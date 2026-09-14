@@ -1,0 +1,1062 @@
+// Zaparoo Frontend
+// Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
+// SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
+//
+// Shared chrome: the header (logo, host HUD, status line), the three-slot
+// top status strip and its page indicator, the big focused-name caption,
+// the bottom help bar with controller glyphs, the segmented progress
+// track, the section heading and the inverse-video selection bar. Every
+// geometry value comes from the Sizing and Layout globals Rust pushes, so
+// these components carry almost no percentages of their own.
+
+import { Theme, Sizing, Motion, Layout } from "theme.slint";
+import { ContentState, StatusKind } from "state_types.slint";
+
+// Glyph provider implemented in Rust: the SVG sources under
+// resources/images are rasterized with resvg at the exact requested
+// pixel size, keyed by their resource path ("icons/ScrollUp",
+// "status/NFC", "buttons/style_a/FaceEast"). The binding depends on the
+// element's size, so a res switch re-rasterizes automatically.
+export global GlyphSource {
+    // The tint is baked into the raster rather than applied as a
+    // draw-time `colorize`: one cached image per (key, size, color), and
+    // no per-item offscreen colorize pass in the renderer. A fully
+    // transparent color keeps the artwork's own colors (the two-tone
+    // heart, real art).
+    pure callback glyph(string, length, color) -> image;
+}
+
+// Header logo rungs (resources/images/logo/logo-<variant>-<w>.png):
+// `logo()` snaps the painted width up to the smallest rung that covers
+// it and picks the variant for the theme's surface, the way
+// Resources.logoUrl() does.
+export global Brand {
+    out property <image> dark-96: @image-url("../../../resources/images/logo/logo-on-dark-96.png");
+    out property <image> dark-144: @image-url("../../../resources/images/logo/logo-on-dark-144.png");
+    out property <image> dark-192: @image-url("../../../resources/images/logo/logo-on-dark-192.png");
+    out property <image> dark-256: @image-url("../../../resources/images/logo/logo-on-dark-256.png");
+    out property <image> dark-384: @image-url("../../../resources/images/logo/logo-on-dark-384.png");
+    out property <image> dark-600: @image-url("../../../resources/images/logo/logo-on-dark-600.png");
+    out property <image> light-96: @image-url("../../../resources/images/logo/logo-on-light-96.png");
+    out property <image> light-144: @image-url("../../../resources/images/logo/logo-on-light-144.png");
+    out property <image> light-192: @image-url("../../../resources/images/logo/logo-on-light-192.png");
+    out property <image> light-256: @image-url("../../../resources/images/logo/logo-on-light-256.png");
+    out property <image> light-384: @image-url("../../../resources/images/logo/logo-on-light-384.png");
+    out property <image> light-600: @image-url("../../../resources/images/logo/logo-on-light-600.png");
+    // The master asset's own aspect ratio (width / height).
+    out property <float> aspect: 600 / 135;
+
+    public pure function logo(light: bool, painted-width: length) -> image {
+        if (painted-width <= 96px) { return light ? self.light-96 : self.dark-96; }
+        if (painted-width <= 144px) { return light ? self.light-144 : self.dark-144; }
+        if (painted-width <= 192px) { return light ? self.light-192 : self.dark-192; }
+        if (painted-width <= 256px) { return light ? self.light-256 : self.dark-256; }
+        if (painted-width <= 384px) { return light ? self.light-384 : self.dark-384; }
+        return light ? self.light-600 : self.dark-600;
+    }
+    // The screensaver's bouncing copy always uses the on-dark variant:
+    // its backstop is solid black regardless of the preset.
+    public pure function saver-logo(painted-width: length) -> image {
+        return self.logo(false, painted-width);
+    }
+}
+
+// Help-bar glyph resolution. Rust pushes the style directory and the four
+// positional files from the controller report and the Controls settings;
+// "ButtonA"/"ButtonB"/"ButtonX"/"ButtonY" are semantic tokens that
+// resolve through them, never literal letters.
+export global Buttons {
+    in-out property <string> style: "style_d";
+    in-out property <string> confirm: "FaceEast";
+    in-out property <string> cancel: "FaceSouth";
+    in-out property <string> options: "FaceNorth";
+    in-out property <string> view: "FaceWest";
+
+    public pure function file(token: string) -> string {
+        if (token == "ButtonA") { return self.confirm; }
+        if (token == "ButtonB") { return self.cancel; }
+        if (token == "ButtonX") { return self.options; }
+        if (token == "ButtonY") { return self.view; }
+        if (token == "ButtonL") { return "ShoulderL"; }
+        if (token == "ButtonR") { return "ShoulderR"; }
+        return token;
+    }
+    public pure function key(token: string) -> string {
+        return "buttons/" + self.style + "/" + self.file(token);
+    }
+}
+
+// One help-bar entry: the glyph tokens (one or more) and the label they
+// describe. Wrapping happens between entries, never inside one.
+export struct HelpEntry {
+    buttons: [string],
+    label: string,
+}
+
+// The resolved status ladder, pushed by Rust from
+// `zaparoo_app::status_line`. `kind` is the stable message id; the
+// sentence is composed here so it stays in the translation catalogs.
+export global Status {
+    in-out property <StatusKind> kind: StatusKind.none;
+    in-out property <string> arg: "";
+    in-out property <string> arg2: "";
+    in-out property <bool> is-error: false;
+    in-out property <bool> show-track: false;
+    in-out property <bool> paused: false;
+    in-out property <bool> total-known: true;
+    in-out property <int> current-step: 0;
+    in-out property <int> total-steps: 0;
+    // Whole percent of the active task, or -1 when Core reports no total.
+    in-out property <int> percent: -1;
+
+    public pure function label() -> string {
+        if (self.kind == StatusKind.disconnected) { return @tr("Disconnected"); }
+        if (self.kind == StatusKind.reconnecting) { return @tr("Reconnecting…"); }
+        if (self.kind == StatusKind.connecting) { return @tr("Connecting…"); }
+        if (self.kind == StatusKind.core-error) {
+            return self.arg == "" ? @tr("Core error") : @tr("Core error: {}", self.arg);
+        }
+        if (self.kind == StatusKind.indexing-paused) { return @tr("Indexing paused: game running"); }
+        if (self.kind == StatusKind.indexing) {
+            // Core leaves the step display empty right at the start of a
+            // run; a bare "Indexing: " reads as broken.
+            return self.arg == "" ? @tr("Indexing…") : @tr("Indexing: {}", self.arg);
+        }
+        if (self.kind == StatusKind.optimizing) {
+            return self.arg == "" ? @tr("Optimizing database…") : @tr("Optimizing database: {}", self.arg);
+        }
+        if (self.kind == StatusKind.importing-paused) { return @tr("Importing paused: game running"); }
+        if (self.kind == StatusKind.importing) {
+            return self.arg == "" ? @tr("Importing…") : @tr("Importing: {}", self.arg);
+        }
+        if (self.kind == StatusKind.indexed-files) { return @tr("Indexed {} files", self.arg); }
+        if (self.kind == StatusKind.indexing-complete) { return @tr("Indexing complete"); }
+        if (self.kind == StatusKind.import-failed) { return @tr("Import failed: {}", self.arg); }
+        if (self.kind == StatusKind.imported) { return @tr("Imported {} of {}", self.arg, self.arg2); }
+        if (self.kind == StatusKind.playtime-warning) { return @tr("Playtime limit in {}", self.arg); }
+        if (self.kind == StatusKind.inbox) { return self.arg; }
+        return "";
+    }
+    public pure function percent-text() -> string {
+        return self.percent < 0 ? "" : @tr("{}%", self.percent);
+    }
+}
+
+// Segmented block progress track. Determinate: cells
+// up to the fill fraction paint accent, the rest border-subtle.
+// Indeterminate: one lit cell marches, stopping under Reduce motion and
+// while paused. Determinate cells change only with actual progress. Slint
+// snaps the cells to physical pixels when rendering.
+//
+// Exactly one cell blinks: the fill's leading edge when determinate, the
+// marching cell when not. Without it a determinate track that is waiting
+// on a slow system is indistinguishable from a stalled one, which is the
+// whole reason the header carries a track rather than a percentage. The
+// blink is a hard cut every `pulse-ms`, never a crossfade -- the timer
+// flips a bool the `background` binding reads straight through. It is the
+// one persistent animation in the app: header chrome, never over content,
+// one small cell's worth of dirty rect, and off entirely under Reduce
+// motion rather than looping at 0ms. See docs/style.md -> "Header status
+// line".
+export component ProgressTrack inherits Rectangle {
+    in property <bool> active: false;
+    in property <bool> paused: false;
+    in property <bool> total-known: true;
+    in property <int> current-step: 0;
+    in property <int> total-steps: 0;
+    in property <int> cell-count: Sizing.tier-240 ? 8 : 12;
+    in property <length> cell-height: Sizing.font-small;
+    in property <length> cell-gap: Sizing.pct-w(0.3);
+
+    out property <length> cell-width: Sizing.tier-240
+        ? 4px
+        : Math.max(Sizing.stroke(2), root.cell-height * 1.6);
+    property <int> filled-cells: (!root.active || !root.total-known || root.total-steps <= 0)
+        ? 0
+        : Math.min(root.cell-count, Math.round(Math.max(0, Math.min(1, root.current-step / root.total-steps)) * root.cell-count));
+    property <int> march-index: 0;
+    property <bool> pulsing: root.active && !root.paused && Motion.enabled;
+    // `max(0, ...)` covers the just-started frame: cell 0 blinks before
+    // anything is technically filled, which reads as "starting up".
+    property <int> pulse-cell: root.total-known ? Math.max(0, root.filled-cells - 1) : root.march-index;
+    property <bool> blink-on: true;
+
+    width: root.cell-count * root.cell-width + Math.max(0, root.cell-count - 1) * root.cell-gap;
+    height: root.cell-height;
+
+    Timer {
+        interval: Motion.dur(Motion.pulse-ms * 2);
+        running: root.active && !root.total-known && !root.paused && Motion.enabled;
+        triggered => {
+            root.march-index = Math.mod(root.march-index + 1, root.cell-count);
+        }
+    }
+
+    // The blink itself. Nothing animates the color; the bool is the whole
+    // state machine, so every tick is a one-frame cut.
+    Timer {
+        interval: Motion.dur(Motion.pulse-ms);
+        running: root.pulsing;
+        triggered => { root.blink-on = !root.blink-on; }
+    }
+    // A stopped blink must not freeze the track dark: leave the cue lit.
+    changed pulsing => { if (!root.pulsing) { root.blink-on = true; } }
+
+    for i in root.cell-count: Rectangle {
+        property <bool> is-filled: root.active && (i < root.filled-cells || (!root.total-known && i == root.march-index));
+        property <bool> is-pulse-cell: root.pulsing && i == root.pulse-cell;
+        x: i * (root.cell-width + root.cell-gap);
+        y: 0;
+        width: root.cell-width;
+        height: root.cell-height;
+        border-radius: Sizing.radius-sm;
+        background: self.is-pulse-cell
+            ? (root.blink-on ? Theme.accent : Theme.border-subtle)
+            : (self.is-filled ? Theme.accent : Theme.border-subtle);
+    }
+}
+
+// Header status line: a right-aligned cluster of label,
+// fixed-width percentage and track hugging the header's right margin.
+// Plain text on the header background, no card. The label shrink-wraps
+// to its content and only elides once it would run past the logo.
+// `app-text` is the router's transient status line;
+// it shows only when the ladder is empty.
+export component StatusLine inherits Rectangle {
+    in property <string> app-text: "";
+
+    property <string> ladder-label: Status.label();
+    property <string> label: root.ladder-label != "" ? root.ladder-label : root.app-text;
+    property <bool> show-track: Status.show-track;
+    property <bool> percent-known: Status.percent >= 0;
+    property <length> cells-spacing: Sizing.pct-w(1);
+    property <length> track-reserve: root.show-track ? track.width + root.cells-spacing : 0px;
+    property <length> percent-slot: Math.ceil(percent-measure.preferred-width / 1px) * 1px;
+    property <length> percent-reserve: root.percent-known ? root.percent-slot + root.cells-spacing : 0px;
+    property <length> label-natural-width: Math.ceil(label-measure.preferred-width / 1px) * 1px;
+    property <length> label-width: Math.min(root.label-natural-width, Math.max(0px, root.width - root.track-reserve - root.percent-reserve));
+
+    visible: root.label != "";
+    height: root.visible ? Sizing.header-row-height : 0px;
+
+    label-measure := Text {
+        visible: false;
+        text: root.label;
+        font-size: Sizing.font-small;
+    }
+    percent-measure := Text {
+        visible: false;
+        text: @tr("{}%", 100);
+        font-size: Sizing.font-small;
+    }
+
+    track := ProgressTrack {
+        x: parent.width - self.width;
+        y: (parent.height - self.height) / 2;
+        visible: root.show-track;
+        active: root.show-track;
+        paused: Status.paused;
+        total-known: Status.total-known;
+        current-step: Status.current-step;
+        total-steps: Status.total-steps;
+    }
+
+    if root.percent-known: Text {
+        x: track.x - root.cells-spacing - self.width;
+        y: (parent.height - self.preferred-height) / 2;
+        width: root.percent-slot;
+        horizontal-alignment: right;
+        text: Status.percent-text();
+        color: Theme.text-primary;
+        font-size: Sizing.font-small;
+    }
+
+    Text {
+        x: parent.width - root.track-reserve - root.percent-reserve - self.width;
+        y: (parent.height - self.preferred-height) / 2;
+        width: root.label-width;
+        overflow: elide;
+        text: root.label;
+        color: Status.is-error ? Theme.error : Theme.text-primary;
+        font-size: Sizing.font-small;
+    }
+}
+
+// Top header bar: logo bottom-left, host status row
+// (NFC / Wi-Fi / LAN / Bluetooth / Battery icons plus the clock)
+// right-anchored, and the status line stacked under it. Height is fixed
+// at Sizing.header-height so the status line's slot stays reserved when
+// idle. The CRT profile pins the status row to the top, the HUD to the
+// bottom, and carries the browse title in the header.
+export component HeaderBar inherits Rectangle {
+    in property <string> clock-text;
+    // Widest clock reading for the format, so the slot never reflows.
+    in property <string> clock-sample: "23:59";
+    in property <[string]> status-keys: [];
+    in property <bool> status-icons-enabled: false;
+    in property <bool> has-battery: false;
+    in property <int> battery-percent: 0;
+    in property <string> browse-title: "";
+    in property <string> app-text: "";
+
+    // Exposed for the screensaver so its bouncing copy starts exactly
+    // where the logo is painted.
+    out property <length> logo-x: logo.x;
+    out property <length> logo-y: logo.y;
+    out property <length> logo-width: logo.width;
+    out property <length> logo-height: logo.height;
+
+    height: Sizing.header-height;
+
+    // At 240p the CRT profile puts status on the upper 8px row; only the
+    // kangaroo tip occupies it, so status can use the remaining span.
+    property <bool> compact-status-header: Sizing.tier-240 && Layout.status-pill-pinned-top;
+    property <length> logo-h: root.compact-status-header
+        ? Math.max(1px, Sizing.header-height - 1px)
+        : Sizing.header-height;
+    property <length> logo-painted-width: root.logo-h * Brand.aspect;
+
+    logo := Image {
+        x: Sizing.header-side-margin;
+        y: parent.height - self.height;
+        width: root.logo-painted-width;
+        height: root.logo-h;
+        source: Brand.logo(Theme.light-surface, root.logo-painted-width);
+        image-fit: contain;
+        horizontal-alignment: left;
+        vertical-alignment: bottom;
+    }
+
+    property <string> battery-icon: root.battery-percent >= 75
+        ? "status/BatteryFull"
+        : (root.battery-percent >= 40
+            ? "status/BatteryHalf"
+            : (root.battery-percent >= 15 ? "status/BatteryLow" : "status/BatteryEmpty"));
+    property <bool> battery-visible: root.status-icons-enabled && root.has-battery;
+    // The percentage reading is hidden on the CRT profile: its
+    // native-resolution HUD only has room for the icon.
+    property <bool> battery-label-visible: root.battery-visible && !Theme.crt;
+    property <length> icon-size: Sizing.font-caption;
+    property <length> hud-spacing: Sizing.pct-w(1);
+    property <int> icon-count: (root.status-icons-enabled ? root.status-keys.length : 0) + (root.battery-visible ? 1 : 0);
+    property <length> battery-label-width: root.battery-label-visible ? Math.ceil(battery-measure.preferred-width / 1px) * 1px : 0px;
+    property <length> clock-width: Math.ceil(clock-measure.preferred-width / 1px) * 1px;
+    property <bool> clock-visible: root.clock-text != "";
+    property <length> hud-width: root.icon-count * (root.icon-size + root.hud-spacing)
+        + (root.battery-label-visible ? root.battery-label-width + root.hud-spacing : 0px)
+        + (root.clock-visible ? root.clock-width : 0px);
+    property <length> hud-x: root.width - Sizing.header-side-margin - root.hud-width;
+    property <length> hud-y: Layout.hud-bottom-aligned ? root.height - Sizing.header-row-height : 0px;
+
+    battery-measure := Text {
+        visible: false;
+        text: @tr("{}%", 100);
+        font-size: Sizing.font-caption;
+    }
+    clock-measure := Text {
+        visible: false;
+        text: root.clock-sample;
+        font-size: Sizing.header-row-height;
+    }
+
+    // Host status row. Icons and the clock both center on the row's
+    // plain geometric middle, with no metrics correction. A measurement
+    // put the rendered clock ink 0.64 px off that middle at a 24 px row,
+    // and an ascent/descent-based correction shifted it almost 4 px the
+    // wrong way and was reverted. Re-measure the rendered ink before
+    // adding one.
+    if root.status-icons-enabled: Rectangle {
+        x: root.hud-x;
+        y: root.hud-y;
+        width: root.hud-width;
+        height: Sizing.header-row-height;
+        for key[i] in root.status-keys: Image {
+            x: i * (root.icon-size + root.hud-spacing);
+            y: (parent.height - self.height) / 2;
+            width: root.icon-size;
+            height: root.icon-size;
+            source: GlyphSource.glyph("status/" + key, root.icon-size, Theme.text-primary);
+        }
+        if root.battery-visible: Image {
+            x: root.status-keys.length * (root.icon-size + root.hud-spacing);
+            y: (parent.height - self.height) / 2;
+            width: root.icon-size;
+            height: root.icon-size;
+            source: GlyphSource.glyph(root.battery-icon, root.icon-size, Theme.text-primary);
+        }
+        if root.battery-label-visible: Text {
+            x: root.icon-count * (root.icon-size + root.hud-spacing);
+            y: (parent.height - self.preferred-height) / 2;
+            width: root.battery-label-width;
+            text: @tr("{}%", root.battery-percent);
+            color: Theme.text-primary;
+            font-size: Sizing.font-caption;
+        }
+    }
+    if root.clock-visible: Text {
+        x: parent.width - Sizing.header-side-margin - root.clock-width;
+        y: root.hud-y + (Sizing.header-row-height - self.preferred-height) / 2;
+        width: root.clock-width;
+        horizontal-alignment: right;
+        text: root.clock-text;
+        color: Theme.text-primary;
+        font-size: Sizing.header-row-height;
+    }
+
+    // Browse title in the header (CRT profile only).
+    if Layout.title-in-header && root.browse-title != "": Text {
+        property <length> natural: Math.ceil(title-measure.preferred-width / 1px) * 1px;
+        x: (parent.width - self.width) / 2;
+        y: parent.height - Sizing.header-row-height
+            + (Sizing.header-row-height - self.preferred-height) / 2;
+        width: Math.min(Math.floor(parent.width / 3px) * 1px, self.natural);
+        overflow: elide;
+        text: root.browse-title;
+        color: Theme.text-primary;
+        font-weight: FontWeight.medium;
+        font-size: Sizing.header-row-height;
+    }
+    title-measure := Text {
+        visible: false;
+        text: root.browse-title;
+        font-weight: FontWeight.medium;
+        font-size: Sizing.header-row-height;
+    }
+
+    // Core / task / event status line under the HUD (or pinned to the
+    // top on the CRT profile), spanning from the logo's right edge to
+    // the header's right margin so it knows its true elide budget.
+    StatusLine {
+        property <length> left: root.compact-status-header
+            ? Sizing.header-side-margin + root.logo-painted-width * 0.14
+            : logo.x + logo.width + Sizing.pct-w(1);
+        x: self.left;
+        y: Layout.status-pill-pinned-top
+            ? 0px
+            : root.hud-y + Sizing.header-row-height + Sizing.header-stack-gap;
+        width: Math.max(0px, parent.width - Sizing.header-side-margin - self.left);
+        app-text: root.app-text;
+    }
+}
+
+// A line inside a surface. One hairline, one place, because hand-rolled
+// rules drift to two weights and two colors: a structural line marks the
+// boundary between a pinned region and one that scrolls under it and is
+// painted in `border-mid`, because structure has to survive 240p where
+// `border-subtle` against `surface-card` does not; a decorative row
+// separator inside a table has no contrast requirement and takes the
+// quieter role. Width is the parent's, so mounting it on the surface
+// gives a full-width rule and mounting it in the content box gives an
+// inset one. See docs/style.md -> "Lines".
+export component Divider inherits Rectangle {
+    in property <bool> decorative: false;
+    height: Sizing.stroke(1);
+    background: root.decorative ? Theme.border-subtle : Theme.border-mid;
+}
+
+// A scannable code on the plate a scanner needs. Both surfaces that show
+// one used to draw it differently: the log uploader put it on a hardcoded
+// white plate with a `border-subtle` frame, the QR modal drew the raster
+// bare with no plate at all.
+//
+// The four-module quiet zone is baked into the raster (`qr.rs`) and is the
+// same `qr-light` as the plate, so a corner radius eats light margin and
+// never a module. That is the one hard limit here: a radius wider than the
+// quiet zone clips data and the code stops scanning, so it is clamped to
+// the zone rather than trusted to be small enough.
+export component QrPlate inherits Rectangle {
+    in property <image> code;
+    // Width of the baked quiet zone at the rendered scale.
+    in property <length> quiet-zone;
+    // What sits behind the plate. The corners are painted back in this
+    // color rather than clipped, because Slint's `clip` is rectangular:
+    // the raster's own square light corners would otherwise sit on top of
+    // a rounded background and nothing would look rounded at all. Same
+    // four masks the context menu cuts its scrim hole with.
+    in property <color> behind: Theme.bg-panel;
+
+    property <length> corner: Math.min(Sizing.radius-md, root.quiet-zone);
+
+    background: Theme.qr-light;
+    border-radius: root.corner;
+
+    Image {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: parent.height;
+        source: root.code;
+        image-rendering: pixelated;
+    }
+
+    if root.corner > 0px: Image {
+        x: 0; y: 0; width: root.corner; height: root.corner;
+        source: GlyphSource.glyph("corners/cut-tl", root.corner, root.behind);
+    }
+    if root.corner > 0px: Image {
+        x: parent.width - root.corner; y: 0; width: root.corner; height: root.corner;
+        source: GlyphSource.glyph("corners/cut-tr", root.corner, root.behind);
+    }
+    if root.corner > 0px: Image {
+        x: 0; y: parent.height - root.corner; width: root.corner; height: root.corner;
+        source: GlyphSource.glyph("corners/cut-bl", root.corner, root.behind);
+    }
+    if root.corner > 0px: Image {
+        x: parent.width - root.corner; y: parent.height - root.corner;
+        width: root.corner; height: root.corner;
+        source: GlyphSource.glyph("corners/cut-br", root.corner, root.behind);
+    }
+}
+
+// The one place a modal's chrome lives. Without it, bespoke panels drift:
+// four different title gaps, two QR presentations and three different
+// header treatments, with a change to any one of them landing on a single
+// modal at a time.
+//
+// A host supplies a width and the height of its own content, then places
+// that content against `content-y`; everything above that line belongs
+// here.
+//
+// One trap: `@children` are laid out inside the panel, but `parent` in a
+// host's own declaration still resolves lexically to the host's root,
+// which is the full-screen scrim. Position against `root.panel-width` and
+// `root.content-width`, never `parent.width`, or the content is measured
+// against the screen and clipped away at the panel edge.
+//
+// Every titled panel separates its title from its content with the same
+// rule, unconditionally. Gating it on anything -- whether the body
+// scrolls, how many rows there are -- puts a line on one panel and not on
+// its neighbour doing the same job, which reads as a defect rather than as
+// information. See docs/style.md, "Lines".
+export component ModalShell inherits Rectangle {
+    in property <string> title;
+    in property <length> panel-width;
+    in property <length> content-height;
+
+    // The shared surface inset: all four sides, and every gap between the
+    // blocks stacked inside (docs/style.md, "Surface containment").
+    out property <length> pad: Sizing.surface-pad;
+    out property <length> title-height: Math.ceil(shell-title.preferred-height / 1px) * 1px;
+    out property <length> rule-y: root.pad + root.title-height + root.pad;
+    out property <length> content-y: root.rule-y + Sizing.stroke(1) + root.pad;
+    out property <length> content-width: Math.max(0px, root.panel-width - 2 * root.pad);
+    out property <length> panel-height: root.content-y + root.content-height + root.pad;
+
+    background: Theme.scrim;
+
+    Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        width: root.panel-width;
+        height: root.panel-height;
+        background: Theme.bg-panel;
+        // Flat modal chrome uses the scrim, not an outline, for separation
+        // (docs/style.md, "Surface containment").
+        border-radius: Sizing.radius-md;
+        clip: true;
+
+        shell-title := Text {
+            x: (parent.width - self.width) / 2;
+            y: root.pad;
+            width: Math.min(self.preferred-width, parent.width - 2 * root.pad);
+            overflow: elide;
+            text: root.title;
+            color: Theme.text-primary;
+            font-size: Sizing.font-title;
+        }
+        Divider { x: 0; y: root.rule-y; width: parent.width; }
+        @children
+    }
+}
+
+// One directional cue: a scroll arrow, or one half of `PageIndicator`'s
+// pair, or a carousel arrow. Painted whether or not the direction is live,
+// because a press the other way brings it straight back and hiding it
+// takes away the only sign that the surface scrolls at all. What toggles
+// is the color, and the spent color is `Theme.cue-spent` rather than
+// `text-label`: a state carried by color alone needs 3:1 between the two,
+// and `text-label` manages that on three of the twenty presets. Hosts hide
+// the whole pair when nothing scrolls; that is a different question from
+// one direction being spent. See docs/style.md -> "Spent cues".
+export component ScrollCue inherits Image {
+    in property <string> glyph: "icons/ScrollDown";
+    in property <bool> live: true;
+    width: Sizing.pct-h(3);
+    height: self.width;
+    source: GlyphSource.glyph(root.glyph, Math.max(1px, self.width),
+        root.live ? Theme.text-primary : Theme.cue-spent);
+}
+
+// Compact "where am I" cue: an up/down chevron pair
+// plus "N/M". Reserves its full width unconditionally so arming a
+// second page changes only the text, never the chevrons' position.
+// Unavailable directions dim to text-label; with a single page the
+// whole cue hides (but still reserves its width).
+export component PageIndicator inherits Rectangle {
+    in property <int> current-page: 0;
+    in property <int> total-pages: 1;
+    in property <bool> item-position-mode: false;
+    in property <int> current-item: 0;
+    in property <int> total-items: 0;
+    // Continuously scrolled prose has no items to count, so it reads out a
+    // percentage instead. `fraction` is 0 at the top and 1 at the bottom.
+    in property <bool> percent-mode: false;
+    in property <float> fraction: 0;
+    // False for cursor-paginated lists whose final page is unknown:
+    // shows a bare "N" instead of a growing denominator.
+    in property <bool> page-total-known: true;
+    in property <bool> has-pages-above: false;
+    in property <bool> has-pages-below: false;
+    in property <length> chevron-size: Sizing.pct-h(4);
+    // The chevron art carries its own side bearing, so the pair sits
+    // tight; the text keeps the normal item gap.
+    in property <length> chevron-spacing: 0px;
+    in property <length> item-spacing: Sizing.pct-w(0.6);
+
+    callback page-requested(int);
+
+    out property <bool> has-navigation-range: root.has-pages-above || root.has-pages-below;
+    out property <string> page-text: root.percent-mode
+        ? @tr("{}%", Math.round(Math.max(0, Math.min(1, root.fraction)) * 100))
+        : (root.item-position-mode
+            ? @tr("{}/{}", Math.min(Math.max(0, root.current-item), Math.max(0, root.total-items - 1)) + 1, Math.max(1, root.total-items))
+            : (root.page-total-known
+                ? @tr("{}/{}", root.current-page + 1, Math.max(1, root.total-pages))
+                : @tr("{}", root.current-page + 1)));
+    property <length> text-width: Math.ceil(text-measure.preferred-width / 1px) * 1px;
+    // Baseline of the page-count text within this component, so a host
+    // can baseline-align it against a Text of its own.
+    out property <length> text-baseline-offset: page-count.y + Theme.ascent(Sizing.font-section);
+
+    width: 2 * root.chevron-size + root.chevron-spacing + root.item-spacing + root.text-width;
+    height: root.chevron-size;
+
+    text-measure := Text {
+        visible: false;
+        text: root.page-text;
+        font-size: Sizing.font-section;
+    }
+
+    up := ScrollCue {
+        x: 0;
+        y: (parent.height - self.height) / 2;
+        width: root.chevron-size;
+        visible: root.has-navigation-range;
+        glyph: "icons/ScrollUp";
+        live: root.has-pages-above;
+        TouchArea {
+            enabled: root.has-pages-above;
+            clicked => { root.page-requested(-1); }
+        }
+    }
+    down := ScrollCue {
+        x: up.x + up.width + root.chevron-spacing;
+        y: (parent.height - self.height) / 2;
+        width: root.chevron-size;
+        visible: root.has-navigation-range;
+        glyph: "icons/ScrollDown";
+        live: root.has-pages-below;
+        TouchArea {
+            enabled: root.has-pages-below;
+            clicked => { root.page-requested(1); }
+        }
+    }
+    page-count := Text {
+        x: down.x + down.width + root.item-spacing;
+        y: (parent.height - self.preferred-height) / 2;
+        width: root.text-width;
+        visible: root.has-navigation-range;
+        overflow: elide;
+        text: root.page-text;
+        color: Theme.text-primary;
+        font-size: Sizing.font-section;
+    }
+}
+
+// Three-slot top strip shared by the browse screens: total-count badge
+// left, centered screen title, page position right. Each slot is capped
+// at a third of the width and elides. The side texts sit on the title's
+// own baseline, one type step smaller, so the title stays the visual
+// anchor.
+export component TopStatusStrip inherits Rectangle {
+    in property <string> title: "";
+    in property <int> current-page: 0;
+    in property <int> total-pages: 1;
+    in property <bool> page-total-known: true;
+    in property <string> total-text: "";
+    in property <string> right-text-override: "";
+    in property <bool> show-page-counter: true;
+    // True mounts a PageIndicator (chevrons + "N/M") in the right slot
+    // instead of plain "Page N / M" text.
+    in property <bool> page-indicator-mode: false;
+    in property <bool> item-position-mode: false;
+    in property <int> current-item: 0;
+    in property <int> total-items: 0;
+    in property <bool> has-pages-above: false;
+    in property <bool> has-pages-below: false;
+    in property <length> page-indicator-chevron-size: Sizing.pct-h(4);
+    in property <length> slot-margin: Sizing.pct-w(3);
+
+    callback page-requested(int);
+
+    out property <string> page-text: root.right-text-override != ""
+        ? root.right-text-override
+        : (root.page-total-known
+            ? @tr("Page {} / {}", root.current-page + 1, root.total-pages)
+            : @tr("Page {}", root.current-page + 1));
+    property <length> slot-width: root.width / 3;
+    property <length> title-measured: Math.ceil(title-measure.preferred-width / 1px) * 1px;
+    property <length> title-text-width: Math.min(root.slot-width, root.title-measured);
+    property <length> title-y: (root.height - Sizing.font-hero) / 2;
+    // Side texts share the title's baseline: offset by the difference
+    // of the two ascents, since Slint has no baseline alignment.
+    property <length> side-y: root.title-y + Theme.ascent(Sizing.font-hero) - Theme.ascent(Sizing.font-section);
+
+    title-measure := Text {
+        visible: false;
+        text: root.title;
+        font-weight: FontWeight.medium;
+        font-size: Sizing.font-hero;
+    }
+
+    if root.total-text != "": Text {
+        x: root.slot-margin;
+        y: root.side-y;
+        width: root.slot-width - root.slot-margin;
+        overflow: elide;
+        text: root.total-text;
+        color: Theme.text-primary;
+        font-size: Sizing.font-section;
+    }
+
+    // Slint clips a Text to its height, so instead of a font-hero tall
+    // box with the line box overflowing it, the natural line box sits
+    // top-aligned at the same y.
+    Text {
+        x: (parent.width - self.width) / 2;
+        y: root.title-y;
+        width: root.title-text-width;
+        overflow: elide;
+        text: root.title;
+        color: Theme.text-primary;
+        font-weight: FontWeight.medium;
+        font-size: Sizing.font-hero;
+    }
+
+    if !root.page-indicator-mode && root.show-page-counter
+        && (root.right-text-override != "" || !root.page-total-known || root.total-pages > 1): Text {
+        x: parent.width - root.slot-margin - self.width;
+        y: root.side-y;
+        width: root.slot-width - root.slot-margin;
+        horizontal-alignment: right;
+        overflow: elide;
+        text: root.page-text;
+        color: Theme.text-primary;
+        font-size: Sizing.font-section;
+    }
+
+    if root.page-indicator-mode && root.show-page-counter: PageIndicator {
+        x: parent.width - root.slot-margin - self.width;
+        y: root.title-y + Theme.ascent(Sizing.font-hero) - self.text-baseline-offset;
+        chevron-size: root.page-indicator-chevron-size;
+        current-page: root.current-page;
+        total-pages: root.total-pages;
+        item-position-mode: root.item-position-mode;
+        current-item: root.current-item;
+        total-items: root.total-items;
+        page-total-known: root.page-total-known;
+        has-pages-above: root.has-pages-above;
+        has-pages-below: root.has-pages-below;
+        page-requested(delta) => { root.page-requested(delta); }
+    }
+}
+
+// Big single-line caption for the focused-tile name: hero size, medium
+// weight, centered, elided, never wrapped. `tags` is the dim
+// disambiguation suffix; the name gets first claim on the width and the
+// tags take what is left.
+export component ActiveLabel inherits Rectangle {
+    in property <string> text: "";
+    in property <string> tags: "";
+    // Margin reserved on each side; footer hosts bind it to their
+    // corner slot width so a long name elides before reaching a badge.
+    in property <length> side-inset: Sizing.pct-w(3);
+
+    property <length> avail-width: Math.max(0px, root.width - 2 * root.side-inset);
+    property <bool> has-tags: root.tags != "";
+    property <length> requested-gap: root.has-tags ? Sizing.pct-w(1.5) : 0px;
+    property <length> name-measured: Math.ceil(name-measure.preferred-width / 1px) * 1px;
+    property <length> tags-measured: root.has-tags ? Math.ceil(tags-measure.preferred-width / 1px) * 1px : 0px;
+    property <length> name-width: Math.min(root.name-measured, root.avail-width);
+    property <length> tags-width: Math.min(root.tags-measured, Math.max(0px, root.avail-width - root.name-width - root.requested-gap));
+    property <length> gap: root.tags-width > 0px ? root.requested-gap : 0px;
+    property <length> block-width: root.name-width + root.gap + root.tags-width;
+    property <length> block-x: (root.width - root.block-width) / 2;
+    property <length> text-y: (root.height - Sizing.font-hero) / 2;
+
+    name-measure := Text {
+        visible: false;
+        text: root.text;
+        font-weight: FontWeight.medium;
+        font-size: Sizing.font-hero;
+    }
+    tags-measure := Text {
+        visible: false;
+        text: root.tags;
+        font-weight: FontWeight.medium;
+        font-size: Sizing.font-hero;
+    }
+
+    Text {
+        x: root.block-x;
+        y: root.text-y + (Sizing.font-hero - self.preferred-height) / 2;
+        width: root.name-width;
+        overflow: elide;
+        text: root.text;
+        color: Theme.text-primary;
+        font-weight: FontWeight.medium;
+        font-size: Sizing.font-hero;
+    }
+    if root.has-tags: Text {
+        x: root.block-x + root.name-width + root.gap;
+        y: root.text-y + (Sizing.font-hero - self.preferred-height) / 2;
+        width: root.tags-width;
+        overflow: elide;
+        text: root.tags;
+        color: Theme.text-variant;
+        font-weight: FontWeight.medium;
+        font-size: Sizing.font-hero;
+    }
+}
+
+// Atomic help-bar group: the glyphs and the label they describe, never
+// split across rows.
+component HelpEntryView inherits HorizontalLayout {
+    in property <HelpEntry> entry;
+    property <length> icon-size: Sizing.pct-h(4);
+
+    spacing: Sizing.pct-w(0.6);
+    height: Math.max(root.icon-size, Sizing.font-body);
+
+    for token in root.entry.buttons: Image {
+        y: (root.height - self.height) / 2;
+        width: root.icon-size;
+        height: root.icon-size;
+        source: GlyphSource.glyph(Buttons.key(token), root.icon-size, Theme.text-primary);
+    }
+    Text {
+        vertical-alignment: center;
+        text: root.entry.label;
+        color: Theme.text-primary;
+        font-size: Sizing.font-body;
+    }
+}
+
+// Bottom instructions bar: a bg-bar fill with a single top keyline, both
+// bleeding past the CRT safe-area inset by `bleed` so the fill reaches
+// the framebuffer edge, and the entries centered in one row, or two rows
+// at 240p when one would overflow. Entries are `HelpEntry` values; the
+// App decides the vocabulary per screen and modal.
+export component HelpBar inherits Rectangle {
+    in property <[HelpEntry]> entries: [];
+    in property <length> bleed: 0px;
+    in property <length> side-margin: Sizing.pct-w(2);
+
+    height: Sizing.help-bar-height;
+
+    property <length> entry-height: Math.max(Sizing.pct-h(4), Sizing.font-body);
+    property <length> row-spacing: Sizing.pct-h(1);
+    property <length> entry-gap: Sizing.pct-w(2);
+    property <int> split-index: Math.ceil(root.entries.length / 2);
+    property <length> safe-width: Math.max(0px, root.width - 2 * root.side-margin);
+    out property <bool> wrap-entries: Sizing.tier-240 && measure.preferred-width > root.safe-width;
+
+    Rectangle {
+        x: -root.bleed;
+        y: 0;
+        width: parent.width + 2 * root.bleed;
+        height: parent.height + root.bleed;
+        background: Theme.bg-bar;
+    }
+    Rectangle {
+        x: -root.bleed;
+        y: 0;
+        width: parent.width + 2 * root.bleed;
+        height: Sizing.stroke(1);
+        background: Theme.border-subtle;
+    }
+
+    // Measuring twin for the single-row width.
+    measure := HorizontalLayout {
+        visible: false;
+        spacing: root.entry-gap;
+        for e in root.entries: HelpEntryView { entry: e; }
+    }
+
+    if !root.wrap-entries: HorizontalLayout {
+        x: (parent.width - self.preferred-width) / 2;
+        y: (parent.height - root.entry-height) / 2 + Sizing.pct-h(0.2);
+        width: self.preferred-width;
+        height: root.entry-height;
+        spacing: root.entry-gap;
+        for e in root.entries: HelpEntryView { entry: e; }
+    }
+
+    if root.wrap-entries: Rectangle {
+        x: root.side-margin;
+        y: (parent.height - self.height) / 2;
+        width: root.safe-width;
+        height: 2 * root.entry-height + root.row-spacing;
+        first := HorizontalLayout {
+            x: (parent.width - self.preferred-width) / 2;
+            y: 0;
+            width: self.preferred-width;
+            height: root.entry-height;
+            spacing: root.entry-gap;
+            for e[i] in root.entries: HelpEntryView {
+                visible: i < root.split-index;
+                entry: e;
+            }
+        }
+        second := HorizontalLayout {
+            x: (parent.width - self.preferred-width) / 2;
+            y: root.entry-height + root.row-spacing;
+            width: self.preferred-width;
+            height: root.entry-height;
+            spacing: root.entry-gap;
+            for e[i] in root.entries: HelpEntryView {
+                visible: i >= root.split-index;
+                entry: e;
+            }
+        }
+    }
+}
+
+// Non-focusable group heading: a label-colored heading over a hairline
+// rule, inset like the row labels under it.
+// Color and a rule, not size or weight, because the bitmap tier
+// quantizes the two type sizes to the same strike.
+export component SectionHeader inherits Rectangle {
+    in property <string> label;
+    in property <length> label-inset: Sizing.pct-w(2);
+
+    property <length> top-gap: Sizing.pct-h(1.5);
+    property <length> rule-gap: Sizing.pct-h(0.8);
+
+    height: root.top-gap + label-text.preferred-height + root.rule-gap + Sizing.stroke(1);
+
+    label-text := Text {
+        x: root.label-inset;
+        y: root.top-gap;
+        width: Math.max(0px, parent.width - 2 * root.label-inset);
+        overflow: elide;
+        text: root.label;
+        color: Theme.text-label;
+        font-weight: FontWeight.semi-bold;
+        font-size: Sizing.font-body;
+    }
+    Divider {
+        x: 0;
+        y: parent.height - self.height;
+    }
+}
+
+// In-screen state cue: the empty or failed message centered over the
+// content area, with an optional detail line.
+// Ready paints nothing. Loading waits before painting and holds briefly.
+export component StateCue inherits Rectangle {
+    // Delay and minimum visibility prevent a fast fill from flashing.
+    in property <ContentState> state: ContentState.ready;
+    in property <string> empty-text: @tr("Nothing here");
+    in property <string> empty-detail: "";
+    in property <string> error-detail: @tr("Check Zaparoo Core and try again.");
+    in property <string> loading-text: @tr("Loading…");
+    in property <duration> loading-delay: 300ms;
+    in property <duration> minimum-visible: 200ms;
+    // Vertical center of the loading cue, so a content rect that starts
+    // below the header can still center the cue on the screen.
+    in property <length> cue-center-y: root.height / 2;
+
+    property <bool> loading: root.state == ContentState.loading;
+    property <bool> loading-shown: false;
+    property <bool> hold: false;
+    changed loading => {
+        if (!self.loading && !self.hold) { self.loading-shown = false; }
+    }
+    Timer {
+        interval: root.loading-delay;
+        running: root.loading && !root.loading-shown;
+        triggered => {
+            root.loading-shown = true;
+            root.hold = true;
+        }
+    }
+    Timer {
+        interval: root.minimum-visible;
+        running: root.hold;
+        triggered => {
+            root.hold = false;
+            if (!root.loading) { root.loading-shown = false; }
+        }
+    }
+    out property <bool> loading-visible: root.loading-shown;
+    property <ContentState> message-state: root.loading-shown || root.loading ? ContentState.ready : root.state;
+    visible: root.loading-shown || root.message-state != ContentState.ready;
+
+    property <string> headline: root.message-state == ContentState.error ? @tr("Failed to load") : root.empty-text;
+    property <string> detail: root.message-state == ContentState.error ? root.error-detail : root.empty-detail;
+    property <length> text-w: root.width * 0.7;
+    property <length> gap: Sizing.pct-h(0.6);
+    property <length> block-h: headline-text.preferred-height + (root.detail != "" ? root.gap + detail-text.preferred-height : 0px);
+
+    // Loading cue: the glyph and the text side by side, centered on
+    // `cue-center-y`.
+    if root.loading-shown: Rectangle {
+        property <length> glyph: Sizing.font-size(3);
+        property <length> spacing: Sizing.pct-w(0.6);
+        property <length> w: self.glyph + self.spacing + Math.ceil(loading-label.preferred-width / 1px) * 1px;
+        x: (parent.width - self.w) / 2;
+        y: root.cue-center-y - self.glyph / 2;
+        width: self.w;
+        height: self.glyph;
+        Image {
+            x: 0;
+            y: 0;
+            width: parent.glyph;
+            height: parent.glyph;
+            source: GlyphSource.glyph("icons/Loading", parent.glyph, Theme.text-primary);
+        }
+        loading-label := Text {
+            x: parent.glyph + parent.spacing;
+            y: 0;
+            height: parent.glyph;
+            vertical-alignment: center;
+            text: root.loading-text;
+            color: Theme.text-primary;
+            font-size: parent.glyph;
+        }
+    }
+
+    headline-text := Text {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - root.block-h) / 2;
+        width: root.text-w;
+        visible: root.message-state != ContentState.ready;
+        wrap: word-wrap;
+        horizontal-alignment: center;
+        text: root.headline;
+        color: Theme.text-primary;
+        font-size: Sizing.font-section;
+    }
+    detail-text := Text {
+        x: (parent.width - self.width) / 2;
+        y: headline-text.y + headline-text.preferred-height + root.gap;
+        width: root.text-w;
+        visible: root.message-state != ContentState.ready && root.detail != "";
+        wrap: word-wrap;
+        horizontal-alignment: center;
+        text: root.detail;
+        color: Theme.text-primary;
+        font-size: Sizing.font-caption;
+    }
+}

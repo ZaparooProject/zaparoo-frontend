@@ -1,47 +1,37 @@
 # Building
 
 Day-to-day builds, lints, and tests go through the
-[`justfile`](../justfile). `just --list` shows the full menu.
-`CMakePresets.json` and `rust/.cargo/config.toml` are written for those
-recipes. If you need raw `cmake` or `cargo`, double-check that the justfile does
-not already cover the job.
+[`justfile`](../justfile). `just --list` shows the full menu. If you need raw
+`cargo` or `cross`, double-check that the justfile does not already cover the
+job; it carries the feature sets, the `cross` resource mount, and sccache.
 
 ## Requirements
 
 ### Desktop
 
-- Qt 6.10+ (Quick, QuickControls2, Qml, LinguistTools)
-- CMake 3.22+
-- C++17 compiler (GCC 10+, Clang 12+, MSVC 2019+)
-- Rust stable toolchain (`rustup install stable`)
-- Ninja (required; pinned by `CMakePresets.json`)
-- mold (used as linker on x86_64 Linux; pinned by `rust/.cargo/config.toml`)
+- Rust via rustup. The toolchain version comes from `rust-toolchain.toml`
+  (1.97.0 with rustfmt, clippy, and the MiSTer musl target); rustup installs it
+  on first use.
 - `just`
-- Docker (used by `just lint`, `just fmt`, `just fix`, and the ARM32
-  cross-build; see [Lints](#lints) for the rationale on running them in
-  the published image rather than against host tools)
-
-Run `just install-tools` once after cloning to install the cargo
-extensions used by the host test recipes (currently `cargo-nextest`).
-The lint image carries every other tool — clang-format, qmlformat,
-cmake-format, qmllint, cargo-deny — so they do not need to be on the
-host PATH.
+- mold (the x86_64 Linux linker, set in `rust/.cargo/config.toml`)
+- Slint's desktop system libraries: fontconfig, wayland, xkbcommon, and udev
+  development packages
+- Optional: sccache (the justfile uses it as `RUSTC_WRAPPER` when installed)
 
 Fedora / RHEL:
 ```bash
-sudo dnf install qt6-qtdeclarative-devel qt6-qtquickcontrols2-devel \
-    qt6-qttools-devel cmake ninja-build mold clang-tools-extra just
+sudo dnf install fontconfig-devel wayland-devel libxkbcommon-devel \
+    systemd-devel mold just
 ```
 
 Ubuntu / Debian:
 ```bash
-sudo apt install qt6-declarative-dev qt6-quick-controls2-dev \
-    qt6-tools-dev qt6-l10n-tools cmake ninja-build mold \
-    clang-tidy clang-format just
+sudo apt install libfontconfig1-dev libwayland-dev libxkbcommon-dev \
+    libudev-dev mold just
 ```
 
-Install Rust via rustup, then run `just install-tools` after cloning the
-frontend to install `cargo-nextest`:
+Install Rust, then the cargo extensions the recipes use (`cargo-nextest`,
+`cargo-deny`, `cross`, `slint-tr-extractor`, `cargo-about`):
 
 ```bash
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
@@ -49,428 +39,92 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 just install-tools
 ```
 
-If `just` isn't packaged for your distro, install it the same way:
+If `just` isn't packaged for your distro, install it with
 `cargo install --locked just`.
 
-### MiSTer ARM32 / ARM64 cross-builds
+### MiSTer ARM32 and portable x86_64 builds
 
-- Docker with Buildx (Docker Desktop includes it)
-- x86_64 Linux Docker platform (`linux/amd64`)
-- ~5 GB disk space for each toolchain image
+- Docker, used by `cross` to run its build images
+- `cross` (installed by `just install-tools`)
 
-The toolchain Docker images provide the ARM build environments. Cargo still gets
-its target and linker settings from `rust/.cargo/config.toml`; the desktop
-`mold` linker setting lives there too. You should not need to edit Cargo config
-by hand.
-
-macOS users only need Docker Desktop for the ARM32 path. The build scripts
-default to Docker platform `linux/amd64`, including on Apple Silicon Macs,
-because the MiSTer ARM GCC toolchain is the official x86_64 Linux release from
-Arm. Apple Silicon hosts therefore build through Docker's amd64 emulation while
-the project itself is still pure ARM32 cross-compilation inside the container.
+`cross` mounts only the `rust/` workspace into its container. The `.slint`
+files and several Rust modules embed files from the repo's `resources/`, so
+every `cross` invocation exports `ZAPAROO_RESOURCES_DIR`, which
+`rust/Cross.toml` mounts at the same path inside the container. Use the
+recipes rather than calling `cross` directly.
 
 ## Desktop builds
 
 ```bash
-just build           # debug build (default)
+just build           # debug build
 just build-release   # release build
-just build-dev       # dev preset (relwithdebinfo + extra checks)
-just build-san       # ASan + UBSan
-just run             # build then ./build/bin/frontend
+just run             # cargo run against the Core in frontend.toml
+just run-dev         # run against the mock Core, started and stopped for you
 ```
 
-The first build pulls and compiles the Rust and Qt dependencies. Incremental
-builds are much faster after that.
+The binary lands in `rust/target/debug/frontend` (or `release/`). Fonts, art
+and translations are embedded, so the binary runs from anywhere.
 
-For a faster local build without tests, configure with
-`-DZAPAROO_BUILD_TESTS=OFF`:
+### Portable x86_64 build (Steam Deck)
+
+A build on a modern host bakes in that host's glibc symbol versions and then
+refuses to start on a Steam Deck or an older distribution. `just x86-portable`
+builds inside `cross`'s older image instead, producing
+`rust/target/x86_64-unknown-linux-gnu/release/frontend`.
+`scripts/install-steamos.sh` installs that binary on a Deck and adds it to
+Steam.
+
+### Desktop tarball
+
+`just package-desktop [tag]` builds the release binary and writes
+`output/release/zaparoo-frontend-<tag>-<os>-<arch>.tar.gz` with the binary,
+`COPYING`, the asset attributions, and the crate notices.
+
+## MiSTer ARM32 build
 
 ```bash
-cmake --preset desktop-debug -DZAPAROO_BUILD_TESTS=OFF
-cmake --build --preset desktop-debug
+just arm32
 ```
 
-### Device-default interface profile
-
-Generic builds default to the Standard interface layout. Device vendors can
-make Handheld the initial layout without maintaining a UI fork:
+This runs `cross build -p frontend --release --no-default-features --features
+mister --target armv7-unknown-linux-musleabihf` with Cortex-A9 tuning and
+produces a static binary at
+`rust/target/armv7-unknown-linux-musleabihf/release/frontend`:
 
 ```bash
-cmake --preset desktop-debug -DZAPAROO_DEFAULT_INTERFACE_PROFILE=handheld
-cmake --build --preset desktop-debug
+file rust/target/armv7-unknown-linux-musleabihf/release/frontend
+# Should report: ELF 32-bit LSB executable, ARM, EABI5 ... statically linked
 ```
 
-Accepted values are `standard` and `handheld`; configure fails on anything
-else. This selects only the value behind Settings → Display → Interface
-layout → Device default. Users can still choose Standard or Handheld,
-and that explicit choice persists in `frontend.toml`.
-
-## MiSTer ARM32 cross-build
-
-The default path uses the official prebuilt toolchain image published by this
-repository:
-
-```bash
-./scripts/build-arm32.sh
-```
-
-This pulls
-`ghcr.io/zaparooproject/qt6-arm32-mister:<scripts/toolchain/VERSION>` if it is not
-already cached locally, builds the application in Docker, and writes the MiSTer
-binary to `output/frontend`. It does not require `just`, Qt, CMake, Rust, or
-the ARM toolchain on the host.
-
-If GHCR asks for authentication, authorize the GitHub CLI with package-read
-scope and log Docker in:
-
-```bash
-gh auth refresh -h github.com -s read:packages
-gh auth token | docker login ghcr.io -u <github-user> --password-stdin
-```
-
-If you need to rebuild the toolchain image locally, building Qt from source
-takes about 45 minutes:
-
-```bash
-./scripts/build-toolchain.sh
-```
-
-This creates the local `zaparoo/qt6-arm32-mister:<version>` Docker image. The
-tag comes from `scripts/toolchain/VERSION`.
-
-Use that local toolchain image for the application build with:
-
-```bash
-USE_LOCAL_TOOLCHAIN=1 ./scripts/build-arm32.sh
-```
-
-Later builds usually take under a minute because Docker reuses the toolchain
-and application layers.
-
-`DOCKER_PLATFORM` defaults to `linux/amd64`. Override it only if you are using
-a different compatible toolchain image:
-
-```bash
-DOCKER_PLATFORM=linux/amd64 ./scripts/build-arm32.sh
-```
-
-Check the ARM binary:
-
-```bash
-file output/frontend
-# Should report: ELF 32-bit LSB executable, ARM, EABI5 ...
-```
-
-## ARM64 cross-build
-
-The ARM64 target mirrors the MiSTer Docker flow but uses a separate Qt +
-aarch64 toolchain image with static Qt, EGLFS/GBM, and linuxfb enabled:
-
-```bash
-./scripts/build-arm64.sh
-# or
-just arm64
-```
-
-This pulls
-`ghcr.io/zaparooproject/qt6-arm64-toolchain:<scripts/toolchain-arm64/VERSION>` if it is
-not cached locally, builds the application in Docker, and writes the arm64 binary to
-`output/frontend-arm64`. It does not require host Qt, CMake, Rust, or an aarch64 toolchain.
-
-If the official image is unavailable, build and use the local toolchain image:
-
-```bash
-USE_LOCAL_TOOLCHAIN=1 ./scripts/build-arm64.sh
-```
-
-The arm64 build sets `ZAPAROO_WITH_UPDATE=OFF`. Platform-specific update mechanisms
-own updates, so the optional zaparoo-update integration is intentionally not bundled into
-this artifact.
-
-At runtime, set the Qt platform from the service/wrapper, for example:
-
-```bash
-QT_QPA_PLATFORM=eglfs
-QT_QPA_EGLFS_INTEGRATION=eglfs_kms
-QT_QUICK_BACKEND=software  # fallback only; omit when using Qt Quick via GLES
-```
-
-Check the ARM64 binary:
-
-```bash
-file output/frontend-arm64
-# Should report: ELF 64-bit LSB executable, ARM aarch64 ...
-```
-
-## Tests
-
-```bash
-just test            # ctest + cargo nextest
-just test-qml        # only the Qt/QML tests
-just test-rust       # only cargo nextest
-just test-san        # ASan/UBSan suite
-```
-
-## Lints
-
-All lint and format recipes run inside the published lint image
-(`ghcr.io/zaparooproject/zaparoo-lint:<scripts/lint/VERSION>`). Host execution
-is not exposed because clang-format, qmlformat, and cmake-format have
-no per-project version pin (no rust-toolchain.toml equivalent), and
-host distros routinely package different majors than the image. Routing
-through Docker means host runs, Docker runs, and CI produce identical
-output by construction.
-
-The Docker-backed recipes default to `DOCKER_PLATFORM=linux/amd64`. That keeps
-Apple Silicon macOS hosts working even when a lint-image tag has only been
-published for amd64 so far; Docker Desktop runs it under emulation. If the
-matching lint-image tag is available as native arm64 and you want that path,
-override the platform explicitly:
-
-```bash
-DOCKER_PLATFORM=linux/arm64 just fmt
-```
-
-```bash
-just lint            # everything (rust + cpp + qml)
-just lint-cpp        # clang-format check + clang-tidy
-just lint-qml        # qmllint
-just lint-rust       # rustfmt check + clippy + cargo-deny
-just fix             # clippy --fix, then all formatters
-just fmt             # formatters only (cargo fmt + clang-format +
-                     # qmlformat + cmake-format) on tracked files
-just lint-docker     # alias for `just lint`
-just fmt-docker      # alias for `just fmt`
-just fix-docker      # alias for `just fix`
-```
-
-`just lint` is the zero-warnings gate before a PR. `just fix` runs
-`cargo clippy --fix` first because its rewrites may not be pre-formatted;
-the formatters are the cleanup pass.
-
-The image carries Rust 1.97 + rustfmt + clippy + cargo-deny +
-cargo-nextest, clang-format / clang-tidy 19, qmlformat / qmllint /
-qmake from Qt 6.10.3 (installed via aqtinstall), cmake-format 0.6.13,
-ccache, and mold. The same image runs in CI, so the version pin is
-shared by construction.
-
-The lint recipes configure CMake into `build-docker/`, not `build/`,
-so they never stomp the artifacts from a host `just build`. First run
-is slow (full Qt-linked build inside the container). Subsequent runs
-reuse `build-docker/` via the bind mount and are fast.
-
-When you bump `scripts/lint/VERSION` (because `Dockerfile.lint` changed), the
-first CI run on the PR builds and pushes the new image to GHCR
-automatically before the lint/test/build jobs start. After the PR
-merges to main, `lint-image-build.yml` rebuilds the image multi-arch
-so non-amd64 hosts have a native pull available too. To run the new
-image locally before that first CI push, build the tag yourself:
-
-```bash
-docker build -f Dockerfile.lint \
-    -t ghcr.io/zaparooproject/zaparoo-lint:$(cat scripts/lint/VERSION) .
-```
-
-## Build caching
-
-The build is fast only because several caches cooperate. Each one has a
-coupling that is easy to break silently; this section is the inventory.
-AGENTS.md points here — keep both in sync when any of these change.
-
-### Build provenance lives in `rust/build-info`, nowhere else
-
-The commit hash / build date / channel shown in About and the startup
-log are baked by `rust/build-info/build.rs`, a deliberate leaf crate.
-It is the only build script allowed to declare
-`rerun-if-changed=../../.git/HEAD` (and `refs/heads`): those triggers
-fire on every commit, rebase, and branch switch, so whatever build
-script carries them re-runs on every commit. In `rust/build-info` that
-re-run costs milliseconds. In `rust/frontend/build.rs` — which runs the
-full cxx-qt codegen and compiles its generated C++ — it used to cost a
-near-full rebuild in every cargo target dir.
-
-Do not add `.git/` rerun triggers or `ZAPAROO_BUILD_*` provenance env
-baking back into `rust/frontend/build.rs`. New provenance fields go in
-`rust/build-info` and are consumed as `zaparoo_build_info::*` consts.
-
-### The Rust toolchain pin is referenced in three images
-
-`rust-toolchain.toml` sits at the **repo root** (not in `rust/`) so
-that rustup resolves it for every cargo invocation in the tree —
-including Corrosion's, which run from `build*/` during the cmake build.
-Keeping it in `rust/` made desktop builds silently float on the host's
-default toolchain, so a `rustup update` invalidated every build dir and
-the sccache cache.
-
-Bumping the pinned version means updating, in the same change:
-
-| Where | What |
-|---|---|
-| `rust-toolchain.toml` | the pin itself |
-| `Dockerfile.lint` | `RUST_TOOLCHAIN` ARG, plus a `scripts/lint/VERSION` bump so the image republishes |
-| `Dockerfile.toolchain` | the pre-warmed `rustup toolchain install`, plus a `scripts/toolchain/VERSION` bump |
-
-If any image is left behind, builds still work — rustup downloads the
-pinned toolchain inside the container on **every** run, which is
-exactly the slow path this setup exists to avoid.
-
-`Dockerfile.arm32` COPYs `rust-toolchain.toml` into the build context;
-keep that COPY if the file ever moves again, or the ARM32 build falls
-back to the toolchain image's default channel.
-
-### justfile recipes skip cmake configure
-
-`just build` (and `build-dev`, `build-release`, `build-san`, and the
-lint container's `_build-in-image`) only run `cmake --preset` when the
-build dir has no `build.ninja` (that file — not `CMakeCache.txt`, which
-a *failed* configure also leaves behind — is only written by a
-successful generate). Ninja re-runs cmake itself when `CMakeLists.txt`
-or `*.cmake` files change, so this is safe — with one exception: edits
-to `cacheVariables` in `CMakePresets.json` are invisible to ninja.
-After changing a preset, run `cmake --preset <name>` once by hand, or
-`just clean`.
-
-### Compiler caches
-
-- **C++**: the top-level `CMakeLists.txt` wires ccache as
-  `CMAKE_CXX_COMPILER_LAUNCHER` when ccache is on PATH (host and lint
-  image both have it). ccache's default 5 GB cap is small for Qt
-  across this repo's five build dirs; `ccache -M 20G` once per host is
-  worth it.
-- **Rust**: the justfile exports `RUSTC_WRAPPER=sccache` when sccache
-  is installed. It caches dependency crates across the five cargo
-  target dirs (Corrosion hard-codes one per build dir). It cannot
-  cache workspace-crate incremental compiles or build-script runs —
-  which is why the provenance split above matters.
-
-### Lint container caches under `.docker-cache/`
-
-The `_lint` recipe bind-mounts three host dirs into the otherwise
-ephemeral container: the cargo registry (index + crate sources),
-cargo-deny's advisory DB, and ccache's object dir. Direct Rust lint also
-stores Cargo artifacts in `.docker-cache/rust-target`, available through
-the repository bind mount. It must not share the host's `rust/target`:
-container source and registry paths differ, invalidating Cargo fingerprints
-when switching between Docker lint and host builds. This target-directory
-setting applies only to the Rust lint command; CMake/Corrosion keeps its
-existing separate build directories.
-
-Delete `.docker-cache/` to reset these caches; it is gitignored. Do **not** add a
-mount over `/usr/local/rustup` — it would shadow the toolchains baked
-into the lint image and break the cmake-driven lint path, which needs
-a resolvable toolchain before `/workdir` is even consulted.
-
-### ARM32 builds use BuildKit cache mounts
-
-In `Dockerfile.arm32` the cmake build dir (`/src/build`) and the cargo
-registry are `RUN --mount=type=cache` mounts, so `just arm32` reuses
-ninja and cargo incremental state even though source COPY layers bust
-on every change. Two rules follow:
-
-- Cache mounts are not image layers. Anything a later stage needs must
-  be `cp`'d out of the mount within the same RUN (the binary is copied
-  to `/src/frontend-built`, which is what the export stage COPYs).
-- `docker builder prune` is the reset switch if the cached build dir
-  ever gets into a bad state.
-
-## Deploy desktop bundle
-
-```bash
-just build
-./packaging/deploy-desktop.sh
-./deploy/frontend/run.sh
-```
-
-The deploy script copies Qt shared libraries next to the binary. Qt must be on
-your PATH (`qmake6` or `qmake` must be findable).
-
-## Deploy to MiSTer
-
-```bash
-echo 'MISTER_IP=<your-mister-ip>' > .env
-./scripts/deploy-mister.sh
-```
-
-To copy and restart an already-built `output/frontend` without rebuilding:
-
-```bash
-./scripts/deploy-mister.sh --skip-build
-```
-
-The MiSTer binary is self-contained. It sets `QT_QPA_PLATFORM=linuxfb` and
-`QT_QUICK_BACKEND=software`, runs `vmode -r W H rgb32` using the configured
-width and height (default `1920×1080`), and starts
-`/media/fat/Scripts/zaparoo.sh -service start`. No wrapper script is needed.
-
-User-editable config lives at `/media/fat/zaparoo/frontend.toml`.
-Example:
-
-```toml
-[video]
-width = 1280
-height = 720
-
-[logging]
-debug = true
-```
-
-## Cutting a release
-
-A MiSTer release bundles three independently versioned components: the
-**frontend** binary (this repo), the **`MiSTer_Zaparoo`** host wrapper
-(`ZaparooProject/Main_MiSTer`), and the **`menu_zaparoo.rbf`** menu core
-(`ZaparooProject/Menu_MiSTer`). The analog video path depends on all three
-matching. The release workflow resolves the host wrapper and menu core to their
-latest published releases automatically, so a normal release is just a version
-bump and a tag.
-
-1. **Bump the version.** Update `project(... VERSION ...)` in `CMakeLists.txt`
-   and `version` in `rust/Cargo.toml` (`[workspace.package]`), then regenerate
-   the lockfile with `cargo update --workspace` from `rust/`. These are the only
-   two places to edit; the About page version is derived from the CMake version
-   at build time.
-2. **Tag and publish.** Push a `vX.Y.Z` tag (or run the `Build release ZIP`
-   workflow with `upload` enabled). The workflow resolves the latest
-   `Main_MiSTer` and `Menu_MiSTer` releases, packages the bundle, and uploads the
-   GitHub release.
-3. **Update the downloader database.** In `ZaparooProject/Zaparoo_MiSTer`,
-   update `db.json` (`archives.zaparoo_frontend` url/hash/size and the
-   `summary_inline.files` hashes), then regenerate its distributed zip(s).
-4. **Verify** on a clean unit installed via the downloader.
-
-To bundle a specific menu or host build instead of latest, set the workflow's
-`menu_tag` input (or `MENU_MISTER_TAG` / `MAIN_MISTER_TAG` when running
-`scripts/package-mister-release.sh` directly).
-
-## Run on framebuffer (desktop headless)
-
-Use this to reproduce the MiSTer rendering path on a desktop:
-
-```bash
-QT_QPA_PLATFORM=linuxfb QT_QUICK_BACKEND=software ./build/bin/frontend
-```
-
-### Slint on newer MiSTer kernels
-
-The Slint `/dev/fb0` presenter first tries ordinary framebuffer mmap. If it
-fails with `ENODEV` on a framebuffer character device, it maps the physical
-range reported by `FBIOGET_FSCREENINFO` through `/dev/mem`. This ports the
-compatibility fix from `ad13282` for kernels whose `MiSTer_fb` driver lacks
-`fb_mmap`; working drivers keep the native path. No physical address is
-hardcoded, and other mmap errors do not trigger the fallback.
+The build is static musl because the MiSTer image ships glibc 2.31, older than
+anything `cross`'s gnueabihf image links against. The `mister` feature swaps
+the winit backend for a custom `slint::platform` with the software renderer and
+the fb0, DDR and vblank-latch presenters.
+
+`just release` is `just arm32` with build provenance: it passes
+`ZAPAROO_OFFICIAL_BUILD=1`, the short commit, and the UTC date into the
+container, so About and the startup log report `channel = "official"`. Use it
+for binaries you ship.
+
+### Framebuffer mapping on newer MiSTer kernels
+
+The `/dev/fb0` presenter first tries ordinary framebuffer mmap. If it fails
+with `ENODEV` on a framebuffer character device, it maps the physical range
+reported by `FBIOGET_FSCREENINFO` through `/dev/mem`. This covers kernels whose
+`MiSTer_fb` driver lacks `fb_mmap`; working drivers keep the native path. No
+physical address is hardcoded, and other mmap errors do not trigger the
+fallback.
 
 The fallback requires existing permission to open `/dev/mem`; it does not
 change permissions. Startup logs report activation or the underlying error.
 Set `ZAPAROO_FB_FALLBACK=off` to disable it for diagnosis. Slint retains its
-cached render buffer and dirty-row copies in either case, so Qt's optional
-full-surface `staged` copy mode is not needed. Framebuffer clears and pixel
-stores use aligned volatile writes: ARM Device-memory mappings can fault on
-unaligned accesses emitted by libc `memset` or `memcpy`. DDR and latch presenters are
-unchanged because they do not mmap the fbdev surface.
+cached render buffer and dirty-row copies in either case. Framebuffer clears
+and pixel stores use aligned volatile writes: ARM Device-memory mappings can
+fault on unaligned accesses emitted by libc `memset` or `memcpy`. DDR and latch
+presenters are unchanged because they do not mmap the fbdev surface.
 
-Build with `just slint-arm32`. Host tests cover fallback selection and mapping
-bounds without opening either hardware device; a device boot is still needed
-to verify the affected kernel.
+Host tests cover fallback selection and mapping bounds without opening either
+hardware device; a device boot is still needed to verify the affected kernel.
 
 ### Optional MiSTer HDMI scanout (local testing)
 
@@ -483,9 +137,9 @@ write-combined RGB565 slots and vblank-latched flips. It is not enabled by
 Initial eligibility is HDMI on the qualified `6.18.38-MiSTer` stack, with
 `/dev/zaparoo-scanout` ABI v1. Main optionally loads
 `/media/fat/zaparoo/modules/6.18.38-MiSTer/zaparoo_scanout.ko`. Older/unknown
-kernels, native CRT and Direct Video retain existing paths. Never force-load the demo's
-5.15 module, replace `mem_wc`/MagiK modules, or claim independent renderers can
-safely run concurrently.
+kernels, native CRT and Direct Video retain existing paths. Never force-load the
+prototype's 5.15 module, replace `mem_wc`/MagiK modules, or claim independent
+renderers can safely run concurrently.
 
 Automatic keeps **960x540 rendering into 1920x1080 HDMI**. Physical output timing
 and source geometry remain separate. Default rendering is fixed at the resolved
@@ -493,42 +147,160 @@ Automatic/explicit size; `--adaptive-render` is experimental and opt-in.
 Desktop remains FemtoVG. GPL module/RTL implementation lives only in the Menu
 fork; frontend uses the public protocol and namespaced UAPI.
 
-Build frontend with `just slint-arm32`; run `just lint-slint`, `just test-slint`,
-`just lint` and `just test`. Main requires its ARM cross-build. Menu's
-`README.md` and `kernel/scanout-slots/README.md` cover RTL tests, module
-provenance and exact kernel qualification. Local gates do
-not establish hardware smoothness or lifecycle acceptance. No release/CI
-plumbing or device deployment is implied by these builds.
+Build the frontend with `just arm32` and run `just lint` and `just test`. Main
+requires its ARM cross-build. Menu's `README.md` and
+`kernel/scanout-slots/README.md` cover RTL tests, module provenance and exact
+kernel qualification. Local gates do not establish hardware smoothness or
+lifecycle acceptance.
 
-## Underlying mechanics
-
-Use these only when debugging the build itself or doing something the justfile
-does not cover.
-
-`just build` resolves to:
+## Tests
 
 ```bash
-test -f build/build.ninja || cmake --preset desktop-debug
-cmake --build --preset desktop-debug
+just test
 ```
 
-(See "Build caching" for why configure is conditional.)
+This runs `cargo nextest run --workspace` and then
+`cargo nextest run -p frontend --no-default-features --features mister`: the
+presenter, dual-head and other MiSTer-only modules only build under that
+feature. Render tests draw through Slint's software renderer offline; nothing
+opens a window.
 
-`just lint-cpp` resolves to `cmake --build build-docker --target lint`
-inside the lint container — which runs clang-format (check only),
-clang-tidy, and qmllint together against the same artifacts a fresh
-configure would produce. The individual targets are:
+`just snapshots` renders the main screens (the curated list in
+`scripts/render-snapshots.sh`: each root screen, the modals, and the CRT
+variants) at 540p, 720p, 1080p and 352x240 CRT into `output/snapshots/`,
+optionally through a bundled language (`just snapshots de`).
+
+## Lints
 
 ```bash
-cmake --build build --target format-check   # clang-format dry-run
-cmake --build build --target tidy           # clang-tidy
-cmake --build build --target all_qmllint    # QML linting
+just lint
 ```
 
-`just test` resolves to `ctest --preset desktop-debug` plus
-`cargo nextest run --workspace`. Nextest needs the Rust workspace path, so the
-justfile runs that command from `rust/`. Plain ctest works too:
+The gate, which CI runs as-is:
+
+- `cargo fmt --all --check`
+- `cargo clippy --workspace --all-targets -- -D warnings`
+- the same clippy for the `mister` feature set
+- the same clippy for the `snapshot` feature set, which sits behind
+  `required-features` and so is never built by `--all-targets` alone
+- `cargo deny check` (advisories, licenses, bans, sources; `rust/deny.toml`)
+- `scripts/check-toolkit-free.sh`: `rust/zaparoo-app` must not depend on Slint
+  or any other toolkit
+- `scripts/check-translations.sh`: the committed `frontend.pot` must match a
+  fresh extraction from the `.slint` files
+- `scripts/check-notices.sh`: `THIRD-PARTY-NOTICES.txt` must match the current
+  dependency set; `just notices` regenerates it
+- `python3 scripts/prepare-system-logos.py --check`: the embedded logo sets
+  under `rust/frontend/assets/` must match the sources under
+  `resources/images/systems*/`; `just logos` regenerates them
+
+`just fmt` formats; `just fix` applies clippy's fixes, then formats.
+
+## Build caching
+
+The build is fast only because several caches cooperate. Each one has a
+coupling that is easy to break silently; this section is the inventory.
+AGENTS.md points here; keep both in sync when any of these change.
+
+### Build provenance lives in `rust/build-info`, nowhere else
+
+The commit hash / build date / channel shown in About and the startup
+log are baked by `rust/build-info/build.rs`, a deliberate leaf crate.
+It is the only build script allowed to declare
+`rerun-if-changed=../../.git/HEAD` (and `refs/heads`): those triggers
+fire on every commit, rebase, and branch switch, so whatever build
+script carries them re-runs on every commit. In `rust/build-info` that
+re-run costs milliseconds. In `rust/frontend/build.rs`, which runs the Slint
+compiler over every `.slint` file and generates the logo table, it would cost
+a rebuild of the frontend crate after every commit.
+
+Do not add `.git/` rerun triggers or `ZAPAROO_BUILD_*` provenance env
+baking to `rust/frontend/build.rs`. New provenance fields go in
+`rust/build-info` and are consumed as `zaparoo_build_info::*` consts.
+
+Inside `cross` there is no `.git/`, so the build script falls back to
+`unknown`/`dev` unless the host passes `ZAPAROO_BUILD_COMMIT`,
+`ZAPAROO_BUILD_DATE` and `ZAPAROO_OFFICIAL_BUILD` through; `rust/Cross.toml`
+lists them under `passthrough`, and `just release` sets them.
+
+### The Rust toolchain pin
+
+`rust-toolchain.toml` sits at the **repo root** (not in `rust/`) so rustup
+resolves it for every cargo invocation in the tree, including the ones `cross`
+makes. Bumping it also means updating the explicit
+`rustup toolchain install` line in `.github/workflows/release.yml` and
+`rust-version` in `rust/Cargo.toml`.
+
+### Slint version couplings
+
+`slint` and `slint-build` are pinned exactly in `rust/frontend/Cargo.toml`.
+`slint-tr-extractor` must match: its version appears in `just install-tools`,
+the CI lint job, and the install hint in `scripts/check-translations.sh`. The
+Slint license exceptions in `rust/deny.toml` list crates by name, so a Slint
+bump can add or remove one. Regenerate `just notices` afterward.
+
+### Compiler caches
+
+The justfile exports `RUSTC_WRAPPER` as sccache when it is on `PATH`, which
+shares compiled crates across the desktop and MiSTer feature sets and across
+clean builds. CI uses `Swatinem/rust-cache` per job instead.
+
+## Deploy to MiSTer
+
+Create `.env` in the repo root with the MiSTer address:
 
 ```bash
-ctest --test-dir build --output-on-failure
+echo 'MISTER_IP=192.168.1.100' > .env
+# optional, for password auth through sshpass:
+echo 'MISTER_PW=<password>' >> .env
 ```
+
+Then:
+
+```bash
+just deploy-mister              # build and deploy
+just deploy-mister --skip-build # deploy the last build
+```
+
+The script builds with `just arm32`, uploads to
+`/media/fat/zaparoo/frontend.new`, verifies the size, keeps the previous binary
+as `frontend.bak`, syncs, clears `/tmp/zaparoo/frontend.log`, and SIGKILLs the
+running frontend. `/media/fat/zaparoo/MiSTer_Zaparoo` respawns it with the new
+binary.
+SIGKILL is deliberate: a clean exit counts as an escape and the wrapper will
+not respawn. SIGKILL counts as a crash toward the wrapper's three-strike limit,
+so after three deploys without a clean exit, `killall MiSTer_Zaparoo` to reset.
+
+## Cutting a release
+
+A MiSTer release bundles three independently versioned components: the
+**frontend** binary (this repo), the **`MiSTer_Zaparoo`** host wrapper
+(`ZaparooProject/Main_MiSTer`), and the **`menu_zaparoo.rbf`** menu core
+(`ZaparooProject/Menu_MiSTer`). The analog video path depends on all three
+matching. The release workflow resolves the host wrapper and menu core to their
+latest published releases automatically, so a normal release is a version bump
+and a tag.
+
+1. **Bump the version.** Update `version` in `rust/Cargo.toml`
+   (`[workspace.package]`), then regenerate the lockfile with
+   `cargo update --workspace` from `rust/`. That is the only place to edit;
+   About and the log upload read `CARGO_PKG_VERSION`.
+2. **Refresh the notices** if dependencies changed: `just notices`, and commit
+   `rust/frontend/LICENSES/THIRD-PARTY-NOTICES.txt`. Packaging fails when the
+   file is missing.
+3. **Tag and publish.** Push a `vX.Y.Z` tag (or run the `Build release ZIP`
+   workflow with `upload` enabled). The workflow checks the tag against the
+   workspace version, builds with `just release`, packages the bundle, uploads
+   the GitHub release, and attests the ZIP.
+4. **Update the downloader database.** In `ZaparooProject/Zaparoo_MiSTer`,
+   update `db.json` (`archives.zaparoo_frontend` url/hash/size and the
+   `summary_inline.files` hashes), then regenerate its distributed zip(s).
+5. **Verify** on a clean unit installed via the downloader.
+
+To bundle a specific menu or host build instead of latest, set the workflow's
+`menu_tag` input (or `MENU_MISTER_TAG` / `MAIN_MISTER_TAG` when running
+`scripts/package-mister-release.sh` directly).
+
+The bundle layout: `zaparoo/frontend`, `zaparoo/MiSTer_Zaparoo`,
+`zaparoo/menu_zaparoo.rbf`, `LICENSES/` (asset attributions plus
+`THIRD-PARTY-NOTICES.txt`), `README.txt`, and `COPYING`.

@@ -2,8 +2,9 @@
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 
-//! Pins `zaparoo_app::layouts` to `BrowseLayouts.qml` at every geometry the
-//! sizing fixture covers, for both themes and all six views.
+//! Pins `zaparoo_app::layouts` to `tests/fixtures/layout_golden.txt` at
+//! every geometry the sizing fixture covers, for both themes and all six
+//! views.
 
 #![allow(
     clippy::expect_used,
@@ -16,19 +17,20 @@ use std::collections::BTreeMap;
 use zaparoo_app::layouts::{self, Body, ThemeId, View};
 use zaparoo_app::sizing::{Inputs, InterfaceProfile};
 
-const FIXTURE: &str = include_str!("../../../tests/fixtures/layout_golden.txt");
+const FIXTURE: &str = include_str!("fixtures/layout_golden.txt");
 
-/// The container insets this port deliberately leaves the QML behind on.
-/// `BrowseLayouts.qml` derives a card's sides from the width and its ends
-/// from the height, which puts 26px beside 14px at 720p and gets worse the
-/// wider the screen; a container's inset is one margin seen four times, so
-/// it measures the same on both axes (`docs/style.md` -> "Surface
-/// containment"). `default_card_insets_are_square` owns these keys instead,
-/// so the divergence is pinned somewhere rather than silently tolerated.
+/// The container insets the current rules deliberately leave the golden
+/// fixture behind on. The retired Qt build derived a card's sides from the
+/// width and its ends from the height, which put 26px beside 14px at 720p
+/// and got worse the wider the screen; a container's inset is one margin
+/// seen four times, so it measures the same on both axes (`docs/style.md`
+/// -> "Surface containment"). `default_card_insets_are_square` owns these
+/// keys instead, so the divergence is pinned somewhere rather than silently
+/// tolerated.
 ///
 /// Only the sides move: `pct_min(p) == pct_h(p)` at every geometry in the
 /// fixture, because `swap_percentage_axes` already points `pct_h` at the
-/// short axis in portrait. Top and bottom must still match the QML.
+/// short axis in portrait. Top and bottom must still match the fixture.
 const SQUARE_INSET_KEYS: [&str; 4] = [
     "list.cardPaddingLeft",
     "list.cardPaddingRight",
@@ -110,7 +112,7 @@ fn fixture_covers_every_theme_and_view() {
 }
 
 #[test]
-fn current_theme_matches_qml() {
+fn current_theme_matches_the_fixture() {
     for case in cases() {
         assert_eq!(
             case.inputs.tier().as_str(),
@@ -128,7 +130,7 @@ fn current_theme_matches_qml() {
 }
 
 #[test]
-fn profiles_match_qml() {
+fn profiles_match_the_fixture() {
     let mut failures = Vec::new();
     for case in cases() {
         let profile = layouts::profile(case.theme, case.view, &case.inputs);
@@ -145,7 +147,7 @@ fn profiles_match_qml() {
                 let a = actual.get(key);
                 let e = case.expected.get(key);
                 if a != e && !diff.iter().any(|d: &String| d.starts_with(key.as_str())) {
-                    diff.push(format!("{key}: qml={e:?} rust={a:?}"));
+                    diff.push(format!("{key}: fixture={e:?} rust={a:?}"));
                 }
             }
             if diff.is_empty() {
@@ -169,13 +171,13 @@ fn profiles_match_qml() {
     }
     assert!(
         failures.is_empty(),
-        "{} profiles differ from the QML fixture:\n{}",
+        "{} profiles differ from the golden fixture:\n{}",
         failures.len(),
         failures.join("\n")
     );
 }
 
-/// What `SQUARE_INSET_KEYS` gives up in `profiles_match_qml`. Every default
+/// What `SQUARE_INSET_KEYS` gives up in `profiles_match_the_fixture`. Every default
 /// card and pane inset is the same number on all four sides, and it is the
 /// number the height axis was already giving, so nothing grew.
 #[test]

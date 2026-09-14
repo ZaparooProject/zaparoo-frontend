@@ -5,7 +5,7 @@
 //! The "Change launcher" picker, shared by the system default and the
 //! per-media override: `Default` first, then the launchers Core offers
 //! for that system, then the stored choice when it is no longer one of
-//! them. Ported from `models/system_launchers.rs`.
+//! them.
 
 /// The sentinel row that clears the stored choice.
 pub const DEFAULT_LAUNCHER_ID: &str = "__default__";

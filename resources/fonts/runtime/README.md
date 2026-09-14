@@ -1,10 +1,8 @@
-# Runtime fonts for the Slint frontend
+# Runtime script fonts
 
-Static Regular instances of the six script faces in the parent directory,
-embedded into the Slint binary by `rust/frontend-slint/src/fonts.rs`
-(`include_bytes!`) and registered for script fallback at startup. One
-static binary, like the Qt build, which keeps embedding the variable files
-in the parent directory; nothing there changed.
+Static Regular instances of the Noto Sans Arabic, Devanagari, Hebrew, JP,
+KR and TC faces, embedded into the binary by `rust/frontend/src/fonts.rs`
+(`include_bytes!`) and registered for script fallback at startup.
 
 Why static: Slint's runtime text path renders a variable font's default
 instance and does not apply the weight the UI asks for. Noto Sans Hebrew,
@@ -13,7 +11,11 @@ the offline probe. Instancing at wght 400 (and wdth 100 where the axis
 exists) sidesteps that and also drops the variation tables, so the files
 are smaller than their variable sources.
 
-Regenerate with fontTools (`pip install fonttools`):
+The variable sources are not kept in the tree. Take them from upstream
+(see `LICENSES/NotoSans-ATTRIBUTION.txt`) or from git history before the
+Qt build was removed (`git show 771897d:resources/fonts/NotoSansJP.ttf`),
+place them in `resources/fonts/`, and regenerate with fontTools
+(`pip install fonttools`):
 
 ```sh
 cd resources/fonts
@@ -26,5 +28,4 @@ done
 ```
 
 Only Regular is shipped. A label that asks for a heavier weight in one of
-these scripts renders Regular until Slint applies variation axes at runtime
-(tracked on the parity ledger in `docs/plans/slint-migration.md`).
+these scripts renders Regular until Slint applies variation axes at runtime.

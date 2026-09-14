@@ -5,8 +5,7 @@
 [graph]
 targets = [
     { triple = "x86_64-unknown-linux-gnu" },
-    { triple = "armv7-unknown-linux-gnueabihf" },
-    # Slint frontend: static musl build for MiSTer (see rust/Cross.toml).
+    # MiSTer: static musl build through `cross` (see rust/Cross.toml).
     { triple = "armv7-unknown-linux-musleabihf" },
 ]
 
@@ -33,7 +32,6 @@ allow = [
     "Unicode-3.0",
     # libloading (pulled in by Slint's winit/GL stack).
     "ISC",
-    "PolyForm-Noncommercial-1.0.0",
     "LicenseRef-PolyForm-Noncommercial-1.0.0",
 ]
 confidence-threshold = 0.93
@@ -64,36 +62,16 @@ multiple-versions    = "deny"
 wildcards            = "deny"
 allow-wildcard-paths = true  # Workspace path deps have no version pin; this is fine.
 
-# Known transitive duplicates we can't resolve without forking upstream.
-# Entries are version-pinned so a future additional duplicate (e.g. a third
-# thiserror) trips the check rather than being silently swallowed.
-# Audit this list whenever cxx-qt, tungstenite, or tracing-appender are bumped.
-skip = [
-    # cxx-qt-build pulls codespan-reporting 0.11 directly; its cxx-gen dep pulls 0.13.
-    { crate = "codespan-reporting@0.11.1" },
-    { crate = "codespan-reporting@0.13.1" },
-    # codespan-reporting 0.11 → unicode-width 0.1; codespan-reporting 0.13 → 0.2.
-    { crate = "unicode-width@0.1.14" },
-    { crate = "unicode-width@0.2.2" },
-    # cxx 1.0.198 uses syn 3; cxx-qt and other proc macros still use syn 2.
-    { crate = "syn@2.0.118" },
-    { crate = "syn@3.0.3" },
-    # tempfile+uuid hold getrandom 0.4; rand 0.9 (via tungstenite) brings 0.3.
-    # (0.3 is build-script-only in the linux/armv7 filtered graph so cargo-deny
-    # doesn't surface it; listing it here would warn as unmatched.)
-    { crate = "getrandom@0.4.3" },
-    # tracing-appender + tungstenite are on thiserror 2; cxx-qt still on 1.
-    { crate = "thiserror@1.0.69" },
-    { crate = "thiserror@2.0.18" },
-    { crate = "thiserror-impl@1.0.69" },
-    { crate = "thiserror-impl@2.0.18" },
-]
+# Known transitive duplicates we can't resolve without forking upstream go
+# in `skip`, version-pinned so a future additional duplicate trips the
+# check rather than being silently swallowed. None outside the Slint tree
+# today.
+skip = []
 
 # The Slint dependency tree carries its own duplicate versions (bitflags,
 # hashbrown, rustix, skrifa/read-fonts, tiny-skia, ...). They are internal to
-# that tree and churn on every Slint bump, so they are skipped wholesale while
-# the Qt and Slint frontends coexist. Re-audit with a pinned `skip` list once
-# the Qt crate is deleted at the flip (docs/plans/slint-migration.md).
+# that tree and churn on every Slint bump, so the tree is skipped wholesale;
+# duplicates outside it still fail the check.
 skip-tree = [
     { crate = "slint" },
     { crate = "slint-build" },

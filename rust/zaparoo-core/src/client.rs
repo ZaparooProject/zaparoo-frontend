@@ -16,14 +16,12 @@
 use crate::media_types::{
     HealthResult, LaunchersResult, LogDownloadResult, MediaBrowseIndexParams,
     MediaBrowseIndexResult, MediaBrowseParams, MediaBrowseResult, MediaHistoryLatestResult,
-    MediaHistoryParams, MediaHistoryResult, MediaHistoryTopParams, MediaHistoryTopResult,
-    MediaImageParams, MediaImageResult, MediaIndexParams, MediaLookupParams, MediaLookupResult,
-    MediaMetaBatchParams, MediaMetaBatchResult, MediaMetaParams, MediaMetaResult,
-    MediaMetaUpdateParams, MediaResult, MediaScrapeParams, MediaSearchParams, MediaSearchResult,
-    MediaTagsParams, MediaTagsResult, MediaTagsUpdateParams, MediaTagsUpdateResult, ReadersResult,
-    ReadersWriteParams, RunParams, ScrapersResult, ScrapingStatusResponse, SettingsResult,
-    SystemsParams, SystemsResult, TokensHistoryResult, TokensResult, UpdateSettingsParams,
-    VersionResult,
+    MediaHistoryParams, MediaHistoryResult, MediaImageParams, MediaImageResult, MediaIndexParams,
+    MediaMetaParams, MediaMetaResult, MediaMetaUpdateParams, MediaResult, MediaScrapeParams,
+    MediaSearchParams, MediaSearchResult, MediaTagsUpdateParams, MediaTagsUpdateResult,
+    ReadersResult, ReadersWriteParams, RunParams, ScrapersResult, ScrapingStatusResponse,
+    SettingsResult, SystemsParams, SystemsResult, TokensHistoryResult, TokensResult,
+    UpdateSettingsParams, VersionResult,
 };
 use futures_util::{SinkExt, StreamExt};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -67,9 +65,9 @@ const BOOT_WINDOW: Duration = Duration::from_secs(45);
 const BOOT_RETRY: Duration = Duration::from_millis(250);
 
 /// Rolling state of the WebSocket link, published via `watch` so late
-/// subscribers (QML singletons whose `initialize()` runs after the QML
-/// engine boots, post-connect) read the current value rather than
-/// silently missing transitions.
+/// subscribers (UI bindings that attach after the client has already
+/// connected) read the current value rather than silently missing
+/// transitions.
 ///
 /// State machine:
 ///
@@ -702,19 +700,6 @@ impl Client {
         deserialize_timed("media.meta", val)
     }
 
-    /// Fetches an ordered batch of metadata graphs with one `media` or `error`
-    /// result per input ref. The established single-item method remains
-    /// separate so focused cold misses keep their minimal wire shape.
-    pub async fn media_meta_batch(
-        &self,
-        items: Vec<MediaMetaParams>,
-    ) -> Result<MediaMetaBatchResult, ClientError> {
-        let params =
-            MediaMetaBatchParams::try_new(items).map_err(|message| ClientError { message })?;
-        let val = self.call("media.meta", &params).await?;
-        deserialize_timed("media.meta batch", val)
-    }
-
     /// Sets or clears the per-media launcher override, then returns the
     /// updated metadata graph (same response shape as `media_meta`). Core
     /// validates the launcher exists and supports the row's system before
@@ -751,45 +736,6 @@ impl Client {
         let val = self
             .call("media.history.latest", &serde_json::json!({}))
             .await?;
-        serde_json::from_value(val).map_err(|e| ClientError {
-            message: e.to_string(),
-        })
-    }
-
-    /// Most-played aggregates over the session log. Optionally scoped to
-    /// `systems` and/or windowed by `since` (RFC3339).
-    pub async fn media_history_top(
-        &self,
-        params: MediaHistoryTopParams,
-    ) -> Result<MediaHistoryTopResult, ClientError> {
-        let val = self.call("media.history.top", &params).await?;
-        serde_json::from_value(val).map_err(|e| ClientError {
-            message: e.to_string(),
-        })
-    }
-
-    /// Resolves a `(system, name)` pair to a single best-match media row.
-    /// Core returns `{match: null}` (success, no match) for `ErrNoMatch`
-    /// / `ErrLowConfidence` rather than a JSON-RPC error, so callers
-    /// pattern-match on `result.match_` rather than `Err(...)`.
-    pub async fn media_lookup(
-        &self,
-        params: MediaLookupParams,
-    ) -> Result<MediaLookupResult, ClientError> {
-        let val = self.call("media.lookup", &params).await?;
-        serde_json::from_value(val).map_err(|e| ClientError {
-            message: e.to_string(),
-        })
-    }
-
-    /// Lists the available tag index, optionally scoped to a system
-    /// filter. Useful for any future filter UI; the frontend does not
-    /// currently call this, but the wrapper is here so it's available.
-    pub async fn media_tags(
-        &self,
-        params: MediaTagsParams,
-    ) -> Result<MediaTagsResult, ClientError> {
-        let val = self.call("media.tags", &params).await?;
         serde_json::from_value(val).map_err(|e| ClientError {
             message: e.to_string(),
         })

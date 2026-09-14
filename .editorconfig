@@ -6,19 +6,7 @@ end_of_line = lf
 insert_final_newline = true
 trim_trailing_whitespace = true
 
-[*.{cpp,h,hpp}]
-indent_style = space
-indent_size = 4
-
-[*.qml]
-indent_style = space
-indent_size = 4
-
-[CMakeLists.txt]
-indent_style = space
-indent_size = 4
-
-[*.cmake]
+[*.{rs,slint,toml}]
 indent_style = space
 indent_size = 4
 
@@ -30,13 +18,28 @@ indent_size = 2
 indent_style = space
 indent_size = 4
 
-[*.{json,ts}]
+[*.json]
+indent_style = space
+indent_size = 2
+
+[*.py]
+indent_style = space
+indent_size = 4
+
+[justfile]
+indent_style = space
+indent_size = 4
+
+[*.hbs]
 indent_style = space
 indent_size = 2
 
 [*.md]
 trim_trailing_whitespace = false
 
-[*.{png,ttf,ico,icns,jpg}]
+[*.{po,pot}]
+trim_trailing_whitespace = false
+
+[*.{png,ttf}]
 insert_final_newline = false
 trim_trailing_whitespace = false

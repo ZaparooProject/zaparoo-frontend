@@ -2,13 +2,13 @@
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 //
-// Port of `src/ui/components/StatusLine.qml`'s message ladder: the header
-// shows, in priority order, only one of the Core link state, an active
-// background task, a terminal message held briefly after a task ends, or a
-// transient event. The ladder is toolkit-free and clock-agnostic: callers
-// feed it the current link and task state plus `Instant`s, and it answers
-// with a stable message kind and its arguments. The view composes the
-// sentence, so every user-visible string stays in the `.slint` catalogs.
+// The header's status-line message ladder: it shows, in priority order,
+// only one of the Core link state, an active background task, a terminal
+// message held briefly after a task ends, or a transient event. The ladder
+// is toolkit-free and clock-agnostic:
+// callers feed it the current link and task state plus `Instant`s, and it
+// answers with a stable message kind and its arguments. The view composes
+// the sentence, so every user-visible string stays in the `.slint` catalogs.
 
 use std::time::{Duration, Instant};
 
@@ -24,8 +24,7 @@ pub enum Link {
     Unreachable,
 }
 
-/// Tier 1 input: the link plus the catalog endpoint's own error state
-/// (`AppStatus.connection_state == ERROR` in the Qt build).
+/// Tier 1 input: the link plus the catalog endpoint's own error state.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct LinkInput {
     pub link: Link,
@@ -65,8 +64,7 @@ impl TaskInput {
 }
 
 /// Tier 4 input: a classified Core notification. `TokenScanned` is
-/// deliberately never shown (the Qt line ignores it too) but is kept so the
-/// classifier stays complete.
+/// deliberately never shown, but is kept so the classifier stays complete.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Event {
     TokenScanned(String),
@@ -156,7 +154,7 @@ impl Message {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 #[allow(
     clippy::struct_excessive_bools,
-    reason = "one flag per StatusLine.qml binding the view reads"
+    reason = "one flag per line fact the view reads: error, track, paused, total known"
 )]
 pub struct Output {
     pub message: Message,
@@ -213,6 +211,7 @@ impl Ladder {
     }
 
     /// Shorter dwells for tests.
+    #[cfg(test)]
     #[must_use]
     pub fn with_dwells(mut self, terminal: Duration, event: Duration) -> Self {
         self.terminal_dwell = terminal;
@@ -222,7 +221,7 @@ impl Ladder {
 
     /// Turns the task tiers on and seeds the busy edges from the current
     /// task state, so the first change afterwards cannot be misread as a
-    /// fresh edge (the Qt `onMediaActivityEnabledChanged` seed).
+    /// fresh edge.
     pub fn enable_media_activity(&mut self, task: &TaskInput) {
         self.media_activity_enabled = true;
         self.index_was_busy = task.index_busy();

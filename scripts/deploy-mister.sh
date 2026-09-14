@@ -3,57 +3,52 @@
 # Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 # SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 #
-# Builds the ARM32 binary and deploys it to a MiSTer FPGA over SSH/SCP.
-# Pass --skip-build to deploy an existing output/frontend without rebuilding.
-# Reads MISTER_IP from a .env file in the project root.
+# Cross-builds the static ARM32 binary with `cross` and deploys it to a
+# MiSTer over SSH/SCP as /media/fat/zaparoo/frontend, the path the
+# MiSTer_Zaparoo wrapper starts. It is one static file with every font and
+# logo embedded; nothing else is copied.
+# Reads MISTER_IP (and optional MISTER_PW) from .env in the repo root.
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 ENV_FILE="${PROJECT_ROOT}/.env"
+# Static musl build: the MiSTer image ships glibc 2.31 and cross's
+# gnueabihf image links newer glibc symbols, so dynamic builds fail
+# at load time with GLIBC_2.3x errors.
+TARGET=armv7-unknown-linux-musleabihf
+BINARY="${PROJECT_ROOT}/rust/target/${TARGET}/release/frontend"
 REMOTE_PATH="/media/fat/zaparoo/frontend"
-BINARY="${PROJECT_ROOT}/output/frontend"
 SKIP_BUILD=0
-LOCAL_TOOLCHAIN=0
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
-        --skip-build)
-            SKIP_BUILD=1
-            shift
-            ;;
-        --local-toolchain)
-            LOCAL_TOOLCHAIN=1
-            shift
-            ;;
+        --skip-build) SKIP_BUILD=1; shift ;;
         -h|--help)
-            echo "Usage: $0 [--skip-build] [--local-toolchain]"
+            echo "Usage: $0 [--skip-build]"
             echo ""
-            echo "Builds output/frontend and deploys it to MiSTer."
-            echo "  --skip-build       Deploy existing output/frontend without rebuilding"
-            echo "  --local-toolchain  Build with the local Docker toolchain image"
+            echo "Builds the MiSTer binary and deploys it to ${REMOTE_PATH}."
+            echo "  --skip-build  Deploy the existing binary without rebuilding"
             exit 0
             ;;
         *)
             echo "Error: unknown argument: $1" >&2
-            echo "Usage: $0 [--skip-build] [--local-toolchain]" >&2
+            echo "Usage: $0 [--skip-build]" >&2
             exit 1
             ;;
     esac
 done
 
 if [ ! -f "${ENV_FILE}" ]; then
-    echo "Error: .env file not found at ${ENV_FILE}"
-    echo "Create it with: echo 'MISTER_IP=<your-mister-ip>' > .env"
+    echo "Error: .env file not found at ${ENV_FILE}" >&2
+    echo "Create it with: echo 'MISTER_IP=<your-mister-ip>' > .env" >&2
     exit 1
 fi
-
 # shellcheck source=/dev/null
 source "${ENV_FILE}"
-
 if [ -z "${MISTER_IP}" ]; then
-    echo "Error: MISTER_IP is not set in ${ENV_FILE}"
+    echo "Error: MISTER_IP is not set in ${ENV_FILE}" >&2
     exit 1
 fi
 
@@ -86,29 +81,25 @@ run_scp() {
 
 if [ "${SKIP_BUILD}" -eq 1 ]; then
     echo "=== Skipping ARM32 build ==="
-    if [ ! -f "${BINARY}" ]; then
-        echo "Error: ${BINARY} does not exist; run ${SCRIPT_DIR}/build-arm32.sh first" >&2
-        exit 1
-    fi
 else
-    echo "=== Building ARM32 binary ==="
-    if [ "${LOCAL_TOOLCHAIN}" -eq 1 ]; then
-        USE_LOCAL_TOOLCHAIN=1 "${SCRIPT_DIR}/build-arm32.sh"
-    else
-        "${SCRIPT_DIR}/build-arm32.sh"
-    fi
+    echo "=== Building the MiSTer binary (${TARGET}, Cortex-A9) ==="
+    (cd "${PROJECT_ROOT}" && just arm32)
+fi
+
+if [ ! -f "${BINARY}" ]; then
+    echo "Error: ${BINARY} does not exist; run 'just arm32' first" >&2
+    exit 1
 fi
 
 echo ""
 echo "=== Deploying to MiSTer at ${MISTER_IP} ==="
 
 # Upload to a side path first so an interrupted transfer can never clobber
-# the working binary. The old flow scp'd straight over the live path and
-# pre-rotated it to .bak unconditionally: a failed transfer then left a
-# truncated frontend AND the next run would overwrite the good backup with
-# that stub. Here we only rotate after a size-verified upload, then force
-# the write to the card with `sync` — exFAT has no journal, so a metadata
-# update lost to a power cut is what leaks clusters.
+# the working binary, and only rotate the old binary to .bak after a
+# size-verified upload. `sync` forces the write to the card: exFAT has no
+# journal, so a metadata update lost to a power cut is what leaks clusters.
+# rename() replaces the directory entry even while the old binary is
+# executing, where a cp over it would fail with ETXTBSY.
 # `wc -c` is portable (GNU + BSD/macOS); `stat -c` is GNU-only. The remote
 # size check below runs on the MiSTer (always Linux) so it keeps `stat -c`.
 LOCAL_SIZE="$(wc -c < "${BINARY}" | tr -d '[:space:]')"
@@ -122,6 +113,7 @@ run_ssh "root@${MISTER_IP}" "
         rm -f '${REMOTE_PATH}.new'
         exit 1
     fi
+    chmod +x '${REMOTE_PATH}.new'
     if [ -f '${REMOTE_PATH}' ]; then
         mv '${REMOTE_PATH}' '${REMOTE_PATH}.bak'
     fi
@@ -129,7 +121,7 @@ run_ssh "root@${MISTER_IP}" "
     sync
     echo 'Installed new binary (previous kept as ${REMOTE_PATH}.bak)'
 "
-echo "Deployed ${BINARY} → root@${MISTER_IP}:${REMOTE_PATH}"
+echo "Deployed ${BINARY} -> root@${MISTER_IP}:${REMOTE_PATH}"
 
 run_ssh "root@${MISTER_IP}" "
     rm -f /tmp/zaparoo/frontend.log

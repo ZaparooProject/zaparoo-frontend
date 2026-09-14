@@ -2,12 +2,11 @@
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 
-//! Failed user actions, as `Main.qml` presents them: a stable kind plus
+//! Failed user actions, as the alert presents them: a stable kind plus
 //! the one piece of context the copy needs, deduplicated while the same
 //! failure is already on screen, and queued so a burst of failures is
 //! read one alert at a time. The technical detail belongs in the log at
 //! the call site; the alert only carries what a user can act on.
-//! Ported from `models/action_error.rs` and `Main.qml`'s own queue.
 
 use std::collections::VecDeque;
 

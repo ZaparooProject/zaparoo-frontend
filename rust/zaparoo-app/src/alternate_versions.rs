@@ -5,8 +5,7 @@
 //! Arcade alternate-version discovery: which search results count as
 //! another build of the same game, which folder to browse for the rest,
 //! and how a title is normalized so "Bubble Bobble (Japan)" and
-//! "Bubble Bobble" compare equal. Ported from
-//! `models/alternate_versions.rs`; the Core calls stay in the shell.
+//! "Bubble Bobble" compare equal. The Core calls stay in the shell.
 
 /// The only system that ships alternate builds this way.
 pub const ARCADE_SYSTEM_ID: &str = "Arcade";

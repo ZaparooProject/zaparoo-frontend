@@ -16,18 +16,14 @@ MAIN_ASSET="MiSTer_Zaparoo"
 
 usage() {
     cat >&2 <<'EOF_USAGE'
-Usage: scripts/package-mister-release.sh [--slint] [vX.Y.Z]
+Usage: scripts/package-mister-release.sh [vX.Y.Z]
 
-Builds the official MiSTer frontend binary, downloads the required MiSTer
+Builds the official MiSTer frontend binary (`just release`: the static musl
+binary with every font and logo embedded), downloads the required MiSTer
 wrapper assets, and writes output/release/zaparoo-frontend-vX.Y.Z.zip.
 
---slint packages the Slint frontend instead (docs/plans/slint-migration.md):
-the static musl binary from `just slint-arm32`, with every font and logo
-embedded, in the same zaparoo/ layout the wrapper expects, as
-output/release/zaparoo-frontend-vX.Y.Z-slint.zip.
-
 Set ZAPAROO_SKIP_FRONTEND_BUILD=1 to reuse the existing binary for
-packaging tests (output/frontend, or the cross build's frontend-slint).
+packaging tests.
 EOF_USAGE
 }
 
@@ -66,18 +62,6 @@ resolve_tag() {
     error "release tag not provided and HEAD is not on an exact tag"
 }
 
-extract_cmake_version() {
-    python3 - "$PROJECT_ROOT/CMakeLists.txt" <<'PY'
-import re
-import sys
-text = open(sys.argv[1], encoding="utf-8").read()
-match = re.search(r"\bproject\s*\([^)]*?\bVERSION\s+([0-9]+(?:\.[0-9]+){2})\b", text, re.S)
-if not match:
-    raise SystemExit("could not parse project VERSION from CMakeLists.txt")
-print(match.group(1))
-PY
-}
-
 extract_cargo_version() {
     python3 - "$PROJECT_ROOT/rust/Cargo.toml" <<'PY'
 import re
@@ -108,32 +92,6 @@ main=zaparoo/MiSTer_Zaparoo
 EOF_README
 }
 
-write_slint_readme() {
-    cat > "$1" <<'EOF_README'
-# Zaparoo Frontend (Slint beta)
-
-This bundle carries the new Slint frontend. It installs exactly like a
-regular release and the MiSTer_Zaparoo wrapper starts it the same way.
-
-1. Copy the `zaparoo` folder to root/top of SD card (merge over an existing
-   install; keep a copy of your current `zaparoo/frontend` if you want to
-   switch back by copying it over this one)
-2. In `MiSTer.ini`, add following to the `[MiSTer]` or `[Menu]` section:
-
-```ini
-main=zaparoo/MiSTer_Zaparoo
-```
-
-3. Start or reboot your MiSTer, Frontend will start automatically
-EOF_README
-}
-
-FRONTEND="qt"
-if [ "${1:-}" = "--slint" ]; then
-    FRONTEND="slint"
-    shift
-fi
-
 TAG="$(resolve_tag "$@")"
 VERSION="${TAG#v}"
 BASE_VERSION="${VERSION%%-*}"
@@ -150,49 +108,38 @@ require_command git
 require_command gh
 require_command python3
 require_command zip
+require_command unzip
 require_command install
 require_command rsync
 if [ "${ZAPAROO_SKIP_FRONTEND_BUILD:-0}" != "1" ]; then
     require_command just
 fi
 
-CMAKE_VERSION="$(extract_cmake_version)"
 CARGO_VERSION="$(extract_cargo_version)"
-if [ "$BASE_VERSION" != "$CMAKE_VERSION" ]; then
-    error "tag base version $BASE_VERSION does not match CMake project version $CMAKE_VERSION"
-fi
 if [ "$BASE_VERSION" != "$CARGO_VERSION" ]; then
     error "tag base version $BASE_VERSION does not match Rust workspace version $CARGO_VERSION"
 fi
 
 cd "$PROJECT_ROOT"
-if [ "$FRONTEND" = "slint" ]; then
-    FRONTEND_BIN="${PROJECT_ROOT}/rust/target/armv7-unknown-linux-musleabihf/release/frontend-slint"
-    if [ "${ZAPAROO_SKIP_FRONTEND_BUILD:-0}" = "1" ]; then
-        echo "Skipping frontend build; reusing ${FRONTEND_BIN}"
-    else
-        just slint-arm32
-    fi
+FRONTEND_BIN="${PROJECT_ROOT}/rust/target/armv7-unknown-linux-musleabihf/release/frontend"
+if [ "${ZAPAROO_SKIP_FRONTEND_BUILD:-0}" = "1" ]; then
+    echo "Skipping frontend build; reusing ${FRONTEND_BIN}"
 else
-    FRONTEND_BIN="${OUTPUT_DIR}/frontend"
-    if [ "${ZAPAROO_SKIP_FRONTEND_BUILD:-0}" = "1" ]; then
-        echo "Skipping frontend build; reusing ${FRONTEND_BIN}"
-    else
-        just release
-    fi
+    just release
 fi
 
 if [ ! -f "$FRONTEND_BIN" ]; then
     error "frontend binary not found at $FRONTEND_BIN"
 fi
 
-SUFFIX=""
-if [ "$FRONTEND" = "slint" ]; then
-    SUFFIX="-slint"
+NOTICES="$PROJECT_ROOT/rust/frontend/LICENSES/THIRD-PARTY-NOTICES.txt"
+if [ ! -f "$NOTICES" ]; then
+    error "missing $NOTICES; run 'just notices'"
 fi
+
 mkdir -p "$RELEASE_DIR"
-STAGE="${RELEASE_DIR}/zaparoo-frontend-${TAG}${SUFFIX}"
-ARCHIVE="${RELEASE_DIR}/zaparoo-frontend-${TAG}${SUFFIX}.zip"
+STAGE="${RELEASE_DIR}/zaparoo-frontend-${TAG}"
+ARCHIVE="${RELEASE_DIR}/zaparoo-frontend-${TAG}.zip"
 TMP_DIR="$(mktemp -d "${RELEASE_DIR}/download.XXXXXX")"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
@@ -238,35 +185,15 @@ install -m 0644 "$MENU_DIR/$MENU_ASSET" "$STAGE/zaparoo/menu_zaparoo.rbf"
 install -m 0755 "$MAIN_DIR/$MAIN_ASSET" "$STAGE/zaparoo/MiSTer_Zaparoo"
 install -m 0755 "$FRONTEND_BIN" "$STAGE/zaparoo/frontend"
 install -m 0644 "$PROJECT_ROOT/COPYING" "$STAGE/COPYING"
-if [ "$FRONTEND" = "slint" ]; then
-    # The asset attributions apply to this binary too (same fonts, logos
-    # and glyphs), but Qt's LGPL notice does not (no Qt is linked) and
-    # neither does zaparoo-update's (the Update screen is not part of
-    # this frontend). The Rust crate notices are generated by
-    # `just slint-notices`.
-    rsync -a --delete \
-        --exclude 'Qt-LGPL-NOTICE.txt' \
-        --exclude 'zaparoo-update-NOTICE.txt' \
-        "$PROJECT_ROOT/src/LICENSES/" "$STAGE/LICENSES/"
-    NOTICES="$PROJECT_ROOT/rust/frontend-slint/LICENSES/THIRD-PARTY-NOTICES.txt"
-    if [ ! -f "$NOTICES" ]; then
-        echo "missing $NOTICES; run 'just slint-notices'" >&2
-        exit 1
-    fi
-    install -m 0644 "$NOTICES" "$STAGE/LICENSES/THIRD-PARTY-NOTICES.txt"
-    write_slint_readme "$STAGE/README.txt"
-    (
-        cd "$STAGE"
-        zip -r "$ARCHIVE" zaparoo LICENSES README.txt COPYING
-    )
-else
-    rsync -a --delete "$PROJECT_ROOT/src/LICENSES/" "$STAGE/LICENSES/"
-    write_readme "$STAGE/README.txt"
-    (
-        cd "$STAGE"
-        zip -r "$ARCHIVE" zaparoo LICENSES README.txt COPYING
-    )
-fi
+# The asset attributions (fonts, logos, glyphs) plus the generated notices
+# for every Rust crate linked into the binary (`just notices`).
+rsync -a --delete "$PROJECT_ROOT/LICENSES/" "$STAGE/LICENSES/"
+install -m 0644 "$NOTICES" "$STAGE/LICENSES/THIRD-PARTY-NOTICES.txt"
+write_readme "$STAGE/README.txt"
+(
+    cd "$STAGE"
+    zip -r "$ARCHIVE" zaparoo LICENSES README.txt COPYING
+)
 
 unzip -t "$ARCHIVE" > /dev/null
 

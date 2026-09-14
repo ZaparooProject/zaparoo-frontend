@@ -2,8 +2,8 @@
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 //
-// `CatalogData` is the shape every consumer of the systems list (the
-// AppStatus banner, CategoriesModel, SystemsModel) reads from. The
+// `CatalogData` is the shape every consumer of the systems list reads
+// from: the Hub, Systems and status drivers in `rust/frontend/src`. The
 // fetch + sort + category-derivation pipeline that produces it lives
 // behind `crate::endpoints::catalog::CatalogEndpoint`, dispatched by
 // `crate::store::Store::subscribe::<CatalogEndpoint>(())`.
@@ -17,40 +17,46 @@ pub struct CatalogData {
 }
 
 impl CatalogData {
-    /// Count of indexed (non-launchable) systems. A launchable is a
-    /// launch-only "virtual" system Core synthesizes without a media-db
-    /// index — it carries a non-empty `zap_script`. Since Core's
-    /// launchables feature, a device with no `media.db` still returns
-    /// these, so "is the catalog empty?" no longer answers "are there
-    /// indexed games?". This count does: it ignores launchables and only
-    /// tallies real, indexed systems. The first-run background index
-    /// gates on it (see `Main.qml` → `_shouldStartFirstRunIndex`).
+    /// Count of indexed (non-launchable) systems. See [`indexed_count`].
     pub fn indexed_count(&self) -> usize {
-        self.systems
-            .iter()
-            .filter(|s| s.zap_script.is_empty())
-            .count()
+        indexed_count(&self.systems)
     }
 
+    /// Systems belonging to `category`. See [`systems_in_category`].
     pub fn systems_by_category(&self, category: &str) -> Vec<SystemInfo> {
-        let is_other = category.eq_ignore_ascii_case("Other");
-        self.systems
-            .iter()
-            .filter(|s| {
-                if is_other {
-                    // "Other" is the catch-all bucket: it collects both
-                    // systems with no upstream category (synthesized into
-                    // "Other" by `derive_categories`) and systems Core
-                    // tags with a literal "Other" category, such as the
-                    // MiSTer launchables (`misterLaunchableCategoryOther`).
-                    s.category.is_empty() || s.category.eq_ignore_ascii_case("Other")
-                } else {
-                    s.category.eq_ignore_ascii_case(category)
-                }
-            })
-            .cloned()
-            .collect()
+        systems_in_category(&self.systems, category)
     }
+}
+
+/// Count of indexed (non-launchable) systems. A launchable is a
+/// launch-only "virtual" system Core synthesizes without a media-db
+/// index; it carries a non-empty `zap_script`. Since Core's launchables
+/// feature, a device with no `media.db` still returns these, so "is the
+/// catalog empty?" no longer answers "are there indexed games?". This
+/// count does: it ignores launchables and only tallies real, indexed
+/// systems.
+pub fn indexed_count(systems: &[SystemInfo]) -> usize {
+    systems.iter().filter(|s| s.zap_script.is_empty()).count()
+}
+
+/// Systems belonging to `category`. "Other" is the catch-all bucket: it
+/// collects both systems with no upstream category (synthesized into
+/// "Other" by `derive_categories`) and systems Core tags with a literal
+/// "Other" category, such as the `MiSTer` launchables
+/// (`misterLaunchableCategoryOther`).
+pub fn systems_in_category(systems: &[SystemInfo], category: &str) -> Vec<SystemInfo> {
+    let is_other = category.eq_ignore_ascii_case("Other");
+    systems
+        .iter()
+        .filter(|s| {
+            if is_other {
+                s.category.is_empty() || s.category.eq_ignore_ascii_case("Other")
+            } else {
+                s.category.eq_ignore_ascii_case(category)
+            }
+        })
+        .cloned()
+        .collect()
 }
 
 #[cfg(test)]

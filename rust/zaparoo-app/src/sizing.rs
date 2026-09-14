@@ -2,27 +2,22 @@
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 //
-// Resolution-agnostic sizing: the half of `src/ui/theme/Sizing.qml` that has
-// tables or loops in it. The QML singleton stays as the facade and keeps the
-// one-line percentage helpers (`pctH`, `pctW`, `px`, `stroke`, `center`,
-// `half`, `fontSize`); everything here is what those helpers feed into.
+// Resolution-agnostic sizing: every sizing rule with a table or a loop in
+// it. The one-line percentage helpers live in the view as pure functions on
+// the `Sizing` global in `rust/frontend/ui/theme.slint` (`pct-h`, `pct-w`,
+// `font-size`, `stroke`); everything here is what those helpers feed into.
+// Derived values cross the boundary as plain properties, pushed into that
+// same global by `rust/frontend/src/sizing.rs`.
 //
-// Why the split is where it is: a QML binding captures its dependencies by
-// watching property reads during evaluation. `Sizing.pctH(5.5)` re-evaluates
-// on resize only because `pctH` is QML JavaScript and the engine sees it read
-// `screenHeight`. A cxx-qt *invokable* registers nothing, so moving those
-// helpers would freeze ~510 call sites at their startup value. Derived values
-// cross as notifying properties instead, which bindings do track. See
-// `docs/qt-to-rust-extraction.md`.
+// The tables are pinned by `tests/fixtures/sizing_golden.txt`: 192 cases
+// captured from the retired Qt build and frozen as ground truth.
 //
-// Parity with the QML is pinned by `tests/fixtures/sizing_golden.txt`, 192
-// cases captured from the QML implementation before any of it moved here.
-//
-// The rounding helper matters. QML runs JavaScript, and `Math.round` rounds
-// half towards +infinity (`Math.round(-2.5) === -2`), while Rust's
-// `f64::round` rounds half away from zero (`(-2.5f64).round() == -3.0`). Every
-// rounding in this module goes through `js_round` so the two agree on the
-// negative halves that `center()`-style arithmetic can produce.
+// The rounding helper matters. That fixture was produced by JavaScript,
+// whose `Math.round` rounds half towards +infinity
+// (`Math.round(-2.5) === -2`), while Rust's `f64::round` rounds half away
+// from zero (`(-2.5f64).round() == -3.0`). Every rounding in this module
+// goes through `js_round` so the two agree on the negative halves that
+// `center()`-style arithmetic can produce.
 
 /// JavaScript `Math.round`: half rounds towards positive infinity.
 fn js_round(value: f64) -> f64 {
@@ -109,8 +104,7 @@ impl InterfaceProfile {
     /// Resolve the `interfaceProfile` setting. `handheld` pins the dense
     /// profile and `standard` pins the roomy one; `device` defers to the
     /// hardware, which is the only thing `device_is_handheld` answers.
-    /// Anything else is standard, matching the QML
-    /// `interfaceProfile === "handheld"` test it replaces.
+    /// Any other value, an empty one included, resolves to standard.
     pub fn resolve(name: &str, device_is_handheld: bool) -> Self {
         match name {
             "handheld" => Self::Handheld,
@@ -127,10 +121,9 @@ impl InterfaceProfile {
     }
 }
 
-/// Everything the sizing rules read. These are exactly the writable
-/// properties on the QML singleton, in the same units: `screen_width` and
-/// `screen_height` are the *scene's* logical dimensions, so they already have
-/// the CRT safe-area inset removed and the axes swapped in a rotated layout.
+/// Everything the sizing rules read. `screen_width` and `screen_height` are
+/// the *scene's* logical dimensions, so they already have the CRT safe-area
+/// inset removed and the axes swapped in a rotated layout.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Inputs {
     pub screen_width: f64,
@@ -146,8 +139,8 @@ pub struct Inputs {
 }
 
 impl Default for Inputs {
-    /// Matches `Sizing.qml`'s own property defaults, so the first QML binding
-    /// pass agrees with Rust before the scene has pushed real dimensions.
+    /// Matches the defaults the golden fixture was captured against
+    /// (`tests/fixtures/sizing_golden.txt`).
     fn default() -> Self {
         Self {
             screen_width: 640.0,
@@ -250,8 +243,7 @@ impl Inputs {
     }
 }
 
-/// A page's cell count. Two scalars rather than a map, because every invokable
-/// across the cxx-qt bridge in this project returns a scalar.
+/// A page's cell count.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GridShape {
     pub columns: i32,
@@ -367,7 +359,7 @@ pub enum GridKind {
 }
 
 impl GridKind {
-    /// Mirrors the QML string argument, so the facade can forward verbatim.
+    /// Parses the `"systems"` / `"games"` names a caller passes by string.
     pub fn from_name(name: &str) -> Option<Self> {
         match name {
             "systems" => Some(Self::Systems),
@@ -465,15 +457,15 @@ pub fn hub_grid_shape(inputs: &Inputs) -> GridShape {
         // Hub slots reflow into fewer columns. The low tiers are already
         // compact enough.
         //
-        // Six, where `Sizing.qml` says four. The Qt profile was tuned on a
-        // small handheld panel; on a Steam Deck class screen four columns
-        // leaves a third of the width empty without making the icons any
-        // bigger, because the tile is square and the row height, not the
-        // column count, bounds it. Six closes most of that gap at the same
-        // tile size; seven is the first count where width binds instead
-        // and the tiles start shrinking. The QML keeps four so the device
-        // it was tuned for is untouched, and `tests/sizing_golden.rs`
-        // records the divergence rather than papering over it.
+        // Six, where the golden fixture says four. That four-column profile
+        // was tuned on a small handheld panel; on a Steam Deck class screen
+        // four columns leaves a third of the width empty without making the
+        // icons any bigger, because the tile is square and the row height,
+        // not the column count, bounds it. Six closes most of that gap at
+        // the same tile size; seven is the first count where width binds
+        // instead and the tiles start shrinking. The golden fixture keeps
+        // its four, and `tests/sizing_golden.rs` records the divergence
+        // rather than papering over it.
         GridShape::new(6, 3)
     } else if compact {
         GridShape::new(4, 2)
@@ -578,9 +570,9 @@ fn derived_press_edge_height(inputs: &Inputs) -> i32 {
     inputs.stroke(0.8)
 }
 
-/// Every value the QML facade republishes as a notifying property. Computed
-/// once per input change rather than per read, which is also why the adapter
-/// can expose them as plain properties.
+/// Every value the view reads back as a plain property. Computed once per
+/// input change rather than per read, which is what lets the adapter expose
+/// them as plain properties.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Derived {
     pub effective_height: i32,
@@ -639,8 +631,8 @@ pub struct Derived {
 
 /// The Hub's resolved page geometry: its fixed per-tier shape plus the insets,
 /// gaps and cell fits derived from it. Settings reuses these to render a Hub
-/// preview without a live `HubScreen`, which is why they are resolved here
-/// rather than inside the screen.
+/// preview without a live Hub screen, which is why they are resolved here
+/// rather than inside the screen driver.
 #[derive(Debug, Clone, Copy)]
 struct HubMetrics {
     columns: i32,
@@ -666,8 +658,8 @@ fn derive_hub(inputs: &Inputs, header_bottom: i32, help_bar_height: i32) -> HubM
     let shape = hub_grid_shape(inputs);
     let hub_active_label_height = if is_240 { 8 } else { inputs.pct_h(7.0) };
     let hub_grid_top_margin = if is_240 { inputs.pct_h(1.0) } else { 0 };
-    // Kept in f64 to the end: the QML does this arithmetic in JavaScript
-    // numbers and only truncates when the result lands in an `int` property.
+    // Kept in f64 to the end: the golden fixture computed this in
+    // double-precision and truncated only at the final assignment.
     let hub_reserved = f64::from(header_bottom + help_bar_height + hub_active_label_height)
         + if is_240 {
             f64::from(hub_grid_top_margin)

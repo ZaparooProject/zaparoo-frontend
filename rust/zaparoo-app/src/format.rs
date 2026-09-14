@@ -2,10 +2,9 @@
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 //
-// Number formatting for user-visible counts, ported from `Format.qml`'s
-// `count()` (`Number.toLocaleString(locale, "f", 0)`). Without Qt's CLDR
-// data the grouping rules are a table over the languages the app ships;
-// unknown languages group by three with a comma.
+// Number formatting for user-visible counts. With no CLDR data to consult,
+// the grouping rules are a table over the languages the app ships; unknown
+// languages group by three with a comma.
 
 /// Groups `n` for `language` (`de`, `fr_FR`, `ar`, ...).
 pub fn count(n: i64, language: &str) -> String {

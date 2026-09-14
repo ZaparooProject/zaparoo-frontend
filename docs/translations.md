@@ -1,158 +1,82 @@
 # Translations
 
-Zaparoo Frontend sends every user-visible string through Qt's `QTranslator`.
-Non-English builds should not need code changes. The pipeline has three parts:
+Every user-visible string goes through Slint's translation support. The
+pipeline has three parts:
 
-1. `qsTr()` in QML and `tr()` in C++ at every user-visible call site.
-2. `src/ui/translations/frontend_<tag>.ts` as the canonical catalog
-   (one per locale, XML, checked into git).
-3. `qt_add_translations` in `cmake/ZaparooRust.cmake`, which runs
-   `lrelease` at build time and bundles the resulting `.qm` files
-   under `qrc:/i18n/` inside the frontend binary.
+1. `@tr()` at every user-visible string in the `.slint` files.
+2. gettext catalogs in `rust/frontend/translations/<lang>/LC_MESSAGES/frontend.po`,
+   one per language, with the template `frontend.pot` beside them. These
+   are the canonical catalogs.
+3. `rust/frontend/build.rs` bundles every catalog into the binary with
+   `with_bundled_translations`; nothing is read from disk at runtime.
 
-At runtime, `src/app/main.cpp` installs a `QTranslator` before the QML engine
-loads, then picks the `.qm` file for the configured locale.
+The step-by-step workflow for changing strings and adding a language lives in
+[`rust/frontend/translations/README.md`](../rust/frontend/translations/README.md).
 
 ## Locale resolution
 
 | Source | Precedence |
 |---|---|
-| `[general] language = "ja_JP"` in `frontend.toml` | 1: explicit override |
-| `[general] language = "auto"` or unset | 2: `QLocale::system()` |
+| Language setting (`[general] language = "ja"` in `frontend.toml`) | 1: explicit choice |
+| `auto` or unset | 2: `LC_ALL`, then `LC_MESSAGES`, then `LANG` |
 
-The Rust config loader (`rust/zaparoo-core/src/config.rs`) normalizes `"auto"`
-(case-insensitive) to an empty string. `main.cpp` treats that as the signal to
-call `QLocale::system()`. Anything else passes through to `QLocale(tag)` and Qt
-handles tag validation.
-
-The config-to-C++ handoff goes through FFI. `zaparoo_rust_language_code()`
-returns a `'static` NUL-terminated UTF-8 pointer cached in
-`LANGUAGE_CODE: OnceLock<CString>`. The main thread reads it once before
-constructing the QML engine. There is no reload path; changing the locale takes
-a relaunch, like any other `frontend.toml` edit.
+`apply_language` in `rust/frontend/src/main.rs` runs before the first frame and
+again whenever the Language setting changes, so a switch applies live without
+a relaunch. It normalizes `-` to `_`, tries the exact tag (`zh_CN`), then the
+language part (`zh`), and falls back to the English source strings when no
+bundled catalog matches.
 
 ## Writing translatable strings
 
-Every literal a user might read belongs in `qsTr()`:
+Every literal a user might read belongs in `@tr()`:
 
-```qml
-// Good: translator can reorder the units.
-text: qsTr("%1 FPS").arg(root.fps)
+```slint
+// Good: the translator can reorder the value.
+text: @tr("Built {}", AboutView.build-date);
 
-// Good: entire sentence is one translation unit.
-text: qsTr("Core error: %1").arg(Browse.AppStatus.last_error)
+// Good: the entire sentence is one translation unit.
+text: @tr("Version {} · {} · {}", AboutView.version, AboutView.commit, AboutView.channel);
 
 // Bad: splits the sentence; German, Japanese, etc. can't reorder it.
-text: qsTr("Core error:") + " " + Browse.AppStatus.last_error
+text: @tr("Built") + " " + AboutView.build-date;
 ```
 
-Rule of thumb: one sentence, one `qsTr()`. Use `%1` and `%2` placeholders for
-runtime values so translators can control word order.
+Rule of thumb: one sentence, one `@tr()`. Use `{}` placeholders for runtime
+values; translators can reorder them with `{0}`, `{1}`.
 
-Strings that never face a user do **not** need wrapping: enum tags, filesystem
-paths, QRC URLs, internal error codes routed to `tracing::error!`, QML type
-names, and similar. If it could appear in a screenshot, wrap it.
+Counts use Slint's plural form so each language applies its own plural rules:
 
-Before choosing the English wording itself (not just wrapping it), check
-`docs/content-style.md`'s terminology glossary and capitalization rules —
-consistent source strings make the translator's job easier too.
-
-## Adding a new locale
-
-1. Copy the English catalog:
-
-        cp src/ui/translations/frontend_en.ts src/ui/translations/frontend_de.ts
-
-2. Run `lupdate-qt6` against the full source tree so every `qsTr()`
-   call site populates the new catalog:
-
-        lupdate-qt6 src/ -ts src/ui/translations/frontend_de.ts
-
-   `lupdate` is idempotent. Re-running it adds new strings and marks removed
-   strings without clobbering existing translations.
-
-3. Fill in each `<translation>` element in the `.ts` file. An empty
-   `<translation>` with `type="unfinished"` falls back to the source string;
-   Qt Linguist highlights these in the editor UI.
-
-4. Add the file path to the `TS_FILES` list in
-   `cmake/ZaparooRust.cmake`'s `qt_add_translations(frontend ...)`
-   call. CMake will pick up the `.qm` on the next build.
-
-5. Configure a dev frontend to test it:
-
-        # frontend.toml
-        [general]
-        language = "de"
-
-## Updating existing catalogs
-
-After adding or changing any `qsTr()` call, re-run `lupdate-qt6`:
-
-    lupdate-qt6 src/ -ts src/ui/translations/frontend_en.ts
-
-Review the diff. New strings appear with empty `<translation>` elements,
-changed strings are flagged `type="unfinished"`, and removed strings are marked
-`type="obsolete"`. Commit the `.ts` changes with the QML or C++ edit that
-triggered them so translators get a clean incremental diff.
-
-## Build-time mechanics
-
-`qt_add_translations` is called in `cmake/ZaparooRust.cmake` right
-after the `frontend` target is created:
-
-```cmake
-qt_add_translations(frontend
-    TS_FILES "${CMAKE_SOURCE_DIR}/src/ui/translations/frontend_en.ts"
-    RESOURCE_PREFIX "/i18n"
-    IMMEDIATE_CALL
-)
+```slint
+text: @tr("{n} system with favorites" | "{n} systems with favorites" % count);
 ```
 
-The build does this:
+The extractor only sees `.slint` files, which sets two rules for Rust:
 
-- `lrelease` runs per `.ts` to produce `<name>.qm` in the build tree.
-- The `.qm` files are packed into a Qt resource bound to the
-  `frontend` target at `qrc:/i18n/`.
-- An `update_translations` target is registered for `cmake --build .
-  --target update_translations`, which runs `lupdate` on demand.
-- A `release_translations` target is also registered and wired into
-  the default build, so every `just build` refreshes the compiled
-  catalogs.
+- Rust returns stable ids and structured values; the view composes the
+  sentence. Action errors, for example, publish a `kind` that the view maps
+  to copy.
+- Dynamic lists (menu entries, setting values) go through a key-to-`@tr`
+  vocabulary function in `.slint` (see `ui/labels.slint` and
+  `ui/settings.slint`).
 
-`IMMEDIATE_CALL` runs source-target collection inline. Without it, Qt defers
-collection to the end of the top-level `PROJECT_SOURCE_DIR` scope. That races
-Corrosion's late-bound Rust staticlib targets on parallel builds and can
-produce missing-dependency errors.
+Strings that never face a user do **not** need wrapping: enum tokens,
+filesystem paths, internal error text routed to `tracing::error!`, and similar.
+If it could appear in a screenshot, wrap it.
 
-## Runtime loading
+Before choosing the English wording itself, check `docs/content-style.md`'s
+terminology glossary and capitalization rules. Consistent source strings make
+the translator's job easier too.
 
-`src/app/main.cpp` wires the translator before the QML engine:
+## Checks
 
-```cpp
-const QString langCode = QString::fromUtf8(zaparoo_rust_language_code());
-const QLocale locale = langCode.isEmpty() ? QLocale::system() : QLocale(langCode);
-QTranslator translator;
-if (translator.load(locale, "frontend", "_", ":/i18n")) {
-    QCoreApplication::installTranslator(&translator);
-}
-```
-
-`QTranslator::load` uses Qt's normal fallback chain: exact `ja_JP` match, then
-`ja`, then the base name. A missing `.qm` is logged at info level, not error
-level. English-only builds ship one passthrough catalog (`frontend_en.qm`), and
-other locales fall through to the source strings.
+`just lint` runs `scripts/check-translations.sh`, which regenerates the template
+and fails when the committed `frontend.pot` differs (source locations included).
+Run `just tr-extract` and merge the catalogs after any `@tr` edit.
 
 ## Requirements
 
-- **Desktop build**: `qt6-qttools-devel` (Fedora) or `qt6-tools-dev` +
-  `qt6-l10n-tools` (Debian). These provide the `Qt6LinguistTools`
-  CMake package plus the `lupdate` and `lrelease` binaries. Configure
-  fails early if either is missing.
-- **ARM32 cross-build**: `qttools` is built for host Qt in
-  `Dockerfile.toolchain` (host-only; `.qm` files are
-  architecture-independent and bundled into the target resource by
-  the host build).
+- `slint-tr-extractor` 1.17.1 (`just install-tools`), matching the pinned Slint.
+- gettext (`msgmerge`, `msgattrib`, `msginit`) for catalog maintenance.
 
 ## Translators
 
@@ -163,5 +87,5 @@ other locales fall through to the source strings.
 | Basque (`eu`) | devilschile2 |
 | French (`fr`) | Wilfried ([@willoucom](https://github.com/willoucom)) |
 
-Translators are added to this table when their `.ts` file is merged. Names
-also appear on the About screen so end users see them.
+Translators are added to this table when their catalog is merged. Names also
+appear on the About screen so end users see them.

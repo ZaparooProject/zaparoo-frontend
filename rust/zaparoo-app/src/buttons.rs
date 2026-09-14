@@ -2,12 +2,11 @@
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 //
-// Help-bar glyph resolution, ported from MainLayout.qml's Resources
-// bindings: which button style directory the bar draws from and which
-// positional glyph the semantic confirm / cancel / options / view tokens
-// resolve to. "auto" defers the style to the connected controller
-// (Main_MiSTer's input report); a manual pick pins the family. Confirm
-// and cancel always follow the live report, because which physical
+// Help-bar glyph resolution: which button style directory the bar draws
+// from and which positional glyph the semantic confirm / cancel / options /
+// view tokens resolve to. "auto" defers the style to the connected
+// controller (Main_MiSTer's input report); a manual pick pins the family.
+// Confirm and cancel always follow the live report, because which physical
 // button accepts is a fact about the controller, not a look. The swap
 // settings compensate for controllers whose own mapping is backwards and
 // never apply while the keyboard is the live input source.

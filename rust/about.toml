@@ -1,7 +1,11 @@
-# Third-party notices for the Slint frontend binary (see
-# `just slint-notices`). The accepted set mirrors `deny.toml`'s allow
-# list; Slint's own paid Software License is a per-crate exception there
-# and is accepted here the same way, so its text lands in the notices.
+# Third-party notices for the frontend binary (see `just notices`). The
+# accepted set mirrors `deny.toml`'s allow list; Slint's own paid Software
+# License is a per-crate exception there and is accepted here the same way,
+# so its text lands in the notices. `OFL-1.1`, `CC0-1.0` and `MPL-2.0` are
+# accepted only because cargo-about also scans the license files of crates
+# whose SPDX expression is already fine (font and data crates): `deny.toml`
+# gates the dependency graph, `about.toml` only decides whose text lands in
+# the notices.
 accepted = [
     "MIT",
     "Apache-2.0",
@@ -12,7 +16,6 @@ accepted = [
     "Unicode-3.0",
     "LicenseRef-Slint-Software-3.0",
     "LicenseRef-PolyForm-Noncommercial-1.0.0",
-    "PolyForm-Noncommercial-1.0.0",
     "OFL-1.1",
     "CC0-1.0",
     "MPL-2.0",
@@ -31,5 +34,5 @@ private = { ignore = true }
 # The Slint crates are not clarified here: their license is a custom
 # document cargo-about's scanner cannot map to an SPDX id, so it drops
 # them with a warning no matter how they are pointed at the file.
-# `scripts/generate-slint-notices.sh` appends them from the text the
+# `scripts/generate-notices.sh` appends them from the text the
 # crates themselves ship.

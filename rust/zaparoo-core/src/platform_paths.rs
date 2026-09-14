@@ -33,23 +33,6 @@ pub fn log_file_path() -> PathBuf {
     }
 }
 
-/// Path to the raw stderr capture file. The frontend dup2's its own
-/// `STDERR_FILENO` onto this file early in startup so that the chained
-/// default panic hook, libc `abort()` diagnostics, glibc backtraces, and
-/// any kernel signal-default output land in a durable location instead
-/// of `/dev/null` (which is where the `MiSTer` wrapper sends stderr).
-pub fn stderr_log_path() -> PathBuf {
-    if runtime::current().is_mister() {
-        PathBuf::from("/tmp/zaparoo/frontend.stderr.log")
-    } else {
-        dirs_next::data_local_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("zaparoo")
-            .join("logs")
-            .join("frontend.stderr.log")
-    }
-}
-
 /// Root directory scanned at startup for user-supplied customization
 /// assets. Holds `systems/` and `hub/` subfolders of override images named
 /// by id. Returned even when it does not exist on disk — the scan treats a
@@ -133,7 +116,7 @@ mod tests {
 
     use super::{
         cache_dir, config_file_path, custom_dir, launcher_input_report_path, log_file_path,
-        state_file_path, stderr_log_path,
+        state_file_path,
     };
     use crate::runtime;
 
@@ -149,12 +132,6 @@ mod tests {
         assert_eq!(
             log.file_name().and_then(|n| n.to_str()),
             Some("frontend.log")
-        );
-
-        let stderr_log = stderr_log_path();
-        assert_eq!(
-            stderr_log.file_name().and_then(|n| n.to_str()),
-            Some("frontend.stderr.log")
         );
 
         let state = state_file_path();
@@ -174,10 +151,6 @@ mod tests {
                 Some("/media/fat/zaparoo/frontend.toml")
             );
             assert_eq!(log_file_path().to_str(), Some("/tmp/zaparoo/frontend.log"));
-            assert_eq!(
-                stderr_log_path().to_str(),
-                Some("/tmp/zaparoo/frontend.stderr.log")
-            );
             assert_eq!(state_file_path().to_str(), Some("/tmp/zaparoo/state.toml"));
         } else {
             let cfg = config_file_path();
@@ -189,11 +162,6 @@ mod tests {
             assert!(
                 log.ends_with("zaparoo/logs/frontend.log"),
                 "log path did not end with zaparoo/logs/frontend.log: {log:?}"
-            );
-            let stderr_log = stderr_log_path();
-            assert!(
-                stderr_log.ends_with("zaparoo/logs/frontend.stderr.log"),
-                "stderr log path did not end with zaparoo/logs/frontend.stderr.log: {stderr_log:?}"
             );
             let state = state_file_path();
             assert!(

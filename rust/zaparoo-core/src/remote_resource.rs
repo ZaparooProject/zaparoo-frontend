@@ -5,13 +5,13 @@
 // One shape for any RPC-backed value that the UI binds to.
 //
 // Every screen needs the same four states: nothing yet, fetching now,
-// here's the data, fetch failed. Before this module each model invented
-// its own `loading` / `error_message` / `has_*` triplet and wired it by
-// hand in every match arm; that's how `GamesModel::set_system` ended up
-// not clearing `has_next_page` on the error path. `ResourceStatus<T>`
-// makes the four states one enum so the QML translation layer is the
-// only place per-screen mapping lives, and pagination flags ride inside
-// `Ready(T)` where they can't drift.
+// here's the data, fetch failed. Spelled out per screen, that becomes a
+// `loading` / `error_message` / `has_*` triplet wired by hand in every
+// match arm, and one arm that forgets to clear `has_next_page` on the
+// error path leaves a list paging into nothing. `ResourceStatus<T>` makes
+// the four states one enum so the UI projection is the only place
+// per-screen mapping lives, and pagination flags ride inside `Ready(T)`
+// where they can't drift.
 //
 // `RemoteResource::driven_by` ties the resource to the connection state
 // machine in `client::ConnectionState`:
@@ -81,10 +81,6 @@ impl<T: Clone + Send + Sync + 'static> RemoteResource<T> {
         self.status.subscribe()
     }
 
-    pub fn is_ready(&self) -> bool {
-        matches!(&*self.status.borrow(), ResourceStatus::Ready(_))
-    }
-
     /// Trigger a refetch outside the natural connection-change cadence.
     /// While connected, this cancels any in-flight fetch and starts a
     /// new one; otherwise the notification queues and fires on the
@@ -136,7 +132,7 @@ impl<T: Clone + Send + Sync + 'static> RemoteResource<T> {
         // `Disconnected` would observe the default `Idle` on the
         // first frame and stay there until the next state transition
         // (the MiSTer "screen never updates if Core connects before
-        // QML loads" race).
+        // the UI subscribes" race).
         let initial_status = match &*connection_rx.borrow() {
             ConnectionState::Disconnected => ResourceStatus::Idle,
             ConnectionState::Connecting

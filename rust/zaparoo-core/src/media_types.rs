@@ -447,19 +447,6 @@ pub struct MediaBrowseIndexResult {
     pub groups: Vec<BrowseIndexGroup>,
 }
 
-impl MediaBrowseIndexResult {
-    /// Serialize the buckets as a JSON array of `{key,label,count,cursor}`
-    /// objects. The frontend surfaces this string to QML, where the
-    /// jump-to-letter picker parses it (the pickers already consume `var`
-    /// arrays, so a JSON string fits that convention). Returns `[]` on the
-    /// (practically impossible) serialize failure so QML always gets valid
-    /// JSON to parse.
-    #[must_use]
-    pub fn groups_json(&self) -> String {
-        serde_json::to_string(&self.groups).unwrap_or_else(|_| "[]".to_string())
-    }
-}
-
 /// Parameters for `media.history`. Cursor-driven pagination shares the
 /// same shape as `media.browse`/`media.search`; fields are optional and
 /// `skip_serializing_if` keeps the on-the-wire object minimal.
@@ -583,7 +570,6 @@ pub struct MediaHistoryLatestResult {
     pub entry: Option<MediaHistoryLatestEntry>,
 }
 
-pub const MEDIA_IMAGE_DELIVERY_INLINE: &str = "inline";
 pub const MEDIA_IMAGE_DELIVERY_LOCAL_PATH: &str = "localPath";
 
 /// Parameters for single-image `media.image`. Core identifies the
@@ -732,48 +718,10 @@ pub struct MediaMetaUpdatePatch {
     pub launcher_override: Option<String>,
 }
 
-pub const MEDIA_META_BATCH_MAX_ITEMS: usize = 100;
-
-/// Ordered batch request for `media.meta`. Core accepts one to 100 refs and
-/// returns one response item in the same position for each ref.
-#[derive(Debug, Clone, Serialize)]
-pub struct MediaMetaBatchParams {
-    pub items: Vec<MediaMetaParams>,
-}
-
-impl MediaMetaBatchParams {
-    pub fn try_new(items: Vec<MediaMetaParams>) -> Result<Self, String> {
-        if items.is_empty() {
-            return Err("media.meta batch must contain at least one item".to_string());
-        }
-        if items.len() > MEDIA_META_BATCH_MAX_ITEMS {
-            return Err(format!(
-                "media.meta batch cannot contain more than {MEDIA_META_BATCH_MAX_ITEMS} items"
-            ));
-        }
-        Ok(Self { items })
-    }
-}
-
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MediaMetaResult {
     pub media: MediaMeta,
-}
-
-/// One ordered batch result. Exactly one of `media` or `error` should be set.
-#[derive(Debug, Clone, Default, Deserialize)]
-pub struct MediaMetaBatchItemResult {
-    #[serde(default)]
-    pub media: Option<MediaMeta>,
-    #[serde(default)]
-    pub error: Option<String>,
-}
-
-#[derive(Debug, Clone, Default, Deserialize)]
-pub struct MediaMetaBatchResult {
-    #[serde(default)]
-    pub items: Vec<MediaMetaBatchItemResult>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -846,120 +794,6 @@ pub struct MediaMetaProperty {
     pub extension: Option<String>,
     #[serde(default)]
     pub blob_size: i64,
-}
-
-/// Parameters for `media.lookup` — fuzzy title resolution against the
-/// scraped catalog. `system` and `name` are required; the frontend
-/// composes both from canonical Core data, so we deliberately do not
-/// expose Core's `fuzzySystem` flag (it exists for LLM clients that may
-/// misspell ids; a frontend mismatch is a bug to fix, not paper over).
-#[derive(Debug, Clone, Default, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MediaLookupParams {
-    pub system: String,
-    pub name: String,
-}
-
-/// Result envelope for `media.lookup`. Core returns `{match: null}` for
-/// `ErrNoMatch` / `ErrLowConfidence` rather than raising a JSON-RPC
-/// error, so `match_: None` is the "no match found" case (not an error
-/// signal — the call itself succeeded).
-#[derive(Debug, Clone, Default, Deserialize)]
-pub struct MediaLookupResult {
-    // `match` is a Rust keyword; the field is renamed via serde while
-    // the wire form stays `match`. Same pattern as
-    // `BrowseEntry.entry_type` and `TagInfo.tag_type`.
-    #[serde(rename = "match", default)]
-    pub match_: Option<MediaLookupMatch>,
-}
-
-#[derive(Debug, Clone, Default, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MediaLookupMatch {
-    pub name: String,
-    pub path: String,
-    #[serde(default)]
-    pub zap_script: String,
-    #[serde(default)]
-    pub system: System,
-    #[serde(default)]
-    pub tags: Vec<TagInfo>,
-    /// Path relative to the system's root, when Core was able to derive
-    /// one. Mirrors `MediaItem.relative_path`.
-    #[serde(default)]
-    pub relative_path: Option<String>,
-    /// Match confidence in `[0, 1]`. Below Core's threshold the match
-    /// would be returned as `{match: null}`, so any value here is
-    /// already considered "high enough"; the field is exposed so a UI
-    /// can surface the raw score.
-    #[serde(default)]
-    pub confidence: f64,
-}
-
-/// Parameters for `media.history.top` — most-played aggregates over the
-/// session log. `since` is an RFC3339 timestamp; `limit` caps the
-/// returned entry count.
-//
-// Core also accepts a `fuzzySystem` boolean for LLM clients; the
-// frontend composes ids from canonical Core data so a mismatch would
-// be a bug, and we deliberately do not surface that flag here.
-#[derive(Debug, Clone, Default, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MediaHistoryTopParams {
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub systems: Vec<String>,
-    /// RFC3339 timestamp; entries with a `last_played_at` earlier than
-    /// this are excluded.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub since: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub limit: Option<u32>,
-}
-
-#[derive(Debug, Clone, Default, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MediaHistoryTopEntry {
-    #[serde(default)]
-    pub system_id: String,
-    #[serde(default)]
-    pub system_name: String,
-    #[serde(default)]
-    pub media_name: String,
-    #[serde(default)]
-    pub media_path: String,
-    /// RFC3339 timestamp of the most recent session for this media.
-    #[serde(default)]
-    pub last_played_at: String,
-    /// Cumulative play time in seconds.
-    #[serde(default)]
-    pub total_play_time: u64,
-    #[serde(default)]
-    pub session_count: u32,
-}
-
-#[derive(Debug, Clone, Default, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MediaHistoryTopResult {
-    #[serde(default)]
-    pub entries: Vec<MediaHistoryTopEntry>,
-}
-
-/// Parameters for `media.tags` — list the available tag index, optionally
-/// scoped to a system filter. Core's handler reuses `SearchParams` on
-/// the wire but only consults `systems`/`fuzzySystem`, so we expose a
-/// trimmed type here. (As elsewhere, `fuzzySystem` is intentionally
-/// omitted; the frontend composes canonical ids.)
-#[derive(Debug, Clone, Default, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MediaTagsParams {
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub systems: Vec<String>,
-}
-
-#[derive(Debug, Clone, Default, Deserialize)]
-pub struct MediaTagsResult {
-    #[serde(default)]
-    pub tags: Vec<TagInfo>,
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -1370,17 +1204,15 @@ mod tests {
     )]
 
     use super::{
-        merged_root_view, BrowseEntry, BrowseIndexGroup, HealthResult, IndexingStatusResponse,
-        LaunchersResult, LogDownloadResult, MediaBrowseIndexParams, MediaBrowseIndexResult,
-        MediaBrowseParams, MediaBrowseResult, MediaHistoryEntry, MediaHistoryLatestResult,
-        MediaHistoryParams, MediaHistoryResult, MediaHistoryTopParams, MediaHistoryTopResult,
-        MediaImageParams, MediaImageResult, MediaIndexParams, MediaItem, MediaLookupParams,
-        MediaLookupResult, MediaMetaBatchParams, MediaMetaBatchResult, MediaMetaParams,
-        MediaMetaResult, MediaMetaUpdateParams, MediaResult, MediaScrapeParams, MediaSearchParams,
-        MediaSearchResult, MediaTagsParams, MediaTagsResult, ReaderInfo, ReadersResult,
-        ScrapersResult, ScrapingStatusResponse, SettingsResult, SystemDefault, SystemsParams,
-        SystemsResult, TagInfo, TokensHistoryResult, TokensResult, UpdateSettingsParams,
-        VersionResult, MEDIA_IMAGE_DELIVERY_LOCAL_PATH, MEDIA_META_BATCH_MAX_ITEMS,
+        merged_root_view, BrowseEntry, HealthResult, IndexingStatusResponse, LaunchersResult,
+        LogDownloadResult, MediaBrowseIndexParams, MediaBrowseIndexResult, MediaBrowseParams,
+        MediaBrowseResult, MediaHistoryEntry, MediaHistoryLatestResult, MediaHistoryParams,
+        MediaHistoryResult, MediaImageParams, MediaImageResult, MediaIndexParams, MediaItem,
+        MediaMetaParams, MediaMetaResult, MediaMetaUpdateParams, MediaResult, MediaScrapeParams,
+        MediaSearchParams, MediaSearchResult, ReaderInfo, ReadersResult, ScrapersResult,
+        ScrapingStatusResponse, SettingsResult, SystemDefault, SystemsParams, SystemsResult,
+        TagInfo, TokensHistoryResult, TokensResult, UpdateSettingsParams, VersionResult,
+        MEDIA_IMAGE_DELIVERY_LOCAL_PATH,
     };
 
     #[test]
@@ -1686,40 +1518,6 @@ mod tests {
         assert_eq!(result.groups[1].count, 12);
         assert_eq!(result.groups[1].cursor, "opaqueA");
         assert_eq!(result.groups[1].offset, 10);
-    }
-
-    #[test]
-    fn media_browse_index_groups_json_emits_camel_case_objects() {
-        let result = MediaBrowseIndexResult {
-            scheme: "latin".into(),
-            total_files: 4,
-            groups: vec![BrowseIndexGroup {
-                key: "A".into(),
-                label: "A".into(),
-                count: 4,
-                cursor: "opaqueA".into(),
-                offset: 10,
-            }],
-        };
-        // QML JSON.parse consumes this string; keys must match what the grid
-        // reads (key/label/count/cursor/offset).
-        let parsed: serde_json::Value =
-            serde_json::from_str(&result.groups_json()).expect("parse json");
-        let first = &parsed.as_array().expect("array")[0];
-        assert_eq!(first.get("key").and_then(|v| v.as_str()), Some("A"));
-        assert_eq!(first.get("label").and_then(|v| v.as_str()), Some("A"));
-        assert_eq!(
-            first.get("count").and_then(serde_json::Value::as_u64),
-            Some(4)
-        );
-        assert_eq!(
-            first.get("cursor").and_then(|v| v.as_str()),
-            Some("opaqueA")
-        );
-        assert_eq!(
-            first.get("offset").and_then(serde_json::Value::as_u64),
-            Some(10)
-        );
     }
 
     #[test]
@@ -2155,61 +1953,11 @@ mod tests {
     }
 
     #[test]
-    fn media_meta_batch_preserves_order_and_ref_shapes() {
-        let params = MediaMetaBatchParams::try_new(vec![
-            MediaMetaParams::for_media_id(42),
-            MediaMetaParams::for_media("SNES", "/roms/snes/x.sfc"),
-        ])
-        .expect("valid batch");
-        let json = serde_json::to_value(params).expect("serialise");
-        let items = json["items"].as_array().expect("items");
-        assert_eq!(items.len(), 2);
-        assert_eq!(items[0], serde_json::json!({"mediaId": 42}));
-        assert_eq!(
-            items[1],
-            serde_json::json!({"system": "SNES", "path": "/roms/snes/x.sfc"})
-        );
-    }
-
-    #[test]
-    fn media_meta_batch_enforces_item_cap() {
-        let max_items = vec![MediaMetaParams::for_media_id(1); MEDIA_META_BATCH_MAX_ITEMS];
-        assert!(MediaMetaBatchParams::try_new(max_items).is_ok());
-        let over_limit = vec![MediaMetaParams::for_media_id(1); MEDIA_META_BATCH_MAX_ITEMS + 1];
-        assert_eq!(
-            MediaMetaBatchParams::try_new(over_limit).expect_err("over limit"),
-            format!("media.meta batch cannot contain more than {MEDIA_META_BATCH_MAX_ITEMS} items")
-        );
-        assert!(MediaMetaBatchParams::try_new(Vec::new()).is_err());
-    }
-
-    #[test]
-    fn media_meta_batch_result_parses_mixed_items() {
-        let json = r#"{"items":[
-            {"media":{"path":"/a","title":{}}},
-            {"error":"media not found"}
-        ]}"#;
-        let result: MediaMetaBatchResult = serde_json::from_str(json).expect("parse");
-        assert_eq!(result.items.len(), 2);
-        assert_eq!(
-            result.items[0]
-                .media
-                .as_ref()
-                .map(|media| media.path.as_str()),
-            Some("/a")
-        );
-        assert!(result.items[0].error.is_none());
-        assert!(result.items[1].media.is_none());
-        assert_eq!(result.items[1].error.as_deref(), Some("media not found"));
-    }
-
-    #[test]
     fn media_meta_result_parses_documented_payload() {
-        // Mirrors the documented example from
-        // /home/callan/dev/zaparoo-core/docs/api/methods.md (media.meta
-        // section). Properties cover both binary (boxart) and text
-        // (description) variants so the extension/content_type plumbing
-        // exercises both paths.
+        // Mirrors the documented example from the Core API reference
+        // (https://zaparoo.org/docs/core/api/, `media.meta`). Properties
+        // cover both binary (boxart) and text (description) variants so the
+        // extension/content_type plumbing exercises both paths.
         let json = r#"{
             "media": {
                 "path": "/roms/snes/Super Mario World.sfc",
@@ -2349,171 +2097,6 @@ mod tests {
                 "media": {"launcherOverride": null}
             })
         );
-    }
-
-    #[test]
-    fn media_lookup_params_omits_optional_fields_and_serialises_required() {
-        let params = MediaLookupParams {
-            system: "SNES".into(),
-            name: "Super Mario World".into(),
-        };
-        let json = serde_json::to_value(&params).expect("serialise");
-        let object = json.as_object().expect("object");
-        assert_eq!(object.get("system").and_then(|v| v.as_str()), Some("SNES"));
-        assert_eq!(
-            object.get("name").and_then(|v| v.as_str()),
-            Some("Super Mario World")
-        );
-        assert!(!object.contains_key("fuzzySystem"));
-    }
-
-    #[test]
-    fn media_lookup_result_parses_match_payload() {
-        let json = r#"{
-            "match": {
-                "name": "Super Mario World",
-                "path": "/roms/snes/Super Mario World (USA).sfc",
-                "zapScript": "@SNES/Super Mario World",
-                "system": {"id":"SNES","name":"Super Nintendo","category":"Console"},
-                "tags": [{"type":"region","tag":"usa"}],
-                "relativePath": "Super Mario World (USA).sfc",
-                "confidence": 0.97
-            }
-        }"#;
-        let result: MediaLookupResult = serde_json::from_str(json).expect("parse");
-        let m = result.match_.as_ref().expect("match present");
-        assert_eq!(m.name, "Super Mario World");
-        assert_eq!(m.path, "/roms/snes/Super Mario World (USA).sfc");
-        assert_eq!(m.zap_script, "@SNES/Super Mario World");
-        assert_eq!(m.system.id, "SNES");
-        assert_eq!(m.system.name, "Super Nintendo");
-        assert_eq!(m.tags.len(), 1);
-        assert_eq!(
-            m.relative_path.as_deref(),
-            Some("Super Mario World (USA).sfc")
-        );
-        assert!((m.confidence - 0.97).abs() < f64::EPSILON);
-    }
-
-    #[test]
-    fn media_lookup_result_treats_null_match_as_no_match() {
-        // Core returns `{match: null}` for both `ErrNoMatch` and
-        // `ErrLowConfidence` — neither raises a JSON-RPC error, so the
-        // wrapper has to model "no match" as success-with-None.
-        let result: MediaLookupResult = serde_json::from_str(r#"{"match": null}"#).expect("parse");
-        assert!(result.match_.is_none());
-    }
-
-    #[test]
-    fn media_history_top_params_omits_unset_fields() {
-        let params = MediaHistoryTopParams::default();
-        let json = serde_json::to_value(&params).expect("serialise");
-        let object = json.as_object().expect("object");
-        assert!(object.is_empty());
-    }
-
-    #[test]
-    fn media_history_top_params_serialises_full_surface() {
-        let params = MediaHistoryTopParams {
-            systems: vec!["SNES".into()],
-            since: Some("2025-01-01T00:00:00Z".into()),
-            limit: Some(10),
-        };
-        let json = serde_json::to_value(&params).expect("serialise");
-        let object = json.as_object().expect("object");
-        assert_eq!(
-            object.get("since").and_then(|v| v.as_str()),
-            Some("2025-01-01T00:00:00Z")
-        );
-        assert_eq!(
-            object.get("limit").and_then(serde_json::Value::as_u64),
-            Some(10)
-        );
-        assert_eq!(
-            object
-                .get("systems")
-                .and_then(|v| v.as_array())
-                .map(Vec::len),
-            Some(1)
-        );
-        assert!(!object.contains_key("fuzzySystem"));
-    }
-
-    #[test]
-    fn media_history_top_result_parses_aggregate_payload() {
-        let json = r#"{
-            "entries": [
-                {
-                    "systemId": "SNES",
-                    "systemName": "Super Nintendo",
-                    "mediaName": "Super Mario World",
-                    "mediaPath": "/roms/snes/smw.sfc",
-                    "lastPlayedAt": "2026-04-30T12:00:00Z",
-                    "totalPlayTime": 7200,
-                    "sessionCount": 4
-                }
-            ]
-        }"#;
-        let result: MediaHistoryTopResult = serde_json::from_str(json).expect("parse");
-        assert_eq!(result.entries.len(), 1);
-        let e = &result.entries[0];
-        assert_eq!(e.system_id, "SNES");
-        assert_eq!(e.media_name, "Super Mario World");
-        assert_eq!(e.last_played_at, "2026-04-30T12:00:00Z");
-        assert_eq!(e.total_play_time, 7200);
-        assert_eq!(e.session_count, 4);
-    }
-
-    #[test]
-    fn media_history_top_result_handles_empty_envelope() {
-        let result: MediaHistoryTopResult = serde_json::from_str("{}").expect("parse");
-        assert!(result.entries.is_empty());
-    }
-
-    #[test]
-    fn media_tags_params_omits_unset_systems() {
-        let params = MediaTagsParams::default();
-        let json = serde_json::to_value(&params).expect("serialise");
-        let object = json.as_object().expect("object");
-        assert!(object.is_empty());
-        assert!(!object.contains_key("fuzzySystem"));
-    }
-
-    #[test]
-    fn media_tags_params_serialises_systems() {
-        let params = MediaTagsParams {
-            systems: vec!["SNES".into(), "NES".into()],
-        };
-        let json = serde_json::to_value(&params).expect("serialise");
-        let object = json.as_object().expect("object");
-        assert_eq!(
-            object
-                .get("systems")
-                .and_then(|v| v.as_array())
-                .map(Vec::len),
-            Some(2)
-        );
-        assert!(!object.contains_key("fuzzySystem"));
-    }
-
-    #[test]
-    fn media_tags_result_parses_payload() {
-        let json = r#"{
-            "tags": [
-                {"type":"region","tag":"usa"},
-                {"type":"developer","tag":"Nintendo"}
-            ]
-        }"#;
-        let result: MediaTagsResult = serde_json::from_str(json).expect("parse");
-        assert_eq!(result.tags.len(), 2);
-        assert_eq!(result.tags[0].tag_type, "region");
-        assert_eq!(result.tags[0].tag, "usa");
-    }
-
-    #[test]
-    fn media_tags_result_handles_empty_envelope() {
-        let result: MediaTagsResult = serde_json::from_str("{}").expect("parse");
-        assert!(result.tags.is_empty());
     }
 
     #[test]

@@ -3,8 +3,8 @@
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 //
 // Scripted transient (non-task) notifications: a card scan, a playtime
-// warning, an inbox message — the events `Browse.StatusEvents` on the
-// frontend side listens for. Off by default (`MOCK_CORE_EVENTS` unset)
+// warning, an inbox message: the events the frontend's header status
+// line listens for. Off by default (`MOCK_CORE_EVENTS` unset)
 // so a plain `just mock-core` session stays quiet; set the env var to
 // exercise the header status line's transient-message path without
 // waiting on a real reader or a real playtime limit.

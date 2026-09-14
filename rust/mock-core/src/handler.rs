@@ -599,7 +599,7 @@ mod tests {
 
     // The media.generate/media.scrape sequence tests below rely on
     // `media_state`'s single process-wide `Mutex<MediaState>`. That is
-    // only test-safe because `just test-rust` runs on `cargo nextest`,
+    // only test-safe because `just test` runs on `cargo nextest`,
     // which gives every test its own process — a plain `cargo test`
     // invocation would run these in one process and the shared state
     // could race across tests. Mark new stateful tests `#[tokio::test]`

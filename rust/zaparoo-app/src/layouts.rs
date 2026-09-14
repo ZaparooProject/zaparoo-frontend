@@ -2,20 +2,16 @@
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 //
-// Port of `src/ui/theme/BrowseLayouts.qml`: the built-in browse layout
-// profiles. The QML kept the tables as string tokens (`"pctH:7"`,
-// `"sum(pctH:6,8)"`) resolved by a small interpreter at bind time; here the
-// tables are typed values resolved through `sizing::Inputs`, which is what
-// the tokens meant. Pinned to `tests/fixtures/layout_golden.txt`, dumped
-// from the QML at every geometry the sizing fixture covers, for both themes
+// The built-in browse layout profiles: typed geometry tables resolved
+// through `sizing::Inputs`. Pinned to `tests/fixtures/layout_golden.txt`,
+// which covers every geometry the sizing fixture covers, for both themes
 // and all six views.
 //
-// Two themes: `default` for digital tiers and `crt` for the 240p tier, the
-// way `BrowseLayouts.currentThemeId` picks them. Six views: the systems and
-// games screens as a grid, a list with a detail pane, and the rotated
-// (TATE) list. Within a theme the grid views share their tables and the
-// list views differ only in whether the detail metadata sits at the bottom
-// of the pane.
+// Two themes: `default` for digital tiers and `crt` for the 240p tier. Six
+// views: the systems and games screens as a grid, a list with a detail
+// pane, and the rotated (TATE) list. Within a theme the grid views share
+// their tables and the list views differ only in whether the detail
+// metadata sits at the bottom of the pane.
 
 use crate::sizing::{self, Inputs, Tier};
 
@@ -27,8 +23,7 @@ pub enum ThemeId {
 }
 
 impl ThemeId {
-    /// `BrowseLayouts.currentThemeId`: the CRT tables at the 240p tier,
-    /// the default tables everywhere else.
+    /// The CRT tables at the 240p tier, the default tables everywhere else.
     pub fn current(inputs: &Inputs) -> Self {
         if inputs.tier() == Tier::T240 {
             Self::Crt
@@ -85,7 +80,7 @@ impl Axis {
     }
 }
 
-/// A geometry token as the QML tables spell it, resolved against `Inputs`.
+/// A geometry token from the layout tables, resolved against `Inputs`.
 #[derive(Debug, Clone, Copy)]
 enum Tok {
     Px(i32),
@@ -283,8 +278,8 @@ const DEFAULT: ThemeT = ThemeT {
         // Square on all four sides: the sides came off the width and the
         // ends off the height, which put 26px beside 14px at 720p and got
         // worse the wider the screen. `docs/style.md` -> "Surface
-        // containment"; the QML this table is pinned to still has the
-        // split, so `layout_golden.rs` skips these keys.
+        // containment"; the golden fixture this table is pinned to still
+        // has the split, so `layout_golden.rs` skips these keys.
         card_padding_left: pmin(2.0),
         card_padding_right: pmin(2.0),
         card_padding_top: pmin(2.0),
@@ -309,8 +304,8 @@ const DEFAULT: ThemeT = ThemeT {
         // Square on all four sides: the sides came off the width and the
         // ends off the height, which put 26px beside 14px at 720p and got
         // worse the wider the screen. `docs/style.md` -> "Surface
-        // containment"; the QML this table is pinned to still has the
-        // split, so `layout_golden.rs` skips these keys.
+        // containment"; the golden fixture this table is pinned to still
+        // has the split, so `layout_golden.rs` skips these keys.
         card_padding_left: pmin(2.0),
         card_padding_right: pmin(2.0),
         card_padding_top: pmin(2.0),
@@ -668,8 +663,8 @@ impl Profile {
         }
     }
 
-    /// Every value as `section.key=value` in the QML's own spelling, sorted,
-    /// the shape the golden fixture uses.
+    /// Every value as `section.key=value`, sorted, in the key spelling the
+    /// golden fixture uses.
     pub fn flatten(&self) -> Vec<(String, String)> {
         let mut out = Vec::new();
         put(
@@ -954,7 +949,7 @@ impl Resolver<'_> {
     }
 }
 
-/// `BrowseLayouts.themeProfile(themeId, viewId)` resolved at `inputs`.
+/// The profile for a (theme, view) pair, resolved at `inputs`.
 pub fn profile(theme: ThemeId, view: View, inputs: &Inputs) -> Profile {
     let t = theme_tables(theme);
     let r = Resolver {

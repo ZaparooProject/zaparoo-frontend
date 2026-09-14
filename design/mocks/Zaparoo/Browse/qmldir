@@ -1,9 +1,0 @@
-module Zaparoo.Browse
-singleton CategoriesModel 1.0 CategoriesModel.qml
-singleton SystemsModel 1.0 SystemsModel.qml
-singleton GamesModel 1.0 GamesModel.qml
-singleton AppState 1.0 AppState.qml
-singleton HubState 1.0 HubState.qml
-singleton GamesState 1.0 GamesState.qml
-singleton BrowseModel 1.0 BrowseModel.qml
-depends QtQuick

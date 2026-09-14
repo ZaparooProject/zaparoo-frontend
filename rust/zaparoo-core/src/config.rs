@@ -19,7 +19,7 @@ pub struct Config {
     /// distinguish "user wants the default 1920x1080" (in which case the
     /// preview canvas would be too large to upscale into a desktop window)
     /// from "user didn't write a [video] section at all" (in which case
-    /// `--crt` overrides this to the 320x240 `native_video_writer` canvas).
+    /// `--crt` overrides this to the 320x240 native CRT canvas).
     pub video_explicit: bool,
     /// Ask the windowing system for a fullscreen window at startup. Set by
     /// `[video] fullscreen` or the `--fullscreen` flag, and ignored on
@@ -32,15 +32,14 @@ pub struct Config {
     /// and only an explicit `false` puts it back in a window.
     pub video_fullscreen: Option<bool>,
     pub debug_logging: bool,
-    /// Language override for the UI, passed to `QTranslator` via the
-    /// C++ entry point. Empty string means "follow `QLocale::system()`";
-    /// any non-empty value is treated as a BCP-47 tag (e.g. `en_US`,
-    /// `ja`, `de_DE`). Populated from `[general] language` in the config
-    /// file; the literal `auto` is normalised to an empty string.
+    /// Language override for the UI. An empty string means "follow the host
+    /// locale"; any non-empty value is treated as a BCP-47 tag (e.g.
+    /// `en_US`, `ja`, `de_DE`). Populated from `[general] language` in the
+    /// config file; the literal `auto` is normalized to an empty string.
     pub language: String,
-    /// Qt key code → action name. Built at load time by merging
-    /// `[input.keyboard]` overrides onto `input_actions::default_bindings()`
-    /// and inverting.
+    /// Key code → action name, in the numbering `input_actions` defines.
+    /// Built at load time by merging `[input.keyboard]` overrides onto
+    /// `input_actions::default_bindings()` and inverting.
     pub key_to_action: HashMap<i32, String>,
     /// Durable mirror of frontend-owned settings. These stay in
     /// `frontend.toml` so they survive `MiSTer`'s `/tmp` lifecycle.
@@ -284,7 +283,7 @@ pub fn load_config(path: &Path) -> Config {
     };
     if let Some(lang) = raw.general.language {
         // "auto" is the documented opt-in to system-locale detection; treat
-        // it as an empty override so the C++ side just calls `QLocale::system()`.
+        // it as an empty override so the caller falls back to the host locale.
         cfg.language = if lang.eq_ignore_ascii_case("auto") {
             String::new()
         } else {
@@ -643,8 +642,7 @@ pub fn save_notice_ack(path: &Path, commercial_ack: bool) -> Result<(), String> 
 }
 
 /// Offset ranges the Menu fork core honors before clamping in RTL
-/// (`native_video_reader.sv`). Mirrored by the C++ writer's
-/// `kNativeVideoHOffsetMin`/... constants in `native_video_writer.h`.
+/// (`native_video_reader.sv`).
 pub const CRT_H_OFFSET_MIN: i32 = -8;
 pub const CRT_H_OFFSET_MAX: i32 = 8;
 pub const CRT_V_OFFSET_MIN: i32 = -8;
@@ -679,8 +677,9 @@ pub fn crt_video_dimensions(standard: &str) -> (u32, u32) {
 }
 
 /// DDR word1 mode id for a native CRT video standard. Same vocabulary
-/// as the Menu fork core and `native_video_writer.cpp`, and also byte 1
-/// of `zaparoo_launcher_crt.bin` so `Main_MiSTer` programs the matching
+/// as the Menu fork core and the DDR presenter
+/// (`rust/frontend/src/mister/ddr.rs`), and also byte 1 of
+/// `zaparoo_launcher_crt.bin` so `Main_MiSTer` programs the matching
 /// framebuffer geometry before spawning the frontend (Main's hardcoded
 /// 352x240 plus its post-spawn re-assert would otherwise stomp a PAL
 /// framebuffer).

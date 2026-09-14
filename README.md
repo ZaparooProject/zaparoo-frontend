@@ -5,32 +5,30 @@ Zaparoo Frontend is the game frontend for
 
 ## Build
 
-Start with [docs/building.md](docs/building.md). It covers the packages you
-need on a fresh machine and the MiSTer cross-build path.
+The frontend is written in Rust with [Slint](https://slint.dev). Start with
+[docs/quickstart.md](docs/quickstart.md) for a first run against the mock
+Core, and [docs/building.md](docs/building.md) for the packages you need on a
+fresh machine and the MiSTer cross-build path.
 
 Most commands go through the [`justfile`](justfile). Run `just --list` if you
 need the full menu.
 
 ```bash
 just build && just run    # desktop
-./scripts/build-arm32.sh  # MiSTer ARM32 cross-build (Docker-only)
-just test                 # ctest + cargo nextest
-just lint                 # clang-format, clang-tidy, qmllint, rustfmt, clippy, cargo-deny
+just run-dev              # desktop against the mock Core
+just arm32                # MiSTer ARM32 static build (cross + Docker)
+just test                 # cargo nextest, desktop and MiSTer feature sets
+just lint                 # rustfmt, clippy (all feature sets), cargo-deny,
+                          # toolkit-free guard, translations, notices, logo parity
 ```
 
-The MiSTer ARM32 path uses the official Docker Buildx toolchain image and does
-not need Qt, CMake, Rust, or `just` installed on the host.
+`just test`, `just lint` and `just arm32` need a few cargo extensions; install
+them once with `just install-tools`.
 
 ## Customize
 
 You can override system artwork, the Hub menu icons, and system display names
 without rebuilding. See [docs/customization.md](docs/customization.md).
-
-`just test` and `just lint` need `cargo-nextest` and `cargo-deny`:
-
-```bash
-cargo install --locked cargo-nextest cargo-deny
-```
 
 ## Trademarks
 
@@ -48,43 +46,34 @@ Non-commercial use only. For commercial licensing, contact
 
 Third-party components:
 
-- **Qt framework**: LGPLv3. Dynamically linked on desktop builds; statically
-  linked on MiSTer ARM32. Object files for re-linking against a modified Qt
-  are available on request at
-  [legal@zaparoo.com](mailto:legal@zaparoo.com).
-  See [`src/LICENSES/Qt-LGPL-NOTICE.txt`](src/LICENSES/Qt-LGPL-NOTICE.txt)
-  and [`src/LICENSES/LGPLv3.txt`](src/LICENSES/LGPLv3.txt).
-- **zaparoo-update**: optional third-party update integration, separately owned
-  and licensed under PolyForm Noncommercial License 1.0.0. Commercial licenses
-  for Zaparoo Frontend do not grant commercial rights to zaparoo-update;
-  commercial use, distribution, or bundling with the update integration enabled
-  requires a separate license from the zaparoo-update copyright holder,
-  José Manuel Barroso Galindo <theypsilon@gmail.com>. See
-  [`src/LICENSES/zaparoo-update-NOTICE.txt`](src/LICENSES/zaparoo-update-NOTICE.txt).
+- **Slint** UI toolkit: used under the Slint Software License, which covers
+  embedded distribution. The license text and the notices for every Rust
+  crate linked into the binary are in
+  [`rust/frontend/LICENSES/THIRD-PARTY-NOTICES.txt`](rust/frontend/LICENSES/THIRD-PARTY-NOTICES.txt).
 - **Noto Sans** fonts: SIL Open Font License 1.1, © The Noto Project Authors.
-  See [`src/LICENSES/NotoSans-ATTRIBUTION.txt`](src/LICENSES/NotoSans-ATTRIBUTION.txt)
-  and [`src/LICENSES/NotoSans-OFL.txt`](src/LICENSES/NotoSans-OFL.txt).
+  See [`LICENSES/NotoSans-ATTRIBUTION.txt`](LICENSES/NotoSans-ATTRIBUTION.txt)
+  and [`LICENSES/NotoSans-OFL.txt`](LICENSES/NotoSans-OFL.txt).
 - **MxPlus HP 100LX 6x8** font: Creative Commons Attribution-ShareAlike 4.0
   International, © VileR. See
-  [`src/LICENSES/MxPlus-ATTRIBUTION.txt`](src/LICENSES/MxPlus-ATTRIBUTION.txt).
+  [`LICENSES/MxPlus-ATTRIBUTION.txt`](LICENSES/MxPlus-ATTRIBUTION.txt).
 - **Iconoir** UI icons: MIT License, © Luca Burgio and contributors.
-  See [`src/LICENSES/Iconoir-ATTRIBUTION.txt`](src/LICENSES/Iconoir-ATTRIBUTION.txt).
+  See [`LICENSES/Iconoir-ATTRIBUTION.txt`](LICENSES/Iconoir-ATTRIBUTION.txt).
 - **Lucide** UI icons: ISC License, © 2024 Lucide Contributors (fork of Feather
   Icons by Cole Bemis). See
-  [`src/LICENSES/Lucide-ATTRIBUTION.txt`](src/LICENSES/Lucide-ATTRIBUTION.txt).
+  [`LICENSES/Lucide-ATTRIBUTION.txt`](LICENSES/Lucide-ATTRIBUTION.txt).
 - **Streamline** Core line icon (Handheld category): © Webalys LLC, used
   under the Streamline Free License — <https://streamlinehq.com>. See
-  [`src/LICENSES/Streamline-ATTRIBUTION.txt`](src/LICENSES/Streamline-ATTRIBUTION.txt).
+  [`LICENSES/Streamline-ATTRIBUTION.txt`](LICENSES/Streamline-ATTRIBUTION.txt).
 - **Input Prompts** by Kenney, CC0 1.0 (help-bar button and D-pad glyphs) —
   <https://kenney.nl/assets/input-prompts>. See
-  [`src/LICENSES/Kenney-ATTRIBUTION.txt`](src/LICENSES/Kenney-ATTRIBUTION.txt).
+  [`LICENSES/Kenney-ATTRIBUTION.txt`](LICENSES/Kenney-ATTRIBUTION.txt).
 - **Console logos** redrawn by Dan Patrick (MIT-licensed compilation; platform
   marks remain trademarks of their respective owners). See
-  [`src/LICENSES/console-logos-ATTRIBUTION.txt`](src/LICENSES/console-logos-ATTRIBUTION.txt).
+  [`LICENSES/console-logos-ATTRIBUTION.txt`](LICENSES/console-logos-ATTRIBUTION.txt).
 - **Wikimedia Commons public-domain text/logo assets** used for specific
   missing system logos. See
-  [`src/LICENSES/wikimedia-public-domain-ATTRIBUTION.txt`](src/LICENSES/wikimedia-public-domain-ATTRIBUTION.txt).
+  [`LICENSES/wikimedia-public-domain-ATTRIBUTION.txt`](LICENSES/wikimedia-public-domain-ATTRIBUTION.txt).
 - **Noun Project icons** used in 2-player system logo composites. See
-  [`src/LICENSES/NounProject-ATTRIBUTION.txt`](src/LICENSES/NounProject-ATTRIBUTION.txt).
+  [`LICENSES/NounProject-ATTRIBUTION.txt`](LICENSES/NounProject-ATTRIBUTION.txt).
 
-See all bundled asset and third-party notices in [`src/LICENSES/`](src/LICENSES/).
+See all bundled asset and third-party notices in [`LICENSES/`](LICENSES/).

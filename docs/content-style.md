@@ -39,15 +39,15 @@ This mirrors both established guidance and this app's own constraints:
 GNOME's HIG says order items "by importance, task order, or expected
 frequency of use"; Nielsen Norman Group's contextual-menu guidelines say
 to "list commands in frequency-of-use order." On a six-button controller
-(see `docs/architecture.md`'s input section) every extra row is an extra
+(see `docs/quickstart.md` → "Controllers") every extra row is an extra
 press, so getting the top of the list right matters more here than on a
 mouse-driven desktop menu.
 
 ## Menu size
 
 There is no fixed entry cap. `ContextMenu` navigation wraps, so the last
-entry is one press up from the first, and `rowViewport` scrolls to keep the
-selection reachable when the panel can't fit every row. Ordering matters more
+entry is one press up from the first, and the panel scrolls its rows to keep
+the selection reachable when it can't fit every row. Ordering matters more
 than length: put the primary action first so the common case stays a single
 press.
 
@@ -133,7 +133,7 @@ always the full phrase above.
 ## Length budget
 
 Menu and settings-row labels should read comfortably at the 240p tier
-(see `docs/style.md` → "Resolution tiers"). `ContextMenu.panelWidth`
+(see `docs/style.md` → "Resolution tiers"). `ContextMenu.panel-width`
 tracks the single widest entry in the open menu, so one long label widens
 the whole panel. Treat anything near the length of `Show original
 filenames` as a signal to either shorten the label or move the
@@ -148,17 +148,18 @@ lengthening a menu row further.
 2. Which glossary term applies? Don't introduce a new synonym.
 3. Does the menu still fit without scrolling at 240p? If not, consider
    consolidating rather than relying on the scroll.
-4. Is it wrapped in `qsTr()`? (Three menu strings shipped without it in
-   the past — see `docs/translations.md`.)
+4. Is it wrapped in `@tr()` (or routed through a key-to-`@tr` vocabulary in
+   `ui/labels.slint`)? Three menu strings once shipped untranslated; see
+   `docs/translations.md`.
 5. Sentence case, no trailing period, ellipsis only if it needs more
    input first.
 
 ## Adding a setting — checklist
 
 1. Which of the six Settings pages does it belong to **by what the user
-   is trying to do**, not by which Rust module or QML file implements it?
-   See `SettingsScreen.qml`'s page-domain doc comment for the current six
-   domains.
+   is trying to do**, not by which Rust module or `.slint` file implements
+   it? The six root categories and their rows are registered in
+   `rust/zaparoo-app/src/settings.rs`.
 2. Does it need a "restart required" or "takes effect next launch"
    description line? If the setting doesn't apply live, say so in the
    description — don't let the restart-confirm modal be the first the

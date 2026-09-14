@@ -1,9 +1,9 @@
 # Zaparoo Frontend Agent Guide
 
-Zaparoo Frontend is a Qt/QML frontend for Zaparoo Core. It runs on desktop
-Linux and on MiSTer FPGA (ARM32, Linux framebuffer, software rendering). The
-MiSTer target is the hard constraint: assume no GPU, process kills without
-notice, and a small ARM CPU.
+Zaparoo Frontend is a Rust and Slint frontend for Zaparoo Core. It runs on
+desktop Linux and on MiSTer FPGA (ARM32, Linux framebuffer, software
+rendering). The MiSTer target is the hard constraint: assume no GPU, process
+kills without notice, and a small ARM CPU.
 
 Keep this file focused on commands, traps, and rules that are hard to infer
 from the tree. Use the docs for longer explanations.
@@ -11,46 +11,51 @@ from the tree. Use the docs for longer explanations.
 ## Commands
 
 Run every workflow from the repo root with `just`. Do not `cd rust/` and run
-raw cargo as the default path; the justfile carries the expected environment.
+raw cargo as the default path; the justfile carries the expected environment
+(feature sets, the `cross` resource mount, sccache).
 
 | Task | Command |
 |---|---|
-| Desktop build | `just build` |
+| Desktop build | `just build` (`just build-release` for the release profile) |
 | Desktop run | `just run` |
-| Dev run against mock Core | `just mock-core` in one terminal, `just run-dev` in another |
-| Full test gate | `just test` |
-| QML/C++ tests only | `just test-qml` |
-| Rust tests only | `just test-rust` |
-| Full lint gate | `just lint` |
-| Rust lint only | `just lint-rust` |
-| Format | `just fmt` |
-| MiSTer ARM32 build | `just arm32` |
-| ARM64 build | `just arm64` |
+| Dev run against mock Core | `just run-dev` (starts and stops the mock itself) |
+| Mock Core only | `just mock-core` |
+| Full test gate | `just test` (workspace plus the `mister` feature set) |
+| Full lint gate | `just lint` (fmt, clippy for desktop, mister, and snapshot, deny, toolkit guard, translation template, notices, logo parity) |
+| Format | `just fmt` (`just fix` applies clippy fixes first) |
+| Regenerate the translation template | `just tr-extract` |
+| Render the main screens offline | `just snapshots` (optional language, e.g. `just snapshots de`) |
+| MiSTer ARM32 static build | `just arm32` |
+| Official MiSTer build with provenance | `just release` |
+| MiSTer release bundle | `just release-zip vX.Y.Z` |
 | Deploy to MiSTer | `just deploy-mister` |
-| Slint frontend: dev run against mock Core | `just slint-run-dev` (starts and stops the mock itself) |
-| Slint frontend: lint (host) | `just lint-slint` |
-| Slint frontend: tests (host) | `just test-slint` |
-| Slint frontend: MiSTer ARM32 static build | `just slint-arm32` |
-| Slint frontend: deploy side by side | `just deploy-mister-slint` (`--replace` to install over Qt) |
-| Slint frontend: third-party notices | `just slint-notices` (needs `cargo install cargo-about --features cli`) |
+| Portable x86_64 build (Steam Deck) | `just x86-portable` |
+| Desktop tarball with license files | `just package-desktop` |
+| Third-party notices | `just notices` |
+| Embedded system logo sets | `just logos` (after editing `resources/images/systems*/`) |
+| Isolated UI under Slint's MCP server | `just slint-ui` (`--help` lists commands) |
+| Host cargo extensions | `just install-tools` |
+| Remove `output/` and the cargo target directory | `just clean` |
 
-`just --list` is the source of truth. `CMakePresets.json` and
-`rust/.cargo/config.toml` are tuned for those recipes.
-
-The Slint frontend (`rust/frontend-slint`, plus the toolkit-free rules crate
-`rust/zaparoo-app`) is being ported per `docs/plans/slint-migration.md`. Qt is
-frozen to bug fixes. `just lint` excludes `frontend-slint` from clippy because
-the lint image lacks Slint's desktop system libs; run `just lint-slint` and
-`just test-slint` after touching those crates.
+`just --list` is the source of truth. Every recipe runs on the host; CI runs
+the same commands on a bare runner.
 
 ## Stack Facts
 
-- Qt 6.7+ with Qt Quick, QuickControls2, QML, QuickTest, and LinguistTools.
-- C++17 executable at `src/app/main.cpp`; Rust static library linked through
-  Corrosion and cxx-qt.
-- Rust workspace is under `rust/`, edition 2021, MSRV 1.96, cxx-qt 0.8.
-- Desktop builds link Qt dynamically for LGPL compliance.
-- MiSTer ARM32 builds use the Docker toolchain and static Qt.
+- Slint 1.17.1, pinned exactly (`=1.17.1`) with `slint-build` and
+  `slint-tr-extractor` at the same version. Used under the paid Slint Software
+  License.
+- Rust workspace under `rust/`, edition 2021, MSRV and toolchain 1.97
+  (`rust-toolchain.toml`).
+- `rust/frontend` features: `desktop` (default: winit backend, FemtoVG
+  renderer, gilrs gamepads), `mister` (custom `slint::platform`, `std` software
+  renderer, own presenters), `snapshot` (desktop plus the software renderer for
+  the offline `snapshot` binary). Exactly one of `desktop`/`mister`.
+- The MiSTer binary is a static `armv7-unknown-linux-musleabihf` build made
+  with `cross`. Fonts, logos, glyphs, and translations are embedded; it ships
+  as one file.
+- `cross` mounts only `rust/`, so `resources/` reaches the container through
+  `ZAPAROO_RESOURCES_DIR` (`rust/Cross.toml`). Every `cross` call sets it.
 
 ## Always
 
@@ -85,16 +90,25 @@ the lint image lacks Slint's desktop system libs; run `just lint-slint` and
   natural geometry such as `(parent.width - self.width) / 2`. Keep rounding
   only for semantically discrete values or documented exact-pixel contracts
   such as CRT calibration guides, bitmap raster sizing, and QR modules.
+- Take geometry from the `Sizing` and `Layout` globals (pushed from
+  `zaparoo_app::sizing` and `zaparoo_app::layouts`), not hardcoded pixel sizes
+  or element counts. The UI must run cleanly at 240p.
+- Put product rules (sizing, palette, grid navigation, menus, input timing,
+  status ladders) in the toolkit-free `rust/zaparoo-app` crate with tests, and
+  keep `rust/frontend` as the Slint adapter. `scripts/check-toolkit-free.sh`
+  enforces the boundary.
 - Follow `docs/content-style.md` for every user-visible string: menu
   ordering, capitalization, terminology, and the settings-page checklist.
-- After editing C++, Rust, or QML, run `just lint`. Run `just test` when the
-  change can affect runtime behavior.
+- Wrap every user-visible string in `@tr()` with `{}` placeholders so
+  translators can reorder values. Rust publishes stable keys and values; the
+  `.slint` side composes the sentence. Run `just tr-extract` after any `@tr`
+  edit. See `docs/translations.md`.
+- After editing Rust or `.slint` files, run `just lint`. Run `just test` when
+  the change can affect runtime behavior.
 - Keep user-visible state persistent. Selected screen, row/grid positions,
   focus, settings, and similar state must be serialized to disk and restored
   before the first frame. MiSTer's wrapper can kill and relaunch the process at
   any time.
-- Wrap user-visible QML strings in `qsTr()` and C++ strings in `tr()`. Use
-  `%1`/`%2` placeholders for runtime values so translators can reorder text.
 
 ## Ask First
 
@@ -102,50 +116,27 @@ the lint image lacks Slint's desktop system libs; run `just lint-slint` and
   `rust/zaparoo-core/src/client.rs`, check the upstream API docs:
   <https://zaparoo.org/docs/core/api/>. Method names, params, and return types
   must match Core.
-- Before changing `Sizing.qml` behavior or the persisted state schema, confirm
-  the migration/reset behavior.
-- Before adding dependencies, changing CI, or touching license/trademark text,
-  confirm the intended policy.
-- Before changing forward screen routing (`Main.qml` ↔ screens), see the
-  "Screens and routing" rules below. Cross-screen Connections and
-  per-screen pending flags are how this module bit us last time.
+- Before changing sizing rules, their golden fixtures
+  (`rust/zaparoo-app/tests/fixtures/`), or the persisted state schema
+  (`rust/zaparoo-core/src/persist.rs`), confirm the migration/reset behavior.
+- Before adding dependencies, bumping Slint, changing CI, or touching
+  license/trademark text, confirm the intended policy.
+- Before changing forward screen routing in `rust/frontend/src/router.rs`, see
+  "Screens and routing" below.
 
 ## Never
 
-- Do not use shader-backed or GPU-dependent QML: `LinearGradient`,
-  `RadialGradient`, `DropShadow`, `Glow`, `OpacityMask`, `MultiEffect`,
-  `Qt5Compat.GraphicalEffects`, Qt Quick Studio shapes, or custom shaders.
-  Stick to software-rendering-safe types such as `Rectangle`, `Image`, `Text`,
-  `Repeater`, `Item`, `NumberAnimation`, and `ColorAnimation`.
-- Do not animate properties that force a large dirty rectangle on busy content:
-  no translucent (`opacity < 1`) overlays over a grid, no fading or scaling of
-  a parent that contains many delegates, no slide-translation of a band of
-  tiles. Qt Software-adaptation cost is dominated by *painted pixels per frame
-  × per-pixel cost*, not by the animated property — a fading rectangle over 15
-  tiles repaints all 15 tiles per frame, because translucent nodes do not
-  subtract from the renderer's obscured region. Pick animations whose dirty
-  rect is small (page-dot pulse, focus-ring blink, single-tile move) and let
-  the rest of the scene stay static. See `docs/qml-gotchas.md` →
-  "Software-renderer animation costs".
-- In Qt/QML, do not hardcode pixel sizes or fixed element counts. Use
-  `Sizing.pctH()`, `Sizing.pctW()`, `Sizing.fontSize()`,
-  `Sizing.visibleCovers`, and `Sizing.radiusMd`/`Sizing.radiusSm` (for any
-  rounded-square surface — see `docs/style.md`). Any value that drives `x`/`y`/`width`/
-  `height`, border widths, margins, or font sizes must go through
-  `Sizing.px()`, `Sizing.stroke()`, `Sizing.center()`, or `Sizing.half()`.
-  Qt/QML must run cleanly at 240p; fractional QML geometry is a bug everywhere,
-  not just on MiSTer. Slint uses its renderer-level physical-pixel snapping rule
-  above instead.
-- In Qt/QML, do not center user-visible text via `anchors.horizontalCenter` +
-  `Text.AlignHCenter`. Center the `Text` item itself with
-  `Sizing.center()` and render its glyphs left-aligned (or pre-measure
-  with `TextMetrics`). Glyph runs that straddle a half-pixel soften
-  under any 240p rendering and aren't acceptable on any screen. See
-  `docs/qml-gotchas.md` → "Integer-pixel rules".
-- Do not add Qt5 compatibility code or `#if QT_VERSION` guards. This project is
-  Qt 6.7+ only.
-- Do not change `BUILD_SHARED_LIBS`. Desktop needs `ON`; the ARM32 toolchain
-  sets static linking for MiSTer.
+- Do not animate properties that force a large dirty region on busy content:
+  no translucent overlays fading over a grid, no fading or scaling of a parent
+  that contains many tiles, no full-band slides at full resolution. On the
+  software renderer the cost is dominated by *painted pixels per frame ×
+  per-pixel cost*, not by the animated property: a fading rectangle over 15
+  tiles repaints all 15 tiles every frame. Pick animations whose dirty region
+  is small (page-dot pulse, focus-ring blink, single-tile move) and let the
+  rest of the scene stay static. See `docs/slint-gotchas.md`.
+- Do not paint a full-screen background or a translucent overlay over a screen
+  body to cover a transition. The source screen stays visible until the
+  destination is ready, and the loading cue is the header status line.
 - Do not publish state with `tokio::sync::broadcast` when late subscribers need
   the current value. Use `tokio::sync::watch` for state and reserve broadcast
   for lossy events.
@@ -153,128 +144,126 @@ the lint image lacks Slint's desktop system libs; run `just lint-slint` and
   `match`, or `while let` scrutinee when the body writes to the same channel or
   lock. Bind the read in an inner scope first:
   `let next = { let cur = tx.borrow(); fsm.step(&cur) };`.
-- Do not leave lint warnings, failing tests, or untranslated user-facing text
-  behind.
-- Do not put cross-screen `Connections` (e.g. `target: Browse.GamesModel` from
-  `SystemsScreen.qml`) or pending-transition flags into screen files. Forward
-  routing is owned by `Main.qml` — see "Screens and routing".
-- Do not paint a full-screen background or a translucent overlay over a screen
-  body. Source-screen content hides via `transitioning: true`; the global
-  "Loading…" overlay is a transparent `Item` with one `Text` child.
+- Do not leave lint warnings, failing tests, a stale translation template, or
+  untranslated user-facing text behind.
+- Do not route from a `.slint` view or keep cross-screen state in one. Views
+  forward input and render the globals Rust sets; see "Screens and routing".
 - Do not persist Core metadata (cover art, scraped properties, descriptions,
   etc.) to disk or any user-visible cache. Zaparoo Core is the canonical store;
   the frontend caches in process memory only and re-fetches what it needs after
   a cold start. Any in-memory cache must enforce a strict bytes cap with LRU
-  eviction — MiSTer has under 512 MB of shared system RAM and the frontend
+  eviction: MiSTer has under 512 MB of shared system RAM and the frontend
   competes with Core, the FPGA wrapper, and the active core for it.
-  **Scoped exception:** `rust/frontend/src/hub_cover_manifest.rs` persists a
-  small path *list* (never image bytes or metadata) mapping each Hub
-  `zapscript` tile and the Resume tile to the Core thumbnail path Core itself
-  already wrote to `/media/fat/zaparoo/cache/thumbs/`, so those covers can
-  seed the in-memory cache before the first frame on a cold boot. Bounded to
-  ≤22 entries, colocated `MiSTer` only, and self-healing — a stale path just
-  fails to open and falls through to a normal Core request. Do not extend
-  this carve-out to any other cache without discussing it first.
-- Do not open a modal from a modal. A choice made inside a modal is a page
-  of that modal's own panel (`PickerList` hosted by the modal, see
-  `ScrapeSetupModal.qml`'s `page`); only an `action_error` alert may sit
-  above an open modal, and `ScreenManager.pushModal` warns on anything else.
-  See `docs/style.md` → "Modal depth".
+  **Scoped exception:** `rust/frontend/src/hub_covers.rs` persists a small
+  path *list* (`hub_covers.toml` in the cache dir; never image bytes or
+  metadata) mapping each Hub `zapscript` tile and the Resume tile to the Core
+  thumbnail path Core itself already wrote to
+  `/media/fat/zaparoo/cache/thumbs/`, so those covers can seed the in-memory
+  cache before the first frame on a cold boot. Bounded by
+  `zaparoo_app::covers::MAX_HUB_ENTRIES` plus the Resume tile, colocated
+  `MiSTer` only, and self-healing: a stale path just fails to open and falls
+  through to a normal Core request. Do not extend this carve-out to any other
+  cache without discussing it first.
+- Do not open a modal from a modal. A choice made inside a modal is a page of
+  that modal's own panel (the setup panel in `ui/setup.slint` swaps between
+  its form and its picker page; the context menu hosts the alternate-versions
+  page); only an action-error alert (shown through the decision dialog) may
+  sit above an open modal. See `docs/style.md` → "Modal depth".
 - Do not add `.git/` rerun-if triggers or `ZAPAROO_BUILD_*` provenance baking
   to `rust/frontend/build.rs`. Provenance lives in the `rust/build-info` leaf
-  crate precisely so commits don't re-run the cxx-qt codegen. See
+  crate precisely so commits don't re-run the Slint compiler. See
   `docs/building.md` → "Build caching".
+- Do not load assets from loose files at runtime. Fonts, logos, glyph SVGs and
+  catalogs are embedded (`include_bytes!`, `include_str!`, `@image-url`,
+  bundled translations). The only images read from disk are user overrides
+  from the `custom/` folder and, on a colocated MiSTer, Core's own thumbnail
+  files.
 
 ## Build caching couplings
 
 Full inventory and rationale: `docs/building.md` → "Build caching". The
 update rules, in short:
 
-- Bumping the Rust toolchain pin touches three files together:
-  `rust-toolchain.toml` (repo root — it must stay there so Corrosion's
-  cargo invocations from `build*/` resolve it), `Dockerfile.lint`'s
-  `RUST_TOOLCHAIN` ARG (+ `scripts/lint/VERSION` bump), and
-  `Dockerfile.toolchain`'s pre-warm (+ `scripts/toolchain/VERSION` bump).
-  A missed image still builds, but re-downloads the toolchain inside the
-  container on every run.
-- `just build` recipes skip cmake configure when `build.ninja` exists.
-  After editing `cacheVariables` in `CMakePresets.json`, run
-  `cmake --preset <name>` once by hand (ninja can't see preset edits).
-- `just lint` persists the cargo registry, advisory DB, and ccache dir in
-  gitignored `.docker-cache/`. Delete it to reset. Never mount over the
-  lint container's `/usr/local/rustup`.
-- `Dockerfile.arm32` builds inside BuildKit cache mounts; cache mounts are
-  not image layers, so anything the export stage needs must be `cp`'d out
-  within the same RUN. `docker builder prune` resets a corrupted cache.
+- Bumping the Rust toolchain pin touches `rust-toolchain.toml` (repo root, so
+  `cross` and cargo invoked from `rust/` both resolve it) and the
+  `rustup toolchain install` line in `.github/workflows/release.yml`.
+- Bumping Slint touches `slint` and `slint-build` in `rust/frontend/Cargo.toml`,
+  the `slint-tr-extractor` version in `just install-tools`, CI, and
+  `scripts/check-translations.sh`, and the Slint exceptions in `rust/deny.toml`;
+  then regenerate `just notices`.
+- `RUSTC_WRAPPER` is sccache when installed (set by the justfile). `cross`
+  builds keep their own target directories under `rust/target/<triple>/`.
 
 ## Project Map
 
 | Path | Purpose |
 |---|---|
-| `src/app/main.cpp` | Thin Qt entry point, translator install, QML engine, Qt log bridge |
-| `src/ui/app/Main.qml` | Runtime router: input, persistence, forward-transition orchestration, global "Loading…" overlay |
-| `src/ui/app/MainLayout.qml` | Designer-editable visual tree, `pendingTransition` property, screen-state derivations, modal mounts |
-| `src/ui/screens/` | `Zaparoo.Screens`: `ScreenManager`, `HubScreen`, `SystemsScreen`, `GamesScreen` |
-| `src/ui/components/` | `Zaparoo.Ui`: `Tile`, `TileLoader`, `PagedGrid`, `ActiveLabel`, `LoadingIndicator`, `StatusIcon`, `TopStatusStrip`, `Modal`, `ScreenStateOverlay` |
-| `src/ui/theme/` | `Zaparoo.Theme`: `Theme`, `Sizing` singletons |
-| `rust/frontend/src/models/` | `Zaparoo.Browse` cxx-qt singletons: `AppStatus`, `CategoriesModel`, `SystemsModel`, `GamesModel`, `AppState`, `HubState`, `SystemsState`, `GamesState`, `Input`, `Runtime` |
-| `rust/frontend/src/bind.rs` | Endpoint-to-QML binding macro with synchronous seed |
+| `rust/frontend/src/main.rs` | Entry point: config, logger, tokio runtime, `Client`/`Store`, persisted state, window, language, services |
+| `rust/frontend/src/router.rs` | All forward orchestration and the single input dispatch (`dispatch_action`) |
+| `rust/frontend/src/navigation.rs`, `folder_motion.rs`, `route_motion.rs` | Deferred routes that keep the source until the destination is ready; motion tests on a stepped clock |
+| `rust/frontend/src/{hub,systems,games,settings,about}.rs` | Per-screen drivers |
+| `rust/frontend/src/{game_info,media_setup,log_upload,launchers,alternates,card_write,qr}.rs` | Modal drivers |
+| `rust/frontend/src/{input,actions,gamepad}.rs` | Key path: duplicate guard, swaps, hold-repeat; keyboard bindings; desktop gamepads |
+| `rust/frontend/src/{media_cache,hub_covers,customization}.rs` | Bounded in-memory cover cache, cold-boot cover manifest, user overrides |
+| `rust/frontend/src/{theme,sizing,glyphs,system_logos,fonts}.rs` | Palette push, scene sizing adapter, embedded art and fonts |
+| `rust/frontend/src/mister/` | MiSTer platform: fb0, DDR and vblank-latch presenters, evdev input, lease, service kick |
+| `rust/frontend/src/dual_head.rs` | Projects the HDMI component's state onto the CRT component |
+| `rust/frontend/src/bin/snapshot.rs` | Offline software-rendered screen snapshots |
+| `rust/frontend/ui/` | `.slint` views: `app.slint` (root, globals, modals), `chrome.slint`, `tiles.slint`, `browse_list.slint`, `settings.slint`, `setup.slint`, `game_info.slint`, `about.slint`, `focus.slint`, `theme.slint`, `labels.slint`, `state_types.slint` |
+| `rust/frontend/assets/` | Embedded system logo PNGs: grayscale `systems/` and full-color `systems-color/`, generated by `just logos` |
+| `rust/frontend/translations/` | Canonical gettext catalogs, bundled by `build.rs` |
+| `rust/zaparoo-app/` | Toolkit-free product rules with golden fixtures |
 | `rust/zaparoo-core/src/client.rs` | WebSocket JSON-RPC client for Zaparoo Core |
 | `rust/zaparoo-core/src/store/` | Endpoint cache, tags, mutations, invalidation |
-| `rust/zaparoo-core/src/persist.rs` | Atomic persisted UI state (`HubState`, `SystemsState`, `GamesState`, `AppState`) |
-| `rust/zaparoo-core/src/platform_paths.rs` | Config, log, and state paths per runtime |
-
-QML module URIs are `Zaparoo.App`, `Zaparoo.Screens`, `Zaparoo.Ui`,
-`Zaparoo.Theme`, and `Zaparoo.Browse`. Resources are embedded under
-`qrc:/qt/qml/Zaparoo/App/resources/...`. `compile_commands.json` is generated
-in `build/` by default.
+| `rust/zaparoo-core/src/persist.rs` | Atomic persisted UI state |
+| `rust/zaparoo-core/src/platform_paths.rs` | Config, log, state, and cache paths per runtime |
+| `rust/mock-core/` | Mock Zaparoo Core for dev runs |
+| `rust/build-info/` | Build provenance leaf crate |
+| `resources/` | Fonts, glyph SVGs, logos, system logo sources |
 
 ## Screens and routing
 
-The frontend has three peer root screens — `Hub`, `Systems`, `Games` — plus a
-modal stack. Screens are **pure input dispatchers**: `handleAction` translates
-a key/button to a single `requestAccept(payload)` (forward) or a back signal
-(`requestHubScreen`, `requestSystemsScreen`, `requestQuit`). All forward
-orchestration lives in `Main.qml`.
+The frontend has root screens (Hub, Systems, Favorite systems, Games,
+Favorites, Recents, Settings, About) plus modals. The `.slint` views are
+**pure views**: every key press is forwarded to Rust, `router::dispatch_action`
+maps it to an action, and Rust mutates the globals the views render. All
+forward orchestration lives in `rust/frontend/src/router.rs` and the
+per-screen drivers it calls.
 
 When adding a new screen or routing path, follow this contract:
 
-1. **Forward = signal + payload, router decides destination.** Screens emit
-   `requestAccept(<id-or-empty>)`. The router reads its own state to decide
-   what comes next. Empty payload = "the press was on Empty/Error" or
-   "row/grid was empty" — keep the existing convention, don't overload it
-   for new meanings.
-2. **Back = simple signal.** `requestHubScreen` / `requestSystemsScreen` /
-   `requestQuit`. The router owns any peer-up logic (e.g. the
-   `_gamesEnteredFromHub` Arcade-bypass back-routing flag).
-3. **No cross-screen `Connections` in screens.** A screen must not listen to
-   another screen's model. The router has one Connections block per model
-   that needs a `loadingChanged` waiter, and uses a single-shot callback slot
-   pattern (`_categoryReadyCallback`, `_systemReadyCallback`) — set the
-   callback, fire it on the next non-loading edge, clear it.
-4. **Source-screen content hiding goes through `transitioning`.** Each screen
-   exposes `property bool transitioning: false`; `MainLayout.qml` binds it to
-   `root.pendingTransition !== ""`. Bind the row/grid `visible:
-   !screen.transitioning` so the live tiles hide while the global "Loading…"
-   cue paints alone.
-5. **Gate new input during a transition.** `Main.qml`'s `handleAction`
-   early-returns when `root.pendingTransition !== "" && !ScreenManager.hasModal`.
-   Don't add a second input gate elsewhere.
-6. **Persisted state is per-screen, not bundled on `HubState`.** New screen
-   selection state goes in its own `Browse.<Screen>State` singleton (cf.
-   `HubState` / `SystemsState` / `GamesState`). The router orchestrates
-   model fills (`set_category`, `set_system`); screens write their own state
-   on directional moves.
+1. **One dispatch, one priority order.** `dispatch_action` decides ownership
+   top-down: screensaver, CRT calibration, decision dialogs, boot curtain,
+   modals, then the transition gate, then the active screen's driver. Add a
+   new surface at its place in that ladder; do not add a second input gate.
+2. **Forward routes are deferred.** `router::begin_pending` marks the
+   transition, keeps the source screen visible and interactive only for
+   Cancel, and shows the loading cue in the status line after 300 ms. The
+   driver fills the destination, then `router::transition_to_screen` commits
+   the complete route in one turn. `navigation.rs` retains the one source
+   (moved, not copied) so Cancel restores it and persistence stays on the
+   coherent source until the destination is ready.
+3. **Back is a driver decision.** Each driver owns its peer-up logic
+   (e.g. Games returning to Systems or to the Hub it was entered from, which
+   is persisted per screen).
+4. **No stale tickets.** Async fills carry a sequence or ticket; a completion
+   whose ticket no longer matches is dropped. Never apply a late response to
+   whatever screen happens to be active.
+5. **Persisted state is per screen.** New screen selection state goes in its
+   own section of `zaparoo_core::persist::PersistedState`; drivers write it on
+   directional moves (selection persist is debounced 250 ms and flushed on
+   Accept, Back and hold release).
 
-The class of bug that this layout prevents: a stale pending flag on screen A
-firing during model B's `loadingChanged` and clearing the router's
-back-routing flag while screen A isn't even visible. There is no cross-screen
-state to go stale because there is no cross-screen state.
+The class of bug this layout prevents: a stale pending flag or callback from
+screen A firing during screen B's fill and routing somewhere the user did not
+ask to go.
 
 ## Runtime Notes
 
-- `Runtime` answers where the frontend binary is running. `Platform` answers
-  where Zaparoo Core is running. Do not collapse them.
+- `Runtime` answers where the frontend binary is running. Core's own
+  platform (the `platform` field of its `version` RPC) answers where Zaparoo
+  Core is running. Do not collapse them: a colocated check keys off
+  `Runtime`, never off what Core reports.
 - Desktop config: `~/.config/zaparoo/frontend.toml`.
 - Desktop state: `~/.config/zaparoo/state.toml`.
 - Desktop log: `~/.local/share/zaparoo/logs/frontend.log`.
@@ -287,8 +276,7 @@ state to go stale because there is no cross-screen state.
   stays a two-way `is_mister()` split; the variant only changes defaults for
   a device that presents like a console. It starts fullscreen.
   `ZAPAROO_RUNTIME_OVERRIDE=steamos|mister|desktop` forces detection for
-  off-device work. Do not confuse it with the build-time `ZAPAROO_RUNTIME`
-  that `cmake/ZaparooRust.cmake` sets to pick the `zaparoo_runtime` cfg.
+  off-device work.
 - `Runtime` answers what the machine is; `display_class::Viewing` answers
   how far away the person is from the screen we are painting on, which is
   what layout density actually wants. It is a property of the *output*, so
@@ -319,30 +307,34 @@ state to go stale because there is no cross-screen state.
 - `/tmp/zaparoo_launcher_input.json` is Main_MiSTer's alt-launcher input
   report (written on every button press; source is
   `support/zaparoo/launcher_input_metadata.cpp` in the `Main_MiSTer` repo).
-  `zaparoo_core::controller_report` polls it and feeds `Browse.ControllerReport`,
-  which drives the help bar's icon style and accept/cancel positions.
+  `zaparoo_core::controller_report` polls it, and `apply_buttons` in
+  `main.rs` feeds it through `zaparoo_app::buttons::resolve`, which drives the
+  help bar's icon style and accept/cancel positions.
   `ZAPAROO_INPUT_REPORT_FILE` redirects it and forces the watcher on
-  off-MiSTer, mirroring `ZAPAROO_STATE_FILE`. Off MiSTer the Slint
-  frontend's `gamepad` module (gilrs, `desktop` feature only) fills the same
-  `controller_report` channel from the connected pad, and publishes the
-  keyboard style again on the next real key press. One producer owns the
-  channel: the watcher wins where it runs. Button-style ids stay the
-  existing neutral `style_a`/`style_b`/`style_c`/`style_d`/`style_e` letters
-  — never a controller maker's name — even though the style is now
-  auto-detected. A pre-autodetect install's bare `a`/`b`/`c`/`d` (or the
-  even older `nintendo`/`xbox`/`sony`) force-migrates to `auto` once, not to
-  the matching `style_x`, so every existing install tries autodetection at
-  least one boot before falling back to a manual pick; see
-  `models::settings::normalize_button_layout`.
+  off-MiSTer, mirroring `ZAPAROO_STATE_FILE`. Off MiSTer the `gamepad` module
+  (gilrs, `desktop` feature only) fills the same `controller_report` channel
+  from the connected pad, and publishes the keyboard style again on the next
+  real key press. One producer owns the channel: the watcher wins where it
+  runs. Button-style ids stay the neutral `style_a`/`style_b`/`style_c`/
+  `style_d`/`style_e` letters, never a controller maker's name. Any other
+  persisted value (the legacy `a`/`b`/`c`/`d` and the older
+  `nintendo`/`xbox`/`sony` included) resolves as `auto`.
+- `[input.keyboard]` bindings in `frontend.toml` are stored as Qt key codes;
+  that is a persisted format, kept for existing installs.
+  `actions.rs` maps Slint key events onto those codes.
 
 ## MiSTer Deploy
 
-`just deploy-mister` reads `MISTER_IP` from `.env`, builds the ARM32 binary,
-copies it to `/media/fat/zaparoo/frontend`, restarts `/media/fat/MiSTer_Zaparoo`,
-and clears `/tmp/zaparoo/frontend.log`.
+`just deploy-mister` reads `MISTER_IP` (and optional `MISTER_PW`) from `.env`,
+builds the ARM32 binary with `cross`, uploads it to
+`/media/fat/zaparoo/frontend.new`, verifies the size, keeps the previous
+binary as `frontend.bak`, clears `/tmp/zaparoo/frontend.log`, and SIGKILLs the
+running frontend so `MiSTer_Zaparoo` respawns it. `--skip-build` reuses the
+last build.
 
-`/media/fat/MiSTer_Zaparoo` is the integration binary shipped with MiSTer. It
-starts our `frontend`; do not replace that flow with a new wrapper script.
+`/media/fat/zaparoo/MiSTer_Zaparoo` is the integration binary shipped with
+MiSTer. It starts our `frontend`; do not replace that flow with a new wrapper
+script.
 
 ## Release
 
@@ -352,10 +344,13 @@ and the **`menu_zaparoo.rbf`** menu core (`Menu_MiSTer`). The analog video path
 depends on all three matching. Full checklist: `docs/building.md` → "Cutting a
 release". Key points:
 
-- The version lives in two places: `project(... VERSION ...)` in `CMakeLists.txt`
-  and `version` in `rust/Cargo.toml`. Bump both and regenerate `rust/Cargo.lock`
-  (`cargo update --workspace`). The About page derives its version from the CMake
-  version (`ZAPAROO_VERSION`); do not hardcode it in `main.cpp` or QML.
+- The version lives in one place: `version` in `rust/Cargo.toml`
+  (`[workspace.package]`). Bump it and regenerate `rust/Cargo.lock`
+  (`cargo update --workspace`). About and the log upload read
+  `CARGO_PKG_VERSION`; do not hardcode it.
+- `scripts/package-mister-release.sh` fails when the tag does not match the
+  workspace version, and fails when `rust/frontend/LICENSES/THIRD-PARTY-NOTICES.txt`
+  is missing. Run `just notices` after dependency changes.
 - The release workflow auto-resolves the latest `Main_MiSTer` and `Menu_MiSTer`
   releases; override with the `menu_tag` workflow input or
   `MENU_MISTER_TAG` / `MAIN_MISTER_TAG` when running the packaging script.
@@ -364,13 +359,13 @@ release". Key points:
 
 ## Further Reading
 
-- `docs/architecture.md` — module graph, data flow, runtime/platform split
-- `docs/building.md` — build matrix, ARM32 toolchain, deploy bundle
-- `docs/qml-gotchas.md` — QML issues qmllint often catches late
-- `docs/style.md` — corner-radius token, tile aspect, pill vs. sharp shapes
-- `docs/content-style.md` — menu ordering, wording, and terminology rules
-- `docs/cxx-qt-bridge.md` — cxx-qt 0.8 bridge constraints
-- `docs/customization.md` — user overrides: `custom/` image folder, `[custom.system_names]`
-- `docs/translations.md` — `qsTr()`/`tr()` pipeline and locale catalogs
-- `design/README.md` — Qt Design Studio workflow and designer boundaries
-- `src/LICENSES/` — Qt LGPL notices
+- `docs/architecture.md`: module graph, data flow, runtime/platform split
+- `docs/building.md`: requirements, builds, caching, deploy, release checklist
+- `docs/slint-gotchas.md`: software-renderer costs, motion rules, Slint traps
+- `docs/slint-state-types.md`: typed UI state inventory and boundary rules
+- `docs/style.md`: corner-radius token, tile aspect, pill vs. sharp shapes
+- `docs/content-style.md`: menu ordering, wording, and terminology rules
+- `docs/customization.md`: user overrides: `custom/` image folder, `[custom.system_names]`
+- `docs/translations.md`: `@tr()` pipeline and locale resolution
+- `rust/frontend/translations/README.md`: catalog maintenance steps
+- `LICENSES/`: asset attributions; `rust/frontend/LICENSES/`: crate notices

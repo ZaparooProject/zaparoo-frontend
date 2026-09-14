@@ -2,13 +2,12 @@
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 //
-// Port of `src/ui/screens/HubScreen.qml`'s rules: how the persisted
-// `[[hub.items]]` layout becomes the flat list of tiles one paged grid
-// renders, which tile the persisted state restores focus to, what a focus
-// move persists, and the board-model helpers a Move session needs. The
-// layout records intent (this tile exists, here); each resolver folds in
-// the live rule its kind needs, and a tile whose precondition is not met
-// stays in place with `disabled` set instead of vanishing.
+// How the persisted `[[hub.items]]` layout becomes the flat list of tiles
+// one paged grid renders, which tile the persisted state restores focus to,
+// what a focus move persists, and the board-model helpers a Move session
+// needs. The layout records intent (this tile exists, here); each resolver
+// folds in the live rule its kind needs, and a tile whose precondition is
+// not met stays in place with `disabled` set instead of vanishing.
 //
 // Toolkit-free and Core-free: the caller hands in the visible layout
 // items, the live state, and a resolver for system names and art.
@@ -119,7 +118,7 @@ impl Entry {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[allow(
     clippy::struct_excessive_bools,
-    reason = "one flag per live visibility rule the QML resolvers read"
+    reason = "one flag per live fact: categories loaded, resume state, update, internet"
 )]
 pub struct Live<'a> {
     /// Core has answered with a category list this launch.
@@ -156,7 +155,8 @@ fn hub_cover_key(resolver: &dyn Resolver, id: &str, fallback: &str) -> String {
         .unwrap_or_else(|| fallback.to_string())
 }
 
-/// `CategoryIds.canonicalize`: the plural spellings older configs used.
+/// Canonicalizes a category id, folding the plural spellings older configs
+/// used onto the singular ids Core sends.
 pub fn canonical_category(id: &str) -> &str {
     match id {
         "Computers" => "Computer",
@@ -166,7 +166,7 @@ pub fn canonical_category(id: &str) -> &str {
     }
 }
 
-/// `CategoryIds.coverKey`.
+/// The cover-art key for a category id.
 pub fn category_cover_key(id: &str) -> String {
     format!("categories/{}", canonical_category(id))
 }
@@ -260,9 +260,8 @@ fn resolve_action(live: &Live, resolver: &dyn Resolver, id: &str) -> Option<Entr
 
 fn resolve_category(live: &Live, resolver: &dyn Resolver, id: &str) -> Entry {
     // The layout's id is canonicalized (an older build may have written
-    // a plural), then compared against Core's list as Core spells it -
-    // `HubScreen.qml`'s `index_for_category(canonicalId)`. Core sends the
-    // canonical singular ids (`Console`, `Handheld`, ...).
+    // a plural), then compared against Core's list as Core spells it. Core
+    // sends the canonical singular ids (`Console`, `Handheld`, ...).
     let canonical = canonical_category(id);
     let unconfirmed =
         live.categories_loaded && !live.confirmed_categories.iter().any(|c| c == canonical);
@@ -307,7 +306,7 @@ fn resolve_system(resolver: &dyn Resolver, item: &LayoutItem) -> Option<Entry> {
     })
 }
 
-/// The path's final segment, the way `GamesScreen` names a folder.
+/// The path's final segment, the way a folder row is named.
 pub fn folder_name_for_path(path: &str) -> String {
     let trimmed = path.trim_end_matches('/');
     trimmed.rsplit('/').next().unwrap_or(trimmed).to_string()
@@ -555,7 +554,7 @@ pub fn restore_index(
     category_seat()
 }
 
-/// What a focus move persists (`_commitCurrent`).
+/// What a focus move persists.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Commit {
     pub selected_item: String,
@@ -717,12 +716,12 @@ pub fn geometry(inputs: &Inputs, d: &Derived) -> Geometry {
         + insets.bottom
         + d.hub_grid_rows * fit.cell_height
         + (d.hub_grid_rows - 1) * insets.row_gap;
-    // HubScreen.qml sizes the grid item to exactly its own content plus
-    // insets, so PagedGrid's vertical centering has no slack to hand out:
-    // the rows start at the top of the grid and the band's leftover room
-    // is spent on `vertical_gap` above and below instead. The screen
-    // height above is only the reference for the width fit; centering the
-    // block against it would push every row down by half the band.
+    // The grid item is sized to exactly its own content plus insets, so its
+    // vertical centering has no slack to hand out: the rows start at the top
+    // of the grid and the band's leftover room is spent on `vertical_gap`
+    // above and below instead. The screen height above is only the reference
+    // for the width fit; centering the block against it would push every row
+    // down by half the band.
     fit.available_height = (grid_height - insets.top - insets.bottom).max(0);
     fit.block_offset_y = 0;
     let vertical_band = (height - d.header_bottom - d.help_bar_height).max(0);
@@ -1084,11 +1083,11 @@ mod tests {
 
     #[test]
     fn the_grid_block_starts_at_the_top_of_its_own_band() {
-        // HubScreen.qml sizes the grid item to its content plus insets,
-        // so PagedGrid has no slack to center within: row 0 sits at the
-        // top of the grid, and the band's spare room becomes the gaps
-        // above the grid and around the label. Centering the block
-        // against the screen instead drops every row half a band down.
+        // The grid item is sized to its content plus insets, so the grid has
+        // no slack to center within: row 0 sits at the top of the grid, and
+        // the band's spare room becomes the gaps above the grid and around
+        // the label. Centering the block against the screen instead drops
+        // every row half a band down.
         for (w, h) in [(1280.0, 720.0), (1920.0, 1080.0), (960.0, 540.0)] {
             let inputs = Inputs {
                 screen_width: w,

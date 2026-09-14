@@ -6,7 +6,7 @@
 // runtime, hands out shared `RemoteResource`s keyed by (endpoint, args),
 // and routes mutations through to the same client. In RTK-Query terms
 // this is the `api` slice's reducer + dispatcher. One `Store` per
-// frontend process; QML singletons subscribe through it.
+// frontend process; UI drivers subscribe through it.
 //
 // Responsibilities: cache `(endpoint NAME, args hash) → RemoteResource`,
 // hand back shared subscriptions, route mutations through to the same
@@ -80,7 +80,7 @@ pub struct Store {
     inner: Arc<Mutex<Inner>>,
     /// Singleton media-status publisher. Eagerly constructed on
     /// `Store::new` so the seeding task starts as soon as the frontend
-    /// has a `Client`, even if no QML side has subscribed yet.
+    /// has a `Client`, even if no UI driver has subscribed yet.
     media_status: Arc<MediaStatusResource>,
 }
 
@@ -138,7 +138,7 @@ impl Store {
         self.client.subscribe_notifications()
     }
 
-    /// Shared `MediaStatusResource`. Singleton — every QML caller uses
+    /// Shared `MediaStatusResource`. Singleton: every caller uses
     /// the same publisher, so subscribing late still observes the
     /// current state through the underlying watch channel.
     pub fn media_status(&self) -> Arc<MediaStatusResource> {
@@ -147,39 +147,19 @@ impl Store {
 
     /// Direct access to the underlying `Client` for callers that need
     /// one-shot, cursor-driven calls that don't fit the cached
-    /// `subscribe::<E>` pattern. The store does not cache the result —
-    /// that's the whole point of the bypass — so callers must accept
-    /// that mutation invalidation does not reach this call. Used by
-    /// `GamesModel::fetch_more` to advance pagination cursors that
+    /// `subscribe::<E>` pattern. The store does not cache the result,
+    /// which is the whole point of the bypass, so callers must accept
+    /// that mutation invalidation does not reach this call. Used by the
+    /// Games driver's `fetch_more` to advance pagination cursors that
     /// would otherwise pollute the endpoint cache key with one entry
     /// per page.
     pub fn client(&self) -> Arc<Client> {
         self.client.clone()
     }
 
-    #[allow(
-        clippy::unwrap_used,
-        reason = "mutex poisoning signals another thread panicked with the lock held; state is unrecoverable"
-    )]
-    pub fn is_ready<E: Endpoint>(&self, args: &E::Args) -> bool {
-        let key = CacheKey::new::<E>(args);
-        let inner = self.inner.lock().unwrap();
-        inner
-            .cache
-            .get(&key)
-            .and_then(|entry| {
-                entry
-                    .resource
-                    .clone()
-                    .downcast::<RemoteResource<E::Output>>()
-                    .ok()
-            })
-            .is_some_and(|resource| resource.is_ready())
-    }
-
     /// Get (or create) the shared `RemoteResource` for endpoint `E`
     /// with `args`. Subsequent calls with equal args return the same
-    /// `Arc`, so multiple QML singletons binding the same endpoint
+    /// `Arc`, so multiple subscribers binding the same endpoint
     /// share one fetch task and one publish channel.
     #[allow(
         clippy::unwrap_used,

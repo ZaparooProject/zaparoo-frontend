@@ -74,12 +74,12 @@ above.
 ### Rendered as-is (no tinting)
 
 The bundled system logos default to tintable SVGs that match the active theme.
-Settings → Appearance → System logos can switch bundled system art to the restored
-full-color logo set where available. Hub icons remain theme-tinted. **Your
-override images are not tinted** - they are shown exactly as they are on disk,
-in full color. If you want an image that tracks the theme colors, supply a
-monochrome SVG drawn in the theme's terms; otherwise expect your PNG/JPG to
-appear unchanged.
+Settings → Appearance → System logos can switch bundled system art to the
+full-color logo set; a system the color set does not cover shows its grayscale
+logo un-tinted. Hub icons remain theme-tinted. **Your override images are not
+tinted** - they are shown exactly as they are on disk, in full color. If you
+want an image that tracks the theme colors, supply a monochrome SVG drawn in
+the theme's terms; otherwise expect your PNG/JPG to appear unchanged.
 
 ## Color scheme
 
@@ -97,7 +97,7 @@ as `[settings] color_scheme` in `frontend.toml`:
 color_scheme = "zaparoo-dark" # or "nord", "dracula", "amber-phosphor", ...
 ```
 
-See `src/ui/theme/ColorSchemes.qml`'s `ids` list for every available id.
+See `ids()` in `rust/zaparoo-app/src/palette.rs` for every available id.
 Unknown values fall back to `zaparoo-dark`. Presets recolor built-in tinted
 artwork; custom and full-color artwork remains unchanged.
 

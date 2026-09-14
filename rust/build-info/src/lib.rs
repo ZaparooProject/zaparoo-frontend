@@ -5,10 +5,10 @@
 //! Build provenance constants baked in by this crate's `build.rs`.
 //!
 //! Lives in its own leaf crate so that the `.git/` rerun triggers that
-//! keep the commit stamp fresh do not re-run the expensive cxx-qt
-//! codegen in `zaparoo-frontend-rs`'s build script after every commit.
-//! A commit rebuilds only this crate plus an incremental recompile of
-//! its dependents.
+//! keep the commit stamp fresh do not re-run the frontend's build script
+//! (the Slint compiler and the logo table) after every commit. A commit
+//! rebuilds only this crate plus an incremental recompile of its
+//! dependents.
 
 /// Short git commit hash of the source tree, or "unknown".
 pub const COMMIT: &str = env!("ZAPAROO_BUILD_COMMIT");

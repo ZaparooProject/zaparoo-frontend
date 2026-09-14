@@ -4,15 +4,14 @@
 //
 // `zaparoo-app` is the toolkit-agnostic application layer: the rules the
 // frontend enforces, with no UI toolkit anywhere in sight. `rust/frontend`
-// (cxx-qt) is one adapter over it; a future Slint shell would be a second.
+// is the Slint adapter over it.
 //
 // The contract, enforced by `scripts/check-toolkit-free.sh` in the lint gate:
-// no `cxx`, no `cxx_qt`, no `slint`, no `QString`/`QVariant`/`QList`/`QColor`,
-// no `qt_thread`, no `Pin<&mut ...>`. Decisions are pure functions; state
-// machines take an injected clock; timers are declared, not owned.
+// this crate must never gain a `slint` dependency, nor any other UI
+// toolkit, `cxx`-style bindings included. Decisions are pure functions;
+// state machines take an injected clock; timers are declared, not owned.
 //
-// See `docs/qt-to-rust-extraction.md` for the sequence this crate is being
-// filled in by.
+// See `docs/architecture.md` for where this crate sits in the frontend.
 
 pub mod action_error;
 pub mod alternate_versions;

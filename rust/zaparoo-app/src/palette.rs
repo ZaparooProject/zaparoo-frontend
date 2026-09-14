@@ -2,27 +2,27 @@
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 //
-// Port of `src/ui/theme/ColorSchemes.qml`: the preset catalog and the
-// derivation ladder that turns a preset's three authored colors (primary,
-// accent, text) into every component role the frontend paints with. Pinned
-// to `tests/fixtures/palette_golden.txt`, which was dumped from the QML
-// implementation, so every role matches the Qt build to the 8-bit hex.
+// The preset catalog and the derivation ladder that turns a preset's three
+// authored colors (primary, accent, text) into every component role the
+// frontend paints with. Pinned to `tests/fixtures/palette_golden.txt`, so
+// every role matches that fixture to the 8-bit hex.
 //
-// Matching the QML exactly means matching Qt's color arithmetic, not just
-// the math: every `Qt.rgba(...)`/`Qt.color(...)` boundary in the QML stores
-// channels as 16-bit integers (`QColor`), reads them back as `float`, and
-// prints them through a rounding division by 257. `Rgb16` reproduces those
-// three conversions; the derivation itself runs in f64 like the JS did.
+// Matching it exactly means reproducing its color arithmetic, not just the
+// math. The fixture came from the retired Qt build, which stored channels
+// as 16-bit integers, read them back as `float`, and printed them through a
+// rounding division by 257. `Rgb16` reproduces those three conversions; the
+// derivation itself runs in f64.
 //
 // Two roles deliberately do not derive: `scrim` is always a dark veil, and
 // `error` is a semantic constant (deriving it from the accent would make an
 // amber preset signal danger in amber). The reasoning behind each walk and
-// factor is in the QML's comments and `docs/style.md`; this file keeps the
-// numbers and the order of operations.
+// factor is in `docs/style.md`; this file keeps the numbers and the order
+// of operations.
 
 use core::f64::consts::PI;
 
-/// A color the way `QColor` stores it: three 16-bit channels.
+/// A color the way the golden fixture's arithmetic stores it: three 16-bit
+/// channels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Rgb16 {
     r: u16,
@@ -31,7 +31,7 @@ pub struct Rgb16 {
 }
 
 impl Rgb16 {
-    /// `Qt.color("#rrggbb")`: each 8-bit channel expands to 16 bits by 257.
+    /// Parses `"#rrggbb"`: each 8-bit channel expands to 16 bits by 257.
     pub fn from_hex(hex: &str) -> Option<Self> {
         let digits = hex.strip_prefix('#')?;
         if digits.len() != 6 {
@@ -45,8 +45,8 @@ impl Rgb16 {
         })
     }
 
-    /// `Qt.rgba(r, g, b, 1)`: the doubles narrow to `float`, then
-    /// `qRound(channel * 65535)` in single precision.
+    /// From three opaque 0..1 channels: the doubles narrow to `float`, then
+    /// round to 16 bits in single precision.
     pub fn from_f(r: f64, g: f64, b: f64) -> Self {
         Self {
             r: qround_65535(r),
@@ -55,7 +55,7 @@ impl Rgb16 {
         }
     }
 
-    /// `color.r` in QML: `redF()`, a `float` division that JS then widens.
+    /// The red channel as 0..1: a `float` division, widened back to f64.
     pub fn r(self) -> f64 {
         f64::from(f32::from(self.r) / 65535.0f32)
     }
@@ -68,12 +68,12 @@ impl Rgb16 {
         f64::from(f32::from(self.b) / 65535.0f32)
     }
 
-    /// The 8-bit channels `QColor::name()` prints.
+    /// The 8-bit channels the hex form prints.
     pub fn rgb8(self) -> (u8, u8, u8) {
         (div_257(self.r), div_257(self.g), div_257(self.b))
     }
 
-    /// `"#rrggbb"`, as `String(color)` yields for an opaque color in QML.
+    /// `"#rrggbb"`, the spelling the golden fixture records.
     pub fn hex(self) -> String {
         let (r, g, b) = self.rgb8();
         format!("#{r:02x}{g:02x}{b:02x}")
@@ -82,12 +82,12 @@ impl Rgb16 {
 
 fn qround_65535(value: f64) -> u16 {
     let scaled = (value as f32) * 65535.0f32;
-    // qRound(float): int(d + 0.5f) for the non-negative range fromRgbF accepts.
+    // Round half up in single precision, over the non-negative range only.
     let rounded = (scaled + 0.5f32).floor();
     rounded.clamp(0.0, 65535.0) as u16
 }
 
-/// Qt's `qt_div_257`: 16-bit to 8-bit with rounding.
+/// 16-bit to 8-bit with rounding, the fixture's exact narrowing.
 fn div_257(value: u16) -> u8 {
     let x = u32::from(value) + 128;
     ((x - (x >> 8)) >> 8) as u8
@@ -267,10 +267,6 @@ pub fn ids() -> impl Iterator<Item = &'static str> {
     CATALOG.iter().map(|(id, _)| *id)
 }
 
-pub fn is_known(id: &str) -> bool {
-    CATALOG.iter().any(|(known, _)| *known == id)
-}
-
 /// The id actually used: an unknown id falls back to the default preset.
 pub fn effective_id(id: &str) -> &'static str {
     CATALOG
@@ -333,7 +329,7 @@ fn intensity(name: &str) -> Intensity {
     }
 }
 
-/// Every component role, in the order `Theme.qml` publishes them.
+/// Every component role, in the order the golden fixture lists them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Palette {
     pub bg_deep: Rgb16,
@@ -342,7 +338,7 @@ pub struct Palette {
     pub surface_card: Rgb16,
     pub tile_edge: Rgb16,
     pub control_edge: Rgb16,
-    /// Always a dark veil, with alpha: `#cc000000` in QML's `#aarrggbb`.
+    /// Always a dark veil, with alpha: `#cc000000` as `#aarrggbb`.
     pub scrim: &'static str,
     pub border_subtle: Rgb16,
     pub border_mid: Rgb16,
@@ -368,7 +364,8 @@ pub struct Palette {
 }
 
 impl Palette {
-    /// `(role name as Theme.qml spells it, hex)` for every role, in order.
+    /// `(role name, hex)` for every role, in the golden fixture's order and
+    /// spelling.
     pub fn roles(&self) -> [(&'static str, String); 27] {
         [
             ("bgDeep", self.bg_deep.hex()),
@@ -702,7 +699,7 @@ fn on_accent_muted_for(on_accent: Rgb16, accent: Rgb16) -> Rgb16 {
 /// lightness solved for minimum separation against the card and the ground.
 #[allow(
     clippy::too_many_arguments,
-    reason = "mirrors the QML signature so the two stay comparable line by line"
+    reason = "accent, card and ground colors plus the four factors that shape the edge"
 )]
 fn edge_for(
     accent: Rgb16,

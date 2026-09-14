@@ -19,9 +19,6 @@ pub const HUB_TILE_MAX_SIZE: u32 = 256;
 /// backstop on the manifest, not a real limit.
 pub const MAX_HUB_ENTRIES: usize = 21;
 
-/// Core's own delivery mode name for a path response.
-pub const DELIVERY_LOCAL_PATH: &str = "localPath";
-
 /// The host of a `ws://host:port/path` endpoint, IPv6 brackets and
 /// userinfo included.
 pub fn endpoint_host(endpoint: &str) -> Option<&str> {
