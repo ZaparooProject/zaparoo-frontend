@@ -82,10 +82,22 @@ if len(texts) != 1:
         f"expected one Slint license text across the crates, found {len(texts)}"
     )
 
-body = pathlib.Path(tmp).read_text()
+# Crates are listed by name only, so two versions of one crate under the
+# same license collapse to one "Used by" line.
+body_lines = []
+seen = set()
+for line in pathlib.Path(tmp).read_text().rstrip("\n").split("\n"):
+    if line == "Used by:":
+        seen = set()
+    elif line.startswith("  - "):
+        if line in seen:
+            continue
+        seen.add(line)
+    body_lines.append(line)
+body = "\n".join(body_lines)
 rule = "-" * 70
 lines = [
-    body.rstrip("\n"),
+    body,
     "",
     rule,
     "Slint Software License 3.0",
@@ -93,7 +105,7 @@ lines = [
     "",
     "Used by:",
 ]
-lines += [f"  - {name} {version}" for name, version, _ in slint]
+lines += [f"  - {name}" for name in sorted({name for name, _, _ in slint})]
 lines += ["", texts.pop().rstrip("\n"), ""]
 pathlib.Path(out).write_text("\n".join(lines))
 print(f"wrote {out} ({len(slint)} Slint crates)")
