@@ -31,7 +31,7 @@ pub fn claim_focus_when_mapped(_app: &crate::App) {}
 pub fn claim_focus_settling(_app: &crate::App) {}
 
 #[cfg(feature = "desktop")]
-pub use desktop::{claim_focus_settling, claim_focus_when_mapped};
+pub use desktop::{claim_focus_settling, claim_focus_when_mapped, in_session};
 
 #[cfg(feature = "desktop")]
 mod desktop {
@@ -74,7 +74,7 @@ mod desktop {
     /// True in a gamescope session. One `xprop` at startup, cached: on an
     /// ordinary desktop the atom is absent, and where `xprop` is missing
     /// entirely the check fails the same way and everything below no-ops.
-    fn in_session() -> bool {
+    pub fn in_session() -> bool {
         static CACHED: OnceLock<bool> = OnceLock::new();
         *CACHED.get_or_init(|| {
             if std::env::var_os("DISPLAY").is_none() {

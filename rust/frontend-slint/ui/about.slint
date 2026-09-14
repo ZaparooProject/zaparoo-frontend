@@ -1,5 +1,5 @@
 import { Theme, Sizing } from "theme.slint";
-import { Brand, GlyphSource, TopStatusStrip } from "chrome.slint";
+import { Brand, GlyphSource, ScrollCue, TopStatusStrip } from "chrome.slint";
 
 export global AboutView {
     in-out property <string> version;
@@ -129,14 +129,13 @@ export component AboutScreen inherits Rectangle {
                 }
             }
         }
-        for below in [false, true]: Image {
+        for below in [false, true]: ScrollCue {
             x: (parent.width - self.width) / 2;
             y: below ? parent.height - root.pad - root.arrow : root.pad;
             width: root.arrow;
-            height: self.width;
             visible: root.maximum-scroll > 0px;
-            source: GlyphSource.glyph(below ? "icons/ScrollDown" : "icons/ScrollUp", self.width,
-                (below ? root.scroll-y < root.maximum-scroll : root.scroll-y > 0px) ? Theme.text-primary : Theme.text-label);
+            glyph: below ? "icons/ScrollDown" : "icons/ScrollUp";
+            live: below ? root.scroll-y < root.maximum-scroll : root.scroll-y > 0px;
         }
     }
 }

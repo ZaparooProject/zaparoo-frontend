@@ -14,7 +14,9 @@ use crate::media_cache::MediaCache;
 use crate::sizing;
 use crate::{App, Sizing};
 use slint::{ComponentHandle, Model, ModelRc, SharedString, VecModel};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::time::Duration;
 use tokio::runtime::Handle;
 use zaparoo_app::action_error;
 use zaparoo_core::endpoints::run::RunMutation;
@@ -186,7 +188,7 @@ pub struct Ctx {
     pub shared: Arc<Mutex<Shared>>,
     /// Live 12-hour clock flag shared with the clock task; the
     /// Settings toggle flips it without a restart.
-    pub clock_twelve_hour: Arc<std::sync::atomic::AtomicBool>,
+    pub clock_twelve_hour: Arc<AtomicBool>,
     /// Cooperative desktop suspension. Core lifecycle tracking keeps
     /// this true while primary media runs; background tasks retain a
     /// receiver and sleep instead of spending CPU behind the emulator.
@@ -447,6 +449,13 @@ fn close_dialog(app: &App) {
 /// can't kill the frontend (Main.qml's quit-confirm rule). Default
 /// focus is "No".
 pub(crate) fn open_quit_confirm(app: &App) {
+    // A game we are hosting dies with us, and Core is watching our end of
+    // the launch connection to know when it finished. Quitting now would
+    // report the game over while it is still on screen.
+    if crate::steam_host::hosting() {
+        tracing::debug!("quit declined: a hosted game is still running");
+        return;
+    }
     open_dialog(
         app,
         DialogKind::QuitConfirm,
@@ -778,7 +787,7 @@ pub fn reset_idle(ctx: &Ctx, app: &App) {
     }
     let weak = app.as_weak();
     let shared = ctx.shared.clone();
-    slint::Timer::single_shot(std::time::Duration::from_secs(secs), move || {
+    slint::Timer::single_shot(Duration::from_secs(secs), move || {
         if lock(&shared).saver_seq != ticket {
             return;
         }
@@ -820,21 +829,18 @@ pub(crate) fn begin_pending_with_direction(app: &App, target: crate::Screen, _di
         sequence.get()
     });
     let weak = app.as_weak();
-    slint::Timer::single_shot(
-        std::time::Duration::from_millis(LOADING_CUE_DELAY_MS),
-        move || {
-            if CUE_SEQ.with(std::cell::Cell::get) != ticket {
-                return;
-            }
-            let Some(app) = weak.upgrade() else {
-                return;
-            };
-            let shell = app.global::<crate::Shell>();
-            if shell.get_transitioning() {
-                shell.set_transition_cue(true);
-            }
-        },
-    );
+    slint::Timer::single_shot(Duration::from_millis(LOADING_CUE_DELAY_MS), move || {
+        if CUE_SEQ.with(std::cell::Cell::get) != ticket {
+            return;
+        }
+        let Some(app) = weak.upgrade() else {
+            return;
+        };
+        let shell = app.global::<crate::Shell>();
+        if shell.get_transitioning() {
+            shell.set_transition_cue(true);
+        }
+    });
 }
 
 pub(crate) fn clear_pending(app: &App) {
@@ -869,8 +875,13 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
         if action == actions::ACCEPT {
             return;
         }
+        // A push lasts 90 ms, so the key that interrupted it can be dropped
+        // along with the cue. A hold lasts as long as the launch under it,
+        // and dropping a Back for seconds would lose a press the user meant:
+        // lift the cue and let the key through.
+        let pushing = !crate::press_feedback::holding();
         crate::press_feedback::cancel(app);
-        if action == actions::CANCEL {
+        if pushing && action == actions::CANCEL {
             return;
         }
     }
@@ -1283,8 +1294,7 @@ pub(crate) fn apply_clock_setting(ctx: &Ctx, app: &App) {
         let guard = lock(&ctx.shared);
         crate::clock_twelve_hour(&guard.persist.settings)
     };
-    ctx.clock_twelve_hour
-        .store(twelve, std::sync::atomic::Ordering::Relaxed);
+    ctx.clock_twelve_hour.store(twelve, Ordering::Relaxed);
     crate::push_clock(app, twelve);
 }
 
@@ -1618,14 +1628,31 @@ pub(crate) fn present_systems_context_menu(ctx: &Ctx, app: &App, entries: Vec<cr
     present_context_menu(ctx, app, ContextOwner::Systems, 0, entries);
 }
 
-/// The scene rect of the row or tile a context menu is about; the menu
-/// panel and its scrim hole follow it.
-pub(crate) fn set_context_anchor(app: &App, x: f32, y: f32, w: f32, h: f32) {
+/// The row or tile a context menu is about: where it is, and what its
+/// painted silhouette looks like. The menu panel and the scrim's hole both
+/// follow this.
+pub(crate) struct ContextAnchor {
+    pub x: f32,
+    pub y: f32,
+    pub w: f32,
+    pub h: f32,
+    /// The anchored thing's own corner radius. A square hole around a
+    /// rounded tile leaves a bright notch past each arc.
+    pub radius: f32,
+    /// Whether the focus zoom is on it. A focused tile paints larger than
+    /// its cell rect, so the hole has to grow the same way or the tile
+    /// spills past the bright area.
+    pub zoomed: bool,
+}
+
+pub(crate) fn set_context_anchor(app: &App, anchor: &ContextAnchor) {
     let overlays = app.global::<crate::Overlays>();
-    overlays.set_context_anchor_x(x);
-    overlays.set_context_anchor_y(y);
-    overlays.set_context_anchor_w(w);
-    overlays.set_context_anchor_h(h);
+    overlays.set_context_anchor_x(anchor.x);
+    overlays.set_context_anchor_y(anchor.y);
+    overlays.set_context_anchor_w(anchor.w);
+    overlays.set_context_anchor_h(anchor.h);
+    overlays.set_context_anchor_radius(anchor.radius);
+    overlays.set_context_anchor_zoomed(anchor.zoomed);
 }
 
 pub(crate) fn present_games_context_menu(
@@ -2082,8 +2109,12 @@ pub(crate) fn open_game_info(ctx: &Ctx, app: &App, entry: &GameRow) {
 /// the catalog refetches automatically on the busy -> idle edge via
 /// the store's `Tag::MEDIA_DB` invalidation watcher.
 pub(crate) fn launch(ctx: &Ctx, app: &App, text: String, name: &str) {
-    app.global::<crate::Shell>()
-        .set_status_text(crate::AppCue::Launching);
+    // The tile the user pressed stays pressed until Core answers, so the
+    // feedback is where the eye already is. The header line is the second,
+    // worded cue and only appears if the wait becomes one.
+    let hold = crate::press_feedback::keep_held(app);
+    let inflight = Arc::new(AtomicBool::new(true));
+    spawn_launch_cue(ctx, app, &inflight);
     let store = ctx.store.clone();
     let weak = app.as_weak();
     let ctx2 = ctx.clone();
@@ -2096,14 +2127,46 @@ pub(crate) fn launch(ctx: &Ctx, app: &App, text: String, name: &str) {
                 true
             }
         };
+        inflight.store(false, Ordering::SeqCst);
         let _ = weak.upgrade_in_event_loop(move |app| {
-            app.global::<crate::Shell>()
-                .set_status_text(crate::AppCue::None);
+            crate::press_feedback::release(&app, hold);
+            clear_launch_cue(&app);
             if failed {
                 report_action_error(&ctx2, &app, "launch", &name);
             }
         });
     });
+}
+
+/// The header line is for a launch that turns into a wait. A word that
+/// appears and leaves again inside the grace window reads as a flicker, and
+/// the press cue has already said the button did something, so this follows
+/// the same delay the route loading cue uses.
+fn spawn_launch_cue(ctx: &Ctx, app: &App, inflight: &Arc<AtomicBool>) {
+    let weak = app.as_weak();
+    let inflight = inflight.clone();
+    ctx.handle.spawn(async move {
+        tokio::time::sleep(Duration::from_millis(LOADING_CUE_DELAY_MS)).await;
+        if !inflight.load(Ordering::SeqCst) {
+            return;
+        }
+        let _ = weak.upgrade_in_event_loop(move |app| {
+            if inflight.load(Ordering::SeqCst) {
+                app.global::<crate::Shell>()
+                    .set_status_text(crate::AppCue::Launching);
+            }
+        });
+    });
+}
+
+/// Clear our own value and nobody else's. `AppCue` has only these two today,
+/// so the guard changes nothing yet; it is here so that adding a cue later
+/// cannot be wiped by a launch that answers after it.
+fn clear_launch_cue(app: &App) {
+    let shell = app.global::<crate::Shell>();
+    if shell.get_status_text() == crate::AppCue::Launching {
+        shell.set_status_text(crate::AppCue::None);
+    }
 }
 
 #[cfg(test)]

@@ -50,6 +50,14 @@ pub fn focus_app_id() -> &'static str {
 #[cfg(feature = "desktop")]
 const EXTERNAL_APP_ID: &str = "1";
 
+/// True when Steam started this process, which is what makes it a session
+/// a game can be launched inside rather than an ordinary program. Only the
+/// desktop build can host a launch; `MiSTer` has no Steam at all.
+#[cfg(feature = "desktop")]
+pub fn launched_by_steam() -> bool {
+    app_id().is_some()
+}
+
 /// True when Core's active-media path is this very process: our own Steam
 /// shortcut, seen by Core's Steam watcher. Core reports these as
 /// `steam://<app id>`.

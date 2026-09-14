@@ -25,6 +25,30 @@ fn same_slot(left: &crate::GridCell, right: &crate::GridCell) -> bool {
     left.label_key == right.label_key && left.name == right.name && left.is_empty == right.is_empty
 }
 
+/// The Hub's board, where a slot is a position the user arranges rather
+/// than a window onto a page of results.
+///
+/// Two entries trading places is the same board, mutated, so the cells
+/// have to update in place: replacing the model rebuilds every delegate,
+/// and a delegate created at rest has nothing to animate from, which is
+/// why a Move swap put the neighbour straight into its new spot instead of
+/// sliding it there. `same_slot` cannot serve here because a swap changes
+/// both names by definition, which is exactly the case it treats as a
+/// different list.
+pub fn publish_hub_cells(
+    current: &ModelRc<crate::GridCell>,
+    rows: Vec<crate::GridCell>,
+    set: impl FnOnce(ModelRc<crate::GridCell>),
+) {
+    publish_keyed(
+        current,
+        rows,
+        same_cell,
+        |left, right| left.is_empty == right.is_empty,
+        set,
+    );
+}
+
 pub fn same_image(left: &slint::Image, right: &slint::Image) -> bool {
     left == right || (left.size().width == 0 && right.size().width == 0)
 }

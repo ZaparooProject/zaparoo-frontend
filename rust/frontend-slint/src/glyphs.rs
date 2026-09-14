@@ -490,6 +490,35 @@ pub fn rasterize_svg(svg: &str, px: u32) -> Option<slint::Image> {
 /// baking it means the renderer draws a plain image, and on the GPU
 /// path it needs neither a second texture per item nor a mid-frame
 /// render-target switch to produce one.
+/// One corner of the context menu's scrim hole: an `r` by `r` square with
+/// the anchored tile's own corner arc taken out of it, so the dimmed page
+/// meets the bright tile on the tile's real silhouette instead of on a
+/// square notch past its arc.
+///
+/// Generated rather than baked. Qt ships these as atlas entries for every
+/// integer radius 1 to 16 (`tools/bake-icons`, `Resources.cornerCutUrl`),
+/// but this build rasterizes from a fixed source list with no atlas, and a
+/// mask is always exactly as wide as the radius it cuts -- so `px` is the
+/// radius, and one key serves every tier. Even-odd fill takes the disc out
+/// of the square without needing to describe the concave wedge directly.
+fn corner_cut_svg(corner: &str, px: u32) -> Option<String> {
+    let r = f64::from(px);
+    // The centre of the tile's corner arc, in the mask's own box.
+    let (cx, cy) = match corner {
+        "tl" => (r, r),
+        "tr" => (0.0, r),
+        "bl" => (r, 0.0),
+        "br" => (0.0, 0.0),
+        _ => return None,
+    };
+    let d = 2.0 * r;
+    Some(format!(
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 {r} {r}\">\
+         <path fill=\"#fff\" fill-rule=\"evenodd\" d=\"M0 0H{r}V{r}H0Z\
+         M{cx} {cy}m-{r} 0a{r} {r} 0 1 0 {d} 0a{r} {r} 0 1 0 -{d} 0\"/></svg>"
+    ))
+}
+
 fn rasterize_svg_tinted(svg: &str, px: u32, tint: slint::Color) -> Option<slint::Image> {
     let image = rasterize_svg(svg, px)?;
     let source = image.to_rgba8_premultiplied()?;
@@ -500,15 +529,18 @@ fn rasterize_svg_tinted(svg: &str, px: u32, tint: slint::Color) -> Option<slint:
     );
     let mut buffer =
         slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(source.width(), source.height());
+    let tint_alpha = u32::from(tint.alpha());
     for (out, px) in buffer.make_mut_slice().iter_mut().zip(source.as_slice()) {
         // The source is premultiplied, so the tint is too: scale it by
-        // the coverage this pixel already carries.
-        let a = u32::from(px.a);
+        // the coverage this pixel already carries. The tint's own alpha
+        // counts as well, or a translucent ink such as `Theme.scrim`
+        // would come out solid.
+        let a = (u32::from(px.a) * tint_alpha) / 255;
         *out = slint::Rgba8Pixel {
             r: ((r * a) / 255) as u8,
             g: ((g * a) / 255) as u8,
             b: ((b * a) / 255) as u8,
-            a: px.a,
+            a: a as u8,
         };
     }
     Some(slint::Image::from_rgba8_premultiplied(buffer))
@@ -534,13 +566,18 @@ pub fn render(key: &str, px: u32, tint: slint::Color) -> Option<slint::Image> {
         return Some(image);
     }
 
-    let (_, svg) = SOURCES.iter().find(|(k, _)| *k == key)?;
+    let generated;
     let recolored;
-    let svg: &str = if key == "icons/Heart" {
+    let svg: &str = if let Some(corner) = key.strip_prefix("corners/cut-") {
+        generated = corner_cut_svg(corner, px)?;
+        generated.as_str()
+    } else if key == "icons/Heart" {
+        let (_, svg) = SOURCES.iter().find(|(k, _)| *k == key)?;
         let (fill, outline) = HEART.with(|h| h.borrow().clone());
         recolored = svg.replace("#fff", &fill).replace("#000", &outline);
         recolored.as_str()
     } else {
+        let (_, svg) = SOURCES.iter().find(|(k, _)| *k == key)?;
         svg
     };
     // Tint the rendered pixels, not the document: the sources paint in
@@ -568,6 +605,39 @@ pub fn render(key: &str, px: u32, tint: slint::Color) -> Option<slint::Image> {
 )]
 mod tests {
     use super::*;
+
+    /// Each mask fills its own outer corner and leaves the tile's arc
+    /// clear, so the scrim meets the tile on the silhouette rather than on
+    /// a square. Checked by corner because the arc sweep is easy to get
+    /// backwards and the failure mode is a bright notch nobody spots.
+    #[test]
+    fn a_corner_cut_fills_the_notch_and_spares_the_arc() {
+        let px = 8u32;
+        for (corner, (fx, fy)) in [
+            ("tl", (0, 0)),
+            ("tr", (px - 1, 0)),
+            ("bl", (0, px - 1)),
+            ("br", (px - 1, px - 1)),
+        ] {
+            let image = render(
+                &format!("corners/cut-{corner}"),
+                px,
+                slint::Color::from_argb_u8(204, 0, 0, 0),
+            )
+            .expect("corner mask renders");
+            let buffer = image.to_rgba8_premultiplied().expect("rgba");
+            let width = buffer.width() as usize;
+            let at = |x: u32, y: u32| buffer.as_slice()[y as usize * width + x as usize].a;
+            assert!(at(fx, fy) > 128, "{corner}: outer corner is not filled");
+            // The opposite corner is the deepest point inside the arc.
+            assert!(
+                at(px - 1 - fx, px - 1 - fy) < 16,
+                "{corner}: the arc is covered"
+            );
+            // A translucent ink has to stay translucent through the tint.
+            assert!(at(fx, fy) < 255, "{corner}: the scrim came out opaque");
+        }
+    }
 
     #[test]
     fn every_glyph_rasterizes_with_visible_pixels() {

@@ -352,7 +352,7 @@ pub fn render(ctx: &Ctx, app: &App) {
         .take(page_size)
         .map(|entry| cell_for(ctx, entry))
         .collect();
-    crate::view_model::publish_cells(&view.get_cells(), cells, |rows| view.set_cells(rows));
+    crate::view_model::publish_hub_cells(&view.get_cells(), cells, |rows| view.set_cells(rows));
     view.set_selected_local(i32::try_from(hub.grid.current_index() - start).unwrap_or(0));
     view.set_columns(geometry.columns);
     view.set_rows(geometry.rows);
@@ -929,10 +929,14 @@ fn open_context_menu(ctx: &Ctx, app: &App) {
         );
         crate::router::set_context_anchor(
             app,
-            rect.x as f32,
-            (geometry.grid_y + rect.y) as f32,
-            rect.width as f32,
-            rect.height as f32,
+            &crate::router::ContextAnchor {
+                x: rect.x as f32,
+                y: (geometry.grid_y + rect.y) as f32,
+                w: rect.width as f32,
+                h: rect.height as f32,
+                radius: derived.radius_md as f32,
+                zoomed: true,
+            },
         );
     }
     crate::router::present_hub_context_menu(ctx, app, entries);

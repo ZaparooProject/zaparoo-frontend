@@ -309,6 +309,7 @@ backgrounds must not weaken art, caption, or focus contrast.
 | Focus border | `Sizing.focusBorderWidth`, `Theme.accent` |
 | Outer/card radius | `Sizing.radiusMd` |
 | Nested control radius | `Sizing.radiusSm` |
+| Inset | `Sizing.surfacePad` (see "Surface containment") |
 
 Tile bodies, browse cards, detail panes, and About body use `radiusMd`.
 Settings rows, modal buttons, menu/picker rows, nested list selection,
@@ -369,6 +370,31 @@ there's nothing for dimming to distinguish there.
 
 Tiles use a physical front edge inside their existing cell footprint. Activation
 lowers artwork, caption, and ring together without scaling cover art.
+
+### Launch feedback stays on the control that was pressed
+
+The press-in is the launch cue, and it lasts as long as the launch does. An
+ordinary push is a fixed 90 ms, which is over before Core has answered, so a
+commit that starts work outliving its own push keeps the control down
+(`press_feedback::keep_held`) and lifts it when the work resolves, fails, or
+the frontend goes dormant behind the game it started. Qt did the same thing
+by dispatching the run while the tile was pushed and settling it afterwards
+(`GamesScreen.qml`'s `pressCommit`). A cap releases anything still held after
+ten seconds: a Core that never answers must not leave a tile pushed in.
+
+The reason to keep it there rather than in the header is that the eye is on
+the tile that was just pressed, and on a handheld at arm's length or a TV
+across a room the status line is nowhere near it. No WCAG criterion governs
+where feedback is placed, so this is a usability rule, not an accessibility
+one; what accessibility does require is that a held state carry a 3:1 step
+from its resting state if colour is the only difference, and that it have a
+form under Reduce Motion.
+
+The header line is the second, worded cue, on the same pattern as a hidden
+tile's muted edge plus its worded reason. It waits out `LOADING_CUE_DELAY_MS`
+first, so a launch that answers quickly never flashes a word into the header
+and away again. Nothing floats on the tile itself: no spinner, no badge, no
+looping cue over content.
 
 ### Hidden and disabled tiles — muted material, worded reason, never a badge
 
@@ -622,11 +648,11 @@ viewport, so a band that grew and shrank with the focused row's
 description would reflow the list under the cursor, which is the bug the
 unconditional reservation was there to prevent in the first place.
 
-The divider above the band runs the **full card width**, edge to edge like
-the card's own frame, not the row inset. It separates two regions of the
-card rather than titling the rows under it, which is the opposite job to a
-`SectionHeader` rule (that one runs the row width, because it belongs to
-the rows).
+The divider above the band is a structural line: the rows clip and scroll
+under a pinned band, so it runs the **full card width**, edge to edge like
+the card's own frame, with `surfacePad` either side of it. That is the
+opposite job to a `SectionHeader` rule, which runs the row width because it
+belongs to the rows. See "Lines".
 
 A right-hand detail pane (the more common modern pattern — Kodi, Android
 TV, Switch) was considered and rejected: the card is already capped at
@@ -928,7 +954,9 @@ Use `renderType: Text.NativeRendering`. Center Text item with
 | `pressEdgeHeight` | `stroke(pctH(0.8))` | Control front edge |
 
 Dividers, tiny badges, help-bar edges, and other literal hairlines stay
-`Sizing.stroke(1)` unless promoted deliberately.
+`Sizing.stroke(1)` unless promoted deliberately. A line inside a surface goes
+through the shared `Divider` component rather than being written out — see
+"Lines" for which of the four jobs it is doing.
 
 ## Radius ladder
 
@@ -1051,11 +1079,13 @@ content inside a region.
 **Where a structural divider goes** is the boundary between a pinned region and a
 region that scrolls under it — which is where MDC puts its dialog dividers, and
 it decides every case in the app from a boolean the component already has. The
-settings card gets one always (the rows clip under the pinned hint band); the
-list picker gets one when `scrollable`. Nothing else qualifies, so the dialog,
-setup, QR, letter-jump, card-write and About surfaces carry no line — and the
-list picker stops being the only titled panel in the app with a rule under its
-title. Game info is the one place with a pinned/scrolling boundary and no rule:
+settings card gets one always, because the rows clip under the pinned hint band,
+and a titled list panel gets one always, because the title is chrome and the
+rows under it are interactive. That second one is deliberately not conditional
+on length: gating it on whether the list scrolls put a rule on the Color scheme
+picker and none on Color intensity, which is the same component doing the same
+job and reads as a defect. Nothing else qualifies, so the dialog, setup, QR,
+letter-jump, card-write and About surfaces carry no line. Game info is the one place with a pinned/scrolling boundary and no rule:
 its scroll chevrons already mark it, and a rule as well would be two cues for one
 state.
 
@@ -1077,14 +1107,33 @@ is a `stroke(1)` hairline; that is the stroke ladder above, unchanged.
 
 | Surface | Token |
 |---|---|
-| Panel | `Theme.bgPanel`, `Sizing.radiusMd` |
+| Panel | see "Surface containment" |
 | Scrim | `Theme.scrim` |
-| Title | `Sizing.fontTitle` |
+| Title | `Sizing.fontTitle`, `Theme.textPrimary`, centered |
 | Body/button | `Sizing.fontBody` |
 | Button surface | `PressableSurface`, `Sizing.radiusSm` |
 | Button slot | `pctH(7)` |
+| Inset and every internal gap | `Sizing.surfacePad` |
 
-Panel has no border. Prefer extending `Modal.qml` shell over bespoke chrome.
+**One shell owns the chrome.** `ModalShell` in `chrome.slint` draws the scrim,
+the panel, the title and the rule; a host supplies a width and its own content
+height and positions its content against `contentY`. This is the piece the port
+went without. Qt has `Modal.qml` and every modal is a thin wrapper around it,
+where the Slint build had eight bespoke panels, which is how four different
+title gaps, two QR presentations and three different header treatments grew, and
+why a change to any one of them landed on one modal at a time.
+
+One trap when hosting: `@children` are laid out inside the panel, but `parent`
+in a host's own declaration still resolves lexically to the host's root, which
+is the full-screen scrim. Position against `panelWidth` and `contentWidth`,
+never `parent.width`, or the content is measured against the screen and clipped
+away at the panel edge.
+
+**One width rule.** A panel that sizes to measured content caps at `0.92` of the
+screen; a panel with a fixed width caps at `0.78`. Three different formulas had
+grown here.
+
+Panel has no border. Prefer extending the shell over bespoke chrome.
 QrCodeModal and round-10's `ScrapeSetupModal` (scraper choice + re-scrape
 toggle + Start, three `SettingsField` rows in a shell `Column`) are
 shell-based content. GameInfo stays bespoke — its near-full-height,
@@ -1233,10 +1282,13 @@ tinted matrix is the one thing here that would actually break a scan.
 
 ## ContextMenu chrome
 
-Panel uses `bgPanel` + `radiusMd`, no border. Rows are inverse-video —
-`SelectionBar` + `radiusSm` directly against the panel fill, no nested row
-surface — see "Two registers" and "Inverse-video rows" above. Panel vertical
-padding is independent from radius.
+A menu is a panel like any other: `bgPanel`, `radiusMd`, no border, and
+`Sizing.surfacePad` on all four sides — see "Surface containment". It had its
+own inset a hair below every other panel's, which is how a scale becomes drift.
+Rows are inverse-video directly against the panel fill, no nested row surface —
+see "Two registers" and "Inverse-video rows" above. The row's own `pctW(2)` text
+inset is a horizontal measure inside a row, not the panel's lip; the two are
+separate properties (`labelInset` and `pad`) so they cannot be conflated again.
 
 **No fixed entry cap** (see `docs/content-style.md`'s menu-ordering and
 menu-size rules for the content-side reasoning). `rowViewport` scrolls to keep
@@ -1323,6 +1375,45 @@ tiers already use the compact 4×2 shape and remain unchanged. A separate lever,
 `Image.PreserveAspectCrop` for game covers, remains set aside: it enlarges art
 but crops the top and bottom, where title art often sits.
 
+### Spent cues
+
+A directional cue whose direction has nothing left to reach stays painted and
+changes color. It does not disappear: one press the other way brings it back,
+and hiding it takes away the only sign that the surface scrolls at all. The
+rule of thumb the industry settled on is to disable a control a user action can
+re-enable and hide one nothing can, and a scroll arrow is squarely the first
+case.
+
+The spent color is `Theme.cueSpent`, **not** `Theme.textLabel`. WCAG 1.4.1
+allows a state carried by color alone only when the two colors differ by at
+least 3:1 in luminance. Measured across the palette fixture at Subtle
+intensity, `textLabel` against `textPrimary` manages that on three of the
+twenty presets: 2.07:1 on Nord, 2.59:1 on the default, and only the three light
+schemes pass. That is why a spent arrow read as "very easy to miss" rather than
+as a state. `zaparoo_app::palette::spent_from` derives the role per scheme by
+walking `textPrimary`'s `OKLCh` lightness toward the page until the pair clears
+the bar, preserving hue and chroma the way `clampAccent` does; the two tests
+beside it hold every preset above 3:1 against the text and above 1.5:1 against
+the page, so a spent arrow is always both distinguishable and visible.
+
+One component owns the rule: `ScrollCue` in `chrome.slint`. `PageIndicator`'s
+own chevron pair, the list picker, the setup picker page, the About card, the
+game info body and the game info image switcher all go through it. Hosts still
+decide whether the *pair* appears at all, which is a different question: a
+surface that does not scroll shows neither arrow.
+
+Position is a separate job from direction, and `PageIndicator` carries it as
+text. Three modes: page N/M for paged grids, item N/M for lists, and a
+percentage for continuously scrolled prose that has no items to count.
+
+There is deliberately no persistent position indicator beyond that readout.
+Nothing in this product category has one: Steam Big Picture, EmulationStation,
+ES-DE and Plex all answer "where am I in thousands of items" with a transient
+alphabetical overlay during fast scroll plus a jump-to-letter control, which is
+what `RapidScrollIndicator` and `LetterJumpModal` are. A segmented track was
+prototyped and rejected: it collides with the header's own `ProgressTrack`, and
+it degrades into mush long before a real library size.
+
 ### No scrollbars — grids are paged, not scrolled
 
 `PagedGrid` has no in-grid scroll indicator of any kind — no gutter, no
@@ -1341,10 +1432,9 @@ Paged grids pass page numbers; detailed lists pass focused-item and total-item
 counts. The text only paints once there's actually somewhere else to navigate
 to — `PageIndicator._hasNavigationRange` — since a single page or item never
 needs a "1 / 1" readout. Round 9 changed the chevrons' own no-direction state from hidden to
-dimmed (`Theme.textLabel` instead of `Theme.textPrimary`) so a bare glance
-could tell "there is scroll chrome here" even mid-grid, and only the
-still-live direction reads as actionable — a colour swap, not an opacity
-one: a translucent node would repaint everything it overlaps on every frame
+dimmed so a bare glance could tell "there is scroll chrome here" even
+mid-grid, and only the still-live direction reads as actionable — a colour
+swap, not an opacity one: a translucent node would repaint everything it overlaps on every frame
 under software rendering (see CLAUDE.md's animation-cost rules), while a
 static colour costs nothing extra. Round 10 added the missing case: when
 there's only **one** page or item total, both chevrons hide entirely
@@ -1364,10 +1454,11 @@ reserves a second page) never shifts anything. `SettingsScreen.qml`,
 `AboutScreen.qml`, and `GameInfoModal.qml`'s own scroll chevrons (each
 already sitting in a fixed chrome band reserved regardless of content) got
 the same dim-plus-hide-on-single-page treatment for one consistent rule;
-`ListPickerModal.qml`'s chevrons already satisfied it by construction —
-its `_hasContentAbove`/`_hasContentBelow` are both false whenever the list
-isn't scrollable at all, so a short list already shows neither arrow with
-no round-10 change needed.
+`ListPickerModal.qml`'s chevrons were claimed to satisfy it by
+construction; they did not, and neither did the port's. Both pickers hid
+one arrow per direction and painted the other dim in *both* states. They
+now go through `ScrollCue` like everything else — see "Spent cues" above,
+which is where the dim/hide rule and the colour now live.
 
 Two placements exist because putting the cue at the top, next to a title
 that's already there, was tried first (pre-round-5) and reads better once a
@@ -1575,6 +1666,8 @@ MiSTer tiers snap without anyone opting in.
 
 - A container is a panel or a card, and carries one containment signal, not
   two: a scrim replaces an outline. See "Surface containment".
+- A directional cue goes through `ScrollCue` and dims to `Theme.cueSpent`
+  when its direction is spent; it never disappears. See "Spent cues".
 - A container's inset is `Sizing.surfacePad` on all four sides, and the same
   value again between the blocks stacked inside it.
 - A line inside a surface goes through the shared `Divider`. See "Lines".

@@ -133,8 +133,14 @@ fn apply_layout(app: &App, inputs: &Inputs) {
                 f64::from(gap),
             ) as i32
         });
-    let profile = layouts::profile(ThemeId::current(inputs), current_view(app), inputs);
-    push_profile(app, &profile);
+    let theme = ThemeId::current(inputs);
+    let profile = layouts::profile(theme, current_view(app), inputs);
+    // The page cue's size and placement live in the grid tables, but the
+    // cue itself is on screen in both layouts. Resolve the theme's grid
+    // profile alongside so a list view pushes its own values rather than
+    // inheriting whatever grid was shown last.
+    let cue = layouts::profile(theme, View::GamesGrid, inputs);
+    push_profile(app, &profile, &cue);
 }
 
 fn px(value: i32) -> f32 {
@@ -188,8 +194,12 @@ fn apply_derived(app: &App, d: &Derived) {
     clippy::too_many_lines,
     reason = "one setter per BrowseLayouts.qml profile key keeps the inventory reviewable"
 )]
-fn push_profile(app: &App, p: &Profile) {
+fn push_profile(app: &App, p: &Profile, cue: &Profile) {
     let l = app.global::<Layout>();
+    if let Body::Grid { grid, footer } = &cue.body {
+        l.set_grid_page_chevron_size(px(grid.page_chevron_size));
+        l.set_page_cue_in_footer(footer.page_cue_in_footer);
+    }
     l.set_title_in_header(p.header.title_in_header);
     l.set_hud_bottom_aligned(p.header.hud_bottom_aligned);
     l.set_status_pill_pinned_top(p.header.status_pill_pinned_top);
@@ -208,8 +218,6 @@ fn push_profile(app: &App, p: &Profile) {
             l.set_grid_top_inset(px(grid.top_inset));
             l.set_grid_bottom_inset(px(grid.bottom_inset));
             l.set_grid_row_gap(px(grid.row_gap));
-            l.set_grid_page_chevron_size(px(grid.page_chevron_size));
-            l.set_page_cue_in_footer(footer.page_cue_in_footer);
             l.set_active_label_height(px(footer.active_label_height));
             l.set_active_label_bottom_margin(px(footer.active_label_bottom_margin));
             l.set_bottom_status_left_margin(px(footer.bottom_status_left_margin));

@@ -158,6 +158,21 @@ updates the binary in place without adding a second shortcut. Being
 Steam-owned is the point: Steam only gives its own Steam Input layout, the
 overlay and the Quick Access Menu to what it launched.
 
+A Steam-owned frontend also offers itself to Core as its launch host. Core
+cannot start an emulator inside a Steam session by itself, so in Gaming Mode
+it normally asks Steam to run a second shortcut, **Zaparoo Runtime**, which
+execs the emulator on its behalf. When the frontend is registered, Core hands
+the command here instead and the game runs inside the session the frontend is
+already in: one Steam card rather than two, and one Back press to leave. The
+shortcut stays the fallback for a token scanned with no frontend running, for
+Desktop Mode, and for a frontend Steam did not launch. Registration needs a
+gamescope session, a Steam-started frontend, and a Core on this machine, plus
+a Core build that accepts launch hosts. Registration has a socket of its own,
+so an older Core has nothing to connect to and keeps using the shortcut with
+no idea the frontend offered. Emulators
+inherit the frontend shortcut's Steam Input layout while it hosts, where they
+would otherwise inherit the Zaparoo Runtime shortcut's.
+
 ### Controllers
 
 A connected gamepad drives the UI alongside the keyboard: d-pad or left

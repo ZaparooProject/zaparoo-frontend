@@ -345,6 +345,20 @@ pub fn render(ctx: &Ctx, app: &App) {
         |rows| view.set_rows(rows),
     );
     view.set_index(i32::try_from(index).unwrap_or(0));
+    // Field position for the strip's cue: headings occupy row slots but
+    // are never navigated to, so they must not inflate the denominator.
+    {
+        use slint::Model as _;
+        let published = view.get_rows();
+        let fields = |upto: usize| {
+            (0..upto)
+                .filter_map(|i| published.row_data(i))
+                .filter(|row| row.kind == crate::RowKind::Field)
+                .count()
+        };
+        view.set_field_index(i32::try_from(fields(index)).unwrap_or(0));
+        view.set_field_count(i32::try_from(fields(published.row_count())).unwrap_or(0));
+    }
     view.set_rows_height(viewport as f32);
     view.set_rows_clip_height(shown);
     view.set_scroll(scroll);

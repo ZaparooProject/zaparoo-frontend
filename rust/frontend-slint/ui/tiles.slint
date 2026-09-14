@@ -265,6 +265,17 @@ export component Tile inherits Rectangle {
     // Resolved caption text (the host composes translations).
     in property <string> caption: "";
     in property <length> card-radius: Layout.card-radius;
+    // Flying through the grid: paint the plate and nothing else. No art, no
+    // caption, no heart, and a face that recedes toward the page, so what
+    // is left is the grid's structure without any of its detail and the
+    // letter plate over it has something quiet to sit on.
+    //
+    // This is cheaper than what it replaces, because the cover work stops,
+    // which is the point of a rapid scroll anyway. It is also the only
+    // "dim the grid" available here: Qt froze a `grabToImage` and faded it,
+    // and this build has no cheap subtree grab; blur needs a shader, which
+    // CLAUDE.md rules out and the MiSTer renderer could not run.
+    in property <bool> quiet: false;
 
     property <length> outline-gap: Sizing.pct-h(0.4);
     property <length> outline-width: Sizing.focus-ring-width;
@@ -327,7 +338,8 @@ export component Tile inherits Rectangle {
 
     surface := PressableSurface {
         radius: root.card-radius;
-        edge-color: root.muted ? Theme.border-mid : Theme.tile-edge;
+        face-color: root.quiet ? Theme.bg-bar : Theme.surface-card;
+        edge-color: root.quiet ? Theme.bg-bar : (root.muted ? Theme.border-mid : Theme.tile-edge);
         pressed: root.pressed || root.press-held;
 
         // Focus ring inside the card edge: an accent pill and a face
@@ -355,7 +367,7 @@ export component Tile inherits Rectangle {
         property <length> art-w: Math.max(0px, self.width - 2 * root.pad);
         property <length> art-h: Math.max(0px, self.face-height - self.art-top - self.art-bottom);
 
-        if root.has-top-label: MarqueeCaption {
+        if root.has-top-label && !root.quiet: MarqueeCaption {
             x: root.pad;
             y: 0;
             width: parent.art-w;
@@ -366,7 +378,7 @@ export component Tile inherits Rectangle {
             caption-color: root.focused-selection ? Theme.text-primary : Theme.text-label;
         }
 
-        if root.cell.glyph-key != "": Image {
+        if root.cell.glyph-key != "" && !root.quiet: Image {
             x: root.pad;
             y: parent.art-top;
             width: parent.art-w;
@@ -375,7 +387,7 @@ export component Tile inherits Rectangle {
             image-fit: contain;
         }
 
-        if root.cell.glyph-key == "" && root.cell.has-cover: Image {
+        if root.cell.glyph-key == "" && root.cell.has-cover && !root.quiet: Image {
             x: root.pad;
             y: parent.art-top;
             width: parent.art-w;
@@ -390,7 +402,7 @@ export component Tile inherits Rectangle {
         // Qt fits the wordmark (Text.Fit down to 2.8%); Slint has no fit
         // mode, so the size is capped to let two lines sit in the art
         // area and the rest elides.
-        if root.cell.glyph-key == "" && !root.cell.has-cover && root.system-cover && !root.show-caption: Text {
+        if root.cell.glyph-key == "" && !root.cell.has-cover && root.system-cover && !root.show-caption && !root.quiet: Text {
             property <length> box-h: Math.max(0px, parent.art-h - 2 * Sizing.pct-h(1));
             x: root.pad + Sizing.pct-h(1);
             y: parent.art-top + Sizing.pct-h(1);
@@ -406,7 +418,7 @@ export component Tile inherits Rectangle {
             vertical-alignment: center;
         }
 
-        if root.cell.favorite: Image {
+        if root.cell.favorite && !root.quiet: Image {
             x: parent.width / 12;
             y: parent.width / 12;
             width: parent.width / 6;
@@ -415,7 +427,7 @@ export component Tile inherits Rectangle {
             image-fit: contain;
         }
 
-        if root.show-caption: MarqueeCaption {
+        if root.show-caption && !root.quiet: MarqueeCaption {
             x: root.pad;
             y: parent.face-height - root.caption-height;
             width: parent.art-w;
@@ -452,12 +464,20 @@ export component PagedGridView inherits Rectangle {
     in property <bool> section-focused: true;
     in property <bool> focus-ready: true;
     in property <int> held-local: -1;
+    // A context menu about the selected tile takes the ring off it: the
+    // panel is the mark for that state and a ring as well is two. Only the
+    // ring, though. The tile keeps its zoom, its focus tint and its focused
+    // cover, because the menu is about that tile and it should look exactly
+    // as it did minus the ring. `section-focused` used to carry this and
+    // dropped all four.
+    in property <bool> ring-suppressed: false;
     in property <bool> press-held: false;
     in property <int> activate-pulse: 0;
     in property <int> release-pulse: 0;
     in property <bool> settling: false;
     in property <bool> compact-padding: false;
     in property <bool> show-caption: false;
+    in property <bool> quiet: false;
     in property <length> card-radius: Layout.card-radius;
     // Blank cells refuse the pointer while this is set.
     in property <bool> skip-empty-cells: false;
@@ -546,6 +566,7 @@ export component PagedGridView inherits Rectangle {
             settling: root.settling;
             compact-padding: root.compact-padding;
             show-caption: root.show-caption;
+            quiet: root.quiet;
             caption: root.caption-for(cell);
             card-radius: root.card-radius;
         }
@@ -563,6 +584,7 @@ export component PagedGridView inherits Rectangle {
             settling: root.settling;
             compact-padding: root.compact-padding;
             show-caption: root.show-caption;
+            quiet: root.quiet;
             caption: root.caption-for(cell);
             card-radius: root.card-radius;
         }
@@ -607,7 +629,7 @@ export component PagedGridView inherits Rectangle {
             w: root.cell-width - 2 * root.ring-gap,
             h: root.cell-height - Sizing.press-edge-height - 2 * root.ring-gap,
             column: root.selected-col, row: root.selected-row, scope: root.focus-scope,
-            valid: root.has-selection && root.held-local < 0 };
+            valid: root.has-selection && root.held-local < 0 && !root.ring-suppressed };
     }
 
     // One retained held tile retargets from its current position on repeated
@@ -625,6 +647,7 @@ export component PagedGridView inherits Rectangle {
             held: true;
             compact-padding: root.compact-padding;
             show-caption: root.show-caption;
+            quiet: root.quiet;
             caption: root.caption-for(root.cells[root.selected-local]);
             card-radius: root.card-radius;
         }

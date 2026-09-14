@@ -388,6 +388,18 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
             get_total_pages => set_total_pages,
             source.get_total_pages() * i32::try_from(chunks.max(1)).unwrap_or(1)
         );
+        // The chevrons have to describe the head's own paging, not the
+        // primary's. They were copied verbatim by the mirror macro above
+        // while the numbers beside them were re-sliced here, so the two
+        // halves of one indicator disagreed on this screen.
+        let head_page = target.get_page();
+        let head_total = target.get_total_pages();
+        set_if_changed!(target, get_has_pages_above => set_has_pages_above, head_page > 0);
+        set_if_changed!(
+            target,
+            get_has_pages_below => set_has_pages_below,
+            head_page + 1 < head_total
+        );
         if state.systems == TransitionPhase::Active {
             state.systems = TransitionPhase::Rearm;
         } else if state.systems == TransitionPhase::Rearm {
@@ -574,6 +586,15 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
             target,
             get_total_pages => set_total_pages,
             source.get_total_pages() * i32::try_from(chunks.max(1)).unwrap_or(1)
+        );
+        // As above: the head's chevrons follow the head's own paging.
+        let head_page = target.get_page();
+        let head_total = target.get_total_pages();
+        set_if_changed!(target, get_has_pages_above => set_has_pages_above, head_page > 0);
+        set_if_changed!(
+            target,
+            get_has_pages_below => set_has_pages_below,
+            head_page + 1 < head_total
         );
         if state.games == TransitionPhase::Active {
             state.games = TransitionPhase::Rearm;

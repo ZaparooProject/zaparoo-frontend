@@ -1223,6 +1223,8 @@ fn fixture_games(
         overlays.set_context_anchor_y((grid_y + rect.y) as f32);
         overlays.set_context_anchor_w(rect.width as f32);
         overlays.set_context_anchor_h(rect.height as f32);
+        overlays.set_context_anchor_radius(app.global::<Layout>().get_card_radius());
+        overlays.set_context_anchor_zoomed(true);
     }
     // The list layout is a different view of the same model: rows in a
     // card beside the focused row's detail pane. Filled here too so the

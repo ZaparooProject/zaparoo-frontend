@@ -64,6 +64,7 @@ mod sizing;
 mod state_types;
 mod status;
 mod steam;
+mod steam_host;
 mod system_logos;
 mod system_status;
 mod systems;
@@ -420,6 +421,14 @@ fn seed_display_globals(
         visual_crt,
         framebuffer_size.1,
     ));
+    // The software renderer has no transform support, so a focused tile
+    // never actually grows there. Say so once, here, rather than letting
+    // each consumer guess: the grid would reserve clip headroom it cannot
+    // use and the context menu would cut its scrim hole around a size the
+    // tile never reaches.
+    if cfg!(feature = "mister") {
+        app.global::<Motion>().set_focus_zoom(100.0);
+    }
     display::register_labels(app);
     app.global::<Shell>()
         .set_is_mister(cfg!(feature = "mister"));
@@ -757,6 +766,9 @@ fn main() -> Result<(), slint::PlatformError> {
     bind_connection_status(&ctx, &app, &client, &config.core_endpoint);
     bind_media_status(&ctx, &app, &store);
     bind_desktop_lifecycle(&ctx, &app, &client, &config.core_endpoint);
+    // Offer to be the Steam session Core launches games into, so it does
+    // not have to start a second one.
+    steam_host::start(&config.core_endpoint);
     bind_status_events(&ctx, &app, &client);
     bind_launchers(&ctx, &store);
     apply_buttons(&ctx, &app);
@@ -951,6 +963,9 @@ fn set_dormant(ctx: &Ctx, app: &App, dormant: bool) {
     ctx.dormant.send_replace(dormant);
     if dormant {
         input::stop_repeat(ctx);
+        // A launch that took the screen has said everything a held press
+        // could; nothing may still be pushed in when the frontend comes back.
+        press_feedback::cancel(app);
         {
             let mut shared = lock(&ctx.shared);
             shared.saver_seq += 1;

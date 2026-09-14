@@ -32,6 +32,13 @@ export global Theme {
     in-out property <color> text-primary: #f7f7f5;
     in-out property <color> text-label: #9b9b9b;
     in-out property <color> text-variant: #8091a1;
+    // A directional cue whose direction is exhausted: a scroll arrow at the
+    // top of a list, a carousel arrow on the last image. Derived per scheme
+    // by `zaparoo_app::palette::spent_from` to hold 3:1 against
+    // `text-primary`, which is the bar WCAG 1.4.1 sets for a state carried
+    // by color alone. `text-label` was the obvious choice and clears it on
+    // three of the twenty presets. See docs/style.md -> "Spent cues".
+    in-out property <color> cue-spent: #8b8b89;
     in-out property <color> accent: #168bff;
     in-out property <color> selection-fill: #4c8edd;
     in-out property <color> on-accent: #050608;
@@ -83,7 +90,12 @@ export global Motion {
     // replacement: a size change carries no contrast and so cannot satisfy
     // WCAG 2.4.13. Silently absent on the software renderer, which has no
     // transform support, which is also why CRT never sees it.
-    out property <percent> focus-zoom: 104%;
+    // Pushed rather than fixed, because it is the one motion token the
+    // renderer can silently refuse: 100% wherever transforms do not apply,
+    // so everything that reserves room for the growth (the grid's clip
+    // headroom, the context menu's scrim hole) reserves nothing there
+    // instead of leaving a halo around a tile that never grew.
+    in-out property <percent> focus-zoom: 104%;
     // Longer than a focus move on purpose. A slide is a short-distance
     // movement and a scale is an expansion, which Carbon separates as
     // 150ms and 240ms; at `focus-ms` a 4% scale gets about five frames and

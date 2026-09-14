@@ -1051,6 +1051,126 @@ fn token_cancel_dispatches_once_and_feedback_cannot_cancel_a_reopened_write() {
     assert_eq!(commits.get(), 1);
 }
 
+/// A launch outlives the 90 ms push, so the control the user pressed has to
+/// stay pressed until Core answers. Qt kept the tile down across the run
+/// command and settled it afterwards; the port released on a timer, which
+/// left the tile at rest for the whole wait and the header text as the only
+/// sign the press had done anything.
+#[test]
+#[allow(
+    clippy::expect_used,
+    reason = "a fixture with no pressable control is a broken test"
+)]
+fn a_held_press_outlives_its_push_and_lifts_on_release() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    crate::router::open_quit_confirm(&app);
+    settle(&window);
+
+    let held = Rc::new(Cell::new(None));
+    let target = crate::press_feedback::current(&app).expect("a dialog button to press");
+    crate::press_feedback::dispatch(&app, &target, {
+        let held = held.clone();
+        let weak = app.as_weak();
+        move |_| {
+            let app = weak.upgrade().expect("the app outlives its own commit");
+            held.set(Some(crate::press_feedback::keep_held(&app)));
+        }
+    });
+    settle(&window);
+
+    let hold = held.get().expect("the commit ran and kept the press");
+    assert_eq!(
+        app.global::<crate::PressFeedback>().get_owner(),
+        target.owner,
+        "the press must still be down while the work it started runs"
+    );
+
+    crate::press_feedback::release(&app, hold);
+    assert_eq!(
+        app.global::<crate::PressFeedback>().get_owner(),
+        PressOwner::None,
+        "releasing the hold lifts the control"
+    );
+}
+
+/// A push is short enough to swallow the key that interrupted it. A hold is
+/// not: it lasts as long as the launch under it, so a Back arriving during
+/// one has to lift the cue and then be handled, not disappear.
+#[test]
+#[allow(
+    clippy::expect_used,
+    reason = "a fixture with no pressable control is a broken test"
+)]
+fn a_back_press_survives_a_held_press_but_not_a_push() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    let arm = |hold: bool| {
+        let target = crate::press_feedback::current(&app).expect("a dialog button to press");
+        let weak = app.as_weak();
+        crate::press_feedback::dispatch(&app, &target, move |_| {
+            if hold {
+                let app = weak.upgrade().expect("the app outlives its own commit");
+                crate::press_feedback::keep_held(&app);
+            }
+        });
+    };
+
+    // Mid-push the Back belongs to the cue it interrupted.
+    crate::router::open_quit_confirm(&app);
+    settle(&window);
+    arm(false);
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert!(
+        app.global::<crate::Overlays>().get_dialog_open(),
+        "a Back during the push cancels the cue and stops there"
+    );
+
+    // Held, it has to reach the dialog.
+    arm(true);
+    settle(&window);
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert!(
+        !app.global::<crate::Overlays>().get_dialog_open(),
+        "a Back during a held press must still close the dialog"
+    );
+}
+
+/// A launch that answers after the user has moved on must not lift whatever
+/// they are pressing now.
+#[test]
+fn a_stale_release_cannot_lift_the_next_press() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    crate::router::open_quit_confirm(&app);
+    settle(&window);
+
+    let stale = crate::press_feedback::keep_held(&app);
+    let commits = Rc::new(Cell::new(0));
+    arm_feedback(&app, &commits);
+
+    crate::press_feedback::release(&app, stale);
+
+    assert_ne!(
+        app.global::<crate::PressFeedback>().get_owner(),
+        PressOwner::None,
+        "the new press owns the control now"
+    );
+}
+
 #[test]
 fn dialog_pushes_before_dispatch_and_feedback_settles() {
     assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
@@ -1926,6 +2046,92 @@ fn letter_columns_follow_each_windows_geometry() {
     assert!(
         landscape > portrait,
         "letter packing must reflow, not keep nine columns"
+    );
+}
+
+/// The tile that trades places with the held one slides home; it does not
+/// appear there. Only the held tile was ever animating, and a blink that
+/// takes the held tile away mid-move left the swap with nothing moving in
+/// it at all.
+///
+/// The neighbour is marked `hidden` so it paints a muted `borderMid` edge
+/// instead of the usual `tileEdge`, which is what makes it findable: with
+/// three identical plates a frame comparison picks up the held tile's own
+/// glide and says nothing about the neighbour.
+#[test]
+fn a_hub_swap_slides_the_neighbour_home() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let hub = app.global::<HubView>();
+    // One cell gets a top label in a color nothing else paints, so its
+    // position can be read straight off the frame. Every
+    // `PressableSurface` uses `borderMid` and `tileEdge`, so neither of
+    // those singles a tile out, and glyphs do not render here at all --
+    // the provider callback belongs to the real app, not to `boot`.
+    crate::fonts::register_embedded_fonts();
+    app.global::<crate::Theme>()
+        .set_text_label(slint::Color::from_rgb_u8(255, 0, 255));
+    // `order` is the entry now sitting in each slot, so a swap changes
+    // which name each slot carries -- exactly what the app publishes.
+    let board = |order: [usize; 3]| {
+        order
+            .iter()
+            .map(|&entry| GridCell {
+                name: SharedString::from(format!("Tile {entry}")),
+                // Entry 0 is the neighbour, wherever it currently sits. The
+                // held entry cannot carry the mark: it blinks, so it is
+                // missing from half the frames.
+                top_label: if entry == 0 {
+                    "X".into()
+                } else {
+                    SharedString::default()
+                },
+                ..GridCell::default()
+            })
+            .collect::<Vec<_>>()
+    };
+    let publish = |rows: Vec<GridCell>| {
+        let view = app.global::<HubView>();
+        crate::view_model::publish_hub_cells(&view.get_cells(), rows, |m| view.set_cells(m));
+    };
+    publish(board([0, 1, 2]));
+    hub.set_columns(3);
+    hub.set_cell_width(50.0);
+    hub.set_cell_height(40.0);
+    // Clear of the header, so the probe band holds only tiles.
+    hub.set_grid_y(80.0);
+    hub.set_grid_height(90.0);
+    hub.set_selected_local(1);
+    hub.set_held_local(1);
+    settle(&window);
+
+    let marked_left = |buf: &[Rgb565Pixel]| {
+        let target = 0xf81fu16;
+        (0..W).find(|x| (82..168).any(|y| buf[(y * W + *x) as usize].0 == target))
+    };
+
+    // Hold cell 0 and swap it with cell 1, so cell 1 has to travel one
+    // column to the right.
+    publish(board([1, 0, 2]));
+    hub.set_move_origins(ModelRc::new(VecModel::from(vec![1, 0, 2])));
+    hub.set_selected_local(0);
+    hub.set_held_local(0);
+    hub.set_move_pulse(1);
+
+    advance(2);
+    pixels(&window);
+    advance(24);
+    let midway = marked_left(&pixels(&window));
+    advance(150);
+    let home = marked_left(&pixels(&window));
+
+    assert!(
+        midway.is_some() && home.is_some(),
+        "the neighbour must paint"
+    );
+    assert_ne!(
+        midway, home,
+        "the neighbour teleported home instead of sliding: {midway:?} then {home:?}"
     );
 }
 

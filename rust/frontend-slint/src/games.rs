@@ -2195,10 +2195,13 @@ fn note_rapid_flip(ctx: &Ctx, app: &App, rapid: bool) {
         let mut shared = lock(&ctx.shared);
         let model = &mut shared.games;
         model.rapid_seq += 1;
-        let page_start = model.grid.current_page() * model.grid.page_size();
+        // The row the cursor is on, not the landing page's first row.
+        // "the first 2 letters of where the cursor is" is what
+        // EmulationStation and Big Picture both show, and it is the only
+        // reading that survives a layout without pages.
         let letter = model
             .rows
-            .get(page_start)
+            .get(model.grid.current_index())
             .map(|row| rules::rapid_letter(&row.display))
             .unwrap_or_default();
         (model.rapid_seq, letter)
@@ -2586,7 +2589,7 @@ pub fn jump_to_item(ctx: &Ctx, app: &App, item_offset: u32) {
 
 // ---------- Options menu ----------
 
-fn cell_anchor(ctx: &Ctx, app: &App) -> (f32, f32, f32, f32) {
+fn cell_anchor(ctx: &Ctx, app: &App) -> crate::router::ContextAnchor {
     let shared = lock(&ctx.shared);
     let model = &shared.games;
     let list = list_layout(&shared);
@@ -2596,14 +2599,19 @@ fn cell_anchor(ctx: &Ctx, app: &App) -> (f32, f32, f32, f32) {
         let top = app.global::<GamesView>().get_list_scroll_top().max(0) as usize;
         let local = model.grid.current_index().saturating_sub(top) as f32;
         let row_h = g.row_height as f32;
-        (
-            (g.card_x + g.list_x) as f32 + layout.get_card_padding_left(),
-            (g.card_y + g.list_y) as f32
+        crate::router::ContextAnchor {
+            x: (g.card_x + g.list_x) as f32 + layout.get_card_padding_left(),
+            y: (g.card_y + g.list_y) as f32
                 + layout.get_card_padding_top()
                 + local * (row_h + layout.get_row_spacing()),
-            g.list_width as f32 - layout.get_card_padding_left() - layout.get_card_padding_right(),
-            row_h,
-        )
+            w: g.list_width as f32
+                - layout.get_card_padding_left()
+                - layout.get_card_padding_right(),
+            h: row_h,
+            // A row's silhouette is its selection fill, not a card.
+            radius: layout.get_row_radius(),
+            zoomed: false,
+        }
     } else {
         let geometry = geometry(app, model.mode);
         let rect = paged_grid::cell_rect(
@@ -2612,12 +2620,14 @@ fn cell_anchor(ctx: &Ctx, app: &App) -> (f32, f32, f32, f32) {
             i32::try_from(model.grid.current_row()).unwrap_or(0),
             i32::try_from(model.grid.current_column()).unwrap_or(0),
         );
-        (
-            rect.x as f32,
-            (geometry.grid_y + rect.y) as f32,
-            rect.width as f32,
-            rect.height as f32,
-        )
+        crate::router::ContextAnchor {
+            x: rect.x as f32,
+            y: (geometry.grid_y + rect.y) as f32,
+            w: rect.width as f32,
+            h: rect.height as f32,
+            radius: app.global::<crate::Layout>().get_card_radius(),
+            zoomed: true,
+        }
     }
 }
 
@@ -2685,8 +2695,8 @@ fn open_context_menu(ctx: &Ctx, app: &App) {
     if entries.is_empty() {
         return;
     }
-    let (x, y, w, h) = cell_anchor(ctx, app);
-    crate::router::set_context_anchor(app, x, y, w, h);
+    let anchor = cell_anchor(ctx, app);
+    crate::router::set_context_anchor(app, &anchor);
     let index = lock(&ctx.shared).games.grid.current_index();
     crate::router::present_games_context_menu(ctx, app, index, entries);
     crate::router::refresh_readers(ctx);

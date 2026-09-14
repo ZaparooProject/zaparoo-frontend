@@ -439,6 +439,155 @@ export component HeaderBar inherits Rectangle {
     }
 }
 
+// A line inside a surface (CardDivider.qml, which the port never had, so
+// every rule was hand-rolled and they drifted to two weights and two
+// colors). One hairline, one place: a structural line marks the boundary
+// between a pinned region and one that scrolls under it and is painted in
+// `border-mid`, because structure has to survive 240p where
+// `border-subtle` against `surface-card` does not; a decorative row
+// separator inside a table has no contrast requirement and takes the
+// quieter role. Width is the parent's, so mounting it on the surface
+// gives a full-width rule and mounting it in the content box gives an
+// inset one. See docs/style.md -> "Lines".
+export component Divider inherits Rectangle {
+    in property <bool> decorative: false;
+    height: Sizing.stroke(1);
+    background: root.decorative ? Theme.border-subtle : Theme.border-mid;
+}
+
+// A scannable code on the plate a scanner needs. Both surfaces that show
+// one used to draw it differently: the log uploader put it on a hardcoded
+// white plate with a `border-subtle` frame, the QR modal drew the raster
+// bare with no plate at all.
+//
+// The four-module quiet zone is baked into the raster (`qr.rs`) and is the
+// same `qr-light` as the plate, so a corner radius eats light margin and
+// never a module. That is the one hard limit here: a radius wider than the
+// quiet zone clips data and the code stops scanning, so it is clamped to
+// the zone rather than trusted to be small enough.
+export component QrPlate inherits Rectangle {
+    in property <image> code;
+    // Width of the baked quiet zone at the rendered scale.
+    in property <length> quiet-zone;
+    // What sits behind the plate. The corners are painted back in this
+    // color rather than clipped, because Slint's `clip` is rectangular:
+    // the raster's own square light corners would otherwise sit on top of
+    // a rounded background and nothing would look rounded at all. Same
+    // four masks the context menu cuts its scrim hole with.
+    in property <color> behind: Theme.bg-panel;
+
+    property <length> corner: Math.min(Sizing.radius-md, root.quiet-zone);
+
+    background: Theme.qr-light;
+    border-radius: root.corner;
+
+    Image {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: parent.height;
+        source: root.code;
+        image-rendering: pixelated;
+    }
+
+    if root.corner > 0px: Image {
+        x: 0; y: 0; width: root.corner; height: root.corner;
+        source: GlyphSource.glyph("corners/cut-tl", root.corner, root.behind);
+    }
+    if root.corner > 0px: Image {
+        x: parent.width - root.corner; y: 0; width: root.corner; height: root.corner;
+        source: GlyphSource.glyph("corners/cut-tr", root.corner, root.behind);
+    }
+    if root.corner > 0px: Image {
+        x: 0; y: parent.height - root.corner; width: root.corner; height: root.corner;
+        source: GlyphSource.glyph("corners/cut-bl", root.corner, root.behind);
+    }
+    if root.corner > 0px: Image {
+        x: parent.width - root.corner; y: parent.height - root.corner;
+        width: root.corner; height: root.corner;
+        source: GlyphSource.glyph("corners/cut-br", root.corner, root.behind);
+    }
+}
+
+// The one place a modal's chrome lives (Modal.qml's role, which the port
+// never took over: seven bespoke panels drifted to four different title
+// gaps, two QR presentations and three different header treatments, and a
+// change to any one of them landed on one modal at a time).
+//
+// A host supplies a width and the height of its own content, then places
+// that content against `content-y`; everything above that line belongs
+// here.
+//
+// One trap: `@children` are laid out inside the panel, but `parent` in a
+// host's own declaration still resolves lexically to the host's root,
+// which is the full-screen scrim. Position against `root.panel-width` and
+// `root.content-width`, never `parent.width`, or the content is measured
+// against the screen and clipped away at the panel edge.
+//
+// Every titled panel separates its title from its content with the same
+// rule, unconditionally. Gating it on anything -- whether the body
+// scrolls, how many rows there are -- puts a line on one panel and not on
+// its neighbour doing the same job, which reads as a defect rather than as
+// information. See docs/style.md, "Lines".
+export component ModalShell inherits Rectangle {
+    in property <string> title;
+    in property <length> panel-width;
+    in property <length> content-height;
+
+    // The shared surface inset: all four sides, and every gap between the
+    // blocks stacked inside (docs/style.md, "Surface containment").
+    out property <length> pad: Sizing.surface-pad;
+    out property <length> title-height: Math.ceil(shell-title.preferred-height / 1px) * 1px;
+    out property <length> rule-y: root.pad + root.title-height + root.pad;
+    out property <length> content-y: root.rule-y + Sizing.stroke(1) + root.pad;
+    out property <length> content-width: Math.max(0px, root.panel-width - 2 * root.pad);
+    out property <length> panel-height: root.content-y + root.content-height + root.pad;
+
+    background: Theme.scrim;
+
+    Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        width: root.panel-width;
+        height: root.panel-height;
+        background: Theme.bg-panel;
+        // Flat modal chrome uses the scrim, not an outline, for separation
+        // (docs/style.md, "Surface containment").
+        border-radius: Sizing.radius-md;
+        clip: true;
+
+        shell-title := Text {
+            x: (parent.width - self.width) / 2;
+            y: root.pad;
+            width: Math.min(self.preferred-width, parent.width - 2 * root.pad);
+            overflow: elide;
+            text: root.title;
+            color: Theme.text-primary;
+            font-size: Sizing.font-title;
+        }
+        Divider { x: 0; y: root.rule-y; width: parent.width; }
+        @children
+    }
+}
+
+// One directional cue: a scroll arrow, or one half of `PageIndicator`'s
+// pair, or a carousel arrow. Painted whether or not the direction is live,
+// because a press the other way brings it straight back and hiding it
+// takes away the only sign that the surface scrolls at all. What toggles
+// is the color, and the spent color is `Theme.cue-spent` rather than
+// `text-label`: a state carried by color alone needs 3:1 between the two,
+// and `text-label` manages that on three of the twenty presets. Hosts hide
+// the whole pair when nothing scrolls; that is a different question from
+// one direction being spent. See docs/style.md -> "Spent cues".
+export component ScrollCue inherits Image {
+    in property <string> glyph: "icons/ScrollDown";
+    in property <bool> live: true;
+    width: Sizing.pct-h(3);
+    height: self.width;
+    source: GlyphSource.glyph(root.glyph, Math.max(1px, self.width),
+        root.live ? Theme.text-primary : Theme.cue-spent);
+}
+
 // Compact "where am I" cue (PageIndicator.qml): an up/down chevron pair
 // plus "N/M". Reserves its full width unconditionally so arming a
 // second page changes only the text, never the chevrons' position.
@@ -450,6 +599,10 @@ export component PageIndicator inherits Rectangle {
     in property <bool> item-position-mode: false;
     in property <int> current-item: 0;
     in property <int> total-items: 0;
+    // Continuously scrolled prose has no items to count, so it reads out a
+    // percentage instead. `fraction` is 0 at the top and 1 at the bottom.
+    in property <bool> percent-mode: false;
+    in property <float> fraction: 0;
     // False for cursor-paginated lists whose final page is unknown:
     // shows a bare "N" instead of a growing denominator.
     in property <bool> page-total-known: true;
@@ -464,11 +617,13 @@ export component PageIndicator inherits Rectangle {
     callback page-requested(int);
 
     out property <bool> has-navigation-range: root.has-pages-above || root.has-pages-below;
-    out property <string> page-text: root.item-position-mode
-        ? @tr("{}/{}", Math.min(Math.max(0, root.current-item), Math.max(0, root.total-items - 1)) + 1, Math.max(1, root.total-items))
-        : (root.page-total-known
-            ? @tr("{}/{}", root.current-page + 1, Math.max(1, root.total-pages))
-            : @tr("{}", root.current-page + 1));
+    out property <string> page-text: root.percent-mode
+        ? @tr("{}%", Math.round(Math.max(0, Math.min(1, root.fraction)) * 100))
+        : (root.item-position-mode
+            ? @tr("{}/{}", Math.min(Math.max(0, root.current-item), Math.max(0, root.total-items - 1)) + 1, Math.max(1, root.total-items))
+            : (root.page-total-known
+                ? @tr("{}/{}", root.current-page + 1, Math.max(1, root.total-pages))
+                : @tr("{}", root.current-page + 1)));
     property <length> text-width: Math.ceil(text-measure.preferred-width / 1px) * 1px;
     // Baseline of the page-count text within this component, so a host
     // can baseline-align it against a Text of its own.
@@ -483,25 +638,25 @@ export component PageIndicator inherits Rectangle {
         font-size: Sizing.font-section;
     }
 
-    up := Image {
+    up := ScrollCue {
         x: 0;
         y: (parent.height - self.height) / 2;
         width: root.chevron-size;
-        height: root.chevron-size;
         visible: root.has-navigation-range;
-        source: GlyphSource.glyph("icons/ScrollUp", root.chevron-size, root.has-pages-above ? Theme.text-primary : Theme.text-label);
+        glyph: "icons/ScrollUp";
+        live: root.has-pages-above;
         TouchArea {
             enabled: root.has-pages-above;
             clicked => { root.page-requested(-1); }
         }
     }
-    down := Image {
+    down := ScrollCue {
         x: up.x + up.width + root.chevron-spacing;
         y: (parent.height - self.height) / 2;
         width: root.chevron-size;
-        height: root.chevron-size;
         visible: root.has-navigation-range;
-        source: GlyphSource.glyph("icons/ScrollDown", root.chevron-size, root.has-pages-below ? Theme.text-primary : Theme.text-label);
+        glyph: "icons/ScrollDown";
+        live: root.has-pages-below;
         TouchArea {
             enabled: root.has-pages-below;
             clicked => { root.page-requested(1); }
@@ -777,22 +932,6 @@ export component HelpBar inherits Rectangle {
             }
         }
     }
-}
-
-// A line inside a surface (CardDivider.qml, which the port never had, so
-// every rule was hand-rolled and they drifted to two weights and two
-// colors). One hairline, one place: a structural line marks the boundary
-// between a pinned region and one that scrolls under it and is painted in
-// `border-mid`, because structure has to survive 240p where
-// `border-subtle` against `surface-card` does not; a decorative row
-// separator inside a table has no contrast requirement and takes the
-// quieter role. Width is the parent's, so mounting it on the surface
-// gives a full-width rule and mounting it in the content box gives an
-// inset one. See docs/style.md -> "Lines".
-export component Divider inherits Rectangle {
-    in property <bool> decorative: false;
-    height: Sizing.stroke(1);
-    background: root.decorative ? Theme.border-subtle : Theme.border-mid;
 }
 
 // Non-focusable group heading (SectionHeader.qml): a label-colored

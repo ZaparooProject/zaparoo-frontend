@@ -1061,8 +1061,8 @@ fn open_context_menu(ctx: &Ctx, app: &App) {
         (row, has_launchers, shared.systems_model.mode)
     };
     if mode == SystemsMode::Favorites {
-        let (x, y, w, h) = cell_anchor(ctx, app);
-        crate::router::set_context_anchor(app, x, y, w, h);
+        let anchor = cell_anchor(ctx, app);
+        crate::router::set_context_anchor(app, &anchor);
         crate::router::present_systems_context_menu(
             ctx,
             app,
@@ -1092,13 +1092,13 @@ fn open_context_menu(ctx: &Ctx, app: &App) {
         entries.push(crate::router::menu_row("index_system"));
         entries.push(crate::router::menu_row("scrape_system"));
     }
-    let (x, y, w, h) = cell_anchor(ctx, app);
-    crate::router::set_context_anchor(app, x, y, w, h);
+    let anchor = cell_anchor(ctx, app);
+    crate::router::set_context_anchor(app, &anchor);
     crate::router::present_systems_context_menu(ctx, app, entries);
 }
 
 /// The scene rect of the focused tile or list row (the menu anchor).
-fn cell_anchor(ctx: &Ctx, app: &App) -> (f32, f32, f32, f32) {
+fn cell_anchor(ctx: &Ctx, app: &App) -> crate::router::ContextAnchor {
     let shared = lock(&ctx.shared);
     let model = &shared.systems_model;
     if list_layout(&shared) {
@@ -1107,14 +1107,19 @@ fn cell_anchor(ctx: &Ctx, app: &App) -> (f32, f32, f32, f32) {
         let top = app.global::<SystemsView>().get_list_scroll_top().max(0) as usize;
         let local = model.grid.current_index().saturating_sub(top) as f32;
         let row_h = g.row_height as f32;
-        (
-            (g.card_x + g.list_x) as f32 + layout.get_card_padding_left(),
-            (g.card_y + g.list_y) as f32
+        crate::router::ContextAnchor {
+            x: (g.card_x + g.list_x) as f32 + layout.get_card_padding_left(),
+            y: (g.card_y + g.list_y) as f32
                 + layout.get_card_padding_top()
                 + local * (row_h + layout.get_row_spacing()),
-            g.list_width as f32 - layout.get_card_padding_left() - layout.get_card_padding_right(),
-            row_h,
-        )
+            w: g.list_width as f32
+                - layout.get_card_padding_left()
+                - layout.get_card_padding_right(),
+            h: row_h,
+            // A row's silhouette is its selection fill, not a card.
+            radius: layout.get_row_radius(),
+            zoomed: false,
+        }
     } else {
         let geometry = geometry(app);
         let rect = paged_grid::cell_rect(
@@ -1123,12 +1128,14 @@ fn cell_anchor(ctx: &Ctx, app: &App) -> (f32, f32, f32, f32) {
             i32::try_from(model.grid.current_row()).unwrap_or(0),
             i32::try_from(model.grid.current_column()).unwrap_or(0),
         );
-        (
-            rect.x as f32,
-            (geometry.grid_y + rect.y) as f32,
-            rect.width as f32,
-            rect.height as f32,
-        )
+        crate::router::ContextAnchor {
+            x: rect.x as f32,
+            y: (geometry.grid_y + rect.y) as f32,
+            w: rect.width as f32,
+            h: rect.height as f32,
+            radius: app.global::<crate::Layout>().get_card_radius(),
+            zoomed: true,
+        }
     }
 }
 
