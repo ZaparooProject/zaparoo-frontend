@@ -65,6 +65,8 @@ pub struct HubState {
 #[serde(default)]
 pub struct SystemsState {
     pub system_id: String,
+    /// Slint list viewport; missing in older state files, which retain centered restoration.
+    pub list_top: Option<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -73,6 +75,8 @@ pub struct GamesState {
     pub system_id: String,
     pub path_stack: Vec<String>,
     pub selected_at_level: Vec<String>,
+    /// One viewport per folder level, alongside its selected path. Empty in old files.
+    pub list_top_at_level: Vec<usize>,
     /// Favorites-only projection of folder listings. Serde-defaulted so
     /// state files written before the field existed keep loading.
     pub favorites_filter: bool,
@@ -93,6 +97,7 @@ impl Default for GamesState {
             system_id: String::new(),
             path_stack: vec![String::new()],
             selected_at_level: vec![String::new()],
+            list_top_at_level: Vec::new(),
             favorites_filter: false,
             entered_from_hub: false,
         }
@@ -106,6 +111,7 @@ impl Default for GamesState {
 #[serde(default)]
 pub struct RecentsState {
     pub selected_path: String,
+    pub list_top: Option<usize>,
 }
 
 /// Favorite-games selection state. The list itself is owned by Core
@@ -114,6 +120,7 @@ pub struct RecentsState {
 #[serde(default)]
 pub struct FavoritesState {
     pub selected_path: String,
+    pub list_top: Option<usize>,
 }
 
 /// Favorite-systems selection state. Mirrors `FavoritesState` but stays
@@ -122,6 +129,7 @@ pub struct FavoritesState {
 #[serde(default)]
 pub struct FavoriteSystemsState {
     pub selected_path: String,
+    pub list_top: Option<usize>,
 }
 
 /// Per-frontend Settings selections. `resolution` is `"WxH"` (e.g.
@@ -345,7 +353,15 @@ pub fn load() -> PersistedState {
 }
 
 pub fn save(state: &PersistedState) {
+    let started = std::time::Instant::now();
     save_to(&state_file_path(), state);
+    let elapsed = started.elapsed();
+    if elapsed > std::time::Duration::from_millis(16) {
+        tracing::debug!(
+            duration_us = elapsed.as_micros() as u64,
+            "persisted state save exceeded frame budget"
+        );
+    }
 }
 
 fn load_from(path: &Path) -> PersistedState {
@@ -395,6 +411,12 @@ fn save_to(path: &Path, state: &PersistedState) {
             return;
         }
     };
+    // Reprojection and repeated focus events can save the same snapshot.
+    // Compare with disk, not a process cache: deleted or externally replaced
+    // files must still be repaired. Changed state retains write-through sync.
+    if std::fs::read_to_string(path).is_ok_and(|previous| previous == serialized) {
+        return;
+    }
     if let Some(parent) = path.parent() {
         if let Err(e) = std::fs::create_dir_all(parent) {
             warn!("could not create {}: {e}", parent.display());
@@ -468,6 +490,23 @@ mod tests {
     }
 
     #[test]
+    fn old_browse_state_keeps_selection_without_requiring_viewport_fields() {
+        let old: PersistedState = toml::from_str(
+            "active_screen = 'games'\n[systems]\nsystem_id = 'NES'\n[games]\nsystem_id = 'NES'\npath_stack = ['', '/nes']\nselected_at_level = ['/nes', '/nes/game.nes']\n[favorites]\nselected_path = '/nes/game.nes'\n[recents]\nselected_path = '/snes/game.sfc'\n[favorite_systems]\nselected_path = 'SNES'",
+        ).unwrap();
+        assert_eq!(old.systems.system_id, "NES");
+        assert_eq!(old.games.selected_at_level[1], "/nes/game.nes");
+        assert_eq!(old.favorites.selected_path, "/nes/game.nes");
+        assert_eq!(old.recents.selected_path, "/snes/game.sfc");
+        assert_eq!(old.favorite_systems.selected_path, "SNES");
+        assert_eq!(old.systems.list_top, None);
+        assert_eq!(old.favorites.list_top, None);
+        assert_eq!(old.recents.list_top, None);
+        assert_eq!(old.favorite_systems.list_top, None);
+        assert!(old.games.list_top_at_level.is_empty());
+    }
+
+    #[test]
     fn load_returns_default_on_missing_file() {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("missing.toml");
@@ -490,22 +529,27 @@ mod tests {
             },
             systems: SystemsState {
                 system_id: "NES".into(),
+                list_top: Some(7),
             },
             games: GamesState {
                 system_id: "NES".into(),
                 path_stack: vec![String::new(), "/roms/nes/mario".into()],
                 selected_at_level: vec!["/roms/nes/mario".into(), "/roms/nes/mario/smb.nes".into()],
+                list_top_at_level: vec![4, 9],
                 favorites_filter: false,
                 entered_from_hub: true,
             },
             recents: RecentsState {
                 selected_path: "/roms/nes/mario/smb.nes".into(),
+                list_top: Some(3),
             },
             favorites: FavoritesState {
                 selected_path: "/roms/nes/zelda.nes".into(),
+                list_top: Some(5),
             },
             favorite_systems: FavoriteSystemsState {
                 selected_path: "NES".into(),
+                list_top: Some(2),
             },
             settings: SettingsState {
                 resolution: "1920x1080".into(),
@@ -540,6 +584,43 @@ mod tests {
         save_to(&path, &original);
         let loaded = load_from(&path);
         assert_eq!(loaded, original);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn identical_save_keeps_file_and_changed_save_replaces_it() {
+        use std::os::unix::fs::MetadataExt;
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("state.toml");
+        let mut state = PersistedState::default();
+        save_to(&path, &state);
+        // Keep the old inode alive so it cannot be reused by a replacement.
+        let original = dir.path().join("original.toml");
+        std::fs::hard_link(&path, &original).expect("retain original inode");
+        let inode = std::fs::metadata(&path).expect("metadata").ino();
+        save_to(&path, &state);
+        assert_eq!(std::fs::metadata(&path).expect("metadata").ino(), inode);
+        state.active_screen = "games".into();
+        save_to(&path, &state);
+        assert_ne!(std::fs::metadata(&path).expect("metadata").ino(), inode);
+        assert_eq!(load_from(&path), state);
+    }
+
+    #[test]
+    fn save_repairs_deleted_or_externally_modified_state() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("state.toml");
+        let state = PersistedState {
+            active_screen: "systems".into(),
+            ..Default::default()
+        };
+        save_to(&path, &state);
+        std::fs::remove_file(&path).expect("remove state");
+        save_to(&path, &state);
+        assert_eq!(load_from(&path), state);
+        std::fs::write(&path, "active_screen = 'hub'\n").expect("external write");
+        save_to(&path, &state);
+        assert_eq!(load_from(&path), state);
     }
 
     #[test]
@@ -660,11 +741,13 @@ resolution = "1920x1080"
                             },
                             systems: SystemsState {
                                 system_id: format!("sys-{i}-{j}"),
+                                ..Default::default()
                             },
                             games: GamesState {
                                 system_id: format!("sys-{i}-{j}"),
                                 path_stack: vec![String::new()],
                                 selected_at_level: vec![format!("/roms/{i}/{j}.rom")],
+                                list_top_at_level: vec![0],
                                 favorites_filter: false,
                                 entered_from_hub: false,
                             },

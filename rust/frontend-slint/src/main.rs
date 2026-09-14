@@ -12,6 +12,7 @@
 mod about;
 mod actions;
 mod alternates;
+mod browse_motion;
 mod card_write;
 mod customization;
 mod display;
@@ -24,7 +25,9 @@ mod fonts;
 mod frame_transition;
 mod game_info;
 mod game_info_data;
+mod gamepad;
 mod games;
+mod gamescope;
 mod glyphs;
 mod hub;
 mod hub_covers;
@@ -44,6 +47,11 @@ mod mister;
     )
 )]
 mod mister_battery;
+mod navigation;
+// Reads the kernel power-supply class, which only the desktop feature
+// set has any use for; `MiSTer`'s reading comes off the `SMBus` instead.
+#[cfg(feature = "desktop")]
+mod power_supply;
 mod qr;
 // Route motion has to be checked by rendering, and that needs the
 // software renderer, which only the MiSTer feature set links.
@@ -53,7 +61,10 @@ mod route_motion;
 mod router;
 mod settings;
 mod sizing;
+mod state_types;
 mod status;
+mod steam;
+mod steam_host;
 mod system_logos;
 mod system_status;
 mod systems;
@@ -87,7 +98,7 @@ pub use generated::*;
 
 use router::{lock, Ctx, Shared};
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use zaparoo_core::client::{Client, ConnectionState};
@@ -102,6 +113,12 @@ use zaparoo_core::systems_catalog::CatalogData;
 /// the Qt `CategoriesModel`). User-hidden category preferences are not
 /// wired in the demo.
 const HIDDEN_CATEGORIES: &[&str] = &["Media"];
+
+/// Desktop window size when the config asks for none. `MiSTer` and the CRT
+/// canvas take their raster from the presenter, and a fullscreen window
+/// takes its size from the compositor, so this covers only the plain
+/// windowed case.
+const DESKTOP_WINDOW_SIZE: (u32, u32) = (1280, 720);
 
 /// Physical output raster when a `MiSTer` presenter owns the screen;
 /// None on desktop (window == output). Under dynamic resolution the
@@ -199,7 +216,7 @@ pub(crate) fn set_live_crt_offsets(h_offset: i32, v_offset: i32) {
     let _ = (h_offset, v_offset);
 }
 
-pub(crate) fn set_live_orientation(app: &App, value: &str, framebuffer_size: (u32, u32)) {
+pub(crate) fn set_live_orientation(app: &App, value: Orientation, framebuffer_size: (u32, u32)) {
     #[cfg(feature = "mister")]
     {
         let _ = (app, framebuffer_size);
@@ -207,7 +224,7 @@ pub(crate) fn set_live_orientation(app: &App, value: &str, framebuffer_size: (u3
     }
     #[cfg(not(feature = "mister"))]
     {
-        let (w, h) = if matches!(value, "cw" | "ccw") {
+        let (w, h) = if matches!(value, Orientation::Cw | Orientation::Ccw) {
             (framebuffer_size.1, framebuffer_size.0)
         } else {
             framebuffer_size
@@ -284,7 +301,81 @@ fn merge_config_settings(
     s.crt_v_offset = v;
 }
 
-pub(crate) fn scene_size(width: f64, height: f64, orientation: &str, crt: bool) -> (f64, f64) {
+/// Runtimes that present like a console rather than a desktop: held in
+/// the hand, owning the whole screen, driven by a pad. This is what the
+/// machine *is*, so it never changes while we run, and it decides the
+/// fullscreen default.
+pub(crate) fn handheld_runtime() -> bool {
+    zaparoo_core::runtime::current().is_steam_os()
+}
+
+/// Whether the screen being painted right now is one held in the hand.
+/// This is what the `device` interface profile follows, and unlike
+/// [`handheld_runtime`] it changes underneath us: a Steam Deck put on a
+/// dock is a lean-back device until it is picked back up.
+pub(crate) fn handheld_output() -> bool {
+    zaparoo_core::display_class::current().is_handheld()
+}
+
+/// Resolve `interfaceProfile` against the output in front of the user and
+/// push it. Called at seed and again on every scene change, because the
+/// answer moves with the dock rather than with the binary.
+pub(crate) fn apply_interface_profile(app: &App, setting: &str) {
+    app.global::<Sizing>().set_handheld(
+        zaparoo_app::sizing::InterfaceProfile::resolve(setting, handheld_output())
+            == zaparoo_app::sizing::InterfaceProfile::Handheld,
+    );
+}
+
+/// Pin logical pixels to physical ones before the window exists.
+///
+/// Slint's winit backend derives a scale factor from the display's
+/// reported DPI. On a Steam Deck's panel that lands at 2.17, so a
+/// 1280x800 output becomes a 591x369 logical scene: the whole UI drops
+/// into the 240p tier and every rasterized glyph is drawn at logical
+/// size and then upscaled by more than two.
+///
+/// This frontend sizes itself from the real framebuffer on purpose,
+/// which is what the resolution tiers in `zaparoo_app::sizing` are, so
+/// the two units have to stay the same thing. `MiSTer` never had the
+/// question: it owns the framebuffer outright.
+///
+/// An explicit `SLINT_SCALE_FACTOR` still wins, so a high-density desktop
+/// display can ask for the old behavior for one run.
+#[cfg(feature = "desktop")]
+fn pin_logical_pixels_to_physical() {
+    const VAR: &str = "SLINT_SCALE_FACTOR";
+    if std::env::var_os(VAR).is_none() {
+        std::env::set_var(VAR, "1");
+    }
+}
+
+/// Fullscreen is a desktop-only request. `MiSTer` owns the framebuffer
+/// outright and the CRT canvas is a fixed raster, so neither takes a window
+/// hint. `[video] fullscreen` and `--fullscreen` both ask for it;
+/// `--windowed` is the escape hatch for a config that leaves it on. An
+/// absent config key is not a `false`: `default_on` decides, so a handheld
+/// runtime comes up fullscreen without anyone writing a config file.
+fn fullscreen_requested(
+    config_fullscreen: Option<bool>,
+    default_on: bool,
+    crt: bool,
+    args: &[String],
+) -> bool {
+    if cfg!(feature = "mister") || crt {
+        return false;
+    }
+    let configured = config_fullscreen.unwrap_or(default_on);
+    (configured || args.iter().any(|a| a == "--fullscreen"))
+        && !args.iter().any(|a| a == "--windowed")
+}
+
+pub(crate) fn scene_size(
+    width: f64,
+    height: f64,
+    orientation: Orientation,
+    crt: bool,
+) -> (f64, f64) {
     let inset_w = if crt {
         2.0 * (width * 0.05).round()
     } else {
@@ -297,7 +388,7 @@ pub(crate) fn scene_size(width: f64, height: f64, orientation: &str, crt: bool) 
     };
     let safe_w = (width - inset_w).max(1.0);
     let safe_h = (height - inset_h).max(1.0);
-    if matches!(orientation, "cw" | "ccw") {
+    if matches!(orientation, Orientation::Cw | Orientation::Ccw) {
         (safe_h, safe_w)
     } else {
         (safe_w, safe_h)
@@ -314,34 +405,45 @@ fn seed_display_globals(
 ) {
     app.global::<Theme>().set_crt(visual_crt);
     app.global::<Sizing>().set_crt(visual_crt);
-    let rotated = matches!(persisted.settings.orientation.as_str(), "cw" | "ccw");
+    let orientation = Orientation::try_from(persisted.settings.orientation.as_str())
+        .unwrap_or(Orientation::Horizontal);
+    let rotated = orientation != Orientation::Horizontal;
     app.global::<Sizing>().set_swap_axes(rotated);
-    app.global::<Shell>()
-        .set_orientation(SharedString::from(persisted.settings.orientation.as_str()));
+    app.global::<Shell>().set_orientation(orientation);
     app.global::<Shell>()
         .set_browse_list_layout(persisted.settings.games_browse_layout == "list");
     app.global::<Shell>()
         .set_systems_list_layout(persisted.settings.systems_browse_layout == "list");
-    app.global::<Sizing>()
-        .set_handheld(persisted.settings.interface_profile == "handheld");
+    apply_interface_profile(app, &persisted.settings.interface_profile);
     app.global::<Motion>().set_enabled(display::motion_enabled(
         persisted.settings.reduce_motion,
         cfg!(feature = "mister"),
         visual_crt,
         framebuffer_size.1,
     ));
+    // The software renderer has no transform support, so a focused tile
+    // never actually grows there. Say so once, here, rather than letting
+    // each consumer guess: the grid would reserve clip headroom it cannot
+    // use and the context menu would cut its scrim hole around a size the
+    // tile never reaches.
+    if cfg!(feature = "mister") {
+        app.global::<Motion>().set_focus_zoom(100.0);
+    }
     display::register_labels(app);
     app.global::<Shell>()
         .set_is_mister(cfg!(feature = "mister"));
     app.global::<Shell>().set_crt_enabled(crt_enabled);
-    app.global::<Shell>().set_crt_standard(SharedString::from(
-        persisted.settings.crt_video_standard.as_str(),
-    ));
+    app.global::<Shell>().set_crt_standard(
+        VideoStandard::try_from(persisted.settings.crt_video_standard.as_str())
+            .unwrap_or(VideoStandard::Ntsc),
+    );
     let bitmap = display::bitmap_type(cfg!(feature = "mister"), visual_crt, framebuffer_size.1);
     app.global::<Sizing>().set_bitmap_fonts(bitmap);
     app.global::<Theme>().set_bitmap_fonts(bitmap);
+    // A fullscreen surface is the compositor's to size; asking for one
+    // here would fight it and land a wrong-sized first frame.
     #[cfg(not(feature = "mister"))]
-    {
+    if !app.window().is_fullscreen() {
         let (w, h) = if rotated {
             (framebuffer_size.1, framebuffer_size.0)
         } else {
@@ -353,7 +455,7 @@ fn seed_display_globals(
     let (scene_w, scene_h) = scene_size(
         f64::from(framebuffer_size.0),
         f64::from(framebuffer_size.1),
-        &persisted.settings.orientation,
+        orientation,
         visual_crt,
     );
     app.global::<Sizing>().set_screen_width(scene_w as f32);
@@ -390,6 +492,8 @@ fn main() -> Result<(), slint::PlatformError> {
         path.set_file_name("state-slint.toml");
         std::env::set_var("ZAPAROO_STATE_FILE", &path);
     }
+    #[cfg(feature = "desktop")]
+    pin_logical_pixels_to_physical();
 
     let config = zaparoo_core::config::load_config(&platform_paths::config_file_path());
     let _log_guard = init_demo_paths(&config);
@@ -432,6 +536,7 @@ fn main() -> Result<(), slint::PlatformError> {
     // direct_video, leaving fb0 available for an independent HDMI UI.
     let crt = args.iter().any(|a| a == "--crt");
     let dual_head = cfg!(feature = "mister") && crt && args.iter().any(|a| a == "--dual-head");
+    let fullscreen = fullscreen_requested(config.video_fullscreen, handheld_runtime(), crt, &args);
     // An inherited Main offer is not ownership: the presenter waits for an
     // acknowledged grant after mode setup. A manual --latch grants nothing.
     #[cfg(feature = "mister")]
@@ -491,12 +596,21 @@ fn main() -> Result<(), slint::PlatformError> {
     #[cfg(not(feature = "mister"))]
     let _ = (latch, dual_head, adaptive_render);
 
+    // Desktop seeds the first frame from whatever `[video]` asked for, or
+    // the default window when it asked for nothing. Under fullscreen this
+    // is only a guess: `viewport-changed` re-solves every screen against
+    // the surface the compositor actually hands over.
     let ui_framebuffer_size = if cfg!(feature = "mister") || crt {
         framebuffer_size
+    } else if config.video_explicit {
+        hdmi_framebuffer_size
     } else {
-        (1280, 720)
+        DESKTOP_WINDOW_SIZE
     };
     let app = App::new()?;
+    if fullscreen {
+        app.window().set_fullscreen(true);
+    }
     fonts::register_embedded_fonts();
     apply_language(&persisted.settings.language);
     let palette = theme::apply_palette(
@@ -544,11 +658,13 @@ fn main() -> Result<(), slint::PlatformError> {
         &persisted.settings,
     )));
     let status_language = effective_language(&persisted.settings.language);
+    let (dormant, _) = tokio::sync::watch::channel(false);
     let ctx = Arc::new(Ctx {
         store: store.clone(),
         handle: handle.clone(),
         media,
         clock_twelve_hour: clock_twelve_hour.clone(),
+        dormant,
         status: status::new(&status_language),
         config_path: platform_paths::config_file_path(),
         crt_enabled: crt,
@@ -568,11 +684,11 @@ fn main() -> Result<(), slint::PlatformError> {
     // Solve the initial grid shapes in logical scene space and re-solve
     // on resize/orientation changes. DRS still keys from the physical
     // output raster so its fidelity switch never changes page shape.
-    let initial_orientation = app.global::<Shell>().get_orientation().to_string();
+    let initial_orientation = app.global::<Shell>().get_orientation();
     let (initial_w, initial_h) = scene_size(
         f64::from(ui_framebuffer_size.0),
         f64::from(ui_framebuffer_size.1),
-        &initial_orientation,
+        initial_orientation,
         visual_crt,
     );
     apply_grid_shapes(&app, initial_w, initial_h, visual_crt);
@@ -581,10 +697,18 @@ fn main() -> Result<(), slint::PlatformError> {
         let ctx = ctx.clone();
         app.on_viewport_changed(move |w, h| {
             if let Some(app) = weak.upgrade() {
-                let orientation = app.global::<Shell>().get_orientation().to_string();
+                let orientation = app.global::<Shell>().get_orientation();
                 let (w, h) = output_size().map_or((f64::from(w), f64::from(h)), |(ow, oh)| {
-                    scene_size(f64::from(ow), f64::from(oh), &orientation, visual_crt)
+                    scene_size(f64::from(ow), f64::from(oh), orientation, visual_crt)
                 });
+                // Docking swaps which screen we are painting on, and the
+                // compositor tells us by resizing us. Re-resolve the
+                // profile before the shapes so the same event carries
+                // both halves of the change.
+                apply_interface_profile(
+                    &app,
+                    &lock(&ctx.shared).persist.settings.interface_profile,
+                );
                 apply_grid_shapes(&app, w, h, visual_crt);
                 // The window is rarely the size the config asked for
                 // (a tiling WM, a smaller display, a live resize), so
@@ -596,11 +720,11 @@ fn main() -> Result<(), slint::PlatformError> {
 
     #[cfg(feature = "mister")]
     if let Some(mirror) = crt_mirror.as_ref() {
-        let orientation = mirror.global::<Shell>().get_orientation().to_string();
+        let orientation = mirror.global::<Shell>().get_orientation();
         let (w, h) = scene_size(
             f64::from(crt_framebuffer_size.0),
             f64::from(crt_framebuffer_size.1),
-            &orientation,
+            orientation,
             true,
         );
         apply_grid_shapes(mirror, w, h, true);
@@ -641,17 +765,24 @@ fn main() -> Result<(), slint::PlatformError> {
     bind_catalog(&ctx, &app, &store);
     bind_connection_status(&ctx, &app, &client, &config.core_endpoint);
     bind_media_status(&ctx, &app, &store);
+    bind_desktop_lifecycle(&ctx, &app, &client, &config.core_endpoint);
+    // Offer to be the Steam session Core launches games into, so it does
+    // not have to start a second one.
+    steam_host::start(&config.core_endpoint);
     bind_status_events(&ctx, &app, &client);
     bind_launchers(&ctx, &store);
     apply_buttons(&ctx, &app);
     bind_controller_report(&ctx, &app);
-    start_clock(&app, &handle, clock_twelve_hour);
+    start_clock(&app, &handle, clock_twelve_hour, ctx.dormant.subscribe());
     start_status(&app, &ctx);
 
     #[cfg(feature = "mister")]
     let _dual_runtime = crt_mirror
         .map(|mirror| dual_head::Runtime::start(&app, mirror))
         .transpose()?;
+
+    // Nothing has focused us: Steam only does that for what it launched.
+    gamescope::claim_focus_when_mapped(&app);
 
     app.run()?;
 
@@ -730,6 +861,138 @@ fn bind_media_status(ctx: &Arc<Ctx>, app: &App, store: &Arc<Store>) {
     });
 }
 
+/// Local launch lifecycle. Core remains the process supervisor; every
+/// frontend goes cooperatively idle for primary media. Desktop stays mapped
+/// behind the game so Wayland can reveal it without an unsupported unminimize;
+/// `MiSTer` waits quietly for its wrapper to kill the process.
+fn bind_desktop_lifecycle(ctx: &Arc<Ctx>, app: &App, client: &Arc<Client>, endpoint: &str) {
+    if !local_lifecycle_enabled(endpoint) {
+        return;
+    }
+
+    let resource = ctx.store.media_status();
+    let mut media_rx = resource.subscribe();
+    let weak = app.as_weak();
+    let ctx_media = ctx.clone();
+    ctx.handle.clone().spawn(async move {
+        let mut was_active = false;
+        loop {
+            let snapshot = media_rx.borrow_and_update().clone();
+            // Core's Steam watcher reports every externally started Steam
+            // game, and a frontend installed as a Steam shortcut is one of
+            // them. Going dormant for our own launch would hide the UI
+            // behind its own launch face.
+            let active = snapshot
+                .primary_active
+                .as_ref()
+                .is_some_and(|media| !steam::is_self_media(&media.media_path));
+            let resumed = was_active && !active;
+            was_active = active;
+            let ctx_event = ctx_media.clone();
+            let _ = weak.upgrade_in_event_loop(move |app| {
+                set_dormant(&ctx_event, &app, active);
+            });
+            if resumed {
+                // Core's history tracker consumes the same stop event.
+                // Give its durable row a beat to close before refetching,
+                // without blocking a rapid next start notification.
+                let ctx_refresh = ctx_media.clone();
+                let weak_refresh = weak.clone();
+                ctx_media.handle.spawn(async move {
+                    tokio::time::sleep(Duration::from_millis(200)).await;
+                    if *ctx_refresh.dormant.borrow() {
+                        return;
+                    }
+                    ctx_refresh
+                        .store
+                        .invalidate(&zaparoo_core::store::Tag::any("MediaHistory"));
+                    let ctx_event = ctx_refresh.clone();
+                    let _ = weak_refresh.upgrade_in_event_loop(move |app| {
+                        refresh_resume(&ctx_event, &app);
+                        games::refresh_recents(&ctx_event, &app);
+                    });
+                });
+            }
+            if media_rx.changed().await.is_err() {
+                return;
+            }
+        }
+    });
+
+    // Never leave input and background work suspended indefinitely when
+    // local Core disappears. A short grace avoids flashing awake during
+    // an ordinary reconnect; a later successful seed can suspend again.
+    let mut connection_rx = client.connection.subscribe();
+    let generation = Arc::new(AtomicU64::new(0));
+    let weak = app.as_weak();
+    let handle = ctx.handle.clone();
+    let ctx_connection = ctx.clone();
+    handle.clone().spawn(async move {
+        while connection_rx.changed().await.is_ok() {
+            let state = connection_rx.borrow_and_update().clone();
+            let current_generation = generation.fetch_add(1, Ordering::SeqCst) + 1;
+            if matches!(state, ConnectionState::Connected) {
+                continue;
+            }
+            let generation = generation.clone();
+            let weak = weak.clone();
+            let ctx_event = ctx_connection.clone();
+            handle.spawn(async move {
+                tokio::time::sleep(Duration::from_secs(2)).await;
+                if generation.load(Ordering::SeqCst) != current_generation {
+                    return;
+                }
+                let _ = weak.upgrade_in_event_loop(move |app| {
+                    set_dormant(&ctx_event, &app, false);
+                });
+            });
+        }
+    });
+}
+
+fn local_lifecycle_enabled(endpoint: &str) -> bool {
+    zaparoo_app::covers::endpoint_is_loopback(endpoint)
+}
+
+fn set_dormant(ctx: &Ctx, app: &App, dormant: bool) {
+    let shell = app.global::<Shell>();
+    if shell.get_dormant() == dormant {
+        return;
+    }
+    shell.set_dormant(dormant);
+    ctx.dormant.send_replace(dormant);
+    if dormant {
+        input::stop_repeat(ctx);
+        // A launch that took the screen has said everything a held press
+        // could; nothing may still be pushed in when the frontend comes back.
+        press_feedback::cancel(app);
+        {
+            let mut shared = lock(&ctx.shared);
+            shared.saver_seq += 1;
+        }
+        shell.set_saver_armed(false);
+        app.global::<Motion>().set_enabled(false);
+        if ctx.is_mister {
+            ctx.media.clear_decoded();
+        }
+        tracing::info!("primary media active; frontend dormant");
+    } else {
+        let reduce_motion = lock(&ctx.shared).persist.settings.reduce_motion;
+        app.global::<Motion>().set_enabled(display::motion_enabled(
+            reduce_motion,
+            ctx.is_mister,
+            app.global::<Theme>().get_crt(),
+            ctx.framebuffer_size.1,
+        ));
+        router::reset_idle(ctx, app);
+        // Steam puts its own shell back in front when a game exits, so
+        // the way back on screen is to claim the compositor again rather
+        // than to wait for someone to hand it over.
+        gamescope::claim_focus_settling(app);
+        tracing::info!("primary media stopped; frontend resumed");
+    }
+}
+
 /// Core notifications the status line surfaces as transient events
 /// (playtime warnings, inbox messages); everything else is dropped.
 fn bind_status_events(ctx: &Arc<Ctx>, app: &App, client: &Arc<Client>) {
@@ -761,6 +1024,17 @@ fn bind_status_events(ctx: &Arc<Ctx>, app: &App, client: &Arc<Client>) {
 fn bind_controller_report(ctx: &Arc<Ctx>, app: &App) {
     let started = zaparoo_core::controller_report::spawn_watcher();
     tracing::debug!(started, "controller report watcher");
+    // One producer owns the report. Main's file wins where it exists;
+    // everywhere else the pad reader fills the same channel. Start it on
+    // its own line: a `tracing` macro does not evaluate its arguments
+    // when the level is disabled, so calling `spawn` inside one left the
+    // reader unstarted, and the frontend without a controller, on every
+    // run that did not have debug logging turned on.
+    #[cfg(feature = "desktop")]
+    {
+        let reader_started = gamepad::spawn(ctx, app, started);
+        tracing::debug!(started = reader_started, "desktop gamepad reader");
+    }
     let mut rx = zaparoo_core::controller_report::subscribe();
     let weak = app.as_weak();
     let ctx = ctx.clone();
@@ -820,25 +1094,43 @@ fn bind_resume(ctx: &Arc<Ctx>, app: &App, client: &Arc<Client>) {
                 return;
             }
         }
-        {
-            let ctx = ctx.clone();
-            let _ = weak.upgrade_in_event_loop(move |app| {
-                hub::set_resume(
-                    &ctx,
-                    &app,
-                    hub::Resume {
-                        requested: true,
-                        loading: true,
-                        entry: None,
-                    },
-                );
-            });
-        }
+        let _ = weak.upgrade_in_event_loop(move |app| {
+            request_resume(&ctx, &app, true);
+        });
+    });
+}
+
+/// Refresh the Resume tile after a game exits without blanking its old
+/// value while Core writes the new history row.
+fn refresh_resume(ctx: &Arc<Ctx>, app: &App) {
+    request_resume(ctx, app, false);
+}
+
+fn request_resume(ctx: &Arc<Ctx>, app: &App, show_loading: bool) {
+    if show_loading {
+        hub::set_resume(
+            ctx,
+            app,
+            hub::Resume {
+                requested: true,
+                loading: true,
+                entry: None,
+            },
+        );
+    }
+    let ctx = ctx.clone();
+    let weak = app.as_weak();
+    let client = ctx.store.client();
+    ctx.handle.clone().spawn(async move {
         let entry = match client.media_history_latest().await {
             Ok(result) => result.entry,
             Err(e) => {
                 tracing::debug!("media.history.latest failed: {}", e.message);
-                None
+                if show_loading {
+                    None
+                } else {
+                    return;
+                }
             }
         };
         let _ = weak.upgrade_in_event_loop(move |app| {
@@ -874,19 +1166,30 @@ fn start_clock(
     app: &App,
     handle: &tokio::runtime::Handle,
     twelve_hour: Arc<std::sync::atomic::AtomicBool>,
+    mut dormant: tokio::sync::watch::Receiver<bool>,
 ) {
     push_clock(app, twelve_hour.load(Ordering::Relaxed));
     let weak = app.as_weak();
     handle.spawn(async move {
-        let mut tick = tokio::time::interval(Duration::from_secs(30));
-        tick.tick().await;
         loop {
-            tick.tick().await;
+            while *dormant.borrow_and_update() {
+                if dormant.changed().await.is_err() {
+                    return;
+                }
+            }
             let text = clock_string(twelve_hour.load(Ordering::Relaxed));
             let _ = weak.upgrade_in_event_loop(move |app| {
                 app.global::<Shell>()
                     .set_clock_text(SharedString::from(text.as_str()));
             });
+            tokio::select! {
+                () = tokio::time::sleep(Duration::from_secs(30)) => {}
+                changed = dormant.changed() => {
+                    if changed.is_err() {
+                        return;
+                    }
+                }
+            }
         }
     });
 }
@@ -897,11 +1200,15 @@ fn start_clock(
 /// Core's `readers` (Core owns the reader). Keys are in display order.
 fn start_status(app: &App, ctx: &Arc<Ctx>) {
     let weak = app.as_weak();
+    let mut dormant = ctx.dormant.subscribe();
     let ctx = ctx.clone();
     ctx.handle.clone().spawn(async move {
-        let mut tick = tokio::time::interval(Duration::from_secs(30));
         loop {
-            tick.tick().await;
+            while *dormant.borrow_and_update() {
+                if dormant.changed().await.is_err() {
+                    return;
+                }
+            }
             let local = tokio::task::spawn_blocking(system_status::probe)
                 .await
                 .unwrap_or_default();
@@ -947,6 +1254,14 @@ fn start_status(app: &App, ctx: &Arc<Ctx>) {
                     local.has_wifi_internet || local.has_lan_internet,
                 );
             });
+            tokio::select! {
+                () = tokio::time::sleep(Duration::from_secs(30)) => {}
+                changed = dormant.changed() => {
+                    if changed.is_err() {
+                        return;
+                    }
+                }
+            }
         }
     });
 }
@@ -1005,9 +1320,13 @@ fn start_media_cache(
         client.clone(),
         &handle,
         media_rx,
+        ctx.dormant.subscribe(),
         move |key, image| {
             let ctx = ctx.clone();
             let _ = weak.upgrade_in_event_loop(move |app| {
+                if *ctx.dormant.borrow() {
+                    return;
+                }
                 if key.image_type.is_some() {
                     game_info::cover_landed(&ctx, &app, &key, &image);
                 } else {
@@ -1052,7 +1371,7 @@ fn bind_connection_status(ctx: &Arc<Ctx>, app: &App, client: &Arc<Client>, endpo
         .set_boot_text(SharedString::from(boot_text(&seed, false).as_str()));
 
     let mut rx = client.connection.subscribe();
-    let generation = Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let generation = Arc::new(AtomicU64::new(0));
     let weak = app.as_weak();
     let handle = ctx.handle.clone();
     let escalate_handle = handle.clone();
@@ -1297,12 +1616,60 @@ mod tests {
     #[test]
     fn scene_size_insets_then_rotates_crt_canvas() {
         assert_eq!(
-            scene_size(1280.0, 720.0, "horizontal", false),
+            scene_size(1280.0, 720.0, Orientation::Horizontal, false),
             (1280.0, 720.0)
         );
-        assert_eq!(scene_size(720.0, 480.0, "horizontal", true), (648.0, 432.0));
-        assert_eq!(scene_size(720.0, 480.0, "cw", true), (432.0, 648.0));
-        assert_eq!(scene_size(720.0, 480.0, "ccw", true), (432.0, 648.0));
+        assert_eq!(
+            scene_size(720.0, 480.0, Orientation::Horizontal, true),
+            (648.0, 432.0)
+        );
+        assert_eq!(
+            scene_size(720.0, 480.0, Orientation::Cw, true),
+            (432.0, 648.0)
+        );
+        assert_eq!(
+            scene_size(720.0, 480.0, Orientation::Ccw, true),
+            (432.0, 648.0)
+        );
+    }
+
+    #[test]
+    #[cfg(not(feature = "mister"))]
+    fn fullscreen_requested_reads_config_then_flags() {
+        let none: Vec<String> = Vec::new();
+        let on = vec!["--fullscreen".to_string()];
+        let off = vec!["--windowed".to_string()];
+        let both = vec!["--fullscreen".to_string(), "--windowed".to_string()];
+
+        assert!(!fullscreen_requested(Some(false), false, false, &none));
+        assert!(fullscreen_requested(Some(true), false, false, &none));
+        assert!(fullscreen_requested(None, false, false, &on));
+        // --windowed is the escape hatch, so it wins over both.
+        assert!(!fullscreen_requested(Some(true), false, false, &off));
+        assert!(!fullscreen_requested(None, false, false, &both));
+        // The CRT canvas is a fixed raster, never a window hint.
+        assert!(!fullscreen_requested(Some(true), false, true, &on));
+    }
+
+    #[test]
+    #[cfg(not(feature = "mister"))]
+    fn a_handheld_runtime_is_fullscreen_until_the_config_says_otherwise() {
+        let none: Vec<String> = Vec::new();
+        let off = vec!["--windowed".to_string()];
+
+        // No config key at all: the runtime decides.
+        assert!(fullscreen_requested(None, true, false, &none));
+        assert!(!fullscreen_requested(None, false, false, &none));
+        // An explicit false is not an absent key, so it still wins.
+        assert!(!fullscreen_requested(Some(false), true, false, &none));
+        assert!(!fullscreen_requested(None, true, false, &off));
+    }
+
+    #[test]
+    #[cfg(feature = "mister")]
+    fn fullscreen_is_never_requested_on_mister() {
+        let on = vec!["--fullscreen".to_string()];
+        assert!(!fullscreen_requested(Some(true), true, false, &on));
     }
 
     #[test]

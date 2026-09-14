@@ -36,6 +36,7 @@ const INDEX_STEP_DELAY: Duration = Duration::from_millis(500);
 const INDEX_PAUSE_DELAY: Duration = Duration::from_millis(1500);
 const OPTIMIZE_DELAY: Duration = Duration::from_millis(1200);
 const SCRAPE_SUBSTEP_DELAY: Duration = Duration::from_millis(400);
+const LAUNCH_DURATION: Duration = Duration::from_secs(2);
 
 /// Handle for pushing a JSON-RPC notification (no `id`) back over the
 /// socket that requested a sequence. Cloned into every spawned
@@ -88,6 +89,9 @@ struct MediaState {
     total_media: i32,
     index_generation: u64,
 
+    primary_active: Option<Value>,
+    launch_generation: u64,
+
     scraping: bool,
     scrape_done: bool,
     scrape_paused: bool,
@@ -122,10 +126,10 @@ fn with_state<R>(f: impl FnOnce(&mut MediaState) -> R) -> R {
 }
 
 /// `media` RPC response — the seed the frontend's `MediaStatusResource`
-/// fetches on every connect. `active` is always empty; the mock does not
-/// model a currently-running-game session.
+/// fetches on every connect, including any scripted primary launch.
 pub fn media_response() -> Value {
     with_state(|s| {
+        let active: Vec<Value> = s.primary_active.iter().cloned().collect();
         json!({
             "database": {
                 "exists": s.exists,
@@ -138,9 +142,55 @@ pub fn media_response() -> Value {
                 "totalFiles": s.total_files,
                 "totalMedia": s.total_media,
             },
-            "active": [],
+            "active": active,
         })
     })
+}
+
+/// Script a short primary-media session for UI lifecycle testing. Mock
+/// Core remains process-free: notifications and the `media.active` seed
+/// model the same contract real Core publishes around an emulator.
+pub fn start_launch(zap_script: &str, notifier: &Notifier) -> Value {
+    let active = json!({
+        "started": "2026-01-01T00:00:00Z",
+        "launcherId": "mock-launcher",
+        "systemId": "Mock",
+        "systemName": "Mock System",
+        "mediaPath": zap_script,
+        "mediaName": "Mock Game",
+        "slot": "primary",
+        "zapScript": zap_script,
+    });
+    let generation = with_state(|s| {
+        s.launch_generation += 1;
+        s.primary_active = Some(active.clone());
+        s.launch_generation
+    });
+    notifier.send("media.started", &active);
+
+    let notifier = notifier.clone();
+    tokio::spawn(async move {
+        sleep(LAUNCH_DURATION).await;
+        let stopped = with_state(|s| {
+            if s.launch_generation != generation {
+                return None;
+            }
+            let active = s.primary_active.take()?;
+            Some(json!({
+                "launcherId": active["launcherId"],
+                "systemId": active["systemId"],
+                "systemName": active["systemName"],
+                "mediaPath": active["mediaPath"],
+                "mediaName": active["mediaName"],
+                "slot": "primary",
+                "elapsed": LAUNCH_DURATION.as_secs(),
+            }))
+        });
+        if let Some(params) = stopped {
+            notifier.send("media.stopped", &params);
+        }
+    });
+    Value::Null
 }
 
 /// `media.scrape.status` RPC response — the one-shot seed for scrape

@@ -91,6 +91,14 @@ fn options(ctx: &Ctx, id: &str) -> Vec<String> {
 
 // ---------- Rendering ----------
 
+/// One rendered line of text at `size`, the way Slint lays it out: Noto
+/// Sans has a 1.362 em hhea line height and no line gap. Shared by the
+/// hint band, the action status line and the group heading so the three
+/// stay in step with the type ladder instead of with a magic percentage.
+fn line_height(size: i32) -> i32 {
+    (f64::from(size) * 1.362).ceil() as i32
+}
+
 /// Row metrics (`SettingsField.qml`): a field is one line tall, a
 /// running action adds its status band, a header is its own short row.
 struct Metrics {
@@ -100,45 +108,72 @@ struct Metrics {
 }
 
 fn metrics(app: &App) -> Metrics {
-    let inputs = crate::router::output_scene(app).inputs();
+    metrics_for(&crate::router::output_scene(app).inputs())
+}
+
+fn metrics_for(inputs: &zaparoo_app::sizing::Inputs) -> Metrics {
+    let derived = zaparoo_app::sizing::derive(inputs);
     Metrics {
         row: inputs.pct_h(8.0),
-        action_band: inputs.pct_h(3.2),
-        header: inputs.pct_h(5.0),
+        // Exactly the status line it makes room for, plus the gap over it.
+        // A flat percentage reserved a second *body* line for a caption
+        // and left the pair floating in a row taller than its content.
+        action_band: line_height(derived.font_caption) + inputs.pct_h(0.3),
+        // `SectionHeader`'s own anatomy: top gap, the label, the rule gap
+        // and the hairline. The heading is a shared component, so the row
+        // Rust stacks has to be the box that component draws.
+        header: inputs.pct_h(1.5) + line_height(derived.font_body) + inputs.pct_h(0.8) + 1,
     }
 }
 
 /// `SettingsScreen`'s live caption ladder, including idle totals.
-fn action_status(ms: &zaparoo_core::store::MediaStatusState, id: &str) -> (&'static str, i32) {
+fn action_status(
+    ms: &zaparoo_core::store::MediaStatusState,
+    id: &str,
+) -> (crate::ActionStatus, i32) {
+    use crate::ActionStatus;
     match id {
-        "updateMediaDb" if ms.optimizing => ("optimizing", 0),
-        "updateMediaDb" if ms.indexing => (if ms.paused { "paused" } else { "running" }, 0),
-        "updateMediaDb" if ms.total_media > 0 => ("indexed", ms.total_media),
-        "runScraper" if ms.scraping => (
-            if ms.scrape_paused {
-                "paused"
+        "updateMediaDb" if ms.optimizing => (ActionStatus::Optimizing, 0),
+        "updateMediaDb" if ms.indexing => (
+            if ms.paused {
+                ActionStatus::Paused
             } else {
-                "running"
+                ActionStatus::Running
             },
             0,
         ),
-        "runScraper" if ms.scrape_total_scraped > 0 => ("imported", ms.scrape_total_scraped),
-        _ => ("", 0),
+        "updateMediaDb" if ms.total_media > 0 => (ActionStatus::Indexed, ms.total_media),
+        "runScraper" if ms.scraping => (
+            if ms.scrape_paused {
+                ActionStatus::Paused
+            } else {
+                ActionStatus::Running
+            },
+            0,
+        ),
+        "runScraper" if ms.scrape_total_scraped > 0 => {
+            (ActionStatus::Imported, ms.scrape_total_scraped)
+        }
+        _ => (ActionStatus::None, 0),
     }
 }
 
 /// Build the rows of the open page, with their stacked geometry.
-fn rows(ctx: &Ctx, app: &App, page: &str) -> Vec<SettingsRow> {
+fn rows(ctx: &Ctx, app: &App, page: crate::SettingsPage) -> Vec<SettingsRow> {
     let ms = crate::router::media_state(ctx);
     let index_busy = ms.indexing || ms.optimizing;
     let m = metrics(app);
     let language = lock(&ctx.shared).persist.settings.language.clone();
     let mut offset = 0;
-    rules::page_rows(page, &inputs(ctx))
+    rules::page_rows(page.token(), &inputs(ctx))
         .into_iter()
         .map(|row| {
             let mut out = SettingsRow {
-                kind: SharedString::from(if row.is_field() { "field" } else { "header" }),
+                kind: if row.is_field() {
+                    crate::RowKind::Field
+                } else {
+                    crate::RowKind::Header
+                },
                 id: SharedString::from(row.id()),
                 enabled: true,
                 y_offset: offset as f32,
@@ -147,12 +182,7 @@ fn rows(ctx: &Ctx, app: &App, page: &str) -> Vec<SettingsRow> {
             let height = match row {
                 Row::Header(_) => m.header,
                 Row::Field { id, control } => {
-                    out.control = SharedString::from(match control {
-                        Control::Toggle => "toggle",
-                        Control::Picker => "picker",
-                        Control::Action => "action",
-                        Control::Navigate => "navigate",
-                    });
+                    out.control = control.into();
                     match control {
                         Control::Toggle => out.checked = checked(ctx, id),
                         Control::Picker => {
@@ -164,13 +194,13 @@ fn rows(ctx: &Ctx, app: &App, page: &str) -> Vec<SettingsRow> {
                             out.enabled = !rules::action_disabled(id, index_busy, ms.scraping);
                             out.value = SharedString::from(rules::action_label_key(id, busy));
                             let (status, count) = action_status(&ms, id);
-                            out.status_key = SharedString::from(status);
+                            out.status_key = status;
                             out.status_count =
                                 zaparoo_app::format::count(i64::from(count), &language).into();
                         }
                         Control::Navigate => {}
                     }
-                    if out.status_key.is_empty() {
+                    if out.status_key == crate::ActionStatus::None {
                         m.row
                     } else {
                         m.row + m.action_band
@@ -261,39 +291,79 @@ fn rows_viewport_for(inputs: &zaparoo_app::sizing::Inputs) -> i32 {
     let card_y = derived.header_bottom
         + profile.status.top_margin
         + profile.status.strip_height
-        + inputs.pct_h(2.0);
-    let bottom = if derived.tier == zaparoo_app::sizing::Tier::T240 {
-        derived.help_bar_height + inputs.pct_h(2.0)
-    } else {
-        inputs.pct_h(8.0)
-    };
+        + inputs.pct_h(4.0);
+    let bottom = derived.help_bar_height + inputs.pct_h(4.0);
     let card_h = (inputs.screen_height as i32 - card_y - bottom).max(0);
-    let hint = 2 * (f64::from(derived.font_body) * 1.362).ceil() as i32;
-    // Card padding above, then the hint band and its divider below.
-    (card_h - 2 * inputs.pct_h(2.0) - hint - inputs.pct_h(0.5)).max(0)
+    // Descriptions are authored against the 240p card's line budget, so
+    // only that tier needs two lines held open; every wider one fits them
+    // on one and a second reserved line just holds the rows up. Fixed per
+    // tier, never per row: this is the rows viewport, and a band that grew
+    // with the focused description would reflow the list under the cursor.
+    let hint_lines = if derived.tier == zaparoo_app::sizing::Tier::T240 || inputs.bitmap_type {
+        2
+    } else {
+        1
+    };
+    let hint = hint_lines * line_height(derived.font_body);
+    // Four lips and a hairline: above the rows, either side of the hint
+    // rule, and under the hint text. One inset, used everywhere on the
+    // surface (`docs/style.md`, "Surface containment"); `app.slint`'s
+    // `pad` is the same token, so the two must move together.
+    let pad = inputs.pct_min(2.0);
+    (card_h - 4 * pad - 1 - hint).max(0)
+}
+
+/// The band's scroll offset and painted height, snapped to row edges.
+/// The rule lives in `zaparoo_app` so the snapshot tool solves it the
+/// same way rather than keeping a second copy that can drift.
+fn band_extent(rows: &[SettingsRow], index: usize, viewport: f32) -> (f32, f32) {
+    let spans: Vec<(f32, f32)> = rows.iter().map(|r| (r.y_offset, r.height)).collect();
+    rules::band_extent(&spans, index, viewport)
 }
 
 /// Push the open page: its rows, the cursor, and (on the root) the
 /// category tiles and their geometry.
 pub fn render(ctx: &Ctx, app: &App) {
     let view = app.global::<SettingsView>();
-    let page = view.get_page().to_string();
-    let rows = rows(ctx, app, &page);
+    let page = view.get_page();
+    let rows = rows(ctx, app, page);
     let index = (view.get_index().max(0) as usize).min(rows.len().saturating_sub(1));
-    view.set_index(i32::try_from(index).unwrap_or(0));
     // Keep the focused row inside the viewport; the band never scrolls
     // past the last row.
     let viewport = rows_viewport(app);
-    let total = rows.last().map_or(0.0, |r| r.y_offset + r.height);
-    let focused = rows.get(index).map_or(0.0, |r| r.y_offset + r.height);
-    let scroll = (focused - viewport as f32)
-        .max(0.0)
-        .min((total - viewport as f32).max(0.0));
+    let (scroll, shown) = band_extent(&rows, index, viewport as f32);
+    // Rows before the cursor: the cursor's geometry is read out of the row
+    // it points at, so an index that arrives ahead of a longer page reads
+    // a row that is not there yet and collapses the fill for a frame.
+    // Keyed, not replaced: a toggle flipping changes one row, and
+    // resetting the list would rebuild the delegate that was mid-slide.
+    crate::view_model::publish_keyed(
+        &view.get_rows(),
+        rows,
+        PartialEq::eq,
+        |old, new| old.id == new.id && old.kind == new.kind,
+        |rows| view.set_rows(rows),
+    );
+    view.set_index(i32::try_from(index).unwrap_or(0));
+    // Field position for the strip's cue: headings occupy row slots but
+    // are never navigated to, so they must not inflate the denominator.
+    {
+        use slint::Model as _;
+        let published = view.get_rows();
+        let fields = |upto: usize| {
+            (0..upto)
+                .filter_map(|i| published.row_data(i))
+                .filter(|row| row.kind == crate::RowKind::Field)
+                .count()
+        };
+        view.set_field_index(i32::try_from(fields(index)).unwrap_or(0));
+        view.set_field_count(i32::try_from(fields(published.row_count())).unwrap_or(0));
+    }
     view.set_rows_height(viewport as f32);
+    view.set_rows_clip_height(shown);
     view.set_scroll(scroll);
-    crate::view_model::publish(&view.get_rows(), rows, |rows| view.set_rows(rows));
 
-    if page.is_empty() {
+    if page == crate::SettingsPage::Root {
         let cells: Vec<GridCell> = rules::PAGES
             .iter()
             .map(|p| GridCell {
@@ -317,17 +387,17 @@ pub fn render(ctx: &Ctx, app: &App) {
 
 /// Re-push the open page after something it shows changed.
 pub fn refresh(ctx: &Ctx, app: &App) {
-    if app.global::<crate::Shell>().get_active_screen().as_str() != "settings" {
+    if app.global::<crate::Shell>().get_active_screen() != crate::Screen::Settings {
         return;
     }
     render(ctx, app);
 }
 
-/// Open a page (the empty id is the root grid) and seat the cursor.
-pub fn open_page(ctx: &Ctx, app: &App, page: &str) {
+/// Open a page and seat the cursor.
+pub fn open_page(ctx: &Ctx, app: &App, page: crate::SettingsPage) {
     let view = app.global::<SettingsView>();
-    view.set_page(SharedString::from(page));
-    let seat = rules::first_navigable(&rules::page_rows(page, &inputs(ctx)));
+    view.set_page(page);
+    let seat = rules::first_navigable(&rules::page_rows(page.token(), &inputs(ctx)));
     view.set_index(i32::try_from(seat).unwrap_or(0));
     render(ctx, app);
 }
@@ -339,25 +409,34 @@ pub(crate) fn capture_outgoing(app: &App) {
     view.set_outgoing_index(view.get_index());
     view.set_outgoing_scroll(view.get_scroll());
     view.set_outgoing_rows_height(view.get_rows_height());
+    view.set_outgoing_rows_clip_height(view.get_rows_clip_height());
 }
 
 /// A category is another level of Settings, not an in-place repaint.
-pub(crate) fn navigate_page(ctx: &Ctx, app: &App, page: &str) {
+pub(crate) fn navigate_page(ctx: &Ctx, app: &App, page: crate::SettingsPage) {
     let view = app.global::<SettingsView>();
-    if view.get_page().as_str() == page {
+    if view.get_page() == page {
         return;
     }
     let from = view.get_page();
+    let direction = if page == crate::SettingsPage::Root {
+        -1
+    } else {
+        1
+    };
     capture_outgoing(app);
-    open_page(ctx, app, page);
-    if page.is_empty() {
-        let index = rules::PAGES
-            .iter()
-            .position(|page| page.id == from.as_str())
-            .unwrap_or(0);
-        view.set_index(i32::try_from(index).unwrap_or(0));
-    }
-    crate::router::transition_settings_page(app, if page.is_empty() { -1 } else { 1 });
+    let ctx = ctx.clone();
+    crate::router::transition_settings_page(app, direction, move |app| {
+        open_page(&ctx, app, page);
+        if page == crate::SettingsPage::Root {
+            let index = rules::PAGES
+                .iter()
+                .position(|page| page.id == from.token())
+                .unwrap_or(0);
+            app.global::<SettingsView>()
+                .set_index(i32::try_from(index).unwrap_or(0));
+        }
+    });
 }
 
 pub fn enter(ctx: &Ctx, app: &App) {
@@ -367,8 +446,8 @@ pub fn enter(ctx: &Ctx, app: &App) {
 pub fn enter_with_direction(ctx: &Ctx, app: &App, direction: i32) {
     lock(&ctx.shared).persist.active_screen = "settings".to_string();
     crate::router::save_persist(&ctx.shared);
-    open_page(ctx, app, "");
-    crate::router::transition_to_screen(app, "settings", direction);
+    open_page(ctx, app, crate::SettingsPage::Root);
+    crate::router::transition_to_screen(app, crate::Screen::Settings, direction);
 }
 
 /// Back out of the About screen onto the page that opened it.
@@ -380,16 +459,16 @@ pub fn return_from_about(ctx: &Ctx, app: &App) {
 
 pub(crate) fn show_about_return(ctx: &Ctx, app: &App) {
     // Stage the actual destination before arming the route, not a temporary root grid.
-    open_page(ctx, app, "pageSupportAbout");
-    crate::router::transition_to_screen(app, "settings", -1);
+    open_page(ctx, app, crate::SettingsPage::About);
+    crate::router::transition_to_screen(app, crate::Screen::Settings, -1);
 }
 
 // ---------- Input ----------
 
-fn page_rows_now(ctx: &Ctx, app: &App) -> (String, Vec<Row>, usize) {
+fn page_rows_now(ctx: &Ctx, app: &App) -> (crate::SettingsPage, Vec<Row>, usize) {
     let view = app.global::<SettingsView>();
-    let page = view.get_page().to_string();
-    let rows = rules::page_rows(&page, &inputs(ctx));
+    let page = view.get_page();
+    let rows = rules::page_rows(page.token(), &inputs(ctx));
     let index = (view.get_index().max(0) as usize).min(rows.len().saturating_sub(1));
     (page, rows, index)
 }
@@ -398,7 +477,7 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
     let (page, rows, index) = page_rows_now(ctx, app);
     let view = app.global::<SettingsView>();
 
-    if page.is_empty() {
+    if page == crate::SettingsPage::Root {
         match action {
             actions::LEFT | actions::RIGHT | actions::UP | actions::DOWN => {
                 let (dx, dy) = match action {
@@ -413,13 +492,15 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
             }
             actions::ACCEPT => {
                 if let Some(row) = rows.get(index) {
-                    navigate_page(ctx, app, row.id());
+                    if let Ok(page) = crate::SettingsPage::try_from(row.id()) {
+                        navigate_page(ctx, app, page);
+                    }
                 }
             }
             actions::CANCEL => {
                 lock(&ctx.shared).persist.active_screen = "hub".to_string();
                 crate::router::save_persist(&ctx.shared);
-                crate::router::transition_to_screen(app, "hub", -1);
+                crate::router::transition_to_screen(app, crate::Screen::Hub, -1);
             }
             _ => {}
         }
@@ -430,10 +511,12 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
         actions::UP => {
             let next = rules::seek_navigable(&rows, index, -1);
             view.set_index(i32::try_from(next).unwrap_or(0));
+            render(ctx, app);
         }
         actions::DOWN => {
             let next = rules::seek_navigable(&rows, index, 1);
             view.set_index(i32::try_from(next).unwrap_or(0));
+            render(ctx, app);
         }
         // Left and Right flip a toggle in place; pickers open their list
         // (the Qt screen's own rule, so a long option list never has to
@@ -450,7 +533,7 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
                 accept(ctx, app, id, *control);
             }
         }
-        actions::CANCEL => navigate_page(ctx, app, ""),
+        actions::CANCEL => navigate_page(ctx, app, crate::SettingsPage::Root),
         _ => {}
     }
 }
@@ -656,15 +739,15 @@ pub fn picker_selected(ctx: &Ctx, app: &App, id: &str, value: &str) {
 fn apply(ctx: &Ctx, app: &App, id: &str, value: &str) {
     match id {
         "orientation" => {
-            let rotated = matches!(value, "cw" | "ccw");
-            app.global::<crate::Shell>()
-                .set_orientation(SharedString::from(value));
-            app.global::<crate::Sizing>().set_swap_axes(rotated);
-            crate::set_live_orientation(app, value, ctx.framebuffer_size);
+            let orientation =
+                crate::Orientation::try_from(value).unwrap_or(crate::Orientation::Horizontal);
+            app.global::<crate::Shell>().set_orientation(orientation);
+            app.global::<crate::Sizing>()
+                .set_swap_axes(orientation != crate::Orientation::Horizontal);
+            crate::set_live_orientation(app, orientation, ctx.framebuffer_size);
         }
         "interfaceProfile" => {
-            app.global::<crate::Sizing>()
-                .set_handheld(value == "handheld");
+            crate::apply_interface_profile(app, value);
             crate::sizing::apply_scene(app, crate::router::output_scene(app));
         }
         "language" | "clockFormat" => crate::router::apply_clock_setting(ctx, app),
@@ -762,7 +845,7 @@ pub(crate) fn mirror_geometry(primary: &App, crt: &App) {
     .inputs();
     let (columns, rows, y, height, _, fit) = root_geometry_for(
         &inputs,
-        crt.global::<crate::Shell>().get_orientation().as_str() != "horizontal",
+        crt.global::<crate::Shell>().get_orientation() != crate::Orientation::Horizontal,
     );
     target.set_columns(columns);
     target.set_rows_count(rows);
@@ -773,11 +856,13 @@ pub(crate) fn mirror_geometry(primary: &App, crt: &App) {
     target.set_grid_y(y as f32);
     target.set_grid_height(height as f32);
     let viewport = rows_viewport_for(&inputs) as f32;
-    let (rows, scroll) = mirrored_rows(&source.get_rows(), source.get_index(), viewport, &inputs);
+    let (rows, scroll, shown) =
+        mirrored_rows(&source.get_rows(), source.get_index(), viewport, &inputs);
     crate::view_model::publish(&target.get_rows(), rows, |rows| target.set_rows(rows));
     target.set_scroll(scroll);
     target.set_rows_height(viewport);
-    let (rows, scroll) = mirrored_rows(
+    target.set_rows_clip_height(shown);
+    let (rows, scroll, shown) = mirrored_rows(
         &source.get_outgoing_rows(),
         source.get_outgoing_index(),
         viewport,
@@ -788,6 +873,7 @@ pub(crate) fn mirror_geometry(primary: &App, crt: &App) {
     });
     target.set_outgoing_scroll(scroll);
     target.set_outgoing_rows_height(viewport);
+    target.set_outgoing_rows_clip_height(shown);
 }
 
 #[cfg(feature = "mister")]
@@ -796,20 +882,21 @@ fn mirrored_rows(
     index: i32,
     viewport: f32,
     inputs: &zaparoo_app::sizing::Inputs,
-) -> (Vec<SettingsRow>, f32) {
+) -> (Vec<SettingsRow>, f32, f32) {
     use slint::Model;
+    let m = metrics_for(inputs);
     let mut offset = 0;
     let rows: Vec<_> = rows
         .iter()
         .map(|mut row| {
-            let height = if row.kind.as_str() == "header" {
-                inputs.pct_h(5.0)
+            let height = if row.kind == crate::RowKind::Header {
+                m.header
             } else {
-                inputs.pct_h(8.0)
-                    + if row.status_key.is_empty() {
+                m.row
+                    + if row.status_key == crate::ActionStatus::None {
                         0
                     } else {
-                        inputs.pct_h(3.2)
+                        m.action_band
                     }
             };
             row.y_offset = offset as f32;
@@ -818,23 +905,15 @@ fn mirrored_rows(
             row
         })
         .collect();
-    let focused = rows
-        .get(index.max(0) as usize)
-        .map_or(0.0, |row| row.y_offset + row.height);
-    let scroll = (focused - viewport)
-        .max(0.0)
-        .min((offset as f32 - viewport).max(0.0));
-    (rows, scroll)
+    let (scroll, shown) = band_extent(&rows, index.max(0) as usize, viewport);
+    (rows, scroll, shown)
 }
 
 // ---------- Pointer ----------
 
 fn focus(ctx: &Ctx, app: &App, index: usize) -> bool {
     let shell = app.global::<crate::Shell>();
-    if shell.get_route_transitioning()
-        || shell.get_transitioning()
-        || crate::press_feedback::pending(app)
-    {
+    if shell.get_transitioning() || crate::press_feedback::pending(app) {
         return false;
     }
     let (_, rows, _) = page_rows_now(ctx, app);
@@ -884,22 +963,46 @@ mod status_tests {
             scrape_total_scraped: 200,
             ..Default::default()
         };
-        assert_eq!(action_status(&ms, "updateMediaDb"), ("indexed", 1000));
-        assert_eq!(action_status(&ms, "runScraper"), ("imported", 200));
+        assert_eq!(
+            action_status(&ms, "updateMediaDb"),
+            (crate::ActionStatus::Indexed, 1000)
+        );
+        assert_eq!(
+            action_status(&ms, "runScraper"),
+            (crate::ActionStatus::Imported, 200)
+        );
         ms.indexing = true;
-        assert_eq!(action_status(&ms, "updateMediaDb"), ("running", 0));
+        assert_eq!(
+            action_status(&ms, "updateMediaDb"),
+            (crate::ActionStatus::Running, 0)
+        );
         ms.paused = true;
-        assert_eq!(action_status(&ms, "updateMediaDb"), ("paused", 0));
+        assert_eq!(
+            action_status(&ms, "updateMediaDb"),
+            (crate::ActionStatus::Paused, 0)
+        );
         ms.optimizing = true;
-        assert_eq!(action_status(&ms, "updateMediaDb"), ("optimizing", 0));
+        assert_eq!(
+            action_status(&ms, "updateMediaDb"),
+            (crate::ActionStatus::Optimizing, 0)
+        );
         ms.scraping = true;
-        assert_eq!(action_status(&ms, "runScraper"), ("running", 0));
+        assert_eq!(
+            action_status(&ms, "runScraper"),
+            (crate::ActionStatus::Running, 0)
+        );
         ms.scrape_paused = true;
-        assert_eq!(action_status(&ms, "runScraper"), ("paused", 0));
-        assert_eq!(action_status(&ms, "uploadLog"), ("", 0));
+        assert_eq!(
+            action_status(&ms, "runScraper"),
+            (crate::ActionStatus::Paused, 0)
+        );
+        assert_eq!(
+            action_status(&ms, "uploadLog"),
+            (crate::ActionStatus::None, 0)
+        );
         assert_eq!(
             action_status(&MediaStatusState::default(), "runScraper"),
-            ("", 0)
+            (crate::ActionStatus::None, 0)
         );
     }
 }

@@ -91,6 +91,10 @@ enum Tok {
     Px(i32),
     PctW(f64),
     PctH(f64),
+    /// Percentage of the shorter axis. A container's inset is one margin
+    /// seen four times, so it measures the same on both of them; see
+    /// `docs/style.md` -> "Surface containment".
+    PctMin(f64),
     RadiusMd,
     RadiusSm,
     HeaderSideMargin,
@@ -104,6 +108,7 @@ impl Tok {
             Self::Px(value) => value,
             Self::PctW(percent) => inputs.pct_w(percent),
             Self::PctH(percent) => inputs.pct_h(percent),
+            Self::PctMin(percent) => inputs.pct_min(percent),
             Self::RadiusMd => derived.radius_md,
             Self::RadiusSm => derived.radius_sm,
             Self::HeaderSideMargin => derived.header_side_margin,
@@ -121,6 +126,9 @@ const fn pw(percent: f64) -> Tok {
 }
 const fn ph(percent: f64) -> Tok {
     Tok::PctH(percent)
+}
+const fn pmin(percent: f64) -> Tok {
+    Tok::PctMin(percent)
 }
 
 // Unresolved tables.
@@ -272,10 +280,15 @@ const DEFAULT: ThemeT = ThemeT {
         card_side_margin: pw(3.0),
         card_top_margin: ph(2.0),
         card_bottom_margin: ph(8.0),
-        card_padding_left: pw(2.0),
-        card_padding_right: pw(2.0),
-        card_padding_top: ph(2.0),
-        card_padding_bottom: ph(2.0),
+        // Square on all four sides: the sides came off the width and the
+        // ends off the height, which put 26px beside 14px at 720p and got
+        // worse the wider the screen. `docs/style.md` -> "Surface
+        // containment"; the QML this table is pinned to still has the
+        // split, so `layout_golden.rs` skips these keys.
+        card_padding_left: pmin(2.0),
+        card_padding_right: pmin(2.0),
+        card_padding_top: pmin(2.0),
+        card_padding_bottom: pmin(2.0),
         row_height: 0,
         row_spacing: ph(0.7),
         center_slot: -1,
@@ -293,10 +306,15 @@ const DEFAULT: ThemeT = ThemeT {
         card_side_margin: pw(3.0),
         card_top_margin: ph(2.0),
         card_bottom_margin: ph(8.0),
-        card_padding_left: pw(2.0),
-        card_padding_right: pw(2.0),
-        card_padding_top: ph(2.0),
-        card_padding_bottom: ph(2.0),
+        // Square on all four sides: the sides came off the width and the
+        // ends off the height, which put 26px beside 14px at 720p and got
+        // worse the wider the screen. `docs/style.md` -> "Surface
+        // containment"; the QML this table is pinned to still has the
+        // split, so `layout_golden.rs` skips these keys.
+        card_padding_left: pmin(2.0),
+        card_padding_right: pmin(2.0),
+        card_padding_top: pmin(2.0),
+        card_padding_bottom: pmin(2.0),
         row_height: 0,
         row_spacing: ph(0.3),
         center_slot: -1,
@@ -314,10 +332,11 @@ const DEFAULT: ThemeT = ThemeT {
         image_reserved_width: 0,
         image_reserved_height: 0,
         image_bottom_margin: 0,
-        pane_padding_left: pw(2.0),
-        pane_padding_right: pw(2.0),
-        pane_padding_top: ph(2.0),
-        pane_padding_bottom: ph(2.0),
+        // Square, same rule as the list card beside it.
+        pane_padding_left: pmin(2.0),
+        pane_padding_right: pmin(2.0),
+        pane_padding_top: pmin(2.0),
+        pane_padding_bottom: pmin(2.0),
         image_padding_left: px(0),
         image_padding_right: px(0),
         image_padding_top: px(0),
@@ -344,6 +363,10 @@ const DEFAULT: ThemeT = ThemeT {
         image_reserved_width: 0,
         image_reserved_height: 0,
         image_bottom_margin: 0,
+        // Deliberately anisotropic, not drift: in TATE the detail pane is
+        // a short wide strip under the list, and spending its scarce
+        // height on padding would cost a metadata row. Kept as two
+        // different percentages so it reads as a choice.
         pane_padding_left: pw(3.0),
         pane_padding_right: pw(3.0),
         pane_padding_top: ph(1.2),
@@ -407,6 +430,9 @@ const CRT: ThemeT = ThemeT {
         card_side_margin: Tok::HeaderSideMargin,
         card_top_margin: px(2),
         card_bottom_margin: Tok::Sum(&[ph(6.0), px(12)]),
+        // Hand-calibrated pixels, not a derived inset: the 240p canvas is
+        // measured against a real analog frame, so it keeps its own
+        // numbers rather than the square token the HD tiers use.
         card_padding_left: px(3),
         card_padding_right: px(2),
         card_padding_top: px(3),
@@ -428,6 +454,9 @@ const CRT: ThemeT = ThemeT {
         card_side_margin: Tok::HeaderSideMargin,
         card_top_margin: px(2),
         card_bottom_margin: Tok::Sum(&[ph(6.0), px(12)]),
+        // Hand-calibrated pixels, not a derived inset: the 240p canvas is
+        // measured against a real analog frame, so it keeps its own
+        // numbers rather than the square token the HD tiers use.
         card_padding_left: px(3),
         card_padding_right: px(2),
         card_padding_top: px(3),

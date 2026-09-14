@@ -4,6 +4,18 @@
 
 add_subdirectory(ui)
 
+# Protect direct UI-test invocation too, not only the just/ctest environment.
+# Uses QtCore and native sockets already available on desktop Unix targets.
+if(UNIX AND NOT CMAKE_CROSSCOMPILING)
+    add_executable(ui_isolation_test tst_ui_isolation.cpp)
+    target_link_libraries(ui_isolation_test PRIVATE Zaparoo::CompileOptions Qt6::Core)
+    add_test(
+        NAME ui_isolation
+        COMMAND ui_isolation_test $<TARGET_FILE:tst_ui> "${CMAKE_CURRENT_SOURCE_DIR}/ui"
+    )
+    set_tests_properties(ui_isolation PROPERTIES TIMEOUT 30)
+endif()
+
 add_executable(
     frontend_arguments_test
     tst_frontend_arguments.cpp

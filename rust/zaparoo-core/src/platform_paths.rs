@@ -1,6 +1,11 @@
 // Zaparoo Frontend
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
+//
+// Every path here is one of two answers: MiSTer's fixed locations, or the
+// XDG ones. `SteamOS` takes the XDG side, which is also where Core puts its
+// own files there, so the split stays a `runtime::is_mister()` test rather
+// than a match over every runtime.
 
 use crate::runtime;
 use std::path::PathBuf;

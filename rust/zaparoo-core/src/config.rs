@@ -21,6 +21,16 @@ pub struct Config {
     /// from "user didn't write a [video] section at all" (in which case
     /// `--crt` overrides this to the 320x240 `native_video_writer` canvas).
     pub video_explicit: bool,
+    /// Ask the windowing system for a fullscreen window at startup. Set by
+    /// `[video] fullscreen` or the `--fullscreen` flag, and ignored on
+    /// `MiSTer`, which owns the framebuffer outright. A fullscreen window's
+    /// size belongs to the compositor, so `[video] width` / `height` are not
+    /// applied alongside it.
+    ///
+    /// `None` means the key is absent, which is not the same as `false`: a
+    /// runtime that presents like a console starts fullscreen on its own,
+    /// and only an explicit `false` puts it back in a window.
+    pub video_fullscreen: Option<bool>,
     pub debug_logging: bool,
     /// Language override for the UI, passed to `QTranslator` via the
     /// C++ entry point. Empty string means "follow `QLocale::system()`";
@@ -142,6 +152,7 @@ impl Default for Config {
             video_width: 1920,
             video_height: 1080,
             video_explicit: false,
+            video_fullscreen: None,
             debug_logging: false,
             language: String::new(),
             key_to_action: input_actions::invert(&input_actions::default_bindings()),
@@ -187,6 +198,7 @@ struct RawCore {
 struct RawVideo {
     width: Option<u32>,
     height: Option<u32>,
+    fullscreen: Option<bool>,
 }
 
 #[derive(Deserialize, Default)]
@@ -298,6 +310,7 @@ pub fn load_config(path: &Path) -> Config {
     if let Some(h) = raw.video.height {
         cfg.video_height = h;
     }
+    cfg.video_fullscreen = raw.video.fullscreen;
     if let Some(d) = raw.logging.debug {
         cfg.debug_logging = d;
     }
@@ -1191,6 +1204,26 @@ mod tests {
         let f = write_tmp("[video]\nheight = 224\n");
         let cfg = load_config(f.path());
         assert!(cfg.video_explicit);
+    }
+
+    #[test]
+    fn video_fullscreen_reads_from_config() {
+        // Absent: windowed, and the sizing keys stay independent of it.
+        // Absent is not false: the frontend picks a default per runtime.
+        let f = write_tmp("[video]\nwidth = 1280\n");
+        let cfg = load_config(f.path());
+        assert_eq!(cfg.video_fullscreen, None);
+        assert!(cfg.video_explicit);
+
+        let f = write_tmp("[video]\nfullscreen = true\n");
+        let cfg = load_config(f.path());
+        assert_eq!(cfg.video_fullscreen, Some(true));
+        // fullscreen alone is not a size request.
+        assert!(!cfg.video_explicit);
+
+        let f = write_tmp("[video]\nfullscreen = false\n");
+        let cfg = load_config(f.path());
+        assert_eq!(cfg.video_fullscreen, Some(false));
     }
 
     #[test]

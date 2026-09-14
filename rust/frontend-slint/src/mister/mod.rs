@@ -29,7 +29,10 @@ pub use platform::{install_platform, set_orientation, ResolutionPolicy};
 pub use service::ensure_core_running;
 
 const BROWSE_TRANSITION_FRAMES: u32 = 15;
-const ROUTE_TRANSITION_FRAMES: u32 = 10;
+
+pub fn cancel_page_transition() {
+    transition::cancel();
+}
 
 pub fn request_page_transition(
     geometry: crate::sizing::BrowseGridTransitionGeometry,
@@ -50,28 +53,7 @@ pub fn request_page_transition(
         gap: geometry.gap as usize,
         direction,
         total_frames: BROWSE_TRANSITION_FRAMES,
-    })
-}
-
-pub fn request_route_transition(
-    geometry: crate::sizing::RouteTransitionGeometry,
-    direction: i32,
-) -> bool {
-    let direction = if direction > 0 {
-        crate::frame_transition::Direction::Left
-    } else {
-        crate::frame_transition::Direction::Right
-    };
-    transition::request(crate::frame_transition::Spec {
-        rect: crate::frame_transition::Rect {
-            x: geometry.x as usize,
-            y: geometry.y as usize,
-            width: geometry.width as usize,
-            height: geometry.height as usize,
-        },
-        gap: 0,
-        direction,
-        total_frames: ROUTE_TRANSITION_FRAMES,
+        started: std::time::Instant::now(),
     })
 }
 

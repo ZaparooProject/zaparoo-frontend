@@ -23,6 +23,9 @@ use crate::App;
 pub struct InputModel {
     hold: rules::Hold,
     guard: rules::DuplicateGuard,
+    // Some desktop backends omit the repeat flag. Physical release, not a
+    // timestamp window, distinguishes a new press from native autorepeat.
+    pressed_keys: std::collections::HashSet<String>,
     rapid: rules::RapidNav,
     /// Origin for the monotonic millisecond clock the rules take.
     epoch: Instant,
@@ -40,6 +43,7 @@ impl InputModel {
         Self {
             hold: rules::Hold::new(),
             guard: rules::DuplicateGuard::new(),
+            pressed_keys: std::collections::HashSet::new(),
             rapid: rules::RapidNav::new(),
             epoch: Instant::now(),
             repeat_seq: 0,
@@ -50,11 +54,17 @@ impl InputModel {
 
     /// Retire the repeat ticket and report whether release needs a persist flush.
     fn release(&mut self, key: &str) -> bool {
+        self.pressed_keys.remove(key);
         if !self.hold.release(key) {
             return false;
         }
         self.repeat_seq += 1;
         true
+    }
+
+    #[cfg(all(test, feature = "mister"))]
+    pub(crate) fn advance_test_clock(&mut self, milliseconds: u64) {
+        self.epoch -= Duration::from_millis(milliseconds);
     }
 
     fn now_ms(&self) -> u64 {
@@ -69,13 +79,16 @@ impl Default for InputModel {
 }
 
 /// The keyboard is the live input source, so neither swap applies.
-/// Derived from the controller report, exactly as the help bar's own
-/// glyphs are.
+/// No controller report is the desktop-keyboard case; a report can
+/// explicitly identify either keyboard or controller input.
+fn keyboard_active_for_layout(layout: Option<&str>) -> bool {
+    layout.is_none_or(zaparoo_app::buttons::keyboard_active)
+}
+
 fn keyboard_active() -> bool {
-    zaparoo_core::controller_report::subscribe()
-        .borrow()
-        .as_ref()
-        .is_some_and(|report| zaparoo_app::buttons::keyboard_active(report.layout))
+    let report = zaparoo_core::controller_report::subscribe();
+    let report = report.borrow();
+    keyboard_active_for_layout(report.as_ref().map(|report| report.layout))
 }
 
 /// The Slint `has-modal()` set, plus the CRT calibration overlay that
@@ -96,26 +109,31 @@ fn modal_open(app: &App) -> bool {
         || overlays.get_crt_calibration_open()
 }
 
-/// A real press: guard against a double delivery, map the key to an
-/// action, apply the swaps, route it, then arm the repeat.
-fn key_pressed(ctx: &Ctx, app: &App, bindings: &std::collections::HashMap<i32, String>, key: &str) {
-    let accepted = {
-        let mut shared = lock(&ctx.shared);
-        let now = shared.input.now_ms();
-        shared.input.guard.accept(key, now)
-    };
-    if !accepted {
-        return;
+/// A real press: guard against a double delivery. Runs before the
+/// action lookup so an unbound key still consumes its slot, which is
+/// what stops native autorepeat on a key nothing is listening for.
+fn accept_press(ctx: &Ctx, app: &App, key: &str) -> bool {
+    if app.global::<crate::Shell>().get_dormant() {
+        return false;
     }
-    let Some(action) = crate::actions::action_for_key_with(bindings, key) else {
-        return;
-    };
+    let mut shared = lock(&ctx.shared);
+    if !shared.input.pressed_keys.insert(key.to_string()) {
+        return false;
+    }
+    let now = shared.input.now_ms();
+    shared.input.guard.accept(key, now)
+}
+
+/// Apply the swaps to a resolved action, route it, then arm the repeat.
+/// `key` is the hold identity, which is a keyboard key for the keyboard
+/// and a pad-owned string for the gamepad.
+fn route_press(ctx: &Ctx, app: &App, action: &str, key: &str) {
     let (swap_cc, swap_ov) = {
         let shared = lock(&ctx.shared);
         let s = &shared.persist.settings;
         (s.swap_confirm_cancel, s.swap_options_view)
     };
-    let action = rules::swap_actions(&action, swap_cc, swap_ov, keyboard_active()).to_string();
+    let action = rules::swap_actions(action, swap_cc, swap_ov, keyboard_active()).to_string();
     // The screensaver eats the waking press whole, repeat included: a
     // held direction that only woke the screen must not start walking
     // the list behind it.
@@ -124,6 +142,37 @@ fn key_pressed(ctx: &Ctx, app: &App, bindings: &std::collections::HashMap<i32, S
     if !waking {
         arm_repeat(ctx, app, &action, key);
     }
+}
+
+/// A keyboard press: guard it, map the key to an action, route it.
+fn key_pressed(ctx: &Ctx, app: &App, bindings: &std::collections::HashMap<i32, String>, key: &str) {
+    if !accept_press(ctx, app, key) {
+        return;
+    }
+    let Some(action) = crate::actions::action_for_key_with(bindings, key) else {
+        return;
+    };
+    route_press(ctx, app, &action, key);
+}
+
+/// A gamepad button already resolved to an action. It arrives here
+/// rather than as a synthetic key event so the live input source stays
+/// knowable: the help bar's glyphs and whether the swap settings apply
+/// both depend on which device is driving. `[input.keyboard]` does not
+/// enter into it -- that file remaps keyboard keys, not pad buttons.
+#[cfg(feature = "desktop")]
+pub fn gamepad_pressed(ctx: &Ctx, app: &App, action: &str, key: &str) {
+    if !accept_press(ctx, app, key) {
+        return;
+    }
+    route_press(ctx, app, action, key);
+}
+
+/// The pad button came up. Same retirement as a key release: only the
+/// hold that started the repeat cancels it.
+#[cfg(feature = "desktop")]
+pub fn gamepad_released(ctx: &Ctx, key: &str) {
+    key_released(ctx, key);
 }
 
 /// The key came up. Only the key that started the repeat cancels it; a
@@ -161,6 +210,7 @@ pub fn stop_repeat(ctx: &Ctx) {
     let held = {
         let mut shared = lock(&ctx.shared);
         shared.input.repeat_seq += 1;
+        shared.input.pressed_keys.clear();
         shared.input.hold.stop()
     };
     if held {
@@ -278,8 +328,8 @@ fn schedule_quiet(ctx: &Ctx, app: &App) {
 /// bindings gate it on the active screen the same way.
 fn push_rapid(ctx: &Ctx, app: &App, active: bool) {
     let on_list = matches!(
-        app.global::<crate::Shell>().get_active_screen().as_str(),
-        "games" | "favorites" | "recents"
+        app.global::<crate::Shell>().get_active_screen(),
+        crate::Screen::Games | crate::Screen::Favorites | crate::Screen::Recents
     );
     crate::games::set_rapid(ctx, app, active && on_list);
 }
@@ -290,6 +340,9 @@ pub fn bind(ctx: &Arc<Ctx>, app: &App, bindings: std::collections::HashMap<i32, 
     let pressed_ctx = ctx.clone();
     let weak = app.as_weak();
     app.on_key_pressed(move |text| {
+        // The only real-keyboard entry point in the process, so it is
+        // also where the help bar learns to go back to keycaps.
+        crate::gamepad::note_keyboard_input();
         if let Some(app) = weak.upgrade() {
             key_pressed(&pressed_ctx, &app, &bindings, &text);
         }
@@ -297,12 +350,27 @@ pub fn bind(ctx: &Arc<Ctx>, app: &App, bindings: std::collections::HashMap<i32, 
     let released_ctx = ctx.clone();
     app.on_key_released(move |text| key_released(&released_ctx, &text));
     let lost_ctx = ctx.clone();
-    app.on_input_lost(move || stop_repeat(&lost_ctx));
+    let weak = app.as_weak();
+    app.on_input_lost(move || {
+        stop_repeat(&lost_ctx);
+        if let Some(app) = weak.upgrade() {
+            crate::press_feedback::cancel(&app);
+        }
+    });
 }
 
 #[cfg(test)]
 mod tests {
-    use super::InputModel;
+    use super::{keyboard_active_for_layout, InputModel};
+
+    #[test]
+    fn missing_controller_report_means_keyboard_input() {
+        assert!(keyboard_active_for_layout(None));
+        assert!(keyboard_active_for_layout(Some(
+            zaparoo_app::buttons::KEYBOARD_STYLE
+        )));
+        assert!(!keyboard_active_for_layout(Some("style_b")));
+    }
 
     #[test]
     fn held_key_release_retires_timer_and_requests_exactly_one_flush() {

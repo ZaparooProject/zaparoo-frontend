@@ -13,10 +13,28 @@
 
 use std::collections::BTreeMap;
 
-use zaparoo_app::layouts::{self, ThemeId, View};
+use zaparoo_app::layouts::{self, Body, ThemeId, View};
 use zaparoo_app::sizing::{Inputs, InterfaceProfile};
 
 const FIXTURE: &str = include_str!("../../../tests/fixtures/layout_golden.txt");
+
+/// The container insets this port deliberately leaves the QML behind on.
+/// `BrowseLayouts.qml` derives a card's sides from the width and its ends
+/// from the height, which puts 26px beside 14px at 720p and gets worse the
+/// wider the screen; a container's inset is one margin seen four times, so
+/// it measures the same on both axes (`docs/style.md` -> "Surface
+/// containment"). `default_card_insets_are_square` owns these keys instead,
+/// so the divergence is pinned somewhere rather than silently tolerated.
+///
+/// Only the sides move: `pct_min(p) == pct_h(p)` at every geometry in the
+/// fixture, because `swap_percentage_axes` already points `pct_h` at the
+/// short axis in portrait. Top and bottom must still match the QML.
+const SQUARE_INSET_KEYS: [&str; 4] = [
+    "list.cardPaddingLeft",
+    "list.cardPaddingRight",
+    "detail.panePaddingLeft",
+    "detail.panePaddingRight",
+];
 
 struct Case {
     theme: ThemeId,
@@ -115,14 +133,23 @@ fn profiles_match_qml() {
     for case in cases() {
         let profile = layouts::profile(case.theme, case.view, &case.inputs);
         let actual: BTreeMap<String, String> = profile.flatten().into_iter().collect();
+        // The CRT tables keep their hand-calibrated pixel insets, so the
+        // divergence is the default theme's alone.
+        let diverges = case.theme == ThemeId::Default;
         if actual != case.expected {
             let mut diff = Vec::new();
             for key in actual.keys().chain(case.expected.keys()) {
+                if diverges && SQUARE_INSET_KEYS.contains(&key.as_str()) {
+                    continue;
+                }
                 let a = actual.get(key);
                 let e = case.expected.get(key);
                 if a != e && !diff.iter().any(|d: &String| d.starts_with(key.as_str())) {
                     diff.push(format!("{key}: qml={e:?} rust={a:?}"));
                 }
+            }
+            if diff.is_empty() {
+                continue;
             }
             failures.push(format!(
                 "{:?}/{:?} at {}x{} crt={} swap={}:\n  {}",
@@ -146,4 +173,53 @@ fn profiles_match_qml() {
         failures.len(),
         failures.join("\n")
     );
+}
+
+/// What `SQUARE_INSET_KEYS` gives up in `profiles_match_qml`. Every default
+/// card and pane inset is the same number on all four sides, and it is the
+/// number the height axis was already giving, so nothing grew.
+#[test]
+fn default_card_insets_are_square() {
+    let mut checked = 0;
+    for case in cases() {
+        if case.theme != ThemeId::Default {
+            continue;
+        }
+        let profile = layouts::profile(case.theme, case.view, &case.inputs);
+        let Body::List { list, detail, .. } = profile.body else {
+            continue;
+        };
+        let pad = case.inputs.pct_min(2.0);
+        let at = format!(
+            "{:?} at {}x{} swap={}",
+            case.view,
+            case.inputs.screen_width,
+            case.inputs.screen_height,
+            case.inputs.swap_percentage_axes
+        );
+        for (name, value) in [
+            ("cardPaddingLeft", list.card_padding_left),
+            ("cardPaddingRight", list.card_padding_right),
+            ("cardPaddingTop", list.card_padding_top),
+            ("cardPaddingBottom", list.card_padding_bottom),
+        ] {
+            assert_eq!(value, pad, "list.{name} at {at}");
+        }
+        // The TATE detail pane is deliberately anisotropic -- a short wide
+        // strip under the list, where vertical padding costs a metadata
+        // row -- so only the upright pane is square.
+        if matches!(case.view, View::SystemsList | View::GamesList) {
+            for (name, value) in [
+                ("panePaddingLeft", detail.pane_padding_left),
+                ("panePaddingRight", detail.pane_padding_right),
+                ("panePaddingTop", detail.pane_padding_top),
+                ("panePaddingBottom", detail.pane_padding_bottom),
+            ] {
+                assert_eq!(value, pad, "detail.{name} at {at}");
+            }
+        }
+        checked += 1;
+    }
+    // Four list views at every geometry the fixture covers.
+    assert_eq!(checked, 48 * 4);
 }

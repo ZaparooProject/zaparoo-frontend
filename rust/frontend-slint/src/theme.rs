@@ -41,6 +41,9 @@ pub fn apply_palette(app: &App, scheme: &str, intensity: &str) -> Palette {
     theme.set_text_primary(color(p.text_primary));
     theme.set_text_label(color(p.text_label));
     theme.set_text_variant(color(p.text_variant));
+    // Not a palette role: derived from two of them, so the golden fixture
+    // that pins `ColorSchemes.qml` stays untouched.
+    theme.set_cue_spent(color(palette::spent_from(p.text_primary, p.bg_deep)));
     theme.set_accent(color(p.accent));
     theme.set_selection_fill(color(p.selection_fill));
     theme.set_on_accent(color(p.on_accent));

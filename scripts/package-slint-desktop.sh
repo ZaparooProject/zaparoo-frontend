@@ -50,6 +50,15 @@ cat > "$STAGE/README.txt" <<'EOF_README'
 Run ./frontend-slint. Point it at a Zaparoo Core with
 ZAPAROO_CORE_ENDPOINT=ws://<host>:7497/api/v0.1 or the [core] endpoint in
 ~/.config/zaparoo/frontend.toml.
+
+The window is 1280x720 unless [video] width/height say otherwise. For a couch
+or handheld install, run ./frontend-slint --fullscreen, or set:
+
+    [video]
+    fullscreen = true
+
+A fullscreen surface is sized by the compositor, so width and height are
+ignored while it is on. --windowed overrides the config for one run.
 EOF_README
 
 tar -C "$RELEASE_DIR" -czf "$ARCHIVE" "$NAME"

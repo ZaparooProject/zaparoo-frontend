@@ -94,7 +94,10 @@ pub fn refresh_layout(app: &App, scene: Scene) {
 /// TATE list; every other screen resolves against the games grid.
 fn current_view(app: &App) -> View {
     let shell = app.global::<Shell>();
-    let rotated = matches!(shell.get_orientation().as_str(), "cw" | "ccw");
+    let rotated = matches!(
+        shell.get_orientation(),
+        crate::Orientation::Cw | crate::Orientation::Ccw
+    );
     let pick = |list: bool, grid: View, list_view: View, tate: View| {
         if !list {
             grid
@@ -104,8 +107,8 @@ fn current_view(app: &App) -> View {
             list_view
         }
     };
-    match shell.get_active_screen().as_str() {
-        "systems" | "favorite-systems" => pick(
+    match shell.get_active_screen() {
+        crate::Screen::Systems | crate::Screen::FavoriteSystems => pick(
             shell.get_systems_list_layout(),
             View::SystemsGrid,
             View::SystemsList,
@@ -130,8 +133,14 @@ fn apply_layout(app: &App, inputs: &Inputs) {
                 f64::from(gap),
             ) as i32
         });
-    let profile = layouts::profile(ThemeId::current(inputs), current_view(app), inputs);
-    push_profile(app, &profile);
+    let theme = ThemeId::current(inputs);
+    let profile = layouts::profile(theme, current_view(app), inputs);
+    // The page cue's size and placement live in the grid tables, but the
+    // cue itself is on screen in both layouts. Resolve the theme's grid
+    // profile alongside so a list view pushes its own values rather than
+    // inheriting whatever grid was shown last.
+    let cue = layouts::profile(theme, View::GamesGrid, inputs);
+    push_profile(app, &profile, &cue);
 }
 
 fn px(value: i32) -> f32 {
@@ -185,8 +194,12 @@ fn apply_derived(app: &App, d: &Derived) {
     clippy::too_many_lines,
     reason = "one setter per BrowseLayouts.qml profile key keeps the inventory reviewable"
 )]
-fn push_profile(app: &App, p: &Profile) {
+fn push_profile(app: &App, p: &Profile, cue: &Profile) {
     let l = app.global::<Layout>();
+    if let Body::Grid { grid, footer } = &cue.body {
+        l.set_grid_page_chevron_size(px(grid.page_chevron_size));
+        l.set_page_cue_in_footer(footer.page_cue_in_footer);
+    }
     l.set_title_in_header(p.header.title_in_header);
     l.set_hud_bottom_aligned(p.header.hud_bottom_aligned);
     l.set_status_pill_pinned_top(p.header.status_pill_pinned_top);
@@ -205,8 +218,6 @@ fn push_profile(app: &App, p: &Profile) {
             l.set_grid_top_inset(px(grid.top_inset));
             l.set_grid_bottom_inset(px(grid.bottom_inset));
             l.set_grid_row_gap(px(grid.row_gap));
-            l.set_grid_page_chevron_size(px(grid.page_chevron_size));
-            l.set_page_cue_in_footer(footer.page_cue_in_footer);
             l.set_active_label_height(px(footer.active_label_height));
             l.set_active_label_bottom_margin(px(footer.active_label_bottom_margin));
             l.set_bottom_status_left_margin(px(footer.bottom_status_left_margin));
@@ -319,21 +330,6 @@ pub struct BrowseGridTransitionGeometry {
     pub gap: u32,
 }
 
-#[cfg_attr(
-    not(feature = "mister"),
-    allow(
-        dead_code,
-        reason = "only the MiSTer presenters drive cached transitions"
-    )
-)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct RouteTransitionGeometry {
-    pub x: u32,
-    pub y: u32,
-    pub width: u32,
-    pub height: u32,
-}
-
 /// Published non-CRT browse viewport in Slint render pixels. Horizontal,
 /// one-to-one cached scenes move the same full-width band as the live UI,
 /// leaving header, counter, active label and help bar stationary.
@@ -364,37 +360,6 @@ pub fn mister_browse_grid_transition_geometry(
     })
 }
 
-/// Exact horizontal route-content viewport in Slint render pixels. Header
-/// and help chrome remain stationary while cached screen content pushes
-/// between them. Callers provide live `Sizing` header/help boundaries.
-#[cfg_attr(
-    not(feature = "mister"),
-    allow(
-        dead_code,
-        reason = "only the MiSTer presenters drive cached transitions"
-    )
-)]
-pub fn mister_route_transition_geometry(
-    screen_width: u32,
-    screen_height: u32,
-    header_bottom: u32,
-    help_bar_height: u32,
-) -> Option<RouteTransitionGeometry> {
-    if screen_width == 0 || screen_height == 0 {
-        return None;
-    }
-    // Use the published chrome geometry, including proportional font sizing.
-    let y = header_bottom;
-    let help_top = screen_height.checked_sub(help_bar_height)?;
-    let height = help_top.checked_sub(y)?;
-    (height > 0).then_some(RouteTransitionGeometry {
-        x: 0,
-        y,
-        width: screen_width,
-        height,
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -419,32 +384,7 @@ mod tests {
     }
 
     #[test]
-    fn fixed_720_route_transition_leaves_header_and_help_stationary() {
-        assert_eq!(
-            mister_route_transition_geometry(1280, 720, 68, 43),
-            Some(RouteTransitionGeometry {
-                x: 0,
-                y: 68,
-                width: 1280,
-                height: 609,
-            })
-        );
-    }
-
-    #[test]
-    fn cached_540p_bounds_follow_live_chrome_and_include_left_edge() {
-        for header_bottom in [48, 62, 74] {
-            let route = mister_route_transition_geometry(960, 540, header_bottom, 32);
-            assert_eq!(
-                route,
-                Some(RouteTransitionGeometry {
-                    x: 0,
-                    y: header_bottom,
-                    width: 960,
-                    height: 508 - header_bottom,
-                })
-            );
-        }
+    fn cached_540p_browse_bounds_include_the_left_edge() {
         assert_eq!(
             mister_browse_grid_transition_geometry(960, 540, 110, 350),
             Some(BrowseGridTransitionGeometry {
@@ -455,16 +395,9 @@ mod tests {
                 gap: 0,
             })
         );
-        assert_eq!(mister_route_transition_geometry(960, 540, 520, 32), None);
         assert_eq!(
             mister_browse_grid_transition_geometry(960, 540, u32::MAX, 350),
             None
         );
-    }
-
-    #[test]
-    fn route_transition_rejects_empty_geometry() {
-        assert_eq!(mister_route_transition_geometry(0, 720, 68, 43), None);
-        assert_eq!(mister_route_transition_geometry(1280, 0, 68, 43), None);
     }
 }

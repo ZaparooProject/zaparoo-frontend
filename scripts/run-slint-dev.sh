@@ -34,7 +34,9 @@ serving() {
     (exec 3<> "/dev/tcp/${host}/${port}") 2> /dev/null
 }
 
-if serving; then
+if [ -n "${ZAPAROO_CORE_ENDPOINT:-}" ]; then
+    echo "using the requested Core ${ZAPAROO_CORE_ENDPOINT}"
+elif serving; then
     echo "using the Core already serving ${endpoint}"
 else
     # Build first and run the binary directly: `cargo run` would leave
@@ -62,7 +64,13 @@ else
 fi
 
 cd "$repo_root/rust"
-# A pre-set endpoint wins, so this still points at a real Core when the
-# caller asks for one.
 export ZAPAROO_CORE_ENDPOINT="${ZAPAROO_CORE_ENDPOINT:-$endpoint}"
-cargo run -p frontend-slint -- "$@"
+# Slint's embedded MCP server is opt-in and development-only. Debug
+# metadata enables element discovery; the normal dev/release build is
+# unchanged when no port is requested.
+cargo_args=()
+if [ -n "${SLINT_MCP_PORT:-}" ]; then
+    export SLINT_EMIT_DEBUG_INFO=1
+    cargo_args+=(--features slint/mcp)
+fi
+cargo run -p frontend-slint "${cargo_args[@]}" -- "$@"

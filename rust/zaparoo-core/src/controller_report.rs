@@ -62,6 +62,34 @@ impl GlyphProfile {
         }
     }
 
+    /// Recognize a pad from the device name its own driver reports, for
+    /// producers that have the hardware in hand instead of Main's report
+    /// (the desktop gamepad reader). Same neutral output vocabulary as
+    /// [`GlyphProfile::from_report_str`]: the maker substrings exist only
+    /// to identify the hardware and never reach a setting id or the UI.
+    fn from_device_name(raw: &str) -> Self {
+        let name = raw.to_ascii_lowercase();
+        let has = |needle: &str| name.contains(needle);
+        if has("nintendo") || has("switch") || has("joy-con") || has("joycon") || has("wii") {
+            Self::A
+        } else if has("playstation")
+            || has("sony")
+            || has("dualshock")
+            || has("dualsense")
+            || has("ps3")
+            || has("ps4")
+            || has("ps5")
+        {
+            Self::C
+        } else if has("xbox") || has("x-box") || has("xinput") || has("steam") {
+            // Steam's virtual pad, the Steam Deck's own controls, and
+            // anything XInput all present the same face layout.
+            Self::B
+        } else {
+            Self::D
+        }
+    }
+
     /// The `resources/images/buttons/<id>/` directory this style uses.
     fn layout(self) -> &'static str {
         match self {
@@ -174,6 +202,24 @@ fn parse_report(bytes: &[u8]) -> Option<ControllerGlyphs> {
         accept_button,
         cancel_button,
     })
+}
+
+/// Style id for a pad the caller can name directly. Producers that hold
+/// the device (rather than Main's report file) resolve their glyph style
+/// through here so all controller-name knowledge stays in this module.
+#[must_use]
+pub fn style_for_device_name(name: &str) -> &'static str {
+    GlyphProfile::from_device_name(name).layout()
+}
+
+/// Publish a report from a producer other than the file watcher. The
+/// desktop gamepad reader resolves the same three values from the pad it
+/// has open and from which device last drove the UI, and the help bar
+/// consumes both producers through [`subscribe`] without caring which
+/// one spoke. Only one producer may run at a time: [`spawn_watcher`]
+/// reports whether it took the channel.
+pub fn publish(glyphs: Option<ControllerGlyphs>) {
+    publish_if_changed(glyphs);
 }
 
 fn read_and_parse(path: &Path) -> Option<ControllerGlyphs> {
@@ -346,6 +392,39 @@ mod tests {
         );
         assert_eq!(GlyphProfile::from_report_str("dreamcast"), GlyphProfile::D);
         assert_eq!(GlyphProfile::from_report_str(""), GlyphProfile::D);
+    }
+
+    #[test]
+    fn device_names_map_to_neutral_styles() {
+        // Test-only fixtures quote real device names as their drivers
+        // report them; the output ids stay the neutral letters.
+        assert_eq!(
+            GlyphProfile::from_device_name("Xbox Wireless Controller"),
+            GlyphProfile::B
+        );
+        assert_eq!(
+            GlyphProfile::from_device_name("Microsoft X-Box 360 pad"),
+            GlyphProfile::B
+        );
+        assert_eq!(
+            GlyphProfile::from_device_name("Steam Virtual Gamepad"),
+            GlyphProfile::B
+        );
+        assert_eq!(
+            GlyphProfile::from_device_name(
+                "Sony Interactive Entertainment DualSense Wireless Controller"
+            ),
+            GlyphProfile::C
+        );
+        assert_eq!(
+            GlyphProfile::from_device_name("Nintendo Switch Pro Controller"),
+            GlyphProfile::A
+        );
+        assert_eq!(
+            GlyphProfile::from_device_name("8BitDo Ultimate 2C"),
+            GlyphProfile::D
+        );
+        assert_eq!(GlyphProfile::from_device_name(""), GlyphProfile::D);
     }
 
     #[test]

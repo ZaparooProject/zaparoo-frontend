@@ -579,6 +579,44 @@ fn contrast_ratio(first: Rgb16, second: Rgb16) -> f64 {
     (a.max(b) + 0.05) / (a.min(b) + 0.05)
 }
 
+/// Luminance step a directional cue needs between its live and spent
+/// states. WCAG 1.4.1 allows a state carried by colour alone only when the
+/// two colors differ by at least this much.
+pub const SPENT_CONTRAST: f64 = 3.0;
+
+/// The color a directional cue takes when its direction has nothing left
+/// to reach: a scroll arrow at the top of a list, a carousel arrow on the
+/// last image.
+///
+/// This exists because the obvious choice, `text_label`, does not clear
+/// the bar. Measured against `text_primary` at Subtle intensity it manages
+/// 2.07:1 on Nord and 2.59:1 on the default preset, and only the three
+/// light presets pass at all -- which is exactly why the spent state reads
+/// as "very easy to miss" rather than as a state.
+///
+/// Walks `primary`'s `OKLCh` lightness toward the background until the
+/// pair clears `SPENT_CONTRAST`, preserving hue and chroma, the same shape
+/// as `clamp_accent` below. Toward the background rather than away, so the
+/// spent state reads as receded rather than as a different color.
+pub fn spent_from(primary: Rgb16, background: Rgb16) -> Rgb16 {
+    let lch = to_lch(srgb_to_oklab(primary));
+    let direction = if srgb_to_oklab(background).l < lch.l {
+        -1.0
+    } else {
+        1.0
+    };
+    let mut l = lch.l;
+    let mut adjusted = primary;
+    for _ in 0..60 {
+        l = (l + direction * 0.02).clamp(0.0, 1.0);
+        adjusted = gamut_fit(l, lch.c, lch.h);
+        if contrast_ratio(adjusted, primary) >= SPENT_CONTRAST || l <= 0.0 || l >= 1.0 {
+            break;
+        }
+    }
+    adjusted
+}
+
 /// Seed-agnostic guardrail: walk the accent's `OKLCh` lightness away from
 /// the background until it clears 4.5:1, preserving hue and chroma.
 fn clamp_accent(accent: Rgb16, primary: Rgb16) -> Rgb16 {
@@ -839,6 +877,46 @@ pub fn palette(id: &str, intensity_name: &str) -> Palette {
 
 #[cfg(test)]
 mod tests {
+    use super::{contrast_ratio, ids, palette, spent_from, SPENT_CONTRAST};
+
+    const INTENSITIES: [&str; 2] = ["subtle", "vivid"];
+
+    #[test]
+    fn a_spent_cue_is_readable_as_a_state_on_every_preset() {
+        // The bar WCAG 1.4.1 sets for a state carried by color alone. The
+        // `text_label` this replaced cleared it on three of twenty.
+        for id in ids() {
+            for intensity in INTENSITIES {
+                let p = palette(id, intensity);
+                let spent = spent_from(p.text_primary, p.bg_deep);
+                let step = contrast_ratio(spent, p.text_primary);
+                assert!(
+                    step >= SPENT_CONTRAST,
+                    "{id}/{intensity}: spent vs primary is {step:.2}:1"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_spent_cue_is_still_painted_rather_than_faded_into_the_page() {
+        // Inactive controls are exempt from 1.4.11, but an arrow nobody can
+        // see is not a cue. `border_mid` holds 1.5:1 off its surfaces and is
+        // the weakest line the 240p tier tolerates; hold the spent arrow to
+        // the same floor.
+        for id in ids() {
+            for intensity in INTENSITIES {
+                let p = palette(id, intensity);
+                let spent = spent_from(p.text_primary, p.bg_deep);
+                let against_page = contrast_ratio(spent, p.bg_deep);
+                assert!(
+                    against_page >= 1.5,
+                    "{id}/{intensity}: spent vs page is {against_page:.2}:1"
+                );
+            }
+        }
+    }
+
     use super::*;
 
     #[test]

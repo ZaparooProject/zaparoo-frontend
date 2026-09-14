@@ -27,8 +27,8 @@ pub struct SetupModel {
     pub open: bool,
     pub kind: Kind,
     pub index: usize,
-    /// The scope token the Systems row holds.
-    pub scope: String,
+    /// The Systems row's selected scope, separate from Core's token encoding.
+    pub scope: rules::Scope,
     /// The scraper id the Source row holds (Scrape only).
     pub scraper: String,
     pub rescrape: bool,
@@ -45,7 +45,7 @@ impl SetupModel {
             open: false,
             kind: Kind::Index,
             index: 0,
-            scope: "*".to_string(),
+            scope: rules::Scope::All,
             scraper: String::new(),
             rescrape: false,
             picker: None,
@@ -85,8 +85,9 @@ fn system_name(shared: &Shared, id: &str) -> String {
 }
 
 /// The label pair a picker row (or the form's own row) renders with.
-fn scope_pair(shared: &Shared, token: &str) -> (&'static str, String) {
-    rules::scope_label(&rules::parse_scope(token), &|id| system_name(shared, id))
+fn scope_pair(shared: &Shared, scope: &rules::Scope) -> (crate::ScopeKind, String) {
+    let (kind, name) = rules::scope_label(scope, &|id| system_name(shared, id));
+    (kind.into(), name)
 }
 
 fn scraper_name(model: &SetupModel, id: &str) -> String {
@@ -116,10 +117,7 @@ pub fn render(ctx: &Ctx, app: &App) {
     let shared = lock(&ctx.shared);
     let model = &shared.setup;
     view.set_open(model.open);
-    view.set_kind(SharedString::from(match model.kind {
-        Kind::Index => "index",
-        Kind::Scrape => "scrape",
-    }));
+    view.set_kind(model.kind.into());
     view.set_index(i32::try_from(model.index).unwrap_or(0));
 
     let rows: Vec<SettingsRow> = model
@@ -128,7 +126,7 @@ pub fn render(ctx: &Ctx, app: &App) {
         .enumerate()
         .map(|(i, row)| {
             let mut out = SettingsRow {
-                kind: SharedString::from("field"),
+                kind: crate::RowKind::Field,
                 id: SharedString::from(match row {
                     // The start row names the job it starts.
                     FormRow::Start => match model.kind {
@@ -137,7 +135,7 @@ pub fn render(ctx: &Ctx, app: &App) {
                     },
                     other => other.id(),
                 }),
-                control: SharedString::from(row.control()),
+                control: row.control().into(),
                 enabled: true,
                 y_offset: (i as i32 * row_h) as f32,
                 height: row_h as f32,
@@ -146,11 +144,11 @@ pub fn render(ctx: &Ctx, app: &App) {
             match row {
                 FormRow::Systems => {
                     let (kind, name) = scope_pair(&shared, &model.scope);
-                    out.value = SharedString::from(kind);
+                    out.scope_kind = kind;
                     out.value_name = SharedString::from(name.as_str());
                 }
                 FormRow::Source => {
-                    out.value = SharedString::from("source");
+                    out.scope_kind = crate::ScopeKind::Source;
                     out.value_name =
                         SharedString::from(scraper_name(model, &model.scraper).as_str());
                     out.enabled = !model.scrapers.is_empty();
@@ -171,14 +169,18 @@ pub fn render(ctx: &Ctx, app: &App) {
         return;
     };
     view.set_picker_page(true);
-    view.set_picker_title(SharedString::from(page.id()));
-    let entries: Vec<(&'static str, String)> = match page {
+    view.set_picker_title(if page == FormRow::Source {
+        crate::SetupPicker::Source
+    } else {
+        crate::SetupPicker::Systems
+    });
+    let entries: Vec<(crate::ScopeKind, String)> = match page {
         FormRow::Source => model
             .scrapers
             .iter()
             .map(|s| {
                 (
-                    "source",
+                    crate::ScopeKind::Source,
                     if s.name.is_empty() {
                         s.id.clone()
                     } else {
@@ -189,7 +191,7 @@ pub fn render(ctx: &Ctx, app: &App) {
             .collect(),
         _ => scope_entries(&shared)
             .into_iter()
-            .map(|entry| (entry.kind, entry.name))
+            .map(|entry| (entry.kind.into(), entry.name))
             .collect(),
     };
     // Window the rows around the cursor, like the browse list does.
@@ -201,7 +203,7 @@ pub fn render(ctx: &Ctx, app: &App) {
         .skip(top)
         .take(visible)
         .map(|(kind, name)| SetupPickerRow {
-            kind: SharedString::from(*kind),
+            kind: *kind,
             name: SharedString::from(name.as_str()),
         })
         .collect();
@@ -223,7 +225,7 @@ pub fn open(ctx: &Ctx, app: &App, kind: Kind) {
         model.open = true;
         model.kind = kind;
         model.index = 0;
-        model.scope = "*".to_string();
+        model.scope = rules::Scope::All;
         model.rescrape = false;
         model.picker = None;
         model.picker_index = 0;
@@ -385,7 +387,7 @@ fn open_picker(ctx: &Ctx, app: &App, page: FormRow) {
             let scope = shared.setup.scope.clone();
             scope_entries(&shared)
                 .iter()
-                .position(|entry| entry.token == scope)
+                .position(|entry| rules::parse_scope(&entry.token) == scope)
         };
         let model = &mut shared.setup;
         model.picker = Some(page);
@@ -410,7 +412,7 @@ fn pick(ctx: &Ctx, app: &App) {
         } else {
             let picked = scope_entries(&shared).get(index).map(|e| e.token.clone());
             if let Some(token) = picked {
-                shared.setup.scope = token;
+                shared.setup.scope = rules::parse_scope(&token);
             }
         }
         shared.setup.picker = None;
@@ -422,9 +424,8 @@ fn pick(ctx: &Ctx, app: &App) {
 fn start(ctx: &Ctx, app: &App) {
     let (kind, systems, scraper, rescrape) = {
         let shared = lock(&ctx.shared);
-        let scope = rules::parse_scope(&shared.setup.scope);
         let catalog = zaparoo_app::systems::indexable_ids;
-        let systems = rules::resolved_systems(&scope, &|category| {
+        let systems = rules::resolved_systems(&shared.setup.scope, &|category| {
             catalog(&crate::systems::catalog_systems(&shared.systems), category)
         });
         (
@@ -519,10 +520,10 @@ pub fn bind_input(ctx: &Arc<Ctx>, app: &App) {
             let Some(app) = weak.upgrade() else {
                 return;
             };
+            if crate::press_feedback::pending(&app) {
+                return;
+            }
             if let Ok(index) = usize::try_from(i) {
-                if crate::press_feedback::pending(&app) {
-                    return;
-                }
                 lock(&ctx.shared).setup.index = index;
                 render(&ctx, &app);
                 crate::router::handle_action(&ctx, &app, actions::ACCEPT);

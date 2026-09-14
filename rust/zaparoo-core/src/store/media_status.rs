@@ -9,9 +9,9 @@
 // Why this isn't an `Endpoint`: endpoints are pull-only — Core decides
 // the value, the resource fetches and caches it. Media status is
 // half-pull/half-push: the initial value comes from a `media` query, but
-// every subsequent change is pushed through the
-// `media.indexing`/`media.scraping` notification streams. Folding those
-// notifications into the same shape and republishing keeps the QML
+// every subsequent change is pushed through the `media.indexing`,
+// `media.scraping`, and `media.started`/`media.stopped` notification
+// streams. Folding those notifications into the same shape keeps the QML
 // singleton's binding cost flat — one `watch::Receiver` and a single
 // projection function.
 //
@@ -21,8 +21,8 @@
 
 use crate::client::{Client, ClientError, ConnectionState, Notification};
 use crate::media_types::{
-    IndexingStatusResponse, MediaIndexParams, MediaScrapeParams, ScrapeSystemProgressResponse,
-    ScrapingStatusResponse,
+    ActiveMediaInfo, IndexingStatusResponse, MediaIndexParams, MediaScrapeParams,
+    ScrapeSystemProgressResponse, ScrapingStatusResponse,
 };
 use std::sync::Arc;
 use tokio::runtime::Handle;
@@ -57,6 +57,11 @@ pub struct MediaStatusState {
     pub current_step_display: String,
     pub total_files: i32,
     pub total_media: i32,
+
+    // Primary launch lifecycle from `media.active` and the
+    // `media.started` / `media.stopped` notifications. Secondary slots
+    // (for example background audio) must not suspend the frontend.
+    pub primary_active: Option<ActiveMediaInfo>,
 
     // From `media.scraping`.
     pub scraping: bool,
@@ -104,6 +109,13 @@ impl MediaStatusState {
             .clone_into(&mut self.current_step_display);
         self.total_files = status.total_files.unwrap_or(0);
         self.total_media = status.total_media.unwrap_or(0);
+    }
+
+    fn apply_active(&mut self, active: &[ActiveMediaInfo]) {
+        self.primary_active = active
+            .iter()
+            .find(|item| is_primary_slot(&item.slot))
+            .cloned();
     }
 
     fn apply_scraping(&mut self, status: &ScrapingStatusResponse) {
@@ -272,6 +284,7 @@ async fn seed_now(client: &Arc<Client>, state: &Arc<watch::Sender<MediaStatusSta
         Ok(media) => {
             state.send_modify(|s| {
                 s.apply_indexing(&media.database);
+                s.apply_active(&media.active);
                 s.seeded = true;
             });
             debug!("media_status: seeded from media query");
@@ -317,8 +330,44 @@ fn fold_notification(notification: &Notification, state: &Arc<watch::Sender<Medi
                 Err(e) => warn!("media_status: media.scraping decode failed: {e}"),
             }
         }
+        "media.started" => {
+            match serde_json::from_value::<ActiveMediaInfo>(notification.params.clone()) {
+                Ok(active) if is_primary_slot(&active.slot) => {
+                    state.send_modify(|s| s.primary_active = Some(active));
+                }
+                Ok(_) => {}
+                Err(e) => warn!("media_status: media.started decode failed: {e}"),
+            }
+        }
+        "media.stopped" => {
+            match serde_json::from_value::<ActiveMediaInfo>(notification.params.clone()) {
+                Ok(active) if is_primary_slot(&active.slot) => {
+                    state.send_modify(|s| {
+                        if s.primary_active
+                            .as_ref()
+                            .is_some_and(|current| same_media_identity(current, &active))
+                        {
+                            s.primary_active = None;
+                        }
+                    });
+                }
+                Ok(_) => {}
+                Err(e) => warn!("media_status: media.stopped decode failed: {e}"),
+            }
+        }
         _ => {}
     }
+}
+
+fn same_media_identity(left: &ActiveMediaInfo, right: &ActiveMediaInfo) -> bool {
+    left.launcher_id == right.launcher_id
+        && left.system_id == right.system_id
+        && left.media_path == right.media_path
+        && left.media_name == right.media_name
+}
+
+fn is_primary_slot(slot: &str) -> bool {
+    slot.is_empty() || slot.eq_ignore_ascii_case("primary")
 }
 
 #[cfg(test)]
@@ -491,6 +540,131 @@ mod tests {
         assert!(snapshot.scraping);
         assert!(!snapshot.scrape_force);
         assert!(!snapshot.scrape_force_known);
+    }
+
+    #[test]
+    fn apply_active_selects_primary_and_ignores_secondary_slots() {
+        let mut state = MediaStatusState::default();
+        state.apply_active(&[
+            ActiveMediaInfo {
+                slot: "audio".into(),
+                media_name: "Background music".into(),
+                ..ActiveMediaInfo::default()
+            },
+            ActiveMediaInfo {
+                slot: "primary".into(),
+                media_name: "Super Metroid".into(),
+                ..ActiveMediaInfo::default()
+            },
+        ]);
+        assert_eq!(
+            state
+                .primary_active
+                .as_ref()
+                .map(|item| item.media_name.as_str()),
+            Some("Super Metroid")
+        );
+
+        state.apply_active(&[ActiveMediaInfo {
+            slot: "audio".into(),
+            ..ActiveMediaInfo::default()
+        }]);
+        assert!(state.primary_active.is_none());
+    }
+
+    #[test]
+    fn fold_notification_tracks_primary_media_lifecycle() {
+        let (tx, rx) = watch::channel(MediaStatusState::default());
+        let tx = Arc::new(tx);
+        fold_notification(
+            &Notification {
+                method: "media.started".into(),
+                params: json!({
+                    "systemId": "SNES", "systemName": "Super Nintendo",
+                    "mediaPath": "/games/Super Metroid.sfc", "mediaName": "Super Metroid"
+                }),
+            },
+            &tx,
+        );
+        assert_eq!(
+            rx.borrow()
+                .primary_active
+                .as_ref()
+                .map(|item| item.media_name.as_str()),
+            Some("Super Metroid")
+        );
+
+        fold_notification(
+            &Notification {
+                method: "media.stopped".into(),
+                params: json!({
+                    "systemId": "SNES", "systemName": "Super Nintendo",
+                    "mediaPath": "/games/Super Metroid.sfc", "mediaName": "Super Metroid",
+                    "slot": "primary"
+                }),
+            },
+            &tx,
+        );
+        assert!(rx.borrow().primary_active.is_none());
+    }
+
+    #[test]
+    fn stale_stop_does_not_clear_a_newer_primary_launch() {
+        let current = ActiveMediaInfo {
+            launcher_id: "retroarch".into(),
+            system_id: "SNES".into(),
+            media_path: "/games/Super Metroid.sfc".into(),
+            media_name: "Super Metroid".into(),
+            slot: "primary".into(),
+            ..ActiveMediaInfo::default()
+        };
+        let (tx, rx) = watch::channel(MediaStatusState {
+            primary_active: Some(current.clone()),
+            ..MediaStatusState::default()
+        });
+        let tx = Arc::new(tx);
+
+        fold_notification(
+            &Notification {
+                method: "media.stopped".into(),
+                params: json!({
+                    "launcherId": "retroarch", "systemId": "NES",
+                    "mediaPath": "/games/Mega Man.nes", "mediaName": "Mega Man",
+                    "slot": "primary"
+                }),
+            },
+            &tx,
+        );
+
+        assert_eq!(rx.borrow().primary_active.as_ref(), Some(&current));
+    }
+
+    #[test]
+    fn fold_notification_ignores_secondary_media_lifecycle() {
+        let existing = ActiveMediaInfo {
+            media_name: "Game".into(),
+            ..ActiveMediaInfo::default()
+        };
+        let (tx, rx) = watch::channel(MediaStatusState {
+            primary_active: Some(existing.clone()),
+            ..MediaStatusState::default()
+        });
+        let tx = Arc::new(tx);
+        fold_notification(
+            &Notification {
+                method: "media.started".into(),
+                params: json!({ "slot": "audio", "mediaName": "Music" }),
+            },
+            &tx,
+        );
+        fold_notification(
+            &Notification {
+                method: "media.stopped".into(),
+                params: json!({ "slot": "audio", "mediaName": "Music" }),
+            },
+            &tx,
+        );
+        assert_eq!(rx.borrow().primary_active.as_ref(), Some(&existing));
     }
 
     #[test]

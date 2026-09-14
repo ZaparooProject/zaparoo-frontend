@@ -23,7 +23,8 @@ pub struct LocalStatus {
     pub has_wifi_internet: bool,
     pub has_lan_internet: bool,
     pub has_bluetooth: bool,
-    /// The optional `MiSTer` battery HAT answered on the `SMBus`.
+    /// A battery answered: the optional `MiSTer` HAT on the `SMBus`, or
+    /// a system battery in the kernel's power-supply class off it.
     pub has_battery: bool,
     pub battery_percent: i32,
 }
@@ -43,7 +44,13 @@ pub fn probe() -> LocalStatus {
             InterfaceKind::Wifi => (true, false),
             InterfaceKind::Lan => (false, true),
         });
+    // One HUD reading, two ways to get it: `MiSTer`'s optional fuel
+    // gauge hangs off the `SMBus`, everything else exposes the kernel's
+    // power-supply class.
+    #[cfg(feature = "mister")]
     let battery = crate::mister_battery::read_capacity_percent();
+    #[cfg(not(feature = "mister"))]
+    let battery = crate::power_supply::read_capacity_percent();
     LocalStatus {
         has_wifi_internet: network.0,
         has_lan_internet: network.1,

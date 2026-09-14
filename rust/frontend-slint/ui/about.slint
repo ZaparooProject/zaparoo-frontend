@@ -1,5 +1,5 @@
 import { Theme, Sizing } from "theme.slint";
-import { Brand, GlyphSource, TopStatusStrip } from "chrome.slint";
+import { Brand, GlyphSource, ScrollCue, TopStatusStrip } from "chrome.slint";
 
 export global AboutView {
     in-out property <string> version;
@@ -24,7 +24,7 @@ component CenteredLine inherits Rectangle {
     in property <color> ink: Theme.text-primary;
     height: Math.ceil(label.preferred-height / 1px) * 1px;
     label := Text {
-        x: Math.round((parent.width - self.width) / 2px) * 1px;
+        x: (parent.width - self.width) / 2;
         y: 0px;
         width: Math.min(Math.ceil(self.preferred-width / 1px) * 1px, parent.width);
         text: root.text;
@@ -36,42 +36,55 @@ component CenteredLine inherits Rectangle {
 
 export component AboutScreen inherits Rectangle {
     property <length> maximum-scroll: Math.max(0px, content.preferred-height - viewport.height);
-    property <length> scroll-y: Math.round(Math.min(root.maximum-scroll,
-        AboutView.scroll-milli * root.maximum-scroll / 1000) / 1px) * 1px;
+    property <length> scroll-y: Math.min(root.maximum-scroll,
+        AboutView.scroll-milli * root.maximum-scroll / 1000);
     changed maximum-scroll => {
         AboutView.maximum-scroll-milli = Math.ceil(root.maximum-scroll / Math.max(1px, Sizing.screen-height) * 1000);
     }
     TopStatusStrip {
         y: Sizing.header-bottom + Sizing.pct-h(1);
-        width: parent.width;
         height: Sizing.pct-h(7);
         title: @tr("About / License");
         show-page-counter: false;
     }
+    // The shared surface inset, all four sides (docs/style.md, "Surface
+    // containment"); the sides used to be `pct-w(3)` against `pct-h(4)`
+    // ends, a third pair of numbers for the same job.
+    property <length> pad: Sizing.surface-pad;
+    // The scroll cues get a reserved band inside the lip, the same shape
+    // `ListPickerModal` uses; folding them into the padding is what made
+    // the old `pct-h(4)` end inset look like a considered number.
+    property <length> arrow: Sizing.pct-h(3);
+    property <length> arrow-band: root.arrow + Sizing.pct-h(0.5);
+
     card := Rectangle {
-        x: Math.round((parent.width - self.width) / 2px) * 1px;
+        x: (parent.width - self.width) / 2;
         y: Sizing.header-bottom + Sizing.pct-h(10);
         width: Math.min(parent.width - Sizing.pct-w(10), Sizing.pct-w(50));
-        height: Math.max(0px, parent.height - Sizing.header-bottom - Sizing.pct-h(18));
-        background: Theme.bg-panel;
+        // Clears the help bar the way every other screen does, rather
+        // than a flat `pct-h(8)`: at 240p the bar is `pct_h(10)`, so the
+        // flat figure left the card 10px short of it.
+        height: Math.max(0px, parent.height - self.y - Sizing.help-bar-clearance);
+        background: Theme.surface-card;
         border-radius: Sizing.radius-md;
-        border-width: Sizing.stroke(1);
+        // The card edge, at the card weight -- this was the one
+        // `surface-card` in the app outlined with a bare hairline.
+        border-width: Sizing.card-border-width;
         border-color: Theme.border-mid;
         viewport := Rectangle {
-            x: Sizing.pct-w(3);
-            y: Sizing.pct-h(4);
-            width: parent.width - 2 * self.x;
+            x: root.pad;
+            y: root.pad + root.arrow-band;
+            width: parent.width - 2 * root.pad;
             height: Math.max(0px, parent.height - 2 * self.y);
             clip: true;
             content := VerticalLayout {
                 y: -root.scroll-y;
-                width: parent.width;
                 height: self.preferred-height;
                 spacing: Sizing.pct-h(2);
                 Rectangle {
-                    height: Math.round(Math.min(parent.width, Sizing.pct-h(35)) * 135 / 600 / 1px) * 1px;
+                    height: Math.min(parent.width, Sizing.pct-h(35)) * 135 / 600;
                     Image {
-                        x: Math.round((parent.width - self.width) / 2px) * 1px;
+                        x: (parent.width - self.width) / 2;
                         y: 0px;
                         width: Math.min(parent.width, Sizing.pct-h(35));
                         height: parent.height;
@@ -116,14 +129,13 @@ export component AboutScreen inherits Rectangle {
                 }
             }
         }
-        for below in [false, true]: Image {
-            x: Math.round((parent.width - self.width) / 2px) * 1px;
-            y: below ? parent.height - Sizing.pct-h(3.5) : Sizing.pct-h(0.5);
-            width: Sizing.pct-h(3);
-            height: self.width;
+        for below in [false, true]: ScrollCue {
+            x: (parent.width - self.width) / 2;
+            y: below ? parent.height - root.pad - root.arrow : root.pad;
+            width: root.arrow;
             visible: root.maximum-scroll > 0px;
-            source: GlyphSource.glyph(below ? "icons/ScrollDown" : "icons/ScrollUp", self.width,
-                (below ? root.scroll-y < root.maximum-scroll : root.scroll-y > 0px) ? Theme.text-primary : Theme.text-label);
+            glyph: below ? "icons/ScrollDown" : "icons/ScrollUp";
+            live: below ? root.scroll-y < root.maximum-scroll : root.scroll-y > 0px;
         }
     }
 }

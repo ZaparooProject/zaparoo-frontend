@@ -184,6 +184,25 @@ mod tests {
 
     use super::*;
 
+    #[test]
+    #[ignore = "manual cold-versus-warm embedded logo timing probe"]
+    #[allow(
+        clippy::print_stderr,
+        reason = "manual probe reports measured timings with --nocapture"
+    )]
+    fn profile_cold_and_warm_logo_page() {
+        let ids: Vec<_> = EMBEDDED_LOGOS.iter().take(28).map(|(id, _)| *id).collect();
+        for phase in ["cold", "warm"] {
+            let start = std::time::Instant::now();
+            for id in &ids {
+                for focused in [false, true] {
+                    std::hint::black_box(tinted_logo_for(id, focused));
+                }
+            }
+            eprintln!("{phase}: {} logo pairs in {:?}", ids.len(), start.elapsed());
+        }
+    }
+
     fn px(r: u8, g: u8, b: u8, a: u8) -> [u8; 4] {
         [r, g, b, a]
     }

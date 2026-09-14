@@ -106,13 +106,16 @@ pub enum InterfaceProfile {
 }
 
 impl InterfaceProfile {
-    /// Mirrors the QML `interfaceProfile === "handheld"` test: anything that
-    /// is not exactly `handheld` is the standard profile.
-    pub fn from_name(name: &str) -> Self {
-        if name == "handheld" {
-            Self::Handheld
-        } else {
-            Self::Standard
+    /// Resolve the `interfaceProfile` setting. `handheld` pins the dense
+    /// profile and `standard` pins the roomy one; `device` defers to the
+    /// hardware, which is the only thing `device_is_handheld` answers.
+    /// Anything else is standard, matching the QML
+    /// `interfaceProfile === "handheld"` test it replaces.
+    pub fn resolve(name: &str, device_is_handheld: bool) -> Self {
+        match name {
+            "handheld" => Self::Handheld,
+            "device" if device_is_handheld => Self::Handheld,
+            _ => Self::Standard,
         }
     }
 
@@ -176,6 +179,15 @@ impl Inputs {
             self.screen_width
         };
         js_round(axis * percent / 100.0) as i32
+    }
+
+    /// Percentage of the shorter axis, for insets that have to measure
+    /// the same on both of them. Deriving a card's sides from the width
+    /// and its ends from the height puts 26px beside 14px on a 16:9
+    /// screen, which reads as a mistake rather than as a margin. See
+    /// `docs/style.md` -> "Square insets".
+    pub fn pct_min(&self, percent: f64) -> i32 {
+        self.pct_h(percent).min(self.pct_w(percent))
     }
 
     /// At least one physical pixel, so a hairline never rounds away.
@@ -452,7 +464,17 @@ pub fn hub_grid_shape(inputs: &Inputs) -> GridShape {
         // Handheld changes page density, not persisted order: the same linear
         // Hub slots reflow into fewer columns. The low tiers are already
         // compact enough.
-        GridShape::new(4, 3)
+        //
+        // Six, where `Sizing.qml` says four. The Qt profile was tuned on a
+        // small handheld panel; on a Steam Deck class screen four columns
+        // leaves a third of the width empty without making the icons any
+        // bigger, because the tile is square and the row height, not the
+        // column count, bounds it. Six closes most of that gap at the same
+        // tile size; seven is the first count where width binds instead
+        // and the tiles start shrinking. The QML keeps four so the device
+        // it was tuned for is untouched, and `tests/sizing_golden.rs`
+        // records the divergence rather than papering over it.
+        GridShape::new(6, 3)
     } else if compact {
         GridShape::new(4, 2)
     } else {
@@ -797,5 +819,39 @@ pub fn derive(inputs: &Inputs) -> Derived {
         header_side_margin,
         header_height,
         header_bottom,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::InterfaceProfile;
+
+    #[test]
+    fn device_profile_is_the_only_one_that_asks_the_hardware() {
+        // A pinned profile means the same thing everywhere.
+        for device_is_handheld in [false, true] {
+            assert_eq!(
+                InterfaceProfile::resolve("handheld", device_is_handheld),
+                InterfaceProfile::Handheld
+            );
+            assert_eq!(
+                InterfaceProfile::resolve("standard", device_is_handheld),
+                InterfaceProfile::Standard
+            );
+            // An unknown token stays standard rather than inheriting the
+            // device answer, so a stale setting cannot change density.
+            assert_eq!(
+                InterfaceProfile::resolve("future-profile", device_is_handheld),
+                InterfaceProfile::Standard
+            );
+        }
+        assert_eq!(
+            InterfaceProfile::resolve("device", true),
+            InterfaceProfile::Handheld
+        );
+        assert_eq!(
+            InterfaceProfile::resolve("device", false),
+            InterfaceProfile::Standard
+        );
     }
 }

@@ -112,6 +112,82 @@ accepts direct `WxH` values and aliases from Update All's CRT selector:
 `ntsc-320b`, `ntsc-304`, `pal-640`, `pal-512`, `pal-384`, `pal-352`, and
 `pal-320`. `ZAPAROO_CRT_PREVIEW_SCALE` controls the integer desktop scale.
 
+### Window size and fullscreen
+
+The Slint frontend opens a 1280x720 window unless `frontend.toml` asks for
+something else:
+
+```toml
+[video]
+width = 1280
+height = 800
+fullscreen = true
+```
+
+`fullscreen` asks the windowing system for a fullscreen surface, which is what
+a couch or handheld install wants. The compositor owns the size of a fullscreen
+surface, so `width` and `height` are ignored while it is on, and every screen
+re-solves its layout against whatever size arrives. `--fullscreen` turns it on
+for one run and `--windowed` turns it off for one run, which beats editing the
+config to test a layout. Neither applies on MiSTer or in CRT mode, where the
+presenter owns the raster.
+
+SteamOS is detected as its own runtime and needs none of this: it starts
+fullscreen and picks the handheld page density on its own. Writing
+`fullscreen = false` still puts it in a window, because an absent key and an
+explicit `false` are not the same answer. `ZAPAROO_RUNTIME_OVERRIDE=steamos`
+borrows those defaults on an ordinary desktop for testing.
+
+### Gaming Mode
+
+In a gamescope session the frontend claims the screen for itself, because
+gamescope only draws a window carrying the properties Steam sets for what it
+launched. It claims again when a game exits, so a launch returns to the
+frontend rather than to the Steam library. Both are automatic and inert
+outside a gamescope session; `xprop` must be on `PATH`.
+
+Build the binary with `just slint-x86-portable`. A build from an ordinary
+`cargo build --release` links against the build host's glibc and will not
+start on a Deck.
+
+To install on a Deck, copy the repo (or just the binary and
+`scripts/install-steamos.sh`) across and run the script there with Steam
+running. It installs to `~/.local/bin/zaparoo-frontend`, writes a desktop
+entry, and adds a **Zaparoo** shortcut to the Steam library; rerunning it
+updates the binary in place without adding a second shortcut. Being
+Steam-owned is the point: Steam only gives its own Steam Input layout, the
+overlay and the Quick Access Menu to what it launched.
+
+A Steam-owned frontend also offers itself to Core as its launch host. Core
+cannot start an emulator inside a Steam session by itself, so in Gaming Mode
+it normally asks Steam to run a second shortcut, **Zaparoo Runtime**, which
+execs the emulator on its behalf. When the frontend is registered, Core hands
+the command here instead and the game runs inside the session the frontend is
+already in: one Steam card rather than two, and one Back press to leave. The
+shortcut stays the fallback for a token scanned with no frontend running, for
+Desktop Mode, and for a frontend Steam did not launch. Registration needs a
+gamescope session, a Steam-started frontend, and a Core on this machine, plus
+a Core build that accepts launch hosts. Registration has a socket of its own,
+so an older Core has nothing to connect to and keeps using the shortcut with
+no idea the frontend offered. Emulators
+inherit the frontend shortcut's Steam Input layout while it hosts, where they
+would otherwise inherit the Zaparoo Runtime shortcut's.
+
+### Controllers
+
+A connected gamepad drives the UI alongside the keyboard: d-pad or left
+stick to move, the south face button to confirm, east to cancel, north for
+the context menu, west for the view menu, and the shoulders to page. Steam
+Input's virtual pad arrives the same way, so a Steam Deck needs no extra
+setup.
+
+The help bar follows whichever device you touched last, drawing keycaps for
+the keyboard and the pad's own button glyphs otherwise. Settings > Controls
+pins a button style when the autodetected one is wrong, and the
+confirm/cancel and options/view swaps there apply to the pad only, never to
+Enter and Escape. `[input.keyboard]` in `frontend.toml` remaps keyboard keys
+only; pad buttons are not remappable.
+
 ## 5. Check the result
 
 - The frontend window opens.

@@ -7,6 +7,17 @@
 # (build dependency) to pre-render glyphs; the target binary itself
 # has no fontconfig dependency.
 
+# Desktop x86_64 releases. Building on a modern host bakes in that host's
+# glibc symbol versions, which a Steam Deck (glibc 2.41) or any older
+# distribution then refuses to run. cross's image is old enough that the
+# result runs everywhere we ship. Slint's winit backend dlopens GL and
+# wayland/X11; fontconfig is needed by the host-side Slint compiler, and
+# libudev by gilrs-core's evdev backend.
+[target.x86_64-unknown-linux-gnu]
+pre-build = [
+    "apt-get update && apt-get install --assume-yes libfontconfig1-dev libudev-dev",
+]
+
 [target.armv7-unknown-linux-gnueabihf]
 pre-build = ["apt-get update && apt-get install --assume-yes libfontconfig1-dev"]
 

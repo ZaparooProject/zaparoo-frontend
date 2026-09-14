@@ -498,7 +498,7 @@ impl LatchPresenter {
         let width = self.width as usize;
         let height = self.height as usize;
         let frame_len = width * height;
-        let result = self.transition.as_mut()?.compose_next(
+        let result = self.transition.as_mut()?.compose_now(
             &self.frame[..frame_len],
             &mut self.transition_frame[..frame_len],
         );
@@ -668,6 +668,13 @@ impl Presenter for LatchPresenter {
         let height = self.height as usize;
         let frame_len = width * height;
 
+        // An interrupted animation may have left either output slot on a
+        // partial page. Republish the complete canonical frame, even when
+        // Slint itself only dirtied a cursor or a small modal.
+        let cancelled = super::transition::take_cancelled();
+        if cancelled {
+            self.transition = None;
+        }
         // A request arrives before destination properties render. Preserve
         // outgoing pixels first, then let Slint build its canonical endpoint.
         self.begin_cached_transition();
@@ -686,7 +693,14 @@ impl Presenter for LatchPresenter {
             .map_or((slint_damage, false, false), |(damage, done)| {
                 (damage, true, done)
             });
-        self.publish(damage, transition_frame);
+        self.publish(
+            if cancelled {
+                self.full_damage()
+            } else {
+                damage
+            },
+            transition_frame,
+        );
         if finished {
             self.finish_cached_transition();
         }
@@ -697,6 +711,14 @@ impl Presenter for LatchPresenter {
     }
 
     fn present_cached_transition(&mut self) -> Option<Duration> {
+        if super::transition::take_cancelled() {
+            self.transition = None;
+            let start = Instant::now();
+            self.publish(self.full_damage(), false);
+            let busy = start.elapsed();
+            self.wait_vsync();
+            return Some(busy);
+        }
         self.transition.as_ref()?;
         let start = Instant::now();
         let (damage, finished) = self.compose_cached_transition()?;

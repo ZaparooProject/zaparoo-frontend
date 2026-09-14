@@ -7,22 +7,42 @@
 // panel rather than a second modal, the picker its rows open.
 
 import { Theme, Sizing, Motion, Layout } from "theme.slint";
-import { GlyphSource, SectionHeader, SelectionBar } from "chrome.slint";
+import { GlyphSource, SectionHeader, ScrollCue, Divider, ModalShell, QrPlate } from "chrome.slint";
+import { SelectionCursor, SelectionClip } from "focus.slint";
 import { SettingsRow, SettingsLabels, SettingsRowView } from "settings.slint";
 import { PressableSurface } from "tiles.slint";
+import { SetupKind, SetupPicker, ScopeKind, LogPhase, ControlKind, StateTokens } from "state_types.slint";
 
 // One row of the picker page: the same (kind, name) pair the form's own
 // scope row carries, so both read through one vocabulary.
 export struct SetupPickerRow {
-    kind: string,
+    kind: ScopeKind,
     name: string,
 }
 
-export component SetupModal inherits Rectangle {
-    in property <string> kind: "index";
+// One setup-picker row's label, colors as inputs so the row can draw it
+// at rest and again inverted inside a `SelectionClip`.
+component PickerScopeLabel inherits Rectangle {
+    in property <string> label;
+    in property <color> content-color;
+    in property <int> weight;
+
+    Text {
+        x: Sizing.pct-w(2);
+        y: (parent.height - self.height) / 2;
+        width: parent.width - 2 * Sizing.pct-w(2);
+        overflow: elide;
+        text: root.label;
+        color: root.content-color;
+        font-size: Sizing.font-body;
+        font-weight: root.weight;
+    }
+}
+
+export component SetupModal inherits ModalShell {
+    in property <SetupKind> kind: SetupKind.index;
     in property <bool> picker-page: false;
-    // "systems" or "source": the picker page's own header.
-    in property <string> picker-title: "systems";
+    in property <SetupPicker> picker-title: SetupPicker.systems;
     in property <[SettingsRow]> rows: [];
     in property <int> index: 0;
     in property <[SetupPickerRow]> picker-rows: [];
@@ -35,11 +55,6 @@ export component SetupModal inherits Rectangle {
     callback picker-hovered(int);
     callback picker-clicked(int);
 
-    background: Theme.scrim;
-
-    property <length> pad-x: Sizing.pct-w(4);
-    property <length> pad-y: Sizing.pct-h(3);
-    property <length> title-h: Sizing.pct-h(9);
     property <length> row-gap: Sizing.pct-h(1.5);
     property <length> picker-row-h: Sizing.pct-h(7);
     property <length> picker-gap: Sizing.pct-h(1);
@@ -58,58 +73,64 @@ export component SetupModal inherits Rectangle {
         + root.picker-rows.length * root.picker-row-h
         + Math.max(0, root.picker-rows.length - 1) * root.picker-gap;
     property <length> body-h: root.picker-page ? root.picker-h : root.form-h;
-    property <length> panel-w: Math.min(Sizing.pct-h(110), root.width - 2 * Sizing.pct-w(6));
-    property <length> panel-h: root.title-h + root.body-h + 2 * root.pad-y;
+    title: SettingsLabels.setup-title(root.kind);
+    panel-width: Math.min(root.width * 0.78, Sizing.pct-h(110));
+    content-height: root.body-h;
 
     header-measure := Text {
         visible: false;
-        text: SettingsLabels.label(root.picker-title);
+        text: SettingsLabels.label(StateTokens.picker(root.picker-title));
         font-size: Sizing.font-body;
-        font-weight: 600;
+        font-weight: FontWeight.semi-bold;
     }
-
-    panel := Rectangle {
-        x: Math.round((parent.width - self.width) / 2px) * 1px;
-        y: Math.round((parent.height - self.height) / 2px) * 1px;
-        width: root.panel-w;
-        height: root.panel-h;
-        background: Theme.bg-panel;
-        border-radius: Sizing.radius-md;
-        border-width: Sizing.card-border-width;
-        border-color: Theme.border-mid;
-        clip: true;
-
-        Text {
-            x: Math.round((parent.width - self.width) / 2px) * 1px;
-            y: Math.round((root.title-h - self.height) / 2px) * 1px;
-            text: SettingsLabels.setup-title(root.kind);
-            color: Theme.text-primary;
-            font-size: Sizing.font-title;
-            font-weight: 500;
-        }
 
         // The form.
         if !root.picker-page: Rectangle {
-            x: root.pad-x;
-            y: root.title-h;
-            width: parent.width - 2 * root.pad-x;
+            x: root.pad;
+            y: root.content-y;
+            width: root.content-width;
             height: root.form-h;
 
-            for row[i] in root.rows: SettingsRowView {
+            sel := SelectionCursor {
+                activate-pulse: root.activate-pulse;
+                // Toggles answer with their knob slide, not a flash.
+                flash-enabled: root.index >= 0 && root.index < root.rows.length
+                    && root.rows[root.index].control != ControlKind.toggle;
+                target: { x: 0px,
+                    y: root.index >= 0 && root.index < root.rows.length ? root.rows[root.index].y-offset + root.index * root.row-gap : 0px,
+                    w: parent.width,
+                    h: root.index >= 0 && root.index < root.rows.length ? root.rows[root.index].height : 0px,
+                    column: 0, row: root.index, scope: StateTokens.setup(root.kind),
+                    valid: root.index >= 0 && root.index < root.rows.length };
+            }
+            for row[i] in root.rows: Rectangle {
                 x: 0;
                 y: row.y-offset + i * root.row-gap;
-                width: parent.width;
                 height: row.height;
-                entry: row;
-                focused: i == root.index;
-                activate-pulse: root.activate-pulse;
+                property <bool> lit: sel.fill-bottom > self.y && sel.fill-top < self.y + self.height;
 
-                TouchArea {
-                    mouse-cursor: pointer;
-                    changed has-hover => {
-                        if (self.has-hover) { root.row-hovered(i); }
+                SettingsRowView {
+                    entry: row;
+                    focused: false;
+
+                    TouchArea {
+                        mouse-cursor: pointer;
+                        changed has-hover => {
+                            if (self.has-hover) { root.row-hovered(i); }
+                        }
+                        clicked => { root.row-clicked(i); }
                     }
-                    clicked => { root.row-clicked(i); }
+                }
+                if lit: SelectionClip {
+                    radius: Layout.row-radius;
+                    row-top: parent.y; row-height: parent.height;
+                    fill-top: sel.fill-top; fill-bottom: sel.fill-bottom;
+                    fill: sel.fill;
+                    SettingsRowView {
+                        entry: row;
+                        focused: true;
+                        flashing: sel.flashing;
+                    }
                 }
             }
         }
@@ -117,50 +138,60 @@ export component SetupModal inherits Rectangle {
         // The picker page: a header, the windowed rows Rust sends, and
         // the scroll cues for what sits outside the window.
         if root.picker-page: Rectangle {
-            x: root.pad-x;
-            y: root.title-h;
-            width: parent.width - 2 * root.pad-x;
+            x: root.pad;
+            y: root.content-y;
+            width: root.content-width;
             height: root.picker-h;
 
+            // Default `label-inset`, because the picker rows under it
+            // carry the same `pct-w(2)` text inset -- a heading lines up
+            // with the rows it heads (docs/style.md, "Section headings").
             SectionHeader {
                 x: 0;
                 y: 0;
-                width: parent.width;
-                label-inset: 0px;
-                label: SettingsLabels.label(root.picker-title);
+                label: SettingsLabels.label(StateTokens.picker(root.picker-title));
             }
 
-            if root.has-above: Image {
-                x: Math.round((parent.width - self.width) / 2px) * 1px;
+            // Both cues stand while the window scrolls at all, and the
+            // spent one dims. See docs/style.md, "Spent cues".
+            if root.has-above || root.has-below: ScrollCue {
+                x: (parent.width - self.width) / 2;
                 y: root.header-h;
                 width: root.arrow;
-                height: root.arrow;
-                source: GlyphSource.glyph("icons/ScrollUp", root.arrow, Theme.text-label);
+                glyph: "icons/ScrollUp";
+                live: root.has-above;
             }
 
+            picker-sel := SelectionCursor {
+                radius: Layout.row-radius;
+                activate-pulse: root.activate-pulse;
+                target: { x: 0px, y: root.header-h + root.arrow-band + root.picker-sel * (root.picker-row-h + root.picker-gap),
+                    w: parent.width, h: root.picker-row-h, column: 0, row: root.picker-sel,
+                    scope: StateTokens.picker(root.picker-title),
+                    valid: root.picker-sel >= 0 && root.picker-sel < root.picker-rows.length };
+            }
             for entry[i] in root.picker-rows: Rectangle {
                 x: 0;
                 y: root.header-h + root.arrow-band + i * (root.picker-row-h + root.picker-gap);
-                width: parent.width;
                 height: root.picker-row-h;
 
-                bar := SelectionBar {
-                    width: 100%;
-                    height: 100%;
-                    active: i == root.picker-sel;
-                    activate-pulse: root.activate-pulse;
-                    radius: Layout.row-radius;
-                }
+                property <bool> lit: picker-sel.fill-bottom > self.y && picker-sel.fill-top < self.y + self.height;
 
-                Text {
-                    x: Sizing.pct-w(2);
-                    y: Math.round((parent.height - self.height) / 2px) * 1px;
-                    width: parent.width - 2 * Sizing.pct-w(2);
-                    overflow: elide;
-                    text: SettingsLabels.scope(entry.kind, entry.name);
-                    color: bar.active ? bar.content-color : Theme.text-primary;
-                    font-size: Sizing.font-body;
-                    font-weight: bar.content-weight;
+                PickerScopeLabel {
+                    label: SettingsLabels.scope(entry.kind, entry.name);
+                    content-color: Theme.text-primary;
+                    weight: FontWeight.normal;
+                }
+                if lit: SelectionClip {
+                    radius: Layout.row-radius;
+                    row-top: parent.y; row-height: parent.height;
+                    fill-top: picker-sel.fill-top; fill-bottom: picker-sel.fill-bottom;
+                    fill: picker-sel.fill;
+                    PickerScopeLabel {
+                        label: SettingsLabels.scope(entry.kind, entry.name);
+                        content-color: picker-sel.content;
+                        weight: FontWeight.medium;
+                    }
                 }
 
                 TouchArea {
@@ -172,35 +203,29 @@ export component SetupModal inherits Rectangle {
                 }
             }
 
-            if root.has-below: Image {
-                x: Math.round((parent.width - self.width) / 2px) * 1px;
+            if root.has-above || root.has-below: ScrollCue {
+                x: (parent.width - self.width) / 2;
                 y: parent.height - root.arrow;
                 width: root.arrow;
-                height: root.arrow;
-                source: GlyphSource.glyph("icons/ScrollDown", root.arrow, Theme.text-label);
+                glyph: "icons/ScrollDown";
+                live: root.has-below;
             }
         }
-    }
 }
 
 // The log uploader (LogUploadModal.qml): one panel that reports the
 // upload, then shows the link as a scannable code with the URL under it.
-export component LogUploadModal inherits Rectangle {
-    in property <string> phase: "uploading";
+export component LogUploadModal inherits ModalShell {
+    in property <LogPhase> phase: LogPhase.uploading;
     in property <bool> button-pressed: false;
     in property <string> url: "";
     in property <image> qr;
     in property <int> qr-modules: 0;
     callback confirmed();
 
-    background: Theme.scrim;
-
-    property <length> pad-x: Sizing.pct-w(4);
-    property <length> pad-y: Sizing.pct-h(3);
-    property <length> title-h: Sizing.pct-h(9);
     property <length> button-h: Sizing.pct-h(7);
-    property <bool> done: root.phase == "done";
-    property <bool> failed: root.phase == "failed";
+    property <bool> done: root.phase == LogPhase.done;
+    property <bool> failed: root.phase == LogPhase.failed;
     // The code is square, sized to whole modules so it never resamples.
     property <length> max-px: Math.min(Sizing.pct-w(38), Sizing.pct-h(54));
     property <length> module-px: root.qr-modules > 0
@@ -210,96 +235,67 @@ export component LogUploadModal inherits Rectangle {
     property <length> body-h: root.done
         ? root.qr-px + Sizing.pct-h(2) + url-text.preferred-height
         : message.preferred-height;
-    property <length> panel-w: Math.min(Sizing.pct-h(110), root.width - 2 * Sizing.pct-w(6));
-    property <length> panel-h: root.title-h + root.body-h + Sizing.pct-h(3)
-        + (root.phase == "uploading" ? 0px : root.button-h) + 2 * root.pad-y;
 
-    Rectangle {
-        x: Math.round((parent.width - self.width) / 2px) * 1px;
-        y: Math.round((parent.height - self.height) / 2px) * 1px;
-        width: root.panel-w;
-        height: root.panel-h;
-        background: Theme.bg-panel;
-        border-radius: Sizing.radius-md;
-        border-width: Sizing.card-border-width;
-        border-color: Theme.border-mid;
-        clip: true;
+    title: @tr("Upload log file");
+    panel-width: Math.min(root.width * 0.78, Sizing.pct-h(110));
+    content-height: root.body-h
+        + (root.phase == LogPhase.uploading ? 0px : root.pad + root.button-h);
+
+    message := Text {
+        x: root.pad;
+        y: root.content-y;
+        width: root.content-width;
+        visible: !root.done;
+        wrap: word-wrap;
+        horizontal-alignment: center;
+        text: root.failed
+            ? @tr("Upload failed. Check the network connection and try again.")
+            : @tr("Uploading log file. This may take a moment.");
+        color: Theme.text-primary;
+        font-size: Sizing.font-body;
+    }
+
+    if root.done: QrPlate {
+        x: (root.panel-width - self.width) / 2;
+        y: root.content-y;
+        width: root.qr-px;
+        height: root.qr-px;
+        code: root.qr;
+        quiet-zone: root.module-px * 4;
+    }
+
+    url-text := Text {
+        x: root.pad;
+        y: root.content-y + root.qr-px + Sizing.pct-h(2);
+        width: root.content-width;
+        visible: root.done;
+        wrap: char-wrap;
+        horizontal-alignment: center;
+        text: root.url;
+        color: Theme.text-primary;
+        font-size: Sizing.font-small;
+    }
+
+    if root.phase != LogPhase.uploading: button := PressableSurface {
+        x: (root.panel-width - self.width) / 2;
+        y: root.content-y + root.content-height - root.button-h;
+        width: Math.min(Sizing.pct-w(28), root.content-width);
+        height: root.button-h;
+        focused: true;
+        pressed: root.button-pressed;
 
         Text {
-            x: Math.round((parent.width - self.width) / 2px) * 1px;
-            y: Math.round((root.title-h - self.height) / 2px) * 1px;
-            text: @tr("Upload log file");
-            color: Theme.text-primary;
-            font-size: Sizing.font-title;
-            font-weight: 500;
-        }
-
-        message := Text {
-            x: root.pad-x;
-            y: root.title-h;
-            width: parent.width - 2 * root.pad-x;
-            visible: !root.done;
-            wrap: word-wrap;
-            horizontal-alignment: center;
-            text: root.failed
-                ? @tr("Upload failed. Check the network connection and try again.")
-                : @tr("Uploading log file. This may take a moment.");
+            x: (parent.width - self.width) / 2;
+            y: (button.face-height - self.height) / 2;
+            text: root.failed ? @tr("Retry") : @tr("Done");
             color: Theme.text-primary;
             font-size: Sizing.font-body;
+            font-weight: FontWeight.medium;
         }
 
-        if root.done: Rectangle {
-            x: Math.round((parent.width - self.width) / 2px) * 1px;
-            y: root.title-h;
-            width: root.qr-px;
-            height: root.qr-px;
-            background: white;
-            border-width: Sizing.stroke(root.module-px * 0.18 / 1px);
-            border-color: Theme.border-subtle;
-
-            Image {
-                x: 0;
-                y: 0;
-                width: parent.width;
-                height: parent.height;
-                source: root.qr;
-                image-rendering: pixelated;
-            }
-        }
-
-        url-text := Text {
-            x: root.pad-x;
-            y: root.title-h + root.qr-px + Sizing.pct-h(2);
-            width: parent.width - 2 * root.pad-x;
-            visible: root.done;
-            wrap: char-wrap;
-            horizontal-alignment: center;
-            text: root.url;
-            color: Theme.text-primary;
-            font-size: Sizing.font-small;
-        }
-
-        if root.phase != "uploading": button := PressableSurface {
-            x: Math.round((parent.width - self.width) / 2px) * 1px;
-            y: parent.height - root.pad-y - root.button-h;
-            width: Math.min(Sizing.pct-w(28), parent.width - 2 * root.pad-x);
-            height: root.button-h;
-            focused: true;
-            pressed: root.button-pressed;
-
-            Text {
-                x: Math.round((parent.width - self.width) / 2px) * 1px;
-                y: Math.round((button.face-height - self.height) / 2px) * 1px;
-                text: root.failed ? @tr("Retry") : @tr("Done");
-                color: Theme.text-primary;
-                font-size: Sizing.font-body;
-                font-weight: 500;
-            }
-
-            TouchArea {
-                mouse-cursor: pointer;
-                clicked => { root.confirmed(); }
-            }
+        TouchArea {
+            mouse-cursor: pointer;
+            clicked => { root.confirmed(); }
         }
     }
 }

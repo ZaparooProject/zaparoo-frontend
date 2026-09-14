@@ -343,6 +343,54 @@ pub fn seek_navigable(rows: &[Row], from: usize, dir: i64) -> usize {
 
 /// The root category grid: two rows of three, transposed when the scene
 /// is rotated.
+/// Where a settings rows band can start and stop without cutting a row
+/// in half. `rows` is each row's (top, height) in band space, in order.
+///
+/// The band is a fixed pixel height and its rows are not all the same
+/// height, so an unsnapped clip lands wherever it lands: at the top of a
+/// list that leaves a sliver of the next row against the hint divider,
+/// which reads as a rendering fault rather than as "there is more below".
+/// Both edges snap to a real row edge instead, which is what the browse
+/// list's uniform rows already give for free.
+///
+/// Returns the scroll offset, which is a row top, and the height the band
+/// should paint, which ends on a row bottom.
+pub fn band_extent(rows: &[(f32, f32)], index: usize, viewport: f32) -> (f32, f32) {
+    let Some(&(focused_top, focused_height)) = rows.get(index) else {
+        return (0.0, viewport);
+    };
+    let focused_bottom = focused_top + focused_height;
+    // The least scrolling that brings the focused row fully into view,
+    // rounded up to a row top. Clamping to a raw `total - viewport` here
+    // instead is what unsnaps it: that bound is rarely a row edge.
+    let needed = focused_bottom - viewport;
+    let snapped = rows
+        .iter()
+        .map(|(top, _)| *top)
+        .filter(|top| *top >= needed && *top <= focused_top)
+        .fold(f32::INFINITY, f32::min);
+    // No row top frames a row taller than the band; sit on its own top and
+    // let the fallback below show the raw viewport.
+    let scroll = if snapped.is_finite() {
+        snapped.max(0.0)
+    } else {
+        focused_top.max(0.0)
+    };
+    // A row taller than the band cannot be framed by it; show the raw
+    // viewport rather than collapsing the band to nothing.
+    let bottom = rows
+        .iter()
+        .map(|(top, height)| top + height)
+        .filter(|edge| *edge <= scroll + viewport)
+        .fold(f32::NEG_INFINITY, f32::max);
+    let shown = if bottom > scroll {
+        bottom - scroll
+    } else {
+        viewport
+    };
+    (scroll, shown)
+}
+
 pub fn root_grid_shape(count: usize, rotated: bool) -> (usize, usize) {
     let rows = 2;
     let columns = count.div_ceil(rows).max(1);
@@ -583,5 +631,37 @@ mod tests {
         // the one without wraps back to the top of its own column.
         assert_eq!(root_grid_move(0, 5, 3, 0, 1), 3);
         assert_eq!(root_grid_move(2, 5, 3, 0, 1), 2);
+    }
+
+    #[test]
+    fn band_snaps_both_edges_to_row_boundaries() {
+        use super::band_extent;
+        // Six 60px rows in a band that fits 3.5 of them.
+        let rows: Vec<(f32, f32)> = (0..6).map(|i| (i as f32 * 60.0, 60.0)).collect();
+        // Focus at the top: no scroll, and the band stops after the third
+        // row rather than showing half of the fourth.
+        assert_eq!(band_extent(&rows, 0, 210.0), (0.0, 180.0));
+        // Focus below the fold: scroll lands on a row top, the band still
+        // ends on a row bottom, and it scrolls the least it can.
+        assert_eq!(band_extent(&rows, 4, 210.0), (120.0, 180.0));
+        // The last row, framed the same way rather than flush against an
+        // unsnapped bottom.
+        assert_eq!(band_extent(&rows, 5, 210.0), (180.0, 180.0));
+        // Coming back up returns to the top rather than hanging mid-row.
+        assert_eq!(band_extent(&rows, 1, 210.0), (0.0, 180.0));
+    }
+
+    #[test]
+    fn a_row_taller_than_the_band_falls_back_to_the_viewport() {
+        use super::band_extent;
+        let rows = [(0.0_f32, 500.0_f32)];
+        assert_eq!(band_extent(&rows, 0, 200.0), (0.0, 200.0));
+    }
+
+    #[test]
+    fn an_out_of_range_index_does_not_collapse_the_band() {
+        use super::band_extent;
+        let rows = [(0.0_f32, 60.0_f32)];
+        assert_eq!(band_extent(&rows, 9, 200.0), (0.0, 200.0));
     }
 }

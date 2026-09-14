@@ -7,6 +7,10 @@
 //! Slint renders each endpoint once. During motion this module moves pixels
 //! from those endpoint frames without traversing the component tree again.
 
+use std::time::{Duration, Instant};
+
+const FRAME_PERIOD: Duration = Duration::from_micros(16_667);
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Rect {
     pub x: usize,
@@ -34,8 +38,6 @@ impl Rect {
 pub(crate) enum Direction {
     Up,
     Down,
-    Left,
-    Right,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -44,6 +46,7 @@ pub(crate) struct Spec {
     pub gap: usize,
     pub direction: Direction,
     pub total_frames: u32,
+    pub started: Instant,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -106,10 +109,40 @@ impl<T: Copy> Active<T> {
         })
     }
 
-    pub fn compose_next(
+    pub fn compose_now(
         &mut self,
         destination: &[T],
         output: &mut [T],
+    ) -> Result<Step, TransitionError> {
+        self.compose_at(destination, output, self.spec.started.elapsed())
+    }
+
+    fn compose_at(
+        &mut self,
+        destination: &[T],
+        output: &mut [T],
+        elapsed: Duration,
+    ) -> Result<Step, TransitionError> {
+        // The first frame is step one. A late presentation jumps directly
+        // to the current step instead of replaying obsolete cached frames.
+        let step = elapsed.as_micros() / FRAME_PERIOD.as_micros() + 1;
+        self.compose_frame(destination, output, u32::try_from(step).unwrap_or(u32::MAX))
+    }
+
+    #[cfg(test)]
+    fn compose_next(
+        &mut self,
+        destination: &[T],
+        output: &mut [T],
+    ) -> Result<Step, TransitionError> {
+        self.compose_frame(destination, output, self.frame_index.saturating_add(1))
+    }
+
+    fn compose_frame(
+        &mut self,
+        destination: &[T],
+        output: &mut [T],
+        step: u32,
     ) -> Result<Step, TransitionError> {
         let Some(frame_len) = self.frame_width.checked_mul(self.frame_height) else {
             return Err(TransitionError::Frame);
@@ -118,7 +151,7 @@ impl<T: Copy> Active<T> {
             return Err(TransitionError::Frame);
         }
 
-        self.frame_index = self.frame_index.saturating_add(1);
+        self.frame_index = self.frame_index.max(step);
         if self.frame_index >= self.spec.total_frames {
             output[..frame_len].copy_from_slice(&destination[..frame_len]);
             return Ok(Step {
@@ -133,30 +166,14 @@ impl<T: Copy> Active<T> {
         }
 
         self.fill_region(output);
-        match self.spec.direction {
-            Direction::Up | Direction::Down => {
-                let travel = self.spec.rect.height.saturating_add(self.spec.gap);
-                let offset = smoothstep_offset(self.frame_index, self.spec.total_frames, travel);
-                let (source_top, destination_top) = match self.spec.direction {
-                    Direction::Up => (-(offset as isize), travel as isize - offset as isize),
-                    Direction::Down => (offset as isize, offset as isize - travel as isize),
-                    Direction::Left | Direction::Right => unreachable!(),
-                };
-                self.blit_source_vertical(output, source_top);
-                self.blit_destination_vertical(destination, output, destination_top);
-            }
-            Direction::Left | Direction::Right => {
-                let travel = self.spec.rect.width.saturating_add(self.spec.gap);
-                let offset = smoothstep_offset(self.frame_index, self.spec.total_frames, travel);
-                let (source_left, destination_left) = match self.spec.direction {
-                    Direction::Left => (-(offset as isize), travel as isize - offset as isize),
-                    Direction::Right => (offset as isize, offset as isize - travel as isize),
-                    Direction::Up | Direction::Down => unreachable!(),
-                };
-                self.blit_source_horizontal(output, source_left);
-                self.blit_destination_horizontal(destination, output, destination_left);
-            }
-        }
+        let travel = self.spec.rect.height.saturating_add(self.spec.gap);
+        let offset = smoothstep_offset(self.frame_index, self.spec.total_frames, travel);
+        let (source_top, destination_top) = match self.spec.direction {
+            Direction::Up => (-(offset as isize), travel as isize - offset as isize),
+            Direction::Down => (offset as isize, offset as isize - travel as isize),
+        };
+        self.blit_source_vertical(output, source_top);
+        self.blit_destination_vertical(destination, output, destination_top);
 
         Ok(Step {
             damage: self.spec.rect,
@@ -212,47 +229,6 @@ impl<T: Copy> Active<T> {
                 .copy_from_slice(&destination[source_start..source_start + self.spec.rect.width]);
         }
     }
-
-    fn visible_columns(&self, left: isize) -> Option<(usize, usize, usize)> {
-        let region_width = self.spec.rect.width as isize;
-        let destination_start = left.max(0);
-        let destination_end = (left + region_width).min(region_width);
-        if destination_end <= destination_start {
-            return None;
-        }
-        Some((
-            (destination_start - left) as usize,
-            destination_start as usize,
-            (destination_end - destination_start) as usize,
-        ))
-    }
-
-    fn blit_source_horizontal(&self, output: &mut [T], left: isize) {
-        let Some((source_x, destination_x, columns)) = self.visible_columns(left) else {
-            return;
-        };
-        for row in 0..self.spec.rect.height {
-            let source_start = row * self.spec.rect.width + source_x;
-            let destination_start =
-                (self.spec.rect.y + row) * self.frame_width + self.spec.rect.x + destination_x;
-            output[destination_start..destination_start + columns]
-                .copy_from_slice(&self.source_region[source_start..source_start + columns]);
-        }
-    }
-
-    fn blit_destination_horizontal(&self, destination: &[T], output: &mut [T], left: isize) {
-        let Some((source_x, destination_x, columns)) = self.visible_columns(left) else {
-            return;
-        };
-        for row in 0..self.spec.rect.height {
-            let source_start =
-                (self.spec.rect.y + row) * self.frame_width + self.spec.rect.x + source_x;
-            let destination_start =
-                (self.spec.rect.y + row) * self.frame_width + self.spec.rect.x + destination_x;
-            output[destination_start..destination_start + columns]
-                .copy_from_slice(&destination[source_start..source_start + columns]);
-        }
-    }
 }
 
 fn smoothstep_offset(frame: u32, total_frames: u32, travel: usize) -> usize {
@@ -291,37 +267,57 @@ mod tests {
                 gap: 1,
                 direction,
                 total_frames: 2,
+                started: Instant::now(),
             },
             0xff,
         )
         .ok()
+    }
+
+    #[test]
+    fn overdue_cached_motion_lands_without_replaying_frames() {
+        let transition = active(Direction::Up);
+        assert!(transition.is_some(), "valid transition rejected");
+        let Some(mut transition) = transition else {
+            return;
+        };
+        let started = Instant::now().checked_sub(Duration::from_secs(1));
+        assert!(started.is_some(), "clock supports fixture offset");
+        let Some(started) = started else { return };
+        transition.spec.started = started;
+        let destination = frame(100);
+        let mut output = frame(0);
+        let result = transition.compose_now(&destination, &mut output);
+        assert!(matches!(result, Ok(Step { finished: true, .. })));
+        assert_eq!(output, destination);
+    }
+
+    #[test]
+    fn cached_motion_does_not_advance_without_elapsed_time() {
+        let transition = active(Direction::Down);
+        assert!(transition.is_some(), "valid transition rejected");
+        let Some(mut transition) = transition else {
+            return;
+        };
+        let destination = frame(100);
+        let mut output = frame(0);
+        assert!(transition
+            .compose_at(&destination, &mut output, Duration::ZERO)
+            .is_ok());
+        let first = output.clone();
+        assert!(matches!(
+            transition.compose_at(&destination, &mut output, Duration::ZERO),
+            Ok(Step {
+                finished: false,
+                ..
+            })
+        ));
+        assert_eq!(output, first);
     }
 
     fn region_row(frame: &[u8], y: usize) -> &[u8] {
         let start = y * FRAME_WIDTH + RECT.x;
         &frame[start..start + RECT.width]
-    }
-
-    fn horizontal_active(direction: Direction) -> Option<Active<u8>> {
-        let source = frame(0);
-        Active::new(
-            &source,
-            FRAME_WIDTH,
-            FRAME_HEIGHT,
-            Spec {
-                rect: Rect {
-                    x: 0,
-                    y: 1,
-                    width: 4,
-                    height: 2,
-                },
-                gap: 0,
-                direction,
-                total_frames: 2,
-            },
-            0xff,
-        )
-        .ok()
     }
 
     #[test]
@@ -380,40 +376,6 @@ mod tests {
     }
 
     #[test]
-    fn left_step_pushes_incoming_page_from_right() {
-        let source = frame(0);
-        let destination = frame(100);
-        let mut output = source.clone();
-        let transition = horizontal_active(Direction::Left);
-        assert!(transition.is_some(), "valid transition rejected");
-        let Some(mut transition) = transition else {
-            return;
-        };
-
-        assert!(transition.compose_next(&destination, &mut output).is_ok());
-        assert_eq!(&output[4..8], &[6, 7, 104, 105]);
-        assert_eq!(&output[8..12], &[10, 11, 108, 109]);
-        assert_eq!(&output[0..4], &source[0..4]);
-    }
-
-    #[test]
-    fn right_step_pushes_incoming_page_from_left() {
-        let source = frame(0);
-        let destination = frame(100);
-        let mut output = source.clone();
-        let transition = horizontal_active(Direction::Right);
-        assert!(transition.is_some(), "valid transition rejected");
-        let Some(mut transition) = transition else {
-            return;
-        };
-
-        assert!(transition.compose_next(&destination, &mut output).is_ok());
-        assert_eq!(&output[4..8], &[106, 107, 4, 5]);
-        assert_eq!(&output[8..12], &[110, 111, 8, 9]);
-        assert_eq!(&output[0..4], &source[0..4]);
-    }
-
-    #[test]
     fn final_step_restores_complete_destination() {
         let source = frame(0);
         let destination = frame(100);
@@ -447,6 +409,7 @@ mod tests {
                 gap: 1,
                 direction: Direction::Up,
                 total_frames: 15,
+                started: Instant::now(),
             },
             0xff,
         );

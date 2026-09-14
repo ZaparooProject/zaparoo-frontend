@@ -253,6 +253,13 @@ deploy-mister *args:
 slint-run-dev *args:
     ./scripts/run-slint-dev.sh {{args}}
 
+# Start/control isolated Slint UI via embedded MCP. `run` defaults to a headless
+# software canvas; pass `run --visible` only when desktop-window behavior matters.
+# `just slint-ui --help` lists screenshot, key, click, tree, and lifecycle commands.
+[positional-arguments]
+slint-ui *args:
+    python3 scripts/slint-ui.py "$@"
+
 # Host-side lint for the Slint crates: fmt, clippy, and the toolkit-free guard.
 # Runs on the host because the lint image lacks Slint's desktop system libs.
 lint-slint:
@@ -290,6 +297,14 @@ test-slint:
 # because the MiSTer rootfs glibc is older than cross's gnueabihf image.
 slint-arm32:
     cd rust && ZAPAROO_RESOURCES_DIR="$PWD/../resources" RUSTFLAGS="-C target-cpu=cortex-a9" cross build -p frontend-slint --release --no-default-features --features mister --target armv7-unknown-linux-musleabihf
+
+# A build on a modern host bakes in that host's glibc symbol versions and
+# then refuses to start on a Steam Deck or any older distribution; cross's
+# image is old enough that the result runs everywhere we ship. RUSTFLAGS is
+# overridden because `mold` is a host convenience the container lacks.
+# Portable x86_64 desktop build via `cross` (needed for Steam Deck).
+slint-x86-portable:
+    cd rust && ZAPAROO_RESOURCES_DIR="$PWD/../resources" RUSTFLAGS=" " cross build -p frontend-slint --release --target x86_64-unknown-linux-gnu
 
 # MiSTer release bundle for the Slint frontend (zaparoo-frontend-<tag>-slint.zip);
 # same wrapper and layout as `release-zip`, one static binary with everything embedded.
