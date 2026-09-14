@@ -45,7 +45,7 @@ jobs:
         with:
           workspaces: rust
           prefix-key: "v1-lint"
-      - uses: taiki-e/install-action@7b8d4719ee4aaa279bdf55df38dacb9ebfe12a6c # v2.87.6
+      - uses: taiki-e/install-action@9534c84618278caac52cb373bb164ed464dbd8af # v2.87.11
         with:
           tool: cargo-deny@0.19.4
       - uses: taiki-e/cache-cargo-install-action@9ee83daaa7b96a6fab930949ecf1122bba04a389 # v3.0.8
@@ -92,7 +92,7 @@ jobs:
         with:
           workspaces: rust
           prefix-key: "v1-test"
-      - uses: taiki-e/install-action@7b8d4719ee4aaa279bdf55df38dacb9ebfe12a6c # v2.87.6
+      - uses: taiki-e/install-action@9534c84618278caac52cb373bb164ed464dbd8af # v2.87.11
         with:
           tool: nextest
       - name: nextest (workspace)
@@ -113,7 +113,7 @@ jobs:
         with:
           workspaces: rust
           prefix-key: "v1-arm32"
-      - uses: taiki-e/install-action@7b8d4719ee4aaa279bdf55df38dacb9ebfe12a6c # v2.87.6
+      - uses: taiki-e/install-action@9534c84618278caac52cb373bb164ed464dbd8af # v2.87.11
         with:
           tool: cross@0.2.5
       - name: ARM32 static build (cross, Cortex-A9)
