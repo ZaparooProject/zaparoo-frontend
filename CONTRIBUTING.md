@@ -26,14 +26,15 @@ Use [`docs/quickstart.md`](docs/quickstart.md) to get from a fresh clone to a
 running frontend. You do not need MiSTer hardware. The repo includes a mock
 Zaparoo Core you can start with `just mock-core`.
 
-For the MiSTer ARM32 cross-build and deployment, see
+For the MiSTer ARM32 build and deployment, see
 [`docs/building.md`](docs/building.md).
 
 ### Supported host platforms
 
-- **Linux (x86_64)** is the main development target.
-- **macOS** is best-effort. It should work, but CI does not cover it. Report
-  breakage; patches welcome.
+- **Linux (x86_64)** and **macOS** are both supported development hosts. Lint,
+  tests, and the MiSTer build run inside the toolchain image on either, so
+  they match CI. The desktop build runs natively; CI does not build it on
+  macOS, so report breakage there.
 - **Windows** is not tested or actively supported. Use WSL2 instead.
 
 ## Before you open a pull request

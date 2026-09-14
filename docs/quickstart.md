@@ -21,6 +21,10 @@ sudo apt install libfontconfig1-dev libwayland-dev libxkbcommon-dev \
 (If `just` isn't packaged for your distro, install it with
 `cargo install --locked just` after Rust is set up.)
 
+Then install Docker Engine. `just lint`, `just test`, and the MiSTer build run
+inside the project's toolchain image, so those tools need nothing else on your
+machine.
+
 ### Rust
 
 ```bash
@@ -28,14 +32,23 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
 
 The toolchain version is pinned in `rust-toolchain.toml`; rustup installs it
-the first time you build. After cloning the frontend repo (step 2), run
-`just install-tools` to install the cargo extensions the lint, test and
-MiSTer recipes use (`cargo-nextest`, `cargo-deny`, `cross`,
-`slint-tr-extractor`, `cargo-about`).
+the first time you build.
 
-### macOS / Windows
+### macOS
 
-macOS is best-effort and not covered in CI. Windows is not tested; use WSL2.
+```bash
+brew install rustup just
+brew install --cask docker
+```
+
+Use rustup, not Homebrew's `rust` formula, so builds use the pinned toolchain;
+the justfile finds Homebrew's rustup on its own. On Apple Silicon, turn on
+Rosetta emulation in Docker Desktop's settings. See
+[`docs/building.md`](building.md#desktop-builds-on-macos) for details.
+
+### Windows
+
+Windows is not tested; use WSL2.
 
 ## 2. Clone and build
 
@@ -188,7 +201,8 @@ just lint    # rustfmt, clippy (all feature sets), cargo-deny,
 just test    # cargo nextest, desktop and MiSTer feature sets
 ```
 
-Zero warnings is the bar. If lint complains about formatting or a fixable
+Both run inside the toolchain image. The first run pulls it, which takes a few
+minutes. Zero warnings is the bar. If lint complains about formatting or a fixable
 clippy issue, `just fix` applies clippy's fixes and formats.
 
 ## Next steps

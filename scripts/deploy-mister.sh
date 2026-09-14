@@ -3,8 +3,8 @@
 # Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 # SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 #
-# Cross-builds the static ARM32 binary with `cross` and deploys it to a
-# MiSTer over SSH/SCP as /media/fat/zaparoo/frontend, the path the
+# Builds the static ARM32 binary in the toolchain image (`just arm32`) and
+# deploys it to a MiSTer over SSH/SCP as /media/fat/zaparoo/frontend, the path the
 # MiSTer_Zaparoo wrapper starts. It is one static file with every font and
 # logo embedded; nothing else is copied.
 # Reads MISTER_IP (and optional MISTER_PW) from .env in the repo root.
@@ -14,11 +14,11 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 ENV_FILE="${PROJECT_ROOT}/.env"
-# Static musl build: the MiSTer image ships glibc 2.31 and cross's
-# gnueabihf image links newer glibc symbols, so dynamic builds fail
-# at load time with GLIBC_2.3x errors.
+# Static musl build: the MiSTer rootfs ships an old glibc, so a dynamic
+# build fails at load time with GLIBC_2.3x errors. Container builds use
+# their own target directory (see scripts/toolchain.sh).
 TARGET=armv7-unknown-linux-musleabihf
-BINARY="${PROJECT_ROOT}/rust/target/${TARGET}/release/frontend"
+BINARY="${PROJECT_ROOT}/rust/target/docker/${TARGET}/release/frontend"
 REMOTE_PATH="/media/fat/zaparoo/frontend"
 SKIP_BUILD=0
 

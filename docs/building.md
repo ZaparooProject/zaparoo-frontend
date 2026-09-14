@@ -2,17 +2,29 @@
 
 Day-to-day builds, lints, and tests go through the
 [`justfile`](../justfile). `just --list` shows the full menu. If you need raw
-`cargo` or `cross`, double-check that the justfile does not already cover the
-job; it carries the feature sets, the `cross` resource mount, and sccache.
+`cargo`, double-check that the justfile does not already cover the job; it
+carries the feature sets, the toolchain image, and sccache.
+
+The recipes come in two kinds. The desktop recipes (`build`, `run`, `run-dev`,
+`fmt`, `fix`, `snapshots`) run cargo on your machine. `lint`, `test`, `arm32`,
+`release`, `x86-portable`, `tr-extract`, and `notices` run inside the pinned
+toolchain image, so they need only Docker and `just` and behave the same on
+Linux, macOS, and CI. See [Toolchain image](#toolchain-image).
 
 ## Requirements
 
-### Desktop
+### Every platform
+
+- Docker: Docker Engine on Linux, Docker Desktop on macOS
+- `just`
+
+That is enough for the lint, test, MiSTer, and portable builds.
+
+### Desktop builds on Linux
 
 - Rust via rustup. The toolchain version comes from `rust-toolchain.toml`
   (1.97.0 with rustfmt, clippy, and the MiSTer musl target); rustup installs it
   on first use.
-- `just`
 - mold (the x86_64 Linux linker, set in `rust/.cargo/config.toml`)
 - Slint's desktop system libraries: fontconfig, wayland, xkbcommon, and udev
   development packages
@@ -22,36 +34,74 @@ Fedora / RHEL:
 ```bash
 sudo dnf install fontconfig-devel wayland-devel libxkbcommon-devel \
     systemd-devel mold just
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
 
 Ubuntu / Debian:
 ```bash
 sudo apt install libfontconfig1-dev libwayland-dev libxkbcommon-dev \
     libudev-dev mold just
-```
-
-Install Rust, then the cargo extensions the recipes use (`cargo-nextest`,
-`cargo-deny`, `cross`, `slint-tr-extractor`, `cargo-about`):
-
-```bash
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-# After cloning the frontend repo:
-just install-tools
 ```
 
 If `just` isn't packaged for your distro, install it with
 `cargo install --locked just`.
 
-### MiSTer ARM32 and portable x86_64 builds
+### Desktop builds on macOS
 
-- Docker, used by `cross` to run its build images
-- `cross` (installed by `just install-tools`)
+Install rustup, `just`, and Docker Desktop with Homebrew:
 
-`cross` mounts only the `rust/` workspace into its container. The `.slint`
-files and several Rust modules embed files from the repo's `resources/`, so
-every `cross` invocation exports `ZAPAROO_RESOURCES_DIR`, which
-`rust/Cross.toml` mounts at the same path inside the container. Use the
-recipes rather than calling `cross` directly.
+```bash
+brew install rustup just
+brew install --cask docker
+```
+
+Use rustup rather than Homebrew's `rust` formula: rustup honors
+`rust-toolchain.toml`, so the build uses the pinned compiler. Homebrew installs
+rustup keg-only, outside `PATH`; the justfile finds it in
+`/opt/homebrew/opt/rustup/bin` (or `/usr/local/opt/rustup/bin` on Intel) and
+puts it first for its recipes, so `just build`, `just run`, and `just run-dev`
+work without shell setup. Run `rustup` itself through that path, or add it to
+your shell's `PATH`, if you want the pinned toolchain outside `just`.
+
+The toolchain image is linux/amd64. On Apple Silicon, Docker Desktop runs it
+under emulation; turn on "Use Rosetta for x86_64/amd64 emulation" in Docker
+Desktop's settings, which is far faster than QEMU.
+
+## Toolchain image
+
+[`Dockerfile.toolchain`](../Dockerfile.toolchain) defines the build
+environment: Rust 1.97.0 with rustfmt, clippy, and the MiSTer target; the
+static-musl ARM32 cross compiler (taken from the cross-rs 0.2.5 image); the
+desktop development libraries; and `just`, `cargo-nextest`, `cargo-deny`,
+`cargo-about`, and `slint-tr-extractor` at pinned, checksum-verified versions.
+It is based on Ubuntu 20.04 on purpose: its glibc 2.31 is the floor the
+portable x86_64 build links against.
+
+[`scripts/toolchain.sh`](../scripts/toolchain.sh) runs a command inside it with
+the repository mounted and your working directory mapped, as your own user.
+The containerized recipes delegate to private `_` recipes through it
+(`just lint` runs `scripts/toolchain.sh just _lint`). By default it uses
+`ghcr.io/zaparooproject/zaparoo-frontend-toolchain:<VERSION>`, where
+`<VERSION>` is [`scripts/toolchain/VERSION`](../scripts/toolchain/VERSION),
+pulling it on first use. When the pull fails it builds the image locally
+instead.
+
+```bash
+just toolchain-build   # build the image locally and use it (USE_LOCAL_TOOLCHAIN=1)
+just toolchain-shell   # a shell inside the image at the current directory
+```
+
+Container builds keep their own target directory (`rust/target/docker`) and
+cargo cache (`rust/target/docker-cargo`), so switching between `just build` and
+`just lint` never invalidates either build.
+
+To change the image, edit `Dockerfile.toolchain` **and** bump
+`scripts/toolchain/VERSION` in the same PR. CI's first job
+([`toolchain-image.yml`](../.github/workflows/toolchain-image.yml)) publishes
+any tag that does not exist yet, and fails a PR that changes the Dockerfile
+without bumping the version. A PR from a fork cannot publish, so a maintainer
+lands toolchain changes from a branch in the main repository.
 
 ## Desktop builds
 
@@ -69,8 +119,8 @@ and translations are embedded, so the binary runs from anywhere.
 
 A build on a modern host bakes in that host's glibc symbol versions and then
 refuses to start on a Steam Deck or an older distribution. `just x86-portable`
-builds inside `cross`'s older image instead, producing
-`rust/target/x86_64-unknown-linux-gnu/release/frontend`.
+builds inside the toolchain image (glibc 2.31) instead, producing
+`rust/target/docker/x86_64-unknown-linux-gnu/release/frontend`.
 `scripts/install-steamos.sh` installs that binary on a Deck and adds it to
 Steam.
 
@@ -86,18 +136,18 @@ Steam.
 just arm32
 ```
 
-This runs `cross build -p frontend --release --no-default-features --features
-mister --target armv7-unknown-linux-musleabihf` with Cortex-A9 tuning and
-produces a static binary at
-`rust/target/armv7-unknown-linux-musleabihf/release/frontend`:
+This runs `cargo build -p frontend --release --no-default-features --features
+mister --target armv7-unknown-linux-musleabihf` with Cortex-A9 tuning inside
+the toolchain image and produces a static binary at
+`rust/target/docker/armv7-unknown-linux-musleabihf/release/frontend`:
 
 ```bash
-file rust/target/armv7-unknown-linux-musleabihf/release/frontend
+file rust/target/docker/armv7-unknown-linux-musleabihf/release/frontend
 # Should report: ELF 32-bit LSB executable, ARM, EABI5 ... statically linked
 ```
 
-The build is static musl because the MiSTer image ships glibc 2.31, older than
-anything `cross`'s gnueabihf image links against. The `mister` feature swaps
+The build is static musl because the MiSTer image ships an old glibc; a static
+binary carries no glibc symbol versions at all. The `mister` feature swaps
 the winit backend for a custom `slint::platform` with the software renderer and
 the fb0, DDR and vblank-latch presenters.
 
@@ -159,7 +209,7 @@ lifecycle acceptance.
 just test
 ```
 
-This runs `cargo nextest run --workspace` and then
+Inside the toolchain image, this runs `cargo nextest run --workspace` and then
 `cargo nextest run -p frontend --no-default-features --features mister`: the
 presenter, dual-head and other MiSTer-only modules only build under that
 feature. Render tests draw through Slint's software renderer offline; nothing
@@ -176,11 +226,13 @@ optionally through a bundled language (`just snapshots de`).
 just lint
 ```
 
-The gate, which CI runs as-is:
+The gate, which CI runs as-is inside the toolchain image:
 
 - `cargo fmt --all --check`
 - `cargo clippy --workspace --all-targets -- -D warnings`
-- the same clippy for the `mister` feature set
+- the same clippy for the `mister` feature set, against the MiSTer target
+  (`armv7-unknown-linux-musleabihf`), since 32-bit musl types such as ioctl
+  request codes differ from the host's
 - the same clippy for the `snapshot` feature set, which sits behind
   `required-features` and so is never built by `--all-targets` alone
 - `cargo deny check` (advisories, licenses, bans, sources; `rust/deny.toml`)
@@ -218,32 +270,36 @@ Do not add `.git/` rerun triggers or `ZAPAROO_BUILD_*` provenance env
 baking to `rust/frontend/build.rs`. New provenance fields go in
 `rust/build-info` and are consumed as `zaparoo_build_info::*` consts.
 
-Inside `cross` there is no `.git/`, so the build script falls back to
-`unknown`/`dev` unless the host passes `ZAPAROO_BUILD_COMMIT`,
-`ZAPAROO_BUILD_DATE` and `ZAPAROO_OFFICIAL_BUILD` through; `rust/Cross.toml`
-lists them under `passthrough`, and `just release` sets them.
+`just release` sets `ZAPAROO_BUILD_COMMIT`, `ZAPAROO_BUILD_DATE` and
+`ZAPAROO_OFFICIAL_BUILD`, and `scripts/toolchain.sh` passes them into the
+toolchain container. Without them the build script asks `git` and falls back to
+`unknown`/`dev`.
 
 ### The Rust toolchain pin
 
 `rust-toolchain.toml` sits at the **repo root** (not in `rust/`) so rustup
-resolves it for every cargo invocation in the tree, including the ones `cross`
-makes. Bumping it also means updating the explicit
-`rustup toolchain install` line in `.github/workflows/release.yml` and
-`rust-version` in `rust/Cargo.toml`.
+resolves it for every cargo invocation in the tree. Bumping it also means
+updating `RUST_VERSION` in `Dockerfile.toolchain` (and bumping
+`scripts/toolchain/VERSION`) and `rust-version` in `rust/Cargo.toml`.
 
 ### Slint version couplings
 
 `slint` and `slint-build` are pinned exactly in `rust/frontend/Cargo.toml`.
-`slint-tr-extractor` must match: its version appears in `just install-tools`,
-the CI lint job, and the install hint in `scripts/check-translations.sh`. The
+`slint-tr-extractor` must match: its version is `SLINT_TR_EXTRACTOR_VERSION` in
+`Dockerfile.toolchain` (bump `scripts/toolchain/VERSION` with it).
+`fontique` and `resvg` in `rust/frontend/Cargo.toml` must stay on the versions
+Slint resolves. The
 Slint license exceptions in `rust/deny.toml` list crates by name, so a Slint
 bump can add or remove one. Regenerate `just notices` afterward.
 
 ### Compiler caches
 
-The justfile exports `RUSTC_WRAPPER` as sccache when it is on `PATH`, which
-shares compiled crates across the desktop and MiSTer feature sets and across
-clean builds. CI uses `Swatinem/rust-cache` per job instead.
+For host builds the justfile exports `RUSTC_WRAPPER` as sccache when it is on
+`PATH`, which shares compiled crates across clean builds. The toolchain
+container clears it and relies on its own target directory
+(`rust/target/docker`) instead. CI caches that directory and the container's
+cargo cache per job with `actions/cache`, keyed on the toolchain version and
+`rust/Cargo.lock`.
 
 ## Deploy to MiSTer
 
