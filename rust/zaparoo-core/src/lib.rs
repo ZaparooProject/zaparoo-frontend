@@ -12,7 +12,6 @@ pub mod input_actions;
 pub mod logger;
 pub mod media_types;
 pub mod persist;
-pub mod platform;
 pub mod platform_paths;
 pub mod remote_resource;
 pub mod runtime;

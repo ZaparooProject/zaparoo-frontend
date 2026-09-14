@@ -2,11 +2,11 @@
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 
-//! The input rules `Main.qml` owns between a key event and an action:
-//! the duplicate-delivery guard, the confirm/cancel and options/view
-//! swaps, the hold-repeat state machine, and the press-and-hold rapid
-//! navigation flag. Toolkit-agnostic; the shell owns the timers these
-//! rules ask for and supplies the clock.
+//! The input rules between a key event and an action: the
+//! duplicate-delivery guard, the confirm/cancel and options/view swaps,
+//! the hold-repeat state machine, and the press-and-hold rapid navigation
+//! flag. Toolkit-agnostic; the shell owns the timers these rules ask for
+//! and supplies the clock.
 
 /// A held repeatable action waits this long before it starts repeating.
 pub const REPEAT_INITIAL_MS: u64 = 350;
@@ -15,10 +15,10 @@ pub const REPEAT_TICK_MS: u64 = 90;
 /// Rapid navigation ends this long after the last navigation action.
 pub const RAPID_QUIET_MS: u64 = 260;
 /// One uninterrupted hold has to last this long before it counts as
-/// rapid navigation. Qt's own press-and-hold gesture uses the same 800
-/// ms; holding it apart from the repeat handoff lets ordinary held
-/// navigation start promptly without replacing the live grid until the
-/// intent is unambiguous.
+/// rapid navigation. 800 ms is the usual press-and-hold threshold;
+/// holding it apart from the repeat handoff lets ordinary held navigation
+/// start promptly without replacing the live grid until the intent is
+/// unambiguous.
 pub const RAPID_HOLD_MS: u64 = 800;
 /// A second delivery of the same key inside this window is contact
 /// bounce or an input stack double send, not a second press. Far below
@@ -77,10 +77,9 @@ pub fn swap_actions(
     action
 }
 
-/// The hold-repeat state machine (`_armRepeat`, `handleKeyRelease`,
-/// `_stopRepeat`). Qt's own auto-repeat is dropped because it bursts
-/// unpredictably under load and is not tunable on the framebuffer
-/// build; this drives the cadence itself.
+/// The hold-repeat state machine. Native key auto-repeat is deliberately
+/// not used: its bursts are unpredictable under load and are not tunable
+/// on the framebuffer build, so this drives the cadence itself.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Hold {
     action: String,

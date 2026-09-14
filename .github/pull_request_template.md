@@ -10,7 +10,7 @@
 
 ## Screenshots / recordings
 
-<!-- Required for visual changes. Include the FPS counter at 720p and, if possible, 240p. -->
+<!-- Required for visual changes. Include 720p and, if possible, 240p. `just snapshots` renders every screen offline. -->
 
 ## Test plan
 
@@ -20,7 +20,7 @@
 
 - [ ] `just lint` is green (zero warnings)
 - [ ] `just test` passes
-- [ ] If this touches QML, the FPS counter stays green (≥ 55) at 720p+ and ≥ 30 at 240p
+- [ ] If this touches animation or overlays, I kept the software renderer's dirty region small (see `docs/slint-gotchas.md`)
 - [ ] If this could affect the MiSTer build, I considered ARM32 implications (see `docs/architecture.md`)
-- [ ] If this adds user-visible strings, they are wrapped in `qsTr()` (QML) or `tr()` (C++)
+- [ ] If this adds user-visible strings, they are wrapped in `@tr()` and `just tr-extract` was run
 - [ ] I have signed the [CLA](../.github/CLA.md) (first-time contributors only)

@@ -13,7 +13,7 @@
 // Written synchronously on every mutation (write-through). Parent can
 // SIGKILL between any two lines, so the loss window must be zero. File
 // is tiny (<300 bytes) and lives on tmpfs on MiSTer; sync cost on the
-// Qt thread is microseconds.
+// UI thread is microseconds.
 
 use crate::platform_paths::state_file_path;
 use serde::{Deserialize, Serialize};
@@ -52,12 +52,11 @@ pub struct HubState {
     /// `"favorites"`, `"recents"`, `"update"` or `"settings"`.
     /// Empty defaults to the leftmost action when restored.
     pub selected_action: String,
-    /// The Hub item that last had focus, as `"<kind>:<id>"` — `kind` is
+    /// The Hub item that last had focus, as `"<kind>:<id>"`: `kind` is
     /// `"category"` or `"action"`, `id` is the category id or action id.
-    /// Authoritative when non-empty (round 6, item 7); see HubScreen.qml's
-    /// `restoreFromCategoriesReset`. Empty on any state.toml predating this
-    /// field, which is exactly the fallback-to-`selected_row`/
-    /// `selected_action` case above.
+    /// Authoritative when non-empty; see the Hub driver's restore. Empty on
+    /// any state.toml predating this field, which is exactly the
+    /// fallback-to-`selected_row`/`selected_action` case above.
     pub selected_item: String,
 }
 
@@ -85,9 +84,8 @@ pub struct GamesState {
     /// return to Hub instead of Systems — a screen the user never
     /// visited on that path. Persisted (not a plain in-memory flag) so
     /// it survives the `MiSTer` kill/relaunch cycle around a game launch;
-    /// see `Main.qml`'s `onRequestSystemsScreen` for where it's read and
-    /// cleared, and the routing contract in `CLAUDE.md` for why every
-    /// writer lives in `Main.qml`'s router, never a screen file.
+    /// the games driver sets it on entry from the Hub and reads it on Back
+    /// (see the routing contract in `AGENTS.md`).
     pub entered_from_hub: bool,
 }
 
@@ -174,16 +172,16 @@ pub struct SettingsState {
     /// How strongly the preset's accent shows in resting chrome and surfaces
     /// — `subtle` (the shipped look) or `vivid`. Only ambient accent scales;
     /// focus, selection, the favorite marker and the logo ramps are fixed.
-    /// See `ColorSchemes.qml`'s `_intensities`.
+    /// See `zaparoo_app::palette`.
     #[serde(default = "default_color_intensity")]
     pub color_intensity: String,
     /// Which of Core's scrapers metadata imports run with. Persisted so the
-    /// choice made in `ScrapeSetupModal` is the one every later "Get
-    /// metadata" action uses — those used to hardcode `gamelist.xml`, which
+    /// choice made in the metadata setup modal is the one every later "Get
+    /// metadata" action uses: those used to hardcode `gamelist.xml`, which
     /// silently reverted the user's pick on every context-menu scrape.
     /// Not validated against a fixed list: Core reports its scrapers at
-    /// runtime, so a stale id is reconciled by the modal against
-    /// `MediaStatus.scraper_ids` instead.
+    /// runtime, so a stale id is reconciled by the modal against the
+    /// scraper list Core returns instead.
     #[serde(default = "default_metadata_scraper")]
     pub metadata_scraper: String,
     #[serde(default = "default_button_layout")]
@@ -208,21 +206,20 @@ pub struct SettingsState {
     #[serde(default)]
     pub show_original_filenames: bool,
     /// When true, flips which physical button accepts vs cancels at the
-    /// key->action dispatch seam (see `Main.qml::_swapConfirmCancelAction`),
+    /// key->action dispatch seam (see the frontend's `input.rs`),
     /// compensating for a misconfigured OK/Cancel swap in `Main_MiSTer`'s own
     /// OSD without the user having to fix it there. Never applies while the
-    /// keyboard is the active input source -- Enter/Escape are fixed keys.
-    /// The help-bar glyphs (`MainLayout.qml`) flip in lockstep via
-    /// `Browse.ControllerReport`.
+    /// keyboard is the active input source: Enter/Escape are fixed keys. The
+    /// help-bar glyphs flip in lockstep via `zaparoo_app::buttons::resolve`.
     #[serde(default)]
     pub swap_confirm_cancel: bool,
     /// When true, flips which physical button opens Options vs View at the
-    /// same key->action dispatch seam (see
-    /// `Main.qml::_swapOptionsViewAction`) -- a controller whose X/Y (or
-    /// equivalent) mapping is backwards is common enough that this is
-    /// usually the actual fix, independent of the confirm/cancel swap
-    /// above. Never applies while the keyboard is the active input source
-    /// -- Tab/Space are fixed keys. The help-bar glyphs flip in lockstep.
+    /// same key->action dispatch seam (see the frontend's `input.rs`). A
+    /// controller whose X/Y (or equivalent) mapping is backwards is common
+    /// enough that this is usually the actual fix, independent of the
+    /// confirm/cancel swap above. Never applies while the keyboard is the
+    /// active input source: Tab/Space are fixed keys. The help-bar glyphs
+    /// flip in lockstep.
     #[serde(default)]
     pub swap_options_view: bool,
     /// Region variant for system names and logos. `"auto"` (default) derives
@@ -314,7 +311,7 @@ fn default_color_scheme() -> String {
     "zaparoo-dark".into()
 }
 
-/// Matches `ColorSchemes.defaultIntensity`. Deliberately the shipped look, so
+/// The default color intensity. Deliberately the shipped look, so
 /// an existing install's appearance is unchanged by the upgrade that adds
 /// this key.
 fn default_color_intensity() -> String {
@@ -328,10 +325,10 @@ fn default_metadata_scraper() -> String {
 }
 
 fn default_button_layout() -> String {
-    // Auto-detect the connected controller's family via
-    // `Browse.ControllerReport`. `models::settings::normalize_button_layout`
-    // migrates legacy persisted values (both the old single-letter ids and
-    // the older platform aliases), so this default only applies to
+    // Auto-detect the connected controller's family from the controller
+    // report. `zaparoo_app::buttons::resolve` treats any value that is not
+    // a `style_x` id (the old single-letter ids and the older platform
+    // aliases included) as `auto`, so this default only applies to
     // brand-new state files.
     "auto".into()
 }
@@ -791,7 +788,7 @@ resolution = "1920x1080"
     // Round 6, item 7: a state.toml written by a build predating
     // `selected_item` still loads, with the field defaulting empty and the
     // legacy fields intact — this is exactly the shape
-    // HubScreen.qml's `restoreFromCategoriesReset` falls back on.
+    // the Hub restore falls back on.
     #[test]
     fn hub_state_without_selected_item_falls_back_to_legacy_fields() {
         let dir = tempfile::tempdir().expect("tempdir");

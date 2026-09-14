@@ -3,15 +3,14 @@
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 
 //! The support bundle the log uploader sends: how much of each log it
-//! keeps, the order the sections go in, and the overall cap. Ported from
-//! `models/log_upload.rs`.
+//! keeps, the order the sections go in, and the overall cap.
 
 /// The support summary is trimmed to this before the logs are added.
 pub const SUPPORT_SUMMARY_LIMIT_BYTES: usize = 64 * 1024;
 /// Each log contributes at most this much of its tail.
 pub const PER_LOG_LIMIT_BYTES: usize = 256 * 1024;
 /// What the upload service accepts, less the multipart headroom.
-pub const UPLOAD_LIMIT_BYTES: usize = 768 * 1024;
+const UPLOAD_LIMIT_BYTES: usize = 768 * 1024;
 const UPLOAD_HEADROOM_BYTES: usize = 4 * 1024;
 pub const PAYLOAD_LIMIT_BYTES: usize = UPLOAD_LIMIT_BYTES - UPLOAD_HEADROOM_BYTES;
 /// Wall-clock cap on the upload itself, matching Core's own TUI.

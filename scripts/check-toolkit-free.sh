@@ -3,12 +3,12 @@
 # Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 # SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 #
-# `rust/zaparoo-app` is the toolkit-agnostic application layer. It exists so the
-# rules the frontend enforces survive the move off Qt: `rust/frontend` is a
-# cxx-qt adapter over it, and a future Slint shell would be a second adapter.
-# That only holds if the crate never learns about a toolkit, and the cheapest
-# way to keep it honest over months of work is to fail the lint gate the moment
-# it does. See docs/qt-to-rust-extraction.md.
+# `rust/zaparoo-app` is the toolkit-agnostic application layer: the rules the
+# frontend enforces (sizing, palette, layouts, grid navigation, menus, input),
+# testable without a window. `rust/frontend` is the Slint adapter over it.
+# That split only holds if the crate never learns about a toolkit, and the
+# cheapest way to keep it honest is to fail the lint gate the moment it does.
+# See docs/architecture.md.
 #
 # Deliberately pure coreutils, no cargo, so it runs on any host and in any
 # container. Comments are stripped before matching: the crate's own doc
@@ -22,14 +22,16 @@ crate="$repo_root/rust/zaparoo-app"
 fail() {
     echo "$1" >&2
     echo "rust/zaparoo-app must not depend on a UI toolkit. Put toolkit-facing" >&2
-    echo "code in rust/frontend/src/models/ instead; see docs/qt-to-rust-extraction.md." >&2
+    echo "code in rust/frontend/src/ instead; see docs/architecture.md." >&2
     exit 1
 }
 
 [[ -d "$crate" ]] || fail "Missing $crate."
 
-# Types and helpers that can only come from a toolkit binding.
-banned='cxx|slint|QString|QVariant|QStringList|QList|QColor|QByteArray|QModelIndex|qt_thread|qobject|Pin<&mut'
+# The two names a toolkit arrives under: `slint`, because it is the toolkit in
+# use, and `cxx`, because any C++ binding layer is the other way a toolkit leaks
+# in. The dependency check below keeps the same pair.
+banned='slint|cxx'
 
 hits="$(
     while IFS= read -r -d '' file; do

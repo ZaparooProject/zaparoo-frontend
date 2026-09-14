@@ -26,7 +26,7 @@ Use [`docs/quickstart.md`](docs/quickstart.md) to get from a fresh clone to a
 running frontend. You do not need MiSTer hardware. The repo includes a mock
 Zaparoo Core you can start with `just mock-core`.
 
-For the MiSTer ARM32 cross-build, sanitizer builds, and deployment, see
+For the MiSTer ARM32 cross-build and deployment, see
 [`docs/building.md`](docs/building.md).
 
 ### Supported host platforms
@@ -41,8 +41,9 @@ For the MiSTer ARM32 cross-build, sanitizer builds, and deployment, see
 Run these locally. CI runs the same checks and blocks merge when they fail.
 
 ```bash
-just lint    # clang-format, clang-tidy, qmllint, rustfmt, clippy, cargo-deny
-just test    # ctest + cargo nextest
+just lint    # rustfmt, clippy (all feature sets), cargo-deny,
+             # toolkit-free guard, translations, notices, logo parity
+just test    # cargo nextest, desktop and MiSTer feature sets
 ```
 
 Zero lint warnings is the bar. If a rule is wrong for the change you are
@@ -54,9 +55,8 @@ The [PR template](.github/pull_request_template.md) asks for the details we
 need. Two points matter most:
 
 - **Explain why the change exists.** The diff already shows what changed.
-- **Include screenshots or recordings for visual changes**, with the FPS
-  counter visible at 720p and, if possible, 240p. It must stay green (≥55) at
-  720p+ and not go red (<30) at 240p.
+- **Include screenshots or recordings for visual changes** at 720p and, if
+  possible, 240p. `just snapshots` renders every screen offline.
 
 ### Commit messages
 
@@ -82,8 +82,7 @@ underscores.
 
 `main` only accepts changes through pull requests. Every PR needs:
 
-1. All CI jobs green: Rust lint, Rust tests, desktop build + ctest + lint,
-   ARM32 cross-build, and the CLA check.
+1. All CI jobs green: Lint, Tests, MiSTer ARM32 build, and the CLA check.
 2. A CLA signature recorded for the PR author.
 3. At least one approving review from a maintainer other than the PR
    author.

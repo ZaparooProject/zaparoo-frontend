@@ -3,105 +3,141 @@
 ## Module graph
 
 ```
-src/app/main.cpp
-  frontend (executable)
-    │   Thin C++ entry point: constructs QGuiApplication + QQmlApplicationEngine,
-    │   installs Qt message handler, calls zaparoo_rust_init() from the Rust staticlib.
-    │
-    ├── rust/frontend/  [zaparoo_frontend_rs staticlib]
-    │     ├── src/lib.rs
-    │     │     zaparoo_rust_init()      — tokio runtime, logger, WebSocket client,
-    │     │                               Store, model globals
-    │     │     zaparoo_rust_post_qt_start() — post-engine hooks
-    │     │     zaparoo_log_qt()         — Qt message handler sink → tracing registry
-    │     │
-    │     ├── src/bind.rs
-    │     │     `bind_to_endpoint!` macro — emits the cxx_qt::Initialize
-    │     │     impl for QML singletons (sync seed + qt_thread watcher).
-    │     │
-    │     ├── src/mister_runtime.rs
-    │     │     Pre-Qt ARM32 setup: automatic framebuffer sizing, zaparoo.sh start.
-    │     │     Compiled on all platforms; MiSTer-specific calls are gated by cfg.
-    │     │
-    │     ├── src/models/  [Zaparoo.Browse QML module via cxx-qt 0.8]
-    │     │     AppStatus, CategoriesModel, SystemsModel, GamesModel,
-    │     │     AppState, HubState, HubLayout, SystemsState, GamesState,
-    │     │     Input, Runtime, BrowseModel. All registered via build.rs
-    │     │     QmlModule.
-    │     │
-    │
-    ├── rust/zaparoo-core/  [non-Qt Rust crate]
-    │     client.rs           — WebSocket JSON-RPC 2.0 (tokio-tungstenite)
-    │     remote_resource.rs  — RemoteResource<T>/ResourceStatus<T>
-    │     store/              — Endpoint, Mutation, Tag, Store cache
-    │     endpoints/          — CatalogEndpoint, MediaSearchEndpoint, RunMutation
-    │     systems_catalog.rs  — CatalogData payload + by-category filter
-    │     input_actions.rs    — action names + Qt key-code mapping
-    │     persist.rs          — write-through persisted UI state
-    │     config.rs           — TOML config (frontend.toml)
-    │     hub_layout.rs       — Hub's persisted [[hub.items]] layout schema
-    │     logger.rs           — tracing-subscriber: stderr + JSONL file sinks
-    │     runtime.rs          — Runtime enum: what device the frontend runs on
-    display_class.rs    — Viewing enum: how far away the screen we paint on is
-    │     platform.rs         — Platform enum: what Zaparoo Core is running on
-    │     platform_paths.rs   — log/config paths routed through runtime
-    │     media_types.rs      — file-extension → media-type lookup
-    │
-    └── src/ui/app/  [Zaparoo.App QML module]
-          Main.qml          — runtime router: input, persistence, transitions,
-                              "Loading…" overlay, system-cover prefetch
-          MainLayout.qml    — designer-editable visual tree, pendingTransition
-                              property, screen-state derivations, modal mounts
-          │
-          ├── src/ui/screens/  [Zaparoo.Screens QML module]
-          │     ScreenManager.qml, HubScreen.qml, SystemsScreen.qml,
-          │     GamesScreen.qml
-          │
-          ├── src/ui/components/  [Zaparoo.Ui QML module]
-          │     Tile.qml, TileLoader.qml, PagedGrid.qml,
-          │     ActiveLabel.qml, LoadingIndicator.qml, StatusIcon.qml,
-          │     TopStatusStrip.qml, Modal.qml, ScreenStateOverlay.qml
-          │
-          └── src/ui/theme/  [Zaparoo.Theme QML module]
-                Sizing.qml  — pctH/pctW/fontSize singletons
-                Theme.qml   — colors and font-family constants
+rust/frontend/  [frontend binary; Slint UI]
+  src/main.rs
+  │   Entry point: config, logger, tokio runtime, Client + Store, persisted
+  │   state, window and globals, language, background services, event loop.
+  │
+  ├── ui/*.slint  [compiled by build.rs through slint-build]
+  │     app.slint        : root App component, exported globals (Shell, Overlays,
+  │                        HubView, SystemsView, GamesView, ...), screens, modals
+  │     chrome.slint     : header, status line, help bar, modal shell, cues
+  │     tiles.slint      : Tile and the paged grid view
+  │     browse_list.slint, settings.slint, setup.slint, game_info.slint,
+  │     about.slint      : screen and modal views
+  │     focus.slint      : FocusTarget, the scroll offset and selection cursor
+  │     theme.slint      : Theme, Sizing, Layout, Motion globals
+  │     labels.slint     : key-to-@tr vocabularies
+  │     state_types.slint : enums shared with Rust
+  │
+  ├── src/router.rs      : input dispatch and forward orchestration
+  ├── src/navigation.rs, folder_motion.rs, route_motion.rs
+  │                        deferred routes that keep the source until ready,
+  │                        and the stepped-clock motion tests over them
+  ├── src/{hub,systems,games,settings,about}.rs
+  │                        per-screen drivers
+  ├── src/{game_info,media_setup,log_upload,launchers,alternates,card_write}.rs
+  │                        modal drivers
+  ├── src/game_info_data.rs : Game Info metadata and carousel ordering
+  ├── src/tag_utils.rs   : compact tag tokens for inline metadata
+  ├── src/qr.rs          : QR matrix for the write deep-link and doc links
+  ├── src/{input,actions,gamepad}.rs
+  │                        key path, keyboard bindings, desktop gamepads
+  ├── src/status.rs      : header status-line driver over the ladder
+  ├── src/system_status.rs : host-local hardware and network HUD probes
+  ├── src/{power_supply,mister_battery}.rs
+  │                        the two battery probes behind one HUD field
+  ├── src/media_cache.rs : bounded in-memory cover cache (LRU, bytes cap)
+  ├── src/hub_covers.rs  : cold-boot cover path manifest (MiSTer only)
+  ├── src/customization.rs : user overrides from the customization folder
+  ├── src/{theme,sizing,glyphs,system_logos,fonts}.rs
+  │                        palette push, scene sizing, embedded art and fonts
+  ├── src/display.rs     : output timing, framebuffer render size, CRT scene size
+  ├── src/drs.rs         : heavy-phase signal for dynamic resolution scaling
+  ├── src/frame_transition.rs : cached page transitions over endpoint frames
+  ├── src/browse_motion.rs : scroll window for Slint's bounded list view
+  ├── src/press_feedback.rs : hold the accepting control visible, then dispatch
+  ├── src/view_model.rs  : republish models without resetting unchanged rows
+  ├── src/state_types.rs : token boundaries for UI enums (disk and API text)
+  ├── src/latch_protocol.rs : vblank-latch scanout packing, CRC and parsing
+  ├── src/{steam,steam_host,gamescope}.rs
+  │                        SteamOS: app identity, the runtime host, compositor
+  │                        focus in a gamescope session
+  ├── src/dual_head.rs   : HDMI state mirrored onto the CRT component
+  ├── src/bin/snapshot.rs : offline software-rendered screen snapshots
+  ├── assets/            : embedded system logo PNGs, grayscale (systems/) and
+  │                        full color (systems-color/), generated by `just logos`
+  └── src/mister/        [feature = "mister"]
+        platform.rs      : custom slint::platform: frame loop, DRS, clock
+        fb0.rs, fb_mapping.rs, ddr.rs, latch.rs : presenters and fb mapping
+        transition.rs    : page-commit handoff to latch presentation
+        input.rs, lease.rs, service.rs, video_mode.rs, tty.rs, uio.rs
+
+rust/zaparoo-app/  [toolkit-free product rules]
+  sizing, layouts, palette      : geometry and color, pinned by golden fixtures
+  paged_grid, media_list, hub, systems, settings, letter_jump
+                                  navigation, paging, menus, rows
+  input, status_line, action_error, buttons, clock, covers, customization,
+  launchers, alternate_versions, media_setup, log_upload, format
+  (no Slint or other toolkit dependency; scripts/check-toolkit-free.sh)
+
+rust/zaparoo-core/  [Core client and shared state]
+  client.rs           : WebSocket JSON-RPC 2.0 (tokio-tungstenite)
+  remote_resource.rs  : RemoteResource<T>/ResourceStatus<T>
+  store/              : Endpoint, Mutation, Tag, Store cache
+  endpoints/          : CatalogEndpoint, MediaSearchEndpoint, RunMutation
+  systems_catalog.rs  : CatalogData payload + by-category filter
+  input_actions.rs    : action names + key-code bindings
+  persist.rs          : atomic persisted UI state
+  config.rs           : TOML config (frontend.toml)
+  hub_layout.rs       : Hub's persisted [[hub.items]] layout schema
+  controller_report.rs : Main_MiSTer input report watcher
+  logger.rs           : tracing-subscriber: stderr + JSONL file sinks
+  runtime.rs          : Runtime enum: what device the frontend runs on
+  display_class.rs    : Viewing enum: how far away the screen we paint on is
+  platform_paths.rs   : log/config/state/cache paths routed through runtime
+  media_types.rs      : Core media types
+
+rust/build-info/  : commit, date and channel baked in by build.rs (leaf crate)
+rust/mock-core/   : mock Zaparoo Core for dev runs
 ```
-
-## QML module URIs
-
-| Target | URI | Load path |
-|---|---|---|
-| zaparoo_frontend_rs (plugin) | `Zaparoo.Browse` | `qrc:/qt/qml/Zaparoo/Browse/` |
-| zaparoo_ui_app | `Zaparoo.App` | `qrc:/qt/qml/Zaparoo/App/` |
-| zaparoo_ui_screens | `Zaparoo.Screens` | `qrc:/qt/qml/Zaparoo/Screens/` |
-| zaparoo_ui_components | `Zaparoo.Ui` | `qrc:/qt/qml/Zaparoo/Ui/` |
-| zaparoo_ui_theme | `Zaparoo.Theme` | `qrc:/qt/qml/Zaparoo/Theme/` |
-| zaparoo_update_qml (optional) | `Zaparoo.Update` | `qrc:/qt/qml/Zaparoo/Update/` |
-| zaparoo-update (optional plugin) | `Zaparoo.Update.Native` | `qrc:/qt/qml/Zaparoo/Update/Native/` |
-
-`engine.loadFromModule("Zaparoo.App", "Main")` is the only entry point. Keep
-`qrc:/` strings out of the rest of the app.
-
-The Update bounded context is enabled by default through CMake's
-`ZAPAROO_WITH_UPDATE` option. CMake opts out of Cargo default features and adds
-the `zaparoo-frontend-rs/update` feature explicitly when enabled; build with
-`-DZAPAROO_WITH_UPDATE=OFF` to skip the `Zaparoo.Update` QML module and omit the
-Hub Update tile.
 
 ## Key constraints
 
-- **Software rendering only.** MiSTer has no GPU. Do not use shaders,
-  `LinearGradient`, `RadialGradient`, `DropShadow`, `Glow`, `OpacityMask`,
-  `MultiEffect`, or `Qt5Compat.GraphicalEffects`. Use `Rectangle`, `Image`,
-  `Text`, `Repeater`, `NumberAnimation`, and `ColorAnimation`.
-
+- **Software rendering on MiSTer.** No GPU. The MiSTer build drives Slint's
+  software renderer from its own frame loop and presenters. Frame cost is
+  painted area times per-pixel cost; see `docs/slint-gotchas.md`.
 - **Resolution-agnostic layout.** The UI runs from 240p CRT output to 1080p.
-  Use `Sizing.pctH()`, `Sizing.pctW()`, and `Sizing.fontSize()` for
-  dimensions. Do not hardcode pixel values.
+  Geometry comes from the `Sizing` and `Layout` globals, which Rust pushes from
+  `zaparoo_app::sizing` and `zaparoo_app::layouts` whenever the scene changes.
+- **One static binary.** Fonts, glyph SVGs, logos and translation catalogs are
+  embedded at build time. The MiSTer binary is a static musl build from
+  `cross`.
+- **Core is the canonical store.** Covers and metadata live in process memory
+  only, with a strict bytes cap. The one on-disk exception is the Hub cover
+  path manifest (see `AGENTS.md`).
 
-- **Dynamic Qt on desktop, static Qt on MiSTer.** `BUILD_SHARED_LIBS=ON` is
-  the default for LGPL-compliant desktop distribution. The ARM32 Docker build
-  passes `-DBUILD_SHARED_LIBS=OFF` through the Qt CMake toolchain.
+## Rust → Slint data flow
+
+1. `zaparoo-core` owns the Core connection. `Store` caches endpoint results and
+   publishes them through `tokio::sync::watch` channels.
+2. Drivers in `rust/frontend/src/` subscribe on the tokio runtime, project the
+   data with the rules in `zaparoo-app`, and hand the result to the UI thread
+   with `upgrade_in_event_loop`.
+3. On the UI thread, drivers write Slint globals and models (`VecModel`), and
+   the `.slint` views render them. Rust publishes stable keys and values; the
+   views turn keys into translated text.
+4. Input flows the other way: the root view forwards every key event to Rust,
+   `input.rs` applies the duplicate guard, swaps and hold-repeat, and
+   `router::dispatch_action` routes the action to whichever surface owns input.
+5. State that must survive a kill is written through
+   `zaparoo_core::persist::save` (atomic write) from the drivers, and loaded
+   before the first frame.
+
+### Navigation state
+
+Forward routes are deferred. `router::begin_pending` marks the transition and
+keeps the source screen visible; after 300 ms the header status line shows the
+loading cue. The destination driver fills its model, and
+`router::transition_to_screen` commits the whole route in one turn.
+`navigation.rs` holds the one retained source (moved, not copied) so Cancel can
+restore it and persistence stays on the coherent source until the destination
+is ready. While a transition is pending, only Cancel is accepted.
+
+Async fills carry tickets; a completion whose ticket no longer matches is
+dropped. Per-screen selection state lives in its own section of
+`PersistedState`, written on directional moves with a 250 ms debounce and
+flushed on Accept, Back, and hold release.
 
 ## Runtime vs Platform
 
@@ -111,7 +147,7 @@ runtime/platform bugs come back.
 | Concept | Source of truth | Question answered |
 |---|---|---|
 | **Runtime** | `zaparoo_core::runtime::current()` (filesystem-cached) | What device is the **frontend binary** running on? |
-| **Platform** | `zaparoo_core::platform::subscribe()` (from `version` RPC) | What OS/device is **Zaparoo Core** running on? |
+| **Platform** | Core's `version` RPC (`platform` field) | What OS/device is **Zaparoo Core** running on? Not consumed today; every colocation check keys off Runtime. |
 | **Viewing** | `zaparoo_core::display_class::current()` (re-read, never cached) | How far away is the person from the screen we are **painting on right now**? |
 
 `Runtime == Mister` does **not** imply `Platform == Mister`. The frontend
@@ -125,7 +161,6 @@ the windowing system and the rendering backend, so `platform_paths.rs`
 stays a two-way `is_mister()` split. The variant exists only to change
 defaults for a device that presents like a console: it comes up fullscreen.
 Set `ZAPAROO_RUNTIME_OVERRIDE=steamos` to develop that behavior off a Deck.
-This is a different variable from the build-time `ZAPAROO_RUNTIME` below.
 
 ### Viewing class
 
@@ -176,259 +211,18 @@ connected, which is why the desktop build pins `SLINT_SCALE_FACTOR=1`.
 
 ### When to use which
 
-- **Runtime gate** — use this when the frontend's host device changes the
+- **Runtime gate**: use this when the frontend's host device changes the
   behavior. Read `runtime::current()`. Prefer runtime gating for behavior.
-- **Build-time cfg `#[cfg(zaparoo_runtime = "mister")]`** — use this only for
-  code that should not compile into desktop binaries: system calls,
-  MiSTer-only dependencies, and similar. Currently only `mister_runtime.rs`
-  uses it. `ZAPAROO_RUNTIME=mister` is set in `cmake/ZaparooRust.cmake` for
-  static-Qt ARM32 builds.
-- **Platform gate** — use this when a feature depends on what Core supports.
+- **Cargo feature `mister`** (`#[cfg(feature = "mister")]`): use this only
+  for code that cannot compile into desktop binaries: the custom Slint
+  platform, presenters, evdev input, and similar. Everything else compiles
+  into both builds and branches on `Runtime`.
+- **Platform gate**: use this when a feature depends on what Core supports.
   Subscribe to `platform::subscribe()` and treat `None` as unknown; do not
   enable platform-specific behavior until the first `version` RPC completes.
-  Do not gate on `Platform` directly from C++ or QML. Route the decision
-  through Rust and expose a QML property.
+  Route the decision through Rust and expose the result to the view as a
+  property. The frontend does not start `platform::spawn_fetcher` today, so
+  wire that up in `main.rs` before relying on this gate.
 
 **Never gate runtime behavior on `Platform`, never gate Core
 assumptions on `Runtime`.** They are independent.
-
-## LGPL compliance
-
-Qt is used under LGPLv3. The desktop binary links Qt dynamically, so end
-users can replace the bundled Qt libraries. The MiSTer ARM32 binary is
-statically linked; object files are available on request per LGPL §4(d)(1).
-License texts live in `src/LICENSES/`.
-
-## Rust → QML data flow
-
-The data layer follows the RTK Query shape. A single `Store` owns the `Client`,
-hands out shared `RemoteResource<T>` values keyed by `(endpoint NAME, args
-hash)`, and routes mutations through the same client. QML singletons subscribe
-by binding to an `Endpoint`; `rust/frontend/src/bind.rs` emits the bridge code
-for the sync seed, the `qt_thread` watcher, and the property apply step.
-
-```
-zaparoo_rust_init()
-    │
-    ├── logger::install()          — tracing-subscriber (stderr + JSONL file)
-    ├── Config::load()             — frontend.toml
-    ├── tokio::Runtime::new()      — multi-thread executor
-    ├── Client::new(endpoint)      — WebSocket JSON-RPC, auto-reconnects
-    └── Store::new(client, runtime)
-          │
-          │   subscribe::<E>(args) → Arc<RemoteResource<E::Output>>
-          │     ─ keyed cache: identical args reuse the same Arc
-          │     ─ per-entry watcher updates `provides` on each Ready
-          │
-          │   run_mutation::<M>(args) → invalidates matching tags,
-          │     each refetch pulses Notify on its RemoteResource
-          │
-          ├── CatalogEndpoint           Args = ()        provides: any("Catalog")
-          │     └── bound by AppStatus, CategoriesModel, SystemsModel
-          │           via `bind_to_endpoint!`
-          │
-          ├── MediaSearchEndpoint       Args = SystemId  provides: specific("MediaSearch", id)
-          │     └── GamesModel::set_system subscribes per-system; the
-          │         store keys cache entries by id so re-selecting a
-          │         system reuses its cached resource without re-fetching
-          │
-          └── RunMutation               Args = RunParams  invalidates: ()
-                └── GamesModel::launch_at → store.run_mutation::<RunMutation>
-                      Today no tags are invalidated; future
-                      NowPlayingEndpoint can opt in by adding its tag.
-```
-
-`RemoteResource<T>` combines the connection FSM and per-fetch state into one
-`ResourceStatus<T>`: `Idle`, `Loading`, `Ready(T)`, or
-`Errored { message, retrying }`. Each binding reads the current status
-synchronously before it spawns the watcher. That closes the MiSTer race where
-Core can connect before QML loads and the first screen never updates.
-
-The Qt message handler (`qInstallMessageHandler`) forwards Qt log output to
-`zaparoo_log_qt()` in the Rust staticlib. From there it goes through the same
-tracing registry as Rust logs. Both end up in stderr and `frontend.log`.
-
-### Navigation state
-
-`Main.qml` extends `MainLayout.qml`. The layout owns the visual tree; `Main.qml`
-owns the runtime wiring: key translation, forward-transition orchestration, and
-persistence. Screens live under `Zaparoo.Screens` so they can be tested without
-embedding the whole application shell.
-
-```
-ScreenManager.activeScreen:    "hub" | "systems" | "games"
-ScreenManager.modalStack:      list<string>      // top-of-stack receives input; depth 1, only an action_error alert may sit above (docs/style.md -> Modal depth)
-MainLayout.pendingTransition:  "" | "systems" | "games"   // owned by Main.qml
-```
-
-Persisted state is split across Rust-backed QML singletons:
-
-| Singleton | Stored fields | Owner |
-|---|---|---|
-| `Browse.AppState` | `active_screen` | cross-screen route |
-| `Browse.HubState` | `category`, `selected_item`, `selected_row`/`selected_action` (legacy fallback) | hub-screen grid selection |
-| `Browse.SystemsState` | `system_id` | systems-screen grid selection |
-| `Browse.GamesState` | `system_id`, `game_path` | games-screen grid selection |
-
-State is loaded before the first QML frame and written through on user actions.
-That is deliberate: MiSTer's parent process can kill and relaunch the frontend
-without warning. Each screen writes its own `*State` singleton on directional
-moves; the router writes `AppState.active_screen` when the screen flips.
-
-#### Shared focused-detail policy
-
-List-detail media screens use `FocusedMediaDetailController.qml` as the
-single policy point for focused metadata and cover behavior. New media
-list screens should reuse that controller instead of open-coding detail
-debounce, clearing, or repeat-scroll rules in the screen.
-
-The shared contract covers:
-
-- selection identity tracking (`system_id + path`, or a screen-supplied equivalent)
-- debounced detail loading
-- stale-request suppression
-- transient detail clearing
-- rapid vertical repeat behavior: while held `up` / `down` repeat is active in
-  list mode, metadata and screenshots stay hidden; title may continue to follow
-  selection, and detail reload resumes after repeat stops
-
-`MediaListScreen.qml` is the shared list/detail shell for media browse
-screens. Favorites and Recently Played use it directly; Games layers its
-folder-navigation, per-level persisted selection, and pagination rules on
-top of the same shell instead of duplicating the list/detail render tree.
-New media list screens should extend that component first and only add
-screen-specific hooks where the data model or navigation semantics differ.
-
-#### Screen flow
-
-- **Hub** (`HubScreen.qml`) — one uniform paged grid rendering
-  `Browse.HubLayout`'s persisted `[[hub.items]]` layout in the user's own
-  order (see `docs/plans/ui-geometry-refresh.md` -> section 9 and its "Hub
-  roadmap" addendum for the full design). A tile is a category, a built-in
-  action, a specific system, a folder, or arbitrary ZapScript; the layout
-  records intent, `HubScreen.qml` resolves each kind against live state
-  (Core confirms the category, Resume needs Recents, Update needs the
-  build flag + internet) at render time. Square cells (`PagedGrid.
-  squareCells`); the grid's shape is a fixed per-tier table
-  (`Sizing.hubGridColumns/Rows`), never fitted to the viewport the way
-  Systems/Games are. `PagedGrid` pages once content overflows a page — the
-  normal case here, not an edge case. The cursor skips empty cells outside
-  a Move session (`PagedGrid.skipEmptyCells`); the last page's trailing
-  remainder (or a user-placed `blank` entry) renders as a genuinely blank,
-  unfocusable `EmptySlot` (via `PagedGrid.emptyDelegate`) rather than a
-  `Tile` with nothing on it. Directional moves write `HubState`. Accept
-  emits `requestAccept(kind, id, system)` — `kind` is `"category"` /
-  `"action"` / `"system"` / `"folder"` / `"zapscript"`, the router switches
-  on it; every kind is wired to a destination. `system`/`folder`/
-  `zapscript` shortcuts are user-created via "Add to Hub" on a Systems/
-  Games context menu (`Main.qml`'s `_addToHub`,
-  `Browse.HubLayout.add_target_item`) — see that qinvokable's doc comment
-  for one of two deliberate exceptions to the "don't persist Core
-  metadata" rule (CLAUDE.md -> "Never"): a game shortcut's display name IS
-  cached in `frontend.toml`, since a `zapscript` entry has no live
-  system/category row to re-resolve it from at render time the way a
-  `system`/`folder` shortcut does, and the cache doubles as a rename hook.
-  The other exception is `rust/frontend/src/hub_cover_manifest.rs`'s
-  cold-boot cover manifest — see that file's module doc and CLAUDE.md's
-  own scoped exception. Escape emits
-  `requestQuit`. No edit mode — Move/Hide/Add reuse the Options (North/X,
-  item-scoped) and View (West/Y, page-scoped) menus every other screen
-  already has.
-- **Update** (`zaparoo-update` package `qml/UpdateScreen.qml`) — crate-owned update screen
-  with a Rust-driven progress value surfaced through `Zaparoo.Update.Native`.
-  Accept is a no-op for now; Escape emits `requestHubScreen`.
-- **Systems** (`SystemsScreen.qml`) — paged grid of systems for the active
-  category. Directional moves write `SystemsState.system_id`. Accept on a
-  Ready system emits `requestAccept(systemId)`; Accept on Empty/Error emits
-  `requestAccept("")` so the router can re-fire `set_category` as a retry.
-  Escape emits `requestHubScreen`. Tab on a tile emits
-  `requestSystemCardWrite(index)`.
-- **Games** (`GamesScreen.qml`) — paged grid of games for the active system.
-  Accept on Ready calls `GamesModel.launch_at(index)`; Accept on Empty/Error
-  re-fires `set_system` against the cached `current_system_id` as the retry.
-  Escape emits `requestSystemsScreen` (the router decides whether to land on
-  Hub or Systems — a live eval for the MiSTer Arcade-singleton bypass, or
-  the persisted `GamesState.entered_from_hub` breadcrumb for a Hub
-  `system`/`folder` shortcut; see `onRequestSystemsScreen` in `Main.qml`).
-  Tab on a tile emits `requestGameCardWrite(index)`.
-
-#### Forward-transition orchestration
-
-`Main.qml` is the single owner of forward routing. Screens are pure input
-dispatchers and never call `set_category` / `set_system` themselves. The
-router's flow on a Hub Accept:
-
-1. Set `pendingTransition = "systems"` (tentative). The screen's
-   `transitioning` binding flips true and the source row/grid hides.
-2. `_ensureCategory(category, cb)` short-circuits when the model is already
-   on that category with `count > 0`; otherwise it parks `cb` in the
-   `_categoryReadyCallback` slot, restarts a 50 ms `deferredCategorySetTimer`,
-   and that Timer calls `SystemsModel.set_category(...)`. The defer is
-   essential: `set_category` runs synchronously on the GUI thread and tears
-   down `SystemsScreen`'s tile delegates, which freezes the frame budget if
-   the "Loading…" cue hasn't painted yet.
-3. The router's `Connections { target: Browse.SystemsModel }` fires
-   `onLoadingChanged`. When `loading` flips false, the router pulls the
-   stored callback, clears the slot, and runs it.
-4. Inside that callback the router decides: Arcade-bypass on MiSTer (one
-   system, drill straight to Games) or normal Hub→Systems. Arcade-bypass
-   re-uses the same machinery via `_ensureSystem(systemId, cb)` against
-   `GamesModel`. Hub→Systems needs no cover warm: bundled logos tint
-   synchronously out of the baked atlas, so the destination grid resolves
-   all of them in the binding pass that makes it active.
-5. `_completeTransition(screen)` clears `pendingTransition` and calls
-   `_goto(screen)` which writes `AppState.active_screen`.
-
-Input is gated during the wait: `handleAction` early-returns when
-`pendingTransition !== "" && !ScreenManager.hasModal` so a user mashing keys
-during the load can't queue a second transition.
-
-There are exactly two `loadingChanged` listeners — one per browse model —
-both on the router. There is no cross-screen `Connections` block. There is
-no per-screen pending flag. The class of routing bug where a stale
-per-screen flag fires while its owning screen isn't even visible cannot
-exist when there is no cross-screen state.
-
-Model reset handlers in `Main.qml` restore saved row/grid indices as
-catalog data arrives. Missing IDs fall back to index 0 without erasing the
-saved value from disk, so a temporary catalog gap does not destroy the
-user's last selection.
-
-## Measuring cover pop-in
-
-Bundled artwork (Systems logos, Hub category/action icons, Settings tile
-icons) is served by `TintedSvgImageProvider`, a plain synchronous
-`QQuickImageProvider` backed by a baked mask atlas read through a tint LUT.
-With `Image.asynchronous: false` and a call site that opts in
-(`coverSynchronous`), the decode runs inline on the GUI thread and the tile
-paints complete artwork in the same frame it appears — the direct fix for the
-pop-in this instrument exists to measure.
-
-`Tile.qml`'s `coverBase.onStatusChanged` sets `_coverEverLoading = true` the
-first time it observes `status === Image.Loading`, and `onSourceChanged`
-resets it to `false` for the next source — so a recycled delegate always
-reports on the cover it is currently showing, never a stale prior request. A
-cover whose first observed status is `Image.Ready` was never `Loading`, which
-is the literal definition of zero blank frames. This is stricter than timing
-the load duration: a fast-but-nonzero async decode still trips the flag,
-because the tile still painted blank for at least one frame.
-
-Trace lines are gated on `Resources.isTintedProviderKey(key)`
-(`_coverTraceResource` in `Tile.qml`), not on a hard-coded key allow-list, so
-the instrument covers every tinted key — Hub, Systems, and Settings alike —
-rather than only the five Hub keys the original allow-list shipped with.
-`MainLayout.qml`'s `_coverTrace()` is deliberately outside the
-`_startupTraceActive` gate, which closes after the first Hub paint: closing it
-there would blind the instrument to the Systems grid and the Settings tiles,
-exactly where remaining pop-in would hide. `console.debug` output stays
-suppressed unless `[logging] debug = true`, so there is no separate gate to
-manage.
-
-**Acceptance criterion:** on Hub, Systems page 1, and the Settings root, 100%
-of tinted tiles must log `everLoading=false`. Enable debug logging
-(`[logging] debug = true` or `ZAPAROO_DEBUG=1`) and grep `frontend.log` for
-`everLoading=` after visiting each screen. For frame cost, the
-`responsiveness transition presented ... present_ms=` line from
-`_finishTransitionTiming` gives Hub→Systems wall time — record before/after on
-real MiSTer hardware, since the pop-in work is only meaningful at MiSTer's
-frame budget.

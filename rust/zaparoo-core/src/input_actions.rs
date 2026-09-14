@@ -2,10 +2,14 @@
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 //
-// Normalized UI action catalog and the defaulted key-bindings that map
-// raw Qt key codes onto those actions. Screens handle actions, not keys,
-// so gamepad / NFC reader sources can slot in beside the keyboard without
-// touching the UI tree. Inspired by RetroArch's RetroPad abstraction.
+// Normalized UI action catalog and the defaulted key-bindings that map key
+// codes onto those actions. Key codes use `Qt::Key` names and numbering:
+// that is the persisted format of `[input.keyboard]` in `frontend.toml`,
+// kept so bindings in existing installs resolve unchanged. The frontend's
+// `actions.rs` maps Slint key events onto the same numbers. Screens handle
+// actions, not keys, so gamepad / NFC reader sources can slot in beside the
+// keyboard without touching the UI tree. Inspired by RetroArch's RetroPad
+// abstraction.
 
 use std::collections::HashMap;
 
@@ -17,16 +21,14 @@ pub mod actions {
     pub const ACCEPT: &str = "accept";
     pub const CANCEL: &str = "cancel";
     pub const CONTEXT_MENU: &str = "context_menu";
-    pub const DETAILS: &str = "details";
     pub const PAGE_PREV: &str = "page_prev";
     pub const PAGE_NEXT: &str = "page_next";
     pub const PAGE_MENU: &str = "page_menu";
-    pub const QUIT: &str = "quit";
 }
 
 /// Resolves a `Qt::Key` name as found in `frontend.toml` (e.g. `"Left"`,
-/// `"Return"`) to the numeric key code Qt emits at runtime. Returns None
-/// for unknown names so the caller can warn and skip.
+/// `"Return"`) to its numeric `Qt::Key` code. Returns `None` for unknown
+/// names so the caller can warn and skip.
 #[must_use]
 pub fn qt_key_code(name: &str) -> Option<i32> {
     // Subset that covers every action in the default bindings plus a few
@@ -48,7 +50,7 @@ pub fn qt_key_code(name: &str) -> Option<i32> {
     }
 }
 
-/// Default action → Qt-key-name list. Merged with `[input.keyboard]`
+/// Default action to key-name list. Merged with `[input.keyboard]`
 /// overrides from `frontend.toml`: a user-provided list replaces the
 /// default for that action (not merged), so emptying a list unbinds it.
 #[must_use]
@@ -74,7 +76,7 @@ pub fn default_bindings() -> HashMap<String, Vec<String>> {
 }
 
 /// Inverts the bindings (action → keys) into the runtime lookup shape
-/// ([`Qt::Key`] code → action). When two actions bind the same key the
+/// (`Qt::Key` code to action). When two actions bind the same key the
 /// alphabetically-later action wins — a deterministic, hand-authored
 /// collision policy. We sort the entries before walking them because
 /// `HashMap` iteration order is randomized per process, which would
@@ -92,7 +94,7 @@ where
             if let Some(code) = qt_key_code(name) {
                 out.insert(code, action.clone());
             } else {
-                tracing::warn!("unknown Qt key name in input binding: {name}");
+                tracing::warn!("unknown key name in input binding: {name}");
             }
         }
     }

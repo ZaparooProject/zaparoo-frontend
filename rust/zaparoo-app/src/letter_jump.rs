@@ -2,10 +2,10 @@
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 
-//! Area fit and row-local navigation from `LetterJumpModal.qml`.
+//! Area fit and row-local navigation for the letter-jump modal.
 
 /// Pick the columns that maximize square cell size within both axes.
-/// Ties keep the first candidate, matching Qt's strict comparison.
+/// The comparison is strict, so ties keep the first candidate.
 pub fn fit_columns(count: usize, width: f64, height: f64, gap: f64) -> usize {
     let mut best = 1;
     let mut best_cell = 0.0_f64;

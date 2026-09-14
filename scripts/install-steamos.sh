@@ -9,16 +9,16 @@
 # Being Steam-owned is the point: Steam then gives the frontend the Steam
 # Input layout, the overlay and the Quick Access Menu, none of which reach a
 # process Steam did not launch. The frontend still claims the compositor for
-# itself (src/gamescope.rs), because Steam hands focus back to its own shell
-# when a launched game exits.
+# itself (rust/frontend/src/gamescope.rs), because Steam hands focus back to
+# its own shell when a launched game exits.
 #
 # The eventual home for this is Core's installer, which already adds the
 # Zaparoo Runtime shortcut the same way; this script is how the frontend
 # gets there until then.
 #
 # Usage: install-steamos.sh [path-to-binary]
-# Default binary: rust/target/x86_64-unknown-linux-gnu/release/frontend-slint
-# (`just slint-x86-portable`). A plain `cargo build --release` links the
+# Default binary: rust/target/x86_64-unknown-linux-gnu/release/frontend
+# (`just x86-portable`). A plain `cargo build --release` links the
 # build host's glibc and will not start here.
 set -euo pipefail
 
@@ -33,10 +33,10 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
-SRC="${1:-$PROJECT_ROOT/rust/target/x86_64-unknown-linux-gnu/release/frontend-slint}"
+SRC="${1:-$PROJECT_ROOT/rust/target/x86_64-unknown-linux-gnu/release/frontend}"
 if [ ! -x "$SRC" ]; then
     echo "Error: no executable at $SRC" >&2
-    echo "Build one with: just slint-x86-portable" >&2
+    echo "Build one with: just x86-portable" >&2
     exit 1
 fi
 

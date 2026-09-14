@@ -11,9 +11,9 @@
 // half-pull/half-push: the initial value comes from a `media` query, but
 // every subsequent change is pushed through the `media.indexing`,
 // `media.scraping`, and `media.started`/`media.stopped` notification
-// streams. Folding those notifications into the same shape keeps the QML
-// singleton's binding cost flat — one `watch::Receiver` and a single
-// projection function.
+// streams. Folding those notifications into the same shape keeps the UI
+// binding cost flat: one `watch::Receiver` and a single projection
+// function.
 //
 // `watch` (not `broadcast`) so a freshly-mounted modal sees the current
 // state, not just the next edge — see `feedback_broadcast_vs_watch` in
@@ -32,7 +32,7 @@ use tracing::{debug, warn};
 
 /// Snapshot of every field the frontend renders from `media`,
 /// `media.indexing`, and `media.scraping`. Cloned out of the watch
-/// channel by the QML projection function — keep field counts modest
+/// channel by the UI projection function; keep field counts modest
 /// and types cheap to clone (no nested `Vec`s of large payloads).
 ///
 /// `seeded` flips true after the first successful `media` query so the
@@ -408,7 +408,7 @@ mod tests {
     fn apply_indexing_treats_missing_counters_as_zero() {
         // Idle Core sends `*int omitempty` with the counters absent —
         // the wire-level `None` lands as a numeric zero, not as a
-        // sentinel that breaks the QML bindings.
+        // sentinel that breaks the UI projection.
         let mut state = MediaStatusState::default();
         state.apply_indexing(&IndexingStatusResponse {
             exists: true,

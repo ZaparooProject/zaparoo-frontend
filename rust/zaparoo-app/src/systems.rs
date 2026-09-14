@@ -5,14 +5,12 @@
 // The Systems screen's rules: which region drives names and art, the
 // localized display name for a Core system id, the regional logo stem,
 // the per-category row projection (hidden filter, display names, sort),
-// and the ZapScript text a system launches with. Ported from the Qt
-// crate's `system_region.rs`, `system_names.rs`, `system_logos.rs` and
-// `models/systems.rs`.
+// and the ZapScript text a system launches with.
 //
 // Localized system display names come from the Names_MiSTer project
 // (ThreepwoodLeBrush/Names_MiSTer, CC0 1.0 Universal), re-keyed to Zaparoo
 // Core canonical system ids and restyled for this frontend. See
-// src/LICENSES/Names_MiSTer-ATTRIBUTION.txt.
+// LICENSES/Names_MiSTer-ATTRIBUTION.txt.
 
 use std::collections::HashMap;
 use std::sync::OnceLock;

@@ -2,7 +2,7 @@
 # Keys: Zaparoo Core canonical system IDs (https://zaparoo.org/docs/systems/)
 # Values: iconic + disambiguate style (shortest unambiguous common name)
 # Source: adapted from Names_MiSTer (ThreepwoodLeBrush/Names_MiSTer, CC0 1.0)
-# See src/LICENSES/Names_MiSTer-ATTRIBUTION.txt
+# See LICENSES/Names_MiSTer-ATTRIBUTION.txt
 
 # Game Consoles
 3DO:              3DO

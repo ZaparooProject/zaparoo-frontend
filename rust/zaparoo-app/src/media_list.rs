@@ -5,13 +5,11 @@
 //! The media list rules shared by Games, Favorites and Recents: row
 //! titles and suffixes, root handling, the linear and list paging math,
 //! the focused-detail debounce policy, the selection persist debounce and
-//! the item menu. Ported from `MediaListScreen.qml`, `GamesScreen.qml`,
-//! `BrowseList.qml`, `FocusedMediaDetailController.qml`, `Format.qml` and
-//! `models/games.rs`.
+//! the item menu.
 
 use crate::layouts::{Axis, List};
 
-/// Rows a detailed list shows at once (`GamesScreen._listPageSize`).
+/// Rows a detailed list shows at once.
 pub const LIST_VISIBLE_ROWS: usize = 10;
 /// Portrait non-CRT lists show more rows along their long axis.
 pub const TATE_LIST_VISIBLE_ROWS: usize = 16;
@@ -23,8 +21,6 @@ pub const JUMP_FETCH_CEILING: u32 = 1000;
 pub const DETAIL_DEBOUNCE_MS: u64 = 220;
 /// Selection writes coalesce over this window during a held move.
 pub const PERSIST_DEBOUNCE_MS: u64 = 250;
-/// A second page flip within this window shows the rapid letter badge.
-pub const RAPID_FLIP_WINDOW_MS: u64 = 600;
 /// The badge clears this long after the last flip.
 pub const RAPID_LETTER_HOLD_MS: u64 = 700;
 /// Prefetch this many pages of covers past the visible page.
@@ -32,7 +28,7 @@ pub const COVER_PREFETCH_NEXT_PAGES: usize = 1;
 /// And this many before it.
 pub const COVER_PREFETCH_PREVIOUS_PAGES: usize = 1;
 
-/// Visible rows for the detailed list (`GamesScreen._listPageSize`).
+/// Visible rows for the detailed list.
 pub fn list_visible_rows(crt_native_path: bool, rotated: bool) -> usize {
     if !crt_native_path && rotated {
         TATE_LIST_VISIBLE_ROWS
@@ -79,12 +75,6 @@ pub fn is_filesystem_root(entry_type: EntryType, path: &str) -> bool {
     entry_type == EntryType::Root && !path.is_empty() && !path.contains("://")
 }
 
-/// A singleton media container: a directory with a media id launches like
-/// a game and never browses.
-pub fn is_singleton_container(entry_type: EntryType, has_media_id: bool) -> bool {
-    entry_type == EntryType::Directory && has_media_id
-}
-
 /// Accept on this row browses into it (folders that are not media capable).
 pub fn browses(entry_type: EntryType, has_media_id: bool, zap_script: &str) -> bool {
     entry_type.is_folder() && !is_media_capable(entry_type, has_media_id, zap_script)
@@ -123,7 +113,7 @@ pub fn display_name(name: &str, path: &str, show_original_filenames: bool) -> St
     }
 }
 
-/// The last path component (`GamesScreen._folderNameForPath`).
+/// The last path component.
 pub fn folder_name_for_path(path: &str) -> String {
     let trimmed = path.trim_end_matches(['/', '\\']);
     trimmed
@@ -139,7 +129,7 @@ pub fn at_folder_level(path_stack_len: usize) -> bool {
 }
 
 /// The screen title: the folder's own name below the system root, else
-/// the system's display name (`GamesScreen.topStripTitleProvider`).
+/// the system's display name.
 pub fn screen_title(path_stack_len: usize, current_path: &str, system_name: &str) -> String {
     if at_folder_level(path_stack_len) {
         let folder = folder_name_for_path(current_path);
@@ -172,7 +162,7 @@ pub fn row_suffix(
 }
 
 /// The file count a folder row carries: media-capable directories never
-/// show one (`GamesModel::file_count_at`).
+/// show one.
 pub fn effective_file_count(media_capable: bool, file_count: u32) -> u32 {
     if media_capable {
         0
@@ -256,8 +246,7 @@ pub fn jump_fetch_limit(target_index: usize, count: usize, page_size: usize) -> 
     u32::try_from((pages * page).clamp(page, JUMP_FETCH_CEILING as usize)).unwrap_or(u32::MAX)
 }
 
-/// A letter bucket's first item sits after every leading directory
-/// (`GamesScreen.jumpToItem`).
+/// A letter bucket's first item sits after every leading directory.
 pub fn jump_target(total_dirs: usize, item_offset: usize) -> usize {
     total_dirs + item_offset
 }
@@ -270,11 +259,6 @@ pub fn rapid_letter(title: &str) -> String {
         .chars()
         .next()
         .map_or_else(|| "#".to_string(), |c| c.to_uppercase().collect())
-}
-
-/// A second flip within the window shows the badge.
-pub fn rapid_flip(since_last_flip_ms: Option<u64>) -> bool {
-    since_last_flip_ms.is_some_and(|ms| ms < RAPID_FLIP_WINDOW_MS)
 }
 
 /// The rows to fetch covers for around the visible page: the page, the
@@ -304,19 +288,16 @@ pub struct ListFrame {
     pub strip_height: i32,
     pub help_bar_height: i32,
     pub tier_240: bool,
-    /// `Sizing.pctH(6)`, the part of the 240p card bottom margin the help
-    /// bar already covers.
+    /// The part of the 240p card bottom margin the help bar already covers.
     pub safe_bottom_gap: i32,
     /// Rows the screen wants on screen (0 lets the row height decide).
     pub target_rows: usize,
-    /// `Sizing.pctH(3)` and `Sizing.pctH(6)`.
+    /// Floor and fallback for a row's height.
     pub min_row_height: i32,
     pub default_row_height: i32,
 }
 
-/// The list card, its list and detail sections, and the row metrics
-/// (MediaListScreen.qml's card anchors through `BrowseListDetailView`
-/// and `BrowseList`).
+/// The list card, its list and detail sections, and the row metrics.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ListGeometry {
     pub card_x: i32,
@@ -335,7 +316,7 @@ pub struct ListGeometry {
     pub visible_rows: usize,
 }
 
-/// The rows that fit the list section (`BrowseList.visibleRowCount`).
+/// The rows that fit the list section.
 pub fn list_visible_count(
     content_height: i32,
     row_height: i32,
@@ -461,9 +442,9 @@ pub enum LinearMove {
     Stay { fetch: bool },
 }
 
-/// `GamesScreen._performLinearMove`: wrap at the ends, but past the last
-/// loaded row with more coming, fetch instead of wrapping; near the loaded
-/// edge, fetch alongside the move.
+/// A linear move: wrap at the ends, but past the last loaded row with more
+/// coming, fetch instead of wrapping; near the loaded edge, fetch alongside
+/// the move.
 pub fn linear_move(current: usize, count: usize, delta: i64, has_more: bool) -> LinearMove {
     if count == 0 {
         return LinearMove::Stay { fetch: false };
@@ -489,8 +470,7 @@ pub fn linear_move(current: usize, count: usize, delta: i64, has_more: bool) -> 
     }
 }
 
-/// The list keeps a screenful loaded past the selection
-/// (`GamesScreen._prefetchListTail`).
+/// The list keeps a screenful loaded past the selection.
 pub fn list_tail_prefetch(
     index: usize,
     count: usize,
@@ -501,19 +481,18 @@ pub fn list_tail_prefetch(
     !loading_more && has_more && index + visible_rows >= count
 }
 
-/// One list page holds fewer rows than a screenful: fill it
-/// (`GamesScreen._fillListPage`).
+/// One list page holds fewer rows than a screenful: fill it.
 pub fn list_fill_page(count: usize, visible_rows: usize, has_more: bool) -> bool {
     count > 0 && count <= visible_rows && has_more
 }
 
-/// More rows exist beyond the loaded count (`GamesScreen._listHasMore`).
+/// More rows exist beyond the loaded count.
 pub fn list_has_more(count: usize, known_total: Option<usize>, has_next_page: bool) -> bool {
     has_next_page || known_total.is_some_and(|total| total > count)
 }
 
-/// `BrowseList` row window: the selection sits on the center slot and the
-/// window clamps to the loaded rows.
+/// The row window: the selection sits on the center slot and the window
+/// clamps to the loaded rows.
 pub fn list_view_top(
     current: usize,
     count: usize,
@@ -526,8 +505,8 @@ pub fn list_view_top(
     current.saturating_sub(center).min(max_top)
 }
 
-/// `BrowseList.rowHeight`: the profile's fixed height, else the rows that
-/// fit the target count (never below `min_height`), else `default_height`.
+/// A row's height: the profile's fixed height, else the rows that fit the
+/// target count (never below `min_height`), else `default_height`.
 pub fn list_row_height(
     profile_row_height: i32,
     content_height: i32,
@@ -546,7 +525,7 @@ pub fn list_row_height(
     ((content_height - row_spacing * (rows - 1)) / rows).max(min_height)
 }
 
-/// The detailed list's page and item cues (`MediaListScreen._list*`).
+/// The detailed list's page and item cues.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[allow(
     clippy::struct_excessive_bools,
@@ -588,7 +567,7 @@ pub fn list_paging(
     }
 }
 
-/// `MediaListScreen._state`.
+/// The list's load state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum State {
     Loading,
@@ -638,7 +617,7 @@ pub enum Owner {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[allow(
     clippy::struct_excessive_bools,
-    reason = "one flag per gate the Qt menu builder reads"
+    reason = "one flag per menu gate: media, root, NFC, favorite, arcade, launchers, busy"
 )]
 pub struct MenuInput {
     pub owner: Owner,
@@ -690,7 +669,7 @@ pub fn context_entries(input: &MenuInput) -> Vec<&'static str> {
     entries
 }
 
-/// `GamesScreen.contextMenuEnabledAt`.
+/// Whether the row at the current position gets a context menu at all.
 pub fn context_menu_enabled(entry_type: EntryType, media_capable: bool, path: &str) -> bool {
     media_capable || entry_type == EntryType::Directory || is_filesystem_root(entry_type, path)
 }
@@ -743,11 +722,11 @@ pub enum CoverState {
     Absent,
 }
 
-/// `cover_key_for`: folders get the glyph; otherwise cached art wins, a
+/// The cover-key policy: folders get the glyph; otherwise cached art wins, a
 /// confirmed miss shows the chip and everything else stays blank.
 #[allow(
     clippy::fn_params_excessive_bools,
-    reason = "the four cache and entry facts the Qt key policy reads"
+    reason = "media capable, has cover, cached, and confirmed miss, one bool each"
 )]
 pub fn cover_state(
     entry_type: EntryType,
@@ -781,8 +760,8 @@ pub enum DetailStep {
     Disarm,
 }
 
-/// `FocusedMediaDetailController`: peek immediately, load after the
-/// debounce, never reload the same identity, clear on empty or rapid.
+/// The focused-detail policy: peek immediately, load after the debounce,
+/// never reload the same identity, clear on empty or rapid.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct FocusedDetail {
     requested: String,
@@ -839,21 +818,6 @@ impl FocusedDetail {
         self.reset(clear)
     }
 
-    /// `clearTransient`: forget everything and reload the current row.
-    pub fn clear_transient(
-        &mut self,
-        enabled: bool,
-        rapid: bool,
-        identity: &str,
-        index: usize,
-    ) -> Vec<DetailStep> {
-        let mut steps = self.reset(true);
-        if !rapid {
-            steps.extend(self.schedule(enabled, rapid, identity, index, false));
-        }
-        steps
-    }
-
     /// The debounce fired: the row to load, if the selection still matches.
     pub fn fire(&mut self, enabled: bool, identity_now: &str) -> Option<usize> {
         let (identity, index) = self.pending.take()?;
@@ -865,7 +829,7 @@ impl FocusedDetail {
     }
 }
 
-/// The debounced selection persist (`GamesScreen`'s `persistDebounce`):
+/// The debounced selection persist:
 /// moves schedule a path, hold release and Accept flush it, a scope
 /// replacement discards it so the outgoing folder's snap never lands in
 /// the incoming level's slot.
@@ -889,10 +853,6 @@ impl SelectionPersist {
         }
         self.pending = Some(path.to_string());
         true
-    }
-
-    pub fn is_pending(&self) -> bool {
-        self.pending.is_some()
     }
 
     /// Drop the scheduled write without committing it.
@@ -1079,9 +1039,6 @@ mod tests {
         assert_eq!(rapid_letter("  sonic"), "S");
         assert_eq!(rapid_letter(""), "#");
         assert_eq!(rapid_letter("ßeta"), "SS");
-        assert!(rapid_flip(Some(100)));
-        assert!(!rapid_flip(Some(600)));
-        assert!(!rapid_flip(None));
     }
 
     #[test]
@@ -1489,24 +1446,6 @@ mod tests {
     }
 
     #[test]
-    fn detail_clear_transient_reloads_same_identity() {
-        let mut d = FocusedDetail::new();
-        d.schedule(true, false, "NES\n/a", 0, false);
-        assert_eq!(d.fire(true, "NES\n/a"), Some(0));
-        let steps = d.clear_transient(true, false, "NES\n/a", 0);
-        assert_eq!(
-            steps,
-            vec![
-                DetailStep::Disarm,
-                DetailStep::Clear,
-                DetailStep::Peek(0),
-                DetailStep::Arm
-            ]
-        );
-        assert_eq!(d.fire(true, "NES\n/a"), Some(0));
-    }
-
-    #[test]
     fn detail_rapid_scroll_hides_detail_and_reloads_after_stop() {
         let mut d = FocusedDetail::new();
         d.schedule(true, false, "NES\n/a", 0, false);
@@ -1541,7 +1480,7 @@ mod tests {
         assert_eq!(p.flush().as_deref(), Some("/child/game5"));
         p.begin_replacement();
         assert!(!p.schedule("/child/game0"));
-        assert!(!p.is_pending());
+        assert_eq!(p.flush(), None);
     }
 
     #[test]

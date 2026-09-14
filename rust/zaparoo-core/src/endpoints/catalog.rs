@@ -4,7 +4,7 @@
 //
 // `CatalogEndpoint` — single-fetch endpoint for the systems catalog.
 // `Args = ()` because the catalog is a global per-connection resource;
-// every QML singleton that needs categories or systems shares the one
+// every consumer that needs categories or systems shares the one
 // `RemoteResource<CatalogData>` the store hands back.
 //
 // `fetch` does the same shaping the old `systems_catalog::spawn`

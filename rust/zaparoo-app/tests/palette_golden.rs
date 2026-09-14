@@ -2,9 +2,10 @@
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 //
-// `tests/fixtures/palette_golden.txt` was dumped from `ColorSchemes.qml`
-// before the palette moved to Rust. Every role of every preset at every
-// intensity, plus the fallback and preview helpers, must match to the hex.
+// `tests/fixtures/palette_golden.txt` was captured from the retired Qt
+// build and is frozen ground truth. Every role of every preset at every
+// intensity, plus the fallback and preview helpers, must match it to the
+// hex.
 
 #![allow(
     clippy::expect_used,
@@ -15,7 +16,7 @@
 use std::collections::HashMap;
 use zaparoo_app::palette;
 
-const GOLDEN: &str = include_str!("../../../tests/fixtures/palette_golden.txt");
+const GOLDEN: &str = include_str!("fixtures/palette_golden.txt");
 
 fn fields(line: &str) -> (String, HashMap<String, String>) {
     let mut parts = line.split(' ');
@@ -40,7 +41,7 @@ fn cases(kind: &str) -> Vec<HashMap<String, String>> {
 }
 
 #[test]
-fn catalog_matches_the_qml() {
+fn catalog_matches_the_fixture() {
     let catalog = cases("catalog");
     assert_eq!(catalog.len(), 1);
     let catalog = &catalog[0];
@@ -51,7 +52,7 @@ fn catalog_matches_the_qml() {
 }
 
 #[test]
-fn fallback_and_preview_match_the_qml() {
+fn fallback_and_preview_match_the_fixture() {
     let effective = cases("effective");
     assert_eq!(effective.len(), 20);
     for case in effective {
@@ -79,7 +80,7 @@ fn fallback_and_preview_match_the_qml() {
 }
 
 #[test]
-fn every_role_of_every_preset_matches_the_qml() {
+fn every_role_of_every_preset_matches_the_fixture() {
     let palettes = cases("palette");
     assert_eq!(palettes.len(), 60);
     let mut mismatches = Vec::new();
@@ -91,7 +92,7 @@ fn every_role_of_every_preset_matches_the_qml() {
             let expected = &case[role];
             if &hex != expected {
                 mismatches.push(format!(
-                    "{id}/{intensity} {role}: qml {expected}, rust {hex}"
+                    "{id}/{intensity} {role}: fixture {expected}, rust {hex}"
                 ));
             }
         }

@@ -34,8 +34,8 @@ These IDs appeared in the catalog but did not have matching `resources/images/sy
 
 ## Resolved by artwork alias
 
-- `MacPlus` → aliases to `systems/MacOS` in `Resources.qml`; Core/system catalog should probably treat `MacPlus` as a Mac OS artwork alias.
-- `SVI328` → aliases to `systems/Spectravideo` in `Resources.qml`, using the local PRO100BYTE logo-pack asset.
+- `MacPlus` → would alias to `systems/MacOS`; the frontend has no alias table, so it shows a wordmark. Core/system catalog should probably treat `MacPlus` as a Mac OS artwork alias.
+- `SVI328` → would alias to `systems/Spectravideo` (the local PRO100BYTE logo-pack asset); the frontend has no alias table, so it shows a wordmark.
 
 ## Resolved variant composites
 
@@ -64,7 +64,7 @@ Most other missing IDs had no clear match in the PRO100BYTE main SVG set and lik
 ## Regional logo variants
 
 Systems where the logo itself differs by region (not just the name). Registered in
-`REGIONAL_LOGOS` in `rust/frontend/src/system_logos.rs`; variant SVGs live alongside
+`REGIONAL_LOGOS` in `rust/zaparoo-app/src/systems.rs`; variant SVGs live alongside
 the base art under `resources/images/systems/`.
 
 Naming convention: `{id}.{region}.svg` where `{region}` is `us`, `eu`, or `jp`.

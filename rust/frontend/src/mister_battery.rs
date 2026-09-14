@@ -19,35 +19,35 @@
 // `getBattery` does, since this runs for the life of the process rather
 // than only while a menu page is open.
 
-#[cfg(zaparoo_runtime = "mister")]
+#[cfg(feature = "mister")]
 use std::ffi::CString;
-#[cfg(zaparoo_runtime = "mister")]
+#[cfg(feature = "mister")]
 use std::os::unix::io::RawFd;
-#[cfg(zaparoo_runtime = "mister")]
+#[cfg(feature = "mister")]
 use std::time::Duration;
 
-#[cfg(zaparoo_runtime = "mister")]
-const I2C_SLAVE: libc::c_ulong = 0x0703;
-#[cfg(zaparoo_runtime = "mister")]
-const I2C_SMBUS: libc::c_ulong = 0x0720;
-#[cfg(zaparoo_runtime = "mister")]
+#[cfg(feature = "mister")]
+const I2C_SLAVE: libc::Ioctl = 0x0703;
+#[cfg(feature = "mister")]
+const I2C_SMBUS: libc::Ioctl = 0x0720;
+#[cfg(feature = "mister")]
 const I2C_SMBUS_READ: u8 = 1;
-#[cfg(zaparoo_runtime = "mister")]
+#[cfg(feature = "mister")]
 const I2C_SMBUS_WRITE: u8 = 0;
-#[cfg(zaparoo_runtime = "mister")]
+#[cfg(feature = "mister")]
 const I2C_SMBUS_QUICK: u32 = 0;
-#[cfg(zaparoo_runtime = "mister")]
+#[cfg(feature = "mister")]
 const I2C_SMBUS_WORD_DATA: u32 = 3;
-#[cfg(zaparoo_runtime = "mister")]
+#[cfg(feature = "mister")]
 const BATTERY_I2C_ADDRESS: libc::c_int = 0x0B;
-#[cfg(zaparoo_runtime = "mister")]
+#[cfg(feature = "mister")]
 const CAPACITY_REGISTER: u8 = 0x0D;
-#[cfg(zaparoo_runtime = "mister")]
+#[cfg(feature = "mister")]
 const MAX_TRIES: u32 = 20;
-#[cfg(zaparoo_runtime = "mister")]
+#[cfg(feature = "mister")]
 const RETRY_SLEEP: Duration = Duration::from_micros(500);
 
-#[cfg(zaparoo_runtime = "mister")]
+#[cfg(feature = "mister")]
 #[repr(C)]
 union SmbusData {
     byte: u8,
@@ -55,7 +55,7 @@ union SmbusData {
     block: [u8; 34],
 }
 
-#[cfg(zaparoo_runtime = "mister")]
+#[cfg(feature = "mister")]
 #[repr(C)]
 struct SmbusIoctlData {
     read_write: u8,
@@ -64,7 +64,7 @@ struct SmbusIoctlData {
     data: *mut SmbusData,
 }
 
-#[cfg(zaparoo_runtime = "mister")]
+#[cfg(feature = "mister")]
 fn smbus_access(fd: RawFd, read_write: u8, command: u8, size: u32, data: *mut SmbusData) -> bool {
     let mut args = SmbusIoctlData {
         read_write,
@@ -78,7 +78,7 @@ fn smbus_access(fd: RawFd, read_write: u8, command: u8, size: u32, data: *mut Sm
     unsafe { libc::ioctl(fd, I2C_SMBUS, std::ptr::addr_of_mut!(args)) == 0 }
 }
 
-#[cfg(zaparoo_runtime = "mister")]
+#[cfg(feature = "mister")]
 fn read_word(fd: RawFd, register: u8) -> Option<u16> {
     let mut data = SmbusData { word: 0 };
     if !smbus_access(
@@ -94,7 +94,7 @@ fn read_word(fd: RawFd, register: u8) -> Option<u16> {
     Some(unsafe { data.word })
 }
 
-#[cfg(zaparoo_runtime = "mister")]
+#[cfg(feature = "mister")]
 fn open_bus(bus: u32) -> Option<RawFd> {
     let path = CString::new(format!("/dev/i2c-{bus}")).ok()?;
     // SAFETY: `path` is a valid, live, NUL-terminated C string for the
@@ -103,7 +103,7 @@ fn open_bus(bus: u32) -> Option<RawFd> {
     (fd >= 0).then_some(fd)
 }
 
-#[cfg(zaparoo_runtime = "mister")]
+#[cfg(feature = "mister")]
 fn select_battery_device(fd: RawFd) -> bool {
     // SAFETY: `fd` is a valid, open file descriptor.
     let selected = unsafe { libc::ioctl(fd, I2C_SLAVE, BATTERY_I2C_ADDRESS) == 0 };
@@ -117,7 +117,7 @@ fn select_battery_device(fd: RawFd) -> bool {
         )
 }
 
-#[cfg(zaparoo_runtime = "mister")]
+#[cfg(feature = "mister")]
 fn close_bus(fd: RawFd) {
     // SAFETY: `fd` was returned by a successful `open_bus` above and is not
     // used again after this call.
@@ -130,7 +130,7 @@ fn close_bus(fd: RawFd) {
 /// `Main_MiSTer`'s `getReg` narrows an `SMBus` word read into its signed
 /// `short capacity` field: a failed transfer or a value outside the sensor's
 /// documented 0-100 range is not a real reading.
-#[cfg(any(zaparoo_runtime = "mister", test))]
+#[cfg(any(feature = "mister", test))]
 fn validate_capacity(raw_word: u16) -> Option<u8> {
     let signed = raw_word as i16;
     (0..=100).contains(&signed).then_some(signed as u8)
@@ -140,7 +140,7 @@ fn validate_capacity(raw_word: u16) -> Option<u8> {
 /// answers on the bus -- the common case on stock `MiSTer` hardware.
 /// Probes `/dev/i2c-0` through `/dev/i2c-2` in turn, matching
 /// `Main_MiSTer`'s own default bus scan order.
-#[cfg(zaparoo_runtime = "mister")]
+#[cfg(feature = "mister")]
 pub fn read_capacity_percent() -> Option<u8> {
     for bus in 0..=2u32 {
         let Some(fd) = open_bus(bus) else {
@@ -163,11 +163,6 @@ pub fn read_capacity_percent() -> Option<u8> {
         close_bus(fd);
         return percent;
     }
-    None
-}
-
-#[cfg(not(zaparoo_runtime = "mister"))]
-pub fn read_capacity_percent() -> Option<u8> {
     None
 }
 

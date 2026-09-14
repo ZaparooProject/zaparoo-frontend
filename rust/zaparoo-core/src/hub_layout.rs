@@ -3,13 +3,11 @@
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 //
 // The Hub's persisted layout: a flat, user-ordered list of tiles stored as
-// `[[hub.items]]` in `frontend.toml`. This is the "go all in" replacement
-// for the old hide/order-by-composite-key storage — the layout itself is
-// now the source of truth for what shows on the Hub and in what order,
-// snapshotted from whatever Core reported at first load and hand-editable
-// (or, later, edit-UI-editable) from then on. See
-// `docs/plans/ui-geometry-refresh.md`'s Hub roadmap for the full design
-// discussion this schema comes out of.
+// `[[hub.items]]` in `frontend.toml`. This replaces the older
+// hide/order-by-composite-key storage: the layout itself is now the source
+// of truth for what shows on the Hub and in what order, snapshotted from
+// whatever Core reported at first load and hand-editable (or, later,
+// edit-UI-editable) from then on.
 //
 // Deliberately a plain, reusable entry schema rather than a Hub-specific
 // one — `HubItem`/`HubItemKind` describe "an addressable target with an
@@ -121,9 +119,9 @@ impl HubItem {
 
 /// The built-in action ids, in the order a fresh layout seeds them.
 /// Visibility of some of these (`resume`, `update`) is conditional and
-/// decided at render time in QML from live state (Recents/internet/build
+/// decided at render time from live state (Recents/internet/build
 /// flags) — the layout just records that the tile exists and where it
-/// sits; see `docs/plans/ui-geometry-refresh.md`.
+/// sits.
 pub const BUILT_IN_ACTIONS: &[&str] = &["resume", "favorites", "recents", "update", "settings"];
 
 /// The persisted Hub layout.
@@ -148,22 +146,22 @@ pub struct HubLayout {
 impl HubLayout {
     /// Layout entries this build can actually render, in order — skips
     /// `Collection`/`Unknown` kinds (see `HubItemKind::renderable`). What
-    /// `Browse.HubLayout` exposes to QML.
+    /// the Hub renders.
     pub fn visible(&self) -> impl Iterator<Item = &HubItem> {
         self.items.iter().filter(|item| item.kind().renderable())
     }
 
-    /// True when this layout has never been seeded at all — the state a
+    /// True when this layout has never been seeded at all: the state a
     /// brand-new install (or a config predating this feature) starts in.
     /// Distinct from "seeded but the user emptied it": an empty `items`
     /// with a non-empty `known` is a deliberate empty Hub, not a fresh
-    /// install, and must NOT be re-seeded. Exposed to QML (as
-    /// `Browse.HubLayout.is_unseeded()`) so the bootstrap placeholder branch
-    /// can key off this instead of `item_count() == 0` — with remove-leaves-
-    /// a-gap plus trailing-blank trimming, a seeded layout the user has
-    /// emptied out (every item a trailing blank, all trimmed away) is a
-    /// real, reachable `item_count() == 0` state now, and must render as an
-    /// empty Hub, not snap back to fake placeholder tiles.
+    /// install, and must NOT be re-seeded. The Hub driver reads it so the
+    /// bootstrap placeholder branch can key off this instead of
+    /// `item_count() == 0`: with remove-leaves-a-gap plus trailing-blank
+    /// trimming, a seeded layout the user has emptied out (every item a
+    /// trailing blank, all trimmed away) is a real, reachable
+    /// `item_count() == 0` state now, and must render as an empty Hub, not
+    /// snap back to fake placeholder tiles.
     pub fn is_unseeded(&self) -> bool {
         self.known.is_empty() && self.items.is_empty()
     }
@@ -196,10 +194,10 @@ impl HubLayout {
                 return false;
             }
             // Resume seeds first, ahead of every category, so it lands in
-            // the top-left cell by default — the highest-value action, and
-            // the one the startup focus special case (`HubScreen.
-            // focusResumeIfVisible`) already seats on regardless of where
-            // it sits. Depends on `BUILT_IN_ACTIONS[0] == "resume"`.
+            // the top-left cell by default: the highest-value action, and
+            // the one the startup focus special case already seats on
+            // regardless of where it sits. Depends on
+            // `BUILT_IN_ACTIONS[0] == "resume"`.
             let resume_id = BUILT_IN_ACTIONS[0];
             self.known.push(format!("action:{resume_id}"));
             self.items.push(HubItem::action(resume_id));
@@ -231,7 +229,7 @@ impl HubLayout {
     }
 
     /// Indices into `items` for entries `visible()` yields, in order — the
-    /// mapping from a QML-facing visible index back to the real position in
+    /// mapping from a UI-facing visible index back to the real position in
     /// `items`. Needed because `visible()` filters out unrenderable kinds
     /// (`Collection`/`Unknown`) this build never creates but must still
     /// round-trip, so a visible index and an `items` index can diverge
@@ -509,13 +507,11 @@ struct RawHubRoot {
     hub: RawHub,
 }
 
-/// Load the Hub layout from `frontend.toml`. Read side only — an
+/// Load the Hub layout from `frontend.toml`. Read side only: an
 /// independent top-level parse of the same file `config.rs::load_config`
-/// reads, mirroring how several `Browse.*` singletons already re-read
-/// config independently rather than threading a shared parse through
-/// (`rust/frontend/src/models/settings.rs`, `crt_video.rs`, etc). A missing
-/// or malformed file returns an empty (unseeded) layout, same fallback
-/// shape `load_config` uses.
+/// reads, re-reading config rather than threading a shared parse through.
+/// A missing or malformed file returns an empty (unseeded) layout, the
+/// same fallback shape `load_config` uses.
 pub fn load_hub_layout(path: &Path) -> HubLayout {
     let raw: RawHubRoot = match std::fs::read_to_string(path) {
         Ok(src) => toml::from_str(&src).unwrap_or_default(),

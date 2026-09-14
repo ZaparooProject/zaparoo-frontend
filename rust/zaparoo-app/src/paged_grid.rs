@@ -2,12 +2,12 @@
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 //
-// Port of `src/ui/components/PagedGrid.qml`'s navigation and geometry
-// rules. Items flow row-major within a page; pages stack vertically, so
-// Down at the bottom row swaps in the next page (same column, top row) and
-// Up at the top row swaps in the previous page. Left and Right wrap within
-// the current row and never change pages. Selection is a flat index over
-// the source model; page, row and column derive from it.
+// Paged grid navigation and geometry rules. Items flow row-major within a
+// page; pages stack vertically, so Down at the bottom row swaps in the next
+// page (same column, top row) and Up at the top row swaps in the previous
+// page. Left and Right wrap within the current row and never change pages.
+// Selection is a flat index over the source model; page, row and column
+// derive from it.
 //
 // A paginated model (the games browse) loads a slice at a time: a move
 // onto a page that is not loaded yet is stashed as a pending target, the
@@ -15,7 +15,7 @@
 // `skip_empty_cells` (the Hub outside a Move session) treats blank cells
 // as unreachable.
 //
-// Pinned by the tests below, transcribed from `tests/ui/tst_paged_grid.qml`.
+// Every case below is pinned by this module's tests.
 
 /// The reserved chrome around the cell area, in whole pixels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -117,7 +117,7 @@ pub struct LoadMore {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[allow(
     clippy::struct_excessive_bools,
-    reason = "one flag per PagedGrid.qml property the host binds"
+    reason = "four paging flags the host binds: total known, more pages, loading, skip empty"
 )]
 pub struct Grid {
     columns: usize,
@@ -245,10 +245,6 @@ impl Grid {
 
     pub fn has_pending_target(&self) -> bool {
         self.pending_page.is_some() || self.pending_index.is_some()
-    }
-
-    pub fn has_pending_jump(&self) -> bool {
-        self.pending_index.is_some()
     }
 
     pub fn pending_jump_index(&self) -> Option<usize> {
@@ -673,7 +669,7 @@ impl Grid {
 mod tests {
     use super::*;
 
-    /// The QML harness: a 4x3 grid (page size 12).
+    /// The standard harness: a 4x3 grid (page size 12).
     fn grid(count: usize) -> Grid {
         let mut g = Grid::new(4, 3);
         g.set_item_count(count);
@@ -1199,7 +1195,6 @@ mod tests {
         assert_eq!(g.current_index(), 0);
         assert_eq!(g.pending_jump_index(), Some(50));
         assert_eq!(g.pending_page(), None);
-        assert!(g.has_pending_jump());
         assert!(requests(&mut g) >= 1);
     }
 
@@ -1209,7 +1204,7 @@ mod tests {
         assert!(!g.jump_to_index(50));
         append(&mut g, 60);
         assert_eq!(g.current_index(), 50);
-        assert!(!g.has_pending_jump());
+        assert_eq!(g.pending_jump_index(), None);
     }
 
     #[test]
@@ -1241,17 +1236,17 @@ mod tests {
         g.has_more_pages = true;
         g.total_items_override = Some(120);
         assert!(!g.jump_to_index(100));
-        assert!(g.has_pending_jump());
+        assert_eq!(g.pending_jump_index(), Some(100));
         assert!(g.move_selection(1, 0));
-        assert!(!g.has_pending_jump());
+        assert_eq!(g.pending_jump_index(), None);
     }
 
     #[test]
-    fn has_pending_jump_false_for_page_wrap_target() {
+    fn a_page_wrap_target_is_not_a_jump() {
         let mut g = partial(24, 60);
         assert!(!g.move_selection(0, -1));
         assert!(g.has_pending_target());
-        assert!(!g.has_pending_jump());
+        assert_eq!(g.pending_jump_index(), None);
     }
 
     // -- blank cells --
@@ -1266,7 +1261,7 @@ mod tests {
         assert_eq!(g.current_index(), 2);
     }
 
-    /// The QML `skipEmptyModel` board: 3 x 2, two pages.
+    /// The skip-empty board: 3 x 2, two pages.
     ///   page 0            page 1
     ///   real-a . real-b   .   real-c .
     ///     .    .   .      real-d  .  .

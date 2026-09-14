@@ -4,8 +4,7 @@
 
 //! The media-job setup forms: what the Update media database and Update
 //! metadata modals ask before they start, the scope vocabulary they
-//! offer, and how a scope resolves to the systems Core is given. Ported
-//! from `IndexSetupModal.qml` and `ScrapeSetupModal.qml`.
+//! offer, and how a scope resolves to the systems Core is given.
 
 /// Which job the form starts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -101,15 +100,6 @@ pub fn parse_scope(value: &str) -> Scope {
         Scope::Category(category.to_string())
     } else {
         Scope::System(value.to_string())
-    }
-}
-
-/// The token for a scope.
-pub fn scope_token(scope: &Scope) -> String {
-    match scope {
-        Scope::All => "*".to_string(),
-        Scope::Category(id) => format!("cat:{id}"),
-        Scope::System(id) => id.clone(),
     }
 }
 
@@ -228,12 +218,6 @@ mod tests {
             Scope::Category("Console".into())
         );
         assert_eq!(parse_scope("NES"), Scope::System("NES".into()));
-        assert_eq!(scope_token(&Scope::All), "*");
-        assert_eq!(
-            scope_token(&Scope::Category("Console".into())),
-            "cat:Console"
-        );
-        assert_eq!(scope_token(&Scope::System("NES".into())), "NES");
     }
 
     #[test]

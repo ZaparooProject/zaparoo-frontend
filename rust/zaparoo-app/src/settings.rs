@@ -5,11 +5,10 @@
 //! The Settings registry: the six root categories, the rows each page
 //! shows at the current runtime, what control each row carries, the
 //! canonical option lists, and the cursor rules over rows that include
-//! non-navigable headers. Ported from `SettingsScreen.qml` and
-//! `models/settings.rs`. Every user-visible string stays a key the view
+//! non-navigable headers. Every user-visible string stays a key the view
 //! translates.
 
-/// The control a row carries (`_fieldControl`).
+/// The control a row carries.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Control {
     /// A value the user cycles or picks from a list.
@@ -119,8 +118,8 @@ const NAVIGATES: &[&str] = &[
 
 const ACTIONS: &[&str] = &["updateMediaDb", "runScraper", "uploadLog"];
 
-/// `_fieldControl`: everything that is not a toggle, a navigation or a
-/// one-shot is a picker.
+/// The control a row id carries: everything that is not a toggle, a
+/// navigation or a one-shot is a picker.
 pub fn control(id: &str) -> Control {
     if TOGGLES.contains(&id) {
         Control::Toggle
@@ -314,13 +313,12 @@ pub fn restarts(id: &str) -> bool {
     )
 }
 
-/// The first row a cursor may sit on (`_firstNavigableIndex`).
+/// The first row a cursor may sit on.
 pub fn first_navigable(rows: &[Row]) -> usize {
     rows.iter().position(|r| r.is_field()).unwrap_or(0)
 }
 
-/// The next navigable row in `dir`, wrapping and skipping headers
-/// (`_seekNavigable`).
+/// The next navigable row in `dir`, wrapping and skipping headers.
 pub fn seek_navigable(rows: &[Row], from: usize, dir: i64) -> usize {
     let len = rows.len();
     if len == 0 {
@@ -402,7 +400,7 @@ pub fn root_grid_shape(count: usize, rotated: bool) -> (usize, usize) {
 }
 
 /// A cardinal move on the root grid: horizontal wraps inside its row,
-/// vertical wraps around the column (`_moveRootGrid`).
+/// vertical wraps around the column.
 pub fn root_grid_move(index: usize, count: usize, columns: usize, dx: i64, dy: i64) -> usize {
     if count == 0 {
         return index;

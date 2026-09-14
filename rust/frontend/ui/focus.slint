@@ -1,0 +1,311 @@
+// Zaparoo Frontend
+// Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
+// SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
+
+import { Theme, Sizing, Motion } from "theme.slint";
+
+// One atomic target avoids animating intermediate x/y setters. Scope changes
+// (page, route, windowed list) and geometry changes always snap.
+export struct FocusTarget {
+    x: length, y: length, w: length, h: length,
+    column: int, row: int, scope: string, valid: bool,
+}
+
+// Only nearby viewport changes interpolate; restoration and page jumps snap.
+export component ScrollOffset inherits Rectangle {
+    in property <length> target;
+    in property <length> step;
+    in property <length> focus-start;
+    in property <length> focus-size;
+    in property <length> viewport;
+    in property <string> scope;
+    property <length> previous;
+    property <length> position;
+    property <bool> glide: false;
+    property <bool> motion: Motion.enabled;
+    out property <length> offset: root.position;
+    out property <bool> moving: root.offset != root.target;
+    changed target => {
+        // Never leave the newly selected control outside the clip while the
+        // viewport catches up. Offscreen focus is revealed immediately.
+        root.glide = root.motion && Math.abs(root.target - root.previous) <= root.step
+            && root.focus-start >= root.position
+            && root.focus-start + root.focus-size <= root.position + root.viewport;
+        root.position = root.target;
+        root.previous = root.target;
+    }
+    changed scope => { root.snap(); }
+    changed motion => { if (!root.motion) { root.snap(); } }
+    function snap() {
+        root.glide = false;
+        root.position = root.target;
+        root.previous = root.target;
+    }
+    init => { root.snap(); }
+    animate position { duration: root.glide && root.motion ? Motion.focus-ms : 0ms; easing: ease-out-quad; }
+}
+
+// Local neighbor displacement during a Hub move. Overlapping requests snap
+// rather than queue or replay an obsolete swap; the held tile uses FocusCursor.
+export component TileDisplacement inherits Rectangle {
+    in property <int> pulse;
+    in property <length> from-x;
+    in property <length> from-y;
+    in property <bool> allowed: false;
+    property <float> progress: 1;
+    property <bool> start-pending: false;
+    property <bool> glide: false;
+    out property <length> offset-x: root.from-x * (1 - root.progress);
+    out property <length> offset-y: root.from-y * (1 - root.progress);
+    changed pulse => {
+        if (root.allowed && Motion.enabled && !root.start-pending && root.progress == 1) {
+            root.glide = true;
+            root.start-pending = true;
+            root.progress = 0;
+        } else {
+            root.glide = false;
+            root.start-pending = false;
+            root.progress = 1;
+        }
+    }
+    property <bool> motion: Motion.enabled && root.allowed;
+    changed motion => {
+        if (!root.motion) { root.start-pending = false; root.progress = 1; }
+    }
+    animate progress {
+        duration: root.start-pending || !root.motion || !root.glide ? 0ms : Motion.focus-ms;
+        easing: ease-out-quad;
+    }
+    Timer {
+        interval: 1ms;
+        running: root.start-pending;
+        triggered => { root.start-pending = false; root.progress = 1; }
+    }
+}
+
+// The part of one row the selection fill is currently over. Host a copy
+// of the row's content in here, colored as a selected row, and it shows
+// exactly where the fill is and nowhere else. Children position
+// themselves in the row's own coordinate space, as if the clip were not
+// there.
+export component SelectionClip inherits Rectangle {
+    // The row's own band, in the same space as the cursor's fill-top.
+    in property <length> row-top;
+    in property <length> row-height;
+    in property <length> fill-top;
+    in property <length> fill-bottom;
+    // The cursor's current fill color, so an activation flash inverts the
+    // clipped copy along with the bar it sits on.
+    in property <color> fill: Theme.selection-fill;
+
+    in property <length> radius: Sizing.radius-sm;
+
+    out property <length> covered-top: Math.max(0px, root.fill-top - root.row-top);
+    out property <length> covered-bottom: Math.min(root.row-height, root.fill-bottom - root.row-top);
+
+    // Round only the corners that are the fill's own ends. A row the fill
+    // merely runs through keeps square edges, so two segments meeting at a
+    // row boundary read as one bar instead of pinching.
+    property <length> top-r: root.fill-top >= root.row-top ? root.radius : 0px;
+    property <length> bottom-r: root.fill-bottom <= root.row-top + root.row-height ? root.radius : 0px;
+
+    x: 0;
+    y: root.covered-top;
+    height: Math.max(0px, root.covered-bottom - root.covered-top);
+    clip: true;
+    // Opaque on purpose. The resting copy of the row is still painted
+    // underneath, and two runs of the same glyphs compositing over each
+    // other would leave a light fringe on every antialiased edge.
+    background: root.fill;
+    border-top-left-radius: root.top-r;
+    border-top-right-radius: root.top-r;
+    border-bottom-left-radius: root.bottom-r;
+    border-bottom-right-radius: root.bottom-r;
+    Rectangle {
+        y: -parent.y;
+        height: root.row-height;
+        @children
+    }
+}
+
+// The selection fill itself, traveling. Rows that invert on selection
+// already carry the whole cue, so a focus ring over the top is a second
+// mark for one state; what moves instead is the fill.
+//
+// The fill is one rectangle, so its corners stay right. What makes it
+// legible is that the host draws each row's content twice: once in its
+// resting color, and once inverted and clipped to `fill-top`..
+// `fill-bottom` below. The inversion boundary is then the fill's own
+// edge, to the pixel, and a row the fill is only half over is only half
+// inverted. A per-row boolean cannot express that, and `Theme.on-accent`
+// is near-black, so getting it wrong leaves text invisible against the
+// panel for the length of the move.
+//
+// Motion is decided by how far the fill travels, not by how far apart the
+// two rows are in the model. Index adjacency is the wrong question: a
+// group header sits in the row list without being selectable, so two
+// rows that touch on screen are two indices apart, and a settings row
+// that grows to carry a status line is the same move as one that does
+// not. Both used to snap. See docs/style.md, "Selection motion".
+export component SelectionCursor inherits Rectangle {
+    in property <FocusTarget> target;
+    in property <length> radius: Sizing.radius-sm;
+    in property <bool> motion: Motion.enabled;
+
+    // Activation cue: on accept the selected row swaps its two colors for
+    // `press-ms` and swaps back, so the whole row flashes inverted.
+    // Nothing moves -- a text row is not a button. It lives here rather
+    // than on the row because the fill it has to invert is this one
+    // rectangle; a per-row stroke drawn over the fill was the wrong cue
+    // and read as no cue at all.
+    in property <int> activate-pulse: 0;
+    in property <int> release-pulse: 0;
+    in property <bool> screen-settling: false;
+    // The router holds the accepting row down until it dispatches; the
+    // flash stays up for as long as that lasts.
+    in property <bool> press-held: false;
+    // A toggle answers with its knob sliding, so the row it lives on must
+    // not also flash. The gate is here rather than on the row because the
+    // fill is shared: suppressing only the text would leave the bar
+    // inverting under an unchanged label.
+    in property <bool> flash-enabled: true;
+
+    out property <bool> flashing: root.motion && root.target.valid
+        && (root.flash || root.press-held);
+    // The two halves of the inversion, for the host to paint the clipped
+    // copy of the row with. `Theme.on-accent` is near-black, so a row that
+    // reads one and not the other goes invisible for the length of the cue.
+    out property <color> fill: root.flashing ? Theme.on-accent : Theme.selection-fill;
+    out property <color> content: root.flashing ? Theme.selection-fill : Theme.on-accent;
+    out property <color> content-muted: root.flashing ? Theme.text-label : Theme.on-accent-muted;
+    property <bool> flash: false;
+
+    // Past this the move is a jump rather than a step, and sliding it
+    // would read as a smear across the list.
+    property <float> travel-limit: 3.0;
+    // Carbon's rule: scale duration with distance, non-linearly, so a
+    // longer move reads as the same speed rather than the same time.
+    // Floored at the one-row hop and capped so nothing outruns the 100 to
+    // 400ms band the research puts usable motion in.
+    property <float> duration-cap: 2.5;
+
+    property <FocusTarget> previous;
+    property <bool> glide: false;
+    property <float> stretch: 1.0;
+    property <int> epoch: Motion.epoch;
+    property <length> position-y;
+    property <length> position-h;
+
+    // The band the fill currently covers, in the host's own coordinate
+    // space, for rows to intersect their inverted copy against.
+    out property <length> fill-top: root.position-y;
+    out property <length> fill-bottom: root.position-y + root.position-h;
+
+    changed target => {
+        // An invalid target is "no selection", not a selection of zero
+        // height: assigning its geometry would collapse the fill and then
+        // animate it back out when the list returns. The cursor is hidden
+        // meanwhile, and the next real target snaps because `previous` is
+        // no longer valid.
+        if (!root.target.valid) {
+            root.previous = root.target;
+            return;
+        }
+        // Measured against where the fill actually is, so a move that
+        // interrupts another one is judged on what is left to travel.
+        root.stretch = root.step-scale(Math.abs(root.target.y - root.position-y));
+        root.glide = root.motion && root.previous.valid && root.target.valid
+            && root.previous.scope == root.target.scope
+            && root.target.column == root.previous.column
+            && Math.abs(root.target.y - root.position-y)
+                <= root.travel-limit * Math.max(1px, root.target.h);
+        root.previous = root.target;
+        root.position-y = root.target.y;
+        root.position-h = root.target.h;
+    }
+    changed epoch => { root.snap(); }
+    changed motion => { if (!root.motion) { root.snap(); } }
+    changed activate-pulse => {
+        if (root.target.valid && root.motion && root.flash-enabled) { root.flash = true; }
+    }
+    changed release-pulse => { root.flash = false; }
+    changed screen-settling => {
+        if (root.screen-settling) { root.flash = false; }
+    }
+    Timer {
+        interval: Motion.press-ms;
+        running: root.flash;
+        triggered => { root.flash = false; }
+    }
+    function snap() {
+        root.glide = false;
+        root.stretch = 1.0;
+        root.previous = root.target;
+        root.position-y = root.target.y;
+        root.position-h = root.target.h;
+    }
+    pure function step-scale(travel: length) -> float {
+        return Math.min(root.duration-cap,
+            Math.max(1.0, Math.sqrt(travel / Math.max(1px, root.target.h))));
+    }
+    init => { root.snap(); }
+    animate position-y, position-h {
+        duration: root.glide && root.motion ? Motion.focus-ms * root.stretch : 0ms;
+        easing: ease-out-quad;
+    }
+
+    x: root.target.x;
+    y: root.position-y;
+    width: root.target.w;
+    height: root.position-h;
+    visible: root.target.valid;
+    background: root.fill;
+    border-radius: root.radius;
+}
+
+export component FocusCursor inherits Rectangle {
+    in property <FocusTarget> target;
+    in property <length> radius: Sizing.radius-sm;
+    in property <length> stroke: Sizing.focus-ring-width;
+    in property <bool> motion: Motion.enabled;
+    property <FocusTarget> previous;
+    property <bool> glide: false;
+    property <length> position-x: 0px;
+    property <length> position-y: 0px;
+    property <int> epoch: Motion.epoch;
+
+    changed target => {
+        root.glide = root.motion && root.previous.valid && root.target.valid
+            && root.previous.scope == root.target.scope
+            && root.previous.w == root.target.w && root.previous.h == root.target.h
+            && Math.abs(root.target.x - root.position-x) + Math.abs(root.target.y - root.position-y)
+                <= 1.5 * (Math.abs(root.target.x - root.previous.x) + Math.abs(root.target.y - root.previous.y))
+            && Math.abs(root.target.column - root.previous.column)
+                + Math.abs(root.target.row - root.previous.row) == 1;
+        root.position-x = root.target.x;
+        root.position-y = root.target.y;
+        root.previous = root.target;
+    }
+    changed epoch => { root.snap(); }
+    changed motion => { if (!root.motion) { root.snap(); } }
+    function snap() {
+        root.glide = false;
+        root.position-x = root.target.x;
+        root.position-y = root.target.y;
+        root.previous = root.target;
+    }
+    init => { root.snap(); }
+    animate position-x, position-y {
+        duration: root.glide && root.motion ? Motion.focus-ms : 0ms;
+        easing: ease-out-quad;
+    }
+    x: root.position-x;
+    y: root.position-y;
+    width: root.target.w;
+    height: root.target.h;
+    visible: root.target.valid;
+    border-width: root.stroke;
+    border-color: Theme.accent;
+    border-radius: root.radius;
+    @children
+}

@@ -2,11 +2,10 @@
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 //
-// The header clock, ported from `HeaderBar.qml`: the `clock_format` setting
-// picks 12h or 24h outright, and `auto` follows the effective locale (the
-// language setting, else the host locale), the way the Qt build read
-// `Locale.ShortFormat`'s time pattern. Without Qt's CLDR tables the locale
-// rule is a small list of the 12-hour languages the app ships.
+// The header clock: the `clock_format` setting picks 12h or 24h outright,
+// and `auto` follows the effective locale (the language setting, else the
+// host locale). With no CLDR tables to consult, the locale rule is a small
+// list of the 12-hour languages the app ships.
 
 /// Whether the clock shows 12-hour time for `clock_format` (`auto`, `12h`
 /// or `24h`), given the language setting (`auto` or empty defers to the
@@ -44,7 +43,7 @@ pub fn locale_uses_twelve_hour(tag: &str) -> bool {
     }
 }
 
-/// `h:mm AP` or `HH:mm`, matching the Qt patterns.
+/// `12:05 AM` in 12-hour form, `00:05` in 24-hour form.
 pub fn format(hour: u8, minute: u8, twelve_hour: bool) -> String {
     if twelve_hour {
         let (h, suffix) = match hour {

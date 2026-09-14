@@ -16,204 +16,23 @@ concurrency:
 
 permissions:
   contents: read
-  # Consumer jobs (rust-lint, rust-test, desktop-build) pull the lint image
-  # from GHCR; that pull requires read scope even though the publishing
-  # `ensure-lint-image` job overrides to `packages: write` below. Setting
-  # an explicit `permissions:` block strips defaults, so without this
-  # line the consumer jobs would only get `contents: read` and `docker
-  # pull` would fail with "denied" against any private package version.
-  packages: read
 
 env:
-  # CI doesn't reuse incremental metadata across runs — it only bloats the
+  # CI doesn't reuse incremental metadata across runs; it only bloats the
   # cached `target/` and slows the Swatinem post-cache upload.
   CARGO_INCREMENTAL: 0
   # Strip debug info from test binaries to keep `target/` small for caching.
   CARGO_PROFILE_TEST_DEBUG: 0
   CARGO_TERM_COLOR: always
 
+# Every job runs on the bare runner: the Rust toolchain comes from
+# rust-toolchain.toml, Slint's desktop backend builds against the
+# fontconfig, wayland, xkbcommon, and udev dev packages, and the MiSTer
+# build goes through `cross`, which needs the runner's Docker. Tool versions
+# match the pins in `just install-tools`.
 jobs:
-  # Resolve the lint image tag from `scripts/lint/VERSION` and make sure
-  # that tag exists on GHCR before downstream jobs try to spin up
-  # containers from it. PRs that bump `scripts/lint/VERSION` therefore
-  # self-bootstrap: the very
-  # first CI run for the bump publishes the image, then re-runs and
-  # downstream jobs reuse it. The dedicated `lint-image-build.yml`
-  # workflow still publishes multi-arch images on pushes to main; this
-  # job only ever produces linux/amd64 (CI's runner arch).
-  ensure-lint-image:
-    name: Ensure lint image
-    runs-on: ubuntu-latest
-    # Only this job pushes to GHCR — downstream jobs pull via container
-    # credentials, which use the same GITHUB_TOKEN but don't need write.
-    permissions:
-      contents: read
-      packages: write
-    outputs:
-      image: ${{ steps.resolve.outputs.image }}
-      version: ${{ steps.resolve.outputs.version }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - id: resolve
-        env:
-          OWNER: ${{ github.repository_owner }}
-        run: |
-          VERSION=$(tr -d '[:space:]' < scripts/lint/VERSION)
-          OWNER_LC=$(printf '%s' "$OWNER" | tr '[:upper:]' '[:lower:]')
-          IMAGE="ghcr.io/${OWNER_LC}/zaparoo-lint:${VERSION}"
-          {
-            printf 'version=%s\n' "$VERSION"
-            printf 'image=%s\n' "$IMAGE"
-          } >> "$GITHUB_OUTPUT"
-      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - id: check
-        run: |
-          if docker manifest inspect ${{ steps.resolve.outputs.image }} >/dev/null 2>&1; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-            echo "Lint image ${{ steps.resolve.outputs.image }} already published"
-          else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-            echo "Lint image ${{ steps.resolve.outputs.image }} missing — building"
-          fi
-      # Fork PRs cannot push to GHCR (GITHUB_TOKEN is read-only), so a
-      # scripts/lint/VERSION bump from a fork would fail mid-`docker push` with
-      # an opaque "denied: forbidden". Fail fast here with a useful
-      # message instead. Maintainer-branch PRs (head.repo.fork == false)
-      # fall through to the existing build/push steps.
-      - if: steps.check.outputs.exists != 'true' && github.event.pull_request.head.repo.fork == true
-        run: |
-          echo "::error::Lint image ${{ steps.resolve.outputs.image }} is not yet published. Fork PRs cannot push to GHCR — ask a maintainer to land the scripts/lint/VERSION bump from the main repo first."
-          exit 1
-      - if: steps.check.outputs.exists != 'true' && github.event.pull_request.head.repo.fork != true
-        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
-      - if: steps.check.outputs.exists != 'true' && github.event.pull_request.head.repo.fork != true
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
-        with:
-          context: .
-          file: Dockerfile.lint
-          # Single-arch build is intentional. Multi-arch publish (amd64 +
-          # arm64 for Apple Silicon contributors) is the dedicated
-          # `lint-image-build.yml` workflow's job; CI runners are amd64.
-          platforms: linux/amd64
-          push: true
-          tags: ${{ steps.resolve.outputs.image }}
-          cache-from: type=gha,scope=lint
-          cache-to: type=gha,scope=lint,mode=max
-
-  rust-lint:
-    name: Rust lint (fmt + clippy + deny)
-    needs: ensure-lint-image
-    runs-on: ubicloud-standard-8
-    container:
-      image: ${{ needs.ensure-lint-image.outputs.image }}
-      credentials:
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-    defaults:
-      run:
-        working-directory: rust
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2
-        with:
-          workspaces: rust
-          # Lint image version contributes to cache key — different image
-          # versions can ship different rustc / Qt / clang, so reusing
-          # target/ across image versions risks dangling object refs.
-          prefix-key: "v0-rust-${{ needs.ensure-lint-image.outputs.version }}"
-          env-vars: "CARGO CC CFLAGS CXX CMAKE RUST"
-      - name: rustfmt
-        run: cargo fmt --all --check
-      # frontend-slint is linted by the `slint` job below: the lint image lacks
-      # the fontconfig and wayland dev packages its desktop backend builds against.
-      - name: clippy
-        run: cargo clippy --workspace --exclude frontend-slint --all-targets -- -D warnings
-      - name: cargo-deny
-        run: cargo deny check
-
-  rust-test:
-    name: Rust tests (nextest)
-    needs: ensure-lint-image
-    runs-on: ubicloud-standard-8
-    container:
-      image: ${{ needs.ensure-lint-image.outputs.image }}
-      credentials:
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-    defaults:
-      run:
-        working-directory: rust
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2
-        with:
-          workspaces: rust
-          prefix-key: "v0-rust-${{ needs.ensure-lint-image.outputs.version }}"
-          env-vars: "CARGO CC CFLAGS CXX CMAKE RUST"
-      # frontend-slint tests run in the `slint` job (same system-lib reason).
-      - name: nextest
-        run: cargo nextest run --workspace --exclude frontend-slint
-
-  desktop-build:
-    # Folds the old `cpp-lint` job in: clang-tidy needs compile_commands.json
-    # and the autogen/moc outputs that the desktop build already produces, so
-    # running lint as the final step of the same job avoids building twice.
-    name: Desktop build + ctest + lint
-    needs: ensure-lint-image
-    runs-on: ubicloud-standard-8
-    container:
-      image: ${{ needs.ensure-lint-image.outputs.image }}
-      credentials:
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2
-        with:
-          workspaces: rust
-          prefix-key: "v0-desktop-${{ needs.ensure-lint-image.outputs.version }}"
-          env-vars: "CARGO CC CFLAGS CXX CMAKE RUST"
-      # ccache wraps clang/gcc invocations; CMake's compiler-launcher hooks pick it up
-      # via CMAKE_{C,CXX}_COMPILER_LAUNCHER set on the configure command line
-      # below. Lint image version is part of the cache key because Qt
-      # include paths are baked into preprocessed translation units.
-      - name: Set up ccache
-        uses: hendrikmuhs/ccache-action@d62db5f07c26379fc4b4e0916f098a92573c3b03 # v1.2.23
-        with:
-          key: desktop-build-${{ needs.ensure-lint-image.outputs.version }}
-          max-size: 500M
-      - name: Configure
-        run: >
-          cmake --preset desktop-debug
-          -DCMAKE_C_COMPILER_LAUNCHER=ccache
-          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
-      - name: Build
-        run: cmake --build --preset desktop-debug
-      - name: Test
-        run: ctest --preset desktop-debug
-      - name: Lint (clang-format + clang-tidy + qmllint)
-        run: cmake --build build --target lint
-      - name: Check translations are up to date
-        run: bash scripts/check-translations-updated.sh build
-      - name: Upload frontend binary
-        if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: frontend-debug-${{ github.run_id }}
-          path: build/bin/frontend
-          if-no-files-found: warn
-          retention-days: 7
-
-  slint:
-    # The Slint frontend (docs/plans/slint-migration.md). Runs outside the
-    # lint container: Slint's desktop backend needs fontconfig and wayland dev
-    # packages the image does not carry, and the ARM32 static build goes
-    # through `cross`, which needs the runner's Docker.
-    name: Slint frontend (clippy + nextest + ARM32 musl)
+  lint:
+    name: Lint
     runs-on: ubicloud-standard-8
     defaults:
       run:
@@ -225,30 +44,87 @@ jobs:
       - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2
         with:
           workspaces: rust
-          prefix-key: "v0-slint"
+          prefix-key: "v1-lint"
       - uses: taiki-e/install-action@7b8d4719ee4aaa279bdf55df38dacb9ebfe12a6c # v2.87.6
         with:
-          tool: nextest,cross
+          tool: cargo-deny@0.19.4
       - uses: taiki-e/cache-cargo-install-action@9ee83daaa7b96a6fab930949ecf1122bba04a389 # v3.0.8
         with:
           tool: slint-tr-extractor@1.17.1
-      - name: Translation template is fresh
-        run: bash ../scripts/check-slint-translations.sh
-      - name: clippy
-        run: cargo clippy -p frontend-slint -p zaparoo-app --all-targets -- -D warnings
-      - name: nextest
-        run: cargo nextest run -p frontend-slint -p zaparoo-app
+      - uses: taiki-e/cache-cargo-install-action@9ee83daaa7b96a6fab930949ecf1122bba04a389 # v3.0.8
+        with:
+          tool: cargo-about@0.9.2
+          features: cli
+      - name: rustfmt
+        run: cargo fmt --all --check
+      - name: clippy (desktop)
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      # The MiSTer feature set compiles different modules (the presenters,
+      # the dual-head mirror).
+      - name: clippy (MiSTer)
+        run: cargo clippy -p frontend --no-default-features --features mister --all-targets -- -D warnings
+      # The snapshot bin sits behind `required-features`, so `--all-targets`
+      # alone never compiles it.
+      - name: clippy (snapshot)
+        run: cargo clippy -p frontend --features snapshot --all-targets -- -D warnings
+      - name: cargo-deny
+        run: cargo deny check
       - name: Toolkit-free guard
         run: bash ../scripts/check-toolkit-free.sh
+      - name: Translation template is fresh
+        run: bash ../scripts/check-translations.sh
+      - name: Third-party notices are fresh
+        run: bash ../scripts/check-notices.sh
+      - name: Embedded system logos match their sources
+        run: python3 ../scripts/prepare-system-logos.py --check
+
+  test:
+    name: Tests
+    runs-on: ubicloud-standard-8
+    defaults:
+      run:
+        working-directory: rust
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Desktop libraries and host linker
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libfontconfig1-dev libwayland-dev libxkbcommon-dev libudev-dev mold
+      - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2
+        with:
+          workspaces: rust
+          prefix-key: "v1-test"
+      - uses: taiki-e/install-action@7b8d4719ee4aaa279bdf55df38dacb9ebfe12a6c # v2.87.6
+        with:
+          tool: nextest
+      - name: nextest (workspace)
+        run: cargo nextest run --workspace
+      # Presenter and dual-head tests only build under the MiSTer feature set.
+      - name: nextest (MiSTer)
+        run: cargo nextest run -p frontend --no-default-features --features mister
+
+  arm32:
+    name: MiSTer ARM32 build
+    runs-on: ubicloud-standard-8
+    defaults:
+      run:
+        working-directory: rust
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2
+        with:
+          workspaces: rust
+          prefix-key: "v1-arm32"
+      - uses: taiki-e/install-action@7b8d4719ee4aaa279bdf55df38dacb9ebfe12a6c # v2.87.6
+        with:
+          tool: cross@0.2.5
       - name: ARM32 static build (cross, Cortex-A9)
         env:
           RUSTFLAGS: -C target-cpu=cortex-a9
           # Mounted into the cross container; see rust/Cross.toml.
           ZAPAROO_RESOURCES_DIR: ${{ github.workspace }}/resources
-        run: cross build -p frontend-slint --release --no-default-features --features mister --target armv7-unknown-linux-musleabihf
+        run: cross build -p frontend --release --no-default-features --features mister --target armv7-unknown-linux-musleabihf
       - name: Upload MiSTer binary
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: frontend-slint-armv7-musl-${{ github.run_id }}
-          path: rust/target/armv7-unknown-linux-musleabihf/release/frontend-slint
+          name: frontend-armv7-musl-${{ github.run_id }}
+          path: rust/target/armv7-unknown-linux-musleabihf/release/frontend
           retention-days: 7

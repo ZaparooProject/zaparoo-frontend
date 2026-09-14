@@ -2,13 +2,13 @@
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 //
-// Parity gate for `zaparoo_app::sizing` against the QML it was ported from.
+// Parity gate for `zaparoo_app::sizing` against its golden fixture.
 //
-// `tests/fixtures/sizing_golden.txt` was dumped from `src/ui/theme/Sizing.qml`
-// while that file still owned every formula, so this test compares the port
-// against the shipped behaviour rather than against itself. 192 cases: 12
-// scene sizes crossed with CRT path, bitmap type, interface profile and
-// rotation. If a value here moves, the UI moved with it.
+// `tests/fixtures/sizing_golden.txt` was captured from the retired Qt build
+// while that build still owned every formula, so this test compares the
+// current rules against shipped behavior rather than against themselves.
+// 192 cases: 12 scene sizes crossed with CRT path, bitmap type, interface
+// profile and rotation. If a value here moves, the UI moved with it.
 //
 // The fixture is a flat `key=value` format on purpose. Parsing it with
 // `split_whitespace` keeps `zaparoo-app` at zero dependencies, which is what
@@ -29,7 +29,7 @@ use zaparoo_app::sizing::{
     snap_logo_width, systems_grid_shape, GridKind, Inputs, InterfaceProfile,
 };
 
-const GOLDEN: &str = include_str!("../../../tests/fixtures/sizing_golden.txt");
+const GOLDEN: &str = include_str!("fixtures/sizing_golden.txt");
 
 /// Everything an extra Hub column moves: the shape itself, the space each
 /// cell gets on both axes (a rotated page spends the extra column on the
@@ -106,19 +106,20 @@ fn rows(marker: &str) -> impl Iterator<Item = BTreeMap<&'static str, &'static st
 }
 
 #[test]
-fn every_derived_value_matches_the_qml() {
+fn every_derived_value_matches_the_fixture() {
     let mut checked = 0usize;
     for row in rows("GOLDEN") {
         let inputs = inputs_of(&row);
         let d = derive(&inputs);
         let at = label(&row);
 
-        // The Handheld profile above the compact tiers is one of two
-        // places this port deliberately leaves the QML behind: six Hub
-        // columns where `Sizing.qml` has four. `handheld_hub_is_wider_than_the_qml`
-        // owns these keys instead, so the divergence is pinned somewhere
-        // rather than silently tolerated here. The other is the square
-        // container inset, in `layout_golden.rs`.
+        // The Handheld profile above the compact tiers is one of two places
+        // the current rules deliberately leave the golden fixture behind:
+        // six Hub columns where the fixture has four. The test
+        // `handheld_hub_is_wider_than_the_fixture` owns these keys instead, so
+        // the divergence is pinned somewhere rather than silently tolerated
+        // here. The other is the square container inset, in
+        // `layout_golden.rs`.
         let diverges = row["profile"] == "handheld"
             && !matches!(
                 d.tier,
@@ -192,7 +193,7 @@ fn every_derived_value_matches_the_qml() {
 }
 
 #[test]
-fn grid_shape_functions_match_the_qml() {
+fn grid_shape_functions_match_the_fixture() {
     for row in rows("GOLDEN") {
         let inputs = inputs_of(&row);
         let at = label(&row);
@@ -234,7 +235,7 @@ fn grid_shape_functions_match_the_qml() {
 }
 
 #[test]
-fn cover_tier_functions_match_the_qml() {
+fn cover_tier_functions_match_the_fixture() {
     for row in rows("GOLDEN") {
         let inputs = inputs_of(&row);
         let at = label(&row);
@@ -264,7 +265,7 @@ fn cover_tier_functions_match_the_qml() {
 }
 
 #[test]
-fn font_size_matches_the_qml() {
+fn font_size_matches_the_fixture() {
     for row in rows("GOLDEN") {
         let inputs = inputs_of(&row);
         let at = label(&row);
@@ -284,7 +285,7 @@ fn font_size_matches_the_qml() {
 }
 
 #[test]
-fn argument_only_ladders_match_the_qml() {
+fn argument_only_ladders_match_the_fixture() {
     let row = rows("GOLDENPURE").next().expect("GOLDENPURE line missing");
     let mut seen = 0usize;
     for (key, expected) in &row {
@@ -303,10 +304,9 @@ fn argument_only_ladders_match_the_qml() {
     assert_eq!(seen, 48, "ladder probe count changed");
 }
 
-// The two argument pairs the surviving QML tests still call directly, so a
-// change here shows up in both suites rather than only one.
+// The two argument pairs the fixture records probe values for.
 #[test]
-fn probe_pairs_match_the_qml() {
+fn probe_pairs_match_the_fixture() {
     let row = rows("GOLDENPROBE")
         .next()
         .expect("GOLDENPROBE line missing");
@@ -334,13 +334,13 @@ fn probe_pairs_match_the_qml() {
     assert_eq!(shape.rows, int(&row, "half1080_960x365_r"));
 }
 
-/// The documented divergence, pinned. `Sizing.qml` puts four Hub columns
-/// on a high-resolution Handheld page; this port puts six, because the
-/// tile is square and bounded by the row height, so a fourth of the width
-/// sat empty without buying any icon size. The QML keeps four so the small
-/// handheld panel it was tuned for is untouched.
+/// The documented divergence, pinned. The golden fixture puts four Hub
+/// columns on a high-resolution Handheld page; the current rules put six,
+/// because the tile is square and bounded by the row height, so a fourth of
+/// the width sat empty without buying any icon size. The fixture keeps its
+/// four.
 #[test]
-fn handheld_hub_is_wider_than_the_qml() {
+fn handheld_hub_is_wider_than_the_fixture() {
     let mut checked = 0usize;
     for row in rows("GOLDEN") {
         if row["profile"] != "handheld" {

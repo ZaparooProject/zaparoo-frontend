@@ -15,9 +15,6 @@ const OS_RELEASE: &str = "/etc/os-release";
 /// Force a runtime, for developing one target's behavior on another's
 /// hardware. Mirrors `ZAPAROO_STATE_FILE`; an unrecognized value is
 /// ignored so a stale shell export cannot silently pick the wrong one.
-/// Deliberately not `ZAPAROO_RUNTIME`: `cmake/ZaparooRust.cmake` already
-/// sets that at build time to pick the `zaparoo_runtime` cfg, and the two
-/// answer different questions.
 const RUNTIME_OVERRIDE: &str = "ZAPAROO_RUNTIME_OVERRIDE";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

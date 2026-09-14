@@ -2,19 +2,9 @@
 # Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 # SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 
-# Desktop: use system C compiler as the linker driver. Rust's default
-# (rust-lld / LLVM lld) rejects non-PIC relocations in the Zaparoo static
-# libs (compiled without -fPIC). GCC/BFD ld accepts this combination.
+# Desktop: link through the system C compiler with mold. mold is a host
+# convenience for faster incremental links; the portable x86_64 build in
+# `cross` overrides RUSTFLAGS because its image lacks it (see the justfile).
 [target.x86_64-unknown-linux-gnu]
 linker = "cc"
 rustflags = ["-C", "link-arg=-fuse-ld=mold"]
-
-# ARM32 / MiSTer: use the ARM cross-compiler as the linker driver.
-# The linker binary is the MiSTer ARM GCC toolchain; cargo sets this when
-# CMAKE_TOOLCHAIN_FILE points to arm32-toolchain.cmake.
-[target.armv7-unknown-linux-gnueabihf]
-linker = "arm-none-linux-gnueabihf-gcc"
-
-# ARM64: used inside the Docker toolchain image.
-[target.aarch64-unknown-linux-gnu]
-linker = "aarch64-linux-gnu-gcc"

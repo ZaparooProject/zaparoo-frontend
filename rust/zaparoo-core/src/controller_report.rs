@@ -11,8 +11,8 @@
 // keyboard when the active input source is the keyboard) and which face
 // glyph stands for accept vs cancel.
 //
-// IO lives here (in core); the QML side (`models::controller_report`) is a
-// late subscriber, so state is published over a `watch` channel that always
+// IO lives here (in core); the frontend's help-bar binding is a late
+// subscriber, so state is published over a `watch` channel that always
 // hands out the current value (see AGENTS.md "watch vs broadcast"). The file
 // is rewritten on *every* button press on MiSTer, so we only publish when the
 // projected glyphs actually change -- the help bar must not churn per press.
@@ -34,7 +34,7 @@ use tracing::debug;
 
 /// Icon style resolved from `Main_MiSTer`'s `glyph_profile` field, mapped
 /// onto this frontend's existing neutral `style_a`/`style_b`/`style_c`/
-/// `style_d` ids (see `Browse.Settings.current_button_layout`) rather than
+/// `style_d` ids (the `button_layout` setting's vocabulary) rather than
 /// the connected controller's brand name -- deliberate, see AGENTS.md's
 /// button-layout note. Does not include the keyboard style (`style_e`) --
 /// that's driven by a separate axis (`active_source`), not `glyph_profile`;
@@ -284,15 +284,15 @@ fn poll_once(path: &Path, last_mtime: &mut Option<SystemTime>, last_read_ok: &mu
 /// changes. Seeds the current value synchronously first, so a cold start
 /// that lands after the first report still shows the right glyphs.
 ///
-/// The input report is a `MiSTer`-only integration: only `Main_MiSTer` writes
-/// `/tmp/zaparoo_launcher_input.json`. Off `MiSTer` the watcher is skipped
-/// entirely so desktop builds never poll a file that will never appear --
-/// `Browse.ControllerReport` then stays at its no-report fallback. The
-/// `ZAPAROO_INPUT_REPORT_FILE` override forces the watcher on regardless, so
-/// the feature can be exercised on desktop against a fixture file.
+/// The input report is a `MiSTer`-only integration: only `Main_MiSTer`
+/// writes `/tmp/zaparoo_launcher_input.json`. Off `MiSTer` the watcher is
+/// skipped entirely so desktop builds never poll a file that will never
+/// appear; the help bar then stays at its no-report fallback. The
+/// `ZAPAROO_INPUT_REPORT_FILE` override forces the watcher on regardless,
+/// so the feature can be exercised on desktop against a fixture file.
 /// Returns whether the watcher actually started. Callers log against this
 /// rather than assuming it did: a skipped watcher and a running one that has
-/// simply never seen a report both leave `Browse.ControllerReport` at the same
+/// simply never seen a report both leave the published report at the same
 /// neutral fallback, which is the ambiguity that made "Automatic isn't picking
 /// up my controller" reports untriageable from a log. Both paths now also emit
 /// their own `debug!`, so a debug-logging run distinguishes them without the

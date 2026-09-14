@@ -9,13 +9,18 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
+    # Slint is pinned exactly (`=1.17.1`) and bumped by hand together with
+    # slint-tr-extractor, the deny.toml exceptions, and the notices file
+    # (see AGENTS.md, "Build caching couplings").
+    ignore:
+      - dependency-name: "slint"
+      - dependency-name: "slint-build"
+      - dependency-name: "i-slint-*"
     groups:
       tokio:
         patterns: ["tokio*"]
       tracing:
         patterns: ["tracing*"]
-      cxx-qt:
-        patterns: ["cxx*"]
       serde:
         patterns: ["serde*"]
 
@@ -24,8 +29,3 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
-
-  - package-ecosystem: "docker"
-    directory: "/"
-    schedule:
-      interval: "weekly"

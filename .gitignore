@@ -1,33 +1,5 @@
-# Build directories (anchored to repo root — an unanchored `build-*/`
-# also swallows source dirs like rust/build-info/)
-/build/
-/build2/
-/build-*/
-cmake-build-*/
-artifacts/
-
-# Qt generated files
-*.moc
-moc_*.cpp
-qrc_*.cpp
-ui_*.h
-*.qmlc
-*.jsc
-
-# Compiled files
-*.o
-*.obj
-*.a
-*.lib
-*.so
-*.dylib
-*.dll
-*.exe
-
 # IDE
 .idea/
-*.pro.user
-*.qbs.user
 .vscode/
 *.swp
 *~
@@ -35,33 +7,14 @@ ui_*.h
 # macOS
 .DS_Store
 
-# CMake
-CMakeCache.txt
-CMakeFiles/
-cmake_install.cmake
-Makefile
-CMakeUserPresets.json
-# Keep compile_commands.json — used by clangd
-# compile_commands.json
-
-# Deployment output
-deploy/
-
 # Local MiSTer drive mirror used for ad-hoc runs
 .local_drv/
 
-# ARM32 cross-build output
+# Snapshots, release bundles, and dev-run logs
 output/
 
-# pre-commit cache
+# Editor and LSP caches
 .cache/
-
-# Persistent caches mounted into the lint container (see justfile _lint)
-.docker-cache/
-
-# Qt Creator local user settings
-*.creator.user
-*.user
 
 # Local environment — secrets, never commit
 .env
@@ -75,9 +28,6 @@ docs/plans/
 
 # Cargo build cache
 rust/target/
-
-# cxx-qt 0.8 generates this with absolute paths for qmlls/qmllint
-rust/frontend/.qmlls.ini
 
 # Dev-run log that lands in the repo root (real log goes to ~/.local/share/zaparoo/logs/)
 /frontend.log

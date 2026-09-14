@@ -1,13 +1,13 @@
 # Slint state types
 
-Closed UI discriminants belong in `rust/frontend-slint/ui/state_types.slint`.
+Closed UI discriminants belong in `rust/frontend/ui/state_types.slint`.
 `app.slint` re-exports host-facing enums so the generated setters, getters, and
 callbacks take the same types as Rust routing code. Do not add string or integer
 conversions merely to keep old routing comparisons working.
 
 ## Audit coverage
 
-The audit covered every `.slint` file in `rust/frontend-slint/ui`, Rust producers
+The audit covered every `.slint` file in `rust/frontend/ui`, Rust producers
 and consumers, the snapshot binary, and the MiSTer dual-head mirror/tests.
 
 | Area | Typed state |
@@ -24,7 +24,7 @@ and consumers, the snapshot binary, and the MiSTer dual-head mirror/tests.
 
 UI-owned browse and first-run enums are reused directly by Rust. Toolkit-free
 rules (`zaparoo-app`) retain their own enums; exhaustive `From` matches in
-`rust/frontend-slint/src/state_types.rs` project them into Slint types without
+`rust/frontend/src/state_types.rs` project them into Slint types without
 string round trips.
 
 ## Text and numeric boundaries
@@ -62,12 +62,12 @@ Defaults are explicit rather than depending on enum declaration order.
 
 ## Verification
 
-- `just lint-slint` and `just test-slint` cover desktop and MiSTer builds, routing,
+- `just lint` and `just test` cover desktop and MiSTer builds, routing,
   settings categories, input ownership, software-rendered motion, and mirrors.
 - Boundary tests cover legacy token round trips, unknown-token rejection,
   settings/error vocabulary coverage, defaults, display fallback without disk
   rewrites, and typed modal state copied to the CRT component.
-- Optional snapshot binary: `just slint-snapshots` exercises fixture adapters;
+- Optional snapshot binary: `just snapshots` exercises fixture adapters;
   it is not included by default-feature compilation.
-- Run `just slint-tr-extract` after moving translated strings: the generated POT
+- Run `just tr-extract` after moving translated strings: the generated POT
   tracks source locations even when message text is unchanged.

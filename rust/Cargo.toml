@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 
 [workspace]
-members = ["build-info", "frontend", "frontend-slint", "mock-core", "zaparoo-app", "zaparoo-core"]
+members = ["build-info", "frontend", "mock-core", "zaparoo-app", "zaparoo-core"]
 resolver = "2"
 
 [workspace.package]
@@ -14,10 +14,6 @@ license      = "LicenseRef-PolyForm-Noncommercial-1.0.0"
 authors      = ["Wizzo Pty Ltd and the Zaparoo Project contributors"]
 
 [workspace.dependencies]
-cxx             = "1"
-cxx-qt          = "0.9"
-cxx-qt-lib      = "0.9"
-cxx-qt-build    = "0.9"
 serde           = { version = "1", features = ["derive"] }
 serde_json      = "1"
 toml            = "1.1"
@@ -41,8 +37,6 @@ semver          = "1"
 unsafe_op_in_unsafe_fn        = "deny"
 missing_debug_implementations = "warn"
 unused_qualifications         = "warn"
-# `unreachable_pub` intentionally omitted — cxx-qt bridge macros emit dozens
-# of `pub` items that cannot be demoted without breaking the macro contract.
 
 [workspace.lints.rustdoc]
 broken_intra_doc_links = "deny"
@@ -61,12 +55,6 @@ cast_possible_wrap       = "allow"
 cast_sign_loss           = "allow"
 cast_precision_loss      = "allow"
 similar_names            = "allow"
-# cxx-qt bridge macros and trait-shaped impls require `&self`/`&mut self`
-# even when the method body doesn't touch it.
-unused_self              = "allow"
-# cxx-qt macro expansion returns `Box<T>` for the generated constructors;
-# unavoidable at the bridge boundary.
-unnecessary_box_returns  = "allow"
 
 # Correctness lints from `restriction` — target AI-generated failure modes.
 unwrap_used                     = "deny"
@@ -93,10 +81,9 @@ strip         = true
 debug = "line-tables-only"
 
 [profile.dev.build-override]
-# Build scripts and proc macros run *during* compilation; cxx-qt 0.8 emits
-# a lot of generated code through proc macros (Q_PROPERTY, qinvokable,
-# bridge modules). Compiling those macros at -O3 makes them dramatically
-# faster to execute, which speeds up every incremental build that touches
-# a bridge module. The first cold compile of build scripts takes a few
-# extra seconds; everything after that is faster.
+# Build scripts and proc macros run *during* compilation. `slint-build`
+# compiles every .slint file from `frontend/build.rs`; at -O3 that
+# compiler runs several times faster, which speeds up every incremental
+# build that touches a .slint file. The first cold compile of build
+# scripts takes a few extra seconds; everything after that is faster.
 opt-level = 3

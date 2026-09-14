@@ -15,6 +15,7 @@ publish      = false
 workspace = true
 
 # Deliberately empty. `zaparoo-app` is the toolkit-agnostic application layer:
-# it must never gain a `cxx*` or `slint` dependency, and scripts/check-toolkit-free.sh
-# fails the lint gate if it does. See docs/qt-to-rust-extraction.md.
+# it must never gain a `slint` dependency, nor any other UI toolkit,
+# `cxx`-style bindings included. `scripts/check-toolkit-free.sh` fails the
+# lint gate if it does. See docs/architecture.md.
 [dependencies]

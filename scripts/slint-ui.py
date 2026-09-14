@@ -88,7 +88,7 @@ def run(port, visible, mock):
     print(f"MCP: http://127.0.0.1:{port}/mcp; {mode}; {core}; state: {root}", flush=True)
     # Stay in the foreground: Ctrl+C reaches the existing dev script and
     # its mock cleanup. No PID files or orphaned background supervisors.
-    return subprocess.call(["just", "slint-run-dev"], cwd=ROOT, env=env)
+    return subprocess.call(["just", "run-dev"], cwd=ROOT, env=env)
 
 
 def main():

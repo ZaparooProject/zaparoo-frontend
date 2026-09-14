@@ -8,15 +8,14 @@ Install the pieces you do not already have.
 
 **Fedora / RHEL:**
 ```bash
-sudo dnf install qt6-qtdeclarative-devel qt6-qtquickcontrols2-devel \
-    qt6-qttools-devel cmake ninja-build mold clang-tools-extra just
+sudo dnf install fontconfig-devel wayland-devel libxkbcommon-devel \
+    systemd-devel mold just
 ```
 
 **Ubuntu / Debian:**
 ```bash
-sudo apt install qt6-declarative-dev qt6-quick-controls2-dev \
-    qt6-tools-dev qt6-l10n-tools cmake ninja-build mold \
-    clang-tidy clang-format just
+sudo apt install libfontconfig1-dev libwayland-dev libxkbcommon-dev \
+    libudev-dev mold just
 ```
 
 (If `just` isn't packaged for your distro, install it with
@@ -28,15 +27,15 @@ sudo apt install qt6-declarative-dev qt6-quick-controls2-dev \
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
 
-After cloning the frontend repo (step 2), run `just install-tools` to install
-the optional cargo extensions (`cargo-nextest`, `cargo-deny`) used by the
-lint and test recipes.
+The toolchain version is pinned in `rust-toolchain.toml`; rustup installs it
+the first time you build. After cloning the frontend repo (step 2), run
+`just install-tools` to install the cargo extensions the lint, test and
+MiSTer recipes use (`cargo-nextest`, `cargo-deny`, `cross`,
+`slint-tr-extractor`, `cargo-about`).
 
 ### macOS / Windows
 
-macOS is best-effort and not covered in CI. Qt package names change often
-enough that Linux is the supported path unless you are prepared to debug local
-setup. Windows is not tested; use WSL2.
+macOS is best-effort and not covered in CI. Windows is not tested; use WSL2.
 
 ## 2. Clone and build
 
@@ -46,36 +45,32 @@ cd zaparoo-frontend
 just build
 ```
 
-The first build pulls and compiles the Rust and Qt dependencies. Incremental
-builds are much faster after that.
+The first build compiles Slint and the rest of the dependency tree.
+Incremental builds are much faster after that.
 
-## 3. Start the mock Core
-
-In one terminal:
+## 3. Run against the mock Core
 
 ```bash
-just mock-core
+just run-dev
 ```
 
-You should see:
+`run-dev` starts the mock Core when nothing is serving
+`ws://127.0.0.1:27497/api/v0.1`, points the frontend at it through
+`ZAPAROO_CORE_ENDPOINT`, and stops the mock again when the frontend exits,
+logging to `output/mock-core-dev.log`. A mock (or a real Core) already on the
+port is used as-is and left running. Arguments after `run-dev` go to the
+frontend, for example `just run-dev --fullscreen`.
+
+To run the mock on its own, use `just mock-core`. You should see:
 
 ```text
 mock-core listening on ws://127.0.0.1:27497/api/v0.1
 ```
 
-The mock serves three categories (Consoles, Handhelds, Arcade), ten systems,
-and fifty games. That is enough data to exercise every frontend screen.
-
 `27497` is offset from the real Core's `7497` so a real Core, or another Core
 test instance, can run on the same machine without colliding with the mock. The
-frontend still defaults to `7497` in production. `just run-dev` points it at
-the mock through `ZAPAROO_CORE_ENDPOINT`; `just run` reads
+frontend still defaults to `7497` in production: `just run` reads
 `~/.config/zaparoo/frontend.toml` as usual.
-
-The Slint frontend's `just slint-run-dev` needs no second terminal: it starts
-the mock itself when nothing is serving `27497` and stops it again when the
-frontend exits, logging to `output/mock-core-dev.log`. A mock (or a real Core)
-already on the port is used as-is and left running.
 
 ### Pick a different port
 
@@ -88,34 +83,17 @@ ZAPAROO_CORE_ENDPOINT=ws://127.0.0.1:9000/api/v0.1 just run-dev
 
 `ZAPAROO_CORE_ENDPOINT` always wins over `~/.config/zaparoo/frontend.toml`.
 
-## 4. Run the frontend
+### CRT preview
 
-In a second terminal:
-
-```bash
-just run-dev
-```
-
-`run-dev` points at the mock through `ZAPAROO_CORE_ENDPOINT`. `just run` is
-the production-style runner: it reads `~/.config/zaparoo/frontend.toml`
-instead.
-
-For a desktop CRT preview, use:
-
-```bash
-ZAPAROO_CRT_PREVIEW_RESOLUTION=320x240 just run-dev
-```
-
-Setting `ZAPAROO_CRT_PREVIEW_RESOLUTION` also enables CRT preview mode. It
-accepts direct `WxH` values and aliases from Update All's CRT selector:
-`ntsc-720`, `ntsc-640`, `ntsc-512`, `ntsc-352`, `ntsc-336`, `ntsc-320a`,
-`ntsc-320b`, `ntsc-304`, `pal-640`, `pal-512`, `pal-384`, `pal-352`, and
-`pal-320`. `ZAPAROO_CRT_PREVIEW_SCALE` controls the integer desktop scale.
+`just run-dev --crt` lays the UI out for native CRT output at the resolution of
+the configured CRT video standard (352x240 for NTSC, 352x288 for PAL, 720x480
+for 480i). `just snapshots` renders every screen at the CRT tier offline as
+well.
 
 ### Window size and fullscreen
 
-The Slint frontend opens a 1280x720 window unless `frontend.toml` asks for
-something else:
+The frontend opens a 1280x720 window unless `frontend.toml` asks for something
+else:
 
 ```toml
 [video]
@@ -146,7 +124,7 @@ launched. It claims again when a game exits, so a launch returns to the
 frontend rather than to the Steam library. Both are automatic and inert
 outside a gamescope session; `xprop` must be on `PATH`.
 
-Build the binary with `just slint-x86-portable`. A build from an ordinary
+Build the binary with `just x86-portable`. A build from an ordinary
 `cargo build --release` links against the build host's glibc and will not
 start on a Deck.
 
@@ -188,59 +166,38 @@ confirm/cancel and options/view swaps there apply to the pad only, never to
 Enter and Escape. `[input.keyboard]` in `frontend.toml` remaps keyboard keys
 only; pad buttons are not remappable.
 
-## 5. Check the result
+## 4. Check the result
 
-- The frontend window opens.
-- A static **categories row** of tiles fills with "Favorites",
-  "Arcade", "Consoles", "Handhelds". Left/Right cycles between them.
-  ("Favorites" is a placeholder until a real Favorites endpoint
-  lands in Core; selecting it shows an empty systems grid.)
-- A second action row contains "Favorites", "Recently Played", optional
-  "Update", and "Settings". "Update" opens the update screen and starts
-  the Rust-driven progress bar when the update feature is enabled.
-- Pressing Enter drops you into the **paged systems grid** for that
-  category. Use Left/Right to move within a page; the grid wraps to
-  the next page at the row edge.
-- Pressing Enter on a system opens the **paged games grid** (five
-  entries per system).
-- Pressing Enter on a game sends a `run` RPC to the mock. The mock logs the
-  selected game's ZapScript, but the frontend keeps running because nothing is
+- The window opens on the Hub.
+- Enter on a category opens the paged **systems grid**; PageUp and PageDown
+  flip pages.
+- Enter on a system opens the **games grid**. Enter on a game sends a `run`
+  RPC to the mock, which logs the selected game's ZapScript; nothing is
   actually launched.
-- Pressing Tab on a system or game sends a `readers.write` RPC with the
-  selected entry's ZapScript. The frontend shows a card-write modal while the
-  request is pending; the mock logs the write request.
-- Escape backs out; Escape on the top level opens a quit-confirm modal —
-  confirm to exit.
+- Tab opens the context menu on the focused tile; Space opens the View menu.
+- Escape backs out. On the Hub, Escape does nothing: Quit lives in the View
+  menu.
 
-The FPS counter in the corner should stay green (≥ 55). Red means the UI fell
-below 30 FPS and needs investigation.
-
-## 6. Run tests and lints
+## 5. Run tests and lints
 
 Before you open a pull request:
 
 ```bash
-just lint    # clang-format, clang-tidy, qmllint, rustfmt, clippy, cargo-deny
-just test    # ctest + cargo nextest
+just lint    # rustfmt, clippy (all feature sets), cargo-deny,
+             # toolkit-free guard, translations, notices, logo parity
+just test    # cargo nextest, desktop and MiSTer feature sets
 ```
 
 Zero warnings is the bar. If lint complains about formatting or a fixable
-clippy issue, `just fix` auto-applies everything CI would accept.
-
-If you would rather not install the lint tools on the host (Qt, clang-format,
-qmlformat, cargo-deny, etc.), use the Docker variants — `just fmt-docker`,
-`just lint-docker`, `just fix-docker`. See [`docs/building.md`](building.md)
-for the full list.
+clippy issue, `just fix` applies clippy's fixes and formats.
 
 ## Next steps
 
-- [`docs/building.md`](building.md): sanitizer builds, ARM32
-  cross-build for MiSTer, deployment.
-- [`docs/architecture.md`](architecture.md): module graph, Rust↔QML
-  data flow, Runtime vs Platform distinction.
-- [`docs/qml-gotchas.md`](qml-gotchas.md): QML pitfalls that `qmllint`
-  only catches after the fact.
-- [`docs/cxx-qt-bridge.md`](cxx-qt-bridge.md): cxx-qt 0.8 bridge
-  constraints when editing Rust QML models.
+- [`docs/building.md`](building.md): the MiSTer ARM32 build, deployment, and
+  cutting a release.
+- [`docs/architecture.md`](architecture.md): module graph, Rust to Slint data
+  flow, Runtime vs Platform distinction.
+- [`docs/slint-gotchas.md`](slint-gotchas.md): software-renderer costs and
+  motion rules.
 - [`CONTRIBUTING.md`](../CONTRIBUTING.md): CLA flow, PR expectations,
   branch-protection rules.

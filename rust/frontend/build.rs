@@ -2,113 +2,78 @@
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 
-use cxx_qt_build::{CxxQtBuilder, QmlModule};
+#![allow(
+    clippy::panic,
+    clippy::expect_used,
+    reason = "build scripts communicate failure by panicking; there is no richer channel to cargo"
+)]
 
-const MODEL_FILES: &[&str] = &[
-    "src/models/action_error.rs",
-    "src/models/alternate_versions.rs",
-    "src/models/categories.rs",
-    "src/models/controller_report.rs",
-    "src/models/crt_video.rs",
-    "src/models/favorite_systems.rs",
-    "src/models/favorite_systems_state.rs",
-    "src/models/systems.rs",
-    "src/models/game_info.rs",
-    "src/models/game_launcher_override.rs",
-    "src/models/games.rs",
-    "src/models/favorites.rs",
-    "src/models/browse.rs",
-    "src/models/app_state.rs",
-    "src/models/build_info.rs",
-    "src/models/app_status.rs",
-    "src/models/hub_layout.rs",
-    "src/models/hub_state.rs",
-    "src/models/image_overrides.rs",
-    "src/models/systems_state.rs",
-    "src/models/games_state.rs",
-    "src/models/favorites_state.rs",
-    "src/models/input.rs",
-    "src/models/log_upload.rs",
-    "src/models/media_status.rs",
-    "src/models/notice.rs",
-    "src/models/platform.rs",
-    "src/models/qr_code.rs",
-    "src/models/recents.rs",
-    "src/models/recents_state.rs",
-    "src/models/runtime.rs",
-    "src/models/settings.rs",
-    "src/models/status_events.rs",
-    "src/models/system_launchers.rs",
-    "src/models/system_status.rs",
-];
+use std::fmt::Write as _;
 
 fn main() {
-    println!("cargo:rerun-if-env-changed=ZAPAROO_CARGO_CHEF");
-    if std::env::var_os("ZAPAROO_CARGO_CHEF").is_some() {
-        // cargo-chef builds a synthetic crate graph to cache dependencies.
-        // That graph does not contain the real CXX-Qt bridge source files,
-        // so skip bridge generation for the dependency layer only.
-        return;
-    }
+    // Every `assets/systems/<id>.png` and `assets/systems-color/<id>.png`
+    // becomes an `include_bytes!` entry, so the binary carries the logo art
+    // itself and ships as one file. See `src/system_logos.rs`.
+    embed_logo_table("systems", "system_logos_table.rs", "EMBEDDED_LOGOS");
+    embed_logo_table(
+        "systems-color",
+        "system_color_logos_table.rs",
+        "EMBEDDED_COLOR_LOGOS",
+    );
+    // One configuration for every target: fonts imported by the .slint
+    // files are embedded as files and registered with the runtime font
+    // stack on startup (see `src/fonts.rs`), on MiSTer as on the desktop.
+    // The MiSTer build used to pre-render glyphs here at a fixed size
+    // ladder (`EmbedForSoftwareRenderer`); that path has no text shaping.
+    // Translations are bundled from translations/<lang>/LC_MESSAGES/
+    // frontend.po (the file name is the crate name, which Slint uses as
+    // the gettext domain) and selected at runtime by `apply_language` in
+    // main.rs. No default context: one msgid is one entry, so identical
+    // source strings share one translation across components.
+    let config = slint_build::CompilerConfiguration::new()
+        .with_bundled_translations("translations")
+        .with_default_translation_context(slint_build::DefaultTranslationContext::None);
+    slint_build::compile_with_config("ui/app.slint", config)
+        .unwrap_or_else(|e| panic!("slint compile failed: {e}"));
+}
 
-    // cxx_qt_build compiles the CXX-Qt bridge code and registers the
-    // Zaparoo.Browse QML module. Qt is located via the QMAKE env var
-    // (set by ZaparooRust.cmake for ARM32 cross) or PATH qmake6 on desktop.
-    //
-    // 0.8 builder shape: new_qml_module() takes the QmlModule up front and
-    // auto-links Qt Core + Qml; .files([...]) replaces the 0.7 rust_files
-    // field on QmlModule (removed in 0.8).
-    let builder = CxxQtBuilder::new_qml_module(
-        QmlModule::new("Zaparoo.Browse")
-            .version(1, 0)
-            // QAbstractListModel-derived singletons (CategoriesModel, SystemsModel,
-            // GamesModel, BrowseModel) need this for qmllint to follow the
-            // prototype chain back to QObject.
-            .depend("QtQml.Models"),
-    )
-    .qt_module("Gui")
-    .qt_module("Quick")
-    .qt_module("QuickControls2")
-    .files(MODEL_FILES);
-
-    // SAFETY: cc_builder is unsafe in 0.8 because cxx-qt makes no stability
-    // guarantees about the cc::Build instance. We only adjust the include
-    // path so the generated bridge code can find model_includes.h and add
-    // a diagnostic-suppression flag; we do not mutate flags or sources
-    // cxx-qt depends on for correctness.
-    let builder = unsafe {
-        builder.cc_builder(|cc| {
-            cc.include("src/models");
-            // GCC 16's -Wsfinae-incomplete fires on Qt 6's own headers
-            // (qchar.h via QHash) when they are included with -I instead
-            // of -isystem, flooding every cargo build log through the
-            // cc warning replay. Qt-internal noise, nothing we can fix
-            // here; no-op on compilers without the flag.
-            cc.flag_if_supported("-Wno-sfinae-incomplete");
+/// Writes `$OUT_DIR/<table_file>`: every `assets/<subdir>/<id>.png` as
+/// `include_bytes!`, sorted by id, as `pub static <table_name>`.
+fn embed_logo_table(subdir: &str, table_file: &str, table_name: &str) {
+    let manifest_dir = std::path::PathBuf::from(
+        std::env::var_os("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"),
+    );
+    let out_dir = std::path::PathBuf::from(std::env::var_os("OUT_DIR").expect("OUT_DIR"));
+    let logos_dir = manifest_dir.join("assets").join(subdir);
+    println!("cargo:rerun-if-changed={}", logos_dir.display());
+    let mut logos: Vec<(String, std::path::PathBuf)> = std::fs::read_dir(&logos_dir)
+        .unwrap_or_else(|e| panic!("read {}: {e}", logos_dir.display()))
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "png"))
+        .map(|path| {
+            let id = path
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .expect("png file stem")
+                .to_string();
+            (id, path)
         })
-    };
-    builder.build();
-
-    // Build provenance (commit / date / channel) deliberately does NOT
-    // live here: it is baked by the `zaparoo-build-info` leaf crate so
-    // that its `.git/` rerun triggers never re-run this build script —
-    // a rerun here means re-running the entire cxx-qt codegen and
-    // recompiling its generated C++.
-    println!("cargo:rerun-if-env-changed=ZAPAROO_RUNTIME");
-    println!("cargo:rerun-if-env-changed=ZAPAROO_DEV_BUILD");
-
-    println!("cargo:rustc-check-cfg=cfg(zaparoo_runtime, values(\"mister\"))");
-    println!("cargo:rustc-check-cfg=cfg(dev_build)");
-    if let Ok(rt) = std::env::var("ZAPAROO_RUNTIME") {
-        if rt.trim().eq_ignore_ascii_case("mister") {
-            println!("cargo:rustc-cfg=zaparoo_runtime=\"mister\"");
-        } else {
-            println!(
-                "cargo:warning=ignoring unknown ZAPAROO_RUNTIME value: {rt:?} (expected \"mister\")"
-            );
-        }
+        .collect();
+    logos.sort();
+    let mut table = format!(
+        "/// System id to embedded PNG bytes, sorted by id (generated by build.rs).\n\
+         pub static {table_name}: &[(&str, &[u8])] = &[\n",
+    );
+    for (id, path) in &logos {
+        println!("cargo:rerun-if-changed={}", path.display());
+        let _ = writeln!(
+            table,
+            "    ({id:?}, include_bytes!({:?})),",
+            path.display().to_string()
+        );
     }
-    if std::env::var("ZAPAROO_DEV_BUILD").is_ok() {
-        println!("cargo:rustc-cfg=dev_build");
-    }
+    table.push_str("];\n");
+    std::fs::write(out_dir.join(table_file), table)
+        .unwrap_or_else(|e| panic!("write {table_file}: {e}"));
 }

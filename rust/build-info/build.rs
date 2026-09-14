@@ -20,17 +20,18 @@ fn main() {
     println!("cargo:rerun-if-changed=../../.git/HEAD");
     println!("cargo:rerun-if-changed=../../.git/refs/heads");
 
-    // Build provenance — baked into the binary and surfaced through the
-    // `Browse.BuildInfo` singleton plus the startup log. Goal is
-    // "this binary is from this source tree at this date, and it is /
-    // is not an official package", not DRM. Failures fall back to
-    // "unknown" / "dev"; the build still succeeds.
+    // Build provenance, baked into the binary and surfaced through the
+    // About screen and the startup log. The goal is "this binary is from
+    // this source tree at this date, and it is / is not an official
+    // package", not DRM. Failures fall back to "unknown" / "dev"; the
+    // build still succeeds.
     //
     // Prefer values supplied via env so cross-builds that don't have
-    // `.git/` in their build context (e.g. the ARM32 Docker build,
-    // which COPYs only source dirs) can be told the commit and date by
-    // the host. Fall back to running `git` / `date` when the env vars
-    // are absent or empty, which is the common path for host builds.
+    // `.git/` in their build context (the `cross` container mounts only
+    // `rust/`; see rust/Cross.toml's passthrough list) can be told the
+    // commit and date by the host. Fall back to running `git` / `date`
+    // when the env vars are absent or empty, which is the common path for
+    // host builds.
     let commit = std::env::var("ZAPAROO_BUILD_COMMIT")
         .ok()
         .map(|s| s.trim().to_string())
