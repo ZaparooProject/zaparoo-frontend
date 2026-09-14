@@ -1,0 +1,136 @@
+# syntax=docker/dockerfile:1.7
+# Zaparoo Frontend
+# Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
+# SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
+#
+# The build environment every containerized recipe runs in: the pinned Rust
+# toolchain, the static-musl ARM32 cross compiler for MiSTer, the desktop
+# development libraries, and the lint, test, translation, and notices tools.
+# `just lint`, `just test`, `just arm32`, `just x86-portable`,
+# `just tr-extract`, and `just notices` run inside it through
+# scripts/toolchain.sh, so Linux, macOS, and CI build the same way.
+#
+# The published tag is scripts/toolchain/VERSION. Bump it with any change to
+# this file; .github/workflows/toolchain-image.yml publishes the new tag the
+# first time CI sees it. Build locally with USE_LOCAL_TOOLCHAIN=1.
+#
+# Ubuntu 20.04 is deliberate: its glibc 2.31 is the floor the portable x86_64
+# desktop build links against, old enough for a Steam Deck and older
+# distributions. The MiSTer binary is static musl and has no glibc floor.
+
+ARG RUST_VERSION=1.97.0
+ARG CROSS_IMAGE=ghcr.io/cross-rs/armv7-unknown-linux-musleabihf:0.2.5
+
+# --- MiSTer cross compiler ---------------------------------------------------
+# cross-rs publishes a known-good arm-linux-musleabihf GCC. Only the compiler,
+# its sysroot, and libgcc are copied out; the rest of that image (QEMU,
+# CMake, xargo) is not needed. The host-side executables ship unstripped, so
+# stripping them removes most of their size. strip skips the ARM objects it
+# cannot read, which leaves the sysroot and libgcc untouched.
+FROM ${CROSS_IMAGE} AS musl
+RUN mkdir -p /out/usr/local/bin /out/usr/local/lib /out/usr/local/libexec \
+    && cp -a /usr/local/bin/arm-linux-musleabihf-* /out/usr/local/bin/ \
+    && cp -a /usr/local/arm-linux-musleabihf /out/usr/local/ \
+    && cp -a /usr/local/lib/gcc /out/usr/local/lib/ \
+    && cp -a /usr/local/libexec/gcc /out/usr/local/libexec/ \
+    && { find /out/usr/local/bin /out/usr/local/libexec -type f -print0 \
+        | xargs -0 strip --strip-unneeded 2> /dev/null || true; }
+
+# --- Base: system packages and Rust ------------------------------------------
+FROM ubuntu:20.04 AS base
+ARG RUST_VERSION
+ENV DEBIAN_FRONTEND=noninteractive
+# build-essential links host build scripts and the x86_64 desktop build.
+# The -dev packages are what Slint's winit backend and gilrs build against.
+RUN apt-get update \
+    && apt-get install --assume-yes --no-install-recommends \
+        build-essential \
+        ca-certificates \
+        curl \
+        git \
+        libfontconfig1-dev \
+        libudev-dev \
+        libwayland-dev \
+        libxkbcommon-dev \
+        pkg-config \
+        python3 \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV RUSTUP_HOME=/usr/local/rustup \
+    CARGO_HOME=/usr/local/cargo \
+    PATH=/usr/local/cargo/bin:${PATH}
+ARG RUSTUP_VERSION=1.29.1
+ARG RUSTUP_SHA256=dda7234360b7f578ca8b0ddcb80145646fa61a67c1720a5abc7051b35c9fcb71
+# The components and target mirror rust-toolchain.toml, so rustup never has
+# to download anything when the non-root build user runs cargo.
+RUN curl --proto '=https' --tlsv1.2 -sSfL -o /tmp/rustup-init \
+        "https://static.rust-lang.org/rustup/archive/${RUSTUP_VERSION}/x86_64-unknown-linux-gnu/rustup-init" \
+    && echo "${RUSTUP_SHA256}  /tmp/rustup-init" | sha256sum -c - \
+    && chmod +x /tmp/rustup-init \
+    && /tmp/rustup-init -y --no-modify-path --profile minimal \
+        --default-toolchain "${RUST_VERSION}" \
+        --component rustfmt,clippy \
+        --target armv7-unknown-linux-musleabihf \
+    && rm /tmp/rustup-init \
+    && rm -rf "${CARGO_HOME}/registry" "${RUSTUP_HOME}/downloads" "${RUSTUP_HOME}/tmp" \
+    && chmod -R a+rX "${RUSTUP_HOME}" "${CARGO_HOME}"
+
+# --- slint-tr-extractor ------------------------------------------------------
+# No prebuilt binary is published, so it is compiled here and only the binary
+# reaches the final image. Its version must match the pinned Slint.
+FROM base AS tr-extractor
+ARG SLINT_TR_EXTRACTOR_VERSION=1.17.1
+RUN cargo install --locked --root /opt/tools \
+        slint-tr-extractor --version "${SLINT_TR_EXTRACTOR_VERSION}"
+
+# --- Prebuilt tools, checksum-verified ---------------------------------------
+FROM base AS tools
+ARG JUST_VERSION=1.58.0
+ARG JUST_SHA256=4a5cc2f53e6f0f8c59092a6cc38291eb729d46a7dd95d3ae582008881b84931d
+ARG NEXTEST_VERSION=0.9.144
+ARG NEXTEST_SHA256=20ed0a7d3d6f8dda9bb1b0bcb5838aea5784d3e2360746280868996d709dde0a
+ARG CARGO_DENY_VERSION=0.19.4
+ARG CARGO_DENY_SHA256=3bd58b784e83715b86ddbc9deac591890372ec77fda5741bb0826970b958506f
+ARG CARGO_ABOUT_VERSION=0.9.2
+ARG CARGO_ABOUT_SHA256=9099a59e820c38a68b9d65f300662a567d56562f9a10f6aa4c7e86c17c2566af
+RUN set -eu; \
+    mkdir -p /opt/tools/bin; \
+    fetch() { \
+        curl --proto '=https' --tlsv1.2 -sSfL -o /tmp/tool.tar.gz "$1"; \
+        echo "$2  /tmp/tool.tar.gz" | sha256sum -c -; \
+        mkdir -p /tmp/tool && tar xzf /tmp/tool.tar.gz -C /tmp/tool; \
+        install -m 0755 "/tmp/tool/$3" "/opt/tools/bin/$(basename "$3")"; \
+        rm -rf /tmp/tool /tmp/tool.tar.gz; \
+    }; \
+    fetch "https://github.com/casey/just/releases/download/${JUST_VERSION}/just-${JUST_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
+        "${JUST_SHA256}" just; \
+    fetch "https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-${NEXTEST_VERSION}/cargo-nextest-${NEXTEST_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
+        "${NEXTEST_SHA256}" cargo-nextest; \
+    fetch "https://github.com/EmbarkStudios/cargo-deny/releases/download/${CARGO_DENY_VERSION}/cargo-deny-${CARGO_DENY_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
+        "${CARGO_DENY_SHA256}" "cargo-deny-${CARGO_DENY_VERSION}-x86_64-unknown-linux-musl/cargo-deny"; \
+    fetch "https://github.com/EmbarkStudios/cargo-about/releases/download/${CARGO_ABOUT_VERSION}/cargo-about-${CARGO_ABOUT_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
+        "${CARGO_ABOUT_SHA256}" "cargo-about-${CARGO_ABOUT_VERSION}-x86_64-unknown-linux-musl/cargo-about"
+
+# --- Final image -------------------------------------------------------------
+FROM base
+COPY --from=musl /out/usr/local/ /usr/local/
+COPY --from=tr-extractor /opt/tools/bin/slint-tr-extractor /usr/local/bin/
+COPY --from=tools /opt/tools/bin/ /usr/local/bin/
+
+ENV CARGO_TARGET_ARMV7_UNKNOWN_LINUX_MUSLEABIHF_LINKER=arm-linux-musleabihf-gcc \
+    CC_armv7_unknown_linux_musleabihf=arm-linux-musleabihf-gcc \
+    CXX_armv7_unknown_linux_musleabihf=arm-linux-musleabihf-g++ \
+    AR_armv7_unknown_linux_musleabihf=arm-linux-musleabihf-ar \
+    # rust/.cargo/config.toml links x86_64 through mold, a host convenience
+    # this GCC 9 rejects outright. A set RUSTFLAGS makes cargo ignore the
+    # config file's rustflags; a recipe that needs flags (`_arm32`) sets its
+    # own, and scripts/toolchain.sh passes a host RUSTFLAGS through.
+    RUSTFLAGS=" " \
+    # scripts/toolchain.sh runs commands directly when this is set, so a
+    # recipe that calls it from inside the container does not recurse.
+    ZAPAROO_TOOLCHAIN=1
+
+RUN rustc --version && cargo --version \
+    && arm-linux-musleabihf-gcc --version | head -n 1 \
+    && just --version && cargo nextest --version && cargo deny --version \
+    && cargo about --version && slint-tr-extractor --version

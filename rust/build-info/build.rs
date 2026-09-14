@@ -26,12 +26,11 @@ fn main() {
     // package", not DRM. Failures fall back to "unknown" / "dev"; the
     // build still succeeds.
     //
-    // Prefer values supplied via env so cross-builds that don't have
-    // `.git/` in their build context (the `cross` container mounts only
-    // `rust/`; see rust/Cross.toml's passthrough list) can be told the
-    // commit and date by the host. Fall back to running `git` / `date`
-    // when the env vars are absent or empty, which is the common path for
-    // host builds.
+    // Prefer values supplied via env so a build can be told the commit and
+    // date explicitly: `just release` sets them and scripts/toolchain.sh
+    // passes them into the toolchain container. Fall back to running `git`
+    // / `date` when the env vars are absent or empty, which is the common
+    // path for host builds.
     let commit = std::env::var("ZAPAROO_BUILD_COMMIT")
         .ok()
         .map(|s| s.trim().to_string())

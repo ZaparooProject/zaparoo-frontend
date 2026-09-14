@@ -113,6 +113,7 @@ require_command install
 require_command rsync
 if [ "${ZAPAROO_SKIP_FRONTEND_BUILD:-0}" != "1" ]; then
     require_command just
+    require_command docker
 fi
 
 CARGO_VERSION="$(extract_cargo_version)"
@@ -121,7 +122,7 @@ if [ "$BASE_VERSION" != "$CARGO_VERSION" ]; then
 fi
 
 cd "$PROJECT_ROOT"
-FRONTEND_BIN="${PROJECT_ROOT}/rust/target/armv7-unknown-linux-musleabihf/release/frontend"
+FRONTEND_BIN="${PROJECT_ROOT}/rust/target/docker/armv7-unknown-linux-musleabihf/release/frontend"
 if [ "${ZAPAROO_SKIP_FRONTEND_BUILD:-0}" = "1" ]; then
     echo "Skipping frontend build; reusing ${FRONTEND_BIN}"
 else

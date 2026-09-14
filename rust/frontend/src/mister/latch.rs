@@ -786,7 +786,9 @@ mod tests {
     fn namespaced_layout_matches_qualified_kernel_abi() {
         let layout = expected_layout();
         assert_eq!(size_of::<super::SlotsLayout>(), 64);
-        assert_eq!(super::GET_LAYOUT, 0x8040_5a01);
+        // `libc::Ioctl` is `c_int` on musl and `c_ulong` on glibc; compare
+        // the request code's 32 bits either way.
+        assert_eq!(super::GET_LAYOUT as u32, 0x8040_5a01);
         assert_eq!(layout.slots, [[0x2300_0000, 0], [0x2340_0000, 8_294_400]]);
         assert_eq!(layout.map_bytes % 4096, 0);
         assert!(layout.map_bytes >= layout.max_stride_bytes * layout.max_height);

@@ -13,7 +13,7 @@ repo_root="$(cd -- "$script_dir/.." && pwd -P)"
 notices="$repo_root/rust/frontend/LICENSES/THIRD-PARTY-NOTICES.txt"
 
 if ! command -v cargo-about >/dev/null 2>&1; then
-    echo "cargo-about not found; install it with: cargo install --locked --version 0.9.2 cargo-about --features cli" >&2
+    echo "cargo-about not found; run this through \`just lint\` or \`just notices\`, which use the toolchain image" >&2
     exit 1
 fi
 

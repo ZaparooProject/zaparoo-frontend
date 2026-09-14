@@ -1,0 +1,103 @@
+# Zaparoo Frontend
+# Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
+# SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
+
+name: Toolchain image
+
+# Makes sure the toolchain image for scripts/toolchain/VERSION exists on GHCR
+# and hands its reference to the calling workflow. CI and the release call
+# this first, so the first run that sees a VERSION bump publishes the image
+# and every later run reuses it. A run for a tag that already exists only
+# checks the registry.
+on:
+  workflow_call:
+    outputs:
+      image:
+        description: "Toolchain image reference for scripts/toolchain/VERSION"
+        value: ${{ jobs.image.outputs.image }}
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  image:
+    name: Publish if missing
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    outputs:
+      image: ${{ steps.resolve.outputs.image }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Resolve image tag
+        id: resolve
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          version="$(tr -d '[:space:]' < scripts/toolchain/VERSION)"
+          if ! printf '%s' "$version" | grep -Eq '^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$'; then
+            echo "::error file=scripts/toolchain/VERSION::'$version' is not a valid Docker tag"
+            exit 1
+          fi
+          image="ghcr.io/${OWNER,,}/zaparoo-frontend-toolchain:${version}"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+          echo "Toolchain image: $image"
+
+      # A Dockerfile change without a VERSION bump would silently keep using
+      # the previously published image.
+      - name: Dockerfile changes come with a VERSION bump
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git fetch --quiet --depth=1 origin "$BASE_SHA"
+          changed="$(git diff --name-only "$BASE_SHA" HEAD -- Dockerfile.toolchain scripts/toolchain/VERSION)"
+          if printf '%s\n' "$changed" | grep -qx 'Dockerfile.toolchain' \
+            && ! printf '%s\n' "$changed" | grep -qx 'scripts/toolchain/VERSION'; then
+            echo "::error file=Dockerfile.toolchain::Dockerfile.toolchain changed without a scripts/toolchain/VERSION bump"
+            exit 1
+          fi
+
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check the registry
+        id: check
+        env:
+          IMAGE: ${{ steps.resolve.outputs.image }}
+        run: |
+          if docker manifest inspect "$IMAGE" > /dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "$IMAGE is already published"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "$IMAGE is missing; building it"
+          fi
+
+      # A fork's GITHUB_TOKEN cannot push to GHCR.
+      - name: Forks cannot publish
+        if: steps.check.outputs.exists != 'true' && github.event.pull_request.head.repo.fork
+        run: |
+          echo "::error::${{ steps.resolve.outputs.image }} is not published yet, and a fork cannot publish it. A maintainer needs to land the scripts/toolchain/VERSION bump from a branch in the main repository first."
+          exit 1
+
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
+        if: steps.check.outputs.exists != 'true'
+
+      - uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        if: steps.check.outputs.exists != 'true'
+        with:
+          # The image copies nothing from the repository, so the context is
+          # the smallest directory at hand.
+          context: scripts/toolchain
+          file: Dockerfile.toolchain
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.resolve.outputs.image }}
+          cache-from: type=gha,scope=toolchain
+          cache-to: type=gha,mode=max,scope=toolchain

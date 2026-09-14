@@ -8,7 +8,7 @@ Zaparoo Frontend is the game frontend for
 The frontend is written in Rust with [Slint](https://slint.dev). Start with
 [docs/quickstart.md](docs/quickstart.md) for a first run against the mock
 Core, and [docs/building.md](docs/building.md) for the packages you need on a
-fresh machine and the MiSTer cross-build path.
+fresh machine and the MiSTer build.
 
 Most commands go through the [`justfile`](justfile). Run `just --list` if you
 need the full menu.
@@ -16,14 +16,14 @@ need the full menu.
 ```bash
 just build && just run    # desktop
 just run-dev              # desktop against the mock Core
-just arm32                # MiSTer ARM32 static build (cross + Docker)
+just arm32                # MiSTer ARM32 static build
 just test                 # cargo nextest, desktop and MiSTer feature sets
 just lint                 # rustfmt, clippy (all feature sets), cargo-deny,
                           # toolkit-free guard, translations, notices, logo parity
 ```
 
-`just test`, `just lint` and `just arm32` need a few cargo extensions; install
-them once with `just install-tools`.
+`just test`, `just lint` and `just arm32` run inside the project's toolchain
+image, so they need only Docker and `just`.
 
 ## Customize
 

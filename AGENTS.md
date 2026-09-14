@@ -12,7 +12,7 @@ from the tree. Use the docs for longer explanations.
 
 Run every workflow from the repo root with `just`. Do not `cd rust/` and run
 raw cargo as the default path; the justfile carries the expected environment
-(feature sets, the `cross` resource mount, sccache).
+(feature sets, the toolchain image, sccache).
 
 | Task | Command |
 |---|---|
@@ -34,11 +34,15 @@ raw cargo as the default path; the justfile carries the expected environment
 | Third-party notices | `just notices` |
 | Embedded system logo sets | `just logos` (after editing `resources/images/systems*/`) |
 | Isolated UI under Slint's MCP server | `just slint-ui` (`--help` lists commands) |
-| Host cargo extensions | `just install-tools` |
+| Build or enter the toolchain image | `just toolchain-build`, `just toolchain-shell` |
 | Remove `output/` and the cargo target directory | `just clean` |
 
-`just --list` is the source of truth. Every recipe runs on the host; CI runs
-the same commands on a bare runner.
+`just --list` is the source of truth. The desktop recipes (`build`, `run`,
+`run-dev`, `fmt`, `fix`, `snapshots`) run cargo on the host. `lint`, `test`,
+`arm32`, `release`, `x86-portable`, `tr-extract`, and `notices` run inside the
+pinned toolchain image (`Dockerfile.toolchain`) through
+`scripts/toolchain.sh`, on Linux, macOS, and CI alike; each delegates to a
+private `_` recipe. Container builds write to `rust/target/docker/`.
 
 ## Stack Facts
 
@@ -52,10 +56,12 @@ the same commands on a bare runner.
   renderer, own presenters), `snapshot` (desktop plus the software renderer for
   the offline `snapshot` binary). Exactly one of `desktop`/`mister`.
 - The MiSTer binary is a static `armv7-unknown-linux-musleabihf` build made
-  with `cross`. Fonts, logos, glyphs, and translations are embedded; it ships
-  as one file.
-- `cross` mounts only `rust/`, so `resources/` reaches the container through
-  `ZAPAROO_RESOURCES_DIR` (`rust/Cross.toml`). Every `cross` call sets it.
+  in the toolchain image, landing in
+  `rust/target/docker/armv7-unknown-linux-musleabihf/release/frontend`. Fonts,
+  logos, glyphs, and translations are embedded; it ships as one file.
+- macOS, including Apple Silicon, is a supported development host.
+  Keep host recipes portable: the justfile finds Homebrew's keg-only rustup,
+  and anything Linux-only belongs in the toolchain image.
 
 ## Always
 
@@ -185,15 +191,18 @@ Full inventory and rationale: `docs/building.md` → "Build caching". The
 update rules, in short:
 
 - Bumping the Rust toolchain pin touches `rust-toolchain.toml` (repo root, so
-  `cross` and cargo invoked from `rust/` both resolve it) and the
-  `rustup toolchain install` line in `.github/workflows/release.yml`.
+  cargo invoked from `rust/` resolves it), `RUST_VERSION` in
+  `Dockerfile.toolchain`, and `rust-version` in `rust/Cargo.toml`.
+- Any `Dockerfile.toolchain` change bumps `scripts/toolchain/VERSION` in the
+  same PR; CI publishes the new tag and fails a PR that skips the bump.
 - Bumping Slint touches `slint` and `slint-build` in `rust/frontend/Cargo.toml`
   (plus `fontique` and `resvg`, which must match the versions Slint resolves),
-  the `slint-tr-extractor` version in `just install-tools`, CI, and
-  `scripts/check-translations.sh`, and the Slint exceptions in `rust/deny.toml`;
-  then regenerate `just notices`.
-- `RUSTC_WRAPPER` is sccache when installed (set by the justfile). `cross`
-  builds keep their own target directories under `rust/target/<triple>/`.
+  `SLINT_TR_EXTRACTOR_VERSION` in `Dockerfile.toolchain` (with a
+  `scripts/toolchain/VERSION` bump), and the Slint exceptions in
+  `rust/deny.toml`; then regenerate `just notices`.
+- `RUSTC_WRAPPER` is sccache for host builds (set by the justfile). The
+  toolchain container clears it and keeps its own target directory
+  (`rust/target/docker/`) and cargo cache (`rust/target/docker-cargo/`).
 
 ## Project Map
 
@@ -327,7 +336,7 @@ ask to go.
 ## MiSTer Deploy
 
 `just deploy-mister` reads `MISTER_IP` (and optional `MISTER_PW`) from `.env`,
-builds the ARM32 binary with `cross`, uploads it to
+builds the ARM32 binary in the toolchain image (`just arm32`), uploads it to
 `/media/fat/zaparoo/frontend.new`, verifies the size, keeps the previous
 binary as `frontend.bak`, clears `/tmp/zaparoo/frontend.log`, and SIGKILLs the
 running frontend so `MiSTer_Zaparoo` respawns it. `--skip-build` reuses the
