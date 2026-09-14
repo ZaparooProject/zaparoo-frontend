@@ -11,11 +11,15 @@ updates:
     open-pull-requests-limit: 5
     # Slint is pinned exactly (`=1.17.1`) and bumped by hand together with
     # slint-tr-extractor, the deny.toml exceptions, and the notices file
-    # (see AGENTS.md, "Build caching couplings").
+    # (see AGENTS.md, "Build caching couplings"). fontique and resvg are
+    # also direct dependencies of Slint's own crates and must stay on the
+    # versions Slint resolves, so they move only with a Slint bump.
     ignore:
       - dependency-name: "slint"
       - dependency-name: "slint-build"
       - dependency-name: "i-slint-*"
+      - dependency-name: "fontique"
+      - dependency-name: "resvg"
     groups:
       tokio:
         patterns: ["tokio*"]

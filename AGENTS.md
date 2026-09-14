@@ -187,7 +187,8 @@ update rules, in short:
 - Bumping the Rust toolchain pin touches `rust-toolchain.toml` (repo root, so
   `cross` and cargo invoked from `rust/` both resolve it) and the
   `rustup toolchain install` line in `.github/workflows/release.yml`.
-- Bumping Slint touches `slint` and `slint-build` in `rust/frontend/Cargo.toml`,
+- Bumping Slint touches `slint` and `slint-build` in `rust/frontend/Cargo.toml`
+  (plus `fontique` and `resvg`, which must match the versions Slint resolves),
   the `slint-tr-extractor` version in `just install-tools`, CI, and
   `scripts/check-translations.sh`, and the Slint exceptions in `rust/deny.toml`;
   then regenerate `just notices`.
