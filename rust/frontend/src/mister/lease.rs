@@ -2,16 +2,16 @@
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 
-//! Private Main/child ownership handshake. An inherited offer is not a grant:
-//! mode probing runs first; only Main's acknowledgment permits FPGA traffic.
+//! Private Main/child slot handshake. v2 never grants direct FPGA access:
+//! Main serializes UIO transactions with its own OSD and video traffic.
 use std::fs::File;
 use std::io;
 use std::os::fd::{AsRawFd, FromRawFd};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
 
-const REQUEST: &[u8] = b"ZAPAROO-SCANOUT-1";
-const GRANTED: &[u8] = b"ZAPAROO-SCANOUT-1 OK";
+const REQUEST: &[u8] = b"ZAPAROO-SCANOUT-2";
+const GRANTED: &[u8] = b"ZAPAROO-SCANOUT-2 PROXY";
 static OFFER: OnceLock<Mutex<Option<File>>> = OnceLock::new();
 static MANAGED: AtomicBool = AtomicBool::new(false);
 
@@ -83,7 +83,13 @@ pub fn managed() -> bool {
 /// Retain until route disable, mappings and slot descriptor have been released.
 /// EOF then returns bus ownership to Main, including on process death.
 pub struct Lease {
-    _socket: File,
+    socket: File,
+}
+
+impl Lease {
+    pub fn proxy_socket(&self) -> io::Result<File> {
+        self.socket.try_clone()
+    }
 }
 
 pub fn acquire() -> io::Result<Lease> {
@@ -145,7 +151,7 @@ fn handshake(file: File, timeout_ms: i32) -> io::Result<Lease> {
             "Main declined scanout ownership",
         ));
     }
-    Ok(Lease { _socket: file })
+    Ok(Lease { socket: file })
 }
 
 #[cfg(test)]
@@ -175,9 +181,10 @@ mod tests {
         use std::io::{Read, Write};
         for reply in [
             GRANTED,
-            b"ZAPAROO-SCANOUT-1 NO",
+            b"ZAPAROO-SCANOUT-1 OK",
+            b"ZAPAROO-SCANOUT-2 NO",
             b"OK",
-            b"ZAPAROO-SCANOUT-1 OK extra",
+            b"ZAPAROO-SCANOUT-2 PROXY extra",
         ] {
             let (mut parent, child) = pair()?;
             parent.write_all(reply)?;

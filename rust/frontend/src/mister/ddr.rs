@@ -8,9 +8,9 @@
 //
 // Slint renders into our own cached RAM buffer and the copy converts
 // RGBA -> BGRX (the "linuxfb byte order" the contract expects; the core
-// swaps bytes in RTL) on the way into the uncached slot. fb0 is still
-// opened read-only for the geometry validation, which doubles as the
-// mode selector and the self-disable path against an old host.
+// swaps bytes in RTL) on the way into the uncached slot. Native geometry
+// belongs to this DDR writer, not fb0: Main may independently reassert its
+// framebuffer during startup or keep it at an HDMI resolution.
 
 use super::Presenter;
 use slint::platform::software_renderer::{PremultipliedRgbaColor, SoftwareRenderer};
@@ -45,8 +45,8 @@ fn requested_offsets() -> (i32, i32) {
 }
 
 // Raster timing trim window guaranteed across every mode by the
-// v2-extended contract; the RTL additionally clamps per mode
-// (native_video_timing.sv header table). Asymmetric physics the user
+// v2-extended contract; the RTL clamps to this same common window
+// (native_video_timing.sv). Asymmetric physics the user
 // never sees: the user-facing offset is one symmetric range
 // (zaparoo-core CRT_*_OFFSET_*), composed as
 //   timing = clamp(user, TIMING_*), inset = user - timing
@@ -82,8 +82,7 @@ impl NativeVideoMode {
     }
 }
 
-/// fb0 geometry doubles as the mode selector: the host configures fb0
-/// to one of exactly these shapes before frames flow.
+/// Explicit native rasters supported by the DDR reader.
 const MODES: [NativeVideoMode; 3] = [
     NativeVideoMode {
         mode: 0,
@@ -158,16 +157,13 @@ pub struct DdrPresenter {
 unsafe impl Send for DdrPresenter {}
 
 impl DdrPresenter {
-    /// Select an explicit native raster, optionally validate matching
-    /// fb0 geometry for direct-video/single-output mode, map the DDR
-    /// window, and arm the control words. Dual-head mode deliberately
-    /// leaves fb0 at HDMI resolution and skips that coupling.
+    /// Select a supported native raster, map its independent DDR window,
+    /// and arm the control words. fb0 geometry never controls this writer.
     pub fn open(
         width: u32,
         height: u32,
         h_offset: i32,
         v_offset: i32,
-        validate_fb: bool,
         pace_in_present: bool,
     ) -> Result<Self, slint::PlatformError> {
         let (h_offset, v_offset) = zaparoo_core::config::clamp_crt_offsets(h_offset, v_offset);
@@ -177,32 +173,6 @@ impl DdrPresenter {
                 "{width}x{height} does not match a v2 native-video mode"
             ))
         })?;
-        if validate_fb {
-            let fb = OpenOptions::new()
-                .read(true)
-                .open("/dev/fb0")
-                .map_err(|e| slint::PlatformError::Other(format!("open /dev/fb0: {e}")))?;
-            let (var, fix) = super::fb0::query_fb(fb.as_raw_fd())?;
-            if var.xres != width
-                || var.yres != height
-                || var.bits_per_pixel != 32
-                || fix.line_length as usize != mode.stride()
-                || var.xoffset != 0
-                || var.yoffset != 0
-            {
-                return Err(slint::PlatformError::Other(format!(
-                    "fb0 mode {}x{} {}bpp stride={} offset=({},{}) violates the v2 \
-                     single-output precondition for {width}x{height}; native writer disabled",
-                    var.xres,
-                    var.yres,
-                    var.bits_per_pixel,
-                    fix.line_length,
-                    var.xoffset,
-                    var.yoffset
-                )));
-            }
-        }
-
         let mem = OpenOptions::new()
             .read(true)
             .write(true)

@@ -7,8 +7,12 @@
 //! without readback.
 
 use crate::display::{automatic_size, selectable_sizes};
-use std::io;
+use std::io::{self, Read};
+use std::os::fd::AsRawFd;
+use std::os::unix::process::CommandExt;
+use std::process::{Command as ProcessCommand, Output, Stdio};
 use std::sync::OnceLock;
+use std::time::{Duration, Instant};
 
 type Size = (u32, u32);
 const MODE_PATH: &str = "/sys/module/MiSTer_fb/parameters/mode";
@@ -130,6 +134,84 @@ fn outcome(code: Option<i32>, stdout: &[u8], stderr: &[u8]) -> io::Result<bool> 
     }
 }
 
+// vmode's own confirmation timeout starts only AFTER opening the command
+// FIFO. Bound the whole process group, including a blocked FIFO open/helper.
+fn run_bounded(command: &mut ProcessCommand, timeout: Duration) -> io::Result<Output> {
+    let mut child = command
+        .process_group(0)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+    let mut exited = false;
+    let result = (|| {
+        let mut stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| io::Error::other("missing vmode stdout"))?;
+        let mut stderr = child
+            .stderr
+            .take()
+            .ok_or_else(|| io::Error::other("missing vmode stderr"))?;
+        for fd in [stdout.as_raw_fd(), stderr.as_raw_fd()] {
+            // SAFETY: these are owned pipe descriptors, not inherited handles.
+            if unsafe { libc::fcntl(fd, libc::F_SETFL, libc::O_NONBLOCK) } < 0 {
+                return Err(io::Error::last_os_error());
+            }
+        }
+        let mut out = Vec::new();
+        let mut err = Vec::new();
+        let deadline = Instant::now() + timeout;
+        loop {
+            drain_output(&mut stdout, &mut out)?;
+            drain_output(&mut stderr, &mut err)?;
+            if let Some(status) = child.try_wait()? {
+                exited = true;
+                drain_output(&mut stdout, &mut out)?;
+                drain_output(&mut stderr, &mut err)?;
+                return Ok(Output {
+                    status,
+                    stdout: out,
+                    stderr: err,
+                });
+            }
+            if Instant::now() >= deadline {
+                return Err(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    "vmode process deadline exceeded",
+                ));
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    })();
+    if result.is_err() && !exited {
+        // SAFETY: child has not been reaped on error. Its new process group
+        // contains only this command and its helpers; never signal Main's group.
+        unsafe {
+            libc::kill(-(child.id() as libc::pid_t), libc::SIGKILL);
+        }
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+    result
+}
+
+fn drain_output(reader: &mut impl Read, output: &mut Vec<u8>) -> io::Result<()> {
+    let mut bytes = [0; 4096];
+    // Bound both retained output and work per turn, even for a noisy command.
+    for _ in 0..4 {
+        match reader.read(&mut bytes) {
+            Ok(0) => break,
+            Ok(n) => {
+                output.extend_from_slice(&bytes[..n.min(16384_usize.saturating_sub(output.len()))]);
+            }
+            Err(error) if error.kind() == io::ErrorKind::WouldBlock => break,
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(())
+}
+
 struct Native;
 impl VideoIo for Native {
     fn size(&self) -> Option<Size> {
@@ -156,7 +238,7 @@ impl VideoIo for Native {
                 process.args(["-r", &w.to_string(), &h.to_string(), "rgb32"]);
             }
         }
-        let output = process.output()?;
+        let output = run_bounded(&mut process, Duration::from_secs(2))?;
         let result = outcome(output.status.code(), &output.stdout, &output.stderr);
         if let Err(error) = &result {
             tracing::warn!(?command, %error, "MiSTer video command failed");
@@ -190,6 +272,43 @@ mod tests {
             self.size = after;
             outcome
         }
+    }
+
+    #[test]
+    fn whole_process_deadline_covers_blocked_fifo_and_helpers() -> io::Result<()> {
+        struct Fifo(std::path::PathBuf);
+        impl Drop for Fifo {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_file(&self.0);
+            }
+        }
+        let fifo =
+            Fifo(std::env::temp_dir().join(format!("zaparoo-vmode-test-{}", std::process::id())));
+        let fifo = &fifo.0;
+        assert!(ProcessCommand::new("mkfifo").arg(fifo).status()?.success());
+        let mut command = ProcessCommand::new("sh");
+        command
+            .args(["-c", "printf 'fb_cmd0 8888 1 1\\n' > \"$1\"", "sh"])
+            .arg(fifo);
+        let start = Instant::now();
+        let result = run_bounded(&mut command, Duration::from_millis(50));
+        assert!(matches!(result, Err(e) if e.kind() == io::ErrorKind::TimedOut));
+        assert!(start.elapsed() < Duration::from_secs(2));
+        let mut command = ProcessCommand::new("sh");
+        command.args(["-c", "sleep 30 & wait"]);
+        assert!(run_bounded(&mut command, Duration::from_millis(50)).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn bounded_command_preserves_output_and_normal_exit_one() -> io::Result<()> {
+        let mut command = ProcessCommand::new("sh");
+        command.args(["-c", "printf done; printf diagnostic >&2; exit 1"]);
+        let output = run_bounded(&mut command, Duration::from_secs(1))?;
+        assert_eq!(output.status.code(), Some(1));
+        assert_eq!(output.stdout, b"done");
+        assert_eq!(output.stderr, b"diagnostic");
+        Ok(())
     }
 
     #[test]
