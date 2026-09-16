@@ -1,13 +1,23 @@
 # Zaparoo Frontend dev commands.
-# `just --list` for the full menu. Every recipe runs on the host; see
-# docs/building.md for the packages a fresh machine needs.
+# `just --list` for the full menu; docs/building.md covers a fresh machine.
+#
+# Two kinds of recipe. `build`, `run`, `run-dev`, `fmt`, `fix`, and the other
+# desktop recipes run cargo on the host. `lint`, `test`, `arm32`, `release`,
+# `x86-portable`, `tr-extract`, and `notices` run inside the pinned toolchain
+# image (Dockerfile.toolchain) through scripts/toolchain.sh, so they behave the
+# same on Linux, macOS, and CI and need only Docker and just on the host. Each
+# delegates to a private `_` recipe holding the commands the container runs.
 
 # Use sccache as the rustc wrapper when it's installed. sccache caches
-# compiled crates across `target/` directories. Biggest win when round-
-# tripping between desktop and MiSTer feature sets, but also speeds up any
-# clean build. Falls back to no wrapper if sccache isn't on PATH so
-# contributors who haven't installed it still get working builds.
+# compiled crates across `target/` directories. Falls back to no wrapper if
+# sccache isn't on PATH so contributors who haven't installed it still get
+# working builds. The toolchain container clears it.
 export RUSTC_WRAPPER := `command -v sccache || true`
+
+# Homebrew installs rustup keg-only, outside PATH. Put its proxies first when
+# present so macOS host builds honor rust-toolchain.toml rather than a
+# Homebrew `rust` formula's compiler. No effect anywhere else.
+export PATH := `for d in /opt/homebrew/opt/rustup/bin /usr/local/opt/rustup/bin; do if [ -x "$d/rustup" ]; then printf '%s:' "$d"; break; fi; done; printf '%s' "$PATH"`
 
 default:
     @just --list
@@ -46,22 +56,29 @@ slint-ui *args:
 
 # --- test ---
 
+# Workspace tests plus the MiSTer feature set (toolchain image)
+test:
+    ./scripts/toolchain.sh just _test
+
 # The MiSTer feature set has its own modules and tests (presenters, dual
 # head); they only build under that feature.
-# Workspace tests plus the MiSTer feature set
-test:
+_test:
     cd rust && cargo nextest run --workspace
     cd rust && cargo nextest run -p frontend --no-default-features --features mister
 
 # --- lint and format ---
 
-# Full lint gate. Matches CI.
+# Full lint gate, the same one CI runs (toolchain image)
 lint:
+    ./scripts/toolchain.sh just _lint
+
+_lint:
     cd rust && cargo fmt --all --check
     cd rust && cargo clippy --workspace --all-targets -- -D warnings
-    # The MiSTer feature set compiles different modules (the presenters,
-    # the dual-head mirror); lint it too or their tests rot unseen.
-    cd rust && cargo clippy -p frontend --no-default-features --features mister --all-targets -- -D warnings
+    # The MiSTer feature set compiles different modules (the presenters, the
+    # dual-head mirror). Lint it against the MiSTer target itself: 32-bit musl
+    # types such as ioctl request codes differ from the host's.
+    cd rust && cargo clippy -p frontend --no-default-features --features mister --all-targets --target armv7-unknown-linux-musleabihf -- -D warnings
     # The snapshot bin sits behind `required-features`, so `--all-targets`
     # alone never compiles it.
     cd rust && cargo clippy -p frontend --features snapshot --all-targets -- -D warnings
@@ -85,11 +102,11 @@ fix:
 
 # Regenerate the gettext template from the .slint files. Run after any @tr edit.
 tr-extract:
-    bash scripts/extract-translations.sh
+    ./scripts/toolchain.sh bash scripts/extract-translations.sh
 
-# Regenerate the binary's third-party notices
+# Regenerate the binary's third-party notices (toolchain image)
 notices:
-    bash scripts/generate-notices.sh
+    ./scripts/toolchain.sh bash scripts/generate-notices.sh
 
 # --- embedded art ---
 
@@ -103,13 +120,17 @@ logos *args:
 
 # --- MiSTer and portable builds ---
 
-# Static musl because the MiSTer rootfs glibc is older than cross's
-# gnueabihf image.
-# Static ARM32 musl MiSTer build via `cross` (Cortex-A9 tuning)
+# Static musl because the MiSTer rootfs glibc is older than any distribution
+# worth building on. The binary lands in
+# rust/target/docker/armv7-unknown-linux-musleabihf/release/frontend.
+# Static ARM32 musl MiSTer build, Cortex-A9 tuning (toolchain image)
 arm32:
-    cd rust && ZAPAROO_RESOURCES_DIR="$PWD/../resources" RUSTFLAGS="-C target-cpu=cortex-a9" cross build -p frontend --release --no-default-features --features mister --target armv7-unknown-linux-musleabihf
+    ./scripts/toolchain.sh just _arm32
 
-# Build provenance is passed into the cross container (rust/Cross.toml), so
+_arm32:
+    cd rust && RUSTFLAGS="-C target-cpu=cortex-a9" cargo build -p frontend --release --no-default-features --features mister --target armv7-unknown-linux-musleabihf
+
+# scripts/toolchain.sh passes the provenance variables into the container, so
 # About and the startup log report the commit, the build date, and
 # `channel = "official"`. Use this, not `arm32`, for binaries you ship.
 # Official MiSTer binary: `arm32` with build provenance
@@ -121,19 +142,23 @@ release-zip *args:
     ./scripts/package-mister-release.sh {{args}}
 
 # A build on a modern host bakes in that host's glibc symbol versions and
-# then refuses to start on a Steam Deck or any older distribution; cross's
-# image is old enough that the result runs everywhere we ship. RUSTFLAGS is
-# overridden because `mold` is a host convenience the container lacks.
-# Portable x86_64 desktop build via `cross` (needed for Steam Deck).
+# then refuses to start on a Steam Deck or any older distribution. The
+# toolchain image's glibc 2.31 is old enough that the result runs everywhere
+# we ship. The binary lands in
+# rust/target/docker/x86_64-unknown-linux-gnu/release/frontend.
+# Portable x86_64 desktop build for Steam Deck (toolchain image)
 x86-portable:
-    cd rust && ZAPAROO_RESOURCES_DIR="$PWD/../resources" RUSTFLAGS=" " cross build -p frontend --release --target x86_64-unknown-linux-gnu
+    ./scripts/toolchain.sh just _x86-portable
+
+_x86-portable:
+    cd rust && cargo build -p frontend --release --target x86_64-unknown-linux-gnu
 
 # Desktop tarball of the release cargo build with its license files.
 package-desktop *args:
     ./scripts/package-desktop.sh {{args}}
 
 # Software renderer, no window. Optional language argument, e.g. `de`.
-# Render every screen offline into output/snapshots/
+# Render the main screens offline into output/snapshots/
 snapshots *args:
     bash scripts/render-snapshots.sh {{args}}
 
@@ -143,20 +168,21 @@ snapshots *args:
 deploy-mister *args:
     ./scripts/deploy-mister.sh {{args}}
 
-# --- setup ---
+# --- toolchain ---
 
-# Install the host-only cargo extensions the recipes use. Versions match
-# the pins in .github/workflows/ci.yml and release.yml.
-install-tools:
-    cargo install --locked cargo-nextest
-    cargo install --locked --version 0.19.4 cargo-deny
-    cargo install --locked --version 0.2.5 cross
-    cargo install --locked --version 1.17.1 slint-tr-extractor
-    cargo install --locked --version 0.9.2 cargo-about --features cli
+# Bump scripts/toolchain/VERSION with any Dockerfile.toolchain change; CI
+# publishes the new tag.
+# Build the toolchain image locally instead of pulling the published one
+toolchain-build:
+    USE_LOCAL_TOOLCHAIN=1 ZAPAROO_TOOLCHAIN_REBUILD=1 ./scripts/toolchain.sh true
+
+# Open a shell inside the toolchain image at the current directory
+toolchain-shell:
+    ./scripts/toolchain.sh bash
 
 # --- clean ---
 
-# Remove output/ and the cargo target directory
+# Remove output/ and the cargo target directory (container builds included)
 clean:
     rm -rf output
     cd rust && cargo clean

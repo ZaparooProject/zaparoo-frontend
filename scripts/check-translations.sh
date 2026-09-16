@@ -14,7 +14,7 @@ repo_root="$(cd -- "$script_dir/.." && pwd -P)"
 pot="$repo_root/rust/frontend/translations/frontend.pot"
 
 if ! command -v slint-tr-extractor >/dev/null 2>&1; then
-    echo "slint-tr-extractor not found; install it with: cargo install slint-tr-extractor --version 1.17.1" >&2
+    echo "slint-tr-extractor not found; run this through \`just lint\` or \`just tr-extract\`, which use the toolchain image" >&2
     exit 1
 fi
 

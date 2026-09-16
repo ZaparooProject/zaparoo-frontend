@@ -12,9 +12,9 @@
 # are appended here from the license file the crate itself ships, under
 # the one license term of Slint's triple license this project uses.
 #
-# Needs `cargo install cargo-about --features cli`. The result is
-# committed; `scripts/package-mister-release.sh` ships it in the
-# bundle's LICENSES folder.
+# Needs cargo-about, which the toolchain image provides (`just notices`).
+# The result is committed; `scripts/package-mister-release.sh` ships it in
+# the bundle's LICENSES folder.
 set -euo pipefail
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
@@ -23,7 +23,7 @@ rust_dir="$repo_root/rust"
 out="$rust_dir/frontend/LICENSES/THIRD-PARTY-NOTICES.txt"
 
 if ! command -v cargo-about > /dev/null 2>&1; then
-    echo "cargo-about is not installed: cargo install cargo-about --features cli" >&2
+    echo "cargo-about not found; run this through \`just notices\`, which uses the toolchain image" >&2
     exit 1
 fi
 

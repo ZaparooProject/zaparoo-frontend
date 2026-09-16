@@ -75,7 +75,8 @@ Run `just tr-extract` and merge the catalogs after any `@tr` edit.
 
 ## Requirements
 
-- `slint-tr-extractor` 1.17.1 (`just install-tools`), matching the pinned Slint.
+- `slint-tr-extractor` 1.17.1, matching the pinned Slint. The toolchain image
+  provides it, so `just tr-extract` and `just lint` need no local install.
 - gettext (`msgmerge`, `msgattrib`, `msginit`) for catalog maintenance.
 
 ## Translators

@@ -17,7 +17,7 @@
 # gets there until then.
 #
 # Usage: install-steamos.sh [path-to-binary]
-# Default binary: rust/target/x86_64-unknown-linux-gnu/release/frontend
+# Default binary: rust/target/docker/x86_64-unknown-linux-gnu/release/frontend
 # (`just x86-portable`). A plain `cargo build --release` links the
 # build host's glibc and will not start here.
 set -euo pipefail
@@ -33,7 +33,7 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
-SRC="${1:-$PROJECT_ROOT/rust/target/x86_64-unknown-linux-gnu/release/frontend}"
+SRC="${1:-$PROJECT_ROOT/rust/target/docker/x86_64-unknown-linux-gnu/release/frontend}"
 if [ ! -x "$SRC" ]; then
     echo "Error: no executable at $SRC" >&2
     echo "Build one with: just x86-portable" >&2

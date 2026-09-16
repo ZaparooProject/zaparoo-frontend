@@ -101,8 +101,8 @@ rust/mock-core/   : mock Zaparoo Core for dev runs
   Geometry comes from the `Sizing` and `Layout` globals, which Rust pushes from
   `zaparoo_app::sizing` and `zaparoo_app::layouts` whenever the scene changes.
 - **One static binary.** Fonts, glyph SVGs, logos and translation catalogs are
-  embedded at build time. The MiSTer binary is a static musl build from
-  `cross`.
+  embedded at build time. The MiSTer binary is a static musl build made in
+  the toolchain image (`Dockerfile.toolchain`).
 - **Core is the canonical store.** Covers and metadata live in process memory
   only, with a strict bytes cap. The one on-disk exception is the Hub cover
   path manifest (see `AGENTS.md`).
