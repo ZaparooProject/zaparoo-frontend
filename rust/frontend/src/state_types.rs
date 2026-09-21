@@ -1,6 +1,6 @@
 //! Explicit text boundaries for UI enums. Disk/API vocabulary stays unchanged.
 
-use crate::{ErrorKind, Orientation, Screen, SettingsPage, VideoStandard};
+use crate::{ErrorKind, Orientation, PairPhase, Screen, SettingsPage, VideoStandard};
 
 macro_rules! tokens {
     ($ty:ident { $($variant:ident => $token:literal),+ $(,)? }) => {
@@ -38,6 +38,7 @@ tokens!(ErrorKind {
     MediaIndex => "media_index", MediaScrape => "media_scrape", MediaScrapers => "media_scrapers",
     MediaCancel => "media_cancel", Launcher => "launcher", LauncherSave => "launcher_save",
     AlternateDiscovery => "alternate_discovery", QrCode => "qr_code", CardWrite => "card_write", Setting => "setting",
+    Pairing => "pairing",
 });
 
 impl From<zaparoo_app::hub::Reason> for crate::DisabledReason {
@@ -88,6 +89,19 @@ impl From<zaparoo_app::log_upload::Phase> for crate::LogPhase {
             zaparoo_app::log_upload::Phase::Uploading => Self::Uploading,
             zaparoo_app::log_upload::Phase::Done => Self::Done,
             zaparoo_app::log_upload::Phase::Failed => Self::Failed,
+        }
+    }
+}
+
+impl From<zaparoo_app::pairing::Phase> for PairPhase {
+    fn from(value: zaparoo_app::pairing::Phase) -> Self {
+        use zaparoo_app::pairing::Phase;
+        match value {
+            Phase::Closed => Self::Closed,
+            Phase::Starting => Self::Starting,
+            Phase::Showing => Self::Showing,
+            Phase::Paired => Self::Paired,
+            Phase::Expired => Self::Expired,
         }
     }
 }
