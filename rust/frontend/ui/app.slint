@@ -8,8 +8,8 @@
 // logic; forward orchestration lives in the router.
 
 import { Theme, Sizing, Motion, Layout } from "theme.slint";
-import { Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PressOwner, StatusKind, Orientation, VideoStandard, StateTokens, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogProgress, DialogButton, FirstRunPhase, ErrorKind } from "state_types.slint";
-export { Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PressOwner, StatusKind, Orientation, VideoStandard, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogProgress, DialogButton, FirstRunPhase, ErrorKind }
+import { Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PressOwner, StatusKind, Orientation, VideoStandard, StateTokens, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogProgress, DialogButton, FirstRunPhase, ErrorKind, RepairReason } from "state_types.slint";
+export { Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PressOwner, StatusKind, Orientation, VideoStandard, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogProgress, DialogButton, FirstRunPhase, ErrorKind, RepairReason }
 import { GlyphSource, Brand, Buttons, HelpEntry, Status, HeaderBar, StatusLine, ProgressTrack, TopStatusStrip, PageIndicator, ActiveLabel, HelpBar, SectionHeader, Divider, ScrollCue, ModalShell, QrPlate, StateCue } from "chrome.slint";
 import { GridCell, MarqueeCaption, PressableSurface, Tile, PagedGridView } from "tiles.slint";
 import { ScrollOffset, SelectionCursor, SelectionClip } from "focus.slint";
@@ -32,7 +32,7 @@ import "../../../resources/fonts/NotoSans-Medium.ttf";
 import "../../../resources/fonts/NotoSans-DemiBold.ttf";
 import "../../../resources/fonts/MxPlus_HP_100LX_6x8.ttf";
 
-export { Theme, Sizing, Motion, Layout, GlyphSource, Buttons, Status, HelpEntry, GridCell, DetailRow, SettingsRow, SettingsLabels, SetupPickerRow, GameInfoView, Labels, AboutView }
+export { Theme, Sizing, Motion, Layout, GlyphSource, Buttons, Status, HelpEntry, GridCell, DetailRow, SettingsRow, SettingsLabels, SetupPickerRow, GameInfoView, Labels, DialogLabels, AboutView }
 
 // Context-menu row: `id` is the dispatch key the router switches on,
 // never the row's position (position-keyed dispatch was a footgun).
@@ -473,9 +473,15 @@ export global Overlays {
     in-out property <bool> dialog-open: false;
     in-out property <DialogKind> dialog-kind: DialogKind.none;
     in-out property <ErrorKind> dialog-error: ErrorKind.generic;
+    // Which launch failure this is, when Core named one this build knows.
+    in-out property <RepairReason> dialog-repair: RepairReason.none;
     in-out property <FirstRunPhase> first-run-phase: FirstRunPhase.idle;
-    // Runtime context includes Core-authored, display-safe repair text.
-    // DialogLabels translates interface copy; server text retains Core's language.
+    // The dialog's two text slots. What they carry is the kind's business:
+    // the minimum and running Core versions, the indexed-file count, the
+    // failed action's context, or the launcher and plugin display names of
+    // a launch Core explained. DialogLabels writes every word; the one
+    // exception is a launch failure whose reason this build does not know,
+    // whose `arg` is Core's own sentence and so stays in Core's language.
     in-out property <string> dialog-detail: "";
     in-out property <string> dialog-arg: "";
     // First-run progress line, as a key plus its numbers.
@@ -1412,12 +1418,12 @@ component DialogModal inherits ModalShell {
     // does not stack up into extra lines on a 240p screen.
     title-measure := Text {
         visible: false;
-        text: DialogLabels.title(Overlays.dialog-kind, Overlays.dialog-error);
+        text: DialogLabels.title(Overlays.dialog-kind, Overlays.dialog-error, Overlays.dialog-repair);
         font-size: Sizing.font-title;
     }
     body-measure := Text {
         visible: false;
-        text: DialogLabels.body(Overlays.dialog-kind, Overlays.dialog-error, Overlays.first-run-phase, Overlays.dialog-detail, Overlays.dialog-arg);
+        text: DialogLabels.body(Overlays.dialog-kind, Overlays.dialog-error, Overlays.dialog-repair, Overlays.first-run-phase, Overlays.dialog-detail, Overlays.dialog-arg);
         font-size: Sizing.font-body;
     }
     line-measure := Text {
@@ -1456,7 +1462,7 @@ component DialogModal inherits ModalShell {
     property <length> button-y: root.status-y
         + (Overlays.dialog-status != DialogProgress.none ? root.status-h + root.pad : 0px);
 
-    title: DialogLabels.title(Overlays.dialog-kind, Overlays.dialog-error);
+    title: DialogLabels.title(Overlays.dialog-kind, Overlays.dialog-error, Overlays.dialog-repair);
     panel-width: root.panel-w-raw;
     content-height: root.button-y + root.btn-h - root.content-y;
 
@@ -1465,7 +1471,7 @@ component DialogModal inherits ModalShell {
             y: root.body-y;
             width: Math.min(Math.ceil(body-measure.preferred-width / 1px) * 1px, root.content-width);
             wrap: word-wrap;
-            text: DialogLabels.body(Overlays.dialog-kind, Overlays.dialog-error, Overlays.first-run-phase, Overlays.dialog-detail, Overlays.dialog-arg);
+            text: DialogLabels.body(Overlays.dialog-kind, Overlays.dialog-error, Overlays.dialog-repair, Overlays.first-run-phase, Overlays.dialog-detail, Overlays.dialog-arg);
             color: Theme.text-primary;
             font-size: Sizing.font-body;
             horizontal-alignment: center;

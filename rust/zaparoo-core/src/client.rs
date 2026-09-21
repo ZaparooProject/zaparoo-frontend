@@ -143,22 +143,213 @@ struct RpcError {
     data: Option<Value>,
 }
 
+/// The error category Core stamps on a launch it could not carry out.
+const LAUNCH_REPAIR_CATEGORY: &str = "launch_repair";
+
+/// Ceiling on Core's own sentence, used only when it names a reason this
+/// build does not know.
+const MAX_REPAIR_MESSAGE: usize = 1024;
+
+/// Ceiling on a display name Core attaches to a launch failure. A launcher
+/// or plugin name longer than this is not a name, and the alert has one
+/// panel's worth of room for it.
+const MAX_DISPLAY_NAME: usize = 64;
+
+/// Core's own spelling for "no structured reason". It is the same case as
+/// a reason this build has never heard of, and takes the same path: Core's
+/// `message` if it sent one, the generic launch copy otherwise. Deliberately
+/// not a `LaunchReason`, because it carries no meaning to word.
+const UNSPECIFIED_REASON: &str = "unspecified";
+
+/// Why Core could not start something, in its own closed vocabulary. The
+/// frontend owns every word the user reads; this only says which of them
+/// to say. A value outside this set is not an error — Core's vocabulary
+/// may grow ahead of this build — and falls back to `repair_message`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LaunchReason {
+    /// The launcher application is not installed.
+    LauncherNotInstalled,
+    /// Installed, but the entry point it declares is gone or disabled.
+    LauncherComponentMissing,
+    /// Installed, but its plugin for this system is absent.
+    LauncherPluginMissing,
+    /// Several usable launchers and no reviewed default; the user chooses.
+    /// Reserved: no producer in Core yet, since selection resolves by
+    /// catalog precedence. Nothing may depend on it firing.
+    LauncherAmbiguous,
+    /// This launcher cannot play the selected media entry.
+    LauncherUnsupportedMedia,
+    /// The launch options requested are not supported by this launcher.
+    LauncherOptionsUnsupported,
+    /// The installed build of the launcher cannot be used for this media,
+    /// for instance because its storage model is unsupported. A different
+    /// build of the same launcher is what fixes it.
+    LauncherVersionUnsupported,
+    /// The launcher lacks the storage permission it needs.
+    StoragePermissionRequired,
+    /// The media lives on a provider this launcher cannot read.
+    StorageProviderUnsupported,
+    /// The storage holding the media is not present.
+    StorageUnavailable,
+    /// The media file cannot be resolved or opened.
+    MediaUnavailable,
+    /// The host's launch service is not answering.
+    HostUnavailable,
+    /// The launch needs the user to return to the app first.
+    HostForegroundRequired,
+    /// Dispatched, but the result could not be confirmed.
+    OutcomeUnknown,
+    /// The operating system refused the request.
+    Refused,
+    /// The launch was called off before it started, usually by the app
+    /// itself rather than by anything the user did.
+    Cancelled,
+}
+
+impl LaunchReason {
+    /// Every reason Core can name. `unspecified` is absent on purpose; see
+    /// `UNSPECIFIED_REASON`.
+    pub const ALL: [Self; 16] = [
+        Self::LauncherNotInstalled,
+        Self::LauncherComponentMissing,
+        Self::LauncherPluginMissing,
+        Self::LauncherAmbiguous,
+        Self::LauncherUnsupportedMedia,
+        Self::LauncherOptionsUnsupported,
+        Self::LauncherVersionUnsupported,
+        Self::StoragePermissionRequired,
+        Self::StorageProviderUnsupported,
+        Self::StorageUnavailable,
+        Self::MediaUnavailable,
+        Self::HostUnavailable,
+        Self::HostForegroundRequired,
+        Self::OutcomeUnknown,
+        Self::Refused,
+        Self::Cancelled,
+    ];
+
+    /// Core's wire spelling. An API token, not routing state.
+    pub fn token(self) -> &'static str {
+        match self {
+            Self::LauncherNotInstalled => "launcher_not_installed",
+            Self::LauncherComponentMissing => "launcher_component_missing",
+            Self::LauncherPluginMissing => "launcher_plugin_missing",
+            Self::LauncherAmbiguous => "launcher_ambiguous",
+            Self::LauncherUnsupportedMedia => "launcher_unsupported_media",
+            Self::LauncherOptionsUnsupported => "launcher_options_unsupported",
+            Self::LauncherVersionUnsupported => "launcher_version_unsupported",
+            Self::StoragePermissionRequired => "storage_permission_required",
+            Self::StorageProviderUnsupported => "storage_provider_unsupported",
+            Self::StorageUnavailable => "storage_unavailable",
+            Self::MediaUnavailable => "media_unavailable",
+            Self::HostUnavailable => "host_unavailable",
+            Self::HostForegroundRequired => "host_foreground_required",
+            Self::OutcomeUnknown => "outcome_unknown",
+            Self::Refused => "refused",
+            Self::Cancelled => "cancelled",
+        }
+    }
+
+    fn parse(token: &str) -> Option<Self> {
+        if token == UNSPECIFIED_REASON {
+            return None;
+        }
+        Self::ALL.into_iter().find(|reason| reason.token() == token)
+    }
+}
+
+/// A launch failure Core explained: the reason plus the display names the
+/// copy may put in its sentence. Both names are already screened for
+/// anything that cannot go in one, and either may be empty.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LaunchRepair {
+    pub reason: LaunchReason,
+    pub launcher: String,
+    pub plugin: String,
+}
+
+/// The `launch_repair` half of an error, before the reason is known to be
+/// one this build can word itself.
+#[derive(Debug, Default)]
+struct RepairData {
+    reason: Option<LaunchReason>,
+    launcher: String,
+    plugin: String,
+}
+
 #[derive(Debug)]
 pub struct ClientError {
     pub message: String,
-    pub category: Option<String>,
+    /// `Some` exactly when Core categorized the failure `launch_repair`.
+    repair: Option<RepairData>,
 }
 
 impl ClientError {
-    /// Only Core's explicit repair category carries display-safe application text.
-    /// Ordinary errors retain the generic alert; they may contain private details.
-    pub fn repair_message(&self) -> Option<&str> {
-        (self.category.as_deref() == Some("launch_repair")
-            && !self.message.is_empty()
-            && self.message.len() <= 1024
-            && !self.message.chars().any(char::is_control))
-        .then_some(self.message.as_str())
+    /// An error with no structured metadata from Core.
+    pub(crate) fn plain(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            repair: None,
+        }
     }
+
+    /// Core's structured account of a launch that did not start, when the
+    /// reason it named is one this build knows how to word.
+    pub fn launch_repair(&self) -> Option<LaunchRepair> {
+        let data = self.repair.as_ref()?;
+        Some(LaunchRepair {
+            reason: data.reason?,
+            launcher: data.launcher.clone(),
+            plugin: data.plugin.clone(),
+        })
+    }
+
+    /// Core's own sentence, and only for a launch failure whose reason this
+    /// build does not know: the documented fallback for a vocabulary that
+    /// grew ahead of us. Ordinary errors retain the generic alert; they may
+    /// contain private details.
+    pub fn repair_message(&self) -> Option<&str> {
+        let data = self.repair.as_ref()?;
+        if data.reason.is_some() {
+            return None;
+        }
+        display_safe(&self.message, MAX_REPAIR_MESSAGE)
+    }
+}
+
+/// Text from Core that may go straight into a sentence: present, short
+/// enough for an alert, and free of control characters that would break
+/// the line or smuggle formatting through.
+fn display_safe(value: &str, max: usize) -> Option<&str> {
+    (!value.is_empty() && value.len() <= max && !value.chars().any(char::is_control))
+        .then_some(value)
+}
+
+/// Read the `launch_repair` metadata off an RPC error's `data` object.
+/// Answers `None` for every other category, which keeps the generic alert.
+fn parse_repair(data: Option<&Value>) -> Option<RepairData> {
+    let data = data?;
+    if data.get("category").and_then(Value::as_str) != Some(LAUNCH_REPAIR_CATEGORY) {
+        return None;
+    }
+    let params = data.get("params");
+    let name = |key: &str| {
+        params
+            .and_then(|params| params.get(key))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .and_then(|value| display_safe(value, MAX_DISPLAY_NAME))
+            .unwrap_or_default()
+            .to_owned()
+    };
+    Some(RepairData {
+        reason: data
+            .get("reason")
+            .and_then(Value::as_str)
+            .and_then(LaunchReason::parse),
+        launcher: name("launcher"),
+        plugin: name("plugin"),
+    })
 }
 
 impl std::fmt::Display for ClientError {
@@ -190,10 +381,7 @@ fn deserialize_timed<T: DeserializeOwned>(
     val: Value,
 ) -> Result<T, ClientError> {
     let started = Instant::now();
-    let result = serde_json::from_value(val).map_err(|e| ClientError {
-        category: None,
-        message: e.to_string(),
-    });
+    let result = serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()));
     debug!(
         method,
         duration_ms = started.elapsed().as_millis(),
@@ -221,10 +409,7 @@ fn teardown_session(tx_slot: &OutboundSlot, pending: &PendingMap) {
         drained
     };
     for (_, response) in drained {
-        let _ = response.send(Err(ClientError {
-            category: None,
-            message: "disconnected".into(),
-        }));
+        let _ = response.send(Err(ClientError::plain("disconnected")));
     }
 }
 
@@ -245,13 +430,7 @@ fn handle_incoming(
         if let Some(tx) = sender {
             let result = if let Some(err) = resp.error {
                 Err(ClientError {
-                    category: err
-                        .data
-                        .as_ref()
-                        .and_then(|data| data.get("category"))
-                        .and_then(Value::as_str)
-                        .filter(|category| category.len() <= 64)
-                        .map(str::to_owned),
+                    repair: parse_repair(err.data.as_ref()),
                     message: err.message,
                 })
             } else {
@@ -612,10 +791,7 @@ impl Client {
             params,
             id: id.clone(),
         };
-        let text = serde_json::to_string(&req).map_err(|e| ClientError {
-            category: None,
-            message: e.to_string(),
-        })?;
+        let text = serde_json::to_string(&req).map_err(|e| ClientError::plain(e.to_string()))?;
         let started = Instant::now();
 
         let (resp_tx, resp_rx) = oneshot::channel();
@@ -626,10 +802,9 @@ impl Client {
             // session-scoped operation: teardown either runs before all three
             // steps or drains the newly registered request afterward.
             let sender = self.tx.lock().unwrap();
-            let sender = sender.as_ref().ok_or_else(|| ClientError {
-                category: None,
-                message: "not connected".into(),
-            })?;
+            let sender = sender
+                .as_ref()
+                .ok_or_else(|| ClientError::plain("not connected"))?;
             self.pending.lock().unwrap().insert(id.clone(), resp_tx);
             sender.send(text)
         };
@@ -652,16 +827,12 @@ impl Client {
                 error = "not connected",
                 "rpc round trip",
             );
-            return Err(ClientError {
-                category: None,
-                message: "not connected".into(),
-            });
+            return Err(ClientError::plain("not connected"));
         }
 
-        let result = resp_rx.await.map_err(|_| ClientError {
-            category: None,
-            message: "channel closed".into(),
-        })?;
+        let result = resp_rx
+            .await
+            .map_err(|_| ClientError::plain("channel closed"))?;
         match result {
             Ok(val) => {
                 let payload_bytes = serde_json::to_vec(&val).map_or(0, |bytes| bytes.len());
@@ -689,60 +860,42 @@ impl Client {
 
     pub async fn systems(&self, params: SystemsParams) -> Result<SystemsResult, ClientError> {
         let val = self.call("systems", &params).await?;
-        serde_json::from_value(val).map_err(|e| ClientError {
-            category: None,
-            message: e.to_string(),
-        })
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
     }
 
     pub async fn readers(&self) -> Result<ReadersResult, ClientError> {
         #[derive(Serialize)]
         struct P {}
         let val = self.call("readers", &P {}).await?;
-        serde_json::from_value(val).map_err(|e| ClientError {
-            category: None,
-            message: e.to_string(),
-        })
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
     }
 
     pub async fn health(&self) -> Result<HealthResult, ClientError> {
         #[derive(Serialize)]
         struct P {}
         let val = self.call("health", &P {}).await?;
-        serde_json::from_value(val).map_err(|e| ClientError {
-            category: None,
-            message: e.to_string(),
-        })
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
     }
 
     pub async fn tokens(&self) -> Result<TokensResult, ClientError> {
         #[derive(Serialize)]
         struct P {}
         let val = self.call("tokens", &P {}).await?;
-        serde_json::from_value(val).map_err(|e| ClientError {
-            category: None,
-            message: e.to_string(),
-        })
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
     }
 
     pub async fn tokens_history(&self) -> Result<TokensHistoryResult, ClientError> {
         #[derive(Serialize)]
         struct P {}
         let val = self.call("tokens.history", &P {}).await?;
-        serde_json::from_value(val).map_err(|e| ClientError {
-            category: None,
-            message: e.to_string(),
-        })
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
     }
 
     pub async fn settings(&self) -> Result<SettingsResult, ClientError> {
         #[derive(Serialize)]
         struct P {}
         let val = self.call("settings", &P {}).await?;
-        serde_json::from_value(val).map_err(|e| ClientError {
-            category: None,
-            message: e.to_string(),
-        })
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
     }
 
     pub async fn settings_update(&self, params: UpdateSettingsParams) -> Result<(), ClientError> {
@@ -754,20 +907,14 @@ impl Client {
         #[derive(Serialize)]
         struct P {}
         let val = self.call("settings.logs.download", &P {}).await?;
-        serde_json::from_value(val).map_err(|e| ClientError {
-            category: None,
-            message: e.to_string(),
-        })
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
     }
 
     pub async fn launchers(&self) -> Result<LaunchersResult, ClientError> {
         #[derive(Serialize)]
         struct P {}
         let val = self.call("launchers", &P {}).await?;
-        serde_json::from_value(val).map_err(|e| ClientError {
-            category: None,
-            message: e.to_string(),
-        })
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
     }
 
     pub async fn launchers_refresh(&self) -> Result<(), ClientError> {
@@ -835,10 +982,7 @@ impl Client {
         params: MediaImageParams,
     ) -> Result<MediaImageResult, ClientError> {
         let val = self.call("media.image", &params).await?;
-        serde_json::from_value(val).map_err(|e| ClientError {
-            category: None,
-            message: e.to_string(),
-        })
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
     }
 
     /// Fetches the full metadata graph for a single media row —
@@ -892,10 +1036,7 @@ impl Client {
         let val = self
             .call("media.history.latest", &serde_json::json!({}))
             .await?;
-        serde_json::from_value(val).map_err(|e| ClientError {
-            category: None,
-            message: e.to_string(),
-        })
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
     }
 
     /// Adds or removes mutable user tags for one indexed media item.
@@ -904,10 +1045,7 @@ impl Client {
         params: MediaTagsUpdateParams,
     ) -> Result<MediaTagsUpdateResult, ClientError> {
         let val = self.call("media.tags.update", &params).await?;
-        serde_json::from_value(val).map_err(|e| ClientError {
-            category: None,
-            message: e.to_string(),
-        })
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
     }
 
     /// Snapshot of Core's media state — database build status plus the
@@ -918,10 +1056,7 @@ impl Client {
         #[derive(Serialize)]
         struct P {}
         let val = self.call("media", &P {}).await?;
-        serde_json::from_value(val).map_err(|e| ClientError {
-            category: None,
-            message: e.to_string(),
-        })
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
     }
 
     /// Triggers a (re)build of Core's media database. With an empty
@@ -967,10 +1102,7 @@ impl Client {
         #[derive(Serialize)]
         struct P {}
         let val = self.call("media.scrape.status", &P {}).await?;
-        serde_json::from_value(val).map_err(|e| ClientError {
-            category: None,
-            message: e.to_string(),
-        })
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
     }
 
     /// Lists the scrapers Core knows how to run. Used to resolve a
@@ -979,10 +1111,7 @@ impl Client {
         #[derive(Serialize)]
         struct P {}
         let val = self.call("scrapers", &P {}).await?;
-        serde_json::from_value(val).map_err(|e| ClientError {
-            category: None,
-            message: e.to_string(),
-        })
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
     }
 
     pub async fn run(&self, params: RunParams) -> Result<(), ClientError> {
@@ -1003,10 +1132,7 @@ impl Client {
         #[derive(Serialize)]
         struct P {}
         let val = self.call("version", &P {}).await?;
-        serde_json::from_value(val).map_err(|e| ClientError {
-            category: None,
-            message: e.to_string(),
-        })
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
     }
 }
 
@@ -1047,6 +1173,20 @@ mod tests {
     use std::pin::Pin;
     use std::task::{Context, Poll};
 
+    #[allow(clippy::unwrap_used, reason = "bounded in-memory RPC fixtures")]
+    async fn dispatch_error(data: Value) -> ClientError {
+        let pending: PendingMap = Arc::new(Mutex::new(HashMap::new()));
+        let (tx, rx) = oneshot::channel();
+        pending.lock().unwrap().insert("repair".into(), tx);
+        let (notifications, _) = broadcast::channel(1);
+        let response: RpcResponse = serde_json::from_value(serde_json::json!({
+            "id": "repair", "error": {"message": "Core said something", "data": data}
+        }))
+        .unwrap();
+        handle_incoming(response, &pending, &notifications);
+        rx.await.unwrap().unwrap_err()
+    }
+
     #[tokio::test]
     #[allow(clippy::unwrap_used, reason = "bounded in-memory RPC fixtures")]
     async fn repair_metadata_survives_rpc_dispatch_without_exposing_generic_errors() {
@@ -1074,12 +1214,110 @@ mod tests {
             let error = rx.await.unwrap().unwrap_err();
             assert_eq!(error.message, message);
             assert_eq!(error.repair_message().is_some(), expected);
+            assert!(error.launch_repair().is_none());
         }
         let oversized = ClientError {
             message: "x".repeat(1025),
-            category: Some("launch_repair".into()),
+            repair: Some(RepairData::default()),
         };
         assert!(oversized.repair_message().is_none());
+    }
+
+    #[test]
+    fn every_reason_has_its_own_token_and_parses_back() {
+        let mut seen = Vec::new();
+        for reason in LaunchReason::ALL {
+            let token = reason.token();
+            assert!(!token.is_empty());
+            assert!(!seen.contains(&token), "duplicate reason token {token}");
+            seen.push(token);
+            assert_eq!(LaunchReason::parse(token), Some(reason));
+        }
+        assert_eq!(LaunchReason::parse("launcher_on_fire"), None);
+        assert_eq!(LaunchReason::parse(""), None);
+        // Core's explicit "no reason" spells the same degradation path as
+        // a reason this build has never heard of.
+        assert_eq!(LaunchReason::parse(UNSPECIFIED_REASON), None);
+    }
+
+    #[tokio::test]
+    async fn an_unspecified_reason_keeps_cores_own_sentence() {
+        let error = dispatch_error(serde_json::json!({
+            "category": "launch_repair",
+            "reason": UNSPECIFIED_REASON,
+        }))
+        .await;
+        assert!(error.launch_repair().is_none());
+        assert_eq!(error.repair_message(), Some("Core said something"));
+    }
+
+    #[tokio::test]
+    async fn a_named_reason_arrives_typed_with_its_display_names() {
+        let error = dispatch_error(serde_json::json!({
+            "category": "launch_repair",
+            "reason": "launcher_plugin_missing",
+            "params": {"launcher": " RetroArch ", "plugin": "Mesen"},
+        }))
+        .await;
+        assert_eq!(
+            error.launch_repair(),
+            Some(LaunchRepair {
+                reason: LaunchReason::LauncherPluginMissing,
+                launcher: "RetroArch".into(),
+                plugin: "Mesen".into(),
+            })
+        );
+        // The typed reason owns the wording, so Core's sentence stops here.
+        assert_eq!(error.repair_message(), None);
+    }
+
+    #[tokio::test]
+    async fn a_reason_this_build_does_not_know_keeps_cores_own_sentence() {
+        let error = dispatch_error(serde_json::json!({
+            "category": "launch_repair",
+            "reason": "launcher_possessed",
+            "params": {"launcher": "RetroArch"},
+        }))
+        .await;
+        assert!(error.launch_repair().is_none());
+        assert_eq!(error.repair_message(), Some("Core said something"));
+    }
+
+    #[tokio::test]
+    async fn unusable_display_names_are_dropped_rather_than_carried_into_a_sentence() {
+        for params in [
+            serde_json::json!({}),
+            serde_json::json!({"launcher": "", "plugin": "   "}),
+            serde_json::json!({"launcher": "line\nbreak", "plugin": 7}),
+            serde_json::json!({"launcher": "x".repeat(MAX_DISPLAY_NAME + 1)}),
+        ] {
+            let error = dispatch_error(serde_json::json!({
+                "category": "launch_repair",
+                "reason": "launcher_not_installed",
+                "params": params,
+            }))
+            .await;
+            assert_eq!(
+                error.launch_repair(),
+                Some(LaunchRepair {
+                    reason: LaunchReason::LauncherNotInstalled,
+                    launcher: String::new(),
+                    plugin: String::new(),
+                })
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn params_without_a_launch_repair_category_are_ignored() {
+        let error = dispatch_error(serde_json::json!({
+            "category": "execution_failed",
+            "reason": "launcher_not_installed",
+            "params": {"launcher": "RetroArch"},
+        }))
+        .await;
+        assert!(error.launch_repair().is_none());
+        assert!(error.repair_message().is_none());
     }
 
     struct BackpressuredSocket(Option<oneshot::Sender<()>>);

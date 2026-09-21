@@ -677,6 +677,7 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_dialog_open => set_dialog_open,
         get_dialog_kind => set_dialog_kind,
         get_dialog_error => set_dialog_error,
+        get_dialog_repair => set_dialog_repair,
         get_first_run_phase => set_first_run_phase,
         get_dialog_detail => set_dialog_detail,
         get_dialog_arg => set_dialog_arg,

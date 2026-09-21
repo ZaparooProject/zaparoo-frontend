@@ -93,9 +93,10 @@ fn dialog_target(ov: &Overlays<'_>) -> Option<Target> {
         PressOwner::Dialog,
         index,
         format!(
-            "{:?}:{:?}:{:?}:{}:{}:{button:?}",
+            "{:?}:{:?}:{:?}:{:?}:{}:{}:{button:?}",
             ov.get_dialog_kind(),
             ov.get_dialog_error(),
+            ov.get_dialog_repair(),
             ov.get_first_run_phase(),
             ov.get_dialog_detail(),
             ov.get_dialog_arg()

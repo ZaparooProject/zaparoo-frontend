@@ -8,8 +8,8 @@
 
 use crate::{App, GridCell, HubView, Shell, Sizing, SystemsView};
 use crate::{
-    ControlKind, DialogButton, DialogKind, ErrorKind, GamesMode, LogPhase, PressOwner, RowKind,
-    Screen, SettingsPage, SystemsMode,
+    ControlKind, DialogButton, DialogKind, ErrorKind, GamesMode, LogPhase, PressOwner,
+    RepairReason, RowKind, Screen, SettingsPage, SystemsMode,
 };
 use slint::platform::software_renderer::{MinimalSoftwareWindow, RepaintBufferType, Rgb565Pixel};
 use slint::platform::{Platform, WindowAdapter};
@@ -1094,19 +1094,124 @@ fn launch_repair_uses_existing_alert_without_a_retry_action() {
     let (app, _) = boot();
     let (_runtime, ctx) = offline_ctx();
     app.global::<crate::Motion>().set_enabled(false);
-    let entry =
-        zaparoo_app::action_error::launch_failure("Game", Some("Check player storage access"));
-    crate::router::report_action_error(&ctx, &app, &entry.kind, &entry.context);
+    let entry = zaparoo_app::action_error::launch_failure(
+        "Game",
+        Some(zaparoo_app::action_error::LaunchRepair {
+            reason: "launcher_plugin_missing".into(),
+            launcher: "RetroArch".into(),
+            plugin: "Mesen".into(),
+        }),
+        None,
+    );
+    crate::router::report_action_failure(&ctx, &app, entry);
     let overlay = app.global::<crate::Overlays>();
     assert!(overlay.get_dialog_open());
     assert_eq!(overlay.get_dialog_error(), ErrorKind::LaunchRepair);
-    assert_eq!(overlay.get_dialog_arg(), "Check player storage access");
+    assert_eq!(
+        overlay.get_dialog_repair(),
+        RepairReason::LauncherPluginMissing
+    );
+    assert_eq!(overlay.get_dialog_detail(), "RetroArch");
+    assert_eq!(overlay.get_dialog_arg(), "Mesen");
+    let labels = app.global::<crate::DialogLabels>();
+    assert_eq!(
+        labels.invoke_body(
+            DialogKind::ActionError,
+            ErrorKind::LaunchRepair,
+            RepairReason::LauncherPluginMissing,
+            crate::FirstRunPhase::Idle,
+            "RetroArch".into(),
+            "Mesen".into(),
+        ),
+        "RetroArch needs Mesen for this game. Download Mesen in RetroArch's own updater, then try again."
+    );
     assert_eq!(
         overlay.get_dialog_buttons().row_data(0),
         Some(DialogButton::Ok)
     );
     crate::router::handle_action(&ctx, &app, "accept");
     assert!(!overlay.get_dialog_open());
+}
+
+#[test]
+fn a_reason_core_grew_after_this_build_falls_back_to_its_own_sentence() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    app.global::<crate::Motion>().set_enabled(false);
+    let entry = zaparoo_app::action_error::launch_failure(
+        "Game",
+        None,
+        Some("Check player storage access"),
+    );
+    crate::router::report_action_failure(&ctx, &app, entry);
+    let overlay = app.global::<crate::Overlays>();
+    assert_eq!(overlay.get_dialog_error(), ErrorKind::LaunchRepair);
+    assert_eq!(overlay.get_dialog_repair(), RepairReason::None);
+    assert_eq!(overlay.get_dialog_arg(), "Check player storage access");
+    let labels = app.global::<crate::DialogLabels>();
+    assert_eq!(
+        labels.invoke_error_body(
+            ErrorKind::LaunchRepair,
+            RepairReason::None,
+            "".into(),
+            "Check player storage access".into(),
+        ),
+        "Check player storage access"
+    );
+    // No reason and no sentence: today's generic launch copy, naming the game.
+    assert_eq!(
+        labels.invoke_error_body(
+            ErrorKind::Launch,
+            RepairReason::None,
+            "".into(),
+            "Sonic".into()
+        ),
+        "Could not start Sonic. Check Zaparoo Core and try again."
+    );
+}
+
+#[test]
+fn every_launch_reason_has_its_own_finished_sentence() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _) = boot();
+    let labels = app.global::<crate::DialogLabels>();
+    let mut bodies = Vec::new();
+    for reason in zaparoo_core::client::LaunchReason::ALL {
+        // `cancelled` has no copy on purpose; `router::launch_alert` drops it.
+        let Ok(reason) = RepairReason::try_from(reason.token()) else {
+            continue;
+        };
+        // Both names, one name, neither: no form may leave a hole.
+        for (launcher, plugin) in [("RetroArch", "Mesen"), ("RetroArch", ""), ("", "")] {
+            let body = labels.invoke_repair_body(reason, launcher.into(), plugin.into());
+            let title = labels.invoke_repair_title(reason);
+            assert!(!title.is_empty(), "{reason:?} has no title");
+            assert!(!body.is_empty(), "{reason:?} has no body for {launcher:?}");
+            assert!(
+                !body.contains('{') && !body.contains('}'),
+                "{reason:?} left a placeholder: {body}"
+            );
+            for hole in ["  ", " .", " ,", "null", "()", "\"\""] {
+                assert!(!body.contains(hole), "{reason:?} left {hole:?} in: {body}");
+            }
+            if launcher.is_empty() {
+                assert!(
+                    !body.contains("RetroArch") && !body.contains("Mesen"),
+                    "{reason:?} named a launcher it was not given: {body}"
+                );
+            }
+        }
+        bodies.push(labels.invoke_repair_body(reason, "RetroArch".into(), "Mesen".into()));
+    }
+    let mut unique = bodies.clone();
+    unique.sort();
+    unique.dedup();
+    assert_eq!(
+        unique.len(),
+        bodies.len(),
+        "each reason needs copy a user can tell apart"
+    );
 }
 
 #[test]

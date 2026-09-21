@@ -33,6 +33,18 @@ export enum DialogProgress { none, preparing, optimizing, paused, step }
 export enum DialogButton { ok, yes, no, retry, cancel, i-understand, start-scan }
 export enum FirstRunPhase { idle, running, done }
 export enum ErrorKind { generic, core-start, launch, launch-repair, favorite, add-to-hub, media-index, media-scrape, media-scrapers, media-cancel, launcher, launcher-save, alternate-discovery, qr-code, card-write, setting }
+// Why a launch did not start, as Core's closed vocabulary names it. The
+// frontend owns the wording; this only chooses which sentence to show.
+// `none` is a launch failure Core did not explain in a reason this build
+// knows, which keeps Core's own sentence. Core's `cancelled` has no
+// variant here: nothing is shown for a launch the app itself called off.
+export enum RepairReason {
+    none, launcher-not-installed, launcher-component-missing, launcher-plugin-missing,
+    launcher-ambiguous, launcher-unsupported-media, launcher-options-unsupported,
+    launcher-version-unsupported, storage-permission-required, storage-provider-unsupported,
+    storage-unavailable, media-unavailable, host-unavailable, host-foreground-required,
+    outcome-unknown, refused,
+}
 
 // Text adapters are for vocabulary/resource keys and focus identity only,
 // never routing. Runtime decisions use the enums themselves.

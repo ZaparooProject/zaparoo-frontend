@@ -17,7 +17,7 @@ and consumers, the snapshot binary, and the MiSTer dual-head mirror/tests.
 | Settings | `SettingsPage`, `RowKind`, `ControlKind`, `ActionStatus`: root/subpage, outgoing page, field controls and job status |
 | Setup | `SetupKind`, `SetupPicker`, `ScopeKind`, `SetupAction`: job, picker, scope label and help action; Rust selection stores domain `Scope` with its ID payload |
 | Status | `StatusKind`, `AppCue`, `DisabledReason`: status ladder, transient launch cue and disabled Hub captions |
-| Dialogs | `DialogKind`, `ErrorKind`, `FirstRunPhase`, `DialogProgress`, `DialogButton`: kinds, phase, progress and decisions, separate from text payloads |
+| Dialogs | `DialogKind`, `ErrorKind`, `RepairReason`, `FirstRunPhase`, `DialogProgress`, `DialogButton`: kinds, why a launch failed, phase, progress and decisions, separate from text payloads |
 | Input | `PressOwner`, `ScrollAction`: delayed-accept ownership, overlay pointer dispatch and Details scroll commands |
 | Display | `Orientation`, `VideoStandard`: UI selection; orientation stays typed through scene sizing and live backend updates |
 | Log upload | `LogPhase`: uploading, done, failed |
@@ -52,6 +52,12 @@ Not every repeated literal is state. These remain intentionally primitive:
 routing. `TryFrom<&str>` rejects unknown tokens. Display seeding preserves the
 existing horizontal/NTSC fallback; the shared error queue intentionally accepts
 future kinds, which project to `ErrorKind::Generic` without losing queue context.
+A failed launch carries Core's own `launch_repair` reason the same way:
+`zaparoo_core::client::LaunchReason` parses it at the API boundary and
+`RepairReason` is its UI projection, so the frontend writes the sentence.
+A reason Core grew after this build, or its explicit `unspecified`, projects
+to `RepairReason::None` and keeps Core's message; `cancelled` has no
+projection at all, because that launch raises no alert.
 
 `SettingsPage::Root`, `PressOwner::None`, and `DialogKind::None` replace meaningful
 empty-string sentinels. `Screen::None` represents an intentionally unmounted

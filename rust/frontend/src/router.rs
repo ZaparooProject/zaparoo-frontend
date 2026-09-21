@@ -146,7 +146,7 @@ pub enum ContextOwner {
 
 /// First-run index modal phase: idle, running, completed.
 pub use crate::FirstRunPhase;
-use crate::{DialogButton, DialogKind, DialogProgress, ErrorKind};
+use crate::{DialogButton, DialogKind, DialogProgress, ErrorKind, RepairReason};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PendingRestart {
@@ -400,6 +400,7 @@ fn open_dialog(
     let overlays = app.global::<crate::Overlays>();
     overlays.set_dialog_kind(kind);
     overlays.set_dialog_error(ErrorKind::Generic);
+    overlays.set_dialog_repair(RepairReason::None);
     overlays.set_first_run_phase(FirstRunPhase::Idle);
     overlays.set_dialog_detail(SharedString::from(detail));
     overlays.set_dialog_arg(SharedString::from(arg));
@@ -1811,16 +1812,23 @@ pub(crate) fn open_alert(app: &App, kind: DialogKind) {
 /// and queued by `zaparoo_app::action_error` so a burst of failures is
 /// read one alert at a time.
 pub(crate) fn report_action_error(ctx: &Ctx, app: &App, kind: &str, context: &str) {
+    report_action_failure(ctx, app, action_error::Entry::new(kind, context));
+}
+
+/// `report_action_error` for a failure that carries more than a kind and a
+/// context, such as a launch Core explained in its own vocabulary.
+pub(crate) fn report_action_failure(ctx: &Ctx, app: &App, entry: action_error::Entry) {
     // An alert is the one thing allowed above a modal, but a failed
     // discovery arrives while the context menu still holds its
     // "Searching…" row: close the menu first so Back returns to the
     // screen rather than to a row that can never resolve.
-    if action_error::closes_context_menu(kind) && app.global::<crate::Overlays>().get_context_open()
+    if action_error::closes_context_menu(&entry.kind)
+        && app.global::<crate::Overlays>().get_context_open()
     {
         close_context_menu(ctx, app);
     }
     let slot_free = !app.global::<crate::Overlays>().get_dialog_open();
-    let entry = lock(&ctx.shared).errors.present(kind, context, slot_free);
+    let entry = lock(&ctx.shared).errors.present_entry(entry, slot_free);
     if let Some(entry) = entry {
         show_action_error(app, &entry);
     }
@@ -1833,15 +1841,21 @@ fn show_action_error(app: &App, entry: &action_error::Entry) {
     } else {
         DialogButton::Ok
     };
-    open_dialog(
-        app,
-        DialogKind::ActionError,
-        "",
-        &entry.context,
-        &[button],
-        0,
-    );
-    app.global::<crate::Overlays>().set_dialog_error(error);
+    // A launch Core named a reason for puts its two display names in the
+    // dialog's two text slots; every other failure keeps `arg` as the one
+    // context value its copy names.
+    let named = entry.repair.as_ref().and_then(|repair| {
+        let reason = RepairReason::try_from(repair.reason.as_str()).ok()?;
+        (reason != RepairReason::None).then_some((reason, repair))
+    });
+    let (reason, detail, arg) = match named {
+        Some((reason, repair)) => (reason, repair.launcher.as_str(), repair.plugin.as_str()),
+        None => (RepairReason::None, "", entry.context.as_str()),
+    };
+    open_dialog(app, DialogKind::ActionError, detail, arg, &[button], 0);
+    let overlays = app.global::<crate::Overlays>();
+    overlays.set_dialog_error(error);
+    overlays.set_dialog_repair(reason);
 }
 
 /// Accept on a category tile while the catalog errored: refetch it.
@@ -2101,7 +2115,7 @@ pub(crate) fn launch(ctx: &Ctx, app: &App, text: String, name: &str) {
             Ok(()) => None,
             Err(e) => {
                 tracing::warn!("launch failed for {name}: {e}");
-                Some(action_error::launch_failure(&name, e.repair_message()))
+                launch_alert(&name, e.launch_repair(), e.repair_message())
             }
         };
         inflight.store(false, Ordering::SeqCst);
@@ -2109,10 +2123,37 @@ pub(crate) fn launch(ctx: &Ctx, app: &App, text: String, name: &str) {
             crate::press_feedback::release(&app, hold);
             clear_launch_cue(&app);
             if let Some(entry) = failure {
-                report_action_error(&ctx2, &app, &entry.kind, &entry.context);
+                report_action_failure(&ctx2, &app, entry);
             }
         });
     });
+}
+
+/// The alert a failed launch earns, if any, in the most specific form Core
+/// gave us. A launch the app itself called off is not something the player
+/// did or can fix, so it stays in the log and never interrupts them; every
+/// other failure becomes an alert the frontend words itself.
+fn launch_alert(
+    name: &str,
+    repair: Option<zaparoo_core::client::LaunchRepair>,
+    message: Option<&str>,
+) -> Option<action_error::Entry> {
+    use zaparoo_core::client::LaunchReason;
+    if repair
+        .as_ref()
+        .is_some_and(|repair| repair.reason == LaunchReason::Cancelled)
+    {
+        return None;
+    }
+    Some(action_error::launch_failure(
+        name,
+        repair.map(|repair| action_error::LaunchRepair {
+            reason: repair.reason.token().to_string(),
+            launcher: repair.launcher,
+            plugin: repair.plugin,
+        }),
+        message,
+    ))
 }
 
 /// The header line is for a launch that turns into a wait. A word that
@@ -2177,5 +2218,35 @@ mod tests {
         let picked = systems_for_category(&all, "Other");
         assert_eq!(picked.len(), 1);
         assert_eq!(picked[0].id, "weird");
+    }
+
+    #[test]
+    fn a_cancelled_launch_is_logged_and_never_shown() {
+        use zaparoo_core::client::{LaunchReason, LaunchRepair};
+        let repair = |reason| {
+            Some(LaunchRepair {
+                reason,
+                launcher: "RetroArch".into(),
+                plugin: String::new(),
+            })
+        };
+        assert_eq!(
+            super::launch_alert("Sonic", repair(LaunchReason::Cancelled), Some("cancelled")),
+            None
+        );
+        let shown = super::launch_alert("Sonic", repair(LaunchReason::Refused), None);
+        assert_eq!(
+            shown.map(|entry| (entry.kind, entry.repair.unwrap_or_default().reason)),
+            Some(("launch_repair".to_string(), "refused".to_string()))
+        );
+        // No reason at all still reaches the player, worded by us or by Core.
+        assert_eq!(
+            super::launch_alert("Sonic", None, Some("Core said so")).map(|entry| entry.context),
+            Some("Core said so".to_string())
+        );
+        assert_eq!(
+            super::launch_alert("Sonic", None, None).map(|entry| (entry.kind, entry.context)),
+            Some(("launch".to_string(), "Sonic".to_string()))
+        );
     }
 }
