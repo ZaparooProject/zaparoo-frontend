@@ -22,6 +22,8 @@ use crate::{App, GridCell, SettingsInput, SettingsRow, SettingsView};
 /// What the registry needs to know about this machine.
 fn inputs(ctx: &Ctx) -> rules::Inputs {
     rules::Inputs {
+        can_pick_folder: ctx.folders.available(),
+        can_discover_cores: ctx.core_discovery.available(),
         is_mister: ctx.is_mister,
         crt_enabled: ctx.crt_enabled,
         debug_build: cfg!(debug_assertions),
@@ -196,6 +198,22 @@ fn rows(ctx: &Ctx, app: &App, page: crate::SettingsPage) -> Vec<SettingsRow> {
                             out.status_key = status;
                             out.status_count =
                                 zaparoo_app::format::count(i64::from(count), &language).into();
+                            if id == "addGameFolder" {
+                                let (status, saved, pending) = ctx.folders.status();
+                                out.status_key = status;
+                                out.status_count =
+                                    zaparoo_app::format::count(i64::from(saved), &language).into();
+                                out.busy = pending;
+                                out.enabled = !pending;
+                            } else if id == "detectRetroArchCores" {
+                                let (status, detected, pending) = ctx.core_discovery.status();
+                                out.status_key = status;
+                                out.status_count =
+                                    zaparoo_app::format::count(i64::from(detected), &language)
+                                        .into();
+                                out.busy = pending;
+                                out.enabled = !pending;
+                            }
                         }
                         Control::Navigate => {}
                     }
@@ -548,6 +566,8 @@ fn accept(ctx: &Ctx, app: &App, id: &str, control: Control) {
             "aboutLicense" => crate::router::enter_about(ctx, app),
             "documentation" => crate::router::open_documentation_qr(app),
             "uploadLog" => crate::log_upload::open(ctx, app),
+            "addGameFolder" => crate::folder_picker::request(ctx, app),
+            "detectRetroArchCores" => crate::core_discovery::request(ctx, app),
             "crtCalibration" => crate::router::open_crt_calibration(ctx, app),
             "updateMediaDb" => {
                 if ms.indexing || ms.optimizing {

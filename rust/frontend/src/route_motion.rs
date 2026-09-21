@@ -330,6 +330,8 @@ fn offline_ctx() -> (tokio::runtime::Runtime, crate::router::Ctx) {
     let handle = runtime.handle().clone();
     let client = zaparoo_core::client::Client::new("ws://127.0.0.1:1".into(), &handle);
     let ctx = crate::router::Ctx {
+        folders: crate::folder_picker::Model::default(),
+        core_discovery: crate::core_discovery::Model::default(),
         store: zaparoo_core::store::Store::new(client, handle.clone()),
         handle,
         media: crate::media_cache::MediaCache::new().0,
@@ -350,6 +352,74 @@ fn offline_ctx() -> (tokio::runtime::Runtime, crate::router::Ctx) {
         framebuffer_size: (W, H),
     };
     (runtime, ctx)
+}
+
+#[test]
+fn folder_setting_dispatches_host_once_until_completion() {
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    };
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let requests = Arc::new(AtomicUsize::new(0));
+    let counter = requests.clone();
+    ctx.folders.configure(Arc::new(move || {
+        counter.fetch_add(1, Ordering::SeqCst);
+        true
+    }));
+    app.global::<Shell>().set_active_screen(Screen::Settings);
+    crate::settings::open_page(&ctx, &app, SettingsPage::Library);
+    crate::settings::handle_action(&ctx, &app, "accept");
+    crate::settings::handle_action(&ctx, &app, "accept");
+    assert_eq!(requests.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        ctx.folders.status(),
+        (crate::ActionStatus::FolderOpening, 0, true)
+    );
+    assert!(ctx
+        .folders
+        .update(1, zaparoo_app::folder_picker::State::Cancelled, 2));
+    assert!(!ctx
+        .folders
+        .update(1, zaparoo_app::folder_picker::State::Failed, 0));
+    crate::settings::handle_action(&ctx, &app, "accept");
+    assert_eq!(requests.load(Ordering::SeqCst), 2);
+}
+
+#[test]
+fn core_discovery_setting_dispatches_host_once_until_completion() {
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    };
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let requests = Arc::new(AtomicUsize::new(0));
+    let counter = requests.clone();
+    ctx.core_discovery.configure(Arc::new(move || {
+        counter.fetch_add(1, Ordering::SeqCst);
+        true
+    }));
+    app.global::<Shell>().set_active_screen(Screen::Settings);
+    crate::settings::open_page(&ctx, &app, SettingsPage::Library);
+    crate::settings::handle_action(&ctx, &app, "accept");
+    crate::settings::handle_action(&ctx, &app, "accept");
+    assert_eq!(requests.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        ctx.core_discovery.status(),
+        (crate::ActionStatus::LauncherOpening, 0, true)
+    );
+    assert!(ctx
+        .core_discovery
+        .update(1, zaparoo_app::core_discovery::State::Cancelled, 0));
+    assert!(!ctx
+        .core_discovery
+        .update(1, zaparoo_app::core_discovery::State::Failed, 0));
+    crate::settings::handle_action(&ctx, &app, "accept");
+    assert_eq!(requests.load(Ordering::SeqCst), 2);
 }
 
 #[test]

@@ -84,7 +84,15 @@ pub const PAGES: &[Page] = &[
 
 /// What the registry needs to know about the machine it runs on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "independent runtime capabilities"
+)]
 pub struct Inputs {
+    /// An embedding host can grant access through its own folder chooser.
+    pub can_pick_folder: bool,
+    /// An embedding host can optionally enumerate `RetroArch`'s cores directory.
+    pub can_discover_cores: bool,
     /// `MiSTer`: the resolution and analog-video rows only exist there.
     pub is_mister: bool,
     /// The frontend is already running the native CRT path.
@@ -116,7 +124,13 @@ const NAVIGATES: &[&str] = &[
     "pageSupportAbout",
 ];
 
-const ACTIONS: &[&str] = &["updateMediaDb", "runScraper", "uploadLog"];
+const ACTIONS: &[&str] = &[
+    "detectRetroArchCores",
+    "addGameFolder",
+    "updateMediaDb",
+    "runScraper",
+    "uploadLog",
+];
 
 /// The control a row id carries: everything that is not a toggle, a
 /// navigation or a one-shot is a picker.
@@ -181,17 +195,27 @@ pub fn page_rows(page: &str, inputs: &Inputs) -> Vec<Row> {
         ],
         // Maintenance leads: these are rows a user comes here to do, not
         // one-time preferences.
-        "pageLibraryData" => vec![
-            Row::Header("maintenance"),
-            field("updateMediaDb"),
-            field("runScraper"),
-            Row::Header("browsing"),
-            field("systemsLayout"),
-            field("gamesLayout"),
-            field("mediaImageType"),
-            field("showHidden"),
-            field("showOriginalFilenames"),
-        ],
+        "pageLibraryData" => {
+            let mut rows = Vec::new();
+            if inputs.can_pick_folder {
+                rows.push(field("addGameFolder"));
+            }
+            if inputs.can_discover_cores {
+                rows.push(field("detectRetroArchCores"));
+            }
+            rows.extend([
+                Row::Header("maintenance"),
+                field("updateMediaDb"),
+                field("runScraper"),
+                Row::Header("browsing"),
+                field("systemsLayout"),
+                field("gamesLayout"),
+                field("mediaImageType"),
+                field("showHidden"),
+                field("showOriginalFilenames"),
+            ]);
+            rows
+        }
         "pageSupportAbout" => vec![
             field("aboutLicense"),
             field("documentation"),
@@ -282,6 +306,7 @@ pub fn action_label_key(id: &str, busy: bool) -> &'static str {
             }
         }
         "uploadLog" => "upload",
+        "detectRetroArchCores" => "detect",
         _ => "open",
     }
 }
@@ -447,7 +472,43 @@ mod tests {
             is_mister: true,
             crt_enabled: crt,
             debug_build: false,
+            can_pick_folder: false,
+            can_discover_cores: false,
         }
+    }
+
+    #[test]
+    fn folder_action_requires_host_capability_and_leads_library() {
+        let mut inputs = Inputs::default();
+        assert!(!page_rows("pageLibraryData", &inputs)
+            .iter()
+            .any(|row| row.id() == "addGameFolder"));
+        inputs.can_pick_folder = true;
+        assert_eq!(
+            page_rows("pageLibraryData", &inputs)[0],
+            Row::Field {
+                id: "addGameFolder",
+                control: Control::Action
+            }
+        );
+        assert_eq!(control("addGameFolder"), Control::Action);
+    }
+
+    #[test]
+    fn core_discovery_requires_host_capability_and_is_an_action() {
+        let mut inputs = Inputs::default();
+        assert!(!page_rows("pageLibraryData", &inputs)
+            .iter()
+            .any(|row| row.id() == "detectRetroArchCores"));
+        inputs.can_discover_cores = true;
+        assert_eq!(
+            page_rows("pageLibraryData", &inputs)[0],
+            Row::Field {
+                id: "detectRetroArchCores",
+                control: Control::Action
+            }
+        );
+        assert_eq!(control("detectRetroArchCores"), Control::Action);
     }
 
     #[test]

@@ -12,12 +12,14 @@ mod actions;
 mod alternates;
 mod browse_motion;
 mod card_write;
+mod core_discovery;
 mod customization;
 mod display;
 mod drs;
 #[cfg(feature = "mister")]
 mod dual_head;
 mod folder_motion;
+mod folder_picker;
 mod fonts;
 #[cfg(any(feature = "mister", test))]
 mod frame_transition;
@@ -659,6 +661,8 @@ fn run_application(
     let status_language = effective_language(&persisted.settings.language);
     let (dormant, _) = tokio::sync::watch::channel(false);
     let ctx = Arc::new(Ctx {
+        folders: folder_picker::Model::default(),
+        core_discovery: core_discovery::Model::default(),
         store: store.clone(),
         handle: handle.clone(),
         media,

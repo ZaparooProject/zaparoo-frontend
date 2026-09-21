@@ -8,6 +8,8 @@
 use std::sync::Arc;
 
 use slint::ComponentHandle;
+pub use zaparoo_app::core_discovery::State as CoreDiscoveryState;
+pub use zaparoo_app::folder_picker::State as FolderPickerState;
 pub use zaparoo_core::platform_paths::HostPaths;
 pub use zaparoo_core::transport::Transport;
 
@@ -82,6 +84,84 @@ impl Input {
             ctx: ctx.clone(),
             app: app.as_weak(),
         }
+    }
+
+    /// Offer a host-owned picker; no platform handles or media paths enter Frontend.
+    pub fn configure_folder_picker(
+        &self,
+        request: Arc<dyn Fn() -> bool + Send + Sync>,
+    ) -> Result<(), slint::EventLoopError> {
+        let ctx = self.ctx.clone();
+        self.app.upgrade_in_event_loop(move |app| {
+            ctx.folders.configure(request);
+            crate::settings::refresh(&ctx, &app);
+        })
+    }
+
+    /// Offer optional host-owned `RetroArch` core-directory discovery.
+    pub fn configure_core_discovery(
+        &self,
+        request: Arc<dyn Fn() -> bool + Send + Sync>,
+    ) -> Result<(), slint::EventLoopError> {
+        let ctx = self.ctx.clone();
+        self.app.upgrade_in_event_loop(move |app| {
+            ctx.core_discovery.configure(request);
+            crate::settings::refresh(&ctx, &app);
+        })
+    }
+
+    pub fn core_discovery_status(
+        &self,
+        revision: u64,
+        state: CoreDiscoveryState,
+        detected: u16,
+    ) -> Result<(), slint::EventLoopError> {
+        let ctx = self.ctx.clone();
+        self.app.upgrade_in_event_loop(move |app| {
+            if ctx.core_discovery.update(revision, state, detected) {
+                crate::settings::refresh(&ctx, &app);
+            }
+        })
+    }
+
+    pub fn request_core_discovery(&self) -> Result<(), slint::EventLoopError> {
+        let ctx = self.ctx.clone();
+        self.app
+            .upgrade_in_event_loop(move |app| crate::core_discovery::request(&ctx, &app))
+    }
+
+    /// Apply an ordered permission snapshot for this window only.
+    pub fn folder_picker_status(
+        &self,
+        revision: u64,
+        state: FolderPickerState,
+        saved: u32,
+    ) -> Result<(), slint::EventLoopError> {
+        let ctx = self.ctx.clone();
+        self.app.upgrade_in_event_loop(move |app| {
+            if ctx.folders.update(revision, state, saved) {
+                crate::settings::refresh(&ctx, &app);
+            }
+        })
+    }
+
+    pub fn folder_picker_pending(&self) -> bool {
+        self.ctx.folders.status().2
+    }
+
+    pub fn folder_permission_count(&self) -> u32 {
+        self.ctx.folders.status().1
+    }
+
+    pub fn folder_permission_revoked(&self) -> bool {
+        self.ctx.folders.revoked()
+    }
+
+    /// Invoke the same guarded action as the Library settings row.
+    pub fn request_folder_picker(&self) -> Result<(), slint::EventLoopError> {
+        let ctx = self.ctx.clone();
+        self.app
+            .upgrade_in_event_loop(move |app| crate::folder_picker::request(&ctx, &app))
     }
 
     /// Replace the private endpoint only on this live window's event thread.
