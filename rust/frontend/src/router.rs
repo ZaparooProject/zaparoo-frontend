@@ -180,6 +180,8 @@ pub enum ListContext {
 
 #[derive(Debug, Clone)]
 pub struct Ctx {
+    pub folders: crate::folder_picker::Model,
+    pub core_discovery: crate::core_discovery::Model,
     pub store: Arc<Store>,
     pub handle: Handle,
     pub media: Arc<MediaCache>,
