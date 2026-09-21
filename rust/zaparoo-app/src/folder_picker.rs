@@ -38,7 +38,10 @@ impl Model {
             return false;
         }
         self.revision = revision;
-        self.state = if state == State::Ready && saved < self.saved {
+        // A revocation stays actionable until access comes back or the user acts. Hosts repeat
+        // unchanged snapshots on every resume, which must not erase the notice.
+        let still_revoked = self.state == State::Revoked && saved <= self.saved;
+        self.state = if state == State::Ready && (saved < self.saved || still_revoked) {
             State::Revoked
         } else {
             state
@@ -60,7 +63,13 @@ mod tests {
         assert_eq!(model.state, State::Revoked);
         assert_eq!(model.saved, 1);
         assert!(model.update(3, State::Ready, 1));
-        assert_eq!(model.state, State::Ready);
+        assert_eq!(model.state, State::Revoked, "a repeated snapshot keeps the notice");
+        assert!(model.update(4, State::Ready, 2));
+        assert_eq!(model.state, State::Ready, "restored access clears it");
+        assert!(model.update(5, State::Ready, 1));
+        assert!(model.begin());
+        assert!(model.update(6, State::Saved, 2));
+        assert_eq!(model.state, State::Saved, "acting on it clears it");
     }
 
     #[test]
