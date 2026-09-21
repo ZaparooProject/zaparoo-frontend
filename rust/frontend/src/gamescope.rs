@@ -24,10 +24,10 @@
 
 /// No compositor to claim on `MiSTer`: the presenter owns the screen and
 /// the wrapper decides who has it.
-#[cfg(feature = "mister")]
+#[cfg(not(feature = "desktop"))]
 pub fn claim_focus_when_mapped(_app: &crate::App) {}
 
-#[cfg(feature = "mister")]
+#[cfg(not(feature = "desktop"))]
 pub fn claim_focus_settling(_app: &crate::App) {}
 
 #[cfg(feature = "desktop")]

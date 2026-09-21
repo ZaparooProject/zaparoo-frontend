@@ -21,6 +21,7 @@ raw cargo as the default path; the justfile carries the expected environment
 | Dev run against mock Core | `just run-dev` (starts and stops the mock itself) |
 | Mock Core only | `just mock-core` |
 | Full test gate | `just test` (workspace plus the `mister` feature set) |
+| Hosted seam check | `just hosted-check` (software-renderer host tests; not Android compilation) |
 | Full lint gate | `just lint` (fmt, clippy for desktop, mister, and snapshot, deny, toolkit guard, translation template, notices, logo parity) |
 | Format | `just fmt` (`just fix` applies clippy fixes first) |
 | Regenerate the translation template | `just tr-extract` |
@@ -197,8 +198,8 @@ update rules, in short:
   same PR; CI publishes the new tag and fails a PR that skips the bump.
 - Bumping Slint touches `slint` and `slint-build` in `rust/frontend/Cargo.toml`
   (plus `fontique` and `resvg`, which must match the versions Slint resolves,
-  and the exact `i-slint-core` pin that gives the MiSTer build its image
-  decoders),
+  and the exact `i-slint-core` pin that gives the MiSTer and hosted builds
+  their image decoders),
   `SLINT_TR_EXTRACTOR_VERSION` in `Dockerfile.toolchain` (with a
   `scripts/toolchain/VERSION` bump), and the Slint exceptions in
   `rust/deny.toml`; then regenerate `just notices`.
@@ -210,7 +211,8 @@ update rules, in short:
 
 | Path | Purpose |
 |---|---|
-| `rust/frontend/src/main.rs` | Entry point: config, logger, tokio runtime, `Client`/`Store`, persisted state, window, language, services |
+| `rust/frontend/src/main.rs` | Thin standalone entry calling the shared application |
+| `rust/frontend/src/lib.rs` | Shared application wiring: config, logger, tokio runtime, `Client`/`Store`, persisted state, window, language, services |
 | `rust/frontend/src/router.rs` | All forward orchestration and the single input dispatch (`dispatch_action`) |
 | `rust/frontend/src/navigation.rs`, `folder_motion.rs`, `route_motion.rs` | Deferred routes that keep the source until the destination is ready; motion tests on a stepped clock |
 | `rust/frontend/src/{hub,systems,games,settings,about}.rs` | Per-screen drivers |
