@@ -20,7 +20,7 @@ default-run  = "frontend"
 
 [[bin]]
 name = "frontend"
-path = "src/main.rs"
+path = "src/standalone.rs"
 
 # Offline layout checker: renders the App through the same software
 # renderer the MiSTer build uses and writes a PNG. Debug/layout tool;

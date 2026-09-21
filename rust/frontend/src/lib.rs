@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 //
-// Frontend entry point. Init sequence: config, logger, tokio runtime,
+// Shared Frontend application. Init sequence: config, logger, tokio runtime,
 // `Client`, `Store`, persisted state, then the UI. The `zaparoo-core`
 // data layer owns the Core connection and caches; watch channels project
 // into Slint properties via `upgrade_in_event_loop`.
@@ -464,7 +464,7 @@ fn seed_display_globals(
     clippy::too_many_lines,
     reason = "startup wires independent runtime services in one ordered orchestration path"
 )]
-fn main() -> Result<(), slint::PlatformError> {
+pub fn run() -> Result<(), slint::PlatformError> {
     #[cfg(feature = "desktop")]
     pin_logical_pixels_to_physical();
 
