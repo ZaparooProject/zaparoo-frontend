@@ -2685,10 +2685,7 @@ fn open_context_menu(ctx: &Ctx, app: &App) {
             has_nfc: shared.has_nfc,
             is_favorite: row.is_favorite,
             is_arcade_system: system == ARCADE_SYSTEM_ID,
-            has_launchers: shared
-                .launchers
-                .iter()
-                .any(|l| l.system_id == system && l.available),
+            has_launchers: shared.launchers.iter().any(|l| l.system_id == system),
             media_busy: crate::router::media_busy(app),
         };
         (row, input)

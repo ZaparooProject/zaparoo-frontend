@@ -102,26 +102,16 @@ pub(crate) fn refresh(ctx: &Ctx, app: &App) {
     });
 }
 
-/// The available launcher ids Core offers for a system.
+/// The launcher ids Core offers for a system, in the order Core listed
+/// them. Core ranks a system's launchers by reviewed preference, so the
+/// picker renders that order verbatim rather than re-sorting it. A
+/// launcher that is not installed stays in the list and carries its own
+/// detection label, so the user can still see and pick it.
 fn launcher_ids(ctx: &Ctx, system_id: &str) -> Vec<String> {
-    let shared = lock(&ctx.shared);
-    let mut launchers: Vec<_> = shared
+    lock(&ctx.shared)
         .launchers
         .iter()
-        .filter(|launcher| launcher.system_id == system_id && launcher.available)
-        .collect();
-    launchers.sort_by(|left, right| {
-        let rank = |detected: Option<bool>| match detected {
-            Some(true) => 0,
-            None => 1,
-            Some(false) => 2,
-        };
-        rank(left.detected)
-            .cmp(&rank(right.detected))
-            .then_with(|| left.id.cmp(&right.id))
-    });
-    launchers
-        .into_iter()
+        .filter(|launcher| launcher.system_id == system_id)
         .map(|launcher| launcher.id.clone())
         .collect()
 }

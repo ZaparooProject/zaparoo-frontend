@@ -1046,17 +1046,21 @@ fn launcher_save_keeps_picker_locked_delays_cue_and_retries_original_choice() {
 }
 
 #[test]
-fn launcher_picker_prioritizes_detected_without_hiding_unscanned_choices() {
+fn launcher_picker_keeps_the_order_core_sent_and_lists_uninstalled_launchers() {
     assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
     let (app, _) = boot();
     let (_runtime, ctx) = offline_ctx();
     {
         let mut shared = crate::router::lock(&ctx.shared);
+        // Core ranks a system's launchers itself; this order deliberately
+        // puts the detected one last and the uninstalled one first.
         shared.launchers = vec![
             zaparoo_core::media_types::LauncherInfo {
                 id: "Missing".into(),
                 system_id: "NES".into(),
                 detected: Some(false),
+                available: false,
+                availability_reason: "Not installed.".into(),
                 ..Default::default()
             },
             zaparoo_core::media_types::LauncherInfo {
@@ -1066,7 +1070,7 @@ fn launcher_picker_prioritizes_detected_without_hiding_unscanned_choices() {
                 ..Default::default()
             },
             zaparoo_core::media_types::LauncherInfo {
-                id: "RetroArch.Mesen".into(),
+                id: "Mesen".into(),
                 system_id: "NES".into(),
                 detected: Some(true),
                 ..Default::default()
@@ -1075,17 +1079,17 @@ fn launcher_picker_prioritizes_detected_without_hiding_unscanned_choices() {
     }
     crate::launchers::open_system_picker(&ctx, &app, "NES");
     let rows = app.global::<crate::Overlays>().get_list_entries();
-    assert_eq!(rows.row_count(), 4);
+    assert_eq!(rows.row_count(), 4, "no launcher may be dropped");
     let entries: Vec<_> = (0..rows.row_count())
         .filter_map(|index| rows.row_data(index))
         .collect();
     assert_eq!(entries[0].id, "__default__");
-    assert_eq!(entries[1].id, "RetroArch.Mesen");
-    assert_eq!(entries[1].label_key, "launcher:detected");
+    assert_eq!(entries[1].id, "Missing", "Core's order must survive");
+    assert_eq!(entries[1].label_key, "launcher:not-detected");
     assert_eq!(entries[2].id, "Unknown");
     assert!(entries[2].label_key.is_empty());
-    assert_eq!(entries[3].id, "Missing");
-    assert_eq!(entries[3].label_key, "launcher:not-detected");
+    assert_eq!(entries[3].id, "Mesen");
+    assert_eq!(entries[3].label_key, "launcher:detected");
 }
 
 #[test]
