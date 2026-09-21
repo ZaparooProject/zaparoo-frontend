@@ -140,11 +140,25 @@ struct RpcResponse {
 #[derive(Debug, Deserialize, Clone)]
 struct RpcError {
     message: String,
+    data: Option<Value>,
 }
 
 #[derive(Debug)]
 pub struct ClientError {
     pub message: String,
+    pub category: Option<String>,
+}
+
+impl ClientError {
+    /// Only Core's explicit repair category carries display-safe application text.
+    /// Ordinary errors retain the generic alert; they may contain private details.
+    pub fn repair_message(&self) -> Option<&str> {
+        (self.category.as_deref() == Some("launch_repair")
+            && !self.message.is_empty()
+            && self.message.len() <= 1024
+            && !self.message.chars().any(char::is_control))
+        .then_some(self.message.as_str())
+    }
 }
 
 impl std::fmt::Display for ClientError {
@@ -177,6 +191,7 @@ fn deserialize_timed<T: DeserializeOwned>(
 ) -> Result<T, ClientError> {
     let started = Instant::now();
     let result = serde_json::from_value(val).map_err(|e| ClientError {
+        category: None,
         message: e.to_string(),
     });
     debug!(
@@ -207,6 +222,7 @@ fn teardown_session(tx_slot: &OutboundSlot, pending: &PendingMap) {
     };
     for (_, response) in drained {
         let _ = response.send(Err(ClientError {
+            category: None,
             message: "disconnected".into(),
         }));
     }
@@ -229,6 +245,13 @@ fn handle_incoming(
         if let Some(tx) = sender {
             let result = if let Some(err) = resp.error {
                 Err(ClientError {
+                    category: err
+                        .data
+                        .as_ref()
+                        .and_then(|data| data.get("category"))
+                        .and_then(Value::as_str)
+                        .filter(|category| category.len() <= 64)
+                        .map(str::to_owned),
                     message: err.message,
                 })
             } else {
@@ -590,6 +613,7 @@ impl Client {
             id: id.clone(),
         };
         let text = serde_json::to_string(&req).map_err(|e| ClientError {
+            category: None,
             message: e.to_string(),
         })?;
         let started = Instant::now();
@@ -603,6 +627,7 @@ impl Client {
             // steps or drains the newly registered request afterward.
             let sender = self.tx.lock().unwrap();
             let sender = sender.as_ref().ok_or_else(|| ClientError {
+                category: None,
                 message: "not connected".into(),
             })?;
             self.pending.lock().unwrap().insert(id.clone(), resp_tx);
@@ -628,11 +653,13 @@ impl Client {
                 "rpc round trip",
             );
             return Err(ClientError {
+                category: None,
                 message: "not connected".into(),
             });
         }
 
         let result = resp_rx.await.map_err(|_| ClientError {
+            category: None,
             message: "channel closed".into(),
         })?;
         match result {
@@ -663,6 +690,7 @@ impl Client {
     pub async fn systems(&self, params: SystemsParams) -> Result<SystemsResult, ClientError> {
         let val = self.call("systems", &params).await?;
         serde_json::from_value(val).map_err(|e| ClientError {
+            category: None,
             message: e.to_string(),
         })
     }
@@ -672,6 +700,7 @@ impl Client {
         struct P {}
         let val = self.call("readers", &P {}).await?;
         serde_json::from_value(val).map_err(|e| ClientError {
+            category: None,
             message: e.to_string(),
         })
     }
@@ -681,6 +710,7 @@ impl Client {
         struct P {}
         let val = self.call("health", &P {}).await?;
         serde_json::from_value(val).map_err(|e| ClientError {
+            category: None,
             message: e.to_string(),
         })
     }
@@ -690,6 +720,7 @@ impl Client {
         struct P {}
         let val = self.call("tokens", &P {}).await?;
         serde_json::from_value(val).map_err(|e| ClientError {
+            category: None,
             message: e.to_string(),
         })
     }
@@ -699,6 +730,7 @@ impl Client {
         struct P {}
         let val = self.call("tokens.history", &P {}).await?;
         serde_json::from_value(val).map_err(|e| ClientError {
+            category: None,
             message: e.to_string(),
         })
     }
@@ -708,6 +740,7 @@ impl Client {
         struct P {}
         let val = self.call("settings", &P {}).await?;
         serde_json::from_value(val).map_err(|e| ClientError {
+            category: None,
             message: e.to_string(),
         })
     }
@@ -722,6 +755,7 @@ impl Client {
         struct P {}
         let val = self.call("settings.logs.download", &P {}).await?;
         serde_json::from_value(val).map_err(|e| ClientError {
+            category: None,
             message: e.to_string(),
         })
     }
@@ -731,8 +765,16 @@ impl Client {
         struct P {}
         let val = self.call("launchers", &P {}).await?;
         serde_json::from_value(val).map_err(|e| ClientError {
+            category: None,
             message: e.to_string(),
         })
+    }
+
+    pub async fn launchers_refresh(&self) -> Result<(), ClientError> {
+        #[derive(Serialize)]
+        struct P {}
+        self.call("launchers.refresh", &P {}).await?;
+        Ok(())
     }
 
     pub async fn media_search(
@@ -794,6 +836,7 @@ impl Client {
     ) -> Result<MediaImageResult, ClientError> {
         let val = self.call("media.image", &params).await?;
         serde_json::from_value(val).map_err(|e| ClientError {
+            category: None,
             message: e.to_string(),
         })
     }
@@ -850,6 +893,7 @@ impl Client {
             .call("media.history.latest", &serde_json::json!({}))
             .await?;
         serde_json::from_value(val).map_err(|e| ClientError {
+            category: None,
             message: e.to_string(),
         })
     }
@@ -861,6 +905,7 @@ impl Client {
     ) -> Result<MediaTagsUpdateResult, ClientError> {
         let val = self.call("media.tags.update", &params).await?;
         serde_json::from_value(val).map_err(|e| ClientError {
+            category: None,
             message: e.to_string(),
         })
     }
@@ -874,6 +919,7 @@ impl Client {
         struct P {}
         let val = self.call("media", &P {}).await?;
         serde_json::from_value(val).map_err(|e| ClientError {
+            category: None,
             message: e.to_string(),
         })
     }
@@ -922,6 +968,7 @@ impl Client {
         struct P {}
         let val = self.call("media.scrape.status", &P {}).await?;
         serde_json::from_value(val).map_err(|e| ClientError {
+            category: None,
             message: e.to_string(),
         })
     }
@@ -933,6 +980,7 @@ impl Client {
         struct P {}
         let val = self.call("scrapers", &P {}).await?;
         serde_json::from_value(val).map_err(|e| ClientError {
+            category: None,
             message: e.to_string(),
         })
     }
@@ -956,6 +1004,7 @@ impl Client {
         struct P {}
         let val = self.call("version", &P {}).await?;
         serde_json::from_value(val).map_err(|e| ClientError {
+            category: None,
             message: e.to_string(),
         })
     }
@@ -997,6 +1046,41 @@ mod tests {
     use super::*;
     use std::pin::Pin;
     use std::task::{Context, Poll};
+
+    #[tokio::test]
+    #[allow(clippy::unwrap_used, reason = "bounded in-memory RPC fixtures")]
+    async fn repair_metadata_survives_rpc_dispatch_without_exposing_generic_errors() {
+        for (category, message, expected) in [
+            (Some("launch_repair"), "Check player storage access", true),
+            (
+                Some("execution_failed"),
+                "/private/path from a legacy error",
+                false,
+            ),
+            (None, "/private/path without structured metadata", false),
+            (Some("unknown"), "Unexpected category", false),
+            (Some("launch_repair"), "line\nbreak", false),
+            (Some("launch_repair"), "", false),
+        ] {
+            let pending: PendingMap = Arc::new(Mutex::new(HashMap::new()));
+            let (tx, rx) = oneshot::channel();
+            pending.lock().unwrap().insert("repair".into(), tx);
+            let (notifications, _) = broadcast::channel(1);
+            let response: RpcResponse = serde_json::from_value(serde_json::json!({
+                "id": "repair", "error": {"message": message, "data": {"category": category}}
+            }))
+            .unwrap();
+            handle_incoming(response, &pending, &notifications);
+            let error = rx.await.unwrap().unwrap_err();
+            assert_eq!(error.message, message);
+            assert_eq!(error.repair_message().is_some(), expected);
+        }
+        let oversized = ClientError {
+            message: "x".repeat(1025),
+            category: Some("launch_repair".into()),
+        };
+        assert!(oversized.repair_message().is_none());
+    }
 
     struct BackpressuredSocket(Option<oneshot::Sender<()>>);
 

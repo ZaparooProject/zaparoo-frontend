@@ -32,7 +32,7 @@ export enum DialogKind { none, quit-confirm, quit-blocked, restart-setting, noti
 export enum DialogProgress { none, preparing, optimizing, paused, step }
 export enum DialogButton { ok, yes, no, retry, cancel, i-understand, start-scan }
 export enum FirstRunPhase { idle, running, done }
-export enum ErrorKind { generic, launch, favorite, add-to-hub, media-index, media-scrape, media-scrapers, media-cancel, launcher, launcher-save, alternate-discovery, qr-code, card-write, setting }
+export enum ErrorKind { generic, core-start, launch, launch-repair, favorite, add-to-hub, media-index, media-scrape, media-scrapers, media-cancel, launcher, launcher-save, alternate-discovery, qr-code, card-write, setting }
 
 // Text adapters are for vocabulary/resource keys and focus identity only,
 // never routing. Runtime decisions use the enums themselves.

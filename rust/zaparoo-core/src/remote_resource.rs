@@ -404,6 +404,7 @@ mod tests {
                     async move {
                         if n == 1 {
                             Err(ClientError {
+                                category: None,
                                 message: "transient".into(),
                             })
                         } else {

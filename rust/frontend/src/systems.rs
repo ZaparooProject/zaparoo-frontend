@@ -1059,7 +1059,10 @@ fn open_context_menu(ctx: &Ctx, app: &App) {
         let Some(row) = shared.systems_model.current().cloned() else {
             return;
         };
-        let has_launchers = shared.launchers.iter().any(|l| l.system_id == row.id);
+        let has_launchers = shared
+            .launchers
+            .iter()
+            .any(|l| l.system_id == row.id && l.available);
         (row, has_launchers, shared.systems_model.mode)
     };
     if mode == SystemsMode::Favorites {

@@ -474,8 +474,8 @@ export global Overlays {
     in-out property <DialogKind> dialog-kind: DialogKind.none;
     in-out property <ErrorKind> dialog-error: ErrorKind.generic;
     in-out property <FirstRunPhase> first-run-phase: FirstRunPhase.idle;
-    // Runtime text (minimum Core version and context); `DialogLabels` composes the
-    // words from these so every dialog string can be translated.
+    // Runtime context includes Core-authored, display-safe repair text.
+    // DialogLabels translates interface copy; server text retains Core's language.
     in-out property <string> dialog-detail: "";
     in-out property <string> dialog-arg: "";
     // First-run progress line, as a key plus its numbers.

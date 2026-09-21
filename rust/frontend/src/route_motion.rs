@@ -1046,6 +1046,90 @@ fn launcher_save_keeps_picker_locked_delays_cue_and_retries_original_choice() {
 }
 
 #[test]
+fn launcher_picker_prioritizes_detected_without_hiding_unscanned_choices() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.launchers = vec![
+            zaparoo_core::media_types::LauncherInfo {
+                id: "Missing".into(),
+                system_id: "NES".into(),
+                detected: Some(false),
+                ..Default::default()
+            },
+            zaparoo_core::media_types::LauncherInfo {
+                id: "Unknown".into(),
+                system_id: "NES".into(),
+                detected: None,
+                ..Default::default()
+            },
+            zaparoo_core::media_types::LauncherInfo {
+                id: "RetroArch.Mesen".into(),
+                system_id: "NES".into(),
+                detected: Some(true),
+                ..Default::default()
+            },
+        ];
+    }
+    crate::launchers::open_system_picker(&ctx, &app, "NES");
+    let rows = app.global::<crate::Overlays>().get_list_entries();
+    assert_eq!(rows.row_count(), 4);
+    let entries: Vec<_> = (0..rows.row_count())
+        .filter_map(|index| rows.row_data(index))
+        .collect();
+    assert_eq!(entries[0].id, "__default__");
+    assert_eq!(entries[1].id, "RetroArch.Mesen");
+    assert_eq!(entries[1].label_key, "launcher:detected");
+    assert_eq!(entries[2].id, "Unknown");
+    assert!(entries[2].label_key.is_empty());
+    assert_eq!(entries[3].id, "Missing");
+    assert_eq!(entries[3].label_key, "launcher:not-detected");
+}
+
+#[test]
+fn launch_repair_uses_existing_alert_without_a_retry_action() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    app.global::<crate::Motion>().set_enabled(false);
+    let entry =
+        zaparoo_app::action_error::launch_failure("Game", Some("Check player storage access"));
+    crate::router::report_action_error(&ctx, &app, &entry.kind, &entry.context);
+    let overlay = app.global::<crate::Overlays>();
+    assert!(overlay.get_dialog_open());
+    assert_eq!(overlay.get_dialog_error(), ErrorKind::LaunchRepair);
+    assert_eq!(overlay.get_dialog_arg(), "Check player storage access");
+    assert_eq!(
+        overlay.get_dialog_buttons().row_data(0),
+        Some(DialogButton::Ok)
+    );
+    crate::router::handle_action(&ctx, &app, "accept");
+    assert!(!overlay.get_dialog_open());
+}
+
+#[test]
+fn core_start_failure_uses_deduplicated_dismissible_alert() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    app.global::<crate::Motion>().set_enabled(false);
+    crate::router::report_action_error(&ctx, &app, "core_start", "");
+    crate::router::report_action_error(&ctx, &app, "core_start", "");
+    let overlay = app.global::<crate::Overlays>();
+    assert!(overlay.get_dialog_open());
+    assert_eq!(overlay.get_dialog_error(), ErrorKind::CoreStart);
+    assert_eq!(
+        overlay.get_dialog_buttons().row_data(0),
+        Some(DialogButton::Ok)
+    );
+    crate::router::handle_action(&ctx, &app, "accept");
+    assert!(!overlay.get_dialog_open());
+    assert!(crate::router::lock(&ctx.shared).errors.showing().is_none());
+}
+
+#[test]
 fn token_empty_retry_replaces_alert_and_cancel_drains_queue() {
     assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
     let (app, _) = boot();

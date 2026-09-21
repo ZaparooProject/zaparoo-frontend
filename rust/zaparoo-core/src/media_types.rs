@@ -1098,7 +1098,11 @@ pub struct UpdateSettingsParams {
     pub system_defaults: Option<Vec<SystemDefault>>,
 }
 
-#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+fn launcher_available_default() -> bool {
+    true
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct LauncherInfo {
     #[serde(default)]
@@ -1109,6 +1113,29 @@ pub struct LauncherInfo {
     pub system_name: String,
     #[serde(default)]
     pub groups: Vec<String>,
+    #[serde(default = "launcher_available_default")]
+    pub available: bool,
+    #[serde(default)]
+    pub availability_reason: String,
+    #[serde(default)]
+    pub detected: Option<bool>,
+    #[serde(default)]
+    pub default: bool,
+}
+
+impl Default for LauncherInfo {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            system_id: String::new(),
+            system_name: String::new(),
+            groups: Vec::new(),
+            available: true,
+            availability_reason: String::new(),
+            detected: None,
+            default: false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -1204,16 +1231,39 @@ mod tests {
     )]
 
     use super::{
-        merged_root_view, BrowseEntry, HealthResult, IndexingStatusResponse, LaunchersResult,
-        LogDownloadResult, MediaBrowseIndexParams, MediaBrowseIndexResult, MediaBrowseParams,
-        MediaBrowseResult, MediaHistoryEntry, MediaHistoryLatestResult, MediaHistoryParams,
-        MediaHistoryResult, MediaImageParams, MediaImageResult, MediaIndexParams, MediaItem,
-        MediaMetaParams, MediaMetaResult, MediaMetaUpdateParams, MediaResult, MediaScrapeParams,
-        MediaSearchParams, MediaSearchResult, ReaderInfo, ReadersResult, ScrapersResult,
-        ScrapingStatusResponse, SettingsResult, SystemDefault, SystemsParams, SystemsResult,
-        TagInfo, TokensHistoryResult, TokensResult, UpdateSettingsParams, VersionResult,
-        MEDIA_IMAGE_DELIVERY_LOCAL_PATH,
+        merged_root_view, BrowseEntry, HealthResult, IndexingStatusResponse, LauncherInfo,
+        LaunchersResult, LogDownloadResult, MediaBrowseIndexParams, MediaBrowseIndexResult,
+        MediaBrowseParams, MediaBrowseResult, MediaHistoryEntry, MediaHistoryLatestResult,
+        MediaHistoryParams, MediaHistoryResult, MediaImageParams, MediaImageResult,
+        MediaIndexParams, MediaItem, MediaMetaParams, MediaMetaResult, MediaMetaUpdateParams,
+        MediaResult, MediaScrapeParams, MediaSearchParams, MediaSearchResult, ReaderInfo,
+        ReadersResult, ScrapersResult, ScrapingStatusResponse, SettingsResult, SystemDefault,
+        SystemsParams, SystemsResult, TagInfo, TokensHistoryResult, TokensResult,
+        UpdateSettingsParams, VersionResult, MEDIA_IMAGE_DELIVERY_LOCAL_PATH,
     };
+
+    #[test]
+    fn launcher_readiness_metadata_is_retained_and_legacy_defaults_ready() {
+        let ready: LauncherInfo = serde_json::from_value(serde_json::json!({
+            "id": "RetroArch.Mesen",
+            "systemId": "NES",
+            "available": false,
+            "availabilityReason": "RetroArch is unavailable.",
+            "detected": true,
+            "default": true
+        }))
+        .expect("deserialize launcher readiness");
+        assert!(!ready.available);
+        assert_eq!(ready.availability_reason, "RetroArch is unavailable.");
+        assert_eq!(ready.detected, Some(true));
+        assert!(ready.default);
+
+        let legacy: LauncherInfo = serde_json::from_value(serde_json::json!({"id": "legacy"}))
+            .expect("deserialize legacy launcher");
+        assert!(legacy.available);
+        assert_eq!(legacy.detected, None);
+        assert!(!legacy.default);
+    }
 
     #[test]
     fn is_folder_accepts_directory_and_root() {

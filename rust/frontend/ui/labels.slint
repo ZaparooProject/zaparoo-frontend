@@ -110,6 +110,8 @@ export global Labels {
         // Launcher picker rows.
         if (key == "launcher:default") { return @tr("Default"); }
         if (key == "launcher:current") { return @tr("Current: {}", name); }
+        if (key == "launcher:detected") { return @tr("{} (Detected)", name); }
+        if (key == "launcher:not-detected") { return @tr("{} (Not detected)", name); }
         // Picker titles.
         if (key == "title:view") { return @tr("View"); }
         if (key == "title:add_item") { return @tr("Add item"); }
@@ -197,9 +199,11 @@ export global DialogLabels {
     // A failed user action. The technical detail is already in the log;
     // these say what failed and what the user can do about it.
     public pure function error-title(kind: ErrorKind) -> string {
+        if (kind == ErrorKind.launch-repair) { return @tr("Launcher needs attention"); }
         if (kind == ErrorKind.launch) { return @tr("Launch failed"); }
         if (kind == ErrorKind.favorite) { return @tr("Favorite update failed"); }
         if (kind == ErrorKind.add-to-hub) { return @tr("Add to Hub failed"); }
+        if (kind == ErrorKind.core-start) { return @tr("Core could not start"); }
         if (kind == ErrorKind.media-index) { return @tr("Media update failed"); }
         if (kind == ErrorKind.media-scrape) { return @tr("Update metadata failed"); }
         if (kind == ErrorKind.media-scrapers) { return @tr("Source list unavailable"); }
@@ -213,7 +217,9 @@ export global DialogLabels {
     }
 
     public pure function error-body(kind: ErrorKind, context: string) -> string {
-        if (kind == ErrorKind.launch) {
+        // Core explicitly marks this server-authored repair text as display-safe.
+        if (kind == ErrorKind.launch-repair && context != "") { return context; }
+        if (kind == ErrorKind.launch || kind == ErrorKind.launch-repair) {
             if (context == "") { return @tr("Could not start this item. Check Zaparoo Core and try again."); }
             return @tr("Could not start {}. Check Zaparoo Core and try again.", context);
         }
@@ -222,6 +228,7 @@ export global DialogLabels {
             if (context == "") { return @tr("Could not add this item to the Hub. Check Zaparoo Core and try again."); }
             return @tr("Could not add {} to the Hub. Check Zaparoo Core and try again.", context);
         }
+        if (kind == ErrorKind.core-start) { return @tr("Leave the app and return to retry. If Core still cannot start, close and reopen the app."); }
         if (kind == ErrorKind.media-index) { return @tr("Could not start the media database update. Check Zaparoo Core and try again."); }
         if (kind == ErrorKind.media-scrape) { return @tr("Could not start updating metadata. Check Zaparoo Core and try again."); }
         if (kind == ErrorKind.media-scrapers) { return @tr("Could not load the list of metadata sources. Check Zaparoo Core and try again."); }

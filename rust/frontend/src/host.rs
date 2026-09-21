@@ -120,6 +120,9 @@ impl Input {
         self.app.upgrade_in_event_loop(move |app| {
             if ctx.core_discovery.update(revision, state, detected) {
                 crate::settings::refresh(&ctx, &app);
+                if !matches!(state, CoreDiscoveryState::Opening) {
+                    crate::launchers::refresh(&ctx, &app);
+                }
             }
         })
     }
@@ -204,6 +207,14 @@ impl Input {
             if !shell.get_boot_complete() {
                 shell.set_boot_status(status);
             }
+        })
+    }
+
+    /// Report framework service acquisition failure without carrying platform exception text.
+    pub fn core_start_failed(&self) -> Result<(), slint::EventLoopError> {
+        let ctx = self.ctx.clone();
+        self.app.upgrade_in_event_loop(move |app| {
+            crate::router::report_action_error(&ctx, &app, "core_start", "");
         })
     }
 

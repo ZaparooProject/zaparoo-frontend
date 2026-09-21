@@ -12,8 +12,10 @@ use std::collections::VecDeque;
 
 /// Every kind the alert vocabulary knows. An unknown kind still shows,
 /// with the generic copy.
-pub const KINDS: [&str; 13] = [
+pub const KINDS: [&str; 15] = [
+    "core_start",
     "launch",
+    "launch_repair",
     "favorite",
     "add_to_hub",
     "media_index",
@@ -54,6 +56,15 @@ impl Entry {
 
     pub fn key(&self) -> String {
         format!("{}:{}", self.kind, self.context)
+    }
+}
+
+/// A launch may carry explicitly display-safe repair text from Core. Without
+/// that contract, keep technical error details out of the user-facing alert.
+pub fn launch_failure(name: &str, repair: Option<&str>) -> Entry {
+    match repair {
+        Some(message) => Entry::new("launch_repair", message),
+        None => Entry::new("launch", name),
     }
 }
 
@@ -127,6 +138,15 @@ impl ErrorQueue {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn launch_repairs_keep_their_safe_context_and_generic_errors_keep_the_name() {
+        assert_eq!(
+            launch_failure("Game", Some("Check player settings")),
+            Entry::new("launch_repair", "Check player settings")
+        );
+        assert_eq!(launch_failure("Game", None), Entry::new("launch", "Game"));
+    }
 
     #[test]
     fn the_first_failure_shows_and_the_next_one_queues() {

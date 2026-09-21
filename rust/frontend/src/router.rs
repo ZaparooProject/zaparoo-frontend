@@ -2097,19 +2097,19 @@ pub(crate) fn launch(ctx: &Ctx, app: &App, text: String, name: &str) {
     let ctx2 = ctx.clone();
     let name = name.to_string();
     ctx.handle.spawn(async move {
-        let failed = match store.run_mutation::<RunMutation>(RunParams { text }).await {
-            Ok(()) => false,
+        let failure = match store.run_mutation::<RunMutation>(RunParams { text }).await {
+            Ok(()) => None,
             Err(e) => {
                 tracing::warn!("launch failed for {name}: {e}");
-                true
+                Some(action_error::launch_failure(&name, e.repair_message()))
             }
         };
         inflight.store(false, Ordering::SeqCst);
         let _ = weak.upgrade_in_event_loop(move |app| {
             crate::press_feedback::release(&app, hold);
             clear_launch_cue(&app);
-            if failed {
-                report_action_error(&ctx2, &app, "launch", &name);
+            if let Some(entry) = failure {
+                report_action_error(&ctx2, &app, &entry.kind, &entry.context);
             }
         });
     });
