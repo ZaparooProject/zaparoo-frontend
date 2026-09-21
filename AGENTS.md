@@ -212,7 +212,7 @@ update rules, in short:
 | Path | Purpose |
 |---|---|
 | `rust/frontend/src/main.rs` | Thin standalone entry calling the shared application |
-| `rust/frontend/src/lib.rs` | Shared application wiring: config, logger, tokio runtime, `Client`/`Store`, persisted state, window, language, services |
+| `rust/frontend/src/lib.rs`, `host.rs` | Shared application wiring and platform-neutral hosted entry/input seam |
 | `rust/frontend/src/router.rs` | All forward orchestration and the single input dispatch (`dispatch_action`) |
 | `rust/frontend/src/navigation.rs`, `folder_motion.rs`, `route_motion.rs` | Deferred routes that keep the source until the destination is ready; motion tests on a stepped clock |
 | `rust/frontend/src/{hub,systems,games,settings,about}.rs` | Per-screen drivers |

@@ -120,7 +120,7 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_battery_percent => set_battery_percent,
         get_boot_curtain => set_boot_curtain,
         get_boot_complete => set_boot_complete,
-        get_boot_text => set_boot_text,
+        get_boot_status => set_boot_status,
         get_reduce_motion => set_reduce_motion,
         get_mouse_enabled => set_mouse_enabled,
         get_saver_armed => set_saver_armed,
