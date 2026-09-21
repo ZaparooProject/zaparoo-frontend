@@ -331,7 +331,7 @@ fn offline_ctx() -> (tokio::runtime::Runtime, crate::router::Ctx) {
     let client = zaparoo_core::client::Client::new("ws://127.0.0.1:1".into(), &handle);
     let ctx = crate::router::Ctx {
         folders: crate::folder_picker::Model::default(),
-        core_discovery: crate::core_discovery::Model::default(),
+        launcher_scan: crate::launcher_scan::Model::default(),
         store: zaparoo_core::store::Store::new(client, handle.clone()),
         handle,
         media: crate::media_cache::MediaCache::new().0,
@@ -389,7 +389,7 @@ fn folder_setting_dispatches_host_once_until_completion() {
 }
 
 #[test]
-fn core_discovery_setting_dispatches_host_once_until_completion() {
+fn launcher_scan_setting_dispatches_host_once_until_completion() {
     use std::sync::{
         atomic::{AtomicUsize, Ordering},
         Arc,
@@ -399,7 +399,7 @@ fn core_discovery_setting_dispatches_host_once_until_completion() {
     let (_runtime, ctx) = offline_ctx();
     let requests = Arc::new(AtomicUsize::new(0));
     let counter = requests.clone();
-    ctx.core_discovery.configure(Arc::new(move || {
+    ctx.launcher_scan.configure(Arc::new(move || {
         counter.fetch_add(1, Ordering::SeqCst);
         true
     }));
@@ -409,15 +409,15 @@ fn core_discovery_setting_dispatches_host_once_until_completion() {
     crate::settings::handle_action(&ctx, &app, "accept");
     assert_eq!(requests.load(Ordering::SeqCst), 1);
     assert_eq!(
-        ctx.core_discovery.status(),
+        ctx.launcher_scan.status(),
         (crate::ActionStatus::LauncherOpening, 0, true)
     );
     assert!(ctx
-        .core_discovery
-        .update(1, zaparoo_app::core_discovery::State::Cancelled, 0));
+        .launcher_scan
+        .update(1, zaparoo_app::launcher_scan::State::Cancelled, 0));
     assert!(!ctx
-        .core_discovery
-        .update(1, zaparoo_app::core_discovery::State::Failed, 0));
+        .launcher_scan
+        .update(1, zaparoo_app::launcher_scan::State::Failed, 0));
     crate::settings::handle_action(&ctx, &app, "accept");
     assert_eq!(requests.load(Ordering::SeqCst), 2);
 }

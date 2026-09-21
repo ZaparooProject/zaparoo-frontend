@@ -23,7 +23,7 @@ use crate::{App, GridCell, SettingsInput, SettingsRow, SettingsView};
 fn inputs(ctx: &Ctx) -> rules::Inputs {
     rules::Inputs {
         can_pick_folder: ctx.folders.available(),
-        can_discover_cores: ctx.core_discovery.available(),
+        can_scan_launchers: ctx.launcher_scan.available(),
         is_mister: ctx.is_mister,
         crt_enabled: ctx.crt_enabled,
         debug_build: cfg!(debug_assertions),
@@ -205,8 +205,8 @@ fn rows(ctx: &Ctx, app: &App, page: crate::SettingsPage) -> Vec<SettingsRow> {
                                     zaparoo_app::format::count(i64::from(saved), &language).into();
                                 out.busy = pending;
                                 out.enabled = !pending;
-                            } else if id == "detectRetroArchCores" {
-                                let (status, detected, pending) = ctx.core_discovery.status();
+                            } else if id == "detectLaunchers" {
+                                let (status, detected, pending) = ctx.launcher_scan.status();
                                 out.status_key = status;
                                 out.status_count =
                                     zaparoo_app::format::count(i64::from(detected), &language)
@@ -567,7 +567,7 @@ fn accept(ctx: &Ctx, app: &App, id: &str, control: Control) {
             "documentation" => crate::router::open_documentation_qr(app),
             "uploadLog" => crate::log_upload::open(ctx, app),
             "addGameFolder" => crate::folder_picker::request(ctx, app),
-            "detectRetroArchCores" => crate::core_discovery::request(ctx, app),
+            "detectLaunchers" => crate::launcher_scan::request(ctx, app),
             "crtCalibration" => crate::router::open_crt_calibration(ctx, app),
             "updateMediaDb" => {
                 if ms.indexing || ms.optimizing {

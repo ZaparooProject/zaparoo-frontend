@@ -59,13 +59,13 @@ export global SettingsLabels {
         if (key == ActionStatus.folder-denied) { return @tr("Read access could not be saved. Choose the folder again."); }
         if (key == ActionStatus.folder-failed) { return @tr("Could not open or save the folder. Try again."); }
         if (key == ActionStatus.folder-revoked) { return @tr("Folder access was removed. Choose the folder again."); }
-        if (key == ActionStatus.launcher-ready) { return @tr("In the picker, open RetroArch and choose cores"); }
-        if (key == ActionStatus.launcher-opening) { return @tr("Open RetroArch and choose cores"); }
-        if (key == ActionStatus.launcher-detected) { return @tr("{} RetroArch cores detected", count); }
-        if (key == ActionStatus.launcher-cancelled) { return @tr("Canceled: {} RetroArch cores detected", count); }
-        if (key == ActionStatus.launcher-denied) { return @tr("Read access could not be saved. Choose the cores folder again."); }
-        if (key == ActionStatus.launcher-failed) { return @tr("Could not scan RetroArch cores. Try again."); }
-        if (key == ActionStatus.launcher-unavailable) { return @tr("RetroArch AArch64 core discovery is unavailable"); }
+        if (key == ActionStatus.launcher-ready) { return @tr("Choose a folder to scan for installed launchers"); }
+        if (key == ActionStatus.launcher-opening) { return @tr("Choose the folder to scan in the system picker"); }
+        if (key == ActionStatus.launcher-detected) { return @tr("{} launchers detected", count); }
+        if (key == ActionStatus.launcher-cancelled) { return @tr("Canceled: {} launchers detected", count); }
+        if (key == ActionStatus.launcher-denied) { return @tr("Read access could not be saved. Choose the folder again."); }
+        if (key == ActionStatus.launcher-failed) { return @tr("Could not scan that folder. Try again."); }
+        if (key == ActionStatus.launcher-unavailable) { return @tr("Scanning for launchers is unavailable"); }
         if (key == ActionStatus.optimizing) { return @tr("Optimizing"); }
         if (key == ActionStatus.paused) { return @tr("Paused"); }
         if (key == ActionStatus.running) { return @tr("In progress"); }
@@ -138,7 +138,7 @@ export global SettingsLabels {
         if (id == "mouseEnabled") { return @tr("Mouse support"); }
         // Library.
         if (id == "addGameFolder") { return @tr("Add game folder…"); }
-        if (id == "detectRetroArchCores") { return @tr("Detect RetroArch cores…"); }
+        if (id == "detectLaunchers") { return @tr("Detect launchers…"); }
         if (id == "updateMediaDb") { return @tr("Update media database"); }
         if (id == "runScraper") { return @tr("Update metadata"); }
         if (id == "systemsLayout") { return @tr("Systems layout"); }
@@ -156,7 +156,7 @@ export global SettingsLabels {
 
     public pure function description(id: string) -> string {
         if (id == "addGameFolder") { return @tr("Choose a folder containing system folders, then use Update media database to scan."); }
-        if (id == "detectRetroArchCores") { return @tr("In the system picker, open RetroArch and select the cores folder. Access is read-only and optional."); }
+        if (id == "detectLaunchers") { return @tr("Scans a folder you choose for launchers already installed."); }
         if (id == "colorScheme") { return @tr("Changes colors across screens, including text and highlights."); }
         if (id == "colorIntensity") { return @tr("Controls how strongly accent colors tint tiles and backgrounds."); }
         if (id == "systemLogoStyle") { return @tr("Shows system logos in original colors or tinted to match colors."); }

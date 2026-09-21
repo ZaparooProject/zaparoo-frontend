@@ -2,12 +2,12 @@
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 
-//! Optional embedding-host `RetroArch` core discovery, projected into Library settings.
+//! Optional embedding-host scan for installed launchers, projected into Library settings.
 
 use crate::router::Ctx;
 use crate::{ActionStatus, App};
 use std::sync::{Arc, Mutex};
-use zaparoo_app::core_discovery::{Model as Rules, State};
+use zaparoo_app::launcher_scan::{Model as Rules, State};
 
 type Request = Arc<dyn Fn() -> bool + Send + Sync>;
 
@@ -22,7 +22,7 @@ pub struct Model(Arc<Mutex<Data>>);
 
 impl std::fmt::Debug for Model {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("CoreDiscovery").finish_non_exhaustive()
+        f.debug_struct("LauncherScan").finish_non_exhaustive()
     }
 }
 
@@ -68,7 +68,7 @@ impl Model {
 
 pub fn request(ctx: &Ctx, app: &App) {
     let callback = {
-        let mut data = lock(&ctx.core_discovery.0);
+        let mut data = lock(&ctx.launcher_scan.0);
         let Some(callback) = data.request.clone() else {
             return;
         };
@@ -79,7 +79,7 @@ pub fn request(ctx: &Ctx, app: &App) {
     };
     crate::input::stop_repeat(ctx);
     if !callback() {
-        lock(&ctx.core_discovery.0).rules.state = State::Failed;
+        lock(&ctx.launcher_scan.0).rules.state = State::Failed;
     }
     crate::settings::refresh(ctx, app);
 }

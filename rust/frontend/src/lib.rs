@@ -12,7 +12,6 @@ mod actions;
 mod alternates;
 mod browse_motion;
 mod card_write;
-mod core_discovery;
 mod customization;
 mod display;
 mod drs;
@@ -35,6 +34,7 @@ mod hub;
 mod hub_covers;
 mod input;
 mod latch_protocol;
+mod launcher_scan;
 mod launchers;
 mod log_upload;
 mod media_cache;
@@ -662,7 +662,7 @@ fn run_application(
     let (dormant, _) = tokio::sync::watch::channel(false);
     let ctx = Arc::new(Ctx {
         folders: folder_picker::Model::default(),
-        core_discovery: core_discovery::Model::default(),
+        launcher_scan: launcher_scan::Model::default(),
         store: store.clone(),
         handle: handle.clone(),
         media,

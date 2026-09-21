@@ -8,8 +8,8 @@
 use std::sync::Arc;
 
 use slint::ComponentHandle;
-pub use zaparoo_app::core_discovery::State as CoreDiscoveryState;
 pub use zaparoo_app::folder_picker::State as FolderPickerState;
+pub use zaparoo_app::launcher_scan::State as LauncherScanState;
 pub use zaparoo_core::platform_paths::HostPaths;
 pub use zaparoo_core::transport::Transport;
 
@@ -98,39 +98,39 @@ impl Input {
         })
     }
 
-    /// Offer optional host-owned `RetroArch` core-directory discovery.
-    pub fn configure_core_discovery(
+    /// Offer an optional host-owned scan for installed launchers.
+    pub fn configure_launcher_scan(
         &self,
         request: Arc<dyn Fn() -> bool + Send + Sync>,
     ) -> Result<(), slint::EventLoopError> {
         let ctx = self.ctx.clone();
         self.app.upgrade_in_event_loop(move |app| {
-            ctx.core_discovery.configure(request);
+            ctx.launcher_scan.configure(request);
             crate::settings::refresh(&ctx, &app);
         })
     }
 
-    pub fn core_discovery_status(
+    pub fn launcher_scan_status(
         &self,
         revision: u64,
-        state: CoreDiscoveryState,
+        state: LauncherScanState,
         detected: u16,
     ) -> Result<(), slint::EventLoopError> {
         let ctx = self.ctx.clone();
         self.app.upgrade_in_event_loop(move |app| {
-            if ctx.core_discovery.update(revision, state, detected) {
+            if ctx.launcher_scan.update(revision, state, detected) {
                 crate::settings::refresh(&ctx, &app);
-                if !matches!(state, CoreDiscoveryState::Opening) {
+                if !matches!(state, LauncherScanState::Opening) {
                     crate::launchers::refresh(&ctx, &app);
                 }
             }
         })
     }
 
-    pub fn request_core_discovery(&self) -> Result<(), slint::EventLoopError> {
+    pub fn request_launcher_scan(&self) -> Result<(), slint::EventLoopError> {
         let ctx = self.ctx.clone();
         self.app
-            .upgrade_in_event_loop(move |app| crate::core_discovery::request(&ctx, &app))
+            .upgrade_in_event_loop(move |app| crate::launcher_scan::request(&ctx, &app))
     }
 
     /// Apply an ordered permission snapshot for this window only.

@@ -942,7 +942,7 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, page: bool
         crt_enabled: crt,
         debug_build: false,
         can_pick_folder: false,
-        can_discover_cores: false,
+        can_scan_launchers: false,
     };
     let row_h = inputs.pct_h(8.0);
     let header_h = inputs.pct_h(5.0);

@@ -91,8 +91,8 @@ pub const PAGES: &[Page] = &[
 pub struct Inputs {
     /// An embedding host can grant access through its own folder chooser.
     pub can_pick_folder: bool,
-    /// An embedding host can optionally enumerate `RetroArch`'s cores directory.
-    pub can_discover_cores: bool,
+    /// An embedding host can scan a folder for installed launchers.
+    pub can_scan_launchers: bool,
     /// `MiSTer`: the resolution and analog-video rows only exist there.
     pub is_mister: bool,
     /// The frontend is already running the native CRT path.
@@ -125,7 +125,7 @@ const NAVIGATES: &[&str] = &[
 ];
 
 const ACTIONS: &[&str] = &[
-    "detectRetroArchCores",
+    "detectLaunchers",
     "addGameFolder",
     "updateMediaDb",
     "runScraper",
@@ -200,8 +200,8 @@ pub fn page_rows(page: &str, inputs: &Inputs) -> Vec<Row> {
             if inputs.can_pick_folder {
                 rows.push(field("addGameFolder"));
             }
-            if inputs.can_discover_cores {
-                rows.push(field("detectRetroArchCores"));
+            if inputs.can_scan_launchers {
+                rows.push(field("detectLaunchers"));
             }
             rows.extend([
                 Row::Header("maintenance"),
@@ -306,7 +306,7 @@ pub fn action_label_key(id: &str, busy: bool) -> &'static str {
             }
         }
         "uploadLog" => "upload",
-        "detectRetroArchCores" => "detect",
+        "detectLaunchers" => "detect",
         _ => "open",
     }
 }
@@ -473,7 +473,7 @@ mod tests {
             crt_enabled: crt,
             debug_build: false,
             can_pick_folder: false,
-            can_discover_cores: false,
+            can_scan_launchers: false,
         }
     }
 
@@ -495,20 +495,20 @@ mod tests {
     }
 
     #[test]
-    fn core_discovery_requires_host_capability_and_is_an_action() {
+    fn launcher_scan_requires_host_capability_and_is_an_action() {
         let mut inputs = Inputs::default();
         assert!(!page_rows("pageLibraryData", &inputs)
             .iter()
-            .any(|row| row.id() == "detectRetroArchCores"));
-        inputs.can_discover_cores = true;
+            .any(|row| row.id() == "detectLaunchers"));
+        inputs.can_scan_launchers = true;
         assert_eq!(
             page_rows("pageLibraryData", &inputs)[0],
             Row::Field {
-                id: "detectRetroArchCores",
+                id: "detectLaunchers",
                 control: Control::Action
             }
         );
-        assert_eq!(control("detectRetroArchCores"), Control::Action);
+        assert_eq!(control("detectLaunchers"), Control::Action);
     }
 
     #[test]

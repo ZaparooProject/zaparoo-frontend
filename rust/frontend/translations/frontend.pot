@@ -2,7 +2,7 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: frontend VERSION\n"
-"POT-Creation-Date: 2026-09-21 09:32+0000\n"
+"POT-Creation-Date: 2026-09-21 10:56+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -1221,7 +1221,7 @@ msgstr ""
 msgid "Canceled: {} folder permissions saved"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:59
+#: rust/frontend/ui/settings.slint:59 rust/frontend/ui/settings.slint:66
 msgid "Read access could not be saved. Choose the folder again."
 msgstr ""
 
@@ -1234,31 +1234,27 @@ msgid "Folder access was removed. Choose the folder again."
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:62
-msgid "In the picker, open RetroArch and choose cores"
+msgid "Choose a folder to scan for installed launchers"
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:63
-msgid "Open RetroArch and choose cores"
+msgid "Choose the folder to scan in the system picker"
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:64
-msgid "{} RetroArch cores detected"
+msgid "{} launchers detected"
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:65
-msgid "Canceled: {} RetroArch cores detected"
-msgstr ""
-
-#: rust/frontend/ui/settings.slint:66
-msgid "Read access could not be saved. Choose the cores folder again."
+msgid "Canceled: {} launchers detected"
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:67
-msgid "Could not scan RetroArch cores. Try again."
+msgid "Could not scan that folder. Try again."
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:68
-msgid "RetroArch AArch64 core discovery is unavailable"
+msgid "Scanning for launchers is unavailable"
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:69
@@ -1423,7 +1419,7 @@ msgid "Add game folder…"
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:141
-msgid "Detect RetroArch cores…"
+msgid "Detect launchers…"
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:144
@@ -1461,9 +1457,7 @@ msgid ""
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:159
-msgid ""
-"In the system picker, open RetroArch and select the cores folder. Access is "
-"read-only and optional."
+msgid "Scans a folder you choose for launchers already installed."
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:160
