@@ -9,7 +9,7 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
-    # Slint is pinned exactly (`=1.17.1`) and bumped by hand together with
+    # Slint is pinned exactly (`=1.18.0`) and bumped by hand together with
     # slint-tr-extractor, the deny.toml exceptions, and the notices file
     # (see AGENTS.md, "Build caching couplings"). fontique and resvg are
     # also direct dependencies of Slint's own crates and must stay on the

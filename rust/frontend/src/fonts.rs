@@ -18,7 +18,7 @@
 // device without system fonts. So each face is also appended as the
 // fallback for the scripts it covers and to the generic families.
 
-use slint::fontique_010::fontique::{self, FallbackKey, GenericFamily, Script};
+use slint::fontique_011::fontique::{self, FallbackKey, GenericFamily, Script};
 
 struct Face {
     bytes: &'static [u8],
@@ -62,7 +62,7 @@ static FACES: [Face; 6] = [
 /// platform exists (the first component has been created) and before the
 /// first frame.
 pub fn register_embedded_fonts() {
-    let mut collection = slint::fontique_010::shared_collection();
+    let mut collection = slint::fontique_011::shared_collection();
     let mut all_families = Vec::new();
     for face in &FACES {
         let blob = fontique::Blob::new(std::sync::Arc::new(face.bytes));
