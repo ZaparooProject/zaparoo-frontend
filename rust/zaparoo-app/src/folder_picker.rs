@@ -63,7 +63,11 @@ mod tests {
         assert_eq!(model.state, State::Revoked);
         assert_eq!(model.saved, 1);
         assert!(model.update(3, State::Ready, 1));
-        assert_eq!(model.state, State::Revoked, "a repeated snapshot keeps the notice");
+        assert_eq!(
+            model.state,
+            State::Revoked,
+            "a repeated snapshot keeps the notice"
+        );
         assert!(model.update(4, State::Ready, 2));
         assert_eq!(model.state, State::Ready, "restored access clears it");
         assert!(model.update(5, State::Ready, 1));
