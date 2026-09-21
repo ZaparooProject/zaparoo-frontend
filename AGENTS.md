@@ -213,6 +213,7 @@ update rules, in short:
 |---|---|
 | `rust/frontend/src/main.rs` | Thin binary entry calling `frontend::run()` |
 | `rust/frontend/src/lib.rs` | Application wiring: config, logger, tokio runtime, `Client`/`Store`, persisted state, window, language, services |
+| `rust/frontend/src/host.rs` | Hosted entry (`host::run`) and the `Input` seam an embedding host drives |
 | `rust/frontend/src/router.rs` | All forward orchestration and the single input dispatch (`dispatch_action`) |
 | `rust/frontend/src/navigation.rs`, `folder_motion.rs`, `route_motion.rs` | Deferred routes that keep the source until the destination is ready; motion tests on a stepped clock |
 | `rust/frontend/src/{hub,systems,games,settings,about}.rs` | Per-screen drivers |

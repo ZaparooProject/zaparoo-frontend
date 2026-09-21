@@ -8,8 +8,8 @@
 // logic; forward orchestration lives in the router.
 
 import { Theme, Sizing, Motion, Layout } from "theme.slint";
-import { Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PressOwner, StatusKind, Orientation, VideoStandard, StateTokens, ScrollAction, SetupAction, AppCue, DisabledReason, DialogKind, DialogProgress, DialogButton, FirstRunPhase, ErrorKind } from "state_types.slint";
-export { Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PressOwner, StatusKind, Orientation, VideoStandard, ScrollAction, SetupAction, AppCue, DisabledReason, DialogKind, DialogProgress, DialogButton, FirstRunPhase, ErrorKind }
+import { Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PressOwner, StatusKind, Orientation, VideoStandard, StateTokens, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogProgress, DialogButton, FirstRunPhase, ErrorKind } from "state_types.slint";
+export { Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PressOwner, StatusKind, Orientation, VideoStandard, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogProgress, DialogButton, FirstRunPhase, ErrorKind }
 import { GlyphSource, Brand, Buttons, HelpEntry, Status, HeaderBar, StatusLine, ProgressTrack, TopStatusStrip, PageIndicator, ActiveLabel, HelpBar, SectionHeader, Divider, ScrollCue, ModalShell, QrPlate, StateCue } from "chrome.slint";
 import { GridCell, MarqueeCaption, PressableSurface, Tile, PagedGridView } from "tiles.slint";
 import { ScrollOffset, SelectionCursor, SelectionClip } from "focus.slint";
@@ -89,7 +89,7 @@ export global Shell {
     // cannot flash before the first load settles.
     in-out property <bool> boot-curtain: false;
     in-out property <bool> boot-complete: false;
-    in-out property <string> boot-text: "";
+    in-out property <BootStatus> boot-status: BootStatus.connecting;
     // Primary game active: gate input and recurring work behind emulator.
     in-out property <bool> dormant: false;
     // Reduce motion collapses decorative animation and caption movement.
@@ -2563,7 +2563,7 @@ export component App inherits Window {
             y: (parent.height - self.height) / 2;
             max-width: parent.width - 2 * Sizing.pct-w(10);
             overflow: elide;
-            text: Shell.boot-text;
+            text: Labels.boot(Shell.boot-status);
             color: Theme.text-primary;
             font-size: Sizing.font-size(3.2);
         }
