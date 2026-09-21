@@ -56,6 +56,16 @@ slint-ui *args:
 
 # --- test ---
 
+# Check the embedding seam with a host-only software renderer. Android's
+# backend and renderer are supplied by the owning host repository.
+hosted-check:
+    ./scripts/toolchain.sh just _hosted-check
+
+[private]
+_hosted-check:
+    cd rust && cargo clippy -p frontend --lib --no-default-features --features hosted,slint/renderer-software -- -D warnings
+    cd rust && cargo nextest run -p frontend --lib --no-default-features --features hosted,slint/renderer-software
+
 # Workspace tests plus the MiSTer feature set (toolchain image)
 test:
     ./scripts/toolchain.sh just _test

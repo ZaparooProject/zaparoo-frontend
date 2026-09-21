@@ -70,10 +70,13 @@ mod tag_utils;
 mod theme;
 mod view_model;
 
-#[cfg(all(feature = "desktop", feature = "mister"))]
-compile_error!("features `desktop` and `mister` are mutually exclusive; build the MiSTer target with --no-default-features --features mister");
-#[cfg(not(any(feature = "desktop", feature = "mister")))]
-compile_error!("enable exactly one of the `desktop` (default) or `mister` features");
+#[cfg(any(
+    all(feature = "desktop", feature = "mister"),
+    all(feature = "hosted", any(feature = "desktop", feature = "mister"))
+))]
+compile_error!("enable exactly one of desktop, mister, or hosted");
+#[cfg(not(any(feature = "desktop", feature = "mister", feature = "hosted")))]
+compile_error!("enable exactly one of desktop, mister, or hosted");
 
 // The generated component code does not follow the workspace's
 // warn-level style lints; scope the allowances to the macro output.
@@ -194,6 +197,7 @@ pub(crate) fn request_main_reload() {
     let _ = slint::quit_event_loop();
 }
 
+#[cfg(not(feature = "hosted"))]
 fn restart_current_process() -> Result<(), slint::PlatformError> {
     use std::os::unix::process::CommandExt as _;
     let exe = std::env::current_exe()
@@ -460,17 +464,23 @@ fn seed_display_globals(
     app.global::<Sizing>().set_screen_height(scene_h as f32);
 }
 
+/// Run the standalone desktop or `MiSTer` application.
+#[cfg(not(feature = "hosted"))]
+pub fn run() -> Result<(), slint::PlatformError> {
+    run_application()
+}
+
 #[allow(
     clippy::too_many_lines,
     reason = "startup wires independent runtime services in one ordered orchestration path"
 )]
-pub fn run() -> Result<(), slint::PlatformError> {
+fn run_application() -> Result<(), slint::PlatformError> {
     #[cfg(feature = "desktop")]
     pin_logical_pixels_to_physical();
 
     let config = zaparoo_core::config::load_config(&platform_paths::config_file_path());
-    // Held for the process lifetime: dropping it flushes and stops the
-    // file appender.
+    // A hosted application leaves process-global logging to its owner.
+    #[cfg(not(feature = "hosted"))]
     let _log_guard = zaparoo_core::logger::install(&config);
     tracing::info!(endpoint = %config.core_endpoint, "Zaparoo Frontend starting");
     #[cfg(feature = "mister")]
@@ -506,7 +516,10 @@ pub fn run() -> Result<(), slint::PlatformError> {
         "systems" | "games" | "favorites" | "recents"
     );
 
+    #[cfg(not(feature = "hosted"))]
     let args: Vec<String> = std::env::args().collect();
+    #[cfg(feature = "hosted")]
+    let args: Vec<String> = Vec::new();
     // Main passes --dual-head only when analog CRT is active without
     // direct_video, leaving fb0 available for an independent HDMI UI.
     let crt = args.iter().any(|a| a == "--crt");

@@ -6,11 +6,16 @@
 // NOT probed here: Core owns the reader, so the HUD's NFC state comes
 // from Core's `readers` RPC (see the router's reader refresh).
 
+#[cfg(not(feature = "hosted"))]
 use std::fs;
+#[cfg(not(feature = "hosted"))]
 use std::net::{SocketAddr, TcpStream};
+#[cfg(not(feature = "hosted"))]
 use std::path::Path;
+#[cfg(not(feature = "hosted"))]
 use std::time::Duration;
 
+#[cfg(not(feature = "hosted"))]
 const INTERNET_TIMEOUT: Duration = Duration::from_millis(800);
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -29,6 +34,7 @@ pub struct LocalStatus {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg(not(feature = "hosted"))]
 enum InterfaceKind {
     Wifi,
     Lan,
@@ -36,6 +42,7 @@ enum InterfaceKind {
 
 /// Probe the host. Blocking (reads /proc, /sys, and dials out with an
 /// 800 ms cap) - run on a blocking-capable thread, never the UI loop.
+#[cfg(not(feature = "hosted"))]
 pub fn probe() -> LocalStatus {
     let network = default_network_kind()
         .filter(|_| internet_reachable())
@@ -59,12 +66,14 @@ pub fn probe() -> LocalStatus {
     }
 }
 
+#[cfg(not(feature = "hosted"))]
 fn default_network_kind() -> Option<InterfaceKind> {
     let routes = fs::read_to_string("/proc/net/route").ok()?;
     let iface = parse_default_route_interface(&routes)?;
     classify_interface(&iface)
 }
 
+#[cfg(any(test, not(feature = "hosted")))]
 fn parse_default_route_interface(routes: &str) -> Option<String> {
     routes
         .lines()
@@ -93,6 +102,7 @@ fn parse_default_route_interface(routes: &str) -> Option<String> {
         .map(|(_, iface)| iface)
 }
 
+#[cfg(not(feature = "hosted"))]
 fn classify_interface(iface: &str) -> Option<InterfaceKind> {
     if iface == "lo" || !interface_is_up(iface) {
         return None;
@@ -104,11 +114,13 @@ fn classify_interface(iface: &str) -> Option<InterfaceKind> {
     }
 }
 
+#[cfg(not(feature = "hosted"))]
 fn interface_is_up(iface: &str) -> bool {
     let path = Path::new("/sys/class/net").join(iface).join("operstate");
     fs::read_to_string(path).is_ok_and(|state| matches!(state.trim(), "up" | "unknown"))
 }
 
+#[cfg(not(feature = "hosted"))]
 fn is_wireless_interface(iface: &str) -> bool {
     Path::new("/sys/class/net")
         .join(iface)
@@ -117,6 +129,7 @@ fn is_wireless_interface(iface: &str) -> bool {
         || iface.starts_with("wl")
 }
 
+#[cfg(not(feature = "hosted"))]
 fn internet_reachable() -> bool {
     [
         SocketAddr::from(([1, 1, 1, 1], 443)),
@@ -126,6 +139,7 @@ fn internet_reachable() -> bool {
     .any(|addr| TcpStream::connect_timeout(addr, INTERNET_TIMEOUT).is_ok())
 }
 
+#[cfg(not(feature = "hosted"))]
 fn bluetooth_adapter_present() -> bool {
     fs::read_dir("/sys/class/bluetooth")
         .ok()
@@ -133,6 +147,12 @@ fn bluetooth_adapter_present() -> bool {
         .flatten()
         .filter_map(Result::ok)
         .any(|entry| entry.file_name().to_string_lossy().starts_with("hci"))
+}
+
+#[cfg(feature = "hosted")]
+pub fn probe() -> LocalStatus {
+    // Framework status is host-owned; never probe Linux sysfs or public IPs.
+    LocalStatus::default()
 }
 
 #[cfg(test)]
