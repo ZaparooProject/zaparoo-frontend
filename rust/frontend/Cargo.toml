@@ -21,6 +21,7 @@ default-run  = "frontend"
 [[bin]]
 name = "frontend"
 path = "src/main.rs"
+required-features = ["standalone"]
 
 # Offline layout checker: renders the App through the same software
 # renderer the MiSTer build uses and writes a PNG. Debug/layout tool;
@@ -35,7 +36,11 @@ required-features = ["snapshot"]
 # slint::platform with the software renderer and its own presenters
 # (fb0, DDR, vblank latch). Exactly one of the two must be enabled.
 default = ["desktop"]
+# Hosts supply their own Slint backend, paths, logging, and platform lifecycle.
+hosted = ["slint/std", "dep:i-slint-core"]
+standalone = []
 desktop = [
+    "standalone",
     "slint/std",
     "slint/backend-winit",
     "slint/renderer-femtovg",
@@ -56,8 +61,10 @@ desktop = [
 # system fonts empty, which is fine because `src/fonts.rs` registers
 # the faces we ship.
 mister = [
+    "standalone",
     "slint/std",
     "slint/renderer-software",
+    "dep:i-slint-core",
     "dep:libc",
     "dep:fontique",
 ]
@@ -68,9 +75,9 @@ snapshot = ["desktop", "slint/renderer-software"]
 zaparoo-core = { path = "../zaparoo-core" }
 zaparoo-app = { path = "../zaparoo-app" }
 zaparoo-build-info = { path = "../build-info" }
-# `unstable-fontique-010` exposes the shared font collection so the embedded
+# `unstable-fontique-011` exposes the shared font collection so the embedded
 # script faces can be registered for fallback (src/fonts.rs).
-slint = { version = "=1.17.1", default-features = false, features = ["compat-1-2", "unstable-fontique-010"] }
+slint = { version = "=1.18.0", default-features = false, features = ["compat-1-2", "unstable-fontique-011"] }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time"] }
 tracing.workspace = true
 tracing-subscriber.workspace = true
@@ -80,16 +87,24 @@ semver = { workspace = true }
 # `bmp` is here for the user's own override artwork; the bundled art is
 # all PNG. See docs/customization.md for the accepted types.
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "bmp"] }
-# Same version Slint 1.17's own crates resolve, so the binary carries one
+# Same version Slint 1.18's own crates resolve, so the binary carries one
 # SVG stack; moves only with a Slint bump.
-resvg = { version = "0.47", default-features = false }
+resvg = { version = "0.48", default-features = false }
+# Slint 1.18 stopped enabling the image decoders and SVG support from `std`;
+# they now arrive only through the winit backend or the FemtoVG renderer. The
+# MiSTer and hosted builds have neither, and the generated code needs the
+# decoders for the embedded images, so turn the features on directly (Cargo
+# unifies them onto Slint's own i-slint-core). Same exact version as `slint`;
+# adds no crate to the lock. Drop this once the `slint` crate exposes the
+# features itself.
+i-slint-core = { version = "=1.18.0", optional = true, default-features = false, features = ["image-decoders", "svg"] }
 libc = { version = "0.2", optional = true }
 gilrs = { version = "0.11", optional = true }
-# Same version Slint 1.17 and winit resolve; adds no crate to the lock.
+# Same version Slint 1.18 and winit resolve; adds no crate to the lock.
 raw-window-handle = { version = "0.6", optional = true }
-# Same version Slint 1.17 resolves; only here to turn on `fontconfig-dlopen`
+# Same version Slint 1.18 resolves; only here to turn on `fontconfig-dlopen`
 # (Cargo unifies the feature onto Slint's own fontique dependency).
-fontique = { version = "0.10", optional = true, default-features = false, features = ["fontconfig-dlopen"] }
+fontique = { version = "0.11", optional = true, default-features = false, features = ["fontconfig-dlopen"] }
 time.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -98,7 +113,7 @@ serde_json.workspace = true
 toml.workspace = true
 
 [build-dependencies]
-slint-build = "=1.17.1"
+slint-build = "=1.18.0"
 
 [lints]
 workspace = true

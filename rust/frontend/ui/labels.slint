@@ -6,10 +6,18 @@
 // them into translated text. Kept in its own file so every screen and
 // modal can reach it without importing the app tree.
 
-import { Screen, AppCue, DisabledReason, DialogKind, DialogProgress, DialogButton, FirstRunPhase, ErrorKind } from "state_types.slint";
+import { Screen, AppCue, BootStatus, DisabledReason, DialogKind, DialogProgress, DialogButton, FirstRunPhase, ErrorKind, RepairReason } from "state_types.slint";
 
 // Key-to-copy vocabulary for labels Rust hands over as stable ids.
 export global Labels {
+    public pure function boot(status: BootStatus) -> string {
+        if (status == BootStatus.starting) { return @tr("Starting Zaparoo Core…"); }
+        if (status == BootStatus.migrating) { return @tr("Updating Zaparoo Core data…"); }
+        if (status == BootStatus.reconnecting) { return @tr("Reconnecting to Zaparoo Core…"); }
+        if (status == BootStatus.loading) { return @tr("Loading library…"); }
+        if (status == BootStatus.unreachable) { return @tr("Can't reach Zaparoo Core. Check the connection."); }
+        return @tr("Connecting to Zaparoo Core…");
+    }
     public pure function loading(target: Screen) -> string {
         if (target == Screen.systems) { return @tr("Loading systems…"); }
         if (target == Screen.games) { return @tr("Loading games…"); }
@@ -102,6 +110,8 @@ export global Labels {
         // Launcher picker rows.
         if (key == "launcher:default") { return @tr("Default"); }
         if (key == "launcher:current") { return @tr("Current: {}", name); }
+        if (key == "launcher:detected") { return @tr("{} (Detected)", name); }
+        if (key == "launcher:not-detected") { return @tr("{} (Not detected)", name); }
         // Picker titles.
         if (key == "title:view") { return @tr("View"); }
         if (key == "title:add_item") { return @tr("Add item"); }
@@ -128,9 +138,10 @@ export global Labels {
 }
 
 // Typed dialog state stays separate from runtime text. `detail` carries
-// the minimum Core version; `arg` carries context, running version, or count.
+// the minimum Core version or a launcher's display name; `arg` carries
+// context, the running version, a count, or a launcher plugin's name.
 export global DialogLabels {
-    public pure function title(kind: DialogKind, error: ErrorKind) -> string {
+    public pure function title(kind: DialogKind, error: ErrorKind, repair: RepairReason) -> string {
         if (kind == DialogKind.quit-confirm) { return @tr("Quit Zaparoo Frontend?"); }
         if (kind == DialogKind.quit-blocked) { return @tr("Game still running"); }
         if (kind == DialogKind.restart-setting) { return @tr("Quit and restart Zaparoo Frontend?"); }
@@ -138,11 +149,11 @@ export global DialogLabels {
         if (kind == DialogKind.core-version) { return @tr("Update Zaparoo Core"); }
         if (kind == DialogKind.first-run) { return @tr("First-time setup"); }
         if (kind == DialogKind.hub-full) { return @tr("Nothing left to add"); }
-        if (kind == DialogKind.action-error) { return DialogLabels.error-title(error); }
+        if (kind == DialogKind.action-error) { return DialogLabels.error-title(error, repair); }
         return "";
     }
 
-    public pure function body(kind: DialogKind, error: ErrorKind, phase: FirstRunPhase, detail: string, arg: string) -> string {
+    public pure function body(kind: DialogKind, error: ErrorKind, repair: RepairReason, phase: FirstRunPhase, detail: string, arg: string) -> string {
         if (kind == DialogKind.quit-confirm) { return @tr("Are you sure you want to exit?"); }
         if (kind == DialogKind.quit-blocked) { return @tr("Close the running game before exiting Zaparoo Frontend."); }
         if (kind == DialogKind.restart-setting) { return @tr("This setting needs a frontend restart to take effect."); }
@@ -159,7 +170,7 @@ export global DialogLabels {
         if (kind == DialogKind.hub-full) {
             return @tr("All categories and actions are already on the Hub. To add a game or system, open its Options menu and choose \"Add to Hub\".");
         }
-        if (kind == DialogKind.action-error) { return DialogLabels.error-body(error, arg); }
+        if (kind == DialogKind.action-error) { return DialogLabels.error-body(error, repair, detail, arg); }
         return "";
     }
 
@@ -188,10 +199,13 @@ export global DialogLabels {
 
     // A failed user action. The technical detail is already in the log;
     // these say what failed and what the user can do about it.
-    public pure function error-title(kind: ErrorKind) -> string {
+    public pure function error-title(kind: ErrorKind, repair: RepairReason) -> string {
+        if (kind == ErrorKind.launch-repair && repair != RepairReason.none) { return DialogLabels.repair-title(repair); }
+        if (kind == ErrorKind.launch-repair) { return @tr("Launcher needs attention"); }
         if (kind == ErrorKind.launch) { return @tr("Launch failed"); }
         if (kind == ErrorKind.favorite) { return @tr("Favorite update failed"); }
         if (kind == ErrorKind.add-to-hub) { return @tr("Add to Hub failed"); }
+        if (kind == ErrorKind.core-start) { return @tr("Core could not start"); }
         if (kind == ErrorKind.media-index) { return @tr("Media update failed"); }
         if (kind == ErrorKind.media-scrape) { return @tr("Update metadata failed"); }
         if (kind == ErrorKind.media-scrapers) { return @tr("Source list unavailable"); }
@@ -201,19 +215,108 @@ export global DialogLabels {
         if (kind == ErrorKind.qr-code) { return @tr("QR code failed"); }
         if (kind == ErrorKind.card-write) { return @tr("Token write failed"); }
         if (kind == ErrorKind.setting) { return @tr("Setting not saved"); }
+        if (kind == ErrorKind.pairing) { return @tr("Pairing could not start"); }
         return @tr("Action failed");
     }
 
-    public pure function error-body(kind: ErrorKind, context: string) -> string {
-        if (kind == ErrorKind.launch) {
-            if (context == "") { return @tr("Could not start this item. Check Zaparoo Core and try again."); }
-            return @tr("Could not start {}. Check Zaparoo Core and try again.", context);
+    // What went wrong with a launch, in Zaparoo's own words. `launcher`
+    // and `plugin` are the display names Core supplied; either may be
+    // empty, so every sentence that names one has a form that doesn't.
+    public pure function repair-title(reason: RepairReason) -> string {
+        if (reason == RepairReason.launcher-not-installed) { return @tr("Launcher not installed"); }
+        if (reason == RepairReason.launcher-ambiguous) { return @tr("Choose a launcher"); }
+        if (reason == RepairReason.launcher-unsupported-media) { return @tr("Launcher can't play this game"); }
+        if (reason == RepairReason.launcher-options-unsupported) { return @tr("Launch options not supported"); }
+        if (reason == RepairReason.launcher-version-unsupported) { return @tr("Launcher version not supported"); }
+        if (reason == RepairReason.storage-permission-required) { return @tr("Storage permission needed"); }
+        if (reason == RepairReason.storage-provider-unsupported) { return @tr("Storage not supported"); }
+        if (reason == RepairReason.storage-unavailable) { return @tr("Storage not connected"); }
+        if (reason == RepairReason.media-unavailable) { return @tr("Game not found"); }
+        if (reason == RepairReason.host-unavailable) { return @tr("Launch service unavailable"); }
+        if (reason == RepairReason.host-foreground-required) { return @tr("Return to Zaparoo"); }
+        if (reason == RepairReason.outcome-unknown) { return @tr("Launch not confirmed"); }
+        if (reason == RepairReason.refused) { return @tr("Launch refused"); }
+        // launcher-component-missing and launcher-plugin-missing: the
+        // launcher is there, something it needs isn't.
+        return @tr("Launcher needs attention");
+    }
+
+    public pure function repair-body(reason: RepairReason, launcher: string, plugin: string) -> string {
+        if (reason == RepairReason.launcher-not-installed) {
+            if (launcher == "") { return @tr("The launcher for this game isn't installed on this device. Install it, then try again."); }
+            return @tr("{} isn't installed on this device. Install it, then try again.", launcher);
+        }
+        if (reason == RepairReason.launcher-component-missing) {
+            if (launcher == "") { return @tr("The launcher is installed, but the part of it that starts games is missing or turned off. Reinstall or re-enable it, then try again."); }
+            return @tr("{} is installed, but the part of it that starts games is missing or turned off. Reinstall or re-enable it, then try again.", launcher);
+        }
+        if (reason == RepairReason.launcher-plugin-missing) {
+            if (launcher != "" && plugin != "") { return @tr("{0} needs {1} for this game. Download {1} in {0}'s own updater, then try again.", launcher, plugin); }
+            if (launcher != "") { return @tr("{} is missing the support this system needs. Open it, download the missing part, then try again.", launcher); }
+            return @tr("The launcher is missing the support this system needs. Open it, download the missing part, then try again.");
+        }
+        if (reason == RepairReason.launcher-ambiguous) {
+            return @tr("More than one launcher can play this game. Open the game's Options menu, choose \"Change launcher\", then try again.");
+        }
+        if (reason == RepairReason.launcher-unsupported-media) {
+            if (launcher == "") { return @tr("This launcher can't play this game. Open the game's Options menu and choose \"Change launcher\"."); }
+            return @tr("{} can't play this game. Open the game's Options menu and choose \"Change launcher\".", launcher);
+        }
+        if (reason == RepairReason.launcher-options-unsupported) {
+            if (launcher == "") { return @tr("This launcher doesn't support the launch options this game was started with. Open the game's Options menu and choose \"Change launcher\"."); }
+            return @tr("{} doesn't support the launch options this game was started with. Open the game's Options menu and choose \"Change launcher\".", launcher);
+        }
+        if (reason == RepairReason.launcher-version-unsupported) {
+            if (launcher == "") { return @tr("The installed build of this launcher can't be used for this game. Install a different build of it, then try again."); }
+            return @tr("The installed build of {} can't be used for this game. Install a different build of it, then try again.", launcher);
+        }
+        if (reason == RepairReason.storage-permission-required) {
+            if (launcher == "") { return @tr("The launcher needs permission to read your storage. Allow it storage access, then try again."); }
+            return @tr("{} needs permission to read your storage. Open it, allow storage access, then try again.", launcher);
+        }
+        if (reason == RepairReason.storage-provider-unsupported) {
+            if (launcher == "") { return @tr("The launcher can't read the storage this game is kept on. Move the game somewhere it can read, then update the media database."); }
+            return @tr("{} can't read the storage this game is kept on. Move the game somewhere it can read, then update the media database.", launcher);
+        }
+        if (reason == RepairReason.storage-unavailable) {
+            return @tr("The storage holding this game isn't connected. Reconnect it, then try again.");
+        }
+        if (reason == RepairReason.media-unavailable) {
+            return @tr("This game's file couldn't be opened. It may have been moved or deleted. Update the media database, then try again.");
+        }
+        if (reason == RepairReason.host-unavailable) {
+            return @tr("The service that starts games isn't responding. Restart Zaparoo, then try again.");
+        }
+        if (reason == RepairReason.host-foreground-required) {
+            return @tr("Zaparoo needs to be on screen to start a game. Return to Zaparoo, then try again.");
+        }
+        if (reason == RepairReason.outcome-unknown) {
+            return @tr("Zaparoo started this game but couldn't confirm it opened. Check the screen before trying again.");
+        }
+        if (reason == RepairReason.refused) {
+            return @tr("The device refused to start this game. Check the launcher's permissions, then try again.");
+        }
+        return "";
+    }
+
+    public pure function error-body(kind: ErrorKind, repair: RepairReason, detail: string, arg: string) -> string {
+        // `detail` and `arg` are the launcher and plugin display names for a
+        // launch Core named a reason for; `arg` alone is the context for
+        // every other failure.
+        if (kind == ErrorKind.launch-repair && repair != RepairReason.none) { return DialogLabels.repair-body(repair, detail, arg); }
+        // Core named a reason this build doesn't know. Its own sentence is
+        // the documented fallback, and the only server text shown as is.
+        if (kind == ErrorKind.launch-repair && arg != "") { return arg; }
+        if (kind == ErrorKind.launch || kind == ErrorKind.launch-repair) {
+            if (arg == "") { return @tr("Could not start this item. Check Zaparoo Core and try again."); }
+            return @tr("Could not start {}. Check Zaparoo Core and try again.", arg);
         }
         if (kind == ErrorKind.favorite) { return @tr("Could not update this favorite. Check Zaparoo Core and try again."); }
         if (kind == ErrorKind.add-to-hub) {
-            if (context == "") { return @tr("Could not add this item to the Hub. Check Zaparoo Core and try again."); }
-            return @tr("Could not add {} to the Hub. Check Zaparoo Core and try again.", context);
+            if (arg == "") { return @tr("Could not add this item to the Hub. Check Zaparoo Core and try again."); }
+            return @tr("Could not add {} to the Hub. Check Zaparoo Core and try again.", arg);
         }
+        if (kind == ErrorKind.core-start) { return @tr("Leave the app and return to retry. If Core still cannot start, close and reopen the app."); }
         if (kind == ErrorKind.media-index) { return @tr("Could not start the media database update. Check Zaparoo Core and try again."); }
         if (kind == ErrorKind.media-scrape) { return @tr("Could not start updating metadata. Check Zaparoo Core and try again."); }
         if (kind == ErrorKind.media-scrapers) { return @tr("Could not load the list of metadata sources. Check Zaparoo Core and try again."); }
@@ -223,6 +326,7 @@ export global DialogLabels {
         if (kind == ErrorKind.qr-code) { return @tr("Could not create the QR code for this item."); }
         if (kind == ErrorKind.card-write) { return @tr("Could not write to this token. Check that it is writable and try again."); }
         if (kind == ErrorKind.setting) { return @tr("Could not save this setting. Try again."); }
+        if (kind == ErrorKind.pairing) { return @tr("Core would not start a pairing. It may already have as many paired devices as it allows, or it may be running on another device."); }
         return @tr("The action could not be completed. Check Zaparoo Core and try again.");
     }
 }

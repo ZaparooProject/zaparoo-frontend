@@ -403,9 +403,7 @@ mod tests {
                     let n = calls_clone.fetch_add(1, Ordering::SeqCst) + 1;
                     async move {
                         if n == 1 {
-                            Err(ClientError {
-                                message: "transient".into(),
-                            })
+                            Err(ClientError::plain("transient"))
                         } else {
                             Ok("ok")
                         }

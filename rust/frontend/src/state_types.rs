@@ -1,6 +1,6 @@
 //! Explicit text boundaries for UI enums. Disk/API vocabulary stays unchanged.
 
-use crate::{ErrorKind, Orientation, Screen, SettingsPage, VideoStandard};
+use crate::{ErrorKind, Orientation, PairPhase, RepairReason, Screen, SettingsPage, VideoStandard};
 
 macro_rules! tokens {
     ($ty:ident { $($variant:ident => $token:literal),+ $(,)? }) => {
@@ -34,10 +34,29 @@ tokens!(SettingsPage {
 tokens!(Orientation { Horizontal => "horizontal", Cw => "cw", Ccw => "ccw" });
 tokens!(VideoStandard { Ntsc => "ntsc", Pal => "pal" });
 tokens!(ErrorKind {
-    Generic => "", Launch => "launch", Favorite => "favorite", AddToHub => "add_to_hub",
+    CoreStart => "core_start", Generic => "", Launch => "launch", LaunchRepair => "launch_repair", Favorite => "favorite", AddToHub => "add_to_hub",
     MediaIndex => "media_index", MediaScrape => "media_scrape", MediaScrapers => "media_scrapers",
     MediaCancel => "media_cancel", Launcher => "launcher", LauncherSave => "launcher_save",
     AlternateDiscovery => "alternate_discovery", QrCode => "qr_code", CardWrite => "card_write", Setting => "setting",
+    Pairing => "pairing",
+});
+tokens!(RepairReason {
+    None => "",
+    LauncherNotInstalled => "launcher_not_installed",
+    LauncherComponentMissing => "launcher_component_missing",
+    LauncherPluginMissing => "launcher_plugin_missing",
+    LauncherAmbiguous => "launcher_ambiguous",
+    LauncherUnsupportedMedia => "launcher_unsupported_media",
+    LauncherOptionsUnsupported => "launcher_options_unsupported",
+    LauncherVersionUnsupported => "launcher_version_unsupported",
+    StoragePermissionRequired => "storage_permission_required",
+    StorageProviderUnsupported => "storage_provider_unsupported",
+    StorageUnavailable => "storage_unavailable",
+    MediaUnavailable => "media_unavailable",
+    HostUnavailable => "host_unavailable",
+    HostForegroundRequired => "host_foreground_required",
+    OutcomeUnknown => "outcome_unknown",
+    Refused => "refused",
 });
 
 impl From<zaparoo_app::hub::Reason> for crate::DisabledReason {
@@ -88,6 +107,19 @@ impl From<zaparoo_app::log_upload::Phase> for crate::LogPhase {
             zaparoo_app::log_upload::Phase::Uploading => Self::Uploading,
             zaparoo_app::log_upload::Phase::Done => Self::Done,
             zaparoo_app::log_upload::Phase::Failed => Self::Failed,
+        }
+    }
+}
+
+impl From<zaparoo_app::pairing::Phase> for PairPhase {
+    fn from(value: zaparoo_app::pairing::Phase) -> Self {
+        use zaparoo_app::pairing::Phase;
+        match value {
+            Phase::Closed => Self::Closed,
+            Phase::Starting => Self::Starting,
+            Phase::Showing => Self::Showing,
+            Phase::Paired => Self::Paired,
+            Phase::Expired => Self::Expired,
         }
     }
 }
@@ -176,5 +208,34 @@ mod tests {
             ErrorKind::try_from("future-kind").unwrap_or(ErrorKind::Generic),
             ErrorKind::Generic
         );
+    }
+
+    #[test]
+    fn every_launch_reason_core_can_send_has_a_ui_projection() {
+        use zaparoo_core::client::LaunchReason;
+        for reason in LaunchReason::ALL {
+            let token = reason.token();
+            if reason == LaunchReason::Cancelled {
+                // Nothing the player did or can fix; `router::launch` drops
+                // it before the alert queue, so it has no copy to project to.
+                assert!(RepairReason::try_from(token).is_err());
+                continue;
+            }
+            assert_eq!(
+                RepairReason::try_from(token).map(RepairReason::token),
+                Ok(token),
+                "unmapped launch reason {token}"
+            );
+            assert_ne!(
+                RepairReason::try_from(token),
+                Ok(RepairReason::None),
+                "{token} must not collapse into the unexplained case"
+            );
+        }
+        // Core's vocabulary may grow ahead of this build; that is the
+        // fallback case, not a routing failure.
+        assert!(RepairReason::try_from("launcher_possessed").is_err());
+        assert!(RepairReason::try_from("unspecified").is_err());
+        assert_eq!(RepairReason::None.token(), "");
     }
 }

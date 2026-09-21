@@ -8,8 +8,8 @@
 
 use crate::{App, GridCell, HubView, Shell, Sizing, SystemsView};
 use crate::{
-    ControlKind, DialogButton, DialogKind, ErrorKind, GamesMode, LogPhase, PressOwner, RowKind,
-    Screen, SettingsPage, SystemsMode,
+    ControlKind, DialogButton, DialogKind, ErrorKind, GamesMode, LogPhase, PairPhase, PressOwner,
+    RepairReason, RowKind, Screen, SettingsPage, SystemsMode,
 };
 use slint::platform::software_renderer::{MinimalSoftwareWindow, RepaintBufferType, Rgb565Pixel};
 use slint::platform::{Platform, WindowAdapter};
@@ -330,6 +330,8 @@ fn offline_ctx() -> (tokio::runtime::Runtime, crate::router::Ctx) {
     let handle = runtime.handle().clone();
     let client = zaparoo_core::client::Client::new("ws://127.0.0.1:1".into(), &handle);
     let ctx = crate::router::Ctx {
+        folders: crate::folder_picker::Model::default(),
+        launcher_scan: crate::launcher_scan::Model::default(),
         store: zaparoo_core::store::Store::new(client, handle.clone()),
         handle,
         media: crate::media_cache::MediaCache::new().0,
@@ -353,16 +355,218 @@ fn offline_ctx() -> (tokio::runtime::Runtime, crate::router::Ctx) {
 }
 
 #[test]
+fn folder_setting_dispatches_host_once_until_completion() {
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    };
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let requests = Arc::new(AtomicUsize::new(0));
+    let counter = requests.clone();
+    ctx.folders.configure(Arc::new(move || {
+        counter.fetch_add(1, Ordering::SeqCst);
+        true
+    }));
+    app.global::<Shell>().set_active_screen(Screen::Settings);
+    crate::settings::open_page(&ctx, &app, SettingsPage::Library);
+    crate::settings::handle_action(&ctx, &app, "accept");
+    crate::settings::handle_action(&ctx, &app, "accept");
+    assert_eq!(requests.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        ctx.folders.status(),
+        (crate::ActionStatus::FolderOpening, 0, true)
+    );
+    assert!(ctx
+        .folders
+        .update(1, zaparoo_app::folder_picker::State::Cancelled, 2));
+    assert!(!ctx
+        .folders
+        .update(1, zaparoo_app::folder_picker::State::Failed, 0));
+    crate::settings::handle_action(&ctx, &app, "accept");
+    assert_eq!(requests.load(Ordering::SeqCst), 2);
+}
+
+#[test]
+fn launcher_scan_setting_dispatches_host_once_until_completion() {
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    };
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let requests = Arc::new(AtomicUsize::new(0));
+    let counter = requests.clone();
+    ctx.launcher_scan.configure(Arc::new(move || {
+        counter.fetch_add(1, Ordering::SeqCst);
+        true
+    }));
+    app.global::<Shell>().set_active_screen(Screen::Settings);
+    crate::settings::open_page(&ctx, &app, SettingsPage::Library);
+    crate::settings::handle_action(&ctx, &app, "accept");
+    crate::settings::handle_action(&ctx, &app, "accept");
+    assert_eq!(requests.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        ctx.launcher_scan.status(),
+        (crate::ActionStatus::LauncherOpening, 0, true)
+    );
+    assert!(ctx
+        .launcher_scan
+        .update(1, zaparoo_app::launcher_scan::State::Cancelled, 0));
+    assert!(!ctx
+        .launcher_scan
+        .update(1, zaparoo_app::launcher_scan::State::Failed, 0));
+    crate::settings::handle_action(&ctx, &app, "accept");
+    assert_eq!(requests.load(Ordering::SeqCst), 2);
+}
+
+/// The pairing panel's one promise: Core is never left holding a PIN the
+/// user has walked away from. Every way out of the panel is checked here,
+/// against the same `cancels` count the driver sends its calls off.
+#[test]
+fn pairing_row_shows_a_pin_and_every_exit_calls_the_pairing_off() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    app.global::<crate::Motion>().set_enabled(false);
+    app.global::<Shell>().set_active_screen(Screen::Settings);
+    crate::settings::open_page(&ctx, &app, SettingsPage::About);
+    let rows = app.global::<crate::SettingsView>().get_rows();
+    assert_eq!(
+        rows.row_data(0).map(|row| row.id.to_string()),
+        Some("pairDevice".to_string()),
+        "the About page leads with the pairing row"
+    );
+
+    // The row starts a pairing and puts the panel up before Core answers.
+    let ov = app.global::<crate::Overlays>();
+    settle(&window);
+    app.window().request_redraw();
+    let settings_page = frame(&window);
+    crate::settings::handle_action(&ctx, &app, "accept");
+    assert!(ov.get_pair_open());
+    assert_eq!(ov.get_pair_phase(), PairPhase::Starting);
+
+    // Core's PIN, with the seconds the panel counts down.
+    let ticket = crate::pairing::open(&ctx, &app);
+    let deadline = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_secs() as i64)
+        + 30;
+    crate::pairing::observe_started(&ctx, &app, ticket, "482913", deadline);
+    assert_eq!(ov.get_pair_phase(), PairPhase::Showing);
+    assert_eq!(ov.get_pair_pin(), "482913");
+    assert_eq!(ov.get_pair_expires_in(), 30);
+    settle(&window);
+    app.window().request_redraw();
+    assert_ne!(
+        settings_page,
+        frame(&window),
+        "the PIN has to be on screen, not just in the model"
+    );
+
+    // Walking away calls it off and takes the PIN off screen.
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert!(!ov.get_pair_open());
+    assert_eq!(ov.get_pair_pin(), "");
+    assert_eq!(crate::router::lock(&ctx.shared).pairing.cancels, 1);
+
+    // A device that pairs ends the flow by name, with nothing owed.
+    let ticket = crate::pairing::open(&ctx, &app);
+    crate::pairing::observe_started(&ctx, &app, ticket, "551104", deadline);
+    crate::pairing::observe_paired(&ctx, &app, "Wizzo's phone");
+    assert_eq!(ov.get_pair_phase(), PairPhase::Paired);
+    assert_eq!(ov.get_pair_client(), "Wizzo's phone");
+    assert_eq!(
+        ov.get_pair_pin(),
+        "",
+        "a PIN that has been used is not left on screen"
+    );
+    crate::router::handle_action(&ctx, &app, "accept");
+    assert!(!ov.get_pair_open());
+    assert_eq!(
+        crate::router::lock(&ctx.shared).pairing.cancels,
+        1,
+        "a completed pairing has nothing to call off"
+    );
+
+    // Running out of time retires the PIN and calls it off too.
+    let ticket = crate::pairing::open(&ctx, &app);
+    crate::pairing::observe_started(&ctx, &app, ticket, "730025", deadline);
+    for _ in 0..30 {
+        crate::pairing::observe_tick(&ctx, &app, ticket);
+    }
+    assert_eq!(ov.get_pair_phase(), PairPhase::Expired);
+    assert_eq!(ov.get_pair_pin(), "");
+    assert_eq!(crate::router::lock(&ctx.shared).pairing.cancels, 2);
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert!(!ov.get_pair_open());
+    assert_eq!(crate::router::lock(&ctx.shared).pairing.cancels, 2);
+
+    // A PIN Core minted for a panel the user already left is called off
+    // as well: the start may only have reached Core after they walked.
+    let ticket = crate::pairing::open(&ctx, &app);
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert_eq!(
+        crate::router::lock(&ctx.shared).pairing.cancels,
+        2,
+        "nothing is owed while the start is still in flight"
+    );
+    crate::pairing::observe_started(&ctx, &app, ticket, "918820", deadline);
+    assert!(!ov.get_pair_open());
+    assert_eq!(crate::router::lock(&ctx.shared).pairing.cancels, 3);
+}
+
+#[test]
+fn a_pairing_core_refuses_closes_the_panel_and_takes_the_shared_alert() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    app.global::<crate::Motion>().set_enabled(false);
+    app.global::<Shell>().set_active_screen(Screen::Settings);
+    crate::settings::open_page(&ctx, &app, SettingsPage::About);
+
+    let ticket = crate::pairing::open(&ctx, &app);
+    crate::pairing::observe_failed(&ctx, &app, ticket);
+    let ov = app.global::<crate::Overlays>();
+    assert!(!ov.get_pair_open());
+    assert!(ov.get_dialog_open());
+    assert_eq!(ov.get_dialog_kind(), DialogKind::ActionError);
+    assert_eq!(ov.get_dialog_error(), ErrorKind::Pairing);
+    assert_eq!(
+        ov.get_dialog_buttons().row_data(0),
+        Some(DialogButton::Ok),
+        "a refused pairing is read and dismissed, not retried in place"
+    );
+    assert_eq!(
+        crate::router::lock(&ctx.shared).pairing.cancels,
+        0,
+        "a start that never happened leaves nothing to call off"
+    );
+    crate::router::handle_action(&ctx, &app, "accept");
+    assert!(!ov.get_dialog_open());
+}
+
+#[test]
 fn launch_dormancy_is_local_only() {
-    assert!(crate::local_lifecycle_enabled(
-        "ws://127.0.0.1:7497/api/v0.1"
-    ));
-    assert!(crate::local_lifecycle_enabled(
-        "ws://localhost:7497/api/v0.1"
-    ));
-    assert!(!crate::local_lifecycle_enabled(
-        "ws://192.0.2.10:7497/api/v0.1"
-    ));
+    let local =
+        |endpoint: &str| zaparoo_core::transport::Transport::tcp(endpoint.into(), None).is_local();
+    assert!(local("ws://127.0.0.1:7497/api/v0.1"));
+    assert!(local("ws://localhost:7497/api/v0.1"));
+    assert!(!local("ws://192.0.2.10:7497/api/v0.1"));
+    #[cfg(unix)]
+    assert!(zaparoo_core::transport::Transport::unix(
+        "/private/api.sock".into(),
+        "test-key".into(),
+        1
+    )
+    .is_local());
 }
 
 #[test]
@@ -970,6 +1174,199 @@ fn launcher_save_keeps_picker_locked_delays_cue_and_retries_original_choice() {
         "fast completion retires delayed cue"
     );
     assert!(!ov.get_list_open());
+}
+
+#[test]
+fn launcher_picker_keeps_the_order_core_sent_and_lists_uninstalled_launchers() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        // Core ranks a system's launchers itself; this order deliberately
+        // puts the detected one last and the uninstalled one first.
+        shared.launchers = vec![
+            zaparoo_core::media_types::LauncherInfo {
+                id: "Missing".into(),
+                system_id: "NES".into(),
+                detected: Some(false),
+                available: false,
+                availability_reason: "Not installed.".into(),
+                ..Default::default()
+            },
+            zaparoo_core::media_types::LauncherInfo {
+                id: "Unknown".into(),
+                system_id: "NES".into(),
+                detected: None,
+                ..Default::default()
+            },
+            zaparoo_core::media_types::LauncherInfo {
+                id: "Mesen".into(),
+                system_id: "NES".into(),
+                detected: Some(true),
+                ..Default::default()
+            },
+        ];
+    }
+    crate::launchers::open_system_picker(&ctx, &app, "NES");
+    let rows = app.global::<crate::Overlays>().get_list_entries();
+    assert_eq!(rows.row_count(), 4, "no launcher may be dropped");
+    let entries: Vec<_> = (0..rows.row_count())
+        .filter_map(|index| rows.row_data(index))
+        .collect();
+    assert_eq!(entries[0].id, "__default__");
+    assert_eq!(entries[1].id, "Missing", "Core's order must survive");
+    assert_eq!(entries[1].label_key, "launcher:not-detected");
+    assert_eq!(entries[2].id, "Unknown");
+    assert!(entries[2].label_key.is_empty());
+    assert_eq!(entries[3].id, "Mesen");
+    assert_eq!(entries[3].label_key, "launcher:detected");
+}
+
+#[test]
+fn launch_repair_uses_existing_alert_without_a_retry_action() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    app.global::<crate::Motion>().set_enabled(false);
+    let entry = zaparoo_app::action_error::launch_failure(
+        "Game",
+        Some(zaparoo_app::action_error::LaunchRepair {
+            reason: "launcher_plugin_missing".into(),
+            launcher: "RetroArch".into(),
+            plugin: "Mesen".into(),
+        }),
+        None,
+    );
+    crate::router::report_action_failure(&ctx, &app, entry);
+    let overlay = app.global::<crate::Overlays>();
+    assert!(overlay.get_dialog_open());
+    assert_eq!(overlay.get_dialog_error(), ErrorKind::LaunchRepair);
+    assert_eq!(
+        overlay.get_dialog_repair(),
+        RepairReason::LauncherPluginMissing
+    );
+    assert_eq!(overlay.get_dialog_detail(), "RetroArch");
+    assert_eq!(overlay.get_dialog_arg(), "Mesen");
+    let labels = app.global::<crate::DialogLabels>();
+    assert_eq!(
+        labels.invoke_body(
+            DialogKind::ActionError,
+            ErrorKind::LaunchRepair,
+            RepairReason::LauncherPluginMissing,
+            crate::FirstRunPhase::Idle,
+            "RetroArch".into(),
+            "Mesen".into(),
+        ),
+        "RetroArch needs Mesen for this game. Download Mesen in RetroArch's own updater, then try again."
+    );
+    assert_eq!(
+        overlay.get_dialog_buttons().row_data(0),
+        Some(DialogButton::Ok)
+    );
+    crate::router::handle_action(&ctx, &app, "accept");
+    assert!(!overlay.get_dialog_open());
+}
+
+#[test]
+fn a_reason_core_grew_after_this_build_falls_back_to_its_own_sentence() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    app.global::<crate::Motion>().set_enabled(false);
+    let entry = zaparoo_app::action_error::launch_failure(
+        "Game",
+        None,
+        Some("Check player storage access"),
+    );
+    crate::router::report_action_failure(&ctx, &app, entry);
+    let overlay = app.global::<crate::Overlays>();
+    assert_eq!(overlay.get_dialog_error(), ErrorKind::LaunchRepair);
+    assert_eq!(overlay.get_dialog_repair(), RepairReason::None);
+    assert_eq!(overlay.get_dialog_arg(), "Check player storage access");
+    let labels = app.global::<crate::DialogLabels>();
+    assert_eq!(
+        labels.invoke_error_body(
+            ErrorKind::LaunchRepair,
+            RepairReason::None,
+            "".into(),
+            "Check player storage access".into(),
+        ),
+        "Check player storage access"
+    );
+    // No reason and no sentence: today's generic launch copy, naming the game.
+    assert_eq!(
+        labels.invoke_error_body(
+            ErrorKind::Launch,
+            RepairReason::None,
+            "".into(),
+            "Sonic".into()
+        ),
+        "Could not start Sonic. Check Zaparoo Core and try again."
+    );
+}
+
+#[test]
+fn every_launch_reason_has_its_own_finished_sentence() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _) = boot();
+    let labels = app.global::<crate::DialogLabels>();
+    let mut bodies = Vec::new();
+    for reason in zaparoo_core::client::LaunchReason::ALL {
+        // `cancelled` has no copy on purpose; `router::launch_alert` drops it.
+        let Ok(reason) = RepairReason::try_from(reason.token()) else {
+            continue;
+        };
+        // Both names, one name, neither: no form may leave a hole.
+        for (launcher, plugin) in [("RetroArch", "Mesen"), ("RetroArch", ""), ("", "")] {
+            let body = labels.invoke_repair_body(reason, launcher.into(), plugin.into());
+            let title = labels.invoke_repair_title(reason);
+            assert!(!title.is_empty(), "{reason:?} has no title");
+            assert!(!body.is_empty(), "{reason:?} has no body for {launcher:?}");
+            assert!(
+                !body.contains('{') && !body.contains('}'),
+                "{reason:?} left a placeholder: {body}"
+            );
+            for hole in ["  ", " .", " ,", "null", "()", "\"\""] {
+                assert!(!body.contains(hole), "{reason:?} left {hole:?} in: {body}");
+            }
+            if launcher.is_empty() {
+                assert!(
+                    !body.contains("RetroArch") && !body.contains("Mesen"),
+                    "{reason:?} named a launcher it was not given: {body}"
+                );
+            }
+        }
+        bodies.push(labels.invoke_repair_body(reason, "RetroArch".into(), "Mesen".into()));
+    }
+    let mut unique = bodies.clone();
+    unique.sort();
+    unique.dedup();
+    assert_eq!(
+        unique.len(),
+        bodies.len(),
+        "each reason needs copy a user can tell apart"
+    );
+}
+
+#[test]
+fn core_start_failure_uses_deduplicated_dismissible_alert() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    app.global::<crate::Motion>().set_enabled(false);
+    crate::router::report_action_error(&ctx, &app, "core_start", "");
+    crate::router::report_action_error(&ctx, &app, "core_start", "");
+    let overlay = app.global::<crate::Overlays>();
+    assert!(overlay.get_dialog_open());
+    assert_eq!(overlay.get_dialog_error(), ErrorKind::CoreStart);
+    assert_eq!(
+        overlay.get_dialog_buttons().row_data(0),
+        Some(DialogButton::Ok)
+    );
+    crate::router::handle_action(&ctx, &app, "accept");
+    assert!(!overlay.get_dialog_open());
+    assert!(crate::router::lock(&ctx.shared).errors.showing().is_none());
 }
 
 #[test]

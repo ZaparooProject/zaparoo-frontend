@@ -93,9 +93,10 @@ fn dialog_target(ov: &Overlays<'_>) -> Option<Target> {
         PressOwner::Dialog,
         index,
         format!(
-            "{:?}:{:?}:{:?}:{}:{}:{button:?}",
+            "{:?}:{:?}:{:?}:{:?}:{}:{}:{button:?}",
             ov.get_dialog_kind(),
             ov.get_dialog_error(),
+            ov.get_dialog_repair(),
             ov.get_first_run_phase(),
             ov.get_dialog_detail(),
             ov.get_dialog_arg()
@@ -136,6 +137,12 @@ fn current_with(app: &App, prepare_grid: impl FnOnce()) -> Option<Target> {
         );
     }
     if ov.get_qr_open() {
+        return None;
+    }
+    // The pairing panel carries no pressable control: its two keys are
+    // named in the help bar and nothing on the screen below it may take
+    // the push.
+    if ov.get_pair_open() {
         return None;
     }
     if ov.get_card_write_open() {

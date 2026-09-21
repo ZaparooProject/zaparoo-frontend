@@ -7,7 +7,9 @@
 // resulting link as a scannable code. The bundle rules live in
 // `zaparoo_app::log_upload`.
 
+#[cfg(not(feature = "hosted"))]
 use std::io::Write as _;
+#[cfg(not(feature = "hosted"))]
 use std::process::{Command, Stdio};
 use std::sync::Arc;
 
@@ -24,6 +26,7 @@ use crate::{App, LogUploadView};
 /// Where the bundle goes. The frontend has no HTTPS client of its own,
 /// and curl is a hard requirement of Core's installer, so the upload
 /// shells out to it.
+#[cfg(not(feature = "hosted"))]
 const UPLOAD_URL: &str = "https://logs.zaparoo.org/";
 
 /// The panel's state.
@@ -346,6 +349,12 @@ fn start(ctx: &Ctx, app: &App) {
 }
 
 /// Post the bundle with curl and return the link it answers with.
+#[cfg(feature = "hosted")]
+fn post(_payload: &[u8]) -> Result<String, String> {
+    Err("log upload is not supported by this host".into())
+}
+
+#[cfg(not(feature = "hosted"))]
 fn post(payload: &[u8]) -> Result<String, String> {
     let timeout = rules::UPLOAD_TIMEOUT_SECS.to_string();
     let mut child = Command::new("curl")

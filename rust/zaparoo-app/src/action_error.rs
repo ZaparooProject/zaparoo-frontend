@@ -12,8 +12,10 @@ use std::collections::VecDeque;
 
 /// Every kind the alert vocabulary knows. An unknown kind still shows,
 /// with the generic copy.
-pub const KINDS: [&str; 13] = [
+pub const KINDS: [&str; 16] = [
+    "core_start",
     "launch",
+    "launch_repair",
     "favorite",
     "add_to_hub",
     "media_index",
@@ -26,6 +28,7 @@ pub const KINDS: [&str; 13] = [
     "qr_code",
     "card_write",
     "setting",
+    "pairing",
 ];
 
 /// A discovery that failed while the context menu still holds its
@@ -36,12 +39,30 @@ pub fn closes_context_menu(kind: &str) -> bool {
     kind == "alternate_discovery"
 }
 
+/// Core's own account of a launch that did not start: which of its closed
+/// reasons applied, and the display names the sentence may use. The words
+/// are the UI's; this is only what it chooses them from, carried on the
+/// queued failure so the copy is still there when its turn comes.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct LaunchRepair {
+    /// Core's reason token. An opaque vocabulary key here; the UI layer
+    /// maps it to a typed reason and to the copy.
+    pub reason: String,
+    /// The launcher's display name, or empty when Core did not name one.
+    pub launcher: String,
+    /// The launcher plugin's display name, or empty when Core did not
+    /// name one.
+    pub plugin: String,
+}
+
 /// One queued failure. The key is what deduplication compares, so the
 /// same failure about a different item still gets its own alert.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Entry {
     pub kind: String,
     pub context: String,
+    /// Set only for a launch Core explained in its own vocabulary.
+    pub repair: Option<LaunchRepair>,
 }
 
 impl Entry {
@@ -49,11 +70,39 @@ impl Entry {
         Self {
             kind: kind.to_string(),
             context: context.to_string(),
+            repair: None,
         }
     }
 
+    /// The key includes the reason and the names in it, so two different
+    /// things wrong with the same launch stay two alerts.
     pub fn key(&self) -> String {
-        format!("{}:{}", self.kind, self.context)
+        match &self.repair {
+            Some(repair) => format!(
+                "{}:{}:{}:{}:{}",
+                self.kind, self.context, repair.reason, repair.launcher, repair.plugin
+            ),
+            None => format!("{}:{}", self.kind, self.context),
+        }
+    }
+}
+
+/// A launch failure, in the most specific form Core gave us. A reason from
+/// its closed vocabulary is the one the UI words itself. Failing that,
+/// Core's own sentence stands in, but only when Core marked it display-safe
+/// by categorizing the failure; every other error keeps the generic copy,
+/// because it may carry technical detail a user cannot act on.
+pub fn launch_failure(name: &str, repair: Option<LaunchRepair>, message: Option<&str>) -> Entry {
+    if let Some(repair) = repair {
+        return Entry {
+            kind: "launch_repair".to_string(),
+            context: String::new(),
+            repair: Some(repair),
+        };
+    }
+    match message {
+        Some(message) if !message.is_empty() => Entry::new("launch_repair", message),
+        _ => Entry::new("launch", name),
     }
 }
 
@@ -80,10 +129,15 @@ impl ErrorQueue {
     /// screen now, or `None` when it was dropped as a duplicate or
     /// queued behind one already waiting.
     pub fn present(&mut self, kind: &str, context: &str, slot_free: bool) -> Option<Entry> {
-        if kind.is_empty() {
+        self.present_entry(Entry::new(kind, context), slot_free)
+    }
+
+    /// `present` for a failure that already carries more than a kind and a
+    /// context, such as a launch Core explained.
+    pub fn present_entry(&mut self, entry: Entry, slot_free: bool) -> Option<Entry> {
+        if entry.kind.is_empty() {
             return None;
         }
-        let entry = Entry::new(kind, context);
         let key = entry.key();
         if self.showing.as_ref().is_some_and(|e| e.key() == key)
             || self.queued.iter().any(|e| e.key() == key)
@@ -127,6 +181,78 @@ impl ErrorQueue {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn repair(reason: &str, launcher: &str, plugin: &str) -> LaunchRepair {
+        LaunchRepair {
+            reason: reason.to_string(),
+            launcher: launcher.to_string(),
+            plugin: plugin.to_string(),
+        }
+    }
+
+    #[test]
+    fn a_named_reason_wins_then_cores_sentence_then_the_games_name() {
+        let named = repair("launcher_plugin_missing", "RetroArch", "Mesen");
+        let entry = launch_failure("Game", Some(named.clone()), Some("Check player settings"));
+        assert_eq!(entry.kind, "launch_repair");
+        assert_eq!(entry.repair, Some(named));
+        assert_eq!(
+            entry.context, "",
+            "a named reason needs no server prose to show"
+        );
+        assert_eq!(
+            launch_failure("Game", None, Some("Check player settings")),
+            Entry::new("launch_repair", "Check player settings")
+        );
+        assert_eq!(
+            launch_failure("Game", None, Some("")),
+            Entry::new("launch", "Game")
+        );
+        assert_eq!(
+            launch_failure("Game", None, None),
+            Entry::new("launch", "Game")
+        );
+    }
+
+    #[test]
+    fn two_things_wrong_with_one_launch_stay_two_alerts() {
+        let mut q = ErrorQueue::new();
+        let missing = launch_failure("Game", Some(repair("launcher_not_installed", "", "")), None);
+        let plugin = launch_failure(
+            "Game",
+            Some(repair("launcher_plugin_missing", "RetroArch", "Mesen")),
+            None,
+        );
+        assert_eq!(q.present_entry(missing.clone(), true), Some(missing));
+        assert_eq!(
+            q.present_entry(plugin.clone(), true),
+            None,
+            "queued behind the first"
+        );
+        assert_eq!(q.dismiss(), Some(plugin.clone()));
+        // The same reason about the same launcher is still one alert.
+        assert_eq!(q.present_entry(plugin, true), None);
+        assert_eq!(q.dismiss(), None);
+    }
+
+    #[test]
+    fn the_same_reason_naming_a_different_launcher_is_its_own_alert() {
+        let mut q = ErrorQueue::new();
+        let retroarch = launch_failure(
+            "Game",
+            Some(repair("launcher_not_installed", "RetroArch", "")),
+            None,
+        );
+        let dolphin = launch_failure(
+            "Game",
+            Some(repair("launcher_not_installed", "Dolphin", "")),
+            None,
+        );
+        assert_ne!(retroarch.key(), dolphin.key());
+        assert_eq!(q.present_entry(retroarch.clone(), true), Some(retroarch));
+        assert_eq!(q.present_entry(dolphin.clone(), true), None);
+        assert_eq!(q.dismiss(), Some(dolphin));
+    }
 
     #[test]
     fn the_first_failure_shows_and_the_next_one_queues() {

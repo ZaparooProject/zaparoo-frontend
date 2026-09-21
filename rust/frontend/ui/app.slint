@@ -8,8 +8,8 @@
 // logic; forward orchestration lives in the router.
 
 import { Theme, Sizing, Motion, Layout } from "theme.slint";
-import { Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PressOwner, StatusKind, Orientation, VideoStandard, StateTokens, ScrollAction, SetupAction, AppCue, DisabledReason, DialogKind, DialogProgress, DialogButton, FirstRunPhase, ErrorKind } from "state_types.slint";
-export { Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PressOwner, StatusKind, Orientation, VideoStandard, ScrollAction, SetupAction, AppCue, DisabledReason, DialogKind, DialogProgress, DialogButton, FirstRunPhase, ErrorKind }
+import { Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, PressOwner, StatusKind, Orientation, VideoStandard, StateTokens, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogProgress, DialogButton, FirstRunPhase, ErrorKind, RepairReason } from "state_types.slint";
+export { Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, PressOwner, StatusKind, Orientation, VideoStandard, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogProgress, DialogButton, FirstRunPhase, ErrorKind, RepairReason }
 import { GlyphSource, Brand, Buttons, HelpEntry, Status, HeaderBar, StatusLine, ProgressTrack, TopStatusStrip, PageIndicator, ActiveLabel, HelpBar, SectionHeader, Divider, ScrollCue, ModalShell, QrPlate, StateCue } from "chrome.slint";
 import { GridCell, MarqueeCaption, PressableSurface, Tile, PagedGridView } from "tiles.slint";
 import { ScrollOffset, SelectionCursor, SelectionClip } from "focus.slint";
@@ -32,7 +32,7 @@ import "../../../resources/fonts/NotoSans-Medium.ttf";
 import "../../../resources/fonts/NotoSans-DemiBold.ttf";
 import "../../../resources/fonts/MxPlus_HP_100LX_6x8.ttf";
 
-export { Theme, Sizing, Motion, Layout, GlyphSource, Buttons, Status, HelpEntry, GridCell, DetailRow, SettingsRow, SettingsLabels, SetupPickerRow, GameInfoView, Labels, AboutView }
+export { Theme, Sizing, Motion, Layout, GlyphSource, Buttons, Status, HelpEntry, GridCell, DetailRow, SettingsRow, SettingsLabels, SetupPickerRow, GameInfoView, Labels, DialogLabels, AboutView }
 
 // Context-menu row: `id` is the dispatch key the router switches on,
 // never the row's position (position-keyed dispatch was a footgun).
@@ -89,7 +89,7 @@ export global Shell {
     // cannot flash before the first load settles.
     in-out property <bool> boot-curtain: false;
     in-out property <bool> boot-complete: false;
-    in-out property <string> boot-text: "";
+    in-out property <BootStatus> boot-status: BootStatus.connecting;
     // Primary game active: gate input and recurring work behind emulator.
     in-out property <bool> dormant: false;
     // Reduce motion collapses decorative animation and caption movement.
@@ -459,6 +459,15 @@ export global Overlays {
         Sizing.pct-w(78) - 2 * Sizing.pct-w(4), Sizing.pct-h(52), Sizing.pct-w(1));
     in-out property <bool> card-write-open: false;
     in-out property <string> card-write-key: "";
+    // Pairing a device with Core: Rust owns the phase, the PIN Core
+    // minted, the seconds left on it and the name the device reported.
+    // The PIN is cleared the moment it stops being worth reading out, so
+    // the panel can never show a stale one.
+    in-out property <bool> pair-open: false;
+    in-out property <PairPhase> pair-phase: PairPhase.closed;
+    in-out property <string> pair-pin: "";
+    in-out property <int> pair-expires-in: 0;
+    in-out property <string> pair-client: "";
     // QR write deep-link modal: the matrix image is rendered by Rust
     // at module resolution (quiet zone baked in) and scaled up
     // pixelated to the largest whole multiple.
@@ -473,9 +482,15 @@ export global Overlays {
     in-out property <bool> dialog-open: false;
     in-out property <DialogKind> dialog-kind: DialogKind.none;
     in-out property <ErrorKind> dialog-error: ErrorKind.generic;
+    // Which launch failure this is, when Core named one this build knows.
+    in-out property <RepairReason> dialog-repair: RepairReason.none;
     in-out property <FirstRunPhase> first-run-phase: FirstRunPhase.idle;
-    // Runtime text (minimum Core version and context); `DialogLabels` composes the
-    // words from these so every dialog string can be translated.
+    // The dialog's two text slots. What they carry is the kind's business:
+    // the minimum and running Core versions, the indexed-file count, the
+    // failed action's context, or the launcher and plugin display names of
+    // a launch Core explained. DialogLabels writes every word; the one
+    // exception is a launch failure whose reason this build does not know,
+    // whose `arg` is Core's own sentence and so stays in Core's language.
     in-out property <string> dialog-detail: "";
     in-out property <string> dialog-arg: "";
     // First-run progress line, as a key plus its numbers.
@@ -1337,6 +1352,126 @@ component CardWriteModal inherits ModalShell {
     }
 }
 
+// Pairing a device: the PIN Core minted, set large enough to read from
+// across the room, with the time left on it, then the name of whatever
+// device used it. Display only, like the QR shell - Rust owns every phase
+// change and the help bar names the one or two controls that apply.
+component PairDeviceModal inherits ModalShell {
+    property <length> pin-size: Sizing.font-size(10);
+    // Whole minutes left, rounded up, so the last minute reads "1 minute"
+    // rather than "0" for its whole length. Under a minute the line
+    // counts seconds instead.
+    property <int> minutes-left: Math.ceil(Overlays.pair-expires-in / 60);
+
+    title: @tr("Pair a device");
+    // Sized around the PIN itself: it is the widest thing here and the
+    // whole point of the panel, so it never elides.
+    panel-width: Math.min(Math.min(root.width * 0.92, Sizing.pct-h(110)),
+        Math.max(Sizing.pct-w(50), pin-measure.preferred-width + 2 * root.pad));
+    content-height: Math.ceil(content.preferred-height / 1px) * 1px;
+
+    pin-measure := Text {
+        visible: false;
+        text: Overlays.pair-pin;
+        font-size: root.pin-size;
+        font-weight: FontWeight.medium;
+    }
+
+    content := VerticalLayout {
+        x: root.pad;
+        y: root.content-y;
+        width: root.content-width;
+        height: self.preferred-height;
+        spacing: root.pad;
+
+        if Overlays.pair-phase == PairPhase.starting: Rectangle {
+            height: Math.ceil(starting.preferred-height / 1px) * 1px;
+            starting := Text {
+                x: (parent.width - self.width) / 2;
+                y: 0px;
+                width: Math.min(Math.ceil(self.preferred-width / 1px) * 1px, parent.width);
+                text: @tr("Starting…");
+                color: Theme.text-label;
+                font-size: Sizing.font-body;
+                wrap: word-wrap;
+            }
+        }
+
+        if Overlays.pair-phase == PairPhase.showing: Rectangle {
+            height: Math.ceil(pin.preferred-height / 1px) * 1px;
+            pin := Text {
+                x: (parent.width - self.width) / 2;
+                y: 0px;
+                width: Math.min(Math.ceil(self.preferred-width / 1px) * 1px, parent.width);
+                text: Overlays.pair-pin;
+                color: Theme.accent;
+                font-size: root.pin-size;
+                font-weight: FontWeight.medium;
+            }
+        }
+        if Overlays.pair-phase == PairPhase.showing: Rectangle {
+            height: Math.ceil(instructions.preferred-height / 1px) * 1px;
+            instructions := Text {
+                x: (parent.width - self.width) / 2;
+                y: 0px;
+                width: parent.width;
+                horizontal-alignment: center;
+                text: @tr("Enter this PIN on the device you are pairing.");
+                color: Theme.text-primary;
+                font-size: Sizing.font-body;
+                wrap: word-wrap;
+            }
+        }
+        if Overlays.pair-phase == PairPhase.showing: Rectangle {
+            height: Math.ceil(expiry.preferred-height / 1px) * 1px;
+            expiry := Text {
+                x: (parent.width - self.width) / 2;
+                y: 0px;
+                width: parent.width;
+                horizontal-alignment: center;
+                text: Overlays.pair-expires-in >= 60
+                    ? @tr("Expires in {n} minute" | "Expires in {n} minutes" % root.minutes-left)
+                    : @tr("Expires in {n} second" | "Expires in {n} seconds" % Overlays.pair-expires-in);
+                color: Theme.text-label;
+                font-size: Sizing.font-caption;
+                wrap: word-wrap;
+            }
+        }
+
+        if Overlays.pair-phase == PairPhase.paired: Rectangle {
+            height: Math.ceil(paired.preferred-height / 1px) * 1px;
+            paired := Text {
+                x: (parent.width - self.width) / 2;
+                y: 0px;
+                width: parent.width;
+                horizontal-alignment: center;
+                // Core names the device it paired; it does not always have
+                // a name to give.
+                text: Overlays.pair-client == ""
+                    ? @tr("A device is now paired with Core.")
+                    : @tr("{} is now paired with Core.", Overlays.pair-client);
+                color: Theme.text-primary;
+                font-size: Sizing.font-body;
+                wrap: word-wrap;
+            }
+        }
+
+        if Overlays.pair-phase == PairPhase.expired: Rectangle {
+            height: Math.ceil(expired.preferred-height / 1px) * 1px;
+            expired := Text {
+                x: (parent.width - self.width) / 2;
+                y: 0px;
+                width: parent.width;
+                horizontal-alignment: center;
+                text: @tr("The PIN expired before a device used it. Pair again for a new one.");
+                color: Theme.text-primary;
+                font-size: Sizing.font-body;
+                wrap: word-wrap;
+            }
+        }
+    }
+}
+
 // QR shell: translated purpose and instructions above an integer module
 // matrix, with a readable documentation URL for composite video.
 component QrCodeModal inherits ModalShell {
@@ -1412,12 +1547,12 @@ component DialogModal inherits ModalShell {
     // does not stack up into extra lines on a 240p screen.
     title-measure := Text {
         visible: false;
-        text: DialogLabels.title(Overlays.dialog-kind, Overlays.dialog-error);
+        text: DialogLabels.title(Overlays.dialog-kind, Overlays.dialog-error, Overlays.dialog-repair);
         font-size: Sizing.font-title;
     }
     body-measure := Text {
         visible: false;
-        text: DialogLabels.body(Overlays.dialog-kind, Overlays.dialog-error, Overlays.first-run-phase, Overlays.dialog-detail, Overlays.dialog-arg);
+        text: DialogLabels.body(Overlays.dialog-kind, Overlays.dialog-error, Overlays.dialog-repair, Overlays.first-run-phase, Overlays.dialog-detail, Overlays.dialog-arg);
         font-size: Sizing.font-body;
     }
     line-measure := Text {
@@ -1456,7 +1591,7 @@ component DialogModal inherits ModalShell {
     property <length> button-y: root.status-y
         + (Overlays.dialog-status != DialogProgress.none ? root.status-h + root.pad : 0px);
 
-    title: DialogLabels.title(Overlays.dialog-kind, Overlays.dialog-error);
+    title: DialogLabels.title(Overlays.dialog-kind, Overlays.dialog-error, Overlays.dialog-repair);
     panel-width: root.panel-w-raw;
     content-height: root.button-y + root.btn-h - root.content-y;
 
@@ -1465,7 +1600,7 @@ component DialogModal inherits ModalShell {
             y: root.body-y;
             width: Math.min(Math.ceil(body-measure.preferred-width / 1px) * 1px, root.content-width);
             wrap: word-wrap;
-            text: DialogLabels.body(Overlays.dialog-kind, Overlays.dialog-error, Overlays.first-run-phase, Overlays.dialog-detail, Overlays.dialog-arg);
+            text: DialogLabels.body(Overlays.dialog-kind, Overlays.dialog-error, Overlays.dialog-repair, Overlays.first-run-phase, Overlays.dialog-detail, Overlays.dialog-arg);
             color: Theme.text-primary;
             font-size: Sizing.font-body;
             horizontal-alignment: center;
@@ -2212,7 +2347,7 @@ export component App inherits Window {
 
     pure function has-modal() -> bool {
         return LogUploadView.open || SetupModalView.open || GameInfoView.modal-open || Overlays.card-write-open || Overlays.qr-open
-            || Overlays.dialog-open || Overlays.list-open || Overlays.letter-open
+            || Overlays.pair-open || Overlays.dialog-open || Overlays.list-open || Overlays.letter-open
             || Overlays.context-open;
     }
 
@@ -2293,6 +2428,18 @@ export component App inherits Window {
         }
         if (Overlays.qr-open) {
             return [{ buttons: ["ButtonB"], label: @tr("Close") }];
+        }
+        // Pairing: while a PIN is live, Back is the only thing that can
+        // happen and it calls the pairing off. Once it is finished or
+        // spent there is nothing to call off, so both buttons just close.
+        if (Overlays.pair-open) {
+            if (Overlays.pair-phase == PairPhase.paired || Overlays.pair-phase == PairPhase.expired) {
+                return [
+                    { buttons: ["ButtonA"], label: @tr("Done") },
+                    { buttons: ["ButtonB"], label: @tr("Close") },
+                ];
+            }
+            return [{ buttons: ["ButtonB"], label: @tr("Cancel") }];
         }
         if (GameInfoView.modal-open) {
             if (info-modal.scrollable && GameInfoView.image-count > 1) {
@@ -2563,7 +2710,7 @@ export component App inherits Window {
             y: (parent.height - self.height) / 2;
             max-width: parent.width - 2 * Sizing.pct-w(10);
             overflow: elide;
-            text: Shell.boot-text;
+            text: Labels.boot(Shell.boot-status);
             color: Theme.text-primary;
             font-size: Sizing.font-size(3.2);
         }
@@ -2601,6 +2748,8 @@ export component App inherits Window {
         qr: Overlays.qr-image;
         modules: Overlays.qr-modules;
     }
+
+    if Overlays.pair-open: PairDeviceModal {}
 
     if LogUploadView.open: LogUploadModal {
         phase: LogUploadView.phase;

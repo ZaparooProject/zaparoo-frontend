@@ -84,7 +84,15 @@ pub const PAGES: &[Page] = &[
 
 /// What the registry needs to know about the machine it runs on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "independent runtime capabilities"
+)]
 pub struct Inputs {
+    /// An embedding host can grant access through its own folder chooser.
+    pub can_pick_folder: bool,
+    /// An embedding host can scan a folder for installed launchers.
+    pub can_scan_launchers: bool,
     /// `MiSTer`: the resolution and analog-video rows only exist there.
     pub is_mister: bool,
     /// The frontend is already running the native CRT path.
@@ -116,7 +124,14 @@ const NAVIGATES: &[&str] = &[
     "pageSupportAbout",
 ];
 
-const ACTIONS: &[&str] = &["updateMediaDb", "runScraper", "uploadLog"];
+const ACTIONS: &[&str] = &[
+    "detectLaunchers",
+    "addGameFolder",
+    "updateMediaDb",
+    "runScraper",
+    "pairDevice",
+    "uploadLog",
+];
 
 /// The control a row id carries: everything that is not a toggle, a
 /// navigation or a one-shot is a picker.
@@ -181,18 +196,32 @@ pub fn page_rows(page: &str, inputs: &Inputs) -> Vec<Row> {
         ],
         // Maintenance leads: these are rows a user comes here to do, not
         // one-time preferences.
-        "pageLibraryData" => vec![
-            Row::Header("maintenance"),
-            field("updateMediaDb"),
-            field("runScraper"),
-            Row::Header("browsing"),
-            field("systemsLayout"),
-            field("gamesLayout"),
-            field("mediaImageType"),
-            field("showHidden"),
-            field("showOriginalFilenames"),
-        ],
+        "pageLibraryData" => {
+            let mut rows = Vec::new();
+            if inputs.can_pick_folder {
+                rows.push(field("addGameFolder"));
+            }
+            if inputs.can_scan_launchers {
+                rows.push(field("detectLaunchers"));
+            }
+            rows.extend([
+                Row::Header("maintenance"),
+                field("updateMediaDb"),
+                field("runScraper"),
+                Row::Header("browsing"),
+                field("systemsLayout"),
+                field("gamesLayout"),
+                field("mediaImageType"),
+                field("showHidden"),
+                field("showOriginalFilenames"),
+            ]);
+            rows
+        }
+        // Pairing leads: it is the one row here a user comes to *do*,
+        // the way the Library page leads with its own action rows. The
+        // rest of the page is identity and diagnostics.
         "pageSupportAbout" => vec![
+            field("pairDevice"),
             field("aboutLicense"),
             field("documentation"),
             field("debugLogging"),
@@ -282,6 +311,8 @@ pub fn action_label_key(id: &str, busy: bool) -> &'static str {
             }
         }
         "uploadLog" => "upload",
+        "detectLaunchers" => "detect",
+        "pairDevice" => "pair",
         _ => "open",
     }
 }
@@ -447,7 +478,43 @@ mod tests {
             is_mister: true,
             crt_enabled: crt,
             debug_build: false,
+            can_pick_folder: false,
+            can_scan_launchers: false,
         }
+    }
+
+    #[test]
+    fn folder_action_requires_host_capability_and_leads_library() {
+        let mut inputs = Inputs::default();
+        assert!(!page_rows("pageLibraryData", &inputs)
+            .iter()
+            .any(|row| row.id() == "addGameFolder"));
+        inputs.can_pick_folder = true;
+        assert_eq!(
+            page_rows("pageLibraryData", &inputs)[0],
+            Row::Field {
+                id: "addGameFolder",
+                control: Control::Action
+            }
+        );
+        assert_eq!(control("addGameFolder"), Control::Action);
+    }
+
+    #[test]
+    fn launcher_scan_requires_host_capability_and_is_an_action() {
+        let mut inputs = Inputs::default();
+        assert!(!page_rows("pageLibraryData", &inputs)
+            .iter()
+            .any(|row| row.id() == "detectLaunchers"));
+        inputs.can_scan_launchers = true;
+        assert_eq!(
+            page_rows("pageLibraryData", &inputs)[0],
+            Row::Field {
+                id: "detectLaunchers",
+                control: Control::Action
+            }
+        );
+        assert_eq!(control("detectLaunchers"), Control::Action);
     }
 
     #[test]
@@ -461,6 +528,7 @@ mod tests {
         assert_eq!(control("updateMediaDb"), Control::Action);
         assert_eq!(control("runScraper"), Control::Action);
         assert_eq!(control("uploadLog"), Control::Action);
+        assert_eq!(control("pairDevice"), Control::Action);
         assert_eq!(control("resolution"), Control::Picker);
         assert_eq!(control("colorScheme"), Control::Picker);
     }
@@ -527,6 +595,35 @@ mod tests {
             .iter()
             .any(|r| r.id() == "discoverArcadeAlternateVersions"));
         assert!(!rows.iter().any(|r| r.id() == "browseLayout"));
+    }
+
+    #[test]
+    fn the_about_page_leads_with_pairing() {
+        let rows = page_rows("pageSupportAbout", &Inputs::default());
+        assert_eq!(
+            rows[0],
+            Row::Field {
+                id: "pairDevice",
+                control: Control::Action
+            }
+        );
+        assert_eq!(first_navigable(&rows), 0);
+        let ids: Vec<&str> = rows.iter().map(|r| r.id()).collect();
+        assert_eq!(
+            ids,
+            vec![
+                "pairDevice",
+                "aboutLicense",
+                "documentation",
+                "debugLogging",
+                "uploadLog"
+            ]
+        );
+        // Pairing has nothing to do with a media job, so neither job can
+        // gate it and it is never the busy one.
+        assert!(!action_busy("pairDevice", true, true));
+        assert!(!action_disabled("pairDevice", true, true));
+        assert_eq!(action_label_key("pairDevice", false), "pair");
     }
 
     #[test]

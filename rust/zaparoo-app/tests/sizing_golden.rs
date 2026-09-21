@@ -30,6 +30,7 @@ use zaparoo_app::sizing::{
 };
 
 const GOLDEN: &str = include_str!("fixtures/sizing_golden.txt");
+const NOVA_GOLDEN: &str = include_str!("fixtures/nova_1280x960_golden.txt");
 
 /// Everything an extra Hub column moves: the shape itself, the space each
 /// cell gets on both axes (a rotated page spends the extra column on the
@@ -103,6 +104,37 @@ fn rows(marker: &str) -> impl Iterator<Item = BTreeMap<&'static str, &'static st
                 .is_some_and(|first| first == marker)
         })
         .map(fields)
+}
+
+#[test]
+fn nova_1280x960_has_a_pinned_four_three_tier() {
+    for line in NOVA_GOLDEN.lines().filter(|line| line.starts_with("NOVA ")) {
+        let row = fields(line);
+        let inputs = Inputs {
+            screen_width: f64::from(int(&row, "screen_width")),
+            screen_height: f64::from(int(&row, "screen_height")),
+            interface_profile: InterfaceProfile::resolve(row["profile"], false),
+            ..Inputs::default()
+        };
+        let derived = derive(&inputs);
+        assert_eq!(derived.tier.as_str(), row["tier"]);
+        for (key, actual) in [
+            ("fontHero", derived.font_hero),
+            ("fontTitle", derived.font_title),
+            ("fontSection", derived.font_section),
+            ("fontBody", derived.font_body),
+            ("fontCaption", derived.font_caption),
+            ("fontSmall", derived.font_small),
+            ("hubGridColumns", derived.hub_grid_columns),
+            ("hubGridRows", derived.hub_grid_rows),
+            ("systemsGridColumns", derived.systems_grid_columns),
+            ("systemsGridRows", derived.systems_grid_rows),
+            ("gamesGridColumns", derived.games_grid_columns),
+            ("gamesGridRows", derived.games_grid_rows),
+        ] {
+            assert_eq!(actual, int(&row, key), "{key} for {}", row["profile"]);
+        }
+    }
 }
 
 #[test]

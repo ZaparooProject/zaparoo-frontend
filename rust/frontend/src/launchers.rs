@@ -82,13 +82,37 @@ pub(crate) fn retry(ctx: &Ctx, app: &App, payload: &str) {
     }
 }
 
-/// The launcher ids Core offers for a system.
+/// Re-evaluate host dependencies, then replace the local launcher snapshot.
+#[cfg(feature = "hosted")]
+pub(crate) fn refresh(ctx: &Ctx, app: &App) {
+    let client = ctx.store.client();
+    let ctx2 = ctx.clone();
+    let weak = app.as_weak();
+    ctx.handle.spawn(async move {
+        if client.launchers_refresh().await.is_err() {
+            return;
+        }
+        let Ok(result) = client.launchers().await else {
+            return;
+        };
+        let _ = weak.upgrade_in_event_loop(move |app| {
+            lock(&ctx2.shared).launchers = result.launchers;
+            crate::settings::refresh(&ctx2, &app);
+        });
+    });
+}
+
+/// The launcher ids Core offers for a system, in the order Core listed
+/// them. Core ranks a system's launchers by reviewed preference, so the
+/// picker renders that order verbatim rather than re-sorting it. A
+/// launcher that is not installed stays in the list and carries its own
+/// detection label, so the user can still see and pick it.
 fn launcher_ids(ctx: &Ctx, system_id: &str) -> Vec<String> {
     lock(&ctx.shared)
         .launchers
         .iter()
-        .filter(|l| l.system_id == system_id)
-        .map(|l| l.id.clone())
+        .filter(|launcher| launcher.system_id == system_id)
+        .map(|launcher| launcher.id.clone())
         .collect()
 }
 
@@ -102,10 +126,20 @@ fn present(ctx: &Ctx, app: &App, context: ListContext, ids: &[String], current: 
     let entries: Vec<crate::MenuEntry> = rows
         .iter()
         .map(|row| {
-            if row.key.is_empty() {
-                crate::router::menu_entry(&row.id, &row.id)
-            } else {
-                crate::router::menu_row_keyed(&row.id, row.key, &row.id)
+            if !row.key.is_empty() {
+                return crate::router::menu_row_keyed(&row.id, row.key, &row.id);
+            }
+            let detected = lock(&ctx.shared)
+                .launchers
+                .iter()
+                .find(|launcher| launcher.id == row.id)
+                .and_then(|launcher| launcher.detected);
+            match detected {
+                Some(true) => crate::router::menu_row_keyed(&row.id, "launcher:detected", &row.id),
+                Some(false) => {
+                    crate::router::menu_row_keyed(&row.id, "launcher:not-detected", &row.id)
+                }
+                None => crate::router::menu_entry(&row.id, &row.id),
             }
         })
         .collect();
