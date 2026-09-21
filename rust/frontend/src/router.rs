@@ -63,6 +63,9 @@ pub struct Shared {
     pub setup: crate::media_setup::SetupModel,
     /// The log uploader's own panel state.
     pub log_upload: crate::log_upload::LogUploadModel,
+    /// The "Pair a device" panel: its phase, the PIN on screen and what
+    /// leaving still owes Core.
+    pub pairing: zaparoo_app::pairing::Session,
     /// Failed user actions waiting for the alert surface.
     pub errors: action_error::ErrorQueue,
     /// The context menu's alternate-versions page.
@@ -230,6 +233,7 @@ impl Shared {
             game_info: crate::game_info::GameInfoModel::default(),
             setup: crate::media_setup::SetupModel::new(),
             log_upload: crate::log_upload::LogUploadModel::new(),
+            pairing: zaparoo_app::pairing::Session::default(),
             errors: action_error::ErrorQueue::new(),
             alternates: crate::alternates::AlternatesModel::default(),
             input: crate::input::InputModel::new(),
@@ -975,6 +979,13 @@ fn dispatch_action(ctx: &Ctx, app: &App, action: &str) {
         if action == actions::CANCEL {
             app.global::<crate::Overlays>().set_qr_open(false);
         }
+        return;
+    }
+    // Pairing: the panel owns input while a PIN is live, which is what
+    // makes Back the only way out and so the only path that has to call
+    // the pairing off.
+    if app.global::<crate::Overlays>().get_pair_open() {
+        crate::pairing::handle_action(ctx, app, action);
         return;
     }
     if app.global::<crate::Overlays>().get_card_write_open() {

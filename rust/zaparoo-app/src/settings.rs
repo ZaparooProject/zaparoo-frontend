@@ -129,6 +129,7 @@ const ACTIONS: &[&str] = &[
     "addGameFolder",
     "updateMediaDb",
     "runScraper",
+    "pairDevice",
     "uploadLog",
 ];
 
@@ -216,7 +217,11 @@ pub fn page_rows(page: &str, inputs: &Inputs) -> Vec<Row> {
             ]);
             rows
         }
+        // Pairing leads: it is the one row here a user comes to *do*,
+        // the way the Library page leads with its own action rows. The
+        // rest of the page is identity and diagnostics.
         "pageSupportAbout" => vec![
+            field("pairDevice"),
             field("aboutLicense"),
             field("documentation"),
             field("debugLogging"),
@@ -307,6 +312,7 @@ pub fn action_label_key(id: &str, busy: bool) -> &'static str {
         }
         "uploadLog" => "upload",
         "detectLaunchers" => "detect",
+        "pairDevice" => "pair",
         _ => "open",
     }
 }
@@ -522,6 +528,7 @@ mod tests {
         assert_eq!(control("updateMediaDb"), Control::Action);
         assert_eq!(control("runScraper"), Control::Action);
         assert_eq!(control("uploadLog"), Control::Action);
+        assert_eq!(control("pairDevice"), Control::Action);
         assert_eq!(control("resolution"), Control::Picker);
         assert_eq!(control("colorScheme"), Control::Picker);
     }
@@ -588,6 +595,35 @@ mod tests {
             .iter()
             .any(|r| r.id() == "discoverArcadeAlternateVersions"));
         assert!(!rows.iter().any(|r| r.id() == "browseLayout"));
+    }
+
+    #[test]
+    fn the_about_page_leads_with_pairing() {
+        let rows = page_rows("pageSupportAbout", &Inputs::default());
+        assert_eq!(
+            rows[0],
+            Row::Field {
+                id: "pairDevice",
+                control: Control::Action
+            }
+        );
+        assert_eq!(first_navigable(&rows), 0);
+        let ids: Vec<&str> = rows.iter().map(|r| r.id()).collect();
+        assert_eq!(
+            ids,
+            vec![
+                "pairDevice",
+                "aboutLicense",
+                "documentation",
+                "debugLogging",
+                "uploadLog"
+            ]
+        );
+        // Pairing has nothing to do with a media job, so neither job can
+        // gate it and it is never the busy one.
+        assert!(!action_busy("pairDevice", true, true));
+        assert!(!action_disabled("pairDevice", true, true));
+        assert_eq!(action_label_key("pairDevice", false), "pair");
     }
 
     #[test]

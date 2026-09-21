@@ -50,6 +50,7 @@ mod mister;
 )]
 mod mister_battery;
 mod navigation;
+mod pairing;
 // Reads the kernel power-supply class, which only the desktop feature
 // set has any use for; `MiSTer`'s reading comes off the `SMBus` instead.
 #[cfg(feature = "desktop")]
@@ -773,6 +774,7 @@ fn run_application(
     // not have to start a second one.
     steam_host::start(&config.core_endpoint);
     bind_status_events(&ctx, &app, &client);
+    pairing::bind_events(&ctx, &app, &client);
     bind_launchers(&ctx, &store);
     apply_buttons(&ctx, &app);
     bind_controller_report(&ctx, &app);

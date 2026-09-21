@@ -566,6 +566,9 @@ fn accept(ctx: &Ctx, app: &App, id: &str, control: Control) {
             "aboutLicense" => crate::router::enter_about(ctx, app),
             "documentation" => crate::router::open_documentation_qr(app),
             "uploadLog" => crate::log_upload::open(ctx, app),
+            "pairDevice" => {
+                crate::pairing::open(ctx, app);
+            }
             "addGameFolder" => crate::folder_picker::request(ctx, app),
             "detectLaunchers" => crate::launcher_scan::request(ctx, app),
             "crtCalibration" => crate::router::open_crt_calibration(ctx, app),

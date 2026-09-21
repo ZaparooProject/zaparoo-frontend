@@ -1221,6 +1221,17 @@ pub struct VersionResult {
     pub platform: String,
 }
 
+/// `clients.pair.start`: the PIN to read out and Core's own deadline for
+/// it, in whole seconds since the Unix epoch.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PairStartResult {
+    #[serde(default)]
+    pub pin: String,
+    #[serde(default)]
+    pub expires_at: i64,
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(

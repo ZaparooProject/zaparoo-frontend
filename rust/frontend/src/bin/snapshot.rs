@@ -46,8 +46,8 @@ mod generated {
 }
 use generated::{
     ActionStatus, AppCue, ControlKind, DialogButton, DialogKind, DisabledReason, ErrorKind,
-    GamesMode, LogPhase, Orientation, RepairReason, RowKind, ScopeKind, Screen, SettingsPage,
-    SetupKind, SetupPicker, StatusKind, SystemsMode, VideoStandard,
+    GamesMode, LogPhase, Orientation, PairPhase, RepairReason, RowKind, ScopeKind, Screen,
+    SettingsPage, SetupKind, SetupPicker, StatusKind, SystemsMode, VideoStandard,
 };
 use generated::{App, GlyphSource, GridCell, LetterBucket, MenuEntry, Sizing, Theme};
 #[allow(

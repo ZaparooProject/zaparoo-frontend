@@ -19,9 +19,9 @@ use crate::media_types::{
     MediaHistoryParams, MediaHistoryResult, MediaImageParams, MediaImageResult, MediaIndexParams,
     MediaMetaParams, MediaMetaResult, MediaMetaUpdateParams, MediaResult, MediaScrapeParams,
     MediaSearchParams, MediaSearchResult, MediaTagsUpdateParams, MediaTagsUpdateResult,
-    ReadersResult, ReadersWriteParams, RunParams, ScrapersResult, ScrapingStatusResponse,
-    SettingsResult, SystemsParams, SystemsResult, TokensHistoryResult, TokensResult,
-    UpdateSettingsParams, VersionResult,
+    PairStartResult, ReadersResult, ReadersWriteParams, RunParams, ScrapersResult,
+    ScrapingStatusResponse, SettingsResult, SystemsParams, SystemsResult, TokensHistoryResult,
+    TokensResult, UpdateSettingsParams, VersionResult,
 };
 use crate::transport::Transport;
 use futures_util::{SinkExt, StreamExt};
@@ -908,6 +908,26 @@ impl Client {
         struct P {}
         let val = self.call("settings.logs.download", &P {}).await?;
         serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
+    }
+
+    /// Start pairing a device. Core only accepts this from a local
+    /// client, and answers the PIN to read out plus the deadline it stops
+    /// working at. It can refuse, for instance when the paired-client cap
+    /// is already reached.
+    pub async fn clients_pair_start(&self) -> Result<PairStartResult, ClientError> {
+        #[derive(Serialize)]
+        struct P {}
+        let val = self.call("clients.pair.start", &P {}).await?;
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
+    }
+
+    /// Drop the pending pairing. Core accepts this whether or not one is
+    /// still open, so it is safe on every exit path.
+    pub async fn clients_pair_cancel(&self) -> Result<(), ClientError> {
+        #[derive(Serialize)]
+        struct P {}
+        self.call("clients.pair.cancel", &P {}).await?;
+        Ok(())
     }
 
     pub async fn launchers(&self) -> Result<LaunchersResult, ClientError> {

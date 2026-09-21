@@ -8,7 +8,7 @@
 
 use crate::{App, GridCell, HubView, Shell, Sizing, SystemsView};
 use crate::{
-    ControlKind, DialogButton, DialogKind, ErrorKind, GamesMode, LogPhase, PressOwner,
+    ControlKind, DialogButton, DialogKind, ErrorKind, GamesMode, LogPhase, PairPhase, PressOwner,
     RepairReason, RowKind, Screen, SettingsPage, SystemsMode,
 };
 use slint::platform::software_renderer::{MinimalSoftwareWindow, RepaintBufferType, Rgb565Pixel};
@@ -420,6 +420,137 @@ fn launcher_scan_setting_dispatches_host_once_until_completion() {
         .update(1, zaparoo_app::launcher_scan::State::Failed, 0));
     crate::settings::handle_action(&ctx, &app, "accept");
     assert_eq!(requests.load(Ordering::SeqCst), 2);
+}
+
+/// The pairing panel's one promise: Core is never left holding a PIN the
+/// user has walked away from. Every way out of the panel is checked here,
+/// against the same `cancels` count the driver sends its calls off.
+#[test]
+fn pairing_row_shows_a_pin_and_every_exit_calls_the_pairing_off() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    app.global::<crate::Motion>().set_enabled(false);
+    app.global::<Shell>().set_active_screen(Screen::Settings);
+    crate::settings::open_page(&ctx, &app, SettingsPage::About);
+    let rows = app.global::<crate::SettingsView>().get_rows();
+    assert_eq!(
+        rows.row_data(0).map(|row| row.id.to_string()),
+        Some("pairDevice".to_string()),
+        "the About page leads with the pairing row"
+    );
+
+    // The row starts a pairing and puts the panel up before Core answers.
+    let ov = app.global::<crate::Overlays>();
+    settle(&window);
+    app.window().request_redraw();
+    let settings_page = frame(&window);
+    crate::settings::handle_action(&ctx, &app, "accept");
+    assert!(ov.get_pair_open());
+    assert_eq!(ov.get_pair_phase(), PairPhase::Starting);
+
+    // Core's PIN, with the seconds the panel counts down.
+    let ticket = crate::pairing::open(&ctx, &app);
+    let deadline = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_secs() as i64)
+        + 30;
+    crate::pairing::observe_started(&ctx, &app, ticket, "482913", deadline);
+    assert_eq!(ov.get_pair_phase(), PairPhase::Showing);
+    assert_eq!(ov.get_pair_pin(), "482913");
+    assert_eq!(ov.get_pair_expires_in(), 30);
+    settle(&window);
+    app.window().request_redraw();
+    assert_ne!(
+        settings_page,
+        frame(&window),
+        "the PIN has to be on screen, not just in the model"
+    );
+
+    // Walking away calls it off and takes the PIN off screen.
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert!(!ov.get_pair_open());
+    assert_eq!(ov.get_pair_pin(), "");
+    assert_eq!(crate::router::lock(&ctx.shared).pairing.cancels, 1);
+
+    // A device that pairs ends the flow by name, with nothing owed.
+    let ticket = crate::pairing::open(&ctx, &app);
+    crate::pairing::observe_started(&ctx, &app, ticket, "551104", deadline);
+    crate::pairing::observe_paired(&ctx, &app, "Wizzo's phone");
+    assert_eq!(ov.get_pair_phase(), PairPhase::Paired);
+    assert_eq!(ov.get_pair_client(), "Wizzo's phone");
+    assert_eq!(
+        ov.get_pair_pin(),
+        "",
+        "a PIN that has been used is not left on screen"
+    );
+    crate::router::handle_action(&ctx, &app, "accept");
+    assert!(!ov.get_pair_open());
+    assert_eq!(
+        crate::router::lock(&ctx.shared).pairing.cancels,
+        1,
+        "a completed pairing has nothing to call off"
+    );
+
+    // Running out of time retires the PIN and calls it off too.
+    let ticket = crate::pairing::open(&ctx, &app);
+    crate::pairing::observe_started(&ctx, &app, ticket, "730025", deadline);
+    for _ in 0..30 {
+        crate::pairing::observe_tick(&ctx, &app, ticket);
+    }
+    assert_eq!(ov.get_pair_phase(), PairPhase::Expired);
+    assert_eq!(ov.get_pair_pin(), "");
+    assert_eq!(crate::router::lock(&ctx.shared).pairing.cancels, 2);
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert!(!ov.get_pair_open());
+    assert_eq!(crate::router::lock(&ctx.shared).pairing.cancels, 2);
+
+    // A PIN Core minted for a panel the user already left is called off
+    // as well: the start may only have reached Core after they walked.
+    let ticket = crate::pairing::open(&ctx, &app);
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert_eq!(
+        crate::router::lock(&ctx.shared).pairing.cancels,
+        2,
+        "nothing is owed while the start is still in flight"
+    );
+    crate::pairing::observe_started(&ctx, &app, ticket, "918820", deadline);
+    assert!(!ov.get_pair_open());
+    assert_eq!(crate::router::lock(&ctx.shared).pairing.cancels, 3);
+}
+
+#[test]
+fn a_pairing_core_refuses_closes_the_panel_and_takes_the_shared_alert() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    app.global::<crate::Motion>().set_enabled(false);
+    app.global::<Shell>().set_active_screen(Screen::Settings);
+    crate::settings::open_page(&ctx, &app, SettingsPage::About);
+
+    let ticket = crate::pairing::open(&ctx, &app);
+    crate::pairing::observe_failed(&ctx, &app, ticket);
+    let ov = app.global::<crate::Overlays>();
+    assert!(!ov.get_pair_open());
+    assert!(ov.get_dialog_open());
+    assert_eq!(ov.get_dialog_kind(), DialogKind::ActionError);
+    assert_eq!(ov.get_dialog_error(), ErrorKind::Pairing);
+    assert_eq!(
+        ov.get_dialog_buttons().row_data(0),
+        Some(DialogButton::Ok),
+        "a refused pairing is read and dismissed, not retried in place"
+    );
+    assert_eq!(
+        crate::router::lock(&ctx.shared).pairing.cancels,
+        0,
+        "a start that never happened leaves nothing to call off"
+    );
+    crate::router::handle_action(&ctx, &app, "accept");
+    assert!(!ov.get_dialog_open());
 }
 
 #[test]

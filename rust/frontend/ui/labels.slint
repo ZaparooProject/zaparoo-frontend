@@ -215,6 +215,7 @@ export global DialogLabels {
         if (kind == ErrorKind.qr-code) { return @tr("QR code failed"); }
         if (kind == ErrorKind.card-write) { return @tr("Token write failed"); }
         if (kind == ErrorKind.setting) { return @tr("Setting not saved"); }
+        if (kind == ErrorKind.pairing) { return @tr("Pairing could not start"); }
         return @tr("Action failed");
     }
 
@@ -325,6 +326,7 @@ export global DialogLabels {
         if (kind == ErrorKind.qr-code) { return @tr("Could not create the QR code for this item."); }
         if (kind == ErrorKind.card-write) { return @tr("Could not write to this token. Check that it is writable and try again."); }
         if (kind == ErrorKind.setting) { return @tr("Could not save this setting. Try again."); }
+        if (kind == ErrorKind.pairing) { return @tr("Core would not start a pairing. It may already have as many paired devices as it allows, or it may be running on another device."); }
         return @tr("The action could not be completed. Check Zaparoo Core and try again.");
     }
 }

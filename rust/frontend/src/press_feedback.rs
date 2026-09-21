@@ -139,6 +139,12 @@ fn current_with(app: &App, prepare_grid: impl FnOnce()) -> Option<Target> {
     if ov.get_qr_open() {
         return None;
     }
+    // The pairing panel carries no pressable control: its two keys are
+    // named in the help bar and nothing on the screen below it may take
+    // the push.
+    if ov.get_pair_open() {
+        return None;
+    }
     if ov.get_card_write_open() {
         return Some(target(
             PressOwner::CardWrite,

@@ -20,6 +20,9 @@ export enum SetupKind { index, scrape }
 export enum SetupPicker { systems, source }
 export enum ScopeKind { all, category, system, source }
 export enum LogPhase { uploading, done, failed }
+// The "pair a device" panel. `closed` is the resting value; the panel's
+// own open flag is what mounts it.
+export enum PairPhase { closed, starting, showing, paired, expired }
 export enum PressOwner { none, hub, systems, games, settings, setup, context, list, letter, card-write, dialog, log, wake }
 export enum StatusKind {
     none, disconnected, reconnecting, connecting, core-error, indexing-paused,
@@ -32,7 +35,7 @@ export enum DialogKind { none, quit-confirm, quit-blocked, restart-setting, noti
 export enum DialogProgress { none, preparing, optimizing, paused, step }
 export enum DialogButton { ok, yes, no, retry, cancel, i-understand, start-scan }
 export enum FirstRunPhase { idle, running, done }
-export enum ErrorKind { generic, core-start, launch, launch-repair, favorite, add-to-hub, media-index, media-scrape, media-scrapers, media-cancel, launcher, launcher-save, alternate-discovery, qr-code, card-write, setting }
+export enum ErrorKind { generic, core-start, launch, launch-repair, favorite, add-to-hub, media-index, media-scrape, media-scrapers, media-cancel, launcher, launcher-save, alternate-discovery, qr-code, card-write, setting, pairing }
 // Why a launch did not start, as Core's closed vocabulary names it. The
 // frontend owns the wording; this only chooses which sentence to show.
 // `none` is a launch failure Core did not explain in a reason this build
