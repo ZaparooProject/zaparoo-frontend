@@ -354,15 +354,18 @@ fn offline_ctx() -> (tokio::runtime::Runtime, crate::router::Ctx) {
 
 #[test]
 fn launch_dormancy_is_local_only() {
-    assert!(crate::local_lifecycle_enabled(
-        "ws://127.0.0.1:7497/api/v0.1"
-    ));
-    assert!(crate::local_lifecycle_enabled(
-        "ws://localhost:7497/api/v0.1"
-    ));
-    assert!(!crate::local_lifecycle_enabled(
-        "ws://192.0.2.10:7497/api/v0.1"
-    ));
+    let local =
+        |endpoint: &str| zaparoo_core::transport::Transport::tcp(endpoint.into(), None).is_local();
+    assert!(local("ws://127.0.0.1:7497/api/v0.1"));
+    assert!(local("ws://localhost:7497/api/v0.1"));
+    assert!(!local("ws://192.0.2.10:7497/api/v0.1"));
+    #[cfg(unix)]
+    assert!(zaparoo_core::transport::Transport::unix(
+        "/private/api.sock".into(),
+        "test-key".into(),
+        1
+    )
+    .is_local());
 }
 
 #[test]

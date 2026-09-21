@@ -210,18 +210,15 @@ impl MediaCache {
 static LOCAL_PATH_DISABLED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 /// Whether Core runs on this machine, so the paths it names are ours to
-/// open. Set once at startup from the configured endpoint.
+/// open. Updated when the host replaces the active transport.
 static CORE_IS_LOCAL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static IS_MISTER: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// Record the runtime facts the local-path fast path depends on.
-pub fn configure_local_path(is_mister: bool, core_endpoint: &str) {
+pub fn configure_local_path(is_mister: bool, is_local: bool) {
     use std::sync::atomic::Ordering;
     IS_MISTER.store(is_mister, Ordering::Release);
-    CORE_IS_LOCAL.store(
-        zaparoo_app::covers::endpoint_is_loopback(core_endpoint),
-        Ordering::Release,
-    );
+    CORE_IS_LOCAL.store(is_local, Ordering::Release);
 }
 
 /// Whether a request for `max_size` may ask Core for a path.

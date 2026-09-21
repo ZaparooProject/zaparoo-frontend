@@ -23,6 +23,7 @@ use crate::media_types::{
     SettingsResult, SystemsParams, SystemsResult, TokensHistoryResult, TokensResult,
     UpdateSettingsParams, VersionResult,
 };
+use crate::transport::Transport;
 use futures_util::{SinkExt, StreamExt};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::Value;
@@ -30,10 +31,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::sync::{broadcast, mpsc, oneshot, watch};
-use tokio_tungstenite::{
-    connect_async_with_config,
-    tungstenite::{protocol::WebSocketConfig, Message},
-};
+use tokio_tungstenite::tungstenite::{protocol::WebSocketConfig, Message};
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
@@ -246,6 +244,72 @@ fn handle_incoming(
     }
 }
 
+enum SessionEnd {
+    Disconnected,
+    Replaced,
+    Closed,
+}
+
+/// A session owns its outbound queue; no message crosses an endpoint change.
+async fn serve_session(
+    socket: std::pin::Pin<Box<dyn crate::transport::Socket>>,
+    transport: &Transport,
+    target: &mut watch::Receiver<Option<Transport>>,
+    mut outgoing: mpsc::UnboundedReceiver<String>,
+    pending: &PendingMap,
+    notifications: &broadcast::Sender<Notification>,
+) -> SessionEnd {
+    let (mut write, mut read) = socket.split();
+    loop {
+        tokio::select! {
+            changed = target.changed() => {
+                return if changed.is_ok() { SessionEnd::Replaced } else { SessionEnd::Closed };
+            }
+            message = outgoing.recv() => {
+                let Some(text) = message else {
+                    // Host invalidation retires the sender before notifying the watch.
+                    return SessionEnd::Disconnected;
+                };
+                tokio::select! {
+                    biased;
+                    changed = target.changed() => {
+                        return if changed.is_ok() { SessionEnd::Replaced } else { SessionEnd::Closed };
+                    }
+                    result = write.send(Message::Text(text.into())) => {
+                        if let Err(error) = result {
+                            warn!("ws send error: {error}");
+                            return SessionEnd::Disconnected;
+                        }
+                    }
+                }
+            }
+            message = read.next() => {
+                match message {
+                    Some(Ok(Message::Text(text))) => {
+                        if let Ok(response) = serde_json::from_str::<RpcResponse>(text.as_str()) {
+                            let current = target.borrow();
+                            if current.as_ref() == Some(transport)
+                                && !target.has_changed().unwrap_or(true)
+                            {
+                                handle_incoming(response, pending, notifications);
+                            }
+                        }
+                    }
+                    Some(Ok(Message::Close(_))) | None => {
+                        debug!("ws closed");
+                        return SessionEnd::Disconnected;
+                    }
+                    Some(Err(error)) => {
+                        warn!("ws read error: {error}");
+                        return SessionEnd::Disconnected;
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+}
+
 /// Bookkeeping for the connection state machine. Extracted from the
 /// connect loop so the transition rules can be unit-tested without
 /// driving real WebSocket I/O.
@@ -331,10 +395,28 @@ pub struct Client {
     pending: PendingMap,
     notifications: broadcast::Sender<Notification>,
     pub connection: Arc<watch::Sender<ConnectionState>>,
+    transport: watch::Sender<Option<Transport>>,
 }
 
 impl Client {
     pub fn new(endpoint: String, runtime: &tokio::runtime::Handle) -> Arc<Self> {
+        Self::with_transport(Transport::tcp(endpoint, None), runtime)
+    }
+
+    pub fn with_transport(transport: Transport, runtime: &tokio::runtime::Handle) -> Arc<Self> {
+        Self::with_optional_transport(Some(transport), runtime)
+    }
+
+    /// Wait for a host-owned endpoint rather than probing a desktop default.
+    pub fn waiting(runtime: &tokio::runtime::Handle) -> Arc<Self> {
+        Self::with_optional_transport(None, runtime)
+    }
+
+    fn with_optional_transport(
+        transport: Option<Transport>,
+        runtime: &tokio::runtime::Handle,
+    ) -> Arc<Self> {
+        let (transport_tx, mut transport_rx) = watch::channel(transport);
         let (connection_tx, _) = watch::channel(ConnectionState::Disconnected);
         let pending: PendingMap = Arc::new(Mutex::new(HashMap::new()));
         let pending_clone = pending.clone();
@@ -350,6 +432,7 @@ impl Client {
             pending,
             notifications: notification_tx,
             connection: connection_arc,
+            transport: transport_tx,
         });
 
         runtime.spawn(async move {
@@ -357,6 +440,16 @@ impl Client {
             let process_start = Instant::now();
 
             loop {
+                let target = { transport_rx.borrow_and_update().clone() };
+                let Some(transport) = target else {
+                    if fsm.ever_connected() {
+                        connection_clone.send_replace(ConnectionState::Reconnecting);
+                    }
+                    if transport_rx.changed().await.is_err() {
+                        return;
+                    }
+                    continue;
+                };
                 // Cold-boot fast-retry window: while we have never
                 // connected and the process is young, Core is probably
                 // still starting up. Retry tightly so we pick up Core's
@@ -390,62 +483,48 @@ impl Client {
                 let ws_config = WebSocketConfig::default()
                     .max_message_size(None)
                     .max_frame_size(None);
-                match connect_async_with_config(&endpoint, Some(ws_config), false).await {
-                    Ok((ws_stream, _)) => {
-                        info!("connected to core at {endpoint}");
+                let connected = tokio::select! {
+                    biased;
+                    changed = transport_rx.changed() => {
+                        if changed.is_err() { return; }
+                        continue;
+                    }
+                    result = transport.connect(ws_config) => result,
+                };
+                match connected {
+                    Ok(ws_stream) => {
+                        info!(?transport, "connected to core");
 
                         // Fresh outbound channel per session — see the
                         // OutboundSlot doc comment for why this isn't
                         // shared across reconnects.
-                        let (msg_tx, mut msg_rx) = mpsc::unbounded_channel::<String>();
-                        #[allow(clippy::unwrap_used, reason = "mutex poisoning is unrecoverable")]
+                        let (msg_tx, msg_rx) = mpsc::unbounded_channel::<String>();
                         {
-                            *tx_slot_clone.lock().unwrap() = Some(msg_tx);
-                        }
-                        connection_clone.send_replace(fsm.on_connected());
-
-                        let (mut write, mut read) = ws_stream.split();
-
-                        loop {
-                            tokio::select! {
-                                msg = msg_rx.recv() => {
-                                    match msg {
-                                        Some(text) => {
-                                            if let Err(e) = write.send(Message::Text(text.into())).await {
-                                                warn!("ws send error: {e}");
-                                                break;
-                                            }
-                                        }
-                                        None => return, // Outbound channel dropped — only happens on shutdown.
-                                    }
-                                }
-                                msg = read.next() => {
-                                    match msg {
-                                        Some(Ok(Message::Text(text))) => {
-                                            if let Ok(resp) = serde_json::from_str::<RpcResponse>(text.as_str()) {
-                                                handle_incoming(resp, &pending_clone, &notification_tx_clone);
-                                            }
-                                        }
-                                        Some(Ok(Message::Close(_))) | None => {
-                                            debug!("ws closed");
-                                            break;
-                                        }
-                                        Some(Err(e)) => {
-                                            warn!("ws read error: {e}");
-                                            break;
-                                        }
-                                        _ => {}
-                                    }
-                                }
+                            // Fence endpoint replacement against installing a session
+                            // whose handshake completed just as its credential expired.
+                            let current = transport_rx.borrow();
+                            if current.as_ref() != Some(&transport)
+                                || transport_rx.has_changed().unwrap_or(true)
+                            {
+                                continue;
                             }
+                            #[allow(clippy::unwrap_used, reason = "mutex poisoning is unrecoverable")]
+                            {
+                                *tx_slot_clone.lock().unwrap() = Some(msg_tx);
+                            }
+                            connection_clone.send_replace(fsm.on_connected());
                         }
 
-                        // Tear down the session: drop the outbound sender
-                        // (msg_rx is dropped at scope-exit, taking any
-                        // queued-but-unsent messages with it) and fail
-                        // every pending RPC. The next iteration publishes
-                        // `Reconnecting` automatically.
+                        let ended = serve_session(
+                            ws_stream, &transport, &mut transport_rx, msg_rx,
+                            &pending_clone, &notification_tx_clone,
+                        ).await;
                         teardown_session(&tx_slot_clone, &pending_clone);
+                        match ended {
+                            SessionEnd::Replaced => continue,
+                            SessionEnd::Closed => return,
+                            SessionEnd::Disconnected => {}
+                        }
                     }
                     Err(e) => {
                         if let Some(next) = fsm.on_attempt_failed(e.to_string(), boot_window) {
@@ -457,11 +536,45 @@ impl Client {
                         );
                     }
                 }
-                tokio::time::sleep(backoff_delay(fsm.current_failures(), boot_window)).await;
+                tokio::select! {
+                    biased;
+                    changed = transport_rx.changed() => {
+                        if changed.is_err() { return; }
+                    }
+                    () = tokio::time::sleep(backoff_delay(fsm.current_failures(), boot_window)) => {}
+                }
             }
         });
 
         client
+    }
+
+    /// Invalidates queued/in-flight work before publishing replacement credentials.
+    /// Identical updates are idempotent; None retires the session until readiness.
+    pub fn set_transport(&self, transport: Option<Transport>) {
+        self.transport.send_if_modified(|current| {
+            if *current == transport {
+                return false;
+            }
+            teardown_session(&self.tx, &self.pending);
+            self.connection.send_if_modified(|state| {
+                if matches!(state, ConnectionState::Connected) {
+                    *state = ConnectionState::Reconnecting;
+                    true
+                } else {
+                    false
+                }
+            });
+            *current = transport;
+            true
+        });
+    }
+
+    pub fn is_local(&self) -> bool {
+        self.transport
+            .borrow()
+            .as_ref()
+            .is_some_and(Transport::is_local)
     }
 
     pub fn subscribe_notifications(&self) -> broadcast::Receiver<Notification> {
@@ -882,6 +995,153 @@ pub(crate) fn backoff_delay(failures: u32, boot_window: bool) -> Duration {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::pin::Pin;
+    use std::task::{Context, Poll};
+
+    struct BackpressuredSocket(Option<oneshot::Sender<()>>);
+
+    impl futures_util::Stream for BackpressuredSocket {
+        type Item = Result<Message, tokio_tungstenite::tungstenite::Error>;
+        fn poll_next(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+            Poll::Pending
+        }
+    }
+
+    impl futures_util::Sink<Message> for BackpressuredSocket {
+        type Error = tokio_tungstenite::tungstenite::Error;
+        fn poll_ready(
+            mut self: Pin<&mut Self>,
+            _: &mut Context<'_>,
+        ) -> Poll<Result<(), Self::Error>> {
+            if let Some(waiting) = self.0.take() {
+                let _ = waiting.send(());
+            }
+            Poll::Pending
+        }
+        fn start_send(self: Pin<&mut Self>, _: Message) -> Result<(), Self::Error> {
+            Ok(())
+        }
+        fn poll_flush(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            Poll::Pending
+        }
+        fn poll_close(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            Poll::Pending
+        }
+    }
+
+    #[tokio::test]
+    #[allow(clippy::unwrap_used, reason = "bounded fake-transport regression test")]
+    async fn endpoint_change_cancels_a_backpressured_write() {
+        tokio::time::timeout(Duration::from_secs(2), async {
+            let transport = Transport::tcp("ws://localhost/api/v0.1".into(), None);
+            let (target, mut target_rx) = watch::channel(Some(transport.clone()));
+            let (outgoing, outgoing_rx) = mpsc::unbounded_channel();
+            let (waiting, blocked) = oneshot::channel();
+            let session = tokio::spawn(async move {
+                let pending = PendingMap::default();
+                let (notifications, _) = broadcast::channel(1);
+                serve_session(
+                    Box::pin(BackpressuredSocket(Some(waiting))),
+                    &transport,
+                    &mut target_rx,
+                    outgoing_rx,
+                    &pending,
+                    &notifications,
+                )
+                .await
+            });
+            outgoing.send("queued request".into()).unwrap();
+            blocked.await.unwrap();
+            target.send_replace(None);
+            assert!(matches!(session.await.unwrap(), SessionEnd::Replaced));
+        })
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    #[allow(clippy::unwrap_used, reason = "bounded transport regression test")]
+    async fn endpoint_replacement_fails_pending_work_and_drop_closes_session() {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            let first = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let second = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let first_target = Transport::tcp(
+                format!("ws://{}/api/v0.1", first.local_addr().unwrap()),
+                None,
+            );
+            let second_target = Transport::tcp(
+                format!("ws://{}/api/v0.1", second.local_addr().unwrap()),
+                None,
+            );
+            let (received_tx, received_rx) = oneshot::channel();
+            let first_server = tokio::spawn(async move {
+                let (stream, _) = first.accept().await.unwrap();
+                let mut socket = tokio_tungstenite::accept_async(stream).await.unwrap();
+                assert!(matches!(socket.next().await, Some(Ok(Message::Text(_)))));
+                received_tx.send(()).unwrap();
+                // Replacement must drop this socket, not replay its queued request.
+                assert!(!matches!(socket.next().await, Some(Ok(Message::Text(_)))));
+            });
+            let second_server = tokio::spawn(async move {
+                let (stream, _) = second.accept().await.unwrap();
+                let mut socket = tokio_tungstenite::accept_async(stream).await.unwrap();
+                let request = socket.next().await.unwrap().unwrap();
+                let request: Value = serde_json::from_str(request.to_text().unwrap()).unwrap();
+                assert_eq!(request["method"], "replacement");
+                socket
+                    .send(Message::Text(
+                        serde_json::json!({
+                            "jsonrpc": "2.0", "id": request["id"], "result": "new-session"
+                        })
+                        .to_string()
+                        .into(),
+                    ))
+                    .await
+                    .unwrap();
+                // Dropping the last Client must stop its background connection task.
+                assert!(!matches!(socket.next().await, Some(Ok(Message::Text(_)))));
+            });
+            let client = Client::waiting(&tokio::runtime::Handle::current());
+            assert!(!client.is_local());
+            assert!(client.call("offline", &Value::Null).await.is_err());
+            let mut connection = client.connection.subscribe();
+            client.set_transport(Some(first_target.clone()));
+            drop(
+                connection
+                    .wait_for(|state| matches!(state, ConnectionState::Connected))
+                    .await
+                    .unwrap(),
+            );
+            assert!(client.is_local());
+            let pending = tokio::spawn({
+                let client = client.clone();
+                async move { client.call("old-pending", &Value::Null).await }
+            });
+            received_rx.await.unwrap();
+            client.set_transport(Some(first_target)); // Same identity must not tear down.
+            assert!(matches!(*connection.borrow(), ConnectionState::Connected));
+            client.set_transport(None);
+            assert!(!client.is_local());
+            assert_eq!(pending.await.unwrap().unwrap_err().message, "disconnected");
+            assert!(client.call("offline", &Value::Null).await.is_err());
+            first_server.await.unwrap();
+            client.set_transport(Some(second_target));
+            drop(
+                connection
+                    .wait_for(|state| matches!(state, ConnectionState::Connected))
+                    .await
+                    .unwrap(),
+            );
+            assert_eq!(
+                client.call("replacement", &Value::Null).await.unwrap(),
+                "new-session"
+            );
+            drop(client);
+            second_server.await.unwrap();
+        })
+        .await
+        .unwrap();
+    }
 
     #[test]
     #[allow(clippy::unwrap_used, reason = "test mutex must remain healthy")]
@@ -914,6 +1174,7 @@ mod tests {
             pending: pending.clone(),
             notifications,
             connection: Arc::new(connection),
+            transport: watch::channel(None).0,
         });
         let barrier = Arc::new(tokio::sync::Barrier::new(2));
 
