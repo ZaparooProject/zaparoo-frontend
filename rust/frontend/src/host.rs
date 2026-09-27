@@ -255,6 +255,13 @@ impl Input {
         })
     }
 
+    /// A host window regaining focus dismisses the saver and restarts its idle clock.
+    pub fn activated(&self) -> Result<(), slint::EventLoopError> {
+        let ctx = self.ctx.clone();
+        self.app
+            .upgrade_in_event_loop(move |app| crate::router::on_app_activated(&ctx, &app))
+    }
+
     /// Focus loss retires held inputs so no repeat survives app switching.
     pub fn clear(&self) -> Result<(), slint::EventLoopError> {
         let ctx = self.ctx.clone();
