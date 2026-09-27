@@ -10,8 +10,8 @@
 // command 0x57); the FPGA latches the new base at vblank, so scanout
 // never observes a partial frame.
 //
-// Engaged only after Main acknowledges an inherited bus-lease request.
-// Main suppresses its FPGA writes until the lease socket closes. Both
+// Engaged only after Main acknowledges an inherited slot/proxy request.
+// Main proxies complete UIO transactions while the slot lease is live. Both
 // the module and the latch-capable menu RBF are probed at open();
 // any missing piece falls back to the fb0 presenter, loudly.
 //
@@ -127,7 +127,7 @@ impl Damage {
 pub struct LatchPresenter {
     uio: Uio,
     // Fields drop in this order after route disable: unmap, close the slot
-    // owner, then release Main's bus lease. Failed setup uses the same RAII.
+    // owner, then release Main's slot lease. Failed setup uses the same RAII.
     maps: SlotMappings,
     _slots_file: File,
     _lease: super::lease::Lease,
@@ -314,12 +314,12 @@ impl LatchPresenter {
 
         let output = super::video_mode::output_size()
             .ok_or_else(|| err("HDMI output timing was not verified".into()))?;
-        // No FPGA traffic before Main confirms it has stopped its own writes.
+        // No scanout traffic before Main grants slots and the transaction proxy.
         let lease = super::lease::acquire().map_err(|e| err(format!("scanout lease: {e}")))?;
         let (slots_file, layout, maps) = open_slots()?;
 
         // A verified lease removes the concurrent CAPS/startup race.
-        let mut uio = Uio::open().map_err(|e| err(format!("uio open: {e}")))?;
+        let mut uio = Uio::open(&lease).map_err(|e| err(format!("uio proxy: {e}")))?;
         let mut caps_words = [0_u16; 6];
         uio.transact(CMD_CAPS, &mut caps_words)
             .map_err(|e| err(format!("latch caps probe: {e}")))?;

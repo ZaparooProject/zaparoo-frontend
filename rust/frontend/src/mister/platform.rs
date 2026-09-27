@@ -330,7 +330,6 @@ impl MisterPlatform {
                 self.crt_offsets.0,
                 self.crt_offsets.1,
                 true,
-                true,
             ) {
                 Ok(p) => return Ok(Box::new(p)),
                 Err(e) => {
@@ -353,7 +352,6 @@ impl MisterPlatform {
             self.crt_size.1,
             self.crt_offsets.0,
             self.crt_offsets.1,
-            false,
             false,
         )?);
         let mut rotation = requested_rotation();

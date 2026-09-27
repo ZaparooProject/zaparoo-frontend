@@ -176,13 +176,27 @@ presenters are unchanged because they do not mmap the fbdev surface.
 Host tests cover fallback selection and mapping bounds without opening either
 hardware device; a device boot is still needed to verify the affected kernel.
 
+### Native MiSTer CRT compatibility
+
+Slint publishes extended DDR magic `0x5A51` (signed vertical bits 7:2, mode bits
+1:0). Menu must support this alongside legacy `0x5A50`; older Main/Qt writers
+remain compatible with the dual decoder. Native geometry belongs to the DDR
+writer, independently of fb0. No persisted-state reset is needed.
+
+After replacing `menu_zaparoo.rbf`, explicitly load it through Main's normal
+`load_core` path. Restarting Main with an RBF argument does not program FPGA.
+Keep the original RBF for rollback, which also requires an explicit load.
+
 ### Optional MiSTer HDMI scanout (local testing)
 
 A coordinated Main/Menu/module integration can replace fb0 copies with
 write-combined RGB565 slots and vblank-latched flips. It is not enabled by
-`--latch` alone: Main must offer and acknowledge a private inherited bus lease
-**after** frontend video probing. Missing components fall back to ordinary fb0;
-`--no-latch` opts out. Managed display restarts go through Main for a fresh lease.
+`--latch` alone: Main must acknowledge the private v2 slot/proxy handshake
+**after** frontend video probing. Main executes complete UIO transactions and
+remains the sole FPGA-bus writer, so OSD drawing and video queries stay live.
+Frontend never maps the FPGA registers. Missing components or mismatched old/new
+handshakes fall back to ordinary fb0; `--no-latch` opts out. Managed display
+restarts go through Main for a fresh lease.
 
 Initial eligibility is HDMI on the qualified `6.18.38-MiSTer` stack, with
 `/dev/zaparoo-scanout` ABI v1. Main optionally loads
