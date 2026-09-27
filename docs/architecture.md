@@ -22,6 +22,7 @@ rust/frontend/  [frontend library and binary; Slint UI]
   │     labels.slint     : key-to-@tr vocabularies
   │     state_types.slint : enums shared with Rust
   │
+  ├── src/host.rs        : hosted entry (host::run) and the Input seam
   ├── src/router.rs      : input dispatch and forward orchestration
   ├── src/navigation.rs, folder_motion.rs, route_motion.rs
   │                        deferred routes that keep the source until ready,
@@ -75,6 +76,7 @@ rust/zaparoo-app/  [toolkit-free product rules]
 
 rust/zaparoo-core/  [Core client and shared state]
   client.rs           : WebSocket JSON-RPC 2.0 (tokio-tungstenite)
+  transport.rs        : Core endpoint: TCP, or a Unix socket with an API key
   remote_resource.rs  : RemoteResource<T>/ResourceStatus<T>
   store/              : Endpoint, Mutation, Tag, Store cache
   endpoints/          : CatalogEndpoint, MediaSearchEndpoint, RunMutation
@@ -87,7 +89,8 @@ rust/zaparoo-core/  [Core client and shared state]
   logger.rs           : tracing-subscriber: stderr + JSONL file sinks
   runtime.rs          : Runtime enum: what device the frontend runs on
   display_class.rs    : Viewing enum: how far away the screen we paint on is
-  platform_paths.rs   : log/config/state/cache paths routed through runtime
+  platform_paths.rs   : log/config/state/cache paths routed through runtime,
+                        or under a host's HostPaths roots
   media_types.rs      : Core media types
 
 rust/build-info/  : commit, date and channel baked in by build.rs (leaf crate)
@@ -108,6 +111,45 @@ rust/mock-core/   : mock Zaparoo Core for dev runs
 - **Core is the canonical store.** Covers and metadata live in process memory
   only, with a strict bytes cap. The one on-disk exception is the Hub cover
   path manifest (see `AGENTS.md`).
+
+## Hosted library
+
+The `hosted` feature builds `rust/frontend` as a library another application
+embeds. The host owns the process, the Slint backend and renderer, the
+window lifecycle, process logging and the Core connection's endpoint; this
+crate still owns all UI, navigation and input semantics.
+
+- `host::run(&Options, ready)` runs the application on the host's already
+  initialized Slint thread and calls `ready` with an `Input` for that window.
+  When the event loop returns, the instance is gone and the host may start a
+  new one.
+- `Options::paths` (`HostPaths`) gives absolute config, data and cache roots,
+  installed once per process; every path in `platform_paths` resolves under
+  them.
+- `Options::core_transport` is the Core endpoint: `Transport::tcp` (a
+  WebSocket URL, optionally with an API key) or, on Unix, `Transport::unix`
+  (a socket path and a required API key). `None` waits for the
+  host; a hosted build never falls back to localhost. `Input::set_core_transport`
+  replaces it at runtime; pending calls on the old session fail and nothing
+  is replayed. API keys never appear in `Debug` output or config.
+- `Options::log_upload` (`LogUploader`) posts the support bundle. The
+  frontend builds the multipart body; the uploader sends one HTTPS POST and
+  returns the response body. Without one, Settings > Upload log file is not
+  offered. Standalone builds post with curl.
+- `Input::action(Action, pressed)` takes semantic actions as raw press and
+  release; duplicate suppression and hold-repeat stay in `input.rs`, so
+  framework key repeat must not be forwarded. `Input::clear` drops held
+  inputs on focus loss.
+- `Input::core_phase(CorePhase)` shows the host's Core startup phase on the
+  boot curtain until boot completes.
+- `Input::navigation_events`, `indexed_system_count` and `core_connected` are
+  read-only diagnostics for host tests; they carry no behavior.
+
+A hosted build compiles out what the host owns: process-global logging,
+command-line arguments, process restart, the Linux network probe, the Steam
+session host and gamescope focus claims. `just hosted-check` runs clippy and
+the library tests for the hosted feature set on the software renderer; it
+does not compile for any particular host target.
 
 ## Rust → Slint data flow
 

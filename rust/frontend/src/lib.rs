@@ -668,6 +668,10 @@ fn run_application(
         config_path: platform_paths::config_file_path(),
         crt_enabled: crt,
         is_mister: cfg!(feature = "mister"),
+        #[cfg(not(feature = "hosted"))]
+        log_uploader: Some(log_upload::LogUploader::curl()),
+        #[cfg(feature = "hosted")]
+        log_uploader: options.log_upload.clone(),
         framebuffer_size: ui_framebuffer_size,
         shared: Arc::new(Mutex::new(Shared::new(
             persisted,

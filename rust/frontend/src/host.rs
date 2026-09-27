@@ -11,6 +11,8 @@ use slint::ComponentHandle;
 pub use zaparoo_core::platform_paths::HostPaths;
 pub use zaparoo_core::transport::Transport;
 
+pub use crate::log_upload::{LogUploader, UploadRequest};
+
 use crate::router::Ctx;
 use crate::App;
 
@@ -19,6 +21,8 @@ pub struct Options {
     pub paths: HostPaths,
     /// None waits for host readiness; never falls back to desktop localhost.
     pub core_transport: Option<Transport>,
+    /// Posts the support bundle; `None` hides Settings > Upload log file.
+    pub log_upload: Option<LogUploader>,
 }
 
 /// Start the real application on the host's initialized Slint thread.
@@ -58,6 +62,31 @@ impl Action {
             Self::PagePrev => actions::PAGE_PREV,
             Self::PageNext => actions::PAGE_NEXT,
             Self::PageMenu => actions::PAGE_MENU,
+        }
+    }
+}
+
+/// Host-owned Core startup phases, shown on the boot curtain until the
+/// first catalog arrives. Platform error text never crosses this seam.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CorePhase {
+    Connecting,
+    Starting,
+    /// Core is migrating its data before it can serve.
+    Migrating,
+    /// Core is serving; the library is loading.
+    Ready,
+    Reconnecting,
+}
+
+impl CorePhase {
+    fn boot_status(self) -> crate::BootStatus {
+        match self {
+            Self::Connecting => crate::BootStatus::Connecting,
+            Self::Starting => crate::BootStatus::Starting,
+            Self::Migrating => crate::BootStatus::Migrating,
+            Self::Ready => crate::BootStatus::Loading,
+            Self::Reconnecting => crate::BootStatus::Reconnecting,
         }
     }
 }
@@ -110,15 +139,9 @@ impl Input {
         zaparoo_core::systems_catalog::indexed_count(&shared.systems)
     }
 
-    /// Project host-owned Core startup phases without carrying platform exception text.
-    pub fn core_phase(&self, phase: &str) -> Result<(), slint::EventLoopError> {
-        let status = match phase {
-            "starting" => crate::BootStatus::Starting,
-            "migrating" => crate::BootStatus::Migrating,
-            "ready" => crate::BootStatus::Loading,
-            "reconnecting" => crate::BootStatus::Reconnecting,
-            _ => crate::BootStatus::Connecting,
-        };
+    /// Show a Core startup phase on the boot curtain; ignored once boot completes.
+    pub fn core_phase(&self, phase: CorePhase) -> Result<(), slint::EventLoopError> {
+        let status = phase.boot_status();
         self.app.upgrade_in_event_loop(move |app| {
             let shell = app.global::<crate::Shell>();
             if !shell.get_boot_complete() {

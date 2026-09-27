@@ -56,8 +56,8 @@ slint-ui *args:
 
 # --- test ---
 
-# Check the embedding seam with a host-only software renderer. Android's
-# backend and renderer are supplied by the owning host repository.
+# Clippy and tests for the hosted library on the software renderer. An
+# embedding host supplies its own backend and renderer; this builds for none.
 hosted-check:
     ./scripts/toolchain.sh just _hosted-check
 

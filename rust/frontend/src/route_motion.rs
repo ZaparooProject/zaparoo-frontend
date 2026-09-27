@@ -347,6 +347,7 @@ fn offline_ctx() -> (tokio::runtime::Runtime, crate::router::Ctx) {
         config_path: std::path::PathBuf::new(),
         crt_enabled: false,
         is_mister: false,
+        log_uploader: None,
         framebuffer_size: (W, H),
     };
     (runtime, ctx)

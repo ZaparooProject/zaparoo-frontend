@@ -198,6 +198,8 @@ pub struct Ctx {
     /// Immutable process mode; changing it requires Main to respawn us.
     pub crt_enabled: bool,
     pub is_mister: bool,
+    /// Posts the support bundle; `None` hides Upload log.
+    pub log_uploader: Option<crate::log_upload::LogUploader>,
     /// Physical framebuffer geometry, used to resize desktop previews
     /// and by the `MiSTer` renderer when orientation changes live.
     pub framebuffer_size: (u32, u32),

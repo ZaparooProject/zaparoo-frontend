@@ -25,6 +25,7 @@ fn inputs(ctx: &Ctx) -> rules::Inputs {
         is_mister: ctx.is_mister,
         crt_enabled: ctx.crt_enabled,
         debug_build: cfg!(debug_assertions),
+        log_upload: ctx.log_uploader.is_some(),
     }
 }
 
