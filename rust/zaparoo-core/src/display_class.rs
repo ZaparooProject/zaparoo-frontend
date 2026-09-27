@@ -38,7 +38,7 @@
 // gamescope session that number is fiction. gamescope hands the game's
 // Xwayland a hardcoded 100 mm x 150 mm output whatever is really
 // connected, which is exactly how a 1280x800 Deck ended up with a 2.17
-// scale factor and a 591x369 logical scene. See `main.rs`'s
+// scale factor and a 591x369 logical scene. See the frontend `lib.rs`'s
 // `pin_logical_pixels_to_physical`.
 
 use std::path::Path;

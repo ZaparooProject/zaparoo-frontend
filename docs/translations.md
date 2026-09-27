@@ -20,7 +20,7 @@ The step-by-step workflow for changing strings and adding a language lives in
 | Language setting (`[general] language = "ja"` in `frontend.toml`) | 1: explicit choice |
 | `auto` or unset | 2: `LC_ALL`, then `LC_MESSAGES`, then `LANG` |
 
-`apply_language` in `rust/frontend/src/main.rs` runs before the first frame and
+`apply_language` in `rust/frontend/src/lib.rs` runs before the first frame and
 again whenever the Language setting changes, so a switch applies live without
 a relaunch. It normalizes `-` to `_`, tries the exact tag (`zh_CN`), then the
 language part (`zh`), and falls back to the English source strings when no

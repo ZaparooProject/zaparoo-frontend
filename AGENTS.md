@@ -210,7 +210,8 @@ update rules, in short:
 
 | Path | Purpose |
 |---|---|
-| `rust/frontend/src/main.rs` | Entry point: config, logger, tokio runtime, `Client`/`Store`, persisted state, window, language, services |
+| `rust/frontend/src/main.rs` | Thin binary entry calling `frontend::run()` |
+| `rust/frontend/src/lib.rs` | Application wiring: config, logger, tokio runtime, `Client`/`Store`, persisted state, window, language, services |
 | `rust/frontend/src/router.rs` | All forward orchestration and the single input dispatch (`dispatch_action`) |
 | `rust/frontend/src/navigation.rs`, `folder_motion.rs`, `route_motion.rs` | Deferred routes that keep the source until the destination is ready; motion tests on a stepped clock |
 | `rust/frontend/src/{hub,systems,games,settings,about}.rs` | Per-screen drivers |
@@ -320,7 +321,7 @@ ask to go.
   report (written on every button press; source is
   `support/zaparoo/launcher_input_metadata.cpp` in the `Main_MiSTer` repo).
   `zaparoo_core::controller_report` polls it, and `apply_buttons` in
-  `main.rs` feeds it through `zaparoo_app::buttons::resolve`, which drives the
+  `lib.rs` feeds it through `zaparoo_app::buttons::resolve`, which drives the
   help bar's icon style and accept/cancel positions.
   `ZAPAROO_INPUT_REPORT_FILE` redirects it and forces the watcher on
   off-MiSTer, mirroring `ZAPAROO_STATE_FILE`. Off MiSTer the `gamepad` module
