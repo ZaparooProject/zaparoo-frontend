@@ -1196,19 +1196,43 @@ fn crt_calibration_action(ctx: &Ctx, app: &App, action: &str) {
     crate::set_live_crt_offsets(h, v);
 }
 
-/// Scoped scraper run: Core's in-tree ES gamelist.xml scraper (the only
-/// shipped scraper, and `scraperId` has no server-side default, so the id
-/// is hardcoded here). `force` re-scrapes existing metadata; the one-shot
-/// toggle resets when the run is kicked off.
+/// Scoped scraper run with the saved metadata source, or, where Core does
+/// not offer it for these systems (each platform registers its own
+/// scrapers), the first one Core offers that covers them. `scraperId` has
+/// no server-side default. `force` re-scrapes existing metadata; the
+/// one-shot toggle resets when the run is kicked off.
 pub(crate) fn start_scrape(ctx: &Ctx, app: &App, systems: Vec<String>, force: bool) {
     use zaparoo_core::media_types::MediaScrapeParams;
     let client = ctx.store.client();
     let shared = ctx.shared.clone();
+    let preferred = lock(&ctx.shared).persist.settings.metadata_scraper.clone();
     let ctx2 = ctx.clone();
     let weak = app.as_weak();
     ctx.handle.spawn(async move {
+        let scraper_id = match client.scrapers().await {
+            Ok(result) => {
+                let offered: Vec<(&str, &[String])> = result
+                    .scrapers
+                    .iter()
+                    .map(|s| (s.id.as_str(), s.supported_systems.as_slice()))
+                    .collect();
+                zaparoo_app::media_setup::scraper_for(&offered, &preferred, &systems)
+                    .map(str::to_string)
+            }
+            Err(e) => {
+                tracing::warn!("scraper list unavailable: {}", e.message);
+                Some(preferred)
+            }
+        };
+        let Some(scraper_id) = scraper_id else {
+            tracing::warn!(?systems, "no scraper covers these systems");
+            let _ = weak.upgrade_in_event_loop(move |app| {
+                report_action_error(&ctx2, &app, "media_scrape", "");
+            });
+            return;
+        };
         let params = MediaScrapeParams {
-            scraper_id: "gamelist.xml".to_string(),
+            scraper_id,
             systems,
             force,
         };
