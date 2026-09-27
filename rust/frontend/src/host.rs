@@ -262,3 +262,22 @@ impl Input {
             .upgrade_in_event_loop(move |_| crate::input::stop_repeat(&ctx))
     }
 }
+
+/// The host's network, Bluetooth and battery state for the header. A
+/// battery of `None` hides the gauge. Status belongs to the device, not to
+/// a window, so it may arrive before any window exists and is kept for the
+/// first one. Safe from any thread.
+pub fn system_status(
+    wifi_internet: bool,
+    lan_internet: bool,
+    bluetooth: bool,
+    battery_percent: Option<i32>,
+) {
+    crate::system_status::set_host_status(crate::system_status::LocalStatus {
+        has_wifi_internet: wifi_internet,
+        has_lan_internet: lan_internet,
+        has_bluetooth: bluetooth,
+        has_battery: battery_percent.is_some(),
+        battery_percent: battery_percent.unwrap_or(0).clamp(0, 100),
+    });
+}
