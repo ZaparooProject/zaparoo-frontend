@@ -60,7 +60,10 @@ impl Endpoint for MediaHistoryEndpoint {
     }
 
     fn provides(args: &Self::Args, _output: &Self::Output) -> Vec<Tag> {
-        vec![Tag::specific(Self::NAME, args.systems.join(","))]
+        vec![
+            Tag::specific(Self::NAME, args.systems.join(",")),
+            Tag::MEDIA_DB,
+        ]
     }
 }
 

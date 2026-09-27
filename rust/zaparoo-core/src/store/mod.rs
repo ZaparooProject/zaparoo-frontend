@@ -104,10 +104,10 @@ impl Store {
     }
 
     /// Watches the live `MediaStatusResource` for the busy → idle edge
-    /// (indexing or optimizing finished) and pulses `Tag::MEDIA_DB`.
-    /// Cache entries whose `provides` set contains that tag — currently
-    /// the systems catalog — are refetched in place, so the UI picks
-    /// up systems that landed during the index run.
+    /// (indexing, optimizing or a metadata import finished) and pulses
+    /// `Tag::MEDIA_DB`. Cache entries whose `provides` set contains that
+    /// tag — the systems catalog and the game lists — are refetched in
+    /// place, so the UI picks up what the run changed.
     ///
     /// Held weakly so the watcher exits when the store is dropped at
     /// process teardown without forming a cycle that pins `Inner`.
@@ -301,15 +301,16 @@ impl Store {
     }
 }
 
-/// True when `curr` represents the busy → idle edge of an indexing /
-/// optimizing run. "Busy" is `indexing || optimizing` because Core
-/// stays in the optimizing phase after the file scan ends and before
-/// the DB is queryable, and the catalog should refetch only once the
-/// whole pipeline has wound down. Pulled out of the watcher so the
-/// edge logic is unit-testable without driving a runtime.
-fn is_media_db_completion_edge(prev: &MediaStatusState, curr: &MediaStatusState) -> bool {
-    let prev_busy = prev.indexing || prev.optimizing;
-    let curr_busy = curr.indexing || curr.optimizing;
+/// True when `curr` represents the busy → idle edge of a run that
+/// rewrites the media DB: indexing, optimizing or a metadata import.
+/// Core stays in the optimizing phase after the file scan ends and
+/// before the DB is queryable, and an import can follow an index
+/// directly, so the edge fires only once the whole pipeline has wound
+/// down. Pulled out of the watcher so the edge logic is unit-testable
+/// without driving a runtime; frontends use it for their own caches.
+pub fn is_media_db_completion_edge(prev: &MediaStatusState, curr: &MediaStatusState) -> bool {
+    let prev_busy = prev.indexing || prev.optimizing || prev.scraping;
+    let curr_busy = curr.indexing || curr.optimizing || curr.scraping;
     prev_busy && !curr_busy
 }
 
@@ -513,6 +514,17 @@ mod tests {
         let mut curr = idle();
         curr.optimizing = true;
         assert!(!is_media_db_completion_edge(&prev, &curr));
+    }
+
+    #[test]
+    fn completion_edge_fires_when_a_metadata_import_finishes() {
+        let scraping = MediaStatusState {
+            scraping: true,
+            ..idle()
+        };
+        assert!(is_media_db_completion_edge(&scraping, &idle()));
+        // An index handing straight over to an import has not finished.
+        assert!(!is_media_db_completion_edge(&busy(), &scraping));
     }
 
     #[test]

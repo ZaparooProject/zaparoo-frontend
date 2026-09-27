@@ -165,6 +165,19 @@ impl MediaCache {
         inner.bytes = 0;
     }
 
+    /// Forget every image and every "no image" answer. An index or a
+    /// metadata import can add, replace or remove art for any game, and a
+    /// remembered answer would otherwise hold for the whole session.
+    /// Queued requests stay queued.
+    pub fn clear(&self) {
+        let mut inner = lock_inner(&self.inner);
+        inner.map.clear();
+        inner.order.clear();
+        inner.bytes = 0;
+        inner.negatives.clear();
+        inner.negative_order.clear();
+    }
+
     /// Put an image the cache did not fetch itself into it (the
     /// cold-boot manifest's own seed).
     pub fn seed(&self, key: MediaKey, image: DecodedImage) {

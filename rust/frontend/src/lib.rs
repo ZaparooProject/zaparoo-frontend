@@ -870,13 +870,27 @@ fn bind_media_status(ctx: &Arc<Ctx>, app: &App, store: &Arc<Store>) {
     let weak = app.as_weak();
     let ctx = ctx.clone();
     ctx.handle.clone().spawn(async move {
+        let mut prev = rx.borrow_and_update().clone();
         while rx.changed().await.is_ok() {
-            let task = status::task_of(&rx.borrow_and_update());
+            let curr = rx.borrow_and_update().clone();
+            let task = status::task_of(&curr);
+            // The store refetches its cached lists on this edge; covers are
+            // this process's own cache, so drop them and repaint what is on
+            // screen so tiles ask Core again.
+            let finished = zaparoo_core::store::is_media_db_completion_edge(&prev, &curr);
+            prev = curr;
+            if finished {
+                ctx.media.clear();
+            }
             let ctx = ctx.clone();
             let _ = weak.upgrade_in_event_loop(move |app| {
                 status::set_task(&ctx.status, &app, &ctx.handle, task);
                 settings::refresh(&ctx, &app);
                 router::refresh_first_run(&ctx, &app);
+                if finished {
+                    hub::rebuild(&ctx, &app);
+                    games::reproject(&ctx, &app);
+                }
             });
         }
     });
