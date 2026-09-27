@@ -70,7 +70,14 @@ impl GlyphProfile {
     fn from_device_name(raw: &str) -> Self {
         let name = raw.to_ascii_lowercase();
         let has = |needle: &str| name.contains(needle);
-        if has("nintendo") || has("switch") || has("joy-con") || has("joycon") || has("wii") {
+        if has("nintendo")
+            || has("switch")
+            || has("joy-con")
+            || has("joycon")
+            || has("wii")
+            || has("retroid")
+        {
+            // Retroid prints Nintendo's labels in Nintendo's positions.
             Self::A
         } else if has("playstation")
             || has("sony")
@@ -202,6 +209,48 @@ fn parse_report(bytes: &[u8]) -> Option<ControllerGlyphs> {
         accept_button,
         cancel_button,
     })
+}
+
+/// Physical face of each button a host reports by its printed label
+/// (A/B/X/Y) rather than by position. Values are the positional glyph
+/// names [`ControllerGlyphs`] uses.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LabelledFaces {
+    pub a: &'static str,
+    pub b: &'static str,
+    pub x: &'static str,
+    pub y: &'static str,
+}
+
+/// The common convention: A on the bottom face, B right, X left, Y top.
+const BOTTOM_A_FACES: LabelledFaces = LabelledFaces {
+    a: "FaceSouth",
+    b: "FaceEast",
+    x: "FaceWest",
+    y: "FaceNorth",
+};
+
+/// Nintendo's printed layout, reported by label: A right, B bottom, X
+/// top, Y left.
+const RIGHT_A_FACES: LabelledFaces = LabelledFaces {
+    a: "FaceEast",
+    b: "FaceSouth",
+    x: "FaceNorth",
+    y: "FaceWest",
+};
+
+/// Where a named pad's labelled buttons sit. Retroid handhelds report
+/// each button by its printed Nintendo label in their default control
+/// type; their optional Xbox control type follows the common convention
+/// instead, which the swap settings cover. Everything else is assumed to
+/// follow the common convention.
+#[must_use]
+pub fn labelled_faces(name: &str) -> LabelledFaces {
+    if name.to_ascii_lowercase().contains("retroid") {
+        RIGHT_A_FACES
+    } else {
+        BOTTOM_A_FACES
+    }
 }
 
 /// Style id for a pad the caller can name directly. Producers that hold
@@ -370,7 +419,8 @@ mod tests {
     )]
 
     use super::{
-        parse_report, poll_once, position_to_face, subscribe, ControllerGlyphs, GlyphProfile,
+        labelled_faces, parse_report, poll_once, position_to_face, subscribe, ControllerGlyphs,
+        GlyphProfile,
     };
     use std::time::SystemTime;
 
@@ -425,6 +475,27 @@ mod tests {
             GlyphProfile::D
         );
         assert_eq!(GlyphProfile::from_device_name(""), GlyphProfile::D);
+        assert_eq!(
+            GlyphProfile::from_device_name("Retroid Pocket Controller"),
+            GlyphProfile::A
+        );
+    }
+
+    #[test]
+    fn labelled_faces_follow_the_printed_layout() {
+        let retroid = labelled_faces("Retroid Pocket Controller");
+        assert_eq!(
+            (retroid.a, retroid.b, retroid.x, retroid.y),
+            ("FaceEast", "FaceSouth", "FaceNorth", "FaceWest")
+        );
+        for name in ["Xbox Wireless Controller", "8BitDo Ultimate 2C", ""] {
+            let faces = labelled_faces(name);
+            assert_eq!(
+                (faces.a, faces.b, faces.x, faces.y),
+                ("FaceSouth", "FaceEast", "FaceWest", "FaceNorth"),
+                "{name}"
+            );
+        }
     }
 
     #[test]

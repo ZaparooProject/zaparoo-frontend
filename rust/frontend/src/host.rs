@@ -281,3 +281,41 @@ pub fn system_status(
         battery_percent: battery_percent.unwrap_or(0).clamp(0, 100),
     });
 }
+
+/// The pad now driving the UI, by the name its driver reports, or `None`
+/// when no pad is connected. Updates the help bar's glyphs and returns the
+/// actions for the pad's labelled A, B, X and Y buttons, so a host that
+/// reads buttons by label binds options and view to the faces the bar
+/// draws: options on the top face, view on the left. Device-level, so it
+/// may run before any window exists. Safe from any thread.
+pub fn controller(name: Option<&str>) -> [Action; 4] {
+    use zaparoo_core::controller_report::{self, ControllerGlyphs};
+    let face_action = |face: &str| {
+        if face == "FaceNorth" {
+            Action::ContextMenu
+        } else {
+            Action::PageMenu
+        }
+    };
+    let Some(name) = name else {
+        controller_report::publish(None);
+        return [
+            Action::Accept,
+            Action::Cancel,
+            Action::PageMenu,
+            Action::ContextMenu,
+        ];
+    };
+    let faces = controller_report::labelled_faces(name);
+    controller_report::publish(Some(ControllerGlyphs {
+        layout: controller_report::style_for_device_name(name),
+        accept_button: faces.a,
+        cancel_button: faces.b,
+    }));
+    [
+        Action::Accept,
+        Action::Cancel,
+        face_action(faces.x),
+        face_action(faces.y),
+    ]
+}
