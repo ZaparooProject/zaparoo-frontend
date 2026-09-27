@@ -481,6 +481,8 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_detail_path => set_detail_path,
         get_detail_has_cover => set_detail_has_cover,
         get_detail_cover_absent => set_detail_cover_absent,
+        get_detail_placeholder => set_detail_placeholder,
+        get_detail_has_placeholder => set_detail_has_placeholder,
         get_detail_rows => set_detail_rows,
         get_detail_loading => set_detail_loading,
         get_rapid_active => set_rapid_active,

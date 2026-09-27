@@ -87,6 +87,25 @@ pub struct GamesState {
     /// the games driver sets it on entry from the Hub and reads it on Back
     /// (see the routing contract in `AGENTS.md`).
     pub entered_from_hub: bool,
+    /// Where each recently browsed system was left, most recent first, so
+    /// entering one from Systems returns to that folder and game. Bounded
+    /// by `MAX_SYSTEM_FOCUS`; empty in older state files. Last, because
+    /// TOML writes arrays of tables after a section's plain values.
+    pub system_focus: Vec<SystemFocus>,
+}
+
+/// Systems whose browse position is remembered.
+pub const MAX_SYSTEM_FOCUS: usize = 32;
+
+/// One system's browse position: the same stacks `GamesState` keeps for
+/// the system on screen.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SystemFocus {
+    pub system_id: String,
+    pub path_stack: Vec<String>,
+    pub selected_at_level: Vec<String>,
+    pub list_top_at_level: Vec<usize>,
 }
 
 impl Default for GamesState {
@@ -98,6 +117,71 @@ impl Default for GamesState {
             list_top_at_level: Vec::new(),
             favorites_filter: false,
             entered_from_hub: false,
+            system_focus: Vec::new(),
+        }
+    }
+}
+
+impl GamesState {
+    /// Record where the system on screen was left, as its most recent
+    /// entry. A position at the root with nothing selected is not worth
+    /// an entry and clears any older one.
+    pub fn remember_system_focus(&mut self) {
+        if self.system_id.is_empty() {
+            return;
+        }
+        self.system_focus.retain(|f| f.system_id != self.system_id);
+        let at_root_untouched = self.path_stack.len() <= 1
+            && self.selected_at_level.iter().all(String::is_empty)
+            && self.list_top_at_level.iter().all(|top| *top == 0);
+        if at_root_untouched {
+            return;
+        }
+        self.system_focus.insert(
+            0,
+            SystemFocus {
+                system_id: self.system_id.clone(),
+                path_stack: self.path_stack.clone(),
+                selected_at_level: self.selected_at_level.clone(),
+                list_top_at_level: self.list_top_at_level.clone(),
+            },
+        );
+        self.system_focus.truncate(MAX_SYSTEM_FOCUS);
+    }
+
+    /// Make `system_id` the system on screen, at the position it was
+    /// last left in, or at its root with nothing selected. True when a
+    /// remembered position was restored.
+    pub fn recall_system_focus(&mut self, system_id: &str) -> bool {
+        self.system_id = system_id.to_string();
+        let saved = self
+            .system_focus
+            .iter()
+            .find(|f| f.system_id == system_id)
+            .filter(|f| !f.path_stack.is_empty() && f.selected_at_level.len() == f.path_stack.len())
+            .cloned();
+        if let Some(focus) = saved {
+            self.path_stack = focus.path_stack;
+            self.selected_at_level = focus.selected_at_level;
+            self.list_top_at_level = focus.list_top_at_level;
+            self.list_top_at_level.truncate(self.path_stack.len());
+            true
+        } else {
+            self.path_stack = vec![String::new()];
+            self.selected_at_level = vec![String::new()];
+            self.list_top_at_level.clear();
+            false
+        }
+    }
+
+    /// The remembered position for `system_id` led nowhere (its folder is
+    /// gone): forget it and start that system at its root.
+    pub fn forget_system_focus(&mut self, system_id: &str) {
+        self.system_focus.retain(|f| f.system_id != system_id);
+        if self.system_id == system_id {
+            self.path_stack = vec![String::new()];
+            self.selected_at_level = vec![String::new()];
+            self.list_top_at_level.clear();
         }
     }
 }
@@ -470,7 +554,7 @@ mod tests {
 
     use super::{
         load_from, save_to, FavoriteSystemsState, FavoritesState, GamesState, HubState,
-        PersistedState, RecentsState, SettingsState, SystemsState,
+        PersistedState, RecentsState, SettingsState, SystemFocus, SystemsState, MAX_SYSTEM_FOCUS,
     };
     use std::thread;
 
@@ -535,6 +619,15 @@ mod tests {
                 list_top_at_level: vec![4, 9],
                 favorites_filter: false,
                 entered_from_hub: true,
+                system_focus: vec![SystemFocus {
+                    system_id: "SNES".into(),
+                    path_stack: vec![String::new(), "/roms/snes/rpg".into()],
+                    selected_at_level: vec![
+                        "/roms/snes/rpg".into(),
+                        "/roms/snes/rpg/zelda.sfc".into(),
+                    ],
+                    list_top_at_level: vec![0, 2],
+                }],
             },
             recents: RecentsState {
                 selected_path: "/roms/nes/mario/smb.nes".into(),
@@ -747,6 +840,7 @@ resolution = "1920x1080"
                                 list_top_at_level: vec![0],
                                 favorites_filter: false,
                                 entered_from_hub: false,
+                                system_focus: Vec::new(),
                             },
                             favorites: FavoritesState::default(),
                             favorite_systems: FavoriteSystemsState::default(),
@@ -862,5 +956,75 @@ future_field = "ignored"
         assert_eq!(state.systems.system_id, "NES");
         assert_eq!(state.games.path_stack, vec![""]);
         assert_eq!(state.games.selected_at_level, vec!["/x.rom"]);
+    }
+
+    #[test]
+    fn each_system_keeps_its_own_browse_position() {
+        let mut games = GamesState {
+            system_id: "NES".into(),
+            path_stack: vec![String::new(), "/nes/rpg".into()],
+            selected_at_level: vec!["/nes/rpg".into(), "/nes/rpg/b.nes".into()],
+            list_top_at_level: vec![0, 3],
+            ..GamesState::default()
+        };
+        games.remember_system_focus();
+        // A system never browsed starts at its root.
+        assert!(!games.recall_system_focus("SNES"));
+        assert_eq!(games.path_stack, vec![String::new()]);
+        assert_eq!(games.selected_at_level, vec![String::new()]);
+        assert!(games.list_top_at_level.is_empty());
+        games.selected_at_level = vec!["/snes/a.sfc".into()];
+        games.remember_system_focus();
+        // Back to NES: its folder, game and viewport return.
+        assert!(games.recall_system_focus("NES"));
+        assert_eq!(games.system_id, "NES");
+        assert_eq!(
+            games.path_stack,
+            vec![String::new(), "/nes/rpg".to_string()]
+        );
+        assert_eq!(games.selected_at_level[1], "/nes/rpg/b.nes");
+        assert_eq!(games.list_top_at_level, vec![0, 3]);
+        // Most recent first.
+        assert_eq!(games.system_focus[0].system_id, "SNES");
+        // A folder that is gone falls back to the root and is forgotten.
+        games.forget_system_focus("NES");
+        assert_eq!(games.path_stack, vec![String::new()]);
+        assert!(!games.recall_system_focus("NES"));
+    }
+
+    #[test]
+    fn system_focus_is_bounded_and_survives_a_round_trip() {
+        let mut games = GamesState::default();
+        for i in 0..(MAX_SYSTEM_FOCUS + 5) {
+            games.system_id = format!("sys{i}");
+            games.selected_at_level = vec![format!("/g/{i}")];
+            games.remember_system_focus();
+        }
+        assert_eq!(games.system_focus.len(), MAX_SYSTEM_FOCUS);
+        assert_eq!(
+            games.system_focus[0].system_id,
+            format!("sys{}", MAX_SYSTEM_FOCUS + 4)
+        );
+        assert!(!games.system_focus.iter().any(|f| f.system_id == "sys0"));
+        // Malformed entries (stacks out of step) restore the root.
+        games.system_focus.insert(
+            0,
+            SystemFocus {
+                system_id: "bad".into(),
+                path_stack: vec![String::new(), "/x".into()],
+                selected_at_level: vec![String::new()],
+                list_top_at_level: Vec::new(),
+            },
+        );
+        assert!(!games.recall_system_focus("bad"));
+        let state = PersistedState {
+            games,
+            ..PersistedState::default()
+        };
+        let decoded: PersistedState = toml::from_str(&toml::to_string(&state).unwrap()).unwrap();
+        assert_eq!(decoded, state);
+        // Older files have no entries.
+        let old: PersistedState = toml::from_str("[games]\nsystem_id = 'NES'").unwrap();
+        assert!(old.games.system_focus.is_empty());
     }
 }

@@ -406,6 +406,8 @@ export global GamesView {
     in-out property <image> detail-cover;
     in-out property <bool> detail-has-cover: false;
     in-out property <bool> detail-cover-absent: false;
+    in-out property <color> detail-placeholder;
+    in-out property <bool> detail-has-placeholder: false;
     in-out property <[DetailRow]> detail-rows: [];
     in-out property <bool> detail-loading: false;
     in-out property <bool> rapid-active: false;
@@ -2156,6 +2158,8 @@ component GamesScreen inherits Rectangle {
         cover: GamesView.detail-cover;
         has-cover: GamesView.detail-has-cover;
         cover-absent: GamesView.detail-cover-absent;
+        art-color: GamesView.detail-placeholder;
+        has-art-color: GamesView.detail-has-placeholder;
         wordmark: false;
         detail-rows: GamesView.detail-rows;
         detail-loading: GamesView.detail-loading;

@@ -166,12 +166,32 @@ impl Resolver for SharedResolver<'_> {
             max_size: HUB_COVER_TIER,
             image_type: None,
         };
-        if self.media.get(&key).is_some() {
+        // A cover Core has none for resolves like a present one: the tile
+        // stays blank either way, but it is settled rather than loading.
+        if self.media.get(&key).is_some() || self.media.is_negative(&key) {
             return format!("{MEDIA_PREFIX}{system}\u{1f}{path}");
         }
         self.media.enqueue(key);
         LOADING_KEY.to_string()
     }
+}
+
+/// Whether a resolved media cover key has art in memory. The Resume
+/// tile keeps its glyph while its art loads or when there is none.
+fn media_key_cached(media: &MediaCache, key: &str) -> bool {
+    let Some((system, path)) = key
+        .strip_prefix(MEDIA_PREFIX)
+        .and_then(|rest| rest.split_once('\u{1f}'))
+    else {
+        return true;
+    };
+    media.is_cached(&MediaKey {
+        media_id: None,
+        system: system.to_string(),
+        path: path.to_string(),
+        max_size: HUB_COVER_TIER,
+        image_type: None,
+    })
 }
 
 /// Re-resolve the entries from the layout and the live state, then paint.
@@ -180,6 +200,8 @@ pub fn rebuild(ctx: &Ctx, app: &App) {
     // goes through `save`, and every writer ends in a rebuild.
     if std::mem::take(&mut lock(&ctx.shared).hub.layout_dirty) {
         crate::hub_covers::refresh_hub_entries(ctx);
+    } else {
+        crate::hub_covers::ensure_hub_entries(ctx);
     }
     // The page size below is the grid's, so its shape has to match the
     // scene before the entries are padded to it.
@@ -208,13 +230,7 @@ pub fn rebuild(ctx: &Ctx, app: &App) {
                 }
                 .media_cover_key(&e.system_id, &e.media_path)
             })
-            .map(|key| {
-                if key == LOADING_KEY {
-                    String::new()
-                } else {
-                    key
-                }
-            })
+            .filter(|key| key != LOADING_KEY && media_key_cached(&ctx.media, key))
             .unwrap_or_default();
         let live = Live {
             categories_loaded: hub.categories_loaded,
@@ -405,20 +421,25 @@ pub fn render(ctx: &Ctx, app: &App) {
     }
 }
 
-/// A media cover landed: repaint if a tile shows that game.
-pub fn cover_landed(ctx: &Ctx, app: &App, key: &MediaKey) {
+/// Covers landed or were found missing: repaint once if any tile shows
+/// one of those games. A missing cover counts, so the tile settles.
+pub fn covers_landed(ctx: &Ctx, app: &App, keys: &[MediaKey]) {
     let relevant = {
         let shared = lock(&ctx.shared);
         let hub = &shared.hub;
-        let resume_match = hub
-            .resume
-            .entry
-            .as_ref()
-            .is_some_and(|e| e.system_id == key.system && e.media_path == key.path);
-        resume_match
-            || hub.layout.visible().any(|item| {
-                item.kind_raw == "zapscript" && item.system == key.system && item.path == key.path
-            })
+        keys.iter().any(|key| {
+            let resume_match = hub
+                .resume
+                .entry
+                .as_ref()
+                .is_some_and(|e| e.system_id == key.system && e.media_path == key.path);
+            resume_match
+                || hub.layout.visible().any(|item| {
+                    item.kind_raw == "zapscript"
+                        && item.system == key.system
+                        && item.path == key.path
+                })
+        })
     };
     if relevant {
         rebuild(ctx, app);

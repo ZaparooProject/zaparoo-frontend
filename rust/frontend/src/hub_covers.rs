@@ -5,7 +5,7 @@
 // The Hub/Resume cold-boot cover manifest (`hub_cover_manifest.rs`): a
 // small list of paths - never image bytes - so the Hub's game tiles and
 // the Resume tile can paint their real art on the first frame after a
-// `MiSTer` boot instead of a placeholder glyph until Core answers.
+// cold start instead of a placeholder glyph until Core answers.
 //
 // The bytes are already on the SD card before this process starts:
 // they are Core's own thumbnail cache, and the frontend can open them
@@ -24,6 +24,8 @@
 // explicit, scoped exception for exactly this file.
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Mutex, PoisonError};
 
 use serde::{Deserialize, Serialize};
 use zaparoo_app::covers::{HUB_TILE_MAX_SIZE, MAX_HUB_ENTRIES, MAX_LOCAL_IMAGE_BYTES};
@@ -50,12 +52,26 @@ struct ManifestEntry {
     max_size: u32,
 }
 
+/// Every read-modify-write of the manifest holds this, so the tile half
+/// and the resume half, refreshed by separate tasks, cannot overwrite
+/// each other's update.
+static MANIFEST_WRITE: Mutex<()> = Mutex::new(());
+/// Each refresh of a half takes a new generation; a slower, older refresh
+/// that finishes after a newer one drops its result instead of
+/// replacing the newer one.
+static HUB_GENERATION: AtomicU64 = AtomicU64::new(0);
+static RESUME_GENERATION: AtomicU64 = AtomicU64::new(0);
+/// The first Hub rebuild checks once whether the manifest has a tile
+/// half at all; later ones rely on layout changes.
+static HUB_CHECKED: AtomicBool = AtomicBool::new(false);
+
 fn manifest_path() -> PathBuf {
     zaparoo_core::platform_paths::cache_dir().join(MANIFEST_FILE_NAME)
 }
 
-/// Only a colocated `MiSTer` has the files to point at; everywhere else
-/// this whole module is a no-op.
+/// Only a frontend that can open Core's files (a colocated `MiSTer`, or an
+/// embedding host running Core as the same app) has the files to point
+/// at; everywhere else this whole module is a no-op.
 fn eligible() -> bool {
     crate::media_cache::should_request_local_path(HUB_TILE_MAX_SIZE)
 }
@@ -93,6 +109,23 @@ fn write_manifest_to(path: &Path, manifest: &Manifest) {
         tracing::warn!("hub covers: could not write the manifest: {e}");
         let _ = std::fs::remove_file(&tmp);
     }
+}
+
+/// Read, change and write the manifest at `path` as one step against
+/// every other writer in this process. `update` returns false to leave
+/// the file as it was.
+fn update_manifest_at(path: &Path, update: impl FnOnce(&mut Manifest) -> bool) {
+    let _guard = MANIFEST_WRITE
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    let mut manifest = read_manifest_from(path);
+    if update(&mut manifest) {
+        write_manifest_to(path, &manifest);
+    }
+}
+
+fn update_manifest(update: impl FnOnce(&mut Manifest) -> bool) {
+    update_manifest_at(&manifest_path(), update);
 }
 
 fn entry_key(entry: &ManifestEntry) -> MediaKey {
@@ -174,6 +207,44 @@ async fn fetch_local_path(
     result.local_path.filter(|p| !p.is_empty())
 }
 
+/// The Hub's game shortcuts the tile half covers, in layout order.
+fn hub_targets(ctx: &Ctx) -> Vec<(String, String)> {
+    let shared = lock(&ctx.shared);
+    shared
+        .hub
+        .layout
+        .visible()
+        .filter(|item| {
+            item.kind() == HubItemKind::ZapScript
+                && !item.system.is_empty()
+                && !item.path.is_empty()
+        })
+        .take(MAX_HUB_ENTRIES)
+        .map(|item| (item.system.clone(), item.path.clone()))
+        .collect()
+}
+
+/// Resolve once the client has a live link, so a refresh fired while
+/// Core is still starting does not record every tile as missing.
+async fn wait_for_core(client: &zaparoo_core::client::Client) {
+    let mut state = client.connection.subscribe();
+    let _ = state
+        .wait_for(|s| *s == zaparoo_core::client::ConnectionState::Connected)
+        .await;
+}
+
+/// The first Hub rebuild of the process: write the tile half when the
+/// manifest has none yet, so a Hub whose layout never changes still
+/// gets its covers seeded on the next cold start.
+pub fn ensure_hub_entries(ctx: &Ctx) {
+    if !eligible() || HUB_CHECKED.swap(true, Ordering::AcqRel) {
+        return;
+    }
+    if read_manifest_from(&manifest_path()).hub_entries.is_empty() && !hub_targets(ctx).is_empty() {
+        refresh_hub_entries(ctx);
+    }
+}
+
 /// Rebuild the tile half of the manifest from the Hub's current game
 /// shortcuts, leaving the resume half alone. Fired on a real layout
 /// change, not on every cover fetch.
@@ -181,34 +252,30 @@ pub fn refresh_hub_entries(ctx: &Ctx) {
     if !eligible() {
         return;
     }
-    let targets: Vec<(String, String)> = {
-        let shared = lock(&ctx.shared);
-        shared
-            .hub
-            .layout
-            .visible()
-            .filter(|item| {
-                item.kind() == HubItemKind::ZapScript
-                    && !item.system.is_empty()
-                    && !item.path.is_empty()
-            })
-            .take(MAX_HUB_ENTRIES)
-            .map(|item| (item.system.clone(), item.path.clone()))
-            .collect()
-    };
+    HUB_CHECKED.store(true, Ordering::Release);
+    let generation = HUB_GENERATION.fetch_add(1, Ordering::AcqRel) + 1;
+    let targets = hub_targets(ctx);
     if targets.is_empty() {
-        let mut manifest = read_manifest_from(&manifest_path());
-        if !manifest.hub_entries.is_empty() {
+        update_manifest(|manifest| {
+            if HUB_GENERATION.load(Ordering::Acquire) != generation
+                || manifest.hub_entries.is_empty()
+            {
+                return false;
+            }
             manifest.hub_entries.clear();
-            write_manifest_to(&manifest_path(), &manifest);
-        }
+            true
+        });
         return;
     }
     let client = ctx.store.client();
     let preferred = lock(&ctx.shared).persist.settings.media_image_type.clone();
     ctx.handle.spawn(async move {
+        wait_for_core(&client).await;
         let mut hub_entries = Vec::with_capacity(targets.len());
         for (system_id, path) in targets {
+            if HUB_GENERATION.load(Ordering::Acquire) != generation {
+                return;
+            }
             let Some(local_path) = fetch_local_path(&client, &preferred, &system_id, &path).await
             else {
                 continue;
@@ -220,9 +287,13 @@ pub fn refresh_hub_entries(ctx: &Ctx) {
                 max_size: HUB_TILE_MAX_SIZE,
             });
         }
-        let mut manifest = read_manifest_from(&manifest_path());
-        manifest.hub_entries = hub_entries;
-        write_manifest_to(&manifest_path(), &manifest);
+        update_manifest(|manifest| {
+            if HUB_GENERATION.load(Ordering::Acquire) != generation {
+                return false;
+            }
+            manifest.hub_entries = hub_entries;
+            true
+        });
     });
 }
 
@@ -232,25 +303,31 @@ pub fn refresh_resume_entry(ctx: &Ctx, target: Option<(String, String)>) {
     if !eligible() {
         return;
     }
+    let generation = RESUME_GENERATION.fetch_add(1, Ordering::AcqRel) + 1;
     let Some((system_id, path)) = target else {
-        let mut manifest = read_manifest_from(&manifest_path());
-        if manifest.resume.take().is_some() {
-            write_manifest_to(&manifest_path(), &manifest);
-        }
+        update_manifest(|manifest| {
+            RESUME_GENERATION.load(Ordering::Acquire) == generation
+                && manifest.resume.take().is_some()
+        });
         return;
     };
     let client = ctx.store.client();
     let preferred = lock(&ctx.shared).persist.settings.media_image_type.clone();
     ctx.handle.spawn(async move {
+        wait_for_core(&client).await;
         let local_path = fetch_local_path(&client, &preferred, &system_id, &path).await;
-        let mut manifest = read_manifest_from(&manifest_path());
-        manifest.resume = local_path.map(|local_path| ManifestEntry {
-            system_id,
-            path,
-            local_path,
-            max_size: HUB_TILE_MAX_SIZE,
+        update_manifest(|manifest| {
+            if RESUME_GENERATION.load(Ordering::Acquire) != generation {
+                return false;
+            }
+            manifest.resume = local_path.map(|local_path| ManifestEntry {
+                system_id,
+                path,
+                local_path,
+                max_size: HUB_TILE_MAX_SIZE,
+            });
+            true
         });
-        write_manifest_to(&manifest_path(), &manifest);
     });
 }
 
@@ -290,6 +367,57 @@ mod tests {
         assert!(read_manifest_from(&dir.join("absent.toml"))
             .hub_entries
             .is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_hosted_start_makes_the_manifest_eligible() {
+        // What `run_application` configures before seeding on a hosted
+        // build, with no Core transport yet.
+        let (reads, local) = zaparoo_app::covers::startup_local_path(true, false, false);
+        crate::media_cache::configure_local_path(reads, local);
+        assert!(eligible());
+        crate::media_cache::configure_local_path(false, false);
+        assert!(!eligible());
+    }
+
+    #[test]
+    fn concurrent_half_updates_keep_both_halves() {
+        let dir = std::env::temp_dir().join(format!(
+            "zaparoo-hub-covers-concurrent-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("scratch dir");
+        let path = dir.join(MANIFEST_FILE_NAME);
+        let entry = |name: &str| ManifestEntry {
+            system_id: "SNES".into(),
+            path: format!("/games/{name}.sfc"),
+            local_path: format!("/thumbs/{name}.png"),
+            max_size: HUB_TILE_MAX_SIZE,
+        };
+        std::thread::scope(|scope| {
+            for round in 0..20 {
+                let path = &path;
+                let hub = entry(&format!("hub{round}"));
+                let resume = entry(&format!("resume{round}"));
+                scope.spawn(move || {
+                    update_manifest_at(path, |m| {
+                        m.hub_entries = vec![hub];
+                        true
+                    });
+                });
+                scope.spawn(move || {
+                    update_manifest_at(path, |m| {
+                        m.resume = Some(resume);
+                        true
+                    });
+                });
+            }
+        });
+        let read = read_manifest_from(&path);
+        assert_eq!(read.hub_entries.len(), 1);
+        assert!(read.resume.is_some());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

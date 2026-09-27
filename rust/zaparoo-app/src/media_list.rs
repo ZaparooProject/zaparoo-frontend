@@ -17,8 +17,13 @@ pub const TATE_LIST_VISIBLE_ROWS: usize = 16;
 pub const RAPID_FETCH_CHUNK: u32 = 300;
 /// Ceiling for one jump-to-letter fetch (Core's `max_results` cap).
 pub const JUMP_FETCH_CEILING: u32 = 1000;
+/// Core's `media.history` `limit` ceiling.
+pub const HISTORY_FETCH_CAP: u32 = 100;
+/// Rows fetched per chunk while a cold start walks to a deep saved row:
+/// as many as Core allows at once, so the walk takes the fewest trips.
+pub const RESTORE_FETCH_CHUNK: u32 = JUMP_FETCH_CEILING;
 /// The focused-detail load waits this long after the last move.
-pub const DETAIL_DEBOUNCE_MS: u64 = 220;
+pub const DETAIL_DEBOUNCE_MS: u64 = 150;
 /// Selection writes coalesce over this window during a held move.
 pub const PERSIST_DEBOUNCE_MS: u64 = 250;
 /// The fast-scroll rail stays this long after the scroll stops, so the
@@ -502,6 +507,21 @@ pub fn list_tail_prefetch(
     loading_more: bool,
 ) -> bool {
     !loading_more && has_more && index + visible_rows >= count
+}
+
+/// The first fetch of a list, sized so its answer already holds the
+/// rows the screen keeps loaded: a grid's page plus its lookahead pages,
+/// or two screens of a list. Capped at Core's `max_results` ceiling.
+pub fn first_fill_limit(page_size: u32, list: bool, load_ahead_pages: usize) -> u32 {
+    let page = page_size.max(1);
+    let pages = if list {
+        2
+    } else {
+        u32::try_from(load_ahead_pages)
+            .unwrap_or(u32::MAX)
+            .saturating_add(1)
+    };
+    page.saturating_mul(pages).min(JUMP_FETCH_CEILING)
 }
 
 /// One list page holds fewer rows than a screenful: fill it.
@@ -1256,6 +1276,21 @@ mod tests {
                 fetch: false
             }
         );
+    }
+
+    #[test]
+    fn the_first_fill_covers_the_lookahead_in_one_fetch() {
+        // A 7x3 grid keeps its page plus two lookahead pages loaded.
+        assert_eq!(first_fill_limit(21, false, 2), 63);
+        assert_eq!(first_fill_limit(21, false, 0), 21);
+        // A list asks for two screens, so no fill-page follow-up runs.
+        assert_eq!(first_fill_limit(10, true, 2), 20);
+        assert!(!list_fill_page(20, 10, true));
+        // Never past Core's cap, never zero.
+        assert_eq!(first_fill_limit(600, false, 2), JUMP_FETCH_CEILING);
+        assert_eq!(first_fill_limit(0, false, 2), 3);
+        assert_eq!(RESTORE_FETCH_CHUNK, JUMP_FETCH_CEILING);
+        assert_eq!(DETAIL_DEBOUNCE_MS, 150);
     }
 
     #[test]

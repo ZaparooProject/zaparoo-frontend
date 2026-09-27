@@ -145,6 +145,34 @@ struct RpcError {
 #[derive(Debug)]
 pub struct ClientError {
     pub message: String,
+    /// The request never got an answer because there was no live link:
+    /// not connected, or the session ended while it waited. Retrying once
+    /// Core is connected again can succeed; nothing Core said applies.
+    transport: bool,
+}
+
+impl ClientError {
+    pub(crate) fn plain(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            transport: false,
+        }
+    }
+
+    /// A request that never reached Core, or lost its link before Core
+    /// answered.
+    pub(crate) fn transport(message: impl Into<String>) -> Self {
+        Self {
+            transport: true,
+            ..Self::plain(message)
+        }
+    }
+
+    /// See [`ClientError::transport`]: true when the failure is the link's,
+    /// not an answer from Core.
+    pub fn is_transport(&self) -> bool {
+        self.transport
+    }
 }
 
 impl std::fmt::Display for ClientError {
@@ -176,9 +204,7 @@ fn deserialize_timed<T: DeserializeOwned>(
     val: Value,
 ) -> Result<T, ClientError> {
     let started = Instant::now();
-    let result = serde_json::from_value(val).map_err(|e| ClientError {
-        message: e.to_string(),
-    });
+    let result = serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()));
     debug!(
         method,
         duration_ms = started.elapsed().as_millis(),
@@ -206,9 +232,7 @@ fn teardown_session(tx_slot: &OutboundSlot, pending: &PendingMap) {
         drained
     };
     for (_, response) in drained {
-        let _ = response.send(Err(ClientError {
-            message: "disconnected".into(),
-        }));
+        let _ = response.send(Err(ClientError::transport("disconnected")));
     }
 }
 
@@ -228,9 +252,7 @@ fn handle_incoming(
         let sender = pending.lock().unwrap().remove(&id);
         if let Some(tx) = sender {
             let result = if let Some(err) = resp.error {
-                Err(ClientError {
-                    message: err.message,
-                })
+                Err(ClientError::plain(err.message))
             } else {
                 Ok(resp.result.unwrap_or(Value::Null))
             };
@@ -589,9 +611,7 @@ impl Client {
             params,
             id: id.clone(),
         };
-        let text = serde_json::to_string(&req).map_err(|e| ClientError {
-            message: e.to_string(),
-        })?;
+        let text = serde_json::to_string(&req).map_err(|e| ClientError::plain(e.to_string()))?;
         let started = Instant::now();
 
         let (resp_tx, resp_rx) = oneshot::channel();
@@ -602,9 +622,9 @@ impl Client {
             // session-scoped operation: teardown either runs before all three
             // steps or drains the newly registered request afterward.
             let sender = self.tx.lock().unwrap();
-            let sender = sender.as_ref().ok_or_else(|| ClientError {
-                message: "not connected".into(),
-            })?;
+            let sender = sender
+                .as_ref()
+                .ok_or_else(|| ClientError::transport("not connected"))?;
             self.pending.lock().unwrap().insert(id.clone(), resp_tx);
             sender.send(text)
         };
@@ -627,24 +647,23 @@ impl Client {
                 error = "not connected",
                 "rpc round trip",
             );
-            return Err(ClientError {
-                message: "not connected".into(),
-            });
+            return Err(ClientError::transport("not connected"));
         }
 
-        let result = resp_rx.await.map_err(|_| ClientError {
-            message: "channel closed".into(),
-        })?;
+        let result = resp_rx
+            .await
+            .map_err(|_| ClientError::transport("channel closed"))?;
         match result {
             Ok(val) => {
-                let payload_bytes = serde_json::to_vec(&val).map_or(0, |bytes| bytes.len());
-                debug!(
-                    method,
-                    request_id = %id,
-                    duration_ms = started.elapsed().as_millis(),
-                    payload_bytes,
-                    "rpc round trip",
-                );
+                if let Some(payload_bytes) = debug_payload_bytes(&val) {
+                    debug!(
+                        method,
+                        request_id = %id,
+                        duration_ms = started.elapsed().as_millis(),
+                        payload_bytes,
+                        "rpc round trip",
+                    );
+                }
                 Ok(val)
             }
             Err(e) => {
@@ -662,54 +681,42 @@ impl Client {
 
     pub async fn systems(&self, params: SystemsParams) -> Result<SystemsResult, ClientError> {
         let val = self.call("systems", &params).await?;
-        serde_json::from_value(val).map_err(|e| ClientError {
-            message: e.to_string(),
-        })
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
     }
 
     pub async fn readers(&self) -> Result<ReadersResult, ClientError> {
         #[derive(Serialize)]
         struct P {}
         let val = self.call("readers", &P {}).await?;
-        serde_json::from_value(val).map_err(|e| ClientError {
-            message: e.to_string(),
-        })
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
     }
 
     pub async fn health(&self) -> Result<HealthResult, ClientError> {
         #[derive(Serialize)]
         struct P {}
         let val = self.call("health", &P {}).await?;
-        serde_json::from_value(val).map_err(|e| ClientError {
-            message: e.to_string(),
-        })
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
     }
 
     pub async fn tokens(&self) -> Result<TokensResult, ClientError> {
         #[derive(Serialize)]
         struct P {}
         let val = self.call("tokens", &P {}).await?;
-        serde_json::from_value(val).map_err(|e| ClientError {
-            message: e.to_string(),
-        })
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
     }
 
     pub async fn tokens_history(&self) -> Result<TokensHistoryResult, ClientError> {
         #[derive(Serialize)]
         struct P {}
         let val = self.call("tokens.history", &P {}).await?;
-        serde_json::from_value(val).map_err(|e| ClientError {
-            message: e.to_string(),
-        })
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
     }
 
     pub async fn settings(&self) -> Result<SettingsResult, ClientError> {
         #[derive(Serialize)]
         struct P {}
         let val = self.call("settings", &P {}).await?;
-        serde_json::from_value(val).map_err(|e| ClientError {
-            message: e.to_string(),
-        })
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
     }
 
     pub async fn settings_update(&self, params: UpdateSettingsParams) -> Result<(), ClientError> {
@@ -721,9 +728,7 @@ impl Client {
         #[derive(Serialize)]
         struct P {}
         let val = self.call("settings.logs.download", &P {}).await?;
-        serde_json::from_value(val).map_err(|e| ClientError {
-            message: e.to_string(),
-        })
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
     }
 
     /// Start pairing a device. Core only accepts this from a local
@@ -734,9 +739,7 @@ impl Client {
         #[derive(Serialize)]
         struct P {}
         let val = self.call("clients.pair.start", &P {}).await?;
-        serde_json::from_value(val).map_err(|e| ClientError {
-            message: e.to_string(),
-        })
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
     }
 
     /// Drop the pending pairing. Core accepts this whether or not one is
@@ -752,9 +755,7 @@ impl Client {
         #[derive(Serialize)]
         struct P {}
         let val = self.call("launchers", &P {}).await?;
-        serde_json::from_value(val).map_err(|e| ClientError {
-            message: e.to_string(),
-        })
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
     }
 
     /// Ask Core to re-evaluate which launchers are installed.
@@ -823,9 +824,7 @@ impl Client {
         params: MediaImageParams,
     ) -> Result<MediaImageResult, ClientError> {
         let val = self.call("media.image", &params).await?;
-        serde_json::from_value(val).map_err(|e| ClientError {
-            message: e.to_string(),
-        })
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
     }
 
     /// Fetches the full metadata graph for a single media row —
@@ -879,9 +878,7 @@ impl Client {
         let val = self
             .call("media.history.latest", &serde_json::json!({}))
             .await?;
-        serde_json::from_value(val).map_err(|e| ClientError {
-            message: e.to_string(),
-        })
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
     }
 
     /// Adds or removes mutable user tags for one indexed media item.
@@ -890,9 +887,7 @@ impl Client {
         params: MediaTagsUpdateParams,
     ) -> Result<MediaTagsUpdateResult, ClientError> {
         let val = self.call("media.tags.update", &params).await?;
-        serde_json::from_value(val).map_err(|e| ClientError {
-            message: e.to_string(),
-        })
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
     }
 
     /// Snapshot of Core's media state — database build status plus the
@@ -903,9 +898,7 @@ impl Client {
         #[derive(Serialize)]
         struct P {}
         let val = self.call("media", &P {}).await?;
-        serde_json::from_value(val).map_err(|e| ClientError {
-            message: e.to_string(),
-        })
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
     }
 
     /// Triggers a (re)build of Core's media database. With an empty
@@ -951,9 +944,7 @@ impl Client {
         #[derive(Serialize)]
         struct P {}
         let val = self.call("media.scrape.status", &P {}).await?;
-        serde_json::from_value(val).map_err(|e| ClientError {
-            message: e.to_string(),
-        })
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
     }
 
     /// Lists the scrapers Core knows how to run. Used to resolve a
@@ -962,9 +953,7 @@ impl Client {
         #[derive(Serialize)]
         struct P {}
         let val = self.call("scrapers", &P {}).await?;
-        serde_json::from_value(val).map_err(|e| ClientError {
-            message: e.to_string(),
-        })
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
     }
 
     pub async fn run(&self, params: RunParams) -> Result<(), ClientError> {
@@ -985,9 +974,7 @@ impl Client {
         #[derive(Serialize)]
         struct P {}
         let val = self.call("version", &P {}).await?;
-        serde_json::from_value(val).map_err(|e| ClientError {
-            message: e.to_string(),
-        })
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
     }
 }
 
@@ -1020,6 +1007,14 @@ pub(crate) fn backoff_delay(failures: u32, boot_window: bool) -> Duration {
     let exp = failures.saturating_sub(1).min(5);
     let secs = 1u64 << exp;
     Duration::from_secs(secs.min(MAX_BACKOFF_SECS))
+}
+
+/// The size of an RPC result for the round-trip debug line. Measuring it
+/// re-serializes the whole result, so it only happens when that line would
+/// actually be written.
+fn debug_payload_bytes(val: &Value) -> Option<usize> {
+    tracing::enabled!(tracing::Level::DEBUG)
+        .then(|| serde_json::to_vec(val).map_or(0, |bytes| bytes.len()))
 }
 
 #[cfg(test)]
@@ -1087,6 +1082,46 @@ mod tests {
         })
         .await
         .unwrap();
+    }
+
+    /// Callers retry a request that never reached Core, and must not
+    /// treat Core's own refusal the same way.
+    #[tokio::test]
+    #[allow(clippy::unwrap_used, reason = "bounded in-memory RPC fixtures")]
+    async fn only_link_failures_are_transport_errors() {
+        let (notifications, _) = broadcast::channel(1);
+        let client = Client {
+            tx: Arc::new(Mutex::new(None)),
+            pending: PendingMap::default(),
+            notifications: notifications.clone(),
+            connection: Arc::new(watch::channel(ConnectionState::Connecting).0),
+            transport: watch::channel(None).0,
+        };
+        let not_connected = client.call("media.image", &Value::Null).await.unwrap_err();
+        assert!(not_connected.is_transport());
+
+        let (msg_tx, _msg_rx) = mpsc::unbounded_channel();
+        let tx_slot: OutboundSlot = Arc::new(Mutex::new(Some(msg_tx)));
+        let pending = PendingMap::default();
+        let (tx, rx) = oneshot::channel();
+        pending.lock().unwrap().insert("waiting".into(), tx);
+        teardown_session(&tx_slot, &pending);
+        assert!(
+            rx.await.unwrap().unwrap_err().is_transport(),
+            "a session ending mid-request"
+        );
+
+        let (tx, rx) = oneshot::channel();
+        pending.lock().unwrap().insert("refused".into(), tx);
+        let response: RpcResponse = serde_json::from_value(serde_json::json!({
+            "id": "refused", "error": {"message": "not allowed"}
+        }))
+        .unwrap();
+        handle_incoming(response, &pending, &notifications);
+        assert!(
+            !rx.await.unwrap().unwrap_err().is_transport(),
+            "Core's own refusal"
+        );
     }
 
     #[tokio::test]
@@ -1455,5 +1490,29 @@ mod tests {
             log,
             vec![ConnectionState::Connecting, ConnectionState::Connected],
         );
+    }
+
+    #[test]
+    fn payload_size_is_measured_only_when_debug_is_on() {
+        let val = serde_json::json!({ "entries": [1, 2, 3] });
+        // No subscriber: the debug line is off, so nothing is re-serialized.
+        assert_eq!(debug_payload_bytes(&val), None);
+        let info = tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::INFO)
+            .with_writer(std::io::sink)
+            .finish();
+        tracing::subscriber::with_default(info, || {
+            assert_eq!(debug_payload_bytes(&val), None);
+        });
+        let debug = tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::DEBUG)
+            .with_writer(std::io::sink)
+            .finish();
+        tracing::subscriber::with_default(debug, || {
+            assert_eq!(
+                debug_payload_bytes(&val),
+                Some(serde_json::to_vec(&val).map_or(0, |b| b.len()))
+            );
+        });
     }
 }

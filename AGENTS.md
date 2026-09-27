@@ -168,11 +168,12 @@ private `_` recipe. Container builds write to `rust/target/docker/`.
   **Scoped exception:** `rust/frontend/src/hub_covers.rs` persists a small
   path *list* (`hub_covers.toml` in the cache dir; never image bytes or
   metadata) mapping each Hub `zapscript` tile and the Resume tile to the Core
-  thumbnail path Core itself already wrote to
-  `/media/fat/zaparoo/cache/thumbs/`, so those covers can seed the in-memory
+  thumbnail path Core itself already wrote to its thumbnail cache (on MiSTer
+  `/media/fat/zaparoo/cache/thumbs/`), so those covers can seed the in-memory
   cache before the first frame on a cold boot. Bounded by
-  `zaparoo_app::covers::MAX_HUB_ENTRIES` plus the Resume tile, colocated
-  `MiSTer` only, and self-healing: a stale path just fails to open and falls
+  `zaparoo_app::covers::MAX_HUB_ENTRIES` plus the Resume tile, only where Core
+  is colocated and its files are readable (MiSTer, and an embedding host that
+  runs Core in the same app), and self-healing: a stale path just fails to open and falls
   through to a normal Core request. Do not extend this carve-out to any other
   cache without discussing it first.
 - Do not open a modal from a modal. A choice made inside a modal is a page of

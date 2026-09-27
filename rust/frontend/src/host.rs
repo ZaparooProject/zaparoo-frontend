@@ -205,7 +205,9 @@ impl Input {
         self.app.upgrade_in_event_loop(move |_| {
             let client = ctx.store.client();
             client.set_transport(transport);
-            crate::media_cache::configure_local_path(cfg!(feature = "mister"), client.is_local());
+            // The embedding host runs Core as this same app, so the thumbnail
+            // paths a local Core names are this process's to open.
+            crate::media_cache::configure_local_path(true, client.is_local());
         })
     }
 
@@ -270,6 +272,42 @@ impl Input {
     }
 }
 
+/// The running window's cover cache, for [`trim_memory`]. Weak, so a
+/// released window's cache is not kept alive by the host.
+static MEDIA: std::sync::Mutex<std::sync::Weak<crate::media_cache::MediaCache>> =
+    std::sync::Mutex::new(std::sync::Weak::new());
+
+pub(crate) fn register_media(media: &Arc<crate::media_cache::MediaCache>) {
+    *MEDIA
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = Arc::downgrade(media);
+}
+
+/// The system asked the app to use less memory (the window is hidden or
+/// memory is short): drop every decoded cover. Tiles already on screen
+/// keep their own copy; anything else is fetched again when it is next
+/// shown. Safe from any thread; a no-op before the first window.
+pub fn trim_memory() {
+    let media = MEDIA
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .upgrade();
+    if let Some(media) = media {
+        media.clear_decoded();
+        // Screens request art only while they resolve their tiles, so the
+        // next activation must re-resolve them or the art never returns.
+        TRIMMED.store(true, std::sync::atomic::Ordering::Release);
+    }
+}
+
+/// Decoded art was dropped while the window was away.
+static TRIMMED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// True once after [`trim_memory`] dropped decoded art.
+pub(crate) fn take_trimmed() -> bool {
+    TRIMMED.swap(false, std::sync::atomic::Ordering::AcqRel)
+}
+
 /// The host's network, Bluetooth and battery state for the header. A
 /// battery of `None` hides the gauge. Status belongs to the device, not to
 /// a window, so it may arrive before any window exists and is kept for the
@@ -325,4 +363,43 @@ pub fn controller(name: Option<&str>) -> [Action; 4] {
         face_action(faces.x),
         face_action(faces.y),
     ]
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::expect_used,
+    reason = "a failed test thread should fail the test"
+)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn trim_memory_drops_decoded_covers() {
+        trim_memory();
+        let media = crate::media_cache::MediaCache::new();
+        register_media(&media);
+        let key = crate::media_cache::MediaKey {
+            media_id: Some(1),
+            system: "SNES".into(),
+            path: "/a".into(),
+            max_size: 256,
+            image_type: None,
+        };
+        media.seed(
+            key.clone(),
+            crate::media_cache::DecodedImage {
+                buffer: slint::SharedPixelBuffer::new(2, 2),
+            },
+        );
+        let _ = take_trimmed();
+        let other_thread = std::thread::spawn(trim_memory);
+        other_thread.join().expect("trim thread");
+        assert!(!media.is_cached(&key));
+        // The next activation must re-resolve the screens, once.
+        assert!(take_trimmed());
+        assert!(!take_trimmed());
+        drop(media);
+        trim_memory();
+        assert!(!take_trimmed(), "nothing was dropped without a cache");
+    }
 }

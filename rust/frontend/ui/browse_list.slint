@@ -232,6 +232,9 @@ export component BrowseDetailPane inherits Rectangle {
     // A system row with no bundled logo: the fitted name stands in.
     in property <bool> wordmark: false;
     in property <string> placeholder-key: "icons/File";
+    // Core's average cover colour, shown while the cover loads.
+    in property <color> art-color;
+    in property <bool> has-art-color: false;
     in property <[DetailRow]> rows: [];
     in property <bool> loading: false;
     in property <string> loading-text: @tr("Loading…");
@@ -369,13 +372,40 @@ export component BrowseDetailPane inherits Rectangle {
             property <length> art-w: Math.max(0px, self.width - (root.horizontal ? Layout.image-padding-left + Layout.image-padding-right : 0px));
             property <length> art-h: Math.max(0px, self.height - Layout.image-padding-top - Layout.image-padding-bottom);
 
-            if root.has-cover: Image {
+            // The cover's colour until it lands, like a grid tile.
+            if root.has-art-color && !root.cover-absent: Rectangle {
+                x: parent.art-x;
+                y: parent.art-y;
+                width: parent.art-w;
+                height: parent.art-h;
+                background: root.art-color;
+                opacity: 1;
+                states [
+                    covered when root.has-cover: {
+                        opacity: 0;
+                        in {
+                            animate opacity { duration: Motion.dur(Motion.cover-reveal-ms); easing: ease-out; }
+                        }
+                    }
+                ]
+            }
+            // Fades in as it lands, like a grid tile's art.
+            Image {
                 x: parent.art-x;
                 y: parent.art-y;
                 width: parent.art-w;
                 height: parent.art-h;
                 source: root.cover;
                 image-fit: contain;
+                opacity: 0;
+                states [
+                    shown when root.has-cover: {
+                        opacity: 1;
+                        in {
+                            animate opacity { duration: Motion.dur(Motion.cover-reveal-ms); easing: ease-out; }
+                        }
+                    }
+                ]
             }
             // Only a confirmed no-cover state shows the chip; the pane
             // never shows an hourglass.
@@ -511,6 +541,8 @@ export component BrowseListDetailView inherits Rectangle {
     in property <bool> cover-absent: false;
     in property <bool> wordmark: false;
     in property <string> placeholder-key: "icons/File";
+    in property <color> art-color;
+    in property <bool> has-art-color: false;
     in property <[DetailRow]> detail-rows: [];
     in property <bool> detail-loading: false;
     in property <string> loading-text: @tr("Loading…");
@@ -579,6 +611,8 @@ export component BrowseListDetailView inherits Rectangle {
         cover-absent: root.cover-absent;
         wordmark: root.wordmark;
         placeholder-key: root.placeholder-key;
+        art-color: root.art-color;
+        has-art-color: root.has-art-color;
         rows: root.detail-rows;
         loading: root.detail-loading;
         loading-text: root.loading-text;

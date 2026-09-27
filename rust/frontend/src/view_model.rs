@@ -72,6 +72,8 @@ pub fn same_cell(left: &crate::GridCell, right: &crate::GridCell) -> bool {
         && left.top_label == right.top_label
         && left.wordmark == right.wordmark
         && left.is_empty == right.is_empty
+        && left.has_placeholder == right.has_placeholder
+        && left.placeholder == right.placeholder
 }
 
 fn publish_by<T: Clone + 'static>(

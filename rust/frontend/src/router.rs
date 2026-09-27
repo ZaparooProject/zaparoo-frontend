@@ -138,6 +138,10 @@ pub struct Shared {
     /// `media.history.latest` answers (or when history is empty).
     /// The Hub: persisted layout, entries, cursor and Move session.
     pub hub: crate::hub::HubModel,
+    /// The Settings page and row last shown, so re-entering Settings in
+    /// the same process returns there. Memory only: a cold start opens
+    /// Settings at its root like before.
+    pub settings_focus: Option<(crate::SettingsPage, usize)>,
 }
 
 /// Which surface an open context menu was invoked on. Favorites and
@@ -270,6 +274,7 @@ impl Shared {
             persist,
             restore_pending,
             hub: crate::hub::HubModel::new(hub_layout_path),
+            settings_focus: None,
         }
     }
 }
@@ -763,6 +768,13 @@ pub fn refresh_first_run(ctx: &Ctx, app: &App) {
 pub(crate) fn on_app_activated(ctx: &Ctx, app: &App) {
     app.global::<crate::Shell>().set_saver_armed(false);
     reset_idle(ctx, app);
+    #[cfg(feature = "hosted")]
+    if crate::host::take_trimmed() {
+        // The host dropped decoded art while away: re-resolve the screens
+        // that show it, which requests it again.
+        crate::hub::rebuild(ctx, app);
+        crate::games::render(ctx, app);
+    }
 }
 
 /// Restart the screensaver idle countdown. Every input calls this;

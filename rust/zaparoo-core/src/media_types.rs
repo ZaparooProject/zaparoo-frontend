@@ -143,6 +143,11 @@ pub struct MediaItem {
     /// probe `media.image`.
     #[serde(default = "default_true")]
     pub has_cover: bool,
+    /// Core's average colour of the cover thumbnail, as `#rrggbb`, for a
+    /// placeholder until the art itself loads. Omitted when Core has not
+    /// sized that cover yet, and by Core builds that predate it.
+    #[serde(default)]
+    pub cover_color: Option<String>,
 }
 
 impl Default for MediaItem {
@@ -157,6 +162,7 @@ impl Default for MediaItem {
             disambiguating_tags: Vec::new(),
             relative_path: None,
             has_cover: true,
+            cover_color: None,
         }
     }
 }
@@ -330,6 +336,11 @@ pub struct BrowseEntry {
     /// Only meaningful for `media` entries; folders always behave as `true`.
     #[serde(default = "default_true")]
     pub has_cover: bool,
+    /// Core's average colour of the cover thumbnail, as `#rrggbb`, for a
+    /// placeholder until the art itself loads. Omitted when Core has not
+    /// sized that cover yet, and by Core builds that predate it.
+    #[serde(default)]
+    pub cover_color: Option<String>,
 }
 
 impl Default for BrowseEntry {
@@ -351,6 +362,7 @@ impl Default for BrowseEntry {
             // Default to true so callers that don't set this field (tests,
             // struct-update syntax) still request covers from Core.
             has_cover: true,
+            cover_color: None,
         }
     }
 }
@@ -505,6 +517,11 @@ pub struct MediaHistoryEntry {
     /// probe `media.image`.
     #[serde(default = "default_true")]
     pub has_cover: bool,
+    /// Core's average colour of the cover thumbnail, as `#rrggbb`, for a
+    /// placeholder until the art itself loads. Omitted when Core has not
+    /// sized that cover yet, and by Core builds that predate it.
+    #[serde(default)]
+    pub cover_color: Option<String>,
 }
 
 impl Default for MediaHistoryEntry {
@@ -520,6 +537,7 @@ impl Default for MediaHistoryEntry {
             ended_at: None,
             play_time: 0,
             has_cover: true,
+            cover_color: None,
         }
     }
 }
@@ -2511,5 +2529,32 @@ mod tests {
         // syntax in tests/callers doesn't accidentally suppress cover requests.
         let entry = BrowseEntry::default();
         assert!(entry.has_cover, "Default::has_cover must be true");
+    }
+
+    #[test]
+    fn cover_color_is_optional_on_every_row_shape() {
+        let entry: BrowseEntry = serde_json::from_str(
+            r##"{"name":"Zelda","path":"/z","type":"media","coverColor":"#a1b2c3"}"##,
+        )
+        .expect("browse entry");
+        assert_eq!(entry.cover_color.as_deref(), Some("#a1b2c3"));
+        let item: MediaItem =
+            serde_json::from_str(r##"{"name":"Zelda","path":"/z","coverColor":"#000000"}"##)
+                .expect("search item");
+        assert_eq!(item.cover_color.as_deref(), Some("#000000"));
+        let history: MediaHistoryEntry =
+            serde_json::from_str(r##"{"mediaPath":"/z","coverColor":"#ffffff"}"##)
+                .expect("history entry");
+        assert_eq!(history.cover_color.as_deref(), Some("#ffffff"));
+        // Older Core builds, and covers Core has not sized yet, omit it.
+        let entry: BrowseEntry =
+            serde_json::from_str(r#"{"name":"Zelda","path":"/z"}"#).expect("browse entry");
+        assert_eq!(entry.cover_color, None);
+        let item: MediaItem =
+            serde_json::from_str(r#"{"name":"Zelda","path":"/z"}"#).expect("search item");
+        assert_eq!(item.cover_color, None);
+        let history: MediaHistoryEntry =
+            serde_json::from_str(r#"{"mediaPath":"/z"}"#).expect("history entry");
+        assert_eq!(history.cover_color, None);
     }
 }

@@ -106,6 +106,12 @@ export global Motion {
     // under the 3 Hz WCAG flash-safety threshold, and slow enough that the
     // tile is legible in its "on" half rather than strobing.
     out property <duration> held-blink-ms: 650ms;
+    // Fetched cover art fades in as it lands rather than popping in. Only
+    // art that arrives while its tile is on screen fades; art already cached
+    // when a tile appears shows at once, so paging and cached page slides
+    // never flash. Pushed to 0 on the software renderer, where fading tiles
+    // is the expensive kind of motion (docs/slint-gotchas.md).
+    in-out property <duration> cover-reveal-ms: 180ms;
     // The fast-scroll rail's fade in and out and its highlight's glide
     // between letters. Pushed to 0 on the software renderer, where the rail
     // cuts instead: it stays a small repaint either way.

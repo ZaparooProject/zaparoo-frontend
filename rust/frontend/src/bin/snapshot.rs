@@ -1197,6 +1197,10 @@ fn fixture_games(
             } else {
                 "".into()
             },
+            // Covers still loading: Core's average colour stands in, and a
+            // cover Core has not sized yet keeps the plain plate.
+            placeholder: snapshot_cover_color(i),
+            has_placeholder: (flat || i != 1) && i % 4 != 0,
             ..Default::default()
         })
         .collect();
@@ -1250,7 +1254,8 @@ fn fixture_games(
     view.set_list_visible(i32::try_from(list_visible).unwrap_or(10));
     view.set_list_row_height(list_row_height);
     view.set_detail_title("Example Game Title 3".into());
-    view.set_detail_cover_absent(true);
+    view.set_detail_placeholder(snapshot_cover_color(3));
+    view.set_detail_has_placeholder(true);
     view.set_detail_rows(slint::ModelRc::new(slint::VecModel::from(vec![
         generated::DetailRow {
             key: "system".into(),
@@ -1400,6 +1405,20 @@ fn fixture_systems(app: &App, scene_w: f64, scene_h: f64, crt: bool, favorites: 
     view.set_block_offset_y(fit.block_offset_y as f32);
     view.set_grid_y(grid_y as f32);
     view.set_grid_height(grid_height as f32);
+}
+
+/// Stand-in cover colours, the kind Core averages from box art.
+fn snapshot_cover_color(i: usize) -> slint::Color {
+    const COLORS: [[u8; 3]; 6] = [
+        [0x8a, 0x2f, 0x2a],
+        [0x2c, 0x4f, 0x7c],
+        [0x3d, 0x6b, 0x3a],
+        [0x7a, 0x62, 0x2b],
+        [0x5b, 0x3a, 0x6e],
+        [0x2f, 0x6a, 0x6a],
+    ];
+    let [r, g, b] = COLORS[i % COLORS.len()];
+    slint::Color::from_rgb_u8(r, g, b)
 }
 
 #[cfg(test)]

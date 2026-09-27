@@ -299,7 +299,7 @@ fn matching_media_rows(path_prefix: &str, systems: &[&str], filters: &[&str]) ->
         .enumerate()
         .filter(|(_, (_, _, system))| systems.is_empty() || systems.contains(system))
         .filter_map(|(index, (name, file, system))| {
-            let row = json!({
+            let mut row = json!({
                 "name": name,
                 "path": format!("{path_prefix}/{file}"),
                 "type": "media",
@@ -310,6 +310,7 @@ fn matching_media_rows(path_prefix: &str, systems: &[&str], filters: &[&str]) ->
                 "disambiguatingTags": disambiguating_tags_for(file),
                 "hasCover": true,
             });
+            with_cover_color(&mut row, index);
             filters
                 .iter()
                 .all(|filter| game_has_tag(&row, filter))
@@ -708,7 +709,7 @@ pub fn media_history_response(params: &Value) -> Value {
         .map(|(i, (name, file, system))| {
             let started = format!("2026-04-29T{:02}:00:00Z", 23 - i.min(23));
             let ended = format!("2026-04-29T{:02}:30:00Z", 23 - i.min(23));
-            json!({
+            let mut entry = json!({
                 "systemId": system,
                 "systemName": system_display_for(system),
                 "mediaName": name,
@@ -718,7 +719,9 @@ pub fn media_history_response(params: &Value) -> Value {
                 "startedAt": started,
                 "endedAt": ended,
                 "playTime": 1800,
-            })
+            });
+            with_cover_color(&mut entry, i);
+            entry
         })
         .collect();
     // Core's docs say `pagination` is only present when entries are
@@ -738,6 +741,17 @@ pub fn media_history_response(params: &Value) -> Value {
         }
     }
     response
+}
+
+/// Core's `coverColor`: the average colour of a sized cover. Every fifth
+/// game has none yet, the way Core omits it for covers it has not sized.
+fn with_cover_color(row: &mut Value, index: usize) {
+    const COLORS: [&str; 6] = [
+        "#8a2f2a", "#2c4f7c", "#3d6b3a", "#7a622b", "#5b3a6e", "#2f6a6a",
+    ];
+    if index % 5 != 4 {
+        row["coverColor"] = json!(COLORS[index % COLORS.len()]);
+    }
 }
 
 // Mirrors the display names in `systems_response`. The history fixture
@@ -768,7 +782,7 @@ fn games_for_systems<'a>(systems: &'a [&'a str]) -> impl Iterator<Item = Value> 
                 return None;
             }
             let (system_name, category) = system_meta(system);
-            Some(json!({
+            let mut item = json!({
                 "name": name,
                 "path": format!("/mock/{system}/{file}"),
                 "zapScript": format!("@{system}/{file}"),
@@ -776,7 +790,9 @@ fn games_for_systems<'a>(systems: &'a [&'a str]) -> impl Iterator<Item = Value> 
                 "tags": tags_for(file, index),
                 "disambiguatingTags": disambiguating_tags_for(file),
                 "hasCover": true,
-            }))
+            });
+            with_cover_color(&mut item, index);
+            Some(item)
         })
 }
 
