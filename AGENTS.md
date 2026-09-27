@@ -46,7 +46,7 @@ private `_` recipe. Container builds write to `rust/target/docker/`.
 
 ## Stack Facts
 
-- Slint 1.17.1, pinned exactly (`=1.17.1`) with `slint-build` and
+- Slint 1.18.0, pinned exactly (`=1.18.0`) with `slint-build` and
   `slint-tr-extractor` at the same version. Used under the paid Slint Software
   License.
 - Rust workspace under `rust/`, edition 2021, MSRV and toolchain 1.97
@@ -196,7 +196,9 @@ update rules, in short:
 - Any `Dockerfile.toolchain` change bumps `scripts/toolchain/VERSION` in the
   same PR; CI publishes the new tag and fails a PR that skips the bump.
 - Bumping Slint touches `slint` and `slint-build` in `rust/frontend/Cargo.toml`
-  (plus `fontique` and `resvg`, which must match the versions Slint resolves),
+  (plus `fontique` and `resvg`, which must match the versions Slint resolves,
+  and the exact `i-slint-core` pin that gives the MiSTer build its image
+  decoders),
   `SLINT_TR_EXTRACTOR_VERSION` in `Dockerfile.toolchain` (with a
   `scripts/toolchain/VERSION` bump), and the Slint exceptions in
   `rust/deny.toml`; then regenerate `just notices`.

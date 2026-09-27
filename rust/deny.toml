@@ -13,12 +13,10 @@ targets = [
 db-urls = ["https://github.com/rustsec/advisory-db"]
 yanked  = "deny"
 # Unmaintained-crate notices (not vulnerabilities) carried by the Slint
-# dependency tree: `paste` through Slint's macros, `rustybuzz` and
-# `ttf-parser` through usvg and Slint's text stack. Nothing in this
-# repository can replace them; re-check the list on every Slint bump.
+# dependency tree: `ttf-parser` through the winit backend's window
+# decorations. Nothing in this repository can replace it; re-check the list
+# on every Slint bump.
 ignore  = [
-    "RUSTSEC-2024-0436", # paste
-    "RUSTSEC-2026-0206", # rustybuzz
     "RUSTSEC-2026-0192", # ttf-parser
 ]
 
