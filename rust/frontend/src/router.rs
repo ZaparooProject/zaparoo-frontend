@@ -117,11 +117,15 @@ pub struct Shared {
     pub first_run_cancelling: bool,
     pub card_write: crate::card_write::Model,
     pub launcher_save_seq: u64,
-    /// Jump-to-letter buckets for the open picker (cursor kept
-    /// Rust-side; the UI only shows label + count).
+    /// The browse scope's letter buckets, for the jump-to-letter picker
+    /// and the fast-scroll rail (cursor kept Rust-side; the UI only shows
+    /// label + count).
     pub letter_buckets: Vec<zaparoo_core::media_types::BrowseIndexGroup>,
-    /// Ticket for the picker's facet fetch; bumped on open/close so a
-    /// stale index response cannot fill a reopened picker.
+    /// The `(system, browse path)` the buckets belong to; None until the
+    /// current fetch lands.
+    pub letter_scope: Option<(String, String)>,
+    /// Ticket for the facet fetch; bumped per fetch so a stale index
+    /// response cannot fill a newer scope.
     pub letter_seq: u64,
     /// Ticket for the per-game launcher read, so a picker only opens
     /// for the row the user is still on.
@@ -260,6 +264,7 @@ impl Shared {
             card_write: crate::card_write::Model::default(),
             launcher_save_seq: 0,
             letter_buckets: Vec::new(),
+            letter_scope: None,
             letter_seq: 0,
             game_launcher_seq: 0,
             persist,
@@ -1404,12 +1409,14 @@ fn list_action(ctx: &Ctx, app: &App, action: &str) {
 
 /// Fetch the browse facet for the current scope (`media.browse.index`,
 /// non-empty buckets in sort order) and publish it to the picker
-/// properties as it lands; the seq ticket drops stale responses.
-fn fetch_letter_index(ctx: &Ctx, app: &App) {
+/// properties and the fast-scroll rail as it lands; the seq ticket drops
+/// stale responses.
+pub(crate) fn fetch_letter_index(ctx: &Ctx, app: &App) {
     let (browse_path, system_id, ticket) = {
         let mut guard = lock(&ctx.shared);
         guard.letter_seq += 1;
         guard.letter_buckets.clear();
+        guard.letter_scope = None;
         (
             guard.games.browse_path.clone(),
             guard.games.system_id.clone(),
@@ -1425,7 +1432,9 @@ fn fetch_letter_index(ctx: &Ctx, app: &App) {
 
     let client = ctx.store.client();
     let shared = ctx.shared.clone();
+    let ctx2 = ctx.clone();
     let weak = app.as_weak();
+    let scope = (system_id.clone(), browse_path.clone());
     ctx.handle.spawn(async move {
         let outcome = client
             .media_browse_index(zaparoo_core::media_types::MediaBrowseIndexParams {
@@ -1453,10 +1462,15 @@ fn fetch_letter_index(ctx: &Ctx, app: &App) {
                             count: i32::try_from(g.count).unwrap_or(i32::MAX),
                         })
                         .collect();
-                    lock(&shared).letter_buckets = result.groups;
+                    {
+                        let mut guard = lock(&shared);
+                        guard.letter_buckets = result.groups;
+                        guard.letter_scope = Some(scope);
+                    }
                     app.global::<crate::Overlays>()
                         .set_letter_buckets(ModelRc::new(VecModel::from(rows)));
                     app.global::<crate::Overlays>().set_letter_loading(false);
+                    crate::games::render(&ctx2, &app);
                 }
                 Err(e) => {
                     tracing::warn!("letter index fetch failed: {}", e.message);
@@ -1475,9 +1489,10 @@ fn open_letter_jump(_ctx: &Ctx, app: &App) {
     app.global::<crate::Overlays>().set_letter_open(true);
 }
 
-fn close_letter_jump(ctx: &Ctx, app: &App) {
+fn close_letter_jump(_ctx: &Ctx, app: &App) {
     crate::press_feedback::cancel(app);
-    lock(&ctx.shared).letter_seq += 1;
+    // The index in flight is still the scope's: the rail keeps it, and a
+    // reopened picker fetches again under a newer ticket.
     app.global::<crate::Overlays>().set_letter_open(false);
 }
 

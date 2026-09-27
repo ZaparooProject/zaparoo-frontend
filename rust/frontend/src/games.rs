@@ -255,7 +255,11 @@ pub struct GamesModel {
     pub detail: FocusedDetail,
     pub detail_seq: u64,
     pub rapid_active: bool,
-    pub rapid_seq: u64,
+    /// The fast-scroll rail is up: from the start of a fast scroll until
+    /// `RAIL_LINGER_MS` after it stops.
+    pub rail_visible: bool,
+    /// Ticket for the rail's linger timer.
+    pub rail_seq: u64,
     pub activate_pulse: i32,
     pub release_pulse: i32,
     /// A page swoop is in flight; input waits for the commit.
@@ -297,7 +301,8 @@ impl GamesModel {
             detail: FocusedDetail::new(),
             detail_seq: 0,
             rapid_active: false,
-            rapid_seq: 0,
+            rail_visible: false,
+            rail_seq: 0,
             activate_pulse: 0,
             release_pulse: 0,
             sliding: false,
@@ -924,6 +929,17 @@ fn on_browse_ready(
         Some((result.total_files, total_dirs)),
         flip,
     );
+    // The fast-scroll rail and letter steps need the scope's letters
+    // before the first long hold, not only once the picker opens.
+    let fetched = {
+        let shared = lock(&ctx.shared);
+        shared.letter_scope.as_ref().is_some_and(|(system, path)| {
+            *system == shared.games.system_id && *path == shared.games.browse_path
+        })
+    };
+    if !fetched {
+        crate::router::fetch_letter_index(ctx, app);
+    }
 }
 
 /// Ready-side fill: store the rows, seat the persisted selection, persist
@@ -1578,6 +1594,7 @@ pub fn render(ctx: &Ctx, app: &App) {
     );
     view.set_focus_ready(model.focus_armed || model.restore_done);
     view.set_rapid_active(model.rapid_active);
+    publish_rail(app, &shared);
 
     if !model.folder_sliding {
         if view.get_folder_slide() {
@@ -1755,7 +1772,9 @@ fn refresh_detail_cover(ctx: &Ctx, app: &App, model: &GamesModel) {
     } else {
         view.set_detail_has_cover(false);
         view.set_detail_cover_absent(!row.has_cover || ctx.media.is_negative(&key));
-        if row.has_cover {
+        // A fast scroll never waits on art: the landing row's cover is
+        // fetched once it stops.
+        if row.has_cover && !model.rapid_active {
             ctx.media.enqueue(key);
         }
     }
@@ -2083,7 +2102,6 @@ fn slide_to_current_page(ctx: &Ctx, app: &App, from_page: usize) {
         )
     };
     let dir: i32 = if to_page > from_page { 1 } else { -1 };
-    note_rapid_flip(ctx, app, rapid);
     let view = app.global::<GamesView>();
     let target_local = {
         let shared = lock(&ctx.shared);
@@ -2186,66 +2204,129 @@ pub(crate) fn interrupt_page(ctx: &Ctx, app: &App) {
     app.window().request_redraw();
 }
 
-/// Only a qualified held navigation may show the landing letter. Page-flip
-/// frequency is not hold intent: quick taps must keep normal presentation.
-fn note_rapid_flip(ctx: &Ctx, app: &App, rapid: bool) {
-    if !rapid {
-        clear_rapid_letter(ctx, app);
-        return;
+/// The scope's letter buckets, when the list is browsed by title and the
+/// fetched index belongs to the folder on screen.
+fn scope_letters(shared: &Shared) -> Option<&[zaparoo_core::media_types::BrowseIndexGroup]> {
+    let model = &shared.games;
+    if model.mode != GamesMode::Browse || shared.letter_buckets.is_empty() {
+        return None;
     }
-    let (seq, letter) = {
+    let (system, path) = shared.letter_scope.as_ref()?;
+    (*system == model.system_id && *path == model.browse_path)
+        .then_some(shared.letter_buckets.as_slice())
+}
+
+/// The fast-scroll rail: the scope's letters with the current one, or,
+/// where letters mean nothing (Favorites, Recently played, no index yet),
+/// only the position marker.
+fn publish_rail(app: &App, shared: &Shared) {
+    let view = app.global::<GamesView>();
+    let model = &shared.games;
+    let index = model.grid.current_index();
+    let (labels, at) = scope_letters(shared).map_or((Vec::new(), None), |groups| {
+        let offsets: Vec<u32> = groups.iter().map(|group| group.offset).collect();
+        (
+            groups
+                .iter()
+                .map(|group| SharedString::from(group.label.as_str()))
+                .collect::<Vec<_>>(),
+            rules::letter_at(&offsets, model.non_media_total(), index),
+        )
+    });
+    // The letters change per folder, not per move: keep the model (and
+    // the rail's text items) across moves.
+    let current = view.get_rail_letters();
+    let same = slint::Model::row_count(&current) == labels.len()
+        && labels
+            .iter()
+            .enumerate()
+            .all(|(i, label)| slint::Model::row_data(&current, i).as_ref() == Some(label));
+    view.set_rail_index(at.map_or(-1, |i| i32::try_from(i).unwrap_or(-1)));
+    view.set_rail_letter(at.and_then(|i| labels.get(i).cloned()).unwrap_or_default());
+    if !same {
+        view.set_rail_letters(ModelRc::new(VecModel::from(labels)));
+    }
+    let total = model.grid.total_items().max(model.rows.len());
+    view.set_rail_fraction(rules::rail_fraction(index, total));
+    view.set_rail_visible(model.rail_visible);
+}
+
+/// A fast scroll stops at the list's ends: a tapped page flip wraps
+/// around, but a held one wrapping sends the user away from the end they
+/// were heading for.
+fn at_rapid_edge(ctx: &Ctx, dir: i64) -> bool {
+    let shared = lock(&ctx.shared);
+    let grid = &shared.games.grid;
+    if dir < 0 {
+        grid.current_page() == 0
+    } else {
+        grid.pagination_total_known && grid.current_page() + 1 >= grid.total_page_count()
+    }
+}
+
+/// A long hold's letter step: jump to the next or previous letter. True
+/// when the hold is handled here, including while an earlier step's jump
+/// is still loading; false where there are no letters or no further
+/// letter, so the hold keeps paging.
+fn letter_step(ctx: &Ctx, app: &App, forward: bool) -> bool {
+    let target = {
+        let shared = lock(&ctx.shared);
+        let Some(groups) = scope_letters(&shared) else {
+            return false;
+        };
+        let model = &shared.games;
+        if model.jump_loading {
+            return true;
+        }
+        let offsets: Vec<u32> = groups.iter().map(|group| group.offset).collect();
+        let Some(bucket) = rules::letter_step(
+            &offsets,
+            model.non_media_total(),
+            model.grid.current_index(),
+            forward,
+        ) else {
+            return false;
+        };
+        offsets[bucket]
+    };
+    jump_to_item(ctx, app, target);
+    true
+}
+
+/// Held rapid navigation: covers pause and the detail pane stops loading
+/// while it runs; the rail comes up with it and stays `RAIL_LINGER_MS`
+/// after it ends.
+pub fn set_rapid(ctx: &Ctx, app: &App, active: bool) {
+    let (changed, linger, seq) = {
         let mut shared = lock(&ctx.shared);
         let model = &mut shared.games;
-        model.rapid_seq += 1;
-        // The row the cursor is on, not the landing page's first row.
-        // "the first 2 letters of where the cursor is" is what
-        // EmulationStation and Big Picture both show, and it is the only
-        // reading that survives a layout without pages.
-        let letter = model
-            .rows
-            .get(model.grid.current_index())
-            .map(|row| rules::rapid_letter(&row.display))
-            .unwrap_or_default();
-        (model.rapid_seq, letter)
+        let changed = model.rapid_active != active;
+        model.rapid_active = active;
+        model.rail_seq += 1;
+        let linger = !active && model.rail_visible;
+        if active {
+            model.rail_visible = true;
+        }
+        (changed, linger, model.rail_seq)
     };
-    app.global::<GamesView>()
-        .set_rapid_letter(SharedString::from(letter.as_str()));
-    let weak = app.as_weak();
-    let ctx = ctx.clone();
-    slint::Timer::single_shot(
-        Duration::from_millis(rules::RAPID_LETTER_HOLD_MS),
-        move || {
-            if lock(&ctx.shared).games.rapid_seq != seq {
-                return;
+    if linger {
+        let weak = app.as_weak();
+        let ctx = ctx.clone();
+        slint::Timer::single_shot(Duration::from_millis(rules::RAIL_LINGER_MS), move || {
+            {
+                let mut shared = lock(&ctx.shared);
+                if shared.games.rail_seq != seq {
+                    return;
+                }
+                shared.games.rail_visible = false;
             }
             if let Some(app) = weak.upgrade() {
-                app.global::<GamesView>()
-                    .set_rapid_letter(SharedString::default());
+                app.global::<GamesView>().set_rail_visible(false);
             }
-        },
-    );
-}
-
-fn clear_rapid_letter(ctx: &Ctx, app: &App) {
-    lock(&ctx.shared).games.rapid_seq += 1;
-    app.global::<GamesView>()
-        .set_rapid_letter(SharedString::default());
-}
-
-/// Held rapid navigation: covers pause and the detail pane clears while
-/// it runs.
-pub fn set_rapid(ctx: &Ctx, app: &App, active: bool) {
-    if !active {
-        // Retire the badge even when render state was already inactive; otherwise
-        // invalidating its timer on a later ordinary flip can strand the letter.
-        clear_rapid_letter(ctx, app);
+        });
     }
-    {
-        let mut shared = lock(&ctx.shared);
-        if shared.games.rapid_active == active {
-            return;
-        }
-        shared.games.rapid_active = active;
+    if !changed {
+        return;
     }
     render(ctx, app);
     schedule_detail(ctx, app, false);
@@ -2357,8 +2438,25 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
         }
         actions::UP | actions::DOWN => {
             let dir: i64 = if action == actions::UP { -1 } else { 1 };
+            let ready = state == State::Ready;
+            // A long hold speeds up: a letter per step, else a page.
+            if ready && crate::input::letter_step(ctx) && letter_step(ctx, app, dir > 0) {
+                return;
+            }
+            let step = if ready && crate::input::rapid_page(ctx) {
+                if list {
+                    list_page
+                } else {
+                    if !at_rapid_edge(ctx, dir) {
+                        grid_move(ctx, app, 0, 0, dir as i32);
+                    }
+                    return;
+                }
+            } else {
+                1
+            };
             if list {
-                list_move(ctx, app, dir);
+                list_move(ctx, app, dir * step);
             } else {
                 grid_move(ctx, app, 0, dir as i32, 0);
             }
@@ -2368,9 +2466,12 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
                 return;
             }
             let dir: i64 = if action == actions::PAGE_PREV { -1 } else { 1 };
+            if crate::input::letter_step(ctx) && letter_step(ctx, app, dir > 0) {
+                return;
+            }
             if list {
                 list_move(ctx, app, dir * list_page);
-            } else {
+            } else if !(crate::input::rapid_page(ctx) && at_rapid_edge(ctx, dir)) {
                 grid_move(ctx, app, 0, 0, dir as i32);
             }
         }

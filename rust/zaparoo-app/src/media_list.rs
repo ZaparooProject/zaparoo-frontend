@@ -21,8 +21,9 @@ pub const JUMP_FETCH_CEILING: u32 = 1000;
 pub const DETAIL_DEBOUNCE_MS: u64 = 220;
 /// Selection writes coalesce over this window during a held move.
 pub const PERSIST_DEBOUNCE_MS: u64 = 250;
-/// The badge clears this long after the last flip.
-pub const RAPID_LETTER_HOLD_MS: u64 = 700;
+/// The fast-scroll rail stays this long after the scroll stops, so the
+/// letter it landed on can be read.
+pub const RAIL_LINGER_MS: u64 = 600;
 /// Prefetch this many pages of covers past the visible page.
 pub const COVER_PREFETCH_NEXT_PAGES: usize = 1;
 /// And this many before it.
@@ -251,14 +252,36 @@ pub fn jump_target(total_dirs: usize, item_offset: usize) -> usize {
     total_dirs + item_offset
 }
 
-/// The rapid-paging badge letter: the title's first character, upper-cased,
-/// `#` for a blank title.
-pub fn rapid_letter(title: &str) -> String {
-    title
-        .trim()
-        .chars()
-        .next()
-        .map_or_else(|| "#".to_string(), |c| c.to_uppercase().collect())
+/// The letter bucket holding browse position `index`, from the buckets'
+/// first-item offsets (ascending, after `leading` directories and
+/// virtual roots). None on a leading directory or with no buckets.
+pub fn letter_at(offsets: &[u32], leading: usize, index: usize) -> Option<usize> {
+    let item = u32::try_from(index.checked_sub(leading)?).ok()?;
+    offsets.iter().rposition(|&offset| offset <= item)
+}
+
+/// The bucket a letter step lands on from browse position `index`: the
+/// next bucket going down (the first from a leading directory), the
+/// previous one going up. None at either end.
+pub fn letter_step(offsets: &[u32], leading: usize, index: usize, forward: bool) -> Option<usize> {
+    if offsets.is_empty() {
+        return None;
+    }
+    match (letter_at(offsets, leading, index), forward) {
+        (None, true) => Some(0),
+        (None, false) => None,
+        (Some(at), true) => (at + 1 < offsets.len()).then_some(at + 1),
+        (Some(at), false) => at.checked_sub(1),
+    }
+}
+
+/// Where the fast-scroll rail's position marker sits, 0.0 at the top and
+/// 1.0 at the last item of `total`.
+pub fn rail_fraction(index: usize, total: usize) -> f32 {
+    if total <= 1 {
+        return 0.0;
+    }
+    (index.min(total - 1) as f32 / (total - 1) as f32).clamp(0.0, 1.0)
 }
 
 /// The rows to fetch covers for around the visible page: the page, the
@@ -761,7 +784,8 @@ pub enum DetailStep {
 }
 
 /// The focused-detail policy: peek immediately, load after the debounce,
-/// never reload the same identity, clear on empty or rapid.
+/// never reload the same identity, clear on empty. A fast scroll peeks
+/// but never loads: the row's own metadata is local, Core's is not.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct FocusedDetail {
     requested: String,
@@ -797,13 +821,19 @@ impl FocusedDetail {
         if !enabled {
             return Vec::new();
         }
-        if rapid || identity.is_empty() {
+        if identity.is_empty() {
             return self.reset(true);
         }
         let mut steps = Vec::new();
+        if rapid && self.pending.take().is_some() {
+            steps.push(DetailStep::Disarm);
+        }
         if self.peeked != identity {
             self.peeked = identity.to_string();
             steps.push(DetailStep::Peek(index));
+        }
+        if rapid {
+            return steps;
         }
         if !force && identity == self.requested {
             return steps;
@@ -1035,10 +1065,38 @@ mod tests {
     }
 
     #[test]
-    fn rapid_letter_upper_cases_and_falls_back_to_hash() {
-        assert_eq!(rapid_letter("  sonic"), "S");
-        assert_eq!(rapid_letter(""), "#");
-        assert_eq!(rapid_letter("ßeta"), "SS");
+    fn letter_at_finds_the_bucket_after_leading_directories() {
+        // #: 0..3, A: 3..10, C: 10..
+        let offsets = [0, 3, 10];
+        assert_eq!(letter_at(&offsets, 2, 0), None, "a leading directory");
+        assert_eq!(letter_at(&offsets, 2, 2), Some(0));
+        assert_eq!(letter_at(&offsets, 2, 5), Some(1));
+        assert_eq!(letter_at(&offsets, 2, 11), Some(1));
+        assert_eq!(letter_at(&offsets, 2, 12), Some(2));
+        assert_eq!(letter_at(&offsets, 2, 500), Some(2));
+        assert_eq!(letter_at(&[], 0, 5), None);
+    }
+
+    #[test]
+    fn letter_step_moves_one_bucket_and_stops_at_the_ends() {
+        let offsets = [0, 3, 10];
+        assert_eq!(letter_step(&offsets, 2, 0, true), Some(0));
+        assert_eq!(letter_step(&offsets, 2, 0, false), None);
+        assert_eq!(letter_step(&offsets, 2, 5, true), Some(2));
+        assert_eq!(letter_step(&offsets, 2, 5, false), Some(0));
+        assert_eq!(letter_step(&offsets, 2, 12, true), None);
+        assert_eq!(letter_step(&offsets, 2, 2, false), None);
+        assert_eq!(letter_step(&[], 0, 2, true), None);
+    }
+
+    #[test]
+    fn rail_fraction_spans_first_to_last_item() {
+        assert!(rail_fraction(0, 0).abs() < f32::EPSILON);
+        assert!(rail_fraction(0, 1).abs() < f32::EPSILON);
+        assert!(rail_fraction(0, 101).abs() < f32::EPSILON);
+        assert!((rail_fraction(50, 101) - 0.5).abs() < f32::EPSILON);
+        assert!((rail_fraction(100, 101) - 1.0).abs() < f32::EPSILON);
+        assert!((rail_fraction(500, 101) - 1.0).abs() < f32::EPSILON);
     }
 
     #[test]
@@ -1446,16 +1504,21 @@ mod tests {
     }
 
     #[test]
-    fn detail_rapid_scroll_hides_detail_and_reloads_after_stop() {
+    fn detail_rapid_scroll_peeks_without_loading_and_loads_after_stop() {
         let mut d = FocusedDetail::new();
         d.schedule(true, false, "NES\n/a", 0, false);
         assert_eq!(d.fire(true, "NES\n/a"), Some(0));
         let steps = d.schedule(true, true, "NES\n/b", 1, false);
-        assert_eq!(steps, vec![DetailStep::Disarm, DetailStep::Clear]);
+        assert_eq!(steps, vec![DetailStep::Peek(1)]);
         assert_eq!(d.fire(true, "NES\n/b"), None);
-        let steps = d.schedule(true, false, "NES\n/b", 1, false);
-        assert_eq!(steps, vec![DetailStep::Peek(1), DetailStep::Arm]);
-        assert_eq!(d.fire(true, "NES\n/b"), Some(1));
+        // A load armed before the scroll turned fast is dropped.
+        d.schedule(true, false, "NES\n/c", 2, false);
+        let steps = d.schedule(true, true, "NES\n/d", 3, false);
+        assert_eq!(steps, vec![DetailStep::Disarm, DetailStep::Peek(3)]);
+        // Stopping loads the row the scroll landed on.
+        let steps = d.schedule(true, false, "NES\n/d", 3, false);
+        assert_eq!(steps, vec![DetailStep::Arm]);
+        assert_eq!(d.fire(true, "NES\n/d"), Some(3));
     }
 
     #[test]

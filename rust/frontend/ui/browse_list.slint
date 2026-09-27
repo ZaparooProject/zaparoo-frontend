@@ -234,8 +234,6 @@ export component BrowseDetailPane inherits Rectangle {
     in property <string> placeholder-key: "icons/File";
     in property <[DetailRow]> rows: [];
     in property <bool> loading: false;
-    // Held rapid navigation hides the pane's content entirely.
-    in property <bool> suppressed: false;
     in property <string> loading-text: @tr("Loading…");
     in property <bool> show-chrome: true;
 
@@ -255,8 +253,7 @@ export component BrowseDetailPane inherits Rectangle {
     property <length> primary-span: root.horizontal
         ? Math.floor((root.content-w - Layout.section-gap) * Layout.image-share / root.share-total / 1px) * 1px
         : Math.floor((root.content-h - Layout.section-gap) * Layout.image-share / root.share-total / 1px) * 1px;
-    property <bool> visible-content: !root.suppressed;
-    property <bool> title-visible: root.visible-content && root.show-title && root.title != "";
+    property <bool> title-visible: root.show-title && root.title != "";
     // Image slot: the share-based span keeps the cover footprint stable
     // from the first frame; with a title the profile's ratio applies.
     property <length> image-avail-w: Math.max(0px, root.content-w - Layout.image-padding-left - Layout.image-padding-right);
@@ -372,7 +369,7 @@ export component BrowseDetailPane inherits Rectangle {
             property <length> art-w: Math.max(0px, self.width - (root.horizontal ? Layout.image-padding-left + Layout.image-padding-right : 0px));
             property <length> art-h: Math.max(0px, self.height - Layout.image-padding-top - Layout.image-padding-bottom);
 
-            if root.visible-content && root.has-cover: Image {
+            if root.has-cover: Image {
                 x: parent.art-x;
                 y: parent.art-y;
                 width: parent.art-w;
@@ -382,7 +379,7 @@ export component BrowseDetailPane inherits Rectangle {
             }
             // Only a confirmed no-cover state shows the chip; the pane
             // never shows an hourglass.
-            if root.visible-content && !root.has-cover && !root.wordmark && root.cover-absent: Image {
+            if !root.has-cover && !root.wordmark && root.cover-absent: Image {
                 property <length> s: parent.art-w * 0.5;
                 x: parent.art-x + (parent.art-w - self.s) / 2;
                 y: parent.art-y + (parent.art-h - self.s) / 2;
@@ -392,7 +389,7 @@ export component BrowseDetailPane inherits Rectangle {
             }
             // Wordmark fallback for a system without curated logo art
             // (the grid tile's fitted-text treatment).
-            if root.visible-content && !root.has-cover && root.wordmark && root.title != "": Text {
+            if !root.has-cover && root.wordmark && root.title != "": Text {
                 property <length> box-h: Math.max(0px, parent.art-h - 2 * Sizing.pct-h(1));
                 x: parent.art-x + Sizing.pct-h(1);
                 y: parent.art-y + Sizing.pct-h(1);
@@ -438,7 +435,6 @@ export component BrowseDetailPane inherits Rectangle {
                     x: 0;
                     y: root.table-y + j * (root.tag-row-h + Layout.tag-row-spacing);
                     height: root.tag-row-h;
-                    visible: root.visible-content;
                     Text {
                         x: 0;
                         y: (parent.height - self.height) / 2;
@@ -464,7 +460,7 @@ export component BrowseDetailPane inherits Rectangle {
 
         // The loading cue paints only when the pane has nothing else to
         // show, after a short delay so quick loads never flash it.
-        property <bool> empty-loading: root.loading && root.visible-content && !root.has-cover && root.row-count == 0 && root.title == "";
+        property <bool> empty-loading: root.loading && !root.has-cover && root.row-count == 0 && root.title == "";
         property <bool> loading-shown: false;
         changed empty-loading => {
             if (!self.empty-loading) { self.loading-shown = false; }
@@ -517,7 +513,6 @@ export component BrowseListDetailView inherits Rectangle {
     in property <string> placeholder-key: "icons/File";
     in property <[DetailRow]> detail-rows: [];
     in property <bool> detail-loading: false;
-    in property <bool> suppressed: false;
     in property <string> loading-text: @tr("Loading…");
     callback row-hovered(int);
     callback row-clicked(int);
@@ -586,7 +581,6 @@ export component BrowseListDetailView inherits Rectangle {
         placeholder-key: root.placeholder-key;
         rows: root.detail-rows;
         loading: root.detail-loading;
-        suppressed: root.suppressed;
         loading-text: root.loading-text;
     }
 }

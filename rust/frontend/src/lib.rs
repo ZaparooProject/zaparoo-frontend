@@ -435,6 +435,7 @@ fn seed_display_globals(
     // tile never reaches.
     if cfg!(feature = "mister") {
         app.global::<Motion>().set_focus_zoom(100.0);
+        app.global::<Motion>().set_rail_ms(0);
     }
     display::register_labels(app);
     app.global::<Shell>()

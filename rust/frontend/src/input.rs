@@ -35,8 +35,9 @@ pub struct InputModel {
     repeat_seq: u64,
     /// The same ticket for the rapid navigation quiet tail.
     quiet_seq: u64,
-    /// True only during a qualified held-repeat dispatch, never its async tail.
-    rapid_dispatch: bool,
+    /// The held tier only during a held-repeat dispatch, never its async
+    /// tail; `Row` otherwise.
+    dispatch_tier: rules::HoldTier,
     /// Non-text navigation count for embedding-host input diagnostics.
     #[cfg(feature = "hosted")]
     navigation_events: u64,
@@ -52,7 +53,7 @@ impl InputModel {
             epoch: Instant::now(),
             repeat_seq: 0,
             quiet_seq: 0,
-            rapid_dispatch: false,
+            dispatch_tier: rules::HoldTier::Row,
             #[cfg(feature = "hosted")]
             navigation_events: 0,
         }
@@ -269,17 +270,22 @@ fn repeat_fire(ctx: &Ctx, app: &App) {
             .input
             .hold
             .tick(now)
-            .map(|(action, long_enough)| (action.to_string(), long_enough))
+            .map(|(action, tier)| (action.to_string(), tier))
     };
-    let Some((action, long_enough)) = fired else {
+    let Some((action, tier)) = fired else {
         return;
     };
-    dispatch_repeat(ctx, app, &action, long_enough);
-    schedule_repeat(ctx, app, rules::REPEAT_TICK_MS);
+    dispatch_repeat(ctx, app, &action, tier);
+    schedule_repeat(ctx, app, tier.repeat_ms());
 }
 
 pub(crate) fn rapid_page(ctx: &Ctx) -> bool {
-    lock(&ctx.shared).input.rapid_dispatch
+    lock(&ctx.shared).input.dispatch_tier.is_rapid()
+}
+
+/// The dispatch in flight is a long hold's letter step.
+pub(crate) fn letter_step(ctx: &Ctx) -> bool {
+    lock(&ctx.shared).input.dispatch_tier == rules::HoldTier::Letter
 }
 
 /// Async page fills use the input state, never its mirrored render flag.
@@ -289,18 +295,22 @@ pub(crate) fn rapid_navigation(ctx: &Ctx) -> bool {
 
 /// Keep repeat identity through screen dispatch; rapid rendering state is
 /// not suitable because ordinary actions reset it before navigating.
-pub(crate) fn dispatch_repeat(ctx: &Ctx, app: &App, action: &str, long_enough: bool) {
+pub(crate) fn dispatch_repeat(ctx: &Ctx, app: &App, action: &str, tier: rules::HoldTier) {
     // Read before dispatch: a modal that owns input keeps this repeat
     // off the rapid flag even though the action still routes to it.
     let owns_input = !modal_open(app);
-    lock(&ctx.shared).input.rapid_dispatch =
-        owns_input && long_enough && rules::is_rapid_navigation_action(action);
+    lock(&ctx.shared).input.dispatch_tier =
+        if owns_input && rules::is_rapid_navigation_action(action) {
+            tier
+        } else {
+            rules::HoldTier::Row
+        };
     crate::router::handle_action(ctx, app, action);
-    lock(&ctx.shared).input.rapid_dispatch = false;
+    lock(&ctx.shared).input.dispatch_tier = rules::HoldTier::Row;
     if owns_input {
         // Publish the held state after dispatch. Qualified repeats preserve
         // the previous rapid state; early repeats still behave like taps.
-        note_rapid(ctx, app, action, long_enough);
+        note_rapid(ctx, app, action, tier.is_rapid());
     }
 }
 
