@@ -51,6 +51,14 @@ mod mister;
 mod mister_battery;
 mod navigation;
 mod pairing;
+#[cfg_attr(
+    not(feature = "hosted"),
+    allow(
+        dead_code,
+        reason = "only an embedding host installs timing hooks; standalone builds keep the no-op calls"
+    )
+)]
+mod perf;
 // Reads the kernel power-supply class, which only the desktop feature
 // set has any use for; `MiSTer`'s reading comes off the `SMBus` instead.
 #[cfg(feature = "desktop")]
@@ -614,6 +622,8 @@ fn run_application(
         DESKTOP_WINDOW_SIZE
     };
     let app = App::new()?;
+    #[cfg(feature = "hosted")]
+    perf::attach(&app);
     if fullscreen {
         app.window().set_fullscreen(true);
     }

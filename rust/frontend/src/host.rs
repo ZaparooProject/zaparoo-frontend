@@ -308,6 +308,20 @@ pub(crate) fn take_trimmed() -> bool {
     TRIMMED.swap(false, std::sync::atomic::Ordering::AcqRel)
 }
 
+pub use crate::perf::Hooks as PerfHooks;
+
+/// Timing milestones for the host to stamp with its own clock. Install
+/// once per process, before [`run`]; later calls are ignored.
+pub fn install_perf(hooks: PerfHooks) {
+    crate::perf::install(hooks);
+}
+
+/// The host gave the running window a new native surface (after another
+/// app held the screen). Safe from any thread.
+pub fn window_renewed() {
+    crate::perf::window_renewed();
+}
+
 /// The host's network, Bluetooth and battery state for the header. A
 /// battery of `None` hides the gauge. Status belongs to the device, not to
 /// a window, so it may arrive before any window exists and is kept for the

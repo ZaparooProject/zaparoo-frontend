@@ -607,19 +607,17 @@ impl FrameProfile {
         if self.samples.len() < PROFILE_WINDOW {
             return;
         }
-        self.samples.sort_unstable();
-        let avg: Duration = self.samples.iter().sum::<Duration>() / self.samples.len() as u32;
-        let p99 = self.samples[self.samples.len() * 99 / 100];
-        let max = self.samples[self.samples.len() - 1];
-        tracing::info!(
-            rendered = self.total_rendered,
-            avg_us = avg.as_micros() as u64,
-            p99_us = p99.as_micros() as u64,
-            max_us = max.as_micros() as u64,
-            budget_us = FRAME_BUDGET.as_micros() as u64,
-            overruns = self.overruns,
-            "frame profile"
-        );
+        if let Some(summary) = crate::perf::summarize(&mut self.samples) {
+            tracing::info!(
+                rendered = self.total_rendered,
+                avg_us = summary.avg.as_micros() as u64,
+                p99_us = summary.p99.as_micros() as u64,
+                max_us = summary.max.as_micros() as u64,
+                budget_us = FRAME_BUDGET.as_micros() as u64,
+                overruns = self.overruns,
+                "frame profile"
+            );
+        }
         self.samples.clear();
     }
 }
