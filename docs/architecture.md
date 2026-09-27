@@ -3,9 +3,11 @@
 ## Module graph
 
 ```
-rust/frontend/  [frontend binary; Slint UI]
+rust/frontend/  [frontend library and binary; Slint UI]
   src/main.rs
-  │   Entry point: config, logger, tokio runtime, Client + Store, persisted
+  │   Thin binary entry calling frontend::run().
+  src/lib.rs
+  │   Application: config, logger, tokio runtime, Client + Store, persisted
   │   state, window and globals, language, background services, event loop.
   │
   ├── ui/*.slint  [compiled by build.rs through slint-build]
@@ -222,7 +224,7 @@ connected, which is why the desktop build pins `SLINT_SCALE_FACTOR=1`.
   enable platform-specific behavior until the first `version` RPC completes.
   Route the decision through Rust and expose the result to the view as a
   property. The frontend does not start `platform::spawn_fetcher` today, so
-  wire that up in `main.rs` before relying on this gate.
+  wire that up in `lib.rs` before relying on this gate.
 
 **Never gate runtime behavior on `Platform`, never gate Core
 assumptions on `Runtime`.** They are independent.

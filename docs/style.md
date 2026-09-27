@@ -1682,7 +1682,7 @@ size to make room.
 The software renderer has no transform support, so neither the tile nor its
 ring scales there, and they stay consistent with each other. So that nothing
 reserves room for growth that never happens (the clip headroom, the context
-menu's scrim hole), `main.rs` pushes `Motion.focus-zoom` as 100% on MiSTer and
+menu's scrim hole), `lib.rs` pushes `Motion.focus-zoom` as 100% on MiSTer and
 `PagedGridView` skips the zoom on CRT. Snapshots render through that same
 renderer, which means the zoom cannot be checked offline; it is a
 device-verified effect.

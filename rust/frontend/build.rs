@@ -28,7 +28,7 @@ fn main() {
     // Translations are bundled from translations/<lang>/LC_MESSAGES/
     // frontend.po (the file name is the crate name, which Slint uses as
     // the gettext domain) and selected at runtime by `apply_language` in
-    // main.rs. No default context: one msgid is one entry, so identical
+    // lib.rs. No default context: one msgid is one entry, so identical
     // source strings share one translation across components.
     let config = slint_build::CompilerConfiguration::new()
         .with_bundled_translations("translations")

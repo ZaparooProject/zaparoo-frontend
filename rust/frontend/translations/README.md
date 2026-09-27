@@ -32,7 +32,7 @@ with any gettext editor (Poedit, Lokalize, Weblate).
 
 Language names are the directory names (`de`, `zh_CN`, ...). They must match
 the Language setting exactly or by language part; see `apply_language` in
-`src/main.rs`. To add one:
+`src/lib.rs`. To add one:
 
 1. Create `<lang>/LC_MESSAGES/frontend.po` from the template
    (`msginit --no-translator -l <lang> -i frontend.pot -o <lang>/LC_MESSAGES/frontend.po`).
