@@ -165,6 +165,27 @@ pub fn scope_label(scope: &Scope, system_name: &dyn Fn(&str) -> String) -> (Scop
     }
 }
 
+/// The scraper a one-step metadata update runs with, from Core's offer as
+/// `(id, supported systems)` pairs, where an empty list covers every
+/// system. The saved choice wins while Core offers it and it covers every
+/// requested system (an empty request means every system); otherwise the
+/// first offered scraper that does. None when nothing covers them.
+pub fn scraper_for<'a>(
+    offered: &[(&'a str, &[String])],
+    preferred: &str,
+    systems: &[String],
+) -> Option<&'a str> {
+    let covers = |supported: &[String]| {
+        supported.is_empty()
+            || (!systems.is_empty() && systems.iter().all(|system| supported.contains(system)))
+    };
+    offered
+        .iter()
+        .find(|(id, supported)| *id == preferred && covers(supported))
+        .or_else(|| offered.iter().find(|(_, supported)| covers(supported)))
+        .map(|(id, _)| *id)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -269,5 +290,41 @@ mod tests {
             scope_label(&Scope::System("NES".into()), &name),
             (ScopeKind::System, "NES name".to_string())
         );
+    }
+
+    #[test]
+    fn scraper_for_prefers_the_saved_choice_when_it_covers_the_request() {
+        let nes = vec!["NES".to_string()];
+        let many = vec!["NES".to_string(), "ScummVM".to_string()];
+        let apps = vec!["Android".to_string()];
+        let offered: Vec<(&str, &[String])> = vec![
+            ("android-apps", &apps),
+            ("libretro-thumbnails", &many),
+            ("media-folder", &[]),
+        ];
+        let scummvm = vec!["ScummVM".to_string()];
+        // Saved choice offered and covering: kept.
+        assert_eq!(
+            scraper_for(&offered, "libretro-thumbnails", &scummvm),
+            Some("libretro-thumbnails")
+        );
+        // Saved choice Core does not offer: first covering scraper.
+        assert_eq!(
+            scraper_for(&offered, "gamelist.xml", &scummvm),
+            Some("libretro-thumbnails")
+        );
+        // Saved choice that does not cover the request is skipped.
+        assert_eq!(
+            scraper_for(&offered, "android-apps", &nes),
+            Some("libretro-thumbnails")
+        );
+        // Every system: only an unrestricted scraper covers it.
+        assert_eq!(
+            scraper_for(&offered, "libretro-thumbnails", &[]),
+            Some("media-folder")
+        );
+        // Nothing covers the request.
+        let psx = vec!["PSX".to_string()];
+        assert_eq!(scraper_for(&offered[..2], "gamelist.xml", &psx), None);
     }
 }

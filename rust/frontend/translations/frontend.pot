@@ -2,7 +2,7 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: frontend VERSION\n"
-"POT-Creation-Date: 2026-09-28 00:45+0000\n"
+"POT-Creation-Date: 2026-09-28 02:05+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -1370,7 +1370,7 @@ msgid "Rescans game folders for added or removed files. Choose systems."
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:180
-msgid "Imports artwork and details from your files. Downloads nothing."
+msgid "Adds artwork and details from the sources Core offers."
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:181
