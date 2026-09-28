@@ -135,6 +135,8 @@ fn after_rendering(screen: crate::Screen, covered: bool) {
         }
         if !s.first_frame {
             s.first_frame = true;
+            // A host reports its first surface as a renewal too; the first
+            // frame is `first-frame`, never a return from another app.
             WINDOW_RENEWED.store(false, Ordering::Relaxed);
             marks.push(("first-frame", String::new()));
         } else if WINDOW_RENEWED.swap(false, Ordering::Relaxed) {
@@ -219,16 +221,25 @@ pub(crate) fn games_rendered(rows: usize, loading: bool, visible: usize, pending
         return;
     }
     let mut s = state();
-    match s.open {
-        Open::Pressed if rows > 0 && !loading => {
-            s.open = Open::RowsQueued;
-            s.open_rows = rows;
-        }
-        Open::RowsPainted if pending == 0 => s.open = Open::CoversQueued,
-        _ => {}
+    let next = open_after_render(s.open, rows, loading, pending);
+    if next == Open::RowsQueued && s.open != Open::RowsQueued {
+        s.open_rows = rows;
     }
+    s.open = next;
     s.open_visible = visible;
     s.open_pending = pending;
+}
+
+/// Where an open's timing goes when the games view pushes: first rows
+/// queue once they arrive; covers queue once none on screen are pending,
+/// and fall back if the rows now on screen wait for art again.
+fn open_after_render(open: Open, rows: usize, loading: bool, pending: usize) -> Open {
+    match open {
+        Open::Pressed if rows > 0 && !loading => Open::RowsQueued,
+        Open::RowsPainted if pending == 0 => Open::CoversQueued,
+        Open::CoversQueued if pending > 0 => Open::RowsPainted,
+        other => other,
+    }
 }
 
 /// A held fast scroll started or ended. The end logs frame intervals
@@ -314,6 +325,33 @@ mod tests {
             })
         );
         assert_eq!(summarize(&mut []), None);
+    }
+
+    #[test]
+    fn covers_complete_only_while_none_on_screen_are_pending() {
+        assert_eq!(open_after_render(Open::Pressed, 0, true, 0), Open::Pressed);
+        assert_eq!(
+            open_after_render(Open::Pressed, 20, false, 5),
+            Open::RowsQueued
+        );
+        assert_eq!(
+            open_after_render(Open::RowsPainted, 20, false, 5),
+            Open::RowsPainted
+        );
+        assert_eq!(
+            open_after_render(Open::RowsPainted, 20, false, 0),
+            Open::CoversQueued
+        );
+        // New rows on screen wait for art again before the complete frame.
+        assert_eq!(
+            open_after_render(Open::CoversQueued, 20, false, 3),
+            Open::RowsPainted
+        );
+        assert_eq!(
+            open_after_render(Open::CoversQueued, 20, false, 0),
+            Open::CoversQueued
+        );
+        assert_eq!(open_after_render(Open::Idle, 20, false, 0), Open::Idle);
     }
 
     #[test]
