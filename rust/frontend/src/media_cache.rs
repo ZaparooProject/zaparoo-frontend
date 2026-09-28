@@ -62,6 +62,10 @@ struct CacheInner {
     negatives: HashSet<MediaKey>,
     negative_order: VecDeque<MediaKey>,
     queued: HashSet<MediaKey>,
+    /// Bumped by `clear`. A fetch that started under an older generation
+    /// may carry art from before the run that cleared the cache, so its
+    /// result is dropped and the key fetched again.
+    generation: u64,
 }
 
 #[derive(Debug)]
@@ -168,7 +172,8 @@ impl MediaCache {
     /// Forget every image and every "no image" answer. An index or a
     /// metadata import can add, replace or remove art for any game, and a
     /// remembered answer would otherwise hold for the whole session.
-    /// Queued requests stay queued.
+    /// Queued requests stay queued; one already in flight is fetched
+    /// again when it lands (see `store_fetched`).
     pub fn clear(&self) {
         let mut inner = lock_inner(&self.inner);
         inner.map.clear();
@@ -176,6 +181,30 @@ impl MediaCache {
         inner.bytes = 0;
         inner.negatives.clear();
         inner.negative_order.clear();
+        inner.generation = inner.generation.wrapping_add(1);
+    }
+
+    fn generation(&self) -> u64 {
+        lock_inner(&self.inner).generation
+    }
+
+    /// Store what a fetch that began under `generation` found: an image,
+    /// or `None` for no image. When `clear` ran since, the answer may
+    /// predate it, so it is dropped and the still-queued key goes back to
+    /// the driver. Returns whether the result was stored.
+    fn store_fetched(&self, key: MediaKey, generation: u64, image: Option<DecodedImage>) -> bool {
+        {
+            let mut inner = lock_inner(&self.inner);
+            if inner.generation == generation {
+                match image {
+                    Some(image) => insert_locked(&mut inner, key, image),
+                    None => insert_negative_locked(&mut inner, key),
+                }
+                return true;
+            }
+        }
+        let _ = self.tx.send(key);
+        false
     }
 
     /// Put an image the cache did not fetch itself into it (the
@@ -185,30 +214,37 @@ impl MediaCache {
     }
 
     fn insert(&self, key: MediaKey, image: DecodedImage) {
-        let mut inner = lock_inner(&self.inner);
-        inner.queued.remove(&key);
-        inner.bytes += image.byte_size();
-        inner.map.insert(key.clone(), image);
-        inner.order.push_back(key);
-        while inner.bytes > CACHE_CAP_BYTES {
-            let Some(oldest) = inner.order.pop_front() else {
-                break;
-            };
-            if let Some(evicted) = inner.map.remove(&oldest) {
-                inner.bytes -= evicted.byte_size();
-            }
-        }
+        insert_locked(&mut lock_inner(&self.inner), key, image);
     }
 
+    #[cfg(test)]
     fn insert_negative(&self, key: MediaKey) {
-        let mut inner = lock_inner(&self.inner);
-        inner.queued.remove(&key);
-        if inner.negatives.insert(key.clone()) {
-            inner.negative_order.push_back(key);
-            while inner.negative_order.len() > NEGATIVE_CAP {
-                if let Some(old) = inner.negative_order.pop_front() {
-                    inner.negatives.remove(&old);
-                }
+        insert_negative_locked(&mut lock_inner(&self.inner), key);
+    }
+}
+
+fn insert_locked(inner: &mut CacheInner, key: MediaKey, image: DecodedImage) {
+    inner.queued.remove(&key);
+    inner.bytes += image.byte_size();
+    inner.map.insert(key.clone(), image);
+    inner.order.push_back(key);
+    while inner.bytes > CACHE_CAP_BYTES {
+        let Some(oldest) = inner.order.pop_front() else {
+            break;
+        };
+        if let Some(evicted) = inner.map.remove(&oldest) {
+            inner.bytes -= evicted.byte_size();
+        }
+    }
+}
+
+fn insert_negative_locked(inner: &mut CacheInner, key: MediaKey) {
+    inner.queued.remove(&key);
+    if inner.negatives.insert(key.clone()) {
+        inner.negative_order.push_back(key);
+        while inner.negative_order.len() > NEGATIVE_CAP {
+            if let Some(old) = inner.negative_order.pop_front() {
+                inner.negatives.remove(&old);
             }
         }
     }
@@ -356,6 +392,7 @@ pub fn spawn_driver(
             // On a colocated MiSTer the bytes are already on the SD card:
             // request its path instead of making Core base64 a local file.
             let params = request_params(&cache, &key);
+            let generation = cache.generation();
             let asked_for_path = params.delivery.is_some();
             let mut outcome = client.media_image(params.clone()).await;
             if let Err(e) = &outcome {
@@ -407,10 +444,13 @@ pub fn spawn_driver(
                     };
                     match image {
                         Some(image) => {
-                            cache.insert(key.clone(), image.clone());
-                            on_ready(key, image);
+                            if cache.store_fetched(key.clone(), generation, Some(image.clone())) {
+                                on_ready(key, image);
+                            }
                         }
-                        None => cache.insert_negative(key),
+                        None => {
+                            cache.store_fetched(key, generation, None);
+                        }
                     }
                 }
                 Err(e) => {
@@ -421,7 +461,7 @@ pub fn spawn_driver(
                         continue;
                     }
                     tracing::debug!(path = %key.path, "media.image failed: {}", e.message);
-                    cache.insert_negative(key);
+                    cache.store_fetched(key, generation, None);
                 }
             }
         }
@@ -552,6 +592,36 @@ mod tests {
         let inner = lock_inner(&cache.inner);
         assert!(inner.order.is_empty());
         assert_eq!(inner.bytes, 0);
+    }
+
+    #[test]
+    fn a_fetch_that_lands_after_clear_is_fetched_again() {
+        let (cache, mut rx) = MediaCache::new();
+        cache.enqueue(key(1));
+        cache.enqueue(key(2));
+        assert_eq!(rx.try_recv().ok(), Some(key(1)));
+        assert_eq!(rx.try_recv().ok(), Some(key(2)));
+        let before = cache.generation();
+
+        cache.clear();
+
+        // Both answers predate the clear: neither is stored, and each
+        // key goes back to the driver instead of staying stuck queued.
+        assert!(!cache.store_fetched(key(1), before, Some(img(64))));
+        assert!(!cache.store_fetched(key(2), before, None));
+        assert!(!cache.is_cached(&key(1)));
+        assert!(!cache.is_negative(&key(2)));
+        assert_eq!(rx.try_recv().ok(), Some(key(1)));
+        assert_eq!(rx.try_recv().ok(), Some(key(2)));
+
+        // The retry runs under the new generation and lands.
+        let current = cache.generation();
+        assert!(cache.store_fetched(key(1), current, Some(img(64))));
+        assert!(cache.store_fetched(key(2), current, None));
+        assert!(cache.is_cached(&key(1)));
+        assert!(cache.is_negative(&key(2)));
+        cache.enqueue(key(1));
+        assert!(rx.try_recv().is_err(), "a stored key must not re-queue");
     }
 
     #[test]
