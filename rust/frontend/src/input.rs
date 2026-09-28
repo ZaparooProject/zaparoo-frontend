@@ -12,6 +12,8 @@ use std::time::{Duration, Instant};
 
 use slint::ComponentHandle;
 use zaparoo_app::input as rules;
+#[cfg(feature = "hosted")]
+use zaparoo_core::input_actions::actions;
 
 use crate::router::{lock, Ctx};
 use crate::App;
@@ -35,6 +37,9 @@ pub struct InputModel {
     quiet_seq: u64,
     /// True only during a qualified held-repeat dispatch, never its async tail.
     rapid_dispatch: bool,
+    /// Non-text navigation count for embedding-host input diagnostics.
+    #[cfg(feature = "hosted")]
+    navigation_events: u64,
 }
 
 impl InputModel {
@@ -48,7 +53,14 @@ impl InputModel {
             repeat_seq: 0,
             quiet_seq: 0,
             rapid_dispatch: false,
+            #[cfg(feature = "hosted")]
+            navigation_events: 0,
         }
+    }
+
+    #[cfg(feature = "hosted")]
+    pub(crate) fn navigation_events(&self) -> u64 {
+        self.navigation_events
     }
 
     /// Retire the repeat ticket and report whether release needs a persist flush.
@@ -137,6 +149,19 @@ fn route_press(ctx: &Ctx, app: &App, action: &str, key: &str) {
     // held direction that only woke the screen must not start walking
     // the list behind it.
     let waking = app.global::<crate::Shell>().get_saver_armed();
+    #[cfg(feature = "hosted")]
+    if matches!(
+        action.as_str(),
+        actions::UP
+            | actions::DOWN
+            | actions::LEFT
+            | actions::RIGHT
+            | actions::PAGE_PREV
+            | actions::PAGE_NEXT
+    ) {
+        let mut shared = lock(&ctx.shared);
+        shared.input.navigation_events = shared.input.navigation_events.saturating_add(1);
+    }
     crate::router::handle_action(ctx, app, &action);
     if !waking {
         arm_repeat(ctx, app, &action, key);
@@ -159,7 +184,7 @@ fn key_pressed(ctx: &Ctx, app: &App, bindings: &std::collections::HashMap<i32, S
 /// knowable: the help bar's glyphs and whether the swap settings apply
 /// both depend on which device is driving. `[input.keyboard]` does not
 /// enter into it -- that file remaps keyboard keys, not pad buttons.
-#[cfg(feature = "desktop")]
+#[cfg(any(feature = "desktop", feature = "hosted"))]
 pub fn gamepad_pressed(ctx: &Ctx, app: &App, action: &str, key: &str) {
     if !accept_press(ctx, app, key) {
         return;
@@ -169,7 +194,7 @@ pub fn gamepad_pressed(ctx: &Ctx, app: &App, action: &str, key: &str) {
 
 /// The pad button came up. Same retirement as a key release: only the
 /// hold that started the repeat cancels it.
-#[cfg(feature = "desktop")]
+#[cfg(any(feature = "desktop", feature = "hosted"))]
 pub fn gamepad_released(ctx: &Ctx, key: &str) {
     key_released(ctx, key);
 }

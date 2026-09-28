@@ -2,15 +2,42 @@
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 //
-// Every path here is one of two answers: MiSTer's fixed locations, or the
-// XDG ones. `SteamOS` takes the XDG side, which is also where Core puts its
-// own files there, so the split stays a `runtime::is_mister()` test rather
-// than a match over every runtime.
+// Hosts may supply app-private roots before starting the application.
+// Otherwise paths keep the existing MiSTer/XDG behavior.
 
 use crate::runtime;
 use std::path::PathBuf;
+use std::sync::OnceLock;
+
+/// App-private roots supplied by an embedding host, never media identity.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HostPaths {
+    pub config: PathBuf,
+    pub data: PathBuf,
+    pub cache: PathBuf,
+}
+
+static HOST_PATHS: OnceLock<HostPaths> = OnceLock::new();
+
+/// Install immutable process paths. Recreated UI instances may repeat identical roots.
+pub fn install_host_paths(paths: &HostPaths) -> Result<(), &'static str> {
+    install_paths(&HOST_PATHS, paths)
+}
+
+fn install_paths(slot: &OnceLock<HostPaths>, paths: &HostPaths) -> Result<(), &'static str> {
+    if !paths.config.is_absolute() || !paths.data.is_absolute() || !paths.cache.is_absolute() {
+        return Err("host paths must be absolute");
+    }
+    if slot.get_or_init(|| paths.clone()) != paths {
+        return Err("host paths cannot change within a live process");
+    }
+    Ok(())
+}
 
 pub fn config_file_path() -> PathBuf {
+    if let Some(paths) = HOST_PATHS.get() {
+        return paths.config.join("frontend.toml");
+    }
     if runtime::current().is_mister() {
         PathBuf::from("/media/fat/zaparoo/frontend.toml")
     } else {
@@ -22,6 +49,9 @@ pub fn config_file_path() -> PathBuf {
 }
 
 pub fn log_file_path() -> PathBuf {
+    if let Some(paths) = HOST_PATHS.get() {
+        return paths.data.join("logs/frontend.log");
+    }
     if runtime::current().is_mister() {
         PathBuf::from("/tmp/zaparoo/frontend.log")
     } else {
@@ -39,6 +69,9 @@ pub fn log_file_path() -> PathBuf {
 /// missing directory as "no overrides" so the feature works with zero
 /// config. `[custom] dir` in `frontend.toml` overrides this default.
 pub fn custom_dir() -> PathBuf {
+    if let Some(paths) = HOST_PATHS.get() {
+        return paths.data.join("custom");
+    }
     if runtime::current().is_mister() {
         PathBuf::from("/media/fat/zaparoo/custom")
     } else {
@@ -60,6 +93,9 @@ pub fn custom_dir() -> PathBuf {
 /// even when it does not exist on disk — callers create it on first
 /// write, same convention as `custom_dir`.
 pub fn cache_dir() -> PathBuf {
+    if let Some(paths) = HOST_PATHS.get() {
+        return paths.cache.clone();
+    }
     if runtime::current().is_mister() {
         PathBuf::from("/media/fat/zaparoo/cache/frontend")
     } else {
@@ -71,6 +107,9 @@ pub fn cache_dir() -> PathBuf {
 }
 
 pub fn state_file_path() -> PathBuf {
+    if let Some(paths) = HOST_PATHS.get() {
+        return paths.config.join("state.toml");
+    }
     // ZAPAROO_STATE_FILE lets tests (and ad-hoc runs) redirect state
     // persistence away from the real user path. Checked first so the
     // override applies on every platform.
@@ -119,6 +158,31 @@ mod tests {
         state_file_path,
     };
     use crate::runtime;
+
+    #[test]
+    fn host_paths_are_absolute_and_recreation_is_idempotent() {
+        let root = tempfile::tempdir().unwrap();
+        let slot = std::sync::OnceLock::new();
+        let paths = super::HostPaths {
+            config: root.path().join("config"),
+            data: root.path().join("data"),
+            cache: root.path().join("cache"),
+        };
+        assert!(super::install_paths(&slot, &paths).is_ok());
+        assert!(super::install_paths(&slot, &paths).is_ok());
+        let mut changed = paths;
+        changed.cache = root.path().join("different");
+        assert!(super::install_paths(&slot, &changed).is_err());
+        assert!(super::install_paths(
+            &std::sync::OnceLock::new(),
+            &super::HostPaths {
+                config: "relative".into(),
+                data: root.path().join("data"),
+                cache: root.path().join("cache"),
+            }
+        )
+        .is_err());
+    }
 
     #[test]
     fn paths_end_with_expected_filenames() {

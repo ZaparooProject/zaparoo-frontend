@@ -27,6 +27,8 @@ mod gamepad;
 mod games;
 mod gamescope;
 mod glyphs;
+#[cfg(feature = "hosted")]
+pub mod host;
 mod hub;
 mod hub_covers;
 mod input;
@@ -70,10 +72,13 @@ mod tag_utils;
 mod theme;
 mod view_model;
 
-#[cfg(all(feature = "desktop", feature = "mister"))]
-compile_error!("features `desktop` and `mister` are mutually exclusive; build the MiSTer target with --no-default-features --features mister");
-#[cfg(not(any(feature = "desktop", feature = "mister")))]
-compile_error!("enable exactly one of the `desktop` (default) or `mister` features");
+#[cfg(any(
+    all(feature = "desktop", feature = "mister"),
+    all(feature = "hosted", any(feature = "desktop", feature = "mister"))
+))]
+compile_error!("enable exactly one of desktop, mister, or hosted");
+#[cfg(not(any(feature = "desktop", feature = "mister", feature = "hosted")))]
+compile_error!("enable exactly one of desktop, mister, or hosted");
 
 // The generated component code does not follow the workspace's
 // warn-level style lints; scope the allowances to the macro output.
@@ -194,6 +199,7 @@ pub(crate) fn request_main_reload() {
     let _ = slint::quit_event_loop();
 }
 
+#[cfg(not(feature = "hosted"))]
 fn restart_current_process() -> Result<(), slint::PlatformError> {
     use std::os::unix::process::CommandExt as _;
     let exe = std::env::current_exe()
@@ -460,19 +466,28 @@ fn seed_display_globals(
     app.global::<Sizing>().set_screen_height(scene_h as f32);
 }
 
+/// Run the standalone desktop or `MiSTer` application.
+#[cfg(not(feature = "hosted"))]
+pub fn run() -> Result<(), slint::PlatformError> {
+    run_application()
+}
+
 #[allow(
     clippy::too_many_lines,
     reason = "startup wires independent runtime services in one ordered orchestration path"
 )]
-pub fn run() -> Result<(), slint::PlatformError> {
+fn run_application(
+    #[cfg(feature = "hosted")] options: &host::Options,
+    #[cfg(feature = "hosted")] ready: impl FnOnce(host::Input),
+) -> Result<(), slint::PlatformError> {
     #[cfg(feature = "desktop")]
     pin_logical_pixels_to_physical();
 
     let config = zaparoo_core::config::load_config(&platform_paths::config_file_path());
-    // Held for the process lifetime: dropping it flushes and stops the
-    // file appender.
+    // A hosted application leaves process-global logging to its owner.
+    #[cfg(not(feature = "hosted"))]
     let _log_guard = zaparoo_core::logger::install(&config);
-    tracing::info!(endpoint = %config.core_endpoint, "Zaparoo Frontend starting");
+    tracing::info!("Zaparoo Frontend starting");
     #[cfg(feature = "mister")]
     let scanout_offer = mister::lease::configure();
 
@@ -488,7 +503,13 @@ pub fn run() -> Result<(), slint::PlatformError> {
     };
     let handle = runtime.handle().clone();
 
+    #[cfg(not(feature = "hosted"))]
     let client = Client::new(config.core_endpoint.clone(), &handle);
+    #[cfg(feature = "hosted")]
+    let client = match &options.core_transport {
+        Some(transport) => Client::with_transport(transport.clone(), &handle),
+        None => Client::waiting(&handle),
+    };
     let store = Store::new(client.clone(), handle.clone());
 
     let mut persisted = persist::load();
@@ -506,7 +527,10 @@ pub fn run() -> Result<(), slint::PlatformError> {
         "systems" | "games" | "favorites" | "recents"
     );
 
+    #[cfg(not(feature = "hosted"))]
     let args: Vec<String> = std::env::args().collect();
+    #[cfg(feature = "hosted")]
+    let args: Vec<String> = Vec::new();
     // Main passes --dual-head only when analog CRT is active without
     // direct_video, leaving fb0 available for an independent HDMI UI.
     let crt = args.iter().any(|a| a == "--crt");
@@ -624,7 +648,7 @@ pub fn run() -> Result<(), slint::PlatformError> {
     // Cover art can be read straight off the SD card when Core is on
     // this machine; the manifest then paints the Hub's real art on the
     // first frame instead of a placeholder.
-    media_cache::configure_local_path(cfg!(feature = "mister"), &config.core_endpoint);
+    media_cache::configure_local_path(cfg!(feature = "mister"), client.is_local());
     hub_covers::seed(&media);
     games::seed_detail_ctx(client.clone(), handle.clone());
     let notice_ack = config.notice.commercial_ack;
@@ -644,6 +668,10 @@ pub fn run() -> Result<(), slint::PlatformError> {
         config_path: platform_paths::config_file_path(),
         crt_enabled: crt,
         is_mister: cfg!(feature = "mister"),
+        #[cfg(not(feature = "hosted"))]
+        log_uploader: Some(log_upload::LogUploader::curl()),
+        #[cfg(feature = "hosted")]
+        log_uploader: options.log_upload.clone(),
         framebuffer_size: ui_framebuffer_size,
         shared: Arc::new(Mutex::new(Shared::new(
             persisted,
@@ -738,9 +766,9 @@ pub fn run() -> Result<(), slint::PlatformError> {
 
     restore_core_independent(&ctx, &app);
     bind_catalog(&ctx, &app, &store);
-    bind_connection_status(&ctx, &app, &client, &config.core_endpoint);
+    bind_connection_status(&ctx, &app, &client);
     bind_media_status(&ctx, &app, &store);
-    bind_desktop_lifecycle(&ctx, &app, &client, &config.core_endpoint);
+    bind_desktop_lifecycle(&ctx, &app, &client);
     // Offer to be the Steam session Core launches games into, so it does
     // not have to start a second one.
     steam_host::start(&config.core_endpoint);
@@ -759,12 +787,24 @@ pub fn run() -> Result<(), slint::PlatformError> {
     // Nothing has focused us: Steam only does that for what it launched.
     gamescope::claim_focus_when_mapped(&app);
 
-    app.run()?;
+    #[cfg(feature = "hosted")]
+    ready(host::Input::new(&ctx, &app));
 
-    // Drain tokio with a deadline so worker threads exit while main is
-    // still alive, mirroring `zaparoo_rust_shutdown`.
+    let result = app.run();
+    input::stop_repeat(&ctx);
+    // Shutdown also runs on event-loop failure, before a host can recreate us.
     runtime.shutdown_timeout(Duration::from_secs(2));
-    match EXIT_ACTION.swap(EXIT_NONE, Ordering::SeqCst) {
+    result?;
+    let exit = EXIT_ACTION.swap(EXIT_NONE, Ordering::SeqCst);
+    #[cfg(feature = "hosted")]
+    {
+        if exit != EXIT_NONE {
+            return Err(slint::PlatformError::Other("host restart requested".into()));
+        }
+        Ok(())
+    }
+    #[cfg(not(feature = "hosted"))]
+    match exit {
         EXIT_RESTART => restart_current_process(),
         EXIT_MAIN_RELOAD => std::process::exit(42),
         _ => Ok(()),
@@ -840,11 +880,7 @@ fn bind_media_status(ctx: &Arc<Ctx>, app: &App, store: &Arc<Store>) {
 /// frontend goes cooperatively idle for primary media. Desktop stays mapped
 /// behind the game so Wayland can reveal it without an unsupported unminimize;
 /// `MiSTer` waits quietly for its wrapper to kill the process.
-fn bind_desktop_lifecycle(ctx: &Arc<Ctx>, app: &App, client: &Arc<Client>, endpoint: &str) {
-    if !local_lifecycle_enabled(endpoint) {
-        return;
-    }
-
+fn bind_desktop_lifecycle(ctx: &Arc<Ctx>, app: &App, client: &Arc<Client>) {
     let resource = ctx.store.media_status();
     let mut media_rx = resource.subscribe();
     let weak = app.as_weak();
@@ -857,15 +893,20 @@ fn bind_desktop_lifecycle(ctx: &Arc<Ctx>, app: &App, client: &Arc<Client>, endpo
             // game, and a frontend installed as a Steam shortcut is one of
             // them. Going dormant for our own launch would hide the UI
             // behind its own launch face.
-            let active = snapshot
-                .primary_active
-                .as_ref()
-                .is_some_and(|media| !steam::is_self_media(&media.media_path));
+            let active = ctx_media.store.client().is_local()
+                && snapshot
+                    .primary_active
+                    .as_ref()
+                    .is_some_and(|media| !steam::is_self_media(&media.media_path));
             let resumed = was_active && !active;
             was_active = active;
             let ctx_event = ctx_media.clone();
             let _ = weak.upgrade_in_event_loop(move |app| {
-                set_dormant(&ctx_event, &app, active);
+                set_dormant(
+                    &ctx_event,
+                    &app,
+                    active && ctx_event.store.client().is_local(),
+                );
             });
             if resumed {
                 // Core's history tracker consumes the same stop event.
@@ -923,10 +964,6 @@ fn bind_desktop_lifecycle(ctx: &Arc<Ctx>, app: &App, client: &Arc<Client>, endpo
             });
         }
     });
-}
-
-fn local_lifecycle_enabled(endpoint: &str) -> bool {
-    zaparoo_app::covers::endpoint_is_loopback(endpoint)
 }
 
 fn set_dormant(ctx: &Ctx, app: &App, dormant: bool) {
@@ -1334,7 +1371,7 @@ fn bind_catalog(ctx: &Arc<Ctx>, app: &App, store: &Arc<Store>) {
 /// 5-second escalation before an unreachable Core is blamed on the
 /// user's network (a transient probe failure on first connect isn't
 /// worth scaring anyone about).
-fn bind_connection_status(ctx: &Arc<Ctx>, app: &App, client: &Arc<Client>, endpoint: &str) {
+fn bind_connection_status(ctx: &Arc<Ctx>, app: &App, client: &Arc<Client>) {
     let seed = {
         let rx = client.connection.subscribe();
         let state = rx.borrow().clone();
@@ -1342,7 +1379,7 @@ fn bind_connection_status(ctx: &Arc<Ctx>, app: &App, client: &Arc<Client>, endpo
     };
     status::set_link(&ctx.status, app, &ctx.handle, status::link_of(&seed), None);
     app.global::<Shell>()
-        .set_boot_text(SharedString::from(boot_text(&seed, false).as_str()));
+        .set_boot_status(boot_status(&seed, false));
 
     let mut rx = client.connection.subscribe();
     let generation = Arc::new(AtomicU64::new(0));
@@ -1350,7 +1387,6 @@ fn bind_connection_status(ctx: &Arc<Ctx>, app: &App, client: &Arc<Client>, endpo
     let handle = ctx.handle.clone();
     let escalate_handle = handle.clone();
     let ctx = ctx.clone();
-    let endpoint = endpoint.to_string();
     handle.spawn(async move {
         while rx.changed().await.is_ok() {
             let state = rx.borrow_and_update().clone();
@@ -1358,34 +1394,32 @@ fn bind_connection_status(ctx: &Arc<Ctx>, app: &App, client: &Arc<Client>, endpo
             // default level an unreachable Core looks like nothing
             // happening at all. Say it once per transition instead.
             match &state {
-                ConnectionState::Connected => tracing::info!("connected to core at {endpoint}"),
+                ConnectionState::Connected => tracing::info!("connected to core"),
                 ConnectionState::Unreachable(message) => {
-                    tracing::warn!("cannot reach core at {endpoint}, retrying: {message}");
+                    tracing::warn!("cannot reach core, retrying: {message}");
                 }
-                other => tracing::info!("core link: {other:?} ({endpoint})"),
+                other => tracing::info!("core link: {other:?}"),
             }
             let my_generation = generation.fetch_add(1, Ordering::SeqCst) + 1;
-            let boot = boot_text(&state, false);
+            let boot = boot_status(&state, false);
             let link = status::link_of(&state);
             let ctx_inner = ctx.clone();
             let _ = weak.upgrade_in_event_loop(move |app| {
                 status::set_link(&ctx_inner.status, &app, &ctx_inner.handle, link, None);
                 if !app.global::<Shell>().get_boot_complete() {
-                    app.global::<Shell>()
-                        .set_boot_text(SharedString::from(boot.as_str()));
+                    app.global::<Shell>().set_boot_status(boot);
                 }
             });
             if matches!(state, ConnectionState::Unreachable(_)) {
                 let generation = generation.clone();
                 let weak = weak.clone();
-                let escalated = boot_text(&state, true);
+                let escalated = boot_status(&state, true);
                 escalate_handle.spawn(async move {
                     tokio::time::sleep(Duration::from_secs(5)).await;
                     if generation.load(Ordering::SeqCst) == my_generation {
                         let _ = weak.upgrade_in_event_loop(move |app| {
                             if !app.global::<Shell>().get_boot_complete() {
-                                app.global::<Shell>()
-                                    .set_boot_text(SharedString::from(escalated.as_str()));
+                                app.global::<Shell>().set_boot_status(escalated);
                             }
                         });
                     }
@@ -1398,14 +1432,12 @@ fn bind_connection_status(ctx: &Arc<Ctx>, app: &App, client: &Arc<Client>, endpo
 /// Cold-launch curtain line for a link state, mirroring `BootOverlay`'s
 /// wording: don't distinguish "not connected yet" flavors until the
 /// unreachable state has persisted long enough to escalate.
-fn boot_text(state: &ConnectionState, unreachable_long: bool) -> String {
+fn boot_status(state: &ConnectionState, unreachable_long: bool) -> BootStatus {
     match state {
-        ConnectionState::Connected => "Loading library…".to_string(),
-        ConnectionState::Reconnecting => "Reconnecting…".to_string(),
-        ConnectionState::Unreachable(_) if unreachable_long => {
-            "Can't reach Zaparoo Core. Check your connection.".to_string()
-        }
-        _ => "Connecting to Zaparoo Core…".to_string(),
+        ConnectionState::Connected => BootStatus::Loading,
+        ConnectionState::Reconnecting => BootStatus::Reconnecting,
+        ConnectionState::Unreachable(_) if unreachable_long => BootStatus::Unreachable,
+        _ => BootStatus::Connecting,
     }
 }
 
@@ -1482,7 +1514,7 @@ fn apply_catalog(ctx: &Arc<Ctx>, app: &App, status: &ResourceStatus<CatalogData>
 fn seed_startup_state(app: &App, persisted: &persist::PersistedState, boot_curtain: bool) {
     app.global::<Shell>().set_boot_curtain(boot_curtain);
     app.global::<Shell>()
-        .set_boot_text(SharedString::from("Connecting to Zaparoo Core…"));
+        .set_boot_status(BootStatus::Connecting);
     app.global::<Shell>()
         .set_reduce_motion(persisted.settings.reduce_motion);
     app.global::<Shell>()
@@ -1585,6 +1617,30 @@ fn restore_screens(ctx: &Arc<Ctx>, app: &App) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn connection_state_maps_to_closed_translated_boot_status() {
+        assert_eq!(
+            boot_status(&ConnectionState::Connecting, false),
+            BootStatus::Connecting
+        );
+        assert_eq!(
+            boot_status(&ConnectionState::Reconnecting, false),
+            BootStatus::Reconnecting
+        );
+        assert_eq!(
+            boot_status(&ConnectionState::Connected, false),
+            BootStatus::Loading
+        );
+        assert_eq!(
+            boot_status(&ConnectionState::Unreachable("offline".to_string()), false),
+            BootStatus::Connecting
+        );
+        assert_eq!(
+            boot_status(&ConnectionState::Unreachable("offline".to_string()), true),
+            BootStatus::Unreachable
+        );
+    }
 
     #[test]
     fn scene_size_insets_then_rotates_crt_canvas() {

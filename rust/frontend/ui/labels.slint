@@ -6,10 +6,18 @@
 // them into translated text. Kept in its own file so every screen and
 // modal can reach it without importing the app tree.
 
-import { Screen, AppCue, DisabledReason, DialogKind, DialogProgress, DialogButton, FirstRunPhase, ErrorKind } from "state_types.slint";
+import { Screen, AppCue, BootStatus, DisabledReason, DialogKind, DialogProgress, DialogButton, FirstRunPhase, ErrorKind } from "state_types.slint";
 
 // Key-to-copy vocabulary for labels Rust hands over as stable ids.
 export global Labels {
+    public pure function boot(status: BootStatus) -> string {
+        if (status == BootStatus.starting) { return @tr("Starting Zaparoo Core…"); }
+        if (status == BootStatus.migrating) { return @tr("Updating Zaparoo Core data…"); }
+        if (status == BootStatus.reconnecting) { return @tr("Reconnecting to Zaparoo Core…"); }
+        if (status == BootStatus.loading) { return @tr("Loading library…"); }
+        if (status == BootStatus.unreachable) { return @tr("Can't reach Zaparoo Core. Check the connection."); }
+        return @tr("Connecting to Zaparoo Core…");
+    }
     public pure function loading(target: Screen) -> string {
         if (target == Screen.systems) { return @tr("Loading systems…"); }
         if (target == Screen.games) { return @tr("Loading games…"); }

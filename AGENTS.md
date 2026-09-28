@@ -21,6 +21,7 @@ raw cargo as the default path; the justfile carries the expected environment
 | Dev run against mock Core | `just run-dev` (starts and stops the mock itself) |
 | Mock Core only | `just mock-core` |
 | Full test gate | `just test` (workspace plus the `mister` feature set) |
+| Hosted seam check | `just hosted-check` (clippy and tests for the hosted library on the software renderer; builds for no host target) |
 | Full lint gate | `just lint` (fmt, clippy for desktop, mister, and snapshot, deny, toolkit guard, translation template, notices, logo parity) |
 | Format | `just fmt` (`just fix` applies clippy fixes first) |
 | Regenerate the translation template | `just tr-extract` |
@@ -53,8 +54,12 @@ private `_` recipe. Container builds write to `rust/target/docker/`.
   (`rust-toolchain.toml`).
 - `rust/frontend` features: `desktop` (default: winit backend, FemtoVG
   renderer, gilrs gamepads), `mister` (custom `slint::platform`, `std` software
-  renderer, own presenters), `snapshot` (desktop plus the software renderer for
-  the offline `snapshot` binary). Exactly one of `desktop`/`mister`.
+  renderer, own presenters), `hosted` (library only: an embedding host
+  supplies the Slint backend, paths, logging and Core transport through
+  `frontend::host`), `snapshot` (desktop plus the software renderer for the
+  offline `snapshot` binary). Exactly one of `desktop`/`mister`/`hosted`;
+  `desktop` and `mister` imply `standalone`, which the `frontend` binary
+  requires. See `docs/architecture.md#hosted-library`.
 - The MiSTer binary is a static `armv7-unknown-linux-musleabihf` build made
   in the toolchain image, landing in
   `rust/target/docker/armv7-unknown-linux-musleabihf/release/frontend`. Fonts,
@@ -197,8 +202,8 @@ update rules, in short:
   same PR; CI publishes the new tag and fails a PR that skips the bump.
 - Bumping Slint touches `slint` and `slint-build` in `rust/frontend/Cargo.toml`
   (plus `fontique` and `resvg`, which must match the versions Slint resolves,
-  and the exact `i-slint-core` pin that gives the MiSTer build its image
-  decoders),
+  and the exact `i-slint-core` pin that gives the MiSTer and hosted builds
+  their image decoders),
   `SLINT_TR_EXTRACTOR_VERSION` in `Dockerfile.toolchain` (with a
   `scripts/toolchain/VERSION` bump), and the Slint exceptions in
   `rust/deny.toml`; then regenerate `just notices`.
@@ -212,6 +217,7 @@ update rules, in short:
 |---|---|
 | `rust/frontend/src/main.rs` | Thin binary entry calling `frontend::run()` |
 | `rust/frontend/src/lib.rs` | Application wiring: config, logger, tokio runtime, `Client`/`Store`, persisted state, window, language, services |
+| `rust/frontend/src/host.rs` | Hosted entry (`host::run`) and the `Input` seam an embedding host drives |
 | `rust/frontend/src/router.rs` | All forward orchestration and the single input dispatch (`dispatch_action`) |
 | `rust/frontend/src/navigation.rs`, `folder_motion.rs`, `route_motion.rs` | Deferred routes that keep the source until the destination is ready; motion tests on a stepped clock |
 | `rust/frontend/src/{hub,systems,games,settings,about}.rs` | Per-screen drivers |

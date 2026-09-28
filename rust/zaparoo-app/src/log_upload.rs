@@ -63,6 +63,31 @@ pub fn build_payload(support_summary: &[u8], frontend_log: &[u8], core_log: &Cor
     payload
 }
 
+/// Wrap the bundle in the multipart form the upload service expects: one
+/// `file` field named `zaparoo.log`. Returns the content type, which
+/// carries the boundary, and the request body.
+pub fn multipart_form(payload: &[u8]) -> (String, Vec<u8>) {
+    let mut boundary = String::from("zaparoo-log-upload");
+    let mut n = 0u32;
+    while payload
+        .windows(boundary.len())
+        .any(|w| w == boundary.as_bytes())
+    {
+        n += 1;
+        boundary = format!("zaparoo-log-upload-{n}");
+    }
+    let mut body = Vec::with_capacity(payload.len() + 256);
+    body.extend_from_slice(
+        format!(
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"zaparoo.log\"\r\nContent-Type: text/plain\r\n\r\n"
+        )
+        .as_bytes(),
+    );
+    body.extend_from_slice(payload);
+    body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+    (format!("multipart/form-data; boundary={boundary}"), body)
+}
+
 /// Where the modal is in the upload.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Phase {
@@ -97,6 +122,29 @@ impl Phase {
 )]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_multipart_form_wraps_the_bundle_in_one_file_field() {
+        let (content_type, body) = multipart_form(b"hello");
+        assert_eq!(
+            content_type,
+            "multipart/form-data; boundary=zaparoo-log-upload"
+        );
+        assert_eq!(
+            String::from_utf8(body).expect("ascii"),
+            "--zaparoo-log-upload\r\n\
+             Content-Disposition: form-data; name=\"file\"; filename=\"zaparoo.log\"\r\n\
+             Content-Type: text/plain\r\n\r\n\
+             hello\r\n--zaparoo-log-upload--\r\n"
+        );
+    }
+
+    #[test]
+    fn the_multipart_boundary_never_appears_in_the_bundle() {
+        let payload = b"a zaparoo-log-upload and zaparoo-log-upload-1 line";
+        let (content_type, _) = multipart_form(payload);
+        assert!(content_type.ends_with("boundary=zaparoo-log-upload-2"));
+    }
 
     #[test]
     fn a_tail_keeps_the_end_of_the_buffer() {

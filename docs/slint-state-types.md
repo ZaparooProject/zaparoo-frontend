@@ -16,7 +16,7 @@ and consumers, the snapshot binary, and the MiSTer dual-head mirror/tests.
 | Browse | `GamesMode`, `SystemsMode`, `ContentState`: list source and ready/loading/empty/error cues |
 | Settings | `SettingsPage`, `RowKind`, `ControlKind`, `ActionStatus`: root/subpage, outgoing page, field controls and job status |
 | Setup | `SetupKind`, `SetupPicker`, `ScopeKind`, `SetupAction`: job, picker, scope label and help action; Rust selection stores domain `Scope` with its ID payload |
-| Status | `StatusKind`, `AppCue`, `DisabledReason`: status ladder, transient launch cue and disabled Hub captions |
+| Status | `StatusKind`, `AppCue`, `DisabledReason`, `BootStatus`: status ladder, transient launch cue, disabled Hub captions and the boot curtain line |
 | Dialogs | `DialogKind`, `ErrorKind`, `FirstRunPhase`, `DialogProgress`, `DialogButton`: kinds, phase, progress and decisions, separate from text payloads |
 | Input | `PressOwner`, `ScrollAction`: delayed-accept ownership, overlay pointer dispatch and Details scroll commands |
 | Display | `Orientation`, `VideoStandard`: UI selection; orientation stays typed through scene sizing and live backend updates |

@@ -7,9 +7,12 @@
 // resulting link as a scannable code. The bundle rules live in
 // `zaparoo_app::log_upload`.
 
+#[cfg(not(feature = "hosted"))]
 use std::io::Write as _;
+#[cfg(not(feature = "hosted"))]
 use std::process::{Command, Stdio};
 use std::sync::Arc;
+use std::time::Duration;
 
 use base64::Engine as _;
 use slint::{ComponentHandle, SharedString};
@@ -21,10 +24,50 @@ use zaparoo_core::media_types::{LaunchEntry, MediaResult, ScrapingStatusResponse
 use crate::router::{lock, Ctx};
 use crate::{App, LogUploadView};
 
-/// Where the bundle goes. The frontend has no HTTPS client of its own,
-/// and curl is a hard requirement of Core's installer, so the upload
-/// shells out to it.
+/// Where the bundle goes.
 const UPLOAD_URL: &str = "https://logs.zaparoo.org/";
+
+/// One upload: a plain HTTPS POST whose successful response body is the
+/// link. The frontend builds the multipart body, so an uploader only
+/// needs to send bytes.
+#[derive(Debug)]
+pub struct UploadRequest<'a> {
+    pub url: &'a str,
+    pub content_type: &'a str,
+    pub body: &'a [u8],
+    pub timeout: Duration,
+}
+
+/// Sends an [`UploadRequest`] and returns the body of a successful
+/// response, or why it failed (logged, never shown). It runs on a
+/// blocking thread, never the UI thread. The frontend has no HTTPS client
+/// of its own: standalone builds shell out to curl, which Core's installer
+/// requires, and an embedding host supplies one. Without an uploader the
+/// Upload log row is not offered.
+#[derive(Clone)]
+pub struct LogUploader(Arc<PostFn>);
+
+type PostFn = dyn Fn(&UploadRequest<'_>) -> Result<String, String> + Send + Sync;
+
+impl LogUploader {
+    pub fn new(
+        post: impl Fn(&UploadRequest<'_>) -> Result<String, String> + Send + Sync + 'static,
+    ) -> Self {
+        Self(Arc::new(post))
+    }
+
+    /// The curl uploader standalone builds use.
+    #[cfg(not(feature = "hosted"))]
+    pub(crate) fn curl() -> Self {
+        Self::new(post_with_curl)
+    }
+}
+
+impl std::fmt::Debug for LogUploader {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LogUploader").finish_non_exhaustive()
+    }
+}
 
 /// The panel's state.
 #[derive(Debug, Clone)]
@@ -290,6 +333,7 @@ fn start(ctx: &Ctx, app: &App) {
 
     let mut summary = support_summary(ctx, app);
     let client = ctx.store.client();
+    let uploader = ctx.log_uploader.clone();
     let weak = app.as_weak();
     let ctx2 = ctx.clone();
     ctx.handle.spawn(async move {
@@ -310,9 +354,12 @@ fn start(ctx: &Ctx, app: &App) {
         let frontend_log =
             std::fs::read(zaparoo_core::platform_paths::log_file_path()).unwrap_or_default();
         let payload = rules::build_payload(summary.as_bytes(), &frontend_log, &core_log);
-        let outcome = tokio::task::spawn_blocking(move || post(&payload))
-            .await
-            .unwrap_or_else(|e| Err(format!("upload task failed: {e}")));
+        let outcome = tokio::task::spawn_blocking(move || match uploader {
+            Some(uploader) => post(&uploader, &payload),
+            None => Err("no log uploader is configured".to_string()),
+        })
+        .await
+        .unwrap_or_else(|e| Err(format!("upload task failed: {e}")));
         let _ = weak.upgrade_in_event_loop(move |app| {
             {
                 let mut shared = lock(&ctx2.shared);
@@ -345,9 +392,26 @@ fn start(ctx: &Ctx, app: &App) {
     });
 }
 
-/// Post the bundle with curl and return the link it answers with.
-fn post(payload: &[u8]) -> Result<String, String> {
-    let timeout = rules::UPLOAD_TIMEOUT_SECS.to_string();
+/// Post the bundle and return the link the service answers with.
+fn post(uploader: &LogUploader, payload: &[u8]) -> Result<String, String> {
+    let (content_type, body) = rules::multipart_form(payload);
+    let response = (uploader.0)(&UploadRequest {
+        url: UPLOAD_URL,
+        content_type: &content_type,
+        body: &body,
+        timeout: Duration::from_secs(u64::from(rules::UPLOAD_TIMEOUT_SECS)),
+    })?;
+    let url = response.trim().to_string();
+    if url.is_empty() {
+        return Err("the upload service returned an empty response".to_string());
+    }
+    Ok(url)
+}
+
+#[cfg(not(feature = "hosted"))]
+fn post_with_curl(request: &UploadRequest<'_>) -> Result<String, String> {
+    let timeout = request.timeout.as_secs().to_string();
+    let content_type = format!("Content-Type: {}", request.content_type);
     let mut child = Command::new("curl")
         .args([
             "--silent",
@@ -355,9 +419,11 @@ fn post(payload: &[u8]) -> Result<String, String> {
             "--fail-with-body",
             "--max-time",
             timeout.as_str(),
-            "-F",
-            "file=@-;filename=zaparoo.log",
-            UPLOAD_URL,
+            "-H",
+            content_type.as_str(),
+            "--data-binary",
+            "@-",
+            request.url,
         ])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -370,7 +436,7 @@ fn post(payload: &[u8]) -> Result<String, String> {
             .take()
             .ok_or_else(|| "curl stdin was not available".to_string())?;
         stdin
-            .write_all(payload)
+            .write_all(request.body)
             .map_err(|e| format!("curl upload write failed: {e}"))?;
     }
     let output = child
@@ -384,11 +450,7 @@ fn post(payload: &[u8]) -> Result<String, String> {
             stderr
         });
     }
-    let url = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if url.is_empty() {
-        return Err("the upload service returned an empty response".to_string());
-    }
-    Ok(url)
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
 pub fn bind_input(ctx: &Arc<Ctx>, app: &App) {

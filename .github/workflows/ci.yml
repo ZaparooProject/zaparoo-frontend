@@ -99,6 +99,9 @@ jobs:
       # The workspace, then the MiSTer feature set (presenters, dual head).
       - name: just test
         run: just test
+      # The hosted library on the software renderer: clippy and its tests.
+      - name: just hosted-check
+        run: just hosted-check
 
   arm32:
     name: MiSTer ARM32 build

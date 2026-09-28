@@ -84,6 +84,10 @@ pub const PAGES: &[Page] = &[
 
 /// What the registry needs to know about the machine it runs on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "independent facts about the machine, each gating its own rows"
+)]
 pub struct Inputs {
     /// `MiSTer`: the resolution and analog-video rows only exist there.
     pub is_mister: bool,
@@ -91,6 +95,9 @@ pub struct Inputs {
     pub crt_enabled: bool,
     /// A debug build offers the one-second screensaver for testing.
     pub debug_build: bool,
+    /// Something can post the log bundle: curl when standalone, or the
+    /// embedding host's own uploader.
+    pub log_upload: bool,
 }
 
 const TOGGLES: &[&str] = &[
@@ -192,12 +199,17 @@ pub fn page_rows(page: &str, inputs: &Inputs) -> Vec<Row> {
             field("showHidden"),
             field("showOriginalFilenames"),
         ],
-        "pageSupportAbout" => vec![
-            field("aboutLicense"),
-            field("documentation"),
-            field("debugLogging"),
-            field("uploadLog"),
-        ],
+        "pageSupportAbout" => {
+            let mut rows = vec![
+                field("aboutLicense"),
+                field("documentation"),
+                field("debugLogging"),
+            ];
+            if inputs.log_upload {
+                rows.push(field("uploadLog"));
+            }
+            rows
+        }
         _ => Vec::new(),
     }
 }
@@ -447,7 +459,20 @@ mod tests {
             is_mister: true,
             crt_enabled: crt,
             debug_build: false,
+            log_upload: true,
         }
+    }
+
+    #[test]
+    fn the_upload_row_needs_an_uploader() {
+        let ids = |inputs: &Inputs| -> Vec<&'static str> {
+            page_rows("pageSupportAbout", inputs)
+                .into_iter()
+                .map(Row::id)
+                .collect()
+        };
+        assert!(ids(&mister(false)).contains(&"uploadLog"));
+        assert!(!ids(&Inputs::default()).contains(&"uploadLog"));
     }
 
     #[test]

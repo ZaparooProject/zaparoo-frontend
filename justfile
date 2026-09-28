@@ -56,6 +56,16 @@ slint-ui *args:
 
 # --- test ---
 
+# Clippy and tests for the hosted library on the software renderer. An
+# embedding host supplies its own backend and renderer; this builds for none.
+hosted-check:
+    ./scripts/toolchain.sh just _hosted-check
+
+[private]
+_hosted-check:
+    cd rust && cargo clippy -p frontend --lib --no-default-features --features hosted,slint/renderer-software -- -D warnings
+    cd rust && cargo nextest run -p frontend --lib --no-default-features --features hosted,slint/renderer-software
+
 # Workspace tests plus the MiSTer feature set (toolchain image)
 test:
     ./scripts/toolchain.sh just _test
