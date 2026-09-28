@@ -576,6 +576,7 @@ pub fn enter(ctx: &Ctx, app: &App, sys: &SystemInfo) {
         crate::router::launch(ctx, app, sys.zap_script.clone(), &sys.name);
         return;
     }
+    crate::perf::open_pressed("system");
     crate::navigation::stage(ctx, app);
     let top = {
         let mut shared = lock(&ctx.shared);
@@ -666,6 +667,7 @@ pub fn enter_folder_from_hub(ctx: &Ctx, app: &App, system_id: &str, path: &str) 
     let Some(system) = system else {
         return;
     };
+    crate::perf::open_pressed("folder");
     crate::navigation::stage(ctx, app);
     {
         let mut shared = lock(&ctx.shared);
@@ -1571,6 +1573,19 @@ fn placeholder_color(row: &GameRow) -> Option<slint::Color> {
         .map(|[r, g, b]| slint::Color::from_rgb_u8(r, g, b))
 }
 
+/// A row that will show art but has none cached yet.
+fn cover_waiting(ctx: &Ctx, model: &GamesModel, row: &GameRow, tier: u32) -> bool {
+    let key = media_key(row, &model.system_id, tier);
+    let state = rules::cover_state(
+        row.entry_type,
+        row.media_capable,
+        row.has_cover && !key.system.is_empty(),
+        ctx.media.get(&key).is_some(),
+        ctx.media.is_negative(&key),
+    );
+    matches!(state, CoverState::Pending)
+}
+
 fn page_cells(ctx: &Ctx, model: &GamesModel, page: usize, tier: u32) -> Vec<GridCell> {
     let page_size = model.grid.page_size();
     model
@@ -1817,6 +1832,14 @@ pub fn render(ctx: &Ctx, app: &App) {
     // queued ahead of them.
     if list {
         refresh_detail_cover(ctx, app, model);
+    }
+    if crate::perf::enabled() {
+        let visible_rows = model.rows.iter().skip(first_visible).take(window);
+        let (visible, pending) = visible_rows.fold((0, 0), |(visible, pending), row| {
+            let waiting = cover_waiting(ctx, model, row, tier);
+            (visible + 1, pending + usize::from(waiting))
+        });
+        crate::perf::games_rendered(count, model.loading, visible, pending);
     }
     drop(shared);
     if list {
@@ -2448,6 +2471,7 @@ pub fn set_rapid(ctx: &Ctx, app: &App, active: bool) {
     if !changed {
         return;
     }
+    crate::perf::scroll(active);
     render(ctx, app);
     schedule_detail(ctx, app, false);
 }
@@ -2704,6 +2728,7 @@ fn navigate_into_folder(ctx: &Ctx, app: &App, path: &str) {
     if path.is_empty() {
         return;
     }
+    crate::perf::open_pressed("folder");
     crate::navigation::stage(ctx, app);
     {
         let mut shared = lock(&ctx.shared);

@@ -154,6 +154,18 @@ crate still owns all UI, navigation and input semantics.
   It sets the help bar's glyphs and returns the actions for the pad's
   labelled A, B, X and Y buttons, so a host that reads buttons by label
   binds options and view to the faces the bar draws.
+- `host::trim_memory` drops every decoded cover when the system asks the
+  app to use less memory. Tiles on screen keep their copy; anything else is
+  fetched again when next shown, and screens re-resolve their art on the
+  next activation. Safe from any thread.
+- `host::install_perf(PerfHooks)` installs timing hooks once per process,
+  before `run`. The frontend reports milestones as an event name plus
+  `k=v` fields for the host to stamp with its own clock: first frame, the
+  first Hub frame with every cover present (also `fully_drawn`), open press
+  to first rows and to covered rows, launch press and reply, the first
+  frame after `host::window_renewed` (the host gave the window a new
+  surface), and a frame-time summary when a held scroll ends. Without hooks
+  every mark is a no-op.
 - `Input::configure_folder_picker` and `configure_launcher_scan` register
   optional host actions. Each adds a row to Settings > Library ("Add game
   folder", "Detect launchers") that is absent until configured. The host

@@ -332,6 +332,27 @@ fn cell_for(ctx: &Ctx, entry: &Entry) -> GridCell {
     cell
 }
 
+/// For a tile that shows game art: whether that art is still missing.
+/// A cover Core has none for counts as settled. `None` for other tiles.
+fn cover_outstanding(ctx: &Ctx, entry: &Entry, cell: &GridCell) -> Option<bool> {
+    if entry.is_empty() {
+        return None;
+    }
+    let key = entry.cover_key.as_str();
+    if key == LOADING_KEY {
+        return Some(true);
+    }
+    let (system, path) = key.strip_prefix(MEDIA_PREFIX)?.split_once('\u{1f}')?;
+    let negative = ctx.media.is_negative(&MediaKey {
+        media_id: None,
+        system: system.to_string(),
+        path: path.to_string(),
+        max_size: HUB_COVER_TIER,
+        image_type: None,
+    });
+    Some(!cell.has_cover && !negative)
+}
+
 /// The Hub's geometry for the current scene, with the model's own grid
 /// shape kept in step. The shape is the fixed per-tier table (7x3, or
 /// 4x2 on the low tiers), so a viewport change can move it: navigation
@@ -367,6 +388,18 @@ pub fn render(ctx: &Ctx, app: &App) {
         .take(page_size)
         .map(|entry| cell_for(ctx, entry))
         .collect();
+    if crate::perf::enabled() {
+        let (mut covers, mut outstanding) = (0, 0);
+        for (entry, cell) in hub.entries.iter().skip(start).zip(&cells) {
+            if let Some(missing) = cover_outstanding(ctx, entry, cell) {
+                covers += 1;
+                outstanding += usize::from(missing);
+            }
+        }
+        // Until Core has answered, the page is the persisted layout without its live tiles.
+        let settled = hub.categories_loaded && !hub.resume.loading;
+        crate::perf::hub_rendered(settled, cells.len(), covers, outstanding);
+    }
     crate::view_model::publish_hub_cells(&view.get_cells(), cells, |rows| view.set_cells(rows));
     view.set_selected_local(i32::try_from(hub.grid.current_index() - start).unwrap_or(0));
     view.set_columns(geometry.columns);

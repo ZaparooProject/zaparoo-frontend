@@ -2158,6 +2158,7 @@ pub(crate) fn open_game_info(ctx: &Ctx, app: &App, entry: &GameRow) {
 /// the catalog refetches automatically on the busy -> idle edge via
 /// the store's `Tag::MEDIA_DB` invalidation watcher.
 pub(crate) fn launch(ctx: &Ctx, app: &App, text: String, name: &str) {
+    crate::perf::mark("launch-press", "");
     // The tile the user pressed stays pressed until Core answers, so the
     // feedback is where the eye already is. The header line is the second,
     // worded cue and only appears if the wait becomes one.
@@ -2170,8 +2171,12 @@ pub(crate) fn launch(ctx: &Ctx, app: &App, text: String, name: &str) {
     let name = name.to_string();
     ctx.handle.spawn(async move {
         let failed = match store.run_mutation::<RunMutation>(RunParams { text }).await {
-            Ok(()) => false,
+            Ok(()) => {
+                crate::perf::mark("launch-reply", "ok=true");
+                false
+            }
             Err(e) => {
+                crate::perf::mark("launch-reply", "ok=false");
                 tracing::warn!("launch failed for {name}: {e}");
                 true
             }
