@@ -8,10 +8,17 @@
 //! flag. Toolkit-agnostic; the shell owns the timers these rules ask for
 //! and supplies the clock.
 
+// The quiet tail must outlast a page repeat, or a steady hold would
+// drop out of rapid navigation between ticks.
+const _: () = assert!(RAPID_QUIET_MS > PAGE_TICK_MS);
+
 /// A held repeatable action waits this long before it starts repeating.
-pub const REPEAT_INITIAL_MS: u64 = 350;
-/// Then it repeats at this cadence.
-pub const REPEAT_TICK_MS: u64 = 90;
+pub const REPEAT_INITIAL_MS: u64 = 250;
+/// Then ordinary held navigation repeats a row at this cadence.
+pub const REPEAT_TICK_MS: u64 = 65;
+/// A fast scroll's page step repeats at this cadence: slower than a row,
+/// since each step repaints a whole page.
+pub const PAGE_TICK_MS: u64 = 90;
 /// Rapid navigation ends this long after the last navigation action.
 pub const RAPID_QUIET_MS: u64 = 260;
 /// One uninterrupted hold has to last this long before it counts as
@@ -126,7 +133,8 @@ impl HoldTier {
     /// The delay before the next repeat at this tier.
     pub fn repeat_ms(self) -> u64 {
         match self {
-            Self::Row | Self::Page => REPEAT_TICK_MS,
+            Self::Row => REPEAT_TICK_MS,
+            Self::Page => PAGE_TICK_MS,
             Self::Letter => LETTER_STEP_TICK_MS,
         }
     }
@@ -411,7 +419,10 @@ mod tests {
         assert!(HoldTier::Page.is_rapid());
         assert!(HoldTier::Letter.is_rapid());
         assert_eq!(HoldTier::Row.repeat_ms(), REPEAT_TICK_MS);
-        assert_eq!(HoldTier::Page.repeat_ms(), REPEAT_TICK_MS);
+        assert_eq!(HoldTier::Page.repeat_ms(), PAGE_TICK_MS);
+        assert_eq!(REPEAT_INITIAL_MS, 250);
+        assert_eq!(REPEAT_TICK_MS, 65);
+        assert_eq!(PAGE_TICK_MS, 90);
         assert_eq!(LETTER_STEP_TICK_MS, 250);
         assert_eq!(HoldTier::Letter.repeat_ms(), LETTER_STEP_TICK_MS);
     }

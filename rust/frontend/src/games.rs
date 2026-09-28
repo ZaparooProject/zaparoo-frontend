@@ -81,6 +81,9 @@ pub struct GameRow {
     pub tag_labels: Vec<String>,
     /// `false` only when Core confirmed no cover exists.
     pub has_cover: bool,
+    /// Core's average cover colour, painted in the art slot until the
+    /// art itself lands.
+    pub cover_color: Option<[u8; 3]>,
     pub is_favorite: bool,
     pub media_capable: bool,
     /// The roots page distinguisher, when siblings share a name.
@@ -140,6 +143,10 @@ impl GameRow {
     }
 }
 
+fn cover_color(value: Option<&str>) -> Option<[u8; 3]> {
+    value.and_then(zaparoo_app::covers::parse_cover_color)
+}
+
 fn has_favorite_tag(tags: &[TagInfo]) -> bool {
     tags.iter()
         .any(|tag| tag.tag_type == "user" && tag.tag == "favorite")
@@ -159,6 +166,7 @@ impl From<&BrowseEntry> for GameRow {
             zap_script: e.zap_script.clone(),
             tag_labels: crate::tag_utils::disambiguating_tag_labels(&e.disambiguating_tags),
             has_cover: e.has_cover,
+            cover_color: cover_color(e.cover_color.as_deref()),
             is_favorite: has_favorite_tag(&e.tags),
             media_capable: rules::is_media_capable(entry_type, e.media_id.is_some(), &e.zap_script),
             root_distinguisher: String::new(),
@@ -182,6 +190,7 @@ impl From<&MediaItem> for GameRow {
             zap_script: item.zap_script.clone(),
             tag_labels: crate::tag_utils::disambiguating_tag_labels(&item.disambiguating_tags),
             has_cover: item.has_cover,
+            cover_color: cover_color(item.cover_color.as_deref()),
             is_favorite: has_favorite_tag(&item.tags),
             media_capable: true,
             root_distinguisher: String::new(),
@@ -205,6 +214,7 @@ impl From<&MediaHistoryEntry> for GameRow {
             zap_script: String::new(),
             tag_labels: Vec::new(),
             has_cover: e.has_cover,
+            cover_color: cover_color(e.cover_color.as_deref()),
             // History rows carry no tag data; the Recents menu offers no
             // favorite toggle, so this stays false.
             is_favorite: false,
@@ -273,6 +283,9 @@ pub struct GamesModel {
     pub press_seq: u64,
     /// Bulk appends pause cover fetches until they land.
     pub covers_paused: bool,
+    /// The fill in flight browses a remembered folder; if that folder is
+    /// gone, the system root replaces it.
+    pub focus_recalled: bool,
 }
 
 impl GamesModel {
@@ -313,6 +326,7 @@ impl GamesModel {
             jump_loading: false,
             press_seq: 0,
             covers_paused: false,
+            focus_recalled: false,
         }
     }
 
@@ -555,23 +569,55 @@ pub fn seed_detail_ctx(client: Arc<zaparoo_core::client::Client>, handle: Handle
 // ---------- Entry points ----------
 
 /// Systems Accept (and the Hub's system shortcut): a launch-only system
-/// runs its script; everything else browses the system root with the
-/// folder stack reset.
+/// runs its script; everything else browses where that system was last
+/// left (its folder, game and viewport), or its root the first time.
 pub fn enter(ctx: &Ctx, app: &App, sys: &SystemInfo) {
     if !sys.zap_script.is_empty() {
         crate::router::launch(ctx, app, sys.zap_script.clone(), &sys.name);
         return;
     }
     crate::navigation::stage(ctx, app);
-    {
+    let top = {
         let mut shared = lock(&ctx.shared);
-        shared.persist.games.system_id.clone_from(&sys.id);
-        shared.persist.games.path_stack = vec![String::new()];
-        shared.persist.games.selected_at_level = vec![String::new()];
-        shared.persist.games.list_top_at_level.clear();
+        let games = &mut shared.persist.games;
+        // The system being left keeps its place for next time.
+        games.remember_system_focus();
+        let recalled = games.recall_system_focus(&sys.id);
+        let top = games.path_stack.last().cloned().unwrap_or_default();
+        // Only a folder below the root can have gone away.
+        let recalled = recalled && !top.is_empty();
         begin_browse_mode(&mut shared, sys);
-    }
-    browse(ctx, app, "", true);
+        shared.games.focus_recalled = recalled;
+        top
+    };
+    browse(ctx, app, &top, true);
+}
+
+/// A recalled browse position whose folder is gone (Core answered it
+/// empty): forget it and browse the system root instead. True when the
+/// fallback took over the fill.
+fn fall_back_from_recalled_focus(ctx: &Ctx, app: &App, flip: bool) -> bool {
+    let (root, direction) = {
+        let mut shared = lock(&ctx.shared);
+        if !std::mem::take(&mut shared.games.focus_recalled) {
+            return false;
+        }
+        let system_id = shared.games.system_id.clone();
+        shared.persist.games.forget_system_focus(&system_id);
+        (
+            shared
+                .persist
+                .games
+                .path_stack
+                .last()
+                .cloned()
+                .unwrap_or_default(),
+            shared.games.folder_direction,
+        )
+    };
+    tracing::info!("remembered folder is gone; browsing the system root");
+    browse_with_motion(ctx, app, &root, flip, direction);
+    true
 }
 
 /// Cold-start re-entry: browse the persisted stack's top level so a kill
@@ -623,6 +669,7 @@ pub fn enter_folder_from_hub(ctx: &Ctx, app: &App, system_id: &str, path: &str) 
     crate::navigation::stage(ctx, app);
     {
         let mut shared = lock(&ctx.shared);
+        shared.persist.games.remember_system_focus();
         shared.persist.games.system_id.clone_from(&system.id);
         shared.persist.games.path_stack = vec![String::new(), path.to_string()];
         shared.persist.games.selected_at_level = vec![String::new(), String::new()];
@@ -642,6 +689,7 @@ fn begin_browse_mode(shared: &mut Shared, sys: &SystemInfo) {
     model.system_name = name;
     model.focus_armed = false;
     model.restore_done = false;
+    model.focus_recalled = false;
 }
 
 /// Favorites (Hub action): media tagged `user:favorite`.
@@ -701,6 +749,7 @@ fn enter_flat(ctx: &Ctx, app: &App, mode: GamesMode, flip: bool) {
         model.total_dirs = 0;
         model.focus_armed = false;
         model.restore_done = false;
+        model.focus_recalled = false;
         (begin_fill(model), size, sort, scope)
     };
     if flip {
@@ -817,7 +866,13 @@ fn browse_with_motion(ctx: &Ctx, app: &App, path: &str, flip: bool, direction: i
     crate::folder_motion::capture(app, direction);
     let (ticket, system_id, tags, page_size) = {
         let mut shared = lock(&ctx.shared);
-        let size = page_size(ctx, app, &shared);
+        // One round trip fills the lookahead the grid keeps loaded (or two
+        // list screens), instead of a page and then follow-up fetches.
+        let size = rules::first_fill_limit(
+            page_size(ctx, app, &shared),
+            list_layout(&shared),
+            shared.games.grid.load_ahead_pages,
+        );
         let tags = favorites_tags(&shared);
         let model = &mut shared.games;
         model.mode = GamesMode::Browse;
@@ -891,7 +946,7 @@ fn browse_rows(entries: &[BrowseEntry]) -> Vec<GameRow> {
         .collect()
 }
 
-fn on_browse_ready(
+pub(crate) fn on_browse_ready(
     ctx: &Ctx,
     app: &App,
     ticket: u64,
@@ -903,6 +958,9 @@ fn on_browse_ready(
         return;
     }
     let rows = browse_rows(&result.entries);
+    if rows.is_empty() && !at_root && fall_back_from_recalled_focus(ctx, app, flip) {
+        return;
+    }
     // Single-root auto-nav: a system whose scoped roots collapse to one
     // folder skips the pointless one-entry level. The root REPLACES the
     // stack's base so Back still exits the screen.
@@ -962,6 +1020,7 @@ pub(crate) fn apply_fill(
         let visible = list_rows_visible(ctx, &shared);
         let saved = saved_path(&shared);
         let model = &mut shared.games;
+        model.focus_recalled = false;
         model.rows = rows;
         model.next_cursor = cursor;
         model.loading = false;
@@ -1012,7 +1071,7 @@ pub(crate) fn apply_fill(
     if app.global::<crate::Shell>().get_transitioning()
         && (restore_fetch || list_restore_needs_rows(ctx, &lock(&ctx.shared)))
     {
-        fetch_more(ctx, app, rules::RAPID_FETCH_CHUNK, true);
+        fetch_more(ctx, app, rules::RESTORE_FETCH_CHUNK, true);
         return;
     }
     crate::navigation::finish(app);
@@ -1027,7 +1086,7 @@ pub(crate) fn apply_fill(
     crate::folder_motion::start(ctx, app);
     schedule_detail(ctx, app, false);
     if restore_fetch {
-        fetch_more(ctx, app, rules::RAPID_FETCH_CHUNK, true);
+        fetch_more(ctx, app, rules::RESTORE_FETCH_CHUNK, true);
     } else if fill_list {
         let size = {
             let shared = lock(&ctx.shared);
@@ -1041,9 +1100,16 @@ pub(crate) fn apply_fill(
 
 /// Terminal in-screen error (`ScreenStateOverlay`'s Error state): flip to
 /// the destination and paint "Failed to load" plus the message.
-fn show_error(ctx: &Ctx, app: &App, ticket: u64, message: &str, flip: bool) {
-    if lock(&ctx.shared).games.ticket != ticket {
-        return;
+pub(crate) fn show_error(ctx: &Ctx, app: &App, ticket: u64, message: &str, flip: bool) {
+    {
+        let mut shared = lock(&ctx.shared);
+        if shared.games.ticket != ticket {
+            return;
+        }
+        // An error does not prove a recalled folder is gone: it may be the
+        // link or Core being busy. Keep the remembered position for the
+        // next visit; only an empty answer drops it.
+        shared.games.focus_recalled = false;
     }
     if crate::navigation::fail(ctx, app, message) {
         return;
@@ -1078,6 +1144,16 @@ fn show_error(ctx: &Ctx, app: &App, ticket: u64, message: &str, flip: bool) {
 /// Fetch the next chunk with the stored cursor, bypassing the endpoint
 /// cache (each follow-up has a different cursor). `bulk` pauses cover
 /// fetches until the chunk lands (jumps and restores).
+/// The most rows one request for this list may ask for: Core validates
+/// `media.browse`/`media.search` `maxResults` up to 1000 and `media.history`
+/// `limit` up to 100, and rejects anything larger.
+fn fetch_cap(mode: GamesMode) -> u32 {
+    match mode {
+        GamesMode::Recents => rules::HISTORY_FETCH_CAP,
+        GamesMode::Browse | GamesMode::Favorites => rules::JUMP_FETCH_CEILING,
+    }
+}
+
 fn fetch_more(ctx: &Ctx, app: &App, limit: u32, bulk: bool) {
     let (mode, cursor, system_id, browse_path, tags, ticket, sort, scope) = {
         let mut shared = lock(&ctx.shared);
@@ -1111,7 +1187,7 @@ fn fetch_more(ctx: &Ctx, app: &App, limit: u32, bulk: bool) {
     let client = ctx.store.client();
     let weak = app.as_weak();
     let ctx2 = ctx.clone();
-    let limit = limit.max(1);
+    let limit = limit.clamp(1, fetch_cap(mode));
     ctx.handle.spawn(async move {
         let outcome: Result<(Vec<GameRow>, Option<String>), String> = match mode {
             GamesMode::Browse => client
@@ -1238,7 +1314,7 @@ pub(crate) fn on_append(
     };
     if app.global::<crate::Shell>().get_transitioning() {
         if restore_again || list_restore_needs_rows(ctx, &lock(&ctx.shared)) {
-            fetch_more(ctx, app, rules::RAPID_FETCH_CHUNK, true);
+            fetch_more(ctx, app, rules::RESTORE_FETCH_CHUNK, true);
             return;
         }
         let token = lock(&ctx.shared).games.mode.screen();
@@ -1260,7 +1336,7 @@ pub(crate) fn on_append(
     }
     schedule_detail(ctx, app, false);
     if restore_again {
-        fetch_more(ctx, app, rules::RAPID_FETCH_CHUNK, true);
+        fetch_more(ctx, app, rules::RESTORE_FETCH_CHUNK, true);
     } else {
         drain_load_requests(ctx, app);
     }
@@ -1453,6 +1529,12 @@ fn cell_for(ctx: &Ctx, model: &GamesModel, row: &GameRow, tier: u32) -> GridCell
         cached.is_some(),
         ctx.media.is_negative(&key),
     );
+    if matches!(state, CoverState::Art | CoverState::Pending) {
+        if let Some(color) = placeholder_color(row) {
+            cell.placeholder = color;
+            cell.has_placeholder = true;
+        }
+    }
     match state {
         CoverState::Folder => cell.glyph_key = SharedString::from(FOLDER_GLYPH),
         CoverState::Art => {
@@ -1483,6 +1565,12 @@ fn cell_for(ctx: &Ctx, model: &GamesModel, row: &GameRow, tier: u32) -> GridCell
     cell
 }
 
+/// The art slot's stand-in colour while a row's cover loads.
+fn placeholder_color(row: &GameRow) -> Option<slint::Color> {
+    row.cover_color
+        .map(|[r, g, b]| slint::Color::from_rgb_u8(r, g, b))
+}
+
 fn page_cells(ctx: &Ctx, model: &GamesModel, page: usize, tier: u32) -> Vec<GridCell> {
     let page_size = model.grid.page_size();
     model
@@ -1503,22 +1591,39 @@ fn request_covers(
     page_size: usize,
     tier: u32,
 ) {
-    if model.covers_paused || model.rapid_active {
+    if model.covers_paused {
         return;
     }
-    for index in rules::prefetch_rows(model.rows.len(), page_size, first_visible) {
-        let Some(row) = model.rows.get(index) else {
-            continue;
-        };
-        if !row.media_capable || !row.has_cover {
-            continue;
-        }
-        let key = media_key(row, &model.system_id, tier);
-        if key.system.is_empty() || key.path.is_empty() {
-            continue;
-        }
-        ctx.media.enqueue(key);
+    // A fast scroll starts no loads, and what it flew past is not worth
+    // fetching any more.
+    if model.rapid_active {
+        ctx.media.request_wanted(Vec::new());
+        return;
     }
+    ctx.media
+        .request_wanted(wanted_covers(model, first_visible, page_size, tier));
+}
+
+/// The cover keys around the visible window, in fetch priority order.
+fn wanted_covers(
+    model: &GamesModel,
+    first_visible: usize,
+    page_size: usize,
+    tier: u32,
+) -> Vec<MediaKey> {
+    rules::prefetch_rows(model.rows.len(), page_size, first_visible)
+        .into_iter()
+        .filter_map(|index| model.rows.get(index))
+        .filter(|row| row.media_capable && row.has_cover)
+        .map(|row| media_key(row, &model.system_id, tier))
+        .filter(|key| !key.system.is_empty() && !key.path.is_empty())
+        .collect()
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Full renders on this thread, for tests that bound repaint counts.
+    pub(crate) static RENDERS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 /// Paint the current page (or the list window), the cursor, the caption,
@@ -1528,6 +1633,8 @@ fn request_covers(
     reason = "one setter per GamesView property keeps the inventory reviewable"
 )]
 pub fn render(ctx: &Ctx, app: &App) {
+    #[cfg(test)]
+    RENDERS.with(|count| count.set(count.get() + 1));
     // Even an offscreen render updates saved viewport positions. Wait for the
     // complete destination so a partial restore cannot overwrite its target.
     if app.global::<crate::Shell>().get_transitioning() {
@@ -1691,7 +1798,6 @@ pub fn render(ctx: &Ctx, app: &App) {
         );
         view.set_list_view_top(i32::try_from(top).unwrap_or(0));
         view.set_list_scroll_top(i32::try_from(scroll_top).unwrap_or(0));
-        refresh_detail_cover(ctx, app, model);
     } else {
         view.set_list_rows(ModelRc::new(VecModel::from(Vec::<GridCell>::new())));
     }
@@ -1707,6 +1813,11 @@ pub fn render(ctx: &Ctx, app: &App) {
         model.grid.page_size()
     };
     request_covers(ctx, model, first_visible, window, tier);
+    // After the window's covers, so the focused row's larger cover is
+    // queued ahead of them.
+    if list {
+        refresh_detail_cover(ctx, app, model);
+    }
     drop(shared);
     if list {
         remember_list_top(
@@ -1717,7 +1828,7 @@ pub fn render(ctx: &Ctx, app: &App) {
 }
 
 /// The detail pane's identity fields for the focused row: title, path and
-/// the cached cover (misses stream in through `cover_landed`).
+/// the cached cover (misses stream in through `covers_landed`).
 fn detail_row(key: &str, value: &str) -> crate::DetailRow {
     crate::DetailRow {
         key: SharedString::from(key),
@@ -1754,9 +1865,13 @@ fn refresh_detail_cover(ctx: &Ctx, app: &App, model: &GamesModel) {
         view.set_detail_path(SharedString::default());
         view.set_detail_has_cover(false);
         view.set_detail_cover_absent(false);
+        view.set_detail_has_placeholder(false);
         return;
     };
     view.set_detail_title(SharedString::from(row.display.as_str()));
+    let placeholder = placeholder_color(row).filter(|_| row.media_capable && row.has_cover);
+    view.set_detail_placeholder(placeholder.unwrap_or_default());
+    view.set_detail_has_placeholder(placeholder.is_some());
     view.set_detail_path(SharedString::from(row.path.as_str()));
     let tier = crate::sizing::detail_cover_source_size(crate::router::output_scene(app));
     let key = media_key(row, &model.system_id, tier);
@@ -1780,9 +1895,9 @@ fn refresh_detail_cover(ctx: &Ctx, app: &App, model: &GamesModel) {
     }
 }
 
-/// A media cover landed: repaint when the page (or the detail pane) shows
-/// that item.
-pub fn cover_landed(ctx: &Ctx, app: &App, key: &MediaKey) {
+/// A batch of covers landed or were found missing: repaint once when the
+/// page (or the list window and its detail pane) shows any of them.
+pub fn covers_landed(ctx: &Ctx, app: &App, keys: &[MediaKey]) {
     if crate::navigation::retaining(
         app,
         &[
@@ -1814,7 +1929,7 @@ pub fn cover_landed(ctx: &Ctx, app: &App, key: &MediaKey) {
             .iter()
             .skip(first)
             .take(window)
-            .any(|row| row.path == key.path)
+            .any(|row| keys.iter().any(|key| row.path == key.path))
     };
     if relevant {
         render(ctx, app);
@@ -3043,6 +3158,7 @@ mod tests {
             tags: Vec::new(),
             disambiguating_tags: Vec::new(),
             has_cover: true,
+            cover_color: None,
         }
     }
 
@@ -3057,6 +3173,15 @@ mod tests {
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0].root_distinguisher, "fat");
         assert_eq!(rows[1].root_distinguisher, "usb0");
+    }
+
+    #[test]
+    fn fetches_never_exceed_the_cap_core_validates() {
+        // media.history rejects a limit above 100; browse and search allow 1000.
+        assert_eq!(fetch_cap(GamesMode::Recents), 100);
+        assert_eq!(fetch_cap(GamesMode::Browse), 1000);
+        assert_eq!(fetch_cap(GamesMode::Favorites), 1000);
+        assert!(rules::RESTORE_FETCH_CHUNK.clamp(1, fetch_cap(GamesMode::Recents)) <= 100);
     }
 
     #[test]

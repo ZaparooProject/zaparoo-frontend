@@ -357,6 +357,16 @@ pub fn first_navigable(rows: &[Row]) -> usize {
     rows.iter().position(|r| r.is_field()).unwrap_or(0)
 }
 
+/// Where a remembered row lands on a page as it is now: the same row
+/// while it is still a field, otherwise the page's first field.
+pub fn restore_seat(rows: &[Row], index: usize) -> usize {
+    if rows.get(index).copied().is_some_and(Row::is_field) {
+        index
+    } else {
+        first_navigable(rows)
+    }
+}
+
 /// The next navigable row in `dir`, wrapping and skipping headers.
 pub fn seek_navigable(rows: &[Row], from: usize, dir: i64) -> usize {
     let len = rows.len();

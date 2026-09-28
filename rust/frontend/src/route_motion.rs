@@ -335,7 +335,7 @@ fn offline_ctx() -> (tokio::runtime::Runtime, crate::router::Ctx) {
         launcher_scan: crate::launcher_scan::Model::default(),
         store: zaparoo_core::store::Store::new(client, handle.clone()),
         handle,
-        media: crate::media_cache::MediaCache::new().0,
+        media: crate::media_cache::MediaCache::new(),
         shared: Arc::new(Mutex::new(crate::router::Shared::new(
             zaparoo_core::persist::PersistedState::default(),
             false,
@@ -422,6 +422,56 @@ fn launcher_scan_setting_dispatches_host_once_until_completion() {
         .update(1, zaparoo_app::launcher_scan::State::Failed, 0));
     crate::settings::handle_action(&ctx, &app, "accept");
     assert_eq!(requests.load(Ordering::SeqCst), 2);
+}
+
+/// Cover art that lands on a tile already on screen fades in; art a tile
+/// already has when it appears paints at once, so paging never flashes.
+#[test]
+fn cover_art_fades_in_only_when_it_lands() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    app.global::<crate::Motion>().set_enabled(true);
+    app.global::<Shell>().set_active_screen(Screen::Hub);
+    let mut buffer = slint::SharedPixelBuffer::<slint::Rgb8Pixel>::new(8, 8);
+    for pixel in buffer.make_mut_slice() {
+        *pixel = slint::Rgb8Pixel { r: 255, g: 0, b: 0 };
+    }
+    let red = slint::Image::from_rgb8(buffer);
+    let cell = |has_cover: bool| GridCell {
+        name: "Cover".into(),
+        cover: red.clone(),
+        cover_focus: red.clone(),
+        has_cover,
+        has_cover_focus: has_cover,
+        ..Default::default()
+    };
+    let view = app.global::<HubView>();
+    view.set_cell_width(70.0);
+    view.set_cell_height(60.0);
+    view.set_grid_y(40.0);
+    view.set_grid_height(100.0);
+    let art = |window: &Rc<MinimalSoftwareWindow>| {
+        pixels(window).iter().filter(|p| p.0 == 0xF800).count()
+    };
+
+    // Art the tile has from the start is whole on the very first frame.
+    view.set_cells(ModelRc::new(VecModel::from(vec![cell(true)])));
+    let shown = art(&window);
+    assert!(shown > 0, "cached art paints on the first frame");
+
+    // Art that lands later starts transparent and ends whole.
+    let cells = Rc::new(VecModel::from(vec![cell(false)]));
+    view.set_cells(ModelRc::from(cells.clone()));
+    settle(&window);
+    assert_eq!(art(&window), 0);
+    cells.set_row_data(0, cell(true));
+    assert!(art(&window) < shown, "landed art does not pop in");
+    settle(&window);
+    assert_eq!(art(&window), shown, "the fade ends at full strength");
 }
 
 /// The pairing panel's one promise: Core is never left holding a PIN the
@@ -677,6 +727,7 @@ fn held_game_pages_cut_at_repeat_cadence_but_taps_keep_slides() {
                 zap_script: String::new(),
                 tag_labels: vec![],
                 has_cover: false,
+                cover_color: None,
                 is_favorite: false,
                 media_capable: false,
                 root_distinguisher: String::new(),
@@ -3534,4 +3585,181 @@ fn a_slow_fill_keeps_source_and_adds_static_delayed_feedback() {
     distinct_frames(&window, SETTLE_TICKS);
     assert!(!shell.get_transitioning());
     assert!(!shell.get_transition_cue());
+}
+
+#[test]
+fn a_batch_of_landed_covers_repaints_games_once() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    app.global::<Shell>().set_active_screen(Screen::Games);
+    let mut rows = game_rows("Game", 40);
+    for (index, row) in rows.iter_mut().enumerate() {
+        row.path = format!("/g/{index}");
+        row.system_id = "NES".into();
+        row.has_cover = true;
+    }
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.games.loading = false;
+        shared.games.rows = rows;
+        shared.games.grid.set_item_count(40);
+    }
+    crate::games::render(&ctx, &app);
+    let key = |path: String| crate::media_cache::MediaKey {
+        media_id: None,
+        system: "NES".into(),
+        path,
+        max_size: 256,
+        image_type: None,
+    };
+    let on_page: Vec<_> = (0..3).map(|i| key(format!("/g/{i}"))).collect();
+    let renders = || crate::games::RENDERS.with(Cell::get);
+    let before = renders();
+    crate::deliver_covers(&ctx, &app, &on_page);
+    assert_eq!(renders() - before, 1, "three covers, one repaint");
+    let elsewhere: Vec<_> = (0..3).map(|i| key(format!("/other/{i}"))).collect();
+    let before = renders();
+    crate::deliver_covers(&ctx, &app, &elsewhere);
+    assert_eq!(renders(), before, "covers nobody shows repaint nothing");
+}
+
+#[test]
+fn settings_reopens_on_the_page_and_row_it_was_left_on() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let view = app.global::<crate::SettingsView>();
+    crate::settings::enter(&ctx, &app);
+    settle(&window);
+    assert_eq!(view.get_page(), SettingsPage::Root);
+    assert_eq!(view.get_index(), 0);
+    crate::settings::handle_action(&ctx, &app, "right");
+    let left_on = view.get_index();
+    assert!(left_on > 0, "the move must land on another category");
+    crate::settings::handle_action(&ctx, &app, "cancel");
+    settle(&window);
+    // Something else resets the view meanwhile; the memory is Rust's.
+    view.set_index(0);
+    crate::settings::enter(&ctx, &app);
+    settle(&window);
+    assert_eq!(view.get_page(), SettingsPage::Root);
+    assert_eq!(view.get_index(), left_on);
+    // A sub-page and a row on it come back too, reseated when the row is
+    // no longer a field.
+    crate::router::lock(&ctx.shared).settings_focus = Some((SettingsPage::Appearance, 999));
+    crate::settings::enter(&ctx, &app);
+    assert_eq!(view.get_page(), SettingsPage::Appearance);
+    let rows = zaparoo_app::settings::page_rows(
+        SettingsPage::Appearance.token(),
+        &crate::settings::inputs(&ctx),
+    );
+    assert_eq!(
+        view.get_index(),
+        i32::try_from(zaparoo_app::settings::first_navigable(&rows)).unwrap_or(-1)
+    );
+}
+
+#[test]
+fn a_failed_browse_of_a_remembered_folder_keeps_the_memory() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let snes = zaparoo_core::media_types::SystemInfo {
+        id: "SNES".into(),
+        name: "SNES".into(),
+        media_count: Some(1),
+        ..Default::default()
+    };
+    let remembered = zaparoo_core::persist::SystemFocus {
+        system_id: "SNES".into(),
+        path_stack: vec![String::new(), "/snes/rpg".into()],
+        selected_at_level: vec!["/snes/rpg".into(), "/snes/rpg/z.sfc".into()],
+        list_top_at_level: vec![0, 2],
+    };
+    crate::router::lock(&ctx.shared).persist.games.system_focus = vec![remembered.clone()];
+    crate::games::enter(&ctx, &app, &snes);
+    let ticket = {
+        let shared = crate::router::lock(&ctx.shared);
+        assert!(shared.games.focus_recalled);
+        shared.games.ticket
+    };
+    // The link drops, or Core is busy: an error, not an empty folder. The
+    // entry is called off as any failed navigation is, and the remembered
+    // position survives for the next visit.
+    crate::games::show_error(&ctx, &app, ticket, "not connected", true);
+    let shared = crate::router::lock(&ctx.shared);
+    assert!(!shared.games.focus_recalled);
+    assert_eq!(shared.persist.games.system_focus, vec![remembered]);
+}
+
+#[test]
+fn a_system_reopens_in_its_remembered_folder_or_its_root_when_gone() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let system = |id: &str| zaparoo_core::media_types::SystemInfo {
+        id: id.into(),
+        name: id.into(),
+        media_count: Some(1),
+        ..Default::default()
+    };
+    crate::router::lock(&ctx.shared).persist.games = zaparoo_core::persist::GamesState {
+        system_id: "SNES".into(),
+        path_stack: vec![String::new(), "/snes/rpg".into()],
+        selected_at_level: vec!["/snes/rpg".into(), "/snes/rpg/z.sfc".into()],
+        list_top_at_level: vec![0, 2],
+        ..Default::default()
+    };
+    // Leaving SNES for NES: NES has no memory yet and starts at its root.
+    crate::games::enter(&ctx, &app, &system("NES"));
+    {
+        let shared = crate::router::lock(&ctx.shared);
+        assert_eq!(shared.persist.games.system_id, "NES");
+        assert_eq!(shared.persist.games.path_stack, vec![String::new()]);
+        assert!(!shared.games.focus_recalled);
+    }
+    crate::navigation::finish(&app);
+    // Back to SNES: its folder, game and viewport return.
+    crate::games::enter(&ctx, &app, &system("SNES"));
+    let ticket = {
+        let shared = crate::router::lock(&ctx.shared);
+        assert_eq!(
+            shared.persist.games.path_stack,
+            vec![String::new(), "/snes/rpg".to_string()]
+        );
+        assert_eq!(shared.persist.games.selected_at_level[1], "/snes/rpg/z.sfc");
+        assert_eq!(shared.persist.games.list_top_at_level, vec![0, 2]);
+        assert_eq!(shared.games.browse_path, "/snes/rpg");
+        assert!(shared.games.focus_recalled);
+        shared.games.ticket
+    };
+    // The folder is gone: Core answers it empty. The root replaces it
+    // and the stale memory is dropped.
+    crate::games::on_browse_ready(
+        &ctx,
+        &app,
+        ticket,
+        &zaparoo_core::media_types::MediaBrowseResult::default(),
+        false,
+        true,
+    );
+    let shared = crate::router::lock(&ctx.shared);
+    assert_eq!(shared.persist.games.path_stack, vec![String::new()]);
+    assert_eq!(shared.games.browse_path, "");
+    assert!(!shared.games.focus_recalled);
+    assert!(
+        shared.games.ticket != ticket,
+        "the root browse is a new fill"
+    );
+    assert!(!shared
+        .persist
+        .games
+        .system_focus
+        .iter()
+        .any(|focus| focus.system_id == "SNES"));
 }

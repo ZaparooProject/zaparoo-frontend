@@ -20,7 +20,7 @@ use crate::router::{lock, Ctx, ListContext, PendingRestart};
 use crate::{App, GridCell, SettingsInput, SettingsRow, SettingsView};
 
 /// What the registry needs to know about this machine.
-fn inputs(ctx: &Ctx) -> rules::Inputs {
+pub(crate) fn inputs(ctx: &Ctx) -> rules::Inputs {
     rules::Inputs {
         can_pick_folder: ctx.folders.available(),
         can_scan_launchers: ctx.launcher_scan.available(),
@@ -462,9 +462,23 @@ pub fn enter(ctx: &Ctx, app: &App) {
 }
 
 pub fn enter_with_direction(ctx: &Ctx, app: &App, direction: i32) {
-    lock(&ctx.shared).persist.active_screen = "settings".to_string();
+    let focus = {
+        let mut shared = lock(&ctx.shared);
+        shared.persist.active_screen = "settings".to_string();
+        shared.settings_focus
+    };
     crate::router::save_persist(&ctx.shared);
-    open_page(ctx, app, crate::SettingsPage::Root);
+    match focus {
+        Some((page, index)) => {
+            open_page(ctx, app, page);
+            let rows = rules::page_rows(page.token(), &inputs(ctx));
+            let seat = rules::restore_seat(&rows, index);
+            app.global::<SettingsView>()
+                .set_index(i32::try_from(seat).unwrap_or(0));
+            render(ctx, app);
+        }
+        None => open_page(ctx, app, crate::SettingsPage::Root),
+    }
     crate::router::transition_to_screen(app, crate::Screen::Settings, direction);
 }
 
@@ -492,6 +506,18 @@ fn page_rows_now(ctx: &Ctx, app: &App) -> (crate::SettingsPage, Vec<Row>, usize)
 }
 
 pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
+    dispatch(ctx, app, action);
+    remember_focus(ctx, app);
+}
+
+/// Keep the page and row on screen for the next time Settings opens.
+fn remember_focus(ctx: &Ctx, app: &App) {
+    let view = app.global::<SettingsView>();
+    let index = usize::try_from(view.get_index()).unwrap_or(0);
+    lock(&ctx.shared).settings_focus = Some((view.get_page(), index));
+}
+
+fn dispatch(ctx: &Ctx, app: &App, action: &str) {
     let (page, rows, index) = page_rows_now(ctx, app);
     let view = app.global::<SettingsView>();
 

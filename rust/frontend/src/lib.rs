@@ -435,6 +435,9 @@ fn seed_display_globals(
     // tile never reaches.
     if cfg!(feature = "mister") {
         app.global::<Motion>().set_focus_zoom(100.0);
+        // Fading tiles is the expensive kind of motion on the software
+        // renderer: covers keep their hard cut there.
+        app.global::<Motion>().set_cover_reveal_ms(0);
         app.global::<Motion>().set_rail_ms(0);
     }
     display::register_labels(app);
@@ -647,12 +650,18 @@ fn run_application(
 
     seed_startup_state(&app, &persisted, boot_curtain);
 
-    let (media, media_rx) = media_cache::MediaCache::new();
+    let media = media_cache::MediaCache::new();
     media.set_preferred_image_type(&persisted.settings.media_image_type);
     // Cover art can be read straight off the SD card when Core is on
     // this machine; the manifest then paints the Hub's real art on the
-    // first frame instead of a placeholder.
-    media_cache::configure_local_path(cfg!(feature = "mister"), client.is_local());
+    // first frame instead of a placeholder. A hosted Core is always this
+    // app's own, even before the host hands over its transport.
+    let (reads_core_files, core_is_local) = zaparoo_app::covers::startup_local_path(
+        cfg!(feature = "hosted"),
+        cfg!(feature = "mister"),
+        client.is_local(),
+    );
+    media_cache::configure_local_path(reads_core_files, core_is_local);
     hub_covers::seed(&media);
     games::seed_detail_ctx(client.clone(), handle.clone());
     let notice_ack = config.notice.commercial_ack;
@@ -688,7 +697,9 @@ fn run_application(
             platform_paths::config_file_path(),
         ))),
     });
-    start_media_cache(&ctx, &app, &client, media_rx);
+    start_media_cache(&ctx, &app, &client);
+    #[cfg(feature = "hosted")]
+    host::register_media(&ctx.media);
 
     // Solve the initial grid shapes in logical scene space and re-solve
     // on resize/orientation changes. DRS still keys from the physical
@@ -1339,39 +1350,52 @@ pub(crate) fn effective_language(setting: &str) -> String {
     }
 }
 
-/// Media cover fetch driver. Ready covers are marshaled onto the event
-/// loop and patched into whatever tile still shows that path.
-fn start_media_cache(
-    ctx: &Arc<Ctx>,
-    app: &App,
-    client: &Arc<Client>,
-    media_rx: tokio::sync::mpsc::UnboundedReceiver<media_cache::MediaKey>,
-) {
+/// Media cover fetch driver. Settled covers collect into one batch per
+/// event-loop turn and are patched into whatever still shows them.
+fn start_media_cache(ctx: &Arc<Ctx>, app: &App, client: &Arc<Client>) {
     let weak = app.as_weak();
     let media = ctx.media.clone();
     let handle = ctx.handle.clone();
     let ctx = ctx.clone();
+    let landings = Arc::new(media_cache::Landings::default());
     media_cache::spawn_driver(
         media,
         client.clone(),
         &handle,
-        media_rx,
         ctx.dormant.subscribe(),
-        move |key, image| {
+        move |key| {
+            if !landings.push(key) {
+                return;
+            }
             let ctx = ctx.clone();
+            let landings = landings.clone();
             let _ = weak.upgrade_in_event_loop(move |app| {
+                let keys = landings.take();
                 if *ctx.dormant.borrow() {
                     return;
                 }
-                if key.image_type.is_some() {
-                    game_info::cover_landed(&ctx, &app, &key, &image);
-                } else {
-                    hub::cover_landed(&ctx, &app, &key);
-                    games::cover_landed(&ctx, &app, &key);
-                }
+                deliver_covers(&ctx, &app, &keys);
             });
         },
     );
+}
+
+/// One batch of settled covers: each screen that shows any of them
+/// repaints once.
+pub(crate) fn deliver_covers(ctx: &Ctx, app: &App, keys: &[media_cache::MediaKey]) {
+    let (carousel, browse): (Vec<_>, Vec<_>) = keys
+        .iter()
+        .cloned()
+        .partition(|key| key.image_type.is_some());
+    for key in &carousel {
+        if let Some(image) = ctx.media.get(key) {
+            game_info::cover_landed(ctx, app, key, &image);
+        }
+    }
+    if !browse.is_empty() {
+        hub::covers_landed(ctx, app, &browse);
+        games::covers_landed(ctx, app, &browse);
+    }
 }
 
 /// Catalog endpoint -> categories, systems, cold-start restore.

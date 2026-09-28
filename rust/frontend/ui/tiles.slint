@@ -34,6 +34,10 @@ export struct GridCell {
     top-label: string,
     // A structural placeholder: paints nothing, ever.
     is-empty: bool,
+    // Core's average cover colour: fills the art slot while the art
+    // loads, then fades out under it. A solid fill, cheap everywhere.
+    placeholder: color,
+    has-placeholder: bool,
 }
 
 // One-line caption with the focused-overflow marquee: fits -> static
@@ -369,7 +373,29 @@ export component Tile inherits Rectangle {
             image-fit: contain;
         }
 
-        if root.cell.glyph-key == "" && root.cell.has-cover: Image {
+        // The art's own colour stands in until the art lands, then fades
+        // out as the art fades in over it.
+        if root.cell.glyph-key == "" && root.cell.has-placeholder: Rectangle {
+            x: root.pad;
+            y: parent.art-top;
+            width: parent.art-w;
+            height: parent.art-h;
+            background: root.cell.placeholder;
+            border-radius: Math.max(0px, root.card-radius - root.pad);
+            opacity: 1;
+            states [
+                covered when root.cell.has-cover: {
+                    opacity: 0;
+                    in {
+                        animate opacity { duration: Motion.dur(Motion.cover-reveal-ms); easing: ease-out; }
+                    }
+                }
+            ]
+        }
+
+        // Kept mounted so its art can fade in when it lands (see
+        // `Motion.cover-reveal-ms`); invisible until then.
+        if root.cell.glyph-key == "": Image {
             x: root.pad;
             y: parent.art-top;
             width: parent.art-w;
@@ -377,6 +403,15 @@ export component Tile inherits Rectangle {
             source: (!root.muted && root.focused-selection && root.cell.has-cover-focus)
                 ? root.cell.cover-focus : root.cell.cover;
             image-fit: contain;
+            opacity: 0;
+            states [
+                shown when root.cell.has-cover: {
+                    opacity: 1;
+                    in {
+                        animate opacity { duration: Motion.dur(Motion.cover-reveal-ms); easing: ease-out; }
+                    }
+                }
+            ]
         }
 
         // Wordmark fallback for a system without art; other tiles stay
