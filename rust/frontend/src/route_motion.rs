@@ -979,6 +979,59 @@ fn rapid_letter_requires_a_qualified_hold_and_clears_on_taps_and_quiet() {
 }
 
 #[test]
+#[allow(
+    clippy::expect_used,
+    reason = "fixture must contain two real system tiles"
+)]
+fn adjacent_systems_move_keeps_logo_images_and_glides_focus() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    app.global::<Shell>().set_active_screen(Screen::Systems);
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.systems_model.rows = ["SNES", "NES"]
+            .into_iter()
+            .map(|id| zaparoo_app::systems::SystemRow {
+                id: id.into(),
+                name: id.into(),
+                cover_key: id.into(),
+                category: String::new(),
+                hidden: false,
+                zap_script: String::new(),
+                release_date: String::new(),
+                manufacturer: String::new(),
+                media_count: None,
+            })
+            .collect();
+        shared.systems_model.grid.set_item_count(2);
+        shared.systems_model.focus_armed = true;
+    }
+    crate::systems::render(&ctx, &app);
+    settle(&window);
+    let view = app.global::<SystemsView>();
+    let first = view.get_cells().row_data(0).expect("first system");
+    assert!(first.has_cover, "test must exercise real logo images");
+    crate::systems::handle_action(&ctx, &app, "right");
+    let after = view
+        .get_cells()
+        .row_data(0)
+        .expect("first system still visible");
+    assert!(
+        distinct_frames(&window, 6) > 2,
+        "adjacent focus should travel over several frames"
+    );
+    assert!(
+        crate::view_model::same_image(&first.cover, &after.cover),
+        "adjacent focus must not rebuild every logo image"
+    );
+}
+
+#[test]
 fn systems_redraw_retains_both_pages_during_a_slide() {
     assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
     let (app, window) = boot();

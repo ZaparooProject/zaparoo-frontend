@@ -7,7 +7,7 @@
 // the page swoop, owns the Options menu, and paints the current page into
 // the `SystemsView` global.
 
-use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
+use slint::{ComponentHandle, Model, ModelRc, SharedString, VecModel};
 use zaparoo_app::layouts::{self, Body, ThemeId, View};
 use zaparoo_app::media_list as list_rules;
 use zaparoo_app::paged_grid::{self, Grid, Insets};
@@ -513,6 +513,10 @@ fn page_cells(shared: &Shared, page: usize) -> Vec<GridCell> {
 
 /// Paint the current page, the cursor, the caption and the geometry.
 pub fn render(ctx: &Ctx, app: &App) {
+    render_with_page(ctx, app, false);
+}
+
+fn render_with_page(ctx: &Ctx, app: &App, reuse_page: bool) {
     if crate::navigation::active() {
         return;
     }
@@ -535,7 +539,6 @@ pub fn render(ctx: &Ctx, app: &App) {
         }
         changed
     };
-    let _ = shape_changed;
     let model = &shared.systems_model;
     let page = model.grid.current_page();
     let start = page * model.grid.page_size();
@@ -552,9 +555,28 @@ pub fn render(ctx: &Ctx, app: &App) {
             |rows| view.set_next_cells(rows),
         );
     } else {
-        crate::view_model::publish_cells(&view.get_cells(), page_cells(&shared, page), |rows| {
-            view.set_cells(rows);
-        });
+        // A same-page cursor move changes selection, not artwork. Rebuilding
+        // embedded logos allocates fresh Slint image buffers for every tile;
+        // publishing them dirties the whole grid during an 80 ms focus glide.
+        // Full renders still refresh art after theme, catalog or style changes.
+        let page_len = model
+            .rows
+            .len()
+            .saturating_sub(start)
+            .min(model.grid.page_size());
+        if !reuse_page
+            || shape_changed
+            || view.get_page() != i32::try_from(page).unwrap_or(0)
+            || view.get_cells().row_count() != page_len
+        {
+            crate::view_model::publish_cells(
+                &view.get_cells(),
+                page_cells(&shared, page),
+                |rows| {
+                    view.set_cells(rows);
+                },
+            );
+        }
         view.set_next_cells(ModelRc::default());
     }
     view.set_selected_local(if strip_sliding {
@@ -952,7 +974,13 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
                 return;
             }
         }
-        render(ctx, app);
+        // Only same-page grid moves reuse the existing image-bearing cells.
+        // A page change is handled by slide_to_current_page above.
+        let reuse_page = {
+            let shared = lock(&ctx.shared);
+            !list_layout(&shared)
+        };
+        render_with_page(ctx, app, reuse_page);
         return;
     }
     match action {

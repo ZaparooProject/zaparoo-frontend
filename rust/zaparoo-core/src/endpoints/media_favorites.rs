@@ -57,7 +57,7 @@ impl Endpoint for MediaFavoritesEndpoint {
     }
 
     fn provides(_args: &Self::Args, _output: &Self::Output) -> Vec<Tag> {
-        vec![Tag::any(Self::NAME)]
+        vec![Tag::any(Self::NAME), Tag::MEDIA_DB]
     }
 }
 

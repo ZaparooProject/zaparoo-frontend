@@ -89,16 +89,21 @@ impl Endpoint for MediaBrowseEndpoint {
         })
     }
 
+    /// Titles, tags and cover flags change when an index or metadata
+    /// import finishes, so the cached first page joins `Tag::MEDIA_DB`.
     fn provides(args: &Self::Args, _output: &Self::Output) -> Vec<Tag> {
-        vec![Tag::specific(
-            Self::NAME,
-            format!(
-                "{}::{}::{}",
-                args.path,
-                args.systems.join(","),
-                args.tags.join(",")
+        vec![
+            Tag::specific(
+                Self::NAME,
+                format!(
+                    "{}::{}::{}",
+                    args.path,
+                    args.systems.join(","),
+                    args.tags.join(",")
+                ),
             ),
-        )]
+            Tag::MEDIA_DB,
+        ]
     }
 }
 
