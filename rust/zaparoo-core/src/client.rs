@@ -735,6 +735,14 @@ impl Client {
         })
     }
 
+    /// Ask Core to re-evaluate which launchers are installed.
+    pub async fn launchers_refresh(&self) -> Result<(), ClientError> {
+        #[derive(Serialize)]
+        struct P {}
+        self.call("launchers.refresh", &P {}).await?;
+        Ok(())
+    }
+
     pub async fn media_search(
         &self,
         params: MediaSearchParams,

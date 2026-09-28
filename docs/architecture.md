@@ -142,8 +142,21 @@ crate still owns all UI, navigation and input semantics.
   inputs on focus loss.
 - `Input::core_phase(CorePhase)` shows the host's Core startup phase on the
   boot curtain until boot completes.
-- `Input::navigation_events`, `indexed_system_count` and `core_connected` are
-  read-only diagnostics for host tests; they carry no behavior.
+- `Input::configure_folder_picker` and `configure_launcher_scan` register
+  optional host actions. Each adds a row to Settings > Library ("Add game
+  folder", "Detect launchers") that is absent until configured. The host
+  reports progress with `folder_picker_status` and `launcher_scan_status`:
+  ordered snapshots of a state and a count, where a stale revision is
+  ignored and no path or platform handle crosses the seam. A drop in saved
+  folders shows as revoked access until access returns or the user acts. A
+  finished launcher scan makes the frontend ask Core to refresh its
+  launcher list. `request_folder_picker` and `request_launcher_scan` trigger
+  the same guarded request as the rows. Configuration and status live with
+  the window, so a host configures them again for every new window.
+- `Input::navigation_events`, `indexed_system_count`, `core_connected`,
+  `folder_picker_pending`, `folder_permission_count` and
+  `folder_permission_revoked` are read-only diagnostics for host tests; they
+  carry no behavior.
 
 A hosted build compiles out what the host owns: process-global logging,
 command-line arguments, process restart, the Linux network probe, the Steam
