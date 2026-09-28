@@ -86,9 +86,13 @@ pub const PAGES: &[Page] = &[
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[allow(
     clippy::struct_excessive_bools,
-    reason = "independent facts about the machine, each gating its own rows"
+    reason = "independent runtime capabilities"
 )]
 pub struct Inputs {
+    /// An embedding host can grant access through its own folder chooser.
+    pub can_pick_folder: bool,
+    /// An embedding host can scan a folder for installed launchers.
+    pub can_scan_launchers: bool,
     /// `MiSTer`: the resolution and analog-video rows only exist there.
     pub is_mister: bool,
     /// The frontend is already running the native CRT path.
@@ -123,7 +127,13 @@ const NAVIGATES: &[&str] = &[
     "pageSupportAbout",
 ];
 
-const ACTIONS: &[&str] = &["updateMediaDb", "runScraper", "uploadLog"];
+const ACTIONS: &[&str] = &[
+    "detectLaunchers",
+    "addGameFolder",
+    "updateMediaDb",
+    "runScraper",
+    "uploadLog",
+];
 
 /// The control a row id carries: everything that is not a toggle, a
 /// navigation or a one-shot is a picker.
@@ -188,17 +198,27 @@ pub fn page_rows(page: &str, inputs: &Inputs) -> Vec<Row> {
         ],
         // Maintenance leads: these are rows a user comes here to do, not
         // one-time preferences.
-        "pageLibraryData" => vec![
-            Row::Header("maintenance"),
-            field("updateMediaDb"),
-            field("runScraper"),
-            Row::Header("browsing"),
-            field("systemsLayout"),
-            field("gamesLayout"),
-            field("mediaImageType"),
-            field("showHidden"),
-            field("showOriginalFilenames"),
-        ],
+        "pageLibraryData" => {
+            let mut rows = Vec::new();
+            if inputs.can_pick_folder {
+                rows.push(field("addGameFolder"));
+            }
+            if inputs.can_scan_launchers {
+                rows.push(field("detectLaunchers"));
+            }
+            rows.extend([
+                Row::Header("maintenance"),
+                field("updateMediaDb"),
+                field("runScraper"),
+                Row::Header("browsing"),
+                field("systemsLayout"),
+                field("gamesLayout"),
+                field("mediaImageType"),
+                field("showHidden"),
+                field("showOriginalFilenames"),
+            ]);
+            rows
+        }
         "pageSupportAbout" => {
             let mut rows = vec![
                 field("aboutLicense"),
@@ -294,6 +314,7 @@ pub fn action_label_key(id: &str, busy: bool) -> &'static str {
             }
         }
         "uploadLog" => "upload",
+        "detectLaunchers" => "detect",
         _ => "open",
     }
 }
@@ -460,6 +481,8 @@ mod tests {
             crt_enabled: crt,
             debug_build: false,
             log_upload: true,
+            can_pick_folder: false,
+            can_scan_launchers: false,
         }
     }
 
@@ -473,6 +496,40 @@ mod tests {
         };
         assert!(ids(&mister(false)).contains(&"uploadLog"));
         assert!(!ids(&Inputs::default()).contains(&"uploadLog"));
+    }
+
+    #[test]
+    fn folder_action_requires_host_capability_and_leads_library() {
+        let mut inputs = Inputs::default();
+        assert!(!page_rows("pageLibraryData", &inputs)
+            .iter()
+            .any(|row| row.id() == "addGameFolder"));
+        inputs.can_pick_folder = true;
+        assert_eq!(
+            page_rows("pageLibraryData", &inputs)[0],
+            Row::Field {
+                id: "addGameFolder",
+                control: Control::Action
+            }
+        );
+        assert_eq!(control("addGameFolder"), Control::Action);
+    }
+
+    #[test]
+    fn launcher_scan_requires_host_capability_and_is_an_action() {
+        let mut inputs = Inputs::default();
+        assert!(!page_rows("pageLibraryData", &inputs)
+            .iter()
+            .any(|row| row.id() == "detectLaunchers"));
+        inputs.can_scan_launchers = true;
+        assert_eq!(
+            page_rows("pageLibraryData", &inputs)[0],
+            Row::Field {
+                id: "detectLaunchers",
+                control: Control::Action
+            }
+        );
+        assert_eq!(control("detectLaunchers"), Control::Action);
     }
 
     #[test]

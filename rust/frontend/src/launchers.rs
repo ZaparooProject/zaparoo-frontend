@@ -82,6 +82,27 @@ pub(crate) fn retry(ctx: &Ctx, app: &App, payload: &str) {
     }
 }
 
+/// Have Core re-check installed launchers, then replace the local snapshot.
+/// Runs when a host launcher scan reports a result.
+#[cfg(feature = "hosted")]
+pub(crate) fn refresh(ctx: &Ctx, app: &App) {
+    let client = ctx.store.client();
+    let ctx2 = ctx.clone();
+    let weak = app.as_weak();
+    ctx.handle.spawn(async move {
+        if client.launchers_refresh().await.is_err() {
+            return;
+        }
+        let Ok(result) = client.launchers().await else {
+            return;
+        };
+        let _ = weak.upgrade_in_event_loop(move |app| {
+            lock(&ctx2.shared).launchers = result.launchers;
+            crate::settings::refresh(&ctx2, &app);
+        });
+    });
+}
+
 /// The launcher ids Core offers for a system.
 fn launcher_ids(ctx: &Ctx, system_id: &str) -> Vec<String> {
     lock(&ctx.shared)

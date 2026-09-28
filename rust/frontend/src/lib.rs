@@ -18,6 +18,7 @@ mod drs;
 #[cfg(feature = "mister")]
 mod dual_head;
 mod folder_motion;
+mod folder_picker;
 mod fonts;
 #[cfg(any(feature = "mister", test))]
 mod frame_transition;
@@ -33,6 +34,7 @@ mod hub;
 mod hub_covers;
 mod input;
 mod latch_protocol;
+mod launcher_scan;
 mod launchers;
 mod log_upload;
 mod media_cache;
@@ -659,6 +661,8 @@ fn run_application(
     let status_language = effective_language(&persisted.settings.language);
     let (dormant, _) = tokio::sync::watch::channel(false);
     let ctx = Arc::new(Ctx {
+        folders: folder_picker::Model::default(),
+        launcher_scan: launcher_scan::Model::default(),
         store: store.clone(),
         handle: handle.clone(),
         media,
