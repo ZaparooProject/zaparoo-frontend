@@ -93,6 +93,9 @@ pub struct Inputs {
     pub can_pick_folder: bool,
     /// An embedding host can scan a folder for installed launchers.
     pub can_scan_launchers: bool,
+    /// An embedding host can hand off to the system setting that lets it
+    /// measure foreground playtime exactly.
+    pub can_request_playtime_access: bool,
     /// Core lets this client link an Online account and set play history
     /// consent: it answered `playtimeSyncEnabled`, which it only does for
     /// local and admin clients.
@@ -139,6 +142,7 @@ const ACTIONS: &[&str] = &[
     "runScraper",
     "pairDevice",
     "uploadLog",
+    "playtimeAccess",
     "onlineAccount",
 ];
 
@@ -212,6 +216,9 @@ pub fn page_rows(page: &str, inputs: &Inputs) -> Vec<Row> {
             }
             if inputs.can_scan_launchers {
                 rows.push(field("detectLaunchers"));
+            }
+            if inputs.can_request_playtime_access {
+                rows.push(field("playtimeAccess"));
             }
             rows.extend([
                 Row::Header("maintenance"),
@@ -515,6 +522,7 @@ mod tests {
             log_upload: true,
             can_pick_folder: false,
             can_scan_launchers: false,
+            can_request_playtime_access: false,
             can_link_online: false,
         }
     }
@@ -549,6 +557,19 @@ mod tests {
         assert_eq!(rows.get(account.unwrap() + 1), Some(&"playtimeSync"));
         assert_eq!(control("onlineAccount"), Control::Action);
         assert_eq!(control("playtimeSync"), Control::Toggle);
+    }
+
+    #[test]
+    fn playtime_access_requires_a_host_handoff_and_remains_an_action() {
+        let mut inputs = Inputs::default();
+        assert!(!page_rows("pageLibraryData", &inputs)
+            .iter()
+            .any(|row| row.id() == "playtimeAccess"));
+        inputs.can_request_playtime_access = true;
+        assert!(page_rows("pageLibraryData", &inputs)
+            .iter()
+            .any(|row| row.id() == "playtimeAccess"));
+        assert_eq!(control("playtimeAccess"), Control::Action);
     }
 
     #[test]
