@@ -24,6 +24,7 @@ pub(crate) fn inputs(ctx: &Ctx) -> rules::Inputs {
     rules::Inputs {
         can_pick_folder: ctx.folders.available(),
         can_scan_launchers: ctx.launcher_scan.available(),
+        can_link_online: lock(&ctx.shared).online.available,
         is_mister: ctx.is_mister,
         crt_enabled: ctx.crt_enabled,
         debug_build: cfg!(debug_assertions),
@@ -68,6 +69,7 @@ fn checked(ctx: &Ctx, id: &str) -> bool {
         "swapConfirmCancel" => s.swap_confirm_cancel,
         "swapOptionsView" => s.swap_options_view,
         "crtEnabled" => ctx.crt_enabled,
+        "playtimeSync" => shared.online.sync_enabled,
         _ => false,
     }
 }
@@ -206,6 +208,15 @@ fn rows(ctx: &Ctx, app: &App, page: crate::SettingsPage) -> Vec<SettingsRow> {
                                     zaparoo_app::format::count(i64::from(saved), &language).into();
                                 out.busy = pending;
                                 out.enabled = !pending;
+                            } else if id == "onlineAccount" {
+                                let linked = lock(&ctx.shared).online.linked;
+                                out.status_key = if linked {
+                                    crate::ActionStatus::OnlineLinked
+                                } else {
+                                    crate::ActionStatus::OnlineUnlinked
+                                };
+                                out.value =
+                                    SharedString::from(if linked { "unlink" } else { "link" });
                             } else if id == "detectLaunchers" {
                                 let (status, detected, pending) = ctx.launcher_scan.status();
                                 out.status_key = status;
@@ -598,6 +609,7 @@ fn accept(ctx: &Ctx, app: &App, id: &str, control: Control) {
             }
             "addGameFolder" => crate::folder_picker::request(ctx, app),
             "detectLaunchers" => crate::launcher_scan::request(ctx, app),
+            "onlineAccount" => crate::online::accept_account(ctx, app),
             "crtCalibration" => crate::router::open_crt_calibration(ctx, app),
             "updateMediaDb" => {
                 if ms.indexing || ms.optimizing {
@@ -642,6 +654,11 @@ fn accept(ctx: &Ctx, app: &App, id: &str, control: Control) {
 fn toggle(ctx: &Ctx, app: &App, id: &str) {
     if id == "crtEnabled" {
         crate::router::stage_restart(ctx, app, PendingRestart::CrtEnabled(!ctx.crt_enabled));
+        return;
+    }
+    // Core owns upload consent; nothing is saved locally.
+    if id == "playtimeSync" {
+        crate::online::toggle_sync(ctx, app);
         return;
     }
     let value = {

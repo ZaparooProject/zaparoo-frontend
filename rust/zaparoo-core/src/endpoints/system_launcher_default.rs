@@ -35,6 +35,7 @@ impl Mutation for SetSystemLauncherDefaultMutation {
             client
                 .settings_update(UpdateSettingsParams {
                     system_defaults: Some(merged),
+                    ..Default::default()
                 })
                 .await
         })

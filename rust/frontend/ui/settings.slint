@@ -66,6 +66,8 @@ export global SettingsLabels {
         if (key == ActionStatus.launcher-denied) { return @tr("Read access could not be saved. Choose the folder again."); }
         if (key == ActionStatus.launcher-failed) { return @tr("Could not scan that folder. Try again."); }
         if (key == ActionStatus.launcher-unavailable) { return @tr("Scanning for launchers is unavailable"); }
+        if (key == ActionStatus.online-linked) { return @tr("Linked to Zaparoo Online"); }
+        if (key == ActionStatus.online-unlinked) { return @tr("Not linked"); }
         if (key == ActionStatus.optimizing) { return @tr("Optimizing"); }
         if (key == ActionStatus.paused) { return @tr("Paused"); }
         if (key == ActionStatus.running) { return @tr("In progress"); }
@@ -114,6 +116,7 @@ export global SettingsLabels {
         if (id == "analogVideo") { return @tr("Analog video"); }
         if (id == "maintenance") { return @tr("Maintenance"); }
         if (id == "browsing") { return @tr("Browsing"); }
+        if (id == "online") { return @tr("Online"); }
         // Appearance.
         if (id == "colorScheme") { return @tr("Color scheme"); }
         if (id == "colorIntensity") { return @tr("Color intensity"); }
@@ -146,6 +149,8 @@ export global SettingsLabels {
         if (id == "mediaImageType") { return @tr("Preferred artwork"); }
         if (id == "showHidden") { return @tr("Show hidden items"); }
         if (id == "showOriginalFilenames") { return @tr("Show original filenames"); }
+        if (id == "onlineAccount") { return @tr("Online account…"); }
+        if (id == "playtimeSync") { return @tr("Sync play history"); }
         // About.
         if (id == "pairDevice") { return @tr("Pair a device"); }
         if (id == "aboutLicense") { return @tr("About / License"); }
@@ -183,6 +188,8 @@ export global SettingsLabels {
         if (id == "mediaImageType") { return @tr("Prefers an artwork type when games have multiple images."); }
         if (id == "showHidden") { return @tr("Shows hidden systems and categories so you can unhide them."); }
         if (id == "showOriginalFilenames") { return @tr("Shows real filenames instead of cleaned-up display titles."); }
+        if (id == "onlineAccount") { return @tr("Links this device to Zaparoo Online with a code, or unlinks it."); }
+        if (id == "playtimeSync") { return @tr("Uploads verified playtime to your account. Estimates stay local."); }
         if (id == "pairDevice") { return @tr("Shows a PIN for pairing a new device with Core."); }
         if (id == "aboutLicense") { return @tr("Version, build date, license terms, and contributors."); }
         if (id == "documentation") { return @tr("Shows a code for opening the Frontend guide on your phone."); }
@@ -198,6 +205,8 @@ export global SettingsLabels {
         if (key == "upload") { return @tr("Upload"); }
         if (key == "detect") { return @tr("Detect"); }
         if (key == "pair") { return @tr("Pair"); }
+        if (key == "link") { return @tr("Link"); }
+        if (key == "unlink") { return @tr("Unlink"); }
         return @tr("Open");
     }
 

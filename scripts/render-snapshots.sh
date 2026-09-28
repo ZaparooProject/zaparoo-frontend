@@ -20,7 +20,7 @@ cargo build -q -p frontend --features snapshot --bin snapshot
 snapshot="$repo_root/rust/target/debug/snapshot"
 mkdir -p "$out"
 
-digital_screens=(hub systems systems-list favorite-systems games games-list favorites favorites-list recents settings settings-page setup setup-picker log-upload picker palette-picker about about-scrolled context context-alt letters fast-scroll dialog alert notice saver launcher-saving token-write token-error qr-docs qr-write game-info game-info-short game-info-scrolled game-info-loading game-info-error)
+digital_screens=(hub systems systems-list favorite-systems games games-list favorites favorites-list recents settings settings-page settings-page-online online-link setup setup-picker log-upload picker palette-picker about about-scrolled context context-alt letters fast-scroll dialog alert notice saver launcher-saving token-write token-error qr-docs qr-write game-info game-info-short game-info-scrolled game-info-loading game-info-error)
 crt_screens=(crt-hub crt-systems crt-games crt-games-list crt-favorites crt-settings crt-settings-page crt-about crt-about-scrolled crt-setup crt-picker crt-palette-picker crt-letters crt-fast-scroll crt-dialog crt-alert crt-notice crt-launcher-saving crt-token-write crt-token-error crt-qr-docs crt-qr-write crt-game-info crt-game-info-short crt-game-info-scrolled crt-game-info-loading crt-game-info-error calibration)
 
 render() {

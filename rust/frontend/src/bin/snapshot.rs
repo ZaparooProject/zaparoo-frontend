@@ -46,8 +46,8 @@ mod generated {
 }
 use generated::{
     ActionStatus, AppCue, ControlKind, DialogButton, DialogKind, DisabledReason, ErrorKind,
-    GamesMode, LogPhase, Orientation, PairPhase, RowKind, ScopeKind, Screen, SettingsPage,
-    SetupKind, SetupPicker, StatusKind, SystemsMode, VideoStandard,
+    GamesMode, LogPhase, OnlineLinkPhase, Orientation, PairPhase, RowKind, ScopeKind, Screen,
+    SettingsPage, SetupKind, SetupPicker, StatusKind, SystemsMode, VideoStandard,
 };
 use generated::{App, GlyphSource, GridCell, LetterBucket, MenuEntry, Sizing, Theme};
 #[allow(
@@ -362,13 +362,7 @@ fn main() {
         ])));
     // Settings fixtures: the root category grid, or the Library page
     // with a header, both maintenance actions and the browsing rows.
-    fixture_settings(
-        &app,
-        scene_w,
-        scene_h,
-        crt,
-        screen.contains("settings-page"),
-    );
+    fixture_settings(&app, scene_w, scene_h, crt, &screen);
     // "setup" renders the scrape setup form over Settings; "setup-picker"
     // renders its scope page.
     if screen.contains("setup") {
@@ -507,6 +501,20 @@ fn main() {
     }
     if screen.contains("game-info") {
         fixture_game_info(&app, &screen);
+    }
+    // "online-link" renders the Online link panel with a live code.
+    if screen.contains("online-link") {
+        let url = "https://online.zaparoo.com/link?code=ABCD1234";
+        let ov = app.global::<generated::Overlays>();
+        if let Some((image, modules)) = qr::qr_image(url, qr::code_colors(&app)) {
+            ov.set_online_qr(image);
+            ov.set_online_qr_modules(i32::try_from(modules).unwrap_or(0));
+        }
+        ov.set_online_phase(OnlineLinkPhase::Showing);
+        ov.set_online_code("ABCD-1234".into());
+        ov.set_online_url("https://online.zaparoo.com/link".into());
+        ov.set_online_expires_in(597);
+        ov.set_online_open(true);
     }
     // "log-upload" renders the uploader's finished state with its link.
     if screen.contains("log-upload") {
@@ -731,6 +739,7 @@ fn fixture_screen(screen: &str) -> Screen {
     } else if screen.contains("settings")
         || screen.contains("setup")
         || screen.contains("log-upload")
+        || screen.contains("online-link")
     {
         Screen::Settings
     } else if matches!(
@@ -945,9 +954,11 @@ fn list_metrics(
     clippy::too_many_lines,
     reason = "one fixture keeps settings rows and their geometry together"
 )]
-fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, page: bool) {
+fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &str) {
     use zaparoo_app::layouts::{self, Body, ThemeId, View};
     use zaparoo_app::settings::{self as rules, Control, Row};
+    let page = screen.contains("settings-page");
+    let online = screen.contains("settings-page-online");
     let inputs = sizing::Scene::of(app, scene_w, scene_h, crt).inputs();
     let derived = zaparoo_app::sizing::derive(&inputs);
     let view = app.global::<generated::SettingsView>();
@@ -963,6 +974,7 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, page: bool
         log_upload: false,
         can_pick_folder: false,
         can_scan_launchers: false,
+        can_link_online: online,
     };
     let row_h = inputs.pct_h(8.0);
     let header_h = inputs.pct_h(5.0);
@@ -998,7 +1010,9 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, page: bool
                         }
                         Control::Action => {
                             out.busy = id == "runScraper";
-                            out.status_key = if out.busy {
+                            out.status_key = if id == "onlineAccount" {
+                                ActionStatus::OnlineUnlinked
+                            } else if out.busy {
                                 ActionStatus::Running
                             } else {
                                 ActionStatus::None
@@ -1007,10 +1021,10 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, page: bool
                         }
                         Control::Navigate => {}
                     }
-                    if out.busy {
-                        row_h + band
-                    } else {
+                    if out.status_key == ActionStatus::None {
                         row_h
+                    } else {
+                        row_h + band
                     }
                 }
             };
@@ -1033,7 +1047,18 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, page: bool
     let hint = 2 * (f64::from(derived.font_body) * 1.362).ceil() as i32;
     let viewport = (card_h - 2 * inputs.pct_h(2.0) - hint - inputs.pct_h(0.5)).max(0);
     view.set_page(page_id);
-    let index = if page { 2 } else { 1 };
+    // The Online fixture seats the cursor on the account row so the band
+    // scrolls to the group.
+    let index = if online {
+        rows.iter()
+            .position(|row| row.id == "onlineAccount")
+            .and_then(|i| i32::try_from(i).ok())
+            .unwrap_or(2)
+    } else if page {
+        2
+    } else {
+        1
+    };
     view.set_index(index);
     // Same snap the driver applies, from the same rule, so the fixture
     // cannot quietly frame the band differently from the app.

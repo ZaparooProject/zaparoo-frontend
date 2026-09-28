@@ -1044,6 +1044,41 @@ pub struct SystemDefault {
 pub struct SettingsResult {
     #[serde(default)]
     pub system_defaults: Vec<SystemDefault>,
+    /// Play history upload consent. Core returns it only to local and admin
+    /// clients, so its presence is also the capability to change it.
+    #[serde(default)]
+    pub playtime_sync_enabled: Option<bool>,
+    /// The Zaparoo Online service Core links accounts against. Local and
+    /// admin clients only.
+    #[serde(default)]
+    pub online_base_url: Option<String>,
+}
+
+/// `settings.auth.status`: whether Core holds a credential for a URL. No
+/// token material ever comes back.
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+pub struct AuthStatusResult {
+    #[serde(default)]
+    pub linked: bool,
+}
+
+/// A `settings.auth.link*` status. The code and URLs come only with the
+/// link call's own answer and a local status poll; notifications omit them.
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AuthLinkStatus {
+    #[serde(default)]
+    pub status: String,
+    #[serde(default)]
+    pub user_code: String,
+    #[serde(default)]
+    pub verification_url: String,
+    #[serde(default)]
+    pub verification_url_complete: String,
+    #[serde(default)]
+    pub expires_at: String,
+    #[serde(default)]
+    pub error: String,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
@@ -1114,6 +1149,8 @@ pub struct TokensHistoryResult {
 pub struct UpdateSettingsParams {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub system_defaults: Option<Vec<SystemDefault>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub playtime_sync_enabled: Option<bool>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
@@ -2216,6 +2253,7 @@ mod tests {
                 launcher: "snes9x".into(),
                 before_exit: String::new(),
             }]),
+            ..Default::default()
         };
         let json = serde_json::to_value(&params).expect("serialise");
         let defaults = json

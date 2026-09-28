@@ -93,6 +93,10 @@ pub struct Inputs {
     pub can_pick_folder: bool,
     /// An embedding host can scan a folder for installed launchers.
     pub can_scan_launchers: bool,
+    /// Core lets this client link an Online account and set play history
+    /// consent: it answered `playtimeSyncEnabled`, which it only does for
+    /// local and admin clients.
+    pub can_link_online: bool,
     /// `MiSTer`: the resolution and analog-video rows only exist there.
     pub is_mister: bool,
     /// The frontend is already running the native CRT path.
@@ -113,6 +117,7 @@ const TOGGLES: &[&str] = &[
     "crtEnabled",
     "swapConfirmCancel",
     "swapOptionsView",
+    "playtimeSync",
 ];
 
 const NAVIGATES: &[&str] = &[
@@ -134,6 +139,7 @@ const ACTIONS: &[&str] = &[
     "runScraper",
     "pairDevice",
     "uploadLog",
+    "onlineAccount",
 ];
 
 /// The control a row id carries: everything that is not a toggle, a
@@ -218,6 +224,15 @@ pub fn page_rows(page: &str, inputs: &Inputs) -> Vec<Row> {
                 field("showHidden"),
                 field("showOriginalFilenames"),
             ]);
+            // Play history is library data; its upload stays an explicit,
+            // separate choice from linking the account.
+            if inputs.can_link_online {
+                rows.extend([
+                    Row::Header("online"),
+                    field("onlineAccount"),
+                    field("playtimeSync"),
+                ]);
+            }
             rows
         }
         // Pairing leads: it is the one row here a user comes to *do*,
@@ -321,6 +336,7 @@ pub fn action_label_key(id: &str, busy: bool) -> &'static str {
         "uploadLog" => "upload",
         "detectLaunchers" => "detect",
         "pairDevice" => "pair",
+        "onlineAccount" => "link",
         _ => "open",
     }
 }
@@ -499,6 +515,7 @@ mod tests {
             log_upload: true,
             can_pick_folder: false,
             can_scan_launchers: false,
+            can_link_online: false,
         }
     }
 
@@ -512,6 +529,26 @@ mod tests {
         };
         assert!(ids(&mister(false)).contains(&"uploadLog"));
         assert!(!ids(&Inputs::default()).contains(&"uploadLog"));
+    }
+
+    #[test]
+    fn online_rows_need_core_consent_capability() {
+        let mut inputs = Inputs::default();
+        let ids = |inputs: &Inputs| -> Vec<&str> {
+            page_rows("pageLibraryData", inputs)
+                .iter()
+                .map(|row| row.id())
+                .collect()
+        };
+        assert!(!ids(&inputs).contains(&"onlineAccount"));
+        assert!(!ids(&inputs).contains(&"playtimeSync"));
+        inputs.can_link_online = true;
+        let rows = ids(&inputs);
+        let account = rows.iter().position(|id| *id == "onlineAccount");
+        assert_eq!(rows.get(account.unwrap() - 1), Some(&"online"));
+        assert_eq!(rows.get(account.unwrap() + 1), Some(&"playtimeSync"));
+        assert_eq!(control("onlineAccount"), Control::Action);
+        assert_eq!(control("playtimeSync"), Control::Toggle);
     }
 
     #[test]

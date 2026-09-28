@@ -14,14 +14,14 @@
 // instead of disappearing into a queue.
 
 use crate::media_types::{
-    HealthResult, LaunchersResult, LogDownloadResult, MediaBrowseIndexParams,
-    MediaBrowseIndexResult, MediaBrowseParams, MediaBrowseResult, MediaHistoryLatestResult,
-    MediaHistoryParams, MediaHistoryResult, MediaImageParams, MediaImageResult, MediaIndexParams,
-    MediaMetaParams, MediaMetaResult, MediaMetaUpdateParams, MediaResult, MediaScrapeParams,
-    MediaSearchParams, MediaSearchResult, MediaTagsUpdateParams, MediaTagsUpdateResult,
-    PairStartResult, ReadersResult, ReadersWriteParams, RunParams, ScrapersResult,
-    ScrapingStatusResponse, SettingsResult, SystemsParams, SystemsResult, TokensHistoryResult,
-    TokensResult, UpdateSettingsParams, VersionResult,
+    AuthLinkStatus, AuthStatusResult, HealthResult, LaunchersResult, LogDownloadResult,
+    MediaBrowseIndexParams, MediaBrowseIndexResult, MediaBrowseParams, MediaBrowseResult,
+    MediaHistoryLatestResult, MediaHistoryParams, MediaHistoryResult, MediaImageParams,
+    MediaImageResult, MediaIndexParams, MediaMetaParams, MediaMetaResult, MediaMetaUpdateParams,
+    MediaResult, MediaScrapeParams, MediaSearchParams, MediaSearchResult, MediaTagsUpdateParams,
+    MediaTagsUpdateResult, PairStartResult, ReadersResult, ReadersWriteParams, RunParams,
+    ScrapersResult, ScrapingStatusResponse, SettingsResult, SystemsParams, SystemsResult,
+    TokensHistoryResult, TokensResult, UpdateSettingsParams, VersionResult,
 };
 use crate::transport::Transport;
 use futures_util::{SinkExt, StreamExt};
@@ -721,6 +721,50 @@ impl Client {
 
     pub async fn settings_update(&self, params: UpdateSettingsParams) -> Result<(), ClientError> {
         self.call("settings.update", &params).await?;
+        Ok(())
+    }
+
+    /// Whether Core holds an Online credential for `url`. Local only; the
+    /// token is never validated or returned.
+    pub async fn settings_auth_status(&self, url: &str) -> Result<AuthStatusResult, ClientError> {
+        #[derive(Serialize)]
+        struct P<'a> {
+            url: &'a str,
+        }
+        let val = self.call("settings.auth.status", &P { url }).await?;
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
+    }
+
+    /// Start linking this device to an Online account. Core answers the code
+    /// and URL to show, then waits for approval in the background.
+    pub async fn settings_auth_link(&self) -> Result<AuthLinkStatus, ClientError> {
+        #[derive(Serialize)]
+        struct P {}
+        let val = self.call("settings.auth.link", &P {}).await?;
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
+    }
+
+    pub async fn settings_auth_link_status(&self) -> Result<AuthLinkStatus, ClientError> {
+        #[derive(Serialize)]
+        struct P {}
+        let val = self.call("settings.auth.link.status", &P {}).await?;
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
+    }
+
+    /// Cancel the pending link. Core errors when none is pending, which the
+    /// caller may ignore.
+    pub async fn settings_auth_link_cancel(&self) -> Result<(), ClientError> {
+        #[derive(Serialize)]
+        struct P {}
+        self.call("settings.auth.link.cancel", &P {}).await?;
+        Ok(())
+    }
+
+    /// Remove this device's Online account credentials.
+    pub async fn settings_auth_unlink(&self) -> Result<(), ClientError> {
+        #[derive(Serialize)]
+        struct P {}
+        self.call("settings.auth.unlink", &P {}).await?;
         Ok(())
     }
 
