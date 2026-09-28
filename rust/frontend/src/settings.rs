@@ -20,7 +20,7 @@ use crate::router::{lock, Ctx, ListContext, PendingRestart};
 use crate::{App, GridCell, SettingsInput, SettingsRow, SettingsView};
 
 /// What the registry needs to know about this machine.
-fn inputs(ctx: &Ctx) -> rules::Inputs {
+pub(crate) fn inputs(ctx: &Ctx) -> rules::Inputs {
     rules::Inputs {
         can_pick_folder: ctx.folders.available(),
         can_scan_launchers: ctx.launcher_scan.available(),
