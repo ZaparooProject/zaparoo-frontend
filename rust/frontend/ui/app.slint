@@ -8,8 +8,8 @@
 // logic; forward orchestration lives in the router.
 
 import { Theme, Sizing, Motion, Layout } from "theme.slint";
-import { Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, PressOwner, StatusKind, Orientation, VideoStandard, StateTokens, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogProgress, DialogButton, FirstRunPhase, ErrorKind } from "state_types.slint";
-export { Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, PressOwner, StatusKind, Orientation, VideoStandard, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogProgress, DialogButton, FirstRunPhase, ErrorKind }
+import { Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, PressOwner, StatusKind, Orientation, VideoStandard, StateTokens, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogProgress, DialogButton, FirstRunPhase, ErrorKind } from "state_types.slint";
+export { Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, PressOwner, StatusKind, Orientation, VideoStandard, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogProgress, DialogButton, FirstRunPhase, ErrorKind }
 import { GlyphSource, Brand, Buttons, HelpEntry, Status, HeaderBar, StatusLine, ProgressTrack, TopStatusStrip, PageIndicator, ActiveLabel, HelpBar, SectionHeader, Divider, ScrollCue, ModalShell, QrPlate, StateCue } from "chrome.slint";
 import { GridCell, MarqueeCaption, PressableSurface, Tile, PagedGridView } from "tiles.slint";
 import { ScrollOffset, SelectionCursor, SelectionClip } from "focus.slint";
@@ -476,6 +476,15 @@ export global Overlays {
     in-out property <string> pair-pin: "";
     in-out property <int> pair-expires-in: 0;
     in-out property <string> pair-client: "";
+    // The Online account link panel: Core's code, the URL to open, and
+    // the same URL with the code in it as a QR code.
+    in-out property <bool> online-open: false;
+    in-out property <OnlineLinkPhase> online-phase: OnlineLinkPhase.closed;
+    in-out property <string> online-code: "";
+    in-out property <string> online-url: "";
+    in-out property <int> online-expires-in: 0;
+    in-out property <image> online-qr;
+    in-out property <int> online-qr-modules: 0;
     // QR write deep-link modal: the matrix image is rendered by Rust
     // at module resolution (quiet zone baked in) and scaled up
     // pixelated to the largest whole multiple.
@@ -1474,6 +1483,114 @@ component PairDeviceModal inherits ModalShell {
     }
 }
 
+// Linking an Online account: a code to scan, the short code and URL for
+// typing it in instead, and the time left, then the outcome. Display only;
+// Rust owns every phase change, like the pairing panel.
+component OnlineLinkModal inherits ModalShell {
+    property <length> code-size: Sizing.font-size(7);
+    property <int> minutes-left: Math.ceil(Overlays.online-expires-in / 60);
+    property <bool> showing: Overlays.online-phase == OnlineLinkPhase.showing;
+    property <length> max-px: Math.min(Sizing.pct-w(32), Sizing.pct-h(38));
+    property <length> module-px: Overlays.online-qr-modules > 0
+        ? Math.max(1, Math.floor(root.max-px / Overlays.online-qr-modules / 1px)) * 1px
+        : 1px;
+    property <length> qr-px: root.module-px * Overlays.online-qr-modules;
+
+    title: @tr("Link Online account");
+    panel-width: Math.min(root.width * 0.78, Sizing.pct-h(110));
+    content-height: Math.ceil(content.preferred-height / 1px) * 1px;
+
+    content := VerticalLayout {
+        x: root.pad;
+        y: root.content-y;
+        width: root.content-width;
+        height: self.preferred-height;
+        spacing: root.pad;
+
+        if !root.showing: Rectangle {
+            height: Math.ceil(message.preferred-height / 1px) * 1px;
+            message := Text {
+                x: 0px;
+                y: 0px;
+                width: parent.width;
+                horizontal-alignment: center;
+                text: Overlays.online-phase == OnlineLinkPhase.starting ? @tr("Starting…")
+                    : Overlays.online-phase == OnlineLinkPhase.linked ? @tr("This device is now linked to your Zaparoo Online account.")
+                    : Overlays.online-phase == OnlineLinkPhase.expired ? @tr("The code expired before it was approved. Link again for a new one.")
+                    : @tr("Linking failed. Check the network connection and try again.");
+                color: Overlays.online-phase == OnlineLinkPhase.starting ? Theme.text-label : Theme.text-primary;
+                font-size: Sizing.font-body;
+                wrap: word-wrap;
+            }
+        }
+
+        if root.showing: Rectangle {
+            height: Math.ceil(instructions.preferred-height / 1px) * 1px;
+            instructions := Text {
+                x: 0px;
+                y: 0px;
+                width: parent.width;
+                horizontal-alignment: center;
+                text: @tr("Scan this code with your phone, or open the address below and enter the code.");
+                color: Theme.text-primary;
+                font-size: Sizing.font-caption;
+                wrap: word-wrap;
+            }
+        }
+        if root.showing && Overlays.online-qr-modules > 0: Rectangle {
+            height: root.qr-px;
+            QrPlate {
+                x: (parent.width - self.width) / 2;
+                y: 0px;
+                width: root.qr-px;
+                height: root.qr-px;
+                code: Overlays.online-qr;
+                quiet-zone: root.module-px * 4;
+            }
+        }
+        if root.showing: Rectangle {
+            height: Math.ceil(code.preferred-height / 1px) * 1px;
+            code := Text {
+                x: (parent.width - self.width) / 2;
+                y: 0px;
+                width: Math.min(Math.ceil(self.preferred-width / 1px) * 1px, parent.width);
+                text: Overlays.online-code;
+                color: Theme.accent;
+                font-size: root.code-size;
+                font-weight: FontWeight.medium;
+            }
+        }
+        if root.showing: Rectangle {
+            height: Math.ceil(url.preferred-height / 1px) * 1px;
+            url := Text {
+                x: 0px;
+                y: 0px;
+                width: parent.width;
+                horizontal-alignment: center;
+                text: Overlays.online-url;
+                color: Theme.text-primary;
+                font-size: Sizing.font-small;
+                wrap: char-wrap;
+            }
+        }
+        if root.showing: Rectangle {
+            height: Math.ceil(expiry.preferred-height / 1px) * 1px;
+            expiry := Text {
+                x: 0px;
+                y: 0px;
+                width: parent.width;
+                horizontal-alignment: center;
+                text: Overlays.online-expires-in >= 60
+                    ? @tr("Expires in {n} minute" | "Expires in {n} minutes" % root.minutes-left)
+                    : @tr("Expires in {n} second" | "Expires in {n} seconds" % Overlays.online-expires-in);
+                color: Theme.text-label;
+                font-size: Sizing.font-caption;
+                wrap: word-wrap;
+            }
+        }
+    }
+}
+
 // QR shell: translated purpose and instructions above an integer module
 // matrix, with a readable documentation URL for composite video.
 component QrCodeModal inherits ModalShell {
@@ -2417,7 +2534,7 @@ export component App inherits Window {
 
     pure function has-modal() -> bool {
         return LogUploadView.open || SetupModalView.open || GameInfoView.modal-open || Overlays.card-write-open || Overlays.qr-open
-            || Overlays.pair-open || Overlays.dialog-open || Overlays.list-open || Overlays.letter-open
+            || Overlays.pair-open || Overlays.online-open || Overlays.dialog-open || Overlays.list-open || Overlays.letter-open
             || Overlays.context-open;
     }
 
@@ -2502,6 +2619,18 @@ export component App inherits Window {
         // Pairing: while a PIN is live, Back is the only thing that can
         // happen and it calls the pairing off. Once it is finished or
         // spent there is nothing to call off, so both buttons just close.
+        // Online link: while a code is live, Back calls it off; once it has
+        // an outcome both buttons just close.
+        if (Overlays.online-open) {
+            if (Overlays.online-phase == OnlineLinkPhase.linked || Overlays.online-phase == OnlineLinkPhase.failed
+                || Overlays.online-phase == OnlineLinkPhase.expired) {
+                return [
+                    { buttons: ["ButtonA"], label: @tr("Done") },
+                    { buttons: ["ButtonB"], label: @tr("Close") },
+                ];
+            }
+            return [{ buttons: ["ButtonB"], label: @tr("Cancel") }];
+        }
         if (Overlays.pair-open) {
             if (Overlays.pair-phase == PairPhase.paired || Overlays.pair-phase == PairPhase.expired) {
                 return [
@@ -2820,6 +2949,8 @@ export component App inherits Window {
     }
 
     if Overlays.pair-open: PairDeviceModal {}
+
+    if Overlays.online-open: OnlineLinkModal {}
 
     if LogUploadView.open: LogUploadModal {
         phase: LogUploadView.phase;

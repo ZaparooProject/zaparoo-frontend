@@ -575,6 +575,137 @@ fn pairing_row_shows_a_pin_and_every_exit_calls_the_pairing_off() {
     assert_eq!(crate::router::lock(&ctx.shared).pairing.cancels, 3);
 }
 
+/// One settings row by id, or an empty row the caller's asserts reject.
+fn settings_row(app: &App, id: &str) -> crate::SettingsRow {
+    app.global::<crate::SettingsView>()
+        .get_rows()
+        .iter()
+        .find(|row| row.id == id)
+        .unwrap_or_default()
+}
+
+fn online_settings(ctx: &crate::router::Ctx, app: &App, linked: bool) {
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.online.available = true;
+        shared.online.linked = linked;
+        shared.online.sync_enabled = false;
+    }
+    crate::settings::open_page(ctx, app, SettingsPage::Library);
+}
+
+/// The Online rows appear only when Core offers upload consent to this
+/// client; unlinking asks first.
+#[test]
+fn online_rows_follow_core_and_unlinking_asks_first() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    app.global::<crate::Motion>().set_enabled(false);
+    app.global::<Shell>().set_active_screen(Screen::Settings);
+
+    crate::settings::open_page(&ctx, &app, SettingsPage::Library);
+    assert_eq!(
+        settings_row(&app, "onlineAccount").id,
+        "",
+        "no consent capability from Core, no Online rows"
+    );
+    online_settings(&ctx, &app, false);
+    let account = settings_row(&app, "onlineAccount");
+    assert_eq!(account.id, "onlineAccount");
+    assert_eq!(account.status_key, crate::ActionStatus::OnlineUnlinked);
+    assert_eq!(account.value, "link");
+    let sync = settings_row(&app, "playtimeSync");
+    assert_eq!(sync.id, "playtimeSync");
+    assert!(!sync.checked, "upload consent defaults off");
+
+    online_settings(&ctx, &app, true);
+    let account = settings_row(&app, "onlineAccount");
+    assert_eq!(account.status_key, crate::ActionStatus::OnlineLinked);
+    assert_eq!(account.value, "unlink");
+    let ov = app.global::<crate::Overlays>();
+    crate::online::accept_account(&ctx, &app);
+    assert!(ov.get_dialog_open());
+    assert_eq!(ov.get_dialog_kind(), DialogKind::UnlinkOnline);
+    assert_eq!(ov.get_dialog_buttons().row_data(0), Some(DialogButton::No));
+    assert_eq!(ov.get_dialog_focus(), 0);
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert!(!ov.get_dialog_open());
+    assert!(crate::router::lock(&ctx.shared).online.linked);
+}
+
+/// The link panel shows Core's code until Core decides, and every way out
+/// takes the code off screen.
+#[test]
+fn online_link_panel_shows_the_code_until_core_decides() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    app.global::<crate::Motion>().set_enabled(false);
+    app.global::<Shell>().set_active_screen(Screen::Settings);
+    online_settings(&ctx, &app, false);
+
+    // Linking puts the panel up before Core answers, then shows the code.
+    let ov = app.global::<crate::Overlays>();
+    settle(&window);
+    app.window().request_redraw();
+    let settings_page = frame(&window);
+    let ticket = crate::online::open(&ctx, &app);
+    assert!(ov.get_online_open());
+    assert_eq!(ov.get_online_phase(), crate::OnlineLinkPhase::Starting);
+    crate::online::observe_started(
+        &ctx,
+        &app,
+        ticket,
+        "ABCD-1234",
+        "https://online.example/link",
+        "https://online.example/link?code=ABCD1234",
+        600,
+    );
+    assert_eq!(ov.get_online_phase(), crate::OnlineLinkPhase::Showing);
+    assert_eq!(ov.get_online_code(), "ABCD-1234");
+    assert_eq!(ov.get_online_url(), "https://online.example/link");
+    assert!(ov.get_online_qr_modules() > 0, "the code is scannable");
+    settle(&window);
+    app.window().request_redraw();
+    assert_ne!(
+        settings_page,
+        frame(&window),
+        "the code has to be on screen"
+    );
+
+    // Accept does nothing while Core waits; approval ends it.
+    crate::router::handle_action(&ctx, &app, "accept");
+    assert!(ov.get_online_open());
+    crate::online::observe_status(&ctx, &app, "approved");
+    assert_eq!(ov.get_online_phase(), crate::OnlineLinkPhase::Linked);
+    assert_eq!(
+        ov.get_online_code(),
+        "",
+        "an approved code leaves the screen"
+    );
+    crate::router::handle_action(&ctx, &app, "accept");
+    assert!(!ov.get_online_open());
+
+    // Back walks away from a live code.
+    let ticket = crate::online::open(&ctx, &app);
+    crate::online::observe_started(&ctx, &app, ticket, "WXYZ", "u", "", 600);
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert!(!ov.get_online_open());
+    assert_eq!(ov.get_online_code(), "");
+
+    // A refused start stays up with its failure until dismissed.
+    let ticket = crate::online::open(&ctx, &app);
+    crate::online::observe_failed(&ctx, &app, ticket);
+    assert_eq!(ov.get_online_phase(), crate::OnlineLinkPhase::Failed);
+    crate::router::handle_action(&ctx, &app, "accept");
+    assert!(!ov.get_online_open());
+}
+
 #[test]
 fn a_pairing_core_refuses_closes_the_panel_and_takes_the_shared_alert() {
     assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());

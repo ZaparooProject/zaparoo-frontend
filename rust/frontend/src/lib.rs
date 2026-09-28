@@ -50,6 +50,7 @@ mod mister;
 )]
 mod mister_battery;
 mod navigation;
+mod online;
 mod pairing;
 #[cfg_attr(
     not(feature = "hosted"),
@@ -800,7 +801,9 @@ fn run_application(
     // not have to start a second one.
     steam_host::start(&config.core_endpoint);
     bind_status_events(&ctx, &app, &client);
+    bind_history_changes(&ctx, &app, &client);
     pairing::bind_events(&ctx, &app, &client);
+    online::bind_events(&ctx, &app, &client);
     bind_launchers(&ctx, &store);
     apply_buttons(&ctx, &app);
     bind_controller_report(&ctx, &app);
@@ -1067,6 +1070,34 @@ fn bind_status_events(ctx: &Arc<Ctx>, app: &App, client: &Arc<Client>) {
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
+            }
+        }
+    });
+}
+
+/// Core's `media.history.changed`: a platform recorded play history
+/// after the fact, with no `media.stopped` to trigger the refresh in
+/// `bind_desktop_lifecycle`. Drop cached history and refill what shows it.
+fn bind_history_changes(ctx: &Arc<Ctx>, app: &App, client: &Arc<Client>) {
+    let mut rx = client.subscribe_notifications();
+    let weak = app.as_weak();
+    let ctx = ctx.clone();
+    ctx.handle.clone().spawn(async move {
+        loop {
+            let changed = match rx.recv().await {
+                Ok(notification) => notification.method == "media.history.changed",
+                // A missed notification may have been this one.
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => true,
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
+            };
+            if changed {
+                ctx.store
+                    .invalidate(&zaparoo_core::store::Tag::any("MediaHistory"));
+                let ctx_event = ctx.clone();
+                let _ = weak.upgrade_in_event_loop(move |app| {
+                    refresh_resume(&ctx_event, &app);
+                    games::refresh_recents(&ctx_event, &app);
+                });
             }
         }
     });

@@ -30,6 +30,7 @@ pub mod letter_jump;
 pub mod log_upload;
 pub mod media_list;
 pub mod media_setup;
+pub mod online_link;
 pub mod paged_grid;
 pub mod pairing;
 pub mod palette;

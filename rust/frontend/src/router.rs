@@ -66,6 +66,10 @@ pub struct Shared {
     /// The "Pair a device" panel: its phase, the PIN on screen and what
     /// leaving still owes Core.
     pub pairing: zaparoo_app::pairing::Session,
+    /// Online account and play history consent, as Core last reported them.
+    pub online: crate::online::Model,
+    /// The Online account link panel.
+    pub online_link: zaparoo_app::online_link::Session,
     /// Failed user actions waiting for the alert surface.
     pub errors: action_error::ErrorQueue,
     /// The context menu's alternate-versions page.
@@ -244,6 +248,8 @@ impl Shared {
             setup: crate::media_setup::SetupModel::new(),
             log_upload: crate::log_upload::LogUploadModel::new(),
             pairing: zaparoo_app::pairing::Session::default(),
+            online: crate::online::Model::default(),
+            online_link: zaparoo_app::online_link::Session::default(),
             errors: action_error::ErrorQueue::new(),
             alternates: crate::alternates::AlternatesModel::default(),
             input: crate::input::InputModel::new(),
@@ -637,6 +643,12 @@ fn dialog_accept(ctx: &Ctx, app: &App, kind: DialogKind, focus: usize) {
                 close_dialog(app);
             }
         }
+        DialogKind::UnlinkOnline => {
+            close_dialog(app);
+            if confirmed {
+                crate::online::unlink(ctx, app);
+            }
+        }
         _ => close_dialog(app),
     }
 }
@@ -1014,6 +1026,12 @@ fn dispatch_action(ctx: &Ctx, app: &App, action: &str) {
         crate::pairing::handle_action(ctx, app, action);
         return;
     }
+    // The Online link panel, on the same terms: Back is the way out and
+    // calls a live code off.
+    if app.global::<crate::Overlays>().get_online_open() {
+        crate::online::handle_action(ctx, app, action);
+        return;
+    }
     if app.global::<crate::Overlays>().get_card_write_open() {
         // Accept commits the focused Cancel button; Back cancels directly.
         if action == actions::CANCEL || action == actions::ACCEPT {
@@ -1095,6 +1113,18 @@ fn about_action(ctx: &Ctx, app: &App, action: &str) {
         // About is reached from the Support page; Back lands there.
         crate::settings::return_from_about(ctx, app);
     }
+}
+
+/// Ask before removing the Online account link; No is focused.
+pub(crate) fn confirm_unlink_online(app: &App) {
+    open_dialog(
+        app,
+        DialogKind::UnlinkOnline,
+        "",
+        "",
+        &[DialogButton::No, DialogButton::Yes],
+        0,
+    );
 }
 
 pub(crate) fn stage_restart(ctx: &Ctx, app: &App, pending: PendingRestart) {
