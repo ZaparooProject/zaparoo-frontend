@@ -46,6 +46,17 @@ pub fn is_rapid_navigation_action(action: &str) -> bool {
     matches!(action, "up" | "down" | "page_prev" | "page_next")
 }
 
+/// The tier a repeat of `action` runs at once the hold has reached
+/// `held`. Only the fast-scroll directions speed up; left and right keep
+/// stepping a cell at the row cadence however long they are held.
+pub fn repeat_tier(action: &str, held: HoldTier) -> HoldTier {
+    if is_rapid_navigation_action(action) {
+        held
+    } else {
+        HoldTier::Row
+    }
+}
+
 /// Drop a second delivery of the same key while the guard window is
 /// open. A different key, or the same key after the window closes, is
 /// not a duplicate.
@@ -376,6 +387,22 @@ mod tests {
         );
         assert!(hold.stop());
         assert!(!hold.stop());
+    }
+
+    #[test]
+    fn only_fast_scroll_directions_speed_up() {
+        for action in ["up", "down", "page_prev", "page_next"] {
+            assert_eq!(repeat_tier(action, HoldTier::Letter), HoldTier::Letter);
+            assert_eq!(repeat_tier(action, HoldTier::Page), HoldTier::Page);
+        }
+        for action in ["left", "right"] {
+            assert_eq!(repeat_tier(action, HoldTier::Letter), HoldTier::Row);
+            assert_eq!(repeat_tier(action, HoldTier::Page), HoldTier::Row);
+            assert_eq!(
+                repeat_tier(action, HoldTier::Letter).repeat_ms(),
+                REPEAT_TICK_MS
+            );
+        }
     }
 
     #[test]

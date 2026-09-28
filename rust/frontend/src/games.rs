@@ -2251,9 +2251,10 @@ fn publish_rail(app: &App, shared: &Shared) {
     view.set_rail_visible(model.rail_visible);
 }
 
-/// A fast scroll stops at the list's ends: a tapped page flip wraps
-/// around, but a held one wrapping sends the user away from the end they
-/// were heading for.
+/// A held page flip stops at the list's ends: a tapped one wraps around,
+/// but a held one wrapping sends the user away from the end they were
+/// heading for. That holds from the first repeat, before the hold counts
+/// as a fast scroll.
 fn at_rapid_edge(ctx: &Ctx, dir: i64) -> bool {
     let shared = lock(&ctx.shared);
     let grid = &shared.games.grid;
@@ -2302,8 +2303,12 @@ pub fn set_rapid(ctx: &Ctx, app: &App, active: bool) {
         let model = &mut shared.games;
         let changed = model.rapid_active != active;
         model.rapid_active = active;
-        model.rail_seq += 1;
-        let linger = !active && model.rail_visible;
+        // Only the transition re-arms the linger: taps after a fast scroll
+        // must not keep pushing its deadline back.
+        if changed {
+            model.rail_seq += 1;
+        }
+        let linger = changed && !active && model.rail_visible;
         if active {
             model.rail_visible = true;
         }
@@ -2471,7 +2476,7 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
             }
             if list {
                 list_move(ctx, app, dir * list_page);
-            } else if !(crate::input::rapid_page(ctx) && at_rapid_edge(ctx, dir)) {
+            } else if !(crate::input::dispatching_repeat(ctx) && at_rapid_edge(ctx, dir)) {
                 grid_move(ctx, app, 0, 0, dir as i32);
             }
         }

@@ -1008,6 +1008,69 @@ fn rail_needs_a_qualified_hold_and_lingers_after_the_scroll_stops() {
 }
 
 #[test]
+fn taps_after_a_fast_scroll_do_not_extend_the_rail_linger() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    app.global::<Shell>().set_active_screen(Screen::Games);
+    seat_folder(&ctx, &app, "Game", 0);
+    settle(&window);
+    let view = app.global::<crate::GamesView>();
+    crate::input::dispatch_repeat(&ctx, &app, "page_next", HoldTier::Page);
+    assert!(view.get_rail_visible());
+    crate::router::handle_action(&ctx, &app, "down");
+    assert!(!view.get_rapid_active());
+    assert!(view.get_rail_visible(), "the rail lingers after the scroll");
+    let half = zaparoo_app::media_list::RAIL_LINGER_MS / 2;
+    CLOCK.with(|clock| clock.set(clock.get() + half));
+    slint::platform::update_timers_and_animations();
+    crate::router::handle_action(&ctx, &app, "up");
+    CLOCK.with(|clock| {
+        clock.set(clock.get() + zaparoo_app::media_list::RAIL_LINGER_MS - half);
+    });
+    slint::platform::update_timers_and_animations();
+    assert!(
+        !view.get_rail_visible(),
+        "a tap during the linger must not push its deadline back"
+    );
+}
+
+#[test]
+fn a_held_page_flip_stops_at_the_ends_from_its_first_repeat() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    app.global::<Shell>().set_active_screen(Screen::Games);
+    seat_folder(&ctx, &app, "Game", 0);
+    let size = crate::router::lock(&ctx.shared).games.grid.page_size();
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.games.rows = game_rows("Game", size * 2);
+        shared.games.grid.set_item_count(size * 2);
+        shared.games.grid.set_current_index_immediate(size);
+    }
+    crate::games::render(&ctx, &app);
+    settle(&window);
+    let page = || crate::router::lock(&ctx.shared).games.grid.current_page();
+    assert_eq!(page(), 1);
+    // An early repeat is still a hold, though not yet a fast scroll.
+    crate::input::dispatch_repeat(&ctx, &app, "page_next", HoldTier::Row);
+    assert_eq!(page(), 1, "a held flip must not wrap past the last page");
+    assert!(!crate::router::lock(&ctx.shared).games.sliding);
+    // A tap still wraps.
+    crate::router::handle_action(&ctx, &app, "page_next");
+    assert!(crate::router::lock(&ctx.shared).games.sliding);
+}
+
+#[test]
 fn long_holds_step_pages_then_letters_and_the_rail_follows() {
     assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
     let (app, window) = boot();
