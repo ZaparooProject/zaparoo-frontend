@@ -21,6 +21,7 @@ and consumers, the snapshot binary, and the MiSTer dual-head mirror/tests.
 | Input | `PressOwner`, `ScrollAction`: delayed-accept ownership, overlay pointer dispatch and Details scroll commands |
 | Display | `Orientation`, `VideoStandard`: UI selection; orientation stays typed through scene sizing and live backend updates |
 | Log upload | `LogPhase`: uploading, done, failed |
+| Pairing | `PairPhase`: closed, starting, showing, paired, expired |
 
 UI-owned browse and first-run enums are reused directly by Rust. Toolkit-free
 rules (`zaparoo-app`) retain their own enums; exhaustive `From` matches in
