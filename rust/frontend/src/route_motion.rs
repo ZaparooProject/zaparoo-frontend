@@ -3665,6 +3665,39 @@ fn settings_reopens_on_the_page_and_row_it_was_left_on() {
 }
 
 #[test]
+fn a_failed_browse_of_a_remembered_folder_keeps_the_memory() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let snes = zaparoo_core::media_types::SystemInfo {
+        id: "SNES".into(),
+        name: "SNES".into(),
+        media_count: Some(1),
+        ..Default::default()
+    };
+    let remembered = zaparoo_core::persist::SystemFocus {
+        system_id: "SNES".into(),
+        path_stack: vec![String::new(), "/snes/rpg".into()],
+        selected_at_level: vec!["/snes/rpg".into(), "/snes/rpg/z.sfc".into()],
+        list_top_at_level: vec![0, 2],
+    };
+    crate::router::lock(&ctx.shared).persist.games.system_focus = vec![remembered.clone()];
+    crate::games::enter(&ctx, &app, &snes);
+    let ticket = {
+        let shared = crate::router::lock(&ctx.shared);
+        assert!(shared.games.focus_recalled);
+        shared.games.ticket
+    };
+    // The link drops, or Core is busy: an error, not an empty folder. The
+    // entry is called off as any failed navigation is, and the remembered
+    // position survives for the next visit.
+    crate::games::show_error(&ctx, &app, ticket, "not connected", true);
+    let shared = crate::router::lock(&ctx.shared);
+    assert!(!shared.games.focus_recalled);
+    assert_eq!(shared.persist.games.system_focus, vec![remembered]);
+}
+
+#[test]
 fn a_system_reopens_in_its_remembered_folder_or_its_root_when_gone() {
     assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
     let (app, _window) = boot();

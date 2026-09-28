@@ -593,9 +593,9 @@ pub fn enter(ctx: &Ctx, app: &App, sys: &SystemInfo) {
     browse(ctx, app, &top, true);
 }
 
-/// A recalled browse position whose folder is gone (Core failed it, or
-/// it came back empty): forget it and browse the system root instead.
-/// True when the fallback took over the fill.
+/// A recalled browse position whose folder is gone (Core answered it
+/// empty): forget it and browse the system root instead. True when the
+/// fallback took over the fill.
 fn fall_back_from_recalled_focus(ctx: &Ctx, app: &App, flip: bool) -> bool {
     let (root, direction) = {
         let mut shared = lock(&ctx.shared);
@@ -1100,12 +1100,16 @@ pub(crate) fn apply_fill(
 
 /// Terminal in-screen error (`ScreenStateOverlay`'s Error state): flip to
 /// the destination and paint "Failed to load" plus the message.
-fn show_error(ctx: &Ctx, app: &App, ticket: u64, message: &str, flip: bool) {
-    if lock(&ctx.shared).games.ticket != ticket {
-        return;
-    }
-    if fall_back_from_recalled_focus(ctx, app, flip) {
-        return;
+pub(crate) fn show_error(ctx: &Ctx, app: &App, ticket: u64, message: &str, flip: bool) {
+    {
+        let mut shared = lock(&ctx.shared);
+        if shared.games.ticket != ticket {
+            return;
+        }
+        // An error does not prove a recalled folder is gone: it may be the
+        // link or Core being busy. Keep the remembered position for the
+        // next visit; only an empty answer drops it.
+        shared.games.focus_recalled = false;
     }
     if crate::navigation::fail(ctx, app, message) {
         return;
