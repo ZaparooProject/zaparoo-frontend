@@ -142,6 +142,18 @@ crate still owns all UI, navigation and input semantics.
   inputs on focus loss.
 - `Input::core_phase(CorePhase)` shows the host's Core startup phase on the
   boot curtain until boot completes.
+- `Input::activated` tells the frontend its window is showing again (the
+  user returned from another app). It counts as activity: a screensaver
+  that armed in the background is dismissed and the idle countdown
+  restarts.
+- `host::system_status` reports network, Bluetooth and battery state for
+  the header; a hosted build never probes the machine itself. It is
+  device-level: callable from any thread before any window exists, and the
+  latest report wakes the header at once.
+- `host::controller(name)` names the pad now driving the UI (`None`: none).
+  It sets the help bar's glyphs and returns the actions for the pad's
+  labelled A, B, X and Y buttons, so a host that reads buttons by label
+  binds options and view to the faces the bar draws.
 - `Input::configure_folder_picker` and `configure_launcher_scan` register
   optional host actions. Each adds a row to Settings > Library ("Add game
   folder", "Detect launchers") that is absent until configured. The host
