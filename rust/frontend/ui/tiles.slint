@@ -258,17 +258,6 @@ export component Tile inherits Rectangle {
     // Resolved caption text (the host composes translations).
     in property <string> caption: "";
     in property <length> card-radius: Layout.card-radius;
-    // Flying through the grid: paint the plate and nothing else. No art, no
-    // caption, no heart, and a face that recedes toward the page, so what
-    // is left is the grid's structure without any of its detail and the
-    // letter plate over it has something quiet to sit on.
-    //
-    // This is cheaper than what it replaces, because the cover work stops,
-    // which is the point of a rapid scroll anyway. It is also the only
-    // "dim the grid" available here: there is no cheap subtree grab to
-    // freeze and fade, and blur needs a shader, which the MiSTer renderer
-    // cannot run (see docs/slint-gotchas.md).
-    in property <bool> quiet: false;
 
     property <length> outline-gap: Sizing.pct-h(0.4);
     property <length> outline-width: Sizing.focus-ring-width;
@@ -331,8 +320,8 @@ export component Tile inherits Rectangle {
 
     surface := PressableSurface {
         radius: root.card-radius;
-        face-color: root.quiet ? Theme.bg-bar : Theme.surface-card;
-        edge-color: root.quiet ? Theme.bg-bar : (root.muted ? Theme.border-mid : Theme.tile-edge);
+        face-color: Theme.surface-card;
+        edge-color: root.muted ? Theme.border-mid : Theme.tile-edge;
         pressed: root.pressed || root.press-held;
 
         // Focus ring inside the card edge: an accent pill and a face
@@ -350,7 +339,7 @@ export component Tile inherits Rectangle {
                 y: root.outline-width;
                 width: parent.width - 2 * root.outline-width;
                 height: parent.height - 2 * root.outline-width;
-                background: root.quiet ? Theme.bg-bar : Theme.surface-card;
+                background: Theme.surface-card;
                 border-radius: Math.max(0px, parent.border-radius - root.outline-width);
             }
         }
@@ -360,7 +349,7 @@ export component Tile inherits Rectangle {
         property <length> art-w: Math.max(0px, self.width - 2 * root.pad);
         property <length> art-h: Math.max(0px, self.face-height - self.art-top - self.art-bottom);
 
-        if root.has-top-label && !root.quiet: MarqueeCaption {
+        if root.has-top-label: MarqueeCaption {
             x: root.pad;
             y: 0;
             width: parent.art-w;
@@ -371,7 +360,7 @@ export component Tile inherits Rectangle {
             caption-color: root.focused-selection ? Theme.text-primary : Theme.text-label;
         }
 
-        if root.cell.glyph-key != "" && !root.quiet: Image {
+        if root.cell.glyph-key != "": Image {
             x: root.pad;
             y: parent.art-top;
             width: parent.art-w;
@@ -380,7 +369,7 @@ export component Tile inherits Rectangle {
             image-fit: contain;
         }
 
-        if root.cell.glyph-key == "" && root.cell.has-cover && !root.quiet: Image {
+        if root.cell.glyph-key == "" && root.cell.has-cover: Image {
             x: root.pad;
             y: parent.art-top;
             width: parent.art-w;
@@ -395,7 +384,7 @@ export component Tile inherits Rectangle {
         // Slint has no fit mode, so rather than shrinking the wordmark
         // until it fits, the size is capped to let two lines sit in the
         // art area and the rest elides.
-        if root.cell.glyph-key == "" && !root.cell.has-cover && root.system-cover && !root.show-caption && !root.quiet: Text {
+        if root.cell.glyph-key == "" && !root.cell.has-cover && root.system-cover && !root.show-caption: Text {
             property <length> box-h: Math.max(0px, parent.art-h - 2 * Sizing.pct-h(1));
             x: root.pad + Sizing.pct-h(1);
             y: parent.art-top + Sizing.pct-h(1);
@@ -411,7 +400,7 @@ export component Tile inherits Rectangle {
             vertical-alignment: center;
         }
 
-        if root.cell.favorite && !root.quiet: Image {
+        if root.cell.favorite: Image {
             x: parent.width / 12;
             y: parent.width / 12;
             width: parent.width / 6;
@@ -420,7 +409,7 @@ export component Tile inherits Rectangle {
             image-fit: contain;
         }
 
-        if root.show-caption && !root.quiet: MarqueeCaption {
+        if root.show-caption: MarqueeCaption {
             x: root.pad;
             y: parent.face-height - root.caption-height;
             width: parent.art-w;
@@ -470,7 +459,6 @@ export component PagedGridView inherits Rectangle {
     in property <bool> settling: false;
     in property <bool> compact-padding: false;
     in property <bool> show-caption: false;
-    in property <bool> quiet: false;
     in property <length> card-radius: Layout.card-radius;
     // Blank cells refuse the pointer while this is set.
     in property <bool> skip-empty-cells: false;
@@ -559,7 +547,6 @@ export component PagedGridView inherits Rectangle {
             settling: root.settling;
             compact-padding: root.compact-padding;
             show-caption: root.show-caption;
-            quiet: root.quiet;
             caption: root.caption-for(cell);
             card-radius: root.card-radius;
         }
@@ -577,7 +564,6 @@ export component PagedGridView inherits Rectangle {
             settling: root.settling;
             compact-padding: root.compact-padding;
             show-caption: root.show-caption;
-            quiet: root.quiet;
             caption: root.caption-for(cell);
             card-radius: root.card-radius;
         }
@@ -640,7 +626,6 @@ export component PagedGridView inherits Rectangle {
             held: true;
             compact-padding: root.compact-padding;
             show-caption: root.show-caption;
-            quiet: root.quiet;
             caption: root.caption-for(root.cells[root.selected-local]);
             card-radius: root.card-radius;
         }

@@ -17,6 +17,7 @@ use slint::{ComponentHandle, Model, ModelRc, SharedString, VecModel};
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::time::Duration;
+use zaparoo_app::input::HoldTier;
 
 thread_local! {
     static CLOCK: Cell<u64> = const { Cell::new(0) };
@@ -705,7 +706,7 @@ fn held_game_pages_cut_at_repeat_cadence_but_taps_keep_slides() {
         "redraw must not erase the incoming page"
     );
     let first = crate::router::lock(&ctx.shared).games.grid.current_page();
-    crate::input::dispatch_repeat(&ctx, &app, "page_next", true);
+    crate::input::dispatch_repeat(&ctx, &app, "page_next", HoldTier::Page);
     assert_eq!(
         crate::router::lock(&ctx.shared).games.grid.current_page(),
         first + 1,
@@ -715,7 +716,7 @@ fn held_game_pages_cut_at_repeat_cadence_but_taps_keep_slides() {
     distinct_frames(&window, 18);
     assert!(!crate::router::lock(&ctx.shared).games.sliding);
     for expected in first + 1..=first + 5 {
-        crate::input::dispatch_repeat(&ctx, &app, "page_next", true);
+        crate::input::dispatch_repeat(&ctx, &app, "page_next", HoldTier::Page);
         let state = crate::router::lock(&ctx.shared);
         assert_eq!(state.games.grid.current_page(), expected);
         assert!(
@@ -732,7 +733,7 @@ fn held_game_pages_cut_at_repeat_cadence_but_taps_keep_slides() {
         frame(&window);
     }
     app.global::<crate::Overlays>().set_list_open(true);
-    crate::input::dispatch_repeat(&ctx, &app, "page_next", true);
+    crate::input::dispatch_repeat(&ctx, &app, "page_next", HoldTier::Page);
     assert_eq!(
         crate::router::lock(&ctx.shared).games.grid.current_page(),
         first + 5,
@@ -960,7 +961,7 @@ fn page_lookahead_is_bounded_and_delayed_partial_pages_wait_then_slide() {
 }
 
 #[test]
-fn rapid_letter_requires_a_qualified_hold_and_clears_on_taps_and_quiet() {
+fn rail_needs_a_qualified_hold_and_lingers_after_the_scroll_stops() {
     assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
     let (app, window) = boot();
     let (_runtime, ctx) = offline_ctx();
@@ -977,38 +978,198 @@ fn rapid_letter_requires_a_qualified_hold_and_clears_on_taps_and_quiet() {
         assert!(crate::router::lock(&ctx.shared).games.sliding);
         assert!(!view.get_rapid_active());
         assert!(
-            view.get_rapid_letter().is_empty(),
-            "ordinary taps must not show the rapid badge"
+            !view.get_rail_visible(),
+            "ordinary taps must not raise the rail"
         );
         distinct_frames(&window, 18);
     }
-    crate::input::dispatch_repeat(&ctx, &app, "page_next", true);
+    crate::input::dispatch_repeat(&ctx, &app, "page_next", HoldTier::Page);
     assert!(view.get_rapid_active());
-    assert!(!view.get_rapid_letter().is_empty());
+    assert!(view.get_rail_visible());
     assert!(!crate::router::lock(&ctx.shared).games.sliding);
+    // A fresh tap ends the fast scroll; the rail lingers, then goes.
     crate::router::handle_action(&ctx, &app, "page_prev");
     assert!(!view.get_rapid_active());
-    assert!(
-        view.get_rapid_letter().is_empty(),
-        "a fresh tap must retire the held badge"
-    );
-    assert!(crate::router::lock(&ctx.shared).games.sliding);
+    assert!(view.get_rail_visible(), "the rail lingers after the scroll");
+    CLOCK.with(|clock| clock.set(clock.get() + zaparoo_app::media_list::RAIL_LINGER_MS));
+    slint::platform::update_timers_and_animations();
+    assert!(!view.get_rail_visible());
     distinct_frames(&window, 18);
-    crate::input::dispatch_repeat(&ctx, &app, "page_next", true);
-    assert!(!view.get_rapid_letter().is_empty());
+    // Quiet ends the scroll too, and the linger restarts from there.
+    crate::input::dispatch_repeat(&ctx, &app, "page_next", HoldTier::Page);
+    assert!(view.get_rail_visible());
     CLOCK.with(|clock| clock.set(clock.get() + zaparoo_app::input::RAPID_QUIET_MS));
     slint::platform::update_timers_and_animations();
     assert!(!view.get_rapid_active());
-    assert!(
-        view.get_rapid_letter().is_empty(),
-        "quiet must clear the letter as well as rapid mode"
+    assert!(view.get_rail_visible());
+    CLOCK.with(|clock| clock.set(clock.get() + zaparoo_app::media_list::RAIL_LINGER_MS));
+    slint::platform::update_timers_and_animations();
+    assert!(!view.get_rail_visible());
+}
+
+#[test]
+fn taps_after_a_fast_scroll_do_not_extend_the_rail_linger() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
     );
-    crate::router::handle_action(&ctx, &app, "page_next");
+    app.global::<Shell>().set_active_screen(Screen::Games);
+    seat_folder(&ctx, &app, "Game", 0);
     settle(&window);
+    let view = app.global::<crate::GamesView>();
+    crate::input::dispatch_repeat(&ctx, &app, "page_next", HoldTier::Page);
+    assert!(view.get_rail_visible());
+    crate::router::handle_action(&ctx, &app, "down");
+    assert!(!view.get_rapid_active());
+    assert!(view.get_rail_visible(), "the rail lingers after the scroll");
+    let half = zaparoo_app::media_list::RAIL_LINGER_MS / 2;
+    CLOCK.with(|clock| clock.set(clock.get() + half));
+    slint::platform::update_timers_and_animations();
+    crate::router::handle_action(&ctx, &app, "up");
+    CLOCK.with(|clock| {
+        clock.set(clock.get() + zaparoo_app::media_list::RAIL_LINGER_MS - half);
+    });
+    slint::platform::update_timers_and_animations();
     assert!(
-        view.get_rapid_letter().is_empty(),
-        "later nonrapid flips cannot strand an old badge"
+        !view.get_rail_visible(),
+        "a tap during the linger must not push its deadline back"
     );
+}
+
+#[test]
+fn a_held_page_flip_stops_at_the_ends_from_its_first_repeat() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    app.global::<Shell>().set_active_screen(Screen::Games);
+    seat_folder(&ctx, &app, "Game", 0);
+    let size = crate::router::lock(&ctx.shared).games.grid.page_size();
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.games.rows = game_rows("Game", size * 2);
+        shared.games.grid.set_item_count(size * 2);
+        shared.games.grid.set_current_index_immediate(size);
+    }
+    crate::games::render(&ctx, &app);
+    settle(&window);
+    let page = || crate::router::lock(&ctx.shared).games.grid.current_page();
+    assert_eq!(page(), 1);
+    // An early repeat is still a hold, though not yet a fast scroll.
+    crate::input::dispatch_repeat(&ctx, &app, "page_next", HoldTier::Row);
+    assert_eq!(page(), 1, "a held flip must not wrap past the last page");
+    assert!(!crate::router::lock(&ctx.shared).games.sliding);
+    // A tap still wraps.
+    crate::router::handle_action(&ctx, &app, "page_next");
+    assert!(crate::router::lock(&ctx.shared).games.sliding);
+}
+
+#[test]
+fn long_holds_step_pages_then_letters_and_the_rail_follows() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    app.global::<Shell>().set_active_screen(Screen::Games);
+    let bucket = |label: &str, offset: u32| zaparoo_core::media_types::BrowseIndexGroup {
+        key: label.to_lowercase(),
+        label: label.into(),
+        count: 0,
+        cursor: String::new(),
+        offset,
+    };
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.games.mode = GamesMode::Browse;
+        shared.games.system_id = "NES".into();
+        shared.games.browse_path = "/roms/nes".into();
+        shared.games.rows = game_rows("Game", 60);
+        shared.games.grid.set_item_count(60);
+        shared.games.grid.set_current_index_immediate(0);
+        shared.letter_buckets = vec![bucket("A", 0), bucket("B", 20), bucket("C", 45)];
+        shared.letter_scope = Some(("NES".into(), "/roms/nes".into()));
+    }
+    crate::games::render(&ctx, &app);
+    settle(&window);
+    let view = app.global::<crate::GamesView>();
+    assert_eq!(view.get_rail_letters().row_count(), 3);
+    assert_eq!(view.get_rail_index(), 0);
+    let index = || crate::router::lock(&ctx.shared).games.grid.current_index();
+    let page = crate::router::lock(&ctx.shared).games.grid.page_size();
+
+    // Past the hold threshold a held Down moves a page, not a row.
+    crate::input::dispatch_repeat(&ctx, &app, "down", HoldTier::Page);
+    assert_eq!(index(), page);
+    // A long hold steps a letter at a time.
+    crate::input::dispatch_repeat(&ctx, &app, "down", HoldTier::Letter);
+    assert_eq!(index(), 20);
+    assert_eq!(view.get_rail_index(), 1);
+    assert_eq!(view.get_rail_letter(), "B");
+    crate::input::dispatch_repeat(&ctx, &app, "down", HoldTier::Letter);
+    assert_eq!(index(), 45);
+    assert_eq!(view.get_rail_letter(), "C");
+    // Past the last letter the hold keeps paging toward the end.
+    crate::input::dispatch_repeat(&ctx, &app, "down", HoldTier::Letter);
+    assert_eq!(index(), (45 + page).min(59));
+    crate::input::dispatch_repeat(&ctx, &app, "up", HoldTier::Letter);
+    assert_eq!(index(), 20);
+    crate::input::dispatch_repeat(&ctx, &app, "page_prev", HoldTier::Letter);
+    assert_eq!(index(), 0);
+    assert_eq!(view.get_rail_letter(), "A");
+    // A fast scroll stops at the ends instead of wrapping round.
+    crate::input::dispatch_repeat(&ctx, &app, "up", HoldTier::Letter);
+    assert_eq!(index(), 0, "a held Up at the top must not wrap to the end");
+    crate::input::dispatch_repeat(&ctx, &app, "page_prev", HoldTier::Page);
+    assert_eq!(index(), 0);
+    let page_now = || crate::router::lock(&ctx.shared).games.grid.current_page();
+    let total_pages = crate::router::lock(&ctx.shared)
+        .games
+        .grid
+        .total_page_count();
+    for _ in 0..total_pages + 2 {
+        crate::input::dispatch_repeat(&ctx, &app, "down", HoldTier::Page);
+    }
+    let last_page = page_now();
+    assert_eq!(
+        last_page + 1,
+        total_pages,
+        "a held Down reaches the last page"
+    );
+    crate::input::dispatch_repeat(&ctx, &app, "down", HoldTier::Page);
+    assert_eq!(
+        page_now(),
+        last_page,
+        "a held Down at the bottom must not wrap to the top"
+    );
+    assert!(last_page > 0);
+    // A tapped page flip still wraps round.
+    crate::router::handle_action(&ctx, &app, "page_next");
+    assert_eq!(
+        crate::router::lock(&ctx.shared).games.grid.current_page(),
+        0
+    );
+    crate::router::lock(&ctx.shared)
+        .games
+        .grid
+        .set_current_index_immediate(0);
+
+    // Where letters mean nothing the rail keeps only its position marker,
+    // and a long hold keeps paging.
+    crate::router::lock(&ctx.shared).games.mode = GamesMode::Recents;
+    crate::games::render(&ctx, &app);
+    assert_eq!(view.get_rail_letters().row_count(), 0);
+    crate::input::dispatch_repeat(&ctx, &app, "down", HoldTier::Letter);
+    assert_eq!(index(), page);
+    assert!(view.get_rail_fraction() > 0.0);
 }
 
 #[test]
@@ -2496,10 +2657,7 @@ fn held_window_down_key_enters_rapid_mode_without_direct_repeat_dispatch() {
         "a held window key must qualify rapid mode"
     );
     assert!(app.global::<crate::GamesView>().get_rapid_active());
-    assert!(!app
-        .global::<crate::GamesView>()
-        .get_rapid_letter()
-        .is_empty());
+    assert!(app.global::<crate::GamesView>().get_rail_visible());
     app.window()
         .dispatch_event(slint::platform::WindowEvent::KeyReleased { text: key });
     crate::router::lock(&ctx.shared)

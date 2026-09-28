@@ -381,9 +381,15 @@ export global GamesView {
     in-out property <bool> slide-anim: true;
     in-out property <int> transition-target-index: 0;
     in-out property <bool> cached-transition: false;
-    // The rapid-scroll cue: the landing row's first letter while page
-    // flips chain quickly.
-    in-out property <string> rapid-letter: "";
+    // The fast-scroll rail: up while a hold runs fast and briefly after.
+    // Letters are the scope's letter buckets (empty where letters mean
+    // nothing, which leaves only the position marker); `rail-index` is
+    // the current one (-1 on a leading folder) and `rail-letter` its label.
+    in-out property <bool> rail-visible: false;
+    in-out property <[string]> rail-letters: [];
+    in-out property <int> rail-index: -1;
+    in-out property <string> rail-letter: "";
+    in-out property <float> rail-fraction: 0;
     // Detailed list: one overscan row on either side of the minimal viewport.
     in-out property <int> list-scroll-top: 0;
     in-out property <[GridCell]> list-rows: [];
@@ -1924,6 +1930,93 @@ component ContextMenu inherits Rectangle {
 // grid. The folder rules, paging and persistence live in src/games.rs;
 // this paints the page Rust pushes into GamesView. The detailed list
 // still uses the prototype rows.
+// The fast-scroll rail. With letters, it lists them top to bottom with
+// the current one highlighted and repeated large in a bubble beside it;
+// without, it is a track with a position marker. Only the rail's own area
+// changes as the scroll moves, and it never waits on art. On the software
+// renderer `Motion.rail-ms` is 0, so it appears, moves and leaves in cuts.
+component FastScrollRail inherits Rectangle {
+    in property <bool> shown: false;
+    in property <[string]> letters: [];
+    in property <int> current: -1;
+    in property <string> letter: "";
+    in property <float> fraction: 0;
+
+    property <bool> has-letters: root.letters.length > 0;
+    property <length> cell: root.has-letters ? root.height / root.letters.length : 0px;
+    property <length> bubble: Sizing.pct-h(14);
+    property <length> thumb: Math.max(Sizing.pct-h(4), root.height * 0.08);
+    property <length> mark-y: root.current >= 0 ? root.current * root.cell : 0px;
+    // Glides keep pace with the steps (a page every 90 ms), so the marks
+    // never trail the letter; no glide where the rail cuts.
+    property <duration> glide: Motion.rail-ms > 0ms ? Motion.dur(Motion.focus-ms) : 0ms;
+
+    width: Sizing.pct-h(5);
+    opacity: root.shown ? 1 : 0;
+    visible: self.opacity > 0;
+    animate opacity { duration: Motion.dur(Motion.rail-ms); easing: ease-out; }
+
+    Rectangle {
+        background: Theme.surface-card;
+        border-width: Sizing.card-border-width;
+        border-color: Theme.border-mid;
+        border-radius: Sizing.radius-md;
+    }
+
+    if root.has-letters && root.current >= 0: Rectangle {
+        x: Sizing.card-border-width;
+        y: root.mark-y;
+        width: parent.width - 2 * Sizing.card-border-width;
+        height: root.cell;
+        background: Theme.accent;
+        border-radius: Math.min(Sizing.radius-md, self.height / 2);
+        animate y { duration: root.glide; easing: ease-out; }
+    }
+
+    for label[i] in root.letters: Text {
+        y: i * root.cell;
+        width: parent.width;
+        height: root.cell;
+        text: label;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        font-size: Math.min(Sizing.font-size(2.2), root.cell * 0.8);
+        color: i == root.current ? Theme.on-accent : Theme.text-label;
+    }
+
+    if !root.has-letters: Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: root.fraction * (parent.height - self.height);
+        width: parent.width * 0.5;
+        height: root.thumb;
+        background: Theme.accent;
+        border-radius: self.width / 2;
+        animate y { duration: root.glide; easing: ease-out; }
+    }
+
+    // The bubble: the current letter at reading size, level with the
+    // highlight and kept inside the rail's span.
+    if root.has-letters && root.letter != "": Rectangle {
+        x: -root.bubble - Sizing.pct-h(1.5);
+        y: Math.max(0px, Math.min(parent.height - root.bubble, root.mark-y + root.cell / 2 - root.bubble / 2));
+        width: root.bubble;
+        height: root.bubble;
+        background: Theme.surface-card;
+        border-width: Sizing.card-border-width;
+        border-color: Theme.accent;
+        border-radius: Sizing.radius-md;
+        animate y { duration: root.glide; easing: ease-out; }
+
+        Text {
+            text: root.letter;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            color: Theme.text-primary;
+            font-size: Sizing.font-size(7);
+        }
+    }
+}
+
 component GamesScreen inherits Rectangle {
     in property <bool> gated: false;
     property <bool> list-layout: Shell.browse-list-layout;
@@ -2002,9 +2095,6 @@ component GamesScreen inherits Rectangle {
                 row-gap: Layout.grid-row-gap;
                 selected-local: GamesView.cached-transition ? -1 : GamesView.selected-local;
                 ring-suppressed: Overlays.context-open;
-                // Flying through the grid: plates only, so the letter has
-                // something quiet to sit on. See tiles.slint's `quiet`.
-                quiet: GamesView.rapid-active;
                 focus-ready: GamesView.focus-ready;
                 press-held: PressFeedback.active(PressOwner.games, GamesView.selected-local);
                 activate-pulse: GamesView.activate-pulse;
@@ -2069,7 +2159,6 @@ component GamesScreen inherits Rectangle {
         wordmark: false;
         detail-rows: GamesView.detail-rows;
         detail-loading: GamesView.detail-loading;
-        suppressed: GamesView.rapid-active;
         loading-text: root.is-games ? @tr("Loading game…") : @tr("Loading…");
         row-hovered(i) => { GamesInput.cell-hovered(i); }
         row-clicked(i) => { GamesInput.cell-clicked(i); }
@@ -2097,12 +2186,7 @@ component GamesScreen inherits Rectangle {
         side-inset: root.page-cue-in-footer ? Math.max(root.footer-left-inset, root.footer-right-inset) : Sizing.pct-w(3);
         text: GamesView.label-name;
         tags: GamesView.label-tags;
-        // Not while flying. The name changes on every page flip, which is
-        // several times a second, and per-item text at that rate is the
-        // thing the letter plate exists to replace. The detail pane is
-        // already suppressed for exactly this reason a few lines up; the
-        // footer name is the same class of detail and was missed.
-        visible: !root.gate-hide && !GamesView.rapid-active;
+        visible: !root.gate-hide;
     }
 
     if !root.gate-hide && GamesView.page-loading: Rectangle {
@@ -2158,28 +2242,16 @@ component GamesScreen inherits Rectangle {
         page-requested(delta) => { GamesInput.page-requested(delta); }
     }
 
-    // The landing row's first letter on an 18%h card over the grid,
-    // painted only during qualified held navigation.
-    if !root.gate-hide && !root.list-layout && GamesView.rapid-active && GamesView.rapid-letter != "" && GamesView.count > 0: Rectangle {
-        property <length> s: Sizing.pct-h(18);
-        x: (parent.width - self.s) / 2;
-        y: GamesView.grid-y + (GamesView.grid-height - self.s) / 2;
-        width: self.s;
-        height: self.s;
-        background: Theme.surface-card;
-        border-width: Sizing.card-border-width;
-        border-color: Theme.border-mid;
-        // A card recipe takes the card radius; this plate was the only
-        // `surface-card` on the small rung.
-        border-radius: Sizing.radius-md;
-
-        Text {
-            x: (parent.width - self.width) / 2;
-            y: (parent.height - self.height) / 2;
-            text: GamesView.rapid-letter;
-            color: Theme.text-primary;
-            font-size: Sizing.font-size(10);
-        }
+    // Where a fast scroll is, on the right edge of the grid or list.
+    FastScrollRail {
+        x: root.width - self.width - Sizing.pct-w(1);
+        y: root.list-layout ? root.list-card-y : GamesView.grid-y;
+        height: root.list-layout ? root.list-card-h : GamesView.grid-height;
+        shown: !root.gate-hide && GamesView.rail-visible && GamesView.count > 0;
+        letters: GamesView.rail-letters;
+        current: GamesView.rail-index;
+        letter: GamesView.rail-letter;
+        fraction: GamesView.rail-fraction;
     }
 
     cue := StateCue {

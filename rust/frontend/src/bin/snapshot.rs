@@ -298,6 +298,24 @@ fn main() {
         app.global::<generated::Overlays>().set_context_index(1);
         app.global::<generated::Overlays>().set_context_open(true);
     }
+    // "fast-scroll" renders the games screen mid fast scroll: the rail up
+    // with its letters, on the fourth one.
+    if screen.contains("fast-scroll") {
+        let labels = [
+            "0-9", "A", "B", "C", "D", "F", "G", "K", "M", "P", "R", "S", "T", "W", "Z",
+        ];
+        let view = app.global::<GamesView>();
+        view.set_rail_letters(slint::ModelRc::new(slint::VecModel::from(
+            labels
+                .iter()
+                .map(|l| slint::SharedString::from(*l))
+                .collect::<Vec<_>>(),
+        )));
+        view.set_rail_index(3);
+        view.set_rail_letter("C".into());
+        view.set_rail_visible(true);
+        view.set_rapid_active(true);
+    }
     // "letters" renders the games screen with the letter picker open.
     if screen.contains("letters") {
         let labels = [
@@ -700,6 +718,7 @@ fn fixture_screen(screen: &str) -> Screen {
     } else if matches!(screen, "context" | "context-alt" | "letters")
         || (screen.contains("list") && !screen.contains("systems"))
         || screen.contains("games")
+        || screen.contains("fast-scroll")
         || screen.contains("game-info")
     {
         Screen::Games

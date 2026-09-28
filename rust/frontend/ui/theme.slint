@@ -106,6 +106,10 @@ export global Motion {
     // under the 3 Hz WCAG flash-safety threshold, and slow enough that the
     // tile is legible in its "on" half rather than strobing.
     out property <duration> held-blink-ms: 650ms;
+    // The fast-scroll rail's fade in and out and its highlight's glide
+    // between letters. Pushed to 0 on the software renderer, where the rail
+    // cuts instead: it stays a small repaint either way.
+    in-out property <duration> rail-ms: 160ms;
     public pure function dur(ms: duration) -> duration {
         return self.enabled ? ms : 0ms;
     }

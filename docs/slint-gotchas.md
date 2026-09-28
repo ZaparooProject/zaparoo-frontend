@@ -52,9 +52,13 @@ Two follow-on rules:
   instead of traversing the component tree every frame.
 - **Held-key paging cuts.** Qualified hold-repeats change pages without a
   slide; a slide already running finishes first. Ordinary taps keep the slide.
-- **Rapid scroll goes quiet.** While pages flip in a chain, tiles paint only
-  their plate (`quiet` in `ui/tiles.slint`): no art, caption or heart, so cover
-  work stops and the letter badge has a calm backdrop.
+- **Fast scroll never waits on art.** While a hold runs fast, no new cover
+  loads start (the MiSTer cannot fetch and decode covers as fast as pages
+  pass) and the list detail pane peeks without loading. Tiles keep their
+  captions, hearts and any art already in memory. The fast-scroll rail
+  (`FastScrollRail` in `ui/app.slint`) is the only new painting: a narrow
+  strip whose highlight moves between letters, with `Motion.rail-ms` at 0 on
+  the software renderer so it cuts instead of fading.
 
 ### Cheat sheet
 
@@ -73,8 +77,7 @@ Two follow-on rules:
   fixed, so nothing reserves room for growth that never happens. Never make a
   transform carry meaning; the focus ring is the focus cue.
 - No blur, no shader-like effect, and no subtree grab to fade. There is no way
-  to dim a frozen grab of a subtree, so rapid scroll drops tiles to the `quiet`
-  plate instead.
+  to dim a frozen grab of a subtree.
 
 ### Sanctioned one-shot cues
 
