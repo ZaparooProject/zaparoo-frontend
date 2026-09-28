@@ -149,10 +149,41 @@ fn bluetooth_adapter_present() -> bool {
         .any(|entry| entry.file_name().to_string_lossy().starts_with("hci"))
 }
 
+/// The status an embedding host last reported. Framework status is
+/// host-owned there: never probe Linux sysfs or public IPs.
+#[cfg(feature = "hosted")]
+static HOST_STATUS: std::sync::Mutex<LocalStatus> = std::sync::Mutex::new(LocalStatus {
+    has_wifi_internet: false,
+    has_lan_internet: false,
+    has_bluetooth: false,
+    has_battery: false,
+    battery_percent: 0,
+});
+
+/// Wakes the status loop when a host reports a change, so the header does
+/// not wait for its next poll.
+static CHANGED: tokio::sync::Notify = tokio::sync::Notify::const_new();
+
 #[cfg(feature = "hosted")]
 pub fn probe() -> LocalStatus {
-    // Framework status is host-owned; never probe Linux sysfs or public IPs.
-    LocalStatus::default()
+    *HOST_STATUS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// Record what the embedding host reports and refresh the header now.
+#[cfg(feature = "hosted")]
+pub fn set_host_status(status: LocalStatus) {
+    *HOST_STATUS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = status;
+    CHANGED.notify_one();
+}
+
+/// Resolves when a host reports new status. Pending forever where the
+/// frontend probes the machine itself.
+pub async fn changed() {
+    CHANGED.notified().await;
 }
 
 #[cfg(test)]

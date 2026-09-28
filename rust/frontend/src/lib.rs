@@ -1215,6 +1215,7 @@ fn start_clock(
             });
             tokio::select! {
                 () = tokio::time::sleep(Duration::from_secs(30)) => {}
+                () = system_status::changed() => {}
                 changed = dormant.changed() => {
                     if changed.is_err() {
                         return;
@@ -1225,10 +1226,12 @@ fn start_clock(
     });
 }
 
-/// Header HUD status icons, refreshed every 30 seconds: host-local
-/// probe (default-route class, internet reachability, Bluetooth
-/// adapter, battery HAT) on a blocking thread, NFC projected from
-/// Core's `readers` (Core owns the reader). Keys are in display order.
+/// Header HUD status icons, refreshed every 30 seconds and whenever an
+/// embedding host reports a change: host-local probe (default-route
+/// class, internet reachability, Bluetooth adapter, battery HAT; on an
+/// embedding host, what the host reported) on a blocking thread, NFC
+/// projected from Core's `readers` (Core owns the reader). Keys are in
+/// display order.
 fn start_status(app: &App, ctx: &Arc<Ctx>) {
     let weak = app.as_weak();
     let mut dormant = ctx.dormant.subscribe();
@@ -1287,6 +1290,7 @@ fn start_status(app: &App, ctx: &Arc<Ctx>) {
             });
             tokio::select! {
                 () = tokio::time::sleep(Duration::from_secs(30)) => {}
+                () = system_status::changed() => {}
                 changed = dormant.changed() => {
                     if changed.is_err() {
                         return;

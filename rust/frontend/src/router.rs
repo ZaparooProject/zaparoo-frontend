@@ -752,6 +752,14 @@ pub fn refresh_first_run(ctx: &Ctx, app: &App) {
     overlays.set_dialog_focus(0);
 }
 
+/// A host showing this window again counts as activity even without a key press.
+/// Disarm a saver that may have started while the app was in the background.
+#[cfg(any(feature = "hosted", all(test, feature = "mister")))]
+pub(crate) fn on_app_activated(ctx: &Ctx, app: &App) {
+    app.global::<crate::Shell>().set_saver_armed(false);
+    reset_idle(ctx, app);
+}
+
 /// Restart the screensaver idle countdown. Every input calls this;
 /// the seq ticket makes earlier armed timers no-ops. "off" disables
 /// arming entirely (a stale timer still fires but fails the ticket).

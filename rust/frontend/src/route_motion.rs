@@ -571,6 +571,39 @@ fn launch_dormancy_is_local_only() {
 }
 
 #[test]
+fn app_activation_dismisses_saver_and_restarts_idle_from_foreground_return() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    crate::router::lock(&ctx.shared)
+        .persist
+        .settings
+        .screensaver_timeout = "1".into();
+    let shell = app.global::<Shell>();
+    shell.set_boot_complete(true);
+
+    crate::router::reset_idle(&ctx, &app);
+    CLOCK.with(|clock| clock.set(clock.get() + 800));
+    slint::platform::update_timers_and_animations();
+    shell.set_saver_armed(true); // It may have armed while another app held focus.
+    crate::router::on_app_activated(&ctx, &app);
+    assert!(
+        !shell.get_saver_armed(),
+        "foreground return must reveal the UI"
+    );
+
+    CLOCK.with(|clock| clock.set(clock.get() + 300));
+    slint::platform::update_timers_and_animations();
+    assert!(!shell.get_saver_armed(), "old idle timer must not re-arm");
+    CLOCK.with(|clock| clock.set(clock.get() + 800));
+    slint::platform::update_timers_and_animations();
+    assert!(
+        shell.get_saver_armed(),
+        "new countdown starts on activation"
+    );
+}
+
+#[test]
 fn desktop_dormancy_stops_motion_and_screensaver_until_resume() {
     assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
     let (app, _window) = boot();

@@ -255,10 +255,74 @@ impl Input {
         })
     }
 
+    /// A host window regaining focus dismisses the saver and restarts its idle clock.
+    pub fn activated(&self) -> Result<(), slint::EventLoopError> {
+        let ctx = self.ctx.clone();
+        self.app
+            .upgrade_in_event_loop(move |app| crate::router::on_app_activated(&ctx, &app))
+    }
+
     /// Focus loss retires held inputs so no repeat survives app switching.
     pub fn clear(&self) -> Result<(), slint::EventLoopError> {
         let ctx = self.ctx.clone();
         self.app
             .upgrade_in_event_loop(move |_| crate::input::stop_repeat(&ctx))
     }
+}
+
+/// The host's network, Bluetooth and battery state for the header. A
+/// battery of `None` hides the gauge. Status belongs to the device, not to
+/// a window, so it may arrive before any window exists and is kept for the
+/// first one. Safe from any thread.
+pub fn system_status(
+    wifi_internet: bool,
+    lan_internet: bool,
+    bluetooth: bool,
+    battery_percent: Option<i32>,
+) {
+    crate::system_status::set_host_status(crate::system_status::LocalStatus {
+        has_wifi_internet: wifi_internet,
+        has_lan_internet: lan_internet,
+        has_bluetooth: bluetooth,
+        has_battery: battery_percent.is_some(),
+        battery_percent: battery_percent.unwrap_or(0).clamp(0, 100),
+    });
+}
+
+/// The pad now driving the UI, by the name its driver reports, or `None`
+/// when no pad is connected. Updates the help bar's glyphs and returns the
+/// actions for the pad's labelled A, B, X and Y buttons, so a host that
+/// reads buttons by label binds options and view to the faces the bar
+/// draws: options on the top face, view on the left. Device-level, so it
+/// may run before any window exists. Safe from any thread.
+pub fn controller(name: Option<&str>) -> [Action; 4] {
+    use zaparoo_core::controller_report::{self, ControllerGlyphs};
+    let face_action = |face: &str| {
+        if face == "FaceNorth" {
+            Action::ContextMenu
+        } else {
+            Action::PageMenu
+        }
+    };
+    let Some(name) = name else {
+        controller_report::publish(None);
+        return [
+            Action::Accept,
+            Action::Cancel,
+            Action::PageMenu,
+            Action::ContextMenu,
+        ];
+    };
+    let faces = controller_report::labelled_faces(name);
+    controller_report::publish(Some(ControllerGlyphs {
+        layout: controller_report::style_for_device_name(name),
+        accept_button: faces.a,
+        cancel_button: faces.b,
+    }));
+    [
+        Action::Accept,
+        Action::Cancel,
+        face_action(faces.x),
+        face_action(faces.y),
+    ]
 }
