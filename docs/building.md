@@ -198,9 +198,12 @@ Frontend never maps the FPGA registers. Missing components or mismatched old/new
 handshakes fall back to ordinary fb0; `--no-latch` opts out. Managed display
 restarts go through Main for a fresh lease.
 
-Initial eligibility is HDMI on the qualified `6.18.38-MiSTer` stack, with
-`/dev/zaparoo-scanout` ABI v1. Main optionally loads
-`/media/fat/zaparoo/modules/6.18.38-MiSTer/zaparoo_scanout.ko`. Older/unknown
+Initial eligibility is HDMI on an exact qualified kernel build, with
+`/dev/zaparoo-scanout` ABI v1. Main selects
+`/media/fat/zaparoo/modules/<release>/<kernel-build-id>/zaparoo_scanout.ko`
+using the running kernel's GNU build ID from `/sys/kernel/notes`. It verifies
+the module SHA-256 before loading and its loaded build ID before granting access.
+The old flat release-only module path no longer enables scanout. Older/unknown
 kernels, native CRT and Direct Video retain existing paths. Never force-load the
 prototype's 5.15 module, replace `mem_wc`/MagiK modules, or claim independent
 renderers can safely run concurrently.
@@ -374,3 +377,35 @@ To bundle a specific menu or host build instead of latest, set the workflow's
 The bundle layout: `zaparoo/frontend`, `zaparoo/MiSTer_Zaparoo`,
 `zaparoo/menu_zaparoo.rbf`, `LICENSES/` (asset attributions plus
 `THIRD-PARTY-NOTICES.txt`), `README.txt`, and `COPYING`.
+
+### Bundling scanout modules
+
+Update All 2.11 offers a Linux-pinned default distribution and Edge Linux. Keep
+one frontend installation across both; bundle each device-qualified kernel
+build under its own release/build-ID directory. Do not infer compatibility from
+the channel name, `uname -r` alone, or an updated kernel image awaiting reboot.
+Unknown builds retain fb0 without changing the user's Linux update policy.
+
+Menu CI produces `zaparoo-scanout.zip` with profiles, module objects, build
+provenance and matching source. Building that ZIP does not qualify a stock
+kernel: the exact running-image identity and matched Main/Menu/frontend stack
+need hardware testing, including kill/relaunch, ownership handoff and fallback.
+The currently pinned local kernel build remains the only build input; this
+change does not declare the current pinned or Edge stock images qualified.
+
+After qualification, attach the ZIP to the matching Menu release and use
+`ZAPAROO_INCLUDE_SCANOUT=1 just release-zip vX.Y.Z`. The release workflow has
+an `include_scanout` input; set repository variable `ZAPAROO_INCLUDE_SCANOUT=1`
+only once automatically selected Menu releases carry qualified bundles. A
+requested missing or invalid bundle fails the release. For local packaging,
+`ZAPAROO_SCANOUT_BUNDLE=/absolute/path/zaparoo-scanout.zip` supplies the artifact.
+Without either setting, packaging continues to ship the fb0 baseline.
+Combine separately qualified builds with
+`python3 scripts/scanout_bundle.py pinned.zip edge.zip --merge zaparoo-scanout.zip`;
+the validator rejects duplicate profiles, including builds sharing a release
+string and build ID. Distinct build IDs under the same release coexist.
+
+`just test-scanout-bundle` checks bundle validation without a device.
+Main's identity tests cross-compile with its ARM GNU toolchain; target execution
+and physical scanout qualification are separate gates. No MagiK kernel/RTL code
+or licensing changes are imported by this profile and packaging integration.

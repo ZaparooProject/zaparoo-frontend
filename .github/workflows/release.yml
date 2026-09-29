@@ -18,6 +18,11 @@ on:
         description: 'Menu_MiSTer release tag to bundle (defaults to latest)'
         required: false
         type: string
+      include_scanout:
+        description: 'Include device-qualified scanout profiles from the selected Menu release'
+        required: false
+        type: boolean
+        default: false
       upload:
         description: 'Upload to GitHub release'
         required: false
@@ -119,12 +124,16 @@ jobs:
         with:
           tool: just@1.58.0
 
+      - name: Test scanout bundle packaging
+        run: just test-scanout-bundle
+
       - name: Build release ZIP
         run: ./scripts/package-mister-release.sh "$BUILD_TAG"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           MAIN_MISTER_TAG: ${{ steps.main-mister.outputs.tag }}
           MENU_MISTER_TAG: ${{ steps.menu-mister.outputs.tag }}
+          ZAPAROO_INCLUDE_SCANOUT: ${{ (inputs.include_scanout || vars.ZAPAROO_INCLUDE_SCANOUT == '1') && '1' || '0' }}
 
       - name: Record archive name
         id: archive

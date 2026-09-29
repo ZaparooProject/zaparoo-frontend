@@ -196,3 +196,7 @@ toolchain-shell:
 clean:
     rm -rf output
     cd rust && cargo clean
+
+# Validate scanout release bundle handling without a MiSTer device.
+test-scanout-bundle:
+    python3 -B -m unittest discover -s scripts/tests -p 'test_scanout_bundle.py'
