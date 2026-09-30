@@ -303,6 +303,9 @@ fn apply_state(app: &App, state: &Arc<api::ViewState>) -> bool {
     view.set_database_count(state.details.database_count);
     view.set_details_counts(counts(&state.details.counts));
     view.set_allows_screensaver(state.allows_screensaver);
+    if !state.allows_screensaver {
+        app.global::<crate::Shell>().set_saver_armed(false);
+    }
 
     // The models below only rebuild when their content changed: a fresh
     // model is a change even when it holds the same rows.
@@ -356,9 +359,11 @@ fn apply_state(app: &App, state: &Arc<api::ViewState>) -> bool {
     state.allows_screensaver && prev.is_some_and(|p| !p.allows_screensaver)
 }
 
-fn run_effect(ctx: &Arc<Ctx>, app: &App, effect: api::Effect) {
+pub(crate) fn run_effect(ctx: &Arc<Ctx>, app: &App, effect: api::Effect) {
     match effect {
         api::Effect::LeaveToHub => {
+            "hub".clone_into(&mut crate::router::lock(&ctx.shared).persist.active_screen);
+            crate::router::save_persist(&ctx.shared);
             crate::router::transition_to_screen(app, Screen::Hub, -1);
         }
         api::Effect::ConfirmStop => crate::router::open_dialog(
@@ -461,7 +466,15 @@ mod tests {
             allows_screensaver: false,
             ..api::ViewState::default()
         });
+        app.global::<crate::Shell>().set_saver_armed(true);
         assert!(!apply_state(&app, &running));
+        assert!(!app.global::<crate::Shell>().get_saver_armed());
+        app.global::<crate::Shell>().set_saver_armed(true);
+        assert!(!apply_state(&app, &running));
+        assert!(
+            !app.global::<crate::Shell>().get_saver_armed(),
+            "even an unchanged running state disarms a late saver"
+        );
         assert_eq!(view.get_page(), UpdatePage::Running);
         assert_eq!(view.get_progress_bp(), 4250);
         assert_eq!(view.get_status_kind(), UpdateStatusKind::File);

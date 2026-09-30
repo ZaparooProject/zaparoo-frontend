@@ -3956,3 +3956,22 @@ fn update_buttons_push_before_dispatch_and_drop_stale_commits() -> Result<(), &'
     assert!(!crate::press_feedback::pending(&app));
     Ok(())
 }
+
+#[test]
+fn leaving_update_persists_hub_before_returning() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    app.global::<Shell>().set_active_screen(Screen::Update);
+    "settings".clone_into(&mut crate::router::lock(&ctx.shared).persist.active_screen);
+    let ctx = std::sync::Arc::new(ctx);
+
+    crate::update::run_effect(&ctx, &app, zaparoo_update_api::Effect::LeaveToHub);
+
+    assert_eq!(app.global::<Shell>().get_active_screen(), Screen::Hub);
+    assert_eq!(
+        crate::router::lock(&ctx.shared).persist.active_screen,
+        "hub"
+    );
+    assert_eq!(zaparoo_core::persist::load().active_screen, "hub");
+}
