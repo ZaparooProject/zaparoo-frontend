@@ -1110,6 +1110,8 @@ fn open_add_picker(ctx: &Ctx, app: &App) {
             // The picker shows the same words the tile will; the view
             // maps the key.
             label_key: SharedString::from(e.label_key.as_str()),
+            enabled: true,
+            reason_key: SharedString::default(),
         })
         .collect();
     crate::router::present_hub_add_picker(ctx, app, rows);

@@ -41,6 +41,14 @@ export struct MenuEntry {
     label: string,
     // Translatable label id (see `Labels`); empty rows show `label`.
     label-key: string,
+    // Whether this row can currently be picked usefully. `true` for every
+    // menu but the launcher picker, which is the only one with rows that
+    // can be temporarily unusable. Never hidden either way - see
+    // `reason-key`.
+    enabled: bool,
+    // A `Labels.menu` key wording why `enabled` is false. Empty when
+    // `enabled` is true or the row has nothing to say.
+    reason-key: string,
 }
 
 // One first-character bucket of the jump-to-letter picker.
@@ -504,6 +512,13 @@ export global Overlays {
     // words from these so every dialog string can be translated.
     in-out property <string> dialog-detail: "";
     in-out property <string> dialog-arg: "";
+    // `ErrorKind.launch-repair` only: Core's own reason code plus the
+    // display names it named, so `DialogLabels` can pick per-reason
+    // wording instead of the generic body every other kind uses.
+    // `dialog-arg` carries Core's fallback message for this kind.
+    in-out property <string> dialog-repair-reason: "";
+    in-out property <string> dialog-repair-launcher: "";
+    in-out property <string> dialog-repair-plugin: "";
     // First-run progress line, as a key plus its numbers.
     in-out property <DialogProgress> dialog-status: DialogProgress.none;
     in-out property <int> dialog-status-step: 0;
@@ -1151,7 +1166,16 @@ component ListPickerModal inherits ModalShell {
     changed visible-rows => { root.reveal-current(); }
     changed entries => { root.top = 0; root.reveal-current(); }
     init => { root.reveal-current(); }
+    // The worded reason a row can't currently be used folds into the row's
+    // own text rather than an overlay - the same idiom captioned tiles use
+    // for a disambiguating tag. Never hidden either way. One `@tr()` template
+    // for the whole phrase, not a fixed concatenation, so translators can
+    // reorder the name and the reason.
     pure function entry-label(entry: MenuEntry) -> string {
+        return entry.enabled || entry.reason-key == "" ? root.entry-primary-label(entry)
+            : @tr("{} · {}", root.entry-primary-label(entry), Labels.launcher-reason(entry.reason-key));
+    }
+    pure function entry-primary-label(entry: MenuEntry) -> string {
         return root.setting-id != "" ? SettingsLabels.picker-value(root.setting-id, entry.id)
             : (entry.label-key != "" ? Labels.menu(entry.label-key, entry.label) : entry.label);
     }
@@ -1218,7 +1242,9 @@ component ListPickerModal inherits ModalShell {
                     swatch-size: root.swatch-size;
                     swatch-gap: root.swatch-gap;
                     swatch-band: root.swatch-band;
-                    content-color: Theme.text-primary;
+                    // Muted, never hidden: docs/style.md, "Hidden and
+                    // disabled tiles" - the row stays pickable.
+                    content-color: entry.enabled ? Theme.text-primary : Theme.text-label;
                     swatch-edge: Theme.text-label;
                     weight: FontWeight.normal;
                 }
@@ -1671,7 +1697,7 @@ component DialogModal inherits ModalShell {
     }
     body-measure := Text {
         visible: false;
-        text: DialogLabels.body(Overlays.dialog-kind, Overlays.dialog-error, Overlays.first-run-phase, Overlays.dialog-detail, Overlays.dialog-arg);
+        text: DialogLabels.body(Overlays.dialog-kind, Overlays.dialog-error, Overlays.first-run-phase, Overlays.dialog-detail, Overlays.dialog-arg, Overlays.dialog-repair-reason, Overlays.dialog-repair-launcher, Overlays.dialog-repair-plugin);
         font-size: Sizing.font-body;
     }
     line-measure := Text {
@@ -1719,7 +1745,7 @@ component DialogModal inherits ModalShell {
             y: root.body-y;
             width: Math.min(Math.ceil(body-measure.preferred-width / 1px) * 1px, root.content-width);
             wrap: word-wrap;
-            text: DialogLabels.body(Overlays.dialog-kind, Overlays.dialog-error, Overlays.first-run-phase, Overlays.dialog-detail, Overlays.dialog-arg);
+            text: DialogLabels.body(Overlays.dialog-kind, Overlays.dialog-error, Overlays.first-run-phase, Overlays.dialog-detail, Overlays.dialog-arg, Overlays.dialog-repair-reason, Overlays.dialog-repair-launcher, Overlays.dialog-repair-plugin);
             color: Theme.text-primary;
             font-size: Sizing.font-body;
             horizontal-alignment: center;

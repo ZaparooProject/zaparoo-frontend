@@ -133,6 +133,14 @@ export global Labels {
         if (reason == DisabledReason.not-available) { return @tr("Not available"); }
         return "";
     }
+
+    // Why a launcher picker row can't currently be picked usefully,
+    // folded into the row's own text (see `entry-reason-suffix`).
+    public pure function launcher-reason(key: string) -> string {
+        if (key == "launcher:not_installed") { return @tr("not installed"); }
+        if (key == "launcher:unavailable") { return @tr("unavailable"); }
+        return "";
+    }
 }
 
 // Typed dialog state stays separate from runtime text. `detail` carries
@@ -151,7 +159,10 @@ export global DialogLabels {
         return "";
     }
 
-    public pure function body(kind: DialogKind, error: ErrorKind, phase: FirstRunPhase, detail: string, arg: string) -> string {
+    public pure function body(
+        kind: DialogKind, error: ErrorKind, phase: FirstRunPhase, detail: string, arg: string,
+        repair-reason: string, repair-launcher: string, repair-plugin: string,
+    ) -> string {
         if (kind == DialogKind.quit-confirm) { return @tr("Are you sure you want to exit?"); }
         if (kind == DialogKind.quit-blocked) { return @tr("Close the running game before exiting Zaparoo Frontend."); }
         if (kind == DialogKind.restart-setting) { return @tr("This setting needs a frontend restart to take effect."); }
@@ -169,7 +180,9 @@ export global DialogLabels {
         if (kind == DialogKind.hub-full) {
             return @tr("All categories and actions are already on the Hub. To add a game or system, open its Options menu and choose \"Add to Hub\".");
         }
-        if (kind == DialogKind.action-error) { return DialogLabels.error-body(error, arg); }
+        if (kind == DialogKind.action-error) {
+            return DialogLabels.error-body(error, arg, repair-reason, repair-launcher, repair-plugin);
+        }
         return "";
     }
 
@@ -199,7 +212,7 @@ export global DialogLabels {
     // A failed user action. The technical detail is already in the log;
     // these say what failed and what the user can do about it.
     public pure function error-title(kind: ErrorKind) -> string {
-        if (kind == ErrorKind.launch) { return @tr("Launch failed"); }
+        if (kind == ErrorKind.launch || kind == ErrorKind.launch-repair) { return @tr("Launch failed"); }
         if (kind == ErrorKind.favorite) { return @tr("Favorite update failed"); }
         if (kind == ErrorKind.add-to-hub) { return @tr("Add to Hub failed"); }
         if (kind == ErrorKind.media-index) { return @tr("Media update failed"); }
@@ -216,10 +229,15 @@ export global DialogLabels {
         return @tr("Action failed");
     }
 
-    public pure function error-body(kind: ErrorKind, context: string) -> string {
+    public pure function error-body(
+        kind: ErrorKind, context: string, reason: string, launcher: string, plugin: string,
+    ) -> string {
         if (kind == ErrorKind.launch) {
             if (context == "") { return @tr("Could not start this item. Check Zaparoo Core and try again."); }
             return @tr("Could not start {}. Check Zaparoo Core and try again.", context);
+        }
+        if (kind == ErrorKind.launch-repair) {
+            return DialogLabels.launch-repair-body(reason, launcher, plugin, context);
         }
         if (kind == ErrorKind.favorite) { return @tr("Could not update this favorite. Check Zaparoo Core and try again."); }
         if (kind == ErrorKind.add-to-hub) {
@@ -238,5 +256,56 @@ export global DialogLabels {
         if (kind == ErrorKind.pairing) { return @tr("Core would not start a pairing. It may already have as many paired devices as it allows, or it may be running on another device."); }
         if (kind == ErrorKind.online) { return @tr("Core could not reach or update your Zaparoo Online account. Check the network connection and try again."); }
         return @tr("The action could not be completed. Check Zaparoo Core and try again.");
+    }
+
+    // A `launch_repair` error's closed `reason` set (see
+    // docs/api/methods.md#launch-repair-errors upstream). `launcher`/
+    // `plugin` are short display names Core sent, or empty when it had
+    // none - each reason falls back a tier rather than naming a blank.
+    // `unspecified`, the reserved `launcher_ambiguous`, and any reason
+    // this build doesn't recognize all show `message` verbatim, exactly
+    // as Core's own client contract requires.
+    public pure function launch-repair-body(reason: string, launcher: string, plugin: string, message: string) -> string {
+        if (reason == "launcher_not_installed") {
+            if (launcher == "") { return @tr("This launcher isn't installed."); }
+            return @tr("{} isn't installed.", launcher);
+        }
+        if (reason == "launcher_component_missing") {
+            if (launcher == "") { return @tr("This launcher is installed, but its entry point is missing or disabled."); }
+            return @tr("{} is installed, but its entry point is missing or disabled.", launcher);
+        }
+        if (reason == "launcher_plugin_missing") {
+            if (launcher == "") { return @tr("This launcher's plugin for this system isn't installed."); }
+            if (plugin == "") { return @tr("{}'s plugin for this system isn't installed.", launcher); }
+            return @tr("{}'s {} plugin isn't installed.", launcher, plugin);
+        }
+        if (reason == "launcher_version_unsupported") {
+            if (launcher == "") { return @tr("This build of the launcher can't be used for this media. A different build is needed."); }
+            return @tr("This build of {} can't be used for this media. A different build is needed.", launcher);
+        }
+        if (reason == "launcher_unsupported_media") {
+            if (launcher == "") { return @tr("This launcher can't play this media."); }
+            return @tr("{} can't play this media.", launcher);
+        }
+        if (reason == "launcher_options_unsupported") {
+            if (launcher == "") { return @tr("This launcher doesn't support the requested launch options."); }
+            return @tr("{} doesn't support the requested launch options.", launcher);
+        }
+        if (reason == "storage_permission_required") {
+            if (launcher == "") { return @tr("This launcher doesn't have the storage permission it needs."); }
+            return @tr("{} doesn't have the storage permission it needs.", launcher);
+        }
+        if (reason == "storage_provider_unsupported") {
+            if (launcher == "") { return @tr("This launcher can't read media from where it's stored."); }
+            return @tr("{} can't read media from where it's stored.", launcher);
+        }
+        if (reason == "storage_unavailable") { return @tr("The storage holding this media isn't available."); }
+        if (reason == "media_unavailable") { return @tr("This media could not be resolved or opened."); }
+        if (reason == "host_unavailable") { return @tr("The launcher service isn't responding."); }
+        if (reason == "host_foreground_required") { return @tr("Return to Zaparoo before launching this."); }
+        if (reason == "cancelled") { return @tr("The launch was cancelled before it started."); }
+        if (reason == "outcome_unknown") { return @tr("The launch was sent, but its outcome could not be confirmed."); }
+        if (reason == "refused") { return @tr("The system refused the launch request."); }
+        return message;
     }
 }

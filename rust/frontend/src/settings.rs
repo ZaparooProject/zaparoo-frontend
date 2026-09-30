@@ -751,6 +751,8 @@ fn open_picker(ctx: &Ctx, app: &App, id: &str) {
             id: SharedString::from(value.as_str()),
             label: SharedString::default(),
             label_key: SharedString::default(),
+            enabled: true,
+            reason_key: SharedString::default(),
         })
         .collect();
     lock(&ctx.shared).list_context = ListContext::SettingsPicker(id.to_string());

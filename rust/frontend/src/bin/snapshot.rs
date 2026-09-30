@@ -254,6 +254,8 @@ fn main() {
                         id: format!("alternate_version:{index}").into(),
                         label: (*name).into(),
                         label_key: "".into(),
+                        enabled: true,
+                        reason_key: "".into(),
                     })
                     .collect::<Vec<_>>(),
             )));
@@ -268,31 +270,43 @@ fn main() {
                     id: "more_info".into(),
                     label: "".into(),
                     label_key: "more_info".into(),
+                    enabled: true,
+                    reason_key: "".into(),
                 },
                 MenuEntry {
                     id: "toggle_favorite".into(),
                     label: "".into(),
                     label_key: "favorite:add".into(),
+                    enabled: true,
+                    reason_key: "".into(),
                 },
                 MenuEntry {
                     id: "write_card".into(),
                     label: "".into(),
                     label_key: "write_card".into(),
+                    enabled: true,
+                    reason_key: "".into(),
                 },
                 MenuEntry {
                     id: "qr_code".into(),
                     label: "".into(),
                     label_key: "qr_code".into(),
+                    enabled: true,
+                    reason_key: "".into(),
                 },
                 MenuEntry {
                     id: "add_to_hub".into(),
                     label: "".into(),
                     label_key: "add_to_hub".into(),
+                    enabled: true,
+                    reason_key: "".into(),
                 },
                 MenuEntry {
                     id: "scrape_game".into(),
                     label: "".into(),
                     label_key: "scrape_game".into(),
+                    enabled: true,
+                    reason_key: "".into(),
                 },
             ])));
         app.global::<generated::Overlays>().set_context_index(1);
@@ -444,11 +458,44 @@ fn main() {
                 id: (*value).into(),
                 label: "".into(),
                 label_key: "".into(),
+                enabled: true,
+                reason_key: "".into(),
             })
             .collect();
         ov.set_list_setting_id(if palette { "colorScheme" } else { "language" }.into());
         ov.set_list_entries(slint::ModelRc::new(slint::VecModel::from(entries)));
         ov.set_list_index(6);
+        ov.set_list_open(true);
+    }
+    // "launcher-picker" renders the "Change launcher" list with one row
+    // Core reports as unavailable — muted, folded reason, still pickable.
+    if screen.ends_with("launcher-picker") {
+        let ov = app.global::<generated::Overlays>();
+        ov.set_list_title("title:change_launcher".into());
+        ov.set_list_entries(slint::ModelRc::new(slint::VecModel::from(vec![
+            MenuEntry {
+                id: "default".into(),
+                label: "".into(),
+                label_key: "launcher:default".into(),
+                enabled: true,
+                reason_key: "".into(),
+            },
+            MenuEntry {
+                id: "RetroArch".into(),
+                label: "RetroArch".into(),
+                label_key: "".into(),
+                enabled: true,
+                reason_key: "".into(),
+            },
+            MenuEntry {
+                id: "DuckStation".into(),
+                label: "DuckStation".into(),
+                label_key: "".into(),
+                enabled: false,
+                reason_key: "launcher:not_installed".into(),
+            },
+        ])));
+        ov.set_list_index(1);
         ov.set_list_open(true);
     }
     if screen.ends_with("launcher-saving") {
@@ -459,11 +506,15 @@ fn main() {
                 id: "default".into(),
                 label: "Default".into(),
                 label_key: "".into(),
+                enabled: true,
+                reason_key: "".into(),
             },
             MenuEntry {
                 id: "alternate".into(),
                 label: "Alternate launcher".into(),
                 label_key: "".into(),
+                enabled: true,
+                reason_key: "".into(),
             },
         ])));
         ov.set_list_index(1);

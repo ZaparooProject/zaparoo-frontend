@@ -1164,6 +1164,20 @@ pub struct LauncherInfo {
     pub system_name: String,
     #[serde(default)]
     pub groups: Vec<String>,
+    /// Whether this launcher's runtime dependencies are currently satisfied.
+    /// Required on the wire; defaults to `false` (fail closed) if an older
+    /// fixture or Core build omits it.
+    #[serde(default)]
+    pub available: bool,
+    /// Why `available` is `false`. Plain English from Core, not a stable,
+    /// localizable contract (same status as an error's `message`): show it
+    /// only as a last resort, never as the primary reason wording.
+    #[serde(default)]
+    pub availability_reason: Option<String>,
+    /// Whether the platform looked for this launcher and found it installed.
+    /// `None` means the platform never checks (unknown, not "missing").
+    #[serde(default)]
+    pub detected: Option<bool>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -1270,15 +1284,15 @@ mod tests {
     )]
 
     use super::{
-        merged_root_view, BrowseEntry, HealthResult, IndexingStatusResponse, LaunchersResult,
-        LogDownloadResult, MediaBrowseIndexParams, MediaBrowseIndexResult, MediaBrowseParams,
-        MediaBrowseResult, MediaHistoryEntry, MediaHistoryLatestResult, MediaHistoryParams,
-        MediaHistoryResult, MediaImageParams, MediaImageResult, MediaIndexParams, MediaItem,
-        MediaMetaParams, MediaMetaResult, MediaMetaUpdateParams, MediaResult, MediaScrapeParams,
-        MediaSearchParams, MediaSearchResult, ReaderInfo, ReadersResult, ScrapersResult,
-        ScrapingStatusResponse, SettingsResult, SystemDefault, SystemsParams, SystemsResult,
-        TagInfo, TokensHistoryResult, TokensResult, UpdateSettingsParams, VersionResult,
-        MEDIA_IMAGE_DELIVERY_LOCAL_PATH,
+        merged_root_view, BrowseEntry, HealthResult, IndexingStatusResponse, LauncherInfo,
+        LaunchersResult, LogDownloadResult, MediaBrowseIndexParams, MediaBrowseIndexResult,
+        MediaBrowseParams, MediaBrowseResult, MediaHistoryEntry, MediaHistoryLatestResult,
+        MediaHistoryParams, MediaHistoryResult, MediaImageParams, MediaImageResult,
+        MediaIndexParams, MediaItem, MediaMetaParams, MediaMetaResult, MediaMetaUpdateParams,
+        MediaResult, MediaScrapeParams, MediaSearchParams, MediaSearchResult, ReaderInfo,
+        ReadersResult, ScrapersResult, ScrapingStatusResponse, SettingsResult, SystemDefault,
+        SystemsParams, SystemsResult, TagInfo, TokensHistoryResult, TokensResult,
+        UpdateSettingsParams, VersionResult, MEDIA_IMAGE_DELIVERY_LOCAL_PATH,
     };
 
     #[test]
@@ -2279,7 +2293,8 @@ mod tests {
     fn launchers_result_parses_payload() {
         let json = r#"{
             "launchers": [
-                {"id":"snes9x","systemId":"SNES","systemName":"Super Nintendo","groups":["libretro"]}
+                {"id":"snes9x","systemId":"SNES","systemName":"Super Nintendo","groups":["libretro"],
+                 "available":true,"detected":true}
             ]
         }"#;
         let result: LaunchersResult = serde_json::from_str(json).expect("parse");
@@ -2287,6 +2302,38 @@ mod tests {
         assert_eq!(result.launchers[0].id, "snes9x");
         assert_eq!(result.launchers[0].system_id, "SNES");
         assert_eq!(result.launchers[0].groups, vec!["libretro"]);
+        assert!(result.launchers[0].available);
+        assert_eq!(result.launchers[0].detected, Some(true));
+    }
+
+    #[test]
+    fn launcher_unavailable_carries_a_reason_and_no_detection() {
+        let json = r#"{"id":"x","availabilityReason":"not installed","available":false}"#;
+        let launcher: LauncherInfo = serde_json::from_str(json).expect("parse");
+        assert!(!launcher.available);
+        assert_eq!(
+            launcher.availability_reason.as_deref(),
+            Some("not installed")
+        );
+        assert_eq!(launcher.detected, None, "the platform never checked");
+    }
+
+    #[test]
+    fn launcher_missing_available_defaults_closed() {
+        // `available` is required on the wire; a fixture or older Core that
+        // omits it should never read as usable.
+        let launcher: LauncherInfo = serde_json::from_str(r#"{"id":"x"}"#).expect("parse");
+        assert!(!launcher.available);
+        assert_eq!(launcher.detected, None);
+        assert_eq!(launcher.availability_reason, None);
+    }
+
+    #[test]
+    fn launcher_detected_false_is_distinct_from_absent() {
+        let launcher: LauncherInfo =
+            serde_json::from_str(r#"{"id":"x","available":false,"detected":false}"#)
+                .expect("parse");
+        assert_eq!(launcher.detected, Some(false));
     }
 
     #[test]
