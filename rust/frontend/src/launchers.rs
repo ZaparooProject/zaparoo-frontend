@@ -113,21 +113,36 @@ fn launcher_ids(ctx: &Ctx, system_id: &str) -> Vec<String> {
         .collect()
 }
 
-/// Present the picker for a launcher list and the stored choice.
+/// Present the picker for a launcher list and the stored choice. `ids`
+/// selects which of Core's launchers to offer; their availability comes
+/// from the local snapshot Core already sent, not a fresh query.
 fn present(ctx: &Ctx, app: &App, context: ListContext, ids: &[String], current: Option<&str>) {
     if app.global::<crate::Overlays>().get_launcher_saving() {
         return;
     }
-    let rows = rules::picker_rows(ids, current);
+    let launchers = lock(&ctx.shared).launchers.clone();
+    let readiness: Vec<rules::LauncherReadiness> = ids
+        .iter()
+        .map(|id| {
+            let info = launchers.iter().find(|l| &l.id == id);
+            rules::LauncherReadiness {
+                id: id.clone(),
+                available: info.is_none_or(|l| l.available),
+                detected: info.and_then(|l| l.detected),
+            }
+        })
+        .collect();
+    let rows = rules::picker_rows(&readiness, current);
     let index = rules::picker_index(&rows, current);
     let entries: Vec<crate::MenuEntry> = rows
         .iter()
         .map(|row| {
-            if row.key.is_empty() {
-                crate::router::menu_entry(&row.id, &row.id)
-            } else {
-                crate::router::menu_row_keyed(&row.id, row.key, &row.id)
-            }
+            let reason_key = match row.reason {
+                rules::PickerReason::NotInstalled => "launcher:not_installed",
+                rules::PickerReason::Unavailable => "launcher:unavailable",
+                rules::PickerReason::None => "",
+            };
+            crate::router::menu_row_full(&row.id, row.key, &row.id, row.available, reason_key)
         })
         .collect();
     lock(&ctx.shared).list_context = context;
