@@ -467,6 +467,37 @@ fn main() {
         ov.set_list_index(6);
         ov.set_list_open(true);
     }
+    // "launcher-picker" renders the "Change launcher" list with one row
+    // Core reports as unavailable — muted, folded reason, still pickable.
+    if screen.ends_with("launcher-picker") {
+        let ov = app.global::<generated::Overlays>();
+        ov.set_list_title("title:change_launcher".into());
+        ov.set_list_entries(slint::ModelRc::new(slint::VecModel::from(vec![
+            MenuEntry {
+                id: "default".into(),
+                label: "".into(),
+                label_key: "launcher:default".into(),
+                enabled: true,
+                reason_key: "".into(),
+            },
+            MenuEntry {
+                id: "RetroArch".into(),
+                label: "RetroArch".into(),
+                label_key: "".into(),
+                enabled: true,
+                reason_key: "".into(),
+            },
+            MenuEntry {
+                id: "DuckStation".into(),
+                label: "DuckStation".into(),
+                label_key: "".into(),
+                enabled: false,
+                reason_key: "launcher:not_installed".into(),
+            },
+        ])));
+        ov.set_list_index(1);
+        ov.set_list_open(true);
+    }
     if screen.ends_with("launcher-saving") {
         let ov = app.global::<generated::Overlays>();
         ov.set_list_title("title:change_launcher".into());
