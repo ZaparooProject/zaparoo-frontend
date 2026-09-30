@@ -13,12 +13,18 @@ export { Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, Co
 import { GlyphSource, Brand, Buttons, HelpEntry, Status, HeaderBar, StatusLine, ProgressTrack, TopStatusStrip, PageIndicator, ActiveLabel, HelpBar, SectionHeader, Divider, ScrollCue, ModalShell, QrPlate, StateCue } from "chrome.slint";
 import { GridCell, MarqueeCaption, PressableSurface, Tile, PagedGridView } from "tiles.slint";
 import { ScrollOffset, SelectionCursor, SelectionClip } from "focus.slint";
+import { PressFeedback } from "press_feedback.slint";
+export { PressFeedback }
 import { DetailRow, MetaLabels, BrowseListDetailView } from "browse_list.slint";
 import { SettingsRow, SettingsLabels, SettingsRowView } from "settings.slint";
 import { SetupPickerRow, SetupModal, LogUploadModal } from "setup.slint";
 import { Labels, DialogLabels } from "labels.slint";
 import { GameInfoView, GameInfoModal } from "game_info.slint";
 import { AboutView, AboutScreen } from "about.slint";
+import { UpdateView, UpdatePage, UpdateButton, UpdateOutcome, UpdateStatusKind, UpdateError, UpdateLinuxPhase, UpdateFilter, UpdateRowKind, UpdateRowStatus, UpdateFolderKind, UpdateHelpLabel, UpdateCounts, UpdateRow, UpdateMembership, UpdateHelp } from "update_view.slint";
+// The screen itself comes from the `zaparoo-update` crate: an empty stand-in
+// in public builds, the real module in official ones.
+import { UpdateScreen } from "@zaparoo-update/update.slint";
 
 // Embed the real launcher fonts: Noto Sans for desktop, the MxPlus
 // 6x8 bitmap font for the CRT native path (family names must match
@@ -33,6 +39,7 @@ import "../../../resources/fonts/NotoSans-DemiBold.ttf";
 import "../../../resources/fonts/MxPlus_HP_100LX_6x8.ttf";
 
 export { Theme, Sizing, Motion, Layout, GlyphSource, Buttons, Status, HelpEntry, GridCell, DetailRow, SettingsRow, SettingsLabels, SetupPickerRow, GameInfoView, Labels, AboutView }
+export { UpdateView, UpdatePage, UpdateButton, UpdateOutcome, UpdateStatusKind, UpdateError, UpdateLinuxPhase, UpdateFilter, UpdateRowKind, UpdateRowStatus, UpdateFolderKind, UpdateHelpLabel, UpdateCounts, UpdateRow, UpdateMembership, UpdateHelp }
 
 // Context-menu row: `id` is the dispatch key the router switches on,
 // never the row's position (position-keyed dispatch was a footgun).
@@ -428,15 +435,6 @@ export global GamesInput {
     callback cell-right-clicked(int);
     callback page-requested(int);
     callback wheel(int);
-}
-
-// One pending commitment, owned by the router and mirrored to the CRT.
-export global PressFeedback {
-    in-out property <PressOwner> owner: PressOwner.none;
-    in-out property <int> index: -1;
-    public pure function active(owner: PressOwner, index: int) -> bool {
-        return self.owner == owner && self.index == index;
-    }
 }
 
 // Context menu, View menu, letter picker, and card-writer state.
@@ -2523,6 +2521,8 @@ component RouteScreen inherits Rectangle {
 
     if root.screen-token == Screen.about: AboutScreen {}
 
+    if root.screen-token == Screen.update: UpdateScreen {}
+
     if root.screen-token == Screen.games || root.screen-token == Screen.favorites
         || root.screen-token == Screen.recents: GamesScreen {
         gated: root.gated;
@@ -2584,6 +2584,19 @@ export component App inherits Window {
     pure function focused-settings-control() -> ControlKind {
         return SettingsView.index >= 0 && SettingsView.index < SettingsView.rows.length
             ? SettingsView.rows[SettingsView.index].control : ControlKind.none;
+    }
+    pure function update-help-label(label: UpdateHelpLabel) -> string {
+        if (label == UpdateHelpLabel.move) { return @tr("Move"); }
+        if (label == UpdateHelpLabel.select) { return @tr("Select"); }
+        if (label == UpdateHelpLabel.start) { return @tr("Start"); }
+        if (label == UpdateHelpLabel.cancel) { return @tr("Cancel"); }
+        if (label == UpdateHelpLabel.close) { return @tr("Close"); }
+        if (label == UpdateHelpLabel.toggle) { return @tr("Toggle"); }
+        if (label == UpdateHelpLabel.info) { return @tr("Info"); }
+        return @tr("Back");
+    }
+    pure function update-help-entry(index: int) -> HelpEntry {
+        return { buttons: [UpdateView.help[index].button], label: root.update-help-label(UpdateView.help[index].label) };
     }
     pure function help-entries() -> [HelpEntry] {
         if (Shell.boot-curtain) {
@@ -2788,6 +2801,13 @@ export component App inherits Window {
                 { buttons: ["ButtonA"], label: @tr("Open") },
                 { buttons: ["ButtonB"], label: @tr("Back") },
             ];
+        }
+        // The Update screen's state machine chooses the hints; at most three.
+        if (Shell.active-screen == Screen.update) {
+            if (UpdateView.help.length >= 3) { return [root.update-help-entry(0), root.update-help-entry(1), root.update-help-entry(2)]; }
+            if (UpdateView.help.length == 2) { return [root.update-help-entry(0), root.update-help-entry(1)]; }
+            if (UpdateView.help.length == 1) { return [root.update-help-entry(0)]; }
+            return [];
         }
         if (Shell.active-screen == Screen.about) {
             if (AboutView.maximum-scroll-milli <= 0) { return [{ buttons: ["ButtonB"], label: @tr("Back") }]; }

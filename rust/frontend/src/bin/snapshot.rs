@@ -619,6 +619,11 @@ fn main() {
         overlays.set_crt_v_offset(-2);
         overlays.set_crt_calibration_open(true);
     }
+    // "update-*" renders the Update screen from a seeded `UpdateView`, with
+    // no engine behind it.
+    if screen.contains("update") {
+        fixture_update(&app, &screen);
+    }
     app.global::<Shell>()
         .set_active_screen(fixture_screen(&screen));
     if screen == "route-forward" {
@@ -774,6 +779,8 @@ fn main() {
 fn fixture_screen(screen: &str) -> Screen {
     if screen.starts_with("route-") {
         Screen::Hub
+    } else if screen.contains("update") {
+        Screen::Update
     } else if matches!(screen, "context" | "context-alt" | "letters")
         || (screen.contains("list") && !screen.contains("systems"))
         || screen.contains("games")
@@ -807,6 +814,386 @@ fn fixture_screen(screen: &str) -> Screen {
     } else {
         // Standalone overlay fixtures intentionally mount no root screen.
         Screen::None
+    }
+}
+
+/// Seed the Update screen's view state for one `update-*` fixture (a `crt-`
+/// prefix or a `-tate`/`-ccw` suffix only changes the scene, not the state).
+#[allow(
+    clippy::too_many_lines,
+    reason = "one explicit inventory of the fixtures keeps their states reviewable"
+)]
+fn fixture_update(app: &App, screen: &str) {
+    use generated::{
+        UpdateButton, UpdateCounts, UpdateError, UpdateFilter, UpdateFolderKind, UpdateHelp,
+        UpdateHelpLabel, UpdateLinuxPhase, UpdateMembership, UpdateOutcome, UpdatePage, UpdateRow,
+        UpdateRowKind, UpdateRowStatus, UpdateStatusKind, UpdateView,
+    };
+    let name = screen
+        .trim_start_matches("crt-")
+        .trim_end_matches("-ccw")
+        .trim_end_matches("-tate");
+    let view = app.global::<UpdateView>();
+    let set_buttons = |buttons: &[UpdateButton], focus: i32| {
+        view.set_buttons(slint::ModelRc::new(slint::VecModel::from(buttons.to_vec())));
+        view.set_button_focus(focus);
+    };
+    let set_help = |entries: &[(&str, UpdateHelpLabel)]| {
+        view.set_help(slint::ModelRc::new(slint::VecModel::from(
+            entries
+                .iter()
+                .map(|(button, label)| UpdateHelp {
+                    button: (*button).into(),
+                    label: *label,
+                })
+                .collect::<Vec<_>>(),
+        )));
+    };
+    view.set_available(name != "update-unavailable");
+    view.set_version("2.3".into());
+    view.set_page(UpdatePage::Intro);
+    view.set_allows_screensaver(true);
+    set_help(&[
+        ("Dpad", UpdateHelpLabel::Move),
+        ("ButtonA", UpdateHelpLabel::Start),
+        ("ButtonB", UpdateHelpLabel::Back),
+    ]);
+    set_buttons(&[UpdateButton::Back, UpdateButton::Start], 1);
+    let finished = |outcome: UpdateOutcome, counts: UpdateCounts| {
+        view.set_page(UpdatePage::Finished);
+        view.set_outcome(outcome);
+        view.set_counts(counts);
+    };
+    match name {
+        "update-unavailable" => {
+            set_buttons(&[UpdateButton::Back], 0);
+            set_help(&[("ButtonB", UpdateHelpLabel::Back)]);
+        }
+        "update-running" | "update-progress" | "update-slow" | "update-file" => {
+            view.set_page(UpdatePage::Running);
+            view.set_progress_known(name != "update-running" && name != "update-slow");
+            view.set_progress_bp(4250);
+            view.set_progress_decimals(1);
+            view.set_status_kind(match name {
+                "update-running" => UpdateStatusKind::Starting,
+                "update-slow" => UpdateStatusKind::Slow,
+                _ => UpdateStatusKind::File,
+            });
+            view.set_status_arg(
+                "_Console/Super Nintendo Entertainment System Enhanced Edition (Rev A) [Alternate].rbf"
+                    .into(),
+            );
+            view.set_allows_screensaver(false);
+            set_help(&[("ButtonB", UpdateHelpLabel::Cancel)]);
+        }
+        "update-running-error" => {
+            view.set_page(UpdatePage::Running);
+            view.set_progress_known(true);
+            view.set_progress_bp(6100);
+            view.set_status_kind(UpdateStatusKind::Tool);
+            view.set_status_arg("Retrying download of _Arcade/cores/1942.rbf".into());
+            view.set_error(UpdateError::Network);
+            view.set_allows_screensaver(false);
+            set_help(&[("ButtonB", UpdateHelpLabel::Cancel)]);
+        }
+        "update-transition" => {
+            view.set_page(UpdatePage::Running);
+            view.set_progress_known(true);
+            view.set_progress_bp(10000);
+            view.set_status_kind(UpdateStatusKind::Transition);
+            view.set_status_arg("from_old_db_ids_to_new_db_ids".into());
+            view.set_allows_screensaver(false);
+            set_help(&[("ButtonB", UpdateHelpLabel::Cancel)]);
+        }
+        "update-stopping" => {
+            view.set_page(UpdatePage::Stopping);
+            view.set_status_kind(UpdateStatusKind::StoppingSlow);
+            view.set_allows_screensaver(false);
+            set_help(&[]);
+        }
+        "update-finished"
+        | "update-finished-errors"
+        | "update-membership"
+        | "update-reboot"
+        | "update-uptodate"
+        | "update-failed" => {
+            let counts = UpdateCounts {
+                installed: 12,
+                updated: 34,
+                removed: 1,
+                failed: if name == "update-finished-errors" {
+                    3
+                } else {
+                    0
+                },
+                ..Default::default()
+            };
+            match name {
+                "update-finished-errors" => {
+                    finished(UpdateOutcome::CompleteWithErrors, counts);
+                    view.set_error(UpdateError::SomeFiles);
+                }
+                "update-reboot" => finished(UpdateOutcome::CompleteRebootNeeded, counts),
+                "update-uptodate" => finished(UpdateOutcome::UpToDate, UpdateCounts::default()),
+                "update-failed" => {
+                    finished(UpdateOutcome::Failed, UpdateCounts::default());
+                    view.set_error(UpdateError::Network);
+                }
+                _ => finished(UpdateOutcome::Complete, counts),
+            }
+            if name == "update-membership" {
+                view.set_membership(slint::ModelRc::new(slint::VecModel::from(vec![
+                    UpdateMembership {
+                        topic: "Thanks for supporting the project".into(),
+                        message: "New database entries arrive every Friday. Check the Details page after each update to see what changed.".into(),
+                        info: "".into(),
+                    },
+                    UpdateMembership {
+                        topic: "".into(),
+                        message: "A second message".into(),
+                        info: "".into(),
+                    },
+                ])));
+                view.set_membership_index(0);
+                view.set_transition("from_old_db_ids_to_new_db_ids".into());
+            }
+            if matches!(
+                name,
+                "update-finished" | "update-finished-errors" | "update-membership"
+            ) {
+                set_buttons(
+                    &[
+                        UpdateButton::Details,
+                        UpdateButton::Errors,
+                        UpdateButton::Ok,
+                    ],
+                    2,
+                );
+            } else {
+                set_buttons(&[UpdateButton::Ok], 0);
+            }
+            set_help(&[
+                ("Dpad", UpdateHelpLabel::Move),
+                ("ButtonA", UpdateHelpLabel::Select),
+                ("ButtonB", UpdateHelpLabel::Back),
+            ]);
+        }
+        "update-linux" | "update-linux-flash" | "update-linux-failed" => {
+            view.set_page(UpdatePage::Linux);
+            view.set_linux_phase(if name == "update-linux" {
+                UpdateLinuxPhase::Extract
+            } else {
+                UpdateLinuxPhase::Flash
+            });
+            view.set_linux_current_version("2025-03-14".into());
+            view.set_linux_new_version("2026-08-30".into());
+            view.set_linux_failed(name == "update-linux-failed");
+            if name == "update-linux-failed" {
+                view.set_error(UpdateError::Network);
+            }
+            view.set_allows_screensaver(false);
+            set_help(&[]);
+        }
+        "update-rebooting" => {
+            view.set_page(UpdatePage::Rebooting);
+            view.set_countdown_secs(12);
+            view.set_allows_screensaver(false);
+            set_help(&[]);
+        }
+        "update-details"
+        | "update-details-second"
+        | "update-info"
+        | "update-info-duplicate"
+        | "update-info-failed" => {
+            let counts = |i: i32, u: i32, r: i32, f: i32| UpdateCounts {
+                installed: i,
+                updated: u,
+                removed: r,
+                failed: f,
+                ..Default::default()
+            };
+            let row = |kind: UpdateRowKind,
+                       status: UpdateRowStatus,
+                       depth: i32,
+                       label: &str,
+                       reason: &str| UpdateRow {
+                kind,
+                status,
+                depth,
+                label: label.into(),
+                reason: reason.into(),
+                ..Default::default()
+            };
+            let mut rows = vec![
+                UpdateRow {
+                    kind: UpdateRowKind::Database,
+                    database: "distribution_mister".into(),
+                    file_count: 47,
+                    counts: counts(12, 34, 1, 0),
+                    ..Default::default()
+                },
+                UpdateRow {
+                    kind: UpdateRowKind::Folder,
+                    folder: UpdateFolderKind::Arcade,
+                    depth: 1,
+                    file_count: 20,
+                    counts: counts(4, 16, 0, 0),
+                    ..Default::default()
+                },
+                row(
+                    UpdateRowKind::File,
+                    UpdateRowStatus::Updated,
+                    2,
+                    "1942.mra",
+                    "_Arcade/1942.mra",
+                ),
+                row(
+                    UpdateRowKind::File,
+                    UpdateRowStatus::Installed,
+                    2,
+                    "Bubble Bobble (Japan, Ver 0.1).mra",
+                    "_Arcade/Bubble Bobble (Japan, Ver 0.1).mra",
+                ),
+                row(
+                    UpdateRowKind::File,
+                    UpdateRowStatus::Failed,
+                    2,
+                    "Galaga.mra",
+                    "Connection reset by peer",
+                ),
+                UpdateRow {
+                    kind: UpdateRowKind::Folder,
+                    folder: UpdateFolderKind::Console,
+                    depth: 1,
+                    file_count: 3,
+                    counts: counts(3, 0, 0, 0),
+                    collapsed: true,
+                    ..Default::default()
+                },
+                UpdateRow {
+                    kind: UpdateRowKind::Folder,
+                    folder: UpdateFolderKind::Plain,
+                    depth: 1,
+                    label: "docs".into(),
+                    file_count: 2,
+                    counts: counts(0, 1, 1, 0),
+                    ..Default::default()
+                },
+                row(
+                    UpdateRowKind::File,
+                    UpdateRowStatus::Removed,
+                    2,
+                    "old-readme.txt",
+                    "docs/old-readme.txt",
+                ),
+                UpdateRow {
+                    kind: UpdateRowKind::Database,
+                    database: "jotego/jtcores".into(),
+                    file_count: 9,
+                    counts: counts(0, 9, 0, 0),
+                    collapsed: true,
+                    ..Default::default()
+                },
+                UpdateRow {
+                    kind: UpdateRowKind::DuplicateCategory,
+                    file_count: 2,
+                    ..Default::default()
+                },
+                UpdateRow {
+                    kind: UpdateRowKind::DuplicateFile,
+                    depth: 1,
+                    label: "PSX.rbf".into(),
+                    reason: "_Console/PSX.rbf".into(),
+                    database: "distribution_mister".into(),
+                    ..Default::default()
+                },
+                UpdateRow {
+                    kind: UpdateRowKind::NotOverwrittenCategory,
+                    file_count: 1,
+                    ..Default::default()
+                },
+                UpdateRow {
+                    kind: UpdateRowKind::NotOverwrittenFile,
+                    depth: 1,
+                    label: "user.ini".into(),
+                    reason: "config/user.ini".into(),
+                    database: "mikes11/yc_builds-mister".into(),
+                    ..Default::default()
+                },
+                UpdateRow {
+                    kind: UpdateRowKind::DatabaseError,
+                    status: UpdateRowStatus::Failed,
+                    database: "theypsilon/broken_db".into(),
+                    ..Default::default()
+                },
+                row(
+                    UpdateRowKind::DatabaseErrorReason,
+                    UpdateRowStatus::Failed,
+                    1,
+                    "",
+                    "Could not download the database file.",
+                ),
+            ];
+            for n in 0..80 {
+                rows.push(row(
+                    UpdateRowKind::File,
+                    UpdateRowStatus::Updated,
+                    2,
+                    &format!("Extra file {n:02}.rbf"),
+                    &format!("_Console/Extra file {n:02}.rbf"),
+                ));
+            }
+            let total = i32::try_from(rows.len()).unwrap();
+            let info_row = match name {
+                "update-info-duplicate" => rows[10].clone(),
+                "update-info-failed" => rows[4].clone(),
+                _ => rows[3].clone(),
+            };
+            view.set_rows(slint::ModelRc::new(slint::VecModel::from(rows)));
+            view.set_page(UpdatePage::Details);
+            view.set_filter_visible(true);
+            view.set_filter(UpdateFilter::All);
+            view.set_filter_focus(UpdateFilter::All);
+            view.set_filter_focused(false);
+            view.set_focused_row(if name == "update-details-second" {
+                60
+            } else {
+                3
+            });
+            view.set_row_count(total);
+            view.set_database_count(3);
+            view.set_details_counts(UpdateCounts {
+                installed: 12,
+                updated: 43,
+                removed: 1,
+                failed: 3,
+                ..Default::default()
+            });
+            set_help(&[
+                ("Dpad", UpdateHelpLabel::Move),
+                ("ButtonA", UpdateHelpLabel::Info),
+                ("ButtonB", UpdateHelpLabel::Back),
+            ]);
+            if name.starts_with("update-info") {
+                view.set_info_row(info_row);
+                view.set_info_databases(slint::ModelRc::new(slint::VecModel::from(
+                    [
+                        "distribution_mister",
+                        "theypsilon/alt_a",
+                        "theypsilon/alt_b",
+                    ]
+                    .iter()
+                    .map(|db| slint::SharedString::from(*db))
+                    .collect::<Vec<_>>(),
+                )));
+                view.set_info_open(true);
+                set_help(&[
+                    ("ButtonA", UpdateHelpLabel::Close),
+                    ("ButtonB", UpdateHelpLabel::Back),
+                ]);
+            }
+        }
+        _ => {}
     }
 }
 
@@ -1525,6 +1912,8 @@ mod fixture_tests {
             ("game-info", Screen::Games),
             ("settings-page", Screen::Settings),
             ("about", Screen::About),
+            ("update-intro", Screen::Update),
+            ("crt-update-details", Screen::Update),
         ] {
             assert_eq!(fixture_screen(name), screen, "{name}");
         }

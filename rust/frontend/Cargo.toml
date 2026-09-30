@@ -75,6 +75,10 @@ snapshot = ["desktop", "slint/renderer-software"]
 zaparoo-core = { path = "../zaparoo-core" }
 zaparoo-app = { path = "../zaparoo-app" }
 zaparoo-build-info = { path = "../build-info" }
+# The Update screen: the public stub, or the private module that official
+# builds substitute for it (docs/architecture.md, "Update module").
+zaparoo-update = { path = "../zaparoo-update" }
+zaparoo-update-api = { path = "../zaparoo-update-api" }
 # `unstable-fontique-011` exposes the shared font collection so the embedded
 # script faces can be registered for fallback (src/fonts.rs).
 slint = { version = "=1.18.0", default-features = false, features = ["compat-1-2", "unstable-fontique-011"] }

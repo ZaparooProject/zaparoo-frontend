@@ -26,7 +26,7 @@ macro_rules! tokens {
 tokens!(Screen {
     Hub => "hub", Systems => "systems", FavoriteSystems => "favorite-systems",
     Games => "games", Favorites => "favorites", Recents => "recents",
-    Settings => "settings", About => "about", None => "",
+    Settings => "settings", About => "about", Update => "update", None => "",
 });
 tokens!(SettingsPage {
     Root => "", Appearance => "pageAppearance", Library => "pageLibraryData",
@@ -162,6 +162,7 @@ mod tests {
             Screen::Recents,
             Screen::Settings,
             Screen::About,
+            Screen::Update,
             Screen::None,
         ] {
             assert_eq!(Screen::try_from(value.token()), Ok(value));

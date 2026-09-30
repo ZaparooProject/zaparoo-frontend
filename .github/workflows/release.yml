@@ -18,6 +18,10 @@ on:
         description: 'Menu_MiSTer release tag to bundle (defaults to latest)'
         required: false
         type: string
+      update_ref:
+        description: 'zaparoo-update ref (tag, branch or commit) to bundle (defaults to the ZAPAROO_UPDATE_REF variable, then main)'
+        required: false
+        type: string
       upload:
         description: 'Upload to GitHub release'
         required: false
@@ -118,6 +122,47 @@ jobs:
       - uses: taiki-e/install-action@9983c65e42da123ff25d1f78505eb6de315aa172 # v2.87.20
         with:
           tool: just@1.58.0
+
+      # The Update screen is a private module (docs/architecture.md, "Update
+      # module"). Without it the build is the public stub and the Hub has no
+      # Update tile, so a published release must have it; a dispatch that
+      # uploads nothing may go without.
+      - name: Check out the Update module
+        env:
+          UPDATE_DEPLOY_KEY: ${{ secrets.ZAPAROO_UPDATE_DEPLOY_KEY }}
+          UPDATE_REF: ${{ inputs.update_ref || vars.ZAPAROO_UPDATE_REF || 'main' }}
+          PUBLISHING: ${{ steps.upload-policy.outputs.should-upload }}
+        run: |
+          if [ -z "$UPDATE_DEPLOY_KEY" ]; then
+            if [ "$PUBLISHING" = "true" ]; then
+              echo "ZAPAROO_UPDATE_DEPLOY_KEY is not set; a published release must include the Update module" >&2
+              exit 1
+            fi
+            echo "::warning::ZAPAROO_UPDATE_DEPLOY_KEY is not set; building without the Update module"
+            exit 0
+          fi
+          key="$RUNNER_TEMP/update_deploy_key"
+          trap 'rm -f "$key"' EXIT
+          umask 077
+          printf '%s\n' "$UPDATE_DEPLOY_KEY" > "$key"
+          export GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
+          dest=rust/private/zaparoo-update
+          mkdir -p "$dest"
+          git -C "$dest" init --quiet
+          git -C "$dest" remote add origin git@github.com:theypsilon/zaparoo-update.git
+          git -C "$dest" fetch --quiet --depth 1 origin "$UPDATE_REF"
+          git -C "$dest" checkout --quiet FETCH_HEAD
+          if [ "$PUBLISHING" = "true" ]; then
+            for required in src/imp/mod.rs ui/update.slint; do
+              if [ ! -f "$dest/$required" ]; then
+                echo "Update checkout is missing $required" >&2
+                exit 1
+              fi
+            done
+          fi
+          just update-module
+          rm -f "$key"
+          echo "Bundling zaparoo-update at $(git -C "$dest" rev-parse --short HEAD)"
 
       - name: Build release ZIP
         run: ./scripts/package-mister-release.sh "$BUILD_TAG"

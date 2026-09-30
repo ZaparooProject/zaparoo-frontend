@@ -83,6 +83,7 @@ mod system_status;
 mod systems;
 mod tag_utils;
 mod theme;
+mod update;
 mod view_model;
 
 #[cfg(any(
@@ -789,6 +790,7 @@ fn run_application(
     settings::bind_input(&ctx, &app);
     media_setup::bind_input(&ctx, &app);
     log_upload::bind_input(&ctx, &app);
+    update::bind(&ctx, &app);
     router::bind_context_input(&ctx, &app);
     hub::rebuild(&ctx, &app);
     hub::restore(&ctx, &app);

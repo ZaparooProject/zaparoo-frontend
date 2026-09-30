@@ -196,8 +196,28 @@ fn current_with(app: &App, prepare_grid: impl FnOnce()) -> Option<Target> {
             &view.get_rows(),
         );
     }
+    if shell.get_active_screen() == Screen::Update {
+        return update_target(app);
+    }
     prepare_grid();
     grid_target(app)
+}
+
+fn update_target(app: &App) -> Option<Target> {
+    let view = app.global::<crate::UpdateView>();
+    if !matches!(
+        view.get_page(),
+        crate::UpdatePage::Intro | crate::UpdatePage::Finished
+    ) {
+        return None;
+    }
+    let index = view.get_button_focus();
+    let button = view.get_buttons().row_data(usize::try_from(index).ok()?)?;
+    Some(target(
+        PressOwner::Update,
+        index,
+        format!("{:?}:{:?}:{button:?}", view.get_page(), view.get_outcome()),
+    ))
 }
 
 fn grid_target(app: &App) -> Option<Target> {

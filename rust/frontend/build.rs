@@ -30,11 +30,106 @@ fn main() {
     // the gettext domain) and selected at runtime by `apply_language` in
     // lib.rs. No default context: one msgid is one entry, so identical
     // source strings share one translation across components.
+    let manifest_dir = std::path::PathBuf::from(
+        std::env::var_os("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"),
+    );
+    // The Update screen lives in the `zaparoo-update` crate: an empty
+    // stand-in here, the real module in official builds. Both publish the
+    // directory of their `.slint` files (and, for the real one, their
+    // translation catalogs) through cargo metadata.
+    let update_ui = std::env::var_os("DEP_ZAPAROO_UPDATE_UI_DIR")
+        .expect("zaparoo-update publishes its ui directory");
+    let update_translations = std::env::var_os("DEP_ZAPAROO_UPDATE_TRANSLATIONS_DIR")
+        .filter(|dir| !dir.is_empty())
+        .map(std::path::PathBuf::from);
+    println!("cargo:rerun-if-changed=translations");
+    let translations = stage_translations(&manifest_dir, update_translations.as_deref());
     let config = slint_build::CompilerConfiguration::new()
-        .with_bundled_translations("translations")
+        .with_library_paths(std::collections::HashMap::from([
+            (
+                "zaparoo-update".to_string(),
+                std::path::PathBuf::from(update_ui),
+            ),
+            ("zaparoo-ui".to_string(), manifest_dir.join("ui")),
+        ]))
+        .with_bundled_translations(translations)
         .with_default_translation_context(slint_build::DefaultTranslationContext::None);
     slint_build::compile_with_config("ui/app.slint", config)
         .unwrap_or_else(|e| panic!("slint compile failed: {e}"));
+}
+
+/// The catalogs Slint bundles: the frontend's own, plus the Update module's
+/// when it brings some. Both use the crate-name domain (`frontend.po`), so
+/// each language's module catalog is appended to the frontend's, minus its
+/// header and any msgid the frontend already translates: one msgid is one
+/// entry, and the frontend's wording wins.
+fn stage_translations(
+    manifest_dir: &std::path::Path,
+    module: Option<&std::path::Path>,
+) -> std::path::PathBuf {
+    let out = std::path::PathBuf::from(std::env::var_os("OUT_DIR").expect("OUT_DIR"))
+        .join("translations");
+    let _ = std::fs::remove_dir_all(&out);
+    let own = manifest_dir.join("translations");
+    let Some(module) = module else {
+        return own;
+    };
+    println!("cargo:rerun-if-changed={}", module.display());
+    for entry in std::fs::read_dir(&own)
+        .unwrap_or_else(|e| panic!("read {}: {e}", own.display()))
+        .filter_map(Result::ok)
+    {
+        let lang = entry.file_name();
+        let catalog = std::path::Path::new("LC_MESSAGES").join("frontend.po");
+        let Ok(base) = std::fs::read_to_string(entry.path().join(&catalog)) else {
+            continue;
+        };
+        let merged = match std::fs::read_to_string(module.join(&lang).join(&catalog)) {
+            Ok(extra) => merge_catalogs(&base, &extra),
+            Err(_) => base,
+        };
+        let dest = out.join(&lang).join(&catalog);
+        std::fs::create_dir_all(dest.parent().expect("catalog has a parent"))
+            .unwrap_or_else(|e| panic!("create {}: {e}", dest.display()));
+        std::fs::write(&dest, merged).unwrap_or_else(|e| panic!("write {}: {e}", dest.display()));
+    }
+    out
+}
+
+/// The identity of a catalog entry: its `msgid` and `msgid_plural` lines,
+/// continuation lines included.
+fn entry_key(block: &str) -> String {
+    let mut key = String::new();
+    let mut in_id = false;
+    for line in block.lines() {
+        if line.starts_with("msgid") {
+            in_id = true;
+        } else if line.starts_with("msgstr") || line.starts_with("msgctxt") {
+            in_id = false;
+        }
+        if in_id {
+            key.push_str(line);
+            key.push('\n');
+        }
+    }
+    key
+}
+
+/// Appends `extra`'s entries to `base`, skipping `extra`'s header and any
+/// entry `base` already has.
+fn merge_catalogs(base: &str, extra: &str) -> String {
+    let mut seen: std::collections::HashSet<String> = base.split("\n\n").map(entry_key).collect();
+    let mut merged = base.trim_end().to_string();
+    for block in extra.split("\n\n").skip(1) {
+        let block = block.trim_matches('\n');
+        if block.is_empty() || !seen.insert(entry_key(block)) {
+            continue;
+        }
+        merged.push_str("\n\n");
+        merged.push_str(block);
+    }
+    merged.push('\n');
+    merged
 }
 
 /// Writes `$OUT_DIR/<table_file>`: every `assets/<subdir>/<id>.png` as
