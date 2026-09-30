@@ -197,6 +197,7 @@ pub enum ListContext {
 pub struct Ctx {
     pub folders: crate::folder_picker::Model,
     pub launcher_scan: crate::launcher_scan::Model,
+    pub playtime_access: crate::playtime_access::Model,
     pub store: Arc<Store>,
     pub handle: Handle,
     pub media: Arc<MediaCache>,

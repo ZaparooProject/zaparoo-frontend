@@ -958,6 +958,7 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
     use zaparoo_app::layouts::{self, Body, ThemeId, View};
     use zaparoo_app::settings::{self as rules, Control, Row};
     let page = screen.contains("settings-page");
+    let playtime = screen.contains("settings-page-playtime");
     let online = screen.contains("settings-page-online");
     let inputs = sizing::Scene::of(app, scene_w, scene_h, crt).inputs();
     let derived = zaparoo_app::sizing::derive(&inputs);
@@ -974,6 +975,7 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
         log_upload: false,
         can_pick_folder: false,
         can_scan_launchers: false,
+        can_request_playtime_access: playtime,
         can_link_online: online,
     };
     let row_h = inputs.pct_h(8.0);
@@ -1010,7 +1012,9 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
                         }
                         Control::Action => {
                             out.busy = id == "runScraper";
-                            out.status_key = if id == "onlineAccount" {
+                            out.status_key = if id == "playtimeAccess" {
+                                ActionStatus::PlaytimeUnverified
+                            } else if id == "onlineAccount" {
                                 ActionStatus::OnlineUnlinked
                             } else if out.busy {
                                 ActionStatus::Running

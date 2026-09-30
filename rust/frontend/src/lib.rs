@@ -60,6 +60,7 @@ mod pairing;
     )
 )]
 mod perf;
+mod playtime_access;
 // Reads the kernel power-supply class, which only the desktop feature
 // set has any use for; `MiSTer`'s reading comes off the `SMBus` instead.
 #[cfg(feature = "desktop")]
@@ -685,6 +686,7 @@ fn run_application(
     let ctx = Arc::new(Ctx {
         folders: folder_picker::Model::default(),
         launcher_scan: launcher_scan::Model::default(),
+        playtime_access: playtime_access::Model::default(),
         store: store.clone(),
         handle: handle.clone(),
         media,

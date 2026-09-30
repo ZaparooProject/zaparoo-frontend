@@ -127,6 +127,28 @@ impl Input {
         })
     }
 
+    /// Offer a handoff to the system setting that lets the host measure
+    /// foreground playtime exactly. Granting it stays the user's action in
+    /// system settings.
+    pub fn configure_playtime_access(
+        &self,
+        request: Arc<dyn Fn() -> bool + Send + Sync>,
+    ) -> Result<(), slint::EventLoopError> {
+        let ctx = self.ctx.clone();
+        self.app.upgrade_in_event_loop(move |app| {
+            ctx.playtime_access.configure(request);
+            crate::settings::refresh(&ctx, &app);
+        })
+    }
+
+    pub fn playtime_access_status(&self, granted: bool) -> Result<(), slint::EventLoopError> {
+        let ctx = self.ctx.clone();
+        self.app.upgrade_in_event_loop(move |app| {
+            ctx.playtime_access.set_granted(granted);
+            crate::settings::refresh(&ctx, &app);
+        })
+    }
+
     /// Offer an optional host-owned scan for installed launchers.
     pub fn configure_launcher_scan(
         &self,

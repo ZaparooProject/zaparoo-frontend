@@ -333,6 +333,7 @@ fn offline_ctx() -> (tokio::runtime::Runtime, crate::router::Ctx) {
     let ctx = crate::router::Ctx {
         folders: crate::folder_picker::Model::default(),
         launcher_scan: crate::launcher_scan::Model::default(),
+        playtime_access: crate::playtime_access::Model::default(),
         store: zaparoo_core::store::Store::new(client, handle.clone()),
         handle,
         media: crate::media_cache::MediaCache::new(),

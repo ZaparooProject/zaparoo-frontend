@@ -66,6 +66,8 @@ export global SettingsLabels {
         if (key == ActionStatus.launcher-denied) { return @tr("Read access could not be saved. Choose the folder again."); }
         if (key == ActionStatus.launcher-failed) { return @tr("Could not scan that folder. Try again."); }
         if (key == ActionStatus.launcher-unavailable) { return @tr("Scanning for launchers is unavailable"); }
+        if (key == ActionStatus.playtime-verified) { return @tr("Verified: exact foreground playtime"); }
+        if (key == ActionStatus.playtime-unverified) { return @tr("Off: playtime cannot be verified"); }
         if (key == ActionStatus.online-linked) { return @tr("Linked to Zaparoo Online"); }
         if (key == ActionStatus.online-unlinked) { return @tr("Not linked"); }
         if (key == ActionStatus.optimizing) { return @tr("Optimizing"); }
@@ -142,6 +144,7 @@ export global SettingsLabels {
         // Library.
         if (id == "addGameFolder") { return @tr("Add game folder…"); }
         if (id == "detectLaunchers") { return @tr("Detect launchers…"); }
+        if (id == "playtimeAccess") { return @tr("Verify playtime…"); }
         if (id == "updateMediaDb") { return @tr("Update media database"); }
         if (id == "runScraper") { return @tr("Update metadata"); }
         if (id == "systemsLayout") { return @tr("Systems layout"); }
@@ -163,6 +166,7 @@ export global SettingsLabels {
     public pure function description(id: string) -> string {
         if (id == "addGameFolder") { return @tr("Choose a folder containing system folders, then use Update media database to scan."); }
         if (id == "detectLaunchers") { return @tr("Scans a folder you choose for launchers already installed."); }
+        if (id == "playtimeAccess") { return @tr("Allow exact game time in system settings. Optional."); }
         if (id == "colorScheme") { return @tr("Changes colors across screens, including text and highlights."); }
         if (id == "colorIntensity") { return @tr("Controls how strongly accent colors tint tiles and backgrounds."); }
         if (id == "systemLogoStyle") { return @tr("Shows system logos in original colors or tinted to match colors."); }

@@ -24,6 +24,7 @@ pub(crate) fn inputs(ctx: &Ctx) -> rules::Inputs {
     rules::Inputs {
         can_pick_folder: ctx.folders.available(),
         can_scan_launchers: ctx.launcher_scan.available(),
+        can_request_playtime_access: ctx.playtime_access.available(),
         can_link_online: lock(&ctx.shared).online.available,
         is_mister: ctx.is_mister,
         crt_enabled: ctx.crt_enabled,
@@ -217,6 +218,12 @@ fn rows(ctx: &Ctx, app: &App, page: crate::SettingsPage) -> Vec<SettingsRow> {
                                 };
                                 out.value =
                                     SharedString::from(if linked { "unlink" } else { "link" });
+                            } else if id == "playtimeAccess" {
+                                out.status_key = if ctx.playtime_access.granted() {
+                                    crate::ActionStatus::PlaytimeVerified
+                                } else {
+                                    crate::ActionStatus::PlaytimeUnverified
+                                };
                             } else if id == "detectLaunchers" {
                                 let (status, detected, pending) = ctx.launcher_scan.status();
                                 out.status_key = status;
@@ -609,6 +616,7 @@ fn accept(ctx: &Ctx, app: &App, id: &str, control: Control) {
             }
             "addGameFolder" => crate::folder_picker::request(ctx, app),
             "detectLaunchers" => crate::launcher_scan::request(ctx, app),
+            "playtimeAccess" => crate::playtime_access::request(ctx, app),
             "onlineAccount" => crate::online::accept_account(ctx, app),
             "crtCalibration" => crate::router::open_crt_calibration(ctx, app),
             "updateMediaDb" => {
