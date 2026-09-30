@@ -13,12 +13,18 @@ export { Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, Co
 import { GlyphSource, Brand, Buttons, HelpEntry, Status, HeaderBar, StatusLine, ProgressTrack, TopStatusStrip, PageIndicator, ActiveLabel, HelpBar, SectionHeader, Divider, ScrollCue, ModalShell, QrPlate, StateCue } from "chrome.slint";
 import { GridCell, MarqueeCaption, PressableSurface, Tile, PagedGridView } from "tiles.slint";
 import { ScrollOffset, SelectionCursor, SelectionClip } from "focus.slint";
+import { PressFeedback } from "press_feedback.slint";
+export { PressFeedback }
 import { DetailRow, MetaLabels, BrowseListDetailView } from "browse_list.slint";
 import { SettingsRow, SettingsLabels, SettingsRowView } from "settings.slint";
 import { SetupPickerRow, SetupModal, LogUploadModal } from "setup.slint";
 import { Labels, DialogLabels } from "labels.slint";
 import { GameInfoView, GameInfoModal } from "game_info.slint";
 import { AboutView, AboutScreen } from "about.slint";
+import { UpdateView, UpdatePage, UpdateButton, UpdateOutcome, UpdateStatusKind, UpdateError, UpdateLinuxPhase, UpdateFilter, UpdateRowKind, UpdateRowStatus, UpdateFolderKind, UpdateHelpLabel, UpdateCounts, UpdateRow, UpdateMembership, UpdateHelp } from "update_view.slint";
+// The screen itself comes from the `zaparoo-update` crate: an empty stand-in
+// in public builds, the real module in official ones.
+import { UpdateScreen } from "@zaparoo-update/update.slint";
 
 // Embed the real launcher fonts: Noto Sans for desktop, the MxPlus
 // 6x8 bitmap font for the CRT native path (family names must match
@@ -33,6 +39,7 @@ import "../../../resources/fonts/NotoSans-DemiBold.ttf";
 import "../../../resources/fonts/MxPlus_HP_100LX_6x8.ttf";
 
 export { Theme, Sizing, Motion, Layout, GlyphSource, Buttons, Status, HelpEntry, GridCell, DetailRow, SettingsRow, SettingsLabels, SetupPickerRow, GameInfoView, Labels, AboutView }
+export { UpdateView, UpdatePage, UpdateButton, UpdateOutcome, UpdateStatusKind, UpdateError, UpdateLinuxPhase, UpdateFilter, UpdateRowKind, UpdateRowStatus, UpdateFolderKind, UpdateHelpLabel, UpdateCounts, UpdateRow, UpdateMembership, UpdateHelp }
 
 // Context-menu row: `id` is the dispatch key the router switches on,
 // never the row's position (position-keyed dispatch was a footgun).
@@ -41,6 +48,14 @@ export struct MenuEntry {
     label: string,
     // Translatable label id (see `Labels`); empty rows show `label`.
     label-key: string,
+    // Whether this row can currently be picked usefully. `true` for every
+    // menu but the launcher picker, which is the only one with rows that
+    // can be temporarily unusable. Never hidden either way - see
+    // `reason-key`.
+    enabled: bool,
+    // A `Labels.menu` key wording why `enabled` is false. Empty when
+    // `enabled` is true or the row has nothing to say.
+    reason-key: string,
 }
 
 // One first-character bucket of the jump-to-letter picker.
@@ -422,15 +437,6 @@ export global GamesInput {
     callback wheel(int);
 }
 
-// One pending commitment, owned by the router and mirrored to the CRT.
-export global PressFeedback {
-    in-out property <PressOwner> owner: PressOwner.none;
-    in-out property <int> index: -1;
-    public pure function active(owner: PressOwner, index: int) -> bool {
-        return self.owner == owner && self.index == index;
-    }
-}
-
 // Context menu, View menu, letter picker, and card-writer state.
 export global Overlays {
     callback pointer-choice(PressOwner, int, bool);
@@ -504,6 +510,13 @@ export global Overlays {
     // words from these so every dialog string can be translated.
     in-out property <string> dialog-detail: "";
     in-out property <string> dialog-arg: "";
+    // `ErrorKind.launch-repair` only: Core's own reason code plus the
+    // display names it named, so `DialogLabels` can pick per-reason
+    // wording instead of the generic body every other kind uses.
+    // `dialog-arg` carries Core's fallback message for this kind.
+    in-out property <string> dialog-repair-reason: "";
+    in-out property <string> dialog-repair-launcher: "";
+    in-out property <string> dialog-repair-plugin: "";
     // First-run progress line, as a key plus its numbers.
     in-out property <DialogProgress> dialog-status: DialogProgress.none;
     in-out property <int> dialog-status-step: 0;
@@ -1151,7 +1164,16 @@ component ListPickerModal inherits ModalShell {
     changed visible-rows => { root.reveal-current(); }
     changed entries => { root.top = 0; root.reveal-current(); }
     init => { root.reveal-current(); }
+    // The worded reason a row can't currently be used folds into the row's
+    // own text rather than an overlay - the same idiom captioned tiles use
+    // for a disambiguating tag. Never hidden either way. One `@tr()` template
+    // for the whole phrase, not a fixed concatenation, so translators can
+    // reorder the name and the reason.
     pure function entry-label(entry: MenuEntry) -> string {
+        return entry.enabled || entry.reason-key == "" ? root.entry-primary-label(entry)
+            : @tr("{} · {}", root.entry-primary-label(entry), Labels.launcher-reason(entry.reason-key));
+    }
+    pure function entry-primary-label(entry: MenuEntry) -> string {
         return root.setting-id != "" ? SettingsLabels.picker-value(root.setting-id, entry.id)
             : (entry.label-key != "" ? Labels.menu(entry.label-key, entry.label) : entry.label);
     }
@@ -1218,7 +1240,9 @@ component ListPickerModal inherits ModalShell {
                     swatch-size: root.swatch-size;
                     swatch-gap: root.swatch-gap;
                     swatch-band: root.swatch-band;
-                    content-color: Theme.text-primary;
+                    // Muted, never hidden: docs/style.md, "Hidden and
+                    // disabled tiles" - the row stays pickable.
+                    content-color: entry.enabled ? Theme.text-primary : Theme.text-label;
                     swatch-edge: Theme.text-label;
                     weight: FontWeight.normal;
                 }
@@ -1671,7 +1695,7 @@ component DialogModal inherits ModalShell {
     }
     body-measure := Text {
         visible: false;
-        text: DialogLabels.body(Overlays.dialog-kind, Overlays.dialog-error, Overlays.first-run-phase, Overlays.dialog-detail, Overlays.dialog-arg);
+        text: DialogLabels.body(Overlays.dialog-kind, Overlays.dialog-error, Overlays.first-run-phase, Overlays.dialog-detail, Overlays.dialog-arg, Overlays.dialog-repair-reason, Overlays.dialog-repair-launcher, Overlays.dialog-repair-plugin);
         font-size: Sizing.font-body;
     }
     line-measure := Text {
@@ -1719,7 +1743,7 @@ component DialogModal inherits ModalShell {
             y: root.body-y;
             width: Math.min(Math.ceil(body-measure.preferred-width / 1px) * 1px, root.content-width);
             wrap: word-wrap;
-            text: DialogLabels.body(Overlays.dialog-kind, Overlays.dialog-error, Overlays.first-run-phase, Overlays.dialog-detail, Overlays.dialog-arg);
+            text: DialogLabels.body(Overlays.dialog-kind, Overlays.dialog-error, Overlays.first-run-phase, Overlays.dialog-detail, Overlays.dialog-arg, Overlays.dialog-repair-reason, Overlays.dialog-repair-launcher, Overlays.dialog-repair-plugin);
             color: Theme.text-primary;
             font-size: Sizing.font-body;
             horizontal-alignment: center;
@@ -2497,6 +2521,8 @@ component RouteScreen inherits Rectangle {
 
     if root.screen-token == Screen.about: AboutScreen {}
 
+    if root.screen-token == Screen.update: UpdateScreen {}
+
     if root.screen-token == Screen.games || root.screen-token == Screen.favorites
         || root.screen-token == Screen.recents: GamesScreen {
         gated: root.gated;
@@ -2558,6 +2584,19 @@ export component App inherits Window {
     pure function focused-settings-control() -> ControlKind {
         return SettingsView.index >= 0 && SettingsView.index < SettingsView.rows.length
             ? SettingsView.rows[SettingsView.index].control : ControlKind.none;
+    }
+    pure function update-help-label(label: UpdateHelpLabel) -> string {
+        if (label == UpdateHelpLabel.move) { return @tr("Move"); }
+        if (label == UpdateHelpLabel.select) { return @tr("Select"); }
+        if (label == UpdateHelpLabel.start) { return @tr("Start"); }
+        if (label == UpdateHelpLabel.cancel) { return @tr("Cancel"); }
+        if (label == UpdateHelpLabel.close) { return @tr("Close"); }
+        if (label == UpdateHelpLabel.toggle) { return @tr("Toggle"); }
+        if (label == UpdateHelpLabel.info) { return @tr("Info"); }
+        return @tr("Back");
+    }
+    pure function update-help-entry(index: int) -> HelpEntry {
+        return { buttons: [UpdateView.help[index].button], label: root.update-help-label(UpdateView.help[index].label) };
     }
     pure function help-entries() -> [HelpEntry] {
         if (Shell.boot-curtain) {
@@ -2762,6 +2801,13 @@ export component App inherits Window {
                 { buttons: ["ButtonA"], label: @tr("Open") },
                 { buttons: ["ButtonB"], label: @tr("Back") },
             ];
+        }
+        // The Update screen's state machine chooses the hints; at most three.
+        if (Shell.active-screen == Screen.update) {
+            if (UpdateView.help.length >= 3) { return [root.update-help-entry(0), root.update-help-entry(1), root.update-help-entry(2)]; }
+            if (UpdateView.help.length == 2) { return [root.update-help-entry(0), root.update-help-entry(1)]; }
+            if (UpdateView.help.length == 1) { return [root.update-help-entry(0)]; }
+            return [];
         }
         if (Shell.active-screen == Screen.about) {
             if (AboutView.maximum-scroll-milli <= 0) { return [{ buttons: ["ButtonB"], label: @tr("Back") }]; }

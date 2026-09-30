@@ -333,6 +333,7 @@ fn offline_ctx() -> (tokio::runtime::Runtime, crate::router::Ctx) {
     let ctx = crate::router::Ctx {
         folders: crate::folder_picker::Model::default(),
         launcher_scan: crate::launcher_scan::Model::default(),
+        playtime_access: crate::playtime_access::Model::default(),
         store: zaparoo_core::store::Store::new(client, handle.clone()),
         handle,
         media: crate::media_cache::MediaCache::new(),
@@ -2231,6 +2232,8 @@ fn a_two_item_list_glides_on_the_wrap_as_well_as_the_step() {
                 id: i.to_string().into(),
                 label: format!("Item {i}").into(),
                 label_key: "".into(),
+                enabled: true,
+                reason_key: "".into(),
             })
             .collect::<Vec<_>>(),
     )));
@@ -2269,6 +2272,8 @@ fn picker_keeps_first_row_until_focus_leaves_viewport() {
                 id: i.to_string().into(),
                 label: if i == 0 { "Anchor".into() } else { "".into() },
                 label_key: "".into(),
+                enabled: true,
+                reason_key: "".into(),
             })
             .collect::<Vec<_>>(),
     )));
@@ -2579,6 +2584,8 @@ fn picker_selected_text_uses_on_accent_and_palette_previews_paint() {
         id: "zaparoo-dark".into(),
         label: "Selected label".into(),
         label_key: "".into(),
+        enabled: true,
+        reason_key: "".into(),
     }])));
     ov.set_list_open(true);
     ov.set_list_index(0);
@@ -2618,6 +2625,8 @@ fn mouse_setting_blocks_picker_clicks_but_not_enabled_selection() {
         id: "one".into(),
         label: "One".into(),
         label_key: "".into(),
+        enabled: true,
+        reason_key: "".into(),
     }])));
     ov.set_list_open(true);
     app.global::<crate::Theme>()
@@ -3893,4 +3902,76 @@ fn a_system_reopens_in_its_remembered_folder_or_its_root_when_gone() {
         .system_focus
         .iter()
         .any(|focus| focus.system_id == "SNES"));
+}
+
+#[test]
+fn update_buttons_push_before_dispatch_and_drop_stale_commits() -> Result<(), &'static str> {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let view = app.global::<crate::UpdateView>();
+    app.global::<Shell>().set_active_screen(Screen::Update);
+    app.global::<crate::Motion>().set_enabled(true);
+    view.set_page(crate::UpdatePage::Intro);
+    view.set_buttons(ModelRc::new(VecModel::from(vec![
+        crate::UpdateButton::Back,
+        crate::UpdateButton::Start,
+    ])));
+    view.set_button_focus(0);
+    let target = crate::press_feedback::current(&app).ok_or("visible Update button")?;
+    assert_eq!(target.owner, PressOwner::Update);
+    let committed = Rc::new(Cell::new(false));
+    let done = committed.clone();
+    crate::press_feedback::dispatch(&app, &target, move |app| {
+        done.set(true);
+        app.global::<Shell>().set_active_screen(Screen::Hub);
+    });
+    assert!(crate::press_feedback::pending(&app));
+    assert!(!committed.get());
+    advance(40);
+    assert_eq!(app.global::<Shell>().get_active_screen(), Screen::Update);
+    assert!(!committed.get());
+    advance(60);
+    assert!(committed.get());
+    assert_eq!(app.global::<Shell>().get_active_screen(), Screen::Hub);
+    assert!(!crate::press_feedback::pending(&app));
+
+    app.global::<Shell>().set_active_screen(Screen::Update);
+    committed.set(false);
+    let done = committed.clone();
+    crate::press_feedback::dispatch(&app, &target, move |_| done.set(true));
+    view.set_page(crate::UpdatePage::Running);
+    advance(100);
+    assert!(
+        !committed.get(),
+        "a changed page cannot receive stale Accept"
+    );
+    assert!(!crate::press_feedback::pending(&app));
+    assert!(crate::press_feedback::current(&app).is_none());
+
+    view.set_page(crate::UpdatePage::Intro);
+    app.global::<crate::Motion>().set_enabled(false);
+    let done = committed.clone();
+    crate::press_feedback::dispatch(&app, &target, move |_| done.set(true));
+    assert!(committed.get(), "reduced motion dispatches without waiting");
+    assert!(!crate::press_feedback::pending(&app));
+    Ok(())
+}
+
+#[test]
+fn leaving_update_persists_hub_before_returning() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    app.global::<Shell>().set_active_screen(Screen::Update);
+    "settings".clone_into(&mut crate::router::lock(&ctx.shared).persist.active_screen);
+    let ctx = std::sync::Arc::new(ctx);
+
+    crate::update::run_effect(&ctx, &app, zaparoo_update_api::Effect::LeaveToHub);
+
+    assert_eq!(app.global::<Shell>().get_active_screen(), Screen::Hub);
+    assert_eq!(
+        crate::router::lock(&ctx.shared).persist.active_screen,
+        "hub"
+    );
+    assert_eq!(zaparoo_core::persist::load().active_screen, "hub");
 }

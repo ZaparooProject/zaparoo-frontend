@@ -1,0 +1,14 @@
+// Zaparoo Frontend
+// Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
+// SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
+
+import { PressOwner } from "state_types.slint";
+
+// One pending commitment, owned by the router and mirrored to the CRT.
+export global PressFeedback {
+    in-out property <PressOwner> owner: PressOwner.none;
+    in-out property <int> index: -1;
+    public pure function active(owner: PressOwner, index: int) -> bool {
+        return self.owner == owner && self.index == index;
+    }
+}

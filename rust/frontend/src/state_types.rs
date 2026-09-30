@@ -26,7 +26,7 @@ macro_rules! tokens {
 tokens!(Screen {
     Hub => "hub", Systems => "systems", FavoriteSystems => "favorite-systems",
     Games => "games", Favorites => "favorites", Recents => "recents",
-    Settings => "settings", About => "about", None => "",
+    Settings => "settings", About => "about", Update => "update", None => "",
 });
 tokens!(SettingsPage {
     Root => "", Appearance => "pageAppearance", Library => "pageLibraryData",
@@ -36,7 +36,8 @@ tokens!(SettingsPage {
 tokens!(Orientation { Horizontal => "horizontal", Cw => "cw", Ccw => "ccw" });
 tokens!(VideoStandard { Ntsc => "ntsc", Pal => "pal" });
 tokens!(ErrorKind {
-    Generic => "", Launch => "launch", Favorite => "favorite", AddToHub => "add_to_hub",
+    Generic => "", Launch => "launch", LaunchRepair => "launch_repair", Favorite => "favorite",
+    AddToHub => "add_to_hub",
     MediaIndex => "media_index", MediaScrape => "media_scrape", MediaScrapers => "media_scrapers",
     MediaCancel => "media_cancel", Launcher => "launcher", LauncherSave => "launcher_save",
     AlternateDiscovery => "alternate_discovery", QrCode => "qr_code", CardWrite => "card_write", Setting => "setting",
@@ -161,6 +162,7 @@ mod tests {
             Screen::Recents,
             Screen::Settings,
             Screen::About,
+            Screen::Update,
             Screen::None,
         ] {
             assert_eq!(Screen::try_from(value.token()), Ok(value));

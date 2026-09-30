@@ -197,6 +197,7 @@ pub enum ListContext {
 pub struct Ctx {
     pub folders: crate::folder_picker::Model,
     pub launcher_scan: crate::launcher_scan::Model,
+    pub playtime_access: crate::playtime_access::Model,
     pub store: Arc<Store>,
     pub handle: Handle,
     pub media: Arc<MediaCache>,
@@ -411,7 +412,7 @@ mod version_gate_tests {
 /// Open a dialog. Rust names the kind, its sub-kind and the one
 /// runtime value the copy needs; `DialogLabels` in the UI composes
 /// every word, so the buttons are keys too.
-fn open_dialog(
+pub(crate) fn open_dialog(
     app: &App,
     kind: DialogKind,
     detail: &str,
@@ -441,7 +442,7 @@ fn set_dialog_status(app: &App, key: DialogProgress, step: i32, total: i32, name
     overlays.set_dialog_status_name(SharedString::from(name));
 }
 
-fn close_dialog(app: &App) {
+pub(crate) fn close_dialog(app: &App) {
     crate::press_feedback::cancel(app);
     let overlays = app.global::<crate::Overlays>();
     overlays.set_dialog_open(false);
@@ -649,6 +650,10 @@ fn dialog_accept(ctx: &Ctx, app: &App, kind: DialogKind, focus: usize) {
                 crate::online::unlink(ctx, app);
             }
         }
+        DialogKind::UpdateStop => {
+            close_dialog(app);
+            crate::update::stop_answered(confirmed);
+        }
         _ => close_dialog(app),
     }
 }
@@ -683,6 +688,10 @@ fn dialog_cancel(ctx: &Ctx, app: &App, kind: DialogKind) {
         DialogKind::RestartSetting => {
             lock(&ctx.shared).pending_restart = None;
             close_dialog(app);
+        }
+        DialogKind::UpdateStop => {
+            close_dialog(app);
+            crate::update::stop_answered(false);
         }
         _ => close_dialog(app),
     }
@@ -821,6 +830,13 @@ pub fn reset_idle(ctx: &Ctx, app: &App) {
         if !app.global::<crate::Shell>().get_boot_complete()
             || app.global::<crate::Shell>().get_dormant()
             || app.global::<crate::Shell>().get_transitioning()
+        {
+            return;
+        }
+        // A running update keeps the screen awake; the driver restarts
+        // this clock when the run ends.
+        if app.global::<crate::Shell>().get_active_screen() == crate::Screen::Update
+            && !app.global::<crate::UpdateView>().get_allows_screensaver()
         {
             return;
         }
@@ -1076,6 +1092,7 @@ fn dispatch_action(ctx: &Ctx, app: &App, action: &str) {
         }
         crate::Screen::Settings => crate::settings::handle_action(ctx, app, action),
         crate::Screen::About => about_action(ctx, app, action),
+        crate::Screen::Update => crate::update::handle_action(app, action),
         crate::Screen::None => {}
     }
 }
@@ -1646,11 +1663,7 @@ pub(crate) fn open_qr_code(ctx: &Ctx, app: &App, entry: &GameRow) {
 
 /// A menu row whose text is literal (a launcher id, a system name).
 pub(crate) fn menu_entry(id: &str, label: &str) -> crate::MenuEntry {
-    crate::MenuEntry {
-        id: SharedString::from(id),
-        label: SharedString::from(label),
-        label_key: SharedString::default(),
-    }
+    menu_row_full(id, "", label, true, "")
 }
 
 /// A menu row whose text comes from the `Labels.menu` vocabulary. The
@@ -1662,10 +1675,26 @@ pub(crate) fn menu_row(id: &str) -> crate::MenuEntry {
 }
 
 pub(crate) fn menu_row_keyed(id: &str, key: &str, name: &str) -> crate::MenuEntry {
+    menu_row_full(id, key, name, true, "")
+}
+
+/// The general form every other `menu_*` helper reduces to: a row that
+/// can additionally be unusable right now, with a short worded reason
+/// (a `Labels.menu` key) instead of hiding it — the picker is still the
+/// place to pick it for later, once it stops being true.
+pub(crate) fn menu_row_full(
+    id: &str,
+    key: &str,
+    name: &str,
+    enabled: bool,
+    reason_key: &str,
+) -> crate::MenuEntry {
     crate::MenuEntry {
         id: SharedString::from(id),
         label: SharedString::from(name),
         label_key: SharedString::from(key),
+        enabled,
+        reason_key: SharedString::from(reason_key),
     }
 }
 
@@ -1935,14 +1964,26 @@ fn show_action_error(app: &App, entry: &action_error::Entry) {
     } else {
         DialogButton::Ok
     };
-    open_dialog(
-        app,
-        DialogKind::ActionError,
-        "",
-        &entry.context,
-        &[button],
-        0,
-    );
+    // `dialog_arg` carries the plain context for every other kind, and
+    // `launch_repair`'s own fallback message for this one; its reason and
+    // display names ride separately so `DialogLabels` can pick per-reason
+    // wording instead of decoding JSON itself.
+    let arg = if error == ErrorKind::LaunchRepair {
+        let [reason, launcher, plugin, message] =
+            RepairContext::decode(&entry.context).unwrap_or_default();
+        let overlays = app.global::<crate::Overlays>();
+        overlays.set_dialog_repair_reason(SharedString::from(reason));
+        overlays.set_dialog_repair_launcher(SharedString::from(launcher));
+        overlays.set_dialog_repair_plugin(SharedString::from(plugin));
+        message
+    } else {
+        let overlays = app.global::<crate::Overlays>();
+        overlays.set_dialog_repair_reason(SharedString::default());
+        overlays.set_dialog_repair_launcher(SharedString::default());
+        overlays.set_dialog_repair_plugin(SharedString::default());
+        entry.context.clone()
+    };
+    open_dialog(app, DialogKind::ActionError, "", &arg, &[button], 0);
     app.global::<crate::Overlays>().set_dialog_error(error);
 }
 
@@ -2200,26 +2241,99 @@ pub(crate) fn launch(ctx: &Ctx, app: &App, text: String, name: &str) {
     let ctx2 = ctx.clone();
     let name = name.to_string();
     ctx.handle.spawn(async move {
-        let failed = match store.run_mutation::<RunMutation>(RunParams { text }).await {
+        let outcome = match store.run_mutation::<RunMutation>(RunParams { text }).await {
             Ok(()) => {
                 crate::perf::mark("launch-reply", "ok=true");
-                false
+                LaunchOutcome::Ok
             }
             Err(e) => {
                 crate::perf::mark("launch-reply", "ok=false");
                 tracing::warn!("launch failed for {name}: {e}");
-                true
+                LaunchOutcome::from_error(&e)
             }
         };
         inflight.store(false, Ordering::SeqCst);
         let _ = weak.upgrade_in_event_loop(move |app| {
             crate::press_feedback::release(&app, hold);
             clear_launch_cue(&app);
-            if failed {
-                report_action_error(&ctx2, &app, "launch", &name);
+            match outcome {
+                LaunchOutcome::Ok => {}
+                LaunchOutcome::Failed => report_action_error(&ctx2, &app, "launch", &name),
+                LaunchOutcome::Repair(context) => {
+                    report_action_error(&ctx2, &app, "launch_repair", &context.encode());
+                }
             }
         });
     });
+}
+
+/// What a launch attempt produced, decided once (in the async task) so the
+/// event-loop closure only has to act on it.
+enum LaunchOutcome {
+    Ok,
+    Failed,
+    Repair(RepairContext),
+}
+
+impl LaunchOutcome {
+    fn from_error(e: &zaparoo_core::client::ClientError) -> Self {
+        if !e.is_launch_repair() {
+            return Self::Failed;
+        }
+        Self::Repair(RepairContext::new(
+            e.reason.as_deref(),
+            e.params.as_deref(),
+            &e.message,
+        ))
+    }
+}
+
+/// A `launch_repair` error's `reason` and the display names Core sent,
+/// carried through the alert queue as one JSON string (the same idiom
+/// `launchers.rs`'s retry payload uses) so a second failure queued behind
+/// the first survives with its own reason intact.
+struct RepairContext {
+    reason: String,
+    launcher: String,
+    plugin: String,
+    message: String,
+}
+
+impl RepairContext {
+    /// Built from an already-confirmed `launch_repair` error's own fields
+    /// (plain data, not `ClientError` itself, so this is testable without
+    /// a live client). An absent `reason` or param reads as empty, which
+    /// `DialogLabels.launch-repair-body` treats the same as `unspecified`.
+    fn new(
+        reason: Option<&str>,
+        params: Option<&std::collections::HashMap<String, String>>,
+        message: &str,
+    ) -> Self {
+        let param = |key: &str| {
+            params
+                .and_then(|params| params.get(key))
+                .cloned()
+                .unwrap_or_default()
+        };
+        Self {
+            reason: reason.unwrap_or_default().to_string(),
+            launcher: param("launcher"),
+            plugin: param("plugin"),
+            message: message.to_string(),
+        }
+    }
+
+    fn encode(&self) -> String {
+        serde_json::to_string(&[&self.reason, &self.launcher, &self.plugin, &self.message])
+            .unwrap_or_default()
+    }
+
+    /// The inverse of `encode`, tolerant of a malformed payload (an older
+    /// build's queued alert surviving a hot-reload, say): every field
+    /// falls back to the generic-failure treatment rather than panicking.
+    fn decode(payload: &str) -> Option<[String; 4]> {
+        serde_json::from_str(payload).ok()
+    }
 }
 
 /// The header line is for a launch that turns into a wait. A word that
@@ -2284,5 +2398,56 @@ mod tests {
         let picked = systems_for_category(&all, "Other");
         assert_eq!(picked.len(), 1);
         assert_eq!(picked[0].id, "weird");
+    }
+
+    fn params(pairs: &[(&str, &str)]) -> std::collections::HashMap<String, String> {
+        pairs
+            .iter()
+            .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn a_repair_context_round_trips_through_its_encoded_payload() {
+        let context = super::RepairContext::new(
+            Some("launcher_plugin_missing"),
+            Some(&params(&[("launcher", "RetroArch"), ("plugin", "Mesen")])),
+            "this launcher's plugin for this system is not installed",
+        );
+        let decoded = super::RepairContext::decode(&context.encode());
+        assert_eq!(
+            decoded,
+            Some([
+                "launcher_plugin_missing".to_string(),
+                "RetroArch".to_string(),
+                "Mesen".to_string(),
+                "this launcher's plugin for this system is not installed".to_string(),
+            ])
+        );
+    }
+
+    #[test]
+    fn an_absent_reason_or_param_encodes_as_empty_not_missing() {
+        let context = super::RepairContext::new(None, None, "fallback message");
+        let decoded = super::RepairContext::decode(&context.encode());
+        assert_eq!(
+            decoded,
+            Some([
+                String::new(),
+                String::new(),
+                String::new(),
+                "fallback message".to_string(),
+            ])
+        );
+    }
+
+    #[test]
+    fn a_malformed_payload_decodes_to_none_rather_than_panicking() {
+        assert_eq!(super::RepairContext::decode("not json"), None);
+        assert_eq!(super::RepairContext::decode(""), None);
+        assert_eq!(
+            super::RepairContext::decode(r#"["only", "three", "of four"]"#),
+            None
+        );
     }
 }

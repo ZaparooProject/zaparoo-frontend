@@ -28,6 +28,13 @@ default:
 build:
     cd rust && cargo build -p frontend
 
+# rust/private/zaparoo-update is a checkout of the private Update module. It is
+# gitignored, and cargo does not notice it appearing or disappearing, so this
+# refreshes the crate that compiles it in. Run it after cloning or removing it.
+# Make cargo re-detect the private Update module checkout
+update-module:
+    touch rust/zaparoo-update/build.rs
+
 # Desktop release build
 build-release:
     cd rust && cargo build --release -p frontend

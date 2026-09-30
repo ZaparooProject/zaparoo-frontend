@@ -633,6 +633,47 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_scroll_milli => set_scroll_milli,
     );
 
+    let source = primary.global::<crate::UpdateView>();
+    let target = crt.global::<crate::UpdateView>();
+    copy_properties!(source, target;
+        get_page => set_page,
+        get_version => set_version,
+        get_available => set_available,
+        get_status_kind => set_status_kind,
+        get_status_arg => set_status_arg,
+        get_progress_bp => set_progress_bp,
+        get_progress_decimals => set_progress_decimals,
+        get_progress_known => set_progress_known,
+        get_outcome => set_outcome,
+        get_error => set_error,
+        get_error_arg => set_error_arg,
+        get_counts => set_counts,
+        get_linux_phase => set_linux_phase,
+        get_linux_current_version => set_linux_current_version,
+        get_linux_new_version => set_linux_new_version,
+        get_linux_failed => set_linux_failed,
+        get_membership => set_membership,
+        get_membership_index => set_membership_index,
+        get_transition => set_transition,
+        get_buttons => set_buttons,
+        get_button_focus => set_button_focus,
+        get_countdown_secs => set_countdown_secs,
+        get_rows => set_rows,
+        get_filter => set_filter,
+        get_filter_focus => set_filter_focus,
+        get_filter_visible => set_filter_visible,
+        get_filter_focused => set_filter_focused,
+        get_focused_row => set_focused_row,
+        get_row_count => set_row_count,
+        get_database_count => set_database_count,
+        get_details_counts => set_details_counts,
+        get_info_open => set_info_open,
+        get_info_row => set_info_row,
+        get_info_databases => set_info_databases,
+        get_help => set_help,
+        get_allows_screensaver => set_allows_screensaver,
+    );
+
     let source = primary.global::<GameInfoView>();
     let target = crt.global::<GameInfoView>();
     copy_properties!(source, target;

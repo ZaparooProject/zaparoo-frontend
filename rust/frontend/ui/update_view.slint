@@ -1,0 +1,117 @@
+// The Update screen's interface: closed enums and one global, shared by the
+// public stub and the private module that official builds substitute for it
+// (`docs/architecture.md`, "Update module"). Rust (`src/update.rs`) maps the
+// module's `zaparoo_update_api::ViewState` onto this global; the screen
+// only renders it and forwards taps. Every user-visible sentence is
+// composed by the screen from these enums, never sent as prose.
+
+export enum UpdatePage { intro, running, stopping, finished, details, linux, rebooting }
+export enum UpdateButton { start, back, details, errors, ok, reboot }
+export enum UpdateOutcome {
+    none, unavailable, up-to-date, complete, complete-reboot-needed,
+    complete-with-errors, failed, linux-complete, linux-failed
+}
+export enum UpdateStatusKind { none, starting, slow, file, tool, transition, stopping, stopping-slow }
+export enum UpdateError {
+    none, not-responding, unavailable, tool-too-old, secure-connection, critical,
+    state-save, state-load, network, some-files, some-databases, config, no-certs,
+    full-partition, unexpected, generic
+}
+export enum UpdateLinuxPhase { preparing, fetch-image, fetch-tool, extract, user-files, flash }
+export enum UpdateFilter { all, installed, updated, removed, failed }
+export enum UpdateRowKind {
+    file, folder, database, linux-update, linux-update-detail, duplicate-category,
+    duplicate-file, not-overwritten-category, not-overwritten-file, database-error,
+    database-error-reason, zip-error, zip-error-reason, folder-error, folder-error-reason
+}
+export enum UpdateRowStatus { none, installed, updated, removed, failed }
+export enum UpdateFolderKind {
+    plain, arcade, arcade-core, arcade-alternative, console, computer, downloader, update-all
+}
+export enum UpdateHelpLabel { move, select, start, back, cancel, close, toggle, info }
+
+export struct UpdateCounts {
+    installed: int,
+    updated: int,
+    removed: int,
+    failed: int,
+    duplicated: int,
+    not-overwritten: int,
+    database-errors: int,
+    zip-errors: int,
+    folder-errors: int,
+}
+
+export struct UpdateRow {
+    kind: UpdateRowKind,
+    status: UpdateRowStatus,
+    folder: UpdateFolderKind,
+    depth: int,
+    collapsed: bool,
+    database: string,
+    label: string,
+    reason: string,
+    file-count: int,
+    counts: UpdateCounts,
+}
+
+export struct UpdateMembership {
+    topic: string,
+    message: string,
+    info: string,
+}
+
+export struct UpdateHelp {
+    // A help-bar glyph id: "Dpad", "ButtonA" or "ButtonB".
+    button: string,
+    label: UpdateHelpLabel,
+}
+
+export global UpdateView {
+    in-out property <UpdatePage> page: UpdatePage.intro;
+    // The updater's "major.minor" version; empty when unknown.
+    in-out property <string> version;
+    in-out property <bool> available;
+    in-out property <UpdateStatusKind> status-kind;
+    in-out property <string> status-arg;
+    // Basis points, 0 to 10000, and how many decimals the percentage shows.
+    in-out property <int> progress-bp;
+    in-out property <int> progress-decimals;
+    // False until the first file starts: the track is indeterminate.
+    in-out property <bool> progress-known;
+    in-out property <UpdateOutcome> outcome;
+    in-out property <UpdateError> error;
+    in-out property <string> error-arg;
+    in-out property <UpdateCounts> counts;
+    in-out property <UpdateLinuxPhase> linux-phase;
+    in-out property <string> linux-current-version;
+    in-out property <string> linux-new-version;
+    in-out property <bool> linux-failed;
+    in-out property <[UpdateMembership]> membership;
+    in-out property <int> membership-index;
+    // An Update All transition id; empty when none.
+    in-out property <string> transition;
+    in-out property <[UpdateButton]> buttons;
+    in-out property <int> button-focus;
+    in-out property <int> countdown-secs;
+    // Details page.
+    in-out property <[UpdateRow]> rows;
+    in-out property <UpdateFilter> filter;
+    in-out property <UpdateFilter> filter-focus;
+    in-out property <bool> filter-visible;
+    in-out property <bool> filter-focused;
+    in-out property <int> focused-row: -1;
+    in-out property <int> row-count;
+    in-out property <int> database-count;
+    in-out property <UpdateCounts> details-counts;
+    in-out property <bool> info-open;
+    in-out property <UpdateRow> info-row;
+    in-out property <[string]> info-databases;
+    // Help bar and screensaver.
+    in-out property <[UpdateHelp]> help;
+    in-out property <bool> allows-screensaver: true;
+
+    callback tap-button(int);
+    callback tap-row(int);
+    callback tap-filter(UpdateFilter);
+}

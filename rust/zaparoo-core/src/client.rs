@@ -137,14 +137,46 @@ struct RpcResponse {
     params: Option<Value>,
 }
 
+/// The wire category (`error.data.category`) meaning the launch stopped for
+/// something the user can act on. See `ClientError::is_launch_repair`.
+const LAUNCH_REPAIR_CATEGORY: &str = "launch_repair";
+
+/// `error.data` on a JSON-RPC error response. Every category shares this
+/// shape; only `launch_repair` currently populates `reason`/`params`, but
+/// parsing is generic rather than category-specific.
+#[derive(Debug, Deserialize, Clone, Default)]
+struct RpcErrorData {
+    #[serde(default)]
+    category: Option<String>,
+    #[serde(default)]
+    reason: Option<String>,
+    #[serde(default)]
+    params: Option<HashMap<String, String>>,
+}
+
 #[derive(Debug, Deserialize, Clone)]
 struct RpcError {
     message: String,
+    #[serde(default)]
+    data: Option<RpcErrorData>,
 }
 
 #[derive(Debug)]
 pub struct ClientError {
     pub message: String,
+    /// `error.data.category`, when Core sent one. `None` for a transport
+    /// failure or an older Core that predates categorized errors.
+    pub category: Option<String>,
+    /// `error.data.reason`, when the category documents one (currently only
+    /// `launch_repair`). A closed, machine-readable set documented at
+    /// `docs/api/methods.md#launch-repair-errors` upstream.
+    pub reason: Option<String>,
+    /// `error.data.params`, when the reason carries one. Display names only
+    /// (`launcher`, `plugin`), never identifiers, paths or URIs. A key is
+    /// absent when Core has no name for it. Boxed: rarely populated, and an
+    /// inline `HashMap` would make every `Result<_, ClientError>` carry its
+    /// size whether or not this field is ever set.
+    pub params: Option<Box<HashMap<String, String>>>,
     /// The request never got an answer because there was no live link:
     /// not connected, or the session ended while it waited. Retrying once
     /// Core is connected again can succeed; nothing Core said applies.
@@ -155,6 +187,9 @@ impl ClientError {
     pub(crate) fn plain(message: impl Into<String>) -> Self {
         Self {
             message: message.into(),
+            category: None,
+            reason: None,
+            params: None,
             transport: false,
         }
     }
@@ -168,10 +203,30 @@ impl ClientError {
         }
     }
 
+    /// Built from Core's own error response, so `data` (when present) rides
+    /// along with the message.
+    fn from_rpc(err: RpcError) -> Self {
+        let data = err.data.unwrap_or_default();
+        Self {
+            message: err.message,
+            category: data.category,
+            reason: data.reason,
+            params: data.params.map(Box::new),
+            transport: false,
+        }
+    }
+
     /// See [`ClientError::transport`]: true when the failure is the link's,
     /// not an answer from Core.
     pub fn is_transport(&self) -> bool {
         self.transport
+    }
+
+    /// Whether this is a `launch_repair` error: the launch stopped for
+    /// something the user can act on. `reason`/`params` describe how, and
+    /// `zaparoo_app::launch_repair` turns `reason` into wording.
+    pub fn is_launch_repair(&self) -> bool {
+        self.category.as_deref() == Some(LAUNCH_REPAIR_CATEGORY)
     }
 }
 
@@ -252,7 +307,7 @@ fn handle_incoming(
         let sender = pending.lock().unwrap().remove(&id);
         if let Some(tx) = sender {
             let result = if let Some(err) = resp.error {
-                Err(ClientError::plain(err.message))
+                Err(ClientError::from_rpc(err))
             } else {
                 Ok(resp.result.unwrap_or(Value::Null))
             };
@@ -1166,6 +1221,80 @@ mod tests {
             !rx.await.unwrap().unwrap_err().is_transport(),
             "Core's own refusal"
         );
+    }
+
+    #[allow(clippy::unwrap_used, reason = "test constructs known-good JSON")]
+    fn error_from(value: &Value) -> ClientError {
+        let response: RpcResponse = serde_json::from_value(serde_json::json!({
+            "id": "x", "error": value
+        }))
+        .unwrap();
+        ClientError::from_rpc(response.error.unwrap())
+    }
+
+    #[test]
+    fn a_launch_repair_error_carries_its_reason_and_params() {
+        let err = error_from(&serde_json::json!({
+            "message": "this launcher's plugin for this system is not installed",
+            "data": {
+                "category": "launch_repair",
+                "reason": "launcher_plugin_missing",
+                "params": {"launcher": "RetroArch", "plugin": "Mesen"},
+            },
+        }));
+        assert!(err.is_launch_repair());
+        assert_eq!(err.category.as_deref(), Some("launch_repair"));
+        assert_eq!(err.reason.as_deref(), Some("launcher_plugin_missing"));
+        assert_eq!(
+            err.params.as_ref().and_then(|p| p.get("launcher")),
+            Some(&"RetroArch".to_string())
+        );
+        assert_eq!(
+            err.params.as_ref().and_then(|p| p.get("plugin")),
+            Some(&"Mesen".to_string())
+        );
+        assert_eq!(
+            err.message,
+            "this launcher's plugin for this system is not installed"
+        );
+    }
+
+    #[test]
+    fn a_category_with_no_reason_or_params_leaves_them_absent() {
+        let err = error_from(&serde_json::json!({
+            "message": "media not found",
+            "data": {"category": "media_not_found"},
+        }));
+        assert!(!err.is_launch_repair());
+        assert_eq!(err.category.as_deref(), Some("media_not_found"));
+        assert_eq!(err.reason, None);
+        assert_eq!(err.params, None);
+    }
+
+    #[test]
+    fn an_older_core_with_no_data_field_leaves_everything_absent() {
+        let err = error_from(&serde_json::json!({ "message": "something failed" }));
+        assert!(!err.is_launch_repair());
+        assert_eq!(err.category, None);
+        assert_eq!(err.reason, None);
+        assert_eq!(err.params, None);
+        assert_eq!(err.message, "something failed");
+    }
+
+    #[test]
+    fn an_absent_param_key_is_absent_not_empty() {
+        let err = error_from(&serde_json::json!({
+            "message": "this launcher is not installed",
+            "data": {
+                "category": "launch_repair",
+                "reason": "launcher_not_installed",
+                "params": {"launcher": "RetroArch"},
+            },
+        }));
+        assert!(err
+            .params
+            .as_ref()
+            .is_some_and(|p| !p.contains_key("plugin")));
     }
 
     #[tokio::test]
