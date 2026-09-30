@@ -152,6 +152,14 @@ jobs:
           git -C "$dest" remote add origin git@github.com:theypsilon/zaparoo-update.git
           git -C "$dest" fetch --quiet --depth 1 origin "$UPDATE_REF"
           git -C "$dest" checkout --quiet FETCH_HEAD
+          if [ "$PUBLISHING" = "true" ]; then
+            for required in src/imp/mod.rs ui/update.slint; do
+              if [ ! -f "$dest/$required" ]; then
+                echo "Update checkout is missing $required" >&2
+                exit 1
+              fi
+            done
+          fi
           just update-module
           rm -f "$key"
           echo "Bundling zaparoo-update at $(git -C "$dest" rev-parse --short HEAD)"
