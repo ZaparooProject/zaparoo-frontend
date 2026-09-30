@@ -27,8 +27,9 @@ rust/frontend/  [frontend library and binary; Slint UI]
   ├── src/navigation.rs, folder_motion.rs, route_motion.rs
   │                        deferred routes that keep the source until ready,
   │                        and the stepped-clock motion tests over them
-  ├── src/{hub,systems,games,settings,about}.rs
-  │                        per-screen drivers
+  ├── src/{hub,systems,games,settings,about,update}.rs
+  │                        per-screen drivers (update.rs hosts the Update
+  │                        module's session; see "Update module")
   ├── src/{game_info,media_setup,log_upload,launchers,alternates,card_write}.rs
   │                        modal drivers
   ├── src/game_info_data.rs : Game Info metadata and carousel ordering
@@ -187,6 +188,59 @@ command-line arguments, process restart, the Linux network probe, the Steam
 session host and gamescope focus claims. `just hosted-check` runs clippy and
 the library tests for the hosted feature set on the software renderer; it
 does not compile for any particular host target.
+
+## Update module
+
+The Update screen (firmware and core updates through the Downloader) belongs
+to a separately owned module, `zaparoo-update`, whose source is private. The
+public repository carries only its interface and a stand-in, and official
+builds compile the real thing in.
+
+```
+rust/zaparoo-update-api/   toolkit-free contract: ViewState, Input, Effect,
+                           Event, the row and enum types (plain data, no deps)
+rust/zaparoo-update/       public stub: is_updater_available() is false,
+                           UpdateSession does nothing, ui/update.slint is empty
+rust/private/zaparoo-update/   gitignored checkout of the private repo
+rust/frontend/ui/update_view.slint   the UpdateView global and its enums
+rust/frontend/src/update.rs          the adapter
+```
+
+- **One crate identity.** `rust/zaparoo-update/build.rs` looks for
+  `rust/private/zaparoo-update`. When `src/imp/mod.rs` and `ui/update.slint`
+  are there, it compiles `src/imp/**` into the stub crate as its `imp`
+  module (`#[path]` through a generated file) and publishes the private
+  `ui/` and `translations/` directories through cargo metadata
+  (`DEP_ZAPAROO_UPDATE_UI_DIR`, `DEP_ZAPAROO_UPDATE_TRANSLATIONS_DIR`).
+  Otherwise it publishes its own empty screen. `Cargo.lock`, `cargo metadata`,
+  `cargo deny` and every workspace command are identical either way. The
+  private crate may therefore use only the dependencies the stub lists
+  (`tokio`, `tracing`, `libc`, `zaparoo-update-api`) and module-relative paths,
+  and is linted under this workspace's lint table.
+- **Who owns what.** The module owns the update run (the updater tool, the
+  DLP1 event stream, cancellation) and the screen's whole state machine:
+  page, focus, filter, collapse, timers. It publishes a `ViewState`.
+  `update.rs` maps that onto `UpdateView` and applies row deltas to one
+  `VecModel`; the private `update.slint` only renders the global and forwards
+  taps. Every sentence is composed in `.slint` from enums and ids with
+  `@tr()`; the module never sends prose.
+- **Effects.** `LeaveToHub`, `ConfirmStop` (the "Stop update?" decision
+  dialog, `DialogKind::UpdateStop`), `CloseStopConfirm` and `Reboot` come back
+  through the same sink as state. The router owns dialogs and routing, and the
+  adapter answers with `Input::StopConfirmed`, `StopDeclined` or
+  `RebootFailed`.
+- **Build.** `build.rs` maps `@zaparoo-update` (the module's `ui/`) and
+  `@zaparoo-ui` (this crate's `ui/`) as Slint library paths, so the private
+  screen imports `Theme`, `Sizing` and the components with
+  `@zaparoo-ui/...` and shares the one set of globals. It also merges the
+  module's `translations/<lang>/LC_MESSAGES/frontend.po` into the bundled
+  catalogs; the frontend's entry wins on a duplicate msgid.
+- **Availability.** The Hub tile shows only when `update::available()`: the
+  module is built in, the device has an updater tool
+  (`ZAPAROO_UPDATE_TOOL`, `/media/fat/Scripts/update.sh`, then
+  `downloader.sh`), and the build is not `hosted`. The screen is not restored
+  after a restart: a killed run cannot resume, and the screensaver stays off
+  while a run is active.
 
 ## Rust → Slint data flow
 

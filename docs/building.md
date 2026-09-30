@@ -68,6 +68,34 @@ The toolchain image is linux/amd64. On Apple Silicon, Docker Desktop runs it
 under emulation; turn on "Use Rosetta for x86_64/amd64 emulation" in Docker
 Desktop's settings, which is far faster than QEMU.
 
+## The private Update module
+
+The Hub's Update tile and its screen come from a private repository,
+`theypsilon/zaparoo-update`. Public builds use a stand-in and have no Update
+tile; official builds compile the real module in. Architecture:
+`docs/architecture.md` ("Update module").
+
+To build with it (needs read access to that repository):
+
+```sh
+git clone git@github.com:theypsilon/zaparoo-update.git rust/private/zaparoo-update
+just update-module    # cargo does not notice the checkout appearing
+just build
+```
+
+`rust/private/` is gitignored. Run `just update-module` again after removing
+the checkout to go back to the stand-in. The container recipes (`just lint`,
+`just test`, `just arm32`) see the same directory, so they build the same
+variant. The private code is linted and tested under this workspace's rules
+through the stub crate, on top of the private repository's own checks.
+
+The release workflow clones it with the `ZAPAROO_UPDATE_DEPLOY_KEY` secret
+(a read-only deploy key) at `inputs.update_ref`, then the
+`ZAPAROO_UPDATE_REF` repository variable, then `main`. A release that would
+be published fails when the key is missing; a dispatch that uploads nothing
+only warns and builds the stand-in. The stand-in ships
+`LICENSES/zaparoo-update-NOTICE.txt` in every bundle either way.
+
 ## Toolchain image
 
 [`Dockerfile.toolchain`](../Dockerfile.toolchain) defines the build

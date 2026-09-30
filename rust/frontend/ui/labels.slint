@@ -147,6 +147,7 @@ export global DialogLabels {
         if (kind == DialogKind.first-run) { return @tr("First-time setup"); }
         if (kind == DialogKind.hub-full) { return @tr("Nothing left to add"); }
         if (kind == DialogKind.unlink-online) { return @tr("Unlink Online account?"); }
+        if (kind == DialogKind.update-stop) { return @tr("Stop update?"); }
         if (kind == DialogKind.action-error) { return DialogLabels.error-title(error); }
         return "";
     }
@@ -156,6 +157,7 @@ export global DialogLabels {
         if (kind == DialogKind.quit-blocked) { return @tr("Close the running game before exiting Zaparoo Frontend."); }
         if (kind == DialogKind.restart-setting) { return @tr("This setting needs a frontend restart to take effect."); }
         if (kind == DialogKind.unlink-online) { return @tr("This device stops backing up and syncing with your Zaparoo Online account. Local play history stays on this device."); }
+        if (kind == DialogKind.update-stop) { return @tr("An update is still running. Leaving this screen stops it."); }
         if (kind == DialogKind.notice) {
             return @tr("Copyright 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.\n\nThis free source-available build is for personal and non-commercial use only. Commercial use requires a separate license.\n\nContact: legal@zaparoo.com\n\nFull details available any time under Settings > About / License.\n\nCreated by\nAndrea Bogazzi, BossRighteous, Tim Wilsie, Wizzo");
         }

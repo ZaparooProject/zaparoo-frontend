@@ -239,11 +239,10 @@ pub fn rebuild(ctx: &Ctx, app: &App) {
             resume_name: &resume_name,
             resume_cover_key: &resume_cover,
             resume_known_unavailable: hub.resume_known_unavailable(connected),
-            // There is no Update screen: the previous one came from the
-            // external `zaparoo-update` crate, which has no Slint
-            // counterpart. The tile stays a structural absence rather
-            // than a dead row until one exists.
-            update_enabled: false,
+            // Only when the private `zaparoo-update` module is built in
+            // and the device has an updater tool: otherwise the tile is a
+            // structural absence rather than a dead row.
+            update_enabled: crate::update::available(),
             internet_available: hub.internet_available,
         };
         let page_size = hub.grid.page_size();
@@ -686,6 +685,7 @@ fn emit_activate(ctx: &Ctx, app: &App) {
                 }
                 "recents" => crate::games::enter_recents(ctx, app),
                 "settings" => crate::settings::enter(ctx, app),
+                "update" => crate::update::enter(app),
                 _ => {}
             }
         }
@@ -1086,7 +1086,7 @@ fn open_add_picker(ctx: &Ctx, app: &App) {
         let live = Live {
             categories_loaded: hub.categories_loaded,
             confirmed_categories: &shared.all_categories,
-            update_enabled: false,
+            update_enabled: crate::update::available(),
             ..Live::default()
         };
         rules::add_entries(

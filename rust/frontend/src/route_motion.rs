@@ -3894,3 +3894,56 @@ fn a_system_reopens_in_its_remembered_folder_or_its_root_when_gone() {
         .iter()
         .any(|focus| focus.system_id == "SNES"));
 }
+
+#[test]
+fn update_buttons_push_before_dispatch_and_drop_stale_commits() -> Result<(), &'static str> {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let view = app.global::<crate::UpdateView>();
+    app.global::<Shell>().set_active_screen(Screen::Update);
+    app.global::<crate::Motion>().set_enabled(true);
+    view.set_page(crate::UpdatePage::Intro);
+    view.set_buttons(ModelRc::new(VecModel::from(vec![
+        crate::UpdateButton::Back,
+        crate::UpdateButton::Start,
+    ])));
+    view.set_button_focus(0);
+    let target = crate::press_feedback::current(&app).ok_or("visible Update button")?;
+    assert_eq!(target.owner, PressOwner::Update);
+    let committed = Rc::new(Cell::new(false));
+    let done = committed.clone();
+    crate::press_feedback::dispatch(&app, &target, move |app| {
+        done.set(true);
+        app.global::<Shell>().set_active_screen(Screen::Hub);
+    });
+    assert!(crate::press_feedback::pending(&app));
+    assert!(!committed.get());
+    advance(40);
+    assert_eq!(app.global::<Shell>().get_active_screen(), Screen::Update);
+    assert!(!committed.get());
+    advance(60);
+    assert!(committed.get());
+    assert_eq!(app.global::<Shell>().get_active_screen(), Screen::Hub);
+    assert!(!crate::press_feedback::pending(&app));
+
+    app.global::<Shell>().set_active_screen(Screen::Update);
+    committed.set(false);
+    let done = committed.clone();
+    crate::press_feedback::dispatch(&app, &target, move |_| done.set(true));
+    view.set_page(crate::UpdatePage::Running);
+    advance(100);
+    assert!(
+        !committed.get(),
+        "a changed page cannot receive stale Accept"
+    );
+    assert!(!crate::press_feedback::pending(&app));
+    assert!(crate::press_feedback::current(&app).is_none());
+
+    view.set_page(crate::UpdatePage::Intro);
+    app.global::<crate::Motion>().set_enabled(false);
+    let done = committed.clone();
+    crate::press_feedback::dispatch(&app, &target, move |_| done.set(true));
+    assert!(committed.get(), "reduced motion dispatches without waiting");
+    assert!(!crate::press_feedback::pending(&app));
+    Ok(())
+}

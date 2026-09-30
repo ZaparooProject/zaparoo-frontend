@@ -411,7 +411,7 @@ mod version_gate_tests {
 /// Open a dialog. Rust names the kind, its sub-kind and the one
 /// runtime value the copy needs; `DialogLabels` in the UI composes
 /// every word, so the buttons are keys too.
-fn open_dialog(
+pub(crate) fn open_dialog(
     app: &App,
     kind: DialogKind,
     detail: &str,
@@ -441,7 +441,7 @@ fn set_dialog_status(app: &App, key: DialogProgress, step: i32, total: i32, name
     overlays.set_dialog_status_name(SharedString::from(name));
 }
 
-fn close_dialog(app: &App) {
+pub(crate) fn close_dialog(app: &App) {
     crate::press_feedback::cancel(app);
     let overlays = app.global::<crate::Overlays>();
     overlays.set_dialog_open(false);
@@ -649,6 +649,10 @@ fn dialog_accept(ctx: &Ctx, app: &App, kind: DialogKind, focus: usize) {
                 crate::online::unlink(ctx, app);
             }
         }
+        DialogKind::UpdateStop => {
+            close_dialog(app);
+            crate::update::stop_answered(confirmed);
+        }
         _ => close_dialog(app),
     }
 }
@@ -683,6 +687,10 @@ fn dialog_cancel(ctx: &Ctx, app: &App, kind: DialogKind) {
         DialogKind::RestartSetting => {
             lock(&ctx.shared).pending_restart = None;
             close_dialog(app);
+        }
+        DialogKind::UpdateStop => {
+            close_dialog(app);
+            crate::update::stop_answered(false);
         }
         _ => close_dialog(app),
     }
@@ -821,6 +829,13 @@ pub fn reset_idle(ctx: &Ctx, app: &App) {
         if !app.global::<crate::Shell>().get_boot_complete()
             || app.global::<crate::Shell>().get_dormant()
             || app.global::<crate::Shell>().get_transitioning()
+        {
+            return;
+        }
+        // A running update keeps the screen awake; the driver restarts
+        // this clock when the run ends.
+        if app.global::<crate::Shell>().get_active_screen() == crate::Screen::Update
+            && !app.global::<crate::UpdateView>().get_allows_screensaver()
         {
             return;
         }
@@ -1076,6 +1091,7 @@ fn dispatch_action(ctx: &Ctx, app: &App, action: &str) {
         }
         crate::Screen::Settings => crate::settings::handle_action(ctx, app, action),
         crate::Screen::About => about_action(ctx, app, action),
+        crate::Screen::Update => crate::update::handle_action(app, action),
         crate::Screen::None => {}
     }
 }

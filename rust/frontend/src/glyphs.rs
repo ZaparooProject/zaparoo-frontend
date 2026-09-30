@@ -94,6 +94,10 @@ const SOURCES: &[(&str, &str)] = &[
         include_str!("../../../resources/images/icons/Loading.svg"),
     ),
     (
+        "icons/Minus",
+        include_str!("../../../resources/images/icons/Minus.svg"),
+    ),
+    (
         "icons/NavDown",
         include_str!("../../../resources/images/icons/NavDown.svg"),
     ),
@@ -112,6 +116,10 @@ const SOURCES: &[(&str, &str)] = &[
     (
         "icons/PlayOutline",
         include_str!("../../../resources/images/icons/PlayOutline.svg"),
+    ),
+    (
+        "icons/Plus",
+        include_str!("../../../resources/images/icons/Plus.svg"),
     ),
     (
         "icons/RefreshCw",
@@ -136,6 +144,10 @@ const SOURCES: &[(&str, &str)] = &[
     (
         "icons/Tools",
         include_str!("../../../resources/images/icons/Tools.svg"),
+    ),
+    (
+        "icons/Warning",
+        include_str!("../../../resources/images/icons/Warning.svg"),
     ),
     // Header HUD status icons.
     (
