@@ -254,6 +254,8 @@ fn main() {
                         id: format!("alternate_version:{index}").into(),
                         label: (*name).into(),
                         label_key: "".into(),
+                        enabled: true,
+                        reason_key: "".into(),
                     })
                     .collect::<Vec<_>>(),
             )));
@@ -268,31 +270,43 @@ fn main() {
                     id: "more_info".into(),
                     label: "".into(),
                     label_key: "more_info".into(),
+                    enabled: true,
+                    reason_key: "".into(),
                 },
                 MenuEntry {
                     id: "toggle_favorite".into(),
                     label: "".into(),
                     label_key: "favorite:add".into(),
+                    enabled: true,
+                    reason_key: "".into(),
                 },
                 MenuEntry {
                     id: "write_card".into(),
                     label: "".into(),
                     label_key: "write_card".into(),
+                    enabled: true,
+                    reason_key: "".into(),
                 },
                 MenuEntry {
                     id: "qr_code".into(),
                     label: "".into(),
                     label_key: "qr_code".into(),
+                    enabled: true,
+                    reason_key: "".into(),
                 },
                 MenuEntry {
                     id: "add_to_hub".into(),
                     label: "".into(),
                     label_key: "add_to_hub".into(),
+                    enabled: true,
+                    reason_key: "".into(),
                 },
                 MenuEntry {
                     id: "scrape_game".into(),
                     label: "".into(),
                     label_key: "scrape_game".into(),
+                    enabled: true,
+                    reason_key: "".into(),
                 },
             ])));
         app.global::<generated::Overlays>().set_context_index(1);
@@ -444,11 +458,44 @@ fn main() {
                 id: (*value).into(),
                 label: "".into(),
                 label_key: "".into(),
+                enabled: true,
+                reason_key: "".into(),
             })
             .collect();
         ov.set_list_setting_id(if palette { "colorScheme" } else { "language" }.into());
         ov.set_list_entries(slint::ModelRc::new(slint::VecModel::from(entries)));
         ov.set_list_index(6);
+        ov.set_list_open(true);
+    }
+    // "launcher-picker" renders the "Change launcher" list with one row
+    // Core reports as unavailable — muted, folded reason, still pickable.
+    if screen.ends_with("launcher-picker") {
+        let ov = app.global::<generated::Overlays>();
+        ov.set_list_title("title:change_launcher".into());
+        ov.set_list_entries(slint::ModelRc::new(slint::VecModel::from(vec![
+            MenuEntry {
+                id: "default".into(),
+                label: "".into(),
+                label_key: "launcher:default".into(),
+                enabled: true,
+                reason_key: "".into(),
+            },
+            MenuEntry {
+                id: "RetroArch".into(),
+                label: "RetroArch".into(),
+                label_key: "".into(),
+                enabled: true,
+                reason_key: "".into(),
+            },
+            MenuEntry {
+                id: "DuckStation".into(),
+                label: "DuckStation".into(),
+                label_key: "".into(),
+                enabled: false,
+                reason_key: "launcher:not_installed".into(),
+            },
+        ])));
+        ov.set_list_index(1);
         ov.set_list_open(true);
     }
     if screen.ends_with("launcher-saving") {
@@ -459,11 +506,15 @@ fn main() {
                 id: "default".into(),
                 label: "Default".into(),
                 label_key: "".into(),
+                enabled: true,
+                reason_key: "".into(),
             },
             MenuEntry {
                 id: "alternate".into(),
                 label: "Alternate launcher".into(),
                 label_key: "".into(),
+                enabled: true,
+                reason_key: "".into(),
             },
         ])));
         ov.set_list_index(1);
@@ -1345,6 +1396,7 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
     use zaparoo_app::layouts::{self, Body, ThemeId, View};
     use zaparoo_app::settings::{self as rules, Control, Row};
     let page = screen.contains("settings-page");
+    let playtime = screen.contains("settings-page-playtime");
     let online = screen.contains("settings-page-online");
     let inputs = sizing::Scene::of(app, scene_w, scene_h, crt).inputs();
     let derived = zaparoo_app::sizing::derive(&inputs);
@@ -1361,6 +1413,7 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
         log_upload: false,
         can_pick_folder: false,
         can_scan_launchers: false,
+        can_request_playtime_access: playtime,
         can_link_online: online,
     };
     let row_h = inputs.pct_h(8.0);
@@ -1397,7 +1450,9 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
                         }
                         Control::Action => {
                             out.busy = id == "runScraper";
-                            out.status_key = if id == "onlineAccount" {
+                            out.status_key = if id == "playtimeAccess" {
+                                ActionStatus::PlaytimeUnverified
+                            } else if id == "onlineAccount" {
                                 ActionStatus::OnlineUnlinked
                             } else if out.busy {
                                 ActionStatus::Running

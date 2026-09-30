@@ -333,6 +333,7 @@ fn offline_ctx() -> (tokio::runtime::Runtime, crate::router::Ctx) {
     let ctx = crate::router::Ctx {
         folders: crate::folder_picker::Model::default(),
         launcher_scan: crate::launcher_scan::Model::default(),
+        playtime_access: crate::playtime_access::Model::default(),
         store: zaparoo_core::store::Store::new(client, handle.clone()),
         handle,
         media: crate::media_cache::MediaCache::new(),
@@ -2231,6 +2232,8 @@ fn a_two_item_list_glides_on_the_wrap_as_well_as_the_step() {
                 id: i.to_string().into(),
                 label: format!("Item {i}").into(),
                 label_key: "".into(),
+                enabled: true,
+                reason_key: "".into(),
             })
             .collect::<Vec<_>>(),
     )));
@@ -2269,6 +2272,8 @@ fn picker_keeps_first_row_until_focus_leaves_viewport() {
                 id: i.to_string().into(),
                 label: if i == 0 { "Anchor".into() } else { "".into() },
                 label_key: "".into(),
+                enabled: true,
+                reason_key: "".into(),
             })
             .collect::<Vec<_>>(),
     )));
@@ -2579,6 +2584,8 @@ fn picker_selected_text_uses_on_accent_and_palette_previews_paint() {
         id: "zaparoo-dark".into(),
         label: "Selected label".into(),
         label_key: "".into(),
+        enabled: true,
+        reason_key: "".into(),
     }])));
     ov.set_list_open(true);
     ov.set_list_index(0);
@@ -2618,6 +2625,8 @@ fn mouse_setting_blocks_picker_clicks_but_not_enabled_selection() {
         id: "one".into(),
         label: "One".into(),
         label_key: "".into(),
+        enabled: true,
+        reason_key: "".into(),
     }])));
     ov.set_list_open(true);
     app.global::<crate::Theme>()

@@ -9,8 +9,9 @@
 // Derived values cross the boundary as plain properties, pushed into that
 // same global by `rust/frontend/src/sizing.rs`.
 //
-// The tables are pinned by `tests/fixtures/sizing_golden.txt`: 192 cases
-// captured from the retired Qt build and frozen as ground truth.
+// The legacy tables are pinned by `tests/fixtures/sizing_golden.txt`: 192
+// cases captured from the retired Qt build and frozen as ground truth. The
+// Nova-specific tier is pinned separately by `nova_1280x960_golden.txt`.
 //
 // The rounding helper matters. That fixture was produced by JavaScript,
 // whose `Math.round` rounds half towards +infinity
@@ -33,6 +34,7 @@ pub enum Tier {
     T480,
     T540,
     T720,
+    T960,
     T1080,
 }
 
@@ -43,6 +45,7 @@ impl Tier {
             Self::T480 => "480",
             Self::T540 => "540",
             Self::T720 => "720",
+            Self::T960 => "960",
             Self::T1080 => "1080",
         }
     }
@@ -71,6 +74,7 @@ impl Tier {
     fn radius_md(self) -> i32 {
         match self {
             Self::T1080 => 8,
+            Self::T960 => 7,
             Self::T720 => 6,
             Self::T540 => 4,
             Self::T480 => 3,
@@ -83,6 +87,7 @@ impl Tier {
     fn font_ladder(self) -> [i32; 6] {
         match self {
             Self::T1080 => [43, 35, 31, 28, 26, 24],
+            Self::T960 => [38, 31, 28, 25, 23, 21],
             Self::T720 => [29, 23, 21, 19, 17, 16],
             Self::T540 => [24, 20, 18, 17, 15, 14],
             Self::T480 => [22, 18, 17, 16, 14, 13],
@@ -213,6 +218,16 @@ impl Inputs {
     }
 
     pub fn tier(&self) -> Tier {
+        if !self.crt_native_path {
+            let (width, height) = if self.swap_percentage_axes {
+                (self.screen_height, self.screen_width)
+            } else {
+                (self.screen_width, self.screen_height)
+            };
+            if (width - 1280.0).abs() <= 2.0 && (height - 960.0).abs() <= 2.0 {
+                return Tier::T960;
+            }
+        }
         Tier::from_resolution_height(self.resolution_height())
     }
 
@@ -388,6 +403,8 @@ fn common_digital_scene(inputs: &Inputs) -> Option<Tier> {
         Some(Tier::T540)
     } else if matches(1280.0, 720.0) || matches(1366.0, 768.0) {
         Some(Tier::T720)
+    } else if matches(1280.0, 960.0) {
+        Some(Tier::T960)
     } else if matches(1920.0, 1080.0) {
         Some(Tier::T1080)
     } else {
@@ -452,7 +469,9 @@ pub fn systems_grid_shape(inputs: &Inputs, viewport_width: f64, viewport_height:
 pub fn hub_grid_shape(inputs: &Inputs) -> GridShape {
     let tier = inputs.tier();
     let compact = tier == Tier::T240 || tier == Tier::T480;
-    let base = if inputs.handheld() && !compact {
+    let base = if tier == Tier::T960 {
+        GridShape::new(5, 3)
+    } else if inputs.handheld() && !compact {
         // Handheld changes page density, not persisted order: the same linear
         // Hub slots reflow into fewer columns. The low tiers are already
         // compact enough.

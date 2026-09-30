@@ -12,8 +12,9 @@ use std::collections::VecDeque;
 
 /// Every kind the alert vocabulary knows. An unknown kind still shows,
 /// with the generic copy.
-pub const KINDS: [&str; 15] = [
+pub const KINDS: [&str; 16] = [
     "launch",
+    "launch_repair",
     "favorite",
     "add_to_hub",
     "media_index",
@@ -214,5 +215,25 @@ mod tests {
         assert!(closes_context_menu("alternate_discovery"));
         assert!(!closes_context_menu("launch"));
         assert!(KINDS.contains(&"alternate_discovery"));
+    }
+
+    #[test]
+    fn a_repairable_launch_failure_is_its_own_kind() {
+        assert!(KINDS.contains(&"launch_repair"));
+        assert!(!closes_context_menu("launch_repair"));
+    }
+
+    #[test]
+    fn a_repair_failure_and_a_generic_launch_failure_are_never_deduped_together() {
+        // Different kinds about the same context never collapse into one
+        // alert - a repair failure needs its own reason shown.
+        let mut q = ErrorQueue::new();
+        q.present("launch", "same-payload", true);
+        assert_eq!(q.dismiss(), None, "nothing else was queued yet");
+        assert_eq!(
+            q.present("launch_repair", "same-payload", true),
+            Some(Entry::new("launch_repair", "same-payload")),
+            "a different kind is a different failure even with identical context"
+        );
     }
 }

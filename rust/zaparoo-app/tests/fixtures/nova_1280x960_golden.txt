@@ -1,0 +1,4 @@
+# Retroid Pocket Nova 1280x960 landscape sizing contract.
+# Derived sizing has no persisted-state migration or reset behavior.
+NOVA screen_width=1280 screen_height=960 profile=standard tier=960 fontHero=38 fontTitle=31 fontSection=28 fontBody=25 fontCaption=23 fontSmall=21 hubGridColumns=5 hubGridRows=3 systemsGridColumns=4 systemsGridRows=3 gamesGridColumns=5 gamesGridRows=2
+NOVA screen_width=1280 screen_height=960 profile=handheld tier=960 fontHero=38 fontTitle=31 fontSection=28 fontBody=25 fontCaption=23 fontSmall=21 hubGridColumns=5 hubGridRows=3 systemsGridColumns=4 systemsGridRows=3 gamesGridColumns=5 gamesGridRows=2

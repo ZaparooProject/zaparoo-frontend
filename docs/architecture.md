@@ -178,6 +178,11 @@ crate still owns all UI, navigation and input semantics.
   launcher list. `request_folder_picker` and `request_launcher_scan` trigger
   the same guarded request as the rows. Configuration and status live with
   the window, so a host configures them again for every new window.
+- `Input::configure_playtime_access` offers a handoff to the system
+  setting that lets the host measure foreground playtime exactly; it adds
+  "Verify playtime…" to Settings > Library. `playtime_access_status`
+  reports whether it is granted, which the row shows. Granting stays the
+  user's action in system settings.
 - `Input::navigation_events`, `indexed_system_count`, `core_connected`,
   `folder_picker_pending`, `folder_permission_count` and
   `folder_permission_revoked` are read-only diagnostics for host tests; they
