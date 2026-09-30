@@ -1166,19 +1166,18 @@ component ListPickerModal inherits ModalShell {
     changed visible-rows => { root.reveal-current(); }
     changed entries => { root.top = 0; root.reveal-current(); }
     init => { root.reveal-current(); }
+    // The worded reason a row can't currently be used folds into the row's
+    // own text rather than an overlay - the same idiom captioned tiles use
+    // for a disambiguating tag. Never hidden either way. One `@tr()` template
+    // for the whole phrase, not a fixed concatenation, so translators can
+    // reorder the name and the reason.
     pure function entry-label(entry: MenuEntry) -> string {
-        return root.entry-primary-label(entry) + root.entry-reason-suffix(entry);
+        return entry.enabled || entry.reason-key == "" ? root.entry-primary-label(entry)
+            : @tr("{} · {}", root.entry-primary-label(entry), Labels.launcher-reason(entry.reason-key));
     }
     pure function entry-primary-label(entry: MenuEntry) -> string {
         return root.setting-id != "" ? SettingsLabels.picker-value(root.setting-id, entry.id)
             : (entry.label-key != "" ? Labels.menu(entry.label-key, entry.label) : entry.label);
-    }
-    // The worded reason a row can't currently be used, folded into the
-    // row's own text rather than an overlay - the same idiom captioned
-    // tiles use for a disambiguating tag. Never hidden either way.
-    pure function entry-reason-suffix(entry: MenuEntry) -> string {
-        return entry.enabled || entry.reason-key == "" ? ""
-            : " · " + Labels.launcher-reason(entry.reason-key);
     }
     property <bool> swatches: root.setting-id == "colorScheme";
     property <length> swatch-size: Sizing.pct-h(2.4);

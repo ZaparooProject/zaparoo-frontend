@@ -19,6 +19,11 @@ pub struct LauncherReadiness {
     pub available: bool,
     /// `None` means the platform never checks (unknown, not "missing").
     pub detected: Option<bool>,
+    /// Group names this launcher belongs to. `systemDefaults.launcher` may
+    /// name a group instead of a launcher id, matched against any member's
+    /// groups - a stored group default must not read as a retired launcher
+    /// while a member of that group is still offered.
+    pub groups: Vec<String>,
 }
 
 /// Why a picker row can't currently be used. Meaningless when the row is
@@ -74,9 +79,14 @@ pub fn picker_rows(launchers: &[LauncherReadiness], current: Option<&str>) -> Ve
         });
     }
     // A launcher that was chosen and has since gone away still needs a
-    // row, or the picker would silently show the wrong selection.
+    // row, or the picker would silently show the wrong selection. `current`
+    // may instead be a group name still matched by an offered launcher
+    // (`systemDefaults.launcher` accepts either), which is not "gone".
     if let Some(current) = current.filter(|c| !c.is_empty() && *c != DEFAULT_LAUNCHER_ID) {
-        if !launchers.iter().any(|l| l.id == current) {
+        let still_offered = launchers
+            .iter()
+            .any(|l| l.id == current || l.groups.iter().any(|g| g == current));
+        if !still_offered {
             rows.push(PickerRow {
                 id: current.to_string(),
                 key: "launcher:current",
@@ -114,6 +124,7 @@ mod tests {
             id: id.to_string(),
             available: true,
             detected: None,
+            groups: Vec::new(),
         }
     }
 
@@ -170,10 +181,31 @@ mod tests {
             id: "LauncherA".to_string(),
             available: false,
             detected: Some(false),
+            groups: Vec::new(),
         }];
         let rows = picker_rows(&launchers, None);
         assert!(!rows[1].available);
         assert_eq!(rows[1].reason, PickerReason::NotInstalled);
+    }
+
+    #[test]
+    fn a_stored_group_default_with_an_available_member_is_not_flagged_gone() {
+        // `systemDefaults.launcher` may name a group, matched against any
+        // launcher's `groups`, not just a launcher id - a stored "libretro"
+        // must not read as a retired launcher when a libretro launcher is
+        // still offered and available.
+        let launchers = vec![LauncherReadiness {
+            id: "LauncherA".to_string(),
+            available: true,
+            detected: None,
+            groups: vec!["libretro".to_string()],
+        }];
+        let rows = picker_rows(&launchers, Some("libretro"));
+        assert_eq!(
+            rows.len(),
+            2,
+            "no extra row for a group the launcher belongs to"
+        );
     }
 
     #[test]
@@ -183,6 +215,7 @@ mod tests {
                 id: "LauncherA".to_string(),
                 available: false,
                 detected,
+                groups: Vec::new(),
             }];
             let rows = picker_rows(&launchers, None);
             assert!(!rows[1].available);

@@ -129,6 +129,7 @@ fn present(ctx: &Ctx, app: &App, context: ListContext, ids: &[String], current: 
                 id: id.clone(),
                 available: info.is_none_or(|l| l.available),
                 detected: info.and_then(|l| l.detected),
+                groups: info.map(|l| l.groups.clone()).unwrap_or_default(),
             }
         })
         .collect();
