@@ -418,8 +418,12 @@ Menu CI produces `zaparoo-scanout.zip` with profiles, module objects, build
 provenance and matching source. Building that ZIP does not qualify a stock
 kernel: the exact running-image identity and matched Main/Menu/frontend stack
 need hardware testing, including kill/relaunch, ownership handoff and fallback.
-The currently pinned local kernel build remains the only build input; this
-change does not declare the current pinned or Edge stock images qualified.
+The default Menu build reproduces the pinned official September 12, 2026 stock
+image. Packaging requires byte equality outside its GNU build-ID descriptor,
+matching config/symbol-table hashes, and records both stock and reproduced IDs.
+See Menu's `kernel/stock-20260912.json` and `kernel/scanout-slots/README.md`.
+The older prototype build remains separate. This does not qualify future pinned
+or Edge images or waive hardware checks for a newly produced bundle.
 
 After qualification, attach the ZIP to the matching Menu release and use
 `ZAPAROO_INCLUDE_SCANOUT=1 just release-zip vX.Y.Z`. The release workflow has
