@@ -2,7 +2,7 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: frontend VERSION\n"
-"POT-Creation-Date: 2026-09-30 08:44+0000\n"
+"POT-Creation-Date: 2026-10-01 06:35+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -1184,22 +1184,27 @@ msgid "This media could not be resolved or opened."
 msgstr ""
 
 #: rust/frontend/ui/labels.slint:306
-msgid "The launcher service isn't responding."
+msgid ""
+"Access to this media's folder was revoked. Re-grant it in Settings > Library."
 msgstr ""
 
 #: rust/frontend/ui/labels.slint:307
-msgid "Return to Zaparoo before launching this."
+msgid "The launcher service isn't responding."
 msgstr ""
 
 #: rust/frontend/ui/labels.slint:308
-msgid "The launch was cancelled before it started."
+msgid "Return to Zaparoo before launching this."
 msgstr ""
 
 #: rust/frontend/ui/labels.slint:309
-msgid "The launch was sent, but its outcome could not be confirmed."
+msgid "The launch was cancelled before it started."
 msgstr ""
 
 #: rust/frontend/ui/labels.slint:310
+msgid "The launch was sent, but its outcome could not be confirmed."
+msgstr ""
+
+#: rust/frontend/ui/labels.slint:311
 msgid "The system refused the launch request."
 msgstr ""
 

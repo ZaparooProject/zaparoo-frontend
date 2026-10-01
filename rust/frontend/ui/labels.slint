@@ -303,6 +303,7 @@ export global DialogLabels {
         }
         if (reason == "storage_unavailable") { return @tr("The storage holding this media isn't available."); }
         if (reason == "media_unavailable") { return @tr("This media could not be resolved or opened."); }
+        if (reason == "media_access_revoked") { return @tr("Access to this media's folder was revoked. Re-grant it in Settings > Library."); }
         if (reason == "host_unavailable") { return @tr("The launcher service isn't responding."); }
         if (reason == "host_foreground_required") { return @tr("Return to Zaparoo before launching this."); }
         if (reason == "cancelled") { return @tr("The launch was cancelled before it started."); }
