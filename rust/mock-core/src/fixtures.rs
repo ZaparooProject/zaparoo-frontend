@@ -171,6 +171,10 @@ fn media_ref_key(reference: &Value) -> (String, String) {
 }
 
 pub fn systems_response(params: &Value) -> Value {
+    systems_response_for_count(params, crate::media_state::indexed_system_count())
+}
+
+fn systems_response_for_count(params: &Value, indexed_systems: usize) -> Value {
     let tags = params
         .get("tags")
         .and_then(Value::as_array)
@@ -178,6 +182,7 @@ pub fn systems_response(params: &Value) -> Value {
         .unwrap_or_default();
     let systems = MOCK_SYSTEMS
         .iter()
+        .take(indexed_systems)
         .copied()
         .filter_map(|(id, name, category)| {
             let media_count = ALL_GAMES
@@ -1056,4 +1061,26 @@ pub fn media_image_response(params: &Value) -> Result<Value, String> {
         "extension": "png",
         "data": base64::engine::general_purpose::STANDARD.encode(&png_bytes),
     }))
+}
+
+#[cfg(test)]
+#[allow(clippy::expect_used, reason = "tests fail fast on malformed fixtures")]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn empty_mock_catalog_grows_before_indexing_finishes() {
+        let empty = systems_response_for_count(&json!({}), 0);
+        assert!(empty["systems"]
+            .as_array()
+            .expect("systems array")
+            .is_empty());
+        let partial = systems_response_for_count(&json!({}), 2);
+        let systems = partial["systems"].as_array().expect("systems array");
+        assert_eq!(systems.len(), 2);
+        assert!(systems
+            .iter()
+            .all(|system| system["mediaCount"].as_u64().is_some_and(|count| count > 0)));
+        assert!(systems.len() < MOCK_SYSTEMS.len());
+    }
 }

@@ -340,6 +340,7 @@ fn seat_favorites(shared: &mut Shared, rows: Vec<SystemRow>) {
 /// Re-run the projection after a hide toggle, a Show hidden flip or a
 /// region change, keeping the focused system when it survives.
 pub fn reproject(ctx: &Ctx, app: &App) {
+    let mut dismiss_context = false;
     {
         let mut shared = lock(&ctx.shared);
         let rows = match shared.systems_model.mode {
@@ -356,10 +357,25 @@ pub fn reproject(ctx: &Ctx, app: &App) {
         let index = current_id
             .and_then(|id| rows.iter().position(|s| s.id == id))
             .unwrap_or(0);
+        if app.global::<crate::Overlays>().get_context_open()
+            && shared.context_owner == crate::router::ContextOwner::Systems
+        {
+            let target = shared.systems_model.rows.get(shared.context_target);
+            if let Some(index) =
+                target.and_then(|target| rows.iter().position(|s| s.id == target.id))
+            {
+                shared.context_target = index;
+            } else {
+                dismiss_context = true;
+            }
+        }
         let model = &mut shared.systems_model;
         model.rows = rows;
         model.grid.set_item_count(model.rows.len());
         model.grid.set_current_index_immediate(index);
+    }
+    if dismiss_context {
+        crate::router::close_context_menu(ctx, app);
     }
     render(ctx, app);
 }

@@ -67,6 +67,8 @@ pub struct RemoteResource<T: Clone + Send + Sync + 'static> {
     // pulse queues, then fires on the next reconnect (one extra fetch
     // atop the natural refresh-on-reconnect; harmless).
     refetch: Arc<Notify>,
+    // Background refreshes coalesce without aborting an in-flight RPC.
+    background_refresh: Arc<Notify>,
     // Held only for its Drop side-effect: when the resource is dropped,
     // this sender drops, which fires the cancellation receiver inside
     // the spawned task and unwinds it (cancelling any in-flight fetch
@@ -94,6 +96,12 @@ impl<T: Clone + Send + Sync + 'static> RemoteResource<T> {
             self.status.send_replace(ResourceStatus::Loading);
         }
         self.refetch.notify_one();
+    }
+
+    /// Refresh without cancelling a slow fetch or clearing the last good value
+    /// on failure. Repeated requests queue at most one follow-up fetch.
+    pub fn refresh_in_background(&self) {
+        self.background_refresh.notify_one();
     }
 
     /// Spawn a task on `runtime` that drives the resource lifecycle off
@@ -191,6 +199,8 @@ impl<T: Clone + Send + Sync + 'static> RemoteResource<T> {
         let (cancel_tx, mut cancel_rx) = oneshot::channel::<()>();
         let refetch = Arc::new(Notify::new());
         let refetch_for_task = refetch.clone();
+        let background_refresh = Arc::new(Notify::new());
+        let background_refresh_for_task = background_refresh.clone();
 
         runtime.spawn(async move {
             loop {
@@ -233,6 +243,7 @@ impl<T: Clone + Send + Sync + 'static> RemoteResource<T> {
                                 &mut connection_rx,
                                 &status_for_task,
                                 &refetch_for_task,
+                                &background_refresh_for_task,
                             ) => {}
                         }
                         // run_connected returns when the connection
@@ -257,6 +268,7 @@ impl<T: Clone + Send + Sync + 'static> RemoteResource<T> {
         Self {
             status: status_tx,
             refetch,
+            background_refresh,
             _cancel_tx: cancel_tx,
         }
     }
@@ -270,12 +282,14 @@ async fn run_connected<T, F, Fut>(
     connection_rx: &mut watch::Receiver<ConnectionState>,
     status: &watch::Sender<ResourceStatus<T>>,
     refetch: &Arc<Notify>,
+    background_refresh: &Arc<Notify>,
 ) where
     T: Clone + Send + Sync + 'static,
     F: Fn() -> Fut,
     Fut: Future<Output = Result<T, ClientError>> + Send,
 {
     let mut rpc_failures: u32 = 0;
+    let mut background = false;
     loop {
         // Race the fetch against (a) a connection-state change — abort
         // and let the outer loop publish the appropriate state — or
@@ -286,7 +300,10 @@ async fn run_connected<T, F, Fut>(
         let result = tokio::select! {
             biased;
             _ = connection_rx.changed() => return,
-            () = refetch.notified() => continue,
+            () = refetch.notified() => {
+                background = false;
+                continue;
+            }
             r = &mut attempt => r,
         };
 
@@ -304,7 +321,8 @@ async fn run_connected<T, F, Fut>(
                 tokio::select! {
                     biased;
                     _ = connection_rx.changed() => return,
-                    () = refetch.notified() => {}
+                    () = refetch.notified() => background = false,
+                    () = background_refresh.notified() => background = true,
                 }
             }
             Err(e) => {
@@ -313,10 +331,13 @@ async fn run_connected<T, F, Fut>(
                     "RemoteResource fetch failed (attempt {rpc_failures}): {}",
                     e.message
                 );
-                status.send_replace(ResourceStatus::Errored {
-                    message: e.message,
-                    retrying: true,
-                });
+                let keep_ready = background && matches!(*status.borrow(), ResourceStatus::Ready(_));
+                if !keep_ready {
+                    status.send_replace(ResourceStatus::Errored {
+                        message: e.message,
+                        retrying: true,
+                    });
+                }
                 // RPC-level retries always use the steady-state curve;
                 // the connect-loop's boot-window fast retry doesn't
                 // apply here because we only reach this path after a
@@ -329,7 +350,7 @@ async fn run_connected<T, F, Fut>(
                 tokio::select! {
                     biased;
                     _ = connection_rx.changed() => return,
-                    () = refetch.notified() => {}
+                    () = refetch.notified() => background = false,
                     () = tokio::time::sleep(delay) => {}
                 }
             }
@@ -632,6 +653,91 @@ mod tests {
             assert_eq!(calls.load(Ordering::SeqCst), 2);
 
             drop(conn_tx);
+        });
+    }
+
+    #[test]
+    fn background_refresh_coalesces_without_cancelling_slow_reads() {
+        let runtime = rt();
+        runtime.block_on(async {
+            let (_conn_tx, conn_rx) = watch::channel(ConnectionState::Connected);
+            let calls = Arc::new(AtomicUsize::new(0));
+            let started = Arc::new(Notify::new());
+            let gate = Arc::new(tokio::sync::Semaphore::new(0));
+            let res = RemoteResource::<usize>::spawn_with(conn_rx, runtime.handle(), {
+                let calls = calls.clone();
+                let started = started.clone();
+                let gate = gate.clone();
+                move || {
+                    let n = calls.fetch_add(1, Ordering::SeqCst) + 1;
+                    let started = started.clone();
+                    let gate = gate.clone();
+                    async move {
+                        if n > 1 {
+                            started.notify_one();
+                            gate.acquire().await.expect("released read").forget();
+                        }
+                        Ok(n)
+                    }
+                }
+            });
+            let mut sub = res.subscribe();
+            wait_for(&mut sub, |s| matches!(s, ResourceStatus::Ready(1))).await;
+            res.refresh_in_background();
+            timeout(Duration::from_secs(5), started.notified())
+                .await
+                .expect("read started");
+            for _ in 0..20 {
+                res.refresh_in_background();
+            }
+            // The runtime remains runnable while the RPC is deliberately stuck.
+            tokio::task::yield_now().await;
+            assert_eq!(*sub.borrow(), ResourceStatus::Ready(1));
+            assert_eq!(calls.load(Ordering::SeqCst), 2);
+            gate.add_permits(1);
+            timeout(Duration::from_secs(5), started.notified())
+                .await
+                .expect("follow-up started");
+            assert_eq!(*sub.borrow(), ResourceStatus::Ready(2));
+            assert_eq!(calls.load(Ordering::SeqCst), 3);
+            gate.add_permits(1);
+            wait_for(&mut sub, |s| matches!(s, ResourceStatus::Ready(3))).await;
+            tokio::time::sleep(Duration::from_millis(30)).await;
+            assert_eq!(calls.load(Ordering::SeqCst), 3, "only one follow-up queues");
+        });
+    }
+
+    #[test]
+    fn failed_background_refresh_keeps_ready_data_and_retries() {
+        let runtime = rt();
+        runtime.block_on(async {
+            let (_conn_tx, conn_rx) = watch::channel(ConnectionState::Connected);
+            let calls = Arc::new(AtomicUsize::new(0));
+            let failed = Arc::new(Notify::new());
+            let res = RemoteResource::<usize>::spawn_with(conn_rx, runtime.handle(), {
+                let calls = calls.clone();
+                let failed = failed.clone();
+                move || {
+                    let n = calls.fetch_add(1, Ordering::SeqCst) + 1;
+                    let failed = failed.clone();
+                    async move {
+                        if n == 2 {
+                            failed.notify_one();
+                            Err(ClientError::plain("database busy"))
+                        } else {
+                            Ok(n)
+                        }
+                    }
+                }
+            });
+            let mut sub = res.subscribe();
+            wait_for(&mut sub, |s| matches!(s, ResourceStatus::Ready(1))).await;
+            res.refresh_in_background();
+            timeout(Duration::from_secs(5), failed.notified())
+                .await
+                .expect("failed refresh");
+            assert_eq!(*sub.borrow(), ResourceStatus::Ready(1));
+            wait_for(&mut sub, |s| matches!(s, ResourceStatus::Ready(3))).await;
         });
     }
 

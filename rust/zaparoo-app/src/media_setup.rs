@@ -6,6 +6,17 @@
 //! metadata modals ask before they start, the scope vocabulary they
 //! offer, and how a scope resolves to the systems Core is given.
 
+/// Offer setup only after Core's status is known and no background update
+/// already owns the empty database. Accepting the offer ends onboarding.
+pub fn needs_first_run(
+    indexed_systems: usize,
+    already_shown: bool,
+    status_seeded: bool,
+    media_busy: bool,
+) -> bool {
+    indexed_systems == 0 && !already_shown && status_seeded && !media_busy
+}
+
 /// Which job the form starts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
@@ -189,6 +200,15 @@ pub fn scraper_for<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn first_run_waits_for_status_and_never_blocks_an_existing_update() {
+        assert!(needs_first_run(0, false, true, false));
+        assert!(!needs_first_run(0, false, false, false));
+        assert!(!needs_first_run(0, false, true, true));
+        assert!(!needs_first_run(0, true, true, false));
+        assert!(!needs_first_run(1, false, true, false));
+    }
 
     #[test]
     fn each_form_has_its_own_rows() {

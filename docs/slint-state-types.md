@@ -17,13 +17,13 @@ and consumers, the snapshot binary, and the MiSTer dual-head mirror/tests.
 | Settings | `SettingsPage`, `RowKind`, `ControlKind`, `ActionStatus`: root/subpage, outgoing page, field controls and job status |
 | Setup | `SetupKind`, `SetupPicker`, `ScopeKind`, `SetupAction`: job, picker, scope label and help action; Rust selection stores domain `Scope` with its ID payload |
 | Status | `StatusKind`, `AppCue`, `DisabledReason`, `BootStatus`: status ladder, transient launch cue, disabled Hub captions and the boot curtain line |
-| Dialogs | `DialogKind`, `ErrorKind`, `FirstRunPhase`, `DialogProgress`, `DialogButton`: kinds, phase, progress and decisions, separate from text payloads |
+| Dialogs | `DialogKind`, `ErrorKind`, `DialogButton`: kinds and decisions, separate from text payloads; first-time setup ends on Start media update and progress stays in the header |
 | Input | `PressOwner`, `ScrollAction`: delayed-accept ownership, overlay pointer dispatch and Details scroll commands |
 | Display | `Orientation`, `VideoStandard`: UI selection; orientation stays typed through scene sizing and live backend updates |
 | Log upload | `LogPhase`: uploading, done, failed |
 | Pairing | `PairPhase`: closed, starting, showing, paired, expired |
 
-UI-owned browse and first-run enums are reused directly by Rust. Toolkit-free
+UI-owned browse and dialog enums are reused directly by Rust. Toolkit-free
 rules (`zaparoo-app`) retain their own enums; exhaustive `From` matches in
 `rust/frontend/src/state_types.rs` project them into Slint types without
 string round trips.

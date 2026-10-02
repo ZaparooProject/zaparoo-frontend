@@ -5893,3 +5893,177 @@ fn leaving_update_persists_hub_before_returning() {
     );
     assert_eq!(zaparoo_core::persist::load().active_screen, "hub");
 }
+
+#[test]
+fn first_time_setup_closes_before_rpc_and_returns_input_to_screen() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    // This runtime never runs: dismissal cannot depend on any RPC reply.
+    let (_runtime, ctx) = offline_ctx();
+    app.global::<crate::Motion>().set_enabled(false);
+    app.global::<Shell>().set_active_screen(Screen::Settings);
+    crate::settings::open_page(&ctx, &app, SettingsPage::Display);
+    let overlays = app.global::<crate::Overlays>();
+    overlays.set_dialog_kind(DialogKind::FirstRun);
+    overlays.set_dialog_buttons(ModelRc::new(VecModel::from(vec![
+        DialogButton::StartMediaUpdate,
+    ])));
+    overlays.set_dialog_open(true);
+    crate::router::lock(&ctx.shared).first_run_shown = true;
+    crate::router::handle_action(&ctx, &app, "accept");
+    distinct_frames(&window, 4);
+    assert!(
+        !overlays.get_dialog_open(),
+        "setup ends without waiting for Core"
+    );
+    assert_eq!(overlays.get_dialog_kind(), DialogKind::None);
+    let before = app.global::<crate::SettingsView>().get_index();
+    crate::router::handle_action(&ctx, &app, "down");
+    assert_ne!(
+        app.global::<crate::SettingsView>().get_index(),
+        before,
+        "screen input remains usable"
+    );
+    assert_eq!(app.global::<Shell>().get_active_screen(), Screen::Settings);
+}
+
+#[test]
+fn catalog_refresh_adds_systems_during_indexing_without_resetting_focus_or_menu_target() {
+    use std::sync::Arc;
+    use zaparoo_app::status_line::{Link, TaskInput};
+    use zaparoo_core::media_types::SystemInfo;
+    use zaparoo_core::remote_resource::ResourceStatus;
+    use zaparoo_core::systems_catalog::CatalogData;
+
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let ctx = Arc::new(ctx);
+    app.global::<Shell>().set_active_screen(Screen::Systems);
+    crate::router::lock(&ctx.shared).systems_model.category = "Console".into();
+    let system = |id: &str, name: &str| SystemInfo {
+        id: id.into(),
+        name: name.into(),
+        category: "Console".into(),
+        media_count: Some(1),
+        ..SystemInfo::default()
+    };
+    let snes = system("SNES", "Super Nintendo");
+    let nes = system("NES", "Nintendo");
+    crate::apply_catalog(
+        &ctx,
+        &app,
+        &ResourceStatus::Ready(CatalogData {
+            systems: vec![snes.clone()],
+            categories: vec!["Console".into()],
+        }),
+    );
+    crate::status::set_link(&ctx.status, &app, &ctx.handle, Link::Connected, None);
+    crate::status::enable_media_activity(&ctx.status, &app, &ctx.handle);
+    crate::status::set_task(
+        &ctx.status,
+        &app,
+        &ctx.handle,
+        TaskInput {
+            indexing: true,
+            current_step: 1,
+            total_steps: 10,
+            ..Default::default()
+        },
+    );
+    assert!(
+        app.global::<HubView>().get_indexing(),
+        "empty-library copy follows the job immediately"
+    );
+    let overlays = app.global::<crate::Overlays>();
+    overlays.set_context_open(true);
+    let idle_ticket = {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.context_owner = crate::router::ContextOwner::Systems;
+        shared.context_target = 0;
+        shared.saver_seq
+    };
+    let update = ResourceStatus::Ready(CatalogData {
+        systems: vec![nes.clone(), snes],
+        categories: vec!["Console".into()],
+    });
+    crate::apply_catalog(&ctx, &app, &update);
+    {
+        let shared = crate::router::lock(&ctx.shared);
+        assert_eq!(shared.systems_model.rows.len(), 2);
+        assert_eq!(
+            shared.systems_model.current().map(|row| row.id.as_str()),
+            Some("SNES")
+        );
+        assert_eq!(shared.systems_model.rows[shared.context_target].id, "SNES");
+        assert_eq!(
+            shared.saver_seq, idle_ticket,
+            "polling does not count as user activity"
+        );
+    }
+    assert!(overlays.get_context_open());
+    assert!(
+        app.global::<crate::Status>().get_show_track(),
+        "indexing has not finished"
+    );
+    assert_eq!(app.global::<SystemsView>().get_cells().row_count(), 2);
+    assert_eq!(app.global::<Shell>().get_active_screen(), Screen::Systems);
+    crate::apply_catalog(&ctx, &app, &update);
+    assert_eq!(crate::router::lock(&ctx.shared).saver_seq, idle_ticket);
+    // A disappearing target must not silently redirect its menu to another system.
+    crate::apply_catalog(
+        &ctx,
+        &app,
+        &ResourceStatus::Ready(CatalogData {
+            systems: vec![nes],
+            categories: vec!["Console".into()],
+        }),
+    );
+    assert!(!overlays.get_context_open());
+    crate::status::set_task(&ctx.status, &app, &ctx.handle, TaskInput::default());
+    assert!(!app.global::<HubView>().get_indexing());
+}
+
+#[test]
+fn catalog_refresh_keeps_hub_focus_when_first_category_replaces_bootstrap_tiles() {
+    use zaparoo_core::{
+        media_types::SystemInfo, remote_resource::ResourceStatus, systems_catalog::CatalogData,
+    };
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let ctx = std::sync::Arc::new(ctx);
+    crate::apply_catalog(
+        &ctx,
+        &app,
+        &ResourceStatus::Ready(CatalogData {
+            systems: vec![],
+            categories: vec![],
+        }),
+    );
+    let before = {
+        let shared = crate::router::lock(&ctx.shared);
+        shared.hub.entries[shared.hub.grid.current_index()]
+            .id
+            .clone()
+    };
+    crate::apply_catalog(
+        &ctx,
+        &app,
+        &ResourceStatus::Ready(CatalogData {
+            systems: vec![SystemInfo {
+                id: "NES".into(),
+                name: "Nintendo".into(),
+                category: "Console".into(),
+                media_count: Some(1),
+                ..Default::default()
+            }],
+            categories: vec!["Console".into()],
+        }),
+    );
+    let shared = crate::router::lock(&ctx.shared);
+    assert_eq!(
+        shared.hub.entries[shared.hub.grid.current_index()].id,
+        before
+    );
+}

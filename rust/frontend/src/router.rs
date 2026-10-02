@@ -109,14 +109,8 @@ pub struct Shared {
     pub core_version_checked: bool,
     /// The version gate has resolved this session (shown or skipped).
     pub version_warning_shown: bool,
-    /// The first-run index modal has opened once this session.
+    /// Setup was offered or Core was already updating this session.
     pub first_run_shown: bool,
-    pub first_run: FirstRunPhase,
-    /// Core has confirmed the scan actually started; without this the
-    /// optimistic Running phase would read the pre-start indexing=false
-    /// snapshot as instant completion.
-    pub first_run_saw_indexing: bool,
-    pub first_run_cancelling: bool,
     pub card_write: crate::card_write::Model,
     pub launcher_save_seq: u64,
     /// The browse scope's letter buckets, for the jump-to-letter picker
@@ -158,9 +152,7 @@ pub enum ContextOwner {
     Hub,
 }
 
-/// First-run index modal phase: idle, running, completed.
-pub use crate::FirstRunPhase;
-use crate::{DialogButton, DialogKind, DialogProgress, ErrorKind};
+use crate::{DialogButton, DialogKind, ErrorKind};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PendingRestart {
@@ -272,9 +264,6 @@ impl Shared {
             core_version_checked: false,
             version_warning_shown: false,
             first_run_shown: false,
-            first_run: FirstRunPhase::Idle,
-            first_run_saw_indexing: false,
-            first_run_cancelling: false,
             card_write: crate::card_write::Model::default(),
             launcher_save_seq: 0,
             letter_buckets: Vec::new(),
@@ -305,17 +294,17 @@ pub(crate) fn save_persist(shared: &Arc<Mutex<Shared>>) {
 /// Rebuild the visible category list from the master list and the
 /// hidden prefs, then re-resolve the Hub's tiles.
 pub fn reproject_hub(ctx: &Ctx, app: &App) {
-    {
-        let mut shared = lock(&ctx.shared);
-        let visible: Vec<String> = shared
-            .all_categories
-            .iter()
-            .filter(|name| shared.show_hidden || !shared.hidden_categories.contains(name))
-            .cloned()
-            .collect();
-        shared.categories = visible;
-    }
+    project_categories(&mut lock(&ctx.shared));
     crate::hub::rebuild(ctx, app);
+}
+
+pub(crate) fn project_categories(shared: &mut Shared) {
+    shared.categories = shared
+        .all_categories
+        .iter()
+        .filter(|name| shared.show_hidden || !shared.hidden_categories.contains(name))
+        .cloned()
+        .collect();
 }
 
 /// Re-run the Systems screen's projection after a hide/unhide, a
@@ -427,23 +416,11 @@ pub(crate) fn open_dialog(
     let overlays = app.global::<crate::Overlays>();
     overlays.set_dialog_kind(kind);
     overlays.set_dialog_error(ErrorKind::Generic);
-    overlays.set_first_run_phase(FirstRunPhase::Idle);
     overlays.set_dialog_detail(SharedString::from(detail));
     overlays.set_dialog_arg(SharedString::from(arg));
-    overlays.set_dialog_status(DialogProgress::None);
     overlays.set_dialog_buttons(ModelRc::new(VecModel::from(buttons.to_vec())));
     overlays.set_dialog_focus(focus);
     overlays.set_dialog_open(true);
-}
-
-/// The first-run progress line, as the key plus the numbers the copy
-/// puts in it.
-fn set_dialog_status(app: &App, key: DialogProgress, step: i32, total: i32, name: &str) {
-    let overlays = app.global::<crate::Overlays>();
-    overlays.set_dialog_status(key);
-    overlays.set_dialog_status_step(step);
-    overlays.set_dialog_status_total(total);
-    overlays.set_dialog_status_name(SharedString::from(name));
 }
 
 pub(crate) fn close_dialog(app: &App) {
@@ -526,16 +503,21 @@ pub fn maybe_open_startup_notices(ctx: &Ctx, app: &App) {
             return;
         }
     }
-    // First-run gate: a catalog with no indexed (non-launchable)
-    // systems means the media database has never been built.
-    if !first_run_shown && indexed == 0 {
+    // Media status may seed after the catalog. A running update needs no
+    // setup gate, including after MiSTer's wrapper relaunches the frontend.
+    let media = media_state(ctx);
+    let busy = media.indexing || media.optimizing || media.scraping;
+    if busy {
+        lock(&ctx.shared).first_run_shown = true;
+    }
+    if zaparoo_app::media_setup::needs_first_run(indexed, first_run_shown, media.seeded, busy) {
         lock(&ctx.shared).first_run_shown = true;
         open_dialog(
             app,
             DialogKind::FirstRun,
             "",
             "",
-            &[DialogButton::StartScan],
+            &[DialogButton::StartMediaUpdate],
             0,
         );
     }
@@ -639,7 +621,13 @@ fn dialog_accept(ctx: &Ctx, app: &App, kind: DialogKind, focus: usize) {
             close_dialog(app);
             maybe_open_startup_notices(ctx, app);
         }
-        DialogKind::FirstRun => first_run_accept(ctx, app),
+        DialogKind::FirstRun => {
+            close_dialog(app);
+            let media = media_state(ctx);
+            if !media.indexing && !media.optimizing && !media.scraping {
+                start_index(ctx, app, None);
+            }
+        }
         DialogKind::RestartSetting => {
             if confirmed {
                 confirm_pending_restart(ctx, app);
@@ -664,27 +652,8 @@ fn dialog_accept(ctx: &Ctx, app: &App, kind: DialogKind, focus: usize) {
 
 fn dialog_cancel(ctx: &Ctx, app: &App, kind: DialogKind) {
     match kind {
-        // The notice must be acknowledged; the idle first-run gate has
-        // no skip, and closes only when indexed systems appear out of
-        // band.
-        DialogKind::Notice => {}
-        DialogKind::FirstRun => {
-            let running = lock(&ctx.shared).first_run == FirstRunPhase::Running;
-            if running {
-                lock(&ctx.shared).first_run_cancelling = true;
-                let client = ctx.store.client();
-                let ctx2 = ctx.clone();
-                let weak = app.as_weak();
-                ctx.handle.spawn(async move {
-                    if let Err(e) = client.media_generate_cancel().await {
-                        tracing::warn!("first-run cancel failed: {}", e.message);
-                        let _ = weak.upgrade_in_event_loop(move |app| {
-                            report_action_error(&ctx2, &app, "media_cancel", "");
-                        });
-                    }
-                });
-            }
-        }
+        // Setup ends on Start media update; it never owns a running job.
+        DialogKind::Notice | DialogKind::FirstRun => {}
         DialogKind::CoreVersion => {
             close_dialog(app);
             maybe_open_startup_notices(ctx, app);
@@ -701,90 +670,23 @@ fn dialog_cancel(ctx: &Ctx, app: &App, kind: DialogKind) {
     }
 }
 
-fn first_run_accept(ctx: &Ctx, app: &App) {
-    let phase = lock(&ctx.shared).first_run;
-    match phase {
-        FirstRunPhase::Idle => {
-            {
-                let mut guard = lock(&ctx.shared);
-                guard.first_run = FirstRunPhase::Running;
-                guard.first_run_saw_indexing = false;
-                guard.first_run_cancelling = false;
-            }
-            start_index(ctx, app, None);
-            set_dialog_status(app, DialogProgress::Preparing, 0, 0, "");
-            let overlays = app.global::<crate::Overlays>();
-            overlays.set_first_run_phase(FirstRunPhase::Running);
-            overlays.set_dialog_buttons(ModelRc::new(VecModel::from(vec![DialogButton::Cancel])));
-            overlays.set_dialog_focus(0);
+/// Retire an obsolete setup prompt when indexing starts out of band or
+/// indexed systems arrive. Progress belongs to the header, never a modal.
+pub fn refresh_startup_notices(ctx: &Ctx, app: &App) {
+    let media = media_state(ctx);
+    let busy = media.indexing || media.optimizing || media.scraping;
+    let indexed = {
+        let mut shared = lock(&ctx.shared);
+        if busy {
+            shared.first_run_shown = true;
         }
-        FirstRunPhase::Running => {}
-        FirstRunPhase::Done => close_dialog(app),
-    }
-}
-
-/// Track a running first-run scan against Core's media-status flags:
-/// progress line while indexing/optimizing, then Done (or back to
-/// Idle after a cancel). Called from the media-status watcher.
-pub fn refresh_first_run(ctx: &Ctx, app: &App) {
-    if !app.global::<crate::Overlays>().get_dialog_open()
-        || app.global::<crate::Overlays>().get_dialog_kind() != DialogKind::FirstRun
-    {
-        return;
-    }
-    if lock(&ctx.shared).first_run != FirstRunPhase::Running {
-        return;
-    }
-    let ms = media_state(ctx);
-    let overlays = app.global::<crate::Overlays>();
-    if ms.indexing || ms.optimizing {
-        lock(&ctx.shared).first_run_saw_indexing = true;
-        if ms.optimizing {
-            set_dialog_status(app, DialogProgress::Optimizing, 0, 0, "");
-        } else if ms.paused {
-            set_dialog_status(app, DialogProgress::Paused, 0, 0, "");
-        } else if ms.total_steps > 0 {
-            set_dialog_status(
-                app,
-                DialogProgress::Step,
-                ms.current_step.max(0),
-                ms.total_steps,
-                &ms.current_step_display,
-            );
-        } else {
-            set_dialog_status(app, DialogProgress::Preparing, 0, 0, "");
-        }
-        return;
-    }
-    // indexing and optimizing both clear: completion or cancel, but
-    // only after Core confirmed the run actually started.
-    let (saw, cancelling) = {
-        let guard = lock(&ctx.shared);
-        (guard.first_run_saw_indexing, guard.first_run_cancelling)
+        zaparoo_core::systems_catalog::indexed_count(&shared.systems)
     };
-    if !saw {
-        return;
+    let overlays = app.global::<crate::Overlays>();
+    if overlays.get_dialog_kind() == DialogKind::FirstRun && (busy || indexed > 0) {
+        close_dialog(app);
     }
-    if cancelling {
-        let mut guard = lock(&ctx.shared);
-        guard.first_run = FirstRunPhase::Idle;
-        guard.first_run_cancelling = false;
-        guard.first_run_saw_indexing = false;
-        drop(guard);
-        overlays.set_dialog_status(DialogProgress::None);
-        overlays.set_first_run_phase(FirstRunPhase::Idle);
-        overlays.set_dialog_buttons(ModelRc::new(VecModel::from(vec![DialogButton::StartScan])));
-        overlays.set_dialog_focus(0);
-        return;
-    }
-    lock(&ctx.shared).first_run = FirstRunPhase::Done;
-    overlays.set_dialog_status(DialogProgress::None);
-    overlays.set_first_run_phase(FirstRunPhase::Done);
-    overlays.set_dialog_arg(SharedString::from(
-        ms.total_files.max(0).to_string().as_str(),
-    ));
-    overlays.set_dialog_buttons(ModelRc::new(VecModel::from(vec![DialogButton::Ok])));
-    overlays.set_dialog_focus(0);
+    maybe_open_startup_notices(ctx, app);
 }
 
 /// A host showing this window again counts as activity even without a key press.
@@ -2076,7 +1978,7 @@ fn present_context_menu(
     app.global::<crate::Overlays>().set_context_open(true);
 }
 
-fn close_context_menu(ctx: &Ctx, app: &App) {
+pub(crate) fn close_context_menu(ctx: &Ctx, app: &App) {
     crate::press_feedback::cancel(app);
     // Bumping the seq abandons any in-flight card write (its result is
     // ignored on arrival) and any discovery still looking for a menu to

@@ -71,6 +71,8 @@ pub struct HubModel {
     pub layout_dirty: bool,
     pub sliding: bool,
     page_seq: u64,
+    /// One serialized disk writer, with only the latest pending snapshot.
+    layout_save: Option<tokio::sync::watch::Sender<HubLayout>>,
 }
 
 impl HubModel {
@@ -83,6 +85,7 @@ impl HubModel {
             layout_dirty: false,
             sliding: false,
             page_seq: 0,
+            layout_save: None,
             focus_armed: false,
             restore_done: false,
             move_snapshot: None,
@@ -129,14 +132,32 @@ impl HubModel {
         self.resume.requested && !self.resume.loading && self.resume.entry.is_none() && connected
     }
 
-    /// Persist the layout and mark it changed, so the next rebuild
-    /// refreshes the cold-boot cover manifest once rather than per
-    /// mutation.
-    fn save(&mut self) {
-        if let Err(e) = save_hub_layout(&self.layout_path, &self.layout) {
-            tracing::warn!("could not save hub layout: {e}");
-        }
+    /// Serialize disk writes away from the UI thread. A watch channel bounds
+    /// pending work to one snapshot and prevents an older catalog save from
+    /// overwriting a newer user edit. No shared UI lock is held during I/O.
+    fn save(&mut self, handle: &tokio::runtime::Handle) {
         self.layout_dirty = true;
+        if let Some(writer) = &self.layout_save {
+            writer.send_replace(self.layout.clone());
+            return;
+        }
+        let (writer, mut pending) = tokio::sync::watch::channel(self.layout.clone());
+        self.layout_save = Some(writer);
+        let path = self.layout_path.clone();
+        handle.spawn(async move {
+            loop {
+                let layout = pending.borrow_and_update().clone();
+                let path = path.clone();
+                match tokio::task::spawn_blocking(move || save_hub_layout(&path, &layout)).await {
+                    Ok(Ok(())) => {}
+                    Ok(Err(error)) => tracing::warn!("could not save hub layout: {error}"),
+                    Err(error) => tracing::warn!("hub layout writer failed: {error}"),
+                }
+                if pending.changed().await.is_err() {
+                    return;
+                }
+            }
+        });
     }
 }
 
@@ -501,7 +522,6 @@ pub fn render(ctx: &Ctx, app: &App) {
     });
     view.set_loaded(hub.categories_loaded);
     view.set_catalog_empty(shared.all_categories.is_empty());
-    view.set_indexing(app.global::<crate::Status>().get_kind() == crate::StatusKind::Indexing);
     let error = !view.get_hub_error().is_empty();
     match hub.current() {
         Some(entry) if !entry.is_empty() => {
@@ -586,14 +606,16 @@ pub fn covers_landed(ctx: &Ctx, app: &App, keys: &[MediaKey]) {
     }
 }
 
-/// The catalog answered: reconcile the layout (add-only), note the
-/// categories, and seat the persisted focus.
+/// Reconcile new categories without reseating the user's live focus. Only
+/// the first catalog restores focus from disk.
 pub fn on_catalog_ready(ctx: &Ctx, app: &App) {
-    let (ids, migrate_hidden) = {
+    let (ids, migrate_hidden, was_loaded, focused) = {
         let shared = lock(&ctx.shared);
         (
             shared.all_categories.clone(),
             shared.hidden_categories.clone(),
+            shared.hub.categories_loaded,
+            shared.hub.current().cloned(),
         )
     };
     {
@@ -601,11 +623,28 @@ pub fn on_catalog_ready(ctx: &Ctx, app: &App) {
         let hub = &mut shared.hub;
         hub.categories_loaded = true;
         if hub.layout.reconcile(&ids, &migrate_hidden) {
-            hub.save();
+            hub.save(&ctx.handle);
         }
     }
     rebuild(ctx, app);
-    restore(ctx, app);
+    if was_loaded {
+        if let Some(focused) = focused {
+            let mut shared = lock(&ctx.shared);
+            let hub = &mut shared.hub;
+            if let Some(index) = hub.entries.iter().position(|entry| {
+                entry.kind == focused.kind
+                    && entry.id == focused.id
+                    && entry.path == focused.path
+                    && entry.script == focused.script
+                    && entry.system == focused.system
+            }) {
+                hub.grid.set_current_index_immediate(index);
+            }
+        }
+        render(ctx, app);
+    } else {
+        restore(ctx, app);
+    }
 }
 
 /// Seat focus from persisted state after a categories reset. Nothing
@@ -988,7 +1027,7 @@ fn accept_move(ctx: &Ctx, app: &App) {
             return;
         }
         hub.layout.trim_trailing_blanks();
-        hub.save();
+        hub.save(&ctx.handle);
         clear_move_state(hub);
     }
     rebuild(ctx, app);
@@ -1230,7 +1269,7 @@ pub fn context_accept(ctx: &Ctx, app: &App, id: &str) {
                     let hub = &mut shared.hub;
                     let removed = hub.layout.remove_visible_item(index);
                     if removed {
-                        hub.save();
+                        hub.save(&ctx.handle);
                     }
                     removed
                 };
@@ -1277,7 +1316,7 @@ pub fn page_menu_accept(ctx: &Ctx, app: &App, id: &str) {
                 let mut shared = lock(&ctx.shared);
                 let hub = &mut shared.hub;
                 hub.layout.reset(&ids);
-                hub.save();
+                hub.save(&ctx.handle);
             }
             rebuild(ctx, app);
         }
@@ -1359,7 +1398,7 @@ pub fn add_target(
             .layout
             .add_target_item(kind, id, path, script, name, icon, system);
         if added {
-            hub.save();
+            hub.save(&ctx.handle);
         }
         added
     };
@@ -1384,7 +1423,7 @@ pub fn add_picked(ctx: &Ctx, app: &App, id: &str) {
         let hub = &mut shared.hub;
         let added = hub.layout.add_item(kind, item_id, target);
         if added {
-            hub.save();
+            hub.save(&ctx.handle);
         }
         added.then(|| {
             hub.layout
@@ -1506,5 +1545,38 @@ pub fn set_internet(ctx: &Ctx, app: &App, available: bool) {
     };
     if changed {
         rebuild(ctx, app);
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::expect_used, reason = "tests fail fast on persistence errors")]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn background_layout_writer_saves_latest_snapshot_in_order() {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let dir =
+            std::env::temp_dir().join(format!("zaparoo-hub-save-{}-{stamp}", std::process::id()));
+        std::fs::create_dir(&dir).expect("isolated directory");
+        let path = dir.join("hub.toml");
+        let mut hub = HubModel::new(path.clone());
+        for category in ["Console", "Arcade", "Computer"] {
+            hub.layout.reset(&[category.into()]);
+            hub.save(&tokio::runtime::Handle::current());
+        }
+        let expected = hub.layout.clone();
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            while load_hub_layout(&path) != expected {
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("latest layout saved");
+        drop(hub);
+        std::fs::remove_dir_all(&dir).expect("cleanup");
     }
 }

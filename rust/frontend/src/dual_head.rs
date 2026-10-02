@@ -756,13 +756,8 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_dialog_open => set_dialog_open,
         get_dialog_kind => set_dialog_kind,
         get_dialog_error => set_dialog_error,
-        get_first_run_phase => set_first_run_phase,
         get_dialog_detail => set_dialog_detail,
         get_dialog_arg => set_dialog_arg,
-        get_dialog_status => set_dialog_status,
-        get_dialog_status_step => set_dialog_status_step,
-        get_dialog_status_total => set_dialog_status_total,
-        get_dialog_status_name => set_dialog_status_name,
         get_dialog_buttons => set_dialog_buttons,
         get_dialog_focus => set_dialog_focus,
         get_crt_calibration_open => set_crt_calibration_open,
@@ -899,16 +894,15 @@ mod tests {
             Some(crate::DialogButton::Retry)
         );
         source.set_dialog_kind(crate::DialogKind::FirstRun);
-        source.set_first_run_phase(crate::FirstRunPhase::Done);
-        source.set_dialog_status(crate::DialogProgress::Step);
-        source.set_dialog_status_step(2);
-        source.set_dialog_status_total(3);
+        source.set_dialog_buttons(ModelRc::new(VecModel::from(vec![
+            crate::DialogButton::StartMediaUpdate,
+        ])));
         sync_with_state(&primary, &crt, &mut state);
         assert_eq!(target.get_dialog_kind(), crate::DialogKind::FirstRun);
-        assert_eq!(target.get_first_run_phase(), crate::FirstRunPhase::Done);
-        assert_eq!(target.get_dialog_status(), crate::DialogProgress::Step);
-        assert_eq!(target.get_dialog_status_step(), 2);
-        assert_eq!(target.get_dialog_status_total(), 3);
+        assert_eq!(
+            target.get_dialog_buttons().row_data(0),
+            Some(crate::DialogButton::StartMediaUpdate)
+        );
         Ok(())
     }
 
