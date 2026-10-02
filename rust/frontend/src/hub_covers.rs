@@ -28,6 +28,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Mutex, PoisonError};
 
 use serde::{Deserialize, Serialize};
+use slint::ComponentHandle;
 use zaparoo_app::covers::{HUB_TILE_MAX_SIZE, MAX_HUB_ENTRIES, MAX_LOCAL_IMAGE_BYTES};
 use zaparoo_core::hub_layout::HubItemKind;
 use zaparoo_core::media_types::MediaImageParams;
@@ -36,6 +37,7 @@ use crate::media_cache::{MediaCache, MediaKey};
 use crate::router::{lock, Ctx};
 
 const MANIFEST_FILE_NAME: &str = "hub_covers.toml";
+const MAX_MANIFEST_BYTES: u64 = 64 * 1024;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
@@ -79,10 +81,21 @@ fn eligible() -> bool {
 /// Split from `manifest_path` so tests can drive it against their own
 /// directory, the way `zaparoo_core::persist` splits its own IO.
 fn read_manifest_from(path: &Path) -> Manifest {
-    let Ok(contents) = std::fs::read_to_string(path) else {
-        return Manifest::default();
+    use std::io::Read as _;
+    let read = || -> Option<Manifest> {
+        let file = std::fs::File::open(path).ok()?;
+        let mut contents = String::new();
+        file.take(MAX_MANIFEST_BYTES + 1)
+            .read_to_string(&mut contents)
+            .ok()?;
+        if contents.len() as u64 > MAX_MANIFEST_BYTES {
+            return None;
+        }
+        let mut manifest: Manifest = toml::from_str(&contents).ok()?;
+        manifest.hub_entries.truncate(MAX_HUB_ENTRIES);
+        Some(manifest)
     };
-    toml::from_str(&contents).unwrap_or_default()
+    read().unwrap_or_default()
 }
 
 /// Write-temp-then-rename, so a kill mid-write cannot leave a half
@@ -138,39 +151,145 @@ fn entry_key(entry: &ManifestEntry) -> MediaKey {
     }
 }
 
-/// Open every path the manifest names and seed the in-memory cache, so
-/// the Hub's first paint already has the art. Called once at startup,
-/// synchronously: these are small, local, sequential reads, and the
-/// whole point is to be done before the first frame.
-pub fn seed(cache: &MediaCache) {
+fn split_visible(
+    manifest: Manifest,
+    visible: &[(String, String)],
+    resume_visible: bool,
+) -> (Vec<ManifestEntry>, Vec<ManifestEntry>) {
+    let (mut now, mut later): (Vec<_>, Vec<_>) =
+        manifest.hub_entries.into_iter().partition(|entry| {
+            visible
+                .iter()
+                .any(|(system, path)| *system == entry.system_id && *path == entry.path)
+        });
+    if let Some(resume) = manifest.resume {
+        if resume_visible {
+            now.push(resume);
+        } else {
+            later.push(resume);
+        }
+    }
+    (now, later)
+}
+
+fn seed_entry(cache: &MediaCache, entry: &ManifestEntry, epoch: u64) -> bool {
+    if entry.max_size == 0 || entry.max_size > HUB_TILE_MAX_SIZE || cache.seed_epoch() != epoch {
+        return false;
+    }
+    let key = entry_key(entry);
+    if cache.is_cached(&key) {
+        return false;
+    }
+    let Some(image) = load_entry(entry) else {
+        return false;
+    };
+    cache.seed_current(key, image, epoch)
+}
+
+fn load_entry(entry: &ManifestEntry) -> Option<crate::media_cache::DecodedImage> {
+    let bytes =
+        crate::media_cache::read_local_image_file(&entry.local_path, MAX_LOCAL_IMAGE_BYTES).ok()?;
+    let mut reader = image::ImageReader::new(std::io::Cursor::new(bytes))
+        .with_guessed_format()
+        .ok()?;
+    let mut limits = image::Limits::default();
+    limits.max_alloc = Some(zaparoo_app::customization::ART_DECODE_BYTES);
+    limits.max_image_width = Some(zaparoo_app::customization::ART_SOURCE_EDGE);
+    limits.max_image_height = Some(zaparoo_app::customization::ART_SOURCE_EDGE);
+    reader.limits(limits);
+    let decoded = reader.decode().ok()?;
+    let image = if decoded.width() > entry.max_size || decoded.height() > entry.max_size {
+        decoded.thumbnail(entry.max_size, entry.max_size)
+    } else {
+        decoded
+    }
+    .to_rgba8();
+    Some(crate::media_cache::DecodedImage {
+        buffer: slint::SharedPixelBuffer::clone_from_slice(
+            image.as_raw(),
+            image.width(),
+            image.height(),
+        ),
+    })
+}
+
+/// Called after Hub geometry and persisted focus are seated, before app.run.
+/// Only a Hub restore reads its visible page synchronously. A non-Hub restore
+/// does not even open the manifest on the UI thread.
+pub fn seed_startup(ctx: &std::sync::Arc<Ctx>, app: &crate::App) -> crate::scoped_task::ScopedTask {
     if !eligible() {
-        return;
+        return crate::scoped_task::ScopedTask::default();
     }
-    let manifest = read_manifest_from(&manifest_path());
-    let mut seeded = 0usize;
-    for entry in manifest.hub_entries.into_iter().chain(manifest.resume) {
-        let key = entry_key(&entry);
-        if cache.is_cached(&key) {
-            continue;
+    let epoch = ctx.media.seed_epoch();
+    let foreground = {
+        let shared = lock(&ctx.shared);
+        !matches!(
+            shared.persist.active_screen.as_str(),
+            "systems"
+                | "favorite-systems"
+                | "games"
+                | "favorites"
+                | "recents"
+                | "settings"
+                | "about"
+        )
+    };
+    let deferred = if foreground {
+        let (visible, resume_visible) = crate::hub::visible_cover_targets(ctx);
+        let (now, later) = split_visible(
+            read_manifest_from(&manifest_path()),
+            &visible,
+            resume_visible,
+        );
+        for entry in now {
+            seed_entry(&ctx.media, &entry, epoch);
         }
-        match crate::media_cache::read_local_image_file(&entry.local_path, MAX_LOCAL_IMAGE_BYTES) {
-            Ok(bytes) => {
-                if let Some(image) = crate::media_cache::decode_bytes(&bytes) {
-                    cache.seed(key, image);
-                    seeded += 1;
-                } else {
-                    tracing::debug!(path = %entry.local_path, "hub covers: undecodable");
-                }
+        crate::hub::rebuild(ctx, app);
+        Some(later)
+    } else {
+        None
+    };
+    let ctx = ctx.clone();
+    let weak = app.as_weak();
+    let task = ctx.handle.clone().spawn(async move {
+        let entries = match deferred {
+            Some(entries) => entries,
+            None => tokio::task::spawn_blocking(|| {
+                let manifest = read_manifest_from(&manifest_path());
+                manifest
+                    .hub_entries
+                    .into_iter()
+                    .chain(manifest.resume)
+                    .collect()
+            })
+            .await
+            .unwrap_or_default(),
+        };
+        let mut landed = Vec::new();
+        for entry in entries {
+            if ctx.media.seed_epoch() != epoch || *ctx.dormant.borrow() {
+                return;
             }
-            Err(e) => tracing::debug!(
-                path = %entry.local_path,
-                "hub covers: stale entry, falling through to Core: {e}"
-            ),
+            let key = entry_key(&entry);
+            let cache = ctx.media.clone();
+            let seeded = tokio::task::spawn_blocking(move || seed_entry(&cache, &entry, epoch))
+                .await
+                .unwrap_or(false);
+            if seeded {
+                landed.push(key);
+            }
         }
-    }
-    if seeded > 0 {
-        tracing::debug!(seeded, "hub covers: seeded from the manifest");
-    }
+        if !landed.is_empty() && ctx.media.seed_epoch() == epoch {
+            let _ = weak.upgrade_in_event_loop(move |app| {
+                if ctx.media.seed_epoch() == epoch {
+                    crate::hub::covers_landed(&ctx, &app, &landed);
+                }
+            });
+        }
+    });
+    let mut owned = crate::scoped_task::ScopedTask::default();
+    owned.replace(task);
+    owned
 }
 
 /// Ask Core for one thumbnail's path without touching the ordinary
@@ -240,9 +359,20 @@ pub fn ensure_hub_entries(ctx: &Ctx) {
     if !eligible() || HUB_CHECKED.swap(true, Ordering::AcqRel) {
         return;
     }
-    if read_manifest_from(&manifest_path()).hub_entries.is_empty() && !hub_targets(ctx).is_empty() {
-        refresh_hub_entries(ctx);
+    if hub_targets(ctx).is_empty() {
+        return;
     }
+    let ctx = ctx.clone();
+    ctx.handle.clone().spawn(async move {
+        let missing = tokio::task::spawn_blocking(|| {
+            read_manifest_from(&manifest_path()).hub_entries.is_empty()
+        })
+        .await
+        .unwrap_or(false);
+        if missing {
+            refresh_hub_entries(&ctx);
+        }
+    });
 }
 
 /// Rebuild the tile half of the manifest from the Hub's current game
@@ -338,6 +468,65 @@ pub fn refresh_resume_entry(ctx: &Ctx, target: Option<(String, String)>) {
 )]
 mod tests {
     use super::*;
+
+    fn entry(path: &str) -> ManifestEntry {
+        ManifestEntry {
+            system_id: "NES".into(),
+            path: path.into(),
+            local_path: String::new(),
+            max_size: HUB_TILE_MAX_SIZE,
+        }
+    }
+
+    #[test]
+    fn seed_partition_uses_restored_visible_identities_not_manifest_order() {
+        let manifest = Manifest {
+            hub_entries: vec![entry("offscreen"), entry("visible"), entry("deleted")],
+            resume: Some(entry("resume")),
+        };
+        let (now, later) =
+            split_visible(manifest.clone(), &[("NES".into(), "visible".into())], false);
+        assert_eq!(
+            now.iter().map(|e| e.path.as_str()).collect::<Vec<_>>(),
+            ["visible"]
+        );
+        assert_eq!(
+            later.iter().map(|e| e.path.as_str()).collect::<Vec<_>>(),
+            ["offscreen", "deleted", "resume"]
+        );
+        let (now, later) = split_visible(manifest, &[], true);
+        assert_eq!(now[0].path, "resume");
+        assert_eq!(later.len(), 3);
+    }
+
+    #[test]
+    fn disk_seed_never_overwrites_live_results_or_survives_a_trim() {
+        let dir = std::env::temp_dir().join(format!("zaparoo-hub-seed-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("scratch dir");
+        let path = dir.join("cover.png");
+        image::RgbaImage::new(512, 256).save(&path).expect("PNG");
+        let mut entry = entry("game");
+        entry.local_path = path.to_string_lossy().into_owned();
+        let cache = MediaCache::new();
+        let epoch = cache.seed_epoch();
+        assert!(seed_entry(&cache, &entry, epoch));
+        let image = cache.get(&entry_key(&entry)).expect("seeded");
+        assert_eq!((image.buffer.width(), image.buffer.height()), (256, 128));
+        assert!(!seed_entry(&cache, &entry, epoch), "newer cache value wins");
+        cache.clear_decoded();
+        assert!(
+            !seed_entry(&cache, &entry, epoch),
+            "trim retires pending disk work"
+        );
+        assert!(seed_entry(&cache, &entry, cache.seed_epoch()));
+        let epoch = cache.seed_epoch();
+        cache.clear();
+        assert!(
+            !seed_entry(&cache, &entry, epoch),
+            "rescan retires old thumbnail work"
+        );
+        std::fs::remove_dir_all(dir).expect("cleanup");
+    }
 
     #[test]
     fn a_manifest_round_trips_through_its_file() {

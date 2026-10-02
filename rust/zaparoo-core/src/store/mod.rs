@@ -14,23 +14,35 @@
 // intersects a successful mutation's `invalidates` list.
 
 mod endpoint;
+#[cfg(test)]
+mod lifecycle_tests;
 mod media_status;
 mod mutation;
+mod subscription;
 mod tag;
 
 pub use endpoint::Endpoint;
 pub use media_status::{MediaStatusResource, MediaStatusState};
 pub use mutation::Mutation;
+pub use subscription::{ResourceHandle, ResourceSubscription};
 pub use tag::Tag;
 
-use crate::client::{Client, ClientError, Notification};
+use crate::client::{Client, ClientError, ConnectionState, Notification};
 use crate::remote_resource::{RemoteResource, ResourceStatus};
 use std::any::Any;
 use std::collections::HashMap;
 use std::hash::{DefaultHasher, Hash, Hasher};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
+use subscription::Lease;
 use tokio::runtime::Handle;
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, watch};
+
+// Active consumers own their working set. Only inactive first pages count
+// against this RAM-only LRU; no fetch or per-entry watcher survives retirement.
+const INACTIVE_BYTES: usize = 8 * 1024 * 1024;
+const INACTIVE_ENTRIES: usize = 64;
+// Covers the fixed entry, channel marker, box and hash-table bookkeeping.
+const ENTRY_OVERHEAD: usize = 512;
 
 /// Cache lookup key for `Store::subscribe`. Combines the endpoint's
 /// `NAME` with a hash of its `Args`. Endpoints are expected to choose
@@ -55,23 +67,183 @@ impl CacheKey {
     }
 }
 
-/// Type-erased per-entry record. `resource` is an
-/// `Arc<RemoteResource<E::Output>>` for the endpoint that owns the slot;
-/// the `(NAME, args)` pair uniquely determines the concrete `Output`,
-/// so the downcast on subscribe is infallible in practice. `provides`
-/// is updated by a per-entry watcher each time the resource transitions
-/// to `Ready`. `refetch` is a type-erased clone of
-/// `RemoteResource::refetch` so the store can pulse invalidations
-/// without naming `E::Output`.
+/// Active resources are shared only by explicit consumer leases. Inactive
+/// entries contain a measured Ready payload, never a live resource/task.
 struct CacheEntry {
-    resource: Arc<dyn Any + Send + Sync>,
+    id: u64,
+    resource: Option<Arc<dyn Any + Send + Sync>>,
+    lease: Weak<Lease>,
     provides: Vec<Tag>,
-    refetch: Arc<dyn Fn() + Send + Sync>,
+    refetch: Option<Arc<dyn Fn() + Send + Sync>>,
+    cached: Option<Box<dyn Any + Send + Sync>>,
+    connection: watch::Receiver<ConnectionState>,
+    stale: bool,
+    revision: u64,
+    bytes: usize,
+    used: u64,
 }
 
-#[derive(Default)]
+impl CacheEntry {
+    fn active<E: Endpoint>(&self) -> Option<ResourceHandle<E::Output>> {
+        let resource = self
+            .resource
+            .as_ref()?
+            .clone()
+            .downcast::<RemoteResource<E::Output>>();
+        let Ok(resource) = resource else {
+            tracing::error!(
+                name = E::NAME,
+                "endpoint NAME collision: different Output types"
+            );
+            debug_assert!(false, "endpoint NAME collision: {}", E::NAME);
+            return None;
+        };
+        let refetch = self.refetch.clone()?;
+        let lease = self.lease.upgrade()?;
+        Some(ResourceHandle {
+            resource,
+            lease,
+            refetch,
+        })
+    }
+}
+
+async fn fetch_tracked<E: Endpoint>(
+    client: Arc<Client>,
+    args: E::Args,
+    inner: Weak<Mutex<Inner>>,
+    key: CacheKey,
+    id: u64,
+    marker: Arc<Mutex<watch::Receiver<ConnectionState>>>,
+) -> Result<E::Output, ClientError> {
+    marker
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .borrow_and_update();
+    let revision = inner
+        .upgrade()
+        .and_then(|inner| lock(&inner).cache.get(&key).map(|entry| entry.revision));
+    let output = E::fetch(client, args.clone()).await?;
+    if let Some(inner) = inner.upgrade() {
+        if let Some(entry) = lock(&inner)
+            .cache
+            .get_mut(&key)
+            .filter(|entry| entry.id == id && entry.resource.is_some())
+        {
+            entry.provides = E::provides(&args, &output);
+            if Some(entry.revision) == revision {
+                entry.stale = false;
+            }
+        }
+    }
+    Ok(output)
+}
+
 struct Inner {
     cache: HashMap<CacheKey, CacheEntry>,
+    clock: u64,
+    byte_limit: usize,
+    entry_limit: usize,
+}
+
+impl Default for Inner {
+    fn default() -> Self {
+        Self {
+            cache: HashMap::new(),
+            clock: 0,
+            byte_limit: INACTIVE_BYTES,
+            entry_limit: INACTIVE_ENTRIES,
+        }
+    }
+}
+
+impl Inner {
+    fn tick(&mut self) -> u64 {
+        self.clock += 1;
+        self.clock
+    }
+
+    fn trim(&mut self) {
+        loop {
+            let inactive = || self.cache.values().filter(|e| e.resource.is_none());
+            let bytes = inactive().fold(0usize, |sum, e| sum.saturating_add(e.bytes));
+            if bytes <= self.byte_limit && inactive().count() <= self.entry_limit {
+                break;
+            }
+            let oldest = self
+                .cache
+                .iter()
+                .filter(|(_, e)| e.resource.is_none())
+                .min_by_key(|(_, e)| e.used)
+                .map(|(key, _)| key.clone());
+            let Some(key) = oldest else { break };
+            self.cache.remove(&key);
+        }
+        if self.cache.capacity() > self.cache.len().saturating_mul(4).max(INACTIVE_ENTRIES) {
+            self.cache.shrink_to_fit();
+        }
+    }
+}
+
+#[allow(
+    clippy::unwrap_used,
+    reason = "poisoning means another thread panicked while mutating the store"
+)]
+fn lock(inner: &Mutex<Inner>) -> std::sync::MutexGuard<'_, Inner> {
+    inner.lock().unwrap()
+}
+
+/// Runs exactly once when the last consumer (including cloned receivers) goes
+/// away. The lease owns the resource until this callback returns, so eviction
+/// also cancels an in-flight request rather than merely forgetting its key.
+fn retire<E: Endpoint>(
+    inner: &Weak<Mutex<Inner>>,
+    key: &CacheKey,
+    id: u64,
+    resource: &RemoteResource<E::Output>,
+    marker: &Mutex<watch::Receiver<ConnectionState>>,
+) {
+    let Some(inner) = inner.upgrade() else { return };
+    let rx = resource.subscribe();
+    let status = rx.borrow();
+    let mut inner = lock(&inner);
+    let used = inner.tick();
+    let limit = inner.byte_limit;
+    let Some(entry) = inner.cache.get_mut(key).filter(|e| e.id == id) else {
+        return;
+    };
+    let retained = match &*status {
+        ResourceStatus::Ready(value) if !entry.stale => E::cache_bytes(value)
+            .map(|bytes| {
+                bytes
+                    .saturating_add(ENTRY_OVERHEAD)
+                    .saturating_add(entry.provides.capacity() * size_of::<Tag>())
+                    .saturating_add(
+                        entry
+                            .provides
+                            .iter()
+                            .map(|tag| tag.id.as_ref().map_or(0, String::capacity))
+                            .sum::<usize>(),
+                    )
+            })
+            .filter(|&bytes| bytes <= limit)
+            .map(|bytes| (bytes, Box::new(value.clone()) as Box<dyn Any + Send + Sync>)),
+        _ => None,
+    };
+    if let Some((bytes, cached)) = retained {
+        entry.resource = None;
+        entry.refetch = None;
+        entry.cached = Some(cached);
+        entry.connection = marker
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        entry.bytes = bytes;
+        entry.used = used;
+    } else {
+        inner.cache.remove(key);
+    }
+    inner.trim();
 }
 
 pub struct Store {
@@ -157,112 +329,98 @@ impl Store {
         self.client.clone()
     }
 
-    /// Get (or create) the shared `RemoteResource` for endpoint `E`
-    /// with `args`. Subsequent calls with equal args return the same
-    /// `Arc`, so multiple subscribers binding the same endpoint
-    /// share one fetch task and one publish channel.
-    #[allow(
-        clippy::unwrap_used,
-        reason = "mutex poisoning signals another thread panicked with the lock held; state is unrecoverable"
-    )]
-    pub fn subscribe<E: Endpoint>(&self, args: E::Args) -> Arc<RemoteResource<E::Output>> {
+    /// Share one active fetch, or reopen a clean recent first page. Receiver
+    /// clones carry the lease too; the Store's own Arcs never count as users.
+    pub fn subscribe<E: Endpoint>(&self, args: E::Args) -> ResourceHandle<E::Output> {
         let key = CacheKey::new::<E>(&args);
-        let mut inner = self.inner.lock().unwrap();
-        if let Some(existing) = inner.cache.get(&key) {
-            if let Ok(resource) = existing
-                .resource
-                .clone()
-                .downcast::<RemoteResource<E::Output>>()
-            {
-                return resource;
-            }
-            // Same NAME but a different `Output` type — programmer
-            // error (two endpoints sharing a NAME). Fall through and
-            // overwrite so behavior is deterministic, but surface
-            // the misuse loudly in dev and at least log it in release
-            // so it doesn't go unnoticed.
-            tracing::error!(
-                name = E::NAME,
-                "endpoint NAME collision: cache entry has a different Output type; \
-                 the prior entry is being orphaned"
-            );
-            debug_assert!(
-                false,
-                "endpoint NAME collision: two endpoints share NAME = {:?} but disagree on Output",
-                E::NAME
-            );
+        let mut inner = lock(&self.inner);
+        if let Some(handle) = inner.cache.get(&key).and_then(CacheEntry::active::<E>) {
+            return handle;
         }
-        // Cache entries live for the lifetime of the `Store` (which is
-        // the lifetime of the frontend process). No reclamation path:
-        // total cardinality is bounded by `endpoints × distinct args` —
-        // a handful of endpoints times a few dozen system IDs in the
-        // worst case — and each entry holds one `tokio::sync::watch`
-        // plus one watcher task, both cheap. The `Client` and `Runtime`
-        // outlive every entry by construction. Add eviction (most
-        // likely `Arc::strong_count`-driven on the per-entry watcher's
-        // drop branch) only if RAM growth shows up in the field.
-        let runtime = self.runtime.clone();
-        let args_for_fetch = args.clone();
-        let resource = Arc::new(RemoteResource::driven_by(
+        let previous = inner.cache.remove(&key);
+        let mut provides = Vec::new();
+        let cached = previous.and_then(|mut entry| {
+            if entry.stale || entry.connection.has_changed().unwrap_or(true) {
+                return None;
+            }
+            provides = entry.provides;
+            entry
+                .cached
+                .take()?
+                .downcast::<E::Output>()
+                .ok()
+                .map(|value| (*value, entry.connection))
+        });
+        let id = inner.tick();
+        let marker = Arc::new(Mutex::new(self.client.connection.subscribe()));
+        let marker_for_fetch = marker.clone();
+        let inner_weak = Arc::downgrade(&self.inner);
+        let inner_for_fetch = inner_weak.clone();
+        let key_for_fetch = key.clone();
+        let resource = Arc::new(RemoteResource::driven_by_cached(
             self.client.clone(),
-            &runtime,
-            move |c| E::fetch(c, args_for_fetch.clone()),
+            &self.runtime,
+            move |client| {
+                fetch_tracked::<E>(
+                    client,
+                    args.clone(),
+                    inner_for_fetch.clone(),
+                    key_for_fetch.clone(),
+                    id,
+                    marker_for_fetch.clone(),
+                )
+            },
+            cached,
         ));
         let resource_for_refetch = resource.clone();
-        let refetch: Arc<dyn Fn() + Send + Sync> = Arc::new(move || resource_for_refetch.refetch());
-        let entry = CacheEntry {
-            resource: resource.clone(),
-            // `provides` starts empty; the per-entry watcher below
-            // populates it on the first `Ready`. A mutation that fires
-            // before the resource has produced a value can't have
-            // anything meaningful to invalidate yet — refetching an
-            // entry that hasn't fetched once is a no-op for callers.
-            provides: Vec::new(),
-            refetch,
-        };
-        inner.cache.insert(key.clone(), entry);
-        drop(inner);
-
-        // Spawn a per-entry watcher that keeps `provides` in sync with
-        // the resource's last `Ready` value. Held weakly so the
-        // watcher exits as soon as the store is dropped (process
-        // teardown), without forming a cycle that would keep `Inner`
-        // alive forever.
-        //
-        // `tokio::sync::watch` is intentionally lossy — a rapid
-        // `Ready → Loading → Ready` collapses into one wake-up that
-        // observes the later state — so the watcher is *not*
-        // guaranteed to see every `Ready` transition. This is fine
-        // because (a) `Ready` is sticky, so subsequent fetches
-        // re-emit `Ready` and the watcher catches up, and (b) every
-        // current `Endpoint::provides` is output-independent. See
-        // the doc comment on `Endpoint::provides` for the constraint
-        // future endpoints must respect.
-        let inner_weak = Arc::downgrade(&self.inner);
-        let mut status_rx = resource.subscribe();
-        let key_for_watcher = key;
-        runtime.spawn(async move {
-            loop {
-                let snapshot = status_rx.borrow_and_update().clone();
-                if let ResourceStatus::Ready(output) = snapshot {
-                    let new_provides = E::provides(&args, &output);
-                    let Some(inner_arc) = inner_weak.upgrade() else {
+        let inner_for_refetch = inner_weak.clone();
+        let key_for_refetch = key.clone();
+        let refetch: Arc<dyn Fn() + Send + Sync> =
+            Arc::new(move || {
+                if let Some(inner) = inner_for_refetch.upgrade() {
+                    let mut inner = lock(&inner);
+                    let Some(entry) = inner.cache.get_mut(&key_for_refetch).filter(|e| {
+                        e.id == id && e.resource.is_some() && e.lease.strong_count() > 0
+                    }) else {
                         return;
                     };
-                    let lock_result = inner_arc.lock();
-                    if let Ok(mut inner) = lock_result {
-                        if let Some(entry) = inner.cache.get_mut(&key_for_watcher) {
-                            entry.provides = new_provides;
-                        }
-                    }
+                    entry.stale = true;
+                    entry.revision += 1;
                 }
-                if status_rx.changed().await.is_err() {
-                    return;
-                }
-            }
-        });
-
-        resource
+                resource_for_refetch.refetch();
+            });
+        let resource_for_lease = resource.clone();
+        let key_for_lease = key.clone();
+        let lease = Arc::new(Lease(Box::new(move || {
+            retire::<E>(
+                &inner_weak,
+                &key_for_lease,
+                id,
+                &resource_for_lease,
+                &marker,
+            );
+        })));
+        inner.cache.insert(
+            key,
+            CacheEntry {
+                id,
+                resource: Some(resource.clone()),
+                lease: Arc::downgrade(&lease),
+                provides,
+                refetch: Some(refetch.clone()),
+                cached: None,
+                connection: self.client.connection.subscribe(),
+                stale: false,
+                revision: 0,
+                bytes: 0,
+                used: id,
+            },
+        );
+        ResourceHandle {
+            resource,
+            lease,
+            refetch,
+        }
     }
 
     /// Invoke a mutation. On success, every cache entry whose
@@ -279,22 +437,22 @@ impl Store {
         Ok(result)
     }
 
-    /// Invalidate every cache entry whose `provides` set matches `tag`.
-    /// Matching is RTK-Query-shaped: kinds must agree, and a `None` id
-    /// (the "any" tag) on either side matches any id on the other.
-    #[allow(
-        clippy::unwrap_used,
-        reason = "mutex poisoning signals another thread panicked with the lock held; state is unrecoverable"
-    )]
+    /// Active matches refresh; inactive matches become stale without spawning
+    /// work. Their next subscriber fetches a fresh page before publishing it.
     pub fn invalidate(&self, tag: &Tag) {
-        let inner = self.inner.lock().unwrap();
-        let to_refetch: Vec<Arc<dyn Fn() + Send + Sync>> = inner
-            .cache
-            .values()
-            .filter(|entry| entry.provides.iter().any(|p| tags_match(p, tag)))
-            .map(|entry| entry.refetch.clone())
-            .collect();
-        drop(inner);
+        let to_refetch: Vec<_> = {
+            let mut inner = lock(&self.inner);
+            inner
+                .cache
+                .values_mut()
+                .filter(|entry| entry.provides.iter().any(|p| tags_match(p, tag)))
+                .filter_map(|entry| {
+                    entry.stale = true;
+                    entry.revision += 1;
+                    entry.refetch.clone()
+                })
+                .collect()
+        };
         for refetch in to_refetch {
             refetch();
         }
@@ -436,7 +594,7 @@ mod tests {
         let b = store.subscribe::<DummyEndpoint>("alpha".to_string());
         // Pointer equality — the cache must hand back the same
         // resource Arc, not a fresh `RemoteResource` per call.
-        assert!(Arc::ptr_eq(&a, &b));
+        assert!(Arc::ptr_eq(&a.resource, &b.resource));
     }
 
     #[test]
@@ -444,7 +602,7 @@ mod tests {
         let store = test_store();
         let a = store.subscribe::<DummyEndpoint>("alpha".to_string());
         let b = store.subscribe::<DummyEndpoint>("beta".to_string());
-        assert!(!Arc::ptr_eq(&a, &b));
+        assert!(!Arc::ptr_eq(&a.resource, &b.resource));
 
         // Each args value should occupy its own cache slot — two
         // entries with the expected keys means the cache really did
@@ -598,9 +756,17 @@ mod tests {
         });
         let dummy_resource: Arc<dyn Any + Send + Sync> = Arc::new(());
         let entry = CacheEntry {
-            resource: dummy_resource,
+            id: 0,
+            resource: Some(dummy_resource),
+            lease: Weak::new(),
             provides,
-            refetch,
+            refetch: Some(refetch),
+            cached: None,
+            connection: store.client.connection.subscribe(),
+            stale: false,
+            revision: 0,
+            bytes: 0,
+            used: 0,
         };
         store
             .inner

@@ -255,6 +255,7 @@ pub struct GamesModel {
     pub browse_path: String,
     /// A fill applies only while its ticket is current.
     pub ticket: u64,
+    pub fill_task: crate::scoped_task::ScopedTask,
     pub focus_armed: bool,
     pub restore_done: bool,
     /// A saved selection deeper than the loaded rows: keep fetching
@@ -306,6 +307,7 @@ impl GamesModel {
             favorites_system: String::new(),
             browse_path: String::new(),
             ticket: 0,
+            fill_task: crate::scoped_task::ScopedTask::default(),
             focus_armed: false,
             restore_done: false,
             pending_restore_path: String::new(),
@@ -366,22 +368,30 @@ impl GamesModel {
         rules::screen_state(self.loading, false, !self.error.is_empty(), self.rows.len())
     }
 
-    /// Recompute the display name and suffix of every row (the sibling
-    /// disambiguation spans the whole list, so this runs over all rows).
+    /// Naming/language changes and replacement fills reproject the full model.
     fn refresh_display(&mut self, show_original_filenames: bool, language: &str) {
-        let names: Vec<(String, Vec<String>)> = self
-            .rows
+        self.refresh_display_from(0, show_original_filenames, language);
+    }
+
+    /// Ordinary appends touch new rows and only the old sibling run they join.
+    /// Recompute that run from original tokens, not its already-trimmed suffix.
+    fn refresh_display_from(
+        &mut self,
+        appended_from: usize,
+        show_original: bool,
+        language: &str,
+    ) -> usize {
+        for row in self.rows.iter_mut().skip(appended_from) {
+            row.display = rules::display_name(&row.name, &row.path, show_original);
+        }
+        let start = rules::sibling_group_start(&self.rows, appended_from, |row| &row.display);
+        let names: Vec<_> = self.rows[start..]
             .iter()
-            .map(|row| {
-                (
-                    rules::display_name(&row.name, &row.path, show_original_filenames),
-                    row.tag_labels.clone(),
-                )
-            })
+            .map(|row| (row.display.clone(), row.tag_labels.clone()))
             .collect();
         let displays = crate::tag_utils::sibling_disambiguation_displays(&names);
         let count = |n: u32| zaparoo_app::format::count(i64::from(n), language);
-        for ((row, (display, _)), tags) in self.rows.iter_mut().zip(names).zip(displays) {
+        for (row, tags) in self.rows[start..].iter_mut().zip(displays) {
             let tags = if row.root_distinguisher.is_empty() {
                 tags
             } else {
@@ -393,8 +403,8 @@ impl GamesModel {
                 rules::effective_file_count(row.media_capable, row.file_count),
                 &count,
             );
-            row.display = display;
         }
+        self.rows.len() - start
     }
 }
 
@@ -767,7 +777,7 @@ fn enter_flat(ctx: &Ctx, app: &App, mode: GamesMode, flip: bool) {
                 .store
                 .subscribe::<MediaFavoritesEndpoint>(FavoritesArgs::new(page_size, sort, scope));
             let mut rx = resource.subscribe();
-            ctx.handle.spawn(async move {
+            let task = ctx.handle.spawn(async move {
                 loop {
                     let snapshot = rx.borrow_and_update().clone();
                     match snapshot {
@@ -793,13 +803,14 @@ fn enter_flat(ctx: &Ctx, app: &App, mode: GamesMode, flip: bool) {
                     }
                 }
             });
+            lock(&ctx.shared).games.fill_task.replace(task);
         }
         GamesMode::Recents => {
             let resource = ctx
                 .store
                 .subscribe::<MediaHistoryEndpoint>(HistoryArgs::new(Vec::new(), page_size));
             let mut rx = resource.subscribe();
-            ctx.handle.spawn(async move {
+            let task = ctx.handle.spawn(async move {
                 loop {
                     let snapshot = rx.borrow_and_update().clone();
                     match snapshot {
@@ -825,6 +836,7 @@ fn enter_flat(ctx: &Ctx, app: &App, mode: GamesMode, flip: bool) {
                     }
                 }
             });
+            lock(&ctx.shared).games.fill_task.replace(task);
         }
         GamesMode::Browse => {}
     }
@@ -840,6 +852,7 @@ fn next_cursor(pagination: Option<&zaparoo_core::media_types::Pagination>) -> Op
 /// replacement rules (the snap to row 0 must not persist, pending
 /// targets drop, the detail pane resets).
 fn begin_fill(model: &mut GamesModel) -> u64 {
+    model.fill_task.cancel();
     model.ticket += 1;
     model.sliding = false;
     model.folder_direction = 0;
@@ -897,7 +910,7 @@ fn browse_with_motion(ctx: &Ctx, app: &App, path: &str, flip: bool, direction: i
     let weak = app.as_weak();
     let ctx2 = ctx.clone();
     let at_root = path.is_empty();
-    ctx.handle.spawn(async move {
+    let task = ctx.handle.spawn(async move {
         loop {
             let snapshot = rx.borrow_and_update().clone();
             match snapshot {
@@ -920,6 +933,7 @@ fn browse_with_motion(ctx: &Ctx, app: &App, path: &str, flip: bool, direction: i
             }
         }
     });
+    lock(&ctx.shared).games.fill_task.replace(task);
 }
 
 fn browse_rows(entries: &[BrowseEntry]) -> Vec<GameRow> {
@@ -1257,6 +1271,8 @@ pub(crate) fn on_append(
         }
         let saved = saved_path(&shared);
         let list = list_layout(&shared);
+        let show_original = shared.persist.settings.show_original_filenames;
+        let language = crate::effective_language(&shared.persist.settings.language);
         let model = &mut shared.games;
         let from_page = model.grid.current_page();
         model.loading_more = false;
@@ -1278,6 +1294,7 @@ pub(crate) fn on_append(
             }
         };
         let empty = rows.is_empty();
+        let appended_from = model.rows.len();
         model.rows.extend(rows);
         model.next_cursor = if empty { None } else { cursor };
         model.grid.total_items_override = model.known_total();
@@ -1297,7 +1314,9 @@ pub(crate) fn on_append(
             } else if let Some(index) = model
                 .rows
                 .iter()
-                .position(|r| r.path == model.pending_restore_path)
+                .enumerate()
+                .skip(appended_from)
+                .find_map(|(index, row)| (row.path == model.pending_restore_path).then_some(index))
             {
                 model.grid.set_current_index_immediate(index);
                 model.pending_restore_path.clear();
@@ -1309,9 +1328,7 @@ pub(crate) fn on_append(
             }
         }
         let changed_page = !list && model.grid.current_page() != from_page;
-        drop(shared);
-        let mut shared = lock(&ctx.shared);
-        refresh_display(&mut shared);
+        model.refresh_display_from(appended_from, show_original, &language);
         (restore_again, landed, from_page, changed_page)
     };
     if app.global::<crate::Shell>().get_transitioning() {
@@ -1507,15 +1524,20 @@ fn media_key(row: &GameRow, fallback_system: &str, tier: u32) -> MediaKey {
     }
 }
 
-/// One tile: the caption with its dim suffix, the favorite heart, the
-/// flat lists' system label, and the cover slot under its `MediaKey`.
-fn cell_for(ctx: &Ctx, model: &GamesModel, row: &GameRow, tier: u32) -> GridCell {
-    let mut cell = GridCell {
+/// List rows never resolve artwork: only their separate detail pane paints it.
+fn text_cell(row: &GameRow) -> GridCell {
+    GridCell {
         name: SharedString::from(row.display.as_str()),
         tags: SharedString::from(row.suffix.as_str()),
         favorite: row.is_favorite,
         ..Default::default()
-    };
+    }
+}
+
+/// One tile: the caption with its dim suffix, the favorite heart, the
+/// flat lists' system label, and the cover slot under its `MediaKey`.
+fn cell_for(ctx: &Ctx, model: &GamesModel, row: &GameRow, tier: u32) -> GridCell {
+    let mut cell = text_cell(row);
     if model.mode != GamesMode::Browse {
         cell.top_label = SharedString::from(row.system_name.trim());
         if cell.top_label.is_empty() {
@@ -1597,26 +1619,15 @@ fn page_cells(ctx: &Ctx, model: &GamesModel, page: usize, tier: u32) -> Vec<Grid
         .collect()
 }
 
-/// Queue fetches for the covers around the visible page that are not
-/// cached yet: the page first, then the next page, then the previous.
-fn request_covers(
-    ctx: &Ctx,
-    model: &GamesModel,
-    first_visible: usize,
-    page_size: usize,
-    tier: u32,
-) {
-    if model.covers_paused {
-        return;
-    }
-    // A fast scroll starts no loads, and what it flew past is not worth
-    // fetching any more.
-    if model.rapid_active {
-        ctx.media.request_wanted(Vec::new());
-        return;
-    }
+/// Replace this view's demand, including obsolete detail images. Other owners
+/// (Hub and modals) keep their independently enqueued requests.
+fn request_covers(ctx: &Ctx, model: &GamesModel, keys: Vec<MediaKey>) {
     ctx.media
-        .request_wanted(wanted_covers(model, first_visible, page_size, tier));
+        .request_wanted(if model.covers_paused || model.rapid_active {
+            Vec::new()
+        } else {
+            keys
+        });
 }
 
 /// The cover keys around the visible window, in fetch priority order.
@@ -1626,7 +1637,23 @@ fn wanted_covers(
     page_size: usize,
     tier: u32,
 ) -> Vec<MediaKey> {
-    rules::prefetch_rows(model.rows.len(), page_size, first_visible)
+    cover_keys(
+        model,
+        rules::prefetch_rows(model.rows.len(), page_size, first_visible),
+        tier,
+    )
+}
+
+fn wanted_detail_covers(model: &GamesModel, tier: u32) -> Vec<MediaKey> {
+    cover_keys(
+        model,
+        rules::detail_prefetch_rows(model.rows.len(), model.grid.current_index()),
+        tier,
+    )
+}
+
+fn cover_keys(model: &GamesModel, indices: Vec<usize>, tier: u32) -> Vec<MediaKey> {
+    indices
         .into_iter()
         .filter_map(|index| model.rows.get(index))
         .filter(|row| row.media_capable && row.has_cover)
@@ -1803,7 +1830,7 @@ pub fn render(ctx: &Ctx, app: &App) {
             .iter()
             .skip(top)
             .take(visible + 2)
-            .map(|row| cell_for(ctx, model, row, tier))
+            .map(text_cell)
             .collect();
         crate::view_model::publish_cells(&view.get_list_rows(), rows, |rows| {
             view.set_list_rows(rows);
@@ -1827,16 +1854,23 @@ pub fn render(ctx: &Ctx, app: &App) {
     } else {
         model.grid.page_size()
     };
-    request_covers(ctx, model, first_visible, window, tier);
-    // After the window's covers, so the focused row's larger cover is
-    // queued ahead of them.
-    if list {
+    let (art_start, art_window, art_tier) = if list {
+        let detail_tier = crate::sizing::detail_cover_source_size(crate::router::output_scene(app));
+        request_covers(ctx, model, wanted_detail_covers(model, detail_tier));
         refresh_detail_cover(ctx, app, model);
-    }
+        (model.grid.current_index(), 1, detail_tier)
+    } else {
+        request_covers(
+            ctx,
+            model,
+            wanted_covers(model, first_visible, window, tier),
+        );
+        (first_visible, window, tier)
+    };
     if crate::perf::enabled() {
-        let visible_rows = model.rows.iter().skip(first_visible).take(window);
+        let visible_rows = model.rows.iter().skip(art_start).take(art_window);
         let (visible, pending) = visible_rows.fold((0, 0), |(visible, pending), row| {
-            let waiting = cover_waiting(ctx, model, row, tier);
+            let waiting = cover_waiting(ctx, model, row, art_tier);
             (visible + 1, pending + usize::from(waiting))
         });
         crate::perf::games_rendered(count, model.loading, visible, pending);
@@ -1910,11 +1944,8 @@ fn refresh_detail_cover(ctx: &Ctx, app: &App, model: &GamesModel) {
     } else {
         view.set_detail_has_cover(false);
         view.set_detail_cover_absent(!row.has_cover || ctx.media.is_negative(&key));
-        // A fast scroll never waits on art: the landing row's cover is
-        // fetched once it stops.
-        if row.has_cover && !model.rapid_active {
-            ctx.media.enqueue(key);
-        }
+        // render owns the cancellable detail demand, including its lookahead.
+        // Do not enqueue here: that would keep obsolete selections alive.
     }
 }
 
@@ -1935,16 +1966,17 @@ pub fn covers_landed(ctx: &Ctx, app: &App, keys: &[MediaKey]) {
         let shared = lock(&ctx.shared);
         let model = &shared.games;
         let list = list_layout(&shared);
-        let (first, window) = if list {
-            let visible = list_rows_visible(ctx, &shared);
+        let (first, window, tier) = if list {
             (
-                app.global::<GamesView>().get_list_view_top().max(0) as usize,
-                visible + 2,
+                model.grid.current_index(),
+                1,
+                crate::sizing::detail_cover_source_size(crate::router::output_scene(app)),
             )
         } else {
             (
                 model.grid.current_page() * model.grid.page_size(),
                 model.grid.page_size(),
+                cover_tier(app),
             )
         };
         model
@@ -1952,7 +1984,7 @@ pub fn covers_landed(ctx: &Ctx, app: &App, keys: &[MediaKey]) {
             .iter()
             .skip(first)
             .take(window)
-            .any(|row| keys.iter().any(|key| row.path == key.path))
+            .any(|row| keys.contains(&media_key(row, &model.system_id, tier)))
     };
     if relevant {
         render(ctx, app);
@@ -3261,6 +3293,67 @@ mod tests {
         assert_eq!(model.rows[1].suffix, "");
         model.refresh_display(true, "en");
         assert_eq!(model.rows[1].display, "Sonic CD (USA)");
+    }
+
+    #[test]
+    fn appended_projection_matches_full_rebuild_across_every_batch_boundary() {
+        let mut rows: Vec<_> = ["Alpha", "Beta", "Beta", "Beta", "Éclair", "Éclair", "Omega"]
+            .iter()
+            .enumerate()
+            .map(|(n, name)| GameRow::from(&entry("media", name, &format!("/g/{name} {n}.rom"))))
+            .collect();
+        rows[0].entry_type = EntryType::Directory;
+        rows[0].file_count = 12_345;
+        rows[1].tag_labels = vec!["atari-joystick".into()];
+        rows[2].tag_labels = vec!["atari-lightgun".into()];
+        rows[3].tag_labels = vec!["sega-pad".into()];
+        rows[4].root_distinguisher = "SD".into();
+        for original in [false, true] {
+            for language in ["en", "de"] {
+                for batch in 1..=rows.len() {
+                    let mut incremental = GamesModel::new();
+                    for page in rows.chunks(batch) {
+                        let first = incremental.rows.len();
+                        incremental.rows.extend_from_slice(page);
+                        incremental.refresh_display_from(first, original, language);
+                        let mut rebuilt = incremental.clone();
+                        rebuilt.refresh_display(original, language);
+                        for (actual, expected) in incremental.rows.iter().zip(&rebuilt.rows) {
+                            assert_eq!(
+                                (&actual.display, &actual.suffix),
+                                (&expected.display, &expected.suffix)
+                            );
+                        }
+                    }
+                    assert_eq!(
+                        incremental.refresh_display_from(rows.len(), original, language),
+                        0
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn unique_title_append_does_not_reproject_the_loaded_prefix() {
+        let mut model = GamesModel::new();
+        model.rows = (0..1000)
+            .map(|n| GameRow::from(&entry("media", &format!("Game {n}"), &format!("/g/{n}"))))
+            .collect();
+        model.refresh_display(false, "en");
+        let first_name_allocation = model.rows[0].display.as_ptr();
+        model.rows.extend(
+            (1000..2000)
+                .map(|n| GameRow::from(&entry("media", &format!("Game {n}"), &format!("/g/{n}")))),
+        );
+        assert_eq!(model.refresh_display_from(1000, false, "en"), 1000);
+        assert_eq!(model.rows[0].display.as_ptr(), first_name_allocation);
+        assert_eq!(model.rows[1999].display, "Game 1999");
+        model.refresh_display(true, "en");
+        assert_eq!(
+            model.rows[0].display, "0",
+            "naming changes still rebuild every title"
+        );
     }
 
     #[test]

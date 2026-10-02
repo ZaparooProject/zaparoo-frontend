@@ -19,6 +19,7 @@ use std::mem::size_of;
 use std::os::fd::AsRawFd;
 use std::os::unix::fs::OpenOptionsExt;
 use std::sync::atomic::{fence, AtomicI32, Ordering};
+use std::time::{Duration, Instant};
 
 const NATIVE_VIDEO_BASE: i64 = 0x3A00_0000;
 const REGION_SIZE: usize = 0x0030_0000;
@@ -131,6 +132,34 @@ fn mode_for_geometry(width: u32, height: u32) -> Option<NativeVideoMode> {
         .find(|m| m.width == width && m.height == height)
 }
 
+/// Monotonic cadence for a software-paced writer, independent of scanout.
+/// Late work skips to the next boundary instead of replaying missed ticks.
+struct FrameDeadline {
+    period: Duration,
+    next: Instant,
+}
+
+impl FrameDeadline {
+    fn new(start: Instant, period: Duration) -> Self {
+        Self {
+            period,
+            next: start + period,
+        }
+    }
+
+    fn remaining(&mut self, now: Instant) -> Duration {
+        if now > self.next {
+            // Native periods are at most 20 ms, so the remainder fits u64.
+            let remainder = now.duration_since(self.next).as_nanos() % self.period.as_nanos();
+            let phase = Duration::from_nanos(u64::try_from(remainder).unwrap_or(0));
+            self.next = now + (self.period.saturating_sub(phase));
+        }
+        let wait = self.next.saturating_duration_since(now);
+        self.next += self.period;
+        wait
+    }
+}
+
 pub struct DdrPresenter {
     base: *mut u8,
     mode: NativeVideoMode,
@@ -146,6 +175,7 @@ pub struct DdrPresenter {
     h_offset: i32,
     v_offset: i32,
     pace_in_present: bool,
+    pacing: FrameDeadline,
     /// Slots whose vacated inset strips must be cleared before their
     /// next write. Clearing lazily avoids touching the slot currently
     /// being scanned out.
@@ -225,6 +255,10 @@ impl DdrPresenter {
             h_offset,
             v_offset,
             pace_in_present,
+            pacing: FrameDeadline::new(
+                Instant::now(),
+                Duration::from_micros(if mode.mode == 2 { 20_000 } else { 16_667 }),
+            ),
             clear_slots: 0,
         };
 
@@ -314,10 +348,12 @@ impl Presenter for DdrPresenter {
     }
 
     fn wait_vsync(&mut self) {
-        // The core latches at its own field boundary; the writer only
-        // needs pacing. Mode 2 (PAL) is 50 Hz; modes 0/1 are 60 Hz.
-        let period_us = if self.mode.mode == 2 { 20_000 } else { 16_667 };
-        std::thread::sleep(std::time::Duration::from_micros(period_us));
+        // Render/copy time belongs inside the frame period. The FPGA still
+        // latches independently; this changes no buffers, fences, or ABI.
+        let remaining = self.pacing.remaining(Instant::now());
+        if !remaining.is_zero() {
+            std::thread::sleep(remaining);
+        }
     }
 
     fn sync_controls(&mut self) -> Option<(u32, u32)> {
@@ -364,8 +400,8 @@ impl Presenter for DdrPresenter {
         ))
     }
 
-    fn render_and_present(&mut self, renderer: &SoftwareRenderer) -> std::time::Duration {
-        let busy_start = std::time::Instant::now();
+    fn render_and_present(&mut self, renderer: &SoftwareRenderer) -> Duration {
+        let busy_start = Instant::now();
         let win_w = self.mode.width as usize - self.inset_h;
         let win_h = self.mode.height as usize - self.inset_v;
         // Render to cached RAM, then one full-frame convert-copy into
@@ -441,6 +477,56 @@ impl Drop for DdrPresenter {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn crt_deadline_subtracts_work_for_ntsc_and_pal() {
+        for micros in [16_667, 20_000] {
+            let period = Duration::from_micros(micros);
+            let start = Instant::now();
+            let work = Duration::from_millis(5);
+            let mut pacing = FrameDeadline::new(start, period);
+            assert_eq!(pacing.remaining(start + work), period.saturating_sub(work));
+            assert_eq!(
+                pacing.remaining(start + period + work),
+                period.saturating_sub(work)
+            );
+            assert_eq!(pacing.next, start + period * 3);
+        }
+    }
+
+    #[test]
+    fn missed_crt_deadlines_skip_without_catch_up_bursts() {
+        let period = Duration::from_micros(16_667);
+        let start = Instant::now();
+        let mut pacing = FrameDeadline::new(start, period);
+        let work = Duration::from_millis(5);
+        assert_eq!(
+            pacing.remaining(start + period * 1000 + work),
+            period.saturating_sub(work)
+        );
+        assert_eq!(pacing.next, start + period * 1002);
+        assert_eq!(
+            pacing.remaining(start + period * 1001 + work),
+            period.saturating_sub(work)
+        );
+        assert_eq!(pacing.remaining(start + period * 1003), Duration::ZERO);
+        assert_eq!(pacing.next, start + period * 1004);
+    }
+
+    #[test]
+    fn sleep_overshoot_does_not_accumulate_into_the_cadence() {
+        let period = Duration::from_millis(20);
+        let start = Instant::now();
+        let mut pacing = FrameDeadline::new(start, period);
+        let work = Duration::from_millis(4);
+        let overshoot = Duration::from_micros(73);
+        let mut now = start;
+        for tick in 1..=1000 {
+            now += work;
+            now += pacing.remaining(now) + overshoot;
+            assert_eq!(now, start + period * tick + overshoot);
+        }
+    }
 
     // v2-extended layout goldens (magic 0x5A51, 6-bit v_offset at
     // [7:2], 2-bit mode). Field placement cross-checked against the
