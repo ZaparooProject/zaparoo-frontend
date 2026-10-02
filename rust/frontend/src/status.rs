@@ -200,7 +200,14 @@ pub fn push(shared: &Shared, app: &App, handle: &tokio::runtime::Handle) {
 
 fn apply(app: &App, output: &Output) {
     let status = app.global::<Status>();
-    status.set_kind(output.message.kind.into());
+    let kind = output.message.kind.into();
+    status.set_kind(kind);
+    // Empty-library copy must follow the job immediately, before a catalog
+    // refresh finds the first system or any Hub repaint is requested.
+    app.global::<crate::HubView>().set_indexing(matches!(
+        kind,
+        crate::StatusKind::Indexing | crate::StatusKind::Optimizing
+    ));
     status.set_arg(SharedString::from(output.message.arg.as_str()));
     status.set_arg2(SharedString::from(output.message.arg2.as_str()));
     status.set_is_error(output.is_error);

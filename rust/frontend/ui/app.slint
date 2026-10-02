@@ -8,8 +8,8 @@
 // logic; forward orchestration lives in the router.
 
 import { Theme, Sizing, Motion, Layout } from "theme.slint";
-import { Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, PressOwner, StatusKind, Orientation, VideoStandard, StateTokens, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogProgress, DialogButton, FirstRunPhase, ErrorKind } from "state_types.slint";
-export { Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, PressOwner, StatusKind, Orientation, VideoStandard, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogProgress, DialogButton, FirstRunPhase, ErrorKind }
+import { Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, PressOwner, StatusKind, Orientation, VideoStandard, StateTokens, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogButton, ErrorKind } from "state_types.slint";
+export { Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, PressOwner, StatusKind, Orientation, VideoStandard, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogButton, ErrorKind }
 import { GlyphSource, Brand, Buttons, HelpEntry, Status, HeaderBar, StatusLine, ProgressTrack, TopStatusStrip, FooterIndicator, ActiveLabel, HelpBar, SectionHeader, Divider, ScrollCue, ModalShell, QrPlate, StateCue } from "chrome.slint";
 import { GridCell, MarqueeCaption, PressableSurface, Tile, PagedGridView } from "tiles.slint";
 import { ScrollOffset, SelectionCursor, SelectionClip, FocusCursor } from "focus.slint";
@@ -514,7 +514,6 @@ export global Overlays {
     in-out property <bool> dialog-open: false;
     in-out property <DialogKind> dialog-kind: DialogKind.none;
     in-out property <ErrorKind> dialog-error: ErrorKind.generic;
-    in-out property <FirstRunPhase> first-run-phase: FirstRunPhase.idle;
     // Runtime text (minimum Core version and context); `DialogLabels` composes the
     // words from these so every dialog string can be translated.
     in-out property <string> dialog-detail: "";
@@ -526,11 +525,6 @@ export global Overlays {
     in-out property <string> dialog-repair-reason: "";
     in-out property <string> dialog-repair-launcher: "";
     in-out property <string> dialog-repair-plugin: "";
-    // First-run progress line, as a key plus its numbers.
-    in-out property <DialogProgress> dialog-status: DialogProgress.none;
-    in-out property <int> dialog-status-step: 0;
-    in-out property <int> dialog-status-total: 0;
-    in-out property <string> dialog-status-name: "";
     in-out property <[DialogButton]> dialog-buttons: [];
     in-out property <int> dialog-focus: 0;
     // Full-framebuffer CRT calibration pattern. Unlike normal modals,
@@ -1735,7 +1729,7 @@ component QrCodeModal inherits ModalShell {
 }
 
 // Decision dialog: a rounded panel over the scrim with title, wrapped
-// body, an optional status line, and a centered row of raised commitment
+// body and a centered row of raised commitment
 // buttons. Purely presentational - the router owns which buttons exist
 // and what they mean.
 component DialogModal inherits ModalShell {
@@ -1750,18 +1744,12 @@ component DialogModal inherits ModalShell {
     }
     body-measure := Text {
         visible: false;
-        text: DialogLabels.body(Overlays.dialog-kind, Overlays.dialog-error, Overlays.first-run-phase, Overlays.dialog-detail, Overlays.dialog-arg, Overlays.dialog-repair-reason, Overlays.dialog-repair-launcher, Overlays.dialog-repair-plugin);
+        text: DialogLabels.body(Overlays.dialog-kind, Overlays.dialog-error, Overlays.dialog-detail, Overlays.dialog-arg, Overlays.dialog-repair-reason, Overlays.dialog-repair-launcher, Overlays.dialog-repair-plugin);
         font-size: Sizing.font-body;
     }
     line-measure := Text {
         visible: false;
         text: "abcdefghijklmnopqrstuvwxyz";
-        font-size: Sizing.font-body;
-    }
-    status-measure := Text {
-        visible: false;
-        text: DialogLabels.status(Overlays.dialog-status, Overlays.dialog-status-step,
-            Overlays.dialog-status-total, Overlays.dialog-status-name);
         font-size: Sizing.font-body;
     }
     button-measure := HorizontalLayout {
@@ -1783,11 +1771,8 @@ component DialogModal inherits ModalShell {
     property <length> btn-h: Sizing.pct-h(7);
     property <length> btn-gap: Sizing.pct-w(2);
     property <length> body-h: body-t.preferred-height;
-    property <length> status-h: Overlays.dialog-status != DialogProgress.none ? status-measure.preferred-height : 0px;
     property <length> body-y: root.content-y;
-    property <length> status-y: root.body-y + root.body-h + root.pad;
-    property <length> button-y: root.status-y
-        + (Overlays.dialog-status != DialogProgress.none ? root.status-h + root.pad : 0px);
+    property <length> button-y: root.body-y + root.body-h + root.pad;
 
     title: DialogLabels.title(Overlays.dialog-kind, Overlays.dialog-error);
     panel-width: root.panel-w-raw;
@@ -1798,21 +1783,10 @@ component DialogModal inherits ModalShell {
             y: root.body-y;
             width: Math.min(Math.ceil(body-measure.preferred-width / 1px) * 1px, root.content-width);
             wrap: word-wrap;
-            text: DialogLabels.body(Overlays.dialog-kind, Overlays.dialog-error, Overlays.first-run-phase, Overlays.dialog-detail, Overlays.dialog-arg, Overlays.dialog-repair-reason, Overlays.dialog-repair-launcher, Overlays.dialog-repair-plugin);
+            text: DialogLabels.body(Overlays.dialog-kind, Overlays.dialog-error, Overlays.dialog-detail, Overlays.dialog-arg, Overlays.dialog-repair-reason, Overlays.dialog-repair-launcher, Overlays.dialog-repair-plugin);
             color: Theme.text-primary;
             font-size: Sizing.font-body;
             horizontal-alignment: center;
-        }
-
-        if Overlays.dialog-status != DialogProgress.none: Text {
-            x: (root.panel-width - self.width) / 2;
-            y: root.status-y;
-            max-width: root.content-width;
-            overflow: elide;
-            text: DialogLabels.status(Overlays.dialog-status, Overlays.dialog-status-step,
-                Overlays.dialog-status-total, Overlays.dialog-status-name);
-            color: Theme.text-variant;
-            font-size: Sizing.font-body;
         }
 
         // Same raised surfaces and safe-area width cap as ModalShell.
@@ -1821,10 +1795,14 @@ component DialogModal inherits ModalShell {
             / Math.max(1, Overlays.dialog-buttons.length) / 1px) * 1px;
         // A one-word alert action sizes around its label like the panel does;
         // it must not inflate to nearly the full width of the panel.
-        property <length> btn-w: Math.min(Sizing.pct-w(28),
-            Overlays.dialog-kind == DialogKind.action-error && Overlays.dialog-buttons.length == 1
-                ? Math.min(self.available-btn-w, button-measure.preferred-width)
-                : self.available-btn-w);
+        // Setup's commitment is longer than a one-word alert, especially
+        // in the CRT bitmap font. Fit its caption instead of the usual cap.
+        property <length> btn-w: Overlays.dialog-kind == DialogKind.first-run
+            ? Math.min(self.available-btn-w, button-measure.preferred-width)
+            : Math.min(Sizing.pct-w(28),
+                Overlays.dialog-kind == DialogKind.action-error && Overlays.dialog-buttons.length == 1
+                    ? Math.min(self.available-btn-w, button-measure.preferred-width)
+                    : self.available-btn-w);
         for label[i] in Overlays.dialog-buttons: button := PressableSurface {
             x: (root.panel-width
                 - (Overlays.dialog-buttons.length * parent.btn-w

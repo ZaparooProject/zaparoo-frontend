@@ -6,7 +6,7 @@
 // them into translated text. Kept in its own file so every screen and
 // modal can reach it without importing the app tree.
 
-import { Screen, AppCue, BootStatus, DisabledReason, DialogKind, DialogProgress, DialogButton, FirstRunPhase, ErrorKind } from "state_types.slint";
+import { Screen, AppCue, BootStatus, DisabledReason, DialogKind, DialogButton, ErrorKind } from "state_types.slint";
 
 // Key-to-copy vocabulary for labels Rust hands over as stable ids.
 export global Labels {
@@ -205,7 +205,7 @@ export global DialogLabels {
     }
 
     public pure function body(
-        kind: DialogKind, error: ErrorKind, phase: FirstRunPhase, detail: string, arg: string,
+        kind: DialogKind, error: ErrorKind, detail: string, arg: string,
         repair-reason: string, repair-launcher: string, repair-plugin: string,
     ) -> string {
         if (kind == DialogKind.quit-confirm) { return @tr("Are you sure you want to exit?"); }
@@ -220,26 +220,13 @@ export global DialogLabels {
             return @tr("This frontend needs Zaparoo Core {} or newer. You're running {}. Some features may not work until you update.", detail, arg);
         }
         if (kind == DialogKind.first-run) {
-            if (phase == FirstRunPhase.done) { return @tr("Done. {} files indexed.", arg); }
-            return @tr("Zaparoo needs to scan your games before you can use the frontend. This usually takes a few minutes.");
+            return @tr("Start a media database update to find your games. It runs in the background, and systems appear as they are indexed.");
         }
         if (kind == DialogKind.hub-full) {
             return @tr("All categories and actions are already on the Hub. To add a game or system, open its Options menu and choose \"Add to Hub\".");
         }
         if (kind == DialogKind.action-error) {
             return DialogLabels.error-body(error, arg, repair-reason, repair-launcher, repair-plugin);
-        }
-        return "";
-    }
-
-    // The first-run scan's progress line.
-    public pure function status(key: DialogProgress, step: int, total: int, name: string) -> string {
-        if (key == DialogProgress.preparing) { return @tr("Preparing…"); }
-        if (key == DialogProgress.optimizing) { return @tr("Optimizing database - almost done"); }
-        if (key == DialogProgress.paused) { return @tr("Indexing paused"); }
-        if (key == DialogProgress.step) {
-            if (name == "") { return @tr("Step {} of {}", step, total); }
-            return @tr("Step {} of {} - {}", step, total, name);
         }
         return "";
     }
@@ -251,7 +238,7 @@ export global DialogLabels {
         if (key == DialogButton.retry) { return @tr("Retry"); }
         if (key == DialogButton.cancel) { return @tr("Cancel"); }
         if (key == DialogButton.i-understand) { return @tr("I understand"); }
-        if (key == DialogButton.start-scan) { return @tr("Start scan"); }
+        if (key == DialogButton.start-media-update) { return @tr("Start media update"); }
         return "";
     }
 

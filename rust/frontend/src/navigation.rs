@@ -124,7 +124,14 @@ pub fn cancel(ctx: &Ctx, app: &App) -> bool {
             crate::games::render(ctx, app);
             crate::games::resume_after_cancel(ctx, app);
         }
-        crate::Screen::Systems | crate::Screen::FavoriteSystems => crate::systems::render(ctx, app),
+        crate::Screen::Systems | crate::Screen::FavoriteSystems => {
+            let catalog_loaded = { lock(&ctx.shared).hub.categories_loaded };
+            if catalog_loaded {
+                crate::systems::reproject(ctx, app);
+            } else {
+                crate::systems::render(ctx, app);
+            }
+        }
         crate::Screen::Hub => crate::hub::render(ctx, app),
         _ => {}
     }

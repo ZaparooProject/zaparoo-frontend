@@ -910,10 +910,11 @@ fn bind_media_status(ctx: &Arc<Ctx>, app: &App, store: &Arc<Store>) {
         status::task_of(&rx.borrow_and_update()),
     );
     status::enable_media_activity(&ctx.status, app, &ctx.handle);
+    router::refresh_startup_notices(ctx, app);
     let weak = app.as_weak();
     let ctx = ctx.clone();
     ctx.handle.clone().spawn(async move {
-        let mut prev = rx.borrow_and_update().clone();
+        let mut prev = rx.borrow().clone();
         while rx.changed().await.is_ok() {
             let curr = rx.borrow_and_update().clone();
             let task = status::task_of(&curr);
@@ -929,10 +930,11 @@ fn bind_media_status(ctx: &Arc<Ctx>, app: &App, store: &Arc<Store>) {
             let _ = weak.upgrade_in_event_loop(move |app| {
                 status::set_task(&ctx.status, &app, &ctx.handle, task);
                 settings::refresh(&ctx, &app);
-                router::refresh_first_run(&ctx, &app);
+                router::refresh_startup_notices(&ctx, &app);
                 if finished {
                     hub::rebuild(&ctx, &app);
                     games::reproject(&ctx, &app);
+                    fetch_system_defaults(&ctx);
                 }
             });
         }
@@ -1577,33 +1579,38 @@ fn apply_catalog(ctx: &Arc<Ctx>, app: &App, status: &ResourceStatus<CatalogData>
                 .cloned()
                 .collect();
 
-            let was_restore_pending = {
+            let (first_catalog, was_restore_pending) = {
                 let mut shared = lock(&ctx.shared);
+                let first = !shared.hub.categories_loaded;
+                if !first && shared.all_categories == categories && shared.systems == data.systems {
+                    return;
+                }
                 shared.all_categories = categories;
                 shared.systems.clone_from(&data.systems);
+                router::project_categories(&mut shared);
                 let pending = shared.restore_pending;
                 shared.restore_pending = false;
-                pending
+                (first, pending)
             };
 
-            // Visible categories, then the Hub: reconcile the persisted
-            // layout against what Core reported and seat the saved focus.
-            router::reproject_hub(ctx, app);
             hub::on_catalog_ready(ctx, app);
+            if matches!(
+                app.global::<Shell>().get_active_screen(),
+                Screen::Systems | Screen::FavoriteSystems
+            ) && !navigation::active()
+            {
+                systems::reproject(ctx, app);
+            }
 
-            // One-shot boot latch: the curtain lifts here and never
-            // re-asserts; later disconnects surface through the header
-            // status line only.
-            app.global::<Shell>().set_boot_complete(true);
-            app.global::<Shell>().set_boot_curtain(false);
-            // Start the screensaver idle countdown now that there is
-            // something on screen worth protecting.
-            router::reset_idle(ctx, app);
-            // Kick the sequential startup chain (commercial notice ->
-            // core-version warning -> first-run index gate). Re-runs
-            // are cheap and the chain self-gates on dialog-open.
-            router::maybe_open_startup_notices(ctx, app);
-            fetch_system_defaults(ctx);
+            // Background catalog reads never reset the idle timer, restore
+            // screens, or reassert the boot curtain.
+            if first_catalog {
+                app.global::<Shell>().set_boot_complete(true);
+                app.global::<Shell>().set_boot_curtain(false);
+                router::reset_idle(ctx, app);
+                fetch_system_defaults(ctx);
+            }
+            router::refresh_startup_notices(ctx, app);
 
             if was_restore_pending {
                 restore_screens(ctx, app);
@@ -1635,8 +1642,7 @@ fn seed_startup_state(app: &App, persisted: &persist::PersistedState, boot_curta
 
 /// Launcher inventory + per-system defaults for the "Change launcher"
 /// picker: the launchers endpoint streams into Shared, the defaults
-/// come from the settings RPC on every catalog Ready (cheap; keeps
-/// them fresh after out-of-band changes).
+/// come from the settings RPC at startup and after a media job finishes.
 fn bind_launchers(ctx: &Arc<Ctx>, store: &Arc<Store>) {
     use zaparoo_core::endpoints::launchers::LaunchersEndpoint;
     let resource = store.subscribe::<LaunchersEndpoint>(());

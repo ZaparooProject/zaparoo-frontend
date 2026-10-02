@@ -88,6 +88,7 @@ struct MediaState {
     total_files: i32,
     total_media: i32,
     index_generation: u64,
+    indexed_systems: usize,
 
     primary_active: Option<Value>,
     launch_generation: u64,
@@ -115,7 +116,17 @@ struct MediaState {
 
 fn state() -> &'static Mutex<MediaState> {
     static STATE: OnceLock<Mutex<MediaState>> = OnceLock::new();
-    STATE.get_or_init(|| Mutex::new(MediaState::default()))
+    STATE.get_or_init(|| {
+        let indexed_systems = if std::env::var("MOCK_CORE_EMPTY_DB").as_deref() == Ok("1") {
+            0
+        } else {
+            MOCK_SYSTEMS.len()
+        };
+        Mutex::new(MediaState {
+            indexed_systems,
+            ..MediaState::default()
+        })
+    })
 }
 
 fn with_state<R>(f: impl FnOnce(&mut MediaState) -> R) -> R {
@@ -123,6 +134,19 @@ fn with_state<R>(f: impl FnOnce(&mut MediaState) -> R) -> R {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     f(&mut guard)
+}
+
+/// An opt-in empty database exposes one more system after each index step.
+pub fn indexed_system_count() -> usize {
+    with_state(|s| s.indexed_systems)
+}
+
+fn index_step_delay() -> Duration {
+    std::env::var("MOCK_CORE_INDEX_STEP_MS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .filter(|millis| *millis > 0)
+        .map_or(INDEX_STEP_DELAY, Duration::from_millis)
 }
 
 /// `media` RPC response — the seed the frontend's `MediaStatusResource`
@@ -289,11 +313,12 @@ pub fn cancel_index(notifier: &Notifier) -> Result<Value, String> {
 
 async fn run_index_sequence(generation: u64, notifier: Notifier) {
     for (step, (_, display_name, _)) in MOCK_SYSTEMS.iter().enumerate() {
-        sleep(INDEX_STEP_DELAY).await;
+        sleep(index_step_delay()).await;
         let still_current = with_state(|s| {
             if s.index_generation != generation {
                 return false;
             }
+            s.indexed_systems = s.indexed_systems.max(step + 1);
             s.current_step = step as i32 + 1;
             (*display_name).clone_into(&mut s.current_step_display);
             s.total_files += FILES_PER_SYSTEM;

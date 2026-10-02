@@ -13,6 +13,7 @@
 // `Client`, and refetch every cache entry whose `provides` set
 // intersects a successful mutation's `invalidates` list.
 
+mod catalog_refresh;
 mod endpoint;
 #[cfg(test)]
 mod lifecycle_tests;
@@ -272,7 +273,29 @@ impl Store {
             media_status: media_status.clone(),
         });
         Self::spawn_media_db_invalidation_watcher(&store, &media_status);
+        Self::spawn_catalog_refresh_watcher(&store, &media_status);
         store
+    }
+
+    /// Incremental catalog reads run off the UI thread and keep the last good
+    /// value if Core is temporarily busy. The resource serializes/coalesces
+    /// requests, so a slow query is never cancelled by the next timer tick.
+    fn spawn_catalog_refresh_watcher(store: &Arc<Self>, media_status: &Arc<MediaStatusResource>) {
+        let weak = Arc::downgrade(store);
+        let rx = media_status.subscribe();
+        store.runtime.spawn(catalog_refresh::run(
+            rx,
+            catalog_refresh::PERIOD,
+            move || {
+                let Some(store) = weak.upgrade() else {
+                    return false;
+                };
+                store
+                    .subscribe::<crate::endpoints::catalog::CatalogEndpoint>(())
+                    .refresh_in_background();
+                true
+            },
+        ));
     }
 
     /// Watches the live `MediaStatusResource` for the busy → idle edge

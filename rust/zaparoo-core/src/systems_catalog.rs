@@ -10,7 +10,7 @@
 
 use crate::media_types::SystemInfo;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CatalogData {
     pub systems: Vec<SystemInfo>,
     pub categories: Vec<String>,

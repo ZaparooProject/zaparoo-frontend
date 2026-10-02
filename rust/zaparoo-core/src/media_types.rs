@@ -24,7 +24,7 @@ fn default_true() -> bool {
     true
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SystemInfo {
     pub id: String,

@@ -30,6 +30,11 @@ impl<T: Clone + Send + Sync + 'static> ResourceHandle<T> {
         }
     }
 
+    /// Queue a coalesced refresh while preserving the last successful result.
+    pub fn refresh_in_background(&self) {
+        self.resource.refresh_in_background();
+    }
+
     pub fn refetch(&self) {
         (self.refetch)();
     }
