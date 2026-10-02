@@ -241,6 +241,71 @@ fn main() {
         games_mode,
         (screen == "context" || screen == "context-alt").then_some(6),
     );
+    // The browse filter: the header cue on the games screen, the picker's
+    // categories page with a filter set, its values page with counts, and
+    // the empty list a filter can leave.
+    if screen.ends_with("games-filter")
+        || screen.ends_with("games-list-filter")
+        || screen.ends_with("games-filter-empty")
+    {
+        let view = app.global::<GamesView>();
+        view.set_filter_text("Platformer +1".into());
+        if screen.ends_with("empty") {
+            view.set_count(0);
+            view.set_total_files(0);
+            view.set_cells(slint::ModelRc::default());
+        }
+    }
+    if screen.ends_with("filter-picker") || screen.ends_with("filter-values") {
+        let filter_row = |id: &str, key: &str, name: &str, detail: &str| MenuEntry {
+            id: id.into(),
+            label: name.into(),
+            label_key: key.into(),
+            enabled: true,
+            reason_key: "".into(),
+            detail: detail.into(),
+        };
+        let ov = app.global::<generated::Overlays>();
+        app.global::<GamesView>()
+            .set_filter_text("Platformer +1".into());
+        let (title, rows, index) = if screen.ends_with("values") {
+            let values = [
+                ("Action", "412"),
+                ("Adventure", "88"),
+                ("Fighting", "61"),
+                ("Platformer", "203"),
+                ("Puzzle", "97"),
+                ("Racing", "54"),
+                ("Role-playing", "130"),
+                ("Shooter", "176"),
+                ("Sports", "72"),
+            ];
+            let mut rows = vec![filter_row("any", "filter:any", "", "")];
+            rows.extend(
+                values
+                    .iter()
+                    .map(|(name, count)| filter_row(&format!("v:{name}"), "", name, count)),
+            );
+            ("title:filter_cat:genre", rows, 4)
+        } else {
+            (
+                "title:filter",
+                vec![
+                    filter_row("cat:genre", "filter_cat:genre", "Platformer", ""),
+                    filter_row("cat:year", "filter_cat:year", "", ""),
+                    filter_row("cat:players", "filter_cat:players", "2", ""),
+                    filter_row("cat:region", "filter_cat:region", "", ""),
+                    filter_row("filter_clear", "filter_clear", "", ""),
+                    filter_row("filter_apply", "filter_apply", "", ""),
+                ],
+                0,
+            )
+        };
+        ov.set_list_title(title.into());
+        ov.set_list_entries(slint::ModelRc::new(slint::VecModel::from(rows)));
+        ov.set_list_index(index);
+        ov.set_list_open(true);
+    }
     // "context-alt" renders the same menu after discovery replaced its
     // rows with the alternate builds it found.
     if screen == "context-alt" {
@@ -259,6 +324,7 @@ fn main() {
                         label_key: "".into(),
                         enabled: true,
                         reason_key: "".into(),
+                        detail: "".into(),
                     })
                     .collect::<Vec<_>>(),
             )));
@@ -275,6 +341,7 @@ fn main() {
                     label_key: "more_info".into(),
                     enabled: true,
                     reason_key: "".into(),
+                    detail: "".into(),
                 },
                 MenuEntry {
                     id: "toggle_favorite".into(),
@@ -282,6 +349,7 @@ fn main() {
                     label_key: "favorite:add".into(),
                     enabled: true,
                     reason_key: "".into(),
+                    detail: "".into(),
                 },
                 MenuEntry {
                     id: "write_card".into(),
@@ -289,6 +357,7 @@ fn main() {
                     label_key: "write_card".into(),
                     enabled: true,
                     reason_key: "".into(),
+                    detail: "".into(),
                 },
                 MenuEntry {
                     id: "qr_code".into(),
@@ -296,6 +365,7 @@ fn main() {
                     label_key: "qr_code".into(),
                     enabled: true,
                     reason_key: "".into(),
+                    detail: "".into(),
                 },
                 MenuEntry {
                     id: "add_to_hub".into(),
@@ -303,6 +373,7 @@ fn main() {
                     label_key: "add_to_hub".into(),
                     enabled: true,
                     reason_key: "".into(),
+                    detail: "".into(),
                 },
                 MenuEntry {
                     id: "toggle_hidden".into(),
@@ -310,6 +381,7 @@ fn main() {
                     label_key: "hide:hide".into(),
                     enabled: true,
                     reason_key: "".into(),
+                    detail: "".into(),
                 },
                 MenuEntry {
                     id: "scrape_game".into(),
@@ -317,6 +389,7 @@ fn main() {
                     label_key: "scrape_game".into(),
                     enabled: true,
                     reason_key: "".into(),
+                    detail: "".into(),
                 },
             ])));
         app.global::<generated::Overlays>().set_context_index(1);
@@ -470,6 +543,7 @@ fn main() {
                 label_key: "".into(),
                 enabled: true,
                 reason_key: "".into(),
+                detail: "".into(),
             })
             .collect();
         ov.set_list_setting_id(if palette { "colorScheme" } else { "language" }.into());
@@ -489,6 +563,7 @@ fn main() {
                 label_key: "launcher:default".into(),
                 enabled: true,
                 reason_key: "".into(),
+                detail: "".into(),
             },
             MenuEntry {
                 id: "RetroArch".into(),
@@ -496,6 +571,7 @@ fn main() {
                 label_key: "".into(),
                 enabled: true,
                 reason_key: "".into(),
+                detail: "".into(),
             },
             MenuEntry {
                 id: "DuckStation".into(),
@@ -503,6 +579,7 @@ fn main() {
                 label_key: "".into(),
                 enabled: false,
                 reason_key: "launcher:not_installed".into(),
+                detail: "".into(),
             },
         ])));
         ov.set_list_index(1);
@@ -518,6 +595,7 @@ fn main() {
                 label_key: "".into(),
                 enabled: true,
                 reason_key: "".into(),
+                detail: "".into(),
             },
             MenuEntry {
                 id: "alternate".into(),
@@ -525,6 +603,7 @@ fn main() {
                 label_key: "".into(),
                 enabled: true,
                 reason_key: "".into(),
+                detail: "".into(),
             },
         ])));
         ov.set_list_index(1);
@@ -794,6 +873,7 @@ fn fixture_screen(screen: &str) -> Screen {
     } else if matches!(screen, "context" | "context-alt" | "letters")
         || (screen.contains("list") && !screen.contains("systems"))
         || screen.contains("games")
+        || screen.contains("filter")
         || screen.contains("fast-scroll")
         || screen.contains("game-info")
     {

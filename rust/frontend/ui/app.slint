@@ -56,6 +56,8 @@ export struct MenuEntry {
     // A `Labels.menu` key wording why `enabled` is false. Empty when
     // `enabled` is true or the row has nothing to say.
     reason-key: string,
+    // A plain value shown after the label (a game count). Empty for most rows.
+    detail: string,
 }
 
 // One first-character bucket of the jump-to-letter picker.
@@ -362,6 +364,8 @@ export global GamesView {
     in-out property <int> total-items: 0;
     in-out property <bool> total-known: true;
     in-out property <int> total-files: 0;
+    // The active browse filter as one line ("Platformer +1"); empty without one.
+    in-out property <string> filter-text: "";
     in-out property <bool> has-more: false;
     // A page fetch the user is waiting on (a wrap, jump or list tail).
     in-out property <bool> page-loading: false;
@@ -1192,8 +1196,9 @@ component ListPickerModal inherits ModalShell {
     // for the whole phrase, not a fixed concatenation, so translators can
     // reorder the name and the reason.
     pure function entry-label(entry: MenuEntry) -> string {
-        return entry.enabled || entry.reason-key == "" ? root.entry-primary-label(entry)
-            : @tr("{} · {}", root.entry-primary-label(entry), Labels.launcher-reason(entry.reason-key));
+        return entry.detail != "" ? @tr("{} · {}", root.entry-primary-label(entry), entry.detail)
+            : (entry.enabled || entry.reason-key == "" ? root.entry-primary-label(entry)
+            : @tr("{} · {}", root.entry-primary-label(entry), Labels.launcher-reason(entry.reason-key)));
     }
     pure function entry-primary-label(entry: MenuEntry) -> string {
         return root.setting-id != "" ? SettingsLabels.picker-value(root.setting-id, entry.id)
@@ -2227,6 +2232,12 @@ component GamesScreen inherits Rectangle {
     // no known total). The 240p footer keeps the bare number.
     property <string> count-text: !root.is-games || GamesView.total-files <= 0 ? ""
         : (Sizing.tier-240 ? Labels.count(GamesView.total-files) : @tr("{} games", Labels.count(GamesView.total-files)));
+    // The browse filter's name, then the count where the grid shows one.
+    property <string> filter-and-count: GamesView.filter-text == "" ? root.count-text
+        : (root.count-text == "" ? GamesView.filter-text : @tr("{} · {}", GamesView.filter-text, root.count-text));
+    // The footer's left text, where the strip is hidden and the footer
+    // keeps the count.
+    property <string> footer-left-text: root.list-layout ? GamesView.filter-text : root.filter-and-count;
     // The detailed list swaps its position cue for this while a
     // background fetch fills rows the user scrolled past.
     property <string> right-text: root.list-layout && GamesView.loading-more && GamesView.count > 0 ? @tr("Loading more…") : "";
@@ -2241,6 +2252,7 @@ component GamesScreen inherits Rectangle {
         total-pages: root.list-layout ? GamesView.list-total-pages : GamesView.total-pages;
         page-total-known: GamesView.total-known;
         total-text: root.count-text;
+        filter-text: root.is-games ? GamesView.filter-text : "";
         right-text-override: root.right-text;
         show-page-counter: root.show-top-page-cue || root.right-text != "";
         page-indicator-mode: root.show-top-page-cue && root.right-text == "";
@@ -2362,12 +2374,12 @@ component GamesScreen inherits Rectangle {
     // which has no title strip, also keeps its count and cue here.
     // A page fetch the user is waiting on replaces the name.
     property <length> label-y: GamesView.label-y;
-    property <length> footer-left-inset: Math.ceil(footer-count-measure.preferred-width / 1px) * 1px + Layout.bottom-status-left-margin;
+    property <length> footer-left-inset: Math.min(Math.ceil(footer-count-measure.preferred-width / 1px) * 1px, root.width * 0.4) + Layout.bottom-status-left-margin;
     property <length> footer-right-inset: footer-indicator.width + Layout.bottom-status-right-margin;
 
     footer-count-measure := Text {
         visible: false;
-        text: root.count-text;
+        text: root.footer-left-text;
         font-size: Sizing.font-section;
     }
 
@@ -2407,14 +2419,14 @@ component GamesScreen inherits Rectangle {
         }
     }
 
-    if !root.list-layout && !Layout.top-strip-visible && root.page-cue-in-footer && root.count-text != "": Text {
+    if !Layout.top-strip-visible && root.page-cue-in-footer && root.footer-left-text != "": Text {
         x: Layout.bottom-status-left-margin;
         y: root.label-y + (GamesView.label-height - self.height) / 2;
         width: root.footer-left-inset - Layout.bottom-status-left-margin;
         height: Sizing.font-section;
         vertical-alignment: center;
         overflow: elide;
-        text: root.count-text;
+        text: root.footer-left-text;
         color: Theme.text-primary;
         font-size: Sizing.font-section;
         visible: !root.gate-hide;
@@ -2454,7 +2466,8 @@ component GamesScreen inherits Rectangle {
         cue-center-y: root.height / 2 - self.y;
         state: GamesView.folder-slide ? ContentState.ready : root.state;
         empty-text: GamesView.mode == GamesMode.favorites ? @tr("No favorites yet")
-            : (GamesView.mode == GamesMode.recents ? @tr("Nothing played yet") : @tr("No games in this system"));
+            : (GamesView.mode == GamesMode.recents ? @tr("Nothing played yet")
+            : (GamesView.filter-text != "" ? @tr("No games match this filter") : @tr("No games in this system")));
         loading-text: GamesView.mode == GamesMode.favorites ? @tr("Loading favorites…")
             : (GamesView.mode == GamesMode.recents ? @tr("Loading recently played…") : @tr("Loading games…"));
         error-detail: GamesView.error;

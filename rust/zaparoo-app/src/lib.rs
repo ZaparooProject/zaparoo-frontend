@@ -15,6 +15,7 @@
 
 pub mod action_error;
 pub mod alternate_versions;
+pub mod browse_filter;
 pub mod buttons;
 pub mod clock;
 pub mod covers;

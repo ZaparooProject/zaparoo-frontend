@@ -66,6 +66,10 @@ const SOURCES: &[(&str, &str)] = &[
         include_str!("../../../resources/images/icons/File.svg"),
     ),
     (
+        "icons/Filter",
+        include_str!("../../../resources/images/icons/Filter.svg"),
+    ),
+    (
         "icons/Folder",
         include_str!("../../../resources/images/icons/Folder.svg"),
     ),

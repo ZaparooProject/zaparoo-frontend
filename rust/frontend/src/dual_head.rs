@@ -485,6 +485,7 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_total_items => set_total_items,
         get_total_known => set_total_known,
         get_total_files => set_total_files,
+        get_filter_text => set_filter_text,
         get_has_more => set_has_more,
         get_page_loading => set_page_loading,
         get_focus_ready => set_focus_ready,

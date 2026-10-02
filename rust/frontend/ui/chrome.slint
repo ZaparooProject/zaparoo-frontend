@@ -670,6 +670,9 @@ export component TopStatusStrip inherits Rectangle {
     in property <int> total-pages: 1;
     in property <bool> page-total-known: true;
     in property <string> total-text: "";
+    // The active browse filter's name, shown with a funnel in the left slot
+    // (the CRT strip keeps its count there, and hides the strip anyway).
+    in property <string> filter-text: "";
     in property <string> right-text-override: "";
     in property <bool> show-page-counter: true;
     // True mounts a PageIndicator (chevrons + "N/M") in the right slot
@@ -735,6 +738,36 @@ export component TopStatusStrip inherits Rectangle {
             : Math.min(total-measure.preferred-width, Math.max(0px, root.side-slot-width - root.counter-width - root.count-gap));
         overflow: elide;
         text: root.total-text;
+        color: Theme.text-primary;
+        font-size: Sizing.font-section;
+    }
+
+    property <length> filter-glyph-size: Sizing.font-section;
+    property <length> filter-glyph-gap: Sizing.pct-w(0.8);
+    property <bool> filter-shown: root.filter-text != "" && !Sizing.crt;
+
+    // The line box the filter text sits in, to center the funnel on it.
+    filter-measure := Text {
+        visible: false;
+        text: "A";
+        font-size: Sizing.font-section;
+    }
+
+    if root.filter-shown: Image {
+        x: root.slot-margin;
+        y: root.side-y + (filter-measure.preferred-height - self.height) / 2;
+        width: root.filter-glyph-size;
+        height: root.filter-glyph-size;
+        source: GlyphSource.glyph("icons/Filter", self.height, Theme.text-primary);
+    }
+
+    if root.filter-shown: Text {
+        x: root.slot-margin + root.filter-glyph-size + root.filter-glyph-gap;
+        y: root.side-y;
+        width: Math.max(0px, (parent.width - root.title-text-width) / 2 - root.slot-margin
+            - root.filter-glyph-size - 2 * root.filter-glyph-gap);
+        overflow: elide;
+        text: root.filter-text;
         color: Theme.text-primary;
         font-size: Sizing.font-section;
     }

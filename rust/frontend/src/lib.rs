@@ -13,6 +13,7 @@ mod about;
 mod actions;
 mod alternates;
 mod brand;
+mod browse_filter;
 mod browse_motion;
 mod card_write;
 mod customization;

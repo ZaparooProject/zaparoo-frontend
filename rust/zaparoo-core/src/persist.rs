@@ -76,9 +76,6 @@ pub struct GamesState {
     pub selected_at_level: Vec<String>,
     /// One viewport per folder level, alongside its selected path. Empty in old files.
     pub list_top_at_level: Vec<usize>,
-    /// Favorites-only projection of folder listings. Serde-defaulted so
-    /// state files written before the field existed keep loading.
-    pub favorites_filter: bool,
     /// True when this Games screen was entered directly from a Hub
     /// `system`/`folder` shortcut (skipping Systems), so Back should
     /// return to Hub instead of Systems — a screen the user never
@@ -89,13 +86,28 @@ pub struct GamesState {
     pub entered_from_hub: bool,
     /// Where each recently browsed system was left, most recent first, so
     /// entering one from Systems returns to that folder and game. Bounded
-    /// by `MAX_SYSTEM_FOCUS`; empty in older state files. Last, because
-    /// TOML writes arrays of tables after a section's plain values.
+    /// by `MAX_SYSTEM_FOCUS`; empty in older state files. After the plain
+    /// values, because TOML writes arrays of tables after them.
     pub system_focus: Vec<SystemFocus>,
+    /// The browse filter each recently filtered system was left with, most
+    /// recent first. Bounded by `MAX_SYSTEM_FILTERS`; empty in older state
+    /// files.
+    pub filters: Vec<SystemFilter>,
 }
 
 /// Systems whose browse position is remembered.
 pub const MAX_SYSTEM_FOCUS: usize = 32;
+
+/// Systems whose browse filter is remembered.
+pub const MAX_SYSTEM_FILTERS: usize = 32;
+
+/// One system's browse filter: `type:value` tags, at most one per type.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SystemFilter {
+    pub system_id: String,
+    pub tags: Vec<String>,
+}
 
 /// One system's browse position: the same stacks `GamesState` keeps for
 /// the system on screen.
@@ -115,14 +127,42 @@ impl Default for GamesState {
             path_stack: vec![String::new()],
             selected_at_level: vec![String::new()],
             list_top_at_level: Vec::new(),
-            favorites_filter: false,
             entered_from_hub: false,
             system_focus: Vec::new(),
+            filters: Vec::new(),
         }
     }
 }
 
 impl GamesState {
+    /// The browse filter saved for `system_id`; empty when it has none.
+    pub fn filter_for(&self, system_id: &str) -> &[String] {
+        self.filters
+            .iter()
+            .find(|f| f.system_id == system_id)
+            .map_or(&[], |f| f.tags.as_slice())
+    }
+
+    /// Save `tags` as the filter for `system_id`, most recent first. An
+    /// empty list clears it, and the oldest entry past the bound is dropped.
+    pub fn set_filter(&mut self, system_id: &str, tags: Vec<String>) {
+        if system_id.is_empty() {
+            return;
+        }
+        self.filters.retain(|f| f.system_id != system_id);
+        if tags.is_empty() {
+            return;
+        }
+        self.filters.insert(
+            0,
+            SystemFilter {
+                system_id: system_id.to_string(),
+                tags,
+            },
+        );
+        self.filters.truncate(MAX_SYSTEM_FILTERS);
+    }
+
     /// Record where the system on screen was left, as its most recent
     /// entry. A position at the root with nothing selected is not worth
     /// an entry and clears any older one.
@@ -554,7 +594,8 @@ mod tests {
 
     use super::{
         load_from, save_to, FavoriteSystemsState, FavoritesState, GamesState, HubState,
-        PersistedState, RecentsState, SettingsState, SystemFocus, SystemsState, MAX_SYSTEM_FOCUS,
+        PersistedState, RecentsState, SettingsState, SystemFilter, SystemFocus, SystemsState,
+        MAX_SYSTEM_FILTERS, MAX_SYSTEM_FOCUS,
     };
     use std::thread;
 
@@ -617,7 +658,6 @@ mod tests {
                 path_stack: vec![String::new(), "/roms/nes/mario".into()],
                 selected_at_level: vec!["/roms/nes/mario".into(), "/roms/nes/mario/smb.nes".into()],
                 list_top_at_level: vec![4, 9],
-                favorites_filter: false,
                 entered_from_hub: true,
                 system_focus: vec![SystemFocus {
                     system_id: "SNES".into(),
@@ -627,6 +667,10 @@ mod tests {
                         "/roms/snes/rpg/zelda.sfc".into(),
                     ],
                     list_top_at_level: vec![0, 2],
+                }],
+                filters: vec![SystemFilter {
+                    system_id: "SNES".into(),
+                    tags: vec!["genre:rpg".into(), "region:us".into()],
                 }],
             },
             recents: RecentsState {
@@ -838,9 +882,9 @@ resolution = "1920x1080"
                                 path_stack: vec![String::new()],
                                 selected_at_level: vec![format!("/roms/{i}/{j}.rom")],
                                 list_top_at_level: vec![0],
-                                favorites_filter: false,
                                 entered_from_hub: false,
                                 system_focus: Vec::new(),
+                                filters: Vec::new(),
                             },
                             favorites: FavoritesState::default(),
                             favorite_systems: FavoriteSystemsState::default(),
@@ -1026,5 +1070,42 @@ future_field = "ignored"
         // Older files have no entries.
         let old: PersistedState = toml::from_str("[games]\nsystem_id = 'NES'").unwrap();
         assert!(old.games.system_focus.is_empty());
+    }
+
+    #[test]
+    fn browse_filters_are_per_system_bounded_and_survive_a_round_trip() {
+        let mut games = GamesState::default();
+        assert!(games.filter_for("NES").is_empty());
+        games.set_filter("NES", vec!["genre:action".into()]);
+        games.set_filter("SNES", vec!["year:1994".into()]);
+        assert_eq!(games.filter_for("NES"), ["genre:action".to_string()]);
+        // Most recent first; replacing an entry moves it to the front.
+        games.set_filter("NES", vec!["genre:rpg".into()]);
+        assert_eq!(games.filters[0].system_id, "NES");
+        assert_eq!(games.filters.len(), 2);
+        // An empty list clears it, and a blank system id is ignored.
+        games.set_filter("SNES", Vec::new());
+        assert!(games.filter_for("SNES").is_empty());
+        games.set_filter("", vec!["genre:rpg".into()]);
+        assert_eq!(games.filters.len(), 1);
+        for i in 0..(MAX_SYSTEM_FILTERS + 5) {
+            games.set_filter(&format!("sys{i}"), vec!["genre:action".into()]);
+        }
+        assert_eq!(games.filters.len(), MAX_SYSTEM_FILTERS);
+        assert!(games.filter_for("NES").is_empty());
+        let state = PersistedState {
+            games,
+            ..PersistedState::default()
+        };
+        let decoded: PersistedState = toml::from_str(&toml::to_string(&state).unwrap()).unwrap();
+        assert_eq!(decoded, state);
+    }
+
+    #[test]
+    fn legacy_favorites_filter_key_is_ignored() {
+        let old: PersistedState =
+            toml::from_str("[games]\nsystem_id = 'NES'\nfavorites_filter = true").unwrap();
+        assert_eq!(old.games.system_id, "NES");
+        assert!(old.games.filters.is_empty());
     }
 }

@@ -64,6 +64,40 @@ export global Labels {
         return "";
     }
 
+    // What a browse filter row shows after its colon: the chosen value, or
+    // "Any" when none is chosen (the driver sends an empty name).
+    public pure function filter-value(name: string) -> string {
+        return name == "" ? @tr("Any") : name;
+    }
+
+    // The filter's category rows ("Genre: Any") and the picker titles of
+    // their value pages. Listed out so each name is extracted once.
+    public pure function filter-category(key: string, name: string) -> string {
+        if (key == "filter_cat:genre") { return @tr("Genre: {}", Labels.filter-value(name)); }
+        if (key == "filter_cat:year") { return @tr("Year: {}", Labels.filter-value(name)); }
+        if (key == "filter_cat:players") { return @tr("Players: {}", Labels.filter-value(name)); }
+        if (key == "filter_cat:developer") { return @tr("Developer: {}", Labels.filter-value(name)); }
+        if (key == "filter_cat:publisher") { return @tr("Publisher: {}", Labels.filter-value(name)); }
+        if (key == "filter_cat:region") { return @tr("Region: {}", Labels.filter-value(name)); }
+        if (key == "filter_cat:language") { return @tr("Language: {}", Labels.filter-value(name)); }
+        if (key == "filter_cat:perspective") { return @tr("Perspective: {}", Labels.filter-value(name)); }
+        if (key == "filter_cat:input") { return @tr("Input: {}", Labels.filter-value(name)); }
+        if (key == "filter_cat:arcadeboard") { return @tr("Arcade board: {}", Labels.filter-value(name)); }
+        if (key == "filter_cat:lists") { return @tr("Lists: {}", Labels.filter-value(name)); }
+        if (key == "title:filter_cat:genre") { return @tr("Genre"); }
+        if (key == "title:filter_cat:year") { return @tr("Year"); }
+        if (key == "title:filter_cat:players") { return @tr("Players"); }
+        if (key == "title:filter_cat:developer") { return @tr("Developer"); }
+        if (key == "title:filter_cat:publisher") { return @tr("Publisher"); }
+        if (key == "title:filter_cat:region") { return @tr("Region"); }
+        if (key == "title:filter_cat:language") { return @tr("Language"); }
+        if (key == "title:filter_cat:perspective") { return @tr("Perspective"); }
+        if (key == "title:filter_cat:input") { return @tr("Input"); }
+        if (key == "title:filter_cat:arcadeboard") { return @tr("Arcade board"); }
+        if (key == "title:filter_cat:lists") { return @tr("Lists"); }
+        return "";
+    }
+
     // Menu rows and picker titles. Rust pushes the id it routes on; a
     // key this table does not know falls through to the Hub vocabulary
     // (a hub item's own `category:`/`action:` key) and then to the name
@@ -89,6 +123,15 @@ export global Labels {
         if (key == "index_category" || key == "index_system") { return @tr("Update media database"); }
         if (key == "scrape_category" || key == "scrape_system") { return @tr("Update metadata"); }
         if (key == "jump_letter") { return @tr("Go to…"); }
+        // The games View menu's filter rows and pages.
+        if (key == "filter") { return @tr("Filter: {}", Labels.filter-value(name)); }
+        if (key == "filter_clear") { return @tr("Clear filter"); }
+        if (key == "filter_apply") { return @tr("Apply"); }
+        if (key == "filter:any") { return @tr("Any"); }
+        if (key == "filter:loading") { return @tr("Loading…"); }
+        if (key == "filter:failed") { return @tr("Failed to load filters"); }
+        if (key == "filter:none") { return @tr("No filters available"); }
+        if (Labels.filter-category(key, name) != "") { return Labels.filter-category(key, name); }
         // Hub rows and its View menu.
         if (key == "hub_add") { return @tr("Add item…"); }
         if (key == "hub_move") { return @tr("Move"); }
@@ -112,6 +155,7 @@ export global Labels {
         if (key == "launcher:current") { return @tr("Current: {}", name); }
         // Picker titles.
         if (key == "title:view") { return @tr("View"); }
+        if (key == "title:filter") { return @tr("Filter"); }
         if (key == "title:add_item") { return @tr("Add item"); }
         if (key == "title:sort") { return @tr("Sort"); }
         if (key == "title:group_by") { return @tr("Group by"); }

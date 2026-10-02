@@ -1329,6 +1329,7 @@ fn open_add_picker(ctx: &Ctx, app: &App) {
             label_key: SharedString::from(e.label_key.as_str()),
             enabled: true,
             reason_key: SharedString::default(),
+            detail: SharedString::default(),
         })
         .collect();
     crate::router::present_hub_add_picker(ctx, app, rows);

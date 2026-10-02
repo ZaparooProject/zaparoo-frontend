@@ -18,10 +18,11 @@ use crate::media_types::{
     MediaBrowseIndexParams, MediaBrowseIndexResult, MediaBrowseParams, MediaBrowseResult,
     MediaHistoryLatestResult, MediaHistoryParams, MediaHistoryResult, MediaImageParams,
     MediaImageResult, MediaIndexParams, MediaMetaParams, MediaMetaResult, MediaMetaUpdateParams,
-    MediaResult, MediaScrapeParams, MediaSearchParams, MediaSearchResult, MediaTagsUpdateParams,
-    MediaTagsUpdateResult, PairStartResult, ReadersResult, ReadersWriteParams, RunParams,
-    ScrapersResult, ScrapingStatusResponse, SettingsResult, SystemsParams, SystemsResult,
-    TokensHistoryResult, TokensResult, UpdateSettingsParams, VersionResult,
+    MediaResult, MediaScrapeParams, MediaSearchParams, MediaSearchResult, MediaTagsParams,
+    MediaTagsResult, MediaTagsUpdateParams, MediaTagsUpdateResult, PairStartResult, ReadersResult,
+    ReadersWriteParams, RunParams, ScrapersResult, ScrapingStatusResponse, SettingsResult,
+    SystemsParams, SystemsResult, TokensHistoryResult, TokensResult, UpdateSettingsParams,
+    VersionResult,
 };
 use crate::transport::Transport;
 use futures_util::{SinkExt, StreamExt};
@@ -978,6 +979,17 @@ impl Client {
             .call("media.history.latest", &serde_json::json!({}))
             .await?;
         serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
+    }
+
+    /// Lists the tags available for browse filtering (`media.tags`),
+    /// scoped to `params.systems` or every system when empty. Core caps
+    /// long-tail types at 100 entries each.
+    pub async fn media_tags(
+        &self,
+        params: MediaTagsParams,
+    ) -> Result<MediaTagsResult, ClientError> {
+        let val = self.call("media.tags", &params).await?;
+        deserialize_timed("media.tags", val)
     }
 
     /// Adds or removes mutable user tags for one indexed media item.
