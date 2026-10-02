@@ -831,8 +831,8 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
         if action == actions::ACCEPT {
             return;
         }
-        // The operation already started. Lift its feedback, but never eat
-        // Back merely because the control is still pressed.
+        // Interrupt an undispatched Accept or lift a pending operation's
+        // feedback. Back still belongs to the current surface, not the cue.
         crate::press_feedback::cancel(app);
     }
     if action == actions::ACCEPT {

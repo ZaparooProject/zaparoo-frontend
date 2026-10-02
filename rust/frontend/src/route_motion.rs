@@ -4,7 +4,7 @@
 
 //! Motion and navigation checked with software-rendered frames on a stepped
 //! clock. Assert coherent source/destination composition, local cursor motion,
-//! immediate dispatch with pending feedback, command ownership, and eventual quiescence.
+//! visible pushes before dispatch, command ownership, and eventual quiescence.
 
 use crate::navigation::EntryMode;
 
@@ -2632,8 +2632,7 @@ fn token_empty_retry_replaces_alert_and_cancel_drains_queue() {
 }
 
 #[test]
-fn token_cancel_dispatches_immediately_and_rejects_a_reopened_write_target(
-) -> Result<(), &'static str> {
+fn token_cancel_push_rejects_a_reopened_write_target() -> Result<(), &'static str> {
     assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
     let (app, window) = boot();
     let ov = app.global::<crate::Overlays>();
@@ -2642,16 +2641,22 @@ fn token_cancel_dispatches_immediately_and_rejects_a_reopened_write_target(
     let target = crate::press_feedback::current(&app).ok_or("Cancel target")?;
     let commits = Rc::new(Cell::new(0));
     arm_feedback(&app, &commits);
-    assert_eq!(commits.get(), 1);
+    assert_eq!(commits.get(), 0);
     ov.set_card_write_key("2".into());
-    let count = commits.clone();
-    crate::press_feedback::dispatch(&app, &target, move |_| count.set(count.get() + 1));
     settle(&window);
     assert_eq!(
         commits.get(),
-        1,
-        "old target must not cancel a reopened write"
+        0,
+        "old push must not cancel a reopened write"
     );
+    assert!(!crate::press_feedback::pending(&app));
+    let count = commits.clone();
+    crate::press_feedback::dispatch(&app, &target, move |_| count.set(count.get() + 1));
+    settle(&window);
+    assert_eq!(commits.get(), 0, "already stale target is rejected too");
+    arm_feedback(&app, &commits);
+    settle(&window);
+    assert_eq!(commits.get(), 1, "new write owns its own Accept");
     ov.set_card_write_open(false);
     crate::press_feedback::cancel(&app);
     settle(&window);
@@ -2762,8 +2767,21 @@ fn launch_tile_release_cycle(reuse: bool) {
         // Exercise router -> games::accept_current -> router::launch. The
         // offline runtime leaves the reply pending until this fixture sends it.
         crate::router::handle_action(&ctx, &app, "accept");
-        let hold = crate::press_feedback::held_ticket(&app).expect("real launch keeps its ticket");
+        assert!(crate::press_feedback::held_ticket(&app).is_none());
         pixels(&window);
+        advance(zaparoo_app::input::PRESS_FEEDBACK_MS - 1);
+        assert!(crate::press_feedback::held_ticket(&app).is_none());
+        let pushed = pixels(&window);
+        assert_ne!(pushed, resting, "launch tile pushes before dispatch");
+        advance(1);
+        let hold = crate::press_feedback::held_ticket(&app).expect("real launch keeps its ticket");
+        assert_region_matches(
+            &pixels(&window),
+            &pushed,
+            0..W as usize,
+            32..H as usize - 30,
+            "launch hold cannot raise the face between push and reply",
+        );
         settle(&window);
         assert_ne!(
             pixels(&window),
@@ -2805,6 +2823,7 @@ fn launch_tile_release_cycle(reuse: bool) {
                 crate::router::handle_action(&ctx, &app, "left");
                 if matches!(exit, Exit::StaleReply) {
                     crate::router::handle_action(&ctx, &app, "accept");
+                    advance(zaparoo_app::input::PRESS_FEEDBACK_MS);
                     let newer = crate::press_feedback::held_ticket(&app).expect("second launch");
                     pixels(&window);
                     crate::router::finish_launch(
@@ -2868,36 +2887,32 @@ fn launch_tile_release_cycle(reuse: bool) {
     clippy::expect_used,
     reason = "a fixture with no pressable control is a broken test"
 )]
-fn back_survives_both_immediate_and_pending_commits() {
+fn back_survives_both_a_push_and_a_pending_commit() {
     assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
-    let (app, _window) = boot();
+    let (app, window) = boot();
     let (_runtime, ctx) = offline_ctx();
-    for hold in [false, true] {
+    for dispatched in [false, true] {
         crate::router::open_quit_confirm(&app);
-        let target = crate::press_feedback::current(&app).expect("dialog button");
         let commits = Rc::new(Cell::new(0));
-        let count = commits.clone();
-        crate::press_feedback::dispatch(&app, &target, move |app| {
-            count.set(count.get() + 1);
-            if hold {
-                crate::press_feedback::keep_held(app);
-            }
-        });
-        assert_eq!(commits.get(), 1);
-        if hold {
+        arm_feedback(&app, &commits);
+        assert_eq!(commits.get(), 0);
+        crate::router::handle_action(&ctx, &app, "accept");
+        assert_eq!(commits.get(), 0, "duplicate Accept is gated during push");
+        if dispatched {
+            advance(zaparoo_app::input::PRESS_FEEDBACK_MS);
+            assert_eq!(commits.get(), 1);
             crate::router::handle_action(&ctx, &app, "accept");
-            assert!(
-                app.global::<crate::Overlays>().get_dialog_open(),
-                "duplicate Accept is gated"
-            );
+            assert_eq!(commits.get(), 1, "duplicate Accept is gated during hold");
         }
         crate::router::handle_action(&ctx, &app, "cancel");
         assert!(!app.global::<crate::Overlays>().get_dialog_open());
+        settle(&window);
         assert_eq!(
             commits.get(),
-            1,
-            "Back cannot undo an already dispatched operation"
+            u32::from(dispatched),
+            "Back cancels only an undispatched Accept"
         );
+        assert!(!crate::press_feedback::pending(&app));
     }
 }
 
@@ -2928,7 +2943,7 @@ fn a_stale_release_cannot_lift_the_next_press() {
 }
 
 #[test]
-fn dialog_dispatches_immediately_and_pending_feedback_settles() {
+fn dialog_pushes_before_dispatch_and_pending_feedback_settles() {
     assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
     let (app, window) = boot();
     crate::sizing::apply_scene(
@@ -2942,7 +2957,7 @@ fn dialog_dispatches_immediately_and_pending_feedback_settles() {
     let commits = Rc::new(Cell::new(0));
     let time = CLOCK.with(Cell::get);
     arm_feedback(&app, &commits);
-    assert_eq!(commits.get(), 1);
+    assert_eq!(commits.get(), 0);
     assert_eq!(CLOCK.with(Cell::get), time);
     frame(&window);
     distinct_frames(&window, 2);
@@ -2950,8 +2965,11 @@ fn dialog_dispatches_immediately_and_pending_feedback_settles() {
     assert_ne!(
         resting,
         frame(&window),
-        "pending dialog button visibly depresses"
+        "dialog button visibly depresses before dispatch"
     );
+    assert_eq!(commits.get(), 0);
+    advance(zaparoo_app::input::PRESS_FEEDBACK_MS - 2 * TICK_MS);
+    assert_eq!(commits.get(), 1);
     assert!(crate::press_feedback::pending(&app));
     crate::press_feedback::cancel(&app);
     settle(&window);
@@ -2961,35 +2979,34 @@ fn dialog_dispatches_immediately_and_pending_feedback_settles() {
 }
 
 #[test]
-fn feedback_never_defers_an_accept_to_a_later_target() -> Result<(), &'static str> {
+fn feedback_completion_never_dispatches_to_a_later_target() -> Result<(), &'static str> {
     assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
     let (app, window) = boot();
     crate::router::open_quit_confirm(&app);
     let target = crate::press_feedback::current(&app).ok_or("No target")?;
     let commits = Rc::new(Cell::new(0));
     arm_feedback(&app, &commits);
-    assert_eq!(commits.get(), 1);
+    assert_eq!(commits.get(), 0);
     app.global::<crate::Overlays>().set_dialog_focus(1);
+    settle(&window);
+    assert_eq!(commits.get(), 0, "Yes never inherits No's pending Accept");
+    assert!(!crate::press_feedback::pending(&app));
     let count = commits.clone();
     crate::press_feedback::dispatch(&app, &target, move |_| count.set(count.get() + 1));
     settle(&window);
-    assert_eq!(commits.get(), 1, "Yes never inherits No's Accept");
+    assert_eq!(commits.get(), 0, "already stale target is rejected too");
     arm_feedback(&app, &commits);
     crate::press_feedback::cancel(&app);
     settle(&window);
-    assert_eq!(
-        commits.get(),
-        2,
-        "feedback cancellation cannot undo dispatched actions"
-    );
+    assert_eq!(commits.get(), 0, "canceled push never dispatches");
     assert!(!crate::press_feedback::pending(&app));
+    arm_feedback(&app, &commits);
+    settle(&window);
+    assert_eq!(commits.get(), 1, "new target gets its own Accept");
+    crate::press_feedback::cancel(&app);
     app.global::<crate::Motion>().set_enabled(false);
     arm_feedback(&app, &commits);
-    assert_eq!(
-        commits.get(),
-        3,
-        "reduced motion also dispatches synchronously"
-    );
+    assert_eq!(commits.get(), 2, "reduced motion dispatches synchronously");
     crate::press_feedback::cancel(&app);
     Ok(())
 }
@@ -3025,6 +3042,7 @@ fn letter_and_log_buttons_paint_their_pending_press() {
         app.window().request_redraw();
         assert_eq!(app.global::<crate::PressFeedback>().get_owner(), owner);
         assert_ne!(resting, frame(&window), "{owner:?} button must push down");
+        advance(zaparoo_app::input::PRESS_FEEDBACK_MS - 2 * TICK_MS);
         crate::press_feedback::cancel(&app);
         settle(&window);
     }
@@ -3077,6 +3095,7 @@ fn settings_category_and_picker_feedback_is_local_and_settles() {
             frame(&window),
             "{owner:?} must show local feedback while pending"
         );
+        advance(zaparoo_app::input::PRESS_FEEDBACK_MS - 2 * TICK_MS);
         crate::press_feedback::cancel(&app);
         settle(&window);
         app.window().request_redraw();
@@ -4635,7 +4654,9 @@ fn pending_folder_cancel_and_stale_reply_preserve_grid_and_list_sources() {
         crate::router::handle_action(&ctx, &app, "accept");
         if !list {
             assert!(crate::press_feedback::pending(&app));
+            assert!(!app.global::<Shell>().get_transitioning());
             pixels(&window);
+            advance(zaparoo_app::input::PRESS_FEEDBACK_MS);
             assert!(app.global::<Shell>().get_transitioning());
         }
         assert!(app.global::<Shell>().get_transitioning());
@@ -4672,6 +4693,7 @@ fn pending_folder_cancel_and_stale_reply_preserve_grid_and_list_sources() {
         crate::router::handle_action(&ctx, &app, "accept");
         if !list {
             pixels(&window);
+            advance(zaparoo_app::input::PRESS_FEEDBACK_MS);
             assert!(app.global::<Shell>().get_transitioning());
         }
         let ticket = crate::router::lock(&ctx.shared).games.ticket;
@@ -4931,7 +4953,7 @@ fn save_push_evidence(name: &str, buffer: &[Rgb565Pixel]) {
     clippy::too_many_lines,
     reason = "one software window checks the physical face and edge across every tile host"
 )]
-fn grid_push_lowers_face_art_and_ring_while_navigation_is_pending() {
+fn grid_push_lowers_face_art_and_ring_before_navigation() {
     assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
     let (app, window) = boot();
     crate::sizing::apply_scene(
@@ -5021,9 +5043,10 @@ fn grid_push_lowers_face_art_and_ring_while_navigation_is_pending() {
             return;
         };
         crate::press_feedback::dispatch(&app, &target, |app| {
-            crate::router::begin_pending(app, Screen::About);
+            crate::router::transition_to_screen(app, Screen::About, 1);
         });
-        assert!(shell.get_transitioning());
+        assert!(crate::press_feedback::pending(&app));
+        assert!(!shell.get_transitioning());
         pixels(&window);
         advance(16);
         save_push_evidence(&format!("{owner}-1-downstroke"), &pixels(&window));
@@ -5033,7 +5056,7 @@ fn grid_push_lowers_face_art_and_ring_while_navigation_is_pending() {
         assert_eq!(
             shell.get_active_screen(),
             screen,
-            "pending navigation keeps source visible"
+            "push keeps source visible before navigation"
         );
         let sizing = app.global::<Sizing>();
         let layout = app.global::<crate::Layout>();
@@ -5083,8 +5106,7 @@ fn grid_push_lowers_face_art_and_ring_while_navigation_is_pending() {
             screen,
             "fully depressed source must remain visible"
         );
-        advance(16);
-        crate::router::transition_to_screen(&app, Screen::About, 1);
+        advance(zaparoo_app::input::PRESS_FEEDBACK_MS - 80);
         assert_eq!(shell.get_active_screen(), Screen::About);
         assert!(!crate::press_feedback::pending(&app));
         save_push_evidence(&format!("{owner}-3-destination"), &pixels(&window));
@@ -5092,7 +5114,7 @@ fn grid_push_lowers_face_art_and_ring_while_navigation_is_pending() {
 }
 
 #[test]
-fn window_and_pointer_accept_open_ready_settings_without_waiting() {
+fn window_and_pointer_accept_push_settings_tiles_before_opening_page() {
     assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
     let (app, window) = boot();
     let (_runtime, ctx) = offline_ctx();
@@ -5122,14 +5144,44 @@ fn window_and_pointer_accept_open_ready_settings_without_waiting() {
             app.window()
                 .dispatch_event(slint::platform::WindowEvent::KeyReleased { text: key.into() });
         }
-        assert_eq!(view.get_page(), SettingsPage::Appearance);
         assert_eq!(CLOCK.with(Cell::get), time);
+        assert_eq!(view.get_page(), SettingsPage::Root);
+        assert!(crate::press_feedback::pending(&app));
+        let prefix = if pointer {
+            "settings-pointer"
+        } else {
+            "settings-key"
+        };
+        save_push_evidence(&format!("{prefix}-0-raised"), &raised);
+        pixels(&window);
+        advance(48);
+        let depressed = pixels(&window);
+        save_push_evidence(&format!("{prefix}-1-depressed"), &depressed);
+        assert_ne!(raised, depressed, "category tile pushes before navigation");
+        assert_eq!(view.get_page(), SettingsPage::Root);
+        advance(zaparoo_app::input::PRESS_FEEDBACK_MS - 48 - 1);
+        assert_eq!(view.get_page(), SettingsPage::Root);
+        assert_eq!(depressed, pixels(&window), "push holds until dispatch");
+        advance(1);
+        assert_eq!(view.get_page(), SettingsPage::Appearance);
         assert!(!crate::press_feedback::pending(&app));
+        save_push_evidence(&format!("{prefix}-2-page"), &pixels(&window));
         crate::router::handle_action(&ctx, &app, "cancel");
         settle(&window);
         assert_eq!(view.get_page(), SettingsPage::Root);
         assert_eq!(raised, pixels(&window), "return restores raised tile");
     }
+    crate::router::handle_action(&ctx, &app, "accept");
+    assert_eq!(view.get_page(), SettingsPage::Root);
+    assert!(crate::press_feedback::pending(&app));
+    app.invoke_input_lost();
+    advance(zaparoo_app::input::PRESS_FEEDBACK_MS);
+    assert_eq!(
+        view.get_page(),
+        SettingsPage::Root,
+        "input loss cancels pending navigation"
+    );
+    assert!(!crate::press_feedback::pending(&app));
     app.global::<crate::Motion>().set_enabled(false);
     crate::router::handle_action(&ctx, &app, "accept");
     assert_eq!(view.get_page(), SettingsPage::Appearance);
@@ -5139,6 +5191,61 @@ fn window_and_pointer_accept_open_ready_settings_without_waiting() {
         SettingsPage::Appearance,
         "input loss cannot retract completed navigation"
     );
+    assert!(!crate::press_feedback::pending(&app));
+}
+
+#[test]
+fn hub_settings_tile_pushes_before_opening_ready_screen() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.hub.layout.items = vec![zaparoo_core::hub_layout::HubItem {
+            kind_raw: "action".into(),
+            id: "settings".into(),
+            ..Default::default()
+        }];
+        shared.hub.categories_loaded = true;
+        shared.hub.restore_done = true;
+    }
+    crate::hub::rebuild(&ctx, &app);
+    settle(&window);
+    let raised = pixels(&window);
+    save_push_evidence("hub-settings-0-raised", &raised);
+    let shell = app.global::<Shell>();
+    crate::router::handle_action(&ctx, &app, "accept");
+    assert_eq!(shell.get_active_screen(), Screen::Hub);
+    assert_eq!(
+        app.global::<crate::PressFeedback>().get_owner(),
+        PressOwner::Hub
+    );
+    pixels(&window);
+    advance(48);
+    let depressed = pixels(&window);
+    save_push_evidence("hub-settings-1-depressed", &depressed);
+    assert_ne!(raised, depressed, "Hub tile pushes before navigation");
+    assert_eq!(shell.get_active_screen(), Screen::Hub);
+    advance(zaparoo_app::input::PRESS_FEEDBACK_MS - 48 - 1);
+    assert_eq!(shell.get_active_screen(), Screen::Hub);
+    assert_eq!(depressed, pixels(&window), "push holds until dispatch");
+    advance(1);
+    assert_eq!(shell.get_active_screen(), Screen::Settings);
+    assert_eq!(
+        app.global::<crate::SettingsView>().get_page(),
+        SettingsPage::Root
+    );
+    assert!(!crate::press_feedback::pending(&app));
+    save_push_evidence("hub-settings-2-screen", &pixels(&window));
+
+    crate::router::handle_action(&ctx, &app, "cancel");
+    app.global::<crate::Motion>().set_enabled(false);
+    crate::router::handle_action(&ctx, &app, "accept");
+    assert_eq!(shell.get_active_screen(), Screen::Settings);
     assert!(!crate::press_feedback::pending(&app));
 }
 
@@ -5184,7 +5291,7 @@ fn accepting_during_page_motion_pushes_the_logical_destination_tile() {
     pixels(&window);
     advance(48);
     pixels(&window);
-    assert!(app.global::<Shell>().get_transitioning());
+    assert!(!app.global::<Shell>().get_transitioning());
     advance(48);
     assert_eq!(
         crate::router::lock(&ctx.shared)
@@ -5828,7 +5935,7 @@ fn restored_missing_folder_falls_back_to_root_but_errors_do_not_reset() {
 }
 
 #[test]
-fn update_buttons_dispatch_immediately_and_reject_stale_targets() -> Result<(), &'static str> {
+fn update_buttons_push_before_dispatch_and_reject_stale_targets() -> Result<(), &'static str> {
     assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
     let (app, _window) = boot();
     let view = app.global::<crate::UpdateView>();
@@ -5848,21 +5955,27 @@ fn update_buttons_dispatch_immediately_and_reject_stale_targets() -> Result<(), 
         done.set(true);
         app.global::<Shell>().set_active_screen(Screen::Hub);
     });
-    assert!(committed.get());
+    assert!(!committed.get());
     assert_eq!(CLOCK.with(Cell::get), time);
+    assert_eq!(app.global::<Shell>().get_active_screen(), Screen::Update);
+    advance(zaparoo_app::input::PRESS_FEEDBACK_MS - 1);
+    assert!(!committed.get());
+    advance(1);
+    assert!(committed.get());
     assert_eq!(app.global::<Shell>().get_active_screen(), Screen::Hub);
     assert!(!crate::press_feedback::pending(&app));
 
     app.global::<Shell>().set_active_screen(Screen::Update);
     committed.set(false);
-    view.set_page(crate::UpdatePage::Running);
     let done = committed.clone();
     crate::press_feedback::dispatch(&app, &target, move |_| done.set(true));
-    advance(100);
-    assert!(
-        !committed.get(),
-        "changed page rejects an already stale target"
-    );
+    view.set_page(crate::UpdatePage::Running);
+    advance(zaparoo_app::input::PRESS_FEEDBACK_MS);
+    assert!(!committed.get(), "changed page cancels the pending Accept");
+    let done = committed.clone();
+    crate::press_feedback::dispatch(&app, &target, move |_| done.set(true));
+    advance(zaparoo_app::input::PRESS_FEEDBACK_MS);
+    assert!(!committed.get(), "already stale target is rejected too");
     assert!(!crate::press_feedback::pending(&app));
     assert!(crate::press_feedback::current(&app).is_none());
 
