@@ -1,4 +1,4 @@
-//! Dispatch Accept immediately; retain local feedback only while work is pending.
+//! Keep Accept visible through its push, then retain feedback while work is pending.
 
 use crate::{App, Overlays, PressFeedback, PressOwner, Screen, Shell};
 use slint::{ComponentHandle, Model};
@@ -287,6 +287,7 @@ pub(crate) fn held_ticket(app: &App) -> Option<Hold> {
 
 pub fn cancel(app: &App) {
     TICKET.with(|ticket| ticket.set(ticket.get().wrapping_add(1)));
+    HELD.with(|held| held.set(false));
     let feedback = app.global::<PressFeedback>();
     if feedback.get_owner() == PressOwner::Settings {
         let view = app.global::<crate::SettingsView>();
@@ -316,8 +317,9 @@ pub fn release(app: &App, hold: Hold) {
     }
 }
 
-/// Feedback never delays useful work. Validate the target in this same turn;
-/// no timer retains an action that could later reach a different control.
+/// Retain the source control through its downstroke and short depressed hold.
+/// Disabled motion dispatches immediately; interrupted or changed targets never
+/// receive an old Accept.
 pub fn dispatch(app: &App, target: &Target, commit: impl FnOnce(&App) + 'static) {
     cancel(app);
     if current(app).as_ref() != Some(target) {
@@ -338,14 +340,39 @@ pub fn dispatch(app: &App, target: &Target, commit: impl FnOnce(&App) + 'static)
         }
         _ => {}
     }
-    HELD.with(|held| held.set(false));
-    commit(app);
-    if TICKET.with(Cell::get) == ticket && !HELD.with(Cell::get) {
-        if app.global::<Shell>().get_transitioning() {
-            keep_held(app);
-        } else {
-            cancel(app);
+    // Commit before lifting so a launch or pending route can retain the same
+    // pressed face without a raised frame between the push and its hold.
+    let dispatch = move |app: &App| {
+        commit(app);
+        if TICKET.with(Cell::get) == ticket && !HELD.with(Cell::get) {
+            if app.global::<Shell>().get_transitioning() {
+                keep_held(app);
+            } else {
+                cancel(app);
+            }
         }
+    };
+    if app.global::<crate::Motion>().get_enabled() {
+        let weak = app.as_weak();
+        let target = target.clone();
+        slint::Timer::single_shot(
+            Duration::from_millis(zaparoo_app::input::PRESS_FEEDBACK_MS),
+            move || {
+                if TICKET.with(Cell::get) != ticket {
+                    return;
+                }
+                let Some(app) = weak.upgrade() else {
+                    return;
+                };
+                if current(&app).as_ref() != Some(&target) {
+                    cancel(&app);
+                    return;
+                }
+                dispatch(&app);
+            },
+        );
+    } else {
+        dispatch(app);
     }
     app.window().request_redraw();
 }

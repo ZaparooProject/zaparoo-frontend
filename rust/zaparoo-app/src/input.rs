@@ -12,6 +12,10 @@
 // drop out of rapid navigation between ticks.
 const _: () = assert!(RAPID_QUIET_MS > PAGE_TICK_MS);
 
+/// Keep the accepting control visible through its downstroke and a short
+/// depressed hold before dispatch. Disabled motion skips this wait.
+pub const PRESS_FEEDBACK_MS: u64 = 90;
+
 /// A held repeatable action waits this long before it starts repeating.
 pub const REPEAT_INITIAL_MS: u64 = 250;
 /// Then ordinary held navigation repeats a row at this cadence.

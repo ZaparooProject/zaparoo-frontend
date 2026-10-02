@@ -87,7 +87,7 @@ does not ban short one-shot cues on one small element at a state change:
 
 | Cue | Why it is cheap |
 |---|---|
-| Tile physical press on activate or launch (`rust/frontend/src/press_feedback.rs`: 34 ms downstroke plus a short hold) | One opaque face moves; the dirty region is one tile |
+| Tile physical press on activate or launch (`rust/frontend/src/press_feedback.rs`: 90 ms feedback window with a 34 ms downstroke) | One opaque face moves; the dirty region is one tile |
 | List, settings and menu row inverse blink on activate (`Motion.press-ms`) | The selected row swaps fill and ink, then swaps back: two repaints, nothing moves |
 | Held tile blink in Hub Move mode (`Motion.held-blink-ms`) | One tile, a hard on/off cut, only while a Move session holds it |
 
@@ -144,10 +144,12 @@ expensive for the A9.
 | `held-blink-ms` | 650 ms | Hub Move held-tile blink cycle |
 
 `press-ms` has a one-frame floor at the slowest target (about 30 fps, so
-33.3 ms rounded up to 34): it is also the time a deferred Accept waits so the
-cue gets at least one presented frame before a forward route replaces it.
-Don't drop it below that floor, and there is no perceptual reason to raise it
-toward `settle-ms`.
+33.3 ms rounded up to 34). Accept waits through a shared 90 ms feedback window
+(`zaparoo_app::input::PRESS_FEEDBACK_MS`): the downstroke plus a short depressed
+hold before the action can replace its control. Launches and pending routes
+retain that press until completion. Disabled motion skips the wait, and
+interrupted or changed targets cancel the pending Accept. Don't drop the
+downstroke below its one-frame floor or stretch it toward `settle-ms`.
 
 ## Loading cues
 
