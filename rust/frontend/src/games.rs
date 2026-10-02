@@ -703,7 +703,9 @@ pub(crate) fn refilter(ctx: &Ctx, app: &App) {
         }
         write_saved_path(&mut shared, String::new());
         remember_list_top(&mut shared, 0);
-        // The letters belong to the list that was filtered.
+        // The letters belong to the list that was filtered. Bumping the
+        // ticket retires a fetch still in flight with the old filter.
+        shared.letter_seq += 1;
         shared.letter_buckets.clear();
         shared.letter_scope = None;
         shared.games.browse_path.clone()
