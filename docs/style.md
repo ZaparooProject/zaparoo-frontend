@@ -388,13 +388,12 @@ lowers artwork, caption, and ring together without scaling cover art.
 
 ### Launch feedback stays on the control that was pressed
 
-The press-in is the launch cue, and it lasts as long as the launch does. An
-ordinary push is a fixed 90 ms, which is over before Core has answered, so a
-commit that starts work outliving its own push keeps the control down
-(`press_feedback::keep_held`) and lifts it when the work resolves, fails, or
-the frontend goes dormant behind the game it started. A cap (`HOLD_MAX_MS`)
-releases anything still held after ten seconds: a Core that never answers must
-not leave a tile pushed in.
+Accept dispatches immediately; feedback never delays the action. Work that
+finishes in the same turn retires its feedback with it. A launch or deferred
+route keeps the accepting control down (`press_feedback::keep_held`) until the
+work resolves, fails, or the frontend goes dormant behind the game it started.
+A cap (`HOLD_MAX_MS`) releases anything still held after ten seconds: a Core
+that never answers must not leave a tile pushed in.
 
 The reason to keep it there rather than in the header is that the eye is on
 the tile that was just pressed, and on a handheld at arm's length or a TV

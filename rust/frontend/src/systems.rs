@@ -52,6 +52,7 @@ pub struct SystemsModel {
     /// A page swoop is in flight; input waits for the commit.
     pub sliding: bool,
     pub transition_seq: u64,
+    pub fill_task: crate::scoped_task::ScopedTask,
     pub page_seq: u64,
     pub cut_next_page: bool,
 }
@@ -71,6 +72,7 @@ impl SystemsModel {
             release_pulse: 0,
             sliding: false,
             transition_seq: 0,
+            fill_task: crate::scoped_task::ScopedTask::default(),
             page_seq: 0,
             cut_next_page: false,
         }
@@ -169,6 +171,7 @@ pub fn enter(ctx: &Ctx, app: &App, category: &str, entry: EntryMode, animate: bo
         shared.persist.hub.category = category.to_string();
         shared.persist.active_screen = "systems".to_string();
         let model = &mut shared.systems_model;
+        model.fill_task.cancel();
         model.mode = SystemsMode::Category;
         model.loading = false;
         model.category = category.to_string();
@@ -214,6 +217,7 @@ fn enter_favorites_with_direction(ctx: &Ctx, app: &App, entry: EntryMode, direct
         }
         shared.persist.active_screen = "favorite-systems".to_string();
         let model = &mut shared.systems_model;
+        model.fill_task.cancel();
         model.mode = SystemsMode::Favorites;
         model.loading = model.favorites.is_empty();
         model.focus_armed = false;
@@ -243,7 +247,7 @@ fn enter_favorites_with_direction(ctx: &Ctx, app: &App, entry: EntryMode, direct
     let mut rx = resource.subscribe();
     let weak = app.as_weak();
     let ctx2 = ctx.clone();
-    ctx.handle.spawn(async move {
+    let task = ctx.handle.spawn(async move {
         loop {
             let snapshot = rx.borrow_and_update().clone();
             match snapshot {
@@ -289,6 +293,7 @@ fn enter_favorites_with_direction(ctx: &Ctx, app: &App, entry: EntryMode, direct
             }
         }
     });
+    lock(&ctx.shared).systems_model.fill_task.replace(task);
 }
 
 /// Core answered the favorites catalog: store it, re-project and seat the
@@ -367,16 +372,12 @@ fn cell_for(
     row: &SystemRow,
     logo_style: &str,
     bounds: zaparoo_app::logo_cache::Bounds,
+    art_size: u32,
 ) -> GridCell {
-    let mut cell = GridCell {
-        name: SharedString::from(row.name.as_str()),
-        wordmark: true,
-        hidden: row.hidden,
-        ..Default::default()
-    };
+    let mut cell = text_cell(row);
     // A user override is served as supplied: no tint ramp, one image
     // for both states.
-    if let Some(image) = crate::customization::system_image(&row.id) {
+    if let Some(image) = crate::customization::system_image(&row.id, art_size) {
         cell.cover = image.clone();
         cell.has_cover = true;
         cell.cover_focus = image;
@@ -395,6 +396,15 @@ fn cell_for(
     cell
 }
 
+fn text_cell(row: &SystemRow) -> GridCell {
+    GridCell {
+        name: SharedString::from(row.name.as_str()),
+        wordmark: true,
+        hidden: row.hidden,
+        ..Default::default()
+    }
+}
+
 /// The grid's band and cell fit for the scene, resolved through the
 /// browse layout profile.
 struct Geometry {
@@ -404,6 +414,15 @@ struct Geometry {
     grid_height: i32,
     insets: Insets,
     fit: paged_grid::Fit,
+}
+
+impl Geometry {
+    fn artwork_size(&self) -> u32 {
+        zaparoo_app::customization::artwork_size(
+            self.fit.cell_width as f32,
+            self.fit.cell_height as f32,
+        )
+    }
 }
 
 fn geometry(app: &App) -> Geometry {
@@ -520,18 +539,8 @@ fn request_logos(ctx: &Ctx, app: &App, shared: &Shared, bounds: zaparoo_app::log
     }
     let model = &shared.systems_model;
     let (start, size) = if list_layout(shared) {
-        let size = list_visible_rows(app, shared);
-        let top = saved_list_top(shared).unwrap_or(0);
-        (
-            crate::browse_motion::window_top(
-                model.grid.current_index(),
-                model.rows.len(),
-                size,
-                top,
-            )
-            .saturating_sub(1),
-            size + 2,
-        )
+        // List rows contain text only; prepare the detail cover and its neighbors.
+        (model.grid.current_index(), 1)
     } else {
         (
             model.grid.current_page() * model.grid.page_size(),
@@ -556,7 +565,11 @@ fn page_cells(
     shared: &Shared,
     page: usize,
     bounds: zaparoo_app::logo_cache::Bounds,
+    art_size: u32,
 ) -> Vec<GridCell> {
+    if list_layout(shared) {
+        return Vec::new();
+    }
     let model = &shared.systems_model;
     let page_size = model.grid.page_size();
     model
@@ -564,7 +577,15 @@ fn page_cells(
         .iter()
         .skip(page * page_size)
         .take(page_size)
-        .map(|row| cell_for(ctx, row, &shared.persist.settings.system_logo_style, bounds))
+        .map(|row| {
+            cell_for(
+                ctx,
+                row,
+                &shared.persist.settings.system_logo_style,
+                bounds,
+                art_size,
+            )
+        })
         .collect()
 }
 
@@ -578,6 +599,7 @@ fn render_with_page(ctx: &Ctx, app: &App, reuse_page: bool) {
         return;
     }
     let geometry = geometry(app);
+    let art_size = geometry.artwork_size();
     let view = app.global::<SystemsView>();
     let mut shared = lock(&ctx.shared);
     let shape_changed = {
@@ -610,7 +632,7 @@ fn render_with_page(ctx: &Ctx, app: &App, reuse_page: bool) {
     if strip_sliding {
         crate::view_model::publish_cells(
             &view.get_next_cells(),
-            page_cells(ctx, &shared, page, bounds),
+            page_cells(ctx, &shared, page, bounds, art_size),
             |rows| view.set_next_cells(rows),
         );
     } else {
@@ -629,7 +651,7 @@ fn render_with_page(ctx: &Ctx, app: &App, reuse_page: bool) {
         {
             crate::view_model::publish_cells(
                 &view.get_cells(),
-                page_cells(ctx, &shared, page, bounds),
+                page_cells(ctx, &shared, page, bounds, art_size),
                 |rows| {
                     view.set_cells(rows);
                 },
@@ -730,7 +752,7 @@ fn render_list(ctx: &Ctx, app: &App, shared: &Shared, bounds: zaparoo_app::logo_
             .iter()
             .skip(top)
             .take(visible + 2)
-            .map(|row| cell_for(ctx, row, &shared.persist.settings.system_logo_style, bounds))
+            .map(text_cell)
             .collect();
         crate::view_model::publish_cells(&view.get_list_rows(), rows, |rows| {
             view.set_list_rows(rows);
@@ -739,7 +761,13 @@ fn render_list(ctx: &Ctx, app: &App, shared: &Shared, bounds: zaparoo_app::logo_
         view.set_list_view_top(i32::try_from(top).unwrap_or(0));
         view.set_list_scroll_top(i32::try_from(scroll_top).unwrap_or(0));
         if let Some(row) = model.current() {
-            let cell = cell_for(ctx, row, &shared.persist.settings.system_logo_style, bounds);
+            let cell = cell_for(
+                ctx,
+                row,
+                &shared.persist.settings.system_logo_style,
+                bounds,
+                crate::sizing::detail_cover_source_size(crate::router::output_scene(app)),
+            );
             view.set_detail_title(SharedString::from(row.name.as_str()));
             view.set_detail_has_cover(cell.has_cover);
             view.set_detail_wordmark(!cell.has_cover);
@@ -882,9 +910,10 @@ fn slide_to_current_page(ctx: &Ctx, app: &App) {
     crate::drs::heavy_begin();
     let next: Vec<GridCell> = {
         let shared = lock(&ctx.shared);
-        let bounds = logo_bounds(app, &shared, &geometry(app));
+        let geometry = geometry(app);
+        let bounds = logo_bounds(app, &shared, &geometry);
         request_logos(ctx, app, &shared, bounds);
-        page_cells(ctx, &shared, to_page, bounds)
+        page_cells(ctx, &shared, to_page, bounds, geometry.artwork_size())
     };
     view.set_slide_anim(true);
     view.set_selected_local(-1);

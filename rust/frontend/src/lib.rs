@@ -75,6 +75,7 @@ mod press_feedback;
 #[cfg(all(test, feature = "mister"))]
 mod route_motion;
 mod router;
+mod scoped_task;
 mod settings;
 mod sizing;
 mod state_types;
@@ -681,7 +682,6 @@ fn run_application(
         client.is_local(),
     );
     media_cache::configure_local_path(reads_core_files, core_is_local);
-    hub_covers::seed(&media);
     games::seed_detail_ctx(client.clone(), handle.clone());
     let notice_ack = config.notice.commercial_ack;
 
@@ -788,6 +788,7 @@ fn run_application(
             .map_or_else(platform_paths::custom_dir, std::path::PathBuf::from),
         config.system_names.clone(),
     );
+    let customization_task = customization::start(&ctx, &app);
     scan_customization(&ctx, &app);
     input::bind(&ctx, &app, config.key_to_action.clone());
     // The Hub paints its persisted layout before the first frame; the
@@ -802,6 +803,7 @@ fn run_application(
     router::bind_context_input(&ctx, &app);
     hub::rebuild(&ctx, &app);
     hub::restore(&ctx, &app);
+    let hub_seed_task = hub_covers::seed_startup(&ctx, &app);
     bind_resume(&ctx, &app, &client);
 
     restore_core_independent(&ctx, &app);
@@ -817,7 +819,6 @@ fn run_application(
     pairing::bind_events(&ctx, &app, &client);
     online::bind_events(&ctx, &app, &client);
     bind_launchers(&ctx, &store);
-    apply_buttons(&ctx, &app);
     bind_controller_report(&ctx, &app);
     start_clock(&app, &handle, clock_twelve_hour, ctx.dormant.subscribe());
     start_status(&app, &ctx);
@@ -834,7 +835,11 @@ fn run_application(
     ready(host::Input::new(&ctx, &app));
 
     let result = app.run();
+    router::stop_idle();
     input::stop_repeat(&ctx);
+    customization::stop();
+    drop(customization_task);
+    drop(hub_seed_task);
     // Shutdown also runs on event-loop failure, before a host can recreate us.
     runtime.shutdown_timeout(Duration::from_secs(2));
     result?;
@@ -884,7 +889,7 @@ fn scan_customization(ctx: &Arc<Ctx>, app: &App) {
             return;
         }
         let _ = weak.upgrade_in_event_loop(move |app| {
-            hub::render(&ctx, &app);
+            hub::rebuild(&ctx, &app);
             systems::render(&ctx, &app);
         });
     });
@@ -1037,10 +1042,7 @@ fn set_dormant(ctx: &Ctx, app: &App, dormant: bool) {
         // A launch that took the screen has said everything a held press
         // could; nothing may still be pushed in when the frontend comes back.
         press_feedback::cancel(app);
-        {
-            let mut shared = lock(&ctx.shared);
-            shared.saver_seq += 1;
-        }
+        router::stop_idle();
         shell.set_saver_armed(false);
         app.global::<Motion>().set_enabled(false);
         if ctx.is_mister {
@@ -1136,6 +1138,10 @@ fn bind_controller_report(ctx: &Arc<Ctx>, app: &App) {
         tracing::debug!(started = reader_started, "desktop gamepad reader");
     }
     let mut rx = zaparoo_core::controller_report::subscribe();
+    // Subscribe before reading the seed so concurrent producer updates stay
+    // pending. A late watch subscriber sees the current value as already read;
+    // waiting only for changed() would leave startup glyphs at the fallback.
+    apply_buttons(ctx, app);
     let weak = app.as_weak();
     let ctx = ctx.clone();
     ctx.handle.clone().spawn(async move {

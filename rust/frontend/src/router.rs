@@ -97,9 +97,6 @@ pub struct Shared {
     /// Session-scoped "Re-scrape existing" one-shot; deliberately not
     /// persisted, and resets after the forced run starts.
     pub rescrape_existing: bool,
-    /// Screensaver idle ticket: every input bumps it, so an armed
-    /// timer from an earlier idle stretch fires as a no-op.
-    pub saver_seq: u64,
     /// Core's launcher inventory + per-system defaults, for the
     /// "Change launcher" picker (`SystemLaunchers` model port).
     pub launchers: Vec<zaparoo_core::media_types::LauncherInfo>,
@@ -262,7 +259,6 @@ impl Shared {
             list_context: ListContext::ViewMenu,
             pending_restart: None,
             rescrape_existing: false,
-            saver_seq: 0,
             launchers: Vec::new(),
             system_defaults: Vec::new(),
             notice_ack: false,
@@ -799,49 +795,60 @@ pub(crate) fn on_app_activated(ctx: &Ctx, app: &App) {
     }
 }
 
-/// Restart the screensaver idle countdown. Every input calls this;
-/// the seq ticket makes earlier armed timers no-ops. "off" disables
-/// arming entirely (a stale timer still fires but fails the ticket).
+thread_local! {
+    static IDLE_TIMER: slint::Timer = slint::Timer::default();
+    #[cfg(all(test, feature = "mister"))]
+    static IDLE_FIRES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// Drop pending countdown work on dormancy and before a hosted event loop ends.
+pub(crate) fn stop_idle() {
+    IDLE_TIMER.with(slint::Timer::stop);
+}
+
+#[cfg(all(test, feature = "mister"))]
+pub(crate) fn idle_firings() -> usize {
+    IDLE_FIRES.with(std::cell::Cell::get)
+}
+
+/// Restart the same countdown on every input. Invalid/off settings cancel it
+/// rather than leaving a ticketed callback queued for minutes.
 pub fn reset_idle(ctx: &Ctx, app: &App) {
-    let (ticket, timeout) = {
-        let mut shared = lock(&ctx.shared);
-        shared.saver_seq += 1;
-        (
-            shared.saver_seq,
-            shared.persist.settings.screensaver_timeout.clone(),
-        )
-    };
+    stop_idle();
+    let timeout = lock(&ctx.shared)
+        .persist
+        .settings
+        .screensaver_timeout
+        .clone();
     let Ok(secs) = timeout.parse::<u64>() else {
-        return; // "off" or malformed - never arms
+        return;
     };
     if secs == 0 {
         return;
     }
     let weak = app.as_weak();
-    let shared = ctx.shared.clone();
-    slint::Timer::single_shot(Duration::from_secs(secs), move || {
-        if lock(&shared).saver_seq != ticket {
-            return;
-        }
-        let Some(app) = weak.upgrade() else {
-            return;
-        };
-        // The boot curtain and the transition "Loading…" cue are not
-        // burn targets; skip and let the next input re-arm the clock.
-        if !app.global::<crate::Shell>().get_boot_complete()
-            || app.global::<crate::Shell>().get_dormant()
-            || app.global::<crate::Shell>().get_transitioning()
-        {
-            return;
-        }
-        // A running update keeps the screen awake; the driver restarts
-        // this clock when the run ends.
-        if app.global::<crate::Shell>().get_active_screen() == crate::Screen::Update
-            && !app.global::<crate::UpdateView>().get_allows_screensaver()
-        {
-            return;
-        }
-        app.global::<crate::Shell>().set_saver_armed(true);
+    IDLE_TIMER.with(|timer| {
+        timer.start(
+            slint::TimerMode::SingleShot,
+            Duration::from_secs(secs),
+            move || {
+                #[cfg(all(test, feature = "mister"))]
+                IDLE_FIRES.with(|fires| fires.set(fires.get() + 1));
+                let Some(app) = weak.upgrade() else { return };
+                let shell = app.global::<crate::Shell>();
+                // Busy surfaces are not burn targets. Their completion/input paths
+                // re-arm the clock; this timeout never polls or chains another timer.
+                if !shell.get_boot_complete() || shell.get_dormant() || shell.get_transitioning() {
+                    return;
+                }
+                if shell.get_active_screen() == crate::Screen::Update
+                    && !app.global::<crate::UpdateView>().get_allows_screensaver()
+                {
+                    return;
+                }
+                shell.set_saver_armed(true);
+            },
+        );
     });
 }
 
@@ -883,6 +890,7 @@ pub(crate) fn begin_pending_with_direction(app: &App, target: crate::Screen, _di
 }
 
 pub(crate) fn clear_pending(app: &App) {
+    crate::press_feedback::cancel(app);
     CUE_SEQ.with(|sequence| sequence.set(sequence.get().wrapping_add(1)));
     let shell = app.global::<crate::Shell>();
     shell.set_transitioning(false);
@@ -914,15 +922,9 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
         if action == actions::ACCEPT {
             return;
         }
-        // A push lasts 90 ms, so the key that interrupted it can be dropped
-        // along with the cue. A hold lasts as long as the launch under it,
-        // and dropping a Back for seconds would lose a press the user meant:
-        // lift the cue and let the key through.
-        let pushing = !crate::press_feedback::holding();
+        // The operation already started. Lift its feedback, but never eat
+        // Back merely because the control is still pressed.
         crate::press_feedback::cancel(app);
-        if pushing && action == actions::CANCEL {
-            return;
-        }
     }
     if action == actions::ACCEPT {
         if let Some(target) = crate::press_feedback::prepare(ctx, app) {
