@@ -809,7 +809,6 @@ fn run_application(
     pairing::bind_events(&ctx, &app, &client);
     online::bind_events(&ctx, &app, &client);
     bind_launchers(&ctx, &store);
-    apply_buttons(&ctx, &app);
     bind_controller_report(&ctx, &app);
     start_clock(&app, &handle, clock_twelve_hour, ctx.dormant.subscribe());
     start_status(&app, &ctx);
@@ -1125,6 +1124,10 @@ fn bind_controller_report(ctx: &Arc<Ctx>, app: &App) {
         tracing::debug!(started = reader_started, "desktop gamepad reader");
     }
     let mut rx = zaparoo_core::controller_report::subscribe();
+    // Subscribe before reading the seed so concurrent producer updates stay
+    // pending. A late watch subscriber sees the current value as already read;
+    // waiting only for changed() would leave startup glyphs at the fallback.
+    apply_buttons(ctx, app);
     let weak = app.as_weak();
     let ctx = ctx.clone();
     ctx.handle.clone().spawn(async move {
