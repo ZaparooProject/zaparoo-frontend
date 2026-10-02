@@ -114,9 +114,9 @@ mod tests {
             let args = BrowseArgs::new(String::new(), vec!["NES".into()], 100, Vec::new());
             let visible = store.subscribe::<MediaBrowseEndpoint>(args.clone());
             let all = store.subscribe::<MediaBrowseEndpoint>(args.with_hidden(true));
-            assert!(!Arc::ptr_eq(&visible, &all));
             let mut visible_rx = visible.subscribe();
             let mut all_rx = all.subscribe();
+            assert!(!visible_rx.same_channel(&all_rx));
             for rx in [&mut visible_rx, &mut all_rx] {
                 rx.wait_for(|s| matches!(s, ResourceStatus::Ready(r) if r.entries.len() == 1)).await.unwrap();
             }
@@ -131,6 +131,19 @@ mod tests {
             }).await.unwrap();
             visible_rx.wait_for(|s| matches!(s, ResourceStatus::Ready(r) if r.entries.len() == 1)).await.unwrap();
             all_rx.wait_for(|s| matches!(s, ResourceStatus::Ready(r) if r.entries.first().is_some_and(|e| e.tags.is_empty()))).await.unwrap();
+            drop(visible_rx);
+            drop(all_rx);
+            drop(visible);
+            drop(all);
+            // Games releases its initial-page lease after filling the view.
+            // A later hide must also invalidate that inactive retained payload.
+            store.run_mutation::<MediaTagsUpdateMutation>(MediaTagsUpdateParams {
+                media_id: Some(42), add: vec!["user:hidden".into()], ..MediaTagsUpdateParams::default()
+            }).await.unwrap();
+            let reopened = store.subscribe::<MediaBrowseEndpoint>(BrowseArgs::new(String::new(), vec!["NES".into()], 100, Vec::new()));
+            let mut reopened_rx = reopened.subscribe();
+            assert!(matches!(*reopened_rx.borrow(), ResourceStatus::Loading));
+            reopened_rx.wait_for(|s| matches!(s, ResourceStatus::Ready(r) if r.entries.is_empty())).await.unwrap();
             server.abort();
         }).await.unwrap();
     }

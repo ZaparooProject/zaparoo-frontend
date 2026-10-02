@@ -145,6 +145,7 @@ fields!(MediaHistoryEntry {
     system_name,
     media_name,
     media_path,
+    tags,
     launcher_id,
     started_at,
     ended_at,
@@ -170,6 +171,20 @@ fields!(LaunchersResult { launchers });
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn history_cache_accounts_for_current_user_tags() {
+        let empty = MediaHistoryEntry::default();
+        let tagged = MediaHistoryEntry {
+            tags: vec![TagInfo {
+                tag: "hidden".into(),
+                tag_type: "user".into(),
+                label: String::new(),
+            }],
+            ..MediaHistoryEntry::default()
+        };
+        assert!(bytes(&tagged) > bytes(&empty));
+    }
 
     #[test]
     fn counts_unused_capacity_nested_tags_and_optional_strings() {
