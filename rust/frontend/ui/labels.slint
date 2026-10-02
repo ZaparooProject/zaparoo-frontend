@@ -216,6 +216,7 @@ export global DialogLabels {
     public pure function error-title(kind: ErrorKind) -> string {
         if (kind == ErrorKind.launch || kind == ErrorKind.launch-repair) { return @tr("Launch failed"); }
         if (kind == ErrorKind.favorite) { return @tr("Favorite update failed"); }
+        if (kind == ErrorKind.media-visibility) { return @tr("Visibility update failed"); }
         if (kind == ErrorKind.add-to-hub) { return @tr("Add to Hub failed"); }
         if (kind == ErrorKind.media-index) { return @tr("Media update failed"); }
         if (kind == ErrorKind.media-scrape) { return @tr("Update metadata failed"); }
@@ -242,6 +243,7 @@ export global DialogLabels {
             return DialogLabels.launch-repair-body(reason, launcher, plugin, context);
         }
         if (kind == ErrorKind.favorite) { return @tr("Could not update this favorite. Check Zaparoo Core and try again."); }
+        if (kind == ErrorKind.media-visibility) { return @tr("Could not hide or unhide this game. Check Zaparoo Core and try again."); }
         if (kind == ErrorKind.add-to-hub) {
             if (context == "") { return @tr("Could not add this item to the Hub. Check Zaparoo Core and try again."); }
             return @tr("Could not add {} to the Hub. Check Zaparoo Core and try again.", context);

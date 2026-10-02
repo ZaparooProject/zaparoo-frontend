@@ -87,6 +87,12 @@ impl<T: Clone + Send + Sync + 'static> RemoteResource<T> {
     /// next reconnect. The store layer drives tag-based invalidation
     /// through this method; direct callers rarely need it.
     pub fn refetch(&self) {
+        // A subscriber created immediately after a mutation must not consume
+        // the old Ready value before the fetch task processes its wake-up.
+        let ready = { matches!(&*self.status.borrow(), ResourceStatus::Ready(_)) };
+        if ready {
+            self.status.send_replace(ResourceStatus::Loading);
+        }
         self.refetch.notify_one();
     }
 
@@ -361,6 +367,26 @@ mod tests {
             let final_status = wait_for(&mut sub, |s| matches!(s, ResourceStatus::Ready(42))).await;
             assert!(matches!(final_status, ResourceStatus::Ready(42)));
             drop(conn_tx);
+        });
+    }
+
+    #[test]
+    fn refetch_retires_cached_ready_before_a_new_subscriber_can_read_it() {
+        let runtime = rt();
+        runtime.block_on(async {
+            let (_conn_tx, conn_rx) = watch::channel(ConnectionState::Connected);
+            let calls = Arc::new(AtomicUsize::new(0));
+            let count = calls.clone();
+            let res = RemoteResource::<usize>::spawn_with(conn_rx, runtime.handle(), move || {
+                let value = count.fetch_add(1, Ordering::SeqCst) + 1;
+                async move { Ok(value) }
+            });
+            let mut sub = res.subscribe();
+            wait_for(&mut sub, |s| matches!(s, ResourceStatus::Ready(1))).await;
+            res.refetch();
+            let mut fresh = res.subscribe();
+            assert!(matches!(*fresh.borrow(), ResourceStatus::Loading));
+            wait_for(&mut fresh, |s| matches!(s, ResourceStatus::Ready(2))).await;
         });
     }
 

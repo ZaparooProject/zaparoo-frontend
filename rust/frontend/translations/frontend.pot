@@ -2,7 +2,7 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: frontend VERSION\n"
-"POT-Creation-Date: 2026-10-01 06:35+0000\n"
+"POT-Creation-Date: 2026-10-02 08:31+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -978,233 +978,241 @@ msgid "Favorite update failed"
 msgstr ""
 
 #: rust/frontend/ui/labels.slint:219
-msgid "Add to Hub failed"
+msgid "Visibility update failed"
 msgstr ""
 
 #: rust/frontend/ui/labels.slint:220
-msgid "Media update failed"
+msgid "Add to Hub failed"
 msgstr ""
 
 #: rust/frontend/ui/labels.slint:221
-msgid "Update metadata failed"
+msgid "Media update failed"
 msgstr ""
 
 #: rust/frontend/ui/labels.slint:222
-msgid "Source list unavailable"
+msgid "Update metadata failed"
 msgstr ""
 
 #: rust/frontend/ui/labels.slint:223
-msgid "Cancel failed"
+msgid "Source list unavailable"
 msgstr ""
 
 #: rust/frontend/ui/labels.slint:224
-msgid "Launcher update failed"
+msgid "Cancel failed"
 msgstr ""
 
 #: rust/frontend/ui/labels.slint:225
-msgid "Alternate versions unavailable"
+msgid "Launcher update failed"
 msgstr ""
 
 #: rust/frontend/ui/labels.slint:226
-msgid "QR code failed"
+msgid "Alternate versions unavailable"
 msgstr ""
 
 #: rust/frontend/ui/labels.slint:227
-msgid "Token write failed"
+msgid "QR code failed"
 msgstr ""
 
 #: rust/frontend/ui/labels.slint:228
-msgid "Setting not saved"
+msgid "Token write failed"
 msgstr ""
 
 #: rust/frontend/ui/labels.slint:229
-msgid "Pairing could not start"
+msgid "Setting not saved"
 msgstr ""
 
 #: rust/frontend/ui/labels.slint:230
-msgid "Online account unavailable"
+msgid "Pairing could not start"
 msgstr ""
 
 #: rust/frontend/ui/labels.slint:231
+msgid "Online account unavailable"
+msgstr ""
+
+#: rust/frontend/ui/labels.slint:232
 msgid "Action failed"
 msgstr ""
 
-#: rust/frontend/ui/labels.slint:238
+#: rust/frontend/ui/labels.slint:239
 msgid "Could not start this item. Check Zaparoo Core and try again."
 msgstr ""
 
-#: rust/frontend/ui/labels.slint:239
+#: rust/frontend/ui/labels.slint:240
 msgid "Could not start {}. Check Zaparoo Core and try again."
 msgstr ""
 
-#: rust/frontend/ui/labels.slint:244
+#: rust/frontend/ui/labels.slint:245
 msgid "Could not update this favorite. Check Zaparoo Core and try again."
 msgstr ""
 
 #: rust/frontend/ui/labels.slint:246
+msgid "Could not hide or unhide this game. Check Zaparoo Core and try again."
+msgstr ""
+
+#: rust/frontend/ui/labels.slint:248
 msgid "Could not add this item to the Hub. Check Zaparoo Core and try again."
 msgstr ""
 
-#: rust/frontend/ui/labels.slint:247
+#: rust/frontend/ui/labels.slint:249
 msgid "Could not add {} to the Hub. Check Zaparoo Core and try again."
 msgstr ""
 
-#: rust/frontend/ui/labels.slint:249
+#: rust/frontend/ui/labels.slint:251
 msgid ""
 "Could not start the media database update. Check Zaparoo Core and try again."
 msgstr ""
 
-#: rust/frontend/ui/labels.slint:250
+#: rust/frontend/ui/labels.slint:252
 msgid "Could not start updating metadata. Check Zaparoo Core and try again."
 msgstr ""
 
-#: rust/frontend/ui/labels.slint:251
+#: rust/frontend/ui/labels.slint:253
 msgid ""
 "Could not load the list of metadata sources. Check Zaparoo Core and try "
 "again."
 msgstr ""
 
-#: rust/frontend/ui/labels.slint:252
+#: rust/frontend/ui/labels.slint:254
 msgid "Could not cancel the media operation. Check Zaparoo Core and try again."
 msgstr ""
 
-#: rust/frontend/ui/labels.slint:253
+#: rust/frontend/ui/labels.slint:255
 msgid "Could not change the launcher. Check Zaparoo Core and try again."
 msgstr ""
 
-#: rust/frontend/ui/labels.slint:254
+#: rust/frontend/ui/labels.slint:256
 msgid "Could not find alternate versions. Check Zaparoo Core and try again."
 msgstr ""
 
-#: rust/frontend/ui/labels.slint:255
+#: rust/frontend/ui/labels.slint:257
 msgid "Could not create the QR code for this item."
 msgstr ""
 
-#: rust/frontend/ui/labels.slint:256
+#: rust/frontend/ui/labels.slint:258
 msgid "Could not write to this token. Check that it is writable and try again."
 msgstr ""
 
-#: rust/frontend/ui/labels.slint:257
+#: rust/frontend/ui/labels.slint:259
 msgid "Could not save this setting. Try again."
 msgstr ""
 
-#: rust/frontend/ui/labels.slint:258
+#: rust/frontend/ui/labels.slint:260
 msgid ""
 "Core would not start a pairing. It may already have as many paired devices "
 "as it allows, or it may be running on another device."
 msgstr ""
 
-#: rust/frontend/ui/labels.slint:259
+#: rust/frontend/ui/labels.slint:261
 msgid ""
 "Core could not reach or update your Zaparoo Online account. Check the "
 "network connection and try again."
 msgstr ""
 
-#: rust/frontend/ui/labels.slint:260
+#: rust/frontend/ui/labels.slint:262
 msgid "The action could not be completed. Check Zaparoo Core and try again."
 msgstr ""
 
-#: rust/frontend/ui/labels.slint:272
+#: rust/frontend/ui/labels.slint:274
 msgid "This launcher isn't installed."
 msgstr ""
 
-#: rust/frontend/ui/labels.slint:273
+#: rust/frontend/ui/labels.slint:275
 msgid "{} isn't installed."
 msgstr ""
 
-#: rust/frontend/ui/labels.slint:276
+#: rust/frontend/ui/labels.slint:278
 msgid "This launcher is installed, but its entry point is missing or disabled."
 msgstr ""
 
-#: rust/frontend/ui/labels.slint:277
+#: rust/frontend/ui/labels.slint:279
 msgid "{} is installed, but its entry point is missing or disabled."
 msgstr ""
 
-#: rust/frontend/ui/labels.slint:280
+#: rust/frontend/ui/labels.slint:282
 msgid "This launcher's plugin for this system isn't installed."
 msgstr ""
 
-#: rust/frontend/ui/labels.slint:281
+#: rust/frontend/ui/labels.slint:283
 msgid "{}'s plugin for this system isn't installed."
 msgstr ""
 
-#: rust/frontend/ui/labels.slint:282
+#: rust/frontend/ui/labels.slint:284
 msgid "{}'s {} plugin isn't installed."
 msgstr ""
 
-#: rust/frontend/ui/labels.slint:285
+#: rust/frontend/ui/labels.slint:287
 msgid ""
 "This build of the launcher can't be used for this media. A different build "
 "is needed."
 msgstr ""
 
-#: rust/frontend/ui/labels.slint:286
+#: rust/frontend/ui/labels.slint:288
 msgid ""
 "This build of {} can't be used for this media. A different build is needed."
 msgstr ""
 
-#: rust/frontend/ui/labels.slint:289
+#: rust/frontend/ui/labels.slint:291
 msgid "This launcher can't play this media."
 msgstr ""
 
-#: rust/frontend/ui/labels.slint:290
+#: rust/frontend/ui/labels.slint:292
 msgid "{} can't play this media."
 msgstr ""
 
-#: rust/frontend/ui/labels.slint:293
+#: rust/frontend/ui/labels.slint:295
 msgid "This launcher doesn't support the requested launch options."
 msgstr ""
 
-#: rust/frontend/ui/labels.slint:294
+#: rust/frontend/ui/labels.slint:296
 msgid "{} doesn't support the requested launch options."
 msgstr ""
 
-#: rust/frontend/ui/labels.slint:297
+#: rust/frontend/ui/labels.slint:299
 msgid "This launcher doesn't have the storage permission it needs."
 msgstr ""
 
-#: rust/frontend/ui/labels.slint:298
+#: rust/frontend/ui/labels.slint:300
 msgid "{} doesn't have the storage permission it needs."
 msgstr ""
 
-#: rust/frontend/ui/labels.slint:301
+#: rust/frontend/ui/labels.slint:303
 msgid "This launcher can't read media from where it's stored."
 msgstr ""
 
-#: rust/frontend/ui/labels.slint:302
+#: rust/frontend/ui/labels.slint:304
 msgid "{} can't read media from where it's stored."
 msgstr ""
 
-#: rust/frontend/ui/labels.slint:304
+#: rust/frontend/ui/labels.slint:306
 msgid "The storage holding this media isn't available."
 msgstr ""
 
-#: rust/frontend/ui/labels.slint:305
+#: rust/frontend/ui/labels.slint:307
 msgid "This media could not be resolved or opened."
 msgstr ""
 
-#: rust/frontend/ui/labels.slint:306
+#: rust/frontend/ui/labels.slint:308
 msgid ""
 "Access to this media's folder was revoked. Re-grant it in Settings > Library."
 msgstr ""
 
-#: rust/frontend/ui/labels.slint:307
+#: rust/frontend/ui/labels.slint:309
 msgid "The launcher service isn't responding."
 msgstr ""
 
-#: rust/frontend/ui/labels.slint:308
+#: rust/frontend/ui/labels.slint:310
 msgid "Return to Zaparoo before launching this."
 msgstr ""
 
-#: rust/frontend/ui/labels.slint:309
+#: rust/frontend/ui/labels.slint:311
 msgid "The launch was cancelled before it started."
 msgstr ""
 
-#: rust/frontend/ui/labels.slint:310
+#: rust/frontend/ui/labels.slint:312
 msgid "The launch was sent, but its outcome could not be confirmed."
 msgstr ""
 
-#: rust/frontend/ui/labels.slint:311
+#: rust/frontend/ui/labels.slint:313
 msgid "The system refused the launch request."
 msgstr ""
 
@@ -1596,7 +1604,7 @@ msgid "Prefers an artwork type when games have multiple images."
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:193
-msgid "Shows hidden systems and categories so you can unhide them."
+msgid "Shows hidden games, systems and categories to unhide them."
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:194

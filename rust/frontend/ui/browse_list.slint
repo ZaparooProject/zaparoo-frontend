@@ -157,7 +157,7 @@ export component BrowseList inherits Rectangle {
             center-content: false;
             caption-font-size: Sizing.font-section;
             caption-weight: FontWeight.normal;
-            caption-color: Theme.text-label;
+            caption-color: row.hidden ? Theme.text-variant : Theme.text-label;
             tags-color: Theme.text-variant;
         }
         if lit: SelectionClip {
@@ -178,7 +178,7 @@ export component BrowseList inherits Rectangle {
                 center-content: false;
                 caption-font-size: Sizing.font-section;
                 caption-weight: FontWeight.medium;
-                caption-color: sel.content;
+                caption-color: row.hidden ? sel.content-muted : sel.content;
                 tags-color: sel.content-muted;
             }
         }

@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 //
 // `MediaBrowseEndpoint` — directory listing for the games view. Cache key
-// is `(path, sorted systems, sorted tags)` so two singletons asking for same
+// includes path, sorted systems/tags and visibility so callers asking for the same
 // scoped path share one fetch task. The frontend only uses this Endpoint
 // for the *initial* page of a browse target; cursor-driven follow-up
 // pages bypass the cache and call `Client::media_browse` directly,
@@ -31,6 +31,8 @@ pub struct BrowseArgs {
     /// a fetch (in practice each screen has a fixed page size, so
     /// duplicates inside one process are rare).
     pub max_results: u32,
+    /// Visibility is part of the cache identity, not a client-side filter.
+    pub include_hidden: bool,
 }
 
 impl BrowseArgs {
@@ -49,7 +51,14 @@ impl BrowseArgs {
             systems,
             tags,
             max_results,
+            include_hidden: false,
         }
+    }
+
+    #[must_use]
+    pub fn with_hidden(mut self, include_hidden: bool) -> Self {
+        self.include_hidden = include_hidden;
+        self
     }
 
     /// Core's merged system-root view for this scope. Derived, not stored:
@@ -78,6 +87,7 @@ impl Endpoint for MediaBrowseEndpoint {
                 .media_browse(MediaBrowseParams {
                     path: args.path,
                     systems: args.systems,
+                    include_hidden: Some(args.include_hidden),
                     max_results: Some(args.max_results),
                     cursor: None,
                     tags: args.tags,
@@ -168,6 +178,16 @@ mod tests {
         );
         assert_ne!(unfiltered, filtered);
         assert_eq!(filtered.tags, vec!["user:favorite"]);
+    }
+
+    #[test]
+    fn browse_cache_identity_distinguishes_hidden_visibility() {
+        let visible = BrowseArgs::new(String::new(), vec!["SNES".into()], 100, Vec::new());
+        let hidden = visible.clone().with_hidden(true);
+        assert_ne!(visible, hidden);
+        assert!(!visible.include_hidden);
+        assert!(hidden.include_hidden);
+        assert_eq!(visible, hidden.with_hidden(false));
     }
 
     #[test]

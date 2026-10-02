@@ -706,10 +706,19 @@ pub fn context_entries(input: &MenuInput) -> Vec<&'static str> {
         entries.push("discover");
     }
     entries.push("add_to_hub");
+    entries.push("toggle_hidden");
     if !input.media_busy {
         entries.push("scrape_game");
     }
     entries
+}
+
+/// Keep focus near a newly hidden row: next visible sibling, then previous.
+/// Returning none lets a refill clear an empty list's saved selection.
+pub fn selection_after_hide(index: usize, hidden: &[bool]) -> Option<usize> {
+    (index.saturating_add(1)..hidden.len())
+        .chain((0..index.min(hidden.len())).rev())
+        .find(|&candidate| !hidden[candidate])
 }
 
 /// Whether the row at the current position gets a context menu at all.
@@ -1386,6 +1395,7 @@ mod tests {
                 "qr_code",
                 "discover",
                 "add_to_hub",
+                "toggle_hidden",
                 "scrape_game"
             ]
         );
@@ -1395,7 +1405,13 @@ mod tests {
         };
         assert_eq!(
             context_entries(&busy),
-            vec!["more_info", "toggle_favorite", "qr_code", "add_to_hub"]
+            vec![
+                "more_info",
+                "toggle_favorite",
+                "qr_code",
+                "add_to_hub",
+                "toggle_hidden"
+            ]
         );
     }
 
@@ -1412,6 +1428,7 @@ mod tests {
                 "toggle_favorite",
                 "qr_code",
                 "add_to_hub",
+                "toggle_hidden",
                 "scrape_game"
             ]
         );
@@ -1421,7 +1438,13 @@ mod tests {
     fn recents_menu_has_no_favorite_toggle() {
         assert_eq!(
             context_entries(&menu(Owner::Recents)),
-            vec!["more_info", "qr_code", "add_to_hub", "scrape_game"]
+            vec![
+                "more_info",
+                "qr_code",
+                "add_to_hub",
+                "toggle_hidden",
+                "scrape_game"
+            ]
         );
     }
 
@@ -1452,6 +1475,24 @@ mod tests {
         assert!(context_menu_enabled(EntryType::Directory, false, "/x"));
         assert!(context_menu_enabled(EntryType::Root, false, "/x"));
         assert!(!context_menu_enabled(EntryType::Root, false, "mame://"));
+    }
+
+    #[test]
+    fn hiding_keeps_focus_on_the_nearest_visible_sibling() {
+        assert_eq!(selection_after_hide(1, &[false, true, false]), Some(2));
+        assert_eq!(selection_after_hide(2, &[false, false, true]), Some(1));
+        assert_eq!(selection_after_hide(0, &[true, true, false]), Some(2));
+        assert_eq!(selection_after_hide(1, &[true, true]), None);
+        assert_eq!(selection_after_hide(0, &[]), None);
+    }
+
+    #[test]
+    fn media_capable_directories_get_the_hide_toggle() {
+        let input = MenuInput {
+            entry_type: EntryType::Directory,
+            ..menu(Owner::Games)
+        };
+        assert!(context_entries(&input).contains(&"toggle_hidden"));
     }
 
     #[test]

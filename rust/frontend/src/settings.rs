@@ -715,6 +715,7 @@ fn toggle(ctx: &Ctx, app: &App, id: &str) {
         "showHidden" => {
             crate::router::reproject_hub(ctx, app);
             crate::systems::reproject(ctx, app);
+            crate::games::refresh_visibility(ctx, app);
         }
         "showOriginalFilenames" => crate::games::reproject(ctx, app),
         "reduceMotion" => {
