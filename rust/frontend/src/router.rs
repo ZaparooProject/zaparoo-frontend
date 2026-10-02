@@ -11,6 +11,7 @@
 
 use crate::games::GameRow;
 use crate::media_cache::MediaCache;
+use crate::navigation::EntryMode;
 use crate::sizing;
 use crate::{App, Sizing};
 use slint::{ComponentHandle, Model, ModelRc, SharedString, VecModel};
@@ -139,9 +140,8 @@ pub struct Shared {
     /// `media.history.latest` answers (or when history is empty).
     /// The Hub: persisted layout, entries, cursor and Move session.
     pub hub: crate::hub::HubModel,
-    /// The Settings page and row last shown, so re-entering Settings in
-    /// the same process returns there. Memory only: a cold start opens
-    /// Settings at its root like before.
+    /// Settings page and row for Back and in-process restoration, not
+    /// fresh entry. Memory only: a cold start opens Settings at its root.
     pub settings_focus: Option<(crate::SettingsPage, usize)>,
 }
 
@@ -198,6 +198,7 @@ pub struct Ctx {
     pub store: Arc<Store>,
     pub handle: Handle,
     pub media: Arc<MediaCache>,
+    pub logos: Arc<crate::system_logos::Logos>,
     pub shared: Arc<Mutex<Shared>>,
     /// Live 12-hour clock flag shared with the clock task; the
     /// Settings toggle flips it without a restart.
@@ -973,6 +974,17 @@ fn focus_index(app: &App) -> i32 {
 fn dispatch_with_focus(ctx: &Ctx, app: &App, action: &str) {
     let before = focus_index(app);
     dispatch_action(ctx, app, action);
+    if !matches!(
+        app.global::<crate::Shell>().get_active_screen(),
+        crate::Screen::Hub
+            | crate::Screen::Systems
+            | crate::Screen::FavoriteSystems
+            | crate::Screen::Games
+            | crate::Screen::Favorites
+            | crate::Screen::Recents
+    ) {
+        ctx.logos.request([]);
+    }
     let after = focus_index(app);
     // A wrap can look geometrically adjacent on a two-row/two-column grid.
     // Input direction disambiguates it; never glide backward across that wrap.
@@ -1117,8 +1129,17 @@ pub(crate) fn media_state(ctx: &Ctx) -> zaparoo_core::store::MediaStatusState {
 
 /// About screen: enter from Settings, Back returns there. The screen
 /// token persists so a kill on the About page restores to it.
-pub fn enter_about(ctx: &Ctx, app: &App) {
-    lock(&ctx.shared).persist.active_screen = "about".to_string();
+pub fn enter_about(ctx: &Ctx, app: &App, entry: EntryMode) {
+    let position = {
+        let mut shared = lock(&ctx.shared);
+        shared.persist.active_screen = "about".to_string();
+        if entry == EntryMode::Fresh {
+            shared.persist.about_scroll_milli = 0;
+        }
+        shared.persist.about_scroll_milli.min(1000)
+    };
+    app.global::<crate::AboutView>()
+        .set_scroll_milli(i32::try_from(position).unwrap_or(0));
     save_persist(&ctx.shared);
     transition_to_screen(app, crate::Screen::About, 1);
 }
@@ -1905,9 +1926,9 @@ fn favorites_grouping_picked(ctx: &Ctx, app: &App, id: &str) {
     }
     crate::settings::save(ctx, app);
     if id == "system" {
-        crate::systems::enter_favorites(ctx, app);
+        crate::systems::enter_favorites(ctx, app, EntryMode::Restore);
     } else {
-        crate::games::enter_favorites(ctx, app);
+        crate::games::enter_favorites(ctx, app, EntryMode::Restore);
     }
 }
 
@@ -2259,22 +2280,32 @@ pub(crate) fn launch(ctx: &Ctx, app: &App, text: String, name: &str) {
         };
         inflight.store(false, Ordering::SeqCst);
         let _ = weak.upgrade_in_event_loop(move |app| {
-            crate::press_feedback::release(&app, hold);
-            clear_launch_cue(&app);
-            match outcome {
-                LaunchOutcome::Ok => {}
-                LaunchOutcome::Failed => report_action_error(&ctx2, &app, "launch", &name),
-                LaunchOutcome::Repair(context) => {
-                    report_action_error(&ctx2, &app, "launch_repair", &context.encode());
-                }
-            }
+            finish_launch(&ctx2, &app, hold, outcome, &name);
         });
     });
 }
 
+pub(crate) fn finish_launch(
+    ctx: &Ctx,
+    app: &App,
+    hold: crate::press_feedback::Hold,
+    outcome: LaunchOutcome,
+    name: &str,
+) {
+    crate::press_feedback::release(app, hold);
+    clear_launch_cue(app);
+    match outcome {
+        LaunchOutcome::Ok => {}
+        LaunchOutcome::Failed => report_action_error(ctx, app, "launch", name),
+        LaunchOutcome::Repair(context) => {
+            report_action_error(ctx, app, "launch_repair", &context.encode());
+        }
+    }
+}
+
 /// What a launch attempt produced, decided once (in the async task) so the
 /// event-loop closure only has to act on it.
-enum LaunchOutcome {
+pub(crate) enum LaunchOutcome {
     Ok,
     Failed,
     Repair(RepairContext),
@@ -2297,7 +2328,7 @@ impl LaunchOutcome {
 /// carried through the alert queue as one JSON string (the same idiom
 /// `launchers.rs`'s retry payload uses) so a second failure queued behind
 /// the first survives with its own reason intact.
-struct RepairContext {
+pub(crate) struct RepairContext {
     reason: String,
     launcher: String,
     plugin: String,

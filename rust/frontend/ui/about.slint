@@ -11,6 +11,7 @@ export global AboutView {
     in-out property <int> scroll-milli: 0;
     in-out property <int> maximum-scroll-milli: 0;
     callback scroll-requested(int);
+    callback direction-requested(int);
     public function move(delta: int) {
         AboutView.scroll-requested(Math.max(0, Math.min(1000,
             Math.min(1000, AboutView.scroll-milli)
@@ -45,7 +46,13 @@ export component AboutScreen inherits Rectangle {
         y: Sizing.header-bottom + Sizing.pct-h(1);
         height: Sizing.pct-h(7);
         title: @tr("About / License");
-        show-page-counter: false;
+        show-page-counter: !Sizing.crt;
+        page-indicator-mode: true;
+        percent-mode: true;
+        fraction: root.maximum-scroll > 0px ? root.scroll-y / root.maximum-scroll : 0;
+        has-pages-above: root.scroll-y > 0px;
+        has-pages-below: root.scroll-y < root.maximum-scroll;
+        page-requested(delta) => { AboutView.direction-requested(delta); }
     }
     // The shared surface inset, all four sides (docs/style.md, "Surface
     // containment"); the sides used to be `pct-w(3)` against `pct-h(4)`
@@ -55,7 +62,7 @@ export component AboutScreen inherits Rectangle {
     // `ListPickerModal` uses; folding them into the padding is what made
     // the old `pct-h(4)` end inset look like a considered number.
     property <length> arrow: Sizing.pct-h(3);
-    property <length> arrow-band: root.arrow + Sizing.pct-h(0.5);
+    property <length> arrow-band: Sizing.crt ? root.arrow + Sizing.pct-h(0.5) : 0px;
 
     card := Rectangle {
         x: (parent.width - self.width) / 2;
@@ -133,7 +140,7 @@ export component AboutScreen inherits Rectangle {
             x: (parent.width - self.width) / 2;
             y: below ? parent.height - root.pad - root.arrow : root.pad;
             width: root.arrow;
-            visible: root.maximum-scroll > 0px;
+            visible: Sizing.crt && root.maximum-scroll > 0px;
             glyph: below ? "icons/ScrollDown" : "icons/ScrollUp";
             live: below ? root.scroll-y < root.maximum-scroll : root.scroll-y > 0px;
         }

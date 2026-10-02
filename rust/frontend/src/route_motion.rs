@@ -6,6 +6,8 @@
 //! clock. Assert coherent source/destination composition, local cursor motion,
 //! immediate dispatch with pending feedback, command ownership, and eventual quiescence.
 
+use crate::navigation::EntryMode;
+
 use crate::{App, GridCell, HubView, Shell, Sizing, SystemsView};
 use crate::{
     ControlKind, DialogButton, DialogKind, ErrorKind, GamesMode, LogPhase, PairPhase, PressOwner,
@@ -22,6 +24,8 @@ use zaparoo_app::input::HoldTier;
 thread_local! {
     static CLOCK: Cell<u64> = const { Cell::new(0) };
     static WINDOW: RefCell<Option<Rc<MinimalSoftwareWindow>>> = const { RefCell::new(None) };
+    static REUSE_BUFFER: Cell<bool> = const { Cell::new(false) };
+    static PIXELS: RefCell<Vec<Rgb565Pixel>> = const { RefCell::new(Vec::new()) };
 }
 
 /// A platform whose clock only moves when the test moves it, making each
@@ -30,7 +34,12 @@ pub(crate) struct ProbePlatform;
 
 impl Platform for ProbePlatform {
     fn create_window_adapter(&self) -> Result<Rc<dyn WindowAdapter>, slint::PlatformError> {
-        let window = MinimalSoftwareWindow::new(RepaintBufferType::NewBuffer);
+        let mode = if REUSE_BUFFER.with(Cell::get) {
+            RepaintBufferType::ReusedBuffer
+        } else {
+            RepaintBufferType::NewBuffer
+        };
+        let window = MinimalSoftwareWindow::new(mode);
         WINDOW.with(|slot| *slot.borrow_mut() = Some(window.clone()));
         Ok(window)
     }
@@ -46,12 +55,20 @@ const TICK_MS: u64 = 16;
 /// Enough ticks for the retained 240 ms page slide to settle.
 const SETTLE_TICKS: u32 = 20;
 
+fn render_pixels(window: &Rc<MinimalSoftwareWindow>) -> (bool, Vec<Rgb565Pixel>) {
+    PIXELS.with(|pixels| {
+        let mut buf = pixels.borrow_mut();
+        buf.resize((W * H) as usize, Rgb565Pixel(0));
+        let drew = window.draw_if_needed(|renderer| {
+            renderer.render(&mut buf, W as usize);
+        });
+        (drew, buf.clone())
+    })
+}
+
 /// Render one frame and fingerprint it.
 fn frame(window: &Rc<MinimalSoftwareWindow>) -> Option<u64> {
-    let mut buf = vec![Rgb565Pixel(0); (W * H) as usize];
-    let drew = window.draw_if_needed(|renderer| {
-        renderer.render(&mut buf, W as usize);
-    });
+    let (drew, buf) = render_pixels(window);
     if !drew {
         return None;
     }
@@ -65,14 +82,9 @@ fn frame(window: &Rc<MinimalSoftwareWindow>) -> Option<u64> {
 }
 
 fn pixels(window: &Rc<MinimalSoftwareWindow>) -> Vec<Rgb565Pixel> {
-    let mut buf = vec![Rgb565Pixel(0); (W * H) as usize];
     window.request_redraw();
-    assert!(
-        window.draw_if_needed(|renderer| {
-            renderer.render(&mut buf, W as usize);
-        }),
-        "a requested redraw must produce a frame"
-    );
+    let (drew, buf) = render_pixels(window);
+    assert!(drew, "a requested redraw must produce a frame");
     buf
 }
 
@@ -168,6 +180,7 @@ fn boot() -> (App, Rc<MinimalSoftwareWindow>) {
     }
     STATE_DIR.with(|dir| std::env::set_var("ZAPAROO_STATE_FILE", dir.0.join("state.toml")));
     let app = App::new().expect("the app builds under the probe platform");
+    crate::brand::register(&app);
     let window = WINDOW
         .with(|slot| slot.borrow().clone())
         .expect("the platform handed out a window");
@@ -209,12 +222,13 @@ fn tile_press_survives_an_unchanged_model_publication() {
         cells(10, "Category").iter().collect(),
         |rows| hub.set_cells(rows),
     );
-    hub.set_activate_pulse(1);
+    let commits = Rc::new(Cell::new(0));
+    arm_feedback(&app, &commits);
     distinct_frames(&window, 4);
     app.window().request_redraw();
     let pressed = frame(&window);
     assert_ne!(resting, pressed, "the selected tile must push down");
-    hub.set_release_pulse(1);
+    crate::press_feedback::cancel(&app);
     settle(&window);
     app.window().request_redraw();
     assert_eq!(
@@ -252,13 +266,16 @@ fn system_logo_tile_feedback_preserves_images_and_settles() {
         crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
     );
     app.global::<Shell>().set_active_screen(Screen::Systems);
-    let pixels = crate::system_logos::logo_for("SNES").expect("embedded SNES logo");
+    let bytes = include_bytes!("../assets/systems/SNES.png");
+    let pixels = image::load_from_memory(bytes)
+        .expect("embedded SNES logo")
+        .to_rgba8();
     let image = || {
         slint::Image::from_rgba8(
             slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(
-                &pixels.rgba,
-                pixels.width,
-                pixels.height,
+                &pixels,
+                pixels.width(),
+                pixels.height(),
             ),
         )
     };
@@ -293,7 +310,8 @@ fn system_logo_tile_feedback_preserves_images_and_settles() {
     settle(&window);
     app.window().request_redraw();
     let resting = frame(&window);
-    crate::systems::publish_press(&app, 1, 0);
+    let commits = Rc::new(Cell::new(0));
+    arm_feedback(&app, &commits);
     assert!(
         systems.get_cells() == page,
         "activation must not replace the logo page"
@@ -304,9 +322,9 @@ fn system_logo_tile_feedback_preserves_images_and_settles() {
     assert_ne!(
         resting,
         frame(&window),
-        "system tile must show its local press feedback"
+        "system tile must show its shared press feedback"
     );
-    crate::systems::publish_press(&app, 1, 1);
+    crate::press_feedback::cancel(&app);
     assert!(
         systems.get_cells() == page,
         "release must preserve the same delegates"
@@ -340,6 +358,7 @@ fn offline_ctx() -> (tokio::runtime::Runtime, crate::router::Ctx) {
         store: zaparoo_core::store::Store::new(client, handle.clone()),
         handle,
         media: crate::media_cache::MediaCache::new(),
+        logos: crate::system_logos::Logos::new(),
         shared: Arc::new(Mutex::new(crate::router::Shared::new(
             zaparoo_core::persist::PersistedState::default(),
             false,
@@ -453,6 +472,12 @@ fn list_artwork_requests_only_detail_neighbors_and_retires_old_focus() {
         crate::games::RENDERS.with(Cell::get),
         0,
         "prefetch does not repaint"
+    );
+    crate::games::covers_landed(&ctx, &app, &[pending[0].color_preview()]);
+    assert_eq!(
+        crate::games::RENDERS.with(Cell::get),
+        0,
+        "tile-color previews do not repaint a text-only list"
     );
     crate::games::covers_landed(&ctx, &app, &pending[..1]);
     assert_eq!(crate::games::RENDERS.with(Cell::get), 1);
@@ -1520,6 +1545,206 @@ fn seat_folder(ctx: &crate::router::Ctx, app: &App, name: &str, index: usize) {
 }
 
 #[test]
+fn missing_browse_colors_use_real_previews_on_every_page_before_full_art() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    crate::theme::apply_palette(&app, "zaparoo-dark", "normal");
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    app.global::<Shell>().set_active_screen(Screen::Games);
+    let rows: Vec<_> = (500..560)
+        .map(|index| {
+            crate::games::GameRow::from(&zaparoo_core::media_types::BrowseEntry {
+                media_id: Some(index),
+                name: format!("Game {index}"),
+                path: format!("/SNES/{index}"),
+                system_id: "SNES".into(),
+                entry_type: "media".into(),
+                has_cover: true,
+                ..Default::default()
+            })
+        })
+        .collect();
+    let ticket = crate::router::lock(&ctx.shared).games.ticket;
+    crate::games::apply_fill(&ctx, &app, ticket, rows.clone(), None, Some((60, 0)), false);
+    let view = app.global::<crate::GamesView>();
+    let original = view.get_cells();
+    assert!(original
+        .iter()
+        .all(|cell| !cell.has_placeholder && !cell.has_cover));
+    let page_size = crate::router::lock(&ctx.shared).games.grid.page_size();
+    let pending = ctx.media.pending_keys();
+    assert!(pending[..page_size]
+        .iter()
+        .all(|key| key.max_size == zaparoo_app::covers::COLOR_PREVIEW_MAX_SIZE));
+    assert!(pending[page_size..page_size * 2]
+        .iter()
+        .all(|key| key.max_size > zaparoo_app::covers::COLOR_PREVIEW_MAX_SIZE));
+    let keys: Vec<_> = rows
+        .iter()
+        .map(|row| crate::media_cache::MediaKey {
+            media_id: row.media_id,
+            system: row.system_id.clone(),
+            path: row.path.clone(),
+            max_size: zaparoo_app::covers::COLOR_PREVIEW_MAX_SIZE,
+            image_type: None,
+        })
+        .collect();
+    for key in &keys {
+        ctx.media.seed(
+            key.clone(),
+            crate::media_cache::DecodedImage {
+                buffer: slint::SharedPixelBuffer::clone_from_slice(&[255_u8, 0, 255, 255], 1, 1),
+            },
+        );
+    }
+    crate::deliver_covers(&ctx, &app, &keys);
+    assert_eq!(
+        view.get_cells(),
+        original,
+        "preview colors patch retained delegates"
+    );
+    for page in 0..3 {
+        if page > 0 {
+            crate::router::handle_action(&ctx, &app, "page_next");
+        }
+        settle(&window);
+        assert_eq!(view.get_page(), page);
+        assert!(view
+            .get_cells()
+            .iter()
+            .all(|cell| cell.has_placeholder && !cell.has_cover));
+        assert!(
+            pixels(&window)
+                .iter()
+                .filter(|pixel| pixel.0 == 0xf81f)
+                .count()
+                > 20
+        );
+    }
+    crate::router::lock(&ctx.shared).games.rapid_active = true;
+    crate::games::render(&ctx, &app);
+    assert!(
+        ctx.media.pending_keys().is_empty(),
+        "rapid navigation starts no artwork work"
+    );
+    assert!(
+        view.get_cells().iter().all(|cell| cell.has_placeholder),
+        "prepared colors survive rapid navigation"
+    );
+    assert!(
+        crate::router::lock(&ctx.shared)
+            .games
+            .rows
+            .iter()
+            .all(|row| row.cover_color.is_none()),
+        "browse metadata and persisted state are not rewritten"
+    );
+}
+
+#[test]
+fn cover_colors_survive_appended_pages_and_warm_to_cold_tile_replacement() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    crate::theme::apply_palette(&app, "zaparoo-dark", "normal");
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    app.global::<Shell>().set_active_screen(Screen::Games);
+    let rows: Vec<_> = (0..60)
+        .map(|index| {
+            crate::games::GameRow::from(&zaparoo_core::media_types::BrowseEntry {
+                media_id: Some(index),
+                name: format!("Game {index}"),
+                path: format!("/SNES/{index}"),
+                system_id: "SNES".into(),
+                entry_type: "media".into(),
+                has_cover: true,
+                cover_color: Some("#ff00ff".into()),
+                ..Default::default()
+            })
+        })
+        .collect();
+    let ticket = crate::router::lock(&ctx.shared).games.ticket;
+    crate::games::apply_fill(
+        &ctx,
+        &app,
+        ticket,
+        rows[..30].to_vec(),
+        Some("next".into()),
+        Some((60, 0)),
+        false,
+    );
+    crate::games::on_append(&ctx, &app, ticket, Ok((rows[30..].to_vec(), None)));
+    let view = app.global::<crate::GamesView>();
+    let colored = || {
+        pixels(&window)
+            .iter()
+            .filter(|pixel| pixel.0 == 0xf81f)
+            .count()
+    };
+    settle(&window);
+    assert!(
+        colored() > 20,
+        "first page must paint supplied colors before art"
+    );
+    let page_size = crate::router::lock(&ctx.shared).games.grid.page_size();
+    let tier = crate::sizing::games_grid_cover_source_size(crate::router::output_scene(&app));
+    for row in &rows[..page_size] {
+        ctx.media.seed(
+            crate::media_cache::MediaKey {
+                media_id: row.media_id,
+                system: row.system_id.clone(),
+                path: row.path.clone(),
+                max_size: tier,
+                image_type: None,
+            },
+            crate::media_cache::DecodedImage {
+                buffer: slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(
+                    &[255u8; 16],
+                    2,
+                    2,
+                ),
+            },
+        );
+    }
+    crate::games::render(&ctx, &app);
+    settle(&window);
+    assert_eq!(colored(), 0, "placeholder must yield to loaded art");
+    for page in 1..=30 / page_size + 1 {
+        crate::router::handle_action(&ctx, &app, "page_next");
+        settle(&window);
+        assert_eq!(view.get_page(), page as i32);
+        assert!(view
+            .get_cells()
+            .iter()
+            .all(|cell| cell.has_placeholder && !cell.has_cover));
+        assert!(
+            colored() > 20,
+            "page {page} must paint colors, including appended API rows"
+        );
+    }
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        let index = shared.games.grid.current_index();
+        shared.games.rows[index].cover_color = None;
+    }
+    crate::games::render(&ctx, &app);
+    assert!(
+        !view
+            .get_cells()
+            .row_data(0)
+            .is_some_and(|cell| cell.has_placeholder),
+        "absent Core colors must not be invented"
+    );
+}
+
+#[test]
 fn page_lookahead_is_bounded_and_delayed_partial_pages_wait_then_slide() {
     assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
     let (app, window) = boot();
@@ -1597,6 +1822,11 @@ fn page_lookahead_is_bounded_and_delayed_partial_pages_wait_then_slide() {
     assert!(crate::router::lock(&ctx.shared).games.sliding);
     assert_eq!(view.get_cells().row_data(0).map(|cell| cell.name), outgoing);
     assert_eq!(view.get_next_cells().row_count(), size);
+    assert_eq!(
+        view.get_slide_dir(),
+        -1,
+        "a deferred wrap keeps Previous direction"
+    );
     assert!(distinct_frames(&window, 18) > 5);
     assert_eq!(view.get_page(), 4);
     assert!(!crate::router::lock(&ctx.shared).games.loading_more);
@@ -1682,6 +1912,74 @@ fn taps_after_a_fast_scroll_do_not_extend_the_rail_linger() {
 }
 
 #[test]
+fn wrapped_game_grids_follow_keys_and_pointer_direction_in_every_mode() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let ctx = std::sync::Arc::new(ctx);
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    crate::games::bind_input(&ctx, &app);
+    seat_folder(&ctx, &app, "Game", 0);
+    let size = crate::router::lock(&ctx.shared).games.grid.page_size();
+    let count = size * 3 - 1;
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.games.rows = game_rows("Game", count);
+        shared.games.total_files = count as u32;
+        shared.games.grid.set_item_count(count);
+    }
+    let view = app.global::<crate::GamesView>();
+    for (screen, mode) in [
+        (Screen::Games, GamesMode::Browse),
+        (Screen::Favorites, GamesMode::Favorites),
+        (Screen::Recents, GamesMode::Recents),
+    ] {
+        app.global::<Shell>().set_active_screen(screen);
+        crate::router::lock(&ctx.shared).games.mode = mode;
+        for (action, direction, pointer) in [
+            ("page_prev", -1, false),
+            ("page_next", 1, false),
+            ("up", -1, false),
+            ("down", 1, false),
+            ("page_prev", -1, true),
+            ("page_next", 1, true),
+        ] {
+            crate::router::lock(&ctx.shared)
+                .games
+                .grid
+                .set_current_index_immediate(if direction < 0 { 0 } else { count - 1 });
+            crate::games::render(&ctx, &app);
+            settle(&window);
+            if pointer {
+                app.global::<crate::GamesInput>()
+                    .invoke_page_requested(direction);
+            } else {
+                crate::router::handle_action(&ctx, &app, action);
+            }
+            assert_eq!(
+                view.get_slide_dir(),
+                direction,
+                "{screen:?} {action} pointer={pointer}"
+            );
+            assert!(crate::router::lock(&ctx.shared).games.sliding);
+            assert!(distinct_frames(&window, 18) > 5);
+            assert_eq!(view.get_page(), if direction < 0 { 2 } else { 0 });
+        }
+    }
+    app.global::<crate::Motion>().set_enabled(false);
+    crate::router::handle_action(&ctx, &app, "page_prev");
+    assert_eq!(view.get_page(), 2);
+    assert_eq!(view.get_slide_dir(), -1);
+    assert!(
+        !crate::router::lock(&ctx.shared).games.sliding,
+        "reduced motion still cuts"
+    );
+}
+
+#[test]
 fn a_held_page_flip_stops_at_the_ends_from_its_first_repeat() {
     assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
     let (app, window) = boot();
@@ -1707,9 +2005,10 @@ fn a_held_page_flip_stops_at_the_ends_from_its_first_repeat() {
     crate::input::dispatch_repeat(&ctx, &app, "page_next", HoldTier::Row);
     assert_eq!(page(), 1, "a held flip must not wrap past the last page");
     assert!(!crate::router::lock(&ctx.shared).games.sliding);
-    // A tap still wraps.
+    // A tap still wraps, continuing forward rather than reversing to page zero.
     crate::router::handle_action(&ctx, &app, "page_next");
     assert!(crate::router::lock(&ctx.shared).games.sliding);
+    assert_eq!(app.global::<crate::GamesView>().get_slide_dir(), 1);
 }
 
 #[test]
@@ -1817,6 +2116,69 @@ fn long_holds_step_pages_then_letters_and_the_rail_follows() {
 #[test]
 #[allow(
     clippy::expect_used,
+    reason = "cold route must queue its embedded logo"
+)]
+fn entering_systems_queues_logos_after_route_commit_without_an_extra_key() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    crate::router::lock(&ctx.shared).systems = ["SNES", "ZzzNoArtwork"]
+        .into_iter()
+        .map(|id| zaparoo_core::media_types::SystemInfo {
+            id: id.into(),
+            name: id.into(),
+            category: "Console".into(),
+            media_count: Some(1),
+            ..Default::default()
+        })
+        .collect();
+    for animate in [false, true] {
+        ctx.logos.clear();
+        app.global::<Shell>().set_active_screen(Screen::Hub);
+        crate::systems::enter(&ctx, &app, "Console", EntryMode::Fresh, animate);
+        assert_eq!(app.global::<Shell>().get_active_screen(), Screen::Systems);
+        let view = app.global::<SystemsView>();
+        let page = view.get_cells();
+        let pending = page.row_data(0).expect("immediate pending tile");
+        assert!(!pending.has_cover);
+        assert!(
+            !pending.wordmark,
+            "known artwork must stay blank while preparing"
+        );
+        assert!(
+            !pending.name.is_empty(),
+            "caption still identifies the focused tile"
+        );
+        assert!(page.row_data(1).expect("no embedded artwork").wordmark);
+        advance(16);
+        let finish = ctx
+            .logos
+            .hold_job()
+            .expect("committed destination must request art without input");
+        finish();
+        crate::system_logos::refresh(&ctx, &app);
+        assert_eq!(view.get_cells(), page, "completion patches same delegates");
+        assert!(page.row_data(0).expect("prepared tile").has_cover);
+        settle(&window);
+    }
+    ctx.logos.clear();
+    app.global::<Shell>().set_active_screen(Screen::Hub);
+    crate::systems::render(&ctx, &app);
+    app.global::<Shell>().set_active_screen(Screen::Settings);
+    advance(16);
+    assert!(
+        ctx.logos.hold_job().is_none(),
+        "an abandoned destination cannot steal current work"
+    );
+}
+
+#[test]
+#[allow(
+    clippy::expect_used,
     reason = "fixture must contain two real system tiles"
 )]
 fn adjacent_systems_move_keeps_logo_images_and_glides_focus() {
@@ -1848,8 +2210,29 @@ fn adjacent_systems_move_keeps_logo_images_and_glides_focus() {
         shared.systems_model.focus_armed = true;
     }
     crate::systems::render(&ctx, &app);
-    settle(&window);
     let view = app.global::<SystemsView>();
+    let page = view.get_cells();
+    assert!(!page.row_data(0).expect("named fallback").has_cover);
+    let finish = ctx
+        .logos
+        .hold_job()
+        .expect("cold logo queued off UI thread");
+    // A worker stalled inside decode cannot stall publication or input.
+    crate::systems::handle_action(&ctx, &app, "right");
+    assert_eq!(view.get_selected_local(), 1);
+    assert!(!page.row_data(1).expect("next named fallback").has_cover);
+    settle(&window);
+    finish();
+    ctx.logos.prepare_queued();
+    crate::system_logos::refresh(&ctx, &app);
+    assert_eq!(
+        view.get_cells(),
+        page,
+        "late art patches existing delegates"
+    );
+    assert_eq!(view.get_selected_local(), 1, "late art cannot steal focus");
+    crate::systems::handle_action(&ctx, &app, "left");
+    settle(&window);
     let first = view.get_cells().row_data(0).expect("first system");
     assert!(first.has_cover, "test must exercise real logo images");
     crate::systems::handle_action(&ctx, &app, "right");
@@ -1865,6 +2248,135 @@ fn adjacent_systems_move_keeps_logo_images_and_glides_focus() {
         crate::view_model::same_image(&first.cover, &after.cover),
         "adjacent focus must not rebuild every logo image"
     );
+}
+
+#[test]
+fn header_cue_requests_use_rust_settings_and_about_drivers() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let ctx = std::sync::Arc::new(ctx);
+    crate::settings::bind_input(&ctx, &app);
+    app.global::<Shell>().set_active_screen(Screen::Settings);
+    crate::settings::open_page(&ctx, &app, SettingsPage::Appearance);
+    let before = app.global::<crate::SettingsView>().get_index();
+    app.global::<crate::SettingsInput>()
+        .invoke_page_requested(1);
+    assert_ne!(app.global::<crate::SettingsView>().get_index(), before);
+    app.global::<crate::SettingsInput>()
+        .invoke_page_requested(-1);
+    assert_eq!(app.global::<crate::SettingsView>().get_index(), before);
+    crate::about::bind(&ctx, &app);
+    app.global::<Shell>().set_active_screen(Screen::About);
+    let about = app.global::<crate::AboutView>();
+    about.set_maximum_scroll_milli(1000);
+    about.invoke_direction_requested(1);
+    assert!(about.get_scroll_milli() > 0);
+    assert_eq!(
+        crate::router::lock(&ctx.shared).persist.about_scroll_milli,
+        about.get_scroll_milli() as u32
+    );
+    about.invoke_direction_requested(-1);
+    assert_eq!(about.get_scroll_milli(), 0);
+}
+
+#[test]
+fn digital_position_changes_paint_only_grouped_header_cue() {
+    position_changes_paint_only_header_cue(false);
+}
+
+#[test]
+fn digital_list_positions_paint_only_grouped_header_cue() {
+    position_changes_paint_only_header_cue(true);
+}
+
+fn position_changes_paint_only_header_cue(list: bool) {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (width, height) = (960u32, 540u32);
+    window.set_size(slint::PhysicalSize::new(width, height));
+    app.global::<Sizing>().set_screen_width(width as f32);
+    app.global::<Sizing>().set_screen_height(height as f32);
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(width), f64::from(height), false),
+    );
+    let shot = || {
+        let mut buf = vec![Rgb565Pixel(0); (width * height) as usize];
+        window.request_redraw();
+        assert!(window.draw_if_needed(|renderer| {
+            renderer.render(&mut buf, width as usize);
+        }));
+        buf
+    };
+    let shell = app.global::<Shell>();
+    shell.set_browse_list_layout(list);
+    shell.set_systems_list_layout(list);
+    let systems = app.global::<SystemsView>();
+    systems.set_count(40);
+    systems.set_total_pages(3);
+    systems.set_has_pages_below(true);
+    systems.set_has_items_below(true);
+    let games = app.global::<crate::GamesView>();
+    games.set_cells(cells(10, "Game"));
+    games.set_count(40);
+    games.set_total_files(500);
+    games.set_total_items(40);
+    games.set_total_pages(3);
+    games.set_has_pages_below(true);
+    games.set_has_items_below(true);
+    for screen in [
+        Screen::Systems,
+        Screen::FavoriteSystems,
+        Screen::Games,
+        Screen::Favorites,
+        Screen::Recents,
+    ] {
+        shell.set_active_screen(screen);
+        systems.set_mode(if screen == Screen::FavoriteSystems {
+            SystemsMode::Favorites
+        } else {
+            SystemsMode::Category
+        });
+        games.set_mode(match screen {
+            Screen::Favorites => GamesMode::Favorites,
+            Screen::Recents => GamesMode::Recents,
+            _ => GamesMode::Browse,
+        });
+        crate::router::refresh_layout(&app);
+        systems.set_page(0);
+        games.set_page(0);
+        systems.set_current_index(0);
+        games.set_current_index(0);
+        shot();
+        advance(500);
+        let before = shot();
+        systems.set_page(1);
+        games.set_page(1);
+        systems.set_current_index(1);
+        games.set_current_index(1);
+        shot();
+        advance(500);
+        let after = shot();
+        let changed: Vec<_> = before
+            .iter()
+            .zip(&after)
+            .enumerate()
+            .filter(|(_, (a, b))| a != b)
+            .map(|(i, _)| i)
+            .collect();
+        assert!(!changed.is_empty(), "{screen:?} must paint its position");
+        let layout = app.global::<crate::Layout>();
+        let top = (app.global::<Sizing>().get_header_bottom() + layout.get_top_margin()) as usize;
+        let bottom = top + layout.get_strip_height() as usize;
+        assert!(
+            changed
+                .iter()
+                .all(|i| (top..bottom).contains(&(i / width as usize))
+                    && i % width as usize > width as usize * 2 / 3),
+            "{screen:?} position changed outside the header's count/cue group"
+        );
+    }
 }
 
 #[test]
@@ -1897,27 +2409,40 @@ fn systems_redraw_retains_both_pages_during_a_slide() {
     crate::systems::render(&ctx, &app);
     settle(&window);
     let view = app.global::<SystemsView>();
-    for direction in [1, -1] {
-        let from = crate::router::lock(&ctx.shared)
-            .systems_model
-            .grid
-            .current_page();
-        let outgoing = view.get_cells().row_data(0).map(|cell| cell.name);
-        assert!(crate::router::lock(&ctx.shared)
-            .systems_model
-            .grid
-            .page_by(direction));
-        crate::systems::slide_to_current_page(&ctx, &app, from);
-        let incoming = view.get_next_cells().row_data(0).map(|cell| cell.name);
-        assert!(incoming.is_some());
+    for (screen, mode) in [
+        (Screen::Systems, SystemsMode::Category),
+        (Screen::FavoriteSystems, SystemsMode::Favorites),
+    ] {
+        app.global::<Shell>().set_active_screen(screen);
+        crate::router::lock(&ctx.shared).systems_model.mode = mode;
         crate::systems::render(&ctx, &app);
-        assert_eq!(view.get_cells().row_data(0).map(|cell| cell.name), outgoing);
-        assert_eq!(
-            view.get_next_cells().row_data(0).map(|cell| cell.name),
-            incoming
-        );
-        assert!(distinct_frames(&window, 18) > 5);
-        settle(&window);
+        for direction in [-1, 1, 1, -1] {
+            let outgoing = view.get_cells().row_data(0).map(|cell| cell.name);
+            crate::router::handle_action(
+                &ctx,
+                &app,
+                if direction < 0 {
+                    "page_prev"
+                } else {
+                    "page_next"
+                },
+            );
+            assert_eq!(
+                view.get_slide_dir(),
+                direction,
+                "ordinary and wrapped turns keep input direction"
+            );
+            let incoming = view.get_next_cells().row_data(0).map(|cell| cell.name);
+            assert!(incoming.is_some());
+            crate::systems::render(&ctx, &app);
+            assert_eq!(view.get_cells().row_data(0).map(|cell| cell.name), outgoing);
+            assert_eq!(
+                view.get_next_cells().row_data(0).map(|cell| cell.name),
+                incoming
+            );
+            assert!(distinct_frames(&window, 18) > 5);
+            settle(&window);
+        }
     }
 }
 
@@ -2175,6 +2700,166 @@ fn a_held_press_outlives_its_push_and_lifts_on_release() {
         PressOwner::None,
         "releasing the hold lifts the control"
     );
+}
+
+#[test]
+fn launch_tile_releases_face_art_edge_and_ring() {
+    launch_tile_release_cycle(false);
+}
+
+#[test]
+fn launch_tile_releases_face_art_edge_and_ring_in_reused_buffer() {
+    launch_tile_release_cycle(true);
+}
+
+#[allow(
+    clippy::too_many_lines,
+    clippy::expect_used,
+    reason = "one real driver fixture checks every hold exit against the same resting pixels"
+)]
+fn launch_tile_release_cycle(reuse: bool) {
+    enum Exit {
+        Reply,
+        Error,
+        Cancel,
+        Dormant,
+        Timeout,
+        Selection,
+        StaleReply,
+    }
+    REUSE_BUFFER.with(|mode| mode.set(reuse));
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    let shell = app.global::<Shell>();
+    shell.set_active_screen(Screen::Games);
+    shell.set_browse_list_layout(false);
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.games.rows = game_rows("Launch", 2);
+        for (i, row) in shared.games.rows.iter_mut().enumerate() {
+            row.path = format!("/probe/{i}.rom");
+        }
+        shared.games.grid.set_item_count(2);
+        shared.games.focus_armed = true;
+    }
+    crate::games::render(&ctx, &app);
+    settle(&window);
+    let resting = pixels(&window);
+    for exit in [
+        Exit::Reply,
+        Exit::Error,
+        Exit::Cancel,
+        Exit::Dormant,
+        Exit::Timeout,
+        Exit::Selection,
+        Exit::StaleReply,
+    ] {
+        // Exercise router -> games::accept_current -> router::launch. The
+        // offline runtime leaves the reply pending until this fixture sends it.
+        crate::router::handle_action(&ctx, &app, "accept");
+        let hold = crate::press_feedback::held_ticket(&app).expect("real launch keeps its ticket");
+        pixels(&window);
+        settle(&window);
+        assert_ne!(
+            pixels(&window),
+            resting,
+            "pending launch keeps the face depressed"
+        );
+        assert_eq!(
+            app.global::<crate::PressFeedback>().get_owner(),
+            PressOwner::Games
+        );
+        match exit {
+            Exit::Reply => crate::router::finish_launch(
+                &ctx,
+                &app,
+                hold,
+                crate::router::LaunchOutcome::Ok,
+                "Launch",
+            ),
+            Exit::Error => {
+                crate::router::finish_launch(
+                    &ctx,
+                    &app,
+                    hold,
+                    crate::router::LaunchOutcome::Failed,
+                    "Launch",
+                );
+                assert!(app.global::<crate::Overlays>().get_dialog_open());
+                crate::router::handle_action(&ctx, &app, "cancel");
+            }
+            Exit::Cancel => crate::press_feedback::cancel(&app),
+            Exit::Dormant => {
+                crate::set_dormant(&ctx, &app, true);
+                pixels(&window);
+                crate::set_dormant(&ctx, &app, false);
+            }
+            Exit::Timeout => advance(10_001),
+            Exit::Selection | Exit::StaleReply => {
+                crate::router::handle_action(&ctx, &app, "right");
+                crate::router::handle_action(&ctx, &app, "left");
+                if matches!(exit, Exit::StaleReply) {
+                    crate::router::handle_action(&ctx, &app, "accept");
+                    let newer = crate::press_feedback::held_ticket(&app).expect("second launch");
+                    pixels(&window);
+                    crate::router::finish_launch(
+                        &ctx,
+                        &app,
+                        hold,
+                        crate::router::LaunchOutcome::Ok,
+                        "old launch",
+                    );
+                    assert!(
+                        crate::press_feedback::pending(&app),
+                        "old reply cannot lift new face"
+                    );
+                    crate::router::finish_launch(
+                        &ctx,
+                        &app,
+                        newer,
+                        crate::router::LaunchOutcome::Ok,
+                        "new launch",
+                    );
+                }
+            }
+        }
+        settle(&window);
+        assert!(!crate::press_feedback::pending(&app));
+        assert_region_matches(
+            &pixels(&window),
+            &resting,
+            0..W as usize,
+            32..H as usize - 30,
+            "complete tile face/art/edge/ring must return to the same resting geometry",
+        );
+    }
+    // A late list-row pulse must never depress a grid face without its ring.
+    let view = app.global::<crate::GamesView>();
+    view.set_activate_pulse(view.get_activate_pulse().wrapping_add(1));
+    settle(&window);
+    assert_region_matches(
+        &pixels(&window),
+        &resting,
+        0..W as usize,
+        32..H as usize - 30,
+        "grid feedback has only one owner, even when list pulse state changes",
+    );
+    shell.set_reduce_motion(true);
+    app.global::<crate::Motion>().set_enabled(false);
+    settle(&window);
+    let reduced = pixels(&window);
+    crate::router::handle_action(&ctx, &app, "accept");
+    let hold =
+        crate::press_feedback::held_ticket(&app).expect("reduced motion dispatches immediately");
+    assert!(crate::press_feedback::pending(&app));
+    crate::router::finish_launch(&ctx, &app, hold, crate::router::LaunchOutcome::Ok, "Launch");
+    settle(&window);
+    assert_eq!(pixels(&window), reduced);
 }
 
 /// Back is never swallowed for decoration, even while an operation is pending.
@@ -3122,6 +3807,292 @@ fn mouse_setting_blocks_picker_clicks_but_not_enabled_selection() {
 }
 
 #[test]
+fn letter_picker_routes_vertical_wrap_without_moving_the_background() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let ov = app.global::<crate::Overlays>();
+    ov.set_letter_buckets(ModelRc::new(VecModel::from(
+        (0..28)
+            .map(|index| crate::LetterBucket {
+                label: index.to_string().into(),
+                count: 1,
+            })
+            .collect::<Vec<_>>(),
+    )));
+    ov.set_letter_open(true);
+    settle(&window);
+    let columns = ov.get_letter_columns();
+    assert!(columns > 1 && columns < 28);
+    let last_row = 27 / columns * columns;
+    ov.set_letter_index(1);
+    crate::router::handle_action(&ctx, &app, "up");
+    assert_eq!(ov.get_letter_index(), (last_row + 1).min(27));
+    crate::router::handle_action(&ctx, &app, "down");
+    assert_eq!(ov.get_letter_index(), (last_row + 1).min(27) % columns);
+    assert_eq!(app.global::<Shell>().get_active_screen(), Screen::Hub);
+    assert!(!crate::input::rapid_navigation(&ctx));
+}
+
+#[test]
+fn letter_focus_glides_and_reduced_motion_snaps() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    app.global::<Shell>().set_active_screen(Screen::None);
+    app.global::<crate::Theme>()
+        .set_accent(slint::Color::from_rgb_u8(255, 0, 255));
+    let ov = app.global::<crate::Overlays>();
+    ov.set_letter_buckets(ModelRc::new(VecModel::from(
+        ["A", "B", "C", "D"]
+            .into_iter()
+            .map(|label| crate::LetterBucket {
+                label: label.into(),
+                count: 12,
+            })
+            .collect::<Vec<_>>(),
+    )));
+    ov.set_letter_open(true);
+    let left = |buf: &[Rgb565Pixel]| {
+        buf.iter()
+            .enumerate()
+            .filter(|(_, pixel)| pixel.0 == 0xf81f)
+            .map(|(i, _)| i % W as usize)
+            .min()
+            .unwrap_or(W as usize)
+    };
+    settle(&window);
+    let first = left(&pixels(&window));
+    ov.set_letter_index(1);
+    pixels(&window);
+    advance(24);
+    let middle = left(&pixels(&window));
+    advance(100);
+    let second = left(&pixels(&window));
+    assert!(
+        first < middle && middle < second,
+        "letter ring must glide: {first}, {middle}, {second}"
+    );
+    app.global::<crate::Motion>().set_enabled(false);
+    ov.set_letter_index(0);
+    assert_eq!(left(&pixels(&window)), first);
+    advance(100);
+    assert_eq!(left(&pixels(&window)), first);
+}
+
+#[test]
+fn held_hub_tile_reappears_immediately_and_stays_visible_during_motion() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    app.global::<crate::Theme>()
+        .set_accent(slint::Color::from_rgb_u8(255, 0, 255));
+    let hub = app.global::<HubView>();
+    hub.set_cells(cells(3, "Tile"));
+    hub.set_columns(3);
+    hub.set_cell_width(50.0);
+    hub.set_cell_height(40.0);
+    hub.set_grid_y(40.0);
+    hub.set_grid_height(100.0);
+    hub.set_selected_local(0);
+    hub.set_held_local(0);
+    settle(&window);
+    let first = ring_left(&pixels(&window));
+    assert!(first < W as usize);
+    advance(400);
+    assert_eq!(
+        ring_left(&pixels(&window)),
+        W as usize,
+        "fixture starts in blink's hidden half"
+    );
+    hub.set_selected_local(1);
+    hub.set_held_local(1);
+    assert!(
+        ring_left(&pixels(&window)) < W as usize,
+        "movement reveals held tile immediately"
+    );
+    for _ in 0..5 {
+        advance(12);
+        assert!(
+            ring_left(&pixels(&window)) < W as usize,
+            "held tile cannot disappear in flight"
+        );
+    }
+    advance(100);
+    let destination = ring_left(&pixels(&window));
+    assert!(first < destination && destination < W as usize);
+    advance(700);
+    let a = ring_left(&pixels(&window));
+    advance(650);
+    let b = ring_left(&pixels(&window));
+    assert_ne!(a, b, "stationary tile resumes blink");
+}
+
+#[allow(
+    clippy::expect_used,
+    reason = "boot creates isolated persistence for the Hub fixture"
+)]
+fn seed_hub_pages(ctx: &crate::router::Ctx, app: &App) -> usize {
+    crate::sizing::apply_scene(
+        app,
+        crate::sizing::Scene::of(app, f64::from(W), f64::from(H), false),
+    );
+    crate::hub::render(ctx, app);
+    let size = {
+        let mut shared = crate::router::lock(&ctx.shared);
+        let size = shared.hub.grid.page_size();
+        shared.all_categories = (0..size * 3).map(|i| format!("Category{i}")).collect();
+        shared.hub.layout.items = shared
+            .all_categories
+            .iter()
+            .map(|id| zaparoo_core::hub_layout::HubItem {
+                kind_raw: "category".into(),
+                id: id.clone(),
+                ..Default::default()
+            })
+            .collect();
+        shared.hub.layout_path = std::path::PathBuf::from(
+            std::env::var_os("ZAPAROO_STATE_FILE").expect("isolated state"),
+        )
+        .with_file_name("hub.toml");
+        shared.hub.categories_loaded = true;
+        shared.hub.restore_done = true;
+        size
+    };
+    crate::hub::rebuild(ctx, app);
+    size
+}
+
+#[test]
+fn hub_page_turns_animate_in_navigation_direction() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let ctx = std::sync::Arc::new(ctx);
+    seed_hub_pages(&ctx, &app);
+    crate::hub::bind_input(&ctx, &app);
+    settle(&window);
+    let view = app.global::<HubView>();
+    for (action, page, direction) in [
+        ("page_prev", 2, -1),
+        ("page_next", 0, 1),
+        ("page_next", 1, 1),
+    ] {
+        let outgoing = view.get_cells();
+        crate::router::handle_action(&ctx, &app, action);
+        assert_eq!(view.get_slide_dir(), direction);
+        assert_eq!(
+            view.get_cells(),
+            outgoing,
+            "source delegates survive until landing"
+        );
+        assert!(
+            distinct_frames(&window, 18) > 5,
+            "Hub {action} must slide rather than cut"
+        );
+        assert_eq!(view.get_page(), page);
+        assert_eq!(view.get_next_cells().row_count(), 0);
+    }
+    app.global::<crate::HubInput>().invoke_page_requested(1);
+    assert!(crate::router::lock(&ctx.shared).hub.sliding);
+    advance(32);
+    app.global::<crate::HubInput>().invoke_page_requested(1);
+    assert_eq!(view.get_page(), 0);
+    assert!(
+        !crate::router::lock(&ctx.shared).hub.sliding,
+        "a new command cuts obsolete motion"
+    );
+    settle(&window);
+    assert_eq!(
+        view.get_page(),
+        0,
+        "old completion cannot restore its destination"
+    );
+    app.global::<crate::Motion>().set_enabled(false);
+    crate::router::handle_action(&ctx, &app, "page_next");
+    assert_eq!(view.get_page(), 1);
+    assert!(!crate::router::lock(&ctx.shared).hub.sliding);
+}
+
+#[test]
+fn cached_hub_pages_interrupt_safely_and_dormancy_clears_motion() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, mut ctx) = offline_ctx();
+    ctx.is_mister = true;
+    seed_hub_pages(&ctx, &app);
+    settle(&window);
+    let view = app.global::<HubView>();
+    crate::mister::with_cached_page_transitions(|| {
+        crate::router::handle_action(&ctx, &app, "page_prev");
+        assert!(view.get_cached_transition());
+        assert!(
+            view.get_page_slide().abs() < f32::EPSILON,
+            "cached pixels move, not the Slint grid"
+        );
+        assert_eq!(view.get_page(), 2);
+        assert_eq!(view.get_slide_dir(), -1);
+        assert!(view.get_cells().row_count() > 0);
+        crate::router::handle_action(&ctx, &app, "page_next");
+        assert!(!view.get_cached_transition());
+        assert_eq!(view.get_page(), 0);
+        settle(&window);
+        assert_eq!(view.get_page(), 0);
+        crate::router::handle_action(&ctx, &app, "page_next");
+        assert!(view.get_cached_transition());
+        crate::set_dormant(&ctx, &app, true);
+        assert!(!view.get_cached_transition());
+        assert!(!crate::router::lock(&ctx.shared).hub.sliding);
+        settle(&window);
+        assert_eq!(view.get_page(), 1);
+    });
+    crate::set_dormant(&ctx, &app, false);
+    crate::router::handle_action(&ctx, &app, "page_next");
+    assert_eq!(view.get_page(), 2);
+    assert!(
+        !crate::router::lock(&ctx.shared).hub.sliding,
+        "uncached HDMI never repaints a live full grid"
+    );
+}
+
+#[test]
+fn hub_move_pages_keep_held_identity_and_cancel_rejects_late_completion() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let size = seed_hub_pages(&ctx, &app);
+    let original = crate::router::lock(&ctx.shared).hub.layout.clone();
+    settle(&window);
+    crate::router::handle_action(&ctx, &app, "context_menu");
+    assert!(app.global::<crate::Overlays>().get_context_open());
+    crate::router::handle_action(&ctx, &app, "accept");
+    settle(&window);
+    assert!(crate::router::lock(&ctx.shared).hub.move_armed());
+    crate::router::handle_action(&ctx, &app, "right");
+    assert_eq!(
+        app.global::<HubView>().get_move_origins().row_data(0),
+        Some(1)
+    );
+    assert!(
+        distinct_frames(&window, 8) > 2,
+        "real Move input animates the local swap"
+    );
+    crate::router::handle_action(&ctx, &app, "page_next");
+    assert!(crate::router::lock(&ctx.shared).hub.sliding);
+    assert_eq!(
+        crate::router::lock(&ctx.shared).hub.grid.current_index(),
+        size + 1
+    );
+    assert!(distinct_frames(&window, 5) > 2);
+    crate::router::handle_action(&ctx, &app, "cancel");
+    settle(&window);
+    let shared = crate::router::lock(&ctx.shared);
+    assert_eq!(shared.hub.layout, original);
+    assert_eq!(shared.hub.grid.current_index(), 0);
+    assert!(!shared.hub.move_armed());
+    assert!(!shared.hub.sliding);
+    assert_eq!(app.global::<HubView>().get_page(), 0);
+}
+
+#[test]
 fn letter_columns_follow_each_windows_geometry() {
     assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
     let (app, _) = boot();
@@ -3250,6 +4221,182 @@ fn ring_left(image: &[Rgb565Pixel]) -> usize {
         .map(|(x, _)| x)
         .min()
         .unwrap_or(W as usize)
+}
+
+#[test]
+fn setup_picker_holds_keep_row_cadence_past_page_and_letter_thresholds() {
+    use slint::platform::WindowEvent;
+    use zaparoo_app::input::{REPEAT_INITIAL_MS, REPEAT_TICK_MS};
+
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let ctx = std::sync::Arc::new(ctx);
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.systems = (0..80)
+            .map(|index| zaparoo_core::media_types::SystemInfo {
+                id: format!("System{index:02}"),
+                name: format!("System {index:02}"),
+                ..Default::default()
+            })
+            .collect();
+        shared.setup.open = true;
+        shared.setup.picker = Some(zaparoo_app::media_setup::FormRow::Systems);
+        shared.input.advance_test_clock(1);
+    }
+    crate::media_setup::render(&ctx, &app);
+    crate::input::bind(&ctx, &app, std::collections::HashMap::new());
+    settle(&window);
+    for (key, start, down) in [
+        (slint::platform::Key::DownArrow, 0, true),
+        (slint::platform::Key::UpArrow, 60, false),
+    ] {
+        crate::router::lock(&ctx.shared).setup.picker_index = start;
+        crate::media_setup::render(&ctx, &app);
+        let picker_rows = app.global::<crate::SetupModalView>().get_picker_rows();
+        let key: SharedString = char::from(key).to_string().into();
+        app.window()
+            .dispatch_event(WindowEvent::KeyPressed { text: key.clone() });
+        let step = |offset| if down { start + offset } else { start - offset };
+        assert_eq!(crate::router::lock(&ctx.shared).setup.picker_index, step(1));
+        for tick in 0..50 {
+            let delay = if tick == 0 {
+                REPEAT_INITIAL_MS
+            } else {
+                REPEAT_TICK_MS
+            };
+            crate::router::lock(&ctx.shared)
+                .input
+                .advance_test_clock(delay);
+            advance(delay);
+            assert_eq!(
+                crate::router::lock(&ctx.shared).setup.picker_index,
+                step(tick + 2),
+                "repeat {tick} must still step every {REPEAT_TICK_MS} ms"
+            );
+            assert!(!crate::input::rapid_navigation(&ctx));
+            assert!(
+                app.global::<crate::SetupModalView>().get_picker_rows() == picker_rows,
+                "scrolling must retain picker delegates"
+            );
+            frame(&window);
+        }
+        app.window()
+            .dispatch_event(WindowEvent::KeyReleased { text: key });
+        let stopped = crate::router::lock(&ctx.shared).setup.picker_index;
+        crate::router::lock(&ctx.shared)
+            .input
+            .advance_test_clock(300);
+        advance(300);
+        assert_eq!(crate::router::lock(&ctx.shared).setup.picker_index, stopped);
+    }
+}
+
+#[test]
+fn header_logo_uses_a_cached_paint_sized_raster_at_540p() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    crate::theme::apply_palette(&app, "zaparoo-dark", "normal");
+    let (width, height) = (960, 540);
+    window.set_size(slint::PhysicalSize::new(width, height));
+    let sizing = app.global::<Sizing>();
+    sizing.set_screen_width(width as f32);
+    sizing.set_screen_height(height as f32);
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(width), f64::from(height), false),
+    );
+    let brand = app.global::<crate::Brand>();
+    let painted_width = sizing.get_header_height() * brand.get_aspect();
+    let image = brand.invoke_logo(false, painted_width);
+    assert_eq!(image.size().width, painted_width.round() as u32);
+    assert_eq!(
+        image.size().height,
+        sizing.get_header_height().round() as u32
+    );
+    assert_eq!(
+        brand.invoke_saver_logo(painted_width),
+        image,
+        "screensaver motion must share the prepared raster"
+    );
+    let capture = || {
+        let mut pixels = vec![Rgb565Pixel(0); (width * height) as usize];
+        window.request_redraw();
+        assert!(window.draw_if_needed(|renderer| {
+            renderer.render(&mut pixels, width as usize);
+        }));
+        pixels
+    };
+    let with_logo = capture();
+    brand.on_logo(|_, _| slint::Image::default());
+    let without_logo = capture();
+    let changed: Vec<_> = with_logo
+        .iter()
+        .zip(&without_logo)
+        .enumerate()
+        .filter(|(_, (a, b))| a != b)
+        .map(|(index, _)| index)
+        .collect();
+    assert!(changed.len() > 100, "prepared header logo must paint");
+    assert!(changed
+        .iter()
+        .all(|index| index / (width as usize) < sizing.get_header_bottom() as usize));
+}
+
+#[test]
+fn folder_title_descenders_stay_out_of_the_cached_grid_band() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    crate::fonts::register_embedded_fonts();
+    crate::theme::apply_palette(&app, "zaparoo-dark", "normal");
+    let (_runtime, ctx) = offline_ctx();
+    app.global::<Shell>().set_active_screen(Screen::Games);
+    app.global::<crate::Motion>().set_enabled(false);
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.games.rows = game_rows("Game", 40);
+        shared.games.grid.set_item_count(40);
+        shared.games.focus_armed = true;
+        shared.games.restore_done = true;
+    }
+    for (width, height) in [(960, 540), (1280, 720), (1920, 1080)] {
+        window.set_size(slint::PhysicalSize::new(width, height));
+        app.global::<Sizing>().set_screen_width(width as f32);
+        app.global::<Sizing>().set_screen_height(height as f32);
+        crate::sizing::apply_scene(
+            &app,
+            crate::sizing::Scene::of(&app, f64::from(width), f64::from(height), false),
+        );
+        crate::games::render(&ctx, &app);
+        let view = app.global::<crate::GamesView>();
+        let top = view.get_grid_y().round() as usize;
+        let bottom = top + view.get_grid_height().round() as usize;
+        let capture = || {
+            let mut pixels = vec![Rgb565Pixel(0); (width * height) as usize];
+            window.request_redraw();
+            assert!(window.draw_if_needed(|renderer| {
+                renderer.render(&mut pixels, width as usize);
+            }));
+            pixels
+        };
+        view.set_title("gyjpq".into());
+        let titled = capture();
+        view.set_title("".into());
+        let blank = capture();
+        let start = top * width as usize;
+        let end = bottom * width as usize;
+        assert!(titled[..start] != blank[..start], "title must paint above grid: top={top}, bottom={bottom}, loading={}, count={}, strip={}", view.get_loading(), view.get_count(), app.global::<crate::Layout>().get_top_strip_visible());
+        let differences = titled[start..end]
+            .iter()
+            .zip(&blank[start..end])
+            .filter(|(a, b)| a != b)
+            .count();
+        assert_eq!(
+            differences, 0,
+            "{width}x{height}: title pixels must not enter cached page band at y={top}"
+        );
+    }
 }
 
 #[test]
@@ -3631,7 +4778,7 @@ fn cold_and_cached_favorite_systems_restore_the_same_list_viewport() {
             shared.persist.favorite_systems.list_top = Some(6);
         }
         settle(&window);
-        crate::systems::enter_favorites(&ctx, &app);
+        crate::systems::enter_favorites(&ctx, &app, EntryMode::Restore);
         if !cached {
             assert!(app.global::<Shell>().get_transitioning());
             assert_eq!(
@@ -4164,7 +5311,18 @@ fn a_batch_of_landed_covers_repaints_games_once() {
     let renders = || crate::games::RENDERS.with(Cell::get);
     let before = renders();
     crate::deliver_covers(&ctx, &app, &on_page);
-    assert_eq!(renders() - before, 1, "three covers, one repaint");
+    assert_eq!(renders() - before, 1, "three previews, one repaint");
+    let full_art: Vec<_> = ctx
+        .media
+        .pending_keys()
+        .into_iter()
+        .filter(|key| key.max_size > zaparoo_app::covers::COLOR_PREVIEW_MAX_SIZE)
+        .take(3)
+        .collect();
+    assert_eq!(full_art.len(), 3);
+    let before = renders();
+    crate::deliver_covers(&ctx, &app, &full_art);
+    assert_eq!(renders() - before, 1, "three full covers, one repaint");
     let elsewhere: Vec<_> = on_page
         .into_iter()
         .map(|mut key| {
@@ -4178,12 +5336,12 @@ fn a_batch_of_landed_covers_repaints_games_once() {
 }
 
 #[test]
-fn settings_reopens_on_the_page_and_row_it_was_left_on() {
+fn fresh_settings_entry_resets_the_page_and_row() {
     assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
     let (app, window) = boot();
     let (_runtime, ctx) = offline_ctx();
     let view = app.global::<crate::SettingsView>();
-    crate::settings::enter(&ctx, &app);
+    crate::settings::enter(&ctx, &app, EntryMode::Fresh);
     settle(&window);
     assert_eq!(view.get_page(), SettingsPage::Root);
     assert_eq!(view.get_index(), 0);
@@ -4194,23 +5352,14 @@ fn settings_reopens_on_the_page_and_row_it_was_left_on() {
     settle(&window);
     // Something else resets the view meanwhile; the memory is Rust's.
     view.set_index(0);
-    crate::settings::enter(&ctx, &app);
+    crate::settings::enter(&ctx, &app, EntryMode::Fresh);
     settle(&window);
     assert_eq!(view.get_page(), SettingsPage::Root);
-    assert_eq!(view.get_index(), left_on);
-    // A sub-page and a row on it come back too, reseated when the row is
-    // no longer a field.
+    assert_eq!(view.get_index(), 0);
     crate::router::lock(&ctx.shared).settings_focus = Some((SettingsPage::Appearance, 999));
-    crate::settings::enter(&ctx, &app);
-    assert_eq!(view.get_page(), SettingsPage::Appearance);
-    let rows = zaparoo_app::settings::page_rows(
-        SettingsPage::Appearance.token(),
-        &crate::settings::inputs(&ctx),
-    );
-    assert_eq!(
-        view.get_index(),
-        i32::try_from(zaparoo_app::settings::first_navigable(&rows)).unwrap_or(-1)
-    );
+    crate::settings::enter(&ctx, &app, EntryMode::Fresh);
+    assert_eq!(view.get_page(), SettingsPage::Root);
+    assert_eq!(view.get_index(), 0);
 }
 
 #[test]
@@ -4230,8 +5379,15 @@ fn a_failed_browse_of_a_remembered_folder_keeps_the_memory() {
         selected_at_level: vec!["/snes/rpg".into(), "/snes/rpg/z.sfc".into()],
         list_top_at_level: vec![0, 2],
     };
-    crate::router::lock(&ctx.shared).persist.games.system_focus = vec![remembered.clone()];
-    crate::games::enter(&ctx, &app, &snes);
+    crate::router::lock(&ctx.shared).persist.games = zaparoo_core::persist::GamesState {
+        system_id: remembered.system_id.clone(),
+        path_stack: remembered.path_stack.clone(),
+        selected_at_level: remembered.selected_at_level.clone(),
+        list_top_at_level: remembered.list_top_at_level.clone(),
+        system_focus: vec![remembered.clone()],
+        ..Default::default()
+    };
+    crate::games::enter_restored(&ctx, &app, &snes);
     let ticket = {
         let shared = crate::router::lock(&ctx.shared);
         assert!(shared.games.focus_recalled);
@@ -4247,7 +5403,7 @@ fn a_failed_browse_of_a_remembered_folder_keeps_the_memory() {
 }
 
 #[test]
-fn a_system_reopens_in_its_remembered_folder_or_its_root_when_gone() {
+fn a_fresh_system_entry_ignores_its_remembered_folder_and_viewport() {
     assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
     let (app, _window) = boot();
     let (_runtime, ctx) = offline_ctx();
@@ -4273,22 +5429,386 @@ fn a_system_reopens_in_its_remembered_folder_or_its_root_when_gone() {
         assert!(!shared.games.focus_recalled);
     }
     crate::navigation::finish(&app);
-    // Back to SNES: its folder, game and viewport return.
+    // Selecting SNES again is a new visit, not Back or process resume.
     crate::games::enter(&ctx, &app, &system("SNES"));
     let ticket = {
         let shared = crate::router::lock(&ctx.shared);
-        assert_eq!(
-            shared.persist.games.path_stack,
-            vec![String::new(), "/snes/rpg".to_string()]
-        );
-        assert_eq!(shared.persist.games.selected_at_level[1], "/snes/rpg/z.sfc");
-        assert_eq!(shared.persist.games.list_top_at_level, vec![0, 2]);
-        assert_eq!(shared.games.browse_path, "/snes/rpg");
-        assert!(shared.games.focus_recalled);
+        assert_eq!(shared.persist.games.path_stack, vec![String::new()]);
+        assert_eq!(shared.persist.games.selected_at_level, vec![String::new()]);
+        assert!(shared
+            .persist
+            .games
+            .list_top_at_level
+            .iter()
+            .all(|top| *top == 0));
+        assert_eq!(shared.games.browse_path, "");
+        assert!(!shared.games.focus_recalled);
         shared.games.ticket
     };
-    // The folder is gone: Core answers it empty. The root replaces it
-    // and the stale memory is dropped.
+    crate::games::apply_fill(&ctx, &app, ticket, game_rows("Root", 40), None, None, true);
+    assert_eq!(app.global::<crate::GamesView>().get_current_index(), 0);
+    assert_eq!(
+        crate::router::lock(&ctx.shared).games.grid.current_page(),
+        0
+    );
+}
+
+fn navigation_catalog() -> Vec<zaparoo_core::media_types::SystemInfo> {
+    (0..20)
+        .map(|index| zaparoo_core::media_types::SystemInfo {
+            id: format!("System{index:02}"),
+            name: format!("System {index:02}"),
+            category: "Console".into(),
+            media_count: Some(40),
+            ..Default::default()
+        })
+        .collect()
+}
+
+fn navigation_rows() -> Vec<crate::games::GameRow> {
+    game_rows("Game", 40)
+        .into_iter()
+        .enumerate()
+        .map(|(index, mut row)| {
+            row.path = format!("/games/{index}");
+            row.system_id = "System08".into();
+            row
+        })
+        .collect()
+}
+
+#[test]
+fn fresh_systems_reset_but_back_and_resume_keep_the_parent_position() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    let view = app.global::<SystemsView>();
+    for list in [false, true] {
+        {
+            let mut shared = crate::router::lock(&ctx.shared);
+            shared.systems = navigation_catalog();
+            shared.categories = vec!["Console".into()];
+            shared.persist.active_screen = "systems".into();
+            shared.persist.hub.category = "Console".into();
+            shared.persist.systems.system_id = "System08".into();
+            shared.persist.systems.list_top = Some(6);
+            shared.persist.settings.systems_browse_layout =
+                if list { "list" } else { "grid" }.into();
+        }
+        crate::restore_screens(&std::sync::Arc::new(ctx.clone()), &app);
+        settle(&window);
+        assert_eq!(view.get_current_index(), 8);
+        if list {
+            assert_eq!(view.get_list_scroll_top(), 6);
+        }
+        // Open this system, then Back: retain its parent row, not row zero.
+        crate::games::enter(&ctx, &app, &navigation_catalog()[8]);
+        let ticket = crate::router::lock(&ctx.shared).games.ticket;
+        crate::games::apply_fill(&ctx, &app, ticket, navigation_rows(), None, None, true);
+        crate::router::handle_action(&ctx, &app, "cancel");
+        settle(&window);
+        assert_eq!(app.global::<Shell>().get_active_screen(), Screen::Systems);
+        assert_eq!(view.get_current_index(), 8);
+        if list {
+            assert_eq!(view.get_list_scroll_top(), 6);
+        }
+        crate::systems::enter(&ctx, &app, "Console", EntryMode::Fresh, true);
+        assert_eq!(view.get_current_index(), 0);
+        assert_eq!(
+            crate::router::lock(&ctx.shared)
+                .systems_model
+                .grid
+                .current_page(),
+            0
+        );
+        if list {
+            assert_eq!(view.get_list_scroll_top(), 0);
+        }
+    }
+}
+
+#[test]
+fn flat_entries_reset_only_when_fresh_and_resume_scoped_favorites() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    for mode in [GamesMode::Favorites, GamesMode::Recents] {
+        let enter = if mode == GamesMode::Favorites {
+            crate::games::enter_favorites
+        } else {
+            crate::games::enter_recents
+        };
+        for entry in [EntryMode::Restore, EntryMode::Fresh] {
+            app.global::<Shell>().set_active_screen(Screen::Hub);
+            {
+                let mut shared = crate::router::lock(&ctx.shared);
+                shared.persist.active_screen = mode.screen().token().into();
+                shared.persist.settings.games_browse_layout = "list".into();
+                shared.persist.settings.favorites_grouping = "system".into();
+                shared.persist.favorite_systems.selected_path = "System08".into();
+                shared.persist.favorites.selected_path = "/games/8".into();
+                shared.persist.favorites.list_top = Some(6);
+                shared.persist.recents.selected_path = "/games/8".into();
+                shared.persist.recents.list_top = Some(6);
+            }
+            if entry == EntryMode::Restore {
+                crate::restore_screens(&std::sync::Arc::new(ctx.clone()), &app);
+            } else {
+                enter(&ctx, &app, entry);
+            }
+            let ticket = crate::router::lock(&ctx.shared).games.ticket;
+            crate::games::apply_fill(&ctx, &app, ticket, navigation_rows(), None, None, true);
+            settle(&window);
+            let view = app.global::<crate::GamesView>();
+            let (index, top) = if entry == EntryMode::Restore {
+                (8, 6)
+            } else {
+                (0, 0)
+            };
+            assert_eq!(view.get_current_index(), index);
+            assert_eq!(view.get_list_scroll_top(), top);
+            if mode == GamesMode::Favorites {
+                assert_eq!(
+                    crate::router::lock(&ctx.shared).games.favorites_system,
+                    if entry == EntryMode::Restore {
+                        "System08"
+                    } else {
+                        ""
+                    }
+                );
+            }
+            // Reprojection, art publication and an in-place refill keep focus.
+            crate::games::reproject(&ctx, &app);
+            crate::games::render(&ctx, &app);
+            if mode == GamesMode::Favorites {
+                crate::games::refresh_favorites(&ctx, &app);
+            } else {
+                crate::games::refresh_recents(&ctx, &app);
+            }
+            let ticket = crate::router::lock(&ctx.shared).games.ticket;
+            crate::games::apply_fill(&ctx, &app, ticket, navigation_rows(), None, None, false);
+            assert_eq!(view.get_current_index(), index);
+            assert_eq!(view.get_list_scroll_top(), top);
+        }
+    }
+    crate::games::enter_favorites_for_system(&ctx, &app, "System12");
+    let ticket = crate::router::lock(&ctx.shared).games.ticket;
+    crate::games::apply_fill(&ctx, &app, ticket, navigation_rows(), None, None, true);
+    assert_eq!(app.global::<crate::GamesView>().get_current_index(), 0);
+    assert_eq!(
+        crate::router::lock(&ctx.shared).games.favorites_system,
+        "System12"
+    );
+}
+
+#[test]
+fn favorite_systems_fresh_entry_resets_but_return_preserves_the_viewport() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    let result = zaparoo_core::media_types::SystemsResult {
+        systems: navigation_catalog(),
+    };
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.persist.settings.systems_browse_layout = "list".into();
+        shared.persist.favorite_systems.selected_path = "System08".into();
+        shared.persist.favorite_systems.list_top = Some(6);
+    }
+    crate::systems::enter_favorites(&ctx, &app, EntryMode::Fresh);
+    crate::systems::apply_favorites(&ctx, &app, &result, 1, true);
+    settle(&window);
+    let view = app.global::<SystemsView>();
+    assert_eq!(view.get_current_index(), 0);
+    assert_eq!(view.get_list_scroll_top(), 0);
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.persist.favorite_systems.selected_path = "System08".into();
+        shared.persist.favorite_systems.list_top = Some(6);
+    }
+    crate::systems::return_to_favorites(&ctx, &app);
+    assert_eq!(view.get_current_index(), 8);
+    assert_eq!(view.get_list_scroll_top(), 6);
+    crate::systems::enter_favorites(&ctx, &app, EntryMode::Fresh);
+    assert_eq!(
+        view.get_current_index(),
+        0,
+        "warm entry follows the same policy"
+    );
+    assert_eq!(view.get_list_scroll_top(), 0);
+}
+
+#[test]
+fn cold_games_restore_the_folder_selection_and_back_stack() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.systems = navigation_catalog();
+        shared.categories = vec!["Console".into()];
+        shared.persist.hub.category = "Console".into();
+        shared.persist.active_screen = "games".into();
+        shared.persist.settings.games_browse_layout = "list".into();
+        shared.persist.games.system_id = "System08".into();
+        shared.persist.games.path_stack = vec![String::new(), "/rpg".into()];
+        shared.persist.games.selected_at_level = vec!["/rpg".into(), "/games/8".into()];
+        shared.persist.games.list_top_at_level = vec![10, 6];
+        shared.persist.games.entered_from_hub = true;
+    }
+    crate::restore_screens(&std::sync::Arc::new(ctx.clone()), &app);
+    let ticket = {
+        let shared = crate::router::lock(&ctx.shared);
+        assert_eq!(shared.games.browse_path, "/rpg");
+        shared.games.ticket
+    };
+    crate::games::apply_fill(&ctx, &app, ticket, navigation_rows(), None, None, true);
+    settle(&window);
+    let view = app.global::<crate::GamesView>();
+    assert_eq!(view.get_current_index(), 8);
+    assert_eq!(view.get_list_scroll_top(), 6);
+    crate::router::open_view_menu(&ctx, &app);
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert_eq!(
+        view.get_current_index(),
+        8,
+        "closing a modal is not fresh entry"
+    );
+    for layout in ["grid", "list"] {
+        crate::router::lock(&ctx.shared)
+            .persist
+            .settings
+            .games_browse_layout = layout.into();
+        crate::games::reproject(&ctx, &app);
+        assert_eq!(view.get_current_index(), 8, "view changes keep selection");
+    }
+    crate::router::handle_action(&ctx, &app, "cancel");
+    let ticket = crate::router::lock(&ctx.shared).games.ticket;
+    let mut parent = navigation_rows();
+    parent[12].path = "/rpg".into();
+    crate::games::apply_fill(&ctx, &app, ticket, parent, None, None, false);
+    settle(&window);
+    assert_eq!(
+        view.get_current_index(),
+        12,
+        "Back restores the parent selection"
+    );
+    assert_eq!(view.get_list_scroll_top(), 10);
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert_eq!(app.global::<Shell>().get_active_screen(), Screen::Hub);
+}
+
+#[test]
+fn fresh_shortcuts_keep_their_target_and_cancel_keeps_the_source() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.systems = navigation_catalog();
+        shared.persist.active_screen = "hub".into();
+        shared.persist.games.system_id = "System08".into();
+        shared.persist.games.path_stack = vec![String::new(), "/old-folder".into()];
+        shared.persist.games.selected_at_level =
+            vec!["/old-folder".into(), "/old-folder/game".into()];
+        shared.persist.games.list_top_at_level = vec![3, 7];
+    }
+    let source = crate::router::lock(&ctx.shared).persist.clone();
+    for folder in [false, true] {
+        if folder {
+            crate::games::enter_folder_from_hub(&ctx, &app, "System08", "/explicit-target");
+        } else {
+            crate::games::enter_from_hub(&ctx, &app, &navigation_catalog()[8]);
+        }
+        let ticket = {
+            let shared = crate::router::lock(&ctx.shared);
+            assert_eq!(
+                shared.games.browse_path,
+                if folder { "/explicit-target" } else { "" }
+            );
+            assert!(shared.persist.games.entered_from_hub);
+            assert!(shared
+                .persist
+                .games
+                .selected_at_level
+                .iter()
+                .all(String::is_empty));
+            shared.games.ticket
+        };
+        assert_eq!(crate::navigation::source_persist(), Some(source.clone()));
+        assert!(crate::navigation::cancel(&ctx, &app));
+        crate::games::apply_fill(&ctx, &app, ticket, navigation_rows(), None, None, true);
+        assert_eq!(app.global::<Shell>().get_active_screen(), Screen::Hub);
+        assert_eq!(crate::router::lock(&ctx.shared).persist.games, source.games);
+    }
+}
+
+#[test]
+fn about_starts_at_top_only_on_fresh_entry_and_back_keeps_settings_focus() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let ctx = std::sync::Arc::new(ctx);
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.persist.active_screen = "about".into();
+        shared.persist.about_scroll_milli = 725;
+    }
+    crate::restore_core_independent(&ctx, &app);
+    settle(&window);
+    assert_eq!(app.global::<crate::AboutView>().get_scroll_milli(), 725);
+    crate::router::enter_about(&ctx, &app, EntryMode::Fresh);
+    assert_eq!(app.global::<crate::AboutView>().get_scroll_milli(), 0);
+    assert_eq!(
+        crate::router::lock(&ctx.shared).persist.about_scroll_milli,
+        0
+    );
+    let rows = zaparoo_app::settings::page_rows("about", &crate::settings::inputs(&ctx));
+    let index = rows
+        .iter()
+        .position(|row| row.id() == "aboutLicense")
+        .unwrap_or(0);
+    crate::router::lock(&ctx.shared).settings_focus = Some((SettingsPage::About, index));
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert_eq!(
+        app.global::<crate::SettingsView>().get_page(),
+        SettingsPage::About
+    );
+    assert_eq!(
+        app.global::<crate::SettingsView>().get_index(),
+        index as i32
+    );
+}
+
+#[test]
+fn restored_missing_folder_falls_back_to_root_but_errors_do_not_reset() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.persist.games.system_id = "System08".into();
+        shared.persist.games.path_stack = vec![String::new(), "/gone".into()];
+        shared.persist.games.selected_at_level = vec!["/gone".into(), "/gone/game".into()];
+    }
+    crate::games::enter_restored(&ctx, &app, &navigation_catalog()[8]);
+    let ticket = crate::router::lock(&ctx.shared).games.ticket;
     crate::games::on_browse_ready(
         &ctx,
         &app,
@@ -4300,17 +5820,7 @@ fn a_system_reopens_in_its_remembered_folder_or_its_root_when_gone() {
     let shared = crate::router::lock(&ctx.shared);
     assert_eq!(shared.persist.games.path_stack, vec![String::new()]);
     assert_eq!(shared.games.browse_path, "");
-    assert!(!shared.games.focus_recalled);
-    assert!(
-        shared.games.ticket != ticket,
-        "the root browse is a new fill"
-    );
-    assert!(!shared
-        .persist
-        .games
-        .system_focus
-        .iter()
-        .any(|focus| focus.system_id == "SNES"));
+    assert_ne!(shared.games.ticket, ticket);
 }
 
 #[test]

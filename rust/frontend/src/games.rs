@@ -29,9 +29,11 @@ use zaparoo_core::media_types::{
     MediaItem, MediaSearchParams, MediaTagsUpdateParams, MediaTagsUpdateResult, SystemInfo,
     TagInfo,
 };
+use zaparoo_core::persist::{FavoritesState, RecentsState};
 use zaparoo_core::remote_resource::ResourceStatus;
 
 use crate::media_cache::MediaKey;
+use crate::navigation::EntryMode;
 use crate::router::{lock, Ctx, Shared};
 use crate::{App, GamesInput, GamesView, GridCell};
 
@@ -292,7 +294,7 @@ pub struct GamesModel {
     pub press_seq: u64,
     /// Bulk appends pause cover fetches until they land.
     pub covers_paused: bool,
-    /// The fill in flight browses a remembered folder; if that folder is
+    /// The fill in flight restores a saved folder; if that folder is
     /// gone, the system root replaces it.
     pub focus_recalled: bool,
 }
@@ -587,8 +589,8 @@ pub fn seed_detail_ctx(client: Arc<zaparoo_core::client::Client>, handle: Handle
 // ---------- Entry points ----------
 
 /// Systems Accept (and the Hub's system shortcut): a launch-only system
-/// runs its script; everything else browses where that system was last
-/// left (its folder, game and viewport), or its root the first time.
+/// runs its script; every fresh browse starts at the system root. Only
+/// cold-start restoration reuses the saved folder, game and viewport.
 pub fn enter(ctx: &Ctx, app: &App, sys: &SystemInfo) {
     if !sys.zap_script.is_empty() {
         crate::router::launch(ctx, app, sys.zap_script.clone(), &sys.name);
@@ -596,20 +598,16 @@ pub fn enter(ctx: &Ctx, app: &App, sys: &SystemInfo) {
     }
     crate::perf::open_pressed("system");
     crate::navigation::stage(ctx, app);
-    let top = {
+    {
         let mut shared = lock(&ctx.shared);
         let games = &mut shared.persist.games;
-        // The system being left keeps its place for next time.
-        games.remember_system_focus();
-        let recalled = games.recall_system_focus(&sys.id);
-        let top = games.path_stack.last().cloned().unwrap_or_default();
-        // Only a folder below the root can have gone away.
-        let recalled = recalled && !top.is_empty();
+        games.system_id.clone_from(&sys.id);
+        games.path_stack = vec![String::new()];
+        games.selected_at_level = vec![String::new()];
+        games.list_top_at_level.clear();
         begin_browse_mode(&mut shared, sys);
-        shared.games.focus_recalled = recalled;
-        top
-    };
-    browse(ctx, app, &top, true);
+    }
+    browse(ctx, app, "", true);
 }
 
 /// A recalled browse position whose folder is gone (Core answered it
@@ -648,13 +646,15 @@ pub fn enter_restored(ctx: &Ctx, app: &App, sys: &SystemInfo) {
     let top = {
         let mut shared = lock(&ctx.shared);
         begin_browse_mode(&mut shared, sys);
-        shared
+        let top = shared
             .persist
             .games
             .path_stack
             .last()
             .cloned()
-            .unwrap_or_default()
+            .unwrap_or_default();
+        shared.games.focus_recalled = !top.is_empty();
+        top
     };
     browse(ctx, app, &top, true);
 }
@@ -689,7 +689,6 @@ pub fn enter_folder_from_hub(ctx: &Ctx, app: &App, system_id: &str, path: &str) 
     crate::navigation::stage(ctx, app);
     {
         let mut shared = lock(&ctx.shared);
-        shared.persist.games.remember_system_focus();
         shared.persist.games.system_id.clone_from(&system.id);
         shared.persist.games.path_stack = vec![String::new(), path.to_string()];
         shared.persist.games.selected_at_level = vec![String::new(), String::new()];
@@ -713,9 +712,21 @@ fn begin_browse_mode(shared: &mut Shared, sys: &SystemInfo) {
 }
 
 /// Favorites (Hub action): media tagged `user:favorite`.
-pub fn enter_favorites(ctx: &Ctx, app: &App) {
+pub fn enter_favorites(ctx: &Ctx, app: &App, entry: EntryMode) {
     crate::navigation::stage(ctx, app);
-    lock(&ctx.shared).games.favorites_system.clear();
+    {
+        let mut shared = lock(&ctx.shared);
+        if entry == EntryMode::Fresh {
+            shared.persist.favorites = FavoritesState::default();
+        }
+        shared.games.favorites_system = if entry == EntryMode::Restore
+            && shared.persist.settings.favorites_grouping == "system"
+        {
+            shared.persist.favorite_systems.selected_path.clone()
+        } else {
+            String::new()
+        };
+    }
     enter_flat(ctx, app, GamesMode::Favorites, true);
 }
 
@@ -726,6 +737,7 @@ pub fn enter_favorites_for_system(ctx: &Ctx, app: &App, system_id: &str) {
         let mut shared = lock(&ctx.shared);
         shared.games.favorites_system = system_id.to_string();
         shared.persist.favorite_systems.selected_path = system_id.to_string();
+        shared.persist.favorites = FavoritesState::default();
     }
     enter_flat(ctx, app, GamesMode::Favorites, true);
 }
@@ -768,8 +780,11 @@ pub fn refresh_visibility(ctx: &Ctx, app: &App) {
 }
 
 /// Recently played (Hub action): Core's play history.
-pub fn enter_recents(ctx: &Ctx, app: &App) {
+pub fn enter_recents(ctx: &Ctx, app: &App, entry: EntryMode) {
     crate::navigation::stage(ctx, app);
+    if entry == EntryMode::Fresh {
+        lock(&ctx.shared).persist.recents = RecentsState::default();
+    }
     enter_flat(ctx, app, GamesMode::Recents, true);
 }
 
@@ -1309,7 +1324,7 @@ pub(crate) fn on_append(
     ticket: u64,
     outcome: Result<(Vec<GameRow>, Option<String>), String>,
 ) {
-    let (restore_again, landed_restore, from_page, changed_page) = {
+    let (restore_again, landed_restore, changed_page) = {
         let mut shared = lock(&ctx.shared);
         if shared.games.ticket != ticket {
             return;
@@ -1374,7 +1389,7 @@ pub(crate) fn on_append(
         }
         let changed_page = !list && model.grid.current_page() != from_page;
         model.refresh_display_from(appended_from, show_original, &language);
-        (restore_again, landed, from_page, changed_page)
+        (restore_again, landed, changed_page)
     };
     if app.global::<crate::Shell>().get_transitioning() {
         if restore_again || list_restore_needs_rows(ctx, &lock(&ctx.shared)) {
@@ -1394,7 +1409,7 @@ pub(crate) fn on_append(
     }
     if changed_page && !landed_restore {
         persist_current(ctx);
-        slide_to_current_page(ctx, app, from_page);
+        slide_to_current_page(ctx, app);
     } else {
         render(ctx, app);
     }
@@ -1546,14 +1561,6 @@ fn geometry(app: &App, mode: GamesMode) -> Geometry {
     geometry_for(&crate::router::output_scene(app).inputs(), mode)
 }
 
-fn logo_image(px: &crate::system_logos::LogoPixels) -> slint::Image {
-    slint::Image::from_rgba8(
-        slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(
-            &px.rgba, px.width, px.height,
-        ),
-    )
-}
-
 /// The cover decode tier for the grid at the current output geometry.
 fn cover_tier(app: &App) -> u32 {
     crate::sizing::games_grid_cover_source_size(crate::router::output_scene(app))
@@ -1600,7 +1607,7 @@ fn cell_for(ctx: &Ctx, model: &GamesModel, row: &GameRow, tier: u32) -> GridCell
         ctx.media.is_negative(&key),
     );
     if matches!(state, CoverState::Art | CoverState::Pending) {
-        if let Some(color) = placeholder_color(row) {
+        if let Some(color) = placeholder_color(ctx, row, &key) {
             cell.placeholder = color;
             cell.has_placeholder = true;
         }
@@ -1616,16 +1623,15 @@ fn cell_for(ctx: &Ctx, model: &GamesModel, row: &GameRow, tier: u32) -> GridCell
         CoverState::Absent => {
             // The flat lists fall back to the system logo, a friendlier
             // "no cover" cue than the file chip; Games keeps the chip.
+            let bounds = zaparoo_app::logo_cache::Bounds::new(tier, tier);
             let logo = (model.mode != GamesMode::Browse && !key.system.is_empty())
-                .then(|| crate::system_logos::tinted_logo_for(&key.system, false))
-                .flatten();
-            if let Some(px) = logo {
-                cell.cover = logo_image(&px);
+                .then(|| ctx.logos.key(&key.system, &key.system, false, bounds))
+                .flatten()
+                .and_then(|key| ctx.logos.get(&key));
+            if let Some(pair) = logo {
+                (cell.cover, cell.cover_focus) = pair.images();
                 cell.has_cover = true;
-                if let Some(focus) = crate::system_logos::tinted_logo_for(&key.system, true) {
-                    cell.cover_focus = logo_image(&focus);
-                    cell.has_cover_focus = true;
-                }
+                cell.has_cover_focus = true;
             } else {
                 cell.glyph_key = SharedString::from(FILE_GLYPH);
             }
@@ -1636,8 +1642,10 @@ fn cell_for(ctx: &Ctx, model: &GamesModel, row: &GameRow, tier: u32) -> GridCell
 }
 
 /// The art slot's stand-in colour while a row's cover loads.
-fn placeholder_color(row: &GameRow) -> Option<slint::Color> {
+fn placeholder_color(ctx: &Ctx, row: &GameRow, key: &MediaKey) -> Option<slint::Color> {
     row.cover_color
+        .or_else(|| ctx.media.average_color(key))
+        .or_else(|| ctx.media.average_color(&key.color_preview()))
         .map(|[r, g, b]| slint::Color::from_rgb_u8(r, g, b))
 }
 
@@ -1668,6 +1676,8 @@ fn page_cells(ctx: &Ctx, model: &GamesModel, page: usize, tier: u32) -> Vec<Grid
 /// Replace this view's demand, including obsolete detail images. Other owners
 /// (Hub and modals) keep their independently enqueued requests.
 fn request_covers(ctx: &Ctx, model: &GamesModel, keys: Vec<MediaKey>) {
+    // Even a tiny thumbnail makes Core decode its original on a cold miss.
+    // Fast navigation reuses prepared colors but starts no artwork work.
     ctx.media
         .request_wanted(if model.covers_paused || model.rapid_active {
             Vec::new()
@@ -1678,16 +1688,36 @@ fn request_covers(ctx: &Ctx, model: &GamesModel, keys: Vec<MediaKey>) {
 
 /// The cover keys around the visible window, in fetch priority order.
 fn wanted_covers(
+    ctx: &Ctx,
     model: &GamesModel,
     first_visible: usize,
     page_size: usize,
     tier: u32,
 ) -> Vec<MediaKey> {
-    cover_keys(
-        model,
-        rules::prefetch_rows(model.rows.len(), page_size, first_visible),
-        tier,
-    )
+    let indices = rules::prefetch_rows(model.rows.len(), page_size, first_visible);
+    let mut wanted = Vec::new();
+    for window in indices.chunks(page_size.max(1)) {
+        let rows: Vec<_> = window
+            .iter()
+            .filter_map(|index| model.rows.get(*index))
+            .filter(|row| row.media_capable && row.has_cover)
+            .map(|row| (row, media_key(row, &model.system_id, tier)))
+            .filter(|(_, key)| !key.system.is_empty() && !key.path.is_empty())
+            .collect();
+        // Prepare real colors before this window's full-size art; replacing
+        // the wanted window drops work for pages that scrolled past.
+        for (row, key) in &rows {
+            if row.cover_color.is_none()
+                && tier > zaparoo_app::covers::COLOR_PREVIEW_MAX_SIZE
+                && !ctx.media.is_cached(key)
+                && !ctx.media.is_negative(key)
+            {
+                wanted.push(key.color_preview());
+            }
+        }
+        wanted.extend(rows.into_iter().map(|(_, key)| key));
+    }
+    wanted
 }
 
 fn wanted_detail_covers(model: &GamesModel, tier: u32) -> Vec<MediaKey> {
@@ -1909,10 +1939,45 @@ pub fn render(ctx: &Ctx, app: &App) {
         request_covers(
             ctx,
             model,
-            wanted_covers(model, first_visible, window, tier),
+            wanted_covers(ctx, model, first_visible, window, tier),
         );
         (first_visible, window, tier)
     };
+    if matches!(
+        app.global::<crate::Shell>().get_active_screen(),
+        crate::Screen::Games | crate::Screen::Favorites | crate::Screen::Recents
+    ) {
+        let bounds = zaparoo_app::logo_cache::Bounds::new(art_tier, art_tier);
+        let key = |row: &GameRow| {
+            if model.mode == GamesMode::Browse
+                || model.rapid_active
+                || (row.has_cover
+                    && !ctx
+                        .media
+                        .is_negative(&media_key(row, &model.system_id, art_tier)))
+            {
+                return None;
+            }
+            let id = row.system_or(&model.system_id);
+            ctx.logos.key(id, id, false, bounds)
+        };
+        let visible = model
+            .rows
+            .iter()
+            .skip(art_start)
+            .take(art_window)
+            .filter_map(key);
+        let neighbors = [
+            art_start.saturating_add(art_window),
+            art_start.saturating_sub(art_window),
+        ]
+        .into_iter()
+        .flat_map(|first| model.rows.iter().skip(first).take(art_window))
+        .filter_map(key);
+        ctx.logos.request_window(visible, neighbors);
+    } else {
+        crate::system_logos::defer_refresh(ctx, app);
+    }
     if crate::perf::enabled() {
         let visible_rows = model.rows.iter().skip(art_start).take(art_window);
         let (visible, pending) = visible_rows.fold((0, 0), |(visible, pending), row| {
@@ -1921,8 +1986,11 @@ pub fn render(ctx: &Ctx, app: &App) {
         });
         crate::perf::games_rendered(count, model.loading, visible, pending);
     }
+    // A replacement temporarily seats row zero while old rows may still be
+    // painted. That transient viewport must not overwrite the restore target.
+    let stable_viewport = !model.loading && model.pending_restore_path.is_empty();
     drop(shared);
-    if list {
+    if list && stable_viewport {
         remember_list_top(
             &mut lock(&ctx.shared),
             view.get_list_scroll_top().max(0) as usize,
@@ -1972,12 +2040,13 @@ fn refresh_detail_cover(ctx: &Ctx, app: &App, model: &GamesModel) {
         return;
     };
     view.set_detail_title(SharedString::from(row.display.as_str()));
-    let placeholder = placeholder_color(row).filter(|_| row.media_capable && row.has_cover);
+    let tier = crate::sizing::detail_cover_source_size(crate::router::output_scene(app));
+    let key = media_key(row, &model.system_id, tier);
+    let placeholder =
+        placeholder_color(ctx, row, &key).filter(|_| row.media_capable && row.has_cover);
     view.set_detail_placeholder(placeholder.unwrap_or_default());
     view.set_detail_has_placeholder(placeholder.is_some());
     view.set_detail_path(SharedString::from(row.path.as_str()));
-    let tier = crate::sizing::detail_cover_source_size(crate::router::output_scene(app));
-    let key = media_key(row, &model.system_id, tier);
     if !row.media_capable || key.system.is_empty() {
         view.set_detail_has_cover(false);
         view.set_detail_cover_absent(!row.is_dir());
@@ -1995,8 +2064,8 @@ fn refresh_detail_cover(ctx: &Ctx, app: &App, model: &GamesModel) {
     }
 }
 
-/// A batch of covers landed or were found missing: repaint once when the
-/// page (or the list window and its detail pane) shows any of them.
+/// Repaint once for a visible grid cover/color preview or the focused list
+/// detail cover. Hidden list-row artwork and neighbor-only arrivals do no work.
 pub fn covers_landed(ctx: &Ctx, app: &App, keys: &[MediaKey]) {
     if crate::navigation::retaining(
         app,
@@ -2025,12 +2094,14 @@ pub fn covers_landed(ctx: &Ctx, app: &App, keys: &[MediaKey]) {
                 cover_tier(app),
             )
         };
-        model
-            .rows
-            .iter()
-            .skip(first)
-            .take(window)
-            .any(|row| keys.contains(&media_key(row, &model.system_id, tier)))
+        model.rows.iter().skip(first).take(window).any(|row| {
+            let key = media_key(row, &model.system_id, tier);
+            keys.contains(&key)
+                || (!list
+                    && row.has_cover
+                    && row.cover_color.is_none()
+                    && keys.contains(&key.color_preview()))
+        })
     };
     if relevant {
         render(ctx, app);
@@ -2297,11 +2368,11 @@ fn request_cached_page_transition(_app: &App, _direction: i32, _columns: i32, _r
     false
 }
 
-/// A cursor move landed on another page: swoop the strip one period in
-/// `dir`, then commit. Reduce motion cuts instead.
-fn slide_to_current_page(ctx: &Ctx, app: &App, from_page: usize) {
+/// Swoop one period in the grid's committed navigation direction, including
+/// wrapped and deferred turns. Reduce motion cuts instead.
+fn slide_to_current_page(ctx: &Ctx, app: &App) {
     let rapid = crate::input::rapid_page(ctx) || crate::input::rapid_navigation(ctx);
-    let (to_page, columns, rows, reduce_motion, tier) = {
+    let (to_page, columns, rows, reduce_motion, tier, dir) = {
         let mut shared = lock(&ctx.shared);
         let reduce_motion =
             shared.persist.settings.reduce_motion || !app.global::<crate::Motion>().get_enabled();
@@ -2315,9 +2386,9 @@ fn slide_to_current_page(ctx: &Ctx, app: &App, from_page: usize) {
             model.grid.rows() as i32,
             reduce_motion,
             cover_tier(app),
+            model.grid.page_direction().offset(),
         )
     };
-    let dir: i32 = if to_page > from_page { 1 } else { -1 };
     let view = app.global::<GamesView>();
     let target_local = {
         let shared = lock(&ctx.shared);
@@ -2348,6 +2419,7 @@ fn slide_to_current_page(ctx: &Ctx, app: &App, from_page: usize) {
                 let view = app.global::<GamesView>();
                 view.set_cached_transition(false);
                 view.set_slide_anim(true);
+                render(&ctx, &app);
             }
         });
         return;
@@ -2583,7 +2655,7 @@ fn grid_move(ctx: &Ctx, app: &App, d_col: i32, d_row: i32, page_delta: i32) {
     if moved {
         persist_current(ctx);
         if to_page != from_page {
-            slide_to_current_page(ctx, app, from_page);
+            slide_to_current_page(ctx, app);
             drain_load_requests(ctx, app);
             return;
         }
@@ -2764,6 +2836,7 @@ fn press_duration(app: &App) -> u64 {
 /// Dispatch the selected row after the router's grid push. List feedback
 /// retires locally without a navigation delay.
 fn accept_current(ctx: &Ctx, app: &App) {
+    let list_feedback = app.global::<crate::Shell>().get_browse_list_layout();
     let (row, seq) = {
         let mut shared = lock(&ctx.shared);
         let model = &mut shared.games;
@@ -2771,7 +2844,9 @@ fn accept_current(ctx: &Ctx, app: &App) {
             return;
         };
         model.press_seq += 1;
-        model.activate_pulse += 1;
+        if list_feedback {
+            model.activate_pulse += 1;
+        }
         (row, model.press_seq)
     };
     persist_now(ctx);
@@ -2784,6 +2859,9 @@ fn accept_current(ctx: &Ctx, app: &App) {
     }
     if let Some(text) = row.launch_text() {
         crate::router::launch(ctx, app, text, &row.display);
+    }
+    if !list_feedback {
+        return;
     }
     slint::Timer::single_shot(Duration::from_millis(press_duration(app)), move || {
         let Some(app) = weak.upgrade() else {

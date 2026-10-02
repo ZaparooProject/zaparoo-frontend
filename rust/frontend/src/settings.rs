@@ -16,6 +16,7 @@ use zaparoo_app::settings::{self as rules, Control, Row};
 use zaparoo_core::input_actions::actions;
 use zaparoo_core::persist;
 
+use crate::navigation::EntryMode;
 use crate::router::{lock, Ctx, ListContext, PendingRestart};
 use crate::{App, GridCell, SettingsInput, SettingsRow, SettingsView};
 
@@ -475,14 +476,13 @@ pub(crate) fn navigate_page(ctx: &Ctx, app: &App, page: crate::SettingsPage) {
     });
 }
 
-pub fn enter(ctx: &Ctx, app: &App) {
-    enter_with_direction(ctx, app, 1);
-}
-
-pub fn enter_with_direction(ctx: &Ctx, app: &App, direction: i32) {
+pub fn enter(ctx: &Ctx, app: &App, entry: EntryMode) {
     let focus = {
         let mut shared = lock(&ctx.shared);
         shared.persist.active_screen = "settings".to_string();
+        if entry == EntryMode::Fresh {
+            shared.settings_focus = None;
+        }
         shared.settings_focus
     };
     crate::router::save_persist(&ctx.shared);
@@ -497,7 +497,8 @@ pub fn enter_with_direction(ctx: &Ctx, app: &App, direction: i32) {
         }
         None => open_page(ctx, app, crate::SettingsPage::Root),
     }
-    crate::router::transition_to_screen(app, crate::Screen::Settings, direction);
+    remember_focus(ctx, app);
+    crate::router::transition_to_screen(app, crate::Screen::Settings, 1);
 }
 
 /// Back out of the About screen onto the page that opened it.
@@ -509,7 +510,15 @@ pub fn return_from_about(ctx: &Ctx, app: &App) {
 
 pub(crate) fn show_about_return(ctx: &Ctx, app: &App) {
     // Stage the actual destination before arming the route, not a temporary root grid.
+    let index = lock(&ctx.shared)
+        .settings_focus
+        .filter(|(page, _)| *page == crate::SettingsPage::About)
+        .map_or(0, |(_, index)| index);
     open_page(ctx, app, crate::SettingsPage::About);
+    let rows = rules::page_rows(crate::SettingsPage::About.token(), &inputs(ctx));
+    app.global::<SettingsView>()
+        .set_index(i32::try_from(rules::restore_seat(&rows, index)).unwrap_or(0));
+    render(ctx, app);
     crate::router::transition_to_screen(app, crate::Screen::Settings, -1);
 }
 
@@ -528,7 +537,7 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
     remember_focus(ctx, app);
 }
 
-/// Keep the page and row on screen for the next time Settings opens.
+/// Keep the page and row for Back and in-process restoration.
 fn remember_focus(ctx: &Ctx, app: &App) {
     let view = app.global::<SettingsView>();
     let index = usize::try_from(view.get_index()).unwrap_or(0);
@@ -608,7 +617,7 @@ fn accept(ctx: &Ctx, app: &App, id: &str, control: Control) {
         Control::Toggle => toggle(ctx, app, id),
         Control::Picker => open_picker(ctx, app, id),
         Control::Navigate | Control::Action => match id {
-            "aboutLicense" => crate::router::enter_about(ctx, app),
+            "aboutLicense" => crate::router::enter_about(ctx, app, EntryMode::Fresh),
             "documentation" => crate::router::open_documentation_qr(app),
             "uploadLog" => crate::log_upload::open(ctx, app),
             "pairDevice" => {
@@ -841,7 +850,7 @@ fn apply(ctx: &Ctx, app: &App, id: &str, value: &str) {
             // ramps follow from the new palette.
             let palette = crate::theme::apply_palette(app, &scheme, &intensity);
             let (rest, focus) = crate::theme::logo_tints(&palette);
-            crate::system_logos::set_tints(rest, focus);
+            ctx.logos.set_tints(rest, focus);
             crate::systems::reproject(ctx, app);
             crate::router::reproject_hub(ctx, app);
         }
@@ -1003,6 +1012,25 @@ fn focus(ctx: &Ctx, app: &App, index: usize) -> bool {
 
 pub fn bind_input(ctx: &Arc<Ctx>, app: &App) {
     let input = app.global::<SettingsInput>();
+    let weak = app.as_weak();
+    let ctx_page = ctx.clone();
+    input.on_page_requested(move |delta| {
+        let Some(app) = weak.upgrade() else {
+            return;
+        };
+        if delta != 0 && app.global::<crate::Shell>().get_active_screen() == crate::Screen::Settings
+        {
+            crate::router::handle_action(
+                &ctx_page,
+                &app,
+                if delta < 0 {
+                    actions::UP
+                } else {
+                    actions::DOWN
+                },
+            );
+        }
+    });
     for (hover, accept) in [(true, false), (false, true)] {
         let ctx = ctx.clone();
         let weak = app.as_weak();

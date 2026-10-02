@@ -273,6 +273,8 @@ export component FocusCursor inherits Rectangle {
     property <length> position-x: 0px;
     property <length> position-y: 0px;
     property <int> epoch: Motion.epoch;
+    out property <bool> moving: root.target.valid && root.motion
+        && (root.position-x != root.target.x || root.position-y != root.target.y);
 
     changed target => {
         root.glide = root.motion && root.previous.valid && root.target.valid

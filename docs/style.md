@@ -388,13 +388,12 @@ lowers artwork, caption, and ring together without scaling cover art.
 
 ### Launch feedback stays on the control that was pressed
 
-The press-in is the launch cue, and it lasts as long as the launch does. An
-ordinary push is a fixed 90 ms, which is over before Core has answered, so a
-commit that starts work outliving its own push keeps the control down
-(`press_feedback::keep_held`) and lifts it when the work resolves, fails, or
-the frontend goes dormant behind the game it started. A cap (`HOLD_MAX_MS`)
-releases anything still held after ten seconds: a Core that never answers must
-not leave a tile pushed in.
+Accept dispatches immediately; feedback never delays the action. Work that
+finishes in the same turn retires its feedback with it. A launch or deferred
+route keeps the accepting control down (`press_feedback::keep_held`) until the
+work resolves, fails, or the frontend goes dormant behind the game it started.
+A cap (`HOLD_MAX_MS`) releases anything still held after ten seconds: a Core
+that never answers must not leave a tile pushed in.
 
 The reason to keep it there rather than in the header is that the eye is on
 the tile that was just pressed, and on a handheld at arm's length or a TV
@@ -886,29 +885,25 @@ chroma) rather than mixing toward `primary`/`text` in sRGB, which is what
 fixed a focused amber tile reading near-white and a focused blue tile reading
 closer to brown than orange.
 
-### Header logo asset ladder
+### Header logo rasterization
 
-The bundled wordmark logo cannot be recolored by a palette role, it's a
-full-color brand mark, not a single-hue tinted glyph. `HeaderBar` instead
-selects between two pre-rendered PNG variants under
-`resources/images/logo/logo-<variant>-<w>.png`, embedded through the `Brand`
-global in `chrome.slint`:
+The bundled wordmark is full-color artwork, not a tinted glyph.
+`Theme.light-surface` (from `zaparoo_app::palette::is_light_surface`) selects
+the embedded `logo-on-dark-600.png` or `logo-on-light-600.png` master under
+`resources/images/logo/`. This selects an asset, not a palette color.
 
-- `on-dark-<w>`, light wordmark, for `zaparoo-dark` / `classic-purple`.
-- `on-light-<w>`, dark wordmark, for `zaparoo-light`.
+`Brand.logo(light, painted-width)` delegates to `rust/frontend/src/brand.rs`,
+which resizes the master to the painted width with a premultiplied-alpha
+Lanczos filter. Slint's software renderer uses nearest-neighbor bitmap
+sampling: drawing a larger asset rung at a smaller size skips source rows
+and makes diagonals uneven. Preparing the final raster avoids that extra
+resampling without changing layout geometry or the source artwork.
 
-`Theme.light-surface` (pushed from `zaparoo_app::palette::is_light_surface`)
-picks the variant. It is deliberately not a palette role (it is not a field
-of `palette::Palette`), because it selects an asset, not a color.
-`w` is one of `96, 144, 192, 256, 384, 600` (600 is the largest rung, at the
-master's own aspect ratio). `Brand.logo(light, painted-width)` is the single
-place that snaps a painted width up to a rung (the same "snap up" contract
-`zaparoo_app::sizing::snap_cover_tier` uses for grid covers) and picks the
-variant; `HeaderBar`, `AboutScreen`, and the screensaver's bouncing copy
-(through `Brand.saver-logo`, always the on-dark variant over its black
-backstop) all call it instead of naming an image, so none of them ever
-decode a texture larger than their own painted size. There is no unscaled
-monolithic `logo.png` any more, every call site goes through the ladder.
+Header, About, and screensaver share this provider; `Brand.saver-logo`
+always selects the on-dark variant over its black backstop. Each window's
+LRU retains at most four rasters and 2 MiB, with a 1024-pixel raster-width
+cap. Repainting or moving an unchanged logo shares its existing image;
+filtering happens only on a size or surface-color cache miss.
 
 ## Resolution tiers
 
@@ -1192,8 +1187,9 @@ deep they are or how many Back presses get out. The rules:
    would split what the user sees from what takes input.
 2. A choice made inside a modal is made inside that modal. The panel swaps
    its content to the option list and back: a *page* of the same panel,
-   the modal title unchanged, the row's own name as a section header over
-   the list. A picks and returns; Back returns without changing, with
+   the row's own name replacing the form title while the picker is open.
+   Do not repeat that name in a second heading above the options. A picks
+   and returns; Back returns without changing, with
    focus on the row that opened the page. One level of pages only. See
    `SetupModal` in `rust/frontend/ui/setup.slint`, whose `picker-page` swaps
    the form for its picker page, and its driver
@@ -1474,17 +1470,17 @@ there's only **one** page or item total, both chevrons hide entirely
 (`has-navigation-range`, the same gate the "N / M" text already used) rather
 than painting two permanently-dim arrows that will never do anything,
 dimming is for "this direction specifically has nothing," not for "nothing
-here scrolls at all." It sits alongside `TopStatusStrip`'s title,
-baseline-aligned to it (`TopStatusStrip`'s `page-indicator-mode`), on every
-theme except CRT, CRT hides that strip entirely
-(`Layout.top-strip-visible: false`) and keeps the same cue in the host screen's
-**footer** instead, alongside `ActiveLabel` (`Layout.page-cue-in-footer`,
-resolved by `zaparoo_app::layouts`, is the profile flag both placements key
-off). Wherever it lives, the badge and
-`PageIndicator` are unconditionally reserved, only the count text's and
-each chevron pair's presence, and each chevron's own colour, toggle, so a
+here scrolls at all." Non-CRT browse screens put the **count and position cue
+together at the right of the existing title strip**, with the title centered.
+The group fits within one side slot and elides its count rather than colliding
+with the title. Settings detail pages put item position there; About/License
+puts scroll percentage there. Loading status stays independent. Hub has no
+title strip or total count, so its cue stays beside the focused caption rather
+than taking space from its grid. CRT retains its calibrated footer and
+in-card About cues. Modal cues remain inside their panels, and the fast-scroll
+rail remains on the right. Cue visibility never changes grid geometry: a
 single-page grid becoming multi-page (arming Hub Options → Move always
-reserves a second page) never shifts anything. The Settings card, the About
+reserves a second page) cannot shift or shrink its tiles. The Settings card, the About
 card, and `GameInfoModal`'s own scroll chevrons got the same
 dim-plus-hide-on-single-page treatment for one consistent rule. The list
 picker's chevrons were once claimed to satisfy it by construction and did not:
@@ -1492,14 +1488,15 @@ they hid one arrow per direction and painted the other dim in *both* states.
 Every one of them now goes through `ScrollCue`; see "Spent cues" above,
 which is where the dim/hide rule and the colour now live.
 
-Two placements exist because putting the cue at the top, next to a title
-that's already there, was tried first (pre-round-5) and reads better once a
-footer that's ALSO carrying the focused item's own title has room to spare,
-`ActiveLabel`'s `side-inset` reverts to its own default (`Sizing.pct-w(3)`)
-instead of a corner-slot reservation whenever the footer isn't hosting the
-count/page slots, roughly doubling the room a long focused title gets before
-eliding. CRT's footer is the one place that still needs the full three-slot
-arrangement, since CRT has nowhere else to put it. `PageIndicator` in
+Digital list, Settings, and About cards reserve only their normal help-bar
+clearance, not a second navigation footer. Rust viewport calculations use the
+same restored content height. Hub and CRT captions reserve their footer cue's
+measured width even on a single-page screen, so names cannot collide with a
+large page count; digital browse captions can use that width for their names.
+CRT retains its three-slot count/name/position arrangement. Geometry is resolved
+per output, not from the platform: HDMI and CRT in a dual-head session use
+different placements.
+`PageIndicator` in
 `chrome.slint` places each chevron and the text at a fixed x off the element
 before it rather than in a layout, so hiding the chevrons never shifts the
 "N / M" text, and its `chevron-spacing` is a tighter gap between the two
@@ -1508,8 +1505,38 @@ Gestalt proximity: the chevrons are one control, the text is a separate
 readout, and the glyphs' own baked-in side bearing already makes an *equal*
 gap read backwards. Detailed `BrowseList` layouts use this same cue for
 single-item movement and omit the separate left-side total. The Settings card
-uses it too, in item mode in the page's own `TopStatusStrip`, so the cue costs
-the card no room.
+uses it too, in item mode below its card. Pointer cues call Rust drivers;
+Slint does not change screen selection or persisted scroll state itself.
+
+### Navigation memory
+
+A fresh forward visit starts at the first item and first page. Selecting a
+category starts its Systems list at the top; selecting a system opens its
+root, not the folder from an earlier visit. Favorites, Recently played,
+Settings and About follow the same fresh-entry rule. An explicit Hub folder
+shortcut still opens its named folder.
+
+Back is different: it restores the parent selection and viewport. Process
+resume uses the existing saved screen, browse stacks, selections and scroll
+positions rather than taking a fresh-entry path. Closing a modal, delivering
+artwork, changing the view or refreshing a list never starts a new visit.
+`navigation::EntryMode` makes intent explicit where entry paths are shared;
+reset only after retaining the source so canceled loads cannot erase it.
+The persisted schema is unchanged; legacy per-system memories remain readable
+but no longer choose a fresh visit's destination.
+
+### Hub pages and Go to…
+
+Hub page changes follow navigation direction, including wraps and pages crossed
+while arranging tiles. Accelerated MiSTer output moves cached RGB565 endpoints;
+without that capability HDMI cuts rather than repainting a large grid every
+frame. Desktop and small CRT scenes use the live page strip. Repeated input
+interrupts obsolete motion; Reduce motion cuts immediately. Persistence records
+the destination, never an animation phase.
+
+The Go to… modal keeps letter and count together as a centered group. One retained
+focus ring travels between adjacent buckets and follows the selected surface's
+press depth; opening, reflow, and nonadjacent jumps snap.
 
 ### Empty slots
 
@@ -1554,8 +1581,11 @@ session.
 
 ### The held tile in Move mode
 
-A tile held for a Move (Hub Options → Move) blinks out of existence and
-back on a `Motion.held-blink-ms` cycle: nothing is painted in that cell for
+A stationary tile held for a Move (Hub Options → Move) blinks out of existence
+and back on a `Motion.held-blink-ms` cycle. While moving, it stays visible:
+movement is already the cue. On arrival, a full visible interval starts before
+blinking resumes, including when movement started in the hidden half-cycle.
+Nothing is painted in that cell for
 the instant it is off, focus ring included, and it returns exactly as it
 was. No tint, no recolor, no lift, a hard on/off cut, implemented as
 `opacity` toggling between exactly 0 and 1 so one binding takes the art,

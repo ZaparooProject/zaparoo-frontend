@@ -87,6 +87,7 @@ enum TransitionPhase {
 
 #[derive(Default)]
 struct SyncState {
+    hub: TransitionPhase,
     systems: TransitionPhase,
     games: TransitionPhase,
     /// Screen the CRT head last resolved its layout profile for.
@@ -188,7 +189,6 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_loaded => set_loaded,
         get_catalog_empty => set_catalog_empty,
         get_indexing => set_indexing,
-        get_cells => set_cells,
         get_selected_local => set_selected_local,
         get_columns => set_columns,
         get_rows => set_rows,
@@ -207,9 +207,40 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_move_origins => set_move_origins,
         get_move_pulse => set_move_pulse,
         get_options_available => set_options_available,
-        get_activate_pulse => set_activate_pulse,
-        get_release_pulse => set_release_pulse,
+        get_transition_target_index => set_transition_target_index,
     );
+    let hub_transition =
+        source.get_cached_transition() || source.get_page_slide().abs() > f32::EPSILON;
+    if hub_transition {
+        target.set_selected_local(-1);
+        target.set_held_local(-1);
+        if state.hub != TransitionPhase::Active {
+            target.set_next_cells(if source.get_cached_transition() {
+                source.get_cells()
+            } else {
+                source.get_next_cells()
+            });
+            target.set_slide_dir(source.get_slide_dir());
+            target.set_slide_anim(true);
+            target.set_page_slide(source.get_slide_dir() as f32);
+            state.hub = TransitionPhase::Active;
+        }
+    } else {
+        if state.hub == TransitionPhase::Active {
+            target.set_slide_anim(false);
+        }
+        set_if_changed!(target, get_cells => set_cells, source.get_cells());
+        set_if_changed!(target, get_next_cells => set_next_cells, ModelRc::default());
+        if target.get_page_slide().abs() > f32::EPSILON {
+            target.set_page_slide(0.0);
+        }
+        if state.hub == TransitionPhase::Active {
+            state.hub = TransitionPhase::Rearm;
+        } else {
+            target.set_slide_anim(true);
+            state.hub = TransitionPhase::Idle;
+        }
+    }
     {
         let sizing = crt.global::<crate::Sizing>();
         let scene = crate::sizing::Scene::of(
@@ -877,6 +908,71 @@ mod tests {
         assert_eq!(target.get_dialog_status(), crate::DialogProgress::Step);
         assert_eq!(target.get_dialog_status_step(), 2);
         assert_eq!(target.get_dialog_status_total(), 3);
+        Ok(())
+    }
+
+    #[test]
+    fn hub_pages_preserve_crt_source_for_cached_and_live_transitions(
+    ) -> Result<(), slint::PlatformError> {
+        assert!(slint::platform::set_platform(Box::new(TestPlatform)).is_ok());
+        let primary = App::new()?;
+        let crt = App::new()?;
+        primary.global::<crate::Sizing>().set_screen_width(960.0);
+        primary.global::<crate::Sizing>().set_screen_height(540.0);
+        crt.global::<crate::Sizing>().set_screen_width(352.0);
+        crt.global::<crate::Sizing>().set_screen_height(240.0);
+        let source = primary.global::<HubView>();
+        let target = crt.global::<HubView>();
+        source.set_columns(3);
+        source.set_rows(2);
+        source.set_cell_width(200.0);
+        let cells = |name: &str| {
+            ModelRc::new(VecModel::from(vec![
+                GridCell {
+                    name: name.into(),
+                    ..Default::default()
+                };
+                6
+            ]))
+        };
+        for cached in [false, true] {
+            let old = cells("Old");
+            let incoming = cells("New");
+            let mut state = SyncState::default();
+            source.set_cells(old.clone());
+            source.set_page(0);
+            sync_with_state(&primary, &crt, &mut state);
+            source.set_page(1);
+            source.set_slide_dir(-1);
+            source.set_transition_target_index(2);
+            if cached {
+                source.set_cells(incoming.clone());
+                source.set_cached_transition(true);
+            } else {
+                source.set_next_cells(incoming.clone());
+                source.set_page_slide(-1.0);
+            }
+            sync_with_state(&primary, &crt, &mut state);
+            assert_eq!(target.get_cells(), old);
+            assert_eq!(target.get_next_cells(), incoming);
+            assert!((target.get_page_slide() + 1.0).abs() < f32::EPSILON);
+            assert_eq!(target.get_transition_target_index(), 2);
+            assert!(target.get_cell_width() < source.get_cell_width());
+            sync_with_state(&primary, &crt, &mut state);
+            assert_eq!(target.get_cells(), old, "mirror ticks cannot commit midway");
+            source.set_cached_transition(false);
+            source.set_page_slide(0.0);
+            source.set_cells(incoming.clone());
+            source.set_selected_local(2);
+            sync_with_state(&primary, &crt, &mut state);
+            assert_eq!(target.get_cells(), incoming);
+            assert_eq!(target.get_selected_local(), 2);
+            assert_eq!(target.get_next_cells().row_count(), 0);
+            assert!(target.get_page_slide().abs() < f32::EPSILON);
+            assert!(!target.get_slide_anim());
+            sync_with_state(&primary, &crt, &mut state);
+            assert!(target.get_slide_anim());
+        }
         Ok(())
     }
 

@@ -7,9 +7,12 @@
 // data layer owns the Core connection and caches; watch channels project
 // into Slint properties via `upgrade_in_event_loop`.
 
+use crate::navigation::EntryMode;
+
 mod about;
 mod actions;
 mod alternates;
+mod brand;
 mod browse_motion;
 mod card_write;
 mod customization;
@@ -639,8 +642,10 @@ fn run_application(
         &persisted.settings.color_intensity,
     );
     let (rest, focus) = theme::logo_tints(&palette);
-    system_logos::set_tints(rest, focus);
+    let logos = system_logos::Logos::new();
+    logos.set_tints(rest, focus);
     seed_display_globals(&app, &persisted, visual_crt, crt, ui_framebuffer_size);
+    brand::register(&app);
     app.global::<GlyphSource>().on_glyph(|key, px, tint| {
         glyphs::render(key.as_str(), px.round().max(0.0) as u32, tint).unwrap_or_default()
     });
@@ -654,6 +659,7 @@ fn run_application(
             &persisted.settings.color_intensity,
         );
         seed_display_globals(&mirror, &persisted, true, true, crt_framebuffer_size);
+        brand::register(&mirror);
         mirror.global::<GlyphSource>().on_glyph(|key, px, tint| {
             glyphs::render(key.as_str(), px.round().max(0.0) as u32, tint).unwrap_or_default()
         });
@@ -691,6 +697,7 @@ fn run_application(
         store: store.clone(),
         handle: handle.clone(),
         media,
+        logos,
         clock_twelve_hour: clock_twelve_hour.clone(),
         dormant,
         status: status::new(&status_language),
@@ -712,8 +719,9 @@ fn run_application(
         ))),
     });
     start_media_cache(&ctx, &app, &client);
+    system_logos::spawn_driver(&ctx, &app);
     #[cfg(feature = "hosted")]
-    host::register_media(&ctx.media);
+    host::register_media(&ctx.media, &ctx.logos);
 
     // Solve the initial grid shapes in logical scene space and re-solve
     // on resize/orientation changes. DRS still keys from the physical
@@ -859,9 +867,9 @@ fn restore_core_independent(ctx: &Arc<Ctx>, app: &App) {
     if matches!(target.as_str(), "settings" | "about") {
         lock(&ctx.shared).restore_pending = false;
         if target == "settings" {
-            settings::enter(ctx, app);
+            settings::enter(ctx, app, EntryMode::Restore);
         } else {
-            router::enter_about(ctx, app);
+            router::enter_about(ctx, app, EntryMode::Restore);
         }
     }
 }
@@ -1027,7 +1035,9 @@ fn set_dormant(ctx: &Ctx, app: &App, dormant: bool) {
     }
     shell.set_dormant(dormant);
     ctx.dormant.send_replace(dormant);
+    ctx.logos.suspend(dormant);
     if dormant {
+        hub::interrupt_page(ctx, app);
         input::stop_repeat(ctx);
         // A launch that took the screen has said everything a held press
         // could; nothing may still be pushed in when the frontend comes back.
@@ -1052,6 +1062,7 @@ fn set_dormant(ctx: &Ctx, app: &App, dormant: bool) {
         // the way back on screen is to claim the compositor again rather
         // than to wait for someone to hand it over.
         gamescope::claim_focus_settling(app);
+        system_logos::refresh(ctx, app);
         tracing::info!("primary media stopped; frontend resumed");
     }
 }
@@ -1668,23 +1679,23 @@ fn restore_screens(ctx: &Arc<Ctx>, app: &App) {
     // pass through a category.
     match target.as_str() {
         "favorites" => {
-            games::enter_favorites(ctx, app);
+            games::enter_favorites(ctx, app, EntryMode::Restore);
             return;
         }
         "favorite-systems" => {
-            systems::enter_favorites(ctx, app);
+            systems::enter_favorites(ctx, app, EntryMode::Restore);
             return;
         }
         "recents" => {
-            games::enter_recents(ctx, app);
+            games::enter_recents(ctx, app, EntryMode::Restore);
             return;
         }
         "settings" => {
-            settings::enter(ctx, app);
+            settings::enter(ctx, app, EntryMode::Restore);
             return;
         }
         "about" => {
-            router::enter_about(ctx, app);
+            router::enter_about(ctx, app, EntryMode::Restore);
             return;
         }
         _ => {}
@@ -1697,7 +1708,7 @@ fn restore_screens(ctx: &Arc<Ctx>, app: &App) {
         // Establish the parent synchronously so restored Games cannot
         // overlap a Hub -> Systems route transition while its browse
         // request is in flight.
-        systems::enter(ctx, app, &category, false);
+        systems::enter(ctx, app, &category, EntryMode::Restore, false);
         let sys = lock(&ctx.shared)
             .systems
             .iter()
@@ -1710,7 +1721,7 @@ fn restore_screens(ctx: &Arc<Ctx>, app: &App) {
             games::enter_restored(ctx, app, &sys);
         }
     } else {
-        systems::enter(ctx, app, &category, true);
+        systems::enter(ctx, app, &category, EntryMode::Restore, true);
     }
 }
 

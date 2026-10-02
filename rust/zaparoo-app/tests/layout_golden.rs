@@ -177,6 +177,30 @@ fn profiles_match_the_fixture() {
     );
 }
 
+#[test]
+fn digital_header_cues_do_not_reserve_content_height_or_change_grid_space() {
+    let mut checked = 0;
+    for case in cases() {
+        if case.theme != ThemeId::Default || case.current_theme != ThemeId::Default {
+            continue;
+        }
+        let profile = layouts::profile(case.theme, case.view, &case.inputs);
+        match profile.body {
+            Body::Grid { footer, .. } => {
+                assert!(!footer.page_cue_in_footer);
+                // Grid insets and shape remain pinned by the unchanged fixture keys.
+                assert_eq!(
+                    footer.grid_bottom_margin.to_string(),
+                    case.expected["footer.gridBottomMargin"]
+                );
+            }
+            Body::List { list, .. } => assert_eq!(list.card_bottom_margin, case.inputs.pct_h(8.0)),
+        }
+        checked += 1;
+    }
+    assert!(checked > 0);
+}
+
 /// What `SQUARE_INSET_KEYS` gives up in `profiles_match_the_fixture`. Every default
 /// card and pane inset is the same number on all four sides, and it is the
 /// number the height axis was already giving, so nothing grew.

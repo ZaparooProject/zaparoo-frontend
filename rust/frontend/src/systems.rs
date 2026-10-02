@@ -15,8 +15,10 @@ use zaparoo_app::systems::{self as rules, CatalogSystem, Region, SystemRow};
 use zaparoo_core::endpoints::systems_favorites::SystemsFavoritesEndpoint;
 use zaparoo_core::input_actions::actions;
 use zaparoo_core::media_types::{SystemInfo, SystemsResult};
+use zaparoo_core::persist::FavoriteSystemsState;
 use zaparoo_core::remote_resource::ResourceStatus;
 
+use crate::navigation::EntryMode;
 use crate::router::{lock, Ctx, Shared};
 use crate::{App, GridCell, SystemsInput, SystemsView};
 
@@ -153,12 +155,17 @@ fn catalog_entry(shared: &Shared, id: &str) -> Option<SystemInfo> {
     shared.systems.iter().find(|s| s.id == id).cloned()
 }
 
-/// Enter the category's systems: project the rows, seat the persisted
-/// system, and route to the screen (with or without the slide).
-pub fn enter(ctx: &Ctx, app: &App, category: &str, animate: bool) {
+/// Enter a category, starting at its first system on a fresh visit and
+/// preserving the saved system and viewport on resume.
+pub fn enter(ctx: &Ctx, app: &App, category: &str, entry: EntryMode, animate: bool) {
     {
         let mut shared = lock(&ctx.shared);
         let rows = project(&shared, category);
+        if entry == EntryMode::Fresh {
+            shared.persist.systems.system_id =
+                rows.first().map(|row| row.id.clone()).unwrap_or_default();
+            shared.persist.systems.list_top = Some(0);
+        }
         let restore_id = shared.persist.systems.system_id.clone();
         let index = rows.iter().position(|s| s.id == restore_id).unwrap_or(0);
         shared.persist.hub.category = category.to_string();
@@ -192,19 +199,22 @@ pub fn enter(ctx: &Ctx, app: &App, category: &str, animate: bool) {
 
 /// The Hub's Favorites action with Group by: System: the systems that
 /// hold favorites, from Core's favorites-scoped catalog.
-pub fn enter_favorites(ctx: &Ctx, app: &App) {
-    enter_favorites_with_direction(ctx, app, 1);
+pub fn enter_favorites(ctx: &Ctx, app: &App, entry: EntryMode) {
+    enter_favorites_with_direction(ctx, app, entry, 1);
 }
 
 /// Back out of a scoped favorites list onto the systems that hold them.
 pub fn return_to_favorites(ctx: &Ctx, app: &App) {
-    enter_favorites_with_direction(ctx, app, -1);
+    enter_favorites_with_direction(ctx, app, EntryMode::Restore, -1);
 }
 
-fn enter_favorites_with_direction(ctx: &Ctx, app: &App, direction: i32) {
+fn enter_favorites_with_direction(ctx: &Ctx, app: &App, entry: EntryMode, direction: i32) {
     crate::navigation::stage(ctx, app);
     {
         let mut shared = lock(&ctx.shared);
+        if entry == EntryMode::Fresh {
+            shared.persist.favorite_systems = FavoriteSystemsState::default();
+        }
         shared.persist.active_screen = "favorite-systems".to_string();
         let model = &mut shared.systems_model;
         model.fill_task.cancel();
@@ -354,17 +364,16 @@ pub fn reproject(ctx: &Ctx, app: &App) {
     render(ctx, app);
 }
 
-fn logo_image(px: &crate::system_logos::LogoPixels) -> slint::Image {
-    slint::Image::from_rgba8(
-        slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(
-            &px.rgba, px.width, px.height,
-        ),
-    )
-}
-
 /// One tile: the tinted logo pair (or the original art under the color
-/// style), else the wordmark fallback.
-fn cell_for(row: &SystemRow, logo_style: &str, art_size: u32) -> GridCell {
+/// style). Known logos stay blank while preparing; only missing or failed
+/// artwork uses the wordmark fallback.
+fn cell_for(
+    ctx: &Ctx,
+    row: &SystemRow,
+    logo_style: &str,
+    bounds: zaparoo_app::logo_cache::Bounds,
+    art_size: u32,
+) -> GridCell {
     let mut cell = text_cell(row);
     // A user override is served as supplied: no tint ramp, one image
     // for both states.
@@ -375,30 +384,14 @@ fn cell_for(row: &SystemRow, logo_style: &str, art_size: u32) -> GridCell {
         cell.has_cover_focus = true;
         return cell;
     }
-    let stem = row.cover_key.strip_prefix("systems/").unwrap_or(&row.id);
-    let (rest, focus) = if logo_style == "color" {
-        // The original art, one image for both states; a system without
-        // color art shows its grayscale logo un-tinted rather than nothing.
-        let original = crate::system_logos::color_logo_for(stem)
-            .or_else(|| crate::system_logos::color_logo_for(&row.id))
-            .or_else(|| crate::system_logos::logo_for(stem))
-            .or_else(|| crate::system_logos::logo_for(&row.id));
-        (original.clone(), original)
-    } else {
-        (
-            crate::system_logos::tinted_logo_for(stem, false)
-                .or_else(|| crate::system_logos::tinted_logo_for(&row.id, false)),
-            crate::system_logos::tinted_logo_for(stem, true)
-                .or_else(|| crate::system_logos::tinted_logo_for(&row.id, true)),
-        )
-    };
-    if let Some(rest) = rest {
-        cell.cover = logo_image(&rest);
-        cell.has_cover = true;
-    }
-    if let Some(focus) = focus {
-        cell.cover_focus = logo_image(&focus);
-        cell.has_cover_focus = true;
+    if let Some(key) = logo_key(ctx, row, logo_style, bounds) {
+        if let Some(pair) = ctx.logos.get(&key) {
+            (cell.cover, cell.cover_focus) = pair.images();
+            cell.has_cover = true;
+            cell.has_cover_focus = true;
+        } else {
+            cell.wordmark = ctx.logos.is_negative(&key);
+        }
     }
     cell
 }
@@ -517,7 +510,63 @@ fn list_visible_rows(app: &App, shared: &Shared) -> usize {
     list_geometry(app, shared).visible_rows.max(1)
 }
 
-fn page_cells(shared: &Shared, page: usize, art_size: u32) -> Vec<GridCell> {
+fn logo_key(
+    ctx: &Ctx,
+    row: &SystemRow,
+    style: &str,
+    bounds: zaparoo_app::logo_cache::Bounds,
+) -> Option<crate::system_logos::Key> {
+    let stem = row.cover_key.strip_prefix("systems/").unwrap_or(&row.id);
+    ctx.logos.key(&row.id, stem, style == "color", bounds)
+}
+
+fn logo_bounds(app: &App, shared: &Shared, geometry: &Geometry) -> zaparoo_app::logo_cache::Bounds {
+    if list_layout(shared) {
+        let size = crate::sizing::detail_cover_source_size(crate::router::output_scene(app));
+        zaparoo_app::logo_cache::Bounds::new(size, size)
+    } else {
+        crate::system_logos::cell_bounds(app, geometry.fit.cell_width, geometry.fit.cell_height)
+    }
+}
+
+fn request_logos(ctx: &Ctx, app: &App, shared: &Shared, bounds: zaparoo_app::logo_cache::Bounds) {
+    if !matches!(
+        app.global::<crate::Shell>().get_active_screen(),
+        crate::Screen::Systems | crate::Screen::FavoriteSystems
+    ) {
+        crate::system_logos::defer_refresh(ctx, app);
+        return;
+    }
+    let model = &shared.systems_model;
+    let (start, size) = if list_layout(shared) {
+        // List rows contain text only; prepare the detail cover and its neighbors.
+        (model.grid.current_index(), 1)
+    } else {
+        (
+            model.grid.current_page() * model.grid.page_size(),
+            model.grid.page_size(),
+        )
+    };
+    let style = &shared.persist.settings.system_logo_style;
+    let visible = model
+        .current()
+        .into_iter()
+        .chain(model.rows.iter().skip(start).take(size))
+        .filter_map(|row| logo_key(ctx, row, style, bounds));
+    let neighbors = [start.saturating_add(size), start.saturating_sub(size)]
+        .into_iter()
+        .flat_map(|first| model.rows.iter().skip(first).take(size))
+        .filter_map(|row| logo_key(ctx, row, style, bounds));
+    ctx.logos.request_window(visible, neighbors);
+}
+
+fn page_cells(
+    ctx: &Ctx,
+    shared: &Shared,
+    page: usize,
+    bounds: zaparoo_app::logo_cache::Bounds,
+    art_size: u32,
+) -> Vec<GridCell> {
     if list_layout(shared) {
         return Vec::new();
     }
@@ -528,7 +577,15 @@ fn page_cells(shared: &Shared, page: usize, art_size: u32) -> Vec<GridCell> {
         .iter()
         .skip(page * page_size)
         .take(page_size)
-        .map(|row| cell_for(row, &shared.persist.settings.system_logo_style, art_size))
+        .map(|row| {
+            cell_for(
+                ctx,
+                row,
+                &shared.persist.settings.system_logo_style,
+                bounds,
+                art_size,
+            )
+        })
         .collect()
 }
 
@@ -561,6 +618,8 @@ fn render_with_page(ctx: &Ctx, app: &App, reuse_page: bool) {
         }
         changed
     };
+    let bounds = logo_bounds(app, &shared, &geometry);
+    request_logos(ctx, app, &shared, bounds);
     let model = &shared.systems_model;
     let page = model.grid.current_page();
     let start = page * model.grid.page_size();
@@ -573,14 +632,13 @@ fn render_with_page(ctx: &Ctx, app: &App, reuse_page: bool) {
     if strip_sliding {
         crate::view_model::publish_cells(
             &view.get_next_cells(),
-            page_cells(&shared, page, art_size),
+            page_cells(ctx, &shared, page, bounds, art_size),
             |rows| view.set_next_cells(rows),
         );
     } else {
-        // A same-page cursor move changes selection, not artwork. Rebuilding
-        // embedded logos allocates fresh Slint image buffers for every tile;
-        // publishing them dirties the whole grid during an 80 ms focus glide.
-        // Full renders still refresh art after theme, catalog or style changes.
+        // Cursor moves reuse the page. Worker completions and theme/size
+        // changes explicitly refresh it; shared prepared pixels keep image
+        // identity stable even through those full publications.
         let page_len = model
             .rows
             .len()
@@ -593,7 +651,7 @@ fn render_with_page(ctx: &Ctx, app: &App, reuse_page: bool) {
         {
             crate::view_model::publish_cells(
                 &view.get_cells(),
-                page_cells(&shared, page, art_size),
+                page_cells(ctx, &shared, page, bounds, art_size),
                 |rows| {
                     view.set_cells(rows);
                 },
@@ -637,7 +695,7 @@ fn render_with_page(ctx: &Ctx, app: &App, reuse_page: bool) {
         view.set_label_hidden(false);
         view.set_label_count(-1);
     }
-    render_list(app, &shared);
+    render_list(ctx, app, &shared, bounds);
     drop(shared);
     remember_list_top(&mut lock(&ctx.shared), app);
 }
@@ -669,7 +727,7 @@ fn remember_list_top(shared: &mut Shared, app: &App) {
 }
 
 /// Bounded row window with overscan for minimal focus-following scroll.
-fn render_list(app: &App, shared: &Shared) {
+fn render_list(ctx: &Ctx, app: &App, shared: &Shared, bounds: zaparoo_app::logo_cache::Bounds) {
     let view = app.global::<SystemsView>();
     let model = &shared.systems_model;
     let list_geometry = list_geometry(app, shared);
@@ -704,8 +762,10 @@ fn render_list(app: &App, shared: &Shared) {
         view.set_list_scroll_top(i32::try_from(scroll_top).unwrap_or(0));
         if let Some(row) = model.current() {
             let cell = cell_for(
+                ctx,
                 row,
                 &shared.persist.settings.system_logo_style,
+                bounds,
                 crate::sizing::detail_cover_source_size(crate::router::output_scene(app)),
             );
             view.set_detail_title(SharedString::from(row.name.as_str()));
@@ -793,11 +853,11 @@ fn request_cached_page_transition(_app: &App, _direction: i32, _columns: i32, _r
     false
 }
 
-/// A cursor move landed on another page: swoop the strip one period in
-/// `dir`, then commit the new page. Reduce motion cuts instead.
-pub(crate) fn slide_to_current_page(ctx: &Ctx, app: &App, from_page: usize) {
+/// Swoop one period in the grid's committed navigation direction, including
+/// wrapped turns. Reduce motion cuts instead.
+fn slide_to_current_page(ctx: &Ctx, app: &App) {
     let rapid = crate::input::rapid_page(ctx);
-    let (to_page, columns, rows, reduce_motion) = {
+    let (to_page, columns, rows, reduce_motion, dir) = {
         let mut shared = lock(&ctx.shared);
         let reduce_motion =
             shared.persist.settings.reduce_motion || !app.global::<crate::Motion>().get_enabled();
@@ -810,9 +870,9 @@ pub(crate) fn slide_to_current_page(ctx: &Ctx, app: &App, from_page: usize) {
             model.grid.columns() as i32,
             model.grid.rows() as i32,
             reduce_motion,
+            model.grid.page_direction().offset(),
         )
     };
-    let dir: i32 = if to_page > from_page { 1 } else { -1 };
     let view = app.global::<SystemsView>();
     let target_local = {
         let shared = lock(&ctx.shared);
@@ -842,6 +902,7 @@ pub(crate) fn slide_to_current_page(ctx: &Ctx, app: &App, from_page: usize) {
                 let view = app.global::<SystemsView>();
                 view.set_cached_transition(false);
                 view.set_slide_anim(true);
+                render(&ctx, &app);
             }
         });
         return;
@@ -849,11 +910,10 @@ pub(crate) fn slide_to_current_page(ctx: &Ctx, app: &App, from_page: usize) {
     crate::drs::heavy_begin();
     let next: Vec<GridCell> = {
         let shared = lock(&ctx.shared);
-        page_cells(
-            &shared,
-            to_page,
-            zaparoo_app::customization::artwork_size(view.get_cell_width(), view.get_cell_height()),
-        )
+        let geometry = geometry(app);
+        let bounds = logo_bounds(app, &shared, &geometry);
+        request_logos(ctx, app, &shared, bounds);
+        page_cells(ctx, &shared, to_page, bounds, geometry.artwork_size())
     };
     view.set_slide_anim(true);
     view.set_selected_local(-1);
@@ -1000,7 +1060,7 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
             let list_layout = lock(&ctx.shared).persist.settings.systems_browse_layout == "list";
             let to_page = lock(&ctx.shared).systems_model.grid.current_page();
             if !list_layout && to_page != from_page {
-                slide_to_current_page(ctx, app, from_page);
+                slide_to_current_page(ctx, app);
                 return;
             }
         }
@@ -1052,39 +1112,13 @@ pub(crate) fn publish_press(app: &App, activate: i32, release: i32) {
 }
 
 fn activate_current(ctx: &Ctx, app: &App) {
-    let (activate, release) = {
-        let mut shared = lock(&ctx.shared);
-        if shared.systems_model.current().is_none() {
-            return;
-        }
-        shared.systems_model.activate_pulse += 1;
-        (
-            shared.systems_model.activate_pulse,
-            shared.systems_model.release_pulse,
-        )
-    };
+    if lock(&ctx.shared).systems_model.current().is_none() {
+        return;
+    }
     persist_selection(ctx);
-    publish_press(app, activate, release);
-    let ctx2 = ctx.clone();
-    let weak = app.as_weak();
-    let duration = if app.global::<crate::Motion>().get_enabled() {
-        34
-    } else {
-        0
-    };
-    slint::Timer::single_shot(std::time::Duration::from_millis(duration), move || {
-        let release = {
-            let mut shared = lock(&ctx2.shared);
-            if shared.systems_model.activate_pulse != activate {
-                return;
-            }
-            shared.systems_model.release_pulse += 1;
-            shared.systems_model.release_pulse
-        };
-        if let Some(app) = weak.upgrade() {
-            publish_press(&app, activate, release);
-        }
-    });
+    if app.global::<crate::Shell>().get_systems_list_layout() {
+        pulse_list_row(ctx, app);
+    }
     // The router owns the preceding grid push; list feedback retires locally.
     let (mode, id) = {
         let shared = lock(&ctx.shared);
@@ -1107,6 +1141,41 @@ fn activate_current(ctx: &Ctx, app: &App) {
         lock(&ctx.shared).persist.games.entered_from_hub = false;
         crate::games::enter(ctx, app, &system);
     }
+}
+
+fn pulse_list_row(ctx: &Ctx, app: &App) {
+    let (activate, release) = {
+        let mut shared = lock(&ctx.shared);
+        if shared.systems_model.current().is_none() {
+            return;
+        }
+        shared.systems_model.activate_pulse += 1;
+        (
+            shared.systems_model.activate_pulse,
+            shared.systems_model.release_pulse,
+        )
+    };
+    publish_press(app, activate, release);
+    let ctx2 = ctx.clone();
+    let weak = app.as_weak();
+    let duration = if app.global::<crate::Motion>().get_enabled() {
+        34
+    } else {
+        0
+    };
+    slint::Timer::single_shot(std::time::Duration::from_millis(duration), move || {
+        let release = {
+            let mut shared = lock(&ctx2.shared);
+            if shared.systems_model.activate_pulse != activate {
+                return;
+            }
+            shared.systems_model.release_pulse += 1;
+            shared.systems_model.release_pulse
+        };
+        if let Some(app) = weak.upgrade() {
+            publish_press(&app, activate, release);
+        }
+    });
 }
 
 /// Options on the focused system: the `systems` owner, or the one-entry

@@ -299,10 +299,19 @@ impl Input {
 static MEDIA: std::sync::Mutex<std::sync::Weak<crate::media_cache::MediaCache>> =
     std::sync::Mutex::new(std::sync::Weak::new());
 
-pub(crate) fn register_media(media: &Arc<crate::media_cache::MediaCache>) {
+static LOGOS: std::sync::Mutex<std::sync::Weak<crate::system_logos::Logos>> =
+    std::sync::Mutex::new(std::sync::Weak::new());
+
+pub(crate) fn register_media(
+    media: &Arc<crate::media_cache::MediaCache>,
+    logos: &Arc<crate::system_logos::Logos>,
+) {
     *MEDIA
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner) = Arc::downgrade(media);
+    *LOGOS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = Arc::downgrade(logos);
 }
 
 /// The system asked the app to use less memory (the window is hidden or
@@ -310,6 +319,14 @@ pub(crate) fn register_media(media: &Arc<crate::media_cache::MediaCache>) {
 /// keep their own copy; anything else is fetched again when it is next
 /// shown. Safe from any thread; a no-op before the first window.
 pub fn trim_memory() {
+    let logos = LOGOS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .upgrade();
+    if let Some(logos) = logos {
+        logos.clear();
+        TRIMMED.store(true, std::sync::atomic::Ordering::Release);
+    }
     let media = MEDIA
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -410,10 +427,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn trim_memory_drops_decoded_covers() {
+    fn trim_memory_drops_decoded_covers_and_logos() {
         trim_memory();
         let media = crate::media_cache::MediaCache::new();
-        register_media(&media);
+        let logos = crate::system_logos::Logos::new();
+        register_media(&media, &logos);
+        let logo = logos
+            .key(
+                "SNES",
+                "SNES",
+                false,
+                zaparoo_app::logo_cache::Bounds::new(128, 64),
+            )
+            .expect("logo");
+        logos.request([logo]);
+        logos.prepare_queued();
+        assert!(logos.get(&logo).is_some());
         let key = crate::media_cache::MediaKey {
             media_id: Some(1),
             system: "SNES".into(),
@@ -431,10 +460,12 @@ mod tests {
         let other_thread = std::thread::spawn(trim_memory);
         other_thread.join().expect("trim thread");
         assert!(!media.is_cached(&key));
+        assert!(logos.get(&logo).is_none());
         // The next activation must re-resolve the screens, once.
         assert!(take_trimmed());
         assert!(!take_trimmed());
         drop(media);
+        drop(logos);
         trim_memory();
         assert!(!take_trimmed(), "nothing was dropped without a cache");
     }

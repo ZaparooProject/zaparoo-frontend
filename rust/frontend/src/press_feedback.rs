@@ -18,7 +18,7 @@ thread_local! {
     static HELD: Cell<bool> = const { Cell::new(false) };
 }
 
-/// A press a commit has kept down past its push.
+/// A press retained while its operation is pending.
 ///
 /// Releasing a stale hold does nothing: every new press bumps the same
 /// ticket, so a launch that answers after the user has moved on cannot lift
@@ -279,6 +279,11 @@ fn grid_target(app: &App) -> Option<Target> {
 
 pub fn pending(app: &App) -> bool {
     app.global::<PressFeedback>().get_owner() != PressOwner::None
+}
+
+#[cfg(all(test, feature = "mister"))]
+pub(crate) fn held_ticket(app: &App) -> Option<Hold> {
+    (HELD.with(Cell::get) && pending(app)).then(|| Hold(TICKET.with(Cell::get)))
 }
 
 pub fn cancel(app: &App) {

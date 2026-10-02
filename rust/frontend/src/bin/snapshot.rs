@@ -49,7 +49,7 @@ use generated::{
     GamesMode, LogPhase, OnlineLinkPhase, Orientation, PairPhase, RowKind, ScopeKind, Screen,
     SettingsPage, SetupKind, SetupPicker, StatusKind, SystemsMode, VideoStandard,
 };
-use generated::{App, GlyphSource, GridCell, LetterBucket, MenuEntry, Sizing, Theme};
+use generated::{App, Brand, GlyphSource, GridCell, LetterBucket, MenuEntry, Sizing, Theme};
 #[allow(
     unused_imports,
     reason = "reached through crate:: paths from the shared sizing adapter"
@@ -62,6 +62,8 @@ use generated::{GamesView, Layout, Shell, SystemsView};
 )]
 mod state_types;
 
+#[path = "../brand.rs"]
+mod brand;
 #[path = "../fonts.rs"]
 mod fonts;
 #[path = "../glyphs.rs"]
@@ -127,6 +129,7 @@ fn main() {
     if let Ok(lang) = std::env::var("ZAPAROO_SNAPSHOT_LANG") {
         slint::select_bundled_translation(&lang).expect("bundled language");
     }
+    brand::register(&app);
     app.global::<GlyphSource>().on_glyph(|key, px, tint| {
         glyphs::render(key.as_str(), px.round().max(0.0) as u32, tint).unwrap_or_default()
     });
@@ -1509,6 +1512,14 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
         1
     };
     view.set_index(index);
+    let fields = |end: usize| {
+        rows.iter()
+            .take(end)
+            .filter(|row| row.kind == RowKind::Field)
+            .count() as i32
+    };
+    view.set_field_index(fields(index.max(0) as usize));
+    view.set_field_count(fields(rows.len()));
     // Same snap the driver applies, from the same rule, so the fixture
     // cannot quietly frame the band differently from the app.
     let spans: Vec<(f32, f32)> = rows.iter().map(|r| (r.y_offset, r.height)).collect();
@@ -1727,6 +1738,12 @@ fn fixture_games(
     view.set_list_view_top(0);
     view.set_list_visible(i32::try_from(list_visible).unwrap_or(10));
     view.set_list_row_height(list_row_height);
+    let paging = zaparoo_app::media_list::list_paging(2, 48, Some(48), !flat, list_visible, true);
+    view.set_current_index(2);
+    view.set_list_page(paging.current_page as i32);
+    view.set_list_total_pages(paging.total_pages as i32);
+    view.set_has_items_above(paging.has_items_above);
+    view.set_has_items_below(paging.has_items_below);
     view.set_detail_title("Example Game Title 3".into());
     view.set_detail_placeholder(snapshot_cover_color(3));
     view.set_detail_has_placeholder(true);
@@ -1838,6 +1855,7 @@ fn fixture_systems(app: &App, scene_w: f64, scene_h: f64, crt: bool, favorites: 
     view.set_list_rows(slint::ModelRc::new(slint::VecModel::from(list_rows)));
     view.set_list_sel(2);
     view.set_list_view_top(12);
+    view.set_list_scroll_top(12);
     view.set_list_visible(i32::try_from(visible).unwrap_or(10));
     view.set_list_row_height(row_height);
     view.set_current_index(14);

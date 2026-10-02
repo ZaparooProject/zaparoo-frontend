@@ -17,7 +17,9 @@ lang="${1:-}"
 
 cd "$repo_root/rust"
 cargo build -q -p frontend --features snapshot --bin snapshot
-snapshot="$repo_root/rust/target/debug/snapshot"
+# Match cargo's command-scoped target directory instead of running a stale
+# host binary when rendering from an isolated or container build.
+snapshot="${CARGO_TARGET_DIR:-target}/debug/snapshot"
 mkdir -p "$out"
 
 digital_screens=(hub systems systems-list favorite-systems games games-list favorites favorites-list recents settings settings-page settings-page-online online-link setup setup-picker log-upload picker palette-picker about about-scrolled context context-alt letters fast-scroll dialog alert notice saver launcher-picker launcher-saving token-write token-error qr-docs qr-write game-info game-info-short game-info-scrolled game-info-loading game-info-error update-intro update-unavailable update-running update-progress update-stopping update-finished update-finished-errors update-membership update-reboot update-linux update-rebooting update-details update-info)
