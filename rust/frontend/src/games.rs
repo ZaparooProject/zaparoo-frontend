@@ -26,7 +26,8 @@ use zaparoo_core::endpoints::media_history::{HistoryArgs, MediaHistoryEndpoint};
 use zaparoo_core::input_actions::actions;
 use zaparoo_core::media_types::{
     merged_root_view, BrowseEntry, MediaBrowseParams, MediaHistoryEntry, MediaHistoryParams,
-    MediaItem, MediaSearchParams, SystemInfo, TagInfo,
+    MediaItem, MediaSearchParams, MediaTagsUpdateParams, MediaTagsUpdateResult, SystemInfo,
+    TagInfo,
 };
 use zaparoo_core::remote_resource::ResourceStatus;
 
@@ -38,6 +39,7 @@ use crate::{App, GamesInput, GamesView, GridCell};
 pub(crate) const SWOOP_MS: u64 = 260;
 pub(crate) const REARM_MS: u64 = 50;
 const FAVORITE_TAG: &str = "user:favorite";
+const HIDDEN_TAG: &str = "user:hidden";
 const FILE_GLYPH: &str = "icons/File";
 const FOLDER_GLYPH: &str = "icons/Folder";
 const ARCADE_SYSTEM_ID: &str = "Arcade";
@@ -66,6 +68,10 @@ impl GamesMode {
 
 /// One row as the screen and its menus see it.
 #[derive(Debug, Clone)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "Core row capabilities and user preference flags are independent"
+)]
 pub struct GameRow {
     pub media_id: Option<i64>,
     /// Core's cleaned title.
@@ -85,6 +91,7 @@ pub struct GameRow {
     /// art itself lands.
     pub cover_color: Option<[u8; 3]>,
     pub is_favorite: bool,
+    pub is_hidden: bool,
     pub media_capable: bool,
     /// The roots page distinguisher, when siblings share a name.
     pub root_distinguisher: String,
@@ -147,9 +154,9 @@ fn cover_color(value: Option<&str>) -> Option<[u8; 3]> {
     value.and_then(zaparoo_app::covers::parse_cover_color)
 }
 
-fn has_favorite_tag(tags: &[TagInfo]) -> bool {
+fn has_user_tag(tags: &[TagInfo], name: &str) -> bool {
     tags.iter()
-        .any(|tag| tag.tag_type == "user" && tag.tag == "favorite")
+        .any(|tag| tag.tag_type == "user" && tag.tag == name)
 }
 
 impl From<&BrowseEntry> for GameRow {
@@ -167,7 +174,8 @@ impl From<&BrowseEntry> for GameRow {
             tag_labels: crate::tag_utils::disambiguating_tag_labels(&e.disambiguating_tags),
             has_cover: e.has_cover,
             cover_color: cover_color(e.cover_color.as_deref()),
-            is_favorite: has_favorite_tag(&e.tags),
+            is_favorite: has_user_tag(&e.tags, "favorite"),
+            is_hidden: has_user_tag(&e.tags, "hidden"),
             media_capable: rules::is_media_capable(entry_type, e.media_id.is_some(), &e.zap_script),
             root_distinguisher: String::new(),
             detail_rows: rules::detail_rows_from_tags(&tag_pairs(&e.tags)),
@@ -191,7 +199,8 @@ impl From<&MediaItem> for GameRow {
             tag_labels: crate::tag_utils::disambiguating_tag_labels(&item.disambiguating_tags),
             has_cover: item.has_cover,
             cover_color: cover_color(item.cover_color.as_deref()),
-            is_favorite: has_favorite_tag(&item.tags),
+            is_favorite: has_user_tag(&item.tags, "favorite"),
+            is_hidden: has_user_tag(&item.tags, "hidden"),
             media_capable: true,
             root_distinguisher: String::new(),
             detail_rows: rules::detail_rows_from_tags(&tag_pairs(&item.tags)),
@@ -215,9 +224,8 @@ impl From<&MediaHistoryEntry> for GameRow {
             tag_labels: Vec::new(),
             has_cover: e.has_cover,
             cover_color: cover_color(e.cover_color.as_deref()),
-            // History rows carry no tag data; the Recents menu offers no
-            // favorite toggle, so this stays false.
-            is_favorite: false,
+            is_favorite: has_user_tag(&e.tags, "favorite"),
+            is_hidden: has_user_tag(&e.tags, "hidden"),
             media_capable: true,
             root_distinguisher: String::new(),
             detail_rows: Vec::new(),
@@ -484,7 +492,7 @@ fn favorites_scope(shared: &Shared) -> Vec<String> {
     }
 }
 
-fn favorites_tags(shared: &Shared) -> Vec<String> {
+pub(crate) fn favorites_tags(shared: &Shared) -> Vec<String> {
     if shared.persist.games.favorites_filter {
         vec![FAVORITE_TAG.to_string()]
     } else {
@@ -727,6 +735,38 @@ pub fn refresh_favorites(ctx: &Ctx, app: &App) {
     enter_flat(ctx, app, GamesMode::Favorites, false);
 }
 
+/// Visibility changes retire letter offsets and cursor chains. Settings can
+/// change visibility while another screen is active; only refill a visible list.
+pub fn refresh_visibility(ctx: &Ctx, app: &App) {
+    let (mode, path) = {
+        let mut shared = lock(&ctx.shared);
+        shared.letter_seq += 1;
+        shared.letter_scope = None;
+        shared.letter_buckets.clear();
+        (shared.games.mode, shared.games.browse_path.clone())
+    };
+    let shell = app.global::<crate::Shell>();
+    if shell.get_active_screen() != mode.screen() || shell.get_transitioning() {
+        return;
+    }
+    let hidden_selection = {
+        let shared = lock(&ctx.shared);
+        mode == GamesMode::Browse
+            && !shared.show_hidden
+            && !shared.persist.games.favorites_filter
+            && shared.games.current().is_some_and(|row| row.is_hidden)
+    };
+    if hidden_selection {
+        write_saved_path(&mut lock(&ctx.shared), String::new());
+    } else {
+        persist_now(ctx);
+    }
+    match mode {
+        GamesMode::Browse => browse(ctx, app, &path, false),
+        GamesMode::Favorites | GamesMode::Recents => enter_flat(ctx, app, mode, false),
+    }
+}
+
 /// Recently played (Hub action): Core's play history.
 pub fn enter_recents(ctx: &Ctx, app: &App) {
     crate::navigation::stage(ctx, app);
@@ -879,7 +919,7 @@ fn browse(ctx: &Ctx, app: &App, path: &str, flip: bool) {
 
 fn browse_with_motion(ctx: &Ctx, app: &App, path: &str, flip: bool, direction: i32) {
     crate::folder_motion::capture(app, direction);
-    let (ticket, system_id, tags, page_size) = {
+    let (ticket, system_id, tags, page_size, include_hidden) = {
         let mut shared = lock(&ctx.shared);
         // One round trip fills the lookahead the grid keeps loaded (or two
         // list screens), instead of a page and then follow-up fetches.
@@ -889,13 +929,14 @@ fn browse_with_motion(ctx: &Ctx, app: &App, path: &str, flip: bool, direction: i
             shared.games.grid.load_ahead_pages,
         );
         let tags = favorites_tags(&shared);
+        let include_hidden = shared.show_hidden;
         let model = &mut shared.games;
         model.mode = GamesMode::Browse;
         model.browse_path = path.to_string();
         model.total_known = true;
         let ticket = begin_fill(model);
         model.folder_direction = direction;
-        (ticket, model.system_id.clone(), tags, size)
+        (ticket, model.system_id.clone(), tags, size, include_hidden)
     };
     crate::router::save_persist(&ctx.shared);
     if flip {
@@ -904,7 +945,8 @@ fn browse_with_motion(ctx: &Ctx, app: &App, path: &str, flip: bool, direction: i
         render(ctx, app);
     }
 
-    let args = BrowseArgs::new(path.to_string(), vec![system_id], page_size, tags);
+    let args = BrowseArgs::new(path.to_string(), vec![system_id], page_size, tags)
+        .with_hidden(include_hidden);
     let resource = ctx.store.subscribe::<MediaBrowseEndpoint>(args);
     let mut rx = resource.subscribe();
     let weak = app.as_weak();
@@ -1171,8 +1213,9 @@ fn fetch_cap(mode: GamesMode) -> u32 {
 }
 
 fn fetch_more(ctx: &Ctx, app: &App, limit: u32, bulk: bool) {
-    let (mode, cursor, system_id, browse_path, tags, ticket, sort, scope) = {
+    let (mode, cursor, system_id, browse_path, tags, ticket, sort, scope, include_hidden) = {
         let mut shared = lock(&ctx.shared);
+        let include_hidden = shared.show_hidden;
         let tags = favorites_tags(&shared);
         let sort = favorites_sort(&shared);
         let scope = favorites_scope(&shared);
@@ -1197,6 +1240,7 @@ fn fetch_more(ctx: &Ctx, app: &App, limit: u32, bulk: bool) {
             model.ticket,
             sort,
             scope,
+            include_hidden,
         )
     };
     render(ctx, app);
@@ -1211,6 +1255,7 @@ fn fetch_more(ctx: &Ctx, app: &App, limit: u32, bulk: bool) {
                     root_view: merged_root_view(&browse_path, std::slice::from_ref(&system_id)),
                     path: browse_path,
                     systems: vec![system_id],
+                    include_hidden: Some(include_hidden),
                     max_results: Some(limit),
                     cursor: Some(cursor),
                     tags,
@@ -1530,6 +1575,7 @@ fn text_cell(row: &GameRow) -> GridCell {
         name: SharedString::from(row.display.as_str()),
         tags: SharedString::from(row.suffix.as_str()),
         favorite: row.is_favorite,
+        hidden: row.is_hidden,
         ..Default::default()
     }
 }
@@ -2911,14 +2957,20 @@ fn cell_anchor(ctx: &Ctx, app: &App) -> crate::router::ContextAnchor {
     }
 }
 
-/// The `Labels.menu` key for a row id; only the favorite toggle's copy
-/// depends on the row's own state.
-fn menu_key(id: &str, is_favorite: bool) -> &'static str {
+/// Stateful toggles share the vocabulary used by system menus.
+fn menu_key(id: &str, is_favorite: bool, is_hidden: bool) -> &'static str {
     if id == "toggle_favorite" {
         return if is_favorite {
             "favorite:remove"
         } else {
             "favorite:add"
+        };
+    }
+    if id == "toggle_hidden" {
+        return if is_hidden {
+            "hide:unhide"
+        } else {
+            "hide:hide"
         };
     }
     match id {
@@ -2970,7 +3022,9 @@ fn open_context_menu(ctx: &Ctx, app: &App) {
     };
     let entries: Vec<crate::MenuEntry> = rules::context_entries(&input)
         .into_iter()
-        .map(|id| crate::router::menu_row_keyed(id, menu_key(id, row.is_favorite), ""))
+        .map(|id| {
+            crate::router::menu_row_keyed(id, menu_key(id, row.is_favorite, row.is_hidden), "")
+        })
         .collect();
     if entries.is_empty() {
         return;
@@ -2996,6 +3050,7 @@ pub fn context_accept(ctx: &Ctx, app: &App, id: &str) {
     match id {
         "more_info" => crate::router::open_game_info(ctx, app, &row),
         "toggle_favorite" => toggle_favorite(ctx, app, index, &row),
+        "toggle_hidden" => toggle_hidden(ctx, app, &row, &system),
         "write_card" => crate::router::begin_card_write(ctx, app, &row),
         "qr_code" => crate::router::open_qr_code(ctx, app, &row),
         "add_to_hub" => add_to_hub(ctx, app, mode, &row, &system),
@@ -3108,6 +3163,110 @@ fn toggle_favorite(ctx: &Ctx, app: &App, index: usize, row: &GameRow) {
             }
         });
     });
+}
+
+/// Build Core's exclusive media reference and change only the requested tag.
+fn tag_update_params(
+    row: &GameRow,
+    fallback_system: &str,
+    tag: &str,
+    adding: bool,
+) -> Option<MediaTagsUpdateParams> {
+    let mut params = MediaTagsUpdateParams::default();
+    if let Some(media_id) = row.media_id {
+        params.media_id = Some(media_id);
+    } else {
+        let system = row.system_or(fallback_system);
+        if system.is_empty() || row.path.is_empty() {
+            return None;
+        }
+        params.system = system.to_string();
+        params.path.clone_from(&row.path);
+    }
+    if adding {
+        params.add.push(tag.to_string());
+    } else {
+        params.remove.push(tag.to_string());
+    }
+    Some(params)
+}
+
+/// Hide/unhide is installation-wide in Core. Commit only after success, then
+/// restart the list: preference edits invalidate Core's existing cursors.
+fn toggle_hidden(ctx: &Ctx, app: &App, row: &GameRow, system: &str) {
+    use zaparoo_core::endpoints::media_tags_update::MediaTagsUpdateMutation;
+
+    let Some(params) = tag_update_params(row, system, HIDDEN_TAG, !row.is_hidden) else {
+        tracing::warn!(
+            "visibility update skipped: missing media identity for {}",
+            row.name
+        );
+        return;
+    };
+    let ticket = lock(&ctx.shared).games.ticket;
+    let store = ctx.store.clone();
+    let ctx2 = ctx.clone();
+    let weak = app.as_weak();
+    let row = row.clone();
+    let system = system.to_string();
+    ctx.handle.spawn(async move {
+        let result = store.run_mutation::<MediaTagsUpdateMutation>(params).await;
+        let _ = weak.upgrade_in_event_loop(move |app| {
+            on_hidden_updated(&ctx2, &app, ticket, &row, &system, result);
+        });
+    });
+}
+
+pub(crate) fn on_hidden_updated(
+    ctx: &Ctx,
+    app: &App,
+    ticket: u64,
+    target: &GameRow,
+    system: &str,
+    result: Result<MediaTagsUpdateResult, zaparoo_core::client::ClientError>,
+) {
+    let mut shared = lock(&ctx.shared);
+    let shell = app.global::<crate::Shell>();
+    if shared.games.ticket != ticket
+        || shell.get_active_screen() != shared.games.mode.screen()
+        || shell.get_transitioning()
+    {
+        return;
+    }
+    match result {
+        Ok(result) => {
+            let fallback = shared.games.system_id.clone();
+            for row in &mut shared.games.rows {
+                if row.path == target.path && row.system_or(&fallback) == system {
+                    row.is_hidden = has_user_tag(&result.tags, "hidden");
+                    row.is_favorite = has_user_tag(&result.tags, "favorite");
+                }
+            }
+            if shared.games.mode == GamesMode::Browse
+                && !shared.show_hidden
+                && !shared.persist.games.favorites_filter
+                && shared.games.current().is_some_and(|row| row.is_hidden)
+            {
+                let hidden: Vec<bool> = shared.games.rows.iter().map(|row| row.is_hidden).collect();
+                if let Some(index) =
+                    rules::selection_after_hide(shared.games.grid.current_index(), &hidden)
+                {
+                    shared.games.grid.set_current_index_immediate(index);
+                }
+            }
+            drop(shared);
+            refresh_visibility(ctx, app);
+        }
+        Err(e) => {
+            drop(shared);
+            tracing::warn!(
+                "visibility update failed for {}: {}",
+                target.name,
+                e.message
+            );
+            crate::router::report_action_error(ctx, app, "media_visibility", &target.name);
+        }
+    }
 }
 
 // ---------- Pointer ----------
@@ -3230,6 +3389,76 @@ mod tests {
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0].root_distinguisher, "fat");
         assert_eq!(rows[1].root_distinguisher, "usb0");
+    }
+
+    #[test]
+    fn hidden_tags_drive_browse_favorites_and_history_menu_copy() {
+        let tags = vec![TagInfo {
+            tag: "hidden".into(),
+            tag_type: "user".into(),
+            label: String::new(),
+        }];
+        let browse = BrowseEntry {
+            tags: tags.clone(),
+            ..entry("media", "Game", "/g/Game.nes")
+        };
+        let favorite = MediaItem {
+            tags: tags.clone(),
+            ..MediaItem::default()
+        };
+        let history = MediaHistoryEntry {
+            tags,
+            ..MediaHistoryEntry::default()
+        };
+        for row in [
+            GameRow::from(&browse),
+            GameRow::from(&favorite),
+            GameRow::from(&history),
+        ] {
+            assert!(row.is_hidden);
+            assert_eq!(
+                menu_key("toggle_hidden", row.is_favorite, row.is_hidden),
+                "hide:unhide"
+            );
+        }
+        let mut visible = entry("media", "Game", "/g/Game.nes");
+        visible.tags = vec![TagInfo {
+            tag: "hidden".into(),
+            tag_type: "genre".into(),
+            label: String::new(),
+        }];
+        let row = GameRow::from(&visible);
+        assert!(!row.is_hidden);
+        assert_eq!(menu_key("toggle_hidden", false, row.is_hidden), "hide:hide");
+    }
+
+    #[test]
+    #[allow(clippy::expect_used, reason = "known media identities must serialize")]
+    fn hide_requests_change_only_the_hidden_tag_and_use_exclusive_identity() {
+        let row = GameRow::from(&BrowseEntry {
+            media_id: Some(42),
+            ..entry("media", "Game", "/g/Game.nes")
+        });
+        let hiding = tag_update_params(&row, "SNES", HIDDEN_TAG, true).expect("media id");
+        let request = serde_json::to_value(&hiding).expect("serialize");
+        assert_eq!(
+            request,
+            serde_json::json!({"mediaId": 42, "add": ["user:hidden"]})
+        );
+        let mut path_row = row;
+        path_row.media_id = None;
+        path_row.system_id.clear();
+        let unhiding =
+            tag_update_params(&path_row, "NES", HIDDEN_TAG, false).expect("path identity");
+        assert_eq!(
+            serde_json::to_value(&unhiding).expect("serialize"),
+            serde_json::json!({
+                "system": "NES", "path": "/g/Game.nes", "remove": ["user:hidden"]
+            })
+        );
+        assert!(tag_update_params(&path_row, "", HIDDEN_TAG, true).is_none());
+        path_row.path.clear();
+        assert!(tag_update_params(&path_row, "NES", HIDDEN_TAG, true).is_none());
     }
 
     #[test]

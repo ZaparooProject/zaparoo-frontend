@@ -1473,7 +1473,7 @@ fn list_action(ctx: &Ctx, app: &App, action: &str) {
 /// properties and the fast-scroll rail as it lands; the seq ticket drops
 /// stale responses.
 pub(crate) fn fetch_letter_index(ctx: &Ctx, app: &App) {
-    let (browse_path, system_id, ticket) = {
+    let (browse_path, system_id, ticket, include_hidden, tags) = {
         let mut guard = lock(&ctx.shared);
         guard.letter_seq += 1;
         guard.letter_buckets.clear();
@@ -1482,6 +1482,8 @@ pub(crate) fn fetch_letter_index(ctx: &Ctx, app: &App) {
             guard.games.browse_path.clone(),
             guard.games.system_id.clone(),
             guard.letter_seq,
+            guard.show_hidden,
+            crate::games::favorites_tags(&guard),
         )
     };
     app.global::<crate::Overlays>()
@@ -1505,7 +1507,8 @@ pub(crate) fn fetch_letter_index(ctx: &Ctx, app: &App) {
                 ),
                 path: browse_path,
                 systems: vec![system_id],
-                tags: Vec::new(),
+                include_hidden: Some(include_hidden),
+                tags,
                 sort: None,
             })
             .await;

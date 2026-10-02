@@ -257,6 +257,9 @@ pub struct MediaBrowseParams {
     pub path: String,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub systems: Vec<String>,
+    /// Include media tagged `user:hidden`. Repeat on every cursor page.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub include_hidden: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_results: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -412,6 +415,9 @@ pub struct MediaBrowseIndexParams {
     pub path: String,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub systems: Vec<String>,
+    /// Must match the visibility mode of the corresponding browse pages.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub include_hidden: Option<bool>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -502,6 +508,9 @@ pub struct MediaHistoryEntry {
     pub media_name: String,
     #[serde(default)]
     pub media_path: String,
+    /// Current tags when Core can resolve this history entry to indexed media.
+    #[serde(default, deserialize_with = "deserialize_null_default")]
+    pub tags: Vec<TagInfo>,
     #[serde(default)]
     pub launcher_id: String,
     #[serde(default)]
@@ -532,6 +541,7 @@ impl Default for MediaHistoryEntry {
             system_name: String::new(),
             media_name: String::new(),
             media_path: String::new(),
+            tags: Vec::new(),
             launcher_id: String::new(),
             started_at: String::new(),
             ended_at: None,
@@ -1628,6 +1638,7 @@ mod tests {
             tags: vec!["user:favorite".into()],
             sort: None,
             root_view: None,
+            include_hidden: Some(false),
         };
         let json = serde_json::to_value(&params).expect("serialise");
         let object = json.as_object().expect("object");
@@ -1682,6 +1693,7 @@ mod tests {
             letter: Some("M".into()),
             sort: Some("name-asc".into()),
             root_view: None,
+            include_hidden: Some(true),
         };
         let json = serde_json::to_value(&params).expect("serialise");
         let object = json.as_object().expect("object");
@@ -1710,6 +1722,54 @@ mod tests {
             Some(1)
         );
         assert!(!object.contains_key("fuzzySystem"));
+        assert_eq!(
+            object
+                .get("includeHidden")
+                .and_then(serde_json::Value::as_bool),
+            Some(true)
+        );
+    }
+
+    #[test]
+    fn browse_and_letter_index_share_the_optional_visibility_flag() {
+        for include_hidden in [None, Some(false), Some(true)] {
+            let browse = serde_json::to_value(MediaBrowseParams {
+                include_hidden,
+                ..MediaBrowseParams::default()
+            })
+            .expect("serialize browse");
+            let index = serde_json::to_value(MediaBrowseIndexParams {
+                include_hidden,
+                ..MediaBrowseIndexParams::default()
+            })
+            .expect("serialize index");
+            assert_eq!(
+                browse
+                    .get("includeHidden")
+                    .and_then(serde_json::Value::as_bool),
+                include_hidden
+            );
+            assert_eq!(index.get("includeHidden"), browse.get("includeHidden"));
+            assert!(!browse
+                .as_object()
+                .expect("object")
+                .contains_key("include_hidden"));
+        }
+    }
+
+    #[test]
+    fn history_deserializes_current_hidden_tags_and_older_responses() {
+        let tagged: MediaHistoryEntry = serde_json::from_value(serde_json::json!({
+            "mediaId": 42,
+            "tags": [{"type": "user", "tag": "hidden"}]
+        }))
+        .expect("tagged history");
+        assert_eq!(tagged.tags.len(), 1);
+        assert_eq!(tagged.tags[0].tag, "hidden");
+        for response in [serde_json::json!({}), serde_json::json!({"tags": null})] {
+            let older: MediaHistoryEntry = serde_json::from_value(response).expect("older history");
+            assert!(older.tags.is_empty());
+        }
     }
 
     #[test]
