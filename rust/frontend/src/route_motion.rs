@@ -1154,6 +1154,7 @@ fn held_game_pages_cut_at_repeat_cadence_but_taps_keep_slides() {
                 has_cover: false,
                 cover_color: None,
                 is_favorite: false,
+                is_hidden: false,
                 media_capable: false,
                 root_distinguisher: String::new(),
                 detail_rows: vec![],
@@ -1342,6 +1343,196 @@ fn game_rows(name: &str, count: usize) -> Vec<crate::games::GameRow> {
             row
         })
         .collect()
+}
+
+fn seat_visibility_list(
+    ctx: &crate::router::Ctx,
+    app: &App,
+    mode: GamesMode,
+) -> crate::games::GameRow {
+    crate::sizing::apply_scene(
+        app,
+        crate::sizing::Scene::of(app, f64::from(W), f64::from(H), false),
+    );
+    app.global::<Shell>().set_active_screen(mode.screen());
+    let mut shared = crate::router::lock(&ctx.shared);
+    shared.games.mode = mode;
+    shared.games.system_id = "NES".into();
+    shared.games.rows = game_rows("Game", 3);
+    for (index, row) in shared.games.rows.iter_mut().enumerate() {
+        row.media_id = Some(index as i64 + 42);
+        row.path = format!("/g/Game {index}.nes");
+        row.system_id = "NES".into();
+    }
+    shared.games.grid.set_item_count(3);
+    shared.games.grid.set_has_more_pages(true);
+    shared.games.next_cursor = Some("old-visibility-cursor".into());
+    let target = shared.games.rows[0].clone();
+    shared.persist.games.path_stack = vec![String::new()];
+    shared.persist.games.selected_at_level = vec![target.path.clone()];
+    shared
+        .persist
+        .favorites
+        .selected_path
+        .clone_from(&target.path);
+    shared
+        .persist
+        .recents
+        .selected_path
+        .clone_from(&target.path);
+    shared.letter_scope = Some(("NES".into(), String::new()));
+    shared.letter_buckets = vec![zaparoo_core::media_types::BrowseIndexGroup {
+        label: "G".into(),
+        count: 3,
+        ..Default::default()
+    }];
+    target
+}
+
+fn visibility_reply(hidden: bool) -> zaparoo_core::media_types::MediaTagsUpdateResult {
+    use zaparoo_core::media_types::TagInfo;
+    let mut tags = vec![TagInfo {
+        tag: "favorite".into(),
+        tag_type: "user".into(),
+        label: String::new(),
+    }];
+    if hidden {
+        tags.push(TagInfo {
+            tag: "hidden".into(),
+            tag_type: "user".into(),
+            label: String::new(),
+        });
+    }
+    zaparoo_core::media_types::MediaTagsUpdateResult { tags }
+}
+
+#[test]
+fn hiding_restarts_browse_and_letters_without_losing_favorites_or_neighbor_focus() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let target = seat_visibility_list(&ctx, &app, GamesMode::Browse);
+    crate::games::on_hidden_updated(&ctx, &app, 0, &target, "NES", Ok(visibility_reply(true)));
+    let shared = crate::router::lock(&ctx.shared);
+    assert!(shared.games.rows[0].is_hidden);
+    assert!(shared.games.rows[0].is_favorite);
+    assert_eq!(shared.persist.games.selected_at_level[0], "/g/Game 1.nes");
+    assert!(shared.games.loading);
+    assert_eq!(shared.games.ticket, 1);
+    assert!(shared.games.next_cursor.is_none());
+    assert!(shared.letter_scope.is_none());
+    assert!(shared.letter_buckets.is_empty());
+    assert_eq!(shared.letter_seq, 1);
+    assert_eq!(app.global::<Shell>().get_active_screen(), Screen::Games);
+}
+
+#[test]
+fn hidden_management_keeps_favorites_recents_and_recovery_selection() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    for mode in [GamesMode::Browse, GamesMode::Favorites, GamesMode::Recents] {
+        let target = seat_visibility_list(&ctx, &app, mode);
+        {
+            let mut shared = crate::router::lock(&ctx.shared);
+            shared.show_hidden = mode == GamesMode::Browse;
+        }
+        let ticket = crate::router::lock(&ctx.shared).games.ticket;
+        crate::games::on_hidden_updated(
+            &ctx,
+            &app,
+            ticket,
+            &target,
+            "NES",
+            Ok(visibility_reply(true)),
+        );
+        let shared = crate::router::lock(&ctx.shared);
+        assert!(shared.games.rows[0].is_hidden);
+        let selected = match mode {
+            GamesMode::Browse => &shared.persist.games.selected_at_level[0],
+            GamesMode::Favorites => &shared.persist.favorites.selected_path,
+            GamesMode::Recents => &shared.persist.recents.selected_path,
+        };
+        assert_eq!(selected, &target.path);
+        let ticket = shared.games.ticket;
+        drop(shared);
+        crate::games::on_hidden_updated(
+            &ctx,
+            &app,
+            ticket,
+            &target,
+            "NES",
+            Ok(visibility_reply(false)),
+        );
+        assert!(!crate::router::lock(&ctx.shared).games.rows[0].is_hidden);
+    }
+}
+
+#[test]
+fn visibility_errors_and_stale_completions_do_not_replace_the_visible_list() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (runtime, ctx) = offline_ctx();
+    let target = seat_visibility_list(&ctx, &app, GamesMode::Browse);
+    let failure = runtime.block_on(
+        ctx.store
+            .client()
+            .media_tags_update(zaparoo_core::media_types::MediaTagsUpdateParams::default()),
+    );
+    assert!(failure.is_err());
+    crate::games::on_hidden_updated(&ctx, &app, 0, &target, "NES", failure);
+    assert_eq!(
+        app.global::<crate::Overlays>().get_dialog_error(),
+        ErrorKind::MediaVisibility
+    );
+    assert!(!crate::router::lock(&ctx.shared).games.rows[0].is_hidden);
+    assert_eq!(
+        crate::router::lock(&ctx.shared)
+            .games
+            .next_cursor
+            .as_deref(),
+        Some("old-visibility-cursor")
+    );
+    crate::router::lock(&ctx.shared).games.ticket = 1;
+    crate::games::on_hidden_updated(&ctx, &app, 0, &target, "NES", Ok(visibility_reply(true)));
+    assert!(!crate::router::lock(&ctx.shared).games.rows[0].is_hidden);
+    app.global::<Shell>().set_active_screen(Screen::Settings);
+    crate::games::on_hidden_updated(&ctx, &app, 1, &target, "NES", Ok(visibility_reply(true)));
+    assert_eq!(app.global::<Shell>().get_active_screen(), Screen::Settings);
+    assert!(!crate::router::lock(&ctx.shared).games.loading);
+    assert!(!crate::router::lock(&ctx.shared).games.rows[0].is_hidden);
+}
+
+#[test]
+#[allow(clippy::expect_used, reason = "isolated settings fixture")]
+fn show_hidden_setting_retires_letter_scope_without_routing_out_of_settings() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, mut ctx) = offline_ctx();
+    seat_visibility_list(&ctx, &app, GamesMode::Browse);
+    ctx.config_path =
+        std::path::PathBuf::from(std::env::var("ZAPAROO_STATE_FILE").expect("isolated state"))
+            .with_file_name("frontend.toml");
+    app.global::<Shell>().set_active_screen(Screen::Settings);
+    let view = app.global::<crate::SettingsView>();
+    view.set_page(SettingsPage::Library);
+    let rows = zaparoo_app::settings::page_rows(
+        SettingsPage::Library.token(),
+        &crate::settings::inputs(&ctx),
+    );
+    view.set_index(
+        rows.iter()
+            .position(|row| row.id() == "showHidden")
+            .expect("show hidden row") as i32,
+    );
+    crate::settings::handle_action(&ctx, &app, "accept");
+    let shared = crate::router::lock(&ctx.shared);
+    assert!(shared.show_hidden);
+    assert!(shared.persist.settings.show_hidden);
+    assert!(shared.letter_scope.is_none());
+    assert!(shared.letter_buckets.is_empty());
+    assert_eq!(shared.games.ticket, 0);
+    assert_eq!(app.global::<Shell>().get_active_screen(), Screen::Settings);
 }
 
 fn seat_folder(ctx: &crate::router::Ctx, app: &App, name: &str, index: usize) {

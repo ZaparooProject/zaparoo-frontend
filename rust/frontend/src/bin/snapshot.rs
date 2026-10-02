@@ -305,6 +305,13 @@ fn main() {
                     reason_key: "".into(),
                 },
                 MenuEntry {
+                    id: "toggle_hidden".into(),
+                    label: "".into(),
+                    label_key: "hide:hide".into(),
+                    enabled: true,
+                    reason_key: "".into(),
+                },
+                MenuEntry {
                     id: "scrape_game".into(),
                     label: "".into(),
                     label_key: "scrape_game".into(),
