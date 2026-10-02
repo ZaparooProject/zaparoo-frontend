@@ -119,6 +119,23 @@ pub fn display_name(name: &str, path: &str, show_original_filenames: bool) -> St
     }
 }
 
+/// Appending can change suffixes in the preceding equal-title run, but never
+/// in unrelated earlier rows. Empty appends need no projection work.
+pub fn sibling_group_start<T>(
+    rows: &[T],
+    appended_from: usize,
+    name: impl Fn(&T) -> &str,
+) -> usize {
+    let Some(first) = rows.get(appended_from) else {
+        return rows.len();
+    };
+    let mut start = appended_from;
+    while start > 0 && name(&rows[start - 1]) == name(first) {
+        start -= 1;
+    }
+    start
+}
+
 /// The last path component.
 pub fn folder_name_for_path(path: &str) -> String {
     let trimmed = path.trim_end_matches(['/', '\\']);
@@ -303,6 +320,18 @@ pub fn prefetch_rows(count: usize, page_size: usize, first_visible_row: usize) -
     (first..current_end)
         .chain(current_end..next_end)
         .chain(previous_start..first)
+        .collect()
+}
+
+/// Only the selected detail image is painted in a list. Warm its immediate
+/// neighbors at the same decode size, with the next row ahead of the previous.
+pub fn detail_prefetch_rows(count: usize, selected: usize) -> Vec<usize> {
+    if selected >= count {
+        return Vec::new();
+    }
+    std::iter::once(selected)
+        .chain(selected.checked_add(1).filter(|&next| next < count))
+        .chain(selected.checked_sub(1))
         .collect()
 }
 
@@ -1126,6 +1155,25 @@ mod tests {
         assert!((rail_fraction(50, 101) - 0.5).abs() < f32::EPSILON);
         assert!((rail_fraction(100, 101) - 1.0).abs() < f32::EPSILON);
         assert!((rail_fraction(500, 101) - 1.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn append_projection_only_revisits_the_boundary_sibling_group() {
+        let names = ["Alpha", "Beta", "Beta", "Beta", "Gamma"];
+        assert_eq!(sibling_group_start(&names, 3, |name| *name), 1);
+        assert_eq!(sibling_group_start(&names, 4, |name| *name), 4);
+        assert_eq!(sibling_group_start(&names, 0, |name| *name), 0);
+        assert_eq!(sibling_group_start(&names, 5, |name| *name), 5);
+    }
+
+    #[test]
+    fn detail_prefetch_is_selected_then_immediate_neighbors() {
+        assert_eq!(detail_prefetch_rows(50, 10), vec![10, 11, 9]);
+        assert_eq!(detail_prefetch_rows(3, 0), vec![0, 1]);
+        assert_eq!(detail_prefetch_rows(3, 2), vec![2, 1]);
+        assert_eq!(detail_prefetch_rows(1, 0), vec![0]);
+        assert!(detail_prefetch_rows(0, 0).is_empty());
+        assert!(detail_prefetch_rows(3, 3).is_empty());
     }
 
     #[test]

@@ -13,6 +13,7 @@ pub mod media_favorites;
 pub mod media_history;
 pub mod media_tags_update;
 pub mod readers_write;
+mod retained;
 pub mod run;
 pub mod system_launcher_default;
 pub mod systems_favorites;

@@ -77,6 +77,10 @@ impl Endpoint for MediaBrowseEndpoint {
     type Output = MediaBrowseResult;
     const NAME: &'static str = "MediaBrowse";
 
+    fn cache_bytes(output: &Self::Output) -> Option<usize> {
+        Some(super::retained::bytes(output))
+    }
+
     fn fetch(
         client: Arc<Client>,
         args: Self::Args,

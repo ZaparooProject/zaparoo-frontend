@@ -119,11 +119,30 @@ impl<T: Clone + Send + Sync + 'static> RemoteResource<T> {
         Self::spawn_with(connection_rx, runtime, fetch)
     }
 
+    /// Reopen a clean inactive cache entry without a speculative refetch.
+    /// Its connection marker prevents reuse across a Core session change.
+    pub(crate) fn driven_by_cached<F, Fut>(
+        client: Arc<Client>,
+        runtime: &Handle,
+        fetch: F,
+        cached: Option<(T, watch::Receiver<ConnectionState>)>,
+    ) -> Self
+    where
+        F: Fn(Arc<Client>) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<T, ClientError>> + Send + 'static,
+    {
+        let (value, connection) = match cached {
+            Some((value, connection)) => (Some(value), connection),
+            None => (None, client.connection.subscribe()),
+        };
+        Self::spawn_seeded(connection, runtime, move || fetch(client.clone()), value)
+    }
+
     /// Internal entry point used by `driven_by` and tests. Decoupled
     /// from `Client` so tests can drive a synthetic `ConnectionState`
     /// watch without standing up a real WebSocket.
     pub(crate) fn spawn_with<F, Fut>(
-        mut connection_rx: watch::Receiver<ConnectionState>,
+        connection_rx: watch::Receiver<ConnectionState>,
         runtime: &Handle,
         fetch: F,
     ) -> Self
@@ -131,6 +150,24 @@ impl<T: Clone + Send + Sync + 'static> RemoteResource<T> {
         F: Fn() -> Fut + Send + Sync + 'static,
         Fut: Future<Output = Result<T, ClientError>> + Send + 'static,
     {
+        Self::spawn_seeded(connection_rx, runtime, fetch, None)
+    }
+
+    fn spawn_seeded<F, Fut>(
+        mut connection_rx: watch::Receiver<ConnectionState>,
+        runtime: &Handle,
+        fetch: F,
+        cached: Option<T>,
+    ) -> Self
+    where
+        F: Fn() -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<T, ClientError>> + Send + 'static,
+    {
+        let cached = cached.filter(|_| {
+            !connection_rx.has_changed().unwrap_or(true)
+                && *connection_rx.borrow() == ConnectionState::Connected
+        });
+        let mut reuse_ready = cached.is_some();
         // Seed the watch from the *current* connection state so a
         // subscriber that calls `borrow()` before the spawned task
         // runs sees the right value. Without this seed a singleton
@@ -149,7 +186,7 @@ impl<T: Clone + Send + Sync + 'static> RemoteResource<T> {
                 retrying: false,
             },
         };
-        let (status_tx, _) = watch::channel(initial_status);
+        let (status_tx, _) = watch::channel(cached.map_or(initial_status, ResourceStatus::Ready));
         let status_for_task = status_tx.clone();
         let (cancel_tx, mut cancel_rx) = oneshot::channel::<()>();
         let refetch = Arc::new(Notify::new());
@@ -157,6 +194,9 @@ impl<T: Clone + Send + Sync + 'static> RemoteResource<T> {
 
         runtime.spawn(async move {
             loop {
+                if connection_rx.has_changed().unwrap_or(true) {
+                    reuse_ready = false;
+                }
                 let conn = connection_rx.borrow_and_update().clone();
                 match conn {
                     ConnectionState::Disconnected => {
@@ -172,6 +212,15 @@ impl<T: Clone + Send + Sync + 'static> RemoteResource<T> {
                         });
                     }
                     ConnectionState::Connected => {
+                        if std::mem::take(&mut reuse_ready) {
+                            tokio::select! {
+                                biased;
+                                _ = &mut cancel_rx => return,
+                                _ = connection_rx.changed() => {},
+                                () = refetch_for_task.notified() => {},
+                            }
+                            continue;
+                        }
                         status_for_task.send_replace(ResourceStatus::Loading);
                         // Race the connected loop against cancellation
                         // so dropping the resource mid-fetch aborts the

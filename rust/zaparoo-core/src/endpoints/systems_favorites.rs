@@ -27,6 +27,10 @@ impl Endpoint for SystemsFavoritesEndpoint {
     type Output = SystemsResult;
     const NAME: &'static str = "SystemsFavorites";
 
+    fn cache_bytes(output: &Self::Output) -> Option<usize> {
+        Some(super::retained::bytes(output))
+    }
+
     fn fetch(
         client: Arc<Client>,
         _args: Self::Args,

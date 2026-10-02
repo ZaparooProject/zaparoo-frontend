@@ -84,6 +84,8 @@ struct CacheInner {
     /// may carry art from before the run that cleared the cache, so its
     /// result is dropped and the key fetched again.
     generation: u64,
+    /// Invalidates deferred disk seeds on either a data reset or memory trim.
+    seed_epoch: u64,
 }
 
 impl CacheInner {
@@ -179,6 +181,11 @@ impl MediaCache {
             wake: Notify::new(),
             preferred_type: Mutex::new(String::new()),
         })
+    }
+
+    #[cfg(all(test, feature = "mister"))]
+    pub(crate) fn pending_keys(&self) -> Vec<MediaKey> {
+        lock_inner(&self.inner).pending.iter().cloned().collect()
     }
 
     /// Set the preferred artwork type. Cached images keep their old
@@ -293,6 +300,7 @@ impl MediaCache {
         let mut inner = lock_inner(&self.inner);
         inner.map.clear();
         inner.bytes = 0;
+        inner.seed_epoch = inner.seed_epoch.wrapping_add(1);
     }
 
     /// Forget every image and every "no image" answer. An index or a
@@ -307,6 +315,7 @@ impl MediaCache {
         inner.negatives.clear();
         inner.negative_order.clear();
         inner.generation = inner.generation.wrapping_add(1);
+        inner.seed_epoch = inner.seed_epoch.wrapping_add(1);
     }
 
     fn generation(&self) -> u64 {
@@ -332,12 +341,30 @@ impl MediaCache {
         false
     }
 
-    /// Put an image the cache did not fetch itself into it (the
-    /// cold-boot manifest's own seed).
+    #[cfg(test)]
     pub fn seed(&self, key: MediaKey, image: DecodedImage) {
         self.insert(key, image);
     }
 
+    pub(crate) fn seed_epoch(&self) -> u64 {
+        lock_inner(&self.inner).seed_epoch
+    }
+
+    /// Disk seeding must not overwrite newer Core results or repopulate art
+    /// after a memory trim/rescan canceled its generation.
+    pub(crate) fn seed_current(&self, key: MediaKey, image: DecodedImage, epoch: u64) -> bool {
+        let mut inner = lock_inner(&self.inner);
+        if inner.seed_epoch != epoch
+            || inner.map.contains_key(&key)
+            || inner.negatives.contains(&key)
+        {
+            return false;
+        }
+        inner.insert(key, image);
+        true
+    }
+
+    #[cfg(test)]
     fn insert(&self, key: MediaKey, image: DecodedImage) {
         lock_inner(&self.inner).insert(key, image);
     }
