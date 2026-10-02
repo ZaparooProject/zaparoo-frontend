@@ -491,6 +491,10 @@ export global Overlays {
     in-out property <bool> crt-calibration-open: false;
     in-out property <int> crt-h-offset: 0;
     in-out property <int> crt-v-offset: 0;
+    // Analog width stretch (word2 H size) and the calibration
+    // adjustment selector: false = position, true = size.
+    in-out property <int> crt-h-size: 0;
+    in-out property <bool> crt-size-mode: false;
 }
 
 // Settings: the root is a grid of six category tiles; a page is a card of
@@ -2116,40 +2120,44 @@ component CrtCalibrationPattern inherits Rectangle {
         border-color: Theme.text-primary;
     }
 
+    // Readout plate. Sized by its own layout so no row can outgrow the
+    // border (the old fixed formula overflowed at 240p where fonts
+    // quantize to 8 px), translucent so the guides it covers stay
+    // readable, and parked on the lower third so the center crossing
+    // stays clear while adjusting.
     plate := Rectangle {
-        property <length> pad-x: Sizing.pct-w(2);
-        property <length> pad-y: Sizing.pct-h(2);
-        width: Math.max(Sizing.pct-w(42), readout.preferred-width + 2 * self.pad-x);
-        height: Sizing.font-size(3.2) + 2 * Sizing.font-size(2.4)
-            + 2 * Sizing.pct-h(1) + 2 * self.pad-y;
         x: (parent.width - self.width) / 2;
-        y: (parent.height - self.height) / 2;
-        background: #000000;
+        y: parent.height * 0.62;
+        width: plate-rows.preferred-width;
+        height: plate-rows.preferred-height;
+        background: #000000CC;
         border-width: root.stroke;
         border-color: Theme.text-primary;
 
-        readout := Text {
-            x: (parent.width - self.width) / 2;
-            y: parent.pad-y;
-            text: "H \{Overlays.crt-h-offset}   V \{Overlays.crt-v-offset}";
-            color: Theme.text-primary;
-            font-size: Sizing.font-size(3.2);
-            font-weight: FontWeight.semi-bold;
-        }
-        Text {
-            x: (parent.width - self.width) / 2;
-            y: parent.pad-y + Sizing.font-size(3.2) + Sizing.pct-h(1);
-            text: @tr("Arrows adjust position");
-            color: Theme.text-label;
-            font-size: Sizing.font-size(2.4);
-        }
-        Text {
-            x: (parent.width - self.width) / 2;
-            y: parent.pad-y + Sizing.font-size(3.2) + Sizing.font-size(2.4)
-                + 2 * Sizing.pct-h(1);
-            text: @tr("Accept or Back saves");
-            color: Theme.text-label;
-            font-size: Sizing.font-size(2.4);
+        plate-rows := VerticalLayout {
+            padding: Sizing.pct-min(2);
+            spacing: Sizing.pct-h(1);
+            Text {
+                horizontal-alignment: center;
+                text: "H \{Overlays.crt-h-offset}  V \{Overlays.crt-v-offset}  W \{Overlays.crt-h-size}";
+                color: Theme.text-primary;
+                font-size: Sizing.font-size(3.2);
+                font-weight: FontWeight.semi-bold;
+            }
+            Text {
+                horizontal-alignment: center;
+                text: Overlays.crt-size-mode
+                    ? @tr("Left/Right adjust width")
+                    : @tr("Arrows adjust position");
+                color: Theme.accent;
+                font-size: Sizing.font-size(2.4);
+            }
+            Text {
+                horizontal-alignment: center;
+                text: @tr("Accept or Back saves");
+                color: Theme.text-label;
+                font-size: Sizing.font-size(2.4);
+            }
         }
     }
 }
@@ -2326,6 +2334,7 @@ export component App inherits Window {
         if (Overlays.crt-calibration-open) {
             return [
                 { buttons: ["Dpad"], label: @tr("Adjust") },
+                { buttons: ["ButtonX"], label: Overlays.crt-size-mode ? @tr("Position") : @tr("Size") },
                 { buttons: ["ButtonA"], label: @tr("Save") },
             ];
         }

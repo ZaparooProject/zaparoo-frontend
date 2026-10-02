@@ -24,12 +24,24 @@ const NATIVE_VIDEO_BASE: i64 = 0x3A00_0000;
 const REGION_SIZE: usize = 0x0030_0000;
 const WORD0_OFFSET: usize = 0x0;
 const WORD1_OFFSET: usize = 0x4;
+const WORD2_OFFSET: usize = 0x8;
 const BUFFER0_OFFSET: usize = 0x1000;
 const BUFFER1_OFFSET: usize = 0x0018_0000;
 const BYTES_PER_PIXEL: usize = 4;
 
+/// User-facing CRT trims as persisted: centering offsets plus the
+/// analog H size (word2), bundled so the platform plumbing carries one
+/// value instead of a growing argument list.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct CrtTrims {
+    pub h_offset: i32,
+    pub v_offset: i32,
+    pub h_size: i32,
+}
+
 static REQUESTED_H_OFFSET: AtomicI32 = AtomicI32::new(0);
 static REQUESTED_V_OFFSET: AtomicI32 = AtomicI32::new(0);
+static REQUESTED_H_SIZE: AtomicI32 = AtomicI32::new(0);
 
 pub fn set_requested_offsets(h_offset: i32, v_offset: i32) {
     let (h, v) = zaparoo_core::config::clamp_crt_offsets(h_offset, v_offset);
@@ -37,11 +49,20 @@ pub fn set_requested_offsets(h_offset: i32, v_offset: i32) {
     REQUESTED_V_OFFSET.store(v, Ordering::SeqCst);
 }
 
+pub fn set_requested_h_size(h_size: i32) {
+    let h = zaparoo_core::config::clamp_crt_h_size(h_size);
+    REQUESTED_H_SIZE.store(h, Ordering::SeqCst);
+}
+
 fn requested_offsets() -> (i32, i32) {
     (
         REQUESTED_H_OFFSET.load(Ordering::SeqCst),
         REQUESTED_V_OFFSET.load(Ordering::SeqCst),
     )
+}
+
+fn requested_h_size() -> i32 {
+    REQUESTED_H_SIZE.load(Ordering::SeqCst)
 }
 
 // Raster timing trim window guaranteed across every mode by the
@@ -124,6 +145,17 @@ pub fn pack_word1(h_offset: i32, v_offset: i32, mode: u32) -> u32 {
     (0x5A51_u32 << 16) | (u32::from(h) << 8) | (u32::from(v) << 2) | (mode & 0x3)
 }
 
+/// Pack the interim size control word2: `[31:16]` magic 0x5A52,
+/// `[15:8]` v size (reserved, always 0 since the blank-line vertical
+/// shrink was dropped), `[7:0]` analog `h_size` as signed int8
+/// (core-clamped to -8..+2; 0 = retimer bypass). Same ownership as
+/// word1's offsets: this writer owns the byte while it runs, and
+/// Main's OSD row edits the saved value then respawns the frontend.
+pub fn pack_word2(h_size: i32) -> u32 {
+    let h = (h_size as i8) as u8;
+    (0x5A52_u32 << 16) | u32::from(h)
+}
+
 fn mode_for_geometry(width: u32, height: u32) -> Option<NativeVideoMode> {
     MODES
         .iter()
@@ -145,6 +177,7 @@ pub struct DdrPresenter {
     inset_v: usize,
     h_offset: i32,
     v_offset: i32,
+    h_size: i32,
     pace_in_present: bool,
     /// Slots whose vacated inset strips must be cleared before their
     /// next write. Clearing lazily avoids touching the slot currently
@@ -162,12 +195,14 @@ impl DdrPresenter {
     pub fn open(
         width: u32,
         height: u32,
-        h_offset: i32,
-        v_offset: i32,
+        trims: CrtTrims,
         pace_in_present: bool,
     ) -> Result<Self, slint::PlatformError> {
-        let (h_offset, v_offset) = zaparoo_core::config::clamp_crt_offsets(h_offset, v_offset);
+        let (h_offset, v_offset) =
+            zaparoo_core::config::clamp_crt_offsets(trims.h_offset, trims.v_offset);
+        let h_size = zaparoo_core::config::clamp_crt_h_size(trims.h_size);
         set_requested_offsets(h_offset, v_offset);
+        set_requested_h_size(h_size);
         let mode = mode_for_geometry(width, height).ok_or_else(|| {
             slint::PlatformError::Other(format!(
                 "{width}x{height} does not match a v2 native-video mode"
@@ -224,6 +259,7 @@ impl DdrPresenter {
             inset_v,
             h_offset,
             v_offset,
+            h_size,
             pace_in_present,
             clear_slots: 0,
         };
@@ -234,6 +270,7 @@ impl DdrPresenter {
         presenter.clear_slot(0);
         presenter.clear_slot(1);
         presenter.write_word(WORD1_OFFSET, pack_word1(timing_h, timing_v, mode.mode));
+        presenter.write_word(WORD2_OFFSET, pack_word2(h_size));
         presenter.write_word(WORD0_OFFSET, 0);
 
         tracing::info!(
@@ -242,6 +279,7 @@ impl DdrPresenter {
             mode = mode.mode,
             h_offset,
             v_offset,
+            h_size,
             timing_h,
             timing_v,
             inset_h,
@@ -321,6 +359,12 @@ impl Presenter for DdrPresenter {
     }
 
     fn sync_controls(&mut self) -> Option<(u32, u32)> {
+        let h_size = requested_h_size();
+        if h_size != self.h_size {
+            self.h_size = h_size;
+            self.write_word(WORD2_OFFSET, pack_word2(h_size));
+            tracing::info!(h_size, "native video h size updated");
+        }
         let (h_offset, v_offset) = requested_offsets();
         if (h_offset, v_offset) == (self.h_offset, self.v_offset) {
             return None;
@@ -430,6 +474,7 @@ impl Drop for DdrPresenter {
         // for tidiness, same order as the C++ cleanup path.
         self.write_word(WORD0_OFFSET, 0);
         self.write_word(WORD1_OFFSET, 0);
+        self.write_word(WORD2_OFFSET, 0);
         // SAFETY: unmapping the region mapped in open() with the same
         // base pointer and length.
         unsafe {
@@ -468,6 +513,17 @@ mod tests {
         assert_eq!(split_offset(-10, TIMING_V_MIN, TIMING_V_MAX), (-10, 0));
         assert_eq!(split_offset(2, TIMING_V_MIN, TIMING_V_MAX), (2, 0));
         assert_eq!(split_offset(10, TIMING_V_MIN, TIMING_V_MAX), (2, 8));
+    }
+
+    // Interim word2 goldens (magic 0x5A52, reserved v byte 0, signed
+    // h size low byte). Cross-checked against the reader RTL's parse
+    // (`$signed(ctrl_word2[7:0])` under the 0x5A52 magic).
+    #[test]
+    fn word2_packing_matches_the_interim_contract() {
+        assert_eq!(pack_word2(0), 0x5A52_0000);
+        assert_eq!(pack_word2(2), 0x5A52_0002);
+        assert_eq!(pack_word2(-1), 0x5A52_00FF);
+        assert_eq!(pack_word2(-8), 0x5A52_00F8);
     }
 
     #[test]

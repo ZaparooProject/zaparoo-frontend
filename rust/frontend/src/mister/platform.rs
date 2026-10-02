@@ -11,7 +11,11 @@
 
 pub use super::latch::ResolutionPolicy;
 use super::{
-    ddr::DdrPresenter, fb0::Fb0Presenter, input::InputReader, latch::LatchPresenter, Presenter,
+    ddr::{CrtTrims, DdrPresenter},
+    fb0::Fb0Presenter,
+    input::InputReader,
+    latch::LatchPresenter,
+    Presenter,
 };
 use slint::platform::software_renderer::{
     MinimalSoftwareWindow, RenderingRotation, RepaintBufferType,
@@ -271,7 +275,7 @@ pub struct MisterPlatform {
     /// CRT native path: present through the DDR contract instead of fb0.
     crt: bool,
     crt_size: (u32, u32),
-    crt_offsets: (i32, i32),
+    crt_trims: CrtTrims,
     /// Render normal HDMI and CRT-profile component instances together.
     dual_head: bool,
     /// Main granted the uio lease (spawned us with --latch): try the
@@ -286,7 +290,7 @@ impl MisterPlatform {
     fn new(
         crt: bool,
         crt_size: (u32, u32),
-        crt_offsets: (i32, i32),
+        crt_trims: CrtTrims,
         latch: bool,
         dual_head: bool,
         resolution_policy: ResolutionPolicy,
@@ -297,7 +301,7 @@ impl MisterPlatform {
             started: Instant::now(),
             crt,
             crt_size,
-            crt_offsets,
+            crt_trims,
             dual_head,
             latch,
             resolution_policy,
@@ -324,13 +328,7 @@ impl MisterPlatform {
     /// behavior visibly.
     fn make_presenter(&self) -> Result<Box<dyn Presenter>, slint::PlatformError> {
         if self.crt {
-            match DdrPresenter::open(
-                self.crt_size.0,
-                self.crt_size.1,
-                self.crt_offsets.0,
-                self.crt_offsets.1,
-                true,
-            ) {
+            match DdrPresenter::open(self.crt_size.0, self.crt_size.1, self.crt_trims, true) {
                 Ok(p) => return Ok(Box::new(p)),
                 Err(e) => {
                     tracing::warn!("DDR presenter unavailable, falling back to fb0: {e}");
@@ -350,8 +348,7 @@ impl MisterPlatform {
         let mut crt: Box<dyn Presenter> = Box::new(DdrPresenter::open(
             self.crt_size.0,
             self.crt_size.1,
-            self.crt_offsets.0,
-            self.crt_offsets.1,
+            self.crt_trims,
             false,
         )?);
         let mut rotation = requested_rotation();
@@ -631,7 +628,7 @@ impl FrameProfile {
 pub fn install_platform(
     crt: bool,
     crt_size: (u32, u32),
-    crt_offsets: (i32, i32),
+    crt_trims: CrtTrims,
     latch: bool,
     dual_head: bool,
     resolution_policy: ResolutionPolicy,
@@ -643,7 +640,7 @@ pub fn install_platform(
     slint::platform::set_platform(Box::new(MisterPlatform::new(
         crt,
         crt_size,
-        crt_offsets,
+        crt_trims,
         latch,
         dual_head,
         resolution_policy,
@@ -660,7 +657,7 @@ mod tests {
         let mut platform = MisterPlatform::new(
             false,
             (352, 240),
-            (0, 0),
+            CrtTrims::default(),
             false,
             false,
             ResolutionPolicy::Adaptive,

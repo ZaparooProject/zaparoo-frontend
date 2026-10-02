@@ -73,8 +73,14 @@ pub fn prepare_crt_mode((width, height): (u32, u32)) {
     }
 }
 
+pub use ddr::CrtTrims;
+
 pub fn set_crt_offsets(h_offset: i32, v_offset: i32) {
     ddr::set_requested_offsets(h_offset, v_offset);
+}
+
+pub fn set_crt_h_size(h_size: i32) {
+    ddr::set_requested_h_size(h_size);
 }
 
 /// Physical output raster, set by the presenter that owns the screen.

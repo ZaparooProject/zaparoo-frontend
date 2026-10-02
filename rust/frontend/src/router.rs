@@ -1134,23 +1134,39 @@ pub(crate) fn open_crt_calibration(ctx: &Ctx, app: &App) {
     if !ctx.crt_enabled {
         return;
     }
-    let (h, v) = {
+    let (h, v, w) = {
         let shared = lock(&ctx.shared);
         (
             shared.persist.settings.crt_h_offset,
             shared.persist.settings.crt_v_offset,
+            shared.persist.settings.crt_h_size,
         )
     };
     let overlays = app.global::<crate::Overlays>();
     overlays.set_crt_h_offset(h);
     overlays.set_crt_v_offset(v);
+    overlays.set_crt_h_size(w);
+    overlays.set_crt_size_mode(false);
     overlays.set_crt_calibration_open(true);
 }
 
 fn crt_calibration_action(ctx: &Ctx, app: &App, action: &str) {
     let overlays = app.global::<crate::Overlays>();
+    let size_mode = overlays.get_crt_size_mode();
     let (mut h, mut v) = (overlays.get_crt_h_offset(), overlays.get_crt_v_offset());
+    let mut w = overlays.get_crt_h_size();
     match action {
+        // One selector, two adjustments (master plan packet 7): the
+        // context-menu button flips between position and size.
+        actions::CONTEXT_MENU => {
+            overlays.set_crt_size_mode(!size_mode);
+            return;
+        }
+        // Width stretch: left widens (negative steps), right narrows,
+        // matching the picture edge the arrow pushes.
+        actions::LEFT if size_mode => w -= 1,
+        actions::RIGHT if size_mode => w += 1,
+        actions::UP | actions::DOWN if size_mode => return,
         actions::LEFT => h -= 1,
         actions::RIGHT => h += 1,
         actions::UP => v -= 1,
@@ -1161,6 +1177,13 @@ fn crt_calibration_action(ctx: &Ctx, app: &App, action: &str) {
             return;
         }
         _ => return,
+    }
+    if size_mode {
+        let w = zaparoo_core::config::clamp_crt_h_size(w);
+        lock(&ctx.shared).persist.settings.crt_h_size = w;
+        overlays.set_crt_h_size(w);
+        crate::set_live_crt_h_size(w);
+        return;
     }
     let (h, v) = zaparoo_core::config::clamp_crt_offsets(h, v);
     {

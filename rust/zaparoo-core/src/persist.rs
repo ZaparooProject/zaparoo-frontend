@@ -239,6 +239,10 @@ pub struct SettingsState {
     pub crt_h_offset: i32,
     #[serde(default)]
     pub crt_v_offset: i32,
+    /// Analog H size (width stretch) in the Menu fork core's honored
+    /// range (-8..=2, 1/64-pixel-period steps, 0 = unity).
+    #[serde(default)]
+    pub crt_h_size: i32,
 }
 
 impl Default for SettingsState {
@@ -271,6 +275,7 @@ impl Default for SettingsState {
             crt_video_standard: default_crt_video_standard(),
             crt_h_offset: 0,
             crt_v_offset: 0,
+            crt_h_size: 0,
         }
     }
 }
@@ -576,6 +581,7 @@ mod tests {
                 crt_video_standard: "pal".into(),
                 crt_h_offset: -3,
                 crt_v_offset: 2,
+                crt_h_size: -5,
             },
         };
         save_to(&path, &original);
@@ -833,6 +839,7 @@ resolution = "1920x1080"
         assert_eq!(state.settings.crt_video_standard, "ntsc");
         assert_eq!(state.settings.crt_h_offset, 0);
         assert_eq!(state.settings.crt_v_offset, 0);
+        assert_eq!(state.settings.crt_h_size, 0);
     }
 
     #[test]

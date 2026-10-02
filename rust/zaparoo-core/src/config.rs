@@ -103,6 +103,7 @@ pub struct SettingsConfig {
     pub crt_video_standard: Option<String>,
     pub crt_h_offset: Option<i32>,
     pub crt_v_offset: Option<i32>,
+    pub crt_h_size: Option<i32>,
 }
 
 #[allow(
@@ -137,6 +138,7 @@ pub struct SettingsMirror<'a> {
     pub crt_video_standard: &'a str,
     pub crt_h_offset: i32,
     pub crt_v_offset: i32,
+    pub crt_h_size: i32,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -248,6 +250,7 @@ struct RawSettings {
     crt_video_standard: Option<String>,
     crt_h_offset: Option<i32>,
     crt_v_offset: Option<i32>,
+    crt_h_size: Option<i32>,
 }
 
 #[derive(Deserialize, Default)]
@@ -393,6 +396,7 @@ fn settings_config_from_raw(raw: RawSettings) -> SettingsConfig {
         crt_video_standard: trim_opt(raw.crt_video_standard),
         crt_h_offset: raw.crt_h_offset,
         crt_v_offset: raw.crt_v_offset,
+        crt_h_size: raw.crt_h_size,
     }
 }
 
@@ -579,6 +583,11 @@ pub fn save_settings_mirror(path: &Path, mirror: SettingsMirror<'_>) -> Result<(
     let (crt_h, crt_v) = clamp_crt_offsets(mirror.crt_h_offset, mirror.crt_v_offset);
     set_int(settings, "crt_h_offset", i64::from(crt_h));
     set_int(settings, "crt_v_offset", i64::from(crt_v));
+    set_int(
+        settings,
+        "crt_h_size",
+        i64::from(clamp_crt_h_size(mirror.crt_h_size)),
+    );
 
     let logging = section_mut(&mut doc, "logging", path)?;
     set_bool(logging, "debug", mirror.debug_logging);
@@ -647,6 +656,11 @@ pub const CRT_H_OFFSET_MIN: i32 = -8;
 pub const CRT_H_OFFSET_MAX: i32 = 8;
 pub const CRT_V_OFFSET_MIN: i32 = -8;
 pub const CRT_V_OFFSET_MAX: i32 = 2;
+/// Analog H size (word2 width stretch) range honored by the Menu fork
+/// core: steps of 1/64 pixel period, negative widens toward -8, +2 is
+/// the porch-limited narrow end. Shared with Main's OSD row.
+pub const CRT_H_SIZE_MIN: i32 = -8;
+pub const CRT_H_SIZE_MAX: i32 = 2;
 
 /// Canonical native CRT video standard names. `"480i"` is accepted so
 /// it can be hand-set in `frontend.toml` for hardware smoke tests, but
@@ -698,6 +712,13 @@ pub fn clamp_crt_offsets(h_offset: i32, v_offset: i32) -> (i32, i32) {
         h_offset.clamp(CRT_H_OFFSET_MIN, CRT_H_OFFSET_MAX),
         v_offset.clamp(CRT_V_OFFSET_MIN, CRT_V_OFFSET_MAX),
     )
+}
+
+/// Clamp the analog H size to the range the core honors, so persisted
+/// values never depend on the hardware's saturating clamp.
+#[must_use]
+pub fn clamp_crt_h_size(h_size: i32) -> i32 {
+    h_size.clamp(CRT_H_SIZE_MIN, CRT_H_SIZE_MAX)
 }
 
 fn normalize_language_override(value: &str) -> String {
@@ -818,6 +839,7 @@ mod tests {
             crt_video_standard: "ntsc",
             crt_h_offset: 0,
             crt_v_offset: 0,
+            crt_h_size: 0,
         }
     }
 
@@ -1372,6 +1394,7 @@ mod tests {
                 crt_video_standard: "pal",
                 crt_h_offset: -3,
                 crt_v_offset: 1,
+                crt_h_size: 0,
             },
         )
         .expect("save");
@@ -1438,6 +1461,7 @@ mod tests {
                 crt_video_standard: "ntsc",
                 crt_h_offset: 0,
                 crt_v_offset: 0,
+                crt_h_size: 0,
             },
         )
         .expect("save");
@@ -1496,6 +1520,7 @@ mod tests {
             crt_video_standard: "secam",
             crt_h_offset: 99,
             crt_v_offset: -99,
+            crt_h_size: -99,
         };
         save_settings_mirror(f.path(), mirror).expect("save");
         let written = std::fs::read_to_string(f.path()).expect("read");
@@ -1571,6 +1596,16 @@ mod tests {
         assert_eq!(clamp_crt_offsets(-8, 2), (-8, 2));
         assert_eq!(clamp_crt_offsets(9, 3), (8, 2));
         assert_eq!(clamp_crt_offsets(-9, -9), (-8, -8));
+    }
+
+    #[test]
+    fn crt_h_size_clamps_to_core_range() {
+        use super::clamp_crt_h_size;
+        assert_eq!(clamp_crt_h_size(0), 0);
+        assert_eq!(clamp_crt_h_size(-8), -8);
+        assert_eq!(clamp_crt_h_size(2), 2);
+        assert_eq!(clamp_crt_h_size(-99), -8);
+        assert_eq!(clamp_crt_h_size(99), 2);
     }
 
     // Single test because std::env is process-global; splitting into
