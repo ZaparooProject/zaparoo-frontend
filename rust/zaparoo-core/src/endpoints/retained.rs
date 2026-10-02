@@ -69,7 +69,8 @@ macro_rules! fields {
 fields!(TagInfo {
     tag,
     tag_type,
-    label
+    label,
+    count
 });
 fields!(Pagination {
     has_next_page,
@@ -179,7 +180,7 @@ mod tests {
             tags: vec![TagInfo {
                 tag: "hidden".into(),
                 tag_type: "user".into(),
-                label: String::new(),
+                ..TagInfo::default()
             }],
             ..MediaHistoryEntry::default()
         };

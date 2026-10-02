@@ -108,6 +108,25 @@ pub struct TagInfo {
     pub tag_type: String,
     #[serde(default)]
     pub label: String,
+    /// Games carrying this tag. Core sends it on `media.tags` but the
+    /// upstream docs do not list it, so it is optional (0 when absent).
+    #[serde(default)]
+    pub count: i64,
+}
+
+/// Parameters for `media.tags`: the tags available for filtering, scoped to
+/// the given systems (all systems when empty).
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaTagsParams {
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub systems: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct MediaTagsResult {
+    #[serde(default)]
+    pub tags: Vec<TagInfo>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

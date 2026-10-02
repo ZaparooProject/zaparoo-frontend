@@ -250,7 +250,7 @@ mod tests {
         TagInfo {
             tag: value.into(),
             tag_type: tag_type.into(),
-            label: String::new(),
+            ..Default::default()
         }
     }
 

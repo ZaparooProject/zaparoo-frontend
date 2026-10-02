@@ -72,6 +72,7 @@ pub fn dispatch(text: &str, notifier: &Notifier) -> String {
         "media.meta" => Some(Ok(fixtures::media_meta_response(&req.params))),
         "media.meta.update" => Some(fixtures::media_meta_update_response(&req.params)),
         "media.image" => Some(fixtures::media_image_response(&req.params)),
+        "media.tags" => Some(Ok(fixtures::media_tags_response(&req.params))),
         "media.tags.update" => Some(media_tags_update(&req.params)),
         "media.history" => Some(Ok(fixtures::media_history_response(&req.params))),
         "media.history.latest" => Some(Ok(fixtures::media_history_latest_response())),
@@ -443,6 +444,48 @@ mod tests {
             indexed,
             browse["result"]["totalFiles"].as_u64().unwrap_or(0)
         );
+    }
+
+    #[test]
+    fn media_tags_lists_counted_tags_scoped_to_systems() {
+        let all = parse(&dispatch(
+            r#"{"jsonrpc":"2.0","id":"1","method":"media.tags"}"#,
+        ));
+        let all_tags = all["result"]["tags"].as_array().expect("array");
+        for tag_type in ["genre", "year", "players", "developer", "user"] {
+            assert!(
+                all_tags.iter().any(|t| t["type"] == tag_type),
+                "missing {tag_type}"
+            );
+        }
+        assert!(all_tags
+            .iter()
+            .all(|t| t["count"].as_u64().unwrap_or(0) > 0));
+        let nes = parse(&dispatch(
+            r#"{"jsonrpc":"2.0","id":"2","method":"media.tags","params":{"systems":["NES"]}}"#,
+        ));
+        let nes_total: u64 = nes["result"]["tags"]
+            .as_array()
+            .expect("array")
+            .iter()
+            .filter(|t| t["type"] == "genre")
+            .filter_map(|t| t["count"].as_u64())
+            .sum();
+        // One genre per game, so the genre counts add up to the NES games.
+        assert_eq!(nes_total, 5);
+    }
+
+    #[test]
+    fn media_browse_filters_on_genre_and_year_together() {
+        let genre = parse(&dispatch(
+            r#"{"jsonrpc":"2.0","id":"1","method":"media.browse","params":{"path":"/games","maxResults":1000,"tags":["genre:rpg"]}}"#,
+        ));
+        let rpg = genre["result"]["totalFiles"].as_u64().expect("count");
+        assert!(rpg > 0);
+        let both = parse(&dispatch(
+            r#"{"jsonrpc":"2.0","id":"2","method":"media.browse","params":{"path":"/games","maxResults":1000,"tags":["genre:rpg","year:1985"]}}"#,
+        ));
+        assert!(both["result"]["totalFiles"].as_u64().expect("count") < rpg);
     }
 
     #[test]

@@ -1394,13 +1394,13 @@ fn visibility_reply(hidden: bool) -> zaparoo_core::media_types::MediaTagsUpdateR
     let mut tags = vec![TagInfo {
         tag: "favorite".into(),
         tag_type: "user".into(),
-        label: String::new(),
+        ..Default::default()
     }];
     if hidden {
         tags.push(TagInfo {
             tag: "hidden".into(),
             tag_type: "user".into(),
-            label: String::new(),
+            ..Default::default()
         });
     }
     zaparoo_core::media_types::MediaTagsUpdateResult { tags }
@@ -3365,6 +3365,7 @@ fn a_two_item_list_glides_on_the_wrap_as_well_as_the_step() {
                 label_key: "".into(),
                 enabled: true,
                 reason_key: "".into(),
+                detail: "".into(),
             })
             .collect::<Vec<_>>(),
     )));
@@ -3405,6 +3406,7 @@ fn picker_keeps_first_row_until_focus_leaves_viewport() {
                 label_key: "".into(),
                 enabled: true,
                 reason_key: "".into(),
+                detail: "".into(),
             })
             .collect::<Vec<_>>(),
     )));
@@ -3717,6 +3719,7 @@ fn picker_selected_text_uses_on_accent_and_palette_previews_paint() {
         label_key: "".into(),
         enabled: true,
         reason_key: "".into(),
+        detail: "".into(),
     }])));
     ov.set_list_open(true);
     ov.set_list_index(0);
@@ -3758,6 +3761,7 @@ fn mouse_setting_blocks_picker_clicks_but_not_enabled_selection() {
         label_key: "".into(),
         enabled: true,
         reason_key: "".into(),
+        detail: "".into(),
     }])));
     ov.set_list_open(true);
     app.global::<crate::Theme>()

@@ -129,6 +129,8 @@ pub struct Shared {
     /// Ticket for the facet fetch; bumped per fetch so a stale index
     /// response cannot fill a newer scope.
     pub letter_seq: u64,
+    /// The browse filter picker's tag list for the system on screen.
+    pub filter: crate::browse_filter::Model,
     /// Ticket for the per-game launcher read, so a picker only opens
     /// for the row the user is still on.
     pub game_launcher_seq: u64,
@@ -181,6 +183,10 @@ pub enum ListContext {
     /// Its "Group by" and "Sort" pages.
     FavoritesGrouping,
     FavoritesSort,
+    /// The Games "Filter" page: one row per category, and the values page
+    /// of the category being chosen. Both stay inside the View menu's panel.
+    FilterCategories,
+    FilterValues(zaparoo_app::browse_filter::Category),
     /// A settings picker row; the payload is the field id.
     SettingsPicker(String),
     /// The "Change launcher" picker; the payload is the system id.
@@ -274,6 +280,7 @@ impl Shared {
             letter_buckets: Vec::new(),
             letter_scope: None,
             letter_seq: 0,
+            filter: crate::browse_filter::Model::default(),
             game_launcher_seq: 0,
             persist,
             restore_pending,
@@ -1409,22 +1416,16 @@ pub(crate) fn apply_clock_setting(ctx: &Ctx, app: &App) {
 }
 
 /// Open the West "View" menu (the page/list-scoped operations menu,
-/// counterpart to North's item-scoped Options). One entry today -
-/// Go to..., pre-focused so the common path is a fixed West-then-
-/// Accept chord. The letter facet fetch is kicked off here so the
-/// buckets are likely ready by the time the user advances into the
-/// grid.
+/// counterpart to North's item-scoped Options). Go to... is pre-focused
+/// so the common path is a fixed West-then-Accept chord, then the filter
+/// rows. The letter facet and the filter's tag list are fetched here so
+/// both are likely ready by the time the user gets into them.
 pub(crate) fn open_view_menu(ctx: &Ctx, app: &App) {
     fetch_letter_index(ctx, app);
-    lock(&ctx.shared).list_context = ListContext::ViewMenu;
-    app.global::<crate::Overlays>()
-        .set_list_setting_id(SharedString::default());
-    app.global::<crate::Overlays>()
-        .set_list_title(SharedString::from("title:view"));
-    app.global::<crate::Overlays>()
-        .set_list_entries(ModelRc::new(VecModel::from(vec![menu_row("jump_letter")])));
-    app.global::<crate::Overlays>().set_list_index(0);
-    app.global::<crate::Overlays>().set_list_open(true);
+    crate::browse_filter::begin(ctx, app);
+    let mut entries = vec![menu_row("jump_letter")];
+    entries.extend(crate::browse_filter::view_rows(&lock(&ctx.shared)));
+    present_list(ctx, app, ListContext::ViewMenu, "title:view", entries);
 }
 
 fn list_action(ctx: &Ctx, app: &App, action: &str) {
@@ -1453,17 +1454,28 @@ fn list_action(ctx: &Ctx, app: &App, action: &str) {
                 .map(|e| e.id.to_string());
             if let Some(id) = id {
                 let context = lock(&ctx.shared).list_context.clone();
-                if !matches!(
-                    context,
-                    ListContext::SystemLauncher(_) | ListContext::GameLauncher(_, _)
-                ) {
+                // These keep the panel open: the launcher pickers while they
+                // save, and the filter, which swaps pages inside it.
+                let stays_open = match context {
+                    ListContext::SystemLauncher(_)
+                    | ListContext::GameLauncher(_, _)
+                    | ListContext::FilterCategories
+                    | ListContext::FilterValues(_) => true,
+                    ListContext::ViewMenu => id == "filter",
+                    _ => false,
+                };
+                if !stays_open {
                     app.global::<crate::Overlays>().set_list_open(false);
                 }
                 match context {
-                    ListContext::ViewMenu => {
-                        if id == "jump_letter" {
-                            open_letter_jump(ctx, app);
-                        }
+                    ListContext::ViewMenu => match id.as_str() {
+                        "jump_letter" => open_letter_jump(ctx, app),
+                        "filter" => crate::browse_filter::open(ctx, app),
+                        "filter_clear" => crate::browse_filter::clear(ctx, app),
+                        _ => {}
+                    },
+                    ListContext::FilterCategories | ListContext::FilterValues(_) => {
+                        crate::browse_filter::accept(ctx, app, &context, &id);
                     }
                     ListContext::HubPageMenu => crate::hub::page_menu_accept(ctx, app, &id),
                     ListContext::HubAdd => crate::hub::add_picked(ctx, app, &id),
@@ -1482,8 +1494,21 @@ fn list_action(ctx: &Ctx, app: &App, action: &str) {
                 }
             }
         }
+        actions::LEFT | actions::RIGHT
+            if matches!(lock(&ctx.shared).list_context, ListContext::FilterValues(_)) =>
+        {
+            crate::browse_filter::page(app, action);
+        }
         actions::CANCEL | actions::PAGE_MENU => {
-            app.global::<crate::Overlays>().set_list_open(false);
+            let context = lock(&ctx.shared).list_context.clone();
+            if matches!(
+                context,
+                ListContext::FilterCategories | ListContext::FilterValues(_)
+            ) {
+                crate::browse_filter::back(ctx, app, &context, action == actions::PAGE_MENU);
+            } else {
+                app.global::<crate::Overlays>().set_list_open(false);
+            }
         }
         _ => {}
     }
@@ -1504,7 +1529,7 @@ pub(crate) fn fetch_letter_index(ctx: &Ctx, app: &App) {
             guard.games.system_id.clone(),
             guard.letter_seq,
             guard.show_hidden,
-            crate::games::favorites_tags(&guard),
+            crate::browse_filter::active_tags(&guard),
         )
     };
     app.global::<crate::Overlays>()
@@ -1721,6 +1746,7 @@ pub(crate) fn menu_row_full(
         label_key: SharedString::from(key),
         enabled,
         reason_key: SharedString::from(reason_key),
+        detail: SharedString::default(),
     }
 }
 
@@ -1799,7 +1825,7 @@ pub(crate) fn present_games_context_menu(
     present_context_menu(ctx, app, ContextOwner::Games, target, entries);
 }
 
-fn present_list(
+pub(crate) fn present_list(
     ctx: &Ctx,
     app: &App,
     context: ListContext,

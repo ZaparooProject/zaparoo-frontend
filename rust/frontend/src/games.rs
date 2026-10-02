@@ -494,14 +494,6 @@ fn favorites_scope(shared: &Shared) -> Vec<String> {
     }
 }
 
-pub(crate) fn favorites_tags(shared: &Shared) -> Vec<String> {
-    if shared.persist.games.favorites_filter {
-        vec![FAVORITE_TAG.to_string()]
-    } else {
-        Vec::new()
-    }
-}
-
 /// The persisted selection for the active mode and folder level.
 fn saved_path(shared: &Shared) -> String {
     match shared.games.mode {
@@ -700,6 +692,25 @@ pub fn enter_folder_from_hub(ctx: &Ctx, app: &App, system_id: &str, path: &str) 
     browse(ctx, app, path, true);
 }
 
+/// The browse filter changed: reload the folder on screen from its top.
+/// Core filters the games directly inside a folder and leaves its
+/// sub-folders alone, so the user stays where they are.
+pub(crate) fn refilter(ctx: &Ctx, app: &App) {
+    let path = {
+        let mut shared = lock(&ctx.shared);
+        if shared.games.mode != GamesMode::Browse {
+            return;
+        }
+        write_saved_path(&mut shared, String::new());
+        remember_list_top(&mut shared, 0);
+        // The letters belong to the list that was filtered.
+        shared.letter_buckets.clear();
+        shared.letter_scope = None;
+        shared.games.browse_path.clone()
+    };
+    browse(ctx, app, &path, false);
+}
+
 fn begin_browse_mode(shared: &mut Shared, sys: &SystemInfo) {
     let name = crate::systems::display_name(shared, &sys.id);
     let model = &mut shared.games;
@@ -765,7 +776,7 @@ pub fn refresh_visibility(ctx: &Ctx, app: &App) {
         let shared = lock(&ctx.shared);
         mode == GamesMode::Browse
             && !shared.show_hidden
-            && !shared.persist.games.favorites_filter
+            && !crate::browse_filter::shows_hidden(&shared)
             && shared.games.current().is_some_and(|row| row.is_hidden)
     };
     if hidden_selection {
@@ -943,7 +954,7 @@ fn browse_with_motion(ctx: &Ctx, app: &App, path: &str, flip: bool, direction: i
             list_layout(&shared),
             shared.games.grid.load_ahead_pages,
         );
-        let tags = favorites_tags(&shared);
+        let tags = crate::browse_filter::active_tags(&shared);
         let include_hidden = shared.show_hidden;
         let model = &mut shared.games;
         model.mode = GamesMode::Browse;
@@ -1231,7 +1242,7 @@ fn fetch_more(ctx: &Ctx, app: &App, limit: u32, bulk: bool) {
     let (mode, cursor, system_id, browse_path, tags, ticket, sort, scope, include_hidden) = {
         let mut shared = lock(&ctx.shared);
         let include_hidden = shared.show_hidden;
-        let tags = favorites_tags(&shared);
+        let tags = crate::browse_filter::active_tags(&shared);
         let sort = favorites_sort(&shared);
         let scope = favorites_scope(&shared);
         let model = &mut shared.games;
@@ -1808,6 +1819,14 @@ pub fn render(ctx: &Ctx, app: &App) {
     view.set_total_items(i32::try_from(model.grid.total_items()).unwrap_or(0));
     view.set_total_known(model.total_known);
     view.set_total_files(i32::try_from(model.total_files).unwrap_or(0));
+    view.set_filter_text(SharedString::from(
+        if mode == GamesMode::Browse {
+            crate::browse_filter::summary(&shared)
+        } else {
+            None
+        }
+        .unwrap_or_default(),
+    ));
     view.set_has_more(model.has_more());
     view.set_page_loading(
         model.loading_more
@@ -3322,7 +3341,7 @@ pub(crate) fn on_hidden_updated(
             }
             if shared.games.mode == GamesMode::Browse
                 && !shared.show_hidden
-                && !shared.persist.games.favorites_filter
+                && !crate::browse_filter::shows_hidden(&shared)
                 && shared.games.current().is_some_and(|row| row.is_hidden)
             {
                 let hidden: Vec<bool> = shared.games.rows.iter().map(|row| row.is_hidden).collect();
@@ -3474,7 +3493,7 @@ mod tests {
         let tags = vec![TagInfo {
             tag: "hidden".into(),
             tag_type: "user".into(),
-            label: String::new(),
+            ..Default::default()
         }];
         let browse = BrowseEntry {
             tags: tags.clone(),
@@ -3503,7 +3522,7 @@ mod tests {
         visible.tags = vec![TagInfo {
             tag: "hidden".into(),
             tag_type: "genre".into(),
-            label: String::new(),
+            ..Default::default()
         }];
         let row = GameRow::from(&visible);
         assert!(!row.is_hidden);
@@ -3687,7 +3706,7 @@ mod tests {
         e.tags = vec![TagInfo {
             tag_type: "year".into(),
             tag: "1991".into(),
-            label: String::new(),
+            ..Default::default()
         }];
         let mut row = GameRow::from(&e);
         row.system_name = "Genesis".into();

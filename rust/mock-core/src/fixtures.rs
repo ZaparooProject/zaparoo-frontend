@@ -810,6 +810,12 @@ fn system_meta(system: &str) -> (&'static str, &'static str) {
 /// mock's Favorites screen holds entries from several systems, which is what
 /// the favorites sort and system-filter paths need to exercise.
 fn tags_for(file: &str, index: usize) -> Value {
+    // A deterministic spread of the filterable categories, so the browse
+    // filter has genres (flat and nested), years, player counts and
+    // developers to pick from.
+    const GENRES: [&str; 5] = ["action", "action:platformer", "rpg", "puzzle", "sports"];
+    const DEVELOPERS: [&str; 4] = ["Nintendo", "Capcom", "Konami", "Sega"];
+    const PLAYERS: [&str; 3] = ["1", "2", "4"];
     let mut tags = disambiguating_tags_for(file)
         .as_array()
         .cloned()
@@ -817,7 +823,58 @@ fn tags_for(file: &str, index: usize) -> Value {
     if index.is_multiple_of(3) {
         tags.push(json!({ "tag": "favorite", "type": "user" }));
     }
+    tags.push(json!({ "tag": GENRES[index % GENRES.len()], "type": "genre" }));
+    tags.push(json!({ "tag": (1985 + index % 12).to_string(), "type": "year" }));
+    tags.push(json!({ "tag": PLAYERS[(index + 1) % PLAYERS.len()], "type": "players" }));
+    tags.push(json!({ "tag": DEVELOPERS[index % DEVELOPERS.len()], "type": "developer" }));
     Value::Array(tags)
+}
+
+/// `media.tags`: every tag on the games of the requested systems (all
+/// systems when none are named) with its game count, most used first. Core
+/// labels some tags and not others, so the mock labels the nested genre only.
+pub fn media_tags_response(params: &Value) -> Value {
+    let systems = params
+        .get("systems")
+        .and_then(Value::as_array)
+        .map(|a| a.iter().filter_map(Value::as_str).collect::<Vec<_>>())
+        .unwrap_or_default();
+    let mut counts: std::collections::BTreeMap<(String, String), u64> =
+        std::collections::BTreeMap::new();
+    for game in games_for_systems(&systems) {
+        let Some(tags) = game.get("tags").and_then(Value::as_array) else {
+            continue;
+        };
+        for tag in tags {
+            let (Some(tag_type), Some(value)) = (
+                tag.get("type").and_then(Value::as_str),
+                tag.get("tag").and_then(Value::as_str),
+            ) else {
+                continue;
+            };
+            *counts
+                .entry((tag_type.to_string(), value.to_string()))
+                .or_default() += 1;
+        }
+    }
+    let mut rows: Vec<((String, String), u64)> = counts.into_iter().collect();
+    rows.sort_by(|a, b| {
+        a.0 .0
+            .cmp(&b.0 .0)
+            .then(b.1.cmp(&a.1))
+            .then(a.0 .1.cmp(&b.0 .1))
+    });
+    let tags: Vec<Value> = rows
+        .into_iter()
+        .map(|((tag_type, value), count)| {
+            let mut row = json!({ "type": tag_type, "tag": value, "count": count });
+            if tag_type == "genre" && value == "action:platformer" {
+                row["label"] = json!("Platformer");
+            }
+            row
+        })
+        .collect();
+    json!({ "tags": tags })
 }
 
 // Synthesize disambiguating tags for a handful of mock entries so the
