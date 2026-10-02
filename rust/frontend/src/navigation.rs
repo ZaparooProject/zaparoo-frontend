@@ -110,10 +110,7 @@ pub fn cancel(ctx: &Ctx, app: &App) -> bool {
             crate::games::resume_after_cancel(ctx, app);
         }
         crate::Screen::Systems | crate::Screen::FavoriteSystems => crate::systems::render(ctx, app),
-        crate::Screen::Hub => {
-            lock(&ctx.shared).hub.release_pulse += 1;
-            crate::hub::render(ctx, app);
-        }
+        crate::Screen::Hub => crate::hub::render(ctx, app),
         _ => {}
     }
     true

@@ -1250,7 +1250,7 @@ pub(crate) fn on_append(
     ticket: u64,
     outcome: Result<(Vec<GameRow>, Option<String>), String>,
 ) {
-    let (restore_again, landed_restore, from_page, changed_page) = {
+    let (restore_again, landed_restore, changed_page) = {
         let mut shared = lock(&ctx.shared);
         if shared.games.ticket != ticket {
             return;
@@ -1312,7 +1312,7 @@ pub(crate) fn on_append(
         drop(shared);
         let mut shared = lock(&ctx.shared);
         refresh_display(&mut shared);
-        (restore_again, landed, from_page, changed_page)
+        (restore_again, landed, changed_page)
     };
     if app.global::<crate::Shell>().get_transitioning() {
         if restore_again || list_restore_needs_rows(ctx, &lock(&ctx.shared)) {
@@ -1332,7 +1332,7 @@ pub(crate) fn on_append(
     }
     if changed_page && !landed_restore {
         persist_current(ctx);
-        slide_to_current_page(ctx, app, from_page);
+        slide_to_current_page(ctx, app);
     } else {
         render(ctx, app);
     }
@@ -1484,14 +1484,6 @@ fn geometry(app: &App, mode: GamesMode) -> Geometry {
     geometry_for(&crate::router::output_scene(app).inputs(), mode)
 }
 
-fn logo_image(px: &crate::system_logos::LogoPixels) -> slint::Image {
-    slint::Image::from_rgba8(
-        slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(
-            &px.rgba, px.width, px.height,
-        ),
-    )
-}
-
 /// The cover decode tier for the grid at the current output geometry.
 fn cover_tier(app: &App) -> u32 {
     crate::sizing::games_grid_cover_source_size(crate::router::output_scene(app))
@@ -1548,16 +1540,15 @@ fn cell_for(ctx: &Ctx, model: &GamesModel, row: &GameRow, tier: u32) -> GridCell
         CoverState::Absent => {
             // The flat lists fall back to the system logo, a friendlier
             // "no cover" cue than the file chip; Games keeps the chip.
+            let bounds = zaparoo_app::logo_cache::Bounds::new(tier, tier);
             let logo = (model.mode != GamesMode::Browse && !key.system.is_empty())
-                .then(|| crate::system_logos::tinted_logo_for(&key.system, false))
-                .flatten();
-            if let Some(px) = logo {
-                cell.cover = logo_image(&px);
+                .then(|| ctx.logos.key(&key.system, &key.system, false, bounds))
+                .flatten()
+                .and_then(|key| ctx.logos.get(&key));
+            if let Some(pair) = logo {
+                (cell.cover, cell.cover_focus) = pair.images();
                 cell.has_cover = true;
-                if let Some(focus) = crate::system_logos::tinted_logo_for(&key.system, true) {
-                    cell.cover_focus = logo_image(&focus);
-                    cell.has_cover_focus = true;
-                }
+                cell.has_cover_focus = true;
             } else {
                 cell.glyph_key = SharedString::from(FILE_GLYPH);
             }
@@ -1828,6 +1819,41 @@ pub fn render(ctx: &Ctx, app: &App) {
         model.grid.page_size()
     };
     request_covers(ctx, model, first_visible, window, tier);
+    if matches!(
+        app.global::<crate::Shell>().get_active_screen(),
+        crate::Screen::Games | crate::Screen::Favorites | crate::Screen::Recents
+    ) {
+        let bounds = zaparoo_app::logo_cache::Bounds::new(tier, tier);
+        let key = |row: &GameRow| {
+            if model.mode == GamesMode::Browse
+                || model.rapid_active
+                || (row.has_cover
+                    && !ctx
+                        .media
+                        .is_negative(&media_key(row, &model.system_id, tier)))
+            {
+                return None;
+            }
+            let id = row.system_or(&model.system_id);
+            ctx.logos.key(id, id, false, bounds)
+        };
+        let visible = model
+            .rows
+            .iter()
+            .skip(first_visible)
+            .take(window)
+            .filter_map(key);
+        let neighbors = [
+            first_visible.saturating_add(window),
+            first_visible.saturating_sub(window),
+        ]
+        .into_iter()
+        .flat_map(|first| model.rows.iter().skip(first).take(window))
+        .filter_map(key);
+        ctx.logos.request_window(visible, neighbors);
+    } else {
+        crate::system_logos::defer_refresh(ctx, app);
+    }
     // After the window's covers, so the focused row's larger cover is
     // queued ahead of them.
     if list {
@@ -2219,11 +2245,11 @@ fn request_cached_page_transition(_app: &App, _direction: i32, _columns: i32, _r
     false
 }
 
-/// A cursor move landed on another page: swoop the strip one period in
-/// `dir`, then commit. Reduce motion cuts instead.
-fn slide_to_current_page(ctx: &Ctx, app: &App, from_page: usize) {
+/// Swoop one period in the grid's committed navigation direction, including
+/// wrapped and deferred turns. Reduce motion cuts instead.
+fn slide_to_current_page(ctx: &Ctx, app: &App) {
     let rapid = crate::input::rapid_page(ctx) || crate::input::rapid_navigation(ctx);
-    let (to_page, columns, rows, reduce_motion, tier) = {
+    let (to_page, columns, rows, reduce_motion, tier, dir) = {
         let mut shared = lock(&ctx.shared);
         let reduce_motion =
             shared.persist.settings.reduce_motion || !app.global::<crate::Motion>().get_enabled();
@@ -2237,9 +2263,9 @@ fn slide_to_current_page(ctx: &Ctx, app: &App, from_page: usize) {
             model.grid.rows() as i32,
             reduce_motion,
             cover_tier(app),
+            model.grid.page_direction().offset(),
         )
     };
-    let dir: i32 = if to_page > from_page { 1 } else { -1 };
     let view = app.global::<GamesView>();
     let target_local = {
         let shared = lock(&ctx.shared);
@@ -2270,6 +2296,7 @@ fn slide_to_current_page(ctx: &Ctx, app: &App, from_page: usize) {
                 let view = app.global::<GamesView>();
                 view.set_cached_transition(false);
                 view.set_slide_anim(true);
+                render(&ctx, &app);
             }
         });
         return;
@@ -2505,7 +2532,7 @@ fn grid_move(ctx: &Ctx, app: &App, d_col: i32, d_row: i32, page_delta: i32) {
     if moved {
         persist_current(ctx);
         if to_page != from_page {
-            slide_to_current_page(ctx, app, from_page);
+            slide_to_current_page(ctx, app);
             drain_load_requests(ctx, app);
             return;
         }
@@ -2686,6 +2713,7 @@ fn press_duration(app: &App) -> u64 {
 /// Dispatch the selected row after the router's grid push. List feedback
 /// retires locally without a navigation delay.
 fn accept_current(ctx: &Ctx, app: &App) {
+    let list_feedback = app.global::<crate::Shell>().get_browse_list_layout();
     let (row, seq) = {
         let mut shared = lock(&ctx.shared);
         let model = &mut shared.games;
@@ -2693,7 +2721,9 @@ fn accept_current(ctx: &Ctx, app: &App) {
             return;
         };
         model.press_seq += 1;
-        model.activate_pulse += 1;
+        if list_feedback {
+            model.activate_pulse += 1;
+        }
         (row, model.press_seq)
     };
     persist_now(ctx);
@@ -2706,6 +2736,9 @@ fn accept_current(ctx: &Ctx, app: &App) {
     }
     if let Some(text) = row.launch_text() {
         crate::router::launch(ctx, app, text, &row.display);
+    }
+    if !list_feedback {
+        return;
     }
     slint::Timer::single_shot(Duration::from_millis(press_duration(app)), move || {
         let Some(app) = weak.upgrade() else {

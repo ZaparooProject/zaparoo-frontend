@@ -246,15 +246,12 @@ export component Tile inherits Rectangle {
     in property <GridCell> cell;
     in property <bool> selected: false;
     in property <bool> own-ring: true;
-    // The router holds the accepting face down until dispatch.
+    // One shared owner moves both face and retained ring, through launch reply.
     in property <bool> press-held: false;
     // The section owning this tile has user focus.
     in property <bool> section-focused: true;
     in property <bool> focus-ready: true;
     in property <bool> held: false;
-    in property <int> activate-pulse: 0;
-    in property <int> release-pulse: 0;
-    in property <bool> settling: false;
     // Hub and Settings tiles: art fills the card up to the ring's inner
     // edge plus a small clearance instead of the 2% band.
     in property <bool> compact-padding: false;
@@ -276,33 +273,6 @@ export component Tile inherits Rectangle {
     property <bool> muted: root.cell.hidden || root.cell.disabled;
     property <color> art-tint: (!root.muted && root.focused-selection) ? Theme.logo-focus-primary : Theme.logo-primary;
     property <bool> system-cover: root.cell.wordmark;
-
-    // Press cue: lowered on activate while focused, raised on release,
-    // on settling (screen going off-screen) and when the cell changes.
-    property <bool> pressed: false;
-    property <bool> mounted: false;
-    Timer {
-        interval: 1ms;
-        running: !root.mounted;
-        triggered => { root.mounted = true; }
-    }
-    property <{ activate: int, release: int }> press-signal: { activate: root.activate-pulse, release: root.release-pulse };
-    property <int> last-release: root.release-pulse;
-    changed press-signal => {
-        // A release arriving before the next paint wins over activation;
-        // independent changed callbacks have no guaranteed ordering.
-        if (root.release-pulse != root.last-release) {
-            root.pressed = false;
-        } else if (root.mounted && root.focused-selection) {
-            root.pressed = true;
-        }
-        root.last-release = root.release-pulse;
-    }
-    init => { root.last-release = root.release-pulse; }
-    changed settling => {
-        if (root.settling) { root.pressed = false; }
-    }
-    changed cell => { root.pressed = false; }
 
     // Held cue (Options -> Move), and only this: the WHOLE tile blinks out
     // of existence and back. No tint, no recolor, no lift -- nothing is
@@ -326,7 +296,7 @@ export component Tile inherits Rectangle {
         radius: root.card-radius;
         face-color: Theme.surface-card;
         edge-color: root.muted ? Theme.border-mid : Theme.tile-edge;
-        pressed: root.pressed || root.press-held;
+        pressed: root.press-held;
 
         // Focus ring inside the card edge: an accent pill and a face
         // colored mask punched back out of its center. Sized to the face
@@ -489,9 +459,6 @@ export component PagedGridView inherits Rectangle {
     // dropped all four.
     in property <bool> ring-suppressed: false;
     in property <bool> press-held: false;
-    in property <int> activate-pulse: 0;
-    in property <int> release-pulse: 0;
-    in property <bool> settling: false;
     in property <bool> compact-padding: false;
     in property <bool> show-caption: false;
     in property <length> card-radius: Layout.card-radius;
@@ -577,9 +544,6 @@ export component PagedGridView inherits Rectangle {
             section-focused: root.section-focused;
             focus-ready: root.focus-ready;
             held: i == root.held-local;
-            activate-pulse: root.activate-pulse;
-            release-pulse: root.release-pulse;
-            settling: root.settling;
             compact-padding: root.compact-padding;
             show-caption: root.show-caption;
             caption: root.caption-for(cell);
@@ -594,9 +558,6 @@ export component PagedGridView inherits Rectangle {
             section-focused: root.section-focused;
             focus-ready: root.focus-ready;
             held: i == root.held-local;
-            activate-pulse: root.activate-pulse;
-            release-pulse: root.release-pulse;
-            settling: root.settling;
             compact-padding: root.compact-padding;
             show-caption: root.show-caption;
             caption: root.caption-for(cell);

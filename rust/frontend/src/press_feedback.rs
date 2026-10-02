@@ -297,6 +297,11 @@ pub fn holding() -> bool {
     HOLDING.with(Cell::get)
 }
 
+#[cfg(all(test, feature = "mister"))]
+pub(crate) fn held_ticket() -> Option<Hold> {
+    holding().then(|| Hold(TICKET.with(Cell::get)))
+}
+
 pub fn cancel(app: &App) {
     TICKET.with(|ticket| ticket.set(ticket.get().wrapping_add(1)));
     HOLDING.with(|holding| holding.set(false));

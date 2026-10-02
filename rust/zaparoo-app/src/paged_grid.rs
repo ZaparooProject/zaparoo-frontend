@@ -113,6 +113,39 @@ pub struct LoadMore {
     pub urgent: bool,
 }
 
+/// A page turn follows navigation intent, including across the wrap boundary.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PageDirection {
+    Previous,
+    Next,
+}
+
+impl PageDirection {
+    fn from_delta(delta: i32) -> Self {
+        if delta < 0 {
+            Self::Previous
+        } else {
+            Self::Next
+        }
+    }
+
+    /// Signed page offset for a transition's incoming surface.
+    pub fn offset(self) -> i32 {
+        match self {
+            Self::Previous => -1,
+            Self::Next => 1,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PendingPage {
+    page: usize,
+    row: usize,
+    column: usize,
+    direction: PageDirection,
+}
+
 /// Selection and paging state over a flat model.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[allow(
@@ -141,8 +174,9 @@ pub struct Grid {
     pub load_ahead_pages: usize,
     /// Blank cells are unreachable (see the module comment).
     pub skip_empty_cells: bool,
-    pending_page: Option<(usize, usize, usize)>,
+    pending_page: Option<PendingPage>,
     pending_index: Option<usize>,
+    page_direction: PageDirection,
     previous_item_count: usize,
     requests: Vec<LoadMore>,
 }
@@ -163,6 +197,7 @@ impl Grid {
             skip_empty_cells: false,
             pending_page: None,
             pending_index: None,
+            page_direction: PageDirection::Next,
             previous_item_count: 0,
             requests: Vec::new(),
         }
@@ -214,6 +249,12 @@ impl Grid {
         self.current_index / self.page_size()
     }
 
+    /// Direction of the last committed page turn. Deferred turns retain their
+    /// own direction until their destination loads, rather than using a later key.
+    pub fn page_direction(&self) -> PageDirection {
+        self.page_direction
+    }
+
     pub fn current_column(&self) -> usize {
         (self.current_index % self.page_size()) % self.columns
     }
@@ -254,6 +295,7 @@ impl Grid {
     #[cfg(test)]
     fn pending_page(&self) -> Option<(usize, usize, usize)> {
         self.pending_page
+            .map(|target| (target.page, target.row, target.column))
     }
 
     /// Fetch requests raised since the last drain, oldest first.
@@ -270,7 +312,30 @@ impl Grid {
         self.pending_index = None;
     }
 
+    fn queue_page(&mut self, page: usize, row: usize, direction: PageDirection) {
+        self.pending_index = None;
+        self.pending_page = Some(PendingPage {
+            page,
+            row,
+            column: self.current_column(),
+            direction,
+        });
+        self.request_load(true);
+    }
+
     pub fn set_current_index_immediate(&mut self, index: usize) {
+        let direction = if index < self.current_index {
+            PageDirection::Previous
+        } else {
+            PageDirection::Next
+        };
+        self.commit_index(index, direction);
+    }
+
+    fn commit_index(&mut self, index: usize, direction: PageDirection) {
+        if index / self.page_size() != self.current_page() {
+            self.page_direction = direction;
+        }
         self.current_index = index;
     }
 
@@ -354,6 +419,7 @@ impl Grid {
             return self.page_by_step(delta);
         }
         let start = self.current_index;
+        let direction = self.page_direction;
         for _ in 0..self.page_count() {
             if !self.page_by_step(delta) {
                 break;
@@ -368,6 +434,7 @@ impl Grid {
             }
         }
         self.current_index = start;
+        self.page_direction = direction;
         false
     }
 
@@ -393,9 +460,11 @@ impl Grid {
             return false;
         }
         if target_page > self.page_count() - 1 {
-            self.pending_index = None;
-            self.pending_page = Some((target_page, self.current_row(), self.current_column()));
-            self.request_load(true);
+            self.queue_page(
+                target_page,
+                self.current_row(),
+                PageDirection::from_delta(delta),
+            );
             return false;
         }
         self.clear_pending_target();
@@ -410,7 +479,7 @@ impl Grid {
         if new_index == self.current_index {
             return false;
         }
-        self.current_index = new_index;
+        self.commit_index(new_index, PageDirection::from_delta(delta));
         if self.near_loaded_edge() {
             self.request_load(false);
         }
@@ -426,7 +495,7 @@ impl Grid {
         let target = target.min(self.total_items() - 1);
         if target < self.item_count {
             self.clear_pending_target();
-            self.current_index = target;
+            self.set_current_index_immediate(target);
             if self.near_loaded_edge() {
                 self.request_load(false);
             }
@@ -444,7 +513,7 @@ impl Grid {
         if let Some(want) = self.pending_index {
             if want < self.item_count {
                 self.clear_pending_target();
-                self.current_index = want;
+                self.set_current_index_immediate(want);
                 return;
             }
             if self.has_more_pages {
@@ -455,11 +524,17 @@ impl Grid {
             }
             self.clear_pending_target();
             if self.item_count > 0 {
-                self.current_index = want.min(self.item_count - 1);
+                self.set_current_index_immediate(want.min(self.item_count - 1));
             }
             return;
         }
-        let Some((page, row, col)) = self.pending_page else {
+        let Some(PendingPage {
+            page,
+            row,
+            column: col,
+            direction,
+        }) = self.pending_page
+        else {
             return;
         };
         let total_last = self.total_page_count() - 1;
@@ -482,16 +557,16 @@ impl Grid {
             let page_start = target_page * self.page_size();
             let last_loaded_on_page = ((target_page + 1) * self.page_size()).min(self.item_count);
             if last_loaded_on_page > page_start {
-                self.current_index = last_loaded_on_page - 1;
+                self.commit_index(last_loaded_on_page - 1, direction);
                 return;
             }
             if self.item_count > 0 {
-                self.current_index = self.item_count - 1;
+                self.commit_index(self.item_count - 1, direction);
             }
             return;
         }
         self.pending_page = None;
-        self.current_index = target_idx;
+        self.commit_index(target_idx, direction);
     }
 
     /// Step the selection by (`d_col`, `d_row`). Cardinal moves only.
@@ -504,7 +579,7 @@ impl Grid {
                 return false;
             };
             self.clear_pending_target();
-            self.current_index = candidate;
+            self.commit_index(candidate, PageDirection::from_delta(d_row));
             return true;
         }
         let start = self.current_index;
@@ -608,9 +683,7 @@ impl Grid {
                     self.current_page() - 1
                 };
                 if target_page > self.page_count() - 1 {
-                    self.pending_index = None;
-                    self.pending_page = Some((target_page, self.rows - 1, self.current_column()));
-                    self.request_load(true);
+                    self.queue_page(target_page, self.rows - 1, PageDirection::Previous);
                     return false;
                 }
                 new_page = target_page;
@@ -630,9 +703,7 @@ impl Grid {
                     self.current_page() + 1
                 };
                 if target_page > self.page_count() - 1 {
-                    self.pending_index = None;
-                    self.pending_page = Some((target_page, 0, self.current_column()));
-                    self.request_load(true);
+                    self.queue_page(target_page, 0, PageDirection::Next);
                     return false;
                 }
                 new_page = target_page;
@@ -657,7 +728,7 @@ impl Grid {
             return false;
         }
         self.clear_pending_target();
-        self.current_index = new_index;
+        self.commit_index(new_index, PageDirection::from_delta(d_row));
         if self.near_loaded_edge() {
             self.request_load(false);
         }
@@ -693,6 +764,113 @@ mod tests {
         assert_eq!(g.total_page_count(), total.div_ceil(12));
         g.take_load_requests();
         g
+    }
+
+    #[test]
+    fn page_turns_keep_requested_direction_on_full_partial_and_two_page_wraps() {
+        for count in [13, 24, 25, 36] {
+            for skip_empty in [false, true] {
+                for delta in [-1, 1] {
+                    for by_page in [false, true] {
+                        let mut g = grid(count);
+                        g.skip_empty_cells = skip_empty;
+                        g.set_current_index_immediate(if delta < 0 { 0 } else { count - 1 });
+                        let moved = if by_page {
+                            g.page_by(delta)
+                        } else {
+                            g.move_selection(0, delta)
+                        };
+                        assert!(moved);
+                        assert_eq!(
+                            g.current_page(),
+                            if delta < 0 {
+                                g.total_page_count() - 1
+                            } else {
+                                0
+                            }
+                        );
+                        assert_eq!(
+                            g.page_direction().offset(),
+                            delta,
+                            "count={count} skip={skip_empty} page={by_page}"
+                        );
+                    }
+                }
+            }
+        }
+        let mut g = grid(12);
+        assert!(!g.page_by(1), "single-page grids do not turn");
+    }
+
+    #[test]
+    fn deferred_wrap_keeps_its_direction_through_partial_and_short_terminal_results() {
+        for by_page in [false, true] {
+            let mut g = partial(12, 36);
+            assert!(!if by_page {
+                g.page_by(-1)
+            } else {
+                g.move_selection(0, -1)
+            });
+            append(&mut g, 24);
+            assert_eq!(g.current_page(), 0);
+            assert!(g.has_pending_target());
+            append(&mut g, 25);
+            assert_eq!(
+                g.current_page(),
+                0,
+                "partial destination waits for completion"
+            );
+            g.set_has_more_pages(false);
+            assert_eq!(g.current_index(), 24);
+            assert_eq!(g.page_direction(), PageDirection::Previous);
+        }
+    }
+
+    #[test]
+    fn ignored_input_cannot_reverse_a_pending_turn_and_cancellation_drops_it() {
+        let mut g = partial(12, 36);
+        g.pagination_total_known = false;
+        assert!(!g.page_by(1));
+        assert!(
+            !g.move_selection(0, -1),
+            "unknown-total first page cannot wrap backward"
+        );
+        append(&mut g, 24);
+        assert_eq!(g.current_page(), 1);
+        assert_eq!(g.page_direction(), PageDirection::Next);
+
+        let mut g = partial(12, 36);
+        assert!(!g.page_by(-1));
+        assert!(g.move_selection(1, 0));
+        assert!(!g.has_pending_target());
+        append(&mut g, 36);
+        assert_eq!(g.current_index(), 1, "canceled wrap must not land late");
+        assert!(g.page_by(1));
+        assert_eq!(g.page_direction(), PageDirection::Next);
+    }
+
+    #[test]
+    fn absolute_jumps_and_sparse_pages_publish_their_own_direction() {
+        let mut g = partial(12, 36);
+        assert!(!g.page_by(-1));
+        assert!(!g.jump_to_index(24));
+        append(&mut g, 36);
+        assert_eq!(g.current_index(), 24);
+        assert_eq!(
+            g.page_direction(),
+            PageDirection::Next,
+            "absolute jump replaces wrapped intent"
+        );
+        assert!(g.jump_to_index(0));
+        assert_eq!(g.page_direction(), PageDirection::Previous);
+
+        let mut g = grid(36);
+        g.skip_empty_cells = true;
+        g.set_empty_flags((0..36).map(|i| i != 0 && i != 24).collect());
+        for delta in [1, 1, -1, -1] {
+            assert!(g.page_by(delta));
+            assert_eq!(g.page_direction().offset(), delta);
+        }
     }
 
     // -- geometry --

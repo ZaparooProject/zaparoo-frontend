@@ -1474,13 +1474,14 @@ there's only **one** page or item total, both chevrons hide entirely
 (`has-navigation-range`, the same gate the "N / M" text already used) rather
 than painting two permanently-dim arrows that will never do anything,
 dimming is for "this direction specifically has nothing," not for "nothing
-here scrolls at all." It sits alongside `TopStatusStrip`'s title,
-baseline-aligned to it (`TopStatusStrip`'s `page-indicator-mode`), on every
-theme except CRT, CRT hides that strip entirely
-(`Layout.top-strip-visible: false`) and keeps the same cue in the host screen's
-**footer** instead, alongside `ActiveLabel` (`Layout.page-cue-in-footer`,
-resolved by `zaparoo_app::layouts`, is the profile flag both placements key
-off). Wherever it lives, the badge and
+here scrolls at all." Full-screen non-CRT cues share the **bottom-right footer**
+through `FooterIndicator` and `layouts::navigation_footer`: Hub, browse grids
+and detailed lists, Settings detail pages, and About/License. Grids show page
+position, lists and Settings show item position, and About shows scroll
+percentage. Browse totals stay top-left and titles stay in the top strip;
+loading status is independent of the position cue. CRT retains its calibrated
+footer and in-card About cues. Modal cues remain inside their panels, and the
+fast-scroll rail remains on the right. Wherever it lives, the badge and
 `PageIndicator` are unconditionally reserved, only the count text's and
 each chevron pair's presence, and each chevron's own colour, toggle, so a
 single-page grid becoming multi-page (arming Hub Options → Move always
@@ -1492,14 +1493,14 @@ they hid one arrow per direction and painted the other dim in *both* states.
 Every one of them now goes through `ScrollCue`; see "Spent cues" above,
 which is where the dim/hide rule and the colour now live.
 
-Two placements exist because putting the cue at the top, next to a title
-that's already there, was tried first (pre-round-5) and reads better once a
-footer that's ALSO carrying the focused item's own title has room to spare,
-`ActiveLabel`'s `side-inset` reverts to its own default (`Sizing.pct-w(3)`)
-instead of a corner-slot reservation whenever the footer isn't hosting the
-count/page slots, roughly doubling the room a long focused title gets before
-eliding. CRT's footer is the one place that still needs the full three-slot
-arrangement, since CRT has nowhere else to put it. `PageIndicator` in
+The cue sits above the help bar, inside the output's safe area. Grid shapes
+stay unchanged. Non-CRT list, Settings, and About cards reserve that same
+footer band; Rust viewport calculations use the matching bottom reservation.
+Focused labels reserve the cue's measured width even on a single-page screen,
+so long names cannot collide with large page counts. CRT retains its three-slot
+count/name/position arrangement. Geometry is resolved per output, not from the
+platform: HDMI and CRT in a dual-head session use different placements.
+`PageIndicator` in
 `chrome.slint` places each chevron and the text at a fixed x off the element
 before it rather than in a layout, so hiding the chevrons never shifts the
 "N / M" text, and its `chevron-spacing` is a tighter gap between the two
@@ -1508,8 +1509,8 @@ Gestalt proximity: the chevrons are one control, the text is a separate
 readout, and the glyphs' own baked-in side bearing already makes an *equal*
 gap read backwards. Detailed `BrowseList` layouts use this same cue for
 single-item movement and omit the separate left-side total. The Settings card
-uses it too, in item mode in the page's own `TopStatusStrip`, so the cue costs
-the card no room.
+uses it too, in item mode below its card. Pointer cues call Rust drivers;
+Slint does not change screen selection or persisted scroll state itself.
 
 ### Empty slots
 

@@ -10,7 +10,7 @@
 import { Theme, Sizing, Motion, Layout } from "theme.slint";
 import { Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, PressOwner, StatusKind, Orientation, VideoStandard, StateTokens, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogProgress, DialogButton, FirstRunPhase, ErrorKind } from "state_types.slint";
 export { Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, PressOwner, StatusKind, Orientation, VideoStandard, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogProgress, DialogButton, FirstRunPhase, ErrorKind }
-import { GlyphSource, Brand, Buttons, HelpEntry, Status, HeaderBar, StatusLine, ProgressTrack, TopStatusStrip, PageIndicator, ActiveLabel, HelpBar, SectionHeader, Divider, ScrollCue, ModalShell, QrPlate, StateCue } from "chrome.slint";
+import { GlyphSource, Brand, Buttons, HelpEntry, Status, HeaderBar, StatusLine, ProgressTrack, TopStatusStrip, FooterIndicator, ActiveLabel, HelpBar, SectionHeader, Divider, ScrollCue, ModalShell, QrPlate, StateCue } from "chrome.slint";
 import { GridCell, MarqueeCaption, PressableSurface, Tile, PagedGridView } from "tiles.slint";
 import { ScrollOffset, SelectionCursor, SelectionClip } from "focus.slint";
 import { PressFeedback } from "press_feedback.slint";
@@ -166,8 +166,6 @@ export global HubView {
     in-out property <[int]> move-origins: [];
     in-out property <int> move-pulse: 0;
     in-out property <bool> options-available: false;
-    in-out property <int> activate-pulse: 0;
-    in-out property <int> release-pulse: 0;
 }
 
 // Pointer and page-cue events from the Hub, handled by the Rust router.
@@ -339,6 +337,7 @@ export global SettingsInput {
     callback cell-clicked(int);
     callback row-hovered(int);
     callback row-clicked(int);
+    callback page-requested(int);
 }
 
 export global GamesView {
@@ -604,10 +603,8 @@ component SettingsScreen inherits Rectangle {
     property <length> rows-height: root.outgoing ? SettingsView.outgoing-rows-height : SettingsView.rows-height;
     property <length> rows-clip-height: root.outgoing ? SettingsView.outgoing-rows-clip-height : SettingsView.rows-clip-height;
     property <length> scroll: root.outgoing ? SettingsView.outgoing-scroll : SettingsView.scroll;
-    // The card's rows scroll and clip, so the page needs a scroll cue. It
-    // goes in the strip the page already carries, the same slot and the
-    // same component the browse lists use, so it costs the card no room
-    // rather than taking chevrons of its own.
+    // Non-CRT detail pages reserve the shared navigation footer below the
+    // card. CRT retains its existing card and help-bar clearance.
     property <length> rows-content-h: root.rows.length > 0
         ? root.rows[root.rows.length - 1].y-offset + root.rows[root.rows.length - 1].height
         : 0px;
@@ -619,14 +616,16 @@ component SettingsScreen inherits Rectangle {
         slot-margin: Layout.slot-margin;
         title: SettingsLabels.page-title(root.page);
         show-page-counter: false;
-        page-indicator-mode: !root.root-grid;
+        visible: Layout.top-strip-visible;
+    }
+
+    if !root.root-grid && !Sizing.crt: FooterIndicator {
         item-position-mode: true;
         current-item: SettingsView.field-index;
         total-items: SettingsView.field-count;
-        has-pages-above: !root.root-grid && root.scroll > 0px;
-        has-pages-below: !root.root-grid
-            && root.scroll + root.rows-clip-height < root.rows-content-h;
-        visible: Layout.top-strip-visible;
+        has-pages-above: root.scroll > 0px;
+        has-pages-below: root.scroll + root.rows-clip-height < root.rows-content-h;
+        page-requested(delta) => { SettingsInput.page-requested(delta); }
     }
 
     // Root: the category tiles, on the shared grid.
@@ -649,9 +648,6 @@ component SettingsScreen inherits Rectangle {
         selected-local: root.index;
         section-focused: !Overlays.list-open;
         focus-ready: true;
-        activate-pulse: SettingsView.activate-pulse;
-        release-pulse: SettingsView.release-pulse;
-        settling: Shell.active-screen != Screen.settings;
         card-radius: Layout.card-radius;
         cell-hovered(i) => { SettingsInput.cell-hovered(i); }
         cell-clicked(i) => { SettingsInput.cell-clicked(i); }
@@ -674,7 +670,8 @@ component SettingsScreen inherits Rectangle {
     property <length> card-x: (self.width - self.card-w) / 2;
     property <length> card-y: Sizing.header-bottom + Layout.top-margin + Layout.strip-height + Sizing.pct-h(4);
     property <length> card-w: Math.min(self.width - 2 * Sizing.pct-w(3), Sizing.pct-w(70));
-    property <length> card-h: self.height - self.card-y - Sizing.help-bar-height - Sizing.pct-h(4);
+    property <length> card-h: self.height - self.card-y - (Sizing.crt
+        ? Sizing.help-bar-height + Sizing.pct-h(4) : Layout.navigation-content-bottom);
     // One lip on all four sides, and the same value again either side of
     // the hint rule; see docs/style.md, "Surface containment".
     // `zaparoo_app::settings::rows_viewport_for` subtracts the identical
@@ -863,9 +860,6 @@ component HubScreen inherits Rectangle {
         held-local: HubView.held-local;
         move-origins: HubView.move-origins;
         move-pulse: HubView.move-pulse;
-        activate-pulse: HubView.activate-pulse;
-        release-pulse: HubView.release-pulse;
-        settling: Shell.active-screen != Screen.hub;
         compact-padding: true;
         card-radius: Sizing.radius-md;
         skip-empty-cells: !HubView.move-armed;
@@ -885,19 +879,15 @@ component HubScreen inherits Rectangle {
         x: 0;
         y: HubView.label-y;
         height: HubView.label-height;
-        side-inset: indicator.width + Sizing.hub-grid-side-inset;
+        side-inset: indicator.width + (Sizing.crt ? Sizing.hub-grid-side-inset : Layout.navigation-cue-right-margin);
         text: Labels.hub(HubView.label-key, HubView.label-name);
         tags: Labels.hub-reason(HubView.label-reason);
         visible: !root.gated && HubView.label-visible;
     }
 
-    indicator := PageIndicator {
-        x: parent.width - Sizing.hub-grid-side-inset - self.width;
-        y: label.y + (label.height - self.height) / 2;
-        // The same size the browse grids use. Omitting it left the Hub on
-        // the component default, so at 240p its chevrons and the Games
-        // footer's were different sizes in the same screen position.
-        chevron-size: Layout.grid-page-chevron-size;
+    indicator := FooterIndicator {
+        crt-right-margin: Sizing.hub-grid-side-inset;
+        crt-y: label.y + (label.height - self.height) / 2;
         current-page: HubView.page;
         total-pages: HubView.total-pages;
         has-pages-above: HubView.has-pages-above;
@@ -953,8 +943,8 @@ component SystemsScreen inherits Rectangle {
         title: root.title;
         current-page: root.list-layout ? SystemsView.list-page : SystemsView.page;
         total-pages: root.list-layout ? SystemsView.list-total-pages : SystemsView.total-pages;
-        total-text: !root.list-layout && root.show-grid-page-cue ? root.count-text : "";
-        show-page-counter: root.list-layout || root.show-grid-page-cue;
+        total-text: !root.list-layout ? root.count-text : "";
+        show-page-counter: root.show-top-page-cue;
         page-indicator-mode: root.show-top-page-cue;
         item-position-mode: root.list-layout;
         current-item: SystemsView.current-index;
@@ -1001,9 +991,6 @@ component SystemsScreen inherits Rectangle {
                 ring-suppressed: Overlays.context-open;
                 focus-ready: SystemsView.focus-ready;
                 press-held: PressFeedback.active(PressOwner.systems, SystemsView.selected-local);
-                activate-pulse: SystemsView.activate-pulse;
-                release-pulse: SystemsView.release-pulse;
-                settling: Shell.active-screen != SystemsView.screen;
                 card-radius: Layout.card-radius;
                 caption-for(cell) => { return cell.name; }
                 cell-hovered(i) => { SystemsInput.cell-hovered(i); }
@@ -1067,7 +1054,7 @@ component SystemsScreen inherits Rectangle {
     }
 
     // Footer: the focused system's name, with the count and page cue
-    // in the corners only where the profile keeps them there (CRT).
+    // in the corners on CRT. Digital counts remain in the top strip.
     property <length> label-y: root.height - (Sizing.tier-240 ? Sizing.help-bar-height : Layout.active-label-bottom-margin) - Layout.active-label-height;
     property <length> footer-left-inset: Math.ceil(footer-count-measure.preferred-width / 1px) * 1px + Layout.bottom-status-left-margin;
     property <length> footer-right-inset: footer-indicator.width + Layout.bottom-status-right-margin;
@@ -1082,7 +1069,7 @@ component SystemsScreen inherits Rectangle {
         x: 0;
         y: root.label-y;
         height: Layout.active-label-height;
-        side-inset: root.page-cue-in-footer ? Math.max(root.footer-left-inset, root.footer-right-inset) : Sizing.pct-w(3);
+        side-inset: Layout.top-strip-visible ? root.footer-right-inset : Math.max(root.footer-left-inset, root.footer-right-inset);
         text: SystemsView.label-name;
         tags: root.favorites
             ? (SystemsView.label-count >= 0 ? Labels.favorites(SystemsView.label-count) : "")
@@ -1090,7 +1077,7 @@ component SystemsScreen inherits Rectangle {
         visible: !root.gate-hide;
     }
 
-    if !root.list-layout && root.page-cue-in-footer && root.count-text != "": Text {
+    if !root.list-layout && !Layout.top-strip-visible && root.page-cue-in-footer && root.count-text != "": Text {
         x: Layout.bottom-status-left-margin;
         y: root.label-y + (Layout.active-label-height - self.height) / 2;
         width: root.footer-left-inset - Layout.bottom-status-left-margin;
@@ -1103,10 +1090,9 @@ component SystemsScreen inherits Rectangle {
         visible: !root.gate-hide;
     }
 
-    footer-indicator := PageIndicator {
-        x: parent.width - Layout.bottom-status-right-margin - self.width;
-        y: root.label-y + (Layout.active-label-height - self.height) / 2;
-        chevron-size: Layout.grid-page-chevron-size;
+    footer-indicator := FooterIndicator {
+        crt-right-margin: Layout.bottom-status-right-margin;
+        crt-y: root.label-y + (Layout.active-label-height - self.height) / 2;
         current-page: root.list-layout ? SystemsView.list-page : SystemsView.page;
         total-pages: root.list-layout ? SystemsView.list-total-pages : SystemsView.total-pages;
         item-position-mode: root.list-layout;
@@ -2190,9 +2176,9 @@ component GamesScreen inherits Rectangle {
         current-page: root.list-layout ? GamesView.list-page : GamesView.page;
         total-pages: root.list-layout ? GamesView.list-total-pages : GamesView.total-pages;
         page-total-known: GamesView.total-known;
-        total-text: root.show-grid-page-cue ? root.count-text : "";
+        total-text: !root.list-layout ? root.count-text : "";
         right-text-override: root.right-text;
-        show-page-counter: root.list-layout || root.show-grid-page-cue;
+        show-page-counter: root.show-top-page-cue || root.right-text != "";
         page-indicator-mode: root.show-top-page-cue && root.right-text == "";
         item-position-mode: root.list-layout;
         current-item: GamesView.current-index;
@@ -2240,9 +2226,6 @@ component GamesScreen inherits Rectangle {
                 ring-suppressed: Overlays.context-open;
                 focus-ready: GamesView.focus-ready;
                 press-held: PressFeedback.active(PressOwner.games, GamesView.selected-local);
-                activate-pulse: GamesView.activate-pulse;
-                release-pulse: GamesView.release-pulse;
-                settling: Shell.active-screen != GamesView.screen;
                 show-caption: true;
                 card-radius: Layout.card-radius;
                 caption-for(cell) => { return cell.name; }
@@ -2312,8 +2295,8 @@ component GamesScreen inherits Rectangle {
     }
 
     // Footer: the focused row's name with the dim suffix, the count and
-    // the page cue in the corners only where the profile keeps them
-    // there (CRT). A page fetch the user is waiting on replaces the name.
+    // the bottom-right page cue. CRT also keeps its count in the footer.
+    // A page fetch the user is waiting on replaces the name.
     property <length> label-y: GamesView.label-y;
     property <length> footer-left-inset: Math.ceil(footer-count-measure.preferred-width / 1px) * 1px + Layout.bottom-status-left-margin;
     property <length> footer-right-inset: footer-indicator.width + Layout.bottom-status-right-margin;
@@ -2328,7 +2311,7 @@ component GamesScreen inherits Rectangle {
         x: 0;
         y: root.label-y;
         height: GamesView.label-height;
-        side-inset: root.page-cue-in-footer ? Math.max(root.footer-left-inset, root.footer-right-inset) : Sizing.pct-w(3);
+        side-inset: Layout.top-strip-visible ? root.footer-right-inset : Math.max(root.footer-left-inset, root.footer-right-inset);
         text: GamesView.label-name;
         tags: GamesView.label-tags;
         visible: !root.gate-hide;
@@ -2358,7 +2341,7 @@ component GamesScreen inherits Rectangle {
         }
     }
 
-    if !root.list-layout && root.page-cue-in-footer && root.count-text != "": Text {
+    if !root.list-layout && !Layout.top-strip-visible && root.page-cue-in-footer && root.count-text != "": Text {
         x: Layout.bottom-status-left-margin;
         y: root.label-y + (GamesView.label-height - self.height) / 2;
         width: root.footer-left-inset - Layout.bottom-status-left-margin;
@@ -2371,10 +2354,9 @@ component GamesScreen inherits Rectangle {
         visible: !root.gate-hide;
     }
 
-    footer-indicator := PageIndicator {
-        x: parent.width - Layout.bottom-status-right-margin - self.width;
-        y: root.label-y + (GamesView.label-height - self.height) / 2;
-        chevron-size: Layout.grid-page-chevron-size;
+    footer-indicator := FooterIndicator {
+        crt-right-margin: Layout.bottom-status-right-margin;
+        crt-y: root.label-y + (GamesView.label-height - self.height) / 2;
         current-page: root.list-layout ? GamesView.list-page : GamesView.page;
         total-pages: root.list-layout ? GamesView.list-total-pages : GamesView.total-pages;
         item-position-mode: root.list-layout;

@@ -59,8 +59,6 @@ pub struct HubModel {
     pub resume: Resume,
     pub categories_loaded: bool,
     pub internet_available: bool,
-    pub activate_pulse: i32,
-    pub release_pulse: i32,
     /// Layout position the open Options menu targets.
     pub menu_hub_index: i32,
     pub menu_kind: Option<Kind>,
@@ -86,8 +84,6 @@ impl HubModel {
             resume: Resume::default(),
             categories_loaded: false,
             internet_available: false,
-            activate_pulse: 0,
-            release_pulse: 0,
             menu_hub_index: -1,
             menu_kind: None,
         }
@@ -272,15 +268,7 @@ pub fn rebuild(ctx: &Ctx, app: &App) {
     render(ctx, app);
 }
 
-fn logo_image(px: &crate::system_logos::LogoPixels) -> slint::Image {
-    slint::Image::from_rgba8(
-        slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(
-            &px.rgba, px.width, px.height,
-        ),
-    )
-}
-
-fn cell_for(ctx: &Ctx, entry: &Entry) -> GridCell {
+fn cell_for(ctx: &Ctx, entry: &Entry, bounds: zaparoo_app::logo_cache::Bounds) -> GridCell {
     let mut cell = GridCell {
         label_key: SharedString::from(entry.label_key.as_str()),
         name: SharedString::from(entry.name.as_str()),
@@ -303,13 +291,14 @@ fn cell_for(ctx: &Ctx, entry: &Entry) -> GridCell {
     }
     if let Some(id) = key.strip_prefix("systems/") {
         cell.wordmark = true;
-        if let Some(rest) = crate::system_logos::tinted_logo_for(id, false) {
-            cell.cover = logo_image(&rest);
+        if let Some(pair) = ctx
+            .logos
+            .key(id, id, false, bounds)
+            .and_then(|key| ctx.logos.get(&key))
+        {
+            (cell.cover, cell.cover_focus) = pair.images();
             cell.has_cover = true;
-            if let Some(focus) = crate::system_logos::tinted_logo_for(id, true) {
-                cell.cover_focus = logo_image(&focus);
-                cell.has_cover_focus = true;
-            }
+            cell.has_cover_focus = true;
         }
     } else if let Some(rest) = key.strip_prefix(MEDIA_PREFIX) {
         if let Some((system, path)) = rest.split_once('\u{1f}') {
@@ -371,6 +360,31 @@ fn geometry_for(ctx: &Ctx, app: &App) -> rules::Geometry {
     geometry
 }
 
+fn request_logos(ctx: &Ctx, hub: &HubModel, bounds: zaparoo_app::logo_cache::Bounds) {
+    let page_size = hub.grid.page_size();
+    let start = hub.grid.current_page() * page_size;
+    let key = |entry: &Entry| {
+        entry
+            .cover_key
+            .strip_prefix("systems/")
+            .and_then(|id| ctx.logos.key(id, id, false, bounds))
+    };
+    let visible = hub
+        .entries
+        .iter()
+        .skip(start)
+        .take(page_size)
+        .filter_map(key);
+    let neighbors = [
+        start.saturating_add(page_size),
+        start.saturating_sub(page_size),
+    ]
+    .into_iter()
+    .flat_map(|first| hub.entries.iter().skip(first).take(page_size))
+    .filter_map(key);
+    ctx.logos.request_window(visible, neighbors);
+}
+
 /// Push the current page, the cursor, the caption and the geometry.
 pub fn render(ctx: &Ctx, app: &App) {
     let geometry = geometry_for(ctx, app);
@@ -380,12 +394,21 @@ pub fn render(ctx: &Ctx, app: &App) {
     let page_size = hub.grid.page_size();
     let page = hub.grid.current_page();
     let start = page * page_size;
+    let bounds = zaparoo_app::logo_cache::Bounds::new(
+        geometry.fit.cell_width.max(1) as u32,
+        geometry.fit.cell_height.max(1) as u32,
+    );
+    if app.global::<crate::Shell>().get_active_screen() == crate::Screen::Hub {
+        request_logos(ctx, hub, bounds);
+    } else {
+        crate::system_logos::defer_refresh(ctx, app);
+    }
     let cells: Vec<GridCell> = hub
         .entries
         .iter()
         .skip(start)
         .take(page_size)
-        .map(|entry| cell_for(ctx, entry))
+        .map(|entry| cell_for(ctx, entry, bounds))
         .collect();
     if crate::perf::enabled() {
         let (mut covers, mut outstanding) = (0, 0);
@@ -422,8 +445,6 @@ pub fn render(ctx: &Ctx, app: &App) {
     } else {
         -1
     });
-    view.set_activate_pulse(hub.activate_pulse);
-    view.set_release_pulse(hub.release_pulse);
     view.set_loaded(hub.categories_loaded);
     view.set_catalog_empty(shared.all_categories.is_empty());
     view.set_indexing(app.global::<crate::Status>().get_kind() == crate::StatusKind::Indexing);
@@ -599,39 +620,12 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
 }
 
 fn activate_current(ctx: &Ctx, app: &App) {
-    let pulse = {
-        let mut shared = lock(&ctx.shared);
-        let hub = &mut shared.hub;
-        if hub.current().is_none_or(Entry::is_empty) {
-            return;
-        }
-        hub.activate_pulse += 1;
-        hub.activate_pulse
-    };
+    if lock(&ctx.shared).hub.current().is_none_or(Entry::is_empty) {
+        return;
+    }
     commit_current(ctx);
-    render(ctx, app);
-    let ctx2 = ctx.clone();
-    let weak = app.as_weak();
-    let duration = if app.global::<crate::Motion>().get_enabled() {
-        34
-    } else {
-        0
-    };
-    slint::Timer::single_shot(std::time::Duration::from_millis(duration), move || {
-        if lock(&ctx2.shared).hub.activate_pulse == pulse {
-            if let Some(app) = weak.upgrade() {
-                release_activate(&ctx2, &app);
-            }
-        }
-    });
     // The router has already held the accepting tile through its push.
     emit_activate(ctx, app);
-}
-
-/// Settle the push-in cue for accepts that keep the Hub on screen.
-fn release_activate(ctx: &Ctx, app: &App) {
-    lock(&ctx.shared).hub.release_pulse += 1;
-    render(ctx, app);
 }
 
 fn emit_activate(ctx: &Ctx, app: &App) {

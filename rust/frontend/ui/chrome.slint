@@ -673,6 +673,16 @@ export component PageIndicator inherits Rectangle {
     }
 }
 
+// Full-screen cue placement is shared across grids, lists and prose. CRT
+// hosts retain their calibrated placement; modals still own their own cues.
+export component FooterIndicator inherits PageIndicator {
+    in property <length> crt-y;
+    in property <length> crt-right-margin;
+    x: Sizing.screen-width - (Sizing.crt ? root.crt-right-margin : Layout.navigation-cue-right-margin) - self.width;
+    y: Sizing.crt ? root.crt-y : Layout.navigation-cue-y + (Layout.navigation-cue-height - self.height) / 2;
+    chevron-size: Layout.grid-page-chevron-size;
+}
+
 // Three-slot top strip shared by the browse screens: total-count badge
 // left, centered screen title, page position right. Each slot is capped
 // at a third of the width and elides. The side texts sit on the title's

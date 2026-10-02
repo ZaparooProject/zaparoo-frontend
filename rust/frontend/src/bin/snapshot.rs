@@ -1484,7 +1484,11 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
         + profile.status.top_margin
         + profile.status.strip_height
         + inputs.pct_h(4.0);
-    let card_bottom = derived.help_bar_height + inputs.pct_h(4.0);
+    let card_bottom = if inputs.crt_native_path {
+        derived.help_bar_height + inputs.pct_h(4.0)
+    } else {
+        layouts::navigation_footer(&inputs).content_bottom
+    };
     let card_h = (inputs.screen_height as i32 - card_y - card_bottom).max(0);
     let hint = 2 * (f64::from(derived.font_body) * 1.362).ceil() as i32;
     let viewport = (card_h - 2 * inputs.pct_h(2.0) - hint - inputs.pct_h(0.5)).max(0);
@@ -1502,6 +1506,14 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
         1
     };
     view.set_index(index);
+    let fields = |end: usize| {
+        rows.iter()
+            .take(end)
+            .filter(|row| row.kind == RowKind::Field)
+            .count() as i32
+    };
+    view.set_field_index(fields(index.max(0) as usize));
+    view.set_field_count(fields(rows.len()));
     // Same snap the driver applies, from the same rule, so the fixture
     // cannot quietly frame the band differently from the app.
     let spans: Vec<(f32, f32)> = rows.iter().map(|r| (r.y_offset, r.height)).collect();
@@ -1720,6 +1732,12 @@ fn fixture_games(
     view.set_list_view_top(0);
     view.set_list_visible(i32::try_from(list_visible).unwrap_or(10));
     view.set_list_row_height(list_row_height);
+    let paging = zaparoo_app::media_list::list_paging(2, 48, Some(48), !flat, list_visible, true);
+    view.set_current_index(2);
+    view.set_list_page(paging.current_page as i32);
+    view.set_list_total_pages(paging.total_pages as i32);
+    view.set_has_items_above(paging.has_items_above);
+    view.set_has_items_below(paging.has_items_below);
     view.set_detail_title("Example Game Title 3".into());
     view.set_detail_placeholder(snapshot_cover_color(3));
     view.set_detail_has_placeholder(true);
@@ -1831,6 +1849,7 @@ fn fixture_systems(app: &App, scene_w: f64, scene_h: f64, crt: bool, favorites: 
     view.set_list_rows(slint::ModelRc::new(slint::VecModel::from(list_rows)));
     view.set_list_sel(2);
     view.set_list_view_top(12);
+    view.set_list_scroll_top(12);
     view.set_list_visible(i32::try_from(visible).unwrap_or(10));
     view.set_list_row_height(row_height);
     view.set_current_index(14);

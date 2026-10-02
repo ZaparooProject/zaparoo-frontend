@@ -207,8 +207,6 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_move_origins => set_move_origins,
         get_move_pulse => set_move_pulse,
         get_options_available => set_options_available,
-        get_activate_pulse => set_activate_pulse,
-        get_release_pulse => set_release_pulse,
     );
     {
         let sizing = crt.global::<crate::Sizing>();

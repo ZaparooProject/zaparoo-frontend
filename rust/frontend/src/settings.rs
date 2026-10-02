@@ -328,7 +328,11 @@ fn rows_viewport_for(inputs: &zaparoo_app::sizing::Inputs) -> i32 {
         + profile.status.top_margin
         + profile.status.strip_height
         + inputs.pct_h(4.0);
-    let bottom = derived.help_bar_height + inputs.pct_h(4.0);
+    let bottom = if inputs.crt_native_path {
+        derived.help_bar_height + inputs.pct_h(4.0)
+    } else {
+        layouts::navigation_footer(inputs).content_bottom
+    };
     let card_h = (inputs.screen_height as i32 - card_y - bottom).max(0);
     // Descriptions are authored against the 240p card's line budget, so
     // only that tier needs two lines held open; every wider one fits them
@@ -840,7 +844,7 @@ fn apply(ctx: &Ctx, app: &App, id: &str, value: &str) {
             // ramps follow from the new palette.
             let palette = crate::theme::apply_palette(app, &scheme, &intensity);
             let (rest, focus) = crate::theme::logo_tints(&palette);
-            crate::system_logos::set_tints(rest, focus);
+            ctx.logos.set_tints(rest, focus);
             crate::systems::reproject(ctx, app);
             crate::router::reproject_hub(ctx, app);
         }
@@ -1002,6 +1006,25 @@ fn focus(ctx: &Ctx, app: &App, index: usize) -> bool {
 
 pub fn bind_input(ctx: &Arc<Ctx>, app: &App) {
     let input = app.global::<SettingsInput>();
+    let weak = app.as_weak();
+    let ctx_page = ctx.clone();
+    input.on_page_requested(move |delta| {
+        let Some(app) = weak.upgrade() else {
+            return;
+        };
+        if delta != 0 && app.global::<crate::Shell>().get_active_screen() == crate::Screen::Settings
+        {
+            crate::router::handle_action(
+                &ctx_page,
+                &app,
+                if delta < 0 {
+                    actions::UP
+                } else {
+                    actions::DOWN
+                },
+            );
+        }
+    });
     for (hover, accept) in [(true, false), (false, true)] {
         let ctx = ctx.clone();
         let weak = app.as_weak();
