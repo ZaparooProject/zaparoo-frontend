@@ -5975,14 +5975,20 @@ fn catalog_refresh_adds_systems_during_indexing_without_resetting_focus_or_menu_
         app.global::<HubView>().get_indexing(),
         "empty-library copy follows the job immediately"
     );
+    crate::router::lock(&ctx.shared)
+        .persist
+        .settings
+        .screensaver_timeout = "1".into();
+    crate::router::reset_idle(&ctx, &app);
+    advance(999);
+    assert!(!app.global::<Shell>().get_saver_armed());
     let overlays = app.global::<crate::Overlays>();
     overlays.set_context_open(true);
-    let idle_ticket = {
+    {
         let mut shared = crate::router::lock(&ctx.shared);
         shared.context_owner = crate::router::ContextOwner::Systems;
         shared.context_target = 0;
-        shared.saver_seq
-    };
+    }
     let update = ResourceStatus::Ready(CatalogData {
         systems: vec![nes.clone(), snes],
         categories: vec!["Console".into()],
@@ -5996,10 +6002,6 @@ fn catalog_refresh_adds_systems_during_indexing_without_resetting_focus_or_menu_
             Some("SNES")
         );
         assert_eq!(shared.systems_model.rows[shared.context_target].id, "SNES");
-        assert_eq!(
-            shared.saver_seq, idle_ticket,
-            "polling does not count as user activity"
-        );
     }
     assert!(overlays.get_context_open());
     assert!(
@@ -6009,7 +6011,11 @@ fn catalog_refresh_adds_systems_during_indexing_without_resetting_focus_or_menu_
     assert_eq!(app.global::<SystemsView>().get_cells().row_count(), 2);
     assert_eq!(app.global::<Shell>().get_active_screen(), Screen::Systems);
     crate::apply_catalog(&ctx, &app, &update);
-    assert_eq!(crate::router::lock(&ctx.shared).saver_seq, idle_ticket);
+    advance(1);
+    assert!(
+        app.global::<Shell>().get_saver_armed(),
+        "catalog polling must not postpone the idle deadline"
+    );
     // A disappearing target must not silently redirect its menu to another system.
     crate::apply_catalog(
         &ctx,
