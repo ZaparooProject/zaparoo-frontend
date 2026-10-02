@@ -477,6 +477,77 @@ fn list_artwork_requests_only_detail_neighbors_and_retires_old_focus() {
 }
 
 #[test]
+fn controller_report_seed_reaches_help_bar_before_event_loop() {
+    use zaparoo_core::controller_report::{self, ControllerGlyphs};
+
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let ctx = std::sync::Arc::new(ctx);
+    let report = ControllerGlyphs {
+        layout: "style_c",
+        accept_button: "FaceSouth",
+        cancel_button: "FaceEast",
+    };
+    controller_report::publish(Some(report.clone()));
+    let rx = controller_report::subscribe();
+
+    // Main can report the pad before the frontend starts. The idle runtime
+    // proves binding consumes that seed synchronously, without a later press.
+    crate::bind_controller_report(&ctx, &app);
+    let buttons = app.global::<crate::Buttons>();
+    assert_eq!(buttons.get_style(), "style_c");
+    assert_eq!(buttons.get_confirm(), "FaceSouth");
+    assert_eq!(buttons.get_cancel(), "FaceEast");
+
+    // Repeated presses rewrite Main's file but do not change its projection.
+    controller_report::publish(Some(report));
+    assert!(matches!(rx.has_changed(), Ok(false)));
+    assert_eq!(buttons.get_style(), "style_c");
+
+    // A manual style pins the artwork, not the controller's face positions.
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.persist.settings.button_layout = "style_b".into();
+        shared.persist.settings.swap_confirm_cancel = true;
+        shared.persist.settings.swap_options_view = true;
+    }
+    crate::apply_buttons(&ctx, &app);
+    assert_eq!(buttons.get_style(), "style_b");
+    assert_eq!(buttons.get_confirm(), "FaceEast");
+    assert_eq!(buttons.get_cancel(), "FaceSouth");
+    assert_eq!(buttons.get_options(), "FaceWest");
+    assert_eq!(buttons.get_view(), "FaceNorth");
+}
+
+#[test]
+fn keyboard_report_seed_keeps_fixed_bindings_despite_controller_swaps() {
+    use zaparoo_core::controller_report::{self, ControllerGlyphs};
+
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let ctx = std::sync::Arc::new(ctx);
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.persist.settings.swap_confirm_cancel = true;
+        shared.persist.settings.swap_options_view = true;
+    }
+    controller_report::publish(Some(ControllerGlyphs {
+        layout: "style_e",
+        accept_button: "FaceEast",
+        cancel_button: "FaceSouth",
+    }));
+    crate::bind_controller_report(&ctx, &app);
+    let buttons = app.global::<crate::Buttons>();
+    assert_eq!(buttons.get_style(), "style_e");
+    assert_eq!(buttons.get_confirm(), "FaceEast");
+    assert_eq!(buttons.get_cancel(), "FaceSouth");
+    assert_eq!(buttons.get_options(), "FaceNorth");
+    assert_eq!(buttons.get_view(), "FaceWest");
+}
+
+#[test]
 fn folder_setting_dispatches_host_once_until_completion() {
     use std::sync::{
         atomic::{AtomicUsize, Ordering},
