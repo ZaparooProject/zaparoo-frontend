@@ -11,6 +11,7 @@
 
 use crate::games::GameRow;
 use crate::media_cache::MediaCache;
+use crate::navigation::EntryMode;
 use crate::sizing;
 use crate::{App, Sizing};
 use slint::{ComponentHandle, Model, ModelRc, SharedString, VecModel};
@@ -142,9 +143,8 @@ pub struct Shared {
     /// `media.history.latest` answers (or when history is empty).
     /// The Hub: persisted layout, entries, cursor and Move session.
     pub hub: crate::hub::HubModel,
-    /// The Settings page and row last shown, so re-entering Settings in
-    /// the same process returns there. Memory only: a cold start opens
-    /// Settings at its root like before.
+    /// Settings page and row for Back and in-process restoration, not
+    /// fresh entry. Memory only: a cold start opens Settings at its root.
     pub settings_focus: Option<(crate::SettingsPage, usize)>,
 }
 
@@ -1127,8 +1127,17 @@ pub(crate) fn media_state(ctx: &Ctx) -> zaparoo_core::store::MediaStatusState {
 
 /// About screen: enter from Settings, Back returns there. The screen
 /// token persists so a kill on the About page restores to it.
-pub fn enter_about(ctx: &Ctx, app: &App) {
-    lock(&ctx.shared).persist.active_screen = "about".to_string();
+pub fn enter_about(ctx: &Ctx, app: &App, entry: EntryMode) {
+    let position = {
+        let mut shared = lock(&ctx.shared);
+        shared.persist.active_screen = "about".to_string();
+        if entry == EntryMode::Fresh {
+            shared.persist.about_scroll_milli = 0;
+        }
+        shared.persist.about_scroll_milli.min(1000)
+    };
+    app.global::<crate::AboutView>()
+        .set_scroll_milli(i32::try_from(position).unwrap_or(0));
     save_persist(&ctx.shared);
     transition_to_screen(app, crate::Screen::About, 1);
 }
@@ -1912,9 +1921,9 @@ fn favorites_grouping_picked(ctx: &Ctx, app: &App, id: &str) {
     }
     crate::settings::save(ctx, app);
     if id == "system" {
-        crate::systems::enter_favorites(ctx, app);
+        crate::systems::enter_favorites(ctx, app, EntryMode::Restore);
     } else {
-        crate::games::enter_favorites(ctx, app);
+        crate::games::enter_favorites(ctx, app, EntryMode::Restore);
     }
 }
 

@@ -178,32 +178,23 @@ fn profiles_match_the_fixture() {
 }
 
 #[test]
-fn digital_views_share_footer_band_without_spending_grid_space() {
+fn digital_header_cues_do_not_reserve_content_height_or_change_grid_space() {
     let mut checked = 0;
     for case in cases() {
         if case.theme != ThemeId::Default || case.current_theme != ThemeId::Default {
             continue;
         }
-        let cue = layouts::navigation_footer(&case.inputs);
-        let derived = zaparoo_app::sizing::derive(&case.inputs);
-        assert!(cue.top > derived.header_bottom);
-        assert!(cue.top + cue.height <= case.inputs.screen_height as i32 - derived.help_bar_height);
-        assert_eq!(
-            cue.top + cue.content_bottom,
-            case.inputs.screen_height as i32
-        );
         let profile = layouts::profile(case.theme, case.view, &case.inputs);
         match profile.body {
             Body::Grid { footer, .. } => {
-                assert!(footer.page_cue_in_footer);
-                assert_eq!(footer.grid_bottom_margin, cue.content_bottom);
+                assert!(!footer.page_cue_in_footer);
                 // Grid insets and shape remain pinned by the unchanged fixture keys.
                 assert_eq!(
                     footer.grid_bottom_margin.to_string(),
                     case.expected["footer.gridBottomMargin"]
                 );
             }
-            Body::List { list, .. } => assert_eq!(list.card_bottom_margin, cue.content_bottom),
+            Body::List { list, .. } => assert_eq!(list.card_bottom_margin, case.inputs.pct_h(8.0)),
         }
         checked += 1;
     }

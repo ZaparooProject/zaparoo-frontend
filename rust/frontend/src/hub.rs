@@ -16,6 +16,8 @@ use zaparoo_app::paged_grid::Grid;
 use zaparoo_core::hub_layout::{load_hub_layout, save_hub_layout, HubLayout};
 use zaparoo_core::media_types::MediaHistoryLatestEntry;
 
+use crate::navigation::EntryMode;
+
 use crate::media_cache::{MediaCache, MediaKey};
 use crate::router::{lock, Ctx, Shared};
 use crate::{App, GridCell, HubInput, HubView};
@@ -30,6 +32,8 @@ const CUSTOM_PREFIX: &str = "custom:";
 const LOADING_KEY: &str = "icons/Loading";
 /// Cover decode tier for Hub tiles: a fixed 256 px raster.
 const HUB_COVER_TIER: u32 = 256;
+const PAGE_SETTLE_MS: u64 = 260;
+const PAGE_REARM_MS: u64 = 50;
 
 /// What Core history says about the resumable game.
 #[derive(Debug, Clone, Default)]
@@ -65,6 +69,8 @@ pub struct HubModel {
     /// The layout was persisted since the last rebuild, so the
     /// cold-boot cover manifest needs rebuilding too.
     pub layout_dirty: bool,
+    pub sliding: bool,
+    page_seq: u64,
 }
 
 impl HubModel {
@@ -75,6 +81,8 @@ impl HubModel {
             grid: Grid::new(5, 2),
             entries: Vec::new(),
             layout_dirty: false,
+            sliding: false,
+            page_seq: 0,
             focus_armed: false,
             restore_done: false,
             move_snapshot: None,
@@ -192,6 +200,11 @@ fn media_key_cached(media: &MediaCache, key: &str) -> bool {
 
 /// Re-resolve the entries from the layout and the live state, then paint.
 pub fn rebuild(ctx: &Ctx, app: &App) {
+    resolve_entries(ctx, app);
+    render(ctx, app);
+}
+
+fn resolve_entries(ctx: &Ctx, app: &App) {
     // One refresh per layout change, not per mutation: every writer
     // goes through `save`, and every writer ends in a rebuild.
     if std::mem::take(&mut lock(&ctx.shared).hub.layout_dirty) {
@@ -265,7 +278,6 @@ pub fn rebuild(ctx: &Ctx, app: &App) {
         hub.grid.skip_empty_cells = !hub.move_armed();
         hub.entries = entries;
     }
-    render(ctx, app);
 }
 
 fn cell_for(ctx: &Ctx, entry: &Entry, bounds: zaparoo_app::logo_cache::Bounds) -> GridCell {
@@ -291,14 +303,14 @@ fn cell_for(ctx: &Ctx, entry: &Entry, bounds: zaparoo_app::logo_cache::Bounds) -
     }
     if let Some(id) = key.strip_prefix("systems/") {
         cell.wordmark = true;
-        if let Some(pair) = ctx
-            .logos
-            .key(id, id, false, bounds)
-            .and_then(|key| ctx.logos.get(&key))
-        {
-            (cell.cover, cell.cover_focus) = pair.images();
-            cell.has_cover = true;
-            cell.has_cover_focus = true;
+        if let Some(key) = ctx.logos.key(id, id, false, bounds) {
+            if let Some(pair) = ctx.logos.get(&key) {
+                (cell.cover, cell.cover_focus) = pair.images();
+                cell.has_cover = true;
+                cell.has_cover_focus = true;
+            } else {
+                cell.wordmark = ctx.logos.is_negative(&key);
+            }
         }
     } else if let Some(rest) = key.strip_prefix(MEDIA_PREFIX) {
         if let Some((system, path)) = rest.split_once('\u{1f}') {
@@ -385,10 +397,21 @@ fn request_logos(ctx: &Ctx, hub: &HubModel, bounds: zaparoo_app::logo_cache::Bou
     ctx.logos.request_window(visible, neighbors);
 }
 
+fn grid_geometry_changed(view: &HubView<'_>, geometry: &rules::Geometry) -> bool {
+    view.get_columns() != geometry.columns
+        || view.get_rows() != geometry.rows
+        || (view.get_grid_height() - geometry.grid_height as f32).abs() > f32::EPSILON
+        || (view.get_cell_width() - geometry.fit.cell_width as f32).abs() > f32::EPSILON
+}
+
 /// Push the current page, the cursor, the caption and the geometry.
 pub fn render(ctx: &Ctx, app: &App) {
     let geometry = geometry_for(ctx, app);
     let view = app.global::<HubView>();
+    if grid_geometry_changed(&view, &geometry) && lock(&ctx.shared).hub.sliding {
+        interrupt_page(ctx, app);
+        return;
+    }
     let shared = lock(&ctx.shared);
     let hub = &shared.hub;
     let page_size = hub.grid.page_size();
@@ -422,8 +445,20 @@ pub fn render(ctx: &Ctx, app: &App) {
         let settled = hub.categories_loaded && !hub.resume.loading;
         crate::perf::hub_rendered(settled, cells.len(), covers, outstanding);
     }
-    crate::view_model::publish_hub_cells(&view.get_cells(), cells, |rows| view.set_cells(rows));
-    view.set_selected_local(i32::try_from(hub.grid.current_index() - start).unwrap_or(0));
+    let strip_sliding = hub.sliding && !view.get_cached_transition();
+    if strip_sliding {
+        crate::view_model::publish_hub_cells(&view.get_next_cells(), cells, |rows| {
+            view.set_next_cells(rows);
+        });
+    } else {
+        crate::view_model::publish_hub_cells(&view.get_cells(), cells, |rows| view.set_cells(rows));
+        view.set_next_cells(slint::ModelRc::default());
+    }
+    view.set_selected_local(if strip_sliding {
+        -1
+    } else {
+        i32::try_from(hub.grid.current_index() - start).unwrap_or(0)
+    });
     view.set_columns(geometry.columns);
     view.set_rows(geometry.rows);
     view.set_cell_width(geometry.fit.cell_width as f32);
@@ -440,7 +475,7 @@ pub fn render(ctx: &Ctx, app: &App) {
     view.set_has_pages_below(hub.grid.has_pages_below());
     view.set_focus_ready(hub.focus_armed || hub.restore_done);
     view.set_move_armed(hub.move_armed());
-    view.set_held_local(if hub.move_armed() {
+    view.set_held_local(if hub.move_armed() && !strip_sliding {
         i32::try_from(hub.grid.current_index() - start).unwrap_or(-1)
     } else {
         -1
@@ -524,6 +559,7 @@ pub fn on_catalog_ready(ctx: &Ctx, app: &App) {
 /// Seat focus from persisted state after a categories reset. Nothing
 /// cascades into the Systems screen: it projects its rows on entry.
 pub fn restore(ctx: &Ctx, app: &App) {
+    interrupt_page(ctx, app);
     {
         let mut shared = lock(&ctx.shared);
         let connected = app.global::<crate::Shell>().get_boot_complete();
@@ -579,14 +615,148 @@ fn set_index(ctx: &Ctx, app: &App, index: usize) {
     render(ctx, app);
 }
 
+#[cfg(feature = "mister")]
+fn request_cached_page_transition(app: &App, direction: i32) -> bool {
+    if app.global::<crate::Shell>().get_orientation() != crate::Orientation::Horizontal {
+        return false;
+    }
+    let sizing = app.global::<crate::Sizing>();
+    let view = app.global::<HubView>();
+    let Some(geometry) = crate::sizing::mister_browse_grid_transition_geometry(
+        sizing.get_screen_width().round().max(0.0) as u32,
+        sizing.get_screen_height().round().max(0.0) as u32,
+        view.get_grid_y().round().max(0.0) as u32,
+        view.get_grid_height().round().max(0.0) as u32,
+    ) else {
+        return false;
+    };
+    crate::mister::request_page_transition(geometry, direction)
+}
+
+#[cfg(not(feature = "mister"))]
+fn request_cached_page_transition(_app: &App, _direction: i32) -> bool {
+    false
+}
+
+/// A new command commits the logical destination before acting on it, never
+/// queues another page behind an old animation. Its completion ticket expires.
+pub(crate) fn interrupt_page(ctx: &Ctx, app: &App) -> bool {
+    {
+        let mut shared = lock(&ctx.shared);
+        if !shared.hub.sliding {
+            return false;
+        }
+        shared.hub.sliding = false;
+        shared.hub.page_seq = shared.hub.page_seq.wrapping_add(1);
+    }
+    let view = app.global::<HubView>();
+    #[cfg(feature = "mister")]
+    if view.get_cached_transition() {
+        crate::mister::cancel_page_transition();
+    }
+    view.set_cached_transition(false);
+    view.set_slide_anim(false);
+    view.set_page_slide(0.0);
+    render(ctx, app);
+    app.window().request_redraw();
+    true
+}
+
+fn show_page(ctx: &Ctx, app: &App, from_page: usize, animate: bool) {
+    let (page, direction, local, reduce) = {
+        let shared = lock(&ctx.shared);
+        let grid = &shared.hub.grid;
+        (
+            grid.current_page(),
+            grid.page_direction().offset(),
+            grid.current_index() % grid.page_size(),
+            shared.persist.settings.reduce_motion,
+        )
+    };
+    let view = app.global::<HubView>();
+    if page == from_page
+        || !animate
+        || reduce
+        || !app.global::<crate::Motion>().get_enabled()
+        || crate::input::rapid_page(ctx)
+    {
+        render(ctx, app);
+        return;
+    }
+    let cached = request_cached_page_transition(app, direction);
+    // Without cached endpoints, never animate a full HDMI grid at native
+    // resolution on MiSTer's software renderer. Desktop and small CRT scenes
+    // can use the live strip; accelerated HDMI paints each endpoint just once.
+    if !cached && ctx.is_mister && !app.global::<crate::Sizing>().get_crt() {
+        render(ctx, app);
+        return;
+    }
+    let seq = {
+        let mut shared = lock(&ctx.shared);
+        shared.hub.sliding = true;
+        shared.hub.page_seq = shared.hub.page_seq.wrapping_add(1);
+        shared.hub.page_seq
+    };
+    view.set_slide_dir(direction);
+    view.set_transition_target_index(i32::try_from(local).unwrap_or(0));
+    view.set_cached_transition(cached);
+    view.set_slide_anim(!cached);
+    render(ctx, app);
+    // Resolving a changed viewport can invalidate this ticket during render.
+    if lock(&ctx.shared).hub.page_seq != seq {
+        return;
+    }
+    if !cached {
+        crate::drs::heavy_begin();
+        view.set_page_slide(direction as f32);
+    }
+    let weak = app.as_weak();
+    let ctx = ctx.clone();
+    slint::Timer::single_shot(
+        std::time::Duration::from_millis(PAGE_SETTLE_MS),
+        move || {
+            if !cached {
+                crate::drs::heavy_end();
+            }
+            let Some(app) = weak.upgrade() else {
+                return;
+            };
+            {
+                let mut shared = lock(&ctx.shared);
+                if shared.hub.page_seq != seq {
+                    return;
+                }
+                shared.hub.sliding = false;
+            }
+            let view = app.global::<HubView>();
+            view.set_cached_transition(false);
+            view.set_slide_anim(false);
+            view.set_page_slide(0.0);
+            if app.global::<crate::Shell>().get_active_screen() == crate::Screen::Hub {
+                render(&ctx, &app);
+            }
+            let weak = app.as_weak();
+            slint::Timer::single_shot(std::time::Duration::from_millis(PAGE_REARM_MS), move || {
+                if lock(&ctx.shared).hub.page_seq == seq {
+                    if let Some(app) = weak.upgrade() {
+                        app.global::<HubView>().set_slide_anim(true);
+                    }
+                }
+            });
+        },
+    );
+}
+
 pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
+    let interrupted = interrupt_page(ctx, app);
+    let from_page = lock(&ctx.shared).hub.grid.current_page();
     let move_armed = {
         let mut shared = lock(&ctx.shared);
         shared.hub.focus_armed = true;
         shared.hub.move_armed()
     };
     if move_armed {
-        handle_move_action(ctx, app, action);
+        handle_move_action(ctx, app, action, !interrupted);
         return;
     }
     let moved = {
@@ -606,7 +776,7 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
         if moved {
             commit_current(ctx);
         }
-        render(ctx, app);
+        show_page(ctx, app, from_page, !interrupted);
         return;
     }
     match action {
@@ -646,7 +816,7 @@ fn emit_activate(ctx: &Ctx, app: &App) {
                 crate::router::retry_catalog(ctx);
                 return;
             }
-            crate::systems::enter(ctx, app, &entry.id, true);
+            crate::systems::enter(ctx, app, &entry.id, EntryMode::Fresh, true);
         }
         Some(Kind::Action) => {
             if entry.disabled {
@@ -672,13 +842,13 @@ fn emit_activate(ctx: &Ctx, app: &App) {
                 "favorites" => {
                     let grouped = lock(&ctx.shared).persist.settings.favorites_grouping == "system";
                     if grouped {
-                        crate::systems::enter_favorites(ctx, app);
+                        crate::systems::enter_favorites(ctx, app, EntryMode::Fresh);
                     } else {
-                        crate::games::enter_favorites(ctx, app);
+                        crate::games::enter_favorites(ctx, app, EntryMode::Fresh);
                     }
                 }
-                "recents" => crate::games::enter_recents(ctx, app),
-                "settings" => crate::settings::enter(ctx, app),
+                "recents" => crate::games::enter_recents(ctx, app, EntryMode::Fresh),
+                "settings" => crate::settings::enter(ctx, app, EntryMode::Fresh),
                 "update" => crate::update::enter(app),
                 _ => {}
             }
@@ -804,7 +974,7 @@ fn same_item(a: &Entry, b: &Entry) -> bool {
         && a.system == b.system
 }
 
-fn move_step(ctx: &Ctx, app: &App, d_col: i32, d_row: i32, page_delta: i32) {
+fn move_step(ctx: &Ctx, app: &App, d_col: i32, d_row: i32, page_delta: i32, animate: bool) {
     let (from_page, before) = {
         let shared = lock(&ctx.shared);
         let hub = &shared.hub;
@@ -852,7 +1022,7 @@ fn move_step(ctx: &Ctx, app: &App, d_col: i32, d_row: i32, page_delta: i32) {
         }
     };
     if moved {
-        rebuild(ctx, app);
+        resolve_entries(ctx, app);
         let origins = {
             let shared = lock(&ctx.shared);
             let hub = &shared.hub;
@@ -881,19 +1051,20 @@ fn move_step(ctx: &Ctx, app: &App, d_col: i32, d_row: i32, page_delta: i32) {
         view.set_move_origins(slint::ModelRc::new(slint::VecModel::from(origins)));
         view.set_move_pulse(view.get_move_pulse().wrapping_add(1));
         commit_current(ctx);
+        show_page(ctx, app, from_page, animate);
     } else {
         render(ctx, app);
     }
 }
 
-fn handle_move_action(ctx: &Ctx, app: &App, action: &str) {
+fn handle_move_action(ctx: &Ctx, app: &App, action: &str, animate: bool) {
     match action {
-        actions::LEFT => move_step(ctx, app, -1, 0, 0),
-        actions::RIGHT => move_step(ctx, app, 1, 0, 0),
-        actions::DOWN => move_step(ctx, app, 0, 1, 0),
-        actions::UP => move_step(ctx, app, 0, -1, 0),
-        actions::PAGE_PREV => move_step(ctx, app, 0, 0, -1),
-        actions::PAGE_NEXT => move_step(ctx, app, 0, 0, 1),
+        actions::LEFT => move_step(ctx, app, -1, 0, 0, animate),
+        actions::RIGHT => move_step(ctx, app, 1, 0, 0, animate),
+        actions::DOWN => move_step(ctx, app, 0, 1, 0, animate),
+        actions::UP => move_step(ctx, app, 0, -1, 0, animate),
+        actions::PAGE_PREV => move_step(ctx, app, 0, 0, -1, animate),
+        actions::PAGE_NEXT => move_step(ctx, app, 0, 0, 1, animate),
         actions::ACCEPT => accept_move(ctx, app),
         actions::CANCEL => cancel_move(ctx, app),
         _ => {}
@@ -1058,7 +1229,7 @@ pub fn page_menu_accept(ctx: &Ctx, app: &App, id: &str) {
             }
             rebuild(ctx, app);
         }
-        "hub_settings" => crate::settings::enter(ctx, app),
+        "hub_settings" => crate::settings::enter(ctx, app, EntryMode::Fresh),
         "hub_quit" => crate::router::open_quit_confirm(app),
         _ => {}
     }
@@ -1184,6 +1355,9 @@ fn pointer_select(ctx: &Ctx, app: &App, local: i32) -> bool {
     {
         let mut shared = lock(&ctx.shared);
         let hub = &mut shared.hub;
+        if hub.sliding {
+            return false;
+        }
         hub.focus_armed = true;
         let Ok(local) = usize::try_from(local) else {
             return false;
@@ -1250,15 +1424,17 @@ fn page_handler(ctx: std::sync::Arc<Ctx>, weak: slint::Weak<App>) -> impl Fn(i32
         let Some(app) = weak.upgrade() else {
             return;
         };
-        if lock(&ctx.shared).hub.move_armed() {
-            move_step(&ctx, &app, 0, 0, delta);
-            return;
+        if delta != 0 && app.global::<crate::Shell>().get_active_screen() == crate::Screen::Hub {
+            crate::router::handle_action(
+                &ctx,
+                &app,
+                if delta < 0 {
+                    actions::PAGE_PREV
+                } else {
+                    actions::PAGE_NEXT
+                },
+            );
         }
-        let moved = lock(&ctx.shared).hub.grid.page_by(delta);
-        if moved {
-            commit_current(&ctx);
-        }
-        render(&ctx, &app);
     }
 }
 

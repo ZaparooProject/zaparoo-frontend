@@ -28,9 +28,11 @@ use zaparoo_core::media_types::{
     merged_root_view, BrowseEntry, MediaBrowseParams, MediaHistoryEntry, MediaHistoryParams,
     MediaItem, MediaSearchParams, SystemInfo, TagInfo,
 };
+use zaparoo_core::persist::{FavoritesState, RecentsState};
 use zaparoo_core::remote_resource::ResourceStatus;
 
 use crate::media_cache::MediaKey;
+use crate::navigation::EntryMode;
 use crate::router::{lock, Ctx, Shared};
 use crate::{App, GamesInput, GamesView, GridCell};
 
@@ -283,7 +285,7 @@ pub struct GamesModel {
     pub press_seq: u64,
     /// Bulk appends pause cover fetches until they land.
     pub covers_paused: bool,
-    /// The fill in flight browses a remembered folder; if that folder is
+    /// The fill in flight restores a saved folder; if that folder is
     /// gone, the system root replaces it.
     pub focus_recalled: bool,
 }
@@ -569,8 +571,8 @@ pub fn seed_detail_ctx(client: Arc<zaparoo_core::client::Client>, handle: Handle
 // ---------- Entry points ----------
 
 /// Systems Accept (and the Hub's system shortcut): a launch-only system
-/// runs its script; everything else browses where that system was last
-/// left (its folder, game and viewport), or its root the first time.
+/// runs its script; every fresh browse starts at the system root. Only
+/// cold-start restoration reuses the saved folder, game and viewport.
 pub fn enter(ctx: &Ctx, app: &App, sys: &SystemInfo) {
     if !sys.zap_script.is_empty() {
         crate::router::launch(ctx, app, sys.zap_script.clone(), &sys.name);
@@ -578,20 +580,16 @@ pub fn enter(ctx: &Ctx, app: &App, sys: &SystemInfo) {
     }
     crate::perf::open_pressed("system");
     crate::navigation::stage(ctx, app);
-    let top = {
+    {
         let mut shared = lock(&ctx.shared);
         let games = &mut shared.persist.games;
-        // The system being left keeps its place for next time.
-        games.remember_system_focus();
-        let recalled = games.recall_system_focus(&sys.id);
-        let top = games.path_stack.last().cloned().unwrap_or_default();
-        // Only a folder below the root can have gone away.
-        let recalled = recalled && !top.is_empty();
+        games.system_id.clone_from(&sys.id);
+        games.path_stack = vec![String::new()];
+        games.selected_at_level = vec![String::new()];
+        games.list_top_at_level.clear();
         begin_browse_mode(&mut shared, sys);
-        shared.games.focus_recalled = recalled;
-        top
-    };
-    browse(ctx, app, &top, true);
+    }
+    browse(ctx, app, "", true);
 }
 
 /// A recalled browse position whose folder is gone (Core answered it
@@ -630,13 +628,15 @@ pub fn enter_restored(ctx: &Ctx, app: &App, sys: &SystemInfo) {
     let top = {
         let mut shared = lock(&ctx.shared);
         begin_browse_mode(&mut shared, sys);
-        shared
+        let top = shared
             .persist
             .games
             .path_stack
             .last()
             .cloned()
-            .unwrap_or_default()
+            .unwrap_or_default();
+        shared.games.focus_recalled = !top.is_empty();
+        top
     };
     browse(ctx, app, &top, true);
 }
@@ -671,7 +671,6 @@ pub fn enter_folder_from_hub(ctx: &Ctx, app: &App, system_id: &str, path: &str) 
     crate::navigation::stage(ctx, app);
     {
         let mut shared = lock(&ctx.shared);
-        shared.persist.games.remember_system_focus();
         shared.persist.games.system_id.clone_from(&system.id);
         shared.persist.games.path_stack = vec![String::new(), path.to_string()];
         shared.persist.games.selected_at_level = vec![String::new(), String::new()];
@@ -695,9 +694,21 @@ fn begin_browse_mode(shared: &mut Shared, sys: &SystemInfo) {
 }
 
 /// Favorites (Hub action): media tagged `user:favorite`.
-pub fn enter_favorites(ctx: &Ctx, app: &App) {
+pub fn enter_favorites(ctx: &Ctx, app: &App, entry: EntryMode) {
     crate::navigation::stage(ctx, app);
-    lock(&ctx.shared).games.favorites_system.clear();
+    {
+        let mut shared = lock(&ctx.shared);
+        if entry == EntryMode::Fresh {
+            shared.persist.favorites = FavoritesState::default();
+        }
+        shared.games.favorites_system = if entry == EntryMode::Restore
+            && shared.persist.settings.favorites_grouping == "system"
+        {
+            shared.persist.favorite_systems.selected_path.clone()
+        } else {
+            String::new()
+        };
+    }
     enter_flat(ctx, app, GamesMode::Favorites, true);
 }
 
@@ -708,6 +719,7 @@ pub fn enter_favorites_for_system(ctx: &Ctx, app: &App, system_id: &str) {
         let mut shared = lock(&ctx.shared);
         shared.games.favorites_system = system_id.to_string();
         shared.persist.favorite_systems.selected_path = system_id.to_string();
+        shared.persist.favorites = FavoritesState::default();
     }
     enter_flat(ctx, app, GamesMode::Favorites, true);
 }
@@ -718,8 +730,11 @@ pub fn refresh_favorites(ctx: &Ctx, app: &App) {
 }
 
 /// Recently played (Hub action): Core's play history.
-pub fn enter_recents(ctx: &Ctx, app: &App) {
+pub fn enter_recents(ctx: &Ctx, app: &App, entry: EntryMode) {
     crate::navigation::stage(ctx, app);
+    if entry == EntryMode::Fresh {
+        lock(&ctx.shared).persist.recents = RecentsState::default();
+    }
     enter_flat(ctx, app, GamesMode::Recents, true);
 }
 
@@ -1524,7 +1539,7 @@ fn cell_for(ctx: &Ctx, model: &GamesModel, row: &GameRow, tier: u32) -> GridCell
         ctx.media.is_negative(&key),
     );
     if matches!(state, CoverState::Art | CoverState::Pending) {
-        if let Some(color) = placeholder_color(row) {
+        if let Some(color) = placeholder_color(ctx, row, &key) {
             cell.placeholder = color;
             cell.has_placeholder = true;
         }
@@ -1559,8 +1574,10 @@ fn cell_for(ctx: &Ctx, model: &GamesModel, row: &GameRow, tier: u32) -> GridCell
 }
 
 /// The art slot's stand-in colour while a row's cover loads.
-fn placeholder_color(row: &GameRow) -> Option<slint::Color> {
+fn placeholder_color(ctx: &Ctx, row: &GameRow, key: &MediaKey) -> Option<slint::Color> {
     row.cover_color
+        .or_else(|| ctx.media.average_color(key))
+        .or_else(|| ctx.media.average_color(&key.color_preview()))
         .map(|[r, g, b]| slint::Color::from_rgb_u8(r, g, b))
 }
 
@@ -1600,30 +1617,48 @@ fn request_covers(
     if model.covers_paused {
         return;
     }
-    // A fast scroll starts no loads, and what it flew past is not worth
-    // fetching any more.
+    // Even a tiny thumbnail makes Core decode its original on a cold miss.
+    // Fast navigation reuses prepared colors but starts no artwork work.
     if model.rapid_active {
         ctx.media.request_wanted(Vec::new());
         return;
     }
     ctx.media
-        .request_wanted(wanted_covers(model, first_visible, page_size, tier));
+        .request_wanted(wanted_covers(ctx, model, first_visible, page_size, tier));
 }
 
 /// The cover keys around the visible window, in fetch priority order.
 fn wanted_covers(
+    ctx: &Ctx,
     model: &GamesModel,
     first_visible: usize,
     page_size: usize,
     tier: u32,
 ) -> Vec<MediaKey> {
-    rules::prefetch_rows(model.rows.len(), page_size, first_visible)
-        .into_iter()
-        .filter_map(|index| model.rows.get(index))
-        .filter(|row| row.media_capable && row.has_cover)
-        .map(|row| media_key(row, &model.system_id, tier))
-        .filter(|key| !key.system.is_empty() && !key.path.is_empty())
-        .collect()
+    let indices = rules::prefetch_rows(model.rows.len(), page_size, first_visible);
+    let mut wanted = Vec::new();
+    for window in indices.chunks(page_size.max(1)) {
+        let rows: Vec<_> = window
+            .iter()
+            .filter_map(|index| model.rows.get(*index))
+            .filter(|row| row.media_capable && row.has_cover)
+            .map(|row| (row, media_key(row, &model.system_id, tier)))
+            .filter(|(_, key)| !key.system.is_empty() && !key.path.is_empty())
+            .collect();
+        // Prepare real colors before this window's full-size art; replacing
+        // the wanted window drops work for pages that scrolled past.
+        for (row, key) in &rows {
+            if row.cover_color.is_none()
+                && tier > zaparoo_app::covers::COLOR_PREVIEW_MAX_SIZE
+                && !ctx.media.is_cached(key)
+                && !ctx.media.is_negative(key)
+            {
+                wanted.push(key.color_preview());
+            }
+        }
+        wanted.extend(rows.into_iter().map(|(_, key)| key));
+    }
+    wanted
 }
 
 #[cfg(test)]
@@ -1867,8 +1902,11 @@ pub fn render(ctx: &Ctx, app: &App) {
         });
         crate::perf::games_rendered(count, model.loading, visible, pending);
     }
+    // A replacement temporarily seats row zero while old rows may still be
+    // painted. That transient viewport must not overwrite the restore target.
+    let stable_viewport = !model.loading && model.pending_restore_path.is_empty();
     drop(shared);
-    if list {
+    if list && stable_viewport {
         remember_list_top(
             &mut lock(&ctx.shared),
             view.get_list_scroll_top().max(0) as usize,
@@ -1918,12 +1956,13 @@ fn refresh_detail_cover(ctx: &Ctx, app: &App, model: &GamesModel) {
         return;
     };
     view.set_detail_title(SharedString::from(row.display.as_str()));
-    let placeholder = placeholder_color(row).filter(|_| row.media_capable && row.has_cover);
+    let tier = crate::sizing::detail_cover_source_size(crate::router::output_scene(app));
+    let key = media_key(row, &model.system_id, tier);
+    let placeholder =
+        placeholder_color(ctx, row, &key).filter(|_| row.media_capable && row.has_cover);
     view.set_detail_placeholder(placeholder.unwrap_or_default());
     view.set_detail_has_placeholder(placeholder.is_some());
     view.set_detail_path(SharedString::from(row.path.as_str()));
-    let tier = crate::sizing::detail_cover_source_size(crate::router::output_scene(app));
-    let key = media_key(row, &model.system_id, tier);
     if !row.media_capable || key.system.is_empty() {
         view.set_detail_has_cover(false);
         view.set_detail_cover_absent(!row.is_dir());
@@ -1939,6 +1978,9 @@ fn refresh_detail_cover(ctx: &Ctx, app: &App, model: &GamesModel) {
         // A fast scroll never waits on art: the landing row's cover is
         // fetched once it stops.
         if row.has_cover && !model.rapid_active {
+            if row.cover_color.is_none() && tier > zaparoo_app::covers::COLOR_PREVIEW_MAX_SIZE {
+                ctx.media.enqueue(key.color_preview());
+            }
             ctx.media.enqueue(key);
         }
     }

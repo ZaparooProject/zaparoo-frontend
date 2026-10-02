@@ -149,6 +149,12 @@ impl Logos {
         self.lock().cache.get(key).cloned().flatten()
     }
 
+    /// Distinguish an unusable asset from one still waiting for preparation.
+    /// Only the former needs the text fallback before another cache reset.
+    pub fn is_negative(&self, key: &Key) -> bool {
+        matches!(self.lock().cache.get(key), Some(None))
+    }
+
     pub fn request(&self, keys: impl IntoIterator<Item = Key>) {
         self.request_window(keys, []);
     }
@@ -351,7 +357,11 @@ pub(crate) fn refresh(ctx: &crate::router::Ctx, app: &crate::App) {
                 crate::systems::render(ctx, app);
             }
         }
-        crate::Screen::Hub => crate::hub::render(ctx, app),
+        crate::Screen::Hub => {
+            if !crate::router::lock(&ctx.shared).hub.sliding {
+                crate::hub::render(ctx, app);
+            }
+        }
         crate::Screen::Games | crate::Screen::Favorites | crate::Screen::Recents => {
             let sliding = {
                 let shared = crate::router::lock(&ctx.shared);
@@ -452,6 +462,25 @@ mod tests {
         let pair = cache.get(&color).expect("color prepared");
         assert_eq!(pair.images().0, pair.images().1);
         assert_eq!(pair.bytes(), pair.rest.as_bytes().len());
+    }
+
+    #[test]
+    fn only_failed_preparation_is_negative_not_pending_or_evicted_art() {
+        let cache = Logos::new();
+        let key = cache
+            .key("SNES", "SNES", false, Bounds::new(128, 64))
+            .expect("known asset");
+        assert!(!cache.is_negative(&key));
+        cache.request([key]);
+        let (job, _) = cache.next_job().expect("queued asset");
+        assert!(!cache.is_negative(&key));
+        assert!(cache.finish(job, None));
+        assert!(cache.is_negative(&key));
+        cache.clear();
+        assert!(
+            !cache.is_negative(&key),
+            "memory trim permits a fresh preparation"
+        );
     }
 
     #[test]

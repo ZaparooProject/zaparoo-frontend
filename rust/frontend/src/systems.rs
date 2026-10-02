@@ -15,8 +15,10 @@ use zaparoo_app::systems::{self as rules, CatalogSystem, Region, SystemRow};
 use zaparoo_core::endpoints::systems_favorites::SystemsFavoritesEndpoint;
 use zaparoo_core::input_actions::actions;
 use zaparoo_core::media_types::{SystemInfo, SystemsResult};
+use zaparoo_core::persist::FavoriteSystemsState;
 use zaparoo_core::remote_resource::ResourceStatus;
 
+use crate::navigation::EntryMode;
 use crate::router::{lock, Ctx, Shared};
 use crate::{App, GridCell, SystemsInput, SystemsView};
 
@@ -151,12 +153,17 @@ fn catalog_entry(shared: &Shared, id: &str) -> Option<SystemInfo> {
     shared.systems.iter().find(|s| s.id == id).cloned()
 }
 
-/// Enter the category's systems: project the rows, seat the persisted
-/// system, and route to the screen (with or without the slide).
-pub fn enter(ctx: &Ctx, app: &App, category: &str, animate: bool) {
+/// Enter a category, starting at its first system on a fresh visit and
+/// preserving the saved system and viewport on resume.
+pub fn enter(ctx: &Ctx, app: &App, category: &str, entry: EntryMode, animate: bool) {
     {
         let mut shared = lock(&ctx.shared);
         let rows = project(&shared, category);
+        if entry == EntryMode::Fresh {
+            shared.persist.systems.system_id =
+                rows.first().map(|row| row.id.clone()).unwrap_or_default();
+            shared.persist.systems.list_top = Some(0);
+        }
         let restore_id = shared.persist.systems.system_id.clone();
         let index = rows.iter().position(|s| s.id == restore_id).unwrap_or(0);
         shared.persist.hub.category = category.to_string();
@@ -189,19 +196,22 @@ pub fn enter(ctx: &Ctx, app: &App, category: &str, animate: bool) {
 
 /// The Hub's Favorites action with Group by: System: the systems that
 /// hold favorites, from Core's favorites-scoped catalog.
-pub fn enter_favorites(ctx: &Ctx, app: &App) {
-    enter_favorites_with_direction(ctx, app, 1);
+pub fn enter_favorites(ctx: &Ctx, app: &App, entry: EntryMode) {
+    enter_favorites_with_direction(ctx, app, entry, 1);
 }
 
 /// Back out of a scoped favorites list onto the systems that hold them.
 pub fn return_to_favorites(ctx: &Ctx, app: &App) {
-    enter_favorites_with_direction(ctx, app, -1);
+    enter_favorites_with_direction(ctx, app, EntryMode::Restore, -1);
 }
 
-fn enter_favorites_with_direction(ctx: &Ctx, app: &App, direction: i32) {
+fn enter_favorites_with_direction(ctx: &Ctx, app: &App, entry: EntryMode, direction: i32) {
     crate::navigation::stage(ctx, app);
     {
         let mut shared = lock(&ctx.shared);
+        if entry == EntryMode::Fresh {
+            shared.persist.favorite_systems = FavoriteSystemsState::default();
+        }
         shared.persist.active_screen = "favorite-systems".to_string();
         let model = &mut shared.systems_model;
         model.mode = SystemsMode::Favorites;
@@ -350,7 +360,8 @@ pub fn reproject(ctx: &Ctx, app: &App) {
 }
 
 /// One tile: the tinted logo pair (or the original art under the color
-/// style), else the wordmark fallback.
+/// style). Known logos stay blank while preparing; only missing or failed
+/// artwork uses the wordmark fallback.
 fn cell_for(
     ctx: &Ctx,
     row: &SystemRow,
@@ -372,10 +383,14 @@ fn cell_for(
         cell.has_cover_focus = true;
         return cell;
     }
-    if let Some(pair) = logo_key(ctx, row, logo_style, bounds).and_then(|key| ctx.logos.get(&key)) {
-        (cell.cover, cell.cover_focus) = pair.images();
-        cell.has_cover = true;
-        cell.has_cover_focus = true;
+    if let Some(key) = logo_key(ctx, row, logo_style, bounds) {
+        if let Some(pair) = ctx.logos.get(&key) {
+            (cell.cover, cell.cover_focus) = pair.images();
+            cell.has_cover = true;
+            cell.has_cover_focus = true;
+        } else {
+            cell.wordmark = ctx.logos.is_negative(&key);
+        }
     }
     cell
 }

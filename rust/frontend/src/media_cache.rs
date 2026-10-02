@@ -41,6 +41,15 @@ pub struct MediaKey {
     pub image_type: Option<String>,
 }
 
+impl MediaKey {
+    pub fn color_preview(&self) -> Self {
+        Self {
+            max_size: zaparoo_app::covers::COLOR_PREVIEW_MAX_SIZE,
+            ..self.clone()
+        }
+    }
+}
+
 /// Decoded pixels stored directly as a Slint pixel buffer: it is
 /// refcounted and Send, so the one unavoidable memcpy happens here on
 /// the fetch-driver thread and every UI-side `Image` wrap is a cheap
@@ -60,6 +69,7 @@ impl DecodedImage {
 #[derive(Debug)]
 struct CachedImage {
     image: DecodedImage,
+    average_color: Option<[u8; 3]>,
     /// Recency stamp: the cache's tick at the last read or insert.
     used: u64,
 }
@@ -119,7 +129,19 @@ impl CacheInner {
         self.queued.remove(&key);
         let used = self.stamp();
         self.bytes += image.byte_size();
-        if let Some(replaced) = self.map.insert(key, CachedImage { image, used }) {
+        let average_color = zaparoo_app::covers::average_cover_color(
+            image.buffer.as_bytes(),
+            image.buffer.width() as usize,
+            image.buffer.height() as usize,
+        );
+        if let Some(replaced) = self.map.insert(
+            key,
+            CachedImage {
+                image,
+                average_color,
+                used,
+            },
+        ) {
             self.bytes -= replaced.image.byte_size();
         }
         self.evict_to_cap();
@@ -208,6 +230,16 @@ impl MediaCache {
         Some(entry.image.clone())
     }
 
+    /// The average is prepared once with cache insertion, never while painting.
+    /// It shares the image's LRU lifetime and memory-pressure invalidation.
+    pub fn average_color(&self, key: &MediaKey) -> Option<[u8; 3]> {
+        let mut inner = lock_inner(&self.inner);
+        let stamp = inner.stamp();
+        let entry = inner.map.get_mut(key)?;
+        entry.used = stamp;
+        entry.average_color
+    }
+
     /// Core answered "no image" for this key earlier in the process.
     pub fn is_negative(&self, key: &MediaKey) -> bool {
         lock_inner(&self.inner).negatives.contains(key)
@@ -261,7 +293,18 @@ impl MediaCache {
     async fn next_pending(&self) -> MediaKey {
         loop {
             let woken = self.wake.notified();
-            if let Some(key) = lock_inner(&self.inner).pending.pop_front() {
+            let next = {
+                let mut inner = lock_inner(&self.inner);
+                // A full cover must not overtake its tiny color preview when
+                // several fetch slots are free. Other ready work can proceed.
+                let ready = inner.pending.iter().position(|key| {
+                    key.image_type.is_some()
+                        || key.max_size <= zaparoo_app::covers::COLOR_PREVIEW_MAX_SIZE
+                        || !inner.queued.contains(&key.color_preview())
+                });
+                ready.and_then(|index| inner.pending.remove(index))
+            };
+            if let Some(key) = next {
                 return key;
             }
             woken.await;
@@ -284,6 +327,7 @@ impl MediaCache {
     /// A request ended without a result to store; its key may queue again.
     fn forget_queued(&self, key: &MediaKey) {
         lock_inner(&self.inner).queued.remove(key);
+        self.wake.notify_one();
     }
 
     /// Release decoded image storage before `MiSTer` hands RAM to a
@@ -325,6 +369,7 @@ impl MediaCache {
                     Some(image) => inner.insert(key, image),
                     None => inner.insert_negative(key),
                 }
+                self.wake.notify_one();
                 return true;
             }
         }
@@ -340,6 +385,12 @@ impl MediaCache {
 
     fn insert(&self, key: MediaKey, image: DecodedImage) {
         lock_inner(&self.inner).insert(key, image);
+        self.wake.notify_one();
+    }
+
+    #[cfg(test)]
+    pub(crate) fn pending_keys(&self) -> Vec<MediaKey> {
+        lock_inner(&self.inner).pending.iter().cloned().collect()
     }
 
     #[cfg(test)]
@@ -707,6 +758,57 @@ mod tests {
             max_size: 256,
             image_type: None,
         }
+    }
+
+    #[tokio::test]
+    async fn full_art_waits_for_its_preview_without_blocking_other_ready_work() {
+        use std::future::Future;
+        use std::task::{Context, Poll, Waker};
+        let cache = MediaCache::new();
+        let full = key(1);
+        let preview = full.color_preview();
+        let other = key(2);
+        cache.request_wanted(vec![preview.clone(), full.clone(), other.clone()]);
+        assert_eq!(
+            cache.pending_keys(),
+            [preview.clone(), full.clone(), other.clone()]
+        );
+        assert_eq!(cache.next_pending().await, preview);
+        assert_eq!(cache.next_pending().await, other);
+        let mut next = std::pin::pin!(cache.next_pending());
+        let mut context = Context::from_waker(Waker::noop());
+        assert!(matches!(next.as_mut().poll(&mut context), Poll::Pending));
+        // A failed preview must release the dependency too: the full art can
+        // still succeed, and no synthetic color is stored for the failure.
+        assert!(cache.store_fetched(preview.clone(), cache.generation(), None));
+        assert!(matches!(next.as_mut().poll(&mut context), Poll::Ready(key) if key == full));
+        assert_eq!(cache.average_color(&preview), None);
+    }
+
+    #[tokio::test]
+    async fn preview_colors_share_image_invalidation_and_stale_fetch_rules() {
+        let cache = MediaCache::new();
+        let full = key(1);
+        let preview = full.color_preview();
+        let image = || DecodedImage {
+            buffer: slint::SharedPixelBuffer::clone_from_slice(&[20_u8, 60, 100, 255], 1, 1),
+        };
+        cache.request_wanted(vec![preview.clone(), full.clone()]);
+        assert_eq!(cache.next_pending().await, preview);
+        let generation = cache.generation();
+        cache.clear();
+        assert!(!cache.store_fetched(preview.clone(), generation, Some(image())));
+        assert_eq!(cache.average_color(&preview), None);
+        assert_eq!(
+            cache.next_pending().await,
+            preview,
+            "stale preview retries before full cover"
+        );
+        assert!(cache.store_fetched(preview.clone(), cache.generation(), Some(image())));
+        assert_eq!(cache.average_color(&preview), Some([20, 60, 100]));
+        assert_eq!(cache.next_pending().await, full);
+        cache.clear_decoded();
+        assert_eq!(cache.average_color(&preview), None);
     }
 
     #[test]

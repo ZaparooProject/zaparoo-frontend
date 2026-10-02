@@ -7,7 +7,7 @@
 // a second modal, the picker its rows open.
 
 import { Theme, Sizing, Motion, Layout } from "theme.slint";
-import { GlyphSource, SectionHeader, ScrollCue, Divider, ModalShell, QrPlate } from "chrome.slint";
+import { GlyphSource, ScrollCue, Divider, ModalShell, QrPlate } from "chrome.slint";
 import { SelectionCursor, SelectionClip } from "focus.slint";
 import { SettingsRow, SettingsLabels, SettingsRowView } from "settings.slint";
 import { PressableSurface } from "tiles.slint";
@@ -59,9 +59,6 @@ export component SetupModal inherits ModalShell {
     property <length> picker-row-h: Sizing.pct-h(7);
     property <length> picker-gap: Sizing.pct-h(1);
     property <length> arrow: Sizing.pct-h(3);
-    // Mirrors SectionHeader's own height so the rows below it line up.
-    property <length> header-h: Sizing.pct-h(1.5) + header-measure.preferred-height
-        + Sizing.pct-h(0.8) + Sizing.stroke(1);
     // The scroll cues only take room when there is somewhere to scroll.
     property <length> arrow-band: (root.has-above || root.has-below) ? root.arrow + Sizing.pct-h(0.5) : 0px;
     // The form's own height is the stacked rows Rust measured.
@@ -69,20 +66,15 @@ export component SetupModal inherits ModalShell {
         ? 0px
         : root.rows[root.rows.length - 1].y-offset + root.rows[root.rows.length - 1].height
             + (root.rows.length - 1) * root.row-gap;
-    property <length> picker-h: root.header-h + 2 * root.arrow-band
+    property <length> picker-h: 2 * root.arrow-band
         + root.picker-rows.length * root.picker-row-h
         + Math.max(0, root.picker-rows.length - 1) * root.picker-gap;
     property <length> body-h: root.picker-page ? root.picker-h : root.form-h;
-    title: SettingsLabels.setup-title(root.kind);
+    title: root.picker-page
+        ? SettingsLabels.label(StateTokens.picker(root.picker-title))
+        : SettingsLabels.setup-title(root.kind);
     panel-width: Math.min(root.width * 0.78, Sizing.pct-h(110));
     content-height: root.body-h;
-
-    header-measure := Text {
-        visible: false;
-        text: SettingsLabels.label(StateTokens.picker(root.picker-title));
-        font-size: Sizing.font-body;
-        font-weight: FontWeight.semi-bold;
-    }
 
         // The form.
         if !root.picker-page: Rectangle {
@@ -135,28 +127,19 @@ export component SetupModal inherits ModalShell {
             }
         }
 
-        // The picker page: a header, the windowed rows Rust sends, and
-        // the scroll cues for what sits outside the window.
+        // The picker owns the panel title; its body needs only the windowed
+        // rows and scroll cues, not a second heading and divider.
         if root.picker-page: Rectangle {
             x: root.pad;
             y: root.content-y;
             width: root.content-width;
             height: root.picker-h;
 
-            // Default `label-inset`, because the picker rows under it
-            // carry the same `pct-w(2)` text inset -- a heading lines up
-            // with the rows it heads (docs/style.md, "Section headings").
-            SectionHeader {
-                x: 0;
-                y: 0;
-                label: SettingsLabels.label(StateTokens.picker(root.picker-title));
-            }
-
             // Both cues stand while the window scrolls at all, and the
             // spent one dims. See docs/style.md, "Spent cues".
             if root.has-above || root.has-below: ScrollCue {
                 x: (parent.width - self.width) / 2;
-                y: root.header-h;
+                y: 0px;
                 width: root.arrow;
                 glyph: "icons/ScrollUp";
                 live: root.has-above;
@@ -165,14 +148,14 @@ export component SetupModal inherits ModalShell {
             picker-sel := SelectionCursor {
                 radius: Layout.row-radius;
                 activate-pulse: root.activate-pulse;
-                target: { x: 0px, y: root.header-h + root.arrow-band + root.picker-sel * (root.picker-row-h + root.picker-gap),
+                target: { x: 0px, y: root.arrow-band + root.picker-sel * (root.picker-row-h + root.picker-gap),
                     w: parent.width, h: root.picker-row-h, column: 0, row: root.picker-sel,
                     scope: StateTokens.picker(root.picker-title),
                     valid: root.picker-sel >= 0 && root.picker-sel < root.picker-rows.length };
             }
             for entry[i] in root.picker-rows: Rectangle {
                 x: 0;
-                y: root.header-h + root.arrow-band + i * (root.picker-row-h + root.picker-gap);
+                y: root.arrow-band + i * (root.picker-row-h + root.picker-gap);
                 height: root.picker-row-h;
 
                 property <bool> lit: picker-sel.fill-bottom > self.y && picker-sel.fill-top < self.y + self.height;

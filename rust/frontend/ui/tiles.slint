@@ -252,6 +252,7 @@ export component Tile inherits Rectangle {
     in property <bool> section-focused: true;
     in property <bool> focus-ready: true;
     in property <bool> held: false;
+    in property <bool> moving: false;
     // Hub and Settings tiles: art fills the card up to the ring's inner
     // edge plus a small clearance instead of the 2% band.
     in property <bool> compact-padding: false;
@@ -283,14 +284,17 @@ export component Tile inherits Rectangle {
     // it. Under Reduce motion the tile just stays on: freezing a
     // disappear cue on "gone" would hide the very thing being moved, and
     // the help bar's move-mode line carries the state instead.
+    // Movement is already the cue: reveal immediately, then restart a full
+    // visible blink interval once the retained tile reaches its destination.
+    property <bool> blinking: root.held && !root.moving && Motion.enabled;
     property <bool> held-blink-on: true;
-    opacity: (root.held && Motion.enabled && !root.held-blink-on) ? 0.0 : 1.0;
+    opacity: (root.blinking && !root.held-blink-on) ? 0.0 : 1.0;
     Timer {
-        interval: Motion.dur(Motion.held-blink-ms);
-        running: root.held && Motion.enabled;
+        interval: Motion.held-blink-ms;
+        running: root.blinking;
         triggered => { root.held-blink-on = !root.held-blink-on; }
     }
-    changed held => { root.held-blink-on = true; }
+    changed blinking => { root.held-blink-on = true; }
 
     surface := PressableSurface {
         radius: root.card-radius;
@@ -609,7 +613,7 @@ export component PagedGridView inherits Rectangle {
 
     // One retained held tile retargets from its current position on repeated
     // moves. Cross-page changes snap through focus-scope, like the cursor.
-    FocusCursor {
+    held-cursor := FocusCursor {
         motion: Motion.enabled && root.focus-motion;
         stroke: 0px;
         target: { x: root.selected-x, y: root.selected-y,
@@ -620,6 +624,7 @@ export component PagedGridView inherits Rectangle {
             cell: root.cells[root.selected-local];
             selected: true;
             held: true;
+            moving: held-cursor.moving || !root.focus-motion;
             compact-padding: root.compact-padding;
             show-caption: root.show-caption;
             caption: root.caption-for(root.cells[root.selected-local]);

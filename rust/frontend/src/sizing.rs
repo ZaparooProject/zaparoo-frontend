@@ -140,12 +140,6 @@ fn apply_layout(app: &App, inputs: &Inputs) {
     // inheriting whatever grid was shown last.
     let cue = layouts::profile(theme, View::GamesGrid, inputs);
     push_profile(app, &profile, &cue);
-    let footer = layouts::navigation_footer(inputs);
-    let layout = app.global::<Layout>();
-    layout.set_navigation_cue_y(px(footer.top));
-    layout.set_navigation_cue_height(px(footer.height));
-    layout.set_navigation_cue_right_margin(px(footer.right_margin));
-    layout.set_navigation_content_bottom(px(footer.content_bottom));
 }
 
 fn px(value: i32) -> f32 {

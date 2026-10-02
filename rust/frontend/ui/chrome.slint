@@ -26,34 +26,12 @@ export global GlyphSource {
     pure callback glyph(string, length, color) -> image;
 }
 
-// Header logo rungs (resources/images/logo/logo-<variant>-<w>.png):
-// `logo()` snaps the painted width up to the smallest rung that covers
-// it and picks the variant for the theme's surface, the way
-// Resources.logoUrl() does.
+// Rust filters the embedded master into a cached raster at the painted size.
+// This avoids nearest-neighbor downsampling of a larger rung on software.
 export global Brand {
-    out property <image> dark-96: @image-url("../../../resources/images/logo/logo-on-dark-96.png");
-    out property <image> dark-144: @image-url("../../../resources/images/logo/logo-on-dark-144.png");
-    out property <image> dark-192: @image-url("../../../resources/images/logo/logo-on-dark-192.png");
-    out property <image> dark-256: @image-url("../../../resources/images/logo/logo-on-dark-256.png");
-    out property <image> dark-384: @image-url("../../../resources/images/logo/logo-on-dark-384.png");
-    out property <image> dark-600: @image-url("../../../resources/images/logo/logo-on-dark-600.png");
-    out property <image> light-96: @image-url("../../../resources/images/logo/logo-on-light-96.png");
-    out property <image> light-144: @image-url("../../../resources/images/logo/logo-on-light-144.png");
-    out property <image> light-192: @image-url("../../../resources/images/logo/logo-on-light-192.png");
-    out property <image> light-256: @image-url("../../../resources/images/logo/logo-on-light-256.png");
-    out property <image> light-384: @image-url("../../../resources/images/logo/logo-on-light-384.png");
-    out property <image> light-600: @image-url("../../../resources/images/logo/logo-on-light-600.png");
+    pure callback logo(bool, length) -> image;
     // The master asset's own aspect ratio (width / height).
     out property <float> aspect: 600 / 135;
-
-    public pure function logo(light: bool, painted-width: length) -> image {
-        if (painted-width <= 96px) { return light ? self.light-96 : self.dark-96; }
-        if (painted-width <= 144px) { return light ? self.light-144 : self.dark-144; }
-        if (painted-width <= 192px) { return light ? self.light-192 : self.dark-192; }
-        if (painted-width <= 256px) { return light ? self.light-256 : self.dark-256; }
-        if (painted-width <= 384px) { return light ? self.light-384 : self.dark-384; }
-        return light ? self.light-600 : self.dark-600;
-    }
     // The screensaver's bouncing copy always uses the on-dark variant:
     // its backstop is solid black regardless of the preset.
     public pure function saver-logo(painted-width: length) -> image {
@@ -673,21 +651,19 @@ export component PageIndicator inherits Rectangle {
     }
 }
 
-// Full-screen cue placement is shared across grids, lists and prose. CRT
-// hosts retain their calibrated placement; modals still own their own cues.
+// Hub has no title strip, and CRT keeps its calibrated caption-row cue.
+// Neither case reserves extra height below a content card.
 export component FooterIndicator inherits PageIndicator {
-    in property <length> crt-y;
-    in property <length> crt-right-margin;
-    x: Sizing.screen-width - (Sizing.crt ? root.crt-right-margin : Layout.navigation-cue-right-margin) - self.width;
-    y: Sizing.crt ? root.crt-y : Layout.navigation-cue-y + (Layout.navigation-cue-height - self.height) / 2;
+    in property <length> cue-y;
+    in property <length> right-margin;
+    x: Sizing.screen-width - root.right-margin - self.width;
+    y: root.cue-y;
     chevron-size: Layout.grid-page-chevron-size;
 }
 
-// Three-slot top strip shared by the browse screens: total-count badge
-// left, centered screen title, page position right. Each slot is capped
-// at a third of the width and elides. The side texts sit on the title's
-// own baseline, one type step smaller, so the title stays the visual
-// anchor.
+// Centered title with a compact count-and-position group at the right.
+// The group shares one bounded side slot so it cannot overlap the title.
+// CRT retains its existing separate side slots.
 export component TopStatusStrip inherits Rectangle {
     in property <string> title: "";
     in property <int> current-page: 0;
@@ -702,6 +678,8 @@ export component TopStatusStrip inherits Rectangle {
     in property <bool> item-position-mode: false;
     in property <int> current-item: 0;
     in property <int> total-items: 0;
+    in property <bool> percent-mode: false;
+    in property <float> fraction: 0;
     in property <bool> has-pages-above: false;
     in property <bool> has-pages-below: false;
     in property <length> page-indicator-chevron-size: Sizing.pct-h(4);
@@ -715,9 +693,18 @@ export component TopStatusStrip inherits Rectangle {
             ? @tr("Page {} / {}", root.current-page + 1, root.total-pages)
             : @tr("Page {}", root.current-page + 1));
     property <length> slot-width: root.width / 3;
+    property <length> side-slot-width: Math.max(0px, root.slot-width - root.slot-margin);
+    property <bool> plain-counter: !root.page-indicator-mode && root.show-page-counter
+        && (root.right-text-override != "" || !root.page-total-known || root.total-pages > 1);
+    property <length> counter-width: root.plain-counter
+        ? Math.min(page-measure.preferred-width, root.side-slot-width)
+        : (indicator.visible ? indicator.width : 0px);
+    property <length> count-gap: root.counter-width > 0px && root.total-text != "" ? Sizing.pct-w(1.5) : 0px;
     property <length> title-measured: Math.ceil(title-measure.preferred-width / 1px) * 1px;
     property <length> title-text-width: Math.min(root.slot-width, root.title-measured);
-    property <length> title-y: (root.height - Sizing.font-hero) / 2;
+    // Center the full line box, not the em size: otherwise descenders can
+    // spill into the cached grid band and travel with a page transition.
+    property <length> title-y: (root.height - title-measure.preferred-height) / 2;
     // Side texts share the title's baseline: offset by the difference
     // of the two ascents, since Slint has no baseline alignment.
     property <length> side-y: root.title-y + Theme.ascent(Sizing.font-hero) - Theme.ascent(Sizing.font-section);
@@ -729,19 +716,30 @@ export component TopStatusStrip inherits Rectangle {
         font-size: Sizing.font-hero;
     }
 
+    total-measure := Text {
+        visible: false;
+        text: root.total-text;
+        font-size: Sizing.font-section;
+    }
+    page-measure := Text {
+        visible: false;
+        text: root.page-text;
+        font-size: Sizing.font-section;
+    }
+
     if root.total-text != "": Text {
-        x: root.slot-margin;
+        x: Sizing.crt ? root.slot-margin
+            : parent.width - root.slot-margin - root.counter-width - root.count-gap - self.width;
         y: root.side-y;
-        width: root.slot-width - root.slot-margin;
+        width: Sizing.crt ? root.side-slot-width
+            : Math.min(total-measure.preferred-width, Math.max(0px, root.side-slot-width - root.counter-width - root.count-gap));
         overflow: elide;
         text: root.total-text;
         color: Theme.text-primary;
         font-size: Sizing.font-section;
     }
 
-    // Slint clips a Text to its height, so instead of a font-hero tall
-    // box with the line box overflowing it, the natural line box sits
-    // top-aligned at the same y.
+    // Keep the natural line box so descenders remain intact.
     Text {
         x: (parent.width - self.width) / 2;
         y: root.title-y;
@@ -753,11 +751,10 @@ export component TopStatusStrip inherits Rectangle {
         font-size: Sizing.font-hero;
     }
 
-    if !root.page-indicator-mode && root.show-page-counter
-        && (root.right-text-override != "" || !root.page-total-known || root.total-pages > 1): Text {
+    if root.plain-counter: Text {
         x: parent.width - root.slot-margin - self.width;
         y: root.side-y;
-        width: root.slot-width - root.slot-margin;
+        width: root.counter-width;
         horizontal-alignment: right;
         overflow: elide;
         text: root.page-text;
@@ -765,9 +762,12 @@ export component TopStatusStrip inherits Rectangle {
         font-size: Sizing.font-section;
     }
 
-    if root.page-indicator-mode && root.show-page-counter: PageIndicator {
+    indicator := PageIndicator {
         x: parent.width - root.slot-margin - self.width;
         y: root.title-y + Theme.ascent(Sizing.font-hero) - self.text-baseline-offset;
+        visible: root.page-indicator-mode && root.show-page-counter && self.has-navigation-range;
+        percent-mode: root.percent-mode;
+        fraction: root.fraction;
         chevron-size: root.page-indicator-chevron-size;
         current-page: root.current-page;
         total-pages: root.total-pages;

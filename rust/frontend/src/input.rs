@@ -279,7 +279,14 @@ fn repeat_fire(ctx: &Ctx, app: &App) {
     let Some((action, tier)) = fired else {
         return;
     };
-    let tier = rules::repeat_tier(&action, tier);
+    // Modals take one row per repeat, never a page or letter. Their timer
+    // must use that same tier rather than slowing down a one-row move as
+    // the background browse hold crosses its acceleration thresholds.
+    let tier = if modal_open(app) {
+        rules::HoldTier::Row
+    } else {
+        rules::repeat_tier(&action, tier)
+    };
     dispatch_repeat(ctx, app, &action, tier);
     schedule_repeat(ctx, app, tier.repeat_ms());
 }

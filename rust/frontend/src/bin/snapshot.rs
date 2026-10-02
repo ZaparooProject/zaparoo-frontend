@@ -49,7 +49,7 @@ use generated::{
     GamesMode, LogPhase, OnlineLinkPhase, Orientation, PairPhase, RowKind, ScopeKind, Screen,
     SettingsPage, SetupKind, SetupPicker, StatusKind, SystemsMode, VideoStandard,
 };
-use generated::{App, GlyphSource, GridCell, LetterBucket, MenuEntry, Sizing, Theme};
+use generated::{App, Brand, GlyphSource, GridCell, LetterBucket, MenuEntry, Sizing, Theme};
 #[allow(
     unused_imports,
     reason = "reached through crate:: paths from the shared sizing adapter"
@@ -62,6 +62,8 @@ use generated::{GamesView, Layout, Shell, SystemsView};
 )]
 mod state_types;
 
+#[path = "../brand.rs"]
+mod brand;
 #[path = "../fonts.rs"]
 mod fonts;
 #[path = "../glyphs.rs"]
@@ -127,6 +129,7 @@ fn main() {
     if let Ok(lang) = std::env::var("ZAPAROO_SNAPSHOT_LANG") {
         slint::select_bundled_translation(&lang).expect("bundled language");
     }
+    brand::register(&app);
     app.global::<GlyphSource>().on_glyph(|key, px, tint| {
         glyphs::render(key.as_str(), px.round().max(0.0) as u32, tint).unwrap_or_default()
     });
@@ -1484,11 +1487,7 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
         + profile.status.top_margin
         + profile.status.strip_height
         + inputs.pct_h(4.0);
-    let card_bottom = if inputs.crt_native_path {
-        derived.help_bar_height + inputs.pct_h(4.0)
-    } else {
-        layouts::navigation_footer(&inputs).content_bottom
-    };
+    let card_bottom = derived.help_bar_height + inputs.pct_h(4.0);
     let card_h = (inputs.screen_height as i32 - card_y - card_bottom).max(0);
     let hint = 2 * (f64::from(derived.font_body) * 1.362).ceil() as i32;
     let viewport = (card_h - 2 * inputs.pct_h(2.0) - hint - inputs.pct_h(0.5)).max(0);

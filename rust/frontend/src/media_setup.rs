@@ -206,7 +206,16 @@ pub fn render(ctx: &Ctx, app: &App) {
             name: SharedString::from(name.as_str()),
         })
         .collect();
-    view.set_picker_rows(ModelRc::new(VecModel::from(rows)));
+    // These are fixed viewport slots, not animated item identities. Update
+    // their labels in place when the window scrolls instead of rebuilding
+    // all seven delegates on every held repeat.
+    crate::view_model::publish_keyed(
+        &view.get_picker_rows(),
+        rows,
+        PartialEq::eq,
+        |_, _| true,
+        |rows| view.set_picker_rows(rows),
+    );
     view.set_picker_sel(i32::try_from(model.picker_index.saturating_sub(top)).unwrap_or(0));
     view.set_has_above(top > 0);
     view.set_has_below(top + visible < entries.len());

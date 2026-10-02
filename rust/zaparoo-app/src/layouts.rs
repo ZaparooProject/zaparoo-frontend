@@ -128,35 +128,6 @@ const fn pmin(percent: f64) -> Tok {
 
 // Unresolved tables.
 
-/// Shared non-CRT full-screen position cue. Grid geometry does not change:
-/// lists and prose cards reserve the band that grids already leave free.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct NavigationFooter {
-    pub top: i32,
-    pub height: i32,
-    pub right_margin: i32,
-    pub content_bottom: i32,
-}
-
-pub fn navigation_footer(inputs: &Inputs) -> NavigationFooter {
-    let derived = sizing::derive(inputs);
-    let profile = profile(ThemeId::current(inputs), View::GamesGrid, inputs);
-    let Body::Grid { footer, .. } = profile.body else {
-        unreachable!("grid profile contains a footer");
-    };
-    let bottom = if derived.tier == Tier::T240 {
-        derived.help_bar_height
-    } else {
-        footer.active_label_bottom_margin
-    };
-    NavigationFooter {
-        top: inputs.screen_height as i32 - bottom - footer.active_label_height,
-        height: footer.active_label_height,
-        right_margin: footer.bottom_status_right_margin,
-        content_bottom: bottom + footer.active_label_height,
-    }
-}
-
 #[derive(Debug, Clone, Copy)]
 struct HeaderT {
     title_in_header: bool,
@@ -287,7 +258,7 @@ const DEFAULT: ThemeT = ThemeT {
         page_chevron_size: Tok::Min(&pw(3.0), &ph(4.0)),
     },
     grid_footer: GridFooterT {
-        page_cue_in_footer: true,
+        page_cue_in_footer: false,
         active_label_height: ph(7.0),
         active_label_bottom_margin: ph(8.0),
         bottom_status_left_margin: pw(3.0),
@@ -303,7 +274,7 @@ const DEFAULT: ThemeT = ThemeT {
         divider_margin: 0,
         card_side_margin: pw(3.0),
         card_top_margin: ph(2.0),
-        card_bottom_margin: Tok::Sum(&[ph(8.0), ph(7.0)]),
+        card_bottom_margin: ph(8.0),
         // Square on all four sides: the sides came off the width and the
         // ends off the height, which put 26px beside 14px at 720p and got
         // worse the wider the screen. `docs/style.md` -> "Surface
@@ -329,7 +300,7 @@ const DEFAULT: ThemeT = ThemeT {
         divider_margin: 0,
         card_side_margin: pw(3.0),
         card_top_margin: ph(2.0),
-        card_bottom_margin: Tok::Sum(&[ph(8.0), ph(7.0)]),
+        card_bottom_margin: ph(8.0),
         // Square on all four sides: the sides came off the width and the
         // ends off the height, which put 26px beside 14px at 720p and got
         // worse the wider the screen. `docs/style.md` -> "Surface

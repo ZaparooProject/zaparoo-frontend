@@ -8,6 +8,15 @@ use slint::ComponentHandle;
 use std::cell::{Cell, RefCell};
 use zaparoo_core::persist::PersistedState;
 
+/// Route intent, independent of animation direction. A new visit starts at
+/// the destination's first item; Back, resume and in-place regrouping reuse
+/// its saved position. Apply resets only after retaining the source.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EntryMode {
+    Fresh,
+    Restore,
+}
+
 struct Source {
     persist: PersistedState,
     games: crate::games::GamesModel,

@@ -15,6 +15,9 @@ pub const MAX_LOCAL_IMAGE_BYTES: usize = 16 * 1024 * 1024;
 /// The size a Hub tile decodes at, and so the largest thumbnail worth
 /// asking Core for on that tile's behalf.
 pub const HUB_TILE_MAX_SIZE: u32 = 256;
+/// Core's smallest thumbnail tier, used to prepare a real loading color
+/// before requesting full-size art when browse metadata has no average.
+pub const COLOR_PREVIEW_MAX_SIZE: u32 = 32;
 /// The Hub can hold this many tiles at its widest shape; a sanity
 /// backstop on the manifest, not a real limit.
 pub const MAX_HUB_ENTRIES: usize = 21;
@@ -95,6 +98,28 @@ pub fn parse_cover_color(value: &str) -> Option<[u8; 3]> {
     Some([channel(0)?, channel(2)?, channel(4)?])
 }
 
+/// Alpha-weighted RGB average of straight RGBA pixels. Sampling is bounded
+/// to 64×64 points; tiny Core previews are sampled in full. Transparent art
+/// has no color, and malformed buffers must never become a made-up fallback.
+pub fn average_cover_color(rgba: &[u8], width: usize, height: usize) -> Option<[u8; 3]> {
+    if width == 0 || height == 0 || width.checked_mul(height)?.checked_mul(4)? != rgba.len() {
+        return None;
+    }
+    let mut channels = [0_u64; 3];
+    let mut alpha = 0_u64;
+    for y in (0..height).step_by(height.div_ceil(64)) {
+        for x in (0..width).step_by(width.div_ceil(64)) {
+            let at = (y * width + x) * 4;
+            let weight = u64::from(rgba[at + 3]);
+            alpha += weight;
+            for channel in 0..3 {
+                channels[channel] += u64::from(rgba[at + channel]) * weight;
+            }
+        }
+    }
+    (alpha > 0).then(|| channels.map(|sum| u8::try_from(sum / alpha).unwrap_or(u8::MAX)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -150,6 +175,24 @@ mod tests {
         assert_eq!(startup_local_path(false, true, true), (true, true));
         assert_eq!(startup_local_path(false, true, false), (true, false));
         assert_eq!(startup_local_path(false, false, true), (false, true));
+    }
+
+    #[test]
+    fn average_colors_are_alpha_weighted_and_never_invented() {
+        assert_eq!(
+            average_cover_color(&[20, 40, 60, 255, 100, 80, 60, 255], 2, 1),
+            Some([60, 60, 60])
+        );
+        assert_eq!(
+            average_cover_color(&[255, 0, 0, 128, 0, 0, 255, 128, 0, 255, 0, 0], 3, 1),
+            Some([127, 0, 127])
+        );
+        assert_eq!(average_cover_color(&[255, 0, 0, 0], 1, 1), None);
+        assert_eq!(average_cover_color(&[], 0, 0), None);
+        assert_eq!(average_cover_color(&[1, 2, 3], 1, 1), None);
+        assert_eq!(average_cover_color(&[], usize::MAX, 2), None);
+        let large = [12, 34, 56, 255].repeat(1024 * 768);
+        assert_eq!(average_cover_color(&large, 1024, 768), Some([12, 34, 56]));
     }
 
     #[test]

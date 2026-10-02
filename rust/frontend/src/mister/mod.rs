@@ -34,6 +34,19 @@ pub fn cancel_page_transition() {
     transition::cancel();
 }
 
+#[cfg(test)]
+pub(crate) fn with_cached_page_transitions(test: impl FnOnce()) {
+    struct Reset;
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            transition::set_available(false);
+        }
+    }
+    let _reset = Reset;
+    transition::set_available(true);
+    test();
+}
+
 pub fn request_page_transition(
     geometry: crate::sizing::BrowseGridTransitionGeometry,
     direction: i32,
