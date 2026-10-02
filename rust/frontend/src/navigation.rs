@@ -25,6 +25,8 @@ pub fn stage(ctx: &Ctx, app: &App) {
     }
     let mut shared = lock(&ctx.shared);
     let mut games = std::mem::take(&mut shared.games);
+    games.fill_task.cancel();
+    shared.systems_model.fill_task.cancel();
     // Copy navigation metadata without duplicating an arbitrarily long list.
     let rows = std::mem::take(&mut games.rows);
     shared.games = games.clone();
@@ -87,6 +89,10 @@ pub fn cancel(ctx: &Ctx, app: &App) -> bool {
     };
     {
         let mut shared = lock(&ctx.shared);
+        shared.games.fill_task.cancel();
+        shared.systems_model.fill_task.cancel();
+        source.games.fill_task.cancel();
+        source.systems.fill_task.cancel();
         source.games.ticket = shared.games.ticket.wrapping_add(1);
         source.games.detail_seq = shared.games.detail_seq.wrapping_add(1);
         source.games.persist_seq = shared.games.persist_seq.wrapping_add(1);

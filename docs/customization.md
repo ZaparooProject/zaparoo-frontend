@@ -81,6 +81,23 @@ tinted** - they are shown exactly as they are on disk, in full color. If you
 want an image that tracks the theme colors, supply a monochrome SVG drawn in
 the theme's terms; otherwise expect your PNG/JPG to appear unchanged.
 
+### Loading and memory limits
+
+Artwork discovery, file reads, decoding, and resizing run in the background.
+Built-in art remains visible until an override is ready. Original files are
+never changed; prepared images keep their colors and aspect ratio.
+
+Preparation is serial, with at most 32 queued requests and a 16 MiB in-memory
+LRU cache. Bitmaps must fit an 8 MiB file limit, an 8192-pixel source-edge limit,
+and the decoder's 32 MiB allocation budget. Output follows the displayed size,
+capped at 1024 pixels per edge. Small bitmaps are not enlarged during preparation.
+
+SVG files are limited to 256 KiB and must be self-contained vector artwork:
+referenced/embedded images and filter graphs fall back to built-in art rather
+than bypassing the decode-memory limits. Paths, gradients, clipping, and masks
+remain supported. Discovery retains up to 512 files per namespace within a
+shared 1 MiB index budget. Invalid or over-budget files use built-in art.
+
 ## Color scheme
 
 Choose a preset live under Settings → Appearance → Color scheme. There are 19

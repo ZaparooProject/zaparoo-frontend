@@ -280,7 +280,7 @@ fn logo_image(px: &crate::system_logos::LogoPixels) -> slint::Image {
     )
 }
 
-fn cell_for(ctx: &Ctx, entry: &Entry) -> GridCell {
+fn cell_for(ctx: &Ctx, entry: &Entry, art_size: u32) -> GridCell {
     let mut cell = GridCell {
         label_key: SharedString::from(entry.label_key.as_str()),
         name: SharedString::from(entry.name.as_str()),
@@ -292,14 +292,15 @@ fn cell_for(ctx: &Ctx, entry: &Entry) -> GridCell {
     if entry.is_empty() {
         return cell;
     }
-    let key = entry.cover_key.as_str();
-    // The user's own icon, as supplied: no tint, no glyph fallback.
+    let mut key = entry.cover_key.as_str();
+    // Prepared overrides retain their colors. Until then, keep built-in art.
     if let Some(id) = key.strip_prefix(CUSTOM_PREFIX) {
-        if let Some(image) = crate::customization::hub_image(id) {
+        if let Some(image) = crate::customization::hub_image(id, art_size) {
             cell.cover = image;
             cell.has_cover = true;
             return cell;
         }
+        key = &entry.fallback_cover_key;
     }
     if let Some(id) = key.strip_prefix("systems/") {
         cell.wordmark = true;
@@ -385,7 +386,16 @@ pub fn render(ctx: &Ctx, app: &App) {
         .iter()
         .skip(start)
         .take(page_size)
-        .map(|entry| cell_for(ctx, entry))
+        .map(|entry| {
+            cell_for(
+                ctx,
+                entry,
+                zaparoo_app::customization::artwork_size(
+                    geometry.fit.cell_width as f32,
+                    geometry.fit.cell_height as f32,
+                ),
+            )
+        })
         .collect();
     if crate::perf::enabled() {
         let (mut covers, mut outstanding) = (0, 0);
@@ -451,6 +461,39 @@ pub fn render(ctx: &Ctx, app: &App) {
             view.set_options_available(false);
         }
     }
+}
+
+/// Thumbnail identities on the restored page, before the first frame. Layout
+/// indices include folders/actions, so never treat the manifest as page order.
+pub(crate) fn visible_cover_targets(ctx: &Ctx) -> (Vec<(String, String)>, bool) {
+    let shared = lock(&ctx.shared);
+    let hub = &shared.hub;
+    let mut targets = Vec::new();
+    let mut resume = false;
+    for entry in hub
+        .entries
+        .iter()
+        .skip(hub.grid.current_page() * hub.grid.page_size())
+        .take(hub.grid.page_size())
+    {
+        if entry.cover_key.starts_with(CUSTOM_PREFIX) {
+            continue;
+        }
+        if entry.kind == Some(Kind::Action) && entry.id == "resume" {
+            resume = true;
+        }
+        if entry.kind != Some(Kind::ZapScript) {
+            continue;
+        }
+        if let Ok(index) = usize::try_from(entry.hub_index) {
+            if let Some(item) = hub.layout.visible().nth(index) {
+                if !item.system.is_empty() && !item.path.is_empty() {
+                    targets.push((item.system.clone(), item.path.clone()));
+                }
+            }
+        }
+    }
+    (targets, resume)
 }
 
 /// Covers landed or were found missing: repaint once if any tile shows

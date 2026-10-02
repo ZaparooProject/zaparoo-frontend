@@ -93,6 +93,8 @@ pub struct Entry {
     /// Resource path of the art: `categories/...`, `icons/...`,
     /// `systems/<id>`, or a media cover key the host resolves.
     pub cover_key: String,
+    /// Original built-in art while a user override is preparing or rejected.
+    pub fallback_cover_key: String,
     pub disabled: bool,
     pub reason: Reason,
     /// The entry's real position in the layout, or -1 for the bootstrap
@@ -183,6 +185,7 @@ fn action_entry(
         id: id.to_string(),
         label_key: format!("action:{id}"),
         cover_key: hub_cover_key(resolver, id, fallback_cover),
+        fallback_cover_key: fallback_cover.to_string(),
         disabled,
         reason,
         hub_index: -1,
@@ -273,6 +276,7 @@ fn resolve_category(live: &Live, resolver: &dyn Resolver, id: &str) -> Entry {
         name: canonical.to_string(),
         label_key: format!("category:{canonical}"),
         cover_key: hub_cover_key(resolver, canonical, &category_cover_key(canonical)),
+        fallback_cover_key: category_cover_key(canonical),
         disabled: unconfirmed,
         reason: if unconfirmed {
             Reason::NotAvailable
@@ -301,6 +305,7 @@ fn resolve_system(resolver: &dyn Resolver, item: &LayoutItem) -> Option<Entry> {
         } else {
             hub_cover_key(resolver, &item.icon, "icons/File")
         },
+        fallback_cover_key: "icons/File".into(),
         hub_index: -1,
         ..Entry::default()
     })
@@ -331,6 +336,7 @@ fn resolve_folder(resolver: &dyn Resolver, item: &LayoutItem) -> Option<Entry> {
         } else {
             hub_cover_key(resolver, &item.icon, "icons/Folder")
         },
+        fallback_cover_key: "icons/Folder".into(),
         hub_index: -1,
         ..Entry::default()
     })
@@ -359,6 +365,7 @@ fn resolve_zapscript(resolver: &dyn Resolver, item: &LayoutItem) -> Option<Entry
             item.name.clone()
         },
         cover_key,
+        fallback_cover_key: "icons/File".into(),
         hub_index: -1,
         ..Entry::default()
     })
