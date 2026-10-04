@@ -558,7 +558,7 @@ fn run_application(
     // optimisticHubVisible / coreIndependentStartupVisible split.
     let boot_curtain = matches!(
         persisted.active_screen.as_str(),
-        "systems" | "games" | "favorites" | "recents" | "search-results"
+        "systems" | "games" | "favorites" | "recents" | "search" | "search-results"
     );
 
     #[cfg(not(feature = "hosted"))]

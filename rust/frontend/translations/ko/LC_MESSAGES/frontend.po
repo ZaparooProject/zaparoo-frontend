@@ -304,7 +304,7 @@ msgstr "최근 플레이 불러오는 중…"
 #: rust/frontend/ui/app.slint:2928 rust/frontend/ui/labels.slint:26
 #: rust/frontend/ui/search.slint:64
 msgid "Searching…"
-msgstr ""
+msgstr "검색 중…"
 
 #: rust/frontend/ui/app.slint:2928 rust/frontend/ui/labels.slint:23
 msgid "Loading games…"
@@ -435,7 +435,7 @@ msgstr ""
 #: rust/frontend/ui/browse_list.slint:27 rust/frontend/ui/labels.slint:65
 #: rust/frontend/ui/search.slint:287
 msgid "System"
-msgstr ""
+msgstr "시스템"
 
 #: rust/frontend/ui/browse_list.slint:28
 msgid "Platform"
@@ -714,7 +714,7 @@ msgstr ""
 
 #: rust/frontend/ui/labels.slint:37 rust/frontend/ui/labels.slint:120
 msgid "Other"
-msgstr ""
+msgstr "기타"
 
 #: rust/frontend/ui/labels.slint:38
 msgid "Resume"
@@ -756,7 +756,7 @@ msgstr ""
 
 #: rust/frontend/ui/labels.slint:72 rust/frontend/ui/labels.slint:124
 msgid "Any"
-msgstr ""
+msgstr "전체"
 
 #: rust/frontend/ui/labels.slint:83 rust/frontend/ui/settings.slint:143
 msgid "Region"
@@ -846,7 +846,7 @@ msgstr "여기서 검색…"
 
 #: rust/frontend/ui/labels.slint:118 rust/frontend/ui/search.slint:288
 msgid "All systems"
-msgstr ""
+msgstr "모든 시스템"
 
 #: rust/frontend/ui/labels.slint:119
 msgid "Recent"

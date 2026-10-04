@@ -306,7 +306,7 @@ msgstr "טוען את הפריטים ששוחקו לאחרונה…"
 #: rust/frontend/ui/app.slint:2928 rust/frontend/ui/labels.slint:26
 #: rust/frontend/ui/search.slint:64
 msgid "Searching…"
-msgstr ""
+msgstr "מחפש…"
 
 #: rust/frontend/ui/app.slint:2928 rust/frontend/ui/labels.slint:23
 msgid "Loading games…"
@@ -437,7 +437,7 @@ msgstr ""
 #: rust/frontend/ui/browse_list.slint:27 rust/frontend/ui/labels.slint:65
 #: rust/frontend/ui/search.slint:287
 msgid "System"
-msgstr ""
+msgstr "מערכת"
 
 #: rust/frontend/ui/browse_list.slint:28
 msgid "Platform"
@@ -716,7 +716,7 @@ msgstr ""
 
 #: rust/frontend/ui/labels.slint:37 rust/frontend/ui/labels.slint:120
 msgid "Other"
-msgstr ""
+msgstr "אחר"
 
 #: rust/frontend/ui/labels.slint:38
 msgid "Resume"
@@ -760,7 +760,7 @@ msgstr ""
 
 #: rust/frontend/ui/labels.slint:72 rust/frontend/ui/labels.slint:124
 msgid "Any"
-msgstr ""
+msgstr "הכול"
 
 #: rust/frontend/ui/labels.slint:83 rust/frontend/ui/settings.slint:143
 msgid "Region"
@@ -850,7 +850,7 @@ msgstr "חיפוש כאן…"
 
 #: rust/frontend/ui/labels.slint:118 rust/frontend/ui/search.slint:288
 msgid "All systems"
-msgstr ""
+msgstr "כל המערכות"
 
 #: rust/frontend/ui/labels.slint:119
 msgid "Recent"

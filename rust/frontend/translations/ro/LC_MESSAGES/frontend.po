@@ -308,7 +308,7 @@ msgstr "Se încarcă recent jucatele…"
 #: rust/frontend/ui/app.slint:2928 rust/frontend/ui/labels.slint:26
 #: rust/frontend/ui/search.slint:64
 msgid "Searching…"
-msgstr ""
+msgstr "Se caută…"
 
 #: rust/frontend/ui/app.slint:2928 rust/frontend/ui/labels.slint:23
 msgid "Loading games…"
@@ -439,7 +439,7 @@ msgstr ""
 #: rust/frontend/ui/browse_list.slint:27 rust/frontend/ui/labels.slint:65
 #: rust/frontend/ui/search.slint:287
 msgid "System"
-msgstr ""
+msgstr "Sistem"
 
 #: rust/frontend/ui/browse_list.slint:28
 msgid "Platform"
@@ -718,7 +718,7 @@ msgstr ""
 
 #: rust/frontend/ui/labels.slint:37 rust/frontend/ui/labels.slint:120
 msgid "Other"
-msgstr ""
+msgstr "Altele"
 
 #: rust/frontend/ui/labels.slint:38
 msgid "Resume"
@@ -764,7 +764,7 @@ msgstr ""
 
 #: rust/frontend/ui/labels.slint:72 rust/frontend/ui/labels.slint:124
 msgid "Any"
-msgstr ""
+msgstr "Oricare"
 
 #: rust/frontend/ui/labels.slint:83 rust/frontend/ui/settings.slint:143
 msgid "Region"
@@ -854,7 +854,7 @@ msgstr "Caută aici…"
 
 #: rust/frontend/ui/labels.slint:118 rust/frontend/ui/search.slint:288
 msgid "All systems"
-msgstr ""
+msgstr "Toate sistemele"
 
 #: rust/frontend/ui/labels.slint:119
 msgid "Recent"
