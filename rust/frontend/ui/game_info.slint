@@ -1,4 +1,4 @@
-import { Theme, Sizing } from "theme.slint";
+import { Theme, Sizing, Motion } from "theme.slint";
 import { ScrollAction } from "state_types.slint";
 import { DetailRow, MetaLabels } from "browse_list.slint";
 import { GlyphSource, SectionHeader, ScrollCue, ModalShell } from "chrome.slint";
@@ -48,6 +48,11 @@ export component GameInfoModal inherits ModalShell {
 
     property <length> scroll-y: Math.min(root.maximum-scroll,
         Math.max(0px, GameInfoView.scroll-position * Sizing.screen-height));
+
+    // What the body is drawn at: it glides to a stepped position, and
+    // tracks a drag exactly so the text stays under the finger.
+    property <length> shown-y: root.scroll-y;
+    animate shown-y { duration: body-touch.pressed ? 0ms : Motion.dur(Motion.page-ms); easing: ease-out; }
 
     public function move-scroll(delta: length) {
         if (!GameInfoView.loading && !GameInfoView.failed) {
@@ -99,7 +104,7 @@ export component GameInfoModal inherits ModalShell {
             visible: !GameInfoView.loading && !GameInfoView.failed;
 
             contents := VerticalLayout {
-                y: -root.scroll-y;
+                y: -root.shown-y;
                 height: self.preferred-height;
                 spacing: Sizing.pct-h(2.4);
 
@@ -116,6 +121,10 @@ export component GameInfoModal inherits ModalShell {
                     property <length> art-h: self.height - self.count-band;
                     Image {
                         x: parent.gutter;
+                        // Pinned to the top: an element with no `y` is
+                        // centred in its parent, which slid the art down
+                        // into the count's strip by half its height.
+                        y: 0px;
                         width: parent.width - 2 * parent.gutter;
                         height: parent.art-h;
                         source: GameInfoView.modal-cover;
@@ -194,7 +203,7 @@ export component GameInfoModal inherits ModalShell {
                     wrap: word-wrap;
                 }
             }
-            TouchArea {
+            body-touch := TouchArea {
                 property <length> drag-y;
                 property <float> drag-scroll;
                 pointer-event(event) => {

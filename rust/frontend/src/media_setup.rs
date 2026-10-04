@@ -19,6 +19,9 @@ use crate::{App, SettingsRow, SetupInput, SetupModalView, SetupPickerRow};
 
 /// Rows the picker page shows at once before it scrolls.
 const PICKER_WINDOW: usize = 7;
+/// Slots kept either side of the picker's viewport, so a held scroll that
+/// runs ahead of the glide still has rows to draw.
+const PICKER_OVERSCAN: usize = 4;
 
 /// The open form's state.
 #[derive(Debug, Clone)]
@@ -193,22 +196,35 @@ pub fn render(ctx: &Ctx, app: &App) {
             .map(|entry| (entry.kind.into(), entry.name))
             .collect(),
     };
-    // Window the rows around the cursor, like the browse list does.
+    publish_picker_window(&view, &entries, model.picker_index);
+}
+
+/// Publish the picker's window of rows around `picker_index`.
+fn publish_picker_window(
+    view: &SetupModalView<'_>,
+    entries: &[(crate::ScopeKind, String)],
+    picker_index: usize,
+) {
+    // Window the rows around the cursor, like the browse list does, with a
+    // few slots either side of the viewport so the window can glide to its
+    // next position. A slot past either end of the list stays empty, which
+    // keeps the slot count fixed.
     let visible = PICKER_WINDOW.min(entries.len().max(1));
-    let top =
-        zaparoo_app::media_list::list_view_top(model.picker_index, entries.len(), visible, None);
-    let rows: Vec<SetupPickerRow> = entries
-        .iter()
-        .skip(top)
-        .take(visible)
-        .map(|(kind, name)| SetupPickerRow {
-            kind: *kind,
-            name: SharedString::from(name.as_str()),
+    let top = zaparoo_app::media_list::list_view_top(picker_index, entries.len(), visible, None);
+    let rows: Vec<SetupPickerRow> = (0..visible + 2 * PICKER_OVERSCAN)
+        .map(|slot| {
+            (top + slot)
+                .checked_sub(PICKER_OVERSCAN)
+                .and_then(|index| entries.get(index))
+                .map_or_else(SetupPickerRow::default, |(kind, name)| SetupPickerRow {
+                    kind: *kind,
+                    name: SharedString::from(name.as_str()),
+                })
         })
         .collect();
-    // These are fixed viewport slots, not animated item identities. Update
-    // their labels in place when the window scrolls instead of rebuilding
-    // all seven delegates on every held repeat.
+    // These are fixed slots, not animated item identities. Update their
+    // labels in place when the window scrolls instead of rebuilding every
+    // delegate on every held repeat.
     crate::view_model::publish_keyed(
         &view.get_picker_rows(),
         rows,
@@ -216,7 +232,12 @@ pub fn render(ctx: &Ctx, app: &App) {
         |_, _| true,
         |rows| view.set_picker_rows(rows),
     );
-    view.set_picker_sel(i32::try_from(model.picker_index.saturating_sub(top)).unwrap_or(0));
+    let int = |value: usize| i32::try_from(value).unwrap_or(0);
+    view.set_picker_first(int(top) - int(PICKER_OVERSCAN));
+    view.set_picker_top(int(top));
+    view.set_picker_visible(int(visible));
+    view.set_picker_count(int(entries.len()));
+    view.set_picker_sel(int(picker_index.saturating_sub(top)));
     view.set_has_above(top > 0);
     view.set_has_below(top + visible < entries.len());
 }
@@ -580,7 +601,11 @@ fn focus_picker(ctx: &Ctx, app: &App, local: i32) -> bool {
         let visible = PICKER_WINDOW.min(len.max(1));
         let top =
             zaparoo_app::media_list::list_view_top(shared.setup.picker_index, len, visible, None);
-        let index = top + local;
+        // `local` is a published slot; the first holds the row a few
+        // above the viewport's top.
+        let Some(index) = (top + local).checked_sub(PICKER_OVERSCAN) else {
+            return false;
+        };
         if index >= len {
             return false;
         }

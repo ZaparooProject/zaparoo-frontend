@@ -19,6 +19,13 @@ pub enum Control {
     Action,
     /// Opens another page or screen.
     Navigate,
+    /// Reads as off, mixed, or fully on across several settings at once;
+    /// Accept always drives it to fully on or fully off. Today, only the
+    /// Online page's "All" features row uses this.
+    TriToggle,
+    /// Shows a live value and nothing else: there is nothing to change, so
+    /// it never takes focus.
+    Info,
 }
 
 /// A row on a settings page: a group header, or a field.
@@ -42,6 +49,11 @@ impl Row {
     pub fn is_field(self) -> bool {
         matches!(self, Self::Field { .. })
     }
+
+    /// A row the cursor can rest on: a field with something to do.
+    pub fn is_navigable(self) -> bool {
+        matches!(self, Self::Field { control, .. } if control != Control::Info)
+    }
 }
 
 /// One root category tile: the page it opens and its glyph.
@@ -63,6 +75,10 @@ pub const PAGES: &[Page] = &[
     Page {
         id: "pageLibraryData",
         glyph: "icons/Library",
+    },
+    Page {
+        id: "pageOnline",
+        glyph: "icons/Online",
     },
     Page {
         id: "pageDisplayInterface",
@@ -100,6 +116,11 @@ pub struct Inputs {
     /// consent: it answered `playtimeSyncEnabled`, which it only does for
     /// local and admin clients.
     pub can_link_online: bool,
+    /// This device is currently linked to an Online account: the account
+    /// row shows status/unlink instead of a link prompt, and the Warp row
+    /// joins it. Every other row on the page still shows either way
+    /// (linking again resets them, so there is always something to see).
+    pub online_linked: bool,
     /// `MiSTer`: the resolution and analog-video rows only exist there.
     pub is_mister: bool,
     /// The frontend is already running the native CRT path.
@@ -121,6 +142,9 @@ const TOGGLES: &[&str] = &[
     "swapConfirmCancel",
     "swapOptionsView",
     "playtimeSync",
+    "onlineRemoteControl",
+    "onlineLibrarySync",
+    "onlineCloudBackup",
 ];
 
 const NAVIGATES: &[&str] = &[
@@ -132,6 +156,7 @@ const NAVIGATES: &[&str] = &[
     "pageLanguage",
     "pageControlsInput",
     "pageLibraryData",
+    "pageOnline",
     "pageSupportAbout",
 ];
 
@@ -143,11 +168,21 @@ const ACTIONS: &[&str] = &[
     "pairDevice",
     "uploadLog",
     "playtimeAccess",
-    "onlineAccount",
+    "onlineLinkAccount",
+    "onlineUnlinkAccount",
+    "onlineManageBackups",
+    "onlineRemoteActivity",
 ];
 
+/// Rows whose current value sweeps between fully off and fully on across
+/// several settings at once; see `Control::TriToggle`.
+const TRI_TOGGLES: &[&str] = &["onlineAllFeatures"];
+
+/// Rows that only report a live value; see `Control::Info`.
+const INFOS: &[&str] = &["onlineStatus", "onlineWarp", "onlineRemoteStatus"];
+
 /// The control a row id carries: everything that is not a toggle, a
-/// navigation or a one-shot is a picker.
+/// navigation, a one-shot, a tri-toggle or an info row is a picker.
 pub fn control(id: &str) -> Control {
     if TOGGLES.contains(&id) {
         Control::Toggle
@@ -155,6 +190,10 @@ pub fn control(id: &str) -> Control {
         Control::Navigate
     } else if ACTIONS.contains(&id) {
         Control::Action
+    } else if TRI_TOGGLES.contains(&id) {
+        Control::TriToggle
+    } else if INFOS.contains(&id) {
+        Control::Info
     } else {
         Control::Picker
     }
@@ -231,15 +270,42 @@ pub fn page_rows(page: &str, inputs: &Inputs) -> Vec<Row> {
                 field("showHidden"),
                 field("showOriginalFilenames"),
             ]);
-            // Play history is library data; its upload stays an explicit,
-            // separate choice from linking the account.
-            if inputs.can_link_online {
-                rows.extend([
-                    Row::Header("online"),
-                    field("onlineAccount"),
-                    field("playtimeSync"),
-                ]);
+            rows
+        }
+        // Account first: everything else on the page needs it. Status and
+        // Warp only report (info rows, never focused); the one thing to do
+        // there is link or unlink. Features lead with the one switch that
+        // covers all four, then each on its own; Backup and Remote close
+        // the page with the one action each actually needs doing from here.
+        "pageOnline" => {
+            if !inputs.can_link_online {
+                // Unreachable for any client this frontend ships as today
+                // (every embedding is its own Core's local, privileged
+                // client); kept so a future non-local role still gets an
+                // honest page instead of a crash or a silently empty one.
+                return vec![Row::Header("onlineUnavailable")];
             }
+            let mut rows = vec![Row::Header("account"), field("onlineStatus")];
+            if inputs.online_linked {
+                rows.push(field("onlineWarp"));
+                rows.push(field("onlineUnlinkAccount"));
+            } else {
+                rows.push(field("onlineLinkAccount"));
+            }
+            rows.extend([
+                Row::Header("features"),
+                field("onlineAllFeatures"),
+                field("onlineRemoteControl"),
+                field("playtimeSync"),
+                field("onlineLibrarySync"),
+                field("onlineCloudBackup"),
+                Row::Header("backup"),
+                field("onlineBackupSchedule"),
+                field("onlineManageBackups"),
+                Row::Header("remote"),
+                field("onlineRemoteStatus"),
+                field("onlineRemoteActivity"),
+            ]);
             rows
         }
         // Pairing leads: it is the one row here a user comes to *do*,
@@ -298,6 +364,7 @@ pub const MEDIA_IMAGE_TYPES: &[&str] = &[
     "boxartback",
 ];
 pub const CRT_VIDEO_STANDARDS: &[&str] = &["ntsc", "pal"];
+pub const BACKUP_SCHEDULES: &[&str] = &["daily", "weekly", "manual"];
 
 /// The option list of a picker row, when it is a fixed one. Resolutions
 /// and color schemes come from the host (the output modes it detected,
@@ -316,6 +383,7 @@ pub fn options(id: &str, inputs: &Inputs) -> Option<Vec<&'static str>> {
         "buttonLayout" => BUTTON_LAYOUTS,
         "mediaImageType" => MEDIA_IMAGE_TYPES,
         "crtVideoStandard" => CRT_VIDEO_STANDARDS,
+        "onlineBackupSchedule" => BACKUP_SCHEDULES,
         "screensaverTimeout" => {
             let mut values = SCREENSAVER_TIMEOUTS.to_vec();
             // A debug build can watch the screensaver arm immediately.
@@ -343,7 +411,8 @@ pub fn action_label_key(id: &str, busy: bool) -> &'static str {
         "uploadLog" => "upload",
         "detectLaunchers" => "detect",
         "pairDevice" => "pair",
-        "onlineAccount" => "link",
+        "onlineLinkAccount" => "link",
+        "onlineUnlinkAccount" => "unlink",
         _ => "open",
     }
 }
@@ -366,6 +435,22 @@ pub fn action_disabled(id: &str, index_busy: bool, scrape_busy: bool) -> bool {
     }
 }
 
+/// Online rows that do nothing without a linked account. They stay on the
+/// page, dimmed, and say to link first, the same as Core's own TUI: Core
+/// refuses every one of them for an unlinked device.
+pub fn needs_online_link(id: &str) -> bool {
+    matches!(
+        id,
+        "onlineAllFeatures"
+            | "onlineRemoteControl"
+            | "playtimeSync"
+            | "onlineLibrarySync"
+            | "onlineCloudBackup"
+            | "onlineBackupSchedule"
+            | "onlineManageBackups"
+    )
+}
+
 /// Rows whose change only takes effect after the frontend restarts; the
 /// view says so in their description and the host stages a confirm.
 pub fn restarts(id: &str) -> bool {
@@ -377,13 +462,13 @@ pub fn restarts(id: &str) -> bool {
 
 /// The first row a cursor may sit on.
 pub fn first_navigable(rows: &[Row]) -> usize {
-    rows.iter().position(|r| r.is_field()).unwrap_or(0)
+    rows.iter().position(|r| r.is_navigable()).unwrap_or(0)
 }
 
 /// Where a remembered row lands on a page as it is now: the same row
 /// while it is still a field, otherwise the page's first field.
 pub fn restore_seat(rows: &[Row], index: usize) -> usize {
-    if rows.get(index).copied().is_some_and(Row::is_field) {
+    if rows.get(index).copied().is_some_and(Row::is_navigable) {
         index
     } else {
         first_navigable(rows)
@@ -404,7 +489,7 @@ pub fn seek_navigable(rows: &[Row], from: usize, dir: i64) -> usize {
         } else if i >= len as i64 {
             i = 0;
         }
-        if rows[i as usize].is_field() {
+        if rows[i as usize].is_navigable() {
             return i as usize;
         }
     }
@@ -413,52 +498,48 @@ pub fn seek_navigable(rows: &[Row], from: usize, dir: i64) -> usize {
 
 /// The root category grid: two rows of three, transposed when the scene
 /// is rotated.
-/// Where a settings rows band can start and stop without cutting a row
-/// in half. `rows` is each row's (top, height) in band space, in order.
+/// How far a settings rows band scrolls to keep the focused row in view.
+/// `rows` is each row's (top, height) in order, measured from the first
+/// row's top. `lip` is the inset the card keeps above the first row and
+/// below the last; it scrolls with the rows, so the band clips against the
+/// card's own edges rather than against a margin inside them.
 ///
-/// The band is a fixed pixel height and its rows are not all the same
-/// height, so an unsnapped clip lands wherever it lands: at the top of a
-/// list that leaves a sliver of the next row against the hint divider,
-/// which reads as a rendering fault rather than as "there is more below".
-/// Both edges snap to a real row edge instead, which is what the browse
-/// list's uniform rows already give for free.
+/// The band is a fixed height and its rows are not all the same height.
+/// Its bottom edge is fixed (the hint rule), so a row may be cut there,
+/// which reads as "there is more below" because the rows glide under it.
+/// The top is the edge that must stay clean: a scrolled band always starts
+/// on a row top, so no sliver of the row before it hangs under the card's
+/// frame. The focused row keeps one lip of air above the bottom edge.
 ///
-/// Returns the scroll offset, which is a row top, and the height the band
-/// should paint, which ends on a row bottom.
-pub fn band_extent(rows: &[(f32, f32)], index: usize, viewport: f32) -> (f32, f32) {
+/// Returns the scroll offset in lip-inclusive space (0, or `lip` plus a
+/// row top) and the height the band paints (`viewport` plus both lips).
+pub fn band_extent(rows: &[(f32, f32)], index: usize, viewport: f32, lip: f32) -> (f32, f32) {
+    let shown = viewport + 2.0 * lip;
     let Some(&(focused_top, focused_height)) = rows.get(index) else {
-        return (0.0, viewport);
+        return (0.0, shown);
     };
-    let focused_bottom = focused_top + focused_height;
-    // The least scrolling that brings the focused row fully into view,
-    // rounded up to a row top. Clamping to a raw `total - viewport` here
-    // instead is what unsnaps it: that bound is rarely a row edge.
-    let needed = focused_bottom - viewport;
+    // The least scrolling that brings the focused row fully into view with
+    // its lip under it, rounded up to a row top.
+    let needed = focused_top + focused_height - viewport - lip;
+    if needed <= 0.0 {
+        return (0.0, shown);
+    }
     let snapped = rows
         .iter()
         .map(|(top, _)| *top)
         .filter(|top| *top >= needed && *top <= focused_top)
         .fold(f32::INFINITY, f32::min);
-    // No row top frames a row taller than the band; sit on its own top and
-    // let the fallback below show the raw viewport.
-    let scroll = if snapped.is_finite() {
-        snapped.max(0.0)
+    // No row top frames a row taller than the band; sit on its own top.
+    let top = if snapped.is_finite() {
+        snapped
     } else {
-        focused_top.max(0.0)
+        focused_top
     };
-    // A row taller than the band cannot be framed by it; show the raw
-    // viewport rather than collapsing the band to nothing.
-    let bottom = rows
-        .iter()
-        .map(|(top, height)| top + height)
-        .filter(|edge| *edge <= scroll + viewport)
-        .fold(f32::NEG_INFINITY, f32::max);
-    let shown = if bottom > scroll {
-        bottom - scroll
+    if top <= 0.0 {
+        (0.0, shown)
     } else {
-        viewport
-    };
-    (scroll, shown)
+        (lip + top, shown)
+    }
 }
 
 pub fn root_grid_shape(count: usize, rotated: bool) -> (usize, usize) {
@@ -518,12 +599,8 @@ mod tests {
         Inputs {
             is_mister: true,
             crt_enabled: crt,
-            debug_build: false,
             log_upload: true,
-            can_pick_folder: false,
-            can_scan_launchers: false,
-            can_request_playtime_access: false,
-            can_link_online: false,
+            ..Inputs::default()
         }
     }
 
@@ -540,23 +617,101 @@ mod tests {
     }
 
     #[test]
-    fn online_rows_need_core_consent_capability() {
-        let mut inputs = Inputs::default();
-        let ids = |inputs: &Inputs| -> Vec<&str> {
-            page_rows("pageLibraryData", inputs)
-                .iter()
-                .map(|row| row.id())
-                .collect()
+    fn online_page_needs_core_consent_capability_and_is_not_on_library() {
+        let ids = |page: &str, inputs: &Inputs| -> Vec<&str> {
+            page_rows(page, inputs).iter().map(|row| row.id()).collect()
         };
-        assert!(!ids(&inputs).contains(&"onlineAccount"));
-        assert!(!ids(&inputs).contains(&"playtimeSync"));
-        inputs.can_link_online = true;
-        let rows = ids(&inputs);
-        let account = rows.iter().position(|id| *id == "onlineAccount");
-        assert_eq!(rows.get(account.unwrap() - 1), Some(&"online"));
-        assert_eq!(rows.get(account.unwrap() + 1), Some(&"playtimeSync"));
-        assert_eq!(control("onlineAccount"), Control::Action);
+        assert!(!ids("pageLibraryData", &Inputs::default()).contains(&"playtimeSync"));
+        assert!(!ids("pageLibraryData", &Inputs::default()).contains(&"onlineLinkAccount"));
+        assert_eq!(
+            page_rows("pageOnline", &Inputs::default()),
+            vec![Row::Header("onlineUnavailable")],
+            "a client Core never grants Online consent to gets an honest page, not a crash"
+        );
+
+        let inputs = Inputs {
+            can_link_online: true,
+            ..Inputs::default()
+        };
+        let rows = ids("pageOnline", &inputs);
+        assert!(rows.contains(&"onlineLinkAccount"), "{rows:?}");
+        assert!(!rows.contains(&"onlineUnlinkAccount"), "{rows:?}");
+        assert!(!rows.contains(&"onlineWarp"), "{rows:?}");
+        assert!(rows.contains(&"playtimeSync"), "{rows:?}");
+        assert!(rows.contains(&"onlineAllFeatures"), "{rows:?}");
+
+        let linked_rows = ids(
+            "pageOnline",
+            &Inputs {
+                can_link_online: true,
+                online_linked: true,
+                ..Inputs::default()
+            },
+        );
+        assert!(
+            !linked_rows.contains(&"onlineLinkAccount"),
+            "{linked_rows:?}"
+        );
+        assert!(
+            linked_rows.contains(&"onlineUnlinkAccount"),
+            "{linked_rows:?}"
+        );
+        assert!(linked_rows.contains(&"onlineWarp"), "{linked_rows:?}");
+
+        // Everything that changes or reads account data waits for a link;
+        // linking itself, and the rows that only report, do not.
+        for row in &page_rows("pageOnline", &inputs) {
+            let waits = needs_online_link(row.id());
+            match row.id() {
+                "onlineLinkAccount"
+                | "onlineStatus"
+                | "onlineRemoteStatus"
+                | "onlineRemoteActivity" => assert!(!waits, "{}", row.id()),
+                _ if row.is_field() => assert!(waits, "{}", row.id()),
+                _ => {}
+            }
+        }
+
+        assert_eq!(control("onlineLinkAccount"), Control::Action);
+        assert_eq!(control("onlineUnlinkAccount"), Control::Action);
+        assert_eq!(control("onlineAllFeatures"), Control::TriToggle);
+        assert_eq!(control("onlineStatus"), Control::Info);
+        assert_eq!(control("onlineWarp"), Control::Info);
+        assert_eq!(control("onlineRemoteStatus"), Control::Info);
+        assert_eq!(control("onlineBackupSchedule"), Control::Picker);
+        assert_eq!(control("onlineManageBackups"), Control::Action);
+        assert_eq!(control("onlineRemoteActivity"), Control::Action);
+        assert_eq!(control("onlineRemoteControl"), Control::Toggle);
+        assert_eq!(control("onlineLibrarySync"), Control::Toggle);
+        assert_eq!(control("onlineCloudBackup"), Control::Toggle);
         assert_eq!(control("playtimeSync"), Control::Toggle);
+        assert_eq!(
+            options("onlineBackupSchedule", &Inputs::default()).unwrap(),
+            BACKUP_SCHEDULES
+        );
+        // An info row only reports: the cursor starts on the first row
+        // there is something to do on and steps over the rest.
+        let page = page_rows("pageOnline", &inputs);
+        let seat = first_navigable(&page);
+        assert_eq!(page[seat].id(), "onlineLinkAccount");
+        let next = seek_navigable(&page, seat, 1);
+        assert_eq!(
+            page[next].id(),
+            "onlineAllFeatures",
+            "the all-features switch leads the Features group"
+        );
+        let last = seek_navigable(&page, seat, -1);
+        assert_eq!(
+            page[last].id(),
+            "onlineRemoteActivity",
+            "wrapping up from the first row skips the remote status row"
+        );
+        assert!(page.iter().all(|row| row.is_navigable()
+            || !row.is_field()
+            || matches!(
+                row.id(),
+                "onlineStatus" | "onlineWarp" | "onlineRemoteStatus"
+            )));
     }
 
     #[test]
@@ -623,13 +778,15 @@ mod tests {
     }
 
     #[test]
-    fn root_page_lists_the_six_categories() {
+    fn root_page_lists_the_seven_categories() {
         let rows = page_rows("", &Inputs::default());
-        assert_eq!(rows.len(), 6);
+        assert_eq!(rows.len(), 7);
         assert!(rows.iter().all(|r| r.is_field()));
         assert_eq!(rows[0].id(), "pageAppearance");
-        assert_eq!(rows[5].id(), "pageSupportAbout");
+        assert_eq!(rows[2].id(), "pageOnline");
+        assert_eq!(rows[6].id(), "pageSupportAbout");
         assert_eq!(opens_page("pageLibraryData"), Some("pageLibraryData"));
+        assert_eq!(opens_page("pageOnline"), Some("pageOnline"));
         assert_eq!(opens_page("colorScheme"), None);
     }
 
@@ -824,34 +981,55 @@ mod tests {
     }
 
     #[test]
-    fn band_snaps_both_edges_to_row_boundaries() {
+    fn band_scrolls_to_a_row_top_and_keeps_a_fixed_height() {
         use super::band_extent;
-        // Six 60px rows in a band that fits 3.5 of them.
+        // Six 60px rows in a band that fits 3.5 of them, with a 10px lip.
         let rows: Vec<(f32, f32)> = (0..6).map(|i| (i as f32 * 60.0, 60.0)).collect();
-        // Focus at the top: no scroll, and the band stops after the third
-        // row rather than showing half of the fourth.
-        assert_eq!(band_extent(&rows, 0, 210.0), (0.0, 180.0));
-        // Focus below the fold: scroll lands on a row top, the band still
-        // ends on a row bottom, and it scrolls the least it can.
-        assert_eq!(band_extent(&rows, 4, 210.0), (120.0, 180.0));
-        // The last row, framed the same way rather than flush against an
-        // unsnapped bottom.
-        assert_eq!(band_extent(&rows, 5, 210.0), (180.0, 180.0));
+        // Focus at the top: no scroll. The band paints its full height
+        // every time, so its bottom edge never moves.
+        assert_eq!(band_extent(&rows, 0, 210.0, 10.0), (0.0, 230.0));
+        assert_eq!(band_extent(&rows, 2, 210.0, 10.0), (0.0, 230.0));
+        // Focus below the fold: it scrolls the least it can, to a row top,
+        // and the top lip has scrolled away with the rows above it.
+        assert_eq!(band_extent(&rows, 4, 210.0, 10.0), (130.0, 230.0));
+        assert_eq!(band_extent(&rows, 5, 210.0, 10.0), (190.0, 230.0));
         // Coming back up returns to the top rather than hanging mid-row.
-        assert_eq!(band_extent(&rows, 1, 210.0), (0.0, 180.0));
+        assert_eq!(band_extent(&rows, 1, 210.0, 10.0), (0.0, 230.0));
     }
 
     #[test]
-    fn a_row_taller_than_the_band_falls_back_to_the_viewport() {
+    fn the_focused_row_keeps_a_lip_above_the_bottom_edge() {
+        use super::band_extent;
+        // A header (30) then 60px rows; the band shows 200 plus two 10px
+        // lips. Row 4 ends at 270, so 70 must scroll away; the first row
+        // top at or past that is 90.
+        let rows = [
+            (0.0_f32, 30.0_f32),
+            (30.0, 60.0),
+            (90.0, 60.0),
+            (150.0, 60.0),
+            (210.0, 60.0),
+        ];
+        let (scroll, shown) = band_extent(&rows, 4, 200.0, 10.0);
+        assert_eq!((scroll, shown), (100.0, 220.0));
+        // In lip-inclusive space the focused row's bottom sits at
+        // 10 + 270 - 100 = 180, at least one lip above the 220 edge.
+        assert!(10.0 + 270.0 - scroll <= shown - 10.0);
+    }
+
+    #[test]
+    fn a_row_taller_than_the_band_sits_on_its_own_top() {
         use super::band_extent;
         let rows = [(0.0_f32, 500.0_f32)];
-        assert_eq!(band_extent(&rows, 0, 200.0), (0.0, 200.0));
+        assert_eq!(band_extent(&rows, 0, 200.0, 10.0), (0.0, 220.0));
+        let rows = [(0.0_f32, 60.0_f32), (60.0, 500.0)];
+        assert_eq!(band_extent(&rows, 1, 200.0, 10.0), (70.0, 220.0));
     }
 
     #[test]
     fn an_out_of_range_index_does_not_collapse_the_band() {
         use super::band_extent;
         let rows = [(0.0_f32, 60.0_f32)];
-        assert_eq!(band_extent(&rows, 9, 200.0), (0.0, 200.0));
+        assert_eq!(band_extent(&rows, 9, 200.0, 10.0), (0.0, 220.0));
     }
 }

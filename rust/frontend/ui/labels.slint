@@ -199,6 +199,7 @@ export global DialogLabels {
         if (kind == DialogKind.first-run) { return @tr("First-time setup"); }
         if (kind == DialogKind.hub-full) { return @tr("Nothing left to add"); }
         if (kind == DialogKind.unlink-online) { return @tr("Unlink Online account?"); }
+        if (kind == DialogKind.restore-online-backup) { return @tr("Restore this backup?"); }
         if (kind == DialogKind.update-stop) { return @tr("Stop update?"); }
         if (kind == DialogKind.action-error) { return DialogLabels.error-title(error); }
         return "";
@@ -212,6 +213,7 @@ export global DialogLabels {
         if (kind == DialogKind.quit-blocked) { return @tr("Close the running game before exiting Zaparoo Frontend."); }
         if (kind == DialogKind.restart-setting) { return @tr("This setting needs a frontend restart to take effect."); }
         if (kind == DialogKind.unlink-online) { return @tr("This device stops backing up and syncing with your Zaparoo Online account. Local play history stays on this device."); }
+        if (kind == DialogKind.restore-online-backup) { return @tr("This replaces this device's settings and data with the backup from {}. Zaparoo restarts when it finishes.", detail); }
         if (kind == DialogKind.update-stop) { return @tr("An update is still running. Leaving this screen stops it."); }
         if (kind == DialogKind.notice) {
             return @tr("Copyright 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.\n\nThis free source-available build is for personal and non-commercial use only. Commercial use requires a separate license.\n\nContact: legal@zaparoo.com\n\nFull details available any time under Settings > About / License.\n\nCreated by\nAndrea Bogazzi, BossRighteous, Tim Wilsie, Wizzo");
@@ -260,6 +262,7 @@ export global DialogLabels {
         if (kind == ErrorKind.setting) { return @tr("Setting not saved"); }
         if (kind == ErrorKind.pairing) { return @tr("Pairing could not start"); }
         if (kind == ErrorKind.online) { return @tr("Online account unavailable"); }
+        if (kind == ErrorKind.backup) { return @tr("Cloud backup failed"); }
         return @tr("Action failed");
     }
 
@@ -290,6 +293,20 @@ export global DialogLabels {
         if (kind == ErrorKind.setting) { return @tr("Could not save this setting. Try again."); }
         if (kind == ErrorKind.pairing) { return @tr("Core would not start a pairing. It may already have as many paired devices as it allows, or it may be running on another device."); }
         if (kind == ErrorKind.online) { return @tr("Core could not reach or update your Zaparoo Online account. Check the network connection and try again."); }
+        // A cloud backup or restore Core refused. `context` is the cause
+        // `zaparoo_app::online_lists::Failure::token` named, or empty.
+        if (kind == ErrorKind.backup) {
+            if (context == "rate_limited") { return @tr("A backup was uploaded recently. Wait a few minutes, then try again."); }
+            if (context == "needs_warp") { return @tr("Cloud backup needs an active Zaparoo Warp subscription."); }
+            if (context == "unlinked") { return @tr("This device is not linked. Link your Zaparoo Online account, then try again."); }
+            if (context == "quota_exceeded") { return @tr("Your cloud backup storage is full."); }
+            if (context == "busy") { return @tr("Zaparoo is busy with another backup or request. Wait for it to finish, then try again."); }
+            if (context == "media_active") { return @tr("Stop the game that is running, then try again."); }
+            if (context == "restart_needed") { return @tr("Restart Zaparoo to finish the previous restore, then try again."); }
+            if (context == "needs_newer") { return @tr("This backup was made by a newer Zaparoo. Update Zaparoo, then try again."); }
+            if (context == "disk_space") { return @tr("Free some storage space on this device, then try again."); }
+            return @tr("Could not finish the cloud backup. Check the network connection and try again.");
+        }
         return @tr("The action could not be completed. Check Zaparoo Core and try again.");
     }
 

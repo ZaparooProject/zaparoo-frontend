@@ -110,6 +110,7 @@ export global SettingsLabels {
         // Root categories.
         if (id == "pageAppearance") { return @tr("Appearance"); }
         if (id == "pageLibraryData") { return @tr("Library"); }
+        if (id == "pageOnline") { return @tr("Online"); }
         if (id == "pageDisplayInterface") { return @tr("Display"); }
         if (id == "pageControlsInput") { return @tr("Controls"); }
         if (id == "pageLanguage") { return @tr("Language"); }
@@ -118,7 +119,10 @@ export global SettingsLabels {
         if (id == "analogVideo") { return @tr("Analog video"); }
         if (id == "maintenance") { return @tr("Maintenance"); }
         if (id == "browsing") { return @tr("Browsing"); }
-        if (id == "online") { return @tr("Online"); }
+        if (id == "account") { return @tr("Account"); }
+        if (id == "features") { return @tr("Features"); }
+        if (id == "backup") { return @tr("Backup"); }
+        if (id == "remote") { return @tr("Remote"); }
         // Appearance.
         if (id == "colorScheme") { return @tr("Color scheme"); }
         if (id == "colorIntensity") { return @tr("Color intensity"); }
@@ -152,8 +156,21 @@ export global SettingsLabels {
         if (id == "mediaImageType") { return @tr("Preferred artwork"); }
         if (id == "showHidden") { return @tr("Show hidden items"); }
         if (id == "showOriginalFilenames") { return @tr("Show original filenames"); }
-        if (id == "onlineAccount") { return @tr("Online account…"); }
+        // Online.
+        if (id == "onlineUnavailable") { return @tr("Online features are not available for this client"); }
+        if (id == "onlineStatus") { return @tr("Status"); }
+        if (id == "onlineWarp") { return @tr("Warp"); }
+        if (id == "onlineLinkAccount") { return @tr("Link account"); }
+        if (id == "onlineUnlinkAccount") { return @tr("Unlink account"); }
+        if (id == "onlineAllFeatures") { return @tr("All"); }
         if (id == "playtimeSync") { return @tr("Sync play history"); }
+        if (id == "onlineRemoteControl") { return @tr("Remote control"); }
+        if (id == "onlineLibrarySync") { return @tr("Library sync"); }
+        if (id == "onlineCloudBackup") { return @tr("Cloud backup"); }
+        if (id == "onlineBackupSchedule") { return @tr("Schedule"); }
+        if (id == "onlineManageBackups") { return @tr("Manage backups…"); }
+        if (id == "onlineRemoteStatus") { return @tr("Status"); }
+        if (id == "onlineRemoteActivity") { return @tr("Activity…"); }
         // About.
         if (id == "pairDevice") { return @tr("Pair a device"); }
         if (id == "aboutLicense") { return @tr("About / License"); }
@@ -163,6 +180,19 @@ export global SettingsLabels {
         return id;
     }
 
+    // What a dimmed row says instead of its description, when the reason
+    // is one the user can act on. Empty for a row that is only busy.
+    public pure function disabled-reason(id: string) -> string {
+        if (id == "onlineAllFeatures" || id == "onlineRemoteControl" || id == "playtimeSync"
+            || id == "onlineLibrarySync" || id == "onlineCloudBackup" || id == "onlineBackupSchedule"
+            || id == "onlineManageBackups") {
+            return @tr("Link your Zaparoo Online account first.");
+        }
+        // The two media jobs cannot run at once; each waits for the other.
+        if (id == "updateMediaDb") { return @tr("Wait for the metadata update to finish."); }
+        if (id == "runScraper") { return @tr("Wait for the media database update to finish."); }
+        return "";
+    }
     public pure function description(id: string) -> string {
         if (id == "addGameFolder") { return @tr("Choose a folder containing system folders, then use Update media database to scan."); }
         if (id == "detectLaunchers") { return @tr("Scans a folder you choose for launchers already installed."); }
@@ -192,8 +222,16 @@ export global SettingsLabels {
         if (id == "mediaImageType") { return @tr("Prefers an artwork type when games have multiple images."); }
         if (id == "showHidden") { return @tr("Shows hidden games, systems and categories to unhide them."); }
         if (id == "showOriginalFilenames") { return @tr("Shows real filenames instead of cleaned-up display titles."); }
-        if (id == "onlineAccount") { return @tr("Links this device to Zaparoo Online with a code, or unlinks it."); }
+        if (id == "onlineLinkAccount") { return @tr("Connects this device to your Zaparoo Online account with a code."); }
+        if (id == "onlineUnlinkAccount") { return @tr("Removes this device's Zaparoo Online account credentials."); }
+        if (id == "onlineAllFeatures") { return @tr("Turns every online feature on or off. Each can still be changed on its own."); }
         if (id == "playtimeSync") { return @tr("Uploads verified playtime to your account. Estimates stay local."); }
+        if (id == "onlineRemoteControl") { return @tr("Allows your linked Zaparoo Online account to send approved commands to this device."); }
+        if (id == "onlineLibrarySync") { return @tr("Syncs your game list, favorites, likes and decks with your linked Zaparoo Online account."); }
+        if (id == "onlineCloudBackup") { return @tr("Backs up this device to the cloud on a schedule."); }
+        if (id == "onlineBackupSchedule") { return @tr("How often automatic cloud backup runs."); }
+        if (id == "onlineManageBackups") { return @tr("Back up now, view and restore cloud backup snapshots."); }
+        if (id == "onlineRemoteActivity") { return @tr("See what a linked account's remote commands have done on this device."); }
         if (id == "pairDevice") { return @tr("Shows a PIN for pairing a new device with Core."); }
         if (id == "aboutLicense") { return @tr("Version, build date, license terms, and contributors."); }
         if (id == "documentation") { return @tr("Shows a code for opening the Frontend guide on your phone."); }
@@ -272,6 +310,31 @@ export global SettingsLabels {
         if (id == "favoritesGrouping") {
             if (value == "system") { return @tr("System"); }
             return @tr("None");
+        }
+        if (id == "onlineBackupSchedule") {
+            if (value == "daily") { return @tr("Daily"); }
+            if (value == "weekly") { return @tr("Weekly"); }
+            return @tr("Manual");
+        }
+        if (id == "onlineStatus") {
+            if (value == "linked") { return @tr("Linked"); }
+            return @tr("Not linked");
+        }
+        if (id == "onlineWarp") {
+            if (value == "active") { return @tr("Active"); }
+            if (value == "inactive") { return @tr("Not active"); }
+            return @tr("Checking…");
+        }
+        if (id == "onlineRemoteStatus") {
+            if (value == "disabled") { return @tr("Off"); }
+            if (value == "unlinked") { return @tr("Not linked"); }
+            if (value == "connecting") { return @tr("Connecting"); }
+            if (value == "waiting") { return @tr("Waiting for commands"); }
+            if (value == "not_remote_device") { return @tr("Not the remote device"); }
+            if (value == "unavailable") { return @tr("Not available"); }
+            if (value == "credential_rejected") { return @tr("Link rejected"); }
+            if (value == "error") { return @tr("Server unreachable"); }
+            return @tr("Unknown");
         }
         return value;
     }
@@ -361,7 +424,10 @@ export component SettingsRowView inherits Rectangle {
     // goes invisible against `Theme.on-accent` for the length of the cue.
     in property <bool> flashing: false;
 
-    opacity: root.entry.enabled ? 1.0 : 0.4;
+    // A row that cannot be used right now is muted through its text tier,
+    // never through opacity: an alpha multiplier has no contrast floor.
+    // See docs/style.md, "Disabled controls".
+    property <bool> dim: !root.entry.enabled;
 
     property <bool> is-action: root.entry.control == ControlKind.action;
     property <length> pad: Sizing.pct-w(2);
@@ -403,7 +469,8 @@ export component SettingsRowView inherits Rectangle {
             parent.width - 2 * root.pad);
         overflow: elide;
         text: SettingsLabels.label(root.entry.id);
-        color: root.focused ? root.content-color : (root.is-action ? Theme.accent : Theme.text-primary);
+        color: root.focused ? (root.dim ? Theme.on-accent-muted : root.content-color)
+            : (root.dim ? Theme.text-label : (root.is-action ? Theme.accent : Theme.text-primary));
         font-size: Sizing.font-body;
         font-weight: root.content-weight;
     }
@@ -421,21 +488,36 @@ export component SettingsRowView inherits Rectangle {
 
     property <string> value-text: (root.entry.id == "systems" || root.entry.id == "source")
         ? SettingsLabels.scope(root.entry.scope-kind, root.entry.value-name)
-        : SettingsLabels.value(root.entry.id, root.entry.value);
+        : (root.entry.id == "onlineStatus" && root.entry.value == "linked" && root.entry.value-name != "")
+            ? @tr("Linked as {}", root.entry.value-name)
+            : SettingsLabels.value(root.entry.id, root.entry.value);
 
-    if root.entry.control == ControlKind.picker: Text {
-        x: parent.width - self.width - root.pad - chevron.width - Sizing.pct-w(1);
+    // An info row only reports: its value sits flush right in the label
+    // color, with no chevron, so it does not read as something to open.
+    property <bool> is-info: root.entry.control == ControlKind.info;
+
+    if root.entry.control == ControlKind.picker || root.is-info: Text {
+        x: root.is-info
+            ? parent.width - self.width - root.pad
+            : parent.width - self.width - root.pad - chevron.width - Sizing.pct-w(1);
         y: (parent.height - self.height) / 2;
         width: Math.min(self.preferred-width, Math.max(0px,
             chevron.x - Sizing.pct-w(2) - label.x - label.width - Sizing.pct-w(2)));
         overflow: elide;
         text: root.value-text;
-        color: root.focused ? root.content-color : Theme.text-primary;
+        color: root.focused ? (root.dim ? Theme.on-accent-muted : root.content-color)
+            : (root.is-info || root.dim ? Theme.text-label : Theme.text-primary);
         font-size: Sizing.font-body;
         font-weight: root.content-weight;
     }
 
-    if root.entry.control == ControlKind.toggle: Rectangle {
+    // A toggle's knob rests left (off) or right (on). A tri-toggle adds the
+    // middle: some of what it covers is on. `level` is 0, 1 or 2.
+    property <int> level: root.entry.control == ControlKind.tri-toggle
+        ? (root.entry.value == "on" ? 2 : root.entry.value == "mixed" ? 1 : 0)
+        : (root.entry.checked ? 2 : 0);
+
+    if root.entry.control == ControlKind.toggle || root.entry.control == ControlKind.tri-toggle: Rectangle {
         property <length> inset: Sizing.card-border-width * (Sizing.tier-240 ? 1 : 2);
         x: parent.width - self.width - root.pad;
         y: (parent.height - self.height) / 2;
@@ -443,11 +525,12 @@ export component SettingsRowView inherits Rectangle {
         height: root.knob-h;
         border-radius: Sizing.radius-sm;
         background: root.focused
-            ? (root.entry.checked ? Theme.on-accent : Theme.on-accent-muted)
-            : (root.entry.checked ? Theme.accent : Theme.border-mid);
+            ? (root.level == 2 ? Theme.on-accent : Theme.on-accent-muted)
+            : (root.level == 2 ? Theme.accent
+                : root.level == 1 ? Theme.accent.mix(Theme.border-mid, 0.5) : Theme.border-mid);
 
         Rectangle {
-            property <length> knob-x: root.entry.checked ? parent.width - self.width - parent.inset : parent.inset;
+            property <length> knob-x: parent.inset + (parent.width - self.width - 2 * parent.inset) * root.level / 2;
             x: self.knob-x;
             y: parent.inset;
             width: parent.height - 2 * parent.inset;

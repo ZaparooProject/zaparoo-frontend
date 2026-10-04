@@ -1,4 +1,4 @@
-import { Theme, Sizing } from "theme.slint";
+import { Theme, Sizing, Motion } from "theme.slint";
 import { Brand, GlyphSource, ScrollCue, TopStatusStrip } from "chrome.slint";
 
 export global AboutView {
@@ -39,6 +39,10 @@ export component AboutScreen inherits Rectangle {
     property <length> maximum-scroll: Math.max(0px, content.preferred-height - viewport.height);
     property <length> scroll-y: Math.min(root.maximum-scroll,
         AboutView.scroll-milli * root.maximum-scroll / 1000);
+    // What the text is drawn at: it glides to a stepped position, and
+    // tracks a drag exactly so the text stays under the finger.
+    property <length> shown-y: root.scroll-y;
+    animate shown-y { duration: body-touch.pressed ? 0ms : Motion.dur(Motion.page-ms); easing: ease-out; }
     changed maximum-scroll => {
         AboutView.maximum-scroll-milli = Math.ceil(root.maximum-scroll / Math.max(1px, Sizing.screen-height) * 1000);
     }
@@ -85,7 +89,7 @@ export component AboutScreen inherits Rectangle {
             height: Math.max(0px, parent.height - 2 * self.y);
             clip: true;
             content := VerticalLayout {
-                y: -root.scroll-y;
+                y: -root.shown-y;
                 height: self.preferred-height;
                 spacing: Sizing.pct-h(2);
                 Rectangle {
@@ -115,7 +119,7 @@ export component AboutScreen inherits Rectangle {
                 CenteredLine { text: @tr("Italiano - Andrea Bogazzi\nEspañol - Carlos R.\nEuskara - devilschile2\nFrançais - Wilfried"); }
                 CenteredLine { text: @tr("Full license text in COPYING."); font-size: Sizing.font-caption; ink: Theme.text-label; }
             }
-            TouchArea {
+            body-touch := TouchArea {
                 property <length> drag-y;
                 property <int> drag-scroll;
                 pointer-event(event) => {

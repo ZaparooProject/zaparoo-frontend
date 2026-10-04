@@ -1081,6 +1081,21 @@ pub struct SettingsResult {
     /// admin clients only.
     #[serde(default)]
     pub online_base_url: Option<String>,
+    /// Whether a linked account may send this device remote commands. Local
+    /// and admin clients only, like every other Online consent setting here.
+    #[serde(default)]
+    pub remote_control_enabled: Option<bool>,
+    /// Whether this device's game list, favorites, likes and decks sync with
+    /// a linked account.
+    #[serde(default)]
+    pub library_sync_enabled: Option<bool>,
+    /// Whether this device uploads scheduled backups to a linked account.
+    /// Scheduling itself still needs Zaparoo Warp; see `BackupStatusResponse`.
+    #[serde(default)]
+    pub backup_remote_enabled: Option<bool>,
+    /// "daily", "weekly", or "manual".
+    #[serde(default)]
+    pub backup_remote_schedule: Option<String>,
 }
 
 /// `settings.auth.status`: whether Core holds a credential for a URL. No
@@ -1108,6 +1123,233 @@ pub struct AuthLinkStatus {
     pub expires_at: String,
     #[serde(default)]
     pub error: String,
+}
+
+/// One category's current backup accounting: how much it holds, and
+/// whether it is included at all (a device with nothing to back up for a
+/// category still reports it, `enabled: false`).
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupCategoryStatus {
+    #[serde(default)]
+    pub files: i64,
+    #[serde(default)]
+    pub bytes: i64,
+    #[serde(default)]
+    pub enabled: bool,
+}
+
+/// One file or folder a backup pass could not collect, and why.
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupWarning {
+    #[serde(default)]
+    pub category: String,
+    #[serde(default)]
+    pub path: String,
+    #[serde(default)]
+    pub reason: String,
+}
+
+/// One of `BackupStatusResponse`'s two sides (local, remote): the same
+/// shape either way, though a field only ever means something on one side
+/// (`deviceName`/`linkedAt`/`availability` are remote-only; Core sends its
+/// zero value on the other side rather than omitting the field).
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupStatusEntry {
+    #[serde(default)]
+    pub last_run_at: Option<String>,
+    #[serde(default)]
+    pub last_success_at: Option<String>,
+    #[serde(default)]
+    pub last_snapshot_created_at: Option<String>,
+    #[serde(default)]
+    pub availability_checked_at: Option<String>,
+    #[serde(default)]
+    pub device_name: Option<String>,
+    #[serde(default)]
+    pub linked_at: Option<String>,
+    #[serde(default)]
+    pub categories: HashMap<String, BackupCategoryStatus>,
+    /// "daily", "weekly", or "manual"; meaningless on the local side.
+    #[serde(default)]
+    pub schedule: String,
+    #[serde(default)]
+    pub last_error: String,
+    /// "available", "unavailable", or "" while Core is still checking
+    /// (Zaparoo Warp); meaningless on the local side.
+    #[serde(default)]
+    pub availability: String,
+    #[serde(default)]
+    pub last_status: String,
+    #[serde(default)]
+    pub warnings: Vec<BackupWarning>,
+    #[serde(default)]
+    pub last_backup_size: i64,
+    #[serde(default)]
+    pub skipped_files: i64,
+    #[serde(default)]
+    pub linked: bool,
+    #[serde(default)]
+    pub enabled: bool,
+    /// The most recent successful run found the account already held an
+    /// identical snapshot: `lastSuccessAt` still advanced, nothing new was
+    /// stored.
+    #[serde(default)]
+    pub last_run_no_changes: bool,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupStatusResponse {
+    #[serde(default)]
+    pub active_since: Option<String>,
+    #[serde(default)]
+    pub active_operation: String,
+    #[serde(default)]
+    pub local: BackupStatusEntry,
+    #[serde(default)]
+    pub remote: BackupStatusEntry,
+}
+
+/// Identifies the account device that created a cloud snapshot. `current`
+/// is relative to the device asking, so exactly one entry in a listing
+/// (if any) ever has it set.
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupRemoteSourceDevice {
+    #[serde(default)]
+    pub platform: Option<String>,
+    #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub linked: bool,
+    #[serde(default)]
+    pub current: bool,
+}
+
+/// One cloud snapshot's metadata, as the account's own catalog answers it
+/// (listing) or as the snapshot a run just created/a restore just read
+/// (`backup`/`restoredFrom` below).
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupRemoteInfo {
+    #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    pub created_at: String,
+    #[serde(default)]
+    pub core_version: Option<String>,
+    #[serde(default)]
+    pub platform: Option<String>,
+    #[serde(default)]
+    pub verified_at: Option<String>,
+    #[serde(default)]
+    pub restored_at: Option<String>,
+    #[serde(default)]
+    pub source_device: Option<BackupRemoteSourceDevice>,
+    #[serde(default)]
+    pub categories: HashMap<String, BackupCategorySummary>,
+    #[serde(default)]
+    pub size_bytes: i64,
+    /// This snapshot was committed with a newer schema than this Core
+    /// supports: it still lists, but refuses to restore.
+    #[serde(default)]
+    pub incompatible: bool,
+}
+
+/// A cloud snapshot's per-category footprint: just the accounting, since a
+/// listed snapshot has nothing to enable or disable.
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupCategorySummary {
+    #[serde(default)]
+    pub files: i64,
+    #[serde(default)]
+    pub bytes: i64,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupRemoteListResult {
+    #[serde(default)]
+    pub items: Vec<BackupRemoteInfo>,
+    #[serde(default)]
+    pub storage_used_bytes: i64,
+    #[serde(default)]
+    pub storage_quota_bytes: i64,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupRemoteRunResult {
+    #[serde(default)]
+    pub backup: BackupRemoteInfo,
+    #[serde(default)]
+    pub warnings: Vec<BackupWarning>,
+    #[serde(default)]
+    pub uploaded_files: i64,
+    #[serde(default)]
+    pub deduped_files: i64,
+    #[serde(default)]
+    pub skipped_files: i64,
+    #[serde(default)]
+    pub uploaded_bytes: i64,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupRemoteRestoreResult {
+    #[serde(default)]
+    pub restored_from: BackupRemoteInfo,
+}
+
+/// One remote operation Core already executed or attempted for the
+/// account, newest-first play-by-play for the Remote activity page.
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteActivityEntry {
+    #[serde(default)]
+    pub created_at: String,
+    #[serde(default)]
+    pub operation_type: String,
+    #[serde(default)]
+    pub origin_kind: String,
+    #[serde(default)]
+    pub origin_key_name: String,
+    #[serde(default)]
+    pub state: String,
+    #[serde(default)]
+    pub status: String,
+    #[serde(default)]
+    pub error_code: String,
+}
+
+/// The remote operations poller's last observation: why this device is or
+/// is not currently reachable for a linked account's commands. `state` is
+/// one of unknown, disabled, unlinked, connecting, waiting,
+/// `not_remote_device`, unavailable, `credential_rejected`, or error.
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteStatusInfo {
+    #[serde(default)]
+    pub state: String,
+    #[serde(default)]
+    pub last_contact_at: String,
+    #[serde(default)]
+    pub last_error_code: String,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteActivityResult {
+    #[serde(default)]
+    pub status: RemoteStatusInfo,
+    #[serde(default)]
+    pub entries: Vec<RemoteActivityEntry>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
@@ -1180,6 +1422,15 @@ pub struct UpdateSettingsParams {
     pub system_defaults: Option<Vec<SystemDefault>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub playtime_sync_enabled: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub remote_control_enabled: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub library_sync_enabled: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub backup_remote_enabled: Option<bool>,
+    /// "daily", "weekly", or "manual"; Core rejects any other value.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub backup_remote_schedule: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]

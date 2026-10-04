@@ -519,6 +519,8 @@ fn main() {
                 .collect();
             sv.set_picker_page(true);
             sv.set_picker_title(SetupPicker::Systems);
+            sv.set_picker_visible(i32::try_from(picker.len()).unwrap_or(0));
+            sv.set_picker_count(i32::try_from(picker.len()).unwrap_or(0) + 1);
             sv.set_picker_rows(slint::ModelRc::new(slint::VecModel::from(picker)));
             sv.set_picker_sel(1);
             sv.set_has_below(true);
@@ -655,6 +657,63 @@ fn main() {
         ov.set_online_url("https://online.zaparoo.com/link".into());
         ov.set_online_expires_in(597);
         ov.set_online_open(true);
+    }
+    // "…-online-backups" and "…-online-activity" render the Online page's
+    // list modal over it: a list long enough to scroll, cursor mid-way.
+    if screen.contains("online-backups") || screen.contains("online-activity") {
+        let backups = screen.contains("online-backups");
+        let ov = app.global::<generated::Overlays>();
+        let row = |id: &str, label: &str, detail: &str, enabled: bool, this_device: bool| {
+            generated::OnlineListRow {
+                id: id.into(),
+                label: label.into(),
+                detail: detail.into(),
+                enabled,
+                this_device,
+            }
+        };
+        let rows = if backups {
+            let mut rows = vec![row("run", "", "", true, false)];
+            rows.extend((1..=9).map(|n| {
+                row(
+                    &format!("s{n}"),
+                    &format!("{} Oct 09:45", 12 - n),
+                    if n % 3 == 0 {
+                        "4.2 MB, MiSTer"
+                    } else {
+                        "4.2 MB"
+                    },
+                    n != 4,
+                    n % 3 != 0,
+                )
+            }));
+            rows
+        } else {
+            (1..=9)
+                .map(|n| {
+                    row(
+                        "",
+                        &format!("{} Oct 09:45  launch", 12 - n),
+                        if n == 2 {
+                            "account, failed: host_foreground_required"
+                        } else {
+                            "account, succeeded"
+                        },
+                        true,
+                        false,
+                    )
+                })
+                .collect()
+        };
+        ov.set_online_list_kind(if backups {
+            generated::OnlineListKind::Backups
+        } else {
+            generated::OnlineListKind::Activity
+        });
+        ov.set_online_list_note(if backups { "38.1 MB / 1.0 GB" } else { "" }.into());
+        ov.set_online_list_rows(slint::ModelRc::new(slint::VecModel::from(rows)));
+        ov.set_online_list_index(if backups { 4 } else { 1 });
+        ov.set_online_list_open(true);
     }
     // "log-upload" renders the uploader's finished state with its link.
     if screen.contains("log-upload") {
@@ -1488,10 +1547,15 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
     let page = screen.contains("settings-page");
     let playtime = screen.contains("settings-page-playtime");
     let online = screen.contains("settings-page-online");
+    // "…-online-unlinked": the same page before an account is linked, with
+    // the cursor on a row that waits for one.
+    let unlinked = screen.contains("online-unlinked");
     let inputs = sizing::Scene::of(app, scene_w, scene_h, crt).inputs();
     let derived = zaparoo_app::sizing::derive(&inputs);
     let view = app.global::<generated::SettingsView>();
-    let page_id = if page {
+    let page_id = if online {
+        SettingsPage::Online
+    } else if page {
         SettingsPage::Library
     } else {
         SettingsPage::Root
@@ -1505,6 +1569,7 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
         can_scan_launchers: false,
         can_request_playtime_access: playtime,
         can_link_online: online,
+        online_linked: online && !unlinked,
     };
     let row_h = inputs.pct_h(8.0);
     let header_h = inputs.pct_h(5.0);
@@ -1528,12 +1593,20 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
                 Row::Header(_) => header_h,
                 Row::Field { id, control } => {
                     out.control = control.into();
+                    out.enabled = !(unlinked && rules::needs_online_link(id));
                     match control {
-                        Control::Toggle => out.checked = id == "showHidden",
-                        Control::Picker => {
+                        Control::Toggle => {
+                            out.checked = id == "showHidden" || (id == "playtimeSync" && !unlinked);
+                        }
+                        Control::Picker | Control::Info => {
                             out.value = match id {
                                 "systemsLayout" => "grid",
                                 "gamesLayout" => "list",
+                                "onlineStatus" if unlinked => "unlinked",
+                                "onlineStatus" => "linked",
+                                "onlineWarp" => "active",
+                                "onlineBackupSchedule" => "daily",
+                                "onlineRemoteStatus" => "waiting",
                                 _ => "auto",
                             }
                             .into();
@@ -1542,8 +1615,6 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
                             out.busy = id == "runScraper";
                             out.status_key = if id == "playtimeAccess" {
                                 ActionStatus::PlaytimeUnverified
-                            } else if id == "onlineAccount" {
-                                ActionStatus::OnlineUnlinked
                             } else if out.busy {
                                 ActionStatus::Running
                             } else {
@@ -1552,6 +1623,9 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
                             out.value = rules::action_label_key(id, out.busy).into();
                         }
                         Control::Navigate => {}
+                        Control::TriToggle => {
+                            out.value = if unlinked { "off" } else { "mixed" }.into();
+                        }
                     }
                     if out.status_key == ActionStatus::None {
                         row_h
@@ -1583,7 +1657,14 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
     // scrolls to the group.
     let index = if online {
         rows.iter()
-            .position(|row| row.id == "onlineAccount")
+            .position(|row| {
+                row.id
+                    == if unlinked {
+                        "onlineAllFeatures"
+                    } else {
+                        "onlineUnlinkAccount"
+                    }
+            })
             .and_then(|i| i32::try_from(i).ok())
             .unwrap_or(2)
     } else if page {
@@ -1600,11 +1681,15 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
     };
     view.set_field_index(fields(index.max(0) as usize));
     view.set_field_count(fields(rows.len()));
-    // Same snap the driver applies, from the same rule, so the fixture
+    // Same scroll the driver applies, from the same rule, so the fixture
     // cannot quietly frame the band differently from the app.
     let spans: Vec<(f32, f32)> = rows.iter().map(|r| (r.y_offset, r.height)).collect();
-    let (scroll, shown) =
-        zaparoo_app::settings::band_extent(&spans, index.max(0) as usize, viewport as f32);
+    let (scroll, shown) = zaparoo_app::settings::band_extent(
+        &spans,
+        index.max(0) as usize,
+        viewport as f32,
+        inputs.pct_min(2.0) as f32,
+    );
     view.set_rows_height(viewport as f32);
     view.set_rows_clip_height(shown);
     view.set_scroll(scroll);

@@ -30,7 +30,7 @@ tokens!(Screen {
 });
 tokens!(SettingsPage {
     Root => "", Appearance => "pageAppearance", Library => "pageLibraryData",
-    Display => "pageDisplayInterface", Controls => "pageControlsInput",
+    Online => "pageOnline", Display => "pageDisplayInterface", Controls => "pageControlsInput",
     Language => "pageLanguage", About => "pageSupportAbout",
 });
 tokens!(Orientation { Horizontal => "horizontal", Cw => "cw", Ccw => "ccw" });
@@ -41,7 +41,7 @@ tokens!(ErrorKind {
     MediaIndex => "media_index", MediaScrape => "media_scrape", MediaScrapers => "media_scrapers",
     MediaCancel => "media_cancel", Launcher => "launcher", LauncherSave => "launcher_save",
     AlternateDiscovery => "alternate_discovery", QrCode => "qr_code", CardWrite => "card_write", Setting => "setting",
-    Pairing => "pairing", Online => "online",
+    Pairing => "pairing", Online => "online", Backup => "backup",
 });
 
 impl From<zaparoo_app::hub::Reason> for crate::DisabledReason {
@@ -63,6 +63,8 @@ impl From<zaparoo_app::settings::Control> for crate::ControlKind {
             Control::Toggle => Self::Toggle,
             Control::Action => Self::Action,
             Control::Navigate => Self::Navigate,
+            Control::TriToggle => Self::TriToggle,
+            Control::Info => Self::Info,
         }
     }
 }
@@ -171,6 +173,7 @@ mod tests {
             SettingsPage::Root,
             SettingsPage::Appearance,
             SettingsPage::Library,
+            SettingsPage::Online,
             SettingsPage::Display,
             SettingsPage::Controls,
             SettingsPage::Language,

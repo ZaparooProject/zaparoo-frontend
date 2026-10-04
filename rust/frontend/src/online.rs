@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 //
-// Settings > Library > Online: link this device to a Zaparoo Online account
+// Settings > Online: link this device to a Zaparoo Online account
 // and choose, separately, whether its play history is uploaded. Core owns
 // the account token and every upload; this module shows Core's state, runs
 // the link panel and forwards the user's choices. The panel's rules live in
@@ -14,21 +14,34 @@ use std::time::Duration;
 
 use slint::{ComponentHandle, SharedString};
 use zaparoo_app::online_link::{self as rules, Started, Tick};
-use zaparoo_core::client::{Client, Notification};
+use zaparoo_app::online_settings::{OnlineFeatureChanges, OnlineFeatures};
+use zaparoo_core::client::{Client, ConnectionState, Notification};
 use zaparoo_core::input_actions::actions;
 use zaparoo_core::media_types::UpdateSettingsParams;
 
 use crate::router::{lock, Ctx};
 use crate::{App, Overlays};
 
-/// What Core last said about the account and upload consent.
+/// What Core last said about the account, Warp, and the four consent
+/// settings. Account identity (`linked`/`device_name`) and
+/// Warp come from `settings.backup.status`'s `remote` side, the same as
+/// Core's own TUI reads them, not from a separate auth-status call.
 #[derive(Debug, Clone, Default)]
 pub struct Model {
-    /// Core answered `playtimeSyncEnabled`: this client may change it and
-    /// link an account.
+    /// Core answered `playtimeSyncEnabled`: this client may change every
+    /// consent setting here and link an account.
     pub available: bool,
     pub linked: bool,
-    pub sync_enabled: bool,
+    pub device_name: Option<String>,
+    /// "", "available", or "unavailable".
+    pub warp_availability: String,
+    pub features: OnlineFeatures,
+    /// "daily", "weekly", or "manual".
+    pub backup_schedule: String,
+    /// The remote-control poller's last observation: unknown, disabled,
+    /// unlinked, connecting, waiting, `not_remote_device`, unavailable,
+    /// `credential_rejected`, or error (empty when the fetch itself failed).
+    pub remote_state: String,
 }
 
 /// Core's `auth.link.status` notification: the flow's new status. The
@@ -62,19 +75,54 @@ pub fn refresh(ctx: &Ctx, app: &App) {
     ctx.handle.clone().spawn(async move {
         let model = match client.settings().await {
             Ok(settings) => {
-                let base_url = settings.online_base_url.unwrap_or_default();
-                let linked = if base_url.is_empty() {
-                    false
+                // Account identity and Warp come from the backup status
+                // call's remote side, the same as Core's own TUI reads
+                // them. A failure here still leaves every consent setting
+                // and the schedule usable; it only loses the device name
+                // and Warp display for this refresh.
+                let remote = client
+                    .settings_backup_status()
+                    .await
+                    .inspect_err(|error| {
+                        tracing::debug!("reading Online backup status failed: {}", error.message);
+                    })
+                    .ok()
+                    .map(|status| status.remote);
+                // The remote-control poller's own status; soft-fail like
+                // Core's TUI does, since it is one row, not the page.
+                let activity = client
+                    .remote_activity()
+                    .await
+                    .inspect_err(|error| {
+                        tracing::debug!("reading Online remote activity failed: {}", error.message);
+                    })
+                    .ok();
+                // A Core older than the backup status call, or one that
+                // could not answer it just now, still knows whether it is
+                // linked: never offer to link an account that already is.
+                let linked = if let Some(remote) = &remote {
+                    remote.linked
                 } else {
-                    client
-                        .settings_auth_status(&base_url)
-                        .await
-                        .is_ok_and(|status| status.linked)
+                    let base_url = settings.online_base_url.clone().unwrap_or_default();
+                    !base_url.is_empty()
+                        && client
+                            .settings_auth_status(&base_url)
+                            .await
+                            .is_ok_and(|status| status.linked)
                 };
                 Model {
                     available: settings.playtime_sync_enabled.is_some(),
                     linked,
-                    sync_enabled: settings.playtime_sync_enabled.unwrap_or(false),
+                    device_name: remote.as_ref().and_then(|r| r.device_name.clone()),
+                    warp_availability: remote.map(|r| r.availability).unwrap_or_default(),
+                    features: OnlineFeatures {
+                        remote_control: settings.remote_control_enabled.unwrap_or(false),
+                        play_history: settings.playtime_sync_enabled.unwrap_or(false),
+                        library: settings.library_sync_enabled.unwrap_or(false),
+                        cloud_backup: settings.backup_remote_enabled.unwrap_or(false),
+                    },
+                    backup_schedule: settings.backup_remote_schedule.unwrap_or_default(),
+                    remote_state: activity.map_or_else(String::new, |a| a.status.state),
                 }
             }
             Err(error) => {
@@ -84,21 +132,180 @@ pub fn refresh(ctx: &Ctx, app: &App) {
         };
         let _ = weak.upgrade_in_event_loop(move |app| {
             lock(&ctx.shared).online = model;
+            crate::settings::reseat(&ctx, &app);
             crate::settings::refresh(&ctx, &app);
         });
     });
 }
 
-/// Flip play history upload consent. The row shows the new value at once
-/// and goes back if Core refuses.
-pub fn toggle_sync(ctx: &Ctx, app: &App) {
-    let enabled = {
+/// "linked" or "unlinked": the view adds the device name itself.
+pub fn status_value(model: &Model) -> &'static str {
+    if model.linked {
+        "linked"
+    } else {
+        "unlinked"
+    }
+}
+
+/// "active", "inactive", or "checking" while Core's own check has not
+/// resolved yet.
+pub fn warp_value(model: &Model) -> &'static str {
+    match model.warp_availability.as_str() {
+        "available" => "active",
+        "unavailable" => "inactive",
+        _ => "checking",
+    }
+}
+
+/// The remote-control poller's state, or "unknown" for one this build does
+/// not name (or when the fetch failed): the same closed set Core's own TUI
+/// words.
+pub fn remote_status_value(model: &Model) -> &'static str {
+    match model.remote_state.as_str() {
+        "disabled" => "disabled",
+        "unlinked" => "unlinked",
+        "connecting" => "connecting",
+        "waiting" => "waiting",
+        "not_remote_device" => "not_remote_device",
+        "unavailable" => "unavailable",
+        "credential_rejected" => "credential_rejected",
+        "error" => "error",
+        _ => "unknown",
+    }
+}
+
+/// One of the four consent settings the Online page's own feature toggles
+/// and the "All online features" row both change.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Feature {
+    RemoteControl,
+    PlayHistory,
+    Library,
+    CloudBackup,
+}
+
+impl Feature {
+    pub fn from_id(id: &str) -> Option<Self> {
+        match id {
+            "onlineRemoteControl" => Some(Self::RemoteControl),
+            "playtimeSync" => Some(Self::PlayHistory),
+            "onlineLibrarySync" => Some(Self::Library),
+            "onlineCloudBackup" => Some(Self::CloudBackup),
+            _ => None,
+        }
+    }
+
+    fn get(self, features: OnlineFeatures) -> bool {
+        match self {
+            Self::RemoteControl => features.remote_control,
+            Self::PlayHistory => features.play_history,
+            Self::Library => features.library,
+            Self::CloudBackup => features.cloud_backup,
+        }
+    }
+
+    fn set(self, features: &mut OnlineFeatures, value: bool) {
+        match self {
+            Self::RemoteControl => features.remote_control = value,
+            Self::PlayHistory => features.play_history = value,
+            Self::Library => features.library = value,
+            Self::CloudBackup => features.cloud_backup = value,
+        }
+    }
+
+    fn params(self, value: bool) -> UpdateSettingsParams {
+        let value = Some(value);
+        match self {
+            Self::RemoteControl => UpdateSettingsParams {
+                remote_control_enabled: value,
+                ..Default::default()
+            },
+            Self::PlayHistory => UpdateSettingsParams {
+                playtime_sync_enabled: value,
+                ..Default::default()
+            },
+            Self::Library => UpdateSettingsParams {
+                library_sync_enabled: value,
+                ..Default::default()
+            },
+            Self::CloudBackup => UpdateSettingsParams {
+                backup_remote_enabled: value,
+                ..Default::default()
+            },
+        }
+    }
+
+    /// The one change a toggle of this feature asks Core for.
+    fn changes(self, value: bool) -> OnlineFeatureChanges {
+        let mut changes = OnlineFeatureChanges::default();
+        match self {
+            Self::RemoteControl => changes.remote_control = Some(value),
+            Self::PlayHistory => changes.play_history = Some(value),
+            Self::Library => changes.library = Some(value),
+            Self::CloudBackup => changes.cloud_backup = Some(value),
+        }
+        changes
+    }
+
+    fn log_name(self) -> &'static str {
+        match self {
+            Self::RemoteControl => "remote control",
+            Self::PlayHistory => "play history sync",
+            Self::Library => "library sync",
+            Self::CloudBackup => "cloud backup",
+        }
+    }
+}
+
+/// Flip one consent setting. The row shows the new value at once and goes
+/// back if Core refuses.
+pub fn toggle_feature(ctx: &Ctx, app: &App, feature: Feature) {
+    let (before, enabled) = {
         let mut shared = lock(&ctx.shared);
         if !shared.online.available {
             return;
         }
-        shared.online.sync_enabled = !shared.online.sync_enabled;
-        shared.online.sync_enabled
+        let before = shared.online.features;
+        let next = !feature.get(before);
+        feature.set(&mut shared.online.features, next);
+        (before, next)
+    };
+    crate::settings::refresh(ctx, app);
+    let client = ctx.store.client();
+    let ctx = ctx.clone();
+    let weak = app.as_weak();
+    ctx.handle.clone().spawn(async move {
+        let result = client.settings_update(feature.params(enabled)).await;
+        if let Err(error) = result {
+            tracing::warn!("changing {} failed: {}", feature.log_name(), error.message);
+            let _ = weak.upgrade_in_event_loop(move |app| {
+                roll_back(&ctx, before, feature.changes(enabled));
+                crate::settings::refresh(&ctx, &app);
+                crate::router::report_action_error(&ctx, &app, "online", "");
+            });
+        }
+    });
+}
+
+/// Put back what a refused request changed, leaving anything the user or
+/// an overlapping request has changed since. See
+/// `zaparoo_app::online_settings::roll_back`.
+fn roll_back(ctx: &Ctx, before: OnlineFeatures, changes: OnlineFeatureChanges) {
+    let mut shared = lock(&ctx.shared);
+    shared.online.features =
+        zaparoo_app::online_settings::roll_back(shared.online.features, before, changes);
+}
+
+/// Pick how often cloud backup runs on its own. The row shows the new value
+/// at once and goes back if Core refuses (it validates the value itself).
+pub fn set_backup_schedule(ctx: &Ctx, app: &App, schedule: &str) {
+    let (previous, schedule) = {
+        let mut shared = lock(&ctx.shared);
+        if !shared.online.available || shared.online.backup_schedule == schedule {
+            return;
+        }
+        let previous = std::mem::replace(&mut shared.online.backup_schedule, schedule.to_string());
+        (previous, schedule.to_string())
     };
     crate::settings::refresh(ctx, app);
     let client = ctx.store.client();
@@ -107,14 +314,66 @@ pub fn toggle_sync(ctx: &Ctx, app: &App) {
     ctx.handle.clone().spawn(async move {
         let result = client
             .settings_update(UpdateSettingsParams {
-                playtime_sync_enabled: Some(enabled),
+                backup_remote_schedule: Some(schedule.clone()),
                 ..Default::default()
             })
             .await;
         if let Err(error) = result {
-            tracing::warn!("changing play history sync failed: {}", error.message);
+            tracing::warn!(
+                "changing the cloud backup schedule failed: {}",
+                error.message
+            );
             let _ = weak.upgrade_in_event_loop(move |app| {
-                lock(&ctx.shared).online.sync_enabled = !enabled;
+                {
+                    // Only while the row still shows this request's value:
+                    // a later pick that Core accepted must stand.
+                    let mut shared = lock(&ctx.shared);
+                    if shared.online.backup_schedule == schedule {
+                        shared.online.backup_schedule = previous;
+                    }
+                }
+                crate::settings::refresh(&ctx, &app);
+                crate::router::report_action_error(&ctx, &app, "online", "");
+            });
+        }
+    });
+}
+
+/// Accepted the "All online features" row: drive every one of the four to
+/// fully on or fully off in one request. See
+/// `zaparoo_app::online_settings::all_features_update` for exactly what
+/// turning it on or off changes.
+pub fn toggle_all_features(ctx: &Ctx, app: &App) {
+    let (before, changes) = {
+        let mut shared = lock(&ctx.shared);
+        if !shared.online.available {
+            return;
+        }
+        let before = shared.online.features;
+        let warp_available = shared.online.warp_availability == "available";
+        let on = before.tri_state(warp_available) != zaparoo_app::online_settings::TriState::On;
+        let (next, changes) =
+            zaparoo_app::online_settings::all_features_update(before, on, warp_available);
+        shared.online.features = next;
+        (before, changes)
+    };
+    let params = UpdateSettingsParams {
+        remote_control_enabled: changes.remote_control,
+        playtime_sync_enabled: changes.play_history,
+        library_sync_enabled: changes.library,
+        backup_remote_enabled: changes.cloud_backup,
+        ..Default::default()
+    };
+    crate::settings::refresh(ctx, app);
+    let client = ctx.store.client();
+    let ctx = ctx.clone();
+    let weak = app.as_weak();
+    ctx.handle.clone().spawn(async move {
+        let result = client.settings_update(params).await;
+        if let Err(error) = result {
+            tracing::warn!("changing all online features failed: {}", error.message);
+            let _ = weak.upgrade_in_event_loop(move |app| {
+                roll_back(&ctx, before, changes);
                 crate::settings::refresh(&ctx, &app);
                 crate::router::report_action_error(&ctx, &app, "online", "");
             });
@@ -335,6 +594,25 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
 
 /// Watch for link progress Core pushes.
 pub fn bind_events(ctx: &Arc<Ctx>, app: &App, client: &Arc<Client>) {
+    // Ask as soon as Core is reachable, and again after every reconnect,
+    // so the Online page opens on rows that are already settled instead of
+    // redrawing under the cursor when the first answer lands.
+    {
+        let mut connection = client.connection.subscribe();
+        let weak = app.as_weak();
+        let ctx = ctx.clone();
+        ctx.handle.clone().spawn(async move {
+            loop {
+                if matches!(*connection.borrow_and_update(), ConnectionState::Connected) {
+                    let ctx = ctx.clone();
+                    let _ = weak.upgrade_in_event_loop(move |app| refresh(&ctx, &app));
+                }
+                if connection.changed().await.is_err() {
+                    return;
+                }
+            }
+        });
+    }
     let mut rx = client.subscribe_notifications();
     let weak = app.as_weak();
     let ctx = ctx.clone();
