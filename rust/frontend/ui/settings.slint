@@ -110,6 +110,7 @@ export global SettingsLabels {
         // Root categories.
         if (id == "pageAppearance") { return @tr("Appearance"); }
         if (id == "pageLibraryData") { return @tr("Library"); }
+        if (id == "pageOnline") { return @tr("Online"); }
         if (id == "pageDisplayInterface") { return @tr("Display"); }
         if (id == "pageControlsInput") { return @tr("Controls"); }
         if (id == "pageLanguage") { return @tr("Language"); }
@@ -118,7 +119,10 @@ export global SettingsLabels {
         if (id == "analogVideo") { return @tr("Analog video"); }
         if (id == "maintenance") { return @tr("Maintenance"); }
         if (id == "browsing") { return @tr("Browsing"); }
-        if (id == "online") { return @tr("Online"); }
+        if (id == "account") { return @tr("Account"); }
+        if (id == "features") { return @tr("Features"); }
+        if (id == "backup") { return @tr("Backup"); }
+        if (id == "remote") { return @tr("Remote"); }
         // Appearance.
         if (id == "colorScheme") { return @tr("Color scheme"); }
         if (id == "colorIntensity") { return @tr("Color intensity"); }
@@ -152,8 +156,21 @@ export global SettingsLabels {
         if (id == "mediaImageType") { return @tr("Preferred artwork"); }
         if (id == "showHidden") { return @tr("Show hidden items"); }
         if (id == "showOriginalFilenames") { return @tr("Show original filenames"); }
-        if (id == "onlineAccount") { return @tr("Online account…"); }
+        // Online.
+        if (id == "onlineUnavailable") { return @tr("Online features are not available for this client"); }
+        if (id == "onlineStatus") { return @tr("Status"); }
+        if (id == "onlineWarp") { return @tr("Warp"); }
+        if (id == "onlineLinkAccount") { return @tr("Link account"); }
+        if (id == "onlineUnlinkAccount") { return @tr("Unlink account"); }
+        if (id == "onlineAllFeatures") { return @tr("All online features"); }
         if (id == "playtimeSync") { return @tr("Sync play history"); }
+        if (id == "onlineRemoteControl") { return @tr("Remote control"); }
+        if (id == "onlineLibrarySync") { return @tr("Library sync"); }
+        if (id == "onlineCloudBackup") { return @tr("Cloud backup"); }
+        if (id == "onlineBackupSchedule") { return @tr("Schedule"); }
+        if (id == "onlineManageBackups") { return @tr("Manage backups…"); }
+        if (id == "onlineRemoteStatus") { return @tr("Status"); }
+        if (id == "onlineRemoteActivity") { return @tr("Activity…"); }
         // About.
         if (id == "pairDevice") { return @tr("Pair a device"); }
         if (id == "aboutLicense") { return @tr("About / License"); }
@@ -192,8 +209,16 @@ export global SettingsLabels {
         if (id == "mediaImageType") { return @tr("Prefers an artwork type when games have multiple images."); }
         if (id == "showHidden") { return @tr("Shows hidden games, systems and categories to unhide them."); }
         if (id == "showOriginalFilenames") { return @tr("Shows real filenames instead of cleaned-up display titles."); }
-        if (id == "onlineAccount") { return @tr("Links this device to Zaparoo Online with a code, or unlinks it."); }
+        if (id == "onlineLinkAccount") { return @tr("Connects this device to your Zaparoo Online account with a code."); }
+        if (id == "onlineUnlinkAccount") { return @tr("Removes this device's Zaparoo Online account credentials."); }
+        if (id == "onlineAllFeatures") { return @tr("Turns every online feature on or off. Each can still be changed on its own."); }
         if (id == "playtimeSync") { return @tr("Uploads verified playtime to your account. Estimates stay local."); }
+        if (id == "onlineRemoteControl") { return @tr("Allows your linked Zaparoo Online account to send approved commands to this device."); }
+        if (id == "onlineLibrarySync") { return @tr("Syncs your game list, favorites, likes and decks with your linked Zaparoo Online account."); }
+        if (id == "onlineCloudBackup") { return @tr("Backs up this device to the cloud on a schedule."); }
+        if (id == "onlineBackupSchedule") { return @tr("How often automatic cloud backup runs."); }
+        if (id == "onlineManageBackups") { return @tr("Back up now, view and restore cloud backup snapshots."); }
+        if (id == "onlineRemoteActivity") { return @tr("See what a linked account's remote commands have done on this device."); }
         if (id == "pairDevice") { return @tr("Shows a PIN for pairing a new device with Core."); }
         if (id == "aboutLicense") { return @tr("Version, build date, license terms, and contributors."); }
         if (id == "documentation") { return @tr("Shows a code for opening the Frontend guide on your phone."); }
@@ -272,6 +297,36 @@ export global SettingsLabels {
         if (id == "favoritesGrouping") {
             if (value == "system") { return @tr("System"); }
             return @tr("None");
+        }
+        if (id == "onlineAllFeatures") {
+            if (value == "on") { return @tr("On"); }
+            if (value == "mixed") { return @tr("Mixed"); }
+            return @tr("Off");
+        }
+        if (id == "onlineBackupSchedule") {
+            if (value == "daily") { return @tr("Daily"); }
+            if (value == "weekly") { return @tr("Weekly"); }
+            return @tr("Manual");
+        }
+        if (id == "onlineStatus") {
+            if (value == "linked") { return @tr("Linked"); }
+            return @tr("Not linked");
+        }
+        if (id == "onlineWarp") {
+            if (value == "active") { return @tr("Active"); }
+            if (value == "inactive") { return @tr("Not active"); }
+            return @tr("Checking…");
+        }
+        if (id == "onlineRemoteStatus") {
+            if (value == "disabled") { return @tr("Off"); }
+            if (value == "unlinked") { return @tr("Not linked"); }
+            if (value == "connecting") { return @tr("Connecting"); }
+            if (value == "waiting") { return @tr("Waiting for commands"); }
+            if (value == "not_remote_device") { return @tr("Not the remote device"); }
+            if (value == "unavailable") { return @tr("Not available"); }
+            if (value == "credential_rejected") { return @tr("Link rejected"); }
+            if (value == "error") { return @tr("Server unreachable"); }
+            return @tr("Unknown");
         }
         return value;
     }
@@ -421,9 +476,11 @@ export component SettingsRowView inherits Rectangle {
 
     property <string> value-text: (root.entry.id == "systems" || root.entry.id == "source")
         ? SettingsLabels.scope(root.entry.scope-kind, root.entry.value-name)
-        : SettingsLabels.value(root.entry.id, root.entry.value);
+        : (root.entry.id == "onlineStatus" && root.entry.value == "linked" && root.entry.value-name != "")
+            ? @tr("Linked as {}", root.entry.value-name)
+            : SettingsLabels.value(root.entry.id, root.entry.value);
 
-    if root.entry.control == ControlKind.picker: Text {
+    if root.entry.control == ControlKind.picker || root.entry.control == ControlKind.tri-toggle: Text {
         x: parent.width - self.width - root.pad - chevron.width - Sizing.pct-w(1);
         y: (parent.height - self.height) / 2;
         width: Math.min(self.preferred-width, Math.max(0px,

@@ -8,8 +8,8 @@
 // logic; forward orchestration lives in the router.
 
 import { Theme, Sizing, Motion, Layout } from "theme.slint";
-import { Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, PressOwner, StatusKind, Orientation, VideoStandard, StateTokens, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogButton, ErrorKind } from "state_types.slint";
-export { Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, PressOwner, StatusKind, Orientation, VideoStandard, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogButton, ErrorKind }
+import { Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, PressOwner, StatusKind, Orientation, VideoStandard, StateTokens, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogButton, ErrorKind } from "state_types.slint";
+export { Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, PressOwner, StatusKind, Orientation, VideoStandard, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogButton, ErrorKind }
 import { GlyphSource, Brand, Buttons, HelpEntry, Status, HeaderBar, StatusLine, ProgressTrack, TopStatusStrip, FooterIndicator, ActiveLabel, HelpBar, SectionHeader, Divider, ScrollCue, ModalShell, QrPlate, StateCue } from "chrome.slint";
 import { GridCell, MarqueeCaption, PressableSurface, Tile, PagedGridView } from "tiles.slint";
 import { ScrollOffset, SelectionCursor, SelectionClip, FocusCursor } from "focus.slint";
@@ -58,6 +58,15 @@ export struct MenuEntry {
     reason-key: string,
     // A plain value shown after the label (a game count). Empty for most rows.
     detail: string,
+}
+
+// One row of the Online page's list modal: Rust composes the text.
+export struct OnlineListRow {
+    id: string,
+    label: string,
+    detail: string,
+    enabled: bool,
+    this-device: bool,
 }
 
 // One first-character bucket of the jump-to-letter picker.
@@ -503,6 +512,16 @@ export global Overlays {
     // True on a host that can open the link itself (Android): Accept opens
     // it instead of only scanning the code or typing it in elsewhere.
     in-out property <bool> online-can-open-url: false;
+    // The Online page's cloud-backup list and remote-activity log: one
+    // modal, rows composed by Rust, windowed to what fits.
+    in-out property <bool> online-list-open: false;
+    in-out property <OnlineListKind> online-list-kind: OnlineListKind.none;
+    in-out property <OnlineListStatus> online-list-status: OnlineListStatus.ready;
+    in-out property <string> online-list-note: "";
+    in-out property <[OnlineListRow]> online-list-rows: [];
+    in-out property <int> online-list-index: 0;
+    in-out property <bool> online-list-more-above: false;
+    in-out property <bool> online-list-more-below: false;
     // QR write deep-link modal: the matrix image is rendered by Rust
     // at module resolution (quiet zone baked in) and scaled up
     // pixelated to the largest whole multiple.
@@ -1680,6 +1699,99 @@ component OnlineLinkModal inherits ModalShell {
     }
 }
 
+// The Online page's two lists, one modal: cloud backup snapshots (Accept
+// restores, after asking) and the remote-control activity log (read only).
+// Rust composes every row and windows a long list to what fits; this only
+// draws them. The first row of the backup list is the "back up now" action.
+component OnlineListModal inherits ModalShell {
+    property <bool> backups: Overlays.online-list-kind == OnlineListKind.backups;
+    property <length> row-h: Math.ceil(Sizing.font-body / 1px * 2.6) * 1px;
+    property <length> note-h: Math.ceil(Sizing.font-caption / 1px * 1.6) * 1px;
+    property <bool> has-status: Overlays.online-list-status != OnlineListStatus.ready;
+
+    title: root.backups ? @tr("Cloud backups") : @tr("Remote activity");
+    panel-width: Math.min(root.width * 0.84, Sizing.pct-h(120));
+    content-height: Math.ceil(content.preferred-height / 1px) * 1px;
+
+    content := VerticalLayout {
+        x: root.pad;
+        y: root.content-y;
+        width: root.content-width;
+        height: self.preferred-height;
+        spacing: root.pad;
+
+        if Overlays.online-list-note != "": Rectangle {
+            height: root.note-h;
+            Text {
+                x: 0px;
+                y: 0px;
+                width: parent.width;
+                horizontal-alignment: center;
+                text: Overlays.online-list-note;
+                color: Theme.text-label;
+                font-size: Sizing.font-caption;
+                wrap: word-wrap;
+            }
+        }
+        if root.has-status: Rectangle {
+            height: root.row-h;
+            status := Text {
+                x: 0px;
+                y: 0px;
+                width: parent.width;
+                horizontal-alignment: center;
+                text: Overlays.online-list-status == OnlineListStatus.loading ? @tr("Loading…")
+                    : Overlays.online-list-status == OnlineListStatus.working ? @tr("Working…")
+                    : Overlays.online-list-status == OnlineListStatus.failed ? @tr("Could not load this. Check the network connection and try again.")
+                    : (root.backups ? @tr("No cloud backups yet.") : @tr("Nothing has run through remote control yet."));
+                color: Overlays.online-list-status == OnlineListStatus.failed ? Theme.accent : Theme.text-label;
+                font-size: Sizing.font-body;
+                wrap: word-wrap;
+            }
+        }
+        if Overlays.online-list-more-above: Text {
+            horizontal-alignment: center;
+            text: "▲";
+            color: Theme.text-label;
+            font-size: Sizing.font-caption;
+        }
+        for row[index] in Overlays.online-list-rows: Rectangle {
+            height: root.row-h;
+            property <bool> selected: index == Overlays.online-list-index;
+            background: self.selected ? Theme.selection-fill : transparent;
+            border-radius: Sizing.radius-sm;
+            opacity: row.enabled ? 1.0 : 0.45;
+
+            Text {
+                x: root.pad;
+                y: parent.height * 0.08;
+                width: parent.width * 0.55 - root.pad;
+                text: row.id == "run" ? @tr("Back up now") : row.label;
+                overflow: elide;
+                color: parent.selected ? Theme.on-accent : (row.id == "run" ? Theme.accent : Theme.text-primary);
+                font-size: Sizing.font-body;
+                font-weight: parent.selected ? FontWeight.medium : FontWeight.normal;
+            }
+            Text {
+                x: parent.width * 0.55;
+                y: parent.height * 0.08;
+                width: parent.width * 0.45 - root.pad;
+                horizontal-alignment: right;
+                text: row.this-device ? @tr("{}, this device", row.detail) : row.detail;
+                overflow: elide;
+                color: parent.selected ? Theme.on-accent : Theme.text-label;
+                font-size: Sizing.font-caption;
+            }
+        }
+        if Overlays.online-list-more-below: Text {
+            horizontal-alignment: center;
+            text: "▼";
+            color: Theme.text-label;
+            font-size: Sizing.font-caption;
+        }
+    }
+}
+
 // QR shell: translated purpose and instructions above an integer module
 // matrix, with a readable documentation URL for composite video.
 component QrCodeModal inherits ModalShell {
@@ -2615,7 +2727,7 @@ export component App inherits Window {
 
     pure function has-modal() -> bool {
         return LogUploadView.open || SetupModalView.open || GameInfoView.modal-open || Overlays.card-write-open || Overlays.qr-open
-            || Overlays.pair-open || Overlays.online-open || Overlays.dialog-open || Overlays.list-open || Overlays.letter-open
+            || Overlays.pair-open || Overlays.online-open || Overlays.online-list-open || Overlays.dialog-open || Overlays.list-open || Overlays.letter-open
             || Overlays.context-open;
     }
 
@@ -2715,6 +2827,15 @@ export component App inherits Window {
         // spent there is nothing to call off, so both buttons just close.
         // Online link: while a code is live, Back calls it off; once it has
         // an outcome both buttons just close.
+        if (Overlays.online-list-open) {
+            if (Overlays.online-list-kind == OnlineListKind.backups && Overlays.online-list-rows.length > 0) {
+                return [
+                    { buttons: ["ButtonA"], label: @tr("Select") },
+                    { buttons: ["ButtonB"], label: @tr("Close") },
+                ];
+            }
+            return [{ buttons: ["ButtonB"], label: @tr("Close") }];
+        }
         if (Overlays.online-open) {
             if (Overlays.online-phase == OnlineLinkPhase.linked || Overlays.online-phase == OnlineLinkPhase.failed
                 || Overlays.online-phase == OnlineLinkPhase.expired) {
@@ -3052,6 +3173,7 @@ export component App inherits Window {
     if Overlays.pair-open: PairDeviceModal {}
 
     if Overlays.online-open: OnlineLinkModal {}
+    if Overlays.online-list-open: OnlineListModal {}
 
     if LogUploadView.open: LogUploadModal {
         phase: LogUploadView.phase;

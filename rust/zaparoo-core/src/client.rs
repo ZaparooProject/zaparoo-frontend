@@ -14,15 +14,16 @@
 // instead of disappearing into a queue.
 
 use crate::media_types::{
-    AuthLinkStatus, AuthStatusResult, HealthResult, LaunchersResult, LogDownloadResult,
+    AuthLinkStatus, AuthStatusResult, BackupRemoteListResult, BackupRemoteRestoreResult,
+    BackupRemoteRunResult, BackupStatusResponse, HealthResult, LaunchersResult, LogDownloadResult,
     MediaBrowseIndexParams, MediaBrowseIndexResult, MediaBrowseParams, MediaBrowseResult,
     MediaHistoryLatestResult, MediaHistoryParams, MediaHistoryResult, MediaImageParams,
     MediaImageResult, MediaIndexParams, MediaMetaParams, MediaMetaResult, MediaMetaUpdateParams,
     MediaResult, MediaScrapeParams, MediaSearchParams, MediaSearchResult, MediaTagsParams,
     MediaTagsResult, MediaTagsUpdateParams, MediaTagsUpdateResult, PairStartResult, ReadersResult,
-    ReadersWriteParams, RunParams, ScrapersResult, ScrapingStatusResponse, SettingsResult,
-    SystemsParams, SystemsResult, TokensHistoryResult, TokensResult, UpdateSettingsParams,
-    VersionResult,
+    ReadersWriteParams, RemoteActivityResult, RunParams, ScrapersResult, ScrapingStatusResponse,
+    SettingsResult, SystemsParams, SystemsResult, TokensHistoryResult, TokensResult,
+    UpdateSettingsParams, VersionResult,
 };
 use crate::transport::Transport;
 use futures_util::{SinkExt, StreamExt};
@@ -822,6 +823,53 @@ impl Client {
         struct P {}
         self.call("settings.auth.unlink", &P {}).await?;
         Ok(())
+    }
+
+    pub async fn settings_backup_status(&self) -> Result<BackupStatusResponse, ClientError> {
+        #[derive(Serialize)]
+        struct P {}
+        let val = self.call("settings.backup.status", &P {}).await?;
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
+    }
+
+    /// Back up this device to the cloud now, outside its schedule.
+    pub async fn settings_backup_remote_run(&self) -> Result<BackupRemoteRunResult, ClientError> {
+        #[derive(Serialize)]
+        struct P {}
+        let val = self.call("settings.backup.remote.run", &P {}).await?;
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
+    }
+
+    pub async fn settings_backup_remote_list(&self) -> Result<BackupRemoteListResult, ClientError> {
+        #[derive(Serialize)]
+        struct P {}
+        let val = self.call("settings.backup.remote.list", &P {}).await?;
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
+    }
+
+    /// Restore this device from a cloud snapshot. Core restarts to finish
+    /// applying it once this answers.
+    pub async fn settings_backup_remote_restore(
+        &self,
+        id: &str,
+    ) -> Result<BackupRemoteRestoreResult, ClientError> {
+        #[derive(Serialize)]
+        struct P<'a> {
+            id: &'a str,
+        }
+        let val = self
+            .call("settings.backup.remote.restore", &P { id })
+            .await?;
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
+    }
+
+    /// The remote-control poller's current status and recent activity, for
+    /// the Online settings page. Local clients only.
+    pub async fn remote_activity(&self) -> Result<RemoteActivityResult, ClientError> {
+        #[derive(Serialize)]
+        struct P {}
+        let val = self.call("remote.activity", &P {}).await?;
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
     }
 
     pub async fn settings_logs_download(&self) -> Result<LogDownloadResult, ClientError> {
