@@ -94,6 +94,22 @@ fn dialog_target(ov: &Overlays<'_>) -> Option<Target> {
     ))
 }
 
+/// The Online lists: only a backup row can be accepted, and only while
+/// nothing is already running. The activity log is read only.
+fn online_list_target(ov: &Overlays<'_>) -> Option<Target> {
+    if ov.get_online_list_kind() != crate::OnlineListKind::Backups
+        || ov.get_online_list_status() == crate::OnlineListStatus::Working
+    {
+        return None;
+    }
+    let index = ov.get_online_list_index();
+    let row = ov
+        .get_online_list_rows()
+        .row_data(usize::try_from(index).ok()?)?;
+    row.enabled
+        .then(|| target(PressOwner::OnlineList, index, row.id.to_string()))
+}
+
 fn current_with(app: &App, prepare_grid: impl FnOnce()) -> Option<Target> {
     let shell = app.global::<Shell>();
     let ov = app.global::<Overlays>();
@@ -134,6 +150,14 @@ fn current_with(app: &App, prepare_grid: impl FnOnce()) -> Option<Target> {
     // the push.
     if ov.get_pair_open() {
         return None;
+    }
+    // The link panel has nothing to press either: Accept is named in its
+    // own text, and the settings row under it must not take the push.
+    if ov.get_online_open() {
+        return None;
+    }
+    if ov.get_online_list_open() {
+        return online_list_target(&ov);
     }
     if ov.get_card_write_open() {
         return Some(target(

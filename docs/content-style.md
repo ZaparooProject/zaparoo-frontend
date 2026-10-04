@@ -156,10 +156,11 @@ lengthening a menu row further.
 
 ## Adding a setting — checklist
 
-1. Which of the six Settings pages does it belong to **by what the user
+1. Which of the seven Settings pages does it belong to **by what the user
    is trying to do**, not by which Rust module or `.slint` file implements
-   it? The six root categories and their rows are registered in
-   `rust/zaparoo-app/src/settings.rs`.
+   it? The seven root categories and their rows are registered in
+   `rust/zaparoo-app/src/settings.rs`. Anything that needs a Zaparoo Online
+   account goes on the Online page.
 2. Does it need a "restart required" or "takes effect next launch"
    description line? If the setting doesn't apply live, say so in the
    description — don't let the restart-confirm modal be the first the

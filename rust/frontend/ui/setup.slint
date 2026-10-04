@@ -8,7 +8,7 @@
 
 import { Theme, Sizing, Motion, Layout } from "theme.slint";
 import { GlyphSource, ScrollCue, Divider, ModalShell, QrPlate } from "chrome.slint";
-import { SelectionCursor, SelectionClip } from "focus.slint";
+import { SelectionCursor, SelectionClip, ScrollOffset } from "focus.slint";
 import { SettingsRow, SettingsLabels, SettingsRowView } from "settings.slint";
 import { PressableSurface } from "tiles.slint";
 import { SetupKind, SetupPicker, ScopeKind, LogPhase, ControlKind, StateTokens } from "state_types.slint";
@@ -45,7 +45,17 @@ export component SetupModal inherits ModalShell {
     in property <SetupPicker> picker-title: SetupPicker.systems;
     in property <[SettingsRow]> rows: [];
     in property <int> index: 0;
+    // The picker's rows are a window Rust keeps around the cursor: the
+    // slots on screen plus a few either side, so the window can glide
+    // without a long list (every system) being built as delegates.
+    // `picker-first` is the list index the first slot holds, `picker-top`
+    // the one at the top of the viewport; a slot past either end of the
+    // list is empty.
     in property <[SetupPickerRow]> picker-rows: [];
+    in property <int> picker-first: 0;
+    in property <int> picker-top: 0;
+    in property <int> picker-visible: 0;
+    in property <int> picker-count: 0;
     in property <int> picker-sel: 0;
     in property <bool> has-above: false;
     in property <bool> has-below: false;
@@ -66,9 +76,10 @@ export component SetupModal inherits ModalShell {
         ? 0px
         : root.rows[root.rows.length - 1].y-offset + root.rows[root.rows.length - 1].height
             + (root.rows.length - 1) * root.row-gap;
-    property <length> picker-h: 2 * root.arrow-band
-        + root.picker-rows.length * root.picker-row-h
-        + Math.max(0, root.picker-rows.length - 1) * root.picker-gap;
+    property <length> picker-stride: root.picker-row-h + root.picker-gap;
+    property <length> picker-viewport-h: root.picker-visible * root.picker-row-h
+        + Math.max(0, root.picker-visible - 1) * root.picker-gap;
+    property <length> picker-h: 2 * root.arrow-band + root.picker-viewport-h;
     property <length> body-h: root.picker-page ? root.picker-h : root.form-h;
     title: root.picker-page
         ? SettingsLabels.label(StateTokens.picker(root.picker-title))
@@ -145,18 +156,40 @@ export component SetupModal inherits ModalShell {
                 live: root.has-above;
             }
 
+            // The window glides to its next position instead of jumping;
+            // the fill travels with the rows, the same way the settings
+            // card scrolls. A jump of more than a viewport snaps.
+            picker-scroll := ScrollOffset {
+                target: root.picker-top * root.picker-stride;
+                step: root.picker-viewport-h;
+                reveal: true;
+                duration: Motion.page-ms;
+                viewport: root.picker-viewport-h;
+                scope: StateTokens.picker(root.picker-title) + ":" + Motion.epoch;
+            }
+            Rectangle {
+            x: 0;
+            y: root.arrow-band;
+            height: root.picker-viewport-h;
+            clip: true;
+
+            Rectangle {
+            y: root.picker-top * root.picker-stride - picker-scroll.offset;
+            height: parent.height;
+
             picker-sel := SelectionCursor {
                 radius: Layout.row-radius;
                 activate-pulse: root.activate-pulse;
-                target: { x: 0px, y: root.arrow-band + root.picker-sel * (root.picker-row-h + root.picker-gap),
+                target: { x: 0px, y: root.picker-sel * root.picker-stride,
                     w: parent.width, h: root.picker-row-h, column: 0, row: root.picker-sel,
-                    scope: StateTokens.picker(root.picker-title),
-                    valid: root.picker-sel >= 0 && root.picker-sel < root.picker-rows.length };
+                    scope: StateTokens.picker(root.picker-title) + ":" + root.picker-top,
+                    valid: root.picker-sel >= 0 && root.picker-sel < root.picker-visible };
             }
             for entry[i] in root.picker-rows: Rectangle {
                 x: 0;
-                y: root.arrow-band + i * (root.picker-row-h + root.picker-gap);
+                y: (root.picker-first + i - root.picker-top) * root.picker-stride;
                 height: root.picker-row-h;
+                visible: root.picker-first + i >= 0 && root.picker-first + i < root.picker-count;
 
                 property <bool> lit: picker-sel.fill-bottom > self.y && picker-sel.fill-top < self.y + self.height;
 
@@ -184,6 +217,8 @@ export component SetupModal inherits ModalShell {
                     }
                     clicked => { root.picker-clicked(i); }
                 }
+            }
+            }
             }
 
             if root.has-above || root.has-below: ScrollCue {

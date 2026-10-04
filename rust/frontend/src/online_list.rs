@@ -10,18 +10,16 @@
 // `observe_*` function that ignores an answer for a list the user has
 // already left.
 
-use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
+use slint::{ComponentHandle, SharedString};
 use zaparoo_app::online_lists::{self as lists, ListRow};
 use zaparoo_core::input_actions::actions;
 use zaparoo_core::media_types::{BackupRemoteListResult, RemoteActivityResult};
 
 use crate::router::{lock, Ctx};
 use crate::{
-    App, DialogButton, DialogKind, OnlineListKind, OnlineListRow, OnlineListStatus, Overlays,
+    App, DialogButton, DialogKind, OnlineListFailure, OnlineListKind, OnlineListRow,
+    OnlineListStatus, Overlays,
 };
-
-/// Rows the modal draws at once. A longer list scrolls inside it.
-const WINDOW: usize = 6;
 
 /// The action row that leads the backup list.
 const RUN_ROW: &str = "run";
@@ -31,8 +29,9 @@ pub struct State {
     kind: Option<Kind>,
     rows: Vec<ListRow>,
     index: usize,
-    start: usize,
     status: Status,
+    /// Why the last request was refused, while `status` is `Failed`.
+    failure: lists::Failure,
     note: String,
     /// Retires an answer for a list the user closed or reopened.
     ticket: u64,
@@ -79,13 +78,18 @@ fn render(ctx: &Ctx, app: &App) {
         None => OnlineListKind::None,
     });
     overlays.set_online_list_status(state.status.into());
+    overlays.set_online_list_failure(match state.failure {
+        lists::Failure::Unlinked => OnlineListFailure::Unlinked,
+        lists::Failure::NeedsWarp => OnlineListFailure::NeedsWarp,
+        // The rest only arise from running a backup or a restore, which
+        // report through the error dialog.
+        _ => OnlineListFailure::Other,
+    });
     overlays.set_online_list_note(SharedString::from(state.note.as_str()));
-    let start = lists::window_start(state.rows.len(), state.index, state.start, WINDOW);
+    // The whole list: the view windows and scrolls it, like the pickers.
     let shown: Vec<OnlineListRow> = state
         .rows
         .iter()
-        .skip(start)
-        .take(WINDOW)
         .map(|row| OnlineListRow {
             id: SharedString::from(row.id.as_str()),
             label: SharedString::from(row.label.as_str()),
@@ -94,11 +98,10 @@ fn render(ctx: &Ctx, app: &App) {
             this_device: row.this_device,
         })
         .collect();
-    overlays.set_online_list_more_above(start > 0);
-    overlays.set_online_list_more_below(start + WINDOW < state.rows.len());
-    overlays
-        .set_online_list_index(i32::try_from(state.index - start.min(state.index)).unwrap_or(0));
-    overlays.set_online_list_rows(ModelRc::new(VecModel::from(shown)));
+    overlays.set_online_list_index(i32::try_from(state.index).unwrap_or(0));
+    crate::view_model::publish(&overlays.get_online_list_rows(), shown, |rows| {
+        overlays.set_online_list_rows(rows);
+    });
     overlays.set_online_list_open(state.kind.is_some());
 }
 
@@ -143,7 +146,7 @@ fn fetch_backups(ctx: &Ctx, app: &App, ticket: u64) {
             Ok(list) => observe_backups(&ctx, &app, ticket, &list),
             Err(error) => {
                 tracing::warn!("listing cloud backups failed: {}", error.message);
-                observe_failed(&ctx, &app, ticket);
+                observe_failed(&ctx, &app, ticket, lists::failure(&error.message));
             }
         });
     });
@@ -210,7 +213,7 @@ pub fn open_activity(ctx: &Ctx, app: &App) {
             Ok(activity) => observe_activity(&ctx, &app, ticket, &activity),
             Err(error) => {
                 tracing::warn!("reading remote activity failed: {}", error.message);
-                observe_failed(&ctx, &app, ticket);
+                observe_failed(&ctx, &app, ticket, lists::failure(&error.message));
             }
         });
     });
@@ -247,7 +250,7 @@ pub(crate) fn observe_activity(ctx: &Ctx, app: &App, ticket: u64, activity: &Rem
     render(ctx, app);
 }
 
-fn observe_failed(ctx: &Ctx, app: &App, ticket: u64) {
+fn observe_failed(ctx: &Ctx, app: &App, ticket: u64, failure: lists::Failure) {
     if !current(ctx, ticket) {
         return;
     }
@@ -256,6 +259,7 @@ fn observe_failed(ctx: &Ctx, app: &App, ticket: u64) {
         let state = &mut shared.online_list;
         state.rows.clear();
         state.status = Status::Failed;
+        state.failure = failure;
     }
     render(ctx, app);
 }
@@ -294,13 +298,22 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
 }
 
 fn move_to(ctx: &Ctx, app: &App, index: usize) {
+    lock(&ctx.shared).online_list.index = index;
+    render(ctx, app);
+}
+
+/// The pointer is over a row: put the cursor there.
+pub(crate) fn focus(ctx: &Ctx, app: &App, index: usize) -> bool {
     {
         let mut shared = lock(&ctx.shared);
         let state = &mut shared.online_list;
-        state.start = lists::window_start(state.rows.len(), index, state.start, WINDOW);
+        if state.kind.is_none() || index >= state.rows.len() {
+            return false;
+        }
         state.index = index;
     }
     render(ctx, app);
+    true
 }
 
 fn accept_backup_row(ctx: &Ctx, app: &App, index: usize) {
@@ -339,7 +352,8 @@ fn run_backup(ctx: &Ctx, app: &App) {
         let _ = weak.upgrade_in_event_loop(move |app| {
             if let Err(error) = &result {
                 tracing::warn!("cloud backup failed: {}", error.message);
-                crate::router::report_action_error(&ctx, &app, "online", "");
+                let cause = lists::failure(&error.message).token();
+                crate::router::report_action_error(&ctx, &app, "backup", cause);
             }
             // Either way the list is no longer working; show what the
             // account holds now.
@@ -372,7 +386,8 @@ pub fn restore_confirmed(ctx: &Ctx, app: &App) {
             Ok(_) => close(&ctx, &app),
             Err(error) => {
                 tracing::warn!("restoring a cloud backup failed: {}", error.message);
-                crate::router::report_action_error(&ctx, &app, "online", "");
+                let cause = lists::failure(&error.message).token();
+                crate::router::report_action_error(&ctx, &app, "backup", cause);
                 if current(&ctx, ticket) {
                     lock(&ctx.shared).online_list.status = Status::Ready;
                     render(&ctx, &app);

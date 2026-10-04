@@ -19,6 +19,11 @@ export component ScrollOffset inherits Rectangle {
     in property <length> focus-size;
     in property <length> viewport;
     in property <string> scope;
+    // True when the caller moves its cursor with the content it scrolls, so
+    // a newly focused row may ride in from outside the clip instead of the
+    // viewport having to snap to reveal it.
+    in property <bool> reveal: false;
+    in property <duration> duration: Motion.focus-ms;
     property <length> previous;
     property <length> position;
     property <bool> glide: false;
@@ -29,8 +34,8 @@ export component ScrollOffset inherits Rectangle {
         // Never leave the newly selected control outside the clip while the
         // viewport catches up. Offscreen focus is revealed immediately.
         root.glide = root.motion && Math.abs(root.target - root.previous) <= root.step
-            && root.focus-start >= root.position
-            && root.focus-start + root.focus-size <= root.position + root.viewport;
+            && (root.reveal || (root.focus-start >= root.position
+                && root.focus-start + root.focus-size <= root.position + root.viewport));
         root.position = root.target;
         root.previous = root.target;
     }
@@ -42,7 +47,7 @@ export component ScrollOffset inherits Rectangle {
         root.previous = root.target;
     }
     init => { root.snap(); }
-    animate position { duration: root.glide && root.motion ? Motion.focus-ms : 0ms; easing: ease-out-quad; }
+    animate position { duration: root.glide && root.motion ? root.duration : 0ms; easing: ease-out-quad; }
 }
 
 // Local neighbor displacement during a Hub move. Overlapping requests snap

@@ -198,7 +198,13 @@ fn rows(ctx: &Ctx, app: &App, page: crate::SettingsPage) -> Vec<SettingsRow> {
     let ms = crate::router::media_state(ctx);
     let index_busy = ms.indexing || ms.optimizing;
     let m = metrics(app);
-    let language = lock(&ctx.shared).persist.settings.language.clone();
+    let (language, online_linked) = {
+        let shared = lock(&ctx.shared);
+        (
+            shared.persist.settings.language.clone(),
+            shared.online.linked,
+        )
+    };
     let mut offset = 0;
     rules::page_rows(page.token(), &inputs(ctx))
         .into_iter()
@@ -220,7 +226,7 @@ fn rows(ctx: &Ctx, app: &App, page: crate::SettingsPage) -> Vec<SettingsRow> {
                     out.control = control.into();
                     match control {
                         Control::Toggle => out.checked = checked(ctx, id),
-                        Control::Picker => {
+                        Control::Picker | Control::Info => {
                             out.value = SharedString::from(current_value(ctx, id).as_str());
                             if id == "onlineStatus" {
                                 out.value_name = SharedString::from(
@@ -269,6 +275,11 @@ fn rows(ctx: &Ctx, app: &App, page: crate::SettingsPage) -> Vec<SettingsRow> {
                         Control::TriToggle => {
                             out.value = SharedString::from(tri_toggle_value(ctx, id));
                         }
+                    }
+                    // After the control's own state: an action row sets
+                    // `enabled` from whether its job is busy.
+                    if rules::needs_online_link(id) && !online_linked {
+                        out.enabled = false;
                     }
                     if out.status_key == crate::ActionStatus::None {
                         m.row
@@ -351,10 +362,6 @@ fn root_geometry_for(
 
 /// The rows viewport inside the page card: what is left once the hint
 /// band and the paddings are taken out.
-fn rows_viewport(app: &App) -> i32 {
-    rows_viewport_for(&crate::router::output_scene(app).inputs())
-}
-
 fn rows_viewport_for(inputs: &zaparoo_app::sizing::Inputs) -> i32 {
     let derived = zaparoo_app::sizing::derive(inputs);
     let profile = layouts::profile(ThemeId::current(inputs), View::GamesGrid, inputs);
@@ -379,16 +386,21 @@ fn rows_viewport_for(inputs: &zaparoo_app::sizing::Inputs) -> i32 {
     // rule, and under the hint text. One inset, used everywhere on the
     // surface (`docs/style.md`, "Surface containment"); `app.slint`'s
     // `pad` is the same token, so the two must move together.
-    let pad = inputs.pct_min(2.0);
+    let pad = rows_lip_for(inputs);
     (card_h - 4 * pad - 1 - hint).max(0)
 }
 
-/// The band's scroll offset and painted height, snapped to row edges.
-/// The rule lives in `zaparoo_app` so the snapshot tool solves it the
-/// same way rather than keeping a second copy that can drift.
-fn band_extent(rows: &[SettingsRow], index: usize, viewport: f32) -> (f32, f32) {
+/// The card's inset above the first row and under the last.
+fn rows_lip_for(inputs: &zaparoo_app::sizing::Inputs) -> i32 {
+    inputs.pct_min(2.0)
+}
+
+/// The band's scroll offset and painted height. The rule lives in
+/// `zaparoo_app` so the snapshot tool solves it the same way rather than
+/// keeping a second copy that can drift.
+fn band_extent(rows: &[SettingsRow], index: usize, viewport: f32, lip: f32) -> (f32, f32) {
     let spans: Vec<(f32, f32)> = rows.iter().map(|r| (r.y_offset, r.height)).collect();
-    rules::band_extent(&spans, index, viewport)
+    rules::band_extent(&spans, index, viewport, lip)
 }
 
 /// Push the open page: its rows, the cursor, and (on the root) the
@@ -400,8 +412,10 @@ pub fn render(ctx: &Ctx, app: &App) {
     let index = (view.get_index().max(0) as usize).min(rows.len().saturating_sub(1));
     // Keep the focused row inside the viewport; the band never scrolls
     // past the last row.
-    let viewport = rows_viewport(app);
-    let (scroll, shown) = band_extent(&rows, index, viewport as f32);
+    let inputs = crate::router::output_scene(app).inputs();
+    let viewport = rows_viewport_for(&inputs);
+    let lip = rows_lip_for(&inputs) as f32;
+    let (scroll, shown) = band_extent(&rows, index, viewport as f32, lip);
     // Rows before the cursor: the cursor's geometry is read out of the row
     // it points at, so an index that arrives ahead of a longer page reads
     // a row that is not there yet and collapses the fill for a frame.
@@ -423,7 +437,9 @@ pub fn render(ctx: &Ctx, app: &App) {
         let fields = |upto: usize| {
             (0..upto)
                 .filter_map(|i| published.row_data(i))
-                .filter(|row| row.kind == crate::RowKind::Field)
+                .filter(|row| {
+                    row.kind == crate::RowKind::Field && row.control != crate::ControlKind::Info
+                })
                 .count()
         };
         view.set_field_index(i32::try_from(fields(index)).unwrap_or(0));
@@ -473,11 +489,11 @@ pub fn open_page(ctx: &Ctx, app: &App, page: crate::SettingsPage) {
 }
 
 /// The page's rows changed under the cursor (Core answered after the page
-/// opened): if it now sits on a header, move it to the first row it can
-/// act on.
+/// opened): if it now sits on a row it cannot act on, move it to the first
+/// one it can.
 pub(crate) fn reseat(ctx: &Ctx, app: &App) {
     let (_, rows, index) = page_rows_now(ctx, app);
-    if rows.get(index).is_some_and(|row| row.is_field()) {
+    if rows.get(index).is_some_and(|row| row.is_navigable()) {
         return;
     }
     let seat = rules::first_navigable(&rows);
@@ -644,7 +660,7 @@ fn dispatch(ctx: &Ctx, app: &App, action: &str) {
         // so a long option list never has to be cycled blind.
         actions::LEFT | actions::RIGHT => {
             if let Some(Row::Field { id, control }) = rows.get(index) {
-                if *control == Control::Toggle {
+                if *control == Control::Toggle && !blocked(ctx, id) {
                     toggle(ctx, app, id);
                 }
             }
@@ -659,15 +675,28 @@ fn dispatch(ctx: &Ctx, app: &App, action: &str) {
     }
 }
 
-fn accept(ctx: &Ctx, app: &App, id: &str, control: Control) {
+/// A row that cannot be used right now: drawn muted, and no input changes
+/// it. Every way of acting on a row (Accept, Left/Right on a toggle, the
+/// pointer) asks this first, so none of them can act on a row the page
+/// shows as unavailable.
+fn blocked(ctx: &Ctx, id: &str) -> bool {
+    if rules::needs_online_link(id) && !lock(&ctx.shared).online.linked {
+        return true;
+    }
     let ms = crate::router::media_state(ctx);
-    if rules::action_disabled(id, ms.indexing || ms.optimizing, ms.scraping) {
+    rules::action_disabled(id, ms.indexing || ms.optimizing, ms.scraping)
+}
+
+fn accept(ctx: &Ctx, app: &App, id: &str, control: Control) {
+    if blocked(ctx, id) {
         return;
     }
+    let ms = crate::router::media_state(ctx);
     match control {
         Control::Toggle => toggle(ctx, app, id),
         Control::TriToggle => crate::online::toggle_all_features(ctx, app),
         Control::Picker => open_picker(ctx, app, id),
+        Control::Info => {}
         Control::Navigate | Control::Action => match id {
             "aboutLicense" => crate::router::enter_about(ctx, app, EntryMode::Fresh),
             "documentation" => crate::router::open_documentation_qr(app),
@@ -1051,7 +1080,8 @@ fn mirrored_rows(
             row
         })
         .collect();
-    let (scroll, shown) = band_extent(&rows, index.max(0) as usize, viewport);
+    let lip = rows_lip_for(inputs) as f32;
+    let (scroll, shown) = band_extent(&rows, index.max(0) as usize, viewport, lip);
     (rows, scroll, shown)
 }
 
@@ -1063,7 +1093,7 @@ fn focus(ctx: &Ctx, app: &App, index: usize) -> bool {
         return false;
     }
     let (_, rows, _) = page_rows_now(ctx, app);
-    if !rows.get(index).is_some_and(|r| r.is_field()) {
+    if !rows.get(index).is_some_and(|r| r.is_navigable()) {
         return false;
     }
     app.global::<SettingsView>()

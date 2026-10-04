@@ -3,8 +3,7 @@
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 
 //! The two lists behind the Online page: cloud backup snapshots, and the
-//! remote-control activity log. What each row says, and how a long list
-//! scrolls inside a modal that only has room for a few at a time. The
+//! remote-control activity log: what each row says. The
 //! wording of a row mirrors Core's own TUI (`pkg/ui/tui/remote_activity.go`):
 //! identifiers Core sends (an operation type, an origin, an outcome) are
 //! shown as Core named them, with anything that could break the layout
@@ -26,6 +25,88 @@ pub struct ListRow {
 const MONTHS: [&str; 12] = [
     "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
+
+/// Why Core refused a cloud backup request, as far as its message says.
+/// Core sends these as plain messages with no error category, so this
+/// reads the same phrases Core's own TUI does (`backupActionErrorText` in
+/// `pkg/ui/tui/settings.go`); anything it does not recognize is `Other`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Failure {
+    /// The device has no linked account (or its link was dropped).
+    Unlinked,
+    /// The account has no active Warp subscription.
+    NeedsWarp,
+    /// A backup was uploaded too recently.
+    RateLimited,
+    /// The account's cloud storage is full.
+    QuotaExceeded,
+    /// Another backup, restore or request holds Core.
+    Busy,
+    /// A game is starting or running; a restore will not run over it.
+    MediaActive,
+    /// A previous restore is waiting on a restart.
+    RestartNeeded,
+    /// The snapshot was made by a newer Core.
+    NeedsNewer,
+    /// This device has no room to stage the backup.
+    DiskSpace,
+    /// Unreachable, or a reason this build does not name.
+    #[default]
+    Other,
+}
+
+impl Failure {
+    /// The stable key the error dialog words this cause by.
+    pub fn token(self) -> &'static str {
+        match self {
+            Self::Unlinked => "unlinked",
+            Self::NeedsWarp => "needs_warp",
+            Self::RateLimited => "rate_limited",
+            Self::QuotaExceeded => "quota_exceeded",
+            Self::Busy => "busy",
+            Self::MediaActive => "media_active",
+            Self::RestartNeeded => "restart_needed",
+            Self::NeedsNewer => "needs_newer",
+            Self::DiskSpace => "disk_space",
+            Self::Other => "",
+        }
+    }
+}
+
+pub fn failure(message: &str) -> Failure {
+    let message = message.to_lowercase();
+    let has = |phrase: &str| message.contains(phrase);
+    if has("remote backup is unlinked") || has("device not linked") {
+        Failure::Unlinked
+    } else if has("remote backup is not available for this account") {
+        Failure::NeedsWarp
+    } else if has("remote backup rate limited") {
+        Failure::RateLimited
+    } else if has("remote backup quota exceeded") {
+        Failure::QuotaExceeded
+    } else if (has("backup operation ") && has(" has been running since "))
+        || has("zaparoo is busy with another request or a media launch")
+    {
+        Failure::Busy
+    } else if has("cannot restore backup while media is active")
+        || has("cannot restore backup while media is launching")
+        || has("media launch is in progress")
+    {
+        Failure::MediaActive
+    } else if has("until zaparoo restarts to finish the previous restore")
+        || has("backup restore rollback requires recovery")
+        || has("pending backup restore transaction exists")
+        || has("backup restore restart is pending")
+    {
+        Failure::RestartNeeded
+    } else if has("backup requires a newer core version") {
+        Failure::NeedsNewer
+    } else if has("insufficient disk space") {
+        Failure::DiskSpace
+    } else {
+        Failure::Other
+    }
+}
 
 /// Replace anything that is not safe to draw as one line of text.
 pub fn clean(value: &str) -> String {
@@ -154,24 +235,6 @@ pub fn snapshot_row(snapshot: &Snapshot<'_>) -> ListRow {
     }
 }
 
-/// Which rows of a long list a modal draws: the first of `window` rows to
-/// show, scrolled the least that keeps `index` in view. `start` is where
-/// the window sat before this move.
-pub fn window_start(len: usize, index: usize, start: usize, window: usize) -> usize {
-    if window == 0 || len <= window {
-        return 0;
-    }
-    let index = index.min(len - 1);
-    let start = start.min(len - window);
-    if index < start {
-        index
-    } else if index >= start + window {
-        index + 1 - window
-    } else {
-        start
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -183,6 +246,51 @@ mod tests {
         assert_eq!(short_time("yesterday"), "yesterday");
         assert_eq!(short_time("2026-13-02T09:45:11Z"), "2026-13-02T09:45:11Z");
         assert_eq!(short_time("a\nb"), "a\u{FFFD}b");
+    }
+
+    #[test]
+    fn a_refused_backup_request_is_worded_by_its_cause() {
+        assert_eq!(
+            failure("failed to list remote backups: remote backup is unlinked"),
+            Failure::Unlinked
+        );
+        assert_eq!(failure("device not linked"), Failure::Unlinked);
+        assert_eq!(
+            failure("remote backup is not available for this account"),
+            Failure::NeedsWarp
+        );
+        assert_eq!(
+            failure("failed to run remote backup: remote backup rate limited"),
+            Failure::RateLimited
+        );
+        assert_eq!(
+            failure("Remote backup quota exceeded"),
+            Failure::QuotaExceeded,
+            "matching ignores case, as Core's TUI does"
+        );
+        assert_eq!(
+            failure("backup operation upload has been running since 10:02"),
+            Failure::Busy
+        );
+        assert_eq!(
+            failure("cannot restore backup while media is active"),
+            Failure::MediaActive
+        );
+        assert_eq!(
+            failure("backup restore restart is pending"),
+            Failure::RestartNeeded
+        );
+        assert_eq!(
+            failure("backup requires a newer Core version"),
+            Failure::NeedsNewer
+        );
+        assert_eq!(failure("insufficient disk space"), Failure::DiskSpace);
+        assert_eq!(failure("dial tcp: i/o timeout"), Failure::Other);
+        assert_eq!(failure(""), Failure::Other);
+        // Every named cause has its own dialog wording; only the unnamed
+        // one falls back to the generic body.
+        assert_eq!(Failure::Other.token(), "");
+        assert_eq!(Failure::RateLimited.token(), "rate_limited");
     }
 
     #[test]
@@ -232,7 +340,7 @@ mod tests {
             id: "s1",
             created_at: "2026-10-02T09:45:11Z",
             size_bytes: 2048,
-            device_name: Some("Nova"),
+            device_name: Some("Handheld"),
             current_device: true,
             incompatible: false,
         });
@@ -268,23 +376,5 @@ mod tests {
             ..Snapshot::default()
         });
         assert!(!row.enabled);
-    }
-
-    #[test]
-    fn the_window_scrolls_the_least_that_keeps_the_cursor_in_view() {
-        // Nothing to scroll.
-        assert_eq!(window_start(3, 2, 0, 5), 0);
-        assert_eq!(window_start(0, 0, 0, 5), 0);
-        // Moving down past the window drags it one row at a time.
-        assert_eq!(window_start(10, 4, 0, 5), 0);
-        assert_eq!(window_start(10, 5, 0, 5), 1);
-        assert_eq!(window_start(10, 9, 1, 5), 5);
-        // Moving back up leaves it until the cursor leaves the top.
-        assert_eq!(window_start(10, 6, 5, 5), 5);
-        assert_eq!(window_start(10, 4, 5, 5), 4);
-        // A wrap to the top goes all the way back.
-        assert_eq!(window_start(10, 0, 5, 5), 0);
-        // A stale start (the list shrank) is pulled back inside it.
-        assert_eq!(window_start(6, 5, 9, 5), 1);
     }
 }

@@ -2049,6 +2049,10 @@ pub fn bind_context_input(ctx: &Arc<Ctx>, app: &App) {
                     {
                         ov.set_list_index(index);
                     }
+                    crate::PressOwner::OnlineList
+                        if !ov.get_dialog_open()
+                            && ov.get_online_list_open()
+                            && crate::online_list::focus(&ctx, &app, row) => {}
                     crate::PressOwner::Letter
                         if !ov.get_dialog_open()
                             && ov.get_letter_open()

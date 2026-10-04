@@ -162,7 +162,7 @@ export global SettingsLabels {
         if (id == "onlineWarp") { return @tr("Warp"); }
         if (id == "onlineLinkAccount") { return @tr("Link account"); }
         if (id == "onlineUnlinkAccount") { return @tr("Unlink account"); }
-        if (id == "onlineAllFeatures") { return @tr("All online features"); }
+        if (id == "onlineAllFeatures") { return @tr("All"); }
         if (id == "playtimeSync") { return @tr("Sync play history"); }
         if (id == "onlineRemoteControl") { return @tr("Remote control"); }
         if (id == "onlineLibrarySync") { return @tr("Library sync"); }
@@ -180,6 +180,19 @@ export global SettingsLabels {
         return id;
     }
 
+    // What a dimmed row says instead of its description, when the reason
+    // is one the user can act on. Empty for a row that is only busy.
+    public pure function disabled-reason(id: string) -> string {
+        if (id == "onlineAllFeatures" || id == "onlineRemoteControl" || id == "playtimeSync"
+            || id == "onlineLibrarySync" || id == "onlineCloudBackup" || id == "onlineBackupSchedule"
+            || id == "onlineManageBackups") {
+            return @tr("Link your Zaparoo Online account first.");
+        }
+        // The two media jobs cannot run at once; each waits for the other.
+        if (id == "updateMediaDb") { return @tr("Wait for the metadata update to finish."); }
+        if (id == "runScraper") { return @tr("Wait for the media database update to finish."); }
+        return "";
+    }
     public pure function description(id: string) -> string {
         if (id == "addGameFolder") { return @tr("Choose a folder containing system folders, then use Update media database to scan."); }
         if (id == "detectLaunchers") { return @tr("Scans a folder you choose for launchers already installed."); }
@@ -298,11 +311,6 @@ export global SettingsLabels {
             if (value == "system") { return @tr("System"); }
             return @tr("None");
         }
-        if (id == "onlineAllFeatures") {
-            if (value == "on") { return @tr("On"); }
-            if (value == "mixed") { return @tr("Mixed"); }
-            return @tr("Off");
-        }
         if (id == "onlineBackupSchedule") {
             if (value == "daily") { return @tr("Daily"); }
             if (value == "weekly") { return @tr("Weekly"); }
@@ -416,7 +424,10 @@ export component SettingsRowView inherits Rectangle {
     // goes invisible against `Theme.on-accent` for the length of the cue.
     in property <bool> flashing: false;
 
-    opacity: root.entry.enabled ? 1.0 : 0.4;
+    // A row that cannot be used right now is muted through its text tier,
+    // never through opacity: an alpha multiplier has no contrast floor.
+    // See docs/style.md, "Disabled controls".
+    property <bool> dim: !root.entry.enabled;
 
     property <bool> is-action: root.entry.control == ControlKind.action;
     property <length> pad: Sizing.pct-w(2);
@@ -458,7 +469,8 @@ export component SettingsRowView inherits Rectangle {
             parent.width - 2 * root.pad);
         overflow: elide;
         text: SettingsLabels.label(root.entry.id);
-        color: root.focused ? root.content-color : (root.is-action ? Theme.accent : Theme.text-primary);
+        color: root.focused ? (root.dim ? Theme.on-accent-muted : root.content-color)
+            : (root.dim ? Theme.text-label : (root.is-action ? Theme.accent : Theme.text-primary));
         font-size: Sizing.font-body;
         font-weight: root.content-weight;
     }
@@ -480,19 +492,32 @@ export component SettingsRowView inherits Rectangle {
             ? @tr("Linked as {}", root.entry.value-name)
             : SettingsLabels.value(root.entry.id, root.entry.value);
 
-    if root.entry.control == ControlKind.picker || root.entry.control == ControlKind.tri-toggle: Text {
-        x: parent.width - self.width - root.pad - chevron.width - Sizing.pct-w(1);
+    // An info row only reports: its value sits flush right in the label
+    // color, with no chevron, so it does not read as something to open.
+    property <bool> is-info: root.entry.control == ControlKind.info;
+
+    if root.entry.control == ControlKind.picker || root.is-info: Text {
+        x: root.is-info
+            ? parent.width - self.width - root.pad
+            : parent.width - self.width - root.pad - chevron.width - Sizing.pct-w(1);
         y: (parent.height - self.height) / 2;
         width: Math.min(self.preferred-width, Math.max(0px,
             chevron.x - Sizing.pct-w(2) - label.x - label.width - Sizing.pct-w(2)));
         overflow: elide;
         text: root.value-text;
-        color: root.focused ? root.content-color : Theme.text-primary;
+        color: root.focused ? (root.dim ? Theme.on-accent-muted : root.content-color)
+            : (root.is-info || root.dim ? Theme.text-label : Theme.text-primary);
         font-size: Sizing.font-body;
         font-weight: root.content-weight;
     }
 
-    if root.entry.control == ControlKind.toggle: Rectangle {
+    // A toggle's knob rests left (off) or right (on). A tri-toggle adds the
+    // middle: some of what it covers is on. `level` is 0, 1 or 2.
+    property <int> level: root.entry.control == ControlKind.tri-toggle
+        ? (root.entry.value == "on" ? 2 : root.entry.value == "mixed" ? 1 : 0)
+        : (root.entry.checked ? 2 : 0);
+
+    if root.entry.control == ControlKind.toggle || root.entry.control == ControlKind.tri-toggle: Rectangle {
         property <length> inset: Sizing.card-border-width * (Sizing.tier-240 ? 1 : 2);
         x: parent.width - self.width - root.pad;
         y: (parent.height - self.height) / 2;
@@ -500,11 +525,12 @@ export component SettingsRowView inherits Rectangle {
         height: root.knob-h;
         border-radius: Sizing.radius-sm;
         background: root.focused
-            ? (root.entry.checked ? Theme.on-accent : Theme.on-accent-muted)
-            : (root.entry.checked ? Theme.accent : Theme.border-mid);
+            ? (root.level == 2 ? Theme.on-accent : Theme.on-accent-muted)
+            : (root.level == 2 ? Theme.accent
+                : root.level == 1 ? Theme.accent.mix(Theme.border-mid, 0.5) : Theme.border-mid);
 
         Rectangle {
-            property <length> knob-x: root.entry.checked ? parent.width - self.width - parent.inset : parent.inset;
+            property <length> knob-x: parent.inset + (parent.width - self.width - 2 * parent.inset) * root.level / 2;
             x: self.knob-x;
             y: parent.inset;
             width: parent.height - 2 * parent.inset;

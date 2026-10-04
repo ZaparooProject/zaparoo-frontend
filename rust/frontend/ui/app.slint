@@ -8,8 +8,8 @@
 // logic; forward orchestration lives in the router.
 
 import { Theme, Sizing, Motion, Layout } from "theme.slint";
-import { Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, PressOwner, StatusKind, Orientation, VideoStandard, StateTokens, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogButton, ErrorKind } from "state_types.slint";
-export { Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, PressOwner, StatusKind, Orientation, VideoStandard, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogButton, ErrorKind }
+import { Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, StateTokens, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogButton, ErrorKind } from "state_types.slint";
+export { Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogButton, ErrorKind }
 import { GlyphSource, Brand, Buttons, HelpEntry, Status, HeaderBar, StatusLine, ProgressTrack, TopStatusStrip, FooterIndicator, ActiveLabel, HelpBar, SectionHeader, Divider, ScrollCue, ModalShell, QrPlate, StateCue } from "chrome.slint";
 import { GridCell, MarqueeCaption, PressableSurface, Tile, PagedGridView } from "tiles.slint";
 import { ScrollOffset, SelectionCursor, SelectionClip, FocusCursor } from "focus.slint";
@@ -303,9 +303,9 @@ export global SettingsView {
     in-out property <length> grid-y: 0px;
     in-out property <length> grid-height: 0px;
     // The rows viewport and how far it has scrolled to keep the focused
-    // row inside it. `rows-clip-height` is what the band actually shows:
-    // the viewport trimmed back to the last whole row, so the bottom edge
-    // never cuts a row through its text.
+    // row inside it. `rows-clip-height` is what the band shows: the
+    // viewport plus the card's lip above and below it, which scroll with
+    // the rows, so they clip against the card's frame and the hint rule.
     in-out property <length> rows-height: 0px;
     in-out property <length> rows-clip-height: 0px;
     in-out property <length> scroll: 0px;
@@ -322,6 +322,10 @@ export global SetupModalView {
     in-out property <[SettingsRow]> rows: [];
     in-out property <int> index: 0;
     in-out property <[SetupPickerRow]> picker-rows: [];
+    in-out property <int> picker-first: 0;
+    in-out property <int> picker-top: 0;
+    in-out property <int> picker-visible: 0;
+    in-out property <int> picker-count: 0;
     in-out property <int> picker-sel: 0;
     in-out property <bool> has-above: false;
     in-out property <bool> has-below: false;
@@ -513,15 +517,14 @@ export global Overlays {
     // it instead of only scanning the code or typing it in elsewhere.
     in-out property <bool> online-can-open-url: false;
     // The Online page's cloud-backup list and remote-activity log: one
-    // modal, rows composed by Rust, windowed to what fits.
+    // modal, rows composed by Rust.
     in-out property <bool> online-list-open: false;
     in-out property <OnlineListKind> online-list-kind: OnlineListKind.none;
     in-out property <OnlineListStatus> online-list-status: OnlineListStatus.ready;
+    in-out property <OnlineListFailure> online-list-failure: OnlineListFailure.other;
     in-out property <string> online-list-note: "";
     in-out property <[OnlineListRow]> online-list-rows: [];
     in-out property <int> online-list-index: 0;
-    in-out property <bool> online-list-more-above: false;
-    in-out property <bool> online-list-more-below: false;
     // QR write deep-link modal: the matrix image is rendered by Rust
     // at module resolution (quiet zone baked in) and scaled up
     // pixelated to the largest whole multiple.
@@ -645,7 +648,7 @@ component SettingsScreen inherits Rectangle {
         current-item: SettingsView.field-index;
         total-items: SettingsView.field-count;
         has-pages-above: root.scroll > 0px;
-        has-pages-below: root.scroll + root.rows-clip-height < root.rows-content-h;
+        has-pages-below: root.scroll + root.rows-clip-height < root.rows-content-h + 2 * root.pad;
         page-requested(delta) => { SettingsInput.page-requested(delta); }
         visible: Layout.top-strip-visible;
     }
@@ -708,8 +711,10 @@ component SettingsScreen inherits Rectangle {
     // and shrank with the focused row's description would reflow the list
     // under the cursor.
     property <length> hint-h: (Sizing.bitmap-fonts || Sizing.tier-240 ? 2 : 1) * self.hint-line;
-    property <string> hint: root.index >= 0 && root.index < root.rows.length
-        ? SettingsLabels.description(root.rows[root.index].id) : "";
+    property <string> hint: root.index < 0 || root.index >= root.rows.length ? ""
+        : !root.rows[root.index].enabled && SettingsLabels.disabled-reason(root.rows[root.index].id) != ""
+            ? SettingsLabels.disabled-reason(root.rows[root.index].id)
+            : SettingsLabels.description(root.rows[root.index].id);
     property <length> hint-y: self.card-h - self.pad - self.hint-h;
     property <length> hint-rule-y: self.hint-y - self.pad - Sizing.stroke(1);
 
@@ -729,20 +734,26 @@ component SettingsScreen inherits Rectangle {
 
         // Rows stack from the top inside a clipped viewport; a busy
         // action row is taller, so Rust stacks the offsets and scrolls
-        // the band to keep the focused row on screen.
+        // the band to keep the focused row on screen. The fill travels
+        // with the rows (below), so a row past the edge slides into view
+        // under it; only a jump of more than a viewport (a wrap) snaps.
         row-scroll := ScrollOffset {
             target: root.scroll;
-            step: 2 * root.row-h;
+            step: root.rows-height;
+            reveal: true;
+            duration: Motion.page-ms;
             focus-start: root.rows[root.index].y-offset;
             focus-size: root.rows[root.index].height;
             viewport: root.rows-height;
             scope: StateTokens.page(root.page) + ":" + Motion.epoch;
         }
+        // The band runs from the card's frame to the hint rule, so rows
+        // leave under those edges rather than under a margin inside them.
         rows-band := Rectangle {
             x: root.pad;
-            y: root.pad;
+            y: Sizing.card-border-width;
             width: root.card-w - 2 * root.pad;
-            height: root.rows-clip-height;
+            height: root.hint-rule-y - self.y;
             clip: true;
 
         // The fill and the rows hang off one scrolled parent, positioned
@@ -756,7 +767,7 @@ component SettingsScreen inherits Rectangle {
         // inverting, so the covered band grew and shrank for the length of
         // every scroll.
         Rectangle {
-            y: root.scroll - row-scroll.offset;
+            y: root.pad - rows-band.y + root.scroll - row-scroll.offset;
 
         sel := SelectionCursor {
             radius: Layout.row-radius;
@@ -1256,12 +1267,27 @@ component ListPickerModal inherits ModalShell {
             live: root.top > 0;
         }
 
+        // The rows glide to a new window instead of jumping; the fill
+        // travels with them, the same way the settings card scrolls. A
+        // wrap from one end to the other is more than a viewport and snaps.
+        list-scroll := ScrollOffset {
+            target: root.top * root.stride;
+            step: root.viewport-h;
+            reveal: true;
+            duration: Motion.page-ms;
+            viewport: root.viewport-h;
+            scope: root.title-text + ":" + root.setting-id + ":" + Motion.epoch;
+        }
         Rectangle {
             x: root.pad;
             y: root.content-y + root.arrow-band;
             width: root.content-width;
             height: root.viewport-h;
             clip: true;
+
+            Rectangle {
+            y: root.top * root.stride - list-scroll.offset;
+            height: parent.height;
 
             sel := SelectionCursor {
                 press-held: PressFeedback.active(PressOwner.list, root.current-index);
@@ -1310,6 +1336,7 @@ component ListPickerModal inherits ModalShell {
                     changed has-hover => { if (self.has-hover) { Overlays.pointer-choice(PressOwner.list, i, false); } }
                     clicked => { Overlays.pointer-choice(PressOwner.list, i, true); }
                 }
+            }
             }
         }
 
@@ -1699,96 +1726,203 @@ component OnlineLinkModal inherits ModalShell {
     }
 }
 
+// One row of the Online list modal: what it is on the left, the detail a
+// second column carries on the right. Drawn twice per row, once resting and
+// once in the selection's colors, for the same reason as `PickerRowBody`.
+component OnlineListRowBody inherits Rectangle {
+    in property <string> label;
+    in property <string> detail;
+    in property <color> label-color;
+    in property <color> detail-color;
+    in property <int> weight;
+
+    Text {
+        x: Sizing.pct-w(2);
+        y: (parent.height - self.height) / 2;
+        width: parent.width * 0.55 - Sizing.pct-w(2);
+        overflow: elide;
+        text: root.label;
+        color: root.label-color;
+        font-size: Sizing.font-body;
+        font-weight: root.weight;
+    }
+    Text {
+        x: parent.width * 0.55;
+        y: (parent.height - self.height) / 2;
+        width: parent.width * 0.45 - Sizing.pct-w(2);
+        horizontal-alignment: right;
+        overflow: elide;
+        text: root.detail;
+        color: root.detail-color;
+        font-size: Sizing.font-caption;
+        font-weight: root.weight;
+    }
+}
+
 // The Online page's two lists, one modal: cloud backup snapshots (Accept
 // restores, after asking) and the remote-control activity log (read only).
-// Rust composes every row and windows a long list to what fits; this only
-// draws them. The first row of the backup list is the "back up now" action.
+// Rust composes every row; the list itself is the picker's: the shared
+// cursor, the reserved scroll cues, a window that glides, and rows that
+// answer the pointer. The first row of the backup list is "back up now".
 component OnlineListModal inherits ModalShell {
+    property <[OnlineListRow]> entries: Overlays.online-list-rows;
+    property <int> current-index: Overlays.online-list-index;
     property <bool> backups: Overlays.online-list-kind == OnlineListKind.backups;
-    property <length> row-h: Math.ceil(Sizing.font-body / 1px * 2.6) * 1px;
-    property <length> note-h: Math.ceil(Sizing.font-caption / 1px * 1.6) * 1px;
     property <bool> has-status: Overlays.online-list-status != OnlineListStatus.ready;
+    property <bool> has-note: Overlays.online-list-note != "";
+
+    property <length> row-h: Sizing.pct-h(7);
+    property <length> row-sp: Sizing.pct-h(1);
+    property <length> stride: root.row-h + root.row-sp;
+    property <length> arrow: Sizing.pct-h(3);
+    property <length> max-viewport: Sizing.pct-h(46);
+    property <int> visible-rows: Math.max(1, Math.min(root.entries.length,
+        Math.floor((root.max-viewport + root.row-sp) / root.stride)));
+    property <bool> scrollable: root.entries.length > root.visible-rows;
+    property <length> arrow-band: root.scrollable ? root.arrow + Sizing.pct-h(0.5) : 0px;
+    property <length> viewport-h: root.entries.length == 0 ? 0px
+        : root.visible-rows * root.row-h + Math.max(0, root.visible-rows - 1) * root.row-sp;
+    // Preserve the viewport until focus crosses an edge.
+    property <int> top: 0;
+    function reveal-current() {
+        root.top = Math.max(0, Math.min(Math.max(0, root.entries.length - root.visible-rows),
+            Math.min(root.current-index, Math.max(root.top, root.current-index - root.visible-rows + 1))));
+    }
+    changed current-index => { root.reveal-current(); }
+    changed visible-rows => { root.reveal-current(); }
+    init => { root.reveal-current(); }
+
+    // Why the list could not load, in the user's terms: two causes they
+    // can fix themselves, and the network for anything else.
+    pure function failure-text() -> string {
+        if (Overlays.online-list-failure == OnlineListFailure.unlinked) {
+            return @tr("This device is not linked. Link your Zaparoo Online account, then try again.");
+        }
+        if (Overlays.online-list-failure == OnlineListFailure.needs-warp) {
+            return @tr("Cloud backup needs an active Zaparoo Warp subscription.");
+        }
+        return @tr("Could not load this. Check the network connection and try again.");
+    }
+    pure function row-label(row: OnlineListRow) -> string {
+        return row.id == "run" ? @tr("Back up now") : row.label;
+    }
+    pure function row-detail(row: OnlineListRow) -> string {
+        // The only row that cannot be accepted is a snapshot a newer
+        // Zaparoo made; it says so where its detail already is.
+        if (!row.enabled) { return @tr("{}, needs a newer Zaparoo", row.detail); }
+        return row.this-device ? @tr("{}, this device", row.detail) : row.detail;
+    }
+
+    property <length> note-h: root.has-note ? Math.ceil(Sizing.font-caption / 1px * 1.6) * 1px + root.pad : 0px;
+    property <length> status-h: root.has-status ? root.row-h + (root.entries.length > 0 ? root.pad : 0px) : 0px;
+    property <length> list-y: root.content-y + root.note-h + root.status-h;
 
     title: root.backups ? @tr("Cloud backups") : @tr("Remote activity");
     panel-width: Math.min(root.width * 0.84, Sizing.pct-h(120));
-    content-height: Math.ceil(content.preferred-height / 1px) * 1px;
+    content-height: root.note-h + root.status-h + root.viewport-h + 2 * root.arrow-band;
 
-    content := VerticalLayout {
+    if root.has-note: Text {
         x: root.pad;
         y: root.content-y;
         width: root.content-width;
-        height: self.preferred-height;
-        spacing: root.pad;
+        horizontal-alignment: center;
+        overflow: elide;
+        text: Overlays.online-list-note;
+        color: Theme.text-label;
+        font-size: Sizing.font-caption;
+    }
+    if root.has-status: Text {
+        x: root.pad;
+        y: root.content-y + root.note-h;
+        width: root.content-width;
+        height: root.row-h;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        wrap: word-wrap;
+        text: Overlays.online-list-status == OnlineListStatus.loading ? @tr("Loading…")
+            : Overlays.online-list-status == OnlineListStatus.working ? @tr("Working…")
+            : Overlays.online-list-status == OnlineListStatus.failed ? root.failure-text()
+            : (root.backups ? @tr("No cloud backups yet.") : @tr("Nothing has run through remote control yet."));
+        color: Overlays.online-list-status == OnlineListStatus.failed ? Theme.accent : Theme.text-label;
+        font-size: Sizing.font-body;
+    }
 
-        if Overlays.online-list-note != "": Rectangle {
-            height: root.note-h;
-            Text {
-                x: 0px;
-                y: 0px;
-                width: parent.width;
-                horizontal-alignment: center;
-                text: Overlays.online-list-note;
-                color: Theme.text-label;
-                font-size: Sizing.font-caption;
-                wrap: word-wrap;
-            }
-        }
-        if root.has-status: Rectangle {
-            height: root.row-h;
-            status := Text {
-                x: 0px;
-                y: 0px;
-                width: parent.width;
-                horizontal-alignment: center;
-                text: Overlays.online-list-status == OnlineListStatus.loading ? @tr("Loading…")
-                    : Overlays.online-list-status == OnlineListStatus.working ? @tr("Working…")
-                    : Overlays.online-list-status == OnlineListStatus.failed ? @tr("Could not load this. Check the network connection and try again.")
-                    : (root.backups ? @tr("No cloud backups yet.") : @tr("Nothing has run through remote control yet."));
-                color: Overlays.online-list-status == OnlineListStatus.failed ? Theme.accent : Theme.text-label;
-                font-size: Sizing.font-body;
-                wrap: word-wrap;
-            }
-        }
-        if Overlays.online-list-more-above: Text {
-            horizontal-alignment: center;
-            text: "▲";
-            color: Theme.text-label;
-            font-size: Sizing.font-caption;
-        }
-        for row[index] in Overlays.online-list-rows: Rectangle {
-            height: root.row-h;
-            property <bool> selected: index == Overlays.online-list-index;
-            background: self.selected ? Theme.selection-fill : transparent;
-            border-radius: Sizing.radius-sm;
-            opacity: row.enabled ? 1.0 : 0.45;
+    if root.scrollable: ScrollCue {
+        x: (root.panel-width - self.width) / 2;
+        y: root.list-y;
+        width: root.arrow;
+        glyph: "icons/ScrollUp";
+        live: root.top > 0;
+    }
 
-            Text {
-                x: root.pad;
-                y: parent.height * 0.08;
-                width: parent.width * 0.55 - root.pad;
-                text: row.id == "run" ? @tr("Back up now") : row.label;
-                overflow: elide;
-                color: parent.selected ? Theme.on-accent : (row.id == "run" ? Theme.accent : Theme.text-primary);
-                font-size: Sizing.font-body;
-                font-weight: parent.selected ? FontWeight.medium : FontWeight.normal;
+    list-scroll := ScrollOffset {
+        target: root.top * root.stride;
+        step: root.viewport-h;
+        reveal: true;
+        duration: Motion.page-ms;
+        viewport: root.viewport-h;
+        scope: "online-list:" + (root.backups ? "backups" : "activity") + ":" + Motion.epoch;
+    }
+    Rectangle {
+        x: root.pad;
+        y: root.list-y + root.arrow-band;
+        width: root.content-width;
+        height: root.viewport-h;
+        clip: true;
+
+        Rectangle {
+        y: root.top * root.stride - list-scroll.offset;
+        height: parent.height;
+
+        sel := SelectionCursor {
+            press-held: PressFeedback.active(PressOwner.online-list, root.current-index);
+            target: { x: 0px, y: (root.current-index - root.top) * root.stride,
+                w: parent.width, h: root.row-h, column: 0, row: root.current-index,
+                scope: "online-list:" + (root.backups ? "backups" : "activity") + ":" + root.top,
+                valid: root.current-index >= 0 && root.current-index < root.entries.length };
+        }
+        for row[i] in root.entries: Rectangle {
+            x: 0;
+            y: (i - root.top) * root.stride;
+            height: root.row-h;
+            property <bool> lit: sel.fill-bottom > self.y && sel.fill-top < self.y + self.height;
+
+            OnlineListRowBody {
+                label: root.row-label(row);
+                detail: root.row-detail(row);
+                // Muted, never hidden: docs/style.md, "Hidden and disabled
+                // tiles". A snapshot this Core cannot restore still lists.
+                label-color: !row.enabled ? Theme.text-label : (row.id == "run" ? Theme.accent : Theme.text-primary);
+                detail-color: Theme.text-label;
+                weight: FontWeight.normal;
             }
-            Text {
-                x: parent.width * 0.55;
-                y: parent.height * 0.08;
-                width: parent.width * 0.45 - root.pad;
-                horizontal-alignment: right;
-                text: row.this-device ? @tr("{}, this device", row.detail) : row.detail;
-                overflow: elide;
-                color: parent.selected ? Theme.on-accent : Theme.text-label;
-                font-size: Sizing.font-caption;
+            if lit: SelectionClip {
+                row-top: parent.y; row-height: parent.height;
+                fill-top: sel.fill-top; fill-bottom: sel.fill-bottom;
+                fill: sel.fill;
+                OnlineListRowBody {
+                    label: root.row-label(row);
+                    detail: root.row-detail(row);
+                    label-color: sel.content;
+                    detail-color: sel.content;
+                    weight: FontWeight.medium;
+                }
+            }
+            TouchArea {
+                mouse-cursor: pointer;
+                changed has-hover => { if (self.has-hover) { Overlays.pointer-choice(PressOwner.online-list, i, false); } }
+                clicked => { Overlays.pointer-choice(PressOwner.online-list, i, true); }
             }
         }
-        if Overlays.online-list-more-below: Text {
-            horizontal-alignment: center;
-            text: "▼";
-            color: Theme.text-label;
-            font-size: Sizing.font-caption;
         }
+    }
+
+    if root.scrollable: ScrollCue {
+        x: (root.panel-width - self.width) / 2;
+        y: root.list-y + root.arrow-band + root.viewport-h + root.arrow-band - root.arrow;
+        width: root.arrow;
+        glyph: "icons/ScrollDown";
+        live: root.top + root.visible-rows < root.entries.length;
     }
 }
 
@@ -2186,16 +2320,36 @@ component ContextMenu inherits Rectangle {
             live: root.scroll < root.content-h - 2 * root.pad - root.viewport-h;
         }
 
+        // The rows glide under the cues instead of jumping; the fill
+        // travels with them, the same way the settings card scrolls.
+        context-scroll := ScrollOffset {
+            target: root.scroll;
+            step: root.viewport-h;
+            reveal: true;
+            duration: Motion.page-ms;
+            viewport: root.viewport-h;
+            scope: "context:" + Motion.epoch;
+        }
+        Rectangle {
+        x: 0;
+        y: root.pad + root.arrow-band;
+        height: root.viewport-h;
+        clip: true;
+
+        Rectangle {
+        y: root.scroll - context-scroll.offset;
+        height: parent.height;
+
         sel := SelectionCursor {
             press-held: PressFeedback.active(PressOwner.context, root.current-index);
-            target: { x: root.pad, y: root.pad + root.arrow-band + root.current-index * (root.row-h + root.row-sp) - root.scroll,
+            target: { x: root.pad, y: root.current-index * (root.row-h + root.row-sp) - root.scroll,
                 w: parent.width - 2 * root.pad, h: root.row-h, column: 0, row: root.current-index,
                 scope: "context:" + root.scroll / 1px,
                 valid: root.current-index >= 0 && root.current-index < root.entries.length };
         }
         for entry[i] in root.entries: Rectangle {
             x: root.pad;
-            y: root.pad + root.arrow-band + i * (root.row-h + root.row-sp) - root.scroll;
+            y: i * (root.row-h + root.row-sp) - root.scroll;
             width: parent.width - 2 * root.pad;
             height: root.row-h;
 
@@ -2226,6 +2380,8 @@ component ContextMenu inherits Rectangle {
                 }
                 clicked => { ContextInput.row-clicked(i); }
             }
+        }
+        }
         }
     }
 }
@@ -2748,6 +2904,13 @@ export component App inherits Window {
     pure function move-cue(pages: int) -> HelpEntry {
         return { buttons: pages > 1 ? ["ButtonL", "ButtonR", "Dpad"] : ["Dpad"], label: @tr("Move") };
     }
+    // The help bar is the contract for what a button does. A control that
+    // cannot be used right now offers no Accept; see docs/style.md,
+    // "Disabled controls".
+    pure function focused-settings-enabled() -> bool {
+        return SettingsView.index >= 0 && SettingsView.index < SettingsView.rows.length
+            ? SettingsView.rows[SettingsView.index].enabled : true;
+    }
     pure function focused-settings-control() -> ControlKind {
         return SettingsView.index >= 0 && SettingsView.index < SettingsView.rows.length
             ? SettingsView.rows[SettingsView.index].control : ControlKind.none;
@@ -2828,9 +2991,18 @@ export component App inherits Window {
         // Online link: while a code is live, Back calls it off; once it has
         // an outcome both buttons just close.
         if (Overlays.online-list-open) {
-            if (Overlays.online-list-kind == OnlineListKind.backups && Overlays.online-list-rows.length > 0) {
+            if (Overlays.online-list-kind == OnlineListKind.backups && Overlays.online-list-rows.length > 0
+                && Overlays.online-list-index >= 0 && Overlays.online-list-index < Overlays.online-list-rows.length
+                && Overlays.online-list-rows[Overlays.online-list-index].enabled) {
                 return [
+                    { buttons: ["Dpad"], label: @tr("Move") },
                     { buttons: ["ButtonA"], label: @tr("Select") },
+                    { buttons: ["ButtonB"], label: @tr("Close") },
+                ];
+            }
+            if (Overlays.online-list-rows.length > 1) {
+                return [
+                    { buttons: ["Dpad"], label: @tr("Move") },
                     { buttons: ["ButtonB"], label: @tr("Close") },
                 ];
             }
@@ -2900,6 +3072,21 @@ export component App inherits Window {
                     { buttons: ["ButtonB"], label: @tr("Cancel") },
                 ];
             }
+            // A tile whose precondition is not met names its reason in
+            // the active label and offers no Accept.
+            if (HubView.label-reason != DisabledReason.none) {
+                if (HubView.options-available) {
+                    return [
+                        self.move-cue(HubView.total-pages),
+                        { buttons: ["ButtonX"], label: @tr("Options") },
+                        { buttons: ["ButtonY"], label: @tr("View") },
+                    ];
+                }
+                return [
+                    self.move-cue(HubView.total-pages),
+                    { buttons: ["ButtonY"], label: @tr("View") },
+                ];
+            }
             if (HubView.options-available) {
                 return [
                     self.move-cue(HubView.total-pages),
@@ -2947,6 +3134,12 @@ export component App inherits Window {
                 }
                 return [
                     { buttons: ["ButtonA"], label: @tr("Open") },
+                    { buttons: ["ButtonB"], label: @tr("Back") },
+                ];
+            }
+            if (!self.focused-settings-enabled()) {
+                return [
+                    { buttons: ["DpadUp", "DpadDown"], label: @tr("Move") },
                     { buttons: ["ButtonB"], label: @tr("Back") },
                 ];
             }
@@ -3191,6 +3384,10 @@ export component App inherits Window {
         rows: SetupModalView.rows;
         index: SetupModalView.index;
         picker-rows: SetupModalView.picker-rows;
+        picker-first: SetupModalView.picker-first;
+        picker-top: SetupModalView.picker-top;
+        picker-visible: SetupModalView.picker-visible;
+        picker-count: SetupModalView.picker-count;
         picker-sel: SetupModalView.picker-sel;
         has-above: SetupModalView.has-above;
         has-below: SetupModalView.has-below;

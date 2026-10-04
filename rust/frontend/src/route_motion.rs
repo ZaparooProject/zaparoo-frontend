@@ -851,6 +851,36 @@ fn online_rows_follow_core_and_unlinking_asks_first() {
     let sync = settings_row(&app, "playtimeSync");
     assert_eq!(sync.id, "playtimeSync");
     assert!(!sync.checked, "upload consent defaults off");
+    assert!(
+        !sync.enabled,
+        "a row that needs an account waits, dimmed, until one is linked"
+    );
+    assert!(!settings_row(&app, "onlineManageBackups").enabled);
+    assert!(settings_row(&app, "onlineLinkAccount").enabled);
+    // No input changes a row the page shows as unavailable: not Accept,
+    // and not Left or Right on a toggle.
+    {
+        use slint::Model as _;
+        let view = app.global::<crate::SettingsView>();
+        let index = view
+            .get_rows()
+            .iter()
+            .position(|row| row.id == "playtimeSync")
+            .and_then(|index| i32::try_from(index).ok())
+            .unwrap_or(-1);
+        assert!(index >= 0, "the play history row is on the page");
+        view.set_index(index);
+    }
+    for action in ["accept", "left", "right"] {
+        crate::settings::handle_action(&ctx, &app, action);
+        assert!(
+            !crate::router::lock(&ctx.shared)
+                .online
+                .features
+                .play_history,
+            "{action} must not change a row that waits for an account"
+        );
+    }
     let all = settings_row(&app, "onlineAllFeatures");
     assert_eq!(all.control, ControlKind::TriToggle);
     assert_eq!(all.value, "off");
@@ -862,6 +892,8 @@ fn online_rows_follow_core_and_unlinking_asks_first() {
     assert_eq!(settings_row(&app, "onlineLinkAccount").id, "");
     assert_eq!(settings_row(&app, "onlineStatus").value, "linked");
     assert_eq!(settings_row(&app, "onlineWarp").value, "checking");
+    assert!(settings_row(&app, "playtimeSync").enabled);
+    assert!(settings_row(&app, "onlineManageBackups").enabled);
     let ov = app.global::<crate::Overlays>();
     crate::online::accept_account(&ctx, &app);
     assert!(ov.get_dialog_open());
@@ -3165,7 +3197,7 @@ fn settings_rows(heights: &[f32]) -> (ModelRc<crate::SettingsRow>, Vec<f32>) {
 }
 
 #[test]
-fn a_settings_move_that_scrolls_the_band_snaps_the_fill() {
+fn a_settings_move_that_scrolls_glides_the_band_and_snaps_without_motion() {
     assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
     let (app, window) = boot();
     crate::sizing::apply_scene(
@@ -3176,30 +3208,53 @@ fn a_settings_move_that_scrolls_the_band_snaps_the_fill() {
     let settings = app.global::<crate::SettingsView>();
     settings.set_page(SettingsPage::Appearance);
     // The last row is taller on purpose: the fill animates its height as
-    // well as its position, and a move that scrolls must not animate
-    // either, because the rows it is inverting have already jumped.
+    // well as its position, and a move that scrolls must do neither on its
+    // own. The fill sits on its row and the band carries both.
     let heights = [30.0, 30.0, 30.0, 30.0, 60.0];
     let (rows, offsets) = settings_rows(&heights);
     settings.set_rows(rows);
     let viewport = 120.0;
-    settings.set_rows_height(viewport);
-    settings.set_rows_clip_height(viewport);
-    settings.set_index(0);
-    settings.set_scroll(0.0);
-    settle(&window);
-
-    // Focus the tall last row. Its bottom is at 180, so the band scrolls
-    // to a row boundary that keeps it in view.
     let scroll = offsets[4] + heights[4] - viewport;
-    settings.set_index(4);
-    settings.set_scroll(scroll);
-    settings.set_rows_clip_height(viewport);
+    let top = |settings: &crate::SettingsView<'_>| {
+        settings.set_rows_height(viewport);
+        settings.set_rows_clip_height(viewport);
+        settings.set_index(0);
+        settings.set_scroll(0.0);
+    };
+    let scrolled = |settings: &crate::SettingsView<'_>| {
+        settings.set_index(4);
+        settings.set_scroll(scroll);
+    };
+
+    // With motion off the band is placed in one frame.
+    app.global::<crate::Motion>().set_enabled(false);
+    top(&settings);
+    settle(&window);
+    scrolled(&settings);
     let first = pixels(&window);
     settle(&window);
-    let settled = pixels(&window);
+    let snapped = pixels(&window);
     assert_eq!(
-        first, settled,
-        "a move that scrolls the band must place the fill in one frame"
+        first, snapped,
+        "without motion a move that scrolls the band lands in one frame"
+    );
+
+    // With motion on the rows glide to the same place.
+    app.global::<crate::Motion>().set_enabled(true);
+    top(&settings);
+    settle(&window);
+    scrolled(&settings);
+    let travelling = pixels(&window);
+    settle(&window);
+    assert_ne!(
+        travelling,
+        pixels(&window),
+        "a move that scrolls the band glides there"
+    );
+    assert_eq!(
+        pixels(&window),
+        snapped,
+        "the glide settles exactly where the snap lands"
     );
 
     // A move inside the band still glides: same scroll, different row.
@@ -3307,6 +3362,9 @@ fn game_info_scrolls_long_content_but_not_short_or_loading_content() {
     let top = frame(&window);
     app.invoke_game_info_scroll(crate::ScrollAction::PageNext);
     assert!(info.get_scroll_position() > 0.0);
+    // The body glides to the new position, so compare where it settles.
+    settle(&window);
+    app.window().request_redraw();
     assert_ne!(top, frame(&window), "paging must move rendered content");
     for _ in 0..100 {
         app.invoke_game_info_scroll(crate::ScrollAction::PageNext);

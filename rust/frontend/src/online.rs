@@ -15,7 +15,7 @@ use std::time::Duration;
 use slint::{ComponentHandle, SharedString};
 use zaparoo_app::online_link::{self as rules, Started, Tick};
 use zaparoo_app::online_settings::OnlineFeatures;
-use zaparoo_core::client::{Client, Notification};
+use zaparoo_core::client::{Client, ConnectionState, Notification};
 use zaparoo_core::input_actions::actions;
 use zaparoo_core::media_types::UpdateSettingsParams;
 
@@ -586,6 +586,25 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
 
 /// Watch for link progress Core pushes.
 pub fn bind_events(ctx: &Arc<Ctx>, app: &App, client: &Arc<Client>) {
+    // Ask as soon as Core is reachable, and again after every reconnect,
+    // so the Online page opens on rows that are already settled instead of
+    // redrawing under the cursor when the first answer lands.
+    {
+        let mut connection = client.connection.subscribe();
+        let weak = app.as_weak();
+        let ctx = ctx.clone();
+        ctx.handle.clone().spawn(async move {
+            loop {
+                if matches!(*connection.borrow_and_update(), ConnectionState::Connected) {
+                    let ctx = ctx.clone();
+                    let _ = weak.upgrade_in_event_loop(move |app| refresh(&ctx, &app));
+                }
+                if connection.changed().await.is_err() {
+                    return;
+                }
+            }
+        });
+    }
     let mut rx = client.subscribe_notifications();
     let weak = app.as_weak();
     let ctx = ctx.clone();

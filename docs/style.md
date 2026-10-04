@@ -542,6 +542,73 @@ one, or the widest label can elide the moment it becomes selected, both
 measure every label in a hidden `VerticalLayout` fixed at `FontWeight.medium`
 for exactly this.
 
+#### Info rows only report
+
+`ControlKind.info` rows (the Online page's Status, Warp and remote Status)
+show a live value and nothing else. The value sits flush right in
+`Theme.text-label`, there is no chevron, and the cursor steps over the row:
+`Row::is_navigable` in `zaparoo_app::settings` is false for it, and it does
+not count toward the "N/M" position cue. A value row drawn as a picker with
+no options took focus and drew a chevron but did nothing on Accept, which
+read as a broken button next to the action row beside it.
+
+#### Disabled controls
+
+One rule for every control that cannot be used right now, on every screen:
+a Hub tile whose precondition is not met, a Settings row waiting on an
+account or on another job, a snapshot this Zaparoo cannot restore.
+
+1. **It stays, and it takes focus.** A controller has no hover: focus is the
+   only way to ask a control what it is and why it is unavailable. Skipping
+   it hides the reason and makes the cursor jump past a row the user can
+   see. (The exception is a row that was never a control: an info row only
+   reports, so it is skipped. See "Info rows only report".)
+2. **It is muted through its color tier, never through opacity.** A raw
+   alpha multiplier has no contrast floor; see "Hidden and disabled tiles"
+   for the measurement. A Settings row drops its label and value to
+   `Theme.text-label`, or `Theme.on-accent-muted` under the selection fill.
+3. **It says why, in text the screen already shows.** The Hub's active
+   label, a captioned tile's tag suffix, a list row's detail column, or the
+   Settings hint line, where `SettingsLabels.disabled-reason` replaces the
+   row's description. No badge, no dialog on Accept.
+4. **The help bar stops offering Accept.** The help bar is the contract for
+   what each button does. A control that will not act must not advertise
+   "Open", "Change" or "Select"; the bar shows Move and Back only.
+5. **Nothing acts on it.** Not Accept, not Left or Right on a toggle, not
+   the pointer. In Settings every input path asks `blocked` in
+   `frontend::settings` first, so a new path cannot forget. It gets no
+   press cue either: `press_feedback` gives a disabled control no target.
+
+Rules 4 and 5 go together. A disabled row that still showed "Select" and
+then did nothing on Accept read as a broken button; a muted row with its
+reason on screen and no Accept in the bar reads as what it is.
+
+Where this applies today:
+
+| Control | Why it is unavailable | Where the reason shows |
+|---|---|---|
+| Hub tile (Resume, Update, a category) | no history, no internet, not confirmed by Core | active label suffix |
+| Online toggles, Schedule, Manage backups | no linked account (`needs_online_link`) | Settings hint line |
+| Update media database / Update metadata | the other job is running | Settings hint line |
+| Cloud backup snapshot | made by a newer Zaparoo | the row's detail column |
+
+A launcher picker row that is not ready is not disabled: it stays
+pickable on purpose and only folds its reason into its label.
+
+The same honesty goes for a request Core refuses: name the cause when
+Core's answer gives one, and fall back to the network wording only for
+the rest. A backups list that fails to load says so in the modal (not
+linked, no Warp subscription). A backup or restore that fails opens the
+`backup` error dialog, whose body is chosen by cause: uploaded too
+recently, storage full, another backup running, a game running, a restart
+pending, a snapshot from a newer Zaparoo, no room on the device. Core
+sends all of these as plain messages with no error category, so
+`online_lists::failure` matches the phrases Core's own TUI matches
+(`backupActionErrorText`); a cause it does not recognize gets the generic
+body. Two earlier versions got this wrong the same way: an unlinked
+device was told to check its network, and a rate-limited backup was
+reported as "Online account unavailable" on an account that was working.
+
 #### Action rows are the one row kind that centers its label
 
 `ControlKind.action` rows (`updateMediaDb`, `runScraper`, `uploadLog`) used
@@ -580,6 +647,13 @@ track), with a border in the track's own "on" color for that register**:
 |---|---|---|---|---|
 | Unselected row | `Theme.accent` | `Theme.border-mid` | `Theme.surface-card` | `Theme.accent` |
 | Selected row | `Theme.on-accent` | `Theme.on-accent-muted` | `Theme.selection-fill` | `Theme.on-accent` |
+
+A tri-toggle (`ControlKind.tri-toggle`, the Online page's "All" row) is the
+same control with a third knob position: left when everything it covers is
+off, centred when some of it is on, right when all of it is. The centred
+track is the on and off colors mixed half and half on an unselected row and
+stays `on-accent-muted` on a selected one; position is still the primary
+cue. It never shows its state as a word.
 
 Before this rule, the track and the knob branched on row-selection
 independently of each other, so which element carried state flipped
@@ -1680,6 +1754,58 @@ Anything beyond `travel-limit` row heights is treated as a jump and snaps
 too, which is what catches a wrap inside a short list where the pixel
 distance alone would look harmless.
 
+### Scrolling lists
+
+A list that scrolls glides to its new position over `Motion.page-ms`, the
+same duration as a grid page turn; it does not jump. This covers the
+Settings card, `ListPickerModal`, the context menu, the media setup picker,
+the Online list modal, and the free-text bodies of Game info and About. All
+of the row lists share one mechanism: `ScrollOffset` with `reveal: true`,
+over rows and their `SelectionCursor` hung off one translated parent. The
+cursor is positioned against where the list will settle, so the highlight
+rides in with the row it is on and the pair moves as one rigid piece. A
+cursor that chased the moving offset instead lagged its row and grew and
+shrank for the length of every scroll.
+
+`reveal` is what lets a row that starts outside the clip slide into view.
+Without it `ScrollOffset` snaps whenever the newly focused row is not
+already visible, which is right for a list whose cursor does not travel
+with its content and wrong for these.
+
+What still snaps: a jump of more than one viewport (a wrap from the last
+row to the first), a scope change, and everything when motion is off. A
+drag tracks the finger exactly; only stepped moves glide.
+
+**Edges.** A modal list keeps its `ScrollCue` arrows in a reserved band
+above and below the rows, so its rows clip at row edges between them. The
+Settings card has no arrows and clips against its own frame at the top and
+the hint rule at the bottom, so both edges are fixed and rows leave under
+them. The card's lip above the first row scrolls away with the rows: once
+scrolled, the band starts on a row top, flush with the frame, so no sliver
+of the previous row hangs there. The bottom edge may cut a row; with the
+rows gliding under it that reads as "more below". An earlier rule trimmed
+the band back to the last whole row instead, which kept every row intact
+but moved the bottom edge by a different amount at each scroll position,
+because headers and rows are not the same height.
+
+**One list, every modal.** A modal that lists rows is built from the same
+parts as `ListPickerModal`: `SelectionCursor` with each row drawn a second
+time inside `SelectionClip`, `ScrollCue` arrows in a reserved band with the
+spent one dimmed, a `TouchArea` per row routed through
+`Overlays.pointer-choice`, its own `PressOwner` so Accept presses the
+focused row and never a control under the modal, and the gliding scroll
+above. The Online list modal first shipped with a hand-drawn highlight,
+text triangles that vanished when spent, and no pointer or press cue; a
+new list modal starts from the picker, not from a blank `Rectangle`.
+
+**Long lists stay windowed.** The media setup picker can hold every system,
+so Rust keeps publishing a window of rows around the cursor rather than the
+whole list, plus a few slots either side of the viewport (`PICKER_OVERSCAN`)
+so a held scroll that runs ahead of the glide still has rows to draw. Slots
+past either end of the list are empty, which keeps the slot count, and so
+the delegates, fixed. Short lists (pickers, the context menu, the Online
+lists) publish every row and let the view window them.
+
 ### Focus zoom on tiles
 
 A focused grid tile scales to `Motion.focus-zoom` (104%) about its own
@@ -1738,8 +1864,9 @@ and `display::motion_enabled` also folds in framebuffer height, so native
   vertical option lists (browse, Settings, menus, pickers) use the list's own
   `SelectionCursor`, and never a focus ring as well.
 - Focus uses `Theme.accent`; an inverted row uses `Theme.selection-fill`.
-- A rows band clips on row edges, never through a row. `band_extent` in
-  `zaparoo_app::settings` owns that rule for the Settings card.
+- A scrolled Settings band starts on a row top and clips against the card's
+  frame and the hint rule. `band_extent` in `zaparoo_app::settings` owns that
+  rule; see "Scrolling lists".
 - Ordinary text chooses six-role ladder.
 - Geometry comes from `Sizing` and `Layout` tokens (`pct-h()`, `pct-w()`,
   `pct-min()`, `stroke()`), never a hardcoded pixel size, and Slint snaps it

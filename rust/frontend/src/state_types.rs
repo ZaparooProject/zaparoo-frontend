@@ -41,7 +41,7 @@ tokens!(ErrorKind {
     MediaIndex => "media_index", MediaScrape => "media_scrape", MediaScrapers => "media_scrapers",
     MediaCancel => "media_cancel", Launcher => "launcher", LauncherSave => "launcher_save",
     AlternateDiscovery => "alternate_discovery", QrCode => "qr_code", CardWrite => "card_write", Setting => "setting",
-    Pairing => "pairing", Online => "online",
+    Pairing => "pairing", Online => "online", Backup => "backup",
 });
 
 impl From<zaparoo_app::hub::Reason> for crate::DisabledReason {
@@ -64,6 +64,7 @@ impl From<zaparoo_app::settings::Control> for crate::ControlKind {
             Control::Action => Self::Action,
             Control::Navigate => Self::Navigate,
             Control::TriToggle => Self::TriToggle,
+            Control::Info => Self::Info,
         }
     }
 }
