@@ -149,6 +149,18 @@ impl Input {
         })
     }
 
+    /// Offer a handoff to open a URL in the device's own browser, for a
+    /// host with one and no separate device at hand to scan a code with.
+    pub fn configure_open_url(
+        &self,
+        open: Arc<dyn Fn(&str) -> bool + Send + Sync>,
+    ) -> Result<(), slint::EventLoopError> {
+        let ctx = self.ctx.clone();
+        self.app.upgrade_in_event_loop(move |_app| {
+            ctx.open_url.configure(open);
+        })
+    }
+
     /// Offer an optional host-owned scan for installed launchers.
     pub fn configure_launcher_scan(
         &self,

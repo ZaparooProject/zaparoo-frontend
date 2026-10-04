@@ -55,6 +55,7 @@ mod mister;
 mod mister_battery;
 mod navigation;
 mod online;
+mod open_url;
 mod pairing;
 #[cfg_attr(
     not(feature = "hosted"),
@@ -695,6 +696,7 @@ fn run_application(
         folders: folder_picker::Model::default(),
         launcher_scan: launcher_scan::Model::default(),
         playtime_access: playtime_access::Model::default(),
+        open_url: open_url::Model::default(),
         store: store.clone(),
         handle: handle.clone(),
         media,
