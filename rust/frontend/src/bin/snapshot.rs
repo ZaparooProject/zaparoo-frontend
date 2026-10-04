@@ -1491,7 +1491,9 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
     let inputs = sizing::Scene::of(app, scene_w, scene_h, crt).inputs();
     let derived = zaparoo_app::sizing::derive(&inputs);
     let view = app.global::<generated::SettingsView>();
-    let page_id = if page {
+    let page_id = if online {
+        SettingsPage::Online
+    } else if page {
         SettingsPage::Library
     } else {
         SettingsPage::Root
@@ -1505,6 +1507,7 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
         can_scan_launchers: false,
         can_request_playtime_access: playtime,
         can_link_online: online,
+        online_linked: online,
     };
     let row_h = inputs.pct_h(8.0);
     let header_h = inputs.pct_h(5.0);
@@ -1529,11 +1532,15 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
                 Row::Field { id, control } => {
                     out.control = control.into();
                     match control {
-                        Control::Toggle => out.checked = id == "showHidden",
+                        Control::Toggle => out.checked = id == "showHidden" || id == "playtimeSync",
                         Control::Picker => {
                             out.value = match id {
                                 "systemsLayout" => "grid",
                                 "gamesLayout" => "list",
+                                "onlineStatus" => "linked",
+                                "onlineWarp" => "active",
+                                "onlineBackupSchedule" => "daily",
+                                "onlineRemoteStatus" => "waiting",
                                 _ => "auto",
                             }
                             .into();
@@ -1542,8 +1549,6 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
                             out.busy = id == "runScraper";
                             out.status_key = if id == "playtimeAccess" {
                                 ActionStatus::PlaytimeUnverified
-                            } else if id == "onlineAccount" {
-                                ActionStatus::OnlineUnlinked
                             } else if out.busy {
                                 ActionStatus::Running
                             } else {
@@ -1552,6 +1557,7 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
                             out.value = rules::action_label_key(id, out.busy).into();
                         }
                         Control::Navigate => {}
+                        Control::TriToggle => out.value = "mixed".into(),
                     }
                     if out.status_key == ActionStatus::None {
                         row_h
@@ -1583,7 +1589,7 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
     // scrolls to the group.
     let index = if online {
         rows.iter()
-            .position(|row| row.id == "onlineAccount")
+            .position(|row| row.id == "onlineUnlinkAccount")
             .and_then(|i| i32::try_from(i).ok())
             .unwrap_or(2)
     } else if page {

@@ -55,6 +55,7 @@ mod mister;
 mod mister_battery;
 mod navigation;
 mod online;
+mod online_list;
 mod open_url;
 mod pairing;
 #[cfg_attr(
