@@ -500,6 +500,9 @@ export global Overlays {
     in-out property <int> online-expires-in: 0;
     in-out property <image> online-qr;
     in-out property <int> online-qr-modules: 0;
+    // True on a host that can open the link itself (Android): Accept opens
+    // it instead of only scanning the code or typing it in elsewhere.
+    in-out property <bool> online-can-open-url: false;
     // QR write deep-link modal: the matrix image is rendered by Rust
     // at module resolution (quiet zone baked in) and scaled up
     // pixelated to the largest whole multiple.
@@ -1606,6 +1609,19 @@ component OnlineLinkModal inherits ModalShell {
                 horizontal-alignment: center;
                 text: @tr("Scan this code with your phone, or open the address below and enter the code.");
                 color: Theme.text-primary;
+                font-size: Sizing.font-caption;
+                wrap: word-wrap;
+            }
+        }
+        if root.showing && Overlays.online-can-open-url: Rectangle {
+            height: Math.ceil(open-hint.preferred-height / 1px) * 1px;
+            open-hint := Text {
+                x: 0px;
+                y: 0px;
+                width: parent.width;
+                horizontal-alignment: center;
+                text: @tr("Or press Accept to open it on this device.");
+                color: Theme.text-label;
                 font-size: Sizing.font-caption;
                 wrap: word-wrap;
             }

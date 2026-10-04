@@ -158,6 +158,7 @@ fn render(ctx: &Ctx, app: &App) {
     overlays.set_online_url(SharedString::from(session.url.as_str()));
     overlays.set_online_expires_in(i32::try_from(session.expires_in).unwrap_or(0));
     overlays.set_online_open(phase != crate::OnlineLinkPhase::Closed);
+    overlays.set_online_can_open_url(ctx.open_url.available());
 }
 
 /// Tell Core to drop a pending link. Core errors when there is none, which
@@ -303,12 +304,32 @@ pub fn close(ctx: &Ctx, app: &App) {
     crate::settings::refresh(ctx, app);
 }
 
-/// The panel owns input while it is up: Back always leaves, Accept only
-/// once there is an outcome.
+/// The panel owns input while it is up: Back always leaves. What Accept
+/// does is `rules::accept_action`'s call; see it for the three outcomes.
 pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
-    let finished = lock(&ctx.shared).online_link.finished();
-    if action == actions::CANCEL || (action == actions::ACCEPT && finished) {
+    if action == actions::CANCEL {
         close(ctx, app);
+        return;
+    }
+    if action != actions::ACCEPT {
+        return;
+    }
+    let (finished, showing, url_complete) = {
+        let shared = lock(&ctx.shared);
+        (
+            shared.online_link.finished(),
+            shared.online_link.phase == rules::Phase::Showing,
+            shared.online_link.url_complete.clone(),
+        )
+    };
+    match rules::accept_action(finished, showing, ctx.open_url.available()) {
+        rules::AcceptAction::Close => close(ctx, app),
+        rules::AcceptAction::OpenUrl => {
+            if !ctx.open_url.open(&url_complete) {
+                crate::router::report_action_error(ctx, app, "online", "");
+            }
+        }
+        rules::AcceptAction::Nothing => {}
     }
 }
 
