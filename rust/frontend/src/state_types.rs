@@ -30,7 +30,7 @@ tokens!(Screen {
 });
 tokens!(SettingsPage {
     Root => "", Appearance => "pageAppearance", Library => "pageLibraryData",
-    Display => "pageDisplayInterface", Controls => "pageControlsInput",
+    Online => "pageOnline", Display => "pageDisplayInterface", Controls => "pageControlsInput",
     Language => "pageLanguage", About => "pageSupportAbout",
 });
 tokens!(Orientation { Horizontal => "horizontal", Cw => "cw", Ccw => "ccw" });
@@ -63,6 +63,7 @@ impl From<zaparoo_app::settings::Control> for crate::ControlKind {
             Control::Toggle => Self::Toggle,
             Control::Action => Self::Action,
             Control::Navigate => Self::Navigate,
+            Control::TriToggle => Self::TriToggle,
         }
     }
 }
@@ -171,6 +172,7 @@ mod tests {
             SettingsPage::Root,
             SettingsPage::Appearance,
             SettingsPage::Library,
+            SettingsPage::Online,
             SettingsPage::Display,
             SettingsPage::Controls,
             SettingsPage::Language,

@@ -42,6 +42,31 @@ pub enum Tick {
     Stale,
 }
 
+/// What Accept does on the link panel.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AcceptAction {
+    /// The run is finished (linked, failed, or expired): leave the panel.
+    Close,
+    /// A code is showing and the host can open it itself: do that instead.
+    OpenUrl,
+    /// A code is showing but there is nowhere to send it, or nothing is
+    /// showing yet (still starting): Accept does nothing.
+    Nothing,
+}
+
+/// What Accept does right now. `finished` and `showing` describe the same
+/// `Session` Accept is pressed against; `can_open_url` is the host's own
+/// capability, not part of the session.
+pub fn accept_action(finished: bool, showing: bool, can_open_url: bool) -> AcceptAction {
+    if finished {
+        AcceptAction::Close
+    } else if showing && can_open_url {
+        AcceptAction::OpenUrl
+    } else {
+        AcceptAction::Nothing
+    }
+}
+
 const MIN_WINDOW_SECS: i64 = 30;
 const MAX_WINDOW_SECS: i64 = 30 * 60;
 /// Seconds between status polls while a code is shown.
@@ -180,7 +205,8 @@ impl Session {
 #[cfg(test)]
 mod tests {
     use super::{
-        window, Phase, Session, Started, Tick, MAX_WINDOW_SECS, MIN_WINDOW_SECS, POLL_SECS,
+        accept_action, window, AcceptAction, Phase, Session, Started, Tick, MAX_WINDOW_SECS,
+        MIN_WINDOW_SECS, POLL_SECS,
     };
 
     fn showing(seconds: i64) -> (Session, u64) {
@@ -272,5 +298,26 @@ mod tests {
         assert_eq!(window(-5), MIN_WINDOW_SECS);
         assert_eq!(window(600), 600);
         assert_eq!(window(i64::MAX), MAX_WINDOW_SECS);
+    }
+
+    #[test]
+    fn accept_closes_a_finished_run_regardless_of_the_host() {
+        assert_eq!(accept_action(true, false, false), AcceptAction::Close);
+        assert_eq!(accept_action(true, true, true), AcceptAction::Close);
+    }
+
+    #[test]
+    fn accept_opens_the_url_only_while_showing_on_a_capable_host() {
+        assert_eq!(accept_action(false, true, true), AcceptAction::OpenUrl);
+        assert_eq!(
+            accept_action(false, true, false),
+            AcceptAction::Nothing,
+            "no host handoff: nothing to do but wait"
+        );
+        assert_eq!(
+            accept_action(false, false, true),
+            AcceptAction::Nothing,
+            "still starting, no code yet: nothing to open"
+        );
     }
 }

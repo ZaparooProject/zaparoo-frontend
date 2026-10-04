@@ -33,6 +33,8 @@ pub mod logo_cache;
 pub mod media_list;
 pub mod media_setup;
 pub mod online_link;
+pub mod online_lists;
+pub mod online_settings;
 pub mod paged_grid;
 pub mod pairing;
 pub mod palette;

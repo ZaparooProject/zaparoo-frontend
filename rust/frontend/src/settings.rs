@@ -22,11 +22,18 @@ use crate::{App, GridCell, SettingsInput, SettingsRow, SettingsView};
 
 /// What the registry needs to know about this machine.
 pub(crate) fn inputs(ctx: &Ctx) -> rules::Inputs {
+    // One lock for both: a guard held across the struct literal is still
+    // held when a second `lock` in it runs, which deadlocks.
+    let (can_link_online, online_linked) = {
+        let shared = lock(&ctx.shared);
+        (shared.online.available, shared.online.linked)
+    };
     rules::Inputs {
         can_pick_folder: ctx.folders.available(),
         can_scan_launchers: ctx.launcher_scan.available(),
         can_request_playtime_access: ctx.playtime_access.available(),
-        can_link_online: lock(&ctx.shared).online.available,
+        can_link_online,
+        online_linked,
         is_mister: ctx.is_mister,
         crt_enabled: ctx.crt_enabled,
         debug_build: cfg!(debug_assertions),
@@ -54,7 +61,26 @@ fn current_value(ctx: &Ctx, id: &str) -> String {
         "region" => s.region.clone(),
         "clockFormat" => s.clock_format.clone(),
         "buttonLayout" => s.button_layout.clone(),
+        "onlineStatus" => crate::online::status_value(&shared.online).to_string(),
+        "onlineWarp" => crate::online::warp_value(&shared.online).to_string(),
+        "onlineBackupSchedule" => shared.online.backup_schedule.clone(),
+        "onlineRemoteStatus" => crate::online::remote_status_value(&shared.online).to_string(),
         _ => String::new(),
+    }
+}
+
+/// The off/mixed/on reading of a tri-toggle row.
+fn tri_toggle_value(ctx: &Ctx, id: &str) -> &'static str {
+    use zaparoo_app::online_settings::TriState;
+    if id != "onlineAllFeatures" {
+        return "off";
+    }
+    let shared = lock(&ctx.shared);
+    let warp_available = shared.online.warp_availability == "available";
+    match shared.online.features.tri_state(warp_available) {
+        TriState::On => "on",
+        TriState::Mixed => "mixed",
+        TriState::Off => "off",
     }
 }
 
@@ -71,7 +97,10 @@ fn checked(ctx: &Ctx, id: &str) -> bool {
         "swapConfirmCancel" => s.swap_confirm_cancel,
         "swapOptionsView" => s.swap_options_view,
         "crtEnabled" => ctx.crt_enabled,
-        "playtimeSync" => shared.online.sync_enabled,
+        "playtimeSync" => shared.online.features.play_history,
+        "onlineRemoteControl" => shared.online.features.remote_control,
+        "onlineLibrarySync" => shared.online.features.library,
+        "onlineCloudBackup" => shared.online.features.cloud_backup,
         _ => false,
     }
 }
@@ -193,6 +222,16 @@ fn rows(ctx: &Ctx, app: &App, page: crate::SettingsPage) -> Vec<SettingsRow> {
                         Control::Toggle => out.checked = checked(ctx, id),
                         Control::Picker => {
                             out.value = SharedString::from(current_value(ctx, id).as_str());
+                            if id == "onlineStatus" {
+                                out.value_name = SharedString::from(
+                                    lock(&ctx.shared)
+                                        .online
+                                        .device_name
+                                        .clone()
+                                        .unwrap_or_default()
+                                        .as_str(),
+                                );
+                            }
                         }
                         Control::Action => {
                             let busy = rules::action_busy(id, index_busy, ms.scraping);
@@ -210,15 +249,6 @@ fn rows(ctx: &Ctx, app: &App, page: crate::SettingsPage) -> Vec<SettingsRow> {
                                     zaparoo_app::format::count(i64::from(saved), &language).into();
                                 out.busy = pending;
                                 out.enabled = !pending;
-                            } else if id == "onlineAccount" {
-                                let linked = lock(&ctx.shared).online.linked;
-                                out.status_key = if linked {
-                                    crate::ActionStatus::OnlineLinked
-                                } else {
-                                    crate::ActionStatus::OnlineUnlinked
-                                };
-                                out.value =
-                                    SharedString::from(if linked { "unlink" } else { "link" });
                             } else if id == "playtimeAccess" {
                                 out.status_key = if ctx.playtime_access.granted() {
                                     crate::ActionStatus::PlaytimeVerified
@@ -236,6 +266,9 @@ fn rows(ctx: &Ctx, app: &App, page: crate::SettingsPage) -> Vec<SettingsRow> {
                             }
                         }
                         Control::Navigate => {}
+                        Control::TriToggle => {
+                            out.value = SharedString::from(tri_toggle_value(ctx, id));
+                        }
                     }
                     if out.status_key == crate::ActionStatus::None {
                         m.row
@@ -439,6 +472,19 @@ pub fn open_page(ctx: &Ctx, app: &App, page: crate::SettingsPage) {
     render(ctx, app);
 }
 
+/// The page's rows changed under the cursor (Core answered after the page
+/// opened): if it now sits on a header, move it to the first row it can
+/// act on.
+pub(crate) fn reseat(ctx: &Ctx, app: &App) {
+    let (_, rows, index) = page_rows_now(ctx, app);
+    if rows.get(index).is_some_and(|row| row.is_field()) {
+        return;
+    }
+    let seat = rules::first_navigable(&rows);
+    app.global::<SettingsView>()
+        .set_index(i32::try_from(seat).unwrap_or(0));
+}
+
 pub(crate) fn capture_outgoing(app: &App) {
     let view = app.global::<SettingsView>();
     view.set_outgoing_page(view.get_page());
@@ -456,6 +502,11 @@ pub(crate) fn navigate_page(ctx: &Ctx, app: &App, page: crate::SettingsPage) {
         return;
     }
     let from = view.get_page();
+    // Account, Warp and the consent settings are Core's: ask when the page
+    // opens, so it never shows a stale or never-fetched answer.
+    if page == crate::SettingsPage::Online {
+        crate::online::refresh(ctx, app);
+    }
     let direction = if page == crate::SettingsPage::Root {
         -1
     } else {
@@ -615,6 +666,7 @@ fn accept(ctx: &Ctx, app: &App, id: &str, control: Control) {
     }
     match control {
         Control::Toggle => toggle(ctx, app, id),
+        Control::TriToggle => crate::online::toggle_all_features(ctx, app),
         Control::Picker => open_picker(ctx, app, id),
         Control::Navigate | Control::Action => match id {
             "aboutLicense" => crate::router::enter_about(ctx, app, EntryMode::Fresh),
@@ -626,7 +678,11 @@ fn accept(ctx: &Ctx, app: &App, id: &str, control: Control) {
             "addGameFolder" => crate::folder_picker::request(ctx, app),
             "detectLaunchers" => crate::launcher_scan::request(ctx, app),
             "playtimeAccess" => crate::playtime_access::request(ctx, app),
-            "onlineAccount" => crate::online::accept_account(ctx, app),
+            "onlineLinkAccount" | "onlineUnlinkAccount" => {
+                crate::online::accept_account(ctx, app);
+            }
+            "onlineManageBackups" => crate::online_list::open_backups(ctx, app),
+            "onlineRemoteActivity" => crate::online_list::open_activity(ctx, app),
             "crtCalibration" => crate::router::open_crt_calibration(ctx, app),
             "updateMediaDb" => {
                 if ms.indexing || ms.optimizing {
@@ -673,9 +729,9 @@ fn toggle(ctx: &Ctx, app: &App, id: &str) {
         crate::router::stage_restart(ctx, app, PendingRestart::CrtEnabled(!ctx.crt_enabled));
         return;
     }
-    // Core owns upload consent; nothing is saved locally.
-    if id == "playtimeSync" {
-        crate::online::toggle_sync(ctx, app);
+    // Core owns every Online consent setting; nothing is saved locally.
+    if let Some(feature) = crate::online::Feature::from_id(id) {
+        crate::online::toggle_feature(ctx, app, feature);
         return;
     }
     let value = {
@@ -790,6 +846,10 @@ pub fn picker_selected(ctx: &Ctx, app: &App, id: &str, value: &str) {
         if value != lock(&ctx.shared).persist.settings.crt_video_standard {
             crate::router::stage_restart(ctx, app, PendingRestart::CrtStandard(value.to_string()));
         }
+        return;
+    }
+    if id == "onlineBackupSchedule" {
+        crate::online::set_backup_schedule(ctx, app, value);
         return;
     }
     {

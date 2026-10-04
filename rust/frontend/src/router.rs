@@ -71,6 +71,7 @@ pub struct Shared {
     pub online: crate::online::Model,
     /// The Online account link panel.
     pub online_link: zaparoo_app::online_link::Session,
+    pub online_list: crate::online_list::State,
     /// Failed user actions waiting for the alert surface.
     pub errors: action_error::ErrorQueue,
     /// The context menu's alternate-versions page.
@@ -193,6 +194,7 @@ pub struct Ctx {
     pub folders: crate::folder_picker::Model,
     pub launcher_scan: crate::launcher_scan::Model,
     pub playtime_access: crate::playtime_access::Model,
+    pub open_url: crate::open_url::Model,
     pub store: Arc<Store>,
     pub handle: Handle,
     pub media: Arc<MediaCache>,
@@ -247,6 +249,7 @@ impl Shared {
             pairing: zaparoo_app::pairing::Session::default(),
             online: crate::online::Model::default(),
             online_link: zaparoo_app::online_link::Session::default(),
+            online_list: crate::online_list::State::default(),
             errors: action_error::ErrorQueue::new(),
             alternates: crate::alternates::AlternatesModel::default(),
             input: crate::input::InputModel::new(),
@@ -642,6 +645,12 @@ fn dialog_accept(ctx: &Ctx, app: &App, kind: DialogKind, focus: usize) {
                 crate::online::unlink(ctx, app);
             }
         }
+        DialogKind::RestoreOnlineBackup => {
+            close_dialog(app);
+            if confirmed {
+                crate::online_list::restore_confirmed(ctx, app);
+            }
+        }
         DialogKind::UpdateStop => {
             close_dialog(app);
             crate::update::stop_answered(confirmed);
@@ -969,6 +978,12 @@ fn dispatch_action(ctx: &Ctx, app: &App, action: &str) {
     // calls a live code off.
     if app.global::<crate::Overlays>().get_online_open() {
         crate::online::handle_action(ctx, app, action);
+        return;
+    }
+    // The Online page's cloud backup list and activity log. A restore
+    // confirmation is a dialog and takes input before this is reached.
+    if app.global::<crate::Overlays>().get_online_list_open() {
+        crate::online_list::handle_action(ctx, app, action);
         return;
     }
     if app.global::<crate::Overlays>().get_card_write_open() {

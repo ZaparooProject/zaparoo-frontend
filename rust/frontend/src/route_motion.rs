@@ -355,6 +355,7 @@ fn offline_ctx() -> (tokio::runtime::Runtime, crate::router::Ctx) {
         folders: crate::folder_picker::Model::default(),
         launcher_scan: crate::launcher_scan::Model::default(),
         playtime_access: crate::playtime_access::Model::default(),
+        open_url: crate::open_url::Model::default(),
         store: zaparoo_core::store::Store::new(client, handle.clone()),
         handle,
         media: crate::media_cache::MediaCache::new(),
@@ -805,13 +806,13 @@ fn online_settings(ctx: &crate::router::Ctx, app: &App, linked: bool) {
         let mut shared = crate::router::lock(&ctx.shared);
         shared.online.available = true;
         shared.online.linked = linked;
-        shared.online.sync_enabled = false;
+        shared.online.features = zaparoo_app::online_settings::OnlineFeatures::default();
     }
-    crate::settings::open_page(ctx, app, SettingsPage::Library);
+    crate::settings::open_page(ctx, app, SettingsPage::Online);
 }
 
-/// The Online rows appear only when Core offers upload consent to this
-/// client; unlinking asks first.
+/// The Online page's rows appear only when Core offers consent to this
+/// client, the account row follows the link, and unlinking asks first.
 #[test]
 fn online_rows_follow_core_and_unlinking_asks_first() {
     assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
@@ -820,25 +821,47 @@ fn online_rows_follow_core_and_unlinking_asks_first() {
     app.global::<crate::Motion>().set_enabled(false);
     app.global::<Shell>().set_active_screen(Screen::Settings);
 
-    crate::settings::open_page(&ctx, &app, SettingsPage::Library);
+    crate::settings::open_page(&ctx, &app, SettingsPage::Online);
     assert_eq!(
-        settings_row(&app, "onlineAccount").id,
+        settings_row(&app, "onlineLinkAccount").id,
         "",
         "no consent capability from Core, no Online rows"
     );
+    assert_eq!(
+        settings_row(&app, "onlineUnavailable").id,
+        "onlineUnavailable"
+    );
+    assert_eq!(
+        settings_row(&app, "playtimeSync").id,
+        "",
+        "play history sync lives on the Online page, not Library"
+    );
+
     online_settings(&ctx, &app, false);
-    let account = settings_row(&app, "onlineAccount");
-    assert_eq!(account.id, "onlineAccount");
-    assert_eq!(account.status_key, crate::ActionStatus::OnlineUnlinked);
+    let account = settings_row(&app, "onlineLinkAccount");
+    assert_eq!(account.id, "onlineLinkAccount");
     assert_eq!(account.value, "link");
+    assert_eq!(settings_row(&app, "onlineUnlinkAccount").id, "");
+    assert_eq!(
+        settings_row(&app, "onlineWarp").id,
+        "",
+        "Warp needs a linked account"
+    );
+    assert_eq!(settings_row(&app, "onlineStatus").value, "unlinked");
     let sync = settings_row(&app, "playtimeSync");
     assert_eq!(sync.id, "playtimeSync");
     assert!(!sync.checked, "upload consent defaults off");
+    let all = settings_row(&app, "onlineAllFeatures");
+    assert_eq!(all.control, ControlKind::TriToggle);
+    assert_eq!(all.value, "off");
 
     online_settings(&ctx, &app, true);
-    let account = settings_row(&app, "onlineAccount");
-    assert_eq!(account.status_key, crate::ActionStatus::OnlineLinked);
+    let account = settings_row(&app, "onlineUnlinkAccount");
+    assert_eq!(account.id, "onlineUnlinkAccount");
     assert_eq!(account.value, "unlink");
+    assert_eq!(settings_row(&app, "onlineLinkAccount").id, "");
+    assert_eq!(settings_row(&app, "onlineStatus").value, "linked");
+    assert_eq!(settings_row(&app, "onlineWarp").value, "checking");
     let ov = app.global::<crate::Overlays>();
     crate::online::accept_account(&ctx, &app);
     assert!(ov.get_dialog_open());
