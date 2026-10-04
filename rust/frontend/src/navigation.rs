@@ -120,7 +120,10 @@ pub fn cancel(ctx: &Ctx, app: &App) -> bool {
     crate::router::save_persist(&ctx.shared);
     crate::router::refresh_layout(app);
     match app.global::<Shell>().get_active_screen() {
-        crate::Screen::Games | crate::Screen::Favorites | crate::Screen::Recents => {
+        crate::Screen::Games
+        | crate::Screen::Favorites
+        | crate::Screen::Recents
+        | crate::Screen::SearchResults => {
             crate::games::render(ctx, app);
             crate::games::resume_after_cancel(ctx, app);
         }
@@ -133,6 +136,7 @@ pub fn cancel(ctx: &Ctx, app: &App) -> bool {
             }
         }
         crate::Screen::Hub => crate::hub::render(ctx, app),
+        crate::Screen::Search => crate::search::resume(ctx, app),
         _ => {}
     }
     true

@@ -1,7 +1,15 @@
 // Closed UI discriminants shared with the generated Rust API.
-export enum Screen { hub, systems, favorite-systems, games, favorites, recents, settings, about, update, none }
-export enum GamesMode { browse, favorites, recents }
+export enum Screen { hub, systems, favorite-systems, games, favorites, recents, search, search-results, settings, about, update, none }
+export enum GamesMode { browse, favorites, recents, search }
 export enum SystemsMode { category, favorites }
+// What a menu row is: something to pick, a section's name (never focused),
+// or an action set apart at the foot of a form list.
+export enum MenuRole { option, header, action }
+// The on-screen keyboard's key kinds, and the Search screen's focus zones
+// and what its side pane lists.
+export enum KeyKind { char, space, backspace, shift, symbols, submit }
+export enum SearchZone { system, filter, keys, pane }
+export enum SearchPane { none, recents, preview }
 export enum SettingsPage { root, appearance, library, online, display, controls, language, about }
 export enum ContentState { ready, loading, empty, error }
 export enum AppCue { none, launching }
@@ -24,7 +32,7 @@ export enum OnlineListFailure { other, unlinked, needs-warp }
 export enum SetupAction { select, start, toggle, change }
 export enum SetupKind { index, scrape }
 export enum SetupPicker { systems, source }
-export enum ScopeKind { all, category, system, source }
+export enum ScopeKind { all, category, system, source, header }
 export enum LogPhase { uploading, done, failed }
 // The "pair a device" panel. `closed` is the resting value; the panel's
 // own open flag is what mounts it.
@@ -59,6 +67,7 @@ export global StateTokens {
     public pure function games(mode: GamesMode) -> string {
         if (mode == GamesMode.favorites) { return "favorites"; }
         if (mode == GamesMode.recents) { return "recents"; }
+        if (mode == GamesMode.search) { return "search-results"; }
         return "games";
     }
     public pure function systems(mode: SystemsMode) -> string {

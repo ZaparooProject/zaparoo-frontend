@@ -122,7 +122,14 @@ impl HubItem {
 /// decided at render time from live state (Recents/internet/build
 /// flags) — the layout just records that the tile exists and where it
 /// sits.
-pub const BUILT_IN_ACTIONS: &[&str] = &["resume", "favorites", "recents", "update", "settings"];
+pub const BUILT_IN_ACTIONS: &[&str] = &[
+    "resume",
+    "favorites",
+    "recents",
+    "search",
+    "update",
+    "settings",
+];
 
 /// The persisted Hub layout.
 ///
@@ -183,7 +190,8 @@ impl HubLayout {
     ///   until it returns `true`.
     /// - **Already seeded**: append any detected category whose
     ///   `"category:<id>"` key isn't in `known` yet — same "lands at the
-    ///   end" rule, new items only.
+    ///   end" rule, new items only. A built-in action this layout has never
+    ///   seen (one a newer build introduced) lands the same way, once.
     pub fn reconcile(
         &mut self,
         detected_categories: &[String],
@@ -223,6 +231,15 @@ impl HubLayout {
             }
             self.known.push(key);
             self.items.push(HubItem::category(id));
+            changed = true;
+        }
+        for id in BUILT_IN_ACTIONS {
+            let key = format!("action:{id}");
+            if self.known.iter().any(|k| k == &key) {
+                continue;
+            }
+            self.known.push(key);
+            self.items.push(HubItem::action(id));
             changed = true;
         }
         changed
@@ -687,6 +704,7 @@ type = "blank"
                 "category:Console",
                 "action:favorites",
                 "action:recents",
+                "action:search",
                 "action:update",
                 "action:settings",
             ]
@@ -700,6 +718,7 @@ type = "blank"
                 "Console",
                 "favorites",
                 "recents",
+                "search",
                 "update",
                 "settings"
             ]
@@ -747,6 +766,24 @@ type = "blank"
     }
 
     #[test]
+    fn reconcile_appends_a_new_built_in_action_to_a_seeded_layout_once() {
+        let mut layout = HubLayout::default();
+        layout.reconcile(&["Arcade".to_string()], &[]);
+        // A layout an older build seeded: it has never seen Search.
+        layout.known.retain(|k| k != "action:search");
+        layout.items.retain(|i| i.id != "search");
+
+        assert!(layout.reconcile(&["Arcade".to_string()], &[]));
+        assert_eq!(layout.items.last().unwrap().id, "search");
+        assert!(layout.known.contains(&"action:search".to_string()));
+
+        // Removed by the user afterwards: `known` keeps it out for good.
+        layout.items.retain(|i| i.id != "search");
+        assert!(!layout.reconcile(&["Arcade".to_string()], &[]));
+        assert!(!layout.items.iter().any(|i| i.id == "search"));
+    }
+
+    #[test]
     fn reconcile_never_re_adds_a_removed_item_because_known_still_has_it() {
         let mut layout = HubLayout::default();
         layout.reconcile(&["Arcade".to_string()], &[]);
@@ -779,6 +816,7 @@ type = "blank"
                 "A",
                 "favorites",
                 "recents",
+                "search",
                 "update",
                 "settings"
             ]
@@ -828,14 +866,14 @@ type = "blank"
             kind_raw: "blank".to_string(),
             ..HubItem::default()
         });
-        // resume, A, B, favorites, recents, update, settings, blank
-        assert!(layout.place_visible_item(1, 7));
+        // resume, A, B, favorites, recents, search, update, settings, blank
+        assert!(layout.place_visible_item(1, 8));
         assert_eq!(
             layout.items[1].kind(),
             HubItemKind::Blank,
             "A's old cell must become a blank, not shift anything else"
         );
-        assert_eq!(layout.items[7].id, "A");
+        assert_eq!(layout.items[8].id, "A");
     }
 
     #[test]
@@ -876,6 +914,7 @@ type = "blank"
                 "C",
                 "favorites",
                 "recents",
+                "search",
                 "update",
                 "settings"
             ],
@@ -896,6 +935,7 @@ type = "blank"
                 "A",
                 "favorites",
                 "recents",
+                "search",
                 "update",
                 "settings"
             ],
@@ -1232,6 +1272,7 @@ type = "blank"
                 "Console",
                 "favorites",
                 "recents",
+                "search",
                 "update",
                 "settings"
             ]
@@ -1244,6 +1285,7 @@ type = "blank"
                 "category:Console",
                 "action:favorites",
                 "action:recents",
+                "action:search",
                 "action:update",
                 "action:settings"
             ]

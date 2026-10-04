@@ -81,6 +81,9 @@ pub struct MediaSearchParams {
     /// `name-asc`, `name-desc`, `filename-asc`, and `filename-desc`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sort: Option<String>,
+    /// Limit results to media at or below this folder or virtual route.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path_prefix: Option<String>,
 }
 
 /// Image types Core's `media.image` endpoint can actually serve.
@@ -127,6 +130,26 @@ pub struct MediaTagsParams {
 pub struct MediaTagsResult {
     #[serde(default)]
     pub tags: Vec<TagInfo>,
+}
+
+/// One deck as the `decks` list names it. Core sends more (description,
+/// timestamps, ownership); the frontend reads only what it shows.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeckInfo {
+    /// Also the value of the deck's membership tag, `user:deck:<id>`.
+    #[serde(default)]
+    pub deck_id: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub item_count: u32,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct DecksResult {
+    #[serde(default)]
+    pub decks: Vec<DeckInfo>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -1564,15 +1587,15 @@ mod tests {
     )]
 
     use super::{
-        merged_root_view, BrowseEntry, HealthResult, IndexingStatusResponse, LauncherInfo,
-        LaunchersResult, LogDownloadResult, MediaBrowseIndexParams, MediaBrowseIndexResult,
-        MediaBrowseParams, MediaBrowseResult, MediaHistoryEntry, MediaHistoryLatestResult,
-        MediaHistoryParams, MediaHistoryResult, MediaImageParams, MediaImageResult,
-        MediaIndexParams, MediaItem, MediaMetaParams, MediaMetaResult, MediaMetaUpdateParams,
-        MediaResult, MediaScrapeParams, MediaSearchParams, MediaSearchResult, ReaderInfo,
-        ReadersResult, ScrapersResult, ScrapingStatusResponse, SettingsResult, SystemDefault,
-        SystemsParams, SystemsResult, TagInfo, TokensHistoryResult, TokensResult,
-        UpdateSettingsParams, VersionResult, MEDIA_IMAGE_DELIVERY_LOCAL_PATH,
+        merged_root_view, BrowseEntry, DecksResult, HealthResult, IndexingStatusResponse,
+        LauncherInfo, LaunchersResult, LogDownloadResult, MediaBrowseIndexParams,
+        MediaBrowseIndexResult, MediaBrowseParams, MediaBrowseResult, MediaHistoryEntry,
+        MediaHistoryLatestResult, MediaHistoryParams, MediaHistoryResult, MediaImageParams,
+        MediaImageResult, MediaIndexParams, MediaItem, MediaMetaParams, MediaMetaResult,
+        MediaMetaUpdateParams, MediaResult, MediaScrapeParams, MediaSearchParams,
+        MediaSearchResult, ReaderInfo, ReadersResult, ScrapersResult, ScrapingStatusResponse,
+        SettingsResult, SystemDefault, SystemsParams, SystemsResult, TagInfo, TokensHistoryResult,
+        TokensResult, UpdateSettingsParams, VersionResult, MEDIA_IMAGE_DELIVERY_LOCAL_PATH,
     };
 
     #[test]
@@ -1742,6 +1765,24 @@ mod tests {
     }
 
     #[test]
+    fn decks_result_reads_ids_and_names_and_ignores_the_rest() {
+        let result: DecksResult = serde_json::from_value(serde_json::json!({
+            "decks": [
+                { "deckId": "0k3v9x2rq7bm", "name": "Couch co-op", "itemCount": 8,
+                  "description": "x", "owned": true, "locked": false,
+                  "createdAt": 1, "updatedAt": 2 },
+                { "deckId": "aa11bb22" }
+            ]
+        }))
+        .expect("decks");
+        assert_eq!(result.decks.len(), 2);
+        assert_eq!(result.decks[0].deck_id, "0k3v9x2rq7bm");
+        assert_eq!(result.decks[0].name, "Couch co-op");
+        assert_eq!(result.decks[0].item_count, 8);
+        assert_eq!(result.decks[1].name, "");
+    }
+
+    #[test]
     fn media_search_params_omits_unset_fields() {
         let params = MediaSearchParams::default();
         let json = serde_json::to_value(&params).expect("serialise");
@@ -1759,6 +1800,7 @@ mod tests {
             tags: vec!["region:usa".into()],
             letter: Some("M".into()),
             sort: Some("name-asc".into()),
+            path_prefix: Some("/roms/SNES/RPG".into()),
         };
         let json = serde_json::to_value(&params).expect("serialise");
         let object = json.as_object().expect("object");
@@ -1779,6 +1821,10 @@ mod tests {
         assert_eq!(
             object.get("tags").and_then(|v| v.as_array()).map(Vec::len),
             Some(1)
+        );
+        assert_eq!(
+            object.get("pathPrefix").and_then(|v| v.as_str()),
+            Some("/roms/SNES/RPG")
         );
         assert!(!object.contains_key("fuzzySystem"));
     }

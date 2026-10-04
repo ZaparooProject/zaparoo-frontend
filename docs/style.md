@@ -805,6 +805,99 @@ Pressable content belongs on card/control surface.
 Focus is always `Theme.accent`. No second focus color. Accent configurability is
 future theme work, not per-surface override.
 
+## Text entry
+
+Text is typed on the shared on-screen keyboard (`OnScreenKeyboard` in
+`ui/keyboard.slint`; layout and editing rules in `zaparoo_app::keyboard`).
+The Search screen is its first user.
+
+- **Layout.** QWERTY, every row ten units wide, with a digit row on top.
+  A use that does not care about case or punctuation takes the basic
+  layer only (letters, digits, Space, Backspace and the submit key); the
+  full keyboard adds Shift and Symbols and their layers.
+- **Keys are raised controls** (the pressable front edge), and one focus
+  ring travels between them.
+- **The field being typed in has a block cursor, not a ring.** A ring there
+  would be a second one on screen beside the focused key's. It blinks while the
+  keyboard has focus and rests dimmed while anything else does. Moved back
+  into the text, it sits on a character and inverts it. Reduce motion
+  holds it solid.
+- **Buttons.** Accept presses the focused key, and repeats while held on a
+  key that types or deletes. View deletes and repeats while held; held past
+  `TEXT_CLEAR_HOLD_MS` it clears the whole field. Options types a space and
+  the shoulder buttons move the cursor. They work from anywhere on the
+  screen, so fixing a typo never needs a trip to the Backspace key. The
+  help bar names them.
+- **A real keyboard types directly.** Characters go to the field before
+  any key binding sees them, Backspace deletes, and focus moves to the
+  submit key so Enter runs the action. The help bar then drops the Delete
+  and Space hints, which that keyboard's own keys already cover.
+- **Every edge wraps.** The fields above the keyboard and its key rows are
+  one vertical loop: Down from the bottom row reaches the field above that
+  half of the keyboard, and Up from a field reaches the bottom row. A key
+  row and the card beside it are one horizontal loop: Right from the last
+  key enters the card, Right again comes round to the row's first key, and
+  Left from the card returns to the key it was entered from. With nothing
+  beside the keyboard a row wraps on itself. The card's rows loop top to
+  bottom, like a list picker's.
+- **No system keyboard.** Latin letters and digits only; other scripts
+  need a real keyboard.
+
+The Search screen puts the Name field on top, then the System and Tags
+fields side by side above the keyboard, with a card beside them: recent
+searches while there is nothing to search on, then the first matches as the
+query is typed. Each field carries its name on the left and no placeholder.
+A focused System or Tags field wears the accent ring; inverting it left
+the name unreadable on the fill. The stack fills the height between the
+strip and the help bar. The Tags field shows
+the chosen tags as one line (`Platformer +1`), the same summary the Games
+header shows; values are changed and cleared in the tags picker. The card follows the Settings card: a
+`SectionHeader`, rows the selection fill travels over, and as many rows as
+its height fits. A longer list scrolls, with a `ScrollCue` above and below
+it as in the list pickers. Clearing the recent searches is an action row at the
+card's foot, drawn as Settings draws one: centered, in the accent, and
+inverted under the fill. The match count heads the card; it is exact up
+to one page of results and reads `Matches: 100+` beyond it, because Core
+reports no total. At the 240p tier and on a rotated scene or one narrower
+than 4:3 the card collapses and the count moves into the query field.
+
+## Form lists
+
+`FormListModal` is the list picker for a list that is long or has structure:
+the system picker and the tags picker. The plain `ListPickerModal` stays
+for short menus of centered commands.
+
+- **Rows read like Settings rows:** the name on the left, its value on the
+  right in the muted tier (a chosen tag, a game count).
+- **Section headers** name the rows under them, in the caption tier over a
+  rule. They take no focus: Up and Down pass over them, and the row under
+  a header brings the header into view with it.
+- **Sideways or the shoulder buttons jump a section**, forward to the next
+  one's first row, back to the start of this one and then the one before.
+  On a page of plain values they page instead.
+- **Actions sit at the foot, apart from the options:** centered, in the
+  accent, under a rule, as a Settings action row. An action never looks
+  like an option. There is no Apply: a pick is kept as it is made, Back
+  leaves, and the help bar says Back rather than Cancel.
+- Only the rows on screen are built, so a list of every system costs no
+  more than a short one. The window snaps rather than glides.
+
+The system list is the same wherever it is offered (the Search screen, the
+media update setup): All systems, the systems used lately where the screen
+has a notion of that, then every system under its manufacturer, with the
+ones Core names no manufacturer for under Other. Eight systems or fewer are
+one plain alphabetical list. Rules: `zaparoo_app::system_picker` and
+`zaparoo_app::form_list`.
+
+The tags picker is the same from the Games View menu and from the Search
+screen's Tags field: a page of categories, each showing its chosen value
+or Any, then a page of one category's values with their game counts. It is
+called Tags everywhere. Its Collections category lists the built-in
+collections first (Favorites, Liked, Play later), then the user's decks by
+name. Core tags a deck's games with the deck's id alone, so the names come
+from its `decks` list, asked for only when the library has such tags; a
+deck whose name is not known is left out rather than shown as an id.
+
 ## Pills
 
 Toggle track/thumb use `height / 2` or `width / 2`. Pills are distinct from
@@ -1587,7 +1680,8 @@ Slint does not change screen selection or persisted scroll state itself.
 A fresh forward visit starts at the first item and first page. Selecting a
 category starts its Systems list at the top; selecting a system opens its
 root, not the folder from an earlier visit. Favorites, Recently played,
-Settings and About follow the same fresh-entry rule. An explicit Hub folder
+Search, Settings and About follow the same fresh-entry rule: Search opens
+with an empty query and no filters, and offers the recent searches instead. An explicit Hub folder
 shortcut still opens its named folder.
 
 Back is different: it restores the parent selection and viewport. Process

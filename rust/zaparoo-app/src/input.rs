@@ -43,11 +43,24 @@ pub const LETTER_STEP_TICK_MS: u64 = 250;
 /// floor for a deliberate human re-tap.
 pub const DUPLICATE_INPUT_WINDOW_MS: u64 = 40;
 
-/// The directions that repeat while held.
+/// Delete the character before the caret. Not a bindable action: a text
+/// field takes it from the View button or the Backspace key while it has
+/// the input.
+pub const TEXT_DELETE: &str = "text_delete";
+
+/// Press the focused key of an on-screen keyboard. Not a bindable action:
+/// Accept becomes it on a key that types or deletes, so holding the
+/// button repeats the key.
+pub const TEXT_KEY: &str = "text_key";
+
+/// A delete held this long stops stepping and clears the whole field.
+pub const TEXT_CLEAR_HOLD_MS: u64 = 1_200;
+
+/// The directions that repeat while held, and typing or deleting text.
 pub fn is_repeatable_action(action: &str) -> bool {
     matches!(
         action,
-        "up" | "down" | "left" | "right" | "page_prev" | "page_next"
+        "up" | "down" | "left" | "right" | "page_prev" | "page_next" | TEXT_DELETE | TEXT_KEY
     )
 }
 
@@ -200,6 +213,15 @@ impl Hold {
         held
     }
 
+    /// How long the current hold has lasted; 0 when nothing is held.
+    pub fn held_ms(&self, now_ms: u64) -> u64 {
+        if self.action.is_empty() || self.started_ms == 0 {
+            0
+        } else {
+            now_ms.saturating_sub(self.started_ms)
+        }
+    }
+
     /// A repeat timer fired: the action to dispatch, plus the tier this
     /// hold has reached.
     pub fn tick(&self, now_ms: u64) -> Option<(&str, HoldTier)> {
@@ -290,6 +312,21 @@ impl RapidNav {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn typing_and_deleting_repeat_and_a_hold_knows_its_age() {
+        assert!(is_repeatable_action(TEXT_DELETE));
+        assert!(is_repeatable_action(TEXT_KEY));
+        assert!(!is_repeatable_action("accept"));
+        // Neither speeds up into the fast-scroll tiers.
+        assert_eq!(repeat_tier(TEXT_DELETE, HoldTier::Letter), HoldTier::Row);
+        let mut hold = Hold::new();
+        assert_eq!(hold.held_ms(5_000), 0);
+        assert!(hold.arm(TEXT_DELETE, "west", 1_000));
+        assert_eq!(hold.held_ms(1_000 + TEXT_CLEAR_HOLD_MS), TEXT_CLEAR_HOLD_MS);
+        assert!(hold.release("west"));
+        assert_eq!(hold.held_ms(9_000), 0);
+    }
 
     #[test]
     fn only_the_directions_repeat() {

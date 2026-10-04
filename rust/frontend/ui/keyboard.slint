@@ -1,0 +1,137 @@
+// Zaparoo Frontend
+// Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
+// SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
+//
+// The on-screen keyboard: a grid of raised keys with one travelling focus
+// ring. Pure presentation. Rust lays the keys out
+// (`zaparoo_app::keyboard`), owns the text, and moves the focus.
+
+import { Theme, Sizing, Motion } from "theme.slint";
+import { GlyphSource } from "chrome.slint";
+import { PressableSurface } from "tiles.slint";
+import { FocusCursor } from "focus.slint";
+import { KeyKind } from "state_types.slint";
+
+// One key. `start` and `span` are in grid units along its row.
+export struct KeyCell {
+    kind: KeyKind,
+    text: string,
+    row: int,
+    start: int,
+    span: int,
+}
+
+export component OnScreenKeyboard inherits Rectangle {
+    in property <[KeyCell]> keys;
+    in property <int> rows: 4;
+    in property <int> columns: 10;
+    in property <int> current-index: 0;
+    // The keyboard holds focus; the ring hides while another zone has it.
+    in property <bool> focused: true;
+    // The key being pressed, or -1.
+    in property <int> pressed-index: -1;
+    in property <bool> enabled: true;
+    in property <bool> submit-enabled: true;
+    in property <string> submit-glyph: "icons/Search";
+    in property <bool> shift-active: false;
+    in property <bool> symbols-active: false;
+    // Separates this keyboard's focus moves from another's.
+    in property <string> scope: "keyboard";
+    callback key-hovered(int);
+    callback key-clicked(int);
+
+    property <length> gap: Math.max(1px, Sizing.pct-min(0.7));
+    property <length> cell-w: (root.width - (root.columns - 1) * root.gap) / Math.max(1, root.columns);
+    property <length> cell-h: (root.height - (root.rows - 1) * root.gap) / Math.max(1, root.rows);
+    property <length> ring-gap: Sizing.card-border-width;
+    property <KeyCell> current: root.current-index >= 0 && root.current-index < root.keys.length
+        ? root.keys[root.current-index] : { kind: KeyKind.char, text: "", row: 0, start: 0, span: 1 };
+    property <bool> current-pressed: root.pressed-index == root.current-index;
+    property <float> press-t: root.current-pressed ? 1 : 0;
+    animate press-t {
+        duration: Motion.dur(root.current-pressed ? Motion.press-ms : Motion.settle-ms);
+        easing: ease-out-quad;
+    }
+
+    pure function key-x(key: KeyCell) -> length {
+        return key.start * (root.cell-w + root.gap);
+    }
+    pure function key-w(key: KeyCell) -> length {
+        return key.span * root.cell-w + (key.span - 1) * root.gap;
+    }
+    pure function key-ink(key: KeyCell) -> color {
+        if (!root.enabled || (key.kind == KeyKind.submit && !root.submit-enabled)) {
+            return Theme.text-label;
+        }
+        if ((key.kind == KeyKind.shift && root.shift-active)
+            || (key.kind == KeyKind.symbols && root.symbols-active)) {
+            return Theme.accent;
+        }
+        return Theme.text-primary;
+    }
+    pure function key-glyph(key: KeyCell) -> string {
+        if (key.kind == KeyKind.backspace) { return "icons/NavLeft"; }
+        if (key.kind == KeyKind.shift) { return "icons/NavUp"; }
+        if (key.kind == KeyKind.submit) { return root.submit-glyph; }
+        return "";
+    }
+
+    for key[i] in root.keys: face := PressableSurface {
+        x: root.key-x(key);
+        y: key.row * (root.cell-h + root.gap);
+        width: root.key-w(key);
+        height: root.cell-h;
+        pressed: root.pressed-index == i;
+        property <length> glyph-size: Math.round(Math.min(self.width, self.face-height) * 0.5 / 1px) * 1px;
+
+        if key.kind == KeyKind.char || key.kind == KeyKind.symbols: Text {
+            width: parent.width;
+            height: face.face-height;
+            text: key.text;
+            color: root.key-ink(key);
+            font-size: Sizing.font-body;
+            font-weight: FontWeight.medium;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+        // Space is drawn, not lettered: an open-topped bracket.
+        if key.kind == KeyKind.space: Rectangle {
+            property <length> stroke: Math.max(1px, Sizing.stroke(1.5));
+            x: (parent.width - self.width) / 2;
+            y: face.face-height * 0.55;
+            width: Math.min(parent.width * 0.6, Sizing.pct-w(12));
+            height: Math.max(self.stroke * 3, face.face-height * 0.14);
+            Rectangle { x: 0; y: parent.height - parent.stroke; height: parent.stroke; background: root.key-ink(key); }
+            Rectangle { x: 0; y: 0; width: parent.stroke; background: root.key-ink(key); }
+            Rectangle { x: parent.width - parent.stroke; y: 0; width: parent.stroke; background: root.key-ink(key); }
+        }
+        if root.key-glyph(key) != "": Image {
+            x: (parent.width - self.width) / 2;
+            y: (face.face-height - self.height) / 2;
+            width: face.glyph-size;
+            height: face.glyph-size;
+            source: GlyphSource.glyph(root.key-glyph(key), face.glyph-size, root.key-ink(key));
+        }
+        TouchArea {
+            mouse-cursor: pointer;
+            changed has-hover => { if (self.has-hover) { root.key-hovered(i); } }
+            clicked => { root.key-clicked(i); }
+        }
+    }
+
+    FocusCursor {
+        radius: Math.max(0px, Sizing.radius-sm - root.ring-gap);
+        stroke: Sizing.card-border-width * 2;
+        target: {
+            x: root.key-x(root.current) + root.ring-gap,
+            y: root.current.row * (root.cell-h + root.gap) + root.ring-gap + root.press-t * Sizing.press-edge-height,
+            w: root.key-w(root.current) - 2 * root.ring-gap,
+            h: root.cell-h - Sizing.press-edge-height - 2 * root.ring-gap,
+            column: root.current.start,
+            row: root.current.row,
+            scope: root.scope + ":" + root.keys.length,
+            valid: root.focused && root.enabled && root.current-index >= 0 && root.current-index < root.keys.length
+        };
+    }
+}

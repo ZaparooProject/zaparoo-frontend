@@ -68,7 +68,7 @@ pub fn prepare(ctx: &crate::router::Ctx, app: &App) -> Option<Target> {
         // resolving the button, since the outgoing strip can hide its focus.
         match app.global::<Shell>().get_active_screen() {
             Screen::Systems | Screen::FavoriteSystems => crate::systems::interrupt_page(ctx, app),
-            Screen::Games | Screen::Favorites | Screen::Recents => {
+            Screen::Games | Screen::Favorites | Screen::Recents | Screen::SearchResults => {
                 crate::games::interrupt_page(ctx, app);
             }
             _ => {}
@@ -267,7 +267,7 @@ fn grid_target(app: &App) -> Option<Target> {
                 view.get_cells(),
             )
         }
-        Screen::Games | Screen::Favorites | Screen::Recents => {
+        Screen::Games | Screen::Favorites | Screen::Recents | Screen::SearchResults => {
             let view = app.global::<crate::GamesView>();
             if shell.get_browse_list_layout() {
                 return None;

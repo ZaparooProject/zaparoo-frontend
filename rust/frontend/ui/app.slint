@@ -8,8 +8,8 @@
 // logic; forward orchestration lives in the router.
 
 import { Theme, Sizing, Motion, Layout } from "theme.slint";
-import { Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, StateTokens, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogButton, ErrorKind } from "state_types.slint";
-export { Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogButton, ErrorKind }
+import { MenuRole, KeyKind, SearchZone, SearchPane, Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, StateTokens, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogButton, ErrorKind } from "state_types.slint";
+export { MenuRole, KeyKind, SearchZone, SearchPane, Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogButton, ErrorKind }
 import { GlyphSource, Brand, Buttons, HelpEntry, Status, HeaderBar, StatusLine, ProgressTrack, TopStatusStrip, FooterIndicator, ActiveLabel, HelpBar, SectionHeader, Divider, ScrollCue, ModalShell, QrPlate, StateCue } from "chrome.slint";
 import { GridCell, MarqueeCaption, PressableSurface, Tile, PagedGridView } from "tiles.slint";
 import { ScrollOffset, SelectionCursor, SelectionClip, FocusCursor } from "focus.slint";
@@ -21,6 +21,9 @@ import { SetupPickerRow, SetupModal, LogUploadModal } from "setup.slint";
 import { Labels, DialogLabels } from "labels.slint";
 import { GameInfoView, GameInfoModal } from "game_info.slint";
 import { AboutView, AboutScreen } from "about.slint";
+import { KeyCell } from "keyboard.slint";
+import { SearchView, SearchInput, SearchPaneRow, SearchScreen } from "search.slint";
+export { KeyCell, SearchView, SearchInput, SearchPaneRow }
 import { UpdateView, UpdatePage, UpdateButton, UpdateOutcome, UpdateStatusKind, UpdateError, UpdateLinuxPhase, UpdateFilter, UpdateRowKind, UpdateRowStatus, UpdateFolderKind, UpdateHelpLabel, UpdateCounts, UpdateRow, UpdateMembership, UpdateHelp } from "update_view.slint";
 // The screen itself comes from the `zaparoo-update` crate: an empty stand-in
 // in public builds, the real module in official ones.
@@ -58,6 +61,10 @@ export struct MenuEntry {
     reason-key: string,
     // A plain value shown after the label (a game count). Empty for most rows.
     detail: string,
+    // A `Labels.menu` key for the value instead, when it is a word of ours
+    // ("Any") rather than data.
+    detail-key: string,
+    role: MenuRole,
 }
 
 // One row of the Online page's list modal: Rust composes the text.
@@ -365,7 +372,8 @@ export global GamesView {
     // The mode picks the title, empty/loading copy, and back route.
     in-out property <GamesMode> mode: GamesMode.browse;
     out property <Screen> screen: self.mode == GamesMode.favorites ? Screen.favorites
-        : (self.mode == GamesMode.recents ? Screen.recents : Screen.games);
+        : (self.mode == GamesMode.recents ? Screen.recents
+        : (self.mode == GamesMode.search ? Screen.search-results : Screen.games));
     // Games: the system's display name, or the folder's own name below
     // the system root. The flat lists compose their titles in the view.
     in-out property <string> title: "";
@@ -486,6 +494,9 @@ export global Overlays {
     // plain labels the other pickers carry.
     in-out property <string> list-setting-id: "";
     in-out property <[MenuEntry]> list-entries: [];
+    // A form list: left-aligned rows with their value on the right,
+    // section headers and footer actions, drawn by `FormListModal`.
+    in-out property <bool> list-form: false;
     in-out property <int> list-index: 0;
     in-out property <bool> letter-open: false;
     in-out property <[LetterBucket]> letter-buckets: [];
@@ -1340,6 +1351,186 @@ component ListPickerModal inherits ModalShell {
             }
         }
 
+        if root.scrollable: ScrollCue {
+            x: (root.panel-width - self.width) / 2;
+            y: root.content-y + root.content-height - root.arrow;
+            width: root.arrow;
+            glyph: "icons/ScrollDown";
+            live: root.top + root.visible-rows < root.entries.length;
+        }
+}
+
+// One form-list row's content, colors as inputs so the row can draw it at
+// rest and again inverted inside a `SelectionClip`. An option is its name
+// on the left and its value on the right, as a Settings row; a header
+// names the section below it; an action is centered, as a Settings action.
+component FormRowBody inherits Rectangle {
+    in property <MenuEntry> entry;
+    in property <color> ink;
+    in property <color> ink-muted;
+    in property <color> ink-action;
+    in property <int> weight;
+    property <length> pad: Sizing.pct-w(2);
+    property <string> label: root.entry.label-key != "" ? Labels.menu(root.entry.label-key, root.entry.label) : root.entry.label;
+    property <string> detail: root.entry.detail-key != "" ? Labels.menu(root.entry.detail-key, "") : root.entry.detail;
+
+    if root.entry.role == MenuRole.header: Text {
+        x: root.pad;
+        y: parent.height - self.height - Sizing.pct-h(0.8);
+        width: Math.max(0px, parent.width - 2 * root.pad);
+        text: root.label;
+        color: Theme.text-label;
+        font-size: Sizing.font-caption;
+        font-weight: FontWeight.semi-bold;
+        overflow: elide;
+    }
+    if root.entry.role == MenuRole.header: Divider {
+        x: 0;
+        y: parent.height - self.height;
+    }
+    if root.entry.role == MenuRole.action: Text {
+        x: root.pad;
+        width: Math.max(0px, parent.width - 2 * root.pad);
+        height: parent.height;
+        text: root.label;
+        color: root.ink-action;
+        font-size: Sizing.font-body;
+        font-weight: root.weight;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+    if root.entry.role == MenuRole.option: Text {
+        x: root.pad;
+        width: Math.max(0px, parent.width - 2 * root.pad
+            - (value.text != "" ? value.width + root.pad : 0px));
+        height: parent.height;
+        text: root.label;
+        color: root.entry.enabled ? root.ink : root.ink-muted;
+        font-size: Sizing.font-body;
+        font-weight: root.weight;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+    value := Text {
+        visible: root.entry.role == MenuRole.option;
+        x: parent.width - self.width - root.pad;
+        width: Math.min(self.preferred-width, parent.width * 0.5);
+        height: parent.height;
+        text: root.entry.role == MenuRole.option ? root.detail : "";
+        color: root.ink-muted;
+        font-size: Sizing.font-body;
+        vertical-alignment: center;
+        horizontal-alignment: right;
+        overflow: elide;
+    }
+}
+
+// The list picker for long or structured lists: rows named on the left
+// with their value on the right, section headers that take no focus, and
+// actions set apart at the foot. Only the rows on screen are built, so a
+// list of every system costs no more than a short one. Pure presentation:
+// the router owns the cursor, skipping headers and jumping sections.
+component FormListModal inherits ModalShell {
+    in property <string> title-text;
+    in property <[MenuEntry]> entries;
+    in property <int> current-index;
+
+    property <length> row-h: Sizing.pct-h(7);
+    property <length> row-sp: Sizing.pct-h(1);
+    property <length> stride: root.row-h + root.row-sp;
+    property <length> arrow: Sizing.pct-h(3);
+    property <length> max-viewport: Sizing.pct-h(60);
+    property <int> visible-rows: Math.max(1, Math.min(root.entries.length,
+        Math.floor((root.max-viewport + root.row-sp) / root.stride)));
+    property <bool> scrollable: root.entries.length > root.visible-rows;
+    property <length> arrow-band: root.scrollable ? root.arrow + Sizing.pct-h(0.5) : 0px;
+    property <length> viewport-h: root.visible-rows * root.row-h
+        + Math.max(0, root.visible-rows - 1) * root.row-sp;
+    // Preserve the viewport until focus crosses an edge. A row under a
+    // header brings the header into view with it, so the first row of a
+    // section never sits at the top without its name.
+    property <int> top: 0;
+    pure function lead(index: int) -> int {
+        return index > 0 && index <= root.entries.length
+            && root.entries[index - 1].role == MenuRole.header ? 1 : 0;
+    }
+    function reveal-current() {
+        root.top = Math.max(0, Math.min(Math.max(0, root.entries.length - root.visible-rows),
+            Math.min(root.current-index - root.lead(root.current-index),
+                Math.max(root.top, root.current-index - root.visible-rows + 1))));
+    }
+    changed current-index => { root.reveal-current(); }
+    changed visible-rows => { root.reveal-current(); }
+    changed entries => { root.top = 0; root.reveal-current(); }
+    init => { root.reveal-current(); }
+
+    title: root.title-text;
+    panel-width: Math.min(Sizing.pct-w(92), Math.max(Sizing.pct-w(46), Sizing.pct-h(85)));
+    content-height: root.viewport-h + 2 * root.arrow-band;
+
+        if root.scrollable: ScrollCue {
+            x: (root.panel-width - self.width) / 2;
+            y: root.content-y;
+            width: root.arrow;
+            glyph: "icons/ScrollUp";
+            live: root.top > 0;
+        }
+        Rectangle {
+            x: root.pad;
+            y: root.content-y + root.arrow-band;
+            width: root.content-width;
+            height: root.viewport-h;
+            clip: true;
+
+            sel := SelectionCursor {
+                press-held: PressFeedback.active(PressOwner.list, root.current-index);
+                target: { x: 0px, y: (root.current-index - root.top) * root.stride,
+                    w: parent.width, h: root.row-h, column: 0, row: root.current-index,
+                    scope: root.title-text + ":" + root.top,
+                    valid: root.current-index >= 0 && root.current-index < root.entries.length };
+            }
+            for slot in root.visible-rows: cell := Rectangle {
+                property <int> i: root.top + slot;
+                property <MenuEntry> entry: root.entries[self.i];
+                property <bool> lit: sel.fill-bottom > self.y && sel.fill-top < self.y + self.height;
+                visible: self.i < root.entries.length;
+                x: 0;
+                y: slot * root.stride;
+                height: root.row-h;
+
+                // The first action stands apart from the options above it.
+                if cell.entry.role == MenuRole.action && cell.i > 0
+                    && root.entries[cell.i - 1].role != MenuRole.action: Divider {
+                    x: 0;
+                    y: -(root.row-sp + self.height) / 2;
+                }
+                FormRowBody {
+                    entry: cell.entry;
+                    ink: Theme.text-primary;
+                    ink-muted: Theme.text-label;
+                    ink-action: Theme.accent;
+                    weight: FontWeight.normal;
+                }
+                if cell.lit && cell.entry.role != MenuRole.header: SelectionClip {
+                    row-top: cell.y; row-height: cell.height;
+                    fill-top: sel.fill-top; fill-bottom: sel.fill-bottom;
+                    fill: sel.fill;
+                    FormRowBody {
+                        entry: cell.entry;
+                        ink: sel.content;
+                        ink-muted: sel.content-muted;
+                        ink-action: sel.content;
+                        weight: FontWeight.medium;
+                    }
+                }
+                if cell.entry.role != MenuRole.header: TouchArea {
+                    mouse-cursor: pointer;
+                    changed has-hover => { if (self.has-hover) { Overlays.pointer-choice(PressOwner.list, cell.i, false); } }
+                    clicked => { Overlays.pointer-choice(PressOwner.list, cell.i, true); }
+                }
+            }
+        }
         if root.scrollable: ScrollCue {
             x: (root.panel-width - self.width) / 2;
             y: root.content-y + root.content-height - root.arrow;
@@ -2483,7 +2674,8 @@ component GamesScreen inherits Rectangle {
     property <bool> tate-list: self.list-layout && Shell.orientation != Orientation.horizontal;
     property <bool> is-games: GamesView.mode == GamesMode.browse;
     property <string> title: GamesView.mode == GamesMode.favorites ? @tr("Favorites")
-        : (GamesView.mode == GamesMode.recents ? @tr("Recently played") : GamesView.title);
+        : (GamesView.mode == GamesMode.recents ? @tr("Recently played")
+        : (GamesView.mode == GamesMode.search && GamesView.title == "" ? @tr("Search") : GamesView.title));
     property <ContentState> state: GamesView.error != "" ? ContentState.error
         : (GamesView.loading ? ContentState.loading : (GamesView.count == 0 ? ContentState.empty : ContentState.ready));
     property <bool> gate-hide: root.gated || GamesView.loading || cue.loading-visible || GamesView.error != "";
@@ -2729,9 +2921,11 @@ component GamesScreen inherits Rectangle {
         state: GamesView.folder-slide ? ContentState.ready : root.state;
         empty-text: GamesView.mode == GamesMode.favorites ? @tr("No favorites yet")
             : (GamesView.mode == GamesMode.recents ? @tr("Nothing played yet")
-            : (GamesView.filter-text != "" ? @tr("No games match this filter") : @tr("No games in this system")));
+            : (GamesView.mode == GamesMode.search ? @tr("No matches")
+            : (GamesView.filter-text != "" ? @tr("No games match these tags") : @tr("No games in this system"))));
         loading-text: GamesView.mode == GamesMode.favorites ? @tr("Loading favorites…")
-            : (GamesView.mode == GamesMode.recents ? @tr("Loading recently played…") : @tr("Loading games…"));
+            : (GamesView.mode == GamesMode.recents ? @tr("Loading recently played…")
+            : (GamesView.mode == GamesMode.search ? @tr("Searching…") : @tr("Loading games…")));
         error-detail: GamesView.error;
     }
 }
@@ -2846,8 +3040,10 @@ component RouteScreen inherits Rectangle {
 
     if root.screen-token == Screen.update: UpdateScreen {}
 
+    if root.screen-token == Screen.search: SearchScreen {}
+
     if root.screen-token == Screen.games || root.screen-token == Screen.favorites
-        || root.screen-token == Screen.recents: GamesScreen {
+        || root.screen-token == Screen.recents || root.screen-token == Screen.search-results: GamesScreen {
         gated: root.gated;
     }
 }
@@ -2878,6 +3074,10 @@ export component App inherits Window {
         if (Shell.active-screen == Screen.games) { return GamesView.title; }
         if (Shell.active-screen == Screen.favorites) { return @tr("Favorites"); }
         if (Shell.active-screen == Screen.recents) { return @tr("Recently played"); }
+        if (Shell.active-screen == Screen.search) { return @tr("Search"); }
+        if (Shell.active-screen == Screen.search-results) {
+            return GamesView.title == "" ? @tr("Search") : GamesView.title;
+        }
         return "";
     }
 
@@ -2927,6 +3127,39 @@ export component App inherits Window {
     }
     pure function update-help-entry(index: int) -> HelpEntry {
         return { buttons: [UpdateView.help[index].button], label: root.update-help-label(UpdateView.help[index].label) };
+    }
+    // The Search screen: the keyboard types, deletes and spaces; a field
+    // opens its picker.
+    pure function search-help-entries() -> [HelpEntry] {
+        // A real keyboard types, deletes and spaces with its own keys.
+        if (SearchView.zone == SearchZone.keys && Buttons.style == "style_e") {
+            return [
+                { buttons: ["Dpad"], label: @tr("Move") },
+                { buttons: ["ButtonA"], label: SearchView.key-kind == KeyKind.submit ? @tr("Search") : @tr("Select") },
+                { buttons: ["ButtonB"], label: @tr("Back") },
+            ];
+        }
+        if (SearchView.zone == SearchZone.keys) {
+            return [
+                { buttons: ["Dpad"], label: @tr("Move") },
+                { buttons: ["ButtonA"], label: SearchView.key-kind == KeyKind.submit ? @tr("Search") : @tr("Select") },
+                { buttons: ["ButtonY"], label: @tr("Delete") },
+                { buttons: ["ButtonX"], label: @tr("Space") },
+                { buttons: ["ButtonB"], label: @tr("Back") },
+            ];
+        }
+        if (SearchView.zone == SearchZone.pane) {
+            return [
+                { buttons: ["Dpad"], label: @tr("Move") },
+                { buttons: ["ButtonA"], label: SearchView.pane-on-clear ? @tr("Select") : @tr("Open") },
+                { buttons: ["ButtonB"], label: @tr("Back") },
+            ];
+        }
+        return [
+            { buttons: ["Dpad"], label: @tr("Move") },
+            { buttons: ["ButtonA"], label: @tr("Change") },
+            { buttons: ["ButtonB"], label: @tr("Back") },
+        ];
     }
     pure function help-entries() -> [HelpEntry] {
         if (Shell.boot-curtain) {
@@ -3048,6 +3281,17 @@ export component App inherits Window {
                 ];
             }
             return [{ buttons: ["ButtonB"], label: @tr("Close") }];
+        }
+        // A form list keeps every pick as it is made, so Back leaves
+        // rather than cancels.
+        if (Overlays.list-open && Overlays.list-form) {
+            return [
+                // The shoulder buttons jump or page only a list long enough
+                // to scroll.
+                self.move-cue(Overlays.list-entries.length > 7 ? 2 : 1),
+                { buttons: ["ButtonA"], label: @tr("Select") },
+                { buttons: ["ButtonB"], label: @tr("Back") },
+            ];
         }
         if (Overlays.list-open || Overlays.letter-open) {
             return [
@@ -3185,7 +3429,11 @@ export component App inherits Window {
                 { buttons: ["ButtonB"], label: @tr("Back") },
             ];
         }
-        // Games, Favorites and Recents share the games-style rows.
+        if (Shell.active-screen == Screen.search && !Shell.transitioning) {
+            return root.search-help-entries();
+        }
+        // Games, Favorites, Recents and Search results share the
+        // games-style rows.
         if (Shell.transitioning) {
             return [{ buttons: ["ButtonB"], label: @tr("Back") }];
         }
@@ -3196,7 +3444,7 @@ export component App inherits Window {
             ];
         }
         if (GamesView.count == 0 && !GamesView.loading) {
-            if (Shell.active-screen == Screen.recents) {
+            if (Shell.active-screen == Screen.recents || Shell.active-screen == Screen.search-results) {
                 return [
                     { buttons: ["ButtonA"], label: @tr("Retry") },
                     { buttons: ["ButtonB"], label: @tr("Back") },
@@ -3212,6 +3460,14 @@ export component App inherits Window {
             return [
                 self.move-cue(GamesView.total-pages),
                 { buttons: ["ButtonA"], label: @tr("Open") },
+                { buttons: ["ButtonB"], label: @tr("Back") },
+            ];
+        }
+        if (Shell.active-screen == Screen.search-results) {
+            return [
+                self.move-cue(GamesView.total-pages),
+                { buttons: ["ButtonA"], label: @tr("Open") },
+                { buttons: ["ButtonX"], label: @tr("Options") },
                 { buttons: ["ButtonB"], label: @tr("Back") },
             ];
         }
@@ -3409,7 +3665,13 @@ export component App inherits Window {
         anchor-zoomed: Overlays.context-anchor-zoomed;
     }
 
-    if Overlays.list-open: ListPickerModal {
+    if Overlays.list-open && Overlays.list-form: FormListModal {
+        title-text: Labels.menu(Overlays.list-title, "");
+        entries: Overlays.list-entries;
+        current-index: Overlays.list-index;
+    }
+
+    if Overlays.list-open && !Overlays.list-form: ListPickerModal {
         title-text: Labels.menu(Overlays.list-title, "");
         setting-id: Overlays.list-setting-id;
         entries: Overlays.list-entries;

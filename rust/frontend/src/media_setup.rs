@@ -72,14 +72,30 @@ impl Default for SetupModel {
 }
 
 /// The scope rows the picker offers: All systems, the categories that
-/// have indexable systems, then every system by display name.
+/// have indexable systems, then every system under its manufacturer.
 fn scope_entries(shared: &Shared) -> Vec<rules::ScopeEntry> {
-    let systems: Vec<(String, String)> = shared
+    let systems: Vec<zaparoo_app::system_picker::System> = shared
         .systems
         .iter()
-        .map(|s| (s.id.clone(), crate::systems::display_name(shared, &s.id)))
+        .map(|s| zaparoo_app::system_picker::System {
+            id: s.id.clone(),
+            name: crate::systems::display_name(shared, &s.id),
+            manufacturer: s.manufacturer.clone().unwrap_or_default(),
+            games: s.media_count,
+        })
         .collect();
     rules::scope_entries(&shared.categories, &systems)
+}
+
+/// What each row of the open picker page is to the list cursor: the
+/// systems page has manufacturer headers, the source page is all options.
+fn picker_roles(shared: &Shared, page: FormRow) -> Vec<zaparoo_app::form_list::Role> {
+    match page {
+        FormRow::Source => {
+            vec![zaparoo_app::form_list::Role::Option; shared.setup.scrapers.len()]
+        }
+        _ => rules::scope_roles(&scope_entries(shared)),
+    }
 }
 
 fn system_name(shared: &Shared, id: &str) -> String {
@@ -318,23 +334,31 @@ fn fetch_scrapers(ctx: &Ctx, app: &App) {
 // ---------- Input ----------
 
 pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
-    let (page, len, picker_len) = {
+    let (page, len) = {
         let shared = lock(&ctx.shared);
-        let model = &shared.setup;
-        let picker_len = model.picker.map_or(0, |page| match page {
-            FormRow::Source => model.scrapers.len(),
-            _ => scope_entries(&shared).len(),
-        });
-        (model.picker, model.rows().len(), picker_len)
+        (shared.setup.picker, shared.setup.rows().len())
     };
 
-    if page.is_some() {
+    if let Some(page) = page {
         match action {
-            actions::UP | actions::DOWN => {
-                let delta = if action == actions::UP { -1 } else { 1 };
+            // Up and Down pass over the manufacturer headers; sideways and
+            // the shoulder buttons jump a manufacturer at a time.
+            actions::UP
+            | actions::DOWN
+            | actions::LEFT
+            | actions::RIGHT
+            | actions::PAGE_PREV
+            | actions::PAGE_NEXT => {
+                use zaparoo_app::form_list;
                 let mut shared = lock(&ctx.shared);
-                let model = &mut shared.setup;
-                model.picker_index = rules::move_index(model.picker_index, picker_len, delta);
+                let roles = picker_roles(&shared, page);
+                let index = shared.setup.picker_index;
+                shared.setup.picker_index = match action {
+                    actions::UP => form_list::step(&roles, index, false),
+                    actions::DOWN => form_list::step(&roles, index, true),
+                    actions::LEFT | actions::PAGE_PREV => form_list::jump(&roles, index, false),
+                    _ => form_list::jump(&roles, index, true),
+                };
                 drop(shared);
                 render(ctx, app);
             }
@@ -414,9 +438,9 @@ fn open_picker(ctx: &Ctx, app: &App, page: FormRow) {
                 .position(|s| s.id == shared.setup.scraper)
         } else {
             let scope = shared.setup.scope.clone();
-            scope_entries(&shared)
-                .iter()
-                .position(|entry| rules::parse_scope(&entry.token) == scope)
+            scope_entries(&shared).iter().position(|entry| {
+                entry.kind != rules::ScopeKind::Header && rules::parse_scope(&entry.token) == scope
+            })
         };
         let model = &mut shared.setup;
         model.picker = Some(page);
@@ -606,7 +630,9 @@ fn focus_picker(ctx: &Ctx, app: &App, local: i32) -> bool {
         let Some(index) = (top + local).checked_sub(PICKER_OVERSCAN) else {
             return false;
         };
-        if index >= len {
+        if index >= len
+            || picker_roles(&shared, page).get(index) == Some(&zaparoo_app::form_list::Role::Header)
+        {
             return false;
         }
         shared.setup.picker_index = index;

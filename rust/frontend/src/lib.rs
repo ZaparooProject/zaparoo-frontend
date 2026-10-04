@@ -37,6 +37,7 @@ pub mod host;
 mod hub;
 mod hub_covers;
 mod input;
+mod keyboard;
 mod latch_protocol;
 mod launcher_scan;
 mod launchers;
@@ -79,6 +80,7 @@ mod press_feedback;
 mod route_motion;
 mod router;
 mod scoped_task;
+mod search;
 mod settings;
 mod sizing;
 mod state_types;
@@ -541,7 +543,14 @@ fn run_application(
     merge_config_settings(&mut persisted, &config);
     let restore_pending = matches!(
         persisted.active_screen.as_str(),
-        "systems" | "games" | "favorites" | "recents" | "settings" | "about"
+        "systems"
+            | "games"
+            | "favorites"
+            | "recents"
+            | "search"
+            | "search-results"
+            | "settings"
+            | "about"
     );
     // Cold-launch curtain only for Core-dependent restore targets; a
     // hub restore paints the (empty) hub optimistically and
@@ -549,7 +558,7 @@ fn run_application(
     // optimisticHubVisible / coreIndependentStartupVisible split.
     let boot_curtain = matches!(
         persisted.active_screen.as_str(),
-        "systems" | "games" | "favorites" | "recents"
+        "systems" | "games" | "favorites" | "recents" | "search-results"
     );
 
     #[cfg(not(feature = "hosted"))]
@@ -800,6 +809,7 @@ fn run_application(
     hub::bind_input(&ctx, &app);
     systems::bind_input(&ctx, &app);
     games::bind_input(&ctx, &app);
+    search::bind(&ctx, &app);
     settings::bind_input(&ctx, &app);
     media_setup::bind_input(&ctx, &app);
     log_upload::bind_input(&ctx, &app);
@@ -1698,6 +1708,14 @@ fn restore_screens(ctx: &Arc<Ctx>, app: &App) {
         }
         "recents" => {
             games::enter_recents(ctx, app, EntryMode::Restore);
+            return;
+        }
+        "search" => {
+            search::enter(ctx, app, EntryMode::Restore);
+            return;
+        }
+        "search-results" => {
+            search::restore_results(ctx, app);
             return;
         }
         "settings" => {

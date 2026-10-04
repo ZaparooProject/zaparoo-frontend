@@ -45,9 +45,12 @@ pub enum Category {
     Lists,
 }
 
-/// The user tags worth filtering on. `hidden`, `disliked` and the deck
+/// The collections worth filtering on. `hidden`, `disliked` and the deck
 /// membership tags are bookkeeping, not something to browse by.
 const LIST_VALUES: [&str; 3] = ["favorite", "liked", "playlater"];
+
+/// Leads a deck membership tag's value; the deck's id follows.
+const DECK_PREFIX: &str = "deck:";
 
 impl Category {
     pub const ALL: [Category; 11] = [
@@ -102,7 +105,7 @@ impl Category {
     }
 
     fn accepts(self, value: &str) -> bool {
-        self != Category::Lists || LIST_VALUES.contains(&value)
+        self != Category::Lists || LIST_VALUES.contains(&value) || deck_id(value).is_some()
     }
 
     /// Numbers sort by magnitude, not alphabetically ("10" after "2").
@@ -132,13 +135,15 @@ pub fn group(tags: &[FilterTag]) -> Vec<Group> {
                     || Category::from_tag_type(&tag.tag_type) != Some(category)
                     || !category.accepts(value)
                     || values.iter().any(|v| v.value == value)
+                    // A deck is offered by its name, which Core's tag list
+                    // does not carry; one the caller could not name is an
+                    // id nobody would recognise.
+                    || (deck_id(value).is_some() && tag.label.trim().is_empty())
                 {
                     continue;
                 }
-                let label = match (category, value) {
-                    (Category::Lists, "playlater") if tag.label.trim().is_empty() => {
-                        "Play later".to_string()
-                    }
+                let label = match collection_name(category, value) {
+                    Some(name) if tag.label.trim().is_empty() => name.to_string(),
                     _ => display_label(&tag.label, value),
                 };
                 values.push(FilterValue {
@@ -169,23 +174,42 @@ fn sort_key(category: Category, value: &FilterValue) -> (u8, u64, String) {
         }
         return (1, 0, text);
     }
+    // The built-in collections lead, then the decks by name.
+    if category == Category::Lists && deck_id(&value.value).is_some() {
+        return (1, 0, text);
+    }
     (0, 0, text)
 }
 
-/// Core's label, or the raw value made readable when it sends none:
-/// `action:platformer` becomes `Platformer`, `run-and-gun` `Run and gun`.
+/// The deck a membership tag value names: `deck:<id>`.
+pub fn deck_id(value: &str) -> Option<&str> {
+    value.strip_prefix(DECK_PREFIX).filter(|id| !id.is_empty())
+}
+
+/// The name a collection goes by, where its tag value alone would not
+/// read as one.
+fn collection_name(category: Category, value: &str) -> Option<&'static str> {
+    if category != Category::Lists {
+        return None;
+    }
+    match value {
+        "favorite" => Some("Favorites"),
+        "liked" => Some("Liked"),
+        "playlater" => Some("Play later"),
+        _ => None,
+    }
+}
+
+/// Core's label, or the tag's own value when it sends none: the last part
+/// of a nested value (`action:platformer` is `platformer`), otherwise as
+/// written. Values are acronyms, proper names and codes as often as words
+/// (`us`, `snk`, `2`), so recasing them reads worse than leaving them.
 pub fn display_label(label: &str, value: &str) -> String {
     let label = label.trim();
     if !label.is_empty() {
         return label.to_string();
     }
-    let leaf = value.rsplit(':').next().unwrap_or(value).trim();
-    let spaced = leaf.replace(['-', '_'], " ");
-    let mut chars = spaced.chars();
-    match chars.next() {
-        Some(first) => first.to_uppercase().chain(chars).collect(),
-        None => String::new(),
-    }
+    value.rsplit(':').next().unwrap_or(value).trim().to_string()
 }
 
 /// The value selected for `category`, if any.
@@ -345,7 +369,49 @@ mod tests {
         ];
         let groups = group(&tags);
         let labels: Vec<_> = groups[0].values.iter().map(|v| v.label.as_str()).collect();
-        assert_eq!(labels, ["Favorite", "Liked games", "Play later"]);
+        assert_eq!(labels, ["Favorites", "Liked games", "Play later"]);
+    }
+
+    #[test]
+    fn decks_join_the_collections_by_name_after_the_built_ins() {
+        let tags = vec![
+            tag("user", "deck:0k3v9x2rq7bm", "Couch co-op", 14),
+            tag("user", "playlater", "", 1),
+            tag("user", "deck:zz00unnamed0", "", 3),
+            tag("user", "deck:aa11bb22cc33", "Arcade night", 9),
+            tag("user", "favorite", "", 1),
+            tag("user", "hidden", "", 2),
+            tag("user", "deck:", "Broken", 2),
+        ];
+        let groups = group(&tags);
+        let values: Vec<_> = groups[0]
+            .values
+            .iter()
+            .map(|v| (v.value.as_str(), v.label.as_str()))
+            .collect();
+        assert_eq!(
+            values,
+            [
+                ("favorite", "Favorites"),
+                ("playlater", "Play later"),
+                ("deck:aa11bb22cc33", "Arcade night"),
+                ("deck:0k3v9x2rq7bm", "Couch co-op"),
+            ]
+        );
+        // A deck is one choice among the collections, like any other.
+        let chosen = with_selection(&[], Category::Lists, Some("deck:0k3v9x2rq7bm"));
+        assert_eq!(chosen, ["user:deck:0k3v9x2rq7bm"]);
+        assert_eq!(
+            selected(&chosen, Category::Lists),
+            Some("deck:0k3v9x2rq7bm")
+        );
+        assert_eq!(
+            with_selection(&chosen, Category::Lists, Some("favorite")),
+            ["user:favorite"]
+        );
+        assert_eq!(deck_id("deck:abc"), Some("abc"));
+        assert_eq!(deck_id("deck:"), None);
+        assert_eq!(deck_id("favorite"), None);
     }
 
     #[test]
@@ -354,9 +420,10 @@ mod tests {
             display_label("Platformer", "action:platformer"),
             "Platformer"
         );
-        assert_eq!(display_label("", "action:platformer"), "Platformer");
-        assert_eq!(display_label("", "run-and-gun"), "Run and gun");
-        assert_eq!(display_label("  ", "us"), "Us");
+        assert_eq!(display_label("", "action:platformer"), "platformer");
+        assert_eq!(display_label("", "run-and-gun"), "run-and-gun");
+        assert_eq!(display_label("  ", "us"), "us");
+        assert_eq!(display_label("", "SNK"), "SNK");
     }
 
     #[test]
@@ -398,7 +465,7 @@ mod tests {
     fn summary_names_the_first_value_and_counts_the_rest() {
         assert_eq!(summary(&[], |_| None), None);
         let tags = strings(&["region:us", "genre:action:platformer", "year:1994"]);
-        assert_eq!(summary(&tags, |_| None).as_deref(), Some("Platformer +2"));
+        assert_eq!(summary(&tags, |_| None).as_deref(), Some("platformer +2"));
         assert_eq!(
             summary(&tags, |t| (t == "genre:action:platformer")
                 .then(|| "Platform".into()))

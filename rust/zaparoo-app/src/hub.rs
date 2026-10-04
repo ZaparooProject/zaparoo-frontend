@@ -16,7 +16,14 @@ use crate::paged_grid::{self, Fit, Grid, Insets};
 use crate::sizing::{Derived, Inputs, Tier};
 
 /// The built-in action ids in their seed order (`hub_layout.rs`).
-pub const BUILT_IN_ACTIONS: [&str; 5] = ["resume", "favorites", "recents", "update", "settings"];
+pub const BUILT_IN_ACTIONS: [&str; 6] = [
+    "resume",
+    "favorites",
+    "recents",
+    "search",
+    "update",
+    "settings",
+];
 
 /// One visible `[[hub.items]]` entry, as the layout stores it.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -231,6 +238,13 @@ fn resolve_action(live: &Live, resolver: &dyn Resolver, id: &str) -> Option<Entr
             resolver,
             id,
             "icons/History",
+            false,
+            Reason::None,
+        )),
+        "search" => Some(action_entry(
+            resolver,
+            id,
+            "icons/Search",
             false,
             Reason::None,
         )),
@@ -867,8 +881,8 @@ mod tests {
                 "category:Other",
                 "action:favorites",
                 "action:recents",
+                "action:search",
                 "action:settings",
-                ""
             ]
         );
         assert!(out.iter().all(|e| e.hub_index == -1));

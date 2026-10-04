@@ -244,7 +244,7 @@ update rules, in short:
 ## Screens and routing
 
 The frontend has root screens (Hub, Systems, Favorite systems, Games,
-Favorites, Recents, Settings, About) plus modals. The `.slint` views are
+Favorites, Recents, Search, Search results, Settings, About) plus modals. The `.slint` views are
 **pure views**: every key press is forwarded to Rust, `router::dispatch_action`
 maps it to an action, and Rust mutates the globals the views render. All
 forward orchestration lives in `rust/frontend/src/router.rs` and the

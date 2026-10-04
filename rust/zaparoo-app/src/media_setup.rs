@@ -6,6 +6,9 @@
 //! metadata modals ask before they start, the scope vocabulary they
 //! offer, and how a scope resolves to the systems Core is given.
 
+use crate::form_list::Role;
+use crate::system_picker::{self, Row, Section, System};
+
 /// Offer setup only after Core's status is known and no background update
 /// already owns the empty database. Accepting the offer ends onboarding.
 pub fn needs_first_run(
@@ -132,6 +135,8 @@ pub enum ScopeKind {
     All,
     Category,
     System,
+    /// A manufacturer's name over its systems; not a scope, never picked.
+    Header,
 }
 
 /// One row of the scope picker: its token, plus how the view should
@@ -146,8 +151,9 @@ pub struct ScopeEntry {
 }
 
 /// The scope list the picker page offers: All systems, then every
-/// category that has indexable systems, then every system by name.
-pub fn scope_entries(categories: &[String], systems: &[(String, String)]) -> Vec<ScopeEntry> {
+/// category that has indexable systems, then every system under its
+/// manufacturer, the way the system picker lists them.
+pub fn scope_entries(categories: &[String], systems: &[System]) -> Vec<ScopeEntry> {
     let mut entries = vec![ScopeEntry {
         token: "*".to_string(),
         kind: ScopeKind::All,
@@ -158,12 +164,42 @@ pub fn scope_entries(categories: &[String], systems: &[(String, String)]) -> Vec
         kind: ScopeKind::Category,
         name: category.clone(),
     }));
-    entries.extend(systems.iter().map(|(id, name)| ScopeEntry {
-        token: id.clone(),
-        kind: ScopeKind::System,
-        name: name.clone(),
-    }));
+    entries.extend(
+        system_picker::rows(systems, &[])
+            .into_iter()
+            .map(|row| match row {
+                Row::Header(section) => ScopeEntry {
+                    token: String::new(),
+                    kind: ScopeKind::Header,
+                    // Empty for the systems with no manufacturer, which
+                    // the view words.
+                    name: match section {
+                        Section::Manufacturer(name) => name,
+                        Section::Recent | Section::Other => String::new(),
+                    },
+                },
+                Row::System(system) => ScopeEntry {
+                    token: system.id,
+                    kind: ScopeKind::System,
+                    name: system.name,
+                },
+            }),
+    );
     entries
+}
+
+/// What each scope row is to the list cursor.
+pub fn scope_roles(entries: &[ScopeEntry]) -> Vec<Role> {
+    entries
+        .iter()
+        .map(|entry| {
+            if entry.kind == ScopeKind::Header {
+                Role::Header
+            } else {
+                Role::Option
+            }
+        })
+        .collect()
 }
 
 /// The label for the scope a form currently holds, as the same
@@ -278,11 +314,20 @@ mod tests {
         );
     }
 
+    fn system(id: &str, name: &str, manufacturer: &str) -> System {
+        System {
+            id: id.into(),
+            name: name.into(),
+            manufacturer: manufacturer.into(),
+            games: None,
+        }
+    }
+
     #[test]
     fn the_scope_list_leads_with_everything_then_categories() {
         let entries = scope_entries(
             &["Console".to_string()],
-            &[("NES".to_string(), "Nintendo".to_string())],
+            &[system("NES", "Nintendo", "Nintendo")],
         );
         assert_eq!(entries.len(), 3);
         assert_eq!(entries[0].token, "*");
@@ -293,6 +338,30 @@ mod tests {
         assert_eq!(entries[2].token, "NES");
         assert_eq!(entries[2].kind, ScopeKind::System);
         assert_eq!(entries[2].name, "Nintendo");
+    }
+
+    #[test]
+    fn a_long_scope_list_puts_systems_under_their_manufacturer() {
+        let systems: Vec<System> = (0..6)
+            .map(|n| system(&format!("N{n}"), &format!("Nintendo {n}"), "Nintendo"))
+            .chain((0..4).map(|n| system(&format!("X{n}"), &format!("Other {n}"), "")))
+            .collect();
+        let entries = scope_entries(&[], &systems);
+        let kinds: Vec<ScopeKind> = entries.iter().map(|e| e.kind).collect();
+        assert_eq!(
+            kinds[..3],
+            [ScopeKind::All, ScopeKind::Header, ScopeKind::System]
+        );
+        assert_eq!(entries[1].name, "Nintendo");
+        // The systems with no manufacturer come last, under a header the
+        // view words.
+        let other = entries.iter().rposition(|e| e.kind == ScopeKind::Header);
+        assert_eq!(other, Some(8));
+        assert_eq!(entries[8].name, "");
+        let roles = scope_roles(&entries);
+        assert_eq!(roles[0], Role::Option);
+        assert_eq!(roles[1], Role::Header);
+        assert_eq!(roles.iter().filter(|r| **r == Role::Header).count(), 2);
     }
 
     #[test]

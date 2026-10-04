@@ -939,6 +939,7 @@ fn emit_activate(ctx: &Ctx, app: &App) {
                     }
                 }
                 "recents" => crate::games::enter_recents(ctx, app, EntryMode::Fresh),
+                "search" => crate::search::enter(ctx, app, EntryMode::Fresh),
                 "settings" => crate::settings::enter(ctx, app, EntryMode::Fresh),
                 "update" => crate::update::enter(app),
                 _ => {}
@@ -1361,6 +1362,8 @@ fn open_add_picker(ctx: &Ctx, app: &App) {
     let rows: Vec<crate::MenuEntry> = entries
         .iter()
         .map(|e| crate::MenuEntry {
+            role: crate::MenuRole::default(),
+            detail_key: SharedString::default(),
             id: SharedString::from(e.id.as_str()),
             label: SharedString::default(),
             // The picker shows the same words the tile will; the view

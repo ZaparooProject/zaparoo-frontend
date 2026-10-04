@@ -1507,6 +1507,7 @@ fn hidden_management_keeps_favorites_recents_and_recovery_selection() {
             GamesMode::Browse => &shared.persist.games.selected_at_level[0],
             GamesMode::Favorites => &shared.persist.favorites.selected_path,
             GamesMode::Recents => &shared.persist.recents.selected_path,
+            GamesMode::Search => &shared.persist.search.selected_path,
         };
         assert_eq!(selected, &target.path);
         let ticket = shared.games.ticket;
@@ -3131,6 +3132,8 @@ fn settings_category_and_picker_feedback_is_local_and_settles() {
         if owner == PressOwner::List {
             let ov = app.global::<crate::Overlays>();
             ov.set_list_entries(ModelRc::new(VecModel::from(vec![crate::MenuEntry {
+                role: crate::MenuRole::default(),
+                detail_key: SharedString::default(),
                 id: "one".into(),
                 label: "One".into(),
                 ..Default::default()
@@ -3281,11 +3284,15 @@ fn accepting_a_list_row_flashes_the_whole_row_inverted() {
     ov.set_list_title("Pick".into());
     ov.set_list_entries(ModelRc::new(VecModel::from(vec![
         crate::MenuEntry {
+            role: crate::MenuRole::default(),
+            detail_key: SharedString::default(),
             id: "one".into(),
             label: "One".into(),
             ..Default::default()
         },
         crate::MenuEntry {
+            role: crate::MenuRole::default(),
+            detail_key: SharedString::default(),
             id: "two".into(),
             label: "Two".into(),
             ..Default::default()
@@ -3460,6 +3467,8 @@ fn a_two_item_list_glides_on_the_wrap_as_well_as_the_step() {
     ov.set_list_entries(ModelRc::new(VecModel::from(
         (0..2)
             .map(|i| crate::MenuEntry {
+                role: crate::MenuRole::default(),
+                detail_key: SharedString::default(),
                 id: i.to_string().into(),
                 label: format!("Item {i}").into(),
                 label_key: "".into(),
@@ -3501,6 +3510,8 @@ fn picker_keeps_first_row_until_focus_leaves_viewport() {
     ov.set_list_entries(ModelRc::new(VecModel::from(
         (0..20)
             .map(|i| crate::MenuEntry {
+                role: crate::MenuRole::default(),
+                detail_key: SharedString::default(),
                 id: i.to_string().into(),
                 label: if i == 0 { "Anchor".into() } else { "".into() },
                 label_key: "".into(),
@@ -3814,6 +3825,8 @@ fn picker_selected_text_uses_on_accent_and_palette_previews_paint() {
     app.global::<Shell>().set_active_screen(Screen::None);
     let ov = app.global::<crate::Overlays>();
     ov.set_list_entries(ModelRc::new(VecModel::from(vec![crate::MenuEntry {
+        role: crate::MenuRole::default(),
+        detail_key: SharedString::default(),
         id: "zaparoo-dark".into(),
         label: "Selected label".into(),
         label_key: "".into(),
@@ -3856,6 +3869,8 @@ fn mouse_setting_blocks_picker_clicks_but_not_enabled_selection() {
     app.global::<Shell>().set_active_screen(Screen::None);
     let ov = app.global::<crate::Overlays>();
     ov.set_list_entries(ModelRc::new(VecModel::from(vec![crate::MenuEntry {
+        role: crate::MenuRole::default(),
+        detail_key: SharedString::default(),
         id: "one".into(),
         label: "One".into(),
         label_key: "".into(),
@@ -4352,8 +4367,10 @@ fn setup_picker_holds_keep_row_cadence_past_page_and_letter_thresholds() {
     crate::media_setup::render(&ctx, &app);
     crate::input::bind(&ctx, &app, std::collections::HashMap::new());
     settle(&window);
+    // Row 0 is All systems and row 1 the header over the systems, which
+    // the cursor passes over; start among the systems themselves.
     for (key, start, down) in [
-        (slint::platform::Key::DownArrow, 0, true),
+        (slint::platform::Key::DownArrow, 2, true),
         (slint::platform::Key::UpArrow, 60, false),
     ] {
         crate::router::lock(&ctx.shared).setup.picker_index = start;
@@ -6265,5 +6282,372 @@ fn catalog_refresh_keeps_hub_focus_when_first_category_replaces_bootstrap_tiles(
     assert_eq!(
         shared.hub.entries[shared.hub.grid.current_index()].id,
         before
+    );
+}
+
+#[allow(
+    clippy::expect_used,
+    reason = "a fixed search answer always deserialises"
+)]
+fn search_result(names: &[&str], more: bool) -> zaparoo_core::media_types::MediaSearchResult {
+    let results: Vec<_> = names
+        .iter()
+        .map(|name| {
+            serde_json::json!({
+                "name": name,
+                "path": format!("/games/{name}"),
+                "system": { "id": "System08", "name": "System 08" },
+            })
+        })
+        .collect();
+    serde_json::from_value(serde_json::json!({
+        "results": results,
+        "total": names.len(),
+        "pagination": { "hasNextPage": more, "pageSize": 100 },
+    }))
+    .expect("search result")
+}
+
+#[test]
+fn search_types_submits_and_returns_with_the_query_intact() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    let view = app.global::<crate::SearchView>();
+    crate::router::lock(&ctx.shared).persist.search.query = "stale".into();
+    crate::search::enter(&ctx, &app, EntryMode::Fresh);
+    settle(&window);
+    let shell = app.global::<Shell>();
+    assert_eq!(shell.get_active_screen(), Screen::Search);
+    // A fresh visit starts empty, with nothing to search on yet.
+    assert_eq!(view.get_before(), "");
+    assert!(!view.get_can_search());
+
+    // The focused key types, North spaces, a real key types and moves
+    // focus to the Search key, L steps the caret back, West deletes there.
+    crate::router::handle_action(&ctx, &app, "accept");
+    crate::router::handle_action(&ctx, &app, "context_menu");
+    crate::search::type_char(&ctx, &app, 'b');
+    assert_eq!(view.get_before(), "a b");
+    assert_eq!(view.get_key_kind(), crate::KeyKind::Submit);
+    crate::router::handle_action(&ctx, &app, "page_prev");
+    assert_eq!(
+        (view.get_before(), view.get_at(), view.get_after()),
+        ("a\u{a0}".into(), "b".into(), "".into())
+    );
+    crate::router::handle_action(&ctx, &app, zaparoo_app::input::TEXT_DELETE);
+    assert_eq!((view.get_before(), view.get_at()), ("a".into(), "b".into()));
+    assert!(view.get_can_search());
+    // A held Accept arrives as its own repeating action: it types on a
+    // letter, deletes on Backspace, and is never offered on Search.
+    assert!(!crate::search::key_repeats(&ctx));
+    crate::search::focus_key_for_test(&ctx, zaparoo_app::keyboard::Key::Char('z'));
+    assert!(crate::search::key_repeats(&ctx));
+    crate::router::handle_action(&ctx, &app, zaparoo_app::input::TEXT_KEY);
+    assert_eq!(
+        (view.get_before(), view.get_at()),
+        ("az".into(), "b".into())
+    );
+    crate::search::focus_key_for_test(&ctx, zaparoo_app::keyboard::Key::Backspace);
+    assert!(crate::search::key_repeats(&ctx));
+    crate::router::handle_action(&ctx, &app, zaparoo_app::input::TEXT_KEY);
+    assert_eq!((view.get_before(), view.get_at()), ("a".into(), "b".into()));
+    crate::search::focus_key_for_test(&ctx, zaparoo_app::keyboard::Key::Submit);
+
+    crate::router::handle_action(&ctx, &app, "accept");
+    assert!(shell.get_transitioning(), "results are a deferred route");
+    assert_eq!(shell.get_active_screen(), Screen::Search);
+    let ticket = crate::router::lock(&ctx.shared).games.ticket;
+    crate::games::apply_fill(&ctx, &app, ticket, navigation_rows(), None, None, true);
+    settle(&window);
+    assert_eq!(shell.get_active_screen(), Screen::SearchResults);
+    let games = app.global::<crate::GamesView>();
+    assert_eq!(games.get_mode(), GamesMode::Search);
+    assert_eq!(games.get_title(), "\u{201c}ab\u{201d}");
+    {
+        let shared = crate::router::lock(&ctx.shared);
+        assert_eq!(shared.persist.active_screen, "search-results");
+        assert_eq!(shared.persist.search.recent.len(), 1);
+        assert_eq!(shared.persist.search.recent[0].query, "ab");
+    }
+
+    // Back restores the search as it was, on the Search key.
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert_eq!(shell.get_active_screen(), Screen::Search);
+    assert_eq!(view.get_before(), "ab");
+    assert_eq!(view.get_zone(), crate::SearchZone::Keys);
+    assert_eq!(view.get_key_kind(), crate::KeyKind::Submit);
+    assert_eq!(
+        crate::router::lock(&ctx.shared).persist.active_screen,
+        "search"
+    );
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert_eq!(shell.get_active_screen(), Screen::Hub);
+}
+
+#[test]
+fn a_late_preview_cannot_fill_a_newer_search() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    crate::search::enter(&ctx, &app, EntryMode::Fresh);
+    let view = app.global::<crate::SearchView>();
+    crate::search::type_char(&ctx, &app, 'm');
+    let first = crate::search::preview_seq(&crate::router::lock(&ctx.shared));
+    crate::search::type_char(&ctx, &app, 'a');
+    let second = crate::search::preview_seq(&crate::router::lock(&ctx.shared));
+    assert_ne!(first, second);
+    assert!(view.get_searching());
+
+    crate::search::preview_landed(&ctx, &app, first, Ok(&search_result(&["Metroid"], false)));
+    assert!(!view.get_count_known(), "the answer to \"m\" is stale");
+    assert_eq!(view.get_pane_rows().row_count(), 0);
+
+    crate::search::preview_landed(
+        &ctx,
+        &app,
+        second,
+        Ok(&search_result(
+            &["Mario Kart 64", "Super Mario World"],
+            true,
+        )),
+    );
+    assert!(view.get_count_known() && view.get_count_more());
+    assert_eq!(view.get_count(), 2);
+    assert_eq!(view.get_pane(), crate::SearchPane::Preview);
+    assert_eq!(view.get_pane_rows().row_count(), 2);
+    assert!(!view.get_searching());
+
+    // The pane is reachable from the keyboard's right edge, and a match
+    // opens the results focused on it.
+    crate::router::handle_action(&ctx, &app, "right");
+    assert_eq!(view.get_zone(), crate::SearchZone::Pane);
+    crate::router::handle_action(&ctx, &app, "down");
+    assert_eq!(view.get_pane_index(), 1);
+    crate::router::handle_action(&ctx, &app, "accept");
+    assert_eq!(
+        crate::router::lock(&ctx.shared)
+            .persist
+            .search
+            .selected_path,
+        "/games/Super Mario World"
+    );
+    assert!(app.global::<Shell>().get_transitioning());
+
+    // A failed search says so and lists nothing.
+    crate::router::handle_action(&ctx, &app, "cancel");
+    crate::search::type_char(&ctx, &app, 'r');
+    let third = crate::search::preview_seq(&crate::router::lock(&ctx.shared));
+    crate::search::preview_landed(&ctx, &app, third, Err("offline"));
+    assert!(view.get_failed() && !view.get_count_known());
+    assert_eq!(view.get_pane_rows().row_count(), 0);
+}
+
+#[test]
+fn search_here_scopes_to_the_folder_and_back_returns_to_it() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let shell = app.global::<Shell>();
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.systems = navigation_catalog();
+        shared.games.mode = GamesMode::Browse;
+        shared.games.system_id = "System08".into();
+        shared.games.system_name = "System 08".into();
+        shared.games.browse_path = "/roms/System08/RPG".into();
+        shared.persist.games.system_id = "System08".into();
+        shared.persist.games.path_stack = vec![String::new(), "/roms/System08/RPG".into()];
+        shared.persist.games.selected_at_level = vec![String::new(), String::new()];
+        shared.persist.search.query = "left over".into();
+        shared.persist.active_screen = "games".into();
+    }
+    shell.set_active_screen(Screen::Games);
+
+    crate::search::enter_scoped(&ctx, &app);
+    assert_eq!(shell.get_active_screen(), Screen::Search);
+    let view = app.global::<crate::SearchView>();
+    assert!(view.get_scoped());
+    assert_eq!(view.get_system_name(), "System 08");
+    assert_eq!(view.get_scope_name(), "RPG");
+    assert_eq!(view.get_before(), "");
+    // The folder alone is enough to search on.
+    assert!(view.get_can_search());
+    {
+        let shared = crate::router::lock(&ctx.shared);
+        let args = crate::search::args(&shared);
+        assert_eq!(args.system_id, "System08");
+        assert_eq!(args.path_prefix, "/roms/System08/RPG");
+    }
+    // The scope field takes no focus: Up from the top row lands on the
+    // tags, and Up again loops round to the bottom key row.
+    crate::router::handle_action(&ctx, &app, "up");
+    crate::router::handle_action(&ctx, &app, "up");
+    crate::router::handle_action(&ctx, &app, "up");
+    assert_eq!(view.get_zone(), crate::SearchZone::Filter);
+    crate::router::handle_action(&ctx, &app, "up");
+    assert_eq!(view.get_zone(), crate::SearchZone::Keys);
+    assert_eq!(
+        view.get_key_index(),
+        30,
+        "the bottom row, under the home row's first key"
+    );
+    crate::router::handle_action(&ctx, &app, "down");
+    assert_eq!(view.get_zone(), crate::SearchZone::Filter);
+
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert_eq!(shell.get_active_screen(), Screen::Games);
+    let shared = crate::router::lock(&ctx.shared);
+    assert_eq!(shared.persist.active_screen, "games");
+    assert_eq!(shared.games.browse_path, "/roms/System08/RPG");
+    drop(shared);
+
+    // At a system's top level only the system narrows the search.
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.games.browse_path = String::new();
+        shared.persist.games.path_stack = vec![String::new()];
+        shared.persist.games.selected_at_level = vec![String::new()];
+    }
+    crate::search::enter_scoped(&ctx, &app);
+    let shared = crate::router::lock(&ctx.shared);
+    assert!(shared.persist.search.scoped);
+    assert_eq!(shared.persist.search.scope_path, "");
+    assert_eq!(crate::search::args(&shared).system_id, "System08");
+}
+
+#[test]
+fn the_tags_picker_keeps_each_pick_and_back_leaves_with_them() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    crate::search::enter(&ctx, &app, EntryMode::Fresh);
+    let overlays = app.global::<crate::Overlays>();
+    let view = app.global::<crate::SearchView>();
+
+    // Up from the home row's first key twice reaches the top row, then
+    // System; Right is Tags.
+    for action in ["up", "up", "up", "right"] {
+        crate::router::handle_action(&ctx, &app, action);
+    }
+    assert_eq!(view.get_zone(), crate::SearchZone::Filter);
+    crate::router::handle_action(&ctx, &app, "accept");
+    assert!(overlays.get_list_open() && overlays.get_list_form());
+    assert_eq!(overlays.get_list_title(), "title:filter");
+    crate::browse_filter::landed_for_test(
+        &ctx,
+        &app,
+        &[
+            ("genre", "rpg", "RPG", 12),
+            ("genre", "racing", "Racing", 4),
+        ],
+    );
+    let ids = |app: &App| -> Vec<String> {
+        app.global::<crate::Overlays>()
+            .get_list_entries()
+            .iter()
+            .map(|entry| entry.id.to_string())
+            .collect()
+    };
+    // No Apply, and nothing to clear yet.
+    assert_eq!(ids(&app), ["cat:genre"]);
+    assert_eq!(
+        overlays
+            .get_list_entries()
+            .row_data(0)
+            .map(|e| e.detail_key),
+        Some("filter:any".into())
+    );
+
+    // A list row holds its press for a moment before it dispatches.
+    let press = zaparoo_app::input::PRESS_FEEDBACK_MS + 10;
+    crate::router::handle_action(&ctx, &app, "accept");
+    advance(press);
+    assert_eq!(ids(&app), ["any", "v:racing", "v:rpg"]);
+    crate::router::handle_action(&ctx, &app, "down");
+    crate::router::handle_action(&ctx, &app, "accept");
+    advance(press);
+    // The pick is kept at once, and Clear appears as the foot's action.
+    assert_eq!(ids(&app), ["cat:genre", "filter_clear"]);
+    let rows = overlays.get_list_entries();
+    assert_eq!(rows.row_data(0).map(|e| e.detail), Some("Racing".into()));
+    assert_eq!(
+        rows.row_data(1).map(|e| e.role),
+        Some(crate::MenuRole::Action)
+    );
+    assert_eq!(
+        crate::router::lock(&ctx.shared).persist.search.tags,
+        ["genre:racing"]
+    );
+
+    // Back leaves with the pick, rather than discarding it.
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert!(!overlays.get_list_open());
+    assert_eq!(view.get_filter_text(), "Racing");
+    assert_eq!(
+        crate::router::lock(&ctx.shared).persist.search.tags,
+        ["genre:racing"]
+    );
+}
+
+#[test]
+fn the_system_picker_skips_headers_and_jumps_by_manufacturer() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.systems = (0..10)
+            .map(|index| zaparoo_core::media_types::SystemInfo {
+                id: format!("S{index}"),
+                name: format!("System {index}"),
+                manufacturer: Some(if index < 6 { "Alpha" } else { "Beta" }.into()),
+                media_count: Some(5),
+                ..Default::default()
+            })
+            .collect();
+    }
+    crate::search::enter(&ctx, &app, EntryMode::Fresh);
+    for action in ["up", "up", "up", "accept"] {
+        crate::router::handle_action(&ctx, &app, action);
+    }
+    let overlays = app.global::<crate::Overlays>();
+    assert!(overlays.get_list_open() && overlays.get_list_form());
+    // All systems, "Alpha" and its six, "Beta" and its four.
+    assert_eq!(overlays.get_list_entries().row_count(), 13);
+    assert_eq!(overlays.get_list_index(), 0);
+    crate::router::handle_action(&ctx, &app, "down");
+    assert_eq!(overlays.get_list_index(), 2, "the header takes no focus");
+    crate::router::handle_action(&ctx, &app, "right");
+    assert_eq!(
+        overlays.get_list_index(),
+        9,
+        "the next manufacturer's first system"
+    );
+    crate::router::handle_action(&ctx, &app, "page_prev");
+    assert_eq!(overlays.get_list_index(), 2);
+    crate::router::handle_action(&ctx, &app, "up");
+    assert_eq!(overlays.get_list_index(), 0);
+    crate::router::handle_action(&ctx, &app, "up");
+    assert_eq!(
+        overlays.get_list_index(),
+        12,
+        "Up from the top wraps to the last row"
+    );
+
+    crate::router::handle_action(&ctx, &app, "accept");
+    advance(zaparoo_app::input::PRESS_FEEDBACK_MS + 10);
+    assert!(!overlays.get_list_open());
+    assert_eq!(
+        crate::router::lock(&ctx.shared).persist.search.system_id,
+        "S9"
+    );
+    assert_eq!(
+        app.global::<crate::SearchView>().get_system_name(),
+        "System 9"
     );
 }

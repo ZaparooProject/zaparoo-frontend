@@ -2,7 +2,8 @@
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 //
-// The games-style screen driver (Games, Favorites, Recently played):
+// The games-style screen driver (Games, Favorites, Recently played,
+// Search results):
 // fills the rows from Core, drives the cursor through `paged_grid`, runs
 // the page swoop, the folder stack, the selection persist debounce, the
 // focused-detail debounce and the Options menu, and paints the current
@@ -23,14 +24,16 @@ use zaparoo_app::paged_grid::{self, Grid, Insets};
 use zaparoo_core::endpoints::media_browse::{BrowseArgs, MediaBrowseEndpoint};
 use zaparoo_core::endpoints::media_favorites::{FavoritesArgs, MediaFavoritesEndpoint};
 use zaparoo_core::endpoints::media_history::{HistoryArgs, MediaHistoryEndpoint};
+use zaparoo_core::endpoints::media_search::MediaSearchEndpoint;
 use zaparoo_core::input_actions::actions;
 use zaparoo_core::media_types::{
     merged_root_view, BrowseEntry, MediaBrowseParams, MediaHistoryEntry, MediaHistoryParams,
-    MediaItem, MediaSearchParams, MediaTagsUpdateParams, MediaTagsUpdateResult, SystemInfo,
-    TagInfo,
+    MediaItem, MediaSearchParams, MediaSearchResult, MediaTagsUpdateParams, MediaTagsUpdateResult,
+    SystemInfo, TagInfo,
 };
 use zaparoo_core::persist::{FavoritesState, RecentsState};
 use zaparoo_core::remote_resource::ResourceStatus;
+use zaparoo_core::store::Endpoint;
 
 use crate::media_cache::MediaKey;
 use crate::navigation::EntryMode;
@@ -56,6 +59,7 @@ impl GamesMode {
             Self::Browse => crate::Screen::Games,
             Self::Favorites => crate::Screen::Favorites,
             Self::Recents => crate::Screen::Recents,
+            Self::Search => crate::Screen::SearchResults,
         }
     }
 
@@ -64,6 +68,7 @@ impl GamesMode {
             Self::Browse => Owner::Games,
             Self::Favorites => Owner::Favorites,
             Self::Recents => Owner::Recents,
+            Self::Search => Owner::Search,
         }
     }
 }
@@ -506,6 +511,7 @@ fn saved_path(shared: &Shared) -> String {
             .unwrap_or_default(),
         GamesMode::Favorites => shared.persist.favorites.selected_path.clone(),
         GamesMode::Recents => shared.persist.recents.selected_path.clone(),
+        GamesMode::Search => shared.persist.search.selected_path.clone(),
     }
 }
 
@@ -519,6 +525,7 @@ fn saved_list_top(shared: &Shared) -> Option<usize> {
             .copied(),
         GamesMode::Favorites => shared.persist.favorites.list_top,
         GamesMode::Recents => shared.persist.recents.list_top,
+        GamesMode::Search => shared.persist.search.list_top,
     }
 }
 
@@ -546,6 +553,7 @@ fn remember_list_top(shared: &mut Shared, top: usize) {
         }
         GamesMode::Favorites => shared.persist.favorites.list_top = Some(top),
         GamesMode::Recents => shared.persist.recents.list_top = Some(top),
+        GamesMode::Search => shared.persist.search.list_top = Some(top),
     }
 }
 
@@ -558,6 +566,7 @@ fn write_saved_path(shared: &mut Shared, path: String) {
         }
         GamesMode::Favorites => shared.persist.favorites.selected_path = path,
         GamesMode::Recents => shared.persist.recents.selected_path = path,
+        GamesMode::Search => shared.persist.search.selected_path = path,
     }
 }
 
@@ -788,8 +797,33 @@ pub fn refresh_visibility(ctx: &Ctx, app: &App) {
     }
     match mode {
         GamesMode::Browse => browse(ctx, app, &path, false),
-        GamesMode::Favorites | GamesMode::Recents => enter_flat(ctx, app, mode, false),
+        GamesMode::Favorites | GamesMode::Recents | GamesMode::Search => {
+            enter_flat(ctx, app, mode, false);
+        }
     }
+}
+
+/// Search results (the Search screen's submit): media matching the search
+/// held in `persist.search`.
+pub fn enter_search(ctx: &Ctx, app: &App, entry: EntryMode) {
+    crate::navigation::stage(ctx, app);
+    if entry == EntryMode::Fresh {
+        let mut shared = lock(&ctx.shared);
+        shared.persist.search.selected_path.clear();
+        shared.persist.search.list_top = None;
+    }
+    enter_flat(ctx, app, GamesMode::Search, true);
+}
+
+/// The same, focused on a result the Search screen's preview named.
+pub fn enter_search_at(ctx: &Ctx, app: &App, path: &str) {
+    crate::navigation::stage(ctx, app);
+    {
+        let mut shared = lock(&ctx.shared);
+        shared.persist.search.selected_path = path.to_string();
+        shared.persist.search.list_top = None;
+    }
+    enter_flat(ctx, app, GamesMode::Search, true);
 }
 
 /// Recently played (Hub action): Core's play history.
@@ -814,11 +848,12 @@ pub fn refresh_recents(ctx: &Ctx, app: &App) {
 }
 
 fn enter_flat(ctx: &Ctx, app: &App, mode: GamesMode, flip: bool) {
-    let (ticket, page_size, sort, scope) = {
+    let (ticket, page_size, sort, scope, search) = {
         let mut shared = lock(&ctx.shared);
         let size = page_size(ctx, app, &shared);
         let sort = favorites_sort(&shared);
         let scope = favorites_scope(&shared);
+        let search = crate::search::args(&shared);
         let model = &mut shared.games;
         model.mode = mode;
         model.system_id.clear();
@@ -830,84 +865,89 @@ fn enter_flat(ctx: &Ctx, app: &App, mode: GamesMode, flip: bool) {
         model.focus_armed = false;
         model.restore_done = false;
         model.focus_recalled = false;
-        (begin_fill(model), size, sort, scope)
+        (begin_fill(model), size, sort, scope, search)
     };
     if flip {
         crate::router::begin_pending(app, mode.screen());
     } else {
         render(ctx, app);
     }
-    let weak = app.as_weak();
-    let ctx2 = ctx.clone();
+    let search_rows = |result: &MediaSearchResult| {
+        (
+            result.results.iter().map(GameRow::from).collect(),
+            next_cursor(result.pagination.as_ref()),
+        )
+    };
     match mode {
-        GamesMode::Favorites => {
-            let resource = ctx
-                .store
-                .subscribe::<MediaFavoritesEndpoint>(FavoritesArgs::new(page_size, sort, scope));
-            let mut rx = resource.subscribe();
-            let task = ctx.handle.spawn(async move {
-                loop {
-                    let snapshot = rx.borrow_and_update().clone();
-                    match snapshot {
-                        ResourceStatus::Ready(result) => {
-                            let _ = weak.upgrade_in_event_loop(move |app| {
-                                let rows: Vec<GameRow> =
-                                    result.results.iter().map(GameRow::from).collect();
-                                let cursor = next_cursor(result.pagination.as_ref());
-                                apply_fill(&ctx2, &app, ticket, rows, cursor, None, flip);
-                            });
-                            return;
-                        }
-                        ResourceStatus::Errored { message, .. } => {
-                            let _ = weak.upgrade_in_event_loop(move |app| {
-                                show_error(&ctx2, &app, ticket, &message, flip);
-                            });
-                            return;
-                        }
-                        ResourceStatus::Idle | ResourceStatus::Loading => {}
-                    }
-                    if rx.changed().await.is_err() {
-                        return;
-                    }
-                }
-            });
-            lock(&ctx.shared).games.fill_task.replace(task);
+        GamesMode::Favorites => fill_from::<MediaFavoritesEndpoint>(
+            ctx,
+            app,
+            FavoritesArgs::new(page_size, sort, scope),
+            (ticket, flip),
+            search_rows,
+        ),
+        GamesMode::Search => {
+            fill_from::<MediaSearchEndpoint>(ctx, app, search, (ticket, flip), search_rows);
         }
-        GamesMode::Recents => {
-            let resource = ctx
-                .store
-                .subscribe::<MediaHistoryEndpoint>(HistoryArgs::new(Vec::new(), page_size));
-            let mut rx = resource.subscribe();
-            let task = ctx.handle.spawn(async move {
-                loop {
-                    let snapshot = rx.borrow_and_update().clone();
-                    match snapshot {
-                        ResourceStatus::Ready(result) => {
-                            let _ = weak.upgrade_in_event_loop(move |app| {
-                                let rows: Vec<GameRow> =
-                                    result.entries.iter().map(GameRow::from).collect();
-                                let cursor = next_cursor(result.pagination.as_ref());
-                                apply_fill(&ctx2, &app, ticket, rows, cursor, None, flip);
-                            });
-                            return;
-                        }
-                        ResourceStatus::Errored { message, .. } => {
-                            let _ = weak.upgrade_in_event_loop(move |app| {
-                                show_error(&ctx2, &app, ticket, &message, flip);
-                            });
-                            return;
-                        }
-                        ResourceStatus::Idle | ResourceStatus::Loading => {}
-                    }
-                    if rx.changed().await.is_err() {
-                        return;
-                    }
-                }
-            });
-            lock(&ctx.shared).games.fill_task.replace(task);
-        }
+        GamesMode::Recents => fill_from::<MediaHistoryEndpoint>(
+            ctx,
+            app,
+            HistoryArgs::new(Vec::new(), page_size),
+            (ticket, flip),
+            |result| {
+                (
+                    result.entries.iter().map(GameRow::from).collect(),
+                    next_cursor(result.pagination.as_ref()),
+                )
+            },
+        ),
         GamesMode::Browse => {}
     }
+}
+
+/// One page of rows and the cursor for the next, if any.
+type Page = (Vec<GameRow>, Option<String>);
+
+/// Fill a flat list from an endpoint's first page: wait for the shared
+/// resource to settle, then apply its rows or show its error. `fill` is
+/// the fill's ticket and whether it flips to the screen when it lands.
+fn fill_from<E: Endpoint>(
+    ctx: &Ctx,
+    app: &App,
+    args: E::Args,
+    fill: (u64, bool),
+    rows: fn(&E::Output) -> Page,
+) {
+    let (ticket, flip) = fill;
+    let resource = ctx.store.subscribe::<E>(args);
+    let mut rx = resource.subscribe();
+    let weak = app.as_weak();
+    let ctx2 = ctx.clone();
+    let task = ctx.handle.spawn(async move {
+        loop {
+            let snapshot = rx.borrow_and_update().clone();
+            match snapshot {
+                ResourceStatus::Ready(result) => {
+                    let _ = weak.upgrade_in_event_loop(move |app| {
+                        let (rows, cursor) = rows(&result);
+                        apply_fill(&ctx2, &app, ticket, rows, cursor, None, flip);
+                    });
+                    return;
+                }
+                ResourceStatus::Errored { message, .. } => {
+                    let _ = weak.upgrade_in_event_loop(move |app| {
+                        show_error(&ctx2, &app, ticket, &message, flip);
+                    });
+                    return;
+                }
+                ResourceStatus::Idle | ResourceStatus::Loading => {}
+            }
+            if rx.changed().await.is_err() {
+                return;
+            }
+        }
+    });
+    lock(&ctx.shared).games.fill_task.replace(task);
 }
 
 fn next_cursor(pagination: Option<&zaparoo_core::media_types::Pagination>) -> Option<String> {
@@ -1236,13 +1276,14 @@ pub(crate) fn show_error(ctx: &Ctx, app: &App, ticket: u64, message: &str, flip:
 fn fetch_cap(mode: GamesMode) -> u32 {
     match mode {
         GamesMode::Recents => rules::HISTORY_FETCH_CAP,
-        GamesMode::Browse | GamesMode::Favorites => rules::JUMP_FETCH_CEILING,
+        GamesMode::Browse | GamesMode::Favorites | GamesMode::Search => rules::JUMP_FETCH_CEILING,
     }
 }
 
 fn fetch_more(ctx: &Ctx, app: &App, limit: u32, bulk: bool) {
-    let (mode, cursor, system_id, browse_path, tags, ticket, sort, scope, include_hidden) = {
+    let (mode, cursor, system_id, browse_path, tags, ticket, sort, scope, include_hidden, search) = {
         let mut shared = lock(&ctx.shared);
+        let search = crate::search::args(&shared);
         let include_hidden = shared.show_hidden;
         let tags = crate::browse_filter::active_tags(&shared);
         let sort = favorites_sort(&shared);
@@ -1269,6 +1310,7 @@ fn fetch_more(ctx: &Ctx, app: &App, limit: u32, bulk: bool) {
             sort,
             scope,
             include_hidden,
+            search,
         )
     };
     render(ctx, app);
@@ -1296,14 +1338,21 @@ fn fetch_more(ctx: &Ctx, app: &App, limit: u32, bulk: bool) {
                     (browse_rows(&r.entries), cursor)
                 })
                 .map_err(|e| e.message),
-            GamesMode::Favorites => client
-                .media_search(MediaSearchParams {
-                    systems: scope,
-                    max_results: Some(limit),
-                    cursor: Some(cursor),
-                    tags: vec![FAVORITE_TAG.to_string()],
-                    sort,
-                    ..MediaSearchParams::default()
+            GamesMode::Favorites | GamesMode::Search => client
+                .media_search(if mode == GamesMode::Search {
+                    MediaSearchParams {
+                        max_results: Some(limit),
+                        ..search.params(Some(cursor))
+                    }
+                } else {
+                    MediaSearchParams {
+                        systems: scope,
+                        max_results: Some(limit),
+                        cursor: Some(cursor),
+                        tags: vec![FAVORITE_TAG.to_string()],
+                        sort,
+                        ..MediaSearchParams::default()
+                    }
                 })
                 .await
                 .map(|r| {
@@ -1528,7 +1577,7 @@ pub fn geometry_for(inputs: &zaparoo_app::sizing::Inputs, mode: GamesMode) -> Ge
                 - label_height;
             (bottom, label_y, label_height)
         }
-        GamesMode::Favorites | GamesMode::Recents => {
+        GamesMode::Favorites | GamesMode::Recents | GamesMode::Search => {
             let label_height = inputs.pct_h(7.0);
             let bottom = if t240 {
                 derived.help_bar_height + label_height
@@ -1811,9 +1860,11 @@ pub fn render(ctx: &Ctx, app: &App) {
     let count = model.rows.len();
 
     view.set_mode(mode);
-    view.set_title(SharedString::from(
-        rules::screen_title(path_stack_len, &model.browse_path, &model.system_name).as_str(),
-    ));
+    view.set_title(SharedString::from(if mode == GamesMode::Search {
+        crate::search::results_title(&shared)
+    } else {
+        rules::screen_title(path_stack_len, &model.browse_path, &model.system_name)
+    }));
     view.set_loading(model.loading);
     view.set_loading_more(model.loading_more);
     view.set_error(SharedString::from(model.error.as_str()));
@@ -1966,7 +2017,10 @@ pub fn render(ctx: &Ctx, app: &App) {
     };
     if matches!(
         app.global::<crate::Shell>().get_active_screen(),
-        crate::Screen::Games | crate::Screen::Favorites | crate::Screen::Recents
+        crate::Screen::Games
+            | crate::Screen::Favorites
+            | crate::Screen::Recents
+            | crate::Screen::SearchResults
     ) {
         let bounds = zaparoo_app::logo_cache::Bounds::new(art_tier, art_tier);
         let key = |row: &GameRow| {
@@ -2094,6 +2148,7 @@ pub fn covers_landed(ctx: &Ctx, app: &App, keys: &[MediaKey]) {
             crate::Screen::Games,
             crate::Screen::Favorites,
             crate::Screen::Recents,
+            crate::Screen::SearchResults,
         ],
     ) {
         return;
@@ -2233,6 +2288,7 @@ fn schedule_detail(ctx: &Ctx, app: &App, force: bool) {
             crate::Screen::Games,
             crate::Screen::Favorites,
             crate::Screen::Recents,
+            crate::Screen::SearchResults,
         ],
     ) {
         return;
@@ -2799,7 +2855,7 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
             match mode {
                 GamesMode::Browse => crate::router::open_view_menu(ctx, app),
                 GamesMode::Favorites => crate::router::open_favorites_page_menu(ctx, app),
-                GamesMode::Recents => {}
+                GamesMode::Recents | GamesMode::Search => {}
             }
         }
         actions::ACCEPT => match state {
@@ -2842,7 +2898,9 @@ fn retry(ctx: &Ctx, app: &App) {
     };
     match mode {
         GamesMode::Browse => browse(ctx, app, &top, false),
-        GamesMode::Favorites | GamesMode::Recents => enter_flat(ctx, app, mode, false),
+        GamesMode::Favorites | GamesMode::Recents | GamesMode::Search => {
+            enter_flat(ctx, app, mode, false);
+        }
     }
 }
 
@@ -2961,6 +3019,10 @@ fn cancel(ctx: &Ctx, app: &App) {
     if mode == GamesMode::Browse && navigate_out_of_folder(ctx, app) {
         return;
     }
+    if mode == GamesMode::Search {
+        crate::search::return_from_results(ctx, app);
+        return;
+    }
     let target = {
         let mut shared = lock(&ctx.shared);
         let arcade_bypass = ctx.is_mister
@@ -2979,7 +3041,7 @@ fn cancel(ctx: &Ctx, app: &App) {
             }
             GamesMode::Browse => crate::Screen::Systems,
             GamesMode::Favorites if grouped_favorites => crate::Screen::FavoriteSystems,
-            GamesMode::Favorites | GamesMode::Recents => crate::Screen::Hub,
+            GamesMode::Favorites | GamesMode::Recents | GamesMode::Search => crate::Screen::Hub,
         };
         shared.persist.active_screen = target.token().to_string();
         target
