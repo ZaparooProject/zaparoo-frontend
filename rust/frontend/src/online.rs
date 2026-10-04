@@ -14,7 +14,7 @@ use std::time::Duration;
 
 use slint::{ComponentHandle, SharedString};
 use zaparoo_app::online_link::{self as rules, Started, Tick};
-use zaparoo_app::online_settings::OnlineFeatures;
+use zaparoo_app::online_settings::{OnlineFeatureChanges, OnlineFeatures};
 use zaparoo_core::client::{Client, ConnectionState, Notification};
 use zaparoo_core::input_actions::actions;
 use zaparoo_core::media_types::UpdateSettingsParams;
@@ -235,6 +235,18 @@ impl Feature {
         }
     }
 
+    /// The one change a toggle of this feature asks Core for.
+    fn changes(self, value: bool) -> OnlineFeatureChanges {
+        let mut changes = OnlineFeatureChanges::default();
+        match self {
+            Self::RemoteControl => changes.remote_control = Some(value),
+            Self::PlayHistory => changes.play_history = Some(value),
+            Self::Library => changes.library = Some(value),
+            Self::CloudBackup => changes.cloud_backup = Some(value),
+        }
+        changes
+    }
+
     fn log_name(self) -> &'static str {
         match self {
             Self::RemoteControl => "remote control",
@@ -248,14 +260,15 @@ impl Feature {
 /// Flip one consent setting. The row shows the new value at once and goes
 /// back if Core refuses.
 pub fn toggle_feature(ctx: &Ctx, app: &App, feature: Feature) {
-    let enabled = {
+    let (before, enabled) = {
         let mut shared = lock(&ctx.shared);
         if !shared.online.available {
             return;
         }
-        let next = !feature.get(shared.online.features);
+        let before = shared.online.features;
+        let next = !feature.get(before);
         feature.set(&mut shared.online.features, next);
-        next
+        (before, next)
     };
     crate::settings::refresh(ctx, app);
     let client = ctx.store.client();
@@ -266,12 +279,21 @@ pub fn toggle_feature(ctx: &Ctx, app: &App, feature: Feature) {
         if let Err(error) = result {
             tracing::warn!("changing {} failed: {}", feature.log_name(), error.message);
             let _ = weak.upgrade_in_event_loop(move |app| {
-                feature.set(&mut lock(&ctx.shared).online.features, !enabled);
+                roll_back(&ctx, before, feature.changes(enabled));
                 crate::settings::refresh(&ctx, &app);
                 crate::router::report_action_error(&ctx, &app, "online", "");
             });
         }
     });
+}
+
+/// Put back what a refused request changed, leaving anything the user or
+/// an overlapping request has changed since. See
+/// `zaparoo_app::online_settings::roll_back`.
+fn roll_back(ctx: &Ctx, before: OnlineFeatures, changes: OnlineFeatureChanges) {
+    let mut shared = lock(&ctx.shared);
+    shared.online.features =
+        zaparoo_app::online_settings::roll_back(shared.online.features, before, changes);
 }
 
 /// Pick how often cloud backup runs on its own. The row shows the new value
@@ -292,7 +314,7 @@ pub fn set_backup_schedule(ctx: &Ctx, app: &App, schedule: &str) {
     ctx.handle.clone().spawn(async move {
         let result = client
             .settings_update(UpdateSettingsParams {
-                backup_remote_schedule: Some(schedule),
+                backup_remote_schedule: Some(schedule.clone()),
                 ..Default::default()
             })
             .await;
@@ -302,7 +324,14 @@ pub fn set_backup_schedule(ctx: &Ctx, app: &App, schedule: &str) {
                 error.message
             );
             let _ = weak.upgrade_in_event_loop(move |app| {
-                lock(&ctx.shared).online.backup_schedule = previous;
+                {
+                    // Only while the row still shows this request's value:
+                    // a later pick that Core accepted must stand.
+                    let mut shared = lock(&ctx.shared);
+                    if shared.online.backup_schedule == schedule {
+                        shared.online.backup_schedule = previous;
+                    }
+                }
                 crate::settings::refresh(&ctx, &app);
                 crate::router::report_action_error(&ctx, &app, "online", "");
             });
@@ -315,46 +344,25 @@ pub fn set_backup_schedule(ctx: &Ctx, app: &App, schedule: &str) {
 /// `zaparoo_app::online_settings::all_features_update` for exactly what
 /// turning it on or off changes.
 pub fn toggle_all_features(ctx: &Ctx, app: &App) {
-    let (next, changes, params) = {
+    let (before, changes) = {
         let mut shared = lock(&ctx.shared);
         if !shared.online.available {
             return;
         }
+        let before = shared.online.features;
         let warp_available = shared.online.warp_availability == "available";
-        let on = shared.online.features.tri_state(warp_available)
-            != zaparoo_app::online_settings::TriState::On;
-        let (next, changes) = zaparoo_app::online_settings::all_features_update(
-            shared.online.features,
-            on,
-            warp_available,
-        );
+        let on = before.tri_state(warp_available) != zaparoo_app::online_settings::TriState::On;
+        let (next, changes) =
+            zaparoo_app::online_settings::all_features_update(before, on, warp_available);
         shared.online.features = next;
-        let params = UpdateSettingsParams {
-            remote_control_enabled: changes.remote_control,
-            playtime_sync_enabled: changes.play_history,
-            library_sync_enabled: changes.library,
-            backup_remote_enabled: changes.cloud_backup,
-            ..Default::default()
-        };
-        (next, changes, params)
+        (before, changes)
     };
-    let previous = {
-        // Only the fields this request actually changed need to be undone
-        // on failure; anything `changes` left at None was never touched.
-        let mut reverted = next;
-        if let Some(value) = changes.remote_control {
-            reverted.remote_control = !value;
-        }
-        if let Some(value) = changes.play_history {
-            reverted.play_history = !value;
-        }
-        if let Some(value) = changes.library {
-            reverted.library = !value;
-        }
-        if let Some(value) = changes.cloud_backup {
-            reverted.cloud_backup = !value;
-        }
-        reverted
+    let params = UpdateSettingsParams {
+        remote_control_enabled: changes.remote_control,
+        playtime_sync_enabled: changes.play_history,
+        library_sync_enabled: changes.library,
+        backup_remote_enabled: changes.cloud_backup,
+        ..Default::default()
     };
     crate::settings::refresh(ctx, app);
     let client = ctx.store.client();
@@ -365,7 +373,7 @@ pub fn toggle_all_features(ctx: &Ctx, app: &App) {
         if let Err(error) = result {
             tracing::warn!("changing all online features failed: {}", error.message);
             let _ = weak.upgrade_in_event_loop(move |app| {
-                lock(&ctx.shared).online.features = previous;
+                roll_back(&ctx, before, changes);
                 crate::settings::refresh(&ctx, &app);
                 crate::router::report_action_error(&ctx, &app, "online", "");
             });

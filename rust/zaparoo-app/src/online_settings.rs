@@ -89,9 +89,34 @@ pub fn all_features_update(
     (next, changes)
 }
 
+/// Undo a change Core refused. Each feature the request set goes back to
+/// what it was `before`, but only while it still shows the value that
+/// request put there: a later change the user made in the meantime is
+/// theirs, and an overlapping request that already succeeded is Core's.
+pub fn roll_back(
+    current: OnlineFeatures,
+    before: OnlineFeatures,
+    changes: OnlineFeatureChanges,
+) -> OnlineFeatures {
+    let mut next = current;
+    if changes.remote_control == Some(current.remote_control) {
+        next.remote_control = before.remote_control;
+    }
+    if changes.play_history == Some(current.play_history) {
+        next.play_history = before.play_history;
+    }
+    if changes.library == Some(current.library) {
+        next.library = before.library;
+    }
+    if changes.cloud_backup == Some(current.cloud_backup) {
+        next.cloud_backup = before.cloud_backup;
+    }
+    next
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{all_features_update, OnlineFeatureChanges, OnlineFeatures, TriState};
+    use super::{all_features_update, roll_back, OnlineFeatureChanges, OnlineFeatures, TriState};
 
     fn features(on: [bool; 4]) -> OnlineFeatures {
         OnlineFeatures {
@@ -140,6 +165,38 @@ mod tests {
         assert_eq!(
             features([true, false, false, false]).tri_state(true),
             TriState::Mixed
+        );
+    }
+
+    #[test]
+    fn a_refused_change_goes_back_to_what_each_feature_was() {
+        // Remote control was already on when "all on" was pressed. A
+        // refusal must leave it on, not flip it to the opposite of what
+        // the request asked for.
+        let before = features([true, false, false, false]);
+        let (optimistic, changes) = all_features_update(before, true, true);
+        assert_eq!(roll_back(optimistic, before, changes), before);
+    }
+
+    #[test]
+    fn a_roll_back_leaves_a_later_change_alone() {
+        let before = features([false, false, false, false]);
+        let (optimistic, changes) = all_features_update(before, true, true);
+        // The user turned library sync back off while the request ran.
+        let mut current = optimistic;
+        current.library = false;
+        assert_eq!(
+            roll_back(current, before, changes),
+            features([false, false, false, false]),
+            "the three still showing this request's value go back"
+        );
+        // And a field this request never touched is not touched now.
+        let (_, without_backup) = all_features_update(before, true, false);
+        let mut current = features([true, true, true, true]);
+        current.remote_control = false;
+        assert_eq!(
+            roll_back(current, before, without_backup),
+            features([false, false, false, true])
         );
     }
 
