@@ -1623,17 +1623,64 @@ fn geometry(app: &App, mode: GamesMode) -> Geometry {
     geometry_for(&crate::router::output_scene(app).inputs(), mode)
 }
 
-/// The cover decode tier for the grid at the current output geometry.
-fn cover_tier(app: &App) -> u32 {
-    crate::sizing::games_grid_cover_source_size(crate::router::output_scene(app))
+/// How a cover is asked for and prepared: Core's size tier, and the
+/// painted box the decoded image is resized to.
+#[derive(Clone, Copy)]
+struct CoverSize {
+    tier: u32,
+    fit: zaparoo_app::covers::Fit,
 }
 
-fn media_key(row: &GameRow, fallback_system: &str, tier: u32) -> MediaKey {
+impl CoverSize {
+    /// The detail pane's cover, fitted to the art box the view reported.
+    /// Until it has, the image keeps its decoded size.
+    fn detail(app: &App) -> Self {
+        let view = app.global::<GamesView>();
+        Self {
+            tier: crate::sizing::detail_cover_source_size(crate::router::output_scene(app)),
+            fit: zaparoo_app::covers::Fit::new(
+                view.get_detail_art_width(),
+                view.get_detail_art_height(),
+            ),
+        }
+    }
+}
+
+/// The grid's cover size at the current output geometry: the decode tier,
+/// and the tile art box for `mode` (the flat lists add a system name band).
+fn cover_tier(app: &App, mode: GamesMode) -> CoverSize {
+    let scene = crate::router::output_scene(app);
+    let inputs = scene.inputs();
+    let geometry = geometry_for(&inputs, mode);
+    let (width, height) = zaparoo_app::sizing::tile_art_box(
+        &inputs,
+        geometry.fit.cell_width,
+        geometry.fit.cell_height,
+        zaparoo_app::sizing::TileArt {
+            compact_padding: false,
+            caption: true,
+            top_label: mode != GamesMode::Browse,
+        },
+    );
+    CoverSize {
+        tier: crate::sizing::games_grid_cover_source_size(scene),
+        fit: zaparoo_app::covers::Fit::new(width, height),
+    }
+}
+
+/// The grid tile art box, for tests that seed covers by key.
+#[cfg(all(test, feature = "mister"))]
+pub(crate) fn grid_cover_fit(app: &App, mode: GamesMode) -> zaparoo_app::covers::Fit {
+    cover_tier(app, mode).fit
+}
+
+fn media_key(row: &GameRow, fallback_system: &str, tier: CoverSize) -> MediaKey {
     MediaKey {
         media_id: row.media_id,
         system: row.system_or(fallback_system).to_string(),
         path: row.path.clone(),
-        max_size: tier,
+        max_size: tier.tier,
+        fit: tier.fit,
         image_type: None,
     }
 }
@@ -1651,7 +1698,13 @@ fn text_cell(row: &GameRow) -> GridCell {
 
 /// One tile: the caption with its dim suffix, the favorite heart, the
 /// flat lists' system label, and the cover slot under its `MediaKey`.
-fn cell_for(ctx: &Ctx, model: &GamesModel, row: &GameRow, tier: u32) -> GridCell {
+fn cell_for(
+    ctx: &Ctx,
+    model: &GamesModel,
+    logos: crate::systems::LogoPrefs,
+    row: &GameRow,
+    tier: CoverSize,
+) -> GridCell {
     let mut cell = text_cell(row);
     if model.mode != GamesMode::Browse {
         cell.top_label = SharedString::from(row.system_name.trim());
@@ -1685,9 +1738,9 @@ fn cell_for(ctx: &Ctx, model: &GamesModel, row: &GameRow, tier: u32) -> GridCell
         CoverState::Absent => {
             // The flat lists fall back to the system logo, a friendlier
             // "no cover" cue than the file chip; Games keeps the chip.
-            let bounds = zaparoo_app::logo_cache::Bounds::new(tier, tier);
+            let bounds = zaparoo_app::logo_cache::Bounds::new(tier.tier, tier.tier);
             let logo = (model.mode != GamesMode::Browse && !key.system.is_empty())
-                .then(|| ctx.logos.key(&key.system, &key.system, false, bounds))
+                .then(|| logos.key(ctx, &key.system, bounds))
                 .flatten()
                 .and_then(|key| ctx.logos.get(&key));
             if let Some(pair) = logo {
@@ -1712,7 +1765,7 @@ fn placeholder_color(ctx: &Ctx, row: &GameRow, key: &MediaKey) -> Option<slint::
 }
 
 /// A row that will show art but has none cached yet.
-fn cover_waiting(ctx: &Ctx, model: &GamesModel, row: &GameRow, tier: u32) -> bool {
+fn cover_waiting(ctx: &Ctx, model: &GamesModel, row: &GameRow, tier: CoverSize) -> bool {
     let key = media_key(row, &model.system_id, tier);
     let state = rules::cover_state(
         row.entry_type,
@@ -1724,14 +1777,20 @@ fn cover_waiting(ctx: &Ctx, model: &GamesModel, row: &GameRow, tier: u32) -> boo
     matches!(state, CoverState::Pending)
 }
 
-fn page_cells(ctx: &Ctx, model: &GamesModel, page: usize, tier: u32) -> Vec<GridCell> {
+fn page_cells(
+    ctx: &Ctx,
+    model: &GamesModel,
+    logos: crate::systems::LogoPrefs,
+    page: usize,
+    tier: CoverSize,
+) -> Vec<GridCell> {
     let page_size = model.grid.page_size();
     model
         .rows
         .iter()
         .skip(page * page_size)
         .take(page_size)
-        .map(|row| cell_for(ctx, model, row, tier))
+        .map(|row| cell_for(ctx, model, logos, row, tier))
         .collect()
 }
 
@@ -1754,7 +1813,7 @@ fn wanted_covers(
     model: &GamesModel,
     first_visible: usize,
     page_size: usize,
-    tier: u32,
+    tier: CoverSize,
 ) -> Vec<MediaKey> {
     let indices = rules::prefetch_rows(model.rows.len(), page_size, first_visible);
     let mut wanted = Vec::new();
@@ -1770,7 +1829,7 @@ fn wanted_covers(
         // the wanted window drops work for pages that scrolled past.
         for (row, key) in &rows {
             if row.cover_color.is_none()
-                && tier > zaparoo_app::covers::COLOR_PREVIEW_MAX_SIZE
+                && tier.tier > zaparoo_app::covers::COLOR_PREVIEW_MAX_SIZE
                 && !ctx.media.is_cached(key)
                 && !ctx.media.is_negative(key)
             {
@@ -1782,7 +1841,7 @@ fn wanted_covers(
     wanted
 }
 
-fn wanted_detail_covers(model: &GamesModel, tier: u32) -> Vec<MediaKey> {
+fn wanted_detail_covers(model: &GamesModel, tier: CoverSize) -> Vec<MediaKey> {
     cover_keys(
         model,
         rules::detail_prefetch_rows(model.rows.len(), model.grid.current_index()),
@@ -1790,7 +1849,7 @@ fn wanted_detail_covers(model: &GamesModel, tier: u32) -> Vec<MediaKey> {
     )
 }
 
-fn cover_keys(model: &GamesModel, indices: Vec<usize>, tier: u32) -> Vec<MediaKey> {
+fn cover_keys(model: &GamesModel, indices: Vec<usize>, tier: CoverSize) -> Vec<MediaKey> {
     indices
         .into_iter()
         .filter_map(|index| model.rows.get(index))
@@ -1829,12 +1888,13 @@ pub fn render(ctx: &Ctx, app: &App) {
     }
     let mode = lock(&ctx.shared).games.mode;
     let geometry = geometry(app, mode);
-    let tier = cover_tier(app);
+    let tier = cover_tier(app, mode);
     let view = app.global::<GamesView>();
     let shared = lock(&ctx.shared);
     let list = list_layout(&shared);
     let visible = list_rows_visible(ctx, &shared);
     let path_stack_len = shared.persist.games.path_stack.len();
+    let logos = crate::systems::LogoPrefs::of(&shared);
     let model = &shared.games;
     // The grid shape follows the scene; the fetch page size follows the
     // grid (or the list window).
@@ -1905,7 +1965,7 @@ pub fn render(ctx: &Ctx, app: &App) {
     if strip_sliding {
         crate::view_model::publish_cells(
             &view.get_next_cells(),
-            page_cells(ctx, model, page, tier),
+            page_cells(ctx, model, logos, page, tier),
             |rows| view.set_next_cells(rows),
         );
     } else if list {
@@ -1913,7 +1973,7 @@ pub fn render(ctx: &Ctx, app: &App) {
     } else {
         crate::view_model::publish_cells(
             &view.get_cells(),
-            page_cells(ctx, model, page, tier),
+            page_cells(ctx, model, logos, page, tier),
             |rows| view.set_cells(rows),
         );
     }
@@ -2003,7 +2063,7 @@ pub fn render(ctx: &Ctx, app: &App) {
         model.grid.page_size()
     };
     let (art_start, art_window, art_tier) = if list {
-        let detail_tier = crate::sizing::detail_cover_source_size(crate::router::output_scene(app));
+        let detail_tier = CoverSize::detail(app);
         request_covers(ctx, model, wanted_detail_covers(model, detail_tier));
         refresh_detail_cover(ctx, app, model);
         (model.grid.current_index(), 1, detail_tier)
@@ -2022,7 +2082,7 @@ pub fn render(ctx: &Ctx, app: &App) {
             | crate::Screen::Recents
             | crate::Screen::SearchResults
     ) {
-        let bounds = zaparoo_app::logo_cache::Bounds::new(art_tier, art_tier);
+        let bounds = zaparoo_app::logo_cache::Bounds::new(art_tier.tier, art_tier.tier);
         let key = |row: &GameRow| {
             if model.mode == GamesMode::Browse
                 || model.rapid_active
@@ -2034,7 +2094,7 @@ pub fn render(ctx: &Ctx, app: &App) {
                 return None;
             }
             let id = row.system_or(&model.system_id);
-            ctx.logos.key(id, id, false, bounds)
+            logos.key(ctx, id, bounds)
         };
         let visible = model
             .rows
@@ -2115,8 +2175,7 @@ fn refresh_detail_cover(ctx: &Ctx, app: &App, model: &GamesModel) {
         return;
     };
     view.set_detail_title(SharedString::from(row.display.as_str()));
-    let tier = crate::sizing::detail_cover_source_size(crate::router::output_scene(app));
-    let key = media_key(row, &model.system_id, tier);
+    let key = media_key(row, &model.system_id, CoverSize::detail(app));
     let placeholder =
         placeholder_color(ctx, row, &key).filter(|_| row.media_capable && row.has_cover);
     view.set_detail_placeholder(placeholder.unwrap_or_default());
@@ -2158,16 +2217,12 @@ pub fn covers_landed(ctx: &Ctx, app: &App, keys: &[MediaKey]) {
         let model = &shared.games;
         let list = list_layout(&shared);
         let (first, window, tier) = if list {
-            (
-                model.grid.current_index(),
-                1,
-                crate::sizing::detail_cover_source_size(crate::router::output_scene(app)),
-            )
+            (model.grid.current_index(), 1, CoverSize::detail(app))
         } else {
             (
                 model.grid.current_page() * model.grid.page_size(),
                 model.grid.page_size(),
-                cover_tier(app),
+                cover_tier(app, model.mode),
             )
         };
         model.rows.iter().skip(first).take(window).any(|row| {
@@ -2462,7 +2517,7 @@ fn slide_to_current_page(ctx: &Ctx, app: &App) {
             model.grid.columns() as i32,
             model.grid.rows() as i32,
             reduce_motion,
-            cover_tier(app),
+            cover_tier(app, model.mode),
             model.grid.page_direction().offset(),
         )
     };
@@ -2504,7 +2559,13 @@ fn slide_to_current_page(ctx: &Ctx, app: &App) {
     crate::drs::heavy_begin();
     let next: Vec<GridCell> = {
         let shared = lock(&ctx.shared);
-        page_cells(ctx, &shared.games, to_page, tier)
+        page_cells(
+            ctx,
+            &shared.games,
+            crate::systems::LogoPrefs::of(&shared),
+            to_page,
+            tier,
+        )
     };
     view.set_slide_anim(true);
     view.set_selected_local(-1);
@@ -3216,7 +3277,11 @@ pub fn context_accept(ctx: &Ctx, app: &App, id: &str) {
         "qr_code" => crate::router::open_qr_code(ctx, app, &row),
         "add_to_hub" => add_to_hub(ctx, app, mode, &row, &system),
         "scrape_game" if !system.is_empty() => {
-            crate::router::start_scrape(ctx, app, vec![system], false);
+            crate::router::open_scrape_setup(
+                ctx,
+                app,
+                zaparoo_app::media_setup::Scope::System(system),
+            );
         }
         "change_launcher" if !system.is_empty() => {
             crate::launchers::open_game_picker(ctx, app, &system, &row.path, row.media_id);
@@ -3468,6 +3533,29 @@ fn pointer_select(ctx: &Ctx, app: &App, local: i32) -> bool {
 /// Wire the pointer and page-cue callbacks.
 pub fn bind_input(ctx: &Arc<Ctx>, app: &App) {
     let input = app.global::<GamesInput>();
+    {
+        let ctx = ctx.clone();
+        let weak = app.as_weak();
+        input.on_detail_art_box(move |width, height| {
+            let Some(app) = weak.upgrade() else { return };
+            let view = app.global::<GamesView>();
+            if view.get_detail_art_width() == width && view.get_detail_art_height() == height {
+                return;
+            }
+            view.set_detail_art_width(width);
+            view.set_detail_art_height(height);
+            // The detail cover is keyed by its box: ask again at this one.
+            // A turn later, because the view reports its box while it is
+            // being laid out, which can be inside a driver's own call.
+            let ctx = ctx.clone();
+            let weak = weak.clone();
+            slint::Timer::single_shot(Duration::ZERO, move || {
+                if let Some(app) = weak.upgrade() {
+                    render(&ctx, &app);
+                }
+            });
+        });
+    }
     {
         let ctx = ctx.clone();
         let weak = app.as_weak();

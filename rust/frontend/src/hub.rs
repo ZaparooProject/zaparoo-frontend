@@ -173,7 +173,11 @@ impl Resolver for SharedResolver<'_> {
     }
 
     fn system_cover_key(&self, id: &str) -> String {
-        format!("systems/{id}")
+        let region = crate::systems::region(self.shared);
+        format!(
+            "systems/{}",
+            zaparoo_app::systems::logo_artwork_stem(id, region)
+        )
     }
 
     /// A user icon wins over the bundled glyph for any key the Hub
@@ -189,6 +193,7 @@ impl Resolver for SharedResolver<'_> {
             system: system.to_string(),
             path: path.to_string(),
             max_size: HUB_COVER_TIER,
+            fit: self.media.hub_fit(),
             image_type: None,
         };
         // A cover Core has none for resolves like a present one: the tile
@@ -215,6 +220,7 @@ fn media_key_cached(media: &MediaCache, key: &str) -> bool {
         system: system.to_string(),
         path: path.to_string(),
         max_size: HUB_COVER_TIER,
+        fit: media.hub_fit(),
         image_type: None,
     })
 }
@@ -301,9 +307,21 @@ fn resolve_entries(ctx: &Ctx, app: &App) {
     }
 }
 
+/// The logo for a `systems/{stem}` cover key, in the user's logo style.
+pub(crate) fn logo_key(
+    ctx: &Ctx,
+    stem: &str,
+    style: &str,
+    bounds: zaparoo_app::logo_cache::Bounds,
+) -> Option<crate::system_logos::Key> {
+    let id = zaparoo_app::systems::logo_system_id(stem);
+    ctx.logos.key(id, stem, style == "color", bounds)
+}
+
 fn cell_for(
     ctx: &Ctx,
     entry: &Entry,
+    logo_style: &str,
     bounds: zaparoo_app::logo_cache::Bounds,
     art_size: u32,
 ) -> GridCell {
@@ -328,9 +346,9 @@ fn cell_for(
         }
         key = &entry.fallback_cover_key;
     }
-    if let Some(id) = key.strip_prefix("systems/") {
+    if let Some(stem) = key.strip_prefix("systems/") {
         cell.wordmark = true;
-        if let Some(key) = ctx.logos.key(id, id, false, bounds) {
+        if let Some(key) = logo_key(ctx, stem, logo_style, bounds) {
             if let Some(pair) = ctx.logos.get(&key) {
                 (cell.cover, cell.cover_focus) = pair.images();
                 cell.has_cover = true;
@@ -346,6 +364,7 @@ fn cell_for(
                 system: system.to_string(),
                 path: path.to_string(),
                 max_size: HUB_COVER_TIER,
+                fit: ctx.media.hub_fit(),
                 image_type: None,
             };
             if let Some(decoded) = ctx.media.get(&media_key) {
@@ -375,6 +394,7 @@ fn cover_outstanding(ctx: &Ctx, entry: &Entry, cell: &GridCell) -> Option<bool> 
         system: system.to_string(),
         path: path.to_string(),
         max_size: HUB_COVER_TIER,
+        fit: ctx.media.hub_fit(),
         image_type: None,
     });
     Some(!cell.has_cover && !negative)
@@ -390,6 +410,18 @@ fn geometry_for(ctx: &Ctx, app: &App) -> rules::Geometry {
     let inputs = scene.inputs();
     let derived = zaparoo_app::sizing::derive(&inputs);
     let geometry = rules::geometry(&inputs, &derived);
+    let (art_width, art_height) = zaparoo_app::sizing::tile_art_box(
+        &inputs,
+        geometry.fit.cell_width,
+        geometry.fit.cell_height,
+        zaparoo_app::sizing::TileArt {
+            compact_padding: true,
+            caption: false,
+            top_label: false,
+        },
+    );
+    ctx.media
+        .set_hub_fit(zaparoo_app::covers::Fit::new(art_width, art_height));
     let mut shared = lock(&ctx.shared);
     let columns = usize::try_from(geometry.columns).unwrap_or(1);
     let rows = usize::try_from(geometry.rows).unwrap_or(1);
@@ -399,14 +431,19 @@ fn geometry_for(ctx: &Ctx, app: &App) -> rules::Geometry {
     geometry
 }
 
-fn request_logos(ctx: &Ctx, hub: &HubModel, bounds: zaparoo_app::logo_cache::Bounds) {
+fn request_logos(
+    ctx: &Ctx,
+    hub: &HubModel,
+    logo_style: &str,
+    bounds: zaparoo_app::logo_cache::Bounds,
+) {
     let page_size = hub.grid.page_size();
     let start = hub.grid.current_page() * page_size;
     let key = |entry: &Entry| {
         entry
             .cover_key
             .strip_prefix("systems/")
-            .and_then(|id| ctx.logos.key(id, id, false, bounds))
+            .and_then(|stem| logo_key(ctx, stem, logo_style, bounds))
     };
     let visible = hub
         .entries
@@ -427,6 +464,7 @@ fn request_logos(ctx: &Ctx, hub: &HubModel, bounds: zaparoo_app::logo_cache::Bou
 fn page_cells(
     ctx: &Ctx,
     hub: &HubModel,
+    logo_style: &str,
     bounds: zaparoo_app::logo_cache::Bounds,
     geometry: &rules::Geometry,
 ) -> Vec<GridCell> {
@@ -439,7 +477,7 @@ fn page_cells(
         .iter()
         .skip(hub.grid.current_page() * page_size)
         .take(page_size)
-        .map(|entry| cell_for(ctx, entry, bounds, art_size))
+        .map(|entry| cell_for(ctx, entry, logo_style, bounds, art_size))
         .collect()
 }
 
@@ -460,6 +498,7 @@ pub fn render(ctx: &Ctx, app: &App) {
     }
     let shared = lock(&ctx.shared);
     let hub = &shared.hub;
+    let logo_style = shared.persist.settings.system_logo_style.as_str();
     let page_size = hub.grid.page_size();
     let page = hub.grid.current_page();
     let start = page * page_size;
@@ -468,11 +507,11 @@ pub fn render(ctx: &Ctx, app: &App) {
         geometry.fit.cell_height.max(1) as u32,
     );
     if app.global::<crate::Shell>().get_active_screen() == crate::Screen::Hub {
-        request_logos(ctx, hub, bounds);
+        request_logos(ctx, hub, logo_style, bounds);
     } else {
         crate::system_logos::defer_refresh(ctx, app);
     }
-    let cells = page_cells(ctx, hub, bounds, &geometry);
+    let cells = page_cells(ctx, hub, logo_style, bounds, &geometry);
     if crate::perf::enabled() {
         let (mut covers, mut outstanding) = (0, 0);
         for (entry, cell) in hub.entries.iter().skip(start).zip(&cells) {
@@ -1537,6 +1576,21 @@ fn page_handler(ctx: std::sync::Arc<Ctx>, weak: slint::Weak<App>) -> impl Fn(i32
 pub fn set_resume(ctx: &Ctx, app: &App, resume: Resume) {
     lock(&ctx.shared).hub.resume = resume;
     rebuild(ctx, app);
+    // A cold start on the Hub waits for this before it shows: the Resume
+    // tile is part of the restored screen. A restore still filling another
+    // screen is a pending route, and its own commit ends it.
+    if resume_settled(ctx)
+        && crate::router::restoring(app)
+        && !app.global::<crate::Shell>().get_transitioning()
+    {
+        crate::router::finish_restore(app);
+    }
+}
+
+/// Core has answered what there is to resume, or that there is nothing.
+pub fn resume_settled(ctx: &Ctx) -> bool {
+    let shared = lock(&ctx.shared);
+    shared.hub.resume.requested && !shared.hub.resume.loading
 }
 
 pub fn set_internet(ctx: &Ctx, app: &App, available: bool) {

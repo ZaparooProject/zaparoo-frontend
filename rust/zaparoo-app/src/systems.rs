@@ -166,6 +166,15 @@ pub fn logo_artwork_stem(system_id: &str, region: Region) -> &str {
         .unwrap_or(system_id)
 }
 
+/// The system an artwork stem belongs to; a stem that is not a regional
+/// variant is its own id.
+pub fn logo_system_id(stem: &str) -> &str {
+    REGIONAL_LOGOS
+        .iter()
+        .find_map(|(id, _, s)| (*s == stem).then_some(*id))
+        .unwrap_or(stem)
+}
+
 /// The catalog fields the projection reads.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct CatalogSystem {
@@ -494,6 +503,14 @@ mod tests {
         assert_eq!(logo_artwork_stem("Genesis", Region::Us), "Genesis");
         assert_eq!(logo_artwork_stem("SNES", Region::Eu), "SNES");
         assert_eq!(logo_artwork_stem("SMS", Region::Eu), "SMS");
+    }
+
+    #[test]
+    fn logo_stems_name_their_system() {
+        assert_eq!(logo_system_id("Genesis.eu"), "Genesis");
+        assert_eq!(logo_system_id("TurboGrafx16CD.jp"), "TurboGrafx16CD");
+        assert_eq!(logo_system_id("Genesis"), "Genesis");
+        assert_eq!(logo_system_id("SMS"), "SMS");
     }
 
     fn sys(id: &str, name: &str, category: &str) -> CatalogSystem {

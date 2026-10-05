@@ -552,6 +552,12 @@ pub fn load() -> PersistedState {
     load_from(&state_file_path())
 }
 
+/// Whether an earlier run left state to restore. False on the first start
+/// after a boot wherever the state file lives in a temporary directory.
+pub fn has_saved_state() -> bool {
+    state_file_path().is_file()
+}
+
 pub fn save(state: &PersistedState) {
     let started = std::time::Instant::now();
     save_to(&state_file_path(), state);

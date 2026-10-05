@@ -285,6 +285,34 @@ dropped. Per-screen selection state lives in its own section of
 `PersistedState`, written on directional moves with a 250 ms debounce and
 flushed on Accept, Back, and hold release.
 
+### Cold-start restore
+
+The wrapper can kill and relaunch the frontend at any time, so every start
+restores the saved screen. The rule is that a start shows the boot curtain and
+then the restored screen, with nothing in between: no parent screen, no Hub, no
+half-filled list.
+
+- The curtain is seeded before the first frame for every Core-dependent start
+  (`boot_curtain_for` in `lib.rs`). Settings and About need no Core and paint
+  final from the first frame. A first start, with no state file, has nothing to
+  restore and paints its Hub optimistically instead.
+- `restore_screens` runs when the first catalog arrives and fills the target
+  under the curtain. The Hub stays the (hidden) active screen until the target
+  commits; a restored Games screen fills its category with
+  `systems::prepare_parent`, which does not show it or name it the saved screen.
+  `navigation::stage` retains no source under the curtain.
+- `router::finish_restore` is the only place the curtain lifts.
+  `router::transition_to_screen` calls it, so the commit of the restored screen
+  and the lift are the same turn. The other exits call it too: a missing
+  category or system, a catalog error, Cancel and the 15 second bound
+  (`router::abandon_restore`, which retires the fill and lands on the parent),
+  and Core staying unreachable for that same bound (`give_up_boot_restore`).
+- A Hub start also waits for the Resume tile's answer (`hub::resume_settled`),
+  under the same bound.
+- The saved screen keeps naming the restore target until it commits, so a kill
+  mid-restore comes back to the same place. Startup notices open only after the
+  curtain lifts.
+
 ## Runtime vs Platform
 
 The frontend tracks two separate facts. Do not collapse them; that is how old

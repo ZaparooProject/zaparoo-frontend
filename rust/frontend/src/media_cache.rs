@@ -22,6 +22,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
 use tokio::sync::Notify;
+use zaparoo_app::covers::Fit;
 use zaparoo_core::client::Client;
 use zaparoo_core::media_types::MediaImageParams;
 
@@ -37,6 +38,9 @@ pub struct MediaKey {
     pub system: String,
     pub path: String,
     pub max_size: u32,
+    /// The painted box the decoded image is resized to before it is
+    /// cached; `max_size` stays the size Core is asked for.
+    pub fit: Fit,
     /// Explicit carousel slot; None retains the browse artwork preference ladder.
     pub image_type: Option<String>,
 }
@@ -45,6 +49,7 @@ impl MediaKey {
     pub fn color_preview(&self) -> Self {
         Self {
             max_size: zaparoo_app::covers::COLOR_PREVIEW_MAX_SIZE,
+            fit: Fit::SOURCE,
             ..self.clone()
         }
     }
@@ -189,6 +194,9 @@ pub struct MediaCache {
     /// prepended to the request ladder when set. "auto"/empty keeps
     /// the default order.
     preferred_type: Mutex<String>,
+    /// The Hub tile's painted art box, packed width over height. Held
+    /// here because the Hub and its cold-boot seeds both key covers by it.
+    hub_fit: std::sync::atomic::AtomicU64,
 }
 
 fn lock_inner(inner: &Mutex<CacheInner>) -> MutexGuard<'_, CacheInner> {
@@ -202,7 +210,22 @@ impl MediaCache {
             inner: Mutex::new(CacheInner::default()),
             wake: Notify::new(),
             preferred_type: Mutex::new(String::new()),
+            hub_fit: std::sync::atomic::AtomicU64::new(0),
         })
+    }
+
+    pub fn set_hub_fit(&self, fit: Fit) {
+        let packed = (u64::from(fit.width) << 32) | u64::from(fit.height);
+        self.hub_fit
+            .store(packed, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    pub fn hub_fit(&self) -> Fit {
+        let packed = self.hub_fit.load(std::sync::atomic::Ordering::Relaxed);
+        Fit {
+            width: (packed >> 32) as u32,
+            height: packed as u32,
+        }
     }
 
     /// Set the preferred artwork type. Cached images keep their old
@@ -488,15 +511,28 @@ pub fn read_local_image_file(path: &str, max_bytes: usize) -> Result<Vec<u8>, St
 
 /// Decode bytes already in hand (a local read, or the manifest's own
 /// seed) into the cache's image form.
-pub fn decode_bytes(bytes: &[u8]) -> Option<DecodedImage> {
+pub fn decode_bytes(bytes: &[u8], fit: Fit) -> Option<DecodedImage> {
     let decoded = image::load_from_memory(bytes).ok()?;
-    let rgba = decoded.to_rgba8();
+    Some(fitted(decoded, fit))
+}
+
+/// Resize a decoded cover to its painted box and take the cache's image
+/// form. The software renderer samples bitmaps nearest-neighbor, so the
+/// filtering has to happen here, off the event loop; art that already
+/// fits is left alone.
+pub fn fitted(decoded: image::DynamicImage, fit: Fit) -> DecodedImage {
+    let rgba = match fit.size_for(decoded.width(), decoded.height()) {
+        Some((width, height)) => decoded
+            .resize_exact(width, height, image::imageops::FilterType::Triangle)
+            .into_rgba8(),
+        None => decoded.into_rgba8(),
+    };
     let (width, height) = rgba.dimensions();
-    Some(DecodedImage {
+    DecodedImage {
         buffer: slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(
             &rgba, width, height,
         ),
-    })
+    }
 }
 
 /// Build one Core request. Media identity fields are exclusive, and artwork
@@ -681,9 +717,11 @@ async fn fetch_one(
             }
             let image =
                 if result.delivery == zaparoo_core::media_types::MEDIA_IMAGE_DELIVERY_LOCAL_PATH {
-                    local_bytes.as_deref().and_then(decode_bytes)
+                    local_bytes
+                        .as_deref()
+                        .and_then(|bytes| decode_bytes(bytes, key.fit))
                 } else {
-                    decode(&result.data)
+                    decode(&result.data, key.fit)
                 };
             if cache.store_fetched(key.clone(), generation, image) {
                 let _ = done.send(key);
@@ -747,7 +785,7 @@ async fn read_local(path: String) -> Option<Vec<u8>> {
 
 /// Base64 payload -> decoded RGBA8. Returns None for empty payloads
 /// or undecodable data (both memoized as negatives by the caller).
-fn decode(data_b64: &str) -> Option<DecodedImage> {
+fn decode(data_b64: &str, fit: Fit) -> Option<DecodedImage> {
     use base64::Engine as _;
     if data_b64.is_empty() {
         return None;
@@ -756,15 +794,7 @@ fn decode(data_b64: &str) -> Option<DecodedImage> {
         .decode(data_b64)
         .ok()?;
     let decoded = image::load_from_memory(&bytes).ok()?;
-    let rgba = decoded.to_rgba8();
-    let (width, height) = rgba.dimensions();
-    Some(DecodedImage {
-        buffer: slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(
-            rgba.as_raw(),
-            width,
-            height,
-        ),
-    })
+    Some(fitted(decoded, fit))
 }
 
 #[cfg(test)]
@@ -778,6 +808,7 @@ mod tests {
             system: String::new(),
             path: format!("/g/{id}"),
             max_size: 256,
+            fit: Fit::SOURCE,
             image_type: None,
         }
     }
@@ -853,6 +884,29 @@ mod tests {
         assert!(cache.is_negative(&screenshot));
         assert!(!cache.is_negative(&boxart));
         assert!(!cache.is_negative(&browse));
+    }
+
+    #[test]
+    fn a_decoded_cover_is_resized_to_its_painted_box() {
+        let source = || image::DynamicImage::new_rgba8(256, 512);
+        let fit = fitted(source(), Fit::new(100, 120));
+        assert_eq!((fit.buffer.width(), fit.buffer.height()), (60, 120));
+        // Smaller art and a missing box both keep the decoded size.
+        let small = fitted(image::DynamicImage::new_rgba8(40, 60), Fit::new(100, 120));
+        assert_eq!((small.buffer.width(), small.buffer.height()), (40, 60));
+        let unboxed = fitted(source(), Fit::SOURCE);
+        assert_eq!(
+            (unboxed.buffer.width(), unboxed.buffer.height()),
+            (256, 512)
+        );
+    }
+
+    #[test]
+    fn the_hub_fit_round_trips() {
+        let cache = MediaCache::new();
+        assert_eq!(cache.hub_fit(), Fit::SOURCE);
+        cache.set_hub_fit(Fit::new(135, 181));
+        assert_eq!(cache.hub_fit(), Fit::new(135, 181));
     }
 
     fn img(bytes: usize) -> DecodedImage {
@@ -1063,7 +1117,7 @@ mod tests {
 
     #[test]
     fn empty_payload_decodes_to_none() {
-        assert!(decode("").is_none());
-        assert!(decode("bm90IGFuIGltYWdl").is_none());
+        assert!(decode("", Fit::SOURCE).is_none());
+        assert!(decode("bm90IGFuIGltYWdl", Fit::SOURCE).is_none());
     }
 }

@@ -111,12 +111,13 @@ export global Shell {
     in-out property <bool> status-icons-enabled: false;
     in-out property <bool> has-battery: false;
     in-out property <int> battery-percent: 0;
-    // Cold-launch curtain (BootOverlay port). `boot-curtain` is true
-    // only while the persisted restore target is a Core-dependent
-    // data screen and the catalog has not reported Ready: hub restores
-    // paint optimistically and Settings/About are core-independent,
-    // matching MainLayout's optimisticHubVisible /
-    // coreIndependentStartupVisible split. `boot-complete` is the
+    // Cold-launch curtain. `boot-curtain` is true from the first frame
+    // until the restored screen is complete, so a start shows the
+    // curtain and then that screen, never a parent or a half-filled
+    // one. Settings/About are core-independent and never use it, and a
+    // first start (no saved state) paints its Hub optimistically
+    // instead. Rust lifts it in `router::finish_restore`.
+    // `boot-complete` is the
     // one-shot "catalog has been Ready at least once" latch that also
     // gates the Hub's empty-library cue so "No systems available"
     // cannot flash before the first load settles.
@@ -456,6 +457,9 @@ export global GamesView {
     in-out property <[DetailRow]> detail-rows: [];
     in-out property <bool> detail-loading: false;
     in-out property <bool> rapid-active: false;
+    // The detail pane's painted art box, as the view last reported it.
+    in-out property <int> detail-art-width: 0;
+    in-out property <int> detail-art-height: 0;
 }
 
 // Pointer and page-cue input from the games-style screens.
@@ -465,6 +469,8 @@ export global GamesInput {
     callback cell-right-clicked(int);
     callback page-requested(int);
     callback wheel(int);
+    // The list detail pane's painted art box, in pixels.
+    callback detail-art-box(int, int);
 }
 
 // Context menu, View menu, letter picker, and card-writer state.
@@ -2812,6 +2818,7 @@ component GamesScreen inherits Rectangle {
         cover: GamesView.detail-cover;
         has-cover: GamesView.detail-has-cover;
         cover-absent: GamesView.detail-cover-absent;
+        art-box(w, h) => { GamesInput.detail-art-box(Math.round(w / 1px), Math.round(h / 1px)); }
         art-color: GamesView.detail-placeholder;
         has-art-color: GamesView.detail-has-placeholder;
         wordmark: false;
@@ -3596,7 +3603,9 @@ export component App inherits Window {
         has-battery: Shell.has-battery;
         battery-percent: Shell.battery-percent;
         browse-title: root.browse-header-title();
-        app-text: Shell.transition-cue ? Labels.loading(Shell.transition-target) : Labels.status(Shell.status-text);
+        // The curtain carries its own cue; a restore filling beneath it
+        // does not add a second one here.
+        app-text: Shell.transition-cue && !Shell.boot-curtain ? Labels.loading(Shell.transition-target) : Labels.status(Shell.status-text);
     }
 
     // Modal scrims swallow pointer events rather than forwarding them to

@@ -22,6 +22,59 @@ pub const COLOR_PREVIEW_MAX_SIZE: u32 = 32;
 /// backstop on the manifest, not a real limit.
 pub const MAX_HUB_ENTRIES: usize = 21;
 
+/// The painted box a cover is prepared for. Slint's software renderer
+/// samples bitmaps nearest-neighbor, so a cover is resized to this box
+/// once, off the event loop, instead of being shrunk at paint time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub struct Fit {
+    pub width: u32,
+    pub height: u32,
+}
+
+impl Fit {
+    /// Keep the decoded size: nothing paints this image in a known box.
+    pub const SOURCE: Self = Self {
+        width: 0,
+        height: 0,
+    };
+
+    pub fn new(width: i32, height: i32) -> Self {
+        Self {
+            width: u32::try_from(width).unwrap_or(0),
+            height: u32::try_from(height).unwrap_or(0),
+        }
+    }
+
+    /// The size a `width` x `height` image is resized to: the largest
+    /// size inside the box that keeps its aspect, as `image-fit: contain`
+    /// paints it. None when the image already fits (art is never
+    /// upscaled here) or there is no box.
+    pub fn size_for(self, width: u32, height: u32) -> Option<(u32, u32)> {
+        if self.width == 0 || self.height == 0 || width == 0 || height == 0 {
+            return None;
+        }
+        if width <= self.width && height <= self.height {
+            return None;
+        }
+        let (bw, bh, w, h) = (
+            u64::from(self.width),
+            u64::from(self.height),
+            u64::from(width),
+            u64::from(height),
+        );
+        // Width-bound when the image is wider than the box, aspect for aspect.
+        let (fw, fh) = if w * bh >= h * bw {
+            (bw, (h * bw + w / 2) / w)
+        } else {
+            ((w * bh + h / 2) / h, bh)
+        };
+        Some((
+            u32::try_from(fw.max(1)).unwrap_or(self.width),
+            u32::try_from(fh.max(1)).unwrap_or(self.height),
+        ))
+    }
+}
+
 /// The host of a `ws://host:port/path` endpoint, IPv6 brackets and
 /// userinfo included.
 pub fn endpoint_host(endpoint: &str) -> Option<&str> {
@@ -123,6 +176,29 @@ pub fn average_cover_color(rgba: &[u8], width: usize, height: usize) -> Option<[
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_cover_is_fitted_inside_its_box_and_never_upscaled() {
+        let fit = Fit::new(100, 120);
+        // Portrait box art is bound by the height.
+        assert_eq!(fit.size_for(256, 512), Some((60, 120)));
+        // Landscape art is bound by the width.
+        assert_eq!(fit.size_for(512, 256), Some((100, 50)));
+        // The box's own aspect fills it exactly.
+        assert_eq!(fit.size_for(200, 240), Some((100, 120)));
+        // One side over the box still shrinks.
+        assert_eq!(fit.size_for(100, 240), Some((50, 120)));
+        assert_eq!(fit.size_for(100, 120), None);
+        assert_eq!(fit.size_for(40, 60), None);
+        assert_eq!(fit.size_for(2000, 1), Some((100, 1)));
+    }
+
+    #[test]
+    fn no_box_keeps_the_decoded_size() {
+        assert_eq!(Fit::SOURCE.size_for(512, 512), None);
+        assert_eq!(Fit::new(-4, 100).size_for(512, 512), None);
+        assert_eq!(Fit::new(100, 100).size_for(0, 10), None);
+    }
 
     #[test]
     fn loopback_core_endpoints_are_local() {

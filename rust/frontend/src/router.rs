@@ -95,9 +95,6 @@ pub struct Shared {
     /// dialog. CRT toggles/standards hand control back to Main; HDMI
     /// resolution changes self-exec after clean presenter shutdown.
     pub pending_restart: Option<PendingRestart>,
-    /// Session-scoped "Re-scrape existing" one-shot; deliberately not
-    /// persisted, and resets after the forced run starts.
-    pub rescrape_existing: bool,
     /// Core's launcher inventory + per-system defaults, for the
     /// "Change launcher" picker (`SystemLaunchers` model port).
     pub launchers: Vec<zaparoo_core::media_types::LauncherInfo>,
@@ -263,7 +260,6 @@ impl Shared {
             context_target: 0,
             list_context: ListContext::ViewMenu,
             pending_restart: None,
-            rescrape_existing: false,
             launchers: Vec::new(),
             system_defaults: Vec::new(),
             notice_ack: false,
@@ -466,8 +462,11 @@ pub(crate) fn open_quit_confirm(app: &App) {
 /// dialog's close and from the catalog/version fetch completions, so
 /// the modals never stack.
 pub fn maybe_open_startup_notices(ctx: &Ctx, app: &App) {
+    // A notice waits for the restored screen: it never opens over the
+    // cold-start curtain.
     if app.global::<crate::Overlays>().get_dialog_open()
         || !app.global::<crate::Shell>().get_boot_complete()
+        || app.global::<crate::Shell>().get_boot_curtain()
     {
         return;
     }
@@ -761,7 +760,11 @@ pub fn reset_idle(ctx: &Ctx, app: &App) {
                 let shell = app.global::<crate::Shell>();
                 // Busy surfaces are not burn targets. Their completion/input paths
                 // re-arm the clock; this timeout never polls or chains another timer.
-                if !shell.get_boot_complete() || shell.get_dormant() || shell.get_transitioning() {
+                if !shell.get_boot_complete()
+                    || shell.get_boot_curtain()
+                    || shell.get_dormant()
+                    || shell.get_transitioning()
+                {
                     return;
                 }
                 if shell.get_active_screen() == crate::Screen::Update
@@ -821,12 +824,125 @@ pub(crate) fn clear_pending(app: &App) {
 }
 
 /// Publish a ready destination in this turn, never after a decorative timer.
+/// On a cold start this is also where the curtain lifts: the restored
+/// screen is the first one shown.
 pub(crate) fn transition_to_screen(app: &App, target: crate::Screen, _direction: i32) {
     clear_pending(app);
     let motion = app.global::<crate::Motion>();
     motion.set_epoch(motion.get_epoch().wrapping_add(1));
     app.global::<crate::Shell>().set_active_screen(target);
     refresh_layout(app);
+    finish_restore(app);
+}
+
+type RestoreHook = std::rc::Rc<dyn Fn(&App)>;
+
+thread_local! {
+    static RESTORE_FINISHED: std::cell::RefCell<Option<RestoreHook>> =
+        const { std::cell::RefCell::new(None) };
+    static RESTORE_SEQ: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// How long a cold-start restore may wait on Core before it is abandoned,
+/// the same bound a staged route has.
+pub(crate) const RESTORE_TIMEOUT: Duration = Duration::from_secs(15);
+
+/// What runs once the cold-start restore ends: the work that waits for
+/// the restored screen (startup notices).
+pub(crate) fn on_restore_finished(hook: impl Fn(&App) + 'static) {
+    RESTORE_FINISHED.with(|slot| *slot.borrow_mut() = Some(std::rc::Rc::new(hook)));
+}
+
+/// The cold-start restore is still deciding what to show: the catalog is
+/// in and the curtain is still up.
+pub(crate) fn restoring(app: &App) -> bool {
+    let shell = app.global::<crate::Shell>();
+    shell.get_boot_curtain() && shell.get_boot_complete()
+}
+
+/// End the cold-start restore: lift the curtain over whatever screen is
+/// now final. Every way a restore can end comes through here (commit,
+/// failure, a missing target, Cancel, the timeout), so the curtain can
+/// never stick and nothing is shown before it lifts.
+pub(crate) fn finish_restore(app: &App) {
+    let shell = app.global::<crate::Shell>();
+    if !shell.get_boot_curtain() {
+        return;
+    }
+    shell.set_boot_curtain(false);
+    RESTORE_SEQ.with(|seq| seq.set(seq.get().wrapping_add(1)));
+    // Deferred a turn: a commit can come from deep inside a driver, and
+    // the work that waited for it takes the shared state itself.
+    let hook = RESTORE_FINISHED.with(|slot| slot.borrow().clone());
+    if let Some(hook) = hook {
+        let weak = app.as_weak();
+        slint::Timer::single_shot(Duration::ZERO, move || {
+            if let Some(app) = weak.upgrade() {
+                hook(&app);
+            }
+        });
+    }
+}
+
+/// Bound a restore that is waiting on Core.
+pub(crate) fn arm_restore_timeout(ctx: &Ctx, app: &App) {
+    let ticket = RESTORE_SEQ.with(|seq| {
+        seq.set(seq.get().wrapping_add(1));
+        seq.get()
+    });
+    let ctx = ctx.clone();
+    let weak = app.as_weak();
+    slint::Timer::single_shot(RESTORE_TIMEOUT, move || {
+        if RESTORE_SEQ.with(std::cell::Cell::get) != ticket {
+            return;
+        }
+        let Some(app) = weak.upgrade() else {
+            return;
+        };
+        if !restoring(&app) {
+            return;
+        }
+        if app.global::<crate::Shell>().get_transitioning() {
+            tracing::warn!("cold-start restore timed out");
+            abandon_restore(&ctx, &app);
+            report_action_error(&ctx, &app, "browse", "");
+        } else {
+            // Only the Hub's Resume tile was outstanding; show the Hub.
+            finish_restore(&app);
+        }
+    });
+}
+
+/// Give up a restore that is waiting on Core (Cancel, or the timeout):
+/// retire its fetches so a late answer cannot route anywhere, and land on
+/// the nearest screen that is already complete. The saved state keeps
+/// naming the target, so the next start tries it again.
+pub(crate) fn abandon_restore(ctx: &Ctx, app: &App) {
+    let parent = {
+        let mut shared = lock(&ctx.shared);
+        shared.games.fill_task.cancel();
+        shared.games.ticket = shared.games.ticket.wrapping_add(1);
+        shared.games.loading = false;
+        shared.games.loading_more = false;
+        shared.systems_model.fill_task.cancel();
+        shared.systems_model.transition_seq += 1;
+        shared.systems_model.loading = false;
+        // A restored Games screen has its category filled beneath it.
+        let under_games = shared.persist.active_screen == crate::Screen::Games.token()
+            && !shared.persist.games.entered_from_hub
+            && shared.systems_model.mode == crate::SystemsMode::Category
+            && !shared.systems_model.rows.is_empty();
+        if under_games {
+            crate::Screen::Systems
+        } else {
+            crate::Screen::Hub
+        }
+    };
+    crate::navigation::finish(app);
+    if parent == crate::Screen::Hub {
+        crate::hub::render(ctx, app);
+    }
+    transition_to_screen(app, parent, -1);
 }
 
 pub(crate) fn transition_settings_page(
@@ -951,8 +1067,16 @@ fn dispatch_action(ctx: &Ctx, app: &App, action: &str) {
     // Cold-launch curtain swallows input except Cancel, which still
     // quits from the (hidden) hub root so a frontend that can't reach
     // Core is never a trap on desktop.
-    if app.global::<crate::Shell>().get_boot_curtain() && action != actions::CANCEL {
-        return;
+    if app.global::<crate::Shell>().get_boot_curtain() {
+        if action != actions::CANCEL {
+            return;
+        }
+        // Once the catalog is in, the curtain is covering a restore:
+        // Cancel gives that up instead of reaching the hidden screen.
+        if restoring(app) {
+            abandon_restore(ctx, app);
+            return;
+        }
     }
     // Single input gate during forward transitions.
     // Modals run on top of the gate; pickers and menus are topmost.
@@ -1217,60 +1341,10 @@ fn crt_calibration_action(ctx: &Ctx, app: &App, action: &str) {
     crate::set_live_crt_offsets(h, v);
 }
 
-/// Scoped scraper run with the saved metadata source, or, where Core does
-/// not offer it for these systems (each platform registers its own
-/// scrapers), the first one Core offers that covers them. `scraperId` has
-/// no server-side default. `force` re-scrapes existing metadata; the
-/// one-shot toggle resets when the run is kicked off.
-pub(crate) fn start_scrape(ctx: &Ctx, app: &App, systems: Vec<String>, force: bool) {
-    use zaparoo_core::media_types::MediaScrapeParams;
-    let client = ctx.store.client();
-    let shared = ctx.shared.clone();
-    let preferred = lock(&ctx.shared).persist.settings.metadata_scraper.clone();
-    let ctx2 = ctx.clone();
-    let weak = app.as_weak();
-    ctx.handle.spawn(async move {
-        let scraper_id = match client.scrapers().await {
-            Ok(result) => {
-                let offered: Vec<(&str, &[String])> = result
-                    .scrapers
-                    .iter()
-                    .map(|s| (s.id.as_str(), s.supported_systems.as_slice()))
-                    .collect();
-                zaparoo_app::media_setup::scraper_for(&offered, &preferred, &systems)
-                    .map(str::to_string)
-            }
-            Err(e) => {
-                tracing::warn!("scraper list unavailable: {}", e.message);
-                Some(preferred)
-            }
-        };
-        let Some(scraper_id) = scraper_id else {
-            tracing::warn!(?systems, "no scraper covers these systems");
-            let _ = weak.upgrade_in_event_loop(move |app| {
-                report_action_error(&ctx2, &app, "media_scrape", "");
-            });
-            return;
-        };
-        let params = MediaScrapeParams {
-            scraper_id,
-            systems,
-            force,
-        };
-        match client.media_scrape(params).await {
-            Ok(()) => {
-                if force {
-                    lock(&shared).rescrape_existing = false;
-                }
-            }
-            Err(e) => {
-                tracing::warn!("start_scrape failed: {}", e.message);
-                let _ = weak.upgrade_in_event_loop(move |app| {
-                    report_action_error(&ctx2, &app, "media_scrape", "");
-                });
-            }
-        }
-    });
+/// The metadata setup panel opened on a scope a menu picked: the same
+/// panel Settings opens, with the Systems row preset and still editable.
+pub(crate) fn open_scrape_setup(ctx: &Ctx, app: &App, scope: zaparoo_app::media_setup::Scope) {
+    crate::media_setup::open(ctx, app, zaparoo_app::media_setup::Kind::Scrape, scope);
 }
 
 /// Shared Ready-side fill for the games-style grid: store the rows,
@@ -1725,9 +1799,12 @@ pub(crate) fn index_category(ctx: &Ctx, app: &App, category: &str) {
 }
 
 pub(crate) fn scrape_category(ctx: &Ctx, app: &App, category: &str) {
-    let ids = indexable_system_ids(ctx, category);
-    if !ids.is_empty() {
-        start_scrape(ctx, app, ids, false);
+    if !indexable_system_ids(ctx, category).is_empty() {
+        open_scrape_setup(
+            ctx,
+            app,
+            zaparoo_app::media_setup::Scope::Category(category.to_string()),
+        );
     }
 }
 

@@ -585,6 +585,48 @@ pub fn detail_cover_source_size(inputs: &Inputs, viewport_width: f64, viewport_h
     doubled.min(max_expressible_cover_tier(viewport_width))
 }
 
+/// Which parts of a grid tile take room from its art.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TileArt {
+    /// Hub and Settings tiles: art runs to the focus ring's inner edge.
+    pub compact_padding: bool,
+    /// A name band along the bottom (the Games grid).
+    pub caption: bool,
+    /// A system name band along the top (the flat lists).
+    pub top_label: bool,
+}
+
+/// The painted art area of a grid tile, `(width, height)`: the box
+/// `Tile` in `ui/tiles.slint` lays its cover out in (`art-w`, `art-h`).
+/// Covers are resized to it before they are cached, so keep the two in
+/// step. The view's percentages are unrounded lengths, so this rounds
+/// only the result.
+pub fn tile_art_box(
+    inputs: &Inputs,
+    cell_width: i32,
+    cell_height: i32,
+    art: TileArt,
+) -> (i32, i32) {
+    let axis = if inputs.swap_percentage_axes {
+        inputs.screen_width
+    } else {
+        inputs.screen_height
+    };
+    let pct = |percent: f64| axis * percent / 100.0;
+    let pad = if art.compact_padding {
+        pct(0.4) + f64::from(inputs.stroke(0.6)) + pct(0.4)
+    } else {
+        pct(2.0)
+    };
+    let band = pct(5.5) + pct(0.4);
+    let top = if art.top_label { band } else { pad };
+    let bottom = if art.caption { band } else { pad };
+    let face = f64::from(cell_height - derived_press_edge_height(inputs).min(cell_height));
+    let width = (f64::from(cell_width) - 2.0 * pad).max(0.0);
+    let height = (face - top - bottom).max(0.0);
+    (js_round(width) as i32, js_round(height) as i32)
+}
+
 fn derived_press_edge_height(inputs: &Inputs) -> i32 {
     inputs.stroke(0.8)
 }
@@ -836,6 +878,37 @@ pub fn derive(inputs: &Inputs) -> Derived {
 #[cfg(test)]
 mod tests {
     use super::InterfaceProfile;
+    use super::{tile_art_box, Inputs, TileArt};
+
+    #[test]
+    fn tile_art_box_follows_the_tile_bands() {
+        let inputs = Inputs {
+            screen_width: 960.0,
+            screen_height: 540.0,
+            ..Inputs::default()
+        };
+        let art = |compact_padding, caption, top_label| TileArt {
+            compact_padding,
+            caption,
+            top_label,
+        };
+        // Press edge 0.8% (4 px), pad 2% (10.8 px), band 5.9% (31.86 px).
+        assert_eq!(
+            tile_art_box(&inputs, 150, 200, art(false, true, false)),
+            (128, 153)
+        );
+        // A top label trades the top pad for a second band.
+        assert_eq!(
+            tile_art_box(&inputs, 150, 200, art(false, true, true)),
+            (128, 132)
+        );
+        // Compact: 0.4% + the 3 px ring + 0.4% on every side.
+        assert_eq!(
+            tile_art_box(&inputs, 150, 200, art(true, false, false)),
+            (135, 181)
+        );
+        assert_eq!(tile_art_box(&inputs, 4, 4, art(false, true, true)), (0, 0));
+    }
 
     #[test]
     fn device_profile_is_the_only_one_that_asks_the_hardware() {

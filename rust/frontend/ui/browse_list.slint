@@ -222,6 +222,9 @@ export component BrowseList inherits Rectangle {
 // logo art), the title, and the label/value metadata table. Sections
 // stack per the detail profile: cover above metadata, or side by side.
 export component BrowseDetailPane inherits Rectangle {
+    // The painted art box, reported so a cover can be resized to it
+    // before it is shown.
+    callback art-box(length, length);
     in property <string> title: "";
     in property <bool> show-title: true;
     in property <image> cover;
@@ -371,6 +374,9 @@ export component BrowseDetailPane inherits Rectangle {
             property <length> art-y: Layout.image-padding-top;
             property <length> art-w: Math.max(0px, self.width - (root.horizontal ? Layout.image-padding-left + Layout.image-padding-right : 0px));
             property <length> art-h: Math.max(0px, self.height - Layout.image-padding-top - Layout.image-padding-bottom);
+            init => { root.art-box(self.art-w, self.art-h); }
+            changed art-w => { root.art-box(self.art-w, self.art-h); }
+            changed art-h => { root.art-box(self.art-w, self.art-h); }
 
             // The cover's colour until it lands, like a grid tile.
             if root.has-art-color && !root.cover-absent: Rectangle {
@@ -551,6 +557,7 @@ export component BrowseListDetailView inherits Rectangle {
     callback row-right-clicked(int);
     callback empty-right-clicked();
     callback wheel(int);
+    callback art-box(length, length);
 
     background: Theme.surface-card;
     border-radius: Layout.card-radius;
@@ -604,6 +611,7 @@ export component BrowseListDetailView inherits Rectangle {
         width: root.vertical ? root.width : root.detail-span;
         height: root.vertical ? root.detail-span : root.height;
         show-chrome: false;
+        art-box(w, h) => { root.art-box(w, h); }
         title: root.detail-title;
         show-title: root.show-title;
         cover: root.cover;
