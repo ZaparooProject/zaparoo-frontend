@@ -96,6 +96,7 @@ fields!(BrowseEntry {
 });
 fields!(MediaBrowseResult {
     path,
+    relative_path,
     entries,
     total_files,
     total_dirs,
@@ -146,6 +147,8 @@ fields!(MediaHistoryEntry {
     system_name,
     media_name,
     media_path,
+    relative_path,
+    zap_script,
     tags,
     launcher_id,
     started_at,

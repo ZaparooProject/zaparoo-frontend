@@ -90,6 +90,8 @@ pub struct GameRow {
     /// Core's system name (the flat lists' tile top label).
     pub system_name: String,
     pub zap_script: String,
+    /// Core's launcher-relative path, empty when Core derived none.
+    pub relative_path: String,
     /// Compact disambiguation token labels (pre sibling diff).
     pub tag_labels: Vec<String>,
     /// `false` only when Core confirmed no cover exists.
@@ -178,6 +180,7 @@ impl From<&BrowseEntry> for GameRow {
             system_id: e.system_id.clone(),
             system_name: String::new(),
             zap_script: e.zap_script.clone(),
+            relative_path: e.relative_path.clone(),
             tag_labels: crate::tag_utils::disambiguating_tag_labels(&e.disambiguating_tags),
             has_cover: e.has_cover,
             cover_color: cover_color(e.cover_color.as_deref()),
@@ -203,6 +206,7 @@ impl From<&MediaItem> for GameRow {
             system_id: item.system.id.clone(),
             system_name: item.system.name.clone(),
             zap_script: item.zap_script.clone(),
+            relative_path: item.relative_path.clone().unwrap_or_default(),
             tag_labels: crate::tag_utils::disambiguating_tag_labels(&item.disambiguating_tags),
             has_cover: item.has_cover,
             cover_color: cover_color(item.cover_color.as_deref()),
@@ -227,7 +231,8 @@ impl From<&MediaHistoryEntry> for GameRow {
             file_count: 0,
             system_id: e.system_id.clone(),
             system_name: e.system_name.clone(),
-            zap_script: String::new(),
+            zap_script: e.zap_script.clone(),
+            relative_path: e.relative_path.clone().unwrap_or_default(),
             tag_labels: Vec::new(),
             has_cover: e.has_cover,
             cover_color: cover_color(e.cover_color.as_deref()),
@@ -3312,30 +3317,67 @@ pub fn reopen_context_menu(ctx: &Ctx, app: &App) {
     open_context_menu(ctx, app);
 }
 
-/// Add to Hub: folders and filesystem roots pin as `folder` items; games
-/// pin as `zapscript` items carrying their run text.
-fn add_to_hub(ctx: &Ctx, app: &App, mode: GamesMode, row: &GameRow, system: &str) {
+/// What Add to Hub stores for a row: every identifier Core reported for
+/// it, so the tile outlives the media moving to another drive.
+#[derive(Debug, PartialEq, Eq)]
+struct HubPin {
+    kind: &'static str,
+    path: String,
+    relative: String,
+    script: String,
+    name: String,
+}
+
+/// Folders and filesystem roots pin as `folder` items; games pin as
+/// `zapscript` items carrying Core's title command (its path when Core sent
+/// none). A media-capable directory already launches by its script, so it
+/// pins without a relative path.
+fn hub_pin(mode: GamesMode, row: &GameRow) -> Option<HubPin> {
     let folder = mode == GamesMode::Browse
         && !row.media_capable
         && (row.entry_type == EntryType::Directory
             || rules::is_filesystem_root(row.entry_type, &row.path));
     if folder {
-        if !row.path.is_empty() {
-            crate::hub::add_target(ctx, app, "folder", "", &row.path, "", "", "", system);
-        }
-        return;
+        return (!row.path.is_empty()).then(|| HubPin {
+            kind: "folder",
+            path: row.path.clone(),
+            relative: row.relative_path.clone(),
+            script: String::new(),
+            name: String::new(),
+        });
     }
-    let Some(script) = row.launch_text() else {
+    let run_text = row.launch_text()?;
+    let container = row.entry_type == EntryType::Directory && row.media_capable;
+    Some(HubPin {
+        kind: "zapscript",
+        path: row.path.clone(),
+        relative: if container {
+            String::new()
+        } else {
+            row.relative_path.clone()
+        },
+        script: if row.zap_script.trim().is_empty() {
+            run_text
+        } else {
+            row.zap_script.clone()
+        },
+        name: row.display.clone(),
+    })
+}
+
+fn add_to_hub(ctx: &Ctx, app: &App, mode: GamesMode, row: &GameRow, system: &str) {
+    let Some(pin) = hub_pin(mode, row) else {
         return;
     };
     crate::hub::add_target(
         ctx,
         app,
-        "zapscript",
+        pin.kind,
         "",
-        &row.path,
-        &script,
-        &row.display,
+        &pin.path,
+        &pin.relative,
+        &pin.script,
+        &pin.name,
         "",
         system,
     );
@@ -3848,6 +3890,120 @@ mod tests {
         let plain = GameRow::from(&entry("media", "Game", "/g/Game.nes"));
         assert_eq!(plain.launch_text().as_deref(), Some("/g/Game.nes"));
         assert!(GameRow::from(&entry("directory", "Folder", "/g/Folder")).is_dir());
+    }
+
+    #[test]
+    fn rows_keep_the_portable_identifiers_core_sends() {
+        let mut browsed = entry("media", "Game", "/g/NES/Game.nes");
+        browsed.relative_path = "NES/Game.nes".into();
+        browsed.zap_script = "@NES/Game".into();
+        let row = GameRow::from(&browsed);
+        assert_eq!(row.relative_path, "NES/Game.nes");
+        assert_eq!(row.zap_script, "@NES/Game");
+
+        let searched = GameRow::from(&MediaItem {
+            path: "/g/NES/Game.nes".into(),
+            relative_path: Some("NES/Game.nes".into()),
+            zap_script: "@NES/Game".into(),
+            ..MediaItem::default()
+        });
+        assert_eq!(searched.relative_path, "NES/Game.nes");
+
+        let played = GameRow::from(&MediaHistoryEntry {
+            media_path: "/g/NES/Game.nes".into(),
+            relative_path: Some("NES/Game.nes".into()),
+            zap_script: "@NES/Game".into(),
+            ..MediaHistoryEntry::default()
+        });
+        assert_eq!(played.relative_path, "NES/Game.nes");
+        assert_eq!(played.zap_script, "@NES/Game");
+
+        // An older Core, or media outside every launcher folder.
+        let bare = GameRow::from(&MediaHistoryEntry {
+            media_path: "/g/NES/Game.nes".into(),
+            ..MediaHistoryEntry::default()
+        });
+        assert!(bare.relative_path.is_empty());
+        assert!(bare.zap_script.is_empty());
+    }
+
+    #[test]
+    fn a_pinned_game_stores_every_identifier_core_reported() {
+        let mut e = entry("media", "Game", "/g/NES/Game.nes");
+        e.relative_path = "NES/Game.nes".into();
+        e.zap_script = "@NES/Game".into();
+        let mut row = GameRow::from(&e);
+        row.display = "Game".into();
+        for mode in [
+            GamesMode::Browse,
+            GamesMode::Favorites,
+            GamesMode::Recents,
+            GamesMode::Search,
+        ] {
+            assert_eq!(
+                hub_pin(mode, &row),
+                Some(HubPin {
+                    kind: "zapscript",
+                    path: "/g/NES/Game.nes".into(),
+                    relative: "NES/Game.nes".into(),
+                    script: "@NES/Game".into(),
+                    name: "Game".into(),
+                })
+            );
+        }
+    }
+
+    #[test]
+    fn a_pinned_game_core_sent_no_script_for_falls_back_to_its_path() {
+        let mut row = GameRow::from(&entry("media", "Game", "/g/NES/Game.nes"));
+        row.display = "Game".into();
+        assert_eq!(
+            hub_pin(GamesMode::Recents, &row),
+            Some(HubPin {
+                kind: "zapscript",
+                path: "/g/NES/Game.nes".into(),
+                relative: String::new(),
+                script: "/g/NES/Game.nes".into(),
+                name: "Game".into(),
+            })
+        );
+    }
+
+    #[test]
+    fn a_pinned_game_folder_keeps_its_script_as_the_launch_form() {
+        let mut e = entry("directory", "Game", "/g/PSX/Game");
+        e.media_id = Some(4);
+        e.zap_script = "@PSX/Game".into();
+        e.relative_path = "PSX/Game/Game (Disc 1).cue".into();
+        let mut row = GameRow::from(&e);
+        row.display = "Game".into();
+        assert_eq!(
+            hub_pin(GamesMode::Browse, &row),
+            Some(HubPin {
+                kind: "zapscript",
+                path: "/g/PSX/Game".into(),
+                // The relative path names one disc, not the game.
+                relative: String::new(),
+                script: "@PSX/Game".into(),
+                name: "Game".into(),
+            })
+        );
+    }
+
+    #[test]
+    fn a_pinned_folder_stores_its_relative_path() {
+        let mut e = entry("directory", "USA", "/g/SNES/USA");
+        e.relative_path = "SNES/USA".into();
+        assert_eq!(
+            hub_pin(GamesMode::Browse, &GameRow::from(&e)),
+            Some(HubPin {
+                kind: "folder",
+                path: "/g/SNES/USA".into(),
+                relative: "SNES/USA".into(),
+                script: String::new(),
+                name: String::new(),
+            })
+        );
     }
 
     #[test]

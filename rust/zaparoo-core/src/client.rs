@@ -18,12 +18,13 @@ use crate::media_types::{
     BackupRemoteRunResult, BackupStatusResponse, DecksResult, HealthResult, LaunchersResult,
     LogDownloadResult, MediaBrowseIndexParams, MediaBrowseIndexResult, MediaBrowseParams,
     MediaBrowseResult, MediaHistoryLatestResult, MediaHistoryParams, MediaHistoryResult,
-    MediaImageParams, MediaImageResult, MediaIndexParams, MediaMetaParams, MediaMetaResult,
-    MediaMetaUpdateParams, MediaResult, MediaScrapeParams, MediaSearchParams, MediaSearchResult,
-    MediaTagsParams, MediaTagsResult, MediaTagsUpdateParams, MediaTagsUpdateResult,
-    PairStartResult, ReadersResult, ReadersWriteParams, RemoteActivityResult, RunParams,
-    ScrapersResult, ScrapingStatusResponse, SettingsResult, SystemsParams, SystemsResult,
-    TokensHistoryResult, TokensResult, UpdateSettingsParams, VersionResult,
+    MediaImageParams, MediaImageResult, MediaIndexParams, MediaLookupParams, MediaLookupResult,
+    MediaMetaParams, MediaMetaResult, MediaMetaUpdateParams, MediaResult, MediaScrapeParams,
+    MediaSearchParams, MediaSearchResult, MediaTagsParams, MediaTagsResult, MediaTagsUpdateParams,
+    MediaTagsUpdateResult, PairStartResult, ReadersResult, ReadersWriteParams,
+    RemoteActivityResult, RunParams, ScrapersResult, ScrapingStatusResponse, SettingsResult,
+    SystemsParams, SystemsResult, TokensHistoryResult, TokensResult, UpdateSettingsParams,
+    VersionResult,
 };
 use crate::transport::Transport;
 use futures_util::{SinkExt, StreamExt};
@@ -988,6 +989,17 @@ impl Client {
     ) -> Result<MediaMetaResult, ClientError> {
         let val = self.call("media.meta", &params).await?;
         deserialize_timed("media.meta", val)
+    }
+
+    /// Resolves a game name within one system to its indexed media row
+    /// (`media.lookup`). `matched` is `None` when Core finds no title or is
+    /// not confident enough in one.
+    pub async fn media_lookup(
+        &self,
+        params: MediaLookupParams,
+    ) -> Result<MediaLookupResult, ClientError> {
+        let val = self.call("media.lookup", &params).await?;
+        deserialize_timed("media.lookup", val)
     }
 
     /// Sets or clears the per-media launcher override, then returns the

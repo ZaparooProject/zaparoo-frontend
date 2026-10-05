@@ -72,6 +72,44 @@ A custom Hub tile (a specific system, a folder, or arbitrary ZapScript — see
 a matching `hub/name.png` here, the same way a built-in tile's id works
 above.
 
+### Hub tile entries
+
+Each tile is one `[[hub.items]]` table in `frontend.toml`. "Add to Hub"
+writes these for you; they can also be written by hand.
+
+| `type`      | Keys                                                  |
+|-------------|-------------------------------------------------------|
+| `system`    | `id`: the system id                                   |
+| `folder`    | `path`, `system`, and optionally `relative`           |
+| `zapscript` | `script`, and optionally `relative`, `path`, `system` |
+
+Any tile can also set `name` and `icon`.
+
+```toml
+[[hub.items]]
+type = "zapscript"
+relative = "NES/Zelda.nes"
+script = "@NES/The Legend of Zelda"
+path = "/media/fat/games/NES/Zelda.nes"
+name = "The Legend of Zelda"
+system = "NES"
+```
+
+A pinned game keeps every way Zaparoo Core identified it, and launches by
+the first one Core can still resolve:
+
+1. `relative`: the path under the system's games folder. It keeps working
+   when the games move to another drive.
+2. `script`: a ZapScript title launch. It keeps working when the file moves
+   to a different folder.
+3. `path`: the full path at the time the game was pinned.
+
+`path` and `system` also select the tile's cover art. After Core rescans
+your games, the frontend asks Core where each pinned game and folder is now
+and updates `path` to match, so covers and folder tiles follow a move too.
+A tile with only a `script` is launched exactly as written and is never
+changed.
+
 ### Rendered as-is (no tinting)
 
 The bundled system logos default to tintable SVGs that match the active theme.
