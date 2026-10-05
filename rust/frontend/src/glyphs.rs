@@ -142,6 +142,10 @@ const SOURCES: &[(&str, &str)] = &[
         include_str!("../../../resources/images/icons/ScrollUp.svg"),
     ),
     (
+        "icons/Search",
+        include_str!("../../../resources/images/icons/Search.svg"),
+    ),
+    (
         "icons/Settings",
         include_str!("../../../resources/images/icons/Settings.svg"),
     ),
@@ -424,6 +428,7 @@ const ALIASES: &[(&str, &str)] = &[
     ("Resume", "icons/PlayOutline"),
     ("Favorites", "icons/HeartOutline"),
     ("Recents", "icons/History"),
+    ("Search", "icons/Search"),
     ("Update", "icons/RefreshCw"),
     ("Settings", "icons/Tools"),
     ("NFC", "status/NFC"),

@@ -193,12 +193,28 @@ export component SetupModal inherits ModalShell {
 
                 property <bool> lit: picker-sel.fill-bottom > self.y && picker-sel.fill-top < self.y + self.height;
 
-                PickerScopeLabel {
+                // A manufacturer's name over its systems: muted, ruled off,
+                // and never under the selection.
+                if entry.kind == ScopeKind.header: Text {
+                    x: Sizing.pct-w(2);
+                    y: parent.height - self.height - Sizing.pct-h(0.8);
+                    width: parent.width - 2 * Sizing.pct-w(2);
+                    text: SettingsLabels.scope(entry.kind, entry.name);
+                    color: Theme.text-label;
+                    font-size: Sizing.font-caption;
+                    font-weight: FontWeight.semi-bold;
+                    overflow: elide;
+                }
+                if entry.kind == ScopeKind.header: Divider {
+                    x: 0;
+                    y: parent.height - self.height;
+                }
+                if entry.kind != ScopeKind.header: PickerScopeLabel {
                     label: SettingsLabels.scope(entry.kind, entry.name);
                     content-color: Theme.text-primary;
                     weight: FontWeight.normal;
                 }
-                if lit: SelectionClip {
+                if lit && entry.kind != ScopeKind.header: SelectionClip {
                     radius: Layout.row-radius;
                     row-top: parent.y; row-height: parent.height;
                     fill-top: picker-sel.fill-top; fill-bottom: picker-sel.fill-bottom;
@@ -210,7 +226,7 @@ export component SetupModal inherits ModalShell {
                     }
                 }
 
-                TouchArea {
+                if entry.kind != ScopeKind.header: TouchArea {
                     mouse-cursor: pointer;
                     changed has-hover => {
                         if (self.has-hover) { root.picker-hovered(i); }

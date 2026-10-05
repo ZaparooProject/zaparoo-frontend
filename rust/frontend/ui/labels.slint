@@ -23,6 +23,7 @@ export global Labels {
         if (target == Screen.games) { return @tr("Loading games…"); }
         if (target == Screen.favorites) { return @tr("Loading favorites…"); }
         if (target == Screen.recents) { return @tr("Loading recently played…"); }
+        if (target == Screen.search-results) { return @tr("Searching…"); }
         return @tr("Loading…");
     }
     public pure function hub(key: string, name: string) -> string {
@@ -37,6 +38,7 @@ export global Labels {
         if (key == "action:resume") { return name == "" ? @tr("Resume") : @tr("Resume: {}", name); }
         if (key == "action:favorites") { return @tr("Favorites"); }
         if (key == "action:recents") { return @tr("Recently played"); }
+        if (key == "action:search") { return @tr("Search"); }
         if (key == "action:update") { return @tr("Update"); }
         if (key == "action:settings") { return @tr("Settings"); }
         return name;
@@ -70,20 +72,9 @@ export global Labels {
         return name == "" ? @tr("Any") : name;
     }
 
-    // The filter's category rows ("Genre: Any") and the picker titles of
-    // their value pages. Listed out so each name is extracted once.
+    // The tags picker's category names, which also title their value
+    // pages. Listed out so each name is extracted once.
     public pure function filter-category(key: string, name: string) -> string {
-        if (key == "filter_cat:genre") { return @tr("Genre: {}", Labels.filter-value(name)); }
-        if (key == "filter_cat:year") { return @tr("Year: {}", Labels.filter-value(name)); }
-        if (key == "filter_cat:players") { return @tr("Players: {}", Labels.filter-value(name)); }
-        if (key == "filter_cat:developer") { return @tr("Developer: {}", Labels.filter-value(name)); }
-        if (key == "filter_cat:publisher") { return @tr("Publisher: {}", Labels.filter-value(name)); }
-        if (key == "filter_cat:region") { return @tr("Region: {}", Labels.filter-value(name)); }
-        if (key == "filter_cat:language") { return @tr("Language: {}", Labels.filter-value(name)); }
-        if (key == "filter_cat:perspective") { return @tr("Perspective: {}", Labels.filter-value(name)); }
-        if (key == "filter_cat:input") { return @tr("Input: {}", Labels.filter-value(name)); }
-        if (key == "filter_cat:arcadeboard") { return @tr("Arcade board: {}", Labels.filter-value(name)); }
-        if (key == "filter_cat:lists") { return @tr("Lists: {}", Labels.filter-value(name)); }
         if (key == "title:filter_cat:genre") { return @tr("Genre"); }
         if (key == "title:filter_cat:year") { return @tr("Year"); }
         if (key == "title:filter_cat:players") { return @tr("Players"); }
@@ -94,7 +85,7 @@ export global Labels {
         if (key == "title:filter_cat:perspective") { return @tr("Perspective"); }
         if (key == "title:filter_cat:input") { return @tr("Input"); }
         if (key == "title:filter_cat:arcadeboard") { return @tr("Arcade board"); }
-        if (key == "title:filter_cat:lists") { return @tr("Lists"); }
+        if (key == "title:filter_cat:lists") { return @tr("Collections"); }
         return "";
     }
 
@@ -123,14 +114,17 @@ export global Labels {
         if (key == "index_category" || key == "index_system") { return @tr("Update media database"); }
         if (key == "scrape_category" || key == "scrape_system") { return @tr("Update metadata"); }
         if (key == "jump_letter") { return @tr("Go to…"); }
-        // The games View menu's filter rows and pages.
-        if (key == "filter") { return @tr("Filter: {}", Labels.filter-value(name)); }
-        if (key == "filter_clear") { return @tr("Clear filter"); }
-        if (key == "filter_apply") { return @tr("Apply"); }
+        if (key == "search_here") { return @tr("Search here…"); }
+        if (key == "search:all_systems") { return @tr("All systems"); }
+        if (key == "section:recent") { return @tr("Recent"); }
+        if (key == "section:other") { return @tr("Other"); }
+        // The tags picker, from the games View menu and the Search screen.
+        if (key == "filter") { return @tr("Tags: {}", Labels.filter-value(name)); }
+        if (key == "filter_clear") { return @tr("Clear tags"); }
         if (key == "filter:any") { return @tr("Any"); }
         if (key == "filter:loading") { return @tr("Loading…"); }
-        if (key == "filter:failed") { return @tr("Failed to load filters"); }
-        if (key == "filter:none") { return @tr("No filters available"); }
+        if (key == "filter:failed") { return @tr("Failed to load tags"); }
+        if (key == "filter:none") { return @tr("No tags available"); }
         if (Labels.filter-category(key, name) != "") { return Labels.filter-category(key, name); }
         // Hub rows and its View menu.
         if (key == "hub_add") { return @tr("Add item…"); }
@@ -155,7 +149,8 @@ export global Labels {
         if (key == "launcher:current") { return @tr("Current: {}", name); }
         // Picker titles.
         if (key == "title:view") { return @tr("View"); }
-        if (key == "title:filter") { return @tr("Filter"); }
+        if (key == "title:filter") { return @tr("Tags"); }
+        if (key == "title:search_system") { return @tr("System"); }
         if (key == "title:add_item") { return @tr("Add item"); }
         if (key == "title:sort") { return @tr("Sort"); }
         if (key == "title:group_by") { return @tr("Group by"); }

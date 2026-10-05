@@ -843,6 +843,8 @@ fn open_picker(ctx: &Ctx, app: &App, id: &str) {
     let entries: Vec<crate::MenuEntry> = values
         .iter()
         .map(|value| crate::MenuEntry {
+            role: crate::MenuRole::default(),
+            detail_key: SharedString::default(),
             id: SharedString::from(value.as_str()),
             label: SharedString::default(),
             label_key: SharedString::default(),

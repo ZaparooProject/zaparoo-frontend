@@ -124,8 +124,10 @@ pub struct Shared {
     /// Ticket for the facet fetch; bumped per fetch so a stale index
     /// response cannot fill a newer scope.
     pub letter_seq: u64,
-    /// The browse filter picker's tag list for the system on screen.
+    /// The tag filter picker's list, for the system on screen or the search.
     pub filter: crate::browse_filter::Model,
+    /// The Search screen: keyboard, focus and live matches.
+    pub search: crate::search::Model,
     /// Ticket for the per-game launcher read, so a picker only opens
     /// for the row the user is still on.
     pub game_launcher_seq: u64,
@@ -180,6 +182,8 @@ pub enum ListContext {
     /// of the category being chosen. Both stay inside the View menu's panel.
     FilterCategories,
     FilterValues(zaparoo_app::browse_filter::Category),
+    /// The Search screen's system picker.
+    SearchSystem,
     /// A settings picker row; the payload is the field id.
     SettingsPicker(String),
     /// The "Change launcher" picker; the payload is the system id.
@@ -273,6 +277,7 @@ impl Shared {
             letter_scope: None,
             letter_seq: 0,
             filter: crate::browse_filter::Model::default(),
+            search: crate::search::Model::default(),
             game_launcher_seq: 0,
             persist,
             restore_pending,
@@ -349,7 +354,7 @@ fn save_hidden_prefs(ctx: &Ctx, app: &App, categories: &[String], system_ids: &[
 
 /// Dev builds and unparseable versions fail open: only a parsed semver
 /// below the floor triggers the warning.
-const MIN_CORE_VERSION: &str = "2.15.0";
+const MIN_CORE_VERSION: &str = "2.17.0";
 
 fn version_supported(raw: &str) -> bool {
     let v = raw.trim();
@@ -398,9 +403,9 @@ mod version_gate_tests {
 
     #[test]
     fn semver_floor_enforced() {
-        assert!(version_supported("2.15.0"));
+        assert!(version_supported("2.17.0"));
         assert!(version_supported("3.0.1"));
-        assert!(!version_supported("2.14.9"));
+        assert!(!version_supported("2.16.9"));
         assert!(!version_supported("1.0.0"));
     }
 }
@@ -900,6 +905,7 @@ fn dispatch_with_focus(ctx: &Ctx, app: &App, action: &str) {
             | crate::Screen::Games
             | crate::Screen::Favorites
             | crate::Screen::Recents
+            | crate::Screen::SearchResults
     ) {
         ctx.logos.request([]);
     }
@@ -1025,9 +1031,13 @@ fn dispatch_action(ctx: &Ctx, app: &App, action: &str) {
         crate::Screen::Systems | crate::Screen::FavoriteSystems => {
             crate::systems::handle_action(ctx, app, action);
         }
-        crate::Screen::Games | crate::Screen::Favorites | crate::Screen::Recents => {
+        crate::Screen::Games
+        | crate::Screen::Favorites
+        | crate::Screen::Recents
+        | crate::Screen::SearchResults => {
             crate::games::handle_action(ctx, app, action);
         }
+        crate::Screen::Search => crate::search::handle_action(ctx, app, action),
         crate::Screen::Settings => crate::settings::handle_action(ctx, app, action),
         crate::Screen::About => about_action(ctx, app, action),
         crate::Screen::Update => crate::update::handle_action(app, action),
@@ -1340,28 +1350,47 @@ pub(crate) fn apply_clock_setting(ctx: &Ctx, app: &App) {
 pub(crate) fn open_view_menu(ctx: &Ctx, app: &App) {
     fetch_letter_index(ctx, app);
     crate::browse_filter::begin(ctx, app);
-    let mut entries = vec![menu_row("jump_letter")];
+    let mut entries = vec![menu_row("jump_letter"), menu_row("search_here")];
     entries.extend(crate::browse_filter::view_rows(&lock(&ctx.shared)));
     present_list(ctx, app, ListContext::ViewMenu, "title:view", entries);
+}
+
+/// What each row of the open list is, for the cursor rules.
+fn list_roles(app: &App) -> Vec<zaparoo_app::form_list::Role> {
+    use zaparoo_app::form_list::Role;
+    app.global::<crate::Overlays>()
+        .get_list_entries()
+        .iter()
+        .map(|entry| match entry.role {
+            crate::MenuRole::Option => Role::Option,
+            crate::MenuRole::Header => Role::Header,
+            crate::MenuRole::Action => Role::Action,
+        })
+        .collect()
 }
 
 fn list_action(ctx: &Ctx, app: &App, action: &str) {
     if app.global::<crate::Overlays>().get_launcher_saving() {
         return;
     }
-    let len = app
-        .global::<crate::Overlays>()
-        .get_list_entries()
-        .row_count();
+    let roles = list_roles(app);
     let index = app.global::<crate::Overlays>().get_list_index().max(0) as usize;
     match action {
-        actions::UP if len > 0 => {
+        // Wraps at the ends and passes over section headers.
+        actions::UP | actions::DOWN if !roles.is_empty() => {
+            let next = zaparoo_app::form_list::step(&roles, index, action == actions::DOWN);
             app.global::<crate::Overlays>()
-                .set_list_index(((index + len - 1) % len) as i32);
+                .set_list_index(i32::try_from(next).unwrap_or(0));
         }
-        actions::DOWN if len > 0 => {
+        // Sideways and the shoulder buttons jump a section in a list that
+        // has them.
+        actions::LEFT | actions::RIGHT | actions::PAGE_PREV | actions::PAGE_NEXT
+            if matches!(lock(&ctx.shared).list_context, ListContext::SearchSystem) =>
+        {
+            let forward = matches!(action, actions::RIGHT | actions::PAGE_NEXT);
+            let next = zaparoo_app::form_list::jump(&roles, index, forward);
             app.global::<crate::Overlays>()
-                .set_list_index(((index + 1) % len) as i32);
+                .set_list_index(i32::try_from(next).unwrap_or(0));
         }
         actions::ACCEPT => {
             let id = app
@@ -1387,6 +1416,7 @@ fn list_action(ctx: &Ctx, app: &App, action: &str) {
                 match context {
                     ListContext::ViewMenu => match id.as_str() {
                         "jump_letter" => open_letter_jump(ctx, app),
+                        "search_here" => crate::search::enter_scoped(ctx, app),
                         "filter" => crate::browse_filter::open(ctx, app),
                         "filter_clear" => crate::browse_filter::clear(ctx, app),
                         _ => {}
@@ -1394,6 +1424,7 @@ fn list_action(ctx: &Ctx, app: &App, action: &str) {
                     ListContext::FilterCategories | ListContext::FilterValues(_) => {
                         crate::browse_filter::accept(ctx, app, &context, &id);
                     }
+                    ListContext::SearchSystem => crate::search::system_picked(ctx, app, &id),
                     ListContext::HubPageMenu => crate::hub::page_menu_accept(ctx, app, &id),
                     ListContext::HubAdd => crate::hub::add_picked(ctx, app, &id),
                     ListContext::FavoritesPageMenu => favorites_page_menu_accept(ctx, app, &id),
@@ -1411,10 +1442,10 @@ fn list_action(ctx: &Ctx, app: &App, action: &str) {
                 }
             }
         }
-        actions::LEFT | actions::RIGHT
+        actions::LEFT | actions::RIGHT | actions::PAGE_PREV | actions::PAGE_NEXT
             if matches!(lock(&ctx.shared).list_context, ListContext::FilterValues(_)) =>
         {
-            crate::browse_filter::page(app, action);
+            crate::browse_filter::page(app, matches!(action, actions::RIGHT | actions::PAGE_NEXT));
         }
         actions::CANCEL | actions::PAGE_MENU => {
             let context = lock(&ctx.shared).list_context.clone();
@@ -1658,6 +1689,8 @@ pub(crate) fn menu_row_full(
     reason_key: &str,
 ) -> crate::MenuEntry {
     crate::MenuEntry {
+        role: crate::MenuRole::default(),
+        detail_key: SharedString::default(),
         id: SharedString::from(id),
         label: SharedString::from(name),
         label_key: SharedString::from(key),
@@ -1753,9 +1786,59 @@ pub(crate) fn present_list(
     let overlays = app.global::<crate::Overlays>();
     overlays.set_list_setting_id(SharedString::default());
     overlays.set_list_title(SharedString::from(title));
+    overlays.set_list_form(false);
     overlays.set_list_entries(ModelRc::new(VecModel::from(entries)));
     overlays.set_list_index(0);
     overlays.set_list_open(true);
+}
+
+/// The same panel as a form list: rows named on the left with their value
+/// on the right, section headers and footer actions. Focus starts on
+/// `index`, which must not be a header.
+pub(crate) fn present_form_list(
+    ctx: &Ctx,
+    app: &App,
+    context: ListContext,
+    title: &str,
+    entries: Vec<crate::MenuEntry>,
+    index: usize,
+) {
+    present_list(ctx, app, context, title, entries);
+    let overlays = app.global::<crate::Overlays>();
+    overlays.set_list_form(true);
+    overlays.set_list_index(i32::try_from(index).unwrap_or(0));
+}
+
+/// A section header row.
+pub(crate) fn menu_header(key: &str, name: &str) -> crate::MenuEntry {
+    crate::MenuEntry {
+        role: crate::MenuRole::Header,
+        ..menu_row_full("", key, name, false, "")
+    }
+}
+
+/// A footer action row.
+pub(crate) fn menu_action(id: &str) -> crate::MenuEntry {
+    crate::MenuEntry {
+        role: crate::MenuRole::Action,
+        ..menu_row(id)
+    }
+}
+
+/// A form row with a value: `detail` as data, or `detail_key` as a word of
+/// the menu vocabulary when the value is ours to translate.
+pub(crate) fn menu_value(
+    id: &str,
+    key: &str,
+    name: &str,
+    detail: &str,
+    detail_key: &str,
+) -> crate::MenuEntry {
+    crate::MenuEntry {
+        detail: SharedString::from(detail),
+        detail_key: SharedString::from(detail_key),
+        ..menu_row_keyed(id, key, name)
+    }
 }
 
 pub(crate) fn present_hub_page_menu(ctx: &Ctx, app: &App, entries: Vec<crate::MenuEntry>) {
@@ -2045,7 +2128,10 @@ pub fn bind_context_input(ctx: &Arc<Ctx>, app: &App) {
                         if !ov.get_dialog_open()
                             && ov.get_list_open()
                             && !ov.get_launcher_saving()
-                            && row < ov.get_list_entries().row_count() =>
+                            && ov
+                                .get_list_entries()
+                                .row_data(row)
+                                .is_some_and(|entry| entry.role != crate::MenuRole::Header) =>
                     {
                         ov.set_list_index(index);
                     }

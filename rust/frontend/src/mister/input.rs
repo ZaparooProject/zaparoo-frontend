@@ -34,9 +34,29 @@ pub struct InputReader {
     buf: Vec<u8>,
 }
 
+/// Letter and digit keycodes in kernel order, US layout: the top digit
+/// row, then the three letter rows. They type into a text field and map
+/// to no action elsewhere.
+const TEXT_KEYS: [(u16, &str); 4] = [
+    (2, "1234567890"),
+    (16, "qwertyuiop"),
+    (30, "asdfghjkl"),
+    (44, "zxcvbnm"),
+];
+
+fn text_key(code: u16) -> Option<char> {
+    TEXT_KEYS.iter().find_map(|(first, row)| {
+        let offset = usize::from(code.checked_sub(*first)?);
+        row.chars().nth(offset)
+    })
+}
+
 /// Kernel keycode -> Slint key text. Mirrors the subset in
-/// `zaparoo_core::input_actions::qt_key_code`.
+/// `zaparoo_core::input_actions::qt_key_code`, plus the keys that type.
 fn key_text(code: u16) -> Option<SharedString> {
+    if let Some(c) = text_key(code) {
+        return Some(SharedString::from(c.to_string()));
+    }
     let key = match code {
         105 => Key::LeftArrow,  // KEY_LEFT
         106 => Key::RightArrow, // KEY_RIGHT
@@ -115,5 +135,29 @@ impl InputReader {
             }
         }
         any
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{key_text, text_key};
+
+    #[test]
+    fn letters_and_digits_type_and_other_keys_keep_their_meaning() {
+        assert_eq!(text_key(2), Some('1'));
+        assert_eq!(text_key(11), Some('0'));
+        assert_eq!(text_key(16), Some('q'));
+        assert_eq!(text_key(25), Some('p'));
+        assert_eq!(text_key(30), Some('a'));
+        assert_eq!(text_key(38), Some('l'));
+        assert_eq!(text_key(44), Some('z'));
+        assert_eq!(text_key(50), Some('m'));
+        // The keys between the rows (minus, brackets, enter, shift) do not type.
+        for code in [1, 12, 13, 14, 15, 26, 28, 29, 39, 42, 51, 57] {
+            assert_eq!(text_key(code), None, "{code}");
+        }
+        assert_eq!(key_text(30).as_deref(), Some("a"));
+        assert!(key_text(28).is_some());
+        assert_eq!(key_text(51), None);
     }
 }

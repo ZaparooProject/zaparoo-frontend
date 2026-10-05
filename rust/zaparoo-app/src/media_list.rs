@@ -683,6 +683,8 @@ pub enum Owner {
     Games,
     Favorites,
     Recents,
+    /// Search results: a flat list of media, like Favorites.
+    Search,
 }
 
 /// Everything `buildContextMenuEntries` reads for a media row.

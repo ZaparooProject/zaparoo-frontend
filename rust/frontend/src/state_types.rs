@@ -26,6 +26,7 @@ macro_rules! tokens {
 tokens!(Screen {
     Hub => "hub", Systems => "systems", FavoriteSystems => "favorite-systems",
     Games => "games", Favorites => "favorites", Recents => "recents",
+    Search => "search", SearchResults => "search-results",
     Settings => "settings", About => "about", Update => "update", None => "",
 });
 tokens!(SettingsPage {
@@ -75,6 +76,7 @@ impl From<zaparoo_app::media_setup::ScopeKind> for crate::ScopeKind {
             zaparoo_app::media_setup::ScopeKind::All => Self::All,
             zaparoo_app::media_setup::ScopeKind::Category => Self::Category,
             zaparoo_app::media_setup::ScopeKind::System => Self::System,
+            zaparoo_app::media_setup::ScopeKind::Header => Self::Header,
         }
     }
 }
@@ -162,6 +164,8 @@ mod tests {
             Screen::Games,
             Screen::Favorites,
             Screen::Recents,
+            Screen::Search,
+            Screen::SearchResults,
             Screen::Settings,
             Screen::About,
             Screen::Update,

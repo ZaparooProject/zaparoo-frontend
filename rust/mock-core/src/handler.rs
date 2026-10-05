@@ -73,6 +73,7 @@ pub fn dispatch(text: &str, notifier: &Notifier) -> String {
         "media.meta.update" => Some(fixtures::media_meta_update_response(&req.params)),
         "media.image" => Some(fixtures::media_image_response(&req.params)),
         "media.tags" => Some(Ok(fixtures::media_tags_response(&req.params))),
+        "decks" => Some(Ok(fixtures::decks_response())),
         "media.tags.update" => Some(media_tags_update(&req.params)),
         "media.history" => Some(Ok(fixtures::media_history_response(&req.params))),
         "media.history.latest" => Some(Ok(fixtures::media_history_latest_response())),
@@ -244,6 +245,71 @@ mod tests {
             .iter()
             .all(|g| g["system"]["id"].as_str() == Some("NES")));
         assert!(results.iter().all(|g| g["hasCover"].is_boolean()));
+    }
+
+    #[test]
+    fn media_search_matches_every_query_word_against_the_name_slug() {
+        let all = parse(&dispatch(
+            r#"{"jsonrpc":"2.0","id":"1","method":"media.search","params":{"maxResults":1000}}"#,
+        ));
+        let all = all["result"]["results"].as_array().expect("array").clone();
+        let name = all[0]["name"].as_str().expect("name").to_string();
+        let word = name.split_whitespace().next().expect("word").to_uppercase();
+        let req = serde_json::json!({
+            "jsonrpc": "2.0", "id": "2", "method": "media.search",
+            "params": { "query": format!(" {word}! "), "maxResults": 1000 },
+        });
+        let resp = parse(&dispatch(&req.to_string()));
+        let results = resp["result"]["results"].as_array().expect("array");
+        assert!(!results.is_empty() && results.len() < all.len());
+        assert!(results.iter().any(|g| g["name"] == name.as_str()));
+
+        let none = serde_json::json!({
+            "jsonrpc": "2.0", "id": "3", "method": "media.search",
+            "params": { "query": format!("{word} zzzzqqqq"), "maxResults": 1000 },
+        });
+        let resp = parse(&dispatch(&none.to_string()));
+        assert!(resp["result"]["results"]
+            .as_array()
+            .expect("array")
+            .is_empty());
+    }
+
+    #[test]
+    fn media_search_limits_results_to_a_path_prefix() {
+        let req = r#"{"jsonrpc":"2.0","id":"1","method":"media.search","params":{"pathPrefix":"/mock/NES","maxResults":1000}}"#;
+        let resp = parse(&dispatch(req));
+        let results = resp["result"]["results"].as_array().expect("array");
+        assert!(!results.is_empty());
+        assert!(results.iter().all(|g| g["path"]
+            .as_str()
+            .is_some_and(|p| p.starts_with("/mock/NES/"))));
+        // A sibling that merely shares the prefix's letters is not under it.
+        let req = r#"{"jsonrpc":"2.0","id":"1","method":"media.search","params":{"pathPrefix":"/mock/NE","maxResults":1000}}"#;
+        let resp = parse(&dispatch(req));
+        assert!(resp["result"]["results"]
+            .as_array()
+            .expect("array")
+            .is_empty());
+    }
+
+    #[test]
+    fn decks_name_the_deck_whose_members_are_tagged() {
+        let decks = parse(&dispatch(
+            r#"{"jsonrpc":"2.0","id":"1","method":"decks","params":{}}"#,
+        ));
+        let deck = &decks["result"]["decks"][0];
+        let id = deck["deckId"].as_str().expect("deck id");
+        assert_eq!(deck["name"], "Couch co-op");
+        let tags = parse(&dispatch(
+            r#"{"jsonrpc":"2.0","id":"2","method":"media.tags","params":{}}"#,
+        ));
+        let wanted = format!("deck:{id}");
+        assert!(tags["result"]["tags"]
+            .as_array()
+            .expect("array")
+            .iter()
+            .any(|t| t["type"] == "user" && t["tag"] == wanted.as_str()));
     }
 
     #[test]

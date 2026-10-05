@@ -12,7 +12,6 @@ use std::time::{Duration, Instant};
 
 use slint::ComponentHandle;
 use zaparoo_app::input as rules;
-#[cfg(feature = "hosted")]
 use zaparoo_core::input_actions::actions;
 
 use crate::router::{lock, Ctx};
@@ -111,7 +110,7 @@ fn keyboard_active() -> bool {
 /// owns input above it. A repeat that lands while a modal is open still
 /// routes to the modal, but it must not arm rapid navigation behind it:
 /// the grid is still painted under the scrim.
-fn modal_open(app: &App) -> bool {
+pub(crate) fn modal_open(app: &App) -> bool {
     let overlays = app.global::<crate::Overlays>();
     app.global::<crate::LogUploadView>().get_open()
         || app.global::<crate::SetupModalView>().get_open()
@@ -150,6 +149,18 @@ fn route_press(ctx: &Ctx, app: &App, action: &str, key: &str) {
         (s.swap_confirm_cancel, s.swap_options_view)
     };
     let action = rules::swap_actions(action, swap_cc, swap_ov, keyboard_active()).to_string();
+    // The View button deletes while a text field has the input; as its own
+    // action it repeats while held.
+    // Accept likewise becomes its own repeating action on a key that types.
+    let action = if !crate::search::owns_input(app) {
+        action
+    } else if action == actions::PAGE_MENU {
+        rules::TEXT_DELETE.to_string()
+    } else if action == actions::ACCEPT && crate::search::key_repeats(ctx) {
+        rules::TEXT_KEY.to_string()
+    } else {
+        action
+    };
     // The screensaver eats the waking press whole, repeat included: a
     // held direction that only woke the screen must not start walking
     // the list behind it.
@@ -178,10 +189,34 @@ fn key_pressed(ctx: &Ctx, app: &App, bindings: &std::collections::HashMap<i32, S
     if !accept_press(ctx, app, key) {
         return;
     }
+    // A text field takes what is typed before any binding sees it, so a
+    // letter bound to an action still types.
+    if crate::search::owns_input(app) && type_key(ctx, app, key) {
+        return;
+    }
     let Some(action) = crate::actions::action_for_key_with(bindings, key) else {
         return;
     };
     route_press(ctx, app, &action, key);
+}
+
+/// Feed a key press to the text field with the input: a character types,
+/// Backspace deletes and repeats while held. False for any other key,
+/// which then keeps its bound action.
+fn type_key(ctx: &Ctx, app: &App, key: &str) -> bool {
+    if key == slint::SharedString::from(slint::platform::Key::Backspace).as_str() {
+        route_press(ctx, app, rules::TEXT_DELETE, key);
+        return true;
+    }
+    let mut chars = key.chars();
+    match (chars.next(), chars.next()) {
+        (Some(c), None) if zaparoo_app::keyboard::is_text(c) => {
+            crate::router::reset_idle(ctx, app);
+            crate::search::type_char(ctx, app, c);
+            true
+        }
+        _ => false,
+    }
 }
 
 /// A gamepad button already resolved to an action. It arrives here
@@ -301,6 +336,17 @@ pub(crate) fn dispatching_repeat(ctx: &Ctx) -> bool {
     lock(&ctx.shared).input.dispatching_repeat
 }
 
+/// How long the hold behind the repeat in flight has lasted; 0 for a
+/// fresh press.
+pub(crate) fn repeat_held_ms(ctx: &Ctx) -> u64 {
+    let shared = lock(&ctx.shared);
+    if shared.input.dispatching_repeat {
+        shared.input.hold.held_ms(shared.input.now_ms())
+    } else {
+        0
+    }
+}
+
 /// The dispatch in flight is a long hold's letter step.
 pub(crate) fn letter_step(ctx: &Ctx) -> bool {
     lock(&ctx.shared).input.dispatch_tier == rules::HoldTier::Letter
@@ -388,7 +434,10 @@ fn schedule_quiet(ctx: &Ctx, app: &App) {
 fn push_rapid(ctx: &Ctx, app: &App, active: bool) {
     let on_list = matches!(
         app.global::<crate::Shell>().get_active_screen(),
-        crate::Screen::Games | crate::Screen::Favorites | crate::Screen::Recents
+        crate::Screen::Games
+            | crate::Screen::Favorites
+            | crate::Screen::Recents
+            | crate::Screen::SearchResults
     );
     crate::games::set_rapid(ctx, app, active && on_list);
 }

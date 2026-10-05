@@ -362,7 +362,10 @@ pub(crate) fn refresh(ctx: &crate::router::Ctx, app: &crate::App) {
                 crate::hub::render(ctx, app);
             }
         }
-        crate::Screen::Games | crate::Screen::Favorites | crate::Screen::Recents => {
+        crate::Screen::Games
+        | crate::Screen::Favorites
+        | crate::Screen::Recents
+        | crate::Screen::SearchResults => {
             let sliding = {
                 let shared = crate::router::lock(&ctx.shared);
                 shared.games.sliding || shared.games.folder_sliding

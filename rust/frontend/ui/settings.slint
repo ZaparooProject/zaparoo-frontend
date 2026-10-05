@@ -91,6 +91,8 @@ export global SettingsLabels {
     public pure function scope(kind: ScopeKind, name: string) -> string {
         if (kind == ScopeKind.all) { return @tr("All systems"); }
         if (kind == ScopeKind.category) { return @tr("All {} systems", Labels.hub("category:" + name, name)); }
+        // A manufacturer's name over its systems; unnamed ones share one.
+        if (kind == ScopeKind.header) { return name == "" ? @tr("Other") : name; }
         return name;
     }
     public pure function setup-action(key: SetupAction) -> string {

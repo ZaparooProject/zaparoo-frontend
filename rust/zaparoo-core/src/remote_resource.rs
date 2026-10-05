@@ -447,15 +447,26 @@ mod tests {
             let (_conn_tx, conn_rx) = watch::channel(ConnectionState::Connected);
             let calls = Arc::new(AtomicUsize::new(0));
             let count = calls.clone();
+            // The refetch is held until the assertion has read the status,
+            // so a fast worker cannot publish the next Ready first.
+            let release = Arc::new(Notify::new());
+            let gate = release.clone();
             let res = RemoteResource::<usize>::spawn_with(conn_rx, runtime.handle(), move || {
                 let value = count.fetch_add(1, Ordering::SeqCst) + 1;
-                async move { Ok(value) }
+                let gate = gate.clone();
+                async move {
+                    if value > 1 {
+                        gate.notified().await;
+                    }
+                    Ok(value)
+                }
             });
             let mut sub = res.subscribe();
             wait_for(&mut sub, |s| matches!(s, ResourceStatus::Ready(1))).await;
             res.refetch();
             let mut fresh = res.subscribe();
             assert!(matches!(*fresh.borrow(), ResourceStatus::Loading));
+            release.notify_one();
             wait_for(&mut fresh, |s| matches!(s, ResourceStatus::Ready(2))).await;
         });
     }

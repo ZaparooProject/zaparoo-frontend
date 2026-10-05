@@ -230,6 +230,8 @@ pub fn seed_startup(ctx: &std::sync::Arc<Ctx>, app: &crate::App) -> crate::scope
                 | "games"
                 | "favorites"
                 | "recents"
+                | "search"
+                | "search-results"
                 | "settings"
                 | "about"
         )

@@ -475,6 +475,40 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
 
     crate::settings::mirror_geometry(primary, crt);
 
+    let source = primary.global::<crate::SearchView>();
+    let target = crt.global::<crate::SearchView>();
+    // The CRT head is the 240p tier, which has no room for the pane.
+    set_if_changed!(target, get_pane_collapsed => set_pane_collapsed, true);
+    copy_properties!(source, target;
+        get_before => set_before,
+        get_at => set_at,
+        get_after => set_after,
+        get_scoped => set_scoped,
+        get_system_name => set_system_name,
+        get_scope_name => set_scope_name,
+        get_filter_text => set_filter_text,
+        get_keys => set_keys,
+        get_key_rows => set_key_rows,
+        get_key_index => set_key_index,
+        get_pressed_key => set_pressed_key,
+        get_shift_active => set_shift_active,
+        get_symbols_active => set_symbols_active,
+        get_zone => set_zone,
+        get_pane_index => set_pane_index,
+        get_pane_top => set_pane_top,
+        get_pane_clear => set_pane_clear,
+        get_pane_on_clear => set_pane_on_clear,
+        get_pane => set_pane,
+        get_pane_rows => set_pane_rows,
+        get_count_known => set_count_known,
+        get_count => set_count,
+        get_count_more => set_count_more,
+        get_searching => set_searching,
+        get_failed => set_failed,
+        get_can_search => set_can_search,
+        get_key_kind => set_key_kind,
+    );
+
     let source = primary.global::<GamesView>();
     let target = crt.global::<GamesView>();
     target.set_list_scroll_top(source.get_list_scroll_top());

@@ -15,15 +15,15 @@
 
 use crate::media_types::{
     AuthLinkStatus, AuthStatusResult, BackupRemoteListResult, BackupRemoteRestoreResult,
-    BackupRemoteRunResult, BackupStatusResponse, HealthResult, LaunchersResult, LogDownloadResult,
-    MediaBrowseIndexParams, MediaBrowseIndexResult, MediaBrowseParams, MediaBrowseResult,
-    MediaHistoryLatestResult, MediaHistoryParams, MediaHistoryResult, MediaImageParams,
-    MediaImageResult, MediaIndexParams, MediaMetaParams, MediaMetaResult, MediaMetaUpdateParams,
-    MediaResult, MediaScrapeParams, MediaSearchParams, MediaSearchResult, MediaTagsParams,
-    MediaTagsResult, MediaTagsUpdateParams, MediaTagsUpdateResult, PairStartResult, ReadersResult,
-    ReadersWriteParams, RemoteActivityResult, RunParams, ScrapersResult, ScrapingStatusResponse,
-    SettingsResult, SystemsParams, SystemsResult, TokensHistoryResult, TokensResult,
-    UpdateSettingsParams, VersionResult,
+    BackupRemoteRunResult, BackupStatusResponse, DecksResult, HealthResult, LaunchersResult,
+    LogDownloadResult, MediaBrowseIndexParams, MediaBrowseIndexResult, MediaBrowseParams,
+    MediaBrowseResult, MediaHistoryLatestResult, MediaHistoryParams, MediaHistoryResult,
+    MediaImageParams, MediaImageResult, MediaIndexParams, MediaMetaParams, MediaMetaResult,
+    MediaMetaUpdateParams, MediaResult, MediaScrapeParams, MediaSearchParams, MediaSearchResult,
+    MediaTagsParams, MediaTagsResult, MediaTagsUpdateParams, MediaTagsUpdateResult,
+    PairStartResult, ReadersResult, ReadersWriteParams, RemoteActivityResult, RunParams,
+    ScrapersResult, ScrapingStatusResponse, SettingsResult, SystemsParams, SystemsResult,
+    TokensHistoryResult, TokensResult, UpdateSettingsParams, VersionResult,
 };
 use crate::transport::Transport;
 use futures_util::{SinkExt, StreamExt};
@@ -1038,6 +1038,13 @@ impl Client {
     ) -> Result<MediaTagsResult, ClientError> {
         let val = self.call("media.tags", &params).await?;
         deserialize_timed("media.tags", val)
+    }
+
+    /// Lists every deck without its items (`decks`, Core 2.18), most
+    /// recently changed first.
+    pub async fn decks(&self) -> Result<DecksResult, ClientError> {
+        let val = self.call("decks", &serde_json::json!({})).await?;
+        deserialize_timed("decks", val)
     }
 
     /// Adds or removes mutable user tags for one indexed media item.

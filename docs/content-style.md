@@ -116,6 +116,8 @@ One term per concept, matching the vocabulary Zaparoo's own docs
 | Use this | Not this | Meaning |
 |---|---|---|
 | **token** | card, tag | The physical NFC/QR/barcode object a user scans or writes |
+| **tags** | filter, attributes | The values a game is labelled with (genre, year, region…). Category names are sentence case and translated; the values are Core's own text, shown as written and never recased |
+| **collection** | list | Any of the user's own groupings of games: the built-in ones (Favorites, Liked, Play later) and decks. A deck is one kind of collection, so say "deck" for a deck and "collection" only for the whole set |
 | **game** | file, entry, item | A piece of launchable media |
 | **system** | platform, console (in labels) | An emulated/native platform, e.g. SNES, Genesis |
 | **launcher** | core, emulator (in labels) | The program that runs a game on a system |

@@ -233,8 +233,31 @@ pub fn media_search_response(params: &Value) -> Value {
         .and_then(|c| c.parse::<usize>().ok())
         .unwrap_or(0);
 
+    let words: Vec<String> = params
+        .get("query")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .split_whitespace()
+        .map(slug)
+        .filter(|word| !word.is_empty())
+        .collect();
+    let path_prefix = params
+        .get("pathPrefix")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+
     let mut matching: Vec<Value> = games_for_systems(&systems)
         .filter(|game| tags.iter().all(|tag| game_has_tag(game, tag)))
+        .filter(|game| {
+            let name = slug(game.get("name").and_then(Value::as_str).unwrap_or_default());
+            words.iter().all(|word| name.contains(word.as_str()))
+        })
+        .filter(|game| {
+            under_path(
+                game.get("path").and_then(Value::as_str).unwrap_or_default(),
+                path_prefix,
+            )
+        })
         .collect();
     match params.get("sort").and_then(Value::as_str) {
         Some("name-asc") => matching.sort_by_key(|game| {
@@ -276,6 +299,25 @@ pub fn media_search_response(params: &Value) -> Value {
         "total": page_total,
         "pagination": pagination,
     })
+}
+
+/// Core matches each query word as a substring of the title's slug:
+/// lowercased, punctuation dropped.
+fn slug(text: &str) -> String {
+    text.chars()
+        .filter(|c| c.is_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect()
+}
+
+/// Core's `pathPrefix`: at or below the folder, never a sibling that
+/// merely starts with its name.
+fn under_path(path: &str, prefix: &str) -> bool {
+    let prefix = prefix.trim_end_matches('/');
+    prefix.is_empty()
+        || path
+            .strip_prefix(prefix)
+            .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
 }
 
 /// Match one `type:value` filter against a search row's `tags` array, the
@@ -810,6 +852,26 @@ fn system_meta(system: &str) -> (&'static str, &'static str) {
         .unwrap_or(("Unknown", ""))
 }
 
+/// The mock library's one deck.
+const MOCK_DECK_ID: &str = "0k3v9x2rq7bm";
+
+/// `decks`: the deck list without items. Its members carry the tag
+/// `user:deck:<id>`, which the list alone gives a name to.
+pub fn decks_response() -> Value {
+    json!({
+        "decks": [{
+            "deckId": MOCK_DECK_ID,
+            "name": "Couch co-op",
+            "description": "",
+            "itemCount": 8,
+            "owned": true,
+            "locked": false,
+            "createdAt": 0,
+            "updatedAt": 0,
+        }]
+    })
+}
+
 /// Full tag list for a search row: the disambiguation tags plus, for every
 /// third entry, the `user:favorite` tag. A deterministic spread means the
 /// mock's Favorites screen holds entries from several systems, which is what
@@ -827,6 +889,11 @@ fn tags_for(file: &str, index: usize) -> Value {
         .unwrap_or_default();
     if index.is_multiple_of(3) {
         tags.push(json!({ "tag": "favorite", "type": "user" }));
+    }
+    // Every fourth entry is in the one mock deck, tagged as Core tags a
+    // deck's members.
+    if index % 4 == 1 {
+        tags.push(json!({ "tag": format!("deck:{MOCK_DECK_ID}"), "type": "user" }));
     }
     tags.push(json!({ "tag": GENRES[index % GENRES.len()], "type": "genre" }));
     tags.push(json!({ "tag": (1985 + index % 12).to_string(), "type": "year" }));

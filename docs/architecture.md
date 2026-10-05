@@ -27,9 +27,11 @@ rust/frontend/  [frontend library and binary; Slint UI]
   ├── src/navigation.rs, folder_motion.rs, route_motion.rs
   │                        deferred routes that keep the source until ready,
   │                        and the stepped-clock motion tests over them
-  ├── src/{hub,systems,games,settings,about,update}.rs
+  ├── src/{hub,systems,games,search,settings,about,update}.rs
   │                        per-screen drivers (update.rs hosts the Update
   │                        module's session; see "Update module")
+  ├── src/keyboard.rs    : on-screen keyboard state for one text field
+  ├── src/browse_filter.rs : the tags picker, for Games and Search
   ├── src/{game_info,media_setup,log_upload,launchers,alternates,card_write}.rs
   │                        modal drivers
   ├── src/game_info_data.rs : Game Info metadata and carousel ordering
@@ -71,6 +73,10 @@ rust/zaparoo-app/  [toolkit-free product rules]
   sizing, layouts, palette      : geometry and color, pinned by golden fixtures
   paged_grid, media_list, hub, systems, settings, letter_jump
                                   navigation, paging, menus, rows
+  keyboard, search, browse_filter : key layout and text editing, the Search
+                                    screen's focus and count rules, tag filters
+  form_list, system_picker        : cursor rules for sectioned lists, and the
+                                    system list grouped by manufacturer
   input, status_line, action_error, buttons, clock, covers, customization,
   launchers, alternate_versions, media_setup, log_upload, format
   (no Slint or other toolkit dependency; scripts/check-toolkit-free.sh)

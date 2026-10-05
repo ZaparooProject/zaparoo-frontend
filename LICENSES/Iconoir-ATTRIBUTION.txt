@@ -32,6 +32,7 @@ fill="none"):
   resources/images/icons/NavUp.svg
   resources/images/icons/ScrollDown.svg
   resources/images/icons/ScrollUp.svg
+  resources/images/icons/Search.svg
   resources/images/icons/Settings.svg
   resources/images/icons/Support.svg
   resources/images/icons/Tools.svg

@@ -55,6 +55,7 @@ use generated::{App, Brand, GlyphSource, GridCell, LetterBucket, MenuEntry, Sizi
     reason = "reached through crate:: paths from the shared sizing adapter"
 )]
 use generated::{GamesView, Layout, Shell, SystemsView};
+use generated::{KeyCell, KeyKind, SearchPane, SearchPaneRow, SearchView, SearchZone};
 #[path = "../state_types.rs"]
 #[allow(
     dead_code,
@@ -68,6 +69,12 @@ mod brand;
 mod fonts;
 #[path = "../glyphs.rs"]
 mod glyphs;
+#[path = "../keyboard.rs"]
+#[allow(
+    dead_code,
+    reason = "the app's keyboard state; the snapshot tool only lays keys out"
+)]
+mod keyboard;
 #[path = "../qr.rs"]
 #[allow(dead_code, reason = "the snapshot tool renders one fixture code")]
 mod qr;
@@ -224,7 +231,9 @@ fn main() {
         "Українська гра 11",
         "Example Game Title 12",
     ];
-    let games_mode = if screen.contains("favorites") {
+    let games_mode = if screen.contains("search-results") {
+        GamesMode::Search
+    } else if screen.contains("favorites") {
         GamesMode::Favorites
     } else if screen.contains("recents") {
         GamesMode::Recents
@@ -241,6 +250,12 @@ fn main() {
         games_mode,
         (screen == "context" || screen == "context-alt").then_some(6),
     );
+    if screen.contains("search-results") {
+        app.global::<GamesView>()
+            .set_title("\u{201c}mario\u{201d} \u{b7} Super Nintendo".into());
+    } else if screen.contains("search") || screen.ends_with("system-picker") {
+        fixture_search(&app, &screen);
+    }
     // The browse filter: the header cue on the games screen, the picker's
     // categories page with a filter set, its values page with counts, and
     // the empty list a filter can leave.
@@ -256,18 +271,32 @@ fn main() {
             view.set_cells(slint::ModelRc::default());
         }
     }
-    if screen.ends_with("filter-picker") || screen.ends_with("filter-values") {
-        let filter_row = |id: &str, key: &str, name: &str, detail: &str| MenuEntry {
-            id: id.into(),
-            label: name.into(),
-            label_key: key.into(),
-            enabled: true,
-            reason_key: "".into(),
-            detail: detail.into(),
+    if screen.ends_with("filter-picker")
+        || screen.ends_with("filter-values")
+        || screen.ends_with("system-picker")
+    {
+        use generated::MenuRole;
+        let row =
+            |id: &str, key: &str, name: &str, detail: &str, detail_key: &str, role: MenuRole| {
+                MenuEntry {
+                    role,
+                    detail_key: detail_key.into(),
+                    id: id.into(),
+                    label: name.into(),
+                    label_key: key.into(),
+                    enabled: true,
+                    reason_key: "".into(),
+                    detail: detail.into(),
+                }
+            };
+        let option = |id: &str, key: &str, name: &str, detail: &str| {
+            row(id, key, name, detail, "", MenuRole::Option)
         };
         let ov = app.global::<generated::Overlays>();
-        app.global::<GamesView>()
-            .set_filter_text("Platformer +1".into());
+        if !screen.ends_with("system-picker") {
+            app.global::<GamesView>()
+                .set_filter_text("Platformer +1".into());
+        }
         let (title, rows, index) = if screen.ends_with("values") {
             let values = [
                 ("Action", "412"),
@@ -280,28 +309,68 @@ fn main() {
                 ("Shooter", "176"),
                 ("Sports", "72"),
             ];
-            let mut rows = vec![filter_row("any", "filter:any", "", "")];
+            let mut rows = vec![option("any", "filter:any", "", "")];
             rows.extend(
                 values
                     .iter()
-                    .map(|(name, count)| filter_row(&format!("v:{name}"), "", name, count)),
+                    .map(|(name, count)| option(&format!("v:{name}"), "", name, count)),
             );
             ("title:filter_cat:genre", rows, 4)
+        } else if screen.ends_with("system-picker") {
+            // All systems, the ones used lately, then every system under
+            // its manufacturer, with its game count.
+            let header = |key: &str, name: &str| row("", key, name, "", "", MenuRole::Header);
+            let system = |name: &str, games: &str| option(&format!("sys:{name}"), "", name, games);
+            (
+                "title:search_system",
+                vec![
+                    option("all", "search:all_systems", "", ""),
+                    header("section:recent", ""),
+                    system("Super Nintendo", "812"),
+                    system("Genesis", "764"),
+                    header("", "Nintendo"),
+                    system("Game Boy", "1045"),
+                    system("Nintendo 64", "296"),
+                    system("Super Nintendo", "812"),
+                    header("", "Sega"),
+                    system("Genesis", "764"),
+                    system("Saturn", "118"),
+                ],
+                2,
+            )
         } else {
+            let any = |id: &str| {
+                row(
+                    &format!("cat:{id}"),
+                    &format!("title:filter_cat:{id}"),
+                    "",
+                    "",
+                    "filter:any",
+                    MenuRole::Option,
+                )
+            };
+            let chosen = |id: &str, value: &str| {
+                option(
+                    &format!("cat:{id}"),
+                    &format!("title:filter_cat:{id}"),
+                    "",
+                    value,
+                )
+            };
             (
                 "title:filter",
                 vec![
-                    filter_row("cat:genre", "filter_cat:genre", "Platformer", ""),
-                    filter_row("cat:year", "filter_cat:year", "", ""),
-                    filter_row("cat:players", "filter_cat:players", "2", ""),
-                    filter_row("cat:region", "filter_cat:region", "", ""),
-                    filter_row("filter_clear", "filter_clear", "", ""),
-                    filter_row("filter_apply", "filter_apply", "", ""),
+                    chosen("genre", "Platformer"),
+                    any("year"),
+                    chosen("players", "2"),
+                    any("region"),
+                    row("filter_clear", "filter_clear", "", "", "", MenuRole::Action),
                 ],
                 0,
             )
         };
         ov.set_list_title(title.into());
+        ov.set_list_form(true);
         ov.set_list_entries(slint::ModelRc::new(slint::VecModel::from(rows)));
         ov.set_list_index(index);
         ov.set_list_open(true);
@@ -319,6 +388,8 @@ fn main() {
                 rows.iter()
                     .enumerate()
                     .map(|(index, name)| MenuEntry {
+                        role: generated::MenuRole::default(),
+                        detail_key: slint::SharedString::default(),
                         id: format!("alternate_version:{index}").into(),
                         label: (*name).into(),
                         label_key: "".into(),
@@ -336,6 +407,8 @@ fn main() {
         app.global::<generated::Overlays>()
             .set_context_entries(slint::ModelRc::new(slint::VecModel::from(vec![
                 MenuEntry {
+                    role: generated::MenuRole::default(),
+                    detail_key: slint::SharedString::default(),
                     id: "more_info".into(),
                     label: "".into(),
                     label_key: "more_info".into(),
@@ -344,6 +417,8 @@ fn main() {
                     detail: "".into(),
                 },
                 MenuEntry {
+                    role: generated::MenuRole::default(),
+                    detail_key: slint::SharedString::default(),
                     id: "toggle_favorite".into(),
                     label: "".into(),
                     label_key: "favorite:add".into(),
@@ -352,6 +427,8 @@ fn main() {
                     detail: "".into(),
                 },
                 MenuEntry {
+                    role: generated::MenuRole::default(),
+                    detail_key: slint::SharedString::default(),
                     id: "write_card".into(),
                     label: "".into(),
                     label_key: "write_card".into(),
@@ -360,6 +437,8 @@ fn main() {
                     detail: "".into(),
                 },
                 MenuEntry {
+                    role: generated::MenuRole::default(),
+                    detail_key: slint::SharedString::default(),
                     id: "qr_code".into(),
                     label: "".into(),
                     label_key: "qr_code".into(),
@@ -368,6 +447,8 @@ fn main() {
                     detail: "".into(),
                 },
                 MenuEntry {
+                    role: generated::MenuRole::default(),
+                    detail_key: slint::SharedString::default(),
                     id: "add_to_hub".into(),
                     label: "".into(),
                     label_key: "add_to_hub".into(),
@@ -376,6 +457,8 @@ fn main() {
                     detail: "".into(),
                 },
                 MenuEntry {
+                    role: generated::MenuRole::default(),
+                    detail_key: slint::SharedString::default(),
                     id: "toggle_hidden".into(),
                     label: "".into(),
                     label_key: "hide:hide".into(),
@@ -384,6 +467,8 @@ fn main() {
                     detail: "".into(),
                 },
                 MenuEntry {
+                    role: generated::MenuRole::default(),
+                    detail_key: slint::SharedString::default(),
                     id: "scrape_game".into(),
                     label: "".into(),
                     label_key: "scrape_game".into(),
@@ -540,6 +625,8 @@ fn main() {
         let entries: Vec<MenuEntry> = values
             .iter()
             .map(|value| MenuEntry {
+                role: generated::MenuRole::default(),
+                detail_key: slint::SharedString::default(),
                 id: (*value).into(),
                 label: "".into(),
                 label_key: "".into(),
@@ -560,6 +647,8 @@ fn main() {
         ov.set_list_title("title:change_launcher".into());
         ov.set_list_entries(slint::ModelRc::new(slint::VecModel::from(vec![
             MenuEntry {
+                role: generated::MenuRole::default(),
+                detail_key: slint::SharedString::default(),
                 id: "default".into(),
                 label: "".into(),
                 label_key: "launcher:default".into(),
@@ -568,6 +657,8 @@ fn main() {
                 detail: "".into(),
             },
             MenuEntry {
+                role: generated::MenuRole::default(),
+                detail_key: slint::SharedString::default(),
                 id: "RetroArch".into(),
                 label: "RetroArch".into(),
                 label_key: "".into(),
@@ -576,6 +667,8 @@ fn main() {
                 detail: "".into(),
             },
             MenuEntry {
+                role: generated::MenuRole::default(),
+                detail_key: slint::SharedString::default(),
                 id: "DuckStation".into(),
                 label: "DuckStation".into(),
                 label_key: "".into(),
@@ -592,6 +685,8 @@ fn main() {
         ov.set_list_title("title:change_launcher".into());
         ov.set_list_entries(slint::ModelRc::new(slint::VecModel::from(vec![
             MenuEntry {
+                role: generated::MenuRole::default(),
+                detail_key: slint::SharedString::default(),
                 id: "default".into(),
                 label: "Default".into(),
                 label_key: "".into(),
@@ -600,6 +695,8 @@ fn main() {
                 detail: "".into(),
             },
             MenuEntry {
+                role: generated::MenuRole::default(),
+                detail_key: slint::SharedString::default(),
                 id: "alternate".into(),
                 label: "Alternate launcher".into(),
                 label_key: "".into(),
@@ -924,9 +1021,87 @@ fn main() {
 
 /// Push a Hub page built from a representative layout through the same
 /// rules the app uses (`zaparoo_app::hub`), at the scene's geometry.
+/// The Search screen: a typed query with live matches, the empty screen
+/// with its recent searches, or a folder search with tags chosen.
+fn fixture_search(app: &App, screen: &str) {
+    let view = app.global::<SearchView>();
+    let sizing = app.global::<Sizing>();
+    let collapsed = sizing.get_tier_240()
+        || sizing.get_swap_axes()
+        || sizing.get_screen_width() < sizing.get_screen_height() * 1.3;
+    let mut keys = keyboard::Keyboard::new(
+        zaparoo_app::keyboard::Layers::Basic,
+        zaparoo_app::search::QUERY_MAX_CHARS,
+    );
+    let row = |title: &str, detail: &str| SearchPaneRow {
+        title: title.into(),
+        detail: detail.into(),
+    };
+    let recents = screen.contains("recents");
+    let rows = if recents {
+        view.set_pane(SearchPane::Recents);
+        view.set_pane_clear(!collapsed);
+        view.set_zone(SearchZone::Pane);
+        view.set_pane_index(1);
+        vec![
+            row("mario kart", ""),
+            row("zelda", "Super Nintendo"),
+            row("Role-playing \u{b7} 1994", ""),
+        ]
+    } else {
+        keys.set_text("mario k");
+        keys.focus(zaparoo_app::keyboard::Key::Char('a'));
+        view.set_pane(SearchPane::Preview);
+        view.set_count_known(true);
+        view.set_count(12);
+        view.set_can_search(true);
+        vec![
+            row("Mario Kart 64", "Nintendo 64"),
+            row("Mario Kart DS", "Nintendo DS"),
+            row("Mario Kart: Super Circuit", "Game Boy Advance"),
+            row("Super Mario Kart", "Super Nintendo"),
+            row("Mario Kart Wii", "Wii"),
+            row("Mario Kart 8 Deluxe", "Switch"),
+            row("Mario Kart 7", "Nintendo 3DS"),
+            row("Mario Kart: Double Dash", "GameCube"),
+            row("Mario Kart Arcade GP", "Arcade"),
+            row("Mario Kart Tour", "Applications"),
+        ]
+    };
+    if screen.contains("scoped") {
+        // A folder search with a filter chosen, the cursor moved back into
+        // the query and focus on the Filter field.
+        view.set_scoped(true);
+        view.set_system_name("Super Nintendo".into());
+        view.set_scope_name("Racing".into());
+        view.set_filter_text("Racing +1".into());
+        view.set_zone(SearchZone::Filter);
+        keys.move_caret(false);
+        keys.move_caret(false);
+    }
+    let (before, at, after) = keys.display();
+    view.set_before(before);
+    view.set_at(at);
+    view.set_after(after);
+    view.set_keys(slint::ModelRc::new(slint::VecModel::from(keys.cells())));
+    view.set_key_rows(i32::try_from(keys.row_count()).unwrap_or(4));
+    view.set_key_index(i32::try_from(keys.index()).unwrap_or(0));
+    view.set_key_kind(KeyKind::Char);
+    view.set_pane_collapsed(collapsed);
+    view.set_pane_rows(slint::ModelRc::new(slint::VecModel::from(if collapsed {
+        Vec::new()
+    } else {
+        rows
+    })));
+}
+
 fn fixture_screen(screen: &str) -> Screen {
     if screen.starts_with("route-") {
         Screen::Hub
+    } else if screen.contains("search-results") {
+        Screen::SearchResults
+    } else if screen.contains("search") || screen.ends_with("system-picker") {
+        Screen::Search
     } else if screen.contains("update") {
         Screen::Update
     } else if matches!(screen, "context" | "context-alt" | "letters")
@@ -2099,6 +2274,9 @@ mod fixture_tests {
             ("favorite-systems", Screen::FavoriteSystems),
             ("favorites", Screen::Favorites),
             ("recents", Screen::Recents),
+            ("search", Screen::Search),
+            ("crt-search-scoped", Screen::Search),
+            ("search-results", Screen::SearchResults),
             ("game-info", Screen::Games),
             ("settings-page", Screen::Settings),
             ("about", Screen::About),
