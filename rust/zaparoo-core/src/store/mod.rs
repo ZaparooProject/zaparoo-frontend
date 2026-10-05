@@ -495,6 +495,32 @@ pub fn is_media_db_completion_edge(prev: &MediaStatusState, curr: &MediaStatusSt
     prev_busy && !curr_busy
 }
 
+/// Follows the media DB's busy periods and answers, on each idle edge,
+/// whether the run that just ended could have changed any art. Indexing
+/// and metadata imports can; optimizing alone cannot, and Core reports
+/// it as its own busy period after every index and when it rebuilds its
+/// browse cache at boot.
+#[derive(Debug, Clone, Copy)]
+pub struct MediaArtRun {
+    art: bool,
+}
+
+impl MediaArtRun {
+    /// A period already under way when first seen may have indexed or
+    /// imported before this client was watching.
+    pub fn new(initial: &MediaStatusState) -> Self {
+        Self {
+            art: initial.indexing || initial.optimizing || initial.scraping,
+        }
+    }
+
+    /// True on the completion edge of a run that indexed or imported.
+    pub fn step(&mut self, prev: &MediaStatusState, curr: &MediaStatusState) -> bool {
+        self.art |= curr.indexing || curr.scraping;
+        is_media_db_completion_edge(prev, curr) && std::mem::take(&mut self.art)
+    }
+}
+
 /// RTK-Query tag matching. Two tags match iff their kinds agree and at
 /// least one side has a `None` id (the "any" wildcard) or both sides
 /// share the same specific id. Used for both directions:
@@ -720,6 +746,62 @@ mod tests {
         // metadata fields change (totals, step display); no spurious
         // invalidation should fire on those.
         assert!(!is_media_db_completion_edge(&idle(), &idle()));
+    }
+
+    fn scraping() -> MediaStatusState {
+        MediaStatusState {
+            scraping: true,
+            ..idle()
+        }
+    }
+
+    /// Feed a sequence of snapshots and collect what each step answered.
+    fn art_edges(states: &[MediaStatusState]) -> Vec<bool> {
+        let mut run = MediaArtRun::new(&states[0]);
+        states
+            .windows(2)
+            .map(|pair| run.step(&pair[0], &pair[1]))
+            .collect()
+    }
+
+    #[test]
+    fn an_optimize_on_its_own_changes_no_art() {
+        assert_eq!(
+            art_edges(&[idle(), optimizing(), idle()]),
+            vec![false, false]
+        );
+    }
+
+    #[test]
+    fn an_index_reports_art_once_across_its_optimize() {
+        // Core announces the index done, then the optimize as its own run.
+        assert_eq!(
+            art_edges(&[idle(), busy(), idle(), optimizing(), idle()]),
+            vec![false, true, false, false]
+        );
+        // The same run without the idle gap between the two phases.
+        assert_eq!(
+            art_edges(&[idle(), busy(), optimizing(), idle()]),
+            vec![false, false, true]
+        );
+    }
+
+    #[test]
+    fn a_metadata_import_reports_art_on_each_job() {
+        assert_eq!(
+            art_edges(&[idle(), scraping(), idle(), scraping(), idle()]),
+            vec![false, true, false, true]
+        );
+    }
+
+    #[test]
+    fn a_run_first_seen_busy_is_assumed_to_have_changed_art() {
+        assert_eq!(art_edges(&[optimizing(), idle()]), vec![true]);
+        // Only that first period: the next optimize is known to be alone.
+        assert_eq!(
+            art_edges(&[optimizing(), idle(), optimizing(), idle()]),
+            vec![true, false, false]
+        );
     }
 
     // RTK-Query tag matching parity. See `tags_match` in this module.

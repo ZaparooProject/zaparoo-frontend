@@ -842,7 +842,7 @@ fn leave(ctx: &Ctx, app: &App) {
     }
     lock(&ctx.shared).persist.active_screen = crate::Screen::Hub.token().to_string();
     crate::router::save_persist(&ctx.shared);
-    crate::router::transition_to_screen(app, crate::Screen::Hub, -1);
+    crate::router::return_to_hub(ctx, app);
 }
 
 /// Delete the character before the cursor. A delete held long enough

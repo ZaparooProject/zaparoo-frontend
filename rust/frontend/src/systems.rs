@@ -1151,7 +1151,7 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
         actions::CANCEL => {
             lock(&ctx.shared).persist.active_screen = "hub".to_string();
             crate::router::save_persist(&ctx.shared);
-            crate::router::transition_to_screen(app, crate::Screen::Hub, -1);
+            crate::router::return_to_hub(ctx, app);
         }
         _ => {}
     }

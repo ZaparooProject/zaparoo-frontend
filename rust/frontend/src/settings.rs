@@ -638,7 +638,7 @@ fn dispatch(ctx: &Ctx, app: &App, action: &str) {
             actions::CANCEL => {
                 lock(&ctx.shared).persist.active_screen = "hub".to_string();
                 crate::router::save_persist(&ctx.shared);
-                crate::router::transition_to_screen(app, crate::Screen::Hub, -1);
+                crate::router::return_to_hub(ctx, app);
             }
             _ => {}
         }
@@ -978,16 +978,9 @@ fn apply(ctx: &Ctx, app: &App, id: &str, value: &str) {
     }
 }
 
-/// Persist the state file and mirror the durable half into
-/// `frontend.toml`.
-pub fn save(ctx: &Ctx, app: &App) {
-    let snapshot = {
-        let shared = lock(&ctx.shared);
-        shared.persist.clone()
-    };
-    persist::save(&snapshot);
-    let s = &snapshot.settings;
-    let mirror = zaparoo_core::config::SettingsMirror {
+/// Every setting that is mirrored into `frontend.toml`.
+pub(crate) fn mirror_of(s: &persist::SettingsState) -> zaparoo_core::config::SettingsMirror<'_> {
+    zaparoo_core::config::SettingsMirror {
         resolution: &s.resolution,
         language: &s.language,
         orientation: &s.orientation,
@@ -1014,7 +1007,18 @@ pub fn save(ctx: &Ctx, app: &App) {
         crt_video_standard: &s.crt_video_standard,
         crt_h_offset: s.crt_h_offset,
         crt_v_offset: s.crt_v_offset,
+    }
+}
+
+/// Persist the state file and mirror the durable half into
+/// `frontend.toml`.
+pub fn save(ctx: &Ctx, app: &App) {
+    let snapshot = {
+        let shared = lock(&ctx.shared);
+        shared.persist.clone()
     };
+    persist::save(&snapshot);
+    let mirror = mirror_of(&snapshot.settings);
     if let Err(e) = zaparoo_core::config::save_settings_mirror(&ctx.config_path, mirror) {
         tracing::warn!("could not mirror settings to config: {e}");
         crate::router::report_action_error(ctx, app, "setting", "");

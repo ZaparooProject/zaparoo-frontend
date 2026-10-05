@@ -167,11 +167,15 @@ private `_` recipe. Container builds write to `rust/target/docker/`.
   competes with Core, the FPGA wrapper, and the active core for it.
   **Scoped exception:** `rust/frontend/src/hub_covers.rs` persists a small
   path *list* (`hub_covers.toml` in the cache dir; never image bytes or
-  metadata) mapping each Hub `zapscript` tile and the Resume tile to the Core
-  thumbnail path Core itself already wrote to its thumbnail cache (on MiSTer
+  metadata) mapping each Hub `zapscript` tile, the Resume tile, and the browse
+  page a game was last launched from to the Core thumbnail path Core itself
+  already wrote to its thumbnail cache (on MiSTer
   `/media/fat/zaparoo/cache/thumbs/`), so those covers can seed the in-memory
-  cache before the first frame on a cold boot. Bounded by
-  `zaparoo_app::covers::MAX_HUB_ENTRIES` plus the Resume tile, only where Core
+  cache on a cold boot: before the first frame for the Hub, and while the rows
+  load for a browse screen. The browse section is written when a launch starts
+  or the frontend goes dormant, never while browsing. Bounded by
+  `zaparoo_app::covers::MAX_HUB_ENTRIES` plus the Resume tile and
+  `MAX_BROWSE_ENTRIES`, only where Core
   is colocated and its files are readable (MiSTer, and an embedding host that
   runs Core in the same app), and self-healing: a stale path just fails to open and falls
   through to a normal Core request. Do not extend this carve-out to any other

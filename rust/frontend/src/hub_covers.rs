@@ -20,6 +20,10 @@
 // ordinary request for that one tile: one extra round trip, never a
 // wrong image.
 //
+// A third section does the same for the browse page a game was launched
+// from, so coming back from that game shows its covers without a round
+// trip each. It is written when a launch starts, not while browsing.
+//
 // The project's "do not persist Core metadata to disk" rule carries an
 // explicit, scoped exception for exactly this file.
 
@@ -29,7 +33,10 @@ use std::sync::{Mutex, PoisonError};
 
 use serde::{Deserialize, Serialize};
 use slint::ComponentHandle;
-use zaparoo_app::covers::{HUB_TILE_MAX_SIZE, MAX_HUB_ENTRIES, MAX_LOCAL_IMAGE_BYTES};
+use zaparoo_app::covers::{
+    Fit, HUB_TILE_MAX_SIZE, MAX_BROWSE_COVER_SIZE, MAX_BROWSE_ENTRIES, MAX_HUB_ENTRIES,
+    MAX_LOCAL_IMAGE_BYTES,
+};
 use zaparoo_core::hub_layout::HubItemKind;
 use zaparoo_core::media_types::MediaImageParams;
 
@@ -44,6 +51,53 @@ const MAX_MANIFEST_BYTES: u64 = 64 * 1024;
 struct Manifest {
     hub_entries: Vec<ManifestEntry>,
     resume: Option<ManifestEntry>,
+    browse: Vec<BrowseEntry>,
+}
+
+/// One browse cover, with every field of the key it is cached under: a
+/// restore at another scene size computes other keys and just misses.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct BrowseEntry {
+    media_id: Option<i64>,
+    system_id: String,
+    path: String,
+    local_path: String,
+    max_size: u32,
+    fit_width: u32,
+    fit_height: u32,
+}
+
+impl BrowseEntry {
+    fn key(&self) -> MediaKey {
+        MediaKey {
+            media_id: self.media_id,
+            system: self.system_id.clone(),
+            path: self.path.clone(),
+            max_size: self.max_size,
+            fit: Fit {
+                width: self.fit_width,
+                height: self.fit_height,
+            },
+            image_type: None,
+        }
+    }
+
+    fn of(key: MediaKey, local_path: String) -> Self {
+        Self {
+            media_id: key.media_id,
+            system_id: key.system,
+            path: key.path,
+            local_path,
+            max_size: key.max_size,
+            fit_width: key.fit.width,
+            fit_height: key.fit.height,
+        }
+    }
+}
+
+/// The screens whose covers the browse section holds.
+fn is_browse_screen(token: &str) -> bool {
+    matches!(token, "games" | "favorites" | "recents" | "search-results")
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -93,6 +147,7 @@ fn read_manifest_from(path: &Path) -> Manifest {
         }
         let mut manifest: Manifest = toml::from_str(&contents).ok()?;
         manifest.hub_entries.truncate(MAX_HUB_ENTRIES);
+        manifest.browse.truncate(MAX_BROWSE_ENTRIES);
         Some(manifest)
     };
     read().unwrap_or_default()
@@ -174,25 +229,48 @@ fn split_visible(
 }
 
 fn seed_entry(cache: &MediaCache, entry: &ManifestEntry, epoch: u64) -> bool {
-    if entry.max_size == 0 || entry.max_size > HUB_TILE_MAX_SIZE || cache.seed_epoch() != epoch {
+    if entry.max_size > HUB_TILE_MAX_SIZE {
         return false;
     }
-    let key = entry_key(cache, entry);
-    if cache.is_cached(&key) {
+    seed_key(
+        cache,
+        entry_key(cache, entry),
+        &entry.local_path,
+        entry.max_size,
+        epoch,
+    )
+}
+
+fn seed_browse_entry(cache: &MediaCache, entry: &BrowseEntry, epoch: u64) -> bool {
+    if entry.max_size > MAX_BROWSE_COVER_SIZE {
         return false;
     }
-    let Some(image) = load_entry(entry, key.fit) else {
+    seed_key(cache, entry.key(), &entry.local_path, entry.max_size, epoch)
+}
+
+fn seed_key(
+    cache: &MediaCache,
+    key: MediaKey,
+    local_path: &str,
+    max_size: u32,
+    epoch: u64,
+) -> bool {
+    if max_size == 0 || cache.seed_epoch() != epoch || cache.is_cached(&key) {
+        return false;
+    }
+    let Some(image) = load_entry(local_path, max_size, key.fit) else {
         return false;
     };
-    cache.seed_current(key, image, epoch)
+    cache.seed_current(key, image, local_path, epoch)
 }
 
 fn load_entry(
-    entry: &ManifestEntry,
-    fit: zaparoo_app::covers::Fit,
+    local_path: &str,
+    max_size: u32,
+    fit: Fit,
 ) -> Option<crate::media_cache::DecodedImage> {
     let bytes =
-        crate::media_cache::read_local_image_file(&entry.local_path, MAX_LOCAL_IMAGE_BYTES).ok()?;
+        crate::media_cache::read_local_image_file(local_path, MAX_LOCAL_IMAGE_BYTES).ok()?;
     let mut reader = image::ImageReader::new(std::io::Cursor::new(bytes))
         .with_guessed_format()
         .ok()?;
@@ -203,24 +281,25 @@ fn load_entry(
     reader.limits(limits);
     let decoded = reader.decode().ok()?;
     // A box caps the image on its own; without one the tier does.
-    let decoded = if fit == zaparoo_app::covers::Fit::SOURCE
-        && (decoded.width() > entry.max_size || decoded.height() > entry.max_size)
-    {
-        decoded.thumbnail(entry.max_size, entry.max_size)
-    } else {
-        decoded
-    };
+    let decoded =
+        if fit == Fit::SOURCE && (decoded.width() > max_size || decoded.height() > max_size) {
+            decoded.thumbnail(max_size, max_size)
+        } else {
+            decoded
+        };
     Some(crate::media_cache::fitted(decoded, fit))
 }
 
 /// Called after Hub geometry and persisted focus are seated, before app.run.
 /// Only a Hub restore reads its visible page synchronously. A non-Hub restore
-/// does not even open the manifest on the UI thread.
+/// does not even open the manifest on the UI thread; a restore into a browse
+/// screen seeds that screen's covers first, while its rows are still loading.
 pub fn seed_startup(ctx: &std::sync::Arc<Ctx>, app: &crate::App) -> crate::scoped_task::ScopedTask {
     if !eligible() {
         return crate::scoped_task::ScopedTask::default();
     }
     let epoch = ctx.media.seed_epoch();
+    let restores_browse = is_browse_screen(&lock(&ctx.shared).persist.active_screen);
     let foreground = {
         let shared = lock(&ctx.shared);
         !matches!(
@@ -254,20 +333,40 @@ pub fn seed_startup(ctx: &std::sync::Arc<Ctx>, app: &crate::App) -> crate::scope
     let ctx = ctx.clone();
     let weak = app.as_weak();
     let task = ctx.handle.clone().spawn(async move {
-        let entries = match deferred {
-            Some(entries) => entries,
-            None => tokio::task::spawn_blocking(|| {
+        let (browse, entries) = match deferred {
+            Some(entries) => (Vec::new(), entries),
+            None => tokio::task::spawn_blocking(move || {
                 let manifest = read_manifest_from(&manifest_path());
-                manifest
+                let browse = if restores_browse {
+                    manifest.browse
+                } else {
+                    Vec::new()
+                };
+                let entries = manifest
                     .hub_entries
                     .into_iter()
                     .chain(manifest.resume)
-                    .collect()
+                    .collect();
+                (browse, entries)
             })
             .await
             .unwrap_or_default(),
         };
         let mut landed = Vec::new();
+        for entry in browse {
+            if ctx.media.seed_epoch() != epoch || *ctx.dormant.borrow() {
+                return;
+            }
+            let key = entry.key();
+            let cache = ctx.media.clone();
+            let seeded =
+                tokio::task::spawn_blocking(move || seed_browse_entry(&cache, &entry, epoch))
+                    .await
+                    .unwrap_or(false);
+            if seeded {
+                landed.push(key);
+            }
+        }
         for entry in entries {
             if ctx.media.seed_epoch() != epoch || *ctx.dormant.borrow() {
                 return;
@@ -284,7 +383,7 @@ pub fn seed_startup(ctx: &std::sync::Arc<Ctx>, app: &crate::App) -> crate::scope
         if !landed.is_empty() && ctx.media.seed_epoch() == epoch {
             let _ = weak.upgrade_in_event_loop(move |app| {
                 if ctx.media.seed_epoch() == epoch {
-                    crate::hub::covers_landed(&ctx, &app, &landed);
+                    crate::deliver_covers(&ctx, &app, &landed);
                 }
             });
         }
@@ -429,6 +528,35 @@ pub fn refresh_hub_entries(ctx: &Ctx) {
     });
 }
 
+/// Record the covers of the browse page on screen, for the cold start
+/// that follows a launched game. Called as a launch starts and as the
+/// frontend goes dormant, never while browsing: the manifest is on the
+/// SD card. Nothing to record leaves the previous page in place; its
+/// keys just miss if the restore lands somewhere else.
+pub fn record_browse_page(ctx: &Ctx) {
+    if !eligible() || !is_browse_screen(&lock(&ctx.shared).persist.active_screen) {
+        return;
+    }
+    let browse: Vec<BrowseEntry> = ctx
+        .media
+        .wanted_local_paths(MAX_BROWSE_ENTRIES)
+        .into_iter()
+        .map(|(key, local_path)| BrowseEntry::of(key, local_path))
+        .collect();
+    if browse.is_empty() {
+        return;
+    }
+    ctx.handle.spawn_blocking(move || {
+        update_manifest(|manifest| {
+            if manifest.browse == browse {
+                return false;
+            }
+            manifest.browse = browse;
+            true
+        });
+    });
+}
+
 /// Update or clear the resume half. `None` means there is nothing to
 /// resume.
 pub fn refresh_resume_entry(ctx: &Ctx, target: Option<(String, String)>) {
@@ -485,6 +613,7 @@ mod tests {
         let manifest = Manifest {
             hub_entries: vec![entry("offscreen"), entry("visible"), entry("deleted")],
             resume: Some(entry("resume")),
+            browse: Vec::new(),
         };
         let (now, later) =
             split_visible(manifest.clone(), &[("NES".into(), "visible".into())], false);
@@ -531,11 +660,97 @@ mod tests {
     }
 
     #[test]
+    fn a_browse_cover_seeds_under_its_own_key_and_keeps_its_file() {
+        let dir = std::env::temp_dir().join(format!("zaparoo-browse-seed-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("scratch dir");
+        let path = dir.join("cover.png");
+        image::RgbaImage::new(512, 256).save(&path).expect("PNG");
+        let local_path = path.to_string_lossy().into_owned();
+        let entry = BrowseEntry {
+            media_id: Some(7),
+            system_id: "SNES".into(),
+            path: "/games/SNES/Zelda.sfc".into(),
+            local_path: local_path.clone(),
+            max_size: 512,
+            fit_width: 200,
+            fit_height: 200,
+        };
+        let cache = MediaCache::new();
+        let epoch = cache.seed_epoch();
+
+        assert!(seed_browse_entry(&cache, &entry, epoch));
+
+        let image = cache.get(&entry.key()).expect("seeded");
+        assert_eq!((image.buffer.width(), image.buffer.height()), (200, 100));
+        // The next launch records it again, from the same file.
+        cache.request_wanted(vec![entry.key()]);
+        let recorded: Vec<BrowseEntry> = cache
+            .wanted_local_paths(MAX_BROWSE_ENTRIES)
+            .into_iter()
+            .map(|(key, path)| BrowseEntry::of(key, path))
+            .collect();
+        assert_eq!(recorded, vec![entry.clone()]);
+
+        // A tier no browse cover uses, and a file that has gone, both
+        // fall through to the ordinary request.
+        let oversized = BrowseEntry {
+            media_id: Some(8),
+            max_size: MAX_BROWSE_COVER_SIZE + 1,
+            ..entry.clone()
+        };
+        assert!(!seed_browse_entry(&cache, &oversized, epoch));
+        std::fs::remove_dir_all(dir).expect("cleanup");
+        let gone = BrowseEntry {
+            media_id: Some(9),
+            ..entry
+        };
+        assert!(!seed_browse_entry(&cache, &gone, epoch));
+        assert!(!cache.is_cached(&gone.key()));
+    }
+
+    #[test]
+    fn a_manifest_holds_no_more_than_its_caps() {
+        let dir = std::env::temp_dir().join(format!("zaparoo-browse-cap-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("scratch dir");
+        let path = dir.join(MANIFEST_FILE_NAME);
+        let browse = (0..MAX_BROWSE_ENTRIES as i64 + 5)
+            .map(|id| BrowseEntry {
+                media_id: Some(id),
+                system_id: "SNES".into(),
+                path: format!("/games/{id}.sfc"),
+                local_path: format!("/thumbs/{id}.webp"),
+                max_size: 256,
+                fit_width: 100,
+                fit_height: 100,
+            })
+            .collect();
+        write_manifest_to(
+            &path,
+            &Manifest {
+                browse,
+                ..Manifest::default()
+            },
+        );
+        assert_eq!(read_manifest_from(&path).browse.len(), MAX_BROWSE_ENTRIES);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn a_manifest_round_trips_through_its_file() {
         let dir = std::env::temp_dir().join("zaparoo-hub-covers-test");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("scratch dir");
         let path = dir.join(MANIFEST_FILE_NAME);
+        let browse = BrowseEntry {
+            media_id: Some(42),
+            system_id: "SNES".into(),
+            path: "/games/SNES/Metroid.sfc".into(),
+            local_path: "/media/fat/zaparoo/cache/thumbs/v2/a/c.webp".into(),
+            max_size: 512,
+            fit_width: 227,
+            fit_height: 208,
+        };
         let manifest = Manifest {
             hub_entries: vec![ManifestEntry {
                 system_id: "SNES".into(),
@@ -544,9 +759,11 @@ mod tests {
                 max_size: HUB_TILE_MAX_SIZE,
             }],
             resume: None,
+            browse: vec![browse.clone()],
         };
         write_manifest_to(&path, &manifest);
         let read = read_manifest_from(&path);
+        assert_eq!(read.browse, vec![browse]);
         assert_eq!(read.hub_entries.len(), 1);
         assert_eq!(read.hub_entries[0].system_id, "SNES");
         assert_eq!(read.hub_entries[0].max_size, HUB_TILE_MAX_SIZE);

@@ -77,6 +77,11 @@ struct CachedImage {
     average_color: Option<[u8; 3]>,
     /// Recency stamp: the cache's tick at the last read or insert.
     used: u64,
+    /// Set by `clear`: the image stays paintable, but Core is asked for
+    /// it again the next time it is wanted.
+    stale: bool,
+    /// The thumbnail file Core named for this image, when it delivered one.
+    local_path: Option<String>,
 }
 
 #[derive(Debug, Default)]
@@ -110,9 +115,10 @@ impl CacheInner {
     }
 
     /// Put `key` at the front of the queue. False when there is nothing
-    /// to fetch: it is cached, known missing, or already in flight.
+    /// to fetch: it is cached and current, known missing, or already in
+    /// flight.
     fn push_front(&mut self, key: MediaKey) -> bool {
-        if self.map.contains_key(&key) || self.negatives.contains(&key) {
+        if self.map.get(&key).is_some_and(|entry| !entry.stale) || self.negatives.contains(&key) {
             return false;
         }
         if self.queued.contains(&key) {
@@ -132,7 +138,7 @@ impl CacheInner {
         true
     }
 
-    fn insert(&mut self, key: MediaKey, image: DecodedImage) {
+    fn insert(&mut self, key: MediaKey, image: DecodedImage, local_path: Option<String>) {
         self.queued.remove(&key);
         let used = self.stamp();
         self.bytes += image.byte_size();
@@ -147,6 +153,8 @@ impl CacheInner {
                 image,
                 average_color,
                 used,
+                stale: false,
+                local_path,
             },
         ) {
             self.bytes -= replaced.image.byte_size();
@@ -156,6 +164,10 @@ impl CacheInner {
 
     fn insert_negative(&mut self, key: MediaKey) {
         self.queued.remove(&key);
+        // Art kept through a rescan that Core no longer has.
+        if let Some(removed) = self.map.remove(&key) {
+            self.bytes -= removed.image.byte_size();
+        }
         if self.negatives.insert(key.clone()) {
             self.negative_order.push_back(key);
             while self.negative_order.len() > NEGATIVE_CAP {
@@ -341,6 +353,27 @@ impl MediaCache {
         lock_inner(&self.inner).map.contains_key(key)
     }
 
+    /// The browse view's current covers that Core delivered as files, the
+    /// most recently painted first, with the file each one came from.
+    pub(crate) fn wanted_local_paths(&self, limit: usize) -> Vec<(MediaKey, String)> {
+        let inner = lock_inner(&self.inner);
+        let mut found: Vec<(u64, &MediaKey, &String)> = inner
+            .wanted
+            .iter()
+            .filter(|key| key.image_type.is_none())
+            .filter_map(|key| {
+                let entry = inner.map.get(key)?;
+                Some((entry.used, key, entry.local_path.as_ref()?))
+            })
+            .collect();
+        found.sort_unstable_by_key(|entry| std::cmp::Reverse(entry.0));
+        found
+            .into_iter()
+            .take(limit)
+            .map(|(_, key, path)| (key.clone(), path.clone()))
+            .collect()
+    }
+
     /// Put an in-flight request back on the queue, behind the dormancy
     /// gate or a reconnect. Its queued identity remains set, so no
     /// duplicate can join it while it waits; it waits behind newer work.
@@ -365,15 +398,18 @@ impl MediaCache {
         inner.seed_epoch = inner.seed_epoch.wrapping_add(1);
     }
 
-    /// Forget every image and every "no image" answer. An index or a
-    /// metadata import can add, replace or remove art for any game, and a
-    /// remembered answer would otherwise hold for the whole session.
-    /// Queued requests stay queued; one already in flight is fetched
-    /// again when it lands (see `store_fetched`).
+    /// Stop trusting every image and every "no image" answer. An index or
+    /// a metadata import can add, replace or remove art for any game, and
+    /// a remembered answer would otherwise hold for the whole session.
+    /// Images stay paintable until Core answers again, so a tile whose art
+    /// did not change never goes back to its placeholder. Queued requests
+    /// stay queued; one already in flight is fetched again when it lands
+    /// (see `store_fetched`).
     pub fn clear(&self) {
         let mut inner = lock_inner(&self.inner);
-        inner.map.clear();
-        inner.bytes = 0;
+        for entry in inner.map.values_mut() {
+            entry.stale = true;
+        }
         inner.negatives.clear();
         inner.negative_order.clear();
         inner.generation = inner.generation.wrapping_add(1);
@@ -388,12 +424,18 @@ impl MediaCache {
     /// or `None` for no image. When `clear` ran since, the answer may
     /// predate it, so it is dropped and the still-queued key goes back on
     /// the queue. Returns whether the result was stored.
-    fn store_fetched(&self, key: MediaKey, generation: u64, image: Option<DecodedImage>) -> bool {
+    fn store_fetched(
+        &self,
+        key: MediaKey,
+        generation: u64,
+        image: Option<DecodedImage>,
+        local_path: Option<String>,
+    ) -> bool {
         {
             let mut inner = lock_inner(&self.inner);
             if inner.generation == generation {
                 match image {
-                    Some(image) => inner.insert(key, image),
+                    Some(image) => inner.insert(key, image, local_path),
                     None => inner.insert_negative(key),
                 }
                 self.wake.notify_one();
@@ -409,13 +451,24 @@ impl MediaCache {
         self.insert(key, image);
     }
 
+    #[cfg(test)]
+    pub(crate) fn seed_with_path(&self, key: MediaKey, image: DecodedImage, local_path: &str) {
+        lock_inner(&self.inner).insert(key, image, Some(local_path.to_string()));
+    }
+
     pub(crate) fn seed_epoch(&self) -> u64 {
         lock_inner(&self.inner).seed_epoch
     }
 
     /// Disk seeding must not overwrite newer Core results or repopulate art
     /// after a memory trim/rescan canceled its generation.
-    pub(crate) fn seed_current(&self, key: MediaKey, image: DecodedImage, epoch: u64) -> bool {
+    pub(crate) fn seed_current(
+        &self,
+        key: MediaKey,
+        image: DecodedImage,
+        local_path: &str,
+        epoch: u64,
+    ) -> bool {
         let mut inner = lock_inner(&self.inner);
         if inner.seed_epoch != epoch
             || inner.map.contains_key(&key)
@@ -423,13 +476,13 @@ impl MediaCache {
         {
             return false;
         }
-        inner.insert(key, image);
+        inner.insert(key, image, Some(local_path.to_string()));
         true
     }
 
     #[cfg(test)]
     fn insert(&self, key: MediaKey, image: DecodedImage) {
-        lock_inner(&self.inner).insert(key, image);
+        lock_inner(&self.inner).insert(key, image, None);
         self.wake.notify_one();
     }
 
@@ -723,7 +776,10 @@ async fn fetch_one(
                 } else {
                     decode(&result.data, key.fit)
                 };
-            if cache.store_fetched(key.clone(), generation, image) {
+            let local_path = result
+                .local_path
+                .filter(|path| !path.is_empty() && local_bytes.is_some());
+            if cache.store_fetched(key.clone(), generation, image, local_path) {
                 let _ = done.send(key);
             }
         }
@@ -746,7 +802,7 @@ async fn fetch_one(
                 return;
             }
             tracing::debug!(path = %key.path, "media.image failed: {}", e.message);
-            if cache.store_fetched(key.clone(), generation, None) {
+            if cache.store_fetched(key.clone(), generation, None, None) {
                 let _ = done.send(key);
             }
         }
@@ -833,7 +889,7 @@ mod tests {
         assert!(matches!(next.as_mut().poll(&mut context), Poll::Pending));
         // A failed preview must release the dependency too: the full art can
         // still succeed, and no synthetic color is stored for the failure.
-        assert!(cache.store_fetched(preview.clone(), cache.generation(), None));
+        assert!(cache.store_fetched(preview.clone(), cache.generation(), None, None));
         assert!(matches!(next.as_mut().poll(&mut context), Poll::Ready(key) if key == full));
         assert_eq!(cache.average_color(&preview), None);
     }
@@ -850,14 +906,14 @@ mod tests {
         assert_eq!(cache.next_pending().await, preview);
         let generation = cache.generation();
         cache.clear();
-        assert!(!cache.store_fetched(preview.clone(), generation, Some(image())));
+        assert!(!cache.store_fetched(preview.clone(), generation, Some(image()), None));
         assert_eq!(cache.average_color(&preview), None);
         assert_eq!(
             cache.next_pending().await,
             preview,
             "stale preview retries before full cover"
         );
-        assert!(cache.store_fetched(preview.clone(), cache.generation(), Some(image())));
+        assert!(cache.store_fetched(preview.clone(), cache.generation(), Some(image()), None));
         assert_eq!(cache.average_color(&preview), Some([20, 60, 100]));
         assert_eq!(cache.next_pending().await, full);
         cache.clear_decoded();
@@ -984,8 +1040,8 @@ mod tests {
 
         // Both answers predate the clear: neither is stored, and each key
         // goes back on the queue instead of staying stuck queued.
-        assert!(!cache.store_fetched(key(1), before, Some(img(64))));
-        assert!(!cache.store_fetched(key(2), before, None));
+        assert!(!cache.store_fetched(key(1), before, Some(img(64)), None));
+        assert!(!cache.store_fetched(key(2), before, None, None));
         assert!(!cache.is_cached(&key(1)));
         assert!(!cache.is_negative(&key(2)));
         let mut again = pending(&cache);
@@ -994,10 +1050,97 @@ mod tests {
 
         // The retry runs under the new generation and lands.
         let current = cache.generation();
-        assert!(cache.store_fetched(key(1), current, Some(img(64))));
-        assert!(cache.store_fetched(key(2), current, None));
+        assert!(cache.store_fetched(key(1), current, Some(img(64)), None));
+        assert!(cache.store_fetched(key(2), current, None, None));
         assert!(cache.is_cached(&key(1)));
         assert!(cache.is_negative(&key(2)));
+    }
+
+    #[test]
+    fn a_cleared_cover_stays_paintable_and_is_asked_for_again() {
+        let cache = MediaCache::new();
+        cache.seed(key(1), img(64));
+        cache.enqueue(key(1));
+        assert!(pending(&cache).is_empty(), "a current cover is not fetched");
+
+        cache.clear();
+
+        assert!(cache.get(&key(1)).is_some(), "the old art stays on screen");
+        cache.enqueue(key(1));
+        assert_eq!(pending(&cache), vec![1]);
+        assert_eq!(pop(&cache), Some(key(1)));
+
+        // Core's answer replaces it in place, and it is current again.
+        let fresh = img(128);
+        let bytes = fresh.byte_size();
+        assert!(cache.store_fetched(key(1), cache.generation(), Some(fresh), None));
+        assert_eq!(lock_inner(&cache.inner).bytes, bytes);
+        cache.enqueue(key(1));
+        assert!(pending(&cache).is_empty());
+    }
+
+    #[test]
+    fn a_cleared_cover_core_no_longer_has_is_dropped() {
+        let cache = MediaCache::new();
+        cache.seed(key(1), img(64));
+        cache.clear();
+        cache.enqueue(key(1));
+        assert_eq!(pop(&cache), Some(key(1)));
+
+        assert!(cache.store_fetched(key(1), cache.generation(), None, None));
+
+        assert!(!cache.is_cached(&key(1)));
+        assert!(cache.is_negative(&key(1)));
+        assert_eq!(lock_inner(&cache.inner).bytes, 0);
+    }
+
+    #[test]
+    fn cleared_covers_still_count_toward_the_cap() {
+        let cache = MediaCache::new();
+        let half = CACHE_CAP_BYTES / 2;
+        cache.seed(key(1), img(half));
+        cache.seed(key(2), img(half));
+        cache.clear();
+
+        cache.seed(key(3), img(half));
+
+        assert!(
+            !cache.is_cached(&key(1)),
+            "the oldest stale cover is evicted"
+        );
+        assert!(lock_inner(&cache.inner).bytes <= CACHE_CAP_BYTES);
+    }
+
+    #[test]
+    fn wanted_local_paths_are_the_browse_window_most_recent_first() {
+        let cache = MediaCache::new();
+        cache.seed_with_path(key(1), img(16), "/thumbs/1");
+        cache.seed_with_path(key(2), img(16), "/thumbs/2");
+        cache.seed_with_path(key(3), img(16), "/thumbs/3");
+        // Delivered inline: there is no file to point at.
+        cache.seed(key(4), img(16));
+        // Cached with a file, but not in the browse window.
+        cache.seed_with_path(key(5), img(16), "/thumbs/5");
+        cache.request_wanted(vec![key(1), key(2), key(3), key(4), key(6)]);
+        // Painted last, so it leads.
+        assert!(cache.get(&key(2)).is_some());
+
+        let ids = |limit| -> Vec<(i64, String)> {
+            cache
+                .wanted_local_paths(limit)
+                .into_iter()
+                .filter_map(|(key, path)| Some((key.media_id?, path)))
+                .collect()
+        };
+        assert_eq!(
+            ids(8),
+            vec![
+                (2, "/thumbs/2".to_string()),
+                (3, "/thumbs/3".to_string()),
+                (1, "/thumbs/1".to_string()),
+            ]
+        );
+        assert_eq!(ids(1), vec![(2, "/thumbs/2".to_string())]);
     }
 
     #[test]
