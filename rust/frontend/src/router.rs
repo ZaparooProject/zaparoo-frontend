@@ -835,6 +835,14 @@ pub(crate) fn transition_to_screen(app: &App, target: crate::Screen, _direction:
     finish_restore(app);
 }
 
+/// Publish the Hub and render it in the same turn. Only a render of the
+/// active Hub asks for its logos, and the screen it comes back from has
+/// taken the one logo window in the meantime.
+pub(crate) fn return_to_hub(ctx: &Ctx, app: &App) {
+    transition_to_screen(app, crate::Screen::Hub, -1);
+    crate::hub::render(ctx, app);
+}
+
 type RestoreHook = std::rc::Rc<dyn Fn(&App)>;
 
 thread_local! {
@@ -940,9 +948,10 @@ pub(crate) fn abandon_restore(ctx: &Ctx, app: &App) {
     };
     crate::navigation::finish(app);
     if parent == crate::Screen::Hub {
-        crate::hub::render(ctx, app);
+        return_to_hub(ctx, app);
+    } else {
+        transition_to_screen(app, parent, -1);
     }
-    transition_to_screen(app, parent, -1);
 }
 
 pub(crate) fn transition_settings_page(
@@ -1164,7 +1173,7 @@ fn dispatch_action(ctx: &Ctx, app: &App, action: &str) {
         crate::Screen::Search => crate::search::handle_action(ctx, app, action),
         crate::Screen::Settings => crate::settings::handle_action(ctx, app, action),
         crate::Screen::About => about_action(ctx, app, action),
-        crate::Screen::Update => crate::update::handle_action(app, action),
+        crate::Screen::Update => crate::update::handle_action(ctx, app, action),
         crate::Screen::None => {}
     }
 }
@@ -1986,7 +1995,7 @@ fn favorites_page_menu_accept(ctx: &Ctx, app: &App, id: &str) {
         "back_to_hub" => {
             lock(&ctx.shared).persist.active_screen = "hub".to_string();
             save_persist(&ctx.shared);
-            transition_to_screen(app, crate::Screen::Hub, -1);
+            return_to_hub(ctx, app);
         }
         _ => {}
     }
@@ -2377,6 +2386,7 @@ pub(crate) fn launch_first(ctx: &Ctx, app: &App, candidates: Vec<String>, name: 
         return;
     }
     crate::perf::mark("launch-press", "");
+    crate::hub_covers::record_browse_page(ctx);
     // The tile the user pressed stays pressed until Core answers, so the
     // feedback is where the eye already is. The header line is the second,
     // worded cue and only appears if the wait becomes one.

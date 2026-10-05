@@ -188,7 +188,7 @@ pub fn enter(app: &App) {
 }
 
 /// One key press while the Update screen is the active surface.
-pub fn handle_action(app: &App, action: &str) {
+pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
     let input = match action {
         actions::UP => api::Input::Up,
         actions::DOWN => api::Input::Down,
@@ -204,7 +204,7 @@ pub fn handle_action(app: &App, action: &str) {
         Some(session) => session.input(input),
         // No module behind the screen: the only sensible key is Back.
         None if input == api::Input::Cancel => {
-            crate::router::transition_to_screen(app, Screen::Hub, -1);
+            crate::router::return_to_hub(ctx, app);
         }
         None => {}
     }
@@ -364,7 +364,7 @@ pub(crate) fn run_effect(ctx: &Arc<Ctx>, app: &App, effect: api::Effect) {
         api::Effect::LeaveToHub => {
             "hub".clone_into(&mut crate::router::lock(&ctx.shared).persist.active_screen);
             crate::router::save_persist(&ctx.shared);
-            crate::router::transition_to_screen(app, Screen::Hub, -1);
+            crate::router::return_to_hub(ctx, app);
         }
         api::Effect::ConfirmStop => crate::router::open_dialog(
             app,

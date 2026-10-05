@@ -3117,7 +3117,11 @@ fn cancel(ctx: &Ctx, app: &App) {
         crate::systems::return_to_favorites(ctx, app);
         return;
     }
-    crate::router::transition_to_screen(app, target, -1);
+    if target == crate::Screen::Hub {
+        crate::router::return_to_hub(ctx, app);
+    } else {
+        crate::router::transition_to_screen(app, target, -1);
+    }
 }
 
 /// Jump-to-letter landing (`GamesScreen.jumpToItem`): the bucket's first

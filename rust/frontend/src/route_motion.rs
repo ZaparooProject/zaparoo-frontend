@@ -2217,6 +2217,177 @@ fn entering_systems_queues_logos_after_route_commit_without_an_extra_key() {
 #[test]
 #[allow(
     clippy::expect_used,
+    reason = "the Hub fixture pins one system with embedded artwork"
+)]
+fn returning_to_the_hub_requests_its_logos_without_an_extra_key() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.hub.layout.items = vec![zaparoo_core::hub_layout::HubItem {
+            kind_raw: "zapscript".into(),
+            script: "**launch.system:SNES".into(),
+            system: "SNES".into(),
+            ..Default::default()
+        }];
+        shared.hub.categories_loaded = true;
+        shared.hub.restore_done = true;
+    }
+    let shell = app.global::<Shell>();
+    // A cold restore into another screen: the Hub is resolved beneath it,
+    // and that screen's render takes the one logo window.
+    shell.set_active_screen(Screen::Systems);
+    crate::hub::rebuild(&ctx, &app);
+    crate::systems::render(&ctx, &app);
+    advance(16);
+    assert!(
+        ctx.logos.hold_job().is_none(),
+        "the Hub is not on screen yet"
+    );
+    let tile = || {
+        app.global::<HubView>()
+            .get_cells()
+            .row_data(0)
+            .expect("pinned system tile")
+    };
+    assert!(!tile().has_cover);
+
+    crate::router::handle_action(&ctx, &app, "cancel");
+
+    assert_eq!(shell.get_active_screen(), Screen::Hub);
+    let finish = ctx
+        .logos
+        .hold_job()
+        .expect("the returned-to Hub must request art without input");
+    finish();
+    crate::system_logos::refresh(&ctx, &app);
+    assert!(tile().has_cover);
+    settle(&window);
+}
+
+#[test]
+#[allow(
+    clippy::expect_used,
+    reason = "the Hub fixture pins one system with embedded artwork"
+)]
+fn leaving_a_game_list_entered_from_the_hub_requests_the_hub_logos() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.hub.layout.items = vec![zaparoo_core::hub_layout::HubItem {
+            kind_raw: "zapscript".into(),
+            script: "**launch.system:SNES".into(),
+            system: "SNES".into(),
+            ..Default::default()
+        }];
+        shared.hub.categories_loaded = true;
+        shared.hub.restore_done = true;
+        shared.persist.games.entered_from_hub = true;
+    }
+    let shell = app.global::<Shell>();
+    shell.set_active_screen(Screen::Games);
+    crate::hub::rebuild(&ctx, &app);
+    crate::games::render(&ctx, &app);
+    advance(16);
+    assert!(
+        ctx.logos.hold_job().is_none(),
+        "the Hub is not on screen yet"
+    );
+
+    crate::router::handle_action(&ctx, &app, "cancel");
+
+    assert_eq!(shell.get_active_screen(), Screen::Hub);
+    let finish = ctx
+        .logos
+        .hold_job()
+        .expect("the returned-to Hub must request art without input");
+    finish();
+    crate::system_logos::refresh(&ctx, &app);
+    let tile = app
+        .global::<HubView>()
+        .get_cells()
+        .row_data(0)
+        .expect("pinned system tile");
+    assert!(tile.has_cover);
+    settle(&window);
+}
+
+#[test]
+#[allow(
+    clippy::expect_used,
+    reason = "the Hub fixture pins one game whose cover is requested"
+)]
+fn a_hub_cover_dropped_for_a_launched_core_is_requested_again_on_resume() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, mut ctx) = offline_ctx();
+    ctx.is_mister = true;
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.hub.layout.items = vec![zaparoo_core::hub_layout::HubItem {
+            kind_raw: "zapscript".into(),
+            script: "/g/1".into(),
+            system: "NES".into(),
+            path: "/g/1".into(),
+            ..Default::default()
+        }];
+        shared.hub.categories_loaded = true;
+        shared.hub.restore_done = true;
+    }
+    app.global::<Shell>().set_active_screen(Screen::Hub);
+    crate::hub::rebuild(&ctx, &app);
+    let key = ctx
+        .media
+        .pending_keys()
+        .into_iter()
+        .find(|key| key.path == "/g/1")
+        .expect("the tile asks for its cover");
+    ctx.media.seed(
+        key.clone(),
+        crate::media_cache::DecodedImage {
+            buffer: slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(8, 8),
+        },
+    );
+    crate::hub::rebuild(&ctx, &app);
+    let requests = || {
+        ctx.media
+            .pending_keys()
+            .iter()
+            .filter(|pending| **pending == key)
+            .count()
+    };
+    let before = requests();
+
+    crate::set_dormant(&ctx, &app, true);
+    assert!(!ctx.media.is_cached(&key));
+    crate::set_dormant(&ctx, &app, false);
+
+    assert_eq!(
+        requests(),
+        before + 1,
+        "resume asks Core for the cover again"
+    );
+    settle(&window);
+}
+
+#[test]
+#[allow(
+    clippy::expect_used,
     reason = "fixture must contain two real system tiles"
 )]
 fn adjacent_systems_move_keeps_logo_images_and_glides_focus() {

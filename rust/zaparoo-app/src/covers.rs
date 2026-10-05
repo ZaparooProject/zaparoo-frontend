@@ -21,6 +21,11 @@ pub const COLOR_PREVIEW_MAX_SIZE: u32 = 32;
 /// The Hub can hold this many tiles at its widest shape; a sanity
 /// backstop on the manifest, not a real limit.
 pub const MAX_HUB_ENTRIES: usize = 21;
+/// The browse covers the manifest keeps for a return from a launched
+/// game: the page that was on screen, with room for its neighbors.
+pub const MAX_BROWSE_ENTRIES: usize = 48;
+/// The largest tier a browse cover is requested at (`sizing::snap_cover_tier`).
+pub const MAX_BROWSE_COVER_SIZE: u32 = 768;
 
 /// The painted box a cover is prepared for. Slint's software renderer
 /// samples bitmaps nearest-neighbor, so a cover is resized to this box

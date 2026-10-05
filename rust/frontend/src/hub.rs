@@ -202,11 +202,15 @@ impl Resolver for SharedResolver<'_> {
         };
         // A cover Core has none for resolves like a present one: the tile
         // stays blank either way, but it is settled rather than loading.
-        if self.media.get(&key).is_some() || self.media.is_negative(&key) {
-            return format!("{MEDIA_PREFIX}{system}\u{1f}{path}");
-        }
+        let settled = self.media.get(&key).is_some() || self.media.is_negative(&key);
+        // A cover kept on screen through a rescan is asked for again here;
+        // a current one is not.
         self.media.enqueue(key);
-        LOADING_KEY.to_string()
+        if settled {
+            format!("{MEDIA_PREFIX}{system}\u{1f}{path}")
+        } else {
+            LOADING_KEY.to_string()
+        }
     }
 }
 

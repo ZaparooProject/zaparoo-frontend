@@ -274,7 +274,33 @@ fn merge_config_settings(
     } else {
         String::new()
     };
+    // An empty override is `auto`, which is also what a lost snapshot holds.
+    if !config.language.is_empty() {
+        s.language.clone_from(&config.language);
+    }
+    s.debug_logging = config.debug_logging;
     let c = &config.settings;
+    if let Some(v) = &c.interface_profile {
+        s.interface_profile.clone_from(v);
+    }
+    if let Some(v) = &c.color_scheme {
+        s.color_scheme.clone_from(v);
+    }
+    if let Some(v) = &c.color_intensity {
+        s.color_intensity.clone_from(v);
+    }
+    if let Some(v) = &c.metadata_scraper {
+        s.metadata_scraper.clone_from(v);
+    }
+    if let Some(v) = &c.favorites_grouping {
+        s.favorites_grouping.clone_from(v);
+    }
+    if let Some(v) = c.swap_confirm_cancel {
+        s.swap_confirm_cancel = v;
+    }
+    if let Some(v) = c.swap_options_view {
+        s.swap_options_view = v;
+    }
     if let Some(v) = &c.orientation {
         s.orientation = if matches!(v.as_str(), "cw" | "ccw") {
             v.clone()
@@ -936,15 +962,17 @@ fn bind_media_status(ctx: &Arc<Ctx>, app: &App, store: &Arc<Store>) {
     let ctx = ctx.clone();
     ctx.handle.clone().spawn(async move {
         let mut prev = rx.borrow().clone();
+        let mut art_run = zaparoo_core::store::MediaArtRun::new(&prev);
         while rx.changed().await.is_ok() {
             let curr = rx.borrow_and_update().clone();
             let task = status::task_of(&curr);
             // The store refetches its cached lists on this edge; covers are
-            // this process's own cache, so drop them and repaint what is on
-            // screen so tiles ask Core again.
+            // this process's own cache, so after a run that could have
+            // changed art, ask Core for each one again as it is shown.
             let finished = zaparoo_core::store::is_media_db_completion_edge(&prev, &curr);
+            let art_changed = art_run.step(&prev, &curr);
             prev = curr;
-            if finished {
+            if art_changed {
                 ctx.media.clear();
             }
             let ctx = ctx.clone();
@@ -1070,6 +1098,8 @@ fn set_dormant(ctx: &Ctx, app: &App, dormant: bool) {
         router::stop_idle();
         shell.set_saver_armed(false);
         app.global::<Motion>().set_enabled(false);
+        // After the launch that led here the last covers have landed.
+        hub_covers::record_browse_page(ctx);
         if ctx.is_mister {
             ctx.media.clear_decoded();
         }
@@ -1087,6 +1117,11 @@ fn set_dormant(ctx: &Ctx, app: &App, dormant: bool) {
         // the way back on screen is to claim the compositor again rather
         // than to wait for someone to hand it over.
         gamescope::claim_focus_settling(app);
+        if ctx.is_mister {
+            // The handoff dropped every decoded cover, and a Hub tile only
+            // asks for its cover while its entry is being resolved.
+            hub::rebuild(ctx, app);
+        }
         system_logos::refresh(ctx, app);
         tracing::info!("primary media stopped; frontend resumed");
     }
@@ -1990,5 +2025,57 @@ mod tests {
         assert!(h < 99 && v > -99);
         assert_eq!(persisted.settings.crt_h_offset, h);
         assert_eq!(persisted.settings.crt_v_offset, v);
+    }
+
+    /// `MiSTer` loses the state snapshot on every reboot, so a setting the
+    /// mirror writes but the merge skips silently resets to its default.
+    #[test]
+    #[allow(
+        clippy::expect_used,
+        reason = "tests should fail fast on a filesystem they just set up"
+    )]
+    fn every_mirrored_setting_survives_a_lost_state_snapshot() {
+        let saved = persist::SettingsState {
+            resolution: "1280x720".to_string(),
+            language: "de".to_string(),
+            clock_format: "24h".to_string(),
+            interface_profile: "handheld".to_string(),
+            orientation: "cw".to_string(),
+            systems_browse_layout: "list".to_string(),
+            games_browse_layout: "list".to_string(),
+            favorites_grouping: "system".to_string(),
+            system_logo_style: "color".to_string(),
+            color_scheme: "classic-purple".to_string(),
+            color_intensity: "vivid".to_string(),
+            metadata_scraper: "libretrothumbs".to_string(),
+            button_layout: "style_b".to_string(),
+            mouse_enabled: false,
+            reduce_motion: true,
+            debug_logging: true,
+            screensaver_timeout: "600".to_string(),
+            media_image_type: "boxart".to_string(),
+            show_hidden: true,
+            show_original_filenames: true,
+            swap_confirm_cancel: true,
+            swap_options_view: true,
+            region: "jp".to_string(),
+            crt_video_standard: "pal".to_string(),
+            crt_h_offset: 2,
+            crt_v_offset: -1,
+            ..persist::SettingsState::default()
+        };
+        let dir = std::env::temp_dir().join(format!("zaparoo-mirror-merge-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let path = dir.join("frontend.toml");
+        zaparoo_core::config::save_settings_mirror(&path, settings::mirror_of(&saved))
+            .expect("mirror saved");
+        let config = zaparoo_core::config::load_config(&path);
+        let _ = std::fs::remove_dir_all(&dir);
+
+        let mut persisted = persist::PersistedState::default();
+        merge_config_settings(&mut persisted, &config);
+
+        assert_eq!(persisted.settings, saved);
     }
 }
