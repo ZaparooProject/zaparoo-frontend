@@ -859,6 +859,7 @@ fn open_picker(ctx: &Ctx, app: &App, id: &str) {
     // settings vocabulary.
     overlays.set_list_setting_id(SharedString::from(id));
     overlays.set_list_title(SharedString::default());
+    overlays.set_list_form(false);
     overlays.set_list_entries(ModelRc::new(VecModel::from(entries)));
     overlays.set_list_index(i32::try_from(initial).unwrap_or(0));
     overlays.set_list_open(true);
