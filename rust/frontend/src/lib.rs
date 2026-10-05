@@ -1555,6 +1555,19 @@ fn bind_connection_status(ctx: &Arc<Ctx>, app: &App, client: &Arc<Client>) {
                         let _ = weak.upgrade_in_event_loop(move |app| {
                             if !app.global::<Shell>().get_boot_complete() {
                                 app.global::<Shell>().set_boot_status(escalated);
+                            }
+                        });
+                    }
+                    // The curtain keeps waiting for the rest of the bound a
+                    // restore has: a Core that is only slow to come up still
+                    // gets the saved screen back.
+                    tokio::time::sleep(
+                        router::RESTORE_TIMEOUT.saturating_sub(Duration::from_secs(5)),
+                    )
+                    .await;
+                    if generation.load(Ordering::SeqCst) == my_generation {
+                        let _ = weak.upgrade_in_event_loop(move |app| {
+                            if !app.global::<Shell>().get_boot_complete() {
                                 give_up_boot_restore(&ctx_escalate, &app);
                             }
                         });

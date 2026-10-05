@@ -56,7 +56,7 @@ impl SetupModel {
         }
     }
 
-    fn rows(&self) -> &'static [FormRow] {
+    pub(crate) fn rows(&self) -> &'static [FormRow] {
         rules::rows(self.kind)
     }
 
@@ -498,15 +498,36 @@ fn scope_systems(shared: &Shared) -> Vec<String> {
 
 /// Start the job over the chosen scope and close the panel.
 fn start(ctx: &Ctx, app: &App) {
-    let (kind, systems, scraper, rescrape) = {
+    let (kind, scoped, systems, scraper, rescrape, covered) = {
         let shared = lock(&ctx.shared);
+        let systems = scope_systems(&shared);
+        // Whether the chosen source handles every system in the scope. A
+        // source Core no longer lists is left for Core to judge.
+        let covered = shared
+            .setup
+            .scrapers
+            .iter()
+            .find(|s| s.id == shared.setup.scraper)
+            .is_none_or(|s| {
+                let offered = [(s.id.as_str(), s.supported_systems.as_slice())];
+                rules::scraper_for(&offered, &s.id, &systems).is_some()
+            });
         (
             shared.setup.kind,
-            scope_systems(&shared),
+            shared.setup.scope != rules::Scope::All,
+            systems,
             shared.setup.scraper.clone(),
             shared.setup.rescrape,
+            covered,
         )
     };
+    // Core reads an empty list as every system, so a scope that resolved
+    // to nothing (its category emptied since the panel opened) must not
+    // widen into a full run.
+    if scoped && systems.is_empty() {
+        close(ctx, app);
+        return;
+    }
     match kind {
         Kind::Index => {
             let client = ctx.store.client();
@@ -526,6 +547,13 @@ fn start(ctx: &Ctx, app: &App) {
         }
         Kind::Scrape => {
             if scraper.is_empty() {
+                return;
+            }
+            // Core would accept the pair and import nothing: say so, and
+            // leave the panel open for another source or scope.
+            if scoped && !covered {
+                tracing::warn!(?systems, scraper, "the source does not cover these systems");
+                crate::router::report_action_error(ctx, app, "media_scrape", "");
                 return;
             }
             // The chosen source becomes the persisted default.

@@ -6991,3 +6991,54 @@ fn cold_favorite_systems_restore_commits_behind_the_curtain() {
     assert_eq!(shell.get_active_screen(), Screen::FavoriteSystems);
     assert!(!shell.get_boot_curtain());
 }
+
+#[test]
+fn a_scoped_metadata_run_never_widens_and_needs_a_source_that_covers_it() {
+    use zaparoo_app::media_setup::Scope;
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let focus_start = |ctx: &crate::router::Ctx| {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.setup.index = shared.setup.rows().len() - 1;
+    };
+    let dialog_open = |app: &App| app.global::<crate::Overlays>().get_dialog_open();
+
+    // The chosen source does not handle the scoped system: an alert, and
+    // the panel stays for another source or scope.
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.systems = navigation_catalog();
+        shared.categories = vec!["Console".into()];
+    }
+    crate::router::open_scrape_setup(&ctx, &app, Scope::System("System08".into()));
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.setup.scrapers = vec![zaparoo_core::media_types::ScraperInfo {
+            id: "pinball".into(),
+            name: "Pinball".into(),
+            supported_systems: vec!["Pinball".into()],
+        }];
+        shared.setup.scraper = "pinball".into();
+    }
+    focus_start(&ctx);
+    crate::media_setup::handle_action(&ctx, &app, "accept");
+    assert!(dialog_open(&app));
+    assert!(crate::router::lock(&ctx.shared).setup.open);
+
+    // The category emptied after the panel opened: Core would read the
+    // empty list as every system, so nothing starts.
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.systems = navigation_catalog();
+        shared.categories = vec!["Console".into()];
+    }
+    crate::router::open_scrape_setup(&ctx, &app, Scope::Category("Console".into()));
+    crate::router::lock(&ctx.shared).systems.clear();
+    focus_start(&ctx);
+    crate::media_setup::handle_action(&ctx, &app, "accept");
+    assert!(!crate::router::lock(&ctx.shared).setup.open);
+    assert!(!dialog_open(&app));
+}

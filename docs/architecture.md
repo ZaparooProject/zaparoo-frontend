@@ -306,7 +306,7 @@ half-filled list.
   and the lift are the same turn. The other exits call it too: a missing
   category or system, a catalog error, Cancel and the 15 second bound
   (`router::abandon_restore`, which retires the fill and lands on the parent),
-  and Core staying unreachable (`give_up_boot_restore`).
+  and Core staying unreachable for that same bound (`give_up_boot_restore`).
 - A Hub start also waits for the Resume tile's answer (`hub::resume_settled`),
   under the same bound.
 - The saved screen keeps naming the restore target until it commits, so a kill

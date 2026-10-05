@@ -845,7 +845,7 @@ thread_local! {
 
 /// How long a cold-start restore may wait on Core before it is abandoned,
 /// the same bound a staged route has.
-const RESTORE_TIMEOUT: Duration = Duration::from_secs(15);
+pub(crate) const RESTORE_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// What runs once the cold-start restore ends: the work that waits for
 /// the restored screen (startup notices).
