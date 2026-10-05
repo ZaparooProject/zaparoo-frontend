@@ -2365,6 +2365,17 @@ pub(crate) fn open_game_info(ctx: &Ctx, app: &App, entry: &GameRow) {
 /// the catalog refetches automatically on the busy -> idle edge via
 /// the store's `Tag::MEDIA_DB` invalidation watcher.
 pub(crate) fn launch(ctx: &Ctx, app: &App, text: String, name: &str) {
+    launch_first(ctx, app, vec![text], name);
+}
+
+/// Launch the first of `candidates` Core can resolve. A Hub tile carries
+/// several identifiers for one game, most portable first; the next is tried
+/// only when Core reports the previous one did not resolve, so nothing is
+/// ever launched twice. The last failure is the one reported.
+pub(crate) fn launch_first(ctx: &Ctx, app: &App, candidates: Vec<String>, name: &str) {
+    if candidates.is_empty() {
+        return;
+    }
     crate::perf::mark("launch-press", "");
     // The tile the user pressed stays pressed until Core answers, so the
     // feedback is where the eye already is. The header line is the second,
@@ -2377,14 +2388,25 @@ pub(crate) fn launch(ctx: &Ctx, app: &App, text: String, name: &str) {
     let ctx2 = ctx.clone();
     let name = name.to_string();
     ctx.handle.spawn(async move {
-        let outcome = match store.run_mutation::<RunMutation>(RunParams { text }).await {
+        let result = run_first(
+            candidates,
+            |text| {
+                let store = store.clone();
+                async move { store.run_mutation::<RunMutation>(RunParams { text }).await }
+            },
+            |e: &zaparoo_core::client::ClientError| {
+                tracing::warn!("launch failed for {name}: {e}");
+                zaparoo_app::hub::should_try_next(e.category.as_deref())
+            },
+        )
+        .await;
+        let outcome = match result {
             Ok(()) => {
                 crate::perf::mark("launch-reply", "ok=true");
                 LaunchOutcome::Ok
             }
             Err(e) => {
                 crate::perf::mark("launch-reply", "ok=false");
-                tracing::warn!("launch failed for {name}: {e}");
                 LaunchOutcome::from_error(&e)
             }
         };
@@ -2393,6 +2415,35 @@ pub(crate) fn launch(ctx: &Ctx, app: &App, text: String, name: &str) {
             finish_launch(&ctx2, &app, hold, outcome, &name);
         });
     });
+}
+
+/// Run `candidates` in order until one succeeds, returning the last
+/// failure otherwise. `try_next` sees each failure and decides whether the
+/// next candidate may run; it is not asked about the last one.
+async fn run_first<E, F, Fut>(
+    candidates: Vec<String>,
+    mut run: F,
+    try_next: impl Fn(&E) -> bool,
+) -> Result<(), E>
+where
+    F: FnMut(String) -> Fut,
+    Fut: std::future::Future<Output = Result<(), E>>,
+{
+    let mut candidates = candidates.into_iter().peekable();
+    let mut result = Ok(());
+    while let Some(text) = candidates.next() {
+        result = run(text).await;
+        match &result {
+            Ok(()) => break,
+            Err(e) => {
+                let more = candidates.peek().is_some();
+                if !try_next(e) || !more {
+                    break;
+                }
+            }
+        }
+    }
+    result
 }
 
 pub(crate) fn finish_launch(
@@ -2528,6 +2579,92 @@ mod tests {
             media_count: None,
             zap_script: String::new(),
         }
+    }
+
+    /// Run the fallback chain against a scripted Core: each candidate maps
+    /// to the error category it fails with, or succeeds when absent.
+    async fn run_chain(
+        candidates: &[&str],
+        failures: &[(&'static str, &'static str)],
+    ) -> (Result<(), &'static str>, Vec<String>) {
+        let tried = std::sync::Mutex::new(Vec::new());
+        let result = super::run_first(
+            candidates.iter().map(ToString::to_string).collect(),
+            |text| {
+                let failure = failures
+                    .iter()
+                    .find(|(candidate, _)| *candidate == text)
+                    .map(|(_, category)| *category);
+                tried
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .push(text);
+                async move { failure.map_or(Ok(()), Err) }
+            },
+            |category: &&'static str| zaparoo_app::hub::should_try_next(Some(category)),
+        )
+        .await;
+        (
+            result,
+            tried
+                .into_inner()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+        )
+    }
+
+    #[tokio::test]
+    async fn a_launch_stops_at_the_first_candidate_core_resolves() {
+        let (result, tried) =
+            run_chain(&["NES/Zelda.nes", "@NES/Zelda", "/g/Zelda.nes"], &[]).await;
+        assert_eq!(result, Ok(()));
+        assert_eq!(tried, ["NES/Zelda.nes"]);
+    }
+
+    #[tokio::test]
+    async fn an_unresolved_candidate_falls_through_to_the_next() {
+        let (result, tried) = run_chain(
+            &["NES/Zelda.nes", "@NES/Zelda", "/g/Zelda.nes"],
+            &[
+                ("NES/Zelda.nes", "media_not_found"),
+                ("@NES/Zelda", "invalid_script"),
+            ],
+        )
+        .await;
+        assert_eq!(result, Ok(()));
+        assert_eq!(tried, ["NES/Zelda.nes", "@NES/Zelda", "/g/Zelda.nes"]);
+    }
+
+    #[tokio::test]
+    async fn a_failure_that_is_not_about_the_identifier_ends_the_launch() {
+        for category in [
+            "busy",
+            "blocked",
+            "playtime_limit",
+            "launch_repair",
+            "timeout",
+        ] {
+            let (result, tried) = run_chain(
+                &["NES/Zelda.nes", "@NES/Zelda"],
+                &[("NES/Zelda.nes", category)],
+            )
+            .await;
+            assert_eq!(result, Err(category));
+            assert_eq!(tried, ["NES/Zelda.nes"], "{category}");
+        }
+    }
+
+    #[tokio::test]
+    async fn the_last_failure_is_the_one_reported() {
+        let (result, tried) = run_chain(
+            &["NES/Zelda.nes", "/g/Zelda.nes"],
+            &[
+                ("NES/Zelda.nes", "media_not_found"),
+                ("/g/Zelda.nes", "execution_failed"),
+            ],
+        )
+        .await;
+        assert_eq!(result, Err("execution_failed"));
+        assert_eq!(tried, ["NES/Zelda.nes", "/g/Zelda.nes"]);
     }
 
     #[test]

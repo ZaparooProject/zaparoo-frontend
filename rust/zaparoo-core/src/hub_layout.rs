@@ -84,11 +84,18 @@ impl HubItemKind {
 /// `system`, `path` for `folder`, `script` (+ optional `system`/`path` as a
 /// cover-art hint) for `zapscript`. `name`/`icon` are optional overrides
 /// available on any kind. `Blank` uses none of them.
+///
+/// `relative` is Core's launcher-relative path for a pinned game or folder
+/// (`SNES/USA/Game.sfc`, `SNES/USA`), stored verbatim as Core reported it.
+/// It survives the media moving to another drive, which `path` (Core's
+/// absolute path at pin time) does not. Empty on a hand-written tile and on
+/// one pinned before Core reported it.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct HubItem {
     pub kind_raw: String,
     pub id: String,
     pub path: String,
+    pub relative: String,
     pub script: String,
     pub name: String,
     pub icon: String,
@@ -434,6 +441,7 @@ impl HubLayout {
         kind: &str,
         id: &str,
         path: &str,
+        relative: &str,
         script: &str,
         name: &str,
         icon: &str,
@@ -450,6 +458,7 @@ impl HubLayout {
             kind_raw: kind.to_string(),
             id: id.to_string(),
             path: path.to_string(),
+            relative: relative.to_string(),
             script: script.to_string(),
             name: name.to_string(),
             icon: icon.to_string(),
@@ -509,6 +518,8 @@ struct RawHubItem {
     #[serde(default)]
     path: String,
     #[serde(default)]
+    relative: String,
+    #[serde(default)]
     script: String,
     #[serde(default)]
     name: String,
@@ -544,6 +555,7 @@ pub fn load_hub_layout(path: &Path) -> HubLayout {
                 kind_raw: raw.kind,
                 id: raw.id,
                 path: raw.path,
+                relative: raw.relative,
                 script: raw.script,
                 name: raw.name,
                 icon: raw.icon,
@@ -575,6 +587,9 @@ pub fn save_hub_layout(path: &Path, layout: &HubLayout) -> Result<(), String> {
         }
         if !item.path.is_empty() {
             table.insert("path", toml_edit::value(item.path.as_str()));
+        }
+        if !item.relative.is_empty() {
+            table.insert("relative", toml_edit::value(item.relative.as_str()));
         }
         if !item.script.is_empty() {
             table.insert("script", toml_edit::value(item.script.as_str()));
@@ -1170,7 +1185,7 @@ type = "blank"
         let mut layout = HubLayout::default();
         layout.reconcile(&["Arcade".to_string()], &[]);
         let before_len = layout.items.len();
-        assert!(layout.add_target_item("system", "NES", "", "", "", "", ""));
+        assert!(layout.add_target_item("system", "NES", "", "", "", "", "", ""));
         assert_eq!(layout.items.len(), before_len + 1);
         let added = layout.items.last().unwrap();
         assert_eq!(added.kind(), HubItemKind::System);
@@ -1184,6 +1199,7 @@ type = "blank"
             "folder",
             "",
             "/media/fat/games/SNES/Homebrew",
+            "SNES/Homebrew",
             "",
             "",
             "",
@@ -1192,6 +1208,7 @@ type = "blank"
         let added = layout.items.last().unwrap();
         assert_eq!(added.kind(), HubItemKind::Folder);
         assert_eq!(added.path, "/media/fat/games/SNES/Homebrew");
+        assert_eq!(added.relative, "SNES/Homebrew");
         assert_eq!(added.system, "SNES");
     }
 
@@ -1202,14 +1219,17 @@ type = "blank"
             "zapscript",
             "",
             "/media/fat/games/NES/Zelda.nes",
-            "/media/fat/games/NES/Zelda.nes",
+            "NES/Zelda.nes",
+            "@NES/The Legend of Zelda",
             "The Legend of Zelda",
             "",
             "NES"
         ));
         let added = layout.items.last().unwrap();
         assert_eq!(added.kind(), HubItemKind::ZapScript);
-        assert_eq!(added.script, "/media/fat/games/NES/Zelda.nes");
+        assert_eq!(added.path, "/media/fat/games/NES/Zelda.nes");
+        assert_eq!(added.relative, "NES/Zelda.nes");
+        assert_eq!(added.script, "@NES/The Legend of Zelda");
         assert_eq!(added.name, "The Legend of Zelda");
         assert_eq!(added.system, "NES");
     }
@@ -1217,9 +1237,9 @@ type = "blank"
     #[test]
     fn add_target_item_rejects_a_kind_it_is_not_valid_for() {
         let mut layout = HubLayout::default();
-        assert!(!layout.add_target_item("category", "Arcade", "", "", "", "", ""));
-        assert!(!layout.add_target_item("action", "resume", "", "", "", "", ""));
-        assert!(!layout.add_target_item("blank", "", "", "", "", "", ""));
+        assert!(!layout.add_target_item("category", "Arcade", "", "", "", "", "", ""));
+        assert!(!layout.add_target_item("action", "resume", "", "", "", "", "", ""));
+        assert!(!layout.add_target_item("blank", "", "", "", "", "", "", ""));
         assert!(layout.items.is_empty());
     }
 
@@ -1230,7 +1250,7 @@ type = "blank"
         // id before, unlike `add_item`'s category/action path.
         let mut layout = HubLayout::default();
         assert!(layout.known.is_empty());
-        assert!(layout.add_target_item("system", "NES", "", "", "", "", ""));
+        assert!(layout.add_target_item("system", "NES", "", "", "", "", "", ""));
         assert!(
             layout.known.is_empty(),
             "target shortcuts must not touch known"
@@ -1246,7 +1266,7 @@ type = "blank"
             ..HubItem::default()
         });
         let blank_index = layout.items.len() - 1;
-        assert!(layout.add_target_item("system", "NES", "", "", "", "", ""));
+        assert!(layout.add_target_item("system", "NES", "", "", "", "", "", ""));
         assert_eq!(
             layout.items[blank_index].kind(),
             HubItemKind::Blank,
@@ -1354,6 +1374,52 @@ type = "blank"
             }
             assert_eq!(after[*i].1, *key, "index {i} moved from an add elsewhere");
         }
+    }
+
+    #[test]
+    fn relative_round_trips_and_is_omitted_when_empty() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("frontend.toml");
+        let mut layout = HubLayout::default();
+        assert!(layout.add_target_item(
+            "zapscript",
+            "",
+            "/media/fat/games/NES/Zelda.nes",
+            "NES/Zelda.nes",
+            "@NES/The Legend of Zelda",
+            "The Legend of Zelda",
+            "",
+            "NES"
+        ));
+        assert!(layout.add_target_item("system", "NES", "", "", "", "", "", ""));
+        save_hub_layout(&path, &layout).expect("save");
+
+        let contents = std::fs::read_to_string(&path).expect("read");
+        assert_eq!(
+            contents.matches("relative = ").count(),
+            1,
+            "only the tile that has one writes the key: {contents}"
+        );
+        assert!(contents.contains("relative = \"NES/Zelda.nes\""));
+        assert_eq!(load_hub_layout(&path).items, layout.items);
+    }
+
+    #[test]
+    fn a_tile_saved_before_relative_existed_loads_without_one() {
+        let f = write_tmp(
+            r#"
+[[hub.items]]
+type = "zapscript"
+path = "/media/fat/games/NES/Zelda.nes"
+script = "/media/fat/games/NES/Zelda.nes"
+name = "The Legend of Zelda"
+system = "NES"
+"#,
+        );
+        let layout = load_hub_layout(f.path());
+        assert_eq!(layout.items.len(), 1);
+        assert!(layout.items[0].relative.is_empty());
+        assert_eq!(layout.items[0].script, "/media/fat/games/NES/Zelda.nes");
     }
 
     #[test]

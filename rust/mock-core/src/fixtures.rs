@@ -352,7 +352,7 @@ fn matching_media_rows(path_prefix: &str, systems: &[&str], filters: &[&str]) ->
                 "type": "media",
                 "systemId": system,
                 "zapScript": format!("@{system}/{file}"),
-                "relativePath": file,
+                "relativePath": format!("{system}/{file}"),
                 "tags": tags_for(file, index),
                 "disambiguatingTags": disambiguating_tags_for(file),
                 "hasCover": true,
@@ -374,12 +374,14 @@ fn matching_media_rows(path_prefix: &str, systems: &[&str], filters: &[&str]) ->
     matching
 }
 
-fn mock_directory_entry(name: &str, path: &str, file_count: u64) -> Value {
+fn mock_directory_entry(system: &str, name: &str, path: &str, file_count: u64) -> Value {
     json!({
         "name": name,
         "path": path,
         "type": "directory",
         "fileCount": file_count,
+        "systemIds": [system],
+        "relativePath": format!("{system}/{name}"),
         "hasCover": false,
     })
 }
@@ -409,6 +411,7 @@ fn mock_route_root_entry(path: &str, system: &str, file_count: u64) -> Value {
         "type": "root",
         "systemId": system,
         "systemIds": [system],
+        "relativePath": system,
         "fileCount": file_count,
         "hasCover": false,
     })
@@ -430,8 +433,8 @@ fn media_browse_root_contents_response(
         Vec::new()
     } else {
         vec![
-            mock_directory_entry("Favorites", &format!("{path_prefix}/Favorites"), 1),
-            mock_directory_entry("Extras", &format!("{path_prefix}/Extras"), 1),
+            mock_directory_entry(system, "Favorites", &format!("{path_prefix}/Favorites"), 1),
+            mock_directory_entry(system, "Extras", &format!("{path_prefix}/Extras"), 1),
         ]
     };
     let remaining = max.saturating_sub(dirs.len());
@@ -526,6 +529,15 @@ pub fn media_browse_response(params: &Value) -> Value {
             return media_browse_route_roots_response(&systems);
         }
     }
+    // A launcher-relative path (`NES/Favorites`) browses the folder it
+    // names under the mock's first root, as Core resolves it.
+    let resolved;
+    let path = if is_relative_browse_path(path) {
+        resolved = format!("/mock/games/{path}");
+        resolved.as_str()
+    } else {
+        path
+    };
     let matching = matching_media_rows(path, &systems, &filters);
     let total_files = matching.len();
     let entries: Vec<Value> = matching.into_iter().skip(offset).take(max).collect();
@@ -538,7 +550,7 @@ pub fn media_browse_response(params: &Value) -> Value {
     if has_next_page {
         pagination["nextCursor"] = json!(next_offset.to_string());
     }
-    json!({
+    let mut result = json!({
         "path": path,
         "entries": entries,
         "totalFiles": total_files,
@@ -546,12 +558,40 @@ pub fn media_browse_response(params: &Value) -> Value {
         // an ordinary path browse.
         "totalDirs": 0,
         "pagination": pagination,
-    })
+    });
+    // Core reports the browsed folder's own relative path for a
+    // single-system browse under that system's launcher folder.
+    if let [system] = systems.as_slice() {
+        let root = format!("/mock/games/{system}");
+        if path == root {
+            result["relativePath"] = json!(system);
+        } else if let Some(rest) = path.strip_prefix(&format!("{root}/")) {
+            result["relativePath"] = json!(format!("{system}/{rest}"));
+        }
+    }
+    result
+}
+
+/// Whether `path` has Core's launcher-relative shape: a known system id,
+/// optionally followed by a path below that system's launcher folder.
+fn is_relative_browse_path(path: &str) -> bool {
+    if path.is_empty() || path.starts_with('/') || path.contains("://") {
+        return false;
+    }
+    let system = path.split('/').next().unwrap_or_default();
+    MOCK_SYSTEMS.iter().any(|(id, ..)| *id == system)
 }
 
 pub fn media_meta_response(params: &Value) -> Value {
     fn media_for(reference: &Value) -> Value {
         let (system, path) = media_ref_key(reference);
+        // Core accepts the launcher-relative shape and answers with the
+        // canonical path.
+        let path = match path.strip_prefix(&format!("{system}/")) {
+            Some(rest) => format!("/mock/{system}/{rest}"),
+            None => path,
+        };
+        let file = path.rsplit('/').next().unwrap_or_default().to_string();
         let name = path
             .rsplit('/')
             .next()
@@ -566,6 +606,8 @@ pub fn media_meta_response(params: &Value) -> Value {
             .and_then(|overrides| overrides.get(&(system.clone(), path.clone())).cloned());
         let mut media = json!({
             "path": path,
+            "relativePath": format!("{system}/{file}"),
+            "zapScript": format!("@{system}/{file}"),
             "parentDir": "/mock",
             "isMissing": false,
             "tags": [{"type": "region", "tag": "world"}],
@@ -699,6 +741,25 @@ pub fn media_browse_index_response(params: &Value) -> Value {
     json!({ "scheme": "latin", "groups": groups })
 }
 
+/// Mirrors Core's `media.lookup`: the game in `system` whose name matches
+/// `name`, in the `media.search` row shape, or a null match.
+pub fn media_lookup_response(params: &Value) -> Value {
+    let system = params.get("system").and_then(Value::as_str).unwrap_or("");
+    let name = params.get("name").and_then(Value::as_str).unwrap_or("");
+    let matched = games_for_systems(&[system]).find(|game| {
+        game.get("name")
+            .and_then(Value::as_str)
+            .is_some_and(|candidate| candidate.eq_ignore_ascii_case(name))
+    });
+    match matched {
+        Some(mut game) => {
+            game["confidence"] = json!(1.0);
+            json!({ "match": game })
+        }
+        None => json!({ "match": null }),
+    }
+}
+
 pub fn media_history_latest_response() -> Value {
     let (name, file, system) = ALL_GAMES[0];
     json!({
@@ -707,6 +768,7 @@ pub fn media_history_latest_response() -> Value {
             "systemName": system_display_for(system),
             "mediaName": name,
             "mediaPath": format!("/mock/{system}/{file}"),
+            "relativePath": format!("{system}/{file}"),
             "launcherId": system,
             "startedAt": "2026-04-29T23:00:00Z",
         }
@@ -761,6 +823,8 @@ pub fn media_history_response(params: &Value) -> Value {
                 "systemName": system_display_for(system),
                 "mediaName": name,
                 "mediaPath": format!("/mock/{system}/{file}"),
+                "relativePath": format!("{system}/{file}"),
+                "zapScript": format!("@{system}/{file}"),
                 "launcherId": system,
                 "hasCover": true,
                 "startedAt": started,
@@ -832,6 +896,7 @@ fn games_for_systems<'a>(systems: &'a [&'a str]) -> impl Iterator<Item = Value> 
             let mut item = json!({
                 "name": name,
                 "path": format!("/mock/{system}/{file}"),
+                "relativePath": format!("{system}/{file}"),
                 "zapScript": format!("@{system}/{file}"),
                 "system": { "id": system, "name": system_name, "category": category },
                 "tags": tags_for(file, index),

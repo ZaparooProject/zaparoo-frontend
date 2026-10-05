@@ -36,6 +36,7 @@ mod glyphs;
 pub mod host;
 mod hub;
 mod hub_covers;
+mod hub_refresh;
 mod input;
 mod keyboard;
 mod latch_protocol;
@@ -953,6 +954,7 @@ fn bind_media_status(ctx: &Arc<Ctx>, app: &App, store: &Arc<Store>) {
                 router::refresh_startup_notices(&ctx, &app);
                 if finished {
                     hub::rebuild(&ctx, &app);
+                    hub_refresh::schedule(&ctx, &app);
                     games::reproject(&ctx, &app);
                     fetch_system_defaults(&ctx);
                 }
@@ -1643,6 +1645,7 @@ fn apply_catalog(ctx: &Arc<Ctx>, app: &App, status: &ResourceStatus<CatalogData>
                 app.global::<Shell>().set_boot_complete(true);
                 router::reset_idle(ctx, app);
                 fetch_system_defaults(ctx);
+                hub_refresh::schedule(ctx, app);
             }
             // The curtain stays up until the restored screen is complete.
             if was_restore_pending {

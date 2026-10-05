@@ -1196,28 +1196,7 @@ fn held_game_pages_cut_at_repeat_cadence_but_taps_keep_slides() {
         let mut state = crate::router::lock(&ctx.shared);
         state.persist.settings.reduce_motion = false;
         state.games.loading = false;
-        state.games.rows = (0..200)
-            .map(|i| crate::games::GameRow {
-                media_id: None,
-                name: format!("Game {i}"),
-                path: String::new(),
-                entry_type: zaparoo_app::media_list::EntryType::Media,
-                file_count: 0,
-                system_id: String::new(),
-                system_name: String::new(),
-                zap_script: String::new(),
-                tag_labels: vec![],
-                has_cover: false,
-                cover_color: None,
-                is_favorite: false,
-                is_hidden: false,
-                media_capable: false,
-                root_distinguisher: String::new(),
-                detail_rows: vec![],
-                display: format!("Game {i}"),
-                suffix: String::new(),
-            })
-            .collect();
+        state.games.rows = game_rows("Game", 200);
         state.games.grid.set_item_count(200);
     }
     crate::games::render(&ctx, &app);

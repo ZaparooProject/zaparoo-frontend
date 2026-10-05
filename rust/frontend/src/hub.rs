@@ -73,6 +73,8 @@ pub struct HubModel {
     page_seq: u64,
     /// One serialized disk writer, with only the latest pending snapshot.
     layout_save: Option<tokio::sync::watch::Sender<HubLayout>>,
+    /// The running pass that keeps pinned tiles on Core's current rows.
+    pub(crate) refresh: crate::scoped_task::ScopedTask,
 }
 
 impl HubModel {
@@ -86,6 +88,7 @@ impl HubModel {
             sliding: false,
             page_seq: 0,
             layout_save: None,
+            refresh: crate::scoped_task::ScopedTask::default(),
             focus_armed: false,
             restore_done: false,
             move_snapshot: None,
@@ -111,6 +114,7 @@ impl HubModel {
                 kind: item.kind_raw.clone(),
                 id: item.id.clone(),
                 path: item.path.clone(),
+                relative: item.relative.clone(),
                 script: item.script.clone(),
                 name: item.name.clone(),
                 icon: item.icon.clone(),
@@ -135,7 +139,7 @@ impl HubModel {
     /// Serialize disk writes away from the UI thread. A watch channel bounds
     /// pending work to one snapshot and prevents an older catalog save from
     /// overwriting a newer user edit. No shared UI lock is held during I/O.
-    fn save(&mut self, handle: &tokio::runtime::Handle) {
+    pub(crate) fn save(&mut self, handle: &tokio::runtime::Handle) {
         self.layout_dirty = true;
         if let Some(writer) = &self.layout_save {
             writer.send_replace(self.layout.clone());
@@ -954,18 +958,20 @@ fn emit_activate(ctx: &Ctx, app: &App) {
             }
             match entry.id.as_str() {
                 "resume" => {
-                    let path = lock(&ctx.shared)
+                    let candidates = lock(&ctx.shared)
                         .hub
                         .resume
                         .entry
                         .as_ref()
-                        .map(|e| e.media_path.clone());
-                    match path {
-                        Some(path) if !path.is_empty() => {
-                            crate::router::launch(ctx, app, path, &entry.name);
-                        }
-                        _ => {}
-                    }
+                        .map(|e| {
+                            zaparoo_app::hub::launch_candidates(
+                                e.relative_path.as_deref().unwrap_or_default(),
+                                "",
+                                &e.media_path,
+                            )
+                        })
+                        .unwrap_or_default();
+                    crate::router::launch_first(ctx, app, candidates, &entry.name);
                 }
                 // Group by: System stops at the systems that hold
                 // favorites; None goes straight to the flat list.
@@ -1002,7 +1008,9 @@ fn emit_activate(ctx: &Ctx, app: &App) {
             crate::games::enter_folder_from_hub(ctx, app, &entry.system, &entry.path);
         }
         Some(Kind::ZapScript) => {
-            crate::router::launch(ctx, app, entry.script.clone(), &entry.name);
+            let candidates =
+                zaparoo_app::hub::launch_candidates(&entry.relative, &entry.script, &entry.path);
+            crate::router::launch_first(ctx, app, candidates, &entry.name);
         }
         _ => {}
     }
@@ -1428,6 +1436,7 @@ pub fn add_target(
     kind: &str,
     id: &str,
     path: &str,
+    relative: &str,
     script: &str,
     name: &str,
     icon: &str,
@@ -1438,7 +1447,7 @@ pub fn add_target(
         let hub = &mut shared.hub;
         let added = hub
             .layout
-            .add_target_item(kind, id, path, script, name, icon, system);
+            .add_target_item(kind, id, path, relative, script, name, icon, system);
         if added {
             hub.save(&ctx.handle);
         }

@@ -45,6 +45,7 @@ rust/frontend/  [frontend library and binary; Slint UI]
   │                        the two battery probes behind one HUD field
   ├── src/media_cache.rs : bounded in-memory cover cache (LRU, bytes cap)
   ├── src/hub_covers.rs  : cold-boot cover path manifest (MiSTer only)
+  ├── src/hub_refresh.rs : keeps pinned Hub games and folders on Core's current rows
   ├── src/customization.rs : user overrides from the customization folder
   ├── src/{theme,sizing,glyphs,system_logos,fonts}.rs
   │                        palette push, scene sizing, embedded art and fonts

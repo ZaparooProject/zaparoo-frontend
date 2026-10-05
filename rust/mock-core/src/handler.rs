@@ -69,6 +69,7 @@ pub fn dispatch(text: &str, notifier: &Notifier) -> String {
         "media.search" => Some(Ok(fixtures::media_search_response(&req.params))),
         "media.browse" => Some(Ok(fixtures::media_browse_response(&req.params))),
         "media.browse.index" => Some(Ok(fixtures::media_browse_index_response(&req.params))),
+        "media.lookup" => Some(Ok(fixtures::media_lookup_response(&req.params))),
         "media.meta" => Some(Ok(fixtures::media_meta_response(&req.params))),
         "media.meta.update" => Some(fixtures::media_meta_update_response(&req.params)),
         "media.image" => Some(fixtures::media_image_response(&req.params)),
@@ -552,6 +553,75 @@ mod tests {
             r#"{"jsonrpc":"2.0","id":"2","method":"media.browse","params":{"path":"/games","maxResults":1000,"tags":["genre:rpg","year:1985"]}}"#,
         ));
         assert!(both["result"]["totalFiles"].as_u64().expect("count") < rpg);
+    }
+
+    #[test]
+    fn portable_identifiers_ride_on_every_media_shape() {
+        let search = parse(&dispatch(
+            r#"{"jsonrpc":"2.0","id":"1","method":"media.search","params":{"systems":["NES"],"maxResults":1}}"#,
+        ));
+        let row = &search["result"]["results"][0];
+        let relative = row["relativePath"].as_str().expect("relativePath");
+        assert!(relative.starts_with("NES/"), "{relative}");
+
+        let history = parse(&dispatch(
+            r#"{"jsonrpc":"2.0","id":"2","method":"media.history","params":{"limit":1}}"#,
+        ));
+        let entry = &history["result"]["entries"][0];
+        assert!(entry["relativePath"].is_string());
+        assert!(entry["zapScript"].is_string());
+
+        let latest = parse(&dispatch(
+            r#"{"jsonrpc":"2.0","id":"3","method":"media.history.latest"}"#,
+        ));
+        assert!(latest["result"]["entry"]["relativePath"].is_string());
+
+        // media.meta answers a relative reference with the canonical path.
+        let meta = parse(&dispatch(
+            r#"{"jsonrpc":"2.0","id":"4","method":"media.meta","params":{"system":"NES","path":"NES/smb.nes"}}"#,
+        ));
+        assert_eq!(meta["result"]["media"]["path"], "/mock/NES/smb.nes");
+        assert_eq!(meta["result"]["media"]["relativePath"], "NES/smb.nes");
+        assert_eq!(meta["result"]["media"]["zapScript"], "@NES/smb.nes");
+    }
+
+    #[test]
+    fn media_browse_resolves_a_relative_folder_and_reports_its_own_relative_path() {
+        let resp = parse(&dispatch(
+            r#"{"jsonrpc":"2.0","id":"1","method":"media.browse","params":{"path":"NES/Favorites","systems":["NES"]}}"#,
+        ));
+        assert_eq!(resp["result"]["path"], "/mock/games/NES/Favorites");
+        assert_eq!(resp["result"]["relativePath"], "NES/Favorites");
+
+        let roots = parse(&dispatch(
+            r#"{"jsonrpc":"2.0","id":"2","method":"media.browse","params":{"systems":["NES"]}}"#,
+        ));
+        assert_eq!(roots["result"]["entries"][0]["relativePath"], "NES");
+
+        let contents = parse(&dispatch(
+            r#"{"jsonrpc":"2.0","id":"3","method":"media.browse","params":{"systems":["NES"],"rootView":"contents"}}"#,
+        ));
+        let dirs: Vec<&Value> = contents["result"]["entries"]
+            .as_array()
+            .expect("entries")
+            .iter()
+            .filter(|entry| entry["type"] == "directory")
+            .collect();
+        assert_eq!(dirs[0]["relativePath"], "NES/Favorites");
+    }
+
+    #[test]
+    fn media_lookup_matches_a_name_within_its_system_or_answers_null() {
+        let found = parse(&dispatch(
+            r#"{"jsonrpc":"2.0","id":"1","method":"media.lookup","params":{"system":"NES","name":"super mario bros."}}"#,
+        ));
+        assert_eq!(found["result"]["match"]["path"], "/mock/NES/smb.nes");
+        assert_eq!(found["result"]["match"]["relativePath"], "NES/smb.nes");
+
+        let missing = parse(&dispatch(
+            r#"{"jsonrpc":"2.0","id":"2","method":"media.lookup","params":{"system":"SNES","name":"Super Mario Bros."}}"#,
+        ));
+        assert!(missing["result"]["match"].is_null());
     }
 
     #[test]

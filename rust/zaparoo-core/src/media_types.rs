@@ -426,6 +426,11 @@ impl BrowseEntry {
 pub struct MediaBrowseResult {
     #[serde(default)]
     pub path: String,
+    /// Core's launcher-relative path of the browsed folder itself. Present
+    /// only for a single-system browse of a folder under that system's
+    /// launcher folders, and absent from Core builds that predate it.
+    #[serde(default)]
+    pub relative_path: Option<String>,
     pub entries: Vec<BrowseEntry>,
     #[serde(default)]
     pub total_files: u32,
@@ -550,6 +555,14 @@ pub struct MediaHistoryEntry {
     pub media_name: String,
     #[serde(default)]
     pub media_path: String,
+    /// Core's launcher-relative path for this media. `None` when Core could
+    /// not derive one.
+    #[serde(default)]
+    pub relative_path: Option<String>,
+    /// Core's title command for this media. Empty when the media is no
+    /// longer indexed, and from Core builds that predate the field.
+    #[serde(default)]
+    pub zap_script: String,
     /// Current tags when Core can resolve this history entry to indexed media.
     #[serde(default, deserialize_with = "deserialize_null_default")]
     pub tags: Vec<TagInfo>,
@@ -583,6 +596,8 @@ impl Default for MediaHistoryEntry {
             system_name: String::new(),
             media_name: String::new(),
             media_path: String::new(),
+            relative_path: None,
+            zap_script: String::new(),
             tags: Vec::new(),
             launcher_id: String::new(),
             started_at: String::new(),
@@ -627,6 +642,10 @@ pub struct MediaHistoryLatestEntry {
     pub media_name: String,
     #[serde(default)]
     pub media_path: String,
+    /// Core's launcher-relative path for this media. `None` when Core could
+    /// not derive one, and from Core builds that predate the field.
+    #[serde(default)]
+    pub relative_path: Option<String>,
     #[serde(default)]
     pub launcher_id: String,
     #[serde(default)]
@@ -717,6 +736,27 @@ pub struct MediaImageResult {
     pub type_tag: String,
 }
 
+/// Parameters for `media.lookup`: resolve a game name within one system to
+/// its indexed media row, through the title matcher `@System/Name` launches
+/// use.
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaLookupParams {
+    pub system: String,
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fuzzy_system: Option<bool>,
+}
+
+/// Response for `media.lookup`. The match has the `media.search` row shape
+/// (plus a `confidence` score this client does not read) and is `None` when
+/// Core found no title or was not confident enough in one.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct MediaLookupResult {
+    #[serde(default, rename = "match")]
+    pub matched: Option<MediaItem>,
+}
+
 /// Parameters for `media.meta`. Identifies the media row by `media_id`
 /// when available, otherwise by `(system, path)`. The result includes
 /// ROM-level and title-level metadata — tags, properties (text or
@@ -799,6 +839,14 @@ pub struct MediaMetaResult {
 pub struct MediaMeta {
     #[serde(default)]
     pub path: String,
+    /// Core's launcher-relative path for this media. `None` when Core could
+    /// not derive one, and from Core builds that predate the field.
+    #[serde(default)]
+    pub relative_path: Option<String>,
+    /// Core's title command for this media. Empty for a missing row, and
+    /// from Core builds that predate the field.
+    #[serde(default)]
+    pub zap_script: String,
     #[serde(default)]
     pub parent_dir: String,
     #[serde(default)]
@@ -1591,11 +1639,12 @@ mod tests {
         LauncherInfo, LaunchersResult, LogDownloadResult, MediaBrowseIndexParams,
         MediaBrowseIndexResult, MediaBrowseParams, MediaBrowseResult, MediaHistoryEntry,
         MediaHistoryLatestResult, MediaHistoryParams, MediaHistoryResult, MediaImageParams,
-        MediaImageResult, MediaIndexParams, MediaItem, MediaMetaParams, MediaMetaResult,
-        MediaMetaUpdateParams, MediaResult, MediaScrapeParams, MediaSearchParams,
-        MediaSearchResult, ReaderInfo, ReadersResult, ScrapersResult, ScrapingStatusResponse,
-        SettingsResult, SystemDefault, SystemsParams, SystemsResult, TagInfo, TokensHistoryResult,
-        TokensResult, UpdateSettingsParams, VersionResult, MEDIA_IMAGE_DELIVERY_LOCAL_PATH,
+        MediaImageResult, MediaIndexParams, MediaItem, MediaLookupParams, MediaLookupResult,
+        MediaMetaParams, MediaMetaResult, MediaMetaUpdateParams, MediaResult, MediaScrapeParams,
+        MediaSearchParams, MediaSearchResult, ReaderInfo, ReadersResult, ScrapersResult,
+        ScrapingStatusResponse, SettingsResult, SystemDefault, SystemsParams, SystemsResult,
+        TagInfo, TokensHistoryResult, TokensResult, UpdateSettingsParams, VersionResult,
+        MEDIA_IMAGE_DELIVERY_LOCAL_PATH,
     };
 
     #[test]
@@ -2245,6 +2294,84 @@ mod tests {
         assert!(result.entry.is_none());
         let result: MediaHistoryLatestResult = serde_json::from_str("{}").expect("parse");
         assert!(result.entry.is_none());
+    }
+
+    #[test]
+    fn portable_identifiers_parse_where_core_sends_them_and_default_where_it_does_not() {
+        let history: MediaHistoryResult = serde_json::from_str(
+            r#"{"entries": [
+                {"systemId": "SNES", "mediaPath": "/roms/snes/smw.sfc",
+                 "relativePath": "SNES/smw.sfc", "zapScript": "@SNES/Super Mario World"},
+                {"systemId": "SNES", "mediaPath": "/roms/snes/gone.sfc"}
+            ]}"#,
+        )
+        .expect("history");
+        assert_eq!(
+            history.entries[0].relative_path.as_deref(),
+            Some("SNES/smw.sfc")
+        );
+        assert_eq!(history.entries[0].zap_script, "@SNES/Super Mario World");
+        assert!(history.entries[1].relative_path.is_none());
+        assert!(history.entries[1].zap_script.is_empty());
+
+        let latest: MediaHistoryLatestResult = serde_json::from_str(
+            r#"{"entry": {"mediaPath": "/roms/snes/smw.sfc", "relativePath": "SNES/smw.sfc"}}"#,
+        )
+        .expect("latest");
+        assert_eq!(
+            latest.entry.expect("entry").relative_path.as_deref(),
+            Some("SNES/smw.sfc")
+        );
+
+        let meta: MediaMetaResult = serde_json::from_str(
+            r#"{"media": {"path": "/roms/snes/smw.sfc", "relativePath": "SNES/smw.sfc",
+                "zapScript": "@SNES/Super Mario World"}}"#,
+        )
+        .expect("meta");
+        assert_eq!(meta.media.relative_path.as_deref(), Some("SNES/smw.sfc"));
+        assert_eq!(meta.media.zap_script, "@SNES/Super Mario World");
+        let older: MediaMetaResult =
+            serde_json::from_str(r#"{"media": {"path": "/roms/snes/smw.sfc"}}"#).expect("older");
+        assert!(older.media.relative_path.is_none());
+        assert!(older.media.zap_script.is_empty());
+    }
+
+    #[test]
+    fn media_lookup_parses_a_match_and_a_null_match() {
+        let params = serde_json::to_value(MediaLookupParams {
+            system: "SNES".into(),
+            name: "Super Mario World".into(),
+            fuzzy_system: None,
+        })
+        .expect("params");
+        assert_eq!(
+            params,
+            serde_json::json!({"system": "SNES", "name": "Super Mario World"})
+        );
+
+        let found: MediaLookupResult = serde_json::from_str(
+            r#"{"match": {
+                "mediaId": 42,
+                "system": {"id": "SNES", "name": "Super Nintendo Entertainment System"},
+                "name": "Super Mario World",
+                "path": "/roms/snes/Super Mario World (USA).sfc",
+                "relativePath": "SNES/Super Mario World (USA).sfc",
+                "zapScript": "@SNES/Super Mario World",
+                "tags": [],
+                "confidence": 0.95
+            }}"#,
+        )
+        .expect("match");
+        let matched = found.matched.expect("matched");
+        assert_eq!(matched.path, "/roms/snes/Super Mario World (USA).sfc");
+        assert_eq!(
+            matched.relative_path.as_deref(),
+            Some("SNES/Super Mario World (USA).sfc")
+        );
+        assert_eq!(matched.zap_script, "@SNES/Super Mario World");
+
+        let none: MediaLookupResult = serde_json::from_str(r#"{"match": null}"#).expect("null");
+        assert!(none.matched.is_none());
     }
 
     #[test]

@@ -225,6 +225,7 @@ update rules, in short:
 | `rust/frontend/src/{game_info,media_setup,log_upload,launchers,alternates,card_write,qr}.rs` | Modal drivers |
 | `rust/frontend/src/{input,actions,gamepad}.rs` | Key path: duplicate guard, swaps, hold-repeat; keyboard bindings; desktop gamepads |
 | `rust/frontend/src/{media_cache,hub_covers,customization}.rs` | Bounded in-memory cover cache, cold-boot cover manifest, user overrides |
+| `rust/frontend/src/hub_refresh.rs` | Refreshes pinned Hub tiles' stored identifiers from Core after a catalog load or rescan |
 | `rust/frontend/src/{theme,sizing,glyphs,system_logos,fonts}.rs` | Palette push, scene sizing adapter, embedded art and fonts |
 | `rust/frontend/src/mister/` | MiSTer platform: fb0, DDR and vblank-latch presenters, evdev input, lease, service kick |
 | `rust/frontend/src/dual_head.rs` | Projects the HDMI component's state onto the CRT component |
