@@ -446,6 +446,7 @@ fn list_artwork_requests_only_detail_neighbors_and_retires_old_focus() {
         system: "NES".into(),
         path: "/hub/game".into(),
         max_size: 256,
+        fit: ctx.media.hub_fit(),
         image_type: None,
     };
     ctx.media.enqueue(hub.clone());
@@ -1646,6 +1647,7 @@ fn missing_browse_colors_use_real_previews_on_every_page_before_full_art() {
             system: row.system_id.clone(),
             path: row.path.clone(),
             max_size: zaparoo_app::covers::COLOR_PREVIEW_MAX_SIZE,
+            fit: zaparoo_app::covers::Fit::SOURCE,
             image_type: None,
         })
         .collect();
@@ -1758,6 +1760,7 @@ fn cover_colors_survive_appended_pages_and_warm_to_cold_tile_replacement() {
                 system: row.system_id.clone(),
                 path: row.path.clone(),
                 max_size: tier,
+                fit: crate::games::grid_cover_fit(&app, GamesMode::Browse),
                 image_type: None,
             },
             crate::media_cache::DecodedImage {
@@ -6681,4 +6684,310 @@ fn the_system_picker_skips_headers_and_jumps_by_manufacturer() {
         app.global::<crate::SearchView>().get_system_name(),
         "System 9"
     );
+}
+
+/// A relaunch with saved state: the catalog is in and the curtain is up.
+fn cold_start(
+    screen: &str,
+) -> (
+    App,
+    Rc<MinimalSoftwareWindow>,
+    tokio::runtime::Runtime,
+    std::sync::Arc<crate::router::Ctx>,
+) {
+    let (app, window) = boot();
+    let (runtime, ctx) = offline_ctx();
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.systems = navigation_catalog();
+        shared.categories = vec!["Console".into()];
+        shared.persist.hub.category = "Console".into();
+        shared.persist.active_screen = screen.into();
+        shared.persist.games.system_id = "System08".into();
+    }
+    app.global::<Shell>().set_boot_curtain(true);
+    (app, window, runtime, std::sync::Arc::new(ctx))
+}
+
+/// The restore is still behind the curtain: nothing but the curtain has
+/// been painted, and the saved state still names the target.
+fn assert_still_curtained(
+    app: &App,
+    window: &Rc<MinimalSoftwareWindow>,
+    ctx: &crate::router::Ctx,
+    curtain: &[Rgb565Pixel],
+    screen: &str,
+) {
+    let shell = app.global::<Shell>();
+    assert!(shell.get_boot_curtain(), "the curtain holds until commit");
+    assert_eq!(
+        shell.get_active_screen(),
+        Screen::Hub,
+        "no screen is published under the curtain"
+    );
+    assert_eq!(
+        crate::router::lock(&ctx.shared).persist.active_screen,
+        screen,
+        "a kill mid-restore comes back to the same screen"
+    );
+    assert_region_matches(
+        &pixels(window),
+        curtain,
+        0..W as usize,
+        0..H as usize,
+        "only the curtain is painted during a restore",
+    );
+}
+
+#[test]
+fn cold_games_restore_shows_the_curtain_then_games_and_never_systems() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window, _runtime, ctx) = cold_start("games");
+    let curtain = pixels(&window);
+    crate::restore_screens(&ctx, &app);
+    assert_still_curtained(&app, &window, &ctx, &curtain, "games");
+    // Past the loading-cue delay: the curtain carries the only cue.
+    for _ in 0..30 {
+        CLOCK.with(|clock| clock.set(clock.get() + TICK_MS));
+        slint::platform::update_timers_and_animations();
+    }
+    assert_still_curtained(&app, &window, &ctx, &curtain, "games");
+    let ticket = crate::router::lock(&ctx.shared).games.ticket;
+    crate::games::apply_fill(&ctx, &app, ticket, navigation_rows(), None, None, true);
+    let shell = app.global::<Shell>();
+    assert_eq!(shell.get_active_screen(), Screen::Games);
+    assert!(!shell.get_boot_curtain(), "the commit lifts the curtain");
+    assert!(!shell.get_transitioning());
+    // The category was filled beneath it, so Back lands on a ready screen.
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert_eq!(shell.get_active_screen(), Screen::Systems);
+    assert_eq!(app.global::<SystemsView>().get_category(), "Console");
+}
+
+#[test]
+fn cold_flat_list_restores_show_the_curtain_then_the_list_and_never_the_hub() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    for (token, screen) in [
+        ("favorites", Screen::Favorites),
+        ("recents", Screen::Recents),
+        ("search-results", Screen::SearchResults),
+    ] {
+        let (app, window, _runtime, ctx) = cold_start(token);
+        let curtain = pixels(&window);
+        crate::restore_screens(&ctx, &app);
+        assert!(
+            !crate::navigation::active(),
+            "{token}: no Hub source is retained under the curtain"
+        );
+        assert_still_curtained(&app, &window, &ctx, &curtain, token);
+        let ticket = crate::router::lock(&ctx.shared).games.ticket;
+        crate::games::apply_fill(&ctx, &app, ticket, navigation_rows(), None, None, true);
+        let shell = app.global::<Shell>();
+        assert_eq!(shell.get_active_screen(), screen, "{token}");
+        assert!(!shell.get_boot_curtain(), "{token}");
+    }
+}
+
+#[test]
+fn cold_systems_and_search_restores_commit_in_the_same_turn() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    for (token, screen) in [("systems", Screen::Systems), ("search", Screen::Search)] {
+        let (app, _window, _runtime, ctx) = cold_start(token);
+        crate::restore_screens(&ctx, &app);
+        let shell = app.global::<Shell>();
+        assert_eq!(shell.get_active_screen(), screen, "{token}");
+        assert!(!shell.get_boot_curtain(), "{token}");
+    }
+}
+
+#[test]
+fn cancel_during_a_cold_restore_retires_the_fill_and_lands_on_the_parent() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window, _runtime, ctx) = cold_start("games");
+    crate::restore_screens(&ctx, &app);
+    let ticket = crate::router::lock(&ctx.shared).games.ticket;
+    crate::router::handle_action(&ctx, &app, "cancel");
+    let shell = app.global::<Shell>();
+    assert_eq!(shell.get_active_screen(), Screen::Systems);
+    assert!(!shell.get_boot_curtain());
+    assert!(!shell.get_transitioning());
+    // The answer that was in flight arrives late and must route nowhere.
+    crate::games::apply_fill(&ctx, &app, ticket, navigation_rows(), None, None, true);
+    assert_eq!(shell.get_active_screen(), Screen::Systems);
+    assert_eq!(
+        crate::router::lock(&ctx.shared).persist.active_screen,
+        "games",
+        "the next start tries the same screen again"
+    );
+
+    // A flat list has no parent but the Hub.
+    let (app, _window, _runtime, ctx) = cold_start("favorites");
+    crate::restore_screens(&ctx, &app);
+    crate::router::handle_action(&ctx, &app, "cancel");
+    let shell = app.global::<Shell>();
+    assert_eq!(shell.get_active_screen(), Screen::Hub);
+    assert!(!shell.get_boot_curtain());
+}
+
+#[test]
+fn a_cold_restore_that_fails_or_times_out_always_lifts_the_curtain() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    // Core answers with an error: the target shows it.
+    let (app, _window, _runtime, ctx) = cold_start("games");
+    crate::restore_screens(&ctx, &app);
+    let ticket = crate::router::lock(&ctx.shared).games.ticket;
+    crate::games::show_error(&ctx, &app, ticket, "boom", true);
+    let shell = app.global::<Shell>();
+    assert_eq!(shell.get_active_screen(), Screen::Games);
+    assert!(!shell.get_boot_curtain());
+
+    // Core never answers: the bound gives up onto the parent.
+    let (app, _window, _runtime, ctx) = cold_start("games");
+    crate::restore_screens(&ctx, &app);
+    let ticket = crate::router::lock(&ctx.shared).games.ticket;
+    CLOCK.with(|clock| clock.set(clock.get() + 15_001));
+    slint::platform::update_timers_and_animations();
+    let shell = app.global::<Shell>();
+    assert_eq!(shell.get_active_screen(), Screen::Systems);
+    assert!(!shell.get_boot_curtain());
+    crate::games::apply_fill(&ctx, &app, ticket, navigation_rows(), None, None, true);
+    assert_eq!(shell.get_active_screen(), Screen::Systems);
+
+    // The saved system is gone: its category is the nearest screen left.
+    let (app, _window, _runtime, ctx) = cold_start("games");
+    crate::router::lock(&ctx.shared).persist.games.system_id = "Gone".into();
+    crate::restore_screens(&ctx, &app);
+    let shell = app.global::<Shell>();
+    assert_eq!(shell.get_active_screen(), Screen::Systems);
+    assert!(!shell.get_boot_curtain());
+}
+
+#[test]
+fn a_cold_hub_start_waits_for_the_resume_tile_behind_the_curtain() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let settled = || crate::hub::Resume {
+        requested: true,
+        loading: false,
+        entry: None,
+    };
+    // The saved category is gone, so the Hub is the restored screen.
+    let (app, _window, _runtime, ctx) = cold_start("systems");
+    crate::router::lock(&ctx.shared).persist.hub.category = "Gone".into();
+    crate::restore_screens(&ctx, &app);
+    let shell = app.global::<Shell>();
+    assert!(shell.get_boot_curtain(), "the Resume tile is still unknown");
+    crate::hub::set_resume(&ctx, &app, settled());
+    assert_eq!(shell.get_active_screen(), Screen::Hub);
+    assert!(!shell.get_boot_curtain());
+
+    // Core never answers the Resume tile: the Hub shows without an alert.
+    let (app, _window, _runtime, ctx) = cold_start("hub");
+    crate::finish_hub_restore(&ctx, &app);
+    let shell = app.global::<Shell>();
+    assert!(shell.get_boot_curtain());
+    CLOCK.with(|clock| clock.set(clock.get() + 15_001));
+    slint::platform::update_timers_and_animations();
+    assert!(!shell.get_boot_curtain());
+    assert!(!app.global::<crate::Overlays>().get_dialog_open());
+
+    // A settled Resume tile does not end a restore that is filling a list.
+    let (app, _window, _runtime, ctx) = cold_start("games");
+    crate::restore_screens(&ctx, &app);
+    crate::hub::set_resume(&ctx, &app, settled());
+    assert!(app.global::<Shell>().get_boot_curtain());
+}
+
+#[test]
+fn hub_and_flat_list_logos_follow_the_logo_style_and_region_settings() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (_app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let bounds = zaparoo_app::logo_cache::Bounds::new(128, 128);
+    let tinted = ctx.logos.key("Genesis", "Genesis", false, bounds);
+    let regional_color = ctx.logos.key("Genesis", "Genesis.jp", true, bounds);
+    assert!(tinted.is_some() && regional_color.is_some());
+    assert_ne!(tinted, regional_color);
+
+    // The Hub resolves a shortcut's stem by region, then its style.
+    assert_eq!(
+        crate::hub::logo_key(&ctx, "Genesis", "tinted", bounds),
+        tinted
+    );
+    assert_eq!(
+        crate::hub::logo_key(&ctx, "Genesis.jp", "color", bounds),
+        regional_color
+    );
+
+    // The flat lists' "no cover" logo reads the same two settings.
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.persist.settings.system_logo_style = "color".into();
+        shared.persist.settings.region = "jp".into();
+    }
+    let prefs = crate::systems::LogoPrefs::of(&crate::router::lock(&ctx.shared));
+    assert_eq!(prefs.key(&ctx, "Genesis", bounds), regional_color);
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.persist.settings.system_logo_style = "tinted".into();
+        shared.persist.settings.region = "us".into();
+    }
+    let prefs = crate::systems::LogoPrefs::of(&crate::router::lock(&ctx.shared));
+    assert_eq!(prefs.key(&ctx, "Genesis", bounds), tinted);
+}
+
+#[test]
+fn update_metadata_opens_the_setup_panel_on_the_menus_scope() {
+    use zaparoo_app::media_setup::{Kind, Scope};
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.systems = navigation_catalog();
+        shared.categories = vec!["Console".into()];
+    }
+    let opened = |ctx: &crate::router::Ctx| {
+        let shared = crate::router::lock(&ctx.shared);
+        (
+            shared.setup.open,
+            shared.setup.kind,
+            shared.setup.scope.clone(),
+            shared.setup.rescrape,
+        )
+    };
+    crate::router::open_scrape_setup(&ctx, &app, Scope::System("System08".into()));
+    assert_eq!(
+        opened(&ctx),
+        (true, Kind::Scrape, Scope::System("System08".into()), false)
+    );
+    crate::media_setup::close(&ctx, &app);
+    crate::router::scrape_category(&ctx, &app, "Console");
+    assert_eq!(
+        opened(&ctx),
+        (true, Kind::Scrape, Scope::Category("Console".into()), false)
+    );
+    crate::media_setup::close(&ctx, &app);
+    // A category with nothing to scrape opens nothing.
+    crate::router::scrape_category(&ctx, &app, "Empty");
+    assert!(!opened(&ctx).0);
+}
+
+#[test]
+fn cold_favorite_systems_restore_commits_behind_the_curtain() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window, _runtime, ctx) = cold_start("favorite-systems");
+    let curtain = pixels(&window);
+    crate::restore_screens(&ctx, &app);
+    assert_still_curtained(&app, &window, &ctx, &curtain, "favorite-systems");
+    let result = zaparoo_core::media_types::SystemsResult {
+        systems: navigation_catalog(),
+    };
+    crate::systems::apply_favorites(&ctx, &app, &result, 1, true);
+    let shell = app.global::<Shell>();
+    assert_eq!(shell.get_active_screen(), Screen::FavoriteSystems);
+    assert!(!shell.get_boot_curtain());
 }

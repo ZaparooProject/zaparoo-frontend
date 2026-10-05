@@ -274,6 +274,14 @@ When adding a new screen or routing path, follow this contract:
    directional moves (selection persist is debounced 250 ms and flushed on
    Accept, Back and hold release).
 
+6. **A cold start shows the curtain, then the restored screen.** Nothing
+   else is ever painted in between. A restore fills its target under the
+   boot curtain and `router::transition_to_screen` lifts it through
+   `router::finish_restore`, the only place the curtain comes down. A new
+   restore target must not publish a parent or source screen first, and a
+   new way for a restore to end must call `finish_restore`. See
+   `docs/architecture.md` → "Cold-start restore".
+
 The class of bug this layout prevents: a stale pending flag or callback from
 screen A firing during screen B's fill and routing somewhere the user did not
 ask to go.

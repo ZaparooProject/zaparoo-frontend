@@ -262,7 +262,7 @@ fn publish_picker_window(
 
 /// Open one of the forms. Scrape seeds its source from the persisted
 /// scraper and refreshes the list from Core.
-pub fn open(ctx: &Ctx, app: &App, kind: Kind) {
+pub fn open(ctx: &Ctx, app: &App, kind: Kind, scope: rules::Scope) {
     {
         let mut shared = lock(&ctx.shared);
         let persisted = shared.persist.settings.metadata_scraper.clone();
@@ -270,7 +270,7 @@ pub fn open(ctx: &Ctx, app: &App, kind: Kind) {
         model.open = true;
         model.kind = kind;
         model.index = 0;
-        model.scope = rules::Scope::All;
+        model.scope = scope;
         model.rescrape = false;
         model.picker = None;
         model.picker_index = 0;
@@ -310,8 +310,23 @@ fn fetch_scrapers(ctx: &Ctx, app: &App) {
             {
                 let mut shared = lock(&ctx2.shared);
                 let persisted = shared.persist.settings.metadata_scraper.clone();
+                // A panel opened on a system or category starts on a source
+                // that covers it, since each platform registers its own.
+                let scoped = (shared.setup.scope != rules::Scope::All).then(|| {
+                    let systems = scope_systems(&shared);
+                    let offered: Vec<(&str, &[String])> = result
+                        .scrapers
+                        .iter()
+                        .map(|s| (s.id.as_str(), s.supported_systems.as_slice()))
+                        .collect();
+                    rules::scraper_for(&offered, &shared.setup.scraper, &systems)
+                        .map(str::to_string)
+                });
                 let model = &mut shared.setup;
                 model.scrapers = result.scrapers;
+                if let Some(Some(scraper)) = scoped {
+                    model.scraper = scraper;
+                }
                 // Keep the stored choice when Core still offers it.
                 let known = model.scrapers.iter().any(|s| s.id == model.scraper);
                 if !known {
@@ -473,17 +488,21 @@ fn pick(ctx: &Ctx, app: &App) {
     render(ctx, app);
 }
 
+/// The systems Core is given for the panel's scope; empty means all.
+fn scope_systems(shared: &Shared) -> Vec<String> {
+    let catalog = zaparoo_app::systems::indexable_ids;
+    rules::resolved_systems(&shared.setup.scope, &|category| {
+        catalog(&crate::systems::catalog_systems(&shared.systems), category)
+    })
+}
+
 /// Start the job over the chosen scope and close the panel.
 fn start(ctx: &Ctx, app: &App) {
     let (kind, systems, scraper, rescrape) = {
         let shared = lock(&ctx.shared);
-        let catalog = zaparoo_app::systems::indexable_ids;
-        let systems = rules::resolved_systems(&shared.setup.scope, &|category| {
-            catalog(&crate::systems::catalog_systems(&shared.systems), category)
-        });
         (
             shared.setup.kind,
-            systems,
+            scope_systems(&shared),
             shared.setup.scraper.clone(),
             shared.setup.rescrape,
         )

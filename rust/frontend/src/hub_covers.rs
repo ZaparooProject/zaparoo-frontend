@@ -141,12 +141,13 @@ fn update_manifest(update: impl FnOnce(&mut Manifest) -> bool) {
     update_manifest_at(&manifest_path(), update);
 }
 
-fn entry_key(entry: &ManifestEntry) -> MediaKey {
+fn entry_key(cache: &MediaCache, entry: &ManifestEntry) -> MediaKey {
     MediaKey {
         media_id: None,
         system: entry.system_id.clone(),
         path: entry.path.clone(),
         max_size: entry.max_size,
+        fit: cache.hub_fit(),
         image_type: None,
     }
 }
@@ -176,17 +177,20 @@ fn seed_entry(cache: &MediaCache, entry: &ManifestEntry, epoch: u64) -> bool {
     if entry.max_size == 0 || entry.max_size > HUB_TILE_MAX_SIZE || cache.seed_epoch() != epoch {
         return false;
     }
-    let key = entry_key(entry);
+    let key = entry_key(cache, entry);
     if cache.is_cached(&key) {
         return false;
     }
-    let Some(image) = load_entry(entry) else {
+    let Some(image) = load_entry(entry, key.fit) else {
         return false;
     };
     cache.seed_current(key, image, epoch)
 }
 
-fn load_entry(entry: &ManifestEntry) -> Option<crate::media_cache::DecodedImage> {
+fn load_entry(
+    entry: &ManifestEntry,
+    fit: zaparoo_app::covers::Fit,
+) -> Option<crate::media_cache::DecodedImage> {
     let bytes =
         crate::media_cache::read_local_image_file(&entry.local_path, MAX_LOCAL_IMAGE_BYTES).ok()?;
     let mut reader = image::ImageReader::new(std::io::Cursor::new(bytes))
@@ -198,19 +202,15 @@ fn load_entry(entry: &ManifestEntry) -> Option<crate::media_cache::DecodedImage>
     limits.max_image_height = Some(zaparoo_app::customization::ART_SOURCE_EDGE);
     reader.limits(limits);
     let decoded = reader.decode().ok()?;
-    let image = if decoded.width() > entry.max_size || decoded.height() > entry.max_size {
+    // A box caps the image on its own; without one the tier does.
+    let decoded = if fit == zaparoo_app::covers::Fit::SOURCE
+        && (decoded.width() > entry.max_size || decoded.height() > entry.max_size)
+    {
         decoded.thumbnail(entry.max_size, entry.max_size)
     } else {
         decoded
-    }
-    .to_rgba8();
-    Some(crate::media_cache::DecodedImage {
-        buffer: slint::SharedPixelBuffer::clone_from_slice(
-            image.as_raw(),
-            image.width(),
-            image.height(),
-        ),
-    })
+    };
+    Some(crate::media_cache::fitted(decoded, fit))
 }
 
 /// Called after Hub geometry and persisted focus are seated, before app.run.
@@ -272,7 +272,7 @@ pub fn seed_startup(ctx: &std::sync::Arc<Ctx>, app: &crate::App) -> crate::scope
             if ctx.media.seed_epoch() != epoch || *ctx.dormant.borrow() {
                 return;
             }
-            let key = entry_key(&entry);
+            let key = entry_key(&ctx.media, &entry);
             let cache = ctx.media.clone();
             let seeded = tokio::task::spawn_blocking(move || seed_entry(&cache, &entry, epoch))
                 .await
@@ -512,7 +512,7 @@ mod tests {
         let cache = MediaCache::new();
         let epoch = cache.seed_epoch();
         assert!(seed_entry(&cache, &entry, epoch));
-        let image = cache.get(&entry_key(&entry)).expect("seeded");
+        let image = cache.get(&entry_key(&cache, &entry)).expect("seeded");
         assert_eq!((image.buffer.width(), image.buffer.height()), (256, 128));
         assert!(!seed_entry(&cache, &entry, epoch), "newer cache value wins");
         cache.clear_decoded();

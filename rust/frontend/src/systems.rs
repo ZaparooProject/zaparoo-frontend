@@ -96,6 +96,33 @@ pub fn region(shared: &Shared) -> Region {
     rules::resolve_region(&shared.persist.settings.region, &locale)
 }
 
+/// The user's logo preferences, read once per render for screens that
+/// draw a system's logo from its id.
+#[derive(Clone, Copy)]
+pub(crate) struct LogoPrefs {
+    color: bool,
+    region: Region,
+}
+
+impl LogoPrefs {
+    pub(crate) fn of(shared: &Shared) -> Self {
+        Self {
+            color: shared.persist.settings.system_logo_style == "color",
+            region: region(shared),
+        }
+    }
+
+    pub(crate) fn key(
+        self,
+        ctx: &Ctx,
+        id: &str,
+        bounds: zaparoo_app::logo_cache::Bounds,
+    ) -> Option<crate::system_logos::Key> {
+        let stem = rules::logo_artwork_stem(id, self.region);
+        ctx.logos.key(id, stem, self.color, bounds)
+    }
+}
+
 pub fn catalog_systems(systems: &[SystemInfo]) -> Vec<CatalogSystem> {
     systems
         .iter()
@@ -158,6 +185,25 @@ fn catalog_entry(shared: &Shared, id: &str) -> Option<SystemInfo> {
 /// Enter a category, starting at its first system on a fresh visit and
 /// preserving the saved system and viewport on resume.
 pub fn enter(ctx: &Ctx, app: &App, category: &str, entry: EntryMode, animate: bool) {
+    lock(&ctx.shared).persist.active_screen = "systems".to_string();
+    fill(ctx, app, category, entry);
+    if animate {
+        crate::router::transition_to_screen(app, crate::Screen::Systems, 1);
+    } else {
+        app.global::<crate::Shell>()
+            .set_active_screen(crate::Screen::Systems);
+        crate::router::refresh_layout(app);
+    }
+}
+
+/// Fill the category a restored Games screen sits under, so Back finds
+/// it complete, without showing it or naming it the saved screen: on a
+/// cold start the Games screen is the first thing shown.
+pub fn prepare_parent(ctx: &Ctx, app: &App, category: &str) {
+    fill(ctx, app, category, EntryMode::Restore);
+}
+
+fn fill(ctx: &Ctx, app: &App, category: &str, entry: EntryMode) {
     {
         let mut shared = lock(&ctx.shared);
         let rows = project(&shared, category);
@@ -169,7 +215,6 @@ pub fn enter(ctx: &Ctx, app: &App, category: &str, entry: EntryMode, animate: bo
         let restore_id = shared.persist.systems.system_id.clone();
         let index = rows.iter().position(|s| s.id == restore_id).unwrap_or(0);
         shared.persist.hub.category = category.to_string();
-        shared.persist.active_screen = "systems".to_string();
         let model = &mut shared.systems_model;
         model.fill_task.cancel();
         model.mode = SystemsMode::Category;
@@ -188,13 +233,6 @@ pub fn enter(ctx: &Ctx, app: &App, category: &str, entry: EntryMode, animate: bo
     view.set_error(SharedString::default());
     view.set_loading(false);
     render(ctx, app);
-    if animate {
-        crate::router::transition_to_screen(app, crate::Screen::Systems, 1);
-    } else {
-        app.global::<crate::Shell>()
-            .set_active_screen(crate::Screen::Systems);
-        crate::router::refresh_layout(app);
-    }
 }
 
 /// The Hub's Favorites action with Group by: System: the systems that
@@ -1311,7 +1349,11 @@ pub fn context_accept(ctx: &Ctx, app: &App, id: &str) {
         "add_to_hub" => crate::hub::add_target(ctx, app, "system", &row.id, "", "", "", "", ""),
         "toggle_hide_system" => crate::router::toggle_hidden_system(ctx, app, &row.id),
         "index_system" => crate::router::start_index(ctx, app, Some(vec![row.id.clone()])),
-        "scrape_system" => crate::router::start_scrape(ctx, app, vec![row.id.clone()], false),
+        "scrape_system" => crate::router::open_scrape_setup(
+            ctx,
+            app,
+            zaparoo_app::media_setup::Scope::System(row.id.clone()),
+        ),
         _ => {}
     }
 }

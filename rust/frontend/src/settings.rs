@@ -727,7 +727,12 @@ fn accept(ctx: &Ctx, app: &App, id: &str, control: Control) {
                         }
                     });
                 } else {
-                    crate::media_setup::open(ctx, app, zaparoo_app::media_setup::Kind::Index);
+                    crate::media_setup::open(
+                        ctx,
+                        app,
+                        zaparoo_app::media_setup::Kind::Index,
+                        zaparoo_app::media_setup::Scope::All,
+                    );
                 }
             }
             "runScraper" => {
@@ -744,7 +749,12 @@ fn accept(ctx: &Ctx, app: &App, id: &str, control: Control) {
                         }
                     });
                 } else {
-                    crate::media_setup::open(ctx, app, zaparoo_app::media_setup::Kind::Scrape);
+                    crate::media_setup::open(
+                        ctx,
+                        app,
+                        zaparoo_app::media_setup::Kind::Scrape,
+                        zaparoo_app::media_setup::Scope::All,
+                    );
                 }
             }
             _ => {}
@@ -930,7 +940,10 @@ fn apply(ctx: &Ctx, app: &App, id: &str, value: &str) {
         }
         "language" | "clockFormat" => crate::router::apply_clock_setting(ctx, app),
         "buttonLayout" => crate::apply_buttons(ctx, app),
-        "systemLogoStyle" => crate::systems::reproject(ctx, app),
+        "systemLogoStyle" | "region" => {
+            crate::systems::reproject(ctx, app);
+            crate::router::reproject_hub(ctx, app);
+        }
         "colorScheme" | "colorIntensity" => {
             let (scheme, intensity) = {
                 let shared = lock(&ctx.shared);

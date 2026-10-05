@@ -460,6 +460,7 @@ mod tests {
             system: "SNES".into(),
             path: "/a".into(),
             max_size: 256,
+            fit: zaparoo_app::covers::Fit::SOURCE,
             image_type: None,
         };
         media.seed(

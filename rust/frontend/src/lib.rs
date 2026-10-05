@@ -539,11 +539,14 @@ fn run_application(
     };
     let store = Store::new(client.clone(), handle.clone());
 
+    // Read before anything saves: a first start has no state to restore.
+    let has_saved_state = persist::has_saved_state();
     let mut persisted = persist::load();
     merge_config_settings(&mut persisted, &config);
     let restore_pending = matches!(
         persisted.active_screen.as_str(),
         "systems"
+            | "favorite-systems"
             | "games"
             | "favorites"
             | "recents"
@@ -552,14 +555,12 @@ fn run_application(
             | "settings"
             | "about"
     );
-    // Cold-launch curtain only for Core-dependent restore targets; a
-    // hub restore paints the (empty) hub optimistically and
-    // Settings/About never need the catalog, matching MainLayout's
-    // optimisticHubVisible / coreIndependentStartupVisible split.
-    let boot_curtain = matches!(
-        persisted.active_screen.as_str(),
-        "systems" | "games" | "favorites" | "recents" | "search" | "search-results"
-    );
+    // The cold-launch curtain covers every Core-dependent restore until
+    // the restored screen is complete, so nothing is shown in between.
+    // Settings and About never need the catalog and paint final from the
+    // first frame. A first start has nothing to restore, so its Hub paints
+    // optimistically and fills in when Core answers.
+    let boot_curtain = boot_curtain_for(&persisted.active_screen, has_saved_state);
 
     #[cfg(not(feature = "hosted"))]
     let args: Vec<String> = std::env::args().collect();
@@ -804,14 +805,16 @@ fn run_application(
     let customization_task = customization::start(&ctx, &app);
     scan_customization(&ctx, &app);
     input::bind(&ctx, &app, config.key_to_action.clone());
-    // The Hub paints its persisted layout before the first frame; the
-    // catalog reconciles it when Core answers.
+    // The Hub builds its persisted layout before the first frame. A first
+    // start shows it at once and the catalog reconciles it when Core
+    // answers; a relaunch keeps it behind the curtain until then.
     hub::bind_input(&ctx, &app);
     systems::bind_input(&ctx, &app);
     games::bind_input(&ctx, &app);
     search::bind(&ctx, &app);
     settings::bind_input(&ctx, &app);
     media_setup::bind_input(&ctx, &app);
+    game_info::bind(&ctx, &app);
     log_upload::bind_input(&ctx, &app);
     update::bind(&ctx, &app);
     router::bind_context_input(&ctx, &app);
@@ -821,6 +824,10 @@ fn run_application(
     bind_resume(&ctx, &app, &client);
 
     restore_core_independent(&ctx, &app);
+    {
+        let ctx = ctx.clone();
+        router::on_restore_finished(move |app| router::refresh_startup_notices(&ctx, app));
+    }
     bind_catalog(&ctx, &app, &store);
     bind_connection_status(&ctx, &app, &client);
     bind_media_status(&ctx, &app, &store);
@@ -1541,12 +1548,14 @@ fn bind_connection_status(ctx: &Arc<Ctx>, app: &App, client: &Arc<Client>) {
                 let generation = generation.clone();
                 let weak = weak.clone();
                 let escalated = boot_status(&state, true);
+                let ctx_escalate = ctx.clone();
                 escalate_handle.spawn(async move {
                     tokio::time::sleep(Duration::from_secs(5)).await;
                     if generation.load(Ordering::SeqCst) == my_generation {
                         let _ = weak.upgrade_in_event_loop(move |app| {
                             if !app.global::<Shell>().get_boot_complete() {
                                 app.global::<Shell>().set_boot_status(escalated);
+                                give_up_boot_restore(&ctx_escalate, &app);
                             }
                         });
                     }
@@ -1619,15 +1628,16 @@ fn apply_catalog(ctx: &Arc<Ctx>, app: &App, status: &ResourceStatus<CatalogData>
             // screens, or reassert the boot curtain.
             if first_catalog {
                 app.global::<Shell>().set_boot_complete(true);
-                app.global::<Shell>().set_boot_curtain(false);
                 router::reset_idle(ctx, app);
                 fetch_system_defaults(ctx);
             }
-            router::refresh_startup_notices(ctx, app);
-
+            // The curtain stays up until the restored screen is complete.
             if was_restore_pending {
                 restore_screens(ctx, app);
+            } else if first_catalog {
+                finish_hub_restore(ctx, app);
             }
+            router::refresh_startup_notices(ctx, app);
         }
         ResourceStatus::Errored { message, .. } => {
             // In-screen terminal error on the Hub, plus the status line's
@@ -1636,8 +1646,50 @@ fn apply_catalog(ctx: &Arc<Ctx>, app: &App, status: &ResourceStatus<CatalogData>
                 .set_hub_error(SharedString::from(message.as_str()));
             status::set_catalog_error(&ctx.status, app, &ctx.handle, Some(message));
             hub::render(ctx, app);
+            // The error is on the Hub, so show it. A restore that would
+            // run on a later catalog is dropped: by then the Hub is in use.
+            if app.global::<Shell>().get_boot_curtain() {
+                lock(&ctx.shared).restore_pending = false;
+                router::finish_restore(app);
+            }
         }
         ResourceStatus::Idle | ResourceStatus::Loading => {}
+    }
+}
+
+/// Core has stayed unreachable: stop holding the curtain for a restore
+/// that cannot run, and show the Hub so Settings is still in reach. The
+/// restore is dropped rather than left to fire later under the user; the
+/// saved state still names its screen for the next start.
+fn give_up_boot_restore(ctx: &Arc<Ctx>, app: &App) {
+    if !app.global::<Shell>().get_boot_curtain() {
+        return;
+    }
+    lock(&ctx.shared).restore_pending = false;
+    hub::render(ctx, app);
+    router::finish_restore(app);
+}
+
+/// A start on the Hub is complete once the catalog and the Resume tile
+/// are both in; until then the curtain stays, bounded like any restore.
+fn finish_hub_restore(ctx: &Arc<Ctx>, app: &App) {
+    if !router::restoring(app) {
+        return;
+    }
+    if hub::resume_settled(ctx) {
+        router::finish_restore(app);
+    } else {
+        router::arm_restore_timeout(ctx, app);
+    }
+}
+
+/// Whether a start with this saved screen opens behind the curtain.
+fn boot_curtain_for(active_screen: &str, has_saved_state: bool) -> bool {
+    match active_screen {
+        "settings" | "about" => false,
+        "systems" | "favorite-systems" | "games" | "favorites" | "recents" | "search"
+        | "search-results" => true,
+        _ => has_saved_state,
     }
 }
 
@@ -1685,8 +1737,25 @@ fn fetch_system_defaults(ctx: &Arc<Ctx>) {
 }
 
 /// Cold-start restore of the persisted screen once the catalog is
-/// available: kill-and-relaunch must come back where the user was.
+/// available: kill-and-relaunch must come back where the user was. The
+/// curtain covers the whole of it: each target fills under the curtain
+/// and its commit lifts it, so no parent or half-filled screen shows.
 fn restore_screens(ctx: &Arc<Ctx>, app: &App) {
+    restore_target(ctx, app);
+    if !router::restoring(app) {
+        return;
+    }
+    if app.global::<Shell>().get_transitioning() {
+        // Waiting on Core.
+        router::arm_restore_timeout(ctx, app);
+    } else {
+        // Nothing to wait for: the target is gone, so the Hub is the
+        // restored screen.
+        finish_hub_restore(ctx, app);
+    }
+}
+
+fn restore_target(ctx: &Arc<Ctx>, app: &App) {
     let (target, category, system_id) = {
         let shared = lock(&ctx.shared);
         (
@@ -1733,20 +1802,26 @@ fn restore_screens(ctx: &Arc<Ctx>, app: &App) {
         return;
     }
     if target == "games" {
-        // Establish the parent synchronously so restored Games cannot
-        // overlap a Hub -> Systems route transition while its browse
-        // request is in flight.
-        systems::enter(ctx, app, &category, EntryMode::Restore, false);
         let sys = lock(&ctx.shared)
             .systems
             .iter()
             .find(|s| s.id == system_id)
             .cloned();
         if let Some(sys) = sys {
+            // Fill the category under the Games screen without showing it:
+            // Back needs it complete, the user must not see it first.
+            systems::prepare_parent(ctx, app, &category);
             // Restored entry preserves the persisted folder stack and
             // browses its top level, so a kill inside a folder resumes
             // inside that folder.
             games::enter_restored(ctx, app, &sys);
+            if !app.global::<Shell>().get_transitioning() {
+                // The system cannot be browsed after all.
+                systems::enter(ctx, app, &category, EntryMode::Restore, true);
+            }
+        } else {
+            // The system is gone: its category is the nearest screen left.
+            systems::enter(ctx, app, &category, EntryMode::Restore, true);
         }
     } else {
         systems::enter(ctx, app, &category, EntryMode::Restore, true);
@@ -1756,6 +1831,31 @@ fn restore_screens(ctx: &Arc<Ctx>, app: &App) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_core_dependent_start_with_saved_state_opens_behind_the_curtain() {
+        for screen in [
+            "systems",
+            "favorite-systems",
+            "games",
+            "favorites",
+            "recents",
+            "search",
+            "search-results",
+        ] {
+            assert!(boot_curtain_for(screen, true), "{screen}");
+            assert!(boot_curtain_for(screen, false), "{screen}");
+        }
+        // Settings and About paint final without Core.
+        for screen in ["settings", "about"] {
+            assert!(!boot_curtain_for(screen, true), "{screen}");
+        }
+        // A Hub relaunch waits for Core; a first start paints optimistically.
+        for screen in ["hub", "", "screen-from-the-future"] {
+            assert!(boot_curtain_for(screen, true), "{screen:?}");
+            assert!(!boot_curtain_for(screen, false), "{screen:?}");
+        }
+    }
 
     #[test]
     fn connection_state_maps_to_closed_translated_boot_status() {

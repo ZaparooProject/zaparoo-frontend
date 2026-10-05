@@ -19,6 +19,8 @@ export global GameInfoView {
     in-out property <int> image-count: 0;
     // Screen-height units keep mirrored windows independent of pixel density.
     in-out property <float> scroll-position: 0;
+    // The painted art box, in pixels, so a cover can be resized to it.
+    callback art-box(int, int);
 }
 
 export component GameInfoModal inherits ModalShell {
@@ -130,6 +132,9 @@ export component GameInfoModal inherits ModalShell {
                         source: GameInfoView.modal-cover;
                         image-fit: contain;
                         visible: GameInfoView.modal-has-cover;
+                        init => { GameInfoView.art-box(Math.round(self.width / 1px), Math.round(self.height / 1px)); }
+                        changed width => { GameInfoView.art-box(Math.round(self.width / 1px), Math.round(self.height / 1px)); }
+                        changed height => { GameInfoView.art-box(Math.round(self.width / 1px), Math.round(self.height / 1px)); }
                     }
                     Text {
                         x: (parent.width - self.width) / 2;

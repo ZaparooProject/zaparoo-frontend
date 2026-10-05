@@ -322,6 +322,8 @@ export component Tile inherits Rectangle {
             }
         }
 
+        // `zaparoo_app::sizing::tile_art_box` mirrors this box: covers are
+        // resized to it before they are cached. Change both together.
         property <length> art-top: root.has-top-label ? root.top-label-height + root.top-label-gap : root.pad;
         property <length> art-bottom: root.show-caption ? root.caption-height + root.caption-gap : root.pad;
         property <length> art-w: Math.max(0px, self.width - 2 * root.pad);
