@@ -150,6 +150,7 @@ fn present(ctx: &Ctx, app: &App, context: ListContext, ids: &[String], current: 
     let overlays = app.global::<crate::Overlays>();
     overlays.set_list_setting_id(SharedString::default());
     overlays.set_list_title(SharedString::from("title:change_launcher"));
+    overlays.set_list_form(false);
     overlays.set_list_entries(ModelRc::new(VecModel::from(entries)));
     overlays.set_list_index(i32::try_from(index).unwrap_or(0));
     overlays.set_list_open(true);

@@ -6595,6 +6595,37 @@ fn the_tags_picker_keeps_each_pick_and_back_leaves_with_them() {
 }
 
 #[test]
+fn a_settings_picker_after_a_form_list_is_a_plain_list_again() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    crate::search::enter(&ctx, &app, EntryMode::Fresh);
+    let overlays = app.global::<crate::Overlays>();
+    for action in ["up", "up", "up", "right", "accept"] {
+        crate::router::handle_action(&ctx, &app, action);
+    }
+    assert!(overlays.get_list_open() && overlays.get_list_form());
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert!(!overlays.get_list_open());
+
+    app.global::<Shell>().set_active_screen(Screen::Settings);
+    crate::settings::open_page(&ctx, &app, SettingsPage::Appearance);
+    let settings = app.global::<crate::SettingsView>();
+    let rows = settings.get_rows();
+    let picker = (0..rows.row_count())
+        .find(|&i| rows.row_data(i).is_some_and(|row| row.id == "colorScheme"));
+    assert!(picker.is_some(), "Appearance lists the color scheme");
+    settings.set_index(picker.unwrap_or(0) as i32);
+    crate::settings::handle_action(&ctx, &app, "accept");
+    assert!(overlays.get_list_open());
+    assert_eq!(overlays.get_list_setting_id(), "colorScheme");
+    assert!(
+        !overlays.get_list_form(),
+        "a settings picker draws its translated values, not form rows"
+    );
+}
+
+#[test]
 fn the_system_picker_skips_headers_and_jumps_by_manufacturer() {
     assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
     let (app, _window) = boot();
