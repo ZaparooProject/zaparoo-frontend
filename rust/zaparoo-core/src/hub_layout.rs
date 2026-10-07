@@ -507,16 +507,22 @@ impl HubLayout {
             match wanted {
                 HubItemKind::System => !id.is_empty() && item.id == id,
                 HubItemKind::Folder | HubItemKind::ZapScript => {
-                    if !item.relative.is_empty() && !relative.is_empty() {
-                        return item.relative == relative
-                            && (item.system.is_empty()
-                                || system.is_empty()
-                                || item.system == system);
+                    let both_relative = !item.relative.is_empty() && !relative.is_empty();
+                    if both_relative
+                        && item.relative == relative
+                        && (item.system.is_empty() || system.is_empty() || item.system == system)
+                    {
+                        return true;
                     }
                     if !item.path.is_empty() && !path.is_empty() {
                         return item.path == path;
                     }
-                    wanted == HubItemKind::ZapScript && !script.is_empty() && item.script == script
+                    // Two relative paths that differ name two files; the
+                    // script cannot make them one.
+                    !both_relative
+                        && wanted == HubItemKind::ZapScript
+                        && !script.is_empty()
+                        && item.script == script
                 }
                 _ => false,
             }
@@ -1427,6 +1433,47 @@ type = "blank"
         );
         assert_eq!(
             layout.target_position("zapscript", "", "", "", "", "PSX"),
+            None
+        );
+    }
+
+    #[test]
+    fn target_position_falls_back_to_the_path_when_relative_paths_differ() {
+        let mut layout = HubLayout::default();
+        layout.reconcile(&["Arcade".to_string()], &[]);
+        let first = layout.items.len();
+        assert!(layout.add_target_item(
+            "zapscript",
+            "",
+            "/media/fat/games/NES/Zelda.nes",
+            "NES/Zelda.nes",
+            "@NES/The Legend of Zelda",
+            "The Legend of Zelda",
+            "",
+            "NES"
+        ));
+        // The same file under another relative path is still that tile.
+        assert_eq!(
+            layout.target_position(
+                "zapscript",
+                "",
+                "/media/fat/games/NES/Zelda.nes",
+                "Zelda.nes",
+                "",
+                "NES"
+            ),
+            Some(first)
+        );
+        // Relative paths that differ are not rescued by the script alone.
+        assert_eq!(
+            layout.target_position(
+                "zapscript",
+                "",
+                "",
+                "NES/Zelda (Rev 1).nes",
+                "@NES/The Legend of Zelda",
+                "NES"
+            ),
             None
         );
     }

@@ -7649,6 +7649,92 @@ fn cancel_gives_up_on_a_launcher_save_core_never_answers() {
 }
 
 #[test]
+fn cancel_retires_a_launcher_save_answer_the_hold_put_off() {
+    use zaparoo_app::wait_cue::{CUE_DELAY_MS, CUE_HOLD_MS};
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    app.global::<crate::Motion>().set_enabled(false);
+    let ov = app.global::<crate::Overlays>();
+    ov.set_list_open(true);
+    ov.set_list_entries(ModelRc::new(VecModel::from(vec![
+        crate::router::menu_entry("default", "Default"),
+        crate::router::menu_entry("alternate", "Alternate"),
+    ])));
+    crate::router::bind_context_input(&std::sync::Arc::new(ctx.clone()), &app);
+    let before = ov.get_dialog_error();
+    let ticket = crate::launchers::begin_save(&ctx, &app);
+    advance(CUE_DELAY_MS);
+    assert!(ov.get_launcher_saving_visible());
+    let payload = serde_json::json!(["system", "SNES", "", "alternate"]).to_string();
+    crate::launchers::finish_save(&ctx, &app, ticket, Some(&payload));
+    assert!(
+        ov.get_launcher_saving_visible(),
+        "the hold keeps the cue up"
+    );
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert!(!ov.get_list_open());
+    // A picker opened after Cancel is not the one that save belonged to.
+    ov.set_list_open(true);
+    advance(CUE_HOLD_MS);
+    assert!(ov.get_list_open());
+    assert_eq!(ov.get_dialog_error(), before);
+}
+
+#[test]
+fn a_scraper_list_answer_reaches_only_the_form_that_asked() {
+    use zaparoo_app::media_setup::Scope;
+    use zaparoo_app::wait_cue::{CUE_DELAY_MS, CUE_HOLD_MS};
+    use zaparoo_core::media_types::{ScraperInfo, ScrapersResult};
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let answer = || {
+        Ok(ScrapersResult {
+            scrapers: vec![ScraperInfo {
+                id: "source".into(),
+                name: "Source".into(),
+                supported_systems: Vec::new(),
+            }],
+        })
+    };
+    let seq = |ctx: &crate::router::Ctx| crate::router::lock(&ctx.shared).setup.sources_seq;
+    let listed = |ctx: &crate::router::Ctx| crate::router::lock(&ctx.shared).setup.scrapers.len();
+
+    crate::router::open_scrape_setup(&ctx, &app, Scope::All);
+    let first = seq(&ctx);
+    crate::media_setup::close(&ctx, &app);
+    crate::media_setup::scrapers_answered(&ctx, &app, first, answer());
+    assert_eq!(listed(&ctx), 0, "a closed form takes no answer");
+
+    crate::router::open_scrape_setup(&ctx, &app, Scope::All);
+    let second = seq(&ctx);
+    crate::media_setup::scrapers_answered(&ctx, &app, first, answer());
+    assert_eq!(listed(&ctx), 0);
+    assert!(
+        crate::router::lock(&ctx.shared)
+            .setup
+            .sources_wait
+            .is_some(),
+        "the earlier answer leaves the new wait alone"
+    );
+
+    // An answer the hold put off is dropped when the form closes first.
+    advance(CUE_DELAY_MS);
+    assert!(crate::router::lock(&ctx.shared).setup.sources_loading);
+    crate::media_setup::scrapers_answered(&ctx, &app, second, answer());
+    assert_eq!(listed(&ctx), 0);
+    crate::media_setup::close(&ctx, &app);
+    advance(CUE_HOLD_MS);
+    assert_eq!(listed(&ctx), 0);
+
+    crate::router::open_scrape_setup(&ctx, &app, Scope::All);
+    let third = seq(&ctx);
+    crate::media_setup::scrapers_answered(&ctx, &app, third, answer());
+    assert_eq!(listed(&ctx), 1);
+}
+
+#[test]
 fn a_hidden_game_shown_among_the_rest_is_labelled_hidden() {
     assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
     let (app, _window) = boot();

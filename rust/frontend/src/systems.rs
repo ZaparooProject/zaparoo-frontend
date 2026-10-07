@@ -599,10 +599,12 @@ pub(crate) fn warm_logos(ctx: &Ctx, app: &App) {
         let bounds = logo_bounds(app, &shared, &geometry(app));
         let style = &shared.persist.settings.system_logo_style;
         let built_from = format!(
-            "{style}|{list}|{bounds:?}|{:?}|{}|{}",
+            "{style}|{list}|{bounds:?}|{:?}|{}|{}|{}|{:?}",
             region(&shared),
             shared.categories.len(),
             shared.systems.len(),
+            shared.show_hidden,
+            shared.hidden_system_ids,
         );
         if BUILT_FROM.with(|last| last.replace(built_from.clone()) == built_from) {
             return;

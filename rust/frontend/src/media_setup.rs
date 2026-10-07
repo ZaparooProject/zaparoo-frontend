@@ -42,6 +42,9 @@ pub struct SetupModel {
     /// The Source row is waiting on that list, and whether it says so yet.
     pub sources_wait: Option<crate::cue::LocalWait>,
     pub sources_loading: bool,
+    /// Which scraper-list request the form is waiting on; an answer to
+    /// any other is dropped.
+    pub sources_seq: u64,
 }
 
 impl SetupModel {
@@ -58,7 +61,15 @@ impl SetupModel {
             scrapers: Vec::new(),
             sources_wait: None,
             sources_loading: false,
+            sources_seq: 0,
         }
+    }
+
+    /// Stop waiting on the scraper list: its answer no longer applies.
+    fn retire_sources(&mut self) -> Option<crate::cue::LocalWait> {
+        self.sources_seq = self.sources_seq.wrapping_add(1);
+        self.sources_loading = false;
+        self.sources_wait.take()
     }
 
     pub(crate) fn rows(&self) -> &'static [FormRow] {
@@ -272,7 +283,7 @@ fn publish_picker_window(
 /// Open one of the forms. Scrape seeds its source from the persisted
 /// scraper and refreshes the list from Core.
 pub fn open(ctx: &Ctx, app: &App, kind: Kind, scope: rules::Scope) {
-    {
+    let stale = {
         let mut shared = lock(&ctx.shared);
         let persisted = shared.persist.settings.metadata_scraper.clone();
         let model = &mut shared.setup;
@@ -286,6 +297,10 @@ pub fn open(ctx: &Ctx, app: &App, kind: Kind, scope: rules::Scope) {
         if model.scraper.is_empty() {
             model.scraper = persisted;
         }
+        model.retire_sources()
+    };
+    if let Some(stale) = stale {
+        crate::cue::abandon_local(stale);
     }
     render(ctx, app);
     if kind == Kind::Scrape {
@@ -294,7 +309,14 @@ pub fn open(ctx: &Ctx, app: &App, kind: Kind, scope: rules::Scope) {
 }
 
 pub fn close(ctx: &Ctx, app: &App) {
-    lock(&ctx.shared).setup.open = false;
+    let stale = {
+        let mut shared = lock(&ctx.shared);
+        shared.setup.open = false;
+        shared.setup.retire_sources()
+    };
+    if let Some(stale) = stale {
+        crate::cue::abandon_local(stale);
+    }
     render(ctx, app);
     crate::settings::refresh(ctx, app);
 }
@@ -302,10 +324,10 @@ pub fn close(ctx: &Ctx, app: &App) {
 /// Core's scraper inventory, for the Source row. Until it answers the row
 /// cannot be used; if that lasts, its value says why (`crate::cue`'s timing).
 fn fetch_scrapers(ctx: &Ctx, app: &App) {
-    let stale = {
+    let (stale, seq) = {
         let mut shared = lock(&ctx.shared);
-        shared.setup.sources_loading = false;
-        shared.setup.sources_wait.take()
+        let stale = shared.setup.retire_sources();
+        (stale, shared.setup.sources_seq)
     };
     if let Some(stale) = stale {
         crate::cue::abandon_local(stale);
@@ -314,7 +336,7 @@ fn fetch_scrapers(ctx: &Ctx, app: &App) {
     let wait = crate::cue::begin_local(app, move |app| {
         {
             let mut shared = lock(&shown.shared);
-            if !shared.setup.open || !shared.setup.scrapers.is_empty() {
+            if shared.setup.sources_seq != seq || !shared.setup.scrapers.is_empty() {
                 return;
             }
             shared.setup.sources_loading = true;
@@ -329,14 +351,37 @@ fn fetch_scrapers(ctx: &Ctx, app: &App) {
     ctx.handle.spawn(async move {
         let result = client.scrapers().await;
         let _ = weak.upgrade_in_event_loop(move |app| {
-            let wait = lock(&ctx2.shared).setup.sources_wait.take();
-            let finish = move |app: &App| scrapers_landed(&ctx2, app, result);
-            match wait {
-                Some(wait) => crate::cue::end_local(&app, wait, finish),
-                None => finish(&app),
-            }
+            scrapers_answered(&ctx2, &app, seq, result);
         });
     });
+}
+
+/// The scraper list answered request `seq`. A form closed or reopened
+/// since is waiting on something else, and so is one closed while the
+/// hold puts the answer off.
+pub(crate) fn scrapers_answered(
+    ctx: &Ctx,
+    app: &App,
+    seq: u64,
+    result: Result<zaparoo_core::media_types::ScrapersResult, zaparoo_core::client::ClientError>,
+) {
+    let wait = {
+        let mut shared = lock(&ctx.shared);
+        if shared.setup.sources_seq != seq {
+            return;
+        }
+        shared.setup.sources_wait.take()
+    };
+    let ctx = ctx.clone();
+    let finish = move |app: &App| {
+        if lock(&ctx.shared).setup.sources_seq == seq {
+            scrapers_landed(&ctx, app, result);
+        }
+    };
+    match wait {
+        Some(wait) => crate::cue::end_local(app, wait, finish),
+        None => finish(app),
+    }
 }
 
 fn scrapers_landed(

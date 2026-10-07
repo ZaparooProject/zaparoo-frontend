@@ -42,17 +42,21 @@ pub(crate) fn begin_save(ctx: &Ctx, app: &App) -> u64 {
 }
 
 pub(crate) fn finish_save(ctx: &Ctx, app: &App, ticket: u64, failure: Option<&str>) {
-    let wait = {
+    let (wait, settled) = {
         let mut shared = lock(&ctx.shared);
         if shared.launcher_save_seq != ticket {
             return;
         }
         shared.launcher_save_seq = shared.launcher_save_seq.wrapping_add(1);
-        shared.launcher_save_wait.take()
+        (shared.launcher_save_wait.take(), shared.launcher_save_seq)
     };
     let ctx = ctx.clone();
     let failure = failure.map(ToString::to_string);
     let finish = move |app: &App| {
+        // The hold can put this off; a Cancel in between retires it.
+        if lock(&ctx.shared).launcher_save_seq != settled {
+            return;
+        }
         let ov = app.global::<crate::Overlays>();
         ov.set_launcher_saving(false);
         ov.set_launcher_saving_visible(false);
