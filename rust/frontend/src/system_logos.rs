@@ -13,6 +13,7 @@ use tokio::sync::Notify;
 use zaparoo_app::logo_cache::{Bounds, Cache, CACHE_BYTES};
 
 include!(concat!(env!("OUT_DIR"), "/system_logos_table.rs"));
+include!(concat!(env!("OUT_DIR"), "/system_half_logos_table.rs"));
 include!(concat!(env!("OUT_DIR"), "/system_color_logos_table.rs"));
 
 type Tints = [(u8, u8, u8); 3];
@@ -65,6 +66,11 @@ struct Inner {
     generation: u64,
     paused: bool,
     visible: std::collections::HashSet<Key>,
+    /// Every logo the Systems grid can show, at its current style and tile
+    /// size: prepared in the background behind whatever a screen asks for,
+    /// so a page turned to later has its art ready instead of popping in.
+    /// Kept across cache resets and re-keyed to the generation in force.
+    warm: Vec<Key>,
 }
 
 #[derive(Debug)]
@@ -82,6 +88,7 @@ impl Logos {
                 ramps: DEFAULT_RAMPS,
                 generation: 0,
                 paused: false,
+                warm: Vec::new(),
                 visible: std::collections::HashSet::new(),
             }),
             wake: Notify::new(),
@@ -173,15 +180,54 @@ impl Logos {
             let generation = inner.generation;
             visible.retain(|key| key.generation == generation);
             inner.visible = visible.iter().copied().collect();
+            let warm: Vec<Key> = inner
+                .warm
+                .iter()
+                .map(|key| Key { generation, ..*key })
+                .collect();
             inner.cache.request(
-                visible.into_iter().chain(
-                    neighbors
-                        .into_iter()
-                        .filter(|key| key.generation == generation),
-                ),
+                visible
+                    .into_iter()
+                    .chain(
+                        neighbors
+                            .into_iter()
+                            .filter(|key| key.generation == generation),
+                    )
+                    .chain(warm),
             );
             self.wake.notify_one();
         }
+    }
+
+    /// Name every logo worth having ready before it is asked for. They are
+    /// prepared behind the window a screen requests, at a pace that leaves
+    /// the processor to whatever the user is doing (`spawn_driver`).
+    pub fn set_warm(&self, keys: impl IntoIterator<Item = Key>) {
+        let keys: Vec<Key> = keys.into_iter().collect();
+        let mut inner = self.lock();
+        let same = inner.warm.len() == keys.len()
+            && inner.warm.iter().zip(&keys).all(|(old, new)| {
+                (old.asset, old.tinted, old.bounds) == (new.asset, new.tinted, new.bounds)
+            });
+        if same {
+            return;
+        }
+        inner.warm = keys;
+        if !inner.paused {
+            let generation = inner.generation;
+            let warm: Vec<Key> = inner
+                .warm
+                .iter()
+                .map(|key| Key { generation, ..*key })
+                .collect();
+            inner.cache.request_more(warm);
+            self.wake.notify_one();
+        }
+    }
+
+    /// Whether `key` is on the page in view, as opposed to warm-up work.
+    fn is_visible(&self, key: &Key) -> bool {
+        self.lock().visible.contains(key)
     }
 
     fn next_job(&self) -> Option<(Key, (Tints, Tints))> {
@@ -232,7 +278,10 @@ pub fn cell_bounds(app: &crate::App, width: i32, height: i32) -> Bounds {
 fn prepare(key: Key, ramps: (Tints, Tints)) -> Option<Prepared> {
     let start = std::time::Instant::now();
     let (id, bytes) = match key.asset {
-        Asset::Gray(index) => EMBEDDED_LOGOS[index],
+        Asset::Gray(index) => {
+            let (id, full) = EMBEDDED_LOGOS[index];
+            (id, half_size_source(id, full, key.bounds).unwrap_or(full))
+        }
         Asset::Color(index) => EMBEDDED_COLOR_LOGOS[index],
     };
     // Embedded assets currently peak at 1716x160. Keep decoder scratch
@@ -274,6 +323,39 @@ fn prepare(key: Key, ramps: (Tints, Tints)) -> Option<Prepared> {
         "system logo prepared"
     );
     Some(prepared)
+}
+
+/// A PNG's pixel size, from its header alone.
+fn png_size(bytes: &[u8]) -> Option<(u32, u32)> {
+    let field = |at: usize| {
+        bytes
+            .get(at..at + 4)
+            .and_then(|b| <[u8; 4]>::try_from(b).ok())
+            .map(u32::from_be_bytes)
+    };
+    bytes
+        .starts_with(b"\x89PNG\r\n\x1a\n")
+        .then(|| field(16).zip(field(20)))
+        .flatten()
+}
+
+/// The half-size copy of a grayscale logo, when the tile draws it at half
+/// size or less. Decoding and scaling are most of what a logo costs to
+/// prepare, and both go by source pixels, so the copy does a quarter of the
+/// work. It is still at least as large as what gets drawn: no tile ever
+/// shows a logo scaled up from it, and one large enough to want more than
+/// half keeps the full-size source.
+fn half_size_source(id: &str, full: &'static [u8], bounds: Bounds) -> Option<&'static [u8]> {
+    let (width, height) = png_size(full)?;
+    let fits_half = u64::from(bounds.width) * 2 <= u64::from(width)
+        || u64::from(bounds.height) * 2 <= u64::from(height);
+    if !fits_half {
+        return None;
+    }
+    EMBEDDED_HALF_LOGOS
+        .binary_search_by(|(name, _)| name.cmp(&id))
+        .ok()
+        .map(|index| EMBEDDED_HALF_LOGOS[index].1)
 }
 
 fn luma(r: u8, g: u8, b: u8) -> i32 {
@@ -394,7 +476,16 @@ pub fn spawn_driver(ctx: &Arc<crate::router::Ctx>, app: &crate::App) {
                 continue;
             };
             // No UI, palette, queue or cache lock crosses the decode/tint.
+            let urgent = cache.is_visible(&key);
+            let started = std::time::Instant::now();
             let image = tokio::task::spawn_blocking(move || prepare(key, ramps)).await;
+            // Work nobody is looking at yet takes half a core at most: rest
+            // as long as it ran. A page that comes into view meanwhile waits
+            // out one such rest, a few tens of milliseconds, then runs at
+            // full pace.
+            if !urgent {
+                tokio::time::sleep(started.elapsed()).await;
+            }
             let image = match image {
                 Ok(image) => image,
                 Err(error) => {
@@ -422,6 +513,85 @@ pub fn spawn_driver(ctx: &Arc<crate::router::Ctx>, app: &crate::App) {
 mod tests {
     #![allow(clippy::expect_used, reason = "required embedded fixtures")]
     use super::*;
+
+    #[test]
+    fn a_small_tile_decodes_the_half_size_copy_and_never_scales_it_up() {
+        for (id, full) in EMBEDDED_LOGOS {
+            let (width, height) = png_size(full).expect("embedded logo is a PNG");
+            // Every grayscale logo has its half-size copy.
+            let small = Bounds::new(64, 64);
+            if u64::from(small.width) * 2 <= u64::from(width)
+                || u64::from(small.height) * 2 <= u64::from(height)
+            {
+                let half = half_size_source(id, full, small).expect("half-size copy");
+                let (half_w, half_h) = png_size(half).expect("half-size copy is a PNG");
+                assert!(half_w.abs_diff(width.div_ceil(2)) <= 1, "{id}");
+                assert!(half_h.abs_diff(height.div_ceil(2)) <= 1, "{id}");
+                // What the tile draws is the full art fitted to its box;
+                // the copy must hold at least that many pixels each way.
+                let scale = (f64::from(small.width) / f64::from(width))
+                    .min(f64::from(small.height) / f64::from(height));
+                assert!(f64::from(half_w) + 1.0 >= f64::from(width) * scale, "{id}");
+                assert!(f64::from(half_h) + 1.0 >= f64::from(height) * scale, "{id}");
+            }
+            // A tile that shows the logo at more than half size keeps the
+            // full-size source.
+            let roomy = Bounds::new(width.max(32), height.max(32));
+            if roomy.width * 2 > width && roomy.height * 2 > height {
+                assert!(half_size_source(id, full, roomy).is_none(), "{id}");
+            }
+        }
+    }
+
+    #[test]
+    fn the_half_size_copy_prepares_to_the_same_size_as_the_full_source() {
+        let logos = Logos::new();
+        let bounds = Bounds::new(128, 64);
+        let key = logos
+            .key("NES", "NES", false, bounds)
+            .expect("the NES logo is embedded");
+        assert!(
+            matches!(key.asset, Asset::Gray(_)),
+            "a tinted key is grayscale"
+        );
+        let Asset::Gray(index) = key.asset else {
+            return;
+        };
+        let (id, full) = EMBEDDED_LOGOS[index];
+        assert!(half_size_source(id, full, bounds).is_some());
+        let prepared = prepare(key, DEFAULT_RAMPS).expect("prepared");
+        let (width, height) = png_size(full).expect("png");
+        let scale = (f64::from(bounds.width) / f64::from(width))
+            .min(f64::from(bounds.height) / f64::from(height));
+        let expected_w = (f64::from(width) * scale).round() as u32;
+        assert!(prepared.rest.width().abs_diff(expected_w) <= 1);
+        assert!(prepared.rest.width() <= bounds.width);
+        assert!(prepared.rest.height() <= bounds.height);
+    }
+
+    #[test]
+    fn the_warm_list_is_prepared_behind_the_page_in_view_and_survives_a_reset() {
+        let logos = Logos::new();
+        let bounds = Bounds::new(128, 64);
+        let key = |id: &str| logos.key(id, id, false, bounds).expect("embedded logo");
+        let (page, later) = (key("NES"), key("SNES"));
+        logos.set_warm([page, later]);
+        // The page in view goes first, the rest of the list after it.
+        logos.request_window([page], []);
+        assert_eq!(logos.next_job().map(|(job, _)| job), Some(page));
+        logos.finish(page, prepare(page, DEFAULT_RAMPS));
+        assert!(!logos.is_visible(&later));
+        logos.prepare_queued();
+        assert!(logos.get(&later).is_some(), "ready before anyone asks");
+
+        // A game launch or a palette change empties the cache; the list is
+        // kept and prepared again for the generation now in force.
+        logos.clear();
+        logos.request([]);
+        logos.prepare_queued();
+        let later = key("SNES");
+        assert!(logos.get(&later).is_some());
+    }
 
     #[test]
     fn tint_preserves_alpha_and_tonal_ramp() {

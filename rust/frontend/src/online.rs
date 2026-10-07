@@ -395,9 +395,11 @@ pub fn unlink(ctx: &Ctx, app: &App) {
     let client = ctx.store.client();
     let ctx = ctx.clone();
     let weak = app.as_weak();
+    let wait = crate::cue::begin(&ctx, app, crate::AppCue::Unlinking, "", "");
     ctx.handle.clone().spawn(async move {
         let result = client.settings_auth_unlink().await;
         let _ = weak.upgrade_in_event_loop(move |app| {
+            crate::cue::end(&ctx, &app, wait);
             if let Err(error) = result {
                 tracing::warn!("unlinking the Online account failed: {}", error.message);
                 crate::router::report_action_error(&ctx, &app, "online", "");

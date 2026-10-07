@@ -181,12 +181,27 @@ fn show_image(ctx: &Ctx, app: &App) {
     view.set_image_index(i32::try_from(index).unwrap_or(0));
     view.set_modal_has_cover(false);
     view.set_modal_cover(slint::Image::default());
+    // An image Core already said it does not have is never fetched again,
+    // so nothing would arrive to end the wait.
+    view.set_modal_cover_absent(key.as_ref().is_some_and(|key| ctx.media.is_negative(key)));
     if let Some(key) = key {
         if let Some(decoded) = ctx.media.get(&key) {
             cover_landed(ctx, app, &key, &decoded);
         } else {
             ctx.media.enqueue(key);
         }
+    }
+}
+
+/// Core answered that it has no image for `key`: stop waiting for it.
+pub fn cover_absent(ctx: &Ctx, app: &App, key: &MediaKey) {
+    let matches = {
+        let shared = lock(&ctx.shared);
+        shared.game_info.images.get(shared.game_info.selected) == Some(key)
+    };
+    let view = app.global::<GameInfoView>();
+    if view.get_modal_open() && matches {
+        view.set_modal_cover_absent(true);
     }
 }
 

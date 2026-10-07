@@ -15,6 +15,10 @@ pub const LIST_VISIBLE_ROWS: usize = 10;
 pub const TATE_LIST_VISIBLE_ROWS: usize = 16;
 /// Rows fetched per chunk while held rapid scrolling or restoring.
 pub const RAPID_FETCH_CHUNK: u32 = 300;
+/// Rows fetched when a page move (left or right) in a list reaches the
+/// loaded edge. A request's cost is mostly fixed, so one screenful per
+/// trip cannot keep up with a held page move.
+pub const LIST_PAGE_FETCH: u32 = 50;
 /// Ceiling for one jump-to-letter fetch (Core's `max_results` cap).
 pub const JUMP_FETCH_CEILING: u32 = 1000;
 /// Core's `media.history` `limit` ceiling.
@@ -497,11 +501,16 @@ pub enum LinearMove {
     FetchMore,
     /// Stay put; `fetch` still asks for the next page.
     Stay { fetch: bool },
+    /// Wrap off the top onto the list's true last row, which is not
+    /// loaded yet: the caller walks there.
+    WrapToTail,
 }
 
-/// A linear move: wrap at the ends, but past the last loaded row with more
-/// coming, fetch instead of wrapping; near the loaded edge, fetch alongside
-/// the move.
+/// A linear move: wrap at the ends of the whole list, not of the loaded
+/// rows. Off the top with more coming, the wrap target is the unloaded
+/// tail. Past the last loaded row with more coming, a page move lands on
+/// that row and fetches, and a move already on it only fetches. Near the
+/// loaded edge, fetch alongside the move.
 pub fn linear_move(current: usize, count: usize, delta: i64, has_more: bool) -> LinearMove {
     if count == 0 {
         return LinearMove::Stay { fetch: false };
@@ -509,9 +518,18 @@ pub fn linear_move(current: usize, count: usize, delta: i64, has_more: bool) -> 
     let count_i = count as i64;
     let mut next = current as i64 + delta;
     if next < 0 {
+        if has_more {
+            return LinearMove::WrapToTail;
+        }
         next = count_i - 1;
     } else if next >= count_i {
         if has_more {
+            if current + 1 < count {
+                return LinearMove::To {
+                    index: count - 1,
+                    fetch: true,
+                };
+            }
             return LinearMove::FetchMore;
         }
         next = 0;
@@ -841,6 +859,80 @@ pub enum DetailStep {
     Arm,
     /// Stop the debounce timer.
     Disarm,
+}
+
+/// What the detailed list does about artwork for the row in focus.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CoverSettleStep {
+    /// The selection has rested here: ask for its artwork.
+    Request,
+    /// The selection moved and its timer is already running: ask for none.
+    Hold,
+    /// The selection moved: ask for none and start the timer for this
+    /// sequence number.
+    Arm(u64),
+}
+
+/// Holds the detailed list's artwork demand until the selection rests for
+/// `DETAIL_DEBOUNCE_MS`. Core resizes one cold image at a time and a
+/// request in flight cannot be withdrawn, so artwork asked for on every
+/// row passed queues ahead of the row the user stops on.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CoverSettle {
+    settled: Option<usize>,
+    pending: Option<usize>,
+    seq: u64,
+}
+
+impl CoverSettle {
+    /// A new list: its first selection needs no wait.
+    pub fn reset(&mut self) {
+        self.settled = None;
+        self.pending = None;
+        self.seq += 1;
+    }
+
+    /// The selection is known to have rested on `index` already.
+    pub fn settle_now(&mut self, index: usize) {
+        self.settled = Some(index);
+        self.pending = None;
+        self.seq += 1;
+    }
+
+    /// The list is about to draw with `index` in focus.
+    pub fn observe(&mut self, index: usize) -> CoverSettleStep {
+        match self.settled {
+            None => {
+                self.settle_now(index);
+                CoverSettleStep::Request
+            }
+            Some(settled) if settled == index => {
+                self.pending = None;
+                CoverSettleStep::Request
+            }
+            Some(_) if self.pending == Some(index) => CoverSettleStep::Hold,
+            Some(_) => {
+                self.pending = Some(index);
+                self.seq += 1;
+                CoverSettleStep::Arm(self.seq)
+            }
+        }
+    }
+
+    /// The timer armed with `seq` ran out. True when the selection is
+    /// still where that timer left it, so its artwork may be asked for.
+    pub fn fire(&mut self, seq: u64) -> bool {
+        if self.seq != seq {
+            return false;
+        }
+        match self.pending.take() {
+            Some(index) => {
+                self.settled = Some(index);
+                true
+            }
+            None => false,
+        }
+    }
 }
 
 /// The focused-detail policy: peek immediately, load after the debounce,
@@ -1306,6 +1398,7 @@ mod tests {
             }
         );
         assert_eq!(linear_move(29, 30, 1, true), LinearMove::FetchMore);
+        assert_eq!(linear_move(29, 30, 10, true), LinearMove::FetchMore);
         assert_eq!(
             linear_move(27, 30, 1, true),
             LinearMove::To {
@@ -1332,6 +1425,91 @@ mod tests {
             linear_move(0, 30, 10, false),
             LinearMove::To {
                 index: 10,
+                fetch: false
+            }
+        );
+    }
+
+    #[test]
+    fn a_burst_of_moves_asks_for_artwork_only_where_it_stops() {
+        let mut settle = CoverSettle::default();
+        // The first row of a new list is asked for at once.
+        assert_eq!(settle.observe(0), CoverSettleStep::Request);
+        assert_eq!(settle.observe(0), CoverSettleStep::Request);
+        // Each row passed re-arms; a redraw on the same row holds.
+        let step = settle.observe(1);
+        assert!(matches!(step, CoverSettleStep::Arm(_)), "a move arms");
+        let CoverSettleStep::Arm(first) = step else {
+            return;
+        };
+        assert_eq!(settle.observe(1), CoverSettleStep::Hold);
+        let step = settle.observe(2);
+        assert!(
+            matches!(step, CoverSettleStep::Arm(_)),
+            "a new move re-arms"
+        );
+        let CoverSettleStep::Arm(second) = step else {
+            return;
+        };
+        // Only the timer of the row it stopped on releases the demand.
+        assert!(!settle.fire(first));
+        assert_eq!(settle.observe(2), CoverSettleStep::Hold);
+        assert!(settle.fire(second));
+        assert_eq!(settle.observe(2), CoverSettleStep::Request);
+        assert!(!settle.fire(second));
+    }
+
+    #[test]
+    fn returning_to_the_settled_row_cancels_the_wait() {
+        let mut settle = CoverSettle::default();
+        assert_eq!(settle.observe(4), CoverSettleStep::Request);
+        let step = settle.observe(5);
+        assert!(matches!(step, CoverSettleStep::Arm(_)), "a move arms");
+        let CoverSettleStep::Arm(seq) = step else {
+            return;
+        };
+        assert_eq!(settle.observe(4), CoverSettleStep::Request);
+        assert!(!settle.fire(seq));
+        // A new list starts settled on whatever row it opens on.
+        settle.reset();
+        assert_eq!(settle.observe(9), CoverSettleStep::Request);
+        // A fast scroll that just ended has already rested.
+        settle.settle_now(30);
+        assert_eq!(settle.observe(30), CoverSettleStep::Request);
+    }
+
+    #[test]
+    fn linear_move_wraps_over_the_whole_list_not_the_loaded_rows() {
+        // Off the top of a partly loaded list the target is the true tail.
+        assert_eq!(linear_move(0, 20, -1, true), LinearMove::WrapToTail);
+        assert_eq!(linear_move(0, 20, -10, true), LinearMove::WrapToTail);
+        assert_eq!(linear_move(3, 20, -10, true), LinearMove::WrapToTail);
+        // Fully loaded, the last loaded row is the tail.
+        assert_eq!(
+            linear_move(0, 20, -10, false),
+            LinearMove::To {
+                index: 19,
+                fetch: false
+            }
+        );
+    }
+
+    #[test]
+    fn a_page_move_past_the_loaded_edge_lands_on_the_last_loaded_row() {
+        assert_eq!(
+            linear_move(126, 130, 10, true),
+            LinearMove::To {
+                index: 129,
+                fetch: true
+            }
+        );
+        // Already on the last loaded row: nothing to land on yet.
+        assert_eq!(linear_move(129, 130, 10, true), LinearMove::FetchMore);
+        // Nothing more is coming: wrap to the top as before.
+        assert_eq!(
+            linear_move(126, 130, 10, false),
+            LinearMove::To {
+                index: 0,
                 fetch: false
             }
         );

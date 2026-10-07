@@ -49,6 +49,10 @@ pub(crate) enum Target {
 /// picker's owner opened.
 #[derive(Debug, Default)]
 pub struct Model {
+    /// The categories page is waiting on the tags, and whether its row
+    /// says so yet (`crate::cue`'s timing).
+    row_wait: Option<crate::cue::LocalWait>,
+    loading_row: bool,
     /// Bumped per fetch so a late answer cannot fill a newer one.
     seq: u64,
     target: Target,
@@ -299,15 +303,17 @@ fn landed(
             }
         }
     }
-    // The categories page may be open on its loading row.
-    let on_categories = matches!(
-        lock(&ctx.shared).list_context,
-        ListContext::FilterCategories
-    );
-    if on_categories && app.global::<crate::Overlays>().get_list_open() {
-        let rows = category_rows(&lock(&ctx.shared));
-        app.global::<crate::Overlays>()
-            .set_list_entries(ModelRc::new(VecModel::from(rows)));
+    // The categories page may be open on its loading row, which stays
+    // out its hold if it only just appeared.
+    let wait = lock(&ctx.shared).filter.row_wait.take();
+    let ctx2 = ctx.clone();
+    let finish = move |app: &App| {
+        lock(&ctx2.shared).filter.loading_row = false;
+        refresh_categories(&ctx2, app);
+    };
+    match wait {
+        Some(wait) => crate::cue::end_local(app, wait, finish),
+        None => finish(app),
     }
     let target = lock(&ctx.shared).filter.target;
     if target == Target::Search {
@@ -333,6 +339,8 @@ fn category_rows(shared: &Shared) -> Vec<crate::MenuEntry> {
     if groups.is_empty() {
         let key = match shared.filter.load {
             Load::Failed => "filter:failed",
+            // Blank until the wait is long enough to be worth a word.
+            Load::Idle | Load::Loading if !shared.filter.loading_row => "filter:pending",
             Load::Idle | Load::Loading => "filter:loading",
             Load::Ready => "filter:none",
         };
@@ -402,8 +410,52 @@ fn present(
     crate::router::present_form_list(ctx, app, context, title, rows, index);
 }
 
+/// Redraw the categories page's rows where it is the page on screen.
+fn refresh_categories(ctx: &Ctx, app: &App) {
+    let on_categories = matches!(
+        lock(&ctx.shared).list_context,
+        ListContext::FilterCategories
+    );
+    if on_categories && app.global::<crate::Overlays>().get_list_open() {
+        let rows = category_rows(&lock(&ctx.shared));
+        app.global::<crate::Overlays>()
+            .set_list_entries(ModelRc::new(VecModel::from(rows)));
+    }
+}
+
+/// Start the loading row's wait when the page opens on tags still in
+/// flight: the row is blank, then says "Loading tags…" if it lasts.
+fn arm_loading_row(ctx: &Ctx, app: &App) {
+    let stale = {
+        let mut shared = lock(&ctx.shared);
+        let waiting = shared.filter.groups.is_empty()
+            && matches!(shared.filter.load, Load::Idle | Load::Loading);
+        if !waiting {
+            return;
+        }
+        shared.filter.loading_row = false;
+        shared.filter.row_wait.take()
+    };
+    if let Some(stale) = stale {
+        crate::cue::abandon_local(stale);
+    }
+    let ctx2 = ctx.clone();
+    let wait = crate::cue::begin_local(app, move |app| {
+        {
+            let mut shared = lock(&ctx2.shared);
+            if !matches!(shared.filter.load, Load::Idle | Load::Loading) {
+                return;
+            }
+            shared.filter.loading_row = true;
+        }
+        refresh_categories(&ctx2, app);
+    });
+    lock(&ctx.shared).filter.row_wait = Some(wait);
+}
+
 /// The categories page, with `focus` pre-selected (the category just left).
 fn present_categories(ctx: &Ctx, app: &App, focus: Option<Category>) {
+    arm_loading_row(ctx, app);
     let (rows, index) = {
         let shared = lock(&ctx.shared);
         let rows = category_rows(&shared);
@@ -595,13 +647,16 @@ mod tests {
 
     #[test]
     fn category_rows_say_why_there_is_nothing_to_pick() {
-        for (load, key) in [
-            (Load::Loading, "filter:loading"),
-            (Load::Failed, "filter:failed"),
-            (Load::Ready, "filter:none"),
+        // A wait says nothing until it has lasted long enough to be one.
+        for (load, said, key) in [
+            (Load::Loading, false, "filter:pending"),
+            (Load::Loading, true, "filter:loading"),
+            (Load::Failed, false, "filter:failed"),
+            (Load::Ready, false, "filter:none"),
         ] {
             let mut shared = shared_with(Vec::new(), &[]);
             shared.filter.load = load;
+            shared.filter.loading_row = said;
             let rows = category_rows(&shared);
             assert_eq!(rows.len(), 1);
             assert_eq!(rows[0].label_key, key);

@@ -404,7 +404,7 @@ from its resting state if colour is the only difference, and that it have a
 form under Reduce Motion.
 
 The header line is the second, worded cue, on the same pattern as a hidden
-tile's muted edge plus its worded reason. It waits out `LOADING_CUE_DELAY_MS`
+tile's muted edge plus its worded reason. It waits out `CUE_DELAY_MS`
 first, so a launch that answers quickly never flashes a word into the header
 and away again. Nothing floats on the tile itself: no spinner, no badge, no
 looping cue over content.
@@ -939,8 +939,9 @@ for it ("999999 scraped") left a visibly blank void next to the track
 whenever the actual count was short or absent (every optimize/vacuum
 phase); sizing it to live content instead fixed the void but reintroduced
 the exact kind of shifting anchor point the fixed-slot rules elsewhere in
-this file exist to prevent. The bar alone conveys progress, the same as the
-mobile app.
+this file exist to prevent. What does sit between the label and the track is
+a whole percent, when the task has a known total: it has a fixed width
+(measured from "100%"), so it never moves the label's anchor.
 
 Label and detail join with a plain colon (`"Indexing: {}"`), not a
 mid-dot, the bitmap CRT font renders `·` as a genuine pixel glyph (it's
@@ -957,7 +958,12 @@ already carry the reason-vs-detail distinction ("error", "paused",
 "failed" vs. a bare progress readout), so nothing is lost by collapsing
 the two joins into one.
 
-One slot, resolved in priority order by `zaparoo_app::status_line`: a Core
+The router's own cue (`crate::cue`: what the user's action is waiting on, or
+its confirmation) shares the slot. It yields to a Core connection problem and
+takes the line from everything below that for as long as it has something to
+say, because a page load lasts a second and an index lasts minutes.
+
+Otherwise one slot, resolved in priority order by `zaparoo_app::status_line`: a Core
 connection problem; an active
 background task (including why it's paused, "game running"); a terminal
 message held ~6 s after a task ends (a scrape failure lands here too, not as

@@ -16,6 +16,7 @@ mod brand;
 mod browse_filter;
 mod browse_motion;
 mod card_write;
+mod cue;
 mod customization;
 mod display;
 mod drs;
@@ -1512,6 +1513,8 @@ pub(crate) fn deliver_covers(ctx: &Ctx, app: &App, keys: &[media_cache::MediaKey
     for key in &carousel {
         if let Some(image) = ctx.media.get(key) {
             game_info::cover_landed(ctx, app, key, &image);
+        } else if ctx.media.is_negative(key) {
+            game_info::cover_absent(ctx, app, key);
         }
     }
     if !browse.is_empty() {
@@ -1666,6 +1669,9 @@ fn apply_catalog(ctx: &Arc<Ctx>, app: &App, status: &ResourceStatus<CatalogData>
             };
 
             hub::on_catalog_ready(ctx, app);
+            // Start preparing every system's logo now, behind whatever is
+            // on screen, so the Systems grid opens with its art in place.
+            systems::warm_logos(ctx, app);
             if matches!(
                 app.global::<Shell>().get_active_screen(),
                 Screen::Systems | Screen::FavoriteSystems

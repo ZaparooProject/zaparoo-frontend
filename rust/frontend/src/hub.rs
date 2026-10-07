@@ -1428,13 +1428,34 @@ fn open_add_picker(ctx: &Ctx, app: &App) {
     crate::router::present_hub_add_picker(ctx, app, rows);
 }
 
-/// "Add to Hub" from a browse screen: append a system, folder or
-/// `ZapScript` shortcut after the last real tile.
+/// Whether the tile a browse screen's "Add to Hub" would create for this
+/// target is already on the Hub, so its menu offers "Remove from Hub".
+pub fn has_target(
+    shared: &Shared,
+    kind: &str,
+    id: &str,
+    path: &str,
+    relative: &str,
+    script: &str,
+    system: &str,
+) -> bool {
+    shared
+        .hub
+        .layout
+        .target_position(kind, id, path, relative, script, system)
+        .is_some()
+}
+
+/// "Add to Hub" / "Remove from Hub" from a browse screen, for a system,
+/// folder or `ZapScript` shortcut. A target not on the Hub takes the first
+/// gap, or the end when there is none; one already there is removed the
+/// way the Hub's own Remove does it, leaving a gap. Either way the header
+/// line confirms it, since the Hub itself is not on screen.
 #[allow(
     clippy::too_many_arguments,
     reason = "one argument per HubItem column, mirroring the core API"
 )]
-pub fn add_target(
+pub fn toggle_target(
     ctx: &Ctx,
     app: &App,
     kind: &str,
@@ -1446,19 +1467,33 @@ pub fn add_target(
     icon: &str,
     system: &str,
 ) {
-    let added = {
+    let cue = {
         let mut shared = lock(&ctx.shared);
         let hub = &mut shared.hub;
-        let added = hub
+        let found = hub
             .layout
-            .add_target_item(kind, id, path, relative, script, name, icon, system);
-        if added {
+            .target_position(kind, id, path, relative, script, system);
+        let cue = match found {
+            Some(index) => hub
+                .layout
+                .remove_visible_item(index)
+                .then_some(crate::AppCue::RemovedFromHub),
+            None => hub
+                .layout
+                .add_target_item(kind, id, path, relative, script, name, icon, system)
+                .then_some(crate::AppCue::AddedToHub),
+        };
+        if cue.is_some() {
             hub.save(&ctx.handle);
         }
-        added
+        cue
     };
-    if added {
+    if let Some(cue) = cue {
         rebuild(ctx, app);
+        crate::cue::flash(ctx, app, cue, zaparoo_app::wait_cue::CONFIRM_MS);
+    } else {
+        tracing::warn!("hub update did nothing for {kind} {name}{id}");
+        crate::router::report_action_error(ctx, app, "add_to_hub", name);
     }
 }
 

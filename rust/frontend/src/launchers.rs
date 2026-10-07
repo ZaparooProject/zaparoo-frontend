@@ -16,7 +16,8 @@ use crate::router::{lock, Ctx, ListContext};
 use crate::App;
 
 /// Keep the full picker stable while saving; only its selected caption
-/// changes after a 300 ms delay. The ticket retires stale timers/results.
+/// changes, under the shared wait timing (`crate::cue`). The ticket
+/// retires stale timers/results.
 pub(crate) fn begin_save(ctx: &Ctx, app: &App) -> u64 {
     let ticket = {
         let mut shared = lock(&ctx.shared);
@@ -26,37 +27,61 @@ pub(crate) fn begin_save(ctx: &Ctx, app: &App) -> u64 {
     let ov = app.global::<crate::Overlays>();
     ov.set_launcher_saving(true);
     ov.set_launcher_saving_visible(false);
-    let weak = app.as_weak();
     let shared = ctx.shared.clone();
-    slint::Timer::single_shot(std::time::Duration::from_millis(300), move || {
+    let wait = crate::cue::begin_local(app, move |app| {
         if lock(&shared).launcher_save_seq != ticket {
             return;
         }
-        if let Some(app) = weak.upgrade() {
-            let ov = app.global::<crate::Overlays>();
-            if ov.get_launcher_saving() && ov.get_list_open() {
-                ov.set_launcher_saving_visible(true);
-            }
+        let ov = app.global::<crate::Overlays>();
+        if ov.get_launcher_saving() && ov.get_list_open() {
+            ov.set_launcher_saving_visible(true);
         }
     });
+    lock(&ctx.shared).launcher_save_wait = Some(wait);
     ticket
 }
 
 pub(crate) fn finish_save(ctx: &Ctx, app: &App, ticket: u64, failure: Option<&str>) {
-    {
+    let wait = {
         let mut shared = lock(&ctx.shared);
         if shared.launcher_save_seq != ticket {
             return;
         }
         shared.launcher_save_seq = shared.launcher_save_seq.wrapping_add(1);
+        shared.launcher_save_wait.take()
+    };
+    let ctx = ctx.clone();
+    let failure = failure.map(ToString::to_string);
+    let finish = move |app: &App| {
+        let ov = app.global::<crate::Overlays>();
+        ov.set_launcher_saving(false);
+        ov.set_launcher_saving_visible(false);
+        ov.set_list_open(false);
+        if let Some(payload) = failure {
+            crate::router::report_action_error(&ctx, app, "launcher_save", &payload);
+        }
+    };
+    match wait {
+        Some(wait) => crate::cue::end_local(app, wait, finish),
+        None => finish(app),
+    }
+}
+
+/// Cancel pressed while a save is unanswered: stop waiting on it. The
+/// ticket retires the answer if it ever comes, and the picker takes input
+/// again, so the same press goes on to close it.
+pub(crate) fn abandon_save(ctx: &Ctx, app: &App) {
+    let wait = {
+        let mut shared = lock(&ctx.shared);
+        shared.launcher_save_seq = shared.launcher_save_seq.wrapping_add(1);
+        shared.launcher_save_wait.take()
+    };
+    if let Some(wait) = wait {
+        crate::cue::abandon_local(wait);
     }
     let ov = app.global::<crate::Overlays>();
     ov.set_launcher_saving(false);
     ov.set_launcher_saving_visible(false);
-    ov.set_list_open(false);
-    if let Some(payload) = failure {
-        crate::router::report_action_error(ctx, app, "launcher_save", payload);
-    }
 }
 
 pub(crate) fn retry(ctx: &Ctx, app: &App, payload: &str) {
@@ -256,6 +281,8 @@ pub fn open_game_picker(ctx: &Ctx, app: &App, system_id: &str, path: &str, media
     let weak = app.as_weak();
     let system_id = system_id.to_string();
     let path = path.to_string();
+    // The menu has closed and the picker is not up yet.
+    let wait = crate::cue::begin(ctx, app, crate::AppCue::LoadingLaunchers, "", "");
     ctx.handle.spawn(async move {
         let current = match client.media_meta(params).await {
             Ok(result) => result.media.launcher_override,
@@ -267,6 +294,7 @@ pub fn open_game_picker(ctx: &Ctx, app: &App, system_id: &str, path: &str, media
             }
         };
         let _ = weak.upgrade_in_event_loop(move |app| {
+            crate::cue::end(&ctx2, &app, wait);
             if lock(&ctx2.shared).game_launcher_seq != ticket {
                 return;
             }

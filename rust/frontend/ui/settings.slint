@@ -70,9 +70,9 @@ export global SettingsLabels {
         if (key == ActionStatus.playtime-unverified) { return @tr("Off: playtime cannot be verified"); }
         if (key == ActionStatus.online-linked) { return @tr("Linked to Zaparoo Online"); }
         if (key == ActionStatus.online-unlinked) { return @tr("Not linked"); }
-        if (key == ActionStatus.optimizing) { return @tr("Optimizing"); }
+        if (key == ActionStatus.optimizing) { return @tr("Optimizing…"); }
         if (key == ActionStatus.paused) { return @tr("Paused"); }
-        if (key == ActionStatus.running) { return @tr("In progress"); }
+        if (key == ActionStatus.running) { return @tr("In progress…"); }
         if (key == ActionStatus.indexed) { return @tr("{} indexed", count); }
         if (key == ActionStatus.imported) { return @tr("{} imported", count); }
         return "";
@@ -93,6 +93,8 @@ export global SettingsLabels {
         if (kind == ScopeKind.category) { return @tr("All {} systems", Labels.hub("category:" + name, name)); }
         // A manufacturer's name over its systems; unnamed ones share one.
         if (kind == ScopeKind.header) { return name == "" ? @tr("Other") : name; }
+        // The Source row before Core has listed the sources.
+        if (kind == ScopeKind.source-loading) { return @tr("Loading sources…"); }
         return name;
     }
     public pure function setup-action(key: SetupAction) -> string {
@@ -330,8 +332,8 @@ export global SettingsLabels {
         if (id == "onlineRemoteStatus") {
             if (value == "disabled") { return @tr("Off"); }
             if (value == "unlinked") { return @tr("Not linked"); }
-            if (value == "connecting") { return @tr("Connecting"); }
-            if (value == "waiting") { return @tr("Waiting for commands"); }
+            if (value == "connecting") { return @tr("Connecting…"); }
+            if (value == "waiting") { return @tr("Waiting for commands…"); }
             if (value == "not_remote_device") { return @tr("Not the remote device"); }
             if (value == "unavailable") { return @tr("Not available"); }
             if (value == "credential_rejected") { return @tr("Link rejected"); }

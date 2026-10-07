@@ -10,7 +10,7 @@
 import { Theme, Sizing, Motion, Layout } from "theme.slint";
 import { MenuRole, KeyKind, SearchZone, SearchPane, Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, StateTokens, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogButton, ErrorKind } from "state_types.slint";
 export { MenuRole, KeyKind, SearchZone, SearchPane, Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogButton, ErrorKind }
-import { GlyphSource, Brand, Buttons, HelpEntry, Status, HeaderBar, StatusLine, ProgressTrack, TopStatusStrip, FooterIndicator, ActiveLabel, HelpBar, SectionHeader, Divider, ScrollCue, ModalShell, QrPlate, StateCue } from "chrome.slint";
+import { GlyphSource, Brand, Buttons, HelpEntry, Status, HeaderBar, StatusLine, ProgressTrack, WaitCue, TopStatusStrip, FooterIndicator, ActiveLabel, HelpBar, SectionHeader, Divider, ScrollCue, ModalShell, QrPlate, StateCue } from "chrome.slint";
 import { GridCell, MarqueeCaption, PressableSurface, Tile, PagedGridView } from "tiles.slint";
 import { ScrollOffset, SelectionCursor, SelectionClip, FocusCursor } from "focus.slint";
 import { PressFeedback } from "press_feedback.slint";
@@ -100,6 +100,9 @@ export global Shell {
     // The header's transient light cue or error line, as a
     // `Labels.status` key.
     in-out property <AppCue> status-text: AppCue.none;
+    // The values the cue's sentence takes: a name, or a count and its total.
+    in-out property <string> status-arg: "";
+    in-out property <string> status-arg2: "";
     in-out property <string> clock-text: "";
     // Widest reading for the clock format, so its slot never reflows.
     in-out property <string> clock-sample: "23:59";
@@ -378,8 +381,10 @@ export global GamesView {
     // Games: the system's display name, or the folder's own name below
     // the system root. The flat lists compose their titles in the view.
     in-out property <string> title: "";
+    // Whether Options opens a menu on the focused row; the help bar offers
+    // it only then.
+    in-out property <bool> options-available: true;
     in-out property <bool> loading: false;
-    in-out property <bool> loading-more: false;
     in-out property <string> error: "";
     // Loaded rows, Core's totals and whether the total is final.
     in-out property <int> count: 0;
@@ -390,7 +395,6 @@ export global GamesView {
     in-out property <string> filter-text: "";
     in-out property <bool> has-more: false;
     // A page fetch the user is waiting on (a wrap, jump or list tail).
-    in-out property <bool> page-loading: false;
     in-out property <bool> focus-ready: false;
     // The page on screen and its fit (src/games.rs render).
     in-out property <[GridCell]> cells: [];
@@ -413,6 +417,8 @@ export global GamesView {
     // Footer: the focused row's name and dim suffix.
     in-out property <string> label-name: "";
     in-out property <string> label-tags: "";
+    // The focused game is hidden, shown because hidden games are.
+    in-out property <bool> label-hidden: false;
     in-out property <int> activate-pulse: 0;
     in-out property <int> release-pulse: 0;
     // Folder changes reuse the mounted strip horizontally; page changes move vertically.
@@ -507,7 +513,9 @@ export global Overlays {
     in-out property <bool> letter-open: false;
     in-out property <[LetterBucket]> letter-buckets: [];
     in-out property <int> letter-index: 0;
-    in-out property <bool> letter-loading: false;
+    // The letter index for the picker: loading, ready with buckets, empty
+    // (the list has no sections), or error (Core could not supply it).
+    in-out property <ContentState> letter-state: ContentState.ready;
     out property <int> letter-columns: Sizing.fit-letter-columns(self.letter-buckets.length,
         Sizing.pct-w(78) - 2 * Sizing.pct-w(4), Sizing.pct-h(52), Sizing.pct-w(1));
     in-out property <bool> card-write-open: false;
@@ -1195,7 +1203,6 @@ component SystemsScreen inherits Rectangle {
         cue-center-y: root.height / 2 - self.y;
         state: root.state;
         empty-text: root.favorites ? @tr("No favorites yet") : @tr("No systems in this category");
-        loading-text: root.favorites ? @tr("Loading favorite systems…") : @tr("Loading systems…");
     }
 }
 
@@ -1553,7 +1560,7 @@ component FormListModal inherits ModalShell {
 component LetterJumpModal inherits ModalShell {
     in property <[LetterBucket]> buckets;
     in property <int> current-index;
-    in property <bool> loading;
+    in property <ContentState> state: ContentState.ready;
     in property <int> columns: 9;
 
     property <length> gap: Sizing.pct-w(1);
@@ -1575,10 +1582,18 @@ component LetterJumpModal inherits ModalShell {
     panel-width: Sizing.pct-w(78);
     content-height: root.grid-h;
 
-    if root.buckets.length == 0: Text {
+    wait := WaitCue {
+        x: 0;
+        y: root.content-y;
+        width: root.panel-width;
+        height: root.grid-h;
+        waiting: root.buckets.length == 0 && root.state == ContentState.loading;
+        text: @tr("Loading sections…");
+    }
+    if root.buckets.length == 0 && root.state != ContentState.loading && !wait.shown: Text {
         x: (root.panel-width - self.width) / 2;
         y: root.content-y + (root.grid-h - self.height) / 2;
-        text: root.loading ? @tr("Loading…") : @tr("No sections");
+        text: root.state == ContentState.error ? @tr("Failed to load sections") : @tr("No sections");
         color: Theme.text-label;
         font-size: Sizing.font-body;
     }
@@ -1636,7 +1651,7 @@ component LetterJumpModal inherits ModalShell {
                 column: Math.mod(Math.max(0, root.current-index), root.columns),
                 row: Math.floor(Math.max(0, root.current-index) / root.columns),
                 scope: "letters:" + root.columns,
-                valid: !root.loading && root.current-index >= 0 && root.current-index < root.buckets.length
+                valid: root.state != ContentState.loading && root.current-index >= 0 && root.current-index < root.buckets.length
             };
         }
     }
@@ -1714,17 +1729,10 @@ component PairDeviceModal inherits ModalShell {
         height: self.preferred-height;
         spacing: root.pad;
 
-        if Overlays.pair-phase == PairPhase.starting: Rectangle {
-            height: Math.ceil(starting.preferred-height / 1px) * 1px;
-            starting := Text {
-                x: (parent.width - self.width) / 2;
-                y: 0px;
-                width: Math.min(Math.ceil(self.preferred-width / 1px) * 1px, parent.width);
-                text: @tr("Starting…");
-                color: Theme.text-label;
-                font-size: Sizing.font-body;
-                wrap: word-wrap;
-            }
+        if Overlays.pair-phase == PairPhase.starting: WaitCue {
+            height: self.glyph;
+            waiting: true;
+            text: @tr("Starting…");
         }
 
         if Overlays.pair-phase == PairPhase.showing: Rectangle {
@@ -1826,18 +1834,23 @@ component OnlineLinkModal inherits ModalShell {
         height: self.preferred-height;
         spacing: root.pad;
 
-        if !root.showing: Rectangle {
+        if Overlays.online-phase == OnlineLinkPhase.starting: WaitCue {
+            height: self.glyph;
+            waiting: true;
+            text: @tr("Starting…");
+        }
+
+        if !root.showing && Overlays.online-phase != OnlineLinkPhase.starting: Rectangle {
             height: Math.ceil(message.preferred-height / 1px) * 1px;
             message := Text {
                 x: 0px;
                 y: 0px;
                 width: parent.width;
                 horizontal-alignment: center;
-                text: Overlays.online-phase == OnlineLinkPhase.starting ? @tr("Starting…")
-                    : Overlays.online-phase == OnlineLinkPhase.linked ? @tr("This device is now linked to your Zaparoo Online account.")
+                text: Overlays.online-phase == OnlineLinkPhase.linked ? @tr("This device is now linked to your Zaparoo Online account.")
                     : Overlays.online-phase == OnlineLinkPhase.expired ? @tr("The code expired before it was approved. Link again for a new one.")
                     : @tr("Linking failed. Check the network connection and try again.");
-                color: Overlays.online-phase == OnlineLinkPhase.starting ? Theme.text-label : Theme.text-primary;
+                color: Theme.text-primary;
                 font-size: Sizing.font-body;
                 wrap: word-wrap;
             }
@@ -1965,7 +1978,15 @@ component OnlineListModal inherits ModalShell {
     property <[OnlineListRow]> entries: Overlays.online-list-rows;
     property <int> current-index: Overlays.online-list-index;
     property <bool> backups: Overlays.online-list-kind == OnlineListKind.backups;
-    property <bool> has-status: Overlays.online-list-status != OnlineListStatus.ready;
+    // A wait (loading the list, a backup or a restore running) takes the
+    // status row only once its cue is up; a failure or an empty list has
+    // it at once.
+    property <bool> waiting: Overlays.online-list-status == OnlineListStatus.loading
+        || Overlays.online-list-status == OnlineListStatus.backing-up
+        || Overlays.online-list-status == OnlineListStatus.restoring;
+    property <bool> has-status: wait.shown
+        || Overlays.online-list-status == OnlineListStatus.failed
+        || Overlays.online-list-status == OnlineListStatus.empty;
     property <bool> has-note: Overlays.online-list-note != "";
 
     property <length> row-h: Sizing.pct-h(7);
@@ -2028,7 +2049,18 @@ component OnlineListModal inherits ModalShell {
         color: Theme.text-label;
         font-size: Sizing.font-caption;
     }
-    if root.has-status: Text {
+    wait := WaitCue {
+        x: root.pad;
+        y: root.content-y + root.note-h;
+        width: root.content-width;
+        height: root.row-h;
+        glyph: Sizing.font-body;
+        waiting: root.waiting;
+        text: Overlays.online-list-status == OnlineListStatus.backing-up ? @tr("Backing up…")
+            : Overlays.online-list-status == OnlineListStatus.restoring ? @tr("Restoring…")
+            : (root.backups ? @tr("Loading backups…") : @tr("Loading activity…"));
+    }
+    if root.has-status && !wait.shown: Text {
         x: root.pad;
         y: root.content-y + root.note-h;
         width: root.content-width;
@@ -2036,9 +2068,7 @@ component OnlineListModal inherits ModalShell {
         horizontal-alignment: center;
         vertical-alignment: center;
         wrap: word-wrap;
-        text: Overlays.online-list-status == OnlineListStatus.loading ? @tr("Loading…")
-            : Overlays.online-list-status == OnlineListStatus.working ? @tr("Working…")
-            : Overlays.online-list-status == OnlineListStatus.failed ? root.failure-text()
+        text: Overlays.online-list-status == OnlineListStatus.failed ? root.failure-text()
             : (root.backups ? @tr("No cloud backups yet.") : @tr("Nothing has run through remote control yet."));
         color: Overlays.online-list-status == OnlineListStatus.failed ? Theme.accent : Theme.text-label;
         font-size: Sizing.font-body;
@@ -2698,9 +2728,6 @@ component GamesScreen inherits Rectangle {
     // The footer's left text, where the strip is hidden and the footer
     // keeps the count.
     property <string> footer-left-text: root.list-layout ? GamesView.filter-text : root.filter-and-count;
-    // The detailed list swaps its position cue for this while a
-    // background fetch fills rows the user scrolled past.
-    property <string> right-text: root.list-layout && GamesView.loading-more && GamesView.count > 0 ? @tr("Loading more…") : "";
 
     TopStatusStrip {
         x: 0;
@@ -2713,9 +2740,8 @@ component GamesScreen inherits Rectangle {
         page-total-known: GamesView.total-known;
         total-text: root.count-text;
         filter-text: root.is-games ? GamesView.filter-text : "";
-        right-text-override: root.right-text;
-        show-page-counter: root.show-top-page-cue || root.right-text != "";
-        page-indicator-mode: root.show-top-page-cue && root.right-text == "";
+        show-page-counter: root.show-top-page-cue;
+        page-indicator-mode: root.show-top-page-cue;
         item-position-mode: root.list-layout;
         current-item: GamesView.current-index;
         total-items: GamesView.total-items;
@@ -2824,7 +2850,7 @@ component GamesScreen inherits Rectangle {
         wordmark: false;
         detail-rows: GamesView.detail-rows;
         detail-loading: GamesView.detail-loading;
-        loading-text: root.is-games ? @tr("Loading game…") : @tr("Loading…");
+        loading-text: @tr("Loading game…");
         row-hovered(i) => { GamesInput.cell-hovered(i); }
         row-clicked(i) => { GamesInput.cell-clicked(i); }
         row-right-clicked(i) => { GamesInput.cell-right-clicked(i); }
@@ -2844,7 +2870,7 @@ component GamesScreen inherits Rectangle {
         font-size: Sizing.font-section;
     }
 
-    if !root.list-layout && !GamesView.page-loading: ActiveLabel {
+    if !root.list-layout: ActiveLabel {
         x: 0;
         y: root.label-y;
         height: GamesView.label-height;
@@ -2852,32 +2878,8 @@ component GamesScreen inherits Rectangle {
             ? (Layout.top-strip-visible ? root.footer-right-inset : Math.max(root.footer-left-inset, root.footer-right-inset))
             : Layout.slot-margin;
         text: GamesView.label-name;
-        tags: GamesView.label-tags;
+        tags: Labels.tags(GamesView.label-tags, GamesView.label-hidden);
         visible: !root.gate-hide;
-    }
-
-    if !root.gate-hide && GamesView.page-loading: Rectangle {
-        property <length> glyph: Sizing.font-size(3);
-        x: 0;
-        y: root.label-y;
-        height: GamesView.label-height;
-        HorizontalLayout {
-            x: (parent.width - self.preferred-width) / 2;
-            y: (parent.height - parent.glyph) / 2;
-            height: parent.glyph;
-            spacing: Sizing.pct-w(0.6);
-            Image {
-                width: parent.height;
-                height: parent.height;
-                source: GlyphSource.glyph("icons/Loading", self.height, Theme.text-primary);
-            }
-            Text {
-                vertical-alignment: center;
-                text: @tr("Loading…");
-                color: Theme.text-primary;
-                font-size: Sizing.font-size(3);
-            }
-        }
     }
 
     if !Layout.top-strip-visible && root.page-cue-in-footer && root.footer-left-text != "": Text {
@@ -3139,6 +3141,21 @@ export component App inherits Window {
     // opens its picker.
     pure function search-help-entries() -> [HelpEntry] {
         // A real keyboard types, deletes and spaces with its own keys.
+        // The Search key with nothing to search for does nothing.
+        if (SearchView.zone == SearchZone.keys && SearchView.key-kind == KeyKind.submit && !SearchView.can-search) {
+            if (Buttons.style == "style_e") {
+                return [
+                    { buttons: ["Dpad"], label: @tr("Move") },
+                    { buttons: ["ButtonB"], label: @tr("Back") },
+                ];
+            }
+            return [
+                { buttons: ["Dpad"], label: @tr("Move") },
+                { buttons: ["ButtonY"], label: @tr("Delete") },
+                { buttons: ["ButtonX"], label: @tr("Space") },
+                { buttons: ["ButtonB"], label: @tr("Back") },
+            ];
+        }
         if (SearchView.zone == SearchZone.keys && Buttons.style == "style_e") {
             return [
                 { buttons: ["Dpad"], label: @tr("Move") },
@@ -3185,6 +3202,15 @@ export component App inherits Window {
         // The setup panel: its confirm cue names what the focused row
         // does, and Back steps out of a picker page before the panel.
         if (SetupModalView.open) {
+            // A row that cannot be used right now offers no confirm.
+            if (!SetupModalView.picker-page && SetupModalView.index >= 0
+                && SetupModalView.index < SetupModalView.rows.length
+                && !SetupModalView.rows[SetupModalView.index].enabled) {
+                return [
+                    { buttons: ["DpadUp", "DpadDown"], label: @tr("Move") },
+                    { buttons: ["ButtonB"], label: @tr("Back") },
+                ];
+            }
             return [
                 { buttons: ["DpadUp", "DpadDown"], label: @tr("Move") },
                 { buttons: ["ButtonA"], label: SettingsLabels.setup-action(
@@ -3233,7 +3259,9 @@ export component App inherits Window {
         if (Overlays.online-list-open) {
             if (Overlays.online-list-kind == OnlineListKind.backups && Overlays.online-list-rows.length > 0
                 && Overlays.online-list-index >= 0 && Overlays.online-list-index < Overlays.online-list-rows.length
-                && Overlays.online-list-rows[Overlays.online-list-index].enabled) {
+                && Overlays.online-list-rows[Overlays.online-list-index].enabled
+                && Overlays.online-list-status != OnlineListStatus.backing-up
+                && Overlays.online-list-status != OnlineListStatus.restoring) {
                 return [
                     { buttons: ["Dpad"], label: @tr("Move") },
                     { buttons: ["ButtonA"], label: @tr("Select") },
@@ -3300,6 +3328,22 @@ export component App inherits Window {
                 { buttons: ["ButtonB"], label: @tr("Back") },
             ];
         }
+        // A picker with no sections has nothing to select.
+        if (Overlays.letter-open && Overlays.letter-buckets.length == 0) {
+            return [
+                { buttons: ["ButtonB"], label: @tr("Cancel") },
+            ];
+        }
+        // So does a list holding only a placeholder row ("No tags
+        // available"): unusable, with no reason of its own. A launcher that
+        // is not ready carries a reason and stays pickable.
+        if (Overlays.list-open && Overlays.list-index >= 0 && Overlays.list-index < Overlays.list-entries.length
+            && !Overlays.list-entries[Overlays.list-index].enabled
+            && Overlays.list-entries[Overlays.list-index].reason-key == "") {
+            return [
+                { buttons: ["ButtonB"], label: @tr("Cancel") },
+            ];
+        }
         if (Overlays.list-open || Overlays.letter-open) {
             return [
                 { buttons: ["Dpad"], label: @tr("Move") },
@@ -3355,6 +3399,25 @@ export component App inherits Window {
         if (Shell.active-screen == Screen.systems || Shell.active-screen == Screen.favorite-systems) {
             if (Shell.transitioning) {
                 return [{ buttons: ["ButtonB"], label: @tr("Back") }];
+            }
+            // Nothing can be opened yet, and Accept on an error or an empty
+            // list reloads it. The favorites View menu stays reachable on
+            // an empty list: it carries the grouping switch.
+            if (SystemsView.loading) {
+                return [{ buttons: ["ButtonB"], label: @tr("Back") }];
+            }
+            if (SystemsView.error != "" || SystemsView.count == 0) {
+                if (Shell.active-screen == Screen.favorite-systems && SystemsView.error == "") {
+                    return [
+                        { buttons: ["ButtonA"], label: @tr("Retry") },
+                        { buttons: ["ButtonY"], label: @tr("View") },
+                        { buttons: ["ButtonB"], label: @tr("Back") },
+                    ];
+                }
+                return [
+                    { buttons: ["ButtonA"], label: @tr("Retry") },
+                    { buttons: ["ButtonB"], label: @tr("Back") },
+                ];
             }
             // The favorites list adds the View menu, which carries the
             // grouping switch.
@@ -3463,18 +3526,27 @@ export component App inherits Window {
                 { buttons: ["ButtonB"], label: @tr("Back") },
             ];
         }
-        if (Shell.active-screen == Screen.recents) {
-            return [
-                self.move-cue(GamesView.total-pages),
-                { buttons: ["ButtonA"], label: @tr("Open") },
-                { buttons: ["ButtonB"], label: @tr("Back") },
-            ];
-        }
-        if (Shell.active-screen == Screen.search-results) {
+        // Options only where the focused row has a menu to open.
+        if (Shell.active-screen == Screen.recents || Shell.active-screen == Screen.search-results) {
+            if (!GamesView.options-available) {
+                return [
+                    self.move-cue(GamesView.total-pages),
+                    { buttons: ["ButtonA"], label: @tr("Open") },
+                    { buttons: ["ButtonB"], label: @tr("Back") },
+                ];
+            }
             return [
                 self.move-cue(GamesView.total-pages),
                 { buttons: ["ButtonA"], label: @tr("Open") },
                 { buttons: ["ButtonX"], label: @tr("Options") },
+                { buttons: ["ButtonB"], label: @tr("Back") },
+            ];
+        }
+        if (!GamesView.options-available) {
+            return [
+                self.move-cue(GamesView.total-pages),
+                { buttons: ["ButtonA"], label: @tr("Open") },
+                { buttons: ["ButtonY"], label: @tr("View") },
                 { buttons: ["ButtonB"], label: @tr("Back") },
             ];
         }
@@ -3582,14 +3654,16 @@ export component App inherits Window {
     // the connection state ("Connecting… / Reconnecting… / Loading
     // library…" plus the escalated unreachable message from Rust).
     if Shell.boot-curtain: Rectangle {
-        Text {
-            x: (parent.width - self.width) / 2;
-            y: (parent.height - self.height) / 2;
-            max-width: parent.width - 2 * Sizing.pct-w(10);
-            overflow: elide;
+        // There from the first frame, so no delay; the hourglass drops
+        // away once the line reports that Core cannot be reached.
+        WaitCue {
+            x: Sizing.pct-w(10);
+            width: parent.width - 2 * Sizing.pct-w(10);
+            waiting: true;
+            immediate: true;
+            icon: Shell.boot-status != BootStatus.unreachable;
+            glyph: Sizing.font-size(3.2);
             text: Labels.boot(Shell.boot-status);
-            color: Theme.text-primary;
-            font-size: Sizing.font-size(3.2);
         }
     }
 
@@ -3605,7 +3679,9 @@ export component App inherits Window {
         browse-title: root.browse-header-title();
         // The curtain carries its own cue; a restore filling beneath it
         // does not add a second one here.
-        app-text: Shell.transition-cue && !Shell.boot-curtain ? Labels.loading(Shell.transition-target) : Labels.status(Shell.status-text);
+        app-text: Shell.transition-cue && !Shell.boot-curtain ? Labels.loading(Shell.transition-target)
+            : Shell.status-text == AppCue.loading-list ? Labels.loading(Shell.active-screen)
+            : Labels.status(Shell.status-text, Shell.status-arg, Shell.status-arg2);
     }
 
     // Modal scrims swallow pointer events rather than forwarding them to
@@ -3690,7 +3766,7 @@ export component App inherits Window {
     if Overlays.letter-open: LetterJumpModal {
         buckets: Overlays.letter-buckets;
         current-index: Overlays.letter-index;
-        loading: Overlays.letter-loading;
+        state: Overlays.letter-state;
         columns: Overlays.letter-columns;
     }
 

@@ -111,10 +111,18 @@ pub struct Shared {
     pub first_run_shown: bool,
     pub card_write: crate::card_write::Model,
     pub launcher_save_seq: u64,
+    /// The "Saving…" caption's wait while a launcher save is unanswered.
+    pub launcher_save_wait: Option<crate::cue::LocalWait>,
+    /// The header line's app cue (`crate::cue`).
+    pub cue: crate::cue::Model,
     /// The browse scope's letter buckets, for the jump-to-letter picker
     /// and the fast-scroll rail (cursor kept Rust-side; the UI only shows
     /// label + count).
     pub letter_buckets: Vec<zaparoo_core::media_types::BrowseIndexGroup>,
+    /// The buckets index the scope's directories, not its files: their
+    /// offsets already count from the first directory. Read only while
+    /// `letter_buckets` is filled.
+    pub letter_directories: bool,
     /// The `(system, browse path)` the buckets belong to; None until the
     /// current fetch lands.
     pub letter_scope: Option<(String, String)>,
@@ -269,7 +277,10 @@ impl Shared {
             first_run_shown: false,
             card_write: crate::card_write::Model::default(),
             launcher_save_seq: 0,
+            launcher_save_wait: None,
+            cue: crate::cue::Model::default(),
             letter_buckets: Vec::new(),
+            letter_directories: false,
             letter_scope: None,
             letter_seq: 0,
             filter: crate::browse_filter::Model::default(),
@@ -778,11 +789,12 @@ pub fn reset_idle(ctx: &Ctx, app: &App) {
     });
 }
 
-/// Slow work adds feedback without hiding the source or delaying a ready route.
-const LOADING_CUE_DELAY_MS: u64 = 300;
-
+// Slow work adds feedback without hiding the source or delaying a ready route.
 thread_local! {
-    static CUE_SEQ: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    // The route's loading word follows the shared wait timing; the token is
+    // the wait of the route now pending.
+    static ROUTE_CUE: std::cell::RefCell<(zaparoo_app::wait_cue::WaitCue, u64)> =
+        std::cell::RefCell::new((zaparoo_app::wait_cue::WaitCue::default(), 0));
 }
 
 pub(crate) fn begin_pending(app: &App, target: crate::Screen) {
@@ -790,37 +802,55 @@ pub(crate) fn begin_pending(app: &App, target: crate::Screen) {
 }
 
 pub(crate) fn begin_pending_with_direction(app: &App, target: crate::Screen, _direction: i32) {
+    use zaparoo_app::wait_cue::{CUE_DELAY_MS, CUE_HOLD_MS};
     let shell = app.global::<crate::Shell>();
     if shell.get_transitioning() {
         return;
     }
     shell.set_transition_target(target);
     shell.set_transitioning(true);
-    let ticket = CUE_SEQ.with(|sequence| {
-        sequence.set(sequence.get().wrapping_add(1));
-        sequence.get()
+    // A word still held from the route before belongs to that route.
+    shell.set_transition_cue(false);
+    let token = ROUTE_CUE.with(|cue| {
+        let mut cue = cue.borrow_mut();
+        cue.1 = cue.0.begin();
+        cue.1
     });
     let weak = app.as_weak();
-    slint::Timer::single_shot(Duration::from_millis(LOADING_CUE_DELAY_MS), move || {
-        if CUE_SEQ.with(std::cell::Cell::get) != ticket {
+    slint::Timer::single_shot(Duration::from_millis(CUE_DELAY_MS), move || {
+        if !ROUTE_CUE.with(|cue| cue.borrow_mut().0.delay_elapsed(token)) {
             return;
         }
         let Some(app) = weak.upgrade() else {
             return;
         };
-        let shell = app.global::<crate::Shell>();
-        if shell.get_transitioning() {
-            shell.set_transition_cue(true);
-        }
+        app.global::<crate::Shell>().set_transition_cue(true);
+        let weak = app.as_weak();
+        slint::Timer::single_shot(Duration::from_millis(CUE_HOLD_MS), move || {
+            // The route landed while the word had only just appeared.
+            if ROUTE_CUE.with(|cue| cue.borrow_mut().0.hold_elapsed(token)) {
+                if let Some(app) = weak.upgrade() {
+                    app.global::<crate::Shell>().set_transition_cue(false);
+                }
+            }
+        });
     });
 }
 
 pub(crate) fn clear_pending(app: &App) {
     crate::press_feedback::cancel(app);
-    CUE_SEQ.with(|sequence| sequence.set(sequence.get().wrapping_add(1)));
     let shell = app.global::<crate::Shell>();
     shell.set_transitioning(false);
-    shell.set_transition_cue(false);
+    let (clear, shown) = ROUTE_CUE.with(|cue| {
+        let mut cue = cue.borrow_mut();
+        let token = cue.1;
+        let clear = cue.0.end(token);
+        (clear, cue.0.is_shown(token))
+    });
+    // A word that only just appeared stays out its hold; its timer clears it.
+    if clear || !shown {
+        shell.set_transition_cue(false);
+    }
 }
 
 /// Publish a ready destination in this turn, never after a decorative timer.
@@ -1454,7 +1484,12 @@ fn list_roles(app: &App) -> Vec<zaparoo_app::form_list::Role> {
 
 fn list_action(ctx: &Ctx, app: &App, action: &str) {
     if app.global::<crate::Overlays>().get_launcher_saving() {
-        return;
+        // A save Core has not answered holds the picker still, but never
+        // hostage: Cancel gives up on it and closes as usual.
+        if action != actions::CANCEL {
+            return;
+        }
+        crate::launchers::abandon_save(ctx, app);
     }
     let roles = list_roles(app);
     let index = app.global::<crate::Overlays>().get_list_index().max(0) as usize;
@@ -1568,7 +1603,8 @@ pub(crate) fn fetch_letter_index(ctx: &Ctx, app: &App) {
             Vec::<crate::LetterBucket>::new(),
         )));
     app.global::<crate::Overlays>().set_letter_index(0);
-    app.global::<crate::Overlays>().set_letter_loading(true);
+    app.global::<crate::Overlays>()
+        .set_letter_state(crate::ContentState::Loading);
 
     let client = ctx.store.client();
     let shared = ctx.shared.clone();
@@ -1605,18 +1641,27 @@ pub(crate) fn fetch_letter_index(ctx: &Ctx, app: &App) {
                         .collect();
                     {
                         let mut guard = lock(&shared);
+                        guard.letter_directories = result.indexes_directories();
                         guard.letter_buckets = result.groups;
                         guard.letter_scope = Some(scope);
                     }
+                    let state = if rows.is_empty() {
+                        crate::ContentState::Empty
+                    } else {
+                        crate::ContentState::Ready
+                    };
                     app.global::<crate::Overlays>()
                         .set_letter_buckets(ModelRc::new(VecModel::from(rows)));
-                    app.global::<crate::Overlays>().set_letter_loading(false);
+                    app.global::<crate::Overlays>().set_letter_state(state);
                     crate::games::render(&ctx2, &app);
                 }
                 Err(e) => {
+                    // The picker stays (or opens) on the failure: closing
+                    // it, or calling the list empty, would hide that the
+                    // sections exist and could not be fetched.
                     tracing::warn!("letter index fetch failed: {}", e.message);
-                    app.global::<crate::Overlays>().set_letter_open(false);
-                    app.global::<crate::Overlays>().set_letter_loading(false);
+                    app.global::<crate::Overlays>()
+                        .set_letter_state(crate::ContentState::Error);
                 }
             }
         });
@@ -2343,13 +2388,18 @@ pub(crate) fn start_index(ctx: &Ctx, app: &App, systems: Option<Vec<String>>) {
     let client = ctx.store.client();
     let weak = app.as_weak();
     let ctx2 = ctx.clone();
+    // Core's own progress takes the header once the job is running; until
+    // it answers, this is the only sign the request went anywhere.
+    let wait = crate::cue::begin(ctx, app, crate::AppCue::Starting, "", "");
     ctx.handle.spawn(async move {
-        if let Err(e) = client.media_generate(MediaIndexParams { systems }).await {
-            tracing::warn!("start_index failed: {}", e.message);
-            let _ = weak.upgrade_in_event_loop(move |app| {
+        let result = client.media_generate(MediaIndexParams { systems }).await;
+        let _ = weak.upgrade_in_event_loop(move |app| {
+            crate::cue::end(&ctx2, &app, wait);
+            if let Err(e) = result {
+                tracing::warn!("start_index failed: {}", e.message);
                 report_action_error(&ctx2, &app, "media_index", "");
-            });
-        }
+            }
+        });
     });
 }
 
@@ -2391,8 +2441,7 @@ pub(crate) fn launch_first(ctx: &Ctx, app: &App, candidates: Vec<String>, name: 
     // feedback is where the eye already is. The header line is the second,
     // worded cue and only appears if the wait becomes one.
     let hold = crate::press_feedback::keep_held(app);
-    let inflight = Arc::new(AtomicBool::new(true));
-    spawn_launch_cue(ctx, app, &inflight);
+    let wait = crate::cue::begin(ctx, app, crate::AppCue::Launching, name, "");
     let store = ctx.store.clone();
     let weak = app.as_weak();
     let ctx2 = ctx.clone();
@@ -2420,8 +2469,8 @@ pub(crate) fn launch_first(ctx: &Ctx, app: &App, candidates: Vec<String>, name: 
                 LaunchOutcome::from_error(&e)
             }
         };
-        inflight.store(false, Ordering::SeqCst);
         let _ = weak.upgrade_in_event_loop(move |app| {
+            crate::cue::end(&ctx2, &app, wait);
             finish_launch(&ctx2, &app, hold, outcome, &name);
         });
     });
@@ -2464,7 +2513,6 @@ pub(crate) fn finish_launch(
     name: &str,
 ) {
     crate::press_feedback::release(app, hold);
-    clear_launch_cue(app);
     match outcome {
         LaunchOutcome::Ok => {}
         LaunchOutcome::Failed => report_action_error(ctx, app, "launch", name),
@@ -2540,37 +2588,6 @@ impl RepairContext {
     /// falls back to the generic-failure treatment rather than panicking.
     fn decode(payload: &str) -> Option<[String; 4]> {
         serde_json::from_str(payload).ok()
-    }
-}
-
-/// The header line is for a launch that turns into a wait. A word that
-/// appears and leaves again inside the grace window reads as a flicker, and
-/// the press cue has already said the button did something, so this follows
-/// the same delay the route loading cue uses.
-fn spawn_launch_cue(ctx: &Ctx, app: &App, inflight: &Arc<AtomicBool>) {
-    let weak = app.as_weak();
-    let inflight = inflight.clone();
-    ctx.handle.spawn(async move {
-        tokio::time::sleep(Duration::from_millis(LOADING_CUE_DELAY_MS)).await;
-        if !inflight.load(Ordering::SeqCst) {
-            return;
-        }
-        let _ = weak.upgrade_in_event_loop(move |app| {
-            if inflight.load(Ordering::SeqCst) {
-                app.global::<crate::Shell>()
-                    .set_status_text(crate::AppCue::Launching);
-            }
-        });
-    });
-}
-
-/// Clear our own value and nobody else's. `AppCue` has only these two today,
-/// so the guard changes nothing yet; it is here so that adding a cue later
-/// cannot be wiped by a launch that answers after it.
-fn clear_launch_cue(app: &App) {
-    let shell = app.global::<crate::Shell>();
-    if shell.get_status_text() == crate::AppCue::Launching {
-        shell.set_status_text(crate::AppCue::None);
     }
 }
 
