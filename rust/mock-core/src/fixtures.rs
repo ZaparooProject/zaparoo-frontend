@@ -9,7 +9,7 @@
 // into it.
 
 use serde_json::{json, Value};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Mutex, OnceLock};
 
 static SYSTEM_DEFAULTS: OnceLock<Mutex<Vec<SystemDefaultFixture>>> = OnceLock::new();
@@ -18,6 +18,15 @@ static SYSTEM_DEFAULTS: OnceLock<Mutex<Vec<SystemDefaultFixture>>> = OnceLock::n
 // Mirrors `SYSTEM_DEFAULTS`'s in-memory, process-lifetime pattern -- this
 // is dev-server state, not a real database.
 static LAUNCHER_OVERRIDES: OnceLock<Mutex<HashMap<(String, String), String>>> = OnceLock::new();
+
+// Paths hidden via `media.tags.update`: a file's own, or a folder's, which
+// leaves its parent's listing and takes what is under it out of search.
+// Dev-server state like the two above.
+static HIDDEN_PATHS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+
+/// The folder every mock system lists as one game on several discs.
+const DISC_FOLDER: &str = "Disc Game";
+const DISC_COUNT: u64 = 2;
 
 pub(crate) const MOCK_SYSTEMS: &[(&str, &str, &str)] = &[
     ("NES", "Nintendo Entertainment System", "Console"),
@@ -147,6 +156,79 @@ fn system_defaults() -> &'static Mutex<Vec<SystemDefaultFixture>> {
     })
 }
 
+fn hidden_paths() -> std::sync::MutexGuard<'static, HashSet<String>> {
+    HIDDEN_PATHS
+        .get_or_init(|| Mutex::new(HashSet::new()))
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// `media.tags.update` for `user:hidden` on a path. Returns whether the
+/// path is hidden afterwards.
+pub fn set_hidden(path: &str, hidden: bool) -> bool {
+    let mut paths = hidden_paths();
+    if hidden {
+        paths.insert(path.to_string());
+    } else {
+        paths.remove(path);
+    }
+    hidden
+}
+
+/// Hidden itself, as a file or folder Core was told to hide.
+fn hidden_itself(path: &str) -> bool {
+    hidden_paths().contains(path)
+}
+
+/// Hidden itself or by a folder above it: what a search leaves out. A
+/// listing asks only `hidden_itself`, so a hidden folder still browses by
+/// its own path.
+fn hidden(path: &str) -> bool {
+    hidden_paths().iter().any(|folder| under_path(path, folder))
+}
+
+fn include_hidden(params: &Value) -> bool {
+    params
+        .get("includeHidden")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+}
+
+fn hidden_tag() -> Value {
+    json!({ "type": "user", "tag": "hidden" })
+}
+
+/// Apply Core's visibility to the entries `is_hidden` picks out: they are
+/// dropped, or kept and tagged when the caller asked for them.
+fn apply_visibility(
+    entries: Vec<Value>,
+    include_hidden: bool,
+    is_hidden: fn(&str) -> bool,
+) -> Vec<Value> {
+    entries
+        .into_iter()
+        .filter_map(|mut entry| {
+            let path = entry
+                .get("path")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            if !is_hidden(path) {
+                return Some(entry);
+            }
+            if !include_hidden {
+                return None;
+            }
+            if hidden_itself(path) {
+                match entry.get_mut("tags").and_then(Value::as_array_mut) {
+                    Some(tags) => tags.push(hidden_tag()),
+                    None => entry["tags"] = json!([hidden_tag()]),
+                }
+            }
+            Some(entry)
+        })
+        .collect()
+}
+
 fn launcher_overrides() -> &'static Mutex<HashMap<(String, String), String>> {
     LAUNCHER_OVERRIDES.get_or_init(|| Mutex::new(HashMap::new()))
 }
@@ -246,7 +328,7 @@ pub fn media_search_response(params: &Value) -> Value {
         .and_then(Value::as_str)
         .unwrap_or_default();
 
-    let mut matching: Vec<Value> = games_for_systems(&systems)
+    let matching: Vec<Value> = games_for_systems(&systems)
         .filter(|game| tags.iter().all(|tag| game_has_tag(game, tag)))
         .filter(|game| {
             let name = slug(game.get("name").and_then(Value::as_str).unwrap_or_default());
@@ -259,6 +341,10 @@ pub fn media_search_response(params: &Value) -> Value {
             )
         })
         .collect();
+    // Search and browse name a game by the same path, so one hidden from a
+    // listing leaves the search too. A mock folder is a view of its whole
+    // system, though, so hiding one takes no game out of the search.
+    let mut matching = apply_visibility(matching, include_hidden(params), hidden);
     match params.get("sort").and_then(Value::as_str) {
         Some("name-asc") => matching.sort_by_key(|game| {
             game.get("name")
@@ -374,7 +460,13 @@ fn matching_media_rows(path_prefix: &str, systems: &[&str], filters: &[&str]) ->
     matching
 }
 
-fn mock_directory_entry(system: &str, name: &str, path: &str, file_count: u64) -> Value {
+fn mock_directory_entry(
+    system: &str,
+    name: &str,
+    path: &str,
+    file_count: u64,
+    has_cover: bool,
+) -> Value {
     json!({
         "name": name,
         "path": path,
@@ -382,8 +474,59 @@ fn mock_directory_entry(system: &str, name: &str, path: &str, file_count: u64) -
         "fileCount": file_count,
         "systemIds": [system],
         "relativePath": format!("{system}/{name}"),
-        "hasCover": false,
+        "hasCover": has_cover,
     })
+}
+
+fn disc_file(folder: &str, disc: u64) -> String {
+    format!("{folder}/{DISC_FOLDER} (Disc {disc}).chd")
+}
+
+/// A folder of one game's discs, collapsed to a single launchable entry
+/// as Core does: its launch fields are the first disc's, whose `disc` tag
+/// stays in `tags` and leaves `disambiguatingTags`.
+fn mock_multi_disc_entry(system: &str, path: &str) -> Value {
+    json!({
+        "name": DISC_FOLDER,
+        "path": path,
+        "type": "directory",
+        "fileCount": DISC_COUNT,
+        "systemId": system,
+        "systemIds": [system],
+        "zapScript": format!("@{system}/{DISC_FOLDER} (disc:1)"),
+        "relativePath": format!("{system}/{}", disc_file(DISC_FOLDER, 1)),
+        "tags": [{ "type": "disc", "tag": "1" }],
+        "hasCover": true,
+        "multiDisc": true,
+    })
+}
+
+/// The discs inside a multi-disc folder, or None when `path` is not one.
+fn mock_disc_rows(path: &str, systems: &[&str]) -> Option<Vec<Value>> {
+    let system = path
+        .strip_suffix(&format!("/{DISC_FOLDER}"))
+        .and_then(|root| root.rsplit('/').next())?;
+    if !systems.is_empty() && !systems.contains(&system) {
+        return None;
+    }
+    Some(
+        (1..=DISC_COUNT)
+            .map(|disc| {
+                let tag = json!({ "type": "disc", "tag": disc.to_string() });
+                json!({
+                    "name": DISC_FOLDER,
+                    "path": disc_file(path, disc),
+                    "type": "media",
+                    "systemId": system,
+                    "zapScript": format!("@{system}/{DISC_FOLDER} (disc:{disc})"),
+                    "relativePath": format!("{system}/{}", disc_file(DISC_FOLDER, disc)),
+                    "tags": [tag],
+                    "disambiguatingTags": [tag],
+                    "hasCover": true,
+                })
+            })
+            .collect(),
+    )
 }
 
 /// A virtual-scheme route. Core never merges these into a system's
@@ -418,7 +561,7 @@ fn mock_route_root_entry(path: &str, system: &str, file_count: u64) -> Value {
 }
 
 /// Core's merged system-root view (`rootView: "contents"`): a virtual
-/// route (first page only), two mock directories, then the system's
+/// route (first page only), the mock directories, then the system's
 /// media, all under one pathless response. Mirrors
 /// `browseSystemRootContents` in zaparoo-core's `media_browse.go`.
 fn media_browse_root_contents_response(
@@ -427,18 +570,28 @@ fn media_browse_root_contents_response(
     max: usize,
     offset: usize,
     cursor_present: bool,
+    include_hidden: bool,
 ) -> Value {
     let path_prefix = format!("/mock/games/{system}");
-    let dirs = if cursor_present {
-        Vec::new()
-    } else {
+    let folder = |name: &str| format!("{path_prefix}/{name}");
+    let all_dirs = apply_visibility(
         vec![
-            mock_directory_entry(system, "Favorites", &format!("{path_prefix}/Favorites"), 1),
-            mock_directory_entry(system, "Extras", &format!("{path_prefix}/Extras"), 1),
-        ]
-    };
+            // Only Extras has artwork of its own.
+            mock_directory_entry(system, "Favorites", &folder("Favorites"), 1, false),
+            mock_directory_entry(system, "Extras", &folder("Extras"), 1, true),
+            mock_multi_disc_entry(system, &folder(DISC_FOLDER)),
+        ],
+        include_hidden,
+        hidden_itself,
+    );
+    let total_dirs = all_dirs.len();
+    let dirs = if cursor_present { Vec::new() } else { all_dirs };
     let remaining = max.saturating_sub(dirs.len());
-    let matching = matching_media_rows(&path_prefix, &[system], filters);
+    let matching = apply_visibility(
+        matching_media_rows(&path_prefix, &[system], filters),
+        include_hidden,
+        hidden_itself,
+    );
     let total_files = matching.len();
     let media_page: Vec<Value> = matching.into_iter().skip(offset).take(remaining).collect();
     let next_offset = offset.saturating_add(media_page.len());
@@ -461,7 +614,7 @@ fn media_browse_root_contents_response(
         "entries": entries,
         // Virtual roots are excluded, mirroring Core: `totalDirs` counts
         // merged physical directories only.
-        "totalDirs": 2,
+        "totalDirs": total_dirs,
         "totalFiles": total_files,
         "pagination": pagination,
     })
@@ -523,6 +676,7 @@ pub fn media_browse_response(params: &Value) -> Value {
                     max,
                     offset,
                     cursor.is_some(),
+                    include_hidden(params),
                 );
             }
         } else if !systems.is_empty() {
@@ -538,7 +692,14 @@ pub fn media_browse_response(params: &Value) -> Value {
     } else {
         path
     };
-    let matching = matching_media_rows(path, &systems, &filters);
+    // A hidden folder still lists by its own path; only what is hidden
+    // inside it is left out.
+    let matching = apply_visibility(
+        mock_disc_rows(path, &systems)
+            .unwrap_or_else(|| matching_media_rows(path, &systems, &filters)),
+        include_hidden(params),
+        hidden_itself,
+    );
     let total_files = matching.len();
     let entries: Vec<Value> = matching.into_iter().skip(offset).take(max).collect();
     let next_offset = offset.saturating_add(entries.len());
@@ -588,7 +749,7 @@ pub fn media_meta_response(params: &Value) -> Value {
         // Core accepts the launcher-relative shape and answers with the
         // canonical path.
         let path = match path.strip_prefix(&format!("{system}/")) {
-            Some(rest) => format!("/mock/{system}/{rest}"),
+            Some(rest) => format!("/mock/games/{system}/{rest}"),
             None => path,
         };
         let file = path.rsplit('/').next().unwrap_or_default().to_string();
@@ -783,7 +944,7 @@ pub fn media_history_latest_response() -> Value {
             "systemId": system,
             "systemName": system_display_for(system),
             "mediaName": name,
-            "mediaPath": format!("/mock/{system}/{file}"),
+            "mediaPath": format!("/mock/games/{system}/{file}"),
             "relativePath": format!("{system}/{file}"),
             "launcherId": system,
             "startedAt": "2026-04-29T23:00:00Z",
@@ -838,7 +999,7 @@ pub fn media_history_response(params: &Value) -> Value {
                 "systemId": system,
                 "systemName": system_display_for(system),
                 "mediaName": name,
-                "mediaPath": format!("/mock/{system}/{file}"),
+                "mediaPath": format!("/mock/games/{system}/{file}"),
                 "relativePath": format!("{system}/{file}"),
                 "zapScript": format!("@{system}/{file}"),
                 "launcherId": system,
@@ -911,7 +1072,7 @@ fn games_for_systems<'a>(systems: &'a [&'a str]) -> impl Iterator<Item = Value> 
             let (system_name, category) = system_meta(system);
             let mut item = json!({
                 "name": name,
-                "path": format!("/mock/{system}/{file}"),
+                "path": format!("/mock/games/{system}/{file}"),
                 "relativePath": format!("{system}/{file}"),
                 "zapScript": format!("@{system}/{file}"),
                 "system": { "id": system, "name": system_name, "category": category },

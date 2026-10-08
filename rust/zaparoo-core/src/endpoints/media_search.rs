@@ -21,6 +21,8 @@ pub struct SearchArgs {
     pub path_prefix: String,
     pub max_results: u32,
     pub sort: String,
+    /// Part of the key: the two visibilities are different result sets.
+    pub include_hidden: bool,
 }
 
 impl SearchArgs {
@@ -37,6 +39,7 @@ impl SearchArgs {
             letter: None,
             sort: some(&self.sort),
             path_prefix: some(&self.path_prefix),
+            include_hidden: self.include_hidden.then_some(true),
         }
     }
 }
@@ -99,6 +102,26 @@ mod tests {
                 "tags": ["genre:rpg"],
                 "pathPrefix": "/roms/SNES/RPG",
             })
+        );
+    }
+
+    #[test]
+    fn hidden_matches_are_asked_for_on_every_page() {
+        let args = SearchArgs {
+            max_results: 100,
+            include_hidden: true,
+            ..SearchArgs::default()
+        };
+        for cursor in [None, Some("abc".to_string())] {
+            let params = serde_json::to_value(args.params(cursor)).expect("serialise");
+            assert_eq!(params["includeHidden"], true);
+        }
+        assert_ne!(
+            args,
+            SearchArgs {
+                include_hidden: false,
+                ..args.clone()
+            }
         );
     }
 }

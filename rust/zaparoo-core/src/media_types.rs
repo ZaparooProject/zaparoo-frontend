@@ -84,6 +84,10 @@ pub struct MediaSearchParams {
     /// Limit results to media at or below this folder or virtual route.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub path_prefix: Option<String>,
+    /// Include media tagged `user:hidden` or under a hidden folder. Repeat
+    /// on every cursor page.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub include_hidden: Option<bool>,
 }
 
 /// Image types Core's `media.image` endpoint can actually serve.
@@ -366,8 +370,9 @@ pub struct BrowseEntry {
     pub group: String,
     #[serde(default)]
     pub description: String,
-    /// Tags attached to media-capable entries. Empty for normal folders;
-    /// Core can populate this on singleton media-container directories.
+    /// Tags attached to media-capable entries, singleton media-container
+    /// directories included. A normal folder carries only `user:hidden`,
+    /// and only when hidden entries were asked for.
     #[serde(default)]
     pub tags: Vec<TagInfo>,
     /// Subset of `tags` whose values differ across same-named siblings of this
@@ -378,7 +383,8 @@ pub struct BrowseEntry {
     /// When `false`, Core has confirmed this media has no cover image in
     /// its properties tables. Defaults to `true` when the field is absent
     /// (older Core builds don't send it) so cover requests are still made.
-    /// Only meaningful for `media` entries; folders always behave as `true`.
+    /// On a folder it reports artwork of the folder's own or, for a
+    /// media-container directory, of its launch target.
     #[serde(default = "default_true")]
     pub has_cover: bool,
     /// Core's average colour of the cover thumbnail, as `#rrggbb`, for a
@@ -386,6 +392,11 @@ pub struct BrowseEntry {
     /// sized that cover yet, and by Core builds that predate it.
     #[serde(default)]
     pub cover_color: Option<String>,
+    /// A `directory` entry standing for several disc images of one game. Its
+    /// launch fields point at one disc, whose `disc` tag stays in `tags`; the
+    /// others are listed by browsing the entry's `path`.
+    #[serde(default)]
+    pub multi_disc: bool,
 }
 
 impl Default for BrowseEntry {
@@ -408,6 +419,7 @@ impl Default for BrowseEntry {
             // struct-update syntax) still request covers from Core.
             has_cover: true,
             cover_color: None,
+            multi_disc: false,
         }
     }
 }
@@ -1867,10 +1879,17 @@ mod tests {
             letter: Some("M".into()),
             sort: Some("name-asc".into()),
             path_prefix: Some("/roms/SNES/RPG".into()),
+            include_hidden: Some(true),
         };
         let json = serde_json::to_value(&params).expect("serialise");
         let object = json.as_object().expect("object");
         assert_eq!(object.get("query").and_then(|v| v.as_str()), Some("mario"));
+        assert_eq!(
+            object
+                .get("includeHidden")
+                .and_then(serde_json::Value::as_bool),
+            Some(true)
+        );
         assert_eq!(
             object.get("maxResults").and_then(serde_json::Value::as_u64),
             Some(50)

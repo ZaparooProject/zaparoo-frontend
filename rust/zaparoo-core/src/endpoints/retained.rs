@@ -93,6 +93,7 @@ fields!(BrowseEntry {
     disambiguating_tags,
     has_cover,
     cover_color,
+    multi_disc,
 });
 fields!(MediaBrowseResult {
     path,

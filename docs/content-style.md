@@ -22,7 +22,8 @@ list by this priority, top to bottom:
    system tile navigates *into* the system on Accept, so `Launch system`
    is not a duplicate and stays first. Apply the test to the anchor, not
    to the verb.
-2. Frequent secondary actions (favorite, write a token, details).
+2. Frequent secondary actions (favorite, write a token, details, Choose
+   disc).
 3. Organizational actions (Move, Add to Hub, Hide).
 4. Long-running maintenance actions (Update media database, Update
    metadata) — always last. These start a background job the user waits

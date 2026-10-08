@@ -18,10 +18,6 @@ pub const PREVIEW_DEBOUNCE_MS: u64 = 250;
 /// Matches the preview asks Core for; beyond it the count reads "100+".
 pub const PREVIEW_LIMIT: u32 = 100;
 
-/// Matches the pane beside the keyboard lists at most; how many show at
-/// once is the view's to measure.
-pub const PANE_ROWS: usize = 12;
-
 /// Core has no relevance ranking, so results read alphabetically.
 pub const RESULT_SORT: &str = "name-asc";
 
@@ -53,6 +49,18 @@ pub fn count(results: usize, has_more: bool) -> Count {
     } else {
         Count::Exact(results)
     }
+}
+
+/// The matches the pane beside the keyboard lists, as indices into Core's
+/// page: the first of each title on each system. Variants of one title read
+/// alike there, so the pane names it once and the results tell them apart.
+pub fn pane_matches<'a>(matches: impl IntoIterator<Item = (&'a str, &'a str)>) -> Vec<usize> {
+    let mut seen = std::collections::HashSet::new();
+    matches
+        .into_iter()
+        .enumerate()
+        .filter_map(|(index, key)| seen.insert(key).then_some(index))
+        .collect()
 }
 
 /// Core lists at most this many values of a long-tail tag type (developer,
@@ -284,6 +292,27 @@ mod tests {
         assert_eq!(count(12, false), Count::Exact(12));
         assert_eq!(count(0, false), Count::Exact(0));
         assert_eq!(count(100, true), Count::AtLeast(100));
+    }
+
+    #[test]
+    fn the_pane_names_each_title_once_per_system() {
+        let page = [
+            ("Chrono Cross", "PSX"),
+            ("Chrono Cross", "PSX"),
+            ("Chrono Trigger", "SNES"),
+            ("Chrono Trigger", "PSX"),
+            ("Chrono Cross", "PSX"),
+            ("Chrono Trigger", "SNES"),
+        ];
+        assert_eq!(pane_matches(page), vec![0, 2, 3]);
+        assert!(pane_matches([]).is_empty());
+    }
+
+    #[test]
+    fn the_pane_lists_a_whole_page_of_distinct_titles() {
+        let titles: Vec<String> = (0..PREVIEW_LIMIT).map(|n| format!("Game {n}")).collect();
+        let page = titles.iter().map(|title| (title.as_str(), "SNES"));
+        assert_eq!(pane_matches(page).len(), titles.len());
     }
 
     #[test]

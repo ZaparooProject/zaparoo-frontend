@@ -95,6 +95,7 @@ pub(crate) fn args(shared: &Shared) -> SearchArgs {
         path_prefix: search.scope_path.clone(),
         max_results: rules::PREVIEW_LIMIT,
         sort: rules::RESULT_SORT.to_string(),
+        include_hidden: shared.show_hidden,
     }
 }
 
@@ -170,7 +171,6 @@ fn pane_rows(shared: &Shared) -> Vec<SearchPaneRow> {
             .search
             .preview
             .iter()
-            .take(rules::PANE_ROWS)
             .map(|p| {
                 // The system is worth naming only when several are searched.
                 let detail = if shared.persist.search.system_id.is_empty() {
@@ -784,10 +784,13 @@ pub(crate) fn preview_landed(
             Ok(result) => {
                 let more = result.pagination.as_ref().is_some_and(|p| p.has_next_page);
                 model.count = Some(rules::count(result.results.len(), more));
-                model.preview = result
+                let titles = result
                     .results
                     .iter()
-                    .take(rules::PANE_ROWS)
+                    .map(|item| (item.name.as_str(), item.system.id.as_str()));
+                model.preview = rules::pane_matches(titles)
+                    .into_iter()
+                    .map(|index| &result.results[index])
                     .map(|item| Preview {
                         name: item.name.clone(),
                         system: item.system.name.clone(),
@@ -1048,6 +1051,9 @@ mod tests {
         assert_eq!(args.path_prefix, "/roms/SNES/Racing");
         assert_eq!(args.max_results, rules::PREVIEW_LIMIT);
         assert_eq!(args.sort, "name-asc");
+        assert!(!args.include_hidden);
+        shared.show_hidden = true;
+        assert!(super::args(&shared).include_hidden);
     }
 
     #[test]

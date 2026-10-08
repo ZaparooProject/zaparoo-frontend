@@ -137,7 +137,9 @@ pub fn dispatch(text: &str, notifier: &Notifier) -> String {
 
 /// `media.tags.update`: validates the exclusive media ref the way Core does
 /// (a `mediaId` or a `(system, path)` pair, never both) and acknowledges the
-/// change. The mock's catalog is static, so no tag state is kept.
+/// change. The mock's catalog is static, so the one tag it keeps is
+/// `user:hidden` on a path, a file's or a folder's, which browse and
+/// search then honor.
 fn media_tags_update(params: &Value) -> Result<Value, String> {
     let has_id = params.get("mediaId").is_some();
     let system = params.get("system").and_then(Value::as_str).unwrap_or("");
@@ -146,7 +148,20 @@ fn media_tags_update(params: &Value) -> Result<Value, String> {
         return Err("invalid params: mediaId cannot be mixed with system/path".into());
     }
     info!(%params, "media.tags.update");
-    Ok(serde_json::json!({ "tags": [] }))
+    let names = |key: &str| {
+        params
+            .get(key)
+            .and_then(Value::as_array)
+            .is_some_and(|tags| tags.iter().any(|tag| tag == "user:hidden"))
+    };
+    let mut tags = Vec::new();
+    if !path.is_empty() && (names("add") || names("remove")) {
+        // Adds win over removes, as in Core.
+        if fixtures::set_hidden(path, names("add")) {
+            tags.push(serde_json::json!({ "type": "user", "tag": "hidden" }));
+        }
+    }
+    Ok(serde_json::json!({ "tags": tags }))
 }
 
 fn encode(response: &RpcResponse) -> String {
@@ -278,15 +293,15 @@ mod tests {
 
     #[test]
     fn media_search_limits_results_to_a_path_prefix() {
-        let req = r#"{"jsonrpc":"2.0","id":"1","method":"media.search","params":{"pathPrefix":"/mock/NES","maxResults":1000}}"#;
+        let req = r#"{"jsonrpc":"2.0","id":"1","method":"media.search","params":{"pathPrefix":"/mock/games/NES","maxResults":1000}}"#;
         let resp = parse(&dispatch(req));
         let results = resp["result"]["results"].as_array().expect("array");
         assert!(!results.is_empty());
         assert!(results.iter().all(|g| g["path"]
             .as_str()
-            .is_some_and(|p| p.starts_with("/mock/NES/"))));
+            .is_some_and(|p| p.starts_with("/mock/games/NES/"))));
         // A sibling that merely shares the prefix's letters is not under it.
-        let req = r#"{"jsonrpc":"2.0","id":"1","method":"media.search","params":{"pathPrefix":"/mock/NE","maxResults":1000}}"#;
+        let req = r#"{"jsonrpc":"2.0","id":"1","method":"media.search","params":{"pathPrefix":"/mock/games/NE","maxResults":1000}}"#;
         let resp = parse(&dispatch(req));
         assert!(resp["result"]["results"]
             .as_array()
@@ -471,16 +486,122 @@ mod tests {
         let resp = parse(&dispatch(req));
         assert_eq!(resp["result"]["path"], Value::from(""));
         let entries = resp["result"]["entries"].as_array().expect("array");
-        // Virtual root first, then the two mock directories, then media --
+        // Virtual root first, then the mock directories, then media --
         // mirrors `browseSystemRootContents`'s ordering in zaparoo-core.
         assert_eq!(entries[0]["type"], Value::from("root"));
-        assert_eq!(entries[1]["type"], Value::from("directory"));
-        assert_eq!(entries[2]["type"], Value::from("directory"));
-        assert!(entries[3..].iter().all(|entry| entry["type"] == "media"));
+        assert!(entries[1..4]
+            .iter()
+            .all(|entry| entry["type"] == "directory"));
+        assert!(entries[4..].iter().all(|entry| entry["type"] == "media"));
         // `totalDirs` counts the merged directories only, excluding the
         // leading virtual root.
-        assert_eq!(resp["result"]["totalDirs"], Value::from(2));
+        assert_eq!(resp["result"]["totalDirs"], Value::from(3));
         assert!(resp["result"]["totalFiles"].as_u64().unwrap_or(0) > 0);
+    }
+
+    #[test]
+    fn a_multi_disc_folder_launches_one_disc_and_browses_to_them_all() {
+        let root = parse(&dispatch(
+            r#"{"jsonrpc":"2.0","id":"1","method":"media.browse","params":{"systems":["SNES"],"rootView":"contents"}}"#,
+        ));
+        let entries = root["result"]["entries"].as_array().expect("array");
+        let folder = entries
+            .iter()
+            .find(|entry| entry["multiDisc"] == true)
+            .expect("multi-disc folder");
+        assert_eq!(folder["type"], "directory");
+        assert_eq!(folder["tags"][0]["type"], "disc");
+        assert!(folder["disambiguatingTags"].is_null());
+        assert!(folder["zapScript"]
+            .as_str()
+            .is_some_and(|s| s.contains("disc:1")));
+
+        let path = folder["path"].as_str().expect("path");
+        let discs = parse(&dispatch(&format!(
+            r#"{{"jsonrpc":"2.0","id":"2","method":"media.browse","params":{{"systems":["SNES"],"path":"{path}"}}}}"#
+        )));
+        let discs = discs["result"]["entries"].as_array().expect("array");
+        assert_eq!(discs.len(), 2);
+        for (index, disc) in discs.iter().enumerate() {
+            assert_eq!(disc["type"], "media");
+            assert_eq!(disc["tags"][0]["tag"], (index + 1).to_string());
+        }
+    }
+
+    #[test]
+    fn a_hidden_folder_leaves_the_listing_until_hidden_entries_are_asked_for() {
+        // GBA is this test's own system: the hidden set is process state.
+        let browse = |extra: &str| {
+            parse(&dispatch(&format!(
+                r#"{{"jsonrpc":"2.0","id":"1","method":"media.browse","params":{{"systems":["GBA"],"rootView":"contents"{extra}}}}}"#
+            )))
+        };
+        let update = |verb: &str| {
+            parse(&dispatch(&format!(
+                r#"{{"jsonrpc":"2.0","id":"1","method":"media.tags.update","params":{{"system":"GBA","path":"/mock/games/GBA/Extras","{verb}":["user:hidden"]}}}}"#
+            )))
+        };
+        let extras = |resp: &Value| {
+            resp["result"]["entries"]
+                .as_array()
+                .expect("array")
+                .iter()
+                .find(|entry| entry["name"] == "Extras")
+                .cloned()
+        };
+
+        assert_eq!(update("add")["result"]["tags"][0]["tag"], "hidden");
+        let listed = browse("");
+        assert!(extras(&listed).is_none());
+        assert_eq!(listed["result"]["totalDirs"], Value::from(2));
+        let shown = extras(&browse(r#","includeHidden":true"#)).expect("hidden folder");
+        assert_eq!(shown["tags"][0]["tag"], "hidden");
+
+        // Its own path still lists what is inside it, untagged.
+        let inside = parse(&dispatch(
+            r#"{"jsonrpc":"2.0","id":"1","method":"media.browse","params":{"systems":["GBA"],"path":"/mock/games/GBA/Extras"}}"#,
+        ));
+        let games = inside["result"]["entries"].as_array().expect("array");
+        assert!(!games.is_empty());
+        assert!(games.iter().all(|game| !game["tags"]
+            .as_array()
+            .is_some_and(|tags| tags.iter().any(|tag| tag["tag"] == "hidden"))));
+
+        assert!(update("remove")["result"]["tags"]
+            .as_array()
+            .is_some_and(Vec::is_empty));
+        assert!(extras(&browse("")).is_some());
+    }
+
+    #[test]
+    fn a_game_hidden_from_a_listing_leaves_the_search() {
+        // NDS is this test's own system: the hidden set is process state.
+        let listed = parse(&dispatch(
+            r#"{"jsonrpc":"2.0","id":"1","method":"media.browse","params":{"systems":["NDS"],"rootView":"contents"}}"#,
+        ));
+        let game = listed["result"]["entries"]
+            .as_array()
+            .expect("array")
+            .iter()
+            .find(|entry| entry["type"] == "media")
+            .expect("a game")
+            .clone();
+        let path = game["path"].as_str().expect("path");
+        let found = |extra: &str| {
+            parse(&dispatch(&format!(
+                r#"{{"jsonrpc":"2.0","id":"1","method":"media.search","params":{{"systems":["NDS"],"maxResults":1000{extra}}}}}"#
+            )))["result"]["results"]
+                .as_array()
+                .expect("array")
+                .iter()
+                .any(|result| result["path"] == path)
+        };
+        assert!(found(""), "search and browse name the game by one path");
+        dispatch(&format!(
+            r#"{{"jsonrpc":"2.0","id":"1","method":"media.tags.update","params":{{"system":"NDS","path":"{path}","add":["user:hidden"]}}}}"#
+        ));
+        assert!(!found(""));
+        assert!(found(r#","includeHidden":true"#));
     }
 
     #[test]
@@ -580,7 +701,7 @@ mod tests {
         let meta = parse(&dispatch(
             r#"{"jsonrpc":"2.0","id":"4","method":"media.meta","params":{"system":"NES","path":"NES/smb.nes"}}"#,
         ));
-        assert_eq!(meta["result"]["media"]["path"], "/mock/NES/smb.nes");
+        assert_eq!(meta["result"]["media"]["path"], "/mock/games/NES/smb.nes");
         assert_eq!(meta["result"]["media"]["relativePath"], "NES/smb.nes");
         assert_eq!(meta["result"]["media"]["zapScript"], "@NES/smb.nes");
     }
@@ -615,7 +736,7 @@ mod tests {
         let found = parse(&dispatch(
             r#"{"jsonrpc":"2.0","id":"1","method":"media.lookup","params":{"system":"NES","name":"super mario bros."}}"#,
         ));
-        assert_eq!(found["result"]["match"]["path"], "/mock/NES/smb.nes");
+        assert_eq!(found["result"]["match"]["path"], "/mock/games/NES/smb.nes");
         assert_eq!(found["result"]["match"]["relativePath"], "NES/smb.nes");
 
         let missing = parse(&dispatch(

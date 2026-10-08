@@ -98,7 +98,10 @@ pub fn open(ctx: &Ctx, app: &App, entry: &GameRow) {
     let params =
         zaparoo_core::media_types::MediaMetaParams::for_media(system.clone(), entry.path.clone());
     let key = MediaKey {
-        media_id: entry.media_id,
+        // A folder's art is asked for by path, as the list asks for it.
+        media_id: entry
+            .media_id
+            .filter(|_| entry.entry_type != zaparoo_app::media_list::EntryType::Directory),
         system,
         path: entry.path.clone(),
         max_size: crate::sizing::detail_cover_source_size(crate::router::output_scene(app)),

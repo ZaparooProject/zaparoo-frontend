@@ -12,7 +12,7 @@ use std::collections::VecDeque;
 
 /// Every kind the alert vocabulary knows. An unknown kind still shows,
 /// with the generic copy.
-pub const KINDS: [&str; 18] = [
+pub const KINDS: [&str; 19] = [
     "launch",
     "launch_repair",
     "favorite",
@@ -25,6 +25,7 @@ pub const KINDS: [&str; 18] = [
     "launcher",
     "launcher_save",
     "alternate_discovery",
+    "disc_list",
     "qr_code",
     "card_write",
     "setting",
@@ -33,12 +34,12 @@ pub const KINDS: [&str; 18] = [
     "backup",
 ];
 
-/// A discovery that failed while the context menu still holds its
-/// "Searching…" row has to close the menu first: an alert is the one
-/// thing allowed above a modal, but at depth 2 Back would return to a
-/// row that can never resolve.
+/// A context-menu page that failed while the menu still holds its
+/// waiting row has to close the menu first: an alert is the one thing
+/// allowed above a modal, but at depth 2 Back would return to a row that
+/// can never resolve.
 pub fn closes_context_menu(kind: &str) -> bool {
-    kind == "alternate_discovery"
+    matches!(kind, "alternate_discovery" | "disc_list")
 }
 
 /// One queued failure. The key is what deduplication compares, so the
@@ -213,10 +214,12 @@ mod tests {
     }
 
     #[test]
-    fn only_a_failed_discovery_closes_the_context_menu() {
-        assert!(closes_context_menu("alternate_discovery"));
+    fn only_a_failed_menu_page_closes_the_context_menu() {
+        for kind in ["alternate_discovery", "disc_list"] {
+            assert!(closes_context_menu(kind));
+            assert!(KINDS.contains(&kind));
+        }
         assert!(!closes_context_menu("launch"));
-        assert!(KINDS.contains(&"alternate_discovery"));
     }
 
     #[test]

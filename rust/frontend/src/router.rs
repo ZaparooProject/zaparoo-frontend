@@ -74,8 +74,8 @@ pub struct Shared {
     pub online_list: crate::online_list::State,
     /// Failed user actions waiting for the alert surface.
     pub errors: action_error::ErrorQueue,
-    /// The context menu's alternate-versions page.
-    pub alternates: crate::alternates::AlternatesModel,
+    /// The page the context menu is showing in place of its own rows.
+    pub context_page: crate::context_page::PageModel,
     /// The key path: duplicate guard, hold-repeat, rapid navigation.
     pub input: crate::input::InputModel,
     /// Core reports at least one connected reader. Refreshed lazily.
@@ -260,7 +260,7 @@ impl Shared {
             online_link: zaparoo_app::online_link::Session::default(),
             online_list: crate::online_list::State::default(),
             errors: action_error::ErrorQueue::new(),
-            alternates: crate::alternates::AlternatesModel::default(),
+            context_page: crate::context_page::PageModel::default(),
             input: crate::input::InputModel::new(),
             has_readers: false,
             has_nfc: false,
@@ -1594,7 +1594,7 @@ pub(crate) fn fetch_letter_index(ctx: &Ctx, app: &App) {
             guard.games.browse_path.clone(),
             guard.games.system_id.clone(),
             guard.letter_seq,
-            guard.show_hidden,
+            crate::games::include_hidden(&guard),
             crate::browse_filter::active_tags(&guard),
         )
     };
@@ -2210,14 +2210,11 @@ fn present_context_menu(
 pub(crate) fn close_context_menu(ctx: &Ctx, app: &App) {
     crate::press_feedback::cancel(app);
     // Bumping the seq abandons any in-flight card write (its result is
-    // ignored on arrival) and any discovery still looking for a menu to
-    // fill.
+    // ignored on arrival) and any page still looking for a menu to fill.
     {
         let mut shared = lock(&ctx.shared);
         shared.card_write.cancel();
-        shared.alternates.seq += 1;
-        shared.alternates.showing = false;
-        shared.alternates.rows.clear();
+        shared.context_page.reset();
     }
     app.global::<crate::Overlays>().set_context_open(false);
 }
@@ -2341,10 +2338,10 @@ fn context_action(ctx: &Ctx, app: &App, action: &str) {
             }
         }
         actions::CANCEL | actions::CONTEXT_MENU => {
-            // The alternates page is a page of this menu, not a menu of
-            // its own: Back returns to the rows it replaced.
-            if crate::alternates::showing(ctx) {
-                crate::alternates::leave(ctx, app);
+            // A page is a page of this menu, not a menu of its own: Back
+            // returns to the rows it replaced.
+            if crate::context_page::showing(ctx) {
+                crate::context_page::leave(ctx, app);
             } else {
                 close_context_menu(ctx, app);
             }
@@ -2354,17 +2351,16 @@ fn context_action(ctx: &Ctx, app: &App, action: &str) {
 }
 
 fn context_accept(ctx: &Ctx, app: &App, id: &str) {
-    if crate::alternates::showing(ctx) {
-        crate::alternates::accept(ctx, app, id);
+    if crate::context_page::showing(ctx) {
+        crate::context_page::accept(ctx, app, id);
         return;
     }
     let owner = lock(&ctx.shared).context_owner;
     match owner {
         ContextOwner::Games => {
-            // Discovery keeps the menu open: its rows become the
-            // alternates once Core answers.
-            if id == "discover" {
-                crate::games::begin_discovery(ctx, app);
+            // A page keeps the menu open: its rows become the page's
+            // once Core answers.
+            if crate::games::begin_context_page(ctx, app, id) {
                 return;
             }
             close_context_menu(ctx, app);

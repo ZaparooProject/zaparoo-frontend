@@ -102,6 +102,9 @@ pub struct GameRow {
     pub is_favorite: bool,
     pub is_hidden: bool,
     pub media_capable: bool,
+    /// A folder of one game's discs: Accept launches the disc Core chose
+    /// and the menu lists the rest.
+    pub multi_disc: bool,
     /// The roots page distinguisher, when siblings share a name.
     pub root_distinguisher: String,
     /// The metadata rows Core sent with the row (the detail pane's
@@ -150,6 +153,12 @@ impl GameRow {
         format!("{system}\n{}", self.path)
     }
 
+    /// Core has artwork to ask for: a game's, or a folder's own. A system
+    /// root has none.
+    fn wants_cover(&self) -> bool {
+        self.has_cover && (self.media_capable || self.entry_type == EntryType::Directory)
+    }
+
     fn system_or<'a>(&'a self, fallback: &'a str) -> &'a str {
         if self.system_id.is_empty() {
             fallback
@@ -157,6 +166,11 @@ impl GameRow {
             &self.system_id
         }
     }
+}
+
+/// Whether a browse of the list asks Core for hidden entries too.
+pub(crate) fn include_hidden(shared: &Shared) -> bool {
+    shared.show_hidden
 }
 
 fn cover_color(value: Option<&str>) -> Option<[u8; 3]> {
@@ -181,12 +195,17 @@ impl From<&BrowseEntry> for GameRow {
             system_name: String::new(),
             zap_script: e.zap_script.clone(),
             relative_path: e.relative_path.clone(),
-            tag_labels: crate::tag_utils::disambiguating_tag_labels(&e.disambiguating_tags),
+            tag_labels: if e.multi_disc {
+                crate::tag_utils::multi_disc_tag_labels(&e.tags, &e.disambiguating_tags)
+            } else {
+                crate::tag_utils::disambiguating_tag_labels(&e.disambiguating_tags)
+            },
             has_cover: e.has_cover,
             cover_color: cover_color(e.cover_color.as_deref()),
             is_favorite: has_user_tag(&e.tags, "favorite"),
             is_hidden: has_user_tag(&e.tags, "hidden"),
             media_capable: rules::is_media_capable(entry_type, e.media_id.is_some(), &e.zap_script),
+            multi_disc: e.multi_disc,
             root_distinguisher: String::new(),
             detail_rows: rules::detail_rows_from_tags(&tag_pairs(&e.tags)),
             display: String::new(),
@@ -213,6 +232,7 @@ impl From<&MediaItem> for GameRow {
             is_favorite: has_user_tag(&item.tags, "favorite"),
             is_hidden: has_user_tag(&item.tags, "hidden"),
             media_capable: true,
+            multi_disc: false,
             root_distinguisher: String::new(),
             detail_rows: rules::detail_rows_from_tags(&tag_pairs(&item.tags)),
             display: String::new(),
@@ -239,6 +259,7 @@ impl From<&MediaHistoryEntry> for GameRow {
             is_favorite: has_user_tag(&e.tags, "favorite"),
             is_hidden: has_user_tag(&e.tags, "hidden"),
             media_capable: true,
+            multi_disc: false,
             root_distinguisher: String::new(),
             detail_rows: Vec::new(),
             display: String::new(),
@@ -1028,7 +1049,7 @@ fn browse_with_motion(ctx: &Ctx, app: &App, path: &str, flip: bool, direction: i
             shared.games.grid.load_ahead_pages,
         );
         let tags = crate::browse_filter::active_tags(&shared);
-        let include_hidden = shared.show_hidden;
+        let include_hidden = include_hidden(&shared);
         let model = &mut shared.games;
         model.mode = GamesMode::Browse;
         model.browse_path = path.to_string();
@@ -1315,7 +1336,7 @@ fn fetch_more(ctx: &Ctx, app: &App, limit: u32, bulk: bool) {
     let (mode, cursor, system_id, browse_path, tags, ticket, sort, scope, include_hidden, search) = {
         let mut shared = lock(&ctx.shared);
         let search = crate::search::args(&shared);
-        let include_hidden = shared.show_hidden;
+        let include_hidden = include_hidden(&shared);
         let tags = crate::browse_filter::active_tags(&shared);
         let sort = favorites_sort(&shared);
         let scope = favorites_scope(&shared);
@@ -1788,9 +1809,14 @@ pub(crate) fn grid_cover_fit(app: &App, mode: GamesMode) -> zaparoo_app::covers:
     cover_tier(app, mode).fit
 }
 
+/// A folder's art is asked for by path: Core then answers with artwork of
+/// the folder's own before its launch target's, which is all a media id
+/// names.
 fn media_key(row: &GameRow, fallback_system: &str, tier: CoverSize) -> MediaKey {
     MediaKey {
-        media_id: row.media_id,
+        media_id: row
+            .media_id
+            .filter(|_| row.entry_type != EntryType::Directory),
         system: row.system_or(fallback_system).to_string(),
         path: row.path.clone(),
         max_size: tier.tier,
@@ -1831,7 +1857,7 @@ fn cell_for(
     let state = rules::cover_state(
         row.entry_type,
         row.media_capable,
-        row.has_cover && !key.system.is_empty(),
+        row.wants_cover() && !key.system.is_empty(),
         cached.is_some(),
         ctx.media.is_negative(&key),
     );
@@ -1884,7 +1910,7 @@ fn cover_waiting(ctx: &Ctx, model: &GamesModel, row: &GameRow, tier: CoverSize) 
     let state = rules::cover_state(
         row.entry_type,
         row.media_capable,
-        row.has_cover && !key.system.is_empty(),
+        row.wants_cover() && !key.system.is_empty(),
         ctx.media.get(&key).is_some(),
         ctx.media.is_negative(&key),
     );
@@ -1935,7 +1961,7 @@ fn wanted_covers(
         let rows: Vec<_> = window
             .iter()
             .filter_map(|index| model.rows.get(*index))
-            .filter(|row| row.media_capable && row.has_cover)
+            .filter(|row| row.wants_cover())
             .map(|row| (row, media_key(row, &model.system_id, tier)))
             .filter(|(_, key)| !key.system.is_empty() && !key.path.is_empty())
             .collect();
@@ -2083,7 +2109,7 @@ fn cover_keys(model: &GamesModel, indices: Vec<usize>, tier: CoverSize) -> Vec<M
     indices
         .into_iter()
         .filter_map(|index| model.rows.get(index))
-        .filter(|row| row.media_capable && row.has_cover)
+        .filter(|row| row.wants_cover())
         .map(|row| media_key(row, &model.system_id, tier))
         .filter(|key| !key.system.is_empty() && !key.path.is_empty())
         .collect()
@@ -2417,10 +2443,11 @@ fn refresh_detail_cover(ctx: &Ctx, app: &App, model: &GamesModel) {
     let key = media_key(row, &model.system_id, CoverSize::detail(app));
     let placeholder =
         placeholder_color(ctx, row, &key).filter(|_| row.media_capable && row.has_cover);
+    let folder = !row.media_capable;
     view.set_detail_placeholder(placeholder.unwrap_or_default());
     view.set_detail_has_placeholder(placeholder.is_some());
     view.set_detail_path(SharedString::from(row.path.as_str()));
-    if !row.media_capable || key.system.is_empty() {
+    if !row.wants_cover() || key.system.is_empty() {
         view.set_detail_has_cover(false);
         view.set_detail_cover_absent(!row.is_dir());
         return;
@@ -2431,7 +2458,8 @@ fn refresh_detail_cover(ctx: &Ctx, app: &App, model: &GamesModel) {
         view.set_detail_cover_absent(false);
     } else {
         view.set_detail_has_cover(false);
-        view.set_detail_cover_absent(!row.has_cover || ctx.media.is_negative(&key));
+        // A folder without art of its own keeps its plain pane.
+        view.set_detail_cover_absent(!folder && ctx.media.is_negative(&key));
         // render owns the cancellable detail demand, including its lookahead.
         // Do not enqueue here: that would keep obsolete selections alive.
     }
@@ -3486,8 +3514,8 @@ fn menu_key(id: &str, is_favorite: bool, is_hidden: bool, on_hub: bool) -> &'sta
         };
     }
     match id {
-        "more_info" | "change_launcher" | "write_card" | "qr_code" | "discover" | "add_to_hub"
-        | "scrape_game" => id_static(id),
+        "more_info" | "change_launcher" | "choose_disc" | "write_card" | "qr_code" | "discover"
+        | "add_to_hub" | "scrape_game" => id_static(id),
         _ => "",
     }
 }
@@ -3498,6 +3526,7 @@ fn id_static(id: &str) -> &'static str {
     match id {
         "more_info" => "more_info",
         "change_launcher" => "change_launcher",
+        "choose_disc" => "choose_disc",
         "write_card" => "write_card",
         "qr_code" => "qr_code",
         "discover" => "discover",
@@ -3523,6 +3552,7 @@ fn menu_input(app: &App, shared: &Shared, row: &GameRow) -> Option<rules::MenuIn
         has_nfc: shared.has_nfc,
         is_favorite: row.is_favorite,
         is_arcade_system: system == ARCADE_SYSTEM_ID,
+        multi_disc: row.multi_disc,
         has_launchers: shared.launchers.iter().any(|l| l.system_id == system),
         media_busy: crate::router::media_busy(app),
     })
@@ -3612,24 +3642,34 @@ pub fn context_accept(ctx: &Ctx, app: &App, id: &str) {
     }
 }
 
-/// "Discover alt. versions": the menu stays open while Core answers.
-pub fn begin_discovery(ctx: &Ctx, app: &App) {
-    let (system, name, path) = {
+/// "Discover alt. versions" and "Choose disc" turn the menu to a page of
+/// its own: it stays open while Core answers. False when `id` is an
+/// ordinary entry.
+pub fn begin_context_page(ctx: &Ctx, app: &App, id: &str) -> bool {
+    if id != "discover" && id != "choose_disc" {
+        return false;
+    }
+    let (system, row, include_hidden) = {
         let shared = lock(&ctx.shared);
         let model = &shared.games;
         let Some(row) = model.current() else {
-            return;
+            return true;
         };
         (
             row.system_or(&model.system_id).to_string(),
-            row.name.clone(),
-            row.path.clone(),
+            row.clone(),
+            include_hidden(&shared),
         )
     };
-    crate::alternates::begin(ctx, app, &system, &name, &path);
+    if id == "discover" {
+        crate::alternates::begin(ctx, app, &system, &row.name, &row.path);
+    } else {
+        crate::discs::begin(ctx, app, &system, &row.path, &row.display, include_hidden);
+    }
+    true
 }
 
-/// Rebuild the row's own menu after the alternates page is left.
+/// Rebuild the row's own menu after one of its pages is left.
 pub fn reopen_context_menu(ctx: &Ctx, app: &App) {
     open_context_menu(ctx, app);
 }
@@ -4023,6 +4063,7 @@ mod tests {
             disambiguating_tags: Vec::new(),
             has_cover: true,
             cover_color: None,
+            multi_disc: false,
         }
     }
 
@@ -4217,6 +4258,82 @@ mod tests {
                 }
             }
         }
+    }
+
+    fn tag(tag_type: &str, value: &str) -> TagInfo {
+        TagInfo {
+            tag: value.into(),
+            tag_type: tag_type.into(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn a_multi_disc_folder_names_its_launch_disc_and_asks_for_art_by_path() {
+        let mut model = GamesModel::new();
+        model.rows = vec![GameRow::from(&BrowseEntry {
+            media_id: Some(4),
+            zap_script: "@PSX/Chrono Cross (disc:1) (region:us)".into(),
+            // Core keeps the launch disc in `tags` and out of the tags
+            // that tell siblings apart.
+            tags: vec![tag("disc", "1"), tag("region", "us")],
+            disambiguating_tags: vec![tag("region", "us")],
+            multi_disc: true,
+            ..entry("directory", "Chrono Cross", "/g/PSX/Chrono Cross")
+        })];
+        model.refresh_display(false, "en");
+        let row = &model.rows[0];
+        assert!(row.multi_disc && !row.is_dir());
+        assert_eq!(row.suffix, "D1 US");
+        assert_eq!(menu_key("choose_disc", false, false, false), "choose_disc");
+
+        let tier = CoverSize {
+            tier: 256,
+            fit: zaparoo_app::covers::Fit::default(),
+        };
+        let key = media_key(row, "PSX", tier);
+        assert_eq!(
+            key.media_id, None,
+            "a media id names the disc, not the folder"
+        );
+        assert_eq!(key.path, "/g/PSX/Chrono Cross");
+        // A game keeps its id.
+        let game = GameRow::from(&BrowseEntry {
+            media_id: Some(7),
+            ..entry("media", "Game", "/g/Game.nes")
+        });
+        assert_eq!(media_key(&game, "NES", tier).media_id, Some(7));
+    }
+
+    #[test]
+    #[allow(clippy::expect_used, reason = "a folder row always has a path")]
+    fn a_plain_folder_hides_by_its_path_and_shows_art_of_its_own() {
+        // Core names no single system on a plain folder.
+        let folder = GameRow::from(&BrowseEntry {
+            system_id: String::new(),
+            tags: vec![tag("user", "hidden")],
+            ..entry("directory", "_alternatives", "/g/Arcade/_alternatives")
+        });
+        assert!(folder.is_dir() && folder.is_hidden);
+        let unhiding =
+            tag_update_params(&folder, "Arcade", HIDDEN_TAG, false).expect("folder identity");
+        assert_eq!(
+            serde_json::to_value(&unhiding).expect("serialize"),
+            serde_json::json!({
+                "system": "Arcade",
+                "path": "/g/Arcade/_alternatives",
+                "remove": ["user:hidden"],
+            })
+        );
+
+        assert!(folder.wants_cover());
+        let bare = GameRow::from(&BrowseEntry {
+            has_cover: false,
+            ..entry("directory", "Extras", "/g/NES/Extras")
+        });
+        assert!(!bare.wants_cover());
+        // A system root has no artwork to ask for.
+        assert!(!GameRow::from(&entry("root", "NES", "/g/NES")).wants_cover());
     }
 
     #[test]
