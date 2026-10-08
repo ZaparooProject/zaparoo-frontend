@@ -341,8 +341,9 @@ pub fn media_search_response(params: &Value) -> Value {
             )
         })
         .collect();
-    // A mock folder is a view of its whole system, so only a game hidden
-    // by its own path leaves the search.
+    // Search and browse name a game by the same path, so one hidden from a
+    // listing leaves the search too. A mock folder is a view of its whole
+    // system, though, so hiding one takes no game out of the search.
     let mut matching = apply_visibility(matching, include_hidden(params), hidden);
     match params.get("sort").and_then(Value::as_str) {
         Some("name-asc") => matching.sort_by_key(|game| {
@@ -748,7 +749,7 @@ pub fn media_meta_response(params: &Value) -> Value {
         // Core accepts the launcher-relative shape and answers with the
         // canonical path.
         let path = match path.strip_prefix(&format!("{system}/")) {
-            Some(rest) => format!("/mock/{system}/{rest}"),
+            Some(rest) => format!("/mock/games/{system}/{rest}"),
             None => path,
         };
         let file = path.rsplit('/').next().unwrap_or_default().to_string();
@@ -943,7 +944,7 @@ pub fn media_history_latest_response() -> Value {
             "systemId": system,
             "systemName": system_display_for(system),
             "mediaName": name,
-            "mediaPath": format!("/mock/{system}/{file}"),
+            "mediaPath": format!("/mock/games/{system}/{file}"),
             "relativePath": format!("{system}/{file}"),
             "launcherId": system,
             "startedAt": "2026-04-29T23:00:00Z",
@@ -998,7 +999,7 @@ pub fn media_history_response(params: &Value) -> Value {
                 "systemId": system,
                 "systemName": system_display_for(system),
                 "mediaName": name,
-                "mediaPath": format!("/mock/{system}/{file}"),
+                "mediaPath": format!("/mock/games/{system}/{file}"),
                 "relativePath": format!("{system}/{file}"),
                 "zapScript": format!("@{system}/{file}"),
                 "launcherId": system,
@@ -1071,7 +1072,7 @@ fn games_for_systems<'a>(systems: &'a [&'a str]) -> impl Iterator<Item = Value> 
             let (system_name, category) = system_meta(system);
             let mut item = json!({
                 "name": name,
-                "path": format!("/mock/{system}/{file}"),
+                "path": format!("/mock/games/{system}/{file}"),
                 "relativePath": format!("{system}/{file}"),
                 "zapScript": format!("@{system}/{file}"),
                 "system": { "id": system, "name": system_name, "category": category },

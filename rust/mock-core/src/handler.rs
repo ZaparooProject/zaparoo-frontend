@@ -293,15 +293,15 @@ mod tests {
 
     #[test]
     fn media_search_limits_results_to_a_path_prefix() {
-        let req = r#"{"jsonrpc":"2.0","id":"1","method":"media.search","params":{"pathPrefix":"/mock/NES","maxResults":1000}}"#;
+        let req = r#"{"jsonrpc":"2.0","id":"1","method":"media.search","params":{"pathPrefix":"/mock/games/NES","maxResults":1000}}"#;
         let resp = parse(&dispatch(req));
         let results = resp["result"]["results"].as_array().expect("array");
         assert!(!results.is_empty());
         assert!(results.iter().all(|g| g["path"]
             .as_str()
-            .is_some_and(|p| p.starts_with("/mock/NES/"))));
+            .is_some_and(|p| p.starts_with("/mock/games/NES/"))));
         // A sibling that merely shares the prefix's letters is not under it.
-        let req = r#"{"jsonrpc":"2.0","id":"1","method":"media.search","params":{"pathPrefix":"/mock/NE","maxResults":1000}}"#;
+        let req = r#"{"jsonrpc":"2.0","id":"1","method":"media.search","params":{"pathPrefix":"/mock/games/NE","maxResults":1000}}"#;
         let resp = parse(&dispatch(req));
         assert!(resp["result"]["results"]
             .as_array()
@@ -574,6 +574,37 @@ mod tests {
     }
 
     #[test]
+    fn a_game_hidden_from_a_listing_leaves_the_search() {
+        // NDS is this test's own system: the hidden set is process state.
+        let listed = parse(&dispatch(
+            r#"{"jsonrpc":"2.0","id":"1","method":"media.browse","params":{"systems":["NDS"],"rootView":"contents"}}"#,
+        ));
+        let game = listed["result"]["entries"]
+            .as_array()
+            .expect("array")
+            .iter()
+            .find(|entry| entry["type"] == "media")
+            .expect("a game")
+            .clone();
+        let path = game["path"].as_str().expect("path");
+        let found = |extra: &str| {
+            parse(&dispatch(&format!(
+                r#"{{"jsonrpc":"2.0","id":"1","method":"media.search","params":{{"systems":["NDS"],"maxResults":1000{extra}}}}}"#
+            )))["result"]["results"]
+                .as_array()
+                .expect("array")
+                .iter()
+                .any(|result| result["path"] == path)
+        };
+        assert!(found(""), "search and browse name the game by one path");
+        dispatch(&format!(
+            r#"{{"jsonrpc":"2.0","id":"1","method":"media.tags.update","params":{{"system":"NDS","path":"{path}","add":["user:hidden"]}}}}"#
+        ));
+        assert!(!found(""));
+        assert!(found(r#","includeHidden":true"#));
+    }
+
+    #[test]
     fn media_browse_without_root_view_returns_route_roots() {
         let req =
             r#"{"jsonrpc":"2.0","id":"1","method":"media.browse","params":{"systems":["NES"]}}"#;
@@ -670,7 +701,7 @@ mod tests {
         let meta = parse(&dispatch(
             r#"{"jsonrpc":"2.0","id":"4","method":"media.meta","params":{"system":"NES","path":"NES/smb.nes"}}"#,
         ));
-        assert_eq!(meta["result"]["media"]["path"], "/mock/NES/smb.nes");
+        assert_eq!(meta["result"]["media"]["path"], "/mock/games/NES/smb.nes");
         assert_eq!(meta["result"]["media"]["relativePath"], "NES/smb.nes");
         assert_eq!(meta["result"]["media"]["zapScript"], "@NES/smb.nes");
     }
@@ -705,7 +736,7 @@ mod tests {
         let found = parse(&dispatch(
             r#"{"jsonrpc":"2.0","id":"1","method":"media.lookup","params":{"system":"NES","name":"super mario bros."}}"#,
         ));
-        assert_eq!(found["result"]["match"]["path"], "/mock/NES/smb.nes");
+        assert_eq!(found["result"]["match"]["path"], "/mock/games/NES/smb.nes");
         assert_eq!(found["result"]["match"]["relativePath"], "NES/smb.nes");
 
         let missing = parse(&dispatch(
