@@ -46,7 +46,7 @@ pub fn bind(ctx: &std::sync::Arc<Ctx>, app: &App) {
             let weak = weak.clone();
             slint::Timer::single_shot(std::time::Duration::ZERO, move || {
                 let Some(app) = weak.upgrade() else { return };
-                let fit = zaparoo_app::covers::Fit::new(width, height);
+                let fit = zaparoo_app::covers::Fit::new(width, height).crisp();
                 {
                     let mut shared = lock(&ctx.shared);
                     let model = &mut shared.game_info;

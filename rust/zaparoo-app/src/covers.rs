@@ -34,6 +34,20 @@ pub const MAX_BROWSE_COVER_SIZE: u32 = 768;
 pub struct Fit {
     pub width: u32,
     pub height: u32,
+    /// The surface enlarges a screenshot or title screen smaller than the
+    /// box to fill it (`enlarged`). Off for tiles, which keep the decoded
+    /// size.
+    pub crisp: bool,
+}
+
+/// How a capture smaller than its box is enlarged: by `factor` with hard
+/// pixel edges, then smoothed over what is left to reach `width` x
+/// `height`. Every source pixel stays the same size and sharp at any box.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Enlarged {
+    pub factor: u32,
+    pub width: u32,
+    pub height: u32,
 }
 
 impl Fit {
@@ -41,12 +55,23 @@ impl Fit {
     pub const SOURCE: Self = Self {
         width: 0,
         height: 0,
+        crisp: false,
     };
 
     pub fn new(width: i32, height: i32) -> Self {
         Self {
             width: u32::try_from(width).unwrap_or(0),
             height: u32::try_from(height).unwrap_or(0),
+            crisp: false,
+        }
+    }
+
+    /// The same box on a surface that enlarges captures.
+    #[must_use]
+    pub const fn crisp(self) -> Self {
+        Self {
+            crisp: true,
+            ..self
         }
     }
 
@@ -61,6 +86,34 @@ impl Fit {
         if width <= self.width && height <= self.height {
             return None;
         }
+        Some(self.contain(width, height))
+    }
+
+    /// The enlargement of a `width` x `height` capture that is smaller
+    /// than the box of a `crisp` surface. None on any other surface, when
+    /// the image is larger than the box (`size_for` shrinks it) or when
+    /// it fills the box already.
+    pub fn enlarged(self, width: u32, height: u32) -> Option<Enlarged> {
+        if !self.crisp || self.width == 0 || self.height == 0 || width == 0 || height == 0 {
+            return None;
+        }
+        if width > self.width || height > self.height {
+            return None;
+        }
+        let (fw, fh) = self.contain(width, height);
+        if (fw, fh) == (width, height) {
+            return None;
+        }
+        Some(Enlarged {
+            factor: (fw / width).min(fh / height).max(1),
+            width: fw,
+            height: fh,
+        })
+    }
+
+    /// The largest size inside a non-empty box that keeps the aspect of a
+    /// non-empty image.
+    fn contain(self, width: u32, height: u32) -> (u32, u32) {
         let (bw, bh, w, h) = (
             u64::from(self.width),
             u64::from(self.height),
@@ -73,11 +126,20 @@ impl Fit {
         } else {
             ((w * bh + h / 2) / h, bh)
         };
-        Some((
+        (
             u32::try_from(fw.max(1)).unwrap_or(self.width),
             u32::try_from(fh.max(1)).unwrap_or(self.height),
-        ))
+        )
     }
+}
+
+/// Whether an image type is a raw screen capture, shown with its pixels
+/// kept sharp. Takes the type as the frontend names it (`screenshot`) or
+/// as Core tags it (`property:image-screenshot`).
+pub fn is_capture_type(kind: &str) -> bool {
+    let kind = kind.strip_prefix("property:").unwrap_or(kind);
+    let kind = kind.strip_prefix("image-").unwrap_or(kind);
+    matches!(kind, "screenshot" | "titleshot")
 }
 
 /// The host of a `ws://host:port/path` endpoint, IPv6 brackets and
@@ -196,6 +258,60 @@ mod tests {
         assert_eq!(fit.size_for(100, 120), None);
         assert_eq!(fit.size_for(40, 60), None);
         assert_eq!(fit.size_for(2000, 1), Some((100, 1)));
+    }
+
+    #[test]
+    fn a_capture_is_enlarged_only_on_a_crisp_surface() {
+        // 256x224 in a 600x345 box: height-bound to 394x345, one whole
+        // multiple fits, and the rest is the smoothed remainder.
+        let fit = Fit::new(600, 345).crisp();
+        assert_eq!(
+            fit.enlarged(256, 224),
+            Some(Enlarged {
+                factor: 1,
+                width: 394,
+                height: 345
+            })
+        );
+        // An exact multiple needs no smoothing at all.
+        assert_eq!(
+            Fit::new(512, 448).crisp().enlarged(256, 224),
+            Some(Enlarged {
+                factor: 2,
+                width: 512,
+                height: 448
+            })
+        );
+        assert_eq!(
+            Fit::new(900, 700).crisp().enlarged(256, 224),
+            Some(Enlarged {
+                factor: 3,
+                width: 800,
+                height: 700
+            })
+        );
+        // A tile box, an image that already fills the box, one that has
+        // to shrink and a missing box are all left alone.
+        assert_eq!(Fit::new(600, 345).enlarged(256, 224), None);
+        assert_eq!(Fit::new(256, 300).crisp().enlarged(256, 224), None);
+        assert_eq!(Fit::new(100, 100).crisp().enlarged(256, 224), None);
+        assert_eq!(Fit::SOURCE.crisp().enlarged(256, 224), None);
+        // Shrinking is the same on either kind of surface.
+        assert_eq!(
+            Fit::new(100, 120).crisp().size_for(256, 512),
+            Fit::new(100, 120).size_for(256, 512)
+        );
+    }
+
+    #[test]
+    fn captures_are_named_by_the_frontend_or_by_core() {
+        assert!(is_capture_type("screenshot"));
+        assert!(is_capture_type("titleshot"));
+        assert!(is_capture_type("property:image-screenshot"));
+        assert!(is_capture_type("property:image-titleshot"));
+        assert!(!is_capture_type("boxart"));
+        assert!(!is_capture_type("property:image-boxart"));
+        assert!(!is_capture_type(""));
     }
 
     #[test]

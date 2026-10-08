@@ -237,12 +237,13 @@ impl MediaCache {
         Fit {
             width: (packed >> 32) as u32,
             height: packed as u32,
+            crisp: false,
         }
     }
 
-    /// Set the preferred artwork type. Cached images keep their old
-    /// art until they age out of the LRU; new fetches prefer the new
-    /// type.
+    /// Set the preferred artwork type for new fetches. A caller changing
+    /// it mid-session follows with `clear`, so cached covers of the old
+    /// type are asked for again.
     pub fn set_preferred_image_type(&self, value: &str) {
         let mut preferred = self
             .preferred_type
@@ -562,23 +563,45 @@ pub fn read_local_image_file(path: &str, max_bytes: usize) -> Result<Vec<u8>, St
     Ok(bytes)
 }
 
-/// Decode bytes already in hand (a local read, or the manifest's own
-/// seed) into the cache's image form.
-pub fn decode_bytes(bytes: &[u8], fit: Fit) -> Option<DecodedImage> {
+/// Decode bytes Core delivered as a file into the cache's image form.
+fn decode_bytes(bytes: &[u8], fit: Fit, capture: bool) -> Option<DecodedImage> {
     let decoded = image::load_from_memory(bytes).ok()?;
-    Some(fitted(decoded, fit))
+    Some(fitted(decoded, fit, capture))
 }
 
 /// Resize a decoded cover to its painted box and take the cache's image
 /// form. The software renderer samples bitmaps nearest-neighbor, so the
-/// filtering has to happen here, off the event loop; art that already
-/// fits is left alone.
-pub fn fitted(decoded: image::DynamicImage, fit: Fit) -> DecodedImage {
-    let rgba = match fit.size_for(decoded.width(), decoded.height()) {
-        Some((width, height)) => decoded
-            .resize_exact(width, height, image::imageops::FilterType::Triangle)
-            .into_rgba8(),
-        None => decoded.into_rgba8(),
+/// filtering has to happen here, off the event loop. Art that already
+/// fits is left alone, except a `capture` (a screenshot or title screen)
+/// on a surface that enlarges them: it is grown by a whole multiple with
+/// hard edges and only the remainder is smoothed, so its pixels stay
+/// sharp and even at any box.
+pub fn fitted(decoded: image::DynamicImage, fit: Fit, capture: bool) -> DecodedImage {
+    use image::imageops::FilterType;
+    let (source_width, source_height) = (decoded.width(), decoded.height());
+    let enlarged = if capture {
+        fit.enlarged(source_width, source_height)
+    } else {
+        None
+    };
+    let rgba = if let Some((width, height)) = fit.size_for(source_width, source_height) {
+        decoded
+            .resize_exact(width, height, FilterType::Triangle)
+            .into_rgba8()
+    } else if let Some(plan) = enlarged {
+        let whole = image::imageops::resize(
+            &decoded.into_rgba8(),
+            source_width * plan.factor,
+            source_height * plan.factor,
+            FilterType::Nearest,
+        );
+        if whole.dimensions() == (plan.width, plan.height) {
+            whole
+        } else {
+            image::imageops::resize(&whole, plan.width, plan.height, FilterType::Triangle)
+        }
+    } else {
+        decoded.into_rgba8()
     };
     let (width, height) = rgba.dimensions();
     DecodedImage {
@@ -768,13 +791,18 @@ async fn fetch_one(
                 cache.requeue(key);
                 return;
             }
+            // A carousel slot names its type; anywhere else Core picked
+            // one from the ladder and says which.
+            let capture = zaparoo_app::covers::is_capture_type(
+                key.image_type.as_deref().unwrap_or(&result.type_tag),
+            );
             let image =
                 if result.delivery == zaparoo_core::media_types::MEDIA_IMAGE_DELIVERY_LOCAL_PATH {
                     local_bytes
                         .as_deref()
-                        .and_then(|bytes| decode_bytes(bytes, key.fit))
+                        .and_then(|bytes| decode_bytes(bytes, key.fit, capture))
                 } else {
-                    decode(&result.data, key.fit)
+                    decode(&result.data, key.fit, capture)
                 };
             let local_path = result
                 .local_path
@@ -841,7 +869,7 @@ async fn read_local(path: String) -> Option<Vec<u8>> {
 
 /// Base64 payload -> decoded RGBA8. Returns None for empty payloads
 /// or undecodable data (both memoized as negatives by the caller).
-fn decode(data_b64: &str, fit: Fit) -> Option<DecodedImage> {
+fn decode(data_b64: &str, fit: Fit, capture: bool) -> Option<DecodedImage> {
     use base64::Engine as _;
     if data_b64.is_empty() {
         return None;
@@ -850,7 +878,7 @@ fn decode(data_b64: &str, fit: Fit) -> Option<DecodedImage> {
         .decode(data_b64)
         .ok()?;
     let decoded = image::load_from_memory(&bytes).ok()?;
-    Some(fitted(decoded, fit))
+    Some(fitted(decoded, fit, capture))
 }
 
 #[cfg(test)]
@@ -945,15 +973,54 @@ mod tests {
     #[test]
     fn a_decoded_cover_is_resized_to_its_painted_box() {
         let source = || image::DynamicImage::new_rgba8(256, 512);
-        let fit = fitted(source(), Fit::new(100, 120));
+        let fit = fitted(source(), Fit::new(100, 120), false);
         assert_eq!((fit.buffer.width(), fit.buffer.height()), (60, 120));
         // Smaller art and a missing box both keep the decoded size.
-        let small = fitted(image::DynamicImage::new_rgba8(40, 60), Fit::new(100, 120));
+        let small = fitted(
+            image::DynamicImage::new_rgba8(40, 60),
+            Fit::new(100, 120),
+            false,
+        );
         assert_eq!((small.buffer.width(), small.buffer.height()), (40, 60));
-        let unboxed = fitted(source(), Fit::SOURCE);
+        let unboxed = fitted(source(), Fit::SOURCE, false);
         assert_eq!(
             (unboxed.buffer.width(), unboxed.buffer.height()),
             (256, 512)
+        );
+    }
+
+    #[test]
+    fn a_small_capture_fills_a_crisp_box_with_its_pixels_kept_sharp() {
+        let size = |image: &DecodedImage| (image.buffer.width(), image.buffer.height());
+        // One white pixel on black, so a smoothed enlargement would show
+        // as grays inside the pixel.
+        let capture = || {
+            let mut source = image::RgbaImage::from_pixel(4, 4, image::Rgba([0, 0, 0, 255]));
+            source.put_pixel(1, 1, image::Rgba([255, 255, 255, 255]));
+            image::DynamicImage::ImageRgba8(source)
+        };
+        let crisp = Fit::new(8, 8).crisp();
+        let doubled = fitted(capture(), crisp, true);
+        assert_eq!(size(&doubled), (8, 8));
+        let pixels = doubled.buffer.as_slice();
+        for (x, y) in [(2, 2), (3, 2), (2, 3), (3, 3)] {
+            assert_eq!(pixels[y * 8 + x].r, 255, "({x}, {y}) is the white pixel");
+        }
+        assert_eq!(pixels[8 + 1].r, 0);
+        assert_eq!(pixels[4 * 8 + 4].r, 0);
+        // A remainder is smoothed onto the whole multiple.
+        assert_eq!(
+            size(&fitted(capture(), Fit::new(10, 10).crisp(), true)),
+            (10, 10)
+        );
+        // Box art on the same surface, and a capture on a tile, keep the
+        // decoded size.
+        assert_eq!(size(&fitted(capture(), crisp, false)), (4, 4));
+        assert_eq!(size(&fitted(capture(), Fit::new(8, 8), true)), (4, 4));
+        // A capture larger than its box shrinks like any cover.
+        assert_eq!(
+            size(&fitted(capture(), Fit::new(2, 2).crisp(), true)),
+            (2, 2)
         );
     }
 
@@ -1260,7 +1327,7 @@ mod tests {
 
     #[test]
     fn empty_payload_decodes_to_none() {
-        assert!(decode("", Fit::SOURCE).is_none());
-        assert!(decode("bm90IGFuIGltYWdl", Fit::SOURCE).is_none());
+        assert!(decode("", Fit::SOURCE, false).is_none());
+        assert!(decode("bm90IGFuIGltYWdl", Fit::SOURCE, false).is_none());
     }
 }
