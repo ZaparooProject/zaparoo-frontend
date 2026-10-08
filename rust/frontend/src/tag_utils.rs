@@ -43,6 +43,21 @@ pub fn disambiguating_tag_labels(tags: &[TagInfo]) -> Vec<String> {
         .collect()
 }
 
+/// The tokens of a multi-disc folder. Core drops the disc from its
+/// `disambiguatingTags`, because the row stands for the whole set, and keeps
+/// the disc Accept launches in `tags`; that one leads, so the cap never
+/// costs it.
+pub fn multi_disc_tag_labels(tags: &[TagInfo], disambiguating: &[TagInfo]) -> Vec<String> {
+    let disc = tags.iter().find(|tag| tag.tag_type == "disc");
+    disambiguating_tag_labels(
+        &disc
+            .into_iter()
+            .chain(disambiguating)
+            .cloned()
+            .collect::<Vec<_>>(),
+    )
+}
+
 fn format_disambiguating_tag(tag: &TagInfo) -> Option<String> {
     // Normalize the value to trimmed lowercase up front so the type-specific
     // compaction below matches its canonical (lowercase) keys regardless of how

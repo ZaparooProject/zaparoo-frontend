@@ -390,7 +390,7 @@ fn main() {
                     .map(|(index, name)| MenuEntry {
                         role: generated::MenuRole::default(),
                         detail_key: slint::SharedString::default(),
-                        id: format!("alternate_version:{index}").into(),
+                        id: format!("page_row:{index}").into(),
                         label: (*name).into(),
                         label_key: "".into(),
                         enabled: true,

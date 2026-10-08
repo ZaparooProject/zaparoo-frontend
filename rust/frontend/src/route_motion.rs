@@ -1449,6 +1449,145 @@ fn visibility_reply(hidden: bool) -> zaparoo_core::media_types::MediaTagsUpdateR
     zaparoo_core::media_types::MediaTagsUpdateResult { tags }
 }
 
+fn disc_rows() -> Vec<crate::context_page::PageRow> {
+    (1..=2)
+        .map(|disc| crate::context_page::PageRow {
+            label_key: "disc",
+            label: disc.to_string(),
+            name: "Game 0".into(),
+            launch_text: format!("/g/Game 0/Game 0 (Disc {disc}).chd"),
+        })
+        .collect()
+}
+
+fn context_ids(app: &App) -> Vec<String> {
+    app.global::<crate::Overlays>()
+        .get_context_entries()
+        .iter()
+        .map(|entry| entry.id.to_string())
+        .collect()
+}
+
+/// Put the open menu's focus on row `id`, returning where it sits.
+fn focus_context_row(app: &App, id: &str) -> i32 {
+    let index = context_ids(app).iter().position(|row| row == id);
+    assert!(index.is_some(), "the menu has no {id} row");
+    let index = index
+        .and_then(|index| i32::try_from(index).ok())
+        .unwrap_or_default();
+    app.global::<crate::Overlays>().set_context_index(index);
+    index
+}
+
+#[test]
+fn choose_disc_is_a_page_of_the_menu_that_back_returns_from() {
+    use crate::context_page::Page;
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    seat_visibility_list(&ctx, &app, GamesMode::Browse);
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        let row = &mut shared.games.rows[0];
+        row.entry_type = zaparoo_app::media_list::EntryType::Directory;
+        row.path = "/g/Game 0".into();
+        row.zap_script = "@NES/Game 0 (disc:1)".into();
+        row.multi_disc = true;
+    }
+    let overlays = app.global::<crate::Overlays>();
+    crate::router::handle_action(&ctx, &app, "context_menu");
+    let menu = context_ids(&app);
+
+    // Accepting the row keeps the menu open while Core is asked.
+    let opener = focus_context_row(&app, "choose_disc");
+    crate::router::handle_action(&ctx, &app, "accept");
+    settle(&window);
+    assert!(overlays.get_context_open());
+    let ticket = crate::context_page::ticket(&ctx);
+    assert_ne!(ticket, 0, "the page was asked for");
+
+    // An answer to a run the user moved on from fills nothing.
+    crate::context_page::landed(
+        &ctx,
+        &app,
+        Page::Discs,
+        ticket.wrapping_sub(1),
+        Ok(disc_rows()),
+    );
+    assert!(!crate::context_page::showing(&ctx));
+
+    crate::context_page::landed(&ctx, &app, Page::Discs, ticket, Ok(disc_rows()));
+    assert!(crate::context_page::showing(&ctx));
+    let entries = overlays.get_context_entries();
+    assert_eq!(entries.row_count(), 2);
+    let second = entries
+        .row_data(1)
+        .map(|entry| (entry.label_key.to_string(), entry.label.to_string()));
+    assert_eq!(second, Some(("disc".to_string(), "2".to_string())));
+    assert_eq!(overlays.get_context_index(), 0);
+
+    // Back returns to the menu, on the row that opened the page.
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert!(overlays.get_context_open() && !crate::context_page::showing(&ctx));
+    assert_eq!(context_ids(&app), menu);
+    assert_eq!(overlays.get_context_index(), opener);
+
+    // A chosen disc closes the menu and launches.
+    crate::router::handle_action(&ctx, &app, "accept");
+    settle(&window);
+    let ticket = crate::context_page::ticket(&ctx);
+    crate::context_page::landed(&ctx, &app, Page::Discs, ticket, Ok(disc_rows()));
+    crate::router::handle_action(&ctx, &app, "down");
+    crate::router::handle_action(&ctx, &app, "accept");
+    settle(&window);
+    assert!(!overlays.get_context_open() && !crate::context_page::showing(&ctx));
+}
+
+#[test]
+fn a_disc_list_that_fails_or_is_empty_never_strands_the_menu() {
+    use crate::context_page::Page;
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    seat_visibility_list(&ctx, &app, GamesMode::Browse);
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        let row = &mut shared.games.rows[0];
+        row.entry_type = zaparoo_app::media_list::EntryType::Directory;
+        row.zap_script = "@NES/Game 0 (disc:1)".into();
+        row.multi_disc = true;
+    }
+    let overlays = app.global::<crate::Overlays>();
+    let open_page = || {
+        crate::router::handle_action(&ctx, &app, "context_menu");
+        focus_context_row(&app, "choose_disc");
+        crate::router::handle_action(&ctx, &app, "accept");
+        settle(&window);
+        crate::context_page::ticket(&ctx)
+    };
+
+    // Nothing to list: the row says so and can no longer be pressed.
+    let ticket = open_page();
+    crate::context_page::landed(&ctx, &app, Page::Discs, ticket, Ok(Vec::new()));
+    assert!(overlays.get_context_open() && !crate::context_page::showing(&ctx));
+    let keys: Vec<String> = overlays
+        .get_context_entries()
+        .iter()
+        .map(|entry| entry.label_key.to_string())
+        .collect();
+    assert!(keys.iter().any(|key| key == "choose_disc:none"));
+    assert!(!context_ids(&app).iter().any(|id| id == "choose_disc"));
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert!(!overlays.get_context_open());
+
+    // A failure closes the menu under its alert.
+    let ticket = open_page();
+    crate::context_page::landed(&ctx, &app, Page::Discs, ticket, Err("offline".into()));
+    assert!(!overlays.get_context_open());
+    assert!(overlays.get_dialog_open());
+    assert_eq!(overlays.get_dialog_error(), ErrorKind::DiscList);
+}
+
 #[test]
 fn hiding_restarts_browse_and_letters_without_losing_favorites_or_neighbor_focus() {
     assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
@@ -6483,6 +6622,40 @@ fn search_result(names: &[&str], more: bool) -> zaparoo_core::media_types::Media
         "pagination": { "hasNextPage": more, "pageSize": 100 },
     }))
     .expect("search result")
+}
+
+#[test]
+fn the_search_pane_lists_a_whole_page_with_each_title_once() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    crate::search::enter(&ctx, &app, EntryMode::Fresh);
+    let view = app.global::<crate::SearchView>();
+    crate::search::type_char(&ctx, &app, 'g');
+    let seq = crate::search::preview_seq(&crate::router::lock(&ctx.shared));
+
+    // Three variants of one title, then enough others to pass the old cap.
+    let titles: Vec<String> = (0..20).map(|n| format!("Game {n:02}")).collect();
+    let mut names = vec!["Game 00", "Game 00"];
+    names.extend(titles.iter().map(String::as_str));
+    let mut result = search_result(&names, false);
+    for (index, item) in result.results.iter_mut().enumerate() {
+        item.path = format!("/games/{index}");
+    }
+    crate::search::preview_landed(&ctx, &app, seq, Ok(&result));
+    assert_eq!(view.get_pane_rows().row_count(), 20);
+    assert_eq!(view.get_count(), 22, "the heading counts every match");
+
+    // The one row for the title opens the results on its first variant.
+    crate::router::handle_action(&ctx, &app, "right");
+    crate::router::handle_action(&ctx, &app, "accept");
+    assert_eq!(
+        crate::router::lock(&ctx.shared)
+            .persist
+            .search
+            .selected_path,
+        "/games/0"
+    );
 }
 
 #[test]

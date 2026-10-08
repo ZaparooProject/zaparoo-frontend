@@ -32,8 +32,10 @@ rust/frontend/  [frontend library and binary; Slint UI]
   │                        module's session; see "Update module")
   ├── src/keyboard.rs    : on-screen keyboard state for one text field
   ├── src/browse_filter.rs : the tags picker, for Games and Search
-  ├── src/{game_info,media_setup,log_upload,launchers,alternates,card_write}.rs
+  ├── src/{game_info,media_setup,log_upload,launchers,card_write}.rs
   │                        modal drivers
+  ├── src/context_page.rs : a page of the context menu, with the two that
+  │                        use it: alternates.rs and discs.rs
   ├── src/game_info_data.rs : Game Info metadata and carousel ordering
   ├── src/tag_utils.rs   : compact tag tokens for inline metadata
   ├── src/qr.rs          : QR matrix for the write deep-link and doc links
@@ -81,7 +83,7 @@ rust/zaparoo-app/  [toolkit-free product rules]
   form_list, system_picker        : cursor rules for sectioned lists, and the
                                     system list grouped by manufacturer
   input, status_line, action_error, buttons, clock, covers, customization,
-  launchers, alternate_versions, media_setup, log_upload, format
+  launchers, alternate_versions, multi_disc, media_setup, log_upload, format
   (no Slint or other toolkit dependency; scripts/check-toolkit-free.sh)
 
 rust/zaparoo-core/  [Core client and shared state]

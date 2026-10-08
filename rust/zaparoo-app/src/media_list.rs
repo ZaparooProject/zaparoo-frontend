@@ -709,7 +709,7 @@ pub enum Owner {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[allow(
     clippy::struct_excessive_bools,
-    reason = "one flag per menu gate: media, root, NFC, favorite, arcade, launchers, busy"
+    reason = "one flag per menu gate: media, root, NFC, favorite, arcade, discs, launchers, busy"
 )]
 pub struct MenuInput {
     pub owner: Owner,
@@ -719,6 +719,9 @@ pub struct MenuInput {
     pub has_nfc: bool,
     pub is_favorite: bool,
     pub is_arcade_system: bool,
+    /// A folder of one game's discs: Accept launches one, the menu lists
+    /// them all.
+    pub multi_disc: bool,
     pub has_launchers: bool,
     pub media_busy: bool,
 }
@@ -731,10 +734,11 @@ pub fn context_entries(input: &MenuInput) -> Vec<&'static str> {
             return Vec::new();
         }
         if folder {
-            return if input.owner == Owner::Games {
-                vec!["add_to_hub"]
-            } else {
-                Vec::new()
+            // A system's own root is not a folder Core can hide.
+            return match (input.owner, input.entry_type) {
+                (Owner::Games, EntryType::Directory) => vec!["add_to_hub", "toggle_hidden"],
+                (Owner::Games, _) => vec!["add_to_hub"],
+                _ => Vec::new(),
             };
         }
     } else if folder {
@@ -745,6 +749,9 @@ pub fn context_entries(input: &MenuInput) -> Vec<&'static str> {
         entries.push("toggle_favorite");
         if input.owner == Owner::Games && input.has_launchers {
             entries.push("change_launcher");
+        }
+        if input.owner == Owner::Games && input.multi_disc {
+            entries.push("choose_disc");
         }
     }
     if input.has_nfc {
@@ -823,8 +830,9 @@ pub enum CoverState {
     Absent,
 }
 
-/// The cover-key policy: folders get the glyph; otherwise cached art wins, a
-/// confirmed miss shows the chip and everything else stays blank.
+/// The cover-key policy: a folder keeps its glyph until artwork of its own
+/// has arrived; otherwise cached art wins, a confirmed miss shows the chip
+/// and everything else stays blank.
 #[allow(
     clippy::fn_params_excessive_bools,
     reason = "media capable, has cover, cached, and confirmed miss, one bool each"
@@ -837,7 +845,11 @@ pub fn cover_state(
     negative: bool,
 ) -> CoverState {
     if !media_capable && entry_type.is_folder() {
-        return CoverState::Folder;
+        return if cached && has_cover {
+            CoverState::Art
+        } else {
+            CoverState::Folder
+        };
     }
     if cached && has_cover {
         CoverState::Art
@@ -1600,8 +1612,37 @@ mod tests {
             has_nfc: false,
             is_favorite: false,
             is_arcade_system: false,
+            multi_disc: false,
             has_launchers: false,
             media_busy: false,
+        }
+    }
+
+    #[test]
+    fn a_multi_disc_folder_offers_its_discs_after_the_launcher() {
+        let input = MenuInput {
+            entry_type: EntryType::Directory,
+            multi_disc: true,
+            has_launchers: true,
+            ..menu(Owner::Games)
+        };
+        assert_eq!(
+            context_entries(&input),
+            vec![
+                "more_info",
+                "toggle_favorite",
+                "change_launcher",
+                "choose_disc",
+                "qr_code",
+                "add_to_hub",
+                "toggle_hidden",
+                "scrape_game"
+            ]
+        );
+        // The flat lists hold single discs, never the folder.
+        for owner in [Owner::Favorites, Owner::Recents, Owner::Search] {
+            let flat = MenuInput { owner, ..input };
+            assert!(!context_entries(&flat).contains(&"choose_disc"));
         }
     }
 
@@ -1677,13 +1718,16 @@ mod tests {
     }
 
     #[test]
-    fn folder_rows_get_only_add_to_hub_on_games() {
+    fn folder_rows_pin_and_hide_on_games_and_roots_only_pin() {
         let folder = MenuInput {
             entry_type: EntryType::Directory,
             media_capable: false,
             ..menu(Owner::Games)
         };
-        assert_eq!(context_entries(&folder), vec!["add_to_hub"]);
+        assert_eq!(
+            context_entries(&folder),
+            vec!["add_to_hub", "toggle_hidden"]
+        );
         let virtual_root = MenuInput {
             entry_type: EntryType::Root,
             media_capable: false,
@@ -1739,7 +1783,19 @@ mod tests {
     #[test]
     fn cover_state_follows_the_qt_key_policy() {
         assert_eq!(
-            cover_state(EntryType::Directory, false, true, false, false),
+            cover_state(EntryType::Directory, false, true, true, false),
+            CoverState::Art
+        );
+        // A folder is never blank: the glyph holds until its art lands,
+        // and stays when Core has none.
+        for (cached, negative) in [(false, false), (false, true)] {
+            assert_eq!(
+                cover_state(EntryType::Directory, false, true, cached, negative),
+                CoverState::Folder
+            );
+        }
+        assert_eq!(
+            cover_state(EntryType::Directory, false, false, true, false),
             CoverState::Folder
         );
         assert_eq!(

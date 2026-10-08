@@ -411,8 +411,8 @@ looping cue over content.
 
 ### Hidden and disabled tiles, muted material, worded reason, never a badge
 
-A tile that isn't in its normal, fully-live state, a user-hidden game or
-system, or a Hub tile whose live precondition isn't currently met (Resume
+A tile that isn't in its normal, fully-live state, a user-hidden game,
+folder or system, or a Hub tile whose live precondition isn't currently met (Resume
 with no history, Update with no internet, a category Core hasn't confirmed)
 never disappears and never dims via opacity. Two cues, neither a floating
 badge:
@@ -428,7 +428,8 @@ badge:
   already shows rather than an overlay drawn on top of the tile. Captioned
   tiles (`show-caption: true`, Games/Favorites/Recents) fold it into the
   same dim suffix slot disambiguating tags already use (`MarqueeCaption`'s
-  `tags`, e.g. "Cave Story · Hidden"). Non-captioned tiles (Hub, Systems) have
+  `tags`, e.g. "Cave Story · Hidden"; a hidden folder keeps its file count
+  ahead of it). Non-captioned tiles (Hub, Systems) have
   no per-tile text to fold into, so it surfaces through the screen's
   `ActiveLabel` (also a `tags` suffix) while that tile is focused instead.
 
@@ -454,6 +455,19 @@ warns against overlay pills as clutter when they compete with the content
 they're stuck on. Reusing an existing screen surface for the reason (rather
 than adding a new overlay) avoids both: it's read, not scanned for, and nothing
 new is drawn on top of the artwork.
+
+### Folder rows, the icon until artwork arrives, a disc token on disc sets
+
+A folder draws the folder icon. When Core reports artwork for it, the art
+replaces the icon once it has loaded; the icon never gives way to a blank
+slot, and it stays when the request finds nothing. The folder's art is asked
+for by its path, never by a media id, so a folder's own artwork wins over
+that of the game inside it.
+
+A folder holding the discs of one game is a single launchable row. Its dim
+suffix leads with the disc Accept launches, in the same compact token a
+separate disc file carries (`D1`), and its menu's `Choose disc` lists the
+rest.
 
 ### Inverse-video rows (browse lists, Settings rows, menus, and pickers)
 
@@ -845,8 +859,10 @@ The Search screen is its first user.
 
 The Search screen puts the Name field on top, then the System and Tags
 fields side by side above the keyboard, with a card beside them: recent
-searches while there is nothing to search on, then the first matches as the
-query is typed. Each field carries its name on the left and no placeholder.
+searches while there is nothing to search on, then the matches as the query
+is typed: every title on the first page of results, once per system. Variants
+of one title are told apart in the results, which the row opens on the first
+of them. Each field carries its name on the left and no placeholder.
 A focused System or Tags field wears the accent ring; inverting it left
 the name unreadable on the fill. The stack fills the height between the
 strip and the help bar. The Tags field shows
@@ -856,9 +872,9 @@ header shows; values are changed and cleared in the tags picker. The card follow
 its height fits. A longer list scrolls, with a `ScrollCue` above and below
 it as in the list pickers. Clearing the recent searches is an action row at the
 card's foot, drawn as Settings draws one: centered, in the accent, and
-inverted under the fill. The match count heads the card; it is exact up
-to one page of results and reads `Matches: 100+` beyond it, because Core
-reports no total. At the 240p tier and on a rotated scene or one narrower
+inverted under the fill. The match count heads the card and counts every
+match, so it can exceed the rows listed; it is exact up to one page of
+results and reads `Matches: 100+` beyond it, because Core reports no total. At the 240p tier and on a rotated scene or one narrower
 than 4:3 the card collapses and the count moves into the query field.
 
 ## Form lists
@@ -1378,13 +1394,16 @@ deep they are or how many Back presses get out. The rules:
    before every other modal. It opens nothing itself. Two alerts never stack:
    `ErrorQueue` in `zaparoo_app::action_error` shows one failure at a time,
    drops a duplicate of one already showing or queued, and holds the rest
-   until the dialog is free. A failed alternate-version discovery closes the
-   context menu first (`closes_context_menu`), so Back never returns to a
-   "Searching…" row that can never resolve.
+   until the dialog is free. A context-menu page that fails to load
+   (alternate versions, a game's discs) closes the context menu first
+   (`closes_context_menu`), so Back never returns to a waiting row that can
+   never resolve.
 5. `ContextMenu` is an anchored transient, not a card. It closes before
-   anything it triggers opens, and its alternate-versions page
-   (`rust/frontend/src/alternates.rs`) is an in-place swap of its rows:
-   Back returns to the rows it replaced (`context_action` in `router.rs`).
+   anything it triggers opens. Its two pages, alternate versions
+   (`rust/frontend/src/alternates.rs`) and a multi-disc game's discs
+   (`rust/frontend/src/discs.rs`), are an in-place swap of its rows through
+   `rust/frontend/src/context_page.rs`: Back returns to the rows the page
+   replaced, on the row that opened it (`context_action` in `router.rs`).
 6. A screen may open a modal (Settings rows open `ListPickerModal`); a
    modal that closes and *then* opens another (View menu -> letter jump,
    error -> retry) is a sequence, not a stack, and is fine.

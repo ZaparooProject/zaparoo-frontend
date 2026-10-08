@@ -111,14 +111,19 @@ export global Labels {
         if (key == "discover") { return @tr("Discover alt. versions"); }
         if (key == "discover:searching") { return @tr("Searching…"); }
         if (key == "discover:none") { return @tr("No alternates found"); }
+        if (key == "choose_disc") { return @tr("Choose disc"); }
+        if (key == "choose_disc:loading") { return @tr("Loading…"); }
+        if (key == "choose_disc:none") { return @tr("No discs found"); }
+        if (key == "disc") { return @tr("Disc {}", name); }
         if (key == "add_to_hub") { return @tr("Add to Hub"); }
         if (key == "hub:remove") { return @tr("Remove from Hub"); }
         if (key == "scrape_game") { return @tr("Update metadata"); }
+        // Games, folders and systems share the toggle.
+        if (key == "hide:hide") { return @tr("Hide"); }
+        if (key == "hide:unhide") { return @tr("Unhide"); }
         // Systems rows.
         if (key == "launch_system") { return @tr("Launch system"); }
         if (key == "launch_random_system" || key == "launch_random_favorite") { return @tr("Random game"); }
-        if (key == "hide:hide") { return @tr("Hide"); }
-        if (key == "hide:unhide") { return @tr("Unhide"); }
         if (key == "index_category" || key == "index_system") { return @tr("Update media database"); }
         if (key == "scrape_category" || key == "scrape_system") { return @tr("Update metadata"); }
         if (key == "jump_letter") { return @tr("Go to…"); }
@@ -278,6 +283,7 @@ export global DialogLabels {
         if (kind == ErrorKind.media-cancel) { return @tr("Cancel failed"); }
         if (kind == ErrorKind.launcher || kind == ErrorKind.launcher-save) { return @tr("Launcher update failed"); }
         if (kind == ErrorKind.alternate-discovery) { return @tr("Alternate versions unavailable"); }
+        if (kind == ErrorKind.disc-list) { return @tr("Disc list unavailable"); }
         if (kind == ErrorKind.qr-code) { return @tr("QR code failed"); }
         if (kind == ErrorKind.card-write) { return @tr("Token write failed"); }
         if (kind == ErrorKind.setting) { return @tr("Setting not saved"); }
@@ -311,6 +317,7 @@ export global DialogLabels {
         if (kind == ErrorKind.media-cancel) { return @tr("Could not cancel the media operation. Check Zaparoo Core and try again."); }
         if (kind == ErrorKind.launcher || kind == ErrorKind.launcher-save) { return @tr("Could not change the launcher. Check Zaparoo Core and try again."); }
         if (kind == ErrorKind.alternate-discovery) { return @tr("Could not find alternate versions. Check Zaparoo Core and try again."); }
+        if (kind == ErrorKind.disc-list) { return @tr("Could not list the discs of this game. Check Zaparoo Core and try again."); }
         if (kind == ErrorKind.qr-code) { return @tr("Could not create the QR code for this item."); }
         if (kind == ErrorKind.card-write) { return @tr("Could not write to this token. Check that it is writable and try again."); }
         if (kind == ErrorKind.setting) { return @tr("Could not save this setting. Try again."); }

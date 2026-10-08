@@ -34,6 +34,7 @@ pub mod log_upload;
 pub mod logo_cache;
 pub mod media_list;
 pub mod media_setup;
+pub mod multi_disc;
 pub mod online_link;
 pub mod online_lists;
 pub mod online_settings;

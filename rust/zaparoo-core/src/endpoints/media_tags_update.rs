@@ -7,7 +7,8 @@
 use crate::client::{Client, ClientError};
 use crate::endpoints::{
     media_browse::MediaBrowseEndpoint, media_favorites::MediaFavoritesEndpoint,
-    media_history::MediaHistoryEndpoint, systems_favorites::SystemsFavoritesEndpoint,
+    media_history::MediaHistoryEndpoint, media_search::MediaSearchEndpoint,
+    systems_favorites::SystemsFavoritesEndpoint,
 };
 use crate::media_types::{MediaTagsUpdateParams, MediaTagsUpdateResult};
 use crate::store::{Endpoint, Mutation, Tag};
@@ -33,6 +34,7 @@ impl Mutation for MediaTagsUpdateMutation {
             Tag::any(MediaBrowseEndpoint::NAME),
             Tag::any(MediaFavoritesEndpoint::NAME),
             Tag::any(MediaHistoryEndpoint::NAME),
+            Tag::any(MediaSearchEndpoint::NAME),
             Tag::any(SystemsFavoritesEndpoint::NAME),
         ]
     }
@@ -59,6 +61,7 @@ mod tests {
             MediaBrowseEndpoint::NAME,
             MediaFavoritesEndpoint::NAME,
             MediaHistoryEndpoint::NAME,
+            MediaSearchEndpoint::NAME,
             SystemsFavoritesEndpoint::NAME,
         ] {
             assert!(tags.contains(&Tag::any(kind)));

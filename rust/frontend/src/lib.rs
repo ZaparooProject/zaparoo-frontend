@@ -16,8 +16,10 @@ mod brand;
 mod browse_filter;
 mod browse_motion;
 mod card_write;
+mod context_page;
 mod cue;
 mod customization;
+mod discs;
 mod display;
 mod drs;
 #[cfg(feature = "mister")]
