@@ -10,6 +10,7 @@
 
 import { Theme, Sizing, Motion, Layout } from "theme.slint";
 import { GlyphSource } from "chrome.slint";
+import { Labels } from "labels.slint";
 import { FocusCursor, TileDisplacement } from "focus.slint";
 
 // One grid cell, as Rust projects it. Art is either a glyph key the
@@ -426,7 +427,7 @@ export component Tile inherits Rectangle {
             width: parent.art-w;
             height: root.caption-height;
             content: root.caption;
-            tags: root.cell.tags;
+            tags: Labels.tags(root.cell.tags, root.cell.hidden);
             focused: root.focused-selection;
             caption-font-size: Sizing.font-small;
             caption-color: root.focused-selection ? Theme.text-primary : Theme.text-label;

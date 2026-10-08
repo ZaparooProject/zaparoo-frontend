@@ -13,10 +13,10 @@ and consumers, the snapshot binary, and the MiSTer dual-head mirror/tests.
 | Area | Typed state |
 | --- | --- |
 | Routing | `Screen`: active screen, pending destination, route component, Rust route parameters, retained-source checks, mirror layout identity |
-| Browse | `GamesMode`, `SystemsMode`, `ContentState`: list source and ready/loading/empty/error cues |
+| Browse | `GamesMode`, `SystemsMode`, `ContentState`: list source and ready/loading/empty/error cues, including the jump-to-letter picker's index |
 | Settings | `SettingsPage`, `RowKind`, `ControlKind`, `ActionStatus`: root/subpage, outgoing page, field controls (picker, toggle, tri-toggle, action, navigate, and the read-only info row) and job status |
 | Setup | `SetupKind`, `SetupPicker`, `ScopeKind`, `SetupAction`: job, picker, scope label and help action; Rust selection stores domain `Scope` with its ID payload |
-| Status | `StatusKind`, `AppCue`, `DisabledReason`, `BootStatus`: status ladder, transient launch cue, disabled Hub captions and the boot curtain line |
+| Status | `StatusKind`, `AppCue`, `DisabledReason`, `BootStatus`: status ladder, transient launch cue and Hub add/remove confirmation, disabled Hub captions and the boot curtain line |
 | Dialogs | `DialogKind`, `ErrorKind`, `DialogButton`: kinds and decisions, separate from text payloads; first-time setup ends on Start media update and progress stays in the header |
 | Input | `PressOwner`, `ScrollAction`: delayed-accept ownership, overlay pointer dispatch and Details scroll commands |
 | Display | `Orientation`, `VideoStandard`: UI selection; orientation stays typed through scene sizing and live backend updates |

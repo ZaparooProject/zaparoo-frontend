@@ -53,7 +53,15 @@ enum Status {
     Loading,
     Failed,
     Empty,
-    Working,
+    BackingUp,
+    Restoring,
+}
+
+impl Status {
+    /// A backup or a restore is running: the list takes no input.
+    fn working(self) -> bool {
+        matches!(self, Self::BackingUp | Self::Restoring)
+    }
 }
 
 impl From<Status> for OnlineListStatus {
@@ -63,7 +71,8 @@ impl From<Status> for OnlineListStatus {
             Status::Loading => Self::Loading,
             Status::Failed => Self::Failed,
             Status::Empty => Self::Empty,
-            Status::Working => Self::Working,
+            Status::BackingUp => Self::BackingUp,
+            Status::Restoring => Self::Restoring,
         }
     }
 }
@@ -290,7 +299,7 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
         actions::CANCEL | actions::PAGE_MENU => close(ctx, app),
         actions::UP if len > 0 => move_to(ctx, app, (index + len - 1) % len),
         actions::DOWN if len > 0 => move_to(ctx, app, (index + 1) % len),
-        actions::ACCEPT if kind == Some(Kind::Backups) && status != Status::Working => {
+        actions::ACCEPT if kind == Some(Kind::Backups) && !status.working() => {
             accept_backup_row(ctx, app, index);
         }
         _ => {}
@@ -340,7 +349,7 @@ fn accept_backup_row(ctx: &Ctx, app: &App, index: usize) {
 fn run_backup(ctx: &Ctx, app: &App) {
     let ticket = {
         let mut shared = lock(&ctx.shared);
-        shared.online_list.status = Status::Working;
+        shared.online_list.status = Status::BackingUp;
         shared.online_list.ticket
     };
     render(ctx, app);
@@ -373,7 +382,7 @@ pub fn restore_confirmed(ctx: &Ctx, app: &App) {
     let Some((id, _label)) = pending else { return };
     let ticket = {
         let mut shared = lock(&ctx.shared);
-        shared.online_list.status = Status::Working;
+        shared.online_list.status = Status::Restoring;
         shared.online_list.ticket
     };
     render(ctx, app);

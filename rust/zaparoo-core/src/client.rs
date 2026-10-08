@@ -143,6 +143,35 @@ struct RpcResponse {
 /// The wire category (`error.data.category`) meaning the launch stopped for
 /// something the user can act on. See `ClientError::is_launch_repair`.
 const LAUNCH_REPAIR_CATEGORY: &str = "launch_repair";
+/// Core's `error.data.category` for a request refused because something
+/// else holds what it needs.
+const BUSY_CATEGORY: &str = "busy";
+
+/// How long a request waits for Core's answer. Core ends every bounded
+/// request itself at 30 seconds (`config.APIRequestTimeout`) and says why,
+/// so this only fires when Core stays connected and never answers at all;
+/// the margin lets Core's own answer arrive first.
+const REQUEST_DEADLINE: Duration = Duration::from_secs(35);
+
+/// The methods Core runs with no whole-operation deadline (a full backup
+/// or restore, an update install): the same list as Core's
+/// `MethodHasUnboundedRuntime`, so the two sides cannot disagree about
+/// when a request has been abandoned.
+fn has_unbounded_runtime(method: &str) -> bool {
+    matches!(
+        method,
+        "settings.backup"
+            | "settings.backup.restore"
+            | "settings.backup.remote.run"
+            | "settings.backup.remote.restore"
+            | "update.apply"
+    )
+}
+
+/// The wait `call` allows `method`, or None for one Core does not bound.
+fn request_deadline(method: &str) -> Option<Duration> {
+    (!has_unbounded_runtime(method)).then_some(REQUEST_DEADLINE)
+}
 
 /// `error.data` on a JSON-RPC error response. Every category shares this
 /// shape; only `launch_repair` currently populates `reason`/`params`, but
@@ -223,6 +252,13 @@ impl ClientError {
     /// not an answer from Core.
     pub fn is_transport(&self) -> bool {
         self.transport
+    }
+
+    /// Whether Core refused this because something else holds what the
+    /// request needs (its `busy` category): a media database write while
+    /// an index, a metadata update or an optimization pass is running.
+    pub fn is_busy(&self) -> bool {
+        self.category.as_deref() == Some(BUSY_CATEGORY)
     }
 
     /// Whether this is a `launch_repair` error: the launch stopped for
@@ -662,6 +698,18 @@ impl Client {
     }
 
     async fn call<P: Serialize>(&self, method: &str, params: &P) -> Result<Value, ClientError> {
+        self.call_within(method, params, request_deadline(method))
+            .await
+    }
+
+    /// `call` with the wait for Core's answer bounded by `deadline`, or
+    /// unbounded when it is None.
+    async fn call_within<P: Serialize>(
+        &self,
+        method: &str,
+        params: &P,
+        deadline: Option<Duration>,
+    ) -> Result<Value, ClientError> {
         let id = Uuid::new_v4().to_string();
         let req = RpcRequest {
             jsonrpc: "2.0",
@@ -708,9 +756,19 @@ impl Client {
             return Err(ClientError::transport("not connected"));
         }
 
-        let result = resp_rx
-            .await
-            .map_err(|_| ClientError::transport("channel closed"))?;
+        let answer = match deadline {
+            None => resp_rx.await,
+            Some(deadline) => {
+                let Ok(answer) = tokio::time::timeout(deadline, resp_rx).await else {
+                    // `_pending_guard` drops the entry, so a late answer
+                    // finds nobody waiting.
+                    warn!(method, request_id = %id, "rpc timed out");
+                    return Err(ClientError::transport("request timed out"));
+                };
+                answer
+            }
+        };
+        let result = answer.map_err(|_| ClientError::transport("channel closed"))?;
         match result {
             Ok(val) => {
                 if let Some(payload_bytes) = debug_payload_bytes(&val) {
@@ -1518,6 +1576,63 @@ mod tests {
             error.message.as_str(),
             "disconnected" | "not connected"
         ));
+    }
+
+    fn connected_client() -> (Client, mpsc::UnboundedReceiver<String>, PendingMap) {
+        let (msg_tx, msg_rx) = mpsc::unbounded_channel();
+        let pending = PendingMap::default();
+        let (notifications, _) = broadcast::channel(1);
+        let (connection, _) = watch::channel(ConnectionState::Connected);
+        let client = Client {
+            tx: Arc::new(Mutex::new(Some(msg_tx))),
+            pending: pending.clone(),
+            notifications,
+            connection: Arc::new(connection),
+            transport: watch::channel(None).0,
+        };
+        (client, msg_rx, pending)
+    }
+
+    #[tokio::test]
+    async fn a_request_core_never_answers_fails_after_its_deadline() {
+        let (client, _outbound, pending) = connected_client();
+        let answer = client
+            .call_within(
+                "media.browse",
+                &Value::Null,
+                Some(Duration::from_millis(30)),
+            )
+            .await;
+        assert!(
+            answer.is_err(),
+            "an unanswered request must not wait forever"
+        );
+        let Err(error) = answer else {
+            return;
+        };
+        assert!(error.is_transport(), "the cursor it carried is still good");
+        assert_eq!(error.message, "request timed out");
+        #[allow(clippy::unwrap_used, reason = "mutex poisoning is unrecoverable")]
+        let waiting = pending.lock().unwrap().len();
+        assert_eq!(waiting, 0, "a late answer has nobody left to wake");
+    }
+
+    #[test]
+    fn only_the_methods_core_leaves_unbounded_have_no_deadline() {
+        assert_eq!(request_deadline("media.browse"), Some(REQUEST_DEADLINE));
+        assert_eq!(request_deadline("run"), Some(REQUEST_DEADLINE));
+        assert_eq!(request_deadline("readers.write"), Some(REQUEST_DEADLINE));
+        for method in [
+            "settings.backup",
+            "settings.backup.restore",
+            "settings.backup.remote.run",
+            "settings.backup.remote.restore",
+            "update.apply",
+        ] {
+            assert_eq!(request_deadline(method), None, "{method}");
+        }
+        // Core answers a bounded request first; this is only the backstop.
+        assert!(REQUEST_DEADLINE > Duration::from_secs(30));
     }
 
     #[test]

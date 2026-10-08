@@ -1,7 +1,7 @@
 import { Theme, Sizing, Motion } from "theme.slint";
 import { ScrollAction } from "state_types.slint";
 import { DetailRow, MetaLabels } from "browse_list.slint";
-import { GlyphSource, SectionHeader, ScrollCue, ModalShell } from "chrome.slint";
+import { GlyphSource, SectionHeader, ScrollCue, ModalShell, WaitCue } from "chrome.slint";
 
 export global GameInfoView {
     in-out property <bool> modal-open: false;
@@ -15,6 +15,8 @@ export global GameInfoView {
     in-out property <bool> media-missing: false;
     in-out property <image> modal-cover;
     in-out property <bool> modal-has-cover: false;
+    // Core has no image for the one selected: nothing is coming.
+    in-out property <bool> modal-cover-absent: false;
     in-out property <int> image-index: 0;
     in-out property <int> image-count: 0;
     // Screen-height units keep mirrored windows independent of pixel density.
@@ -26,7 +28,7 @@ export global GameInfoView {
 export component GameInfoModal inherits ModalShell {
     visible: GameInfoView.modal-open;
     property <length> line-h: Math.ceil(Sizing.font-body * 1.362 / 1px) * 1px;
-    property <length> body-h: GameInfoView.loading ? loading-label.preferred-height
+    property <length> body-h: GameInfoView.loading ? loading-label.height
         : GameInfoView.failed ? error-label.preferred-height : contents.preferred-height;
     // Lip, title, gap, rule, gap, scroll cue, body, scroll cue, lip. The
     // cues sit in a reserved band outside the viewport rather than in the
@@ -78,13 +80,14 @@ export component GameInfoModal inherits ModalShell {
     }
     property <length> label-w: Math.ceil(label-measure.preferred-width / 1px) * 1px + Sizing.stroke(2);
 
-        loading-label := Text {
-            x: (root.panel-width - self.width) / 2;
+        loading-label := WaitCue {
+            x: root.pad;
             y: root.content-y + root.arrow-band;
+            width: root.content-width;
+            height: self.glyph;
+            glyph: Sizing.font-body;
+            waiting: GameInfoView.loading;
             text: @tr("Loading details…");
-            font-size: Sizing.font-body;
-            color: Theme.text-primary;
-            visible: GameInfoView.loading;
         }
         error-label := Text {
             x: root.pad;
@@ -136,13 +139,11 @@ export component GameInfoModal inherits ModalShell {
                         changed width => { GameInfoView.art-box(Math.round(self.width / 1px), Math.round(self.height / 1px)); }
                         changed height => { GameInfoView.art-box(Math.round(self.width / 1px), Math.round(self.height / 1px)); }
                     }
-                    Text {
-                        x: (parent.width - self.width) / 2;
-                        y: (parent.art-h - self.height) / 2;
+                    WaitCue {
+                        height: parent.art-h;
+                        glyph: Sizing.font-caption;
+                        waiting: !GameInfoView.modal-has-cover && !GameInfoView.modal-cover-absent;
                         text: @tr("Loading image…");
-                        color: Theme.text-primary;
-                        font-size: Sizing.font-caption;
-                        visible: !GameInfoView.modal-has-cover;
                     }
                     // Same cue and the same size as the body's scroll
                     // arrows; this pair used to sit one type step larger.

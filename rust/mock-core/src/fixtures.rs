@@ -712,8 +712,20 @@ pub fn media_browse_index_response(params: &Value) -> Value {
         .iter()
         .filter(|entry| entry["type"] == "media")
         .collect();
+    // A scope with no media files of its own (a system whose games each
+    // live in their own folder) is bucketed over its directory entries
+    // instead, with offsets counted among those, and says so.
+    let directories = media_entries.is_empty();
+    let indexed: Vec<&Value> = if directories {
+        entries
+            .iter()
+            .filter(|entry| entry["type"] == "directory")
+            .collect()
+    } else {
+        media_entries
+    };
     let mut groups: Vec<Value> = Vec::new();
-    for (offset, entry) in media_entries.iter().enumerate() {
+    for (offset, entry) in indexed.iter().enumerate() {
         let first = entry["name"]
             .as_str()
             .and_then(|name| name.chars().next())
@@ -738,7 +750,11 @@ pub fn media_browse_index_response(params: &Value) -> Value {
             }));
         }
     }
-    json!({ "scheme": "latin", "groups": groups })
+    json!({
+        "scheme": "latin",
+        "entryType": if directories && !groups.is_empty() { "directory" } else { "media" },
+        "groups": groups,
+    })
 }
 
 /// Mirrors Core's `media.lookup`: the game in `system` whose name matches

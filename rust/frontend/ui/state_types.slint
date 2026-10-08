@@ -12,7 +12,13 @@ export enum SearchZone { system, filter, keys, pane }
 export enum SearchPane { none, recents, preview }
 export enum SettingsPage { root, appearance, library, online, display, controls, language, about }
 export enum ContentState { ready, loading, empty, error }
-export enum AppCue { none, launching }
+// The header line's app cue. A wait (`launching` to `cancelling`) follows
+// the shared delay and hold; a confirmation shows at once for a fixed time.
+export enum AppCue {
+    none,
+    launching, loading-list, loading-more, loading-progress, loading-launchers, saving, starting, cancelling, unlinking,
+    added-to-hub, removed-from-hub, token-written
+}
 export enum BootStatus { connecting, starting, migrating, reconnecting, loading, unreachable }
 export enum DisabledReason { none, no-recent-games, no-internet, not-available }
 export enum RowKind { header, field }
@@ -26,13 +32,13 @@ export enum ActionStatus {
 export enum ScrollAction { up, down, page-prev, page-next }
 // The Online page's two list screens, and what the open one is doing.
 export enum OnlineListKind { none, backups, activity }
-export enum OnlineListStatus { ready, loading, failed, empty, working }
+export enum OnlineListStatus { ready, loading, failed, empty, backing-up, restoring }
 // Why a list failed to load, when Core's answer says.
 export enum OnlineListFailure { other, unlinked, needs-warp }
 export enum SetupAction { select, start, toggle, change }
 export enum SetupKind { index, scrape }
 export enum SetupPicker { systems, source }
-export enum ScopeKind { all, category, system, source, header }
+export enum ScopeKind { all, category, system, source, source-loading, header }
 export enum LogPhase { uploading, done, failed }
 // The "pair a device" panel. `closed` is the resting value; the panel's
 // own open flag is what mounts it.
@@ -49,7 +55,7 @@ export enum Orientation { horizontal, cw, ccw }
 export enum VideoStandard { ntsc, pal }
 export enum DialogKind { none, quit-confirm, quit-blocked, restart-setting, notice, core-version, first-run, hub-full, action-error, unlink-online, restore-online-backup, update-stop }
 export enum DialogButton { ok, yes, no, retry, cancel, i-understand, start-media-update }
-export enum ErrorKind { generic, launch, launch-repair, favorite, media-visibility, add-to-hub, media-index, media-scrape, media-scrapers, media-cancel, launcher, launcher-save, alternate-discovery, qr-code, card-write, setting, pairing, online, backup }
+export enum ErrorKind { generic, launch, launch-repair, favorite, media-visibility, media-busy, add-to-hub, media-index, media-scrape, media-scrapers, media-cancel, launcher, launcher-save, alternate-discovery, qr-code, card-write, setting, pairing, online, backup }
 
 // Text adapters are for vocabulary/resource keys and focus identity only,
 // never routing. Runtime decisions use the enums themselves.

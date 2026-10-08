@@ -718,13 +718,16 @@ fn accept(ctx: &Ctx, app: &App, id: &str, control: Control) {
                     let client = ctx.store.client();
                     let ctx2 = ctx.clone();
                     let weak = app.as_weak();
+                    let wait = crate::cue::begin(ctx, app, crate::AppCue::Cancelling, "", "");
                     ctx.handle.spawn(async move {
-                        if let Err(e) = client.media_generate_cancel().await {
-                            tracing::warn!("cancel index failed: {}", e.message);
-                            let _ = weak.upgrade_in_event_loop(move |app| {
+                        let result = client.media_generate_cancel().await;
+                        let _ = weak.upgrade_in_event_loop(move |app| {
+                            crate::cue::end(&ctx2, &app, wait);
+                            if let Err(e) = result {
+                                tracing::warn!("cancel index failed: {}", e.message);
                                 crate::router::report_action_error(&ctx2, &app, "media_cancel", "");
-                            });
-                        }
+                            }
+                        });
                     });
                 } else {
                     crate::media_setup::open(
@@ -740,13 +743,16 @@ fn accept(ctx: &Ctx, app: &App, id: &str, control: Control) {
                     let client = ctx.store.client();
                     let ctx2 = ctx.clone();
                     let weak = app.as_weak();
+                    let wait = crate::cue::begin(ctx, app, crate::AppCue::Cancelling, "", "");
                     ctx.handle.spawn(async move {
-                        if let Err(e) = client.media_scrape_cancel().await {
-                            tracing::warn!("cancel scrape failed: {}", e.message);
-                            let _ = weak.upgrade_in_event_loop(move |app| {
+                        let result = client.media_scrape_cancel().await;
+                        let _ = weak.upgrade_in_event_loop(move |app| {
+                            crate::cue::end(&ctx2, &app, wait);
+                            if let Err(e) = result {
+                                tracing::warn!("cancel scrape failed: {}", e.message);
                                 crate::router::report_action_error(&ctx2, &app, "media_cancel", "");
-                            });
-                        }
+                            }
+                        });
                     });
                 } else {
                     crate::media_setup::open(

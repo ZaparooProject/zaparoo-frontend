@@ -34,6 +34,8 @@ pub struct AlternatesModel {
     /// Bumped per run so a late discovery cannot land on a menu the
     /// user has moved on from.
     pub seq: u64,
+    /// The "Searching…" row's wait while a discovery is unanswered.
+    pub wait: Option<crate::cue::LocalWait>,
 }
 
 /// The row id for an entry on the alternates page.
@@ -47,14 +49,26 @@ pub fn begin(ctx: &Ctx, app: &App, system_id: &str, name: &str, path: &str) {
     if !rules::can_discover(system_id, name, path) {
         return;
     }
-    let ticket = {
+    let (ticket, stale) = {
         let mut shared = lock(&ctx.shared);
         shared.alternates.seq += 1;
         shared.alternates.rows.clear();
         shared.alternates.showing = false;
-        shared.alternates.seq
+        (shared.alternates.seq, shared.alternates.wait.take())
     };
-    relabel_discover(app, "discover:searching");
+    if let Some(stale) = stale {
+        crate::cue::abandon_local(stale);
+    }
+    // The row says it is searching only once the search is a wait.
+    let shared = ctx.shared.clone();
+    let wait = crate::cue::begin_local(app, move |app| {
+        if lock(&shared).alternates.seq == ticket
+            && app.global::<crate::Overlays>().get_context_open()
+        {
+            relabel_discover(app, "discover:searching");
+        }
+    });
+    lock(&ctx.shared).alternates.wait = Some(wait);
     let client = ctx.store.client();
     let ctx2 = ctx.clone();
     let weak = app.as_weak();
@@ -64,23 +78,38 @@ pub fn begin(ctx: &Ctx, app: &App, system_id: &str, name: &str, path: &str) {
     ctx.handle.spawn(async move {
         let found = discover(&client, &system_id, &name, &path).await;
         let _ = weak.upgrade_in_event_loop(move |app| {
-            if lock(&ctx2.shared).alternates.seq != ticket {
-                return;
-            }
-            // The menu the discovery belongs to has to still be open.
-            if !app.global::<crate::Overlays>().get_context_open() {
-                return;
-            }
-            match found {
-                Ok(rows) if rows.is_empty() => relabel_discover(&app, "discover:none"),
-                Ok(rows) => {
-                    lock(&ctx2.shared).alternates.rows = rows;
-                    present(&ctx2, &app);
+            let wait = {
+                let mut shared = lock(&ctx2.shared);
+                if shared.alternates.seq != ticket {
+                    return;
                 }
-                Err(message) => {
-                    tracing::warn!("discover alternate versions failed: {message}");
-                    crate::router::report_action_error(&ctx2, &app, "alternate_discovery", "");
+                shared.alternates.wait.take()
+            };
+            let finish = move |app: &App| {
+                // The menu the discovery belongs to has to still be open.
+                if lock(&ctx2.shared).alternates.seq != ticket
+                    || !app.global::<crate::Overlays>().get_context_open()
+                {
+                    return;
                 }
+                match found {
+                    Ok(rows) if rows.is_empty() => relabel_discover(app, "discover:none"),
+                    Ok(rows) => {
+                        lock(&ctx2.shared).alternates.rows = rows;
+                        present(&ctx2, app);
+                    }
+                    Err(message) => {
+                        tracing::warn!("discover alternate versions failed: {message}");
+                        // The search is over: the row must not go on
+                        // saying it is still running.
+                        restore_discover(app);
+                        crate::router::report_action_error(&ctx2, app, "alternate_discovery", "");
+                    }
+                }
+            };
+            match wait {
+                Some(wait) => crate::cue::end_local(&app, wait, finish),
+                None => finish(&app),
             }
         });
     });
@@ -98,6 +127,24 @@ fn relabel_discover(app: &App, key: &str) {
             if entry.id.as_str() == "discover" || entry.label_key.as_str().starts_with("discover:")
             {
                 crate::router::menu_row_keyed("", key, "")
+            } else {
+                entry
+            }
+        })
+        .collect();
+    app.global::<crate::Overlays>()
+        .set_context_entries(ModelRc::new(VecModel::from(rows)));
+}
+
+/// Put the "Discover alt. versions" row back as it was, pressable again.
+fn restore_discover(app: &App) {
+    use slint::Model as _;
+    let entries = app.global::<crate::Overlays>().get_context_entries();
+    let rows: Vec<crate::MenuEntry> = entries
+        .iter()
+        .map(|entry| {
+            if entry.label_key.as_str().starts_with("discover:") {
+                crate::router::menu_row("discover")
             } else {
                 entry
             }

@@ -211,6 +211,7 @@ fn apply(app: &App, output: &Output) {
     status.set_arg(SharedString::from(output.message.arg.as_str()));
     status.set_arg2(SharedString::from(output.message.arg2.as_str()));
     status.set_is_error(output.is_error);
+    status.set_link_trouble(output.link_trouble);
     status.set_show_track(output.show_track);
     status.set_paused(output.paused);
     status.set_total_known(output.total_known);

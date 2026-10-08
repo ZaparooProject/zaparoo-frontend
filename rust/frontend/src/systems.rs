@@ -583,6 +583,48 @@ fn logo_bounds(app: &App, shared: &Shared, geometry: &Geometry) -> zaparoo_app::
     }
 }
 
+/// Tell the logo cache which logos the Systems grid can ever show, so it
+/// prepares them in the background: every system of every category, at the
+/// grid's tile size and the chosen style. The list layout shows one logo at
+/// a time in its detail pane and warms nothing.
+pub(crate) fn warm_logos(ctx: &Ctx, app: &App) {
+    thread_local! {
+        // What the last list was built from. Renders call this on every
+        // move, and the list only changes with these.
+        static BUILT_FROM: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
+    }
+    let keys = {
+        let shared = lock(&ctx.shared);
+        let list = list_layout(&shared);
+        let bounds = logo_bounds(app, &shared, &geometry(app));
+        let style = &shared.persist.settings.system_logo_style;
+        let built_from = format!(
+            "{style}|{list}|{bounds:?}|{:?}|{}|{}|{}|{:?}",
+            region(&shared),
+            shared.categories.len(),
+            shared.systems.len(),
+            shared.show_hidden,
+            shared.hidden_system_ids,
+        );
+        if BUILT_FROM.with(|last| last.replace(built_from.clone()) == built_from) {
+            return;
+        }
+        if list {
+            Vec::new()
+        } else {
+            let mut seen = std::collections::HashSet::new();
+            shared
+                .categories
+                .iter()
+                .flat_map(|category| project(&shared, category))
+                .filter(|row| seen.insert(row.id.clone()))
+                .filter_map(|row| logo_key(ctx, &row, style, bounds))
+                .collect()
+        }
+    };
+    ctx.logos.set_warm(keys);
+}
+
 fn request_logos(ctx: &Ctx, app: &App, shared: &Shared, bounds: zaparoo_app::logo_cache::Bounds) {
     if !matches!(
         app.global::<crate::Shell>().get_active_screen(),
@@ -645,6 +687,9 @@ fn page_cells(
 
 /// Paint the current page, the cursor, the caption and the geometry.
 pub fn render(ctx: &Ctx, app: &App) {
+    // The grid's tile size or logo style may have changed since the list
+    // of logos to keep ready was built.
+    warm_logos(ctx, app);
     render_with_page(ctx, app, false);
 }
 
@@ -1235,13 +1280,14 @@ fn pulse_list_row(ctx: &Ctx, app: &App) {
 /// Options on the focused system: the `systems` owner, or the one-entry
 /// `favorite_systems` menu.
 fn open_context_menu(ctx: &Ctx, app: &App) {
-    let (row, has_launchers, mode) = {
+    let (row, has_launchers, on_hub, mode) = {
         let shared = lock(&ctx.shared);
         let Some(row) = shared.systems_model.current().cloned() else {
             return;
         };
         let has_launchers = shared.launchers.iter().any(|l| l.system_id == row.id);
-        (row, has_launchers, shared.systems_model.mode)
+        let on_hub = crate::hub::has_target(&shared, "system", &row.id, "", "", "", "");
+        (row, has_launchers, on_hub, shared.systems_model.mode)
     };
     if mode == SystemsMode::Favorites {
         let anchor = cell_anchor(ctx, app);
@@ -1261,7 +1307,11 @@ fn open_context_menu(ctx: &Ctx, app: &App) {
     if !launchable && has_launchers {
         entries.push(crate::router::menu_row("change_launcher"));
     }
-    entries.push(crate::router::menu_row("add_to_hub"));
+    entries.push(crate::router::menu_row_keyed(
+        "add_to_hub",
+        if on_hub { "hub:remove" } else { "add_to_hub" },
+        "",
+    ));
     entries.push(crate::router::menu_row_keyed(
         "toggle_hide_system",
         if row.hidden {
@@ -1346,7 +1396,9 @@ pub fn context_accept(ctx: &Ctx, app: &App, id: &str) {
             }
         }
         "change_launcher" => crate::launchers::open_system_picker(ctx, app, &row.id),
-        "add_to_hub" => crate::hub::add_target(ctx, app, "system", &row.id, "", "", "", "", "", ""),
+        "add_to_hub" => {
+            crate::hub::toggle_target(ctx, app, "system", &row.id, "", "", "", "", "", "");
+        }
         "toggle_hide_system" => crate::router::toggle_hidden_system(ctx, app, &row.id),
         "index_system" => crate::router::start_index(ctx, app, Some(vec![row.id.clone()])),
         "scrape_system" => crate::router::open_scrape_setup(

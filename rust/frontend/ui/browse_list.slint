@@ -9,8 +9,9 @@
 // profile in `Layout`.
 
 import { Theme, Sizing, Motion, Layout } from "theme.slint";
-import { GlyphSource } from "chrome.slint";
+import { GlyphSource, WaitCue } from "chrome.slint";
 import { GridCell, MarqueeCaption } from "tiles.slint";
+import { Labels } from "labels.slint";
 import { ScrollOffset, SelectionCursor, SelectionClip } from "focus.slint";
 
 // One metadata table row: a canonical key the vocabulary translates,
@@ -152,7 +153,7 @@ export component BrowseList inherits Rectangle {
             y: 0;
             width: caption-w;
             content: row.name;
-            tags: row.tags;
+            tags: Labels.tags(row.tags, row.hidden);
             focused: highlighted;
             center-content: false;
             caption-font-size: Sizing.font-section;
@@ -173,7 +174,7 @@ export component BrowseList inherits Rectangle {
                 y: 0;
                 width: caption-w;
                 content: row.name;
-                tags: row.tags;
+                tags: Labels.tags(row.tags, row.hidden);
                 focused: highlighted;
                 center-content: false;
                 caption-font-size: Sizing.font-section;
@@ -495,34 +496,10 @@ export component BrowseDetailPane inherits Rectangle {
         }
 
         // The loading cue paints only when the pane has nothing else to
-        // show, after a short delay so quick loads never flash it.
-        property <bool> empty-loading: root.loading && !root.has-cover && root.row-count == 0 && root.title == "";
-        property <bool> loading-shown: false;
-        changed empty-loading => {
-            if (!self.empty-loading) { self.loading-shown = false; }
-        }
-        Timer {
-            interval: 150ms;
-            running: content.empty-loading && !content.loading-shown;
-            triggered => { content.loading-shown = content.empty-loading; }
-        }
-        if content.loading-shown: HorizontalLayout {
-            property <length> glyph: Sizing.font-size(3);
-            x: (parent.width - self.preferred-width) / 2;
-            y: (parent.height - self.glyph) / 2;
-            height: self.glyph;
-            spacing: Sizing.pct-w(0.6);
-            Image {
-                width: parent.height;
-                height: parent.height;
-                source: GlyphSource.glyph("icons/Loading", self.height, Theme.text-primary);
-            }
-            Text {
-                vertical-alignment: center;
-                text: root.loading-text;
-                color: Theme.text-primary;
-                font-size: Sizing.font-size(3);
-            }
+        // show, under the shared delay so quick loads never flash it.
+        WaitCue {
+            waiting: root.loading && !root.has-cover && root.row-count == 0 && root.title == "";
+            text: root.loading-text;
         }
     }
 }

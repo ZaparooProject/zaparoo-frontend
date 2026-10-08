@@ -39,6 +39,12 @@ pub struct SetupModel {
     pub picker_index: usize,
     /// Scrapers Core reported, once the list has answered.
     pub scrapers: Vec<ScraperInfo>,
+    /// The Source row is waiting on that list, and whether it says so yet.
+    pub sources_wait: Option<crate::cue::LocalWait>,
+    pub sources_loading: bool,
+    /// Which scraper-list request the form is waiting on; an answer to
+    /// any other is dropped.
+    pub sources_seq: u64,
 }
 
 impl SetupModel {
@@ -53,7 +59,17 @@ impl SetupModel {
             picker: None,
             picker_index: 0,
             scrapers: Vec::new(),
+            sources_wait: None,
+            sources_loading: false,
+            sources_seq: 0,
         }
+    }
+
+    /// Stop waiting on the scraper list: its answer no longer applies.
+    fn retire_sources(&mut self) -> Option<crate::cue::LocalWait> {
+        self.sources_seq = self.sources_seq.wrapping_add(1);
+        self.sources_loading = false;
+        self.sources_wait.take()
     }
 
     pub(crate) fn rows(&self) -> &'static [FormRow] {
@@ -166,7 +182,11 @@ pub fn render(ctx: &Ctx, app: &App) {
                     out.value_name = SharedString::from(name.as_str());
                 }
                 FormRow::Source => {
-                    out.scope_kind = crate::ScopeKind::Source;
+                    out.scope_kind = if model.sources_loading {
+                        crate::ScopeKind::SourceLoading
+                    } else {
+                        crate::ScopeKind::Source
+                    };
                     out.value_name =
                         SharedString::from(scraper_name(model, &model.scraper).as_str());
                     out.enabled = !model.scrapers.is_empty();
@@ -263,7 +283,7 @@ fn publish_picker_window(
 /// Open one of the forms. Scrape seeds its source from the persisted
 /// scraper and refreshes the list from Core.
 pub fn open(ctx: &Ctx, app: &App, kind: Kind, scope: rules::Scope) {
-    {
+    let stale = {
         let mut shared = lock(&ctx.shared);
         let persisted = shared.persist.settings.metadata_scraper.clone();
         let model = &mut shared.setup;
@@ -277,6 +297,10 @@ pub fn open(ctx: &Ctx, app: &App, kind: Kind, scope: rules::Scope) {
         if model.scraper.is_empty() {
             model.scraper = persisted;
         }
+        model.retire_sources()
+    };
+    if let Some(stale) = stale {
+        crate::cue::abandon_local(stale);
     }
     render(ctx, app);
     if kind == Kind::Scrape {
@@ -285,65 +309,130 @@ pub fn open(ctx: &Ctx, app: &App, kind: Kind, scope: rules::Scope) {
 }
 
 pub fn close(ctx: &Ctx, app: &App) {
-    lock(&ctx.shared).setup.open = false;
+    let stale = {
+        let mut shared = lock(&ctx.shared);
+        shared.setup.open = false;
+        shared.setup.retire_sources()
+    };
+    if let Some(stale) = stale {
+        crate::cue::abandon_local(stale);
+    }
     render(ctx, app);
     crate::settings::refresh(ctx, app);
 }
 
-/// Core's scraper inventory, for the Source row.
+/// Core's scraper inventory, for the Source row. Until it answers the row
+/// cannot be used; if that lasts, its value says why (`crate::cue`'s timing).
 fn fetch_scrapers(ctx: &Ctx, app: &App) {
+    let (stale, seq) = {
+        let mut shared = lock(&ctx.shared);
+        let stale = shared.setup.retire_sources();
+        (stale, shared.setup.sources_seq)
+    };
+    if let Some(stale) = stale {
+        crate::cue::abandon_local(stale);
+    }
+    let shown = ctx.clone();
+    let wait = crate::cue::begin_local(app, move |app| {
+        {
+            let mut shared = lock(&shown.shared);
+            if shared.setup.sources_seq != seq || !shared.setup.scrapers.is_empty() {
+                return;
+            }
+            shared.setup.sources_loading = true;
+        }
+        render(&shown, app);
+    });
+    lock(&ctx.shared).setup.sources_wait = Some(wait);
+
     let client = ctx.store.client();
     let weak = app.as_weak();
     let ctx2 = ctx.clone();
     ctx.handle.spawn(async move {
-        let result = match client.scrapers().await {
-            Ok(result) => result,
-            Err(e) => {
-                tracing::warn!("scraper list unavailable: {}", e.message);
-                let _ = weak.upgrade_in_event_loop(move |app| {
-                    crate::router::report_action_error(&ctx2, &app, "media_scrapers", "");
-                });
-                return;
-            }
-        };
+        let result = client.scrapers().await;
         let _ = weak.upgrade_in_event_loop(move |app| {
-            {
-                let mut shared = lock(&ctx2.shared);
-                let persisted = shared.persist.settings.metadata_scraper.clone();
-                // A panel opened on a system or category starts on a source
-                // that covers it, since each platform registers its own.
-                let scoped = (shared.setup.scope != rules::Scope::All).then(|| {
-                    let systems = scope_systems(&shared);
-                    let offered: Vec<(&str, &[String])> = result
-                        .scrapers
-                        .iter()
-                        .map(|s| (s.id.as_str(), s.supported_systems.as_slice()))
-                        .collect();
-                    rules::scraper_for(&offered, &shared.setup.scraper, &systems)
-                        .map(str::to_string)
-                });
-                let model = &mut shared.setup;
-                model.scrapers = result.scrapers;
-                if let Some(Some(scraper)) = scoped {
-                    model.scraper = scraper;
-                }
-                // Keep the stored choice when Core still offers it.
-                let known = model.scrapers.iter().any(|s| s.id == model.scraper);
-                if !known {
-                    model.scraper = if model.scrapers.iter().any(|s| s.id == persisted) {
-                        persisted
-                    } else {
-                        model
-                            .scrapers
-                            .first()
-                            .map(|s| s.id.clone())
-                            .unwrap_or_default()
-                    };
-                }
-            }
-            render(&ctx2, &app);
+            scrapers_answered(&ctx2, &app, seq, result);
         });
     });
+}
+
+/// The scraper list answered request `seq`. A form closed or reopened
+/// since is waiting on something else, and so is one closed while the
+/// hold puts the answer off.
+pub(crate) fn scrapers_answered(
+    ctx: &Ctx,
+    app: &App,
+    seq: u64,
+    result: Result<zaparoo_core::media_types::ScrapersResult, zaparoo_core::client::ClientError>,
+) {
+    let wait = {
+        let mut shared = lock(&ctx.shared);
+        if shared.setup.sources_seq != seq {
+            return;
+        }
+        shared.setup.sources_wait.take()
+    };
+    let ctx = ctx.clone();
+    let finish = move |app: &App| {
+        if lock(&ctx.shared).setup.sources_seq == seq {
+            scrapers_landed(&ctx, app, result);
+        }
+    };
+    match wait {
+        Some(wait) => crate::cue::end_local(app, wait, finish),
+        None => finish(app),
+    }
+}
+
+fn scrapers_landed(
+    ctx: &Ctx,
+    app: &App,
+    result: Result<zaparoo_core::media_types::ScrapersResult, zaparoo_core::client::ClientError>,
+) {
+    lock(&ctx.shared).setup.sources_loading = false;
+    let result = match result {
+        Ok(result) => result,
+        Err(e) => {
+            tracing::warn!("scraper list unavailable: {}", e.message);
+            render(ctx, app);
+            crate::router::report_action_error(ctx, app, "media_scrapers", "");
+            return;
+        }
+    };
+    {
+        let mut shared = lock(&ctx.shared);
+        let persisted = shared.persist.settings.metadata_scraper.clone();
+        // A panel opened on a system or category starts on a source
+        // that covers it, since each platform registers its own.
+        let scoped = (shared.setup.scope != rules::Scope::All).then(|| {
+            let systems = scope_systems(&shared);
+            let offered: Vec<(&str, &[String])> = result
+                .scrapers
+                .iter()
+                .map(|s| (s.id.as_str(), s.supported_systems.as_slice()))
+                .collect();
+            rules::scraper_for(&offered, &shared.setup.scraper, &systems).map(str::to_string)
+        });
+        let model = &mut shared.setup;
+        model.scrapers = result.scrapers;
+        if let Some(Some(scraper)) = scoped {
+            model.scraper = scraper;
+        }
+        // Keep the stored choice when Core still offers it.
+        let known = model.scrapers.iter().any(|s| s.id == model.scraper);
+        if !known {
+            model.scraper = if model.scrapers.iter().any(|s| s.id == persisted) {
+                persisted
+            } else {
+                model
+                    .scrapers
+                    .first()
+                    .map(|s| s.id.clone())
+                    .unwrap_or_default()
+            };
+        }
+    }
+    render(ctx, app);
 }
 
 // ---------- Input ----------
@@ -536,13 +625,16 @@ fn start(ctx: &Ctx, app: &App) {
                 systems: (!systems.is_empty()).then_some(systems),
             };
             let ctx2 = ctx.clone();
+            let wait = crate::cue::begin(ctx, app, crate::AppCue::Starting, "", "");
             ctx.handle.spawn(async move {
-                if let Err(e) = client.media_generate(params).await {
-                    tracing::warn!("media update failed to start: {}", e.message);
-                    let _ = weak.upgrade_in_event_loop(move |app| {
+                let result = client.media_generate(params).await;
+                let _ = weak.upgrade_in_event_loop(move |app| {
+                    crate::cue::end(&ctx2, &app, wait);
+                    if let Err(e) = result {
+                        tracing::warn!("media update failed to start: {}", e.message);
                         crate::router::report_action_error(&ctx2, &app, "media_index", "");
-                    });
-                }
+                    }
+                });
             });
         }
         Kind::Scrape => {
@@ -574,13 +666,16 @@ fn start(ctx: &Ctx, app: &App) {
                 force: rescrape,
             };
             let ctx2 = ctx.clone();
+            let wait = crate::cue::begin(ctx, app, crate::AppCue::Starting, "", "");
             ctx.handle.spawn(async move {
-                if let Err(e) = client.media_scrape(params).await {
-                    tracing::warn!("metadata update failed to start: {}", e.message);
-                    let _ = weak.upgrade_in_event_loop(move |app| {
+                let result = client.media_scrape(params).await;
+                let _ = weak.upgrade_in_event_loop(move |app| {
+                    crate::cue::end(&ctx2, &app, wait);
+                    if let Err(e) = result {
+                        tracing::warn!("metadata update failed to start: {}", e.message);
                         crate::router::report_action_error(&ctx2, &app, "media_scrape", "");
-                    });
-                }
+                    }
+                });
             });
         }
     }

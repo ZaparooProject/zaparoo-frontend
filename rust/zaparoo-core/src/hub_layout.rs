@@ -422,16 +422,16 @@ impl HubLayout {
         true
     }
 
-    /// Append a fully-specified `system`/`folder`/`zapscript` shortcut
+    /// Place a fully-specified `system`/`folder`/`zapscript` shortcut
     /// created from a browse screen's "Add to Hub" context-menu action.
     /// Unlike `add_item`, these kinds are never tracked in `known` (see the
     /// struct doc comment — they're always user-authored, never
     /// auto-discovered), so there is no key to validate against here.
-    /// Always appends after the last real tile — the same "lands at the
-    /// end, like an app just installed" placement `reconcile` uses for a
-    /// newly detected category — since a context menu on Systems/Games has
-    /// no meaningful Hub cursor cell to target the way the Hub's own "Add
-    /// item…" does. Returns `false` only for a `kind` this isn't valid for.
+    /// A context menu on Systems/Games has no Hub cursor cell to target the
+    /// way the Hub's own "Add item…" does, so the tile takes the first
+    /// visible `blank` (the gap a removed tile left) and is appended after
+    /// the last tile only when there is none. Returns `false` only for a
+    /// `kind` this isn't valid for.
     #[allow(
         clippy::too_many_arguments,
         reason = "one field per HubItem column, mirrors the struct shape directly"
@@ -454,7 +454,7 @@ impl HubLayout {
         ) {
             return false;
         }
-        self.items.push(HubItem {
+        let entry = HubItem {
             kind_raw: kind.to_string(),
             id: id.to_string(),
             path: path.to_string(),
@@ -463,16 +463,70 @@ impl HubLayout {
             name: name.to_string(),
             icon: icon.to_string(),
             system: system.to_string(),
-        });
-        // No trim call here, unlike `add_item`'s own non-blank append
-        // branch: a straight `push` always lands the new entry at the true
-        // end, so any blank that was previously trailing is now interior
-        // (ahead of what we just added) rather than trailing — nothing for
-        // `trim_trailing_blanks` to find. That also means a pre-existing
-        // trailing blank isn't silently swallowed by this call: it's left
-        // exactly where it was, same as the rest of this file's "nothing
-        // you didn't touch moves" board-model discipline.
+        };
+        // Filling a blank changes that one cell and nothing else; a push
+        // lands at the true end. Neither leaves a trailing blank behind,
+        // so there is nothing to trim.
+        let gap = self
+            .visible_indices()
+            .into_iter()
+            .find(|&real| self.items[real].kind() == HubItemKind::Blank);
+        match gap {
+            Some(real) => self.items[real] = entry,
+            None => self.items.push(entry),
+        }
         true
+    }
+
+    /// The visible position of the tile a browse screen's "Add to Hub"
+    /// would create for this target, when one is already on the Hub. A
+    /// system matches by id. A game or folder matches by system and
+    /// launcher-relative path when both sides carry one (the only identity
+    /// that survives the media moving drives), then by absolute path, and
+    /// a game last by its launch script. A hand-written `zapscript` tile
+    /// with other wording for the same game is not found.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "one field per HubItem column, mirrors add_target_item"
+    )]
+    pub fn target_position(
+        &self,
+        kind: &str,
+        id: &str,
+        path: &str,
+        relative: &str,
+        script: &str,
+        system: &str,
+    ) -> Option<usize> {
+        let wanted = HubItemKind::from_str(kind);
+        self.visible_indices().into_iter().position(|real| {
+            let item = &self.items[real];
+            if item.kind() != wanted {
+                return false;
+            }
+            match wanted {
+                HubItemKind::System => !id.is_empty() && item.id == id,
+                HubItemKind::Folder | HubItemKind::ZapScript => {
+                    let both_relative = !item.relative.is_empty() && !relative.is_empty();
+                    if both_relative
+                        && item.relative == relative
+                        && (item.system.is_empty() || system.is_empty() || item.system == system)
+                    {
+                        return true;
+                    }
+                    if !item.path.is_empty() && !path.is_empty() {
+                        return item.path == path;
+                    }
+                    // Two relative paths that differ name two files; the
+                    // script cannot make them one.
+                    !both_relative
+                        && wanted == HubItemKind::ZapScript
+                        && !script.is_empty()
+                        && item.script == script
+                }
+                _ => false,
+            }
+        })
     }
 
     /// Re-seed the layout from scratch — "Reset layout" in the View menu.
@@ -1258,7 +1312,174 @@ type = "blank"
     }
 
     #[test]
-    fn add_target_item_appends_after_a_preexisting_trailing_blank_without_touching_it() {
+    fn add_target_item_fills_the_first_gap_and_moves_nothing_else() {
+        let mut layout = HubLayout::default();
+        layout.reconcile(&["Arcade".to_string(), "Consoles".to_string()], &[]);
+        // Two gaps, as removing two tiles leaves them.
+        assert!(layout.remove_visible_item(0));
+        assert!(layout.remove_visible_item(2));
+        let before = layout.clone();
+        assert!(layout.add_target_item("system", "NES", "", "", "", "", "", ""));
+        assert_eq!(layout.items.len(), before.items.len());
+        assert_eq!(layout.items[0].kind(), HubItemKind::System);
+        assert_eq!(layout.items[0].id, "NES");
+        assert_eq!(layout.items[1..], before.items[1..]);
+        // The second add takes the remaining gap; the third has none left.
+        assert!(layout.add_target_item("system", "SNES", "", "", "", "", "", ""));
+        assert_eq!(layout.items[2].id, "SNES");
+        assert_eq!(layout.items.len(), before.items.len());
+        assert!(layout.add_target_item("system", "Genesis", "", "", "", "", "", ""));
+        assert_eq!(layout.items.len(), before.items.len() + 1);
+        assert_eq!(layout.items.last().unwrap().id, "Genesis");
+    }
+
+    #[test]
+    fn target_position_finds_what_add_to_hub_would_create() {
+        let mut layout = HubLayout::default();
+        layout.reconcile(&["Arcade".to_string()], &[]);
+        let first = layout.items.len();
+        assert!(layout.add_target_item("system", "NES", "", "", "", "", "", ""));
+        assert!(layout.add_target_item(
+            "zapscript",
+            "",
+            "/media/fat/games/NES/Zelda.nes",
+            "NES/Zelda.nes",
+            "@NES/The Legend of Zelda",
+            "The Legend of Zelda",
+            "",
+            "NES"
+        ));
+        assert!(layout.add_target_item(
+            "folder",
+            "",
+            "/media/fat/games/SNES/Homebrew",
+            "",
+            "",
+            "",
+            "",
+            "SNES"
+        ));
+        assert!(layout.add_target_item(
+            "zapscript",
+            "",
+            "",
+            "",
+            "@PSX/Wipeout",
+            "Wipeout",
+            "",
+            "PSX"
+        ));
+
+        assert_eq!(
+            layout.target_position("system", "NES", "", "", "", ""),
+            Some(first)
+        );
+        assert_eq!(
+            layout.target_position("system", "SNES", "", "", "", ""),
+            None
+        );
+        // The relative path survives the game moving to another drive.
+        assert_eq!(
+            layout.target_position(
+                "zapscript",
+                "",
+                "/media/usb0/games/NES/Zelda.nes",
+                "NES/Zelda.nes",
+                "",
+                "NES"
+            ),
+            Some(first + 1)
+        );
+        // A different file is a different tile, whatever its script says.
+        assert_eq!(
+            layout.target_position(
+                "zapscript",
+                "",
+                "/media/fat/games/NES/Zelda (Rev 1).nes",
+                "NES/Zelda (Rev 1).nes",
+                "@NES/The Legend of Zelda",
+                "NES"
+            ),
+            None
+        );
+        // No relative path on the tile: the absolute path decides.
+        assert_eq!(
+            layout.target_position(
+                "folder",
+                "",
+                "/media/fat/games/SNES/Homebrew",
+                "SNES/Homebrew",
+                "",
+                "SNES"
+            ),
+            Some(first + 2)
+        );
+        // A game is never a folder tile, and the reverse.
+        assert_eq!(
+            layout.target_position(
+                "zapscript",
+                "",
+                "/media/fat/games/SNES/Homebrew",
+                "",
+                "",
+                "SNES"
+            ),
+            None
+        );
+        // Neither path on the tile: the launch script is all there is.
+        assert_eq!(
+            layout.target_position("zapscript", "", "", "", "@PSX/Wipeout", "PSX"),
+            Some(first + 3)
+        );
+        assert_eq!(
+            layout.target_position("zapscript", "", "", "", "", "PSX"),
+            None
+        );
+    }
+
+    #[test]
+    fn target_position_falls_back_to_the_path_when_relative_paths_differ() {
+        let mut layout = HubLayout::default();
+        layout.reconcile(&["Arcade".to_string()], &[]);
+        let first = layout.items.len();
+        assert!(layout.add_target_item(
+            "zapscript",
+            "",
+            "/media/fat/games/NES/Zelda.nes",
+            "NES/Zelda.nes",
+            "@NES/The Legend of Zelda",
+            "The Legend of Zelda",
+            "",
+            "NES"
+        ));
+        // The same file under another relative path is still that tile.
+        assert_eq!(
+            layout.target_position(
+                "zapscript",
+                "",
+                "/media/fat/games/NES/Zelda.nes",
+                "Zelda.nes",
+                "",
+                "NES"
+            ),
+            Some(first)
+        );
+        // Relative paths that differ are not rescued by the script alone.
+        assert_eq!(
+            layout.target_position(
+                "zapscript",
+                "",
+                "",
+                "NES/Zelda (Rev 1).nes",
+                "@NES/The Legend of Zelda",
+                "NES"
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn add_target_item_fills_a_trailing_blank_too() {
         let mut layout = HubLayout::default();
         layout.reconcile(&["Arcade".to_string()], &[]);
         layout.items.push(HubItem {
@@ -1267,12 +1488,8 @@ type = "blank"
         });
         let blank_index = layout.items.len() - 1;
         assert!(layout.add_target_item("system", "NES", "", "", "", "", "", ""));
-        assert_eq!(
-            layout.items[blank_index].kind(),
-            HubItemKind::Blank,
-            "a straight append lands after the blank, not into it -- the blank must be left alone"
-        );
-        assert_eq!(layout.items.last().unwrap().kind(), HubItemKind::System);
+        assert_eq!(layout.items[blank_index].kind(), HubItemKind::System);
+        assert_eq!(layout.items.len(), blank_index + 1);
     }
 
     #[test]

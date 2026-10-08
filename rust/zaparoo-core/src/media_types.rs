@@ -491,9 +491,11 @@ pub struct BrowseIndexGroup {
     pub count: u32,
     #[serde(default)]
     pub cursor: String,
-    /// 0-based position of the bucket's first item among the scope's files
-    /// (excludes leading directories, which the client adds). Authoritative
-    /// browse-order position from Core, used to jump to the bucket.
+    /// 0-based position of the bucket's first item, in browse order: among
+    /// the scope's files (excluding leading directories, which the client
+    /// adds), or among its directories when the index describes those
+    /// (`MediaBrowseIndexResult::indexes_directories`). Authoritative
+    /// position from Core, used to jump to the bucket.
     #[serde(default)]
     pub offset: u32,
 }
@@ -508,8 +510,23 @@ pub struct MediaBrowseIndexResult {
     pub scheme: String,
     #[serde(default)]
     pub total_files: u32,
+    /// What the buckets count: `media` (files), or `directory` for a
+    /// folder that holds only directories, such as a system whose games
+    /// each live in their own folder. Absent from a Core that predates it,
+    /// which only ever indexed files.
+    #[serde(default)]
+    pub entry_type: String,
     #[serde(default)]
     pub groups: Vec<BrowseIndexGroup>,
+}
+
+impl MediaBrowseIndexResult {
+    /// Whether the buckets' offsets are positions among the scope's
+    /// directory entries rather than its files. Any other value, a future
+    /// one included, reads as files: the only shape older clients know.
+    pub fn indexes_directories(&self) -> bool {
+        self.entry_type == "directory"
+    }
 }
 
 /// Parameters for `media.history`. Cursor-driven pagination shares the

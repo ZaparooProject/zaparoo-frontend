@@ -46,3 +46,4 @@ pub mod sizing;
 pub mod status_line;
 pub mod system_picker;
 pub mod systems;
+pub mod wait_cue;

@@ -79,6 +79,9 @@ export global Status {
     in-out property <string> arg: "";
     in-out property <string> arg2: "";
     in-out property <bool> is-error: false;
+    // The line is reporting trouble with the Core link, which the
+    // router's own cue never displaces.
+    in-out property <bool> link-trouble: false;
     in-out property <bool> show-track: false;
     in-out property <bool> paused: false;
     in-out property <bool> total-known: true;
@@ -198,15 +201,18 @@ export component ProgressTrack inherits Rectangle {
 // fixed-width percentage and track hugging the header's right margin.
 // Plain text on the header background, no card. The label shrink-wraps
 // to its content and only elides once it would run past the logo.
-// `app-text` is the router's transient status line;
-// it shows only when the ladder is empty.
+// `app-text` is the router's transient line: what the user's own action
+// is waiting on, or its confirmation. It takes the slot from a background
+// task for as long as it has something to say, and yields only to trouble
+// with the Core link.
 export component StatusLine inherits Rectangle {
     in property <string> app-text: "";
 
     property <string> ladder-label: Status.label();
-    property <string> label: root.ladder-label != "" ? root.ladder-label : root.app-text;
-    property <bool> show-track: Status.show-track;
-    property <bool> percent-known: Status.percent >= 0;
+    property <bool> app-owns: root.app-text != "" && !Status.link-trouble;
+    property <string> label: root.app-owns || root.ladder-label == "" ? root.app-text : root.ladder-label;
+    property <bool> show-track: Status.show-track && !root.app-owns;
+    property <bool> percent-known: Status.percent >= 0 && !root.app-owns;
     property <length> cells-spacing: Sizing.pct-w(1);
     property <length> track-reserve: root.show-track ? track.width + root.cells-spacing : 0px;
     property <length> percent-slot: Math.ceil(percent-measure.preferred-width / 1px) * 1px;
@@ -255,7 +261,7 @@ export component StatusLine inherits Rectangle {
         width: root.label-width;
         overflow: elide;
         text: root.label;
-        color: Status.is-error ? Theme.error : Theme.text-primary;
+        color: Status.is-error && !root.app-owns ? Theme.error : Theme.text-primary;
         font-size: Sizing.font-small;
     }
 }
@@ -1004,6 +1010,76 @@ export component SectionHeader inherits Rectangle {
     }
 }
 
+// The worded cue for a surface that is waiting and has nothing else to
+// show: a screen body, a modal body, the boot curtain. The hourglass and a
+// line naming what is loading, centered in this element. It follows the
+// shared timing (`Motion.cue-delay-ms`, `Motion.cue-hold-ms`) unless
+// `immediate`, which is for a wait that is the whole screen from its first
+// frame. A surface with content to keep puts its cue in the header line
+// instead (`crate::cue`).
+export component WaitCue inherits Rectangle {
+    in property <bool> waiting: false;
+    in property <string> text: @tr("Loading…");
+    in property <bool> immediate: false;
+    // False for a line that reports a problem rather than a wait.
+    in property <bool> icon: true;
+    in property <length> glyph: Sizing.font-size(3);
+    in property <color> ink: Theme.text-primary;
+    // On screen now, which outlasts `waiting` by up to the hold.
+    out property <bool> shown: root.immediate ? root.waiting : root.held-shown;
+
+    property <bool> held-shown: false;
+    property <bool> hold: false;
+    property <length> spacing: Sizing.pct-w(0.6);
+    // With no text the hourglass stands alone, over a sentence of the
+    // caller's own.
+    property <length> icon-w: root.icon ? root.glyph + (root.text == "" ? 0px : root.spacing) : 0px;
+    property <length> label-w: Math.min(Math.ceil(label.preferred-width / 1px) * 1px,
+        Math.max(0px, root.width - root.icon-w));
+    property <length> content-w: root.icon-w + root.label-w;
+
+    changed waiting => {
+        if (!self.waiting && !self.hold) { self.held-shown = false; }
+    }
+    Timer {
+        interval: Motion.cue-delay-ms;
+        running: !root.immediate && root.waiting && !root.held-shown;
+        triggered => {
+            root.held-shown = true;
+            root.hold = true;
+        }
+    }
+    Timer {
+        interval: Motion.cue-hold-ms;
+        running: root.hold;
+        triggered => {
+            root.hold = false;
+            if (!root.waiting) { root.held-shown = false; }
+        }
+    }
+
+    Image {
+        x: (parent.width - root.content-w) / 2;
+        y: (parent.height - root.glyph) / 2;
+        width: root.glyph;
+        height: root.glyph;
+        visible: root.shown && root.icon;
+        source: GlyphSource.glyph("icons/Loading", root.glyph, root.ink);
+    }
+    label := Text {
+        x: (parent.width - root.content-w) / 2 + root.icon-w;
+        y: (parent.height - root.glyph) / 2;
+        width: root.label-w;
+        height: root.glyph;
+        visible: root.shown;
+        vertical-alignment: center;
+        overflow: elide;
+        text: root.text;
+        color: root.ink;
+        font-size: root.glyph;
+    }
+}
+
 // In-screen state cue: the empty or failed message centered over the
 // content area, with an optional detail line.
 // Ready paints nothing. Loading waits before painting and holds briefly.
@@ -1014,34 +1090,12 @@ export component StateCue inherits Rectangle {
     in property <string> empty-detail: "";
     in property <string> error-detail: @tr("Check Zaparoo Core and try again.");
     in property <string> loading-text: @tr("Loading…");
-    in property <duration> loading-delay: 300ms;
-    in property <duration> minimum-visible: 200ms;
     // Vertical center of the loading cue, so a content rect that starts
     // below the header can still center the cue on the screen.
     in property <length> cue-center-y: root.height / 2;
 
     property <bool> loading: root.state == ContentState.loading;
-    property <bool> loading-shown: false;
-    property <bool> hold: false;
-    changed loading => {
-        if (!self.loading && !self.hold) { self.loading-shown = false; }
-    }
-    Timer {
-        interval: root.loading-delay;
-        running: root.loading && !root.loading-shown;
-        triggered => {
-            root.loading-shown = true;
-            root.hold = true;
-        }
-    }
-    Timer {
-        interval: root.minimum-visible;
-        running: root.hold;
-        triggered => {
-            root.hold = false;
-            if (!root.loading) { root.loading-shown = false; }
-        }
-    }
+    property <bool> loading-shown: wait.shown;
     out property <bool> loading-visible: root.loading-shown;
     property <ContentState> message-state: root.loading-shown || root.loading ? ContentState.ready : root.state;
     visible: root.loading-shown || root.message-state != ContentState.ready;
@@ -1054,30 +1108,12 @@ export component StateCue inherits Rectangle {
 
     // Loading cue: the glyph and the text side by side, centered on
     // `cue-center-y`.
-    if root.loading-shown: Rectangle {
-        property <length> glyph: Sizing.font-size(3);
-        property <length> spacing: Sizing.pct-w(0.6);
-        property <length> w: self.glyph + self.spacing + Math.ceil(loading-label.preferred-width / 1px) * 1px;
-        x: (parent.width - self.w) / 2;
-        y: root.cue-center-y - self.glyph / 2;
-        width: self.w;
+    wait := WaitCue {
+        x: 0;
+        y: root.cue-center-y - self.height / 2;
         height: self.glyph;
-        Image {
-            x: 0;
-            y: 0;
-            width: parent.glyph;
-            height: parent.glyph;
-            source: GlyphSource.glyph("icons/Loading", parent.glyph, Theme.text-primary);
-        }
-        loading-label := Text {
-            x: parent.glyph + parent.spacing;
-            y: 0;
-            height: parent.glyph;
-            vertical-alignment: center;
-            text: root.loading-text;
-            color: Theme.text-primary;
-            font-size: parent.glyph;
-        }
+        waiting: root.loading;
+        text: root.loading-text;
     }
 
     headline-text := Text {

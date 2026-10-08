@@ -4,12 +4,18 @@
 # SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 """Regenerate the embedded system logo art from the source sets.
 
-The frontend embeds two PNG sets from rust/frontend/assets/ (see
+The frontend embeds three PNG sets from rust/frontend/assets/ (see
 rust/frontend/build.rs and rust/frontend/src/system_logos.rs):
 
   systems/        the neutral-grayscale logos, rasterized from
                   resources/images/systems/<id>.svg at LOGO_HEIGHT px tall
                   and tinted at runtime
+  systems-half/   the same logos at half that size, derived from systems/.
+                  A tile that draws a logo at half size or less decodes
+                  this copy instead: a quarter of the pixels to decode and
+                  scale, which is most of what a logo costs to prepare on a
+                  MiSTer. A larger tile keeps using systems/, so nothing is
+                  ever drawn from fewer pixels than it shows
   systems-color/  the original full-color logos, copied from
                   resources/images/systems-color/<id>.png and scaled down
                   to at most LOGO_HEIGHT px tall (the source set mixes
@@ -18,7 +24,8 @@ rust/frontend/build.rs and rust/frontend/src/system_logos.rs):
 
 Run after changing either source set:
 
-  just logos              regenerate both sets
+  just logos              regenerate every set
+  just logos --half-only  rebuild systems-half/ from systems/ (no rasterizer)
   just logos --check      fail if the embedded stems drift from the sources
 
 The grayscale set needs a rasterizer on PATH (`resvg`, `rsvg-convert`, or
@@ -39,6 +46,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 SVG_DIR = ROOT / "resources" / "images" / "systems"
 COLOR_SRC_DIR = ROOT / "resources" / "images" / "systems-color"
 GRAY_OUT_DIR = ROOT / "rust" / "frontend" / "assets" / "systems"
+HALF_OUT_DIR = ROOT / "rust" / "frontend" / "assets" / "systems-half"
 COLOR_OUT_DIR = ROOT / "rust" / "frontend" / "assets" / "systems-color"
 
 
@@ -51,12 +59,17 @@ def check() -> int:
     problems: list[str] = []
     svg = stems(SVG_DIR, ".svg")
     gray = stems(GRAY_OUT_DIR, ".png")
+    half = stems(HALF_OUT_DIR, ".png")
     color_src = stems(COLOR_SRC_DIR, ".png")
     color = stems(COLOR_OUT_DIR, ".png")
     for missing in sorted(svg - gray):
         problems.append(f"missing grayscale raster: {GRAY_OUT_DIR.name}/{missing}.png")
     for extra in sorted(gray - svg):
         problems.append(f"orphan grayscale raster (no SVG): {GRAY_OUT_DIR.name}/{extra}.png")
+    for missing in sorted(gray - half):
+        problems.append(f"missing half-size raster: {HALF_OUT_DIR.name}/{missing}.png")
+    for extra in sorted(half - gray):
+        problems.append(f"orphan half-size raster: {HALF_OUT_DIR.name}/{extra}.png")
     for missing in sorted(color_src - color):
         problems.append(f"missing color copy: {COLOR_OUT_DIR.name}/{missing}.png")
     for extra in sorted(color - color_src):
@@ -103,6 +116,22 @@ def rasterize_grayscale() -> None:
     print(f"rasterized {len(list(GRAY_OUT_DIR.glob('*.png')))} grayscale logos")
 
 
+def halve_grayscale() -> None:
+    """Derive systems-half/ from systems/: the same art at half the size."""
+    from PIL import Image
+
+    HALF_OUT_DIR.mkdir(parents=True, exist_ok=True)
+    for old in HALF_OUT_DIR.glob("*.png"):
+        old.unlink()
+    for src in sorted(GRAY_OUT_DIR.glob("*.png")):
+        with Image.open(src) as image:
+            gray = image.convert("LA")
+            width, height = gray.size
+            size = (max(1, round(width / 2)), max(1, round(height / 2)))
+            gray.resize(size, Image.Resampling.LANCZOS).save(HALF_OUT_DIR / src.name, optimize=True)
+    print(f"halved {len(list(HALF_OUT_DIR.glob('*.png')))} grayscale logos")
+
+
 def copy_color() -> None:
     from PIL import Image
 
@@ -125,11 +154,16 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--check", action="store_true", help="verify the embedded sets match the sources")
     parser.add_argument("--color-only", action="store_true", help="skip the grayscale rasterization")
+    parser.add_argument("--half-only", action="store_true", help="only rebuild the half-size grayscale set")
     args = parser.parse_args()
     if args.check:
         return check()
+    if args.half_only:
+        halve_grayscale()
+        return check()
     if not args.color_only:
         rasterize_grayscale()
+    halve_grayscale()
     copy_color()
     return check()
 

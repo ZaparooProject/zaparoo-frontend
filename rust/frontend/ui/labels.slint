@@ -18,8 +18,15 @@ export global Labels {
         if (status == BootStatus.unreachable) { return @tr("Can't reach Zaparoo Core. Check the connection."); }
         return @tr("Connecting to Zaparoo Core…");
     }
+    // The dim suffix beside an item's name: its own tags, and the word that
+    // says a hidden item is hidden while hidden items are being shown.
+    public pure function tags(tags: string, hidden: bool) -> string {
+        if (!hidden) { return tags; }
+        if (tags == "") { return @tr("Hidden"); }
+        return @tr("{} · {}", tags, @tr("Hidden"));
+    }
     public pure function loading(target: Screen) -> string {
-        if (target == Screen.systems) { return @tr("Loading systems…"); }
+        if (target == Screen.favorite-systems) { return @tr("Loading favorite systems…"); }
         if (target == Screen.games) { return @tr("Loading games…"); }
         if (target == Screen.favorites) { return @tr("Loading favorites…"); }
         if (target == Screen.recents) { return @tr("Loading recently played…"); }
@@ -105,6 +112,7 @@ export global Labels {
         if (key == "discover:searching") { return @tr("Searching…"); }
         if (key == "discover:none") { return @tr("No alternates found"); }
         if (key == "add_to_hub") { return @tr("Add to Hub"); }
+        if (key == "hub:remove") { return @tr("Remove from Hub"); }
         if (key == "scrape_game") { return @tr("Update metadata"); }
         // Systems rows.
         if (key == "launch_system") { return @tr("Launch system"); }
@@ -122,7 +130,9 @@ export global Labels {
         if (key == "filter") { return @tr("Tags: {}", Labels.filter-value(name)); }
         if (key == "filter_clear") { return @tr("Clear tags"); }
         if (key == "filter:any") { return @tr("Any"); }
-        if (key == "filter:loading") { return @tr("Loading…"); }
+        if (key == "filter:loading") { return @tr("Loading tags…"); }
+        // The tags are in flight, not yet long enough to say so.
+        if (key == "filter:pending") { return ""; }
         if (key == "filter:failed") { return @tr("Failed to load tags"); }
         if (key == "filter:none") { return @tr("No tags available"); }
         if (Labels.filter-category(key, name) != "") { return Labels.filter-category(key, name); }
@@ -159,10 +169,25 @@ export global Labels {
         return Labels.hub(key, name);
     }
 
-    // The header's transient app line. Rust pushes a key; today the
-    // only one is the launch cue.
-    public pure function status(key: AppCue) -> string {
-        if (key == AppCue.launching) { return @tr("Launching…"); }
+    // The header's transient app line. Rust pushes a key and its values:
+    // what the user's action is waiting on, or the brief confirmation of
+    // one that changed something off screen. `loading-list` is worded by
+    // `loading` from the screen it reloads.
+    public pure function status(key: AppCue, arg: string, arg2: string) -> string {
+        if (key == AppCue.launching) {
+            if (arg == "") { return @tr("Launching…"); }
+            return @tr("Launching {}…", arg);
+        }
+        if (key == AppCue.loading-more) { return @tr("Loading more…"); }
+        if (key == AppCue.loading-progress) { return @tr("Loading {} of {}…", arg, arg2); }
+        if (key == AppCue.loading-launchers) { return @tr("Loading launchers…"); }
+        if (key == AppCue.saving) { return @tr("Saving…"); }
+        if (key == AppCue.starting) { return @tr("Starting…"); }
+        if (key == AppCue.cancelling) { return @tr("Cancelling…"); }
+        if (key == AppCue.unlinking) { return @tr("Unlinking…"); }
+        if (key == AppCue.added-to-hub) { return @tr("Added to Hub"); }
+        if (key == AppCue.removed-from-hub) { return @tr("Removed from Hub"); }
+        if (key == AppCue.token-written) { return @tr("Token written"); }
         return "";
     }
 
@@ -245,6 +270,7 @@ export global DialogLabels {
         if (kind == ErrorKind.launch || kind == ErrorKind.launch-repair) { return @tr("Launch failed"); }
         if (kind == ErrorKind.favorite) { return @tr("Favorite update failed"); }
         if (kind == ErrorKind.media-visibility) { return @tr("Visibility update failed"); }
+        if (kind == ErrorKind.media-busy) { return @tr("Media database is busy"); }
         if (kind == ErrorKind.add-to-hub) { return @tr("Add to Hub failed"); }
         if (kind == ErrorKind.media-index) { return @tr("Media update failed"); }
         if (kind == ErrorKind.media-scrape) { return @tr("Update metadata failed"); }
@@ -273,6 +299,8 @@ export global DialogLabels {
         }
         if (kind == ErrorKind.favorite) { return @tr("Could not update this favorite. Check Zaparoo Core and try again."); }
         if (kind == ErrorKind.media-visibility) { return @tr("Could not hide or unhide this game. Check Zaparoo Core and try again."); }
+        // Core refuses a tag write while a job owns the media database.
+        if (kind == ErrorKind.media-busy) { return @tr("Zaparoo Core is updating the media database. Try again when it finishes."); }
         if (kind == ErrorKind.add-to-hub) {
             if (context == "") { return @tr("Could not add this item to the Hub. Check Zaparoo Core and try again."); }
             return @tr("Could not add {} to the Hub. Check Zaparoo Core and try again.", context);

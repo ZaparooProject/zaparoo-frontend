@@ -489,6 +489,14 @@ fn list_artwork_requests_only_detail_neighbors_and_retires_old_focus() {
         .grid
         .set_current_index_immediate(20);
     crate::games::render(&ctx, &app);
+    assert_eq!(
+        ctx.media.pending_keys(),
+        vec![hub.clone()],
+        "a move retires the old focus and asks for nothing until it rests"
+    );
+    advance(zaparoo_app::media_list::DETAIL_DEBOUNCE_MS - 1);
+    assert_eq!(ctx.media.pending_keys(), vec![hub.clone()]);
+    advance(1);
     let pending = ctx.media.pending_keys();
     assert_eq!(pending.len(), 4);
     assert_eq!(
@@ -1836,7 +1844,12 @@ fn page_lookahead_is_bounded_and_delayed_partial_pages_wait_then_slide() {
         .grid
         .has_pending_target());
     assert!(!crate::router::lock(&ctx.shared).games.sliding);
-    crate::games::on_append(&ctx, &app, 0, Err("offline".into()));
+    crate::games::on_append(
+        &ctx,
+        &app,
+        0,
+        Err(crate::games::PageError::transport("offline")),
+    );
     assert_eq!(view.get_cells().row_data(0).map(|cell| cell.name), outgoing);
     crate::games::handle_action(&ctx, &app, "page_prev");
     crate::games::on_append(
@@ -2765,7 +2778,7 @@ fn launcher_save_keeps_picker_locked_delays_cue_and_retries_original_choice() {
     let ticket = crate::launchers::begin_save(&ctx, &app);
     ov.invoke_pointer_choice(PressOwner::List, 0, true);
     crate::router::handle_action(&ctx, &app, "up");
-    crate::router::handle_action(&ctx, &app, "cancel");
+    crate::router::handle_action(&ctx, &app, "accept");
     assert_eq!(ov.get_list_index(), 1);
     assert!(ov.get_list_open());
     assert_eq!(ov.get_list_entries(), rows);
@@ -2778,6 +2791,12 @@ fn launcher_save_keeps_picker_locked_delays_cue_and_retries_original_choice() {
     assert!(ov.get_launcher_saving_visible());
     let payload = serde_json::json!(["system", "SNES", "", "alternate"]).to_string();
     crate::launchers::finish_save(&ctx, &app, ticket, Some(&payload));
+    assert!(
+        ov.get_launcher_saving_visible(),
+        "a caption that only just appeared stays out its hold"
+    );
+    CLOCK.with(|clock| clock.set(clock.get() + 200));
+    slint::platform::update_timers_and_animations();
     assert!(!ov.get_list_open());
     assert_eq!(ov.get_dialog_error(), ErrorKind::LauncherSave);
     crate::router::handle_action(&ctx, &app, "accept");
@@ -5094,7 +5113,12 @@ fn failed_or_timed_out_navigation_restores_source_and_rejects_late_pages() {
         if timeout {
             advance(15_001);
         } else {
-            crate::games::on_append(&ctx, &app, ticket, Err("offline".into()));
+            crate::games::on_append(
+                &ctx,
+                &app,
+                ticket,
+                Err(crate::games::PageError::transport("offline")),
+            );
         }
         assert!(!app.global::<Shell>().get_transitioning());
         assert_eq!(app.global::<Shell>().get_active_screen(), Screen::Hub);
@@ -7191,4 +7215,548 @@ fn a_scoped_metadata_run_never_widens_and_needs_a_source_that_covers_it() {
     crate::media_setup::handle_action(&ctx, &app, "accept");
     assert!(!crate::router::lock(&ctx.shared).setup.open);
     assert!(!dialog_open(&app));
+}
+
+/// A detailed list of 40 rows with the first 20 loaded and more to come.
+fn seat_partial_list(ctx: &crate::router::Ctx, app: &App) -> (Vec<crate::games::GameRow>, u64) {
+    crate::sizing::apply_scene(
+        app,
+        crate::sizing::Scene::of(app, f64::from(W), f64::from(H), false),
+    );
+    app.global::<Shell>().set_active_screen(Screen::Games);
+    let mut rows = game_rows("Row", 40);
+    for (index, row) in rows.iter_mut().enumerate() {
+        row.path = format!("/target/{index}");
+    }
+    let ticket = {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.persist.settings.games_browse_layout = "list".into();
+        shared.persist.games.path_stack = vec!["/target".into()];
+        shared.persist.games.selected_at_level = vec![String::new()];
+        shared.games.browse_path = "/target".into();
+        shared.games.total_known = true;
+        shared.games.ticket
+    };
+    crate::games::apply_fill(
+        ctx,
+        app,
+        ticket,
+        rows[..20].to_vec(),
+        Some("first".into()),
+        Some((40, 0)),
+        false,
+    );
+    (rows, ticket)
+}
+
+#[test]
+fn up_from_the_top_of_a_partly_loaded_list_walks_to_its_true_last_row() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let (rows, ticket) = seat_partial_list(&ctx, &app);
+    crate::games::handle_action(&ctx, &app, "up");
+    {
+        let shared = crate::router::lock(&ctx.shared);
+        assert_eq!(
+            shared.games.grid.current_index(),
+            0,
+            "the last loaded row is not the tail: nothing moves until the tail loads"
+        );
+        assert!(shared.games.grid.has_pending_target());
+        assert!(shared.games.jump_loading);
+    }
+    crate::games::on_append(&ctx, &app, ticket, Ok((rows[20..].to_vec(), None)));
+    let shared = crate::router::lock(&ctx.shared);
+    assert_eq!(shared.games.grid.current_index(), 39);
+    assert!(!shared.games.jump_loading);
+}
+
+#[test]
+fn a_page_move_past_the_loaded_rows_lands_on_the_last_one_and_loads_more() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let _ = seat_partial_list(&ctx, &app);
+    crate::router::lock(&ctx.shared)
+        .games
+        .grid
+        .set_current_index_immediate(17);
+    crate::games::handle_action(&ctx, &app, "right");
+    let shared = crate::router::lock(&ctx.shared);
+    assert_eq!(shared.games.grid.current_index(), 19);
+    assert!(shared.games.loading_more);
+}
+
+#[test]
+fn a_page_core_refuses_restarts_the_list_and_a_link_failure_does_not() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let (rows, ticket) = seat_partial_list(&ctx, &app);
+    crate::router::lock(&ctx.shared)
+        .games
+        .grid
+        .set_current_index_immediate(15);
+
+    // The link dropped: the rows and the cursor stay for the next move.
+    crate::games::on_append(
+        &ctx,
+        &app,
+        ticket,
+        Err(crate::games::PageError::transport("not connected")),
+    );
+    {
+        let shared = crate::router::lock(&ctx.shared);
+        assert_eq!(shared.games.ticket, ticket);
+        assert_eq!(shared.games.rows.len(), 20);
+        assert!(shared.games.has_more());
+        assert!(!shared.games.loading);
+    }
+
+    // Core will not serve that cursor again: reload from the first page.
+    crate::games::on_append(
+        &ctx,
+        &app,
+        ticket,
+        Err(crate::games::PageError::refused(
+            "library visibility changed; restart browse without cursor",
+        )),
+    );
+    let restarted = {
+        let shared = crate::router::lock(&ctx.shared);
+        assert_ne!(shared.games.ticket, ticket, "a fresh fill is under way");
+        assert!(shared.games.loading);
+        assert!(shared.games.page_restarted);
+        assert_eq!(
+            shared.persist.games.selected_at_level,
+            vec![rows[15].path.clone()],
+            "the selection is saved for the reload to restore"
+        );
+        shared.games.ticket
+    };
+    // The reload's first page stops short of the selection, so it walks.
+    crate::games::apply_fill(
+        &ctx,
+        &app,
+        restarted,
+        rows[..10].to_vec(),
+        Some("fresh".into()),
+        Some((40, 0)),
+        false,
+    );
+    crate::games::on_append(
+        &ctx,
+        &app,
+        restarted,
+        Ok((rows[10..20].to_vec(), Some("fresh-2".into()))),
+    );
+    {
+        let shared = crate::router::lock(&ctx.shared);
+        assert_eq!(shared.games.grid.current_index(), 15);
+        assert!(shared.games.error.is_empty());
+        assert!(
+            !shared.games.page_restarted,
+            "a page loaded, so a later refusal may restart again"
+        );
+    }
+}
+
+#[test]
+fn a_reload_that_core_refuses_too_is_shown_instead_of_looping() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let (rows, ticket) = seat_partial_list(&ctx, &app);
+    crate::router::lock(&ctx.shared)
+        .games
+        .grid
+        .set_current_index_immediate(15);
+    crate::games::on_append(
+        &ctx,
+        &app,
+        ticket,
+        Err(crate::games::PageError::refused("refused")),
+    );
+    let restarted = crate::router::lock(&ctx.shared).games.ticket;
+    crate::games::apply_fill(
+        &ctx,
+        &app,
+        restarted,
+        rows[..10].to_vec(),
+        Some("fresh".into()),
+        Some((40, 0)),
+        false,
+    );
+    crate::games::on_append(
+        &ctx,
+        &app,
+        restarted,
+        Err(crate::games::PageError::refused("refused again")),
+    );
+    let shared = crate::router::lock(&ctx.shared);
+    assert_eq!(shared.games.ticket, restarted, "no second restart");
+    assert_eq!(shared.games.error, "refused again");
+}
+
+#[test]
+fn a_page_with_no_cursor_ends_the_list_whatever_total_core_reported() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let (rows, ticket) = seat_partial_list(&ctx, &app);
+    crate::games::on_append(&ctx, &app, ticket, Ok((rows[20..25].to_vec(), None)));
+    assert_eq!(app.global::<crate::GamesView>().get_total_items(), 25);
+    crate::router::lock(&ctx.shared)
+        .games
+        .grid
+        .set_current_index_immediate(24);
+    // With nothing more to load the list wraps instead of waiting on rows
+    // that will never come.
+    crate::games::handle_action(&ctx, &app, "down");
+    let shared = crate::router::lock(&ctx.shared);
+    assert_eq!(shared.games.grid.current_index(), 0);
+    assert!(!shared.games.loading_more);
+}
+
+#[test]
+fn a_letter_jump_over_game_folders_counts_from_the_first_folder() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    app.global::<Shell>().set_active_screen(Screen::Games);
+    // A system whose every game is a folder: 30 directory rows, no files.
+    let mut rows = game_rows("Disc Game", 30);
+    for (index, row) in rows.iter_mut().enumerate() {
+        row.path = format!("/psx/{index}");
+        row.entry_type = zaparoo_app::media_list::EntryType::Directory;
+        row.media_capable = true;
+    }
+    let ticket = {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.persist.settings.games_browse_layout = "list".into();
+        shared.games.total_known = true;
+        shared.games.ticket
+    };
+    crate::games::apply_fill(&ctx, &app, ticket, rows, None, Some((0, 30)), false);
+
+    // Core indexed the folders, so the offset is already the row.
+    crate::router::lock(&ctx.shared).letter_directories = true;
+    crate::games::jump_to_item(&ctx, &app, 12);
+    assert_eq!(
+        crate::router::lock(&ctx.shared).games.grid.current_index(),
+        12
+    );
+
+    // A file index counts from the first file, after every directory.
+    crate::router::lock(&ctx.shared).letter_directories = false;
+    crate::games::jump_to_item(&ctx, &app, 12);
+    assert_eq!(
+        crate::router::lock(&ctx.shared).games.grid.current_index(),
+        29,
+        "30 directories lead, so file 12 lies past the end and clamps"
+    );
+}
+
+fn header_cue(app: &App) -> crate::AppCue {
+    app.global::<Shell>().get_status_text()
+}
+
+#[test]
+fn a_header_wait_cue_skips_a_fast_answer_and_never_flashes_a_slow_one() {
+    use zaparoo_app::wait_cue::{CUE_DELAY_MS, CUE_HOLD_MS};
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+
+    // Answered inside the delay: no word at all.
+    let fast = crate::cue::begin(&ctx, &app, crate::AppCue::Saving, "", "");
+    advance(CUE_DELAY_MS - 1);
+    assert_eq!(header_cue(&app), crate::AppCue::None);
+    crate::cue::end(&ctx, &app, fast);
+    advance(CUE_DELAY_MS + CUE_HOLD_MS);
+    assert_eq!(header_cue(&app), crate::AppCue::None);
+
+    // Answered just after the word appears: it stays out its hold.
+    let slow = crate::cue::begin(&ctx, &app, crate::AppCue::Launching, "Tetris", "");
+    advance(CUE_DELAY_MS);
+    assert_eq!(header_cue(&app), crate::AppCue::Launching);
+    assert_eq!(app.global::<Shell>().get_status_arg(), "Tetris");
+    crate::cue::end(&ctx, &app, slow);
+    assert_eq!(header_cue(&app), crate::AppCue::Launching);
+    advance(CUE_HOLD_MS);
+    assert_eq!(header_cue(&app), crate::AppCue::None);
+    assert_eq!(app.global::<Shell>().get_status_arg(), "");
+
+    // Answered long after: cleared the moment the answer arrives.
+    let long = crate::cue::begin(&ctx, &app, crate::AppCue::Starting, "", "");
+    advance(CUE_DELAY_MS);
+    advance(CUE_HOLD_MS);
+    advance(500);
+    assert_eq!(header_cue(&app), crate::AppCue::Starting);
+    crate::cue::end(&ctx, &app, long);
+    assert_eq!(header_cue(&app), crate::AppCue::None);
+}
+
+#[test]
+fn a_confirmation_shows_at_once_and_a_new_wait_takes_the_line_from_it() {
+    use zaparoo_app::wait_cue::{CONFIRM_MS, CUE_DELAY_MS};
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+
+    crate::cue::flash(&ctx, &app, crate::AppCue::AddedToHub, CONFIRM_MS);
+    assert_eq!(header_cue(&app), crate::AppCue::AddedToHub);
+    advance(CONFIRM_MS - 1);
+    assert_eq!(header_cue(&app), crate::AppCue::AddedToHub);
+    advance(1);
+    assert_eq!(header_cue(&app), crate::AppCue::None);
+
+    crate::cue::flash(&ctx, &app, crate::AppCue::TokenWritten, CONFIRM_MS);
+    let wait = crate::cue::begin(&ctx, &app, crate::AppCue::Saving, "", "");
+    assert_eq!(header_cue(&app), crate::AppCue::None);
+    advance(CUE_DELAY_MS);
+    assert_eq!(header_cue(&app), crate::AppCue::Saving);
+    // The confirmation's timer must not clear the wait that replaced it.
+    advance(CONFIRM_MS);
+    assert_eq!(header_cue(&app), crate::AppCue::Saving);
+    crate::cue::end(&ctx, &app, wait);
+    assert_eq!(header_cue(&app), crate::AppCue::None);
+}
+
+#[test]
+fn a_page_load_says_so_in_the_header_and_leaves_the_list_as_it_is() {
+    use zaparoo_app::wait_cue::{CUE_DELAY_MS, CUE_HOLD_MS};
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let (rows, ticket) = seat_partial_list(&ctx, &app);
+    crate::router::lock(&ctx.shared)
+        .games
+        .grid
+        .set_current_index_immediate(19);
+    crate::games::handle_action(&ctx, &app, "down");
+    assert!(crate::router::lock(&ctx.shared).games.loading_more);
+    assert_eq!(header_cue(&app), crate::AppCue::None, "not a wait yet");
+    advance(CUE_DELAY_MS);
+    assert_eq!(header_cue(&app), crate::AppCue::LoadingMore);
+    assert_eq!(app.global::<crate::GamesView>().get_current_index(), 19);
+
+    crate::games::on_append(&ctx, &app, ticket, Ok((rows[20..].to_vec(), None)));
+    advance(CUE_HOLD_MS);
+    assert_eq!(header_cue(&app), crate::AppCue::None);
+}
+
+#[test]
+fn a_walk_to_a_distant_row_reports_how_far_it_has_got() {
+    use zaparoo_app::wait_cue::CUE_DELAY_MS;
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let (rows, ticket) = seat_partial_list(&ctx, &app);
+    // Up from the top walks to row 40 of 40, with 20 loaded.
+    crate::games::handle_action(&ctx, &app, "up");
+    advance(CUE_DELAY_MS);
+    let shell = app.global::<Shell>();
+    assert_eq!(header_cue(&app), crate::AppCue::LoadingProgress);
+    assert_eq!(shell.get_status_arg(), "20");
+    assert_eq!(shell.get_status_arg2(), "40");
+    // A chunk that does not finish the walk moves the count, not the delay.
+    crate::games::on_append(
+        &ctx,
+        &app,
+        ticket,
+        Ok((rows[20..30].to_vec(), Some("more".into()))),
+    );
+    assert_eq!(header_cue(&app), crate::AppCue::LoadingProgress);
+    assert_eq!(shell.get_status_arg(), "30");
+}
+
+#[test]
+fn a_list_reloading_in_place_keeps_its_rows_and_cues_in_the_header() {
+    use zaparoo_app::wait_cue::{CUE_DELAY_MS, CUE_HOLD_MS};
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let (rows, ticket) = seat_partial_list(&ctx, &app);
+    let view = app.global::<crate::GamesView>();
+    let before = view.get_list_rows().row_count();
+    assert!(before > 0);
+
+    // Core refused a page: the list reloads from its first page.
+    crate::games::on_append(
+        &ctx,
+        &app,
+        ticket,
+        Err(crate::games::PageError::refused("refused")),
+    );
+    assert!(crate::router::lock(&ctx.shared).games.loading);
+    assert!(
+        !view.get_loading(),
+        "the body does not switch to a loading cue"
+    );
+    assert_eq!(view.get_list_rows().row_count(), before, "the rows stay up");
+    advance(CUE_DELAY_MS);
+    assert_eq!(header_cue(&app), crate::AppCue::LoadingList);
+
+    // Only Cancel is taken while the rows on screen are stale.
+    crate::games::handle_action(&ctx, &app, "down");
+    assert_eq!(view.get_list_rows().row_count(), before);
+
+    let restarted = crate::router::lock(&ctx.shared).games.ticket;
+    crate::games::apply_fill(
+        &ctx,
+        &app,
+        restarted,
+        rows.clone(),
+        None,
+        Some((40, 0)),
+        false,
+    );
+    assert!(!crate::router::lock(&ctx.shared).games.loading);
+    advance(CUE_HOLD_MS);
+    assert_eq!(header_cue(&app), crate::AppCue::None);
+}
+
+#[test]
+fn cancel_gives_up_on_a_launcher_save_core_never_answers() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    app.global::<crate::Motion>().set_enabled(false);
+    let ov = app.global::<crate::Overlays>();
+    ov.set_list_open(true);
+    ov.set_list_entries(ModelRc::new(VecModel::from(vec![
+        crate::router::menu_entry("default", "Default"),
+        crate::router::menu_entry("alternate", "Alternate"),
+    ])));
+    crate::router::bind_context_input(&std::sync::Arc::new(ctx.clone()), &app);
+    let ticket = crate::launchers::begin_save(&ctx, &app);
+    advance(300);
+    assert!(ov.get_launcher_saving_visible());
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert!(!ov.get_launcher_saving());
+    assert!(!ov.get_launcher_saving_visible());
+    assert!(!ov.get_list_open(), "the same press closes the picker");
+    // The answer, if it ever comes, belongs to a save nobody is waiting on.
+    ov.set_list_open(true);
+    crate::launchers::finish_save(&ctx, &app, ticket, None);
+    assert!(ov.get_list_open());
+}
+
+#[test]
+fn cancel_retires_a_launcher_save_answer_the_hold_put_off() {
+    use zaparoo_app::wait_cue::{CUE_DELAY_MS, CUE_HOLD_MS};
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    app.global::<crate::Motion>().set_enabled(false);
+    let ov = app.global::<crate::Overlays>();
+    ov.set_list_open(true);
+    ov.set_list_entries(ModelRc::new(VecModel::from(vec![
+        crate::router::menu_entry("default", "Default"),
+        crate::router::menu_entry("alternate", "Alternate"),
+    ])));
+    crate::router::bind_context_input(&std::sync::Arc::new(ctx.clone()), &app);
+    let before = ov.get_dialog_error();
+    let ticket = crate::launchers::begin_save(&ctx, &app);
+    advance(CUE_DELAY_MS);
+    assert!(ov.get_launcher_saving_visible());
+    let payload = serde_json::json!(["system", "SNES", "", "alternate"]).to_string();
+    crate::launchers::finish_save(&ctx, &app, ticket, Some(&payload));
+    assert!(
+        ov.get_launcher_saving_visible(),
+        "the hold keeps the cue up"
+    );
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert!(!ov.get_list_open());
+    // A picker opened after Cancel is not the one that save belonged to.
+    ov.set_list_open(true);
+    advance(CUE_HOLD_MS);
+    assert!(ov.get_list_open());
+    assert_eq!(ov.get_dialog_error(), before);
+}
+
+#[test]
+fn a_scraper_list_answer_reaches_only_the_form_that_asked() {
+    use zaparoo_app::media_setup::Scope;
+    use zaparoo_app::wait_cue::{CUE_DELAY_MS, CUE_HOLD_MS};
+    use zaparoo_core::media_types::{ScraperInfo, ScrapersResult};
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let answer = || {
+        Ok(ScrapersResult {
+            scrapers: vec![ScraperInfo {
+                id: "source".into(),
+                name: "Source".into(),
+                supported_systems: Vec::new(),
+            }],
+        })
+    };
+    let seq = |ctx: &crate::router::Ctx| crate::router::lock(&ctx.shared).setup.sources_seq;
+    let listed = |ctx: &crate::router::Ctx| crate::router::lock(&ctx.shared).setup.scrapers.len();
+
+    crate::router::open_scrape_setup(&ctx, &app, Scope::All);
+    let first = seq(&ctx);
+    crate::media_setup::close(&ctx, &app);
+    crate::media_setup::scrapers_answered(&ctx, &app, first, answer());
+    assert_eq!(listed(&ctx), 0, "a closed form takes no answer");
+
+    crate::router::open_scrape_setup(&ctx, &app, Scope::All);
+    let second = seq(&ctx);
+    crate::media_setup::scrapers_answered(&ctx, &app, first, answer());
+    assert_eq!(listed(&ctx), 0);
+    assert!(
+        crate::router::lock(&ctx.shared)
+            .setup
+            .sources_wait
+            .is_some(),
+        "the earlier answer leaves the new wait alone"
+    );
+
+    // An answer the hold put off is dropped when the form closes first.
+    advance(CUE_DELAY_MS);
+    assert!(crate::router::lock(&ctx.shared).setup.sources_loading);
+    crate::media_setup::scrapers_answered(&ctx, &app, second, answer());
+    assert_eq!(listed(&ctx), 0);
+    crate::media_setup::close(&ctx, &app);
+    advance(CUE_HOLD_MS);
+    assert_eq!(listed(&ctx), 0);
+
+    crate::router::open_scrape_setup(&ctx, &app, Scope::All);
+    let third = seq(&ctx);
+    crate::media_setup::scrapers_answered(&ctx, &app, third, answer());
+    assert_eq!(listed(&ctx), 1);
+}
+
+#[test]
+fn a_hidden_game_shown_among_the_rest_is_labelled_hidden() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    app.global::<Shell>().set_active_screen(Screen::Games);
+    seat_folder(&ctx, &app, "Game", 0);
+    let view = app.global::<crate::GamesView>();
+    assert!(!view.get_label_hidden());
+
+    crate::router::lock(&ctx.shared).games.rows[0].is_hidden = true;
+    crate::games::render(&ctx, &app);
+    assert!(view.get_label_hidden(), "the focused game says so");
+    assert!(
+        view.get_cells().row_data(0).is_some_and(|cell| cell.hidden),
+        "and so does its tile"
+    );
+
+    // Its neighbor is not hidden.
+    crate::games::handle_action(&ctx, &app, "right");
+    assert!(!view.get_label_hidden());
 }

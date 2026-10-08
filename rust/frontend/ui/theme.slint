@@ -84,6 +84,12 @@ export global Motion {
     out property <duration> press-ms: 34ms;
     out property <duration> settle-ms: 110ms;
     out property <duration> pulse-ms: 250ms;
+    // Every "waiting" cue: nothing for the first `cue-delay-ms`, so a quick
+    // answer shows no cue at all, then at least `cue-hold-ms` once shown,
+    // so one that lands just after never flashes a word. The same two
+    // numbers as `zaparoo_app::wait_cue`, which times the header's cue.
+    out property <duration> cue-delay-ms: 300ms;
+    out property <duration> cue-hold-ms: 200ms;
     out property <duration> page-ms: 240ms;
     // How far a focused grid tile grows. Small on purpose: our tiles are
     // large and the screen is close, and scale is the motion class that

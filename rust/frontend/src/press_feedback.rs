@@ -98,7 +98,10 @@ fn dialog_target(ov: &Overlays<'_>) -> Option<Target> {
 /// nothing is already running. The activity log is read only.
 fn online_list_target(ov: &Overlays<'_>) -> Option<Target> {
     if ov.get_online_list_kind() != crate::OnlineListKind::Backups
-        || ov.get_online_list_status() == crate::OnlineListStatus::Working
+        || matches!(
+            ov.get_online_list_status(),
+            crate::OnlineListStatus::BackingUp | crate::OnlineListStatus::Restoring
+        )
     {
         return None;
     }

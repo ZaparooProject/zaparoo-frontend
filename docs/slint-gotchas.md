@@ -153,12 +153,35 @@ downstroke below its one-frame floor or stretch it toward `settle-ms`.
 
 ## Loading cues
 
-- A forward route keeps the source screen on screen and adds feedback only when
-  the destination is slow: `router::begin_pending` shows "Loading…" in the
-  header status line after 300 ms. Never cover the source with a scrim.
-- In-screen loading, empty and error cues use `StateCue` in `ui/chrome.slint`,
-  which carries a 300 ms delay and a 200 ms minimum visible hold so a fast fill
-  never flashes the cue.
+One timing rule, three places, nothing else.
+
+- **Timing.** Every cue that says something is loading, saving, starting or
+  searching waits 300 ms before it appears and then stays at least 200 ms, so a
+  quick answer shows no cue and a slow one never flashes a word.
+  `zaparoo_app::wait_cue` holds the rule and the two numbers; `Motion.cue-delay-ms`
+  and `Motion.cue-hold-ms` are the same numbers for the views. The boot curtain
+  is exempt (it is the whole screen from its first frame), and so is a
+  confirmation such as "Added to Hub", which is not a wait and shows at once for
+  `CONFIRM_MS`.
+- **Content is on screen: the header status line.** A forward route
+  (`router::begin_pending`), a list's next page or a walk to a distant row, a
+  list reloading in place, a launch, and an action that waits on Core after its
+  menu has closed all put their word in the header through `crate::cue`. The
+  content stays where it is: never cover it with a scrim, and never swap a cue
+  in for the selected item's name or the position counter. A reload in place
+  keeps its old rows until the new ones land.
+- **Nothing to show yet: the body.** `WaitCue` in `ui/chrome.slint` is the
+  hourglass and a line of text, centered. `StateCue` uses it for a screen with no
+  rows, and a modal uses it directly for a body that is still loading.
+- **A row that is waiting on its own action** ("Saving…" on the launcher just
+  picked) relabels itself through `cue::begin_local`, on the same timing.
+- **Name what is loading** ("Loading sections…", "Launching Tetris…"), and say
+  how far where a count exists ("Loading 1,000 of 5,000…"). A static hourglass
+  cannot show that anything is still moving; the words have to.
+- **No wait is forever.** `Client::call` gives up 35 seconds after sending,
+  just past Core's own 30-second request deadline, except for the calls Core
+  itself leaves unbounded (backup, restore, update). The failure then takes the
+  screen's ordinary error path.
 
 ## Geometry
 

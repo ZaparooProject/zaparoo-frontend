@@ -7,7 +7,7 @@
 // a second modal, the picker its rows open.
 
 import { Theme, Sizing, Motion, Layout } from "theme.slint";
-import { GlyphSource, ScrollCue, Divider, ModalShell, QrPlate } from "chrome.slint";
+import { GlyphSource, ScrollCue, Divider, ModalShell, QrPlate, WaitCue } from "chrome.slint";
 import { SelectionCursor, SelectionClip, ScrollOffset } from "focus.slint";
 import { SettingsRow, SettingsLabels, SettingsRowView } from "settings.slint";
 import { PressableSurface } from "tiles.slint";
@@ -268,18 +268,28 @@ export component LogUploadModal inherits ModalShell {
     property <length> qr-px: root.done ? root.module-px * root.qr-modules : 0px;
     property <length> body-h: root.done
         ? root.qr-px + Sizing.pct-h(2) + url-text.preferred-height
-        : message.preferred-height;
+        : message.preferred-height + root.wait-band;
+    // The hourglass sits over the sentence while the upload runs.
+    property <length> wait-band: root.phase == LogPhase.uploading ? wait.glyph + Sizing.pct-h(1) : 0px;
 
     title: @tr("Upload log file");
     panel-width: Math.min(root.width * 0.78, Sizing.pct-h(110));
     content-height: root.body-h
         + (root.phase == LogPhase.uploading ? 0px : root.pad + root.button-h);
 
-    message := Text {
+    wait := WaitCue {
         x: root.pad;
         y: root.content-y;
         width: root.content-width;
-        visible: !root.done;
+        height: self.glyph;
+        waiting: root.phase == LogPhase.uploading;
+        text: "";
+    }
+    message := Text {
+        x: root.pad;
+        y: root.content-y + root.wait-band;
+        width: root.content-width;
+        visible: !root.done && (root.failed || wait.shown);
         wrap: word-wrap;
         horizontal-alignment: center;
         text: root.failed

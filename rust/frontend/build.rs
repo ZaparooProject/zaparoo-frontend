@@ -11,10 +11,16 @@
 use std::fmt::Write as _;
 
 fn main() {
-    // Every `assets/systems/<id>.png` and `assets/systems-color/<id>.png`
-    // becomes an `include_bytes!` entry, so the binary carries the logo art
-    // itself and ships as one file. See `src/system_logos.rs`.
+    // Every `assets/systems/<id>.png`, its half-size copy in
+    // `assets/systems-half/`, and `assets/systems-color/<id>.png` becomes an
+    // `include_bytes!` entry, so the binary carries the logo art itself and
+    // ships as one file. See `src/system_logos.rs`.
     embed_logo_table("systems", "system_logos_table.rs", "EMBEDDED_LOGOS");
+    embed_logo_table(
+        "systems-half",
+        "system_half_logos_table.rs",
+        "EMBEDDED_HALF_LOGOS",
+    );
     embed_logo_table(
         "systems-color",
         "system_color_logos_table.rs",

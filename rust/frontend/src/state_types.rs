@@ -38,7 +38,7 @@ tokens!(Orientation { Horizontal => "horizontal", Cw => "cw", Ccw => "ccw" });
 tokens!(VideoStandard { Ntsc => "ntsc", Pal => "pal" });
 tokens!(ErrorKind {
     Generic => "", Launch => "launch", LaunchRepair => "launch_repair", Favorite => "favorite",
-    MediaVisibility => "media_visibility", AddToHub => "add_to_hub",
+    MediaVisibility => "media_visibility", MediaBusy => "media_busy", AddToHub => "add_to_hub",
     MediaIndex => "media_index", MediaScrape => "media_scrape", MediaScrapers => "media_scrapers",
     MediaCancel => "media_cancel", Launcher => "launcher", LauncherSave => "launcher_save",
     AlternateDiscovery => "alternate_discovery", QrCode => "qr_code", CardWrite => "card_write", Setting => "setting",

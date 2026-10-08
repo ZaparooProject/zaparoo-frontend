@@ -17,8 +17,8 @@ use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 use tokio::runtime::Handle;
 use zaparoo_app::layouts::{self, Body, ThemeId, View};
 use zaparoo_app::media_list::{
-    self as rules, CoverState, DetailStep, EntryType, FocusedDetail, LinearMove, Owner,
-    SelectionPersist, State,
+    self as rules, CoverSettle, CoverSettleStep, CoverState, DetailStep, EntryType, FocusedDetail,
+    LinearMove, Owner, SelectionPersist, State,
 };
 use zaparoo_app::paged_grid::{self, Grid, Insets};
 use zaparoo_core::endpoints::media_browse::{BrowseArgs, MediaBrowseEndpoint};
@@ -33,7 +33,7 @@ use zaparoo_core::media_types::{
 };
 use zaparoo_core::persist::{FavoritesState, RecentsState};
 use zaparoo_core::remote_resource::ResourceStatus;
-use zaparoo_core::store::Endpoint;
+use zaparoo_core::store::{Endpoint, Tag};
 
 use crate::media_cache::MediaKey;
 use crate::navigation::EntryMode;
@@ -261,6 +261,19 @@ pub struct GamesModel {
     /// The initial fill is in flight (the in-screen loading cue).
     pub loading: bool,
     pub loading_more: bool,
+    /// The header cue for the follow-up fetch in flight (`sync_page_wait`).
+    pub page_wait: Option<crate::cue::Wait>,
+    /// A page just landed and the next fetch of the same walk follows in
+    /// this turn: the header cue must not end and restart between them.
+    pub fetch_follows: bool,
+    /// The header cue for a reload in place that keeps its rows on screen.
+    pub refill_wait: Option<crate::cue::Wait>,
+    /// A page arrived with no cursor to continue from: the loaded rows are
+    /// the whole list, and `known_total` reports them over Core's count.
+    pub tail_reached: bool,
+    /// A failed page already restarted this fill, and no page has loaded
+    /// since: a second failure is shown instead of restarting again.
+    pub page_restarted: bool,
     pub error: String,
     /// Core's browse totals (Games only; the flat lists have none).
     pub total_files: u32,
@@ -286,6 +299,8 @@ pub struct GamesModel {
     pub detail: FocusedDetail,
     pub detail_seq: u64,
     pub rapid_active: bool,
+    /// Holds the detailed list's artwork demand until the selection rests.
+    pub cover_settle: CoverSettle,
     /// The fast-scroll rail is up: from the start of a fast scroll until
     /// `RAIL_LINGER_MS` after it stops.
     pub rail_visible: bool,
@@ -318,6 +333,11 @@ impl GamesModel {
             next_cursor: None,
             loading: false,
             loading_more: false,
+            page_wait: None,
+            fetch_follows: false,
+            refill_wait: None,
+            tail_reached: false,
+            page_restarted: false,
             error: String::new(),
             total_files: 0,
             total_dirs: 0,
@@ -336,6 +356,7 @@ impl GamesModel {
             detail: FocusedDetail::new(),
             detail_seq: 0,
             rapid_active: false,
+            cover_settle: CoverSettle::default(),
             rail_visible: false,
             rail_seq: 0,
             activate_pulse: 0,
@@ -376,12 +397,13 @@ impl GamesModel {
     }
 
     fn known_total(&self) -> Option<usize> {
-        self.total_known
-            .then(|| self.total_files as usize + self.non_media_total())
-    }
-
-    fn jump_target(&self, item_offset: usize) -> usize {
-        rules::jump_target(self.non_media_total(), item_offset)
+        self.total_known.then(|| {
+            if self.tail_reached {
+                self.rows.len()
+            } else {
+                self.total_files as usize + self.non_media_total()
+            }
+        })
     }
 
     fn state(&self) -> State {
@@ -976,6 +998,10 @@ fn begin_fill(model: &mut GamesModel) -> u64 {
     model.grid.prepare_for_model_replacement();
     model.next_cursor = None;
     model.loading_more = false;
+    model.tail_reached = false;
+    model.page_restarted = false;
+    model.fetch_follows = false;
+    model.cover_settle.reset();
     model.jump_loading = false;
     model.pending_restore_path.clear();
     model.detail_seq += 1;
@@ -1154,6 +1180,7 @@ pub(crate) fn apply_fill(
         model.focus_recalled = false;
         model.rows = rows;
         model.next_cursor = cursor;
+        model.tail_reached = model.next_cursor.is_none();
         model.loading = false;
         model.loading_more = false;
         model.covers_paused = false;
@@ -1190,6 +1217,11 @@ pub(crate) fn apply_fill(
                 false
             }
         };
+        if !restore_fetch {
+            // Nothing left to walk: the restart landed, so a later failed
+            // page may restart again.
+            model.page_restarted = false;
+        }
         model.restore_done = true;
         let fill_list = list && rules::list_fill_page(model.rows.len(), visible, model.has_more());
         let token = model.mode.screen();
@@ -1209,9 +1241,6 @@ pub(crate) fn apply_fill(
     crate::router::save_persist(&ctx.shared);
     if flip {
         crate::router::transition_to_screen(app, token, 1);
-    } else {
-        app.global::<crate::Shell>()
-            .set_status_text(crate::AppCue::None);
     }
     render(ctx, app);
     crate::folder_motion::start(ctx, app);
@@ -1262,9 +1291,6 @@ pub(crate) fn show_error(ctx: &Ctx, app: &App, ticket: u64, message: &str, flip:
     };
     if flip {
         crate::router::transition_to_screen(app, token, 1);
-    } else {
-        app.global::<crate::Shell>()
-            .set_status_text(crate::AppCue::None);
     }
     render(ctx, app);
     if !flip {
@@ -1324,7 +1350,7 @@ fn fetch_more(ctx: &Ctx, app: &App, limit: u32, bulk: bool) {
     let ctx2 = ctx.clone();
     let limit = limit.clamp(1, fetch_cap(mode));
     ctx.handle.spawn(async move {
-        let outcome: Result<(Vec<GameRow>, Option<String>), String> = match mode {
+        let outcome: Result<(Vec<GameRow>, Option<String>), PageError> = match mode {
             GamesMode::Browse => client
                 .media_browse(MediaBrowseParams {
                     root_view: merged_root_view(&browse_path, std::slice::from_ref(&system_id)),
@@ -1342,7 +1368,7 @@ fn fetch_more(ctx: &Ctx, app: &App, limit: u32, bulk: bool) {
                     let cursor = next_cursor(r.pagination.as_ref());
                     (browse_rows(&r.entries), cursor)
                 })
-                .map_err(|e| e.message),
+                .map_err(PageError::from),
             GamesMode::Favorites | GamesMode::Search => client
                 .media_search(if mode == GamesMode::Search {
                     MediaSearchParams {
@@ -1364,7 +1390,7 @@ fn fetch_more(ctx: &Ctx, app: &App, limit: u32, bulk: bool) {
                     let cursor = next_cursor(r.pagination.as_ref());
                     (r.results.iter().map(GameRow::from).collect(), cursor)
                 })
-                .map_err(|e| e.message),
+                .map_err(PageError::from),
             GamesMode::Recents => client
                 .media_history(MediaHistoryParams {
                     limit: Some(limit),
@@ -1377,7 +1403,7 @@ fn fetch_more(ctx: &Ctx, app: &App, limit: u32, bulk: bool) {
                     let cursor = next_cursor(r.pagination.as_ref());
                     (r.entries.iter().map(GameRow::from).collect(), cursor)
                 })
-                .map_err(|e| e.message),
+                .map_err(PageError::from),
         };
         let _ = weak.upgrade_in_event_loop(move |app| {
             on_append(&ctx2, &app, ticket, outcome);
@@ -1385,11 +1411,67 @@ fn fetch_more(ctx: &Ctx, app: &App, limit: u32, bulk: bool) {
     });
 }
 
+/// A follow-up page did not load. A link failure leaves the rows on screen
+/// and the cursor good: the next move retries. An answer from Core is
+/// different. Core accepts a cursor only while the list it came from is
+/// unchanged, so the same request would fail again: reload from the first
+/// page and walk back to the selection (`restart`), and show a reload that
+/// fails too.
+fn page_failed(ctx: &Ctx, app: &App, ticket: u64, error: &PageError, restart: bool) {
+    tracing::warn!("page fetch failed: {}", error.message);
+    if app.global::<crate::Shell>().get_transitioning() {
+        show_error(ctx, app, ticket, &error.message, true);
+    } else if error.transport {
+        render(ctx, app);
+    } else if restart {
+        restart_after_failed_page(ctx, app);
+    } else {
+        show_error(ctx, app, ticket, &error.message, false);
+    }
+}
+
+/// A follow-up page that did not load. `transport` says the link failed
+/// before Core answered, which leaves the cursor good for another try; an
+/// answer from Core means it will not serve that cursor again.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PageError {
+    pub message: String,
+    pub transport: bool,
+}
+
+// The motion tests, which only build under the MiSTer feature set, are
+// the callers that make one by hand.
+#[cfg(all(test, feature = "mister"))]
+impl PageError {
+    pub(crate) fn transport(message: &str) -> Self {
+        Self {
+            message: message.to_string(),
+            transport: true,
+        }
+    }
+
+    pub(crate) fn refused(message: &str) -> Self {
+        Self {
+            message: message.to_string(),
+            transport: false,
+        }
+    }
+}
+
+impl From<zaparoo_core::client::ClientError> for PageError {
+    fn from(error: zaparoo_core::client::ClientError) -> Self {
+        Self {
+            transport: error.is_transport(),
+            message: error.message,
+        }
+    }
+}
+
 pub(crate) fn on_append(
     ctx: &Ctx,
     app: &App,
     ticket: u64,
-    outcome: Result<(Vec<GameRow>, Option<String>), String>,
+    outcome: Result<(Vec<GameRow>, Option<String>), PageError>,
 ) {
     let (restore_again, landed_restore, changed_page) = {
         let mut shared = lock(&ctx.shared);
@@ -1406,17 +1488,12 @@ pub(crate) fn on_append(
         model.covers_paused = false;
         let (rows, cursor) = match outcome {
             Ok(page) => page,
-            Err(message) => {
-                // The rows already on screen stay, nothing is surfaced to
-                // the user, and the next move retries the fetch.
-                tracing::warn!("page fetch failed: {message}");
+            Err(error) => {
                 model.grid.set_loading_more(false);
+                model.jump_loading = false;
+                let restart = !model.page_restarted;
                 drop(shared);
-                if app.global::<crate::Shell>().get_transitioning() {
-                    show_error(ctx, app, ticket, &message, true);
-                } else {
-                    render(ctx, app);
-                }
+                page_failed(ctx, app, ticket, &error, restart);
                 return;
             }
         };
@@ -1424,6 +1501,8 @@ pub(crate) fn on_append(
         let appended_from = model.rows.len();
         model.rows.extend(rows);
         model.next_cursor = if empty { None } else { cursor };
+        model.tail_reached = model.next_cursor.is_none();
+        model.page_restarted = false;
         model.grid.total_items_override = model.known_total();
         model.grid.set_item_count(model.rows.len());
         model.grid.set_has_more_pages(model.next_cursor.is_some());
@@ -1456,6 +1535,8 @@ pub(crate) fn on_append(
         }
         let changed_page = !list && model.grid.current_page() != from_page;
         model.refresh_display_from(appended_from, show_original, &language);
+        model.fetch_follows =
+            restore_again || (model.grid.has_pending_target() && model.has_more());
         (restore_again, landed, changed_page)
     };
     if app.global::<crate::Shell>().get_transitioning() {
@@ -1469,8 +1550,6 @@ pub(crate) fn on_append(
         crate::router::transition_to_screen(app, token, 1);
         crate::folder_motion::start(ctx, app);
     }
-    app.global::<crate::Shell>()
-        .set_status_text(crate::AppCue::None);
     if landed_restore {
         persist_now(ctx);
     }
@@ -1486,6 +1565,36 @@ pub(crate) fn on_append(
     } else {
         drain_load_requests(ctx, app);
     }
+    // The walk's next fetch has started, or there was none after all.
+    lock(&ctx.shared).games.fetch_follows = false;
+    sync_waits(ctx, app);
+}
+
+/// Reload the list from its first page after a page could not be loaded,
+/// keeping the selection: the fill restores the saved row, walking back to
+/// it when it sits past the first page. The cached first page carries the
+/// same dead cursor, so it is dropped first.
+fn restart_after_failed_page(ctx: &Ctx, app: &App) {
+    persist_now(ctx);
+    for endpoint in [
+        MediaBrowseEndpoint::NAME,
+        MediaFavoritesEndpoint::NAME,
+        MediaHistoryEndpoint::NAME,
+        MediaSearchEndpoint::NAME,
+    ] {
+        ctx.store.invalidate(&Tag::any(endpoint));
+    }
+    let (mode, path) = {
+        let shared = lock(&ctx.shared);
+        (shared.games.mode, shared.games.browse_path.clone())
+    };
+    match mode {
+        GamesMode::Browse => browse(ctx, app, &path, false),
+        GamesMode::Favorites | GamesMode::Recents | GamesMode::Search => {
+            enter_flat(ctx, app, mode, false);
+        }
+    }
+    lock(&ctx.shared).games.page_restarted = true;
 }
 
 /// Restart source work retired by a canceled navigation's generation.
@@ -1846,6 +1955,122 @@ fn wanted_covers(
     wanted
 }
 
+/// What the header says while follow-up rows load: how far a walk to a
+/// distant row has got, when the list's size is known, and otherwise only
+/// that more is coming.
+fn page_wait_text(shared: &Shared) -> (crate::AppCue, String, String) {
+    let model = &shared.games;
+    let walking =
+        model.grid.pending_jump_index().is_some() || !model.pending_restore_path.is_empty();
+    match model.known_total() {
+        Some(total) if walking => {
+            let language = crate::effective_language(&shared.persist.settings.language);
+            let count = |n: usize| {
+                zaparoo_app::format::count(i64::try_from(n).unwrap_or(i64::MAX), &language)
+            };
+            (
+                crate::AppCue::LoadingProgress,
+                count(model.rows.len().min(total)),
+                count(total),
+            )
+        }
+        _ => (crate::AppCue::LoadingMore, String::new(), String::new()),
+    }
+}
+
+/// Keep the header's loading cue in step with what the list is waiting
+/// on. A reload in place holds it for the whole reload. Otherwise a
+/// follow-up fetch does: the cue starts with the fetch, follows a walk's
+/// progress from chunk to chunk (one wait, so its delay is not restarted
+/// by each chunk), and ends when nothing more is in flight. The rows and
+/// the selection stay as they are throughout.
+fn sync_waits(ctx: &Ctx, app: &App) {
+    // A reload in place: the old rows stay up, so the cue belongs in the
+    // header, worded from the screen it reloads. A route has its own cue.
+    let (refilling, refill_wait) = {
+        let shared = lock(&ctx.shared);
+        let model = &shared.games;
+        (
+            model.loading
+                && !model.rows.is_empty()
+                && model.folder_direction == 0
+                && !app.global::<crate::Shell>().get_transitioning(),
+            model.refill_wait,
+        )
+    };
+    match (refilling, refill_wait) {
+        (true, None) => {
+            let wait = crate::cue::begin(ctx, app, crate::AppCue::LoadingList, "", "");
+            lock(&ctx.shared).games.refill_wait = Some(wait);
+        }
+        (false, Some(wait)) => {
+            lock(&ctx.shared).games.refill_wait = None;
+            crate::cue::end(ctx, app, wait);
+        }
+        _ => {}
+    }
+    if refilling {
+        return;
+    }
+    let (loading, wait, text) = {
+        let shared = lock(&ctx.shared);
+        (
+            shared.games.loading_more || shared.games.fetch_follows,
+            shared.games.page_wait,
+            page_wait_text(&shared),
+        )
+    };
+    let (cue, arg, arg2) = text;
+    match (loading, wait) {
+        (true, None) => {
+            let wait = crate::cue::begin(ctx, app, cue, &arg, &arg2);
+            lock(&ctx.shared).games.page_wait = Some(wait);
+        }
+        (true, Some(wait)) => crate::cue::retext(ctx, app, wait, cue, &arg, &arg2),
+        (false, Some(wait)) => {
+            lock(&ctx.shared).games.page_wait = None;
+            crate::cue::end(ctx, app, wait);
+        }
+        (false, None) => {}
+    }
+}
+
+/// Whether the detailed list must hold its artwork demand for this draw:
+/// the selection moved and has not rested yet. Starts the timer that
+/// redraws with the demand once it has. A fast scroll asks for nothing
+/// either way and ends already rested (`set_rapid`).
+fn hold_list_covers(ctx: &Ctx, app: &App) -> bool {
+    let step = {
+        let mut shared = lock(&ctx.shared);
+        let model = &mut shared.games;
+        if model.rapid_active || model.rows.is_empty() {
+            return false;
+        }
+        let index = model.grid.current_index();
+        model.cover_settle.observe(index)
+    };
+    match step {
+        CoverSettleStep::Request => false,
+        CoverSettleStep::Hold => true,
+        CoverSettleStep::Arm(seq) => {
+            let ctx = ctx.clone();
+            let weak = app.as_weak();
+            slint::Timer::single_shot(
+                Duration::from_millis(rules::DETAIL_DEBOUNCE_MS),
+                move || {
+                    let rested = lock(&ctx.shared).games.cover_settle.fire(seq);
+                    if rested {
+                        if let Some(app) = weak.upgrade() {
+                            render(&ctx, &app);
+                        }
+                    }
+                },
+            );
+            true
+        }
+    }
+}
+
 fn wanted_detail_covers(model: &GamesModel, tier: CoverSize) -> Vec<MediaKey> {
     cover_keys(
         model,
@@ -1879,6 +2104,9 @@ thread_local! {
 pub fn render(ctx: &Ctx, app: &App) {
     #[cfg(test)]
     RENDERS.with(|count| count.set(count.get() + 1));
+    // Before the early returns: a fetch retired by a route must still
+    // give the header line back.
+    sync_waits(ctx, app);
     // Even an offscreen render updates saved viewport positions. Wait for the
     // complete destination so a partial restore cannot overwrite its target.
     if app.global::<crate::Shell>().get_transitioning() {
@@ -1886,8 +2114,14 @@ pub fn render(ctx: &Ctx, app: &App) {
     }
     {
         let shared = lock(&ctx.shared);
-        // Keep the complete source, including list details, while a folder fills.
-        if shared.games.loading && shared.games.folder_direction != 0 {
+        // Keep the complete source, including list details, while a folder
+        // fills, and the rows already on screen while their list reloads
+        // in place: the header carries the cue (`sync_waits`), and the
+        // reload replaces them in one step. Only a list with nothing to
+        // keep falls through to the centered loading cue.
+        if shared.games.loading
+            && (shared.games.folder_direction != 0 || !shared.games.rows.is_empty())
+        {
             return;
         }
     }
@@ -1918,6 +2152,7 @@ pub fn render(ctx: &Ctx, app: &App) {
             model.grid.set_current_index_immediate(current);
         }
     }
+    let covers_held = list && hold_list_covers(ctx, app);
     let shared = lock(&ctx.shared);
     let model = &shared.games;
     let page = model.grid.current_page();
@@ -1930,8 +2165,8 @@ pub fn render(ctx: &Ctx, app: &App) {
     } else {
         rules::screen_title(path_stack_len, &model.browse_path, &model.system_name)
     }));
+    view.set_options_available(options_available(app, &shared));
     view.set_loading(model.loading);
-    view.set_loading_more(model.loading_more);
     view.set_error(SharedString::from(model.error.as_str()));
     view.set_count(i32::try_from(count).unwrap_or(0));
     view.set_total_items(i32::try_from(model.grid.total_items()).unwrap_or(0));
@@ -1946,14 +2181,6 @@ pub fn render(ctx: &Ctx, app: &App) {
         .unwrap_or_default(),
     ));
     view.set_has_more(model.has_more());
-    view.set_page_loading(
-        model.loading_more
-            && if list {
-                count > 0
-            } else {
-                model.grid.has_pending_target()
-            },
-    );
     view.set_focus_ready(model.focus_armed || model.restore_done);
     view.set_rapid_active(model.rapid_active);
     publish_rail(app, &shared);
@@ -2010,9 +2237,11 @@ pub fn render(ctx: &Ctx, app: &App) {
     if let Some(row) = model.current() {
         view.set_label_name(SharedString::from(row.display.as_str()));
         view.set_label_tags(SharedString::from(row.suffix.as_str()));
+        view.set_label_hidden(row.is_hidden);
     } else {
         view.set_label_name(SharedString::default());
         view.set_label_tags(SharedString::default());
+        view.set_label_hidden(false);
     }
 
     // Detailed list: the window around the centered slot.
@@ -2069,7 +2298,12 @@ pub fn render(ctx: &Ctx, app: &App) {
     };
     let (art_start, art_window, art_tier) = if list {
         let detail_tier = CoverSize::detail(app);
-        request_covers(ctx, model, wanted_detail_covers(model, detail_tier));
+        let wanted = if covers_held {
+            Vec::new()
+        } else {
+            wanted_detail_covers(model, detail_tier)
+        };
+        request_covers(ctx, model, wanted);
         refresh_detail_cover(ctx, app, model);
         (model.grid.current_index(), 1, detail_tier)
     } else {
@@ -2635,6 +2869,16 @@ pub(crate) fn interrupt_page(ctx: &Ctx, app: &App) {
     app.window().request_redraw();
 }
 
+/// Rows ahead of the letter buckets' first item: the virtual roots, plus
+/// every directory when the buckets index files.
+fn letter_leading(shared: &Shared) -> usize {
+    if shared.letter_directories {
+        shared.games.root_count()
+    } else {
+        shared.games.non_media_total()
+    }
+}
+
 /// The scope's letter buckets, when the list is browsed by title and the
 /// fetched index belongs to the folder on screen.
 fn scope_letters(shared: &Shared) -> Option<&[zaparoo_core::media_types::BrowseIndexGroup]> {
@@ -2661,7 +2905,7 @@ fn publish_rail(app: &App, shared: &Shared) {
                 .iter()
                 .map(|group| SharedString::from(group.label.as_str()))
                 .collect::<Vec<_>>(),
-            rules::letter_at(&offsets, model.non_media_total(), index),
+            rules::letter_at(&offsets, letter_leading(shared), index),
         )
     });
     // The letters change per folder, not per move: keep the model (and
@@ -2713,7 +2957,7 @@ fn letter_step(ctx: &Ctx, app: &App, forward: bool) -> bool {
         let offsets: Vec<u32> = groups.iter().map(|group| group.offset).collect();
         let Some(bucket) = rules::letter_step(
             &offsets,
-            model.non_media_total(),
+            letter_leading(&shared),
             model.grid.current_index(),
             forward,
         ) else {
@@ -2734,6 +2978,11 @@ pub fn set_rapid(ctx: &Ctx, app: &App, active: bool) {
         let model = &mut shared.games;
         let changed = model.rapid_active != active;
         model.rapid_active = active;
+        if changed && !active {
+            // The quiet period that ended the scroll was the rest.
+            let index = model.grid.current_index();
+            model.cover_settle.settle_now(index);
+        }
         // Only the transition re-arms the linger: taps after a fast scroll
         // must not keep pushing its deadline back.
         if changed {
@@ -2808,7 +3057,7 @@ fn grid_move(ctx: &Ctx, app: &App, d_col: i32, d_row: i32, page_delta: i32) {
 }
 
 fn list_move(ctx: &Ctx, app: &App, delta: i64) {
-    let (outcome, size, tail) = {
+    let (outcome, size, tail, tail_target) = {
         let mut shared = lock(&ctx.shared);
         let size = page_size(ctx, app, &shared);
         let visible = list_rows_visible(ctx, &shared);
@@ -2816,13 +3065,27 @@ fn list_move(ctx: &Ctx, app: &App, delta: i64) {
         model.focus_armed = true;
         let count = model.rows.len();
         let has_more = rules::list_has_more(count, model.known_total(), model.has_more());
-        let outcome = rules::linear_move(model.grid.current_index(), count, delta, has_more);
+        let mut outcome = rules::linear_move(model.grid.current_index(), count, delta, has_more);
+        let tail_target = model.known_total().map(|total| total.saturating_sub(1));
+        if outcome == LinearMove::WrapToTail && tail_target.is_none() {
+            // No total to aim at: the last loaded row is the best tail known.
+            outcome = LinearMove::To {
+                index: count.saturating_sub(1),
+                fetch: has_more,
+            };
+        }
         let mut tail = false;
         if let LinearMove::To { index, .. } = outcome {
             model.grid.set_current_index_immediate(index);
             tail = rules::list_tail_prefetch(index, count, visible, has_more, model.loading_more);
         }
-        (outcome, size, tail)
+        (outcome, size, tail, tail_target)
+    };
+    // A page move outruns one screenful per trip; a single step does not.
+    let limit = if delta.unsigned_abs() > 1 {
+        size.max(rules::LIST_PAGE_FETCH)
+    } else {
+        size
     };
     match outcome {
         LinearMove::To { fetch, .. } => {
@@ -2830,13 +3093,18 @@ fn list_move(ctx: &Ctx, app: &App, delta: i64) {
             render(ctx, app);
             schedule_detail(ctx, app, false);
             if fetch || tail {
-                fetch_more(ctx, app, size, false);
+                fetch_more(ctx, app, limit, false);
             }
         }
-        LinearMove::FetchMore => fetch_more(ctx, app, size, false),
+        LinearMove::FetchMore => fetch_more(ctx, app, limit, false),
         LinearMove::Stay { fetch } => {
             if fetch {
-                fetch_more(ctx, app, size, false);
+                fetch_more(ctx, app, limit, false);
+            }
+        }
+        LinearMove::WrapToTail => {
+            if let Some(target) = tail_target {
+                jump_to_index(ctx, app, target);
             }
         }
     }
@@ -3125,12 +3393,22 @@ fn cancel(ctx: &Ctx, app: &App) {
 }
 
 /// Jump-to-letter landing (`GamesScreen.jumpToItem`): the bucket's first
-/// item sits after the leading directories; unloaded targets walk in.
+/// item sits after the rows the buckets do not count; unloaded targets
+/// walk in.
 pub fn jump_to_item(ctx: &Ctx, app: &App, item_offset: u32) {
+    let target = {
+        let shared = lock(&ctx.shared);
+        rules::jump_target(letter_leading(&shared), item_offset as usize)
+    };
+    jump_to_index(ctx, app, target);
+}
+
+/// Land on an absolute row of the whole list, walking in the rows before
+/// it when it is not loaded yet.
+fn jump_to_index(ctx: &Ctx, app: &App, target: usize) {
     let landed = {
         let mut shared = lock(&ctx.shared);
         let model = &mut shared.games;
-        let target = model.jump_target(item_offset as usize);
         model.focus_armed = true;
         let landed = model.grid.jump_to_index(target);
         model.jump_loading = !landed;
@@ -3189,7 +3467,10 @@ fn cell_anchor(ctx: &Ctx, app: &App) -> crate::router::ContextAnchor {
 }
 
 /// Stateful toggles share the vocabulary used by system menus.
-fn menu_key(id: &str, is_favorite: bool, is_hidden: bool) -> &'static str {
+fn menu_key(id: &str, is_favorite: bool, is_hidden: bool, on_hub: bool) -> &'static str {
+    if id == "add_to_hub" && on_hub {
+        return "hub:remove";
+    }
     if id == "toggle_favorite" {
         return if is_favorite {
             "favorite:remove"
@@ -3226,35 +3507,67 @@ fn id_static(id: &str) -> &'static str {
     }
 }
 
+/// What decides `row`'s Options menu, or None when the row gets no menu
+/// at all.
+fn menu_input(app: &App, shared: &Shared, row: &GameRow) -> Option<rules::MenuInput> {
+    if !rules::context_menu_enabled(row.entry_type, row.media_capable, &row.path) {
+        return None;
+    }
+    let model = &shared.games;
+    let system = row.system_or(&model.system_id);
+    Some(rules::MenuInput {
+        owner: model.mode.owner(),
+        entry_type: row.entry_type,
+        media_capable: row.media_capable,
+        pinnable_root: rules::is_filesystem_root(row.entry_type, &row.path),
+        has_nfc: shared.has_nfc,
+        is_favorite: row.is_favorite,
+        is_arcade_system: system == ARCADE_SYSTEM_ID,
+        has_launchers: shared.launchers.iter().any(|l| l.system_id == system),
+        media_busy: crate::router::media_busy(app),
+    })
+}
+
+/// Whether Options opens a menu on the focused row, for the help bar.
+fn options_available(app: &App, shared: &Shared) -> bool {
+    shared.games.current().is_some_and(|row| {
+        menu_input(app, shared, row).is_some_and(|input| !rules::context_entries(&input).is_empty())
+    })
+}
+
 /// Options on the focused row, for Games, Favorites and Recently played.
 fn open_context_menu(ctx: &Ctx, app: &App) {
-    let (row, input) = {
+    let (row, input, on_hub) = {
         let shared = lock(&ctx.shared);
         let model = &shared.games;
         let Some(row) = model.current().cloned() else {
             return;
         };
-        if !rules::context_menu_enabled(row.entry_type, row.media_capable, &row.path) {
+        let Some(input) = menu_input(app, &shared, &row) else {
             return;
-        }
-        let system = row.system_or(&model.system_id).to_string();
-        let input = rules::MenuInput {
-            owner: model.mode.owner(),
-            entry_type: row.entry_type,
-            media_capable: row.media_capable,
-            pinnable_root: rules::is_filesystem_root(row.entry_type, &row.path),
-            has_nfc: shared.has_nfc,
-            is_favorite: row.is_favorite,
-            is_arcade_system: system == ARCADE_SYSTEM_ID,
-            has_launchers: shared.launchers.iter().any(|l| l.system_id == system),
-            media_busy: crate::router::media_busy(app),
         };
-        (row, input)
+        let system = row.system_or(&model.system_id).to_string();
+        let on_hub = hub_pin(model.mode, &row).is_some_and(|pin| {
+            crate::hub::has_target(
+                &shared,
+                pin.kind,
+                "",
+                &pin.path,
+                &pin.relative,
+                &pin.script,
+                &system,
+            )
+        });
+        (row, input, on_hub)
     };
     let entries: Vec<crate::MenuEntry> = rules::context_entries(&input)
         .into_iter()
         .map(|id| {
-            crate::router::menu_row_keyed(id, menu_key(id, row.is_favorite, row.is_hidden), "")
+            crate::router::menu_row_keyed(
+                id,
+                menu_key(id, row.is_favorite, row.is_hidden, on_hub),
+                "",
+            )
         })
         .collect();
     if entries.is_empty() {
@@ -3369,11 +3682,14 @@ fn hub_pin(mode: GamesMode, row: &GameRow) -> Option<HubPin> {
     })
 }
 
+/// "Add to Hub" on a row not pinned yet, "Remove from Hub" on one that is.
 fn add_to_hub(ctx: &Ctx, app: &App, mode: GamesMode, row: &GameRow, system: &str) {
     let Some(pin) = hub_pin(mode, row) else {
+        tracing::warn!("add to hub skipped: nothing to pin for {}", row.name);
+        crate::router::report_action_error(ctx, app, "add_to_hub", &row.display);
         return;
     };
-    crate::hub::add_target(
+    crate::hub::toggle_target(
         ctx,
         app,
         pin.kind,
@@ -3410,6 +3726,7 @@ fn toggle_favorite(ctx: &Ctx, app: &App, index: usize, row: &GameRow) {
             "favorite update skipped: missing media identity for {}",
             row.name
         );
+        crate::router::report_action_error(ctx, app, "favorite", &row.name);
         return;
     }
     let store = ctx.store.clone();
@@ -3417,24 +3734,40 @@ fn toggle_favorite(ctx: &Ctx, app: &App, index: usize, row: &GameRow) {
     let weak = app.as_weak();
     let path = row.path.clone();
     let name = row.name.clone();
+    let wait = crate::cue::begin(ctx, app, crate::AppCue::Saving, "", "");
     ctx.handle.spawn(async move {
         let result = store.run_mutation::<MediaTagsUpdateMutation>(params).await;
-        let _ = weak.upgrade_in_event_loop(move |app| match result {
-            Ok(_) => {
-                {
-                    let mut shared = lock(&ctx2.shared);
-                    if let Some(row) = shared.games.rows.get_mut(index).filter(|r| r.path == path) {
-                        row.is_favorite = adding;
-                    }
-                }
-                render(&ctx2, &app);
-            }
-            Err(e) => {
-                tracing::warn!("favorite update failed for {name}: {}", e.message);
-                crate::router::report_action_error(&ctx2, &app, "favorite", &name);
-            }
+        let _ = weak.upgrade_in_event_loop(move |app| {
+            crate::cue::end(&ctx2, &app, wait);
+            finish_favorite(&ctx2, &app, index, &path, &name, adding, result);
         });
     });
+}
+
+fn finish_favorite(
+    ctx: &Ctx,
+    app: &App,
+    index: usize,
+    path: &str,
+    name: &str,
+    adding: bool,
+    result: Result<MediaTagsUpdateResult, zaparoo_core::client::ClientError>,
+) {
+    match result {
+        Ok(_) => {
+            {
+                let mut shared = lock(&ctx.shared);
+                if let Some(row) = shared.games.rows.get_mut(index).filter(|r| r.path == path) {
+                    row.is_favorite = adding;
+                }
+            }
+            render(ctx, app);
+        }
+        Err(e) => {
+            tracing::warn!("favorite update failed for {name}: {}", e.message);
+            report_tag_error(ctx, app, &e, "favorite", name);
+        }
+    }
 }
 
 /// Build Core's exclusive media reference and change only the requested tag.
@@ -3463,6 +3796,23 @@ fn tag_update_params(
     Some(params)
 }
 
+/// A failed favorite or visibility write. Core refuses these while a job
+/// owns the media database, which is not a fault and has its own wording;
+/// anything else is the action's own failure.
+fn report_tag_error(
+    ctx: &Ctx,
+    app: &App,
+    error: &zaparoo_core::client::ClientError,
+    kind: &str,
+    name: &str,
+) {
+    if error.is_busy() {
+        crate::router::report_action_error(ctx, app, "media_busy", "");
+    } else {
+        crate::router::report_action_error(ctx, app, kind, name);
+    }
+}
+
 /// Hide/unhide is installation-wide in Core. Commit only after success, then
 /// restart the list: preference edits invalidate Core's existing cursors.
 fn toggle_hidden(ctx: &Ctx, app: &App, row: &GameRow, system: &str) {
@@ -3473,6 +3823,7 @@ fn toggle_hidden(ctx: &Ctx, app: &App, row: &GameRow, system: &str) {
             "visibility update skipped: missing media identity for {}",
             row.name
         );
+        crate::router::report_action_error(ctx, app, "media_visibility", &row.name);
         return;
     };
     let ticket = lock(&ctx.shared).games.ticket;
@@ -3481,9 +3832,11 @@ fn toggle_hidden(ctx: &Ctx, app: &App, row: &GameRow, system: &str) {
     let weak = app.as_weak();
     let row = row.clone();
     let system = system.to_string();
+    let wait = crate::cue::begin(ctx, app, crate::AppCue::Saving, "", "");
     ctx.handle.spawn(async move {
         let result = store.run_mutation::<MediaTagsUpdateMutation>(params).await;
         let _ = weak.upgrade_in_event_loop(move |app| {
+            crate::cue::end(&ctx2, &app, wait);
             on_hidden_updated(&ctx2, &app, ticket, &row, &system, result);
         });
     });
@@ -3536,7 +3889,7 @@ pub(crate) fn on_hidden_updated(
                 target.name,
                 e.message
             );
-            crate::router::report_action_error(ctx, app, "media_visibility", &target.name);
+            report_tag_error(ctx, app, &e, "media_visibility", &target.name);
         }
     }
 }
@@ -3712,7 +4065,7 @@ mod tests {
         ] {
             assert!(row.is_hidden);
             assert_eq!(
-                menu_key("toggle_hidden", row.is_favorite, row.is_hidden),
+                menu_key("toggle_hidden", row.is_favorite, row.is_hidden, false),
                 "hide:unhide"
             );
         }
@@ -3724,7 +4077,12 @@ mod tests {
         }];
         let row = GameRow::from(&visible);
         assert!(!row.is_hidden);
-        assert_eq!(menu_key("toggle_hidden", false, row.is_hidden), "hide:hide");
+        assert_eq!(
+            menu_key("toggle_hidden", false, row.is_hidden, false),
+            "hide:hide"
+        );
+        assert_eq!(menu_key("add_to_hub", false, false, false), "add_to_hub");
+        assert_eq!(menu_key("add_to_hub", false, false, true), "hub:remove");
     }
 
     #[test]
@@ -3782,8 +4140,11 @@ mod tests {
         .collect();
 
         assert_eq!(model.known_total(), Some(5));
-        assert_eq!(model.jump_target(1), 4);
-        assert_eq!(model.rows[model.jump_target(1)].name, "Bravo");
+        assert_eq!(rules::jump_target(model.non_media_total(), 1), 4);
+        assert_eq!(
+            model.rows[rules::jump_target(model.non_media_total(), 1)].name,
+            "Bravo"
+        );
     }
 
     #[test]
@@ -3800,7 +4161,7 @@ mod tests {
         .collect();
 
         assert_eq!(model.known_total(), Some(5));
-        assert_eq!(model.jump_target(1), 4);
+        assert_eq!(rules::jump_target(model.non_media_total(), 1), 4);
     }
 
     #[test]

@@ -2,16 +2,19 @@
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 
-//! Bounded embedded-art work: current page, next page, previous page. Replacing
-//! that window discards stale queued work; one already-running job may finish.
+//! Bounded embedded-art work: current page, next page, previous page, then the
+//! caller's warm list (every other logo it will ever show, so a later page
+//! finds its art ready). Replacing that window discards stale queued work; one
+//! already-running job may finish.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::hash::Hash;
 
 pub const CACHE_BYTES: usize = 32 * 1024 * 1024;
 const MAX_ENTRIES: usize = 512;
-/// More than three pages at the densest supported grid, also bounding misses.
-const MAX_WANTED: usize = 192;
+/// Three pages at the densest supported grid plus a warm list of every
+/// embedded logo, also bounding misses. No more than the cache can hold.
+const MAX_WANTED: usize = MAX_ENTRIES;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Bounds {
@@ -75,6 +78,21 @@ impl<K: Clone + Eq + Hash, V> Cache<K, V> {
         self.wanted.clear();
         self.pending.clear();
         for key in keys.into_iter().take(MAX_WANTED) {
+            if self.wanted.insert(key.clone())
+                && !self.map.contains_key(&key)
+                && self.running.as_ref() != Some(&key)
+            {
+                self.pending.push_back(key);
+            }
+        }
+    }
+
+    /// Queue more work behind the current window without replacing it.
+    pub fn request_more(&mut self, keys: impl IntoIterator<Item = K>) {
+        for key in keys {
+            if self.wanted.len() >= MAX_WANTED {
+                break;
+            }
             if self.wanted.insert(key.clone())
                 && !self.map.contains_key(&key)
                 && self.running.as_ref() != Some(&key)

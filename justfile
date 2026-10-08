@@ -128,9 +128,11 @@ notices:
 # --- embedded art ---
 
 # Rasterizes resources/images/systems/*.svg and scales
-# resources/images/systems-color/*.png into rust/frontend/assets/, the two
-# logo sets build.rs embeds. Needs resvg, rsvg-convert, or inkscape on PATH
-# plus Pillow. `just logos --color-only` skips the SVG step.
+# resources/images/systems-color/*.png into rust/frontend/assets/, the logo
+# sets build.rs embeds, along with the half-size grayscale copies small
+# tiles decode. Needs resvg, rsvg-convert, or inkscape on PATH plus Pillow.
+# `just logos --color-only` skips the SVG step; `--half-only` only rebuilds
+# the half-size copies.
 # Regenerate the embedded system logo sets from resources/images
 logos *args:
     python3 scripts/prepare-system-logos.py {{args}}
