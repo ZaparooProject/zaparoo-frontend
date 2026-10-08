@@ -1768,7 +1768,8 @@ struct CoverSize {
 
 impl CoverSize {
     /// The detail pane's cover, fitted to the art box the view reported.
-    /// Until it has, the image keeps its decoded size.
+    /// Until it has, the image keeps its decoded size. The pane shows one
+    /// image at a time, so a small screenshot or title screen is enlarged.
     fn detail(app: &App) -> Self {
         let view = app.global::<GamesView>();
         Self {
@@ -1776,7 +1777,8 @@ impl CoverSize {
             fit: zaparoo_app::covers::Fit::new(
                 view.get_detail_art_width(),
                 view.get_detail_art_height(),
-            ),
+            )
+            .crisp(),
         }
     }
 }

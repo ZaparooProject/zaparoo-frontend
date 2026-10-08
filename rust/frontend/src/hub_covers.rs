@@ -65,6 +65,8 @@ struct BrowseEntry {
     max_size: u32,
     fit_width: u32,
     fit_height: u32,
+    #[serde(default)]
+    fit_crisp: bool,
 }
 
 impl BrowseEntry {
@@ -77,6 +79,7 @@ impl BrowseEntry {
             fit: Fit {
                 width: self.fit_width,
                 height: self.fit_height,
+                crisp: self.fit_crisp,
             },
             image_type: None,
         }
@@ -91,6 +94,7 @@ impl BrowseEntry {
             max_size: key.max_size,
             fit_width: key.fit.width,
             fit_height: key.fit.height,
+            fit_crisp: key.fit.crisp,
         }
     }
 }
@@ -280,6 +284,11 @@ fn load_entry(
     limits.max_image_height = Some(zaparoo_app::customization::ART_SOURCE_EDGE);
     reader.limits(limits);
     let decoded = reader.decode().ok()?;
+    // Whether an image this small is enlarged depends on its type, which
+    // only Core's answer carries, so it is left to the ordinary request.
+    if fit.enlarged(decoded.width(), decoded.height()).is_some() {
+        return None;
+    }
     // A box caps the image on its own; without one the tier does.
     let decoded =
         if fit == Fit::SOURCE && (decoded.width() > max_size || decoded.height() > max_size) {
@@ -287,7 +296,7 @@ fn load_entry(
         } else {
             decoded
         };
-    Some(crate::media_cache::fitted(decoded, fit))
+    Some(crate::media_cache::fitted(decoded, fit, false))
 }
 
 /// Called after Hub geometry and persisted focus are seated, before app.run.
@@ -591,6 +600,27 @@ pub fn refresh_resume_entry(ctx: &Ctx, target: Option<(String, String)>) {
     });
 }
 
+/// The preferred artwork type changed: every recorded path names a file
+/// of the old type, so both halves are resolved again. A Resume tile
+/// that has not loaded yet is left to its own load.
+pub fn refresh_for_image_type(ctx: &Ctx) {
+    refresh_hub_entries(ctx);
+    let resume = {
+        let shared = lock(&ctx.shared);
+        let resume = &shared.hub.resume;
+        (resume.requested && !resume.loading).then(|| {
+            resume
+                .entry
+                .as_ref()
+                .filter(|e| !e.system_id.is_empty() && !e.media_path.is_empty())
+                .map(|e| (e.system_id.clone(), e.media_path.clone()))
+        })
+    };
+    if let Some(target) = resume {
+        refresh_resume_entry(ctx, target);
+    }
+}
+
 #[cfg(test)]
 #[allow(
     clippy::expect_used,
@@ -674,6 +704,7 @@ mod tests {
             max_size: 512,
             fit_width: 200,
             fit_height: 200,
+            fit_crisp: false,
         };
         let cache = MediaCache::new();
         let epoch = cache.seed_epoch();
@@ -690,6 +721,18 @@ mod tests {
             .map(|(key, path)| BrowseEntry::of(key, path))
             .collect();
         assert_eq!(recorded, vec![entry.clone()]);
+
+        // A cover smaller than a box that enlarges captures is left to
+        // the ordinary request: only Core's answer says what type it is.
+        let small = BrowseEntry {
+            media_id: Some(10),
+            fit_width: 1024,
+            fit_height: 1024,
+            fit_crisp: true,
+            ..entry.clone()
+        };
+        assert!(!seed_browse_entry(&cache, &small, epoch));
+        assert!(!cache.is_cached(&small.key()));
 
         // A tier no browse cover uses, and a file that has gone, both
         // fall through to the ordinary request.
@@ -723,6 +766,7 @@ mod tests {
                 max_size: 256,
                 fit_width: 100,
                 fit_height: 100,
+                fit_crisp: false,
             })
             .collect();
         write_manifest_to(
@@ -750,6 +794,7 @@ mod tests {
             max_size: 512,
             fit_width: 227,
             fit_height: 208,
+            fit_crisp: false,
         };
         let manifest = Manifest {
             hub_entries: vec![ManifestEntry {

@@ -1595,6 +1595,19 @@ tiers already use the compact 4×2 shape and remain unchanged. A separate lever,
 `image-fit: cover` for game covers, remains set aside: it enlarges art
 but crops the top and bottom, where title art often sits.
 
+### Screenshots and title screens keep their pixels
+
+A screenshot or title screen is a raw capture, often 256×224 or 320×240, and
+blurring it when it is enlarged loses what it shows. In Game Info and the
+detail pane, which paint one image at a time, a capture smaller than its art
+box is enlarged in Rust before it is cached: by the largest whole multiple
+that fits, with hard pixel edges, then smoothed only over the remainder to
+fill the box (`zaparoo_app::covers::Fit::enlarged`,
+`media_cache::fitted`). Every source pixel stays sharp and the same size at
+any resolution. Box art and other scanned art are never enlarged this way, a
+capture larger than its box is shrunk like any cover, and grid and Hub tiles
+keep the decoded size.
+
 ### Spent cues
 
 A directional cue whose direction has nothing left to reach stays painted and

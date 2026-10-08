@@ -966,7 +966,15 @@ fn apply(ctx: &Ctx, app: &App, id: &str, value: &str) {
             crate::systems::reproject(ctx, app);
             crate::router::reproject_hub(ctx, app);
         }
-        "mediaImageType" => ctx.media.set_preferred_image_type(value),
+        "mediaImageType" => {
+            // Every cached cover and every recorded cold-boot path is the
+            // old type's; ask Core again as each one is shown.
+            ctx.media.set_preferred_image_type(value);
+            ctx.media.clear();
+            crate::hub_covers::refresh_for_image_type(ctx);
+            crate::router::reproject_hub(ctx, app);
+            crate::games::reproject(ctx, app);
+        }
         "screensaverTimeout" => crate::router::reset_idle(ctx, app),
         "systemsLayout" => {
             app.global::<crate::Shell>()
