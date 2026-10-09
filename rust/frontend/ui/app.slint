@@ -691,10 +691,10 @@ component SettingsScreen inherits Rectangle {
         cell-height: SettingsView.cell-height;
         block-offset-x: SettingsView.block-offset-x;
         block-offset-y: SettingsView.block-offset-y;
-        left-inset: Layout.grid-left-inset;
-        top-inset: Layout.grid-top-inset;
-        column-gap: Layout.grid-column-gap;
-        row-gap: Layout.grid-row-gap;
+        left-inset: Sizing.hub-grid-side-inset;
+        top-inset: Sizing.hub-grid-top-inset;
+        column-gap: Sizing.hub-grid-column-gap;
+        row-gap: Sizing.hub-grid-row-gap;
         selected-local: root.index;
         section-focused: !Overlays.list-open;
         focus-ready: true;

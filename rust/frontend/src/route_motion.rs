@@ -7933,3 +7933,68 @@ fn a_hidden_game_shown_among_the_rest_is_labelled_hidden() {
     crate::games::handle_action(&ctx, &app, "right");
     assert!(!view.get_label_hidden());
 }
+
+#[test]
+fn settings_root_grid_ignores_the_browse_grid_insets() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    app.global::<Shell>().set_active_screen(Screen::Settings);
+    crate::settings::open_page(&ctx, &app, SettingsPage::Root);
+    settle(&window);
+    let solved = pixels(&window);
+
+    // A list browse profile never pushes these, so they hold whatever a
+    // grid profile last left or the `.slint` defaults. The root grid is
+    // solved with the Hub's insets and must be drawn with them too.
+    let layout = app.global::<crate::Layout>();
+    layout.set_grid_left_inset(40.0);
+    layout.set_grid_top_inset(40.0);
+    layout.set_grid_column_gap(40.0);
+    layout.set_grid_row_gap(40.0);
+    settle(&window);
+    assert!(
+        pixels(&window) == solved,
+        "the Settings tiles moved with the browse grid's insets"
+    );
+}
+
+#[test]
+fn layout_grid_and_list_tables_both_follow_the_scene_in_either_browse_layout() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let shell = app.global::<Shell>();
+    let layout = app.global::<crate::Layout>();
+    // One value from each table a view outside that layout reads: the
+    // grid insets, the grid footer's cue slot, and the list card margin.
+    let tables = || {
+        (
+            layout.get_grid_left_inset(),
+            layout.get_bottom_status_right_margin(),
+            layout.get_card_side_margin(),
+        )
+    };
+    for screen in [Screen::Games, Screen::Systems, Screen::Search] {
+        shell.set_active_screen(screen);
+        for list in [false, true] {
+            shell.set_browse_list_layout(list);
+            shell.set_systems_list_layout(list);
+            let at = |width: f64, height: f64| {
+                crate::sizing::apply_scene(
+                    &app,
+                    crate::sizing::Scene::of(&app, width, height, false),
+                );
+                tables()
+            };
+            let (small, large) = (at(960.0, 540.0), at(1920.0, 1080.0));
+            assert!(
+                small.0 < large.0 && small.1 < large.1 && small.2 < large.2,
+                "{screen:?} list={list}: a table kept another scene's values: {small:?} then {large:?}"
+            );
+        }
+    }
+}
