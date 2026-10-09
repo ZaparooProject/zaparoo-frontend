@@ -35,6 +35,9 @@ const EVENT_SIZE: usize = size_of::<InputEvent>();
 pub struct InputReader {
     devices: Vec<File>,
     buf: Vec<u8>,
+    /// Every node stamps its events on the monotonic clock, so their times
+    /// can be compared with each other.
+    event_times: bool,
 }
 
 /// Letter and digit keycodes in kernel order, US layout: the top digit
@@ -87,6 +90,7 @@ fn event_ms(time: libc::timeval) -> u64 {
 impl InputReader {
     pub fn open() -> Self {
         let mut devices = Vec::new();
+        let mut event_times = true;
         for n in 0..32 {
             let path = format!("/dev/input/event{n}");
             let Ok(file) = File::open(&path) else {
@@ -99,22 +103,27 @@ impl InputReader {
                 continue;
             }
             // Event times feed the duplicate guard, so they must not jump
-            // when the wall clock is set. A node that refuses keeps the
-            // default clock, which is still consistent between two events.
+            // when the wall clock is set. A node that refuses stays on the
+            // wall clock, and the guard is shared between nodes: one refusal
+            // puts every press back on handling time.
             let clock: libc::c_int = libc::CLOCK_MONOTONIC;
             // SAFETY: EVIOCSCLOCKID reads one int from a pointer that is
             // valid for the duration of the call.
-            unsafe { libc::ioctl(file.as_raw_fd(), EVIOCSCLOCKID, &raw const clock) };
+            let rc = unsafe { libc::ioctl(file.as_raw_fd(), EVIOCSCLOCKID, &raw const clock) };
+            if rc != 0 {
+                event_times = false;
+            }
             devices.push(file);
         }
         if devices.is_empty() {
             tracing::warn!("no /dev/input/event* devices opened; input will be dead");
         } else {
-            tracing::info!(count = devices.len(), "evdev devices opened");
+            tracing::info!(count = devices.len(), event_times, "evdev devices opened");
         }
         Self {
             devices,
             buf: vec![0u8; EVENT_SIZE * 64],
+            event_times,
         }
     }
 
@@ -148,11 +157,22 @@ impl InputReader {
                         _ => WindowEvent::KeyPressed { text },
                     };
                     let time_ms = event_ms(ev.time);
-                    tracing::debug!(code = ev.code, value = ev.value, time_ms, "evdev key");
+                    // A key that types may be part of a search or a code:
+                    // the log says that one was pressed, never which.
+                    let code = if text_key(ev.code).is_some() {
+                        0
+                    } else {
+                        ev.code
+                    };
+                    tracing::debug!(code, value = ev.value, time_ms, "evdev key");
                     // Events are read once per frame, so a slow frame hands
                     // over several at once. The press is timed from when the
                     // button went down, not from when it is handled here.
-                    crate::input::with_event_time(time_ms, || window.dispatch_event(event));
+                    if self.event_times {
+                        crate::input::with_event_time(time_ms, || window.dispatch_event(event));
+                    } else {
+                        window.dispatch_event(event);
+                    }
                     any = true;
                 }
             }

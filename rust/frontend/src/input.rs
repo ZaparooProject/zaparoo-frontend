@@ -176,6 +176,13 @@ fn accept_press(ctx: &Ctx, app: &App, key: &str) -> bool {
     match lock(&ctx.shared).input.accept(key, event_ms) {
         Ok(()) => true,
         Err(reason) => {
+            // A key that types is logged as rejected, never by name.
+            let mut chars = key.chars();
+            let typed = matches!(
+                (chars.next(), chars.next()),
+                (Some(c), None) if zaparoo_app::keyboard::is_text(c)
+            );
+            let key = if typed { "" } else { key };
             tracing::debug!(key, ?reason, ?event_ms, "press rejected");
             false
         }
