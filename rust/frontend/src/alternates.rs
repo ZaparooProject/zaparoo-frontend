@@ -112,7 +112,11 @@ async fn discover(
                 continue;
             }
             // The filename is what tells two builds apart.
-            let name = zaparoo_app::media_list::file_stem_or_name(&entry.path, &entry.name);
+            let name = zaparoo_app::media_list::file_stem_or_name(
+                &entry.path,
+                &entry.name,
+                entry.is_folder(),
+            );
             rows.push(PageRow {
                 label_key: "",
                 label: name.clone(),

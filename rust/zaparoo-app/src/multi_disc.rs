@@ -19,7 +19,7 @@ pub enum Label {
     File(String),
 }
 
-/// The label for one entry of a disc folder, from its `(type, value)` tags.
+/// The label for one disc file of a disc folder, from its `(type, value)` tags.
 pub fn label<'a>(
     tags: impl IntoIterator<Item = (&'a str, &'a str)>,
     path: &str,
@@ -28,7 +28,7 @@ pub fn label<'a>(
     tags.into_iter()
         .find(|(tag_type, value)| *tag_type == "disc" && !value.trim().is_empty())
         .map_or_else(
-            || Label::File(crate::media_list::file_stem_or_name(path, name)),
+            || Label::File(crate::media_list::file_stem_or_name(path, name, false)),
             |(_, value)| Label::Disc(value.trim().to_string()),
         )
 }
