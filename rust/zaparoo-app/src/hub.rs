@@ -838,7 +838,9 @@ pub struct AddEntry {
 }
 
 /// Entries for View > Add item: every known category or action not in
-/// the layout. Resume always offers its plain label.
+/// the layout. Resume always offers its plain label. Once categories have
+/// loaded, a category Core does not list is left out: adding it back would
+/// only make a "Not available" tile.
 pub fn add_entries(
     available: &[(String, String)],
     live: &Live,
@@ -849,7 +851,13 @@ pub fn add_entries(
         .filter_map(|(kind, id)| {
             let label_key = match kind.as_str() {
                 "action" if id == "resume" => "action:resume".to_string(),
-                "category" => resolve_category(live, resolver, id).label_key,
+                "category" => {
+                    let entry = resolve_category(live, resolver, id);
+                    if entry.disabled {
+                        return None;
+                    }
+                    entry.label_key
+                }
                 "action" => resolve_action(live, resolver, id)?.label_key,
                 _ => return None,
             };
@@ -1211,7 +1219,7 @@ mod tests {
 
     #[test]
     fn add_entries_resolve_labels_and_keep_resume_plain() {
-        let confirmed: Vec<String> = Vec::new();
+        let confirmed = vec!["Handheld".to_string()];
         let available = vec![
             ("action".to_string(), "resume".to_string()),
             ("category".to_string(), "Handhelds".to_string()),
@@ -1230,6 +1238,25 @@ mod tests {
             (out[1].id.as_str(), out[1].label_key.as_str()),
             ("category:Handhelds", "category:Handheld")
         );
+    }
+
+    #[test]
+    fn add_entries_leave_out_a_category_core_does_not_list() {
+        let confirmed = vec!["Console".to_string()];
+        let available = vec![
+            ("category".to_string(), "Other".to_string()),
+            ("category".to_string(), "Console".to_string()),
+        ];
+        let mut l = live(&confirmed);
+        let out = add_entries(&available, &l, &Names);
+        let ids: Vec<&str> = out.iter().map(|e| e.id.as_str()).collect();
+        assert_eq!(ids, ["category:Console"]);
+
+        // Before Core answers, nothing is known to be missing.
+        l.categories_loaded = false;
+        let out = add_entries(&available, &l, &Names);
+        let ids: Vec<&str> = out.iter().map(|e| e.id.as_str()).collect();
+        assert_eq!(ids, ["category:Other", "category:Console"]);
     }
 
     #[test]
