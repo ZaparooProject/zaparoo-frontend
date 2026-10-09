@@ -1,6 +1,6 @@
 msgid ""
 msgstr ""
-"POT-Creation-Date: 2026-10-08 03:36+0000\n"
+"POT-Creation-Date: 2026-10-09 07:26+0000\n"
 "Language: zh_TW\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
@@ -194,11 +194,11 @@ msgstr "請用手機掃描此 QR Code，或開啟下方網址並輸入代碼。"
 msgid "Or press Accept to open it on this device."
 msgstr "或按確認鍵在此裝置上開啟。"
 
-#: rust/frontend/ui/app.slint:2017 rust/frontend/ui/labels.slint:331
+#: rust/frontend/ui/app.slint:2017 rust/frontend/ui/labels.slint:332
 msgid "This device is not linked. Link your Zaparoo Online account, then try again."
 msgstr "此裝置尚未連結。請先連結 Zaparoo Online 帳號後再試一次。"
 
-#: rust/frontend/ui/app.slint:2020 rust/frontend/ui/labels.slint:330
+#: rust/frontend/ui/app.slint:2020 rust/frontend/ui/labels.slint:331
 msgid "Cloud backup needs an active Zaparoo Warp subscription."
 msgstr "雲端備份需要有效的 Zaparoo Warp 訂閱。"
 
@@ -367,7 +367,7 @@ msgstr "資訊"
 #: rust/frontend/ui/app.slint:3451 rust/frontend/ui/app.slint:3465
 #: rust/frontend/ui/app.slint:3479 rust/frontend/ui/app.slint:3496
 #: rust/frontend/ui/app.slint:3508 rust/frontend/ui/app.slint:3520
-#: rust/frontend/ui/app.slint:3535 rust/frontend/ui/app.slint:3550
+#: rust/frontend/ui/app.slint:3536 rust/frontend/ui/app.slint:3551
 msgid "Back"
 msgstr "返回"
 
@@ -381,8 +381,8 @@ msgstr "空格"
 
 #: rust/frontend/ui/app.slint:3178 rust/frontend/ui/app.slint:3388
 #: rust/frontend/ui/app.slint:3427 rust/frontend/ui/app.slint:3445
-#: rust/frontend/ui/app.slint:3484 rust/frontend/ui/app.slint:3540
-#: rust/frontend/ui/app.slint:3555
+#: rust/frontend/ui/app.slint:3484 rust/frontend/ui/app.slint:3541
+#: rust/frontend/ui/app.slint:3556
 msgid "Open"
 msgstr "開啟"
 
@@ -431,13 +431,13 @@ msgid "Place"
 msgstr "放置"
 
 #: rust/frontend/ui/app.slint:3376 rust/frontend/ui/app.slint:3389
-#: rust/frontend/ui/app.slint:3436 rust/frontend/ui/app.slint:3556
+#: rust/frontend/ui/app.slint:3436 rust/frontend/ui/app.slint:3557
 msgid "Options"
 msgstr "選項"
 
 #: rust/frontend/ui/app.slint:3377 rust/frontend/ui/app.slint:3382
 #: rust/frontend/ui/app.slint:3396 rust/frontend/ui/app.slint:3429
-#: rust/frontend/ui/app.slint:3549 rust/frontend/ui/labels.slint:166
+#: rust/frontend/ui/app.slint:3550 rust/frontend/ui/labels.slint:166
 msgid "View"
 msgstr "檢視"
 
@@ -1207,218 +1207,226 @@ msgid "Cloud backup failed"
 msgstr "雲端備份失敗"
 
 #: rust/frontend/ui/labels.slint:293
+msgid "Config file not loaded"
+msgstr "設定檔未載入"
+
+#: rust/frontend/ui/labels.slint:294
 msgid "Action failed"
 msgstr "操作失敗"
 
-#: rust/frontend/ui/labels.slint:300
+#: rust/frontend/ui/labels.slint:301
 msgid "Could not start this item. Check Zaparoo Core and try again."
 msgstr "無法啟動此項目。請檢查 Zaparoo Core 後再試一次。"
 
-#: rust/frontend/ui/labels.slint:301
+#: rust/frontend/ui/labels.slint:302
 msgid "Could not start {}. Check Zaparoo Core and try again."
 msgstr "無法啟動 {}。請檢查 Zaparoo Core 後再試一次。"
 
-#: rust/frontend/ui/labels.slint:306
+#: rust/frontend/ui/labels.slint:307
 msgid "Could not update this favorite. Check Zaparoo Core and try again."
 msgstr "無法更新我的最愛。請檢查 Zaparoo Core 後再試一次。"
 
-#: rust/frontend/ui/labels.slint:307
+#: rust/frontend/ui/labels.slint:308
 msgid "Could not hide or unhide this game. Check Zaparoo Core and try again."
 msgstr "無法隱藏或取消隱藏此遊戲。請檢查 Zaparoo Core 後再試一次。"
 
-#: rust/frontend/ui/labels.slint:309
+#: rust/frontend/ui/labels.slint:310
 msgid "Zaparoo Core is updating the media database. Try again when it finishes."
 msgstr "Zaparoo Core 正在更新媒體資料庫。請於完成後再試一次。"
 
-#: rust/frontend/ui/labels.slint:311
+#: rust/frontend/ui/labels.slint:312
 msgid "Could not add this item to the Hub. Check Zaparoo Core and try again."
 msgstr "無法將此項目加入 Hub。請檢查 Zaparoo Core 後再試一次。"
 
-#: rust/frontend/ui/labels.slint:312
+#: rust/frontend/ui/labels.slint:313
 msgid "Could not add {} to the Hub. Check Zaparoo Core and try again."
 msgstr "無法將 {} 加入 Hub。請檢查 Zaparoo Core 後再試一次。"
 
-#: rust/frontend/ui/labels.slint:314
+#: rust/frontend/ui/labels.slint:315
 msgid "Could not start the media database update. Check Zaparoo Core and try again."
 msgstr "無法開始更新媒體資料庫。請檢查 Zaparoo Core 後再試一次。"
 
-#: rust/frontend/ui/labels.slint:315
+#: rust/frontend/ui/labels.slint:316
 msgid "Could not start updating metadata. Check Zaparoo Core and try again."
 msgstr "無法開始更新中繼資料。請檢查 Zaparoo Core 後再試一次。"
 
-#: rust/frontend/ui/labels.slint:316
+#: rust/frontend/ui/labels.slint:317
 msgid "Could not load the list of metadata sources. Check Zaparoo Core and try again."
 msgstr "無法載入中繼資料來源清單。請檢查 Zaparoo Core 後再試一次。"
 
-#: rust/frontend/ui/labels.slint:317
+#: rust/frontend/ui/labels.slint:318
 msgid "Could not cancel the media operation. Check Zaparoo Core and try again."
 msgstr "無法取消媒體作業。請檢查 Zaparoo Core 後再試一次。"
 
-#: rust/frontend/ui/labels.slint:318
+#: rust/frontend/ui/labels.slint:319
 msgid "Could not change the launcher. Check Zaparoo Core and try again."
 msgstr "無法變更啟動器。請檢查 Zaparoo Core 後再試一次。"
 
-#: rust/frontend/ui/labels.slint:319
+#: rust/frontend/ui/labels.slint:320
 msgid "Could not find alternate versions. Check Zaparoo Core and try again."
 msgstr "無法尋找其他版本。請檢查 Zaparoo Core 後再試一次。"
 
-#: rust/frontend/ui/labels.slint:320
+#: rust/frontend/ui/labels.slint:321
 msgid "Could not list the discs of this game. Check Zaparoo Core and try again."
 msgstr "無法列出此遊戲的光碟。請檢查 Zaparoo Core 後再試一次。"
 
-#: rust/frontend/ui/labels.slint:321
+#: rust/frontend/ui/labels.slint:322
 msgid "Could not create the QR code for this item."
 msgstr "無法為此項目建立 QR Code。"
 
-#: rust/frontend/ui/labels.slint:322
+#: rust/frontend/ui/labels.slint:323
 msgid "Could not write to this token. Check that it is writable and try again."
 msgstr "無法寫入此令牌。請確認令牌可寫入後再試一次。"
 
-#: rust/frontend/ui/labels.slint:323
+#: rust/frontend/ui/labels.slint:324
 msgid "Could not save this setting. Try again."
 msgstr "無法儲存此設定。請再試一次。"
 
-#: rust/frontend/ui/labels.slint:324
+#: rust/frontend/ui/labels.slint:325
 msgid "Core would not start a pairing. It may already have as many paired devices as it allows, or it may be running on another device."
 msgstr "Core 無法開始配對。可能已達配對裝置數量上限，或 Core 正在其他裝置上執行。"
 
-#: rust/frontend/ui/labels.slint:325
+#: rust/frontend/ui/labels.slint:326
 msgid "Core could not reach or update your Zaparoo Online account. Check the network connection and try again."
 msgstr "Core 無法連線至您的 Zaparoo Online 帳號或更新帳號。請檢查網路連線後再試一次。"
 
-#: rust/frontend/ui/labels.slint:329
+#: rust/frontend/ui/labels.slint:330
 msgid "A backup was uploaded recently. Wait a few minutes, then try again."
 msgstr "最近已上傳過備份。請稍候幾分鐘再試一次。"
 
-#: rust/frontend/ui/labels.slint:332
+#: rust/frontend/ui/labels.slint:333
 msgid "Your cloud backup storage is full."
 msgstr "您的雲端備份空間已滿。"
 
-#: rust/frontend/ui/labels.slint:333
+#: rust/frontend/ui/labels.slint:334
 msgid "Zaparoo is busy with another backup or request. Wait for it to finish, then try again."
 msgstr "Zaparoo 正在處理其他備份或要求。請等待完成後再試一次。"
 
-#: rust/frontend/ui/labels.slint:334
+#: rust/frontend/ui/labels.slint:335
 msgid "Stop the game that is running, then try again."
 msgstr "請先停止執行中的遊戲，再試一次。"
 
-#: rust/frontend/ui/labels.slint:335
+#: rust/frontend/ui/labels.slint:336
 msgid "Restart Zaparoo to finish the previous restore, then try again."
 msgstr "請重新啟動 Zaparoo 以完成上次的還原，然後再試一次。"
 
-#: rust/frontend/ui/labels.slint:336
+#: rust/frontend/ui/labels.slint:337
 msgid "This backup was made by a newer Zaparoo. Update Zaparoo, then try again."
 msgstr "此備份由較新版的 Zaparoo 建立。請更新 Zaparoo 後再試一次。"
 
-#: rust/frontend/ui/labels.slint:337
+#: rust/frontend/ui/labels.slint:338
 msgid "Free some storage space on this device, then try again."
 msgstr "請先釋出此裝置的儲存空間，再試一次。"
 
-#: rust/frontend/ui/labels.slint:338
+#: rust/frontend/ui/labels.slint:339
 msgid "Could not finish the cloud backup. Check the network connection and try again."
 msgstr "無法完成雲端備份。請檢查網路連線後再試一次。"
 
-#: rust/frontend/ui/labels.slint:340
+#: rust/frontend/ui/labels.slint:342
+msgid "{} could not be read, so defaults are in use and changes will not be saved. Fix or remove the file, then restart."
+msgstr "無法讀取 {}，因此目前使用預設值，變更不會儲存。請修正或移除該檔案，然後重新啟動。"
+
+#: rust/frontend/ui/labels.slint:343
 msgid "The action could not be completed. Check Zaparoo Core and try again."
 msgstr "無法完成此操作。請檢查 Zaparoo Core 後再試一次。"
 
-#: rust/frontend/ui/labels.slint:352
+#: rust/frontend/ui/labels.slint:355
 msgid "This launcher isn't installed."
 msgstr "尚未安裝此啟動器。"
 
-#: rust/frontend/ui/labels.slint:353
+#: rust/frontend/ui/labels.slint:356
 msgid "{} isn't installed."
 msgstr "尚未安裝 {}。"
 
-#: rust/frontend/ui/labels.slint:356
+#: rust/frontend/ui/labels.slint:359
 msgid "This launcher is installed, but its entry point is missing or disabled."
 msgstr "此啟動器已安裝，但其進入點遺失或已停用。"
 
-#: rust/frontend/ui/labels.slint:357
+#: rust/frontend/ui/labels.slint:360
 msgid "{} is installed, but its entry point is missing or disabled."
 msgstr "{} 已安裝，但其進入點遺失或已停用。"
 
-#: rust/frontend/ui/labels.slint:360
+#: rust/frontend/ui/labels.slint:363
 msgid "This launcher's plugin for this system isn't installed."
 msgstr "尚未安裝此啟動器用於此系統的外掛。"
 
-#: rust/frontend/ui/labels.slint:361
+#: rust/frontend/ui/labels.slint:364
 msgid "{}'s plugin for this system isn't installed."
 msgstr "尚未安裝 {} 用於此系統的外掛。"
 
-#: rust/frontend/ui/labels.slint:362
+#: rust/frontend/ui/labels.slint:365
 msgid "{}'s {} plugin isn't installed."
 msgstr "尚未安裝 {} 的 {} 外掛。"
 
-#: rust/frontend/ui/labels.slint:365
+#: rust/frontend/ui/labels.slint:368
 msgid "This build of the launcher can't be used for this media. A different build is needed."
 msgstr "此版本的啟動器無法用於此媒體，需要其他版本。"
 
-#: rust/frontend/ui/labels.slint:366
+#: rust/frontend/ui/labels.slint:369
 msgid "This build of {} can't be used for this media. A different build is needed."
 msgstr "此版本的 {} 無法用於此媒體，需要其他版本。"
 
-#: rust/frontend/ui/labels.slint:369
+#: rust/frontend/ui/labels.slint:372
 msgid "This launcher can't play this media."
 msgstr "此啟動器無法執行此媒體。"
 
-#: rust/frontend/ui/labels.slint:370
+#: rust/frontend/ui/labels.slint:373
 msgid "{} can't play this media."
 msgstr "{} 無法執行此媒體。"
 
-#: rust/frontend/ui/labels.slint:373
+#: rust/frontend/ui/labels.slint:376
 msgid "This launcher doesn't support the requested launch options."
 msgstr "此啟動器不支援所要求的啟動選項。"
 
-#: rust/frontend/ui/labels.slint:374
+#: rust/frontend/ui/labels.slint:377
 msgid "{} doesn't support the requested launch options."
 msgstr "{} 不支援所要求的啟動選項。"
 
-#: rust/frontend/ui/labels.slint:377
+#: rust/frontend/ui/labels.slint:380
 msgid "This launcher doesn't have the storage permission it needs."
 msgstr "此啟動器沒有所需的儲存空間權限。"
 
-#: rust/frontend/ui/labels.slint:378
+#: rust/frontend/ui/labels.slint:381
 msgid "{} doesn't have the storage permission it needs."
 msgstr "{} 沒有所需的儲存空間權限。"
 
-#: rust/frontend/ui/labels.slint:381
+#: rust/frontend/ui/labels.slint:384
 msgid "This launcher can't read media from where it's stored."
 msgstr "此啟動器無法從媒體的儲存位置讀取。"
 
-#: rust/frontend/ui/labels.slint:382
+#: rust/frontend/ui/labels.slint:385
 msgid "{} can't read media from where it's stored."
 msgstr "{} 無法從媒體的儲存位置讀取。"
 
-#: rust/frontend/ui/labels.slint:384
+#: rust/frontend/ui/labels.slint:387
 msgid "The storage holding this media isn't available."
 msgstr "存放此媒體的儲存裝置無法使用。"
 
-#: rust/frontend/ui/labels.slint:385
+#: rust/frontend/ui/labels.slint:388
 msgid "This media could not be resolved or opened."
 msgstr "無法解析或開啟此媒體。"
 
-#: rust/frontend/ui/labels.slint:386
+#: rust/frontend/ui/labels.slint:389
 msgid "Access to this media's folder was revoked. Re-grant it in Settings > Library."
 msgstr "此媒體資料夾的存取權已被撤銷。請至「設定 > 遊戲庫」重新授權。"
 
-#: rust/frontend/ui/labels.slint:387
+#: rust/frontend/ui/labels.slint:390
 msgid "The launcher service isn't responding."
 msgstr "啟動器服務沒有回應。"
 
-#: rust/frontend/ui/labels.slint:388
+#: rust/frontend/ui/labels.slint:391
 msgid "Return to Zaparoo before launching this."
 msgstr "請先返回 Zaparoo 再啟動。"
 
-#: rust/frontend/ui/labels.slint:389
+#: rust/frontend/ui/labels.slint:392
 msgid "The launch was cancelled before it started."
 msgstr "啟動已在開始前取消。"
 
-#: rust/frontend/ui/labels.slint:390
+#: rust/frontend/ui/labels.slint:393
 msgid "The launch was sent, but its outcome could not be confirmed."
 msgstr "啟動要求已送出，但無法確認結果。"
 
-#: rust/frontend/ui/labels.slint:391
+#: rust/frontend/ui/labels.slint:394
 msgid "The system refused the launch request."
 msgstr "系統拒絕了啟動要求。"
 

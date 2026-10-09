@@ -703,15 +703,21 @@ struct RawHubRoot {
     hub: RawHub,
 }
 
+/// Whether `[hub]` in this config text parses. `config::load_config` runs
+/// it so a layout that will not load is part of the one reported fault.
+pub(crate) fn check_source(src: &str) -> Result<(), toml::de::Error> {
+    toml::from_str::<RawHubRoot>(src).map(|_| ())
+}
+
 /// Load the Hub layout from `frontend.toml`. Read side only: an
 /// independent top-level parse of the same file `config.rs::load_config`
 /// reads, re-reading config rather than threading a shared parse through.
 /// A missing or malformed file returns an empty (unseeded) layout, the
-/// same fallback shape `load_config` uses.
+/// same fallback shape `load_config` uses; `load_config` reports why.
 pub fn load_hub_layout(path: &Path) -> HubLayout {
-    let raw: RawHubRoot = match std::fs::read_to_string(path) {
-        Ok(src) => toml::from_str(&src).unwrap_or_default(),
-        Err(_) => RawHubRoot::default(),
+    let raw: RawHubRoot = match crate::config::read_config_source(path) {
+        Ok(Some(source)) => toml::from_str(&source.text).unwrap_or_default(),
+        Ok(None) | Err(_) => RawHubRoot::default(),
     };
     HubLayout {
         known: raw.hub.known,
@@ -742,10 +748,9 @@ pub fn load_hub_layout(path: &Path) -> HubLayout {
 /// `[[hub.items]]` array of tables unconditionally when either changed;
 /// unrelated sections and their comments/formatting are untouched.
 pub fn save_hub_layout(path: &Path, layout: &HubLayout) -> Result<(), String> {
-    let mut doc = crate::config::read_config_document(path)?;
-    let before = doc.to_string();
+    let mut file = crate::config::read_config_document(path)?;
 
-    let hub = crate::config::section_mut(&mut doc, "hub", path)?;
+    let hub = crate::config::section_mut(&mut file.doc, "hub", path)?;
 
     crate::config::set_string_list(hub, "known", &layout.known);
 
@@ -787,7 +792,7 @@ pub fn save_hub_layout(path: &Path, layout: &HubLayout) -> Result<(), String> {
     }
     hub.insert("items", toml_edit::Item::ArrayOfTables(items));
 
-    crate::config::write_document_if_changed(path, &before, &doc)
+    file.write_if_changed(path)
 }
 
 #[cfg(test)]
@@ -812,6 +817,39 @@ mod tests {
         let layout = load_hub_layout(std::path::Path::new("/nonexistent/frontend.toml"));
         assert!(layout.known.is_empty());
         assert!(layout.items.is_empty());
+    }
+
+    #[test]
+    fn a_file_that_is_not_utf8_keeps_its_layout_through_a_save() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("frontend.toml");
+        let original: &[u8] =
+            b"[[hub.items]]\ntype = \"folder\"\npath = \"/media/fat/games/SNES\"\nname = \"Pok\xE9mon\"\n";
+        std::fs::write(&path, original).expect("write");
+
+        let layout = load_hub_layout(&path);
+        assert_eq!(layout.items.len(), 1);
+        assert_eq!(layout.items[0].path, "/media/fat/games/SNES");
+        assert_eq!(layout.items[0].name, "Pok\u{fffd}mon");
+
+        save_hub_layout(&path, &layout).expect("save");
+        assert!(String::from_utf8(std::fs::read(&path).expect("read")).is_ok());
+        assert_eq!(load_hub_layout(&path), layout);
+        assert_eq!(
+            std::fs::read(crate::config::backup_path(&path)).expect("backup"),
+            original
+        );
+    }
+
+    #[test]
+    fn a_save_over_a_file_that_will_not_parse_leaves_it_alone() {
+        let src = "[hub\nknown = [\"category:Arcade\"]\n";
+        let f = write_tmp(src);
+        assert!(load_hub_layout(f.path()).items.is_empty());
+        let mut layout = HubLayout::default();
+        layout.items.push(HubItem::category("Arcade"));
+        assert!(save_hub_layout(f.path(), &layout).is_err());
+        assert_eq!(std::fs::read_to_string(f.path()).expect("read"), src);
     }
 
     #[test]

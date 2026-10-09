@@ -843,8 +843,15 @@ fn main() {
             overlays.set_dialog_focus(0);
         } else if screen.ends_with("alert") {
             overlays.set_dialog_kind(DialogKind::ActionError);
-            overlays.set_dialog_error(ErrorKind::Launch);
-            overlays.set_dialog_arg("Sonic the Hedgehog".into());
+            // The config alert carries the longest unbreakable word any
+            // alert shows: the MiSTer path of the file.
+            if screen.ends_with("config-alert") {
+                overlays.set_dialog_error(ErrorKind::ConfigFile);
+                overlays.set_dialog_arg("/media/fat/zaparoo/frontend.toml".into());
+            } else {
+                overlays.set_dialog_error(ErrorKind::Launch);
+                overlays.set_dialog_arg("Sonic the Hedgehog".into());
+            }
             overlays.set_dialog_buttons(slint::ModelRc::new(slint::VecModel::from(vec![
                 DialogButton::Ok,
             ])));
@@ -1127,7 +1134,7 @@ fn fixture_screen(screen: &str) -> Screen {
         Screen::Settings
     } else if matches!(
         screen,
-        "saver" | "dialog" | "alert" | "notice" | "calibration"
+        "saver" | "dialog" | "alert" | "config-alert" | "notice" | "calibration"
     ) {
         Screen::Hub
     } else if screen.contains("about") {

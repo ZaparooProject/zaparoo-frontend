@@ -1,6 +1,6 @@
 msgid ""
 msgstr ""
-"POT-Creation-Date: 2026-10-08 03:36+0000\n"
+"POT-Creation-Date: 2026-10-09 07:26+0000\n"
 "Language: el\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
@@ -196,11 +196,11 @@ msgstr "Σαρώστε αυτόν τον κωδικό με το κινητό σ�
 msgid "Or press Accept to open it on this device."
 msgstr "Ή πατήστε Αποδοχή για άνοιγμα σε αυτή τη συσκευή."
 
-#: rust/frontend/ui/app.slint:2017 rust/frontend/ui/labels.slint:331
+#: rust/frontend/ui/app.slint:2017 rust/frontend/ui/labels.slint:332
 msgid "This device is not linked. Link your Zaparoo Online account, then try again."
 msgstr "Αυτή η συσκευή δεν είναι συνδεδεμένη. Συνδέστε τον λογαριασμό σας Zaparoo Online και δοκιμάστε ξανά."
 
-#: rust/frontend/ui/app.slint:2020 rust/frontend/ui/labels.slint:330
+#: rust/frontend/ui/app.slint:2020 rust/frontend/ui/labels.slint:331
 msgid "Cloud backup needs an active Zaparoo Warp subscription."
 msgstr "Το αντίγραφο στο cloud απαιτεί ενεργή συνδρομή Zaparoo Warp."
 
@@ -369,7 +369,7 @@ msgstr "Πληροφορίες"
 #: rust/frontend/ui/app.slint:3451 rust/frontend/ui/app.slint:3465
 #: rust/frontend/ui/app.slint:3479 rust/frontend/ui/app.slint:3496
 #: rust/frontend/ui/app.slint:3508 rust/frontend/ui/app.slint:3520
-#: rust/frontend/ui/app.slint:3535 rust/frontend/ui/app.slint:3550
+#: rust/frontend/ui/app.slint:3536 rust/frontend/ui/app.slint:3551
 msgid "Back"
 msgstr "Πίσω"
 
@@ -383,8 +383,8 @@ msgstr "Κενό"
 
 #: rust/frontend/ui/app.slint:3178 rust/frontend/ui/app.slint:3388
 #: rust/frontend/ui/app.slint:3427 rust/frontend/ui/app.slint:3445
-#: rust/frontend/ui/app.slint:3484 rust/frontend/ui/app.slint:3540
-#: rust/frontend/ui/app.slint:3555
+#: rust/frontend/ui/app.slint:3484 rust/frontend/ui/app.slint:3541
+#: rust/frontend/ui/app.slint:3556
 msgid "Open"
 msgstr "Άνοιγμα"
 
@@ -433,13 +433,13 @@ msgid "Place"
 msgstr "Τοποθέτηση"
 
 #: rust/frontend/ui/app.slint:3376 rust/frontend/ui/app.slint:3389
-#: rust/frontend/ui/app.slint:3436 rust/frontend/ui/app.slint:3556
+#: rust/frontend/ui/app.slint:3436 rust/frontend/ui/app.slint:3557
 msgid "Options"
 msgstr "Επιλογές"
 
 #: rust/frontend/ui/app.slint:3377 rust/frontend/ui/app.slint:3382
 #: rust/frontend/ui/app.slint:3396 rust/frontend/ui/app.slint:3429
-#: rust/frontend/ui/app.slint:3549 rust/frontend/ui/labels.slint:166
+#: rust/frontend/ui/app.slint:3550 rust/frontend/ui/labels.slint:166
 msgid "View"
 msgstr "Προβολή"
 
@@ -1211,218 +1211,226 @@ msgid "Cloud backup failed"
 msgstr "Το αντίγραφο στο cloud απέτυχε"
 
 #: rust/frontend/ui/labels.slint:293
+msgid "Config file not loaded"
+msgstr "Οι ρυθμίσεις δεν φορτώθηκαν"
+
+#: rust/frontend/ui/labels.slint:294
 msgid "Action failed"
 msgstr "Η ενέργεια απέτυχε"
 
-#: rust/frontend/ui/labels.slint:300
+#: rust/frontend/ui/labels.slint:301
 msgid "Could not start this item. Check Zaparoo Core and try again."
 msgstr "Δεν ήταν δυνατή η εκκίνηση αυτού του στοιχείου. Ελέγξτε το Zaparoo Core και δοκιμάστε ξανά."
 
-#: rust/frontend/ui/labels.slint:301
+#: rust/frontend/ui/labels.slint:302
 msgid "Could not start {}. Check Zaparoo Core and try again."
 msgstr "Δεν ήταν δυνατή η εκκίνηση: {}. Ελέγξτε το Zaparoo Core και δοκιμάστε ξανά."
 
-#: rust/frontend/ui/labels.slint:306
+#: rust/frontend/ui/labels.slint:307
 msgid "Could not update this favorite. Check Zaparoo Core and try again."
 msgstr "Δεν ήταν δυνατή η ενημέρωση αυτού του αγαπημένου. Ελέγξτε το Zaparoo Core και δοκιμάστε ξανά."
 
-#: rust/frontend/ui/labels.slint:307
+#: rust/frontend/ui/labels.slint:308
 msgid "Could not hide or unhide this game. Check Zaparoo Core and try again."
 msgstr "Δεν ήταν δυνατή η απόκρυψη ή επανεμφάνιση αυτού του παιχνιδιού. Ελέγξτε το Zaparoo Core και δοκιμάστε ξανά."
 
-#: rust/frontend/ui/labels.slint:309
+#: rust/frontend/ui/labels.slint:310
 msgid "Zaparoo Core is updating the media database. Try again when it finishes."
 msgstr "Το Zaparoo Core ενημερώνει τη βάση δεδομένων. Δοκιμάστε ξανά όταν ολοκληρώσει."
 
-#: rust/frontend/ui/labels.slint:311
+#: rust/frontend/ui/labels.slint:312
 msgid "Could not add this item to the Hub. Check Zaparoo Core and try again."
 msgstr "Δεν ήταν δυνατή η προσθήκη αυτού του στοιχείου στο Hub. Ελέγξτε το Zaparoo Core και δοκιμάστε ξανά."
 
-#: rust/frontend/ui/labels.slint:312
+#: rust/frontend/ui/labels.slint:313
 msgid "Could not add {} to the Hub. Check Zaparoo Core and try again."
 msgstr "Δεν ήταν δυνατή η προσθήκη στο Hub: {}. Ελέγξτε το Zaparoo Core και δοκιμάστε ξανά."
 
-#: rust/frontend/ui/labels.slint:314
+#: rust/frontend/ui/labels.slint:315
 msgid "Could not start the media database update. Check Zaparoo Core and try again."
 msgstr "Δεν ήταν δυνατή η έναρξη ενημέρωσης της βάσης δεδομένων. Ελέγξτε το Zaparoo Core και δοκιμάστε ξανά."
 
-#: rust/frontend/ui/labels.slint:315
+#: rust/frontend/ui/labels.slint:316
 msgid "Could not start updating metadata. Check Zaparoo Core and try again."
 msgstr "Δεν ήταν δυνατή η έναρξη ενημέρωσης μεταδεδομένων. Ελέγξτε το Zaparoo Core και δοκιμάστε ξανά."
 
-#: rust/frontend/ui/labels.slint:316
+#: rust/frontend/ui/labels.slint:317
 msgid "Could not load the list of metadata sources. Check Zaparoo Core and try again."
 msgstr "Δεν ήταν δυνατή η φόρτωση της λίστας πηγών μεταδεδομένων. Ελέγξτε το Zaparoo Core και δοκιμάστε ξανά."
 
-#: rust/frontend/ui/labels.slint:317
+#: rust/frontend/ui/labels.slint:318
 msgid "Could not cancel the media operation. Check Zaparoo Core and try again."
 msgstr "Δεν ήταν δυνατή η ακύρωση της εργασίας. Ελέγξτε το Zaparoo Core και δοκιμάστε ξανά."
 
-#: rust/frontend/ui/labels.slint:318
+#: rust/frontend/ui/labels.slint:319
 msgid "Could not change the launcher. Check Zaparoo Core and try again."
 msgstr "Δεν ήταν δυνατή η αλλαγή εκκινητή. Ελέγξτε το Zaparoo Core και δοκιμάστε ξανά."
 
-#: rust/frontend/ui/labels.slint:319
+#: rust/frontend/ui/labels.slint:320
 msgid "Could not find alternate versions. Check Zaparoo Core and try again."
 msgstr "Δεν ήταν δυνατή η εύρεση εναλλακτικών εκδόσεων. Ελέγξτε το Zaparoo Core και δοκιμάστε ξανά."
 
-#: rust/frontend/ui/labels.slint:320
+#: rust/frontend/ui/labels.slint:321
 msgid "Could not list the discs of this game. Check Zaparoo Core and try again."
 msgstr "Δεν ήταν δυνατή η εμφάνιση των δίσκων αυτού του παιχνιδιού. Ελέγξτε το Zaparoo Core και δοκιμάστε ξανά."
 
-#: rust/frontend/ui/labels.slint:321
+#: rust/frontend/ui/labels.slint:322
 msgid "Could not create the QR code for this item."
 msgstr "Δεν ήταν δυνατή η δημιουργία κωδικού QR για αυτό το στοιχείο."
 
-#: rust/frontend/ui/labels.slint:322
+#: rust/frontend/ui/labels.slint:323
 msgid "Could not write to this token. Check that it is writable and try again."
 msgstr "Δεν ήταν δυνατή η εγγραφή σε αυτό το token. Ελέγξτε ότι είναι εγγράψιμο και δοκιμάστε ξανά."
 
-#: rust/frontend/ui/labels.slint:323
+#: rust/frontend/ui/labels.slint:324
 msgid "Could not save this setting. Try again."
 msgstr "Δεν ήταν δυνατή η αποθήκευση αυτής της ρύθμισης. Δοκιμάστε ξανά."
 
-#: rust/frontend/ui/labels.slint:324
+#: rust/frontend/ui/labels.slint:325
 msgid "Core would not start a pairing. It may already have as many paired devices as it allows, or it may be running on another device."
 msgstr "Το Core δεν ξεκίνησε ζεύξη. Ίσως έχει ήδη τον μέγιστο αριθμό συζευγμένων συσκευών ή εκτελείται σε άλλη συσκευή."
 
-#: rust/frontend/ui/labels.slint:325
+#: rust/frontend/ui/labels.slint:326
 msgid "Core could not reach or update your Zaparoo Online account. Check the network connection and try again."
 msgstr "Το Core δεν μπόρεσε να επικοινωνήσει με τον λογαριασμό σας Zaparoo Online ή να τον ενημερώσει. Ελέγξτε τη σύνδεση δικτύου και δοκιμάστε ξανά."
 
-#: rust/frontend/ui/labels.slint:329
+#: rust/frontend/ui/labels.slint:330
 msgid "A backup was uploaded recently. Wait a few minutes, then try again."
 msgstr "Ένα αντίγραφο ανέβηκε πρόσφατα. Περιμένετε λίγα λεπτά και δοκιμάστε ξανά."
 
-#: rust/frontend/ui/labels.slint:332
+#: rust/frontend/ui/labels.slint:333
 msgid "Your cloud backup storage is full."
 msgstr "Ο χώρος αντιγράφων σας στο cloud είναι γεμάτος."
 
-#: rust/frontend/ui/labels.slint:333
+#: rust/frontend/ui/labels.slint:334
 msgid "Zaparoo is busy with another backup or request. Wait for it to finish, then try again."
 msgstr "Το Zaparoo είναι απασχολημένο με άλλο αντίγραφο ή αίτημα. Περιμένετε να ολοκληρωθεί και δοκιμάστε ξανά."
 
-#: rust/frontend/ui/labels.slint:334
+#: rust/frontend/ui/labels.slint:335
 msgid "Stop the game that is running, then try again."
 msgstr "Σταματήστε το παιχνίδι που εκτελείται και δοκιμάστε ξανά."
 
-#: rust/frontend/ui/labels.slint:335
+#: rust/frontend/ui/labels.slint:336
 msgid "Restart Zaparoo to finish the previous restore, then try again."
 msgstr "Επανεκκινήστε το Zaparoo για να ολοκληρωθεί η προηγούμενη επαναφορά και δοκιμάστε ξανά."
 
-#: rust/frontend/ui/labels.slint:336
+#: rust/frontend/ui/labels.slint:337
 msgid "This backup was made by a newer Zaparoo. Update Zaparoo, then try again."
 msgstr "Αυτό το αντίγραφο δημιουργήθηκε από νεότερο Zaparoo. Ενημερώστε το Zaparoo και δοκιμάστε ξανά."
 
-#: rust/frontend/ui/labels.slint:337
+#: rust/frontend/ui/labels.slint:338
 msgid "Free some storage space on this device, then try again."
 msgstr "Ελευθερώστε χώρο αποθήκευσης σε αυτή τη συσκευή και δοκιμάστε ξανά."
 
-#: rust/frontend/ui/labels.slint:338
+#: rust/frontend/ui/labels.slint:339
 msgid "Could not finish the cloud backup. Check the network connection and try again."
 msgstr "Δεν ήταν δυνατή η ολοκλήρωση του αντιγράφου στο cloud. Ελέγξτε τη σύνδεση δικτύου και δοκιμάστε ξανά."
 
-#: rust/frontend/ui/labels.slint:340
+#: rust/frontend/ui/labels.slint:342
+msgid "{} could not be read, so defaults are in use and changes will not be saved. Fix or remove the file, then restart."
+msgstr "Δεν ήταν δυνατή η ανάγνωση του {}, οπότε χρησιμοποιούνται οι προεπιλογές και οι αλλαγές δεν θα αποθηκευτούν. Διορθώστε ή αφαιρέστε το αρχείο και κάντε επανεκκίνηση."
+
+#: rust/frontend/ui/labels.slint:343
 msgid "The action could not be completed. Check Zaparoo Core and try again."
 msgstr "Δεν ήταν δυνατή η ολοκλήρωση της ενέργειας. Ελέγξτε το Zaparoo Core και δοκιμάστε ξανά."
 
-#: rust/frontend/ui/labels.slint:352
+#: rust/frontend/ui/labels.slint:355
 msgid "This launcher isn't installed."
 msgstr "Αυτός ο εκκινητής δεν είναι εγκατεστημένος."
 
-#: rust/frontend/ui/labels.slint:353
+#: rust/frontend/ui/labels.slint:356
 msgid "{} isn't installed."
 msgstr "Το {} δεν είναι εγκατεστημένο."
 
-#: rust/frontend/ui/labels.slint:356
+#: rust/frontend/ui/labels.slint:359
 msgid "This launcher is installed, but its entry point is missing or disabled."
 msgstr "Αυτός ο εκκινητής είναι εγκατεστημένος, αλλά το σημείο εισόδου του λείπει ή είναι απενεργοποιημένο."
 
-#: rust/frontend/ui/labels.slint:357
+#: rust/frontend/ui/labels.slint:360
 msgid "{} is installed, but its entry point is missing or disabled."
 msgstr "Το {} είναι εγκατεστημένο, αλλά το σημείο εισόδου του λείπει ή είναι απενεργοποιημένο."
 
-#: rust/frontend/ui/labels.slint:360
+#: rust/frontend/ui/labels.slint:363
 msgid "This launcher's plugin for this system isn't installed."
 msgstr "Το πρόσθετο αυτού του εκκινητή για αυτό το σύστημα δεν είναι εγκατεστημένο."
 
-#: rust/frontend/ui/labels.slint:361
+#: rust/frontend/ui/labels.slint:364
 msgid "{}'s plugin for this system isn't installed."
 msgstr "Το πρόσθετο του {} για αυτό το σύστημα δεν είναι εγκατεστημένο."
 
-#: rust/frontend/ui/labels.slint:362
+#: rust/frontend/ui/labels.slint:365
 msgid "{}'s {} plugin isn't installed."
 msgstr "Το πρόσθετο {1} του {0} δεν είναι εγκατεστημένο."
 
-#: rust/frontend/ui/labels.slint:365
+#: rust/frontend/ui/labels.slint:368
 msgid "This build of the launcher can't be used for this media. A different build is needed."
 msgstr "Αυτή η έκδοση του εκκινητή δεν μπορεί να χρησιμοποιηθεί για αυτό το μέσο. Απαιτείται διαφορετική έκδοση."
 
-#: rust/frontend/ui/labels.slint:366
+#: rust/frontend/ui/labels.slint:369
 msgid "This build of {} can't be used for this media. A different build is needed."
 msgstr "Αυτή η έκδοση του {} δεν μπορεί να χρησιμοποιηθεί για αυτό το μέσο. Απαιτείται διαφορετική έκδοση."
 
-#: rust/frontend/ui/labels.slint:369
+#: rust/frontend/ui/labels.slint:372
 msgid "This launcher can't play this media."
 msgstr "Αυτός ο εκκινητής δεν μπορεί να αναπαραγάγει αυτό το μέσο."
 
-#: rust/frontend/ui/labels.slint:370
+#: rust/frontend/ui/labels.slint:373
 msgid "{} can't play this media."
 msgstr "Το {} δεν μπορεί να αναπαραγάγει αυτό το μέσο."
 
-#: rust/frontend/ui/labels.slint:373
+#: rust/frontend/ui/labels.slint:376
 msgid "This launcher doesn't support the requested launch options."
 msgstr "Αυτός ο εκκινητής δεν υποστηρίζει τις ζητούμενες επιλογές εκκίνησης."
 
-#: rust/frontend/ui/labels.slint:374
+#: rust/frontend/ui/labels.slint:377
 msgid "{} doesn't support the requested launch options."
 msgstr "Το {} δεν υποστηρίζει τις ζητούμενες επιλογές εκκίνησης."
 
-#: rust/frontend/ui/labels.slint:377
+#: rust/frontend/ui/labels.slint:380
 msgid "This launcher doesn't have the storage permission it needs."
 msgstr "Αυτός ο εκκινητής δεν έχει την άδεια αποθηκευτικού χώρου που χρειάζεται."
 
-#: rust/frontend/ui/labels.slint:378
+#: rust/frontend/ui/labels.slint:381
 msgid "{} doesn't have the storage permission it needs."
 msgstr "Το {} δεν έχει την άδεια αποθηκευτικού χώρου που χρειάζεται."
 
-#: rust/frontend/ui/labels.slint:381
+#: rust/frontend/ui/labels.slint:384
 msgid "This launcher can't read media from where it's stored."
 msgstr "Αυτός ο εκκινητής δεν μπορεί να διαβάσει το μέσο από τη θέση όπου είναι αποθηκευμένο."
 
-#: rust/frontend/ui/labels.slint:382
+#: rust/frontend/ui/labels.slint:385
 msgid "{} can't read media from where it's stored."
 msgstr "Το {} δεν μπορεί να διαβάσει το μέσο από τη θέση όπου είναι αποθηκευμένο."
 
-#: rust/frontend/ui/labels.slint:384
+#: rust/frontend/ui/labels.slint:387
 msgid "The storage holding this media isn't available."
 msgstr "Ο αποθηκευτικός χώρος αυτού του μέσου δεν είναι διαθέσιμος."
 
-#: rust/frontend/ui/labels.slint:385
+#: rust/frontend/ui/labels.slint:388
 msgid "This media could not be resolved or opened."
 msgstr "Δεν ήταν δυνατός ο εντοπισμός ή το άνοιγμα αυτού του μέσου."
 
-#: rust/frontend/ui/labels.slint:386
+#: rust/frontend/ui/labels.slint:389
 msgid "Access to this media's folder was revoked. Re-grant it in Settings > Library."
 msgstr "Η πρόσβαση στον φάκελο αυτού του μέσου ανακλήθηκε. Παραχωρήστε την ξανά στις Ρυθμίσεις > Βιβλιοθήκη."
 
-#: rust/frontend/ui/labels.slint:387
+#: rust/frontend/ui/labels.slint:390
 msgid "The launcher service isn't responding."
 msgstr "Η υπηρεσία εκκινητή δεν ανταποκρίνεται."
 
-#: rust/frontend/ui/labels.slint:388
+#: rust/frontend/ui/labels.slint:391
 msgid "Return to Zaparoo before launching this."
 msgstr "Επιστρέψτε στο Zaparoo πριν από την εκκίνηση."
 
-#: rust/frontend/ui/labels.slint:389
+#: rust/frontend/ui/labels.slint:392
 msgid "The launch was cancelled before it started."
 msgstr "Η εκκίνηση ακυρώθηκε πριν ξεκινήσει."
 
-#: rust/frontend/ui/labels.slint:390
+#: rust/frontend/ui/labels.slint:393
 msgid "The launch was sent, but its outcome could not be confirmed."
 msgstr "Η εκκίνηση στάλθηκε, αλλά το αποτέλεσμά της δεν επιβεβαιώθηκε."
 
-#: rust/frontend/ui/labels.slint:391
+#: rust/frontend/ui/labels.slint:394
 msgid "The system refused the launch request."
 msgstr "Το σύστημα απέρριψε το αίτημα εκκίνησης."
 

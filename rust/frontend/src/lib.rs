@@ -548,6 +548,16 @@ fn run_application(
     #[cfg(not(feature = "hosted"))]
     let _log_guard = zaparoo_core::logger::install(&config);
     tracing::info!("Zaparoo Frontend starting");
+    // `load_config` ran before there was a logger, so it reports here.
+    if let Some(fault) = &config.fault {
+        tracing::error!("{fault}; using defaults and leaving the file untouched");
+    } else if config.recoded {
+        tracing::warn!(
+            "{} is not valid UTF-8; loaded with the invalid bytes replaced, the next save rewrites it and keeps the original as {}",
+            platform_paths::config_file_path().display(),
+            zaparoo_core::config::backup_path(&platform_paths::config_file_path()).display()
+        );
+    }
     #[cfg(feature = "mister")]
     let scanout_offer = mister::lease::configure();
 
@@ -825,7 +835,14 @@ fn run_application(
         });
     }
 
-    lock(&ctx.shared).notice_ack = notice_ack;
+    {
+        let mut shared = lock(&ctx.shared);
+        shared.notice_ack = notice_ack;
+        if let Some(fault) = &config.fault {
+            shared.config_fault = Some(fault.path().display().to_string());
+            shared.hub.read_only = true;
+        }
+    }
     // User customization: the name table applies at once, the artwork
     // folder is walked off the event loop once there is a frame up.
     customization::configure(
