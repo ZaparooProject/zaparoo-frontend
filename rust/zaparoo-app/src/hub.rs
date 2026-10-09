@@ -1030,6 +1030,22 @@ mod tests {
     }
 
     #[test]
+    fn a_system_tile_shows_its_stored_name_before_the_catalog_name() {
+        let items = vec![
+            LayoutItem {
+                kind: "system".into(),
+                id: "ge5jjso5lvkdfgsywmdqjpa5ye".into(),
+                name: "DVD Player".into(),
+                ..LayoutItem::default()
+            },
+            item("system", "SNES"),
+        ];
+        let out = entries(&items, false, &live(&[]), &Names, 4, 0);
+        assert_eq!(out[0].name, "DVD Player");
+        assert_eq!(out[1].name, "Name of SNES");
+    }
+
+    #[test]
     fn bootstrap_window_seeds_resume_categories_then_actions() {
         let confirmed: Vec<String> = Vec::new();
         let mut l = live(&confirmed);
