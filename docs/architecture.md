@@ -147,7 +147,9 @@ crate still owns all UI, navigation and input semantics.
 - `Options::log_upload` (`LogUploader`) posts the support bundle. The
   frontend builds the multipart body; the uploader sends one HTTPS POST and
   returns the response body. Without one, Settings > Upload log file is not
-  offered. Standalone builds post with curl.
+  offered. Standalone builds post with curl; on MiSTer curl is pointed at
+  the downloader's CA bundle when it exists, because the stock bundle is
+  too old to verify the upload service.
 - `Input::action(Action, pressed)` takes semantic actions as raw press and
   release; duplicate suppression and hold-repeat stay in `input.rs`, so
   framework key repeat must not be forwarded. `Input::clear` drops held
