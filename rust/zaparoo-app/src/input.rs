@@ -253,7 +253,8 @@ impl DuplicateGuard {
 
     /// True when the press is a real one and should be routed.
     pub fn accept(&mut self, key: &str, now_ms: u64) -> bool {
-        let within = self.open && now_ms - self.last_ms < DUPLICATE_INPUT_WINDOW_MS;
+        // Event times from two devices can arrive out of order.
+        let within = self.open && now_ms.abs_diff(self.last_ms) < DUPLICATE_INPUT_WINDOW_MS;
         if is_duplicate_input(key, &self.last_key, within) {
             return false;
         }
@@ -367,6 +368,14 @@ mod tests {
         assert!(guard.accept("down", 1_041));
         // A different key is never a duplicate.
         assert!(guard.accept("up", 1_042));
+    }
+
+    #[test]
+    fn the_guard_takes_a_time_earlier_than_the_last_press() {
+        let mut guard = DuplicateGuard::new();
+        assert!(guard.accept("down", 1_000));
+        assert!(!guard.accept("down", 990));
+        assert!(guard.accept("down", 900));
     }
 
     #[test]

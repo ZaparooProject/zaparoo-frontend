@@ -392,6 +392,7 @@ pub fn dispatch(app: &App, target: &Target, commit: impl FnOnce(&App) + 'static)
                     return;
                 };
                 if current(&app).as_ref() != Some(&target) {
+                    tracing::debug!(?target, "accept dropped: its target changed");
                     cancel(&app);
                     return;
                 }

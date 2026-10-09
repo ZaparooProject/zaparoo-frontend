@@ -998,10 +998,12 @@ pub(crate) fn transition_settings_page(
 pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
     if crate::press_feedback::pending(app) {
         if action == actions::ACCEPT {
+            tracing::debug!("accept dropped: a press is already pending");
             return;
         }
         // Interrupt an undispatched Accept or lift a pending operation's
         // feedback. Back still belongs to the current surface, not the cue.
+        tracing::debug!(action, "pending press cancelled by another action");
         crate::press_feedback::cancel(app);
     }
     if action == actions::ACCEPT {
@@ -1181,6 +1183,8 @@ fn dispatch_action(ctx: &Ctx, app: &App, action: &str) {
     if app.global::<crate::Shell>().get_transitioning() {
         if action == actions::CANCEL {
             crate::navigation::cancel(ctx, app);
+        } else {
+            tracing::debug!(action, "action dropped: a route is pending");
         }
         return;
     }

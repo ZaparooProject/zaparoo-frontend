@@ -17,6 +17,9 @@ use std::io::Read;
 use std::os::fd::AsRawFd;
 
 const EV_KEY: u16 = 1;
+/// `_IOW('E', 0xa0, int)`: selects the clock this reader's events are
+/// stamped with. Per open file, so Main's own readers are unaffected.
+const EVIOCSCLOCKID: libc::Ioctl = 0x4004_45a0;
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -74,6 +77,13 @@ fn key_text(code: u16) -> Option<SharedString> {
     Some(SharedString::from(key))
 }
 
+/// The kernel's event stamp in milliseconds.
+fn event_ms(time: libc::timeval) -> u64 {
+    let seconds = u64::try_from(time.tv_sec).unwrap_or(0);
+    let micros = u64::try_from(time.tv_usec).unwrap_or(0);
+    seconds.saturating_mul(1000).saturating_add(micros / 1000)
+}
+
 impl InputReader {
     pub fn open() -> Self {
         let mut devices = Vec::new();
@@ -85,9 +95,17 @@ impl InputReader {
             // SAFETY: setting O_NONBLOCK on a file descriptor we own;
             // no memory is passed to the kernel.
             let rc = unsafe { libc::fcntl(file.as_raw_fd(), libc::F_SETFL, libc::O_NONBLOCK) };
-            if rc == 0 {
-                devices.push(file);
+            if rc != 0 {
+                continue;
             }
+            // Event times feed the duplicate guard, so they must not jump
+            // when the wall clock is set. A node that refuses keeps the
+            // default clock, which is still consistent between two events.
+            let clock: libc::c_int = libc::CLOCK_MONOTONIC;
+            // SAFETY: EVIOCSCLOCKID reads one int from a pointer that is
+            // valid for the duration of the call.
+            unsafe { libc::ioctl(file.as_raw_fd(), EVIOCSCLOCKID, &raw const clock) };
+            devices.push(file);
         }
         if devices.is_empty() {
             tracing::warn!("no /dev/input/event* devices opened; input will be dead");
@@ -129,7 +147,12 @@ impl InputReader {
                         2 => WindowEvent::KeyPressRepeated { text },
                         _ => WindowEvent::KeyPressed { text },
                     };
-                    window.dispatch_event(event);
+                    let time_ms = event_ms(ev.time);
+                    tracing::debug!(code = ev.code, value = ev.value, time_ms, "evdev key");
+                    // Events are read once per frame, so a slow frame hands
+                    // over several at once. The press is timed from when the
+                    // button went down, not from when it is handled here.
+                    crate::input::with_event_time(time_ms, || window.dispatch_event(event));
                     any = true;
                 }
             }
@@ -140,7 +163,16 @@ impl InputReader {
 
 #[cfg(test)]
 mod tests {
-    use super::{key_text, text_key};
+    use super::{event_ms, key_text, text_key};
+
+    #[test]
+    fn event_time_is_milliseconds() {
+        let time = libc::timeval {
+            tv_sec: 12,
+            tv_usec: 345_678,
+        };
+        assert_eq!(event_ms(time), 12_345);
+    }
 
     #[test]
     fn letters_and_digits_type_and_other_keys_keep_their_meaning() {
