@@ -3225,7 +3225,8 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
             match mode {
                 GamesMode::Browse => crate::router::open_view_menu(ctx, app),
                 GamesMode::Favorites => crate::router::open_favorites_page_menu(ctx, app),
-                GamesMode::Recents | GamesMode::Search => {}
+                GamesMode::Search => crate::router::open_search_results_page_menu(ctx, app),
+                GamesMode::Recents => {}
             }
         }
         actions::ACCEPT => match state {
@@ -3389,7 +3390,9 @@ fn cancel(ctx: &Ctx, app: &App) {
     if mode == GamesMode::Browse && navigate_out_of_folder(ctx, app) {
         return;
     }
-    if mode == GamesMode::Search {
+    // A typed search steps back to the Search screen; one a Hub tile opened
+    // has no Search screen behind it and leaves for the Hub below.
+    if mode == GamesMode::Search && !lock(&ctx.shared).persist.search.from_hub {
         crate::search::return_from_results(ctx, app);
         return;
     }
@@ -3411,7 +3414,11 @@ fn cancel(ctx: &Ctx, app: &App) {
             }
             GamesMode::Browse => crate::Screen::Systems,
             GamesMode::Favorites if grouped_favorites => crate::Screen::FavoriteSystems,
-            GamesMode::Favorites | GamesMode::Recents | GamesMode::Search => crate::Screen::Hub,
+            GamesMode::Search => {
+                shared.persist.search.from_hub = false;
+                crate::Screen::Hub
+            }
+            GamesMode::Favorites | GamesMode::Recents => crate::Screen::Hub,
         };
         shared.persist.active_screen = target.token().to_string();
         target

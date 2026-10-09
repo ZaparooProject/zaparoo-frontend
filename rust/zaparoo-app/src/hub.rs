@@ -37,6 +37,10 @@ pub struct LayoutItem {
     pub name: String,
     pub icon: String,
     pub system: String,
+    /// A saved search's text, systems and tags.
+    pub query: String,
+    pub systems: Vec<String>,
+    pub tags: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -46,6 +50,8 @@ pub enum Kind {
     System,
     Folder,
     ZapScript,
+    /// A saved search, which opens its results.
+    Search,
     /// A blank cell: a persisted spacer or the last page's tail padding.
     Empty,
 }
@@ -58,6 +64,7 @@ impl Kind {
             Self::System => "system",
             Self::Folder => "folder",
             Self::ZapScript => "zapscript",
+            Self::Search => "search",
             Self::Empty => "empty",
         }
     }
@@ -96,6 +103,11 @@ pub struct Entry {
     pub script: String,
     /// Owning system of a folder shortcut, carried through to Accept.
     pub system: String,
+    /// A saved search's text, systems and tags, carried through to Accept.
+    /// Its folder limit travels in `path`.
+    pub query: String,
+    pub systems: Vec<String>,
+    pub tags: Vec<String>,
     /// Translatable label id (`category:Arcade`, `action:favorites`), or
     /// empty when `name` is free text.
     pub label_key: String,
@@ -391,6 +403,62 @@ fn resolve_zapscript(resolver: &dyn Resolver, item: &LayoutItem) -> Option<Entry
     })
 }
 
+/// A saved search's identity for focus restore: the same string for the
+/// same search however its query is cased or its lists are ordered.
+fn search_key(item: &LayoutItem) -> String {
+    let set = |values: &[String]| {
+        let mut values: Vec<String> = values.iter().map(|v| v.trim().to_string()).collect();
+        values.retain(|v| !v.is_empty());
+        values.sort();
+        values.dedup();
+        values.join(",")
+    };
+    [
+        item.query.trim().to_lowercase(),
+        set(&item.systems),
+        set(&item.tags),
+        item.path.clone(),
+    ]
+    .join("\u{1f}")
+}
+
+/// A saved search needs something to search on: text, a system, a tag or a
+/// folder. Unnamed, it is called by the first of those it has.
+fn resolve_search(resolver: &dyn Resolver, item: &LayoutItem) -> Option<Entry> {
+    let query = item.query.trim();
+    if query.is_empty() && item.systems.is_empty() && item.tags.is_empty() && item.path.is_empty() {
+        return None;
+    }
+    let name = if !item.name.is_empty() {
+        item.name.clone()
+    } else if !query.is_empty() {
+        query.to_string()
+    } else if let Some(system) = item.systems.first() {
+        resolver.system_name(system)
+    } else if let Some(tag) = item.tags.first() {
+        tag.clone()
+    } else {
+        folder_name_for_path(&item.path)
+    };
+    Some(Entry {
+        kind: Some(Kind::Search),
+        id: search_key(item),
+        path: item.path.clone(),
+        query: query.to_string(),
+        systems: item.systems.clone(),
+        tags: item.tags.clone(),
+        name,
+        cover_key: if item.icon.is_empty() {
+            "icons/Search".to_string()
+        } else {
+            hub_cover_key(resolver, &item.icon, "icons/Search")
+        },
+        fallback_cover_key: "icons/Search".into(),
+        hub_index: -1,
+        ..Entry::default()
+    })
+}
+
 /// What a pinned game tile sends to Core, in the order it is tried: the
 /// launcher-relative path (survives a move to another drive), the title
 /// command (survives a reorganized folder), then the absolute path. Every
@@ -497,6 +565,7 @@ fn resolve_item(
         "system" => resolve_system(resolver, item),
         "folder" => resolve_folder(resolver, item),
         "zapscript" => resolve_zapscript(resolver, item),
+        "search" => resolve_search(resolver, item),
         _ => None,
     }?;
     entry.hub_index = hub_index;
@@ -640,6 +709,7 @@ pub fn restore_index(
             "system" => Some(Kind::System),
             "folder" => Some(Kind::Folder),
             "zapscript" => Some(Kind::ZapScript),
+            "search" => Some(Kind::Search),
             _ => None,
         };
         if let Some(restored) = kind.and_then(|k| index_for(entries, k, id)) {
@@ -1315,6 +1385,105 @@ mod tests {
             assert!(!should_try_next(Some(category)), "{category}");
         }
         assert!(!should_try_next(None));
+    }
+
+    fn search(query: &str, systems: &[&str], tags: &[&str]) -> LayoutItem {
+        LayoutItem {
+            kind: "search".into(),
+            query: query.into(),
+            systems: systems.iter().map(ToString::to_string).collect(),
+            tags: tags.iter().map(ToString::to_string).collect(),
+            ..LayoutItem::default()
+        }
+    }
+
+    #[test]
+    fn a_search_tile_carries_the_whole_search_to_accept() {
+        let items = vec![LayoutItem {
+            name: "RPGs".into(),
+            path: "/g/SNES/Homebrew".into(),
+            ..search(
+                " final ",
+                &["SNES", "Genesis"],
+                &["genre:rpg", "genre:action"],
+            )
+        }];
+        let out = entries(&items, false, &live(&[]), &Names, 4, 0);
+        assert_eq!(out[0].kind, Some(Kind::Search));
+        assert_eq!(out[0].name, "RPGs");
+        assert_eq!(out[0].query, "final");
+        assert_eq!(out[0].systems, ["SNES", "Genesis"]);
+        assert_eq!(out[0].tags, ["genre:rpg", "genre:action"]);
+        assert_eq!(out[0].path, "/g/SNES/Homebrew");
+        assert_eq!(out[0].cover_key, "icons/Search");
+        assert_eq!(out[0].hub_index, 0);
+        assert_eq!(refresh_kind(&items[0]), None);
+    }
+
+    #[test]
+    fn a_search_tile_is_named_by_what_it_searches_and_skipped_when_it_searches_nothing() {
+        let folder = LayoutItem {
+            path: "/g/SNES/Homebrew/".into(),
+            ..search("", &[], &[])
+        };
+        let items = vec![
+            search("mario", &["SNES"], &[]),
+            search("", &["SNES"], &["genre:rpg"]),
+            search("", &[], &["genre:rpg"]),
+            folder,
+            search("  ", &[], &[]),
+        ];
+        let out = entries(&items, false, &live(&[]), &Names, 8, 0);
+        let names: Vec<&str> = out
+            .iter()
+            .filter(|e| e.kind == Some(Kind::Search))
+            .map(|e| e.name.as_str())
+            .collect();
+        assert_eq!(names, ["mario", "Name of SNES", "genre:rpg", "Homebrew"]);
+    }
+
+    #[test]
+    fn a_search_tile_takes_a_custom_icon_and_restores_focus_by_its_search() {
+        struct Custom;
+        impl Resolver for Custom {
+            fn system_name(&self, id: &str) -> String {
+                id.to_string()
+            }
+            fn system_cover_key(&self, id: &str) -> String {
+                format!("systems/{id}")
+            }
+            fn media_cover_key(&self, _system: &str, _path: &str) -> String {
+                String::new()
+            }
+            fn hub_override(&self, id: &str) -> Option<String> {
+                (id == "rpgs").then(|| "custom:rpgs".to_string())
+            }
+        }
+        let items = vec![
+            item("action", "search"),
+            search("zelda", &[], &[]),
+            LayoutItem {
+                icon: "rpgs".into(),
+                ..search("Final", &["SNES", "Genesis"], &["year:1994", "genre:rpg"])
+            },
+        ];
+        let out = entries(&items, false, &live(&[]), &Custom, 4, 0);
+        assert_eq!(out[2].cover_key, "custom:rpgs");
+        assert_eq!(out[2].fallback_cover_key, "icons/Search");
+
+        let selected_item = commit(&out[2]).expect("commit").selected_item;
+        // The same search written another way lands on the same tile.
+        let rewritten = vec![
+            item("action", "search"),
+            search("final", &["Genesis", "SNES"], &["genre:rpg", "year:1994"]),
+            search("zelda", &[], &[]),
+        ];
+        let moved = entries(&rewritten, false, &live(&[]), &Custom, 4, 0);
+        let saved = Saved {
+            selected_item: &selected_item,
+            ..Saved::default()
+        };
+        assert_eq!(restore_index(&moved, &saved, &[], false, "settings"), 1);
     }
 
     #[test]

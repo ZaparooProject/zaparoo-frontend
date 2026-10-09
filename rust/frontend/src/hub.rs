@@ -119,6 +119,9 @@ impl HubModel {
                 name: item.name.clone(),
                 icon: item.icon.clone(),
                 system: item.system.clone(),
+                query: item.query.clone(),
+                systems: item.systems.clone(),
+                tags: item.tags.clone(),
             })
             .collect()
     }
@@ -1016,6 +1019,16 @@ fn emit_activate(ctx: &Ctx, app: &App) {
                 zaparoo_app::hub::launch_candidates(&entry.relative, &entry.script, &entry.path);
             crate::router::launch_first(ctx, app, candidates, &entry.name);
         }
+        Some(Kind::Search) => {
+            crate::search::enter_saved(
+                ctx,
+                app,
+                &entry.query,
+                &entry.systems,
+                &entry.tags,
+                &entry.path,
+            );
+        }
         _ => {}
     }
 }
@@ -1493,6 +1506,61 @@ pub fn toggle_target(
         crate::cue::flash(ctx, app, cue, zaparoo_app::wait_cue::CONFIRM_MS);
     } else {
         tracing::warn!("hub update did nothing for {kind} {name}{id}");
+        crate::router::report_action_error(ctx, app, "add_to_hub", name);
+    }
+}
+
+/// Whether this search already has a tile on the Hub, so the results' View
+/// menu offers "Remove from Hub".
+pub fn has_search(
+    shared: &Shared,
+    query: &str,
+    systems: &[String],
+    tags: &[String],
+    path: &str,
+) -> bool {
+    shared
+        .hub
+        .layout
+        .search_position(query, systems, tags, path)
+        .is_some()
+}
+
+/// "Add to Hub" / "Remove from Hub" from the Search results, for the
+/// search on screen: the same gap-or-end placement, removal and header
+/// confirmation as `toggle_target`.
+pub fn toggle_search(
+    ctx: &Ctx,
+    app: &App,
+    query: &str,
+    systems: &[String],
+    tags: &[String],
+    path: &str,
+    name: &str,
+) {
+    let cue = {
+        let mut shared = lock(&ctx.shared);
+        let hub = &mut shared.hub;
+        let cue = match hub.layout.search_position(query, systems, tags, path) {
+            Some(index) => hub
+                .layout
+                .remove_visible_item(index)
+                .then_some(crate::AppCue::RemovedFromHub),
+            None => hub
+                .layout
+                .add_search_item(query, systems, tags, path, name)
+                .then_some(crate::AppCue::AddedToHub),
+        };
+        if cue.is_some() {
+            hub.save(&ctx.handle);
+        }
+        cue
+    };
+    if let Some(cue) = cue {
+        rebuild(ctx, app);
+        crate::cue::flash(ctx, app, cue, zaparoo_app::wait_cue::CONFIRM_MS);
+    } else {
+        tracing::warn!("hub update did nothing for search {name}");
         crate::router::report_action_error(ctx, app, "add_to_hub", name);
     }
 }

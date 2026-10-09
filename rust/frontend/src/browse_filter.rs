@@ -41,11 +41,11 @@ pub(crate) enum Target {
     /// The browse filter of the system on screen.
     #[default]
     Browse,
-    /// The search being edited; its system may be empty (every system).
+    /// The search being edited; its systems may be empty (every system).
     Search,
 }
 
-/// The tag list for the picker's system, and what the filter was when the
+/// The tag list for the picker's systems, and what the filter was when the
 /// picker's owner opened.
 #[derive(Debug, Default)]
 pub struct Model {
@@ -56,7 +56,8 @@ pub struct Model {
     /// Bumped per fetch so a late answer cannot fill a newer one.
     seq: u64,
     target: Target,
-    system_id: String,
+    /// The systems `groups` was asked for; empty is every system.
+    systems: Vec<String>,
     groups: Vec<Group>,
     load: Load,
     baseline: Vec<String>,
@@ -67,10 +68,19 @@ pub(crate) fn active_tags(shared: &Shared) -> Vec<String> {
     rules::normalize(shared.persist.games.filter_for(&shared.games.system_id))
 }
 
-fn target_system(shared: &Shared) -> String {
+/// One system id as the list `media.tags` takes; none for an empty id.
+fn one_system(system_id: &str) -> Vec<String> {
+    Some(system_id)
+        .filter(|id| !id.is_empty())
+        .map(str::to_string)
+        .into_iter()
+        .collect()
+}
+
+fn target_systems(shared: &Shared) -> Vec<String> {
     match shared.filter.target {
-        Target::Browse => shared.games.system_id.clone(),
-        Target::Search => shared.persist.search.system_id.clone(),
+        Target::Browse => one_system(&shared.games.system_id),
+        Target::Search => shared.persist.search.systems.clone(),
     }
 }
 
@@ -98,10 +108,10 @@ pub(crate) fn shows_hidden(shared: &Shared) -> bool {
     active_tags(shared).iter().any(|t| t.starts_with("user:"))
 }
 
-/// The groups loaded for `system_id`; empty before they have loaded or
-/// while they belong to another system.
-fn groups_for<'a>(shared: &'a Shared, system_id: &str) -> &'a [Group] {
-    if shared.filter.system_id == system_id {
+/// The groups loaded for `systems`; empty before they have loaded or
+/// while they belong to other systems.
+fn groups_for<'a>(shared: &'a Shared, systems: &[String]) -> &'a [Group] {
+    if shared.filter.systems == systems {
         &shared.filter.groups
     } else {
         &[]
@@ -110,23 +120,23 @@ fn groups_for<'a>(shared: &'a Shared, system_id: &str) -> &'a [Group] {
 
 /// The groups of the system on screen, for the browse filter's cue.
 fn groups(shared: &Shared) -> &[Group] {
-    groups_for(shared, &shared.games.system_id)
+    groups_for(shared, &one_system(&shared.games.system_id))
 }
 
 /// The groups the picker is offering.
 fn picker_groups(shared: &Shared) -> &[Group] {
     match shared.filter.target {
         Target::Browse => groups(shared),
-        Target::Search => groups_for(shared, &shared.persist.search.system_id),
+        Target::Search => groups_for(shared, &shared.persist.search.systems),
     }
 }
 
-/// The search's tag groups once they have loaded for its system; None
-/// while another system's list, or none, is held.
+/// The search's tag groups once they have loaded for its systems; None
+/// while another list, or none, is held.
 pub(crate) fn search_groups(shared: &Shared) -> Option<&[Group]> {
     (shared.filter.target == Target::Search
         && shared.filter.load == Load::Ready
-        && shared.filter.system_id == shared.persist.search.system_id)
+        && shared.filter.systems == shared.persist.search.systems)
         .then_some(shared.filter.groups.as_slice())
 }
 
@@ -187,15 +197,15 @@ pub(crate) fn begin(ctx: &Ctx, app: &App) {
 /// The same for either owner. The Search screen calls it on entry and on a
 /// change of system, so its chips can be labelled and pruned.
 pub(crate) fn begin_for(ctx: &Ctx, app: &App, target: Target) {
-    let (system_id, seq) = {
+    let (systems, seq) = {
         let mut shared = lock(&ctx.shared);
         let retarget = shared.filter.target != target;
         shared.filter.target = target;
-        let system_id = target_system(&shared);
+        let systems = target_systems(&shared);
         shared.filter.baseline = picker_tags(&shared);
-        if retarget || shared.filter.system_id != system_id {
+        if retarget || shared.filter.systems != systems {
             shared.filter.groups.clear();
-            shared.filter.system_id.clone_from(&system_id);
+            shared.filter.systems.clone_from(&systems);
         }
         shared.filter.seq += 1;
         // A list from an earlier visit stays on screen while this refreshes.
@@ -204,20 +214,13 @@ pub(crate) fn begin_for(ctx: &Ctx, app: &App, target: Target) {
         } else {
             Load::Ready
         };
-        (system_id, shared.filter.seq)
+        (systems, shared.filter.seq)
     };
     let client = ctx.store.client();
     let ctx2 = ctx.clone();
     let weak = app.as_weak();
     ctx.handle.spawn(async move {
-        let outcome = client
-            .media_tags(MediaTagsParams {
-                systems: Some(system_id)
-                    .filter(|id| !id.is_empty())
-                    .into_iter()
-                    .collect(),
-            })
-            .await;
+        let outcome = client.media_tags(MediaTagsParams { systems }).await;
         // Core tags a deck's members by its id alone. Only a library that
         // has such tags asks for the names, and a Core too old to list
         // decks simply offers none.
@@ -600,7 +603,7 @@ mod tests {
             std::path::PathBuf::new(),
         );
         shared.games.system_id = "NES".into();
-        shared.filter.system_id = "NES".into();
+        shared.filter.systems = vec!["NES".into()];
         shared.filter.groups = groups;
         shared.filter.load = Load::Ready;
         shared
@@ -719,7 +722,7 @@ mod tests {
             "run-and-gun"
         );
 
-        shared.persist.search.system_id = "NES".into();
+        shared.persist.search.systems = vec!["NES".into()];
         assert_eq!(picker_groups(&shared).len(), 1);
         assert!(search_groups(&shared).is_some());
         assert_eq!(search_tag_label(&shared, "genre:rpg"), "rpg");

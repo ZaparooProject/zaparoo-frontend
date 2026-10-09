@@ -28,11 +28,26 @@ pub fn query_text(query: &str) -> &str {
 
 /// Whether there is anything to search on. An empty query still searches
 /// when a system, a tag or a folder narrows it.
-pub fn can_search(query: &str, system_id: &str, tags: &[String], path_prefix: &str) -> bool {
+pub fn can_search(query: &str, systems: &[String], tags: &[String], path_prefix: &str) -> bool {
     !query_text(query).is_empty()
-        || !system_id.is_empty()
+        || !systems.is_empty()
         || !tags.is_empty()
         || !path_prefix.is_empty()
+}
+
+/// A saved search's systems or tags as its Hub tile wrote them: trimmed,
+/// without blanks or repeats, in the tile's order. Unlike the picker's
+/// `browse_filter::normalize`, no tag is dropped for its type or for
+/// sharing one: Core decides what a tag means.
+pub fn tile_list(values: &[String]) -> Vec<String> {
+    let mut kept: Vec<String> = Vec::with_capacity(values.len());
+    for value in values {
+        let value = value.trim();
+        if !value.is_empty() && !kept.iter().any(|seen| seen == value) {
+            kept.push(value.to_string());
+        }
+    }
+    kept
 }
 
 /// How many games match, as far as one page can tell.
@@ -278,13 +293,28 @@ mod tests {
 
     #[test]
     fn a_search_needs_a_query_or_something_narrowing_it() {
-        assert!(!can_search("", "", &[], ""));
-        assert!(!can_search("   ", "", &[], ""));
-        assert!(can_search(" mario ", "", &[], ""));
-        assert!(can_search("", "SNES", &[], ""));
-        assert!(can_search("", "", &tags(&["genre:rpg"]), ""));
-        assert!(can_search("", "", &[], "/roms/SNES/RPG"));
+        assert!(!can_search("", &[], &[], ""));
+        assert!(!can_search("   ", &[], &[], ""));
+        assert!(can_search(" mario ", &[], &[], ""));
+        assert!(can_search("", &tags(&["SNES"]), &[], ""));
+        assert!(can_search("", &[], &tags(&["genre:rpg"]), ""));
+        assert!(can_search("", &[], &[], "/roms/SNES/RPG"));
         assert_eq!(query_text("  mario kart "), "mario kart");
+    }
+
+    #[test]
+    fn a_tiles_lists_keep_everything_but_blanks_and_repeats() {
+        assert_eq!(
+            tile_list(&tags(&[
+                " genre:rpg ",
+                "genre:action",
+                "",
+                "-region:jp",
+                "bogus:x",
+                "genre:rpg",
+            ])),
+            tags(&["genre:rpg", "genre:action", "-region:jp", "bogus:x"])
+        );
     }
 
     #[test]

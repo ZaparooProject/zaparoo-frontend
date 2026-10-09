@@ -14,8 +14,9 @@ use std::sync::Arc;
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash)]
 pub struct SearchArgs {
     pub query: String,
-    /// Empty searches every system.
-    pub system_id: String,
+    /// Empty searches every system. Built with [`SearchArgs::systems`], so
+    /// one set of systems is one cache key.
+    pub systems: Vec<String>,
     pub tags: Vec<String>,
     /// Empty searches every folder.
     pub path_prefix: String,
@@ -26,13 +27,26 @@ pub struct SearchArgs {
 }
 
 impl SearchArgs {
+    /// `systems` as the key holds them: no blanks or repeats, in one order.
+    #[must_use]
+    pub fn systems(systems: &[String]) -> Vec<String> {
+        let mut systems: Vec<String> = systems
+            .iter()
+            .map(|system| system.trim().to_string())
+            .filter(|system| !system.is_empty())
+            .collect();
+        systems.sort();
+        systems.dedup();
+        systems
+    }
+
     /// The request these arguments stand for, at `cursor` or its first page.
     #[must_use]
     pub fn params(&self, cursor: Option<String>) -> MediaSearchParams {
         let some = |text: &str| (!text.is_empty()).then(|| text.to_string());
         MediaSearchParams {
             query: some(self.query.trim()),
-            systems: some(&self.system_id).into_iter().collect(),
+            systems: self.systems.clone(),
             max_results: Some(self.max_results),
             cursor,
             tags: self.tags.clone(),
@@ -87,7 +101,7 @@ mod tests {
             serde_json::json!({"query": "mario", "maxResults": 100, "sort": "name-asc"})
         );
         let scoped = SearchArgs {
-            system_id: "SNES".into(),
+            systems: vec!["SNES".into()],
             tags: vec!["genre:rpg".into()],
             path_prefix: "/roms/SNES/RPG".into(),
             max_results: 50,
@@ -102,6 +116,26 @@ mod tests {
                 "tags": ["genre:rpg"],
                 "pathPrefix": "/roms/SNES/RPG",
             })
+        );
+    }
+
+    #[test]
+    fn several_systems_are_sent_as_one_ordered_set() {
+        let systems = SearchArgs::systems(&[
+            "SNES".into(),
+            " Genesis ".into(),
+            String::new(),
+            "SNES".into(),
+        ]);
+        assert_eq!(systems, ["Genesis", "SNES"]);
+        let args = SearchArgs {
+            systems,
+            max_results: 100,
+            ..SearchArgs::default()
+        };
+        assert_eq!(
+            serde_json::to_value(args.params(None)).expect("serialise"),
+            serde_json::json!({"systems": ["Genesis", "SNES"], "maxResults": 100})
         );
     }
 

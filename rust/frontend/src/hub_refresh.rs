@@ -98,6 +98,9 @@ fn layout_item(item: &HubItem) -> LayoutItem {
         name: item.name.clone(),
         icon: item.icon.clone(),
         system: item.system.clone(),
+        query: item.query.clone(),
+        systems: item.systems.clone(),
+        tags: item.tags.clone(),
     }
 }
 

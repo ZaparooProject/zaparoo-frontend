@@ -67,7 +67,7 @@ hub/favorites.svg
 hub/settings.svg
 ```
 
-A custom Hub tile (a specific system, a folder, or arbitrary ZapScript — see
+A custom Hub tile (a specific system, a folder, a saved search, or arbitrary ZapScript — see
 `[[hub.items]]` in `frontend.toml`) can set its own `icon = "name"` and drop
 a matching `hub/name.png` here, the same way a built-in tile's id works
 above.
@@ -82,6 +82,7 @@ writes these for you; they can also be written by hand.
 | `system`    | `id`: the system id                                   |
 | `folder`    | `path`, `system`, and optionally `relative`           |
 | `zapscript` | `script`, and optionally `relative`, `path`, `system` |
+| `search`    | any of `query`, `systems`, `tags`, `path`             |
 
 Any tile can also set `name` and `icon`.
 
@@ -109,6 +110,36 @@ your games, the frontend asks Core where each pinned game and folder is now
 and updates `path` to match, so covers and folder tiles follow a move too.
 A tile with only a `script` is launched exactly as written and is never
 changed.
+
+#### Saved searches
+
+A `search` tile opens the results of a search. "Add to Hub" in the Search
+results' View menu writes one for the search on screen; Back from results
+opened this way returns to the Hub.
+
+```toml
+[[hub.items]]
+type = "search"
+name = "SNES and Genesis RPGs"
+query = "final"
+systems = ["SNES", "Genesis"]
+tags = ["genre:rpg", "year:1994"]
+icon = "rpgs"
+```
+
+- `query`: the text to match in names. Leave it out to list everything the
+  other keys allow.
+- `systems`: the system ids to search. Leave it out to search every system.
+  A hand-written tile can name several, which the Search screen cannot.
+- `tags`: `type:value` tags a game must carry. They are sent to Zaparoo Core
+  exactly as written, so a tile can also use tags the tags picker does not
+  offer.
+- `path`: limits the search to one folder, as "Search here…" does. It is
+  the full path, so it has to be edited by hand if the games move to another
+  drive.
+
+A tile needs at least one of the four. Without an `icon` it shows the Search
+glyph.
 
 ### Rendered as-is (no tinting)
 
