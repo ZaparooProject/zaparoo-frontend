@@ -13,6 +13,8 @@ use std::os::fd::AsRawFd;
 
 const MAGIC: u16 = 0x5A52;
 const MAX_BYTES: usize = 32;
+/// Answered by Main, never written to the bus. Outside the 8-bit UIO space.
+const CMD_RASTER: u16 = 0x0100;
 
 pub struct Uio {
     socket: File,
@@ -42,6 +44,15 @@ impl Uio {
         self.failed = result.is_err();
         result
     }
+
+    /// The scaler raster a SET destination is expressed in. A pixel-repeated
+    /// mode keeps its logical line width here (mode 14 is 1280x1440), which
+    /// no vmode readback reveals.
+    pub fn raster(&mut self) -> io::Result<(u32, u32)> {
+        let mut words = [0_u16; 2];
+        self.transact(CMD_RASTER, &mut words)?;
+        Ok((u32::from(words[0]), u32::from(words[1])))
+    }
 }
 
 fn exchange(
@@ -55,6 +66,7 @@ fn exchange(
         0x57 => 12,
         0x59 => 6,
         0x5B => 11,
+        CMD_RASTER => 2,
         _ => 0,
     };
     if expected == 0 || words.len() != expected {
@@ -161,6 +173,30 @@ mod tests {
         let mut words = [0; 6];
         exchange(&child, 7, 0x59, &mut words, 1000)?;
         assert_eq!(words[0], 0x1234);
+        assert!(matches!(worker.join(), Ok(Ok(()))));
+        Ok(())
+    }
+
+    #[test]
+    fn raster_query_returns_the_size_main_reports() -> io::Result<()> {
+        let (mut parent, child) = pair()?;
+        let worker = std::thread::spawn(move || -> io::Result<()> {
+            let mut packet = [0; MAX_BYTES];
+            let count = parent.read(&mut packet)?;
+            assert_eq!(
+                &packet[..count],
+                &[0x52, 0x5A, 1, 0, 0, 1, 2, 0, 0, 0, 0, 0]
+            );
+            packet[8..10].copy_from_slice(&1280_u16.to_le_bytes());
+            packet[10..12].copy_from_slice(&1440_u16.to_le_bytes());
+            parent.write_all(&packet[..count])
+        });
+        let mut uio = Uio {
+            socket: child,
+            sequence: 0,
+            failed: false,
+        };
+        assert_eq!(uio.raster()?, (1280, 1440));
         assert!(matches!(worker.join(), Ok(Ok(()))));
         Ok(())
     }
