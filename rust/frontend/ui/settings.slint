@@ -91,8 +91,12 @@ export global SettingsLabels {
     public pure function scope(kind: ScopeKind, name: string) -> string {
         if (kind == ScopeKind.all) { return @tr("All systems"); }
         if (kind == ScopeKind.category) { return @tr("All {} systems", Labels.hub("category:" + name, name)); }
+        // Several checked systems: the name is how many.
+        if (kind == ScopeKind.systems) { return @tr("{n} system" | "{n} systems" % name.to-float()); }
         // A manufacturer's name over its systems; unnamed ones share one.
         if (kind == ScopeKind.header) { return name == "" ? @tr("Other") : name; }
+        // The systems that were checked when the picker opened.
+        if (kind == ScopeKind.selected) { return @tr("Selected"); }
         // The Source row before Core has listed the sources.
         if (kind == ScopeKind.source-loading) { return @tr("Loading sources…"); }
         return name;

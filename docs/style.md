@@ -1389,6 +1389,19 @@ deep they are or how many Back presses get out. The rules:
    the form for its picker page, and its driver
    `rust/frontend/src/media_setup.rs`, where Back clears the page and leaves
    the form's `index` on the row that opened it.
+
+   A page that takes several values has no confirm button, least of all one
+   under the list: on a d-pad it sits a hundred rows away. The setup panel's
+   Systems page is the pattern. A on a system row checks or unchecks it and
+   the page stays (the help bar reads Toggle there, and the row's box fills
+   instead of flashing); Back returns to the form with the checks as its
+   value, which the row words as a count; the panel title counts them
+   while the page is open. Leaving with nothing checked keeps the value the
+   form had. One-press rows (All systems, a category) still pick and
+   return, and clear the checks. What was checked when the page opened
+   leads the list under a Selected heading, and no row moves while the page
+   is open. The form's own Start is the only commit, the same way the tag
+   filter applies on Back.
 3. A modal task that needs more than one such page, or a decision that
    needs information the panel can't show, is a screen (a Settings
    sub-page), not a modal.

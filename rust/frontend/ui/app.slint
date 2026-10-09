@@ -338,6 +338,10 @@ export global SetupModalView {
     in-out property <int> picker-visible: 0;
     in-out property <int> picker-count: 0;
     in-out property <int> picker-sel: 0;
+    // The Systems page: how many systems are checked, and whether the
+    // focused row is one Accept checks rather than picks.
+    in-out property <int> picker-checked: 0;
+    in-out property <bool> picker-toggle: false;
     in-out property <bool> has-above: false;
     in-out property <bool> has-below: false;
     in-out property <int> activate-pulse: 0;
@@ -3215,7 +3219,7 @@ export component App inherits Window {
                 { buttons: ["DpadUp", "DpadDown"], label: @tr("Move") },
                 { buttons: ["ButtonA"], label: SettingsLabels.setup-action(
                     SetupModalView.picker-page
-                        ? SetupAction.select
+                        ? (SetupModalView.picker-toggle ? SetupAction.toggle : SetupAction.select)
                         : (SetupModalView.index >= 0 && SetupModalView.index < SetupModalView.rows.length
                             ? (SetupModalView.rows[SetupModalView.index].control == ControlKind.action
                                 ? SetupAction.start
@@ -3731,6 +3735,8 @@ export component App inherits Window {
         picker-visible: SetupModalView.picker-visible;
         picker-count: SetupModalView.picker-count;
         picker-sel: SetupModalView.picker-sel;
+        picker-checked: SetupModalView.picker-checked;
+        picker-toggle: SetupModalView.picker-toggle;
         has-above: SetupModalView.has-above;
         has-below: SetupModalView.has-below;
         activate-pulse: SetupModalView.activate-pulse;

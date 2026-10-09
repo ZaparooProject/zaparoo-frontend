@@ -587,20 +587,23 @@ fn main() {
         sv.set_rows(slint::ModelRc::new(slint::VecModel::from(rows)));
         sv.set_index(1);
         if screen.contains("picker") {
+            // Two systems checked: they lead the list under their own
+            // heading, and stay checked under their manufacturer.
             let entries = [
-                (ScopeKind::All, ""),
-                (ScopeKind::Category, "Console"),
-                (ScopeKind::Category, "Handheld"),
-                (ScopeKind::System, "Nintendo Entertainment System"),
-                (ScopeKind::System, "Super Nintendo"),
-                (ScopeKind::System, "Mega Drive"),
-                (ScopeKind::System, "Neo Geo"),
+                (ScopeKind::All, "", false),
+                (ScopeKind::Category, "Console", false),
+                (ScopeKind::Selected, "", false),
+                (ScopeKind::System, "Mega Drive", true),
+                (ScopeKind::System, "Super Nintendo", true),
+                (ScopeKind::Header, "Nintendo", false),
+                (ScopeKind::System, "Nintendo Entertainment System", false),
             ];
             let picker: Vec<generated::SetupPickerRow> = entries
                 .iter()
-                .map(|(kind, name)| generated::SetupPickerRow {
+                .map(|(kind, name, checked)| generated::SetupPickerRow {
                     kind: *kind,
                     name: (*name).into(),
+                    checked: *checked,
                 })
                 .collect();
             sv.set_picker_page(true);
@@ -608,7 +611,9 @@ fn main() {
             sv.set_picker_visible(i32::try_from(picker.len()).unwrap_or(0));
             sv.set_picker_count(i32::try_from(picker.len()).unwrap_or(0) + 1);
             sv.set_picker_rows(slint::ModelRc::new(slint::VecModel::from(picker)));
-            sv.set_picker_sel(1);
+            sv.set_picker_sel(3);
+            sv.set_picker_checked(2);
+            sv.set_picker_toggle(true);
             sv.set_has_below(true);
         }
         sv.set_open(true);
