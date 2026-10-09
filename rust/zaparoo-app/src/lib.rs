@@ -23,6 +23,7 @@ pub mod customization;
 pub mod folder_picker;
 pub mod form_list;
 pub mod format;
+pub mod han_fonts;
 pub mod hub;
 pub mod input;
 pub mod keyboard;

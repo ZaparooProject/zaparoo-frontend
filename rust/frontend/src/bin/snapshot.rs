@@ -135,6 +135,7 @@ fn main() {
     // (any language directory under translations/).
     if let Ok(lang) = std::env::var("ZAPAROO_SNAPSHOT_LANG") {
         slint::select_bundled_translation(&lang).expect("bundled language");
+        fonts::set_han_preference(&lang);
     }
     brand::register(&app);
     app.global::<GlyphSource>().on_glyph(|key, px, tint| {
