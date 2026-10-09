@@ -142,7 +142,9 @@ pub struct LatchPresenter {
     cached_transitions_available: bool,
     width: u32,
     height: u32,
-    /// Output raster the scaler stretches the posted frame onto.
+    /// Scaler raster the posted frame is stretched onto. Main reports it;
+    /// without that it is the probed output, which is wrong for a
+    /// pixel-repeated mode.
     out_width: u32,
     out_height: u32,
     /// Dynamic resolution pair: motion res (exact half of output,
@@ -301,6 +303,18 @@ fn select_geometry(
     }
 }
 
+/// The destination words are 12 bits wide in the RTL.
+fn destination_raster(reported: (u32, u32)) -> Result<(u32, u32), slint::PlatformError> {
+    if (1..=4096).contains(&reported.0) && (1..=4096).contains(&reported.1) {
+        Ok(reported)
+    } else {
+        Err(slint::PlatformError::Other(format!(
+            "Main reported an unusable scaler raster {}x{}",
+            reported.0, reported.1
+        )))
+    }
+}
+
 impl LatchPresenter {
     #[allow(
         clippy::too_many_lines,
@@ -341,6 +355,14 @@ impl LatchPresenter {
             .map_err(|e| err(format!("open /dev/fb0: {e}")))?;
         let (var, _fix) = query_fb(fb0.as_raw_fd())?;
         let (width, height) = select_geometry(&caps, output, resolution_policy)?;
+        let raster = if super::lease::raster_query() {
+            let reported = uio
+                .raster()
+                .map_err(|e| err(format!("scaler raster query: {e}")))?;
+            destination_raster(reported)?
+        } else {
+            output
+        };
         let frame_bytes = width * 2 * height;
         if frame_bytes > layout.slot_capacity_bytes {
             return Err(err(format!(
@@ -365,6 +387,8 @@ impl LatchPresenter {
             height,
             output_w = output.0,
             output_h = output.1,
+            raster_w = raster.0,
+            raster_h = raster.1,
             framebuffer_w = var.xres,
             framebuffer_h = var.yres,
             drs = res_modes.is_some(),
@@ -389,8 +413,8 @@ impl LatchPresenter {
             cached_transitions_available,
             width,
             height,
-            out_width: output.0,
-            out_height: output.1,
+            out_width: raster.0,
+            out_height: raster.1,
             res_modes,
             // Both slots start unwritten: first two frames copy fully.
             stale: [
@@ -761,7 +785,17 @@ impl Drop for LatchPresenter {
 
 #[cfg(test)]
 mod tests {
-    use super::{dynamic_resolution_pair, expected_layout, select_geometry, ResolutionPolicy};
+    use super::{
+        destination_raster, dynamic_resolution_pair, expected_layout, select_geometry,
+        ResolutionPolicy,
+    };
+
+    #[test]
+    fn pixel_repeated_raster_is_accepted_and_empty_or_oversized_is_not() {
+        assert!(matches!(destination_raster((1280, 1440)), Ok((1280, 1440))));
+        assert!(destination_raster((0, 1440)).is_err());
+        assert!(destination_raster((1280, 4097)).is_err());
+    }
 
     #[test]
     fn automatic_render_size_is_not_hdmi_timing() -> Result<(), Box<dyn std::error::Error>> {

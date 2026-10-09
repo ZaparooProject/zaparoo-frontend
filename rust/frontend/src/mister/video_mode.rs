@@ -60,14 +60,33 @@ fn apply(io: &mut impl VideoIo, command: Command, target: Size) -> bool {
     io.run(command).is_ok() && io.size() == Some(target)
 }
 
+/// The kernel module's reservation: one 1920x1080 RGB32 frame. Main does not
+/// bound `vmode f` to it, and an oversized mode write makes the console
+/// redraw run off the end of the mapping.
+const RESERVED_BYTES: u64 = 1920 * 1080 * 4;
+
+/// Bytes Main gives an RGB32 framebuffer: it rounds each row up to 16 bytes.
+fn rgb32_bytes((width, height): Size) -> u64 {
+    ((u64::from(width) * 4 + 15) & !15) * u64::from(height)
+}
+
+/// Half of any output up to 4K fits the reservation, so the half-size
+/// framebuffer is the probe and the output is inferred as twice that. The
+/// full-size read only sharpens an inference that halving may have
+/// truncated, and only where the largest output it could hide still fits.
+fn probe_output(io: &mut impl VideoIo) -> Option<Size> {
+    let half = probe(io, Command::Half)?;
+    let inferred = (half.0.checked_mul(2)?, half.1.checked_mul(2)?);
+    let largest = (inferred.0.checked_add(1)?, inferred.1.checked_add(1)?);
+    if rgb32_bytes(largest) > RESERVED_BYTES {
+        return Some(inferred);
+    }
+    probe(io, Command::Full).or(Some(inferred))
+}
+
 fn resolve_with(io: &mut impl VideoIo, requested: Option<Size>) -> Resolved {
     let inherited = io.size();
-    let output = inherited.and_then(|_| {
-        probe(io, Command::Full).or_else(|| {
-            let half = probe(io, Command::Half)?;
-            Some((half.0.checked_mul(2)?, half.1.checked_mul(2)?))
-        })
-    });
+    let output = inherited.and_then(|_| probe_output(io));
     let current = io.size().or(inherited).unwrap_or((1280, 720));
     if let Some(target) = requested
         .filter(|target| output.is_some_and(|output| selectable_sizes(output).contains(target)))
@@ -312,13 +331,10 @@ mod tests {
     }
 
     #[test]
-    fn auto_1080_probes_output_then_applies_verified_half_size() {
+    fn auto_1080_keeps_the_probed_half_size_without_a_full_size_write() {
         let mut io = Fake {
-            size: Some((960, 540)),
-            steps: VecDeque::from([
-                (Command::Full, Some((1920, 1080)), Ok(false)),
-                (Command::Half, Some((960, 540)), Ok(true)),
-            ]),
+            size: Some((1920, 1080)),
+            steps: VecDeque::from([(Command::Half, Some((960, 540)), Ok(false))]),
         };
         assert_eq!(
             resolve_with(&mut io, None),
@@ -332,13 +348,80 @@ mod tests {
     }
 
     #[test]
-    fn ambiguous_full_probe_can_recover_output_from_changed_half_geometry() {
+    fn outputs_above_the_reservation_never_get_a_full_size_write() {
+        // The fake panics on any command it was not told to expect.
+        for (half, output) in [
+            ((960, 600), (1920, 1200)),
+            ((960, 720), (1920, 1440)),
+            ((1280, 720), (2560, 1440)),
+            // 1921x1079 has fewer pixels than 1920x1080 but its padded rows
+            // do not fit, and a 960x539 half cannot rule it out.
+            ((960, 539), (1920, 1078)),
+        ] {
+            let mut io = Fake {
+                size: Some(half),
+                steps: VecDeque::from([(Command::Half, Some(half), Ok(false))]),
+            };
+            assert_eq!(
+                resolve_with(&mut io, None),
+                Resolved {
+                    render: half,
+                    output: Some(output),
+                    explicit_applied: false
+                }
+            );
+            assert!(io.steps.is_empty());
+        }
+    }
+
+    #[test]
+    fn small_output_reads_back_its_exact_size() {
+        for output in [(1280, 720), (1365, 767)] {
+            let mut io = Fake {
+                size: Some(output),
+                steps: VecDeque::from([
+                    (Command::Half, Some((output.0 / 2, output.1 / 2)), Ok(false)),
+                    (Command::Full, Some(output), Ok(false)),
+                ]),
+            };
+            assert_eq!(
+                resolve_with(&mut io, None),
+                Resolved {
+                    render: output,
+                    output: Some(output),
+                    explicit_applied: false
+                }
+            );
+            assert!(io.steps.is_empty());
+        }
+    }
+
+    #[test]
+    fn ambiguous_full_size_read_falls_back_to_the_inferred_output() {
+        let mut io = Fake {
+            size: Some((1280, 720)),
+            steps: VecDeque::from([
+                (Command::Half, Some((640, 360)), Ok(false)),
+                (Command::Full, Some((640, 360)), Ok(true)),
+                (Command::Explicit((1280, 720)), Some((1280, 720)), Ok(false)),
+            ]),
+        };
+        assert_eq!(
+            resolve_with(&mut io, None),
+            Resolved {
+                render: (1280, 720),
+                output: Some((1280, 720)),
+                explicit_applied: false
+            }
+        );
+        assert!(io.steps.is_empty());
+    }
+
+    #[test]
+    fn timed_out_half_probe_still_counts_when_geometry_changed() {
         let mut io = Fake {
             size: Some((1920, 1080)),
-            steps: VecDeque::from([
-                (Command::Full, Some((1920, 1080)), Ok(true)),
-                (Command::Half, Some((960, 540)), Ok(true)),
-            ]),
+            steps: VecDeque::from([(Command::Half, Some((960, 540)), Ok(true))]),
         };
         let result = resolve_with(&mut io, Some((1280, 720)));
         assert_eq!(result.render, (960, 540));
@@ -351,10 +434,7 @@ mod tests {
     fn unverified_output_does_not_offer_explicit_choices() {
         let mut io = Fake {
             size: Some((960, 540)),
-            steps: VecDeque::from([
-                (Command::Full, Some((960, 540)), Ok(true)),
-                (Command::Half, Some((960, 540)), Ok(true)),
-            ]),
+            steps: VecDeque::from([(Command::Half, Some((960, 540)), Ok(true))]),
         };
         assert_eq!(
             resolve_with(&mut io, Some((1920, 1080))),
@@ -364,6 +444,7 @@ mod tests {
                 explicit_applied: false
             }
         );
+        assert!(io.steps.is_empty());
     }
 
     #[test]
@@ -371,28 +452,31 @@ mod tests {
         let mut io = Fake {
             size: Some((1920, 1080)),
             steps: VecDeque::from([
-                (Command::Full, Some((1920, 1080)), Ok(false)),
-                (Command::Half, Some((1920, 1080)), Ok(true)),
-                (Command::Explicit((960, 540)), Some((1920, 1080)), Ok(true)),
+                (Command::Half, Some((1920, 1080)), Ok(false)),
+                (Command::Explicit((1280, 720)), Some((1920, 1080)), Ok(true)),
             ]),
         };
         assert_eq!(resolve_with(&mut io, None).render, (1920, 1080));
+        assert!(io.steps.is_empty());
     }
 
     #[test]
     fn explicit_and_four_k_auto_use_only_supported_verified_sizes() {
         for requested in [Some((1920, 1080)), None] {
             let target = requested.unwrap_or((1280, 720));
+            let mut steps = VecDeque::from([(Command::Half, Some((1920, 1080)), Ok(false))]);
+            if requested.is_none() {
+                steps.push_back((Command::Explicit(target), Some(target), Ok(true)));
+            }
             let mut io = Fake {
-                size: Some((1280, 720)),
-                steps: VecDeque::from([
-                    (Command::Full, Some((3840, 2160)), Ok(false)),
-                    (Command::Explicit(target), Some(target), Ok(true)),
-                ]),
+                size: Some((1920, 1080)),
+                steps,
             };
             let result = resolve_with(&mut io, requested);
             assert_eq!(result.render, target);
+            assert_eq!(result.output, Some((3840, 2160)));
             assert_eq!(result.explicit_applied, requested.is_some());
+            assert!(io.steps.is_empty());
         }
     }
 
@@ -408,5 +492,12 @@ mod tests {
         assert!(outcome(Some(1), b"Usage:", b"").is_err());
         assert!(outcome(Some(1), b"", b"Unknown format").is_err());
         assert!(outcome(Some(2), b"", b"").is_err());
+    }
+
+    #[test]
+    fn framebuffer_bytes_include_row_padding() {
+        assert_eq!(rgb32_bytes((1920, 1080)), RESERVED_BYTES);
+        assert_eq!(rgb32_bytes((1921, 1079)), 8_303_984);
+        assert!(rgb32_bytes((1921, 1079)) > RESERVED_BYTES);
     }
 }

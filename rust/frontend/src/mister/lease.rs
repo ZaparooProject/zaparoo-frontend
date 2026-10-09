@@ -14,6 +14,7 @@ const REQUEST: &[u8] = b"ZAPAROO-SCANOUT-2";
 const GRANTED: &[u8] = b"ZAPAROO-SCANOUT-2 PROXY";
 static OFFER: OnceLock<Mutex<Option<File>>> = OnceLock::new();
 static MANAGED: AtomicBool = AtomicBool::new(false);
+static RASTER_QUERY: AtomicBool = AtomicBool::new(false);
 
 /// Call once during startup, before commands/threads can inherit the descriptor.
 pub fn configure() -> bool {
@@ -37,6 +38,10 @@ pub fn configure() -> bool {
         return false;
     }
     MANAGED.store(true, Ordering::SeqCst);
+    RASTER_QUERY.store(
+        std::env::var("ZAPAROO_SCANOUT_RASTER").is_ok_and(|value| value == "1"),
+        Ordering::SeqCst,
+    );
     true
 }
 
@@ -78,6 +83,12 @@ fn valid_offer(fd: i32) -> bool {
 
 pub fn managed() -> bool {
     MANAGED.load(Ordering::SeqCst)
+}
+
+/// Main answers the proxy's raster query. An older Main ignores the packet,
+/// so it is only sent where Main advertised it.
+pub fn raster_query() -> bool {
+    RASTER_QUERY.load(Ordering::SeqCst)
 }
 
 /// Retain until route disable, mappings and slot descriptor have been released.
