@@ -1397,7 +1397,18 @@ pub fn context_accept(ctx: &Ctx, app: &App, id: &str) {
         }
         "change_launcher" => crate::launchers::open_system_picker(ctx, app, &row.id),
         "add_to_hub" => {
-            crate::hub::toggle_target(ctx, app, "system", &row.id, "", "", "", "", "", "");
+            crate::hub::toggle_target(
+                ctx,
+                app,
+                "system",
+                &row.id,
+                "",
+                "",
+                "",
+                row.hub_name(),
+                "",
+                "",
+            );
         }
         "toggle_hide_system" => crate::router::toggle_hidden_system(ctx, app, &row.id),
         "index_system" => crate::router::start_index(ctx, app, Some(vec![row.id.clone()])),

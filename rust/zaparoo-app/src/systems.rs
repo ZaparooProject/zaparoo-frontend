@@ -229,6 +229,18 @@ impl SystemRow {
         !self.zap_script.trim().is_empty()
     }
 
+    /// The name a Hub tile for this system stores. A launchable keeps its
+    /// own, since its id is an opaque token and no regional name exists for
+    /// it; an indexed system stores none and resolves on every draw, so it
+    /// follows the region and `[custom.system_names]`.
+    pub fn hub_name(&self) -> &str {
+        if self.is_launchable() {
+            &self.name
+        } else {
+            ""
+        }
+    }
+
     /// The `ZapScript` a system launches (or writes to a card) with.
     pub fn launch_text(&self) -> String {
         if self.is_launchable() {
@@ -699,16 +711,20 @@ mod tests {
     fn launch_texts_and_random_directive() {
         let normal = SystemRow {
             id: "SNES".into(),
+            name: "Super Nintendo".into(),
             ..SystemRow::default()
         };
         assert!(!normal.is_launchable());
+        assert_eq!(normal.hub_name(), "");
         assert_eq!(normal.launch_text(), "**launch.system:SNES");
         let virtual_system = SystemRow {
             id: "Menu".into(),
+            name: "MiSTer Menu".into(),
             zap_script: "zaparoo://launch/Menu".into(),
             ..SystemRow::default()
         };
         assert!(virtual_system.is_launchable());
+        assert_eq!(virtual_system.hub_name(), "MiSTer Menu");
         assert_eq!(virtual_system.launch_text(), "zaparoo://launch/Menu");
         assert_eq!(
             random_launch_text(&["SNES".into(), "a,b".into(), "c^d".into(), String::new()]),

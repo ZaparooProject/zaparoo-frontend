@@ -6003,6 +6003,49 @@ fn navigation_rows() -> Vec<crate::games::GameRow> {
 }
 
 #[test]
+fn add_to_hub_from_systems_names_a_launchable_tile_only() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        let mut catalog = navigation_catalog();
+        catalog.truncate(1);
+        catalog.push(zaparoo_core::media_types::SystemInfo {
+            id: "ge5jjso5lvkdfgsywmdqjpa5ye".into(),
+            name: "DVD Player".into(),
+            category: "Console".into(),
+            zap_script: "zaparoo://launch/dvd".into(),
+            ..Default::default()
+        });
+        shared.systems = catalog;
+        shared.categories = vec!["Console".into()];
+        shared.hub.layout.items.clear();
+    }
+    crate::systems::enter(&ctx, &app, "Console", EntryMode::Fresh, false);
+    // Rows sort by name: the launchable first, then the indexed system.
+    crate::systems::context_accept(&ctx, &app, "add_to_hub");
+    crate::router::handle_action(&ctx, &app, "right");
+    crate::systems::context_accept(&ctx, &app, "add_to_hub");
+
+    let shared = crate::router::lock(&ctx.shared);
+    let stored: Vec<(&str, &str)> = shared
+        .hub
+        .layout
+        .items
+        .iter()
+        .map(|item| (item.id.as_str(), item.name.as_str()))
+        .collect();
+    assert_eq!(
+        stored,
+        [
+            ("ge5jjso5lvkdfgsywmdqjpa5ye", "DVD Player"),
+            ("System00", "")
+        ]
+    );
+}
+
+#[test]
 fn fresh_systems_reset_but_back_and_resume_keep_the_parent_position() {
     assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
     let (app, window) = boot();
