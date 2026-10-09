@@ -104,6 +104,13 @@ private `_` recipe. Container builds write to `rust/target/docker/`.
 - Take geometry from the `Sizing` and `Layout` globals (pushed from
   `zaparoo_app::sizing` and `zaparoo_app::layouts`), not hardcoded pixel sizes
   or element counts. The UI must run cleanly at 240p.
+- Keep every `Layout` property pushed on every layout change. `Layout` holds
+  the active screen family's grid table and list table, and `push_profile` in
+  `rust/frontend/src/sizing.rs` writes both whatever the browse layout is, so
+  a view never reads a `.slint` default or the last screen's value. A new
+  `Layout` property gets its setter there, unconditionally. Where Rust solves
+  a grid's cells and offsets, the view places them with the same insets and
+  gaps Rust solved with (Settings and the Hub use `Sizing.hub-grid-*`).
 - Put product rules (sizing, palette, grid navigation, menus, input timing,
   status ladders) in the toolkit-free `rust/zaparoo-app` crate with tests, and
   keep `rust/frontend` as the Slint adapter. `scripts/check-toolkit-free.sh`
