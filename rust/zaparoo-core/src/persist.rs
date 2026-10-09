@@ -252,12 +252,14 @@ pub const MAX_RECENT_SEARCHES: usize = 10;
 /// The Search screen: the search being edited or shown, where its results
 /// were left, and the recent searches.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(from = "SearchStateRepr")]
 pub struct SearchState {
     pub query: String,
-    /// Empty searches every system.
-    pub system_id: String,
-    /// `type:value` tags, at most one per type.
+    /// Empty searches every system. The Search screen picks at most one; a
+    /// saved search's Hub tile can name several.
+    pub systems: Vec<String>,
+    /// `type:value` tags: at most one per type from the Search screen, as
+    /// written from a saved search's Hub tile.
     pub tags: Vec<String>,
     /// True when the search was opened on a browse folder, which fixes the
     /// system and returns there on Back.
@@ -269,6 +271,9 @@ pub struct SearchState {
     pub scope_name: String,
     pub selected_path: String,
     pub list_top: Option<usize>,
+    /// True when a Hub tile opened the search, so Back from the results
+    /// returns to the Hub and the tags are sent as the tile wrote them.
+    pub from_hub: bool,
     /// Most recent first. After the plain values, because TOML writes
     /// arrays of tables after them.
     pub recent: Vec<RecentSearch>,
@@ -276,11 +281,75 @@ pub struct SearchState {
 
 /// One remembered search.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(from = "RecentSearchRepr")]
 pub struct RecentSearch {
     pub query: String,
-    pub system_id: String,
+    pub systems: Vec<String>,
     pub tags: Vec<String>,
+}
+
+/// `SearchState` as a state file holds it, including the single
+/// `system_id` written before a search could cover several systems.
+#[derive(Default, Deserialize)]
+#[serde(default)]
+struct SearchStateRepr {
+    query: String,
+    system_id: String,
+    systems: Vec<String>,
+    tags: Vec<String>,
+    scoped: bool,
+    scope_path: String,
+    scope_name: String,
+    selected_path: String,
+    list_top: Option<usize>,
+    from_hub: bool,
+    recent: Vec<RecentSearch>,
+}
+
+#[derive(Default, Deserialize)]
+#[serde(default)]
+struct RecentSearchRepr {
+    query: String,
+    system_id: String,
+    systems: Vec<String>,
+    tags: Vec<String>,
+}
+
+/// The systems of a search read from disk: the list, or the one legacy
+/// `system_id` when the file predates it.
+fn systems_from_disk(systems: Vec<String>, system_id: String) -> Vec<String> {
+    if systems.is_empty() && !system_id.is_empty() {
+        vec![system_id]
+    } else {
+        systems
+    }
+}
+
+impl From<SearchStateRepr> for SearchState {
+    fn from(repr: SearchStateRepr) -> Self {
+        Self {
+            query: repr.query,
+            systems: systems_from_disk(repr.systems, repr.system_id),
+            tags: repr.tags,
+            scoped: repr.scoped,
+            scope_path: repr.scope_path,
+            scope_name: repr.scope_name,
+            selected_path: repr.selected_path,
+            list_top: repr.list_top,
+            from_hub: repr.from_hub,
+            recent: repr.recent,
+        }
+    }
+}
+
+impl From<RecentSearchRepr> for RecentSearch {
+    fn from(repr: RecentSearchRepr) -> Self {
+        Self {
+            query: repr.query,
+            systems: systems_from_disk(repr.systems, repr.system_id),
+            tags: repr.tags,
+        }
+    }
 }
 
 impl SearchState {
@@ -288,12 +357,12 @@ impl SearchState {
     /// is tied to where it was opened and is not recorded.
     pub fn remember(&mut self) {
         let query = self.query.trim();
-        if self.scoped || (query.is_empty() && self.system_id.is_empty() && self.tags.is_empty()) {
+        if self.scoped || (query.is_empty() && self.systems.is_empty() && self.tags.is_empty()) {
             return;
         }
         let recent = RecentSearch {
             query: query.to_string(),
-            system_id: self.system_id.clone(),
+            systems: self.systems.clone(),
             tags: self.tags.clone(),
         };
         self.recent.retain(|r| !r.matches(&recent));
@@ -311,15 +380,16 @@ impl SearchState {
 }
 
 impl RecentSearch {
-    /// The same search however the query was cased or the tags ordered.
+    /// The same search however the query was cased or the systems and tags
+    /// ordered.
     fn matches(&self, other: &Self) -> bool {
-        let sorted = |tags: &[String]| {
-            let mut tags = tags.to_vec();
-            tags.sort();
-            tags
+        let sorted = |values: &[String]| {
+            let mut values = values.to_vec();
+            values.sort();
+            values
         };
         self.query.to_lowercase() == other.query.to_lowercase()
-            && self.system_id == other.system_id
+            && sorted(&self.systems) == sorted(&other.systems)
             && sorted(&self.tags) == sorted(&other.tags)
     }
 }
@@ -772,16 +842,17 @@ mod tests {
             },
             search: SearchState {
                 query: "mario".into(),
-                system_id: "NES".into(),
+                systems: vec!["NES".into(), "SNES".into()],
                 tags: vec!["genre:platformer".into()],
                 scoped: false,
                 scope_path: String::new(),
                 scope_name: String::new(),
                 selected_path: "/roms/nes/mario/smb.nes".into(),
                 list_top: Some(1),
+                from_hub: true,
                 recent: vec![RecentSearch {
                     query: "zelda".into(),
-                    system_id: String::new(),
+                    systems: vec!["SNES".into()],
                     tags: Vec::new(),
                 }],
             },
@@ -1203,6 +1274,36 @@ future_field = "ignored"
     }
 
     #[test]
+    fn a_search_saved_with_one_system_id_loads_as_a_list_and_is_rewritten_as_one() {
+        let old: PersistedState = toml::from_str(
+            "[search]\nquery = 'mario'\nsystem_id = 'SNES'\n\n[[search.recent]]\nquery = 'zelda'\nsystem_id = 'NES'\n\n[[search.recent]]\nquery = 'kart'\n",
+        )
+        .unwrap();
+        assert_eq!(old.search.systems, ["SNES"]);
+        assert!(!old.search.from_hub);
+        assert_eq!(old.search.recent[0].systems, ["NES"]);
+        assert!(old.search.recent[1].systems.is_empty());
+
+        let written = toml::to_string(&old).unwrap();
+        assert!(!written.contains("system_id = \"SNES\""), "{written}");
+        assert!(written.contains("systems = [\"SNES\"]"), "{written}");
+        let reread: PersistedState = toml::from_str(&written).unwrap();
+        assert_eq!(reread.search, old.search);
+    }
+
+    #[test]
+    fn recent_searches_ignore_the_order_of_their_systems() {
+        let mut search = SearchState {
+            systems: vec!["SNES".into(), "Genesis".into()],
+            ..SearchState::default()
+        };
+        search.remember();
+        search.systems = vec!["Genesis".into(), "SNES".into()];
+        search.remember();
+        assert_eq!(search.recent.len(), 1);
+    }
+
+    #[test]
     fn recent_searches_dedupe_cap_and_round_trip() {
         let mut search = SearchState {
             query: " Mario ".into(),
@@ -1210,12 +1311,12 @@ future_field = "ignored"
         };
         search.remember();
         search.query = "zelda".into();
-        search.system_id = "SNES".into();
+        search.systems = vec!["SNES".into()];
         search.tags = vec!["year:1991".into(), "genre:rpg".into()];
         search.remember();
         // Same search, different case and tag order: moves to the front.
         search.query = "mario".into();
-        search.system_id.clear();
+        search.systems.clear();
         search.tags.clear();
         search.remember();
         assert_eq!(
@@ -1227,13 +1328,13 @@ future_field = "ignored"
                 },
                 RecentSearch {
                     query: "zelda".into(),
-                    system_id: "SNES".into(),
+                    systems: vec!["SNES".into()],
                     tags: vec!["year:1991".into(), "genre:rpg".into()],
                 },
             ]
         );
         search.query = "ZELDA".into();
-        search.system_id = "SNES".into();
+        search.systems = vec!["SNES".into()];
         search.tags = vec!["genre:rpg".into(), "year:1991".into()];
         search.remember();
         assert_eq!(search.recent.len(), 2);
@@ -1242,7 +1343,7 @@ future_field = "ignored"
         // Nothing to search on, or a folder search: not recorded.
         search.reset();
         assert_eq!(search.recent.len(), 2);
-        assert!(search.query.is_empty() && search.system_id.is_empty());
+        assert!(search.query.is_empty() && search.systems.is_empty());
         search.remember();
         search.query = "kart".into();
         search.scoped = true;

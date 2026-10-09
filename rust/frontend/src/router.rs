@@ -183,6 +183,8 @@ pub enum ListContext {
     /// Its "Group by" and "Sort" pages.
     FavoritesGrouping,
     FavoritesSort,
+    /// The Search results' West "View" menu.
+    SearchResultsPageMenu,
     /// The Games "Filter" page: one row per category, and the values page
     /// of the category being chosen. Both stay inside the View menu's panel.
     FilterCategories,
@@ -1550,6 +1552,11 @@ fn list_action(ctx: &Ctx, app: &App, action: &str) {
                     ListContext::HubPageMenu => crate::hub::page_menu_accept(ctx, app, &id),
                     ListContext::HubAdd => crate::hub::add_picked(ctx, app, &id),
                     ListContext::FavoritesPageMenu => favorites_page_menu_accept(ctx, app, &id),
+                    ListContext::SearchResultsPageMenu => {
+                        if id == "add_to_hub" {
+                            crate::search::toggle_hub(ctx, app);
+                        }
+                    }
                     ListContext::FavoritesGrouping => favorites_grouping_picked(ctx, app, &id),
                     ListContext::FavoritesSort => favorites_sort_picked(ctx, app, &id),
                     ListContext::SettingsPicker(field) => {
@@ -2023,6 +2030,24 @@ pub(crate) fn open_favorites_page_menu(ctx: &Ctx, app: &App) {
         ctx,
         app,
         ListContext::FavoritesPageMenu,
+        "title:view",
+        entries,
+    );
+}
+
+/// The Search results' West "View" menu: keep the search on the Hub, or
+/// take its tile back off.
+pub(crate) fn open_search_results_page_menu(ctx: &Ctx, app: &App) {
+    let on_hub = crate::search::on_hub(&lock(&ctx.shared));
+    let entries = vec![menu_row_keyed(
+        "add_to_hub",
+        if on_hub { "hub:remove" } else { "add_to_hub" },
+        "",
+    )];
+    present_list(
+        ctx,
+        app,
+        ListContext::SearchResultsPageMenu,
         "title:view",
         entries,
     );

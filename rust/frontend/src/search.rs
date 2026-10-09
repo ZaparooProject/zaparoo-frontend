@@ -90,8 +90,14 @@ pub(crate) fn args(shared: &Shared) -> SearchArgs {
     let search = &shared.persist.search;
     SearchArgs {
         query: rules::query_text(&search.query).to_string(),
-        system_id: search.system_id.clone(),
-        tags: zaparoo_app::browse_filter::normalize(&search.tags),
+        systems: SearchArgs::systems(&search.systems),
+        // A Hub tile's tags go to Core as written; the picker's are held to
+        // what it can produce.
+        tags: if search.from_hub {
+            rules::tile_list(&search.tags)
+        } else {
+            zaparoo_app::browse_filter::normalize(&search.tags)
+        },
         path_prefix: search.scope_path.clone(),
         max_results: rules::PREVIEW_LIMIT,
         sort: rules::RESULT_SORT.to_string(),
@@ -103,7 +109,7 @@ fn can_search(shared: &Shared) -> bool {
     let search = &shared.persist.search;
     rules::can_search(
         &search.query,
-        &search.system_id,
+        &search.systems,
         &search.tags,
         &search.scope_path,
     )
@@ -129,13 +135,15 @@ pub(crate) fn results_title(shared: &Shared) -> String {
     if !query.is_empty() {
         parts.push(format!("\u{201c}{query}\u{201d}"));
     }
-    if !search.system_id.is_empty() {
-        parts.push(system_name(shared, &search.system_id));
-    }
+    parts.extend(search.systems.iter().map(|id| system_name(shared, id)));
     if !search.scope_name.is_empty() {
         parts.push(search.scope_name.clone());
     }
-    parts.extend(tag_labels(shared, &search.tags));
+    if search.from_hub {
+        parts.extend(tag_labels(shared, &rules::tile_list(&search.tags)));
+    } else {
+        parts.extend(tag_labels(shared, &search.tags));
+    }
     parts.join(" \u{b7} ")
 }
 
@@ -173,10 +181,10 @@ fn pane_rows(shared: &Shared) -> Vec<SearchPaneRow> {
             .iter()
             .map(|p| {
                 // The system is worth naming only when several are searched.
-                let detail = if shared.persist.search.system_id.is_empty() {
-                    p.system.as_str()
-                } else {
+                let detail = if shared.persist.search.systems.len() == 1 {
                     ""
+                } else {
+                    p.system.as_str()
                 };
                 row(&p.name, detail)
             })
@@ -187,10 +195,11 @@ fn pane_rows(shared: &Shared) -> Vec<SearchPaneRow> {
             .recent
             .iter()
             .map(|recent| {
-                let mut filters = Vec::new();
-                if !recent.system_id.is_empty() {
-                    filters.push(system_name(shared, &recent.system_id));
-                }
+                let mut filters: Vec<String> = recent
+                    .systems
+                    .iter()
+                    .map(|id| system_name(shared, id))
+                    .collect();
                 filters.extend(recent.tags.iter().map(|tag| {
                     let value = tag.split_once(':').map_or(tag.as_str(), |(_, v)| v);
                     zaparoo_app::browse_filter::display_label("", value)
@@ -260,11 +269,14 @@ pub(crate) fn render(ctx: &Ctx, app: &App) {
     view.set_at(at);
     view.set_after(after);
     view.set_scoped(search.scoped);
-    view.set_system_name(SharedString::from(if search.system_id.is_empty() {
-        String::new()
-    } else {
-        system_name(shared, &search.system_id)
-    }));
+    view.set_system_name(SharedString::from(
+        search
+            .systems
+            .iter()
+            .map(|id| system_name(shared, id))
+            .collect::<Vec<_>>()
+            .join(", "),
+    ));
     view.set_scope_name(SharedString::from(search.scope_name.as_str()));
     view.set_filter_text(SharedString::from(
         crate::browse_filter::search_summary(shared).unwrap_or_default(),
@@ -369,7 +381,7 @@ pub(crate) fn enter_scoped(ctx: &Ctx, app: &App) {
         let search = &mut shared.persist.search;
         search.reset();
         search.scoped = true;
-        search.system_id = system_id;
+        search.systems = vec![system_id];
         if in_folder {
             search.scope_name = zaparoo_app::media_list::folder_name_for_path(&path);
             search.scope_path = path;
@@ -377,6 +389,74 @@ pub(crate) fn enter_scoped(ctx: &Ctx, app: &App) {
     }
     crate::games::flush_persist(ctx);
     show(ctx, app, 1);
+}
+
+/// A saved search's Hub tile: straight to its results, with no stop on the
+/// Search screen. `path` limits it to a folder. The search is the tile's, so
+/// it is not added to the recent searches, and Back returns to the Hub.
+pub(crate) fn enter_saved(
+    ctx: &Ctx,
+    app: &App,
+    query: &str,
+    systems: &[String],
+    tags: &[String],
+    path: &str,
+) {
+    {
+        let mut shared = lock(&ctx.shared);
+        reset_model(&mut shared);
+        let search = &mut shared.persist.search;
+        search.reset();
+        search.from_hub = true;
+        search.query = rules::query_text(query).to_string();
+        search.systems = rules::tile_list(systems);
+        search.tags = rules::tile_list(tags);
+        if !path.is_empty() {
+            search.scope_name = zaparoo_app::media_list::folder_name_for_path(path);
+            search.scope_path = path.to_string();
+        }
+        let query = search.query.clone();
+        shared.search.keyboard.set_text(&query);
+        shared.search.keyboard.focus(Key::Submit);
+        if !can_search(&shared) {
+            return;
+        }
+    }
+    // The tag list names the tags in the results' title once it lands.
+    crate::browse_filter::begin_for(ctx, app, Target::Search);
+    crate::games::enter_search(ctx, app, EntryMode::Fresh);
+}
+
+/// The search on screen as a Hub tile would hold it: query, systems, tags
+/// and folder limit.
+fn tile_parts(shared: &Shared) -> (String, Vec<String>, Vec<String>, String) {
+    let request = args(shared);
+    let search = &shared.persist.search;
+    (
+        request.query,
+        search.systems.clone(),
+        request.tags,
+        search.scope_path.clone(),
+    )
+}
+
+/// Whether the search on screen already has a Hub tile, so the results'
+/// View menu offers "Remove from Hub".
+pub(crate) fn on_hub(shared: &Shared) -> bool {
+    let (query, systems, tags, path) = tile_parts(shared);
+    crate::hub::has_search(shared, &query, &systems, &tags, &path)
+}
+
+/// "Add to Hub" / "Remove from Hub" in the results' View menu: pin the
+/// search on screen as a tile named by the results' title, or take its tile
+/// back off.
+pub(crate) fn toggle_hub(ctx: &Ctx, app: &App) {
+    let (query, systems, tags, path, name) = {
+        let shared = lock(&ctx.shared);
+        let (query, systems, tags, path) = tile_parts(&shared);
+        (query, systems, tags, path, results_title(&shared))
+    };
+    crate::hub::toggle_search(ctx, app, &query, &systems, &tags, &path, &name);
 }
 
 /// Cold start on the results screen: rebuild the search behind it, then
@@ -533,7 +613,7 @@ fn accept_pane(ctx: &Ctx, app: &App, index: usize) {
                 };
                 let search = &mut shared.persist.search;
                 search.query.clone_from(&recent.query);
-                search.system_id.clone_from(&recent.system_id);
+                search.systems.clone_from(&recent.systems);
                 search.tags.clone_from(&recent.tags);
                 shared.search.keyboard.set_text(&recent.query);
                 shared.search.focus = Focus::default();
@@ -562,7 +642,7 @@ fn recent_systems(shared: &Shared) -> Vec<String> {
         .search
         .recent
         .iter()
-        .map(|r| r.system_id.clone())
+        .flat_map(|r| r.systems.clone())
         .chain(
             shared
                 .persist
@@ -581,7 +661,11 @@ fn open_system_picker(ctx: &Ctx, app: &App) {
     use zaparoo_app::system_picker::{self as picker, Row, Section};
     let (rows, index) = {
         let shared = lock(&ctx.shared);
-        let current = shared.persist.search.system_id.clone();
+        // The picker holds one system; a search across several focuses All.
+        let current = match shared.persist.search.systems.as_slice() {
+            [only] => only.clone(),
+            _ => String::new(),
+        };
         let systems: Vec<picker::System> = shared
             .systems
             .iter()
@@ -631,9 +715,14 @@ fn open_system_picker(ctx: &Ctx, app: &App) {
 pub(crate) fn system_picked(ctx: &Ctx, app: &App, id: &str) {
     let changed = {
         let mut shared = lock(&ctx.shared);
-        let next = id.strip_prefix("sys:").unwrap_or_default().to_string();
-        let changed = shared.persist.search.system_id != next;
-        shared.persist.search.system_id = next;
+        let next: Vec<String> = id
+            .strip_prefix("sys:")
+            .filter(|id| !id.is_empty())
+            .map(str::to_string)
+            .into_iter()
+            .collect();
+        let changed = shared.persist.search.systems != next;
+        shared.persist.search.systems = next;
         shared.search.prune_pending = changed;
         changed
     };
@@ -819,14 +908,22 @@ fn leave(ctx: &Ctx, app: &App) {
         shared.search.task.cancel();
         shared.search.seq = shared.search.seq.wrapping_add(1);
         let scoped = shared.persist.search.scoped;
+        // A folder search covers the one system it was opened on.
+        let scope_system = shared
+            .persist
+            .search
+            .systems
+            .first()
+            .cloned()
+            .unwrap_or_default();
         let system = shared
             .systems
             .iter()
-            .find(|s| s.id == shared.persist.search.system_id)
+            .find(|s| s.id == scope_system)
             .cloned();
         let intact = shared.search.browse_intact
             && shared.games.mode == crate::GamesMode::Browse
-            && shared.games.system_id == shared.persist.search.system_id;
+            && shared.games.system_id == scope_system;
         (scoped, intact, system)
     };
     if scoped {
@@ -1041,12 +1138,12 @@ mod tests {
         let mut shared = shared();
         let search = &mut shared.persist.search;
         search.query = "  mario kart ".into();
-        search.system_id = "SNES".into();
+        search.systems = vec!["SNES".into()];
         search.tags = vec!["year:1992".into(), "bogus:x".into(), "genre:racing".into()];
         search.scope_path = "/roms/SNES/Racing".into();
         let args = args(&shared);
         assert_eq!(args.query, "mario kart");
-        assert_eq!(args.system_id, "SNES");
+        assert_eq!(args.systems, ["SNES"]);
         assert_eq!(args.tags, ["genre:racing", "year:1992"]);
         assert_eq!(args.path_prefix, "/roms/SNES/Racing");
         assert_eq!(args.max_results, rules::PREVIEW_LIMIT);
@@ -1054,6 +1151,28 @@ mod tests {
         assert!(!args.include_hidden);
         shared.show_hidden = true;
         assert!(super::args(&shared).include_hidden);
+    }
+
+    #[test]
+    fn a_hub_tiles_search_sends_its_systems_and_tags_as_written() {
+        let mut shared = shared();
+        let search = &mut shared.persist.search;
+        search.from_hub = true;
+        search.systems = vec!["SNES".into(), "NES".into()];
+        search.tags = vec![
+            "genre:rpg".into(),
+            "genre:action".into(),
+            "bogus:x".into(),
+            " ".into(),
+        ];
+        let args = args(&shared);
+        // One ordered set, so the same systems are one cached page.
+        assert_eq!(args.systems, ["NES", "SNES"]);
+        assert_eq!(args.tags, ["genre:rpg", "genre:action", "bogus:x"]);
+        assert_eq!(
+            results_title(&shared),
+            "SNES \u{b7} NES \u{b7} rpg \u{b7} action \u{b7} x"
+        );
     }
 
     #[test]
@@ -1065,12 +1184,12 @@ mod tests {
         shared.persist.search.recent = vec![
             RecentSearch {
                 query: "zelda".into(),
-                system_id: "SNES".into(),
+                systems: vec!["SNES".into()],
                 tags: vec!["genre:action-rpg".into()],
             },
             RecentSearch {
                 query: String::new(),
-                system_id: String::new(),
+                systems: Vec::new(),
                 tags: vec!["year:1994".into()],
             },
         ];
@@ -1095,8 +1214,11 @@ mod tests {
         assert_eq!(rows[0].title, "Mario Kart 64");
         assert_eq!(rows[0].detail, "Nintendo 64");
         // One system searched: naming it on every row says nothing.
-        shared.persist.search.system_id = "N64".into();
+        shared.persist.search.systems = vec!["N64".into()];
         assert_eq!(pane_rows(&shared)[0].detail, "");
+        // Several searched: each row says which one it is from.
+        shared.persist.search.systems.push("SNES".into());
+        assert_eq!(pane_rows(&shared)[0].detail, "Nintendo 64");
     }
 
     #[test]
@@ -1105,7 +1227,7 @@ mod tests {
         shared.persist.search.recent = vec![
             RecentSearch {
                 query: "zelda".into(),
-                system_id: "SNES".into(),
+                systems: vec!["SNES".into()],
                 tags: Vec::new(),
             },
             RecentSearch {
@@ -1132,7 +1254,7 @@ mod tests {
         assert_eq!(pane_kind(&shared), SearchPane::None);
         assert!(pane_rows(&shared).is_empty());
         // At a system's top level the system alone is enough to search on.
-        shared.persist.search.system_id = "SNES".into();
+        shared.persist.search.systems = vec!["SNES".into()];
         assert_eq!(pane_kind(&shared), SearchPane::Preview);
     }
 
@@ -1142,7 +1264,7 @@ mod tests {
         assert_eq!(results_title(&shared), "");
         let search = &mut shared.persist.search;
         search.query = " mario ".into();
-        search.system_id = "SNES".into();
+        search.systems = vec!["SNES".into()];
         search.scope_name = "Racing".into();
         search.tags = vec!["genre:racing".into()];
         assert_eq!(

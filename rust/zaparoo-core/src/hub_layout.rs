@@ -39,6 +39,7 @@ pub enum HubItemKind {
     System,
     Folder,
     ZapScript,
+    Search,
     Blank,
     Collection,
     Unknown(String),
@@ -52,6 +53,7 @@ impl HubItemKind {
             Self::System => "system",
             Self::Folder => "folder",
             Self::ZapScript => "zapscript",
+            Self::Search => "search",
             Self::Blank => "blank",
             Self::Collection => "collection",
             Self::Unknown(raw) => raw.as_str(),
@@ -65,6 +67,7 @@ impl HubItemKind {
             "system" => Self::System,
             "folder" => Self::Folder,
             "zapscript" => Self::ZapScript,
+            "search" => Self::Search,
             "blank" => Self::Blank,
             "collection" => Self::Collection,
             other => Self::Unknown(other.to_string()),
@@ -82,8 +85,9 @@ impl HubItemKind {
 
 /// One Hub tile. Fields are used per-kind: `id` for `category`/`action`/
 /// `system`, `path` for `folder`, `script` (+ optional `system`/`path` as a
-/// cover-art hint) for `zapscript`. `name`/`icon` are optional overrides
-/// available on any kind. `Blank` uses none of them.
+/// cover-art hint) for `zapscript`, and `query`/`systems`/`tags` (+ optional
+/// `path` as a folder limit) for `search`. `name`/`icon` are optional
+/// overrides available on any kind. `Blank` uses none of them.
 ///
 /// `relative` is Core's launcher-relative path for a pinned game or folder
 /// (`SNES/USA/Game.sfc`, `SNES/USA`), stored verbatim as Core reported it.
@@ -100,6 +104,39 @@ pub struct HubItem {
     pub name: String,
     pub icon: String,
     pub system: String,
+    /// A saved search's text; empty matches every name.
+    pub query: String,
+    /// The systems a saved search covers; empty searches all of them.
+    pub systems: Vec<String>,
+    /// A saved search's `type:value` tags, sent to Core as written.
+    pub tags: Vec<String>,
+}
+
+/// A list as a set: trimmed, without blanks or repeats, in one order.
+fn as_set(values: &[String]) -> Vec<&str> {
+    let mut values: Vec<&str> = values
+        .iter()
+        .map(|v| v.trim())
+        .filter(|v| !v.is_empty())
+        .collect();
+    values.sort_unstable();
+    values.dedup();
+    values
+}
+
+/// Whether `item` runs this search: the query however it is cased, the
+/// systems and tags in any order, and the same folder limit.
+fn same_search(
+    item: &HubItem,
+    query: &str,
+    systems: &[String],
+    tags: &[String],
+    path: &str,
+) -> bool {
+    item.query.trim().to_lowercase() == query.trim().to_lowercase()
+        && as_set(&item.systems) == as_set(systems)
+        && as_set(&item.tags) == as_set(tags)
+        && item.path == path
 }
 
 impl HubItem {
@@ -148,7 +185,7 @@ pub const BUILT_IN_ACTIONS: &[&str] = &[
 /// like an app installed on a phone) and added to `known`. A category the
 /// user removed from `items` stays in `known`, so it does NOT come back —
 /// that's what makes "delete a tile" stick. `known` never tracks
-/// `system`/`folder`/`zapscript`/`blank` entries; those are always
+/// `system`/`folder`/`zapscript`/`search`/`blank` entries; those are always
 /// explicitly user-authored (by hand-editing config, or later an edit UI),
 /// never auto-discovered, so there's nothing to reconcile them against.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -454,7 +491,7 @@ impl HubLayout {
         ) {
             return false;
         }
-        let entry = HubItem {
+        self.place_in_first_gap(HubItem {
             kind_raw: kind.to_string(),
             id: id.to_string(),
             path: path.to_string(),
@@ -463,10 +500,15 @@ impl HubLayout {
             name: name.to_string(),
             icon: icon.to_string(),
             system: system.to_string(),
-        };
-        // Filling a blank changes that one cell and nothing else; a push
-        // lands at the true end. Neither leaves a trailing blank behind,
-        // so there is nothing to trim.
+            ..HubItem::default()
+        });
+        true
+    }
+
+    /// Filling a blank changes that one cell and nothing else; a push lands
+    /// at the true end. Neither leaves a trailing blank behind, so there is
+    /// nothing to trim.
+    fn place_in_first_gap(&mut self, entry: HubItem) {
         let gap = self
             .visible_indices()
             .into_iter()
@@ -475,7 +517,49 @@ impl HubLayout {
             Some(real) => self.items[real] = entry,
             None => self.items.push(entry),
         }
+    }
+
+    /// Place a `search` tile created from the Search results' "Add to Hub",
+    /// where `add_target_item` would place a shortcut. `path` limits the
+    /// search to a folder. Returns `false` for a search with nothing to
+    /// search on.
+    pub fn add_search_item(
+        &mut self,
+        query: &str,
+        systems: &[String],
+        tags: &[String],
+        path: &str,
+        name: &str,
+    ) -> bool {
+        let query = query.trim();
+        if query.is_empty() && systems.is_empty() && tags.is_empty() && path.is_empty() {
+            return false;
+        }
+        self.place_in_first_gap(HubItem {
+            kind_raw: HubItemKind::Search.as_str().to_string(),
+            path: path.to_string(),
+            name: name.to_string(),
+            query: query.to_string(),
+            systems: systems.to_vec(),
+            tags: tags.to_vec(),
+            ..HubItem::default()
+        });
         true
+    }
+
+    /// The visible position of the `search` tile that runs this search,
+    /// when one is already on the Hub.
+    pub fn search_position(
+        &self,
+        query: &str,
+        systems: &[String],
+        tags: &[String],
+        path: &str,
+    ) -> Option<usize> {
+        self.visible_indices().into_iter().position(|real| {
+            let item = &self.items[real];
+            item.kind() == HubItemKind::Search && same_search(item, query, systems, tags, path)
+        })
     }
 
     /// The visible position of the tile a browse screen's "Add to Hub"
@@ -581,6 +665,36 @@ struct RawHubItem {
     icon: String,
     #[serde(default)]
     system: String,
+    #[serde(default)]
+    query: String,
+    #[serde(default, deserialize_with = "string_or_list")]
+    systems: Vec<String>,
+    #[serde(default, deserialize_with = "string_or_list")]
+    tags: Vec<String>,
+}
+
+/// A list key that also takes one bare string, so a hand-written
+/// `systems = "SNES"` reads as one system instead of failing the whole
+/// layout. Blank entries are dropped.
+fn string_or_list<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum OneOrMany {
+        One(String),
+        Many(Vec<String>),
+    }
+    let values = match OneOrMany::deserialize(deserializer)? {
+        OneOrMany::One(value) => vec![value],
+        OneOrMany::Many(values) => values,
+    };
+    Ok(values
+        .into_iter()
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())
+        .collect())
 }
 
 #[derive(Deserialize, Default)]
@@ -614,6 +728,9 @@ pub fn load_hub_layout(path: &Path) -> HubLayout {
                 name: raw.name,
                 icon: raw.icon,
                 system: raw.system,
+                query: raw.query,
+                systems: raw.systems,
+                tags: raw.tags,
             })
             .collect(),
     }
@@ -656,6 +773,15 @@ pub fn save_hub_layout(path: &Path, layout: &HubLayout) -> Result<(), String> {
         }
         if !item.system.is_empty() {
             table.insert("system", toml_edit::value(item.system.as_str()));
+        }
+        if !item.query.is_empty() {
+            table.insert("query", toml_edit::value(item.query.as_str()));
+        }
+        for (key, values) in [("systems", &item.systems), ("tags", &item.tags)] {
+            if !values.is_empty() {
+                let list: toml_edit::Array = values.iter().map(String::as_str).collect();
+                table.insert(key, toml_edit::value(list));
+            }
         }
         items.push(table);
     }
@@ -1637,6 +1763,114 @@ system = "NES"
         assert_eq!(layout.items.len(), 1);
         assert!(layout.items[0].relative.is_empty());
         assert_eq!(layout.items[0].script, "/media/fat/games/NES/Zelda.nes");
+    }
+
+    fn strings(values: &[&str]) -> Vec<String> {
+        values.iter().map(ToString::to_string).collect()
+    }
+
+    #[test]
+    fn a_search_tile_round_trips_every_key() {
+        let f = write_tmp(
+            r#"
+[[hub.items]]
+type = "search"
+name = "SNES and Genesis RPGs"
+query = "final"
+systems = ["SNES", "Genesis"]
+tags = ["genre:rpg", "year:1994"]
+path = "/media/fat/games/SNES/Homebrew"
+icon = "rpgs"
+"#,
+        );
+        let layout = load_hub_layout(f.path());
+        let item = &layout.items[0];
+        assert_eq!(item.kind(), HubItemKind::Search);
+        assert_eq!(layout.visible().count(), 1);
+        assert_eq!(item.name, "SNES and Genesis RPGs");
+        assert_eq!(item.query, "final");
+        assert_eq!(item.systems, strings(&["SNES", "Genesis"]));
+        assert_eq!(item.tags, strings(&["genre:rpg", "year:1994"]));
+        assert_eq!(item.path, "/media/fat/games/SNES/Homebrew");
+        assert_eq!(item.icon, "rpgs");
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("frontend.toml");
+        save_hub_layout(&path, &layout).expect("save");
+        let written = std::fs::read_to_string(&path).expect("read");
+        assert!(written.contains(r#"systems = ["SNES", "Genesis"]"#));
+        assert!(written.contains(r#"tags = ["genre:rpg", "year:1994"]"#));
+        assert_eq!(load_hub_layout(&path).items, layout.items);
+    }
+
+    #[test]
+    fn a_search_tiles_lists_take_one_bare_string_and_drop_blanks() {
+        let f = write_tmp(
+            "[[hub.items]]\ntype = \"search\"\nsystems = \"SNES\"\ntags = [\" genre:rpg \", \"\"]\n",
+        );
+        let layout = load_hub_layout(f.path());
+        assert_eq!(layout.items[0].systems, strings(&["SNES"]));
+        assert_eq!(layout.items[0].tags, strings(&["genre:rpg"]));
+    }
+
+    #[test]
+    fn a_search_tiles_empty_keys_are_not_written() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("frontend.toml");
+        let mut layout = HubLayout::default();
+        assert!(layout.add_search_item(" mario ", &[], &[], "", "Mario"));
+        save_hub_layout(&path, &layout).expect("save");
+        let written = std::fs::read_to_string(&path).expect("read");
+        assert!(written.contains("query = \"mario\""));
+        for key in ["systems", "tags", "path", "icon"] {
+            assert!(!written.contains(key), "{key} written for an empty value");
+        }
+    }
+
+    #[test]
+    fn a_saved_search_takes_the_first_gap_and_needs_something_to_search_on() {
+        let mut layout = HubLayout::default();
+        layout.items.push(HubItem::action("search"));
+        layout.items.push(HubItem {
+            kind_raw: "blank".to_string(),
+            ..HubItem::default()
+        });
+        layout.items.push(HubItem::action("settings"));
+
+        assert!(!layout.add_search_item("  ", &[], &[], "", "Nothing"));
+        assert!(layout.add_search_item("", &strings(&["SNES"]), &[], "", "SNES"));
+        assert_eq!(layout.items.len(), 3);
+        assert_eq!(layout.items[1].kind(), HubItemKind::Search);
+        assert!(layout.add_search_item("zelda", &[], &[], "", "Zelda"));
+        assert_eq!(layout.items[3].query, "zelda");
+        assert!(!layout.add_target_item("search", "", "", "", "", "Zelda", "", ""));
+    }
+
+    #[test]
+    fn search_position_ignores_case_and_order_but_not_the_folder() {
+        let mut layout = HubLayout::default();
+        layout.items.push(HubItem::action("search"));
+        let systems = strings(&["SNES", "Genesis"]);
+        let tags = strings(&["genre:rpg", "year:1994"]);
+        assert!(layout.add_search_item("Final", &systems, &tags, "/roms/SNES", "RPGs"));
+
+        let swapped_systems = strings(&["Genesis", "SNES"]);
+        let swapped_tags = strings(&["year:1994", "genre:rpg"]);
+        assert_eq!(
+            layout.search_position(" final ", &swapped_systems, &swapped_tags, "/roms/SNES"),
+            Some(1)
+        );
+        assert_eq!(layout.search_position("final", &systems, &tags, ""), None);
+        assert_eq!(
+            layout.search_position("fina", &systems, &tags, "/roms/SNES"),
+            None
+        );
+        assert_eq!(
+            layout.search_position("final", &strings(&["SNES"]), &tags, "/roms/SNES"),
+            None
+        );
+        // The built-in Search action is a different tile.
+        assert_eq!(layout.search_position("", &[], &[], ""), None);
     }
 
     #[test]

@@ -2,7 +2,7 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: frontend VERSION\n"
-"POT-Creation-Date: 2026-10-08 03:36+0000\n"
+"POT-Creation-Date: 2026-10-09 07:07+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -399,9 +399,9 @@ msgstr ""
 #: rust/frontend/ui/app.slint:3135 rust/frontend/ui/app.slint:3149 rust/frontend/ui/app.slint:3163 rust/frontend/ui/app.slint:3179 rust/frontend/ui/app.slint:3195 rust/frontend/ui/app.slint:3211 rust/frontend/ui/app.slint:3328 rust/frontend/ui/app.slint:3407 rust/frontend/ui/app.slint:3419 rust/frontend/ui/app.slint:3437 rust/frontend/ui/app.slint:3451 rust/frontend/ui/app.slint:3465 rust/frontend/ui/app.slint:3479 rust/frontend/ui/app.slint:3496
 #: rust/frontend/ui/app.slint:3135 rust/frontend/ui/app.slint:3149 rust/frontend/ui/app.slint:3163 rust/frontend/ui/app.slint:3179 rust/frontend/ui/app.slint:3195 rust/frontend/ui/app.slint:3211 rust/frontend/ui/app.slint:3328 rust/frontend/ui/app.slint:3407 rust/frontend/ui/app.slint:3419 rust/frontend/ui/app.slint:3437 rust/frontend/ui/app.slint:3451 rust/frontend/ui/app.slint:3465 rust/frontend/ui/app.slint:3479 rust/frontend/ui/app.slint:3496 rust/frontend/ui/app.slint:3508
 #: rust/frontend/ui/app.slint:3135 rust/frontend/ui/app.slint:3149 rust/frontend/ui/app.slint:3163 rust/frontend/ui/app.slint:3179 rust/frontend/ui/app.slint:3195 rust/frontend/ui/app.slint:3211 rust/frontend/ui/app.slint:3328 rust/frontend/ui/app.slint:3407 rust/frontend/ui/app.slint:3419 rust/frontend/ui/app.slint:3437 rust/frontend/ui/app.slint:3451 rust/frontend/ui/app.slint:3465 rust/frontend/ui/app.slint:3479 rust/frontend/ui/app.slint:3496 rust/frontend/ui/app.slint:3508 rust/frontend/ui/app.slint:3520
-#: rust/frontend/ui/app.slint:3135 rust/frontend/ui/app.slint:3149 rust/frontend/ui/app.slint:3163 rust/frontend/ui/app.slint:3179 rust/frontend/ui/app.slint:3195 rust/frontend/ui/app.slint:3211 rust/frontend/ui/app.slint:3328 rust/frontend/ui/app.slint:3407 rust/frontend/ui/app.slint:3419 rust/frontend/ui/app.slint:3437 rust/frontend/ui/app.slint:3451 rust/frontend/ui/app.slint:3465 rust/frontend/ui/app.slint:3479 rust/frontend/ui/app.slint:3496 rust/frontend/ui/app.slint:3508 rust/frontend/ui/app.slint:3520 rust/frontend/ui/app.slint:3535
-#: rust/frontend/ui/app.slint:3135 rust/frontend/ui/app.slint:3149 rust/frontend/ui/app.slint:3163 rust/frontend/ui/app.slint:3179 rust/frontend/ui/app.slint:3195 rust/frontend/ui/app.slint:3211 rust/frontend/ui/app.slint:3328 rust/frontend/ui/app.slint:3407 rust/frontend/ui/app.slint:3419 rust/frontend/ui/app.slint:3437 rust/frontend/ui/app.slint:3451 rust/frontend/ui/app.slint:3465 rust/frontend/ui/app.slint:3479 rust/frontend/ui/app.slint:3496 rust/frontend/ui/app.slint:3508 rust/frontend/ui/app.slint:3520 rust/frontend/ui/app.slint:3535 rust/frontend/ui/app.slint:3550
-#: rust/frontend/ui/app.slint:3135 rust/frontend/ui/app.slint:3149 rust/frontend/ui/app.slint:3163 rust/frontend/ui/app.slint:3179 rust/frontend/ui/app.slint:3195 rust/frontend/ui/app.slint:3211 rust/frontend/ui/app.slint:3328 rust/frontend/ui/app.slint:3407 rust/frontend/ui/app.slint:3419 rust/frontend/ui/app.slint:3437 rust/frontend/ui/app.slint:3451 rust/frontend/ui/app.slint:3465 rust/frontend/ui/app.slint:3479 rust/frontend/ui/app.slint:3496 rust/frontend/ui/app.slint:3508 rust/frontend/ui/app.slint:3520 rust/frontend/ui/app.slint:3535 rust/frontend/ui/app.slint:3550
+#: rust/frontend/ui/app.slint:3135 rust/frontend/ui/app.slint:3149 rust/frontend/ui/app.slint:3163 rust/frontend/ui/app.slint:3179 rust/frontend/ui/app.slint:3195 rust/frontend/ui/app.slint:3211 rust/frontend/ui/app.slint:3328 rust/frontend/ui/app.slint:3407 rust/frontend/ui/app.slint:3419 rust/frontend/ui/app.slint:3437 rust/frontend/ui/app.slint:3451 rust/frontend/ui/app.slint:3465 rust/frontend/ui/app.slint:3479 rust/frontend/ui/app.slint:3496 rust/frontend/ui/app.slint:3508 rust/frontend/ui/app.slint:3520 rust/frontend/ui/app.slint:3536
+#: rust/frontend/ui/app.slint:3135 rust/frontend/ui/app.slint:3149 rust/frontend/ui/app.slint:3163 rust/frontend/ui/app.slint:3179 rust/frontend/ui/app.slint:3195 rust/frontend/ui/app.slint:3211 rust/frontend/ui/app.slint:3328 rust/frontend/ui/app.slint:3407 rust/frontend/ui/app.slint:3419 rust/frontend/ui/app.slint:3437 rust/frontend/ui/app.slint:3451 rust/frontend/ui/app.slint:3465 rust/frontend/ui/app.slint:3479 rust/frontend/ui/app.slint:3496 rust/frontend/ui/app.slint:3508 rust/frontend/ui/app.slint:3520 rust/frontend/ui/app.slint:3536 rust/frontend/ui/app.slint:3551
+#: rust/frontend/ui/app.slint:3135 rust/frontend/ui/app.slint:3149 rust/frontend/ui/app.slint:3163 rust/frontend/ui/app.slint:3179 rust/frontend/ui/app.slint:3195 rust/frontend/ui/app.slint:3211 rust/frontend/ui/app.slint:3328 rust/frontend/ui/app.slint:3407 rust/frontend/ui/app.slint:3419 rust/frontend/ui/app.slint:3437 rust/frontend/ui/app.slint:3451 rust/frontend/ui/app.slint:3465 rust/frontend/ui/app.slint:3479 rust/frontend/ui/app.slint:3496 rust/frontend/ui/app.slint:3508 rust/frontend/ui/app.slint:3520 rust/frontend/ui/app.slint:3536 rust/frontend/ui/app.slint:3551
 msgid "Back"
 msgstr ""
 
@@ -417,9 +417,9 @@ msgstr ""
 #: rust/frontend/ui/app.slint:3178 rust/frontend/ui/app.slint:3388 rust/frontend/ui/app.slint:3427
 #: rust/frontend/ui/app.slint:3178 rust/frontend/ui/app.slint:3388 rust/frontend/ui/app.slint:3427 rust/frontend/ui/app.slint:3445
 #: rust/frontend/ui/app.slint:3178 rust/frontend/ui/app.slint:3388 rust/frontend/ui/app.slint:3427 rust/frontend/ui/app.slint:3445 rust/frontend/ui/app.slint:3484
-#: rust/frontend/ui/app.slint:3178 rust/frontend/ui/app.slint:3388 rust/frontend/ui/app.slint:3427 rust/frontend/ui/app.slint:3445 rust/frontend/ui/app.slint:3484 rust/frontend/ui/app.slint:3540
-#: rust/frontend/ui/app.slint:3178 rust/frontend/ui/app.slint:3388 rust/frontend/ui/app.slint:3427 rust/frontend/ui/app.slint:3445 rust/frontend/ui/app.slint:3484 rust/frontend/ui/app.slint:3540 rust/frontend/ui/app.slint:3555
-#: rust/frontend/ui/app.slint:3178 rust/frontend/ui/app.slint:3388 rust/frontend/ui/app.slint:3427 rust/frontend/ui/app.slint:3445 rust/frontend/ui/app.slint:3484 rust/frontend/ui/app.slint:3540 rust/frontend/ui/app.slint:3555
+#: rust/frontend/ui/app.slint:3178 rust/frontend/ui/app.slint:3388 rust/frontend/ui/app.slint:3427 rust/frontend/ui/app.slint:3445 rust/frontend/ui/app.slint:3484 rust/frontend/ui/app.slint:3541
+#: rust/frontend/ui/app.slint:3178 rust/frontend/ui/app.slint:3388 rust/frontend/ui/app.slint:3427 rust/frontend/ui/app.slint:3445 rust/frontend/ui/app.slint:3484 rust/frontend/ui/app.slint:3541 rust/frontend/ui/app.slint:3556
+#: rust/frontend/ui/app.slint:3178 rust/frontend/ui/app.slint:3388 rust/frontend/ui/app.slint:3427 rust/frontend/ui/app.slint:3445 rust/frontend/ui/app.slint:3484 rust/frontend/ui/app.slint:3541 rust/frontend/ui/app.slint:3556
 msgid "Open"
 msgstr ""
 
@@ -473,15 +473,15 @@ msgstr ""
 
 #: rust/frontend/ui/app.slint:3376 rust/frontend/ui/app.slint:3389
 #: rust/frontend/ui/app.slint:3376 rust/frontend/ui/app.slint:3389 rust/frontend/ui/app.slint:3436
-#: rust/frontend/ui/app.slint:3376 rust/frontend/ui/app.slint:3389 rust/frontend/ui/app.slint:3436 rust/frontend/ui/app.slint:3556
+#: rust/frontend/ui/app.slint:3376 rust/frontend/ui/app.slint:3389 rust/frontend/ui/app.slint:3436 rust/frontend/ui/app.slint:3557
 msgid "Options"
 msgstr ""
 
 #: rust/frontend/ui/app.slint:3377 rust/frontend/ui/app.slint:3382
 #: rust/frontend/ui/app.slint:3377 rust/frontend/ui/app.slint:3382 rust/frontend/ui/app.slint:3396
 #: rust/frontend/ui/app.slint:3377 rust/frontend/ui/app.slint:3382 rust/frontend/ui/app.slint:3396 rust/frontend/ui/app.slint:3429
-#: rust/frontend/ui/app.slint:3377 rust/frontend/ui/app.slint:3382 rust/frontend/ui/app.slint:3396 rust/frontend/ui/app.slint:3429 rust/frontend/ui/app.slint:3549
-#: rust/frontend/ui/app.slint:3377 rust/frontend/ui/app.slint:3382 rust/frontend/ui/app.slint:3396 rust/frontend/ui/app.slint:3429 rust/frontend/ui/app.slint:3549 rust/frontend/ui/labels.slint:166
+#: rust/frontend/ui/app.slint:3377 rust/frontend/ui/app.slint:3382 rust/frontend/ui/app.slint:3396 rust/frontend/ui/app.slint:3429 rust/frontend/ui/app.slint:3550
+#: rust/frontend/ui/app.slint:3377 rust/frontend/ui/app.slint:3382 rust/frontend/ui/app.slint:3396 rust/frontend/ui/app.slint:3429 rust/frontend/ui/app.slint:3550 rust/frontend/ui/labels.slint:166
 msgid "View"
 msgstr ""
 

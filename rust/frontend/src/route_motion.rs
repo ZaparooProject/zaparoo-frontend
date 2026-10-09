@@ -6739,6 +6739,133 @@ fn search_types_submits_and_returns_with_the_query_intact() {
     assert_eq!(shell.get_active_screen(), Screen::Hub);
 }
 
+/// A Hub holding one saved search, focused and on screen.
+fn hub_with_saved_search(ctx: &crate::router::Ctx, app: &App) {
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.hub.layout.items = vec![zaparoo_core::hub_layout::HubItem {
+            kind_raw: "search".into(),
+            name: "RPGs".into(),
+            query: "final".into(),
+            systems: vec!["SNES".into(), "Genesis".into()],
+            tags: vec!["genre:rpg".into(), "genre:action".into()],
+            ..Default::default()
+        }];
+        shared.hub.categories_loaded = true;
+        shared.hub.restore_done = true;
+    }
+    crate::hub::rebuild(ctx, app);
+}
+
+#[test]
+#[allow(clippy::expect_used, reason = "the View menu has its one row")]
+fn a_saved_search_tile_opens_its_results_and_back_returns_to_the_hub() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    hub_with_saved_search(&ctx, &app);
+    let shell = app.global::<Shell>();
+    assert_eq!(shell.get_active_screen(), Screen::Hub);
+
+    settle(&window);
+    crate::router::handle_action(&ctx, &app, "accept");
+    advance(zaparoo_app::input::PRESS_FEEDBACK_MS);
+    assert!(shell.get_transitioning(), "results are a deferred route");
+    assert_eq!(shell.get_active_screen(), Screen::Hub);
+    let ticket = crate::router::lock(&ctx.shared).games.ticket;
+    crate::games::apply_fill(&ctx, &app, ticket, navigation_rows(), None, None, true);
+    settle(&window);
+    assert_eq!(shell.get_active_screen(), Screen::SearchResults);
+    assert_eq!(
+        app.global::<crate::GamesView>().get_title(),
+        "\u{201c}final\u{201d} \u{b7} SNES \u{b7} Mega Drive \u{b7} rpg \u{b7} action"
+    );
+    {
+        let shared = crate::router::lock(&ctx.shared);
+        let search = &shared.persist.search;
+        assert!(search.from_hub);
+        assert_eq!(search.systems, ["SNES", "Genesis"]);
+        // Two values of one type: more than the picker could choose.
+        assert_eq!(
+            crate::search::args(&shared).tags,
+            ["genre:rpg", "genre:action"]
+        );
+        assert!(search.recent.is_empty(), "a tile's search is not a recent");
+    }
+
+    // The View menu knows the search is on the Hub, and takes it off and
+    // puts it back.
+    let overlays = app.global::<crate::Overlays>();
+    let saved = || {
+        crate::router::lock(&ctx.shared)
+            .hub
+            .layout
+            .items
+            .iter()
+            .filter(|item| item.kind_raw == "search")
+            .count()
+    };
+    for (key, cue, left) in [
+        ("hub:remove", crate::AppCue::RemovedFromHub, 0),
+        ("add_to_hub", crate::AppCue::AddedToHub, 1),
+    ] {
+        crate::router::handle_action(&ctx, &app, "page_menu");
+        assert!(overlays.get_list_open());
+        let row = overlays.get_list_entries().row_data(0).expect("one row");
+        assert_eq!(
+            (row.id.as_str(), row.label_key.as_str()),
+            ("add_to_hub", key)
+        );
+        crate::router::handle_action(&ctx, &app, "accept");
+        advance(zaparoo_app::input::PRESS_FEEDBACK_MS + 10);
+        assert!(!overlays.get_list_open());
+        assert_eq!(saved(), left);
+        assert_eq!(header_cue(&app), cue);
+        advance(zaparoo_app::wait_cue::CONFIRM_MS);
+    }
+    {
+        // The tile it put back runs the same search under the results' name.
+        let shared = crate::router::lock(&ctx.shared);
+        let item = &shared.hub.layout.items[0];
+        assert_eq!(item.query, "final");
+        assert_eq!(item.systems, ["SNES", "Genesis"]);
+        assert_eq!(item.tags, ["genre:rpg", "genre:action"]);
+        assert!(item.name.starts_with('\u{201c}'));
+    }
+
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert_eq!(shell.get_active_screen(), Screen::Hub, "no Search screen");
+    let shared = crate::router::lock(&ctx.shared);
+    assert_eq!(shared.persist.active_screen, "hub");
+    assert!(!shared.persist.search.from_hub);
+}
+
+#[test]
+fn a_cold_start_on_a_saved_searchs_results_still_returns_to_the_hub() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window, _runtime, ctx) = cold_start("search-results");
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.persist.search.query = "final".into();
+        shared.persist.search.from_hub = true;
+    }
+    let curtain = pixels(&window);
+    crate::restore_screens(&ctx, &app);
+    assert_still_curtained(&app, &window, &ctx, &curtain, "search-results");
+    let ticket = crate::router::lock(&ctx.shared).games.ticket;
+    crate::games::apply_fill(&ctx, &app, ticket, navigation_rows(), None, None, true);
+    let shell = app.global::<Shell>();
+    assert_eq!(shell.get_active_screen(), Screen::SearchResults);
+    assert!(!shell.get_boot_curtain());
+
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert_eq!(shell.get_active_screen(), Screen::Hub);
+}
+
 #[test]
 fn a_late_preview_cannot_fill_a_newer_search() {
     assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
@@ -6830,7 +6957,7 @@ fn search_here_scopes_to_the_folder_and_back_returns_to_it() {
     {
         let shared = crate::router::lock(&ctx.shared);
         let args = crate::search::args(&shared);
-        assert_eq!(args.system_id, "System08");
+        assert_eq!(args.systems, ["System08"]);
         assert_eq!(args.path_prefix, "/roms/System08/RPG");
     }
     // The scope field takes no focus: Up from the top row lands on the
@@ -6867,7 +6994,7 @@ fn search_here_scopes_to_the_folder_and_back_returns_to_it() {
     let shared = crate::router::lock(&ctx.shared);
     assert!(shared.persist.search.scoped);
     assert_eq!(shared.persist.search.scope_path, "");
-    assert_eq!(crate::search::args(&shared).system_id, "System08");
+    assert_eq!(crate::search::args(&shared).systems, ["System08"]);
 }
 
 #[test]
@@ -7024,8 +7151,8 @@ fn the_system_picker_skips_headers_and_jumps_by_manufacturer() {
     advance(zaparoo_app::input::PRESS_FEEDBACK_MS + 10);
     assert!(!overlays.get_list_open());
     assert_eq!(
-        crate::router::lock(&ctx.shared).persist.search.system_id,
-        "S9"
+        crate::router::lock(&ctx.shared).persist.search.systems,
+        ["S9"]
     );
     assert_eq!(
         app.global::<crate::SearchView>().get_system_name(),

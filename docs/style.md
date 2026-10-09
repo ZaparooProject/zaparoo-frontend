@@ -877,6 +877,11 @@ match, so it can exceed the rows listed; it is exact up to one page of
 results and reads `Matches: 100+` beyond it, because Core reports no total. At the 240p tier and on a rotated scene or one narrower
 than 4:3 the card collapses and the count moves into the query field.
 
+The Search results have a View menu with one row, "Add to Hub", which pins
+the search on screen as a Hub tile and reads "Remove from Hub" once it is
+there. Results opened from such a tile have no Search screen behind them:
+Back returns to the Hub, and the search is not added to the recent searches.
+
 ## Form lists
 
 `FormListModal` is the list picker for a list that is long or has structure:

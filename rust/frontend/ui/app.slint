@@ -3514,7 +3514,7 @@ export component App inherits Window {
             ];
         }
         if (GamesView.count == 0 && !GamesView.loading) {
-            if (Shell.active-screen == Screen.recents || Shell.active-screen == Screen.search-results) {
+            if (Shell.active-screen == Screen.recents) {
                 return [
                     { buttons: ["ButtonA"], label: @tr("Retry") },
                     { buttons: ["ButtonB"], label: @tr("Back") },
@@ -3526,8 +3526,9 @@ export component App inherits Window {
                 { buttons: ["ButtonB"], label: @tr("Back") },
             ];
         }
-        // Options only where the focused row has a menu to open.
-        if (Shell.active-screen == Screen.recents || Shell.active-screen == Screen.search-results) {
+        // Options only where the focused row has a menu to open. Recents
+        // has no View menu.
+        if (Shell.active-screen == Screen.recents) {
             if (!GamesView.options-available) {
                 return [
                     self.move-cue(GamesView.total-pages),
