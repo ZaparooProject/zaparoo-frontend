@@ -3148,6 +3148,7 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
         actions::LEFT | actions::RIGHT | actions::UP | actions::DOWN | actions::CONTEXT_MENU
     );
     if is_move && gate_hide(ctx, app) {
+        tracing::debug!(action, "move dropped: the list is loading or failed");
         return;
     }
     let (list, state, mode) = {

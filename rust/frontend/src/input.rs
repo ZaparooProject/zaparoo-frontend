@@ -7,6 +7,7 @@
 // navigation flag. The rules and their thresholds live in
 // `zaparoo_app::input`; this file owns the timers and the wiring.
 
+use std::cell::Cell;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -16,6 +17,31 @@ use zaparoo_core::input_actions::actions;
 
 use crate::router::{lock, Ctx};
 use crate::App;
+
+thread_local! {
+    /// When the key event being dispatched happened, where the platform
+    /// knows it.
+    static EVENT_MS: Cell<Option<u64>> = const { Cell::new(None) };
+}
+
+/// Dispatch a key event stamped with the time it happened. A platform that
+/// reads input in batches hands over presses long after they were made, and
+/// the duplicate guard must time them as pressed, not as handled.
+#[cfg(feature = "mister")]
+pub(crate) fn with_event_time(time_ms: u64, dispatch: impl FnOnce()) {
+    EVENT_MS.with(|event| event.set(Some(time_ms)));
+    dispatch();
+    EVENT_MS.with(|event| event.set(None));
+}
+
+/// Why a press was not routed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Rejected {
+    /// The key is already down: a press with no release in between.
+    AlreadyPressed,
+    /// The same key again inside the duplicate window.
+    Duplicate,
+}
 
 /// The key path's state. Held in `Shared` because the repeat timers
 /// fire on the event loop with nothing else to hang it from.
@@ -65,6 +91,21 @@ impl InputModel {
     #[cfg(feature = "hosted")]
     pub(crate) fn navigation_events(&self) -> u64 {
         self.navigation_events
+    }
+
+    /// Take a press through the held-key check and the duplicate guard.
+    /// `event_ms` is when the press happened; without it the press is timed
+    /// from now.
+    fn accept(&mut self, key: &str, event_ms: Option<u64>) -> Result<(), Rejected> {
+        if !self.pressed_keys.insert(key.to_string()) {
+            return Err(Rejected::AlreadyPressed);
+        }
+        let now = event_ms.unwrap_or_else(|| self.now_ms());
+        if self.guard.accept(key, now) {
+            Ok(())
+        } else {
+            Err(Rejected::Duplicate)
+        }
     }
 
     /// Retire the repeat ticket and report whether release needs a persist flush.
@@ -131,12 +172,21 @@ fn accept_press(ctx: &Ctx, app: &App, key: &str) -> bool {
     if app.global::<crate::Shell>().get_dormant() {
         return false;
     }
-    let mut shared = lock(&ctx.shared);
-    if !shared.input.pressed_keys.insert(key.to_string()) {
-        return false;
+    let event_ms = EVENT_MS.with(Cell::get);
+    match lock(&ctx.shared).input.accept(key, event_ms) {
+        Ok(()) => true,
+        Err(reason) => {
+            // A key that types is logged as rejected, never by name.
+            let mut chars = key.chars();
+            let typed = matches!(
+                (chars.next(), chars.next()),
+                (Some(c), None) if zaparoo_app::keyboard::is_text(c)
+            );
+            let key = if typed { "" } else { key };
+            tracing::debug!(key, ?reason, ?event_ms, "press rejected");
+            false
+        }
     }
-    let now = shared.input.now_ms();
-    shared.input.guard.accept(key, now)
 }
 
 /// Apply the swaps to a resolved action, route it, then arm the repeat.
@@ -469,7 +519,29 @@ pub fn bind(ctx: &Arc<Ctx>, app: &App, bindings: std::collections::HashMap<i32, 
 
 #[cfg(test)]
 mod tests {
-    use super::{keyboard_active_for_layout, InputModel};
+    use super::{keyboard_active_for_layout, InputModel, Rejected};
+
+    #[test]
+    fn presses_are_timed_from_the_event_not_from_handling() {
+        // Three taps handled in the same instant, as one slow frame hands
+        // them over. Only their own times decide which is a bounce.
+        let mut model = InputModel::new();
+        assert_eq!(model.accept("down", Some(1_000)), Ok(()));
+        model.release("down");
+        assert_eq!(model.accept("down", Some(1_120)), Ok(()));
+        model.release("down");
+        assert_eq!(model.accept("down", Some(1_130)), Err(Rejected::Duplicate));
+    }
+
+    #[test]
+    fn a_press_without_a_release_is_rejected() {
+        let mut model = InputModel::new();
+        assert_eq!(model.accept("down", Some(1_000)), Ok(()));
+        assert_eq!(
+            model.accept("down", Some(2_000)),
+            Err(Rejected::AlreadyPressed)
+        );
+    }
 
     #[test]
     fn missing_controller_report_means_keyboard_input() {

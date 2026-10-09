@@ -392,6 +392,12 @@ pub fn dispatch(app: &App, target: &Target, commit: impl FnOnce(&App) + 'static)
                     return;
                 };
                 if current(&app).as_ref() != Some(&target) {
+                    // The target's key can hold a game name or dialog text.
+                    tracing::debug!(
+                        owner = ?target.owner,
+                        index = target.index,
+                        "accept dropped: its target changed"
+                    );
                     cancel(&app);
                     return;
                 }
