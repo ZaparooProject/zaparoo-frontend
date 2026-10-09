@@ -977,17 +977,33 @@ pub struct MediaIndexParams {
     pub systems: Option<Vec<String>>,
 }
 
+/// One indexed item for `media.scrape` to run over instead of whole
+/// systems. Core takes exactly one form, and prefers the media ID where
+/// the client has it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum MediaScrapeScope {
+    /// An indexed media ID, as `media.browse` and `media.search` list it.
+    MediaId(i64),
+    /// One indexed file or virtual URI, matched exactly within a system.
+    File { system: String, path: String },
+}
+
 /// Parameters for `media.scrape` — runs the named scraper across the
 /// indexed media database. `scraper_id` is required server-side
 /// (validated as `min=1`); the frontend resolves it from the `scrapers`
-/// RPC. `systems` optionally narrows the run; `force` re-scrapes media
-/// already attached to a title slug.
+/// RPC. `systems` optionally narrows the run, or `scope` narrows it to one
+/// item: Core refuses the two together, an empty `systems` included, so a
+/// scoped request leaves `systems` empty. `force` re-scrapes media already
+/// attached to a title slug.
 #[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MediaScrapeParams {
     pub scraper_id: String,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub systems: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scope: Option<MediaScrapeScope>,
     #[serde(default)]
     pub force: bool,
 }
@@ -1670,10 +1686,10 @@ mod tests {
         MediaHistoryLatestResult, MediaHistoryParams, MediaHistoryResult, MediaImageParams,
         MediaImageResult, MediaIndexParams, MediaItem, MediaLookupParams, MediaLookupResult,
         MediaMetaParams, MediaMetaResult, MediaMetaUpdateParams, MediaResult, MediaScrapeParams,
-        MediaSearchParams, MediaSearchResult, ReaderInfo, ReadersResult, ScrapersResult,
-        ScrapingStatusResponse, SettingsResult, SystemDefault, SystemsParams, SystemsResult,
-        TagInfo, TokensHistoryResult, TokensResult, UpdateSettingsParams, VersionResult,
-        MEDIA_IMAGE_DELIVERY_LOCAL_PATH,
+        MediaScrapeScope, MediaSearchParams, MediaSearchResult, ReaderInfo, ReadersResult,
+        ScrapersResult, ScrapingStatusResponse, SettingsResult, SystemDefault, SystemsParams,
+        SystemsResult, TagInfo, TokensHistoryResult, TokensResult, UpdateSettingsParams,
+        VersionResult, MEDIA_IMAGE_DELIVERY_LOCAL_PATH,
     };
 
     #[test]
@@ -2935,6 +2951,34 @@ mod tests {
         );
         // `systems` is skipped when empty.
         assert!(!object.contains_key("systems"));
+        assert!(!object.contains_key("scope"));
+    }
+
+    #[test]
+    fn media_scrape_params_serialises_one_scope_form_without_systems() {
+        let by_id = MediaScrapeParams {
+            scraper_id: "screenscraper".into(),
+            scope: Some(MediaScrapeScope::MediaId(42)),
+            ..MediaScrapeParams::default()
+        };
+        let json = serde_json::to_value(&by_id).expect("serialise");
+        assert_eq!(json["scope"], serde_json::json!({ "mediaId": 42 }));
+        // Core refuses `scope` beside `systems`, even an empty list.
+        assert!(!json.as_object().expect("object").contains_key("systems"));
+
+        let by_file = MediaScrapeParams {
+            scraper_id: "screenscraper".into(),
+            scope: Some(MediaScrapeScope::File {
+                system: "SNES".into(),
+                path: "/games/SNES/Game.sfc".into(),
+            }),
+            ..MediaScrapeParams::default()
+        };
+        let json = serde_json::to_value(&by_file).expect("serialise");
+        assert_eq!(
+            json["scope"],
+            serde_json::json!({ "file": { "system": "SNES", "path": "/games/SNES/Game.sfc" } })
+        );
     }
 
     #[test]
@@ -2942,6 +2986,7 @@ mod tests {
         let params = MediaScrapeParams {
             scraper_id: "screenscraper".into(),
             systems: vec!["SNES".into()],
+            scope: None,
             force: true,
         };
         let json = serde_json::to_value(&params).expect("serialise");

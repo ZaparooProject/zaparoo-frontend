@@ -1,17 +1,17 @@
 msgid ""
 msgstr ""
-"POT-Creation-Date: 2026-10-09 07:26+0000\n"
+"POT-Creation-Date: 2026-10-09 08:57+0000\n"
 "Language: ko\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=1; plural=0;\n"
 
-#: rust/frontend/ui/about.slint:52 rust/frontend/ui/settings.slint:180
+#: rust/frontend/ui/about.slint:52 rust/frontend/ui/settings.slint:184
 msgid "About / License"
 msgstr "정보 / 라이선스"
 
-#: rust/frontend/ui/about.slint:106 rust/frontend/ui/app.slint:3063
+#: rust/frontend/ui/about.slint:106 rust/frontend/ui/app.slint:3067
 msgid "Zaparoo Frontend"
 msgstr "Zaparoo Frontend"
 
@@ -63,381 +63,381 @@ msgstr ""
 msgid "Full license text in COPYING."
 msgstr "전체 라이선스 텍스트는 COPYING에 있습니다."
 
-#: rust/frontend/ui/app.slint:996
+#: rust/frontend/ui/app.slint:1000
 msgid "Updating the media database"
 msgstr "미디어 데이터베이스 업데이트 중"
 
-#: rust/frontend/ui/app.slint:996
+#: rust/frontend/ui/app.slint:1000
 msgid "No games found yet"
 msgstr "아직 게임을 찾지 못했습니다"
 
-#: rust/frontend/ui/app.slint:998
+#: rust/frontend/ui/app.slint:1002
 msgid "Your games appear here as Core finds them."
 msgstr "코어가 게임을 찾는 대로 여기에 표시됩니다."
 
-#: rust/frontend/ui/app.slint:999
+#: rust/frontend/ui/app.slint:1003
 msgid "Update media database in Settings > Library."
 msgstr "설정 > 라이브러리에서 미디어 데이터베이스를 업데이트하세요."
 
-#: rust/frontend/ui/app.slint:1019 rust/frontend/ui/app.slint:2712
-#: rust/frontend/ui/app.slint:3084
+#: rust/frontend/ui/app.slint:1023 rust/frontend/ui/app.slint:2716
+#: rust/frontend/ui/app.slint:3088
 msgid "Favorites"
 msgstr "즐겨찾기"
 
-#: rust/frontend/ui/app.slint:1026
+#: rust/frontend/ui/app.slint:1030
 msgid "{} systems"
 msgstr "시스템 {0}개"
 
-#: rust/frontend/ui/app.slint:1168 rust/frontend/ui/labels.slint:25
+#: rust/frontend/ui/app.slint:1172 rust/frontend/ui/labels.slint:25
 msgid "Hidden"
 msgstr "숨김"
 
-#: rust/frontend/ui/app.slint:1205 rust/frontend/ui/app.slint:2931
+#: rust/frontend/ui/app.slint:1209 rust/frontend/ui/app.slint:2935
 msgid "No favorites yet"
 msgstr "아직 즐겨찾기가 없습니다"
 
-#: rust/frontend/ui/app.slint:1205
+#: rust/frontend/ui/app.slint:1209
 msgid "No systems in this category"
 msgstr "이 카테고리에는 시스템이 없습니다"
 
-#: rust/frontend/ui/app.slint:1250 rust/frontend/ui/app.slint:1252
+#: rust/frontend/ui/app.slint:1254 rust/frontend/ui/app.slint:1256
 #: rust/frontend/ui/labels.slint:26
 msgid "{} · {}"
 msgstr "{} · {}"
 
-#: rust/frontend/ui/app.slint:1331 rust/frontend/ui/app.slint:1348
+#: rust/frontend/ui/app.slint:1335 rust/frontend/ui/app.slint:1352
 msgid "Saving…"
 msgstr "저장 중…"
 
-#: rust/frontend/ui/app.slint:1581 rust/frontend/ui/labels.slint:129
+#: rust/frontend/ui/app.slint:1585 rust/frontend/ui/labels.slint:129
 msgid "Go to…"
 msgstr "바로 가기…"
 
-#: rust/frontend/ui/app.slint:1591
+#: rust/frontend/ui/app.slint:1595
 msgid "Loading sections…"
 msgstr "섹션 불러오는 중…"
 
-#: rust/frontend/ui/app.slint:1596
+#: rust/frontend/ui/app.slint:1600
 msgid "Failed to load sections"
 msgstr "섹션을 불러오지 못했습니다"
 
-#: rust/frontend/ui/app.slint:1596
+#: rust/frontend/ui/app.slint:1600
 msgid "No sections"
 msgstr "섹션 없음"
 
-#: rust/frontend/ui/app.slint:1665
+#: rust/frontend/ui/app.slint:1669
 msgid "Hold a writable token near the reader"
 msgstr "쓰기 가능한 토큰을 리더기에 가까이 대세요"
 
-#: rust/frontend/ui/app.slint:1689 rust/frontend/ui/app.slint:3131
-#: rust/frontend/ui/app.slint:3249 rust/frontend/ui/app.slint:3296
-#: rust/frontend/ui/app.slint:3344 rust/frontend/ui/app.slint:3367
-#: rust/frontend/ui/settings.slint:249
+#: rust/frontend/ui/app.slint:1693 rust/frontend/ui/app.slint:3135
+#: rust/frontend/ui/app.slint:3253 rust/frontend/ui/app.slint:3300
+#: rust/frontend/ui/app.slint:3348 rust/frontend/ui/app.slint:3371
+#: rust/frontend/ui/settings.slint:253
 msgid "Cancel"
 msgstr "취소"
 
-#: rust/frontend/ui/app.slint:1711 rust/frontend/ui/settings.slint:179
+#: rust/frontend/ui/app.slint:1715 rust/frontend/ui/settings.slint:183
 msgid "Pair a device"
 msgstr "기기 페어링"
 
-#: rust/frontend/ui/app.slint:1735 rust/frontend/ui/app.slint:1840
+#: rust/frontend/ui/app.slint:1739 rust/frontend/ui/app.slint:1844
 msgid "Starting…"
 msgstr "시작하는 중…"
 
-#: rust/frontend/ui/app.slint:1757
+#: rust/frontend/ui/app.slint:1761
 msgid "Enter this PIN on the device you are pairing."
 msgstr "페어링할 기기에서 이 PIN을 입력하세요."
 
-#: rust/frontend/ui/app.slint:1771 rust/frontend/ui/app.slint:1929
+#: rust/frontend/ui/app.slint:1775 rust/frontend/ui/app.slint:1933
 msgid "Expires in {n} minute"
 msgid_plural "Expires in {n} minutes"
 msgstr[0] "{n}분 후 만료"
 
-#: rust/frontend/ui/app.slint:1772 rust/frontend/ui/app.slint:1930
+#: rust/frontend/ui/app.slint:1776 rust/frontend/ui/app.slint:1934
 msgid "Expires in {n} second"
 msgid_plural "Expires in {n} seconds"
 msgstr[0] "{n}초 후 만료"
 
-#: rust/frontend/ui/app.slint:1789
+#: rust/frontend/ui/app.slint:1793
 msgid "A device is now paired with Core."
 msgstr "기기가 코어와 페어링되었습니다."
 
-#: rust/frontend/ui/app.slint:1790
+#: rust/frontend/ui/app.slint:1794
 msgid "{} is now paired with Core."
 msgstr "{} 기기가 코어와 페어링되었습니다."
 
-#: rust/frontend/ui/app.slint:1804
+#: rust/frontend/ui/app.slint:1808
 msgid "The PIN expired before a device used it. Pair again for a new one."
 msgstr "기기에서 사용하기 전에 PIN이 만료되었습니다. 다시 페어링해 새 PIN을 받으세요."
 
-#: rust/frontend/ui/app.slint:1826
+#: rust/frontend/ui/app.slint:1830
 msgid "Link Online account"
 msgstr "온라인 계정 연동"
 
-#: rust/frontend/ui/app.slint:1850
+#: rust/frontend/ui/app.slint:1854
 msgid "This device is now linked to your Zaparoo Online account."
 msgstr "이 기기가 Zaparoo Online 계정에 연동되었습니다."
 
-#: rust/frontend/ui/app.slint:1851
+#: rust/frontend/ui/app.slint:1855
 msgid "The code expired before it was approved. Link again for a new one."
 msgstr "승인되기 전에 코드가 만료되었습니다. 다시 연동해 새 코드를 받으세요."
 
-#: rust/frontend/ui/app.slint:1852
+#: rust/frontend/ui/app.slint:1856
 msgid "Linking failed. Check the network connection and try again."
 msgstr "연동하지 못했습니다. 네트워크 연결을 확인하고 다시 시도하세요."
 
-#: rust/frontend/ui/app.slint:1866
+#: rust/frontend/ui/app.slint:1870
 msgid "Scan this code with your phone, or open the address below and enter the code."
 msgstr "휴대폰으로 이 코드를 스캔하거나, 아래 주소를 열어 코드를 입력하세요."
 
-#: rust/frontend/ui/app.slint:1879
+#: rust/frontend/ui/app.slint:1883
 msgid "Or press Accept to open it on this device."
 msgstr "또는 확인 버튼을 눌러 이 기기에서 여세요."
 
-#: rust/frontend/ui/app.slint:2017 rust/frontend/ui/labels.slint:332
+#: rust/frontend/ui/app.slint:2021 rust/frontend/ui/labels.slint:332
 msgid "This device is not linked. Link your Zaparoo Online account, then try again."
 msgstr "이 기기는 연동되어 있지 않습니다. Zaparoo Online 계정을 연동한 후 다시 시도하세요."
 
-#: rust/frontend/ui/app.slint:2020 rust/frontend/ui/labels.slint:331
+#: rust/frontend/ui/app.slint:2024 rust/frontend/ui/labels.slint:331
 msgid "Cloud backup needs an active Zaparoo Warp subscription."
 msgstr "클라우드 백업을 사용하려면 Zaparoo Warp 구독이 활성화되어 있어야 합니다."
 
-#: rust/frontend/ui/app.slint:2022
+#: rust/frontend/ui/app.slint:2026
 msgid "Could not load this. Check the network connection and try again."
 msgstr "불러오지 못했습니다. 네트워크 연결을 확인하고 다시 시도하세요."
 
-#: rust/frontend/ui/app.slint:2025
+#: rust/frontend/ui/app.slint:2029
 msgid "Back up now"
 msgstr "지금 백업"
 
 #. Zaparoo made; it says so where its detail already is.
-#: rust/frontend/ui/app.slint:2030
+#: rust/frontend/ui/app.slint:2034
 msgid "{}, needs a newer Zaparoo"
 msgstr "{}, 최신 Zaparoo 필요"
 
-#: rust/frontend/ui/app.slint:2031
+#: rust/frontend/ui/app.slint:2035
 msgid "{}, this device"
 msgstr "{}, 이 기기"
 
-#: rust/frontend/ui/app.slint:2038
+#: rust/frontend/ui/app.slint:2042
 msgid "Cloud backups"
 msgstr "클라우드 백업"
 
-#: rust/frontend/ui/app.slint:2038
+#: rust/frontend/ui/app.slint:2042
 msgid "Remote activity"
 msgstr "원격 활동"
 
-#: rust/frontend/ui/app.slint:2059
+#: rust/frontend/ui/app.slint:2063
 msgid "Backing up…"
 msgstr "백업 중…"
 
-#: rust/frontend/ui/app.slint:2060
+#: rust/frontend/ui/app.slint:2064
 msgid "Restoring…"
 msgstr "복원 중…"
 
-#: rust/frontend/ui/app.slint:2061
+#: rust/frontend/ui/app.slint:2065
 msgid "Loading backups…"
 msgstr "백업 불러오는 중…"
 
-#: rust/frontend/ui/app.slint:2061
+#: rust/frontend/ui/app.slint:2065
 msgid "Loading activity…"
 msgstr "활동 불러오는 중…"
 
-#: rust/frontend/ui/app.slint:2072
+#: rust/frontend/ui/app.slint:2076
 msgid "No cloud backups yet."
 msgstr "아직 클라우드 백업이 없습니다."
 
-#: rust/frontend/ui/app.slint:2072
+#: rust/frontend/ui/app.slint:2076
 msgid "Nothing has run through remote control yet."
 msgstr "아직 원격 제어로 실행된 항목이 없습니다."
 
-#: rust/frontend/ui/app.slint:2168 rust/frontend/ui/settings.slint:181
+#: rust/frontend/ui/app.slint:2172 rust/frontend/ui/settings.slint:185
 msgid "Documentation"
 msgstr "설명서"
 
-#: rust/frontend/ui/app.slint:2168 rust/frontend/ui/labels.slint:110
+#: rust/frontend/ui/app.slint:2172 rust/frontend/ui/labels.slint:110
 msgid "Write with App"
 msgstr "앱으로 쓰기"
 
-#: rust/frontend/ui/app.slint:2187
+#: rust/frontend/ui/app.slint:2191
 msgid "Scan this code to open the Zaparoo Frontend guide on your phone."
 msgstr "이 코드를 스캔하면 휴대폰에서 Zaparoo Frontend 가이드가 열립니다."
 
-#: rust/frontend/ui/app.slint:2188
+#: rust/frontend/ui/app.slint:2192
 msgid "Scan this code with the Zaparoo App to write this game to a Zaparoo token."
 msgstr "Zaparoo App으로 이 코드를 스캔해 이 게임을 Zaparoo 토큰에 쓰세요."
 
-#: rust/frontend/ui/app.slint:2713 rust/frontend/ui/app.slint:3085
+#: rust/frontend/ui/app.slint:2717 rust/frontend/ui/app.slint:3089
 msgid "Recently played"
 msgstr "최근 플레이"
 
-#: rust/frontend/ui/app.slint:2714 rust/frontend/ui/app.slint:3086
-#: rust/frontend/ui/app.slint:3162 rust/frontend/ui/labels.slint:48
+#: rust/frontend/ui/app.slint:2718 rust/frontend/ui/app.slint:3090
+#: rust/frontend/ui/app.slint:3166 rust/frontend/ui/labels.slint:48
 msgid "Search"
 msgstr "검색"
 
-#: rust/frontend/ui/app.slint:2724
+#: rust/frontend/ui/app.slint:2728
 msgid "{} games"
 msgstr "게임 {}개"
 
-#: rust/frontend/ui/app.slint:2853
+#: rust/frontend/ui/app.slint:2857
 msgid "Loading game…"
 msgstr "게임 불러오는 중…"
 
-#: rust/frontend/ui/app.slint:2932
+#: rust/frontend/ui/app.slint:2936
 msgid "Nothing played yet"
 msgstr "아직 플레이한 항목이 없습니다"
 
-#: rust/frontend/ui/app.slint:2933 rust/frontend/ui/search.slint:66
+#: rust/frontend/ui/app.slint:2937 rust/frontend/ui/search.slint:66
 msgid "No matches"
 msgstr "일치 항목 없음"
 
-#: rust/frontend/ui/app.slint:2934
+#: rust/frontend/ui/app.slint:2938
 msgid "No games match these tags"
 msgstr "이 태그와 일치하는 게임이 없습니다"
 
-#: rust/frontend/ui/app.slint:2934
+#: rust/frontend/ui/app.slint:2938
 msgid "No games in this system"
 msgstr "이 시스템에는 게임이 없습니다"
 
-#: rust/frontend/ui/app.slint:2935 rust/frontend/ui/labels.slint:31
+#: rust/frontend/ui/app.slint:2939 rust/frontend/ui/labels.slint:31
 msgid "Loading favorites…"
 msgstr "즐겨찾기 불러오는 중…"
 
-#: rust/frontend/ui/app.slint:2936 rust/frontend/ui/labels.slint:32
+#: rust/frontend/ui/app.slint:2940 rust/frontend/ui/labels.slint:32
 msgid "Loading recently played…"
 msgstr "최근 플레이 불러오는 중…"
 
-#: rust/frontend/ui/app.slint:2937 rust/frontend/ui/labels.slint:33
+#: rust/frontend/ui/app.slint:2941 rust/frontend/ui/labels.slint:33
 #: rust/frontend/ui/search.slint:64
 msgid "Searching…"
 msgstr "검색 중…"
 
-#: rust/frontend/ui/app.slint:2937 rust/frontend/ui/labels.slint:30
+#: rust/frontend/ui/app.slint:2941 rust/frontend/ui/labels.slint:30
 msgid "Loading games…"
 msgstr "게임 불러오는 중…"
 
-#: rust/frontend/ui/app.slint:3014
+#: rust/frontend/ui/app.slint:3018
 msgid "Arrows adjust position"
 msgstr "방향키로 위치 조정"
 
-#: rust/frontend/ui/app.slint:3022
+#: rust/frontend/ui/app.slint:3026
 msgid "Accept or Back saves"
 msgstr "확인 또는 뒤로 버튼으로 저장"
 
-#: rust/frontend/ui/app.slint:3114 rust/frontend/ui/app.slint:3128
-#: rust/frontend/ui/app.slint:3153 rust/frontend/ui/app.slint:3168
-#: rust/frontend/ui/app.slint:3183 rust/frontend/ui/app.slint:3215
-#: rust/frontend/ui/app.slint:3243 rust/frontend/ui/app.slint:3273
-#: rust/frontend/ui/app.slint:3444 rust/frontend/ui/app.slint:3462
-#: rust/frontend/ui/app.slint:3477 rust/frontend/ui/labels.slint:146
+#: rust/frontend/ui/app.slint:3118 rust/frontend/ui/app.slint:3132
+#: rust/frontend/ui/app.slint:3157 rust/frontend/ui/app.slint:3172
+#: rust/frontend/ui/app.slint:3187 rust/frontend/ui/app.slint:3219
+#: rust/frontend/ui/app.slint:3247 rust/frontend/ui/app.slint:3277
+#: rust/frontend/ui/app.slint:3448 rust/frontend/ui/app.slint:3466
+#: rust/frontend/ui/app.slint:3481 rust/frontend/ui/labels.slint:146
 msgid "Move"
 msgstr "이동"
 
-#: rust/frontend/ui/app.slint:3129 rust/frontend/ui/app.slint:3162
-#: rust/frontend/ui/app.slint:3178 rust/frontend/ui/app.slint:3244
-#: rust/frontend/ui/app.slint:3327 rust/frontend/ui/settings.slint:101
+#: rust/frontend/ui/app.slint:3133 rust/frontend/ui/app.slint:3166
+#: rust/frontend/ui/app.slint:3182 rust/frontend/ui/app.slint:3248
+#: rust/frontend/ui/app.slint:3331 rust/frontend/ui/settings.slint:105
 msgid "Select"
 msgstr "선택"
 
-#: rust/frontend/ui/app.slint:3130 rust/frontend/ui/settings.slint:102
+#: rust/frontend/ui/app.slint:3134 rust/frontend/ui/settings.slint:106
 msgid "Start"
 msgstr "시작"
 
-#: rust/frontend/ui/app.slint:3132 rust/frontend/ui/app.slint:3245
-#: rust/frontend/ui/app.slint:3268 rust/frontend/ui/app.slint:3277
-#: rust/frontend/ui/app.slint:3293 rust/frontend/ui/app.slint:3309
-#: rust/frontend/ui/app.slint:3318
+#: rust/frontend/ui/app.slint:3136 rust/frontend/ui/app.slint:3249
+#: rust/frontend/ui/app.slint:3272 rust/frontend/ui/app.slint:3281
+#: rust/frontend/ui/app.slint:3297 rust/frontend/ui/app.slint:3313
+#: rust/frontend/ui/app.slint:3322
 msgid "Close"
 msgstr "닫기"
 
-#: rust/frontend/ui/app.slint:3133 rust/frontend/ui/app.slint:3464
+#: rust/frontend/ui/app.slint:3137 rust/frontend/ui/app.slint:3468
 msgid "Toggle"
 msgstr "전환"
 
-#: rust/frontend/ui/app.slint:3134
+#: rust/frontend/ui/app.slint:3138
 msgid "Info"
 msgstr "정보"
 
-#: rust/frontend/ui/app.slint:3135 rust/frontend/ui/app.slint:3149
-#: rust/frontend/ui/app.slint:3163 rust/frontend/ui/app.slint:3179
-#: rust/frontend/ui/app.slint:3195 rust/frontend/ui/app.slint:3211
-#: rust/frontend/ui/app.slint:3328 rust/frontend/ui/app.slint:3407
-#: rust/frontend/ui/app.slint:3419 rust/frontend/ui/app.slint:3437
-#: rust/frontend/ui/app.slint:3451 rust/frontend/ui/app.slint:3465
-#: rust/frontend/ui/app.slint:3479 rust/frontend/ui/app.slint:3496
-#: rust/frontend/ui/app.slint:3508 rust/frontend/ui/app.slint:3520
-#: rust/frontend/ui/app.slint:3536 rust/frontend/ui/app.slint:3551
+#: rust/frontend/ui/app.slint:3139 rust/frontend/ui/app.slint:3153
+#: rust/frontend/ui/app.slint:3167 rust/frontend/ui/app.slint:3183
+#: rust/frontend/ui/app.slint:3199 rust/frontend/ui/app.slint:3215
+#: rust/frontend/ui/app.slint:3332 rust/frontend/ui/app.slint:3411
+#: rust/frontend/ui/app.slint:3423 rust/frontend/ui/app.slint:3441
+#: rust/frontend/ui/app.slint:3455 rust/frontend/ui/app.slint:3469
+#: rust/frontend/ui/app.slint:3483 rust/frontend/ui/app.slint:3500
+#: rust/frontend/ui/app.slint:3512 rust/frontend/ui/app.slint:3524
+#: rust/frontend/ui/app.slint:3540 rust/frontend/ui/app.slint:3555
 msgid "Back"
 msgstr "뒤로"
 
-#: rust/frontend/ui/app.slint:3154 rust/frontend/ui/app.slint:3170
+#: rust/frontend/ui/app.slint:3158 rust/frontend/ui/app.slint:3174
 msgid "Delete"
 msgstr "삭제"
 
-#: rust/frontend/ui/app.slint:3155 rust/frontend/ui/app.slint:3171
+#: rust/frontend/ui/app.slint:3159 rust/frontend/ui/app.slint:3175
 msgid "Space"
 msgstr "스페이스"
 
-#: rust/frontend/ui/app.slint:3178 rust/frontend/ui/app.slint:3388
-#: rust/frontend/ui/app.slint:3427 rust/frontend/ui/app.slint:3445
-#: rust/frontend/ui/app.slint:3484 rust/frontend/ui/app.slint:3541
-#: rust/frontend/ui/app.slint:3556
+#: rust/frontend/ui/app.slint:3182 rust/frontend/ui/app.slint:3392
+#: rust/frontend/ui/app.slint:3431 rust/frontend/ui/app.slint:3449
+#: rust/frontend/ui/app.slint:3488 rust/frontend/ui/app.slint:3545
+#: rust/frontend/ui/app.slint:3560
 msgid "Open"
 msgstr "열기"
 
-#: rust/frontend/ui/app.slint:3184 rust/frontend/ui/app.slint:3463
-#: rust/frontend/ui/settings.slint:104
+#: rust/frontend/ui/app.slint:3188 rust/frontend/ui/app.slint:3467
+#: rust/frontend/ui/settings.slint:108
 msgid "Change"
 msgstr "변경"
 
-#: rust/frontend/ui/app.slint:3198 rust/frontend/ui/app.slint:3388
-#: rust/frontend/ui/app.slint:3412 rust/frontend/ui/app.slint:3512
-#: rust/frontend/ui/app.slint:3524 rust/frontend/ui/setup.slint:334
+#: rust/frontend/ui/app.slint:3202 rust/frontend/ui/app.slint:3392
+#: rust/frontend/ui/app.slint:3416 rust/frontend/ui/app.slint:3516
+#: rust/frontend/ui/app.slint:3528 rust/frontend/ui/setup.slint:378
 msgid "Retry"
 msgstr "다시 시도"
 
-#: rust/frontend/ui/app.slint:3198 rust/frontend/ui/app.slint:3283
-#: rust/frontend/ui/setup.slint:334
+#: rust/frontend/ui/app.slint:3202 rust/frontend/ui/app.slint:3287
+#: rust/frontend/ui/setup.slint:378
 msgid "Done"
 msgstr "완료"
 
-#: rust/frontend/ui/app.slint:3238 rust/frontend/ui/labels.slint:264
+#: rust/frontend/ui/app.slint:3242 rust/frontend/ui/labels.slint:264
 msgid "OK"
 msgstr "확인"
 
-#: rust/frontend/ui/app.slint:3301 rust/frontend/ui/app.slint:3314
+#: rust/frontend/ui/app.slint:3305 rust/frontend/ui/app.slint:3318
 msgid "Scroll"
 msgstr "스크롤"
 
-#: rust/frontend/ui/app.slint:3302 rust/frontend/ui/app.slint:3308
+#: rust/frontend/ui/app.slint:3306 rust/frontend/ui/app.slint:3312
 msgid "Image"
 msgstr "이미지"
 
-#: rust/frontend/ui/app.slint:3356
+#: rust/frontend/ui/app.slint:3360
 msgid "Adjust"
 msgstr "조정"
 
-#: rust/frontend/ui/app.slint:3357
+#: rust/frontend/ui/app.slint:3361
 msgid "Save"
 msgstr "저장"
 
-#: rust/frontend/ui/app.slint:3365
+#: rust/frontend/ui/app.slint:3369
 msgid "Reposition"
 msgstr "위치 변경"
 
-#: rust/frontend/ui/app.slint:3366
+#: rust/frontend/ui/app.slint:3370
 msgid "Place"
 msgstr "놓기"
 
-#: rust/frontend/ui/app.slint:3376 rust/frontend/ui/app.slint:3389
-#: rust/frontend/ui/app.slint:3436 rust/frontend/ui/app.slint:3557
+#: rust/frontend/ui/app.slint:3380 rust/frontend/ui/app.slint:3393
+#: rust/frontend/ui/app.slint:3440 rust/frontend/ui/app.slint:3561
 msgid "Options"
 msgstr "옵션"
 
-#: rust/frontend/ui/app.slint:3377 rust/frontend/ui/app.slint:3382
-#: rust/frontend/ui/app.slint:3396 rust/frontend/ui/app.slint:3429
-#: rust/frontend/ui/app.slint:3550 rust/frontend/ui/labels.slint:166
+#: rust/frontend/ui/app.slint:3381 rust/frontend/ui/app.slint:3386
+#: rust/frontend/ui/app.slint:3400 rust/frontend/ui/app.slint:3433
+#: rust/frontend/ui/app.slint:3554 rust/frontend/ui/labels.slint:166
 msgid "View"
 msgstr "보기"
 
@@ -567,7 +567,7 @@ msgstr "연결 끊김"
 msgid "Reconnecting…"
 msgstr "재연결 중…"
 
-#: rust/frontend/ui/chrome.slint:96 rust/frontend/ui/settings.slint:335
+#: rust/frontend/ui/chrome.slint:96 rust/frontend/ui/settings.slint:339
 msgid "Connecting…"
 msgstr "연결 중…"
 
@@ -768,7 +768,7 @@ msgstr "A-Z"
 msgid "Default"
 msgstr "기본값"
 
-#: rust/frontend/ui/labels.slint:71 rust/frontend/ui/settings.slint:316
+#: rust/frontend/ui/labels.slint:71 rust/frontend/ui/settings.slint:320
 msgid "None"
 msgstr "없음"
 
@@ -776,11 +776,11 @@ msgstr "없음"
 msgid "Any"
 msgstr "전체"
 
-#: rust/frontend/ui/labels.slint:90 rust/frontend/ui/settings.slint:145
+#: rust/frontend/ui/labels.slint:90 rust/frontend/ui/settings.slint:149
 msgid "Region"
 msgstr "지역"
 
-#: rust/frontend/ui/labels.slint:91 rust/frontend/ui/settings.slint:120
+#: rust/frontend/ui/labels.slint:91 rust/frontend/ui/settings.slint:124
 msgid "Language"
 msgstr "언어"
 
@@ -850,7 +850,7 @@ msgid "Remove from Hub"
 msgstr "허브에서 제거"
 
 #: rust/frontend/ui/labels.slint:120 rust/frontend/ui/labels.slint:128
-#: rust/frontend/ui/settings.slint:157
+#: rust/frontend/ui/settings.slint:161
 msgid "Update metadata"
 msgstr "메타데이터 업데이트"
 
@@ -1006,7 +1006,7 @@ msgstr "최근 게임 없음"
 msgid "No internet connection"
 msgstr "인터넷 연결 없음"
 
-#: rust/frontend/ui/labels.slint:202 rust/frontend/ui/settings.slint:338
+#: rust/frontend/ui/labels.slint:202 rust/frontend/ui/settings.slint:342
 msgid "Not available"
 msgstr "사용할 수 없음"
 
@@ -1538,7 +1538,7 @@ msgstr "끔: 플레이 시간을 확인할 수 없음"
 msgid "Linked to Zaparoo Online"
 msgstr "Zaparoo Online에 연동됨"
 
-#: rust/frontend/ui/settings.slint:72 rust/frontend/ui/settings.slint:325
+#: rust/frontend/ui/settings.slint:72 rust/frontend/ui/settings.slint:329
 msgid "Not linked"
 msgstr "연동 안 됨"
 
@@ -1566,840 +1566,854 @@ msgstr "{}개 가져옴"
 msgid "All {} systems"
 msgstr "모든 {} 시스템"
 
-#: rust/frontend/ui/settings.slint:97
+#: rust/frontend/ui/settings.slint:95
+msgid "{n} system"
+msgid_plural "{n} systems"
+msgstr[0] "시스템 {n}개"
+
+#: rust/frontend/ui/settings.slint:99
+msgid "Selected"
+msgstr "선택됨"
+
+#: rust/frontend/ui/settings.slint:101
 msgid "Loading sources…"
 msgstr "소스 불러오는 중…"
 
 #. Setup forms.
-#: rust/frontend/ui/settings.slint:109
+#: rust/frontend/ui/settings.slint:113
 msgid "Source"
 msgstr "소스"
 
-#: rust/frontend/ui/settings.slint:110
+#: rust/frontend/ui/settings.slint:114
 msgid "Systems"
 msgstr "시스템"
 
-#: rust/frontend/ui/settings.slint:111
+#: rust/frontend/ui/settings.slint:115
 msgid "Replace existing"
 msgstr "기존 항목 교체"
 
-#: rust/frontend/ui/settings.slint:112
+#: rust/frontend/ui/settings.slint:116
 msgid "Start update"
 msgstr "업데이트 시작"
 
-#: rust/frontend/ui/settings.slint:113
+#: rust/frontend/ui/settings.slint:117
 msgid "Start import"
 msgstr "가져오기 시작"
 
-#: rust/frontend/ui/settings.slint:115
+#: rust/frontend/ui/settings.slint:119
 msgid "Appearance"
 msgstr "모양"
 
-#: rust/frontend/ui/settings.slint:116
+#: rust/frontend/ui/settings.slint:120
 msgid "Library"
 msgstr "라이브러리"
 
-#: rust/frontend/ui/settings.slint:117
+#: rust/frontend/ui/settings.slint:121
 msgid "Online"
 msgstr "온라인"
 
-#: rust/frontend/ui/settings.slint:118
+#: rust/frontend/ui/settings.slint:122
 msgid "Display"
 msgstr "디스플레이"
 
-#: rust/frontend/ui/settings.slint:119
+#: rust/frontend/ui/settings.slint:123
 msgid "Controls"
 msgstr "조작"
 
-#: rust/frontend/ui/settings.slint:121
+#: rust/frontend/ui/settings.slint:125
 msgid "About"
 msgstr "정보"
 
-#: rust/frontend/ui/settings.slint:123
+#: rust/frontend/ui/settings.slint:127
 msgid "Analog video"
 msgstr "아날로그 비디오"
 
-#: rust/frontend/ui/settings.slint:124
+#: rust/frontend/ui/settings.slint:128
 msgid "Maintenance"
 msgstr "유지 관리"
 
-#: rust/frontend/ui/settings.slint:125
+#: rust/frontend/ui/settings.slint:129
 msgid "Browsing"
 msgstr "탐색"
 
-#: rust/frontend/ui/settings.slint:126
+#: rust/frontend/ui/settings.slint:130
 msgid "Account"
 msgstr "계정"
 
-#: rust/frontend/ui/settings.slint:127
+#: rust/frontend/ui/settings.slint:131
 msgid "Features"
 msgstr "기능"
 
-#: rust/frontend/ui/settings.slint:128
+#: rust/frontend/ui/settings.slint:132
 msgid "Backup"
 msgstr "백업"
 
-#: rust/frontend/ui/settings.slint:129
+#: rust/frontend/ui/settings.slint:133
 msgid "Remote"
 msgstr "원격"
 
-#: rust/frontend/ui/settings.slint:131
+#: rust/frontend/ui/settings.slint:135
 msgid "Color scheme"
 msgstr "색상 테마"
 
-#: rust/frontend/ui/settings.slint:132
+#: rust/frontend/ui/settings.slint:136
 msgid "Color intensity"
 msgstr "색상 강도"
 
-#: rust/frontend/ui/settings.slint:133
+#: rust/frontend/ui/settings.slint:137
 msgid "System logos"
 msgstr "시스템 로고"
 
-#: rust/frontend/ui/settings.slint:134
+#: rust/frontend/ui/settings.slint:138
 msgid "Reduce motion"
 msgstr "동작 줄이기"
 
-#: rust/frontend/ui/settings.slint:135
+#: rust/frontend/ui/settings.slint:139
 msgid "Screensaver"
 msgstr "화면 보호기"
 
-#: rust/frontend/ui/settings.slint:137
+#: rust/frontend/ui/settings.slint:141
 msgid "Interface resolution"
 msgstr "인터페이스 해상도"
 
-#: rust/frontend/ui/settings.slint:138
+#: rust/frontend/ui/settings.slint:142
 msgid "Interface layout"
 msgstr "인터페이스 레이아웃"
 
-#: rust/frontend/ui/settings.slint:139
+#: rust/frontend/ui/settings.slint:143
 msgid "Orientation"
 msgstr "화면 방향"
 
-#: rust/frontend/ui/settings.slint:140
+#: rust/frontend/ui/settings.slint:144
 msgid "CRT mode"
 msgstr "CRT 모드"
 
-#: rust/frontend/ui/settings.slint:141
+#: rust/frontend/ui/settings.slint:145
 msgid "Video standard"
 msgstr "비디오 규격"
 
-#: rust/frontend/ui/settings.slint:142
+#: rust/frontend/ui/settings.slint:146
 msgid "Screen position"
 msgstr "화면 위치"
 
-#: rust/frontend/ui/settings.slint:146
+#: rust/frontend/ui/settings.slint:150
 msgid "Clock format"
 msgstr "시계 형식"
 
-#: rust/frontend/ui/settings.slint:148
+#: rust/frontend/ui/settings.slint:152
 msgid "Button style"
 msgstr "버튼 스타일"
 
-#: rust/frontend/ui/settings.slint:149
+#: rust/frontend/ui/settings.slint:153
 msgid "Swap controller confirm/cancel"
 msgstr "컨트롤러 확인/취소 바꾸기"
 
-#: rust/frontend/ui/settings.slint:150
+#: rust/frontend/ui/settings.slint:154
 msgid "Swap controller options/view"
 msgstr "컨트롤러 옵션/보기 바꾸기"
 
-#: rust/frontend/ui/settings.slint:151
+#: rust/frontend/ui/settings.slint:155
 msgid "Mouse support"
 msgstr "마우스 지원"
 
-#: rust/frontend/ui/settings.slint:153
+#: rust/frontend/ui/settings.slint:157
 msgid "Add game folder…"
 msgstr "게임 폴더 추가…"
 
-#: rust/frontend/ui/settings.slint:154
+#: rust/frontend/ui/settings.slint:158
 msgid "Detect launchers…"
 msgstr "런처 감지…"
 
-#: rust/frontend/ui/settings.slint:155
+#: rust/frontend/ui/settings.slint:159
 msgid "Verify playtime…"
 msgstr "플레이 시간 확인…"
 
-#: rust/frontend/ui/settings.slint:158
+#: rust/frontend/ui/settings.slint:162
 msgid "Systems layout"
 msgstr "시스템 레이아웃"
 
-#: rust/frontend/ui/settings.slint:159
+#: rust/frontend/ui/settings.slint:163
 msgid "Games layout"
 msgstr "게임 레이아웃"
 
-#: rust/frontend/ui/settings.slint:160
+#: rust/frontend/ui/settings.slint:164
 msgid "Preferred artwork"
 msgstr "선호 아트워크"
 
-#: rust/frontend/ui/settings.slint:161
+#: rust/frontend/ui/settings.slint:165
 msgid "Show hidden items"
 msgstr "숨긴 항목 표시"
 
-#: rust/frontend/ui/settings.slint:162
+#: rust/frontend/ui/settings.slint:166
 msgid "Show original filenames"
 msgstr "원본 파일 이름 표시"
 
-#: rust/frontend/ui/settings.slint:164
+#: rust/frontend/ui/settings.slint:168
 msgid "Online features are not available for this client"
 msgstr "이 클라이언트에서는 온라인 기능을 사용할 수 없습니다"
 
-#: rust/frontend/ui/settings.slint:165 rust/frontend/ui/settings.slint:176
+#: rust/frontend/ui/settings.slint:169 rust/frontend/ui/settings.slint:180
 msgid "Status"
 msgstr "상태"
 
-#: rust/frontend/ui/settings.slint:166
+#: rust/frontend/ui/settings.slint:170
 msgid "Warp"
 msgstr "Warp"
 
-#: rust/frontend/ui/settings.slint:167
+#: rust/frontend/ui/settings.slint:171
 msgid "Link account"
 msgstr "계정 연동"
 
-#: rust/frontend/ui/settings.slint:168
+#: rust/frontend/ui/settings.slint:172
 msgid "Unlink account"
 msgstr "계정 연동 해제"
 
-#: rust/frontend/ui/settings.slint:169
+#: rust/frontend/ui/settings.slint:173
 msgid "All"
 msgstr "전체"
 
-#: rust/frontend/ui/settings.slint:170
+#: rust/frontend/ui/settings.slint:174
 msgid "Sync play history"
 msgstr "플레이 기록 동기화"
 
-#: rust/frontend/ui/settings.slint:171
+#: rust/frontend/ui/settings.slint:175
 msgid "Remote control"
 msgstr "원격 제어"
 
-#: rust/frontend/ui/settings.slint:172
+#: rust/frontend/ui/settings.slint:176
 msgid "Library sync"
 msgstr "라이브러리 동기화"
 
-#: rust/frontend/ui/settings.slint:173
+#: rust/frontend/ui/settings.slint:177
 msgid "Cloud backup"
 msgstr "클라우드 백업"
 
-#: rust/frontend/ui/settings.slint:174
+#: rust/frontend/ui/settings.slint:178
 msgid "Schedule"
 msgstr "주기"
 
-#: rust/frontend/ui/settings.slint:175
+#: rust/frontend/ui/settings.slint:179
 msgid "Manage backups…"
 msgstr "백업 관리…"
 
-#: rust/frontend/ui/settings.slint:177
+#: rust/frontend/ui/settings.slint:181
 msgid "Activity…"
 msgstr "활동…"
 
-#: rust/frontend/ui/settings.slint:182
+#: rust/frontend/ui/settings.slint:186
 msgid "Debug logging"
 msgstr "디버그 로깅"
 
-#: rust/frontend/ui/settings.slint:183 rust/frontend/ui/setup.slint:275
+#: rust/frontend/ui/settings.slint:187 rust/frontend/ui/setup.slint:319
 msgid "Upload log file"
 msgstr "로그 파일 업로드"
 
-#: rust/frontend/ui/settings.slint:193
+#: rust/frontend/ui/settings.slint:197
 msgid "Link your Zaparoo Online account first."
 msgstr "먼저 Zaparoo Online 계정을 연동하세요."
 
-#: rust/frontend/ui/settings.slint:196
+#: rust/frontend/ui/settings.slint:200
 msgid "Wait for the metadata update to finish."
 msgstr "메타데이터 업데이트가 끝날 때까지 기다리세요."
 
-#: rust/frontend/ui/settings.slint:197
+#: rust/frontend/ui/settings.slint:201
 msgid "Wait for the media database update to finish."
 msgstr "미디어 데이터베이스 업데이트가 끝날 때까지 기다리세요."
 
-#: rust/frontend/ui/settings.slint:201
+#: rust/frontend/ui/settings.slint:205
 msgid "Choose a folder containing system folders, then use Update media database to scan."
 msgstr "시스템 폴더가 들어 있는 폴더를 선택한 후 미디어 데이터베이스 업데이트로 스캔하세요."
 
-#: rust/frontend/ui/settings.slint:202
+#: rust/frontend/ui/settings.slint:206
 msgid "Scans a folder you choose for launchers already installed."
 msgstr "선택한 폴더에서 이미 설치된 런처를 스캔합니다."
 
-#: rust/frontend/ui/settings.slint:203
+#: rust/frontend/ui/settings.slint:207
 msgid "Allow exact game time in system settings. Optional."
 msgstr "시스템 설정에서 정확한 게임 시간 측정을 허용합니다. 선택 사항입니다."
 
-#: rust/frontend/ui/settings.slint:204
+#: rust/frontend/ui/settings.slint:208
 msgid "Changes colors across screens, including text and highlights."
 msgstr "텍스트와 강조 표시를 포함한 화면 전체의 색상을 변경합니다."
 
-#: rust/frontend/ui/settings.slint:205
+#: rust/frontend/ui/settings.slint:209
 msgid "Controls how strongly accent colors tint tiles and backgrounds."
 msgstr "강조 색이 타일과 배경에 입혀지는 정도를 조절합니다."
 
-#: rust/frontend/ui/settings.slint:206
+#: rust/frontend/ui/settings.slint:210
 msgid "Shows system logos in original colors or tinted to match colors."
 msgstr "시스템 로고를 원래 색상 또는 테마에 맞춘 색조로 표시합니다."
 
-#: rust/frontend/ui/settings.slint:207
+#: rust/frontend/ui/settings.slint:211
 msgid "Turns off animation throughout the interface."
 msgstr "인터페이스 전체의 애니메이션을 끕니다."
 
-#: rust/frontend/ui/settings.slint:208
+#: rust/frontend/ui/settings.slint:212
 msgid "Sets idle time before the screensaver starts. Off disables it."
 msgstr "화면 보호기가 시작되기까지의 대기 시간입니다. 끔을 선택하면 사용하지 않습니다."
 
-#: rust/frontend/ui/settings.slint:209
+#: rust/frontend/ui/settings.slint:213
 msgid "The resolution the interface renders at. Restarts the frontend."
 msgstr "인터페이스를 렌더링하는 해상도입니다. 프런트엔드가 다시 시작됩니다."
 
-#: rust/frontend/ui/settings.slint:210
+#: rust/frontend/ui/settings.slint:214
 msgid "Adjusts layout density for standard and handheld screens."
 msgstr "표준 화면과 휴대용 화면에 맞게 레이아웃 밀도를 조정합니다."
 
-#: rust/frontend/ui/settings.slint:211
+#: rust/frontend/ui/settings.slint:215
 msgid "Rotates the interface for a sideways screen or tate cabinet."
 msgstr "세로로 돌린 화면이나 세로 화면 캐비닛에 맞게 인터페이스를 회전합니다."
 
-#: rust/frontend/ui/settings.slint:212
+#: rust/frontend/ui/settings.slint:216
 msgid "Outputs 15 kHz analog video through MiSTer. Restarts frontend."
 msgstr "MiSTer를 통해 15 kHz 아날로그 비디오를 출력합니다. 프런트엔드가 다시 시작됩니다."
 
-#: rust/frontend/ui/settings.slint:213
+#: rust/frontend/ui/settings.slint:217
 msgid "Matches analog output to NTSC or PAL. Restarts the frontend."
 msgstr "아날로그 출력을 NTSC 또는 PAL에 맞춥니다. 프런트엔드가 다시 시작됩니다."
 
-#: rust/frontend/ui/settings.slint:214
+#: rust/frontend/ui/settings.slint:218
 msgid "Opens a test pattern to position the analog picture with arrows."
 msgstr "테스트 패턴을 열어 방향키로 아날로그 화면 위치를 조정합니다."
 
-#: rust/frontend/ui/settings.slint:215
+#: rust/frontend/ui/settings.slint:219
 msgid "The language used for interface text. Restarts the frontend."
 msgstr "인터페이스 텍스트에 사용할 언어입니다. 프런트엔드가 다시 시작됩니다."
 
-#: rust/frontend/ui/settings.slint:216
+#: rust/frontend/ui/settings.slint:220
 msgid "Selects regional system and game names, such as Mega Drive."
 msgstr "메가 드라이브처럼 지역마다 다른 시스템 및 게임 이름을 선택합니다."
 
-#: rust/frontend/ui/settings.slint:217
+#: rust/frontend/ui/settings.slint:221
 msgid "12-hour or 24-hour time in the top bar."
 msgstr "상단 바의 시간을 12시간제 또는 24시간제로 표시합니다."
 
-#: rust/frontend/ui/settings.slint:218
+#: rust/frontend/ui/settings.slint:222
 msgid "Matches on-screen prompt icons to your controller."
 msgstr "화면의 버튼 아이콘을 컨트롤러에 맞춥니다."
 
-#: rust/frontend/ui/settings.slint:219
+#: rust/frontend/ui/settings.slint:223
 msgid "Flips which controller button accepts and which cancels."
 msgstr "컨트롤러의 확인 버튼과 취소 버튼을 서로 바꿉니다."
 
-#: rust/frontend/ui/settings.slint:220
+#: rust/frontend/ui/settings.slint:224
 msgid "Swaps which controller button opens Options and View."
 msgstr "컨트롤러의 옵션 버튼과 보기 버튼을 서로 바꿉니다."
 
-#: rust/frontend/ui/settings.slint:221
+#: rust/frontend/ui/settings.slint:225
 msgid "Lets a mouse click tiles and menu rows."
 msgstr "마우스로 타일과 메뉴 항목을 클릭할 수 있습니다."
 
-#: rust/frontend/ui/settings.slint:222
+#: rust/frontend/ui/settings.slint:226
 msgid "Rescans game folders for added or removed files. Choose systems."
 msgstr "게임 폴더를 다시 스캔해 추가되거나 삭제된 파일을 찾습니다. 시스템을 선택하세요."
 
-#: rust/frontend/ui/settings.slint:223
+#: rust/frontend/ui/settings.slint:227
 msgid "Adds artwork and details from the sources Core offers."
 msgstr "코어가 제공하는 소스에서 아트워크와 상세 정보를 추가합니다."
 
-#: rust/frontend/ui/settings.slint:224
+#: rust/frontend/ui/settings.slint:228
 msgid "Shows systems as a cover grid or a list with details."
 msgstr "시스템을 커버 그리드 또는 상세 정보가 있는 목록으로 표시합니다."
 
-#: rust/frontend/ui/settings.slint:225
+#: rust/frontend/ui/settings.slint:229
 msgid "Sets grid or list layout for Games, Favorites, and Recents."
 msgstr "게임, 즐겨찾기, 최근 플레이의 레이아웃을 그리드 또는 목록으로 설정합니다."
 
-#: rust/frontend/ui/settings.slint:226
+#: rust/frontend/ui/settings.slint:230
 msgid "Prefers an artwork type when games have multiple images."
 msgstr "게임에 이미지가 여러 개 있을 때 우선 표시할 아트워크 종류입니다."
 
-#: rust/frontend/ui/settings.slint:227
+#: rust/frontend/ui/settings.slint:231
 msgid "Shows hidden items so they can be unhidden."
 msgstr "숨긴 항목을 표시해 숨김을 해제할 수 있게 합니다."
 
-#: rust/frontend/ui/settings.slint:228
+#: rust/frontend/ui/settings.slint:232
 msgid "Shows real filenames instead of cleaned-up display titles."
 msgstr "정리된 표시 제목 대신 실제 파일 이름을 표시합니다."
 
-#: rust/frontend/ui/settings.slint:229
+#: rust/frontend/ui/settings.slint:233
 msgid "Connects this device to your Zaparoo Online account with a code."
 msgstr "코드를 사용해 이 기기를 Zaparoo Online 계정에 연동합니다."
 
-#: rust/frontend/ui/settings.slint:230
+#: rust/frontend/ui/settings.slint:234
 msgid "Removes this device's Zaparoo Online account credentials."
 msgstr "이 기기에서 Zaparoo Online 계정 인증 정보를 삭제합니다."
 
-#: rust/frontend/ui/settings.slint:231
+#: rust/frontend/ui/settings.slint:235
 msgid "Turns every online feature on or off. Each can still be changed on its own."
 msgstr "모든 온라인 기능을 켜거나 끕니다. 각 기능은 개별적으로도 변경할 수 있습니다."
 
-#: rust/frontend/ui/settings.slint:232
+#: rust/frontend/ui/settings.slint:236
 msgid "Uploads verified playtime to your account. Estimates stay local."
 msgstr "확인된 플레이 시간을 계정에 업로드합니다. 추정치는 기기에만 남습니다."
 
-#: rust/frontend/ui/settings.slint:233
+#: rust/frontend/ui/settings.slint:237
 msgid "Allows your linked Zaparoo Online account to send approved commands to this device."
 msgstr "연동된 Zaparoo Online 계정에서 이 기기로 승인된 명령을 보낼 수 있게 합니다."
 
-#: rust/frontend/ui/settings.slint:234
+#: rust/frontend/ui/settings.slint:238
 msgid "Syncs your game list, favorites, likes and decks with your linked Zaparoo Online account."
 msgstr "게임 목록, 즐겨찾기, 좋아요, 덱을 연동된 Zaparoo Online 계정과 동기화합니다."
 
-#: rust/frontend/ui/settings.slint:235
+#: rust/frontend/ui/settings.slint:239
 msgid "Backs up this device to the cloud on a schedule."
 msgstr "정해진 주기에 따라 이 기기를 클라우드에 백업합니다."
 
-#: rust/frontend/ui/settings.slint:236
+#: rust/frontend/ui/settings.slint:240
 msgid "How often automatic cloud backup runs."
 msgstr "자동 클라우드 백업을 실행하는 주기입니다."
 
-#: rust/frontend/ui/settings.slint:237
+#: rust/frontend/ui/settings.slint:241
 msgid "Back up now, view and restore cloud backup snapshots."
 msgstr "지금 백업하거나 클라우드 백업 스냅샷을 보고 복원합니다."
 
-#: rust/frontend/ui/settings.slint:238
+#: rust/frontend/ui/settings.slint:242
 msgid "See what a linked account's remote commands have done on this device."
 msgstr "연동된 계정의 원격 명령이 이 기기에서 수행한 작업을 확인합니다."
 
-#: rust/frontend/ui/settings.slint:239
+#: rust/frontend/ui/settings.slint:243
 msgid "Shows a PIN for pairing a new device with Core."
 msgstr "새 기기를 코어와 페어링하기 위한 PIN을 표시합니다."
 
-#: rust/frontend/ui/settings.slint:240
+#: rust/frontend/ui/settings.slint:244
 msgid "Version, build date, license terms, and contributors."
 msgstr "버전, 빌드 날짜, 라이선스 조건, 기여자."
 
-#: rust/frontend/ui/settings.slint:241
+#: rust/frontend/ui/settings.slint:245
 msgid "Shows a code for opening the Frontend guide on your phone."
 msgstr "휴대폰에서 Frontend 가이드를 여는 코드를 표시합니다."
 
-#: rust/frontend/ui/settings.slint:242
+#: rust/frontend/ui/settings.slint:246
 msgid "Adds troubleshooting detail to logs. Restarts the frontend."
 msgstr "로그에 문제 해결용 세부 정보를 추가합니다. 프런트엔드가 다시 시작됩니다."
 
-#: rust/frontend/ui/settings.slint:243
+#: rust/frontend/ui/settings.slint:247
 msgid "Uploads the log and provides a link for problem reports."
 msgstr "로그를 업로드하고 문제 신고에 쓸 링크를 제공합니다."
 
-#: rust/frontend/ui/settings.slint:250
+#: rust/frontend/ui/settings.slint:254
 msgid "Configure"
 msgstr "구성"
 
-#: rust/frontend/ui/settings.slint:251
+#: rust/frontend/ui/settings.slint:255
 msgid "Upload"
 msgstr "업로드"
 
-#: rust/frontend/ui/settings.slint:252
+#: rust/frontend/ui/settings.slint:256
 msgid "Detect"
 msgstr "감지"
 
-#: rust/frontend/ui/settings.slint:253
+#: rust/frontend/ui/settings.slint:257
 msgid "Pair"
 msgstr "페어링"
 
-#: rust/frontend/ui/settings.slint:254
+#: rust/frontend/ui/settings.slint:258
 msgid "Link"
 msgstr "연동"
 
-#: rust/frontend/ui/settings.slint:255
+#: rust/frontend/ui/settings.slint:259
 msgid "Unlink"
 msgstr "연동 해제"
 
-#: rust/frontend/ui/settings.slint:261 rust/frontend/ui/settings.slint:274
-#: rust/frontend/ui/settings.slint:285 rust/frontend/ui/settings.slint:415
+#: rust/frontend/ui/settings.slint:265 rust/frontend/ui/settings.slint:278
+#: rust/frontend/ui/settings.slint:289 rust/frontend/ui/settings.slint:419
 msgid "Automatic"
 msgstr "자동"
 
-#: rust/frontend/ui/settings.slint:262
+#: rust/frontend/ui/settings.slint:266
 msgid "{} × {}"
 msgstr "{} × {}"
 
-#: rust/frontend/ui/settings.slint:269
+#: rust/frontend/ui/settings.slint:273
 msgid "Style A"
 msgstr "스타일 A"
 
-#: rust/frontend/ui/settings.slint:270
+#: rust/frontend/ui/settings.slint:274
 msgid "Style B"
 msgstr "스타일 B"
 
-#: rust/frontend/ui/settings.slint:271
+#: rust/frontend/ui/settings.slint:275
 msgid "Style C"
 msgstr "스타일 C"
 
-#: rust/frontend/ui/settings.slint:272
+#: rust/frontend/ui/settings.slint:276
 msgid "Style D"
 msgstr "스타일 D"
 
-#: rust/frontend/ui/settings.slint:273
+#: rust/frontend/ui/settings.slint:277
 msgid "Style E"
 msgstr "스타일 E"
 
-#: rust/frontend/ui/settings.slint:277
+#: rust/frontend/ui/settings.slint:281
 msgid "12-hour"
 msgstr "12시간제"
 
-#: rust/frontend/ui/settings.slint:278
+#: rust/frontend/ui/settings.slint:282
 msgid "24-hour"
 msgstr "24시간제"
 
-#: rust/frontend/ui/settings.slint:282
+#: rust/frontend/ui/settings.slint:286
 msgid "Americas"
 msgstr "미주"
 
-#: rust/frontend/ui/settings.slint:283
+#: rust/frontend/ui/settings.slint:287
 msgid "Europe"
 msgstr "유럽"
 
-#: rust/frontend/ui/settings.slint:284
+#: rust/frontend/ui/settings.slint:288
 msgid "Japan"
 msgstr "일본"
 
-#: rust/frontend/ui/settings.slint:288
+#: rust/frontend/ui/settings.slint:292
 msgid "Standard"
 msgstr "표준"
 
-#: rust/frontend/ui/settings.slint:289
+#: rust/frontend/ui/settings.slint:293
 msgid "Handheld"
 msgstr "휴대용"
 
-#: rust/frontend/ui/settings.slint:290
+#: rust/frontend/ui/settings.slint:294
 msgid "Device default"
 msgstr "기기 기본값"
 
-#: rust/frontend/ui/settings.slint:293
+#: rust/frontend/ui/settings.slint:297
 msgid "Rotated CW"
 msgstr "시계 방향 회전"
 
-#: rust/frontend/ui/settings.slint:294
+#: rust/frontend/ui/settings.slint:298
 msgid "Rotated CCW"
 msgstr "반시계 방향 회전"
 
-#: rust/frontend/ui/settings.slint:295
+#: rust/frontend/ui/settings.slint:299
 msgid "Horizontal"
 msgstr "가로"
 
-#: rust/frontend/ui/settings.slint:298
+#: rust/frontend/ui/settings.slint:302
 msgid "Detailed list view"
 msgstr "자세한 목록 보기"
 
-#: rust/frontend/ui/settings.slint:299
+#: rust/frontend/ui/settings.slint:303
 msgid "Grid view"
 msgstr "그리드 보기"
 
-#: rust/frontend/ui/settings.slint:302
+#: rust/frontend/ui/settings.slint:306
 msgid "Full color"
 msgstr "풀 컬러"
 
-#: rust/frontend/ui/settings.slint:303
+#: rust/frontend/ui/settings.slint:307
 msgid "Tinted"
 msgstr "색조 적용"
 
-#: rust/frontend/ui/settings.slint:306
+#: rust/frontend/ui/settings.slint:310
 msgid "Vivid"
 msgstr "선명하게"
 
-#: rust/frontend/ui/settings.slint:307
+#: rust/frontend/ui/settings.slint:311
 msgid "Subtle"
 msgstr "은은하게"
 
-#: rust/frontend/ui/settings.slint:310
+#: rust/frontend/ui/settings.slint:314
 msgid "PAL (50 Hz)"
 msgstr "PAL (50 Hz)"
 
-#: rust/frontend/ui/settings.slint:311
+#: rust/frontend/ui/settings.slint:315
 msgid "480i (60 Hz)"
 msgstr "480i (60 Hz)"
 
-#: rust/frontend/ui/settings.slint:312
+#: rust/frontend/ui/settings.slint:316
 msgid "NTSC (60 Hz)"
 msgstr "NTSC (60 Hz)"
 
-#: rust/frontend/ui/settings.slint:319
+#: rust/frontend/ui/settings.slint:323
 msgid "Daily"
 msgstr "매일"
 
-#: rust/frontend/ui/settings.slint:320
+#: rust/frontend/ui/settings.slint:324
 msgid "Weekly"
 msgstr "매주"
 
-#: rust/frontend/ui/settings.slint:321
+#: rust/frontend/ui/settings.slint:325
 msgid "Manual"
 msgstr "수동"
 
-#: rust/frontend/ui/settings.slint:324
+#: rust/frontend/ui/settings.slint:328
 msgid "Linked"
 msgstr "연동됨"
 
-#: rust/frontend/ui/settings.slint:328
+#: rust/frontend/ui/settings.slint:332
 msgid "Active"
 msgstr "활성"
 
-#: rust/frontend/ui/settings.slint:329
+#: rust/frontend/ui/settings.slint:333
 msgid "Not active"
 msgstr "비활성"
 
-#: rust/frontend/ui/settings.slint:330
+#: rust/frontend/ui/settings.slint:334
 msgid "Checking…"
 msgstr "확인 중…"
 
-#: rust/frontend/ui/settings.slint:333 rust/frontend/ui/settings.slint:391
+#: rust/frontend/ui/settings.slint:337 rust/frontend/ui/settings.slint:395
 msgid "Off"
 msgstr "끔"
 
-#: rust/frontend/ui/settings.slint:336
+#: rust/frontend/ui/settings.slint:340
 msgid "Waiting for commands…"
 msgstr "명령 대기 중…"
 
-#: rust/frontend/ui/settings.slint:337
+#: rust/frontend/ui/settings.slint:341
 msgid "Not the remote device"
 msgstr "원격 기기가 아님"
 
-#: rust/frontend/ui/settings.slint:339
+#: rust/frontend/ui/settings.slint:343
 msgid "Link rejected"
 msgstr "연동 거부됨"
 
-#: rust/frontend/ui/settings.slint:340
+#: rust/frontend/ui/settings.slint:344
 msgid "Server unreachable"
 msgstr "서버에 연결할 수 없음"
 
-#: rust/frontend/ui/settings.slint:341
+#: rust/frontend/ui/settings.slint:345
 msgid "Unknown"
 msgstr "알 수 없음"
 
-#: rust/frontend/ui/settings.slint:347
+#: rust/frontend/ui/settings.slint:351
 msgid "English"
 msgstr "영어"
 
-#: rust/frontend/ui/settings.slint:348
+#: rust/frontend/ui/settings.slint:352
 msgid "Italian"
 msgstr "이탈리아어"
 
-#: rust/frontend/ui/settings.slint:349
+#: rust/frontend/ui/settings.slint:353
 msgid "Spanish"
 msgstr "스페인어"
 
-#: rust/frontend/ui/settings.slint:350
+#: rust/frontend/ui/settings.slint:354
 msgid "Basque"
 msgstr "바스크어"
 
-#: rust/frontend/ui/settings.slint:351
+#: rust/frontend/ui/settings.slint:355
 msgid "German"
 msgstr "독일어"
 
-#: rust/frontend/ui/settings.slint:352
+#: rust/frontend/ui/settings.slint:356
 msgid "Greek"
 msgstr "그리스어"
 
-#: rust/frontend/ui/settings.slint:353
+#: rust/frontend/ui/settings.slint:357
 msgid "Japanese"
 msgstr "일본어"
 
-#: rust/frontend/ui/settings.slint:354
+#: rust/frontend/ui/settings.slint:358
 msgid "Korean"
 msgstr "한국어"
 
-#: rust/frontend/ui/settings.slint:355
+#: rust/frontend/ui/settings.slint:359
 msgid "Dutch"
 msgstr "네덜란드어"
 
-#: rust/frontend/ui/settings.slint:356
+#: rust/frontend/ui/settings.slint:360
 msgid "Romanian"
 msgstr "루마니아어"
 
-#: rust/frontend/ui/settings.slint:357
+#: rust/frontend/ui/settings.slint:361
 msgid "Slovak"
 msgstr "슬로바키아어"
 
-#: rust/frontend/ui/settings.slint:358
+#: rust/frontend/ui/settings.slint:362
 msgid "Ukrainian"
 msgstr "우크라이나어"
 
-#: rust/frontend/ui/settings.slint:359
+#: rust/frontend/ui/settings.slint:363
 msgid "Chinese (Simplified)"
 msgstr "중국어(간체)"
 
-#: rust/frontend/ui/settings.slint:360
+#: rust/frontend/ui/settings.slint:364
 msgid "Chinese (Traditional)"
 msgstr "중국어(번체)"
 
-#: rust/frontend/ui/settings.slint:361
+#: rust/frontend/ui/settings.slint:365
 msgid "Hebrew"
 msgstr "히브리어"
 
-#: rust/frontend/ui/settings.slint:362
+#: rust/frontend/ui/settings.slint:366
 msgid "Arabic"
 msgstr "아랍어"
 
-#: rust/frontend/ui/settings.slint:363
+#: rust/frontend/ui/settings.slint:367
 msgid "Hindi"
 msgstr "힌디어"
 
-#: rust/frontend/ui/settings.slint:364
+#: rust/frontend/ui/settings.slint:368
 msgid "French"
 msgstr "프랑스어"
 
-#: rust/frontend/ui/settings.slint:369
+#: rust/frontend/ui/settings.slint:373
 msgid "Zaparoo Light"
 msgstr "Zaparoo Light"
 
-#: rust/frontend/ui/settings.slint:370
+#: rust/frontend/ui/settings.slint:374
 msgid "Classic Purple"
 msgstr "Classic Purple"
 
-#: rust/frontend/ui/settings.slint:371
+#: rust/frontend/ui/settings.slint:375
 msgid "Amber Phosphor"
 msgstr "Amber Phosphor"
 
-#: rust/frontend/ui/settings.slint:372
+#: rust/frontend/ui/settings.slint:376
 msgid "Game Boy"
 msgstr "Game Boy"
 
-#: rust/frontend/ui/settings.slint:373
+#: rust/frontend/ui/settings.slint:377
 msgid "Green Phosphor"
 msgstr "Green Phosphor"
 
-#: rust/frontend/ui/settings.slint:374
+#: rust/frontend/ui/settings.slint:378
 msgid "Neo Geo"
 msgstr "Neo Geo"
 
-#: rust/frontend/ui/settings.slint:375
+#: rust/frontend/ui/settings.slint:379
 msgid "NES"
 msgstr "NES"
 
-#: rust/frontend/ui/settings.slint:376
+#: rust/frontend/ui/settings.slint:380
 msgid "Virtual Boy"
 msgstr "Virtual Boy"
 
-#: rust/frontend/ui/settings.slint:377
+#: rust/frontend/ui/settings.slint:381
 msgid "Dracula"
 msgstr "Dracula"
 
-#: rust/frontend/ui/settings.slint:378
+#: rust/frontend/ui/settings.slint:382
 msgid "Everforest"
 msgstr "Everforest"
 
-#: rust/frontend/ui/settings.slint:379
+#: rust/frontend/ui/settings.slint:383
 msgid "Gruvbox"
 msgstr "Gruvbox"
 
-#: rust/frontend/ui/settings.slint:380
+#: rust/frontend/ui/settings.slint:384
 msgid "Nord"
 msgstr "Nord"
 
-#: rust/frontend/ui/settings.slint:381
+#: rust/frontend/ui/settings.slint:385
 msgid "Oxocarbon"
 msgstr "Oxocarbon"
 
-#: rust/frontend/ui/settings.slint:382
+#: rust/frontend/ui/settings.slint:386
 msgid "Rosé Pine"
 msgstr "Rosé Pine"
 
-#: rust/frontend/ui/settings.slint:383
+#: rust/frontend/ui/settings.slint:387
 msgid "Solarized Dark"
 msgstr "Solarized Dark"
 
-#: rust/frontend/ui/settings.slint:384
+#: rust/frontend/ui/settings.slint:388
 msgid "Synthwave '84"
 msgstr "Synthwave '84"
 
-#: rust/frontend/ui/settings.slint:385
+#: rust/frontend/ui/settings.slint:389
 msgid "Flexoki Paper"
 msgstr "Flexoki Paper"
 
-#: rust/frontend/ui/settings.slint:386
+#: rust/frontend/ui/settings.slint:390
 msgid "Solarized Light"
 msgstr "Solarized Light"
 
-#: rust/frontend/ui/settings.slint:387
+#: rust/frontend/ui/settings.slint:391
 msgid "Zaparoo Dark"
 msgstr "Zaparoo Dark"
 
-#: rust/frontend/ui/settings.slint:392
+#: rust/frontend/ui/settings.slint:396
 msgid "1 second (testing)"
 msgstr "1초 (테스트용)"
 
-#: rust/frontend/ui/settings.slint:393
+#: rust/frontend/ui/settings.slint:397
 msgid "1 minute"
 msgstr "1분"
 
-#: rust/frontend/ui/settings.slint:394
+#: rust/frontend/ui/settings.slint:398
 msgid "2 minutes"
 msgstr "2분"
 
-#: rust/frontend/ui/settings.slint:395
+#: rust/frontend/ui/settings.slint:399
 msgid "5 minutes"
 msgstr "5분"
 
-#: rust/frontend/ui/settings.slint:396
+#: rust/frontend/ui/settings.slint:400
 msgid "10 minutes"
 msgstr "10분"
 
-#: rust/frontend/ui/settings.slint:397
+#: rust/frontend/ui/settings.slint:401
 msgid "15 minutes"
 msgstr "15분"
 
-#: rust/frontend/ui/settings.slint:398
+#: rust/frontend/ui/settings.slint:402
 msgid "30 minutes"
 msgstr "30분"
 
-#: rust/frontend/ui/settings.slint:399
+#: rust/frontend/ui/settings.slint:403
 msgid "{} seconds"
 msgstr "{0}초"
 
-#: rust/frontend/ui/settings.slint:404
+#: rust/frontend/ui/settings.slint:408
 msgid "Thumbnail"
 msgstr "썸네일"
 
-#: rust/frontend/ui/settings.slint:405
+#: rust/frontend/ui/settings.slint:409
 msgid "Box art"
 msgstr "박스 아트"
 
-#: rust/frontend/ui/settings.slint:406
+#: rust/frontend/ui/settings.slint:410
 msgid "3D box art"
 msgstr "3D 박스 아트"
 
-#: rust/frontend/ui/settings.slint:407
+#: rust/frontend/ui/settings.slint:411
 msgid "Screenshot"
 msgstr "스크린샷"
 
-#: rust/frontend/ui/settings.slint:408
+#: rust/frontend/ui/settings.slint:412
 msgid "Wheel"
 msgstr "휠"
 
-#: rust/frontend/ui/settings.slint:409
+#: rust/frontend/ui/settings.slint:413
 msgid "Title screen"
 msgstr "타이틀 화면"
 
-#: rust/frontend/ui/settings.slint:410
+#: rust/frontend/ui/settings.slint:414
 msgid "Map"
 msgstr "맵"
 
-#: rust/frontend/ui/settings.slint:411
+#: rust/frontend/ui/settings.slint:415
 msgid "Marquee"
 msgstr "마키"
 
-#: rust/frontend/ui/settings.slint:412
+#: rust/frontend/ui/settings.slint:416
 msgid "Fan art"
 msgstr "팬 아트"
 
-#: rust/frontend/ui/settings.slint:413
+#: rust/frontend/ui/settings.slint:417
 msgid "Box side"
 msgstr "박스 옆면"
 
-#: rust/frontend/ui/settings.slint:414
+#: rust/frontend/ui/settings.slint:418
 msgid "Box back"
 msgstr "박스 뒷면"
 
-#: rust/frontend/ui/settings.slint:496
+#: rust/frontend/ui/settings.slint:500
 msgid "Linked as {}"
 msgstr "{} 계정으로 연동됨"
 
-#: rust/frontend/ui/setup.slint:296
+#: rust/frontend/ui/setup.slint:120
+msgid "{n} selected"
+msgid_plural "{n} selected"
+msgstr[0] "{n}개 선택됨"
+
+#: rust/frontend/ui/setup.slint:340
 msgid "Upload failed. Check the network connection and try again."
 msgstr "업로드하지 못했습니다. 네트워크 연결을 확인하고 다시 시도하세요."
 
-#: rust/frontend/ui/setup.slint:297
+#: rust/frontend/ui/setup.slint:341
 msgid "Uploading log file. This may take a moment."
 msgstr "로그 파일을 업로드하는 중입니다. 잠시 기다려 주세요."

@@ -18,24 +18,53 @@ import { SetupKind, SetupPicker, ScopeKind, LogPhase, ControlKind, StateTokens }
 export struct SetupPickerRow {
     kind: ScopeKind,
     name: string,
+    // A system row that is part of the selection being built.
+    checked: bool,
 }
 
 // One setup-picker row's label, colors as inputs so the row can draw it
-// at rest and again inverted inside a `SelectionClip`.
+// at rest and again inverted inside a `SelectionClip`. A system row ends
+// in a check box: an outline, filled while the system is checked.
 component PickerScopeLabel inherits Rectangle {
     in property <string> label;
     in property <color> content-color;
     in property <int> weight;
+    in property <bool> checkable: false;
+    in property <bool> checked: false;
+
+    property <length> pad: Sizing.pct-w(2);
+    property <length> box: Sizing.pct-h(3);
+    property <length> box-line: Sizing.card-border-width * (Sizing.tier-240 ? 1 : 2);
+    property <length> box-band: root.checkable ? root.box + root.pad : 0px;
 
     Text {
-        x: Sizing.pct-w(2);
+        x: root.pad;
         y: (parent.height - self.height) / 2;
-        width: parent.width - 2 * Sizing.pct-w(2);
+        width: parent.width - 2 * root.pad - root.box-band;
         overflow: elide;
         text: root.label;
         color: root.content-color;
         font-size: Sizing.font-body;
         font-weight: root.weight;
+    }
+
+    if root.checkable: Rectangle {
+        x: parent.width - self.width - root.pad;
+        y: (parent.height - self.height) / 2;
+        width: root.box;
+        height: root.box;
+        border-radius: Sizing.radius-sm;
+        border-width: root.box-line;
+        border-color: root.content-color;
+
+        if root.checked: Rectangle {
+            x: 2 * root.box-line;
+            y: 2 * root.box-line;
+            width: parent.width - 4 * root.box-line;
+            height: parent.height - 4 * root.box-line;
+            border-radius: Math.max(0px, Sizing.radius-sm - 2 * root.box-line);
+            background: root.content-color;
+        }
     }
 }
 
@@ -57,6 +86,8 @@ export component SetupModal inherits ModalShell {
     in property <int> picker-visible: 0;
     in property <int> picker-count: 0;
     in property <int> picker-sel: 0;
+    in property <int> picker-checked: 0;
+    in property <bool> picker-toggle: false;
     in property <bool> has-above: false;
     in property <bool> has-below: false;
     in property <int> activate-pulse: 0;
@@ -81,9 +112,13 @@ export component SetupModal inherits ModalShell {
         + Math.max(0, root.picker-visible - 1) * root.picker-gap;
     property <length> picker-h: 2 * root.arrow-band + root.picker-viewport-h;
     property <length> body-h: root.picker-page ? root.picker-h : root.form-h;
-    title: root.picker-page
-        ? SettingsLabels.label(StateTokens.picker(root.picker-title))
-        : SettingsLabels.setup-title(root.kind);
+    property <string> picker-name: SettingsLabels.label(StateTokens.picker(root.picker-title));
+    // The Systems page counts its checks where the whole list can see it.
+    title: !root.picker-page
+        ? SettingsLabels.setup-title(root.kind)
+        : (root.picker-checked > 0
+            ? @tr("{} · {}", root.picker-name, @tr("{n} selected" | "{n} selected" % root.picker-checked))
+            : root.picker-name);
     panel-width: Math.min(root.width * 0.78, Sizing.pct-h(110));
     content-height: root.body-h;
 
@@ -180,6 +215,8 @@ export component SetupModal inherits ModalShell {
             picker-sel := SelectionCursor {
                 radius: Layout.row-radius;
                 activate-pulse: root.activate-pulse;
+                // A checked row answers with its box, not a flash.
+                flash-enabled: !root.picker-toggle;
                 target: { x: 0px, y: root.picker-sel * root.picker-stride,
                     w: parent.width, h: root.picker-row-h, column: 0, row: root.picker-sel,
                     scope: StateTokens.picker(root.picker-title) + ":" + root.picker-top,
@@ -193,9 +230,12 @@ export component SetupModal inherits ModalShell {
 
                 property <bool> lit: picker-sel.fill-bottom > self.y && picker-sel.fill-top < self.y + self.height;
 
-                // A manufacturer's name over its systems: muted, ruled off,
-                // and never under the selection.
-                if entry.kind == ScopeKind.header: Text {
+                property <bool> heading: entry.kind == ScopeKind.header || entry.kind == ScopeKind.selected;
+
+                // A manufacturer's name over its systems, or the heading
+                // over the checked ones: muted, ruled off, and never under
+                // the selection.
+                if heading: Text {
                     x: Sizing.pct-w(2);
                     y: parent.height - self.height - Sizing.pct-h(0.8);
                     width: parent.width - 2 * Sizing.pct-w(2);
@@ -205,16 +245,18 @@ export component SetupModal inherits ModalShell {
                     font-weight: FontWeight.semi-bold;
                     overflow: elide;
                 }
-                if entry.kind == ScopeKind.header: Divider {
+                if heading: Divider {
                     x: 0;
                     y: parent.height - self.height;
                 }
-                if entry.kind != ScopeKind.header: PickerScopeLabel {
+                if !heading: PickerScopeLabel {
                     label: SettingsLabels.scope(entry.kind, entry.name);
                     content-color: Theme.text-primary;
                     weight: FontWeight.normal;
+                    checkable: entry.kind == ScopeKind.system;
+                    checked: entry.checked;
                 }
-                if lit && entry.kind != ScopeKind.header: SelectionClip {
+                if lit && !heading: SelectionClip {
                     radius: Layout.row-radius;
                     row-top: parent.y; row-height: parent.height;
                     fill-top: picker-sel.fill-top; fill-bottom: picker-sel.fill-bottom;
@@ -223,10 +265,12 @@ export component SetupModal inherits ModalShell {
                         label: SettingsLabels.scope(entry.kind, entry.name);
                         content-color: picker-sel.content;
                         weight: FontWeight.medium;
+                        checkable: entry.kind == ScopeKind.system;
+                        checked: entry.checked;
                     }
                 }
 
-                if entry.kind != ScopeKind.header: TouchArea {
+                if !heading: TouchArea {
                     mouse-cursor: pointer;
                     changed has-hover => {
                         if (self.has-hover) { root.picker-hovered(i); }

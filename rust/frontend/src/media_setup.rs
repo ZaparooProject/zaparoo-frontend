@@ -12,7 +12,9 @@ use std::sync::Arc;
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 use zaparoo_app::media_setup::{self as rules, FormRow, Kind};
 use zaparoo_core::input_actions::actions;
-use zaparoo_core::media_types::{MediaIndexParams, MediaScrapeParams, ScraperInfo};
+use zaparoo_core::media_types::{
+    MediaIndexParams, MediaScrapeParams, MediaScrapeScope, ScraperInfo,
+};
 
 use crate::router::{lock, Ctx, Shared};
 use crate::{App, SettingsRow, SetupInput, SetupModalView, SetupPickerRow};
@@ -31,6 +33,14 @@ pub struct SetupModel {
     pub index: usize,
     /// The Systems row's selected scope, separate from Core's token encoding.
     pub scope: rules::Scope,
+    /// The game the form was opened on, which its Systems page keeps
+    /// offering after the scope is widened.
+    pub game: Option<rules::GameTarget>,
+    /// The systems checked on the open Systems page.
+    pub checked: Vec<String>,
+    /// The ones that were checked when that page opened: they lead its
+    /// list, and stay put while it is open.
+    pub pinned: Vec<String>,
     /// The scraper id the Source row holds (Scrape only).
     pub scraper: String,
     pub rescrape: bool,
@@ -54,6 +64,9 @@ impl SetupModel {
             kind: Kind::Index,
             index: 0,
             scope: rules::Scope::All,
+            game: None,
+            checked: Vec::new(),
+            pinned: Vec::new(),
             scraper: String::new(),
             rescrape: false,
             picker: None,
@@ -87,8 +100,9 @@ impl Default for SetupModel {
     }
 }
 
-/// The scope rows the picker offers: All systems, the categories that
-/// have indexable systems, then every system under its manufacturer.
+/// The scope rows the picker offers: the game the form was opened on, All
+/// systems, the categories that have indexable systems, the systems already
+/// checked, then every system under its manufacturer.
 fn scope_entries(shared: &Shared) -> Vec<rules::ScopeEntry> {
     let systems: Vec<zaparoo_app::system_picker::System> = shared
         .systems
@@ -100,7 +114,15 @@ fn scope_entries(shared: &Shared) -> Vec<rules::ScopeEntry> {
             games: s.media_count,
         })
         .collect();
-    rules::scope_entries(&shared.categories, &systems)
+    rules::scope_entries(
+        &shared.categories,
+        &systems,
+        &rules::Picks {
+            checked: &shared.setup.checked,
+            pinned: &shared.setup.pinned,
+            game: shared.setup.game.as_ref(),
+        },
+    )
 }
 
 /// What each row of the open picker page is to the list cursor: the
@@ -203,6 +225,8 @@ pub fn render(ctx: &Ctx, app: &App) {
 
     let Some(page) = model.picker else {
         view.set_picker_page(false);
+        view.set_picker_toggle(false);
+        view.set_picker_checked(0);
         view.set_picker_rows(ModelRc::new(VecModel::from(Vec::<SetupPickerRow>::new())));
         return;
     };
@@ -212,33 +236,46 @@ pub fn render(ctx: &Ctx, app: &App) {
     } else {
         crate::SetupPicker::Systems
     });
-    let entries: Vec<(crate::ScopeKind, String)> = match page {
+    let entries: Vec<SetupPickerRow> = match page {
         FormRow::Source => model
             .scrapers
             .iter()
-            .map(|s| {
-                (
-                    crate::ScopeKind::Source,
-                    if s.name.is_empty() {
-                        s.id.clone()
-                    } else {
-                        s.name.clone()
-                    },
-                )
+            .map(|s| SetupPickerRow {
+                kind: crate::ScopeKind::Source,
+                name: SharedString::from(if s.name.is_empty() {
+                    s.id.as_str()
+                } else {
+                    s.name.as_str()
+                }),
+                checked: false,
             })
             .collect(),
         _ => scope_entries(&shared)
             .into_iter()
-            .map(|entry| (entry.kind.into(), entry.name))
+            .map(|entry| SetupPickerRow {
+                kind: entry.kind.into(),
+                name: SharedString::from(entry.name.as_str()),
+                checked: entry.checked,
+            })
             .collect(),
     };
+    // A system row is checked, not picked, and the title counts the checks.
+    let toggles = entries
+        .get(model.picker_index)
+        .is_some_and(|row| row.kind == crate::ScopeKind::System);
+    view.set_picker_toggle(toggles);
+    view.set_picker_checked(if page == FormRow::Systems {
+        i32::try_from(model.checked.len()).unwrap_or(i32::MAX)
+    } else {
+        0
+    });
     publish_picker_window(&view, &entries, model.picker_index);
 }
 
 /// Publish the picker's window of rows around `picker_index`.
 fn publish_picker_window(
     view: &SetupModalView<'_>,
-    entries: &[(crate::ScopeKind, String)],
+    entries: &[SetupPickerRow],
     picker_index: usize,
 ) {
     // Window the rows around the cursor, like the browse list does, with a
@@ -252,10 +289,8 @@ fn publish_picker_window(
             (top + slot)
                 .checked_sub(PICKER_OVERSCAN)
                 .and_then(|index| entries.get(index))
-                .map_or_else(SetupPickerRow::default, |(kind, name)| SetupPickerRow {
-                    kind: *kind,
-                    name: SharedString::from(name.as_str()),
-                })
+                .cloned()
+                .unwrap_or_default()
         })
         .collect();
     // These are fixed slots, not animated item identities. Update their
@@ -290,7 +325,13 @@ pub fn open(ctx: &Ctx, app: &App, kind: Kind, scope: rules::Scope) {
         model.open = true;
         model.kind = kind;
         model.index = 0;
+        model.game = match &scope {
+            rules::Scope::Game(game) => Some(game.clone()),
+            _ => None,
+        };
         model.scope = scope;
+        model.checked.clear();
+        model.pinned.clear();
         model.rescrape = false;
         model.picker = None;
         model.picker_index = 0;
@@ -467,10 +508,7 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
                 render(ctx, app);
             }
             actions::ACCEPT => pick(ctx, app),
-            actions::CANCEL => {
-                lock(&ctx.shared).setup.picker = None;
-                render(ctx, app);
-            }
+            actions::CANCEL => leave_picker(ctx, app),
             _ => {}
         }
         return;
@@ -540,20 +578,24 @@ fn open_picker(ctx: &Ctx, app: &App, page: FormRow) {
                 .scrapers
                 .iter()
                 .position(|s| s.id == shared.setup.scraper)
+                .unwrap_or(0)
         } else {
-            let scope = shared.setup.scope.clone();
-            scope_entries(&shared).iter().position(|entry| {
-                entry.kind != rules::ScopeKind::Header && rules::parse_scope(&entry.token) == scope
-            })
+            // The scope's own systems start checked, and lead the list.
+            let checked = rules::checked_systems(&shared.setup.scope);
+            shared.setup.pinned.clone_from(&checked);
+            shared.setup.checked = checked;
+            rules::scope_seat(&scope_entries(&shared), &shared.setup.scope)
         };
         let model = &mut shared.setup;
         model.picker = Some(page);
-        model.picker_index = seat.unwrap_or(0);
+        model.picker_index = seat;
     }
     render(ctx, app);
 }
 
-/// Take the highlighted picker row back to the form.
+/// Accept on a picker row. A source, the game, All systems or a category
+/// goes back to the form as its value; a system is checked or unchecked
+/// and the page stays.
 fn pick(ctx: &Ctx, app: &App) {
     {
         let mut shared = lock(&ctx.shared);
@@ -566,11 +608,40 @@ fn pick(ctx: &Ctx, app: &App) {
             if let Some(id) = picked {
                 shared.setup.scraper = id;
             }
+            shared.setup.picker = None;
         } else {
-            let picked = scope_entries(&shared).get(index).map(|e| e.token.clone());
-            if let Some(token) = picked {
-                shared.setup.scope = rules::parse_scope(&token);
+            let Some(entry) = scope_entries(&shared).into_iter().nth(index) else {
+                return;
+            };
+            let model = &mut shared.setup;
+            if let Some(scope) = rules::picked_scope(&entry, model.game.as_ref()) {
+                model.scope = scope;
+                model.checked.clear();
+                model.picker = None;
+            } else if entry.kind == rules::ScopeKind::System {
+                match model.checked.iter().position(|id| *id == entry.token) {
+                    Some(at) => {
+                        model.checked.remove(at);
+                    }
+                    None => model.checked.push(entry.token),
+                }
+            } else {
+                return;
             }
+        }
+    }
+    render(ctx, app);
+}
+
+/// Back on a picker page returns to the form. The Systems page has no
+/// confirm of its own: what is checked becomes the form's scope, and
+/// nothing checked leaves the scope as it was.
+fn leave_picker(ctx: &Ctx, app: &App) {
+    {
+        let mut shared = lock(&ctx.shared);
+        if shared.setup.picker == Some(FormRow::Systems) {
+            let scope = rules::scope_after_checks(&scope_entries(&shared), &shared.setup.scope);
+            shared.setup.scope = scope;
         }
         shared.setup.picker = None;
     }
@@ -585,11 +656,42 @@ fn scope_systems(shared: &Shared) -> Vec<String> {
     })
 }
 
+/// The scope Core is given for a game; None for a job over systems. An
+/// error when the game cannot be asked for on its own, which must not
+/// widen into its system or the whole library.
+fn scrape_scope(
+    game: Option<&rules::GameTarget>,
+    core_version: &str,
+) -> Result<Option<MediaScrapeScope>, ()> {
+    let Some(game) = game else {
+        return Ok(None);
+    };
+    let Some(item) = rules::scrape_item(game) else {
+        tracing::warn!(game = game.name, "the game has no media ID or path");
+        return Err(());
+    };
+    // A Core below the supported floor ignores the scope, and with no
+    // systems beside it would run over every system. The startup warning
+    // can be dismissed, so this cannot rest on it.
+    if !crate::router::version_supported(core_version) {
+        tracing::warn!(core_version, "this Core cannot scrape a single game");
+        return Err(());
+    }
+    Ok(Some(match item {
+        rules::ScrapeItem::Media(id) => MediaScrapeScope::MediaId(id),
+        rules::ScrapeItem::File { system, path } => MediaScrapeScope::File { system, path },
+    }))
+}
+
 /// Start the job over the chosen scope and close the panel.
 fn start(ctx: &Ctx, app: &App) {
-    let (kind, scoped, systems, scraper, rescrape, covered) = {
+    let (kind, scoped, systems, scraper, rescrape, covered, game, core_version) = {
         let shared = lock(&ctx.shared);
         let systems = scope_systems(&shared);
+        let game = match &shared.setup.scope {
+            rules::Scope::Game(game) => Some(game.clone()),
+            _ => None,
+        };
         // Whether the chosen source handles every system in the scope. A
         // source Core no longer lists is left for Core to judge.
         let covered = shared
@@ -608,6 +710,8 @@ fn start(ctx: &Ctx, app: &App) {
             shared.setup.scraper.clone(),
             shared.setup.rescrape,
             covered,
+            game,
+            shared.core_version.clone(),
         )
     };
     // Core reads an empty list as every system, so a scope that resolved
@@ -648,6 +752,11 @@ fn start(ctx: &Ctx, app: &App) {
                 crate::router::report_action_error(ctx, app, "media_scrape", "");
                 return;
             }
+            // A game is named to Core on its own, in place of the systems.
+            let Ok(scope) = scrape_scope(game.as_ref(), &core_version) else {
+                crate::router::report_action_error(ctx, app, "media_scrape", "");
+                return;
+            };
             // The chosen source becomes the persisted default.
             {
                 let mut shared = lock(&ctx.shared);
@@ -662,7 +771,9 @@ fn start(ctx: &Ctx, app: &App) {
             let weak = app.as_weak();
             let params = MediaScrapeParams {
                 scraper_id: scraper,
-                systems,
+                // Core refuses a scope beside systems, an empty list too.
+                systems: if scope.is_some() { Vec::new() } else { systems },
+                scope,
                 force: rescrape,
             };
             let ctx2 = ctx.clone();

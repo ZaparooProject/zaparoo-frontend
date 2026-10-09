@@ -7591,6 +7591,167 @@ fn a_scoped_metadata_run_never_widens_and_needs_a_source_that_covers_it() {
     assert!(!dialog_open(&app));
 }
 
+#[test]
+fn the_systems_page_checks_systems_and_back_keeps_them() {
+    use zaparoo_app::media_setup::{FormRow, Scope};
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.systems = navigation_catalog();
+        shared.categories = vec!["Console".into()];
+    }
+    let view = app.global::<crate::SetupModalView>();
+    let scope = |ctx: &crate::router::Ctx| crate::router::lock(&ctx.shared).setup.scope.clone();
+    let page = |ctx: &crate::router::Ctx| crate::router::lock(&ctx.shared).setup.picker;
+    let press = |action: &str| crate::media_setup::handle_action(&ctx, &app, action);
+    let open_systems_page = || {
+        crate::router::lock(&ctx.shared).setup.index = 1;
+        press("accept");
+    };
+
+    // The form's own system starts checked and leads the list: All
+    // systems, the category, the Selected heading, then System 08.
+    crate::router::open_scrape_setup(&ctx, &app, Scope::System("System08".into()));
+    open_systems_page();
+    assert_eq!(page(&ctx), Some(FormRow::Systems));
+    assert_eq!(crate::router::lock(&ctx.shared).setup.picker_index, 3);
+    assert!(view.get_picker_toggle());
+    assert_eq!(view.get_picker_checked(), 1);
+
+    // Accept on a system checks it and stays on the page. Down passes
+    // over the manufacturer heading to the first system under it.
+    press("down");
+    press("accept");
+    assert_eq!(page(&ctx), Some(FormRow::Systems));
+    assert_eq!(view.get_picker_checked(), 2);
+    assert_eq!(scope(&ctx), Scope::System("System08".into()));
+
+    // Back has nothing to confirm: the checks are the form's scope, in
+    // the order the list showed them (the Selected rows lead it).
+    press("cancel");
+    assert_eq!(page(&ctx), None);
+    assert_eq!(
+        scope(&ctx),
+        Scope::Systems(vec!["System08".into(), "System00".into()])
+    );
+    assert_eq!(view.get_picker_checked(), 0);
+
+    // Unchecking everything leaves the scope the form already had.
+    open_systems_page();
+    press("accept");
+    press("down");
+    press("accept");
+    assert_eq!(view.get_picker_checked(), 0);
+    press("cancel");
+    assert_eq!(
+        scope(&ctx),
+        Scope::Systems(vec!["System08".into(), "System00".into()])
+    );
+
+    // All systems is one press: it clears the checks and returns.
+    open_systems_page();
+    crate::router::lock(&ctx.shared).setup.picker_index = 0;
+    crate::media_setup::render(&ctx, &app);
+    assert!(!view.get_picker_toggle());
+    press("accept");
+    assert_eq!(page(&ctx), None);
+    assert_eq!(scope(&ctx), Scope::All);
+    assert!(crate::router::lock(&ctx.shared).setup.checked.is_empty());
+}
+
+#[test]
+fn a_game_stays_on_offer_and_never_widens_to_its_system() {
+    use zaparoo_app::media_setup::{GameTarget, Scope};
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.systems = navigation_catalog();
+        shared.categories = vec!["Console".into()];
+    }
+    // Core has nothing to find this row by: no media ID and no path.
+    let game = Scope::Game(GameTarget {
+        media_id: None,
+        system: "System08".into(),
+        path: String::new(),
+        name: "Game 01".into(),
+    });
+    let scope = |ctx: &crate::router::Ctx| crate::router::lock(&ctx.shared).setup.scope.clone();
+    let press = |action: &str| crate::media_setup::handle_action(&ctx, &app, action);
+    let open_systems_page = || {
+        crate::router::lock(&ctx.shared).setup.index = 1;
+        press("accept");
+    };
+
+    // The game leads the Systems page, and the page opens on it.
+    crate::router::open_scrape_setup(&ctx, &app, game.clone());
+    open_systems_page();
+    assert_eq!(crate::router::lock(&ctx.shared).setup.picker_index, 0);
+    let first = app
+        .global::<crate::SetupModalView>()
+        .get_picker_rows()
+        .iter()
+        .find(|row| !row.name.is_empty())
+        .map(|row| (row.kind, row.name.to_string()));
+    assert_eq!(first, Some((crate::ScopeKind::Game, "Game 01".to_string())));
+
+    // Widen to the category, then come back to the game: still offered.
+    press("down");
+    press("down");
+    press("accept");
+    assert_eq!(scope(&ctx), Scope::Category("Console".into()));
+    open_systems_page();
+    crate::router::lock(&ctx.shared).setup.picker_index = 0;
+    press("accept");
+    assert_eq!(scope(&ctx), game);
+
+    // Starting it says so, and leaves the panel open: it must not run
+    // over the game's whole system instead.
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.setup.scraper = "source".into();
+        shared.setup.index = shared.setup.rows().len() - 1;
+    }
+    press("accept");
+    assert!(app.global::<crate::Overlays>().get_dialog_open());
+    assert!(crate::router::lock(&ctx.shared).setup.open);
+}
+
+#[test]
+fn a_game_is_not_sent_to_a_core_that_would_ignore_its_scope() {
+    use zaparoo_app::media_setup::{GameTarget, Scope};
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.systems = navigation_catalog();
+        // Below the floor: it reads the request as every system.
+        shared.core_version = "2.17.2".into();
+    }
+    crate::router::open_scrape_setup(
+        &ctx,
+        &app,
+        Scope::Game(GameTarget {
+            media_id: Some(7),
+            system: "System08".into(),
+            path: "/games/7".into(),
+            name: "Game 07".into(),
+        }),
+    );
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.setup.scraper = "source".into();
+        shared.setup.index = shared.setup.rows().len() - 1;
+    }
+    crate::media_setup::handle_action(&ctx, &app, "accept");
+    assert!(app.global::<crate::Overlays>().get_dialog_open());
+    assert!(crate::router::lock(&ctx.shared).setup.open);
+}
+
 /// A detailed list of 40 rows with the first 20 loaded and more to come.
 fn seat_partial_list(ctx: &crate::router::Ctx, app: &App) -> (Vec<crate::games::GameRow>, u64) {
     crate::sizing::apply_scene(

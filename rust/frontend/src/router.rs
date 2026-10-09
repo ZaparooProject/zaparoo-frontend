@@ -374,9 +374,9 @@ fn save_hidden_prefs(ctx: &Ctx, app: &App, categories: &[String], system_ids: &[
 
 /// Dev builds and unparseable versions fail open: only a parsed semver
 /// below the floor triggers the warning.
-const MIN_CORE_VERSION: &str = "2.17.0";
+const MIN_CORE_VERSION: &str = "2.18.0";
 
-fn version_supported(raw: &str) -> bool {
+pub(crate) fn version_supported(raw: &str) -> bool {
     let v = raw.trim();
     if v == "DEVELOPMENT" || v.ends_with("-dev") {
         return true;
@@ -423,9 +423,9 @@ mod version_gate_tests {
 
     #[test]
     fn semver_floor_enforced() {
-        assert!(version_supported("2.17.0"));
+        assert!(version_supported("2.18.0"));
         assert!(version_supported("3.0.1"));
-        assert!(!version_supported("2.16.9"));
+        assert!(!version_supported("2.17.2"));
         assert!(!version_supported("1.0.0"));
     }
 }

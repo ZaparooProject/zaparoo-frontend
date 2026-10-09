@@ -457,6 +457,8 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_picker_visible => set_picker_visible,
         get_picker_count => set_picker_count,
         get_picker_sel => set_picker_sel,
+        get_picker_checked => set_picker_checked,
+        get_picker_toggle => set_picker_toggle,
         get_has_above => set_has_above,
         get_has_below => set_has_below,
         get_activate_pulse => set_activate_pulse,

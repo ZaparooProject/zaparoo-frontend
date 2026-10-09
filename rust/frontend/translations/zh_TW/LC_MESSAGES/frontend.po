@@ -1,17 +1,17 @@
 msgid ""
 msgstr ""
-"POT-Creation-Date: 2026-10-09 07:26+0000\n"
+"POT-Creation-Date: 2026-10-09 08:57+0000\n"
 "Language: zh_TW\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=1; plural=0;\n"
 
-#: rust/frontend/ui/about.slint:52 rust/frontend/ui/settings.slint:180
+#: rust/frontend/ui/about.slint:52 rust/frontend/ui/settings.slint:184
 msgid "About / License"
 msgstr "關於 / 授權"
 
-#: rust/frontend/ui/about.slint:106 rust/frontend/ui/app.slint:3063
+#: rust/frontend/ui/about.slint:106 rust/frontend/ui/app.slint:3067
 msgid "Zaparoo Frontend"
 msgstr "Zaparoo Frontend"
 
@@ -63,381 +63,381 @@ msgstr ""
 msgid "Full license text in COPYING."
 msgstr "完整授權條款請見 COPYING。"
 
-#: rust/frontend/ui/app.slint:996
+#: rust/frontend/ui/app.slint:1000
 msgid "Updating the media database"
 msgstr "正在更新媒體資料庫"
 
-#: rust/frontend/ui/app.slint:996
+#: rust/frontend/ui/app.slint:1000
 msgid "No games found yet"
 msgstr "尚未找到遊戲"
 
-#: rust/frontend/ui/app.slint:998
+#: rust/frontend/ui/app.slint:1002
 msgid "Your games appear here as Core finds them."
 msgstr "Core 找到遊戲後會顯示在這裡。"
 
-#: rust/frontend/ui/app.slint:999
+#: rust/frontend/ui/app.slint:1003
 msgid "Update media database in Settings > Library."
 msgstr "請至「設定 > 遊戲庫」更新媒體資料庫。"
 
-#: rust/frontend/ui/app.slint:1019 rust/frontend/ui/app.slint:2712
-#: rust/frontend/ui/app.slint:3084
+#: rust/frontend/ui/app.slint:1023 rust/frontend/ui/app.slint:2716
+#: rust/frontend/ui/app.slint:3088
 msgid "Favorites"
 msgstr "我的最愛"
 
-#: rust/frontend/ui/app.slint:1026
+#: rust/frontend/ui/app.slint:1030
 msgid "{} systems"
 msgstr "{} 個系統"
 
-#: rust/frontend/ui/app.slint:1168 rust/frontend/ui/labels.slint:25
+#: rust/frontend/ui/app.slint:1172 rust/frontend/ui/labels.slint:25
 msgid "Hidden"
 msgstr "已隱藏"
 
-#: rust/frontend/ui/app.slint:1205 rust/frontend/ui/app.slint:2931
+#: rust/frontend/ui/app.slint:1209 rust/frontend/ui/app.slint:2935
 msgid "No favorites yet"
 msgstr "尚無我的最愛"
 
-#: rust/frontend/ui/app.slint:1205
+#: rust/frontend/ui/app.slint:1209
 msgid "No systems in this category"
 msgstr "此類別沒有系統"
 
-#: rust/frontend/ui/app.slint:1250 rust/frontend/ui/app.slint:1252
+#: rust/frontend/ui/app.slint:1254 rust/frontend/ui/app.slint:1256
 #: rust/frontend/ui/labels.slint:26
 msgid "{} · {}"
 msgstr "{} · {}"
 
-#: rust/frontend/ui/app.slint:1331 rust/frontend/ui/app.slint:1348
+#: rust/frontend/ui/app.slint:1335 rust/frontend/ui/app.slint:1352
 msgid "Saving…"
 msgstr "儲存中…"
 
-#: rust/frontend/ui/app.slint:1581 rust/frontend/ui/labels.slint:129
+#: rust/frontend/ui/app.slint:1585 rust/frontend/ui/labels.slint:129
 msgid "Go to…"
 msgstr "跳至…"
 
-#: rust/frontend/ui/app.slint:1591
+#: rust/frontend/ui/app.slint:1595
 msgid "Loading sections…"
 msgstr "正在載入區段…"
 
-#: rust/frontend/ui/app.slint:1596
+#: rust/frontend/ui/app.slint:1600
 msgid "Failed to load sections"
 msgstr "無法載入區段"
 
-#: rust/frontend/ui/app.slint:1596
+#: rust/frontend/ui/app.slint:1600
 msgid "No sections"
 msgstr "沒有區段"
 
-#: rust/frontend/ui/app.slint:1665
+#: rust/frontend/ui/app.slint:1669
 msgid "Hold a writable token near the reader"
 msgstr "請將可寫入的令牌靠近讀卡機"
 
-#: rust/frontend/ui/app.slint:1689 rust/frontend/ui/app.slint:3131
-#: rust/frontend/ui/app.slint:3249 rust/frontend/ui/app.slint:3296
-#: rust/frontend/ui/app.slint:3344 rust/frontend/ui/app.slint:3367
-#: rust/frontend/ui/settings.slint:249
+#: rust/frontend/ui/app.slint:1693 rust/frontend/ui/app.slint:3135
+#: rust/frontend/ui/app.slint:3253 rust/frontend/ui/app.slint:3300
+#: rust/frontend/ui/app.slint:3348 rust/frontend/ui/app.slint:3371
+#: rust/frontend/ui/settings.slint:253
 msgid "Cancel"
 msgstr "取消"
 
-#: rust/frontend/ui/app.slint:1711 rust/frontend/ui/settings.slint:179
+#: rust/frontend/ui/app.slint:1715 rust/frontend/ui/settings.slint:183
 msgid "Pair a device"
 msgstr "配對裝置"
 
-#: rust/frontend/ui/app.slint:1735 rust/frontend/ui/app.slint:1840
+#: rust/frontend/ui/app.slint:1739 rust/frontend/ui/app.slint:1844
 msgid "Starting…"
 msgstr "正在開始…"
 
-#: rust/frontend/ui/app.slint:1757
+#: rust/frontend/ui/app.slint:1761
 msgid "Enter this PIN on the device you are pairing."
 msgstr "請在要配對的裝置上輸入此 PIN。"
 
-#: rust/frontend/ui/app.slint:1771 rust/frontend/ui/app.slint:1929
+#: rust/frontend/ui/app.slint:1775 rust/frontend/ui/app.slint:1933
 msgid "Expires in {n} minute"
 msgid_plural "Expires in {n} minutes"
 msgstr[0] "{n} 分鐘後到期"
 
-#: rust/frontend/ui/app.slint:1772 rust/frontend/ui/app.slint:1930
+#: rust/frontend/ui/app.slint:1776 rust/frontend/ui/app.slint:1934
 msgid "Expires in {n} second"
 msgid_plural "Expires in {n} seconds"
 msgstr[0] "{n} 秒後到期"
 
-#: rust/frontend/ui/app.slint:1789
+#: rust/frontend/ui/app.slint:1793
 msgid "A device is now paired with Core."
 msgstr "裝置已與 Core 配對。"
 
-#: rust/frontend/ui/app.slint:1790
+#: rust/frontend/ui/app.slint:1794
 msgid "{} is now paired with Core."
 msgstr "{} 已與 Core 配對。"
 
-#: rust/frontend/ui/app.slint:1804
+#: rust/frontend/ui/app.slint:1808
 msgid "The PIN expired before a device used it. Pair again for a new one."
 msgstr "PIN 已在使用前到期。請重新配對以取得新的 PIN。"
 
-#: rust/frontend/ui/app.slint:1826
+#: rust/frontend/ui/app.slint:1830
 msgid "Link Online account"
 msgstr "連結 Online 帳號"
 
-#: rust/frontend/ui/app.slint:1850
+#: rust/frontend/ui/app.slint:1854
 msgid "This device is now linked to your Zaparoo Online account."
 msgstr "此裝置已連結至您的 Zaparoo Online 帳號。"
 
-#: rust/frontend/ui/app.slint:1851
+#: rust/frontend/ui/app.slint:1855
 msgid "The code expired before it was approved. Link again for a new one."
 msgstr "代碼已在核准前到期。請重新連結以取得新代碼。"
 
-#: rust/frontend/ui/app.slint:1852
+#: rust/frontend/ui/app.slint:1856
 msgid "Linking failed. Check the network connection and try again."
 msgstr "連結失敗。請檢查網路連線後再試一次。"
 
-#: rust/frontend/ui/app.slint:1866
+#: rust/frontend/ui/app.slint:1870
 msgid "Scan this code with your phone, or open the address below and enter the code."
 msgstr "請用手機掃描此 QR Code，或開啟下方網址並輸入代碼。"
 
-#: rust/frontend/ui/app.slint:1879
+#: rust/frontend/ui/app.slint:1883
 msgid "Or press Accept to open it on this device."
 msgstr "或按確認鍵在此裝置上開啟。"
 
-#: rust/frontend/ui/app.slint:2017 rust/frontend/ui/labels.slint:332
+#: rust/frontend/ui/app.slint:2021 rust/frontend/ui/labels.slint:332
 msgid "This device is not linked. Link your Zaparoo Online account, then try again."
 msgstr "此裝置尚未連結。請先連結 Zaparoo Online 帳號後再試一次。"
 
-#: rust/frontend/ui/app.slint:2020 rust/frontend/ui/labels.slint:331
+#: rust/frontend/ui/app.slint:2024 rust/frontend/ui/labels.slint:331
 msgid "Cloud backup needs an active Zaparoo Warp subscription."
 msgstr "雲端備份需要有效的 Zaparoo Warp 訂閱。"
 
-#: rust/frontend/ui/app.slint:2022
+#: rust/frontend/ui/app.slint:2026
 msgid "Could not load this. Check the network connection and try again."
 msgstr "無法載入。請檢查網路連線後再試一次。"
 
-#: rust/frontend/ui/app.slint:2025
+#: rust/frontend/ui/app.slint:2029
 msgid "Back up now"
 msgstr "立即備份"
 
 #. Zaparoo made; it says so where its detail already is.
-#: rust/frontend/ui/app.slint:2030
+#: rust/frontend/ui/app.slint:2034
 msgid "{}, needs a newer Zaparoo"
 msgstr "{}，需要較新版的 Zaparoo"
 
-#: rust/frontend/ui/app.slint:2031
+#: rust/frontend/ui/app.slint:2035
 msgid "{}, this device"
 msgstr "{}，此裝置"
 
-#: rust/frontend/ui/app.slint:2038
+#: rust/frontend/ui/app.slint:2042
 msgid "Cloud backups"
 msgstr "雲端備份"
 
-#: rust/frontend/ui/app.slint:2038
+#: rust/frontend/ui/app.slint:2042
 msgid "Remote activity"
 msgstr "遠端活動記錄"
 
-#: rust/frontend/ui/app.slint:2059
+#: rust/frontend/ui/app.slint:2063
 msgid "Backing up…"
 msgstr "備份中…"
 
-#: rust/frontend/ui/app.slint:2060
+#: rust/frontend/ui/app.slint:2064
 msgid "Restoring…"
 msgstr "還原中…"
 
-#: rust/frontend/ui/app.slint:2061
+#: rust/frontend/ui/app.slint:2065
 msgid "Loading backups…"
 msgstr "正在載入備份…"
 
-#: rust/frontend/ui/app.slint:2061
+#: rust/frontend/ui/app.slint:2065
 msgid "Loading activity…"
 msgstr "正在載入活動記錄…"
 
-#: rust/frontend/ui/app.slint:2072
+#: rust/frontend/ui/app.slint:2076
 msgid "No cloud backups yet."
 msgstr "尚無雲端備份。"
 
-#: rust/frontend/ui/app.slint:2072
+#: rust/frontend/ui/app.slint:2076
 msgid "Nothing has run through remote control yet."
 msgstr "尚未透過遠端控制執行任何操作。"
 
-#: rust/frontend/ui/app.slint:2168 rust/frontend/ui/settings.slint:181
+#: rust/frontend/ui/app.slint:2172 rust/frontend/ui/settings.slint:185
 msgid "Documentation"
 msgstr "說明文件"
 
-#: rust/frontend/ui/app.slint:2168 rust/frontend/ui/labels.slint:110
+#: rust/frontend/ui/app.slint:2172 rust/frontend/ui/labels.slint:110
 msgid "Write with App"
 msgstr "用 App 寫入"
 
-#: rust/frontend/ui/app.slint:2187
+#: rust/frontend/ui/app.slint:2191
 msgid "Scan this code to open the Zaparoo Frontend guide on your phone."
 msgstr "掃描此 QR Code，即可在手機上開啟 Zaparoo Frontend 指南。"
 
-#: rust/frontend/ui/app.slint:2188
+#: rust/frontend/ui/app.slint:2192
 msgid "Scan this code with the Zaparoo App to write this game to a Zaparoo token."
 msgstr "用 Zaparoo App 掃描此 QR Code，即可將此遊戲寫入 Zaparoo 令牌。"
 
-#: rust/frontend/ui/app.slint:2713 rust/frontend/ui/app.slint:3085
+#: rust/frontend/ui/app.slint:2717 rust/frontend/ui/app.slint:3089
 msgid "Recently played"
 msgstr "最近遊玩"
 
-#: rust/frontend/ui/app.slint:2714 rust/frontend/ui/app.slint:3086
-#: rust/frontend/ui/app.slint:3162 rust/frontend/ui/labels.slint:48
+#: rust/frontend/ui/app.slint:2718 rust/frontend/ui/app.slint:3090
+#: rust/frontend/ui/app.slint:3166 rust/frontend/ui/labels.slint:48
 msgid "Search"
 msgstr "搜尋"
 
-#: rust/frontend/ui/app.slint:2724
+#: rust/frontend/ui/app.slint:2728
 msgid "{} games"
 msgstr "{} 款遊戲"
 
-#: rust/frontend/ui/app.slint:2853
+#: rust/frontend/ui/app.slint:2857
 msgid "Loading game…"
 msgstr "正在載入遊戲…"
 
-#: rust/frontend/ui/app.slint:2932
+#: rust/frontend/ui/app.slint:2936
 msgid "Nothing played yet"
 msgstr "尚無遊玩記錄"
 
-#: rust/frontend/ui/app.slint:2933 rust/frontend/ui/search.slint:66
+#: rust/frontend/ui/app.slint:2937 rust/frontend/ui/search.slint:66
 msgid "No matches"
 msgstr "沒有符合的結果"
 
-#: rust/frontend/ui/app.slint:2934
+#: rust/frontend/ui/app.slint:2938
 msgid "No games match these tags"
 msgstr "沒有符合這些標籤的遊戲"
 
-#: rust/frontend/ui/app.slint:2934
+#: rust/frontend/ui/app.slint:2938
 msgid "No games in this system"
 msgstr "此系統沒有遊戲"
 
-#: rust/frontend/ui/app.slint:2935 rust/frontend/ui/labels.slint:31
+#: rust/frontend/ui/app.slint:2939 rust/frontend/ui/labels.slint:31
 msgid "Loading favorites…"
 msgstr "正在載入我的最愛…"
 
-#: rust/frontend/ui/app.slint:2936 rust/frontend/ui/labels.slint:32
+#: rust/frontend/ui/app.slint:2940 rust/frontend/ui/labels.slint:32
 msgid "Loading recently played…"
 msgstr "正在載入最近遊玩…"
 
-#: rust/frontend/ui/app.slint:2937 rust/frontend/ui/labels.slint:33
+#: rust/frontend/ui/app.slint:2941 rust/frontend/ui/labels.slint:33
 #: rust/frontend/ui/search.slint:64
 msgid "Searching…"
 msgstr "搜尋中…"
 
-#: rust/frontend/ui/app.slint:2937 rust/frontend/ui/labels.slint:30
+#: rust/frontend/ui/app.slint:2941 rust/frontend/ui/labels.slint:30
 msgid "Loading games…"
 msgstr "正在載入遊戲…"
 
-#: rust/frontend/ui/app.slint:3014
+#: rust/frontend/ui/app.slint:3018
 msgid "Arrows adjust position"
 msgstr "方向鍵調整位置"
 
-#: rust/frontend/ui/app.slint:3022
+#: rust/frontend/ui/app.slint:3026
 msgid "Accept or Back saves"
 msgstr "按確認或返回儲存"
 
-#: rust/frontend/ui/app.slint:3114 rust/frontend/ui/app.slint:3128
-#: rust/frontend/ui/app.slint:3153 rust/frontend/ui/app.slint:3168
-#: rust/frontend/ui/app.slint:3183 rust/frontend/ui/app.slint:3215
-#: rust/frontend/ui/app.slint:3243 rust/frontend/ui/app.slint:3273
-#: rust/frontend/ui/app.slint:3444 rust/frontend/ui/app.slint:3462
-#: rust/frontend/ui/app.slint:3477 rust/frontend/ui/labels.slint:146
+#: rust/frontend/ui/app.slint:3118 rust/frontend/ui/app.slint:3132
+#: rust/frontend/ui/app.slint:3157 rust/frontend/ui/app.slint:3172
+#: rust/frontend/ui/app.slint:3187 rust/frontend/ui/app.slint:3219
+#: rust/frontend/ui/app.slint:3247 rust/frontend/ui/app.slint:3277
+#: rust/frontend/ui/app.slint:3448 rust/frontend/ui/app.slint:3466
+#: rust/frontend/ui/app.slint:3481 rust/frontend/ui/labels.slint:146
 msgid "Move"
 msgstr "移動"
 
-#: rust/frontend/ui/app.slint:3129 rust/frontend/ui/app.slint:3162
-#: rust/frontend/ui/app.slint:3178 rust/frontend/ui/app.slint:3244
-#: rust/frontend/ui/app.slint:3327 rust/frontend/ui/settings.slint:101
+#: rust/frontend/ui/app.slint:3133 rust/frontend/ui/app.slint:3166
+#: rust/frontend/ui/app.slint:3182 rust/frontend/ui/app.slint:3248
+#: rust/frontend/ui/app.slint:3331 rust/frontend/ui/settings.slint:105
 msgid "Select"
 msgstr "選擇"
 
-#: rust/frontend/ui/app.slint:3130 rust/frontend/ui/settings.slint:102
+#: rust/frontend/ui/app.slint:3134 rust/frontend/ui/settings.slint:106
 msgid "Start"
 msgstr "開始"
 
-#: rust/frontend/ui/app.slint:3132 rust/frontend/ui/app.slint:3245
-#: rust/frontend/ui/app.slint:3268 rust/frontend/ui/app.slint:3277
-#: rust/frontend/ui/app.slint:3293 rust/frontend/ui/app.slint:3309
-#: rust/frontend/ui/app.slint:3318
+#: rust/frontend/ui/app.slint:3136 rust/frontend/ui/app.slint:3249
+#: rust/frontend/ui/app.slint:3272 rust/frontend/ui/app.slint:3281
+#: rust/frontend/ui/app.slint:3297 rust/frontend/ui/app.slint:3313
+#: rust/frontend/ui/app.slint:3322
 msgid "Close"
 msgstr "關閉"
 
-#: rust/frontend/ui/app.slint:3133 rust/frontend/ui/app.slint:3464
+#: rust/frontend/ui/app.slint:3137 rust/frontend/ui/app.slint:3468
 msgid "Toggle"
 msgstr "切換"
 
-#: rust/frontend/ui/app.slint:3134
+#: rust/frontend/ui/app.slint:3138
 msgid "Info"
 msgstr "資訊"
 
-#: rust/frontend/ui/app.slint:3135 rust/frontend/ui/app.slint:3149
-#: rust/frontend/ui/app.slint:3163 rust/frontend/ui/app.slint:3179
-#: rust/frontend/ui/app.slint:3195 rust/frontend/ui/app.slint:3211
-#: rust/frontend/ui/app.slint:3328 rust/frontend/ui/app.slint:3407
-#: rust/frontend/ui/app.slint:3419 rust/frontend/ui/app.slint:3437
-#: rust/frontend/ui/app.slint:3451 rust/frontend/ui/app.slint:3465
-#: rust/frontend/ui/app.slint:3479 rust/frontend/ui/app.slint:3496
-#: rust/frontend/ui/app.slint:3508 rust/frontend/ui/app.slint:3520
-#: rust/frontend/ui/app.slint:3536 rust/frontend/ui/app.slint:3551
+#: rust/frontend/ui/app.slint:3139 rust/frontend/ui/app.slint:3153
+#: rust/frontend/ui/app.slint:3167 rust/frontend/ui/app.slint:3183
+#: rust/frontend/ui/app.slint:3199 rust/frontend/ui/app.slint:3215
+#: rust/frontend/ui/app.slint:3332 rust/frontend/ui/app.slint:3411
+#: rust/frontend/ui/app.slint:3423 rust/frontend/ui/app.slint:3441
+#: rust/frontend/ui/app.slint:3455 rust/frontend/ui/app.slint:3469
+#: rust/frontend/ui/app.slint:3483 rust/frontend/ui/app.slint:3500
+#: rust/frontend/ui/app.slint:3512 rust/frontend/ui/app.slint:3524
+#: rust/frontend/ui/app.slint:3540 rust/frontend/ui/app.slint:3555
 msgid "Back"
 msgstr "返回"
 
-#: rust/frontend/ui/app.slint:3154 rust/frontend/ui/app.slint:3170
+#: rust/frontend/ui/app.slint:3158 rust/frontend/ui/app.slint:3174
 msgid "Delete"
 msgstr "刪除"
 
-#: rust/frontend/ui/app.slint:3155 rust/frontend/ui/app.slint:3171
+#: rust/frontend/ui/app.slint:3159 rust/frontend/ui/app.slint:3175
 msgid "Space"
 msgstr "空格"
 
-#: rust/frontend/ui/app.slint:3178 rust/frontend/ui/app.slint:3388
-#: rust/frontend/ui/app.slint:3427 rust/frontend/ui/app.slint:3445
-#: rust/frontend/ui/app.slint:3484 rust/frontend/ui/app.slint:3541
-#: rust/frontend/ui/app.slint:3556
+#: rust/frontend/ui/app.slint:3182 rust/frontend/ui/app.slint:3392
+#: rust/frontend/ui/app.slint:3431 rust/frontend/ui/app.slint:3449
+#: rust/frontend/ui/app.slint:3488 rust/frontend/ui/app.slint:3545
+#: rust/frontend/ui/app.slint:3560
 msgid "Open"
 msgstr "開啟"
 
-#: rust/frontend/ui/app.slint:3184 rust/frontend/ui/app.slint:3463
-#: rust/frontend/ui/settings.slint:104
+#: rust/frontend/ui/app.slint:3188 rust/frontend/ui/app.slint:3467
+#: rust/frontend/ui/settings.slint:108
 msgid "Change"
 msgstr "變更"
 
-#: rust/frontend/ui/app.slint:3198 rust/frontend/ui/app.slint:3388
-#: rust/frontend/ui/app.slint:3412 rust/frontend/ui/app.slint:3512
-#: rust/frontend/ui/app.slint:3524 rust/frontend/ui/setup.slint:334
+#: rust/frontend/ui/app.slint:3202 rust/frontend/ui/app.slint:3392
+#: rust/frontend/ui/app.slint:3416 rust/frontend/ui/app.slint:3516
+#: rust/frontend/ui/app.slint:3528 rust/frontend/ui/setup.slint:378
 msgid "Retry"
 msgstr "重試"
 
-#: rust/frontend/ui/app.slint:3198 rust/frontend/ui/app.slint:3283
-#: rust/frontend/ui/setup.slint:334
+#: rust/frontend/ui/app.slint:3202 rust/frontend/ui/app.slint:3287
+#: rust/frontend/ui/setup.slint:378
 msgid "Done"
 msgstr "完成"
 
-#: rust/frontend/ui/app.slint:3238 rust/frontend/ui/labels.slint:264
+#: rust/frontend/ui/app.slint:3242 rust/frontend/ui/labels.slint:264
 msgid "OK"
 msgstr "確定"
 
-#: rust/frontend/ui/app.slint:3301 rust/frontend/ui/app.slint:3314
+#: rust/frontend/ui/app.slint:3305 rust/frontend/ui/app.slint:3318
 msgid "Scroll"
 msgstr "捲動"
 
-#: rust/frontend/ui/app.slint:3302 rust/frontend/ui/app.slint:3308
+#: rust/frontend/ui/app.slint:3306 rust/frontend/ui/app.slint:3312
 msgid "Image"
 msgstr "圖片"
 
-#: rust/frontend/ui/app.slint:3356
+#: rust/frontend/ui/app.slint:3360
 msgid "Adjust"
 msgstr "調整"
 
-#: rust/frontend/ui/app.slint:3357
+#: rust/frontend/ui/app.slint:3361
 msgid "Save"
 msgstr "儲存"
 
-#: rust/frontend/ui/app.slint:3365
+#: rust/frontend/ui/app.slint:3369
 msgid "Reposition"
 msgstr "調整位置"
 
-#: rust/frontend/ui/app.slint:3366
+#: rust/frontend/ui/app.slint:3370
 msgid "Place"
 msgstr "放置"
 
-#: rust/frontend/ui/app.slint:3376 rust/frontend/ui/app.slint:3389
-#: rust/frontend/ui/app.slint:3436 rust/frontend/ui/app.slint:3557
+#: rust/frontend/ui/app.slint:3380 rust/frontend/ui/app.slint:3393
+#: rust/frontend/ui/app.slint:3440 rust/frontend/ui/app.slint:3561
 msgid "Options"
 msgstr "選項"
 
-#: rust/frontend/ui/app.slint:3377 rust/frontend/ui/app.slint:3382
-#: rust/frontend/ui/app.slint:3396 rust/frontend/ui/app.slint:3429
-#: rust/frontend/ui/app.slint:3550 rust/frontend/ui/labels.slint:166
+#: rust/frontend/ui/app.slint:3381 rust/frontend/ui/app.slint:3386
+#: rust/frontend/ui/app.slint:3400 rust/frontend/ui/app.slint:3433
+#: rust/frontend/ui/app.slint:3554 rust/frontend/ui/labels.slint:166
 msgid "View"
 msgstr "檢視"
 
@@ -567,7 +567,7 @@ msgstr "已中斷連線"
 msgid "Reconnecting…"
 msgstr "重新連線中…"
 
-#: rust/frontend/ui/chrome.slint:96 rust/frontend/ui/settings.slint:335
+#: rust/frontend/ui/chrome.slint:96 rust/frontend/ui/settings.slint:339
 msgid "Connecting…"
 msgstr "連線中…"
 
@@ -768,7 +768,7 @@ msgstr "A-Z"
 msgid "Default"
 msgstr "預設"
 
-#: rust/frontend/ui/labels.slint:71 rust/frontend/ui/settings.slint:316
+#: rust/frontend/ui/labels.slint:71 rust/frontend/ui/settings.slint:320
 msgid "None"
 msgstr "無"
 
@@ -776,11 +776,11 @@ msgstr "無"
 msgid "Any"
 msgstr "不限"
 
-#: rust/frontend/ui/labels.slint:90 rust/frontend/ui/settings.slint:145
+#: rust/frontend/ui/labels.slint:90 rust/frontend/ui/settings.slint:149
 msgid "Region"
 msgstr "地區"
 
-#: rust/frontend/ui/labels.slint:91 rust/frontend/ui/settings.slint:120
+#: rust/frontend/ui/labels.slint:91 rust/frontend/ui/settings.slint:124
 msgid "Language"
 msgstr "語言"
 
@@ -850,7 +850,7 @@ msgid "Remove from Hub"
 msgstr "從 Hub 移除"
 
 #: rust/frontend/ui/labels.slint:120 rust/frontend/ui/labels.slint:128
-#: rust/frontend/ui/settings.slint:157
+#: rust/frontend/ui/settings.slint:161
 msgid "Update metadata"
 msgstr "更新中繼資料"
 
@@ -1006,7 +1006,7 @@ msgstr "沒有最近玩過的遊戲"
 msgid "No internet connection"
 msgstr "無網路連線"
 
-#: rust/frontend/ui/labels.slint:202 rust/frontend/ui/settings.slint:338
+#: rust/frontend/ui/labels.slint:202 rust/frontend/ui/settings.slint:342
 msgid "Not available"
 msgstr "無法使用"
 
@@ -1538,7 +1538,7 @@ msgstr "關閉：無法驗證遊玩時間"
 msgid "Linked to Zaparoo Online"
 msgstr "已連結至 Zaparoo Online"
 
-#: rust/frontend/ui/settings.slint:72 rust/frontend/ui/settings.slint:325
+#: rust/frontend/ui/settings.slint:72 rust/frontend/ui/settings.slint:329
 msgid "Not linked"
 msgstr "未連結"
 
@@ -1566,840 +1566,854 @@ msgstr "已匯入 {} 個"
 msgid "All {} systems"
 msgstr "全部 {} 個系統"
 
-#: rust/frontend/ui/settings.slint:97
+#: rust/frontend/ui/settings.slint:95
+msgid "{n} system"
+msgid_plural "{n} systems"
+msgstr[0] "{n} 個系統"
+
+#: rust/frontend/ui/settings.slint:99
+msgid "Selected"
+msgstr "已選擇"
+
+#: rust/frontend/ui/settings.slint:101
 msgid "Loading sources…"
 msgstr "正在載入來源…"
 
 #. Setup forms.
-#: rust/frontend/ui/settings.slint:109
+#: rust/frontend/ui/settings.slint:113
 msgid "Source"
 msgstr "來源"
 
-#: rust/frontend/ui/settings.slint:110
+#: rust/frontend/ui/settings.slint:114
 msgid "Systems"
 msgstr "系統"
 
-#: rust/frontend/ui/settings.slint:111
+#: rust/frontend/ui/settings.slint:115
 msgid "Replace existing"
 msgstr "取代現有資料"
 
-#: rust/frontend/ui/settings.slint:112
+#: rust/frontend/ui/settings.slint:116
 msgid "Start update"
 msgstr "開始更新"
 
-#: rust/frontend/ui/settings.slint:113
+#: rust/frontend/ui/settings.slint:117
 msgid "Start import"
 msgstr "開始匯入"
 
-#: rust/frontend/ui/settings.slint:115
+#: rust/frontend/ui/settings.slint:119
 msgid "Appearance"
 msgstr "外觀"
 
-#: rust/frontend/ui/settings.slint:116
+#: rust/frontend/ui/settings.slint:120
 msgid "Library"
 msgstr "遊戲庫"
 
-#: rust/frontend/ui/settings.slint:117
+#: rust/frontend/ui/settings.slint:121
 msgid "Online"
 msgstr "線上"
 
-#: rust/frontend/ui/settings.slint:118
+#: rust/frontend/ui/settings.slint:122
 msgid "Display"
 msgstr "顯示"
 
-#: rust/frontend/ui/settings.slint:119
+#: rust/frontend/ui/settings.slint:123
 msgid "Controls"
 msgstr "操作"
 
-#: rust/frontend/ui/settings.slint:121
+#: rust/frontend/ui/settings.slint:125
 msgid "About"
 msgstr "關於"
 
-#: rust/frontend/ui/settings.slint:123
+#: rust/frontend/ui/settings.slint:127
 msgid "Analog video"
 msgstr "類比視訊"
 
-#: rust/frontend/ui/settings.slint:124
+#: rust/frontend/ui/settings.slint:128
 msgid "Maintenance"
 msgstr "維護"
 
-#: rust/frontend/ui/settings.slint:125
+#: rust/frontend/ui/settings.slint:129
 msgid "Browsing"
 msgstr "瀏覽"
 
-#: rust/frontend/ui/settings.slint:126
+#: rust/frontend/ui/settings.slint:130
 msgid "Account"
 msgstr "帳號"
 
-#: rust/frontend/ui/settings.slint:127
+#: rust/frontend/ui/settings.slint:131
 msgid "Features"
 msgstr "功能"
 
-#: rust/frontend/ui/settings.slint:128
+#: rust/frontend/ui/settings.slint:132
 msgid "Backup"
 msgstr "備份"
 
-#: rust/frontend/ui/settings.slint:129
+#: rust/frontend/ui/settings.slint:133
 msgid "Remote"
 msgstr "遠端"
 
-#: rust/frontend/ui/settings.slint:131
+#: rust/frontend/ui/settings.slint:135
 msgid "Color scheme"
 msgstr "配色主題"
 
-#: rust/frontend/ui/settings.slint:132
+#: rust/frontend/ui/settings.slint:136
 msgid "Color intensity"
 msgstr "色彩強度"
 
-#: rust/frontend/ui/settings.slint:133
+#: rust/frontend/ui/settings.slint:137
 msgid "System logos"
 msgstr "系統標誌"
 
-#: rust/frontend/ui/settings.slint:134
+#: rust/frontend/ui/settings.slint:138
 msgid "Reduce motion"
 msgstr "減少動態效果"
 
-#: rust/frontend/ui/settings.slint:135
+#: rust/frontend/ui/settings.slint:139
 msgid "Screensaver"
 msgstr "螢幕保護程式"
 
-#: rust/frontend/ui/settings.slint:137
+#: rust/frontend/ui/settings.slint:141
 msgid "Interface resolution"
 msgstr "介面解析度"
 
-#: rust/frontend/ui/settings.slint:138
+#: rust/frontend/ui/settings.slint:142
 msgid "Interface layout"
 msgstr "介面版面"
 
-#: rust/frontend/ui/settings.slint:139
+#: rust/frontend/ui/settings.slint:143
 msgid "Orientation"
 msgstr "方向"
 
-#: rust/frontend/ui/settings.slint:140
+#: rust/frontend/ui/settings.slint:144
 msgid "CRT mode"
 msgstr "CRT 模式"
 
-#: rust/frontend/ui/settings.slint:141
+#: rust/frontend/ui/settings.slint:145
 msgid "Video standard"
 msgstr "視訊制式"
 
-#: rust/frontend/ui/settings.slint:142
+#: rust/frontend/ui/settings.slint:146
 msgid "Screen position"
 msgstr "畫面位置"
 
-#: rust/frontend/ui/settings.slint:146
+#: rust/frontend/ui/settings.slint:150
 msgid "Clock format"
 msgstr "時間格式"
 
-#: rust/frontend/ui/settings.slint:148
+#: rust/frontend/ui/settings.slint:152
 msgid "Button style"
 msgstr "按鍵樣式"
 
-#: rust/frontend/ui/settings.slint:149
+#: rust/frontend/ui/settings.slint:153
 msgid "Swap controller confirm/cancel"
 msgstr "對調控制器確認/取消鍵"
 
-#: rust/frontend/ui/settings.slint:150
+#: rust/frontend/ui/settings.slint:154
 msgid "Swap controller options/view"
 msgstr "對調控制器選項/檢視鍵"
 
-#: rust/frontend/ui/settings.slint:151
+#: rust/frontend/ui/settings.slint:155
 msgid "Mouse support"
 msgstr "滑鼠支援"
 
-#: rust/frontend/ui/settings.slint:153
+#: rust/frontend/ui/settings.slint:157
 msgid "Add game folder…"
 msgstr "新增遊戲資料夾…"
 
-#: rust/frontend/ui/settings.slint:154
+#: rust/frontend/ui/settings.slint:158
 msgid "Detect launchers…"
 msgstr "偵測啟動器…"
 
-#: rust/frontend/ui/settings.slint:155
+#: rust/frontend/ui/settings.slint:159
 msgid "Verify playtime…"
 msgstr "驗證遊玩時間…"
 
-#: rust/frontend/ui/settings.slint:158
+#: rust/frontend/ui/settings.slint:162
 msgid "Systems layout"
 msgstr "系統版面"
 
-#: rust/frontend/ui/settings.slint:159
+#: rust/frontend/ui/settings.slint:163
 msgid "Games layout"
 msgstr "遊戲版面"
 
-#: rust/frontend/ui/settings.slint:160
+#: rust/frontend/ui/settings.slint:164
 msgid "Preferred artwork"
 msgstr "偏好的圖片"
 
-#: rust/frontend/ui/settings.slint:161
+#: rust/frontend/ui/settings.slint:165
 msgid "Show hidden items"
 msgstr "顯示隱藏項目"
 
-#: rust/frontend/ui/settings.slint:162
+#: rust/frontend/ui/settings.slint:166
 msgid "Show original filenames"
 msgstr "顯示原始檔名"
 
-#: rust/frontend/ui/settings.slint:164
+#: rust/frontend/ui/settings.slint:168
 msgid "Online features are not available for this client"
 msgstr "此用戶端無法使用線上功能"
 
-#: rust/frontend/ui/settings.slint:165 rust/frontend/ui/settings.slint:176
+#: rust/frontend/ui/settings.slint:169 rust/frontend/ui/settings.slint:180
 msgid "Status"
 msgstr "狀態"
 
-#: rust/frontend/ui/settings.slint:166
+#: rust/frontend/ui/settings.slint:170
 msgid "Warp"
 msgstr "Warp"
 
-#: rust/frontend/ui/settings.slint:167
+#: rust/frontend/ui/settings.slint:171
 msgid "Link account"
 msgstr "連結帳號"
 
-#: rust/frontend/ui/settings.slint:168
+#: rust/frontend/ui/settings.slint:172
 msgid "Unlink account"
 msgstr "解除帳號連結"
 
-#: rust/frontend/ui/settings.slint:169
+#: rust/frontend/ui/settings.slint:173
 msgid "All"
 msgstr "全部"
 
-#: rust/frontend/ui/settings.slint:170
+#: rust/frontend/ui/settings.slint:174
 msgid "Sync play history"
 msgstr "同步遊玩記錄"
 
-#: rust/frontend/ui/settings.slint:171
+#: rust/frontend/ui/settings.slint:175
 msgid "Remote control"
 msgstr "遠端控制"
 
-#: rust/frontend/ui/settings.slint:172
+#: rust/frontend/ui/settings.slint:176
 msgid "Library sync"
 msgstr "遊戲庫同步"
 
-#: rust/frontend/ui/settings.slint:173
+#: rust/frontend/ui/settings.slint:177
 msgid "Cloud backup"
 msgstr "雲端備份"
 
-#: rust/frontend/ui/settings.slint:174
+#: rust/frontend/ui/settings.slint:178
 msgid "Schedule"
 msgstr "排程"
 
-#: rust/frontend/ui/settings.slint:175
+#: rust/frontend/ui/settings.slint:179
 msgid "Manage backups…"
 msgstr "管理備份…"
 
-#: rust/frontend/ui/settings.slint:177
+#: rust/frontend/ui/settings.slint:181
 msgid "Activity…"
 msgstr "活動記錄…"
 
-#: rust/frontend/ui/settings.slint:182
+#: rust/frontend/ui/settings.slint:186
 msgid "Debug logging"
 msgstr "偵錯記錄"
 
-#: rust/frontend/ui/settings.slint:183 rust/frontend/ui/setup.slint:275
+#: rust/frontend/ui/settings.slint:187 rust/frontend/ui/setup.slint:319
 msgid "Upload log file"
 msgstr "上傳記錄檔"
 
-#: rust/frontend/ui/settings.slint:193
+#: rust/frontend/ui/settings.slint:197
 msgid "Link your Zaparoo Online account first."
 msgstr "請先連結您的 Zaparoo Online 帳號。"
 
-#: rust/frontend/ui/settings.slint:196
+#: rust/frontend/ui/settings.slint:200
 msgid "Wait for the metadata update to finish."
 msgstr "請等待中繼資料更新完成。"
 
-#: rust/frontend/ui/settings.slint:197
+#: rust/frontend/ui/settings.slint:201
 msgid "Wait for the media database update to finish."
 msgstr "請等待媒體資料庫更新完成。"
 
-#: rust/frontend/ui/settings.slint:201
+#: rust/frontend/ui/settings.slint:205
 msgid "Choose a folder containing system folders, then use Update media database to scan."
 msgstr "選擇含有系統資料夾的資料夾，再用「更新媒體資料庫」進行掃描。"
 
-#: rust/frontend/ui/settings.slint:202
+#: rust/frontend/ui/settings.slint:206
 msgid "Scans a folder you choose for launchers already installed."
 msgstr "掃描您選擇的資料夾，尋找已安裝的啟動器。"
 
-#: rust/frontend/ui/settings.slint:203
+#: rust/frontend/ui/settings.slint:207
 msgid "Allow exact game time in system settings. Optional."
 msgstr "在系統設定中允許精確的遊戲時間。非必要。"
 
-#: rust/frontend/ui/settings.slint:204
+#: rust/frontend/ui/settings.slint:208
 msgid "Changes colors across screens, including text and highlights."
 msgstr "變更各畫面的色彩，包含文字與醒目標示。"
 
-#: rust/frontend/ui/settings.slint:205
+#: rust/frontend/ui/settings.slint:209
 msgid "Controls how strongly accent colors tint tiles and backgrounds."
 msgstr "調整強調色套用在圖塊與背景上的濃度。"
 
-#: rust/frontend/ui/settings.slint:206
+#: rust/frontend/ui/settings.slint:210
 msgid "Shows system logos in original colors or tinted to match colors."
 msgstr "以原色顯示系統標誌，或套用主題色。"
 
-#: rust/frontend/ui/settings.slint:207
+#: rust/frontend/ui/settings.slint:211
 msgid "Turns off animation throughout the interface."
 msgstr "關閉整個介面的動畫。"
 
-#: rust/frontend/ui/settings.slint:208
+#: rust/frontend/ui/settings.slint:212
 msgid "Sets idle time before the screensaver starts. Off disables it."
 msgstr "設定啟動螢幕保護程式前的閒置時間。選擇「關閉」即可停用。"
 
-#: rust/frontend/ui/settings.slint:209
+#: rust/frontend/ui/settings.slint:213
 msgid "The resolution the interface renders at. Restarts the frontend."
 msgstr "介面的繪製解析度。會重新啟動 Frontend。"
 
-#: rust/frontend/ui/settings.slint:210
+#: rust/frontend/ui/settings.slint:214
 msgid "Adjusts layout density for standard and handheld screens."
 msgstr "依標準或掌機螢幕調整版面密度。"
 
-#: rust/frontend/ui/settings.slint:211
+#: rust/frontend/ui/settings.slint:215
 msgid "Rotates the interface for a sideways screen or tate cabinet."
 msgstr "旋轉介面以配合直立螢幕或直式機台。"
 
-#: rust/frontend/ui/settings.slint:212
+#: rust/frontend/ui/settings.slint:216
 msgid "Outputs 15 kHz analog video through MiSTer. Restarts frontend."
 msgstr "透過 MiSTer 輸出 15 kHz 類比視訊。會重新啟動 Frontend。"
 
-#: rust/frontend/ui/settings.slint:213
+#: rust/frontend/ui/settings.slint:217
 msgid "Matches analog output to NTSC or PAL. Restarts the frontend."
 msgstr "將類比輸出設為 NTSC 或 PAL。會重新啟動 Frontend。"
 
-#: rust/frontend/ui/settings.slint:214
+#: rust/frontend/ui/settings.slint:218
 msgid "Opens a test pattern to position the analog picture with arrows."
 msgstr "開啟測試圖樣，用方向鍵調整類比畫面的位置。"
 
-#: rust/frontend/ui/settings.slint:215
+#: rust/frontend/ui/settings.slint:219
 msgid "The language used for interface text. Restarts the frontend."
 msgstr "介面文字使用的語言。會重新啟動 Frontend。"
 
-#: rust/frontend/ui/settings.slint:216
+#: rust/frontend/ui/settings.slint:220
 msgid "Selects regional system and game names, such as Mega Drive."
 msgstr "選擇各地區的系統與遊戲名稱，例如 Mega Drive。"
 
-#: rust/frontend/ui/settings.slint:217
+#: rust/frontend/ui/settings.slint:221
 msgid "12-hour or 24-hour time in the top bar."
 msgstr "頂端列顯示 12 或 24 小時制時間。"
 
-#: rust/frontend/ui/settings.slint:218
+#: rust/frontend/ui/settings.slint:222
 msgid "Matches on-screen prompt icons to your controller."
 msgstr "讓畫面上的按鍵圖示與您的控制器一致。"
 
-#: rust/frontend/ui/settings.slint:219
+#: rust/frontend/ui/settings.slint:223
 msgid "Flips which controller button accepts and which cancels."
 msgstr "對調控制器的確認鍵與取消鍵。"
 
-#: rust/frontend/ui/settings.slint:220
+#: rust/frontend/ui/settings.slint:224
 msgid "Swaps which controller button opens Options and View."
 msgstr "對調控制器開啟「選項」與「檢視」的按鍵。"
 
-#: rust/frontend/ui/settings.slint:221
+#: rust/frontend/ui/settings.slint:225
 msgid "Lets a mouse click tiles and menu rows."
 msgstr "可用滑鼠點選圖塊與選單項目。"
 
-#: rust/frontend/ui/settings.slint:222
+#: rust/frontend/ui/settings.slint:226
 msgid "Rescans game folders for added or removed files. Choose systems."
 msgstr "重新掃描遊戲資料夾中新增或移除的檔案。可選擇系統。"
 
-#: rust/frontend/ui/settings.slint:223
+#: rust/frontend/ui/settings.slint:227
 msgid "Adds artwork and details from the sources Core offers."
 msgstr "從 Core 提供的來源加入圖片與詳細資訊。"
 
-#: rust/frontend/ui/settings.slint:224
+#: rust/frontend/ui/settings.slint:228
 msgid "Shows systems as a cover grid or a list with details."
 msgstr "以封面格狀或詳細清單顯示系統。"
 
-#: rust/frontend/ui/settings.slint:225
+#: rust/frontend/ui/settings.slint:229
 msgid "Sets grid or list layout for Games, Favorites, and Recents."
 msgstr "設定遊戲、我的最愛與最近遊玩的格狀或清單版面。"
 
-#: rust/frontend/ui/settings.slint:226
+#: rust/frontend/ui/settings.slint:230
 msgid "Prefers an artwork type when games have multiple images."
 msgstr "遊戲有多張圖片時優先使用的圖片類型。"
 
-#: rust/frontend/ui/settings.slint:227
+#: rust/frontend/ui/settings.slint:231
 msgid "Shows hidden items so they can be unhidden."
 msgstr "顯示隱藏項目，以便取消隱藏。"
 
-#: rust/frontend/ui/settings.slint:228
+#: rust/frontend/ui/settings.slint:232
 msgid "Shows real filenames instead of cleaned-up display titles."
 msgstr "顯示實際檔名，而非整理過的顯示標題。"
 
-#: rust/frontend/ui/settings.slint:229
+#: rust/frontend/ui/settings.slint:233
 msgid "Connects this device to your Zaparoo Online account with a code."
 msgstr "使用代碼將此裝置連結至您的 Zaparoo Online 帳號。"
 
-#: rust/frontend/ui/settings.slint:230
+#: rust/frontend/ui/settings.slint:234
 msgid "Removes this device's Zaparoo Online account credentials."
 msgstr "移除此裝置上的 Zaparoo Online 帳號憑證。"
 
-#: rust/frontend/ui/settings.slint:231
+#: rust/frontend/ui/settings.slint:235
 msgid "Turns every online feature on or off. Each can still be changed on its own."
 msgstr "一次開啟或關閉所有線上功能。各項功能仍可個別變更。"
 
-#: rust/frontend/ui/settings.slint:232
+#: rust/frontend/ui/settings.slint:236
 msgid "Uploads verified playtime to your account. Estimates stay local."
 msgstr "將已驗證的遊玩時間上傳至帳號。估計值僅保留在本機。"
 
-#: rust/frontend/ui/settings.slint:233
+#: rust/frontend/ui/settings.slint:237
 msgid "Allows your linked Zaparoo Online account to send approved commands to this device."
 msgstr "允許已連結的 Zaparoo Online 帳號向此裝置傳送經核准的指令。"
 
-#: rust/frontend/ui/settings.slint:234
+#: rust/frontend/ui/settings.slint:238
 msgid "Syncs your game list, favorites, likes and decks with your linked Zaparoo Online account."
 msgstr "將遊戲清單、我的最愛、喜歡的項目與牌組同步至已連結的 Zaparoo Online 帳號。"
 
-#: rust/frontend/ui/settings.slint:235
+#: rust/frontend/ui/settings.slint:239
 msgid "Backs up this device to the cloud on a schedule."
 msgstr "依排程將此裝置備份至雲端。"
 
-#: rust/frontend/ui/settings.slint:236
+#: rust/frontend/ui/settings.slint:240
 msgid "How often automatic cloud backup runs."
 msgstr "自動雲端備份的執行頻率。"
 
-#: rust/frontend/ui/settings.slint:237
+#: rust/frontend/ui/settings.slint:241
 msgid "Back up now, view and restore cloud backup snapshots."
 msgstr "立即備份，或檢視及還原雲端備份快照。"
 
-#: rust/frontend/ui/settings.slint:238
+#: rust/frontend/ui/settings.slint:242
 msgid "See what a linked account's remote commands have done on this device."
 msgstr "查看已連結帳號的遠端指令在此裝置上執行過的操作。"
 
-#: rust/frontend/ui/settings.slint:239
+#: rust/frontend/ui/settings.slint:243
 msgid "Shows a PIN for pairing a new device with Core."
 msgstr "顯示 PIN，用來將新裝置與 Core 配對。"
 
-#: rust/frontend/ui/settings.slint:240
+#: rust/frontend/ui/settings.slint:244
 msgid "Version, build date, license terms, and contributors."
 msgstr "版本、建置日期、授權條款與貢獻者。"
 
-#: rust/frontend/ui/settings.slint:241
+#: rust/frontend/ui/settings.slint:245
 msgid "Shows a code for opening the Frontend guide on your phone."
 msgstr "顯示 QR Code，可在手機上開啟 Frontend 指南。"
 
-#: rust/frontend/ui/settings.slint:242
+#: rust/frontend/ui/settings.slint:246
 msgid "Adds troubleshooting detail to logs. Restarts the frontend."
 msgstr "在記錄中加入疑難排解的詳細資訊。會重新啟動 Frontend。"
 
-#: rust/frontend/ui/settings.slint:243
+#: rust/frontend/ui/settings.slint:247
 msgid "Uploads the log and provides a link for problem reports."
 msgstr "上傳記錄檔，並提供可用於回報問題的連結。"
 
-#: rust/frontend/ui/settings.slint:250
+#: rust/frontend/ui/settings.slint:254
 msgid "Configure"
 msgstr "設定"
 
-#: rust/frontend/ui/settings.slint:251
+#: rust/frontend/ui/settings.slint:255
 msgid "Upload"
 msgstr "上傳"
 
-#: rust/frontend/ui/settings.slint:252
+#: rust/frontend/ui/settings.slint:256
 msgid "Detect"
 msgstr "偵測"
 
-#: rust/frontend/ui/settings.slint:253
+#: rust/frontend/ui/settings.slint:257
 msgid "Pair"
 msgstr "配對"
 
-#: rust/frontend/ui/settings.slint:254
+#: rust/frontend/ui/settings.slint:258
 msgid "Link"
 msgstr "連結"
 
-#: rust/frontend/ui/settings.slint:255
+#: rust/frontend/ui/settings.slint:259
 msgid "Unlink"
 msgstr "解除連結"
 
-#: rust/frontend/ui/settings.slint:261 rust/frontend/ui/settings.slint:274
-#: rust/frontend/ui/settings.slint:285 rust/frontend/ui/settings.slint:415
+#: rust/frontend/ui/settings.slint:265 rust/frontend/ui/settings.slint:278
+#: rust/frontend/ui/settings.slint:289 rust/frontend/ui/settings.slint:419
 msgid "Automatic"
 msgstr "自動"
 
-#: rust/frontend/ui/settings.slint:262
+#: rust/frontend/ui/settings.slint:266
 msgid "{} × {}"
 msgstr "{} × {}"
 
-#: rust/frontend/ui/settings.slint:269
+#: rust/frontend/ui/settings.slint:273
 msgid "Style A"
 msgstr "樣式 A"
 
-#: rust/frontend/ui/settings.slint:270
+#: rust/frontend/ui/settings.slint:274
 msgid "Style B"
 msgstr "樣式 B"
 
-#: rust/frontend/ui/settings.slint:271
+#: rust/frontend/ui/settings.slint:275
 msgid "Style C"
 msgstr "樣式 C"
 
-#: rust/frontend/ui/settings.slint:272
+#: rust/frontend/ui/settings.slint:276
 msgid "Style D"
 msgstr "樣式 D"
 
-#: rust/frontend/ui/settings.slint:273
+#: rust/frontend/ui/settings.slint:277
 msgid "Style E"
 msgstr "樣式 E"
 
-#: rust/frontend/ui/settings.slint:277
+#: rust/frontend/ui/settings.slint:281
 msgid "12-hour"
 msgstr "12 小時制"
 
-#: rust/frontend/ui/settings.slint:278
+#: rust/frontend/ui/settings.slint:282
 msgid "24-hour"
 msgstr "24 小時制"
 
-#: rust/frontend/ui/settings.slint:282
+#: rust/frontend/ui/settings.slint:286
 msgid "Americas"
 msgstr "美洲"
 
-#: rust/frontend/ui/settings.slint:283
+#: rust/frontend/ui/settings.slint:287
 msgid "Europe"
 msgstr "歐洲"
 
-#: rust/frontend/ui/settings.slint:284
+#: rust/frontend/ui/settings.slint:288
 msgid "Japan"
 msgstr "日本"
 
-#: rust/frontend/ui/settings.slint:288
+#: rust/frontend/ui/settings.slint:292
 msgid "Standard"
 msgstr "標準"
 
-#: rust/frontend/ui/settings.slint:289
+#: rust/frontend/ui/settings.slint:293
 msgid "Handheld"
 msgstr "掌機"
 
-#: rust/frontend/ui/settings.slint:290
+#: rust/frontend/ui/settings.slint:294
 msgid "Device default"
 msgstr "裝置預設"
 
-#: rust/frontend/ui/settings.slint:293
+#: rust/frontend/ui/settings.slint:297
 msgid "Rotated CW"
 msgstr "順時針旋轉"
 
-#: rust/frontend/ui/settings.slint:294
+#: rust/frontend/ui/settings.slint:298
 msgid "Rotated CCW"
 msgstr "逆時針旋轉"
 
-#: rust/frontend/ui/settings.slint:295
+#: rust/frontend/ui/settings.slint:299
 msgid "Horizontal"
 msgstr "橫向"
 
-#: rust/frontend/ui/settings.slint:298
+#: rust/frontend/ui/settings.slint:302
 msgid "Detailed list view"
 msgstr "詳細清單檢視"
 
-#: rust/frontend/ui/settings.slint:299
+#: rust/frontend/ui/settings.slint:303
 msgid "Grid view"
 msgstr "格狀檢視"
 
-#: rust/frontend/ui/settings.slint:302
+#: rust/frontend/ui/settings.slint:306
 msgid "Full color"
 msgstr "全彩"
 
-#: rust/frontend/ui/settings.slint:303
+#: rust/frontend/ui/settings.slint:307
 msgid "Tinted"
 msgstr "主題色"
 
-#: rust/frontend/ui/settings.slint:306
+#: rust/frontend/ui/settings.slint:310
 msgid "Vivid"
 msgstr "鮮豔"
 
-#: rust/frontend/ui/settings.slint:307
+#: rust/frontend/ui/settings.slint:311
 msgid "Subtle"
 msgstr "柔和"
 
-#: rust/frontend/ui/settings.slint:310
+#: rust/frontend/ui/settings.slint:314
 msgid "PAL (50 Hz)"
 msgstr "PAL (50 Hz)"
 
-#: rust/frontend/ui/settings.slint:311
+#: rust/frontend/ui/settings.slint:315
 msgid "480i (60 Hz)"
 msgstr "480i (60 Hz)"
 
-#: rust/frontend/ui/settings.slint:312
+#: rust/frontend/ui/settings.slint:316
 msgid "NTSC (60 Hz)"
 msgstr "NTSC (60 Hz)"
 
-#: rust/frontend/ui/settings.slint:319
+#: rust/frontend/ui/settings.slint:323
 msgid "Daily"
 msgstr "每天"
 
-#: rust/frontend/ui/settings.slint:320
+#: rust/frontend/ui/settings.slint:324
 msgid "Weekly"
 msgstr "每週"
 
-#: rust/frontend/ui/settings.slint:321
+#: rust/frontend/ui/settings.slint:325
 msgid "Manual"
 msgstr "手動"
 
-#: rust/frontend/ui/settings.slint:324
+#: rust/frontend/ui/settings.slint:328
 msgid "Linked"
 msgstr "已連結"
 
-#: rust/frontend/ui/settings.slint:328
+#: rust/frontend/ui/settings.slint:332
 msgid "Active"
 msgstr "有效"
 
-#: rust/frontend/ui/settings.slint:329
+#: rust/frontend/ui/settings.slint:333
 msgid "Not active"
 msgstr "無效"
 
-#: rust/frontend/ui/settings.slint:330
+#: rust/frontend/ui/settings.slint:334
 msgid "Checking…"
 msgstr "檢查中…"
 
-#: rust/frontend/ui/settings.slint:333 rust/frontend/ui/settings.slint:391
+#: rust/frontend/ui/settings.slint:337 rust/frontend/ui/settings.slint:395
 msgid "Off"
 msgstr "關閉"
 
-#: rust/frontend/ui/settings.slint:336
+#: rust/frontend/ui/settings.slint:340
 msgid "Waiting for commands…"
 msgstr "等待指令中…"
 
-#: rust/frontend/ui/settings.slint:337
+#: rust/frontend/ui/settings.slint:341
 msgid "Not the remote device"
 msgstr "非遠端控制裝置"
 
-#: rust/frontend/ui/settings.slint:339
+#: rust/frontend/ui/settings.slint:343
 msgid "Link rejected"
 msgstr "連結遭拒"
 
-#: rust/frontend/ui/settings.slint:340
+#: rust/frontend/ui/settings.slint:344
 msgid "Server unreachable"
 msgstr "無法連線至伺服器"
 
-#: rust/frontend/ui/settings.slint:341
+#: rust/frontend/ui/settings.slint:345
 msgid "Unknown"
 msgstr "不明"
 
-#: rust/frontend/ui/settings.slint:347
+#: rust/frontend/ui/settings.slint:351
 msgid "English"
 msgstr "英文"
 
-#: rust/frontend/ui/settings.slint:348
+#: rust/frontend/ui/settings.slint:352
 msgid "Italian"
 msgstr "義大利文"
 
-#: rust/frontend/ui/settings.slint:349
+#: rust/frontend/ui/settings.slint:353
 msgid "Spanish"
 msgstr "西班牙文"
 
-#: rust/frontend/ui/settings.slint:350
+#: rust/frontend/ui/settings.slint:354
 msgid "Basque"
 msgstr "巴斯克文"
 
-#: rust/frontend/ui/settings.slint:351
+#: rust/frontend/ui/settings.slint:355
 msgid "German"
 msgstr "德文"
 
-#: rust/frontend/ui/settings.slint:352
+#: rust/frontend/ui/settings.slint:356
 msgid "Greek"
 msgstr "希臘文"
 
-#: rust/frontend/ui/settings.slint:353
+#: rust/frontend/ui/settings.slint:357
 msgid "Japanese"
 msgstr "日文"
 
-#: rust/frontend/ui/settings.slint:354
+#: rust/frontend/ui/settings.slint:358
 msgid "Korean"
 msgstr "韓文"
 
-#: rust/frontend/ui/settings.slint:355
+#: rust/frontend/ui/settings.slint:359
 msgid "Dutch"
 msgstr "荷蘭文"
 
-#: rust/frontend/ui/settings.slint:356
+#: rust/frontend/ui/settings.slint:360
 msgid "Romanian"
 msgstr "羅馬尼亞文"
 
-#: rust/frontend/ui/settings.slint:357
+#: rust/frontend/ui/settings.slint:361
 msgid "Slovak"
 msgstr "斯洛伐克文"
 
-#: rust/frontend/ui/settings.slint:358
+#: rust/frontend/ui/settings.slint:362
 msgid "Ukrainian"
 msgstr "烏克蘭文"
 
-#: rust/frontend/ui/settings.slint:359
+#: rust/frontend/ui/settings.slint:363
 msgid "Chinese (Simplified)"
 msgstr "簡體中文"
 
-#: rust/frontend/ui/settings.slint:360
+#: rust/frontend/ui/settings.slint:364
 msgid "Chinese (Traditional)"
 msgstr "繁體中文"
 
-#: rust/frontend/ui/settings.slint:361
+#: rust/frontend/ui/settings.slint:365
 msgid "Hebrew"
 msgstr "希伯來文"
 
-#: rust/frontend/ui/settings.slint:362
+#: rust/frontend/ui/settings.slint:366
 msgid "Arabic"
 msgstr "阿拉伯文"
 
-#: rust/frontend/ui/settings.slint:363
+#: rust/frontend/ui/settings.slint:367
 msgid "Hindi"
 msgstr "印地文"
 
-#: rust/frontend/ui/settings.slint:364
+#: rust/frontend/ui/settings.slint:368
 msgid "French"
 msgstr "法文"
 
-#: rust/frontend/ui/settings.slint:369
+#: rust/frontend/ui/settings.slint:373
 msgid "Zaparoo Light"
 msgstr "Zaparoo Light"
 
-#: rust/frontend/ui/settings.slint:370
+#: rust/frontend/ui/settings.slint:374
 msgid "Classic Purple"
 msgstr "Classic Purple"
 
-#: rust/frontend/ui/settings.slint:371
+#: rust/frontend/ui/settings.slint:375
 msgid "Amber Phosphor"
 msgstr "Amber Phosphor"
 
-#: rust/frontend/ui/settings.slint:372
+#: rust/frontend/ui/settings.slint:376
 msgid "Game Boy"
 msgstr "Game Boy"
 
-#: rust/frontend/ui/settings.slint:373
+#: rust/frontend/ui/settings.slint:377
 msgid "Green Phosphor"
 msgstr "Green Phosphor"
 
-#: rust/frontend/ui/settings.slint:374
+#: rust/frontend/ui/settings.slint:378
 msgid "Neo Geo"
 msgstr "Neo Geo"
 
-#: rust/frontend/ui/settings.slint:375
+#: rust/frontend/ui/settings.slint:379
 msgid "NES"
 msgstr "NES"
 
-#: rust/frontend/ui/settings.slint:376
+#: rust/frontend/ui/settings.slint:380
 msgid "Virtual Boy"
 msgstr "Virtual Boy"
 
-#: rust/frontend/ui/settings.slint:377
+#: rust/frontend/ui/settings.slint:381
 msgid "Dracula"
 msgstr "Dracula"
 
-#: rust/frontend/ui/settings.slint:378
+#: rust/frontend/ui/settings.slint:382
 msgid "Everforest"
 msgstr "Everforest"
 
-#: rust/frontend/ui/settings.slint:379
+#: rust/frontend/ui/settings.slint:383
 msgid "Gruvbox"
 msgstr "Gruvbox"
 
-#: rust/frontend/ui/settings.slint:380
+#: rust/frontend/ui/settings.slint:384
 msgid "Nord"
 msgstr "Nord"
 
-#: rust/frontend/ui/settings.slint:381
+#: rust/frontend/ui/settings.slint:385
 msgid "Oxocarbon"
 msgstr "Oxocarbon"
 
-#: rust/frontend/ui/settings.slint:382
+#: rust/frontend/ui/settings.slint:386
 msgid "Rosé Pine"
 msgstr "Rosé Pine"
 
-#: rust/frontend/ui/settings.slint:383
+#: rust/frontend/ui/settings.slint:387
 msgid "Solarized Dark"
 msgstr "Solarized Dark"
 
-#: rust/frontend/ui/settings.slint:384
+#: rust/frontend/ui/settings.slint:388
 msgid "Synthwave '84"
 msgstr "Synthwave '84"
 
-#: rust/frontend/ui/settings.slint:385
+#: rust/frontend/ui/settings.slint:389
 msgid "Flexoki Paper"
 msgstr "Flexoki Paper"
 
-#: rust/frontend/ui/settings.slint:386
+#: rust/frontend/ui/settings.slint:390
 msgid "Solarized Light"
 msgstr "Solarized Light"
 
-#: rust/frontend/ui/settings.slint:387
+#: rust/frontend/ui/settings.slint:391
 msgid "Zaparoo Dark"
 msgstr "Zaparoo Dark"
 
-#: rust/frontend/ui/settings.slint:392
+#: rust/frontend/ui/settings.slint:396
 msgid "1 second (testing)"
 msgstr "1 秒（測試）"
 
-#: rust/frontend/ui/settings.slint:393
+#: rust/frontend/ui/settings.slint:397
 msgid "1 minute"
 msgstr "1 分鐘"
 
-#: rust/frontend/ui/settings.slint:394
+#: rust/frontend/ui/settings.slint:398
 msgid "2 minutes"
 msgstr "2 分鐘"
 
-#: rust/frontend/ui/settings.slint:395
+#: rust/frontend/ui/settings.slint:399
 msgid "5 minutes"
 msgstr "5 分鐘"
 
-#: rust/frontend/ui/settings.slint:396
+#: rust/frontend/ui/settings.slint:400
 msgid "10 minutes"
 msgstr "10 分鐘"
 
-#: rust/frontend/ui/settings.slint:397
+#: rust/frontend/ui/settings.slint:401
 msgid "15 minutes"
 msgstr "15 分鐘"
 
-#: rust/frontend/ui/settings.slint:398
+#: rust/frontend/ui/settings.slint:402
 msgid "30 minutes"
 msgstr "30 分鐘"
 
-#: rust/frontend/ui/settings.slint:399
+#: rust/frontend/ui/settings.slint:403
 msgid "{} seconds"
 msgstr "{} 秒"
 
-#: rust/frontend/ui/settings.slint:404
+#: rust/frontend/ui/settings.slint:408
 msgid "Thumbnail"
 msgstr "縮圖"
 
-#: rust/frontend/ui/settings.slint:405
+#: rust/frontend/ui/settings.slint:409
 msgid "Box art"
 msgstr "封面"
 
-#: rust/frontend/ui/settings.slint:406
+#: rust/frontend/ui/settings.slint:410
 msgid "3D box art"
 msgstr "3D 封面"
 
-#: rust/frontend/ui/settings.slint:407
+#: rust/frontend/ui/settings.slint:411
 msgid "Screenshot"
 msgstr "螢幕截圖"
 
-#: rust/frontend/ui/settings.slint:408
+#: rust/frontend/ui/settings.slint:412
 msgid "Wheel"
 msgstr "輪盤圖"
 
-#: rust/frontend/ui/settings.slint:409
+#: rust/frontend/ui/settings.slint:413
 msgid "Title screen"
 msgstr "標題畫面"
 
-#: rust/frontend/ui/settings.slint:410
+#: rust/frontend/ui/settings.slint:414
 msgid "Map"
 msgstr "地圖"
 
-#: rust/frontend/ui/settings.slint:411
+#: rust/frontend/ui/settings.slint:415
 msgid "Marquee"
 msgstr "看板"
 
-#: rust/frontend/ui/settings.slint:412
+#: rust/frontend/ui/settings.slint:416
 msgid "Fan art"
 msgstr "同人圖"
 
-#: rust/frontend/ui/settings.slint:413
+#: rust/frontend/ui/settings.slint:417
 msgid "Box side"
 msgstr "盒側"
 
-#: rust/frontend/ui/settings.slint:414
+#: rust/frontend/ui/settings.slint:418
 msgid "Box back"
 msgstr "盒背"
 
-#: rust/frontend/ui/settings.slint:496
+#: rust/frontend/ui/settings.slint:500
 msgid "Linked as {}"
 msgstr "已連結：{}"
 
-#: rust/frontend/ui/setup.slint:296
+#: rust/frontend/ui/setup.slint:120
+msgid "{n} selected"
+msgid_plural "{n} selected"
+msgstr[0] "已選擇 {n} 個"
+
+#: rust/frontend/ui/setup.slint:340
 msgid "Upload failed. Check the network connection and try again."
 msgstr "上傳失敗。請檢查網路連線後再試一次。"
 
-#: rust/frontend/ui/setup.slint:297
+#: rust/frontend/ui/setup.slint:341
 msgid "Uploading log file. This may take a moment."
 msgstr "正在上傳記錄檔，可能需要一些時間。"

@@ -3647,7 +3647,12 @@ pub fn context_accept(ctx: &Ctx, app: &App, id: &str) {
             crate::router::open_scrape_setup(
                 ctx,
                 app,
-                zaparoo_app::media_setup::Scope::System(system),
+                zaparoo_app::media_setup::Scope::Game(zaparoo_app::media_setup::GameTarget {
+                    media_id: row.media_id,
+                    system,
+                    path: row.path.clone(),
+                    name: row.display.clone(),
+                }),
             );
         }
         "change_launcher" if !system.is_empty() => {

@@ -82,14 +82,7 @@ pub fn dispatch(text: &str, notifier: &Notifier) -> String {
         "media.scrape.status" => Some(Ok(media_state::scrape_status_response())),
         "media.generate" => Some(Ok(media_state::start_index(notifier))),
         "media.generate.cancel" => Some(media_state::cancel_index(notifier)),
-        "media.scrape" => {
-            let force = req
-                .params
-                .get("force")
-                .and_then(Value::as_bool)
-                .unwrap_or(false);
-            Some(Ok(media_state::start_scrape(force, notifier)))
-        }
+        "media.scrape" => Some(media_scrape(&req.params, notifier)),
         "media.scrape.cancel" => Some(media_state::cancel_scrape(notifier)),
         "run" => {
             let zap_script = req.params.get("text").and_then(Value::as_str).unwrap_or("");
@@ -162,6 +155,43 @@ fn media_tags_update(params: &Value) -> Result<Value, String> {
         }
     }
     Ok(serde_json::json!({ "tags": tags }))
+}
+
+/// `media.scrape` the way Core validates its scope: one of `mediaId`,
+/// `file` or `subtree`, and never beside `systems`, an empty list included.
+/// The mock has one canned run, so a valid scope starts the same one.
+fn media_scrape(params: &Value, notifier: &Notifier) -> Result<Value, String> {
+    if let Some(scope) = params.get("scope").filter(|scope| !scope.is_null()) {
+        // Exactly one known form: an unknown key is refused, not skipped.
+        let form = scope
+            .as_object()
+            .filter(|fields| fields.len() == 1)
+            .and_then(|fields| fields.iter().next());
+        let valid = match form {
+            Some((key, id)) if key == "mediaId" => id.as_i64().is_some_and(|id| id > 0),
+            Some((key, target)) if key == "file" || key == "subtree" => {
+                let named = |field: &str| {
+                    target
+                        .get(field)
+                        .and_then(Value::as_str)
+                        .is_some_and(|text| !text.is_empty())
+                };
+                named("system") && named("path")
+            }
+            _ => false,
+        };
+        if !valid || params.get("systems").is_some() {
+            return Err(
+                "use one scope: mediaId, file, or subtree; cannot mix scope and systems".into(),
+            );
+        }
+    }
+    info!(%params, "media.scrape");
+    let force = params
+        .get("force")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    Ok(media_state::start_scrape(force, notifier))
 }
 
 fn encode(response: &RpcResponse) -> String {
@@ -964,6 +994,42 @@ mod tests {
         let status = parse(&dispatch_with_notifier(status_req, &notifier));
         assert_eq!(status["result"]["scraping"], Value::Bool(true));
         assert!(status["result"]["currentSystem"].is_object());
+    }
+
+    #[tokio::test]
+    async fn media_scrape_takes_one_scope_form_and_never_beside_systems() {
+        let notifier = Notifier::noop();
+        let scoped = |params: &str| {
+            let req = format!(
+                r#"{{"jsonrpc":"2.0","id":"1","method":"media.scrape","params":{params}}}"#
+            );
+            parse(&dispatch_with_notifier(&req, &notifier))
+        };
+        let by_id = scoped(r#"{"scraperId":"mock","scope":{"mediaId":42}}"#);
+        assert!(by_id["error"].is_null());
+        let by_file =
+            scoped(r#"{"scraperId":"mock","scope":{"file":{"system":"SNES","path":"/g.sfc"}}}"#);
+        assert!(by_file["error"].is_null());
+
+        // Core refuses a scope beside systems, an empty list included.
+        let mixed = scoped(r#"{"scraperId":"mock","systems":[],"scope":{"mediaId":42}}"#);
+        assert_eq!(mixed["error"]["code"], -32000);
+        let two_forms = scoped(
+            r#"{"scraperId":"mock","scope":{"mediaId":42,"file":{"system":"SNES","path":"/g.sfc"}}}"#,
+        );
+        assert_eq!(two_forms["error"]["code"], -32000);
+        // A form has to carry its identity, and nothing rides beside it.
+        for malformed in [
+            r#"{"scraperId":"mock","scope":{}}"#,
+            r#"{"scraperId":"mock","scope":{"file":{}}}"#,
+            r#"{"scraperId":"mock","scope":{"file":{"system":"SNES","path":""}}}"#,
+            r#"{"scraperId":"mock","scope":{"mediaId":0}}"#,
+            r#"{"scraperId":"mock","scope":{"mediaId":"42"}}"#,
+            r#"{"scraperId":"mock","scope":{"mediaId":42,"unknown":true}}"#,
+            r#"{"scraperId":"mock","scope":{"unknown":true}}"#,
+        ] {
+            assert_eq!(scoped(malformed)["error"]["code"], -32000, "{malformed}");
+        }
     }
 
     #[tokio::test]

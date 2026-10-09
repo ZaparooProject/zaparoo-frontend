@@ -76,7 +76,10 @@ impl From<zaparoo_app::media_setup::ScopeKind> for crate::ScopeKind {
             zaparoo_app::media_setup::ScopeKind::All => Self::All,
             zaparoo_app::media_setup::ScopeKind::Category => Self::Category,
             zaparoo_app::media_setup::ScopeKind::System => Self::System,
+            zaparoo_app::media_setup::ScopeKind::Systems => Self::Systems,
+            zaparoo_app::media_setup::ScopeKind::Game => Self::Game,
             zaparoo_app::media_setup::ScopeKind::Header => Self::Header,
+            zaparoo_app::media_setup::ScopeKind::Selected => Self::Selected,
         }
     }
 }
