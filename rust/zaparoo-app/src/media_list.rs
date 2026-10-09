@@ -90,14 +90,26 @@ pub fn browses(entry_type: EntryType, has_media_id: bool, zap_script: &str) -> b
     entry_type.is_folder() && !is_media_capable(entry_type, has_media_id, zap_script)
 }
 
-/// The on-disk file name without its extension, else `name`.
-pub fn file_stem_or_name(path: &str, name: &str) -> String {
+/// The longest trailing token read as a file extension.
+const MAX_EXTENSION_LEN: usize = 8;
+
+/// The on-disk name, else `name`. A file loses its extension; a folder has
+/// none, and neither does a tail that only follows a dot in the title
+/// (`Marvel vs. Capcom`).
+pub fn file_stem_or_name(path: &str, name: &str, is_folder: bool) -> String {
     let file = path
         .trim_end_matches(['/', '\\'])
         .rsplit(['/', '\\'])
         .next()
         .unwrap_or_default();
-    let stem = file.rsplit_once('.').map_or(file, |(stem, _)| stem).trim();
+    let stem = if is_folder {
+        file
+    } else {
+        file.rsplit_once('.')
+            .filter(|(_, ext)| is_extension(ext))
+            .map_or(file, |(stem, _)| stem)
+    }
+    .trim();
     if stem.is_empty() {
         name.to_string()
     } else {
@@ -105,21 +117,30 @@ pub fn file_stem_or_name(path: &str, name: &str) -> String {
     }
 }
 
-/// Core's cleaned title, falling back to the file stem when Core sent none.
-pub fn display_title(name: &str, path: &str) -> String {
+fn is_extension(tail: &str) -> bool {
+    (1..=MAX_EXTENSION_LEN).contains(&tail.len()) && tail.bytes().all(|b| b.is_ascii_alphanumeric())
+}
+
+/// Core's cleaned title, falling back to the on-disk name when Core sent none.
+pub fn display_title(name: &str, path: &str, is_folder: bool) -> String {
     if name.is_empty() {
-        file_stem_or_name(path, name)
+        file_stem_or_name(path, name, is_folder)
     } else {
         name.to_string()
     }
 }
 
 /// The row title honoring Show original filenames.
-pub fn display_name(name: &str, path: &str, show_original_filenames: bool) -> String {
+pub fn display_name(
+    name: &str,
+    path: &str,
+    is_folder: bool,
+    show_original_filenames: bool,
+) -> String {
     if show_original_filenames {
-        file_stem_or_name(path, name)
+        file_stem_or_name(path, name, is_folder)
     } else {
-        display_title(name, path)
+        display_title(name, path, is_folder)
     }
 }
 
@@ -1098,25 +1119,55 @@ mod tests {
     #[test]
     fn file_stem_handles_separators_and_blank_stems() {
         assert_eq!(
-            file_stem_or_name("/g/Sonic (USA).md", "Sonic"),
+            file_stem_or_name("/g/Sonic (USA).md", "Sonic", false),
             "Sonic (USA)"
         );
-        assert_eq!(file_stem_or_name("C:\\g\\Sonic.md\\", "Sonic"), "Sonic");
-        assert_eq!(file_stem_or_name("", "Sonic"), "Sonic");
-        assert_eq!(file_stem_or_name("/g/.hidden", "Fallback"), "Fallback");
+        assert_eq!(
+            file_stem_or_name("C:\\g\\Sonic.md\\", "Sonic", false),
+            "Sonic"
+        );
+        assert_eq!(file_stem_or_name("", "Sonic", false), "Sonic");
+        assert_eq!(file_stem_or_name("", "Sonic", true), "Sonic");
+        assert_eq!(
+            file_stem_or_name("/g/.hidden", "Fallback", false),
+            "Fallback"
+        );
+    }
+
+    #[test]
+    fn file_stem_keeps_a_dot_that_is_part_of_the_title() {
+        for title in ["Dr. Slump (Japan)", "Marvel vs. Capcom"] {
+            let folder = format!("/g/PSX/{title}");
+            assert_eq!(file_stem_or_name(&folder, "x", true), title);
+            assert_eq!(file_stem_or_name(&format!("{folder}/"), "x", true), title);
+            assert_eq!(
+                file_stem_or_name(&format!("{folder}.chd"), "x", false),
+                title
+            );
+            assert_eq!(file_stem_or_name(&folder, "x", false), title);
+        }
+        assert_eq!(file_stem_or_name("/g/Game.v1.2", "x", true), "Game.v1.2");
+        assert_eq!(file_stem_or_name("/g/Game.", "x", false), "Game.");
     }
 
     #[test]
     fn display_name_prefers_core_title_unless_original_filenames() {
         assert_eq!(
-            display_name("Friendly Alias", "/g/InternalContainer.zip", false),
+            display_name("Friendly Alias", "/g/InternalContainer.zip", false, false),
             "Friendly Alias"
         );
         assert_eq!(
-            display_name("Friendly Alias", "/g/InternalContainer.zip", true),
+            display_name("Friendly Alias", "/g/InternalContainer.zip", false, true),
             "InternalContainer"
         );
-        assert_eq!(display_name("", "/g/D (Disc 1).chd", false), "D (Disc 1)");
+        assert_eq!(
+            display_name("Dr Slump", "/g/Dr. Slump (Japan)", true, true),
+            "Dr. Slump (Japan)"
+        );
+        assert_eq!(
+            display_name("", "/g/D (Disc 1).chd", false, false),
+            "D (Disc 1)"
+        );
     }
 
     #[test]

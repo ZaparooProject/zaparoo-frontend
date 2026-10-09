@@ -445,7 +445,12 @@ impl GamesModel {
         language: &str,
     ) -> usize {
         for row in self.rows.iter_mut().skip(appended_from) {
-            row.display = rules::display_name(&row.name, &row.path, show_original);
+            row.display = rules::display_name(
+                &row.name,
+                &row.path,
+                row.entry_type.is_folder(),
+                show_original,
+            );
         }
         let start = rules::sibling_group_start(&self.rows, appended_from, |row| &row.display);
         let names: Vec<_> = self.rows[start..]
