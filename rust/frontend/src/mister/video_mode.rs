@@ -60,10 +60,15 @@ fn apply(io: &mut impl VideoIo, command: Command, target: Size) -> bool {
     io.run(command).is_ok() && io.size() == Some(target)
 }
 
-/// Largest RGB32 framebuffer the kernel module's reservation holds. Main
-/// does not bound `vmode f` to it, and an oversized mode write makes the
-/// console redraw run off the end of the mapping.
-const RESERVED_PIXELS: u64 = 1920 * 1080;
+/// The kernel module's reservation: one 1920x1080 RGB32 frame. Main does not
+/// bound `vmode f` to it, and an oversized mode write makes the console
+/// redraw run off the end of the mapping.
+const RESERVED_BYTES: u64 = 1920 * 1080 * 4;
+
+/// Bytes Main gives an RGB32 framebuffer: it rounds each row up to 16 bytes.
+fn rgb32_bytes((width, height): Size) -> u64 {
+    ((u64::from(width) * 4 + 15) & !15) * u64::from(height)
+}
 
 /// Half of any output up to 4K fits the reservation, so the half-size
 /// framebuffer is the probe and the output is inferred as twice that. The
@@ -72,8 +77,8 @@ const RESERVED_PIXELS: u64 = 1920 * 1080;
 fn probe_output(io: &mut impl VideoIo) -> Option<Size> {
     let half = probe(io, Command::Half)?;
     let inferred = (half.0.checked_mul(2)?, half.1.checked_mul(2)?);
-    let largest = u64::from(inferred.0 + 1) * u64::from(inferred.1 + 1);
-    if largest > RESERVED_PIXELS {
+    let largest = (inferred.0.checked_add(1)?, inferred.1.checked_add(1)?);
+    if rgb32_bytes(largest) > RESERVED_BYTES {
         return Some(inferred);
     }
     probe(io, Command::Full).or(Some(inferred))
@@ -349,6 +354,9 @@ mod tests {
             ((960, 600), (1920, 1200)),
             ((960, 720), (1920, 1440)),
             ((1280, 720), (2560, 1440)),
+            // 1921x1079 has fewer pixels than 1920x1080 but its padded rows
+            // do not fit, and a 960x539 half cannot rule it out.
+            ((960, 539), (1920, 1078)),
         ] {
             let mut io = Fake {
                 size: Some(half),
@@ -484,5 +492,12 @@ mod tests {
         assert!(outcome(Some(1), b"Usage:", b"").is_err());
         assert!(outcome(Some(1), b"", b"Unknown format").is_err());
         assert!(outcome(Some(2), b"", b"").is_err());
+    }
+
+    #[test]
+    fn framebuffer_bytes_include_row_padding() {
+        assert_eq!(rgb32_bytes((1920, 1080)), RESERVED_BYTES);
+        assert_eq!(rgb32_bytes((1921, 1079)), 8_303_984);
+        assert!(rgb32_bytes((1921, 1079)) > RESERVED_BYTES);
     }
 }
