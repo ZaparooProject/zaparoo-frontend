@@ -51,6 +51,9 @@ pub struct Resume {
 pub struct HubModel {
     pub layout: HubLayout,
     pub layout_path: PathBuf,
+    /// `frontend.toml` did not load, so the layout stays in memory: a save
+    /// would write this session's layout over the file the user has to fix.
+    pub read_only: bool,
     pub grid: Grid,
     pub entries: Vec<Entry>,
     /// Focus paints once the user has driven it or the restore has run.
@@ -82,6 +85,7 @@ impl HubModel {
         Self {
             layout: load_hub_layout(&layout_path),
             layout_path,
+            read_only: false,
             grid: Grid::new(5, 2),
             entries: Vec::new(),
             layout_dirty: false,
@@ -144,6 +148,9 @@ impl HubModel {
     /// overwriting a newer user edit. No shared UI lock is held during I/O.
     pub(crate) fn save(&mut self, handle: &tokio::runtime::Handle) {
         self.layout_dirty = true;
+        if self.read_only {
+            return;
+        }
         if let Some(writer) = &self.layout_save {
             writer.send_replace(self.layout.clone());
             return;

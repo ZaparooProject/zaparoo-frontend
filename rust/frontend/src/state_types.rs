@@ -42,7 +42,7 @@ tokens!(ErrorKind {
     MediaIndex => "media_index", MediaScrape => "media_scrape", MediaScrapers => "media_scrapers",
     MediaCancel => "media_cancel", Launcher => "launcher", LauncherSave => "launcher_save",
     AlternateDiscovery => "alternate_discovery", DiscList => "disc_list", QrCode => "qr_code", CardWrite => "card_write", Setting => "setting",
-    Pairing => "pairing", Online => "online", Backup => "backup",
+    Pairing => "pairing", Online => "online", Backup => "backup", ConfigFile => "config_file",
 });
 
 impl From<zaparoo_app::hub::Reason> for crate::DisabledReason {

@@ -1,6 +1,6 @@
 msgid ""
 msgstr ""
-"POT-Creation-Date: 2026-10-08 03:36+0000\n"
+"POT-Creation-Date: 2026-10-09 07:26+0000\n"
 "Language: ko\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
@@ -194,11 +194,11 @@ msgstr "휴대폰으로 이 코드를 스캔하거나, 아래 주소를 열어 �
 msgid "Or press Accept to open it on this device."
 msgstr "또는 확인 버튼을 눌러 이 기기에서 여세요."
 
-#: rust/frontend/ui/app.slint:2017 rust/frontend/ui/labels.slint:331
+#: rust/frontend/ui/app.slint:2017 rust/frontend/ui/labels.slint:332
 msgid "This device is not linked. Link your Zaparoo Online account, then try again."
 msgstr "이 기기는 연동되어 있지 않습니다. Zaparoo Online 계정을 연동한 후 다시 시도하세요."
 
-#: rust/frontend/ui/app.slint:2020 rust/frontend/ui/labels.slint:330
+#: rust/frontend/ui/app.slint:2020 rust/frontend/ui/labels.slint:331
 msgid "Cloud backup needs an active Zaparoo Warp subscription."
 msgstr "클라우드 백업을 사용하려면 Zaparoo Warp 구독이 활성화되어 있어야 합니다."
 
@@ -367,7 +367,7 @@ msgstr "정보"
 #: rust/frontend/ui/app.slint:3451 rust/frontend/ui/app.slint:3465
 #: rust/frontend/ui/app.slint:3479 rust/frontend/ui/app.slint:3496
 #: rust/frontend/ui/app.slint:3508 rust/frontend/ui/app.slint:3520
-#: rust/frontend/ui/app.slint:3535 rust/frontend/ui/app.slint:3550
+#: rust/frontend/ui/app.slint:3536 rust/frontend/ui/app.slint:3551
 msgid "Back"
 msgstr "뒤로"
 
@@ -381,8 +381,8 @@ msgstr "스페이스"
 
 #: rust/frontend/ui/app.slint:3178 rust/frontend/ui/app.slint:3388
 #: rust/frontend/ui/app.slint:3427 rust/frontend/ui/app.slint:3445
-#: rust/frontend/ui/app.slint:3484 rust/frontend/ui/app.slint:3540
-#: rust/frontend/ui/app.slint:3555
+#: rust/frontend/ui/app.slint:3484 rust/frontend/ui/app.slint:3541
+#: rust/frontend/ui/app.slint:3556
 msgid "Open"
 msgstr "열기"
 
@@ -431,13 +431,13 @@ msgid "Place"
 msgstr "놓기"
 
 #: rust/frontend/ui/app.slint:3376 rust/frontend/ui/app.slint:3389
-#: rust/frontend/ui/app.slint:3436 rust/frontend/ui/app.slint:3556
+#: rust/frontend/ui/app.slint:3436 rust/frontend/ui/app.slint:3557
 msgid "Options"
 msgstr "옵션"
 
 #: rust/frontend/ui/app.slint:3377 rust/frontend/ui/app.slint:3382
 #: rust/frontend/ui/app.slint:3396 rust/frontend/ui/app.slint:3429
-#: rust/frontend/ui/app.slint:3549 rust/frontend/ui/labels.slint:166
+#: rust/frontend/ui/app.slint:3550 rust/frontend/ui/labels.slint:166
 msgid "View"
 msgstr "보기"
 
@@ -1207,218 +1207,226 @@ msgid "Cloud backup failed"
 msgstr "클라우드 백업 실패"
 
 #: rust/frontend/ui/labels.slint:293
+msgid "Config file not loaded"
+msgstr "설정 파일을 불러오지 못했습니다"
+
+#: rust/frontend/ui/labels.slint:294
 msgid "Action failed"
 msgstr "작업 실패"
 
-#: rust/frontend/ui/labels.slint:300
+#: rust/frontend/ui/labels.slint:301
 msgid "Could not start this item. Check Zaparoo Core and try again."
 msgstr "이 항목을 시작하지 못했습니다. Zaparoo Core를 확인하고 다시 시도하세요."
 
-#: rust/frontend/ui/labels.slint:301
+#: rust/frontend/ui/labels.slint:302
 msgid "Could not start {}. Check Zaparoo Core and try again."
 msgstr "{}을(를) 시작하지 못했습니다. Zaparoo Core를 확인하고 다시 시도하세요."
 
-#: rust/frontend/ui/labels.slint:306
+#: rust/frontend/ui/labels.slint:307
 msgid "Could not update this favorite. Check Zaparoo Core and try again."
 msgstr "이 즐겨찾기를 업데이트하지 못했습니다. Zaparoo Core를 확인하고 다시 시도하세요."
 
-#: rust/frontend/ui/labels.slint:307
+#: rust/frontend/ui/labels.slint:308
 msgid "Could not hide or unhide this game. Check Zaparoo Core and try again."
 msgstr "이 게임을 숨기거나 숨김 해제하지 못했습니다. Zaparoo Core를 확인하고 다시 시도하세요."
 
-#: rust/frontend/ui/labels.slint:309
+#: rust/frontend/ui/labels.slint:310
 msgid "Zaparoo Core is updating the media database. Try again when it finishes."
 msgstr "Zaparoo Core가 미디어 데이터베이스를 업데이트하는 중입니다. 완료된 후 다시 시도하세요."
 
-#: rust/frontend/ui/labels.slint:311
+#: rust/frontend/ui/labels.slint:312
 msgid "Could not add this item to the Hub. Check Zaparoo Core and try again."
 msgstr "이 항목을 허브에 추가하지 못했습니다. Zaparoo Core를 확인하고 다시 시도하세요."
 
-#: rust/frontend/ui/labels.slint:312
+#: rust/frontend/ui/labels.slint:313
 msgid "Could not add {} to the Hub. Check Zaparoo Core and try again."
 msgstr "{}을(를) 허브에 추가하지 못했습니다. Zaparoo Core를 확인하고 다시 시도하세요."
 
-#: rust/frontend/ui/labels.slint:314
+#: rust/frontend/ui/labels.slint:315
 msgid "Could not start the media database update. Check Zaparoo Core and try again."
 msgstr "미디어 데이터베이스 업데이트를 시작하지 못했습니다. Zaparoo Core를 확인하고 다시 시도하세요."
 
-#: rust/frontend/ui/labels.slint:315
+#: rust/frontend/ui/labels.slint:316
 msgid "Could not start updating metadata. Check Zaparoo Core and try again."
 msgstr "메타데이터 업데이트를 시작하지 못했습니다. Zaparoo Core를 확인하고 다시 시도하세요."
 
-#: rust/frontend/ui/labels.slint:316
+#: rust/frontend/ui/labels.slint:317
 msgid "Could not load the list of metadata sources. Check Zaparoo Core and try again."
 msgstr "메타데이터 소스 목록을 불러오지 못했습니다. Zaparoo Core를 확인하고 다시 시도하세요."
 
-#: rust/frontend/ui/labels.slint:317
+#: rust/frontend/ui/labels.slint:318
 msgid "Could not cancel the media operation. Check Zaparoo Core and try again."
 msgstr "미디어 작업을 취소하지 못했습니다. Zaparoo Core를 확인하고 다시 시도하세요."
 
-#: rust/frontend/ui/labels.slint:318
+#: rust/frontend/ui/labels.slint:319
 msgid "Could not change the launcher. Check Zaparoo Core and try again."
 msgstr "런처를 변경하지 못했습니다. Zaparoo Core를 확인하고 다시 시도하세요."
 
-#: rust/frontend/ui/labels.slint:319
+#: rust/frontend/ui/labels.slint:320
 msgid "Could not find alternate versions. Check Zaparoo Core and try again."
 msgstr "다른 버전을 찾지 못했습니다. Zaparoo Core를 확인하고 다시 시도하세요."
 
-#: rust/frontend/ui/labels.slint:320
+#: rust/frontend/ui/labels.slint:321
 msgid "Could not list the discs of this game. Check Zaparoo Core and try again."
 msgstr "이 게임의 디스크 목록을 불러오지 못했습니다. Zaparoo Core를 확인하고 다시 시도하세요."
 
-#: rust/frontend/ui/labels.slint:321
+#: rust/frontend/ui/labels.slint:322
 msgid "Could not create the QR code for this item."
 msgstr "이 항목의 QR 코드를 만들지 못했습니다."
 
-#: rust/frontend/ui/labels.slint:322
+#: rust/frontend/ui/labels.slint:323
 msgid "Could not write to this token. Check that it is writable and try again."
 msgstr "이 토큰에 쓰지 못했습니다. 쓰기 가능한 토큰인지 확인하고 다시 시도하세요."
 
-#: rust/frontend/ui/labels.slint:323
+#: rust/frontend/ui/labels.slint:324
 msgid "Could not save this setting. Try again."
 msgstr "이 설정을 저장하지 못했습니다. 다시 시도하세요."
 
-#: rust/frontend/ui/labels.slint:324
+#: rust/frontend/ui/labels.slint:325
 msgid "Core would not start a pairing. It may already have as many paired devices as it allows, or it may be running on another device."
 msgstr "코어가 페어링을 시작하지 않았습니다. 페어링된 기기 수가 이미 한도에 도달했거나, 코어가 다른 기기에서 실행 중일 수 있습니다."
 
-#: rust/frontend/ui/labels.slint:325
+#: rust/frontend/ui/labels.slint:326
 msgid "Core could not reach or update your Zaparoo Online account. Check the network connection and try again."
 msgstr "코어가 Zaparoo Online 계정에 연결하거나 계정을 업데이트하지 못했습니다. 네트워크 연결을 확인하고 다시 시도하세요."
 
-#: rust/frontend/ui/labels.slint:329
+#: rust/frontend/ui/labels.slint:330
 msgid "A backup was uploaded recently. Wait a few minutes, then try again."
 msgstr "최근에 백업이 업로드되었습니다. 몇 분 기다린 후 다시 시도하세요."
 
-#: rust/frontend/ui/labels.slint:332
+#: rust/frontend/ui/labels.slint:333
 msgid "Your cloud backup storage is full."
 msgstr "클라우드 백업 저장 공간이 가득 찼습니다."
 
-#: rust/frontend/ui/labels.slint:333
+#: rust/frontend/ui/labels.slint:334
 msgid "Zaparoo is busy with another backup or request. Wait for it to finish, then try again."
 msgstr "Zaparoo가 다른 백업이나 요청을 처리하는 중입니다. 완료될 때까지 기다린 후 다시 시도하세요."
 
-#: rust/frontend/ui/labels.slint:334
+#: rust/frontend/ui/labels.slint:335
 msgid "Stop the game that is running, then try again."
 msgstr "실행 중인 게임을 종료한 후 다시 시도하세요."
 
-#: rust/frontend/ui/labels.slint:335
+#: rust/frontend/ui/labels.slint:336
 msgid "Restart Zaparoo to finish the previous restore, then try again."
 msgstr "Zaparoo를 다시 시작해 이전 복원을 완료한 후 다시 시도하세요."
 
-#: rust/frontend/ui/labels.slint:336
+#: rust/frontend/ui/labels.slint:337
 msgid "This backup was made by a newer Zaparoo. Update Zaparoo, then try again."
 msgstr "이 백업은 더 최신 버전의 Zaparoo에서 만들어졌습니다. Zaparoo를 업데이트한 후 다시 시도하세요."
 
-#: rust/frontend/ui/labels.slint:337
+#: rust/frontend/ui/labels.slint:338
 msgid "Free some storage space on this device, then try again."
 msgstr "이 기기의 저장 공간을 확보한 후 다시 시도하세요."
 
-#: rust/frontend/ui/labels.slint:338
+#: rust/frontend/ui/labels.slint:339
 msgid "Could not finish the cloud backup. Check the network connection and try again."
 msgstr "클라우드 백업을 완료하지 못했습니다. 네트워크 연결을 확인하고 다시 시도하세요."
 
-#: rust/frontend/ui/labels.slint:340
+#: rust/frontend/ui/labels.slint:342
+msgid "{} could not be read, so defaults are in use and changes will not be saved. Fix or remove the file, then restart."
+msgstr "{} 파일을 읽을 수 없어 기본값을 사용 중이며 변경 사항은 저장되지 않습니다. 파일을 수정하거나 삭제한 뒤 다시 시작하세요."
+
+#: rust/frontend/ui/labels.slint:343
 msgid "The action could not be completed. Check Zaparoo Core and try again."
 msgstr "작업을 완료하지 못했습니다. Zaparoo Core를 확인하고 다시 시도하세요."
 
-#: rust/frontend/ui/labels.slint:352
+#: rust/frontend/ui/labels.slint:355
 msgid "This launcher isn't installed."
 msgstr "이 런처는 설치되어 있지 않습니다."
 
-#: rust/frontend/ui/labels.slint:353
+#: rust/frontend/ui/labels.slint:356
 msgid "{} isn't installed."
 msgstr "{}이(가) 설치되어 있지 않습니다."
 
-#: rust/frontend/ui/labels.slint:356
+#: rust/frontend/ui/labels.slint:359
 msgid "This launcher is installed, but its entry point is missing or disabled."
 msgstr "이 런처는 설치되어 있지만 진입점이 없거나 비활성화되어 있습니다."
 
-#: rust/frontend/ui/labels.slint:357
+#: rust/frontend/ui/labels.slint:360
 msgid "{} is installed, but its entry point is missing or disabled."
 msgstr "{}이(가) 설치되어 있지만 진입점이 없거나 비활성화되어 있습니다."
 
-#: rust/frontend/ui/labels.slint:360
+#: rust/frontend/ui/labels.slint:363
 msgid "This launcher's plugin for this system isn't installed."
 msgstr "이 런처에 이 시스템용 플러그인이 설치되어 있지 않습니다."
 
-#: rust/frontend/ui/labels.slint:361
+#: rust/frontend/ui/labels.slint:364
 msgid "{}'s plugin for this system isn't installed."
 msgstr "{}에 이 시스템용 플러그인이 설치되어 있지 않습니다."
 
-#: rust/frontend/ui/labels.slint:362
+#: rust/frontend/ui/labels.slint:365
 msgid "{}'s {} plugin isn't installed."
 msgstr "{0}에 {1} 플러그인이 설치되어 있지 않습니다."
 
-#: rust/frontend/ui/labels.slint:365
+#: rust/frontend/ui/labels.slint:368
 msgid "This build of the launcher can't be used for this media. A different build is needed."
 msgstr "이 런처 빌드는 이 미디어에 사용할 수 없습니다. 다른 빌드가 필요합니다."
 
-#: rust/frontend/ui/labels.slint:366
+#: rust/frontend/ui/labels.slint:369
 msgid "This build of {} can't be used for this media. A different build is needed."
 msgstr "이 {} 빌드는 이 미디어에 사용할 수 없습니다. 다른 빌드가 필요합니다."
 
-#: rust/frontend/ui/labels.slint:369
+#: rust/frontend/ui/labels.slint:372
 msgid "This launcher can't play this media."
 msgstr "이 런처는 이 미디어를 실행할 수 없습니다."
 
-#: rust/frontend/ui/labels.slint:370
+#: rust/frontend/ui/labels.slint:373
 msgid "{} can't play this media."
 msgstr "{}은(는) 이 미디어를 실행할 수 없습니다."
 
-#: rust/frontend/ui/labels.slint:373
+#: rust/frontend/ui/labels.slint:376
 msgid "This launcher doesn't support the requested launch options."
 msgstr "이 런처는 요청한 실행 옵션을 지원하지 않습니다."
 
-#: rust/frontend/ui/labels.slint:374
+#: rust/frontend/ui/labels.slint:377
 msgid "{} doesn't support the requested launch options."
 msgstr "{}은(는) 요청한 실행 옵션을 지원하지 않습니다."
 
-#: rust/frontend/ui/labels.slint:377
+#: rust/frontend/ui/labels.slint:380
 msgid "This launcher doesn't have the storage permission it needs."
 msgstr "이 런처에 필요한 저장소 권한이 없습니다."
 
-#: rust/frontend/ui/labels.slint:378
+#: rust/frontend/ui/labels.slint:381
 msgid "{} doesn't have the storage permission it needs."
 msgstr "{}에 필요한 저장소 권한이 없습니다."
 
-#: rust/frontend/ui/labels.slint:381
+#: rust/frontend/ui/labels.slint:384
 msgid "This launcher can't read media from where it's stored."
 msgstr "이 런처는 미디어가 저장된 위치를 읽을 수 없습니다."
 
-#: rust/frontend/ui/labels.slint:382
+#: rust/frontend/ui/labels.slint:385
 msgid "{} can't read media from where it's stored."
 msgstr "{}은(는) 미디어가 저장된 위치를 읽을 수 없습니다."
 
-#: rust/frontend/ui/labels.slint:384
+#: rust/frontend/ui/labels.slint:387
 msgid "The storage holding this media isn't available."
 msgstr "이 미디어가 있는 저장 장치를 사용할 수 없습니다."
 
-#: rust/frontend/ui/labels.slint:385
+#: rust/frontend/ui/labels.slint:388
 msgid "This media could not be resolved or opened."
 msgstr "이 미디어를 찾거나 열 수 없습니다."
 
-#: rust/frontend/ui/labels.slint:386
+#: rust/frontend/ui/labels.slint:389
 msgid "Access to this media's folder was revoked. Re-grant it in Settings > Library."
 msgstr "이 미디어 폴더의 접근 권한이 취소되었습니다. 설정 > 라이브러리에서 다시 허용하세요."
 
-#: rust/frontend/ui/labels.slint:387
+#: rust/frontend/ui/labels.slint:390
 msgid "The launcher service isn't responding."
 msgstr "런처 서비스가 응답하지 않습니다."
 
-#: rust/frontend/ui/labels.slint:388
+#: rust/frontend/ui/labels.slint:391
 msgid "Return to Zaparoo before launching this."
 msgstr "실행하기 전에 Zaparoo로 돌아오세요."
 
-#: rust/frontend/ui/labels.slint:389
+#: rust/frontend/ui/labels.slint:392
 msgid "The launch was cancelled before it started."
 msgstr "실행이 시작되기 전에 취소되었습니다."
 
-#: rust/frontend/ui/labels.slint:390
+#: rust/frontend/ui/labels.slint:393
 msgid "The launch was sent, but its outcome could not be confirmed."
 msgstr "실행 요청은 보냈지만 결과를 확인하지 못했습니다."
 
-#: rust/frontend/ui/labels.slint:391
+#: rust/frontend/ui/labels.slint:394
 msgid "The system refused the launch request."
 msgstr "시스템이 실행 요청을 거부했습니다."
 

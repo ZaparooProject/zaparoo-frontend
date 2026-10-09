@@ -290,6 +290,7 @@ export global DialogLabels {
         if (kind == ErrorKind.pairing) { return @tr("Pairing could not start"); }
         if (kind == ErrorKind.online) { return @tr("Online account unavailable"); }
         if (kind == ErrorKind.backup) { return @tr("Cloud backup failed"); }
+        if (kind == ErrorKind.config-file) { return @tr("Config file not loaded"); }
         return @tr("Action failed");
     }
 
@@ -337,6 +338,8 @@ export global DialogLabels {
             if (context == "disk_space") { return @tr("Free some storage space on this device, then try again."); }
             return @tr("Could not finish the cloud backup. Check the network connection and try again.");
         }
+        // `context` is the path of the file that did not load.
+        if (kind == ErrorKind.config-file) { return @tr("{} could not be read, so defaults are in use and changes will not be saved. Fix or remove the file, then restart.", context); }
         return @tr("The action could not be completed. Check Zaparoo Core and try again.");
     }
 

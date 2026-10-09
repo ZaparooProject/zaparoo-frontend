@@ -211,3 +211,13 @@ reported by Zaparoo Core.
 
 - **MiSTer:** `/media/fat/zaparoo/frontend.toml`
 - **Desktop:** `~/.config/zaparoo/frontend.toml`
+
+Save the file as UTF-8. A file in another encoding still loads, with any
+character that is not valid UTF-8 replaced by `�`; the next time the frontend
+saves a setting it rewrites the file as UTF-8 and keeps the original beside it
+as `frontend.toml.bak`.
+
+A file that is not valid TOML, or that gives a key the wrong type of value, is
+not loaded at all. The frontend starts on its defaults, shows an alert naming
+the file, and writes nothing to it until it is fixed or removed and the
+frontend is restarted. The log names the line.

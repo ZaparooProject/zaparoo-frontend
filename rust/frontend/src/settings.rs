@@ -1032,6 +1032,9 @@ pub fn save(ctx: &Ctx, app: &App) {
         shared.persist.clone()
     };
     persist::save(&snapshot);
+    if !crate::router::config_writable(ctx) {
+        return;
+    }
     let mirror = mirror_of(&snapshot.settings);
     if let Err(e) = zaparoo_core::config::save_settings_mirror(&ctx.config_path, mirror) {
         tracing::warn!("could not mirror settings to config: {e}");

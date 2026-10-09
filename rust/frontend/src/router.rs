@@ -101,6 +101,12 @@ pub struct Shared {
     pub system_defaults: Vec<zaparoo_core::media_types::SystemDefault>,
     /// Commercial-notice acknowledgement (durable, frontend.toml).
     pub notice_ack: bool,
+    /// `frontend.toml` exists but did not load: the path, for the startup
+    /// alert. Nothing is written to the file while this is set, because a
+    /// save would replace the user's file with the defaults in use.
+    pub config_fault: Option<String>,
+    /// The startup alert for `config_fault` has been raised this session.
+    pub config_fault_shown: bool,
     /// Core's reported version, once fetched; drives the min-version
     /// warning between the notice and the first-run gate.
     pub core_version: String,
@@ -273,6 +279,8 @@ impl Shared {
             launchers: Vec::new(),
             system_defaults: Vec::new(),
             notice_ack: false,
+            config_fault: None,
+            config_fault_shown: false,
             core_version: String::new(),
             core_version_checked: false,
             version_warning_shown: false,
@@ -351,6 +359,9 @@ pub(crate) fn toggle_hidden_system(ctx: &Ctx, app: &App, id: &str) {
 /// Durable hidden-browse prefs go to `frontend.toml`, not the volatile
 /// state file (which lives in `/tmp` on `MiSTer`). Small atomic write.
 fn save_hidden_prefs(ctx: &Ctx, app: &App, categories: &[String], system_ids: &[String]) {
+    if !config_writable(ctx) {
+        return;
+    }
     if let Err(e) =
         zaparoo_core::config::save_hidden_browse_prefs(&ctx.config_path, categories, system_ids)
     {
@@ -483,6 +494,19 @@ pub fn maybe_open_startup_notices(ctx: &Ctx, app: &App) {
     {
         return;
     }
+    let config_fault = {
+        let mut guard = lock(&ctx.shared);
+        if guard.config_fault_shown {
+            None
+        } else {
+            guard.config_fault_shown = true;
+            guard.config_fault.clone()
+        }
+    };
+    if let Some(path) = config_fault {
+        report_action_error(ctx, app, "config_file", &path);
+        return;
+    }
     let (notice_ack, version_checked, version_shown, version, first_run_shown, indexed) = {
         let guard = lock(&ctx.shared);
         (
@@ -574,6 +598,8 @@ fn dialog_action(ctx: &Ctx, app: &App, action: &str) {
     let kind = overlays.get_dialog_kind();
     let len = overlays.get_dialog_buttons().row_count();
     let focus = overlays.get_dialog_focus().max(0) as usize;
+    let config_alert =
+        kind == DialogKind::ActionError && overlays.get_dialog_error() == ErrorKind::ConfigFile;
     let retry = (action == actions::ACCEPT
         && kind == DialogKind::ActionError
         && overlays.get_dialog_error() == ErrorKind::CardWrite)
@@ -603,6 +629,9 @@ fn dialog_action(ctx: &Ctx, app: &App, action: &str) {
         };
         if let Some(entry) = next {
             show_action_error(app, &entry);
+        } else if config_alert {
+            // The config alert opens the startup ladder; the rest follows it.
+            maybe_open_startup_notices(ctx, app);
         }
     }
     // Retire the old alert before retrying: an empty payload can fail
@@ -631,7 +660,9 @@ fn dialog_accept(ctx: &Ctx, app: &App, kind: DialogKind, focus: usize) {
         }
         DialogKind::Notice => {
             lock(&ctx.shared).notice_ack = true;
-            if let Err(e) = zaparoo_core::config::save_notice_ack(&ctx.config_path, true) {
+            if !config_writable(ctx) {
+                tracing::warn!("notice ack not persisted: the config file did not load");
+            } else if let Err(e) = zaparoo_core::config::save_notice_ack(&ctx.config_path, true) {
                 tracing::warn!("could not persist notice ack: {e}");
             }
             close_dialog(app);
@@ -2136,9 +2167,11 @@ fn favorites_sort_picked(ctx: &Ctx, app: &App, id: &str) {
         return;
     }
     lock(&ctx.shared).favorites_sort = sort.to_string();
-    if let Err(e) = zaparoo_core::config::save_favorites_sort(&ctx.config_path, sort) {
-        tracing::warn!("saving the favorites sort failed: {e}");
-        report_action_error(ctx, app, "setting", "");
+    if config_writable(ctx) {
+        if let Err(e) = zaparoo_core::config::save_favorites_sort(&ctx.config_path, sort) {
+            tracing::warn!("saving the favorites sort failed: {e}");
+            report_action_error(ctx, app, "setting", "");
+        }
     }
     crate::games::refresh_favorites(ctx, app);
 }
@@ -2153,6 +2186,13 @@ pub(crate) fn open_alert(app: &App, kind: DialogKind) {
 /// log at the call site; this is the user-facing half, deduplicated
 /// and queued by `zaparoo_app::action_error` so a burst of failures is
 /// read one alert at a time.
+/// Whether `frontend.toml` may be written. False for the whole session once
+/// the file failed to load; the startup alert has already said so, and each
+/// later change stays in memory without raising its own alert.
+pub(crate) fn config_writable(ctx: &Ctx) -> bool {
+    lock(&ctx.shared).config_fault.is_none()
+}
+
 pub(crate) fn report_action_error(ctx: &Ctx, app: &App, kind: &str, context: &str) {
     // An alert is the one thing allowed above a modal, but a failed
     // discovery arrives while the context menu still holds its

@@ -1,6 +1,6 @@
 msgid ""
 msgstr ""
-"POT-Creation-Date: 2026-10-08 03:36+0000\n"
+"POT-Creation-Date: 2026-10-09 07:26+0000\n"
 "Language: fr\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
@@ -196,11 +196,11 @@ msgstr "Scannez ce code avec votre téléphone, ou ouvrez l'adresse ci-dessous e
 msgid "Or press Accept to open it on this device."
 msgstr "Ou appuyez sur Valider pour l'ouvrir sur cet appareil."
 
-#: rust/frontend/ui/app.slint:2017 rust/frontend/ui/labels.slint:331
+#: rust/frontend/ui/app.slint:2017 rust/frontend/ui/labels.slint:332
 msgid "This device is not linked. Link your Zaparoo Online account, then try again."
 msgstr "Cet appareil n'est pas lié. Liez votre compte Zaparoo Online, puis réessayez."
 
-#: rust/frontend/ui/app.slint:2020 rust/frontend/ui/labels.slint:330
+#: rust/frontend/ui/app.slint:2020 rust/frontend/ui/labels.slint:331
 msgid "Cloud backup needs an active Zaparoo Warp subscription."
 msgstr "La sauvegarde cloud nécessite un abonnement Zaparoo Warp actif."
 
@@ -369,7 +369,7 @@ msgstr "Infos"
 #: rust/frontend/ui/app.slint:3451 rust/frontend/ui/app.slint:3465
 #: rust/frontend/ui/app.slint:3479 rust/frontend/ui/app.slint:3496
 #: rust/frontend/ui/app.slint:3508 rust/frontend/ui/app.slint:3520
-#: rust/frontend/ui/app.slint:3535 rust/frontend/ui/app.slint:3550
+#: rust/frontend/ui/app.slint:3536 rust/frontend/ui/app.slint:3551
 msgid "Back"
 msgstr "Retour"
 
@@ -383,8 +383,8 @@ msgstr "Espace"
 
 #: rust/frontend/ui/app.slint:3178 rust/frontend/ui/app.slint:3388
 #: rust/frontend/ui/app.slint:3427 rust/frontend/ui/app.slint:3445
-#: rust/frontend/ui/app.slint:3484 rust/frontend/ui/app.slint:3540
-#: rust/frontend/ui/app.slint:3555
+#: rust/frontend/ui/app.slint:3484 rust/frontend/ui/app.slint:3541
+#: rust/frontend/ui/app.slint:3556
 msgid "Open"
 msgstr "Ouvrir"
 
@@ -433,13 +433,13 @@ msgid "Place"
 msgstr "Placer"
 
 #: rust/frontend/ui/app.slint:3376 rust/frontend/ui/app.slint:3389
-#: rust/frontend/ui/app.slint:3436 rust/frontend/ui/app.slint:3556
+#: rust/frontend/ui/app.slint:3436 rust/frontend/ui/app.slint:3557
 msgid "Options"
 msgstr "Options"
 
 #: rust/frontend/ui/app.slint:3377 rust/frontend/ui/app.slint:3382
 #: rust/frontend/ui/app.slint:3396 rust/frontend/ui/app.slint:3429
-#: rust/frontend/ui/app.slint:3549 rust/frontend/ui/labels.slint:166
+#: rust/frontend/ui/app.slint:3550 rust/frontend/ui/labels.slint:166
 msgid "View"
 msgstr "Afficher"
 
@@ -1211,218 +1211,226 @@ msgid "Cloud backup failed"
 msgstr "Échec de la sauvegarde cloud"
 
 #: rust/frontend/ui/labels.slint:293
+msgid "Config file not loaded"
+msgstr "Configuration non chargée"
+
+#: rust/frontend/ui/labels.slint:294
 msgid "Action failed"
 msgstr "Échec de l'action"
 
-#: rust/frontend/ui/labels.slint:300
+#: rust/frontend/ui/labels.slint:301
 msgid "Could not start this item. Check Zaparoo Core and try again."
 msgstr "Impossible de lancer cet élément. Vérifiez Zaparoo Core et réessayez."
 
-#: rust/frontend/ui/labels.slint:301
+#: rust/frontend/ui/labels.slint:302
 msgid "Could not start {}. Check Zaparoo Core and try again."
 msgstr "Impossible de lancer {}. Vérifiez Zaparoo Core et réessayez."
 
-#: rust/frontend/ui/labels.slint:306
+#: rust/frontend/ui/labels.slint:307
 msgid "Could not update this favorite. Check Zaparoo Core and try again."
 msgstr "Impossible de mettre à jour ce favori. Vérifiez Zaparoo Core et réessayez."
 
-#: rust/frontend/ui/labels.slint:307
+#: rust/frontend/ui/labels.slint:308
 msgid "Could not hide or unhide this game. Check Zaparoo Core and try again."
 msgstr "Impossible de masquer ou d'afficher ce jeu. Vérifiez Zaparoo Core et réessayez."
 
-#: rust/frontend/ui/labels.slint:309
+#: rust/frontend/ui/labels.slint:310
 msgid "Zaparoo Core is updating the media database. Try again when it finishes."
 msgstr "Zaparoo Core met à jour la base de données média. Réessayez une fois l'opération terminée."
 
-#: rust/frontend/ui/labels.slint:311
+#: rust/frontend/ui/labels.slint:312
 msgid "Could not add this item to the Hub. Check Zaparoo Core and try again."
 msgstr "Impossible d'ajouter cet élément au Hub. Vérifiez Zaparoo Core et réessayez."
 
-#: rust/frontend/ui/labels.slint:312
+#: rust/frontend/ui/labels.slint:313
 msgid "Could not add {} to the Hub. Check Zaparoo Core and try again."
 msgstr "Impossible d'ajouter {} au Hub. Vérifiez Zaparoo Core et réessayez."
 
-#: rust/frontend/ui/labels.slint:314
+#: rust/frontend/ui/labels.slint:315
 msgid "Could not start the media database update. Check Zaparoo Core and try again."
 msgstr "Impossible de démarrer la mise à jour de la base de données média. Vérifiez Zaparoo Core et réessayez."
 
-#: rust/frontend/ui/labels.slint:315
+#: rust/frontend/ui/labels.slint:316
 msgid "Could not start updating metadata. Check Zaparoo Core and try again."
 msgstr "Impossible de démarrer la mise à jour des métadonnées. Vérifiez Zaparoo Core et réessayez."
 
-#: rust/frontend/ui/labels.slint:316
+#: rust/frontend/ui/labels.slint:317
 msgid "Could not load the list of metadata sources. Check Zaparoo Core and try again."
 msgstr "Impossible de charger la liste des sources de métadonnées. Vérifiez Zaparoo Core et réessayez."
 
-#: rust/frontend/ui/labels.slint:317
+#: rust/frontend/ui/labels.slint:318
 msgid "Could not cancel the media operation. Check Zaparoo Core and try again."
 msgstr "Impossible d'annuler l'opération média. Vérifiez Zaparoo Core et réessayez."
 
-#: rust/frontend/ui/labels.slint:318
+#: rust/frontend/ui/labels.slint:319
 msgid "Could not change the launcher. Check Zaparoo Core and try again."
 msgstr "Impossible de modifier le lanceur. Vérifiez Zaparoo Core et réessayez."
 
-#: rust/frontend/ui/labels.slint:319
+#: rust/frontend/ui/labels.slint:320
 msgid "Could not find alternate versions. Check Zaparoo Core and try again."
 msgstr "Impossible de trouver d'autres versions. Vérifiez Zaparoo Core et réessayez."
 
-#: rust/frontend/ui/labels.slint:320
+#: rust/frontend/ui/labels.slint:321
 msgid "Could not list the discs of this game. Check Zaparoo Core and try again."
 msgstr "Impossible de lister les disques de ce jeu. Vérifiez Zaparoo Core et réessayez."
 
-#: rust/frontend/ui/labels.slint:321
+#: rust/frontend/ui/labels.slint:322
 msgid "Could not create the QR code for this item."
 msgstr "Impossible de créer le code QR de cet élément."
 
-#: rust/frontend/ui/labels.slint:322
+#: rust/frontend/ui/labels.slint:323
 msgid "Could not write to this token. Check that it is writable and try again."
 msgstr "Impossible d'écrire sur ce badge. Vérifiez qu'il est inscriptible et réessayez."
 
-#: rust/frontend/ui/labels.slint:323
+#: rust/frontend/ui/labels.slint:324
 msgid "Could not save this setting. Try again."
 msgstr "Impossible d'enregistrer ce réglage. Réessayez."
 
-#: rust/frontend/ui/labels.slint:324
+#: rust/frontend/ui/labels.slint:325
 msgid "Core would not start a pairing. It may already have as many paired devices as it allows, or it may be running on another device."
 msgstr "Core a refusé de démarrer une association. Il a peut-être atteint son nombre maximal d'appareils associés, ou il s'exécute sur un autre appareil."
 
-#: rust/frontend/ui/labels.slint:325
+#: rust/frontend/ui/labels.slint:326
 msgid "Core could not reach or update your Zaparoo Online account. Check the network connection and try again."
 msgstr "Core n'a pas pu joindre ou mettre à jour votre compte Zaparoo Online. Vérifiez la connexion réseau et réessayez."
 
-#: rust/frontend/ui/labels.slint:329
+#: rust/frontend/ui/labels.slint:330
 msgid "A backup was uploaded recently. Wait a few minutes, then try again."
 msgstr "Une sauvegarde a été envoyée récemment. Patientez quelques minutes, puis réessayez."
 
-#: rust/frontend/ui/labels.slint:332
+#: rust/frontend/ui/labels.slint:333
 msgid "Your cloud backup storage is full."
 msgstr "Votre espace de sauvegarde cloud est plein."
 
-#: rust/frontend/ui/labels.slint:333
+#: rust/frontend/ui/labels.slint:334
 msgid "Zaparoo is busy with another backup or request. Wait for it to finish, then try again."
 msgstr "Zaparoo est occupé par une autre sauvegarde ou requête. Attendez qu'elle se termine, puis réessayez."
 
-#: rust/frontend/ui/labels.slint:334
+#: rust/frontend/ui/labels.slint:335
 msgid "Stop the game that is running, then try again."
 msgstr "Arrêtez le jeu en cours, puis réessayez."
 
-#: rust/frontend/ui/labels.slint:335
+#: rust/frontend/ui/labels.slint:336
 msgid "Restart Zaparoo to finish the previous restore, then try again."
 msgstr "Redémarrez Zaparoo pour terminer la restauration précédente, puis réessayez."
 
-#: rust/frontend/ui/labels.slint:336
+#: rust/frontend/ui/labels.slint:337
 msgid "This backup was made by a newer Zaparoo. Update Zaparoo, then try again."
 msgstr "Cette sauvegarde provient d'un Zaparoo plus récent. Mettez à jour Zaparoo, puis réessayez."
 
-#: rust/frontend/ui/labels.slint:337
+#: rust/frontend/ui/labels.slint:338
 msgid "Free some storage space on this device, then try again."
 msgstr "Libérez de l'espace de stockage sur cet appareil, puis réessayez."
 
-#: rust/frontend/ui/labels.slint:338
+#: rust/frontend/ui/labels.slint:339
 msgid "Could not finish the cloud backup. Check the network connection and try again."
 msgstr "Impossible de terminer la sauvegarde cloud. Vérifiez la connexion réseau et réessayez."
 
-#: rust/frontend/ui/labels.slint:340
+#: rust/frontend/ui/labels.slint:342
+msgid "{} could not be read, so defaults are in use and changes will not be saved. Fix or remove the file, then restart."
+msgstr "Impossible de lire {}. Les valeurs par défaut sont utilisées et les modifications ne seront pas enregistrées. Corrigez ou supprimez le fichier, puis redémarrez."
+
+#: rust/frontend/ui/labels.slint:343
 msgid "The action could not be completed. Check Zaparoo Core and try again."
 msgstr "L'action n'a pas pu aboutir. Vérifiez Zaparoo Core et réessayez."
 
-#: rust/frontend/ui/labels.slint:352
+#: rust/frontend/ui/labels.slint:355
 msgid "This launcher isn't installed."
 msgstr "Ce lanceur n'est pas installé."
 
-#: rust/frontend/ui/labels.slint:353
+#: rust/frontend/ui/labels.slint:356
 msgid "{} isn't installed."
 msgstr "{} n'est pas installé."
 
-#: rust/frontend/ui/labels.slint:356
+#: rust/frontend/ui/labels.slint:359
 msgid "This launcher is installed, but its entry point is missing or disabled."
 msgstr "Ce lanceur est installé, mais son point d'entrée est absent ou désactivé."
 
-#: rust/frontend/ui/labels.slint:357
+#: rust/frontend/ui/labels.slint:360
 msgid "{} is installed, but its entry point is missing or disabled."
 msgstr "{} est installé, mais son point d'entrée est absent ou désactivé."
 
-#: rust/frontend/ui/labels.slint:360
+#: rust/frontend/ui/labels.slint:363
 msgid "This launcher's plugin for this system isn't installed."
 msgstr "Le plugin de ce lanceur pour ce système n'est pas installé."
 
-#: rust/frontend/ui/labels.slint:361
+#: rust/frontend/ui/labels.slint:364
 msgid "{}'s plugin for this system isn't installed."
 msgstr "Le plugin de {} pour ce système n'est pas installé."
 
-#: rust/frontend/ui/labels.slint:362
+#: rust/frontend/ui/labels.slint:365
 msgid "{}'s {} plugin isn't installed."
 msgstr "Le plugin {1} de {0} n'est pas installé."
 
-#: rust/frontend/ui/labels.slint:365
+#: rust/frontend/ui/labels.slint:368
 msgid "This build of the launcher can't be used for this media. A different build is needed."
 msgstr "Cette version du lanceur ne convient pas à ce média. Une autre version est nécessaire."
 
-#: rust/frontend/ui/labels.slint:366
+#: rust/frontend/ui/labels.slint:369
 msgid "This build of {} can't be used for this media. A different build is needed."
 msgstr "Cette version de {} ne convient pas à ce média. Une autre version est nécessaire."
 
-#: rust/frontend/ui/labels.slint:369
+#: rust/frontend/ui/labels.slint:372
 msgid "This launcher can't play this media."
 msgstr "Ce lanceur ne peut pas lire ce média."
 
-#: rust/frontend/ui/labels.slint:370
+#: rust/frontend/ui/labels.slint:373
 msgid "{} can't play this media."
 msgstr "{} ne peut pas lire ce média."
 
-#: rust/frontend/ui/labels.slint:373
+#: rust/frontend/ui/labels.slint:376
 msgid "This launcher doesn't support the requested launch options."
 msgstr "Ce lanceur ne prend pas en charge les options de lancement demandées."
 
-#: rust/frontend/ui/labels.slint:374
+#: rust/frontend/ui/labels.slint:377
 msgid "{} doesn't support the requested launch options."
 msgstr "{} ne prend pas en charge les options de lancement demandées."
 
-#: rust/frontend/ui/labels.slint:377
+#: rust/frontend/ui/labels.slint:380
 msgid "This launcher doesn't have the storage permission it needs."
 msgstr "Ce lanceur n'a pas l'autorisation de stockage nécessaire."
 
-#: rust/frontend/ui/labels.slint:378
+#: rust/frontend/ui/labels.slint:381
 msgid "{} doesn't have the storage permission it needs."
 msgstr "{} n'a pas l'autorisation de stockage nécessaire."
 
-#: rust/frontend/ui/labels.slint:381
+#: rust/frontend/ui/labels.slint:384
 msgid "This launcher can't read media from where it's stored."
 msgstr "Ce lanceur ne peut pas lire le média à son emplacement de stockage."
 
-#: rust/frontend/ui/labels.slint:382
+#: rust/frontend/ui/labels.slint:385
 msgid "{} can't read media from where it's stored."
 msgstr "{} ne peut pas lire le média à son emplacement de stockage."
 
-#: rust/frontend/ui/labels.slint:384
+#: rust/frontend/ui/labels.slint:387
 msgid "The storage holding this media isn't available."
 msgstr "Le stockage contenant ce média n'est pas disponible."
 
-#: rust/frontend/ui/labels.slint:385
+#: rust/frontend/ui/labels.slint:388
 msgid "This media could not be resolved or opened."
 msgstr "Ce média n'a pas pu être localisé ou ouvert."
 
-#: rust/frontend/ui/labels.slint:386
+#: rust/frontend/ui/labels.slint:389
 msgid "Access to this media's folder was revoked. Re-grant it in Settings > Library."
 msgstr "L'accès au dossier de ce média a été révoqué. Accordez-le à nouveau dans Réglages > Bibliothèque."
 
-#: rust/frontend/ui/labels.slint:387
+#: rust/frontend/ui/labels.slint:390
 msgid "The launcher service isn't responding."
 msgstr "Le service du lanceur ne répond pas."
 
-#: rust/frontend/ui/labels.slint:388
+#: rust/frontend/ui/labels.slint:391
 msgid "Return to Zaparoo before launching this."
 msgstr "Revenez à Zaparoo avant de lancer ceci."
 
-#: rust/frontend/ui/labels.slint:389
+#: rust/frontend/ui/labels.slint:392
 msgid "The launch was cancelled before it started."
 msgstr "Le lancement a été annulé avant de démarrer."
 
-#: rust/frontend/ui/labels.slint:390
+#: rust/frontend/ui/labels.slint:393
 msgid "The launch was sent, but its outcome could not be confirmed."
 msgstr "Le lancement a été envoyé, mais son résultat n'a pas pu être confirmé."
 
-#: rust/frontend/ui/labels.slint:391
+#: rust/frontend/ui/labels.slint:394
 msgid "The system refused the launch request."
 msgstr "Le système a refusé la demande de lancement."
 

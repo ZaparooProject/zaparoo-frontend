@@ -2959,6 +2959,37 @@ fn launcher_save_keeps_picker_locked_delays_cue_and_retries_original_choice() {
 }
 
 #[test]
+fn a_config_file_that_did_not_load_alerts_once_and_blocks_saves() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    app.global::<crate::Motion>().set_enabled(false);
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.config_fault = Some("/media/fat/zaparoo/frontend.toml".into());
+        shared.hub.read_only = true;
+    }
+    crate::router::maybe_open_startup_notices(&ctx, &app);
+    let ov = app.global::<crate::Overlays>();
+    assert!(ov.get_dialog_open());
+    assert_eq!(ov.get_dialog_kind(), DialogKind::ActionError);
+    assert_eq!(ov.get_dialog_error(), ErrorKind::ConfigFile);
+    assert_eq!(ov.get_dialog_arg(), "/media/fat/zaparoo/frontend.toml");
+
+    // Dismissing it hands the surface to the rest of the startup ladder.
+    crate::router::handle_action(&ctx, &app, "accept");
+    assert_eq!(ov.get_dialog_kind(), DialogKind::Notice);
+
+    // A save while the file is unusable neither writes nor raises its own
+    // alert: the fixture's config path would fail the write otherwise.
+    crate::settings::save(&ctx, &app);
+    let mut shared = crate::router::lock(&ctx.shared);
+    assert_eq!(shared.errors.showing(), None);
+    assert_eq!(shared.errors.take_next(), None);
+    assert!(shared.config_fault_shown);
+}
+
+#[test]
 fn token_empty_retry_replaces_alert_and_cancel_drains_queue() {
     assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
     let (app, _) = boot();

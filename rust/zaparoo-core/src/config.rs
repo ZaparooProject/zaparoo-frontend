@@ -6,8 +6,7 @@ use crate::input_actions;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::io::Write;
-use std::path::Path;
-use tracing::warn;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -60,6 +59,110 @@ pub struct Config {
     /// priority over the bundled `Names_MiSTer` localized data and the Core
     /// catalog name. Empty when the table is absent.
     pub system_names: HashMap<String, String>,
+    /// Why `frontend.toml` could not be used, when it exists but did not
+    /// load. Everything above is then defaults, and nothing may be written
+    /// back: a save would replace the user's file with those defaults.
+    pub fault: Option<ConfigFault>,
+    /// The file was not valid UTF-8 and loaded with its invalid bytes
+    /// replaced. The next save rewrites it as UTF-8 and keeps the original
+    /// beside it (see `ConfigDocument::write_if_changed`).
+    pub recoded: bool,
+}
+
+/// A `frontend.toml` that exists but cannot be used. `load_config` runs
+/// before the logger is installed, so it hands this back for the caller to
+/// log and show rather than logging it itself.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConfigFault {
+    /// The file is there but could not be read.
+    Unreadable { path: PathBuf, error: String },
+    /// The file is not valid TOML, or a key holds the wrong type of value.
+    /// `line` is 1-based, and 0 when the parser gave no position.
+    Invalid {
+        path: PathBuf,
+        line: usize,
+        message: String,
+    },
+}
+
+impl ConfigFault {
+    pub fn path(&self) -> &Path {
+        match self {
+            Self::Unreadable { path, .. } | Self::Invalid { path, .. } => path,
+        }
+    }
+
+    fn invalid(
+        path: &Path,
+        src: &str,
+        span: Option<std::ops::Range<usize>>,
+        message: &str,
+    ) -> Self {
+        let line = span
+            .and_then(|span| src.get(..span.start))
+            .map_or(0, |head| head.matches('\n').count() + 1);
+        Self::Invalid {
+            path: path.to_path_buf(),
+            line,
+            message: message.to_string(),
+        }
+    }
+}
+
+impl std::fmt::Display for ConfigFault {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Unreadable { path, error } => {
+                write!(f, "could not read {}: {error}", path.display())
+            }
+            Self::Invalid {
+                path,
+                line: 0,
+                message,
+            } => write!(f, "config parse error in {}: {message}", path.display()),
+            Self::Invalid {
+                path,
+                line,
+                message,
+            } => write!(
+                f,
+                "config parse error in {} at line {line}: {message}",
+                path.display()
+            ),
+        }
+    }
+}
+
+/// The text of a config file, as every reader and writer sees it.
+pub(crate) struct ConfigSource {
+    pub(crate) text: String,
+    /// The file held bytes that are not UTF-8; `text` has U+FFFD in their
+    /// place.
+    pub(crate) recoded: bool,
+}
+
+/// Read `frontend.toml` once, the same way for every caller. `Ok(None)` is
+/// the first-run case of no file at all.
+///
+/// A file saved in another encoding (an editor on another machine writing a
+/// legacy code page) still loads: its keys and plain values are ASCII, so
+/// only the non-ASCII characters in a name or a comment are lost.
+pub(crate) fn read_config_source(path: &Path) -> Result<Option<ConfigSource>, ConfigFault> {
+    let bytes = match std::fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => {
+            return Err(ConfigFault::Unreadable {
+                path: path.to_path_buf(),
+                error: e.to_string(),
+            })
+        }
+    };
+    let (text, recoded) = match String::from_utf8(bytes) {
+        Ok(text) => (text, false),
+        Err(e) => (String::from_utf8_lossy(e.as_bytes()).into_owned(), true),
+    };
+    Ok(Some(ConfigSource { text, recoded }))
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -159,6 +262,8 @@ impl Default for Config {
             notice: NoticeConfig::default(),
             custom_dir: None,
             system_names: HashMap::new(),
+            fault: None,
+            recoded: false,
         }
     }
 }
@@ -262,24 +367,41 @@ struct RawCustom {
     system_names: HashMap<String, String>,
 }
 
+/// Parse everything the frontend reads from the file, so one fault covers
+/// both halves: `[hub]` is loaded separately by `hub_layout`, and a layout
+/// that failed to parse there would be replaced by the seeded default on
+/// the next save.
+fn parse_config(path: &Path, src: &str) -> Result<RawConfig, ConfigFault> {
+    let raw: RawConfig =
+        toml::from_str(src).map_err(|e| ConfigFault::invalid(path, src, e.span(), e.message()))?;
+    crate::hub_layout::check_source(src)
+        .map_err(|e| ConfigFault::invalid(path, src, e.span(), e.message()))?;
+    Ok(raw)
+}
+
 pub fn load_config(path: &Path) -> Config {
     let mut cfg = Config::default();
-    let raw: RawConfig = match std::fs::read_to_string(path) {
-        Ok(src) => match toml::from_str(&src) {
-            Ok(r) => r,
-            Err(e) => {
-                warn!("config parse error in {}: {e}", path.display());
-                // Fall through with defaults so the env-var override
-                // below still applies on a malformed file.
-                RawConfig::default()
+    // A missing file is the first-run case, and a file that will not load
+    // leaves a fault for the caller to report. Neither returns early: the
+    // env-var override below must still apply, otherwise an invocation like
+    // `ZAPAROO_CORE_ENDPOINT=… just run` silently falls back to the
+    // localhost default and the frontend sits in CONNECTING forever.
+    let raw = match read_config_source(path) {
+        Ok(Some(source)) => {
+            cfg.recoded = source.recoded;
+            match parse_config(path, &source.text) {
+                Ok(raw) => raw,
+                Err(fault) => {
+                    cfg.fault = Some(fault);
+                    RawConfig::default()
+                }
             }
-        },
-        // Missing file is the first-run case. Don't early-return — the
-        // env-var override below must still apply, otherwise an invocation
-        // like `ZAPAROO_CORE_ENDPOINT=… just run` with no frontend.toml
-        // silently falls back to the localhost default and the frontend
-        // sits in CONNECTING forever.
-        Err(_) => RawConfig::default(),
+        }
+        Ok(None) => RawConfig::default(),
+        Err(fault) => {
+            cfg.fault = Some(fault);
+            RawConfig::default()
+        }
     };
     if let Some(lang) = raw.general.language {
         // "auto" is the documented opt-in to system-locale detection; treat
@@ -421,14 +543,57 @@ pub(crate) fn section_mut<'a>(
         .ok_or_else(|| format!("config key [{key}] in {} is not a table", path.display()))
 }
 
-pub(crate) fn read_config_document(path: &Path) -> Result<toml_edit::DocumentMut, String> {
-    if path.exists() {
-        let src = std::fs::read_to_string(path)
-            .map_err(|e| format!("could not read {}: {e}", path.display()))?;
-        src.parse::<toml_edit::DocumentMut>()
-            .map_err(|e| format!("config parse error in {}: {e}", path.display()))
-    } else {
-        Ok(toml_edit::DocumentMut::new())
+/// A config file opened for a format-preserving edit: change `doc`, then
+/// `write_if_changed`.
+pub(crate) struct ConfigDocument {
+    pub(crate) doc: toml_edit::DocumentMut,
+    before: String,
+    recoded: bool,
+}
+
+pub(crate) fn read_config_document(path: &Path) -> Result<ConfigDocument, String> {
+    let source = read_config_source(path).map_err(|fault| fault.to_string())?;
+    let (text, recoded) = source.map_or_else(
+        || (String::new(), false),
+        |source| (source.text, source.recoded),
+    );
+    let doc = text
+        .parse::<toml_edit::DocumentMut>()
+        .map_err(|e| ConfigFault::invalid(path, &text, e.span(), e.message()).to_string())?;
+    Ok(ConfigDocument {
+        before: doc.to_string(),
+        doc,
+        recoded,
+    })
+}
+
+/// Where the original of a file that was not valid UTF-8 is kept.
+pub fn backup_path(path: &Path) -> PathBuf {
+    let mut buf = path.as_os_str().to_owned();
+    buf.push(".bak");
+    PathBuf::from(buf)
+}
+
+impl ConfigDocument {
+    /// Write the document back, unless nothing changed.
+    ///
+    /// A file that was not valid UTF-8 is always rewritten, so it is read
+    /// cleanly from then on, and its original bytes are kept beside it
+    /// first. An earlier backup is left alone, and a backup that cannot be
+    /// made fails the save instead of losing the original.
+    pub(crate) fn write_if_changed(self, path: &Path) -> Result<(), String> {
+        let after = self.doc.to_string();
+        if self.recoded {
+            let backup = backup_path(path);
+            if !backup.exists() {
+                std::fs::copy(path, &backup)
+                    .map_err(|e| format!("could not back up {}: {e}", path.display()))?;
+            }
+        } else if after == self.before {
+            return Ok(());
+        }
+        write_atomic(path, after.as_bytes())
+            .map_err(|e| format!("could not write {}: {e}", path.display()))
     }
 }
 
@@ -482,31 +647,18 @@ pub(crate) fn set_string_list(table: &mut toml_edit::Table, key: &str, values: &
     table.insert(key, toml_edit::value(arr));
 }
 
-pub(crate) fn write_document_if_changed(
-    path: &Path,
-    before: &str,
-    doc: &toml_edit::DocumentMut,
-) -> Result<(), String> {
-    let after = doc.to_string();
-    if after == before {
-        return Ok(());
-    }
-    write_atomic(path, after.as_bytes())
-        .map_err(|e| format!("could not write {}: {e}", path.display()))
-}
-
 pub fn save_settings_mirror(path: &Path, mirror: SettingsMirror<'_>) -> Result<(), String> {
-    let mut doc = read_config_document(path)?;
-    let before = doc.to_string();
+    let mut file = read_config_document(path)?;
+    let doc = &mut file.doc;
 
-    let general = section_mut(&mut doc, "general", path)?;
+    let general = section_mut(doc, "general", path)?;
     set_str(
         general,
         "language",
         &normalize_language_override(mirror.language),
     );
 
-    let video = section_mut(&mut doc, "video", path)?;
+    let video = section_mut(doc, "video", path)?;
     video.remove("backend");
     if let Some((width, height)) = parse_resolution_override(mirror.resolution) {
         set_int(video, "width", i64::from(width));
@@ -516,7 +668,7 @@ pub fn save_settings_mirror(path: &Path, mirror: SettingsMirror<'_>) -> Result<(
         video.remove("height");
     }
 
-    let settings = section_mut(&mut doc, "settings", path)?;
+    let settings = section_mut(doc, "settings", path)?;
     set_str(
         settings,
         "interface_profile",
@@ -580,20 +732,20 @@ pub fn save_settings_mirror(path: &Path, mirror: SettingsMirror<'_>) -> Result<(
     set_int(settings, "crt_h_offset", i64::from(crt_h));
     set_int(settings, "crt_v_offset", i64::from(crt_v));
 
-    let logging = section_mut(&mut doc, "logging", path)?;
+    let logging = section_mut(doc, "logging", path)?;
     set_bool(logging, "debug", mirror.debug_logging);
 
-    write_document_if_changed(path, &before, &doc)
+    file.write_if_changed(path)
 }
 
 /// Persist Favorites row order into `frontend.toml`.
 ///
 /// Empty restores Core's default order and removes the optional key.
 pub fn save_favorites_sort(path: &Path, sort: &str) -> Result<(), String> {
-    let mut doc = read_config_document(path)?;
-    let before = doc.to_string();
+    let mut file = read_config_document(path)?;
+    let doc = &mut file.doc;
 
-    let settings = section_mut(&mut doc, "settings", path)?;
+    let settings = section_mut(doc, "settings", path)?;
     let normalized = sort.trim();
     if normalized.is_empty() {
         settings.remove("favorites_sort");
@@ -601,7 +753,7 @@ pub fn save_favorites_sort(path: &Path, sort: &str) -> Result<(), String> {
         set_str(settings, "favorites_sort", normalized);
     }
 
-    write_document_if_changed(path, &before, &doc)
+    file.write_if_changed(path)
 }
 
 /// Persist hidden browse filters into `frontend.toml`.
@@ -617,14 +769,14 @@ pub fn save_hidden_browse_prefs(
     hidden_categories: &[String],
     hidden_system_ids: &[String],
 ) -> Result<(), String> {
-    let mut doc = read_config_document(path)?;
-    let before = doc.to_string();
+    let mut file = read_config_document(path)?;
+    let doc = &mut file.doc;
 
-    let settings = section_mut(&mut doc, "settings", path)?;
+    let settings = section_mut(doc, "settings", path)?;
     set_string_list(settings, "hidden_categories", hidden_categories);
     set_string_list(settings, "hidden_system_ids", hidden_system_ids);
 
-    write_document_if_changed(path, &before, &doc)
+    file.write_if_changed(path)
 }
 
 /// Persist a first-run notice acknowledgement into `frontend.toml`.
@@ -632,13 +784,13 @@ pub fn save_hidden_browse_prefs(
 /// pattern so unrelated keys in the file (core endpoint, video, input
 /// bindings) survive untouched.
 pub fn save_notice_ack(path: &Path, commercial_ack: bool) -> Result<(), String> {
-    let mut doc = read_config_document(path)?;
-    let before = doc.to_string();
+    let mut file = read_config_document(path)?;
+    let doc = &mut file.doc;
 
-    let notice = section_mut(&mut doc, "notice", path)?;
+    let notice = section_mut(doc, "notice", path)?;
     set_bool(notice, "commercial_ack", commercial_ack);
 
-    write_document_if_changed(path, &before, &doc)
+    file.write_if_changed(path)
 }
 
 /// Offset ranges the Menu fork core honors before clamping in RTL
@@ -759,14 +911,14 @@ fn sync_parent_directory(_parent: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-fn tmp_sibling(path: &Path) -> std::path::PathBuf {
+fn tmp_sibling(path: &Path) -> PathBuf {
     let pid = std::process::id();
     let tid = format!("{:?}", std::thread::current().id());
     let tid_clean: String = tid.chars().filter(char::is_ascii_alphanumeric).collect();
     let suffix = format!(".tmp.{pid}.{tid_clean}");
     let mut buf = path.as_os_str().to_owned();
     buf.push(&suffix);
-    std::path::PathBuf::from(buf)
+    PathBuf::from(buf)
 }
 
 #[cfg(test)]
@@ -779,8 +931,8 @@ mod tests {
     )]
 
     use super::{
-        load_config, save_favorites_sort, save_hidden_browse_prefs, save_notice_ack,
-        save_settings_mirror, Config, SettingsMirror,
+        backup_path, load_config, save_favorites_sort, save_hidden_browse_prefs, save_notice_ack,
+        save_settings_mirror, Config, ConfigFault, SettingsMirror,
     };
     use std::io::Write;
 
@@ -1631,5 +1783,125 @@ mod tests {
             load_config(bad.path()).core_endpoint,
             "ws://10.0.0.115:7497/api/v0.1"
         );
+    }
+
+    /// `name = "Pok<E9>mon"` as an editor on a Latin-1 machine saves it.
+    const LATIN1: &[u8] = b"[settings]\ncolor_scheme = \"zaparoo-dark\"\n# caf\xE9\n\n[notice]\ncommercial_ack = true\n";
+
+    fn write_bytes(dir: &tempfile::TempDir, contents: &[u8]) -> std::path::PathBuf {
+        let path = dir.path().join("frontend.toml");
+        std::fs::write(&path, contents).expect("write");
+        path
+    }
+
+    #[test]
+    fn a_file_that_is_not_utf8_still_loads_its_settings() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = write_bytes(&dir, LATIN1);
+        let cfg = load_config(&path);
+        assert_eq!(cfg.fault, None);
+        assert!(cfg.recoded);
+        assert_eq!(cfg.settings.color_scheme.as_deref(), Some("zaparoo-dark"));
+        assert!(cfg.notice.commercial_ack);
+        // Loading alone never touches the file.
+        assert_eq!(std::fs::read(&path).expect("read"), LATIN1);
+        assert!(!backup_path(&path).exists());
+    }
+
+    #[test]
+    fn saving_a_file_that_is_not_utf8_rewrites_it_and_keeps_the_original() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = write_bytes(&dir, LATIN1);
+        // Nothing changes in the document: the rewrite still has to happen.
+        save_notice_ack(&path, true).expect("save");
+        let written = std::fs::read(&path).expect("read");
+        let text = String::from_utf8(written).expect("rewritten as UTF-8");
+        assert!(text.contains("# caf\u{fffd}"));
+        assert_eq!(std::fs::read(backup_path(&path)).expect("backup"), LATIN1);
+
+        let cfg = load_config(&path);
+        assert!(!cfg.recoded);
+        assert_eq!(cfg.settings.color_scheme.as_deref(), Some("zaparoo-dark"));
+    }
+
+    #[test]
+    fn an_earlier_backup_is_not_replaced() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = write_bytes(&dir, LATIN1);
+        std::fs::write(backup_path(&path), b"earlier").expect("write backup");
+        save_notice_ack(&path, true).expect("save");
+        assert_eq!(
+            std::fs::read(backup_path(&path)).expect("backup"),
+            b"earlier"
+        );
+        assert!(String::from_utf8(std::fs::read(&path).expect("read")).is_ok());
+    }
+
+    #[test]
+    fn a_byte_order_mark_does_not_stop_the_file_loading() {
+        let f = write_tmp("\u{feff}[settings]\ncolor_scheme = \"zaparoo-dark\"\n");
+        let cfg = load_config(f.path());
+        assert_eq!(cfg.fault, None);
+        assert!(!cfg.recoded);
+        assert_eq!(cfg.settings.color_scheme.as_deref(), Some("zaparoo-dark"));
+        save_notice_ack(f.path(), true).expect("save");
+        assert!(load_config(f.path()).notice.commercial_ack);
+    }
+
+    #[test]
+    fn a_syntax_error_reports_its_line_and_fails_the_save_untouched() {
+        let src = "[settings]\ncolor_scheme = \"zaparoo-dark\"\nregion = = \"jp\"\n";
+        let f = write_tmp(src);
+        let cfg = load_config(f.path());
+        match cfg.fault.as_ref().expect("fault") {
+            ConfigFault::Invalid { path, line, .. } => {
+                assert_eq!(path, f.path());
+                assert_eq!(*line, 3);
+            }
+            other @ ConfigFault::Unreadable { .. } => panic!("unexpected fault: {other}"),
+        }
+        assert!(cfg
+            .fault
+            .as_ref()
+            .is_some_and(|fault| fault.to_string().contains("at line 3")));
+        assert_eq!(cfg.settings.color_scheme, None);
+
+        let error = save_notice_ack(f.path(), true).expect_err("save must fail");
+        assert!(error.contains("at line 3"), "{error}");
+        assert_eq!(std::fs::read_to_string(f.path()).expect("read"), src);
+    }
+
+    #[test]
+    fn a_wrongly_typed_value_is_a_fault_not_a_silent_reset() {
+        let f = write_tmp("[settings]\nmouse_enabled = \"yes\"\n");
+        let cfg = load_config(f.path());
+        assert!(matches!(
+            cfg.fault,
+            Some(ConfigFault::Invalid { line: 2, .. })
+        ));
+    }
+
+    #[test]
+    fn a_hub_table_that_will_not_load_is_a_fault() {
+        let f = write_tmp("[settings]\nregion = \"jp\"\n\n[[hub.items]]\ntype = 5\n");
+        let cfg = load_config(f.path());
+        assert!(matches!(
+            cfg.fault,
+            Some(ConfigFault::Invalid { line: 5, .. })
+        ));
+    }
+
+    #[test]
+    fn a_missing_file_is_not_a_fault() {
+        let cfg = load_config(std::path::Path::new("/definitely/does/not/exist.toml"));
+        assert_eq!(cfg.fault, None);
+        assert!(!cfg.recoded);
+    }
+
+    #[test]
+    fn an_unreadable_path_is_a_fault() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let cfg = load_config(dir.path());
+        assert!(matches!(cfg.fault, Some(ConfigFault::Unreadable { .. })));
     }
 }

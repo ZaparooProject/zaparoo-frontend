@@ -1,6 +1,6 @@
 msgid ""
 msgstr ""
-"POT-Creation-Date: 2026-10-08 03:36+0000\n"
+"POT-Creation-Date: 2026-10-09 07:26+0000\n"
 "Language: uk\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
@@ -198,11 +198,11 @@ msgstr "Відскануйте цей код телефоном або відк�
 msgid "Or press Accept to open it on this device."
 msgstr "Або натисніть \"Підтвердити\", щоб відкрити на цьому пристрої."
 
-#: rust/frontend/ui/app.slint:2017 rust/frontend/ui/labels.slint:331
+#: rust/frontend/ui/app.slint:2017 rust/frontend/ui/labels.slint:332
 msgid "This device is not linked. Link your Zaparoo Online account, then try again."
 msgstr "Цей пристрій не прив'язано. Прив'яжіть обліковий запис Zaparoo Online і спробуйте ще раз."
 
-#: rust/frontend/ui/app.slint:2020 rust/frontend/ui/labels.slint:330
+#: rust/frontend/ui/app.slint:2020 rust/frontend/ui/labels.slint:331
 msgid "Cloud backup needs an active Zaparoo Warp subscription."
 msgstr "Для хмарних резервних копій потрібна активна підписка Zaparoo Warp."
 
@@ -371,7 +371,7 @@ msgstr "Інфо"
 #: rust/frontend/ui/app.slint:3451 rust/frontend/ui/app.slint:3465
 #: rust/frontend/ui/app.slint:3479 rust/frontend/ui/app.slint:3496
 #: rust/frontend/ui/app.slint:3508 rust/frontend/ui/app.slint:3520
-#: rust/frontend/ui/app.slint:3535 rust/frontend/ui/app.slint:3550
+#: rust/frontend/ui/app.slint:3536 rust/frontend/ui/app.slint:3551
 msgid "Back"
 msgstr "Назад"
 
@@ -385,8 +385,8 @@ msgstr "Пробіл"
 
 #: rust/frontend/ui/app.slint:3178 rust/frontend/ui/app.slint:3388
 #: rust/frontend/ui/app.slint:3427 rust/frontend/ui/app.slint:3445
-#: rust/frontend/ui/app.slint:3484 rust/frontend/ui/app.slint:3540
-#: rust/frontend/ui/app.slint:3555
+#: rust/frontend/ui/app.slint:3484 rust/frontend/ui/app.slint:3541
+#: rust/frontend/ui/app.slint:3556
 msgid "Open"
 msgstr "Відкрити"
 
@@ -435,13 +435,13 @@ msgid "Place"
 msgstr "Розмістити"
 
 #: rust/frontend/ui/app.slint:3376 rust/frontend/ui/app.slint:3389
-#: rust/frontend/ui/app.slint:3436 rust/frontend/ui/app.slint:3556
+#: rust/frontend/ui/app.slint:3436 rust/frontend/ui/app.slint:3557
 msgid "Options"
 msgstr "Параметри"
 
 #: rust/frontend/ui/app.slint:3377 rust/frontend/ui/app.slint:3382
 #: rust/frontend/ui/app.slint:3396 rust/frontend/ui/app.slint:3429
-#: rust/frontend/ui/app.slint:3549 rust/frontend/ui/labels.slint:166
+#: rust/frontend/ui/app.slint:3550 rust/frontend/ui/labels.slint:166
 msgid "View"
 msgstr "Вигляд"
 
@@ -1215,218 +1215,226 @@ msgid "Cloud backup failed"
 msgstr "Помилка хмарного копіювання"
 
 #: rust/frontend/ui/labels.slint:293
+msgid "Config file not loaded"
+msgstr "Конфігурацію не завантажено"
+
+#: rust/frontend/ui/labels.slint:294
 msgid "Action failed"
 msgstr "Не вдалося виконати дію"
 
-#: rust/frontend/ui/labels.slint:300
+#: rust/frontend/ui/labels.slint:301
 msgid "Could not start this item. Check Zaparoo Core and try again."
 msgstr "Не вдалося запустити цей елемент. Перевірте Zaparoo Core і спробуйте ще раз."
 
-#: rust/frontend/ui/labels.slint:301
+#: rust/frontend/ui/labels.slint:302
 msgid "Could not start {}. Check Zaparoo Core and try again."
 msgstr "Не вдалося запустити {}. Перевірте Zaparoo Core і спробуйте ще раз."
 
-#: rust/frontend/ui/labels.slint:306
+#: rust/frontend/ui/labels.slint:307
 msgid "Could not update this favorite. Check Zaparoo Core and try again."
 msgstr "Не вдалося оновити вибране. Перевірте Zaparoo Core і спробуйте ще раз."
 
-#: rust/frontend/ui/labels.slint:307
+#: rust/frontend/ui/labels.slint:308
 msgid "Could not hide or unhide this game. Check Zaparoo Core and try again."
 msgstr "Не вдалося приховати або показати цю гру. Перевірте Zaparoo Core і спробуйте ще раз."
 
-#: rust/frontend/ui/labels.slint:309
+#: rust/frontend/ui/labels.slint:310
 msgid "Zaparoo Core is updating the media database. Try again when it finishes."
 msgstr "Zaparoo Core оновлює базу медіа. Спробуйте ще раз, коли він закінчить."
 
-#: rust/frontend/ui/labels.slint:311
+#: rust/frontend/ui/labels.slint:312
 msgid "Could not add this item to the Hub. Check Zaparoo Core and try again."
 msgstr "Не вдалося додати цей елемент до Hub. Перевірте Zaparoo Core і спробуйте ще раз."
 
-#: rust/frontend/ui/labels.slint:312
+#: rust/frontend/ui/labels.slint:313
 msgid "Could not add {} to the Hub. Check Zaparoo Core and try again."
 msgstr "Не вдалося додати {} до Hub. Перевірте Zaparoo Core і спробуйте ще раз."
 
-#: rust/frontend/ui/labels.slint:314
+#: rust/frontend/ui/labels.slint:315
 msgid "Could not start the media database update. Check Zaparoo Core and try again."
 msgstr "Не вдалося почати оновлення бази медіа. Перевірте Zaparoo Core і спробуйте ще раз."
 
-#: rust/frontend/ui/labels.slint:315
+#: rust/frontend/ui/labels.slint:316
 msgid "Could not start updating metadata. Check Zaparoo Core and try again."
 msgstr "Не вдалося почати оновлення метаданих. Перевірте Zaparoo Core і спробуйте ще раз."
 
-#: rust/frontend/ui/labels.slint:316
+#: rust/frontend/ui/labels.slint:317
 msgid "Could not load the list of metadata sources. Check Zaparoo Core and try again."
 msgstr "Не вдалося завантажити список джерел метаданих. Перевірте Zaparoo Core і спробуйте ще раз."
 
-#: rust/frontend/ui/labels.slint:317
+#: rust/frontend/ui/labels.slint:318
 msgid "Could not cancel the media operation. Check Zaparoo Core and try again."
 msgstr "Не вдалося скасувати операцію з медіа. Перевірте Zaparoo Core і спробуйте ще раз."
 
-#: rust/frontend/ui/labels.slint:318
+#: rust/frontend/ui/labels.slint:319
 msgid "Could not change the launcher. Check Zaparoo Core and try again."
 msgstr "Не вдалося змінити лаунчер. Перевірте Zaparoo Core і спробуйте ще раз."
 
-#: rust/frontend/ui/labels.slint:319
+#: rust/frontend/ui/labels.slint:320
 msgid "Could not find alternate versions. Check Zaparoo Core and try again."
 msgstr "Не вдалося знайти інші версії. Перевірте Zaparoo Core і спробуйте ще раз."
 
-#: rust/frontend/ui/labels.slint:320
+#: rust/frontend/ui/labels.slint:321
 msgid "Could not list the discs of this game. Check Zaparoo Core and try again."
 msgstr "Не вдалося отримати список дисків цієї гри. Перевірте Zaparoo Core і спробуйте ще раз."
 
-#: rust/frontend/ui/labels.slint:321
+#: rust/frontend/ui/labels.slint:322
 msgid "Could not create the QR code for this item."
 msgstr "Не вдалося створити QR-код для цього елемента."
 
-#: rust/frontend/ui/labels.slint:322
+#: rust/frontend/ui/labels.slint:323
 msgid "Could not write to this token. Check that it is writable and try again."
 msgstr "Не вдалося записати на цей токен. Перевірте, чи він доступний для запису, і спробуйте ще раз."
 
-#: rust/frontend/ui/labels.slint:323
+#: rust/frontend/ui/labels.slint:324
 msgid "Could not save this setting. Try again."
 msgstr "Не вдалося зберегти це налаштування. Спробуйте ще раз."
 
-#: rust/frontend/ui/labels.slint:324
+#: rust/frontend/ui/labels.slint:325
 msgid "Core would not start a pairing. It may already have as many paired devices as it allows, or it may be running on another device."
 msgstr "Core не почав сполучення. Можливо, вже досягнуто ліміту сполучених пристроїв або Core працює на іншому пристрої."
 
-#: rust/frontend/ui/labels.slint:325
+#: rust/frontend/ui/labels.slint:326
 msgid "Core could not reach or update your Zaparoo Online account. Check the network connection and try again."
 msgstr "Core не зміг зв'язатися з вашим обліковим записом Zaparoo Online або оновити його. Перевірте підключення до мережі і спробуйте ще раз."
 
-#: rust/frontend/ui/labels.slint:329
+#: rust/frontend/ui/labels.slint:330
 msgid "A backup was uploaded recently. Wait a few minutes, then try again."
 msgstr "Резервну копію нещодавно вже вивантажено. Зачекайте кілька хвилин і спробуйте ще раз."
 
-#: rust/frontend/ui/labels.slint:332
+#: rust/frontend/ui/labels.slint:333
 msgid "Your cloud backup storage is full."
 msgstr "Ваше хмарне сховище резервних копій заповнене."
 
-#: rust/frontend/ui/labels.slint:333
+#: rust/frontend/ui/labels.slint:334
 msgid "Zaparoo is busy with another backup or request. Wait for it to finish, then try again."
 msgstr "Zaparoo зайнятий іншою резервною копією або запитом. Дочекайтеся завершення і спробуйте ще раз."
 
-#: rust/frontend/ui/labels.slint:334
+#: rust/frontend/ui/labels.slint:335
 msgid "Stop the game that is running, then try again."
 msgstr "Зупиніть запущену гру і спробуйте ще раз."
 
-#: rust/frontend/ui/labels.slint:335
+#: rust/frontend/ui/labels.slint:336
 msgid "Restart Zaparoo to finish the previous restore, then try again."
 msgstr "Перезапустіть Zaparoo, щоб завершити попереднє відновлення, і спробуйте ще раз."
 
-#: rust/frontend/ui/labels.slint:336
+#: rust/frontend/ui/labels.slint:337
 msgid "This backup was made by a newer Zaparoo. Update Zaparoo, then try again."
 msgstr "Цю резервну копію створено новішою версією Zaparoo. Оновіть Zaparoo і спробуйте ще раз."
 
-#: rust/frontend/ui/labels.slint:337
+#: rust/frontend/ui/labels.slint:338
 msgid "Free some storage space on this device, then try again."
 msgstr "Звільніть місце на цьому пристрої і спробуйте ще раз."
 
-#: rust/frontend/ui/labels.slint:338
+#: rust/frontend/ui/labels.slint:339
 msgid "Could not finish the cloud backup. Check the network connection and try again."
 msgstr "Не вдалося завершити хмарне резервне копіювання. Перевірте підключення до мережі і спробуйте ще раз."
 
-#: rust/frontend/ui/labels.slint:340
+#: rust/frontend/ui/labels.slint:342
+msgid "{} could not be read, so defaults are in use and changes will not be saved. Fix or remove the file, then restart."
+msgstr "Не вдалося прочитати {}, тому використовуються типові значення, а зміни не зберігатимуться. Виправте або видаліть файл, потім перезапустіть."
+
+#: rust/frontend/ui/labels.slint:343
 msgid "The action could not be completed. Check Zaparoo Core and try again."
 msgstr "Не вдалося виконати дію. Перевірте Zaparoo Core і спробуйте ще раз."
 
-#: rust/frontend/ui/labels.slint:352
+#: rust/frontend/ui/labels.slint:355
 msgid "This launcher isn't installed."
 msgstr "Цей лаунчер не встановлено."
 
-#: rust/frontend/ui/labels.slint:353
+#: rust/frontend/ui/labels.slint:356
 msgid "{} isn't installed."
 msgstr "{} не встановлено."
 
-#: rust/frontend/ui/labels.slint:356
+#: rust/frontend/ui/labels.slint:359
 msgid "This launcher is installed, but its entry point is missing or disabled."
 msgstr "Цей лаунчер встановлено, але його точка входу відсутня або вимкнена."
 
-#: rust/frontend/ui/labels.slint:357
+#: rust/frontend/ui/labels.slint:360
 msgid "{} is installed, but its entry point is missing or disabled."
 msgstr "{} встановлено, але його точка входу відсутня або вимкнена."
 
-#: rust/frontend/ui/labels.slint:360
+#: rust/frontend/ui/labels.slint:363
 msgid "This launcher's plugin for this system isn't installed."
 msgstr "Плагін цього лаунчера для цієї системи не встановлено."
 
-#: rust/frontend/ui/labels.slint:361
+#: rust/frontend/ui/labels.slint:364
 msgid "{}'s plugin for this system isn't installed."
 msgstr "Плагін {} для цієї системи не встановлено."
 
-#: rust/frontend/ui/labels.slint:362
+#: rust/frontend/ui/labels.slint:365
 msgid "{}'s {} plugin isn't installed."
 msgstr "Плагін {1} для {0} не встановлено."
 
-#: rust/frontend/ui/labels.slint:365
+#: rust/frontend/ui/labels.slint:368
 msgid "This build of the launcher can't be used for this media. A different build is needed."
 msgstr "Ця збірка лаунчера не підходить для цього медіа. Потрібна інша збірка."
 
-#: rust/frontend/ui/labels.slint:366
+#: rust/frontend/ui/labels.slint:369
 msgid "This build of {} can't be used for this media. A different build is needed."
 msgstr "Ця збірка {} не підходить для цього медіа. Потрібна інша збірка."
 
-#: rust/frontend/ui/labels.slint:369
+#: rust/frontend/ui/labels.slint:372
 msgid "This launcher can't play this media."
 msgstr "Цей лаунчер не може відтворити це медіа."
 
-#: rust/frontend/ui/labels.slint:370
+#: rust/frontend/ui/labels.slint:373
 msgid "{} can't play this media."
 msgstr "{} не може відтворити це медіа."
 
-#: rust/frontend/ui/labels.slint:373
+#: rust/frontend/ui/labels.slint:376
 msgid "This launcher doesn't support the requested launch options."
 msgstr "Цей лаунчер не підтримує запитані параметри запуску."
 
-#: rust/frontend/ui/labels.slint:374
+#: rust/frontend/ui/labels.slint:377
 msgid "{} doesn't support the requested launch options."
 msgstr "{} не підтримує запитані параметри запуску."
 
-#: rust/frontend/ui/labels.slint:377
+#: rust/frontend/ui/labels.slint:380
 msgid "This launcher doesn't have the storage permission it needs."
 msgstr "Цей лаунчер не має потрібного дозволу на доступ до сховища."
 
-#: rust/frontend/ui/labels.slint:378
+#: rust/frontend/ui/labels.slint:381
 msgid "{} doesn't have the storage permission it needs."
 msgstr "{} не має потрібного дозволу на доступ до сховища."
 
-#: rust/frontend/ui/labels.slint:381
+#: rust/frontend/ui/labels.slint:384
 msgid "This launcher can't read media from where it's stored."
 msgstr "Цей лаунчер не може прочитати медіа з місця, де воно зберігається."
 
-#: rust/frontend/ui/labels.slint:382
+#: rust/frontend/ui/labels.slint:385
 msgid "{} can't read media from where it's stored."
 msgstr "{} не може прочитати медіа з місця, де воно зберігається."
 
-#: rust/frontend/ui/labels.slint:384
+#: rust/frontend/ui/labels.slint:387
 msgid "The storage holding this media isn't available."
 msgstr "Сховище з цим медіа недоступне."
 
-#: rust/frontend/ui/labels.slint:385
+#: rust/frontend/ui/labels.slint:388
 msgid "This media could not be resolved or opened."
 msgstr "Не вдалося знайти або відкрити це медіа."
 
-#: rust/frontend/ui/labels.slint:386
+#: rust/frontend/ui/labels.slint:389
 msgid "Access to this media's folder was revoked. Re-grant it in Settings > Library."
 msgstr "Доступ до папки цього медіа відкликано. Надайте його знову в меню Налаштування > Бібліотека."
 
-#: rust/frontend/ui/labels.slint:387
+#: rust/frontend/ui/labels.slint:390
 msgid "The launcher service isn't responding."
 msgstr "Служба лаунчера не відповідає."
 
-#: rust/frontend/ui/labels.slint:388
+#: rust/frontend/ui/labels.slint:391
 msgid "Return to Zaparoo before launching this."
 msgstr "Поверніться до Zaparoo, перш ніж запускати це."
 
-#: rust/frontend/ui/labels.slint:389
+#: rust/frontend/ui/labels.slint:392
 msgid "The launch was cancelled before it started."
 msgstr "Запуск скасовано до його початку."
 
-#: rust/frontend/ui/labels.slint:390
+#: rust/frontend/ui/labels.slint:393
 msgid "The launch was sent, but its outcome could not be confirmed."
 msgstr "Запит на запуск надіслано, але підтвердити результат не вдалося."
 
-#: rust/frontend/ui/labels.slint:391
+#: rust/frontend/ui/labels.slint:394
 msgid "The system refused the launch request."
 msgstr "Система відхилила запит на запуск."
 
