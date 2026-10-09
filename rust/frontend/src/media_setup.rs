@@ -656,18 +656,36 @@ fn scope_systems(shared: &Shared) -> Vec<String> {
     })
 }
 
-/// How Core is asked for one game; None when the row has nothing to name
-/// it by.
-fn game_scope(game: &rules::GameTarget) -> Option<MediaScrapeScope> {
-    rules::scrape_item(game).map(|item| match item {
+/// The scope Core is given for a game; None for a job over systems. An
+/// error when the game cannot be asked for on its own, which must not
+/// widen into its system or the whole library.
+fn scrape_scope(
+    game: Option<&rules::GameTarget>,
+    core_version: &str,
+) -> Result<Option<MediaScrapeScope>, ()> {
+    let Some(game) = game else {
+        return Ok(None);
+    };
+    let Some(item) = rules::scrape_item(game) else {
+        tracing::warn!(game = game.name, "the game has no media ID or path");
+        return Err(());
+    };
+    // A Core below the supported floor ignores the scope, and with no
+    // systems beside it would run over every system. The startup warning
+    // can be dismissed, so this cannot rest on it.
+    if !crate::router::version_supported(core_version) {
+        tracing::warn!(core_version, "this Core cannot scrape a single game");
+        return Err(());
+    }
+    Ok(Some(match item {
         rules::ScrapeItem::Media(id) => MediaScrapeScope::MediaId(id),
         rules::ScrapeItem::File { system, path } => MediaScrapeScope::File { system, path },
-    })
+    }))
 }
 
 /// Start the job over the chosen scope and close the panel.
 fn start(ctx: &Ctx, app: &App) {
-    let (kind, scoped, systems, scraper, rescrape, covered, game) = {
+    let (kind, scoped, systems, scraper, rescrape, covered, game, core_version) = {
         let shared = lock(&ctx.shared);
         let systems = scope_systems(&shared);
         let game = match &shared.setup.scope {
@@ -693,6 +711,7 @@ fn start(ctx: &Ctx, app: &App) {
             shared.setup.rescrape,
             covered,
             game,
+            shared.core_version.clone(),
         )
     };
     // Core reads an empty list as every system, so a scope that resolved
@@ -734,14 +753,10 @@ fn start(ctx: &Ctx, app: &App) {
                 return;
             }
             // A game is named to Core on its own, in place of the systems.
-            // One with nothing to name it by must not widen to its system.
-            let scope = game.as_ref().map(game_scope);
-            if let (Some(game), Some(None)) = (&game, &scope) {
-                tracing::warn!(game = game.name, "the game has no media ID or path");
+            let Ok(scope) = scrape_scope(game.as_ref(), &core_version) else {
                 crate::router::report_action_error(ctx, app, "media_scrape", "");
                 return;
-            }
-            let scope = scope.flatten();
+            };
             // The chosen source becomes the persisted default.
             {
                 let mut shared = lock(&ctx.shared);

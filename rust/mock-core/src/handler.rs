@@ -162,11 +162,25 @@ fn media_tags_update(params: &Value) -> Result<Value, String> {
 /// The mock has one canned run, so a valid scope starts the same one.
 fn media_scrape(params: &Value, notifier: &Notifier) -> Result<Value, String> {
     if let Some(scope) = params.get("scope").filter(|scope| !scope.is_null()) {
-        let forms = ["mediaId", "file", "subtree"]
-            .iter()
-            .filter(|form| scope.get(**form).is_some())
-            .count();
-        if forms != 1 || params.get("systems").is_some() {
+        // Exactly one known form: an unknown key is refused, not skipped.
+        let form = scope
+            .as_object()
+            .filter(|fields| fields.len() == 1)
+            .and_then(|fields| fields.iter().next());
+        let valid = match form {
+            Some((key, id)) if key == "mediaId" => id.as_i64().is_some_and(|id| id > 0),
+            Some((key, target)) if key == "file" || key == "subtree" => {
+                let named = |field: &str| {
+                    target
+                        .get(field)
+                        .and_then(Value::as_str)
+                        .is_some_and(|text| !text.is_empty())
+                };
+                named("system") && named("path")
+            }
+            _ => false,
+        };
+        if !valid || params.get("systems").is_some() {
             return Err(
                 "use one scope: mediaId, file, or subtree; cannot mix scope and systems".into(),
             );
@@ -1004,8 +1018,18 @@ mod tests {
             r#"{"scraperId":"mock","scope":{"mediaId":42,"file":{"system":"SNES","path":"/g.sfc"}}}"#,
         );
         assert_eq!(two_forms["error"]["code"], -32000);
-        let empty = scoped(r#"{"scraperId":"mock","scope":{}}"#);
-        assert_eq!(empty["error"]["code"], -32000);
+        // A form has to carry its identity, and nothing rides beside it.
+        for malformed in [
+            r#"{"scraperId":"mock","scope":{}}"#,
+            r#"{"scraperId":"mock","scope":{"file":{}}}"#,
+            r#"{"scraperId":"mock","scope":{"file":{"system":"SNES","path":""}}}"#,
+            r#"{"scraperId":"mock","scope":{"mediaId":0}}"#,
+            r#"{"scraperId":"mock","scope":{"mediaId":"42"}}"#,
+            r#"{"scraperId":"mock","scope":{"mediaId":42,"unknown":true}}"#,
+            r#"{"scraperId":"mock","scope":{"unknown":true}}"#,
+        ] {
+            assert_eq!(scoped(malformed)["error"]["code"], -32000, "{malformed}");
+        }
     }
 
     #[tokio::test]

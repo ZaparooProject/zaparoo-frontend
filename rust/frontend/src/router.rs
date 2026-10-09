@@ -376,7 +376,7 @@ fn save_hidden_prefs(ctx: &Ctx, app: &App, categories: &[String], system_ids: &[
 /// below the floor triggers the warning.
 const MIN_CORE_VERSION: &str = "2.18.0";
 
-fn version_supported(raw: &str) -> bool {
+pub(crate) fn version_supported(raw: &str) -> bool {
     let v = raw.trim();
     if v == "DEVELOPMENT" || v.ends_with("-dev") {
         return true;

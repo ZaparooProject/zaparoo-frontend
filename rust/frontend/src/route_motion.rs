@@ -7720,6 +7720,38 @@ fn a_game_stays_on_offer_and_never_widens_to_its_system() {
     assert!(crate::router::lock(&ctx.shared).setup.open);
 }
 
+#[test]
+fn a_game_is_not_sent_to_a_core_that_would_ignore_its_scope() {
+    use zaparoo_app::media_setup::{GameTarget, Scope};
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.systems = navigation_catalog();
+        // Below the floor: it reads the request as every system.
+        shared.core_version = "2.17.2".into();
+    }
+    crate::router::open_scrape_setup(
+        &ctx,
+        &app,
+        Scope::Game(GameTarget {
+            media_id: Some(7),
+            system: "System08".into(),
+            path: "/games/7".into(),
+            name: "Game 07".into(),
+        }),
+    );
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.setup.scraper = "source".into();
+        shared.setup.index = shared.setup.rows().len() - 1;
+    }
+    crate::media_setup::handle_action(&ctx, &app, "accept");
+    assert!(app.global::<crate::Overlays>().get_dialog_open());
+    assert!(crate::router::lock(&ctx.shared).setup.open);
+}
+
 /// A detailed list of 40 rows with the first 20 loaded and more to come.
 fn seat_partial_list(ctx: &crate::router::Ctx, app: &App) -> (Vec<crate::games::GameRow>, u64) {
     crate::sizing::apply_scene(
