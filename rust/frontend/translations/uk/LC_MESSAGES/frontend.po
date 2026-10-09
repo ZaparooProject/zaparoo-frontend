@@ -13,7 +13,7 @@ msgstr "Про програму / Ліцензія"
 
 #: rust/frontend/ui/about.slint:106 rust/frontend/ui/app.slint:3063
 msgid "Zaparoo Frontend"
-msgstr ""
+msgstr "Zaparoo Frontend"
 
 #: rust/frontend/ui/about.slint:107
 msgid "Version {} · {} · {}"
@@ -54,6 +54,10 @@ msgid ""
 "Euskara - devilschile2\n"
 "Français - Wilfried"
 msgstr ""
+"Italiano - Andrea Bogazzi\n"
+"Español - Carlos R.\n"
+"Euskara - devilschile2\n"
+"Français - Wilfried"
 
 #: rust/frontend/ui/about.slint:120
 msgid "Full license text in COPYING."
@@ -61,19 +65,19 @@ msgstr "Повний текст ліцензії у файлі COPYING."
 
 #: rust/frontend/ui/app.slint:996
 msgid "Updating the media database"
-msgstr ""
+msgstr "Оновлення бази медіа"
 
 #: rust/frontend/ui/app.slint:996
 msgid "No games found yet"
-msgstr ""
+msgstr "Ігор поки не знайдено"
 
 #: rust/frontend/ui/app.slint:998
 msgid "Your games appear here as Core finds them."
-msgstr ""
+msgstr "Ігри з'являтимуться тут, щойно Core їх знайде."
 
 #: rust/frontend/ui/app.slint:999
 msgid "Update media database in Settings > Library."
-msgstr ""
+msgstr "Оновіть базу медіа в меню Налаштування > Бібліотека."
 
 #: rust/frontend/ui/app.slint:1019 rust/frontend/ui/app.slint:2712
 #: rust/frontend/ui/app.slint:3084
@@ -86,7 +90,7 @@ msgstr "{0} систем"
 
 #: rust/frontend/ui/app.slint:1168 rust/frontend/ui/labels.slint:25
 msgid "Hidden"
-msgstr ""
+msgstr "Приховано"
 
 #: rust/frontend/ui/app.slint:1205 rust/frontend/ui/app.slint:2931
 msgid "No favorites yet"
@@ -99,31 +103,31 @@ msgstr "У цій категорії немає систем"
 #: rust/frontend/ui/app.slint:1250 rust/frontend/ui/app.slint:1252
 #: rust/frontend/ui/labels.slint:26
 msgid "{} · {}"
-msgstr ""
+msgstr "{} · {}"
 
 #: rust/frontend/ui/app.slint:1331 rust/frontend/ui/app.slint:1348
 msgid "Saving…"
-msgstr ""
+msgstr "Збереження…"
 
 #: rust/frontend/ui/app.slint:1581 rust/frontend/ui/labels.slint:129
 msgid "Go to…"
-msgstr ""
+msgstr "Перейти до…"
 
 #: rust/frontend/ui/app.slint:1591
 msgid "Loading sections…"
-msgstr ""
+msgstr "Завантаження розділів…"
 
 #: rust/frontend/ui/app.slint:1596
 msgid "Failed to load sections"
-msgstr ""
+msgstr "Не вдалося завантажити розділи"
 
 #: rust/frontend/ui/app.slint:1596
 msgid "No sections"
-msgstr ""
+msgstr "Немає розділів"
 
 #: rust/frontend/ui/app.slint:1665
 msgid "Hold a writable token near the reader"
-msgstr ""
+msgstr "Піднесіть до зчитувача токен для запису"
 
 #: rust/frontend/ui/app.slint:1689 rust/frontend/ui/app.slint:3131
 #: rust/frontend/ui/app.slint:3249 rust/frontend/ui/app.slint:3296
@@ -134,142 +138,142 @@ msgstr "Скасувати"
 
 #: rust/frontend/ui/app.slint:1711 rust/frontend/ui/settings.slint:179
 msgid "Pair a device"
-msgstr ""
+msgstr "Сполучити пристрій"
 
 #: rust/frontend/ui/app.slint:1735 rust/frontend/ui/app.slint:1840
 msgid "Starting…"
-msgstr ""
+msgstr "Запуск…"
 
 #: rust/frontend/ui/app.slint:1757
 msgid "Enter this PIN on the device you are pairing."
-msgstr ""
+msgstr "Введіть цей PIN-код на пристрої, який сполучаєте."
 
 #: rust/frontend/ui/app.slint:1771 rust/frontend/ui/app.slint:1929
 msgid "Expires in {n} minute"
 msgid_plural "Expires in {n} minutes"
-msgstr[0] ""
-msgstr[1] ""
-msgstr[2] ""
+msgstr[0] "Спливає через {n} хвилину"
+msgstr[1] "Спливає через {n} хвилини"
+msgstr[2] "Спливає через {n} хвилин"
 
 #: rust/frontend/ui/app.slint:1772 rust/frontend/ui/app.slint:1930
 msgid "Expires in {n} second"
 msgid_plural "Expires in {n} seconds"
-msgstr[0] ""
-msgstr[1] ""
-msgstr[2] ""
+msgstr[0] "Спливає через {n} секунду"
+msgstr[1] "Спливає через {n} секунди"
+msgstr[2] "Спливає через {n} секунд"
 
 #: rust/frontend/ui/app.slint:1789
 msgid "A device is now paired with Core."
-msgstr ""
+msgstr "Пристрій сполучено з Core."
 
 #: rust/frontend/ui/app.slint:1790
 msgid "{} is now paired with Core."
-msgstr ""
+msgstr "{} сполучено з Core."
 
 #: rust/frontend/ui/app.slint:1804
 msgid "The PIN expired before a device used it. Pair again for a new one."
-msgstr ""
+msgstr "PIN-код сплив, і жоден пристрій його не використав. Почніть сполучення знову, щоб отримати новий."
 
 #: rust/frontend/ui/app.slint:1826
 msgid "Link Online account"
-msgstr ""
+msgstr "Прив'язати обліковий запис Online"
 
 #: rust/frontend/ui/app.slint:1850
 msgid "This device is now linked to your Zaparoo Online account."
-msgstr ""
+msgstr "Цей пристрій прив'язано до вашого облікового запису Zaparoo Online."
 
 #: rust/frontend/ui/app.slint:1851
 msgid "The code expired before it was approved. Link again for a new one."
-msgstr ""
+msgstr "Код сплив до підтвердження. Почніть прив'язку знову, щоб отримати новий."
 
 #: rust/frontend/ui/app.slint:1852
 msgid "Linking failed. Check the network connection and try again."
-msgstr ""
+msgstr "Не вдалося прив'язати. Перевірте підключення до мережі і спробуйте ще раз."
 
 #: rust/frontend/ui/app.slint:1866
 msgid "Scan this code with your phone, or open the address below and enter the code."
-msgstr ""
+msgstr "Відскануйте цей код телефоном або відкрийте адресу нижче і введіть код."
 
 #: rust/frontend/ui/app.slint:1879
 msgid "Or press Accept to open it on this device."
-msgstr ""
+msgstr "Або натисніть \"Підтвердити\", щоб відкрити на цьому пристрої."
 
 #: rust/frontend/ui/app.slint:2017 rust/frontend/ui/labels.slint:331
 msgid "This device is not linked. Link your Zaparoo Online account, then try again."
-msgstr ""
+msgstr "Цей пристрій не прив'язано. Прив'яжіть обліковий запис Zaparoo Online і спробуйте ще раз."
 
 #: rust/frontend/ui/app.slint:2020 rust/frontend/ui/labels.slint:330
 msgid "Cloud backup needs an active Zaparoo Warp subscription."
-msgstr ""
+msgstr "Для хмарних резервних копій потрібна активна підписка Zaparoo Warp."
 
 #: rust/frontend/ui/app.slint:2022
 msgid "Could not load this. Check the network connection and try again."
-msgstr ""
+msgstr "Не вдалося завантажити. Перевірте підключення до мережі і спробуйте ще раз."
 
 #: rust/frontend/ui/app.slint:2025
 msgid "Back up now"
-msgstr ""
+msgstr "Створити копію зараз"
 
 #. Zaparoo made; it says so where its detail already is.
 #: rust/frontend/ui/app.slint:2030
 msgid "{}, needs a newer Zaparoo"
-msgstr ""
+msgstr "{}, потрібна новіша версія Zaparoo"
 
 #: rust/frontend/ui/app.slint:2031
 msgid "{}, this device"
-msgstr ""
+msgstr "{}, цей пристрій"
 
 #: rust/frontend/ui/app.slint:2038
 msgid "Cloud backups"
-msgstr ""
+msgstr "Хмарні резервні копії"
 
 #: rust/frontend/ui/app.slint:2038
 msgid "Remote activity"
-msgstr ""
+msgstr "Віддалена активність"
 
 #: rust/frontend/ui/app.slint:2059
 msgid "Backing up…"
-msgstr ""
+msgstr "Створення копії…"
 
 #: rust/frontend/ui/app.slint:2060
 msgid "Restoring…"
-msgstr ""
+msgstr "Відновлення…"
 
 #: rust/frontend/ui/app.slint:2061
 msgid "Loading backups…"
-msgstr ""
+msgstr "Завантаження копій…"
 
 #: rust/frontend/ui/app.slint:2061
 msgid "Loading activity…"
-msgstr ""
+msgstr "Завантаження активності…"
 
 #: rust/frontend/ui/app.slint:2072
 msgid "No cloud backups yet."
-msgstr ""
+msgstr "Хмарних резервних копій поки немає."
 
 #: rust/frontend/ui/app.slint:2072
 msgid "Nothing has run through remote control yet."
-msgstr ""
+msgstr "Через віддалене керування ще нічого не запускалося."
 
 #: rust/frontend/ui/app.slint:2168 rust/frontend/ui/settings.slint:181
 msgid "Documentation"
-msgstr ""
+msgstr "Документація"
 
 #: rust/frontend/ui/app.slint:2168 rust/frontend/ui/labels.slint:110
 msgid "Write with App"
-msgstr ""
+msgstr "Записати через App"
 
 #: rust/frontend/ui/app.slint:2187
 msgid "Scan this code to open the Zaparoo Frontend guide on your phone."
-msgstr ""
+msgstr "Відскануйте цей код, щоб відкрити посібник Zaparoo Frontend на телефоні."
 
 #: rust/frontend/ui/app.slint:2188
 msgid "Scan this code with the Zaparoo App to write this game to a Zaparoo token."
-msgstr ""
+msgstr "Відскануйте цей код у Zaparoo App, щоб записати цю гру на токен Zaparoo."
 
 #: rust/frontend/ui/app.slint:2713 rust/frontend/ui/app.slint:3085
 msgid "Recently played"
-msgstr ""
+msgstr "Нещодавно зіграні"
 
 #: rust/frontend/ui/app.slint:2714 rust/frontend/ui/app.slint:3086
 #: rust/frontend/ui/app.slint:3162 rust/frontend/ui/labels.slint:48
@@ -278,11 +282,11 @@ msgstr "Пошук"
 
 #: rust/frontend/ui/app.slint:2724
 msgid "{} games"
-msgstr ""
+msgstr "Ігор: {}"
 
 #: rust/frontend/ui/app.slint:2853
 msgid "Loading game…"
-msgstr ""
+msgstr "Завантаження гри…"
 
 #: rust/frontend/ui/app.slint:2932
 msgid "Nothing played yet"
@@ -319,11 +323,11 @@ msgstr "Завантаження ігор…"
 
 #: rust/frontend/ui/app.slint:3014
 msgid "Arrows adjust position"
-msgstr ""
+msgstr "Стрілки змінюють положення"
 
 #: rust/frontend/ui/app.slint:3022
 msgid "Accept or Back saves"
-msgstr ""
+msgstr "\"Підтвердити\" або \"Назад\" зберігає"
 
 #: rust/frontend/ui/app.slint:3114 rust/frontend/ui/app.slint:3128
 #: rust/frontend/ui/app.slint:3153 rust/frontend/ui/app.slint:3168
@@ -357,7 +361,7 @@ msgstr "Перемкнути"
 
 #: rust/frontend/ui/app.slint:3134
 msgid "Info"
-msgstr ""
+msgstr "Інфо"
 
 #: rust/frontend/ui/app.slint:3135 rust/frontend/ui/app.slint:3149
 #: rust/frontend/ui/app.slint:3163 rust/frontend/ui/app.slint:3179
@@ -412,23 +416,23 @@ msgstr "Прокрутка"
 
 #: rust/frontend/ui/app.slint:3302 rust/frontend/ui/app.slint:3308
 msgid "Image"
-msgstr ""
+msgstr "Зображення"
 
 #: rust/frontend/ui/app.slint:3356
 msgid "Adjust"
-msgstr ""
+msgstr "Налаштувати"
 
 #: rust/frontend/ui/app.slint:3357
 msgid "Save"
-msgstr ""
+msgstr "Зберегти"
 
 #: rust/frontend/ui/app.slint:3365
 msgid "Reposition"
-msgstr ""
+msgstr "Перемістити"
 
 #: rust/frontend/ui/app.slint:3366
 msgid "Place"
-msgstr ""
+msgstr "Розмістити"
 
 #: rust/frontend/ui/app.slint:3376 rust/frontend/ui/app.slint:3389
 #: rust/frontend/ui/app.slint:3436 rust/frontend/ui/app.slint:3556
@@ -439,7 +443,7 @@ msgstr "Параметри"
 #: rust/frontend/ui/app.slint:3396 rust/frontend/ui/app.slint:3429
 #: rust/frontend/ui/app.slint:3549 rust/frontend/ui/labels.slint:166
 msgid "View"
-msgstr ""
+msgstr "Вигляд"
 
 #: rust/frontend/ui/browse_list.slint:28 rust/frontend/ui/labels.slint:72
 #: rust/frontend/ui/search.slint:287
@@ -448,111 +452,111 @@ msgstr "Система"
 
 #: rust/frontend/ui/browse_list.slint:29
 msgid "Platform"
-msgstr ""
+msgstr "Платформа"
 
 #: rust/frontend/ui/browse_list.slint:30
 msgid "Category"
-msgstr ""
+msgstr "Категорія"
 
 #: rust/frontend/ui/browse_list.slint:31 rust/frontend/ui/labels.slint:86
 msgid "Year"
-msgstr ""
+msgstr "Рік"
 
 #: rust/frontend/ui/browse_list.slint:32
 msgid "Release date"
-msgstr ""
+msgstr "Дата випуску"
 
 #: rust/frontend/ui/browse_list.slint:33 rust/frontend/ui/labels.slint:85
 msgid "Genre"
-msgstr ""
+msgstr "Жанр"
 
 #: rust/frontend/ui/browse_list.slint:34 rust/frontend/ui/labels.slint:87
 msgid "Players"
-msgstr ""
+msgstr "Гравці"
 
 #: rust/frontend/ui/browse_list.slint:35
 msgid "Play mode"
-msgstr ""
+msgstr "Режим гри"
 
 #: rust/frontend/ui/browse_list.slint:36
 msgid "Cooperative"
-msgstr ""
+msgstr "Кооператив"
 
 #: rust/frontend/ui/browse_list.slint:37 rust/frontend/ui/labels.slint:88
 msgid "Developer"
-msgstr ""
+msgstr "Розробник"
 
 #: rust/frontend/ui/browse_list.slint:38 rust/frontend/ui/labels.slint:89
 msgid "Publisher"
-msgstr ""
+msgstr "Видавець"
 
 #: rust/frontend/ui/browse_list.slint:39
 msgid "Manufacturer"
-msgstr ""
+msgstr "Виробник"
 
 #: rust/frontend/ui/browse_list.slint:40
 msgid "Rating"
-msgstr ""
+msgstr "Рейтинг"
 
 #: rust/frontend/ui/browse_list.slint:41
 msgid "Filename"
-msgstr ""
+msgstr "Назва файлу"
 
 #: rust/frontend/ui/browse_list.slint:47
 msgid "Sys"
-msgstr ""
+msgstr "Сист"
 
 #: rust/frontend/ui/browse_list.slint:48
 msgid "Plat"
-msgstr ""
+msgstr "Платф"
 
 #: rust/frontend/ui/browse_list.slint:49
 msgid "Cat"
-msgstr ""
+msgstr "Кат"
 
 #: rust/frontend/ui/browse_list.slint:50
 msgid "Yr"
-msgstr ""
+msgstr "Рік"
 
 #: rust/frontend/ui/browse_list.slint:51
 msgid "Date"
-msgstr ""
+msgstr "Дата"
 
 #: rust/frontend/ui/browse_list.slint:52
 msgid "Gen"
-msgstr ""
+msgstr "Жанр"
 
 #: rust/frontend/ui/browse_list.slint:53
 msgid "Plyr"
-msgstr ""
+msgstr "Грав"
 
 #: rust/frontend/ui/browse_list.slint:54
 msgid "Mode"
-msgstr ""
+msgstr "Режим"
 
 #: rust/frontend/ui/browse_list.slint:55
 msgid "Co-op"
-msgstr ""
+msgstr "Кооп"
 
 #: rust/frontend/ui/browse_list.slint:56
 msgid "Dev"
-msgstr ""
+msgstr "Розр"
 
 #: rust/frontend/ui/browse_list.slint:57
 msgid "Pub"
-msgstr ""
+msgstr "Вид"
 
 #: rust/frontend/ui/browse_list.slint:58
 msgid "Mfr"
-msgstr ""
+msgstr "Вироб"
 
 #: rust/frontend/ui/browse_list.slint:59
 msgid "Rtg"
-msgstr ""
+msgstr "Рейт"
 
 #: rust/frontend/ui/browse_list.slint:60
 msgid "File"
-msgstr ""
+msgstr "Файл"
 
 #: rust/frontend/ui/browse_list.slint:244 rust/frontend/ui/chrome.slint:1022
 #: rust/frontend/ui/labels.slint:34
@@ -577,11 +581,11 @@ msgstr "Помилка Core"
 
 #: rust/frontend/ui/chrome.slint:98
 msgid "Core error: {}"
-msgstr ""
+msgstr "Помилка Core: {}"
 
 #: rust/frontend/ui/chrome.slint:100
 msgid "Indexing paused: game running"
-msgstr ""
+msgstr "Індексування призупинено: запущено гру"
 
 #. run; a bare "Indexing: " reads as broken.
 #: rust/frontend/ui/chrome.slint:104
@@ -591,60 +595,60 @@ msgstr "Індексування…"
 #. run; a bare "Indexing: " reads as broken.
 #: rust/frontend/ui/chrome.slint:104
 msgid "Indexing: {}"
-msgstr ""
+msgstr "Індексування: {}"
 
 #: rust/frontend/ui/chrome.slint:107
 msgid "Optimizing database…"
-msgstr ""
+msgstr "Оптимізація бази даних…"
 
 #: rust/frontend/ui/chrome.slint:107
 msgid "Optimizing database: {}"
-msgstr ""
+msgstr "Оптимізація бази даних: {}"
 
 #: rust/frontend/ui/chrome.slint:109
 msgid "Importing paused: game running"
-msgstr ""
+msgstr "Імпорт призупинено: запущено гру"
 
 #: rust/frontend/ui/chrome.slint:111
 msgid "Importing…"
-msgstr ""
+msgstr "Імпорт…"
 
 #: rust/frontend/ui/chrome.slint:111
 msgid "Importing: {}"
-msgstr ""
+msgstr "Імпорт: {}"
 
 #: rust/frontend/ui/chrome.slint:113
 msgid "Indexed {} files"
-msgstr ""
+msgstr "Проіндексовано файлів: {}"
 
 #: rust/frontend/ui/chrome.slint:114
 msgid "Indexing complete"
-msgstr ""
+msgstr "Індексування завершено"
 
 #: rust/frontend/ui/chrome.slint:115
 msgid "Import failed: {}"
-msgstr ""
+msgstr "Помилка імпорту: {}"
 
 #: rust/frontend/ui/chrome.slint:116
 msgid "Imported {} of {}"
-msgstr ""
+msgstr "Імпортовано {} з {}"
 
 #: rust/frontend/ui/chrome.slint:117
 msgid "Playtime limit in {}"
-msgstr ""
+msgstr "Ліміт часу гри через {}"
 
 #: rust/frontend/ui/chrome.slint:122 rust/frontend/ui/chrome.slint:233
 #: rust/frontend/ui/chrome.slint:375
 msgid "{}%"
-msgstr ""
+msgstr "{}%"
 
 #: rust/frontend/ui/chrome.slint:606 rust/frontend/ui/chrome.slint:608
 msgid "{}/{}"
-msgstr ""
+msgstr "{}/{}"
 
 #: rust/frontend/ui/chrome.slint:609
 msgid "{}"
-msgstr ""
+msgstr "{}"
 
 #: rust/frontend/ui/chrome.slint:702
 msgid "Page {} / {}"
@@ -652,7 +656,7 @@ msgstr "Сторінка {0} / {1}"
 
 #: rust/frontend/ui/chrome.slint:703
 msgid "Page {}"
-msgstr ""
+msgstr "Сторінка {}"
 
 #: rust/frontend/ui/chrome.slint:1089
 msgid "Nothing here"
@@ -660,7 +664,7 @@ msgstr "Тут нічого немає"
 
 #: rust/frontend/ui/chrome.slint:1091
 msgid "Check Zaparoo Core and try again."
-msgstr ""
+msgstr "Перевірте Zaparoo Core і спробуйте ще раз."
 
 #: rust/frontend/ui/chrome.slint:1103
 msgid "Failed to load"
@@ -668,67 +672,67 @@ msgstr "Не вдалося завантажити"
 
 #: rust/frontend/ui/game_info.slint:90
 msgid "Loading details…"
-msgstr ""
+msgstr "Завантаження відомостей…"
 
 #: rust/frontend/ui/game_info.slint:96
 msgid "Could not load details. Check Zaparoo Core and try again."
-msgstr ""
+msgstr "Не вдалося завантажити відомості. Перевірте Zaparoo Core і спробуйте ще раз."
 
 #: rust/frontend/ui/game_info.slint:146
 msgid "Loading image…"
-msgstr ""
+msgstr "Завантаження зображення…"
 
 #: rust/frontend/ui/game_info.slint:168
 msgid "This game's file is missing."
-msgstr ""
+msgstr "Файл цієї гри відсутній."
 
 #: rust/frontend/ui/game_info.slint:203
 msgid "Description"
-msgstr ""
+msgstr "Опис"
 
 #: rust/frontend/ui/labels.slint:14
 msgid "Starting Zaparoo Core…"
-msgstr ""
+msgstr "Запуск Zaparoo Core…"
 
 #: rust/frontend/ui/labels.slint:15
 msgid "Updating Zaparoo Core data…"
-msgstr ""
+msgstr "Оновлення даних Zaparoo Core…"
 
 #: rust/frontend/ui/labels.slint:16
 msgid "Reconnecting to Zaparoo Core…"
-msgstr ""
+msgstr "Повторне підключення до Zaparoo Core…"
 
 #: rust/frontend/ui/labels.slint:17
 msgid "Loading library…"
-msgstr ""
+msgstr "Завантаження бібліотеки…"
 
 #: rust/frontend/ui/labels.slint:18
 msgid "Can't reach Zaparoo Core. Check the connection."
-msgstr ""
+msgstr "Немає зв'язку із Zaparoo Core. Перевірте підключення."
 
 #: rust/frontend/ui/labels.slint:19
 msgid "Connecting to Zaparoo Core…"
-msgstr ""
+msgstr "Підключення до Zaparoo Core…"
 
 #: rust/frontend/ui/labels.slint:29
 msgid "Loading favorite systems…"
-msgstr ""
+msgstr "Завантаження вибраних систем…"
 
 #: rust/frontend/ui/labels.slint:37
 msgid "Arcade"
-msgstr ""
+msgstr "Аркади"
 
 #: rust/frontend/ui/labels.slint:41
 msgid "Computers"
-msgstr ""
+msgstr "Комп'ютери"
 
 #: rust/frontend/ui/labels.slint:42
 msgid "Consoles"
-msgstr ""
+msgstr "Консолі"
 
 #: rust/frontend/ui/labels.slint:43
 msgid "Handhelds"
-msgstr ""
+msgstr "Портативні"
 
 #: rust/frontend/ui/labels.slint:44 rust/frontend/ui/labels.slint:133
 msgid "Other"
@@ -736,15 +740,15 @@ msgstr "Інші"
 
 #: rust/frontend/ui/labels.slint:45
 msgid "Resume"
-msgstr ""
+msgstr "Продовжити"
 
 #: rust/frontend/ui/labels.slint:45
 msgid "Resume: {}"
-msgstr ""
+msgstr "Продовжити: {}"
 
 #: rust/frontend/ui/labels.slint:49
 msgid "Update"
-msgstr ""
+msgstr "Оновлення"
 
 #: rust/frontend/ui/labels.slint:50 rust/frontend/ui/labels.slint:150
 msgid "Settings"
@@ -753,20 +757,20 @@ msgstr "Налаштування"
 #: rust/frontend/ui/labels.slint:60
 msgid "{n} system with favorites"
 msgid_plural "{n} systems with favorites"
-msgstr[0] ""
-msgstr[1] ""
-msgstr[2] ""
+msgstr[0] "{n} система з вибраним"
+msgstr[1] "{n} системи з вибраним"
+msgstr[2] "{n} систем з вибраним"
 
 #: rust/frontend/ui/labels.slint:63
 msgid "{n} favorite"
 msgid_plural "{n} favorites"
-msgstr[0] ""
-msgstr[1] ""
-msgstr[2] ""
+msgstr[0] "{n} вибрана гра"
+msgstr[1] "{n} вибрані гри"
+msgstr[2] "{n} вибраних ігор"
 
 #: rust/frontend/ui/labels.slint:69
 msgid "A-Z"
-msgstr ""
+msgstr "A-Z"
 
 #: rust/frontend/ui/labels.slint:70 rust/frontend/ui/labels.slint:163
 msgid "Default"
@@ -774,7 +778,7 @@ msgstr "Типовий"
 
 #: rust/frontend/ui/labels.slint:71 rust/frontend/ui/settings.slint:316
 msgid "None"
-msgstr ""
+msgstr "Немає"
 
 #: rust/frontend/ui/labels.slint:79 rust/frontend/ui/labels.slint:137
 msgid "Any"
@@ -782,7 +786,7 @@ msgstr "Будь-які"
 
 #: rust/frontend/ui/labels.slint:90 rust/frontend/ui/settings.slint:145
 msgid "Region"
-msgstr ""
+msgstr "Регіон"
 
 #: rust/frontend/ui/labels.slint:91 rust/frontend/ui/settings.slint:120
 msgid "Language"
@@ -790,15 +794,15 @@ msgstr "Мова"
 
 #: rust/frontend/ui/labels.slint:92
 msgid "Perspective"
-msgstr ""
+msgstr "Перспектива"
 
 #: rust/frontend/ui/labels.slint:93
 msgid "Input"
-msgstr ""
+msgstr "Введення"
 
 #: rust/frontend/ui/labels.slint:94
 msgid "Arcade board"
-msgstr ""
+msgstr "Аркадна плата"
 
 #: rust/frontend/ui/labels.slint:95
 msgid "Collections"
@@ -807,7 +811,7 @@ msgstr "Колекції"
 #. Games, favorites and recents rows.
 #: rust/frontend/ui/labels.slint:105
 msgid "Details"
-msgstr ""
+msgstr "Відомості"
 
 #: rust/frontend/ui/labels.slint:106
 msgid "Add to favorites"
@@ -819,7 +823,7 @@ msgstr "Видалити з вибраного"
 
 #: rust/frontend/ui/labels.slint:108 rust/frontend/ui/labels.slint:172
 msgid "Change launcher"
-msgstr ""
+msgstr "Змінити лаунчер"
 
 #: rust/frontend/ui/labels.slint:109
 msgid "Write to NFC token"
@@ -827,52 +831,52 @@ msgstr "Записати на NFC-токен"
 
 #: rust/frontend/ui/labels.slint:111
 msgid "Discover alt. versions"
-msgstr ""
+msgstr "Знайти інші версії"
 
 #: rust/frontend/ui/labels.slint:113
 msgid "No alternates found"
-msgstr ""
+msgstr "Інших версій не знайдено"
 
 #: rust/frontend/ui/labels.slint:114
 msgid "Choose disc"
-msgstr ""
+msgstr "Вибрати диск"
 
 #: rust/frontend/ui/labels.slint:116
 msgid "No discs found"
-msgstr ""
+msgstr "Дисків не знайдено"
 
 #: rust/frontend/ui/labels.slint:117
 msgid "Disc {}"
-msgstr ""
+msgstr "Диск {}"
 
 #: rust/frontend/ui/labels.slint:118
 msgid "Add to Hub"
-msgstr ""
+msgstr "Додати до Hub"
 
 #: rust/frontend/ui/labels.slint:119
 msgid "Remove from Hub"
-msgstr ""
+msgstr "Прибрати з Hub"
 
 #: rust/frontend/ui/labels.slint:120 rust/frontend/ui/labels.slint:128
 #: rust/frontend/ui/settings.slint:157
 msgid "Update metadata"
-msgstr ""
+msgstr "Оновити метадані"
 
 #: rust/frontend/ui/labels.slint:122 rust/frontend/ui/labels.slint:147
 msgid "Hide"
-msgstr ""
+msgstr "Приховати"
 
 #: rust/frontend/ui/labels.slint:123
 msgid "Unhide"
-msgstr ""
+msgstr "Показати"
 
 #: rust/frontend/ui/labels.slint:125
 msgid "Launch system"
-msgstr ""
+msgstr "Запустити систему"
 
 #: rust/frontend/ui/labels.slint:126
 msgid "Random game"
-msgstr ""
+msgstr "Випадкова гра"
 
 #: rust/frontend/ui/labels.slint:127 rust/frontend/ui/settings.slint:88
 msgid "Update media database"
@@ -900,7 +904,7 @@ msgstr "Очистити теги"
 
 #: rust/frontend/ui/labels.slint:138
 msgid "Loading tags…"
-msgstr ""
+msgstr "Завантаження тегів…"
 
 #: rust/frontend/ui/labels.slint:141
 msgid "Failed to load tags"
@@ -912,15 +916,15 @@ msgstr "Немає доступних тегів"
 
 #: rust/frontend/ui/labels.slint:145
 msgid "Add item…"
-msgstr ""
+msgstr "Додати елемент…"
 
 #: rust/frontend/ui/labels.slint:148
 msgid "Remove"
-msgstr ""
+msgstr "Прибрати"
 
 #: rust/frontend/ui/labels.slint:149
 msgid "Reset layout"
-msgstr ""
+msgstr "Скинути розташування"
 
 #: rust/frontend/ui/labels.slint:151
 msgid "Quit"
@@ -928,19 +932,19 @@ msgstr "Вийти"
 
 #: rust/frontend/ui/labels.slint:152
 msgid "Back to Hub"
-msgstr ""
+msgstr "Назад до Hub"
 
 #: rust/frontend/ui/labels.slint:156
 msgid "Sort: {}"
-msgstr ""
+msgstr "Сортування: {}"
 
 #: rust/frontend/ui/labels.slint:157
 msgid "Group by: {}"
-msgstr ""
+msgstr "Групування: {}"
 
 #: rust/frontend/ui/labels.slint:164
 msgid "Current: {}"
-msgstr ""
+msgstr "Поточний: {}"
 
 #: rust/frontend/ui/labels.slint:167 rust/frontend/ui/search.slint:303
 msgid "Tags"
@@ -948,27 +952,27 @@ msgstr "Теги"
 
 #: rust/frontend/ui/labels.slint:169
 msgid "Add item"
-msgstr ""
+msgstr "Додати елемент"
 
 #: rust/frontend/ui/labels.slint:170
 msgid "Sort"
-msgstr ""
+msgstr "Сортування"
 
 #: rust/frontend/ui/labels.slint:171
 msgid "Group by"
-msgstr ""
+msgstr "Групування"
 
 #: rust/frontend/ui/labels.slint:173
 msgid "Alternate versions"
-msgstr ""
+msgstr "Інші версії"
 
 #: rust/frontend/ui/labels.slint:183
 msgid "Launching…"
-msgstr ""
+msgstr "Запуск…"
 
 #: rust/frontend/ui/labels.slint:184
 msgid "Launching {}…"
-msgstr ""
+msgstr "Запуск {}…"
 
 #: rust/frontend/ui/labels.slint:186
 msgid "Loading more…"
@@ -976,91 +980,91 @@ msgstr "Завантаження ще…"
 
 #: rust/frontend/ui/labels.slint:187
 msgid "Loading {} of {}…"
-msgstr ""
+msgstr "Завантаження {} з {}…"
 
 #: rust/frontend/ui/labels.slint:188
 msgid "Loading launchers…"
-msgstr ""
+msgstr "Завантаження лаунчерів…"
 
 #: rust/frontend/ui/labels.slint:191
 msgid "Cancelling…"
-msgstr ""
+msgstr "Скасування…"
 
 #: rust/frontend/ui/labels.slint:192
 msgid "Unlinking…"
-msgstr ""
+msgstr "Відв'язування…"
 
 #: rust/frontend/ui/labels.slint:193
 msgid "Added to Hub"
-msgstr ""
+msgstr "Додано до Hub"
 
 #: rust/frontend/ui/labels.slint:194
 msgid "Removed from Hub"
-msgstr ""
+msgstr "Прибрано з Hub"
 
 #: rust/frontend/ui/labels.slint:195
 msgid "Token written"
-msgstr ""
+msgstr "Токен записано"
 
 #: rust/frontend/ui/labels.slint:200
 msgid "No recent games"
-msgstr ""
+msgstr "Немає нещодавніх ігор"
 
 #: rust/frontend/ui/labels.slint:201
 msgid "No internet connection"
-msgstr ""
+msgstr "Немає з'єднання з інтернетом"
 
 #: rust/frontend/ui/labels.slint:202 rust/frontend/ui/settings.slint:338
 msgid "Not available"
-msgstr ""
+msgstr "Недоступно"
 
 #: rust/frontend/ui/labels.slint:209
 msgid "not installed"
-msgstr ""
+msgstr "не встановлено"
 
 #: rust/frontend/ui/labels.slint:210
 msgid "unavailable"
-msgstr ""
+msgstr "недоступно"
 
 #: rust/frontend/ui/labels.slint:219
 msgid "Quit Zaparoo Frontend?"
-msgstr ""
+msgstr "Вийти із Zaparoo Frontend?"
 
 #: rust/frontend/ui/labels.slint:220
 msgid "Game still running"
-msgstr ""
+msgstr "Гра ще запущена"
 
 #: rust/frontend/ui/labels.slint:221
 msgid "Quit and restart Zaparoo Frontend?"
-msgstr ""
+msgstr "Вийти й перезапустити Zaparoo Frontend?"
 
 #: rust/frontend/ui/labels.slint:222
 msgid "Welcome to Zaparoo Frontend"
-msgstr ""
+msgstr "Вітаємо в Zaparoo Frontend"
 
 #: rust/frontend/ui/labels.slint:223
 msgid "Update Zaparoo Core"
-msgstr ""
+msgstr "Оновіть Zaparoo Core"
 
 #: rust/frontend/ui/labels.slint:224
 msgid "First-time setup"
-msgstr ""
+msgstr "Початкове налаштування"
 
 #: rust/frontend/ui/labels.slint:225
 msgid "Nothing left to add"
-msgstr ""
+msgstr "Більше нічого додати"
 
 #: rust/frontend/ui/labels.slint:226
 msgid "Unlink Online account?"
-msgstr ""
+msgstr "Відв'язати обліковий запис Online?"
 
 #: rust/frontend/ui/labels.slint:227
 msgid "Restore this backup?"
-msgstr ""
+msgstr "Відновити цю резервну копію?"
 
 #: rust/frontend/ui/labels.slint:228
 msgid "Stop update?"
-msgstr ""
+msgstr "Зупинити оновлення?"
 
 #: rust/frontend/ui/labels.slint:237
 msgid "Are you sure you want to exit?"
@@ -1068,23 +1072,23 @@ msgstr "Ви впевнені, що хочете вийти?"
 
 #: rust/frontend/ui/labels.slint:238
 msgid "Close the running game before exiting Zaparoo Frontend."
-msgstr ""
+msgstr "Закрийте запущену гру, перш ніж виходити із Zaparoo Frontend."
 
 #: rust/frontend/ui/labels.slint:239
 msgid "This setting needs a frontend restart to take effect."
-msgstr ""
+msgstr "Щоб це налаштування набуло чинності, потрібен перезапуск інтерфейсу."
 
 #: rust/frontend/ui/labels.slint:240
 msgid "This device stops backing up and syncing with your Zaparoo Online account. Local play history stays on this device."
-msgstr ""
+msgstr "Цей пристрій припинить резервне копіювання й синхронізацію з вашим обліковим записом Zaparoo Online. Локальна історія ігор залишиться на цьому пристрої."
 
 #: rust/frontend/ui/labels.slint:241
 msgid "This replaces this device's settings and data with the backup from {}. Zaparoo restarts when it finishes."
-msgstr ""
+msgstr "Налаштування й дані цього пристрою буде замінено резервною копією від {}. Після завершення Zaparoo перезапуститься."
 
 #: rust/frontend/ui/labels.slint:242
 msgid "An update is still running. Leaving this screen stops it."
-msgstr ""
+msgstr "Оновлення ще триває. Якщо вийти з цього екрана, воно зупиниться."
 
 #: rust/frontend/ui/labels.slint:244
 msgid ""
@@ -1099,18 +1103,28 @@ msgid ""
 "Created by\n"
 "Andrea Bogazzi, BossRighteous, Tim Wilsie, Wizzo"
 msgstr ""
+"Авторські права 2026 Wizzo Pty Ltd та учасники проєкту Zaparoo.\n"
+"\n"
+"Ця безкоштовна збірка з доступним вихідним кодом призначена лише для особистого некомерційного використання. Комерційне використання потребує окремої ліцензії.\n"
+"\n"
+"Контакт: legal@zaparoo.com\n"
+"\n"
+"Повні відомості завжди доступні в меню Налаштування > Про програму / Ліцензія.\n"
+"\n"
+"Створено\n"
+"Andrea Bogazzi, BossRighteous, Tim Wilsie, Wizzo"
 
 #: rust/frontend/ui/labels.slint:247
 msgid "This frontend needs Zaparoo Core {} or newer. You're running {}. Some features may not work until you update."
-msgstr ""
+msgstr "Цьому інтерфейсу потрібен Zaparoo Core {} або новіший. У вас запущено {}. Деякі функції можуть не працювати, доки ви не оновитеся."
 
 #: rust/frontend/ui/labels.slint:250
 msgid "Start a media database update to find your games. It runs in the background, and systems appear as they are indexed."
-msgstr ""
+msgstr "Запустіть оновлення бази медіа, щоб знайти свої ігри. Воно працює у фоні, а системи з'являються в міру індексування."
 
 #: rust/frontend/ui/labels.slint:253
 msgid "All categories and actions are already on the Hub. To add a game or system, open its Options menu and choose \"Add to Hub\"."
-msgstr ""
+msgstr "Усі категорії та дії вже є на Hub. Щоб додати гру або систему, відкрийте її меню \"Параметри\" і виберіть \"Додати до Hub\"."
 
 #: rust/frontend/ui/labels.slint:262
 msgid "Yes"
@@ -1126,295 +1140,295 @@ msgstr "Я розумію"
 
 #: rust/frontend/ui/labels.slint:268
 msgid "Start media update"
-msgstr ""
+msgstr "Оновити базу медіа"
 
 #: rust/frontend/ui/labels.slint:275
 msgid "Launch failed"
-msgstr ""
+msgstr "Не вдалося запустити"
 
 #: rust/frontend/ui/labels.slint:276
 msgid "Favorite update failed"
-msgstr ""
+msgstr "Не вдалося оновити вибране"
 
 #: rust/frontend/ui/labels.slint:277
 msgid "Visibility update failed"
-msgstr ""
+msgstr "Не вдалося змінити видимість"
 
 #: rust/frontend/ui/labels.slint:278
 msgid "Media database is busy"
-msgstr ""
+msgstr "База медіа зайнята"
 
 #: rust/frontend/ui/labels.slint:279
 msgid "Add to Hub failed"
-msgstr ""
+msgstr "Не вдалося додати до Hub"
 
 #: rust/frontend/ui/labels.slint:280
 msgid "Media update failed"
-msgstr ""
+msgstr "Не вдалося оновити базу медіа"
 
 #: rust/frontend/ui/labels.slint:281
 msgid "Update metadata failed"
-msgstr ""
+msgstr "Не вдалося оновити метадані"
 
 #: rust/frontend/ui/labels.slint:282
 msgid "Source list unavailable"
-msgstr ""
+msgstr "Список джерел недоступний"
 
 #: rust/frontend/ui/labels.slint:283
 msgid "Cancel failed"
-msgstr ""
+msgstr "Не вдалося скасувати"
 
 #: rust/frontend/ui/labels.slint:284
 msgid "Launcher update failed"
-msgstr ""
+msgstr "Не вдалося змінити лаунчер"
 
 #: rust/frontend/ui/labels.slint:285
 msgid "Alternate versions unavailable"
-msgstr ""
+msgstr "Інші версії недоступні"
 
 #: rust/frontend/ui/labels.slint:286
 msgid "Disc list unavailable"
-msgstr ""
+msgstr "Список дисків недоступний"
 
 #: rust/frontend/ui/labels.slint:287
 msgid "QR code failed"
-msgstr ""
+msgstr "Помилка QR-коду"
 
 #: rust/frontend/ui/labels.slint:288
 msgid "Token write failed"
-msgstr ""
+msgstr "Не вдалося записати токен"
 
 #: rust/frontend/ui/labels.slint:289
 msgid "Setting not saved"
-msgstr ""
+msgstr "Налаштування не збережено"
 
 #: rust/frontend/ui/labels.slint:290
 msgid "Pairing could not start"
-msgstr ""
+msgstr "Не вдалося почати сполучення"
 
 #: rust/frontend/ui/labels.slint:291
 msgid "Online account unavailable"
-msgstr ""
+msgstr "Обліковий запис Online недоступний"
 
 #: rust/frontend/ui/labels.slint:292
 msgid "Cloud backup failed"
-msgstr ""
+msgstr "Помилка хмарного копіювання"
 
 #: rust/frontend/ui/labels.slint:293
 msgid "Action failed"
-msgstr ""
+msgstr "Не вдалося виконати дію"
 
 #: rust/frontend/ui/labels.slint:300
 msgid "Could not start this item. Check Zaparoo Core and try again."
-msgstr ""
+msgstr "Не вдалося запустити цей елемент. Перевірте Zaparoo Core і спробуйте ще раз."
 
 #: rust/frontend/ui/labels.slint:301
 msgid "Could not start {}. Check Zaparoo Core and try again."
-msgstr ""
+msgstr "Не вдалося запустити {}. Перевірте Zaparoo Core і спробуйте ще раз."
 
 #: rust/frontend/ui/labels.slint:306
 msgid "Could not update this favorite. Check Zaparoo Core and try again."
-msgstr ""
+msgstr "Не вдалося оновити вибране. Перевірте Zaparoo Core і спробуйте ще раз."
 
 #: rust/frontend/ui/labels.slint:307
 msgid "Could not hide or unhide this game. Check Zaparoo Core and try again."
-msgstr ""
+msgstr "Не вдалося приховати або показати цю гру. Перевірте Zaparoo Core і спробуйте ще раз."
 
 #: rust/frontend/ui/labels.slint:309
 msgid "Zaparoo Core is updating the media database. Try again when it finishes."
-msgstr ""
+msgstr "Zaparoo Core оновлює базу медіа. Спробуйте ще раз, коли він закінчить."
 
 #: rust/frontend/ui/labels.slint:311
 msgid "Could not add this item to the Hub. Check Zaparoo Core and try again."
-msgstr ""
+msgstr "Не вдалося додати цей елемент до Hub. Перевірте Zaparoo Core і спробуйте ще раз."
 
 #: rust/frontend/ui/labels.slint:312
 msgid "Could not add {} to the Hub. Check Zaparoo Core and try again."
-msgstr ""
+msgstr "Не вдалося додати {} до Hub. Перевірте Zaparoo Core і спробуйте ще раз."
 
 #: rust/frontend/ui/labels.slint:314
 msgid "Could not start the media database update. Check Zaparoo Core and try again."
-msgstr ""
+msgstr "Не вдалося почати оновлення бази медіа. Перевірте Zaparoo Core і спробуйте ще раз."
 
 #: rust/frontend/ui/labels.slint:315
 msgid "Could not start updating metadata. Check Zaparoo Core and try again."
-msgstr ""
+msgstr "Не вдалося почати оновлення метаданих. Перевірте Zaparoo Core і спробуйте ще раз."
 
 #: rust/frontend/ui/labels.slint:316
 msgid "Could not load the list of metadata sources. Check Zaparoo Core and try again."
-msgstr ""
+msgstr "Не вдалося завантажити список джерел метаданих. Перевірте Zaparoo Core і спробуйте ще раз."
 
 #: rust/frontend/ui/labels.slint:317
 msgid "Could not cancel the media operation. Check Zaparoo Core and try again."
-msgstr ""
+msgstr "Не вдалося скасувати операцію з медіа. Перевірте Zaparoo Core і спробуйте ще раз."
 
 #: rust/frontend/ui/labels.slint:318
 msgid "Could not change the launcher. Check Zaparoo Core and try again."
-msgstr ""
+msgstr "Не вдалося змінити лаунчер. Перевірте Zaparoo Core і спробуйте ще раз."
 
 #: rust/frontend/ui/labels.slint:319
 msgid "Could not find alternate versions. Check Zaparoo Core and try again."
-msgstr ""
+msgstr "Не вдалося знайти інші версії. Перевірте Zaparoo Core і спробуйте ще раз."
 
 #: rust/frontend/ui/labels.slint:320
 msgid "Could not list the discs of this game. Check Zaparoo Core and try again."
-msgstr ""
+msgstr "Не вдалося отримати список дисків цієї гри. Перевірте Zaparoo Core і спробуйте ще раз."
 
 #: rust/frontend/ui/labels.slint:321
 msgid "Could not create the QR code for this item."
-msgstr ""
+msgstr "Не вдалося створити QR-код для цього елемента."
 
 #: rust/frontend/ui/labels.slint:322
 msgid "Could not write to this token. Check that it is writable and try again."
-msgstr ""
+msgstr "Не вдалося записати на цей токен. Перевірте, чи він доступний для запису, і спробуйте ще раз."
 
 #: rust/frontend/ui/labels.slint:323
 msgid "Could not save this setting. Try again."
-msgstr ""
+msgstr "Не вдалося зберегти це налаштування. Спробуйте ще раз."
 
 #: rust/frontend/ui/labels.slint:324
 msgid "Core would not start a pairing. It may already have as many paired devices as it allows, or it may be running on another device."
-msgstr ""
+msgstr "Core не почав сполучення. Можливо, вже досягнуто ліміту сполучених пристроїв або Core працює на іншому пристрої."
 
 #: rust/frontend/ui/labels.slint:325
 msgid "Core could not reach or update your Zaparoo Online account. Check the network connection and try again."
-msgstr ""
+msgstr "Core не зміг зв'язатися з вашим обліковим записом Zaparoo Online або оновити його. Перевірте підключення до мережі і спробуйте ще раз."
 
 #: rust/frontend/ui/labels.slint:329
 msgid "A backup was uploaded recently. Wait a few minutes, then try again."
-msgstr ""
+msgstr "Резервну копію нещодавно вже вивантажено. Зачекайте кілька хвилин і спробуйте ще раз."
 
 #: rust/frontend/ui/labels.slint:332
 msgid "Your cloud backup storage is full."
-msgstr ""
+msgstr "Ваше хмарне сховище резервних копій заповнене."
 
 #: rust/frontend/ui/labels.slint:333
 msgid "Zaparoo is busy with another backup or request. Wait for it to finish, then try again."
-msgstr ""
+msgstr "Zaparoo зайнятий іншою резервною копією або запитом. Дочекайтеся завершення і спробуйте ще раз."
 
 #: rust/frontend/ui/labels.slint:334
 msgid "Stop the game that is running, then try again."
-msgstr ""
+msgstr "Зупиніть запущену гру і спробуйте ще раз."
 
 #: rust/frontend/ui/labels.slint:335
 msgid "Restart Zaparoo to finish the previous restore, then try again."
-msgstr ""
+msgstr "Перезапустіть Zaparoo, щоб завершити попереднє відновлення, і спробуйте ще раз."
 
 #: rust/frontend/ui/labels.slint:336
 msgid "This backup was made by a newer Zaparoo. Update Zaparoo, then try again."
-msgstr ""
+msgstr "Цю резервну копію створено новішою версією Zaparoo. Оновіть Zaparoo і спробуйте ще раз."
 
 #: rust/frontend/ui/labels.slint:337
 msgid "Free some storage space on this device, then try again."
-msgstr ""
+msgstr "Звільніть місце на цьому пристрої і спробуйте ще раз."
 
 #: rust/frontend/ui/labels.slint:338
 msgid "Could not finish the cloud backup. Check the network connection and try again."
-msgstr ""
+msgstr "Не вдалося завершити хмарне резервне копіювання. Перевірте підключення до мережі і спробуйте ще раз."
 
 #: rust/frontend/ui/labels.slint:340
 msgid "The action could not be completed. Check Zaparoo Core and try again."
-msgstr ""
+msgstr "Не вдалося виконати дію. Перевірте Zaparoo Core і спробуйте ще раз."
 
 #: rust/frontend/ui/labels.slint:352
 msgid "This launcher isn't installed."
-msgstr ""
+msgstr "Цей лаунчер не встановлено."
 
 #: rust/frontend/ui/labels.slint:353
 msgid "{} isn't installed."
-msgstr ""
+msgstr "{} не встановлено."
 
 #: rust/frontend/ui/labels.slint:356
 msgid "This launcher is installed, but its entry point is missing or disabled."
-msgstr ""
+msgstr "Цей лаунчер встановлено, але його точка входу відсутня або вимкнена."
 
 #: rust/frontend/ui/labels.slint:357
 msgid "{} is installed, but its entry point is missing or disabled."
-msgstr ""
+msgstr "{} встановлено, але його точка входу відсутня або вимкнена."
 
 #: rust/frontend/ui/labels.slint:360
 msgid "This launcher's plugin for this system isn't installed."
-msgstr ""
+msgstr "Плагін цього лаунчера для цієї системи не встановлено."
 
 #: rust/frontend/ui/labels.slint:361
 msgid "{}'s plugin for this system isn't installed."
-msgstr ""
+msgstr "Плагін {} для цієї системи не встановлено."
 
 #: rust/frontend/ui/labels.slint:362
 msgid "{}'s {} plugin isn't installed."
-msgstr ""
+msgstr "Плагін {1} для {0} не встановлено."
 
 #: rust/frontend/ui/labels.slint:365
 msgid "This build of the launcher can't be used for this media. A different build is needed."
-msgstr ""
+msgstr "Ця збірка лаунчера не підходить для цього медіа. Потрібна інша збірка."
 
 #: rust/frontend/ui/labels.slint:366
 msgid "This build of {} can't be used for this media. A different build is needed."
-msgstr ""
+msgstr "Ця збірка {} не підходить для цього медіа. Потрібна інша збірка."
 
 #: rust/frontend/ui/labels.slint:369
 msgid "This launcher can't play this media."
-msgstr ""
+msgstr "Цей лаунчер не може відтворити це медіа."
 
 #: rust/frontend/ui/labels.slint:370
 msgid "{} can't play this media."
-msgstr ""
+msgstr "{} не може відтворити це медіа."
 
 #: rust/frontend/ui/labels.slint:373
 msgid "This launcher doesn't support the requested launch options."
-msgstr ""
+msgstr "Цей лаунчер не підтримує запитані параметри запуску."
 
 #: rust/frontend/ui/labels.slint:374
 msgid "{} doesn't support the requested launch options."
-msgstr ""
+msgstr "{} не підтримує запитані параметри запуску."
 
 #: rust/frontend/ui/labels.slint:377
 msgid "This launcher doesn't have the storage permission it needs."
-msgstr ""
+msgstr "Цей лаунчер не має потрібного дозволу на доступ до сховища."
 
 #: rust/frontend/ui/labels.slint:378
 msgid "{} doesn't have the storage permission it needs."
-msgstr ""
+msgstr "{} не має потрібного дозволу на доступ до сховища."
 
 #: rust/frontend/ui/labels.slint:381
 msgid "This launcher can't read media from where it's stored."
-msgstr ""
+msgstr "Цей лаунчер не може прочитати медіа з місця, де воно зберігається."
 
 #: rust/frontend/ui/labels.slint:382
 msgid "{} can't read media from where it's stored."
-msgstr ""
+msgstr "{} не може прочитати медіа з місця, де воно зберігається."
 
 #: rust/frontend/ui/labels.slint:384
 msgid "The storage holding this media isn't available."
-msgstr ""
+msgstr "Сховище з цим медіа недоступне."
 
 #: rust/frontend/ui/labels.slint:385
 msgid "This media could not be resolved or opened."
-msgstr ""
+msgstr "Не вдалося знайти або відкрити це медіа."
 
 #: rust/frontend/ui/labels.slint:386
 msgid "Access to this media's folder was revoked. Re-grant it in Settings > Library."
-msgstr ""
+msgstr "Доступ до папки цього медіа відкликано. Надайте його знову в меню Налаштування > Бібліотека."
 
 #: rust/frontend/ui/labels.slint:387
 msgid "The launcher service isn't responding."
-msgstr ""
+msgstr "Служба лаунчера не відповідає."
 
 #: rust/frontend/ui/labels.slint:388
 msgid "Return to Zaparoo before launching this."
-msgstr ""
+msgstr "Поверніться до Zaparoo, перш ніж запускати це."
 
 #: rust/frontend/ui/labels.slint:389
 msgid "The launch was cancelled before it started."
-msgstr ""
+msgstr "Запуск скасовано до його початку."
 
 #: rust/frontend/ui/labels.slint:390
 msgid "The launch was sent, but its outcome could not be confirmed."
-msgstr ""
+msgstr "Запит на запуск надіслано, але підтвердити результат не вдалося."
 
 #: rust/frontend/ui/labels.slint:391
 msgid "The system refused the launch request."
-msgstr ""
+msgstr "Система відхилила запит на запуск."
 
 #: rust/frontend/ui/search.slint:63
 msgid "Search failed"
@@ -1454,79 +1468,79 @@ msgstr "Поки нічого"
 
 #: rust/frontend/ui/settings.slint:47
 msgid "Automatic (Recommended)"
-msgstr ""
+msgstr "Автоматично (рекомендовано)"
 
 #: rust/frontend/ui/settings.slint:49
 msgid "{} (Animations off)"
-msgstr ""
+msgstr "{} (без анімацій)"
 
 #: rust/frontend/ui/settings.slint:55
 msgid "Saved folder permissions: {}"
-msgstr ""
+msgstr "Збережено дозволів на папки: {}"
 
 #: rust/frontend/ui/settings.slint:56
 msgid "Choose a folder in the system picker"
-msgstr ""
+msgstr "Виберіть папку в системному вікні вибору"
 
 #: rust/frontend/ui/settings.slint:57
 msgid "Folder access saved: {} total"
-msgstr ""
+msgstr "Доступ до папки збережено: усього {}"
 
 #: rust/frontend/ui/settings.slint:58
 msgid "Canceled: {} folder permissions saved"
-msgstr ""
+msgstr "Скасовано, збережено дозволів на папки: {}"
 
 #: rust/frontend/ui/settings.slint:59 rust/frontend/ui/settings.slint:66
 msgid "Read access could not be saved. Choose the folder again."
-msgstr ""
+msgstr "Не вдалося зберегти доступ на читання. Виберіть папку ще раз."
 
 #: rust/frontend/ui/settings.slint:60
 msgid "Could not open or save the folder. Try again."
-msgstr ""
+msgstr "Не вдалося відкрити або зберегти папку. Спробуйте ще раз."
 
 #: rust/frontend/ui/settings.slint:61
 msgid "Folder access was removed. Choose the folder again."
-msgstr ""
+msgstr "Доступ до папки скасовано. Виберіть папку ще раз."
 
 #: rust/frontend/ui/settings.slint:62
 msgid "Choose a folder to scan for installed launchers"
-msgstr ""
+msgstr "Виберіть папку для пошуку встановлених лаунчерів"
 
 #: rust/frontend/ui/settings.slint:63
 msgid "Choose the folder to scan in the system picker"
-msgstr ""
+msgstr "Виберіть папку для пошуку в системному вікні вибору"
 
 #: rust/frontend/ui/settings.slint:64
 msgid "{} launchers detected"
-msgstr ""
+msgstr "Знайдено лаунчерів: {}"
 
 #: rust/frontend/ui/settings.slint:65
 msgid "Canceled: {} launchers detected"
-msgstr ""
+msgstr "Скасовано, знайдено лаунчерів: {}"
 
 #: rust/frontend/ui/settings.slint:67
 msgid "Could not scan that folder. Try again."
-msgstr ""
+msgstr "Не вдалося просканувати цю папку. Спробуйте ще раз."
 
 #: rust/frontend/ui/settings.slint:68
 msgid "Scanning for launchers is unavailable"
-msgstr ""
+msgstr "Пошук лаунчерів недоступний"
 
 #: rust/frontend/ui/settings.slint:69
 msgid "Verified: exact foreground playtime"
-msgstr ""
+msgstr "Підтверджено: точний час активної гри"
 
 #: rust/frontend/ui/settings.slint:70
 msgid "Off: playtime cannot be verified"
-msgstr ""
+msgstr "Вимкнено: час гри не можна підтвердити"
 
 #: rust/frontend/ui/settings.slint:71
 msgid "Linked to Zaparoo Online"
-msgstr ""
+msgstr "Прив'язано до Zaparoo Online"
 
 #: rust/frontend/ui/settings.slint:72 rust/frontend/ui/settings.slint:325
 msgid "Not linked"
-msgstr ""
+msgstr "Не прив'язано"
 
 #: rust/frontend/ui/settings.slint:73
 msgid "Optimizing…"
@@ -1546,40 +1560,40 @@ msgstr "{0} проіндексовано"
 
 #: rust/frontend/ui/settings.slint:77
 msgid "{} imported"
-msgstr ""
+msgstr "{0} імпортовано"
 
 #: rust/frontend/ui/settings.slint:93
 msgid "All {} systems"
-msgstr ""
+msgstr "Усі системи: {}"
 
 #: rust/frontend/ui/settings.slint:97
 msgid "Loading sources…"
-msgstr ""
+msgstr "Завантаження джерел…"
 
 #. Setup forms.
 #: rust/frontend/ui/settings.slint:109
 msgid "Source"
-msgstr ""
+msgstr "Джерело"
 
 #: rust/frontend/ui/settings.slint:110
 msgid "Systems"
-msgstr ""
+msgstr "Системи"
 
 #: rust/frontend/ui/settings.slint:111
 msgid "Replace existing"
-msgstr ""
+msgstr "Замінити наявні"
 
 #: rust/frontend/ui/settings.slint:112
 msgid "Start update"
-msgstr ""
+msgstr "Почати оновлення"
 
 #: rust/frontend/ui/settings.slint:113
 msgid "Start import"
-msgstr ""
+msgstr "Почати імпорт"
 
 #: rust/frontend/ui/settings.slint:115
 msgid "Appearance"
-msgstr ""
+msgstr "Оформлення"
 
 #: rust/frontend/ui/settings.slint:116
 msgid "Library"
@@ -1587,63 +1601,63 @@ msgstr "Бібліотека"
 
 #: rust/frontend/ui/settings.slint:117
 msgid "Online"
-msgstr ""
+msgstr "Онлайн"
 
 #: rust/frontend/ui/settings.slint:118
 msgid "Display"
-msgstr ""
+msgstr "Екран"
 
 #: rust/frontend/ui/settings.slint:119
 msgid "Controls"
-msgstr ""
+msgstr "Керування"
 
 #: rust/frontend/ui/settings.slint:121
 msgid "About"
-msgstr ""
+msgstr "Про програму"
 
 #: rust/frontend/ui/settings.slint:123
 msgid "Analog video"
-msgstr ""
+msgstr "Аналогове відео"
 
 #: rust/frontend/ui/settings.slint:124
 msgid "Maintenance"
-msgstr ""
+msgstr "Обслуговування"
 
 #: rust/frontend/ui/settings.slint:125
 msgid "Browsing"
-msgstr ""
+msgstr "Перегляд"
 
 #: rust/frontend/ui/settings.slint:126
 msgid "Account"
-msgstr ""
+msgstr "Обліковий запис"
 
 #: rust/frontend/ui/settings.slint:127
 msgid "Features"
-msgstr ""
+msgstr "Функції"
 
 #: rust/frontend/ui/settings.slint:128
 msgid "Backup"
-msgstr ""
+msgstr "Резервна копія"
 
 #: rust/frontend/ui/settings.slint:129
 msgid "Remote"
-msgstr ""
+msgstr "Віддалений доступ"
 
 #: rust/frontend/ui/settings.slint:131
 msgid "Color scheme"
-msgstr ""
+msgstr "Колірна схема"
 
 #: rust/frontend/ui/settings.slint:132
 msgid "Color intensity"
-msgstr ""
+msgstr "Насиченість кольорів"
 
 #: rust/frontend/ui/settings.slint:133
 msgid "System logos"
-msgstr ""
+msgstr "Логотипи систем"
 
 #: rust/frontend/ui/settings.slint:134
 msgid "Reduce motion"
-msgstr ""
+msgstr "Менше руху"
 
 #: rust/frontend/ui/settings.slint:135
 msgid "Screensaver"
@@ -1651,31 +1665,31 @@ msgstr "Заставка"
 
 #: rust/frontend/ui/settings.slint:137
 msgid "Interface resolution"
-msgstr ""
+msgstr "Роздільність інтерфейсу"
 
 #: rust/frontend/ui/settings.slint:138
 msgid "Interface layout"
-msgstr ""
+msgstr "Макет інтерфейсу"
 
 #: rust/frontend/ui/settings.slint:139
 msgid "Orientation"
-msgstr ""
+msgstr "Орієнтація"
 
 #: rust/frontend/ui/settings.slint:140
 msgid "CRT mode"
-msgstr ""
+msgstr "Режим CRT"
 
 #: rust/frontend/ui/settings.slint:141
 msgid "Video standard"
-msgstr ""
+msgstr "Відеостандарт"
 
 #: rust/frontend/ui/settings.slint:142
 msgid "Screen position"
-msgstr ""
+msgstr "Положення екрана"
 
 #: rust/frontend/ui/settings.slint:146
 msgid "Clock format"
-msgstr ""
+msgstr "Формат годинника"
 
 #: rust/frontend/ui/settings.slint:148
 msgid "Button style"
@@ -1683,11 +1697,11 @@ msgstr "Стиль кнопок"
 
 #: rust/frontend/ui/settings.slint:149
 msgid "Swap controller confirm/cancel"
-msgstr ""
+msgstr "Поміняти підтвердження/скасування"
 
 #: rust/frontend/ui/settings.slint:150
 msgid "Swap controller options/view"
-msgstr ""
+msgstr "Поміняти параметри/вигляд"
 
 #: rust/frontend/ui/settings.slint:151
 msgid "Mouse support"
@@ -1695,87 +1709,87 @@ msgstr "Підтримка миші"
 
 #: rust/frontend/ui/settings.slint:153
 msgid "Add game folder…"
-msgstr ""
+msgstr "Додати папку з іграми…"
 
 #: rust/frontend/ui/settings.slint:154
 msgid "Detect launchers…"
-msgstr ""
+msgstr "Знайти лаунчери…"
 
 #: rust/frontend/ui/settings.slint:155
 msgid "Verify playtime…"
-msgstr ""
+msgstr "Підтвердити час гри…"
 
 #: rust/frontend/ui/settings.slint:158
 msgid "Systems layout"
-msgstr ""
+msgstr "Макет систем"
 
 #: rust/frontend/ui/settings.slint:159
 msgid "Games layout"
-msgstr ""
+msgstr "Макет ігор"
 
 #: rust/frontend/ui/settings.slint:160
 msgid "Preferred artwork"
-msgstr ""
+msgstr "Бажане зображення"
 
 #: rust/frontend/ui/settings.slint:161
 msgid "Show hidden items"
-msgstr ""
+msgstr "Показувати приховане"
 
 #: rust/frontend/ui/settings.slint:162
 msgid "Show original filenames"
-msgstr ""
+msgstr "Оригінальні назви файлів"
 
 #: rust/frontend/ui/settings.slint:164
 msgid "Online features are not available for this client"
-msgstr ""
+msgstr "Онлайн-функції недоступні для цього клієнта"
 
 #: rust/frontend/ui/settings.slint:165 rust/frontend/ui/settings.slint:176
 msgid "Status"
-msgstr ""
+msgstr "Стан"
 
 #: rust/frontend/ui/settings.slint:166
 msgid "Warp"
-msgstr ""
+msgstr "Warp"
 
 #: rust/frontend/ui/settings.slint:167
 msgid "Link account"
-msgstr ""
+msgstr "Прив'язати обліковий запис"
 
 #: rust/frontend/ui/settings.slint:168
 msgid "Unlink account"
-msgstr ""
+msgstr "Відв'язати обліковий запис"
 
 #: rust/frontend/ui/settings.slint:169
 msgid "All"
-msgstr ""
+msgstr "Усі"
 
 #: rust/frontend/ui/settings.slint:170
 msgid "Sync play history"
-msgstr ""
+msgstr "Синхронізація історії ігор"
 
 #: rust/frontend/ui/settings.slint:171
 msgid "Remote control"
-msgstr ""
+msgstr "Віддалене керування"
 
 #: rust/frontend/ui/settings.slint:172
 msgid "Library sync"
-msgstr ""
+msgstr "Синхронізація бібліотеки"
 
 #: rust/frontend/ui/settings.slint:173
 msgid "Cloud backup"
-msgstr ""
+msgstr "Хмарна резервна копія"
 
 #: rust/frontend/ui/settings.slint:174
 msgid "Schedule"
-msgstr ""
+msgstr "Розклад"
 
 #: rust/frontend/ui/settings.slint:175
 msgid "Manage backups…"
-msgstr ""
+msgstr "Керувати копіями…"
 
 #: rust/frontend/ui/settings.slint:177
 msgid "Activity…"
-msgstr ""
+msgstr "Активність…"
 
 #: rust/frontend/ui/settings.slint:182
 msgid "Debug logging"
@@ -1787,191 +1801,191 @@ msgstr "Завантажити файл журналу"
 
 #: rust/frontend/ui/settings.slint:193
 msgid "Link your Zaparoo Online account first."
-msgstr ""
+msgstr "Спершу прив'яжіть обліковий запис Zaparoo Online."
 
 #: rust/frontend/ui/settings.slint:196
 msgid "Wait for the metadata update to finish."
-msgstr ""
+msgstr "Дочекайтеся завершення оновлення метаданих."
 
 #: rust/frontend/ui/settings.slint:197
 msgid "Wait for the media database update to finish."
-msgstr ""
+msgstr "Дочекайтеся завершення оновлення бази медіа."
 
 #: rust/frontend/ui/settings.slint:201
 msgid "Choose a folder containing system folders, then use Update media database to scan."
-msgstr ""
+msgstr "Виберіть папку з папками систем, а потім запустіть сканування пунктом \"Оновити базу медіа\"."
 
 #: rust/frontend/ui/settings.slint:202
 msgid "Scans a folder you choose for launchers already installed."
-msgstr ""
+msgstr "Шукає вже встановлені лаунчери у вибраній папці."
 
 #: rust/frontend/ui/settings.slint:203
 msgid "Allow exact game time in system settings. Optional."
-msgstr ""
+msgstr "Дозвольте точний облік часу гри в налаштуваннях системи. Необов'язково."
 
 #: rust/frontend/ui/settings.slint:204
 msgid "Changes colors across screens, including text and highlights."
-msgstr ""
+msgstr "Змінює кольори на всіх екранах, зокрема тексту й виділення."
 
 #: rust/frontend/ui/settings.slint:205
 msgid "Controls how strongly accent colors tint tiles and backgrounds."
-msgstr ""
+msgstr "Визначає, наскільки акцентні кольори тонують плитки й тло."
 
 #: rust/frontend/ui/settings.slint:206
 msgid "Shows system logos in original colors or tinted to match colors."
-msgstr ""
+msgstr "Показує логотипи систем в оригінальних кольорах або в тон схеми."
 
 #: rust/frontend/ui/settings.slint:207
 msgid "Turns off animation throughout the interface."
-msgstr ""
+msgstr "Вимикає анімацію в усьому інтерфейсі."
 
 #: rust/frontend/ui/settings.slint:208
 msgid "Sets idle time before the screensaver starts. Off disables it."
-msgstr ""
+msgstr "Час бездіяльності до запуску заставки. \"Вимкнено\" її вимикає."
 
 #: rust/frontend/ui/settings.slint:209
 msgid "The resolution the interface renders at. Restarts the frontend."
-msgstr ""
+msgstr "Роздільність, з якою малюється інтерфейс. Перезапускає інтерфейс."
 
 #: rust/frontend/ui/settings.slint:210
 msgid "Adjusts layout density for standard and handheld screens."
-msgstr ""
+msgstr "Змінює щільність макета для звичайних і портативних екранів."
 
 #: rust/frontend/ui/settings.slint:211
 msgid "Rotates the interface for a sideways screen or tate cabinet."
-msgstr ""
+msgstr "Повертає інтерфейс для екрана на боці або вертикального автомата."
 
 #: rust/frontend/ui/settings.slint:212
 msgid "Outputs 15 kHz analog video through MiSTer. Restarts frontend."
-msgstr ""
+msgstr "Виводить аналогове відео 15 кГц через MiSTer. Перезапускає інтерфейс."
 
 #: rust/frontend/ui/settings.slint:213
 msgid "Matches analog output to NTSC or PAL. Restarts the frontend."
-msgstr ""
+msgstr "Узгоджує аналоговий вихід з NTSC або PAL. Перезапускає інтерфейс."
 
 #: rust/frontend/ui/settings.slint:214
 msgid "Opens a test pattern to position the analog picture with arrows."
-msgstr ""
+msgstr "Відкриває тестову таблицю, щоб вирівняти аналогове зображення стрілками."
 
 #: rust/frontend/ui/settings.slint:215
 msgid "The language used for interface text. Restarts the frontend."
-msgstr ""
+msgstr "Мова тексту інтерфейсу. Перезапускає інтерфейс."
 
 #: rust/frontend/ui/settings.slint:216
 msgid "Selects regional system and game names, such as Mega Drive."
-msgstr ""
+msgstr "Вибирає регіональні назви систем та ігор, наприклад Mega Drive."
 
 #: rust/frontend/ui/settings.slint:217
 msgid "12-hour or 24-hour time in the top bar."
-msgstr ""
+msgstr "12- або 24-годинний формат часу у верхній панелі."
 
 #: rust/frontend/ui/settings.slint:218
 msgid "Matches on-screen prompt icons to your controller."
-msgstr ""
+msgstr "Підбирає значки підказок на екрані під ваш контролер."
 
 #: rust/frontend/ui/settings.slint:219
 msgid "Flips which controller button accepts and which cancels."
-msgstr ""
+msgstr "Міняє місцями кнопки підтвердження і скасування на контролері."
 
 #: rust/frontend/ui/settings.slint:220
 msgid "Swaps which controller button opens Options and View."
-msgstr ""
+msgstr "Міняє місцями кнопки, що відкривають \"Параметри\" і \"Вигляд\"."
 
 #: rust/frontend/ui/settings.slint:221
 msgid "Lets a mouse click tiles and menu rows."
-msgstr ""
+msgstr "Дозволяє клацати мишею плитки й рядки меню."
 
 #: rust/frontend/ui/settings.slint:222
 msgid "Rescans game folders for added or removed files. Choose systems."
-msgstr ""
+msgstr "Шукає в папках з іграми додані або видалені файли. Виберіть системи."
 
 #: rust/frontend/ui/settings.slint:223
 msgid "Adds artwork and details from the sources Core offers."
-msgstr ""
+msgstr "Додає зображення й відомості з джерел, які пропонує Core."
 
 #: rust/frontend/ui/settings.slint:224
 msgid "Shows systems as a cover grid or a list with details."
-msgstr ""
+msgstr "Показує системи сіткою обкладинок або списком з відомостями."
 
 #: rust/frontend/ui/settings.slint:225
 msgid "Sets grid or list layout for Games, Favorites, and Recents."
-msgstr ""
+msgstr "Сітка або список для екранів \"Ігри\", \"Вибране\" і \"Нещодавні\"."
 
 #: rust/frontend/ui/settings.slint:226
 msgid "Prefers an artwork type when games have multiple images."
-msgstr ""
+msgstr "Якому типу зображень віддавати перевагу, коли гра має кілька."
 
 #: rust/frontend/ui/settings.slint:227
 msgid "Shows hidden items so they can be unhidden."
-msgstr ""
+msgstr "Показує приховані елементи, щоб їх можна було повернути."
 
 #: rust/frontend/ui/settings.slint:228
 msgid "Shows real filenames instead of cleaned-up display titles."
-msgstr ""
+msgstr "Показує справжні назви файлів замість охайних назв."
 
 #: rust/frontend/ui/settings.slint:229
 msgid "Connects this device to your Zaparoo Online account with a code."
-msgstr ""
+msgstr "Підключає цей пристрій до вашого облікового запису Zaparoo Online за кодом."
 
 #: rust/frontend/ui/settings.slint:230
 msgid "Removes this device's Zaparoo Online account credentials."
-msgstr ""
+msgstr "Видаляє з цього пристрою дані входу до Zaparoo Online."
 
 #: rust/frontend/ui/settings.slint:231
 msgid "Turns every online feature on or off. Each can still be changed on its own."
-msgstr ""
+msgstr "Вмикає або вимикає всі онлайн-функції. Кожну можна змінити й окремо."
 
 #: rust/frontend/ui/settings.slint:232
 msgid "Uploads verified playtime to your account. Estimates stay local."
-msgstr ""
+msgstr "Вивантажує підтверджений час гри до вашого облікового запису. Оцінки лишаються локальними."
 
 #: rust/frontend/ui/settings.slint:233
 msgid "Allows your linked Zaparoo Online account to send approved commands to this device."
-msgstr ""
+msgstr "Дозволяє прив'язаному обліковому запису Zaparoo Online надсилати схвалені команди на цей пристрій."
 
 #: rust/frontend/ui/settings.slint:234
 msgid "Syncs your game list, favorites, likes and decks with your linked Zaparoo Online account."
-msgstr ""
+msgstr "Синхронізує список ігор, вибране, вподобання й колоди з прив'язаним обліковим записом Zaparoo Online."
 
 #: rust/frontend/ui/settings.slint:235
 msgid "Backs up this device to the cloud on a schedule."
-msgstr ""
+msgstr "Створює резервні копії цього пристрою в хмарі за розкладом."
 
 #: rust/frontend/ui/settings.slint:236
 msgid "How often automatic cloud backup runs."
-msgstr ""
+msgstr "Як часто виконується автоматичне хмарне копіювання."
 
 #: rust/frontend/ui/settings.slint:237
 msgid "Back up now, view and restore cloud backup snapshots."
-msgstr ""
+msgstr "Створення копії зараз, перегляд і відновлення хмарних копій."
 
 #: rust/frontend/ui/settings.slint:238
 msgid "See what a linked account's remote commands have done on this device."
-msgstr ""
+msgstr "Що зробили на цьому пристрої віддалені команди прив'язаного облікового запису."
 
 #: rust/frontend/ui/settings.slint:239
 msgid "Shows a PIN for pairing a new device with Core."
-msgstr ""
+msgstr "Показує PIN-код для сполучення нового пристрою з Core."
 
 #: rust/frontend/ui/settings.slint:240
 msgid "Version, build date, license terms, and contributors."
-msgstr ""
+msgstr "Версія, дата збірки, умови ліцензії та учасники."
 
 #: rust/frontend/ui/settings.slint:241
 msgid "Shows a code for opening the Frontend guide on your phone."
-msgstr ""
+msgstr "Показує код, щоб відкрити посібник Frontend на телефоні."
 
 #: rust/frontend/ui/settings.slint:242
 msgid "Adds troubleshooting detail to logs. Restarts the frontend."
-msgstr ""
+msgstr "Додає до журналів дані для діагностики. Перезапускає інтерфейс."
 
 #: rust/frontend/ui/settings.slint:243
 msgid "Uploads the log and provides a link for problem reports."
-msgstr ""
+msgstr "Вивантажує журнал і дає посилання для звітів про проблеми."
 
 #: rust/frontend/ui/settings.slint:250
 msgid "Configure"
-msgstr ""
+msgstr "Налаштувати"
 
 #: rust/frontend/ui/settings.slint:251
 msgid "Upload"
@@ -1979,28 +1993,28 @@ msgstr "Вивантажити"
 
 #: rust/frontend/ui/settings.slint:252
 msgid "Detect"
-msgstr ""
+msgstr "Знайти"
 
 #: rust/frontend/ui/settings.slint:253
 msgid "Pair"
-msgstr ""
+msgstr "Сполучити"
 
 #: rust/frontend/ui/settings.slint:254
 msgid "Link"
-msgstr ""
+msgstr "Прив'язати"
 
 #: rust/frontend/ui/settings.slint:255
 msgid "Unlink"
-msgstr ""
+msgstr "Відв'язати"
 
 #: rust/frontend/ui/settings.slint:261 rust/frontend/ui/settings.slint:274
 #: rust/frontend/ui/settings.slint:285 rust/frontend/ui/settings.slint:415
 msgid "Automatic"
-msgstr ""
+msgstr "Автоматично"
 
 #: rust/frontend/ui/settings.slint:262
 msgid "{} × {}"
-msgstr ""
+msgstr "{} × {}"
 
 #: rust/frontend/ui/settings.slint:269
 msgid "Style A"
@@ -2020,51 +2034,51 @@ msgstr "Стиль D"
 
 #: rust/frontend/ui/settings.slint:273
 msgid "Style E"
-msgstr ""
+msgstr "Стиль E"
 
 #: rust/frontend/ui/settings.slint:277
 msgid "12-hour"
-msgstr ""
+msgstr "12-годинний"
 
 #: rust/frontend/ui/settings.slint:278
 msgid "24-hour"
-msgstr ""
+msgstr "24-годинний"
 
 #: rust/frontend/ui/settings.slint:282
 msgid "Americas"
-msgstr ""
+msgstr "Америка"
 
 #: rust/frontend/ui/settings.slint:283
 msgid "Europe"
-msgstr ""
+msgstr "Європа"
 
 #: rust/frontend/ui/settings.slint:284
 msgid "Japan"
-msgstr ""
+msgstr "Японія"
 
 #: rust/frontend/ui/settings.slint:288
 msgid "Standard"
-msgstr ""
+msgstr "Стандартний"
 
 #: rust/frontend/ui/settings.slint:289
 msgid "Handheld"
-msgstr ""
+msgstr "Портативний"
 
 #: rust/frontend/ui/settings.slint:290
 msgid "Device default"
-msgstr ""
+msgstr "Типовий для пристрою"
 
 #: rust/frontend/ui/settings.slint:293
 msgid "Rotated CW"
-msgstr ""
+msgstr "За годинниковою"
 
 #: rust/frontend/ui/settings.slint:294
 msgid "Rotated CCW"
-msgstr ""
+msgstr "Проти годинникової"
 
 #: rust/frontend/ui/settings.slint:295
 msgid "Horizontal"
-msgstr ""
+msgstr "Горизонтальна"
 
 #: rust/frontend/ui/settings.slint:298
 msgid "Detailed list view"
@@ -2076,59 +2090,59 @@ msgstr "Перегляд сіткою"
 
 #: rust/frontend/ui/settings.slint:302
 msgid "Full color"
-msgstr ""
+msgstr "Повноколірні"
 
 #: rust/frontend/ui/settings.slint:303
 msgid "Tinted"
-msgstr ""
+msgstr "Тоновані"
 
 #: rust/frontend/ui/settings.slint:306
 msgid "Vivid"
-msgstr ""
+msgstr "Яскрава"
 
 #: rust/frontend/ui/settings.slint:307
 msgid "Subtle"
-msgstr ""
+msgstr "Стримана"
 
 #: rust/frontend/ui/settings.slint:310
 msgid "PAL (50 Hz)"
-msgstr ""
+msgstr "PAL (50 Гц)"
 
 #: rust/frontend/ui/settings.slint:311
 msgid "480i (60 Hz)"
-msgstr ""
+msgstr "480i (60 Гц)"
 
 #: rust/frontend/ui/settings.slint:312
 msgid "NTSC (60 Hz)"
-msgstr ""
+msgstr "NTSC (60 Гц)"
 
 #: rust/frontend/ui/settings.slint:319
 msgid "Daily"
-msgstr ""
+msgstr "Щодня"
 
 #: rust/frontend/ui/settings.slint:320
 msgid "Weekly"
-msgstr ""
+msgstr "Щотижня"
 
 #: rust/frontend/ui/settings.slint:321
 msgid "Manual"
-msgstr ""
+msgstr "Вручну"
 
 #: rust/frontend/ui/settings.slint:324
 msgid "Linked"
-msgstr ""
+msgstr "Прив'язано"
 
 #: rust/frontend/ui/settings.slint:328
 msgid "Active"
-msgstr ""
+msgstr "Активна"
 
 #: rust/frontend/ui/settings.slint:329
 msgid "Not active"
-msgstr ""
+msgstr "Неактивна"
 
 #: rust/frontend/ui/settings.slint:330
 msgid "Checking…"
-msgstr ""
+msgstr "Перевірка…"
 
 #: rust/frontend/ui/settings.slint:333 rust/frontend/ui/settings.slint:391
 msgid "Off"
@@ -2136,23 +2150,23 @@ msgstr "Вимкнено"
 
 #: rust/frontend/ui/settings.slint:336
 msgid "Waiting for commands…"
-msgstr ""
+msgstr "Очікування команд…"
 
 #: rust/frontend/ui/settings.slint:337
 msgid "Not the remote device"
-msgstr ""
+msgstr "Не віддалений пристрій"
 
 #: rust/frontend/ui/settings.slint:339
 msgid "Link rejected"
-msgstr ""
+msgstr "Прив'язку відхилено"
 
 #: rust/frontend/ui/settings.slint:340
 msgid "Server unreachable"
-msgstr ""
+msgstr "Сервер недоступний"
 
 #: rust/frontend/ui/settings.slint:341
 msgid "Unknown"
-msgstr ""
+msgstr "Невідомо"
 
 #: rust/frontend/ui/settings.slint:347
 msgid "English"
@@ -2164,11 +2178,11 @@ msgstr "Італійська"
 
 #: rust/frontend/ui/settings.slint:349
 msgid "Spanish"
-msgstr ""
+msgstr "Іспанська"
 
 #: rust/frontend/ui/settings.slint:350
 msgid "Basque"
-msgstr ""
+msgstr "Баскська"
 
 #: rust/frontend/ui/settings.slint:351
 msgid "German"
@@ -2208,7 +2222,7 @@ msgstr "Китайська (спрощена)"
 
 #: rust/frontend/ui/settings.slint:360
 msgid "Chinese (Traditional)"
-msgstr ""
+msgstr "Китайська (традиційна)"
 
 #: rust/frontend/ui/settings.slint:361
 msgid "Hebrew"
@@ -2216,91 +2230,91 @@ msgstr "Іврит"
 
 #: rust/frontend/ui/settings.slint:362
 msgid "Arabic"
-msgstr ""
+msgstr "Арабська"
 
 #: rust/frontend/ui/settings.slint:363
 msgid "Hindi"
-msgstr ""
+msgstr "Гінді"
 
 #: rust/frontend/ui/settings.slint:364
 msgid "French"
-msgstr ""
+msgstr "Французька"
 
 #: rust/frontend/ui/settings.slint:369
 msgid "Zaparoo Light"
-msgstr ""
+msgstr "Zaparoo Light"
 
 #: rust/frontend/ui/settings.slint:370
 msgid "Classic Purple"
-msgstr ""
+msgstr "Classic Purple"
 
 #: rust/frontend/ui/settings.slint:371
 msgid "Amber Phosphor"
-msgstr ""
+msgstr "Amber Phosphor"
 
 #: rust/frontend/ui/settings.slint:372
 msgid "Game Boy"
-msgstr ""
+msgstr "Game Boy"
 
 #: rust/frontend/ui/settings.slint:373
 msgid "Green Phosphor"
-msgstr ""
+msgstr "Green Phosphor"
 
 #: rust/frontend/ui/settings.slint:374
 msgid "Neo Geo"
-msgstr ""
+msgstr "Neo Geo"
 
 #: rust/frontend/ui/settings.slint:375
 msgid "NES"
-msgstr ""
+msgstr "NES"
 
 #: rust/frontend/ui/settings.slint:376
 msgid "Virtual Boy"
-msgstr ""
+msgstr "Virtual Boy"
 
 #: rust/frontend/ui/settings.slint:377
 msgid "Dracula"
-msgstr ""
+msgstr "Dracula"
 
 #: rust/frontend/ui/settings.slint:378
 msgid "Everforest"
-msgstr ""
+msgstr "Everforest"
 
 #: rust/frontend/ui/settings.slint:379
 msgid "Gruvbox"
-msgstr ""
+msgstr "Gruvbox"
 
 #: rust/frontend/ui/settings.slint:380
 msgid "Nord"
-msgstr ""
+msgstr "Nord"
 
 #: rust/frontend/ui/settings.slint:381
 msgid "Oxocarbon"
-msgstr ""
+msgstr "Oxocarbon"
 
 #: rust/frontend/ui/settings.slint:382
 msgid "Rosé Pine"
-msgstr ""
+msgstr "Rosé Pine"
 
 #: rust/frontend/ui/settings.slint:383
 msgid "Solarized Dark"
-msgstr ""
+msgstr "Solarized Dark"
 
 #: rust/frontend/ui/settings.slint:384
 msgid "Synthwave '84"
-msgstr ""
+msgstr "Synthwave '84"
 
 #: rust/frontend/ui/settings.slint:385
 msgid "Flexoki Paper"
-msgstr ""
+msgstr "Flexoki Paper"
 
 #: rust/frontend/ui/settings.slint:386
 msgid "Solarized Light"
-msgstr ""
+msgstr "Solarized Light"
 
 #: rust/frontend/ui/settings.slint:387
 msgid "Zaparoo Dark"
-msgstr ""
+msgstr "Zaparoo Dark"
 
 #: rust/frontend/ui/settings.slint:392
 msgid "1 second (testing)"
@@ -2336,56 +2350,56 @@ msgstr "{0} секунд"
 
 #: rust/frontend/ui/settings.slint:404
 msgid "Thumbnail"
-msgstr ""
+msgstr "Мініатюра"
 
 #: rust/frontend/ui/settings.slint:405
 msgid "Box art"
-msgstr ""
+msgstr "Обкладинка"
 
 #: rust/frontend/ui/settings.slint:406
 msgid "3D box art"
-msgstr ""
+msgstr "3D-обкладинка"
 
 #: rust/frontend/ui/settings.slint:407
 msgid "Screenshot"
-msgstr ""
+msgstr "Знімок екрана"
 
 #: rust/frontend/ui/settings.slint:408
 msgid "Wheel"
-msgstr ""
+msgstr "Логотип"
 
 #: rust/frontend/ui/settings.slint:409
 msgid "Title screen"
-msgstr ""
+msgstr "Титульний екран"
 
 #: rust/frontend/ui/settings.slint:410
 msgid "Map"
-msgstr ""
+msgstr "Мапа"
 
 #: rust/frontend/ui/settings.slint:411
 msgid "Marquee"
-msgstr ""
+msgstr "Вивіска"
 
 #: rust/frontend/ui/settings.slint:412
 msgid "Fan art"
-msgstr ""
+msgstr "Фан-арт"
 
 #: rust/frontend/ui/settings.slint:413
 msgid "Box side"
-msgstr ""
+msgstr "Торець коробки"
 
 #: rust/frontend/ui/settings.slint:414
 msgid "Box back"
-msgstr ""
+msgstr "Зворот коробки"
 
 #: rust/frontend/ui/settings.slint:496
 msgid "Linked as {}"
-msgstr ""
+msgstr "Прив'язано як {}"
 
 #: rust/frontend/ui/setup.slint:296
 msgid "Upload failed. Check the network connection and try again."
-msgstr ""
+msgstr "Не вдалося вивантажити. Перевірте підключення до мережі і спробуйте ще раз."
 
 #: rust/frontend/ui/setup.slint:297
 msgid "Uploading log file. This may take a moment."
-msgstr ""
+msgstr "Вивантаження файлу журналу. Це може тривати певний час."

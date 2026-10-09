@@ -26,6 +26,13 @@ a relaunch. It normalizes `-` to `_`, tries the exact tag (`zh_CN`), then the
 language part (`zh`), and falls back to the English source strings when no
 bundled catalog matches.
 
+The same call orders the fonts that draw Han ideographs. Japanese, Korean,
+Simplified Chinese and Traditional Chinese share code points but not glyph
+shapes, and Slint does not tag text runs with a language, so the interface
+language decides which embedded face is tried first
+(`zaparoo_app::han_fonts`); the others follow as fallback. A Japanese game
+title on a Simplified Chinese interface therefore takes Chinese shapes.
+
 ## Writing translatable strings
 
 Every literal a user might read belongs in `@tr()`:

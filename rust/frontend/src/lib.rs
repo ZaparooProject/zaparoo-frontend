@@ -187,6 +187,7 @@ pub(crate) fn request_restart() {
 /// empty value) follows the process locale; anything else is tried as
 /// given and then by its language part, so `de_AT` still lands on the `de`
 /// catalog. English is the source text, so no bundled match means English.
+/// The Han fallback faces follow the same language.
 /// Safe to call again when the setting changes: Slint re-evaluates every
 /// `@tr` binding.
 pub(crate) fn apply_language(setting: &str) {
@@ -201,11 +202,13 @@ pub(crate) fn apply_language(setting: &str) {
     let base = requested.split('_').next().unwrap_or_default().to_string();
     for candidate in [requested.as_str(), base.as_str()] {
         if !candidate.is_empty() && slint::select_bundled_translation(candidate).is_ok() {
+            fonts::set_han_preference(candidate);
             tracing::info!(language = candidate, setting, "translation selected");
             return;
         }
     }
     let _ = slint::select_bundled_translation("");
+    fonts::set_han_preference(&requested);
     tracing::info!(setting, "translation: English (no bundled catalog matched)");
 }
 
