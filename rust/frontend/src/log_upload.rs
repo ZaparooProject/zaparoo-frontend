@@ -8,7 +8,11 @@
 // `zaparoo_app::log_upload`.
 
 #[cfg(not(feature = "hosted"))]
+use std::ffi::OsString;
+#[cfg(not(feature = "hosted"))]
 use std::io::Write as _;
+#[cfg(not(feature = "hosted"))]
+use std::path::{Path, PathBuf};
 #[cfg(not(feature = "hosted"))]
 use std::process::{Command, Stdio};
 use std::sync::Arc;
@@ -26,6 +30,12 @@ use crate::{App, LogUploadView};
 
 /// Where the bundle goes.
 const UPLOAD_URL: &str = "https://logs.zaparoo.org/";
+
+/// The CA bundle the `MiSTer` downloader keeps current. The stock bundle
+/// dates from 2021 and no longer verifies the upload service, so curl is
+/// pointed here when the file exists, as Core does for its own requests.
+#[cfg(not(feature = "hosted"))]
+const MISTER_DOWNLOADER_CA_BUNDLE: &str = "/media/fat/Scripts/.config/downloader/cacert.pem";
 
 /// One upload: a plain HTTPS POST whose successful response body is the
 /// link. The frontend builds the multipart body, so an uploader only
@@ -408,23 +418,39 @@ fn post(uploader: &LogUploader, payload: &[u8]) -> Result<String, String> {
     Ok(url)
 }
 
+/// The bundle curl should trust instead of its default, when there is one.
+#[cfg(not(feature = "hosted"))]
+fn ca_bundle() -> Option<PathBuf> {
+    let path = Path::new(MISTER_DOWNLOADER_CA_BUNDLE);
+    (cfg!(feature = "mister") && path.is_file()).then(|| path.to_path_buf())
+}
+
+/// curl's arguments for one upload; the body arrives on stdin.
+#[cfg(not(feature = "hosted"))]
+fn curl_args(request: &UploadRequest<'_>, ca_bundle: Option<&Path>) -> Vec<OsString> {
+    let mut args: Vec<OsString> = vec![
+        "--silent".into(),
+        "--show-error".into(),
+        "--fail-with-body".into(),
+        "--max-time".into(),
+        request.timeout.as_secs().to_string().into(),
+        "-H".into(),
+        format!("Content-Type: {}", request.content_type).into(),
+        "--data-binary".into(),
+        "@-".into(),
+    ];
+    if let Some(path) = ca_bundle {
+        args.push("--cacert".into());
+        args.push(path.into());
+    }
+    args.push(request.url.into());
+    args
+}
+
 #[cfg(not(feature = "hosted"))]
 fn post_with_curl(request: &UploadRequest<'_>) -> Result<String, String> {
-    let timeout = request.timeout.as_secs().to_string();
-    let content_type = format!("Content-Type: {}", request.content_type);
     let mut child = Command::new("curl")
-        .args([
-            "--silent",
-            "--show-error",
-            "--fail-with-body",
-            "--max-time",
-            timeout.as_str(),
-            "-H",
-            content_type.as_str(),
-            "--data-binary",
-            "@-",
-            request.url,
-        ])
+        .args(curl_args(request, ca_bundle().as_deref()))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -461,4 +487,47 @@ pub fn bind_input(ctx: &Arc<Ctx>, app: &App) {
             crate::router::handle_action(&ctx, &app, actions::ACCEPT);
         }
     });
+}
+
+#[cfg(all(test, not(feature = "hosted")))]
+mod tests {
+    use super::*;
+
+    fn request() -> UploadRequest<'static> {
+        UploadRequest {
+            url: "https://logs.example/",
+            content_type: "multipart/form-data; boundary=b",
+            body: b"",
+            timeout: Duration::from_secs(30),
+        }
+    }
+
+    #[test]
+    fn curl_uses_its_default_roots_without_a_bundle() {
+        let args = curl_args(&request(), None);
+        assert_eq!(
+            args,
+            [
+                "--silent",
+                "--show-error",
+                "--fail-with-body",
+                "--max-time",
+                "30",
+                "-H",
+                "Content-Type: multipart/form-data; boundary=b",
+                "--data-binary",
+                "@-",
+                "https://logs.example/",
+            ]
+        );
+    }
+
+    #[test]
+    fn curl_trusts_the_given_bundle() {
+        let args = curl_args(&request(), Some(Path::new("/roots/cacert.pem")));
+        let at = args.iter().position(|a| a == "--cacert");
+        assert_eq!(at, Some(args.len() - 3));
+        assert_eq!(args[args.len() - 2], "/roots/cacert.pem");
+        assert_eq!(args[args.len() - 1], "https://logs.example/");
+    }
 }
