@@ -65,6 +65,7 @@ pub fn same_cell(left: &crate::GridCell, right: &crate::GridCell) -> bool {
         && left.glyph_key == right.glyph_key
         && left.has_cover == right.has_cover
         && left.has_cover_focus == right.has_cover_focus
+        && left.cover_exact == right.cover_exact
         && left.hidden == right.hidden
         && left.disabled == right.disabled
         && left.favorite == right.favorite

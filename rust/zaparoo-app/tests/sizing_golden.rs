@@ -80,6 +80,10 @@ fn inputs_of(row: &BTreeMap<&str, &str>) -> Inputs {
             row.get("profile").expect("missing profile"),
             false,
         ),
+        // The fixture was captured when a 240p help bar always held two
+        // rows open, which is now the wrapped state. The one-row default
+        // is pinned by `a_240p_help_bar_is_one_row_until_it_wraps`.
+        help_bar_two_rows: true,
     }
 }
 
@@ -222,6 +226,67 @@ fn every_derived_value_matches_the_fixture() {
         checked += 1;
     }
     assert_eq!(checked, 192, "fixture case count changed");
+}
+
+/// The fixture's 240p rows are the wrapped bar. By default the bar is the
+/// one row every other tier has, and the Hub gets the difference back.
+#[test]
+fn a_240p_help_bar_is_one_row_until_it_wraps() {
+    let mut checked = 0usize;
+    for row in rows("GOLDEN") {
+        let wrapped = inputs_of(&row);
+        let one_row = Inputs {
+            help_bar_two_rows: false,
+            ..wrapped
+        };
+        let (two, one) = (derive(&wrapped), derive(&one_row));
+        let at = label(&row);
+        if row["tier"] != "240" {
+            // Larger tiers never wrap, so the input changes nothing.
+            assert_eq!(one.help_bar_height, two.help_bar_height, "{at}");
+            assert_eq!(
+                one.hub_grid_height_budget, two.hub_grid_height_budget,
+                "{at}"
+            );
+            continue;
+        }
+        assert_eq!(one.help_bar_height, one_row.pct_h(6.0), "{at}");
+        assert_eq!(two.help_bar_height, one_row.pct_h(10.0), "{at}");
+        assert_eq!(
+            one.help_bar_clearance,
+            one.help_bar_height + one_row.pct_h(2.0),
+            "{at}"
+        );
+        let reclaimed = two.help_bar_height - one.help_bar_height;
+        assert!(reclaimed > 0, "{at}");
+        assert_eq!(
+            one.hub_grid_height_budget - two.hub_grid_height_budget,
+            reclaimed,
+            "{at}"
+        );
+        // The wrap is decided on width alone, so the row count must not
+        // reach anything the entries are measured with.
+        assert_eq!(one.font_body, two.font_body, "{at}");
+        assert_eq!(one.header_side_margin, two.header_side_margin, "{at}");
+        checked += 1;
+    }
+    assert_eq!(checked, 64, "240p fixture row count changed");
+
+    // The CRT scene: 352x240 less the safe area.
+    let crt = Inputs {
+        screen_width: 316.0,
+        screen_height: 216.0,
+        crt_native_path: true,
+        bitmap_type: true,
+        ..Inputs::default()
+    };
+    let d = derive(&crt);
+    assert_eq!((d.help_bar_height, d.help_bar_clearance), (13, 17));
+    let d = derive(&Inputs {
+        help_bar_two_rows: true,
+        ..crt
+    });
+    assert_eq!((d.help_bar_height, d.help_bar_clearance), (22, 26));
 }
 
 #[test]

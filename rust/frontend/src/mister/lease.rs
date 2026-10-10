@@ -3,7 +3,9 @@
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 
 //! Private Main/child slot handshake. v2 never grants direct FPGA access:
-//! Main serializes UIO transactions with its own OSD and video traffic.
+//! Main serializes UIO transactions with its own OSD and video traffic. On
+//! the native CRT path Main grants the module's native video window instead,
+//! with no bus proxy behind it.
 use std::fs::File;
 use std::io;
 use std::os::fd::{AsRawFd, FromRawFd};
@@ -12,6 +14,7 @@ use std::sync::{Mutex, OnceLock};
 
 const REQUEST: &[u8] = b"ZAPAROO-SCANOUT-2";
 const GRANTED: &[u8] = b"ZAPAROO-SCANOUT-2 PROXY";
+const GRANTED_NATIVE: &[u8] = b"ZAPAROO-SCANOUT-2 NATIVE";
 static OFFER: OnceLock<Mutex<Option<File>>> = OnceLock::new();
 static MANAGED: AtomicBool = AtomicBool::new(false);
 static RASTER_QUERY: AtomicBool = AtomicBool::new(false);
@@ -104,7 +107,17 @@ impl Lease {
 }
 
 pub fn acquire() -> io::Result<Lease> {
-    let file = OFFER
+    handshake(offer()?, 5000, GRANTED)
+}
+
+/// The native CRT path's lease: Main has loaded the verified module and
+/// lets this process map its native video window. Nothing is proxied.
+pub fn acquire_native() -> io::Result<Lease> {
+    handshake(offer()?, 5000, GRANTED_NATIVE)
+}
+
+fn offer() -> io::Result<File> {
+    OFFER
         .get()
         .and_then(|slot| slot.lock().ok()?.take())
         .ok_or_else(|| {
@@ -112,11 +125,10 @@ pub fn acquire() -> io::Result<Lease> {
                 io::ErrorKind::PermissionDenied,
                 "Main did not offer a scanout lease",
             )
-        })?;
-    handshake(file, 5000)
+        })
 }
 
-fn handshake(file: File, timeout_ms: i32) -> io::Result<Lease> {
+fn handshake(file: File, timeout_ms: i32, granted: &[u8]) -> io::Result<Lease> {
     let fd = file.as_raw_fd();
     // SAFETY: request bytes and their length describe a valid readable buffer.
     let sent = unsafe {
@@ -156,7 +168,7 @@ fn handshake(file: File, timeout_ms: i32) -> io::Result<Lease> {
             libc::MSG_DONTWAIT,
         )
     };
-    if count != GRANTED.len() as isize || &reply[..GRANTED.len()] != GRANTED {
+    if count != granted.len() as isize || &reply[..granted.len()] != granted {
         return Err(io::Error::new(
             io::ErrorKind::PermissionDenied,
             "Main declined scanout ownership",
@@ -196,16 +208,20 @@ mod tests {
             b"ZAPAROO-SCANOUT-2 NO",
             b"OK",
             b"ZAPAROO-SCANOUT-2 PROXY extra",
+            GRANTED_NATIVE,
         ] {
-            let (mut parent, child) = pair()?;
-            parent.write_all(reply)?;
-            let result = handshake(child, 100);
-            let mut request = [0; 64];
-            let count = parent.read(&mut request)?;
-            assert_eq!(&request[..count], REQUEST);
-            assert_eq!(result.is_ok(), reply == GRANTED);
-            drop(result);
-            assert_eq!(parent.read(&mut request)?, 0);
+            for wanted in [GRANTED, GRANTED_NATIVE] {
+                let (mut parent, child) = pair()?;
+                parent.write_all(reply)?;
+                let result = handshake(child, 100, wanted);
+                let mut request = [0; 64];
+                let count = parent.read(&mut request)?;
+                assert_eq!(&request[..count], REQUEST);
+                // A proxy grant is not a native one, nor the reverse.
+                assert_eq!(result.is_ok(), reply == wanted);
+                drop(result);
+                assert_eq!(parent.read(&mut request)?, 0);
+            }
         }
         Ok(())
     }
@@ -213,7 +229,9 @@ mod tests {
     #[test]
     fn no_acknowledgment_never_grants_bus_access() -> io::Result<()> {
         let (_parent, child) = pair()?;
-        assert!(matches!(handshake(child, 0), Err(e) if e.kind() == io::ErrorKind::TimedOut));
+        assert!(
+            matches!(handshake(child, 0, GRANTED), Err(e) if e.kind() == io::ErrorKind::TimedOut)
+        );
         Ok(())
     }
 

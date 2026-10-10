@@ -1105,12 +1105,27 @@ fn dispatch_with_focus(ctx: &Ctx, app: &App, action: &str) {
     let wrapped = match action {
         actions::UP | actions::LEFT => after > before,
         actions::DOWN | actions::RIGHT => after < before,
-        actions::PAGE_PREV | actions::PAGE_NEXT => true,
+        // A grid page is a new set of tiles: nothing glides onto it. A list
+        // page is the same list a page further on, and glides there.
+        actions::PAGE_PREV | actions::PAGE_NEXT => !list_layout_active(app),
         _ => false,
     };
     if wrapped {
         let motion = app.global::<crate::Motion>();
         motion.set_epoch(motion.get_epoch().wrapping_add(1));
+    }
+}
+
+/// The active screen is a browse screen in its list layout.
+fn list_layout_active(app: &App) -> bool {
+    let shell = app.global::<crate::Shell>();
+    match shell.get_active_screen() {
+        crate::Screen::Systems | crate::Screen::FavoriteSystems => shell.get_systems_list_layout(),
+        crate::Screen::Games
+        | crate::Screen::Favorites
+        | crate::Screen::Recents
+        | crate::Screen::SearchResults => shell.get_browse_list_layout(),
+        _ => false,
     }
 }
 

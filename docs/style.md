@@ -747,11 +747,21 @@ viewport, so a band that grew and shrank with the focused row's
 description would reflow the list under the cursor, which is the bug the
 unconditional reservation was there to prevent in the first place.
 
+A hint line is one line of the body face: 1.362 em on Noto Sans, and exactly
+the font size on the bitmap face, which has no leading. Two 8px lines are
+16px, where the scaled figure reserved 22px and left a blank strip under
+every description. The card's position, its inset, the hint height and the
+rows viewport are solved together in whole pixels by
+`zaparoo_app::settings::page_geometry` and pushed through `SettingsView`;
+the view does not derive them again, because a card placed on fractional
+percentages put the band's clip edge between two pixels of the rule.
+
 The divider above the band is a structural line: the rows clip and scroll
 under a pinned band, so it runs the **full card width**, edge to edge like
-the card's own frame, with `surface-pad` either side of it. That is the
-opposite job to a `SectionHeader` rule, which runs the row width because it
-belongs to the rows. See "Lines".
+the card's own frame, with `surface-pad` either side of it. The rows band
+stops one hairline above it, so a row gliding out never touches the rule.
+That is the opposite job to a `SectionHeader` rule, which runs the row width
+because it belongs to the rows. See "Lines".
 
 A right-hand detail pane (the more common modern pattern, Kodi, Android
 TV, Switch) was considered and rejected: the card is already capped at
@@ -1221,6 +1231,16 @@ half the thickness of the Settings card at 800p and 1080p.
 
 The screensaver overlay, the CRT calibration plate and the help bar are screen
 chrome rather than containers and keep their own treatment.
+
+The help bar is one row, `pct-h(6)` tall, at every tier. Only 240p can run out
+of width for its entries, which are atomic icon-plus-label groups and never
+split: when the row would overflow the bar's safe width they wrap to two
+centered rows and the bar grows to `pct-h(10)`. The bar measures that itself
+(`HelpBar.wrap-entries`), Rust copies it into the `help_bar_two_rows` sizing
+input and re-solves the sizing table and every screen, so the grid or card
+above gives up exactly the second row and gets it back when the entries fit
+again. The wrap is decided from the entries' width alone, never from the
+bar's height, so growing the bar cannot change the answer.
 
 ## Padding scale
 
@@ -1752,9 +1772,11 @@ but no longer choose a fresh visit's destination.
 ### Hub pages and Go to…
 
 Hub page changes follow navigation direction, including wraps and pages crossed
-while arranging tiles. Accelerated MiSTer output moves cached RGB565 endpoints;
-without that capability HDMI cuts rather than repainting a large grid every
-frame. Desktop and small CRT scenes use the live page strip. Repeated input
+while arranging tiles. Every MiSTer presenter moves cached endpoint frames, in
+every orientation; where one cannot (the vblank-latch presenter holding a
+dynamic-resolution pair) HDMI cuts rather than repainting a large grid every
+frame. Desktop uses the live page strip, as does the CRT head of a dual-head
+pair and a CRT scene that was not granted a cached slide. Repeated input
 interrupts obsolete motion; Reduce motion cuts immediately. Persistence records
 the destination, never an animation phase.
 
@@ -1929,8 +1951,8 @@ drag tracks the finger exactly; only stepped moves glide.
 **Edges.** A modal list keeps its `ScrollCue` arrows in a reserved band
 above and below the rows, so its rows clip at row edges between them. The
 Settings card has no arrows and clips against its own frame at the top and
-the hint rule at the bottom, so both edges are fixed and rows leave under
-them. The card's lip above the first row scrolls away with the rows: once
+one hairline above the hint rule at the bottom, so both edges are fixed and
+rows leave under them. The card's lip above the first row scrolls away with the rows: once
 scrolled, the band starts on a row top, flush with the frame, so no sliver
 of the previous row hangs there. The bottom edge may cut a row; with the
 rows gliding under it that reads as "more below". An earlier rule trimmed
@@ -1959,8 +1981,15 @@ lists) publish every row and let the view window them.
 ### Focus zoom on tiles
 
 A focused grid tile scales to `Motion.focus-zoom` (104%) about its own
-centre, and its ring scales with it so the two stay matched. Three rules
+centre, and its ring scales with it so the two stay matched. Four rules
 govern it.
+
+**Not at the 240p tier.** A tile there grows by a pixel or two, which reads
+as a jitter and not as a zoom, so a scene in the 240p sizing tier (the
+352x240 and 352x288 CRT modes, a 240p-class HDMI render) has no focus zoom.
+The rule is `zaparoo_app::sizing::focus_zoom_percent`, pushed with every
+scene, so the tier and the zoom never disagree. Larger tiers, 720x480 CRT
+included, keep it.
 
 **It is an addition, never the indicator.** WCAG 2.4.13 Focus Appearance
 requires the focus indicator to carry a 3:1 contrast change over a minimum
@@ -1985,13 +2014,26 @@ growth and pushes the cell layer back in by the same amount, so a tile on
 the grid's own edge is not trimmed on its outer side and no tile changes
 size to make room.
 
-The software renderer has no transform support, so neither the tile nor its
-ring scales there, and they stay consistent with each other. So that nothing
-reserves room for growth that never happens (the clip headroom, the context
-menu's scrim hole), `lib.rs` pushes `Motion.focus-zoom` as 100% on MiSTer and
-`PagedGridView` skips the zoom on CRT. Snapshots render through that same
-renderer, which means the zoom cannot be checked offline; it is a
-device-verified effect.
+The software renderer has no transform support, so where it draws (the
+MiSTer build, HDMI and CRT alike, and the snapshot binary) `lib.rs` sets
+`Motion.zoom-by-size` and `PagedGridView` grows the focused cell and its
+ring by their real geometry about the same centre instead, as a cut: the
+resting state matches the transform, the transition does not exist. Animated,
+a growth of a few pixels moves in whole-pixel steps with the art resampled at
+each one, and that read as a shimmer on a 960x540 HDMI render. The cell
+covers the rectangle the transform would. The
+card and its art are sized from the cell and grow with it; type, padding,
+border and ring stroke keep their size, and the ring is laid out on the
+grown cell so it keeps its gap to the card's edge. The growth, 2% of the
+cell on each side, is smaller than every grid's gap, so a grown tile never
+reaches its neighbour. The clip headroom and the context menu's scrim hole
+follow `Motion.focus-zoom` on every renderer.
+
+`Motion.focus-zoom` at 100% turns the growth off and everything that
+reserves room for it reserves nothing, and no larger copy of the focused
+tile's art is prepared. The 240p tier does that, and so does the `zoom`
+name of the `ZAPAROO_MOTION` test switch on the MiSTer build
+(`docs/slint-gotchas.md` → "Motion on the software renderer").
 
 ### Reduce motion
 
@@ -2015,7 +2057,7 @@ and `display::motion_enabled` also folds in framebuffer height, so native
   `SelectionCursor`, and never a focus ring as well.
 - Focus uses `Theme.accent`; an inverted row uses `Theme.selection-fill`.
 - A scrolled Settings band starts on a row top and clips against the card's
-  frame and the hint rule. `band_extent` in `zaparoo_app::settings` owns that
+  frame and one hairline above the hint rule. `band_extent` in `zaparoo_app::settings` owns that
   rule; see "Scrolling lists".
 - Ordinary text chooses six-role ladder.
 - Geometry comes from `Sizing` and `Layout` tokens (`pct-h()`, `pct-w()`,

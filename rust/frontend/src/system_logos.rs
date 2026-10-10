@@ -275,6 +275,55 @@ pub fn cell_bounds(app: &crate::App, width: i32, height: i32) -> Bounds {
     )
 }
 
+/// Whether logos are prepared to the exact box that paints them and painted
+/// one pixel for one: where the software renderer draws, which samples a
+/// fitted bitmap nearest-neighbor. Elsewhere they keep their bucketed
+/// bounds and the renderer fits them.
+pub fn exact_art(app: &crate::App) -> bool {
+    app.global::<crate::Motion>().get_zoom_by_size()
+}
+
+/// The bounds a logo is prepared to for a grid tile under `exact_art`: the
+/// whole pixels of the art box the tile paints
+/// (`zaparoo_app::sizing::tile_art_pixels`, the mirror of `Tile` in
+/// `ui/tiles.slint`), so the view can paint the result one pixel for one.
+/// `zoom` is 1.0 for a tile at rest and the focus zoom for the focused
+/// tile's larger copy.
+pub fn tile_bounds(
+    app: &crate::App,
+    cell_width: i32,
+    cell_height: i32,
+    zoom: f64,
+    art: zaparoo_app::sizing::TileArt,
+) -> Bounds {
+    let inputs = crate::router::output_scene(app).inputs();
+    let (width, height) =
+        zaparoo_app::sizing::tile_art_pixels(&inputs, cell_width, cell_height, zoom, art);
+    Bounds::exact(width, height)
+}
+
+/// The focused tile's growth where the view draws it by size and paints a
+/// second, larger copy of the art: the factor to prepare that copy for.
+/// None where the tile does not grow that way, and one copy serves.
+pub fn focus_zoom(app: &crate::App) -> Option<f64> {
+    let motion = app.global::<crate::Motion>();
+    let zoom = f64::from(motion.get_focus_zoom()) / 100.0;
+    (exact_art(app) && motion.get_enabled() && zoom > 1.0).then_some(zoom)
+}
+
+/// The size a `width` x `height` source is drawn at inside `bounds`, aspect
+/// kept: one side meets its bound and neither passes it.
+fn fitted_size(width: u32, height: u32, bounds: Bounds) -> (u32, u32) {
+    let (w, h) = (u64::from(width.max(1)), u64::from(height.max(1)));
+    let (bw, bh) = (u64::from(bounds.width), u64::from(bounds.height));
+    let (fw, fh) = if w * bh >= h * bw {
+        (bw, (h * bw + w / 2) / w)
+    } else {
+        ((w * bh + h / 2) / h, bh)
+    };
+    (fw.clamp(1, bw.max(1)) as u32, fh.clamp(1, bh.max(1)) as u32)
+}
+
 fn prepare(key: Key, ramps: (Tints, Tints)) -> Option<Prepared> {
     let start = std::time::Instant::now();
     let (id, bytes) = match key.asset {
@@ -294,16 +343,24 @@ fn prepare(key: Key, ramps: (Tints, Tints)) -> Option<Prepared> {
         image::ImageReader::with_format(std::io::Cursor::new(bytes), image::ImageFormat::Png);
     reader.limits(limits);
     let decoded = reader.decode().ok()?;
-    let scaled = if decoded.width() > key.bounds.width || decoded.height() > key.bounds.height {
-        decoded.resize(
-            key.bounds.width,
-            key.bounds.height,
-            image::imageops::FilterType::Triangle,
-        )
+    let rgba = decoded.to_rgba8();
+    let rgba = if rgba.width() > key.bounds.width || rgba.height() > key.bounds.height {
+        let (width, height) = fitted_size(rgba.width(), rgba.height(), key.bounds);
+        // The view paints the result one pixel for one, so this is the
+        // only filtering the logo gets. The tint ramp reads straight
+        // color, so the filtered pixels are taken back out of alpha.
+        let mut scaled = crate::brand::resize_premultiplied(rgba, width, height);
+        for pixel in scaled.pixels_mut() {
+            let alpha = u16::from(pixel.0[3]);
+            for channel in &mut pixel.0[..3] {
+                let straight = (u16::from(*channel) * 255 + alpha / 2).checked_div(alpha);
+                *channel = straight.unwrap_or(0).min(255) as u8;
+            }
+        }
+        scaled
     } else {
-        decoded
+        rgba
     };
-    let rgba = scaled.to_rgba8();
     let base = Pixels::clone_from_slice(&rgba, rgba.width(), rgba.height());
     let prepared = if key.tinted {
         Prepared {
@@ -591,6 +648,55 @@ mod tests {
         logos.prepare_queued();
         let later = key("SNES");
         assert!(logos.get(&later).is_some());
+    }
+
+    #[test]
+    fn a_logo_is_fitted_inside_its_bounds_and_meets_one_of_them() {
+        // Wide art meets the width, tall art the height.
+        assert_eq!(fitted_size(400, 100, Bounds::exact(101, 60)), (101, 25));
+        assert_eq!(fitted_size(100, 400, Bounds::exact(101, 60)), (15, 60));
+        assert_eq!(fitted_size(300, 300, Bounds::exact(77, 77)), (77, 77));
+        for (width, height) in [(1716, 160), (512, 121), (97, 333), (640, 640), (3, 900)] {
+            for bounds in [(1, 1), (60, 40), (93, 61), (300, 180), (17, 400)] {
+                let bounds = Bounds::exact(bounds.0, bounds.1);
+                let (w, h) = fitted_size(width, height, bounds);
+                assert!((1..=bounds.width).contains(&w) && (1..=bounds.height).contains(&h));
+                assert!(w == bounds.width || h == bounds.height);
+            }
+        }
+    }
+
+    #[test]
+    fn a_prepared_logo_fits_its_bounds_exactly_and_keeps_its_tints() {
+        let cache = Logos::new();
+        for (bounds, tinted) in [
+            (Bounds::exact(93, 61), false),
+            (Bounds::exact(57, 44), false),
+            (Bounds::exact(93, 61), true),
+        ] {
+            let key = cache.key("SNES", "SNES", tinted, bounds);
+            assert!(key.is_some(), "embedded logo");
+            let Some(key) = key else { return };
+            cache.request([key]);
+            cache.prepare_queued();
+            let prepared = cache.get(&key);
+            assert!(prepared.is_some(), "prepared logo");
+            let Some(prepared) = prepared else { return };
+            let (rest, focus) = prepared.images();
+            let size = rest.size();
+            assert_eq!(focus.size(), size);
+            assert!(size.width <= bounds.width && size.height <= bounds.height);
+            assert!(size.width == bounds.width || size.height == bounds.height);
+            // Filtering leaves straight color: opaque pixels are not
+            // darkened, and nothing transparent carries color weight.
+            let opaque = prepared
+                .rest
+                .as_bytes()
+                .chunks_exact(4)
+                .filter(|px| px[3] == 255)
+                .count();
+            assert!(opaque > 0, "the logo has solid pixels");
+        }
     }
 
     #[test]

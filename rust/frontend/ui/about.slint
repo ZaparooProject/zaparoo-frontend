@@ -71,10 +71,12 @@ export component AboutScreen inherits Rectangle {
     card := Rectangle {
         x: (parent.width - self.width) / 2;
         y: Sizing.header-bottom + Sizing.pct-h(10);
-        width: Math.min(parent.width - Sizing.pct-w(10), Sizing.pct-w(50));
+        // The Settings page card's width, so the two text cards read as
+        // one surface.
+        width: Math.min(parent.width - 2 * Sizing.pct-w(3), Sizing.pct-w(70));
         // Clears the help bar the way every other screen does, rather
-        // than a flat `pct-h(8)`: at 240p the bar is `pct_h(10)`, so the
-        // flat figure left the card 10px short of it.
+        // than a flat `pct-h(8)`: the 240p bar grows to two rows when its
+        // entries wrap, and a flat figure would not follow it.
         height: Math.max(0px, parent.height - self.y - Sizing.help-bar-clearance);
         background: Theme.surface-card;
         border-radius: Sizing.radius-md;

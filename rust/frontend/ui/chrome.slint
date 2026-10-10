@@ -24,6 +24,14 @@ export global GlyphSource {
     // transparent color keeps the artwork's own colors (the two-tone
     // heart, real art).
     pure callback glyph(string, length, color) -> image;
+    // Exact-pixel contract: the side a square glyph is both rasterized and
+    // painted at. A glyph is rasterized at a whole pixel size, and the
+    // software renderer samples bitmaps nearest-neighbor, so a box that is
+    // not that size loses or repeats rows and columns of it. Where that
+    // renderer draws (`Motion.zoom-by-size`) the box is the raster's size.
+    public pure function side(length: length) -> length {
+        return Motion.zoom-by-size ? Math.round(length / 1px) * 1px : length;
+    }
 }
 
 // Rust filters the embedded master into a cached raster at the painted size.
@@ -565,7 +573,7 @@ export component ModalShell inherits Rectangle {
 export component ScrollCue inherits Image {
     in property <string> glyph: "icons/ScrollDown";
     in property <bool> live: true;
-    width: Sizing.pct-h(3);
+    width: GlyphSource.side(Sizing.pct-h(3));
     height: self.width;
     source: GlyphSource.glyph(root.glyph, Math.max(1px, self.width),
         root.live ? Theme.text-primary : Theme.cue-spent);
@@ -667,9 +675,8 @@ export component FooterIndicator inherits PageIndicator {
     chevron-size: Layout.grid-page-chevron-size;
 }
 
-// Centered title with a compact count-and-position group at the right.
-// The group shares one bounded side slot so it cannot overlap the title.
-// CRT retains its existing separate side slots.
+// Centered title, the item count at the far left and the page position at
+// the right. Each side is bounded by its slot so it cannot overlap the title.
 export component TopStatusStrip inherits Rectangle {
     in property <string> title: "";
     in property <int> current-page: 0;
@@ -677,7 +684,7 @@ export component TopStatusStrip inherits Rectangle {
     in property <bool> page-total-known: true;
     in property <string> total-text: "";
     // The active browse filter's name, shown with a funnel in the left slot
-    // (the CRT strip keeps its count there, and hides the strip anyway).
+    // after the count (the CRT strip hides the filter).
     in property <string> filter-text: "";
     in property <string> right-text-override: "";
     in property <bool> show-page-counter: true;
@@ -708,7 +715,12 @@ export component TopStatusStrip inherits Rectangle {
     property <length> counter-width: root.plain-counter
         ? Math.min(page-measure.preferred-width, root.side-slot-width)
         : (indicator.visible ? indicator.width : 0px);
-    property <length> count-gap: root.counter-width > 0px && root.total-text != "" ? Sizing.pct-w(1.5) : 0px;
+    // The left slot runs from the margin to the title: the item count
+    // first, at the far left, then the active filter after it.
+    property <length> left-room: Math.max(0px, (root.width - root.title-text-width) / 2 - root.slot-margin - Sizing.pct-w(1.5));
+    property <length> count-width: root.total-text == "" ? 0px
+        : (Sizing.crt ? root.side-slot-width : Math.min(total-measure.preferred-width, root.left-room));
+    property <length> filter-x: root.slot-margin + (root.total-text == "" ? 0px : root.count-width + Sizing.pct-w(1.5));
     property <length> title-measured: Math.ceil(title-measure.preferred-width / 1px) * 1px;
     property <length> title-text-width: Math.min(root.slot-width, root.title-measured);
     // Center the full line box, not the em size: otherwise descenders can
@@ -737,11 +749,9 @@ export component TopStatusStrip inherits Rectangle {
     }
 
     if root.total-text != "": Text {
-        x: Sizing.crt ? root.slot-margin
-            : parent.width - root.slot-margin - root.counter-width - root.count-gap - self.width;
+        x: root.slot-margin;
         y: root.side-y;
-        width: Sizing.crt ? root.side-slot-width
-            : Math.min(total-measure.preferred-width, Math.max(0px, root.side-slot-width - root.counter-width - root.count-gap));
+        width: root.count-width;
         overflow: elide;
         text: root.total-text;
         color: Theme.text-primary;
@@ -760,7 +770,7 @@ export component TopStatusStrip inherits Rectangle {
     }
 
     if root.filter-shown: Image {
-        x: root.slot-margin;
+        x: root.filter-x;
         y: root.side-y + (filter-measure.preferred-height - self.height) / 2;
         width: root.filter-glyph-size;
         height: root.filter-glyph-size;
@@ -768,9 +778,9 @@ export component TopStatusStrip inherits Rectangle {
     }
 
     if root.filter-shown: Text {
-        x: root.slot-margin + root.filter-glyph-size + root.filter-glyph-gap;
+        x: root.filter-x + root.filter-glyph-size + root.filter-glyph-gap;
         y: root.side-y;
-        width: Math.max(0px, (parent.width - root.title-text-width) / 2 - root.slot-margin
+        width: Math.max(0px, (parent.width - root.title-text-width) / 2 - root.filter-x
             - root.filter-glyph-size - 2 * root.filter-glyph-gap);
         overflow: elide;
         text: root.filter-text;
@@ -882,7 +892,7 @@ export component ActiveLabel inherits Rectangle {
 // split across rows.
 component HelpEntryView inherits HorizontalLayout {
     in property <HelpEntry> entry;
-    property <length> icon-size: Sizing.pct-h(4);
+    property <length> icon-size: GlyphSource.side(Sizing.pct-h(4));
 
     spacing: Sizing.pct-w(0.6);
     height: Math.max(root.icon-size, Sizing.font-body);
@@ -906,6 +916,11 @@ component HelpEntryView inherits HorizontalLayout {
 // the framebuffer edge, and the entries centered in one row, or two rows
 // at 240p when one would overflow. Entries are `HelpEntry` values; the
 // App decides the vocabulary per screen and modal.
+//
+// The bar is one row tall until the entries wrap: Rust reads
+// `wrap-entries` and re-solves `Sizing.help-bar-height` for two rows. The
+// wrap decision is the entries' width against the safe width and nothing
+// else, so the height it changes can never flip it back.
 export component HelpBar inherits Rectangle {
     in property <[HelpEntry]> entries: [];
     in property <length> bleed: 0px;

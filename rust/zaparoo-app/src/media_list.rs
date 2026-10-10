@@ -473,11 +473,19 @@ pub fn list_geometry(list: &List, frame: &ListFrame) -> ListGeometry {
         detail_width,
         detail_height,
         row_height,
+        // A profile with its own row height (the 240p tier's 12 px rows)
+        // holds as many rows as its card is tall: a PAL scene is 48 lines
+        // taller than an NTSC one and shows the rows that fit them. A
+        // target count only applies where the row height is fitted to it.
         visible_rows: list_visible_count(
             content_height,
             row_height,
             list.row_spacing,
-            frame.target_rows,
+            if list.row_height > 0 {
+                0
+            } else {
+                frame.target_rows
+            },
         ),
     }
 }
@@ -1368,6 +1376,7 @@ mod tests {
             bitmap_type: false,
             swap_percentage_axes: false,
             interface_profile: crate::sizing::InterfaceProfile::Standard,
+            help_bar_two_rows: false,
         };
         let profile = crate::layouts::profile(
             crate::layouts::ThemeId::Default,
@@ -1399,6 +1408,7 @@ mod tests {
             bitmap_type: false,
             swap_percentage_axes: false,
             interface_profile: crate::sizing::InterfaceProfile::Standard,
+            help_bar_two_rows: false,
         };
         let profile = crate::layouts::profile(
             crate::layouts::ThemeId::Default,
@@ -1612,6 +1622,55 @@ mod tests {
         assert_eq!(list_view_top(59, 60, 10, None), 50);
         assert_eq!(list_view_top(5, 60, 10, Some(0)), 5);
         assert_eq!(list_view_top(3, 5, 10, None), 0);
+    }
+
+    #[test]
+    fn a_fixed_row_height_fills_the_card_whatever_the_target_count() {
+        let frame = |screen_height: i32| ListFrame {
+            screen_width: 316,
+            screen_height,
+            header_bottom: 30,
+            status_top_margin: 2,
+            strip_height: 0,
+            help_bar_height: 20,
+            tier_240: true,
+            safe_bottom_gap: 13,
+            target_rows: 10,
+            min_row_height: 6,
+            default_row_height: 13,
+        };
+        let inputs = crate::sizing::Inputs {
+            screen_width: 316.0,
+            screen_height: 216.0,
+            bitmap_type: true,
+            ..crate::sizing::Inputs::default()
+        };
+        let profile = crate::layouts::profile(
+            crate::layouts::ThemeId::current(&inputs),
+            crate::layouts::View::GamesList,
+            &inputs,
+        );
+        let crate::layouts::Body::List { list, .. } = profile.body else {
+            unreachable!("the games list resolves to a list body");
+        };
+        assert!(list.row_height > 0, "the 240p tier fixes its row height");
+        let mut previous = 0;
+        // NTSC and PAL scenes after the action-safe inset.
+        for screen_height in [216, 260] {
+            let geometry = list_geometry(&list, &frame(screen_height));
+            let content = geometry.list_height - list.card_padding_top - list.card_padding_bottom;
+            let rows = i32::try_from(geometry.visible_rows).unwrap_or(0);
+            assert!(rows * geometry.row_height <= content, "{screen_height}");
+            assert!(
+                (rows + 1) * geometry.row_height > content,
+                "{screen_height}"
+            );
+            assert!(
+                geometry.visible_rows > previous,
+                "a taller card holds more rows"
+            );
+            previous = geometry.visible_rows;
+        }
     }
 
     #[test]

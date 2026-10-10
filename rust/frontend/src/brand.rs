@@ -64,13 +64,15 @@ impl Cache {
     }
 }
 
-fn prepare(light: bool, width: u32) -> Option<slint::Image> {
-    let mut source = image::load_from_memory(if light { LIGHT } else { DARK })
-        .ok()?
-        .to_rgba8();
-    let height = (f64::from(width) * f64::from(source.height()) / f64::from(source.width()))
-        .round()
-        .max(1.0) as u32;
+/// Resize straight-alpha artwork to exactly `width` x `height` with a
+/// Lanczos3 filter, returning premultiplied pixels. The paint-sized raster
+/// every logo is drawn from: the software renderer samples bitmaps
+/// nearest-neighbor, so the sharpness has to be in the raster.
+pub(crate) fn resize_premultiplied(
+    mut source: image::RgbaImage,
+    width: u32,
+    height: u32,
+) -> image::RgbaImage {
     // Filter premultiplied channels so transparent padding cannot darken
     // antialiased edges. Clamp Lanczos overshoot back to valid coverage.
     for pixel in source.pixels_mut() {
@@ -91,6 +93,17 @@ fn prepare(light: bool, width: u32) -> Option<slint::Image> {
             *channel = (*channel).min(alpha);
         }
     }
+    scaled
+}
+
+fn prepare(light: bool, width: u32) -> Option<slint::Image> {
+    let source = image::load_from_memory(if light { LIGHT } else { DARK })
+        .ok()?
+        .to_rgba8();
+    let height = (f64::from(width) * f64::from(source.height()) / f64::from(source.width()))
+        .round()
+        .max(1.0) as u32;
+    let scaled = resize_premultiplied(source, width, height);
     Some(slint::Image::from_rgba8_premultiplied(
         slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(&scaled, width, height),
     ))

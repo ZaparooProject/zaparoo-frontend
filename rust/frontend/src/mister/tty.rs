@@ -15,6 +15,11 @@
 use std::fs::{File, OpenOptions};
 use std::io::Write as _;
 use std::os::fd::AsRawFd;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+/// One guard at a time: a second would save the first's raw termios as
+/// the state to restore.
+static HELD: AtomicBool = AtomicBool::new(false);
 
 const KDSETMODE: libc::Ioctl = 0x4B3A;
 const KD_TEXT: libc::c_ulong = 0;
@@ -32,7 +37,21 @@ impl TtyGuard {
     /// failure the app still runs; the console just fights the
     /// framebuffer like any un-guarded fbdev client.
     pub fn acquire() -> Option<Self> {
-        for path in ["/dev/tty", "/dev/tty0"] {
+        Self::acquire_from(&["/dev/tty", "/dev/tty0"])
+    }
+
+    /// Startup's guard, taken before anything is drawn or logged: the
+    /// controlling VT only. The active VT is still the boot console at that
+    /// point, and silencing that one would leave ours in text mode.
+    pub fn acquire_controlling() -> Option<Self> {
+        Self::acquire_from(&["/dev/tty"])
+    }
+
+    fn acquire_from(paths: &[&'static str]) -> Option<Self> {
+        if HELD.load(Ordering::SeqCst) {
+            return None;
+        }
+        for &path in paths {
             let Ok(mut file) = OpenOptions::new().read(true).write(true).open(path) else {
                 continue;
             };
@@ -63,6 +82,7 @@ impl TtyGuard {
             let _ = file.write_all(b"\x1b[?25l");
 
             tracing::info!(path, "console suppressed (KD_GRAPHICS)");
+            HELD.store(true, Ordering::SeqCst);
             return Some(Self {
                 file,
                 saved_termios,
@@ -83,5 +103,6 @@ impl Drop for TtyGuard {
         // SAFETY: same contract as the KDSETMODE call in acquire().
         unsafe { libc::ioctl(fd, KDSETMODE, KD_TEXT) };
         let _ = self.file.write_all(b"\x1b[?25h");
+        HELD.store(false, Ordering::SeqCst);
     }
 }

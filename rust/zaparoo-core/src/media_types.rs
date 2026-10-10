@@ -817,6 +817,17 @@ impl MediaMetaParams {
             path: String::new(),
         }
     }
+
+    /// For a browse row, which may or may not carry Core's id. Core
+    /// rejects a request that names both the id and the pair, so the id
+    /// is sent alone when the row has one.
+    pub fn for_row(
+        media_id: Option<i64>,
+        system: impl Into<String>,
+        path: impl Into<String>,
+    ) -> Self {
+        media_id.map_or_else(|| Self::for_media(system, path), Self::for_media_id)
+    }
 }
 
 /// Parameters for `media.meta.update`. Identifies the media row the same
@@ -2572,6 +2583,19 @@ mod tests {
             Some("/roms/snes/x.sfc")
         );
         assert!(!object.contains_key("mediaId"));
+    }
+
+    #[test]
+    fn media_meta_params_for_a_row_never_mix_the_id_with_the_pair() {
+        let with_id = serde_json::to_value(MediaMetaParams::for_row(Some(7), "SNES", "/x.sfc"))
+            .expect("serialise");
+        assert_eq!(with_id, serde_json::json!({ "mediaId": 7 }));
+        let without = serde_json::to_value(MediaMetaParams::for_row(None, "SNES", "/x.sfc"))
+            .expect("serialise");
+        assert_eq!(
+            without,
+            serde_json::json!({ "system": "SNES", "path": "/x.sfc" })
+        );
     }
 
     #[test]

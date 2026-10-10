@@ -45,6 +45,13 @@ pub fn motion_enabled(reduce_motion: bool, embedded: bool, crt: bool, height: u3
     !(reduce_motion || embedded && !crt && height >= 1080)
 }
 
+/// Whether cover art fades in on grid tiles. On the software renderer a
+/// page of covers fading together repaints most of the grid every frame,
+/// which an HDMI render cannot afford; the native CRT modes can.
+pub const fn tile_cover_fade(embedded: bool, crt: bool) -> bool {
+    !embedded || crt
+}
+
 /// Keep numeric components untranslated; Slint owns the surrounding message.
 pub fn register_labels(app: &crate::App) {
     use slint::ComponentHandle;
@@ -56,6 +63,14 @@ pub fn register_labels(app: &crate::App) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn grid_tiles_fade_their_covers_everywhere_but_a_mister_hdmi_render() {
+        assert!(tile_cover_fade(false, false));
+        assert!(tile_cover_fade(false, true));
+        assert!(tile_cover_fade(true, true));
+        assert!(!tile_cover_fade(true, false));
+    }
 
     #[test]
     fn automatic_and_picker_sizes_match_qt_output_matrix() {
@@ -148,7 +163,14 @@ mod tests {
                 crate::Orientation::Ccw,
             ] {
                 state.settings.orientation = orientation.token().into();
-                crate::seed_display_globals(&app, &state, crt, crt, (width, height));
+                crate::seed_display_globals(
+                    &app,
+                    &state,
+                    crt,
+                    crt,
+                    (width, height),
+                    zaparoo_app::motion_test::Disabled::default(),
+                );
                 let (w, h) =
                     crate::scene_size(f64::from(width), f64::from(height), orientation, crt);
                 crate::sizing::apply_scene(&app, crate::sizing::Scene::of(&app, w, h, crt));

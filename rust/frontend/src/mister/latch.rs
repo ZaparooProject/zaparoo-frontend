@@ -18,9 +18,10 @@
 // Written against the module's UAPI header and latch-protocol.json.
 
 use super::fb0::{query_fb, FBIO_WAITFORVSYNC};
+use super::scanout::{open_device, Damage, Layout, SLOT_COUNT};
+use super::transition::CachedSlide;
 use super::uio::Uio;
 use super::Presenter;
-use crate::frame_transition::Active as ActiveFrameTransition;
 use crate::latch_protocol::{
     self, parse_caps, parse_receipt, SetCommand, CMD_CAPS, CMD_RECEIPT, CMD_SET,
     DISPOSITION_ACCEPTED, LIMIT_MAX_HEIGHT, LIMIT_MAX_STRIDE_BYTES, LIMIT_MAX_WIDTH,
@@ -30,9 +31,6 @@ use std::fs::{File, OpenOptions};
 use std::os::fd::AsRawFd;
 use std::time::{Duration, Instant};
 
-const DEVICE_PATH: &str = "/dev/zaparoo-scanout";
-const SLOT_COUNT: usize = 2;
-const ABI_VERSION: u32 = 1;
 const MODE_ENABLE: u16 = 0x8000;
 /// Scaler filter enable (`route_flt`, the stock fbuf's `FB_FLT` bit):
 /// without it the ascal upscales nearest-neighbor and any non-integer
@@ -41,41 +39,6 @@ const MODE_FILTER: u16 = 0x4000;
 const MODE_FMT_RGB565: u16 = 0x0014;
 /// Theme.bg (`#0f0f23`) encoded as RGB565 for the inter-page gap.
 const TRANSITION_BACKGROUND: Rgb565Pixel = Rgb565Pixel(0x0864);
-
-// Public Zaparoo scanout ABI v1: fixed-width layout, distinct ioctl namespace.
-#[repr(C)]
-#[derive(Default, Clone, Copy, Debug, PartialEq, Eq)]
-struct SlotsLayout {
-    abi_version: u32,
-    slot_count: u32,
-    max_width: u32,
-    max_height: u32,
-    max_stride_bytes: u32,
-    slot_capacity_bytes: u32,
-    map_bytes: u32,
-    flags: u32,
-    slots: [[u32; 2]; SLOT_COUNT], // physical_address, mmap_offset_bytes
-    reserved: [u32; 4],
-}
-
-// _IOR('Z', 0x01, layout): READ << 30 | size << 16 | 'Z' << 8 | nr.
-const GET_LAYOUT: libc::Ioctl =
-    (2 << 30) | ((size_of::<SlotsLayout>() as libc::Ioctl) << 16) | (0x5A << 8) | 0x01;
-
-fn expected_layout() -> SlotsLayout {
-    SlotsLayout {
-        abi_version: ABI_VERSION,
-        slot_count: 2,
-        max_width: 1920,
-        max_height: 1080,
-        max_stride_bytes: 3840,
-        slot_capacity_bytes: 4_147_200,
-        map_bytes: 4_149_248,
-        flags: 3, // write-combined, exclusive mapping-lifetime owner
-        slots: [[0x2300_0000, 0], [0x2340_0000, 8_294_400]],
-        reserved: [0; 4],
-    }
-}
 
 struct SlotMappings {
     ptrs: [*mut u8; SLOT_COUNT],
@@ -95,35 +58,6 @@ impl Drop for SlotMappings {
     }
 }
 
-/// Damage bounding box in buffer pixels, inclusive-exclusive.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct Damage {
-    x0: u32,
-    y0: u32,
-    x1: u32,
-    y1: u32,
-}
-
-impl Damage {
-    const EMPTY: Self = Self {
-        x0: u32::MAX,
-        y0: u32::MAX,
-        x1: 0,
-        y1: 0,
-    };
-    fn union(self, other: Self) -> Self {
-        Self {
-            x0: self.x0.min(other.x0),
-            y0: self.y0.min(other.y0),
-            x1: self.x1.max(other.x1),
-            y1: self.y1.max(other.y1),
-        }
-    }
-    fn is_empty(self) -> bool {
-        self.x1 <= self.x0 || self.y1 <= self.y0
-    }
-}
-
 pub struct LatchPresenter {
     uio: Uio,
     // Fields drop in this order after route disable: unmap, close the slot
@@ -135,10 +69,8 @@ pub struct LatchPresenter {
     /// Canonical Slint render target (RGB565, `width` px stride), sized
     /// for the largest geometry; low-res renders use a prefix slice.
     frame: Vec<Rgb565Pixel>,
-    /// Presentation-only buffer for cached page motion. Slint never
-    /// renders into it, so its destination cache remains coherent.
-    transition_frame: Vec<Rgb565Pixel>,
-    transition: Option<ActiveFrameTransition<Rgb565Pixel>>,
+    /// Cached page motion and the presentation-only frame it shows.
+    slide: CachedSlide<Rgb565Pixel>,
     cached_transitions_available: bool,
     width: u32,
     height: u32,
@@ -163,6 +95,7 @@ pub struct LatchPresenter {
     vsync_supported: bool,
     post_failures: u64,
     posts: u64,
+    last_copy: Duration,
 }
 
 // SAFETY: the mapping is only touched from the render thread that
@@ -174,28 +107,9 @@ unsafe impl Send for LatchPresenter {}
 /// `map_bytes`-sized shared mappings whose file offset selects the
 /// slot (slot0 at offset 0, slot1 at its `mmap_offset_bytes`); a
 /// single combined mapping does not exist.
-fn open_slots() -> Result<(File, SlotsLayout, SlotMappings), slint::PlatformError> {
+fn open_slots() -> Result<(File, Layout, SlotMappings), slint::PlatformError> {
     let err = slint::PlatformError::Other;
-    let slots_file = OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open(DEVICE_PATH)
-        .map_err(|e| err(format!("open {DEVICE_PATH}: {e} (module not loaded?)")))?;
-    let mut layout = SlotsLayout::default();
-    // SAFETY: GET_LAYOUT fills the layout struct; fd is valid.
-    let rc = unsafe { libc::ioctl(slots_file.as_raw_fd(), GET_LAYOUT, &raw mut layout) };
-    if rc != 0 {
-        return Err(err(format!(
-            "scanout-slots GET_LAYOUT failed: {}",
-            std::io::Error::last_os_error()
-        )));
-    }
-    if layout != expected_layout() {
-        return Err(err(format!(
-            "scanout-slots ABI mismatch: version {} slots {}",
-            layout.abi_version, layout.slot_count
-        )));
-    }
+    let (slots_file, layout) = open_device()?;
     let mut maps = SlotMappings {
         ptrs: [std::ptr::null_mut(); SLOT_COUNT],
         len: layout.map_bytes as usize,
@@ -408,8 +322,7 @@ impl LatchPresenter {
             _lease: lease,
             slot_phys: [layout.slots[0][0], layout.slots[1][0]],
             frame: vec![Rgb565Pixel::default(); frame_capacity as usize],
-            transition_frame: vec![Rgb565Pixel::default(); frame_capacity as usize],
-            transition: None,
+            slide: CachedSlide::new(frame_capacity as usize, TRANSITION_BACKGROUND),
             cached_transitions_available,
             width,
             height,
@@ -437,6 +350,7 @@ impl LatchPresenter {
             vsync_supported: true,
             post_failures: 0,
             posts: 0,
+            last_copy: Duration::ZERO,
         })
     }
 
@@ -458,7 +372,7 @@ impl LatchPresenter {
             return;
         }
         let source = if transition_frame {
-            &self.transition_frame
+            self.slide.frame()
         } else {
             &self.frame
         };
@@ -485,63 +399,17 @@ impl LatchPresenter {
     }
 
     fn begin_cached_transition(&mut self) {
-        let Some(spec) = super::transition::take_request() else {
-            return;
-        };
         let width = self.width as usize;
         let height = self.height as usize;
-        let frame_len = width * height;
-        self.transition_frame[..frame_len].copy_from_slice(&self.frame[..frame_len]);
-        match ActiveFrameTransition::new(
-            &self.frame[..frame_len],
-            width,
-            height,
-            spec,
-            TRANSITION_BACKGROUND,
-        ) {
-            Ok(transition) => {
-                tracing::info!(
-                    x = spec.rect.x,
-                    y = spec.rect.y,
-                    width = spec.rect.width,
-                    height = spec.rect.height,
-                    direction = ?spec.direction,
-                    frames = spec.total_frames,
-                    "cached page transition started"
-                );
-                self.transition = Some(transition);
-            }
-            Err(error) => {
-                super::transition::finish();
-                tracing::warn!(?error, "cached page transition rejected");
-            }
-        }
+        self.slide
+            .begin(&self.frame[..width * height], width, height);
     }
 
     fn compose_cached_transition(&mut self) -> Option<(Damage, bool)> {
         let width = self.width as usize;
         let height = self.height as usize;
-        let frame_len = width * height;
-        let result = self.transition.as_mut()?.compose_now(
-            &self.frame[..frame_len],
-            &mut self.transition_frame[..frame_len],
-        );
-        match result {
-            Ok(step) => Some((
-                Damage {
-                    x0: step.damage.x as u32,
-                    y0: step.damage.y as u32,
-                    x1: (step.damage.x + step.damage.width) as u32,
-                    y1: (step.damage.y + step.damage.height) as u32,
-                },
-                step.finished,
-            )),
-            Err(error) => {
-                tracing::warn!(?error, "cached page transition composition failed");
-                self.transition_frame[..frame_len].copy_from_slice(&self.frame[..frame_len]);
-                Some((self.full_damage(), true))
-            }
-        }
+        self.slide
+            .compose(&self.frame[..width * height], width, height)
     }
 
     fn publish(&mut self, damage: Damage, transition_frame: bool) {
@@ -550,7 +418,9 @@ impl LatchPresenter {
         // everything that changed since then, not just this frame's
         // damage.
         let to_copy = self.stale[slot].union(damage);
+        let copy_start = Instant::now();
         self.copy_to_slot(slot, to_copy, transition_frame);
+        self.last_copy = copy_start.elapsed();
         self.stale[slot] = Damage::EMPTY;
         self.stale[1 - slot] = self.stale[1 - slot].union(damage);
 
@@ -563,8 +433,7 @@ impl LatchPresenter {
     }
 
     fn finish_cached_transition(&mut self) {
-        self.transition = None;
-        super::transition::finish();
+        self.slide.finish();
     }
 
     fn post(&mut self, slot: usize) {
@@ -646,6 +515,10 @@ impl Presenter for LatchPresenter {
             .map_or(1.0, |(_, high)| self.width as f32 / high.0 as f32)
     }
 
+    fn last_copy(&self) -> Duration {
+        self.last_copy
+    }
+
     fn supports_res_modes(&self) -> bool {
         self.res_modes.is_some()
     }
@@ -697,7 +570,7 @@ impl Presenter for LatchPresenter {
         // Slint itself only dirtied a cursor or a small modal.
         let cancelled = super::transition::take_cancelled();
         if cancelled {
-            self.transition = None;
+            self.slide.abandon();
         }
         // A request arrives before destination properties render. Preserve
         // outgoing pixels first, then let Slint build its canonical endpoint.
@@ -736,14 +609,16 @@ impl Presenter for LatchPresenter {
 
     fn present_cached_transition(&mut self) -> Option<Duration> {
         if super::transition::take_cancelled() {
-            self.transition = None;
+            self.slide.abandon();
             let start = Instant::now();
             self.publish(self.full_damage(), false);
             let busy = start.elapsed();
             self.wait_vsync();
             return Some(busy);
         }
-        self.transition.as_ref()?;
+        if !self.slide.is_active() {
+            return None;
+        }
         let start = Instant::now();
         let (damage, finished) = self.compose_cached_transition()?;
         self.publish(damage, true);
@@ -785,10 +660,8 @@ impl Drop for LatchPresenter {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        destination_raster, dynamic_resolution_pair, expected_layout, select_geometry,
-        ResolutionPolicy,
-    };
+    use super::super::scanout::expected_layout;
+    use super::{destination_raster, dynamic_resolution_pair, select_geometry, ResolutionPolicy};
 
     #[test]
     fn pixel_repeated_raster_is_accepted_and_empty_or_oversized_is_not() {
@@ -819,10 +692,6 @@ mod tests {
     #[test]
     fn namespaced_layout_matches_qualified_kernel_abi() {
         let layout = expected_layout();
-        assert_eq!(size_of::<super::SlotsLayout>(), 64);
-        // `libc::Ioctl` is `c_int` on musl and `c_ulong` on glibc; compare
-        // the request code's 32 bits either way.
-        assert_eq!(super::GET_LAYOUT as u32, 0x8040_5a01);
         assert_eq!(layout.slots, [[0x2300_0000, 0], [0x2340_0000, 8_294_400]]);
         assert_eq!(layout.map_bytes % 4096, 0);
         assert!(layout.map_bytes >= layout.max_stride_bytes * layout.max_height);

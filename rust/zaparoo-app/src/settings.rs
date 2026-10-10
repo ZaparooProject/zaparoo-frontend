@@ -496,6 +496,93 @@ pub fn seek_navigable(rows: &[Row], from: usize, dir: i64) -> usize {
     from
 }
 
+/// One rendered line of text at `size`, the way Slint lays it out: Noto
+/// Sans has a 1.362 em hhea line height and no line gap. Shared by the
+/// action status line and the group heading so they stay in step with the
+/// type ladder instead of with a magic percentage.
+fn line_height(size: i32) -> i32 {
+    (f64::from(size) * 1.362).ceil() as i32
+}
+
+/// One line of the hint band. The bitmap face has no leading: a line is
+/// exactly its cell, so the scaled figure would hold a third of a line of
+/// blank band open under every description.
+fn hint_line_height(inputs: &crate::sizing::Inputs, size: i32) -> i32 {
+    if inputs.bitmap_type {
+        size
+    } else {
+        line_height(size)
+    }
+}
+
+/// A settings page card in whole pixels: where it sits in the scene, the
+/// bands stacked inside it, and the heights its rows stack with. The view
+/// places the card from these values instead of deriving its own, so the
+/// rows band it clips is the viewport the scroll was solved against.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PageGeometry {
+    pub card_y: i32,
+    pub card_height: i32,
+    /// The card's lip: above the first row, under the last, either side of
+    /// the hint rule and under the hint text. One inset, used everywhere
+    /// on the surface (`docs/style.md`, "Surface containment").
+    pub pad: i32,
+    pub hint_height: i32,
+    /// What is left for rows once the lips, the hint band, its rule and the
+    /// clear line over the rule are taken out.
+    pub rows_viewport: i32,
+    /// A field is one line tall.
+    pub row_height: i32,
+    /// What a row with a status line adds under its label.
+    pub action_band_height: i32,
+    /// A group heading's own short row.
+    pub header_height: i32,
+}
+
+pub fn page_geometry(inputs: &crate::sizing::Inputs) -> PageGeometry {
+    use crate::layouts::{self, ThemeId, View};
+    let derived = crate::sizing::derive(inputs);
+    let profile = layouts::profile(ThemeId::current(inputs), View::GamesGrid, inputs);
+    let card_y = derived.header_bottom
+        + profile.status.top_margin
+        + profile.status.strip_height
+        + inputs.pct_h(4.0);
+    let bottom = derived.help_bar_height + inputs.pct_h(4.0);
+    let card_height = (inputs.screen_height as i32 - card_y - bottom).max(0);
+    // Descriptions are authored against the 240p card's line budget, so
+    // only that tier needs two lines held open; every wider one fits them
+    // on one and a second reserved line just holds the rows up. Fixed per
+    // tier, never per row: this is the rows viewport, and a band that grew
+    // with the focused description would reflow the list under the cursor.
+    let hint_lines = if derived.tier == crate::sizing::Tier::T240 || inputs.bitmap_type {
+        2
+    } else {
+        1
+    };
+    let hint_height = hint_lines * hint_line_height(inputs, derived.font_body);
+    let pad = inputs.pct_min(2.0);
+    // Four lips and two hairlines: the hint rule, and one clear line over
+    // it where the rows band stops, so a row gliding out never abuts the
+    // rule.
+    let rows_viewport = (card_height - 4 * pad - 2 - hint_height).max(0);
+    PageGeometry {
+        card_y,
+        card_height,
+        pad,
+        hint_height,
+        rows_viewport,
+        row_height: inputs.pct_h(8.0),
+        // Exactly the status line it makes room for, plus the gap over it.
+        // A flat percentage reserved a second *body* line for a caption
+        // and left the pair floating in a row taller than its content.
+        action_band_height: line_height(derived.font_caption) + inputs.pct_h(0.3),
+        // `SectionHeader`'s own anatomy: top gap, the label, the rule gap
+        // and the hairline. The heading is a shared component, so the row
+        // Rust stacks has to be the box that component draws.
+        header_height: inputs.pct_h(1.5) + line_height(derived.font_body) + inputs.pct_h(0.8) + 1,
+    }
+}
+
 /// The root category grid: two rows of three, transposed when the scene
 /// is rotated.
 /// How far a settings rows band scrolls to keep the focused row in view.
@@ -978,6 +1065,88 @@ mod tests {
         // the one without wraps back to the top of its own column.
         assert_eq!(root_grid_move(0, 5, 3, 0, 1), 3);
         assert_eq!(root_grid_move(2, 5, 3, 0, 1), 2);
+    }
+
+    /// The CRT scene: 352x240 less the 5% safe area, on the bitmap face.
+    fn crt_scene() -> crate::sizing::Inputs {
+        crate::sizing::Inputs {
+            screen_width: 316.0,
+            screen_height: 216.0,
+            crt_native_path: true,
+            bitmap_type: true,
+            ..crate::sizing::Inputs::default()
+        }
+    }
+
+    #[test]
+    fn a_bitmap_hint_line_is_the_font_size() {
+        use super::page_geometry;
+        // Two 8px lines, not two 11px ones: the face has no leading.
+        let crt = page_geometry(&crt_scene());
+        assert_eq!(crt.hint_height, 16);
+        // The scaled face keeps its 1.362 em line: 10px body at 240p is
+        // 14px a line and two lines, 19px body at 720p is 26px and one.
+        let scaled_240 = page_geometry(&crate::sizing::Inputs {
+            screen_width: 320.0,
+            screen_height: 240.0,
+            ..crate::sizing::Inputs::default()
+        });
+        assert_eq!(scaled_240.hint_height, 28);
+        let hd = page_geometry(&crate::sizing::Inputs {
+            screen_width: 1280.0,
+            screen_height: 720.0,
+            ..crate::sizing::Inputs::default()
+        });
+        assert_eq!(hd.hint_height, 26);
+        // Headings and status lines are not hint lines and keep the
+        // scaled figure on both faces.
+        assert_eq!(crt.header_height, 3 + 11 + 2 + 1);
+        assert_eq!(crt.action_band_height, 11 + 1);
+    }
+
+    #[test]
+    fn the_page_card_is_whole_pixels_that_add_up() {
+        use super::page_geometry;
+        let g = page_geometry(&crt_scene());
+        assert_eq!((g.card_y, g.card_height, g.pad), (33, 161, 4));
+        assert_eq!(g.row_height, 17);
+        assert_eq!(g.rows_viewport, 127);
+        // Top to bottom: lip, rows, lip, the clear line, the rule, lip,
+        // hint, lip.
+        for inputs in [
+            crt_scene(),
+            crate::sizing::Inputs {
+                help_bar_two_rows: true,
+                ..crt_scene()
+            },
+            crate::sizing::Inputs {
+                screen_width: 1920.0,
+                screen_height: 1080.0,
+                ..crate::sizing::Inputs::default()
+            },
+        ] {
+            let g = page_geometry(&inputs);
+            assert_eq!(
+                g.pad + g.rows_viewport + g.pad + 1 + 1 + g.pad + g.hint_height + g.pad,
+                g.card_height,
+                "{inputs:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_wrapped_help_bar_takes_its_rows_from_the_card() {
+        use super::page_geometry;
+        let one = page_geometry(&crt_scene());
+        let two = page_geometry(&crate::sizing::Inputs {
+            help_bar_two_rows: true,
+            ..crt_scene()
+        });
+        // The bar grows from 13px to 22px and the card gives up exactly
+        // that; nothing above it moves.
+        assert_eq!(two.card_y, one.card_y);
+        assert_eq!(one.card_height - two.card_height, 9);
+        assert_eq!(one.rows_viewport - two.rows_viewport, 9);
     }
 
     #[test]

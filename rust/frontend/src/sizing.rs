@@ -9,7 +9,7 @@
 // crate's `Inputs`. The transition-geometry helpers at the bottom are
 // Slint-only (they describe this frontend's own chrome) and stay here.
 
-use crate::{App, GamesView, Layout, Shell, Sizing as SizingGlobal, SystemsView};
+use crate::{App, GamesView, Layout, Motion, Shell, Sizing as SizingGlobal, SystemsView};
 use slint::ComponentHandle;
 use zaparoo_app::layouts::{self, Body, Profile, ThemeId, View};
 pub use zaparoo_app::sizing::GridShape;
@@ -34,6 +34,8 @@ pub struct Scene {
     pub swap_axes: bool,
     /// The handheld interface profile (Settings > Display).
     pub handheld: bool,
+    /// The help entries on screen wrap, so a 240p help bar is two rows.
+    pub help_bar_two_rows: bool,
 }
 
 impl Scene {
@@ -48,6 +50,7 @@ impl Scene {
             bitmap_fonts: sizing.get_bitmap_fonts(),
             swap_axes: sizing.get_swap_axes(),
             handheld: sizing.get_handheld(),
+            help_bar_two_rows: sizing.get_help_bar_two_rows(),
         }
     }
 
@@ -63,8 +66,21 @@ impl Scene {
             } else {
                 InterfaceProfile::Standard
             },
+            help_bar_two_rows: self.help_bar_two_rows,
         }
     }
+}
+
+/// Copy the help bar's wrap measurement into the `Sizing` input the scene
+/// reads. Returns whether it changed, so the caller re-solves only then.
+pub fn sync_help_bar_rows(app: &App) -> bool {
+    let wraps = app.get_help_entries_wrap();
+    let sizing = app.global::<SizingGlobal>();
+    if sizing.get_help_bar_two_rows() == wraps {
+        return false;
+    }
+    sizing.set_help_bar_two_rows(wraps);
+    true
 }
 
 /// Push everything the scene decides: the derived `Sizing` table, the
@@ -168,7 +184,26 @@ fn px(value: i32) -> f32 {
     clippy::too_many_lines,
     reason = "one setter per derived sizing value keeps the inventory reviewable"
 )]
+/// The `zoom` name of the `ZAPAROO_MOTION` test switch, as startup read it.
+static FOCUS_ZOOM_DISABLED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// Record whether the test switch turned the focus zoom off. The zoom is
+/// pushed with every scene, so this takes effect at the next one.
+#[allow(dead_code, reason = "the snapshot tool has no test switch")]
+pub fn set_focus_zoom_disabled(disabled: bool) {
+    FOCUS_ZOOM_DISABLED.store(disabled, std::sync::atomic::Ordering::SeqCst);
+}
+
 fn apply_derived(app: &App, d: &Derived) {
+    // The focus zoom follows the tier, so it is pushed with it: everything
+    // that reserves room for the growth, and the larger art prepared for a
+    // grown tile, reads this one value.
+    app.global::<Motion>()
+        .set_focus_zoom(rules::focus_zoom_percent(
+            d.tier,
+            FOCUS_ZOOM_DISABLED.load(std::sync::atomic::Ordering::SeqCst),
+        ));
     let s = app.global::<SizingGlobal>();
     s.set_tier_240(d.tier == rules::Tier::T240);
     s.set_handheld(d.handheld_profile);
@@ -344,9 +379,10 @@ pub struct BrowseGridTransitionGeometry {
     pub gap: u32,
 }
 
-/// Published non-CRT browse viewport in Slint render pixels. Horizontal,
-/// one-to-one cached scenes move the same full-width band as the live UI,
-/// leaving header, counter, active label and help bar stationary.
+/// Published browse viewport in the scene's own pixels, before any
+/// rotation the presenter renders it with. One-to-one cached scenes move
+/// the same full-width band as the live UI, leaving header, counter, active
+/// label and help bar stationary.
 #[cfg_attr(
     not(feature = "mister"),
     allow(

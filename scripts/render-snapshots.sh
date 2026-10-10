@@ -46,3 +46,8 @@ done
 for screen in "${crt_screens[@]}"; do
     render 352 240 "$screen"
 done
+# The PAL CRT scene is 48 lines taller: the list card and its row window
+# are the part of the layout that has to follow it.
+for screen in crt-games-list crt-fast-scroll; do
+    render 352 288 "$screen"
+done

@@ -123,6 +123,25 @@ impl InputModel {
         self.epoch -= Duration::from_millis(milliseconds);
     }
 
+    /// How a browse list follows a selection that just moved `rows` rows:
+    /// whether it glides, and the linear glide's length in milliseconds (0
+    /// for the eased glide of a tap). A held key that steps one row glides
+    /// at constant speed for a quarter longer than its repeat interval, so
+    /// the list is still moving when the next repeat lands and never falls
+    /// more than a row behind; that holds at every tier. A held step that
+    /// jumps a page or a letter cuts. For a driver that already holds the
+    /// shared state.
+    pub(crate) fn list_follow(&self, rows: usize) -> (bool, i32) {
+        if !self.dispatching_repeat {
+            return (true, 0);
+        }
+        if rows > 1 {
+            return (false, 0);
+        }
+        let interval = self.dispatch_tier.repeat_ms();
+        (true, i32::try_from(interval + interval / 4).unwrap_or(0))
+    }
+
     fn now_ms(&self) -> u64 {
         u64::try_from(self.epoch.elapsed().as_millis()).unwrap_or(u64::MAX)
     }

@@ -312,6 +312,16 @@ ask to go.
 - MiSTer state/log: `/tmp/zaparoo/state.toml`, `/tmp/zaparoo/frontend.log`.
 - `ZAPAROO_CORE_ENDPOINT` overrides `[core] endpoint`; `ZAPAROO_STATE_FILE`
   redirects state for tests and ad-hoc runs.
+- `ZAPAROO_MOTION` is a test switch for the MiSTer build, which runs the
+  same motion as the GPU build. It is a comma-separated list of effects to
+  turn back off for one run, so each can be measured on a device against
+  the cut it replaced: `zoom` (focused tile growth), `cover-fade` (cover
+  art fading in as it lands), `rail` (fast-scroll rail fade and glide),
+  `slides` (cached page slides on the native CRT and fb0 presenters; the
+  vblank-latch presenter keeps its own), `clock` (the fixed-step animation
+  clock; wall time instead). Unset or empty leaves everything on; unknown
+  names are logged and ignored. `zaparoo_app::motion_test` parses it, `lib.rs` reads it once.
+  See `docs/slint-gotchas.md` → "Motion on the software renderer".
 - `Runtime` has three values: `Mister`, `SteamOs`, `Desktop`. SteamOS is a
   desktop-Linux runtime and answers `is_desktop()`, so `platform_paths.rs`
   stays a two-way `is_mister()` split; the variant only changes defaults for

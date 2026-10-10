@@ -455,6 +455,25 @@ pub(crate) fn scene_size(
     }
 }
 
+/// The effects `ZAPAROO_MOTION` turns off for this run. Read once: a
+/// comma-separated list of `zoom`, `cover-fade`, `rail`, `slides` and
+/// `clock`; unset or empty leaves every effect on.
+pub(crate) fn motion_test() -> zaparoo_app::motion_test::Disabled {
+    static DISABLED: std::sync::OnceLock<zaparoo_app::motion_test::Disabled> =
+        std::sync::OnceLock::new();
+    *DISABLED.get_or_init(|| {
+        let value = std::env::var("ZAPAROO_MOTION").unwrap_or_default();
+        let (disabled, unknown) = zaparoo_app::motion_test::Disabled::parse(&value);
+        if !unknown.is_empty() {
+            tracing::warn!(?unknown, "ZAPAROO_MOTION names no such effect; ignored");
+        }
+        if disabled != zaparoo_app::motion_test::Disabled::default() {
+            tracing::info!(?disabled, "ZAPAROO_MOTION turned motion effects off");
+        }
+        disabled
+    })
+}
+
 /// CRT/bitmap-font and orientation seeding shared by both platforms.
 fn seed_display_globals(
     app: &App,
@@ -462,6 +481,7 @@ fn seed_display_globals(
     visual_crt: bool,
     crt_enabled: bool,
     framebuffer_size: (u32, u32),
+    motion_off: zaparoo_app::motion_test::Disabled,
 ) {
     app.global::<Theme>().set_crt(visual_crt);
     app.global::<Sizing>().set_crt(visual_crt);
@@ -475,23 +495,35 @@ fn seed_display_globals(
     app.global::<Shell>()
         .set_systems_list_layout(persisted.settings.systems_browse_layout == "list");
     apply_interface_profile(app, &persisted.settings.interface_profile);
-    app.global::<Motion>().set_enabled(display::motion_enabled(
+    let embedded = cfg!(feature = "mister");
+    let motion = app.global::<Motion>();
+    motion.set_enabled(display::motion_enabled(
         persisted.settings.reduce_motion,
-        cfg!(feature = "mister"),
+        embedded,
         visual_crt,
         framebuffer_size.1,
     ));
     // The software renderer has no transform support, so a focused tile
-    // never actually grows there. Say so once, here, rather than letting
-    // each consumer guess: the grid would reserve clip headroom it cannot
-    // use and the context menu would cut its scrim hole around a size the
-    // tile never reaches.
-    if cfg!(feature = "mister") {
-        app.global::<Motion>().set_focus_zoom(100.0);
-        // Fading tiles is the expensive kind of motion on the software
-        // renderer: covers keep their hard cut there.
-        app.global::<Motion>().set_cover_reveal_ms(0);
-        app.global::<Motion>().set_rail_ms(0);
+    // grows there by its real geometry instead. Say so once, here, rather
+    // than letting each consumer guess.
+    motion.set_zoom_by_size(embedded);
+    // The software-rendered build runs the same motion as the GPU one.
+    // `ZAPAROO_MOTION` turns an effect back off for one run, and each one
+    // named gets the value that cuts it: a tile that does not grow, so the
+    // grid reserves no clip headroom and the context menu cuts its scrim
+    // hole at the tile's own size, covers that cut in, and a rail that
+    // appears, moves and leaves in cuts.
+    // The zoom itself is pushed with every scene (`sizing::apply_scene`),
+    // because the 240p tier has none either.
+    sizing::set_focus_zoom_disabled(embedded && motion_off.zoom());
+    if embedded && motion_off.cover_fade() {
+        motion.set_cover_reveal_ms(0);
+    }
+    if !display::tile_cover_fade(embedded, visual_crt) || embedded && motion_off.cover_fade() {
+        motion.set_tile_cover_reveal_ms(0);
+    }
+    if embedded && motion_off.rail() {
+        motion.set_rail_ms(0);
     }
     display::register_labels(app);
     app.global::<Shell>()
@@ -547,7 +579,13 @@ fn run_application(
     // A hosted application leaves process-global logging to its owner.
     #[cfg(not(feature = "hosted"))]
     let _log_guard = zaparoo_core::logger::install(&config);
+    // Before anything else can reach the screen: Main shows our VT as soon
+    // as it has switched to it, well before the first frame.
+    #[cfg(feature = "mister")]
+    let _console = mister::TtyGuard::acquire_controlling();
     tracing::info!("Zaparoo Frontend starting");
+    // Read here so anything it has to say lands at the top of the log.
+    let _ = motion_test();
     // `load_config` ran before there was a logger, so it reports here.
     if let Some(fault) = &config.fault {
         tracing::error!("{fault}; using defaults and leaving the file untouched");
@@ -700,7 +738,14 @@ fn run_application(
     let (rest, focus) = theme::logo_tints(&palette);
     let logos = system_logos::Logos::new();
     logos.set_tints(rest, focus);
-    seed_display_globals(&app, &persisted, visual_crt, crt, ui_framebuffer_size);
+    seed_display_globals(
+        &app,
+        &persisted,
+        visual_crt,
+        crt,
+        ui_framebuffer_size,
+        motion_test(),
+    );
     brand::register(&app);
     app.global::<GlyphSource>().on_glyph(|key, px, tint| {
         glyphs::render(key.as_str(), px.round().max(0.0) as u32, tint).unwrap_or_default()
@@ -714,7 +759,14 @@ fn run_application(
             &persisted.settings.color_scheme,
             &persisted.settings.color_intensity,
         );
-        seed_display_globals(&mirror, &persisted, true, true, crt_framebuffer_size);
+        seed_display_globals(
+            &mirror,
+            &persisted,
+            true,
+            true,
+            crt_framebuffer_size,
+            motion_test(),
+        );
         brand::register(&mirror);
         mirror.global::<GlyphSource>().on_glyph(|key, px, tint| {
             glyphs::render(key.as_str(), px.round().max(0.0) as u32, tint).unwrap_or_default()
@@ -816,6 +868,25 @@ fn run_application(
             }
         });
     }
+    // A 240p help bar is one row until its entries wrap. The bar measures
+    // that itself; the sizing table and every screen's geometry follow it
+    // here, through the same push a resize uses. Read once now for the
+    // state the globals were seeded with, before any screen is built.
+    if sizing::sync_help_bar_rows(&app) {
+        sizing::apply_scene(&app, router::output_scene(&app));
+    }
+    {
+        let weak = app.as_weak();
+        let ctx = ctx.clone();
+        app.on_help_wrap_changed(move || {
+            if let Some(app) = weak.upgrade() {
+                if sizing::sync_help_bar_rows(&app) {
+                    sizing::apply_scene(&app, router::output_scene(&app));
+                    router::relayout(&ctx, &app);
+                }
+            }
+        });
+    }
 
     #[cfg(feature = "mister")]
     if let Some(mirror) = crt_mirror.as_ref() {
@@ -831,6 +902,26 @@ fn run_application(
         mirror.on_viewport_changed(move |w, h| {
             if let Some(mirror) = weak.upgrade() {
                 apply_grid_shapes(&mirror, f64::from(w), f64::from(h), true);
+            }
+        });
+        // The CRT head measures its own help bar; its screens are re-fit
+        // from its `Sizing` table on the next mirror tick.
+        let resolve_help_rows = |mirror: &App| {
+            if sizing::sync_help_bar_rows(mirror) {
+                let table = mirror.global::<Sizing>();
+                apply_grid_shapes(
+                    mirror,
+                    f64::from(table.get_screen_width()),
+                    f64::from(table.get_screen_height()),
+                    true,
+                );
+            }
+        };
+        resolve_help_rows(mirror);
+        let weak = mirror.as_weak();
+        mirror.on_help_wrap_changed(move || {
+            if let Some(mirror) = weak.upgrade() {
+                resolve_help_rows(&mirror);
             }
         });
     }
