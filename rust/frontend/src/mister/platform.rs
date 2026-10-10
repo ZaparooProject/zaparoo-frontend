@@ -6,8 +6,12 @@
 //
 // Frame loop shape: dispatch a bounded batch of callbacks, poll input,
 // advance timers/animations, render if dirty, then present. Vsync paces
-// presentation; monotonic elapsed time drives deadlines so contention
-// skips obsolete animation frames rather than extending every wait.
+// presentation. The clock timers and animations read is a stepped timeline
+// (`zaparoo_app::frame_clock`): one refresh period per presented frame, so
+// motion is sampled at even steps and a late frame slows it by that frame,
+// and the real time that passed, in whole periods, across a turn that
+// presented nothing, so timers keep real time while nothing animates. The
+// `clock` name of the `ZAPAROO_MOTION` test switch puts wall time back.
 
 pub use super::latch::ResolutionPolicy;
 use super::{
@@ -17,12 +21,13 @@ use slint::platform::software_renderer::{
     MinimalSoftwareWindow, RenderingRotation, RepaintBufferType,
 };
 use slint::platform::{Platform, WindowAdapter};
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
 use std::rc::Rc;
-use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
 use std::sync::{Arc, Condvar, Mutex, PoisonError};
 use std::time::{Duration, Instant};
+use zaparoo_app::frame_clock::{FrameClock, RefreshEstimate, Turn};
 
 /// Nominal presentation budget, independent of the animation clock.
 const FRAME_PERIOD_US: u64 = 16_667;
@@ -102,6 +107,30 @@ fn apply_window_geometry(
 
 pub fn set_orientation(value: crate::Orientation) {
     REQUESTED_ROTATION.store(rotation_value(value), Ordering::SeqCst);
+}
+
+/// The stepped timeline in nanoseconds, published for the cached page
+/// slide, which counts its steps on the clock Slint samples. `u64::MAX`
+/// while no frame loop is stepping one and wall time drives everything.
+static TIMELINE_NANOS: AtomicU64 = AtomicU64::new(u64::MAX);
+
+/// The stepped timeline's current value, or None where wall time is the
+/// animation clock.
+pub(super) fn timeline() -> Option<Duration> {
+    match TIMELINE_NANOS.load(Ordering::SeqCst) {
+        u64::MAX => None,
+        nanos => Some(Duration::from_nanos(nanos)),
+    }
+}
+
+/// What timers and animations read as the time.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum AnimationClock {
+    /// A timeline the frame loop steps one refresh period per presented
+    /// frame.
+    FixedStep,
+    /// Wall time, whatever was presented.
+    Wall,
 }
 
 type QueuedEvent = Box<dyn FnOnce() + Send>;
@@ -266,16 +295,23 @@ impl DynamicResolution {
 pub struct MisterPlatform {
     windows: RefCell<Vec<Rc<MinimalSoftwareWindow>>>,
     queue: Arc<EventQueue>,
-    /// Real elapsed time drives both timers and interpolated motion.
+    /// Wall-clock origin. Timers and interpolated motion read the time
+    /// since it directly until the frame loop starts its stepped timeline,
+    /// and for the whole run on a wall `animation_clock`.
     started: Instant,
+    animation_clock: AnimationClock,
+    /// The stepped timeline, once the frame loop has started it.
+    clock: Cell<Option<FrameClock>>,
     /// CRT native path: present through the DDR contract instead of fb0.
     crt: bool,
     crt_size: (u32, u32),
     crt_offsets: (i32, i32),
     /// Render normal HDMI and CRT-profile component instances together.
     dual_head: bool,
-    /// Main granted the uio lease (spawned us with --latch): try the
-    /// vblank-latch presenter on the HDMI path.
+    /// Main offered its scanout lease. Off the native CRT path that is the
+    /// HDMI slots (try the vblank-latch presenter); on it, the CRT window
+    /// mapped through the module instead of /dev/mem, and a dual-head HDMI
+    /// side stays on fb0.
     latch: bool,
     /// Select adaptive motion/settled geometry or keep the sharpest
     /// supported latch geometry fixed.
@@ -290,11 +326,14 @@ impl MisterPlatform {
         latch: bool,
         dual_head: bool,
         resolution_policy: ResolutionPolicy,
+        animation_clock: AnimationClock,
     ) -> Self {
         Self {
             windows: RefCell::new(Vec::new()),
             queue: Arc::new(EventQueue::default()),
             started: Instant::now(),
+            animation_clock,
+            clock: Cell::new(None),
             crt,
             crt_size,
             crt_offsets,
@@ -304,11 +343,45 @@ impl MisterPlatform {
         }
     }
 
+    /// Starts the stepped timeline level with wall time. The frame loop
+    /// calls this once, before its first turn.
+    fn start_clock(&self) {
+        self.start_clock_at(self.started.elapsed());
+    }
+
+    fn start_clock_at(&self, real_now: Duration) {
+        if self.animation_clock == AnimationClock::FixedStep {
+            self.set_clock(FrameClock::new(real_now));
+        }
+    }
+
+    /// Accounts for the turn that just ended. Each frame loop calls this
+    /// exactly once per turn, before Slint samples the clock for that turn.
+    fn advance_clock(&self, previous: Option<Turn>, period: Duration) {
+        self.advance_clock_at(previous, self.started.elapsed(), period);
+    }
+
+    fn advance_clock_at(&self, previous: Option<Turn>, real_now: Duration, period: Duration) {
+        let (Some(mut clock), Some(previous)) = (self.clock.get(), previous) else {
+            return;
+        };
+        clock.advance(previous, real_now, period);
+        self.set_clock(clock);
+    }
+
+    fn set_clock(&self, clock: FrameClock) {
+        self.clock.set(Some(clock));
+        TIMELINE_NANOS.store(
+            u64::try_from(clock.now().as_nanos()).unwrap_or(u64::MAX - 1),
+            Ordering::SeqCst,
+        );
+    }
+
     /// --latch wants the vblank-latch presenter (kernel module +
     /// latch RBF + Main's uio lease). A failed probe falls back to
     /// fb0 loudly because it changes tearing and DRS behavior.
     fn make_hdmi_presenter(&self) -> Result<Box<dyn Presenter>, slint::PlatformError> {
-        if self.latch {
+        if self.latch && !self.crt {
             match LatchPresenter::open(self.resolution_policy, true) {
                 Ok(p) => return Ok(Box::new(p)),
                 Err(e) => {
@@ -316,7 +389,9 @@ impl MisterPlatform {
                 }
             }
         }
-        Ok(Box::new(Fb0Presenter::open()?))
+        Ok(Box::new(Fb0Presenter::open(
+            !crate::motion_test().slides(),
+        )?))
     }
 
     /// CRT wants the DDR presenter; normal HDMI uses the latch-first
@@ -330,6 +405,8 @@ impl MisterPlatform {
                 self.crt_offsets.0,
                 self.crt_offsets.1,
                 true,
+                self.latch,
+                !crate::motion_test().slides(),
             ) {
                 Ok(p) => return Ok(Box::new(p)),
                 Err(e) => {
@@ -353,6 +430,10 @@ impl MisterPlatform {
             self.crt_offsets.0,
             self.crt_offsets.1,
             false,
+            self.latch,
+            // The HDMI presenter paces this pair and owns its cached page
+            // slides; the CRT head replays the page as a live strip.
+            false,
         )?);
         let mut rotation = requested_rotation();
         let (hdmi_w, hdmi_h) = logical_size(hdmi.size(), rotation);
@@ -372,6 +453,9 @@ impl MisterPlatform {
             "mister platform: entering dual-head frame loop"
         );
 
+        self.start_clock();
+        let mut pace = Pace::new();
+        let mut previous = None;
         loop {
             if self.queue.quit.load(Ordering::SeqCst) {
                 return Ok(());
@@ -389,6 +473,9 @@ impl MisterPlatform {
             if crt.sync_controls().is_some() {
                 apply_window_geometry(crt.as_ref(), crt_window, rotation);
             }
+            // The HDMI presenter paces both heads, so its period is the step.
+            let period = pace.period(hdmi.as_ref());
+            self.advance_clock(previous, period);
             slint::platform::update_timers_and_animations();
             drs.before_render(hdmi.as_mut(), hdmi_window, rotation);
 
@@ -416,17 +503,27 @@ impl MisterPlatform {
                 crt_busy = Some(crt.render_and_present(renderer));
             });
             let total_busy = hdmi_busy.unwrap_or_default() + crt_busy.unwrap_or_default();
+            if hdmi_rendered || crt_busy.is_some() {
+                pace.drew();
+            }
             if hdmi_busy.is_some() {
                 // HDMI resolution is the available pressure valve,
                 // but dual-head budget includes both render targets.
                 drs.rendered(total_busy, hdmi.as_mut(), hdmi_window, rotation);
             } else if !hdmi_rendered {
-                hdmi.wait_vsync();
+                pace.idle_wait(hdmi.as_mut());
                 drs.idle(hdmi.as_mut(), hdmi_window, rotation);
             }
             if hdmi_busy.is_some() || crt_busy.is_some() {
-                profile.record(total_busy);
+                profile.record(total_busy, hdmi.last_copy() + crt.last_copy(), period);
             }
+            // A turn that drew only the CRT head still waited one HDMI
+            // refresh above.
+            previous = Some(if hdmi_rendered || crt_busy.is_some() {
+                Turn::Presented
+            } else {
+                Turn::Idle
+            });
             profile.record_turn(preparation, turn_started.elapsed());
         }
     }
@@ -440,7 +537,9 @@ impl Platform for MisterPlatform {
     }
 
     fn duration_since_start(&self) -> Duration {
-        self.started.elapsed()
+        self.clock
+            .get()
+            .map_or_else(|| self.started.elapsed(), |clock| clock.now())
     }
 
     fn new_event_loop_proxy(&self) -> Option<Box<dyn slint::platform::EventLoopProxy>> {
@@ -467,9 +566,10 @@ impl Platform for MisterPlatform {
             .cloned()
             .ok_or_else(|| slint::PlatformError::Other("no window created".into()))?;
 
-        // Silence the kernel console for the whole frame-loop lifetime;
-        // dropped (KD_TEXT restored) on clean exit. The wrapper resets
-        // the tty itself if we die without unwinding.
+        // Silence the kernel console for the whole frame-loop lifetime
+        // where startup could not already; dropped (KD_TEXT restored) on
+        // clean exit. The wrapper resets the tty itself if we die without
+        // unwinding.
         let _tty = super::tty::TtyGuard::acquire();
 
         let mut presenter = self.make_presenter()?;
@@ -487,6 +587,9 @@ impl Platform for MisterPlatform {
             "mister platform: entering frame loop"
         );
 
+        self.start_clock();
+        let mut pace = Pace::new();
+        let mut previous = None;
         loop {
             if self.queue.quit.load(Ordering::SeqCst) {
                 return Ok(());
@@ -503,6 +606,8 @@ impl Platform for MisterPlatform {
             if presenter.sync_controls().is_some() {
                 apply_window_geometry(presenter.as_ref(), window.as_ref(), rotation);
             }
+            let period = pace.period(presenter.as_ref());
+            self.advance_clock(previous, period);
             slint::platform::update_timers_and_animations();
 
             // Drop to motion res the moment a router-declared heavy
@@ -515,8 +620,10 @@ impl Platform for MisterPlatform {
             // normal frame after the transition.
             let preparation = turn_started.elapsed();
             if let Some(busy) = presenter.present_cached_transition() {
-                profile.record(busy);
+                profile.record(busy, Duration::ZERO, period);
                 profile.record_turn(preparation, turn_started.elapsed());
+                pace.drew();
+                previous = Some(Turn::Presented);
                 continue;
             }
 
@@ -536,32 +643,82 @@ impl Platform for MisterPlatform {
                 drs.full_redraw_complete();
             }
             if let Some(busy) = busy {
-                profile.record(busy);
+                profile.record(busy, presenter.last_copy(), period);
                 // Safety net: sustained native-resolution overruns
                 // retreat to motion resolution until a quiet stretch.
                 drs.rendered(busy, presenter.as_mut(), window.as_ref(), rotation);
             }
-            // Idle turns still wait for vsync; timer deadlines use real
-            // elapsed time regardless of whether this turn painted.
-            if !rendered {
-                presenter.wait_vsync();
+            // Idle turns still wait for vsync, and the next turn puts the
+            // real time that wait took on the clock, so timer deadlines
+            // keep real time whether or not a turn painted.
+            if rendered {
+                pace.drew();
+            } else {
+                pace.idle_wait(presenter.as_mut());
                 // Phase over and settled: pop to native. The resize
                 // dirties one final sharp frame while nothing moves.
                 drs.idle(presenter.as_mut(), window.as_ref(), rotation);
             }
+            previous = Some(if rendered {
+                Turn::Presented
+            } else {
+                Turn::Idle
+            });
             profile.record_turn(preparation, turn_started.elapsed());
         }
     }
 }
 
+/// The refresh period a frame loop steps and budgets by. A presenter that
+/// knows its output's rate reports it; for the rest it is measured from the
+/// vertical-blank waits of turns that drew nothing, so a 50 Hz HDMI mode
+/// steps 20 ms instead of running its motion a sixth slow.
+struct Pace {
+    estimate: RefreshEstimate,
+    last_blank: Option<Instant>,
+}
+
+impl Pace {
+    fn new() -> Self {
+        Self {
+            estimate: RefreshEstimate::new(Duration::from_micros(FRAME_PERIOD_US)),
+            last_blank: None,
+        }
+    }
+
+    fn period(&self, presenter: &dyn Presenter) -> Duration {
+        if presenter.reports_period() {
+            presenter.frame_period()
+        } else {
+            self.estimate.period()
+        }
+    }
+
+    /// Waits out a turn that drew nothing.
+    fn idle_wait(&mut self, presenter: &mut dyn Presenter) {
+        presenter.wait_vsync();
+        let now = Instant::now();
+        if let Some(last) = self.last_blank.replace(now) {
+            self.estimate.observe(now.duration_since(last));
+        }
+    }
+
+    /// A turn that drew: its wait may span more than one refresh.
+    fn drew(&mut self) {
+        self.last_blank = None;
+    }
+}
+
 /// Rolling frame-work profiler: records the busy time of every
 /// rendered frame (render + copy + publish, vsync waits excluded) and
-/// logs avg/p99/max against the 16.7 ms budget every 600 rendered
-/// frames, plus a running overrun count. This is the number to check
-/// against the frame budget on hardware.
+/// logs avg/p99/max against the presenter's refresh period every 600
+/// rendered frames, plus a running overrun count and how much of the
+/// average went on the copy out to the display's memory. This is the
+/// number to check against the frame budget on hardware.
 #[derive(Default)]
 struct FrameProfile {
     samples: Vec<Duration>,
+    copy_total: Duration,
     total_rendered: u64,
     overruns: u64,
     turns: usize,
@@ -598,27 +755,31 @@ impl FrameProfile {
         }
     }
 
-    fn record(&mut self, busy: Duration) {
+    fn record(&mut self, busy: Duration, copy: Duration, budget: Duration) {
         self.total_rendered += 1;
-        if busy > FRAME_BUDGET {
+        if busy > budget {
             self.overruns += 1;
         }
         self.samples.push(busy);
+        self.copy_total += copy;
         if self.samples.len() < PROFILE_WINDOW {
             return;
         }
+        let copy_avg = self.copy_total / PROFILE_WINDOW as u32;
         if let Some(summary) = crate::perf::summarize(&mut self.samples) {
             tracing::info!(
                 rendered = self.total_rendered,
                 avg_us = summary.avg.as_micros() as u64,
+                copy_avg_us = copy_avg.as_micros() as u64,
                 p99_us = summary.p99.as_micros() as u64,
                 max_us = summary.max.as_micros() as u64,
-                budget_us = FRAME_BUDGET.as_micros() as u64,
+                budget_us = budget.as_micros() as u64,
                 overruns = self.overruns,
                 "frame profile"
             );
         }
         self.samples.clear();
+        self.copy_total = Duration::ZERO;
     }
 }
 
@@ -645,6 +806,11 @@ pub fn install_platform(
         latch,
         dual_head,
         resolution_policy,
+        if crate::motion_test().clock() {
+            AnimationClock::Wall
+        } else {
+            AnimationClock::FixedStep
+        },
     )))
     .map_err(|e| slint::PlatformError::Other(format!("set_platform: {e:?}")))
 }
@@ -653,20 +819,77 @@ pub fn install_platform(
 mod tests {
     use super::*;
 
-    #[test]
-    fn clock_advances_without_presented_frames() {
-        let mut platform = MisterPlatform::new(
+    fn platform(animation_clock: AnimationClock) -> MisterPlatform {
+        MisterPlatform::new(
             false,
             (352, 240),
             (0, 0),
             false,
             false,
             ResolutionPolicy::Adaptive,
-        );
+            animation_clock,
+        )
+    }
+
+    #[test]
+    fn clock_advances_without_presented_frames() {
+        const PERIOD: Duration = Duration::from_micros(16_667);
+        let mut platform = platform(AnimationClock::FixedStep);
         let started = Instant::now().checked_sub(Duration::from_secs(2));
         assert!(started.is_some(), "clock supports fixture offset");
         let Some(started) = started else { return };
         platform.started = started;
+        // Before the frame loop starts its timeline the clock is wall time.
+        assert!(platform.duration_since_start() >= Duration::from_secs(2));
+
+        let start = Duration::from_secs(2);
+        platform.start_clock_at(start);
+        assert_eq!(platform.duration_since_start(), start);
+        assert_eq!(timeline(), Some(start));
+        // The first turn has nothing to account for.
+        platform.advance_clock_at(None, start + Duration::from_millis(5), PERIOD);
+        assert_eq!(platform.duration_since_start(), start);
+
+        // Turns that present nothing put the real time that passed on the
+        // clock, in whole periods: three seconds is 179 of them and a rest.
+        let mut real = start + Duration::from_secs(3);
+        platform.advance_clock_at(Some(Turn::Idle), real, PERIOD);
+        assert_eq!(platform.duration_since_start(), start + PERIOD * 179);
+        // Between turns it does not move at all.
+        assert_eq!(platform.duration_since_start(), start + PERIOD * 179);
+
+        // A presented frame is one period however long it took.
+        for (frame, took_ms) in [4_u32, 90, 17].into_iter().enumerate() {
+            real += Duration::from_millis(u64::from(took_ms));
+            platform.advance_clock_at(Some(Turn::Presented), real, PERIOD);
+            assert_eq!(
+                platform.duration_since_start(),
+                start + PERIOD * (180 + frame as u32)
+            );
+        }
+        // A PAL presenter steps 20 ms.
+        platform.advance_clock_at(Some(Turn::Presented), real, Duration::from_millis(20));
+        assert_eq!(
+            platform.duration_since_start(),
+            start + PERIOD * 182 + Duration::from_millis(20)
+        );
+        assert_eq!(timeline(), Some(platform.duration_since_start()));
+    }
+
+    #[test]
+    fn the_clock_test_switch_keeps_wall_time() {
+        let mut platform = platform(AnimationClock::Wall);
+        let started = Instant::now().checked_sub(Duration::from_secs(2));
+        assert!(started.is_some(), "clock supports fixture offset");
+        let Some(started) = started else { return };
+        platform.started = started;
+        platform.start_clock_at(Duration::ZERO);
+        platform.advance_clock_at(
+            Some(Turn::Presented),
+            Duration::ZERO,
+            Duration::from_micros(16_667),
+        );
+        assert!(platform.clock.get().is_none());
         assert!(platform.duration_since_start() >= Duration::from_secs(2));
     }
 

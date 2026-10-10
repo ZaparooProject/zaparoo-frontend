@@ -8,13 +8,26 @@
 //
 // Slint renders into our own cached RAM buffer and the copy converts
 // RGBA -> BGRX (the "linuxfb byte order" the contract expects; the core
-// swaps bytes in RTL) on the way into the uncached slot. Native geometry
-// belongs to this DDR writer, not fb0: Main may independently reassert its
-// framebuffer during startup or keep it at an HDMI resolution.
+// swaps bytes in RTL) on the way into the slot. Only the rows that changed
+// since a slot was last filled are copied. Native geometry belongs to this
+// DDR writer, not fb0: Main may independently reassert its framebuffer
+// during startup or keep it at an HDMI resolution.
+//
+// A cached page slide goes out the same way: each step is composed into a
+// second RAM frame Slint never renders into, and its damage is copied into
+// the next slot and published exactly like a rendered frame.
+//
+// The window is outside the kernel's RAM, so `/dev/mem` can only map it as
+// uncached device memory, where a full PAL frame costs about 27 ms to
+// write. With Main's native lease the `zaparoo_scanout` module maps the
+// frame slots write-combined instead (about 1 ms) and paces on the raster's
+// own vertical sync. `/dev/mem` and a sleep remain the fallback.
 
+use super::scanout::{self, Damage, Mapping};
+use super::transition::{CachedSlide, BACKGROUND_RGBA};
 use super::Presenter;
 use slint::platform::software_renderer::{PremultipliedRgbaColor, SoftwareRenderer};
-use std::fs::OpenOptions;
+use std::fs::{File, OpenOptions};
 use std::mem::size_of;
 use std::os::fd::AsRawFd;
 use std::os::unix::fs::OpenOptionsExt;
@@ -28,6 +41,15 @@ const WORD1_OFFSET: usize = 0x4;
 const BUFFER0_OFFSET: usize = 0x1000;
 const BUFFER1_OFFSET: usize = 0x0018_0000;
 const BYTES_PER_PIXEL: usize = 4;
+/// Consecutive failed sync waits before pacing goes back to the sleep.
+const VBLANK_MISS_LIMIT: u8 = 3;
+/// Everything: clamped to the window when it is copied.
+const FULL: Damage = Damage {
+    x0: 0,
+    y0: 0,
+    x1: u32::MAX,
+    y1: u32::MAX,
+};
 
 static REQUESTED_H_OFFSET: AtomicI32 = AtomicI32::new(0);
 static REQUESTED_V_OFFSET: AtomicI32 = AtomicI32::new(0);
@@ -107,6 +129,8 @@ const _: () = assert!(MODES[1].frame_bytes() == 0x0015_1800);
 const _: () = assert!(MODES[2].frame_bytes() == 0x63000);
 const _: () = assert!(BUFFER0_OFFSET + MODES[1].frame_bytes() <= BUFFER1_OFFSET);
 const _: () = assert!(BUFFER1_OFFSET + MODES[1].frame_bytes() <= REGION_SIZE);
+// The module maps the control page and the slots after it separately.
+const _: () = assert!(BUFFER0_OFFSET == 0x1000);
 const _: () = assert!(BUFFER0_OFFSET.is_multiple_of(size_of::<u32>()));
 const _: () = assert!(BUFFER1_OFFSET.is_multiple_of(size_of::<u32>()));
 const _: () = assert!(MODES[0].frame_bytes().is_multiple_of(size_of::<u32>()));
@@ -160,12 +184,54 @@ impl FrameDeadline {
     }
 }
 
-pub struct DdrPresenter {
+/// The whole window through `/dev/mem`, unmapped on drop.
+struct DevMem {
     base: *mut u8,
+}
+
+impl Drop for DevMem {
+    fn drop(&mut self) {
+        // SAFETY: unmapping the region mapped in `open_dev_mem` with the
+        // same base pointer and length.
+        unsafe {
+            libc::munmap(self.base.cast(), REGION_SIZE);
+        }
+    }
+}
+
+/// What holds the window mapped. Fields drop in declaration order:
+/// mappings, the module's device, then Main's lease.
+enum Window {
+    DevMem(#[allow(dead_code, reason = "held for its Drop")] DevMem),
+    Module {
+        _control: Mapping,
+        _pixels: Mapping,
+        device: File,
+        _lease: super::lease::Lease,
+        /// The module's sync wait is still answering.
+        vblank: bool,
+        vblank_misses: u8,
+    },
+}
+
+pub struct DdrPresenter {
+    /// The two control words: always uncached, so a publish is never held
+    /// behind the pixels it announces.
+    control: *mut u8,
+    /// Slot 0's first pixel; slot 1 follows at the contract's distance.
+    pixels: *mut u8,
+    window: Window,
     mode: NativeVideoMode,
     frame: u32,
     active: usize,
     buffer: Vec<PremultipliedRgbaColor>,
+    /// Cached page motion and the presentation-only frame it shows, the
+    /// same size as `buffer`.
+    slide: CachedSlide<PremultipliedRgbaColor>,
+    /// This presenter owns the screen's cached page slides. False for the
+    /// second head of a dual-head pair, which the other head's presenter
+    /// paces.
+    cached_transitions_available: bool,
     /// Content inset (right/down spill past the timing window). The
     /// Slint window shrinks by this much and the content lands at
     /// (`inset_h`, `inset_v`) in the raster; the vacated strip stays
@@ -180,6 +246,9 @@ pub struct DdrPresenter {
     /// next write. Clearing lazily avoids touching the slot currently
     /// being scanned out.
     clear_slots: u8,
+    /// Damage accumulated per slot since that slot was last filled.
+    stale: [Damage; 2],
+    last_copy: Duration,
 }
 
 // SAFETY: the raw DDR pointer is only dereferenced from the render
@@ -195,6 +264,8 @@ impl DdrPresenter {
         h_offset: i32,
         v_offset: i32,
         pace_in_present: bool,
+        native_scanout: bool,
+        allow_cached_transitions: bool,
     ) -> Result<Self, slint::PlatformError> {
         let (h_offset, v_offset) = zaparoo_core::config::clamp_crt_offsets(h_offset, v_offset);
         set_requested_offsets(h_offset, v_offset);
@@ -203,31 +274,19 @@ impl DdrPresenter {
                 "{width}x{height} does not match a v2 native-video mode"
             ))
         })?;
-        let mem = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .custom_flags(libc::O_SYNC)
-            .open("/dev/mem")
-            .map_err(|e| slint::PlatformError::Other(format!("open /dev/mem: {e}")))?;
-        // SAFETY: mapping the Menu fork's documented DDR control
-        // window; the fd is valid and the length/offset are the
-        // contract constants.
-        let base = unsafe {
-            libc::mmap(
-                std::ptr::null_mut(),
-                REGION_SIZE,
-                libc::PROT_READ | libc::PROT_WRITE,
-                libc::MAP_SHARED,
-                mem.as_raw_fd(),
-                NATIVE_VIDEO_BASE as libc::off_t,
-            )
+        let module = if native_scanout {
+            open_module_window()
+                .inspect_err(|e| {
+                    tracing::warn!("native scanout unavailable, mapping through /dev/mem: {e}");
+                })
+                .ok()
+        } else {
+            None
         };
-        if base == libc::MAP_FAILED {
-            return Err(slint::PlatformError::Other(
-                "mmap native video DDR window failed".into(),
-            ));
-        }
-        let base: *mut u8 = base.cast();
+        let (control, pixels, window) = match module {
+            Some(mapped) => mapped,
+            None => open_dev_mem()?,
+        };
 
         // Compose the user offsets: raster timing first, content
         // inset for the remainder. With the symmetric user bounds the
@@ -239,7 +298,9 @@ impl DdrPresenter {
         let inset_v = usize::try_from(inset_v).unwrap_or(0);
 
         let mut presenter = Self {
-            base,
+            control,
+            pixels,
+            window,
             mode,
             frame: 0,
             // word0's slot bit starts at 0, so the FPGA scans slot 0
@@ -250,6 +311,11 @@ impl DdrPresenter {
                 PremultipliedRgbaColor::default();
                 (mode.width as usize - inset_h) * (mode.height as usize - inset_v)
             ],
+            slide: CachedSlide::new(
+                (mode.width as usize - inset_h) * (mode.height as usize - inset_v),
+                BACKGROUND_RGBA,
+            ),
+            cached_transitions_available: allow_cached_transitions,
             inset_h,
             inset_v,
             h_offset,
@@ -260,6 +326,9 @@ impl DdrPresenter {
                 Duration::from_micros(if mode.mode == 2 { 20_000 } else { 16_667 }),
             ),
             clear_slots: 0,
+            // Both slots were just zeroed; neither holds a frame.
+            stale: [FULL; 2],
+            last_copy: Duration::ZERO,
         };
 
         // Zero both slots (ghost-clear), then word1 BEFORE word0: the
@@ -280,8 +349,13 @@ impl DdrPresenter {
             timing_v,
             inset_h,
             inset_v,
+            write_combined = matches!(presenter.window, Window::Module { .. }),
+            cached_transitions = allow_cached_transitions,
             "native video DDR presenter armed"
         );
+        if allow_cached_transitions {
+            super::transition::set_available(true);
+        }
         Ok(presenter)
     }
 
@@ -291,43 +365,38 @@ impl DdrPresenter {
     )]
     fn write_word(&mut self, offset: usize, value: u32) {
         // SAFETY: offset is one of the two in-bounds control word
-        // offsets within the mapped region; volatile so the store is
-        // not elided or reordered by the compiler.
+        // offsets within the mapped control page; volatile so the store
+        // is not elided or reordered by the compiler.
         unsafe {
-            self.base.add(offset).cast::<u32>().write_volatile(value);
+            self.control.add(offset).cast::<u32>().write_volatile(value);
         }
     }
 
-    const fn slot_offset(slot: usize) -> usize {
-        if slot == 0 {
-            BUFFER0_OFFSET
-        } else {
-            BUFFER1_OFFSET
-        }
-    }
-
-    fn slot_slice(&mut self, slot: usize) -> &mut [u8] {
-        let offset = Self::slot_offset(slot);
-        // SAFETY: the compile-time asserts prove both slots fit inside
-        // the mapped region even in the largest mode; the mapping
-        // lives as long as self.
-        unsafe { std::slice::from_raw_parts_mut(self.base.add(offset), self.mode.frame_bytes()) }
-    }
-
+    /// A slot's first pixel. Both mappings put slot 0 at `pixels`.
     #[allow(
         clippy::cast_ptr_alignment,
         reason = "mmap is page-aligned and compile-time assertions prove aligned slot offsets"
     )]
+    fn slot_ptr(&self, slot: usize) -> *mut u32 {
+        let offset = if slot == 0 {
+            0
+        } else {
+            BUFFER1_OFFSET - BUFFER0_OFFSET
+        };
+        // SAFETY: the compile-time asserts prove both slots fit inside
+        // the mapped region even in the largest mode; the mapping
+        // lives as long as self.
+        unsafe { self.pixels.add(offset).cast() }
+    }
+
     fn clear_slot(&mut self, slot: usize) {
-        let offset = Self::slot_offset(slot);
         let words = self.mode.frame_bytes() / size_of::<u32>();
         // MiSTer's DDR window is device memory: unaligned halfword stores
         // fault even though normal ARM RAM permits them. musl's optimized
         // memset intentionally uses such stores, so slice.fill(0) cannot
         // clear this mapping. Volatile aligned words avoid both memset
         // lowering and writes being elided across the MMIO boundary.
-        // SAFETY: mmap is page-aligned and offset alignment is asserted.
-        let ptr = unsafe { self.base.add(offset).cast::<u32>() };
+        let ptr = self.slot_ptr(slot);
         for i in 0..words {
             // SAFETY: slot offsets and frame sizes are 4-byte aligned by
             // compile-time assertions, and every word stays in its slot.
@@ -348,12 +417,27 @@ impl Presenter for DdrPresenter {
     }
 
     fn wait_vsync(&mut self) {
+        if self.wait_native_vblank() {
+            return;
+        }
         // Render/copy time belongs inside the frame period. The FPGA still
         // latches independently; this changes no buffers, fences, or ABI.
         let remaining = self.pacing.remaining(Instant::now());
         if !remaining.is_zero() {
             std::thread::sleep(remaining);
         }
+    }
+
+    fn frame_period(&self) -> Duration {
+        self.pacing.period
+    }
+
+    fn reports_period(&self) -> bool {
+        true
+    }
+
+    fn last_copy(&self) -> Duration {
+        self.last_copy
     }
 
     fn sync_controls(&mut self) -> Option<(u32, u32)> {
@@ -377,10 +461,15 @@ impl Presenter for DdrPresenter {
                 (self.mode.width as usize - inset_h)
                     * (self.mode.height as usize - inset_v)
             ];
+            // A page slide in flight was composed for the old window.
+            if self.cached_transitions_available {
+                self.slide.resize(self.buffer.len());
+            }
             // A shifted window leaves different strips untouched. Mark
             // both slots for clearing before their next write; never clear
             // the slot the FPGA may currently be scanning.
             self.clear_slots = 0b11;
+            self.stale = [FULL; 2];
         }
         // Next frame's seq_cst publish orders this control word ahead
         // of word0, so timing and pixels latch together at vblank.
@@ -404,34 +493,114 @@ impl Presenter for DdrPresenter {
         let busy_start = Instant::now();
         let win_w = self.mode.width as usize - self.inset_h;
         let win_h = self.mode.height as usize - self.inset_v;
-        // Render to cached RAM, then one full-frame convert-copy into
-        // the uncached slot (cached reads + sequential uncached writes
-        // burst well on Cortex-A9; the frame is only ~330 KB). The
-        // window lands at (inset_h, inset_v) in the raster; the strip
-        // it vacates was blacked at open() and is never touched.
-        renderer.render(self.buffer.as_mut_slice(), win_w);
 
-        // Copy without holding two mutable borrows of self.
-        let raster_w = self.mode.width as usize;
-        let (inset_h, inset_v) = (self.inset_h, self.inset_v);
-        let src_ptr = self.buffer.as_ptr();
-        let next_slot = self.active;
-        let active_bit = 1_u8 << next_slot;
-        if self.clear_slots & active_bit != 0 {
-            self.clear_slot(next_slot);
-            self.clear_slots &= !active_bit;
+        // An interrupted page slide may have left either slot on a partial
+        // page. Republish the complete canonical frame, even when Slint
+        // itself only dirtied a cursor or a small modal.
+        let cancelled = self.cached_transitions_available && super::transition::take_cancelled();
+        if cancelled {
+            self.slide.abandon();
         }
-        let dst = self.slot_slice_active();
-        for y in 0..win_h {
-            let dst_row = ((y + inset_v) * raster_w + inset_h) * 4;
-            for x in 0..win_w {
-                // SAFETY: y*win_w+x < win_w*win_h == buffer length,
-                // established at construction from the same window
-                // dimensions.
-                let px = unsafe { *src_ptr.add(y * win_w + x) };
-                let out = [px.blue, px.green, px.red, 0];
-                dst[dst_row + x * 4..dst_row + x * 4 + 4].copy_from_slice(&out);
+        // A request arrives before destination properties render. Preserve
+        // outgoing pixels first, then let Slint build its canonical endpoint.
+        if self.cached_transitions_available {
+            self.slide.begin(&self.buffer, win_w, win_h);
+        }
+        // Render to cached RAM, then convert-copy what changed into the
+        // slot. The window lands at (inset_h, inset_v) in the raster; the
+        // strip it vacates was blacked at open() and is never touched.
+        let region = renderer.render(self.buffer.as_mut_slice(), win_w);
+        let origin = region.bounding_box_origin();
+        let size = region.bounding_box_size();
+        let slint_damage = Damage {
+            x0: origin.x.max(0) as u32,
+            y0: origin.y.max(0) as u32,
+            x1: origin.x.max(0) as u32 + size.width,
+            y1: origin.y.max(0) as u32 + size.height,
+        };
+        let (damage, slide_frame, finished) = self
+            .slide
+            .compose(&self.buffer, win_w, win_h)
+            .map_or((slint_damage, false, false), |(damage, done)| {
+                (damage, true, done)
+            });
+        self.publish(if cancelled { FULL } else { damage }, slide_frame);
+        if finished {
+            self.slide.finish();
+        }
+
+        let busy = busy_start.elapsed();
+        if self.pace_in_present {
+            self.wait_vsync();
+        }
+        busy
+    }
+
+    fn present_cached_transition(&mut self) -> Option<Duration> {
+        if !self.cached_transitions_available {
+            return None;
+        }
+        if super::transition::take_cancelled() {
+            self.slide.abandon();
+            let start = Instant::now();
+            self.publish(FULL, false);
+            let busy = start.elapsed();
+            if self.pace_in_present {
+                self.wait_vsync();
             }
+            return Some(busy);
+        }
+        if !self.slide.is_active() {
+            return None;
+        }
+        let start = Instant::now();
+        let win_w = self.mode.width as usize - self.inset_h;
+        let win_h = self.mode.height as usize - self.inset_v;
+        let (damage, finished) = self.slide.compose(&self.buffer, win_w, win_h)?;
+        self.publish(damage, true);
+        if finished {
+            self.slide.finish();
+        }
+        let busy = start.elapsed();
+        if self.pace_in_present {
+            self.wait_vsync();
+        }
+        Some(busy)
+    }
+}
+
+impl DdrPresenter {
+    /// Brings the next slot up to date and shows it: `damage` plus whatever
+    /// that slot missed, taken from the cached slide's frame while one is
+    /// showing and from the canonical frame otherwise.
+    fn publish(&mut self, damage: Damage, slide_frame: bool) {
+        let win_w = self.mode.width as usize - self.inset_h;
+        let win_h = self.mode.height as usize - self.inset_v;
+        let copy_start = Instant::now();
+        let slot = self.active;
+        let slot_bit = 1_u8 << slot;
+        if self.clear_slots & slot_bit != 0 {
+            self.clear_slot(slot);
+            self.clear_slots &= !slot_bit;
+            self.stale[slot] = FULL;
+        }
+        let to_copy = take_stale(&mut self.stale, slot, damage);
+        let source = if slide_frame {
+            self.slide.frame()
+        } else {
+            &self.buffer
+        };
+        // SAFETY: both frames hold win_w * win_h pixels and the slot holds
+        // the whole raster, which contains the window at its inset.
+        unsafe {
+            copy_rows(
+                source,
+                (win_w, win_h),
+                self.slot_ptr(slot),
+                self.mode.width as usize,
+                (self.inset_h, self.inset_v),
+                to_copy,
+            );
         }
 
         // The fence orders the pixel stores ahead of the word0
@@ -444,39 +613,246 @@ impl Presenter for DdrPresenter {
         let word0 = (self.frame << 2) | self.active as u32;
         self.write_word(WORD0_OFFSET, word0);
         self.active ^= 1;
-        let busy = busy_start.elapsed();
-        if self.pace_in_present {
-            self.wait_vsync();
+        self.last_copy = copy_start.elapsed();
+    }
+
+    /// Waits on the raster's own vertical sync where the module offers it.
+    /// False means the caller still has to pace this turn itself.
+    fn wait_native_vblank(&mut self) -> bool {
+        let Window::Module {
+            device,
+            vblank,
+            vblank_misses,
+            ..
+        } = &mut self.window
+        else {
+            return false;
+        };
+        if !*vblank {
+            return false;
         }
-        busy
+        let Err(error) = scanout::wait_native_vblank(device) else {
+            *vblank_misses = 0;
+            return true;
+        };
+        if error.kind() == std::io::ErrorKind::Interrupted {
+            return false;
+        }
+        *vblank_misses += 1;
+        if *vblank_misses >= VBLANK_MISS_LIMIT {
+            *vblank = false;
+            tracing::warn!(%error, "native vertical sync wait failed; pacing by sleep");
+        }
+        // A timeout already spent more than a frame period waiting.
+        error.raw_os_error() == Some(libc::ETIMEDOUT)
     }
 }
 
-impl DdrPresenter {
-    fn slot_slice_active(&mut self) -> &mut [u8] {
-        let slot = self.active;
-        self.slot_slice(slot)
+/// The module's mappings of the window, under Main's native lease.
+fn open_module_window() -> Result<(*mut u8, *mut u8, Window), slint::PlatformError> {
+    let lease = super::lease::acquire_native()
+        .map_err(|e| slint::PlatformError::Other(format!("native scanout lease: {e}")))?;
+    let (device, layout) = scanout::open_device()?;
+    let control = Mapping::new(
+        &device,
+        layout.native_control_offset_bytes,
+        layout.native_control_bytes as usize,
+        "native control page",
+    )?;
+    let pixels = Mapping::new(
+        &device,
+        layout.native_pixels_offset_bytes,
+        layout.native_pixels_bytes as usize,
+        "native frame slots",
+    )?;
+    Ok((
+        control.ptr(),
+        pixels.ptr(),
+        Window::Module {
+            _control: control,
+            _pixels: pixels,
+            device,
+            _lease: lease,
+            vblank: true,
+            vblank_misses: 0,
+        },
+    ))
+}
+
+/// The whole window as uncached device memory.
+fn open_dev_mem() -> Result<(*mut u8, *mut u8, Window), slint::PlatformError> {
+    let mem = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .custom_flags(libc::O_SYNC)
+        .open("/dev/mem")
+        .map_err(|e| slint::PlatformError::Other(format!("open /dev/mem: {e}")))?;
+    // SAFETY: mapping the Menu fork's documented DDR control
+    // window; the fd is valid and the length/offset are the
+    // contract constants.
+    let base = unsafe {
+        libc::mmap(
+            std::ptr::null_mut(),
+            REGION_SIZE,
+            libc::PROT_READ | libc::PROT_WRITE,
+            libc::MAP_SHARED,
+            mem.as_raw_fd(),
+            NATIVE_VIDEO_BASE as libc::off_t,
+        )
+    };
+    if base == libc::MAP_FAILED {
+        return Err(slint::PlatformError::Other(
+            "mmap native video DDR window failed".into(),
+        ));
+    }
+    let base: *mut u8 = base.cast();
+    // SAFETY: the slots start one control page into the mapped region.
+    let pixels = unsafe { base.add(BUFFER0_OFFSET) };
+    Ok((base, pixels, Window::DevMem(DevMem { base })))
+}
+
+/// What a slot has to be brought up to date with before it is shown: this
+/// frame's damage plus everything drawn since the slot was last filled. The
+/// other slot now owes this frame's damage too.
+fn take_stale(stale: &mut [Damage; 2], slot: usize, damage: Damage) -> Damage {
+    let to_copy = stale[slot].union(damage);
+    stale[slot] = Damage::EMPTY;
+    stale[1 - slot] = stale[1 - slot].union(damage);
+    to_copy
+}
+
+/// Converts and stores the damaged part of the window into a slot, one
+/// aligned word per pixel. The window is uncached device memory on the
+/// fallback mapping, where a narrower or unaligned store faults or costs a
+/// bus cycle each, so the stores are volatile to keep them whole.
+///
+/// # Safety
+/// `dst` must be valid for `raster_w` words on every row the window covers
+/// once offset by `inset`.
+unsafe fn copy_rows(
+    src: &[PremultipliedRgbaColor],
+    (win_w, win_h): (usize, usize),
+    dst: *mut u32,
+    raster_w: usize,
+    (inset_h, inset_v): (usize, usize),
+    damage: Damage,
+) {
+    let x1 = (damage.x1 as usize).min(win_w);
+    let y1 = (damage.y1 as usize).min(win_h);
+    let (x0, y0) = (damage.x0 as usize, damage.y0 as usize);
+    for y in y0..y1 {
+        let row = &src[y * win_w..(y + 1) * win_w];
+        let dst_row = (y + inset_v) * raster_w + inset_h;
+        for (x, px) in row.iter().enumerate().take(x1).skip(x0) {
+            let word = u32::from(px.blue) | u32::from(px.green) << 8 | u32::from(px.red) << 16;
+            // SAFETY: (x, y) is inside the window, which the caller
+            // guarantees the slot holds at this inset.
+            unsafe { dst.add(dst_row + x).write_volatile(word) };
+        }
     }
 }
 
 impl Drop for DdrPresenter {
     fn drop(&mut self) {
+        if self.cached_transitions_available {
+            super::transition::set_available(false);
+        }
         // word0 = 0 is the "writer stopped" signal (the core reverts
         // to its noise pattern within one frame); word1 zeroed after
         // for tidiness, same order as the C++ cleanup path.
         self.write_word(WORD0_OFFSET, 0);
         self.write_word(WORD1_OFFSET, 0);
-        // SAFETY: unmapping the region mapped in open() with the same
-        // base pointer and length.
-        unsafe {
-            libc::munmap(self.base.cast(), REGION_SIZE);
-        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn px(red: u8, green: u8, blue: u8) -> PremultipliedRgbaColor {
+        PremultipliedRgbaColor {
+            red,
+            green,
+            blue,
+            alpha: 255,
+        }
+    }
+
+    #[test]
+    fn only_the_damaged_window_pixels_are_stored_as_bgrx_at_the_inset() {
+        // A 4x3 window inset by (1, 2) inside a 6x5 raster.
+        let (win_w, win_h, raster_w) = (4_usize, 3_usize, 6_usize);
+        let src: Vec<_> = (0..win_w * win_h)
+            .map(|i| px(0x10 + i as u8, 0x40 + i as u8, 0x80 + i as u8))
+            .collect();
+        let mut slot = vec![0xDEAD_BEEF_u32; raster_w * 5];
+        let damage = Damage {
+            x0: 1,
+            y0: 1,
+            x1: 3,
+            y1: 3,
+        };
+        // SAFETY: the slot holds the 6x5 raster the inset window fits in.
+        unsafe {
+            copy_rows(
+                &src,
+                (win_w, win_h),
+                slot.as_mut_ptr(),
+                raster_w,
+                (1, 2),
+                damage,
+            );
+        }
+        for y in 0..5 {
+            for x in 0..raster_w {
+                let inside = (2..4).contains(&x) && (3..5).contains(&y);
+                let got = slot[y * raster_w + x];
+                if inside {
+                    let i = ((y - 2) * win_w + (x - 1)) as u32;
+                    assert_eq!(got, (0x80 + i) | (0x40 + i) << 8 | (0x10 + i) << 16);
+                    assert_eq!(got.to_le_bytes()[3], 0);
+                } else {
+                    assert_eq!(got, 0xDEAD_BEEF);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn full_damage_is_clamped_to_the_window() {
+        let src = vec![px(1, 2, 3); 6];
+        let mut slot = vec![0_u32; 12];
+        // SAFETY: a 3x2 window at the origin of a 4x3 raster.
+        unsafe { copy_rows(&src, (3, 2), slot.as_mut_ptr(), 4, (0, 0), FULL) };
+        let stored = slot.iter().filter(|w| **w == 0x0001_0203).count();
+        assert_eq!(stored, 6);
+        assert_eq!(slot[3], 0);
+        assert!(slot[8..].iter().all(|w| *w == 0));
+    }
+
+    #[test]
+    fn each_slot_catches_up_on_the_frame_it_missed() {
+        let a = Damage {
+            x0: 0,
+            y0: 0,
+            x1: 4,
+            y1: 4,
+        };
+        let b = Damage {
+            x0: 10,
+            y0: 10,
+            x1: 12,
+            y1: 12,
+        };
+        let mut stale = [Damage::EMPTY; 2];
+        // Frame 1 goes to slot 1; slot 0 did not get it.
+        assert_eq!(take_stale(&mut stale, 1, a), a);
+        // Frame 2 goes to slot 0 and has to carry frame 1 as well.
+        assert_eq!(take_stale(&mut stale, 0, b), a.union(b));
+        // Frame 3 with nothing new still owes slot 1 frame 2.
+        assert_eq!(take_stale(&mut stale, 1, Damage::EMPTY), b);
+        assert!(take_stale(&mut stale, 0, Damage::EMPTY).is_empty());
+    }
 
     #[test]
     fn crt_deadline_subtracts_work_for_ntsc_and_pal() {

@@ -24,19 +24,44 @@ export component ScrollOffset inherits Rectangle {
     // viewport having to snap to reveal it.
     in property <bool> reveal: false;
     in property <duration> duration: Motion.focus-ms;
+    // The farthest one viewport change may travel and still glide; anything
+    // longer snaps. One step unless the caller keeps the content for more
+    // (a page of rows either side of the window) in its model.
+    in property <length> glide-span: self.step;
+    // Constant speed instead of an ease-out. For a caller whose targets
+    // arrive at a steady cadence (a held key): an ease-out restarted at
+    // every target covers less of the way each time and falls behind,
+    // where a linear glide of about one interval keeps pace.
+    in property <bool> steady: false;
     property <length> previous;
+    // One value per easing, because an easing cannot be chosen by a
+    // binding; only the one in use animates.
     property <length> position;
+    property <length> position-linear;
+    // The easing the value on screen belongs to; follows `steady` at the
+    // next target, when the other value takes over from where this one is.
+    property <bool> in-steady: false;
     property <bool> glide: false;
     property <bool> motion: Motion.enabled;
-    out property <length> offset: root.position;
+    out property <length> offset: root.in-steady ? root.position-linear : root.position;
     out property <bool> moving: root.offset != root.target;
     changed target => {
+        if (root.steady != root.in-steady) {
+            root.glide = false;
+            if (root.steady) {
+                root.position-linear = root.position;
+            } else {
+                root.position = root.position-linear;
+            }
+            root.in-steady = root.steady;
+        }
         // Never leave the newly selected control outside the clip while the
         // viewport catches up. Offscreen focus is revealed immediately.
-        root.glide = root.motion && Math.abs(root.target - root.previous) <= root.step
-            && (root.reveal || (root.focus-start >= root.position
-                && root.focus-start + root.focus-size <= root.position + root.viewport));
+        root.glide = root.motion && Math.abs(root.target - root.previous) <= root.glide-span
+            && (root.reveal || (root.focus-start >= root.offset
+                && root.focus-start + root.focus-size <= root.offset + root.viewport));
         root.position = root.target;
+        root.position-linear = root.target;
         root.previous = root.target;
     }
     changed scope => { root.snap(); }
@@ -44,10 +69,18 @@ export component ScrollOffset inherits Rectangle {
     function snap() {
         root.glide = false;
         root.position = root.target;
+        root.position-linear = root.target;
         root.previous = root.target;
     }
     init => { root.snap(); }
-    animate position { duration: root.glide && root.motion ? root.duration : 0ms; easing: ease-out-quad; }
+    animate position {
+        duration: root.glide && root.motion && !root.in-steady ? root.duration : 0ms;
+        easing: ease-out-quad;
+    }
+    animate position-linear {
+        duration: root.glide && root.motion && root.in-steady ? root.duration : 0ms;
+        easing: linear;
+    }
 }
 
 // Local neighbor displacement during a Hub move. Overlapping requests snap

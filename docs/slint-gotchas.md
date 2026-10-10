@@ -49,16 +49,49 @@ Two follow-on rules:
   `heavy_end`.
 - **Cached page transitions** (`rust/frontend/src/frame_transition.rs`). A page slide
   renders each endpoint once and moves pixels between the two cached frames,
-  instead of traversing the component tree every frame.
+  instead of traversing the component tree every frame. Every MiSTer
+  presenter runs it (vblank latch, native CRT, fb0) through the shared
+  `CachedSlide` in `rust/frontend/src/mister/transition.rs`, in every
+  orientation: the band and its direction of travel are mapped into the
+  rotated frame. A list layout has no band and still refuses, as does the
+  vblank-latch presenter while it holds a dynamic-resolution pair. In dual
+  head the HDMI presenter owns the slide and the CRT head replays the page
+  as a live strip.
+- **A fixed-step animation clock** (`zaparoo_app::frame_clock`, driven from
+  `rust/frontend/src/mister/platform.rs`). The clock Slint's timers and
+  animations read moves one refresh period per presented frame, so motion
+  is sampled at even steps and a late frame slows it by that frame instead
+  of enlarging the next step. The native CRT presenter reports its period
+  (16.667 ms, 20 ms on PAL); the HDMI presenters do not know theirs, so the
+  platform measures it from the vertical-blank waits of turns that drew
+  nothing (`RefreshEstimate`) and a 50 Hz mode steps 20 ms. A turn that
+  presents nothing adds the real time that passed, in whole periods, so
+  timers keep real time while nothing animates. Cached page slides count
+  their steps on the same clock. The frame profiler and the key path's
+  duplicate guard keep their own wall-clock and kernel stamps.
 - **Held-key paging cuts.** Qualified hold-repeats change pages without a
   slide; a slide already running finishes first. Ordinary taps keep the slide.
+- **Browse lists follow the selection by step size.** `BrowseList` scrolls
+  through `ScrollOffset` (`ui/focus.slint`), and
+  `zaparoo_app::input::InputModel::list_follow` picks how from the rows the
+  selection just moved. A tap, one row or a page, is an eased glide over
+  `Motion.page-ms`. A held walk of one row per repeat is a constant-speed
+  glide that lasts a quarter longer than the repeat interval, so the list
+  keeps moving between repeats instead of easing to a stop on each one. A
+  held step of more than one row (the Games list paging or jumping letters)
+  cuts. The driver pushes the choice as `list-glide` and `list-step-ms`
+  before the offset it applies to, and only on a render that moved the
+  selection, so a glide in flight is left alone. The list card repaints
+  every frame of a glide. The list paints no placeholder square behind a
+  cover that has not landed; the cover still fades in.
 - **Fast scroll never waits on art.** While a hold runs fast, no new cover
   loads start (the MiSTer cannot fetch and decode covers as fast as pages
   pass) and the list detail pane peeks without loading. Tiles keep their
   captions, hearts and any art already in memory. The fast-scroll rail
   (`FastScrollRail` in `ui/app.slint`) is the only new painting: a narrow
-  strip whose highlight moves between letters, with `Motion.rail-ms` at 0 on
-  the software renderer so it cuts instead of fading.
+  strip that fades in and out over `Motion.rail-ms` and whose highlight
+  glides between letters. Where `Motion.rail-ms` is pushed to 0 it cuts
+  instead.
 
 ### Cheat sheet
 
@@ -72,12 +105,67 @@ Two follow-on rules:
 ### Transforms and effects
 
 - The software renderer has no transform support: `transform-scale` and
-  `transform-rotation` are silently ignored there. That is why `Motion.focus-zoom`
-  is pushed from Rust (100% wherever transforms do not apply) rather than
-  fixed, so nothing reserves room for growth that never happens. Never make a
-  transform carry meaning; the focus ring is the focus cue.
+  `transform-rotation` are silently ignored there. The focus zoom is the one
+  effect that needs one, so where that renderer draws (Rust sets
+  `Motion.zoom-by-size`: the MiSTer build and the snapshot binary) the
+  focused cell and its ring grow by their real `x`, `y`, `width` and
+  `height` about the same center instead, to the rectangle the transform
+  would cover, in one cut with no animation. The card and its art are sized from the cell and grow with
+  it; type, padding and stroke widths keep their size, and glyphs are
+  rasterized for the size the tile settles at.
+  `Motion.focus-zoom` is pushed from Rust with every scene rather than
+  fixed: 100% turns the growth off, and then nothing reserves room for
+  growth that never happens. The 240p sizing tier is pushed 100%
+  (`zaparoo_app::sizing::focus_zoom_percent`): a tile that small grows by a
+  pixel or two, which reads as a jitter.
+  Never make a transform carry meaning; the focus ring is the focus cue.
+- The software renderer samples bitmaps nearest-neighbor. An image fitted
+  to a box that is not its own pixel size loses or repeats rows and columns:
+  uneven strokes, stepped diagonals. So where that renderer draws
+  (`Motion.zoom-by-size`), tile glyphs and system logos are prepared for the
+  whole pixels of the box that paints them and painted at their own pixel
+  size, centered on a whole pixel, never fitted. One rule gives both sides
+  the box: `zaparoo_app::sizing::tile_art_pixels` mirrors `Tile`'s art box,
+  the list detail pane reports its own, and `GlyphSource.side` rounds a
+  square glyph's box to the size it is rasterized at. Logo bounds are exact
+  there (`logo_cache::Bounds::exact`) instead of bucketed, and logos are
+  downscaled with the brand logo's premultiplied Lanczos3 filter. The
+  focused tile paints a second copy prepared for its grown art box, where
+  it grows at all; until that copy is ready it paints the resting copy at
+  that copy's own size.
+  Media covers and user images are still fitted to the box.
 - No blur, no shader-like effect, and no subtree grab to fade. There is no way
   to dim a frozen grab of a subtree.
+
+### Motion on the software renderer
+
+The MiSTer build runs most of the GPU build's motion: the focus zoom's
+resting size (as a cut, not a scale), the cover fade where it is affordable,
+the fast-scroll rail's fade and glide, and page slides on every presenter.
+The rules above about
+what is cheap and what is expensive still decide what may be added; what
+each of these costs on hardware is still to be recorded. Until it is, each
+one can be turned off for a run with the `ZAPAROO_MOTION` environment
+variable, a comma-separated list of names, so it can be measured against
+the cut it replaced. Unset or empty leaves everything on.
+
+| Name | Effect when on | With the name listed |
+|---|---|---|
+| `zoom` | Above the 240p tier, the focused tile and its ring cut to `Motion.focus-zoom`; a focus move repaints the two cells involved once | `Motion.focus-zoom` is 100%: no growth, no clip headroom, no larger scrim hole |
+| `cover-fade` | Cover art that lands while it is on screen fades in: a list's detail pane over `Motion.cover-reveal-ms` everywhere, a grid tile over `Motion.tile-cover-reveal-ms` on native CRT output only (see below); a fading tile repaints every frame of the fade | Both are 0: art cuts in |
+| `rail` | The fast-scroll rail fades over `Motion.rail-ms` and its highlight glides | `Motion.rail-ms` is 0: the rail appears, moves and leaves in cuts |
+| `slides` | The native CRT and fb0 presenters run cached page slides | Only the vblank-latch presenter does; CRT slides its live strip, and on fb0 the Hub cuts while the browse grids slide theirs |
+| `clock` | The fixed-step animation clock | Wall time drives timers, animations and cached slides, and a late slide frame jumps to the current step |
+
+Grid tiles do not fade their covers on a MiSTer HDMI render
+(`display::tile_cover_fade`). A page of covers lands together, each fading
+tile repaints every frame, and Slint repaints the area enclosing them, so
+the fade redrew most of a 960x540 grid for its whole length: on hardware a
+fifth to a quarter of rendered frames missed the 16.7 ms budget and the
+load looked sluggish. The native CRT modes keep the fade.
+
+The switch only acts on the MiSTer build. `zaparoo_app::motion_test` parses
+it and `lib.rs` reads it once at startup, logging any name it does not know.
 
 ### Sanctioned one-shot cues
 
@@ -140,7 +228,10 @@ expensive for the A9.
 | `press-ms` | 34 ms | Press downstroke and row inverse blink |
 | `settle-ms` | 110 ms | Release leg, toggle knob |
 | `pulse-ms` | 250 ms | ProgressTrack blink on/off time |
-| `zoom-ms` | 160 ms | Focus zoom where transforms apply |
+| `zoom-ms` | 160 ms | Focus zoom, where a transform draws it |
+| `cover-reveal-ms` | 180 ms | Cover art fading in as it lands |
+| `tile-cover-reveal-ms` | 180 ms, 0 on a MiSTer HDMI render | The same on a grid tile |
+| `rail-ms` | 160 ms | Fast-scroll rail fade |
 | `held-blink-ms` | 650 ms | Hub Move held-tile blink cycle |
 
 `press-ms` has a one-frame floor at the slowest target (about 30 fps, so

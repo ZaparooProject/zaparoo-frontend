@@ -371,6 +371,8 @@ fn cell_for(
                 (cell.cover, cell.cover_focus) = pair.images();
                 cell.has_cover = true;
                 cell.has_cover_focus = true;
+                // Prepared for the box it is painted in.
+                cell.cover_exact = true;
             } else {
                 cell.wordmark = ctx.logos.is_negative(&key);
             }
@@ -449,11 +451,80 @@ fn geometry_for(ctx: &Ctx, app: &App) -> rules::Geometry {
     geometry
 }
 
+/// What a Hub tile gives its art: it runs to the focus ring's inner edge.
+const TILE_ART: zaparoo_app::sizing::TileArt = zaparoo_app::sizing::TileArt {
+    compact_padding: true,
+    caption: false,
+    top_label: false,
+};
+
+/// The focused tile's system logo at the art box of the grown tile: the
+/// larger copy the view paints for the focused tile where it draws the
+/// focus zoom by size. Only ever the one tile.
+fn focus_art_key(
+    ctx: &Ctx,
+    app: &App,
+    hub: &HubModel,
+    logo_style: &str,
+    geometry: &rules::Geometry,
+) -> Option<crate::system_logos::Key> {
+    let zoom = crate::system_logos::focus_zoom(app)?;
+    let stem = hub.current()?.cover_key.strip_prefix("systems/")?;
+    let bounds = crate::system_logos::tile_bounds(
+        app,
+        geometry.fit.cell_width,
+        geometry.fit.cell_height,
+        zoom,
+        TILE_ART,
+    );
+    logo_key(ctx, stem, logo_style, bounds)
+}
+
+/// The bounds a tile's system logo is prepared to. Where logos are painted
+/// one pixel for one, the whole pixels of the tile's art box, so a logo is
+/// never fitted; elsewhere the bucketed cell the renderer fits it from.
+fn logo_bounds(app: &App, geometry: &rules::Geometry) -> zaparoo_app::logo_cache::Bounds {
+    if crate::system_logos::exact_art(app) {
+        crate::system_logos::tile_bounds(
+            app,
+            geometry.fit.cell_width,
+            geometry.fit.cell_height,
+            1.0,
+            TILE_ART,
+        )
+    } else {
+        zaparoo_app::logo_cache::Bounds::new(
+            geometry.fit.cell_width.max(1) as u32,
+            geometry.fit.cell_height.max(1) as u32,
+        )
+    }
+}
+
+/// The focused tile's larger copy, once it is prepared. Until then the
+/// tile paints its resting copy at that copy's own size.
+fn push_focus_art(
+    ctx: &Ctx,
+    view: &HubView<'_>,
+    key: Option<crate::system_logos::Key>,
+    selected_local: i32,
+) {
+    match key.and_then(|key| ctx.logos.get(&key)) {
+        Some(pair) if selected_local >= 0 => {
+            let (rest, focus) = pair.images();
+            view.set_focus_art(focus);
+            view.set_focus_art_muted(rest);
+            view.set_focus_art_local(selected_local);
+        }
+        _ => view.set_focus_art_local(-1),
+    }
+}
+
 fn request_logos(
     ctx: &Ctx,
     hub: &HubModel,
     logo_style: &str,
     bounds: zaparoo_app::logo_cache::Bounds,
+    focus: Option<crate::system_logos::Key>,
 ) {
     let page_size = hub.grid.page_size();
     let start = hub.grid.current_page() * page_size;
@@ -468,7 +539,8 @@ fn request_logos(
         .iter()
         .skip(start)
         .take(page_size)
-        .filter_map(key);
+        .filter_map(key)
+        .chain(focus);
     let neighbors = [
         start.saturating_add(page_size),
         start.saturating_sub(page_size),
@@ -520,12 +592,10 @@ pub fn render(ctx: &Ctx, app: &App) {
     let page_size = hub.grid.page_size();
     let page = hub.grid.current_page();
     let start = page * page_size;
-    let bounds = zaparoo_app::logo_cache::Bounds::new(
-        geometry.fit.cell_width.max(1) as u32,
-        geometry.fit.cell_height.max(1) as u32,
-    );
+    let bounds = logo_bounds(app, &geometry);
+    let focus_art = focus_art_key(ctx, app, hub, logo_style, &geometry);
     if app.global::<crate::Shell>().get_active_screen() == crate::Screen::Hub {
-        request_logos(ctx, hub, logo_style, bounds);
+        request_logos(ctx, hub, logo_style, bounds, focus_art);
     } else {
         crate::system_logos::defer_refresh(ctx, app);
     }
@@ -551,11 +621,13 @@ pub fn render(ctx: &Ctx, app: &App) {
         crate::view_model::publish_hub_cells(&view.get_cells(), cells, |rows| view.set_cells(rows));
         view.set_next_cells(slint::ModelRc::default());
     }
-    view.set_selected_local(if strip_sliding {
+    let selected_local = if strip_sliding {
         -1
     } else {
         i32::try_from(hub.grid.current_index() - start).unwrap_or(0)
-    });
+    };
+    view.set_selected_local(selected_local);
+    push_focus_art(ctx, &view, focus_art, selected_local);
     view.set_columns(geometry.columns);
     view.set_rows(geometry.rows);
     view.set_cell_width(geometry.fit.cell_width as f32);
@@ -765,20 +837,13 @@ fn set_index(ctx: &Ctx, app: &App, index: usize) {
 
 #[cfg(feature = "mister")]
 fn request_cached_page_transition(app: &App, direction: i32) -> bool {
-    if app.global::<crate::Shell>().get_orientation() != crate::Orientation::Horizontal {
-        return false;
-    }
-    let sizing = app.global::<crate::Sizing>();
     let view = app.global::<HubView>();
-    let Some(geometry) = crate::sizing::mister_browse_grid_transition_geometry(
-        sizing.get_screen_width().round().max(0.0) as u32,
-        sizing.get_screen_height().round().max(0.0) as u32,
-        view.get_grid_y().round().max(0.0) as u32,
-        view.get_grid_height().round().max(0.0) as u32,
-    ) else {
-        return false;
-    };
-    crate::mister::request_page_transition(geometry, direction)
+    crate::mister::request_browse_page_transition(
+        app,
+        view.get_grid_y(),
+        view.get_grid_height(),
+        direction,
+    )
 }
 
 #[cfg(not(feature = "mister"))]
@@ -834,7 +899,7 @@ fn show_page(ctx: &Ctx, app: &App, from_page: usize, animate: bool) {
     let cached = request_cached_page_transition(app, direction);
     // Without cached endpoints, never animate a full HDMI grid at native
     // resolution on MiSTer's software renderer. Desktop and small CRT scenes
-    // can use the live strip; accelerated HDMI paints each endpoint just once.
+    // can use the live strip; a cached slide paints each endpoint just once.
     if !cached && ctx.is_mister && !app.global::<crate::Sizing>().get_crt() {
         render(ctx, app);
         return;

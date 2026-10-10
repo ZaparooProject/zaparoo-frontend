@@ -226,15 +226,30 @@ Frontend never maps the FPGA registers. Missing components or mismatched old/new
 handshakes fall back to ordinary fb0; `--no-latch` opts out. Managed display
 restarts go through Main for a fresh lease.
 
-Initial eligibility is HDMI on an exact qualified kernel build, with
-`/dev/zaparoo-scanout` ABI v1. Main selects
+Eligibility is an exact qualified kernel build, with `/dev/zaparoo-scanout`
+ABI v2. Main selects
 `/media/fat/zaparoo/modules/<release>/<kernel-build-id>/zaparoo_scanout.ko`
 using the running kernel's GNU build ID from `/sys/kernel/notes`. It verifies
 the module SHA-256 before loading and its loaded build ID before granting access.
 The old flat release-only module path no longer enables scanout. Older/unknown
-kernels, native CRT and Direct Video retain existing paths. Never force-load the
+kernels and HDMI under Direct Video retain existing paths. Never force-load the
 prototype's 5.15 module, replace `mem_wc`/MagiK modules, or claim independent
 renderers can safely run concurrently.
+
+On the native CRT path Main answers the same request with a native grant
+instead: no bus proxy, only permission to map the Menu core's native video
+window through the module. The window lies outside the kernel's RAM, so
+`/dev/mem` can only map it as uncached device memory, where writing one PAL
+frame takes about 27 ms. The module maps the frame slots write-combined (about
+1 ms) and keeps the two control words on an uncached page so a publish never
+queues behind its pixels. The DDR presenter copies only the rows that changed
+since each slot was last filled, and waits on the raster's own vertical sync
+through the module instead of sleeping. Without a grant it maps the window
+through `/dev/mem` and paces by sleep, as before; the changed-row copy and
+whole-word stores apply there too. In dual head the HDMI side stays on fb0.
+
+The `frame profile` log line reports `copy_avg_us` beside `avg_us` and judges
+overruns against the presenter's own refresh period (20 ms in PAL).
 
 Automatic keeps **960x540 rendering into 1920x1080 HDMI**. Physical output timing
 and source geometry remain separate. Default rendering is fixed at the resolved

@@ -24,6 +24,14 @@ export global GlyphSource {
     // transparent color keeps the artwork's own colors (the two-tone
     // heart, real art).
     pure callback glyph(string, length, color) -> image;
+    // Exact-pixel contract: the side a square glyph is both rasterized and
+    // painted at. A glyph is rasterized at a whole pixel size, and the
+    // software renderer samples bitmaps nearest-neighbor, so a box that is
+    // not that size loses or repeats rows and columns of it. Where that
+    // renderer draws (`Motion.zoom-by-size`) the box is the raster's size.
+    public pure function side(length: length) -> length {
+        return Motion.zoom-by-size ? Math.round(length / 1px) * 1px : length;
+    }
 }
 
 // Rust filters the embedded master into a cached raster at the painted size.
@@ -565,7 +573,7 @@ export component ModalShell inherits Rectangle {
 export component ScrollCue inherits Image {
     in property <string> glyph: "icons/ScrollDown";
     in property <bool> live: true;
-    width: Sizing.pct-h(3);
+    width: GlyphSource.side(Sizing.pct-h(3));
     height: self.width;
     source: GlyphSource.glyph(root.glyph, Math.max(1px, self.width),
         root.live ? Theme.text-primary : Theme.cue-spent);
@@ -882,7 +890,7 @@ export component ActiveLabel inherits Rectangle {
 // split across rows.
 component HelpEntryView inherits HorizontalLayout {
     in property <HelpEntry> entry;
-    property <length> icon-size: Sizing.pct-h(4);
+    property <length> icon-size: GlyphSource.side(Sizing.pct-h(4));
 
     spacing: Sizing.pct-w(0.6);
     height: Math.max(root.icon-size, Sizing.font-body);
@@ -906,6 +914,11 @@ component HelpEntryView inherits HorizontalLayout {
 // the framebuffer edge, and the entries centered in one row, or two rows
 // at 240p when one would overflow. Entries are `HelpEntry` values; the
 // App decides the vocabulary per screen and modal.
+//
+// The bar is one row tall until the entries wrap: Rust reads
+// `wrap-entries` and re-solves `Sizing.help-bar-height` for two rows. The
+// wrap decision is the entries' width against the safe width and nothing
+// else, so the height it changes can never flip it back.
 export component HelpBar inherits Rectangle {
     in property <[HelpEntry]> entries: [];
     in property <length> bleed: 0px;

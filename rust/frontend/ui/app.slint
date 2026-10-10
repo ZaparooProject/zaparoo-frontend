@@ -194,6 +194,10 @@ export global HubView {
     in-out property <bool> slide-anim: true;
     in-out property <bool> cached-transition: false;
     in-out property <int> transition-target-index: 0;
+    // The focused tile's larger copy of its logo; see `PagedGridView`.
+    in-out property <image> focus-art;
+    in-out property <image> focus-art-muted;
+    in-out property <int> focus-art-local: -1;
 }
 
 // Pointer and page-cue events from the Hub, handled by the Rust router.
@@ -263,6 +267,10 @@ export global SystemsView {
     // metrics and cues, and the detail pane (logo, name, metadata).
     in-out property <int> current-index: 0;
     in-out property <int> list-scroll-top: 0;
+    // How the list follows the selection; see `BrowseList.glide`. The step
+    // is in milliseconds, 0 for a tap's eased glide.
+    in-out property <bool> list-glide: true;
+    in-out property <int> list-step-ms: 0;
     in-out property <[GridCell]> list-rows: [];
     in-out property <int> list-sel: 0;
     in-out property <int> list-view-top: 0;
@@ -275,12 +283,23 @@ export global SystemsView {
     in-out property <string> detail-title: "";
     in-out property <image> detail-cover;
     in-out property <bool> detail-has-cover: false;
+    // The detail logo was prepared for the pane's reported art box.
+    in-out property <bool> detail-cover-exact: false;
+    // The pane's painted art box in whole pixels, as the view reported it.
+    in-out property <int> detail-art-width: 0;
+    in-out property <int> detail-art-height: 0;
     in-out property <bool> detail-wordmark: false;
     in-out property <[DetailRow]> detail-rows: [];
+    // The focused tile's larger copy of its logo; see `PagedGridView`.
+    in-out property <image> focus-art;
+    in-out property <image> focus-art-muted;
+    in-out property <int> focus-art-local: -1;
 }
 
 // Pointer and page-cue events from the Systems screen.
 export global SystemsInput {
+    // The detail pane's painted art box, in whole pixels.
+    callback detail-art-box(int, int);
     callback cell-hovered(int);
     callback cell-clicked(int);
     callback cell-right-clicked(int);
@@ -320,6 +339,14 @@ export global SettingsView {
     in-out property <length> rows-height: 0px;
     in-out property <length> rows-clip-height: 0px;
     in-out property <length> scroll: 0px;
+    // The page card in whole pixels, solved by
+    // `zaparoo_app::settings::page_geometry` with the viewport above. The
+    // view takes them as they are: deriving them again from fractional
+    // percentages put the band's clip edge between two pixels of the rule.
+    in-out property <length> card-y: 0px;
+    in-out property <length> card-height: 0px;
+    in-out property <length> card-pad: 0px;
+    in-out property <length> hint-height: 0px;
     in-out property <int> activate-pulse: 0;
     in-out property <int> release-pulse: 0;
 }
@@ -448,6 +475,10 @@ export global GamesView {
     in-out property <float> rail-fraction: 0;
     // Detailed list: one overscan row on either side of the minimal viewport.
     in-out property <int> list-scroll-top: 0;
+    // How the list follows the selection; see `BrowseList.glide`. The step
+    // is in milliseconds, 0 for a tap's eased glide.
+    in-out property <bool> list-glide: true;
+    in-out property <int> list-step-ms: 0;
     in-out property <[GridCell]> list-rows: [];
     in-out property <int> list-sel: 0;
     in-out property <int> list-view-top: 0;
@@ -722,16 +753,15 @@ component SettingsScreen inherits Rectangle {
     // The card carries its own margins rather than the browse profile's
     // card values, which belong to whichever browse view was last shown.
     property <length> card-x: (self.width - self.card-w) / 2;
-    property <length> card-y: Sizing.header-bottom + Layout.top-margin + Layout.strip-height + Sizing.pct-h(4);
+    property <length> card-y: SettingsView.card-y;
     property <length> card-w: Math.min(self.width - 2 * Sizing.pct-w(3), Sizing.pct-w(70));
-    property <length> card-h: self.height - self.card-y - Sizing.help-bar-height - Sizing.pct-h(4);
+    property <length> card-h: SettingsView.card-height;
     // One lip on all four sides, and the same value again either side of
-    // the hint rule; see docs/style.md, "Surface containment".
-    // `zaparoo_app::settings::rows_viewport_for` subtracts the identical
-    // four, so the two must move together.
-    property <length> pad: Sizing.surface-pad;
+    // the hint rule; see docs/style.md, "Surface containment". It is the
+    // surface inset in whole pixels, the figure
+    // `zaparoo_app::settings::page_geometry` took out of the rows viewport.
+    property <length> pad: SettingsView.card-pad;
     property <length> row-h: Sizing.pct-h(8);
-    property <length> hint-line: Math.ceil(Sizing.font-body * 1.362 / 1px) * 1px;
     // Descriptions are authored to fit two lines at the narrowest tier we
     // ship (docs/content-style.md's length budget is the 240p card), so
     // every wider tier fits them on one and a second reserved line is just
@@ -739,7 +769,7 @@ component SettingsScreen inherits Rectangle {
     // rather than per row: it sets the rows viewport, and a band that grew
     // and shrank with the focused row's description would reflow the list
     // under the cursor.
-    property <length> hint-h: (Sizing.bitmap-fonts || Sizing.tier-240 ? 2 : 1) * self.hint-line;
+    property <length> hint-h: SettingsView.hint-height;
     property <string> hint: root.index < 0 || root.index >= root.rows.length ? ""
         : !root.rows[root.index].enabled && SettingsLabels.disabled-reason(root.rows[root.index].id) != ""
             ? SettingsLabels.disabled-reason(root.rows[root.index].id)
@@ -776,13 +806,14 @@ component SettingsScreen inherits Rectangle {
             viewport: root.rows-height;
             scope: StateTokens.page(root.page) + ":" + Motion.epoch;
         }
-        // The band runs from the card's frame to the hint rule, so rows
-        // leave under those edges rather than under a margin inside them.
+        // The band runs from the card's frame to one clear line over the
+        // hint rule, so rows leave under those edges rather than under a
+        // margin inside them and never abut the rule.
         rows-band := Rectangle {
             x: root.pad;
             y: Sizing.card-border-width;
             width: root.card-w - 2 * root.pad;
-            height: root.hint-rule-y - self.y;
+            height: root.hint-rule-y - Sizing.stroke(1) - self.y;
             clip: true;
 
         // The fill and the rows hang off one scrolled parent, positioned
@@ -930,6 +961,9 @@ component HubScreen inherits Rectangle {
                 column-gap: Sizing.hub-grid-column-gap;
                 row-gap: Sizing.hub-grid-row-gap;
                 selected-local: HubView.cached-transition ? -1 : HubView.selected-local;
+                focus-art: HubView.focus-art;
+                focus-art-muted: HubView.focus-art-muted;
+                focus-art-local: HubView.focus-art-local;
                 ring-suppressed: Overlays.context-open;
                 focus-ready: HubView.focus-ready;
                 held-local: HubView.cached-transition ? -1 : HubView.held-local;
@@ -1082,6 +1116,9 @@ component SystemsScreen inherits Rectangle {
                 column-gap: Layout.grid-column-gap;
                 row-gap: Layout.grid-row-gap;
                 selected-local: SystemsView.cached-transition ? -1 : SystemsView.selected-local;
+                focus-art: SystemsView.focus-art;
+                focus-art-muted: SystemsView.focus-art-muted;
+                focus-art-local: SystemsView.focus-art-local;
                 ring-suppressed: Overlays.context-open;
                 focus-ready: SystemsView.focus-ready;
                 press-held: PressFeedback.active(PressOwner.systems, SystemsView.selected-local);
@@ -1126,6 +1163,8 @@ component SystemsScreen inherits Rectangle {
         height: root.list-card-h;
         rows: SystemsView.list-rows;
         model-top: SystemsView.list-view-top;
+        glide: SystemsView.list-glide;
+        step: SystemsView.list-step-ms * 1ms;
         scroll-top: SystemsView.list-scroll-top;
         scope: StateTokens.systems(SystemsView.mode) + ":" + SystemsView.category;
         selected: SystemsView.list-sel;
@@ -1138,6 +1177,9 @@ component SystemsScreen inherits Rectangle {
         show-title: true;
         cover: SystemsView.detail-cover;
         has-cover: SystemsView.detail-has-cover;
+        cover-exact: SystemsView.detail-cover-exact;
+        // Whole pixels inside the box: the logo must never pass it.
+        art-box(w, h) => { SystemsInput.detail-art-box(Math.floor(w / 1px), Math.floor(h / 1px)); }
         wordmark: SystemsView.detail-wordmark;
         placeholder-key: "icons/Console";
         detail-rows: SystemsView.detail-rows;
@@ -2412,11 +2454,11 @@ component ContextMenu inherits Rectangle {
     in property <bool> anchor-zoomed: false;
 
     // The bright hole, which is the anchored thing's painted silhouette
-    // rather than its layout rect. A focused tile is scaled about its own
+    // rather than its layout rect. A focused tile grows about its own
     // centre by `Motion.focus-zoom`, so the hole grows the same way under
     // the same condition the zoom itself uses; without this the tile spills
     // past the bright area the moment the zoom holds through a menu.
-    property <bool> hole-zoomed: root.anchor-zoomed && Motion.enabled && !Sizing.crt;
+    property <bool> hole-zoomed: root.anchor-zoomed && Motion.enabled;
     property <length> grow-x: root.hole-zoomed
         ? root.anchor-w * (Motion.focus-zoom - 100%) / 2 : 0px;
     property <length> grow-y: root.hole-zoomed
@@ -2624,8 +2666,10 @@ component ContextMenu inherits Rectangle {
 // The fast-scroll rail. With letters, it lists them top to bottom with
 // the current one highlighted and repeated large in a bubble beside it;
 // without, it is a track with a position marker. Only the rail's own area
-// changes as the scroll moves, and it never waits on art. On the software
-// renderer `Motion.rail-ms` is 0, so it appears, moves and leaves in cuts.
+// changes as the scroll moves, and it never waits on art. Where
+// `Motion.rail-ms` is pushed to 0 it appears, moves and leaves in cuts.
+// The rail and the bubble are as wide as their widest label needs: a digits
+// bucket reads "0-9", three glyphs where every letter is one.
 component FastScrollRail inherits Rectangle {
     in property <bool> shown: false;
     in property <[string]> letters: [];
@@ -2636,16 +2680,36 @@ component FastScrollRail inherits Rectangle {
     property <bool> has-letters: root.letters.length > 0;
     property <length> cell: root.has-letters ? root.height / root.letters.length : 0px;
     property <length> bubble: Sizing.pct-h(14);
+    property <length> label-size: Math.min(Sizing.font-size(2.2), root.cell * 0.8);
+    // Clear space between a label and the border on either side.
+    property <length> label-inset: Sizing.card-border-width + Sizing.pct-h(1.5);
+    property <length> bubble-width: Math.max(root.bubble,
+        Math.ceil(bubble-measure.preferred-width / 1px) * 1px + 2 * root.label-inset);
     property <length> thumb: Math.max(Sizing.pct-h(4), root.height * 0.08);
     property <length> mark-y: root.current >= 0 ? root.current * root.cell : 0px;
     // Glides keep pace with the steps (a page every 90 ms), so the marks
     // never trail the letter; no glide where the rail cuts.
     property <duration> glide: Motion.rail-ms > 0ms ? Motion.dur(Motion.focus-ms) : 0ms;
 
-    width: Sizing.pct-h(5);
+    width: Math.max(Sizing.pct-h(5),
+        Math.ceil(measure.preferred-width / 1px) * 1px + 2 * root.label-inset);
     opacity: root.shown ? 1 : 0;
     visible: self.opacity > 0;
     animate opacity { duration: Motion.dur(Motion.rail-ms); easing: ease-out; }
+
+    // Measuring twins: a column is as wide as its widest label.
+    measure := VerticalLayout {
+        visible: false;
+        for label in root.letters: Text {
+            text: label;
+            font-size: root.label-size;
+        }
+    }
+    bubble-measure := Text {
+        visible: false;
+        text: root.letter;
+        font-size: Sizing.font-size(7);
+    }
 
     Rectangle {
         background: Theme.surface-card;
@@ -2671,7 +2735,7 @@ component FastScrollRail inherits Rectangle {
         text: label;
         horizontal-alignment: center;
         vertical-alignment: center;
-        font-size: Math.min(Sizing.font-size(2.2), root.cell * 0.8);
+        font-size: root.label-size;
         color: i == root.current ? Theme.on-accent : Theme.text-label;
     }
 
@@ -2688,9 +2752,9 @@ component FastScrollRail inherits Rectangle {
     // The bubble: the current letter at reading size, level with the
     // highlight and kept inside the rail's span.
     if root.has-letters && root.letter != "": Rectangle {
-        x: -root.bubble - Sizing.pct-h(1.5);
+        x: -root.bubble-width - Sizing.pct-h(1.5);
         y: Math.max(0px, Math.min(parent.height - root.bubble, root.mark-y + root.cell / 2 - root.bubble / 2));
-        width: root.bubble;
+        width: root.bubble-width;
         height: root.bubble;
         background: Theme.surface-card;
         border-width: Sizing.card-border-width;
@@ -2699,6 +2763,16 @@ component FastScrollRail inherits Rectangle {
         animate y { duration: root.glide; easing: ease-out; }
 
         Text {
+            // The bubble's own box: without one a Text is its preferred
+            // size at the origin and its alignment centers nothing.
+            // The 6x8 bitmap face leaves its last column and its last row
+            // blank in every cell, so the cell's center is half of each
+            // away from the ink's; the box is offset by that half.
+            property <length> ink-bias: Theme.crt ? self.font-size / 16 : 0px;
+            x: self.ink-bias;
+            y: self.ink-bias;
+            width: parent.width;
+            height: parent.height;
             text: root.letter;
             horizontal-alignment: center;
             vertical-alignment: center;
@@ -2835,6 +2909,8 @@ component GamesScreen inherits Rectangle {
         height: root.list-card-h;
         rows: GamesView.list-rows;
         model-top: GamesView.list-view-top;
+        glide: GamesView.list-glide;
+        step: GamesView.list-step-ms * 1ms;
         scroll-top: GamesView.list-scroll-top;
         scope: StateTokens.games(GamesView.mode) + ":" + GamesView.title;
         selected: GamesView.list-sel;
@@ -2849,8 +2925,6 @@ component GamesScreen inherits Rectangle {
         has-cover: GamesView.detail-has-cover;
         cover-absent: GamesView.detail-cover-absent;
         art-box(w, h) => { GamesInput.detail-art-box(Math.round(w / 1px), Math.round(h / 1px)); }
-        art-color: GamesView.detail-placeholder;
-        has-art-color: GamesView.detail-has-placeholder;
         wordmark: false;
         detail-rows: GamesView.detail-rows;
         detail-loading: GamesView.detail-loading;
@@ -3598,6 +3672,10 @@ export component App inherits Window {
     callback input-lost();
     // Fired on resize so Rust can re-solve the grid shapes.
     callback viewport-changed(length, length);
+    // The help entries started or stopped fitting one row. Rust re-solves
+    // the sizing table with the bar's row count, then every screen.
+    callback help-wrap-changed();
+    out property <bool> help-entries-wrap: help-bar.wrap-entries;
 
     forward-focus: keys;
 
@@ -3784,10 +3862,11 @@ export component App inherits Window {
     }
     if Overlays.dialog-open: DialogModal {}
 
-    HelpBar {
+    help-bar := HelpBar {
         x: 0;
         y: parent.height - self.height;
         entries: root.help-entries();
+        changed wrap-entries => { root.help-wrap-changed(); }
         // Bleed past the CRT safe-area inset so the fill reaches the
         // framebuffer edge and the keyline lands on the safe-area line.
         bleed: Math.max(root.crt-inset-w, root.crt-inset-h) / 2;

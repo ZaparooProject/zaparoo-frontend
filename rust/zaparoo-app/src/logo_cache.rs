@@ -32,6 +32,16 @@ impl Bounds {
             height: bucket(height),
         }
     }
+
+    /// The box itself, to the pixel, for art that is painted one pixel for
+    /// one where the output size is fixed: a bucket would prepare a bitmap
+    /// of another size and leave the renderer to squeeze it into the box.
+    pub fn exact(width: u32, height: u32) -> Self {
+        Self {
+            width: width.clamp(1, 512),
+            height: height.clamp(1, 512),
+        }
+    }
 }
 
 #[derive(Debug)]

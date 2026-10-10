@@ -3,9 +3,9 @@
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 //
 // MiSTer target: custom `slint::platform` with the software renderer,
-// a fixed-60 animation clock, raw evdev keyboard input (MiSTer
-// forwards controller buttons as keyboard keys), and a `/dev/fb0`
-// wait-vsync + dirty-copy presenter.
+// an animation clock stepped one refresh period per presented frame, raw
+// evdev keyboard input (MiSTer forwards controller buttons as keyboard
+// keys), and a `/dev/fb0` wait-vsync + dirty-copy presenter.
 //
 // Written against Slint's public platform API and the Linux fbdev /
 // evdev UAPI. Three presenters share the `Presenter` seam: fb0 for
@@ -19,6 +19,7 @@ mod input;
 mod latch;
 pub mod lease;
 mod platform;
+mod scanout;
 mod service;
 mod transition;
 mod tty;
@@ -27,6 +28,7 @@ pub mod video_mode;
 
 pub use platform::{install_platform, set_orientation, ResolutionPolicy};
 pub use service::ensure_core_running;
+pub use tty::TtyGuard;
 
 const BROWSE_TRANSITION_FRAMES: u32 = 15;
 
@@ -47,27 +49,107 @@ pub(crate) fn with_cached_page_transitions(test: impl FnOnce()) {
     test();
 }
 
+/// Asks the presenter that owns the screen for a cached slide of a browse
+/// grid's band: the scene's full width, `grid_height` tall from `grid_y`.
+/// False when no presenter can take it; the caller keeps its own fallback.
+pub fn request_browse_page_transition(
+    app: &crate::App,
+    grid_y: f32,
+    grid_height: f32,
+    direction: i32,
+) -> bool {
+    use slint::ComponentHandle;
+    let sizing = app.global::<crate::Sizing>();
+    let scene = (
+        sizing.get_screen_width().round().max(0.0) as u32,
+        sizing.get_screen_height().round().max(0.0) as u32,
+    );
+    let Some(geometry) = crate::sizing::mister_browse_grid_transition_geometry(
+        scene.0,
+        scene.1,
+        grid_y.round().max(0.0) as u32,
+        grid_height.round().max(0.0) as u32,
+    ) else {
+        return false;
+    };
+    let window = app.window().size();
+    request_page_transition(
+        geometry,
+        direction,
+        app.global::<crate::Shell>().get_orientation(),
+        scene,
+        (window.width, window.height),
+    )
+}
+
+/// `geometry` and `direction` are in the scene's own coordinates. The scene
+/// sits centered in the window (a CRT scene is inset from it), and the
+/// presenters render that window turned by `orientation`, so the band and
+/// the way it travels are mapped into their frame here.
 pub fn request_page_transition(
     geometry: crate::sizing::BrowseGridTransitionGeometry,
     direction: i32,
+    orientation: crate::Orientation,
+    scene: (u32, u32),
+    window: (u32, u32),
 ) -> bool {
-    let direction = if direction > 0 {
-        crate::frame_transition::Direction::Up
-    } else {
-        crate::frame_transition::Direction::Down
+    use crate::frame_transition::{to_frame, Direction, Rotation, Spec, Started};
+    let rotation = match orientation {
+        crate::Orientation::Horizontal => Rotation::None,
+        crate::Orientation::Cw => Rotation::Cw,
+        crate::Orientation::Ccw => Rotation::Ccw,
     };
-    transition::request(crate::frame_transition::Spec {
-        rect: crate::frame_transition::Rect {
-            x: geometry.x as usize,
-            y: geometry.y as usize,
-            width: geometry.width as usize,
-            height: geometry.height as usize,
+    let Some(rect) = window_rect(geometry, scene, window) else {
+        return false;
+    };
+    let Some((rect, direction)) = to_frame(
+        rect,
+        if direction > 0 {
+            Direction::Up
+        } else {
+            Direction::Down
         },
+        rotation,
+        (window.0 as usize, window.1 as usize),
+    ) else {
+        return false;
+    };
+    transition::request(Spec {
+        rect,
         gap: geometry.gap as usize,
         direction,
         total_frames: BROWSE_TRANSITION_FRAMES,
-        started: std::time::Instant::now(),
+        // Counted on the clock Slint's own motion is sampled on.
+        started: platform::timeline().map_or_else(
+            || Started::Wall(std::time::Instant::now()),
+            Started::Timeline,
+        ),
     })
+}
+
+/// A scene region in window pixels. None when the scene cannot sit centered
+/// on whole pixels inside the window.
+fn window_rect(
+    geometry: crate::sizing::BrowseGridTransitionGeometry,
+    scene: (u32, u32),
+    window: (u32, u32),
+) -> Option<crate::frame_transition::Rect> {
+    let inset = |outer: u32, inner: u32| {
+        let spare = outer.checked_sub(inner)?;
+        spare.is_multiple_of(2).then_some(spare / 2)
+    };
+    Some(crate::frame_transition::Rect {
+        x: (inset(window.0, scene.0)? + geometry.x) as usize,
+        y: (inset(window.1, scene.1)? + geometry.y) as usize,
+        width: geometry.width as usize,
+        height: geometry.height as usize,
+    })
+}
+
+/// The pending request, for a test to play the presenter's part.
+#[cfg(test)]
+pub(crate) fn take_page_transition_request() -> Option<crate::frame_transition::Spec> {
+    transition::take_request()
 }
 
 /// Direct-video CRT bypasses vmode: Main's command loop is unavailable
@@ -134,5 +216,61 @@ pub trait Presenter {
     /// return asks the platform to resize the Slint scene immediately.
     fn sync_controls(&mut self) -> Option<(u32, u32)> {
         None
+    }
+    /// One refresh of the output this presenter paces to: the budget a
+    /// frame's work is profiled against.
+    fn frame_period(&self) -> std::time::Duration {
+        std::time::Duration::from_micros(16_667)
+    }
+    /// True when `frame_period` is the output's real rate. Otherwise the
+    /// platform measures the rate from the waits for vertical blank.
+    fn reports_period(&self) -> bool {
+        false
+    }
+    /// How much of the last frame's busy time went on copying it out to
+    /// the display's memory. Zero where the presenter does not time it.
+    fn last_copy(&self) -> std::time::Duration {
+        std::time::Duration::ZERO
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::frame_transition::Rect;
+    use crate::sizing::BrowseGridTransitionGeometry;
+
+    #[test]
+    fn a_scene_band_lands_where_the_scene_sits_in_the_window() {
+        let band = BrowseGridTransitionGeometry {
+            x: 0,
+            y: 40,
+            width: 316,
+            height: 150,
+            gap: 0,
+        };
+        // HDMI: the scene is the window.
+        assert_eq!(
+            window_rect(band, (316, 216), (316, 216)),
+            Some(Rect {
+                x: 0,
+                y: 40,
+                width: 316,
+                height: 150
+            })
+        );
+        // CRT: a 352x240 window around a scene inset 18 and 12 a side.
+        assert_eq!(
+            window_rect(band, (316, 216), (352, 240)),
+            Some(Rect {
+                x: 18,
+                y: 52,
+                width: 316,
+                height: 150
+            })
+        );
+        // A scene larger than its window, or off the pixel grid, is refused.
+        assert_eq!(window_rect(band, (316, 216), (300, 240)), None);
+        assert_eq!(window_rect(band, (316, 216), (353, 240)), None);
     }
 }

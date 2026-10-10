@@ -38,6 +38,21 @@ pub enum Tier {
     T1080,
 }
 
+/// How far a focused grid tile grows, in percent, where it grows at all.
+pub const FOCUS_ZOOM_PERCENT: f32 = 104.0;
+
+/// The focus zoom for a scene, in percent; 100 is no growth. The 240p tier
+/// has none: a tile there grows by a pixel or two, which reads as a jitter
+/// and not as a zoom. `disabled` is the `zoom` name of the `ZAPAROO_MOTION`
+/// test switch.
+pub fn focus_zoom_percent(tier: Tier, disabled: bool) -> f32 {
+    if disabled || tier == Tier::T240 {
+        100.0
+    } else {
+        FOCUS_ZOOM_PERCENT
+    }
+}
+
 impl Tier {
     pub fn as_str(self) -> &'static str {
         match self {
@@ -130,6 +145,10 @@ impl InterfaceProfile {
 /// the *scene's* logical dimensions, so they already have the CRT safe-area
 /// inset removed and the axes swapped in a rotated layout.
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "one independent flag per scene condition the rules read"
+)]
 pub struct Inputs {
     pub screen_width: f64,
     pub screen_height: f64,
@@ -141,6 +160,11 @@ pub struct Inputs {
     /// Rotated (TATE) layout: percentage helpers read the other axis.
     pub swap_percentage_axes: bool,
     pub interface_profile: InterfaceProfile,
+    /// The help entries on screen do not fit one row, so the 240p help bar
+    /// takes its two-row height. Measured by the view from the entries'
+    /// width against the bar's safe width, never from the bar's height, so
+    /// the answer cannot depend on what it changes. Larger tiers ignore it.
+    pub help_bar_two_rows: bool,
 }
 
 impl Default for Inputs {
@@ -154,6 +178,7 @@ impl Default for Inputs {
             bitmap_type: false,
             swap_percentage_axes: false,
             interface_profile: InterfaceProfile::Standard,
+            help_bar_two_rows: false,
         }
     }
 }
@@ -607,6 +632,41 @@ pub fn tile_art_box(
     cell_height: i32,
     art: TileArt,
 ) -> (i32, i32) {
+    let (width, height) =
+        tile_art_extent(inputs, f64::from(cell_width), f64::from(cell_height), art);
+    (js_round(width) as i32, js_round(height) as i32)
+}
+
+/// The whole pixels inside that art box, `(width, height)`: the largest
+/// bitmap the tile can paint one pixel for one. A bitmap prepared for these
+/// bounds never overflows the box, where a rounded size can by a pixel, and
+/// a bitmap one pixel too large is squeezed by a renderer that samples
+/// nearest-neighbor, which drops rows and columns out of it.
+///
+/// The cell size is fractional so the focused tile, grown about its center
+/// by `zoom` (1.04 for 104%), is measured as the view grows it; `zoom` of
+/// 1.0 is the tile at rest.
+pub fn tile_art_pixels(
+    inputs: &Inputs,
+    cell_width: i32,
+    cell_height: i32,
+    zoom: f64,
+    art: TileArt,
+) -> (u32, u32) {
+    let (width, height) = tile_art_extent(
+        inputs,
+        f64::from(cell_width) * zoom,
+        f64::from(cell_height) * zoom,
+        art,
+    );
+    // The view computes the same box in single precision. A box that is a
+    // whole number there can come out a hair under it here; the nudge keeps
+    // that pixel without ever reaching the next one.
+    let whole = |extent: f64| (extent + 1e-3).floor().max(0.0) as u32;
+    (whole(width), whole(height))
+}
+
+fn tile_art_extent(inputs: &Inputs, cell_width: f64, cell_height: f64, art: TileArt) -> (f64, f64) {
     let axis = if inputs.swap_percentage_axes {
         inputs.screen_width
     } else {
@@ -621,10 +681,12 @@ pub fn tile_art_box(
     let band = pct(5.5) + pct(0.4);
     let top = if art.top_label { band } else { pad };
     let bottom = if art.caption { band } else { pad };
-    let face = f64::from(cell_height - derived_press_edge_height(inputs).min(cell_height));
-    let width = (f64::from(cell_width) - 2.0 * pad).max(0.0);
-    let height = (face - top - bottom).max(0.0);
-    (js_round(width) as i32, js_round(height) as i32)
+    let edge = f64::from(derived_press_edge_height(inputs));
+    let face = cell_height - edge.min(cell_height);
+    (
+        (cell_width - 2.0 * pad).max(0.0),
+        (face - top - bottom).max(0.0),
+    )
 }
 
 fn derived_press_edge_height(inputs: &Inputs) -> i32 {
@@ -796,9 +858,10 @@ pub fn derive(inputs: &Inputs) -> Derived {
     let header_height = 2 * header_row_height + header_stack_gap;
     let header_bottom = header_top_margin + header_height;
 
-    // Compact screens may need two atomic icon-plus-label help groups, so 240p
-    // reserves two rows; larger tiers keep the single-line footer.
-    let help_bar_height = if is_240 {
+    // One row everywhere. Only 240p can run out of width for the atomic
+    // icon-plus-label help groups, and it takes the two-row height while the
+    // entries on screen actually wrap.
+    let help_bar_height = if is_240 && inputs.help_bar_two_rows {
         inputs.pct_h(10.0)
     } else {
         inputs.pct_h(6.0)
@@ -878,7 +941,7 @@ pub fn derive(inputs: &Inputs) -> Derived {
 #[cfg(test)]
 mod tests {
     use super::InterfaceProfile;
-    use super::{tile_art_box, Inputs, TileArt};
+    use super::{tile_art_box, tile_art_pixels, Inputs, TileArt};
 
     #[test]
     fn tile_art_box_follows_the_tile_bands() {
@@ -908,6 +971,86 @@ mod tests {
             (135, 181)
         );
         assert_eq!(tile_art_box(&inputs, 4, 4, art(false, true, true)), (0, 0));
+    }
+
+    #[test]
+    #[allow(
+        clippy::float_cmp,
+        reason = "the rule returns one of two exact constants"
+    )]
+    fn only_the_240p_tier_and_the_test_switch_turn_the_focus_zoom_off() {
+        use super::{focus_zoom_percent, Tier, FOCUS_ZOOM_PERCENT};
+        for tier in [Tier::T480, Tier::T540, Tier::T720, Tier::T960, Tier::T1080] {
+            assert_eq!(focus_zoom_percent(tier, false), FOCUS_ZOOM_PERCENT);
+            assert_eq!(focus_zoom_percent(tier, true), 100.0);
+        }
+        assert_eq!(focus_zoom_percent(Tier::T240, false), 100.0);
+        assert_eq!(focus_zoom_percent(Tier::T240, true), 100.0);
+        assert_eq!(FOCUS_ZOOM_PERCENT, 104.0);
+    }
+
+    #[test]
+    fn tile_art_pixels_never_exceed_the_box_and_follow_the_zoom() {
+        let art = |compact_padding, caption, top_label| TileArt {
+            compact_padding,
+            caption,
+            top_label,
+        };
+        let inputs = Inputs {
+            screen_width: 960.0,
+            screen_height: 540.0,
+            ..Inputs::default()
+        };
+        // 150 - 2 * 10.8 = 128.4 wide; 200 - 4 - 10.8 - 31.86 = 153.34 tall.
+        // The rounded box agrees here, and would overflow at 128.6.
+        assert_eq!(
+            tile_art_pixels(&inputs, 150, 200, 1.0, art(false, true, false)),
+            (128, 153)
+        );
+        // 151 - 21.6 = 129.4: floor, where the cover box rounds the same.
+        // 201 - 4 - 21.6 = 175.4.
+        assert_eq!(
+            tile_art_pixels(&inputs, 151, 201, 1.0, art(false, false, false)),
+            (129, 175)
+        );
+        // Whatever the cell, the bitmap is the box's whole pixels: never
+        // past it, never a full pixel short of it.
+        let tall = Inputs {
+            screen_width: 740.0,
+            screen_height: 416.0,
+            ..Inputs::default()
+        };
+        let pad = 416.0 * 0.02;
+        let edge = f64::from(tall.stroke(0.8));
+        for cell in 60..260 {
+            let (width, height) = tile_art_pixels(&tall, cell, cell, 1.0, art(false, false, false));
+            let (box_w, box_h) = (
+                f64::from(cell) - 2.0 * pad,
+                f64::from(cell) - edge - 2.0 * pad,
+            );
+            assert!(f64::from(width) <= box_w + 1e-3 && f64::from(width) > box_w - 1.0);
+            assert!(f64::from(height) <= box_h + 1e-3 && f64::from(height) > box_h - 1.0);
+        }
+        // The focused tile grows 4% about its center and its paddings do
+        // not: 156 - 21.6 = 134.4 wide, 208 - 4 - 21.6 = 182.4 tall.
+        assert_eq!(
+            tile_art_pixels(&inputs, 150, 200, 1.04, art(false, false, false)),
+            (134, 182)
+        );
+        // A whole-number box keeps its last pixel, and nothing goes negative.
+        let even = Inputs {
+            screen_width: 800.0,
+            screen_height: 500.0,
+            ..Inputs::default()
+        };
+        assert_eq!(
+            tile_art_pixels(&even, 120, 120, 1.0, art(false, false, false)).0,
+            100
+        );
+        assert_eq!(
+            tile_art_pixels(&inputs, 4, 4, 1.0, art(false, true, true)),
+            (0, 0)
+        );
     }
 
     #[test]

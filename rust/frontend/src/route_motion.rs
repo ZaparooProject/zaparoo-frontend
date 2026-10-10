@@ -3542,16 +3542,86 @@ fn settings_rows(heights: &[f32]) -> (ModelRc<crate::SettingsRow>, Vec<f32>) {
 }
 
 #[test]
+fn a_240p_help_bar_grows_only_while_its_entries_wrap() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    crate::fonts::register_embedded_fonts();
+    let flips = Rc::new(Cell::new(0));
+    {
+        let weak = app.as_weak();
+        let flips = flips.clone();
+        app.on_help_wrap_changed(move || {
+            let Some(app) = weak.upgrade() else { return };
+            if crate::sizing::sync_help_bar_rows(&app) {
+                flips.set(flips.get() + 1);
+                let sizing = app.global::<Sizing>();
+                let (w, h) = (sizing.get_screen_width(), sizing.get_screen_height());
+                crate::sizing::apply_scene(
+                    &app,
+                    crate::sizing::Scene::of(&app, f64::from(w), f64::from(h), false),
+                );
+            }
+        });
+    }
+    // Draw until the bar's measurement and the table it feeds stop moving.
+    let lay_out = |width: u32| {
+        let height = 240;
+        window.set_size(slint::PhysicalSize::new(width, height));
+        let sizing = app.global::<Sizing>();
+        sizing.set_screen_width(width as f32);
+        sizing.set_screen_height(height as f32);
+        crate::sizing::apply_scene(
+            &app,
+            crate::sizing::Scene::of(&app, f64::from(width), f64::from(height), false),
+        );
+        let mut pixels = vec![Rgb565Pixel(0); (width * height) as usize];
+        for _ in 0..SETTLE_TICKS {
+            advance(TICK_MS);
+            window.request_redraw();
+            window.draw_if_needed(|renderer| {
+                renderer.render(&mut pixels, width as usize);
+            });
+        }
+    };
+    let sizing = app.global::<Sizing>();
+
+    // Wide enough for one row: the bar is the height every tier has.
+    lay_out(1000);
+    assert!(sizing.get_tier_240());
+    assert!(!app.get_help_entries_wrap());
+    assert!(!sizing.get_help_bar_two_rows());
+    assert_eq!(sizing.get_help_bar_height().round() as i32, 14);
+    assert_eq!(flips.get(), 0);
+
+    // Too narrow: the entries wrap and the bar takes its second row. The
+    // taller bar does not change the measurement, so it flips once.
+    lay_out(60);
+    assert!(app.get_help_entries_wrap());
+    assert!(sizing.get_help_bar_two_rows());
+    assert_eq!(sizing.get_help_bar_height().round() as i32, 24);
+    assert_eq!(flips.get(), 1);
+
+    // And gives it back when they fit again.
+    lay_out(1000);
+    assert!(!sizing.get_help_bar_two_rows());
+    assert_eq!(sizing.get_help_bar_height().round() as i32, 14);
+    assert_eq!(flips.get(), 2);
+}
+
+#[test]
 fn a_settings_move_that_scrolls_glides_the_band_and_snaps_without_motion() {
     assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
     let (app, window) = boot();
-    crate::sizing::apply_scene(
-        &app,
-        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
-    );
+    let scene = crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false);
+    crate::sizing::apply_scene(&app, scene);
     app.global::<Shell>().set_active_screen(Screen::Settings);
     let settings = app.global::<crate::SettingsView>();
     settings.set_page(SettingsPage::Appearance);
+    // The card is placed from what the driver pushes, not by the view.
+    crate::settings::push_page_geometry(
+        &settings,
+        &zaparoo_app::settings::page_geometry(&scene.inputs()),
+    );
     // The last row is taller on purpose: the fill animates its height as
     // well as its position, and a move that scrolls must do neither on its
     // own. The fill sits on its row and the band carries both.
@@ -5039,13 +5109,14 @@ fn browse_list_focus_and_scroll_are_local_and_restore_the_saved_viewport() {
         1,
         "scroll only one row past the edge"
     );
-    assert!(view.get_list_rows().row_count() <= visible as usize + 2);
+    // The window carries a page of rows either side, and no more.
+    assert!(view.get_list_rows().row_count() <= 3 * visible as usize);
     let edge = pixels(&window);
-    advance(100);
-    assert_eq!(
+    advance(32);
+    assert_ne!(
         pixels(&window),
         edge,
-        "offscreen focus is revealed immediately, not after interpolation"
+        "the list glides one row to follow the selection past its edge"
     );
     settle(&window);
     let saved = crate::router::lock(&ctx.shared)
@@ -8359,4 +8430,1025 @@ fn layout_grid_and_list_tables_both_follow_the_scene_in_either_browse_layout() {
             );
         }
     }
+}
+
+/// The columns and rows every pixel of `color` spans: left, right, top
+/// and bottom, inclusive.
+fn extent(pixels: &[Rgb565Pixel], color: Rgb565Pixel) -> Option<(i32, i32, i32, i32)> {
+    let mut found: Option<(i32, i32, i32, i32)> = None;
+    for (index, _) in pixels.iter().enumerate().filter(|(_, p)| **p == color) {
+        let (x, y) = ((index % W as usize) as i32, (index / W as usize) as i32);
+        found = Some(found.map_or((x, x, y, y), |(x0, x1, y0, y1)| {
+            (x0.min(x), x1.max(x), y0.min(y), y1.max(y))
+        }));
+    }
+    found
+}
+
+/// Where the software renderer draws the focus zoom, the focused cell grows
+/// by its real geometry about its center, on the cell that survives a focus
+/// move, and it does so in one cut each way: there is no size in between.
+/// Where a transform draws it, the cell's geometry never changes.
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one scenario reads the same marked tile at rest, arriving, grown and leaving"
+)]
+fn focus_zoom_by_size_grows_the_focused_cell_about_its_center_and_returns() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    seed_hub_pages(&ctx, &app);
+    let hub = app.global::<HubView>();
+    let motion = app.global::<crate::Motion>();
+    let theme = app.global::<crate::Theme>();
+    // One tile carries a front edge in a color nothing else paints: every
+    // other tile is hidden, which mutes its edge. The edge runs the width
+    // of the card along its bottom, so it reads the cell's left, right and
+    // bottom straight off the frame; the accent ring reads its top.
+    let edge = slint::Color::from_rgb_u8(255, 0, 255);
+    let ring = slint::Color::from_rgb_u8(0, 255, 0);
+    theme.set_tile_edge(edge);
+    theme.set_accent(ring);
+    let (edge, ring) = (Rgb565Pixel(0xF81F), Rgb565Pixel(0x07E0));
+    let count = hub.get_cells().row_count();
+    assert!(count >= 2, "the fixture page holds at least two tiles");
+    hub.set_cells(ModelRc::new(VecModel::from(
+        (0..count)
+            .map(|i| GridCell {
+                name: SharedString::from(format!("Tile {i}")),
+                hidden: i != 0,
+                ..GridCell::default()
+            })
+            .collect::<Vec<_>>(),
+    )));
+    // This 180-line scene is in the 240p tier, which has no focus zoom:
+    // the scene pushed 100%, and with it nothing grows.
+    assert!(app.global::<Sizing>().get_tier_240());
+    assert!((motion.get_focus_zoom() - 100.0).abs() < f32::EPSILON);
+    motion.set_zoom_by_size(true);
+    hub.set_selected_local(1);
+    let unfocused = extent(
+        &{
+            distinct_frames(&window, SETTLE_TICKS);
+            pixels(&window)
+        },
+        edge,
+    );
+    hub.set_selected_local(0);
+    let focused = extent(
+        &{
+            distinct_frames(&window, SETTLE_TICKS);
+            pixels(&window)
+        },
+        edge,
+    );
+    assert!(
+        unfocused.is_some() && focused == unfocused,
+        "no growth at 240p"
+    );
+    // The mechanism itself is read at a growth this frame can show: large
+    // enough to read off 180 lines, small enough that the grown tile stays
+    // inside the gap to its neighbors.
+    motion.set_focus_zoom(110.0);
+    let (grow_x, grow_y) = (hub.get_cell_width() * 0.05, hub.get_cell_height() * 0.05);
+    assert!(
+        grow_x >= 2.0 && grow_y >= 2.0,
+        "the growth must be readable: {grow_x} x {grow_y}"
+    );
+    let near = |moved: i32, expected: f32| (moved as f32 - expected).abs() <= 1.0;
+    let step = |ticks: u32| {
+        distinct_frames(&window, ticks);
+        pixels(&window)
+    };
+    let marked = |frame: &[Rgb565Pixel]| extent(frame, edge);
+
+    for by_size in [true, false] {
+        motion.set_zoom_by_size(by_size);
+        // Focus on the neighbor: the marked tile is at rest.
+        hub.set_selected_local(1);
+        let rest_frame = step(SETTLE_TICKS);
+        let rest = marked(&rest_frame);
+        assert!(rest.is_some(), "the marked edge is on screen");
+        let Some(rest) = rest else { return };
+        let ring_elsewhere = extent(&rest_frame, ring);
+
+        // Focus arrives.
+        hub.set_selected_local(0);
+        let growing = marked(&step(3));
+        let grown_frame = step(SETTLE_TICKS);
+        let grown = marked(&grown_frame);
+        assert!(growing.is_some() && grown.is_some());
+        let (Some(growing), Some(grown)) = (growing, grown) else {
+            return;
+        };
+        let ring_here = extent(&grown_frame, ring);
+        assert!(ring_here.is_some() && ring_here != ring_elsewhere);
+        let Some(ring_here) = ring_here else { return };
+
+        // Focus leaves again.
+        hub.set_selected_local(1);
+        let shrinking = marked(&step(3));
+        let back = marked(&step(SETTLE_TICKS));
+
+        if by_size {
+            // Grown by the same share on every side: left and right off
+            // the edge, bottom off the edge, top off the ring.
+            assert!(
+                near(rest.0 - grown.0, grow_x) && near(grown.1 - rest.1, grow_x),
+                "width grows about the center: {rest:?} -> {grown:?}, {grow_x} a side"
+            );
+            assert!(
+                near(grown.3 - rest.3, grow_y),
+                "the bottom moves down: {rest:?} -> {grown:?}, {grow_y}"
+            );
+            assert!(
+                ring_here.2 < rest.2 && near(rest.0 - ring_here.0, grow_x),
+                "the ring sits on the grown card: {ring_here:?} around {grown:?}"
+            );
+            // Both directions cut: three frames in, the cell is already
+            // at the size it settles at.
+            assert_eq!(growing, grown, "the growth is a cut");
+            assert_eq!(shrinking, Some(rest), "and so is the return");
+        } else {
+            // The software renderer ignores the transform, and the
+            // geometry it scales is the cell's own, untouched.
+            assert_eq!(growing, rest, "no size change while focus arrives");
+            assert_eq!(grown, rest, "no size change while focused");
+            assert_eq!(shrinking, Some(rest), "no size change while focus leaves");
+        }
+        assert_eq!(back, Some(rest), "the cell returns to its own rectangle");
+    }
+}
+
+/// Render one complete frame the way the `MiSTer` presenters do: the window
+/// keeps the scene's own shape and the renderer turns it into the frame.
+fn render_turned(
+    window: &Rc<MinimalSoftwareWindow>,
+    rotation: slint::platform::software_renderer::RenderingRotation,
+    (width, height): (u32, u32),
+) -> Vec<Rgb565Pixel> {
+    window.request_redraw();
+    let mut frame = vec![Rgb565Pixel(0); (width * height) as usize];
+    let drew = window.draw_if_needed(|renderer| {
+        renderer.set_rendering_rotation(rotation);
+        renderer.render(&mut frame, width as usize);
+    });
+    assert!(drew, "a requested redraw must produce a frame");
+    frame
+}
+
+/// A cached page slide moves pixels between two frames Slint rendered once
+/// each. It is right when every step shows exactly what Slint draws for the
+/// live strip at the same offset, so that is what this compares, pixel for
+/// pixel over the whole frame: on HDMI and on the inset CRT scene, unturned
+/// and in both TATE orientations, where the band and its direction of
+/// travel have to be mapped into the turned frame.
+#[cfg(feature = "mister")]
+#[test]
+#[allow(
+    clippy::expect_used,
+    clippy::too_many_lines,
+    reason = "one matrix walks every frame shape, orientation and direction through the same comparison"
+)]
+fn cached_slides_match_the_live_strip_in_every_orientation_and_on_crt() {
+    use crate::frame_transition::{Active, Spec};
+    use crate::Orientation;
+    use slint::platform::software_renderer::RenderingRotation;
+
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    seed_hub_pages(&ctx, &app);
+    let view = app.global::<HubView>();
+    let sizing = app.global::<Sizing>();
+    let mut state = zaparoo_core::persist::PersistedState::default();
+    crate::mister::with_cached_page_transitions(|| {
+        for (frame, crt) in [((W, H), false), ((352, 240), true), ((352, 288), true)] {
+            for (orientation, rotation) in [
+                (Orientation::Horizontal, RenderingRotation::NoRotation),
+                (Orientation::Cw, RenderingRotation::Rotate90),
+                (Orientation::Ccw, RenderingRotation::Rotate270),
+            ] {
+                let case = format!("{}x{} crt={crt} {orientation:?}", frame.0, frame.1);
+                state.settings.orientation = orientation.token().into();
+                crate::seed_display_globals(
+                    &app,
+                    &state,
+                    crt,
+                    crt,
+                    frame,
+                    zaparoo_app::motion_test::Disabled::default(),
+                );
+                let turned = orientation != Orientation::Horizontal;
+                window.set_size(if turned {
+                    slint::PhysicalSize::new(frame.1, frame.0)
+                } else {
+                    slint::PhysicalSize::new(frame.0, frame.1)
+                });
+                let (scene_w, scene_h) =
+                    crate::scene_size(f64::from(frame.0), f64::from(frame.1), orientation, crt);
+                sizing.set_screen_width(scene_w as f32);
+                sizing.set_screen_height(scene_h as f32);
+                crate::sizing::apply_scene(
+                    &app,
+                    crate::sizing::Scene::of(&app, scene_w, scene_h, crt),
+                );
+                crate::hub::rebuild(&ctx, &app);
+                slint::platform::update_timers_and_animations();
+
+                // Two pages that differ, neither symmetric on either axis.
+                let outgoing = view.get_cells();
+                let incoming: ModelRc<GridCell> =
+                    ModelRc::new(VecModel::from(outgoing.iter().take(2).collect::<Vec<_>>()));
+                let (grid_y, grid_height) = (view.get_grid_y(), view.get_grid_height());
+                let still = |cells: &ModelRc<GridCell>| {
+                    view.set_selected_local(-1);
+                    view.set_held_local(-1);
+                    view.set_slide_anim(false);
+                    view.set_page_slide(0.0);
+                    view.set_next_cells(ModelRc::default());
+                    view.set_cells(cells.clone());
+                    slint::platform::update_timers_and_animations();
+                    render_turned(&window, rotation, frame)
+                };
+                for direction in [1, -1] {
+                    let source = still(&outgoing);
+                    assert!(
+                        crate::mister::request_browse_page_transition(
+                            &app,
+                            grid_y,
+                            grid_height,
+                            direction
+                        ),
+                        "{case}: the slide is granted"
+                    );
+                    let spec = crate::mister::take_page_transition_request()
+                        .expect("a granted request is pending");
+                    crate::mister::cancel_page_transition();
+                    let destination = still(&incoming);
+                    assert_ne!(source, destination, "{case}: the pages differ");
+
+                    let mut cached = Active::new(
+                        &source,
+                        frame.0 as usize,
+                        frame.1 as usize,
+                        Spec {
+                            total_frames: 4,
+                            ..spec
+                        },
+                        Rgb565Pixel(0),
+                    )
+                    .expect("the mapped band fits the frame");
+                    for step in 1..4 {
+                        let offset = cached.offset_at(step);
+                        let mut composed = source.clone();
+                        let result = cached.compose_step(&destination, &mut composed, step);
+                        assert!(result.is_ok(), "{case}: step {step} composes");
+                        assert!(composed != source && composed != destination);
+
+                        // The live strip, held at the same offset.
+                        view.set_cells(outgoing.clone());
+                        view.set_next_cells(incoming.clone());
+                        view.set_slide_dir(direction);
+                        view.set_page_slide(direction as f32 * offset as f32 / grid_height);
+                        slint::platform::update_timers_and_animations();
+                        let live = render_turned(&window, rotation, frame);
+                        let mismatches = composed
+                            .iter()
+                            .zip(&live)
+                            .filter(|(cached, live)| cached != live)
+                            .count();
+                        assert_eq!(
+                            mismatches, 0,
+                            "{case} direction {direction} step {step} offset {offset}: \
+                             the cached frame is not the live strip"
+                        );
+                    }
+                }
+            }
+        }
+    });
+}
+
+/// With a presenter that runs cached slides, every paged grid takes one on
+/// HDMI, on CRT and in TATE, and the live strip does not move as well. A
+/// list layout still refuses, and without a presenter to grant it each
+/// screen keeps its own fallback.
+#[cfg(feature = "mister")]
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one platform-owned matrix covers the three paged grids"
+)]
+fn every_paged_grid_takes_a_cached_slide_on_crt_and_in_tate_but_lists_do_not() {
+    use crate::Orientation;
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, mut ctx) = offline_ctx();
+    ctx.is_mister = true;
+    seed_hub_pages(&ctx, &app);
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.persist.settings.reduce_motion = false;
+        shared.systems_model.rows = (0..40)
+            .map(|i| zaparoo_app::systems::SystemRow {
+                id: format!("System{i}"),
+                name: format!("System {i}"),
+                cover_key: String::new(),
+                category: String::new(),
+                hidden: false,
+                zap_script: String::new(),
+                release_date: String::new(),
+                manufacturer: String::new(),
+                media_count: None,
+            })
+            .collect();
+        shared.systems_model.grid.set_item_count(40);
+        shared.games.loading = false;
+        shared.games.rows = game_rows("Game", 200);
+        shared.games.grid.set_item_count(200);
+    }
+    let shell = app.global::<Shell>();
+    let sizing = app.global::<Sizing>();
+    let hub = app.global::<HubView>();
+    let systems = app.global::<SystemsView>();
+    let games = app.global::<crate::GamesView>();
+    // (cached transition granted, the live strip is moving)
+    let turn = |screen: Screen| {
+        shell.set_active_screen(screen);
+        match screen {
+            Screen::Systems => crate::systems::render(&ctx, &app),
+            Screen::Games => crate::games::render(&ctx, &app),
+            _ => crate::hub::render(&ctx, &app),
+        }
+        settle(&window);
+        crate::router::handle_action(&ctx, &app, "page_next");
+        let state = match screen {
+            Screen::Systems => (
+                systems.get_cached_transition(),
+                systems.get_page_slide().abs() > f32::EPSILON,
+            ),
+            Screen::Games => (
+                games.get_cached_transition(),
+                games.get_page_slide().abs() > f32::EPSILON,
+            ),
+            _ => (
+                hub.get_cached_transition(),
+                hub.get_page_slide().abs() > f32::EPSILON,
+            ),
+        };
+        // No presenter runs here to show the last step and free the channel.
+        crate::mister::cancel_page_transition();
+        settle(&window);
+        state
+    };
+
+    crate::mister::with_cached_page_transitions(|| {
+        for crt in [false, true] {
+            sizing.set_crt(crt);
+            for orientation in [Orientation::Horizontal, Orientation::Cw, Orientation::Ccw] {
+                shell.set_orientation(orientation);
+                for screen in [Screen::Hub, Screen::Systems, Screen::Games] {
+                    assert_eq!(
+                        turn(screen),
+                        (true, false),
+                        "{screen:?} crt={crt} {orientation:?}: cached pixels move, not the Slint grid"
+                    );
+                }
+            }
+        }
+        sizing.set_crt(false);
+        shell.set_orientation(Orientation::Horizontal);
+        shell.set_systems_list_layout(true);
+        shell.set_browse_list_layout(true);
+        for screen in [Screen::Systems, Screen::Games] {
+            assert!(!turn(screen).0, "{screen:?}: a list layout has no band");
+        }
+        shell.set_systems_list_layout(false);
+        shell.set_browse_list_layout(false);
+    });
+
+    // No presenter grants a slide: the Hub cuts on HDMI and slides its live
+    // strip on CRT, and the browse grids slide theirs on either.
+    assert_eq!(turn(Screen::Hub), (false, false));
+    assert_eq!(turn(Screen::Systems), (false, true));
+    assert_eq!(turn(Screen::Games), (false, true));
+    sizing.set_crt(true);
+    assert_eq!(turn(Screen::Hub), (false, true));
+    assert_eq!(turn(Screen::Systems), (false, true));
+    assert_eq!(turn(Screen::Games), (false, true));
+}
+
+/// Where the software renderer draws, a tile's glyph and a prepared logo
+/// are painted at their own pixel size, never fitted: the renderer samples
+/// bitmaps nearest-neighbor, so any other size drops or repeats rows and
+/// columns. Solid stand-in bitmaps make the painted rectangle readable off
+/// the frame: it must be exactly the bitmap, for a tile at rest and for the
+/// focused, grown one, on the CRT scene and on HDMI.
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one scenario reads glyphs and logos, resting and focused, off the same frames"
+)]
+fn tile_glyphs_and_logos_are_painted_at_their_own_pixel_size() {
+    use slint::platform::software_renderer::RenderingRotation;
+    use zaparoo_app::sizing::{tile_art_pixels, TileArt};
+
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    seed_hub_pages(&ctx, &app);
+    let hub = app.global::<HubView>();
+    let motion = app.global::<crate::Motion>();
+    let art = TileArt {
+        compact_padding: true,
+        caption: false,
+        top_label: false,
+    };
+    // Every glyph request, and a solid square of the size asked for.
+    let asked: Rc<RefCell<Vec<(String, f32)>>> = Rc::default();
+    let solid = |width: u32, height: u32, rgb: [u8; 3]| {
+        let mut buffer = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(width, height);
+        for pixel in buffer.make_mut_slice() {
+            *pixel = slint::Rgba8Pixel::new(rgb[0], rgb[1], rgb[2], 255);
+        }
+        slint::Image::from_rgba8(buffer)
+    };
+    {
+        let asked = asked.clone();
+        app.global::<crate::GlyphSource>()
+            .on_glyph(move |key, px, _| {
+                asked.borrow_mut().push((key.to_string(), px));
+                let side = px.round().max(0.0) as u32;
+                // Chrome asks for glyphs too; only the two tiles paint.
+                match key.as_str() {
+                    "focused" => solid(side, side, [255, 0, 255]),
+                    "resting" => solid(side, side, [255, 0, 0]),
+                    _ => slint::Image::default(),
+                }
+            });
+    }
+    let (magenta, red, cyan, yellow) = (
+        Rgb565Pixel(0xF81F),
+        Rgb565Pixel(0xF800),
+        Rgb565Pixel(0x07FF),
+        Rgb565Pixel(0xFFE0),
+    );
+    let mut state = zaparoo_core::persist::PersistedState::default();
+    state.settings.orientation = crate::Orientation::Horizontal.token().into();
+
+    for (frame, crt) in [((352_u32, 240_u32), true), ((1280, 720), false)] {
+        let case = format!("{}x{} crt={crt}", frame.0, frame.1);
+        crate::seed_display_globals(
+            &app,
+            &state,
+            crt,
+            crt,
+            frame,
+            zaparoo_app::motion_test::Disabled::default(),
+        );
+        // The software-rendered builds set this; the probe build may not.
+        motion.set_zoom_by_size(true);
+        window.set_size(slint::PhysicalSize::new(frame.0, frame.1));
+        let (scene_w, scene_h) = crate::scene_size(
+            f64::from(frame.0),
+            f64::from(frame.1),
+            crate::Orientation::Horizontal,
+            crt,
+        );
+        let sizing = app.global::<Sizing>();
+        sizing.set_screen_width(scene_w as f32);
+        sizing.set_screen_height(scene_h as f32);
+        let scene = crate::sizing::Scene::of(&app, scene_w, scene_h, crt);
+        crate::sizing::apply_scene(&app, scene);
+        crate::hub::rebuild(&ctx, &app);
+        let inputs = scene.inputs();
+        let (cell_w, cell_h) = (
+            hub.get_cell_width().round() as i32,
+            hub.get_cell_height().round() as i32,
+        );
+        // The 240p tier has no focus zoom; every larger one does.
+        let zoom = f64::from(motion.get_focus_zoom()) / 100.0;
+        let rest = tile_art_pixels(&inputs, cell_w, cell_h, 1.0, art);
+        let grown = tile_art_pixels(&inputs, cell_w, cell_h, zoom, art);
+        if crt {
+            assert!(sizing.get_tier_240(), "{case}: the 240p tier");
+            assert!((zoom - 1.0).abs() < f64::EPSILON, "{case}: no focus zoom");
+            assert_eq!(grown, rest, "{case}: the focused tile keeps its art box");
+            assert_eq!(crate::system_logos::focus_zoom(&app), None);
+        } else {
+            assert!(
+                grown.0 > rest.0 && grown.1 > rest.1,
+                "{case}: the grown tile has a larger art box: {rest:?} {grown:?}"
+            );
+            assert_eq!(crate::system_logos::focus_zoom(&app), Some(zoom));
+        }
+
+        // The painted rectangle of one color: left, top, width, height,
+        // and how many pixels of it there are.
+        let painted = |pixels: &[Rgb565Pixel], color: Rgb565Pixel| {
+            let mut found: Option<(u32, u32, u32, u32)> = None;
+            let mut count = 0_u32;
+            for (index, _) in pixels.iter().enumerate().filter(|(_, p)| **p == color) {
+                let (x, y) = (index as u32 % frame.0, index as u32 / frame.0);
+                count += 1;
+                found = Some(found.map_or((x, y, x, y), |(x0, y0, x1, y1)| {
+                    (x0.min(x), y0.min(y), x1.max(x), y1.max(y))
+                }));
+            }
+            found.map(|(x0, y0, x1, y1)| (x1 - x0 + 1, y1 - y0 + 1, count))
+        };
+        let show = |selected: i32| {
+            hub.set_selected_local(selected);
+            for _ in 0..SETTLE_TICKS {
+                CLOCK.with(|clock| clock.set(clock.get() + TICK_MS));
+                slint::platform::update_timers_and_animations();
+            }
+            render_turned(&window, RenderingRotation::NoRotation, frame)
+        };
+        // A logo keeps its own shape inside the bounds it was prepared to.
+        let logo = |bounds: (u32, u32), rgb| solid(bounds.0, (bounds.1 / 2).max(1), rgb);
+        let logo_size = |bounds: (u32, u32)| (bounds.0, (bounds.1 / 2).max(1));
+        hub.set_focus_art_local(-1);
+        hub.set_next_cells(ModelRc::default());
+        hub.set_cells(ModelRc::new(VecModel::from(vec![
+            GridCell {
+                glyph_key: "focused".into(),
+                ..GridCell::default()
+            },
+            GridCell {
+                glyph_key: "resting".into(),
+                ..GridCell::default()
+            },
+            GridCell {
+                cover: logo(rest, [0, 255, 255]),
+                has_cover: true,
+                cover_exact: true,
+                ..GridCell::default()
+            },
+        ])));
+
+        // Glyphs: the resting tile and the focused, grown one.
+        asked.borrow_mut().clear();
+        let pixels = show(0);
+        let side = |bounds: (u32, u32)| bounds.0.min(bounds.1);
+        assert_eq!(
+            painted(&pixels, red),
+            Some((side(rest), side(rest), side(rest) * side(rest))),
+            "{case}: a resting glyph is painted at its raster's size"
+        );
+        assert_eq!(
+            painted(&pixels, magenta),
+            Some((side(grown), side(grown), side(grown) * side(grown))),
+            "{case}: the focused glyph is painted at the grown tile's raster size"
+        );
+        // The settled frame asked for whole-pixel rasters of those sizes.
+        let last = |key: &str| {
+            asked
+                .borrow()
+                .iter()
+                .rev()
+                .find(|(asked_key, _)| asked_key == key)
+                .map(|(_, px)| *px)
+        };
+        assert_eq!(last("resting"), Some(side(rest) as f32), "{case}");
+        assert_eq!(last("focused"), Some(side(grown) as f32), "{case}");
+        // A resting logo is painted at its own size.
+        let (w, h) = logo_size(rest);
+        assert_eq!(painted(&pixels, cyan), Some((w, h, w * h)), "{case}");
+
+        // The focused logo before its larger copy lands: the resting copy,
+        // still at its own size, not stretched into the grown box.
+        let pixels = show(2);
+        assert_eq!(
+            painted(&pixels, cyan),
+            Some((w, h, w * h)),
+            "{case}: no larger copy yet"
+        );
+        // Without a zoom there is no larger copy to ask for.
+        if crt {
+            continue;
+        }
+        // And once it has landed: the larger copy, at its own size.
+        hub.set_focus_art(logo(grown, [255, 255, 0]));
+        hub.set_focus_art_local(2);
+        let pixels = show(2);
+        let (w, h) = logo_size(grown);
+        assert_eq!(
+            painted(&pixels, yellow),
+            Some((w, h, w * h)),
+            "{case}: the focused logo is painted at the grown tile's copy size"
+        );
+        assert_eq!(painted(&pixels, cyan), None, "{case}");
+        // It belongs to that tile only.
+        let pixels = show(1);
+        assert_eq!(painted(&pixels, yellow), None, "{case}");
+
+        // A bitmap larger than the box is fitted into it, never past it.
+        hub.set_focus_art(solid(grown.0 + 9, grown.1 + 9, [255, 255, 0]));
+        let pixels = show(2);
+        let fitted = painted(&pixels, yellow);
+        assert!(
+            fitted.is_some_and(|(w, h, _)| w <= grown.0 + 1 && h <= grown.1 + 1),
+            "{case}: an oversize bitmap stays inside the art box: {fitted:?}"
+        );
+    }
+
+    // Where a transform draws the zoom, art is fitted to its box as before.
+    motion.set_zoom_by_size(false);
+    hub.set_focus_art_local(-1);
+    hub.set_selected_local(1);
+    for _ in 0..SETTLE_TICKS {
+        CLOCK.with(|clock| clock.set(clock.get() + TICK_MS));
+        slint::platform::update_timers_and_animations();
+    }
+    let asked_before = asked.borrow().len();
+    let _ = render_turned(&window, RenderingRotation::NoRotation, (1280, 720));
+    assert!(asked.borrow().len() >= asked_before);
+}
+
+/// A cold start that resumes inside a system fills the Systems grid under
+/// the Games screen, before any logo is prepared and without the grid ever
+/// being on screen to ask for them. Backing out to it must show its logos
+/// without another key press.
+#[test]
+fn a_restored_game_list_backs_out_to_a_systems_grid_with_its_logos() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    let ids = ["SNES", "NES", "Genesis", "PSX"];
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.persist.settings.system_logo_style = "color".into();
+        shared.categories = vec!["Console".into()];
+        shared.systems = ids
+            .iter()
+            .map(|id| zaparoo_core::media_types::SystemInfo {
+                id: (*id).into(),
+                name: (*id).into(),
+                category: "Console".into(),
+                media_count: Some(40),
+                ..Default::default()
+            })
+            .collect();
+        shared.persist.systems.system_id = "NES".into();
+        shared.games.loading = false;
+        shared.games.rows = game_rows("Game", 40);
+        shared.games.grid.set_item_count(40);
+    }
+    // The restore: the parent is filled unseen, then Games is the screen.
+    crate::systems::prepare_parent(&ctx, &app, "Console");
+    let shell = app.global::<Shell>();
+    shell.set_active_screen(Screen::Games);
+    crate::games::render(&ctx, &app);
+    let view = app.global::<SystemsView>();
+    assert_eq!(view.get_cells().row_count(), ids.len());
+    assert!(
+        view.get_cells().iter().all(|cell| !cell.has_cover),
+        "nothing was prepared when the grid was filled"
+    );
+    // The logo worker runs in the background while the user plays or
+    // browses; no Systems screen is up to be repainted by it.
+    settle(&window);
+    ctx.logos.prepare_queued();
+    settle(&window);
+
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert_eq!(shell.get_active_screen(), Screen::Systems);
+    ctx.logos.prepare_queued();
+    settle(&window);
+    let blank: Vec<_> = view
+        .get_cells()
+        .iter()
+        .filter(|cell| !cell.has_cover)
+        .map(|cell| cell.name)
+        .collect();
+    assert!(blank.is_empty(), "tiles without their logo: {blank:?}");
+}
+
+/// The browse list follows the selection with a glide: one row when the
+/// selection steps past the window's edge, one page on a page jump. A held
+/// key still cuts, and so does everything with motion off.
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one list walks taps, page jumps, held repeats and reduced motion"
+)]
+fn the_browse_list_glides_a_row_or_a_page_and_cuts_on_a_held_key() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    let shell = app.global::<Shell>();
+    shell.set_systems_list_layout(true);
+    shell.set_active_screen(Screen::Systems);
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.persist.settings.systems_browse_layout = "list".into();
+        shared.persist.settings.reduce_motion = false;
+        shared.systems_model.rows = (0..120)
+            .map(|i| zaparoo_app::systems::SystemRow {
+                id: format!("System{i}"),
+                name: format!("System {i}"),
+                cover_key: String::new(),
+                category: String::new(),
+                hidden: false,
+                zap_script: String::new(),
+                release_date: String::new(),
+                manufacturer: String::new(),
+                media_count: None,
+            })
+            .collect();
+        shared.systems_model.grid.set_item_count(120);
+    }
+    crate::systems::render(&ctx, &app);
+    settle(&window);
+    let view = app.global::<SystemsView>();
+    let visible = view.get_list_visible();
+    assert!(visible >= 2, "the list card holds rows: {visible}");
+    let top = || view.get_list_scroll_top();
+    let tap = |action: &str| {
+        crate::router::handle_action(&ctx, &app, action);
+        distinct_frames(&window, 6)
+    };
+
+    // Walk to the window's last row: the selection moves, the list does not.
+    for _ in 1..visible {
+        tap("down");
+        settle(&window);
+    }
+    assert_eq!(top(), 0);
+    // One more row and the list follows by one row, as a glide.
+    let frames = tap("down");
+    assert_eq!(top(), 1);
+    assert!(view.get_list_glide());
+    assert!(frames > 2, "a single row glides: {frames} frames");
+    settle(&window);
+    // The rows a page either side of the window are in the model.
+    assert!(view.get_list_rows().row_count() >= 2 * visible as usize);
+
+    // A page jump travels a page, as one glide over the page duration.
+    let before = top();
+    let frames = tap("page_next");
+    assert!(top() > before + 1, "the window moved by more than a row");
+    assert!(top() - before <= visible, "and by no more than a page");
+    assert!(frames > 3, "a page jump glides: {frames} frames");
+    settle(&window);
+    let frames = tap("page_prev");
+    assert!(frames > 3, "a page jump back glides: {frames} frames");
+    settle(&window);
+
+    // An ordinary held walk glides row by row, as the Settings cards do.
+    // Repeats arrive faster than a glide lasts, so each one retargets the
+    // glide in flight and the list never stops between them.
+    for _ in 0..visible {
+        tap("down");
+        settle(&window);
+    }
+    let before = top();
+    let mut moving = 0;
+    for _ in 0..4 {
+        crate::input::dispatch_repeat(&ctx, &app, "down", HoldTier::Row);
+        assert!(view.get_list_glide(), "an ordinary held walk glides");
+        // Main repeats a held direction every 50 ms: three frames here.
+        moving += distinct_frames(&window, 3);
+    }
+    assert_eq!(top(), before + 4);
+    assert!(
+        moving >= 10,
+        "the list moves through the whole walk: {moving} of 12 frames"
+    );
+    assert!(
+        distinct_frames(&window, 6) > 2,
+        "and glides to rest after it"
+    );
+    settle(&window);
+
+    // A row step glides at every tier of a hold, at the tier's own pace.
+    let before = top();
+    crate::input::dispatch_repeat(&ctx, &app, "down", HoldTier::Page);
+    assert_eq!(top(), before + 1);
+    assert!(view.get_list_glide(), "a row step glides at any tier");
+    assert_eq!(
+        view.get_list_step_ms(),
+        112,
+        "a quarter over the 90 ms tick"
+    );
+    assert!(distinct_frames(&window, 6) > 2);
+    settle(&window);
+
+    // Motion off: a tap lands at once too.
+    app.global::<crate::Motion>().set_enabled(false);
+    let before = top();
+    let frames = tap("down");
+    assert_eq!(top(), before + 1);
+    assert!(frames <= 1, "no glide with motion off: {frames} frames");
+    let frames = tap("page_next");
+    assert!(
+        frames <= 1,
+        "no page glide with motion off: {frames} frames"
+    );
+}
+
+/// The pixels the list scrolled by between two frames: the shift that
+/// lines the earlier frame's rows up with the later one's, read off a band
+/// of the list's text well inside its card.
+#[cfg(feature = "mister")]
+fn list_shift(earlier: &[Rgb565Pixel], later: &[Rgb565Pixel], limit: usize) -> usize {
+    let (width, height) = (W as usize, H as usize);
+    let rows = height / 3..height * 2 / 3 - limit;
+    (0..limit)
+        .min_by_key(|shift| {
+            rows.clone()
+                .flat_map(|y| (12..width / 3).map(move |x| (x, y)))
+                .filter(|&(x, y)| earlier[(y + shift) * width + x] != later[y * width + x])
+                .count()
+        })
+        .unwrap_or(0)
+}
+
+/// Hold Down through the real key path for a second and a half, a frame at
+/// a time, with the frontend's own repeat timer setting the pace. While the
+/// selection steps one row at a time (`row_steps` says so, frame by frame;
+/// once it says no the walk has turned into page steps and is no longer
+/// watched) the list must scroll every frame and never by a whole row at
+/// once.
+#[cfg(feature = "mister")]
+fn hold_down_and_watch(
+    ctx: &crate::router::Ctx,
+    app: &App,
+    window: &Rc<MinimalSoftwareWindow>,
+    stride: usize,
+    row_steps: impl Fn() -> bool,
+) {
+    use slint::platform::WindowEvent;
+    let key: SharedString = char::from(slint::platform::Key::DownArrow)
+        .to_string()
+        .into();
+    app.window()
+        .dispatch_event(WindowEvent::KeyPressed { text: key.clone() });
+    let mut previous = pixels(window);
+    let mut elapsed = 0;
+    let mut watching = true;
+    while elapsed < 1_500 {
+        crate::router::lock(&ctx.shared)
+            .input
+            .advance_test_clock(TICK_MS);
+        advance(TICK_MS);
+        elapsed += TICK_MS;
+        let frame = pixels(window);
+        // From the first repeat's glide to the last row step's.
+        watching = watching && row_steps();
+        if watching && elapsed > zaparoo_app::input::REPEAT_INITIAL_MS + 2 * TICK_MS {
+            let shift = list_shift(&previous, &frame, 2 * stride);
+            assert!(shift >= 1, "the list stopped {elapsed} ms into the hold");
+            assert!(
+                shift < stride,
+                "the list jumped {shift} px, a whole row, {elapsed} ms into the hold"
+            );
+        }
+        previous = frame;
+    }
+    app.window()
+        .dispatch_event(WindowEvent::KeyReleased { text: key });
+    settle(window);
+    settle(window);
+}
+
+/// A held Down in the Systems list steps a row at every tier: the list
+/// scrolls continuously for the whole hold, past the rapid threshold too.
+#[cfg(feature = "mister")]
+#[test]
+fn a_held_walk_scrolls_the_systems_list_continuously() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let ctx = std::sync::Arc::new(ctx);
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    let shell = app.global::<Shell>();
+    shell.set_systems_list_layout(true);
+    shell.set_active_screen(Screen::Systems);
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.persist.settings.systems_browse_layout = "list".into();
+        shared.systems_model.rows = (0..200)
+            .map(|i| zaparoo_app::systems::SystemRow {
+                id: format!("System{i}"),
+                name: format!("System {i}"),
+                cover_key: String::new(),
+                category: String::new(),
+                hidden: false,
+                zap_script: String::new(),
+                release_date: String::new(),
+                manufacturer: String::new(),
+                media_count: None,
+            })
+            .collect();
+        shared.systems_model.grid.set_item_count(200);
+        shared.input.advance_test_clock(1);
+    }
+    crate::systems::render(&ctx, &app);
+    crate::input::bind(&ctx, &app, std::collections::HashMap::new());
+    settle(&window);
+    let view = app.global::<SystemsView>();
+    let visible = usize::try_from(view.get_list_visible()).unwrap_or(1);
+    // Start on the window's last row, so every step scrolls.
+    for _ in 1..visible {
+        crate::router::handle_action(&ctx, &app, "down");
+    }
+    settle(&window);
+    let start = crate::router::lock(&ctx.shared)
+        .systems_model
+        .grid
+        .current_index();
+    let stride = view.get_list_row_height().round() as usize;
+    // The hold clock also counts real time, so a loaded machine can carry
+    // this hold to the letter tier, where a row every 250 ms moves less
+    // than a pixel a frame; the walk is watched up to there.
+    hold_down_and_watch(&ctx, &app, &window, stride, || {
+        view.get_list_glide() && view.get_list_step_ms() < 200
+    });
+    let landed = crate::router::lock(&ctx.shared)
+        .systems_model
+        .grid
+        .current_index();
+    // The press and its repeats: eighteen rows or so on an idle machine,
+    // and at least the six the slowest tier steps when real time has
+    // carried the hold there early.
+    assert!(
+        landed > start + 4,
+        "the hold walked on: {start} to {landed}"
+    );
+    assert_eq!(
+        usize::try_from(view.get_list_scroll_top()).unwrap_or(0),
+        landed + 1 - visible,
+        "and the list rests with the selection on its last row"
+    );
+    let rest = pixels(&window);
+    advance(TICK_MS);
+    assert!(pixels(&window) == rest, "nothing moves after the release");
+}
+
+/// The Games list walks row by row the same way until the hold turns into
+/// a fast scroll, which steps pages and may cut.
+#[cfg(feature = "mister")]
+#[test]
+fn a_held_walk_scrolls_the_games_list_continuously() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let ctx = std::sync::Arc::new(ctx);
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.persist.settings.games_browse_layout = "list".into();
+        shared.persist.games.list_top_at_level = vec![0];
+        shared.games.rows = game_rows("Game", 400);
+        shared.games.grid.set_item_count(400);
+        shared.games.focus_armed = true;
+        shared.input.advance_test_clock(1);
+    }
+    app.global::<Shell>().set_active_screen(Screen::Games);
+    app.global::<Shell>().set_browse_list_layout(true);
+    crate::router::refresh_layout(&app);
+    crate::games::render(&ctx, &app);
+    crate::input::bind(&ctx, &app, std::collections::HashMap::new());
+    settle(&window);
+    let view = app.global::<crate::GamesView>();
+    let visible = usize::try_from(view.get_list_visible()).unwrap_or(1);
+    for _ in 1..visible {
+        crate::router::handle_action(&ctx, &app, "down");
+    }
+    settle(&window);
+    let start = crate::router::lock(&ctx.shared).games.grid.current_index();
+    let stride = view.get_list_row_height().round() as usize;
+    // A page step is the one thing that cuts, and Rust says when.
+    hold_down_and_watch(&ctx, &app, &window, stride, || view.get_list_glide());
+    assert!(
+        !view.get_list_glide(),
+        "the hold reached its page steps before it ended"
+    );
+    let landed = crate::router::lock(&ctx.shared).games.grid.current_index();
+    assert!(
+        landed > start + 2 * visible,
+        "rows, then pages: {start} to {landed}"
+    );
+    let top = usize::try_from(view.get_list_scroll_top()).unwrap_or(0);
+    assert!(
+        (top..top + visible).contains(&landed),
+        "the list rests with the selection in its window"
+    );
+    let rest = pixels(&window);
+    advance(TICK_MS);
+    assert!(pixels(&window) == rest, "nothing moves after the release");
 }

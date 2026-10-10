@@ -1,0 +1,75 @@
+// Zaparoo Frontend
+// Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
+// SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
+//
+// The name of a system that has no art, set as large as its box allows.
+
+import { Sizing } from "theme.slint";
+
+// One candidate size, laid out but never painted. With clipped word-wrap a
+// Text's minimum width is its longest word and its preferred height is the
+// wrapped block at its own width, which is everything a fit needs.
+component WordmarkProbe inherits Text {
+    in property <length> box-w;
+    in property <length> box-h;
+    out property <bool> fits: self.min-width <= self.box-w && self.preferred-height <= self.box-h;
+    visible: false;
+    width: self.box-w;
+    wrap: word-wrap;
+    font-weight: FontWeight.semi-bold;
+}
+
+// Slint has no fit mode, so the wordmark steps down a short ladder instead:
+// the largest size that sets every word whole inside the box wins. The top
+// of the ladder lets two lines fill the box; the bottom is the caption size,
+// the smallest text these screens already ask to be read, and only there
+// does a name that still does not fit elide. The bitmap face has two
+// strikes, so its ladder is just those.
+export component Wordmark inherits Rectangle {
+    in property <string> text;
+    in property <color> ink;
+
+    property <length> smallest: Sizing.font-small;
+    property <length> largest: Math.max(root.smallest,
+        Math.min(Sizing.font-size(5.8), Math.floor(root.height / 2 / 1.362 / 1px) * 1px));
+    property <length> step: (root.largest - root.smallest) / 3;
+    property <length> upper: Sizing.bitmap-fonts ? root.smallest
+        : Math.round((root.largest - root.step) / 1px) * 1px;
+    property <length> lower: Sizing.bitmap-fonts ? root.smallest
+        : Math.round((root.largest - 2 * root.step) / 1px) * 1px;
+
+    at-largest := WordmarkProbe {
+        box-w: root.width;
+        box-h: root.height;
+        text: root.text;
+        font-size: root.largest;
+    }
+    at-upper := WordmarkProbe {
+        box-w: root.width;
+        box-h: root.height;
+        text: root.text;
+        font-size: root.upper;
+    }
+    at-lower := WordmarkProbe {
+        box-w: root.width;
+        box-h: root.height;
+        text: root.text;
+        font-size: root.lower;
+    }
+
+    Text {
+        // A Text is its own preferred size unless told otherwise, which
+        // here would be the whole name on one line.
+        width: parent.width;
+        height: parent.height;
+        text: root.text;
+        color: root.ink;
+        font-size: at-largest.fits ? root.largest
+            : (at-upper.fits ? root.upper : (at-lower.fits ? root.lower : root.smallest));
+        font-weight: FontWeight.semi-bold;
+        wrap: word-wrap;
+        overflow: elide;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}

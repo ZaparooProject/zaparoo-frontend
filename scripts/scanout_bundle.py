@@ -10,7 +10,7 @@ import struct
 import zipfile
 
 MAGIC = 'ZAPAROO-SCANOUT-PROFILE-1'
-CONTRACT = 'zaparoo-scanout-v1-1080p'
+CONTRACT = 'zaparoo-scanout-v2-native'
 
 
 def parse_profile(data):

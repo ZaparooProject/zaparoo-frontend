@@ -492,14 +492,23 @@ fn rotated(shared: &Shared) -> bool {
     matches!(shared.persist.settings.orientation.as_str(), "cw" | "ccw")
 }
 
-fn list_rows_visible(ctx: &Ctx, shared: &Shared) -> usize {
+/// The row count the list's profile is fitted to where its row height
+/// follows the card.
+fn list_target_rows(ctx: &Ctx, shared: &Shared) -> usize {
     rules::list_visible_rows(ctx.crt_enabled, rotated(shared))
+}
+
+/// The list's page size: the rows the painted card holds. One answer for
+/// the row window, paging and the fetch size, from the same geometry the
+/// card is laid out with.
+fn list_rows_visible(ctx: &Ctx, app: &App, shared: &Shared) -> usize {
+    list_geometry(ctx, app, shared).visible_rows.max(1)
 }
 
 /// The fetch page size: the grid page, or a screenful of list rows.
 fn page_size(ctx: &Ctx, app: &App, shared: &Shared) -> u32 {
     if list_layout(shared) {
-        return u32::try_from(list_rows_visible(ctx, shared)).unwrap_or(10);
+        return u32::try_from(list_rows_visible(ctx, app, shared)).unwrap_or(10);
     }
     let view = app.global::<GamesView>();
     (view.get_columns().max(1) * view.get_rows().max(1)) as u32
@@ -530,7 +539,7 @@ fn list_geometry(ctx: &Ctx, app: &App, shared: &Shared) -> rules::ListGeometry {
             help_bar_height: derived.help_bar_height,
             tier_240: derived.tier == zaparoo_app::sizing::Tier::T240,
             safe_bottom_gap: inputs.pct_h(6.0),
-            target_rows: list_rows_visible(ctx, shared),
+            target_rows: list_target_rows(ctx, shared),
             min_row_height: inputs.pct_h(3.0),
             default_row_height: inputs.pct_h(6.0),
         },
@@ -582,11 +591,11 @@ fn saved_list_top(shared: &Shared) -> Option<usize> {
     }
 }
 
-fn list_restore_needs_rows(ctx: &Ctx, shared: &Shared) -> bool {
+fn list_restore_needs_rows(ctx: &Ctx, app: &App, shared: &Shared) -> bool {
     if !list_layout(shared) || !shared.games.has_more() {
         return false;
     }
-    let visible = list_rows_visible(ctx, shared).max(1);
+    let visible = list_rows_visible(ctx, app, shared).max(1);
     let selected = shared.games.grid.current_index();
     let top = saved_list_top(shared)
         .unwrap_or_else(|| selected.saturating_sub(visible / 2))
@@ -1200,7 +1209,7 @@ pub(crate) fn apply_fill(
             return;
         }
         let list = list_layout(&shared);
-        let visible = list_rows_visible(ctx, &shared);
+        let visible = list_rows_visible(ctx, app, &shared);
         let saved = saved_path(&shared);
         let model = &mut shared.games;
         model.focus_recalled = false;
@@ -1258,7 +1267,7 @@ pub(crate) fn apply_fill(
         (token, restore_fetch, fill_list)
     };
     if app.global::<crate::Shell>().get_transitioning()
-        && (restore_fetch || list_restore_needs_rows(ctx, &lock(&ctx.shared)))
+        && (restore_fetch || list_restore_needs_rows(ctx, app, &lock(&ctx.shared)))
     {
         fetch_more(ctx, app, rules::RESTORE_FETCH_CHUNK, true);
         return;
@@ -1566,7 +1575,7 @@ pub(crate) fn on_append(
         (restore_again, landed, changed_page)
     };
     if app.global::<crate::Shell>().get_transitioning() {
-        if restore_again || list_restore_needs_rows(ctx, &lock(&ctx.shared)) {
+        if restore_again || list_restore_needs_rows(ctx, app, &lock(&ctx.shared)) {
             fetch_more(ctx, app, rules::RESTORE_FETCH_CHUNK, true);
             return;
         }
@@ -2164,7 +2173,7 @@ pub fn render(ctx: &Ctx, app: &App) {
     let view = app.global::<GamesView>();
     let shared = lock(&ctx.shared);
     let list = list_layout(&shared);
-    let visible = list_rows_visible(ctx, &shared);
+    let visible = list_rows_visible(ctx, app, &shared);
     let path_stack_len = shared.persist.games.path_stack.len();
     let logos = crate::systems::LogoPrefs::of(&shared);
     let model = &shared.games;
@@ -2299,14 +2308,26 @@ pub fn render(ctx: &Ctx, app: &App) {
         });
         let scroll_top =
             crate::browse_motion::window_top(model.grid.current_index(), count, visible, previous);
-        let top = scroll_top.saturating_sub(1);
+        // A page of rows either side of the window, so a glide to the
+        // next row or the next page has rows to show the whole way.
+        let top = scroll_top.saturating_sub(visible);
         let rows: Vec<GridCell> = model
             .rows
             .iter()
             .skip(top)
-            .take(visible + 2)
+            .take(scroll_top - top + 2 * visible)
             .map(text_cell)
             .collect();
+        // How the list follows this move. Only a render that moved the
+        // selection decides: one that did not must leave a glide in flight
+        // as it is.
+        let was = usize::try_from(view.get_list_view_top() + view.get_list_sel()).unwrap_or(0);
+        let moved = model.grid.current_index().abs_diff(was);
+        if moved > 0 {
+            let (glide, step_ms) = shared.input.list_follow(moved);
+            view.set_list_glide(glide);
+            view.set_list_step_ms(step_ms);
+        }
         crate::view_model::publish_cells(&view.get_list_rows(), rows, |rows| {
             view.set_list_rows(rows);
         });
@@ -2528,7 +2549,7 @@ pub fn reproject(ctx: &Ctx, app: &App) {
 pub fn on_layout_changed(ctx: &Ctx, app: &App) {
     let fill = {
         let shared = lock(&ctx.shared);
-        let visible = list_rows_visible(ctx, &shared);
+        let visible = list_rows_visible(ctx, app, &shared);
         list_layout(&shared)
             && rules::list_fill_page(shared.games.rows.len(), visible, shared.games.has_more())
     };
@@ -2681,6 +2702,19 @@ fn schedule_detail(ctx: &Ctx, app: &App, force: bool) {
     }
 }
 
+/// The pane's rows from a game's full record. The same facts the details
+/// screen shows (`game_info_data::rows`: the title's tags, or the media
+/// record's own when Core sent none, then title and ROM properties, which
+/// is where scraped metadata lives), cut down to the pane's fixed rows. A
+/// game whose year, developer or publisher is a property and not a tag
+/// would otherwise show nothing under its cover.
+fn detail_pairs_from_meta(
+    meta: &zaparoo_core::media_types::MediaMeta,
+    path: &str,
+) -> Vec<(&'static str, String)> {
+    rules::detail_rows_from_tags(&crate::game_info_data::rows(meta, path))
+}
+
 fn fire_detail(ctx: &Ctx, app: &App, seq: u64) {
     let (row, system) = {
         let mut shared = lock(&ctx.shared);
@@ -2729,12 +2763,7 @@ fn fire_detail(ctx: &Ctx, app: &App, seq: u64) {
                 // The title-level tags describe the game; the media
                 // record's own tags stand in when Core sent none.
                 result.ok().map(|result| {
-                    let source = if result.media.title.tags.is_empty() {
-                        result.media.tags.as_slice()
-                    } else {
-                        result.media.title.tags.as_slice()
-                    };
-                    let pairs = rules::detail_rows_from_tags(&tag_pairs(source));
+                    let pairs = detail_pairs_from_meta(&result.media, &row.path);
                     detail_rows_for(&shared.games, &row, &pairs)
                 })
             };
@@ -2751,22 +2780,16 @@ fn fire_detail(ctx: &Ctx, app: &App, seq: u64) {
 
 #[cfg(feature = "mister")]
 fn request_cached_page_transition(app: &App, direction: i32, _columns: i32, _rows: i32) -> bool {
-    let shell = app.global::<crate::Shell>();
-    if shell.get_orientation() != crate::Orientation::Horizontal || shell.get_browse_list_layout() {
+    if app.global::<crate::Shell>().get_browse_list_layout() {
         return false;
     }
-    let sizing = app.global::<crate::Sizing>();
-    let width = sizing.get_screen_width().round().max(0.0) as u32;
-    let height = sizing.get_screen_height().round().max(0.0) as u32;
-    let Some(geometry) = crate::sizing::mister_browse_grid_transition_geometry(
-        width,
-        height,
-        app.global::<GamesView>().get_grid_y().round().max(0.0) as u32,
-        app.global::<GamesView>().get_grid_height().round().max(0.0) as u32,
-    ) else {
-        return false;
-    };
-    crate::mister::request_page_transition(geometry, direction)
+    let view = app.global::<GamesView>();
+    crate::mister::request_browse_page_transition(
+        app,
+        view.get_grid_y(),
+        view.get_grid_height(),
+        direction,
+    )
 }
 
 #[cfg(not(feature = "mister"))]
@@ -3095,7 +3118,7 @@ fn list_move(ctx: &Ctx, app: &App, delta: i64) {
     let (outcome, size, tail, tail_target) = {
         let mut shared = lock(&ctx.shared);
         let size = page_size(ctx, app, &shared);
-        let visible = list_rows_visible(ctx, &shared);
+        let visible = list_rows_visible(ctx, app, &shared);
         let model = &mut shared.games;
         model.focus_armed = true;
         let count = model.rows.len();
@@ -3431,7 +3454,12 @@ fn cancel(ctx: &Ctx, app: &App) {
     if target == crate::Screen::Hub {
         crate::router::return_to_hub(ctx, app);
     } else {
+        // Publish Systems and render it in the same turn, as the Hub is.
+        // Only a render of the active Systems screen asks for its logos,
+        // and a grid filled unseen under a restored Games screen was built
+        // before any were prepared: nothing else would repaint it.
         crate::router::transition_to_screen(app, target, -1);
+        crate::systems::render(ctx, app);
     }
 }
 
@@ -4064,6 +4092,52 @@ pub fn bind_input(ctx: &Arc<Ctx>, app: &App) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_detail_pane_shows_scraped_properties_when_no_tag_carries_them() {
+        use zaparoo_core::media_types::{MediaMeta, MediaMetaProperty, TagInfo};
+        let property = |text: &str| MediaMetaProperty {
+            text: text.into(),
+            ..Default::default()
+        };
+        // The tags Core sent say nothing the pane lists.
+        let mut meta = MediaMeta {
+            tags: vec![TagInfo {
+                tag_type: "region".into(),
+                tag: "ntsc".into(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        assert!(
+            rules::detail_rows_from_tags(&tag_pairs(&meta.tags)).is_empty(),
+            "tags alone leave the pane empty"
+        );
+        // The scraped record does, as properties.
+        meta.title
+            .properties
+            .insert("property:developer".into(), property("Atari"));
+        meta.properties
+            .insert("property:year".into(), property("1987"));
+        meta.properties
+            .insert("property:description".into(), property("A long text."));
+        let rows = detail_pairs_from_meta(&meta, "/games/Desert Falcon.a78");
+        assert_eq!(
+            rows,
+            vec![
+                ("year", "1987".to_string()),
+                ("developer", "Atari".to_string())
+            ]
+        );
+        // A tag still wins over a property of the same kind.
+        meta.tags.push(TagInfo {
+            tag_type: "year".into(),
+            tag: "1988".into(),
+            ..Default::default()
+        });
+        let rows = detail_pairs_from_meta(&meta, "/games/Desert Falcon.a78");
+        assert_eq!(rows[0], ("year", "1988".to_string()));
+    }
+
     use super::*;
 
     fn entry(entry_type: &str, name: &str, path: &str) -> BrowseEntry {

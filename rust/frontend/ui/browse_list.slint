@@ -8,6 +8,7 @@
 // pushes the row metrics; every other length comes from the browse layout
 // profile in `Layout`.
 
+import { Wordmark } from "wordmark.slint";
 import { Theme, Sizing, Motion, Layout } from "theme.slint";
 import { GlyphSource, WaitCue } from "chrome.slint";
 import { GridCell, MarqueeCaption } from "tiles.slint";
@@ -77,6 +78,16 @@ export component BrowseList inherits Rectangle {
     in property <bool> settling: false;
     in property <length> row-height: Sizing.pct-h(6);
     in property <bool> show-chrome: true;
+    // The list glides to follow the selection. A tap eases a row or a page
+    // over `Motion.page-ms`, as the Settings cards do. A held key that
+    // walks row by row sets `step`, a little over its repeat interval, and
+    // the list follows at constant speed: it is still moving when the next
+    // repeat lands, so the walk reads as one continuous scroll at any
+    // cadence. Rust clears `glide` only for a held step that jumps a page
+    // or a letter, and pushes a page of rows either side of the window so
+    // a glide has rows to show the whole way.
+    in property <bool> glide: true;
+    in property <duration> step: 0ms;
     callback row-hovered(int);
     callback row-clicked(int);
     callback row-right-clicked(int);
@@ -90,7 +101,7 @@ export component BrowseList inherits Rectangle {
     clip: true;
 
     property <length> stride: root.row-height + Layout.row-spacing;
-    property <length> heart-size: Sizing.pct-h(3.2);
+    property <length> heart-size: GlyphSource.side(Sizing.pct-h(3.2));
     scroll := ScrollOffset {
         target: root.scroll-top * root.stride;
         step: root.stride;
@@ -98,6 +109,12 @@ export component BrowseList inherits Rectangle {
         focus-size: root.row-height;
         viewport: root.height - Layout.card-padding-top - Layout.card-padding-bottom;
         scope: root.scope + ":" + Motion.epoch;
+        // The cursor is positioned in the content it scrolls, so a row
+        // past the window rides in with it.
+        reveal: true;
+        glide-span: root.glide ? Math.max(root.stride, self.viewport + root.stride) : 0px;
+        duration: root.step > 0ms ? root.step : Motion.page-ms;
+        steady: root.step > 0ms;
     }
 
     TouchArea {
@@ -230,15 +247,15 @@ export component BrowseDetailPane inherits Rectangle {
     in property <bool> show-title: true;
     in property <image> cover;
     in property <bool> has-cover: false;
+    // The cover is a bitmap prepared for the reported art box (a system
+    // logo), painted one pixel for one where bitmaps are painted that way.
+    in property <bool> cover-exact: false;
     // Core confirmed no art exists: show the chip. Pending fetches stay
     // blank, like the grid tiles.
     in property <bool> cover-absent: false;
     // A system row with no bundled logo: the fitted name stands in.
     in property <bool> wordmark: false;
     in property <string> placeholder-key: "icons/File";
-    // Core's average cover colour, shown while the cover loads.
-    in property <color> art-color;
-    in property <bool> has-art-color: false;
     in property <[DetailRow]> rows: [];
     in property <bool> loading: false;
     in property <string> loading-text: @tr("Loading…");
@@ -380,28 +397,20 @@ export component BrowseDetailPane inherits Rectangle {
             changed art-h => { root.art-box(self.art-w, self.art-h); }
 
             // The cover's colour until it lands, like a grid tile.
-            if root.has-art-color && !root.cover-absent: Rectangle {
-                x: parent.art-x;
-                y: parent.art-y;
-                width: parent.art-w;
-                height: parent.art-h;
-                background: root.art-color;
-                opacity: 1;
-                states [
-                    covered when root.has-cover: {
-                        opacity: 0;
-                        in {
-                            animate opacity { duration: Motion.dur(Motion.cover-reveal-ms); easing: ease-out; }
-                        }
-                    }
-                ]
-            }
-            // Fades in as it lands, like a grid tile's art.
+            // No average-colour fill here: that stand-in belongs to the
+            // grid's tiles. The pane's cover only fades in as it lands.
             Image {
-                x: parent.art-x;
-                y: parent.art-y;
-                width: parent.art-w;
-                height: parent.art-h;
+                // Exact-pixel contract, as on a grid tile: a prepared logo
+                // that fits the box is painted at its own pixel size,
+                // centered on a whole pixel, because the software renderer
+                // samples a fitted bitmap nearest-neighbor.
+                property <bool> exact: Motion.zoom-by-size && root.cover-exact
+                    && self.source.width * 1px <= parent.art-w + 0.01px
+                    && self.source.height * 1px <= parent.art-h + 0.01px;
+                x: self.exact ? Math.round((parent.art-x + (parent.art-w - self.width) / 2) / 1px) * 1px : parent.art-x;
+                y: self.exact ? Math.round((parent.art-y + (parent.art-h - self.height) / 2) / 1px) * 1px : parent.art-y;
+                width: self.exact ? self.source.width * 1px : parent.art-w;
+                height: self.exact ? self.source.height * 1px : parent.art-h;
                 source: root.cover;
                 image-fit: contain;
                 opacity: 0;
@@ -417,7 +426,7 @@ export component BrowseDetailPane inherits Rectangle {
             // Only a confirmed no-cover state shows the chip; the pane
             // never shows an hourglass.
             if !root.has-cover && !root.wordmark && root.cover-absent: Image {
-                property <length> s: parent.art-w * 0.5;
+                property <length> s: GlyphSource.side(parent.art-w * 0.5);
                 x: parent.art-x + (parent.art-w - self.s) / 2;
                 y: parent.art-y + (parent.art-h - self.s) / 2;
                 width: self.s;
@@ -426,20 +435,13 @@ export component BrowseDetailPane inherits Rectangle {
             }
             // Wordmark fallback for a system without curated logo art
             // (the grid tile's fitted-text treatment).
-            if !root.has-cover && root.wordmark && root.title != "": Text {
-                property <length> box-h: Math.max(0px, parent.art-h - 2 * Sizing.pct-h(1));
+            if !root.has-cover && root.wordmark && root.title != "": Wordmark {
                 x: parent.art-x + Sizing.pct-h(1);
                 y: parent.art-y + Sizing.pct-h(1);
                 width: Math.max(0px, parent.art-w - 2 * Sizing.pct-h(1));
-                height: self.box-h;
+                height: Math.max(0px, parent.art-h - 2 * Sizing.pct-h(1));
                 text: root.title;
-                color: Theme.logo-focus-primary;
-                font-size: Math.max(Sizing.font-size(2.8), Math.min(Sizing.font-size(5.8), Math.floor(self.box-h / 2 / 1.362 / 1px) * 1px));
-                font-weight: FontWeight.semi-bold;
-                wrap: word-wrap;
-                overflow: elide;
-                horizontal-alignment: center;
-                vertical-alignment: center;
+                ink: Theme.logo-focus-primary;
             }
         }
 
@@ -517,15 +519,16 @@ export component BrowseListDetailView inherits Rectangle {
     in property <int> release-pulse: 0;
     in property <bool> settling: false;
     in property <length> row-height: Sizing.pct-h(6);
+    in property <bool> glide: true;
+    in property <duration> step: 0ms;
     in property <string> detail-title: "";
     in property <bool> show-title: true;
     in property <image> cover;
     in property <bool> has-cover: false;
+    in property <bool> cover-exact: false;
     in property <bool> cover-absent: false;
     in property <bool> wordmark: false;
     in property <string> placeholder-key: "icons/File";
-    in property <color> art-color;
-    in property <bool> has-art-color: false;
     in property <[DetailRow]> detail-rows: [];
     in property <bool> detail-loading: false;
     in property <string> loading-text: @tr("Loading…");
@@ -561,6 +564,8 @@ export component BrowseListDetailView inherits Rectangle {
         model-top: root.model-top;
         scroll-top: root.scroll-top;
         scope: root.scope;
+        glide: root.glide;
+        step: root.step;
         selected: root.selected;
         focus-ready: root.focus-ready;
         activate-pulse: root.activate-pulse;
@@ -593,11 +598,10 @@ export component BrowseListDetailView inherits Rectangle {
         show-title: root.show-title;
         cover: root.cover;
         has-cover: root.has-cover;
+        cover-exact: root.cover-exact;
         cover-absent: root.cover-absent;
         wordmark: root.wordmark;
         placeholder-key: root.placeholder-key;
-        art-color: root.art-color;
-        has-art-color: root.has-art-color;
         rows: root.detail-rows;
         loading: root.detail-loading;
         loading-text: root.loading-text;

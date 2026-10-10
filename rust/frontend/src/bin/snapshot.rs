@@ -54,7 +54,7 @@ use generated::{App, Brand, GlyphSource, GridCell, LetterBucket, MenuEntry, Sizi
     unused_imports,
     reason = "reached through crate:: paths from the shared sizing adapter"
 )]
-use generated::{GamesView, Layout, Shell, SystemsView};
+use generated::{GamesView, Layout, Motion, Shell, SystemsView};
 use generated::{KeyCell, KeyKind, SearchPane, SearchPaneRow, SearchView, SearchZone};
 #[path = "../state_types.rs"]
 #[allow(
@@ -105,10 +105,6 @@ impl Platform for SnapshotPlatform {
     }
 }
 
-#[allow(
-    clippy::too_many_lines,
-    reason = "offline fixture dispatcher keeps scenario setup and capture in one place"
-)]
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let width: u32 = args.get(1).map_or(1920, |a| a.parse().unwrap());
@@ -120,11 +116,31 @@ fn main() {
     let screen = args.get(4).cloned().unwrap_or_else(|| "hub".to_string());
 
     slint::platform::set_platform(Box::new(SnapshotPlatform)).unwrap();
-
-    let app = App::new().unwrap();
     // Same font stack as the device build: the embedded script faces and
     // their fallback wiring.
     fonts::register_embedded_fonts();
+
+    // A 240p help bar is one row until its entries wrap, and the app
+    // re-solves every screen when the bar reports that. A still frame has
+    // no second turn, so a scene whose entries turn out to wrap is
+    // composed again with the two-row bar from the start.
+    if !render(width, height, &out, &screen, false) {
+        assert!(
+            render(width, height, &out, &screen, true),
+            "the help bar's wrap measurement depends on its height"
+        );
+    }
+}
+
+/// Compose and write one frame, solved for a help bar of the given row
+/// count. Returns false, writing nothing, when the composed scene's help
+/// entries measure the other way.
+#[allow(
+    clippy::too_many_lines,
+    reason = "offline fixture dispatcher keeps scenario setup and capture in one place"
+)]
+fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool) -> bool {
+    let app = App::new().unwrap();
     // ZAPAROO_SNAPSHOT_SCHEME / ZAPAROO_SNAPSHOT_INTENSITY render any preset.
     theme::apply_palette(
         &app,
@@ -147,7 +163,11 @@ fn main() {
     let list = screen.contains("list");
     app.global::<Theme>().set_crt(crt);
     app.global::<Sizing>().set_crt(crt);
+    // These frames come from the software renderer, which ignores
+    // transforms: the focus zoom is drawn by size, as it is on MiSTer.
+    app.global::<Motion>().set_zoom_by_size(true);
     app.global::<Sizing>().set_swap_axes(tate);
+    app.global::<Sizing>().set_help_bar_two_rows(help_two_rows);
     let shell = app.global::<Shell>();
     shell.set_orientation(if ccw {
         Orientation::Ccw
@@ -255,7 +275,7 @@ fn main() {
         app.global::<GamesView>()
             .set_title("\u{201c}mario\u{201d} \u{b7} Super Nintendo".into());
     } else if screen.contains("search") || screen.ends_with("system-picker") {
-        fixture_search(&app, &screen);
+        fixture_search(&app, screen);
     }
     // The browse filter: the header cue on the games screen, the picker's
     // categories page with a filter set, its values page with counts, and
@@ -545,7 +565,7 @@ fn main() {
         ])));
     // Settings fixtures: the root category grid, or the Library page
     // with a header, both maintenance actions and the browsing rows.
-    fixture_settings(&app, scene_w, scene_h, crt, &screen);
+    fixture_settings(&app, scene_w, scene_h, crt, screen);
     // "setup" renders the scrape setup form over Settings; "setup-picker"
     // renders its scope page.
     if screen.contains("setup") {
@@ -745,7 +765,7 @@ fn main() {
         ov.set_qr_open(true);
     }
     if screen.contains("game-info") {
-        fixture_game_info(&app, &screen);
+        fixture_game_info(&app, screen);
     }
     // "online-link" renders the Online link panel with a live code.
     if screen.contains("online-link") {
@@ -880,10 +900,10 @@ fn main() {
     // "update-*" renders the Update screen from a seeded `UpdateView`, with
     // no engine behind it.
     if screen.contains("update") {
-        fixture_update(&app, &screen);
+        fixture_update(&app, screen);
     }
     app.global::<Shell>()
-        .set_active_screen(fixture_screen(&screen));
+        .set_active_screen(fixture_screen(screen));
     if screen == "route-forward" {
         app.global::<Shell>().set_active_screen(Screen::Systems);
     }
@@ -1010,6 +1030,11 @@ fn main() {
         rendered,
         "window had nothing to draw (late-set: second frame not dirty)"
     );
+    // The bar measures its entries once they are instantiated, which the
+    // first draw does, so the row count is only known here.
+    if app.get_help_entries_wrap() != help_two_rows {
+        return false;
+    }
 
     // Diagnostic: dump what the Sizing global actually saw, so stale
     // screen-size plumbing is visible in the output, not just the PNG.
@@ -1028,8 +1053,9 @@ fn main() {
     }
     let img: image::RgbaImage =
         image::ImageBuffer::from_raw(width, height, rgba).expect("buffer size mismatch");
-    img.save(&out).expect("write png");
+    img.save(out).expect("write png");
     println!("wrote {out}");
+    true
 }
 
 /// Push a Hub page built from a representative layout through the same
@@ -1759,9 +1785,8 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
         can_link_online: online,
         online_linked: online && !unlinked,
     };
-    let row_h = inputs.pct_h(8.0);
-    let header_h = inputs.pct_h(5.0);
-    let band = inputs.pct_h(3.2);
+    // The card and its row heights, from the rule the driver uses.
+    let geometry = rules::page_geometry(&inputs);
     let mut offset = 0;
     let rows: Vec<generated::SettingsRow> = rules::page_rows(page_id.token(), &registry)
         .into_iter()
@@ -1778,7 +1803,7 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
                 ..Default::default()
             };
             let height = match row {
-                Row::Header(_) => header_h,
+                Row::Header(_) => geometry.header_height,
                 Row::Field { id, control } => {
                     out.control = control.into();
                     out.enabled = !(unlinked && rules::needs_online_link(id));
@@ -1816,9 +1841,9 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
                         }
                     }
                     if out.status_key == ActionStatus::None {
-                        row_h
+                        geometry.row_height
                     } else {
-                        row_h + band
+                        geometry.row_height + geometry.action_band_height
                     }
                 }
             };
@@ -1831,15 +1856,11 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
     let Body::Grid { grid, footer } = profile.body else {
         return;
     };
-    // The rows viewport, as the driver computes it.
-    let card_y = derived.header_bottom
-        + profile.status.top_margin
-        + profile.status.strip_height
-        + inputs.pct_h(4.0);
-    let card_bottom = derived.help_bar_height + inputs.pct_h(4.0);
-    let card_h = (inputs.screen_height as i32 - card_y - card_bottom).max(0);
-    let hint = 2 * (f64::from(derived.font_body) * 1.362).ceil() as i32;
-    let viewport = (card_h - 2 * inputs.pct_h(2.0) - hint - inputs.pct_h(0.5)).max(0);
+    let viewport = geometry.rows_viewport;
+    view.set_card_y(geometry.card_y as f32);
+    view.set_card_height(geometry.card_height as f32);
+    view.set_card_pad(geometry.pad as f32);
+    view.set_hint_height(geometry.hint_height as f32);
     view.set_page(page_id);
     // The Online fixture seats the cursor on the account row so the band
     // scrolls to the group.
@@ -1876,7 +1897,7 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
         &spans,
         index.max(0) as usize,
         viewport as f32,
-        inputs.pct_min(2.0) as f32,
+        geometry.pad as f32,
     );
     view.set_rows_height(viewport as f32);
     view.set_rows_clip_height(shown);

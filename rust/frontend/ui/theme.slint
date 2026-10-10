@@ -96,14 +96,22 @@ export global Motion {
     // vestibular guidance singles out, so this sits well under the 1.1 a
     // TV app would use. It is an addition to the focus ring, never a
     // replacement: a size change carries no contrast and so cannot satisfy
-    // WCAG 2.4.13. Silently absent on the software renderer, which has no
-    // transform support, which is also why CRT never sees it.
-    // Pushed rather than fixed, because it is the one motion token the
-    // renderer can silently refuse: 100% wherever transforms do not apply,
-    // so everything that reserves room for the growth (the grid's clip
-    // headroom, the context menu's scrim hole) reserves nothing there
-    // instead of leaving a halo around a tile that never grew.
+    // WCAG 2.4.13.
+    // Pushed with every scene rather than fixed
+    // (`zaparoo_app::sizing::focus_zoom_percent`), because 100% turns the
+    // growth off: the 240p tier has none, where a tile would grow by a
+    // pixel or two and read as a jitter, and the `zoom` name of the
+    // `ZAPAROO_MOTION` test switch removes it on the software-rendered
+    // build. Then everything that reserves room for
+    // it (the grid's clip headroom, the context menu's scrim hole) reserves
+    // nothing instead of leaving a halo around a tile that never grew.
     in-out property <percent> focus-zoom: 104%;
+    // How the growth is drawn. A transform where the renderer applies one.
+    // The software renderer ignores transforms, so Rust sets this there and
+    // the focused cell and its ring grow by their real geometry about the
+    // same center instead: the card and its art are sized from the cell and
+    // grow with it, while type, padding and stroke widths keep their size.
+    in-out property <bool> zoom-by-size: false;
     // Longer than a focus move on purpose. A slide is a short-distance
     // movement and a scale is an expansion, which Carbon separates as
     // 150ms and 240ms; at `focus-ms` a 4% scale gets about five frames and
@@ -116,12 +124,23 @@ export global Motion {
     // Fetched cover art fades in as it lands rather than popping in. Only
     // art that arrives while its tile is on screen fades; art already cached
     // when a tile appears shows at once, so paging and cached page slides
-    // never flash. Pushed to 0 on the software renderer, where fading tiles
-    // is the expensive kind of motion (docs/slint-gotchas.md).
+    // never flash. The same on every renderer. Pushed to 0, a hard cut, only
+    // by the `cover-fade` name of the `ZAPAROO_MOTION` test switch on the
+    // software-rendered build, where a fading tile repaints every frame of
+    // the fade (docs/slint-gotchas.md).
     in-out property <duration> cover-reveal-ms: 180ms;
+    // The same fade on a grid tile. Separate because a page of covers lands
+    // together, and on the software renderer every fading tile repaints
+    // every frame: at a 960x540 HDMI render that is most of the grid for
+    // the length of the fade, which missed the frame budget and looked
+    // sluggish. Rust pushes 0 there (`display::tile_cover_fade`); the native
+    // CRT modes are small enough to keep it, and one cover in a list's
+    // detail pane fades everywhere.
+    in-out property <duration> tile-cover-reveal-ms: 180ms;
     // The fast-scroll rail's fade in and out and its highlight's glide
-    // between letters. Pushed to 0 on the software renderer, where the rail
-    // cuts instead: it stays a small repaint either way.
+    // between letters. The same on every renderer. Pushed to 0 only by the
+    // `rail` name of the test switch on the software-rendered build, where
+    // the rail then cuts instead: it stays a small repaint either way.
     in-out property <duration> rail-ms: 160ms;
     public pure function dur(ms: duration) -> duration {
         return self.enabled ? ms : 0ms;
@@ -141,6 +160,10 @@ export global Sizing {
     in-out property <bool> swap-axes: false;
     // Bitmap type has only two usable sizes; HDMI uses the semantic ladder.
     in-out property <bool> bitmap-fonts: crt;
+    // The help entries on screen wrap, so the 240p help bar takes its
+    // two-row height. Rust copies it from the bar's own measurement and
+    // re-solves the table below; nothing else writes it.
+    in-out property <bool> help-bar-two-rows: false;
 
     public pure function pct-h(p: float) -> length {
         return p / 100 * (self.swap-axes ? self.screen-width : self.screen-height);

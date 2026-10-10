@@ -275,6 +275,9 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
 
     let source = primary.global::<SystemsView>();
     let target = crt.global::<SystemsView>();
+    // How the list follows a step is set before the offset it applies to.
+    target.set_list_glide(source.get_list_glide());
+    target.set_list_step_ms(source.get_list_step_ms());
     target.set_list_scroll_top(source.get_list_scroll_top());
     copy_properties!(source, target;
         get_mode => set_mode,
@@ -514,6 +517,9 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
 
     let source = primary.global::<GamesView>();
     let target = crt.global::<GamesView>();
+    // How the list follows a step is set before the offset it applies to.
+    target.set_list_glide(source.get_list_glide());
+    target.set_list_step_ms(source.get_list_step_ms());
     target.set_list_scroll_top(source.get_list_scroll_top());
     copy_properties!(source, target;
         get_mode => set_mode,
@@ -905,7 +911,14 @@ mod tests {
         let mut persisted = zaparoo_core::persist::PersistedState::default();
         persisted.settings.orientation = "future-orientation".into();
         persisted.settings.crt_video_standard = "future-standard".into();
-        crate::seed_display_globals(&primary, &persisted, false, false, (960, 540));
+        crate::seed_display_globals(
+            &primary,
+            &persisted,
+            false,
+            false,
+            (960, 540),
+            zaparoo_app::motion_test::Disabled::default(),
+        );
         assert_eq!(
             primary.global::<Shell>().get_orientation(),
             crate::Orientation::Horizontal
@@ -1084,11 +1097,19 @@ mod tests {
                     })
                     .collect::<Vec<_>>(),
             )));
+        primary.global::<GamesView>().set_list_glide(false);
+        primary.global::<GamesView>().set_list_step_ms(81);
+        primary.global::<SystemsView>().set_list_step_ms(112);
         crt.global::<GamesView>().set_columns(4);
         crt.global::<GamesView>().set_rows(1);
         crt.global::<Theme>().set_crt(true);
 
         sync(&primary, &crt);
+
+        assert!(!crt.global::<GamesView>().get_list_glide());
+        assert_eq!(crt.global::<GamesView>().get_list_step_ms(), 81);
+        assert!(crt.global::<SystemsView>().get_list_glide());
+        assert_eq!(crt.global::<SystemsView>().get_list_step_ms(), 112);
 
         assert_eq!(
             crt.global::<Shell>().get_active_screen(),

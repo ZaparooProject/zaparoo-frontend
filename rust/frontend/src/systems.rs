@@ -443,6 +443,8 @@ fn cell_for(
             (cell.cover, cell.cover_focus) = pair.images();
             cell.has_cover = true;
             cell.has_cover_focus = true;
+            // Prepared for the box it is painted in.
+            cell.cover_exact = true;
         } else {
             cell.wordmark = ctx.logos.is_negative(&key);
         }
@@ -564,6 +566,25 @@ fn list_visible_rows(app: &App, shared: &Shared) -> usize {
     list_geometry(app, shared).visible_rows.max(1)
 }
 
+/// The focused tile's larger copy, once it is prepared. Until then the
+/// tile paints its resting copy at that copy's own size.
+fn push_focus_art(
+    ctx: &Ctx,
+    view: &SystemsView<'_>,
+    key: Option<crate::system_logos::Key>,
+    selected_local: i32,
+) {
+    match key.and_then(|key| ctx.logos.get(&key)) {
+        Some(pair) if selected_local >= 0 => {
+            let (rest, focus) = pair.images();
+            view.set_focus_art(focus);
+            view.set_focus_art_muted(rest);
+            view.set_focus_art_local(selected_local);
+        }
+        _ => view.set_focus_art_local(-1),
+    }
+}
+
 fn logo_key(
     ctx: &Ctx,
     row: &SystemRow,
@@ -574,13 +595,67 @@ fn logo_key(
     ctx.logos.key(&row.id, stem, style == "color", bounds)
 }
 
+/// What a Systems grid tile gives its art: no caption, no top label, the
+/// standard padding.
+const TILE_ART: zaparoo_app::sizing::TileArt = zaparoo_app::sizing::TileArt {
+    compact_padding: false,
+    caption: false,
+    top_label: false,
+};
+
+/// The bounds a logo is prepared to. Where logos are painted one pixel for
+/// one (`system_logos::exact_art`) that is the whole pixels of the box that
+/// paints it, so it is never fitted: a grid tile's art box is solved from
+/// the cell, and the list's detail pane reports its own. Until it has, and
+/// wherever the renderer fits logos, they keep their bucketed bounds.
 fn logo_bounds(app: &App, shared: &Shared, geometry: &Geometry) -> zaparoo_app::logo_cache::Bounds {
     if list_layout(shared) {
+        let view = app.global::<SystemsView>();
+        let (width, height) = (view.get_detail_art_width(), view.get_detail_art_height());
+        if crate::system_logos::exact_art(app) && width > 0 && height > 0 {
+            return zaparoo_app::logo_cache::Bounds::exact(width as u32, height as u32);
+        }
         let size = crate::sizing::detail_cover_source_size(crate::router::output_scene(app));
         zaparoo_app::logo_cache::Bounds::new(size, size)
-    } else {
+    } else if !crate::system_logos::exact_art(app) {
         crate::system_logos::cell_bounds(app, geometry.fit.cell_width, geometry.fit.cell_height)
+    } else {
+        crate::system_logos::tile_bounds(
+            app,
+            geometry.fit.cell_width,
+            geometry.fit.cell_height,
+            1.0,
+            TILE_ART,
+        )
     }
+}
+
+/// The focused system's logo at the art box of its grown tile: the larger
+/// copy the view paints for the focused tile where it draws the focus zoom
+/// by size. Only ever the one tile, so the cache holds one extra logo.
+fn focus_art_key(
+    ctx: &Ctx,
+    app: &App,
+    shared: &Shared,
+    geometry: &Geometry,
+) -> Option<crate::system_logos::Key> {
+    if list_layout(shared) {
+        return None;
+    }
+    let zoom = crate::system_logos::focus_zoom(app)?;
+    let bounds = crate::system_logos::tile_bounds(
+        app,
+        geometry.fit.cell_width,
+        geometry.fit.cell_height,
+        zoom,
+        TILE_ART,
+    );
+    logo_key(
+        ctx,
+        shared.systems_model.current()?,
+        &shared.persist.settings.system_logo_style,
+        bounds,
+    )
 }
 
 /// Tell the logo cache which logos the Systems grid can ever show, so it
@@ -648,7 +723,8 @@ fn request_logos(ctx: &Ctx, app: &App, shared: &Shared, bounds: zaparoo_app::log
         .current()
         .into_iter()
         .chain(model.rows.iter().skip(start).take(size))
-        .filter_map(|row| logo_key(ctx, row, style, bounds));
+        .filter_map(|row| logo_key(ctx, row, style, bounds))
+        .chain(focus_art_key(ctx, app, shared, &geometry(app)));
     let neighbors = [start.saturating_add(size), start.saturating_sub(size)]
         .into_iter()
         .flat_map(|first| model.rows.iter().skip(first).take(size))
@@ -758,11 +834,11 @@ fn render_with_page(ctx: &Ctx, app: &App, reuse_page: bool) {
         }
         view.set_next_cells(ModelRc::default());
     }
-    view.set_selected_local(if strip_sliding {
-        -1
-    } else {
-        i32::try_from(model.grid.current_index().saturating_sub(start)).unwrap_or(0)
-    });
+    let local = model.grid.current_index().saturating_sub(start);
+    let selected_local = i32::try_from(local).map_or(0, |i| if strip_sliding { -1 } else { i });
+    view.set_selected_local(selected_local);
+    let focus_art = focus_art_key(ctx, app, &shared, &geometry);
+    push_focus_art(ctx, &view, focus_art, selected_local);
     view.set_mode(model.mode);
     view.set_count(i32::try_from(model.rows.len()).unwrap_or(0));
     view.set_favorites_total(
@@ -845,14 +921,26 @@ fn render_list(ctx: &Ctx, app: &App, shared: &Shared, bounds: zaparoo_app::logo_
         let previous = saved_list_top(shared)
             .unwrap_or_else(|| list_rules::list_view_top(current, count, visible, None));
         let scroll_top = crate::browse_motion::window_top(current, count, visible, previous);
-        let top = scroll_top.saturating_sub(1);
+        // A page of rows either side of the window, so a glide to the
+        // next row or the next page has rows to show the whole way.
+        let top = scroll_top.saturating_sub(visible);
         let rows: Vec<GridCell> = model
             .rows
             .iter()
             .skip(top)
-            .take(visible + 2)
+            .take(scroll_top - top + 2 * visible)
             .map(text_cell)
             .collect();
+        // How the list follows this move. Only a render that moved the
+        // selection decides: one that did not must leave a glide in flight
+        // as it is.
+        let was = usize::try_from(view.get_list_view_top() + view.get_list_sel()).unwrap_or(0);
+        let moved = current.abs_diff(was);
+        if moved > 0 {
+            let (glide, step_ms) = shared.input.list_follow(moved);
+            view.set_list_glide(glide);
+            view.set_list_step_ms(step_ms);
+        }
         crate::view_model::publish_cells(&view.get_list_rows(), rows, |rows| {
             view.set_list_rows(rows);
         });
@@ -869,6 +957,7 @@ fn render_list(ctx: &Ctx, app: &App, shared: &Shared, bounds: zaparoo_app::logo_
             );
             view.set_detail_title(SharedString::from(row.name.as_str()));
             view.set_detail_has_cover(cell.has_cover);
+            view.set_detail_cover_exact(cell.cover_exact);
             view.set_detail_wordmark(!cell.has_cover);
             view.set_detail_cover(if cell.has_cover_focus {
                 cell.cover_focus
@@ -925,26 +1014,16 @@ fn persist_selection(ctx: &Ctx) {
 
 #[cfg(feature = "mister")]
 fn request_cached_page_transition(app: &App, direction: i32, _columns: i32, _rows: i32) -> bool {
-    let shell = app.global::<crate::Shell>();
-    if shell.get_orientation() != crate::Orientation::Horizontal || shell.get_systems_list_layout()
-    {
+    if app.global::<crate::Shell>().get_systems_list_layout() {
         return false;
     }
-    let sizing = app.global::<crate::Sizing>();
-    let width = sizing.get_screen_width().round().max(0.0) as u32;
-    let height = sizing.get_screen_height().round().max(0.0) as u32;
-    let Some(geometry) = crate::sizing::mister_browse_grid_transition_geometry(
-        width,
-        height,
-        app.global::<SystemsView>().get_grid_y().round().max(0.0) as u32,
-        app.global::<SystemsView>()
-            .get_grid_height()
-            .round()
-            .max(0.0) as u32,
-    ) else {
-        return false;
-    };
-    crate::mister::request_page_transition(geometry, direction)
+    let view = app.global::<SystemsView>();
+    crate::mister::request_browse_page_transition(
+        app,
+        view.get_grid_y(),
+        view.get_grid_height(),
+        direction,
+    )
 }
 
 #[cfg(not(feature = "mister"))]
@@ -1458,6 +1537,29 @@ fn pointer_select(ctx: &Ctx, app: &App, local: i32) -> bool {
 /// Wire the pointer and page-cue callbacks.
 pub fn bind_input(ctx: &std::sync::Arc<Ctx>, app: &App) {
     let input = app.global::<SystemsInput>();
+    {
+        let ctx = ctx.clone();
+        let weak = app.as_weak();
+        input.on_detail_art_box(move |width, height| {
+            let Some(app) = weak.upgrade() else { return };
+            let view = app.global::<SystemsView>();
+            if view.get_detail_art_width() == width && view.get_detail_art_height() == height {
+                return;
+            }
+            view.set_detail_art_width(width);
+            view.set_detail_art_height(height);
+            // The detail logo is keyed by its box: ask again at this one.
+            // A turn later, because the view reports its box while it is
+            // being laid out, which can be inside a driver's own call.
+            let ctx = ctx.clone();
+            let weak = weak.clone();
+            slint::Timer::single_shot(std::time::Duration::ZERO, move || {
+                if let Some(app) = weak.upgrade() {
+                    render(&ctx, &app);
+                }
+            });
+        });
+    }
     {
         let ctx = ctx.clone();
         let weak = app.as_weak();
