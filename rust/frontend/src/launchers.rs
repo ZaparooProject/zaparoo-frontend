@@ -276,11 +276,7 @@ pub fn open_game_picker(ctx: &Ctx, app: &App, system_id: &str, path: &str, media
         shared.game_launcher_seq
     };
     let client = ctx.store.client();
-    let params = MediaMetaParams {
-        media_id,
-        system: system_id.to_string(),
-        path: path.to_string(),
-    };
+    let params = MediaMetaParams::for_row(media_id, system_id, path);
     let ctx2 = ctx.clone();
     let weak = app.as_weak();
     let system_id = system_id.to_string();

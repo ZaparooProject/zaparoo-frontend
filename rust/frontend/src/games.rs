@@ -2745,11 +2745,8 @@ fn fire_detail(ctx: &Ctx, app: &App, seq: u64) {
     let Some((client, handle)) = detail_ctx() else {
         return;
     };
-    let params = zaparoo_core::media_types::MediaMetaParams {
-        media_id: row.media_id,
-        system,
-        path: row.path.clone(),
-    };
+    let params =
+        zaparoo_core::media_types::MediaMetaParams::for_row(row.media_id, system, row.path.clone());
     let weak = app.as_weak();
     let ctx = ctx.clone();
     handle.spawn(async move {
