@@ -2,7 +2,7 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: frontend VERSION\n"
-"POT-Creation-Date: 2026-10-10 11:55+0000\n"
+"POT-Creation-Date: 2026-10-10 12:31+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -601,9 +601,9 @@ msgid "File"
 msgstr ""
 
 #: rust/frontend/ui/browse_list.slint:261
-#: rust/frontend/ui/browse_list.slint:261 rust/frontend/ui/chrome.slint:1035
-#: rust/frontend/ui/browse_list.slint:261 rust/frontend/ui/chrome.slint:1035 rust/frontend/ui/labels.slint:34
-#: rust/frontend/ui/browse_list.slint:261 rust/frontend/ui/chrome.slint:1035 rust/frontend/ui/labels.slint:34
+#: rust/frontend/ui/browse_list.slint:261 rust/frontend/ui/chrome.slint:1037
+#: rust/frontend/ui/browse_list.slint:261 rust/frontend/ui/chrome.slint:1037 rust/frontend/ui/labels.slint:34
+#: rust/frontend/ui/browse_list.slint:261 rust/frontend/ui/chrome.slint:1037 rust/frontend/ui/labels.slint:34
 msgid "Loading…"
 msgstr ""
 
@@ -696,23 +696,23 @@ msgstr ""
 msgid "{}"
 msgstr ""
 
-#: rust/frontend/ui/chrome.slint:710
+#: rust/frontend/ui/chrome.slint:709
 msgid "Page {} / {}"
 msgstr ""
 
-#: rust/frontend/ui/chrome.slint:711
+#: rust/frontend/ui/chrome.slint:710
 msgid "Page {}"
 msgstr ""
 
-#: rust/frontend/ui/chrome.slint:1102
+#: rust/frontend/ui/chrome.slint:1104
 msgid "Nothing here"
 msgstr ""
 
-#: rust/frontend/ui/chrome.slint:1104
+#: rust/frontend/ui/chrome.slint:1106
 msgid "Check Zaparoo Core and try again."
 msgstr ""
 
-#: rust/frontend/ui/chrome.slint:1116
+#: rust/frontend/ui/chrome.slint:1118
 msgid "Failed to load"
 msgstr ""
 
