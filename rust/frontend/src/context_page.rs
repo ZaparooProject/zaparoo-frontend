@@ -2,24 +2,29 @@
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 //
-// A page of the context menu: a list Core has to be asked for, offered in
-// place of the menu's own rows. The menu stays open while Core answers,
-// its rows become the list, and Back returns to the menu with focus on the
-// row that opened the page. What each page lists is its own module's
+// A page of the context menu, offered in place of the menu's own rows. Back
+// returns to the menu with focus on the row that opened the page. A page is
+// either part of the menu itself (Manage, Write to token: the rows are
+// already known) or a list Core has to be asked for, in which case the menu
+// stays open while Core answers and what the page lists is its own module's
 // business (`alternates`, `discs`).
 
 use std::future::Future;
 
 use slint::{ComponentHandle, Model as _, ModelRc, VecModel};
 
+use zaparoo_app::options_menu::Page as MenuPage;
+
 use crate::router::{lock, Ctx};
 use crate::App;
 
-/// The pages the games context menu can turn to.
+/// The pages a context menu can turn to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Page {
     Alternates,
     Discs,
+    /// A page of the menu's own rows.
+    Menu(MenuPage),
 }
 
 impl Page {
@@ -28,6 +33,7 @@ impl Page {
         match self {
             Self::Alternates => "discover",
             Self::Discs => "choose_disc",
+            Self::Menu(page) => page.menu_id(),
         }
     }
 
@@ -36,6 +42,7 @@ impl Page {
         match self {
             Self::Alternates => "discover:searching",
             Self::Discs => "choose_disc:loading",
+            Self::Menu(_) => "",
         }
     }
 
@@ -44,6 +51,7 @@ impl Page {
         match self {
             Self::Alternates => "discover:none",
             Self::Discs => "choose_disc:none",
+            Self::Menu(_) => "",
         }
     }
 
@@ -51,6 +59,19 @@ impl Page {
         match self {
             Self::Alternates => "alternate_discovery",
             Self::Discs => "disc_list",
+            Self::Menu(_) => "",
+        }
+    }
+
+    /// What the view titles the page with.
+    fn view(self) -> crate::ContextPage {
+        match self {
+            Self::Alternates => crate::ContextPage::Alternates,
+            Self::Discs => crate::ContextPage::Discs,
+            Self::Menu(MenuPage::WriteToken) => crate::ContextPage::WriteToken,
+            Self::Menu(MenuPage::ManageGame) => crate::ContextPage::ManageGame,
+            Self::Menu(MenuPage::ManageSystem) => crate::ContextPage::ManageSystem,
+            Self::Menu(MenuPage::ManageCategory) => crate::ContextPage::ManageCategory,
         }
     }
 
@@ -91,6 +112,11 @@ impl PageModel {
         self.showing = None;
         self.rows.clear();
     }
+}
+
+/// Whether the menu row `id` opens a page Core has to be asked for.
+pub fn asks_core(id: &str) -> bool {
+    id == Page::Alternates.menu_id() || id == Page::Discs.menu_id()
 }
 
 fn row_id(index: usize) -> String {
@@ -200,7 +226,9 @@ fn relabel(app: &App, page: Page, key: &str) {
 fn restore(app: &App, page: Page) {
     map_entries(app, |entry| {
         if page.owns_label(entry.label_key.as_str()) {
-            crate::router::menu_row(page.menu_id())
+            let mut row = crate::router::menu_row(page.menu_id());
+            row.role = crate::MenuRole::Submenu;
+            row
         } else {
             entry
         }
@@ -228,6 +256,31 @@ fn present(ctx: &Ctx, app: &App, page: Page) {
     };
     let overlays = app.global::<crate::Overlays>();
     overlays.set_context_entries(ModelRc::new(VecModel::from(entries)));
+    overlays.set_context_page(page.view());
+    overlays.set_context_index(0);
+}
+
+/// Turn the menu to one of its own pages: the rows are the menu's, so
+/// there is nothing to wait for.
+pub fn turn(ctx: &Ctx, app: &App, page: MenuPage) {
+    let (entries, stale) = {
+        let mut shared = lock(&ctx.shared);
+        shared.context_page.reset();
+        shared.context_page.showing = Some(Page::Menu(page));
+        let entries: Vec<crate::MenuEntry> = shared
+            .context_menu
+            .rows(page)
+            .iter()
+            .map(|row| crate::router::menu_row_keyed(row.id, row.key, ""))
+            .collect();
+        (entries, shared.context_page.wait.take())
+    };
+    if let Some(stale) = stale {
+        crate::cue::abandon_local(stale);
+    }
+    let overlays = app.global::<crate::Overlays>();
+    overlays.set_context_entries(ModelRc::new(VecModel::from(entries)));
+    overlays.set_context_page(Page::Menu(page).view());
     overlays.set_context_index(0);
 }
 
@@ -239,23 +292,25 @@ pub fn showing(ctx: &Ctx) -> bool {
 /// Back on a page returns to the menu it came from, on the row that
 /// opened it, instead of closing the menu.
 pub fn leave(ctx: &Ctx, app: &App) {
-    let page = {
+    let (page, entries) = {
         let mut shared = lock(&ctx.shared);
         let page = shared.context_page.showing;
         shared.context_page.reset();
-        page
+        (page, crate::router::root_entries(&shared.context_menu))
     };
-    crate::games::reopen_context_menu(ctx, app);
-    let overlays = app.global::<crate::Overlays>();
     let opener = page.and_then(|page| {
-        overlays
-            .get_context_entries()
+        entries
             .iter()
             .position(|entry| entry.id.as_str() == page.menu_id())
     });
-    if let Some(index) = opener {
-        overlays.set_context_index(i32::try_from(index).unwrap_or(0));
-    }
+    let overlays = app.global::<crate::Overlays>();
+    overlays.set_context_entries(ModelRc::new(VecModel::from(entries)));
+    overlays.set_context_page(crate::ContextPage::Root);
+    overlays.set_context_index(
+        opener
+            .and_then(|index| i32::try_from(index).ok())
+            .unwrap_or(0),
+    );
 }
 
 /// A row on the page was accepted: run it and close.
@@ -270,6 +325,8 @@ pub fn accept(ctx: &Ctx, app: &App, id: &str) {
         row
     };
     app.global::<crate::Overlays>().set_context_open(false);
+    app.global::<crate::Overlays>()
+        .set_context_page(crate::ContextPage::Root);
     if let Some(row) = row {
         crate::router::launch(ctx, app, row.launch_text, &row.name);
     }

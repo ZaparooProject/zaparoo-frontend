@@ -189,8 +189,8 @@ private `_` recipe. Container builds write to `rust/target/docker/`.
   cache without discussing it first.
 - Do not open a modal from a modal. A choice made inside a modal is a page of
   that modal's own panel (the setup panel in `ui/setup.slint` swaps between
-  its form and its picker page; the context menu hosts the alternate-versions
-  page); only an action-error alert (shown through the decision dialog) may
+  its form and its picker page; the context menu hosts its Manage, Write to
+  token, disc and alternate-versions pages); only an action-error alert (shown through the decision dialog) may
   sit above an open modal. See `docs/style.md` → "Modal depth".
 - Do not add `.git/` rerun-if triggers or `ZAPAROO_BUILD_*` provenance baking
   to `rust/frontend/build.rs`. Provenance lives in the `rust/build-info` leaf
@@ -234,7 +234,7 @@ update rules, in short:
 | `rust/frontend/src/navigation.rs`, `folder_motion.rs`, `route_motion.rs` | Deferred routes that keep the source until the destination is ready; motion tests on a stepped clock |
 | `rust/frontend/src/{hub,systems,games,settings,about}.rs` | Per-screen drivers |
 | `rust/frontend/src/{game_info,media_setup,log_upload,launchers,card_write,qr}.rs` | Modal drivers |
-| `rust/frontend/src/{context_page,alternates,discs}.rs` | Context-menu pages: the shared page, alternate versions, a multi-disc game's discs |
+| `rust/frontend/src/{context_page,alternates,discs}.rs` | Context-menu pages: the shared page (Manage and Write to token included), alternate versions, a multi-disc game's discs |
 | `rust/frontend/src/{input,actions,gamepad}.rs` | Key path: duplicate guard, swaps, hold-repeat; keyboard bindings; desktop gamepads |
 | `rust/frontend/src/{media_cache,hub_covers,customization}.rs` | Bounded in-memory cover cache, cold-boot cover manifest, user overrides |
 | `rust/frontend/src/hub_refresh.rs` | Refreshes pinned Hub tiles' stored identifiers from Core after a catalog load or rescan |

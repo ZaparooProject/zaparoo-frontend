@@ -1588,6 +1588,444 @@ fn a_disc_list_that_fails_or_is_empty_never_strands_the_menu() {
     assert_eq!(overlays.get_dialog_error(), ErrorKind::DiscList);
 }
 
+fn context_keys(app: &App) -> Vec<String> {
+    app.global::<crate::Overlays>()
+        .get_context_entries()
+        .iter()
+        .map(|entry| entry.label_key.to_string())
+        .collect()
+}
+
+#[test]
+fn manage_and_write_to_token_are_pages_that_back_returns_from() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    seat_visibility_list(&ctx, &app, GamesMode::Browse);
+    let overlays = app.global::<crate::Overlays>();
+
+    // No reader: one way to write, so the row runs it instead of
+    // offering a page with a single choice.
+    crate::router::handle_action(&ctx, &app, "context_menu");
+    assert_eq!(
+        context_ids(&app),
+        ["more_info", "toggle_favorite", "write_token", "manage_game"]
+    );
+    assert_eq!(overlays.get_context_page(), crate::ContextPage::Root);
+    let write = overlays.get_context_entries().row_data(2);
+    assert_eq!(
+        write.map(|entry| entry.role),
+        Some(crate::MenuRole::Option),
+        "a row that opens no page draws no chevron"
+    );
+    focus_context_row(&app, "write_token");
+    crate::router::handle_action(&ctx, &app, "accept");
+    settle(&window);
+    assert!(!overlays.get_context_open());
+    assert!(overlays.get_qr_open(), "the App workflow opened directly");
+    overlays.set_qr_open(false);
+
+    // A reader makes it a choice, on a page of the same menu.
+    crate::router::lock(&ctx.shared).has_nfc = true;
+    crate::router::handle_action(&ctx, &app, "context_menu");
+    let root = context_ids(&app);
+    let opener = focus_context_row(&app, "write_token");
+    let write = overlays.get_context_entries().row_data(2);
+    assert_eq!(
+        write.map(|entry| entry.role),
+        Some(crate::MenuRole::Submenu)
+    );
+    crate::router::handle_action(&ctx, &app, "accept");
+    settle(&window);
+    assert!(overlays.get_context_open() && crate::context_page::showing(&ctx));
+    assert_eq!(overlays.get_context_page(), crate::ContextPage::WriteToken);
+    assert_eq!(context_ids(&app), ["write_card", "qr_code"]);
+    assert_eq!(overlays.get_context_index(), 0);
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert!(overlays.get_context_open() && !crate::context_page::showing(&ctx));
+    assert_eq!(overlays.get_context_page(), crate::ContextPage::Root);
+    assert_eq!(context_ids(&app), root);
+    assert_eq!(overlays.get_context_index(), opener);
+
+    // Manage holds the rest, and its rows run and close like any other.
+    let opener = focus_context_row(&app, "manage_game");
+    crate::router::handle_action(&ctx, &app, "accept");
+    settle(&window);
+    assert_eq!(overlays.get_context_page(), crate::ContextPage::ManageGame);
+    assert_eq!(
+        context_ids(&app),
+        ["add_to_hub", "toggle_hidden", "scrape_game"]
+    );
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert_eq!(overlays.get_context_index(), opener);
+    crate::router::handle_action(&ctx, &app, "accept");
+    settle(&window);
+    focus_context_row(&app, "scrape_game");
+    crate::router::handle_action(&ctx, &app, "accept");
+    settle(&window);
+    assert!(!overlays.get_context_open() && !crate::context_page::showing(&ctx));
+    assert_eq!(overlays.get_context_page(), crate::ContextPage::Root);
+    assert!(app.global::<crate::SetupModalView>().get_open());
+}
+
+#[test]
+fn a_game_reads_the_same_on_every_list() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let mut menus = Vec::new();
+    for mode in [
+        GamesMode::Browse,
+        GamesMode::Favorites,
+        GamesMode::Recents,
+        GamesMode::Search,
+    ] {
+        seat_visibility_list(&ctx, &app, mode);
+        {
+            let mut shared = crate::router::lock(&ctx.shared);
+            shared.launchers = vec![zaparoo_core::media_types::LauncherInfo {
+                id: "nes".into(),
+                system_id: "NES".into(),
+                ..Default::default()
+            }];
+        }
+        crate::router::handle_action(&ctx, &app, "context_menu");
+        let root = context_keys(&app);
+        focus_context_row(&app, "manage_game");
+        crate::router::handle_action(&ctx, &app, "accept");
+        settle(&window);
+        menus.push((mode, root, context_keys(&app)));
+        crate::router::close_context_menu(&ctx, &app);
+    }
+    let (_, root, manage) = menus[0].clone();
+    assert_eq!(
+        root,
+        ["more_info", "favorite:add", "write_token", "manage_game"]
+    );
+    assert_eq!(
+        manage,
+        ["change_launcher", "add_to_hub", "hide:hide", "scrape_game"]
+    );
+    for (mode, other_root, other_manage) in &menus[1..] {
+        assert_eq!(other_root, &root, "{mode:?}");
+        assert_eq!(other_manage, &manage, "{mode:?}");
+    }
+}
+
+#[test]
+fn history_core_cannot_resolve_offers_no_state_it_does_not_know() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    seat_visibility_list(&ctx, &app, GamesMode::Recents);
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        let row = &mut shared.games.rows[0];
+        row.media_id = None;
+        row.tags_known = false;
+    }
+    crate::router::handle_action(&ctx, &app, "context_menu");
+    assert_eq!(
+        context_ids(&app),
+        ["more_info", "write_token", "manage_game"]
+    );
+    focus_context_row(&app, "manage_game");
+    crate::router::handle_action(&ctx, &app, "accept");
+    settle(&window);
+    assert_eq!(context_ids(&app), ["add_to_hub", "scrape_game"]);
+}
+
+fn hub_item(kind: &str, id: &str) -> zaparoo_core::hub_layout::HubItem {
+    zaparoo_core::hub_layout::HubItem {
+        kind_raw: kind.into(),
+        id: id.into(),
+        ..Default::default()
+    }
+}
+
+/// A Hub holding one of each tile the Options menu tells apart: Resume, a
+/// pinned game, a hand-written script, a system, a folder and a search.
+fn seed_hub_tiles(ctx: &crate::router::Ctx, app: &App) {
+    use zaparoo_core::hub_layout::HubItem;
+    seed_hub_pages(ctx, app);
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.systems = navigation_catalog();
+        shared.hub.layout.items = vec![
+            hub_item("action", "resume"),
+            HubItem {
+                path: "/g/Pinned.nes".into(),
+                script: "@NES/Pinned".into(),
+                name: "Pinned".into(),
+                system: "NES".into(),
+                ..hub_item("zapscript", "")
+            },
+            HubItem {
+                script: "**input.keyboard:{f12}".into(),
+                name: "Menu".into(),
+                ..hub_item("zapscript", "")
+            },
+            hub_item("system", "System08"),
+            HubItem {
+                path: "/g/NES/Homebrew".into(),
+                system: "NES".into(),
+                ..hub_item("folder", "")
+            },
+            HubItem {
+                name: "Mario".into(),
+                query: "mario".into(),
+                ..hub_item("search", "")
+            },
+        ];
+        shared.hub.resume = crate::hub::Resume {
+            requested: true,
+            loading: false,
+            entry: Some(zaparoo_core::media_types::MediaHistoryLatestEntry {
+                system_id: "NES".into(),
+                media_name: "Game".into(),
+                media_path: "/g/Game.nes".into(),
+                ..Default::default()
+            }),
+        };
+    }
+    crate::hub::rebuild(ctx, app);
+}
+
+fn favorite_meta(path: &str) -> zaparoo_core::media_types::MediaMeta {
+    zaparoo_core::media_types::MediaMeta {
+        path: path.into(),
+        zap_script: "@NES/Game".into(),
+        tags: vec![zaparoo_core::media_types::TagInfo {
+            tag: "favorite".into(),
+            tag_type: "user".into(),
+            ..Default::default()
+        }],
+        ..Default::default()
+    }
+}
+
+#[test]
+fn the_resume_tile_shows_its_games_menu_once_core_says_what_it_is() {
+    use zaparoo_app::options_menu::Tile;
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    seed_hub_tiles(&ctx, &app);
+    settle(&window);
+    let overlays = app.global::<crate::Overlays>();
+    let resume = || crate::hub::pending_game_request(&ctx, Tile::Resume, "NES", "/g/Game.nes");
+    let meta = favorite_meta("/g/Game.nes");
+
+    // The tile holds no state of the game's: nothing opens until Core
+    // answers, and an answer the user moved on from opens nothing.
+    crate::router::handle_action(&ctx, &app, "context_menu");
+    assert!(!overlays.get_context_open());
+    let stale = resume();
+    crate::router::handle_action(&ctx, &app, "right");
+    crate::router::handle_action(&ctx, &app, "left");
+    crate::hub::game_answered(&ctx, &app, &stale, Some(&meta));
+    assert!(!overlays.get_context_open());
+
+    crate::router::handle_action(&ctx, &app, "context_menu");
+    crate::hub::game_answered(&ctx, &app, &resume(), Some(&meta));
+    assert!(overlays.get_context_open());
+    assert_eq!(
+        context_keys(&app),
+        ["more_info", "favorite:remove", "write_token", "manage_game"]
+    );
+    focus_context_row(&app, "manage_game");
+    crate::router::handle_action(&ctx, &app, "accept");
+    settle(&window);
+    assert_eq!(
+        context_keys(&app),
+        [
+            "add_to_hub",
+            "hide:game",
+            "hub_move:tile",
+            "hub_remove:resume",
+            "scrape_game"
+        ]
+    );
+
+    // A newer game arriving in history cannot redirect the open menu.
+    let mut newer = crate::router::lock(&ctx.shared).hub.resume.clone();
+    if let Some(entry) = newer.entry.as_mut() {
+        entry.media_path = "/g/Other.nes".into();
+    }
+    crate::hub::set_resume(&ctx, &app, newer);
+    let captured = match &crate::router::lock(&ctx.shared).hub.menu_target {
+        crate::hub::MenuTarget::Game { row, .. } => row.path.clone(),
+        _ => String::new(),
+    };
+    assert_eq!(captured, "/g/Game.nes");
+
+    // The tile's own actions are still there, one page down.
+    focus_context_row(&app, "hub_move");
+    crate::router::handle_action(&ctx, &app, "accept");
+    settle(&window);
+    assert!(!overlays.get_context_open());
+    assert!(crate::router::lock(&ctx.shared).hub.move_armed());
+    crate::router::handle_action(&ctx, &app, "cancel");
+    settle(&window);
+
+    // A game Core no longer has leaves the tile its layout actions.
+    crate::router::handle_action(&ctx, &app, "context_menu");
+    let request = crate::hub::pending_game_request(&ctx, Tile::Resume, "NES", "/g/Other.nes");
+    crate::hub::game_answered(&ctx, &app, &request, None);
+    assert_eq!(context_keys(&app), ["hub_move", "hub_remove:hide"]);
+}
+
+#[test]
+fn pinned_tiles_show_what_they_stand_for_or_their_layout_actions() {
+    use zaparoo_app::options_menu::Tile;
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    seed_hub_tiles(&ctx, &app);
+    settle(&window);
+    let overlays = app.global::<crate::Overlays>();
+    let tile = Cell::new(0);
+    let next_tile = || {
+        crate::router::close_context_menu(&ctx, &app);
+        tile.set(tile.get() + 1);
+        crate::router::lock(&ctx.shared)
+            .hub
+            .grid
+            .set_current_index_immediate(tile.get());
+        crate::router::handle_action(&ctx, &app, "context_menu");
+    };
+
+    // A pinned game: its own menu, with the shortcut's actions managed.
+    next_tile();
+    assert!(!overlays.get_context_open());
+    let request = crate::hub::pending_game_request(&ctx, Tile::Pinned, "NES", "/g/Pinned.nes");
+    crate::hub::game_answered(&ctx, &app, &request, Some(&favorite_meta("/g/Pinned.nes")));
+    assert_eq!(
+        context_keys(&app),
+        ["more_info", "favorite:remove", "write_token", "manage_game"]
+    );
+    focus_context_row(&app, "manage_game");
+    crate::router::handle_action(&ctx, &app, "accept");
+    settle(&window);
+    assert_eq!(
+        context_keys(&app),
+        ["hub:remove", "hide:game", "hub_move:tile", "scrape_game"]
+    );
+
+    // A script that is not one game: it can be written as it is.
+    next_tile();
+    assert_eq!(
+        context_keys(&app),
+        ["write_token", "hub:remove", "hub_move:tile"]
+    );
+    focus_context_row(&app, "write_token");
+    crate::router::handle_action(&ctx, &app, "accept");
+    settle(&window);
+    assert!(overlays.get_qr_open());
+    overlays.set_qr_open(false);
+
+    // A pinned system: the system's menu.
+    next_tile();
+    assert_eq!(
+        context_keys(&app),
+        ["launch_system", "launch_random_system", "manage_system"]
+    );
+    focus_context_row(&app, "manage_system");
+    crate::router::handle_action(&ctx, &app, "accept");
+    settle(&window);
+    assert_eq!(
+        overlays.get_context_page(),
+        crate::ContextPage::ManageSystem
+    );
+    assert_eq!(
+        context_keys(&app),
+        [
+            "hub:remove",
+            "hide:system",
+            "hub_move:tile",
+            "index_system",
+            "scrape_system"
+        ]
+    );
+
+    // A folder's visibility is not something the tile knows.
+    next_tile();
+    assert_eq!(context_keys(&app), ["hub_move", "hub:remove"]);
+
+    // A saved search is neither a game nor a script to write.
+    next_tile();
+    assert_eq!(context_keys(&app), ["hub:remove", "hub_move:tile"]);
+
+    // Removing acts on the tile the menu opened on.
+    focus_context_row(&app, "hub_remove");
+    crate::router::handle_action(&ctx, &app, "accept");
+    settle(&window);
+    let shared = crate::router::lock(&ctx.shared);
+    assert!(shared
+        .hub
+        .layout
+        .visible()
+        .all(|item| item.kind_raw != "search"));
+}
+
+#[test]
+fn systems_and_favorite_systems_show_the_same_system_the_same_way() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        let mut catalog = navigation_catalog();
+        catalog.truncate(1);
+        catalog.push(zaparoo_core::media_types::SystemInfo {
+            id: "dvd".into(),
+            name: "DVD Player".into(),
+            category: "Console".into(),
+            zap_script: "zaparoo://launch/dvd".into(),
+            ..Default::default()
+        });
+        shared.systems = catalog;
+        shared.categories = vec!["Console".into()];
+        shared.hub.layout.items.clear();
+    }
+    crate::systems::enter(&ctx, &app, "Console", EntryMode::Fresh, false);
+
+    // Rows sort by name: the launch-only system first. Accept launches
+    // it, so its menu neither repeats that nor needs a page.
+    crate::router::handle_action(&ctx, &app, "context_menu");
+    assert_eq!(context_keys(&app), ["add_to_hub", "hide:hide"]);
+    crate::router::close_context_menu(&ctx, &app);
+
+    crate::router::handle_action(&ctx, &app, "right");
+    crate::router::handle_action(&ctx, &app, "context_menu");
+    assert_eq!(
+        context_keys(&app),
+        ["launch_system", "launch_random_system", "manage_system"]
+    );
+    focus_context_row(&app, "manage_system");
+    crate::router::handle_action(&ctx, &app, "accept");
+    settle(&window);
+    let manage = context_keys(&app);
+    assert_eq!(
+        manage,
+        ["add_to_hub", "hide:hide", "index_system", "scrape_system"]
+    );
+    crate::router::close_context_menu(&ctx, &app);
+
+    // The same system among the favorite systems: random play stays in
+    // its favorites, everything else is the system's own.
+    crate::router::lock(&ctx.shared).systems_model.mode = SystemsMode::Favorites;
+    crate::router::handle_action(&ctx, &app, "context_menu");
+    assert_eq!(
+        context_keys(&app),
+        ["launch_system", "random_favorite", "manage_system"]
+    );
+    focus_context_row(&app, "manage_system");
+    crate::router::handle_action(&ctx, &app, "accept");
+    settle(&window);
+    assert_eq!(context_keys(&app), manage);
+}
+
 #[test]
 fn hiding_restarts_browse_and_letters_without_losing_favorites_or_neighbor_focus() {
     assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());

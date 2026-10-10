@@ -1,6 +1,6 @@
 msgid ""
 msgstr ""
-"POT-Creation-Date: 2026-10-09 08:57+0000\n"
+"POT-Creation-Date: 2026-10-10 12:47+0000\n"
 "Language: zh_CN\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
@@ -11,43 +11,43 @@ msgstr ""
 msgid "About / License"
 msgstr "关于 / 许可"
 
-#: rust/frontend/ui/about.slint:106 rust/frontend/ui/app.slint:3067
+#: rust/frontend/ui/about.slint:108 rust/frontend/ui/app.slint:3203
 msgid "Zaparoo Frontend"
 msgstr "Zaparoo Frontend"
 
-#: rust/frontend/ui/about.slint:107
+#: rust/frontend/ui/about.slint:109
 msgid "Version {} · {} · {}"
 msgstr "版本 {0} · {1} · {2}"
 
-#: rust/frontend/ui/about.slint:108
+#: rust/frontend/ui/about.slint:110
 msgid "Built {}"
 msgstr "构建于 {0}"
 
-#: rust/frontend/ui/about.slint:109
+#: rust/frontend/ui/about.slint:111
 msgid "Copyright 2026 Wizzo Pty Ltd and the Zaparoo Project contributors."
 msgstr "版权所有 2026 Wizzo Pty Ltd 及 Zaparoo Project 贡献者。"
 
-#: rust/frontend/ui/about.slint:110
+#: rust/frontend/ui/about.slint:112
 msgid "Source available under the PolyForm Noncommercial License 1.0.0. Free for personal, non-commercial use. Commercial use requires a separate license."
 msgstr "源码依据 PolyForm Noncommercial License 1.0.0 提供。可免费用于个人和非商业用途。商业使用或重新分发需要单独许可。"
 
-#: rust/frontend/ui/about.slint:111
+#: rust/frontend/ui/about.slint:113
 msgid "Commercial licensing: legal@zaparoo.com"
 msgstr "商业许可：legal@zaparoo.com"
 
-#: rust/frontend/ui/about.slint:112
+#: rust/frontend/ui/about.slint:114
 msgid "Project: https://zaparoo.org"
 msgstr "项目：https://zaparoo.org"
 
-#: rust/frontend/ui/about.slint:113
+#: rust/frontend/ui/about.slint:115
 msgid "Created by"
 msgstr "创作者"
 
-#: rust/frontend/ui/about.slint:118
+#: rust/frontend/ui/about.slint:120
 msgid "Translations"
 msgstr "翻译"
 
-#: rust/frontend/ui/about.slint:119
+#: rust/frontend/ui/about.slint:121
 msgid ""
 "Italiano - Andrea Bogazzi\n"
 "Español - Carlos R.\n"
@@ -59,610 +59,611 @@ msgstr ""
 "Euskara - devilschile2\n"
 "Français - Wilfried"
 
-#: rust/frontend/ui/about.slint:120
+#: rust/frontend/ui/about.slint:122
 msgid "Full license text in COPYING."
 msgstr "完整许可文本见 COPYING。"
 
-#: rust/frontend/ui/app.slint:1000
+#: rust/frontend/ui/app.slint:1050
 msgid "Updating the media database"
 msgstr "正在更新媒体数据库"
 
-#: rust/frontend/ui/app.slint:1000
+#: rust/frontend/ui/app.slint:1050
 msgid "No games found yet"
 msgstr "还没有找到游戏"
 
-#: rust/frontend/ui/app.slint:1002
+#: rust/frontend/ui/app.slint:1052
 msgid "Your games appear here as Core finds them."
 msgstr "Core 找到游戏后会显示在这里。"
 
-#: rust/frontend/ui/app.slint:1003
+#: rust/frontend/ui/app.slint:1053
 msgid "Update media database in Settings > Library."
 msgstr "请在“设置 > 资料库”中更新媒体数据库。"
 
-#: rust/frontend/ui/app.slint:1023 rust/frontend/ui/app.slint:2716
-#: rust/frontend/ui/app.slint:3088
+#: rust/frontend/ui/app.slint:1073 rust/frontend/ui/app.slint:2852
+#: rust/frontend/ui/app.slint:3224
 msgid "Favorites"
 msgstr "收藏"
 
-#: rust/frontend/ui/app.slint:1030
+#: rust/frontend/ui/app.slint:1080
 msgid "{} systems"
 msgstr "{0} 个系统"
 
-#: rust/frontend/ui/app.slint:1172 rust/frontend/ui/labels.slint:25
+#: rust/frontend/ui/app.slint:1230 rust/frontend/ui/labels.slint:25
 msgid "Hidden"
 msgstr "已隐藏"
 
-#: rust/frontend/ui/app.slint:1209 rust/frontend/ui/app.slint:2935
+#: rust/frontend/ui/app.slint:1267 rust/frontend/ui/app.slint:3071
 msgid "No favorites yet"
 msgstr "还没有收藏"
 
-#: rust/frontend/ui/app.slint:1209
+#: rust/frontend/ui/app.slint:1267
 msgid "No systems in this category"
 msgstr "此类别中没有系统"
 
-#: rust/frontend/ui/app.slint:1254 rust/frontend/ui/app.slint:1256
+#: rust/frontend/ui/app.slint:1312 rust/frontend/ui/app.slint:1314
 #: rust/frontend/ui/labels.slint:26
 msgid "{} · {}"
 msgstr "{} · {}"
 
-#: rust/frontend/ui/app.slint:1335 rust/frontend/ui/app.slint:1352
+#: rust/frontend/ui/app.slint:1393 rust/frontend/ui/app.slint:1410
 msgid "Saving…"
 msgstr "正在保存…"
 
-#: rust/frontend/ui/app.slint:1585 rust/frontend/ui/labels.slint:129
+#: rust/frontend/ui/app.slint:1643 rust/frontend/ui/labels.slint:141
 msgid "Go to…"
 msgstr "跳转到…"
 
-#: rust/frontend/ui/app.slint:1595
+#: rust/frontend/ui/app.slint:1653
 msgid "Loading sections…"
 msgstr "正在加载分组…"
 
-#: rust/frontend/ui/app.slint:1600
+#: rust/frontend/ui/app.slint:1658
 msgid "Failed to load sections"
 msgstr "无法加载分组"
 
-#: rust/frontend/ui/app.slint:1600
+#: rust/frontend/ui/app.slint:1658
 msgid "No sections"
 msgstr "没有分组"
 
-#: rust/frontend/ui/app.slint:1669
+#: rust/frontend/ui/app.slint:1727
 msgid "Hold a writable token near the reader"
 msgstr "请将可写入的令牌靠近读卡器"
 
-#: rust/frontend/ui/app.slint:1693 rust/frontend/ui/app.slint:3135
-#: rust/frontend/ui/app.slint:3253 rust/frontend/ui/app.slint:3300
-#: rust/frontend/ui/app.slint:3348 rust/frontend/ui/app.slint:3371
+#: rust/frontend/ui/app.slint:1751 rust/frontend/ui/app.slint:3271
+#: rust/frontend/ui/app.slint:3391 rust/frontend/ui/app.slint:3438
+#: rust/frontend/ui/app.slint:3486 rust/frontend/ui/app.slint:3509
 #: rust/frontend/ui/settings.slint:253
 msgid "Cancel"
 msgstr "取消"
 
-#: rust/frontend/ui/app.slint:1715 rust/frontend/ui/settings.slint:183
+#: rust/frontend/ui/app.slint:1773 rust/frontend/ui/settings.slint:183
 msgid "Pair a device"
 msgstr "配对设备"
 
-#: rust/frontend/ui/app.slint:1739 rust/frontend/ui/app.slint:1844
+#: rust/frontend/ui/app.slint:1797 rust/frontend/ui/app.slint:1902
 msgid "Starting…"
 msgstr "正在启动…"
 
-#: rust/frontend/ui/app.slint:1761
+#: rust/frontend/ui/app.slint:1819
 msgid "Enter this PIN on the device you are pairing."
 msgstr "请在要配对的设备上输入此 PIN。"
 
-#: rust/frontend/ui/app.slint:1775 rust/frontend/ui/app.slint:1933
+#: rust/frontend/ui/app.slint:1833 rust/frontend/ui/app.slint:1991
 msgid "Expires in {n} minute"
 msgid_plural "Expires in {n} minutes"
 msgstr[0] "{n} 分钟后过期"
 
-#: rust/frontend/ui/app.slint:1776 rust/frontend/ui/app.slint:1934
+#: rust/frontend/ui/app.slint:1834 rust/frontend/ui/app.slint:1992
 msgid "Expires in {n} second"
 msgid_plural "Expires in {n} seconds"
 msgstr[0] "{n} 秒后过期"
 
-#: rust/frontend/ui/app.slint:1793
+#: rust/frontend/ui/app.slint:1851
 msgid "A device is now paired with Core."
 msgstr "设备已与 Core 配对。"
 
-#: rust/frontend/ui/app.slint:1794
+#: rust/frontend/ui/app.slint:1852
 msgid "{} is now paired with Core."
 msgstr "{} 已与 Core 配对。"
 
-#: rust/frontend/ui/app.slint:1808
+#: rust/frontend/ui/app.slint:1866
 msgid "The PIN expired before a device used it. Pair again for a new one."
 msgstr "PIN 在使用前已过期。请重新配对以获取新的 PIN。"
 
-#: rust/frontend/ui/app.slint:1830
+#: rust/frontend/ui/app.slint:1888
 msgid "Link Online account"
 msgstr "绑定 Online 账号"
 
-#: rust/frontend/ui/app.slint:1854
+#: rust/frontend/ui/app.slint:1912
 msgid "This device is now linked to your Zaparoo Online account."
 msgstr "此设备已绑定到你的 Zaparoo Online 账号。"
 
-#: rust/frontend/ui/app.slint:1855
+#: rust/frontend/ui/app.slint:1913
 msgid "The code expired before it was approved. Link again for a new one."
 msgstr "代码在确认前已过期。请重新绑定以获取新代码。"
 
-#: rust/frontend/ui/app.slint:1856
+#: rust/frontend/ui/app.slint:1914
 msgid "Linking failed. Check the network connection and try again."
 msgstr "绑定失败。请检查网络连接后重试。"
 
-#: rust/frontend/ui/app.slint:1870
+#: rust/frontend/ui/app.slint:1928
 msgid "Scan this code with your phone, or open the address below and enter the code."
 msgstr "用手机扫描此二维码，或打开下方网址并输入代码。"
 
-#: rust/frontend/ui/app.slint:1883
+#: rust/frontend/ui/app.slint:1941
 msgid "Or press Accept to open it on this device."
 msgstr "或按确认键在此设备上打开。"
 
-#: rust/frontend/ui/app.slint:2021 rust/frontend/ui/labels.slint:332
+#: rust/frontend/ui/app.slint:2079 rust/frontend/ui/labels.slint:344
 msgid "This device is not linked. Link your Zaparoo Online account, then try again."
 msgstr "此设备尚未绑定。请先绑定 Zaparoo Online 账号，然后重试。"
 
-#: rust/frontend/ui/app.slint:2024 rust/frontend/ui/labels.slint:331
+#: rust/frontend/ui/app.slint:2082 rust/frontend/ui/labels.slint:343
 msgid "Cloud backup needs an active Zaparoo Warp subscription."
 msgstr "云备份需要有效的 Zaparoo Warp 订阅。"
 
-#: rust/frontend/ui/app.slint:2026
+#: rust/frontend/ui/app.slint:2084
 msgid "Could not load this. Check the network connection and try again."
 msgstr "无法加载。请检查网络连接后重试。"
 
-#: rust/frontend/ui/app.slint:2029
+#: rust/frontend/ui/app.slint:2087
 msgid "Back up now"
 msgstr "立即备份"
 
 #. Zaparoo made; it says so where its detail already is.
-#: rust/frontend/ui/app.slint:2034
+#: rust/frontend/ui/app.slint:2092
 msgid "{}, needs a newer Zaparoo"
 msgstr "{}，需要更新版本的 Zaparoo"
 
-#: rust/frontend/ui/app.slint:2035
+#: rust/frontend/ui/app.slint:2093
 msgid "{}, this device"
 msgstr "{}，此设备"
 
-#: rust/frontend/ui/app.slint:2042
+#: rust/frontend/ui/app.slint:2100
 msgid "Cloud backups"
 msgstr "云备份"
 
-#: rust/frontend/ui/app.slint:2042
+#: rust/frontend/ui/app.slint:2100
 msgid "Remote activity"
 msgstr "远程活动记录"
 
-#: rust/frontend/ui/app.slint:2063
+#: rust/frontend/ui/app.slint:2121
 msgid "Backing up…"
 msgstr "正在备份…"
 
-#: rust/frontend/ui/app.slint:2064
+#: rust/frontend/ui/app.slint:2122
 msgid "Restoring…"
 msgstr "正在恢复…"
 
-#: rust/frontend/ui/app.slint:2065
+#: rust/frontend/ui/app.slint:2123
 msgid "Loading backups…"
 msgstr "正在加载备份…"
 
-#: rust/frontend/ui/app.slint:2065
+#: rust/frontend/ui/app.slint:2123
 msgid "Loading activity…"
 msgstr "正在加载活动记录…"
 
-#: rust/frontend/ui/app.slint:2076
+#: rust/frontend/ui/app.slint:2134
 msgid "No cloud backups yet."
 msgstr "还没有云备份。"
 
-#: rust/frontend/ui/app.slint:2076
+#: rust/frontend/ui/app.slint:2134
 msgid "Nothing has run through remote control yet."
 msgstr "还没有通过远程控制执行过任何操作。"
 
-#: rust/frontend/ui/app.slint:2172 rust/frontend/ui/settings.slint:185
+#: rust/frontend/ui/app.slint:2230 rust/frontend/ui/settings.slint:185
 msgid "Documentation"
 msgstr "文档"
 
-#: rust/frontend/ui/app.slint:2172 rust/frontend/ui/labels.slint:110
+#: rust/frontend/ui/app.slint:2230 rust/frontend/ui/labels.slint:110
 msgid "Write with App"
 msgstr "用 App 写入"
 
-#: rust/frontend/ui/app.slint:2191
+#: rust/frontend/ui/app.slint:2249
 msgid "Scan this code to open the Zaparoo Frontend guide on your phone."
 msgstr "扫描此二维码，在手机上打开 Zaparoo Frontend 指南。"
 
-#: rust/frontend/ui/app.slint:2192
+#: rust/frontend/ui/app.slint:2250
 msgid "Scan this code with the Zaparoo App to write this game to a Zaparoo token."
 msgstr "用 Zaparoo App 扫描此二维码，将此游戏写入 Zaparoo 令牌。"
 
-#: rust/frontend/ui/app.slint:2717 rust/frontend/ui/app.slint:3089
+#: rust/frontend/ui/app.slint:2853 rust/frontend/ui/app.slint:3225
 msgid "Recently played"
 msgstr "最近游玩"
 
-#: rust/frontend/ui/app.slint:2718 rust/frontend/ui/app.slint:3090
-#: rust/frontend/ui/app.slint:3166 rust/frontend/ui/labels.slint:48
+#: rust/frontend/ui/app.slint:2854 rust/frontend/ui/app.slint:3226
+#: rust/frontend/ui/app.slint:3302 rust/frontend/ui/labels.slint:48
 msgid "Search"
 msgstr "搜索"
 
-#: rust/frontend/ui/app.slint:2728
+#: rust/frontend/ui/app.slint:2864
 msgid "{} games"
 msgstr "{0} 个游戏"
 
-#: rust/frontend/ui/app.slint:2857
+#: rust/frontend/ui/app.slint:2993
 msgid "Loading game…"
 msgstr "正在加载游戏…"
 
-#: rust/frontend/ui/app.slint:2936
+#: rust/frontend/ui/app.slint:3072
 msgid "Nothing played yet"
 msgstr "还没有游玩记录"
 
-#: rust/frontend/ui/app.slint:2937 rust/frontend/ui/search.slint:66
+#: rust/frontend/ui/app.slint:3073 rust/frontend/ui/search.slint:66
 msgid "No matches"
 msgstr "无匹配项"
 
-#: rust/frontend/ui/app.slint:2938
+#: rust/frontend/ui/app.slint:3074
 msgid "No games match these tags"
 msgstr "没有符合这些标签的游戏"
 
-#: rust/frontend/ui/app.slint:2938
+#: rust/frontend/ui/app.slint:3074
 msgid "No games in this system"
 msgstr "此系统中没有游戏"
 
-#: rust/frontend/ui/app.slint:2939 rust/frontend/ui/labels.slint:31
+#: rust/frontend/ui/app.slint:3075 rust/frontend/ui/labels.slint:31
 msgid "Loading favorites…"
 msgstr "正在加载收藏…"
 
-#: rust/frontend/ui/app.slint:2940 rust/frontend/ui/labels.slint:32
+#: rust/frontend/ui/app.slint:3076 rust/frontend/ui/labels.slint:32
 msgid "Loading recently played…"
 msgstr "正在加载最近游玩…"
 
-#: rust/frontend/ui/app.slint:2941 rust/frontend/ui/labels.slint:33
+#: rust/frontend/ui/app.slint:3077 rust/frontend/ui/labels.slint:33
 #: rust/frontend/ui/search.slint:64
 msgid "Searching…"
 msgstr "正在搜索…"
 
-#: rust/frontend/ui/app.slint:2941 rust/frontend/ui/labels.slint:30
+#: rust/frontend/ui/app.slint:3077 rust/frontend/ui/labels.slint:30
 msgid "Loading games…"
 msgstr "正在加载游戏…"
 
-#: rust/frontend/ui/app.slint:3018
+#: rust/frontend/ui/app.slint:3154
 msgid "Arrows adjust position"
 msgstr "方向键调整位置"
 
-#: rust/frontend/ui/app.slint:3026
+#: rust/frontend/ui/app.slint:3162
 msgid "Accept or Back saves"
 msgstr "按确认或返回键保存"
 
-#: rust/frontend/ui/app.slint:3118 rust/frontend/ui/app.slint:3132
-#: rust/frontend/ui/app.slint:3157 rust/frontend/ui/app.slint:3172
-#: rust/frontend/ui/app.slint:3187 rust/frontend/ui/app.slint:3219
-#: rust/frontend/ui/app.slint:3247 rust/frontend/ui/app.slint:3277
-#: rust/frontend/ui/app.slint:3448 rust/frontend/ui/app.slint:3466
-#: rust/frontend/ui/app.slint:3481 rust/frontend/ui/labels.slint:146
+#: rust/frontend/ui/app.slint:3254 rust/frontend/ui/app.slint:3268
+#: rust/frontend/ui/app.slint:3293 rust/frontend/ui/app.slint:3308
+#: rust/frontend/ui/app.slint:3323 rust/frontend/ui/app.slint:3355
+#: rust/frontend/ui/app.slint:3383 rust/frontend/ui/app.slint:3415
+#: rust/frontend/ui/app.slint:3586 rust/frontend/ui/app.slint:3604
+#: rust/frontend/ui/app.slint:3619 rust/frontend/ui/labels.slint:158
 msgid "Move"
 msgstr "移动"
 
-#: rust/frontend/ui/app.slint:3133 rust/frontend/ui/app.slint:3166
-#: rust/frontend/ui/app.slint:3182 rust/frontend/ui/app.slint:3248
-#: rust/frontend/ui/app.slint:3331 rust/frontend/ui/settings.slint:105
+#: rust/frontend/ui/app.slint:3269 rust/frontend/ui/app.slint:3302
+#: rust/frontend/ui/app.slint:3318 rust/frontend/ui/app.slint:3384
+#: rust/frontend/ui/app.slint:3469 rust/frontend/ui/settings.slint:105
 msgid "Select"
 msgstr "选择"
 
-#: rust/frontend/ui/app.slint:3134 rust/frontend/ui/settings.slint:106
+#: rust/frontend/ui/app.slint:3270 rust/frontend/ui/settings.slint:106
 msgid "Start"
 msgstr "开始"
 
-#: rust/frontend/ui/app.slint:3136 rust/frontend/ui/app.slint:3249
-#: rust/frontend/ui/app.slint:3272 rust/frontend/ui/app.slint:3281
-#: rust/frontend/ui/app.slint:3297 rust/frontend/ui/app.slint:3313
-#: rust/frontend/ui/app.slint:3322
+#: rust/frontend/ui/app.slint:3272 rust/frontend/ui/app.slint:3387
+#: rust/frontend/ui/app.slint:3410 rust/frontend/ui/app.slint:3419
+#: rust/frontend/ui/app.slint:3435 rust/frontend/ui/app.slint:3451
+#: rust/frontend/ui/app.slint:3460
 msgid "Close"
 msgstr "关闭"
 
-#: rust/frontend/ui/app.slint:3137 rust/frontend/ui/app.slint:3468
+#: rust/frontend/ui/app.slint:3273 rust/frontend/ui/app.slint:3606
 msgid "Toggle"
 msgstr "切换"
 
-#: rust/frontend/ui/app.slint:3138
+#: rust/frontend/ui/app.slint:3274
 msgid "Info"
 msgstr "信息"
 
-#: rust/frontend/ui/app.slint:3139 rust/frontend/ui/app.slint:3153
-#: rust/frontend/ui/app.slint:3167 rust/frontend/ui/app.slint:3183
-#: rust/frontend/ui/app.slint:3199 rust/frontend/ui/app.slint:3215
-#: rust/frontend/ui/app.slint:3332 rust/frontend/ui/app.slint:3411
-#: rust/frontend/ui/app.slint:3423 rust/frontend/ui/app.slint:3441
-#: rust/frontend/ui/app.slint:3455 rust/frontend/ui/app.slint:3469
-#: rust/frontend/ui/app.slint:3483 rust/frontend/ui/app.slint:3500
-#: rust/frontend/ui/app.slint:3512 rust/frontend/ui/app.slint:3524
-#: rust/frontend/ui/app.slint:3540 rust/frontend/ui/app.slint:3555
+#: rust/frontend/ui/app.slint:3275 rust/frontend/ui/app.slint:3289
+#: rust/frontend/ui/app.slint:3303 rust/frontend/ui/app.slint:3319
+#: rust/frontend/ui/app.slint:3335 rust/frontend/ui/app.slint:3351
+#: rust/frontend/ui/app.slint:3387 rust/frontend/ui/app.slint:3543
+#: rust/frontend/ui/app.slint:3556 rust/frontend/ui/app.slint:3572
+#: rust/frontend/ui/app.slint:3588 rust/frontend/ui/app.slint:3599
+#: rust/frontend/ui/app.slint:3614 rust/frontend/ui/app.slint:3627
+#: rust/frontend/ui/app.slint:3641 rust/frontend/ui/app.slint:3655
+#: rust/frontend/ui/app.slint:3668 rust/frontend/ui/app.slint:3685
+#: rust/frontend/ui/app.slint:3701
 msgid "Back"
 msgstr "返回"
 
-#: rust/frontend/ui/app.slint:3158 rust/frontend/ui/app.slint:3174
+#: rust/frontend/ui/app.slint:3294 rust/frontend/ui/app.slint:3310
 msgid "Delete"
 msgstr "删除"
 
-#: rust/frontend/ui/app.slint:3159 rust/frontend/ui/app.slint:3175
+#: rust/frontend/ui/app.slint:3295 rust/frontend/ui/app.slint:3311
 msgid "Space"
 msgstr "空格"
 
-#: rust/frontend/ui/app.slint:3182 rust/frontend/ui/app.slint:3392
-#: rust/frontend/ui/app.slint:3431 rust/frontend/ui/app.slint:3449
-#: rust/frontend/ui/app.slint:3488 rust/frontend/ui/app.slint:3545
-#: rust/frontend/ui/app.slint:3560
+#: rust/frontend/ui/app.slint:3318 rust/frontend/ui/app.slint:3530
+#: rust/frontend/ui/app.slint:3569 rust/frontend/ui/app.slint:3587
+#: rust/frontend/ui/app.slint:3626 rust/frontend/ui/app.slint:3683
+#: rust/frontend/ui/app.slint:3698
 msgid "Open"
 msgstr "打开"
 
-#: rust/frontend/ui/app.slint:3188 rust/frontend/ui/app.slint:3467
+#: rust/frontend/ui/app.slint:3324 rust/frontend/ui/app.slint:3605
 #: rust/frontend/ui/settings.slint:108
 msgid "Change"
 msgstr "更改"
 
-#: rust/frontend/ui/app.slint:3202 rust/frontend/ui/app.slint:3392
-#: rust/frontend/ui/app.slint:3416 rust/frontend/ui/app.slint:3516
-#: rust/frontend/ui/app.slint:3528 rust/frontend/ui/setup.slint:378
+#: rust/frontend/ui/app.slint:3338 rust/frontend/ui/app.slint:3530
+#: rust/frontend/ui/app.slint:3554 rust/frontend/ui/app.slint:3654
+#: rust/frontend/ui/app.slint:3666 rust/frontend/ui/setup.slint:378
 msgid "Retry"
 msgstr "重试"
 
-#: rust/frontend/ui/app.slint:3202 rust/frontend/ui/app.slint:3287
+#: rust/frontend/ui/app.slint:3338 rust/frontend/ui/app.slint:3425
 #: rust/frontend/ui/setup.slint:378
 msgid "Done"
 msgstr "完成"
 
-#: rust/frontend/ui/app.slint:3242 rust/frontend/ui/labels.slint:264
+#: rust/frontend/ui/app.slint:3378 rust/frontend/ui/labels.slint:276
 msgid "OK"
 msgstr "确定"
 
-#: rust/frontend/ui/app.slint:3305 rust/frontend/ui/app.slint:3318
+#: rust/frontend/ui/app.slint:3443 rust/frontend/ui/app.slint:3456
 msgid "Scroll"
 msgstr "滚动"
 
-#: rust/frontend/ui/app.slint:3306 rust/frontend/ui/app.slint:3312
+#: rust/frontend/ui/app.slint:3444 rust/frontend/ui/app.slint:3450
 msgid "Image"
 msgstr "图片"
 
-#: rust/frontend/ui/app.slint:3360
+#: rust/frontend/ui/app.slint:3498
 msgid "Adjust"
 msgstr "调整"
 
-#: rust/frontend/ui/app.slint:3361
+#: rust/frontend/ui/app.slint:3499
 msgid "Save"
 msgstr "保存"
 
-#: rust/frontend/ui/app.slint:3369
+#: rust/frontend/ui/app.slint:3507
 msgid "Reposition"
 msgstr "调整位置"
 
-#: rust/frontend/ui/app.slint:3370
+#: rust/frontend/ui/app.slint:3508
 msgid "Place"
 msgstr "放置"
 
-#: rust/frontend/ui/app.slint:3380 rust/frontend/ui/app.slint:3393
-#: rust/frontend/ui/app.slint:3440 rust/frontend/ui/app.slint:3561
+#: rust/frontend/ui/app.slint:3518 rust/frontend/ui/app.slint:3531
+#: rust/frontend/ui/app.slint:3578 rust/frontend/ui/app.slint:3699
 msgid "Options"
 msgstr "选项"
 
-#: rust/frontend/ui/app.slint:3381 rust/frontend/ui/app.slint:3386
-#: rust/frontend/ui/app.slint:3400 rust/frontend/ui/app.slint:3433
-#: rust/frontend/ui/app.slint:3554 rust/frontend/ui/labels.slint:166
+#: rust/frontend/ui/app.slint:3519 rust/frontend/ui/app.slint:3524
+#: rust/frontend/ui/app.slint:3538 rust/frontend/ui/app.slint:3571
+#: rust/frontend/ui/app.slint:3692 rust/frontend/ui/labels.slint:179
 msgid "View"
 msgstr "视图"
 
-#: rust/frontend/ui/browse_list.slint:28 rust/frontend/ui/labels.slint:72
+#: rust/frontend/ui/browse_list.slint:29 rust/frontend/ui/labels.slint:72
 #: rust/frontend/ui/search.slint:287
 msgid "System"
 msgstr "系统"
 
-#: rust/frontend/ui/browse_list.slint:29
+#: rust/frontend/ui/browse_list.slint:30
 msgid "Platform"
 msgstr "平台"
 
-#: rust/frontend/ui/browse_list.slint:30
+#: rust/frontend/ui/browse_list.slint:31
 msgid "Category"
 msgstr "类别"
 
-#: rust/frontend/ui/browse_list.slint:31 rust/frontend/ui/labels.slint:86
+#: rust/frontend/ui/browse_list.slint:32 rust/frontend/ui/labels.slint:86
 msgid "Year"
 msgstr "年份"
 
-#: rust/frontend/ui/browse_list.slint:32
+#: rust/frontend/ui/browse_list.slint:33
 msgid "Release date"
 msgstr "发行日期"
 
-#: rust/frontend/ui/browse_list.slint:33 rust/frontend/ui/labels.slint:85
+#: rust/frontend/ui/browse_list.slint:34 rust/frontend/ui/labels.slint:85
 msgid "Genre"
 msgstr "类型"
 
-#: rust/frontend/ui/browse_list.slint:34 rust/frontend/ui/labels.slint:87
+#: rust/frontend/ui/browse_list.slint:35 rust/frontend/ui/labels.slint:87
 msgid "Players"
 msgstr "玩家人数"
 
-#: rust/frontend/ui/browse_list.slint:35
+#: rust/frontend/ui/browse_list.slint:36
 msgid "Play mode"
 msgstr "游戏模式"
 
-#: rust/frontend/ui/browse_list.slint:36
+#: rust/frontend/ui/browse_list.slint:37
 msgid "Cooperative"
 msgstr "合作"
 
-#: rust/frontend/ui/browse_list.slint:37 rust/frontend/ui/labels.slint:88
+#: rust/frontend/ui/browse_list.slint:38 rust/frontend/ui/labels.slint:88
 msgid "Developer"
 msgstr "开发商"
 
-#: rust/frontend/ui/browse_list.slint:38 rust/frontend/ui/labels.slint:89
+#: rust/frontend/ui/browse_list.slint:39 rust/frontend/ui/labels.slint:89
 msgid "Publisher"
 msgstr "发行商"
 
-#: rust/frontend/ui/browse_list.slint:39
+#: rust/frontend/ui/browse_list.slint:40
 msgid "Manufacturer"
 msgstr "制造商"
 
-#: rust/frontend/ui/browse_list.slint:40
+#: rust/frontend/ui/browse_list.slint:41
 msgid "Rating"
 msgstr "评分"
 
-#: rust/frontend/ui/browse_list.slint:41
+#: rust/frontend/ui/browse_list.slint:42
 msgid "Filename"
 msgstr "文件名"
 
-#: rust/frontend/ui/browse_list.slint:47
+#: rust/frontend/ui/browse_list.slint:48
 msgid "Sys"
 msgstr "系统"
 
-#: rust/frontend/ui/browse_list.slint:48
+#: rust/frontend/ui/browse_list.slint:49
 msgid "Plat"
 msgstr "平台"
 
-#: rust/frontend/ui/browse_list.slint:49
+#: rust/frontend/ui/browse_list.slint:50
 msgid "Cat"
 msgstr "类别"
 
-#: rust/frontend/ui/browse_list.slint:50
+#: rust/frontend/ui/browse_list.slint:51
 msgid "Yr"
 msgstr "年份"
 
-#: rust/frontend/ui/browse_list.slint:51
+#: rust/frontend/ui/browse_list.slint:52
 msgid "Date"
 msgstr "日期"
 
-#: rust/frontend/ui/browse_list.slint:52
+#: rust/frontend/ui/browse_list.slint:53
 msgid "Gen"
 msgstr "类型"
 
-#: rust/frontend/ui/browse_list.slint:53
+#: rust/frontend/ui/browse_list.slint:54
 msgid "Plyr"
 msgstr "人数"
 
-#: rust/frontend/ui/browse_list.slint:54
+#: rust/frontend/ui/browse_list.slint:55
 msgid "Mode"
 msgstr "模式"
 
-#: rust/frontend/ui/browse_list.slint:55
+#: rust/frontend/ui/browse_list.slint:56
 msgid "Co-op"
 msgstr "合作"
 
-#: rust/frontend/ui/browse_list.slint:56
+#: rust/frontend/ui/browse_list.slint:57
 msgid "Dev"
 msgstr "开发"
 
-#: rust/frontend/ui/browse_list.slint:57
+#: rust/frontend/ui/browse_list.slint:58
 msgid "Pub"
 msgstr "发行"
 
-#: rust/frontend/ui/browse_list.slint:58
+#: rust/frontend/ui/browse_list.slint:59
 msgid "Mfr"
 msgstr "厂商"
 
-#: rust/frontend/ui/browse_list.slint:59
+#: rust/frontend/ui/browse_list.slint:60
 msgid "Rtg"
 msgstr "评分"
 
-#: rust/frontend/ui/browse_list.slint:60
+#: rust/frontend/ui/browse_list.slint:61
 msgid "File"
 msgstr "文件"
 
-#: rust/frontend/ui/browse_list.slint:244 rust/frontend/ui/chrome.slint:1022
+#: rust/frontend/ui/browse_list.slint:261 rust/frontend/ui/chrome.slint:1037
 #: rust/frontend/ui/labels.slint:34
 msgid "Loading…"
 msgstr "正在加载…"
 
-#: rust/frontend/ui/chrome.slint:94
+#: rust/frontend/ui/chrome.slint:102
 msgid "Disconnected"
 msgstr "已断开"
 
-#: rust/frontend/ui/chrome.slint:95
+#: rust/frontend/ui/chrome.slint:103
 msgid "Reconnecting…"
 msgstr "正在重新连接…"
 
-#: rust/frontend/ui/chrome.slint:96 rust/frontend/ui/settings.slint:339
+#: rust/frontend/ui/chrome.slint:104 rust/frontend/ui/settings.slint:339
 msgid "Connecting…"
 msgstr "正在连接…"
 
-#: rust/frontend/ui/chrome.slint:98
+#: rust/frontend/ui/chrome.slint:106
 msgid "Core error"
 msgstr "Core 错误"
 
-#: rust/frontend/ui/chrome.slint:98
+#: rust/frontend/ui/chrome.slint:106
 msgid "Core error: {}"
 msgstr "Core 错误：{}"
 
-#: rust/frontend/ui/chrome.slint:100
+#: rust/frontend/ui/chrome.slint:108
 msgid "Indexing paused: game running"
 msgstr "索引已暂停：游戏运行中"
 
 #. run; a bare "Indexing: " reads as broken.
-#: rust/frontend/ui/chrome.slint:104
+#: rust/frontend/ui/chrome.slint:112
 msgid "Indexing…"
 msgstr "正在索引…"
 
 #. run; a bare "Indexing: " reads as broken.
-#: rust/frontend/ui/chrome.slint:104
+#: rust/frontend/ui/chrome.slint:112
 msgid "Indexing: {}"
 msgstr "正在索引：{}"
 
-#: rust/frontend/ui/chrome.slint:107
+#: rust/frontend/ui/chrome.slint:115
 msgid "Optimizing database…"
 msgstr "正在优化数据库…"
 
-#: rust/frontend/ui/chrome.slint:107
+#: rust/frontend/ui/chrome.slint:115
 msgid "Optimizing database: {}"
 msgstr "正在优化数据库：{}"
 
-#: rust/frontend/ui/chrome.slint:109
+#: rust/frontend/ui/chrome.slint:117
 msgid "Importing paused: game running"
 msgstr "导入已暂停：游戏运行中"
 
-#: rust/frontend/ui/chrome.slint:111
+#: rust/frontend/ui/chrome.slint:119
 msgid "Importing…"
 msgstr "正在导入…"
 
-#: rust/frontend/ui/chrome.slint:111
+#: rust/frontend/ui/chrome.slint:119
 msgid "Importing: {}"
 msgstr "正在导入：{}"
 
-#: rust/frontend/ui/chrome.slint:113
+#: rust/frontend/ui/chrome.slint:121
 msgid "Indexed {} files"
 msgstr "已索引 {0} 个文件"
 
-#: rust/frontend/ui/chrome.slint:114
+#: rust/frontend/ui/chrome.slint:122
 msgid "Indexing complete"
 msgstr "索引完成"
 
-#: rust/frontend/ui/chrome.slint:115
+#: rust/frontend/ui/chrome.slint:123
 msgid "Import failed: {}"
 msgstr "导入失败：{}"
 
-#: rust/frontend/ui/chrome.slint:116
+#: rust/frontend/ui/chrome.slint:124
 msgid "Imported {} of {}"
 msgstr "已导入 {0} / {1}"
 
-#: rust/frontend/ui/chrome.slint:117
+#: rust/frontend/ui/chrome.slint:125
 msgid "Playtime limit in {}"
 msgstr "距游玩时限还有 {0}"
 
-#: rust/frontend/ui/chrome.slint:122 rust/frontend/ui/chrome.slint:233
-#: rust/frontend/ui/chrome.slint:375
+#: rust/frontend/ui/chrome.slint:130 rust/frontend/ui/chrome.slint:241
+#: rust/frontend/ui/chrome.slint:383
 msgid "{}%"
 msgstr "{}%"
 
-#: rust/frontend/ui/chrome.slint:606 rust/frontend/ui/chrome.slint:608
+#: rust/frontend/ui/chrome.slint:614 rust/frontend/ui/chrome.slint:616
 msgid "{}/{}"
 msgstr "{}/{}"
 
-#: rust/frontend/ui/chrome.slint:609
+#: rust/frontend/ui/chrome.slint:617
 msgid "{}"
 msgstr "{}"
 
-#: rust/frontend/ui/chrome.slint:702
+#: rust/frontend/ui/chrome.slint:709
 msgid "Page {} / {}"
 msgstr "第 {0} / {1} 页"
 
-#: rust/frontend/ui/chrome.slint:703
+#: rust/frontend/ui/chrome.slint:710
 msgid "Page {}"
 msgstr "第 {0} 页"
 
-#: rust/frontend/ui/chrome.slint:1089
+#: rust/frontend/ui/chrome.slint:1104
 msgid "Nothing here"
 msgstr "这里什么都没有"
 
-#: rust/frontend/ui/chrome.slint:1091
+#: rust/frontend/ui/chrome.slint:1106
 msgid "Check Zaparoo Core and try again."
 msgstr "请检查 Zaparoo Core 后重试。"
 
-#: rust/frontend/ui/chrome.slint:1103
+#: rust/frontend/ui/chrome.slint:1118
 msgid "Failed to load"
 msgstr "加载失败"
 
@@ -730,7 +731,7 @@ msgstr "主机"
 msgid "Handhelds"
 msgstr "掌机"
 
-#: rust/frontend/ui/labels.slint:44 rust/frontend/ui/labels.slint:133
+#: rust/frontend/ui/labels.slint:44 rust/frontend/ui/labels.slint:145
 msgid "Other"
 msgstr "其他"
 
@@ -746,7 +747,7 @@ msgstr "继续：{}"
 msgid "Update"
 msgstr "更新"
 
-#: rust/frontend/ui/labels.slint:50 rust/frontend/ui/labels.slint:150
+#: rust/frontend/ui/labels.slint:50 rust/frontend/ui/labels.slint:163
 msgid "Settings"
 msgstr "设置"
 
@@ -764,7 +765,7 @@ msgstr[0] "{n} 个收藏"
 msgid "A-Z"
 msgstr "A-Z"
 
-#: rust/frontend/ui/labels.slint:70 rust/frontend/ui/labels.slint:163
+#: rust/frontend/ui/labels.slint:70 rust/frontend/ui/labels.slint:176
 msgid "Default"
 msgstr "默认"
 
@@ -772,7 +773,7 @@ msgstr "默认"
 msgid "None"
 msgstr "无"
 
-#: rust/frontend/ui/labels.slint:79 rust/frontend/ui/labels.slint:137
+#: rust/frontend/ui/labels.slint:79 rust/frontend/ui/labels.slint:149
 msgid "Any"
 msgstr "不限"
 
@@ -813,7 +814,7 @@ msgstr "添加到收藏"
 msgid "Remove from favorites"
 msgstr "从收藏中移除"
 
-#: rust/frontend/ui/labels.slint:108 rust/frontend/ui/labels.slint:172
+#: rust/frontend/ui/labels.slint:108 rust/frontend/ui/labels.slint:185
 msgid "Change launcher"
 msgstr "更改启动器"
 
@@ -849,240 +850,276 @@ msgstr "添加到 Hub"
 msgid "Remove from Hub"
 msgstr "从 Hub 中移除"
 
-#: rust/frontend/ui/labels.slint:120 rust/frontend/ui/labels.slint:128
+#: rust/frontend/ui/labels.slint:120 rust/frontend/ui/labels.slint:140
 #: rust/frontend/ui/settings.slint:161
 msgid "Update metadata"
 msgstr "更新元数据"
 
-#: rust/frontend/ui/labels.slint:122 rust/frontend/ui/labels.slint:147
+#: rust/frontend/ui/labels.slint:122
+msgid "Write to token"
+msgstr "写入令牌"
+
+#: rust/frontend/ui/labels.slint:123
+msgid "Manage game"
+msgstr "管理游戏"
+
+#: rust/frontend/ui/labels.slint:124
+msgid "Manage system"
+msgstr "管理系统"
+
+#: rust/frontend/ui/labels.slint:125
+msgid "Manage category"
+msgstr "管理类别"
+
+#: rust/frontend/ui/labels.slint:127 rust/frontend/ui/labels.slint:159
 msgid "Hide"
 msgstr "隐藏"
 
-#: rust/frontend/ui/labels.slint:123
+#: rust/frontend/ui/labels.slint:128
 msgid "Unhide"
 msgstr "取消隐藏"
 
-#: rust/frontend/ui/labels.slint:125
+#: rust/frontend/ui/labels.slint:131
+msgid "Hide game"
+msgstr "隐藏游戏"
+
+#: rust/frontend/ui/labels.slint:132
+msgid "Unhide game"
+msgstr "取消隐藏游戏"
+
+#: rust/frontend/ui/labels.slint:133
+msgid "Hide system"
+msgstr "隐藏系统"
+
+#: rust/frontend/ui/labels.slint:134
+msgid "Unhide system"
+msgstr "取消隐藏系统"
+
+#: rust/frontend/ui/labels.slint:136
 msgid "Launch system"
 msgstr "启动系统"
 
-#: rust/frontend/ui/labels.slint:126
+#: rust/frontend/ui/labels.slint:137
 msgid "Random game"
 msgstr "随机游戏"
 
-#: rust/frontend/ui/labels.slint:127 rust/frontend/ui/settings.slint:88
+#: rust/frontend/ui/labels.slint:138
+msgid "Random favorite game"
+msgstr "随机收藏游戏"
+
+#: rust/frontend/ui/labels.slint:139 rust/frontend/ui/settings.slint:88
 msgid "Update media database"
 msgstr "更新媒体数据库"
 
-#: rust/frontend/ui/labels.slint:130
+#: rust/frontend/ui/labels.slint:142
 msgid "Search here…"
 msgstr "在此搜索…"
 
-#: rust/frontend/ui/labels.slint:131 rust/frontend/ui/search.slint:288
+#: rust/frontend/ui/labels.slint:143 rust/frontend/ui/search.slint:288
 msgid "All systems"
 msgstr "所有系统"
 
-#: rust/frontend/ui/labels.slint:132
+#: rust/frontend/ui/labels.slint:144
 msgid "Recent"
 msgstr "最近"
 
-#: rust/frontend/ui/labels.slint:135
+#: rust/frontend/ui/labels.slint:147
 msgid "Tags: {}"
 msgstr "标签：{}"
 
-#: rust/frontend/ui/labels.slint:136
+#: rust/frontend/ui/labels.slint:148
 msgid "Clear tags"
 msgstr "清除标签"
 
-#: rust/frontend/ui/labels.slint:138
+#: rust/frontend/ui/labels.slint:150
 msgid "Loading tags…"
 msgstr "正在加载标签…"
 
-#: rust/frontend/ui/labels.slint:141
+#: rust/frontend/ui/labels.slint:153
 msgid "Failed to load tags"
 msgstr "无法加载标签"
 
-#: rust/frontend/ui/labels.slint:142
+#: rust/frontend/ui/labels.slint:154
 msgid "No tags available"
 msgstr "没有可用的标签"
 
-#: rust/frontend/ui/labels.slint:145
+#: rust/frontend/ui/labels.slint:157
 msgid "Add item…"
 msgstr "添加项目…"
 
-#: rust/frontend/ui/labels.slint:148
-msgid "Remove"
-msgstr "移除"
+#: rust/frontend/ui/labels.slint:160
+msgid "Move tile"
+msgstr "移动磁贴"
 
-#: rust/frontend/ui/labels.slint:149
+#: rust/frontend/ui/labels.slint:161
+msgid "Hide Resume tile"
+msgstr "隐藏“继续游戏”磁贴"
+
+#: rust/frontend/ui/labels.slint:162
 msgid "Reset layout"
 msgstr "重置布局"
 
-#: rust/frontend/ui/labels.slint:151
+#: rust/frontend/ui/labels.slint:164
 msgid "Quit"
 msgstr "退出"
 
-#: rust/frontend/ui/labels.slint:152
+#: rust/frontend/ui/labels.slint:165
 msgid "Back to Hub"
 msgstr "返回 Hub"
 
-#: rust/frontend/ui/labels.slint:156
+#: rust/frontend/ui/labels.slint:169
 msgid "Sort: {}"
 msgstr "排序：{}"
 
-#: rust/frontend/ui/labels.slint:157
+#: rust/frontend/ui/labels.slint:170
 msgid "Group by: {}"
 msgstr "分组方式：{}"
 
-#: rust/frontend/ui/labels.slint:164
+#: rust/frontend/ui/labels.slint:177
 msgid "Current: {}"
 msgstr "当前：{}"
 
-#: rust/frontend/ui/labels.slint:167 rust/frontend/ui/search.slint:303
+#: rust/frontend/ui/labels.slint:180 rust/frontend/ui/search.slint:303
 msgid "Tags"
 msgstr "标签"
 
-#: rust/frontend/ui/labels.slint:169
+#: rust/frontend/ui/labels.slint:182
 msgid "Add item"
 msgstr "添加项目"
 
-#: rust/frontend/ui/labels.slint:170
+#: rust/frontend/ui/labels.slint:183
 msgid "Sort"
 msgstr "排序"
 
-#: rust/frontend/ui/labels.slint:171
+#: rust/frontend/ui/labels.slint:184
 msgid "Group by"
 msgstr "分组方式"
 
-#: rust/frontend/ui/labels.slint:173
-msgid "Alternate versions"
-msgstr "其他版本"
-
-#: rust/frontend/ui/labels.slint:183
+#: rust/frontend/ui/labels.slint:195
 msgid "Launching…"
 msgstr "正在启动…"
 
-#: rust/frontend/ui/labels.slint:184
+#: rust/frontend/ui/labels.slint:196
 msgid "Launching {}…"
 msgstr "正在启动 {0}…"
 
-#: rust/frontend/ui/labels.slint:186
+#: rust/frontend/ui/labels.slint:198
 msgid "Loading more…"
 msgstr "正在加载更多…"
 
-#: rust/frontend/ui/labels.slint:187
+#: rust/frontend/ui/labels.slint:199
 msgid "Loading {} of {}…"
 msgstr "正在加载 {0} / {1}…"
 
-#: rust/frontend/ui/labels.slint:188
+#: rust/frontend/ui/labels.slint:200
 msgid "Loading launchers…"
 msgstr "正在加载启动器…"
 
-#: rust/frontend/ui/labels.slint:191
+#: rust/frontend/ui/labels.slint:203
 msgid "Cancelling…"
 msgstr "正在取消…"
 
-#: rust/frontend/ui/labels.slint:192
+#: rust/frontend/ui/labels.slint:204
 msgid "Unlinking…"
 msgstr "正在解除绑定…"
 
-#: rust/frontend/ui/labels.slint:193
+#: rust/frontend/ui/labels.slint:205
 msgid "Added to Hub"
 msgstr "已添加到 Hub"
 
-#: rust/frontend/ui/labels.slint:194
+#: rust/frontend/ui/labels.slint:206
 msgid "Removed from Hub"
 msgstr "已从 Hub 中移除"
 
-#: rust/frontend/ui/labels.slint:195
+#: rust/frontend/ui/labels.slint:207
 msgid "Token written"
 msgstr "令牌已写入"
 
-#: rust/frontend/ui/labels.slint:200
+#: rust/frontend/ui/labels.slint:212
 msgid "No recent games"
 msgstr "没有最近游玩的游戏"
 
-#: rust/frontend/ui/labels.slint:201
+#: rust/frontend/ui/labels.slint:213
 msgid "No internet connection"
 msgstr "没有网络连接"
 
-#: rust/frontend/ui/labels.slint:202 rust/frontend/ui/settings.slint:342
+#: rust/frontend/ui/labels.slint:214 rust/frontend/ui/settings.slint:342
 msgid "Not available"
 msgstr "不可用"
 
-#: rust/frontend/ui/labels.slint:209
+#: rust/frontend/ui/labels.slint:221
 msgid "not installed"
 msgstr "未安装"
 
-#: rust/frontend/ui/labels.slint:210
+#: rust/frontend/ui/labels.slint:222
 msgid "unavailable"
 msgstr "不可用"
 
-#: rust/frontend/ui/labels.slint:219
+#: rust/frontend/ui/labels.slint:231
 msgid "Quit Zaparoo Frontend?"
 msgstr "退出 Zaparoo Frontend？"
 
-#: rust/frontend/ui/labels.slint:220
+#: rust/frontend/ui/labels.slint:232
 msgid "Game still running"
 msgstr "游戏仍在运行"
 
-#: rust/frontend/ui/labels.slint:221
+#: rust/frontend/ui/labels.slint:233
 msgid "Quit and restart Zaparoo Frontend?"
 msgstr "退出并重新启动 Zaparoo Frontend？"
 
-#: rust/frontend/ui/labels.slint:222
+#: rust/frontend/ui/labels.slint:234
 msgid "Welcome to Zaparoo Frontend"
 msgstr "欢迎使用 Zaparoo Frontend"
 
-#: rust/frontend/ui/labels.slint:223
+#: rust/frontend/ui/labels.slint:235
 msgid "Update Zaparoo Core"
 msgstr "更新 Zaparoo Core"
 
-#: rust/frontend/ui/labels.slint:224
+#: rust/frontend/ui/labels.slint:236
 msgid "First-time setup"
 msgstr "首次设置"
 
-#: rust/frontend/ui/labels.slint:225
+#: rust/frontend/ui/labels.slint:237
 msgid "Nothing left to add"
 msgstr "没有可添加的项目"
 
-#: rust/frontend/ui/labels.slint:226
+#: rust/frontend/ui/labels.slint:238
 msgid "Unlink Online account?"
 msgstr "解除绑定 Online 账号？"
 
-#: rust/frontend/ui/labels.slint:227
+#: rust/frontend/ui/labels.slint:239
 msgid "Restore this backup?"
 msgstr "恢复此备份？"
 
-#: rust/frontend/ui/labels.slint:228
+#: rust/frontend/ui/labels.slint:240
 msgid "Stop update?"
 msgstr "停止更新？"
 
-#: rust/frontend/ui/labels.slint:237
+#: rust/frontend/ui/labels.slint:249
 msgid "Are you sure you want to exit?"
 msgstr "确定要退出吗？"
 
-#: rust/frontend/ui/labels.slint:238
+#: rust/frontend/ui/labels.slint:250
 msgid "Close the running game before exiting Zaparoo Frontend."
 msgstr "退出 Zaparoo Frontend 前，请先关闭正在运行的游戏。"
 
-#: rust/frontend/ui/labels.slint:239
+#: rust/frontend/ui/labels.slint:251
 msgid "This setting needs a frontend restart to take effect."
 msgstr "此设置需要重新启动前端后才能生效。"
 
-#: rust/frontend/ui/labels.slint:240
+#: rust/frontend/ui/labels.slint:252
 msgid "This device stops backing up and syncing with your Zaparoo Online account. Local play history stays on this device."
 msgstr "此设备将停止向你的 Zaparoo Online 账号备份和同步。本地游玩记录会保留在此设备上。"
 
-#: rust/frontend/ui/labels.slint:241
+#: rust/frontend/ui/labels.slint:253
 msgid "This replaces this device's settings and data with the backup from {}. Zaparoo restarts when it finishes."
 msgstr "此设备的设置和数据将被替换为 {0} 的备份。完成后 Zaparoo 会重新启动。"
 
-#: rust/frontend/ui/labels.slint:242
+#: rust/frontend/ui/labels.slint:254
 msgid "An update is still running. Leaving this screen stops it."
 msgstr "更新仍在进行。离开此界面将停止更新。"
 
-#: rust/frontend/ui/labels.slint:244
+#: rust/frontend/ui/labels.slint:256
 msgid ""
 "Copyright 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.\n"
 "\n"
@@ -1106,327 +1143,327 @@ msgstr ""
 "创作者\n"
 "Andrea Bogazzi, BossRighteous, Tim Wilsie, Wizzo"
 
-#: rust/frontend/ui/labels.slint:247
+#: rust/frontend/ui/labels.slint:259
 msgid "This frontend needs Zaparoo Core {} or newer. You're running {}. Some features may not work until you update."
 msgstr "此前端需要 Zaparoo Core {0} 或更高版本。当前运行的是 {1}。更新前部分功能可能无法使用。"
 
-#: rust/frontend/ui/labels.slint:250
+#: rust/frontend/ui/labels.slint:262
 msgid "Start a media database update to find your games. It runs in the background, and systems appear as they are indexed."
 msgstr "开始更新媒体数据库以查找你的游戏。更新在后台运行，系统会在索引后陆续出现。"
 
-#: rust/frontend/ui/labels.slint:253
+#: rust/frontend/ui/labels.slint:265
 msgid "All categories and actions are already on the Hub. To add a game or system, open its Options menu and choose \"Add to Hub\"."
 msgstr "所有类别和操作都已在 Hub 上。要添加游戏或系统，请打开其“选项”菜单并选择“添加到 Hub”。"
 
-#: rust/frontend/ui/labels.slint:262
+#: rust/frontend/ui/labels.slint:274
 msgid "Yes"
 msgstr "是"
 
-#: rust/frontend/ui/labels.slint:263
+#: rust/frontend/ui/labels.slint:275
 msgid "No"
 msgstr "否"
 
-#: rust/frontend/ui/labels.slint:267
+#: rust/frontend/ui/labels.slint:279
 msgid "I understand"
 msgstr "我明白了"
 
-#: rust/frontend/ui/labels.slint:268
+#: rust/frontend/ui/labels.slint:280
 msgid "Start media update"
 msgstr "开始媒体更新"
 
-#: rust/frontend/ui/labels.slint:275
+#: rust/frontend/ui/labels.slint:287
 msgid "Launch failed"
 msgstr "启动失败"
 
-#: rust/frontend/ui/labels.slint:276
+#: rust/frontend/ui/labels.slint:288
 msgid "Favorite update failed"
 msgstr "收藏更新失败"
 
-#: rust/frontend/ui/labels.slint:277
+#: rust/frontend/ui/labels.slint:289
 msgid "Visibility update failed"
 msgstr "隐藏状态更新失败"
 
-#: rust/frontend/ui/labels.slint:278
+#: rust/frontend/ui/labels.slint:290
 msgid "Media database is busy"
 msgstr "媒体数据库正忙"
 
-#: rust/frontend/ui/labels.slint:279
+#: rust/frontend/ui/labels.slint:291
 msgid "Add to Hub failed"
 msgstr "添加到 Hub 失败"
 
-#: rust/frontend/ui/labels.slint:280
+#: rust/frontend/ui/labels.slint:292
 msgid "Media update failed"
 msgstr "媒体更新失败"
 
-#: rust/frontend/ui/labels.slint:281
+#: rust/frontend/ui/labels.slint:293
 msgid "Update metadata failed"
 msgstr "元数据更新失败"
 
-#: rust/frontend/ui/labels.slint:282
+#: rust/frontend/ui/labels.slint:294
 msgid "Source list unavailable"
 msgstr "来源列表不可用"
 
-#: rust/frontend/ui/labels.slint:283
+#: rust/frontend/ui/labels.slint:295
 msgid "Cancel failed"
 msgstr "取消失败"
 
-#: rust/frontend/ui/labels.slint:284
+#: rust/frontend/ui/labels.slint:296
 msgid "Launcher update failed"
 msgstr "启动器更改失败"
 
-#: rust/frontend/ui/labels.slint:285
+#: rust/frontend/ui/labels.slint:297
 msgid "Alternate versions unavailable"
 msgstr "其他版本不可用"
 
-#: rust/frontend/ui/labels.slint:286
+#: rust/frontend/ui/labels.slint:298
 msgid "Disc list unavailable"
 msgstr "光盘列表不可用"
 
-#: rust/frontend/ui/labels.slint:287
+#: rust/frontend/ui/labels.slint:299
 msgid "QR code failed"
 msgstr "二维码生成失败"
 
-#: rust/frontend/ui/labels.slint:288
+#: rust/frontend/ui/labels.slint:300
 msgid "Token write failed"
 msgstr "令牌写入失败"
 
-#: rust/frontend/ui/labels.slint:289
+#: rust/frontend/ui/labels.slint:301
 msgid "Setting not saved"
 msgstr "设置未保存"
 
-#: rust/frontend/ui/labels.slint:290
+#: rust/frontend/ui/labels.slint:302
 msgid "Pairing could not start"
 msgstr "无法开始配对"
 
-#: rust/frontend/ui/labels.slint:291
+#: rust/frontend/ui/labels.slint:303
 msgid "Online account unavailable"
 msgstr "Online 账号不可用"
 
-#: rust/frontend/ui/labels.slint:292
+#: rust/frontend/ui/labels.slint:304
 msgid "Cloud backup failed"
 msgstr "云备份失败"
 
-#: rust/frontend/ui/labels.slint:293
+#: rust/frontend/ui/labels.slint:305
 msgid "Config file not loaded"
 msgstr "配置文件未加载"
 
-#: rust/frontend/ui/labels.slint:294
+#: rust/frontend/ui/labels.slint:306
 msgid "Action failed"
 msgstr "操作失败"
 
-#: rust/frontend/ui/labels.slint:301
+#: rust/frontend/ui/labels.slint:313
 msgid "Could not start this item. Check Zaparoo Core and try again."
 msgstr "无法启动此项目。请检查 Zaparoo Core 后重试。"
 
-#: rust/frontend/ui/labels.slint:302
+#: rust/frontend/ui/labels.slint:314
 msgid "Could not start {}. Check Zaparoo Core and try again."
 msgstr "无法启动 {0}。请检查 Zaparoo Core 后重试。"
 
-#: rust/frontend/ui/labels.slint:307
+#: rust/frontend/ui/labels.slint:319
 msgid "Could not update this favorite. Check Zaparoo Core and try again."
 msgstr "无法更新此收藏。请检查 Zaparoo Core 后重试。"
 
-#: rust/frontend/ui/labels.slint:308
+#: rust/frontend/ui/labels.slint:320
 msgid "Could not hide or unhide this game. Check Zaparoo Core and try again."
 msgstr "无法隐藏或取消隐藏此游戏。请检查 Zaparoo Core 后重试。"
 
-#: rust/frontend/ui/labels.slint:310
+#: rust/frontend/ui/labels.slint:322
 msgid "Zaparoo Core is updating the media database. Try again when it finishes."
 msgstr "Zaparoo Core 正在更新媒体数据库。请在完成后重试。"
 
-#: rust/frontend/ui/labels.slint:312
+#: rust/frontend/ui/labels.slint:324
 msgid "Could not add this item to the Hub. Check Zaparoo Core and try again."
 msgstr "无法将此项目添加到 Hub。请检查 Zaparoo Core 后重试。"
 
-#: rust/frontend/ui/labels.slint:313
+#: rust/frontend/ui/labels.slint:325
 msgid "Could not add {} to the Hub. Check Zaparoo Core and try again."
 msgstr "无法将 {0} 添加到 Hub。请检查 Zaparoo Core 后重试。"
 
-#: rust/frontend/ui/labels.slint:315
+#: rust/frontend/ui/labels.slint:327
 msgid "Could not start the media database update. Check Zaparoo Core and try again."
 msgstr "无法开始更新媒体数据库。请检查 Zaparoo Core 后重试。"
 
-#: rust/frontend/ui/labels.slint:316
+#: rust/frontend/ui/labels.slint:328
 msgid "Could not start updating metadata. Check Zaparoo Core and try again."
 msgstr "无法开始更新元数据。请检查 Zaparoo Core 后重试。"
 
-#: rust/frontend/ui/labels.slint:317
+#: rust/frontend/ui/labels.slint:329
 msgid "Could not load the list of metadata sources. Check Zaparoo Core and try again."
 msgstr "无法加载元数据来源列表。请检查 Zaparoo Core 后重试。"
 
-#: rust/frontend/ui/labels.slint:318
+#: rust/frontend/ui/labels.slint:330
 msgid "Could not cancel the media operation. Check Zaparoo Core and try again."
 msgstr "无法取消媒体操作。请检查 Zaparoo Core 后重试。"
 
-#: rust/frontend/ui/labels.slint:319
+#: rust/frontend/ui/labels.slint:331
 msgid "Could not change the launcher. Check Zaparoo Core and try again."
 msgstr "无法更改启动器。请检查 Zaparoo Core 后重试。"
 
-#: rust/frontend/ui/labels.slint:320
+#: rust/frontend/ui/labels.slint:332
 msgid "Could not find alternate versions. Check Zaparoo Core and try again."
 msgstr "无法查找其他版本。请检查 Zaparoo Core 后重试。"
 
-#: rust/frontend/ui/labels.slint:321
+#: rust/frontend/ui/labels.slint:333
 msgid "Could not list the discs of this game. Check Zaparoo Core and try again."
 msgstr "无法列出此游戏的光盘。请检查 Zaparoo Core 后重试。"
 
-#: rust/frontend/ui/labels.slint:322
+#: rust/frontend/ui/labels.slint:334
 msgid "Could not create the QR code for this item."
 msgstr "无法为此项目生成二维码。"
 
-#: rust/frontend/ui/labels.slint:323
+#: rust/frontend/ui/labels.slint:335
 msgid "Could not write to this token. Check that it is writable and try again."
 msgstr "无法写入此令牌。请确认令牌可写入后重试。"
 
-#: rust/frontend/ui/labels.slint:324
+#: rust/frontend/ui/labels.slint:336
 msgid "Could not save this setting. Try again."
 msgstr "无法保存此设置。请重试。"
 
-#: rust/frontend/ui/labels.slint:325
+#: rust/frontend/ui/labels.slint:337
 msgid "Core would not start a pairing. It may already have as many paired devices as it allows, or it may be running on another device."
 msgstr "Core 无法开始配对。已配对设备可能已达上限，或者 Core 运行在其他设备上。"
 
-#: rust/frontend/ui/labels.slint:326
+#: rust/frontend/ui/labels.slint:338
 msgid "Core could not reach or update your Zaparoo Online account. Check the network connection and try again."
 msgstr "Core 无法连接或更新你的 Zaparoo Online 账号。请检查网络连接后重试。"
 
-#: rust/frontend/ui/labels.slint:330
+#: rust/frontend/ui/labels.slint:342
 msgid "A backup was uploaded recently. Wait a few minutes, then try again."
 msgstr "刚刚已上传过备份。请等待几分钟后重试。"
 
-#: rust/frontend/ui/labels.slint:333
+#: rust/frontend/ui/labels.slint:345
 msgid "Your cloud backup storage is full."
 msgstr "你的云备份存储空间已满。"
 
-#: rust/frontend/ui/labels.slint:334
+#: rust/frontend/ui/labels.slint:346
 msgid "Zaparoo is busy with another backup or request. Wait for it to finish, then try again."
 msgstr "Zaparoo 正在处理其他备份或请求。请等待完成后重试。"
 
-#: rust/frontend/ui/labels.slint:335
+#: rust/frontend/ui/labels.slint:347
 msgid "Stop the game that is running, then try again."
 msgstr "请先停止正在运行的游戏，然后重试。"
 
-#: rust/frontend/ui/labels.slint:336
+#: rust/frontend/ui/labels.slint:348
 msgid "Restart Zaparoo to finish the previous restore, then try again."
 msgstr "请重新启动 Zaparoo 以完成上次恢复，然后重试。"
 
-#: rust/frontend/ui/labels.slint:337
+#: rust/frontend/ui/labels.slint:349
 msgid "This backup was made by a newer Zaparoo. Update Zaparoo, then try again."
 msgstr "此备份由更新版本的 Zaparoo 创建。请更新 Zaparoo 后重试。"
 
-#: rust/frontend/ui/labels.slint:338
+#: rust/frontend/ui/labels.slint:350
 msgid "Free some storage space on this device, then try again."
 msgstr "请释放此设备的部分存储空间后重试。"
 
-#: rust/frontend/ui/labels.slint:339
+#: rust/frontend/ui/labels.slint:351
 msgid "Could not finish the cloud backup. Check the network connection and try again."
 msgstr "无法完成云备份。请检查网络连接后重试。"
 
-#: rust/frontend/ui/labels.slint:342
+#: rust/frontend/ui/labels.slint:354
 msgid "{} could not be read, so defaults are in use and changes will not be saved. Fix or remove the file, then restart."
 msgstr "无法读取 {}，因此正在使用默认设置，更改不会保存。请修复或删除该文件，然后重新启动。"
 
-#: rust/frontend/ui/labels.slint:343
+#: rust/frontend/ui/labels.slint:355
 msgid "The action could not be completed. Check Zaparoo Core and try again."
 msgstr "无法完成此操作。请检查 Zaparoo Core 后重试。"
 
-#: rust/frontend/ui/labels.slint:355
+#: rust/frontend/ui/labels.slint:367
 msgid "This launcher isn't installed."
 msgstr "此启动器未安装。"
 
-#: rust/frontend/ui/labels.slint:356
+#: rust/frontend/ui/labels.slint:368
 msgid "{} isn't installed."
 msgstr "{} 未安装。"
 
-#: rust/frontend/ui/labels.slint:359
+#: rust/frontend/ui/labels.slint:371
 msgid "This launcher is installed, but its entry point is missing or disabled."
 msgstr "此启动器已安装，但其入口缺失或已停用。"
 
-#: rust/frontend/ui/labels.slint:360
+#: rust/frontend/ui/labels.slint:372
 msgid "{} is installed, but its entry point is missing or disabled."
 msgstr "{} 已安装，但其入口缺失或已停用。"
 
-#: rust/frontend/ui/labels.slint:363
+#: rust/frontend/ui/labels.slint:375
 msgid "This launcher's plugin for this system isn't installed."
 msgstr "此启动器未安装用于此系统的插件。"
 
-#: rust/frontend/ui/labels.slint:364
+#: rust/frontend/ui/labels.slint:376
 msgid "{}'s plugin for this system isn't installed."
 msgstr "{} 未安装用于此系统的插件。"
 
-#: rust/frontend/ui/labels.slint:365
+#: rust/frontend/ui/labels.slint:377
 msgid "{}'s {} plugin isn't installed."
 msgstr "{0} 未安装 {1} 插件。"
 
-#: rust/frontend/ui/labels.slint:368
+#: rust/frontend/ui/labels.slint:380
 msgid "This build of the launcher can't be used for this media. A different build is needed."
 msgstr "此版本的启动器无法用于此媒体。需要使用其他版本。"
 
-#: rust/frontend/ui/labels.slint:369
+#: rust/frontend/ui/labels.slint:381
 msgid "This build of {} can't be used for this media. A different build is needed."
 msgstr "此版本的 {0} 无法用于此媒体。需要使用其他版本。"
 
-#: rust/frontend/ui/labels.slint:372
+#: rust/frontend/ui/labels.slint:384
 msgid "This launcher can't play this media."
 msgstr "此启动器无法运行此媒体。"
 
-#: rust/frontend/ui/labels.slint:373
+#: rust/frontend/ui/labels.slint:385
 msgid "{} can't play this media."
 msgstr "{} 无法运行此媒体。"
 
-#: rust/frontend/ui/labels.slint:376
+#: rust/frontend/ui/labels.slint:388
 msgid "This launcher doesn't support the requested launch options."
 msgstr "此启动器不支持所请求的启动选项。"
 
-#: rust/frontend/ui/labels.slint:377
+#: rust/frontend/ui/labels.slint:389
 msgid "{} doesn't support the requested launch options."
 msgstr "{} 不支持所请求的启动选项。"
 
-#: rust/frontend/ui/labels.slint:380
+#: rust/frontend/ui/labels.slint:392
 msgid "This launcher doesn't have the storage permission it needs."
 msgstr "此启动器没有所需的存储权限。"
 
-#: rust/frontend/ui/labels.slint:381
+#: rust/frontend/ui/labels.slint:393
 msgid "{} doesn't have the storage permission it needs."
 msgstr "{} 没有所需的存储权限。"
 
-#: rust/frontend/ui/labels.slint:384
+#: rust/frontend/ui/labels.slint:396
 msgid "This launcher can't read media from where it's stored."
 msgstr "此启动器无法从媒体的存储位置读取。"
 
-#: rust/frontend/ui/labels.slint:385
+#: rust/frontend/ui/labels.slint:397
 msgid "{} can't read media from where it's stored."
 msgstr "{} 无法从媒体的存储位置读取。"
 
-#: rust/frontend/ui/labels.slint:387
+#: rust/frontend/ui/labels.slint:399
 msgid "The storage holding this media isn't available."
 msgstr "存放此媒体的存储设备不可用。"
 
-#: rust/frontend/ui/labels.slint:388
+#: rust/frontend/ui/labels.slint:400
 msgid "This media could not be resolved or opened."
 msgstr "无法解析或打开此媒体。"
 
-#: rust/frontend/ui/labels.slint:389
+#: rust/frontend/ui/labels.slint:401
 msgid "Access to this media's folder was revoked. Re-grant it in Settings > Library."
 msgstr "此媒体所在文件夹的访问权限已被撤销。请在“设置 > 资料库”中重新授权。"
 
-#: rust/frontend/ui/labels.slint:390
+#: rust/frontend/ui/labels.slint:402
 msgid "The launcher service isn't responding."
 msgstr "启动器服务没有响应。"
 
-#: rust/frontend/ui/labels.slint:391
+#: rust/frontend/ui/labels.slint:403
 msgid "Return to Zaparoo before launching this."
 msgstr "请先返回 Zaparoo 再启动。"
 
-#: rust/frontend/ui/labels.slint:392
+#: rust/frontend/ui/labels.slint:404
 msgid "The launch was cancelled before it started."
 msgstr "启动在开始前已取消。"
 
-#: rust/frontend/ui/labels.slint:393
+#: rust/frontend/ui/labels.slint:405
 msgid "The launch was sent, but its outcome could not be confirmed."
 msgstr "启动请求已发送，但无法确认结果。"
 
-#: rust/frontend/ui/labels.slint:394
+#: rust/frontend/ui/labels.slint:406
 msgid "The system refused the launch request."
 msgstr "系统拒绝了启动请求。"
 

@@ -1356,57 +1356,58 @@ fn pulse_list_row(ctx: &Ctx, app: &App) {
     });
 }
 
-/// Options on the focused system: the `systems` owner, or the one-entry
-/// `favorite_systems` menu.
+/// What `row` can do, for its Options menu. Shared with the Hub, whose
+/// pinned system tiles show the same menu with their shortcut's actions.
+pub(crate) fn menu_input(
+    app: &App,
+    shared: &Shared,
+    row: &SystemRow,
+    favorites: bool,
+    tile: bool,
+) -> zaparoo_app::options_menu::SystemInput {
+    zaparoo_app::options_menu::SystemInput {
+        launch_only: row.is_launchable(),
+        favorites,
+        has_launchers: shared.launchers.iter().any(|l| l.system_id == row.id),
+        on_hub: crate::hub::has_target(shared, "system", &row.id, "", "", "", ""),
+        is_hidden: row.hidden,
+        media_busy: crate::router::media_busy(app),
+        tile,
+    }
+}
+
+/// The system `id` as a row, for a surface that is not listing systems.
+/// `None` when the catalog does not have it.
+pub(crate) fn row_for(shared: &Shared, id: &str) -> Option<SystemRow> {
+    let info = catalog_entry(shared, id)?;
+    Some(SystemRow {
+        id: info.id.clone(),
+        name: display_name(shared, id),
+        category: info.category.clone(),
+        hidden: shared.hidden_system_ids.iter().any(|hidden| hidden == id),
+        zap_script: info.zap_script,
+        ..SystemRow::default()
+    })
+}
+
+/// Options on the focused system. Favorite systems shows the same system
+/// the same way; only random play stays inside its favorites.
 fn open_context_menu(ctx: &Ctx, app: &App) {
-    let (row, has_launchers, on_hub, mode) = {
+    let (menu, index) = {
         let shared = lock(&ctx.shared);
-        let Some(row) = shared.systems_model.current().cloned() else {
+        let model = &shared.systems_model;
+        let Some(row) = model.current() else {
             return;
         };
-        let has_launchers = shared.launchers.iter().any(|l| l.system_id == row.id);
-        let on_hub = crate::hub::has_target(&shared, "system", &row.id, "", "", "", "");
-        (row, has_launchers, on_hub, shared.systems_model.mode)
+        let favorites = model.mode == SystemsMode::Favorites;
+        (
+            zaparoo_app::options_menu::system(&menu_input(app, &shared, row, favorites, false)),
+            model.grid.current_index(),
+        )
     };
-    if mode == SystemsMode::Favorites {
-        let anchor = cell_anchor(ctx, app);
-        crate::router::set_context_anchor(app, &anchor);
-        crate::router::present_systems_context_menu(
-            ctx,
-            app,
-            vec![crate::router::menu_row("launch_random_favorite")],
-        );
-        return;
-    }
-    let launchable = row.is_launchable();
-    let mut entries = vec![crate::router::menu_row("launch_system")];
-    if !launchable {
-        entries.push(crate::router::menu_row("launch_random_system"));
-    }
-    if !launchable && has_launchers {
-        entries.push(crate::router::menu_row("change_launcher"));
-    }
-    entries.push(crate::router::menu_row_keyed(
-        "add_to_hub",
-        if on_hub { "hub:remove" } else { "add_to_hub" },
-        "",
-    ));
-    entries.push(crate::router::menu_row_keyed(
-        "toggle_hide_system",
-        if row.hidden {
-            "hide:unhide"
-        } else {
-            "hide:hide"
-        },
-        "",
-    ));
-    if !launchable && !crate::router::media_busy(app) {
-        entries.push(crate::router::menu_row("index_system"));
-        entries.push(crate::router::menu_row("scrape_system"));
-    }
     let anchor = cell_anchor(ctx, app);
     crate::router::set_context_anchor(app, &anchor);
-    crate::router::present_systems_context_menu(ctx, app, entries);
+    crate::router::present_systems_context_menu(ctx, app, index, menu);
 }
 
 /// The scene rect of the focused tile or list row (the menu anchor).
@@ -1459,6 +1460,26 @@ pub fn context_accept(ctx: &Ctx, app: &App, id: &str) {
     let Some(row) = row else {
         return;
     };
+    if id == "add_to_hub" {
+        crate::hub::toggle_target(
+            ctx,
+            app,
+            "system",
+            &row.id,
+            "",
+            "",
+            "",
+            row.hub_name(),
+            "",
+            "",
+        );
+        return;
+    }
+    system_action(ctx, app, id, &row);
+}
+
+/// A system's own actions, whichever screen it was reached from.
+pub(crate) fn system_action(ctx: &Ctx, app: &App, id: &str, row: &SystemRow) {
     match id {
         "launch_random_favorite" => {
             crate::router::launch(
@@ -1475,20 +1496,6 @@ pub fn context_accept(ctx: &Ctx, app: &App, id: &str) {
             }
         }
         "change_launcher" => crate::launchers::open_system_picker(ctx, app, &row.id),
-        "add_to_hub" => {
-            crate::hub::toggle_target(
-                ctx,
-                app,
-                "system",
-                &row.id,
-                "",
-                "",
-                "",
-                row.hub_name(),
-                "",
-                "",
-            );
-        }
         "toggle_hide_system" => crate::router::toggle_hidden_system(ctx, app, &row.id),
         "index_system" => crate::router::start_index(ctx, app, Some(vec![row.id.clone()])),
         "scrape_system" => crate::router::open_scrape_setup(

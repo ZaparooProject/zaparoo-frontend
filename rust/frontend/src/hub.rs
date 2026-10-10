@@ -12,9 +12,10 @@ use std::path::PathBuf;
 
 use slint::{ComponentHandle, SharedString};
 use zaparoo_app::hub::{self as rules, Entry, Kind, LayoutItem, Live, Resolver, Saved};
+use zaparoo_app::options_menu::{self as menu, Tile};
 use zaparoo_app::paged_grid::Grid;
 use zaparoo_core::hub_layout::{load_hub_layout, save_hub_layout, HubLayout};
-use zaparoo_core::media_types::MediaHistoryLatestEntry;
+use zaparoo_core::media_types::{MediaHistoryLatestEntry, MediaMeta, MediaMetaParams};
 
 use crate::navigation::EntryMode;
 
@@ -34,6 +35,33 @@ const LOADING_KEY: &str = "icons/Loading";
 const HUB_COVER_TIER: u32 = 256;
 const PAGE_SETTLE_MS: u64 = 260;
 const PAGE_REARM_MS: u64 = 50;
+
+/// What the open Options menu acts on besides the tile itself. Captured
+/// when the menu opens, so a Resume refresh or a layout change while it
+/// is open cannot point an action at something else.
+#[derive(Debug, Clone, Default)]
+pub enum MenuTarget {
+    /// The tile alone: its layout actions.
+    #[default]
+    Tile,
+    /// The game a tile stands for, or a script known only by its text.
+    Game {
+        row: Box<crate::games::GameRow>,
+        system: String,
+    },
+    System(zaparoo_app::systems::SystemRow),
+}
+
+/// A game tile's menu waiting on Core for the game's current state.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct GameRequest {
+    seq: u64,
+    hub_index: i32,
+    tile: Tile,
+    system: String,
+    path: String,
+    name: String,
+}
 
 /// What Core history says about the resumable game.
 #[derive(Debug, Clone, Default)]
@@ -68,7 +96,10 @@ pub struct HubModel {
     pub internet_available: bool,
     /// Layout position the open Options menu targets.
     pub menu_hub_index: i32,
-    pub menu_kind: Option<Kind>,
+    pub menu_target: MenuTarget,
+    /// Bumped by every Hub input, so a game's state that Core answers
+    /// after the user moved on opens no menu.
+    menu_seq: u64,
     /// The layout was persisted since the last rebuild, so the
     /// cold-boot cover manifest needs rebuilding too.
     pub layout_dirty: bool,
@@ -103,7 +134,8 @@ impl HubModel {
             categories_loaded: false,
             internet_available: false,
             menu_hub_index: -1,
-            menu_kind: None,
+            menu_target: MenuTarget::Tile,
+            menu_seq: 0,
         }
     }
 
@@ -966,6 +998,7 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
     let move_armed = {
         let mut shared = lock(&ctx.shared);
         shared.hub.focus_armed = true;
+        shared.hub.menu_seq += 1;
         shared.hub.move_armed()
     };
     if move_armed {
@@ -1301,101 +1334,242 @@ fn handle_move_action(ctx: &Ctx, app: &App, action: &str, animate: bool) {
 
 // ---------- Menus ----------
 
-/// Options on the focused tile: kind-specific entries first, then the
-/// universal Move and Hide (category, action) or Remove (shortcut).
+/// Options on the focused tile. A tile that stands for a game or a system
+/// shows that item's own menu with the tile's layout actions added; one
+/// that cannot be resolved keeps the layout actions alone.
 fn open_context_menu(ctx: &Ctx, app: &App) {
-    let entry = {
-        let shared = lock(&ctx.shared);
-        shared.hub.current().cloned()
-    };
-    let Some(entry) = entry else {
-        return;
-    };
-    let Some(kind) = entry.kind else {
-        return;
-    };
-    if kind == Kind::Empty || entry.hub_index < 0 {
-        return;
+    enum Plan {
+        Show(menu::Menu, MenuTarget),
+        Ask(GameRequest),
     }
     let error = !app.global::<HubView>().get_hub_error().is_empty();
-    if kind == Kind::Category && error {
-        return;
-    }
-    // "Random game" waits for the shared random-launch helper the
-    // Systems and Favorites rows bring.
-    let mut entries = Vec::new();
-    if kind == Kind::Category {
-        let has_indexable = crate::router::category_has_indexable(ctx, &entry.id);
-        entries.push(crate::router::menu_row("hub_move"));
-        entries.push(crate::router::menu_row_keyed(
-            "hub_remove",
-            "hub_remove:hide",
-            "",
-        ));
-        if has_indexable && !crate::router::media_busy(app) {
-            entries.push(crate::router::menu_row("index_category"));
-            entries.push(crate::router::menu_row("scrape_category"));
-        }
-    } else {
-        entries.push(crate::router::menu_row("hub_move"));
-        entries.push(crate::router::menu_row_keyed(
-            "hub_remove",
-            if kind == Kind::Action {
-                "hub_remove:hide"
-            } else {
-                "hub_remove:remove"
-            },
-            "",
-        ));
-    }
-    {
+    let plan = {
         let mut shared = lock(&ctx.shared);
-        shared.hub.menu_hub_index = entry.hub_index;
-        shared.hub.menu_kind = Some(kind);
-    }
-    {
-        // Anchor the menu on the focused tile.
-        let inputs = crate::router::output_scene(app).inputs();
-        let derived = zaparoo_app::sizing::derive(&inputs);
-        let geometry = rules::geometry(&inputs, &derived);
-        let (row, column) = {
-            let shared = lock(&ctx.shared);
-            (
-                shared.hub.grid.current_row(),
-                shared.hub.grid.current_column(),
-            )
+        let Some(entry) = shared.hub.current().cloned() else {
+            return;
         };
-        let rect = zaparoo_app::paged_grid::cell_rect(
-            &geometry.fit,
-            &geometry.insets,
-            i32::try_from(row).unwrap_or(0),
-            i32::try_from(column).unwrap_or(0),
-        );
-        crate::router::set_context_anchor(
-            app,
-            &crate::router::ContextAnchor {
-                x: rect.x as f32,
-                y: (geometry.grid_y + rect.y) as f32,
-                w: rect.width as f32,
-                h: rect.height as f32,
-                radius: derived.radius_md as f32,
-                zoomed: true,
+        let Some(kind) = entry.kind else {
+            return;
+        };
+        if kind == Kind::Empty || entry.hub_index < 0 {
+            return;
+        }
+        if kind == Kind::Category && error {
+            return;
+        }
+        let item = usize::try_from(entry.hub_index)
+            .ok()
+            .and_then(|index| shared.hub.layout.visible().nth(index).cloned());
+        shared.hub.menu_seq += 1;
+        let seq = shared.hub.menu_seq;
+        let ask = |tile, system: &str, path: &str, name: &str| {
+            Plan::Ask(GameRequest {
+                seq,
+                hub_index: entry.hub_index,
+                tile,
+                system: system.to_string(),
+                path: path.to_string(),
+                name: name.to_string(),
+            })
+        };
+        let plan = match kind {
+            Kind::Category => {
+                let maintainable = crate::router::has_indexable(&shared, &entry.id)
+                    && !crate::router::media_busy(app);
+                Plan::Show(menu::category(maintainable), MenuTarget::Tile)
+            }
+            Kind::Action => match shared.hub.resume.entry.as_ref() {
+                Some(resume)
+                    if entry.id == "resume"
+                        && !resume.system_id.is_empty()
+                        && !resume.media_path.is_empty() =>
+                {
+                    ask(
+                        Tile::Resume,
+                        &resume.system_id,
+                        &resume.media_path,
+                        &resume.media_name,
+                    )
+                }
+                _ => Plan::Show(menu::built_in(), MenuTarget::Tile),
             },
-        );
+            Kind::System => match crate::systems::row_for(&shared, &entry.id) {
+                Some(row) => Plan::Show(
+                    menu::system(&crate::systems::menu_input(app, &shared, &row, false, true)),
+                    MenuTarget::System(row),
+                ),
+                None => Plan::Show(menu::unresolved_shortcut(), MenuTarget::Tile),
+            },
+            // A folder's visibility is reported only by its parent's
+            // listing, which a tile does not record.
+            Kind::Folder => Plan::Show(menu::unresolved_shortcut(), MenuTarget::Tile),
+            Kind::ZapScript => match item {
+                // A game pinned from a list stores where the game is; a
+                // hand-written script stores only its text.
+                Some(item) if !item.system.is_empty() && !item.path.is_empty() => {
+                    ask(Tile::Pinned, &item.system, &item.path, &entry.name)
+                }
+                _ => {
+                    let has_script = !entry.script.trim().is_empty();
+                    Plan::Show(
+                        menu::shortcut(has_script, shared.has_nfc),
+                        MenuTarget::Game {
+                            row: Box::new(crate::games::GameRow::from_script(
+                                &entry.name,
+                                &entry.script,
+                            )),
+                            system: String::new(),
+                        },
+                    )
+                }
+            },
+            Kind::Search => Plan::Show(menu::shortcut(false, false), MenuTarget::Tile),
+            Kind::Empty => return,
+        };
+        shared.hub.menu_hub_index = entry.hub_index;
+        plan
+    };
+    match plan {
+        Plan::Show(menu, target) => present_menu(ctx, app, menu, target),
+        Plan::Ask(request) => ask_game(ctx, app, request),
     }
-    crate::router::present_hub_context_menu(ctx, app, entries);
+}
+
+/// Anchor the menu on the focused tile and show it.
+fn present_menu(ctx: &Ctx, app: &App, menu: menu::Menu, target: MenuTarget) {
+    lock(&ctx.shared).hub.menu_target = target;
+    let inputs = crate::router::output_scene(app).inputs();
+    let derived = zaparoo_app::sizing::derive(&inputs);
+    let geometry = rules::geometry(&inputs, &derived);
+    let (row, column) = {
+        let shared = lock(&ctx.shared);
+        (
+            shared.hub.grid.current_row(),
+            shared.hub.grid.current_column(),
+        )
+    };
+    let rect = zaparoo_app::paged_grid::cell_rect(
+        &geometry.fit,
+        &geometry.insets,
+        i32::try_from(row).unwrap_or(0),
+        i32::try_from(column).unwrap_or(0),
+    );
+    crate::router::set_context_anchor(
+        app,
+        &crate::router::ContextAnchor {
+            x: rect.x as f32,
+            y: (geometry.grid_y + rect.y) as f32,
+            w: rect.width as f32,
+            h: rect.height as f32,
+            radius: derived.radius_md as f32,
+            zoomed: true,
+        },
+    );
+    crate::router::present_hub_context_menu(ctx, app, menu);
+    crate::router::refresh_readers(ctx);
+}
+
+/// A tile only records where its game is. Ask Core what the game's state
+/// is now, then open the menu; the header says so if that takes a while.
+fn ask_game(ctx: &Ctx, app: &App, request: GameRequest) {
+    let client = ctx.store.client();
+    let ctx2 = ctx.clone();
+    let weak = app.as_weak();
+    let wait = crate::cue::begin(ctx, app, crate::AppCue::LoadingList, "", "");
+    let params = MediaMetaParams::for_media(request.system.clone(), request.path.clone());
+    ctx.handle.spawn(async move {
+        let meta = client
+            .media_meta(params)
+            .await
+            .ok()
+            .map(|result| result.media);
+        let _ = weak.upgrade_in_event_loop(move |app| {
+            crate::cue::end(&ctx2, &app, wait);
+            game_answered(&ctx2, &app, &request, meta.as_ref());
+        });
+    });
+}
+
+/// The request the Hub is waiting on, for a test to answer or outrun.
+#[cfg(all(test, feature = "mister"))]
+pub(crate) fn pending_game_request(ctx: &Ctx, tile: Tile, system: &str, path: &str) -> GameRequest {
+    let shared = lock(&ctx.shared);
+    GameRequest {
+        seq: shared.hub.menu_seq,
+        hub_index: shared.hub.menu_hub_index,
+        tile,
+        system: system.to_string(),
+        path: path.to_string(),
+        name: String::new(),
+    }
+}
+
+/// Core said what it knows about a tile's game: open the game's menu, or
+/// the tile's own when Core no longer has the game.
+pub(crate) fn game_answered(ctx: &Ctx, app: &App, request: &GameRequest, meta: Option<&MediaMeta>) {
+    let (menu, target) = {
+        let shared = lock(&ctx.shared);
+        let hub = &shared.hub;
+        let shell = app.global::<crate::Shell>();
+        // The answer is for the tile the user asked about, still focused,
+        // on a Hub nothing else has taken over since.
+        if hub.menu_seq != request.seq
+            || hub.move_armed()
+            || shell.get_active_screen() != crate::Screen::Hub
+            || shell.get_transitioning()
+            || app.global::<crate::Overlays>().get_context_open()
+            || hub
+                .current()
+                .is_none_or(|entry| entry.hub_index != request.hub_index)
+        {
+            return;
+        }
+        let found = meta.filter(|meta| !meta.is_missing && !meta.path.is_empty());
+        match found {
+            Some(meta) => {
+                let row = crate::games::GameRow::from_meta(&request.system, &request.name, meta);
+                let input = crate::games::game_input(
+                    app,
+                    &shared,
+                    crate::games::GamesMode::Favorites,
+                    &row,
+                    &request.system,
+                    Some(request.tile),
+                );
+                (
+                    menu::game(&input),
+                    MenuTarget::Game {
+                        row: Box::new(row),
+                        system: request.system.clone(),
+                    },
+                )
+            }
+            None if request.tile == Tile::Resume => (menu::built_in(), MenuTarget::Tile),
+            None => (menu::unresolved_shortcut(), MenuTarget::Tile),
+        }
+    };
+    present_menu(ctx, app, menu, target);
+}
+
+/// A page Core has to be asked for, opened from a tile's game.
+pub fn begin_context_page(ctx: &Ctx, app: &App, id: &str) -> bool {
+    let target = lock(&ctx.shared).hub.menu_target.clone();
+    let MenuTarget::Game { row, system } = target else {
+        return false;
+    };
+    crate::games::begin_game_page(ctx, app, id, &row, &system)
 }
 
 /// Options menu accept for a Hub-owned menu.
 pub fn context_accept(ctx: &Ctx, app: &App, id: &str) {
-    let (hub_index, category) = {
+    let (hub_index, category, target) = {
         let shared = lock(&ctx.shared);
         let hub = &shared.hub;
         let category = rules::flat_index_for_hub_index(&hub.entries, hub.menu_hub_index)
             .and_then(|flat| hub.entries.get(flat))
             .filter(|e| e.kind == Some(Kind::Category))
             .map(|e| e.id.clone());
-        (hub.menu_hub_index, category)
+        (hub.menu_hub_index, category, hub.menu_target.clone())
     };
     match id {
         "hub_move" => begin_move(ctx, app, hub_index),
@@ -1425,7 +1599,33 @@ pub fn context_accept(ctx: &Ctx, app: &App, id: &str) {
                 crate::router::scrape_category(ctx, app, &category);
             }
         }
-        _ => {}
+        _ => match target {
+            MenuTarget::Game { row, system } => match id {
+                "toggle_favorite" | "toggle_hidden" => crate::games::toggle_tag_detached(
+                    ctx,
+                    app,
+                    &row,
+                    &system,
+                    id == "toggle_favorite",
+                    |_, _, _| {},
+                ),
+                "add_to_hub" => crate::games::add_to_hub(
+                    ctx,
+                    app,
+                    crate::games::GamesMode::Favorites,
+                    &row,
+                    &system,
+                ),
+                _ => crate::games::game_action(ctx, app, id, &row, &system),
+            },
+            MenuTarget::System(row) => {
+                crate::systems::system_action(ctx, app, id, &row);
+                if id == "toggle_hide_system" {
+                    rebuild(ctx, app);
+                }
+            }
+            MenuTarget::Tile => {}
+        },
     }
 }
 

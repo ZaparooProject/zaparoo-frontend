@@ -34,8 +34,9 @@ rust/frontend/  [frontend library and binary; Slint UI]
   ├── src/browse_filter.rs : the tags picker, for Games and Search
   ├── src/{game_info,media_setup,log_upload,launchers,card_write}.rs
   │                        modal drivers
-  ├── src/context_page.rs : a page of the context menu, with the two that
-  │                        use it: alternates.rs and discs.rs
+  ├── src/context_page.rs : a page of the context menu: Manage and Write to
+  │                        token from the menu's own rows, and the two Core
+  │                        is asked for, alternates.rs and discs.rs
   ├── src/game_info_data.rs : Game Info metadata and carousel ordering
   ├── src/tag_utils.rs   : compact tag tokens for inline metadata
   ├── src/qr.rs          : QR matrix for the write deep-link and doc links
@@ -78,6 +79,8 @@ rust/zaparoo-app/  [toolkit-free product rules]
   sizing, layouts, palette      : geometry and color, pinned by golden fixtures
   paged_grid, media_list, hub, systems, settings, letter_jump
                                   navigation, paging, menus, rows
+  options_menu                    : what an item's Options menu offers, in
+                                    order, and what moves to its Manage page
   keyboard, search, browse_filter : key layout and text editing, the Search
                                     screen's focus and count rules, tag filters
   form_list, system_picker        : cursor rules for sectioned lists, and the

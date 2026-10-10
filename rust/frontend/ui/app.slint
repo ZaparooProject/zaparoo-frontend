@@ -8,8 +8,8 @@
 // logic; forward orchestration lives in the router.
 
 import { Theme, Sizing, Motion, Layout } from "theme.slint";
-import { MenuRole, KeyKind, SearchZone, SearchPane, Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, StateTokens, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogButton, ErrorKind } from "state_types.slint";
-export { MenuRole, KeyKind, SearchZone, SearchPane, Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogButton, ErrorKind }
+import { MenuRole, ContextPage, KeyKind, SearchZone, SearchPane, Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, StateTokens, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogButton, ErrorKind } from "state_types.slint";
+export { MenuRole, ContextPage, KeyKind, SearchZone, SearchPane, Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogButton, ErrorKind }
 import { GlyphSource, Brand, Buttons, HelpEntry, Status, HeaderBar, StatusLine, ProgressTrack, WaitCue, TopStatusStrip, FooterIndicator, ActiveLabel, HelpBar, SectionHeader, Divider, ScrollCue, ModalShell, QrPlate, StateCue } from "chrome.slint";
 import { GridCell, MarqueeCaption, PressableSurface, Tile, PagedGridView } from "tiles.slint";
 import { ScrollOffset, SelectionCursor, SelectionClip, FocusCursor } from "focus.slint";
@@ -520,6 +520,9 @@ export global Overlays {
     in-out property <bool> context-open: false;
     in-out property <[MenuEntry]> context-entries: [];
     in-out property <int> context-index: 0;
+    // The page the rows belong to. A page is named above its rows; the
+    // menu's own rows are not.
+    in-out property <ContextPage> context-page: ContextPage.root;
     // The scene rect of the row or tile the menu is about; the scrim
     // hole and the panel placement follow it.
     in-out property <length> context-anchor-x: 0px;
@@ -664,12 +667,25 @@ component PickerRowBody inherits Rectangle {
 }
 
 // A context-menu row's label, centered on its own measured width rather
-// than stretched. Drawn twice for the same reason as `PickerRowBody`.
+// than stretched. Drawn twice for the same reason as `PickerRowBody`. A row
+// that turns the menu to a page carries a trailing chevron, and reserves the
+// same room on its leading side so the label stays centered.
 component ContextRowBody inherits Rectangle {
     in property <string> label;
     in property <length> pad-x;
     in property <color> content-color;
     in property <int> weight;
+    in property <bool> opens-page;
+    in property <length> chevron;
+    in property <length> inset;
+
+    if root.opens-page: Image {
+        x: parent.width - self.width - root.inset;
+        y: (parent.height - self.height) / 2;
+        width: root.chevron;
+        height: self.width;
+        source: GlyphSource.glyph("icons/NavRight", Math.max(1px, self.width), root.content-color);
+    }
 
     Text {
         x: (parent.width - Math.min(self.preferred-width, parent.width - 2 * root.pad-x)) / 2;
@@ -2452,6 +2468,17 @@ component ContextMenu inherits Rectangle {
     in property <length> anchor-h;
     in property <length> anchor-radius: 0px;
     in property <bool> anchor-zoomed: false;
+    in property <ContextPage> page: ContextPage.root;
+
+    // A page is named after the row that opened it.
+    property <string> title: root.page == ContextPage.write-token ? Labels.menu("write_token", "")
+        : root.page == ContextPage.manage-game ? Labels.menu("manage_game", "")
+        : root.page == ContextPage.manage-system ? Labels.menu("manage_system", "")
+        : root.page == ContextPage.manage-category ? Labels.menu("manage_category", "")
+        : root.page == ContextPage.discs ? Labels.menu("choose_disc", "")
+        : root.page == ContextPage.alternates ? Labels.menu("discover", "")
+        : "";
+    property <bool> titled: root.page != ContextPage.root;
 
     // The bright hole, which is the anchored thing's painted silhouette
     // rather than its layout rect. A focused tile grows about its own
@@ -2492,20 +2519,37 @@ component ContextMenu inherits Rectangle {
     // is the measurement the panel sizes around; measured at the
     // selected row's weight so a row cannot outgrow the panel when it
     // gains focus.
+    // A row that opens a page reserves its chevron on both sides, and
+    // the page's title is one more line the panel has to hold.
+    property <length> chevron: Sizing.pct-h(3);
+    property <length> chevron-room: root.chevron + Sizing.pct-w(1);
     measure := VerticalLayout {
         visible: false;
-        for entry in root.entries: Text {
-            text: entry.label-key != "" ? Labels.menu(entry.label-key, entry.label) : entry.label;
+        Text {
+            text: root.title;
             font-size: Sizing.font-caption;
             font-weight: FontWeight.medium;
+        }
+        for entry in root.entries: HorizontalLayout {
+            padding-left: entry.role == MenuRole.submenu ? root.chevron-room : 0px;
+            padding-right: entry.role == MenuRole.submenu ? root.chevron-room : 0px;
+            Text {
+                text: entry.label-key != "" ? Labels.menu(entry.label-key, entry.label) : entry.label;
+                font-size: Sizing.font-caption;
+                font-weight: FontWeight.medium;
+            }
         }
     }
     property <length> desired-panel-w: measure.preferred-width + 2 * root.label-inset
         + 2 * root.pad + 2 * Sizing.stroke(2);
     property <length> panel-w: Math.min(Math.max(root.min-panel-w, root.desired-panel-w),
         Math.max(0px, root.width - 2 * root.margin));
-    property <length> content-h: root.entries.length * root.row-h
-        + Math.max(0, root.entries.length - 1) * root.row-sp + 2 * root.pad;
+    // The title is pinned above the rows: it takes a row of its own and
+    // never scrolls with them.
+    property <length> title-band: root.titled ? root.row-h + root.row-sp : 0px;
+    property <length> rows-h: root.entries.length * root.row-h
+        + Math.max(0, root.entries.length - 1) * root.row-sp;
+    property <length> content-h: root.rows-h + root.title-band + 2 * root.pad;
     property <length> usable-bottom: Math.max(root.margin,
         root.height - Sizing.help-bar-clearance - root.margin);
     property <length> panel-h: Math.min(root.content-h,
@@ -2516,12 +2560,13 @@ component ContextMenu inherits Rectangle {
     property <bool> scrollable: root.content-h > root.panel-h;
     property <length> arrow: Sizing.pct-h(3);
     property <length> arrow-band: root.scrollable ? root.arrow + Sizing.pct-h(0.5) : 0px;
-    property <length> viewport-h: Math.max(0px, root.panel-h - 2 * root.pad - 2 * root.arrow-band);
+    property <length> viewport-h: Math.max(0px,
+        root.panel-h - 2 * root.pad - root.title-band - 2 * root.arrow-band);
     // Keep the focused row in view.
     property <length> row-bottom: (root.current-index + 1) * root.row-h
         + root.current-index * root.row-sp;
     property <length> scroll: Math.max(0px, Math.min(root.row-bottom - root.viewport-h,
-        root.content-h - 2 * root.pad - root.viewport-h));
+        root.rows-h - root.viewport-h));
 
     // Measured off the hole, not the layout rect: the gap should read from
     // the tile's painted edge, which is where the zoom put it.
@@ -2578,9 +2623,20 @@ component ContextMenu inherits Rectangle {
         border-radius: root.panel-radius;
         clip: true;
 
+        if root.titled: Text {
+            x: (parent.width - self.width) / 2;
+            y: root.pad + (root.row-h - self.height) / 2;
+            width: Math.min(self.preferred-width, parent.width - 2 * root.pad - 2 * root.label-inset);
+            overflow: elide;
+            text: root.title;
+            color: Theme.text-label;
+            font-size: Sizing.font-caption;
+            font-weight: FontWeight.medium;
+        }
+
         if root.scrollable: ScrollCue {
             x: (parent.width - self.width) / 2;
-            y: root.pad;
+            y: root.pad + root.title-band;
             width: root.arrow;
             glyph: "icons/ScrollUp";
             live: root.scroll > 0px;
@@ -2590,7 +2646,7 @@ component ContextMenu inherits Rectangle {
             y: parent.height - root.pad - root.arrow;
             width: root.arrow;
             glyph: "icons/ScrollDown";
-            live: root.scroll < root.content-h - 2 * root.pad - root.viewport-h;
+            live: root.scroll < root.rows-h - root.viewport-h;
         }
 
         // The rows glide under the cues instead of jumping; the fill
@@ -2605,7 +2661,7 @@ component ContextMenu inherits Rectangle {
         }
         Rectangle {
         x: 0;
-        y: root.pad + root.arrow-band;
+        y: root.pad + root.title-band + root.arrow-band;
         height: root.viewport-h;
         clip: true;
 
@@ -2630,9 +2686,12 @@ component ContextMenu inherits Rectangle {
 
             ContextRowBody {
                 label: entry.label-key != "" ? Labels.menu(entry.label-key, entry.label) : entry.label;
-                pad-x: root.label-inset;
+                pad-x: root.label-inset + (entry.role == MenuRole.submenu ? root.chevron-room : 0px);
                 content-color: Theme.text-primary;
                 weight: FontWeight.normal;
+                opens-page: entry.role == MenuRole.submenu;
+                chevron: root.chevron;
+                inset: root.label-inset;
             }
             if lit: SelectionClip {
                 row-top: parent.y; row-height: parent.height;
@@ -2640,9 +2699,12 @@ component ContextMenu inherits Rectangle {
                 fill: sel.fill;
                 ContextRowBody {
                     label: entry.label-key != "" ? Labels.menu(entry.label-key, entry.label) : entry.label;
-                    pad-x: root.label-inset;
+                    pad-x: root.label-inset + (entry.role == MenuRole.submenu ? root.chevron-room : 0px);
                     content-color: sel.content;
                     weight: FontWeight.medium;
+                    opens-page: entry.role == MenuRole.submenu;
+                    chevron: root.chevron;
+                    inset: root.label-inset;
                 }
             }
 
@@ -3320,7 +3382,9 @@ export component App inherits Window {
             return [
                 { buttons: ["Dpad"], label: @tr("Move") },
                 { buttons: ["ButtonA"], label: @tr("Select") },
-                { buttons: ["ButtonB", "ButtonX"], label: @tr("Close") },
+                // Back on a page returns to the rows it replaced.
+                { buttons: ["ButtonB", "ButtonX"], label: Overlays.context-page == ContextPage.root
+                    ? @tr("Close") : @tr("Back") },
             ];
         }
         if (Overlays.card-write-open) {
@@ -3833,6 +3897,7 @@ export component App inherits Window {
         anchor-h: Overlays.context-anchor-h;
         anchor-radius: Overlays.context-anchor-radius;
         anchor-zoomed: Overlays.context-anchor-zoomed;
+        page: Overlays.context-page;
     }
 
     if Overlays.list-open && Overlays.list-form: FormListModal {

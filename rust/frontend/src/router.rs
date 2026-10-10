@@ -20,6 +20,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 use tokio::runtime::Handle;
 use zaparoo_app::action_error;
+use zaparoo_app::options_menu::Menu as OptionsMenu;
 use zaparoo_core::endpoints::run::RunMutation;
 use zaparoo_core::input_actions::actions;
 use zaparoo_core::media_types::{RunParams, SystemInfo};
@@ -88,6 +89,9 @@ pub struct Shared {
     /// projected index on that surface.
     pub context_owner: ContextOwner,
     pub context_target: usize,
+    /// The open menu's rows and the pages they open, kept so Back from a
+    /// page returns to the same rows.
+    pub context_menu: zaparoo_app::options_menu::Menu,
     /// What the open `ListPickerModal` is for (View menu vs a settings
     /// picker field).
     pub list_context: ListContext,
@@ -274,6 +278,7 @@ impl Shared {
             has_nfc: false,
             context_owner: ContextOwner::Games,
             context_target: 0,
+            context_menu: zaparoo_app::options_menu::Menu::default(),
             list_context: ListContext::ViewMenu,
             pending_restart: None,
             launchers: Vec::new(),
@@ -1527,7 +1532,9 @@ fn list_roles(app: &App) -> Vec<zaparoo_app::form_list::Role> {
         .get_list_entries()
         .iter()
         .map(|entry| match entry.role {
-            crate::MenuRole::Option => Role::Option,
+            // A page-opening row is a context-menu row; in a list it
+            // would be picked like any other.
+            crate::MenuRole::Option | crate::MenuRole::Submenu => Role::Option,
             crate::MenuRole::Header => Role::Header,
             crate::MenuRole::Action => Role::Action,
         })
@@ -1886,9 +1893,8 @@ pub(crate) fn menu_row_full(
 }
 
 /// Hub helpers the driver in `crate::hub` calls back into.
-pub(crate) fn category_has_indexable(ctx: &Ctx, category: &str) -> bool {
-    let guard = lock(&ctx.shared);
-    zaparoo_core::systems_catalog::systems_in_category(&guard.systems, category)
+pub(crate) fn has_indexable(shared: &Shared, category: &str) -> bool {
+    zaparoo_core::systems_catalog::systems_in_category(&shared.systems, category)
         .iter()
         .any(|s| s.zap_script.trim().is_empty())
 }
@@ -1919,12 +1925,12 @@ pub(crate) fn scrape_category(ctx: &Ctx, app: &App, category: &str) {
     }
 }
 
-pub(crate) fn present_hub_context_menu(ctx: &Ctx, app: &App, entries: Vec<crate::MenuEntry>) {
-    present_context_menu(ctx, app, ContextOwner::Hub, 0, entries);
+pub(crate) fn present_hub_context_menu(ctx: &Ctx, app: &App, menu: OptionsMenu) {
+    present_context_menu(ctx, app, ContextOwner::Hub, 0, menu);
 }
 
-pub(crate) fn present_systems_context_menu(ctx: &Ctx, app: &App, entries: Vec<crate::MenuEntry>) {
-    present_context_menu(ctx, app, ContextOwner::Systems, 0, entries);
+pub(crate) fn present_systems_context_menu(ctx: &Ctx, app: &App, target: usize, menu: OptionsMenu) {
+    present_context_menu(ctx, app, ContextOwner::Systems, target, menu);
 }
 
 /// The row or tile a context menu is about: where it is, and what its
@@ -1954,13 +1960,8 @@ pub(crate) fn set_context_anchor(app: &App, anchor: &ContextAnchor) {
     overlays.set_context_anchor_zoomed(anchor.zoomed);
 }
 
-pub(crate) fn present_games_context_menu(
-    ctx: &Ctx,
-    app: &App,
-    target: usize,
-    entries: Vec<crate::MenuEntry>,
-) {
-    present_context_menu(ctx, app, ContextOwner::Games, target, entries);
+pub(crate) fn present_games_context_menu(ctx: &Ctx, app: &App, target: usize, menu: OptionsMenu) {
+    present_context_menu(ctx, app, ContextOwner::Games, target, menu);
 }
 
 pub(crate) fn present_list(
@@ -2270,25 +2271,44 @@ pub(crate) fn media_busy(app: &App) -> bool {
     app.global::<crate::Status>().get_show_track()
 }
 
+/// The menu's own rows as the view takes them. A row that turns the menu
+/// to a page is marked, so the view can draw where it leads.
+pub(crate) fn root_entries(menu: &OptionsMenu) -> Vec<crate::MenuEntry> {
+    menu.root
+        .iter()
+        .map(|row| {
+            let mut entry = menu_row_keyed(row.id, row.key, "");
+            if menu.page_for(row.id).is_some() || crate::context_page::asks_core(row.id) {
+                entry.role = crate::MenuRole::Submenu;
+            }
+            entry
+        })
+        .collect()
+}
+
 fn present_context_menu(
     ctx: &Ctx,
     app: &App,
     owner: ContextOwner,
     target: usize,
-    entries: Vec<crate::MenuEntry>,
+    menu: OptionsMenu,
 ) {
-    if entries.is_empty() {
+    if menu.is_empty() {
         return;
     }
+    let entries = root_entries(&menu);
     {
         let mut guard = lock(&ctx.shared);
         guard.context_owner = owner;
         guard.context_target = target;
+        guard.context_menu = menu;
+        guard.context_page.reset();
     }
-    app.global::<crate::Overlays>()
-        .set_context_entries(ModelRc::new(VecModel::from(entries)));
-    app.global::<crate::Overlays>().set_context_index(0);
-    app.global::<crate::Overlays>().set_context_open(true);
+    let overlays = app.global::<crate::Overlays>();
+    overlays.set_context_entries(ModelRc::new(VecModel::from(entries)));
+    overlays.set_context_page(crate::ContextPage::Root);
+    overlays.set_context_index(0);
+    overlays.set_context_open(true);
 }
 
 pub(crate) fn close_context_menu(ctx: &Ctx, app: &App) {
@@ -2301,6 +2321,8 @@ pub(crate) fn close_context_menu(ctx: &Ctx, app: &App) {
         shared.context_page.reset();
     }
     app.global::<crate::Overlays>().set_context_open(false);
+    app.global::<crate::Overlays>()
+        .set_context_page(crate::ContextPage::Root);
 }
 
 /// Pointer input on the context menu's rows: hover moves focus, a click
@@ -2435,29 +2457,47 @@ fn context_action(ctx: &Ctx, app: &App, action: &str) {
 }
 
 fn context_accept(ctx: &Ctx, app: &App, id: &str) {
-    if crate::context_page::showing(ctx) {
+    use crate::context_page::Page;
+    let (owner, showing, opens) = {
+        let shared = lock(&ctx.shared);
+        let showing = shared.context_page.showing;
+        // One level of pages: a row on a page never opens another.
+        let opens = if showing.is_none() {
+            shared.context_menu.page_for(id)
+        } else {
+            None
+        };
+        (shared.context_owner, showing, opens)
+    };
+    if matches!(showing, Some(Page::Alternates | Page::Discs)) {
         crate::context_page::accept(ctx, app, id);
         return;
     }
-    let owner = lock(&ctx.shared).context_owner;
+    if let Some(page) = opens {
+        crate::context_page::turn(ctx, app, page);
+        return;
+    }
+    // Write to token with one way to write runs that way.
+    let id = if showing.is_none() {
+        OptionsMenu::direct_action(id)
+    } else {
+        id
+    };
+    // A page Core has to be asked for keeps the menu open: its rows
+    // become the page's once Core answers.
+    let began = match owner {
+        ContextOwner::Games => crate::games::begin_context_page(ctx, app, id),
+        ContextOwner::Hub => crate::hub::begin_context_page(ctx, app, id),
+        ContextOwner::Systems => false,
+    };
+    if began {
+        return;
+    }
+    close_context_menu(ctx, app);
     match owner {
-        ContextOwner::Games => {
-            // A page keeps the menu open: its rows become the page's
-            // once Core answers.
-            if crate::games::begin_context_page(ctx, app, id) {
-                return;
-            }
-            close_context_menu(ctx, app);
-            crate::games::context_accept(ctx, app, id);
-        }
-        ContextOwner::Systems => {
-            close_context_menu(ctx, app);
-            crate::systems::context_accept(ctx, app, id);
-        }
-        ContextOwner::Hub => {
-            close_context_menu(ctx, app);
-            crate::hub::context_accept(ctx, app, id);
-        }
+        ContextOwner::Games => crate::games::context_accept(ctx, app, id),
+        ContextOwner::Systems => crate::systems::context_accept(ctx, app, id),
+        ContextOwner::Hub => crate::hub::context_accept(ctx, app, id),
     }
 }
 
