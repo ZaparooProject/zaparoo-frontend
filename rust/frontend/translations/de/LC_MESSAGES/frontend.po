@@ -1,6 +1,6 @@
 msgid ""
 msgstr ""
-"POT-Creation-Date: 2026-10-09 08:57+0000\n"
+"POT-Creation-Date: 2026-10-10 12:47+0000\n"
 "Language: de\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
@@ -11,43 +11,43 @@ msgstr ""
 msgid "About / License"
 msgstr "Über / Lizenz"
 
-#: rust/frontend/ui/about.slint:106 rust/frontend/ui/app.slint:3067
+#: rust/frontend/ui/about.slint:108 rust/frontend/ui/app.slint:3203
 msgid "Zaparoo Frontend"
 msgstr "Zaparoo Frontend"
 
-#: rust/frontend/ui/about.slint:107
+#: rust/frontend/ui/about.slint:109
 msgid "Version {} · {} · {}"
 msgstr "Fassung {0} · {1} · {2}"
 
-#: rust/frontend/ui/about.slint:108
+#: rust/frontend/ui/about.slint:110
 msgid "Built {}"
 msgstr "Erstellt am {0}"
 
-#: rust/frontend/ui/about.slint:109
+#: rust/frontend/ui/about.slint:111
 msgid "Copyright 2026 Wizzo Pty Ltd and the Zaparoo Project contributors."
 msgstr "Copyright 2026 Wizzo Pty Ltd und die Mitwirkenden des Zaparoo-Projekts."
 
-#: rust/frontend/ui/about.slint:110
+#: rust/frontend/ui/about.slint:112
 msgid "Source available under the PolyForm Noncommercial License 1.0.0. Free for personal, non-commercial use. Commercial use requires a separate license."
 msgstr "Quellcode verfügbar unter der PolyForm Noncommercial License 1.0.0. Kostenlos für den persönlichen, nicht kommerziellen Gebrauch. Kommerzielle Nutzung erfordert eine separate Lizenz."
 
-#: rust/frontend/ui/about.slint:111
+#: rust/frontend/ui/about.slint:113
 msgid "Commercial licensing: legal@zaparoo.com"
 msgstr "Kommerzielle Lizenzierung: legal@zaparoo.com"
 
-#: rust/frontend/ui/about.slint:112
+#: rust/frontend/ui/about.slint:114
 msgid "Project: https://zaparoo.org"
 msgstr "Projekt: https://zaparoo.org"
 
-#: rust/frontend/ui/about.slint:113
+#: rust/frontend/ui/about.slint:115
 msgid "Created by"
 msgstr "Erstellt von"
 
-#: rust/frontend/ui/about.slint:118
+#: rust/frontend/ui/about.slint:120
 msgid "Translations"
 msgstr "Übersetzungen"
 
-#: rust/frontend/ui/about.slint:119
+#: rust/frontend/ui/about.slint:121
 msgid ""
 "Italiano - Andrea Bogazzi\n"
 "Español - Carlos R.\n"
@@ -59,612 +59,613 @@ msgstr ""
 "Euskara - devilschile2\n"
 "Français - Wilfried"
 
-#: rust/frontend/ui/about.slint:120
+#: rust/frontend/ui/about.slint:122
 msgid "Full license text in COPYING."
 msgstr "Vollständiger Lizenztext in COPYING."
 
-#: rust/frontend/ui/app.slint:1000
+#: rust/frontend/ui/app.slint:1050
 msgid "Updating the media database"
 msgstr "Mediendatenbank wird aktualisiert"
 
-#: rust/frontend/ui/app.slint:1000
+#: rust/frontend/ui/app.slint:1050
 msgid "No games found yet"
 msgstr "Noch keine Spiele gefunden"
 
-#: rust/frontend/ui/app.slint:1002
+#: rust/frontend/ui/app.slint:1052
 msgid "Your games appear here as Core finds them."
 msgstr "Deine Spiele erscheinen hier, sobald Core sie findet."
 
-#: rust/frontend/ui/app.slint:1003
+#: rust/frontend/ui/app.slint:1053
 msgid "Update media database in Settings > Library."
 msgstr "Mediendatenbank unter Einstellungen > Bibliothek aktualisieren."
 
-#: rust/frontend/ui/app.slint:1023 rust/frontend/ui/app.slint:2716
-#: rust/frontend/ui/app.slint:3088
+#: rust/frontend/ui/app.slint:1073 rust/frontend/ui/app.slint:2852
+#: rust/frontend/ui/app.slint:3224
 msgid "Favorites"
 msgstr "Favoriten"
 
-#: rust/frontend/ui/app.slint:1030
+#: rust/frontend/ui/app.slint:1080
 msgid "{} systems"
 msgstr "{0} Systeme"
 
-#: rust/frontend/ui/app.slint:1172 rust/frontend/ui/labels.slint:25
+#: rust/frontend/ui/app.slint:1230 rust/frontend/ui/labels.slint:25
 msgid "Hidden"
 msgstr "Ausgeblendet"
 
-#: rust/frontend/ui/app.slint:1209 rust/frontend/ui/app.slint:2935
+#: rust/frontend/ui/app.slint:1267 rust/frontend/ui/app.slint:3071
 msgid "No favorites yet"
 msgstr "Noch keine Favoriten"
 
-#: rust/frontend/ui/app.slint:1209
+#: rust/frontend/ui/app.slint:1267
 msgid "No systems in this category"
 msgstr "Keine Systeme in dieser Kategorie"
 
-#: rust/frontend/ui/app.slint:1254 rust/frontend/ui/app.slint:1256
+#: rust/frontend/ui/app.slint:1312 rust/frontend/ui/app.slint:1314
 #: rust/frontend/ui/labels.slint:26
 msgid "{} · {}"
 msgstr "{} · {}"
 
-#: rust/frontend/ui/app.slint:1335 rust/frontend/ui/app.slint:1352
+#: rust/frontend/ui/app.slint:1393 rust/frontend/ui/app.slint:1410
 msgid "Saving…"
 msgstr "Wird gespeichert…"
 
-#: rust/frontend/ui/app.slint:1585 rust/frontend/ui/labels.slint:129
+#: rust/frontend/ui/app.slint:1643 rust/frontend/ui/labels.slint:141
 msgid "Go to…"
 msgstr "Gehe zu…"
 
-#: rust/frontend/ui/app.slint:1595
+#: rust/frontend/ui/app.slint:1653
 msgid "Loading sections…"
 msgstr "Abschnitte werden geladen…"
 
-#: rust/frontend/ui/app.slint:1600
+#: rust/frontend/ui/app.slint:1658
 msgid "Failed to load sections"
 msgstr "Abschnitte konnten nicht geladen werden"
 
-#: rust/frontend/ui/app.slint:1600
+#: rust/frontend/ui/app.slint:1658
 msgid "No sections"
 msgstr "Keine Abschnitte"
 
-#: rust/frontend/ui/app.slint:1669
+#: rust/frontend/ui/app.slint:1727
 msgid "Hold a writable token near the reader"
 msgstr "Beschreibbaren Token an das Lesegerät halten"
 
-#: rust/frontend/ui/app.slint:1693 rust/frontend/ui/app.slint:3135
-#: rust/frontend/ui/app.slint:3253 rust/frontend/ui/app.slint:3300
-#: rust/frontend/ui/app.slint:3348 rust/frontend/ui/app.slint:3371
+#: rust/frontend/ui/app.slint:1751 rust/frontend/ui/app.slint:3271
+#: rust/frontend/ui/app.slint:3391 rust/frontend/ui/app.slint:3438
+#: rust/frontend/ui/app.slint:3486 rust/frontend/ui/app.slint:3509
 #: rust/frontend/ui/settings.slint:253
 msgid "Cancel"
 msgstr "Abbrechen"
 
-#: rust/frontend/ui/app.slint:1715 rust/frontend/ui/settings.slint:183
+#: rust/frontend/ui/app.slint:1773 rust/frontend/ui/settings.slint:183
 msgid "Pair a device"
 msgstr "Gerät koppeln"
 
-#: rust/frontend/ui/app.slint:1739 rust/frontend/ui/app.slint:1844
+#: rust/frontend/ui/app.slint:1797 rust/frontend/ui/app.slint:1902
 msgid "Starting…"
 msgstr "Wird gestartet…"
 
-#: rust/frontend/ui/app.slint:1761
+#: rust/frontend/ui/app.slint:1819
 msgid "Enter this PIN on the device you are pairing."
 msgstr "Diese PIN auf dem zu koppelnden Gerät eingeben."
 
-#: rust/frontend/ui/app.slint:1775 rust/frontend/ui/app.slint:1933
+#: rust/frontend/ui/app.slint:1833 rust/frontend/ui/app.slint:1991
 msgid "Expires in {n} minute"
 msgid_plural "Expires in {n} minutes"
 msgstr[0] "Läuft in {n} Minute ab"
 msgstr[1] "Läuft in {n} Minuten ab"
 
-#: rust/frontend/ui/app.slint:1776 rust/frontend/ui/app.slint:1934
+#: rust/frontend/ui/app.slint:1834 rust/frontend/ui/app.slint:1992
 msgid "Expires in {n} second"
 msgid_plural "Expires in {n} seconds"
 msgstr[0] "Läuft in {n} Sekunde ab"
 msgstr[1] "Läuft in {n} Sekunden ab"
 
-#: rust/frontend/ui/app.slint:1793
+#: rust/frontend/ui/app.slint:1851
 msgid "A device is now paired with Core."
 msgstr "Ein Gerät ist jetzt mit Core gekoppelt."
 
-#: rust/frontend/ui/app.slint:1794
+#: rust/frontend/ui/app.slint:1852
 msgid "{} is now paired with Core."
 msgstr "{} ist jetzt mit Core gekoppelt."
 
-#: rust/frontend/ui/app.slint:1808
+#: rust/frontend/ui/app.slint:1866
 msgid "The PIN expired before a device used it. Pair again for a new one."
 msgstr "Die PIN ist abgelaufen, bevor ein Gerät sie genutzt hat. Für eine neue erneut koppeln."
 
-#: rust/frontend/ui/app.slint:1830
+#: rust/frontend/ui/app.slint:1888
 msgid "Link Online account"
 msgstr "Online-Konto verknüpfen"
 
-#: rust/frontend/ui/app.slint:1854
+#: rust/frontend/ui/app.slint:1912
 msgid "This device is now linked to your Zaparoo Online account."
 msgstr "Dieses Gerät ist jetzt mit deinem Zaparoo Online-Konto verknüpft."
 
-#: rust/frontend/ui/app.slint:1855
+#: rust/frontend/ui/app.slint:1913
 msgid "The code expired before it was approved. Link again for a new one."
 msgstr "Der Code ist abgelaufen, bevor er bestätigt wurde. Für einen neuen erneut verknüpfen."
 
-#: rust/frontend/ui/app.slint:1856
+#: rust/frontend/ui/app.slint:1914
 msgid "Linking failed. Check the network connection and try again."
 msgstr "Verknüpfung fehlgeschlagen. Netzwerkverbindung prüfen und erneut versuchen."
 
-#: rust/frontend/ui/app.slint:1870
+#: rust/frontend/ui/app.slint:1928
 msgid "Scan this code with your phone, or open the address below and enter the code."
 msgstr "Scanne diesen Code mit dem Handy oder öffne die Adresse unten und gib den Code ein."
 
-#: rust/frontend/ui/app.slint:1883
+#: rust/frontend/ui/app.slint:1941
 msgid "Or press Accept to open it on this device."
 msgstr "Oder Bestätigen drücken, um sie auf diesem Gerät zu öffnen."
 
-#: rust/frontend/ui/app.slint:2021 rust/frontend/ui/labels.slint:332
+#: rust/frontend/ui/app.slint:2079 rust/frontend/ui/labels.slint:344
 msgid "This device is not linked. Link your Zaparoo Online account, then try again."
 msgstr "Dieses Gerät ist nicht verknüpft. Verknüpfe dein Zaparoo Online-Konto und versuche es erneut."
 
-#: rust/frontend/ui/app.slint:2024 rust/frontend/ui/labels.slint:331
+#: rust/frontend/ui/app.slint:2082 rust/frontend/ui/labels.slint:343
 msgid "Cloud backup needs an active Zaparoo Warp subscription."
 msgstr "Cloud-Backup erfordert ein aktives Zaparoo Warp-Abo."
 
-#: rust/frontend/ui/app.slint:2026
+#: rust/frontend/ui/app.slint:2084
 msgid "Could not load this. Check the network connection and try again."
 msgstr "Laden fehlgeschlagen. Netzwerkverbindung prüfen und erneut versuchen."
 
-#: rust/frontend/ui/app.slint:2029
+#: rust/frontend/ui/app.slint:2087
 msgid "Back up now"
 msgstr "Jetzt sichern"
 
 #. Zaparoo made; it says so where its detail already is.
-#: rust/frontend/ui/app.slint:2034
+#: rust/frontend/ui/app.slint:2092
 msgid "{}, needs a newer Zaparoo"
 msgstr "{}, erfordert ein neueres Zaparoo"
 
-#: rust/frontend/ui/app.slint:2035
+#: rust/frontend/ui/app.slint:2093
 msgid "{}, this device"
 msgstr "{}, dieses Gerät"
 
-#: rust/frontend/ui/app.slint:2042
+#: rust/frontend/ui/app.slint:2100
 msgid "Cloud backups"
 msgstr "Cloud-Backups"
 
-#: rust/frontend/ui/app.slint:2042
+#: rust/frontend/ui/app.slint:2100
 msgid "Remote activity"
 msgstr "Fernaktivität"
 
-#: rust/frontend/ui/app.slint:2063
+#: rust/frontend/ui/app.slint:2121
 msgid "Backing up…"
 msgstr "Wird gesichert…"
 
-#: rust/frontend/ui/app.slint:2064
+#: rust/frontend/ui/app.slint:2122
 msgid "Restoring…"
 msgstr "Wird wiederhergestellt…"
 
-#: rust/frontend/ui/app.slint:2065
+#: rust/frontend/ui/app.slint:2123
 msgid "Loading backups…"
 msgstr "Backups werden geladen…"
 
-#: rust/frontend/ui/app.slint:2065
+#: rust/frontend/ui/app.slint:2123
 msgid "Loading activity…"
 msgstr "Aktivität wird geladen…"
 
-#: rust/frontend/ui/app.slint:2076
+#: rust/frontend/ui/app.slint:2134
 msgid "No cloud backups yet."
 msgstr "Noch keine Cloud-Backups."
 
-#: rust/frontend/ui/app.slint:2076
+#: rust/frontend/ui/app.slint:2134
 msgid "Nothing has run through remote control yet."
 msgstr "Noch nichts per Fernsteuerung ausgeführt."
 
-#: rust/frontend/ui/app.slint:2172 rust/frontend/ui/settings.slint:185
+#: rust/frontend/ui/app.slint:2230 rust/frontend/ui/settings.slint:185
 msgid "Documentation"
 msgstr "Dokumentation"
 
-#: rust/frontend/ui/app.slint:2172 rust/frontend/ui/labels.slint:110
+#: rust/frontend/ui/app.slint:2230 rust/frontend/ui/labels.slint:110
 msgid "Write with App"
 msgstr "Mit App schreiben"
 
-#: rust/frontend/ui/app.slint:2191
+#: rust/frontend/ui/app.slint:2249
 msgid "Scan this code to open the Zaparoo Frontend guide on your phone."
 msgstr "Scanne diesen Code, um die Zaparoo Frontend-Anleitung auf dem Handy zu öffnen."
 
-#: rust/frontend/ui/app.slint:2192
+#: rust/frontend/ui/app.slint:2250
 msgid "Scan this code with the Zaparoo App to write this game to a Zaparoo token."
 msgstr "Scanne diesen Code mit der Zaparoo App, um dieses Spiel auf einen Zaparoo-Token zu schreiben."
 
-#: rust/frontend/ui/app.slint:2717 rust/frontend/ui/app.slint:3089
+#: rust/frontend/ui/app.slint:2853 rust/frontend/ui/app.slint:3225
 msgid "Recently played"
 msgstr "Zuletzt gespielt"
 
-#: rust/frontend/ui/app.slint:2718 rust/frontend/ui/app.slint:3090
-#: rust/frontend/ui/app.slint:3166 rust/frontend/ui/labels.slint:48
+#: rust/frontend/ui/app.slint:2854 rust/frontend/ui/app.slint:3226
+#: rust/frontend/ui/app.slint:3302 rust/frontend/ui/labels.slint:48
 msgid "Search"
 msgstr "Suche"
 
-#: rust/frontend/ui/app.slint:2728
+#: rust/frontend/ui/app.slint:2864
 msgid "{} games"
 msgstr "{} Spiele"
 
-#: rust/frontend/ui/app.slint:2857
+#: rust/frontend/ui/app.slint:2993
 msgid "Loading game…"
 msgstr "Spiel wird geladen…"
 
-#: rust/frontend/ui/app.slint:2936
+#: rust/frontend/ui/app.slint:3072
 msgid "Nothing played yet"
 msgstr "Noch nichts gespielt"
 
-#: rust/frontend/ui/app.slint:2937 rust/frontend/ui/search.slint:66
+#: rust/frontend/ui/app.slint:3073 rust/frontend/ui/search.slint:66
 msgid "No matches"
 msgstr "Keine Treffer"
 
-#: rust/frontend/ui/app.slint:2938
+#: rust/frontend/ui/app.slint:3074
 msgid "No games match these tags"
 msgstr "Keine Spiele mit diesen Tags"
 
-#: rust/frontend/ui/app.slint:2938
+#: rust/frontend/ui/app.slint:3074
 msgid "No games in this system"
 msgstr "Keine Spiele in diesem System"
 
-#: rust/frontend/ui/app.slint:2939 rust/frontend/ui/labels.slint:31
+#: rust/frontend/ui/app.slint:3075 rust/frontend/ui/labels.slint:31
 msgid "Loading favorites…"
 msgstr "Favoriten werden geladen…"
 
-#: rust/frontend/ui/app.slint:2940 rust/frontend/ui/labels.slint:32
+#: rust/frontend/ui/app.slint:3076 rust/frontend/ui/labels.slint:32
 msgid "Loading recently played…"
 msgstr "Zuletzt gespielte werden geladen…"
 
-#: rust/frontend/ui/app.slint:2941 rust/frontend/ui/labels.slint:33
+#: rust/frontend/ui/app.slint:3077 rust/frontend/ui/labels.slint:33
 #: rust/frontend/ui/search.slint:64
 msgid "Searching…"
 msgstr "Suche läuft…"
 
-#: rust/frontend/ui/app.slint:2941 rust/frontend/ui/labels.slint:30
+#: rust/frontend/ui/app.slint:3077 rust/frontend/ui/labels.slint:30
 msgid "Loading games…"
 msgstr "Spiele werden geladen…"
 
-#: rust/frontend/ui/app.slint:3018
+#: rust/frontend/ui/app.slint:3154
 msgid "Arrows adjust position"
 msgstr "Pfeile: Position anpassen"
 
-#: rust/frontend/ui/app.slint:3026
+#: rust/frontend/ui/app.slint:3162
 msgid "Accept or Back saves"
 msgstr "Bestätigen oder Zurück speichert"
 
-#: rust/frontend/ui/app.slint:3118 rust/frontend/ui/app.slint:3132
-#: rust/frontend/ui/app.slint:3157 rust/frontend/ui/app.slint:3172
-#: rust/frontend/ui/app.slint:3187 rust/frontend/ui/app.slint:3219
-#: rust/frontend/ui/app.slint:3247 rust/frontend/ui/app.slint:3277
-#: rust/frontend/ui/app.slint:3448 rust/frontend/ui/app.slint:3466
-#: rust/frontend/ui/app.slint:3481 rust/frontend/ui/labels.slint:146
+#: rust/frontend/ui/app.slint:3254 rust/frontend/ui/app.slint:3268
+#: rust/frontend/ui/app.slint:3293 rust/frontend/ui/app.slint:3308
+#: rust/frontend/ui/app.slint:3323 rust/frontend/ui/app.slint:3355
+#: rust/frontend/ui/app.slint:3383 rust/frontend/ui/app.slint:3415
+#: rust/frontend/ui/app.slint:3586 rust/frontend/ui/app.slint:3604
+#: rust/frontend/ui/app.slint:3619 rust/frontend/ui/labels.slint:158
 msgid "Move"
 msgstr "Bewegen"
 
-#: rust/frontend/ui/app.slint:3133 rust/frontend/ui/app.slint:3166
-#: rust/frontend/ui/app.slint:3182 rust/frontend/ui/app.slint:3248
-#: rust/frontend/ui/app.slint:3331 rust/frontend/ui/settings.slint:105
+#: rust/frontend/ui/app.slint:3269 rust/frontend/ui/app.slint:3302
+#: rust/frontend/ui/app.slint:3318 rust/frontend/ui/app.slint:3384
+#: rust/frontend/ui/app.slint:3469 rust/frontend/ui/settings.slint:105
 msgid "Select"
 msgstr "Auswählen"
 
-#: rust/frontend/ui/app.slint:3134 rust/frontend/ui/settings.slint:106
+#: rust/frontend/ui/app.slint:3270 rust/frontend/ui/settings.slint:106
 msgid "Start"
 msgstr "Starten"
 
-#: rust/frontend/ui/app.slint:3136 rust/frontend/ui/app.slint:3249
-#: rust/frontend/ui/app.slint:3272 rust/frontend/ui/app.slint:3281
-#: rust/frontend/ui/app.slint:3297 rust/frontend/ui/app.slint:3313
-#: rust/frontend/ui/app.slint:3322
+#: rust/frontend/ui/app.slint:3272 rust/frontend/ui/app.slint:3387
+#: rust/frontend/ui/app.slint:3410 rust/frontend/ui/app.slint:3419
+#: rust/frontend/ui/app.slint:3435 rust/frontend/ui/app.slint:3451
+#: rust/frontend/ui/app.slint:3460
 msgid "Close"
 msgstr "Schließen"
 
-#: rust/frontend/ui/app.slint:3137 rust/frontend/ui/app.slint:3468
+#: rust/frontend/ui/app.slint:3273 rust/frontend/ui/app.slint:3606
 msgid "Toggle"
 msgstr "Umschalten"
 
-#: rust/frontend/ui/app.slint:3138
+#: rust/frontend/ui/app.slint:3274
 msgid "Info"
 msgstr "Info"
 
-#: rust/frontend/ui/app.slint:3139 rust/frontend/ui/app.slint:3153
-#: rust/frontend/ui/app.slint:3167 rust/frontend/ui/app.slint:3183
-#: rust/frontend/ui/app.slint:3199 rust/frontend/ui/app.slint:3215
-#: rust/frontend/ui/app.slint:3332 rust/frontend/ui/app.slint:3411
-#: rust/frontend/ui/app.slint:3423 rust/frontend/ui/app.slint:3441
-#: rust/frontend/ui/app.slint:3455 rust/frontend/ui/app.slint:3469
-#: rust/frontend/ui/app.slint:3483 rust/frontend/ui/app.slint:3500
-#: rust/frontend/ui/app.slint:3512 rust/frontend/ui/app.slint:3524
-#: rust/frontend/ui/app.slint:3540 rust/frontend/ui/app.slint:3555
+#: rust/frontend/ui/app.slint:3275 rust/frontend/ui/app.slint:3289
+#: rust/frontend/ui/app.slint:3303 rust/frontend/ui/app.slint:3319
+#: rust/frontend/ui/app.slint:3335 rust/frontend/ui/app.slint:3351
+#: rust/frontend/ui/app.slint:3387 rust/frontend/ui/app.slint:3543
+#: rust/frontend/ui/app.slint:3556 rust/frontend/ui/app.slint:3572
+#: rust/frontend/ui/app.slint:3588 rust/frontend/ui/app.slint:3599
+#: rust/frontend/ui/app.slint:3614 rust/frontend/ui/app.slint:3627
+#: rust/frontend/ui/app.slint:3641 rust/frontend/ui/app.slint:3655
+#: rust/frontend/ui/app.slint:3668 rust/frontend/ui/app.slint:3685
+#: rust/frontend/ui/app.slint:3701
 msgid "Back"
 msgstr "Zurück"
 
-#: rust/frontend/ui/app.slint:3158 rust/frontend/ui/app.slint:3174
+#: rust/frontend/ui/app.slint:3294 rust/frontend/ui/app.slint:3310
 msgid "Delete"
 msgstr "Löschen"
 
-#: rust/frontend/ui/app.slint:3159 rust/frontend/ui/app.slint:3175
+#: rust/frontend/ui/app.slint:3295 rust/frontend/ui/app.slint:3311
 msgid "Space"
 msgstr "Leerzeichen"
 
-#: rust/frontend/ui/app.slint:3182 rust/frontend/ui/app.slint:3392
-#: rust/frontend/ui/app.slint:3431 rust/frontend/ui/app.slint:3449
-#: rust/frontend/ui/app.slint:3488 rust/frontend/ui/app.slint:3545
-#: rust/frontend/ui/app.slint:3560
+#: rust/frontend/ui/app.slint:3318 rust/frontend/ui/app.slint:3530
+#: rust/frontend/ui/app.slint:3569 rust/frontend/ui/app.slint:3587
+#: rust/frontend/ui/app.slint:3626 rust/frontend/ui/app.slint:3683
+#: rust/frontend/ui/app.slint:3698
 msgid "Open"
 msgstr "Öffnen"
 
-#: rust/frontend/ui/app.slint:3188 rust/frontend/ui/app.slint:3467
+#: rust/frontend/ui/app.slint:3324 rust/frontend/ui/app.slint:3605
 #: rust/frontend/ui/settings.slint:108
 msgid "Change"
 msgstr "Ändern"
 
-#: rust/frontend/ui/app.slint:3202 rust/frontend/ui/app.slint:3392
-#: rust/frontend/ui/app.slint:3416 rust/frontend/ui/app.slint:3516
-#: rust/frontend/ui/app.slint:3528 rust/frontend/ui/setup.slint:378
+#: rust/frontend/ui/app.slint:3338 rust/frontend/ui/app.slint:3530
+#: rust/frontend/ui/app.slint:3554 rust/frontend/ui/app.slint:3654
+#: rust/frontend/ui/app.slint:3666 rust/frontend/ui/setup.slint:378
 msgid "Retry"
 msgstr "Wiederholen"
 
-#: rust/frontend/ui/app.slint:3202 rust/frontend/ui/app.slint:3287
+#: rust/frontend/ui/app.slint:3338 rust/frontend/ui/app.slint:3425
 #: rust/frontend/ui/setup.slint:378
 msgid "Done"
 msgstr "Fertig"
 
-#: rust/frontend/ui/app.slint:3242 rust/frontend/ui/labels.slint:264
+#: rust/frontend/ui/app.slint:3378 rust/frontend/ui/labels.slint:276
 msgid "OK"
 msgstr "In Ordnung"
 
-#: rust/frontend/ui/app.slint:3305 rust/frontend/ui/app.slint:3318
+#: rust/frontend/ui/app.slint:3443 rust/frontend/ui/app.slint:3456
 msgid "Scroll"
 msgstr "Scrollen"
 
-#: rust/frontend/ui/app.slint:3306 rust/frontend/ui/app.slint:3312
+#: rust/frontend/ui/app.slint:3444 rust/frontend/ui/app.slint:3450
 msgid "Image"
 msgstr "Bild"
 
-#: rust/frontend/ui/app.slint:3360
+#: rust/frontend/ui/app.slint:3498
 msgid "Adjust"
 msgstr "Anpassen"
 
-#: rust/frontend/ui/app.slint:3361
+#: rust/frontend/ui/app.slint:3499
 msgid "Save"
 msgstr "Speichern"
 
-#: rust/frontend/ui/app.slint:3369
+#: rust/frontend/ui/app.slint:3507
 msgid "Reposition"
 msgstr "Verschieben"
 
-#: rust/frontend/ui/app.slint:3370
+#: rust/frontend/ui/app.slint:3508
 msgid "Place"
 msgstr "Ablegen"
 
-#: rust/frontend/ui/app.slint:3380 rust/frontend/ui/app.slint:3393
-#: rust/frontend/ui/app.slint:3440 rust/frontend/ui/app.slint:3561
+#: rust/frontend/ui/app.slint:3518 rust/frontend/ui/app.slint:3531
+#: rust/frontend/ui/app.slint:3578 rust/frontend/ui/app.slint:3699
 msgid "Options"
 msgstr "Optionen"
 
-#: rust/frontend/ui/app.slint:3381 rust/frontend/ui/app.slint:3386
-#: rust/frontend/ui/app.slint:3400 rust/frontend/ui/app.slint:3433
-#: rust/frontend/ui/app.slint:3554 rust/frontend/ui/labels.slint:166
+#: rust/frontend/ui/app.slint:3519 rust/frontend/ui/app.slint:3524
+#: rust/frontend/ui/app.slint:3538 rust/frontend/ui/app.slint:3571
+#: rust/frontend/ui/app.slint:3692 rust/frontend/ui/labels.slint:179
 msgid "View"
 msgstr "Ansicht"
 
-#: rust/frontend/ui/browse_list.slint:28 rust/frontend/ui/labels.slint:72
+#: rust/frontend/ui/browse_list.slint:29 rust/frontend/ui/labels.slint:72
 #: rust/frontend/ui/search.slint:287
 msgid "System"
 msgstr "System"
 
-#: rust/frontend/ui/browse_list.slint:29
+#: rust/frontend/ui/browse_list.slint:30
 msgid "Platform"
 msgstr "Plattform"
 
-#: rust/frontend/ui/browse_list.slint:30
+#: rust/frontend/ui/browse_list.slint:31
 msgid "Category"
 msgstr "Kategorie"
 
-#: rust/frontend/ui/browse_list.slint:31 rust/frontend/ui/labels.slint:86
+#: rust/frontend/ui/browse_list.slint:32 rust/frontend/ui/labels.slint:86
 msgid "Year"
 msgstr "Jahr"
 
-#: rust/frontend/ui/browse_list.slint:32
+#: rust/frontend/ui/browse_list.slint:33
 msgid "Release date"
 msgstr "Erscheinungsdatum"
 
-#: rust/frontend/ui/browse_list.slint:33 rust/frontend/ui/labels.slint:85
+#: rust/frontend/ui/browse_list.slint:34 rust/frontend/ui/labels.slint:85
 msgid "Genre"
 msgstr "Genre"
 
-#: rust/frontend/ui/browse_list.slint:34 rust/frontend/ui/labels.slint:87
+#: rust/frontend/ui/browse_list.slint:35 rust/frontend/ui/labels.slint:87
 msgid "Players"
 msgstr "Spieler"
 
-#: rust/frontend/ui/browse_list.slint:35
+#: rust/frontend/ui/browse_list.slint:36
 msgid "Play mode"
 msgstr "Spielmodus"
 
-#: rust/frontend/ui/browse_list.slint:36
+#: rust/frontend/ui/browse_list.slint:37
 msgid "Cooperative"
 msgstr "Kooperativ"
 
-#: rust/frontend/ui/browse_list.slint:37 rust/frontend/ui/labels.slint:88
+#: rust/frontend/ui/browse_list.slint:38 rust/frontend/ui/labels.slint:88
 msgid "Developer"
 msgstr "Entwickler"
 
-#: rust/frontend/ui/browse_list.slint:38 rust/frontend/ui/labels.slint:89
+#: rust/frontend/ui/browse_list.slint:39 rust/frontend/ui/labels.slint:89
 msgid "Publisher"
 msgstr "Publisher"
 
-#: rust/frontend/ui/browse_list.slint:39
+#: rust/frontend/ui/browse_list.slint:40
 msgid "Manufacturer"
 msgstr "Hersteller"
 
-#: rust/frontend/ui/browse_list.slint:40
+#: rust/frontend/ui/browse_list.slint:41
 msgid "Rating"
 msgstr "Bewertung"
 
-#: rust/frontend/ui/browse_list.slint:41
+#: rust/frontend/ui/browse_list.slint:42
 msgid "Filename"
 msgstr "Dateiname"
 
-#: rust/frontend/ui/browse_list.slint:47
+#: rust/frontend/ui/browse_list.slint:48
 msgid "Sys"
 msgstr "Sys"
 
-#: rust/frontend/ui/browse_list.slint:48
+#: rust/frontend/ui/browse_list.slint:49
 msgid "Plat"
 msgstr "Plat"
 
-#: rust/frontend/ui/browse_list.slint:49
+#: rust/frontend/ui/browse_list.slint:50
 msgid "Cat"
 msgstr "Kat"
 
-#: rust/frontend/ui/browse_list.slint:50
+#: rust/frontend/ui/browse_list.slint:51
 msgid "Yr"
 msgstr "Jahr"
 
-#: rust/frontend/ui/browse_list.slint:51
+#: rust/frontend/ui/browse_list.slint:52
 msgid "Date"
 msgstr "Datum"
 
-#: rust/frontend/ui/browse_list.slint:52
+#: rust/frontend/ui/browse_list.slint:53
 msgid "Gen"
 msgstr "Gen"
 
-#: rust/frontend/ui/browse_list.slint:53
+#: rust/frontend/ui/browse_list.slint:54
 msgid "Plyr"
 msgstr "Spl"
 
-#: rust/frontend/ui/browse_list.slint:54
+#: rust/frontend/ui/browse_list.slint:55
 msgid "Mode"
 msgstr "Modus"
 
-#: rust/frontend/ui/browse_list.slint:55
+#: rust/frontend/ui/browse_list.slint:56
 msgid "Co-op"
 msgstr "Koop"
 
-#: rust/frontend/ui/browse_list.slint:56
+#: rust/frontend/ui/browse_list.slint:57
 msgid "Dev"
 msgstr "Entw"
 
-#: rust/frontend/ui/browse_list.slint:57
+#: rust/frontend/ui/browse_list.slint:58
 msgid "Pub"
 msgstr "Publ"
 
-#: rust/frontend/ui/browse_list.slint:58
+#: rust/frontend/ui/browse_list.slint:59
 msgid "Mfr"
 msgstr "Herst"
 
-#: rust/frontend/ui/browse_list.slint:59
+#: rust/frontend/ui/browse_list.slint:60
 msgid "Rtg"
 msgstr "Bew"
 
-#: rust/frontend/ui/browse_list.slint:60
+#: rust/frontend/ui/browse_list.slint:61
 msgid "File"
 msgstr "Datei"
 
-#: rust/frontend/ui/browse_list.slint:244 rust/frontend/ui/chrome.slint:1022
+#: rust/frontend/ui/browse_list.slint:261 rust/frontend/ui/chrome.slint:1037
 #: rust/frontend/ui/labels.slint:34
 msgid "Loading…"
 msgstr "Wird geladen…"
 
-#: rust/frontend/ui/chrome.slint:94
+#: rust/frontend/ui/chrome.slint:102
 msgid "Disconnected"
 msgstr "Getrennt"
 
-#: rust/frontend/ui/chrome.slint:95
+#: rust/frontend/ui/chrome.slint:103
 msgid "Reconnecting…"
 msgstr "Verbindung wird wiederhergestellt…"
 
-#: rust/frontend/ui/chrome.slint:96 rust/frontend/ui/settings.slint:339
+#: rust/frontend/ui/chrome.slint:104 rust/frontend/ui/settings.slint:339
 msgid "Connecting…"
 msgstr "Verbindung wird aufgebaut…"
 
-#: rust/frontend/ui/chrome.slint:98
+#: rust/frontend/ui/chrome.slint:106
 msgid "Core error"
 msgstr "Core-Fehler"
 
-#: rust/frontend/ui/chrome.slint:98
+#: rust/frontend/ui/chrome.slint:106
 msgid "Core error: {}"
 msgstr "Core-Fehler: {}"
 
-#: rust/frontend/ui/chrome.slint:100
+#: rust/frontend/ui/chrome.slint:108
 msgid "Indexing paused: game running"
 msgstr "Indizierung pausiert: Spiel läuft"
 
 #. run; a bare "Indexing: " reads as broken.
-#: rust/frontend/ui/chrome.slint:104
+#: rust/frontend/ui/chrome.slint:112
 msgid "Indexing…"
 msgstr "Indizierung…"
 
 #. run; a bare "Indexing: " reads as broken.
-#: rust/frontend/ui/chrome.slint:104
+#: rust/frontend/ui/chrome.slint:112
 msgid "Indexing: {}"
 msgstr "Indizierung: {}"
 
-#: rust/frontend/ui/chrome.slint:107
+#: rust/frontend/ui/chrome.slint:115
 msgid "Optimizing database…"
 msgstr "Datenbank wird optimiert…"
 
-#: rust/frontend/ui/chrome.slint:107
+#: rust/frontend/ui/chrome.slint:115
 msgid "Optimizing database: {}"
 msgstr "Datenbank wird optimiert: {}"
 
-#: rust/frontend/ui/chrome.slint:109
+#: rust/frontend/ui/chrome.slint:117
 msgid "Importing paused: game running"
 msgstr "Import pausiert: Spiel läuft"
 
-#: rust/frontend/ui/chrome.slint:111
+#: rust/frontend/ui/chrome.slint:119
 msgid "Importing…"
 msgstr "Import läuft…"
 
-#: rust/frontend/ui/chrome.slint:111
+#: rust/frontend/ui/chrome.slint:119
 msgid "Importing: {}"
 msgstr "Import: {}"
 
-#: rust/frontend/ui/chrome.slint:113
+#: rust/frontend/ui/chrome.slint:121
 msgid "Indexed {} files"
 msgstr "{} Dateien indiziert"
 
-#: rust/frontend/ui/chrome.slint:114
+#: rust/frontend/ui/chrome.slint:122
 msgid "Indexing complete"
 msgstr "Indizierung abgeschlossen"
 
-#: rust/frontend/ui/chrome.slint:115
+#: rust/frontend/ui/chrome.slint:123
 msgid "Import failed: {}"
 msgstr "Import fehlgeschlagen: {}"
 
-#: rust/frontend/ui/chrome.slint:116
+#: rust/frontend/ui/chrome.slint:124
 msgid "Imported {} of {}"
 msgstr "{} von {} importiert"
 
-#: rust/frontend/ui/chrome.slint:117
+#: rust/frontend/ui/chrome.slint:125
 msgid "Playtime limit in {}"
 msgstr "Spielzeitlimit in {}"
 
-#: rust/frontend/ui/chrome.slint:122 rust/frontend/ui/chrome.slint:233
-#: rust/frontend/ui/chrome.slint:375
+#: rust/frontend/ui/chrome.slint:130 rust/frontend/ui/chrome.slint:241
+#: rust/frontend/ui/chrome.slint:383
 msgid "{}%"
 msgstr "{}%"
 
-#: rust/frontend/ui/chrome.slint:606 rust/frontend/ui/chrome.slint:608
+#: rust/frontend/ui/chrome.slint:614 rust/frontend/ui/chrome.slint:616
 msgid "{}/{}"
 msgstr "{}/{}"
 
-#: rust/frontend/ui/chrome.slint:609
+#: rust/frontend/ui/chrome.slint:617
 msgid "{}"
 msgstr "{}"
 
-#: rust/frontend/ui/chrome.slint:702
+#: rust/frontend/ui/chrome.slint:709
 msgid "Page {} / {}"
 msgstr "Seite {0} / {1}"
 
-#: rust/frontend/ui/chrome.slint:703
+#: rust/frontend/ui/chrome.slint:710
 msgid "Page {}"
 msgstr "Seite {}"
 
-#: rust/frontend/ui/chrome.slint:1089
+#: rust/frontend/ui/chrome.slint:1104
 msgid "Nothing here"
 msgstr "Nichts hier"
 
-#: rust/frontend/ui/chrome.slint:1091
+#: rust/frontend/ui/chrome.slint:1106
 msgid "Check Zaparoo Core and try again."
 msgstr "Zaparoo Core prüfen und erneut versuchen."
 
-#: rust/frontend/ui/chrome.slint:1103
+#: rust/frontend/ui/chrome.slint:1118
 msgid "Failed to load"
 msgstr "Laden fehlgeschlagen"
 
@@ -732,7 +733,7 @@ msgstr "Konsolen"
 msgid "Handhelds"
 msgstr "Handhelds"
 
-#: rust/frontend/ui/labels.slint:44 rust/frontend/ui/labels.slint:133
+#: rust/frontend/ui/labels.slint:44 rust/frontend/ui/labels.slint:145
 msgid "Other"
 msgstr "Andere"
 
@@ -748,7 +749,7 @@ msgstr "Fortsetzen: {}"
 msgid "Update"
 msgstr "Update"
 
-#: rust/frontend/ui/labels.slint:50 rust/frontend/ui/labels.slint:150
+#: rust/frontend/ui/labels.slint:50 rust/frontend/ui/labels.slint:163
 msgid "Settings"
 msgstr "Einstellungen"
 
@@ -768,7 +769,7 @@ msgstr[1] "{n} Favoriten"
 msgid "A-Z"
 msgstr "A-Z"
 
-#: rust/frontend/ui/labels.slint:70 rust/frontend/ui/labels.slint:163
+#: rust/frontend/ui/labels.slint:70 rust/frontend/ui/labels.slint:176
 msgid "Default"
 msgstr "Standard"
 
@@ -776,7 +777,7 @@ msgstr "Standard"
 msgid "None"
 msgstr "Keine"
 
-#: rust/frontend/ui/labels.slint:79 rust/frontend/ui/labels.slint:137
+#: rust/frontend/ui/labels.slint:79 rust/frontend/ui/labels.slint:149
 msgid "Any"
 msgstr "Beliebig"
 
@@ -817,7 +818,7 @@ msgstr "Zu Favoriten hinzufügen"
 msgid "Remove from favorites"
 msgstr "Aus Favoriten entfernen"
 
-#: rust/frontend/ui/labels.slint:108 rust/frontend/ui/labels.slint:172
+#: rust/frontend/ui/labels.slint:108 rust/frontend/ui/labels.slint:185
 msgid "Change launcher"
 msgstr "Launcher ändern"
 
@@ -853,240 +854,276 @@ msgstr "Zum Hub hinzufügen"
 msgid "Remove from Hub"
 msgstr "Vom Hub entfernen"
 
-#: rust/frontend/ui/labels.slint:120 rust/frontend/ui/labels.slint:128
+#: rust/frontend/ui/labels.slint:120 rust/frontend/ui/labels.slint:140
 #: rust/frontend/ui/settings.slint:161
 msgid "Update metadata"
 msgstr "Metadaten aktualisieren"
 
-#: rust/frontend/ui/labels.slint:122 rust/frontend/ui/labels.slint:147
+#: rust/frontend/ui/labels.slint:122
+msgid "Write to token"
+msgstr "Auf Token schreiben"
+
+#: rust/frontend/ui/labels.slint:123
+msgid "Manage game"
+msgstr "Spiel verwalten"
+
+#: rust/frontend/ui/labels.slint:124
+msgid "Manage system"
+msgstr "System verwalten"
+
+#: rust/frontend/ui/labels.slint:125
+msgid "Manage category"
+msgstr "Kategorie verwalten"
+
+#: rust/frontend/ui/labels.slint:127 rust/frontend/ui/labels.slint:159
 msgid "Hide"
 msgstr "Ausblenden"
 
-#: rust/frontend/ui/labels.slint:123
+#: rust/frontend/ui/labels.slint:128
 msgid "Unhide"
 msgstr "Einblenden"
 
-#: rust/frontend/ui/labels.slint:125
+#: rust/frontend/ui/labels.slint:131
+msgid "Hide game"
+msgstr "Spiel ausblenden"
+
+#: rust/frontend/ui/labels.slint:132
+msgid "Unhide game"
+msgstr "Spiel einblenden"
+
+#: rust/frontend/ui/labels.slint:133
+msgid "Hide system"
+msgstr "System ausblenden"
+
+#: rust/frontend/ui/labels.slint:134
+msgid "Unhide system"
+msgstr "System einblenden"
+
+#: rust/frontend/ui/labels.slint:136
 msgid "Launch system"
 msgstr "System starten"
 
-#: rust/frontend/ui/labels.slint:126
+#: rust/frontend/ui/labels.slint:137
 msgid "Random game"
 msgstr "Zufälliges Spiel"
 
-#: rust/frontend/ui/labels.slint:127 rust/frontend/ui/settings.slint:88
+#: rust/frontend/ui/labels.slint:138
+msgid "Random favorite game"
+msgstr "Zufälliger Favorit"
+
+#: rust/frontend/ui/labels.slint:139 rust/frontend/ui/settings.slint:88
 msgid "Update media database"
 msgstr "Mediendatenbank aktualisieren"
 
-#: rust/frontend/ui/labels.slint:130
+#: rust/frontend/ui/labels.slint:142
 msgid "Search here…"
 msgstr "Hier suchen…"
 
-#: rust/frontend/ui/labels.slint:131 rust/frontend/ui/search.slint:288
+#: rust/frontend/ui/labels.slint:143 rust/frontend/ui/search.slint:288
 msgid "All systems"
 msgstr "Alle Systeme"
 
-#: rust/frontend/ui/labels.slint:132
+#: rust/frontend/ui/labels.slint:144
 msgid "Recent"
 msgstr "Zuletzt"
 
-#: rust/frontend/ui/labels.slint:135
+#: rust/frontend/ui/labels.slint:147
 msgid "Tags: {}"
 msgstr "Tags: {}"
 
-#: rust/frontend/ui/labels.slint:136
+#: rust/frontend/ui/labels.slint:148
 msgid "Clear tags"
 msgstr "Tags löschen"
 
-#: rust/frontend/ui/labels.slint:138
+#: rust/frontend/ui/labels.slint:150
 msgid "Loading tags…"
 msgstr "Tags werden geladen…"
 
-#: rust/frontend/ui/labels.slint:141
+#: rust/frontend/ui/labels.slint:153
 msgid "Failed to load tags"
 msgstr "Tags konnten nicht geladen werden"
 
-#: rust/frontend/ui/labels.slint:142
+#: rust/frontend/ui/labels.slint:154
 msgid "No tags available"
 msgstr "Keine Tags verfügbar"
 
-#: rust/frontend/ui/labels.slint:145
+#: rust/frontend/ui/labels.slint:157
 msgid "Add item…"
 msgstr "Element hinzufügen…"
 
-#: rust/frontend/ui/labels.slint:148
-msgid "Remove"
-msgstr "Entfernen"
+#: rust/frontend/ui/labels.slint:160
+msgid "Move tile"
+msgstr "Kachel bewegen"
 
-#: rust/frontend/ui/labels.slint:149
+#: rust/frontend/ui/labels.slint:161
+msgid "Hide Resume tile"
+msgstr "Fortsetzen-Kachel ausblenden"
+
+#: rust/frontend/ui/labels.slint:162
 msgid "Reset layout"
 msgstr "Layout zurücksetzen"
 
-#: rust/frontend/ui/labels.slint:151
+#: rust/frontend/ui/labels.slint:164
 msgid "Quit"
 msgstr "Beenden"
 
-#: rust/frontend/ui/labels.slint:152
+#: rust/frontend/ui/labels.slint:165
 msgid "Back to Hub"
 msgstr "Zurück zum Hub"
 
-#: rust/frontend/ui/labels.slint:156
+#: rust/frontend/ui/labels.slint:169
 msgid "Sort: {}"
 msgstr "Sortierung: {}"
 
-#: rust/frontend/ui/labels.slint:157
+#: rust/frontend/ui/labels.slint:170
 msgid "Group by: {}"
 msgstr "Gruppieren nach: {}"
 
-#: rust/frontend/ui/labels.slint:164
+#: rust/frontend/ui/labels.slint:177
 msgid "Current: {}"
 msgstr "Aktuell: {}"
 
-#: rust/frontend/ui/labels.slint:167 rust/frontend/ui/search.slint:303
+#: rust/frontend/ui/labels.slint:180 rust/frontend/ui/search.slint:303
 msgid "Tags"
 msgstr "Tags"
 
-#: rust/frontend/ui/labels.slint:169
+#: rust/frontend/ui/labels.slint:182
 msgid "Add item"
 msgstr "Element hinzufügen"
 
-#: rust/frontend/ui/labels.slint:170
+#: rust/frontend/ui/labels.slint:183
 msgid "Sort"
 msgstr "Sortieren"
 
-#: rust/frontend/ui/labels.slint:171
+#: rust/frontend/ui/labels.slint:184
 msgid "Group by"
 msgstr "Gruppieren nach"
 
-#: rust/frontend/ui/labels.slint:173
-msgid "Alternate versions"
-msgstr "Alternative Versionen"
-
-#: rust/frontend/ui/labels.slint:183
+#: rust/frontend/ui/labels.slint:195
 msgid "Launching…"
 msgstr "Wird gestartet…"
 
-#: rust/frontend/ui/labels.slint:184
+#: rust/frontend/ui/labels.slint:196
 msgid "Launching {}…"
 msgstr "{} wird gestartet…"
 
-#: rust/frontend/ui/labels.slint:186
+#: rust/frontend/ui/labels.slint:198
 msgid "Loading more…"
 msgstr "Mehr laden…"
 
-#: rust/frontend/ui/labels.slint:187
+#: rust/frontend/ui/labels.slint:199
 msgid "Loading {} of {}…"
 msgstr "{} von {} wird geladen…"
 
-#: rust/frontend/ui/labels.slint:188
+#: rust/frontend/ui/labels.slint:200
 msgid "Loading launchers…"
 msgstr "Launcher werden geladen…"
 
-#: rust/frontend/ui/labels.slint:191
+#: rust/frontend/ui/labels.slint:203
 msgid "Cancelling…"
 msgstr "Wird abgebrochen…"
 
-#: rust/frontend/ui/labels.slint:192
+#: rust/frontend/ui/labels.slint:204
 msgid "Unlinking…"
 msgstr "Wird getrennt…"
 
-#: rust/frontend/ui/labels.slint:193
+#: rust/frontend/ui/labels.slint:205
 msgid "Added to Hub"
 msgstr "Zum Hub hinzugefügt"
 
-#: rust/frontend/ui/labels.slint:194
+#: rust/frontend/ui/labels.slint:206
 msgid "Removed from Hub"
 msgstr "Vom Hub entfernt"
 
-#: rust/frontend/ui/labels.slint:195
+#: rust/frontend/ui/labels.slint:207
 msgid "Token written"
 msgstr "Token beschrieben"
 
-#: rust/frontend/ui/labels.slint:200
+#: rust/frontend/ui/labels.slint:212
 msgid "No recent games"
 msgstr "Keine zuletzt gespielten Spiele"
 
-#: rust/frontend/ui/labels.slint:201
+#: rust/frontend/ui/labels.slint:213
 msgid "No internet connection"
 msgstr "Keine Internetverbindung"
 
-#: rust/frontend/ui/labels.slint:202 rust/frontend/ui/settings.slint:342
+#: rust/frontend/ui/labels.slint:214 rust/frontend/ui/settings.slint:342
 msgid "Not available"
 msgstr "Nicht verfügbar"
 
-#: rust/frontend/ui/labels.slint:209
+#: rust/frontend/ui/labels.slint:221
 msgid "not installed"
 msgstr "nicht installiert"
 
-#: rust/frontend/ui/labels.slint:210
+#: rust/frontend/ui/labels.slint:222
 msgid "unavailable"
 msgstr "nicht verfügbar"
 
-#: rust/frontend/ui/labels.slint:219
+#: rust/frontend/ui/labels.slint:231
 msgid "Quit Zaparoo Frontend?"
 msgstr "Zaparoo Frontend beenden?"
 
-#: rust/frontend/ui/labels.slint:220
+#: rust/frontend/ui/labels.slint:232
 msgid "Game still running"
 msgstr "Spiel läuft noch"
 
-#: rust/frontend/ui/labels.slint:221
+#: rust/frontend/ui/labels.slint:233
 msgid "Quit and restart Zaparoo Frontend?"
 msgstr "Zaparoo Frontend beenden und neu starten?"
 
-#: rust/frontend/ui/labels.slint:222
+#: rust/frontend/ui/labels.slint:234
 msgid "Welcome to Zaparoo Frontend"
 msgstr "Willkommen bei Zaparoo Frontend"
 
-#: rust/frontend/ui/labels.slint:223
+#: rust/frontend/ui/labels.slint:235
 msgid "Update Zaparoo Core"
 msgstr "Zaparoo Core aktualisieren"
 
-#: rust/frontend/ui/labels.slint:224
+#: rust/frontend/ui/labels.slint:236
 msgid "First-time setup"
 msgstr "Ersteinrichtung"
 
-#: rust/frontend/ui/labels.slint:225
+#: rust/frontend/ui/labels.slint:237
 msgid "Nothing left to add"
 msgstr "Nichts mehr hinzuzufügen"
 
-#: rust/frontend/ui/labels.slint:226
+#: rust/frontend/ui/labels.slint:238
 msgid "Unlink Online account?"
 msgstr "Online-Konto trennen?"
 
-#: rust/frontend/ui/labels.slint:227
+#: rust/frontend/ui/labels.slint:239
 msgid "Restore this backup?"
 msgstr "Dieses Backup wiederherstellen?"
 
-#: rust/frontend/ui/labels.slint:228
+#: rust/frontend/ui/labels.slint:240
 msgid "Stop update?"
 msgstr "Update abbrechen?"
 
-#: rust/frontend/ui/labels.slint:237
+#: rust/frontend/ui/labels.slint:249
 msgid "Are you sure you want to exit?"
 msgstr "Wirklich beenden?"
 
-#: rust/frontend/ui/labels.slint:238
+#: rust/frontend/ui/labels.slint:250
 msgid "Close the running game before exiting Zaparoo Frontend."
 msgstr "Das laufende Spiel schließen, bevor Zaparoo Frontend beendet wird."
 
-#: rust/frontend/ui/labels.slint:239
+#: rust/frontend/ui/labels.slint:251
 msgid "This setting needs a frontend restart to take effect."
 msgstr "Diese Einstellung wird erst nach einem Neustart des Frontends wirksam."
 
-#: rust/frontend/ui/labels.slint:240
+#: rust/frontend/ui/labels.slint:252
 msgid "This device stops backing up and syncing with your Zaparoo Online account. Local play history stays on this device."
 msgstr "Dieses Gerät wird nicht mehr mit deinem Zaparoo Online-Konto gesichert und synchronisiert. Der lokale Spielverlauf bleibt auf diesem Gerät."
 
-#: rust/frontend/ui/labels.slint:241
+#: rust/frontend/ui/labels.slint:253
 msgid "This replaces this device's settings and data with the backup from {}. Zaparoo restarts when it finishes."
 msgstr "Einstellungen und Daten dieses Geräts werden durch das Backup vom {} ersetzt. Danach startet Zaparoo neu."
 
-#: rust/frontend/ui/labels.slint:242
+#: rust/frontend/ui/labels.slint:254
 msgid "An update is still running. Leaving this screen stops it."
 msgstr "Ein Update läuft noch. Beim Verlassen dieses Bildschirms wird es abgebrochen."
 
-#: rust/frontend/ui/labels.slint:244
+#: rust/frontend/ui/labels.slint:256
 msgid ""
 "Copyright 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.\n"
 "\n"
@@ -1110,327 +1147,327 @@ msgstr ""
 "Erstellt von\n"
 "Andrea Bogazzi, BossRighteous, Tim Wilsie, Wizzo"
 
-#: rust/frontend/ui/labels.slint:247
+#: rust/frontend/ui/labels.slint:259
 msgid "This frontend needs Zaparoo Core {} or newer. You're running {}. Some features may not work until you update."
 msgstr "Dieses Frontend erfordert Zaparoo Core {} oder neuer. Installiert ist {}. Manche Funktionen funktionieren eventuell erst nach einem Update."
 
-#: rust/frontend/ui/labels.slint:250
+#: rust/frontend/ui/labels.slint:262
 msgid "Start a media database update to find your games. It runs in the background, and systems appear as they are indexed."
 msgstr "Starte eine Aktualisierung der Mediendatenbank, um deine Spiele zu finden. Sie läuft im Hintergrund, und Systeme erscheinen, sobald sie indiziert sind."
 
-#: rust/frontend/ui/labels.slint:253
+#: rust/frontend/ui/labels.slint:265
 msgid "All categories and actions are already on the Hub. To add a game or system, open its Options menu and choose \"Add to Hub\"."
 msgstr "Alle Kategorien und Aktionen sind bereits auf dem Hub. Um ein Spiel oder System hinzuzufügen, öffne dessen Optionen-Menü und wähle \"Zum Hub hinzufügen\"."
 
-#: rust/frontend/ui/labels.slint:262
+#: rust/frontend/ui/labels.slint:274
 msgid "Yes"
 msgstr "Ja"
 
-#: rust/frontend/ui/labels.slint:263
+#: rust/frontend/ui/labels.slint:275
 msgid "No"
 msgstr "Nein"
 
-#: rust/frontend/ui/labels.slint:267
+#: rust/frontend/ui/labels.slint:279
 msgid "I understand"
 msgstr "Ich verstehe"
 
-#: rust/frontend/ui/labels.slint:268
+#: rust/frontend/ui/labels.slint:280
 msgid "Start media update"
 msgstr "Medienaktualisierung starten"
 
-#: rust/frontend/ui/labels.slint:275
+#: rust/frontend/ui/labels.slint:287
 msgid "Launch failed"
 msgstr "Start fehlgeschlagen"
 
-#: rust/frontend/ui/labels.slint:276
+#: rust/frontend/ui/labels.slint:288
 msgid "Favorite update failed"
 msgstr "Favorit nicht aktualisiert"
 
-#: rust/frontend/ui/labels.slint:277
+#: rust/frontend/ui/labels.slint:289
 msgid "Visibility update failed"
 msgstr "Sichtbarkeit nicht geändert"
 
-#: rust/frontend/ui/labels.slint:278
+#: rust/frontend/ui/labels.slint:290
 msgid "Media database is busy"
 msgstr "Mediendatenbank ist beschäftigt"
 
-#: rust/frontend/ui/labels.slint:279
+#: rust/frontend/ui/labels.slint:291
 msgid "Add to Hub failed"
 msgstr "Hinzufügen zum Hub fehlgeschlagen"
 
-#: rust/frontend/ui/labels.slint:280
+#: rust/frontend/ui/labels.slint:292
 msgid "Media update failed"
 msgstr "Medienaktualisierung fehlgeschlagen"
 
-#: rust/frontend/ui/labels.slint:281
+#: rust/frontend/ui/labels.slint:293
 msgid "Update metadata failed"
 msgstr "Metadaten-Aktualisierung fehlgeschlagen"
 
-#: rust/frontend/ui/labels.slint:282
+#: rust/frontend/ui/labels.slint:294
 msgid "Source list unavailable"
 msgstr "Quellenliste nicht verfügbar"
 
-#: rust/frontend/ui/labels.slint:283
+#: rust/frontend/ui/labels.slint:295
 msgid "Cancel failed"
 msgstr "Abbrechen fehlgeschlagen"
 
-#: rust/frontend/ui/labels.slint:284
+#: rust/frontend/ui/labels.slint:296
 msgid "Launcher update failed"
 msgstr "Launcher nicht geändert"
 
-#: rust/frontend/ui/labels.slint:285
+#: rust/frontend/ui/labels.slint:297
 msgid "Alternate versions unavailable"
 msgstr "Alternative Versionen nicht verfügbar"
 
-#: rust/frontend/ui/labels.slint:286
+#: rust/frontend/ui/labels.slint:298
 msgid "Disc list unavailable"
 msgstr "Disc-Liste nicht verfügbar"
 
-#: rust/frontend/ui/labels.slint:287
+#: rust/frontend/ui/labels.slint:299
 msgid "QR code failed"
 msgstr "QR-Code fehlgeschlagen"
 
-#: rust/frontend/ui/labels.slint:288
+#: rust/frontend/ui/labels.slint:300
 msgid "Token write failed"
 msgstr "Token-Schreiben fehlgeschlagen"
 
-#: rust/frontend/ui/labels.slint:289
+#: rust/frontend/ui/labels.slint:301
 msgid "Setting not saved"
 msgstr "Einstellung nicht gespeichert"
 
-#: rust/frontend/ui/labels.slint:290
+#: rust/frontend/ui/labels.slint:302
 msgid "Pairing could not start"
 msgstr "Kopplung konnte nicht starten"
 
-#: rust/frontend/ui/labels.slint:291
+#: rust/frontend/ui/labels.slint:303
 msgid "Online account unavailable"
 msgstr "Online-Konto nicht verfügbar"
 
-#: rust/frontend/ui/labels.slint:292
+#: rust/frontend/ui/labels.slint:304
 msgid "Cloud backup failed"
 msgstr "Cloud-Backup fehlgeschlagen"
 
-#: rust/frontend/ui/labels.slint:293
+#: rust/frontend/ui/labels.slint:305
 msgid "Config file not loaded"
 msgstr "Konfiguration nicht geladen"
 
-#: rust/frontend/ui/labels.slint:294
+#: rust/frontend/ui/labels.slint:306
 msgid "Action failed"
 msgstr "Aktion fehlgeschlagen"
 
-#: rust/frontend/ui/labels.slint:301
+#: rust/frontend/ui/labels.slint:313
 msgid "Could not start this item. Check Zaparoo Core and try again."
 msgstr "Dieses Element konnte nicht gestartet werden. Zaparoo Core prüfen und erneut versuchen."
 
-#: rust/frontend/ui/labels.slint:302
+#: rust/frontend/ui/labels.slint:314
 msgid "Could not start {}. Check Zaparoo Core and try again."
 msgstr "{} konnte nicht gestartet werden. Zaparoo Core prüfen und erneut versuchen."
 
-#: rust/frontend/ui/labels.slint:307
+#: rust/frontend/ui/labels.slint:319
 msgid "Could not update this favorite. Check Zaparoo Core and try again."
 msgstr "Dieser Favorit konnte nicht aktualisiert werden. Zaparoo Core prüfen und erneut versuchen."
 
-#: rust/frontend/ui/labels.slint:308
+#: rust/frontend/ui/labels.slint:320
 msgid "Could not hide or unhide this game. Check Zaparoo Core and try again."
 msgstr "Dieses Spiel konnte nicht aus- oder eingeblendet werden. Zaparoo Core prüfen und erneut versuchen."
 
-#: rust/frontend/ui/labels.slint:310
+#: rust/frontend/ui/labels.slint:322
 msgid "Zaparoo Core is updating the media database. Try again when it finishes."
 msgstr "Zaparoo Core aktualisiert gerade die Mediendatenbank. Danach erneut versuchen."
 
-#: rust/frontend/ui/labels.slint:312
+#: rust/frontend/ui/labels.slint:324
 msgid "Could not add this item to the Hub. Check Zaparoo Core and try again."
 msgstr "Dieses Element konnte nicht zum Hub hinzugefügt werden. Zaparoo Core prüfen und erneut versuchen."
 
-#: rust/frontend/ui/labels.slint:313
+#: rust/frontend/ui/labels.slint:325
 msgid "Could not add {} to the Hub. Check Zaparoo Core and try again."
 msgstr "{} konnte nicht zum Hub hinzugefügt werden. Zaparoo Core prüfen und erneut versuchen."
 
-#: rust/frontend/ui/labels.slint:315
+#: rust/frontend/ui/labels.slint:327
 msgid "Could not start the media database update. Check Zaparoo Core and try again."
 msgstr "Die Aktualisierung der Mediendatenbank konnte nicht gestartet werden. Zaparoo Core prüfen und erneut versuchen."
 
-#: rust/frontend/ui/labels.slint:316
+#: rust/frontend/ui/labels.slint:328
 msgid "Could not start updating metadata. Check Zaparoo Core and try again."
 msgstr "Die Metadaten-Aktualisierung konnte nicht gestartet werden. Zaparoo Core prüfen und erneut versuchen."
 
-#: rust/frontend/ui/labels.slint:317
+#: rust/frontend/ui/labels.slint:329
 msgid "Could not load the list of metadata sources. Check Zaparoo Core and try again."
 msgstr "Die Liste der Metadatenquellen konnte nicht geladen werden. Zaparoo Core prüfen und erneut versuchen."
 
-#: rust/frontend/ui/labels.slint:318
+#: rust/frontend/ui/labels.slint:330
 msgid "Could not cancel the media operation. Check Zaparoo Core and try again."
 msgstr "Der Medienvorgang konnte nicht abgebrochen werden. Zaparoo Core prüfen und erneut versuchen."
 
-#: rust/frontend/ui/labels.slint:319
+#: rust/frontend/ui/labels.slint:331
 msgid "Could not change the launcher. Check Zaparoo Core and try again."
 msgstr "Der Launcher konnte nicht geändert werden. Zaparoo Core prüfen und erneut versuchen."
 
-#: rust/frontend/ui/labels.slint:320
+#: rust/frontend/ui/labels.slint:332
 msgid "Could not find alternate versions. Check Zaparoo Core and try again."
 msgstr "Alternative Versionen konnten nicht gesucht werden. Zaparoo Core prüfen und erneut versuchen."
 
-#: rust/frontend/ui/labels.slint:321
+#: rust/frontend/ui/labels.slint:333
 msgid "Could not list the discs of this game. Check Zaparoo Core and try again."
 msgstr "Die Discs dieses Spiels konnten nicht aufgelistet werden. Zaparoo Core prüfen und erneut versuchen."
 
-#: rust/frontend/ui/labels.slint:322
+#: rust/frontend/ui/labels.slint:334
 msgid "Could not create the QR code for this item."
 msgstr "Der QR-Code für dieses Element konnte nicht erstellt werden."
 
-#: rust/frontend/ui/labels.slint:323
+#: rust/frontend/ui/labels.slint:335
 msgid "Could not write to this token. Check that it is writable and try again."
 msgstr "Dieser Token konnte nicht beschrieben werden. Prüfen, ob er beschreibbar ist, und erneut versuchen."
 
-#: rust/frontend/ui/labels.slint:324
+#: rust/frontend/ui/labels.slint:336
 msgid "Could not save this setting. Try again."
 msgstr "Diese Einstellung konnte nicht gespeichert werden. Erneut versuchen."
 
-#: rust/frontend/ui/labels.slint:325
+#: rust/frontend/ui/labels.slint:337
 msgid "Core would not start a pairing. It may already have as many paired devices as it allows, or it may be running on another device."
 msgstr "Core hat keine Kopplung gestartet. Möglicherweise ist die maximale Anzahl gekoppelter Geräte erreicht, oder Core läuft auf einem anderen Gerät."
 
-#: rust/frontend/ui/labels.slint:326
+#: rust/frontend/ui/labels.slint:338
 msgid "Core could not reach or update your Zaparoo Online account. Check the network connection and try again."
 msgstr "Core konnte dein Zaparoo Online-Konto nicht erreichen oder aktualisieren. Netzwerkverbindung prüfen und erneut versuchen."
 
-#: rust/frontend/ui/labels.slint:330
+#: rust/frontend/ui/labels.slint:342
 msgid "A backup was uploaded recently. Wait a few minutes, then try again."
 msgstr "Vor Kurzem wurde ein Backup hochgeladen. Einige Minuten warten und erneut versuchen."
 
-#: rust/frontend/ui/labels.slint:333
+#: rust/frontend/ui/labels.slint:345
 msgid "Your cloud backup storage is full."
 msgstr "Dein Cloud-Backup-Speicher ist voll."
 
-#: rust/frontend/ui/labels.slint:334
+#: rust/frontend/ui/labels.slint:346
 msgid "Zaparoo is busy with another backup or request. Wait for it to finish, then try again."
 msgstr "Zaparoo ist mit einem anderen Backup oder einer Anfrage beschäftigt. Abwarten und dann erneut versuchen."
 
-#: rust/frontend/ui/labels.slint:335
+#: rust/frontend/ui/labels.slint:347
 msgid "Stop the game that is running, then try again."
 msgstr "Das laufende Spiel beenden und erneut versuchen."
 
-#: rust/frontend/ui/labels.slint:336
+#: rust/frontend/ui/labels.slint:348
 msgid "Restart Zaparoo to finish the previous restore, then try again."
 msgstr "Zaparoo neu starten, um die vorherige Wiederherstellung abzuschließen, dann erneut versuchen."
 
-#: rust/frontend/ui/labels.slint:337
+#: rust/frontend/ui/labels.slint:349
 msgid "This backup was made by a newer Zaparoo. Update Zaparoo, then try again."
 msgstr "Dieses Backup stammt von einem neueren Zaparoo. Zaparoo aktualisieren und erneut versuchen."
 
-#: rust/frontend/ui/labels.slint:338
+#: rust/frontend/ui/labels.slint:350
 msgid "Free some storage space on this device, then try again."
 msgstr "Speicherplatz auf diesem Gerät freigeben und erneut versuchen."
 
-#: rust/frontend/ui/labels.slint:339
+#: rust/frontend/ui/labels.slint:351
 msgid "Could not finish the cloud backup. Check the network connection and try again."
 msgstr "Das Cloud-Backup konnte nicht abgeschlossen werden. Netzwerkverbindung prüfen und erneut versuchen."
 
-#: rust/frontend/ui/labels.slint:342
+#: rust/frontend/ui/labels.slint:354
 msgid "{} could not be read, so defaults are in use and changes will not be saved. Fix or remove the file, then restart."
 msgstr "{} konnte nicht gelesen werden. Es gelten die Standardwerte, und Änderungen werden nicht gespeichert. Datei korrigieren oder entfernen, dann neu starten."
 
-#: rust/frontend/ui/labels.slint:343
+#: rust/frontend/ui/labels.slint:355
 msgid "The action could not be completed. Check Zaparoo Core and try again."
 msgstr "Die Aktion konnte nicht abgeschlossen werden. Zaparoo Core prüfen und erneut versuchen."
 
-#: rust/frontend/ui/labels.slint:355
+#: rust/frontend/ui/labels.slint:367
 msgid "This launcher isn't installed."
 msgstr "Dieser Launcher ist nicht installiert."
 
-#: rust/frontend/ui/labels.slint:356
+#: rust/frontend/ui/labels.slint:368
 msgid "{} isn't installed."
 msgstr "{} ist nicht installiert."
 
-#: rust/frontend/ui/labels.slint:359
+#: rust/frontend/ui/labels.slint:371
 msgid "This launcher is installed, but its entry point is missing or disabled."
 msgstr "Dieser Launcher ist installiert, aber sein Einstiegspunkt fehlt oder ist deaktiviert."
 
-#: rust/frontend/ui/labels.slint:360
+#: rust/frontend/ui/labels.slint:372
 msgid "{} is installed, but its entry point is missing or disabled."
 msgstr "{} ist installiert, aber der Einstiegspunkt fehlt oder ist deaktiviert."
 
-#: rust/frontend/ui/labels.slint:363
+#: rust/frontend/ui/labels.slint:375
 msgid "This launcher's plugin for this system isn't installed."
 msgstr "Das Plugin dieses Launchers für dieses System ist nicht installiert."
 
-#: rust/frontend/ui/labels.slint:364
+#: rust/frontend/ui/labels.slint:376
 msgid "{}'s plugin for this system isn't installed."
 msgstr "Das Plugin von {} für dieses System ist nicht installiert."
 
-#: rust/frontend/ui/labels.slint:365
+#: rust/frontend/ui/labels.slint:377
 msgid "{}'s {} plugin isn't installed."
 msgstr "Das {1}-Plugin von {0} ist nicht installiert."
 
-#: rust/frontend/ui/labels.slint:368
+#: rust/frontend/ui/labels.slint:380
 msgid "This build of the launcher can't be used for this media. A different build is needed."
 msgstr "Dieser Build des Launchers eignet sich nicht für dieses Medium. Ein anderer Build ist nötig."
 
-#: rust/frontend/ui/labels.slint:369
+#: rust/frontend/ui/labels.slint:381
 msgid "This build of {} can't be used for this media. A different build is needed."
 msgstr "Dieser Build von {} eignet sich nicht für dieses Medium. Ein anderer Build ist nötig."
 
-#: rust/frontend/ui/labels.slint:372
+#: rust/frontend/ui/labels.slint:384
 msgid "This launcher can't play this media."
 msgstr "Dieser Launcher kann dieses Medium nicht abspielen."
 
-#: rust/frontend/ui/labels.slint:373
+#: rust/frontend/ui/labels.slint:385
 msgid "{} can't play this media."
 msgstr "{} kann dieses Medium nicht abspielen."
 
-#: rust/frontend/ui/labels.slint:376
+#: rust/frontend/ui/labels.slint:388
 msgid "This launcher doesn't support the requested launch options."
 msgstr "Dieser Launcher unterstützt die angeforderten Startoptionen nicht."
 
-#: rust/frontend/ui/labels.slint:377
+#: rust/frontend/ui/labels.slint:389
 msgid "{} doesn't support the requested launch options."
 msgstr "{} unterstützt die angeforderten Startoptionen nicht."
 
-#: rust/frontend/ui/labels.slint:380
+#: rust/frontend/ui/labels.slint:392
 msgid "This launcher doesn't have the storage permission it needs."
 msgstr "Diesem Launcher fehlt die nötige Speicherberechtigung."
 
-#: rust/frontend/ui/labels.slint:381
+#: rust/frontend/ui/labels.slint:393
 msgid "{} doesn't have the storage permission it needs."
 msgstr "{} hat nicht die nötige Speicherberechtigung."
 
-#: rust/frontend/ui/labels.slint:384
+#: rust/frontend/ui/labels.slint:396
 msgid "This launcher can't read media from where it's stored."
 msgstr "Dieser Launcher kann Medien an ihrem Speicherort nicht lesen."
 
-#: rust/frontend/ui/labels.slint:385
+#: rust/frontend/ui/labels.slint:397
 msgid "{} can't read media from where it's stored."
 msgstr "{} kann Medien an ihrem Speicherort nicht lesen."
 
-#: rust/frontend/ui/labels.slint:387
+#: rust/frontend/ui/labels.slint:399
 msgid "The storage holding this media isn't available."
 msgstr "Der Speicher mit diesem Medium ist nicht verfügbar."
 
-#: rust/frontend/ui/labels.slint:388
+#: rust/frontend/ui/labels.slint:400
 msgid "This media could not be resolved or opened."
 msgstr "Dieses Medium konnte nicht gefunden oder geöffnet werden."
 
-#: rust/frontend/ui/labels.slint:389
+#: rust/frontend/ui/labels.slint:401
 msgid "Access to this media's folder was revoked. Re-grant it in Settings > Library."
 msgstr "Der Zugriff auf den Ordner dieses Mediums wurde entzogen. Unter Einstellungen > Bibliothek erneut erlauben."
 
-#: rust/frontend/ui/labels.slint:390
+#: rust/frontend/ui/labels.slint:402
 msgid "The launcher service isn't responding."
 msgstr "Der Launcher-Dienst antwortet nicht."
 
-#: rust/frontend/ui/labels.slint:391
+#: rust/frontend/ui/labels.slint:403
 msgid "Return to Zaparoo before launching this."
 msgstr "Vor dem Starten zu Zaparoo zurückkehren."
 
-#: rust/frontend/ui/labels.slint:392
+#: rust/frontend/ui/labels.slint:404
 msgid "The launch was cancelled before it started."
 msgstr "Der Start wurde vor Beginn abgebrochen."
 
-#: rust/frontend/ui/labels.slint:393
+#: rust/frontend/ui/labels.slint:405
 msgid "The launch was sent, but its outcome could not be confirmed."
 msgstr "Der Start wurde gesendet, das Ergebnis ließ sich aber nicht bestätigen."
 
-#: rust/frontend/ui/labels.slint:394
+#: rust/frontend/ui/labels.slint:406
 msgid "The system refused the launch request."
 msgstr "Das System hat die Startanfrage abgelehnt."
 

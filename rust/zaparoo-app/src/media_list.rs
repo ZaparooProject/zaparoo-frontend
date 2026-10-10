@@ -724,80 +724,6 @@ pub fn page_menu_allowed(state: State, enabled_when_empty: bool) -> bool {
     state == State::Ready || (enabled_when_empty && state == State::Empty)
 }
 
-/// Which list the menu belongs to.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Owner {
-    Games,
-    Favorites,
-    Recents,
-    /// Search results: a flat list of media, like Favorites.
-    Search,
-}
-
-/// Everything `buildContextMenuEntries` reads for a media row.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(
-    clippy::struct_excessive_bools,
-    reason = "one flag per menu gate: media, root, NFC, favorite, arcade, discs, launchers, busy"
-)]
-pub struct MenuInput {
-    pub owner: Owner,
-    pub entry_type: EntryType,
-    pub media_capable: bool,
-    pub pinnable_root: bool,
-    pub has_nfc: bool,
-    pub is_favorite: bool,
-    pub is_arcade_system: bool,
-    /// A folder of one game's discs: Accept launches one, the menu lists
-    /// them all.
-    pub multi_disc: bool,
-    pub has_launchers: bool,
-    pub media_busy: bool,
-}
-
-/// The menu ids in display order, empty when the row gets no menu.
-pub fn context_entries(input: &MenuInput) -> Vec<&'static str> {
-    let folder = input.entry_type.is_folder() && !input.media_capable;
-    if input.owner != Owner::Recents {
-        if input.entry_type == EntryType::Root && !input.media_capable && !input.pinnable_root {
-            return Vec::new();
-        }
-        if folder {
-            // A system's own root is not a folder Core can hide.
-            return match (input.owner, input.entry_type) {
-                (Owner::Games, EntryType::Directory) => vec!["add_to_hub", "toggle_hidden"],
-                (Owner::Games, _) => vec!["add_to_hub"],
-                _ => Vec::new(),
-            };
-        }
-    } else if folder {
-        return Vec::new();
-    }
-    let mut entries = vec!["more_info"];
-    if input.owner != Owner::Recents {
-        entries.push("toggle_favorite");
-        if input.owner == Owner::Games && input.has_launchers {
-            entries.push("change_launcher");
-        }
-        if input.owner == Owner::Games && input.multi_disc {
-            entries.push("choose_disc");
-        }
-    }
-    if input.has_nfc {
-        entries.push("write_card");
-    }
-    entries.push("qr_code");
-    if input.is_arcade_system {
-        entries.push("discover");
-    }
-    entries.push("add_to_hub");
-    entries.push("toggle_hidden");
-    if !input.media_busy {
-        entries.push("scrape_game");
-    }
-    entries
-}
-
 /// Keep focus near a newly hidden row: next visible sibling, then previous.
 /// Returning none lets a refill clear an empty list's saved selection.
 pub fn selection_after_hide(index: usize, hidden: &[bool]) -> Option<usize> {
@@ -806,9 +732,29 @@ pub fn selection_after_hide(index: usize, hidden: &[bool]) -> Option<usize> {
         .find(|&candidate| !hidden[candidate])
 }
 
-/// Whether the row at the current position gets a context menu at all.
-pub fn context_menu_enabled(entry_type: EntryType, media_capable: bool, path: &str) -> bool {
-    media_capable || entry_type == EntryType::Directory || is_filesystem_root(entry_type, path)
+/// What kind of thing a row is to its Options menu.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MenuTarget {
+    /// A game, or a folder or archive Core launches as one.
+    Game,
+    Folder(crate::options_menu::Folder),
+    /// Nothing the menu has an action for.
+    None,
+}
+
+pub fn menu_target(entry_type: EntryType, media_capable: bool, path: &str) -> MenuTarget {
+    use crate::options_menu::Folder;
+    if media_capable {
+        return MenuTarget::Game;
+    }
+    match entry_type {
+        EntryType::Directory => MenuTarget::Folder(Folder::Directory),
+        EntryType::Root if is_filesystem_root(entry_type, path) => {
+            MenuTarget::Folder(Folder::FilesystemRoot)
+        }
+        EntryType::Root => MenuTarget::Folder(Folder::VirtualRoot),
+        EntryType::Media | EntryType::Other => MenuTarget::None,
+    }
 }
 
 /// Escape zapscript separators while leaving path text readable.
@@ -1713,150 +1659,31 @@ mod tests {
         assert!(!page_menu_allowed(State::Loading, true));
     }
 
-    fn menu(owner: Owner) -> MenuInput {
-        MenuInput {
-            owner,
-            entry_type: EntryType::Media,
-            media_capable: true,
-            pinnable_root: false,
-            has_nfc: false,
-            is_favorite: false,
-            is_arcade_system: false,
-            multi_disc: false,
-            has_launchers: false,
-            media_busy: false,
-        }
-    }
-
     #[test]
-    fn a_multi_disc_folder_offers_its_discs_after_the_launcher() {
-        let input = MenuInput {
-            entry_type: EntryType::Directory,
-            multi_disc: true,
-            has_launchers: true,
-            ..menu(Owner::Games)
-        };
+    fn a_row_is_a_game_a_folder_or_nothing_to_the_menu() {
+        use crate::options_menu::Folder;
         assert_eq!(
-            context_entries(&input),
-            vec![
-                "more_info",
-                "toggle_favorite",
-                "change_launcher",
-                "choose_disc",
-                "qr_code",
-                "add_to_hub",
-                "toggle_hidden",
-                "scrape_game"
-            ]
+            menu_target(EntryType::Media, true, "/x.rom"),
+            MenuTarget::Game
         );
-        // The flat lists hold single discs, never the folder.
-        for owner in [Owner::Favorites, Owner::Recents, Owner::Search] {
-            let flat = MenuInput { owner, ..input };
-            assert!(!context_entries(&flat).contains(&"choose_disc"));
-        }
-    }
-
-    #[test]
-    fn games_menu_orders_details_first_and_maintenance_last() {
-        let input = MenuInput {
-            has_nfc: true,
-            has_launchers: true,
-            is_arcade_system: true,
-            ..menu(Owner::Games)
-        };
+        // A folder or archive Core launches as one item is a game.
         assert_eq!(
-            context_entries(&input),
-            vec![
-                "more_info",
-                "toggle_favorite",
-                "change_launcher",
-                "write_card",
-                "qr_code",
-                "discover",
-                "add_to_hub",
-                "toggle_hidden",
-                "scrape_game"
-            ]
+            menu_target(EntryType::Directory, true, "/x"),
+            MenuTarget::Game
         );
-        let busy = MenuInput {
-            media_busy: true,
-            ..menu(Owner::Games)
-        };
         assert_eq!(
-            context_entries(&busy),
-            vec![
-                "more_info",
-                "toggle_favorite",
-                "qr_code",
-                "add_to_hub",
-                "toggle_hidden"
-            ]
+            menu_target(EntryType::Directory, false, "/x"),
+            MenuTarget::Folder(Folder::Directory)
         );
-    }
-
-    #[test]
-    fn favorites_menu_has_no_launcher_override() {
-        let input = MenuInput {
-            has_launchers: true,
-            ..menu(Owner::Favorites)
-        };
         assert_eq!(
-            context_entries(&input),
-            vec![
-                "more_info",
-                "toggle_favorite",
-                "qr_code",
-                "add_to_hub",
-                "toggle_hidden",
-                "scrape_game"
-            ]
+            menu_target(EntryType::Root, false, "/x"),
+            MenuTarget::Folder(Folder::FilesystemRoot)
         );
-    }
-
-    #[test]
-    fn recents_menu_has_no_favorite_toggle() {
         assert_eq!(
-            context_entries(&menu(Owner::Recents)),
-            vec![
-                "more_info",
-                "qr_code",
-                "add_to_hub",
-                "toggle_hidden",
-                "scrape_game"
-            ]
+            menu_target(EntryType::Root, false, "mame://"),
+            MenuTarget::Folder(Folder::VirtualRoot)
         );
-    }
-
-    #[test]
-    fn folder_rows_pin_and_hide_on_games_and_roots_only_pin() {
-        let folder = MenuInput {
-            entry_type: EntryType::Directory,
-            media_capable: false,
-            ..menu(Owner::Games)
-        };
-        assert_eq!(
-            context_entries(&folder),
-            vec!["add_to_hub", "toggle_hidden"]
-        );
-        let virtual_root = MenuInput {
-            entry_type: EntryType::Root,
-            media_capable: false,
-            ..menu(Owner::Games)
-        };
-        assert!(context_entries(&virtual_root).is_empty());
-        let fs_root = MenuInput {
-            pinnable_root: true,
-            ..virtual_root
-        };
-        assert_eq!(context_entries(&fs_root), vec!["add_to_hub"]);
-        let favorites_folder = MenuInput {
-            owner: Owner::Favorites,
-            ..folder
-        };
-        assert!(context_entries(&favorites_folder).is_empty());
-        assert!(context_menu_enabled(EntryType::Directory, false, "/x"));
-        assert!(context_menu_enabled(EntryType::Root, false, "/x"));
-        assert!(!context_menu_enabled(EntryType::Root, false, "mame://"));
+        assert_eq!(menu_target(EntryType::Other, false, "/x"), MenuTarget::None);
     }
 
     #[test]
@@ -1866,15 +1693,6 @@ mod tests {
         assert_eq!(selection_after_hide(0, &[true, true, false]), Some(2));
         assert_eq!(selection_after_hide(1, &[true, true]), None);
         assert_eq!(selection_after_hide(0, &[]), None);
-    }
-
-    #[test]
-    fn media_capable_directories_get_the_hide_toggle() {
-        let input = MenuInput {
-            entry_type: EntryType::Directory,
-            ..menu(Owner::Games)
-        };
-        assert!(context_entries(&input).contains(&"toggle_hidden"));
     }
 
     #[test]

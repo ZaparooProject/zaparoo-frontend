@@ -1437,11 +1437,13 @@ deep they are or how many Back presses get out. The rules:
    (`closes_context_menu`), so Back never returns to a waiting row that can
    never resolve.
 5. `ContextMenu` is an anchored transient, not a card. It closes before
-   anything it triggers opens. Its two pages, alternate versions
+   anything it triggers opens. Its pages are an in-place swap of its rows
+   through `rust/frontend/src/context_page.rs`: Manage and Write to token,
+   whose rows are the menu's own, and alternate versions
    (`rust/frontend/src/alternates.rs`) and a multi-disc game's discs
-   (`rust/frontend/src/discs.rs`), are an in-place swap of its rows through
-   `rust/frontend/src/context_page.rs`: Back returns to the rows the page
-   replaced, on the row that opened it (`context_action` in `router.rs`).
+   (`rust/frontend/src/discs.rs`), which Core is asked for. Back returns to
+   the rows the page replaced, on the row that opened it (`context_action`
+   in `router.rs`). One level only: a row on a page never opens a page.
 6. A screen may open a modal (Settings rows open `ListPickerModal`); a
    modal that closes and *then* opens another (View menu -> letter jump,
    error -> retry) is a sequence, not a stack, and is fine.
@@ -1552,10 +1554,25 @@ the panel carries `clip: true` as a shipped-build safety net. Judge a menu by
 whether it still fits without scrolling at 240p: a scrolled-past entry is an
 undiscoverable one.
 
+**Pages.** A row that turns the menu to a page (`MenuRole.submenu`) draws a
+trailing `icons/NavRight` chevron at the Settings row's size, and reserves the
+same room on its leading side so its label stays centered with the others. The
+chevron marks a page of this menu, not every row that ends in another surface:
+`Change launcher` opens a picker after the menu has closed and draws none, and
+`Write to token` draws none when the App is the only way to write, since it
+then runs directly. While a page shows (`Overlays.context-page`, the
+`ContextPage` enum), its name is pinned above the rows in `Theme.text-label`,
+in a band one row tall that never scrolls with them; the name is the opening
+row's own label. The menu's own rows have no title: the bright anchor already
+says what they are about. There is no Back row; the help bar reads Back in
+place of Close.
+
 Row labels center the `Text` item itself on its measured width
 (`ContextRowBody`), per the integer-pixel rule below, never a full-width
 `Text` with `horizontal-alignment: center`. Panel width tracks content:
-`panel-w` clamps `desired-panel-w` (the widest entry label plus padding)
+`panel-w` clamps `desired-panel-w` (the widest of the entry labels, with a
+chevron's room on both sides where a row has one, and the page title, plus
+padding)
 between a degenerate-case floor (`min-panel-w: Sizing.pct-w(12)`) and the
 available width, so a menu with short labels narrows instead of always paying
 for a fixed minimum panel width.

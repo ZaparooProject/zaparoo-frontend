@@ -29,12 +29,40 @@ list by this priority, top to bottom:
    metadata) — always last. These start a background job the user waits
    on; they are never what most people open the menu to do.
 
+Options is a quick menu, not an item's control center. On an item with
+more than a handful of actions, groups 3 and 4 move to one **Manage**
+page (`Manage game`, `Manage system`, `Manage category`), the last row of
+Options, and the two ways of writing a token share one `Write to token`
+row. Within Manage the same order holds: configuration (`Change
+launcher`), then organization, then maintenance last. `Choose disc` and
+`Discover alt. versions` stay on Options, since they are what the user
+opened the menu for. A menu whose organizational actions number two or
+three keeps them on Options (a folder, a launch-only system, a built-in
+Hub tile): a Manage page is for overflow, not for uniformity. The rules
+and their tests are `rust/zaparoo-app/src/options_menu.rs`.
+
+The same item shows the same menu wherever it appears. A row is offered
+because the item has the data and capability for it, never because of the
+screen: a game reads the same in Games, Favorites, Search results,
+Recently played, and on its Hub tile. Omit a row only when what it needs
+is not known (history Core can no longer resolve has no favorite state to
+toggle) or a shared gate applies (a running media job removes the
+maintenance rows and nothing else). Do not guess missing state to paint
+an identical menu. A context may scope an action when the scope is the
+point and the label says so: Favorite systems offers `Random favorite
+game` in place of `Random game`, not beside it.
+
+On a Hub shortcut the item's rows and the tile's own share a menu, so
+their labels say which they act on: `Hide game` or `Hide system` for the
+item, `Move tile` and `Remove from Hub` for the shortcut, and `Hide Resume
+tile` for the built-in Resume tile.
+
 A destructive or permanent action is never first, and sits with the
 other organizational actions rather than at the very bottom next to
 maintenance — permanence and slowness are different kinds of "be careful
 here" and shouldn't be conflated into one junk-drawer tail. Taking a
-shortcut off the Hub is `Remove`, not `Delete`: nothing on disk changes,
-and `Delete` reads as deleting the game.
+shortcut off the Hub is `Remove from Hub`, not `Delete`: nothing on disk
+changes, and `Delete` reads as deleting the game.
 
 This mirrors both established guidance and this app's own constraints:
 GNOME's HIG says order items "by importance, task order, or expected
@@ -54,7 +82,10 @@ press.
 
 Judge a menu by whether it still fits without scrolling at 240p, not by a
 row count. Scrolling hides entries, and a hidden entry is an undiscoverable
-one.
+one. Four to six rows on Options is the range to aim for on an item with
+many actions; past that, the Manage page is where the rest belong. A page
+of the menu is one level deep: a row on a page acts, it never opens
+another page. A task that needs more than that is a screen.
 
 ## Capitalization
 

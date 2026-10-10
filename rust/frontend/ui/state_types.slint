@@ -3,8 +3,12 @@ export enum Screen { hub, systems, favorite-systems, games, favorites, recents, 
 export enum GamesMode { browse, favorites, recents, search }
 export enum SystemsMode { category, favorites }
 // What a menu row is: something to pick, a section's name (never focused),
-// or an action set apart at the foot of a form list.
-export enum MenuRole { option, header, action }
+// an action set apart at the foot of a form list, or a context-menu row
+// that turns the menu to one of its pages.
+export enum MenuRole { option, header, action, submenu }
+// What the context menu is showing: its own rows, or the page one of them
+// opened in their place.
+export enum ContextPage { root, write-token, manage-game, manage-system, manage-category, discs, alternates }
 // The on-screen keyboard's key kinds, and the Search screen's focus zones
 // and what its side pane lists.
 export enum KeyKind { char, space, backspace, shift, symbols, submit }

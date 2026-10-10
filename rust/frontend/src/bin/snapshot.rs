@@ -269,7 +269,7 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
         &i18n_titles,
         i18n,
         games_mode,
-        (screen == "context" || screen == "context-alt").then_some(6),
+        screen.contains("context").then_some(6),
     );
     if screen.contains("search-results") {
         app.global::<GamesView>()
@@ -396,110 +396,113 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
         ov.set_list_index(index);
         ov.set_list_open(true);
     }
-    // "context-alt" renders the same menu after discovery replaced its
-    // rows with the alternate builds it found.
-    if screen == "context-alt" {
-        let rows = [
-            "Bubble Bobble (Japan)",
-            "Bubble Bobble (Bootleg)",
-            "Bubble Bobble (Rev A)",
-        ];
-        app.global::<generated::Overlays>()
-            .set_context_entries(slint::ModelRc::new(slint::VecModel::from(
-                rows.iter()
+    // The context menu over the games screen, its rows taken from the
+    // product rules so the fixture cannot drift from the app. "context" is
+    // an arcade game's own rows with a reader connected; the other screens
+    // are the pages those rows open, the Manage page being the Resume
+    // tile's, which is the tallest and has the longest labels.
+    if screen.contains("context") {
+        use zaparoo_app::options_menu::{self as menu, GameInput, Page, Tile};
+        let game = menu::game(&GameInput {
+            favorite_known: true,
+            has_payload: true,
+            has_nfc: true,
+            can_discover: true,
+            has_launchers: true,
+            pinnable: true,
+            hideable: true,
+            has_system: true,
+            tile: screen.ends_with("context-manage").then_some(Tile::Resume),
+            ..GameInput::default()
+        });
+        let entry = |id: &str, key: &str, label: &str, opens: bool| MenuEntry {
+            role: if opens {
+                generated::MenuRole::Submenu
+            } else {
+                generated::MenuRole::default()
+            },
+            detail_key: slint::SharedString::default(),
+            id: id.into(),
+            label: label.into(),
+            label_key: key.into(),
+            enabled: true,
+            reason_key: "".into(),
+            detail: "".into(),
+        };
+        let page_rows = |page: Page| -> Vec<MenuEntry> {
+            game.rows(page)
+                .iter()
+                .map(|row| entry(row.id, row.key, "", false))
+                .collect()
+        };
+        let (page, rows, index) = if screen.ends_with("context-alt") {
+            let names = [
+                "Bubble Bobble (Japan)",
+                "Bubble Bobble (Bootleg)",
+                "Bubble Bobble (Rev A)",
+            ];
+            (
+                generated::ContextPage::Alternates,
+                names
+                    .iter()
                     .enumerate()
-                    .map(|(index, name)| MenuEntry {
-                        role: generated::MenuRole::default(),
-                        detail_key: slint::SharedString::default(),
-                        id: format!("page_row:{index}").into(),
-                        label: (*name).into(),
-                        label_key: "".into(),
-                        enabled: true,
-                        reason_key: "".into(),
-                        detail: "".into(),
+                    .map(|(index, name)| entry(&format!("page_row:{index}"), "", name, false))
+                    .collect(),
+                0,
+            )
+        } else if screen.ends_with("context-manage") {
+            (
+                generated::ContextPage::ManageGame,
+                page_rows(Page::ManageGame),
+                0,
+            )
+        } else if screen.ends_with("context-write") {
+            (
+                generated::ContextPage::WriteToken,
+                page_rows(Page::WriteToken),
+                0,
+            )
+        } else {
+            (
+                generated::ContextPage::Root,
+                game.root
+                    .iter()
+                    .map(|row| {
+                        let opens = game.page_for(row.id).is_some() || row.id == "discover";
+                        entry(row.id, row.key, "", opens)
                     })
-                    .collect::<Vec<_>>(),
-            )));
-        app.global::<generated::Overlays>().set_context_index(0);
-        app.global::<generated::Overlays>().set_context_open(true);
-    }
-    // "context" renders the games screen with the context menu open.
-    if screen == "context" {
-        app.global::<generated::Overlays>()
-            .set_context_entries(slint::ModelRc::new(slint::VecModel::from(vec![
-                MenuEntry {
-                    role: generated::MenuRole::default(),
-                    detail_key: slint::SharedString::default(),
-                    id: "more_info".into(),
-                    label: "".into(),
-                    label_key: "more_info".into(),
-                    enabled: true,
-                    reason_key: "".into(),
-                    detail: "".into(),
-                },
-                MenuEntry {
-                    role: generated::MenuRole::default(),
-                    detail_key: slint::SharedString::default(),
-                    id: "toggle_favorite".into(),
-                    label: "".into(),
-                    label_key: "favorite:add".into(),
-                    enabled: true,
-                    reason_key: "".into(),
-                    detail: "".into(),
-                },
-                MenuEntry {
-                    role: generated::MenuRole::default(),
-                    detail_key: slint::SharedString::default(),
-                    id: "write_card".into(),
-                    label: "".into(),
-                    label_key: "write_card".into(),
-                    enabled: true,
-                    reason_key: "".into(),
-                    detail: "".into(),
-                },
-                MenuEntry {
-                    role: generated::MenuRole::default(),
-                    detail_key: slint::SharedString::default(),
-                    id: "qr_code".into(),
-                    label: "".into(),
-                    label_key: "qr_code".into(),
-                    enabled: true,
-                    reason_key: "".into(),
-                    detail: "".into(),
-                },
-                MenuEntry {
-                    role: generated::MenuRole::default(),
-                    detail_key: slint::SharedString::default(),
-                    id: "add_to_hub".into(),
-                    label: "".into(),
-                    label_key: "add_to_hub".into(),
-                    enabled: true,
-                    reason_key: "".into(),
-                    detail: "".into(),
-                },
-                MenuEntry {
-                    role: generated::MenuRole::default(),
-                    detail_key: slint::SharedString::default(),
-                    id: "toggle_hidden".into(),
-                    label: "".into(),
-                    label_key: "hide:hide".into(),
-                    enabled: true,
-                    reason_key: "".into(),
-                    detail: "".into(),
-                },
-                MenuEntry {
-                    role: generated::MenuRole::default(),
-                    detail_key: slint::SharedString::default(),
-                    id: "scrape_game".into(),
-                    label: "".into(),
-                    label_key: "scrape_game".into(),
-                    enabled: true,
-                    reason_key: "".into(),
-                    detail: "".into(),
-                },
-            ])));
-        app.global::<generated::Overlays>().set_context_index(1);
-        app.global::<generated::Overlays>().set_context_open(true);
+                    .collect(),
+                1,
+            )
+        };
+        let overlays = app.global::<generated::Overlays>();
+        overlays.set_context_entries(slint::ModelRc::new(slint::VecModel::from(rows)));
+        overlays.set_context_page(page);
+        overlays.set_context_index(index);
+        overlays.set_context_open(true);
+        // The list layout anchors the menu on a row, not a tile.
+        if screen.contains("list") {
+            if let Some(g) = list_geometry(&app, scene_w, scene_h, crt, 0) {
+                let layout = app.global::<Layout>();
+                let row_h = g.row_height as f32;
+                overlays.set_context_anchor_x(
+                    (g.card_x + g.list_x) as f32 + layout.get_card_padding_left(),
+                );
+                overlays.set_context_anchor_y(
+                    (g.card_y + g.list_y) as f32
+                        + layout.get_card_padding_top()
+                        + 2.0 * (row_h + layout.get_row_spacing()),
+                );
+                overlays.set_context_anchor_w(
+                    g.list_width as f32
+                        - layout.get_card_padding_left()
+                        - layout.get_card_padding_right(),
+                );
+                overlays.set_context_anchor_h(row_h);
+                overlays.set_context_anchor_radius(layout.get_row_radius());
+                overlays.set_context_anchor_zoomed(false);
+            }
+        }
     }
     // "fast-scroll" renders the games screen mid fast scroll: the rail up
     // with its letters, on the fourth one.
@@ -1143,7 +1146,8 @@ fn fixture_screen(screen: &str) -> Screen {
         Screen::Search
     } else if screen.contains("update") {
         Screen::Update
-    } else if matches!(screen, "context" | "context-alt" | "letters")
+    } else if screen.contains("context")
+        || screen == "letters"
         || (screen.contains("list") && !screen.contains("systems"))
         || screen.contains("games")
         || screen.contains("filter")
@@ -1716,6 +1720,19 @@ fn list_metrics(
     crt: bool,
     target_rows: usize,
 ) -> (f32, usize) {
+    list_geometry(app, scene_w, scene_h, crt, target_rows)
+        .map_or((0.0, 1), |g| (g.row_height as f32, g.visible_rows.max(1)))
+}
+
+/// The list card's geometry as the driver would solve it, or `None` on a
+/// profile whose body is not a list.
+fn list_geometry(
+    app: &App,
+    scene_w: f64,
+    scene_h: f64,
+    crt: bool,
+    target_rows: usize,
+) -> Option<zaparoo_app::media_list::ListGeometry> {
     use zaparoo_app::layouts::{self, Body, ThemeId, View};
     let inputs = sizing::Scene::of(app, scene_w, scene_h, crt).inputs();
     let derived = zaparoo_app::sizing::derive(&inputs);
@@ -1728,9 +1745,9 @@ fn list_metrics(
     };
     let profile = layouts::profile(ThemeId::current(&inputs), view, &inputs);
     let Body::List { list, .. } = profile.body else {
-        return (0.0, 1);
+        return None;
     };
-    let g = zaparoo_app::media_list::list_geometry(
+    Some(zaparoo_app::media_list::list_geometry(
         &list,
         &zaparoo_app::media_list::ListFrame {
             screen_width: inputs.screen_width as i32,
@@ -1745,8 +1762,7 @@ fn list_metrics(
             min_row_height: inputs.pct_h(3.0),
             default_row_height: inputs.pct_h(6.0),
         },
-    );
-    (g.row_height as f32, g.visible_rows.max(1))
+    ))
 }
 
 /// The settings screen at its own geometry: the root tiles, or one page

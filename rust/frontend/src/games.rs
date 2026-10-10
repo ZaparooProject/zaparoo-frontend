@@ -18,8 +18,9 @@ use tokio::runtime::Handle;
 use zaparoo_app::layouts::{self, Body, ThemeId, View};
 use zaparoo_app::media_list::{
     self as rules, CoverSettle, CoverSettleStep, CoverState, DetailStep, EntryType, FocusedDetail,
-    LinearMove, Owner, SelectionPersist, State,
+    LinearMove, SelectionPersist, State,
 };
+use zaparoo_app::options_menu as menu;
 use zaparoo_app::paged_grid::{self, Grid, Insets};
 use zaparoo_core::endpoints::media_browse::{BrowseArgs, MediaBrowseEndpoint};
 use zaparoo_core::endpoints::media_favorites::{FavoritesArgs, MediaFavoritesEndpoint};
@@ -28,8 +29,8 @@ use zaparoo_core::endpoints::media_search::MediaSearchEndpoint;
 use zaparoo_core::input_actions::actions;
 use zaparoo_core::media_types::{
     merged_root_view, BrowseEntry, MediaBrowseParams, MediaHistoryEntry, MediaHistoryParams,
-    MediaItem, MediaSearchParams, MediaSearchResult, MediaTagsUpdateParams, MediaTagsUpdateResult,
-    SystemInfo, TagInfo,
+    MediaItem, MediaMeta, MediaSearchParams, MediaSearchResult, MediaTagsUpdateParams,
+    MediaTagsUpdateResult, SystemInfo, TagInfo,
 };
 use zaparoo_core::persist::{FavoritesState, RecentsState};
 use zaparoo_core::remote_resource::ResourceStatus;
@@ -62,15 +63,6 @@ impl GamesMode {
             Self::Search => crate::Screen::SearchResults,
         }
     }
-
-    fn owner(self) -> Owner {
-        match self {
-            Self::Browse => Owner::Games,
-            Self::Favorites => Owner::Favorites,
-            Self::Recents => Owner::Recents,
-            Self::Search => Owner::Search,
-        }
-    }
 }
 
 /// One row as the screen and its menus see it.
@@ -101,6 +93,9 @@ pub struct GameRow {
     pub cover_color: Option<[u8; 3]>,
     pub is_favorite: bool,
     pub is_hidden: bool,
+    /// Core reported the row's tags, so the two flags above are its real
+    /// state. False for history Core could no longer resolve.
+    pub tags_known: bool,
     pub media_capable: bool,
     /// A folder of one game's discs: Accept launches the disc Core chose
     /// and the menu lists the rest.
@@ -204,6 +199,7 @@ impl From<&BrowseEntry> for GameRow {
             cover_color: cover_color(e.cover_color.as_deref()),
             is_favorite: has_user_tag(&e.tags, "favorite"),
             is_hidden: has_user_tag(&e.tags, "hidden"),
+            tags_known: true,
             media_capable: rules::is_media_capable(entry_type, e.media_id.is_some(), &e.zap_script),
             multi_disc: e.multi_disc,
             root_distinguisher: String::new(),
@@ -231,12 +227,55 @@ impl From<&MediaItem> for GameRow {
             cover_color: cover_color(item.cover_color.as_deref()),
             is_favorite: has_user_tag(&item.tags, "favorite"),
             is_hidden: has_user_tag(&item.tags, "hidden"),
+            tags_known: true,
             media_capable: true,
             multi_disc: false,
             root_distinguisher: String::new(),
             detail_rows: rules::detail_rows_from_tags(&tag_pairs(&item.tags)),
             display: String::new(),
             suffix: String::new(),
+        }
+    }
+}
+
+impl GameRow {
+    /// A game known only by where it is (a Hub tile, the Resume tile),
+    /// filled from what Core's `media.meta` says about it now.
+    pub(crate) fn from_meta(system: &str, name: &str, meta: &MediaMeta) -> Self {
+        Self {
+            media_id: None,
+            name: name.to_string(),
+            path: meta.path.clone(),
+            entry_type: EntryType::Media,
+            file_count: 0,
+            system_id: system.to_string(),
+            system_name: String::new(),
+            zap_script: meta.zap_script.clone(),
+            relative_path: meta.relative_path.clone().unwrap_or_default(),
+            tag_labels: Vec::new(),
+            has_cover: true,
+            cover_color: None,
+            is_favorite: has_user_tag(&meta.tags, "favorite"),
+            is_hidden: has_user_tag(&meta.tags, "hidden"),
+            tags_known: true,
+            media_capable: true,
+            // `media.meta` does not say whether a game spans several discs.
+            multi_disc: false,
+            root_distinguisher: String::new(),
+            detail_rows: Vec::new(),
+            display: name.to_string(),
+            suffix: String::new(),
+        }
+    }
+
+    /// A script that is not one game: only its text is known, which is
+    /// all writing it to a token needs.
+    pub(crate) fn from_script(name: &str, script: &str) -> Self {
+        Self {
+            zap_script: script.to_string(),
+            media_capable: false,
+            tags_known: false,
+            ..Self::from_meta("", name, &MediaMeta::default())
         }
     }
 }
@@ -258,6 +297,9 @@ impl From<&MediaHistoryEntry> for GameRow {
             cover_color: cover_color(e.cover_color.as_deref()),
             is_favorite: has_user_tag(&e.tags, "favorite"),
             is_hidden: has_user_tag(&e.tags, "hidden"),
+            // Core sends tags only for history it resolved to indexed
+            // media, which is also when it sends the media id.
+            tags_known: e.media_id.is_some(),
             media_capable: true,
             multi_disc: false,
             root_distinguisher: String::new(),
@@ -2708,10 +2750,7 @@ fn schedule_detail(ctx: &Ctx, app: &App, force: bool) {
 /// is where scraped metadata lives), cut down to the pane's fixed rows. A
 /// game whose year, developer or publisher is a property and not a tag
 /// would otherwise show nothing under its cover.
-fn detail_pairs_from_meta(
-    meta: &zaparoo_core::media_types::MediaMeta,
-    path: &str,
-) -> Vec<(&'static str, String)> {
+fn detail_pairs_from_meta(meta: &MediaMeta, path: &str) -> Vec<(&'static str, String)> {
     rules::detail_rows_from_tags(&crate::game_info_data::rows(meta, path))
 }
 
@@ -3534,119 +3573,97 @@ fn cell_anchor(ctx: &Ctx, app: &App) -> crate::router::ContextAnchor {
     }
 }
 
-/// Stateful toggles share the vocabulary used by system menus.
-fn menu_key(id: &str, is_favorite: bool, is_hidden: bool, on_hub: bool) -> &'static str {
-    if id == "add_to_hub" && on_hub {
-        return "hub:remove";
-    }
-    if id == "toggle_favorite" {
-        return if is_favorite {
-            "favorite:remove"
-        } else {
-            "favorite:add"
-        };
-    }
-    if id == "toggle_hidden" {
-        return if is_hidden {
-            "hide:unhide"
-        } else {
-            "hide:hide"
-        };
-    }
-    match id {
-        "more_info" | "change_launcher" | "choose_disc" | "write_card" | "qr_code" | "discover"
-        | "add_to_hub" | "scrape_game" => id_static(id),
-        _ => "",
-    }
-}
-
-/// The menu ids are compile-time strings; hand the vocabulary the same
-/// `'static` copy rather than allocating one per open.
-fn id_static(id: &str) -> &'static str {
-    match id {
-        "more_info" => "more_info",
-        "change_launcher" => "change_launcher",
-        "choose_disc" => "choose_disc",
-        "write_card" => "write_card",
-        "qr_code" => "qr_code",
-        "discover" => "discover",
-        "add_to_hub" => "add_to_hub",
-        "scrape_game" => "scrape_game",
-        _ => "",
-    }
-}
-
-/// What decides `row`'s Options menu, or None when the row gets no menu
-/// at all.
-fn menu_input(app: &App, shared: &Shared, row: &GameRow) -> Option<rules::MenuInput> {
-    if !rules::context_menu_enabled(row.entry_type, row.media_capable, &row.path) {
-        return None;
-    }
-    let model = &shared.games;
-    let system = row.system_or(&model.system_id);
-    Some(rules::MenuInput {
-        owner: model.mode.owner(),
-        entry_type: row.entry_type,
-        media_capable: row.media_capable,
-        pinnable_root: rules::is_filesystem_root(row.entry_type, &row.path),
-        has_nfc: shared.has_nfc,
+/// What `row` can do, for its Options menu. `system` is the row's system
+/// with the screen's own as the fallback; `mode` decides only how a folder
+/// pins. Shared with the Hub, whose game tiles show the same menu.
+pub(crate) fn game_input(
+    app: &App,
+    shared: &Shared,
+    mode: GamesMode,
+    row: &GameRow,
+    system: &str,
+    tile: Option<menu::Tile>,
+) -> menu::GameInput {
+    let pin = hub_pin(mode, row);
+    let addressable = row.media_id.is_some() || (!system.is_empty() && !row.path.is_empty());
+    menu::GameInput {
+        favorite_known: row.tags_known && addressable,
         is_favorite: row.is_favorite,
-        is_arcade_system: system == ARCADE_SYSTEM_ID,
         multi_disc: row.multi_disc,
+        has_payload: !row.zap_script.trim().is_empty() || !row.path.is_empty(),
+        has_nfc: shared.has_nfc,
+        can_discover: zaparoo_app::alternate_versions::can_discover(system, &row.name, &row.path),
         has_launchers: shared.launchers.iter().any(|l| l.system_id == system),
-        media_busy: crate::router::media_busy(app),
-    })
-}
-
-/// Whether Options opens a menu on the focused row, for the help bar.
-fn options_available(app: &App, shared: &Shared) -> bool {
-    shared.games.current().is_some_and(|row| {
-        menu_input(app, shared, row).is_some_and(|input| !rules::context_entries(&input).is_empty())
-    })
-}
-
-/// Options on the focused row, for Games, Favorites and Recently played.
-fn open_context_menu(ctx: &Ctx, app: &App) {
-    let (row, input, on_hub) = {
-        let shared = lock(&ctx.shared);
-        let model = &shared.games;
-        let Some(row) = model.current().cloned() else {
-            return;
-        };
-        let Some(input) = menu_input(app, &shared, &row) else {
-            return;
-        };
-        let system = row.system_or(&model.system_id).to_string();
-        let on_hub = hub_pin(model.mode, &row).is_some_and(|pin| {
+        pinnable: pin.is_some(),
+        on_hub: pin.is_some_and(|pin| {
             crate::hub::has_target(
-                &shared,
+                shared,
                 pin.kind,
                 "",
                 &pin.path,
                 &pin.relative,
                 &pin.script,
-                &system,
+                system,
             )
-        });
-        (row, input, on_hub)
+        }),
+        hideable: row.tags_known && addressable,
+        is_hidden: row.is_hidden,
+        has_system: !system.is_empty(),
+        media_busy: crate::router::media_busy(app),
+        tile,
+    }
+}
+
+/// The focused row's whole Options menu, empty when it gets none.
+fn row_menu(app: &App, shared: &Shared, row: &GameRow) -> menu::Menu {
+    let model = &shared.games;
+    let system = row.system_or(&model.system_id);
+    match rules::menu_target(row.entry_type, row.media_capable, &row.path) {
+        rules::MenuTarget::None => menu::Menu::default(),
+        rules::MenuTarget::Folder(kind) => {
+            let on_hub = hub_pin(model.mode, row).is_some_and(|pin| {
+                crate::hub::has_target(
+                    shared,
+                    pin.kind,
+                    "",
+                    &pin.path,
+                    &pin.relative,
+                    &pin.script,
+                    system,
+                )
+            });
+            menu::folder(kind, on_hub, row.is_hidden)
+        }
+        rules::MenuTarget::Game => {
+            menu::game(&game_input(app, shared, model.mode, row, system, None))
+        }
+    }
+}
+
+/// Whether Options opens a menu on the focused row, for the help bar.
+fn options_available(app: &App, shared: &Shared) -> bool {
+    shared
+        .games
+        .current()
+        .is_some_and(|row| !row_menu(app, shared, row).is_empty())
+}
+
+/// Options on the focused row, for every list of games.
+fn open_context_menu(ctx: &Ctx, app: &App) {
+    let menu = {
+        let shared = lock(&ctx.shared);
+        let Some(row) = shared.games.current() else {
+            return;
+        };
+        row_menu(app, &shared, row)
     };
-    let entries: Vec<crate::MenuEntry> = rules::context_entries(&input)
-        .into_iter()
-        .map(|id| {
-            crate::router::menu_row_keyed(
-                id,
-                menu_key(id, row.is_favorite, row.is_hidden, on_hub),
-                "",
-            )
-        })
-        .collect();
-    if entries.is_empty() {
+    if menu.is_empty() {
         return;
     }
     let anchor = cell_anchor(ctx, app);
     crate::router::set_context_anchor(app, &anchor);
     let index = lock(&ctx.shared).games.grid.current_index();
-    crate::router::present_games_context_menu(ctx, app, index, entries);
+    crate::router::present_games_context_menu(ctx, app, index, menu);
     crate::router::refresh_readers(ctx);
 }
 
@@ -3662,26 +3679,34 @@ pub fn context_accept(ctx: &Ctx, app: &App, id: &str) {
         (row, model.grid.current_index(), model.mode, system)
     };
     match id {
-        "more_info" => crate::router::open_game_info(ctx, app, &row),
-        "toggle_favorite" => toggle_favorite(ctx, app, index, &row),
+        "toggle_favorite" => toggle_favorite(ctx, app, index, &row, &system),
         "toggle_hidden" => toggle_hidden(ctx, app, &row, &system),
-        "write_card" => crate::router::begin_card_write(ctx, app, &row),
-        "qr_code" => crate::router::open_qr_code(ctx, app, &row),
         "add_to_hub" => add_to_hub(ctx, app, mode, &row, &system),
+        _ => game_action(ctx, app, id, &row, &system),
+    }
+}
+
+/// The game actions that open their own surface and leave no list to
+/// update, whichever screen the game was reached from.
+pub(crate) fn game_action(ctx: &Ctx, app: &App, id: &str, row: &GameRow, system: &str) {
+    match id {
+        "more_info" => crate::router::open_game_info(ctx, app, row),
+        "write_card" => crate::router::begin_card_write(ctx, app, row),
+        "qr_code" => crate::router::open_qr_code(ctx, app, row),
         "scrape_game" if !system.is_empty() => {
             crate::router::open_scrape_setup(
                 ctx,
                 app,
                 zaparoo_app::media_setup::Scope::Game(zaparoo_app::media_setup::GameTarget {
                     media_id: row.media_id,
-                    system,
+                    system: system.to_string(),
                     path: row.path.clone(),
                     name: row.display.clone(),
                 }),
             );
         }
         "change_launcher" if !system.is_empty() => {
-            crate::launchers::open_game_picker(ctx, app, &system, &row.path, row.media_id);
+            crate::launchers::open_game_picker(ctx, app, system, &row.path, row.media_id);
         }
         _ => {}
     }
@@ -3691,50 +3716,50 @@ pub fn context_accept(ctx: &Ctx, app: &App, id: &str) {
 /// its own: it stays open while Core answers. False when `id` is an
 /// ordinary entry.
 pub fn begin_context_page(ctx: &Ctx, app: &App, id: &str) -> bool {
-    if id != "discover" && id != "choose_disc" {
+    if !crate::context_page::asks_core(id) {
         return false;
     }
-    let (system, row, include_hidden) = {
+    let (system, row) = {
         let shared = lock(&ctx.shared);
         let model = &shared.games;
         let Some(row) = model.current() else {
             return true;
         };
-        (
-            row.system_or(&model.system_id).to_string(),
-            row.clone(),
-            include_hidden(&shared),
-        )
+        (row.system_or(&model.system_id).to_string(), row.clone())
     };
-    if id == "discover" {
-        crate::alternates::begin(ctx, app, &system, &row.name, &row.path);
-    } else {
-        crate::discs::begin(ctx, app, &system, &row.path, &row.display, include_hidden);
-    }
-    true
+    begin_game_page(ctx, app, id, &row, &system)
 }
 
-/// Rebuild the row's own menu after one of its pages is left.
-pub fn reopen_context_menu(ctx: &Ctx, app: &App) {
-    open_context_menu(ctx, app);
+/// Ask Core for the page `id` opens on `row`. False when `id` opens none.
+pub(crate) fn begin_game_page(ctx: &Ctx, app: &App, id: &str, row: &GameRow, system: &str) -> bool {
+    use crate::context_page::Page;
+    if id == Page::Alternates.menu_id() {
+        crate::alternates::begin(ctx, app, system, &row.name, &row.path);
+    } else if id == Page::Discs.menu_id() {
+        let include_hidden = include_hidden(&lock(&ctx.shared));
+        crate::discs::begin(ctx, app, system, &row.path, &row.display, include_hidden);
+    } else {
+        return false;
+    }
+    true
 }
 
 /// What Add to Hub stores for a row: every identifier Core reported for
 /// it, so the tile outlives the media moving to another drive.
 #[derive(Debug, PartialEq, Eq)]
-struct HubPin {
-    kind: &'static str,
-    path: String,
-    relative: String,
-    script: String,
-    name: String,
+pub(crate) struct HubPin {
+    pub kind: &'static str,
+    pub path: String,
+    pub relative: String,
+    pub script: String,
+    pub name: String,
 }
 
 /// Folders and filesystem roots pin as `folder` items; games pin as
 /// `zapscript` items carrying Core's title command (its path when Core sent
 /// none). A media-capable directory already launches by its script, so it
 /// pins without a relative path.
-fn hub_pin(mode: GamesMode, row: &GameRow) -> Option<HubPin> {
+pub(crate) fn hub_pin(mode: GamesMode, row: &GameRow) -> Option<HubPin> {
     let folder = mode == GamesMode::Browse
         && !row.media_capable
         && (row.entry_type == EntryType::Directory
@@ -3768,7 +3793,7 @@ fn hub_pin(mode: GamesMode, row: &GameRow) -> Option<HubPin> {
 }
 
 /// "Add to Hub" on a row not pinned yet, "Remove from Hub" on one that is.
-fn add_to_hub(ctx: &Ctx, app: &App, mode: GamesMode, row: &GameRow, system: &str) {
+pub(crate) fn add_to_hub(ctx: &Ctx, app: &App, mode: GamesMode, row: &GameRow, system: &str) {
     let Some(pin) = hub_pin(mode, row) else {
         tracing::warn!("add to hub skipped: nothing to pin for {}", row.name);
         crate::router::report_action_error(ctx, app, "add_to_hub", &row.display);
@@ -3790,30 +3815,18 @@ fn add_to_hub(ctx: &Ctx, app: &App, mode: GamesMode, row: &GameRow, system: &str
 
 /// Flip the `user:favorite` tag through the store mutation; the heart on
 /// the tile is the feedback.
-fn toggle_favorite(ctx: &Ctx, app: &App, index: usize, row: &GameRow) {
+fn toggle_favorite(ctx: &Ctx, app: &App, index: usize, row: &GameRow, system: &str) {
     use zaparoo_core::endpoints::media_tags_update::MediaTagsUpdateMutation;
-    use zaparoo_core::media_types::MediaTagsUpdateParams;
 
     let adding = !row.is_favorite;
-    let mut params = MediaTagsUpdateParams::default();
-    if adding {
-        params.add.push(FAVORITE_TAG.to_string());
-    } else {
-        params.remove.push(FAVORITE_TAG.to_string());
-    }
-    if let Some(media_id) = row.media_id {
-        params.media_id = Some(media_id);
-    } else if !row.system_id.is_empty() && !row.path.is_empty() {
-        params.system.clone_from(&row.system_id);
-        params.path.clone_from(&row.path);
-    } else {
+    let Some(params) = tag_update_params(row, system, FAVORITE_TAG, adding) else {
         tracing::warn!(
             "favorite update skipped: missing media identity for {}",
             row.name
         );
         crate::router::report_action_error(ctx, app, "favorite", &row.name);
         return;
-    }
+    };
     let store = ctx.store.clone();
     let ctx2 = ctx.clone();
     let weak = app.as_weak();
@@ -3879,6 +3892,49 @@ fn tag_update_params(
         params.remove.push(tag.to_string());
     }
     Some(params)
+}
+
+/// Flip one of a game's user tags from a screen that lists no rows to
+/// update afterwards (a Hub tile). `done` hears whether Core took it.
+pub(crate) fn toggle_tag_detached(
+    ctx: &Ctx,
+    app: &App,
+    row: &GameRow,
+    system: &str,
+    favorite: bool,
+    done: impl FnOnce(&Ctx, &App, bool) + Send + 'static,
+) {
+    use zaparoo_core::endpoints::media_tags_update::MediaTagsUpdateMutation;
+
+    let (tag, adding, kind) = if favorite {
+        (FAVORITE_TAG, !row.is_favorite, "favorite")
+    } else {
+        (HIDDEN_TAG, !row.is_hidden, "media_visibility")
+    };
+    let Some(params) = tag_update_params(row, system, tag, adding) else {
+        tracing::warn!(
+            "{kind} update skipped: missing media identity for {}",
+            row.name
+        );
+        crate::router::report_action_error(ctx, app, kind, &row.name);
+        return;
+    };
+    let store = ctx.store.clone();
+    let ctx2 = ctx.clone();
+    let weak = app.as_weak();
+    let name = row.name.clone();
+    let wait = crate::cue::begin(ctx, app, crate::AppCue::Saving, "", "");
+    ctx.handle.spawn(async move {
+        let result = store.run_mutation::<MediaTagsUpdateMutation>(params).await;
+        let _ = weak.upgrade_in_event_loop(move |app| {
+            crate::cue::end(&ctx2, &app, wait);
+            if let Err(e) = &result {
+                tracing::warn!("{kind} update failed for {name}: {}", e.message);
+                report_tag_error(&ctx2, &app, e, kind, &name);
+            }
+            done(&ctx2, &app, result.is_ok());
+        });
+    });
 }
 
 /// A failed favorite or visibility write. Core refuses these while a job
@@ -4172,7 +4228,7 @@ mod tests {
     }
 
     #[test]
-    fn hidden_tags_drive_browse_favorites_and_history_menu_copy() {
+    fn hidden_tags_are_read_from_browse_favorites_and_history_rows() {
         let tags = vec![TagInfo {
             tag: "hidden".into(),
             tag_type: "user".into(),
@@ -4196,10 +4252,6 @@ mod tests {
             GameRow::from(&history),
         ] {
             assert!(row.is_hidden);
-            assert_eq!(
-                menu_key("toggle_hidden", row.is_favorite, row.is_hidden, false),
-                "hide:unhide"
-            );
         }
         let mut visible = entry("media", "Game", "/g/Game.nes");
         visible.tags = vec![TagInfo {
@@ -4209,12 +4261,20 @@ mod tests {
         }];
         let row = GameRow::from(&visible);
         assert!(!row.is_hidden);
-        assert_eq!(
-            menu_key("toggle_hidden", false, row.is_hidden, false),
-            "hide:hide"
-        );
-        assert_eq!(menu_key("add_to_hub", false, false, false), "add_to_hub");
-        assert_eq!(menu_key("add_to_hub", false, false, true), "hub:remove");
+    }
+
+    #[test]
+    fn only_history_core_resolved_knows_its_tags() {
+        let resolved = MediaHistoryEntry {
+            media_id: Some(7),
+            ..MediaHistoryEntry::default()
+        };
+        assert!(GameRow::from(&resolved).tags_known);
+        // No media id is no tags: the row is not a favorite or a visible
+        // game, its state is simply not known.
+        assert!(!GameRow::from(&MediaHistoryEntry::default()).tags_known);
+        assert!(GameRow::from(&MediaItem::default()).tags_known);
+        assert!(GameRow::from(&entry("media", "Game", "/g/Game.nes")).tags_known);
     }
 
     #[test]
@@ -4376,7 +4436,6 @@ mod tests {
         let row = &model.rows[0];
         assert!(row.multi_disc && !row.is_dir());
         assert_eq!(row.suffix, "D1 US");
-        assert_eq!(menu_key("choose_disc", false, false, false), "choose_disc");
 
         let tier = CoverSize {
             tier: 256,
