@@ -16,15 +16,28 @@ use zaparoo_app::settings::{self as rules, Control, Row};
 use zaparoo_core::input_actions::actions;
 use zaparoo_core::persist;
 
+use crate::navigation::EntryMode;
 use crate::router::{lock, Ctx, ListContext, PendingRestart};
 use crate::{App, GridCell, SettingsInput, SettingsRow, SettingsView};
 
 /// What the registry needs to know about this machine.
-fn inputs(ctx: &Ctx) -> rules::Inputs {
+pub(crate) fn inputs(ctx: &Ctx) -> rules::Inputs {
+    // One lock for both: a guard held across the struct literal is still
+    // held when a second `lock` in it runs, which deadlocks.
+    let (can_link_online, online_linked) = {
+        let shared = lock(&ctx.shared);
+        (shared.online.available, shared.online.linked)
+    };
     rules::Inputs {
+        can_pick_folder: ctx.folders.available(),
+        can_scan_launchers: ctx.launcher_scan.available(),
+        can_request_playtime_access: ctx.playtime_access.available(),
+        can_link_online,
+        online_linked,
         is_mister: ctx.is_mister,
         crt_enabled: ctx.crt_enabled,
         debug_build: cfg!(debug_assertions),
+        log_upload: ctx.log_uploader.is_some(),
     }
 }
 
@@ -48,7 +61,26 @@ fn current_value(ctx: &Ctx, id: &str) -> String {
         "region" => s.region.clone(),
         "clockFormat" => s.clock_format.clone(),
         "buttonLayout" => s.button_layout.clone(),
+        "onlineStatus" => crate::online::status_value(&shared.online).to_string(),
+        "onlineWarp" => crate::online::warp_value(&shared.online).to_string(),
+        "onlineBackupSchedule" => shared.online.backup_schedule.clone(),
+        "onlineRemoteStatus" => crate::online::remote_status_value(&shared.online).to_string(),
         _ => String::new(),
+    }
+}
+
+/// The off/mixed/on reading of a tri-toggle row.
+fn tri_toggle_value(ctx: &Ctx, id: &str) -> &'static str {
+    use zaparoo_app::online_settings::TriState;
+    if id != "onlineAllFeatures" {
+        return "off";
+    }
+    let shared = lock(&ctx.shared);
+    let warp_available = shared.online.warp_availability == "available";
+    match shared.online.features.tri_state(warp_available) {
+        TriState::On => "on",
+        TriState::Mixed => "mixed",
+        TriState::Off => "off",
     }
 }
 
@@ -65,6 +97,10 @@ fn checked(ctx: &Ctx, id: &str) -> bool {
         "swapConfirmCancel" => s.swap_confirm_cancel,
         "swapOptionsView" => s.swap_options_view,
         "crtEnabled" => ctx.crt_enabled,
+        "playtimeSync" => shared.online.features.play_history,
+        "onlineRemoteControl" => shared.online.features.remote_control,
+        "onlineLibrarySync" => shared.online.features.library,
+        "onlineCloudBackup" => shared.online.features.cloud_backup,
         _ => false,
     }
 }
@@ -90,39 +126,18 @@ fn options(ctx: &Ctx, id: &str) -> Vec<String> {
 
 // ---------- Rendering ----------
 
-/// One rendered line of text at `size`, the way Slint lays it out: Noto
-/// Sans has a 1.362 em hhea line height and no line gap. Shared by the
-/// hint band, the action status line and the group heading so the three
-/// stay in step with the type ladder instead of with a magic percentage.
-fn line_height(size: i32) -> i32 {
-    (f64::from(size) * 1.362).ceil() as i32
+/// The open page's card geometry at the output scene.
+fn page_geometry(app: &App) -> rules::PageGeometry {
+    rules::page_geometry(&crate::router::output_scene(app).inputs())
 }
 
-/// Row metrics: a field is one line tall, a running action adds its
-/// status band, a header is its own short row.
-struct Metrics {
-    row: i32,
-    action_band: i32,
-    header: i32,
-}
-
-fn metrics(app: &App) -> Metrics {
-    metrics_for(&crate::router::output_scene(app).inputs())
-}
-
-fn metrics_for(inputs: &zaparoo_app::sizing::Inputs) -> Metrics {
-    let derived = zaparoo_app::sizing::derive(inputs);
-    Metrics {
-        row: inputs.pct_h(8.0),
-        // Exactly the status line it makes room for, plus the gap over it.
-        // A flat percentage reserved a second *body* line for a caption
-        // and left the pair floating in a row taller than its content.
-        action_band: line_height(derived.font_caption) + inputs.pct_h(0.3),
-        // `SectionHeader`'s own anatomy: top gap, the label, the rule gap
-        // and the hairline. The heading is a shared component, so the row
-        // Rust stacks has to be the box that component draws.
-        header: inputs.pct_h(1.5) + line_height(derived.font_body) + inputs.pct_h(0.8) + 1,
-    }
+/// Push the card's place and bands. The view lays the card out from these,
+/// so the band it clips is the viewport the scroll was solved against.
+pub(crate) fn push_page_geometry(view: &SettingsView, g: &rules::PageGeometry) {
+    view.set_card_y(g.card_y as f32);
+    view.set_card_height(g.card_height as f32);
+    view.set_card_pad(g.pad as f32);
+    view.set_hint_height(g.hint_height as f32);
 }
 
 /// `SettingsScreen`'s live caption ladder, including idle totals.
@@ -161,8 +176,14 @@ fn action_status(
 fn rows(ctx: &Ctx, app: &App, page: crate::SettingsPage) -> Vec<SettingsRow> {
     let ms = crate::router::media_state(ctx);
     let index_busy = ms.indexing || ms.optimizing;
-    let m = metrics(app);
-    let language = lock(&ctx.shared).persist.settings.language.clone();
+    let m = page_geometry(app);
+    let (language, online_linked) = {
+        let shared = lock(&ctx.shared);
+        (
+            shared.persist.settings.language.clone(),
+            shared.online.linked,
+        )
+    };
     let mut offset = 0;
     rules::page_rows(page.token(), &inputs(ctx))
         .into_iter()
@@ -179,13 +200,23 @@ fn rows(ctx: &Ctx, app: &App, page: crate::SettingsPage) -> Vec<SettingsRow> {
                 ..Default::default()
             };
             let height = match row {
-                Row::Header(_) => m.header,
+                Row::Header(_) => m.header_height,
                 Row::Field { id, control } => {
                     out.control = control.into();
                     match control {
                         Control::Toggle => out.checked = checked(ctx, id),
-                        Control::Picker => {
+                        Control::Picker | Control::Info => {
                             out.value = SharedString::from(current_value(ctx, id).as_str());
+                            if id == "onlineStatus" {
+                                out.value_name = SharedString::from(
+                                    lock(&ctx.shared)
+                                        .online
+                                        .device_name
+                                        .clone()
+                                        .unwrap_or_default()
+                                        .as_str(),
+                                );
+                            }
                         }
                         Control::Action => {
                             let busy = rules::action_busy(id, index_busy, ms.scraping);
@@ -196,13 +227,43 @@ fn rows(ctx: &Ctx, app: &App, page: crate::SettingsPage) -> Vec<SettingsRow> {
                             out.status_key = status;
                             out.status_count =
                                 zaparoo_app::format::count(i64::from(count), &language).into();
+                            if id == "addGameFolder" {
+                                let (status, saved, pending) = ctx.folders.status();
+                                out.status_key = status;
+                                out.status_count =
+                                    zaparoo_app::format::count(i64::from(saved), &language).into();
+                                out.busy = pending;
+                                out.enabled = !pending;
+                            } else if id == "playtimeAccess" {
+                                out.status_key = if ctx.playtime_access.granted() {
+                                    crate::ActionStatus::PlaytimeVerified
+                                } else {
+                                    crate::ActionStatus::PlaytimeUnverified
+                                };
+                            } else if id == "detectLaunchers" {
+                                let (status, detected, pending) = ctx.launcher_scan.status();
+                                out.status_key = status;
+                                out.status_count =
+                                    zaparoo_app::format::count(i64::from(detected), &language)
+                                        .into();
+                                out.busy = pending;
+                                out.enabled = !pending;
+                            }
                         }
                         Control::Navigate => {}
+                        Control::TriToggle => {
+                            out.value = SharedString::from(tri_toggle_value(ctx, id));
+                        }
+                    }
+                    // After the control's own state: an action row sets
+                    // `enabled` from whether its job is busy.
+                    if rules::needs_online_link(id) && !online_linked {
+                        out.enabled = false;
                     }
                     if out.status_key == crate::ActionStatus::None {
-                        m.row
+                        m.row_height
                     } else {
-                        m.row + m.action_band
+                        m.row_height + m.action_band_height
                     }
                 }
             };
@@ -278,46 +339,12 @@ fn root_geometry_for(
     (columns, grid_rows, grid_y, grid_height, insets, fit)
 }
 
-/// The rows viewport inside the page card: what is left once the hint
-/// band and the paddings are taken out.
-fn rows_viewport(app: &App) -> i32 {
-    rows_viewport_for(&crate::router::output_scene(app).inputs())
-}
-
-fn rows_viewport_for(inputs: &zaparoo_app::sizing::Inputs) -> i32 {
-    let derived = zaparoo_app::sizing::derive(inputs);
-    let profile = layouts::profile(ThemeId::current(inputs), View::GamesGrid, inputs);
-    let card_y = derived.header_bottom
-        + profile.status.top_margin
-        + profile.status.strip_height
-        + inputs.pct_h(4.0);
-    let bottom = derived.help_bar_height + inputs.pct_h(4.0);
-    let card_h = (inputs.screen_height as i32 - card_y - bottom).max(0);
-    // Descriptions are authored against the 240p card's line budget, so
-    // only that tier needs two lines held open; every wider one fits them
-    // on one and a second reserved line just holds the rows up. Fixed per
-    // tier, never per row: this is the rows viewport, and a band that grew
-    // with the focused description would reflow the list under the cursor.
-    let hint_lines = if derived.tier == zaparoo_app::sizing::Tier::T240 || inputs.bitmap_type {
-        2
-    } else {
-        1
-    };
-    let hint = hint_lines * line_height(derived.font_body);
-    // Four lips and a hairline: above the rows, either side of the hint
-    // rule, and under the hint text. One inset, used everywhere on the
-    // surface (`docs/style.md`, "Surface containment"); `app.slint`'s
-    // `pad` is the same token, so the two must move together.
-    let pad = inputs.pct_min(2.0);
-    (card_h - 4 * pad - 1 - hint).max(0)
-}
-
-/// The band's scroll offset and painted height, snapped to row edges.
-/// The rule lives in `zaparoo_app` so the snapshot tool solves it the
-/// same way rather than keeping a second copy that can drift.
-fn band_extent(rows: &[SettingsRow], index: usize, viewport: f32) -> (f32, f32) {
+/// The band's scroll offset and painted height. The rule lives in
+/// `zaparoo_app` so the snapshot tool solves it the same way rather than
+/// keeping a second copy that can drift.
+fn band_extent(rows: &[SettingsRow], index: usize, viewport: f32, lip: f32) -> (f32, f32) {
     let spans: Vec<(f32, f32)> = rows.iter().map(|r| (r.y_offset, r.height)).collect();
-    rules::band_extent(&spans, index, viewport)
+    rules::band_extent(&spans, index, viewport, lip)
 }
 
 /// Push the open page: its rows, the cursor, and (on the root) the
@@ -329,8 +356,9 @@ pub fn render(ctx: &Ctx, app: &App) {
     let index = (view.get_index().max(0) as usize).min(rows.len().saturating_sub(1));
     // Keep the focused row inside the viewport; the band never scrolls
     // past the last row.
-    let viewport = rows_viewport(app);
-    let (scroll, shown) = band_extent(&rows, index, viewport as f32);
+    let geometry = page_geometry(app);
+    let viewport = geometry.rows_viewport;
+    let (scroll, shown) = band_extent(&rows, index, viewport as f32, geometry.pad as f32);
     // Rows before the cursor: the cursor's geometry is read out of the row
     // it points at, so an index that arrives ahead of a longer page reads
     // a row that is not there yet and collapses the fill for a frame.
@@ -352,12 +380,15 @@ pub fn render(ctx: &Ctx, app: &App) {
         let fields = |upto: usize| {
             (0..upto)
                 .filter_map(|i| published.row_data(i))
-                .filter(|row| row.kind == crate::RowKind::Field)
+                .filter(|row| {
+                    row.kind == crate::RowKind::Field && row.control != crate::ControlKind::Info
+                })
                 .count()
         };
         view.set_field_index(i32::try_from(fields(index)).unwrap_or(0));
         view.set_field_count(i32::try_from(fields(published.row_count())).unwrap_or(0));
     }
+    push_page_geometry(&view, &geometry);
     view.set_rows_height(viewport as f32);
     view.set_rows_clip_height(shown);
     view.set_scroll(scroll);
@@ -401,6 +432,19 @@ pub fn open_page(ctx: &Ctx, app: &App, page: crate::SettingsPage) {
     render(ctx, app);
 }
 
+/// The page's rows changed under the cursor (Core answered after the page
+/// opened): if it now sits on a row it cannot act on, move it to the first
+/// one it can.
+pub(crate) fn reseat(ctx: &Ctx, app: &App) {
+    let (_, rows, index) = page_rows_now(ctx, app);
+    if rows.get(index).is_some_and(|row| row.is_navigable()) {
+        return;
+    }
+    let seat = rules::first_navigable(&rows);
+    app.global::<SettingsView>()
+        .set_index(i32::try_from(seat).unwrap_or(0));
+}
+
 pub(crate) fn capture_outgoing(app: &App) {
     let view = app.global::<SettingsView>();
     view.set_outgoing_page(view.get_page());
@@ -418,6 +462,11 @@ pub(crate) fn navigate_page(ctx: &Ctx, app: &App, page: crate::SettingsPage) {
         return;
     }
     let from = view.get_page();
+    // Account, Warp and the consent settings are Core's: ask when the page
+    // opens, so it never shows a stale or never-fetched answer.
+    if page == crate::SettingsPage::Online {
+        crate::online::refresh(ctx, app);
+    }
     let direction = if page == crate::SettingsPage::Root {
         -1
     } else {
@@ -438,15 +487,29 @@ pub(crate) fn navigate_page(ctx: &Ctx, app: &App, page: crate::SettingsPage) {
     });
 }
 
-pub fn enter(ctx: &Ctx, app: &App) {
-    enter_with_direction(ctx, app, 1);
-}
-
-pub fn enter_with_direction(ctx: &Ctx, app: &App, direction: i32) {
-    lock(&ctx.shared).persist.active_screen = "settings".to_string();
+pub fn enter(ctx: &Ctx, app: &App, entry: EntryMode) {
+    let focus = {
+        let mut shared = lock(&ctx.shared);
+        shared.persist.active_screen = "settings".to_string();
+        if entry == EntryMode::Fresh {
+            shared.settings_focus = None;
+        }
+        shared.settings_focus
+    };
     crate::router::save_persist(&ctx.shared);
-    open_page(ctx, app, crate::SettingsPage::Root);
-    crate::router::transition_to_screen(app, crate::Screen::Settings, direction);
+    match focus {
+        Some((page, index)) => {
+            open_page(ctx, app, page);
+            let rows = rules::page_rows(page.token(), &inputs(ctx));
+            let seat = rules::restore_seat(&rows, index);
+            app.global::<SettingsView>()
+                .set_index(i32::try_from(seat).unwrap_or(0));
+            render(ctx, app);
+        }
+        None => open_page(ctx, app, crate::SettingsPage::Root),
+    }
+    remember_focus(ctx, app);
+    crate::router::transition_to_screen(app, crate::Screen::Settings, 1);
 }
 
 /// Back out of the About screen onto the page that opened it.
@@ -458,7 +521,15 @@ pub fn return_from_about(ctx: &Ctx, app: &App) {
 
 pub(crate) fn show_about_return(ctx: &Ctx, app: &App) {
     // Stage the actual destination before arming the route, not a temporary root grid.
+    let index = lock(&ctx.shared)
+        .settings_focus
+        .filter(|(page, _)| *page == crate::SettingsPage::About)
+        .map_or(0, |(_, index)| index);
     open_page(ctx, app, crate::SettingsPage::About);
+    let rows = rules::page_rows(crate::SettingsPage::About.token(), &inputs(ctx));
+    app.global::<SettingsView>()
+        .set_index(i32::try_from(rules::restore_seat(&rows, index)).unwrap_or(0));
+    render(ctx, app);
     crate::router::transition_to_screen(app, crate::Screen::Settings, -1);
 }
 
@@ -473,6 +544,18 @@ fn page_rows_now(ctx: &Ctx, app: &App) -> (crate::SettingsPage, Vec<Row>, usize)
 }
 
 pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
+    dispatch(ctx, app, action);
+    remember_focus(ctx, app);
+}
+
+/// Keep the page and row for Back and in-process restoration.
+fn remember_focus(ctx: &Ctx, app: &App) {
+    let view = app.global::<SettingsView>();
+    let index = usize::try_from(view.get_index()).unwrap_or(0);
+    lock(&ctx.shared).settings_focus = Some((view.get_page(), index));
+}
+
+fn dispatch(ctx: &Ctx, app: &App, action: &str) {
     let (page, rows, index) = page_rows_now(ctx, app);
     let view = app.global::<SettingsView>();
 
@@ -499,7 +582,7 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
             actions::CANCEL => {
                 lock(&ctx.shared).persist.active_screen = "hub".to_string();
                 crate::router::save_persist(&ctx.shared);
-                crate::router::transition_to_screen(app, crate::Screen::Hub, -1);
+                crate::router::return_to_hub(ctx, app);
             }
             _ => {}
         }
@@ -521,7 +604,7 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
         // so a long option list never has to be cycled blind.
         actions::LEFT | actions::RIGHT => {
             if let Some(Row::Field { id, control }) = rows.get(index) {
-                if *control == Control::Toggle {
+                if *control == Control::Toggle && !blocked(ctx, id) {
                     toggle(ctx, app, id);
                 }
             }
@@ -536,34 +619,67 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
     }
 }
 
-fn accept(ctx: &Ctx, app: &App, id: &str, control: Control) {
+/// A row that cannot be used right now: drawn muted, and no input changes
+/// it. Every way of acting on a row (Accept, Left/Right on a toggle, the
+/// pointer) asks this first, so none of them can act on a row the page
+/// shows as unavailable.
+fn blocked(ctx: &Ctx, id: &str) -> bool {
+    if rules::needs_online_link(id) && !lock(&ctx.shared).online.linked {
+        return true;
+    }
     let ms = crate::router::media_state(ctx);
-    if rules::action_disabled(id, ms.indexing || ms.optimizing, ms.scraping) {
+    rules::action_disabled(id, ms.indexing || ms.optimizing, ms.scraping)
+}
+
+fn accept(ctx: &Ctx, app: &App, id: &str, control: Control) {
+    if blocked(ctx, id) {
         return;
     }
+    let ms = crate::router::media_state(ctx);
     match control {
         Control::Toggle => toggle(ctx, app, id),
+        Control::TriToggle => crate::online::toggle_all_features(ctx, app),
         Control::Picker => open_picker(ctx, app, id),
+        Control::Info => {}
         Control::Navigate | Control::Action => match id {
-            "aboutLicense" => crate::router::enter_about(ctx, app),
+            "aboutLicense" => crate::router::enter_about(ctx, app, EntryMode::Fresh),
             "documentation" => crate::router::open_documentation_qr(app),
             "uploadLog" => crate::log_upload::open(ctx, app),
+            "pairDevice" => {
+                crate::pairing::open(ctx, app);
+            }
+            "addGameFolder" => crate::folder_picker::request(ctx, app),
+            "detectLaunchers" => crate::launcher_scan::request(ctx, app),
+            "playtimeAccess" => crate::playtime_access::request(ctx, app),
+            "onlineLinkAccount" | "onlineUnlinkAccount" => {
+                crate::online::accept_account(ctx, app);
+            }
+            "onlineManageBackups" => crate::online_list::open_backups(ctx, app),
+            "onlineRemoteActivity" => crate::online_list::open_activity(ctx, app),
             "crtCalibration" => crate::router::open_crt_calibration(ctx, app),
             "updateMediaDb" => {
                 if ms.indexing || ms.optimizing {
                     let client = ctx.store.client();
                     let ctx2 = ctx.clone();
                     let weak = app.as_weak();
+                    let wait = crate::cue::begin(ctx, app, crate::AppCue::Cancelling, "", "");
                     ctx.handle.spawn(async move {
-                        if let Err(e) = client.media_generate_cancel().await {
-                            tracing::warn!("cancel index failed: {}", e.message);
-                            let _ = weak.upgrade_in_event_loop(move |app| {
+                        let result = client.media_generate_cancel().await;
+                        let _ = weak.upgrade_in_event_loop(move |app| {
+                            crate::cue::end(&ctx2, &app, wait);
+                            if let Err(e) = result {
+                                tracing::warn!("cancel index failed: {}", e.message);
                                 crate::router::report_action_error(&ctx2, &app, "media_cancel", "");
-                            });
-                        }
+                            }
+                        });
                     });
                 } else {
-                    crate::media_setup::open(ctx, app, zaparoo_app::media_setup::Kind::Index);
+                    crate::media_setup::open(
+                        ctx,
+                        app,
+                        zaparoo_app::media_setup::Kind::Index,
+                        zaparoo_app::media_setup::Scope::All,
+                    );
                 }
             }
             "runScraper" => {
@@ -571,16 +687,24 @@ fn accept(ctx: &Ctx, app: &App, id: &str, control: Control) {
                     let client = ctx.store.client();
                     let ctx2 = ctx.clone();
                     let weak = app.as_weak();
+                    let wait = crate::cue::begin(ctx, app, crate::AppCue::Cancelling, "", "");
                     ctx.handle.spawn(async move {
-                        if let Err(e) = client.media_scrape_cancel().await {
-                            tracing::warn!("cancel scrape failed: {}", e.message);
-                            let _ = weak.upgrade_in_event_loop(move |app| {
+                        let result = client.media_scrape_cancel().await;
+                        let _ = weak.upgrade_in_event_loop(move |app| {
+                            crate::cue::end(&ctx2, &app, wait);
+                            if let Err(e) = result {
+                                tracing::warn!("cancel scrape failed: {}", e.message);
                                 crate::router::report_action_error(&ctx2, &app, "media_cancel", "");
-                            });
-                        }
+                            }
+                        });
                     });
                 } else {
-                    crate::media_setup::open(ctx, app, zaparoo_app::media_setup::Kind::Scrape);
+                    crate::media_setup::open(
+                        ctx,
+                        app,
+                        zaparoo_app::media_setup::Kind::Scrape,
+                        zaparoo_app::media_setup::Scope::All,
+                    );
                 }
             }
             _ => {}
@@ -592,6 +716,11 @@ fn accept(ctx: &Ctx, app: &App, id: &str, control: Control) {
 fn toggle(ctx: &Ctx, app: &App, id: &str) {
     if id == "crtEnabled" {
         crate::router::stage_restart(ctx, app, PendingRestart::CrtEnabled(!ctx.crt_enabled));
+        return;
+    }
+    // Core owns every Online consent setting; nothing is saved locally.
+    if let Some(feature) = crate::online::Feature::from_id(id) {
+        crate::online::toggle_feature(ctx, app, feature);
         return;
     }
     let value = {
@@ -640,6 +769,7 @@ fn toggle(ctx: &Ctx, app: &App, id: &str) {
         "showHidden" => {
             crate::router::reproject_hub(ctx, app);
             crate::systems::reproject(ctx, app);
+            crate::games::refresh_visibility(ctx, app);
         }
         "showOriginalFilenames" => crate::games::reproject(ctx, app),
         "reduceMotion" => {
@@ -673,9 +803,14 @@ fn open_picker(ctx: &Ctx, app: &App, id: &str) {
     let entries: Vec<crate::MenuEntry> = values
         .iter()
         .map(|value| crate::MenuEntry {
+            role: crate::MenuRole::default(),
+            detail_key: SharedString::default(),
             id: SharedString::from(value.as_str()),
             label: SharedString::default(),
             label_key: SharedString::default(),
+            enabled: true,
+            reason_key: SharedString::default(),
+            detail: SharedString::default(),
         })
         .collect();
     lock(&ctx.shared).list_context = ListContext::SettingsPicker(id.to_string());
@@ -684,6 +819,7 @@ fn open_picker(ctx: &Ctx, app: &App, id: &str) {
     // settings vocabulary.
     overlays.set_list_setting_id(SharedString::from(id));
     overlays.set_list_title(SharedString::default());
+    overlays.set_list_form(false);
     overlays.set_list_entries(ModelRc::new(VecModel::from(entries)));
     overlays.set_list_index(i32::try_from(initial).unwrap_or(0));
     overlays.set_list_open(true);
@@ -702,6 +838,10 @@ pub fn picker_selected(ctx: &Ctx, app: &App, id: &str, value: &str) {
         if value != lock(&ctx.shared).persist.settings.crt_video_standard {
             crate::router::stage_restart(ctx, app, PendingRestart::CrtStandard(value.to_string()));
         }
+        return;
+    }
+    if id == "onlineBackupSchedule" {
+        crate::online::set_backup_schedule(ctx, app, value);
         return;
     }
     {
@@ -750,7 +890,10 @@ fn apply(ctx: &Ctx, app: &App, id: &str, value: &str) {
         }
         "language" | "clockFormat" => crate::router::apply_clock_setting(ctx, app),
         "buttonLayout" => crate::apply_buttons(ctx, app),
-        "systemLogoStyle" => crate::systems::reproject(ctx, app),
+        "systemLogoStyle" | "region" => {
+            crate::systems::reproject(ctx, app);
+            crate::router::reproject_hub(ctx, app);
+        }
         "colorScheme" | "colorIntensity" => {
             let (scheme, intensity) = {
                 let shared = lock(&ctx.shared);
@@ -763,11 +906,19 @@ fn apply(ctx: &Ctx, app: &App, id: &str, value: &str) {
             // ramps follow from the new palette.
             let palette = crate::theme::apply_palette(app, &scheme, &intensity);
             let (rest, focus) = crate::theme::logo_tints(&palette);
-            crate::system_logos::set_tints(rest, focus);
+            ctx.logos.set_tints(rest, focus);
             crate::systems::reproject(ctx, app);
             crate::router::reproject_hub(ctx, app);
         }
-        "mediaImageType" => ctx.media.set_preferred_image_type(value),
+        "mediaImageType" => {
+            // Every cached cover and every recorded cold-boot path is the
+            // old type's; ask Core again as each one is shown.
+            ctx.media.set_preferred_image_type(value);
+            ctx.media.clear();
+            crate::hub_covers::refresh_for_image_type(ctx);
+            crate::router::reproject_hub(ctx, app);
+            crate::games::reproject(ctx, app);
+        }
         "screensaverTimeout" => crate::router::reset_idle(ctx, app),
         "systemsLayout" => {
             app.global::<crate::Shell>()
@@ -785,16 +936,9 @@ fn apply(ctx: &Ctx, app: &App, id: &str, value: &str) {
     }
 }
 
-/// Persist the state file and mirror the durable half into
-/// `frontend.toml`.
-pub fn save(ctx: &Ctx, app: &App) {
-    let snapshot = {
-        let shared = lock(&ctx.shared);
-        shared.persist.clone()
-    };
-    persist::save(&snapshot);
-    let s = &snapshot.settings;
-    let mirror = zaparoo_core::config::SettingsMirror {
+/// Every setting that is mirrored into `frontend.toml`.
+pub(crate) fn mirror_of(s: &persist::SettingsState) -> zaparoo_core::config::SettingsMirror<'_> {
+    zaparoo_core::config::SettingsMirror {
         resolution: &s.resolution,
         language: &s.language,
         orientation: &s.orientation,
@@ -822,7 +966,21 @@ pub fn save(ctx: &Ctx, app: &App) {
         crt_h_offset: s.crt_h_offset,
         crt_v_offset: s.crt_v_offset,
         crt_h_size: s.crt_h_size,
+    }
+}
+
+/// Persist the state file and mirror the durable half into
+/// `frontend.toml`.
+pub fn save(ctx: &Ctx, app: &App) {
+    let snapshot = {
+        let shared = lock(&ctx.shared);
+        shared.persist.clone()
     };
+    persist::save(&snapshot);
+    if !crate::router::config_writable(ctx) {
+        return;
+    }
+    let mirror = mirror_of(&snapshot.settings);
     if let Err(e) = zaparoo_core::config::save_settings_mirror(&ctx.config_path, mirror) {
         tracing::warn!("could not mirror settings to config: {e}");
         crate::router::report_action_error(ctx, app, "setting", "");
@@ -854,9 +1012,11 @@ pub(crate) fn mirror_geometry(primary: &App, crt: &App) {
     target.set_block_offset_y(fit.block_offset_y as f32);
     target.set_grid_y(y as f32);
     target.set_grid_height(height as f32);
-    let viewport = rows_viewport_for(&inputs) as f32;
+    let geometry = rules::page_geometry(&inputs);
+    push_page_geometry(&target, &geometry);
+    let viewport = geometry.rows_viewport as f32;
     let (rows, scroll, shown) =
-        mirrored_rows(&source.get_rows(), source.get_index(), viewport, &inputs);
+        mirrored_rows(&source.get_rows(), source.get_index(), viewport, &geometry);
     crate::view_model::publish(&target.get_rows(), rows, |rows| target.set_rows(rows));
     target.set_scroll(scroll);
     target.set_rows_height(viewport);
@@ -865,7 +1025,7 @@ pub(crate) fn mirror_geometry(primary: &App, crt: &App) {
         &source.get_outgoing_rows(),
         source.get_outgoing_index(),
         viewport,
-        &inputs,
+        &geometry,
     );
     crate::view_model::publish(&target.get_outgoing_rows(), rows, |rows| {
         target.set_outgoing_rows(rows);
@@ -880,22 +1040,21 @@ fn mirrored_rows(
     rows: &ModelRc<SettingsRow>,
     index: i32,
     viewport: f32,
-    inputs: &zaparoo_app::sizing::Inputs,
+    m: &rules::PageGeometry,
 ) -> (Vec<SettingsRow>, f32, f32) {
     use slint::Model;
-    let m = metrics_for(inputs);
     let mut offset = 0;
     let rows: Vec<_> = rows
         .iter()
         .map(|mut row| {
             let height = if row.kind == crate::RowKind::Header {
-                m.header
+                m.header_height
             } else {
-                m.row
+                m.row_height
                     + if row.status_key == crate::ActionStatus::None {
                         0
                     } else {
-                        m.action_band
+                        m.action_band_height
                     }
             };
             row.y_offset = offset as f32;
@@ -904,7 +1063,7 @@ fn mirrored_rows(
             row
         })
         .collect();
-    let (scroll, shown) = band_extent(&rows, index.max(0) as usize, viewport);
+    let (scroll, shown) = band_extent(&rows, index.max(0) as usize, viewport, m.pad as f32);
     (rows, scroll, shown)
 }
 
@@ -916,7 +1075,7 @@ fn focus(ctx: &Ctx, app: &App, index: usize) -> bool {
         return false;
     }
     let (_, rows, _) = page_rows_now(ctx, app);
-    if !rows.get(index).is_some_and(|r| r.is_field()) {
+    if !rows.get(index).is_some_and(|r| r.is_navigable()) {
         return false;
     }
     app.global::<SettingsView>()
@@ -926,6 +1085,25 @@ fn focus(ctx: &Ctx, app: &App, index: usize) -> bool {
 
 pub fn bind_input(ctx: &Arc<Ctx>, app: &App) {
     let input = app.global::<SettingsInput>();
+    let weak = app.as_weak();
+    let ctx_page = ctx.clone();
+    input.on_page_requested(move |delta| {
+        let Some(app) = weak.upgrade() else {
+            return;
+        };
+        if delta != 0 && app.global::<crate::Shell>().get_active_screen() == crate::Screen::Settings
+        {
+            crate::router::handle_action(
+                &ctx_page,
+                &app,
+                if delta < 0 {
+                    actions::UP
+                } else {
+                    actions::DOWN
+                },
+            );
+        }
+    });
     for (hover, accept) in [(true, false), (false, true)] {
         let ctx = ctx.clone();
         let weak = app.as_weak();

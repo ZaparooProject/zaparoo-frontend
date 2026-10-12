@@ -16,7 +16,14 @@ use crate::paged_grid::{self, Fit, Grid, Insets};
 use crate::sizing::{Derived, Inputs, Tier};
 
 /// The built-in action ids in their seed order (`hub_layout.rs`).
-pub const BUILT_IN_ACTIONS: [&str; 5] = ["resume", "favorites", "recents", "update", "settings"];
+pub const BUILT_IN_ACTIONS: [&str; 6] = [
+    "resume",
+    "favorites",
+    "recents",
+    "search",
+    "update",
+    "settings",
+];
 
 /// One visible `[[hub.items]]` entry, as the layout stores it.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -24,10 +31,16 @@ pub struct LayoutItem {
     pub kind: String,
     pub id: String,
     pub path: String,
+    /// Core's launcher-relative path for a pinned game or folder.
+    pub relative: String,
     pub script: String,
     pub name: String,
     pub icon: String,
     pub system: String,
+    /// A saved search's text, systems and tags.
+    pub query: String,
+    pub systems: Vec<String>,
+    pub tags: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -37,6 +50,8 @@ pub enum Kind {
     System,
     Folder,
     ZapScript,
+    /// A saved search, which opens its results.
+    Search,
     /// A blank cell: a persisted spacer or the last page's tail padding.
     Empty,
 }
@@ -49,6 +64,7 @@ impl Kind {
             Self::System => "system",
             Self::Folder => "folder",
             Self::ZapScript => "zapscript",
+            Self::Search => "search",
             Self::Empty => "empty",
         }
     }
@@ -82,9 +98,16 @@ pub struct Entry {
     pub kind: Option<Kind>,
     pub id: String,
     pub path: String,
+    /// Core's launcher-relative path for a pinned game.
+    pub relative: String,
     pub script: String,
     /// Owning system of a folder shortcut, carried through to Accept.
     pub system: String,
+    /// A saved search's text, systems and tags, carried through to Accept.
+    /// Its folder limit travels in `path`.
+    pub query: String,
+    pub systems: Vec<String>,
+    pub tags: Vec<String>,
     /// Translatable label id (`category:Arcade`, `action:favorites`), or
     /// empty when `name` is free text.
     pub label_key: String,
@@ -93,6 +116,8 @@ pub struct Entry {
     /// Resource path of the art: `categories/...`, `icons/...`,
     /// `systems/<id>`, or a media cover key the host resolves.
     pub cover_key: String,
+    /// Original built-in art while a user override is preparing or rejected.
+    pub fallback_cover_key: String,
     pub disabled: bool,
     pub reason: Reason,
     /// The entry's real position in the layout, or -1 for the bootstrap
@@ -183,6 +208,7 @@ fn action_entry(
         id: id.to_string(),
         label_key: format!("action:{id}"),
         cover_key: hub_cover_key(resolver, id, fallback_cover),
+        fallback_cover_key: fallback_cover.to_string(),
         disabled,
         reason,
         hub_index: -1,
@@ -231,6 +257,13 @@ fn resolve_action(live: &Live, resolver: &dyn Resolver, id: &str) -> Option<Entr
             false,
             Reason::None,
         )),
+        "search" => Some(action_entry(
+            resolver,
+            id,
+            "icons/Search",
+            false,
+            Reason::None,
+        )),
         "update" => {
             if !live.update_enabled {
                 return None;
@@ -273,6 +306,7 @@ fn resolve_category(live: &Live, resolver: &dyn Resolver, id: &str) -> Entry {
         name: canonical.to_string(),
         label_key: format!("category:{canonical}"),
         cover_key: hub_cover_key(resolver, canonical, &category_cover_key(canonical)),
+        fallback_cover_key: category_cover_key(canonical),
         disabled: unconfirmed,
         reason: if unconfirmed {
             Reason::NotAvailable
@@ -301,6 +335,7 @@ fn resolve_system(resolver: &dyn Resolver, item: &LayoutItem) -> Option<Entry> {
         } else {
             hub_cover_key(resolver, &item.icon, "icons/File")
         },
+        fallback_cover_key: "icons/File".into(),
         hub_index: -1,
         ..Entry::default()
     })
@@ -331,6 +366,7 @@ fn resolve_folder(resolver: &dyn Resolver, item: &LayoutItem) -> Option<Entry> {
         } else {
             hub_cover_key(resolver, &item.icon, "icons/Folder")
         },
+        fallback_cover_key: "icons/Folder".into(),
         hub_index: -1,
         ..Entry::default()
     })
@@ -352,6 +388,8 @@ fn resolve_zapscript(resolver: &dyn Resolver, item: &LayoutItem) -> Option<Entry
     Some(Entry {
         kind: Some(Kind::ZapScript),
         id: item.script.clone(),
+        path: item.path.clone(),
+        relative: item.relative.clone(),
         script: item.script.clone(),
         name: if item.name.is_empty() {
             item.script.clone()
@@ -359,9 +397,156 @@ fn resolve_zapscript(resolver: &dyn Resolver, item: &LayoutItem) -> Option<Entry
             item.name.clone()
         },
         cover_key,
+        fallback_cover_key: "icons/File".into(),
         hub_index: -1,
         ..Entry::default()
     })
+}
+
+/// A saved search's identity for focus restore: the same string for the
+/// same search however its query is cased or its lists are ordered.
+fn search_key(item: &LayoutItem) -> String {
+    let set = |values: &[String]| {
+        let mut values: Vec<String> = values.iter().map(|v| v.trim().to_string()).collect();
+        values.retain(|v| !v.is_empty());
+        values.sort();
+        values.dedup();
+        values.join(",")
+    };
+    [
+        item.query.trim().to_lowercase(),
+        set(&item.systems),
+        set(&item.tags),
+        item.path.clone(),
+    ]
+    .join("\u{1f}")
+}
+
+/// A saved search needs something to search on: text, a system, a tag or a
+/// folder. Unnamed, it is called by the first of those it has.
+fn resolve_search(resolver: &dyn Resolver, item: &LayoutItem) -> Option<Entry> {
+    let query = item.query.trim();
+    if query.is_empty() && item.systems.is_empty() && item.tags.is_empty() && item.path.is_empty() {
+        return None;
+    }
+    let name = if !item.name.is_empty() {
+        item.name.clone()
+    } else if !query.is_empty() {
+        query.to_string()
+    } else if let Some(system) = item.systems.first() {
+        resolver.system_name(system)
+    } else if let Some(tag) = item.tags.first() {
+        tag.clone()
+    } else {
+        folder_name_for_path(&item.path)
+    };
+    Some(Entry {
+        kind: Some(Kind::Search),
+        id: search_key(item),
+        path: item.path.clone(),
+        query: query.to_string(),
+        systems: item.systems.clone(),
+        tags: item.tags.clone(),
+        name,
+        cover_key: if item.icon.is_empty() {
+            "icons/Search".to_string()
+        } else {
+            hub_cover_key(resolver, &item.icon, "icons/Search")
+        },
+        fallback_cover_key: "icons/Search".into(),
+        hub_index: -1,
+        ..Entry::default()
+    })
+}
+
+/// What a pinned game tile sends to Core, in the order it is tried: the
+/// launcher-relative path (survives a move to another drive), the title
+/// command (survives a reorganized folder), then the absolute path. Every
+/// value is one Core reported for the game; a hand-written tile has only its
+/// script. Empty and repeated values are dropped.
+pub fn launch_candidates(relative: &str, script: &str, path: &str) -> Vec<String> {
+    let mut candidates: Vec<String> = Vec::with_capacity(3);
+    for value in [relative, script, path] {
+        if !value.trim().is_empty() && !candidates.iter().any(|seen| seen == value) {
+            candidates.push(value.to_string());
+        }
+    }
+    candidates
+}
+
+/// Whether a failed launch should move on to the tile's next candidate.
+/// Only a failure that says this identifier did not resolve qualifies. Any
+/// other failure (busy, blocked, a playtime limit, a launcher that needs
+/// repair, a timeout) would fail the same way again or may already have
+/// started something, so it ends the attempt.
+pub fn should_try_next(category: Option<&str>) -> bool {
+    matches!(category, Some("media_not_found" | "invalid_script"))
+}
+
+/// How the background refresh treats a tile.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Refresh {
+    Game,
+    Folder,
+}
+
+/// Tiles "Add to Hub" made, which the refresh keeps pointed at Core's
+/// current row. A hand-written `zapscript` tile (a script that is not the
+/// tile's own path, and no relative path) is never touched.
+pub fn refresh_kind(item: &LayoutItem) -> Option<Refresh> {
+    if item.system.is_empty() || item.path.is_empty() {
+        return None;
+    }
+    match item.kind.as_str() {
+        "folder" => Some(Refresh::Folder),
+        "zapscript" if !item.relative.is_empty() || item.script == item.path => Some(Refresh::Game),
+        _ => None,
+    }
+}
+
+/// Where Core says a tile's game or folder is now. An empty field means
+/// Core did not report that identifier.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Located {
+    pub path: String,
+    pub relative: String,
+    pub script: String,
+}
+
+/// The tile with Core's current identifiers folded in, or `None` when
+/// nothing changes. An identifier Core did not report keeps its stored
+/// value, except that a script which was just the old path follows the
+/// path.
+pub fn with_located(item: &LayoutItem, found: &Located) -> Option<LayoutItem> {
+    let mut next = item.clone();
+    if !found.path.is_empty() {
+        next.path.clone_from(&found.path);
+    }
+    if !found.relative.is_empty() {
+        next.relative.clone_from(&found.relative);
+    }
+    if item.kind == "zapscript" {
+        if !found.script.is_empty() {
+            next.script.clone_from(&found.script);
+        } else if item.script == item.path {
+            next.script.clone_from(&next.path);
+        }
+    }
+    (next != *item).then_some(next)
+}
+
+/// Whether two media paths name the same file, whatever folder each is
+/// in. The check a title match must pass before it may replace a tile's
+/// stored path.
+pub fn same_file_name(a: &str, b: &str) -> bool {
+    let name = |path: &str| {
+        path.rsplit(['/', '\\'])
+            .next()
+            .unwrap_or_default()
+            .to_string()
+    };
+    let (a, b) = (name(a), name(b));
+    !a.is_empty() && a == b
 }
 
 fn resolve_item(
@@ -380,6 +565,7 @@ fn resolve_item(
         "system" => resolve_system(resolver, item),
         "folder" => resolve_folder(resolver, item),
         "zapscript" => resolve_zapscript(resolver, item),
+        "search" => resolve_search(resolver, item),
         _ => None,
     }?;
     entry.hub_index = hub_index;
@@ -523,6 +709,7 @@ pub fn restore_index(
             "system" => Some(Kind::System),
             "folder" => Some(Kind::Folder),
             "zapscript" => Some(Kind::ZapScript),
+            "search" => Some(Kind::Search),
             _ => None,
         };
         if let Some(restored) = kind.and_then(|k| index_for(entries, k, id)) {
@@ -651,7 +838,9 @@ pub struct AddEntry {
 }
 
 /// Entries for View > Add item: every known category or action not in
-/// the layout. Resume always offers its plain label.
+/// the layout. Resume always offers its plain label. Once categories have
+/// loaded, a category Core does not list is left out: adding it back would
+/// only make a "Not available" tile.
 pub fn add_entries(
     available: &[(String, String)],
     live: &Live,
@@ -662,7 +851,13 @@ pub fn add_entries(
         .filter_map(|(kind, id)| {
             let label_key = match kind.as_str() {
                 "action" if id == "resume" => "action:resume".to_string(),
-                "category" => resolve_category(live, resolver, id).label_key,
+                "category" => {
+                    let entry = resolve_category(live, resolver, id);
+                    if entry.disabled {
+                        return None;
+                    }
+                    entry.label_key
+                }
                 "action" => resolve_action(live, resolver, id)?.label_key,
                 _ => return None,
             };
@@ -843,6 +1038,22 @@ mod tests {
     }
 
     #[test]
+    fn a_system_tile_shows_its_stored_name_before_the_catalog_name() {
+        let items = vec![
+            LayoutItem {
+                kind: "system".into(),
+                id: "ge5jjso5lvkdfgsywmdqjpa5ye".into(),
+                name: "DVD Player".into(),
+                ..LayoutItem::default()
+            },
+            item("system", "SNES"),
+        ];
+        let out = entries(&items, false, &live(&[]), &Names, 4, 0);
+        assert_eq!(out[0].name, "DVD Player");
+        assert_eq!(out[1].name, "Name of SNES");
+    }
+
+    #[test]
     fn bootstrap_window_seeds_resume_categories_then_actions() {
         let confirmed: Vec<String> = Vec::new();
         let mut l = live(&confirmed);
@@ -860,8 +1071,8 @@ mod tests {
                 "category:Other",
                 "action:favorites",
                 "action:recents",
+                "action:search",
                 "action:settings",
-                ""
             ]
         );
         assert!(out.iter().all(|e| e.hub_index == -1));
@@ -1008,7 +1219,7 @@ mod tests {
 
     #[test]
     fn add_entries_resolve_labels_and_keep_resume_plain() {
-        let confirmed: Vec<String> = Vec::new();
+        let confirmed = vec!["Handheld".to_string()];
         let available = vec![
             ("action".to_string(), "resume".to_string()),
             ("category".to_string(), "Handhelds".to_string()),
@@ -1027,6 +1238,25 @@ mod tests {
             (out[1].id.as_str(), out[1].label_key.as_str()),
             ("category:Handhelds", "category:Handheld")
         );
+    }
+
+    #[test]
+    fn add_entries_leave_out_a_category_core_does_not_list() {
+        let confirmed = vec!["Console".to_string()];
+        let available = vec![
+            ("category".to_string(), "Other".to_string()),
+            ("category".to_string(), "Console".to_string()),
+        ];
+        let mut l = live(&confirmed);
+        let out = add_entries(&available, &l, &Names);
+        let ids: Vec<&str> = out.iter().map(|e| e.id.as_str()).collect();
+        assert_eq!(ids, ["category:Console"]);
+
+        // Before Core answers, nothing is known to be missing.
+        l.categories_loaded = false;
+        let out = add_entries(&available, &l, &Names);
+        let ids: Vec<&str> = out.iter().map(|e| e.id.as_str()).collect();
+        assert_eq!(ids, ["category:Other", "category:Console"]);
     }
 
     #[test]
@@ -1136,5 +1366,314 @@ mod tests {
         assert!(g.compact_footer);
         assert_eq!(g.fit.cell_width, d.hub_tile_width);
         assert_eq!(g.fit.cell_height, d.hub_tile_height);
+    }
+    fn game(relative: &str, script: &str, path: &str) -> LayoutItem {
+        LayoutItem {
+            kind: "zapscript".into(),
+            system: "NES".into(),
+            relative: relative.into(),
+            script: script.into(),
+            path: path.into(),
+            ..LayoutItem::default()
+        }
+    }
+
+    #[test]
+    fn a_game_tile_launches_by_relative_path_then_script_then_absolute_path() {
+        assert_eq!(
+            launch_candidates(
+                "NES/Zelda.nes",
+                "@NES/Zelda",
+                "/media/fat/games/NES/Zelda.nes"
+            ),
+            [
+                "NES/Zelda.nes",
+                "@NES/Zelda",
+                "/media/fat/games/NES/Zelda.nes"
+            ]
+        );
+        // A tile pinned before Core reported the portable forms.
+        assert_eq!(
+            launch_candidates("", "/g/Zelda.nes", "/g/Zelda.nes"),
+            ["/g/Zelda.nes"]
+        );
+        // A hand-written tile is only ever its script.
+        assert_eq!(
+            launch_candidates("", "**launch.random:NES", ""),
+            ["**launch.random:NES"]
+        );
+        // A multi-disc folder pins without a relative path: script first.
+        assert_eq!(
+            launch_candidates("", "@PSX/Game", "/g/PSX/Game"),
+            ["@PSX/Game", "/g/PSX/Game"]
+        );
+        assert!(launch_candidates("", " ", "").is_empty());
+    }
+
+    #[test]
+    fn only_an_unresolved_identifier_moves_on_to_the_next_candidate() {
+        assert!(should_try_next(Some("media_not_found")));
+        assert!(should_try_next(Some("invalid_script")));
+        for category in [
+            "busy",
+            "blocked",
+            "disabled",
+            "playtime_limit",
+            "launch_repair",
+            "timeout",
+            "cancelled",
+            "unavailable",
+            "execution_failed",
+        ] {
+            assert!(!should_try_next(Some(category)), "{category}");
+        }
+        assert!(!should_try_next(None));
+    }
+
+    fn search(query: &str, systems: &[&str], tags: &[&str]) -> LayoutItem {
+        LayoutItem {
+            kind: "search".into(),
+            query: query.into(),
+            systems: systems.iter().map(ToString::to_string).collect(),
+            tags: tags.iter().map(ToString::to_string).collect(),
+            ..LayoutItem::default()
+        }
+    }
+
+    #[test]
+    fn a_search_tile_carries_the_whole_search_to_accept() {
+        let items = vec![LayoutItem {
+            name: "RPGs".into(),
+            path: "/g/SNES/Homebrew".into(),
+            ..search(
+                " final ",
+                &["SNES", "Genesis"],
+                &["genre:rpg", "genre:action"],
+            )
+        }];
+        let out = entries(&items, false, &live(&[]), &Names, 4, 0);
+        assert_eq!(out[0].kind, Some(Kind::Search));
+        assert_eq!(out[0].name, "RPGs");
+        assert_eq!(out[0].query, "final");
+        assert_eq!(out[0].systems, ["SNES", "Genesis"]);
+        assert_eq!(out[0].tags, ["genre:rpg", "genre:action"]);
+        assert_eq!(out[0].path, "/g/SNES/Homebrew");
+        assert_eq!(out[0].cover_key, "icons/Search");
+        assert_eq!(out[0].hub_index, 0);
+        assert_eq!(refresh_kind(&items[0]), None);
+    }
+
+    #[test]
+    fn a_search_tile_is_named_by_what_it_searches_and_skipped_when_it_searches_nothing() {
+        let folder = LayoutItem {
+            path: "/g/SNES/Homebrew/".into(),
+            ..search("", &[], &[])
+        };
+        let items = vec![
+            search("mario", &["SNES"], &[]),
+            search("", &["SNES"], &["genre:rpg"]),
+            search("", &[], &["genre:rpg"]),
+            folder,
+            search("  ", &[], &[]),
+        ];
+        let out = entries(&items, false, &live(&[]), &Names, 8, 0);
+        let names: Vec<&str> = out
+            .iter()
+            .filter(|e| e.kind == Some(Kind::Search))
+            .map(|e| e.name.as_str())
+            .collect();
+        assert_eq!(names, ["mario", "Name of SNES", "genre:rpg", "Homebrew"]);
+    }
+
+    #[test]
+    fn a_search_tile_takes_a_custom_icon_and_restores_focus_by_its_search() {
+        struct Custom;
+        impl Resolver for Custom {
+            fn system_name(&self, id: &str) -> String {
+                id.to_string()
+            }
+            fn system_cover_key(&self, id: &str) -> String {
+                format!("systems/{id}")
+            }
+            fn media_cover_key(&self, _system: &str, _path: &str) -> String {
+                String::new()
+            }
+            fn hub_override(&self, id: &str) -> Option<String> {
+                (id == "rpgs").then(|| "custom:rpgs".to_string())
+            }
+        }
+        let items = vec![
+            item("action", "search"),
+            search("zelda", &[], &[]),
+            LayoutItem {
+                icon: "rpgs".into(),
+                ..search("Final", &["SNES", "Genesis"], &["year:1994", "genre:rpg"])
+            },
+        ];
+        let out = entries(&items, false, &live(&[]), &Custom, 4, 0);
+        assert_eq!(out[2].cover_key, "custom:rpgs");
+        assert_eq!(out[2].fallback_cover_key, "icons/Search");
+
+        let selected_item = commit(&out[2]).expect("commit").selected_item;
+        // The same search written another way lands on the same tile.
+        let rewritten = vec![
+            item("action", "search"),
+            search("final", &["Genesis", "SNES"], &["genre:rpg", "year:1994"]),
+            search("zelda", &[], &[]),
+        ];
+        let moved = entries(&rewritten, false, &live(&[]), &Custom, 4, 0);
+        let saved = Saved {
+            selected_item: &selected_item,
+            ..Saved::default()
+        };
+        assert_eq!(restore_index(&moved, &saved, &[], false, "settings"), 1);
+    }
+
+    #[test]
+    fn a_zapscript_tile_carries_every_identifier_to_accept() {
+        let items = vec![game("NES/Zelda.nes", "@NES/Zelda", "/g/NES/Zelda.nes")];
+        let out = entries(&items, false, &live(&[]), &Names, 4, 0);
+        assert_eq!(out[0].relative, "NES/Zelda.nes");
+        assert_eq!(out[0].script, "@NES/Zelda");
+        assert_eq!(out[0].path, "/g/NES/Zelda.nes");
+        assert_eq!(out[0].cover_key, "media-image/NES//g/NES/Zelda.nes");
+    }
+
+    #[test]
+    fn the_refresh_covers_pinned_games_and_folders_but_not_hand_written_tiles() {
+        assert_eq!(
+            refresh_kind(&game("NES/Zelda.nes", "@NES/Zelda", "/g/Zelda.nes")),
+            Some(Refresh::Game)
+        );
+        assert_eq!(
+            refresh_kind(&game("", "/g/Zelda.nes", "/g/Zelda.nes")),
+            Some(Refresh::Game),
+            "a pin from before the relative path existed"
+        );
+        assert_eq!(
+            refresh_kind(&game("", "**launch.random:NES", "/g/Zelda.nes")),
+            None,
+            "a hand-written script with a cover hint"
+        );
+        assert_eq!(refresh_kind(&game("", "**launch.random:NES", "")), None);
+        let folder = LayoutItem {
+            kind: "folder".into(),
+            system: "SNES".into(),
+            path: "/g/SNES/USA".into(),
+            ..LayoutItem::default()
+        };
+        assert_eq!(refresh_kind(&folder), Some(Refresh::Folder));
+        assert_eq!(
+            refresh_kind(&LayoutItem {
+                system: String::new(),
+                ..folder
+            }),
+            None
+        );
+        assert_eq!(refresh_kind(&item("category", "Arcade")), None);
+    }
+
+    #[test]
+    fn located_identifiers_upgrade_an_old_pin_and_heal_a_moved_one() {
+        let old_pin = game("", "/g/Zelda.nes", "/g/Zelda.nes");
+        let upgraded = with_located(
+            &old_pin,
+            &Located {
+                path: "/g/Zelda.nes".into(),
+                relative: "NES/Zelda.nes".into(),
+                script: "@NES/Zelda".into(),
+            },
+        )
+        .expect("upgraded");
+        assert_eq!(
+            upgraded,
+            game("NES/Zelda.nes", "@NES/Zelda", "/g/Zelda.nes")
+        );
+
+        let moved = with_located(
+            &upgraded,
+            &Located {
+                path: "/usb/Zelda.nes".into(),
+                relative: "NES/Zelda.nes".into(),
+                script: "@NES/Zelda".into(),
+            },
+        )
+        .expect("moved");
+        assert_eq!(moved.path, "/usb/Zelda.nes");
+        assert_eq!(moved.relative, "NES/Zelda.nes");
+
+        // Nothing new from Core is no change at all.
+        assert_eq!(
+            with_located(
+                &moved,
+                &Located {
+                    path: "/usb/Zelda.nes".into(),
+                    ..Located::default()
+                }
+            ),
+            None
+        );
+        // A Core that reports no portable form leaves the tile as it was.
+        assert_eq!(
+            with_located(
+                &old_pin,
+                &Located {
+                    path: "/g/Zelda.nes".into(),
+                    ..Located::default()
+                }
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn a_script_that_was_the_path_follows_the_path_when_core_sends_no_script() {
+        let healed = with_located(
+            &game("", "/g/Zelda.nes", "/g/Zelda.nes"),
+            &Located {
+                path: "/usb/Zelda.nes".into(),
+                relative: "NES/Zelda.nes".into(),
+                script: String::new(),
+            },
+        )
+        .expect("healed");
+        assert_eq!(healed.script, "/usb/Zelda.nes");
+    }
+
+    #[test]
+    fn a_located_folder_keeps_no_script() {
+        let folder = LayoutItem {
+            kind: "folder".into(),
+            system: "SNES".into(),
+            path: "/g/SNES/USA".into(),
+            ..LayoutItem::default()
+        };
+        let healed = with_located(
+            &folder,
+            &Located {
+                path: "/usb/SNES/USA".into(),
+                relative: "SNES/USA".into(),
+                script: "ignored".into(),
+            },
+        )
+        .expect("healed");
+        assert_eq!(healed.path, "/usb/SNES/USA");
+        assert_eq!(healed.relative, "SNES/USA");
+        assert!(healed.script.is_empty());
+    }
+
+    #[test]
+    fn a_title_match_must_name_the_same_file() {
+        assert!(same_file_name(
+            "/fat/NES/Zelda (USA).nes",
+            "/usb/games/NES/Zelda (USA).nes"
+        ));
+        assert!(same_file_name("C:\\roms\\Zelda.nes", "/usb/Zelda.nes"));
+        assert!(!same_file_name(
+            "/fat/NES/Zelda (USA).nes",
+            "/usb/NES/Zelda (Europe).nes"
+        ));
+        assert!(!same_file_name("", ""));
+        assert!(!same_file_name("/fat/NES/", "/usb/NES/"));
     }
 }

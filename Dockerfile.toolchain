@@ -79,7 +79,7 @@ RUN curl --proto '=https' --tlsv1.2 -sSfL -o /tmp/rustup-init \
 # No prebuilt binary is published, so it is compiled here and only the binary
 # reaches the final image. Its version must match the pinned Slint.
 FROM base AS tr-extractor
-ARG SLINT_TR_EXTRACTOR_VERSION=1.17.1
+ARG SLINT_TR_EXTRACTOR_VERSION=1.18.0
 RUN cargo install --locked --root /opt/tools \
         slint-tr-extractor --version "${SLINT_TR_EXTRACTOR_VERSION}"
 

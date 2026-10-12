@@ -1,0 +1,32 @@
+# Zaparoo Frontend
+# Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
+# SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
+
+[package]
+name         = "zaparoo-update"
+version      = "2.0.0"
+edition      = { workspace = true }
+rust-version = { workspace = true }
+license      = { workspace = true }
+authors      = { workspace = true }
+publish      = false
+# Lets `build.rs` hand the frontend's Slint build the directory that holds
+# the screen (`DEP_ZAPAROO_UPDATE_UI_DIR`).
+links        = "zaparoo_update"
+
+[lints]
+workspace = true
+
+# The public stand-in for the private `zaparoo-update` module. It keeps the
+# module's whole interface (see `zaparoo-update-api`) and does nothing: the
+# updater is never available, so the Hub shows no Update tile. Official
+# builds substitute the private crate through cargo's `paths` override
+# (`docs/architecture.md`, "Update module"), and cargo only accepts that when
+# both crates list the same dependencies, so keep this list in step with it.
+[dependencies]
+tokio              = { workspace = true, features = ["io-util", "process", "rt", "sync", "time"] }
+tracing            = { workspace = true }
+zaparoo-update-api = { path = "../zaparoo-update-api" }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

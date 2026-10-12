@@ -65,6 +65,7 @@ pub fn same_cell(left: &crate::GridCell, right: &crate::GridCell) -> bool {
         && left.glyph_key == right.glyph_key
         && left.has_cover == right.has_cover
         && left.has_cover_focus == right.has_cover_focus
+        && left.cover_exact == right.cover_exact
         && left.hidden == right.hidden
         && left.disabled == right.disabled
         && left.favorite == right.favorite
@@ -72,6 +73,8 @@ pub fn same_cell(left: &crate::GridCell, right: &crate::GridCell) -> bool {
         && left.top_label == right.top_label
         && left.wordmark == right.wordmark
         && left.is_empty == right.is_empty
+        && left.has_placeholder == right.has_placeholder
+        && left.placeholder == right.placeholder
 }
 
 fn publish_by<T: Clone + 'static>(

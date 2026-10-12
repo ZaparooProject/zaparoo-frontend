@@ -19,6 +19,13 @@ pub enum Control {
     Action,
     /// Opens another page or screen.
     Navigate,
+    /// Reads as off, mixed, or fully on across several settings at once;
+    /// Accept always drives it to fully on or fully off. Today, only the
+    /// Online page's "All" features row uses this.
+    TriToggle,
+    /// Shows a live value and nothing else: there is nothing to change, so
+    /// it never takes focus.
+    Info,
 }
 
 /// A row on a settings page: a group header, or a field.
@@ -41,6 +48,11 @@ impl Row {
 
     pub fn is_field(self) -> bool {
         matches!(self, Self::Field { .. })
+    }
+
+    /// A row the cursor can rest on: a field with something to do.
+    pub fn is_navigable(self) -> bool {
+        matches!(self, Self::Field { control, .. } if control != Control::Info)
     }
 }
 
@@ -65,6 +77,10 @@ pub const PAGES: &[Page] = &[
         glyph: "icons/Library",
     },
     Page {
+        id: "pageOnline",
+        glyph: "icons/Online",
+    },
+    Page {
         id: "pageDisplayInterface",
         glyph: "icons/Display",
     },
@@ -84,13 +100,36 @@ pub const PAGES: &[Page] = &[
 
 /// What the registry needs to know about the machine it runs on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "independent runtime capabilities"
+)]
 pub struct Inputs {
+    /// An embedding host can grant access through its own folder chooser.
+    pub can_pick_folder: bool,
+    /// An embedding host can scan a folder for installed launchers.
+    pub can_scan_launchers: bool,
+    /// An embedding host can hand off to the system setting that lets it
+    /// measure foreground playtime exactly.
+    pub can_request_playtime_access: bool,
+    /// Core lets this client link an Online account and set play history
+    /// consent: it answered `playtimeSyncEnabled`, which it only does for
+    /// local and admin clients.
+    pub can_link_online: bool,
+    /// This device is currently linked to an Online account: the account
+    /// row shows status/unlink instead of a link prompt, and the Warp row
+    /// joins it. Every other row on the page still shows either way
+    /// (linking again resets them, so there is always something to see).
+    pub online_linked: bool,
     /// `MiSTer`: the resolution and analog-video rows only exist there.
     pub is_mister: bool,
     /// The frontend is already running the native CRT path.
     pub crt_enabled: bool,
     /// A debug build offers the one-second screensaver for testing.
     pub debug_build: bool,
+    /// Something can post the log bundle: curl when standalone, or the
+    /// embedding host's own uploader.
+    pub log_upload: bool,
 }
 
 const TOGGLES: &[&str] = &[
@@ -102,6 +141,10 @@ const TOGGLES: &[&str] = &[
     "crtEnabled",
     "swapConfirmCancel",
     "swapOptionsView",
+    "playtimeSync",
+    "onlineRemoteControl",
+    "onlineLibrarySync",
+    "onlineCloudBackup",
 ];
 
 const NAVIGATES: &[&str] = &[
@@ -113,13 +156,33 @@ const NAVIGATES: &[&str] = &[
     "pageLanguage",
     "pageControlsInput",
     "pageLibraryData",
+    "pageOnline",
     "pageSupportAbout",
 ];
 
-const ACTIONS: &[&str] = &["updateMediaDb", "runScraper", "uploadLog"];
+const ACTIONS: &[&str] = &[
+    "detectLaunchers",
+    "addGameFolder",
+    "updateMediaDb",
+    "runScraper",
+    "pairDevice",
+    "uploadLog",
+    "playtimeAccess",
+    "onlineLinkAccount",
+    "onlineUnlinkAccount",
+    "onlineManageBackups",
+    "onlineRemoteActivity",
+];
+
+/// Rows whose current value sweeps between fully off and fully on across
+/// several settings at once; see `Control::TriToggle`.
+const TRI_TOGGLES: &[&str] = &["onlineAllFeatures"];
+
+/// Rows that only report a live value; see `Control::Info`.
+const INFOS: &[&str] = &["onlineStatus", "onlineWarp", "onlineRemoteStatus"];
 
 /// The control a row id carries: everything that is not a toggle, a
-/// navigation or a one-shot is a picker.
+/// navigation, a one-shot, a tri-toggle or an info row is a picker.
 pub fn control(id: &str) -> Control {
     if TOGGLES.contains(&id) {
         Control::Toggle
@@ -127,6 +190,10 @@ pub fn control(id: &str) -> Control {
         Control::Navigate
     } else if ACTIONS.contains(&id) {
         Control::Action
+    } else if TRI_TOGGLES.contains(&id) {
+        Control::TriToggle
+    } else if INFOS.contains(&id) {
+        Control::Info
     } else {
         Control::Picker
     }
@@ -181,23 +248,81 @@ pub fn page_rows(page: &str, inputs: &Inputs) -> Vec<Row> {
         ],
         // Maintenance leads: these are rows a user comes here to do, not
         // one-time preferences.
-        "pageLibraryData" => vec![
-            Row::Header("maintenance"),
-            field("updateMediaDb"),
-            field("runScraper"),
-            Row::Header("browsing"),
-            field("systemsLayout"),
-            field("gamesLayout"),
-            field("mediaImageType"),
-            field("showHidden"),
-            field("showOriginalFilenames"),
-        ],
-        "pageSupportAbout" => vec![
-            field("aboutLicense"),
-            field("documentation"),
-            field("debugLogging"),
-            field("uploadLog"),
-        ],
+        "pageLibraryData" => {
+            let mut rows = Vec::new();
+            if inputs.can_pick_folder {
+                rows.push(field("addGameFolder"));
+            }
+            if inputs.can_scan_launchers {
+                rows.push(field("detectLaunchers"));
+            }
+            if inputs.can_request_playtime_access {
+                rows.push(field("playtimeAccess"));
+            }
+            rows.extend([
+                Row::Header("maintenance"),
+                field("updateMediaDb"),
+                field("runScraper"),
+                Row::Header("browsing"),
+                field("systemsLayout"),
+                field("gamesLayout"),
+                field("mediaImageType"),
+                field("showHidden"),
+                field("showOriginalFilenames"),
+            ]);
+            rows
+        }
+        // Account first: everything else on the page needs it. Status and
+        // Warp only report (info rows, never focused); the one thing to do
+        // there is link or unlink. Features lead with the one switch that
+        // covers all four, then each on its own; Backup and Remote close
+        // the page with the one action each actually needs doing from here.
+        "pageOnline" => {
+            if !inputs.can_link_online {
+                // Unreachable for any client this frontend ships as today
+                // (every embedding is its own Core's local, privileged
+                // client); kept so a future non-local role still gets an
+                // honest page instead of a crash or a silently empty one.
+                return vec![Row::Header("onlineUnavailable")];
+            }
+            let mut rows = vec![Row::Header("account"), field("onlineStatus")];
+            if inputs.online_linked {
+                rows.push(field("onlineWarp"));
+                rows.push(field("onlineUnlinkAccount"));
+            } else {
+                rows.push(field("onlineLinkAccount"));
+            }
+            rows.extend([
+                Row::Header("features"),
+                field("onlineAllFeatures"),
+                field("onlineRemoteControl"),
+                field("playtimeSync"),
+                field("onlineLibrarySync"),
+                field("onlineCloudBackup"),
+                Row::Header("backup"),
+                field("onlineBackupSchedule"),
+                field("onlineManageBackups"),
+                Row::Header("remote"),
+                field("onlineRemoteStatus"),
+                field("onlineRemoteActivity"),
+            ]);
+            rows
+        }
+        // Pairing leads: it is the one row here a user comes to *do*,
+        // the way the Library page leads with its own action rows. The
+        // rest of the page is identity and diagnostics.
+        "pageSupportAbout" => {
+            let mut rows = vec![
+                field("pairDevice"),
+                field("aboutLicense"),
+                field("documentation"),
+                field("debugLogging"),
+            ];
+            if inputs.log_upload {
+                rows.push(field("uploadLog"));
+            }
+            rows
+        }
         _ => Vec::new(),
     }
 }
@@ -239,6 +364,7 @@ pub const MEDIA_IMAGE_TYPES: &[&str] = &[
     "boxartback",
 ];
 pub const CRT_VIDEO_STANDARDS: &[&str] = &["ntsc", "pal"];
+pub const BACKUP_SCHEDULES: &[&str] = &["daily", "weekly", "manual"];
 
 /// The option list of a picker row, when it is a fixed one. Resolutions
 /// and color schemes come from the host (the output modes it detected,
@@ -257,6 +383,7 @@ pub fn options(id: &str, inputs: &Inputs) -> Option<Vec<&'static str>> {
         "buttonLayout" => BUTTON_LAYOUTS,
         "mediaImageType" => MEDIA_IMAGE_TYPES,
         "crtVideoStandard" => CRT_VIDEO_STANDARDS,
+        "onlineBackupSchedule" => BACKUP_SCHEDULES,
         "screensaverTimeout" => {
             let mut values = SCREENSAVER_TIMEOUTS.to_vec();
             // A debug build can watch the screensaver arm immediately.
@@ -282,6 +409,10 @@ pub fn action_label_key(id: &str, busy: bool) -> &'static str {
             }
         }
         "uploadLog" => "upload",
+        "detectLaunchers" => "detect",
+        "pairDevice" => "pair",
+        "onlineLinkAccount" => "link",
+        "onlineUnlinkAccount" => "unlink",
         _ => "open",
     }
 }
@@ -304,6 +435,22 @@ pub fn action_disabled(id: &str, index_busy: bool, scrape_busy: bool) -> bool {
     }
 }
 
+/// Online rows that do nothing without a linked account. They stay on the
+/// page, dimmed, and say to link first, the same as Core's own TUI: Core
+/// refuses every one of them for an unlinked device.
+pub fn needs_online_link(id: &str) -> bool {
+    matches!(
+        id,
+        "onlineAllFeatures"
+            | "onlineRemoteControl"
+            | "playtimeSync"
+            | "onlineLibrarySync"
+            | "onlineCloudBackup"
+            | "onlineBackupSchedule"
+            | "onlineManageBackups"
+    )
+}
+
 /// Rows whose change only takes effect after the frontend restarts; the
 /// view says so in their description and the host stages a confirm.
 pub fn restarts(id: &str) -> bool {
@@ -315,7 +462,17 @@ pub fn restarts(id: &str) -> bool {
 
 /// The first row a cursor may sit on.
 pub fn first_navigable(rows: &[Row]) -> usize {
-    rows.iter().position(|r| r.is_field()).unwrap_or(0)
+    rows.iter().position(|r| r.is_navigable()).unwrap_or(0)
+}
+
+/// Where a remembered row lands on a page as it is now: the same row
+/// while it is still a field, otherwise the page's first field.
+pub fn restore_seat(rows: &[Row], index: usize) -> usize {
+    if rows.get(index).copied().is_some_and(Row::is_navigable) {
+        index
+    } else {
+        first_navigable(rows)
+    }
 }
 
 /// The next navigable row in `dir`, wrapping and skipping headers.
@@ -332,61 +489,144 @@ pub fn seek_navigable(rows: &[Row], from: usize, dir: i64) -> usize {
         } else if i >= len as i64 {
             i = 0;
         }
-        if rows[i as usize].is_field() {
+        if rows[i as usize].is_navigable() {
             return i as usize;
         }
     }
     from
 }
 
+/// One rendered line of text at `size`, the way Slint lays it out: Noto
+/// Sans has a 1.362 em hhea line height and no line gap. Shared by the
+/// action status line and the group heading so they stay in step with the
+/// type ladder instead of with a magic percentage.
+fn line_height(size: i32) -> i32 {
+    (f64::from(size) * 1.362).ceil() as i32
+}
+
+/// One line of the hint band. The bitmap face has no leading: a line is
+/// exactly its cell, so the scaled figure would hold a third of a line of
+/// blank band open under every description.
+fn hint_line_height(inputs: &crate::sizing::Inputs, size: i32) -> i32 {
+    if inputs.bitmap_type {
+        size
+    } else {
+        line_height(size)
+    }
+}
+
+/// A settings page card in whole pixels: where it sits in the scene, the
+/// bands stacked inside it, and the heights its rows stack with. The view
+/// places the card from these values instead of deriving its own, so the
+/// rows band it clips is the viewport the scroll was solved against.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PageGeometry {
+    pub card_y: i32,
+    pub card_height: i32,
+    /// The card's lip: above the first row, under the last, either side of
+    /// the hint rule and under the hint text. One inset, used everywhere
+    /// on the surface (`docs/style.md`, "Surface containment").
+    pub pad: i32,
+    pub hint_height: i32,
+    /// What is left for rows once the lips, the hint band, its rule and the
+    /// clear line over the rule are taken out.
+    pub rows_viewport: i32,
+    /// A field is one line tall.
+    pub row_height: i32,
+    /// What a row with a status line adds under its label.
+    pub action_band_height: i32,
+    /// A group heading's own short row.
+    pub header_height: i32,
+}
+
+pub fn page_geometry(inputs: &crate::sizing::Inputs) -> PageGeometry {
+    use crate::layouts::{self, ThemeId, View};
+    let derived = crate::sizing::derive(inputs);
+    let profile = layouts::profile(ThemeId::current(inputs), View::GamesGrid, inputs);
+    let card_y = derived.header_bottom
+        + profile.status.top_margin
+        + profile.status.strip_height
+        + inputs.pct_h(4.0);
+    let bottom = derived.help_bar_height + inputs.pct_h(4.0);
+    let card_height = (inputs.screen_height as i32 - card_y - bottom).max(0);
+    // Descriptions are authored against the 240p card's line budget, so
+    // only that tier needs two lines held open; every wider one fits them
+    // on one and a second reserved line just holds the rows up. Fixed per
+    // tier, never per row: this is the rows viewport, and a band that grew
+    // with the focused description would reflow the list under the cursor.
+    let hint_lines = if derived.tier == crate::sizing::Tier::T240 || inputs.bitmap_type {
+        2
+    } else {
+        1
+    };
+    let hint_height = hint_lines * hint_line_height(inputs, derived.font_body);
+    let pad = inputs.pct_min(2.0);
+    // Four lips and two hairlines: the hint rule, and one clear line over
+    // it where the rows band stops, so a row gliding out never abuts the
+    // rule.
+    let rows_viewport = (card_height - 4 * pad - 2 - hint_height).max(0);
+    PageGeometry {
+        card_y,
+        card_height,
+        pad,
+        hint_height,
+        rows_viewport,
+        row_height: inputs.pct_h(8.0),
+        // Exactly the status line it makes room for, plus the gap over it.
+        // A flat percentage reserved a second *body* line for a caption
+        // and left the pair floating in a row taller than its content.
+        action_band_height: line_height(derived.font_caption) + inputs.pct_h(0.3),
+        // `SectionHeader`'s own anatomy: top gap, the label, the rule gap
+        // and the hairline. The heading is a shared component, so the row
+        // Rust stacks has to be the box that component draws.
+        header_height: inputs.pct_h(1.5) + line_height(derived.font_body) + inputs.pct_h(0.8) + 1,
+    }
+}
+
 /// The root category grid: two rows of three, transposed when the scene
 /// is rotated.
-/// Where a settings rows band can start and stop without cutting a row
-/// in half. `rows` is each row's (top, height) in band space, in order.
+/// How far a settings rows band scrolls to keep the focused row in view.
+/// `rows` is each row's (top, height) in order, measured from the first
+/// row's top. `lip` is the inset the card keeps above the first row and
+/// below the last; it scrolls with the rows, so the band clips against the
+/// card's own edges rather than against a margin inside them.
 ///
-/// The band is a fixed pixel height and its rows are not all the same
-/// height, so an unsnapped clip lands wherever it lands: at the top of a
-/// list that leaves a sliver of the next row against the hint divider,
-/// which reads as a rendering fault rather than as "there is more below".
-/// Both edges snap to a real row edge instead, which is what the browse
-/// list's uniform rows already give for free.
+/// The band is a fixed height and its rows are not all the same height.
+/// Its bottom edge is fixed (the hint rule), so a row may be cut there,
+/// which reads as "there is more below" because the rows glide under it.
+/// The top is the edge that must stay clean: a scrolled band always starts
+/// on a row top, so no sliver of the row before it hangs under the card's
+/// frame. The focused row keeps one lip of air above the bottom edge.
 ///
-/// Returns the scroll offset, which is a row top, and the height the band
-/// should paint, which ends on a row bottom.
-pub fn band_extent(rows: &[(f32, f32)], index: usize, viewport: f32) -> (f32, f32) {
+/// Returns the scroll offset in lip-inclusive space (0, or `lip` plus a
+/// row top) and the height the band paints (`viewport` plus both lips).
+pub fn band_extent(rows: &[(f32, f32)], index: usize, viewport: f32, lip: f32) -> (f32, f32) {
+    let shown = viewport + 2.0 * lip;
     let Some(&(focused_top, focused_height)) = rows.get(index) else {
-        return (0.0, viewport);
+        return (0.0, shown);
     };
-    let focused_bottom = focused_top + focused_height;
-    // The least scrolling that brings the focused row fully into view,
-    // rounded up to a row top. Clamping to a raw `total - viewport` here
-    // instead is what unsnaps it: that bound is rarely a row edge.
-    let needed = focused_bottom - viewport;
+    // The least scrolling that brings the focused row fully into view with
+    // its lip under it, rounded up to a row top.
+    let needed = focused_top + focused_height - viewport - lip;
+    if needed <= 0.0 {
+        return (0.0, shown);
+    }
     let snapped = rows
         .iter()
         .map(|(top, _)| *top)
         .filter(|top| *top >= needed && *top <= focused_top)
         .fold(f32::INFINITY, f32::min);
-    // No row top frames a row taller than the band; sit on its own top and
-    // let the fallback below show the raw viewport.
-    let scroll = if snapped.is_finite() {
-        snapped.max(0.0)
+    // No row top frames a row taller than the band; sit on its own top.
+    let top = if snapped.is_finite() {
+        snapped
     } else {
-        focused_top.max(0.0)
+        focused_top
     };
-    // A row taller than the band cannot be framed by it; show the raw
-    // viewport rather than collapsing the band to nothing.
-    let bottom = rows
-        .iter()
-        .map(|(top, height)| top + height)
-        .filter(|edge| *edge <= scroll + viewport)
-        .fold(f32::NEG_INFINITY, f32::max);
-    let shown = if bottom > scroll {
-        bottom - scroll
+    if top <= 0.0 {
+        (0.0, shown)
     } else {
-        viewport
-    };
-    (scroll, shown)
+        (lip + top, shown)
+    }
 }
 
 pub fn root_grid_shape(count: usize, rotated: bool) -> (usize, usize) {
@@ -446,8 +686,166 @@ mod tests {
         Inputs {
             is_mister: true,
             crt_enabled: crt,
-            debug_build: false,
+            log_upload: true,
+            ..Inputs::default()
         }
+    }
+
+    #[test]
+    fn the_upload_row_needs_an_uploader() {
+        let ids = |inputs: &Inputs| -> Vec<&'static str> {
+            page_rows("pageSupportAbout", inputs)
+                .into_iter()
+                .map(Row::id)
+                .collect()
+        };
+        assert!(ids(&mister(false)).contains(&"uploadLog"));
+        assert!(!ids(&Inputs::default()).contains(&"uploadLog"));
+    }
+
+    #[test]
+    fn online_page_needs_core_consent_capability_and_is_not_on_library() {
+        let ids = |page: &str, inputs: &Inputs| -> Vec<&str> {
+            page_rows(page, inputs).iter().map(|row| row.id()).collect()
+        };
+        assert!(!ids("pageLibraryData", &Inputs::default()).contains(&"playtimeSync"));
+        assert!(!ids("pageLibraryData", &Inputs::default()).contains(&"onlineLinkAccount"));
+        assert_eq!(
+            page_rows("pageOnline", &Inputs::default()),
+            vec![Row::Header("onlineUnavailable")],
+            "a client Core never grants Online consent to gets an honest page, not a crash"
+        );
+
+        let inputs = Inputs {
+            can_link_online: true,
+            ..Inputs::default()
+        };
+        let rows = ids("pageOnline", &inputs);
+        assert!(rows.contains(&"onlineLinkAccount"), "{rows:?}");
+        assert!(!rows.contains(&"onlineUnlinkAccount"), "{rows:?}");
+        assert!(!rows.contains(&"onlineWarp"), "{rows:?}");
+        assert!(rows.contains(&"playtimeSync"), "{rows:?}");
+        assert!(rows.contains(&"onlineAllFeatures"), "{rows:?}");
+
+        let linked_rows = ids(
+            "pageOnline",
+            &Inputs {
+                can_link_online: true,
+                online_linked: true,
+                ..Inputs::default()
+            },
+        );
+        assert!(
+            !linked_rows.contains(&"onlineLinkAccount"),
+            "{linked_rows:?}"
+        );
+        assert!(
+            linked_rows.contains(&"onlineUnlinkAccount"),
+            "{linked_rows:?}"
+        );
+        assert!(linked_rows.contains(&"onlineWarp"), "{linked_rows:?}");
+
+        // Everything that changes or reads account data waits for a link;
+        // linking itself, and the rows that only report, do not.
+        for row in &page_rows("pageOnline", &inputs) {
+            let waits = needs_online_link(row.id());
+            match row.id() {
+                "onlineLinkAccount"
+                | "onlineStatus"
+                | "onlineRemoteStatus"
+                | "onlineRemoteActivity" => assert!(!waits, "{}", row.id()),
+                _ if row.is_field() => assert!(waits, "{}", row.id()),
+                _ => {}
+            }
+        }
+
+        assert_eq!(control("onlineLinkAccount"), Control::Action);
+        assert_eq!(control("onlineUnlinkAccount"), Control::Action);
+        assert_eq!(control("onlineAllFeatures"), Control::TriToggle);
+        assert_eq!(control("onlineStatus"), Control::Info);
+        assert_eq!(control("onlineWarp"), Control::Info);
+        assert_eq!(control("onlineRemoteStatus"), Control::Info);
+        assert_eq!(control("onlineBackupSchedule"), Control::Picker);
+        assert_eq!(control("onlineManageBackups"), Control::Action);
+        assert_eq!(control("onlineRemoteActivity"), Control::Action);
+        assert_eq!(control("onlineRemoteControl"), Control::Toggle);
+        assert_eq!(control("onlineLibrarySync"), Control::Toggle);
+        assert_eq!(control("onlineCloudBackup"), Control::Toggle);
+        assert_eq!(control("playtimeSync"), Control::Toggle);
+        assert_eq!(
+            options("onlineBackupSchedule", &Inputs::default()).unwrap(),
+            BACKUP_SCHEDULES
+        );
+        // An info row only reports: the cursor starts on the first row
+        // there is something to do on and steps over the rest.
+        let page = page_rows("pageOnline", &inputs);
+        let seat = first_navigable(&page);
+        assert_eq!(page[seat].id(), "onlineLinkAccount");
+        let next = seek_navigable(&page, seat, 1);
+        assert_eq!(
+            page[next].id(),
+            "onlineAllFeatures",
+            "the all-features switch leads the Features group"
+        );
+        let last = seek_navigable(&page, seat, -1);
+        assert_eq!(
+            page[last].id(),
+            "onlineRemoteActivity",
+            "wrapping up from the first row skips the remote status row"
+        );
+        assert!(page.iter().all(|row| row.is_navigable()
+            || !row.is_field()
+            || matches!(
+                row.id(),
+                "onlineStatus" | "onlineWarp" | "onlineRemoteStatus"
+            )));
+    }
+
+    #[test]
+    fn playtime_access_requires_a_host_handoff_and_remains_an_action() {
+        let mut inputs = Inputs::default();
+        assert!(!page_rows("pageLibraryData", &inputs)
+            .iter()
+            .any(|row| row.id() == "playtimeAccess"));
+        inputs.can_request_playtime_access = true;
+        assert!(page_rows("pageLibraryData", &inputs)
+            .iter()
+            .any(|row| row.id() == "playtimeAccess"));
+        assert_eq!(control("playtimeAccess"), Control::Action);
+    }
+
+    #[test]
+    fn folder_action_requires_host_capability_and_leads_library() {
+        let mut inputs = Inputs::default();
+        assert!(!page_rows("pageLibraryData", &inputs)
+            .iter()
+            .any(|row| row.id() == "addGameFolder"));
+        inputs.can_pick_folder = true;
+        assert_eq!(
+            page_rows("pageLibraryData", &inputs)[0],
+            Row::Field {
+                id: "addGameFolder",
+                control: Control::Action
+            }
+        );
+        assert_eq!(control("addGameFolder"), Control::Action);
+    }
+
+    #[test]
+    fn launcher_scan_requires_host_capability_and_is_an_action() {
+        let mut inputs = Inputs::default();
+        assert!(!page_rows("pageLibraryData", &inputs)
+            .iter()
+            .any(|row| row.id() == "detectLaunchers"));
+        inputs.can_scan_launchers = true;
+        assert_eq!(
+            page_rows("pageLibraryData", &inputs)[0],
+            Row::Field {
+                id: "detectLaunchers",
+                control: Control::Action
+            }
+        );
+        assert_eq!(control("detectLaunchers"), Control::Action);
     }
 
     #[test]
@@ -461,18 +859,21 @@ mod tests {
         assert_eq!(control("updateMediaDb"), Control::Action);
         assert_eq!(control("runScraper"), Control::Action);
         assert_eq!(control("uploadLog"), Control::Action);
+        assert_eq!(control("pairDevice"), Control::Action);
         assert_eq!(control("resolution"), Control::Picker);
         assert_eq!(control("colorScheme"), Control::Picker);
     }
 
     #[test]
-    fn root_page_lists_the_six_categories() {
+    fn root_page_lists_the_seven_categories() {
         let rows = page_rows("", &Inputs::default());
-        assert_eq!(rows.len(), 6);
+        assert_eq!(rows.len(), 7);
         assert!(rows.iter().all(|r| r.is_field()));
         assert_eq!(rows[0].id(), "pageAppearance");
-        assert_eq!(rows[5].id(), "pageSupportAbout");
+        assert_eq!(rows[2].id(), "pageOnline");
+        assert_eq!(rows[6].id(), "pageSupportAbout");
         assert_eq!(opens_page("pageLibraryData"), Some("pageLibraryData"));
+        assert_eq!(opens_page("pageOnline"), Some("pageOnline"));
         assert_eq!(opens_page("colorScheme"), None);
     }
 
@@ -527,6 +928,41 @@ mod tests {
             .iter()
             .any(|r| r.id() == "discoverArcadeAlternateVersions"));
         assert!(!rows.iter().any(|r| r.id() == "browseLayout"));
+    }
+
+    #[test]
+    fn the_about_page_leads_with_pairing() {
+        let rows = page_rows(
+            "pageSupportAbout",
+            &Inputs {
+                log_upload: true,
+                ..Inputs::default()
+            },
+        );
+        assert_eq!(
+            rows[0],
+            Row::Field {
+                id: "pairDevice",
+                control: Control::Action
+            }
+        );
+        assert_eq!(first_navigable(&rows), 0);
+        let ids: Vec<&str> = rows.iter().map(|r| r.id()).collect();
+        assert_eq!(
+            ids,
+            vec![
+                "pairDevice",
+                "aboutLicense",
+                "documentation",
+                "debugLogging",
+                "uploadLog"
+            ]
+        );
+        // Pairing has nothing to do with a media job, so neither job can
+        // gate it and it is never the busy one.
+        assert!(!action_busy("pairDevice", true, true));
+        assert!(!action_disabled("pairDevice", true, true));
+        assert_eq!(action_label_key("pairDevice", false), "pair");
     }
 
     #[test]
@@ -631,35 +1067,138 @@ mod tests {
         assert_eq!(root_grid_move(2, 5, 3, 0, 1), 2);
     }
 
-    #[test]
-    fn band_snaps_both_edges_to_row_boundaries() {
-        use super::band_extent;
-        // Six 60px rows in a band that fits 3.5 of them.
-        let rows: Vec<(f32, f32)> = (0..6).map(|i| (i as f32 * 60.0, 60.0)).collect();
-        // Focus at the top: no scroll, and the band stops after the third
-        // row rather than showing half of the fourth.
-        assert_eq!(band_extent(&rows, 0, 210.0), (0.0, 180.0));
-        // Focus below the fold: scroll lands on a row top, the band still
-        // ends on a row bottom, and it scrolls the least it can.
-        assert_eq!(band_extent(&rows, 4, 210.0), (120.0, 180.0));
-        // The last row, framed the same way rather than flush against an
-        // unsnapped bottom.
-        assert_eq!(band_extent(&rows, 5, 210.0), (180.0, 180.0));
-        // Coming back up returns to the top rather than hanging mid-row.
-        assert_eq!(band_extent(&rows, 1, 210.0), (0.0, 180.0));
+    /// The CRT scene: 352x240 less the 5% safe area, on the bitmap face.
+    fn crt_scene() -> crate::sizing::Inputs {
+        crate::sizing::Inputs {
+            screen_width: 316.0,
+            screen_height: 216.0,
+            crt_native_path: true,
+            bitmap_type: true,
+            ..crate::sizing::Inputs::default()
+        }
     }
 
     #[test]
-    fn a_row_taller_than_the_band_falls_back_to_the_viewport() {
+    fn a_bitmap_hint_line_is_the_font_size() {
+        use super::page_geometry;
+        // Two 8px lines, not two 11px ones: the face has no leading.
+        let crt = page_geometry(&crt_scene());
+        assert_eq!(crt.hint_height, 16);
+        // The scaled face keeps its 1.362 em line: 10px body at 240p is
+        // 14px a line and two lines, 19px body at 720p is 26px and one.
+        let scaled_240 = page_geometry(&crate::sizing::Inputs {
+            screen_width: 320.0,
+            screen_height: 240.0,
+            ..crate::sizing::Inputs::default()
+        });
+        assert_eq!(scaled_240.hint_height, 28);
+        let hd = page_geometry(&crate::sizing::Inputs {
+            screen_width: 1280.0,
+            screen_height: 720.0,
+            ..crate::sizing::Inputs::default()
+        });
+        assert_eq!(hd.hint_height, 26);
+        // Headings and status lines are not hint lines and keep the
+        // scaled figure on both faces.
+        assert_eq!(crt.header_height, 3 + 11 + 2 + 1);
+        assert_eq!(crt.action_band_height, 11 + 1);
+    }
+
+    #[test]
+    fn the_page_card_is_whole_pixels_that_add_up() {
+        use super::page_geometry;
+        let g = page_geometry(&crt_scene());
+        assert_eq!((g.card_y, g.card_height, g.pad), (33, 161, 4));
+        assert_eq!(g.row_height, 17);
+        assert_eq!(g.rows_viewport, 127);
+        // Top to bottom: lip, rows, lip, the clear line, the rule, lip,
+        // hint, lip.
+        for inputs in [
+            crt_scene(),
+            crate::sizing::Inputs {
+                help_bar_two_rows: true,
+                ..crt_scene()
+            },
+            crate::sizing::Inputs {
+                screen_width: 1920.0,
+                screen_height: 1080.0,
+                ..crate::sizing::Inputs::default()
+            },
+        ] {
+            let g = page_geometry(&inputs);
+            assert_eq!(
+                g.pad + g.rows_viewport + g.pad + 1 + 1 + g.pad + g.hint_height + g.pad,
+                g.card_height,
+                "{inputs:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_wrapped_help_bar_takes_its_rows_from_the_card() {
+        use super::page_geometry;
+        let one = page_geometry(&crt_scene());
+        let two = page_geometry(&crate::sizing::Inputs {
+            help_bar_two_rows: true,
+            ..crt_scene()
+        });
+        // The bar grows from 13px to 22px and the card gives up exactly
+        // that; nothing above it moves.
+        assert_eq!(two.card_y, one.card_y);
+        assert_eq!(one.card_height - two.card_height, 9);
+        assert_eq!(one.rows_viewport - two.rows_viewport, 9);
+    }
+
+    #[test]
+    fn band_scrolls_to_a_row_top_and_keeps_a_fixed_height() {
+        use super::band_extent;
+        // Six 60px rows in a band that fits 3.5 of them, with a 10px lip.
+        let rows: Vec<(f32, f32)> = (0..6).map(|i| (i as f32 * 60.0, 60.0)).collect();
+        // Focus at the top: no scroll. The band paints its full height
+        // every time, so its bottom edge never moves.
+        assert_eq!(band_extent(&rows, 0, 210.0, 10.0), (0.0, 230.0));
+        assert_eq!(band_extent(&rows, 2, 210.0, 10.0), (0.0, 230.0));
+        // Focus below the fold: it scrolls the least it can, to a row top,
+        // and the top lip has scrolled away with the rows above it.
+        assert_eq!(band_extent(&rows, 4, 210.0, 10.0), (130.0, 230.0));
+        assert_eq!(band_extent(&rows, 5, 210.0, 10.0), (190.0, 230.0));
+        // Coming back up returns to the top rather than hanging mid-row.
+        assert_eq!(band_extent(&rows, 1, 210.0, 10.0), (0.0, 230.0));
+    }
+
+    #[test]
+    fn the_focused_row_keeps_a_lip_above_the_bottom_edge() {
+        use super::band_extent;
+        // A header (30) then 60px rows; the band shows 200 plus two 10px
+        // lips. Row 4 ends at 270, so 70 must scroll away; the first row
+        // top at or past that is 90.
+        let rows = [
+            (0.0_f32, 30.0_f32),
+            (30.0, 60.0),
+            (90.0, 60.0),
+            (150.0, 60.0),
+            (210.0, 60.0),
+        ];
+        let (scroll, shown) = band_extent(&rows, 4, 200.0, 10.0);
+        assert_eq!((scroll, shown), (100.0, 220.0));
+        // In lip-inclusive space the focused row's bottom sits at
+        // 10 + 270 - 100 = 180, at least one lip above the 220 edge.
+        assert!(10.0 + 270.0 - scroll <= shown - 10.0);
+    }
+
+    #[test]
+    fn a_row_taller_than_the_band_sits_on_its_own_top() {
         use super::band_extent;
         let rows = [(0.0_f32, 500.0_f32)];
-        assert_eq!(band_extent(&rows, 0, 200.0), (0.0, 200.0));
+        assert_eq!(band_extent(&rows, 0, 200.0, 10.0), (0.0, 220.0));
+        let rows = [(0.0_f32, 60.0_f32), (60.0, 500.0)];
+        assert_eq!(band_extent(&rows, 1, 200.0, 10.0), (70.0, 220.0));
     }
 
     #[test]
     fn an_out_of_range_index_does_not_collapse_the_band() {
         use super::band_extent;
         let rows = [(0.0_f32, 60.0_f32)];
-        assert_eq!(band_extent(&rows, 9, 200.0), (0.0, 200.0));
+        assert_eq!(band_extent(&rows, 9, 200.0, 10.0), (0.0, 220.0));
     }
 }

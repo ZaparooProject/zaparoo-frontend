@@ -39,6 +39,7 @@ pub enum HubItemKind {
     System,
     Folder,
     ZapScript,
+    Search,
     Blank,
     Collection,
     Unknown(String),
@@ -52,6 +53,7 @@ impl HubItemKind {
             Self::System => "system",
             Self::Folder => "folder",
             Self::ZapScript => "zapscript",
+            Self::Search => "search",
             Self::Blank => "blank",
             Self::Collection => "collection",
             Self::Unknown(raw) => raw.as_str(),
@@ -65,6 +67,7 @@ impl HubItemKind {
             "system" => Self::System,
             "folder" => Self::Folder,
             "zapscript" => Self::ZapScript,
+            "search" => Self::Search,
             "blank" => Self::Blank,
             "collection" => Self::Collection,
             other => Self::Unknown(other.to_string()),
@@ -82,17 +85,58 @@ impl HubItemKind {
 
 /// One Hub tile. Fields are used per-kind: `id` for `category`/`action`/
 /// `system`, `path` for `folder`, `script` (+ optional `system`/`path` as a
-/// cover-art hint) for `zapscript`. `name`/`icon` are optional overrides
-/// available on any kind. `Blank` uses none of them.
+/// cover-art hint) for `zapscript`, and `query`/`systems`/`tags` (+ optional
+/// `path` as a folder limit) for `search`. `name`/`icon` are optional
+/// overrides available on any kind. `Blank` uses none of them.
+///
+/// `relative` is Core's launcher-relative path for a pinned game or folder
+/// (`SNES/USA/Game.sfc`, `SNES/USA`), stored verbatim as Core reported it.
+/// It survives the media moving to another drive, which `path` (Core's
+/// absolute path at pin time) does not. Empty on a hand-written tile and on
+/// one pinned before Core reported it.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct HubItem {
     pub kind_raw: String,
     pub id: String,
     pub path: String,
+    pub relative: String,
     pub script: String,
     pub name: String,
     pub icon: String,
     pub system: String,
+    /// A saved search's text; empty matches every name.
+    pub query: String,
+    /// The systems a saved search covers; empty searches all of them.
+    pub systems: Vec<String>,
+    /// A saved search's `type:value` tags, sent to Core as written.
+    pub tags: Vec<String>,
+}
+
+/// A list as a set: trimmed, without blanks or repeats, in one order.
+fn as_set(values: &[String]) -> Vec<&str> {
+    let mut values: Vec<&str> = values
+        .iter()
+        .map(|v| v.trim())
+        .filter(|v| !v.is_empty())
+        .collect();
+    values.sort_unstable();
+    values.dedup();
+    values
+}
+
+/// Whether `item` runs this search: the query however it is cased, the
+/// systems and tags in any order, and the same folder limit.
+fn same_search(
+    item: &HubItem,
+    query: &str,
+    systems: &[String],
+    tags: &[String],
+    path: &str,
+) -> bool {
+    item.query.trim().to_lowercase() == query.trim().to_lowercase()
+        && as_set(&item.systems) == as_set(systems)
+        && as_set(&item.tags) == as_set(tags)
+        && item.path == path
 }
 
 impl HubItem {
@@ -122,7 +166,14 @@ impl HubItem {
 /// decided at render time from live state (Recents/internet/build
 /// flags) — the layout just records that the tile exists and where it
 /// sits.
-pub const BUILT_IN_ACTIONS: &[&str] = &["resume", "favorites", "recents", "update", "settings"];
+pub const BUILT_IN_ACTIONS: &[&str] = &[
+    "resume",
+    "favorites",
+    "recents",
+    "search",
+    "update",
+    "settings",
+];
 
 /// The persisted Hub layout.
 ///
@@ -134,7 +185,7 @@ pub const BUILT_IN_ACTIONS: &[&str] = &["resume", "favorites", "recents", "updat
 /// like an app installed on a phone) and added to `known`. A category the
 /// user removed from `items` stays in `known`, so it does NOT come back —
 /// that's what makes "delete a tile" stick. `known` never tracks
-/// `system`/`folder`/`zapscript`/`blank` entries; those are always
+/// `system`/`folder`/`zapscript`/`search`/`blank` entries; those are always
 /// explicitly user-authored (by hand-editing config, or later an edit UI),
 /// never auto-discovered, so there's nothing to reconcile them against.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -183,7 +234,8 @@ impl HubLayout {
     ///   until it returns `true`.
     /// - **Already seeded**: append any detected category whose
     ///   `"category:<id>"` key isn't in `known` yet — same "lands at the
-    ///   end" rule, new items only.
+    ///   end" rule, new items only. A built-in action this layout has never
+    ///   seen (one a newer build introduced) lands the same way, once.
     pub fn reconcile(
         &mut self,
         detected_categories: &[String],
@@ -223,6 +275,15 @@ impl HubLayout {
             }
             self.known.push(key);
             self.items.push(HubItem::category(id));
+            changed = true;
+        }
+        for id in BUILT_IN_ACTIONS {
+            let key = format!("action:{id}");
+            if self.known.iter().any(|k| k == &key) {
+                continue;
+            }
+            self.known.push(key);
+            self.items.push(HubItem::action(id));
             changed = true;
         }
         changed
@@ -398,16 +459,16 @@ impl HubLayout {
         true
     }
 
-    /// Append a fully-specified `system`/`folder`/`zapscript` shortcut
+    /// Place a fully-specified `system`/`folder`/`zapscript` shortcut
     /// created from a browse screen's "Add to Hub" context-menu action.
     /// Unlike `add_item`, these kinds are never tracked in `known` (see the
     /// struct doc comment — they're always user-authored, never
     /// auto-discovered), so there is no key to validate against here.
-    /// Always appends after the last real tile — the same "lands at the
-    /// end, like an app just installed" placement `reconcile` uses for a
-    /// newly detected category — since a context menu on Systems/Games has
-    /// no meaningful Hub cursor cell to target the way the Hub's own "Add
-    /// item…" does. Returns `false` only for a `kind` this isn't valid for.
+    /// A context menu on Systems/Games has no Hub cursor cell to target the
+    /// way the Hub's own "Add item…" does, so the tile takes the first
+    /// visible `blank` (the gap a removed tile left) and is appended after
+    /// the last tile only when there is none. Returns `false` only for a
+    /// `kind` this isn't valid for.
     #[allow(
         clippy::too_many_arguments,
         reason = "one field per HubItem column, mirrors the struct shape directly"
@@ -417,6 +478,7 @@ impl HubLayout {
         kind: &str,
         id: &str,
         path: &str,
+        relative: &str,
         script: &str,
         name: &str,
         icon: &str,
@@ -429,24 +491,126 @@ impl HubLayout {
         ) {
             return false;
         }
-        self.items.push(HubItem {
+        self.place_in_first_gap(HubItem {
             kind_raw: kind.to_string(),
             id: id.to_string(),
             path: path.to_string(),
+            relative: relative.to_string(),
             script: script.to_string(),
             name: name.to_string(),
             icon: icon.to_string(),
             system: system.to_string(),
+            ..HubItem::default()
         });
-        // No trim call here, unlike `add_item`'s own non-blank append
-        // branch: a straight `push` always lands the new entry at the true
-        // end, so any blank that was previously trailing is now interior
-        // (ahead of what we just added) rather than trailing — nothing for
-        // `trim_trailing_blanks` to find. That also means a pre-existing
-        // trailing blank isn't silently swallowed by this call: it's left
-        // exactly where it was, same as the rest of this file's "nothing
-        // you didn't touch moves" board-model discipline.
         true
+    }
+
+    /// Filling a blank changes that one cell and nothing else; a push lands
+    /// at the true end. Neither leaves a trailing blank behind, so there is
+    /// nothing to trim.
+    fn place_in_first_gap(&mut self, entry: HubItem) {
+        let gap = self
+            .visible_indices()
+            .into_iter()
+            .find(|&real| self.items[real].kind() == HubItemKind::Blank);
+        match gap {
+            Some(real) => self.items[real] = entry,
+            None => self.items.push(entry),
+        }
+    }
+
+    /// Place a `search` tile created from the Search results' "Add to Hub",
+    /// where `add_target_item` would place a shortcut. `path` limits the
+    /// search to a folder. Returns `false` for a search with nothing to
+    /// search on.
+    pub fn add_search_item(
+        &mut self,
+        query: &str,
+        systems: &[String],
+        tags: &[String],
+        path: &str,
+        name: &str,
+    ) -> bool {
+        let query = query.trim();
+        if query.is_empty() && systems.is_empty() && tags.is_empty() && path.is_empty() {
+            return false;
+        }
+        self.place_in_first_gap(HubItem {
+            kind_raw: HubItemKind::Search.as_str().to_string(),
+            path: path.to_string(),
+            name: name.to_string(),
+            query: query.to_string(),
+            systems: systems.to_vec(),
+            tags: tags.to_vec(),
+            ..HubItem::default()
+        });
+        true
+    }
+
+    /// The visible position of the `search` tile that runs this search,
+    /// when one is already on the Hub.
+    pub fn search_position(
+        &self,
+        query: &str,
+        systems: &[String],
+        tags: &[String],
+        path: &str,
+    ) -> Option<usize> {
+        self.visible_indices().into_iter().position(|real| {
+            let item = &self.items[real];
+            item.kind() == HubItemKind::Search && same_search(item, query, systems, tags, path)
+        })
+    }
+
+    /// The visible position of the tile a browse screen's "Add to Hub"
+    /// would create for this target, when one is already on the Hub. A
+    /// system matches by id. A game or folder matches by system and
+    /// launcher-relative path when both sides carry one (the only identity
+    /// that survives the media moving drives), then by absolute path, and
+    /// a game last by its launch script. A hand-written `zapscript` tile
+    /// with other wording for the same game is not found.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "one field per HubItem column, mirrors add_target_item"
+    )]
+    pub fn target_position(
+        &self,
+        kind: &str,
+        id: &str,
+        path: &str,
+        relative: &str,
+        script: &str,
+        system: &str,
+    ) -> Option<usize> {
+        let wanted = HubItemKind::from_str(kind);
+        self.visible_indices().into_iter().position(|real| {
+            let item = &self.items[real];
+            if item.kind() != wanted {
+                return false;
+            }
+            match wanted {
+                HubItemKind::System => !id.is_empty() && item.id == id,
+                HubItemKind::Folder | HubItemKind::ZapScript => {
+                    let both_relative = !item.relative.is_empty() && !relative.is_empty();
+                    if both_relative
+                        && item.relative == relative
+                        && (item.system.is_empty() || system.is_empty() || item.system == system)
+                    {
+                        return true;
+                    }
+                    if !item.path.is_empty() && !path.is_empty() {
+                        return item.path == path;
+                    }
+                    // Two relative paths that differ name two files; the
+                    // script cannot make them one.
+                    !both_relative
+                        && wanted == HubItemKind::ZapScript
+                        && !script.is_empty()
+                        && item.script == script
+                }
+                _ => false,
+            }
+        })
     }
 
     /// Re-seed the layout from scratch — "Reset layout" in the View menu.
@@ -492,6 +656,8 @@ struct RawHubItem {
     #[serde(default)]
     path: String,
     #[serde(default)]
+    relative: String,
+    #[serde(default)]
     script: String,
     #[serde(default)]
     name: String,
@@ -499,6 +665,36 @@ struct RawHubItem {
     icon: String,
     #[serde(default)]
     system: String,
+    #[serde(default)]
+    query: String,
+    #[serde(default, deserialize_with = "string_or_list")]
+    systems: Vec<String>,
+    #[serde(default, deserialize_with = "string_or_list")]
+    tags: Vec<String>,
+}
+
+/// A list key that also takes one bare string, so a hand-written
+/// `systems = "SNES"` reads as one system instead of failing the whole
+/// layout. Blank entries are dropped.
+fn string_or_list<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum OneOrMany {
+        One(String),
+        Many(Vec<String>),
+    }
+    let values = match OneOrMany::deserialize(deserializer)? {
+        OneOrMany::One(value) => vec![value],
+        OneOrMany::Many(values) => values,
+    };
+    Ok(values
+        .into_iter()
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())
+        .collect())
 }
 
 #[derive(Deserialize, Default)]
@@ -507,15 +703,21 @@ struct RawHubRoot {
     hub: RawHub,
 }
 
+/// Whether `[hub]` in this config text parses. `config::load_config` runs
+/// it so a layout that will not load is part of the one reported fault.
+pub(crate) fn check_source(src: &str) -> Result<(), toml::de::Error> {
+    toml::from_str::<RawHubRoot>(src).map(|_| ())
+}
+
 /// Load the Hub layout from `frontend.toml`. Read side only: an
 /// independent top-level parse of the same file `config.rs::load_config`
 /// reads, re-reading config rather than threading a shared parse through.
 /// A missing or malformed file returns an empty (unseeded) layout, the
-/// same fallback shape `load_config` uses.
+/// same fallback shape `load_config` uses; `load_config` reports why.
 pub fn load_hub_layout(path: &Path) -> HubLayout {
-    let raw: RawHubRoot = match std::fs::read_to_string(path) {
-        Ok(src) => toml::from_str(&src).unwrap_or_default(),
-        Err(_) => RawHubRoot::default(),
+    let raw: RawHubRoot = match crate::config::read_config_source(path) {
+        Ok(Some(source)) => toml::from_str(&source.text).unwrap_or_default(),
+        Ok(None) | Err(_) => RawHubRoot::default(),
     };
     HubLayout {
         known: raw.hub.known,
@@ -527,10 +729,14 @@ pub fn load_hub_layout(path: &Path) -> HubLayout {
                 kind_raw: raw.kind,
                 id: raw.id,
                 path: raw.path,
+                relative: raw.relative,
                 script: raw.script,
                 name: raw.name,
                 icon: raw.icon,
                 system: raw.system,
+                query: raw.query,
+                systems: raw.systems,
+                tags: raw.tags,
             })
             .collect(),
     }
@@ -542,10 +748,9 @@ pub fn load_hub_layout(path: &Path) -> HubLayout {
 /// `[[hub.items]]` array of tables unconditionally when either changed;
 /// unrelated sections and their comments/formatting are untouched.
 pub fn save_hub_layout(path: &Path, layout: &HubLayout) -> Result<(), String> {
-    let mut doc = crate::config::read_config_document(path)?;
-    let before = doc.to_string();
+    let mut file = crate::config::read_config_document(path)?;
 
-    let hub = crate::config::section_mut(&mut doc, "hub", path)?;
+    let hub = crate::config::section_mut(&mut file.doc, "hub", path)?;
 
     crate::config::set_string_list(hub, "known", &layout.known);
 
@@ -559,6 +764,9 @@ pub fn save_hub_layout(path: &Path, layout: &HubLayout) -> Result<(), String> {
         if !item.path.is_empty() {
             table.insert("path", toml_edit::value(item.path.as_str()));
         }
+        if !item.relative.is_empty() {
+            table.insert("relative", toml_edit::value(item.relative.as_str()));
+        }
         if !item.script.is_empty() {
             table.insert("script", toml_edit::value(item.script.as_str()));
         }
@@ -571,11 +779,20 @@ pub fn save_hub_layout(path: &Path, layout: &HubLayout) -> Result<(), String> {
         if !item.system.is_empty() {
             table.insert("system", toml_edit::value(item.system.as_str()));
         }
+        if !item.query.is_empty() {
+            table.insert("query", toml_edit::value(item.query.as_str()));
+        }
+        for (key, values) in [("systems", &item.systems), ("tags", &item.tags)] {
+            if !values.is_empty() {
+                let list: toml_edit::Array = values.iter().map(String::as_str).collect();
+                table.insert(key, toml_edit::value(list));
+            }
+        }
         items.push(table);
     }
     hub.insert("items", toml_edit::Item::ArrayOfTables(items));
 
-    crate::config::write_document_if_changed(path, &before, &doc)
+    file.write_if_changed(path)
 }
 
 #[cfg(test)]
@@ -600,6 +817,39 @@ mod tests {
         let layout = load_hub_layout(std::path::Path::new("/nonexistent/frontend.toml"));
         assert!(layout.known.is_empty());
         assert!(layout.items.is_empty());
+    }
+
+    #[test]
+    fn a_file_that_is_not_utf8_keeps_its_layout_through_a_save() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("frontend.toml");
+        let original: &[u8] =
+            b"[[hub.items]]\ntype = \"folder\"\npath = \"/media/fat/games/SNES\"\nname = \"Pok\xE9mon\"\n";
+        std::fs::write(&path, original).expect("write");
+
+        let layout = load_hub_layout(&path);
+        assert_eq!(layout.items.len(), 1);
+        assert_eq!(layout.items[0].path, "/media/fat/games/SNES");
+        assert_eq!(layout.items[0].name, "Pok\u{fffd}mon");
+
+        save_hub_layout(&path, &layout).expect("save");
+        assert!(String::from_utf8(std::fs::read(&path).expect("read")).is_ok());
+        assert_eq!(load_hub_layout(&path), layout);
+        assert_eq!(
+            std::fs::read(crate::config::backup_path(&path)).expect("backup"),
+            original
+        );
+    }
+
+    #[test]
+    fn a_save_over_a_file_that_will_not_parse_leaves_it_alone() {
+        let src = "[hub\nknown = [\"category:Arcade\"]\n";
+        let f = write_tmp(src);
+        assert!(load_hub_layout(f.path()).items.is_empty());
+        let mut layout = HubLayout::default();
+        layout.items.push(HubItem::category("Arcade"));
+        assert!(save_hub_layout(f.path(), &layout).is_err());
+        assert_eq!(std::fs::read_to_string(f.path()).expect("read"), src);
     }
 
     #[test]
@@ -687,6 +937,7 @@ type = "blank"
                 "category:Console",
                 "action:favorites",
                 "action:recents",
+                "action:search",
                 "action:update",
                 "action:settings",
             ]
@@ -700,6 +951,7 @@ type = "blank"
                 "Console",
                 "favorites",
                 "recents",
+                "search",
                 "update",
                 "settings"
             ]
@@ -747,6 +999,24 @@ type = "blank"
     }
 
     #[test]
+    fn reconcile_appends_a_new_built_in_action_to_a_seeded_layout_once() {
+        let mut layout = HubLayout::default();
+        layout.reconcile(&["Arcade".to_string()], &[]);
+        // A layout an older build seeded: it has never seen Search.
+        layout.known.retain(|k| k != "action:search");
+        layout.items.retain(|i| i.id != "search");
+
+        assert!(layout.reconcile(&["Arcade".to_string()], &[]));
+        assert_eq!(layout.items.last().unwrap().id, "search");
+        assert!(layout.known.contains(&"action:search".to_string()));
+
+        // Removed by the user afterwards: `known` keeps it out for good.
+        layout.items.retain(|i| i.id != "search");
+        assert!(!layout.reconcile(&["Arcade".to_string()], &[]));
+        assert!(!layout.items.iter().any(|i| i.id == "search"));
+    }
+
+    #[test]
     fn reconcile_never_re_adds_a_removed_item_because_known_still_has_it() {
         let mut layout = HubLayout::default();
         layout.reconcile(&["Arcade".to_string()], &[]);
@@ -779,6 +1049,7 @@ type = "blank"
                 "A",
                 "favorites",
                 "recents",
+                "search",
                 "update",
                 "settings"
             ]
@@ -828,14 +1099,14 @@ type = "blank"
             kind_raw: "blank".to_string(),
             ..HubItem::default()
         });
-        // resume, A, B, favorites, recents, update, settings, blank
-        assert!(layout.place_visible_item(1, 7));
+        // resume, A, B, favorites, recents, search, update, settings, blank
+        assert!(layout.place_visible_item(1, 8));
         assert_eq!(
             layout.items[1].kind(),
             HubItemKind::Blank,
             "A's old cell must become a blank, not shift anything else"
         );
-        assert_eq!(layout.items[7].id, "A");
+        assert_eq!(layout.items[8].id, "A");
     }
 
     #[test]
@@ -876,6 +1147,7 @@ type = "blank"
                 "C",
                 "favorites",
                 "recents",
+                "search",
                 "update",
                 "settings"
             ],
@@ -896,6 +1168,7 @@ type = "blank"
                 "A",
                 "favorites",
                 "recents",
+                "search",
                 "update",
                 "settings"
             ],
@@ -1130,7 +1403,7 @@ type = "blank"
         let mut layout = HubLayout::default();
         layout.reconcile(&["Arcade".to_string()], &[]);
         let before_len = layout.items.len();
-        assert!(layout.add_target_item("system", "NES", "", "", "", "", ""));
+        assert!(layout.add_target_item("system", "NES", "", "", "", "", "", ""));
         assert_eq!(layout.items.len(), before_len + 1);
         let added = layout.items.last().unwrap();
         assert_eq!(added.kind(), HubItemKind::System);
@@ -1144,6 +1417,7 @@ type = "blank"
             "folder",
             "",
             "/media/fat/games/SNES/Homebrew",
+            "SNES/Homebrew",
             "",
             "",
             "",
@@ -1152,6 +1426,7 @@ type = "blank"
         let added = layout.items.last().unwrap();
         assert_eq!(added.kind(), HubItemKind::Folder);
         assert_eq!(added.path, "/media/fat/games/SNES/Homebrew");
+        assert_eq!(added.relative, "SNES/Homebrew");
         assert_eq!(added.system, "SNES");
     }
 
@@ -1162,14 +1437,17 @@ type = "blank"
             "zapscript",
             "",
             "/media/fat/games/NES/Zelda.nes",
-            "/media/fat/games/NES/Zelda.nes",
+            "NES/Zelda.nes",
+            "@NES/The Legend of Zelda",
             "The Legend of Zelda",
             "",
             "NES"
         ));
         let added = layout.items.last().unwrap();
         assert_eq!(added.kind(), HubItemKind::ZapScript);
-        assert_eq!(added.script, "/media/fat/games/NES/Zelda.nes");
+        assert_eq!(added.path, "/media/fat/games/NES/Zelda.nes");
+        assert_eq!(added.relative, "NES/Zelda.nes");
+        assert_eq!(added.script, "@NES/The Legend of Zelda");
         assert_eq!(added.name, "The Legend of Zelda");
         assert_eq!(added.system, "NES");
     }
@@ -1177,9 +1455,9 @@ type = "blank"
     #[test]
     fn add_target_item_rejects_a_kind_it_is_not_valid_for() {
         let mut layout = HubLayout::default();
-        assert!(!layout.add_target_item("category", "Arcade", "", "", "", "", ""));
-        assert!(!layout.add_target_item("action", "resume", "", "", "", "", ""));
-        assert!(!layout.add_target_item("blank", "", "", "", "", "", ""));
+        assert!(!layout.add_target_item("category", "Arcade", "", "", "", "", "", ""));
+        assert!(!layout.add_target_item("action", "resume", "", "", "", "", "", ""));
+        assert!(!layout.add_target_item("blank", "", "", "", "", "", "", ""));
         assert!(layout.items.is_empty());
     }
 
@@ -1190,7 +1468,7 @@ type = "blank"
         // id before, unlike `add_item`'s category/action path.
         let mut layout = HubLayout::default();
         assert!(layout.known.is_empty());
-        assert!(layout.add_target_item("system", "NES", "", "", "", "", ""));
+        assert!(layout.add_target_item("system", "NES", "", "", "", "", "", ""));
         assert!(
             layout.known.is_empty(),
             "target shortcuts must not touch known"
@@ -1198,7 +1476,174 @@ type = "blank"
     }
 
     #[test]
-    fn add_target_item_appends_after_a_preexisting_trailing_blank_without_touching_it() {
+    fn add_target_item_fills_the_first_gap_and_moves_nothing_else() {
+        let mut layout = HubLayout::default();
+        layout.reconcile(&["Arcade".to_string(), "Consoles".to_string()], &[]);
+        // Two gaps, as removing two tiles leaves them.
+        assert!(layout.remove_visible_item(0));
+        assert!(layout.remove_visible_item(2));
+        let before = layout.clone();
+        assert!(layout.add_target_item("system", "NES", "", "", "", "", "", ""));
+        assert_eq!(layout.items.len(), before.items.len());
+        assert_eq!(layout.items[0].kind(), HubItemKind::System);
+        assert_eq!(layout.items[0].id, "NES");
+        assert_eq!(layout.items[1..], before.items[1..]);
+        // The second add takes the remaining gap; the third has none left.
+        assert!(layout.add_target_item("system", "SNES", "", "", "", "", "", ""));
+        assert_eq!(layout.items[2].id, "SNES");
+        assert_eq!(layout.items.len(), before.items.len());
+        assert!(layout.add_target_item("system", "Genesis", "", "", "", "", "", ""));
+        assert_eq!(layout.items.len(), before.items.len() + 1);
+        assert_eq!(layout.items.last().unwrap().id, "Genesis");
+    }
+
+    #[test]
+    fn target_position_finds_what_add_to_hub_would_create() {
+        let mut layout = HubLayout::default();
+        layout.reconcile(&["Arcade".to_string()], &[]);
+        let first = layout.items.len();
+        assert!(layout.add_target_item("system", "NES", "", "", "", "", "", ""));
+        assert!(layout.add_target_item(
+            "zapscript",
+            "",
+            "/media/fat/games/NES/Zelda.nes",
+            "NES/Zelda.nes",
+            "@NES/The Legend of Zelda",
+            "The Legend of Zelda",
+            "",
+            "NES"
+        ));
+        assert!(layout.add_target_item(
+            "folder",
+            "",
+            "/media/fat/games/SNES/Homebrew",
+            "",
+            "",
+            "",
+            "",
+            "SNES"
+        ));
+        assert!(layout.add_target_item(
+            "zapscript",
+            "",
+            "",
+            "",
+            "@PSX/Wipeout",
+            "Wipeout",
+            "",
+            "PSX"
+        ));
+
+        assert_eq!(
+            layout.target_position("system", "NES", "", "", "", ""),
+            Some(first)
+        );
+        assert_eq!(
+            layout.target_position("system", "SNES", "", "", "", ""),
+            None
+        );
+        // The relative path survives the game moving to another drive.
+        assert_eq!(
+            layout.target_position(
+                "zapscript",
+                "",
+                "/media/usb0/games/NES/Zelda.nes",
+                "NES/Zelda.nes",
+                "",
+                "NES"
+            ),
+            Some(first + 1)
+        );
+        // A different file is a different tile, whatever its script says.
+        assert_eq!(
+            layout.target_position(
+                "zapscript",
+                "",
+                "/media/fat/games/NES/Zelda (Rev 1).nes",
+                "NES/Zelda (Rev 1).nes",
+                "@NES/The Legend of Zelda",
+                "NES"
+            ),
+            None
+        );
+        // No relative path on the tile: the absolute path decides.
+        assert_eq!(
+            layout.target_position(
+                "folder",
+                "",
+                "/media/fat/games/SNES/Homebrew",
+                "SNES/Homebrew",
+                "",
+                "SNES"
+            ),
+            Some(first + 2)
+        );
+        // A game is never a folder tile, and the reverse.
+        assert_eq!(
+            layout.target_position(
+                "zapscript",
+                "",
+                "/media/fat/games/SNES/Homebrew",
+                "",
+                "",
+                "SNES"
+            ),
+            None
+        );
+        // Neither path on the tile: the launch script is all there is.
+        assert_eq!(
+            layout.target_position("zapscript", "", "", "", "@PSX/Wipeout", "PSX"),
+            Some(first + 3)
+        );
+        assert_eq!(
+            layout.target_position("zapscript", "", "", "", "", "PSX"),
+            None
+        );
+    }
+
+    #[test]
+    fn target_position_falls_back_to_the_path_when_relative_paths_differ() {
+        let mut layout = HubLayout::default();
+        layout.reconcile(&["Arcade".to_string()], &[]);
+        let first = layout.items.len();
+        assert!(layout.add_target_item(
+            "zapscript",
+            "",
+            "/media/fat/games/NES/Zelda.nes",
+            "NES/Zelda.nes",
+            "@NES/The Legend of Zelda",
+            "The Legend of Zelda",
+            "",
+            "NES"
+        ));
+        // The same file under another relative path is still that tile.
+        assert_eq!(
+            layout.target_position(
+                "zapscript",
+                "",
+                "/media/fat/games/NES/Zelda.nes",
+                "Zelda.nes",
+                "",
+                "NES"
+            ),
+            Some(first)
+        );
+        // Relative paths that differ are not rescued by the script alone.
+        assert_eq!(
+            layout.target_position(
+                "zapscript",
+                "",
+                "",
+                "NES/Zelda (Rev 1).nes",
+                "@NES/The Legend of Zelda",
+                "NES"
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn add_target_item_fills_a_trailing_blank_too() {
         let mut layout = HubLayout::default();
         layout.reconcile(&["Arcade".to_string()], &[]);
         layout.items.push(HubItem {
@@ -1206,13 +1651,9 @@ type = "blank"
             ..HubItem::default()
         });
         let blank_index = layout.items.len() - 1;
-        assert!(layout.add_target_item("system", "NES", "", "", "", "", ""));
-        assert_eq!(
-            layout.items[blank_index].kind(),
-            HubItemKind::Blank,
-            "a straight append lands after the blank, not into it -- the blank must be left alone"
-        );
-        assert_eq!(layout.items.last().unwrap().kind(), HubItemKind::System);
+        assert!(layout.add_target_item("system", "NES", "", "", "", "", "", ""));
+        assert_eq!(layout.items[blank_index].kind(), HubItemKind::System);
+        assert_eq!(layout.items.len(), blank_index + 1);
     }
 
     #[test]
@@ -1232,6 +1673,7 @@ type = "blank"
                 "Console",
                 "favorites",
                 "recents",
+                "search",
                 "update",
                 "settings"
             ]
@@ -1244,6 +1686,7 @@ type = "blank"
                 "category:Console",
                 "action:favorites",
                 "action:recents",
+                "action:search",
                 "action:update",
                 "action:settings"
             ]
@@ -1312,6 +1755,160 @@ type = "blank"
             }
             assert_eq!(after[*i].1, *key, "index {i} moved from an add elsewhere");
         }
+    }
+
+    #[test]
+    fn relative_round_trips_and_is_omitted_when_empty() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("frontend.toml");
+        let mut layout = HubLayout::default();
+        assert!(layout.add_target_item(
+            "zapscript",
+            "",
+            "/media/fat/games/NES/Zelda.nes",
+            "NES/Zelda.nes",
+            "@NES/The Legend of Zelda",
+            "The Legend of Zelda",
+            "",
+            "NES"
+        ));
+        assert!(layout.add_target_item("system", "NES", "", "", "", "", "", ""));
+        save_hub_layout(&path, &layout).expect("save");
+
+        let contents = std::fs::read_to_string(&path).expect("read");
+        assert_eq!(
+            contents.matches("relative = ").count(),
+            1,
+            "only the tile that has one writes the key: {contents}"
+        );
+        assert!(contents.contains("relative = \"NES/Zelda.nes\""));
+        assert_eq!(load_hub_layout(&path).items, layout.items);
+    }
+
+    #[test]
+    fn a_tile_saved_before_relative_existed_loads_without_one() {
+        let f = write_tmp(
+            r#"
+[[hub.items]]
+type = "zapscript"
+path = "/media/fat/games/NES/Zelda.nes"
+script = "/media/fat/games/NES/Zelda.nes"
+name = "The Legend of Zelda"
+system = "NES"
+"#,
+        );
+        let layout = load_hub_layout(f.path());
+        assert_eq!(layout.items.len(), 1);
+        assert!(layout.items[0].relative.is_empty());
+        assert_eq!(layout.items[0].script, "/media/fat/games/NES/Zelda.nes");
+    }
+
+    fn strings(values: &[&str]) -> Vec<String> {
+        values.iter().map(ToString::to_string).collect()
+    }
+
+    #[test]
+    fn a_search_tile_round_trips_every_key() {
+        let f = write_tmp(
+            r#"
+[[hub.items]]
+type = "search"
+name = "SNES and Genesis RPGs"
+query = "final"
+systems = ["SNES", "Genesis"]
+tags = ["genre:rpg", "year:1994"]
+path = "/media/fat/games/SNES/Homebrew"
+icon = "rpgs"
+"#,
+        );
+        let layout = load_hub_layout(f.path());
+        let item = &layout.items[0];
+        assert_eq!(item.kind(), HubItemKind::Search);
+        assert_eq!(layout.visible().count(), 1);
+        assert_eq!(item.name, "SNES and Genesis RPGs");
+        assert_eq!(item.query, "final");
+        assert_eq!(item.systems, strings(&["SNES", "Genesis"]));
+        assert_eq!(item.tags, strings(&["genre:rpg", "year:1994"]));
+        assert_eq!(item.path, "/media/fat/games/SNES/Homebrew");
+        assert_eq!(item.icon, "rpgs");
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("frontend.toml");
+        save_hub_layout(&path, &layout).expect("save");
+        let written = std::fs::read_to_string(&path).expect("read");
+        assert!(written.contains(r#"systems = ["SNES", "Genesis"]"#));
+        assert!(written.contains(r#"tags = ["genre:rpg", "year:1994"]"#));
+        assert_eq!(load_hub_layout(&path).items, layout.items);
+    }
+
+    #[test]
+    fn a_search_tiles_lists_take_one_bare_string_and_drop_blanks() {
+        let f = write_tmp(
+            "[[hub.items]]\ntype = \"search\"\nsystems = \"SNES\"\ntags = [\" genre:rpg \", \"\"]\n",
+        );
+        let layout = load_hub_layout(f.path());
+        assert_eq!(layout.items[0].systems, strings(&["SNES"]));
+        assert_eq!(layout.items[0].tags, strings(&["genre:rpg"]));
+    }
+
+    #[test]
+    fn a_search_tiles_empty_keys_are_not_written() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("frontend.toml");
+        let mut layout = HubLayout::default();
+        assert!(layout.add_search_item(" mario ", &[], &[], "", "Mario"));
+        save_hub_layout(&path, &layout).expect("save");
+        let written = std::fs::read_to_string(&path).expect("read");
+        assert!(written.contains("query = \"mario\""));
+        for key in ["systems", "tags", "path", "icon"] {
+            assert!(!written.contains(key), "{key} written for an empty value");
+        }
+    }
+
+    #[test]
+    fn a_saved_search_takes_the_first_gap_and_needs_something_to_search_on() {
+        let mut layout = HubLayout::default();
+        layout.items.push(HubItem::action("search"));
+        layout.items.push(HubItem {
+            kind_raw: "blank".to_string(),
+            ..HubItem::default()
+        });
+        layout.items.push(HubItem::action("settings"));
+
+        assert!(!layout.add_search_item("  ", &[], &[], "", "Nothing"));
+        assert!(layout.add_search_item("", &strings(&["SNES"]), &[], "", "SNES"));
+        assert_eq!(layout.items.len(), 3);
+        assert_eq!(layout.items[1].kind(), HubItemKind::Search);
+        assert!(layout.add_search_item("zelda", &[], &[], "", "Zelda"));
+        assert_eq!(layout.items[3].query, "zelda");
+        assert!(!layout.add_target_item("search", "", "", "", "", "Zelda", "", ""));
+    }
+
+    #[test]
+    fn search_position_ignores_case_and_order_but_not_the_folder() {
+        let mut layout = HubLayout::default();
+        layout.items.push(HubItem::action("search"));
+        let systems = strings(&["SNES", "Genesis"]);
+        let tags = strings(&["genre:rpg", "year:1994"]);
+        assert!(layout.add_search_item("Final", &systems, &tags, "/roms/SNES", "RPGs"));
+
+        let swapped_systems = strings(&["Genesis", "SNES"]);
+        let swapped_tags = strings(&["year:1994", "genre:rpg"]);
+        assert_eq!(
+            layout.search_position(" final ", &swapped_systems, &swapped_tags, "/roms/SNES"),
+            Some(1)
+        );
+        assert_eq!(layout.search_position("final", &systems, &tags, ""), None);
+        assert_eq!(
+            layout.search_position("fina", &systems, &tags, "/roms/SNES"),
+            None
+        );
+        assert_eq!(
+            layout.search_position("final", &strings(&["SNES"]), &tags, "/roms/SNES"),
+            None
+        );
+        // The built-in Search action is a different tile.
+        assert_eq!(layout.search_position("", &[], &[], ""), None);
     }
 
     #[test]

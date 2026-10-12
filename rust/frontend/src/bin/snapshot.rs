@@ -46,15 +46,16 @@ mod generated {
 }
 use generated::{
     ActionStatus, AppCue, ControlKind, DialogButton, DialogKind, DisabledReason, ErrorKind,
-    GamesMode, LogPhase, Orientation, RowKind, ScopeKind, Screen, SettingsPage, SetupKind,
-    SetupPicker, StatusKind, SystemsMode, VideoStandard,
+    GamesMode, LogPhase, OnlineLinkPhase, Orientation, PairPhase, RowKind, ScopeKind, Screen,
+    SettingsPage, SetupKind, SetupPicker, StatusKind, SystemsMode, VideoStandard,
 };
-use generated::{App, GlyphSource, GridCell, LetterBucket, MenuEntry, Sizing, Theme};
+use generated::{App, Brand, GlyphSource, GridCell, LetterBucket, MenuEntry, Sizing, Theme};
 #[allow(
     unused_imports,
     reason = "reached through crate:: paths from the shared sizing adapter"
 )]
-use generated::{GamesView, Layout, Shell, SystemsView};
+use generated::{GamesView, Layout, Motion, Shell, SystemsView};
+use generated::{KeyCell, KeyKind, SearchPane, SearchPaneRow, SearchView, SearchZone};
 #[path = "../state_types.rs"]
 #[allow(
     dead_code,
@@ -62,10 +63,18 @@ use generated::{GamesView, Layout, Shell, SystemsView};
 )]
 mod state_types;
 
+#[path = "../brand.rs"]
+mod brand;
 #[path = "../fonts.rs"]
 mod fonts;
 #[path = "../glyphs.rs"]
 mod glyphs;
+#[path = "../keyboard.rs"]
+#[allow(
+    dead_code,
+    reason = "the app's keyboard state; the snapshot tool only lays keys out"
+)]
+mod keyboard;
 #[path = "../qr.rs"]
 #[allow(dead_code, reason = "the snapshot tool renders one fixture code")]
 mod qr;
@@ -96,10 +105,6 @@ impl Platform for SnapshotPlatform {
     }
 }
 
-#[allow(
-    clippy::too_many_lines,
-    reason = "offline fixture dispatcher keeps scenario setup and capture in one place"
-)]
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let width: u32 = args.get(1).map_or(1920, |a| a.parse().unwrap());
@@ -111,11 +116,31 @@ fn main() {
     let screen = args.get(4).cloned().unwrap_or_else(|| "hub".to_string());
 
     slint::platform::set_platform(Box::new(SnapshotPlatform)).unwrap();
-
-    let app = App::new().unwrap();
     // Same font stack as the device build: the embedded script faces and
     // their fallback wiring.
     fonts::register_embedded_fonts();
+
+    // A 240p help bar is one row until its entries wrap, and the app
+    // re-solves every screen when the bar reports that. A still frame has
+    // no second turn, so a scene whose entries turn out to wrap is
+    // composed again with the two-row bar from the start.
+    if !render(width, height, &out, &screen, false) {
+        assert!(
+            render(width, height, &out, &screen, true),
+            "the help bar's wrap measurement depends on its height"
+        );
+    }
+}
+
+/// Compose and write one frame, solved for a help bar of the given row
+/// count. Returns false, writing nothing, when the composed scene's help
+/// entries measure the other way.
+#[allow(
+    clippy::too_many_lines,
+    reason = "offline fixture dispatcher keeps scenario setup and capture in one place"
+)]
+fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool) -> bool {
+    let app = App::new().unwrap();
     // ZAPAROO_SNAPSHOT_SCHEME / ZAPAROO_SNAPSHOT_INTENSITY render any preset.
     theme::apply_palette(
         &app,
@@ -126,7 +151,9 @@ fn main() {
     // (any language directory under translations/).
     if let Ok(lang) = std::env::var("ZAPAROO_SNAPSHOT_LANG") {
         slint::select_bundled_translation(&lang).expect("bundled language");
+        fonts::set_han_preference(&lang);
     }
+    brand::register(&app);
     app.global::<GlyphSource>().on_glyph(|key, px, tint| {
         glyphs::render(key.as_str(), px.round().max(0.0) as u32, tint).unwrap_or_default()
     });
@@ -136,7 +163,11 @@ fn main() {
     let list = screen.contains("list");
     app.global::<Theme>().set_crt(crt);
     app.global::<Sizing>().set_crt(crt);
+    // These frames come from the software renderer, which ignores
+    // transforms: the focus zoom is drawn by size, as it is on MiSTer.
+    app.global::<Motion>().set_zoom_by_size(true);
     app.global::<Sizing>().set_swap_axes(tate);
+    app.global::<Sizing>().set_help_bar_two_rows(help_two_rows);
     let shell = app.global::<Shell>();
     shell.set_orientation(if ccw {
         Orientation::Ccw
@@ -221,7 +252,9 @@ fn main() {
         "Українська гра 11",
         "Example Game Title 12",
     ];
-    let games_mode = if screen.contains("favorites") {
+    let games_mode = if screen.contains("search-results") {
+        GamesMode::Search
+    } else if screen.contains("favorites") {
         GamesMode::Favorites
     } else if screen.contains("recents") {
         GamesMode::Recents
@@ -236,67 +269,258 @@ fn main() {
         &i18n_titles,
         i18n,
         games_mode,
-        (screen == "context" || screen == "context-alt").then_some(6),
+        screen.contains("context").then_some(6),
     );
-    // "context-alt" renders the same menu after discovery replaced its
-    // rows with the alternate builds it found.
-    if screen == "context-alt" {
-        let rows = [
-            "Bubble Bobble (Japan)",
-            "Bubble Bobble (Bootleg)",
-            "Bubble Bobble (Rev A)",
-        ];
-        app.global::<generated::Overlays>()
-            .set_context_entries(slint::ModelRc::new(slint::VecModel::from(
-                rows.iter()
-                    .enumerate()
-                    .map(|(index, name)| MenuEntry {
-                        id: format!("alternate_version:{index}").into(),
-                        label: (*name).into(),
-                        label_key: "".into(),
-                    })
-                    .collect::<Vec<_>>(),
-            )));
-        app.global::<generated::Overlays>().set_context_index(0);
-        app.global::<generated::Overlays>().set_context_open(true);
+    if screen.contains("search-results") {
+        app.global::<GamesView>()
+            .set_title("\u{201c}mario\u{201d} \u{b7} Super Nintendo".into());
+    } else if screen.contains("search") || screen.ends_with("system-picker") {
+        fixture_search(&app, screen);
     }
-    // "context" renders the games screen with the context menu open.
-    if screen == "context" {
-        app.global::<generated::Overlays>()
-            .set_context_entries(slint::ModelRc::new(slint::VecModel::from(vec![
+    // The browse filter: the header cue on the games screen, the picker's
+    // categories page with a filter set, its values page with counts, and
+    // the empty list a filter can leave.
+    if screen.ends_with("games-filter")
+        || screen.ends_with("games-list-filter")
+        || screen.ends_with("games-filter-empty")
+    {
+        let view = app.global::<GamesView>();
+        view.set_filter_text("Platformer +1".into());
+        if screen.ends_with("empty") {
+            view.set_count(0);
+            view.set_total_files(0);
+            view.set_cells(slint::ModelRc::default());
+        }
+    }
+    if screen.ends_with("filter-picker")
+        || screen.ends_with("filter-values")
+        || screen.ends_with("system-picker")
+    {
+        use generated::MenuRole;
+        let row =
+            |id: &str, key: &str, name: &str, detail: &str, detail_key: &str, role: MenuRole| {
                 MenuEntry {
-                    id: "more_info".into(),
-                    label: "".into(),
-                    label_key: "more_info".into(),
-                },
-                MenuEntry {
-                    id: "toggle_favorite".into(),
-                    label: "".into(),
-                    label_key: "favorite:add".into(),
-                },
-                MenuEntry {
-                    id: "write_card".into(),
-                    label: "".into(),
-                    label_key: "write_card".into(),
-                },
-                MenuEntry {
-                    id: "qr_code".into(),
-                    label: "".into(),
-                    label_key: "qr_code".into(),
-                },
-                MenuEntry {
-                    id: "add_to_hub".into(),
-                    label: "".into(),
-                    label_key: "add_to_hub".into(),
-                },
-                MenuEntry {
-                    id: "scrape_game".into(),
-                    label: "".into(),
-                    label_key: "scrape_game".into(),
-                },
-            ])));
-        app.global::<generated::Overlays>().set_context_index(1);
-        app.global::<generated::Overlays>().set_context_open(true);
+                    role,
+                    detail_key: detail_key.into(),
+                    id: id.into(),
+                    label: name.into(),
+                    label_key: key.into(),
+                    enabled: true,
+                    reason_key: "".into(),
+                    detail: detail.into(),
+                }
+            };
+        let option = |id: &str, key: &str, name: &str, detail: &str| {
+            row(id, key, name, detail, "", MenuRole::Option)
+        };
+        let ov = app.global::<generated::Overlays>();
+        if !screen.ends_with("system-picker") {
+            app.global::<GamesView>()
+                .set_filter_text("Platformer +1".into());
+        }
+        let (title, rows, index) = if screen.ends_with("values") {
+            let values = [
+                ("Action", "412"),
+                ("Adventure", "88"),
+                ("Fighting", "61"),
+                ("Platformer", "203"),
+                ("Puzzle", "97"),
+                ("Racing", "54"),
+                ("Role-playing", "130"),
+                ("Shooter", "176"),
+                ("Sports", "72"),
+            ];
+            let mut rows = vec![option("any", "filter:any", "", "")];
+            rows.extend(
+                values
+                    .iter()
+                    .map(|(name, count)| option(&format!("v:{name}"), "", name, count)),
+            );
+            ("title:filter_cat:genre", rows, 4)
+        } else if screen.ends_with("system-picker") {
+            // All systems, the ones used lately, then every system under
+            // its manufacturer, with its game count.
+            let header = |key: &str, name: &str| row("", key, name, "", "", MenuRole::Header);
+            let system = |name: &str, games: &str| option(&format!("sys:{name}"), "", name, games);
+            (
+                "title:search_system",
+                vec![
+                    option("all", "search:all_systems", "", ""),
+                    header("section:recent", ""),
+                    system("Super Nintendo", "812"),
+                    system("Genesis", "764"),
+                    header("", "Nintendo"),
+                    system("Game Boy", "1045"),
+                    system("Nintendo 64", "296"),
+                    system("Super Nintendo", "812"),
+                    header("", "Sega"),
+                    system("Genesis", "764"),
+                    system("Saturn", "118"),
+                ],
+                2,
+            )
+        } else {
+            let any = |id: &str| {
+                row(
+                    &format!("cat:{id}"),
+                    &format!("title:filter_cat:{id}"),
+                    "",
+                    "",
+                    "filter:any",
+                    MenuRole::Option,
+                )
+            };
+            let chosen = |id: &str, value: &str| {
+                option(
+                    &format!("cat:{id}"),
+                    &format!("title:filter_cat:{id}"),
+                    "",
+                    value,
+                )
+            };
+            (
+                "title:filter",
+                vec![
+                    chosen("genre", "Platformer"),
+                    any("year"),
+                    chosen("players", "2"),
+                    any("region"),
+                    row("filter_clear", "filter_clear", "", "", "", MenuRole::Action),
+                ],
+                0,
+            )
+        };
+        ov.set_list_title(title.into());
+        ov.set_list_form(true);
+        ov.set_list_entries(slint::ModelRc::new(slint::VecModel::from(rows)));
+        ov.set_list_index(index);
+        ov.set_list_open(true);
+    }
+    // The context menu over the games screen, its rows taken from the
+    // product rules so the fixture cannot drift from the app. "context" is
+    // an arcade game's own rows with a reader connected; the other screens
+    // are the pages those rows open, the Manage page being the Resume
+    // tile's, which is the tallest and has the longest labels.
+    if screen.contains("context") {
+        use zaparoo_app::options_menu::{self as menu, GameInput, Page, Tile};
+        let game = menu::game(&GameInput {
+            favorite_known: true,
+            has_payload: true,
+            has_nfc: true,
+            can_discover: true,
+            has_launchers: true,
+            pinnable: true,
+            hideable: true,
+            has_system: true,
+            tile: screen.ends_with("context-manage").then_some(Tile::Resume),
+            ..GameInput::default()
+        });
+        let entry = |id: &str, key: &str, label: &str, opens: bool| MenuEntry {
+            role: if opens {
+                generated::MenuRole::Submenu
+            } else {
+                generated::MenuRole::default()
+            },
+            detail_key: slint::SharedString::default(),
+            id: id.into(),
+            label: label.into(),
+            label_key: key.into(),
+            enabled: true,
+            reason_key: "".into(),
+            detail: "".into(),
+        };
+        let page_rows = |page: Page| -> Vec<MenuEntry> {
+            game.rows(page)
+                .iter()
+                .map(|row| entry(row.id, row.key, "", false))
+                .collect()
+        };
+        let (page, rows, index) = if screen.ends_with("context-alt") {
+            let names = [
+                "Bubble Bobble (Japan)",
+                "Bubble Bobble (Bootleg)",
+                "Bubble Bobble (Rev A)",
+            ];
+            (
+                generated::ContextPage::Alternates,
+                names
+                    .iter()
+                    .enumerate()
+                    .map(|(index, name)| entry(&format!("page_row:{index}"), "", name, false))
+                    .collect(),
+                0,
+            )
+        } else if screen.ends_with("context-manage") {
+            (
+                generated::ContextPage::ManageGame,
+                page_rows(Page::ManageGame),
+                0,
+            )
+        } else if screen.ends_with("context-write") {
+            (
+                generated::ContextPage::WriteToken,
+                page_rows(Page::WriteToken),
+                0,
+            )
+        } else {
+            (
+                generated::ContextPage::Root,
+                game.root
+                    .iter()
+                    .map(|row| {
+                        let opens = game.page_for(row.id).is_some() || row.id == "discover";
+                        entry(row.id, row.key, "", opens)
+                    })
+                    .collect(),
+                1,
+            )
+        };
+        let overlays = app.global::<generated::Overlays>();
+        overlays.set_context_entries(slint::ModelRc::new(slint::VecModel::from(rows)));
+        overlays.set_context_page(page);
+        overlays.set_context_index(index);
+        overlays.set_context_open(true);
+        // The list layout anchors the menu on a row, not a tile.
+        if screen.contains("list") {
+            if let Some(g) = list_geometry(&app, scene_w, scene_h, crt, 0) {
+                let layout = app.global::<Layout>();
+                let row_h = g.row_height as f32;
+                overlays.set_context_anchor_x(
+                    (g.card_x + g.list_x) as f32 + layout.get_card_padding_left(),
+                );
+                overlays.set_context_anchor_y(
+                    (g.card_y + g.list_y) as f32
+                        + layout.get_card_padding_top()
+                        + 2.0 * (row_h + layout.get_row_spacing()),
+                );
+                overlays.set_context_anchor_w(
+                    g.list_width as f32
+                        - layout.get_card_padding_left()
+                        - layout.get_card_padding_right(),
+                );
+                overlays.set_context_anchor_h(row_h);
+                overlays.set_context_anchor_radius(layout.get_row_radius());
+                overlays.set_context_anchor_zoomed(false);
+            }
+        }
+    }
+    // "fast-scroll" renders the games screen mid fast scroll: the rail up
+    // with its letters, on the fourth one.
+    if screen.contains("fast-scroll") {
+        let labels = [
+            "0-9", "A", "B", "C", "D", "F", "G", "K", "M", "P", "R", "S", "T", "W", "Z",
+        ];
+        let view = app.global::<GamesView>();
+        view.set_rail_letters(slint::ModelRc::new(slint::VecModel::from(
+            labels
+                .iter()
+                .map(|l| slint::SharedString::from(*l))
+                .collect::<Vec<_>>(),
+        )));
+        view.set_rail_index(3);
+        view.set_rail_letter("C".into());
+        view.set_rail_visible(true);
+        view.set_rapid_active(true);
     }
     // "letters" renders the games screen with the letter picker open.
     if screen.contains("letters") {
@@ -344,13 +568,7 @@ fn main() {
         ])));
     // Settings fixtures: the root category grid, or the Library page
     // with a header, both maintenance actions and the browsing rows.
-    fixture_settings(
-        &app,
-        scene_w,
-        scene_h,
-        crt,
-        screen.contains("settings-page"),
-    );
+    fixture_settings(&app, scene_w, scene_h, crt, screen);
     // "setup" renders the scrape setup form over Settings; "setup-picker"
     // renders its scope page.
     if screen.contains("setup") {
@@ -392,26 +610,33 @@ fn main() {
         sv.set_rows(slint::ModelRc::new(slint::VecModel::from(rows)));
         sv.set_index(1);
         if screen.contains("picker") {
+            // Two systems checked: they lead the list under their own
+            // heading, and stay checked under their manufacturer.
             let entries = [
-                (ScopeKind::All, ""),
-                (ScopeKind::Category, "Console"),
-                (ScopeKind::Category, "Handheld"),
-                (ScopeKind::System, "Nintendo Entertainment System"),
-                (ScopeKind::System, "Super Nintendo"),
-                (ScopeKind::System, "Mega Drive"),
-                (ScopeKind::System, "Neo Geo"),
+                (ScopeKind::All, "", false),
+                (ScopeKind::Category, "Console", false),
+                (ScopeKind::Selected, "", false),
+                (ScopeKind::System, "Mega Drive", true),
+                (ScopeKind::System, "Super Nintendo", true),
+                (ScopeKind::Header, "Nintendo", false),
+                (ScopeKind::System, "Nintendo Entertainment System", false),
             ];
             let picker: Vec<generated::SetupPickerRow> = entries
                 .iter()
-                .map(|(kind, name)| generated::SetupPickerRow {
+                .map(|(kind, name, checked)| generated::SetupPickerRow {
                     kind: *kind,
                     name: (*name).into(),
+                    checked: *checked,
                 })
                 .collect();
             sv.set_picker_page(true);
             sv.set_picker_title(SetupPicker::Systems);
+            sv.set_picker_visible(i32::try_from(picker.len()).unwrap_or(0));
+            sv.set_picker_count(i32::try_from(picker.len()).unwrap_or(0) + 1);
             sv.set_picker_rows(slint::ModelRc::new(slint::VecModel::from(picker)));
-            sv.set_picker_sel(1);
+            sv.set_picker_sel(3);
+            sv.set_picker_checked(2);
+            sv.set_picker_toggle(true);
             sv.set_has_below(true);
         }
         sv.set_open(true);
@@ -429,9 +654,14 @@ fn main() {
         let entries: Vec<MenuEntry> = values
             .iter()
             .map(|value| MenuEntry {
+                role: generated::MenuRole::default(),
+                detail_key: slint::SharedString::default(),
                 id: (*value).into(),
                 label: "".into(),
                 label_key: "".into(),
+                enabled: true,
+                reason_key: "".into(),
+                detail: "".into(),
             })
             .collect();
         ov.set_list_setting_id(if palette { "colorScheme" } else { "language" }.into());
@@ -439,19 +669,69 @@ fn main() {
         ov.set_list_index(6);
         ov.set_list_open(true);
     }
+    // "launcher-picker" renders the "Change launcher" list with one row
+    // Core reports as unavailable — muted, folded reason, still pickable.
+    if screen.ends_with("launcher-picker") {
+        let ov = app.global::<generated::Overlays>();
+        ov.set_list_title("title:change_launcher".into());
+        ov.set_list_entries(slint::ModelRc::new(slint::VecModel::from(vec![
+            MenuEntry {
+                role: generated::MenuRole::default(),
+                detail_key: slint::SharedString::default(),
+                id: "default".into(),
+                label: "".into(),
+                label_key: "launcher:default".into(),
+                enabled: true,
+                reason_key: "".into(),
+                detail: "".into(),
+            },
+            MenuEntry {
+                role: generated::MenuRole::default(),
+                detail_key: slint::SharedString::default(),
+                id: "RetroArch".into(),
+                label: "RetroArch".into(),
+                label_key: "".into(),
+                enabled: true,
+                reason_key: "".into(),
+                detail: "".into(),
+            },
+            MenuEntry {
+                role: generated::MenuRole::default(),
+                detail_key: slint::SharedString::default(),
+                id: "DuckStation".into(),
+                label: "DuckStation".into(),
+                label_key: "".into(),
+                enabled: false,
+                reason_key: "launcher:not_installed".into(),
+                detail: "".into(),
+            },
+        ])));
+        ov.set_list_index(1);
+        ov.set_list_open(true);
+    }
     if screen.ends_with("launcher-saving") {
         let ov = app.global::<generated::Overlays>();
         ov.set_list_title("title:change_launcher".into());
         ov.set_list_entries(slint::ModelRc::new(slint::VecModel::from(vec![
             MenuEntry {
+                role: generated::MenuRole::default(),
+                detail_key: slint::SharedString::default(),
                 id: "default".into(),
                 label: "Default".into(),
                 label_key: "".into(),
+                enabled: true,
+                reason_key: "".into(),
+                detail: "".into(),
             },
             MenuEntry {
+                role: generated::MenuRole::default(),
+                detail_key: slint::SharedString::default(),
                 id: "alternate".into(),
                 label: "Alternate launcher".into(),
                 label_key: "".into(),
+                enabled: true,
+                reason_key: "".into(),
+                detail: "".into(),
             },
         ])));
         ov.set_list_index(1);
@@ -488,7 +768,78 @@ fn main() {
         ov.set_qr_open(true);
     }
     if screen.contains("game-info") {
-        fixture_game_info(&app, &screen);
+        fixture_game_info(&app, screen);
+    }
+    // "online-link" renders the Online link panel with a live code.
+    if screen.contains("online-link") {
+        let url = "https://online.zaparoo.com/link?code=ABCD1234";
+        let ov = app.global::<generated::Overlays>();
+        if let Some((image, modules)) = qr::qr_image(url, qr::code_colors(&app)) {
+            ov.set_online_qr(image);
+            ov.set_online_qr_modules(i32::try_from(modules).unwrap_or(0));
+        }
+        ov.set_online_phase(OnlineLinkPhase::Showing);
+        ov.set_online_code("ABCD-1234".into());
+        ov.set_online_url("https://online.zaparoo.com/link".into());
+        ov.set_online_expires_in(597);
+        ov.set_online_open(true);
+    }
+    // "…-online-backups" and "…-online-activity" render the Online page's
+    // list modal over it: a list long enough to scroll, cursor mid-way.
+    if screen.contains("online-backups") || screen.contains("online-activity") {
+        let backups = screen.contains("online-backups");
+        let ov = app.global::<generated::Overlays>();
+        let row = |id: &str, label: &str, detail: &str, enabled: bool, this_device: bool| {
+            generated::OnlineListRow {
+                id: id.into(),
+                label: label.into(),
+                detail: detail.into(),
+                enabled,
+                this_device,
+            }
+        };
+        let rows = if backups {
+            let mut rows = vec![row("run", "", "", true, false)];
+            rows.extend((1..=9).map(|n| {
+                row(
+                    &format!("s{n}"),
+                    &format!("{} Oct 09:45", 12 - n),
+                    if n % 3 == 0 {
+                        "4.2 MB, MiSTer"
+                    } else {
+                        "4.2 MB"
+                    },
+                    n != 4,
+                    n % 3 != 0,
+                )
+            }));
+            rows
+        } else {
+            (1..=9)
+                .map(|n| {
+                    row(
+                        "",
+                        &format!("{} Oct 09:45  launch", 12 - n),
+                        if n == 2 {
+                            "account, failed: host_foreground_required"
+                        } else {
+                            "account, succeeded"
+                        },
+                        true,
+                        false,
+                    )
+                })
+                .collect()
+        };
+        ov.set_online_list_kind(if backups {
+            generated::OnlineListKind::Backups
+        } else {
+            generated::OnlineListKind::Activity
+        });
+        ov.set_online_list_note(if backups { "38.1 MB / 1.0 GB" } else { "" }.into());
+        ov.set_online_list_rows(slint::ModelRc::new(slint::VecModel::from(rows)));
+        ov.set_online_list_index(if backups { 4 } else { 1 });
+        ov.set_online_list_open(true);
     }
     // "log-upload" renders the uploader's finished state with its link.
     if screen.contains("log-upload") {
@@ -520,8 +871,15 @@ fn main() {
             overlays.set_dialog_focus(0);
         } else if screen.ends_with("alert") {
             overlays.set_dialog_kind(DialogKind::ActionError);
-            overlays.set_dialog_error(ErrorKind::Launch);
-            overlays.set_dialog_arg("Sonic the Hedgehog".into());
+            // The config alert carries the longest unbreakable word any
+            // alert shows: the MiSTer path of the file.
+            if screen.ends_with("config-alert") {
+                overlays.set_dialog_error(ErrorKind::ConfigFile);
+                overlays.set_dialog_arg("/media/fat/zaparoo/frontend.toml".into());
+            } else {
+                overlays.set_dialog_error(ErrorKind::Launch);
+                overlays.set_dialog_arg("Sonic the Hedgehog".into());
+            }
             overlays.set_dialog_buttons(slint::ModelRc::new(slint::VecModel::from(vec![
                 DialogButton::Ok,
             ])));
@@ -542,8 +900,13 @@ fn main() {
         overlays.set_crt_v_offset(-2);
         overlays.set_crt_calibration_open(true);
     }
+    // "update-*" renders the Update screen from a seeded `UpdateView`, with
+    // no engine behind it.
+    if screen.contains("update") {
+        fixture_update(&app, screen);
+    }
     app.global::<Shell>()
-        .set_active_screen(fixture_screen(&screen));
+        .set_active_screen(fixture_screen(screen));
     if screen == "route-forward" {
         app.global::<Shell>().set_active_screen(Screen::Systems);
     }
@@ -670,6 +1033,11 @@ fn main() {
         rendered,
         "window had nothing to draw (late-set: second frame not dirty)"
     );
+    // The bar measures its entries once they are instantiated, which the
+    // first draw does, so the row count is only known here.
+    if app.get_help_entries_wrap() != help_two_rows {
+        return false;
+    }
 
     // Diagnostic: dump what the Sizing global actually saw, so stale
     // screen-size plumbing is visible in the output, not just the PNG.
@@ -688,18 +1056,102 @@ fn main() {
     }
     let img: image::RgbaImage =
         image::ImageBuffer::from_raw(width, height, rgba).expect("buffer size mismatch");
-    img.save(&out).expect("write png");
+    img.save(out).expect("write png");
     println!("wrote {out}");
+    true
 }
 
 /// Push a Hub page built from a representative layout through the same
 /// rules the app uses (`zaparoo_app::hub`), at the scene's geometry.
+/// The Search screen: a typed query with live matches, the empty screen
+/// with its recent searches, or a folder search with tags chosen.
+fn fixture_search(app: &App, screen: &str) {
+    let view = app.global::<SearchView>();
+    let sizing = app.global::<Sizing>();
+    let collapsed = sizing.get_tier_240()
+        || sizing.get_swap_axes()
+        || sizing.get_screen_width() < sizing.get_screen_height() * 1.3;
+    let mut keys = keyboard::Keyboard::new(
+        zaparoo_app::keyboard::Layers::Basic,
+        zaparoo_app::search::QUERY_MAX_CHARS,
+    );
+    let row = |title: &str, detail: &str| SearchPaneRow {
+        title: title.into(),
+        detail: detail.into(),
+    };
+    let recents = screen.contains("recents");
+    let rows = if recents {
+        view.set_pane(SearchPane::Recents);
+        view.set_pane_clear(!collapsed);
+        view.set_zone(SearchZone::Pane);
+        view.set_pane_index(1);
+        vec![
+            row("mario kart", ""),
+            row("zelda", "Super Nintendo"),
+            row("Role-playing \u{b7} 1994", ""),
+        ]
+    } else {
+        keys.set_text("mario k");
+        keys.focus(zaparoo_app::keyboard::Key::Char('a'));
+        view.set_pane(SearchPane::Preview);
+        view.set_count_known(true);
+        view.set_count(12);
+        view.set_can_search(true);
+        vec![
+            row("Mario Kart 64", "Nintendo 64"),
+            row("Mario Kart DS", "Nintendo DS"),
+            row("Mario Kart: Super Circuit", "Game Boy Advance"),
+            row("Super Mario Kart", "Super Nintendo"),
+            row("Mario Kart Wii", "Wii"),
+            row("Mario Kart 8 Deluxe", "Switch"),
+            row("Mario Kart 7", "Nintendo 3DS"),
+            row("Mario Kart: Double Dash", "GameCube"),
+            row("Mario Kart Arcade GP", "Arcade"),
+            row("Mario Kart Tour", "Applications"),
+        ]
+    };
+    if screen.contains("scoped") {
+        // A folder search with a filter chosen, the cursor moved back into
+        // the query and focus on the Filter field.
+        view.set_scoped(true);
+        view.set_system_name("Super Nintendo".into());
+        view.set_scope_name("Racing".into());
+        view.set_filter_text("Racing +1".into());
+        view.set_zone(SearchZone::Filter);
+        keys.move_caret(false);
+        keys.move_caret(false);
+    }
+    let (before, at, after) = keys.display();
+    view.set_before(before);
+    view.set_at(at);
+    view.set_after(after);
+    view.set_keys(slint::ModelRc::new(slint::VecModel::from(keys.cells())));
+    view.set_key_rows(i32::try_from(keys.row_count()).unwrap_or(4));
+    view.set_key_index(i32::try_from(keys.index()).unwrap_or(0));
+    view.set_key_kind(KeyKind::Char);
+    view.set_pane_collapsed(collapsed);
+    view.set_pane_rows(slint::ModelRc::new(slint::VecModel::from(if collapsed {
+        Vec::new()
+    } else {
+        rows
+    })));
+}
+
 fn fixture_screen(screen: &str) -> Screen {
     if screen.starts_with("route-") {
         Screen::Hub
-    } else if matches!(screen, "context" | "context-alt" | "letters")
+    } else if screen.contains("search-results") {
+        Screen::SearchResults
+    } else if screen.contains("search") || screen.ends_with("system-picker") {
+        Screen::Search
+    } else if screen.contains("update") {
+        Screen::Update
+    } else if screen.contains("context")
+        || screen == "letters"
         || (screen.contains("list") && !screen.contains("systems"))
         || screen.contains("games")
+        || screen.contains("filter")
+        || screen.contains("fast-scroll")
         || screen.contains("game-info")
     {
         Screen::Games
@@ -712,11 +1164,12 @@ fn fixture_screen(screen: &str) -> Screen {
     } else if screen.contains("settings")
         || screen.contains("setup")
         || screen.contains("log-upload")
+        || screen.contains("online-link")
     {
         Screen::Settings
     } else if matches!(
         screen,
-        "saver" | "dialog" | "alert" | "notice" | "calibration"
+        "saver" | "dialog" | "alert" | "config-alert" | "notice" | "calibration"
     ) {
         Screen::Hub
     } else if screen.contains("about") {
@@ -728,6 +1181,386 @@ fn fixture_screen(screen: &str) -> Screen {
     } else {
         // Standalone overlay fixtures intentionally mount no root screen.
         Screen::None
+    }
+}
+
+/// Seed the Update screen's view state for one `update-*` fixture (a `crt-`
+/// prefix or a `-tate`/`-ccw` suffix only changes the scene, not the state).
+#[allow(
+    clippy::too_many_lines,
+    reason = "one explicit inventory of the fixtures keeps their states reviewable"
+)]
+fn fixture_update(app: &App, screen: &str) {
+    use generated::{
+        UpdateButton, UpdateCounts, UpdateError, UpdateFilter, UpdateFolderKind, UpdateHelp,
+        UpdateHelpLabel, UpdateLinuxPhase, UpdateMembership, UpdateOutcome, UpdatePage, UpdateRow,
+        UpdateRowKind, UpdateRowStatus, UpdateStatusKind, UpdateView,
+    };
+    let name = screen
+        .trim_start_matches("crt-")
+        .trim_end_matches("-ccw")
+        .trim_end_matches("-tate");
+    let view = app.global::<UpdateView>();
+    let set_buttons = |buttons: &[UpdateButton], focus: i32| {
+        view.set_buttons(slint::ModelRc::new(slint::VecModel::from(buttons.to_vec())));
+        view.set_button_focus(focus);
+    };
+    let set_help = |entries: &[(&str, UpdateHelpLabel)]| {
+        view.set_help(slint::ModelRc::new(slint::VecModel::from(
+            entries
+                .iter()
+                .map(|(button, label)| UpdateHelp {
+                    button: (*button).into(),
+                    label: *label,
+                })
+                .collect::<Vec<_>>(),
+        )));
+    };
+    view.set_available(name != "update-unavailable");
+    view.set_version("2.3".into());
+    view.set_page(UpdatePage::Intro);
+    view.set_allows_screensaver(true);
+    set_help(&[
+        ("Dpad", UpdateHelpLabel::Move),
+        ("ButtonA", UpdateHelpLabel::Start),
+        ("ButtonB", UpdateHelpLabel::Back),
+    ]);
+    set_buttons(&[UpdateButton::Back, UpdateButton::Start], 1);
+    let finished = |outcome: UpdateOutcome, counts: UpdateCounts| {
+        view.set_page(UpdatePage::Finished);
+        view.set_outcome(outcome);
+        view.set_counts(counts);
+    };
+    match name {
+        "update-unavailable" => {
+            set_buttons(&[UpdateButton::Back], 0);
+            set_help(&[("ButtonB", UpdateHelpLabel::Back)]);
+        }
+        "update-running" | "update-progress" | "update-slow" | "update-file" => {
+            view.set_page(UpdatePage::Running);
+            view.set_progress_known(name != "update-running" && name != "update-slow");
+            view.set_progress_bp(4250);
+            view.set_progress_decimals(1);
+            view.set_status_kind(match name {
+                "update-running" => UpdateStatusKind::Starting,
+                "update-slow" => UpdateStatusKind::Slow,
+                _ => UpdateStatusKind::File,
+            });
+            view.set_status_arg(
+                "_Console/Super Nintendo Entertainment System Enhanced Edition (Rev A) [Alternate].rbf"
+                    .into(),
+            );
+            view.set_allows_screensaver(false);
+            set_help(&[("ButtonB", UpdateHelpLabel::Cancel)]);
+        }
+        "update-running-error" => {
+            view.set_page(UpdatePage::Running);
+            view.set_progress_known(true);
+            view.set_progress_bp(6100);
+            view.set_status_kind(UpdateStatusKind::Tool);
+            view.set_status_arg("Retrying download of _Arcade/cores/1942.rbf".into());
+            view.set_error(UpdateError::Network);
+            view.set_allows_screensaver(false);
+            set_help(&[("ButtonB", UpdateHelpLabel::Cancel)]);
+        }
+        "update-transition" => {
+            view.set_page(UpdatePage::Running);
+            view.set_progress_known(true);
+            view.set_progress_bp(10000);
+            view.set_status_kind(UpdateStatusKind::Transition);
+            view.set_status_arg("from_old_db_ids_to_new_db_ids".into());
+            view.set_allows_screensaver(false);
+            set_help(&[("ButtonB", UpdateHelpLabel::Cancel)]);
+        }
+        "update-stopping" => {
+            view.set_page(UpdatePage::Stopping);
+            view.set_status_kind(UpdateStatusKind::StoppingSlow);
+            view.set_allows_screensaver(false);
+            set_help(&[]);
+        }
+        "update-finished"
+        | "update-finished-errors"
+        | "update-membership"
+        | "update-reboot"
+        | "update-uptodate"
+        | "update-failed" => {
+            let counts = UpdateCounts {
+                installed: 12,
+                updated: 34,
+                removed: 1,
+                failed: if name == "update-finished-errors" {
+                    3
+                } else {
+                    0
+                },
+                ..Default::default()
+            };
+            match name {
+                "update-finished-errors" => {
+                    finished(UpdateOutcome::CompleteWithErrors, counts);
+                    view.set_error(UpdateError::SomeFiles);
+                }
+                "update-reboot" => finished(UpdateOutcome::CompleteRebootNeeded, counts),
+                "update-uptodate" => finished(UpdateOutcome::UpToDate, UpdateCounts::default()),
+                "update-failed" => {
+                    finished(UpdateOutcome::Failed, UpdateCounts::default());
+                    view.set_error(UpdateError::Network);
+                }
+                _ => finished(UpdateOutcome::Complete, counts),
+            }
+            if name == "update-membership" {
+                view.set_membership(slint::ModelRc::new(slint::VecModel::from(vec![
+                    UpdateMembership {
+                        topic: "Thanks for supporting the project".into(),
+                        message: "New database entries arrive every Friday. Check the Details page after each update to see what changed.".into(),
+                        info: "".into(),
+                    },
+                    UpdateMembership {
+                        topic: "".into(),
+                        message: "A second message".into(),
+                        info: "".into(),
+                    },
+                ])));
+                view.set_membership_index(0);
+                view.set_transition("from_old_db_ids_to_new_db_ids".into());
+            }
+            if matches!(
+                name,
+                "update-finished" | "update-finished-errors" | "update-membership"
+            ) {
+                set_buttons(
+                    &[
+                        UpdateButton::Details,
+                        UpdateButton::Errors,
+                        UpdateButton::Ok,
+                    ],
+                    2,
+                );
+            } else {
+                set_buttons(&[UpdateButton::Ok], 0);
+            }
+            set_help(&[
+                ("Dpad", UpdateHelpLabel::Move),
+                ("ButtonA", UpdateHelpLabel::Select),
+                ("ButtonB", UpdateHelpLabel::Back),
+            ]);
+        }
+        "update-linux" | "update-linux-flash" | "update-linux-failed" => {
+            view.set_page(UpdatePage::Linux);
+            view.set_linux_phase(if name == "update-linux" {
+                UpdateLinuxPhase::Extract
+            } else {
+                UpdateLinuxPhase::Flash
+            });
+            view.set_linux_current_version("2025-03-14".into());
+            view.set_linux_new_version("2026-08-30".into());
+            view.set_linux_failed(name == "update-linux-failed");
+            if name == "update-linux-failed" {
+                view.set_error(UpdateError::Network);
+            }
+            view.set_allows_screensaver(false);
+            set_help(&[]);
+        }
+        "update-rebooting" => {
+            view.set_page(UpdatePage::Rebooting);
+            view.set_countdown_secs(12);
+            view.set_allows_screensaver(false);
+            set_help(&[]);
+        }
+        "update-details"
+        | "update-details-second"
+        | "update-info"
+        | "update-info-duplicate"
+        | "update-info-failed" => {
+            let counts = |i: i32, u: i32, r: i32, f: i32| UpdateCounts {
+                installed: i,
+                updated: u,
+                removed: r,
+                failed: f,
+                ..Default::default()
+            };
+            let row = |kind: UpdateRowKind,
+                       status: UpdateRowStatus,
+                       depth: i32,
+                       label: &str,
+                       reason: &str| UpdateRow {
+                kind,
+                status,
+                depth,
+                label: label.into(),
+                reason: reason.into(),
+                ..Default::default()
+            };
+            let mut rows = vec![
+                UpdateRow {
+                    kind: UpdateRowKind::Database,
+                    database: "distribution_mister".into(),
+                    file_count: 47,
+                    counts: counts(12, 34, 1, 0),
+                    ..Default::default()
+                },
+                UpdateRow {
+                    kind: UpdateRowKind::Folder,
+                    folder: UpdateFolderKind::Arcade,
+                    depth: 1,
+                    file_count: 20,
+                    counts: counts(4, 16, 0, 0),
+                    ..Default::default()
+                },
+                row(
+                    UpdateRowKind::File,
+                    UpdateRowStatus::Updated,
+                    2,
+                    "1942.mra",
+                    "_Arcade/1942.mra",
+                ),
+                row(
+                    UpdateRowKind::File,
+                    UpdateRowStatus::Installed,
+                    2,
+                    "Bubble Bobble (Japan, Ver 0.1).mra",
+                    "_Arcade/Bubble Bobble (Japan, Ver 0.1).mra",
+                ),
+                row(
+                    UpdateRowKind::File,
+                    UpdateRowStatus::Failed,
+                    2,
+                    "Galaga.mra",
+                    "Connection reset by peer",
+                ),
+                UpdateRow {
+                    kind: UpdateRowKind::Folder,
+                    folder: UpdateFolderKind::Console,
+                    depth: 1,
+                    file_count: 3,
+                    counts: counts(3, 0, 0, 0),
+                    collapsed: true,
+                    ..Default::default()
+                },
+                UpdateRow {
+                    kind: UpdateRowKind::Folder,
+                    folder: UpdateFolderKind::Plain,
+                    depth: 1,
+                    label: "docs".into(),
+                    file_count: 2,
+                    counts: counts(0, 1, 1, 0),
+                    ..Default::default()
+                },
+                row(
+                    UpdateRowKind::File,
+                    UpdateRowStatus::Removed,
+                    2,
+                    "old-readme.txt",
+                    "docs/old-readme.txt",
+                ),
+                UpdateRow {
+                    kind: UpdateRowKind::Database,
+                    database: "jotego/jtcores".into(),
+                    file_count: 9,
+                    counts: counts(0, 9, 0, 0),
+                    collapsed: true,
+                    ..Default::default()
+                },
+                UpdateRow {
+                    kind: UpdateRowKind::DuplicateCategory,
+                    file_count: 2,
+                    ..Default::default()
+                },
+                UpdateRow {
+                    kind: UpdateRowKind::DuplicateFile,
+                    depth: 1,
+                    label: "PSX.rbf".into(),
+                    reason: "_Console/PSX.rbf".into(),
+                    database: "distribution_mister".into(),
+                    ..Default::default()
+                },
+                UpdateRow {
+                    kind: UpdateRowKind::NotOverwrittenCategory,
+                    file_count: 1,
+                    ..Default::default()
+                },
+                UpdateRow {
+                    kind: UpdateRowKind::NotOverwrittenFile,
+                    depth: 1,
+                    label: "user.ini".into(),
+                    reason: "config/user.ini".into(),
+                    database: "mikes11/yc_builds-mister".into(),
+                    ..Default::default()
+                },
+                UpdateRow {
+                    kind: UpdateRowKind::DatabaseError,
+                    status: UpdateRowStatus::Failed,
+                    database: "theypsilon/broken_db".into(),
+                    ..Default::default()
+                },
+                row(
+                    UpdateRowKind::DatabaseErrorReason,
+                    UpdateRowStatus::Failed,
+                    1,
+                    "",
+                    "Could not download the database file.",
+                ),
+            ];
+            for n in 0..80 {
+                rows.push(row(
+                    UpdateRowKind::File,
+                    UpdateRowStatus::Updated,
+                    2,
+                    &format!("Extra file {n:02}.rbf"),
+                    &format!("_Console/Extra file {n:02}.rbf"),
+                ));
+            }
+            let total = i32::try_from(rows.len()).unwrap();
+            let info_row = match name {
+                "update-info-duplicate" => rows[10].clone(),
+                "update-info-failed" => rows[4].clone(),
+                _ => rows[3].clone(),
+            };
+            view.set_rows(slint::ModelRc::new(slint::VecModel::from(rows)));
+            view.set_page(UpdatePage::Details);
+            view.set_filter_visible(true);
+            view.set_filter(UpdateFilter::All);
+            view.set_filter_focus(UpdateFilter::All);
+            view.set_filter_focused(false);
+            view.set_focused_row(if name == "update-details-second" {
+                60
+            } else {
+                3
+            });
+            view.set_row_count(total);
+            view.set_database_count(3);
+            view.set_details_counts(UpdateCounts {
+                installed: 12,
+                updated: 43,
+                removed: 1,
+                failed: 3,
+                ..Default::default()
+            });
+            set_help(&[
+                ("Dpad", UpdateHelpLabel::Move),
+                ("ButtonA", UpdateHelpLabel::Info),
+                ("ButtonB", UpdateHelpLabel::Back),
+            ]);
+            if name.starts_with("update-info") {
+                view.set_info_row(info_row);
+                view.set_info_databases(slint::ModelRc::new(slint::VecModel::from(
+                    [
+                        "distribution_mister",
+                        "theypsilon/alt_a",
+                        "theypsilon/alt_b",
+                    ]
+                    .iter()
+                    .map(|db| slint::SharedString::from(*db))
+                    .collect::<Vec<_>>(),
+                )));
+                view.set_info_open(true);
+                set_help(&[
+                    ("ButtonA", UpdateHelpLabel::Close),
+                    ("ButtonB", UpdateHelpLabel::Back),
+                ]);
+            }
+        }
+        _ => {}
     }
 }
 
@@ -887,6 +1720,19 @@ fn list_metrics(
     crt: bool,
     target_rows: usize,
 ) -> (f32, usize) {
+    list_geometry(app, scene_w, scene_h, crt, target_rows)
+        .map_or((0.0, 1), |g| (g.row_height as f32, g.visible_rows.max(1)))
+}
+
+/// The list card's geometry as the driver would solve it, or `None` on a
+/// profile whose body is not a list.
+fn list_geometry(
+    app: &App,
+    scene_w: f64,
+    scene_h: f64,
+    crt: bool,
+    target_rows: usize,
+) -> Option<zaparoo_app::media_list::ListGeometry> {
     use zaparoo_app::layouts::{self, Body, ThemeId, View};
     let inputs = sizing::Scene::of(app, scene_w, scene_h, crt).inputs();
     let derived = zaparoo_app::sizing::derive(&inputs);
@@ -899,9 +1745,9 @@ fn list_metrics(
     };
     let profile = layouts::profile(ThemeId::current(&inputs), view, &inputs);
     let Body::List { list, .. } = profile.body else {
-        return (0.0, 1);
+        return None;
     };
-    let g = zaparoo_app::media_list::list_geometry(
+    Some(zaparoo_app::media_list::list_geometry(
         &list,
         &zaparoo_app::media_list::ListFrame {
             screen_width: inputs.screen_width as i32,
@@ -916,8 +1762,7 @@ fn list_metrics(
             min_row_height: inputs.pct_h(3.0),
             default_row_height: inputs.pct_h(6.0),
         },
-    );
-    (g.row_height as f32, g.visible_rows.max(1))
+    ))
 }
 
 /// The settings screen at its own geometry: the root tiles, or one page
@@ -926,13 +1771,21 @@ fn list_metrics(
     clippy::too_many_lines,
     reason = "one fixture keeps settings rows and their geometry together"
 )]
-fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, page: bool) {
+fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &str) {
     use zaparoo_app::layouts::{self, Body, ThemeId, View};
     use zaparoo_app::settings::{self as rules, Control, Row};
+    let page = screen.contains("settings-page");
+    let playtime = screen.contains("settings-page-playtime");
+    let online = screen.contains("settings-page-online");
+    // "…-online-unlinked": the same page before an account is linked, with
+    // the cursor on a row that waits for one.
+    let unlinked = screen.contains("online-unlinked");
     let inputs = sizing::Scene::of(app, scene_w, scene_h, crt).inputs();
     let derived = zaparoo_app::sizing::derive(&inputs);
     let view = app.global::<generated::SettingsView>();
-    let page_id = if page {
+    let page_id = if online {
+        SettingsPage::Online
+    } else if page {
         SettingsPage::Library
     } else {
         SettingsPage::Root
@@ -941,14 +1794,18 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, page: bool
         is_mister: crt,
         crt_enabled: crt,
         debug_build: false,
+        log_upload: false,
+        can_pick_folder: false,
+        can_scan_launchers: false,
+        can_request_playtime_access: playtime,
+        can_link_online: online,
+        online_linked: online && !unlinked,
     };
-    let row_h = inputs.pct_h(8.0);
-    let header_h = inputs.pct_h(5.0);
-    let band = inputs.pct_h(3.2);
+    // The card and its row heights, from the rule the driver uses.
+    let geometry = rules::page_geometry(&inputs);
     let mut offset = 0;
     let rows: Vec<generated::SettingsRow> = rules::page_rows(page_id.token(), &registry)
         .into_iter()
-        .filter(|row| row.id() != "uploadLog")
         .map(|row| {
             let mut out = generated::SettingsRow {
                 kind: if row.is_field() {
@@ -962,22 +1819,32 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, page: bool
                 ..Default::default()
             };
             let height = match row {
-                Row::Header(_) => header_h,
+                Row::Header(_) => geometry.header_height,
                 Row::Field { id, control } => {
                     out.control = control.into();
+                    out.enabled = !(unlinked && rules::needs_online_link(id));
                     match control {
-                        Control::Toggle => out.checked = id == "showHidden",
-                        Control::Picker => {
+                        Control::Toggle => {
+                            out.checked = id == "showHidden" || (id == "playtimeSync" && !unlinked);
+                        }
+                        Control::Picker | Control::Info => {
                             out.value = match id {
                                 "systemsLayout" => "grid",
                                 "gamesLayout" => "list",
+                                "onlineStatus" if unlinked => "unlinked",
+                                "onlineStatus" => "linked",
+                                "onlineWarp" => "active",
+                                "onlineBackupSchedule" => "daily",
+                                "onlineRemoteStatus" => "waiting",
                                 _ => "auto",
                             }
                             .into();
                         }
                         Control::Action => {
                             out.busy = id == "runScraper";
-                            out.status_key = if out.busy {
+                            out.status_key = if id == "playtimeAccess" {
+                                ActionStatus::PlaytimeUnverified
+                            } else if out.busy {
                                 ActionStatus::Running
                             } else {
                                 ActionStatus::None
@@ -985,11 +1852,14 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, page: bool
                             out.value = rules::action_label_key(id, out.busy).into();
                         }
                         Control::Navigate => {}
+                        Control::TriToggle => {
+                            out.value = if unlinked { "off" } else { "mixed" }.into();
+                        }
                     }
-                    if out.busy {
-                        row_h + band
+                    if out.status_key == ActionStatus::None {
+                        geometry.row_height
                     } else {
-                        row_h
+                        geometry.row_height + geometry.action_band_height
                     }
                 }
             };
@@ -1002,23 +1872,49 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, page: bool
     let Body::Grid { grid, footer } = profile.body else {
         return;
     };
-    // The rows viewport, as the driver computes it.
-    let card_y = derived.header_bottom
-        + profile.status.top_margin
-        + profile.status.strip_height
-        + inputs.pct_h(4.0);
-    let card_bottom = derived.help_bar_height + inputs.pct_h(4.0);
-    let card_h = (inputs.screen_height as i32 - card_y - card_bottom).max(0);
-    let hint = 2 * (f64::from(derived.font_body) * 1.362).ceil() as i32;
-    let viewport = (card_h - 2 * inputs.pct_h(2.0) - hint - inputs.pct_h(0.5)).max(0);
+    let viewport = geometry.rows_viewport;
+    view.set_card_y(geometry.card_y as f32);
+    view.set_card_height(geometry.card_height as f32);
+    view.set_card_pad(geometry.pad as f32);
+    view.set_hint_height(geometry.hint_height as f32);
     view.set_page(page_id);
-    let index = if page { 2 } else { 1 };
+    // The Online fixture seats the cursor on the account row so the band
+    // scrolls to the group.
+    let index = if online {
+        rows.iter()
+            .position(|row| {
+                row.id
+                    == if unlinked {
+                        "onlineAllFeatures"
+                    } else {
+                        "onlineUnlinkAccount"
+                    }
+            })
+            .and_then(|i| i32::try_from(i).ok())
+            .unwrap_or(2)
+    } else if page {
+        2
+    } else {
+        1
+    };
     view.set_index(index);
-    // Same snap the driver applies, from the same rule, so the fixture
+    let fields = |end: usize| {
+        rows.iter()
+            .take(end)
+            .filter(|row| row.kind == RowKind::Field)
+            .count() as i32
+    };
+    view.set_field_index(fields(index.max(0) as usize));
+    view.set_field_count(fields(rows.len()));
+    // Same scroll the driver applies, from the same rule, so the fixture
     // cannot quietly frame the band differently from the app.
     let spans: Vec<(f32, f32)> = rows.iter().map(|r| (r.y_offset, r.height)).collect();
-    let (scroll, shown) =
-        zaparoo_app::settings::band_extent(&spans, index.max(0) as usize, viewport as f32);
+    let (scroll, shown) = zaparoo_app::settings::band_extent(
+        &spans,
+        index.max(0) as usize,
+        viewport as f32,
+        geometry.pad as f32,
+    );
     view.set_rows_height(viewport as f32);
     view.set_rows_clip_height(shown);
     view.set_scroll(scroll);
@@ -1176,6 +2072,10 @@ fn fixture_games(
             } else {
                 "".into()
             },
+            // Covers still loading: Core's average colour stands in, and a
+            // cover Core has not sized yet keeps the plain plate.
+            placeholder: snapshot_cover_color(i),
+            has_placeholder: (flat || i != 1) && i % 4 != 0,
             ..Default::default()
         })
         .collect();
@@ -1228,8 +2128,15 @@ fn fixture_games(
     view.set_list_view_top(0);
     view.set_list_visible(i32::try_from(list_visible).unwrap_or(10));
     view.set_list_row_height(list_row_height);
+    let paging = zaparoo_app::media_list::list_paging(2, 48, Some(48), !flat, list_visible, true);
+    view.set_current_index(2);
+    view.set_list_page(paging.current_page as i32);
+    view.set_list_total_pages(paging.total_pages as i32);
+    view.set_has_items_above(paging.has_items_above);
+    view.set_has_items_below(paging.has_items_below);
     view.set_detail_title("Example Game Title 3".into());
-    view.set_detail_cover_absent(true);
+    view.set_detail_placeholder(snapshot_cover_color(3));
+    view.set_detail_has_placeholder(true);
     view.set_detail_rows(slint::ModelRc::new(slint::VecModel::from(vec![
         generated::DetailRow {
             key: "system".into(),
@@ -1338,6 +2245,7 @@ fn fixture_systems(app: &App, scene_w: f64, scene_h: f64, crt: bool, favorites: 
     view.set_list_rows(slint::ModelRc::new(slint::VecModel::from(list_rows)));
     view.set_list_sel(2);
     view.set_list_view_top(12);
+    view.set_list_scroll_top(12);
     view.set_list_visible(i32::try_from(visible).unwrap_or(10));
     view.set_list_row_height(row_height);
     view.set_current_index(14);
@@ -1381,6 +2289,20 @@ fn fixture_systems(app: &App, scene_w: f64, scene_h: f64, crt: bool, favorites: 
     view.set_grid_height(grid_height as f32);
 }
 
+/// Stand-in cover colours, the kind Core averages from box art.
+fn snapshot_cover_color(i: usize) -> slint::Color {
+    const COLORS: [[u8; 3]; 6] = [
+        [0x8a, 0x2f, 0x2a],
+        [0x2c, 0x4f, 0x7c],
+        [0x3d, 0x6b, 0x3a],
+        [0x7a, 0x62, 0x2b],
+        [0x5b, 0x3a, 0x6e],
+        [0x2f, 0x6a, 0x6a],
+    ];
+    let [r, g, b] = COLORS[i % COLORS.len()];
+    slint::Color::from_rgb_u8(r, g, b)
+}
+
 #[cfg(test)]
 mod fixture_tests {
     use super::{fixture_screen, Screen};
@@ -1402,9 +2324,14 @@ mod fixture_tests {
             ("favorite-systems", Screen::FavoriteSystems),
             ("favorites", Screen::Favorites),
             ("recents", Screen::Recents),
+            ("search", Screen::Search),
+            ("crt-search-scoped", Screen::Search),
+            ("search-results", Screen::SearchResults),
             ("game-info", Screen::Games),
             ("settings-page", Screen::Settings),
             ("about", Screen::About),
+            ("update-intro", Screen::Update),
+            ("crt-update-details", Screen::Update),
         ] {
             assert_eq!(fixture_screen(name), screen, "{name}");
         }

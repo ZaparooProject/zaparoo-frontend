@@ -1,6 +1,8 @@
 //! Explicit text boundaries for UI enums. Disk/API vocabulary stays unchanged.
 
-use crate::{ErrorKind, Orientation, Screen, SettingsPage, VideoStandard};
+use crate::{
+    ErrorKind, OnlineLinkPhase, Orientation, PairPhase, Screen, SettingsPage, VideoStandard,
+};
 
 macro_rules! tokens {
     ($ty:ident { $($variant:ident => $token:literal),+ $(,)? }) => {
@@ -24,20 +26,23 @@ macro_rules! tokens {
 tokens!(Screen {
     Hub => "hub", Systems => "systems", FavoriteSystems => "favorite-systems",
     Games => "games", Favorites => "favorites", Recents => "recents",
-    Settings => "settings", About => "about", None => "",
+    Search => "search", SearchResults => "search-results",
+    Settings => "settings", About => "about", Update => "update", None => "",
 });
 tokens!(SettingsPage {
     Root => "", Appearance => "pageAppearance", Library => "pageLibraryData",
-    Display => "pageDisplayInterface", Controls => "pageControlsInput",
+    Online => "pageOnline", Display => "pageDisplayInterface", Controls => "pageControlsInput",
     Language => "pageLanguage", About => "pageSupportAbout",
 });
 tokens!(Orientation { Horizontal => "horizontal", Cw => "cw", Ccw => "ccw" });
 tokens!(VideoStandard { Ntsc => "ntsc", Pal => "pal" });
 tokens!(ErrorKind {
-    Generic => "", Launch => "launch", Favorite => "favorite", AddToHub => "add_to_hub",
+    Generic => "", Launch => "launch", LaunchRepair => "launch_repair", Favorite => "favorite",
+    MediaVisibility => "media_visibility", MediaBusy => "media_busy", AddToHub => "add_to_hub",
     MediaIndex => "media_index", MediaScrape => "media_scrape", MediaScrapers => "media_scrapers",
     MediaCancel => "media_cancel", Launcher => "launcher", LauncherSave => "launcher_save",
-    AlternateDiscovery => "alternate_discovery", QrCode => "qr_code", CardWrite => "card_write", Setting => "setting",
+    AlternateDiscovery => "alternate_discovery", DiscList => "disc_list", QrCode => "qr_code", CardWrite => "card_write", Setting => "setting",
+    Pairing => "pairing", Online => "online", Backup => "backup", ConfigFile => "config_file",
 });
 
 impl From<zaparoo_app::hub::Reason> for crate::DisabledReason {
@@ -59,6 +64,8 @@ impl From<zaparoo_app::settings::Control> for crate::ControlKind {
             Control::Toggle => Self::Toggle,
             Control::Action => Self::Action,
             Control::Navigate => Self::Navigate,
+            Control::TriToggle => Self::TriToggle,
+            Control::Info => Self::Info,
         }
     }
 }
@@ -69,6 +76,10 @@ impl From<zaparoo_app::media_setup::ScopeKind> for crate::ScopeKind {
             zaparoo_app::media_setup::ScopeKind::All => Self::All,
             zaparoo_app::media_setup::ScopeKind::Category => Self::Category,
             zaparoo_app::media_setup::ScopeKind::System => Self::System,
+            zaparoo_app::media_setup::ScopeKind::Systems => Self::Systems,
+            zaparoo_app::media_setup::ScopeKind::Game => Self::Game,
+            zaparoo_app::media_setup::ScopeKind::Header => Self::Header,
+            zaparoo_app::media_setup::ScopeKind::Selected => Self::Selected,
         }
     }
 }
@@ -88,6 +99,33 @@ impl From<zaparoo_app::log_upload::Phase> for crate::LogPhase {
             zaparoo_app::log_upload::Phase::Uploading => Self::Uploading,
             zaparoo_app::log_upload::Phase::Done => Self::Done,
             zaparoo_app::log_upload::Phase::Failed => Self::Failed,
+        }
+    }
+}
+
+impl From<zaparoo_app::pairing::Phase> for PairPhase {
+    fn from(value: zaparoo_app::pairing::Phase) -> Self {
+        use zaparoo_app::pairing::Phase;
+        match value {
+            Phase::Closed => Self::Closed,
+            Phase::Starting => Self::Starting,
+            Phase::Showing => Self::Showing,
+            Phase::Paired => Self::Paired,
+            Phase::Expired => Self::Expired,
+        }
+    }
+}
+
+impl From<zaparoo_app::online_link::Phase> for OnlineLinkPhase {
+    fn from(value: zaparoo_app::online_link::Phase) -> Self {
+        use zaparoo_app::online_link::Phase;
+        match value {
+            Phase::Closed => Self::Closed,
+            Phase::Starting => Self::Starting,
+            Phase::Showing => Self::Showing,
+            Phase::Linked => Self::Linked,
+            Phase::Failed => Self::Failed,
+            Phase::Expired => Self::Expired,
         }
     }
 }
@@ -129,8 +167,11 @@ mod tests {
             Screen::Games,
             Screen::Favorites,
             Screen::Recents,
+            Screen::Search,
+            Screen::SearchResults,
             Screen::Settings,
             Screen::About,
+            Screen::Update,
             Screen::None,
         ] {
             assert_eq!(Screen::try_from(value.token()), Ok(value));
@@ -139,6 +180,7 @@ mod tests {
             SettingsPage::Root,
             SettingsPage::Appearance,
             SettingsPage::Library,
+            SettingsPage::Online,
             SettingsPage::Display,
             SettingsPage::Controls,
             SettingsPage::Language,

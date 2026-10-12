@@ -8,10 +8,21 @@
 //! flag. Toolkit-agnostic; the shell owns the timers these rules ask for
 //! and supplies the clock.
 
+// The quiet tail must outlast a page repeat, or a steady hold would
+// drop out of rapid navigation between ticks.
+const _: () = assert!(RAPID_QUIET_MS > PAGE_TICK_MS);
+
+/// Keep the accepting control visible through its downstroke and a short
+/// depressed hold before dispatch. Disabled motion skips this wait.
+pub const PRESS_FEEDBACK_MS: u64 = 90;
+
 /// A held repeatable action waits this long before it starts repeating.
-pub const REPEAT_INITIAL_MS: u64 = 350;
-/// Then it repeats at this cadence.
-pub const REPEAT_TICK_MS: u64 = 90;
+pub const REPEAT_INITIAL_MS: u64 = 250;
+/// Then ordinary held navigation repeats a row at this cadence.
+pub const REPEAT_TICK_MS: u64 = 65;
+/// A fast scroll's page step repeats at this cadence: slower than a row,
+/// since each step repaints a whole page.
+pub const PAGE_TICK_MS: u64 = 90;
 /// Rapid navigation ends this long after the last navigation action.
 pub const RAPID_QUIET_MS: u64 = 260;
 /// One uninterrupted hold has to last this long before it counts as
@@ -20,17 +31,36 @@ pub const RAPID_QUIET_MS: u64 = 260;
 /// start promptly without replacing the live grid until the intent is
 /// unambiguous.
 pub const RAPID_HOLD_MS: u64 = 800;
+/// A hold this long steps a letter at a time instead of a page, so a
+/// list of thousands is crossed in seconds (`EmulationStation` and tvOS
+/// both accelerate a long hold the same way).
+pub const LETTER_STEP_HOLD_MS: u64 = 2_500;
+/// The letter step's cadence: slow enough to read each letter go by.
+pub const LETTER_STEP_TICK_MS: u64 = 250;
 /// A second delivery of the same key inside this window is contact
 /// bounce or an input stack double send, not a second press. Far below
 /// the repeat handoff so it never touches hold-repeat, and below the
 /// floor for a deliberate human re-tap.
 pub const DUPLICATE_INPUT_WINDOW_MS: u64 = 40;
 
-/// The directions that repeat while held.
+/// Delete the character before the caret. Not a bindable action: a text
+/// field takes it from the View button or the Backspace key while it has
+/// the input.
+pub const TEXT_DELETE: &str = "text_delete";
+
+/// Press the focused key of an on-screen keyboard. Not a bindable action:
+/// Accept becomes it on a key that types or deletes, so holding the
+/// button repeats the key.
+pub const TEXT_KEY: &str = "text_key";
+
+/// A delete held this long stops stepping and clears the whole field.
+pub const TEXT_CLEAR_HOLD_MS: u64 = 1_200;
+
+/// The directions that repeat while held, and typing or deleting text.
 pub fn is_repeatable_action(action: &str) -> bool {
     matches!(
         action,
-        "up" | "down" | "left" | "right" | "page_prev" | "page_next"
+        "up" | "down" | "left" | "right" | "page_prev" | "page_next" | TEXT_DELETE | TEXT_KEY
     )
 }
 
@@ -38,6 +68,17 @@ pub fn is_repeatable_action(action: &str) -> bool {
 /// ones that walk a list, not the ones that walk a row.
 pub fn is_rapid_navigation_action(action: &str) -> bool {
     matches!(action, "up" | "down" | "page_prev" | "page_next")
+}
+
+/// The tier a repeat of `action` runs at once the hold has reached
+/// `held`. Only the fast-scroll directions speed up; left and right keep
+/// stepping a cell at the row cadence however long they are held.
+pub fn repeat_tier(action: &str, held: HoldTier) -> HoldTier {
+    if is_rapid_navigation_action(action) {
+        held
+    } else {
+        HoldTier::Row
+    }
 }
 
 /// Drop a second delivery of the same key while the guard window is
@@ -75,6 +116,45 @@ pub fn swap_actions(
         }
     }
     action
+}
+
+/// How far one repeat of a held list-walking action moves, by how long
+/// the hold has lasted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum HoldTier {
+    /// Ordinary held navigation: one step per repeat.
+    Row,
+    /// Fast scroll: a page per repeat.
+    Page,
+    /// Fast scroll, long hold: a letter per repeat.
+    Letter,
+}
+
+impl HoldTier {
+    /// The tier a hold of `held_ms` has reached.
+    pub fn for_hold(held_ms: u64) -> Self {
+        if held_ms >= LETTER_STEP_HOLD_MS {
+            Self::Letter
+        } else if held_ms >= RAPID_HOLD_MS {
+            Self::Page
+        } else {
+            Self::Row
+        }
+    }
+
+    /// Past the press-and-hold threshold: a fast scroll.
+    pub fn is_rapid(self) -> bool {
+        self != Self::Row
+    }
+
+    /// The delay before the next repeat at this tier.
+    pub fn repeat_ms(self) -> u64 {
+        match self {
+            Self::Row => REPEAT_TICK_MS,
+            Self::Page => PAGE_TICK_MS,
+            Self::Letter => LETTER_STEP_TICK_MS,
+        }
+    }
 }
 
 /// The hold-repeat state machine. Native key auto-repeat is deliberately
@@ -133,14 +213,27 @@ impl Hold {
         held
     }
 
-    /// A repeat timer fired: the action to dispatch, plus whether this
-    /// hold has lasted long enough to count as rapid navigation.
-    pub fn tick(&self, now_ms: u64) -> Option<(&str, bool)> {
+    /// How long the current hold has lasted; 0 when nothing is held.
+    pub fn held_ms(&self, now_ms: u64) -> u64 {
+        if self.action.is_empty() || self.started_ms == 0 {
+            0
+        } else {
+            now_ms.saturating_sub(self.started_ms)
+        }
+    }
+
+    /// A repeat timer fired: the action to dispatch, plus the tier this
+    /// hold has reached.
+    pub fn tick(&self, now_ms: u64) -> Option<(&str, HoldTier)> {
         if self.action.is_empty() {
             return None;
         }
-        let long_enough = self.started_ms > 0 && now_ms - self.started_ms >= RAPID_HOLD_MS;
-        Some((self.action.as_str(), long_enough))
+        let held = if self.started_ms > 0 {
+            now_ms.saturating_sub(self.started_ms)
+        } else {
+            0
+        };
+        Some((self.action.as_str(), HoldTier::for_hold(held)))
     }
 }
 
@@ -160,7 +253,8 @@ impl DuplicateGuard {
 
     /// True when the press is a real one and should be routed.
     pub fn accept(&mut self, key: &str, now_ms: u64) -> bool {
-        let within = self.open && now_ms - self.last_ms < DUPLICATE_INPUT_WINDOW_MS;
+        // Event times from two devices can arrive out of order.
+        let within = self.open && now_ms.abs_diff(self.last_ms) < DUPLICATE_INPUT_WINDOW_MS;
         if is_duplicate_input(key, &self.last_key, within) {
             return false;
         }
@@ -221,6 +315,21 @@ mod tests {
     use super::*;
 
     #[test]
+    fn typing_and_deleting_repeat_and_a_hold_knows_its_age() {
+        assert!(is_repeatable_action(TEXT_DELETE));
+        assert!(is_repeatable_action(TEXT_KEY));
+        assert!(!is_repeatable_action("accept"));
+        // Neither speeds up into the fast-scroll tiers.
+        assert_eq!(repeat_tier(TEXT_DELETE, HoldTier::Letter), HoldTier::Row);
+        let mut hold = Hold::new();
+        assert_eq!(hold.held_ms(5_000), 0);
+        assert!(hold.arm(TEXT_DELETE, "west", 1_000));
+        assert_eq!(hold.held_ms(1_000 + TEXT_CLEAR_HOLD_MS), TEXT_CLEAR_HOLD_MS);
+        assert!(hold.release("west"));
+        assert_eq!(hold.held_ms(9_000), 0);
+    }
+
+    #[test]
     fn only_the_directions_repeat() {
         for action in ["up", "down", "left", "right", "page_prev", "page_next"] {
             assert!(is_repeatable_action(action), "{action}");
@@ -259,6 +368,14 @@ mod tests {
         assert!(guard.accept("down", 1_041));
         // A different key is never a duplicate.
         assert!(guard.accept("up", 1_042));
+    }
+
+    #[test]
+    fn the_guard_takes_a_time_earlier_than_the_last_press() {
+        let mut guard = DuplicateGuard::new();
+        assert!(guard.accept("down", 1_000));
+        assert!(!guard.accept("down", 990));
+        assert!(guard.accept("down", 900));
     }
 
     #[test]
@@ -305,15 +422,59 @@ mod tests {
     }
 
     #[test]
-    fn a_tick_reports_rapid_only_after_the_hold_threshold() {
+    fn a_tick_reports_the_tier_the_hold_has_reached() {
         let mut hold = Hold::new();
         assert_eq!(hold.tick(5_000), None);
         hold.arm("down", "Down", 1_000);
-        assert_eq!(hold.tick(1_350), Some(("down", false)));
-        assert_eq!(hold.tick(1_000 + RAPID_HOLD_MS - 1), Some(("down", false)));
-        assert_eq!(hold.tick(1_000 + RAPID_HOLD_MS), Some(("down", true)));
+        assert_eq!(hold.tick(1_350), Some(("down", HoldTier::Row)));
+        assert_eq!(
+            hold.tick(1_000 + RAPID_HOLD_MS - 1),
+            Some(("down", HoldTier::Row))
+        );
+        assert_eq!(
+            hold.tick(1_000 + RAPID_HOLD_MS),
+            Some(("down", HoldTier::Page))
+        );
+        assert_eq!(
+            hold.tick(1_000 + LETTER_STEP_HOLD_MS - 1),
+            Some(("down", HoldTier::Page))
+        );
+        assert_eq!(
+            hold.tick(1_000 + LETTER_STEP_HOLD_MS),
+            Some(("down", HoldTier::Letter))
+        );
         assert!(hold.stop());
         assert!(!hold.stop());
+    }
+
+    #[test]
+    fn only_fast_scroll_directions_speed_up() {
+        for action in ["up", "down", "page_prev", "page_next"] {
+            assert_eq!(repeat_tier(action, HoldTier::Letter), HoldTier::Letter);
+            assert_eq!(repeat_tier(action, HoldTier::Page), HoldTier::Page);
+        }
+        for action in ["left", "right"] {
+            assert_eq!(repeat_tier(action, HoldTier::Letter), HoldTier::Row);
+            assert_eq!(repeat_tier(action, HoldTier::Page), HoldTier::Row);
+            assert_eq!(
+                repeat_tier(action, HoldTier::Letter).repeat_ms(),
+                REPEAT_TICK_MS
+            );
+        }
+    }
+
+    #[test]
+    fn tiers_set_rapid_and_the_repeat_cadence() {
+        assert!(!HoldTier::Row.is_rapid());
+        assert!(HoldTier::Page.is_rapid());
+        assert!(HoldTier::Letter.is_rapid());
+        assert_eq!(HoldTier::Row.repeat_ms(), REPEAT_TICK_MS);
+        assert_eq!(HoldTier::Page.repeat_ms(), PAGE_TICK_MS);
+        assert_eq!(REPEAT_INITIAL_MS, 250);
+        assert_eq!(REPEAT_TICK_MS, 65);
+        assert_eq!(PAGE_TICK_MS, 90);
+        assert_eq!(LETTER_STEP_TICK_MS, 250);
+        assert_eq!(HoldTier::Letter.repeat_ms(), LETTER_STEP_TICK_MS);
     }
 
     #[test]

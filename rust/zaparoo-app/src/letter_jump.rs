@@ -22,7 +22,8 @@ pub fn fit_columns(count: usize, width: f64, height: f64, gap: f64) -> usize {
 }
 
 /// Horizontal moves wrap within the current row, including a partial tail.
-/// Vertical moves stop at the edges; down from a full row reaches the tail.
+/// Vertical moves wrap between the first and last rows, clamping the column
+/// to the final cell when the tail is partial.
 pub fn next_index(action: &str, index: usize, count: usize, columns: usize) -> usize {
     if count == 0 {
         return 0;
@@ -46,13 +47,16 @@ pub fn next_index(action: &str, index: usize, count: usize, columns: usize) -> u
                 index + 1
             }
         }
-        "up" => index.checked_sub(columns).unwrap_or(index),
+        "up" => index.checked_sub(columns).unwrap_or_else(|| {
+            let last_start = (count - 1) / columns * columns;
+            (last_start + index).min(count - 1)
+        }),
         "down" => {
             let last_start = (count - 1) / columns * columns;
             if index < last_start {
                 (index + columns).min(count - 1)
             } else {
-                index
+                index % columns
             }
         }
         _ => index,
@@ -74,12 +78,36 @@ mod tests {
             ("left", 4, 6, 4, 5),
             ("down", 1, 8, 4, 5),
             ("up", 5, 8, 4, 1),
-            ("up", 2, 8, 4, 2),
+            ("up", 2, 8, 4, 6),
             ("down", 2, 6, 4, 5),
-            ("down", 5, 6, 4, 5),
+            ("down", 5, 6, 4, 1),
             ("right", 0, 0, 4, 0),
         ] {
             assert_eq!(next_index(action, index, count, cols), expected);
+        }
+    }
+
+    #[test]
+    fn vertical_wrap_reaches_both_edges_and_clamps_a_partial_tail() {
+        for (action, index, count, columns, expected) in [
+            ("up", 1, 12, 4, 9),
+            ("down", 9, 12, 4, 1),
+            ("up", 3, 10, 4, 9),
+            ("down", 9, 10, 4, 1),
+            ("down", 7, 10, 4, 9),
+            ("up", 9, 10, 4, 5),
+            ("up", 1, 3, 4, 1),
+            ("down", 2, 3, 4, 2),
+            ("up", 0, 3, 0, 2),
+            ("down", 2, 3, 0, 0),
+            ("up", usize::MAX, 10, 4, 5),
+            ("up", 0, 0, 4, 0),
+        ] {
+            assert_eq!(
+                next_index(action, index, count, columns),
+                expected,
+                "{action} from {index}, {count}/{columns}"
+            );
         }
     }
 

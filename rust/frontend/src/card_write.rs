@@ -73,7 +73,15 @@ fn finish(ctx: &Ctx, app: &App, ticket: u64, text: &str, succeeded: bool) {
     }
     crate::press_feedback::cancel(app);
     app.global::<Overlays>().set_card_write_open(false);
-    if !succeeded {
+    if succeeded {
+        // The modal just closes; say that the write happened.
+        crate::cue::flash(
+            ctx,
+            app,
+            crate::AppCue::TokenWritten,
+            zaparoo_app::wait_cue::CONFIRM_MS,
+        );
+    } else {
         // The queued alert owns the exact command, not a mutable row index.
         crate::router::report_action_error(ctx, app, "card_write", text);
     }

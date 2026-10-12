@@ -8,6 +8,15 @@ use slint::ComponentHandle;
 use std::cell::{Cell, RefCell};
 use zaparoo_core::persist::PersistedState;
 
+/// Route intent, independent of animation direction. A new visit starts at
+/// the destination's first item; Back, resume and in-place regrouping reuse
+/// its saved position. Apply resets only after retaining the source.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EntryMode {
+    Fresh,
+    Restore,
+}
+
 struct Source {
     persist: PersistedState,
     games: crate::games::GamesModel,
@@ -25,6 +34,8 @@ pub fn stage(ctx: &Ctx, app: &App) {
     }
     let mut shared = lock(&ctx.shared);
     let mut games = std::mem::take(&mut shared.games);
+    games.fill_task.cancel();
+    shared.systems_model.fill_task.cancel();
     // Copy navigation metadata without duplicating an arbitrarily long list.
     let rows = std::mem::take(&mut games.rows);
     shared.games = games.clone();
@@ -87,6 +98,10 @@ pub fn cancel(ctx: &Ctx, app: &App) -> bool {
     };
     {
         let mut shared = lock(&ctx.shared);
+        shared.games.fill_task.cancel();
+        shared.systems_model.fill_task.cancel();
+        source.games.fill_task.cancel();
+        source.systems.fill_task.cancel();
         source.games.ticket = shared.games.ticket.wrapping_add(1);
         source.games.detail_seq = shared.games.detail_seq.wrapping_add(1);
         source.games.persist_seq = shared.games.persist_seq.wrapping_add(1);
@@ -105,15 +120,23 @@ pub fn cancel(ctx: &Ctx, app: &App) -> bool {
     crate::router::save_persist(&ctx.shared);
     crate::router::refresh_layout(app);
     match app.global::<Shell>().get_active_screen() {
-        crate::Screen::Games | crate::Screen::Favorites | crate::Screen::Recents => {
+        crate::Screen::Games
+        | crate::Screen::Favorites
+        | crate::Screen::Recents
+        | crate::Screen::SearchResults => {
             crate::games::render(ctx, app);
             crate::games::resume_after_cancel(ctx, app);
         }
-        crate::Screen::Systems | crate::Screen::FavoriteSystems => crate::systems::render(ctx, app),
-        crate::Screen::Hub => {
-            lock(&ctx.shared).hub.release_pulse += 1;
-            crate::hub::render(ctx, app);
+        crate::Screen::Systems | crate::Screen::FavoriteSystems => {
+            let catalog_loaded = { lock(&ctx.shared).hub.categories_loaded };
+            if catalog_loaded {
+                crate::systems::reproject(ctx, app);
+            } else {
+                crate::systems::render(ctx, app);
+            }
         }
+        crate::Screen::Hub => crate::hub::render(ctx, app),
+        crate::Screen::Search => crate::search::resume(ctx, app),
         _ => {}
     }
     true

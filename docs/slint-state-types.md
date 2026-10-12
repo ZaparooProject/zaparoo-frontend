@@ -13,16 +13,19 @@ and consumers, the snapshot binary, and the MiSTer dual-head mirror/tests.
 | Area | Typed state |
 | --- | --- |
 | Routing | `Screen`: active screen, pending destination, route component, Rust route parameters, retained-source checks, mirror layout identity |
-| Browse | `GamesMode`, `SystemsMode`, `ContentState`: list source and ready/loading/empty/error cues |
-| Settings | `SettingsPage`, `RowKind`, `ControlKind`, `ActionStatus`: root/subpage, outgoing page, field controls and job status |
-| Setup | `SetupKind`, `SetupPicker`, `ScopeKind`, `SetupAction`: job, picker, scope label and help action; Rust selection stores domain `Scope` with its ID payload |
-| Status | `StatusKind`, `AppCue`, `DisabledReason`: status ladder, transient launch cue and disabled Hub captions |
-| Dialogs | `DialogKind`, `ErrorKind`, `FirstRunPhase`, `DialogProgress`, `DialogButton`: kinds, phase, progress and decisions, separate from text payloads |
+| Browse | `GamesMode`, `SystemsMode`, `ContentState`: list source and ready/loading/empty/error cues, including the jump-to-letter picker's index |
+| Settings | `SettingsPage`, `RowKind`, `ControlKind`, `ActionStatus`: root/subpage, outgoing page, field controls (picker, toggle, tri-toggle, action, navigate, and the read-only info row) and job status |
+| Setup | `SetupKind`, `SetupPicker`, `ScopeKind`, `SetupAction`: job, picker, scope label (one system, a count of checked systems, a game, the picker's headings) and help action; Rust selection stores domain `Scope` with its ID payload, and a picker row's check is a `bool` beside its kind |
+| Status | `StatusKind`, `AppCue`, `DisabledReason`, `BootStatus`: status ladder, transient launch cue and Hub add/remove confirmation, disabled Hub captions and the boot curtain line |
+| Menus | `MenuRole`, `ContextPage`: what a menu row is (an option, a header, a foot action, or a context-menu row that opens a page), and which page the context menu is showing in place of its own rows (root, Write to token, the three Manage pages, discs, alternate versions). Row ids stay strings: they are dynamic dispatch keys |
+| Dialogs | `DialogKind`, `ErrorKind`, `DialogButton`: kinds and decisions, separate from text payloads; first-time setup ends on Start media update and progress stays in the header |
 | Input | `PressOwner`, `ScrollAction`: delayed-accept ownership, overlay pointer dispatch and Details scroll commands |
 | Display | `Orientation`, `VideoStandard`: UI selection; orientation stays typed through scene sizing and live backend updates |
 | Log upload | `LogPhase`: uploading, done, failed |
+| Pairing | `PairPhase`: closed, starting, showing, paired, expired |
+| Online | `OnlineLinkPhase`: the link panel's progress; `OnlineListKind`, `OnlineListStatus`: which list the Online modal shows (backups or activity) and whether it is ready, loading, failed, empty or working |
 
-UI-owned browse and first-run enums are reused directly by Rust. Toolkit-free
+UI-owned browse and dialog enums are reused directly by Rust. Toolkit-free
 rules (`zaparoo-app`) retain their own enums; exhaustive `From` matches in
 `rust/frontend/src/state_types.rs` project them into Slint types without
 string round trips.

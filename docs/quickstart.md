@@ -85,6 +85,20 @@ test instance, can run on the same machine without colliding with the mock. The
 frontend still defaults to `7497` in production: `just run` reads
 `~/.config/zaparoo/frontend.toml` as usual.
 
+### First-time setup and incremental indexing
+
+For an isolated headless UI check with an initially empty mock database:
+
+```bash
+MOCK_CORE_EMPTY_DB=1 MOCK_CORE_INDEX_STEP_MS=2000 just slint-ui run --mock
+```
+
+Use fresh disposable harness state to show the startup notices. **Start media
+update** closes setup immediately; the header shows background progress and
+new systems appear as the mock indexes them. The normal mock starts with its
+full catalog. These variables affect only a newly started mock, not a server
+already on the dev port.
+
 ### Pick a different port
 
 If something already uses `27497`, override it at startup:

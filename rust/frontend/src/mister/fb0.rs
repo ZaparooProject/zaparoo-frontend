@@ -9,8 +9,14 @@
 // every blend reads uncached memory. Render-to-cached + copy is the
 // right shape on Cortex-A9.
 //
+// A cached page slide goes out the same way: each step is composed into a
+// second RAM frame Slint never renders into, and only the rows the step
+// changed are copied.
+//
 // Written against the Linux fbdev UAPI (linux/fb.h).
 
+use super::scanout::Damage;
+use super::transition::{CachedSlide, BACKGROUND_RGBA};
 use super::Presenter;
 use slint::platform::software_renderer::{PremultipliedRgbaColor, SoftwareRenderer};
 use std::fs::{File, OpenOptions};
@@ -131,7 +137,12 @@ pub struct Fb0Presenter {
     red_offset: u32,
     /// Cached RAM render target.
     buffer: Vec<PremultipliedRgbaColor>,
+    /// Cached page motion and the presentation-only frame it shows. The
+    /// frame is empty where this presenter does not run page slides.
+    slide: CachedSlide<PremultipliedRgbaColor>,
+    cached_transitions_available: bool,
     vsync_supported: bool,
+    last_copy: std::time::Duration,
 }
 
 // SAFETY: the raw fb pointer is only dereferenced from the render
@@ -139,7 +150,7 @@ pub struct Fb0Presenter {
 unsafe impl Send for Fb0Presenter {}
 
 impl Fb0Presenter {
-    pub fn open() -> Result<Self, slint::PlatformError> {
+    pub fn open(allow_cached_transitions: bool) -> Result<Self, slint::PlatformError> {
         let file = OpenOptions::new()
             .read(true)
             .write(true)
@@ -175,8 +186,13 @@ impl Fb0Presenter {
             height,
             line_length = fix.line_length,
             red_offset = var.red.offset,
+            cached_transitions = allow_cached_transitions,
             "fb0 presenter ready"
         );
+        let pixels = (width as usize) * (height as usize);
+        if allow_cached_transitions {
+            super::transition::set_available(true);
+        }
         Ok(Self {
             file,
             mapping,
@@ -184,16 +200,28 @@ impl Fb0Presenter {
             width,
             height,
             red_offset: var.red.offset,
-            buffer: vec![PremultipliedRgbaColor::default(); (width as usize) * (height as usize)],
+            buffer: vec![PremultipliedRgbaColor::default(); pixels],
+            slide: CachedSlide::new(
+                if allow_cached_transitions { pixels } else { 0 },
+                BACKGROUND_RGBA,
+            ),
+            cached_transitions_available: allow_cached_transitions,
             vsync_supported: true,
+            last_copy: std::time::Duration::ZERO,
         })
     }
 
     /// Convert one dirty span from premultiplied RGBA to the fb's
-    /// 32-bit layout and store it.
-    fn copy_row(&mut self, row: usize, x0: usize, w: usize) {
+    /// 32-bit layout and store it. The span comes from the cached slide's
+    /// frame while one is showing and from the render target otherwise.
+    fn copy_row(&mut self, slide_frame: bool, row: usize, x0: usize, w: usize) {
         let stride = self.width as usize;
-        let src = &self.buffer[row * stride + x0..row * stride + x0 + w];
+        let source = if slide_frame {
+            self.slide.frame()
+        } else {
+            &self.buffer
+        };
+        let src = &source[row * stride + x0..row * stride + x0 + w];
         let byte_off = row * self.line_length + x0 * 4;
         if byte_off + w * 4 > self.mapping.len() {
             return;
@@ -209,6 +237,31 @@ impl Fb0Presenter {
             };
             self.mapping
                 .write_word(byte_off + i * 4, u32::from_ne_bytes(out));
+        }
+    }
+}
+
+impl Fb0Presenter {
+    /// Copies a damage box, clamped to the screen, into the fb.
+    fn copy_damage(&mut self, slide_frame: bool, damage: Damage) {
+        if damage.is_empty() {
+            return;
+        }
+        let x0 = damage.x0.min(self.width) as usize;
+        let x1 = damage.x1.min(self.width) as usize;
+        let y0 = damage.y0.min(self.height) as usize;
+        let y1 = damage.y1.min(self.height) as usize;
+        for row in y0..y1 {
+            self.copy_row(slide_frame, row, x0, x1 - x0);
+        }
+    }
+
+    fn full_damage(&self) -> Damage {
+        Damage {
+            x0: 0,
+            y0: 0,
+            x1: self.width,
+            y1: self.height,
         }
     }
 }
@@ -237,20 +290,86 @@ impl Presenter for Fb0Presenter {
     /// wait for vblank, then copy the dirty rows into the fb.
     fn render_and_present(&mut self, renderer: &SoftwareRenderer) -> std::time::Duration {
         let stride = self.width as usize;
+        let height = self.height as usize;
         let render_start = std::time::Instant::now();
+        // An interrupted page slide may have left the fb on a partial page.
+        // Copy the complete canonical frame, even when Slint itself only
+        // dirtied a cursor or a small modal.
+        let cancelled = self.cached_transitions_available && super::transition::take_cancelled();
+        if cancelled {
+            self.slide.abandon();
+        }
+        // A request arrives before destination properties render. Preserve
+        // outgoing pixels first, then let Slint build its canonical endpoint.
+        if self.cached_transitions_available {
+            self.slide.begin(&self.buffer, stride, height);
+        }
         let region = renderer.render(self.buffer.as_mut_slice(), stride);
+        let slide_step = self.slide.compose(&self.buffer, stride, height);
         let render_time = render_start.elapsed();
         self.wait_vsync();
         let copy_start = std::time::Instant::now();
-        for (origin, size) in region.iter() {
-            let x0 = origin.x.max(0) as usize;
-            let y0 = origin.y.max(0) as usize;
-            let w = (size.width as usize).min(stride.saturating_sub(x0));
-            let h = (size.height as usize).min((self.height as usize).saturating_sub(y0));
-            for row in y0..y0 + h {
-                self.copy_row(row, x0, w);
+        if cancelled {
+            self.copy_damage(slide_step.is_some(), self.full_damage());
+        } else if let Some((damage, _)) = slide_step {
+            self.copy_damage(true, damage);
+        } else {
+            for (origin, size) in region.iter() {
+                let x0 = origin.x.max(0) as usize;
+                let y0 = origin.y.max(0) as usize;
+                let w = (size.width as usize).min(stride.saturating_sub(x0));
+                let h = (size.height as usize).min(height.saturating_sub(y0));
+                for row in y0..y0 + h {
+                    self.copy_row(false, row, x0, w);
+                }
             }
         }
-        render_time + copy_start.elapsed()
+        if matches!(slide_step, Some((_, true))) {
+            self.slide.finish();
+        }
+        self.last_copy = copy_start.elapsed();
+        render_time + self.last_copy
+    }
+
+    fn present_cached_transition(&mut self) -> Option<std::time::Duration> {
+        if !self.cached_transitions_available {
+            return None;
+        }
+        if super::transition::take_cancelled() {
+            self.slide.abandon();
+            self.wait_vsync();
+            let copy_start = std::time::Instant::now();
+            self.copy_damage(false, self.full_damage());
+            self.last_copy = copy_start.elapsed();
+            return Some(self.last_copy);
+        }
+        if !self.slide.is_active() {
+            return None;
+        }
+        let compose_start = std::time::Instant::now();
+        let (damage, finished) =
+            self.slide
+                .compose(&self.buffer, self.width as usize, self.height as usize)?;
+        let compose_time = compose_start.elapsed();
+        self.wait_vsync();
+        let copy_start = std::time::Instant::now();
+        self.copy_damage(true, damage);
+        if finished {
+            self.slide.finish();
+        }
+        self.last_copy = copy_start.elapsed();
+        Some(compose_time + self.last_copy)
+    }
+
+    fn last_copy(&self) -> std::time::Duration {
+        self.last_copy
+    }
+}
+
+impl Drop for Fb0Presenter {
+    fn drop(&mut self) {
+        if self.cached_transitions_available {
+            super::transition::set_available(false);
+        }
     }
 }

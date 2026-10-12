@@ -24,36 +24,22 @@ export global GlyphSource {
     // transparent color keeps the artwork's own colors (the two-tone
     // heart, real art).
     pure callback glyph(string, length, color) -> image;
+    // Exact-pixel contract: the side a square glyph is both rasterized and
+    // painted at. A glyph is rasterized at a whole pixel size, and the
+    // software renderer samples bitmaps nearest-neighbor, so a box that is
+    // not that size loses or repeats rows and columns of it. Where that
+    // renderer draws (`Motion.zoom-by-size`) the box is the raster's size.
+    public pure function side(length: length) -> length {
+        return Motion.zoom-by-size ? Math.round(length / 1px) * 1px : length;
+    }
 }
 
-// Header logo rungs (resources/images/logo/logo-<variant>-<w>.png):
-// `logo()` snaps the painted width up to the smallest rung that covers
-// it and picks the variant for the theme's surface, the way
-// Resources.logoUrl() does.
+// Rust filters the embedded master into a cached raster at the painted size.
+// This avoids nearest-neighbor downsampling of a larger rung on software.
 export global Brand {
-    out property <image> dark-96: @image-url("../../../resources/images/logo/logo-on-dark-96.png");
-    out property <image> dark-144: @image-url("../../../resources/images/logo/logo-on-dark-144.png");
-    out property <image> dark-192: @image-url("../../../resources/images/logo/logo-on-dark-192.png");
-    out property <image> dark-256: @image-url("../../../resources/images/logo/logo-on-dark-256.png");
-    out property <image> dark-384: @image-url("../../../resources/images/logo/logo-on-dark-384.png");
-    out property <image> dark-600: @image-url("../../../resources/images/logo/logo-on-dark-600.png");
-    out property <image> light-96: @image-url("../../../resources/images/logo/logo-on-light-96.png");
-    out property <image> light-144: @image-url("../../../resources/images/logo/logo-on-light-144.png");
-    out property <image> light-192: @image-url("../../../resources/images/logo/logo-on-light-192.png");
-    out property <image> light-256: @image-url("../../../resources/images/logo/logo-on-light-256.png");
-    out property <image> light-384: @image-url("../../../resources/images/logo/logo-on-light-384.png");
-    out property <image> light-600: @image-url("../../../resources/images/logo/logo-on-light-600.png");
+    pure callback logo(bool, length) -> image;
     // The master asset's own aspect ratio (width / height).
     out property <float> aspect: 600 / 135;
-
-    public pure function logo(light: bool, painted-width: length) -> image {
-        if (painted-width <= 96px) { return light ? self.light-96 : self.dark-96; }
-        if (painted-width <= 144px) { return light ? self.light-144 : self.dark-144; }
-        if (painted-width <= 192px) { return light ? self.light-192 : self.dark-192; }
-        if (painted-width <= 256px) { return light ? self.light-256 : self.dark-256; }
-        if (painted-width <= 384px) { return light ? self.light-384 : self.dark-384; }
-        return light ? self.light-600 : self.dark-600;
-    }
     // The screensaver's bouncing copy always uses the on-dark variant:
     // its backstop is solid black regardless of the preset.
     public pure function saver-logo(painted-width: length) -> image {
@@ -101,6 +87,9 @@ export global Status {
     in-out property <string> arg: "";
     in-out property <string> arg2: "";
     in-out property <bool> is-error: false;
+    // The line is reporting trouble with the Core link, which the
+    // router's own cue never displaces.
+    in-out property <bool> link-trouble: false;
     in-out property <bool> show-track: false;
     in-out property <bool> paused: false;
     in-out property <bool> total-known: true;
@@ -220,15 +209,18 @@ export component ProgressTrack inherits Rectangle {
 // fixed-width percentage and track hugging the header's right margin.
 // Plain text on the header background, no card. The label shrink-wraps
 // to its content and only elides once it would run past the logo.
-// `app-text` is the router's transient status line;
-// it shows only when the ladder is empty.
+// `app-text` is the router's transient line: what the user's own action
+// is waiting on, or its confirmation. It takes the slot from a background
+// task for as long as it has something to say, and yields only to trouble
+// with the Core link.
 export component StatusLine inherits Rectangle {
     in property <string> app-text: "";
 
     property <string> ladder-label: Status.label();
-    property <string> label: root.ladder-label != "" ? root.ladder-label : root.app-text;
-    property <bool> show-track: Status.show-track;
-    property <bool> percent-known: Status.percent >= 0;
+    property <bool> app-owns: root.app-text != "" && !Status.link-trouble;
+    property <string> label: root.app-owns || root.ladder-label == "" ? root.app-text : root.ladder-label;
+    property <bool> show-track: Status.show-track && !root.app-owns;
+    property <bool> percent-known: Status.percent >= 0 && !root.app-owns;
     property <length> cells-spacing: Sizing.pct-w(1);
     property <length> track-reserve: root.show-track ? track.width + root.cells-spacing : 0px;
     property <length> percent-slot: Math.ceil(percent-measure.preferred-width / 1px) * 1px;
@@ -277,7 +269,7 @@ export component StatusLine inherits Rectangle {
         width: root.label-width;
         overflow: elide;
         text: root.label;
-        color: Status.is-error ? Theme.error : Theme.text-primary;
+        color: Status.is-error && !root.app-owns ? Theme.error : Theme.text-primary;
         font-size: Sizing.font-small;
     }
 }
@@ -581,7 +573,7 @@ export component ModalShell inherits Rectangle {
 export component ScrollCue inherits Image {
     in property <string> glyph: "icons/ScrollDown";
     in property <bool> live: true;
-    width: Sizing.pct-h(3);
+    width: GlyphSource.side(Sizing.pct-h(3));
     height: self.width;
     source: GlyphSource.glyph(root.glyph, Math.max(1px, self.width),
         root.live ? Theme.text-primary : Theme.cue-spent);
@@ -673,17 +665,27 @@ export component PageIndicator inherits Rectangle {
     }
 }
 
-// Three-slot top strip shared by the browse screens: total-count badge
-// left, centered screen title, page position right. Each slot is capped
-// at a third of the width and elides. The side texts sit on the title's
-// own baseline, one type step smaller, so the title stays the visual
-// anchor.
+// Hub has no title strip, and CRT keeps its calibrated caption-row cue.
+// Neither case reserves extra height below a content card.
+export component FooterIndicator inherits PageIndicator {
+    in property <length> cue-y;
+    in property <length> right-margin;
+    x: Sizing.screen-width - root.right-margin - self.width;
+    y: root.cue-y;
+    chevron-size: Layout.grid-page-chevron-size;
+}
+
+// Centered title, the item count at the far left and the page position at
+// the right. Each side is bounded by its slot so it cannot overlap the title.
 export component TopStatusStrip inherits Rectangle {
     in property <string> title: "";
     in property <int> current-page: 0;
     in property <int> total-pages: 1;
     in property <bool> page-total-known: true;
     in property <string> total-text: "";
+    // The active browse filter's name, shown with a funnel in the left slot
+    // after the count (the CRT strip hides the filter).
+    in property <string> filter-text: "";
     in property <string> right-text-override: "";
     in property <bool> show-page-counter: true;
     // True mounts a PageIndicator (chevrons + "N/M") in the right slot
@@ -692,6 +694,8 @@ export component TopStatusStrip inherits Rectangle {
     in property <bool> item-position-mode: false;
     in property <int> current-item: 0;
     in property <int> total-items: 0;
+    in property <bool> percent-mode: false;
+    in property <float> fraction: 0;
     in property <bool> has-pages-above: false;
     in property <bool> has-pages-below: false;
     in property <length> page-indicator-chevron-size: Sizing.pct-h(4);
@@ -705,9 +709,23 @@ export component TopStatusStrip inherits Rectangle {
             ? @tr("Page {} / {}", root.current-page + 1, root.total-pages)
             : @tr("Page {}", root.current-page + 1));
     property <length> slot-width: root.width / 3;
+    property <length> side-slot-width: Math.max(0px, root.slot-width - root.slot-margin);
+    property <bool> plain-counter: !root.page-indicator-mode && root.show-page-counter
+        && (root.right-text-override != "" || !root.page-total-known || root.total-pages > 1);
+    property <length> counter-width: root.plain-counter
+        ? Math.min(page-measure.preferred-width, root.side-slot-width)
+        : (indicator.visible ? indicator.width : 0px);
+    // The left slot runs from the margin to the title: the item count
+    // first, at the far left, then the active filter after it.
+    property <length> left-room: Math.max(0px, (root.width - root.title-text-width) / 2 - root.slot-margin - Sizing.pct-w(1.5));
+    property <length> count-width: root.total-text == "" ? 0px
+        : (Sizing.crt ? root.side-slot-width : Math.min(total-measure.preferred-width, root.left-room));
+    property <length> filter-x: root.slot-margin + (root.total-text == "" ? 0px : root.count-width + Sizing.pct-w(1.5));
     property <length> title-measured: Math.ceil(title-measure.preferred-width / 1px) * 1px;
     property <length> title-text-width: Math.min(root.slot-width, root.title-measured);
-    property <length> title-y: (root.height - Sizing.font-hero) / 2;
+    // Center the full line box, not the em size: otherwise descenders can
+    // spill into the cached grid band and travel with a page transition.
+    property <length> title-y: (root.height - title-measure.preferred-height) / 2;
     // Side texts share the title's baseline: offset by the difference
     // of the two ascents, since Slint has no baseline alignment.
     property <length> side-y: root.title-y + Theme.ascent(Sizing.font-hero) - Theme.ascent(Sizing.font-section);
@@ -719,19 +737,58 @@ export component TopStatusStrip inherits Rectangle {
         font-size: Sizing.font-hero;
     }
 
+    total-measure := Text {
+        visible: false;
+        text: root.total-text;
+        font-size: Sizing.font-section;
+    }
+    page-measure := Text {
+        visible: false;
+        text: root.page-text;
+        font-size: Sizing.font-section;
+    }
+
     if root.total-text != "": Text {
         x: root.slot-margin;
         y: root.side-y;
-        width: root.slot-width - root.slot-margin;
+        width: root.count-width;
         overflow: elide;
         text: root.total-text;
         color: Theme.text-primary;
         font-size: Sizing.font-section;
     }
 
-    // Slint clips a Text to its height, so instead of a font-hero tall
-    // box with the line box overflowing it, the natural line box sits
-    // top-aligned at the same y.
+    property <length> filter-glyph-size: Sizing.font-section;
+    property <length> filter-glyph-gap: Sizing.pct-w(0.8);
+    property <bool> filter-shown: root.filter-text != "" && !Sizing.crt;
+
+    // The line box the filter text sits in, to center the funnel on it.
+    filter-measure := Text {
+        visible: false;
+        text: "A";
+        font-size: Sizing.font-section;
+    }
+
+    if root.filter-shown: Image {
+        x: root.filter-x;
+        y: root.side-y + (filter-measure.preferred-height - self.height) / 2;
+        width: root.filter-glyph-size;
+        height: root.filter-glyph-size;
+        source: GlyphSource.glyph("icons/Filter", self.height, Theme.text-primary);
+    }
+
+    if root.filter-shown: Text {
+        x: root.filter-x + root.filter-glyph-size + root.filter-glyph-gap;
+        y: root.side-y;
+        width: Math.max(0px, (parent.width - root.title-text-width) / 2 - root.filter-x
+            - root.filter-glyph-size - 2 * root.filter-glyph-gap);
+        overflow: elide;
+        text: root.filter-text;
+        color: Theme.text-primary;
+        font-size: Sizing.font-section;
+    }
+
+    // Keep the natural line box so descenders remain intact.
     Text {
         x: (parent.width - self.width) / 2;
         y: root.title-y;
@@ -743,11 +800,10 @@ export component TopStatusStrip inherits Rectangle {
         font-size: Sizing.font-hero;
     }
 
-    if !root.page-indicator-mode && root.show-page-counter
-        && (root.right-text-override != "" || !root.page-total-known || root.total-pages > 1): Text {
+    if root.plain-counter: Text {
         x: parent.width - root.slot-margin - self.width;
         y: root.side-y;
-        width: root.slot-width - root.slot-margin;
+        width: root.counter-width;
         horizontal-alignment: right;
         overflow: elide;
         text: root.page-text;
@@ -755,9 +811,12 @@ export component TopStatusStrip inherits Rectangle {
         font-size: Sizing.font-section;
     }
 
-    if root.page-indicator-mode && root.show-page-counter: PageIndicator {
+    indicator := PageIndicator {
         x: parent.width - root.slot-margin - self.width;
         y: root.title-y + Theme.ascent(Sizing.font-hero) - self.text-baseline-offset;
+        visible: root.page-indicator-mode && root.show-page-counter && self.has-navigation-range;
+        percent-mode: root.percent-mode;
+        fraction: root.fraction;
         chevron-size: root.page-indicator-chevron-size;
         current-page: root.current-page;
         total-pages: root.total-pages;
@@ -833,7 +892,7 @@ export component ActiveLabel inherits Rectangle {
 // split across rows.
 component HelpEntryView inherits HorizontalLayout {
     in property <HelpEntry> entry;
-    property <length> icon-size: Sizing.pct-h(4);
+    property <length> icon-size: GlyphSource.side(Sizing.pct-h(4));
 
     spacing: Sizing.pct-w(0.6);
     height: Math.max(root.icon-size, Sizing.font-body);
@@ -857,6 +916,11 @@ component HelpEntryView inherits HorizontalLayout {
 // the framebuffer edge, and the entries centered in one row, or two rows
 // at 240p when one would overflow. Entries are `HelpEntry` values; the
 // App decides the vocabulary per screen and modal.
+//
+// The bar is one row tall until the entries wrap: Rust reads
+// `wrap-entries` and re-solves `Sizing.help-bar-height` for two rows. The
+// wrap decision is the entries' width against the safe width and nothing
+// else, so the height it changes can never flip it back.
 export component HelpBar inherits Rectangle {
     in property <[HelpEntry]> entries: [];
     in property <length> bleed: 0px;
@@ -961,6 +1025,76 @@ export component SectionHeader inherits Rectangle {
     }
 }
 
+// The worded cue for a surface that is waiting and has nothing else to
+// show: a screen body, a modal body, the boot curtain. The hourglass and a
+// line naming what is loading, centered in this element. It follows the
+// shared timing (`Motion.cue-delay-ms`, `Motion.cue-hold-ms`) unless
+// `immediate`, which is for a wait that is the whole screen from its first
+// frame. A surface with content to keep puts its cue in the header line
+// instead (`crate::cue`).
+export component WaitCue inherits Rectangle {
+    in property <bool> waiting: false;
+    in property <string> text: @tr("Loading…");
+    in property <bool> immediate: false;
+    // False for a line that reports a problem rather than a wait.
+    in property <bool> icon: true;
+    in property <length> glyph: Sizing.font-size(3);
+    in property <color> ink: Theme.text-primary;
+    // On screen now, which outlasts `waiting` by up to the hold.
+    out property <bool> shown: root.immediate ? root.waiting : root.held-shown;
+
+    property <bool> held-shown: false;
+    property <bool> hold: false;
+    property <length> spacing: Sizing.pct-w(0.6);
+    // With no text the hourglass stands alone, over a sentence of the
+    // caller's own.
+    property <length> icon-w: root.icon ? root.glyph + (root.text == "" ? 0px : root.spacing) : 0px;
+    property <length> label-w: Math.min(Math.ceil(label.preferred-width / 1px) * 1px,
+        Math.max(0px, root.width - root.icon-w));
+    property <length> content-w: root.icon-w + root.label-w;
+
+    changed waiting => {
+        if (!self.waiting && !self.hold) { self.held-shown = false; }
+    }
+    Timer {
+        interval: Motion.cue-delay-ms;
+        running: !root.immediate && root.waiting && !root.held-shown;
+        triggered => {
+            root.held-shown = true;
+            root.hold = true;
+        }
+    }
+    Timer {
+        interval: Motion.cue-hold-ms;
+        running: root.hold;
+        triggered => {
+            root.hold = false;
+            if (!root.waiting) { root.held-shown = false; }
+        }
+    }
+
+    Image {
+        x: (parent.width - root.content-w) / 2;
+        y: (parent.height - root.glyph) / 2;
+        width: root.glyph;
+        height: root.glyph;
+        visible: root.shown && root.icon;
+        source: GlyphSource.glyph("icons/Loading", root.glyph, root.ink);
+    }
+    label := Text {
+        x: (parent.width - root.content-w) / 2 + root.icon-w;
+        y: (parent.height - root.glyph) / 2;
+        width: root.label-w;
+        height: root.glyph;
+        visible: root.shown;
+        vertical-alignment: center;
+        overflow: elide;
+        text: root.text;
+        color: root.ink;
+        font-size: root.glyph;
+    }
+}
+
 // In-screen state cue: the empty or failed message centered over the
 // content area, with an optional detail line.
 // Ready paints nothing. Loading waits before painting and holds briefly.
@@ -971,34 +1105,12 @@ export component StateCue inherits Rectangle {
     in property <string> empty-detail: "";
     in property <string> error-detail: @tr("Check Zaparoo Core and try again.");
     in property <string> loading-text: @tr("Loading…");
-    in property <duration> loading-delay: 300ms;
-    in property <duration> minimum-visible: 200ms;
     // Vertical center of the loading cue, so a content rect that starts
     // below the header can still center the cue on the screen.
     in property <length> cue-center-y: root.height / 2;
 
     property <bool> loading: root.state == ContentState.loading;
-    property <bool> loading-shown: false;
-    property <bool> hold: false;
-    changed loading => {
-        if (!self.loading && !self.hold) { self.loading-shown = false; }
-    }
-    Timer {
-        interval: root.loading-delay;
-        running: root.loading && !root.loading-shown;
-        triggered => {
-            root.loading-shown = true;
-            root.hold = true;
-        }
-    }
-    Timer {
-        interval: root.minimum-visible;
-        running: root.hold;
-        triggered => {
-            root.hold = false;
-            if (!root.loading) { root.loading-shown = false; }
-        }
-    }
+    property <bool> loading-shown: wait.shown;
     out property <bool> loading-visible: root.loading-shown;
     property <ContentState> message-state: root.loading-shown || root.loading ? ContentState.ready : root.state;
     visible: root.loading-shown || root.message-state != ContentState.ready;
@@ -1011,30 +1123,12 @@ export component StateCue inherits Rectangle {
 
     // Loading cue: the glyph and the text side by side, centered on
     // `cue-center-y`.
-    if root.loading-shown: Rectangle {
-        property <length> glyph: Sizing.font-size(3);
-        property <length> spacing: Sizing.pct-w(0.6);
-        property <length> w: self.glyph + self.spacing + Math.ceil(loading-label.preferred-width / 1px) * 1px;
-        x: (parent.width - self.w) / 2;
-        y: root.cue-center-y - self.glyph / 2;
-        width: self.w;
+    wait := WaitCue {
+        x: 0;
+        y: root.cue-center-y - self.height / 2;
         height: self.glyph;
-        Image {
-            x: 0;
-            y: 0;
-            width: parent.glyph;
-            height: parent.glyph;
-            source: GlyphSource.glyph("icons/Loading", parent.glyph, Theme.text-primary);
-        }
-        loading-label := Text {
-            x: parent.glyph + parent.spacing;
-            y: 0;
-            height: parent.glyph;
-            vertical-alignment: center;
-            text: root.loading-text;
-            color: Theme.text-primary;
-            font-size: parent.glyph;
-        }
+        waiting: root.loading;
+        text: root.loading-text;
     }
 
     headline-text := Text {

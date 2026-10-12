@@ -12,6 +12,9 @@ pub struct GameInfoModel {
     ticket: u64,
     images: Vec<MediaKey>,
     selected: usize,
+    /// The panel's painted art box as it last reported it; kept across
+    /// opens so the next one asks for fitted art straight away.
+    fit: zaparoo_app::covers::Fit,
 }
 
 impl GameInfoModel {
@@ -31,15 +34,46 @@ impl GameInfoModel {
     }
 }
 
+/// The panel's art box: covers are resized to it before they are shown.
+pub fn bind(ctx: &std::sync::Arc<Ctx>, app: &App) {
+    let ctx = ctx.clone();
+    let weak = app.as_weak();
+    app.global::<GameInfoView>()
+        .on_art_box(move |width, height| {
+            // A turn later: the view reports its box while it is being
+            // laid out, which can be inside a driver's own call.
+            let ctx = ctx.clone();
+            let weak = weak.clone();
+            slint::Timer::single_shot(std::time::Duration::ZERO, move || {
+                let Some(app) = weak.upgrade() else { return };
+                let fit = zaparoo_app::covers::Fit::new(width, height).crisp();
+                {
+                    let mut shared = lock(&ctx.shared);
+                    let model = &mut shared.game_info;
+                    if model.fit == fit {
+                        return;
+                    }
+                    model.fit = fit;
+                    for key in &mut model.images {
+                        key.fit = fit;
+                    }
+                }
+                if app.global::<GameInfoView>().get_modal_open() {
+                    show_image(&ctx, &app);
+                }
+            });
+        });
+}
+
 pub fn open(ctx: &Ctx, app: &App, entry: &GameRow) {
-    let (ticket, system) = {
+    let (ticket, fit, system) = {
         let mut shared = lock(&ctx.shared);
         let system = if entry.system_id.is_empty() {
             shared.games.system_id.clone()
         } else {
             entry.system_id.clone()
         };
-        (shared.game_info.reset(), system)
+        (shared.game_info.reset(), shared.game_info.fit, system)
     };
     let view = app.global::<GameInfoView>();
     view.set_modal_name(entry.name.trim().into());
@@ -64,10 +98,14 @@ pub fn open(ctx: &Ctx, app: &App, entry: &GameRow) {
     let params =
         zaparoo_core::media_types::MediaMetaParams::for_media(system.clone(), entry.path.clone());
     let key = MediaKey {
-        media_id: entry.media_id,
+        // A folder's art is asked for by path, as the list asks for it.
+        media_id: entry
+            .media_id
+            .filter(|_| entry.entry_type != zaparoo_app::media_list::EntryType::Directory),
         system,
         path: entry.path.clone(),
         max_size: crate::sizing::detail_cover_source_size(crate::router::output_scene(app)),
+        fit,
         image_type: None,
     };
     let ctx = ctx.clone();
@@ -96,13 +134,19 @@ pub fn open(ctx: &Ctx, app: &App, entry: &GameRow) {
                         })
                         .collect::<Vec<_>>();
                     view.set_rows(ModelRc::new(VecModel::from(rows)));
-                    lock(&ctx.shared).game_info.images = crate::game_info_data::image_types(&meta)
-                        .into_iter()
-                        .map(|kind| MediaKey {
-                            image_type: Some(kind),
-                            ..key.clone()
-                        })
-                        .collect();
+                    {
+                        let mut shared = lock(&ctx.shared);
+                        // The box may have been reported since the panel opened.
+                        let fit = shared.game_info.fit;
+                        shared.game_info.images = crate::game_info_data::image_types(&meta)
+                            .into_iter()
+                            .map(|kind| MediaKey {
+                                image_type: Some(kind),
+                                fit,
+                                ..key.clone()
+                            })
+                            .collect();
+                    }
                     show_image(&ctx, &app);
                 }
                 Err(error) => {
@@ -140,12 +184,27 @@ fn show_image(ctx: &Ctx, app: &App) {
     view.set_image_index(i32::try_from(index).unwrap_or(0));
     view.set_modal_has_cover(false);
     view.set_modal_cover(slint::Image::default());
+    // An image Core already said it does not have is never fetched again,
+    // so nothing would arrive to end the wait.
+    view.set_modal_cover_absent(key.as_ref().is_some_and(|key| ctx.media.is_negative(key)));
     if let Some(key) = key {
         if let Some(decoded) = ctx.media.get(&key) {
             cover_landed(ctx, app, &key, &decoded);
         } else {
             ctx.media.enqueue(key);
         }
+    }
+}
+
+/// Core answered that it has no image for `key`: stop waiting for it.
+pub fn cover_absent(ctx: &Ctx, app: &App, key: &MediaKey) {
+    let matches = {
+        let shared = lock(&ctx.shared);
+        shared.game_info.images.get(shared.game_info.selected) == Some(key)
+    };
+    let view = app.global::<GameInfoView>();
+    if view.get_modal_open() && matches {
+        view.set_modal_cover_absent(true);
     }
 }
 
@@ -194,6 +253,7 @@ mod tests {
                 system: "SNES".into(),
                 path: "same.sfc".into(),
                 max_size: 256,
+                fit: zaparoo_app::covers::Fit::SOURCE,
                 image_type: Some(kind.into()),
             })
             .collect();

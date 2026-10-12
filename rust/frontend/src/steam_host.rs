@@ -29,11 +29,11 @@
 // there.
 
 /// Nothing to host on `MiSTer`: its wrapper owns launching outright.
-#[cfg(feature = "mister")]
+#[cfg(not(feature = "desktop"))]
 pub fn start(_endpoint: &str) {}
 
 /// No hosted game can be running, so nothing is ever held open.
-#[cfg(feature = "mister")]
+#[cfg(not(feature = "desktop"))]
 pub fn hosting() -> bool {
     false
 }

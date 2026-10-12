@@ -16,6 +16,10 @@ impl Endpoint for LaunchersEndpoint {
     type Output = LaunchersResult;
     const NAME: &'static str = "Launchers";
 
+    fn cache_bytes(output: &Self::Output) -> Option<usize> {
+        Some(super::retained::bytes(output))
+    }
+
     fn fetch(
         client: Arc<Client>,
         _args: Self::Args,

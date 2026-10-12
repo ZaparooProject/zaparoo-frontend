@@ -69,9 +69,12 @@ pub fn dispatch(text: &str, notifier: &Notifier) -> String {
         "media.search" => Some(Ok(fixtures::media_search_response(&req.params))),
         "media.browse" => Some(Ok(fixtures::media_browse_response(&req.params))),
         "media.browse.index" => Some(Ok(fixtures::media_browse_index_response(&req.params))),
+        "media.lookup" => Some(Ok(fixtures::media_lookup_response(&req.params))),
         "media.meta" => Some(Ok(fixtures::media_meta_response(&req.params))),
         "media.meta.update" => Some(fixtures::media_meta_update_response(&req.params)),
         "media.image" => Some(fixtures::media_image_response(&req.params)),
+        "media.tags" => Some(Ok(fixtures::media_tags_response(&req.params))),
+        "decks" => Some(Ok(fixtures::decks_response())),
         "media.tags.update" => Some(media_tags_update(&req.params)),
         "media.history" => Some(Ok(fixtures::media_history_response(&req.params))),
         "media.history.latest" => Some(Ok(fixtures::media_history_latest_response())),
@@ -79,14 +82,7 @@ pub fn dispatch(text: &str, notifier: &Notifier) -> String {
         "media.scrape.status" => Some(Ok(media_state::scrape_status_response())),
         "media.generate" => Some(Ok(media_state::start_index(notifier))),
         "media.generate.cancel" => Some(media_state::cancel_index(notifier)),
-        "media.scrape" => {
-            let force = req
-                .params
-                .get("force")
-                .and_then(Value::as_bool)
-                .unwrap_or(false);
-            Some(Ok(media_state::start_scrape(force, notifier)))
-        }
+        "media.scrape" => Some(media_scrape(&req.params, notifier)),
         "media.scrape.cancel" => Some(media_state::cancel_scrape(notifier)),
         "run" => {
             let zap_script = req.params.get("text").and_then(Value::as_str).unwrap_or("");
@@ -134,7 +130,9 @@ pub fn dispatch(text: &str, notifier: &Notifier) -> String {
 
 /// `media.tags.update`: validates the exclusive media ref the way Core does
 /// (a `mediaId` or a `(system, path)` pair, never both) and acknowledges the
-/// change. The mock's catalog is static, so no tag state is kept.
+/// change. The mock's catalog is static, so the one tag it keeps is
+/// `user:hidden` on a path, a file's or a folder's, which browse and
+/// search then honor.
 fn media_tags_update(params: &Value) -> Result<Value, String> {
     let has_id = params.get("mediaId").is_some();
     let system = params.get("system").and_then(Value::as_str).unwrap_or("");
@@ -143,7 +141,57 @@ fn media_tags_update(params: &Value) -> Result<Value, String> {
         return Err("invalid params: mediaId cannot be mixed with system/path".into());
     }
     info!(%params, "media.tags.update");
-    Ok(serde_json::json!({ "tags": [] }))
+    let names = |key: &str| {
+        params
+            .get(key)
+            .and_then(Value::as_array)
+            .is_some_and(|tags| tags.iter().any(|tag| tag == "user:hidden"))
+    };
+    let mut tags = Vec::new();
+    if !path.is_empty() && (names("add") || names("remove")) {
+        // Adds win over removes, as in Core.
+        if fixtures::set_hidden(path, names("add")) {
+            tags.push(serde_json::json!({ "type": "user", "tag": "hidden" }));
+        }
+    }
+    Ok(serde_json::json!({ "tags": tags }))
+}
+
+/// `media.scrape` the way Core validates its scope: one of `mediaId`,
+/// `file` or `subtree`, and never beside `systems`, an empty list included.
+/// The mock has one canned run, so a valid scope starts the same one.
+fn media_scrape(params: &Value, notifier: &Notifier) -> Result<Value, String> {
+    if let Some(scope) = params.get("scope").filter(|scope| !scope.is_null()) {
+        // Exactly one known form: an unknown key is refused, not skipped.
+        let form = scope
+            .as_object()
+            .filter(|fields| fields.len() == 1)
+            .and_then(|fields| fields.iter().next());
+        let valid = match form {
+            Some((key, id)) if key == "mediaId" => id.as_i64().is_some_and(|id| id > 0),
+            Some((key, target)) if key == "file" || key == "subtree" => {
+                let named = |field: &str| {
+                    target
+                        .get(field)
+                        .and_then(Value::as_str)
+                        .is_some_and(|text| !text.is_empty())
+                };
+                named("system") && named("path")
+            }
+            _ => false,
+        };
+        if !valid || params.get("systems").is_some() {
+            return Err(
+                "use one scope: mediaId, file, or subtree; cannot mix scope and systems".into(),
+            );
+        }
+    }
+    info!(%params, "media.scrape");
+    let force = params
+        .get("force")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    Ok(media_state::start_scrape(force, notifier))
 }
 
 fn encode(response: &RpcResponse) -> String {
@@ -243,6 +291,71 @@ mod tests {
             .iter()
             .all(|g| g["system"]["id"].as_str() == Some("NES")));
         assert!(results.iter().all(|g| g["hasCover"].is_boolean()));
+    }
+
+    #[test]
+    fn media_search_matches_every_query_word_against_the_name_slug() {
+        let all = parse(&dispatch(
+            r#"{"jsonrpc":"2.0","id":"1","method":"media.search","params":{"maxResults":1000}}"#,
+        ));
+        let all = all["result"]["results"].as_array().expect("array").clone();
+        let name = all[0]["name"].as_str().expect("name").to_string();
+        let word = name.split_whitespace().next().expect("word").to_uppercase();
+        let req = serde_json::json!({
+            "jsonrpc": "2.0", "id": "2", "method": "media.search",
+            "params": { "query": format!(" {word}! "), "maxResults": 1000 },
+        });
+        let resp = parse(&dispatch(&req.to_string()));
+        let results = resp["result"]["results"].as_array().expect("array");
+        assert!(!results.is_empty() && results.len() < all.len());
+        assert!(results.iter().any(|g| g["name"] == name.as_str()));
+
+        let none = serde_json::json!({
+            "jsonrpc": "2.0", "id": "3", "method": "media.search",
+            "params": { "query": format!("{word} zzzzqqqq"), "maxResults": 1000 },
+        });
+        let resp = parse(&dispatch(&none.to_string()));
+        assert!(resp["result"]["results"]
+            .as_array()
+            .expect("array")
+            .is_empty());
+    }
+
+    #[test]
+    fn media_search_limits_results_to_a_path_prefix() {
+        let req = r#"{"jsonrpc":"2.0","id":"1","method":"media.search","params":{"pathPrefix":"/mock/games/NES","maxResults":1000}}"#;
+        let resp = parse(&dispatch(req));
+        let results = resp["result"]["results"].as_array().expect("array");
+        assert!(!results.is_empty());
+        assert!(results.iter().all(|g| g["path"]
+            .as_str()
+            .is_some_and(|p| p.starts_with("/mock/games/NES/"))));
+        // A sibling that merely shares the prefix's letters is not under it.
+        let req = r#"{"jsonrpc":"2.0","id":"1","method":"media.search","params":{"pathPrefix":"/mock/games/NE","maxResults":1000}}"#;
+        let resp = parse(&dispatch(req));
+        assert!(resp["result"]["results"]
+            .as_array()
+            .expect("array")
+            .is_empty());
+    }
+
+    #[test]
+    fn decks_name_the_deck_whose_members_are_tagged() {
+        let decks = parse(&dispatch(
+            r#"{"jsonrpc":"2.0","id":"1","method":"decks","params":{}}"#,
+        ));
+        let deck = &decks["result"]["decks"][0];
+        let id = deck["deckId"].as_str().expect("deck id");
+        assert_eq!(deck["name"], "Couch co-op");
+        let tags = parse(&dispatch(
+            r#"{"jsonrpc":"2.0","id":"2","method":"media.tags","params":{}}"#,
+        ));
+        let wanted = format!("deck:{id}");
+        assert!(tags["result"]["tags"]
+            .as_array()
+            .expect("array")
+            .iter()
+            .any(|t| t["type"] == "user" && t["tag"] == wanted.as_str()));
     }
 
     #[test]
@@ -403,16 +516,122 @@ mod tests {
         let resp = parse(&dispatch(req));
         assert_eq!(resp["result"]["path"], Value::from(""));
         let entries = resp["result"]["entries"].as_array().expect("array");
-        // Virtual root first, then the two mock directories, then media --
+        // Virtual root first, then the mock directories, then media --
         // mirrors `browseSystemRootContents`'s ordering in zaparoo-core.
         assert_eq!(entries[0]["type"], Value::from("root"));
-        assert_eq!(entries[1]["type"], Value::from("directory"));
-        assert_eq!(entries[2]["type"], Value::from("directory"));
-        assert!(entries[3..].iter().all(|entry| entry["type"] == "media"));
+        assert!(entries[1..4]
+            .iter()
+            .all(|entry| entry["type"] == "directory"));
+        assert!(entries[4..].iter().all(|entry| entry["type"] == "media"));
         // `totalDirs` counts the merged directories only, excluding the
         // leading virtual root.
-        assert_eq!(resp["result"]["totalDirs"], Value::from(2));
+        assert_eq!(resp["result"]["totalDirs"], Value::from(3));
         assert!(resp["result"]["totalFiles"].as_u64().unwrap_or(0) > 0);
+    }
+
+    #[test]
+    fn a_multi_disc_folder_launches_one_disc_and_browses_to_them_all() {
+        let root = parse(&dispatch(
+            r#"{"jsonrpc":"2.0","id":"1","method":"media.browse","params":{"systems":["SNES"],"rootView":"contents"}}"#,
+        ));
+        let entries = root["result"]["entries"].as_array().expect("array");
+        let folder = entries
+            .iter()
+            .find(|entry| entry["multiDisc"] == true)
+            .expect("multi-disc folder");
+        assert_eq!(folder["type"], "directory");
+        assert_eq!(folder["tags"][0]["type"], "disc");
+        assert!(folder["disambiguatingTags"].is_null());
+        assert!(folder["zapScript"]
+            .as_str()
+            .is_some_and(|s| s.contains("disc:1")));
+
+        let path = folder["path"].as_str().expect("path");
+        let discs = parse(&dispatch(&format!(
+            r#"{{"jsonrpc":"2.0","id":"2","method":"media.browse","params":{{"systems":["SNES"],"path":"{path}"}}}}"#
+        )));
+        let discs = discs["result"]["entries"].as_array().expect("array");
+        assert_eq!(discs.len(), 2);
+        for (index, disc) in discs.iter().enumerate() {
+            assert_eq!(disc["type"], "media");
+            assert_eq!(disc["tags"][0]["tag"], (index + 1).to_string());
+        }
+    }
+
+    #[test]
+    fn a_hidden_folder_leaves_the_listing_until_hidden_entries_are_asked_for() {
+        // GBA is this test's own system: the hidden set is process state.
+        let browse = |extra: &str| {
+            parse(&dispatch(&format!(
+                r#"{{"jsonrpc":"2.0","id":"1","method":"media.browse","params":{{"systems":["GBA"],"rootView":"contents"{extra}}}}}"#
+            )))
+        };
+        let update = |verb: &str| {
+            parse(&dispatch(&format!(
+                r#"{{"jsonrpc":"2.0","id":"1","method":"media.tags.update","params":{{"system":"GBA","path":"/mock/games/GBA/Extras","{verb}":["user:hidden"]}}}}"#
+            )))
+        };
+        let extras = |resp: &Value| {
+            resp["result"]["entries"]
+                .as_array()
+                .expect("array")
+                .iter()
+                .find(|entry| entry["name"] == "Extras")
+                .cloned()
+        };
+
+        assert_eq!(update("add")["result"]["tags"][0]["tag"], "hidden");
+        let listed = browse("");
+        assert!(extras(&listed).is_none());
+        assert_eq!(listed["result"]["totalDirs"], Value::from(2));
+        let shown = extras(&browse(r#","includeHidden":true"#)).expect("hidden folder");
+        assert_eq!(shown["tags"][0]["tag"], "hidden");
+
+        // Its own path still lists what is inside it, untagged.
+        let inside = parse(&dispatch(
+            r#"{"jsonrpc":"2.0","id":"1","method":"media.browse","params":{"systems":["GBA"],"path":"/mock/games/GBA/Extras"}}"#,
+        ));
+        let games = inside["result"]["entries"].as_array().expect("array");
+        assert!(!games.is_empty());
+        assert!(games.iter().all(|game| !game["tags"]
+            .as_array()
+            .is_some_and(|tags| tags.iter().any(|tag| tag["tag"] == "hidden"))));
+
+        assert!(update("remove")["result"]["tags"]
+            .as_array()
+            .is_some_and(Vec::is_empty));
+        assert!(extras(&browse("")).is_some());
+    }
+
+    #[test]
+    fn a_game_hidden_from_a_listing_leaves_the_search() {
+        // NDS is this test's own system: the hidden set is process state.
+        let listed = parse(&dispatch(
+            r#"{"jsonrpc":"2.0","id":"1","method":"media.browse","params":{"systems":["NDS"],"rootView":"contents"}}"#,
+        ));
+        let game = listed["result"]["entries"]
+            .as_array()
+            .expect("array")
+            .iter()
+            .find(|entry| entry["type"] == "media")
+            .expect("a game")
+            .clone();
+        let path = game["path"].as_str().expect("path");
+        let found = |extra: &str| {
+            parse(&dispatch(&format!(
+                r#"{{"jsonrpc":"2.0","id":"1","method":"media.search","params":{{"systems":["NDS"],"maxResults":1000{extra}}}}}"#
+            )))["result"]["results"]
+                .as_array()
+                .expect("array")
+                .iter()
+                .any(|result| result["path"] == path)
+        };
+        assert!(found(""), "search and browse name the game by one path");
+        dispatch(&format!(
+            r#"{{"jsonrpc":"2.0","id":"1","method":"media.tags.update","params":{{"system":"NDS","path":"{path}","add":["user:hidden"]}}}}"#
+        ));
+        assert!(!found(""));
+        assert!(found(r#","includeHidden":true"#));
     }
 
     #[test]
@@ -443,6 +662,117 @@ mod tests {
             indexed,
             browse["result"]["totalFiles"].as_u64().unwrap_or(0)
         );
+    }
+
+    #[test]
+    fn media_tags_lists_counted_tags_scoped_to_systems() {
+        let all = parse(&dispatch(
+            r#"{"jsonrpc":"2.0","id":"1","method":"media.tags"}"#,
+        ));
+        let all_tags = all["result"]["tags"].as_array().expect("array");
+        for tag_type in ["genre", "year", "players", "developer", "user"] {
+            assert!(
+                all_tags.iter().any(|t| t["type"] == tag_type),
+                "missing {tag_type}"
+            );
+        }
+        assert!(all_tags
+            .iter()
+            .all(|t| t["count"].as_u64().unwrap_or(0) > 0));
+        let nes = parse(&dispatch(
+            r#"{"jsonrpc":"2.0","id":"2","method":"media.tags","params":{"systems":["NES"]}}"#,
+        ));
+        let nes_total: u64 = nes["result"]["tags"]
+            .as_array()
+            .expect("array")
+            .iter()
+            .filter(|t| t["type"] == "genre")
+            .filter_map(|t| t["count"].as_u64())
+            .sum();
+        // One genre per game, so the genre counts add up to the NES games.
+        assert_eq!(nes_total, 5);
+    }
+
+    #[test]
+    fn media_browse_filters_on_genre_and_year_together() {
+        let genre = parse(&dispatch(
+            r#"{"jsonrpc":"2.0","id":"1","method":"media.browse","params":{"path":"/games","maxResults":1000,"tags":["genre:rpg"]}}"#,
+        ));
+        let rpg = genre["result"]["totalFiles"].as_u64().expect("count");
+        assert!(rpg > 0);
+        let both = parse(&dispatch(
+            r#"{"jsonrpc":"2.0","id":"2","method":"media.browse","params":{"path":"/games","maxResults":1000,"tags":["genre:rpg","year:1985"]}}"#,
+        ));
+        assert!(both["result"]["totalFiles"].as_u64().expect("count") < rpg);
+    }
+
+    #[test]
+    fn portable_identifiers_ride_on_every_media_shape() {
+        let search = parse(&dispatch(
+            r#"{"jsonrpc":"2.0","id":"1","method":"media.search","params":{"systems":["NES"],"maxResults":1}}"#,
+        ));
+        let row = &search["result"]["results"][0];
+        let relative = row["relativePath"].as_str().expect("relativePath");
+        assert!(relative.starts_with("NES/"), "{relative}");
+
+        let history = parse(&dispatch(
+            r#"{"jsonrpc":"2.0","id":"2","method":"media.history","params":{"limit":1}}"#,
+        ));
+        let entry = &history["result"]["entries"][0];
+        assert!(entry["relativePath"].is_string());
+        assert!(entry["zapScript"].is_string());
+
+        let latest = parse(&dispatch(
+            r#"{"jsonrpc":"2.0","id":"3","method":"media.history.latest"}"#,
+        ));
+        assert!(latest["result"]["entry"]["relativePath"].is_string());
+
+        // media.meta answers a relative reference with the canonical path.
+        let meta = parse(&dispatch(
+            r#"{"jsonrpc":"2.0","id":"4","method":"media.meta","params":{"system":"NES","path":"NES/smb.nes"}}"#,
+        ));
+        assert_eq!(meta["result"]["media"]["path"], "/mock/games/NES/smb.nes");
+        assert_eq!(meta["result"]["media"]["relativePath"], "NES/smb.nes");
+        assert_eq!(meta["result"]["media"]["zapScript"], "@NES/smb.nes");
+    }
+
+    #[test]
+    fn media_browse_resolves_a_relative_folder_and_reports_its_own_relative_path() {
+        let resp = parse(&dispatch(
+            r#"{"jsonrpc":"2.0","id":"1","method":"media.browse","params":{"path":"NES/Favorites","systems":["NES"]}}"#,
+        ));
+        assert_eq!(resp["result"]["path"], "/mock/games/NES/Favorites");
+        assert_eq!(resp["result"]["relativePath"], "NES/Favorites");
+
+        let roots = parse(&dispatch(
+            r#"{"jsonrpc":"2.0","id":"2","method":"media.browse","params":{"systems":["NES"]}}"#,
+        ));
+        assert_eq!(roots["result"]["entries"][0]["relativePath"], "NES");
+
+        let contents = parse(&dispatch(
+            r#"{"jsonrpc":"2.0","id":"3","method":"media.browse","params":{"systems":["NES"],"rootView":"contents"}}"#,
+        ));
+        let dirs: Vec<&Value> = contents["result"]["entries"]
+            .as_array()
+            .expect("entries")
+            .iter()
+            .filter(|entry| entry["type"] == "directory")
+            .collect();
+        assert_eq!(dirs[0]["relativePath"], "NES/Favorites");
+    }
+
+    #[test]
+    fn media_lookup_matches_a_name_within_its_system_or_answers_null() {
+        let found = parse(&dispatch(
+            r#"{"jsonrpc":"2.0","id":"1","method":"media.lookup","params":{"system":"NES","name":"super mario bros."}}"#,
+        ));
+        assert_eq!(found["result"]["match"]["path"], "/mock/games/NES/smb.nes");
+        assert_eq!(found["result"]["match"]["relativePath"], "NES/smb.nes");
+
+        let missing = parse(&dispatch(
+            r#"{"jsonrpc":"2.0","id":"2","method":"media.lookup","params":{"system":"SNES","name":"Super Mario Bros."}}"#,
+        ));
+        assert!(missing["result"]["match"].is_null());
     }
 
     #[test]
@@ -664,6 +994,42 @@ mod tests {
         let status = parse(&dispatch_with_notifier(status_req, &notifier));
         assert_eq!(status["result"]["scraping"], Value::Bool(true));
         assert!(status["result"]["currentSystem"].is_object());
+    }
+
+    #[tokio::test]
+    async fn media_scrape_takes_one_scope_form_and_never_beside_systems() {
+        let notifier = Notifier::noop();
+        let scoped = |params: &str| {
+            let req = format!(
+                r#"{{"jsonrpc":"2.0","id":"1","method":"media.scrape","params":{params}}}"#
+            );
+            parse(&dispatch_with_notifier(&req, &notifier))
+        };
+        let by_id = scoped(r#"{"scraperId":"mock","scope":{"mediaId":42}}"#);
+        assert!(by_id["error"].is_null());
+        let by_file =
+            scoped(r#"{"scraperId":"mock","scope":{"file":{"system":"SNES","path":"/g.sfc"}}}"#);
+        assert!(by_file["error"].is_null());
+
+        // Core refuses a scope beside systems, an empty list included.
+        let mixed = scoped(r#"{"scraperId":"mock","systems":[],"scope":{"mediaId":42}}"#);
+        assert_eq!(mixed["error"]["code"], -32000);
+        let two_forms = scoped(
+            r#"{"scraperId":"mock","scope":{"mediaId":42,"file":{"system":"SNES","path":"/g.sfc"}}}"#,
+        );
+        assert_eq!(two_forms["error"]["code"], -32000);
+        // A form has to carry its identity, and nothing rides beside it.
+        for malformed in [
+            r#"{"scraperId":"mock","scope":{}}"#,
+            r#"{"scraperId":"mock","scope":{"file":{}}}"#,
+            r#"{"scraperId":"mock","scope":{"file":{"system":"SNES","path":""}}}"#,
+            r#"{"scraperId":"mock","scope":{"mediaId":0}}"#,
+            r#"{"scraperId":"mock","scope":{"mediaId":"42"}}"#,
+            r#"{"scraperId":"mock","scope":{"mediaId":42,"unknown":true}}"#,
+            r#"{"scraperId":"mock","scope":{"unknown":true}}"#,
+        ] {
+            assert_eq!(scoped(malformed)["error"]["code"], -32000, "{malformed}");
+        }
     }
 
     #[tokio::test]

@@ -11,6 +11,7 @@
 
 use crate::games::GameRow;
 use crate::media_cache::MediaCache;
+use crate::navigation::EntryMode;
 use crate::sizing;
 use crate::{App, Sizing};
 use slint::{ComponentHandle, Model, ModelRc, SharedString, VecModel};
@@ -19,6 +20,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 use tokio::runtime::Handle;
 use zaparoo_app::action_error;
+use zaparoo_app::options_menu::Menu as OptionsMenu;
 use zaparoo_core::endpoints::run::RunMutation;
 use zaparoo_core::input_actions::actions;
 use zaparoo_core::media_types::{RunParams, SystemInfo};
@@ -63,10 +65,18 @@ pub struct Shared {
     pub setup: crate::media_setup::SetupModel,
     /// The log uploader's own panel state.
     pub log_upload: crate::log_upload::LogUploadModel,
+    /// The "Pair a device" panel: its phase, the PIN on screen and what
+    /// leaving still owes Core.
+    pub pairing: zaparoo_app::pairing::Session,
+    /// Online account and play history consent, as Core last reported them.
+    pub online: crate::online::Model,
+    /// The Online account link panel.
+    pub online_link: zaparoo_app::online_link::Session,
+    pub online_list: crate::online_list::State,
     /// Failed user actions waiting for the alert surface.
     pub errors: action_error::ErrorQueue,
-    /// The context menu's alternate-versions page.
-    pub alternates: crate::alternates::AlternatesModel,
+    /// The page the context menu is showing in place of its own rows.
+    pub context_page: crate::context_page::PageModel,
     /// The key path: duplicate guard, hold-repeat, rapid navigation.
     pub input: crate::input::InputModel,
     /// Core reports at least one connected reader. Refreshed lazily.
@@ -79,6 +89,9 @@ pub struct Shared {
     /// projected index on that surface.
     pub context_owner: ContextOwner,
     pub context_target: usize,
+    /// The open menu's rows and the pages they open, kept so Back from a
+    /// page returns to the same rows.
+    pub context_menu: zaparoo_app::options_menu::Menu,
     /// What the open `ListPickerModal` is for (View menu vs a settings
     /// picker field).
     pub list_context: ListContext,
@@ -86,40 +99,50 @@ pub struct Shared {
     /// dialog. CRT toggles/standards hand control back to Main; HDMI
     /// resolution changes self-exec after clean presenter shutdown.
     pub pending_restart: Option<PendingRestart>,
-    /// Session-scoped "Re-scrape existing" one-shot; deliberately not
-    /// persisted, and resets after the forced run starts.
-    pub rescrape_existing: bool,
-    /// Screensaver idle ticket: every input bumps it, so an armed
-    /// timer from an earlier idle stretch fires as a no-op.
-    pub saver_seq: u64,
     /// Core's launcher inventory + per-system defaults, for the
     /// "Change launcher" picker (`SystemLaunchers` model port).
     pub launchers: Vec<zaparoo_core::media_types::LauncherInfo>,
     pub system_defaults: Vec<zaparoo_core::media_types::SystemDefault>,
     /// Commercial-notice acknowledgement (durable, frontend.toml).
     pub notice_ack: bool,
+    /// `frontend.toml` exists but did not load: the path, for the startup
+    /// alert. Nothing is written to the file while this is set, because a
+    /// save would replace the user's file with the defaults in use.
+    pub config_fault: Option<String>,
+    /// The startup alert for `config_fault` has been raised this session.
+    pub config_fault_shown: bool,
     /// Core's reported version, once fetched; drives the min-version
     /// warning between the notice and the first-run gate.
     pub core_version: String,
     pub core_version_checked: bool,
     /// The version gate has resolved this session (shown or skipped).
     pub version_warning_shown: bool,
-    /// The first-run index modal has opened once this session.
+    /// Setup was offered or Core was already updating this session.
     pub first_run_shown: bool,
-    pub first_run: FirstRunPhase,
-    /// Core has confirmed the scan actually started; without this the
-    /// optimistic Running phase would read the pre-start indexing=false
-    /// snapshot as instant completion.
-    pub first_run_saw_indexing: bool,
-    pub first_run_cancelling: bool,
     pub card_write: crate::card_write::Model,
     pub launcher_save_seq: u64,
-    /// Jump-to-letter buckets for the open picker (cursor kept
-    /// Rust-side; the UI only shows label + count).
+    /// The "Saving…" caption's wait while a launcher save is unanswered.
+    pub launcher_save_wait: Option<crate::cue::LocalWait>,
+    /// The header line's app cue (`crate::cue`).
+    pub cue: crate::cue::Model,
+    /// The browse scope's letter buckets, for the jump-to-letter picker
+    /// and the fast-scroll rail (cursor kept Rust-side; the UI only shows
+    /// label + count).
     pub letter_buckets: Vec<zaparoo_core::media_types::BrowseIndexGroup>,
-    /// Ticket for the picker's facet fetch; bumped on open/close so a
-    /// stale index response cannot fill a reopened picker.
+    /// The buckets index the scope's directories, not its files: their
+    /// offsets already count from the first directory. Read only while
+    /// `letter_buckets` is filled.
+    pub letter_directories: bool,
+    /// The `(system, browse path)` the buckets belong to; None until the
+    /// current fetch lands.
+    pub letter_scope: Option<(String, String)>,
+    /// Ticket for the facet fetch; bumped per fetch so a stale index
+    /// response cannot fill a newer scope.
     pub letter_seq: u64,
+    /// The tag filter picker's list, for the system on screen or the search.
+    pub filter: crate::browse_filter::Model,
+    /// The Search screen: keyboard, focus and live matches.
+    pub search: crate::search::Model,
     /// Ticket for the per-game launcher read, so a picker only opens
     /// for the row the user is still on.
     pub game_launcher_seq: u64,
@@ -131,6 +154,9 @@ pub struct Shared {
     /// `media.history.latest` answers (or when history is empty).
     /// The Hub: persisted layout, entries, cursor and Move session.
     pub hub: crate::hub::HubModel,
+    /// Settings page and row for Back and in-process restoration, not
+    /// fresh entry. Memory only: a cold start opens Settings at its root.
+    pub settings_focus: Option<(crate::SettingsPage, usize)>,
 }
 
 /// Which surface an open context menu was invoked on. Favorites and
@@ -144,9 +170,7 @@ pub enum ContextOwner {
     Hub,
 }
 
-/// First-run index modal phase: idle, running, completed.
-pub use crate::FirstRunPhase;
-use crate::{DialogButton, DialogKind, DialogProgress, ErrorKind};
+use crate::{DialogButton, DialogKind, ErrorKind};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PendingRestart {
@@ -169,6 +193,14 @@ pub enum ListContext {
     /// Its "Group by" and "Sort" pages.
     FavoritesGrouping,
     FavoritesSort,
+    /// The Search results' West "View" menu.
+    SearchResultsPageMenu,
+    /// The Games "Filter" page: one row per category, and the values page
+    /// of the category being chosen. Both stay inside the View menu's panel.
+    FilterCategories,
+    FilterValues(zaparoo_app::browse_filter::Category),
+    /// The Search screen's system picker.
+    SearchSystem,
     /// A settings picker row; the payload is the field id.
     SettingsPicker(String),
     /// The "Change launcher" picker; the payload is the system id.
@@ -180,9 +212,14 @@ pub enum ListContext {
 
 #[derive(Debug, Clone)]
 pub struct Ctx {
+    pub folders: crate::folder_picker::Model,
+    pub launcher_scan: crate::launcher_scan::Model,
+    pub playtime_access: crate::playtime_access::Model,
+    pub open_url: crate::open_url::Model,
     pub store: Arc<Store>,
     pub handle: Handle,
     pub media: Arc<MediaCache>,
+    pub logos: Arc<crate::system_logos::Logos>,
     pub shared: Arc<Mutex<Shared>>,
     /// Live 12-hour clock flag shared with the clock task; the
     /// Settings toggle flips it without a restart.
@@ -198,6 +235,8 @@ pub struct Ctx {
     /// Immutable process mode; changing it requires Main to respawn us.
     pub crt_enabled: bool,
     pub is_mister: bool,
+    /// Posts the support bundle; `None` hides Upload log.
+    pub log_uploader: Option<crate::log_upload::LogUploader>,
     /// Physical framebuffer geometry, used to resize desktop previews
     /// and by the `MiSTer` renderer when orientation changes live.
     pub framebuffer_size: (u32, u32),
@@ -228,35 +267,44 @@ impl Shared {
             game_info: crate::game_info::GameInfoModel::default(),
             setup: crate::media_setup::SetupModel::new(),
             log_upload: crate::log_upload::LogUploadModel::new(),
+            pairing: zaparoo_app::pairing::Session::default(),
+            online: crate::online::Model::default(),
+            online_link: zaparoo_app::online_link::Session::default(),
+            online_list: crate::online_list::State::default(),
             errors: action_error::ErrorQueue::new(),
-            alternates: crate::alternates::AlternatesModel::default(),
+            context_page: crate::context_page::PageModel::default(),
             input: crate::input::InputModel::new(),
             has_readers: false,
             has_nfc: false,
             context_owner: ContextOwner::Games,
             context_target: 0,
+            context_menu: zaparoo_app::options_menu::Menu::default(),
             list_context: ListContext::ViewMenu,
             pending_restart: None,
-            rescrape_existing: false,
-            saver_seq: 0,
             launchers: Vec::new(),
             system_defaults: Vec::new(),
             notice_ack: false,
+            config_fault: None,
+            config_fault_shown: false,
             core_version: String::new(),
             core_version_checked: false,
             version_warning_shown: false,
             first_run_shown: false,
-            first_run: FirstRunPhase::Idle,
-            first_run_saw_indexing: false,
-            first_run_cancelling: false,
             card_write: crate::card_write::Model::default(),
             launcher_save_seq: 0,
+            launcher_save_wait: None,
+            cue: crate::cue::Model::default(),
             letter_buckets: Vec::new(),
+            letter_directories: false,
+            letter_scope: None,
             letter_seq: 0,
+            filter: crate::browse_filter::Model::default(),
+            search: crate::search::Model::default(),
             game_launcher_seq: 0,
             persist,
             restore_pending,
             hub: crate::hub::HubModel::new(hub_layout_path),
+            settings_focus: None,
         }
     }
 }
@@ -276,17 +324,17 @@ pub(crate) fn save_persist(shared: &Arc<Mutex<Shared>>) {
 /// Rebuild the visible category list from the master list and the
 /// hidden prefs, then re-resolve the Hub's tiles.
 pub fn reproject_hub(ctx: &Ctx, app: &App) {
-    {
-        let mut shared = lock(&ctx.shared);
-        let visible: Vec<String> = shared
-            .all_categories
-            .iter()
-            .filter(|name| shared.show_hidden || !shared.hidden_categories.contains(name))
-            .cloned()
-            .collect();
-        shared.categories = visible;
-    }
+    project_categories(&mut lock(&ctx.shared));
     crate::hub::rebuild(ctx, app);
+}
+
+pub(crate) fn project_categories(shared: &mut Shared) {
+    shared.categories = shared
+        .all_categories
+        .iter()
+        .filter(|name| shared.show_hidden || !shared.hidden_categories.contains(name))
+        .cloned()
+        .collect();
 }
 
 /// Re-run the Systems screen's projection after a hide/unhide, a
@@ -316,6 +364,9 @@ pub(crate) fn toggle_hidden_system(ctx: &Ctx, app: &App, id: &str) {
 /// Durable hidden-browse prefs go to `frontend.toml`, not the volatile
 /// state file (which lives in `/tmp` on `MiSTer`). Small atomic write.
 fn save_hidden_prefs(ctx: &Ctx, app: &App, categories: &[String], system_ids: &[String]) {
+    if !config_writable(ctx) {
+        return;
+    }
     if let Err(e) =
         zaparoo_core::config::save_hidden_browse_prefs(&ctx.config_path, categories, system_ids)
     {
@@ -328,9 +379,9 @@ fn save_hidden_prefs(ctx: &Ctx, app: &App, categories: &[String], system_ids: &[
 
 /// Dev builds and unparseable versions fail open: only a parsed semver
 /// below the floor triggers the warning.
-const MIN_CORE_VERSION: &str = "2.15.0";
+const MIN_CORE_VERSION: &str = "2.18.0";
 
-fn version_supported(raw: &str) -> bool {
+pub(crate) fn version_supported(raw: &str) -> bool {
     let v = raw.trim();
     if v == "DEVELOPMENT" || v.ends_with("-dev") {
         return true;
@@ -377,9 +428,9 @@ mod version_gate_tests {
 
     #[test]
     fn semver_floor_enforced() {
-        assert!(version_supported("2.15.0"));
+        assert!(version_supported("2.18.0"));
         assert!(version_supported("3.0.1"));
-        assert!(!version_supported("2.14.9"));
+        assert!(!version_supported("2.17.2"));
         assert!(!version_supported("1.0.0"));
     }
 }
@@ -387,7 +438,7 @@ mod version_gate_tests {
 /// Open a dialog. Rust names the kind, its sub-kind and the one
 /// runtime value the copy needs; `DialogLabels` in the UI composes
 /// every word, so the buttons are keys too.
-fn open_dialog(
+pub(crate) fn open_dialog(
     app: &App,
     kind: DialogKind,
     detail: &str,
@@ -398,26 +449,14 @@ fn open_dialog(
     let overlays = app.global::<crate::Overlays>();
     overlays.set_dialog_kind(kind);
     overlays.set_dialog_error(ErrorKind::Generic);
-    overlays.set_first_run_phase(FirstRunPhase::Idle);
     overlays.set_dialog_detail(SharedString::from(detail));
     overlays.set_dialog_arg(SharedString::from(arg));
-    overlays.set_dialog_status(DialogProgress::None);
     overlays.set_dialog_buttons(ModelRc::new(VecModel::from(buttons.to_vec())));
     overlays.set_dialog_focus(focus);
     overlays.set_dialog_open(true);
 }
 
-/// The first-run progress line, as the key plus the numbers the copy
-/// puts in it.
-fn set_dialog_status(app: &App, key: DialogProgress, step: i32, total: i32, name: &str) {
-    let overlays = app.global::<crate::Overlays>();
-    overlays.set_dialog_status(key);
-    overlays.set_dialog_status_step(step);
-    overlays.set_dialog_status_total(total);
-    overlays.set_dialog_status_name(SharedString::from(name));
-}
-
-fn close_dialog(app: &App) {
+pub(crate) fn close_dialog(app: &App) {
     crate::press_feedback::cancel(app);
     let overlays = app.global::<crate::Overlays>();
     overlays.set_dialog_open(false);
@@ -452,9 +491,25 @@ pub(crate) fn open_quit_confirm(app: &App) {
 /// dialog's close and from the catalog/version fetch completions, so
 /// the modals never stack.
 pub fn maybe_open_startup_notices(ctx: &Ctx, app: &App) {
+    // A notice waits for the restored screen: it never opens over the
+    // cold-start curtain.
     if app.global::<crate::Overlays>().get_dialog_open()
         || !app.global::<crate::Shell>().get_boot_complete()
+        || app.global::<crate::Shell>().get_boot_curtain()
     {
+        return;
+    }
+    let config_fault = {
+        let mut guard = lock(&ctx.shared);
+        if guard.config_fault_shown {
+            None
+        } else {
+            guard.config_fault_shown = true;
+            guard.config_fault.clone()
+        }
+    };
+    if let Some(path) = config_fault {
+        report_action_error(ctx, app, "config_file", &path);
         return;
     }
     let (notice_ack, version_checked, version_shown, version, first_run_shown, indexed) = {
@@ -497,16 +552,21 @@ pub fn maybe_open_startup_notices(ctx: &Ctx, app: &App) {
             return;
         }
     }
-    // First-run gate: a catalog with no indexed (non-launchable)
-    // systems means the media database has never been built.
-    if !first_run_shown && indexed == 0 {
+    // Media status may seed after the catalog. A running update needs no
+    // setup gate, including after MiSTer's wrapper relaunches the frontend.
+    let media = media_state(ctx);
+    let busy = media.indexing || media.optimizing || media.scraping;
+    if busy {
+        lock(&ctx.shared).first_run_shown = true;
+    }
+    if zaparoo_app::media_setup::needs_first_run(indexed, first_run_shown, media.seeded, busy) {
         lock(&ctx.shared).first_run_shown = true;
         open_dialog(
             app,
             DialogKind::FirstRun,
             "",
             "",
-            &[DialogButton::StartScan],
+            &[DialogButton::StartMediaUpdate],
             0,
         );
     }
@@ -543,6 +603,8 @@ fn dialog_action(ctx: &Ctx, app: &App, action: &str) {
     let kind = overlays.get_dialog_kind();
     let len = overlays.get_dialog_buttons().row_count();
     let focus = overlays.get_dialog_focus().max(0) as usize;
+    let config_alert =
+        kind == DialogKind::ActionError && overlays.get_dialog_error() == ErrorKind::ConfigFile;
     let retry = (action == actions::ACCEPT
         && kind == DialogKind::ActionError
         && overlays.get_dialog_error() == ErrorKind::CardWrite)
@@ -572,6 +634,9 @@ fn dialog_action(ctx: &Ctx, app: &App, action: &str) {
         };
         if let Some(entry) = next {
             show_action_error(app, &entry);
+        } else if config_alert {
+            // The config alert opens the startup ladder; the rest follows it.
+            maybe_open_startup_notices(ctx, app);
         }
     }
     // Retire the old alert before retrying: an empty payload can fail
@@ -600,7 +665,9 @@ fn dialog_accept(ctx: &Ctx, app: &App, kind: DialogKind, focus: usize) {
         }
         DialogKind::Notice => {
             lock(&ctx.shared).notice_ack = true;
-            if let Err(e) = zaparoo_core::config::save_notice_ack(&ctx.config_path, true) {
+            if !config_writable(ctx) {
+                tracing::warn!("notice ack not persisted: the config file did not load");
+            } else if let Err(e) = zaparoo_core::config::save_notice_ack(&ctx.config_path, true) {
                 tracing::warn!("could not persist notice ack: {e}");
             }
             close_dialog(app);
@@ -610,7 +677,13 @@ fn dialog_accept(ctx: &Ctx, app: &App, kind: DialogKind, focus: usize) {
             close_dialog(app);
             maybe_open_startup_notices(ctx, app);
         }
-        DialogKind::FirstRun => first_run_accept(ctx, app),
+        DialogKind::FirstRun => {
+            close_dialog(app);
+            let media = media_state(ctx);
+            if !media.indexing && !media.optimizing && !media.scraping {
+                start_index(ctx, app, None);
+            }
+        }
         DialogKind::RestartSetting => {
             if confirmed {
                 confirm_pending_restart(ctx, app);
@@ -619,33 +692,30 @@ fn dialog_accept(ctx: &Ctx, app: &App, kind: DialogKind, focus: usize) {
                 close_dialog(app);
             }
         }
+        DialogKind::UnlinkOnline => {
+            close_dialog(app);
+            if confirmed {
+                crate::online::unlink(ctx, app);
+            }
+        }
+        DialogKind::RestoreOnlineBackup => {
+            close_dialog(app);
+            if confirmed {
+                crate::online_list::restore_confirmed(ctx, app);
+            }
+        }
+        DialogKind::UpdateStop => {
+            close_dialog(app);
+            crate::update::stop_answered(confirmed);
+        }
         _ => close_dialog(app),
     }
 }
 
 fn dialog_cancel(ctx: &Ctx, app: &App, kind: DialogKind) {
     match kind {
-        // The notice must be acknowledged; the idle first-run gate has
-        // no skip, and closes only when indexed systems appear out of
-        // band.
-        DialogKind::Notice => {}
-        DialogKind::FirstRun => {
-            let running = lock(&ctx.shared).first_run == FirstRunPhase::Running;
-            if running {
-                lock(&ctx.shared).first_run_cancelling = true;
-                let client = ctx.store.client();
-                let ctx2 = ctx.clone();
-                let weak = app.as_weak();
-                ctx.handle.spawn(async move {
-                    if let Err(e) = client.media_generate_cancel().await {
-                        tracing::warn!("first-run cancel failed: {}", e.message);
-                        let _ = weak.upgrade_in_event_loop(move |app| {
-                            report_action_error(&ctx2, &app, "media_cancel", "");
-                        });
-                    }
-                });
-            }
-        }
+        // Setup ends on Start media update; it never owns a running job.
+        DialogKind::Notice | DialogKind::FirstRun => {}
         DialogKind::CoreVersion => {
             close_dialog(app);
             maybe_open_startup_notices(ctx, app);
@@ -654,140 +724,115 @@ fn dialog_cancel(ctx: &Ctx, app: &App, kind: DialogKind) {
             lock(&ctx.shared).pending_restart = None;
             close_dialog(app);
         }
+        DialogKind::UpdateStop => {
+            close_dialog(app);
+            crate::update::stop_answered(false);
+        }
         _ => close_dialog(app),
     }
 }
 
-fn first_run_accept(ctx: &Ctx, app: &App) {
-    let phase = lock(&ctx.shared).first_run;
-    match phase {
-        FirstRunPhase::Idle => {
-            {
-                let mut guard = lock(&ctx.shared);
-                guard.first_run = FirstRunPhase::Running;
-                guard.first_run_saw_indexing = false;
-                guard.first_run_cancelling = false;
-            }
-            start_index(ctx, app, None);
-            set_dialog_status(app, DialogProgress::Preparing, 0, 0, "");
-            let overlays = app.global::<crate::Overlays>();
-            overlays.set_first_run_phase(FirstRunPhase::Running);
-            overlays.set_dialog_buttons(ModelRc::new(VecModel::from(vec![DialogButton::Cancel])));
-            overlays.set_dialog_focus(0);
-        }
-        FirstRunPhase::Running => {}
-        FirstRunPhase::Done => close_dialog(app),
-    }
-}
-
-/// Track a running first-run scan against Core's media-status flags:
-/// progress line while indexing/optimizing, then Done (or back to
-/// Idle after a cancel). Called from the media-status watcher.
-pub fn refresh_first_run(ctx: &Ctx, app: &App) {
-    if !app.global::<crate::Overlays>().get_dialog_open()
-        || app.global::<crate::Overlays>().get_dialog_kind() != DialogKind::FirstRun
-    {
-        return;
-    }
-    if lock(&ctx.shared).first_run != FirstRunPhase::Running {
-        return;
-    }
-    let ms = media_state(ctx);
-    let overlays = app.global::<crate::Overlays>();
-    if ms.indexing || ms.optimizing {
-        lock(&ctx.shared).first_run_saw_indexing = true;
-        if ms.optimizing {
-            set_dialog_status(app, DialogProgress::Optimizing, 0, 0, "");
-        } else if ms.paused {
-            set_dialog_status(app, DialogProgress::Paused, 0, 0, "");
-        } else if ms.total_steps > 0 {
-            set_dialog_status(
-                app,
-                DialogProgress::Step,
-                ms.current_step.max(0),
-                ms.total_steps,
-                &ms.current_step_display,
-            );
-        } else {
-            set_dialog_status(app, DialogProgress::Preparing, 0, 0, "");
-        }
-        return;
-    }
-    // indexing and optimizing both clear: completion or cancel, but
-    // only after Core confirmed the run actually started.
-    let (saw, cancelling) = {
-        let guard = lock(&ctx.shared);
-        (guard.first_run_saw_indexing, guard.first_run_cancelling)
-    };
-    if !saw {
-        return;
-    }
-    if cancelling {
-        let mut guard = lock(&ctx.shared);
-        guard.first_run = FirstRunPhase::Idle;
-        guard.first_run_cancelling = false;
-        guard.first_run_saw_indexing = false;
-        drop(guard);
-        overlays.set_dialog_status(DialogProgress::None);
-        overlays.set_first_run_phase(FirstRunPhase::Idle);
-        overlays.set_dialog_buttons(ModelRc::new(VecModel::from(vec![DialogButton::StartScan])));
-        overlays.set_dialog_focus(0);
-        return;
-    }
-    lock(&ctx.shared).first_run = FirstRunPhase::Done;
-    overlays.set_dialog_status(DialogProgress::None);
-    overlays.set_first_run_phase(FirstRunPhase::Done);
-    overlays.set_dialog_arg(SharedString::from(
-        ms.total_files.max(0).to_string().as_str(),
-    ));
-    overlays.set_dialog_buttons(ModelRc::new(VecModel::from(vec![DialogButton::Ok])));
-    overlays.set_dialog_focus(0);
-}
-
-/// Restart the screensaver idle countdown. Every input calls this;
-/// the seq ticket makes earlier armed timers no-ops. "off" disables
-/// arming entirely (a stale timer still fires but fails the ticket).
-pub fn reset_idle(ctx: &Ctx, app: &App) {
-    let (ticket, timeout) = {
+/// Retire an obsolete setup prompt when indexing starts out of band or
+/// indexed systems arrive. Progress belongs to the header, never a modal.
+pub fn refresh_startup_notices(ctx: &Ctx, app: &App) {
+    let media = media_state(ctx);
+    let busy = media.indexing || media.optimizing || media.scraping;
+    let indexed = {
         let mut shared = lock(&ctx.shared);
-        shared.saver_seq += 1;
-        (
-            shared.saver_seq,
-            shared.persist.settings.screensaver_timeout.clone(),
-        )
+        if busy {
+            shared.first_run_shown = true;
+        }
+        zaparoo_core::systems_catalog::indexed_count(&shared.systems)
     };
+    let overlays = app.global::<crate::Overlays>();
+    if overlays.get_dialog_kind() == DialogKind::FirstRun && (busy || indexed > 0) {
+        close_dialog(app);
+    }
+    maybe_open_startup_notices(ctx, app);
+}
+
+/// A host showing this window again counts as activity even without a key press.
+/// Disarm a saver that may have started while the app was in the background.
+#[cfg(any(feature = "hosted", all(test, feature = "mister")))]
+pub(crate) fn on_app_activated(ctx: &Ctx, app: &App) {
+    app.global::<crate::Shell>().set_saver_armed(false);
+    reset_idle(ctx, app);
+    #[cfg(feature = "hosted")]
+    if crate::host::take_trimmed() {
+        // The host dropped decoded art while away: re-resolve the screens
+        // that show it, which requests it again.
+        crate::hub::rebuild(ctx, app);
+        crate::games::render(ctx, app);
+    }
+}
+
+thread_local! {
+    static IDLE_TIMER: slint::Timer = slint::Timer::default();
+    #[cfg(all(test, feature = "mister"))]
+    static IDLE_FIRES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// Drop pending countdown work on dormancy and before a hosted event loop ends.
+pub(crate) fn stop_idle() {
+    IDLE_TIMER.with(slint::Timer::stop);
+}
+
+#[cfg(all(test, feature = "mister"))]
+pub(crate) fn idle_firings() -> usize {
+    IDLE_FIRES.with(std::cell::Cell::get)
+}
+
+/// Restart the same countdown on every input. Invalid/off settings cancel it
+/// rather than leaving a ticketed callback queued for minutes.
+pub fn reset_idle(ctx: &Ctx, app: &App) {
+    stop_idle();
+    let timeout = lock(&ctx.shared)
+        .persist
+        .settings
+        .screensaver_timeout
+        .clone();
     let Ok(secs) = timeout.parse::<u64>() else {
-        return; // "off" or malformed - never arms
+        return;
     };
     if secs == 0 {
         return;
     }
     let weak = app.as_weak();
-    let shared = ctx.shared.clone();
-    slint::Timer::single_shot(Duration::from_secs(secs), move || {
-        if lock(&shared).saver_seq != ticket {
-            return;
-        }
-        let Some(app) = weak.upgrade() else {
-            return;
-        };
-        // The boot curtain and the transition "Loading…" cue are not
-        // burn targets; skip and let the next input re-arm the clock.
-        if !app.global::<crate::Shell>().get_boot_complete()
-            || app.global::<crate::Shell>().get_dormant()
-            || app.global::<crate::Shell>().get_transitioning()
-        {
-            return;
-        }
-        app.global::<crate::Shell>().set_saver_armed(true);
+    IDLE_TIMER.with(|timer| {
+        timer.start(
+            slint::TimerMode::SingleShot,
+            Duration::from_secs(secs),
+            move || {
+                #[cfg(all(test, feature = "mister"))]
+                IDLE_FIRES.with(|fires| fires.set(fires.get() + 1));
+                let Some(app) = weak.upgrade() else { return };
+                let shell = app.global::<crate::Shell>();
+                // Busy surfaces are not burn targets. Their completion/input paths
+                // re-arm the clock; this timeout never polls or chains another timer.
+                if !shell.get_boot_complete()
+                    || shell.get_boot_curtain()
+                    || shell.get_dormant()
+                    || shell.get_transitioning()
+                {
+                    return;
+                }
+                if shell.get_active_screen() == crate::Screen::Update
+                    && !app.global::<crate::UpdateView>().get_allows_screensaver()
+                {
+                    return;
+                }
+                shell.set_saver_armed(true);
+            },
+        );
     });
 }
 
-/// Slow work adds feedback without hiding the source or delaying a ready route.
-const LOADING_CUE_DELAY_MS: u64 = 300;
-
+// Slow work adds feedback without hiding the source or delaying a ready route.
 thread_local! {
-    static CUE_SEQ: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    // The route's loading word follows the shared wait timing; the token is
+    // the wait of the route now pending.
+    static ROUTE_CUE: std::cell::RefCell<(zaparoo_app::wait_cue::WaitCue, u64)> =
+        std::cell::RefCell::new((zaparoo_app::wait_cue::WaitCue::default(), 0));
 }
 
 pub(crate) fn begin_pending(app: &App, target: crate::Screen) {
@@ -795,45 +840,186 @@ pub(crate) fn begin_pending(app: &App, target: crate::Screen) {
 }
 
 pub(crate) fn begin_pending_with_direction(app: &App, target: crate::Screen, _direction: i32) {
+    use zaparoo_app::wait_cue::{CUE_DELAY_MS, CUE_HOLD_MS};
     let shell = app.global::<crate::Shell>();
     if shell.get_transitioning() {
         return;
     }
     shell.set_transition_target(target);
     shell.set_transitioning(true);
-    let ticket = CUE_SEQ.with(|sequence| {
-        sequence.set(sequence.get().wrapping_add(1));
-        sequence.get()
+    // A word still held from the route before belongs to that route.
+    shell.set_transition_cue(false);
+    let token = ROUTE_CUE.with(|cue| {
+        let mut cue = cue.borrow_mut();
+        cue.1 = cue.0.begin();
+        cue.1
     });
     let weak = app.as_weak();
-    slint::Timer::single_shot(Duration::from_millis(LOADING_CUE_DELAY_MS), move || {
-        if CUE_SEQ.with(std::cell::Cell::get) != ticket {
+    slint::Timer::single_shot(Duration::from_millis(CUE_DELAY_MS), move || {
+        if !ROUTE_CUE.with(|cue| cue.borrow_mut().0.delay_elapsed(token)) {
             return;
         }
         let Some(app) = weak.upgrade() else {
             return;
         };
-        let shell = app.global::<crate::Shell>();
-        if shell.get_transitioning() {
-            shell.set_transition_cue(true);
-        }
+        app.global::<crate::Shell>().set_transition_cue(true);
+        let weak = app.as_weak();
+        slint::Timer::single_shot(Duration::from_millis(CUE_HOLD_MS), move || {
+            // The route landed while the word had only just appeared.
+            if ROUTE_CUE.with(|cue| cue.borrow_mut().0.hold_elapsed(token)) {
+                if let Some(app) = weak.upgrade() {
+                    app.global::<crate::Shell>().set_transition_cue(false);
+                }
+            }
+        });
     });
 }
 
 pub(crate) fn clear_pending(app: &App) {
-    CUE_SEQ.with(|sequence| sequence.set(sequence.get().wrapping_add(1)));
+    crate::press_feedback::cancel(app);
     let shell = app.global::<crate::Shell>();
     shell.set_transitioning(false);
-    shell.set_transition_cue(false);
+    let (clear, shown) = ROUTE_CUE.with(|cue| {
+        let mut cue = cue.borrow_mut();
+        let token = cue.1;
+        let clear = cue.0.end(token);
+        (clear, cue.0.is_shown(token))
+    });
+    // A word that only just appeared stays out its hold; its timer clears it.
+    if clear || !shown {
+        shell.set_transition_cue(false);
+    }
 }
 
 /// Publish a ready destination in this turn, never after a decorative timer.
+/// On a cold start this is also where the curtain lifts: the restored
+/// screen is the first one shown.
 pub(crate) fn transition_to_screen(app: &App, target: crate::Screen, _direction: i32) {
     clear_pending(app);
     let motion = app.global::<crate::Motion>();
     motion.set_epoch(motion.get_epoch().wrapping_add(1));
     app.global::<crate::Shell>().set_active_screen(target);
     refresh_layout(app);
+    finish_restore(app);
+}
+
+/// Publish the Hub and render it in the same turn. Only a render of the
+/// active Hub asks for its logos, and the screen it comes back from has
+/// taken the one logo window in the meantime.
+pub(crate) fn return_to_hub(ctx: &Ctx, app: &App) {
+    transition_to_screen(app, crate::Screen::Hub, -1);
+    crate::hub::render(ctx, app);
+}
+
+type RestoreHook = std::rc::Rc<dyn Fn(&App)>;
+
+thread_local! {
+    static RESTORE_FINISHED: std::cell::RefCell<Option<RestoreHook>> =
+        const { std::cell::RefCell::new(None) };
+    static RESTORE_SEQ: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// How long a cold-start restore may wait on Core before it is abandoned,
+/// the same bound a staged route has.
+pub(crate) const RESTORE_TIMEOUT: Duration = Duration::from_secs(15);
+
+/// What runs once the cold-start restore ends: the work that waits for
+/// the restored screen (startup notices).
+pub(crate) fn on_restore_finished(hook: impl Fn(&App) + 'static) {
+    RESTORE_FINISHED.with(|slot| *slot.borrow_mut() = Some(std::rc::Rc::new(hook)));
+}
+
+/// The cold-start restore is still deciding what to show: the catalog is
+/// in and the curtain is still up.
+pub(crate) fn restoring(app: &App) -> bool {
+    let shell = app.global::<crate::Shell>();
+    shell.get_boot_curtain() && shell.get_boot_complete()
+}
+
+/// End the cold-start restore: lift the curtain over whatever screen is
+/// now final. Every way a restore can end comes through here (commit,
+/// failure, a missing target, Cancel, the timeout), so the curtain can
+/// never stick and nothing is shown before it lifts.
+pub(crate) fn finish_restore(app: &App) {
+    let shell = app.global::<crate::Shell>();
+    if !shell.get_boot_curtain() {
+        return;
+    }
+    shell.set_boot_curtain(false);
+    RESTORE_SEQ.with(|seq| seq.set(seq.get().wrapping_add(1)));
+    // Deferred a turn: a commit can come from deep inside a driver, and
+    // the work that waited for it takes the shared state itself.
+    let hook = RESTORE_FINISHED.with(|slot| slot.borrow().clone());
+    if let Some(hook) = hook {
+        let weak = app.as_weak();
+        slint::Timer::single_shot(Duration::ZERO, move || {
+            if let Some(app) = weak.upgrade() {
+                hook(&app);
+            }
+        });
+    }
+}
+
+/// Bound a restore that is waiting on Core.
+pub(crate) fn arm_restore_timeout(ctx: &Ctx, app: &App) {
+    let ticket = RESTORE_SEQ.with(|seq| {
+        seq.set(seq.get().wrapping_add(1));
+        seq.get()
+    });
+    let ctx = ctx.clone();
+    let weak = app.as_weak();
+    slint::Timer::single_shot(RESTORE_TIMEOUT, move || {
+        if RESTORE_SEQ.with(std::cell::Cell::get) != ticket {
+            return;
+        }
+        let Some(app) = weak.upgrade() else {
+            return;
+        };
+        if !restoring(&app) {
+            return;
+        }
+        if app.global::<crate::Shell>().get_transitioning() {
+            tracing::warn!("cold-start restore timed out");
+            abandon_restore(&ctx, &app);
+            report_action_error(&ctx, &app, "browse", "");
+        } else {
+            // Only the Hub's Resume tile was outstanding; show the Hub.
+            finish_restore(&app);
+        }
+    });
+}
+
+/// Give up a restore that is waiting on Core (Cancel, or the timeout):
+/// retire its fetches so a late answer cannot route anywhere, and land on
+/// the nearest screen that is already complete. The saved state keeps
+/// naming the target, so the next start tries it again.
+pub(crate) fn abandon_restore(ctx: &Ctx, app: &App) {
+    let parent = {
+        let mut shared = lock(&ctx.shared);
+        shared.games.fill_task.cancel();
+        shared.games.ticket = shared.games.ticket.wrapping_add(1);
+        shared.games.loading = false;
+        shared.games.loading_more = false;
+        shared.systems_model.fill_task.cancel();
+        shared.systems_model.transition_seq += 1;
+        shared.systems_model.loading = false;
+        // A restored Games screen has its category filled beneath it.
+        let under_games = shared.persist.active_screen == crate::Screen::Games.token()
+            && !shared.persist.games.entered_from_hub
+            && shared.systems_model.mode == crate::SystemsMode::Category
+            && !shared.systems_model.rows.is_empty();
+        if under_games {
+            crate::Screen::Systems
+        } else {
+            crate::Screen::Hub
+        }
+    };
+    crate::navigation::finish(app);
+    if parent == crate::Screen::Hub {
+        return_to_hub(ctx, app);
+    } else {
+        transition_to_screen(app, parent, -1);
+    }
 }
 
 pub(crate) fn transition_settings_page(
@@ -850,17 +1036,13 @@ pub(crate) fn transition_settings_page(
 pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
     if crate::press_feedback::pending(app) {
         if action == actions::ACCEPT {
+            tracing::debug!("accept dropped: a press is already pending");
             return;
         }
-        // A push lasts 90 ms, so the key that interrupted it can be dropped
-        // along with the cue. A hold lasts as long as the launch under it,
-        // and dropping a Back for seconds would lose a press the user meant:
-        // lift the cue and let the key through.
-        let pushing = !crate::press_feedback::holding();
+        // Interrupt an undispatched Accept or lift a pending operation's
+        // feedback. Back still belongs to the current surface, not the cue.
+        tracing::debug!(action, "pending press cancelled by another action");
         crate::press_feedback::cancel(app);
-        if pushing && action == actions::CANCEL {
-            return;
-        }
     }
     if action == actions::ACCEPT {
         if let Some(target) = crate::press_feedback::prepare(ctx, app) {
@@ -910,18 +1092,45 @@ fn focus_index(app: &App) -> i32 {
 fn dispatch_with_focus(ctx: &Ctx, app: &App, action: &str) {
     let before = focus_index(app);
     dispatch_action(ctx, app, action);
+    if !matches!(
+        app.global::<crate::Shell>().get_active_screen(),
+        crate::Screen::Hub
+            | crate::Screen::Systems
+            | crate::Screen::FavoriteSystems
+            | crate::Screen::Games
+            | crate::Screen::Favorites
+            | crate::Screen::Recents
+            | crate::Screen::SearchResults
+    ) {
+        ctx.logos.request([]);
+    }
     let after = focus_index(app);
     // A wrap can look geometrically adjacent on a two-row/two-column grid.
     // Input direction disambiguates it; never glide backward across that wrap.
     let wrapped = match action {
         actions::UP | actions::LEFT => after > before,
         actions::DOWN | actions::RIGHT => after < before,
-        actions::PAGE_PREV | actions::PAGE_NEXT => true,
+        // A grid page is a new set of tiles: nothing glides onto it. A list
+        // page is the same list a page further on, and glides there.
+        actions::PAGE_PREV | actions::PAGE_NEXT => !list_layout_active(app),
         _ => false,
     };
     if wrapped {
         let motion = app.global::<crate::Motion>();
         motion.set_epoch(motion.get_epoch().wrapping_add(1));
+    }
+}
+
+/// The active screen is a browse screen in its list layout.
+fn list_layout_active(app: &App) -> bool {
+    let shell = app.global::<crate::Shell>();
+    match shell.get_active_screen() {
+        crate::Screen::Systems | crate::Screen::FavoriteSystems => shell.get_systems_list_layout(),
+        crate::Screen::Games
+        | crate::Screen::Favorites
+        | crate::Screen::Recents
+        | crate::Screen::SearchResults => shell.get_browse_list_layout(),
+        _ => false,
     }
 }
 
@@ -952,8 +1161,16 @@ fn dispatch_action(ctx: &Ctx, app: &App, action: &str) {
     // Cold-launch curtain swallows input except Cancel, which still
     // quits from the (hidden) hub root so a frontend that can't reach
     // Core is never a trap on desktop.
-    if app.global::<crate::Shell>().get_boot_curtain() && action != actions::CANCEL {
-        return;
+    if app.global::<crate::Shell>().get_boot_curtain() {
+        if action != actions::CANCEL {
+            return;
+        }
+        // Once the catalog is in, the curtain is covering a restore:
+        // Cancel gives that up instead of reaching the hidden screen.
+        if restoring(app) {
+            abandon_restore(ctx, app);
+            return;
+        }
     }
     // Single input gate during forward transitions.
     // Modals run on top of the gate; pickers and menus are topmost.
@@ -972,6 +1189,25 @@ fn dispatch_action(ctx: &Ctx, app: &App, action: &str) {
         if action == actions::CANCEL {
             app.global::<crate::Overlays>().set_qr_open(false);
         }
+        return;
+    }
+    // Pairing: the panel owns input while a PIN is live, which is what
+    // makes Back the only way out and so the only path that has to call
+    // the pairing off.
+    if app.global::<crate::Overlays>().get_pair_open() {
+        crate::pairing::handle_action(ctx, app, action);
+        return;
+    }
+    // The Online link panel, on the same terms: Back is the way out and
+    // calls a live code off.
+    if app.global::<crate::Overlays>().get_online_open() {
+        crate::online::handle_action(ctx, app, action);
+        return;
+    }
+    // The Online page's cloud backup list and activity log. A restore
+    // confirmation is a dialog and takes input before this is reached.
+    if app.global::<crate::Overlays>().get_online_list_open() {
+        crate::online_list::handle_action(ctx, app, action);
         return;
     }
     if app.global::<crate::Overlays>().get_card_write_open() {
@@ -1000,6 +1236,8 @@ fn dispatch_action(ctx: &Ctx, app: &App, action: &str) {
     if app.global::<crate::Shell>().get_transitioning() {
         if action == actions::CANCEL {
             crate::navigation::cancel(ctx, app);
+        } else {
+            tracing::debug!(action, "action dropped: a route is pending");
         }
         return;
     }
@@ -1013,11 +1251,16 @@ fn dispatch_action(ctx: &Ctx, app: &App, action: &str) {
         crate::Screen::Systems | crate::Screen::FavoriteSystems => {
             crate::systems::handle_action(ctx, app, action);
         }
-        crate::Screen::Games | crate::Screen::Favorites | crate::Screen::Recents => {
+        crate::Screen::Games
+        | crate::Screen::Favorites
+        | crate::Screen::Recents
+        | crate::Screen::SearchResults => {
             crate::games::handle_action(ctx, app, action);
         }
+        crate::Screen::Search => crate::search::handle_action(ctx, app, action),
         crate::Screen::Settings => crate::settings::handle_action(ctx, app, action),
         crate::Screen::About => about_action(ctx, app, action),
+        crate::Screen::Update => crate::update::handle_action(ctx, app, action),
         crate::Screen::None => {}
     }
 }
@@ -1040,8 +1283,17 @@ pub(crate) fn media_state(ctx: &Ctx) -> zaparoo_core::store::MediaStatusState {
 
 /// About screen: enter from Settings, Back returns there. The screen
 /// token persists so a kill on the About page restores to it.
-pub fn enter_about(ctx: &Ctx, app: &App) {
-    lock(&ctx.shared).persist.active_screen = "about".to_string();
+pub fn enter_about(ctx: &Ctx, app: &App, entry: EntryMode) {
+    let position = {
+        let mut shared = lock(&ctx.shared);
+        shared.persist.active_screen = "about".to_string();
+        if entry == EntryMode::Fresh {
+            shared.persist.about_scroll_milli = 0;
+        }
+        shared.persist.about_scroll_milli.min(1000)
+    };
+    app.global::<crate::AboutView>()
+        .set_scroll_milli(i32::try_from(position).unwrap_or(0));
     save_persist(&ctx.shared);
     transition_to_screen(app, crate::Screen::About, 1);
 }
@@ -1055,6 +1307,18 @@ fn about_action(ctx: &Ctx, app: &App, action: &str) {
         // About is reached from the Support page; Back lands there.
         crate::settings::return_from_about(ctx, app);
     }
+}
+
+/// Ask before removing the Online account link; No is focused.
+pub(crate) fn confirm_unlink_online(app: &App) {
+    open_dialog(
+        app,
+        DialogKind::UnlinkOnline,
+        "",
+        "",
+        &[DialogButton::No, DialogButton::Yes],
+        0,
+    );
 }
 
 pub(crate) fn stage_restart(ctx: &Ctx, app: &App, pending: PendingRestart) {
@@ -1196,36 +1460,10 @@ fn crt_calibration_action(ctx: &Ctx, app: &App, action: &str) {
     crate::set_live_crt_offsets(h, v);
 }
 
-/// Scoped scraper run: Core's in-tree ES gamelist.xml scraper (the only
-/// shipped scraper, and `scraperId` has no server-side default, so the id
-/// is hardcoded here). `force` re-scrapes existing metadata; the one-shot
-/// toggle resets when the run is kicked off.
-pub(crate) fn start_scrape(ctx: &Ctx, app: &App, systems: Vec<String>, force: bool) {
-    use zaparoo_core::media_types::MediaScrapeParams;
-    let client = ctx.store.client();
-    let shared = ctx.shared.clone();
-    let ctx2 = ctx.clone();
-    let weak = app.as_weak();
-    ctx.handle.spawn(async move {
-        let params = MediaScrapeParams {
-            scraper_id: "gamelist.xml".to_string(),
-            systems,
-            force,
-        };
-        match client.media_scrape(params).await {
-            Ok(()) => {
-                if force {
-                    lock(&shared).rescrape_existing = false;
-                }
-            }
-            Err(e) => {
-                tracing::warn!("start_scrape failed: {}", e.message);
-                let _ = weak.upgrade_in_event_loop(move |app| {
-                    report_action_error(&ctx2, &app, "media_scrape", "");
-                });
-            }
-        }
-    });
+/// The metadata setup panel opened on a scope a menu picked: the same
+/// panel Settings opens, with the Systems row preset and still editable.
+pub(crate) fn open_scrape_setup(ctx: &Ctx, app: &App, scope: zaparoo_app::media_setup::Scope) {
+    crate::media_setup::open(ctx, app, zaparoo_app::media_setup::Kind::Scrape, scope);
 }
 
 /// Shared Ready-side fill for the games-style grid: store the rows,
@@ -1298,41 +1536,61 @@ pub(crate) fn apply_clock_setting(ctx: &Ctx, app: &App) {
 }
 
 /// Open the West "View" menu (the page/list-scoped operations menu,
-/// counterpart to North's item-scoped Options). One entry today -
-/// Go to..., pre-focused so the common path is a fixed West-then-
-/// Accept chord. The letter facet fetch is kicked off here so the
-/// buckets are likely ready by the time the user advances into the
-/// grid.
+/// counterpart to North's item-scoped Options). Go to... is pre-focused
+/// so the common path is a fixed West-then-Accept chord, then the filter
+/// rows. The letter facet and the filter's tag list are fetched here so
+/// both are likely ready by the time the user gets into them.
 pub(crate) fn open_view_menu(ctx: &Ctx, app: &App) {
     fetch_letter_index(ctx, app);
-    lock(&ctx.shared).list_context = ListContext::ViewMenu;
+    crate::browse_filter::begin(ctx, app);
+    let mut entries = vec![menu_row("jump_letter"), menu_row("search_here")];
+    entries.extend(crate::browse_filter::view_rows(&lock(&ctx.shared)));
+    present_list(ctx, app, ListContext::ViewMenu, "title:view", entries);
+}
+
+/// What each row of the open list is, for the cursor rules.
+fn list_roles(app: &App) -> Vec<zaparoo_app::form_list::Role> {
+    use zaparoo_app::form_list::Role;
     app.global::<crate::Overlays>()
-        .set_list_setting_id(SharedString::default());
-    app.global::<crate::Overlays>()
-        .set_list_title(SharedString::from("title:view"));
-    app.global::<crate::Overlays>()
-        .set_list_entries(ModelRc::new(VecModel::from(vec![menu_row("jump_letter")])));
-    app.global::<crate::Overlays>().set_list_index(0);
-    app.global::<crate::Overlays>().set_list_open(true);
+        .get_list_entries()
+        .iter()
+        .map(|entry| match entry.role {
+            // A page-opening row is a context-menu row; in a list it
+            // would be picked like any other.
+            crate::MenuRole::Option | crate::MenuRole::Submenu => Role::Option,
+            crate::MenuRole::Header => Role::Header,
+            crate::MenuRole::Action => Role::Action,
+        })
+        .collect()
 }
 
 fn list_action(ctx: &Ctx, app: &App, action: &str) {
     if app.global::<crate::Overlays>().get_launcher_saving() {
-        return;
+        // A save Core has not answered holds the picker still, but never
+        // hostage: Cancel gives up on it and closes as usual.
+        if action != actions::CANCEL {
+            return;
+        }
+        crate::launchers::abandon_save(ctx, app);
     }
-    let len = app
-        .global::<crate::Overlays>()
-        .get_list_entries()
-        .row_count();
+    let roles = list_roles(app);
     let index = app.global::<crate::Overlays>().get_list_index().max(0) as usize;
     match action {
-        actions::UP if len > 0 => {
+        // Wraps at the ends and passes over section headers.
+        actions::UP | actions::DOWN if !roles.is_empty() => {
+            let next = zaparoo_app::form_list::step(&roles, index, action == actions::DOWN);
             app.global::<crate::Overlays>()
-                .set_list_index(((index + len - 1) % len) as i32);
+                .set_list_index(i32::try_from(next).unwrap_or(0));
         }
-        actions::DOWN if len > 0 => {
+        // Sideways and the shoulder buttons jump a section in a list that
+        // has them.
+        actions::LEFT | actions::RIGHT | actions::PAGE_PREV | actions::PAGE_NEXT
+            if matches!(lock(&ctx.shared).list_context, ListContext::SearchSystem) =>
+        {
+            let forward = matches!(action, actions::RIGHT | actions::PAGE_NEXT);
+            let next = zaparoo_app::form_list::jump(&roles, index, forward);
             app.global::<crate::Overlays>()
-                .set_list_index(((index + 1) % len) as i32);
+                .set_list_index(i32::try_from(next).unwrap_or(0));
         }
         actions::ACCEPT => {
             let id = app
@@ -1342,21 +1600,39 @@ fn list_action(ctx: &Ctx, app: &App, action: &str) {
                 .map(|e| e.id.to_string());
             if let Some(id) = id {
                 let context = lock(&ctx.shared).list_context.clone();
-                if !matches!(
-                    context,
-                    ListContext::SystemLauncher(_) | ListContext::GameLauncher(_, _)
-                ) {
+                // These keep the panel open: the launcher pickers while they
+                // save, and the filter, which swaps pages inside it.
+                let stays_open = match context {
+                    ListContext::SystemLauncher(_)
+                    | ListContext::GameLauncher(_, _)
+                    | ListContext::FilterCategories
+                    | ListContext::FilterValues(_) => true,
+                    ListContext::ViewMenu => id == "filter",
+                    _ => false,
+                };
+                if !stays_open {
                     app.global::<crate::Overlays>().set_list_open(false);
                 }
                 match context {
-                    ListContext::ViewMenu => {
-                        if id == "jump_letter" {
-                            open_letter_jump(ctx, app);
-                        }
+                    ListContext::ViewMenu => match id.as_str() {
+                        "jump_letter" => open_letter_jump(ctx, app),
+                        "search_here" => crate::search::enter_scoped(ctx, app),
+                        "filter" => crate::browse_filter::open(ctx, app),
+                        "filter_clear" => crate::browse_filter::clear(ctx, app),
+                        _ => {}
+                    },
+                    ListContext::FilterCategories | ListContext::FilterValues(_) => {
+                        crate::browse_filter::accept(ctx, app, &context, &id);
                     }
+                    ListContext::SearchSystem => crate::search::system_picked(ctx, app, &id),
                     ListContext::HubPageMenu => crate::hub::page_menu_accept(ctx, app, &id),
                     ListContext::HubAdd => crate::hub::add_picked(ctx, app, &id),
                     ListContext::FavoritesPageMenu => favorites_page_menu_accept(ctx, app, &id),
+                    ListContext::SearchResultsPageMenu => {
+                        if id == "add_to_hub" {
+                            crate::search::toggle_hub(ctx, app);
+                        }
+                    }
                     ListContext::FavoritesGrouping => favorites_grouping_picked(ctx, app, &id),
                     ListContext::FavoritesSort => favorites_sort_picked(ctx, app, &id),
                     ListContext::SettingsPicker(field) => {
@@ -1371,8 +1647,21 @@ fn list_action(ctx: &Ctx, app: &App, action: &str) {
                 }
             }
         }
+        actions::LEFT | actions::RIGHT | actions::PAGE_PREV | actions::PAGE_NEXT
+            if matches!(lock(&ctx.shared).list_context, ListContext::FilterValues(_)) =>
+        {
+            crate::browse_filter::page(app, matches!(action, actions::RIGHT | actions::PAGE_NEXT));
+        }
         actions::CANCEL | actions::PAGE_MENU => {
-            app.global::<crate::Overlays>().set_list_open(false);
+            let context = lock(&ctx.shared).list_context.clone();
+            if matches!(
+                context,
+                ListContext::FilterCategories | ListContext::FilterValues(_)
+            ) {
+                crate::browse_filter::back(ctx, app, &context, action == actions::PAGE_MENU);
+            } else {
+                app.global::<crate::Overlays>().set_list_open(false);
+            }
         }
         _ => {}
     }
@@ -1380,16 +1669,20 @@ fn list_action(ctx: &Ctx, app: &App, action: &str) {
 
 /// Fetch the browse facet for the current scope (`media.browse.index`,
 /// non-empty buckets in sort order) and publish it to the picker
-/// properties as it lands; the seq ticket drops stale responses.
-fn fetch_letter_index(ctx: &Ctx, app: &App) {
-    let (browse_path, system_id, ticket) = {
+/// properties and the fast-scroll rail as it lands; the seq ticket drops
+/// stale responses.
+pub(crate) fn fetch_letter_index(ctx: &Ctx, app: &App) {
+    let (browse_path, system_id, ticket, include_hidden, tags) = {
         let mut guard = lock(&ctx.shared);
         guard.letter_seq += 1;
         guard.letter_buckets.clear();
+        guard.letter_scope = None;
         (
             guard.games.browse_path.clone(),
             guard.games.system_id.clone(),
             guard.letter_seq,
+            crate::games::include_hidden(&guard),
+            crate::browse_filter::active_tags(&guard),
         )
     };
     app.global::<crate::Overlays>()
@@ -1397,11 +1690,14 @@ fn fetch_letter_index(ctx: &Ctx, app: &App) {
             Vec::<crate::LetterBucket>::new(),
         )));
     app.global::<crate::Overlays>().set_letter_index(0);
-    app.global::<crate::Overlays>().set_letter_loading(true);
+    app.global::<crate::Overlays>()
+        .set_letter_state(crate::ContentState::Loading);
 
     let client = ctx.store.client();
     let shared = ctx.shared.clone();
+    let ctx2 = ctx.clone();
     let weak = app.as_weak();
+    let scope = (system_id.clone(), browse_path.clone());
     ctx.handle.spawn(async move {
         let outcome = client
             .media_browse_index(zaparoo_core::media_types::MediaBrowseIndexParams {
@@ -1411,7 +1707,8 @@ fn fetch_letter_index(ctx: &Ctx, app: &App) {
                 ),
                 path: browse_path,
                 systems: vec![system_id],
-                tags: Vec::new(),
+                include_hidden: Some(include_hidden),
+                tags,
                 sort: None,
             })
             .await;
@@ -1429,15 +1726,29 @@ fn fetch_letter_index(ctx: &Ctx, app: &App) {
                             count: i32::try_from(g.count).unwrap_or(i32::MAX),
                         })
                         .collect();
-                    lock(&shared).letter_buckets = result.groups;
+                    {
+                        let mut guard = lock(&shared);
+                        guard.letter_directories = result.indexes_directories();
+                        guard.letter_buckets = result.groups;
+                        guard.letter_scope = Some(scope);
+                    }
+                    let state = if rows.is_empty() {
+                        crate::ContentState::Empty
+                    } else {
+                        crate::ContentState::Ready
+                    };
                     app.global::<crate::Overlays>()
                         .set_letter_buckets(ModelRc::new(VecModel::from(rows)));
-                    app.global::<crate::Overlays>().set_letter_loading(false);
+                    app.global::<crate::Overlays>().set_letter_state(state);
+                    crate::games::render(&ctx2, &app);
                 }
                 Err(e) => {
+                    // The picker stays (or opens) on the failure: closing
+                    // it, or calling the list empty, would hide that the
+                    // sections exist and could not be fetched.
                     tracing::warn!("letter index fetch failed: {}", e.message);
-                    app.global::<crate::Overlays>().set_letter_open(false);
-                    app.global::<crate::Overlays>().set_letter_loading(false);
+                    app.global::<crate::Overlays>()
+                        .set_letter_state(crate::ContentState::Error);
                 }
             }
         });
@@ -1451,9 +1762,10 @@ fn open_letter_jump(_ctx: &Ctx, app: &App) {
     app.global::<crate::Overlays>().set_letter_open(true);
 }
 
-fn close_letter_jump(ctx: &Ctx, app: &App) {
+fn close_letter_jump(_ctx: &Ctx, app: &App) {
     crate::press_feedback::cancel(app);
-    lock(&ctx.shared).letter_seq += 1;
+    // The index in flight is still the scope's: the rail keeps it, and a
+    // reopened picker fetches again under a newer ticket.
     app.global::<crate::Overlays>().set_letter_open(false);
 }
 
@@ -1565,11 +1877,7 @@ pub(crate) fn open_qr_code(ctx: &Ctx, app: &App, entry: &GameRow) {
 
 /// A menu row whose text is literal (a launcher id, a system name).
 pub(crate) fn menu_entry(id: &str, label: &str) -> crate::MenuEntry {
-    crate::MenuEntry {
-        id: SharedString::from(id),
-        label: SharedString::from(label),
-        label_key: SharedString::default(),
-    }
+    menu_row_full(id, "", label, true, "")
 }
 
 /// A menu row whose text comes from the `Labels.menu` vocabulary. The
@@ -1581,17 +1889,35 @@ pub(crate) fn menu_row(id: &str) -> crate::MenuEntry {
 }
 
 pub(crate) fn menu_row_keyed(id: &str, key: &str, name: &str) -> crate::MenuEntry {
+    menu_row_full(id, key, name, true, "")
+}
+
+/// The general form every other `menu_*` helper reduces to: a row that
+/// can additionally be unusable right now, with a short worded reason
+/// (a `Labels.menu` key) instead of hiding it — the picker is still the
+/// place to pick it for later, once it stops being true.
+pub(crate) fn menu_row_full(
+    id: &str,
+    key: &str,
+    name: &str,
+    enabled: bool,
+    reason_key: &str,
+) -> crate::MenuEntry {
     crate::MenuEntry {
+        role: crate::MenuRole::default(),
+        detail_key: SharedString::default(),
         id: SharedString::from(id),
         label: SharedString::from(name),
         label_key: SharedString::from(key),
+        enabled,
+        reason_key: SharedString::from(reason_key),
+        detail: SharedString::default(),
     }
 }
 
 /// Hub helpers the driver in `crate::hub` calls back into.
-pub(crate) fn category_has_indexable(ctx: &Ctx, category: &str) -> bool {
-    let guard = lock(&ctx.shared);
-    zaparoo_core::systems_catalog::systems_in_category(&guard.systems, category)
+pub(crate) fn has_indexable(shared: &Shared, category: &str) -> bool {
+    zaparoo_core::systems_catalog::systems_in_category(&shared.systems, category)
         .iter()
         .any(|s| s.zap_script.trim().is_empty())
 }
@@ -1613,18 +1939,21 @@ pub(crate) fn index_category(ctx: &Ctx, app: &App, category: &str) {
 }
 
 pub(crate) fn scrape_category(ctx: &Ctx, app: &App, category: &str) {
-    let ids = indexable_system_ids(ctx, category);
-    if !ids.is_empty() {
-        start_scrape(ctx, app, ids, false);
+    if !indexable_system_ids(ctx, category).is_empty() {
+        open_scrape_setup(
+            ctx,
+            app,
+            zaparoo_app::media_setup::Scope::Category(category.to_string()),
+        );
     }
 }
 
-pub(crate) fn present_hub_context_menu(ctx: &Ctx, app: &App, entries: Vec<crate::MenuEntry>) {
-    present_context_menu(ctx, app, ContextOwner::Hub, 0, entries);
+pub(crate) fn present_hub_context_menu(ctx: &Ctx, app: &App, menu: OptionsMenu) {
+    present_context_menu(ctx, app, ContextOwner::Hub, 0, menu);
 }
 
-pub(crate) fn present_systems_context_menu(ctx: &Ctx, app: &App, entries: Vec<crate::MenuEntry>) {
-    present_context_menu(ctx, app, ContextOwner::Systems, 0, entries);
+pub(crate) fn present_systems_context_menu(ctx: &Ctx, app: &App, target: usize, menu: OptionsMenu) {
+    present_context_menu(ctx, app, ContextOwner::Systems, target, menu);
 }
 
 /// The row or tile a context menu is about: where it is, and what its
@@ -1654,16 +1983,11 @@ pub(crate) fn set_context_anchor(app: &App, anchor: &ContextAnchor) {
     overlays.set_context_anchor_zoomed(anchor.zoomed);
 }
 
-pub(crate) fn present_games_context_menu(
-    ctx: &Ctx,
-    app: &App,
-    target: usize,
-    entries: Vec<crate::MenuEntry>,
-) {
-    present_context_menu(ctx, app, ContextOwner::Games, target, entries);
+pub(crate) fn present_games_context_menu(ctx: &Ctx, app: &App, target: usize, menu: OptionsMenu) {
+    present_context_menu(ctx, app, ContextOwner::Games, target, menu);
 }
 
-fn present_list(
+pub(crate) fn present_list(
     ctx: &Ctx,
     app: &App,
     context: ListContext,
@@ -1674,9 +1998,59 @@ fn present_list(
     let overlays = app.global::<crate::Overlays>();
     overlays.set_list_setting_id(SharedString::default());
     overlays.set_list_title(SharedString::from(title));
+    overlays.set_list_form(false);
     overlays.set_list_entries(ModelRc::new(VecModel::from(entries)));
     overlays.set_list_index(0);
     overlays.set_list_open(true);
+}
+
+/// The same panel as a form list: rows named on the left with their value
+/// on the right, section headers and footer actions. Focus starts on
+/// `index`, which must not be a header.
+pub(crate) fn present_form_list(
+    ctx: &Ctx,
+    app: &App,
+    context: ListContext,
+    title: &str,
+    entries: Vec<crate::MenuEntry>,
+    index: usize,
+) {
+    present_list(ctx, app, context, title, entries);
+    let overlays = app.global::<crate::Overlays>();
+    overlays.set_list_form(true);
+    overlays.set_list_index(i32::try_from(index).unwrap_or(0));
+}
+
+/// A section header row.
+pub(crate) fn menu_header(key: &str, name: &str) -> crate::MenuEntry {
+    crate::MenuEntry {
+        role: crate::MenuRole::Header,
+        ..menu_row_full("", key, name, false, "")
+    }
+}
+
+/// A footer action row.
+pub(crate) fn menu_action(id: &str) -> crate::MenuEntry {
+    crate::MenuEntry {
+        role: crate::MenuRole::Action,
+        ..menu_row(id)
+    }
+}
+
+/// A form row with a value: `detail` as data, or `detail_key` as a word of
+/// the menu vocabulary when the value is ours to translate.
+pub(crate) fn menu_value(
+    id: &str,
+    key: &str,
+    name: &str,
+    detail: &str,
+    detail_key: &str,
+) -> crate::MenuEntry {
+    crate::MenuEntry {
+        detail: SharedString::from(detail),
+        detail_key: SharedString::from(detail_key),
+        ..menu_row_keyed(id, key, name)
+    }
 }
 
 pub(crate) fn present_hub_page_menu(ctx: &Ctx, app: &App, entries: Vec<crate::MenuEntry>) {
@@ -1731,6 +2105,24 @@ pub(crate) fn open_favorites_page_menu(ctx: &Ctx, app: &App) {
     );
 }
 
+/// The Search results' West "View" menu: keep the search on the Hub, or
+/// take its tile back off.
+pub(crate) fn open_search_results_page_menu(ctx: &Ctx, app: &App) {
+    let on_hub = crate::search::on_hub(&lock(&ctx.shared));
+    let entries = vec![menu_row_keyed(
+        "add_to_hub",
+        if on_hub { "hub:remove" } else { "add_to_hub" },
+        "",
+    )];
+    present_list(
+        ctx,
+        app,
+        ListContext::SearchResultsPageMenu,
+        "title:view",
+        entries,
+    );
+}
+
 fn favorites_page_menu_accept(ctx: &Ctx, app: &App, id: &str) {
     match id {
         "favorites_sort" => open_favorites_sort_menu(ctx, app),
@@ -1747,7 +2139,7 @@ fn favorites_page_menu_accept(ctx: &Ctx, app: &App, id: &str) {
         "back_to_hub" => {
             lock(&ctx.shared).persist.active_screen = "hub".to_string();
             save_persist(&ctx.shared);
-            transition_to_screen(app, crate::Screen::Hub, -1);
+            return_to_hub(ctx, app);
         }
         _ => {}
     }
@@ -1790,9 +2182,9 @@ fn favorites_grouping_picked(ctx: &Ctx, app: &App, id: &str) {
     }
     crate::settings::save(ctx, app);
     if id == "system" {
-        crate::systems::enter_favorites(ctx, app);
+        crate::systems::enter_favorites(ctx, app, EntryMode::Restore);
     } else {
-        crate::games::enter_favorites(ctx, app);
+        crate::games::enter_favorites(ctx, app, EntryMode::Restore);
     }
 }
 
@@ -1814,9 +2206,11 @@ fn favorites_sort_picked(ctx: &Ctx, app: &App, id: &str) {
         return;
     }
     lock(&ctx.shared).favorites_sort = sort.to_string();
-    if let Err(e) = zaparoo_core::config::save_favorites_sort(&ctx.config_path, sort) {
-        tracing::warn!("saving the favorites sort failed: {e}");
-        report_action_error(ctx, app, "setting", "");
+    if config_writable(ctx) {
+        if let Err(e) = zaparoo_core::config::save_favorites_sort(&ctx.config_path, sort) {
+            tracing::warn!("saving the favorites sort failed: {e}");
+            report_action_error(ctx, app, "setting", "");
+        }
     }
     crate::games::refresh_favorites(ctx, app);
 }
@@ -1831,6 +2225,13 @@ pub(crate) fn open_alert(app: &App, kind: DialogKind) {
 /// log at the call site; this is the user-facing half, deduplicated
 /// and queued by `zaparoo_app::action_error` so a burst of failures is
 /// read one alert at a time.
+/// Whether `frontend.toml` may be written. False for the whole session once
+/// the file failed to load; the startup alert has already said so, and each
+/// later change stays in memory without raising its own alert.
+pub(crate) fn config_writable(ctx: &Ctx) -> bool {
+    lock(&ctx.shared).config_fault.is_none()
+}
+
 pub(crate) fn report_action_error(ctx: &Ctx, app: &App, kind: &str, context: &str) {
     // An alert is the one thing allowed above a modal, but a failed
     // discovery arrives while the context menu still holds its
@@ -1854,14 +2255,26 @@ fn show_action_error(app: &App, entry: &action_error::Entry) {
     } else {
         DialogButton::Ok
     };
-    open_dialog(
-        app,
-        DialogKind::ActionError,
-        "",
-        &entry.context,
-        &[button],
-        0,
-    );
+    // `dialog_arg` carries the plain context for every other kind, and
+    // `launch_repair`'s own fallback message for this one; its reason and
+    // display names ride separately so `DialogLabels` can pick per-reason
+    // wording instead of decoding JSON itself.
+    let arg = if error == ErrorKind::LaunchRepair {
+        let [reason, launcher, plugin, message] =
+            RepairContext::decode(&entry.context).unwrap_or_default();
+        let overlays = app.global::<crate::Overlays>();
+        overlays.set_dialog_repair_reason(SharedString::from(reason));
+        overlays.set_dialog_repair_launcher(SharedString::from(launcher));
+        overlays.set_dialog_repair_plugin(SharedString::from(plugin));
+        message
+    } else {
+        let overlays = app.global::<crate::Overlays>();
+        overlays.set_dialog_repair_reason(SharedString::default());
+        overlays.set_dialog_repair_launcher(SharedString::default());
+        overlays.set_dialog_repair_plugin(SharedString::default());
+        entry.context.clone()
+    };
+    open_dialog(app, DialogKind::ActionError, "", &arg, &[button], 0);
     app.global::<crate::Overlays>().set_dialog_error(error);
 }
 
@@ -1881,40 +2294,58 @@ pub(crate) fn media_busy(app: &App) -> bool {
     app.global::<crate::Status>().get_show_track()
 }
 
+/// The menu's own rows as the view takes them. A row that turns the menu
+/// to a page is marked, so the view can draw where it leads.
+pub(crate) fn root_entries(menu: &OptionsMenu) -> Vec<crate::MenuEntry> {
+    menu.root
+        .iter()
+        .map(|row| {
+            let mut entry = menu_row_keyed(row.id, row.key, "");
+            if menu.page_for(row.id).is_some() || crate::context_page::asks_core(row.id) {
+                entry.role = crate::MenuRole::Submenu;
+            }
+            entry
+        })
+        .collect()
+}
+
 fn present_context_menu(
     ctx: &Ctx,
     app: &App,
     owner: ContextOwner,
     target: usize,
-    entries: Vec<crate::MenuEntry>,
+    menu: OptionsMenu,
 ) {
-    if entries.is_empty() {
+    if menu.is_empty() {
         return;
     }
+    let entries = root_entries(&menu);
     {
         let mut guard = lock(&ctx.shared);
         guard.context_owner = owner;
         guard.context_target = target;
+        guard.context_menu = menu;
+        guard.context_page.reset();
     }
-    app.global::<crate::Overlays>()
-        .set_context_entries(ModelRc::new(VecModel::from(entries)));
-    app.global::<crate::Overlays>().set_context_index(0);
-    app.global::<crate::Overlays>().set_context_open(true);
+    let overlays = app.global::<crate::Overlays>();
+    overlays.set_context_entries(ModelRc::new(VecModel::from(entries)));
+    overlays.set_context_page(crate::ContextPage::Root);
+    overlays.set_context_index(0);
+    overlays.set_context_open(true);
 }
 
-fn close_context_menu(ctx: &Ctx, app: &App) {
+pub(crate) fn close_context_menu(ctx: &Ctx, app: &App) {
     crate::press_feedback::cancel(app);
     // Bumping the seq abandons any in-flight card write (its result is
-    // ignored on arrival) and any discovery still looking for a menu to
-    // fill.
+    // ignored on arrival) and any page still looking for a menu to fill.
     {
         let mut shared = lock(&ctx.shared);
         shared.card_write.cancel();
-        shared.alternates.seq += 1;
-        shared.alternates.showing = false;
-        shared.alternates.rows.clear();
+        shared.context_page.reset();
     }
     app.global::<crate::Overlays>().set_context_open(false);
+    app.global::<crate::Overlays>()
+        .set_context_page(crate::ContextPage::Root);
 }
 
 /// Pointer input on the context menu's rows: hover moves focus, a click
@@ -1954,10 +2385,17 @@ pub fn bind_context_input(ctx: &Arc<Ctx>, app: &App) {
                         if !ov.get_dialog_open()
                             && ov.get_list_open()
                             && !ov.get_launcher_saving()
-                            && row < ov.get_list_entries().row_count() =>
+                            && ov
+                                .get_list_entries()
+                                .row_data(row)
+                                .is_some_and(|entry| entry.role != crate::MenuRole::Header) =>
                     {
                         ov.set_list_index(index);
                     }
+                    crate::PressOwner::OnlineList
+                        if !ov.get_dialog_open()
+                            && ov.get_online_list_open()
+                            && crate::online_list::focus(&ctx, &app, row) => {}
                     crate::PressOwner::Letter
                         if !ov.get_dialog_open()
                             && ov.get_letter_open()
@@ -2029,10 +2467,10 @@ fn context_action(ctx: &Ctx, app: &App, action: &str) {
             }
         }
         actions::CANCEL | actions::CONTEXT_MENU => {
-            // The alternates page is a page of this menu, not a menu of
-            // its own: Back returns to the rows it replaced.
-            if crate::alternates::showing(ctx) {
-                crate::alternates::leave(ctx, app);
+            // A page is a page of this menu, not a menu of its own: Back
+            // returns to the rows it replaced.
+            if crate::context_page::showing(ctx) {
+                crate::context_page::leave(ctx, app);
             } else {
                 close_context_menu(ctx, app);
             }
@@ -2042,30 +2480,47 @@ fn context_action(ctx: &Ctx, app: &App, action: &str) {
 }
 
 fn context_accept(ctx: &Ctx, app: &App, id: &str) {
-    if crate::alternates::showing(ctx) {
-        crate::alternates::accept(ctx, app, id);
+    use crate::context_page::Page;
+    let (owner, showing, opens) = {
+        let shared = lock(&ctx.shared);
+        let showing = shared.context_page.showing;
+        // One level of pages: a row on a page never opens another.
+        let opens = if showing.is_none() {
+            shared.context_menu.page_for(id)
+        } else {
+            None
+        };
+        (shared.context_owner, showing, opens)
+    };
+    if matches!(showing, Some(Page::Alternates | Page::Discs)) {
+        crate::context_page::accept(ctx, app, id);
         return;
     }
-    let owner = lock(&ctx.shared).context_owner;
+    if let Some(page) = opens {
+        crate::context_page::turn(ctx, app, page);
+        return;
+    }
+    // Write to token with one way to write runs that way.
+    let id = if showing.is_none() {
+        OptionsMenu::direct_action(id)
+    } else {
+        id
+    };
+    // A page Core has to be asked for keeps the menu open: its rows
+    // become the page's once Core answers.
+    let began = match owner {
+        ContextOwner::Games => crate::games::begin_context_page(ctx, app, id),
+        ContextOwner::Hub => crate::hub::begin_context_page(ctx, app, id),
+        ContextOwner::Systems => false,
+    };
+    if began {
+        return;
+    }
+    close_context_menu(ctx, app);
     match owner {
-        ContextOwner::Games => {
-            // Discovery keeps the menu open: its rows become the
-            // alternates once Core answers.
-            if id == "discover" {
-                crate::games::begin_discovery(ctx, app);
-                return;
-            }
-            close_context_menu(ctx, app);
-            crate::games::context_accept(ctx, app, id);
-        }
-        ContextOwner::Systems => {
-            close_context_menu(ctx, app);
-            crate::systems::context_accept(ctx, app, id);
-        }
-        ContextOwner::Hub => {
-            close_context_menu(ctx, app);
-            crate::hub::context_accept(ctx, app, id);
-        }
+        ContextOwner::Games => crate::games::context_accept(ctx, app, id),
+        ContextOwner::Systems => crate::systems::context_accept(ctx, app, id),
+        ContextOwner::Hub => crate::hub::context_accept(ctx, app, id),
     }
 }
 
@@ -2076,13 +2531,18 @@ pub(crate) fn start_index(ctx: &Ctx, app: &App, systems: Option<Vec<String>>) {
     let client = ctx.store.client();
     let weak = app.as_weak();
     let ctx2 = ctx.clone();
+    // Core's own progress takes the header once the job is running; until
+    // it answers, this is the only sign the request went anywhere.
+    let wait = crate::cue::begin(ctx, app, crate::AppCue::Starting, "", "");
     ctx.handle.spawn(async move {
-        if let Err(e) = client.media_generate(MediaIndexParams { systems }).await {
-            tracing::warn!("start_index failed: {}", e.message);
-            let _ = weak.upgrade_in_event_loop(move |app| {
+        let result = client.media_generate(MediaIndexParams { systems }).await;
+        let _ = weak.upgrade_in_event_loop(move |app| {
+            crate::cue::end(&ctx2, &app, wait);
+            if let Err(e) = result {
+                tracing::warn!("start_index failed: {}", e.message);
                 report_action_error(&ctx2, &app, "media_index", "");
-            });
-        }
+            }
+        });
     });
 }
 
@@ -2107,63 +2567,170 @@ pub(crate) fn open_game_info(ctx: &Ctx, app: &App, entry: &GameRow) {
 /// the catalog refetches automatically on the busy -> idle edge via
 /// the store's `Tag::MEDIA_DB` invalidation watcher.
 pub(crate) fn launch(ctx: &Ctx, app: &App, text: String, name: &str) {
+    launch_first(ctx, app, vec![text], name);
+}
+
+/// Launch the first of `candidates` Core can resolve. A Hub tile carries
+/// several identifiers for one game, most portable first; the next is tried
+/// only when Core reports the previous one did not resolve, so nothing is
+/// ever launched twice. The last failure is the one reported.
+pub(crate) fn launch_first(ctx: &Ctx, app: &App, candidates: Vec<String>, name: &str) {
+    if candidates.is_empty() {
+        return;
+    }
+    crate::perf::mark("launch-press", "");
+    crate::hub_covers::record_browse_page(ctx);
     // The tile the user pressed stays pressed until Core answers, so the
     // feedback is where the eye already is. The header line is the second,
     // worded cue and only appears if the wait becomes one.
     let hold = crate::press_feedback::keep_held(app);
-    let inflight = Arc::new(AtomicBool::new(true));
-    spawn_launch_cue(ctx, app, &inflight);
+    let wait = crate::cue::begin(ctx, app, crate::AppCue::Launching, name, "");
     let store = ctx.store.clone();
     let weak = app.as_weak();
     let ctx2 = ctx.clone();
     let name = name.to_string();
     ctx.handle.spawn(async move {
-        let failed = match store.run_mutation::<RunMutation>(RunParams { text }).await {
-            Ok(()) => false,
-            Err(e) => {
+        let result = run_first(
+            candidates,
+            |text| {
+                let store = store.clone();
+                async move { store.run_mutation::<RunMutation>(RunParams { text }).await }
+            },
+            |e: &zaparoo_core::client::ClientError| {
                 tracing::warn!("launch failed for {name}: {e}");
-                true
+                zaparoo_app::hub::should_try_next(e.category.as_deref())
+            },
+        )
+        .await;
+        let outcome = match result {
+            Ok(()) => {
+                crate::perf::mark("launch-reply", "ok=true");
+                LaunchOutcome::Ok
+            }
+            Err(e) => {
+                crate::perf::mark("launch-reply", "ok=false");
+                LaunchOutcome::from_error(&e)
             }
         };
-        inflight.store(false, Ordering::SeqCst);
         let _ = weak.upgrade_in_event_loop(move |app| {
-            crate::press_feedback::release(&app, hold);
-            clear_launch_cue(&app);
-            if failed {
-                report_action_error(&ctx2, &app, "launch", &name);
-            }
+            crate::cue::end(&ctx2, &app, wait);
+            finish_launch(&ctx2, &app, hold, outcome, &name);
         });
     });
 }
 
-/// The header line is for a launch that turns into a wait. A word that
-/// appears and leaves again inside the grace window reads as a flicker, and
-/// the press cue has already said the button did something, so this follows
-/// the same delay the route loading cue uses.
-fn spawn_launch_cue(ctx: &Ctx, app: &App, inflight: &Arc<AtomicBool>) {
-    let weak = app.as_weak();
-    let inflight = inflight.clone();
-    ctx.handle.spawn(async move {
-        tokio::time::sleep(Duration::from_millis(LOADING_CUE_DELAY_MS)).await;
-        if !inflight.load(Ordering::SeqCst) {
-            return;
+/// Run `candidates` in order until one succeeds, returning the last
+/// failure otherwise. `try_next` sees each failure and decides whether the
+/// next candidate may run; it is not asked about the last one.
+async fn run_first<E, F, Fut>(
+    candidates: Vec<String>,
+    mut run: F,
+    try_next: impl Fn(&E) -> bool,
+) -> Result<(), E>
+where
+    F: FnMut(String) -> Fut,
+    Fut: std::future::Future<Output = Result<(), E>>,
+{
+    let mut candidates = candidates.into_iter().peekable();
+    let mut result = Ok(());
+    while let Some(text) = candidates.next() {
+        result = run(text).await;
+        match &result {
+            Ok(()) => break,
+            Err(e) => {
+                let more = candidates.peek().is_some();
+                if !try_next(e) || !more {
+                    break;
+                }
+            }
         }
-        let _ = weak.upgrade_in_event_loop(move |app| {
-            if inflight.load(Ordering::SeqCst) {
-                app.global::<crate::Shell>()
-                    .set_status_text(crate::AppCue::Launching);
-            }
-        });
-    });
+    }
+    result
 }
 
-/// Clear our own value and nobody else's. `AppCue` has only these two today,
-/// so the guard changes nothing yet; it is here so that adding a cue later
-/// cannot be wiped by a launch that answers after it.
-fn clear_launch_cue(app: &App) {
-    let shell = app.global::<crate::Shell>();
-    if shell.get_status_text() == crate::AppCue::Launching {
-        shell.set_status_text(crate::AppCue::None);
+pub(crate) fn finish_launch(
+    ctx: &Ctx,
+    app: &App,
+    hold: crate::press_feedback::Hold,
+    outcome: LaunchOutcome,
+    name: &str,
+) {
+    crate::press_feedback::release(app, hold);
+    match outcome {
+        LaunchOutcome::Ok => {}
+        LaunchOutcome::Failed => report_action_error(ctx, app, "launch", name),
+        LaunchOutcome::Repair(context) => {
+            report_action_error(ctx, app, "launch_repair", &context.encode());
+        }
+    }
+}
+
+/// What a launch attempt produced, decided once (in the async task) so the
+/// event-loop closure only has to act on it.
+pub(crate) enum LaunchOutcome {
+    Ok,
+    Failed,
+    Repair(RepairContext),
+}
+
+impl LaunchOutcome {
+    fn from_error(e: &zaparoo_core::client::ClientError) -> Self {
+        if !e.is_launch_repair() {
+            return Self::Failed;
+        }
+        Self::Repair(RepairContext::new(
+            e.reason.as_deref(),
+            e.params.as_deref(),
+            &e.message,
+        ))
+    }
+}
+
+/// A `launch_repair` error's `reason` and the display names Core sent,
+/// carried through the alert queue as one JSON string (the same idiom
+/// `launchers.rs`'s retry payload uses) so a second failure queued behind
+/// the first survives with its own reason intact.
+pub(crate) struct RepairContext {
+    reason: String,
+    launcher: String,
+    plugin: String,
+    message: String,
+}
+
+impl RepairContext {
+    /// Built from an already-confirmed `launch_repair` error's own fields
+    /// (plain data, not `ClientError` itself, so this is testable without
+    /// a live client). An absent `reason` or param reads as empty, which
+    /// `DialogLabels.launch-repair-body` treats the same as `unspecified`.
+    fn new(
+        reason: Option<&str>,
+        params: Option<&std::collections::HashMap<String, String>>,
+        message: &str,
+    ) -> Self {
+        let param = |key: &str| {
+            params
+                .and_then(|params| params.get(key))
+                .cloned()
+                .unwrap_or_default()
+        };
+        Self {
+            reason: reason.unwrap_or_default().to_string(),
+            launcher: param("launcher"),
+            plugin: param("plugin"),
+            message: message.to_string(),
+        }
+    }
+
+    fn encode(&self) -> String {
+        serde_json::to_string(&[&self.reason, &self.launcher, &self.plugin, &self.message])
+            .unwrap_or_default()
+    }
+
+    /// The inverse of `encode`, tolerant of a malformed payload (an older
+    /// build's queued alert surviving a hot-reload, say): every field
+    /// falls back to the generic-failure treatment rather than panicking.
+    fn decode(payload: &str) -> Option<[String; 4]> {
+        serde_json::from_str(payload).ok()
     }
 }
 
@@ -2184,6 +2751,92 @@ mod tests {
         }
     }
 
+    /// Run the fallback chain against a scripted Core: each candidate maps
+    /// to the error category it fails with, or succeeds when absent.
+    async fn run_chain(
+        candidates: &[&str],
+        failures: &[(&'static str, &'static str)],
+    ) -> (Result<(), &'static str>, Vec<String>) {
+        let tried = std::sync::Mutex::new(Vec::new());
+        let result = super::run_first(
+            candidates.iter().map(ToString::to_string).collect(),
+            |text| {
+                let failure = failures
+                    .iter()
+                    .find(|(candidate, _)| *candidate == text)
+                    .map(|(_, category)| *category);
+                tried
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .push(text);
+                async move { failure.map_or(Ok(()), Err) }
+            },
+            |category: &&'static str| zaparoo_app::hub::should_try_next(Some(category)),
+        )
+        .await;
+        (
+            result,
+            tried
+                .into_inner()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+        )
+    }
+
+    #[tokio::test]
+    async fn a_launch_stops_at_the_first_candidate_core_resolves() {
+        let (result, tried) =
+            run_chain(&["NES/Zelda.nes", "@NES/Zelda", "/g/Zelda.nes"], &[]).await;
+        assert_eq!(result, Ok(()));
+        assert_eq!(tried, ["NES/Zelda.nes"]);
+    }
+
+    #[tokio::test]
+    async fn an_unresolved_candidate_falls_through_to_the_next() {
+        let (result, tried) = run_chain(
+            &["NES/Zelda.nes", "@NES/Zelda", "/g/Zelda.nes"],
+            &[
+                ("NES/Zelda.nes", "media_not_found"),
+                ("@NES/Zelda", "invalid_script"),
+            ],
+        )
+        .await;
+        assert_eq!(result, Ok(()));
+        assert_eq!(tried, ["NES/Zelda.nes", "@NES/Zelda", "/g/Zelda.nes"]);
+    }
+
+    #[tokio::test]
+    async fn a_failure_that_is_not_about_the_identifier_ends_the_launch() {
+        for category in [
+            "busy",
+            "blocked",
+            "playtime_limit",
+            "launch_repair",
+            "timeout",
+        ] {
+            let (result, tried) = run_chain(
+                &["NES/Zelda.nes", "@NES/Zelda"],
+                &[("NES/Zelda.nes", category)],
+            )
+            .await;
+            assert_eq!(result, Err(category));
+            assert_eq!(tried, ["NES/Zelda.nes"], "{category}");
+        }
+    }
+
+    #[tokio::test]
+    async fn the_last_failure_is_the_one_reported() {
+        let (result, tried) = run_chain(
+            &["NES/Zelda.nes", "/g/Zelda.nes"],
+            &[
+                ("NES/Zelda.nes", "media_not_found"),
+                ("/g/Zelda.nes", "execution_failed"),
+            ],
+        )
+        .await;
+        assert_eq!(result, Err("execution_failed"));
+        assert_eq!(tried, ["NES/Zelda.nes", "/g/Zelda.nes"]);
+    }
+
     #[test]
     fn filters_by_exact_category() {
         let all = vec![sys("nes", "Console"), sys("mame", "Arcade")];
@@ -2198,5 +2851,56 @@ mod tests {
         let picked = systems_for_category(&all, "Other");
         assert_eq!(picked.len(), 1);
         assert_eq!(picked[0].id, "weird");
+    }
+
+    fn params(pairs: &[(&str, &str)]) -> std::collections::HashMap<String, String> {
+        pairs
+            .iter()
+            .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn a_repair_context_round_trips_through_its_encoded_payload() {
+        let context = super::RepairContext::new(
+            Some("launcher_plugin_missing"),
+            Some(&params(&[("launcher", "RetroArch"), ("plugin", "Mesen")])),
+            "this launcher's plugin for this system is not installed",
+        );
+        let decoded = super::RepairContext::decode(&context.encode());
+        assert_eq!(
+            decoded,
+            Some([
+                "launcher_plugin_missing".to_string(),
+                "RetroArch".to_string(),
+                "Mesen".to_string(),
+                "this launcher's plugin for this system is not installed".to_string(),
+            ])
+        );
+    }
+
+    #[test]
+    fn an_absent_reason_or_param_encodes_as_empty_not_missing() {
+        let context = super::RepairContext::new(None, None, "fallback message");
+        let decoded = super::RepairContext::decode(&context.encode());
+        assert_eq!(
+            decoded,
+            Some([
+                String::new(),
+                String::new(),
+                String::new(),
+                "fallback message".to_string(),
+            ])
+        );
+    }
+
+    #[test]
+    fn a_malformed_payload_decodes_to_none_rather_than_panicking() {
+        assert_eq!(super::RepairContext::decode("not json"), None);
+        assert_eq!(super::RepairContext::decode(""), None);
+        assert_eq!(
+            super::RepairContext::decode(r#"["only", "three", "of four"]"#),
+            None
+        );
     }
 }

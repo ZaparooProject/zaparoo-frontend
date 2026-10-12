@@ -14,15 +14,19 @@
 // instead of disappearing into a queue.
 
 use crate::media_types::{
-    HealthResult, LaunchersResult, LogDownloadResult, MediaBrowseIndexParams,
-    MediaBrowseIndexResult, MediaBrowseParams, MediaBrowseResult, MediaHistoryLatestResult,
-    MediaHistoryParams, MediaHistoryResult, MediaImageParams, MediaImageResult, MediaIndexParams,
+    AuthLinkStatus, AuthStatusResult, BackupRemoteListResult, BackupRemoteRestoreResult,
+    BackupRemoteRunResult, BackupStatusResponse, DecksResult, HealthResult, LaunchersResult,
+    LogDownloadResult, MediaBrowseIndexParams, MediaBrowseIndexResult, MediaBrowseParams,
+    MediaBrowseResult, MediaHistoryLatestResult, MediaHistoryParams, MediaHistoryResult,
+    MediaImageParams, MediaImageResult, MediaIndexParams, MediaLookupParams, MediaLookupResult,
     MediaMetaParams, MediaMetaResult, MediaMetaUpdateParams, MediaResult, MediaScrapeParams,
-    MediaSearchParams, MediaSearchResult, MediaTagsUpdateParams, MediaTagsUpdateResult,
-    ReadersResult, ReadersWriteParams, RunParams, ScrapersResult, ScrapingStatusResponse,
-    SettingsResult, SystemsParams, SystemsResult, TokensHistoryResult, TokensResult,
-    UpdateSettingsParams, VersionResult,
+    MediaSearchParams, MediaSearchResult, MediaTagsParams, MediaTagsResult, MediaTagsUpdateParams,
+    MediaTagsUpdateResult, PairStartResult, ReadersResult, ReadersWriteParams,
+    RemoteActivityResult, RunParams, ScrapersResult, ScrapingStatusResponse, SettingsResult,
+    SystemsParams, SystemsResult, TokensHistoryResult, TokensResult, UpdateSettingsParams,
+    VersionResult,
 };
+use crate::transport::Transport;
 use futures_util::{SinkExt, StreamExt};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::Value;
@@ -30,10 +34,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::sync::{broadcast, mpsc, oneshot, watch};
-use tokio_tungstenite::{
-    connect_async_with_config,
-    tungstenite::{protocol::WebSocketConfig, Message},
-};
+use tokio_tungstenite::tungstenite::{protocol::WebSocketConfig, Message};
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
@@ -139,14 +140,133 @@ struct RpcResponse {
     params: Option<Value>,
 }
 
+/// The wire category (`error.data.category`) meaning the launch stopped for
+/// something the user can act on. See `ClientError::is_launch_repair`.
+const LAUNCH_REPAIR_CATEGORY: &str = "launch_repair";
+/// Core's `error.data.category` for a request refused because something
+/// else holds what it needs.
+const BUSY_CATEGORY: &str = "busy";
+
+/// How long a request waits for Core's answer. Core ends every bounded
+/// request itself at 30 seconds (`config.APIRequestTimeout`) and says why,
+/// so this only fires when Core stays connected and never answers at all;
+/// the margin lets Core's own answer arrive first.
+const REQUEST_DEADLINE: Duration = Duration::from_secs(35);
+
+/// The methods Core runs with no whole-operation deadline (a full backup
+/// or restore, an update install): the same list as Core's
+/// `MethodHasUnboundedRuntime`, so the two sides cannot disagree about
+/// when a request has been abandoned.
+fn has_unbounded_runtime(method: &str) -> bool {
+    matches!(
+        method,
+        "settings.backup"
+            | "settings.backup.restore"
+            | "settings.backup.remote.run"
+            | "settings.backup.remote.restore"
+            | "update.apply"
+    )
+}
+
+/// The wait `call` allows `method`, or None for one Core does not bound.
+fn request_deadline(method: &str) -> Option<Duration> {
+    (!has_unbounded_runtime(method)).then_some(REQUEST_DEADLINE)
+}
+
+/// `error.data` on a JSON-RPC error response. Every category shares this
+/// shape; only `launch_repair` currently populates `reason`/`params`, but
+/// parsing is generic rather than category-specific.
+#[derive(Debug, Deserialize, Clone, Default)]
+struct RpcErrorData {
+    #[serde(default)]
+    category: Option<String>,
+    #[serde(default)]
+    reason: Option<String>,
+    #[serde(default)]
+    params: Option<HashMap<String, String>>,
+}
+
 #[derive(Debug, Deserialize, Clone)]
 struct RpcError {
     message: String,
+    #[serde(default)]
+    data: Option<RpcErrorData>,
 }
 
 #[derive(Debug)]
 pub struct ClientError {
     pub message: String,
+    /// `error.data.category`, when Core sent one. `None` for a transport
+    /// failure or an older Core that predates categorized errors.
+    pub category: Option<String>,
+    /// `error.data.reason`, when the category documents one (currently only
+    /// `launch_repair`). A closed, machine-readable set documented at
+    /// `docs/api/methods.md#launch-repair-errors` upstream.
+    pub reason: Option<String>,
+    /// `error.data.params`, when the reason carries one. Display names only
+    /// (`launcher`, `plugin`), never identifiers, paths or URIs. A key is
+    /// absent when Core has no name for it. Boxed: rarely populated, and an
+    /// inline `HashMap` would make every `Result<_, ClientError>` carry its
+    /// size whether or not this field is ever set.
+    pub params: Option<Box<HashMap<String, String>>>,
+    /// The request never got an answer because there was no live link:
+    /// not connected, or the session ended while it waited. Retrying once
+    /// Core is connected again can succeed; nothing Core said applies.
+    transport: bool,
+}
+
+impl ClientError {
+    pub(crate) fn plain(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            category: None,
+            reason: None,
+            params: None,
+            transport: false,
+        }
+    }
+
+    /// A request that never reached Core, or lost its link before Core
+    /// answered.
+    pub(crate) fn transport(message: impl Into<String>) -> Self {
+        Self {
+            transport: true,
+            ..Self::plain(message)
+        }
+    }
+
+    /// Built from Core's own error response, so `data` (when present) rides
+    /// along with the message.
+    fn from_rpc(err: RpcError) -> Self {
+        let data = err.data.unwrap_or_default();
+        Self {
+            message: err.message,
+            category: data.category,
+            reason: data.reason,
+            params: data.params.map(Box::new),
+            transport: false,
+        }
+    }
+
+    /// See [`ClientError::transport`]: true when the failure is the link's,
+    /// not an answer from Core.
+    pub fn is_transport(&self) -> bool {
+        self.transport
+    }
+
+    /// Whether Core refused this because something else holds what the
+    /// request needs (its `busy` category): a media database write while
+    /// an index, a metadata update or an optimization pass is running.
+    pub fn is_busy(&self) -> bool {
+        self.category.as_deref() == Some(BUSY_CATEGORY)
+    }
+
+    /// Whether this is a `launch_repair` error: the launch stopped for
+    /// something the user can act on. `reason`/`params` describe how, and
+    /// `zaparoo_app::launch_repair` turns `reason` into wording.
+    pub fn is_launch_repair(&self) -> bool {
+        self.category.as_deref() == Some(LAUNCH_REPAIR_CATEGORY)
+    }
 }
 
 impl std::fmt::Display for ClientError {
@@ -178,9 +298,7 @@ fn deserialize_timed<T: DeserializeOwned>(
     val: Value,
 ) -> Result<T, ClientError> {
     let started = Instant::now();
-    let result = serde_json::from_value(val).map_err(|e| ClientError {
-        message: e.to_string(),
-    });
+    let result = serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()));
     debug!(
         method,
         duration_ms = started.elapsed().as_millis(),
@@ -208,9 +326,7 @@ fn teardown_session(tx_slot: &OutboundSlot, pending: &PendingMap) {
         drained
     };
     for (_, response) in drained {
-        let _ = response.send(Err(ClientError {
-            message: "disconnected".into(),
-        }));
+        let _ = response.send(Err(ClientError::transport("disconnected")));
     }
 }
 
@@ -230,9 +346,7 @@ fn handle_incoming(
         let sender = pending.lock().unwrap().remove(&id);
         if let Some(tx) = sender {
             let result = if let Some(err) = resp.error {
-                Err(ClientError {
-                    message: err.message,
-                })
+                Err(ClientError::from_rpc(err))
             } else {
                 Ok(resp.result.unwrap_or(Value::Null))
             };
@@ -243,6 +357,72 @@ fn handle_incoming(
             method,
             params: resp.params.unwrap_or(Value::Null),
         });
+    }
+}
+
+enum SessionEnd {
+    Disconnected,
+    Replaced,
+    Closed,
+}
+
+/// A session owns its outbound queue; no message crosses an endpoint change.
+async fn serve_session(
+    socket: std::pin::Pin<Box<dyn crate::transport::Socket>>,
+    transport: &Transport,
+    target: &mut watch::Receiver<Option<Transport>>,
+    mut outgoing: mpsc::UnboundedReceiver<String>,
+    pending: &PendingMap,
+    notifications: &broadcast::Sender<Notification>,
+) -> SessionEnd {
+    let (mut write, mut read) = socket.split();
+    loop {
+        tokio::select! {
+            changed = target.changed() => {
+                return if changed.is_ok() { SessionEnd::Replaced } else { SessionEnd::Closed };
+            }
+            message = outgoing.recv() => {
+                let Some(text) = message else {
+                    // Host invalidation retires the sender before notifying the watch.
+                    return SessionEnd::Disconnected;
+                };
+                tokio::select! {
+                    biased;
+                    changed = target.changed() => {
+                        return if changed.is_ok() { SessionEnd::Replaced } else { SessionEnd::Closed };
+                    }
+                    result = write.send(Message::Text(text.into())) => {
+                        if let Err(error) = result {
+                            warn!("ws send error: {error}");
+                            return SessionEnd::Disconnected;
+                        }
+                    }
+                }
+            }
+            message = read.next() => {
+                match message {
+                    Some(Ok(Message::Text(text))) => {
+                        if let Ok(response) = serde_json::from_str::<RpcResponse>(text.as_str()) {
+                            let current = target.borrow();
+                            if current.as_ref() == Some(transport)
+                                && !target.has_changed().unwrap_or(true)
+                            {
+                                handle_incoming(response, pending, notifications);
+                            }
+                        }
+                    }
+                    Some(Ok(Message::Close(_))) | None => {
+                        debug!("ws closed");
+                        return SessionEnd::Disconnected;
+                    }
+                    Some(Err(error)) => {
+                        warn!("ws read error: {error}");
+                        return SessionEnd::Disconnected;
+                    }
+                    _ => {}
+                }
+            }
+        }
     }
 }
 
@@ -331,10 +511,28 @@ pub struct Client {
     pending: PendingMap,
     notifications: broadcast::Sender<Notification>,
     pub connection: Arc<watch::Sender<ConnectionState>>,
+    transport: watch::Sender<Option<Transport>>,
 }
 
 impl Client {
     pub fn new(endpoint: String, runtime: &tokio::runtime::Handle) -> Arc<Self> {
+        Self::with_transport(Transport::tcp(endpoint, None), runtime)
+    }
+
+    pub fn with_transport(transport: Transport, runtime: &tokio::runtime::Handle) -> Arc<Self> {
+        Self::with_optional_transport(Some(transport), runtime)
+    }
+
+    /// Wait for a host-owned endpoint rather than probing a desktop default.
+    pub fn waiting(runtime: &tokio::runtime::Handle) -> Arc<Self> {
+        Self::with_optional_transport(None, runtime)
+    }
+
+    fn with_optional_transport(
+        transport: Option<Transport>,
+        runtime: &tokio::runtime::Handle,
+    ) -> Arc<Self> {
+        let (transport_tx, mut transport_rx) = watch::channel(transport);
         let (connection_tx, _) = watch::channel(ConnectionState::Disconnected);
         let pending: PendingMap = Arc::new(Mutex::new(HashMap::new()));
         let pending_clone = pending.clone();
@@ -350,6 +548,7 @@ impl Client {
             pending,
             notifications: notification_tx,
             connection: connection_arc,
+            transport: transport_tx,
         });
 
         runtime.spawn(async move {
@@ -357,6 +556,16 @@ impl Client {
             let process_start = Instant::now();
 
             loop {
+                let target = { transport_rx.borrow_and_update().clone() };
+                let Some(transport) = target else {
+                    if fsm.ever_connected() {
+                        connection_clone.send_replace(ConnectionState::Reconnecting);
+                    }
+                    if transport_rx.changed().await.is_err() {
+                        return;
+                    }
+                    continue;
+                };
                 // Cold-boot fast-retry window: while we have never
                 // connected and the process is young, Core is probably
                 // still starting up. Retry tightly so we pick up Core's
@@ -390,62 +599,48 @@ impl Client {
                 let ws_config = WebSocketConfig::default()
                     .max_message_size(None)
                     .max_frame_size(None);
-                match connect_async_with_config(&endpoint, Some(ws_config), false).await {
-                    Ok((ws_stream, _)) => {
-                        info!("connected to core at {endpoint}");
+                let connected = tokio::select! {
+                    biased;
+                    changed = transport_rx.changed() => {
+                        if changed.is_err() { return; }
+                        continue;
+                    }
+                    result = transport.connect(ws_config) => result,
+                };
+                match connected {
+                    Ok(ws_stream) => {
+                        info!(?transport, "connected to core");
 
                         // Fresh outbound channel per session — see the
                         // OutboundSlot doc comment for why this isn't
                         // shared across reconnects.
-                        let (msg_tx, mut msg_rx) = mpsc::unbounded_channel::<String>();
-                        #[allow(clippy::unwrap_used, reason = "mutex poisoning is unrecoverable")]
+                        let (msg_tx, msg_rx) = mpsc::unbounded_channel::<String>();
                         {
-                            *tx_slot_clone.lock().unwrap() = Some(msg_tx);
-                        }
-                        connection_clone.send_replace(fsm.on_connected());
-
-                        let (mut write, mut read) = ws_stream.split();
-
-                        loop {
-                            tokio::select! {
-                                msg = msg_rx.recv() => {
-                                    match msg {
-                                        Some(text) => {
-                                            if let Err(e) = write.send(Message::Text(text.into())).await {
-                                                warn!("ws send error: {e}");
-                                                break;
-                                            }
-                                        }
-                                        None => return, // Outbound channel dropped — only happens on shutdown.
-                                    }
-                                }
-                                msg = read.next() => {
-                                    match msg {
-                                        Some(Ok(Message::Text(text))) => {
-                                            if let Ok(resp) = serde_json::from_str::<RpcResponse>(text.as_str()) {
-                                                handle_incoming(resp, &pending_clone, &notification_tx_clone);
-                                            }
-                                        }
-                                        Some(Ok(Message::Close(_))) | None => {
-                                            debug!("ws closed");
-                                            break;
-                                        }
-                                        Some(Err(e)) => {
-                                            warn!("ws read error: {e}");
-                                            break;
-                                        }
-                                        _ => {}
-                                    }
-                                }
+                            // Fence endpoint replacement against installing a session
+                            // whose handshake completed just as its credential expired.
+                            let current = transport_rx.borrow();
+                            if current.as_ref() != Some(&transport)
+                                || transport_rx.has_changed().unwrap_or(true)
+                            {
+                                continue;
                             }
+                            #[allow(clippy::unwrap_used, reason = "mutex poisoning is unrecoverable")]
+                            {
+                                *tx_slot_clone.lock().unwrap() = Some(msg_tx);
+                            }
+                            connection_clone.send_replace(fsm.on_connected());
                         }
 
-                        // Tear down the session: drop the outbound sender
-                        // (msg_rx is dropped at scope-exit, taking any
-                        // queued-but-unsent messages with it) and fail
-                        // every pending RPC. The next iteration publishes
-                        // `Reconnecting` automatically.
+                        let ended = serve_session(
+                            ws_stream, &transport, &mut transport_rx, msg_rx,
+                            &pending_clone, &notification_tx_clone,
+                        ).await;
                         teardown_session(&tx_slot_clone, &pending_clone);
+                        match ended {
+                            SessionEnd::Replaced => continue,
+                            SessionEnd::Closed => return,
+                            SessionEnd::Disconnected => {}
+                        }
                     }
                     Err(e) => {
                         if let Some(next) = fsm.on_attempt_failed(e.to_string(), boot_window) {
@@ -457,11 +652,45 @@ impl Client {
                         );
                     }
                 }
-                tokio::time::sleep(backoff_delay(fsm.current_failures(), boot_window)).await;
+                tokio::select! {
+                    biased;
+                    changed = transport_rx.changed() => {
+                        if changed.is_err() { return; }
+                    }
+                    () = tokio::time::sleep(backoff_delay(fsm.current_failures(), boot_window)) => {}
+                }
             }
         });
 
         client
+    }
+
+    /// Invalidates queued/in-flight work before publishing replacement credentials.
+    /// Identical updates are idempotent; None retires the session until readiness.
+    pub fn set_transport(&self, transport: Option<Transport>) {
+        self.transport.send_if_modified(|current| {
+            if *current == transport {
+                return false;
+            }
+            teardown_session(&self.tx, &self.pending);
+            self.connection.send_if_modified(|state| {
+                if matches!(state, ConnectionState::Connected) {
+                    *state = ConnectionState::Reconnecting;
+                    true
+                } else {
+                    false
+                }
+            });
+            *current = transport;
+            true
+        });
+    }
+
+    pub fn is_local(&self) -> bool {
+        self.transport
+            .borrow()
+            .as_ref()
+            .is_some_and(Transport::is_local)
     }
 
     pub fn subscribe_notifications(&self) -> broadcast::Receiver<Notification> {
@@ -469,6 +698,18 @@ impl Client {
     }
 
     async fn call<P: Serialize>(&self, method: &str, params: &P) -> Result<Value, ClientError> {
+        self.call_within(method, params, request_deadline(method))
+            .await
+    }
+
+    /// `call` with the wait for Core's answer bounded by `deadline`, or
+    /// unbounded when it is None.
+    async fn call_within<P: Serialize>(
+        &self,
+        method: &str,
+        params: &P,
+        deadline: Option<Duration>,
+    ) -> Result<Value, ClientError> {
         let id = Uuid::new_v4().to_string();
         let req = RpcRequest {
             jsonrpc: "2.0",
@@ -476,9 +717,7 @@ impl Client {
             params,
             id: id.clone(),
         };
-        let text = serde_json::to_string(&req).map_err(|e| ClientError {
-            message: e.to_string(),
-        })?;
+        let text = serde_json::to_string(&req).map_err(|e| ClientError::plain(e.to_string()))?;
         let started = Instant::now();
 
         let (resp_tx, resp_rx) = oneshot::channel();
@@ -489,9 +728,9 @@ impl Client {
             // session-scoped operation: teardown either runs before all three
             // steps or drains the newly registered request afterward.
             let sender = self.tx.lock().unwrap();
-            let sender = sender.as_ref().ok_or_else(|| ClientError {
-                message: "not connected".into(),
-            })?;
+            let sender = sender
+                .as_ref()
+                .ok_or_else(|| ClientError::transport("not connected"))?;
             self.pending.lock().unwrap().insert(id.clone(), resp_tx);
             sender.send(text)
         };
@@ -514,24 +753,33 @@ impl Client {
                 error = "not connected",
                 "rpc round trip",
             );
-            return Err(ClientError {
-                message: "not connected".into(),
-            });
+            return Err(ClientError::transport("not connected"));
         }
 
-        let result = resp_rx.await.map_err(|_| ClientError {
-            message: "channel closed".into(),
-        })?;
+        let answer = match deadline {
+            None => resp_rx.await,
+            Some(deadline) => {
+                let Ok(answer) = tokio::time::timeout(deadline, resp_rx).await else {
+                    // `_pending_guard` drops the entry, so a late answer
+                    // finds nobody waiting.
+                    warn!(method, request_id = %id, "rpc timed out");
+                    return Err(ClientError::transport("request timed out"));
+                };
+                answer
+            }
+        };
+        let result = answer.map_err(|_| ClientError::transport("channel closed"))?;
         match result {
             Ok(val) => {
-                let payload_bytes = serde_json::to_vec(&val).map_or(0, |bytes| bytes.len());
-                debug!(
-                    method,
-                    request_id = %id,
-                    duration_ms = started.elapsed().as_millis(),
-                    payload_bytes,
-                    "rpc round trip",
-                );
+                if let Some(payload_bytes) = debug_payload_bytes(&val) {
+                    debug!(
+                        method,
+                        request_id = %id,
+                        duration_ms = started.elapsed().as_millis(),
+                        payload_bytes,
+                        "rpc round trip",
+                    );
+                }
                 Ok(val)
             }
             Err(e) => {
@@ -549,54 +797,42 @@ impl Client {
 
     pub async fn systems(&self, params: SystemsParams) -> Result<SystemsResult, ClientError> {
         let val = self.call("systems", &params).await?;
-        serde_json::from_value(val).map_err(|e| ClientError {
-            message: e.to_string(),
-        })
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
     }
 
     pub async fn readers(&self) -> Result<ReadersResult, ClientError> {
         #[derive(Serialize)]
         struct P {}
         let val = self.call("readers", &P {}).await?;
-        serde_json::from_value(val).map_err(|e| ClientError {
-            message: e.to_string(),
-        })
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
     }
 
     pub async fn health(&self) -> Result<HealthResult, ClientError> {
         #[derive(Serialize)]
         struct P {}
         let val = self.call("health", &P {}).await?;
-        serde_json::from_value(val).map_err(|e| ClientError {
-            message: e.to_string(),
-        })
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
     }
 
     pub async fn tokens(&self) -> Result<TokensResult, ClientError> {
         #[derive(Serialize)]
         struct P {}
         let val = self.call("tokens", &P {}).await?;
-        serde_json::from_value(val).map_err(|e| ClientError {
-            message: e.to_string(),
-        })
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
     }
 
     pub async fn tokens_history(&self) -> Result<TokensHistoryResult, ClientError> {
         #[derive(Serialize)]
         struct P {}
         let val = self.call("tokens.history", &P {}).await?;
-        serde_json::from_value(val).map_err(|e| ClientError {
-            message: e.to_string(),
-        })
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
     }
 
     pub async fn settings(&self) -> Result<SettingsResult, ClientError> {
         #[derive(Serialize)]
         struct P {}
         let val = self.call("settings", &P {}).await?;
-        serde_json::from_value(val).map_err(|e| ClientError {
-            message: e.to_string(),
-        })
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
     }
 
     pub async fn settings_update(&self, params: UpdateSettingsParams) -> Result<(), ClientError> {
@@ -604,22 +840,137 @@ impl Client {
         Ok(())
     }
 
+    /// Whether Core holds an Online credential for `url`. Local only; the
+    /// token is never validated or returned.
+    pub async fn settings_auth_status(&self, url: &str) -> Result<AuthStatusResult, ClientError> {
+        #[derive(Serialize)]
+        struct P<'a> {
+            url: &'a str,
+        }
+        let val = self.call("settings.auth.status", &P { url }).await?;
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
+    }
+
+    /// Start linking this device to an Online account. Core answers the code
+    /// and URL to show, then waits for approval in the background.
+    pub async fn settings_auth_link(&self) -> Result<AuthLinkStatus, ClientError> {
+        #[derive(Serialize)]
+        struct P {}
+        let val = self.call("settings.auth.link", &P {}).await?;
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
+    }
+
+    pub async fn settings_auth_link_status(&self) -> Result<AuthLinkStatus, ClientError> {
+        #[derive(Serialize)]
+        struct P {}
+        let val = self.call("settings.auth.link.status", &P {}).await?;
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
+    }
+
+    /// Cancel the pending link. Core errors when none is pending, which the
+    /// caller may ignore.
+    pub async fn settings_auth_link_cancel(&self) -> Result<(), ClientError> {
+        #[derive(Serialize)]
+        struct P {}
+        self.call("settings.auth.link.cancel", &P {}).await?;
+        Ok(())
+    }
+
+    /// Remove this device's Online account credentials.
+    pub async fn settings_auth_unlink(&self) -> Result<(), ClientError> {
+        #[derive(Serialize)]
+        struct P {}
+        self.call("settings.auth.unlink", &P {}).await?;
+        Ok(())
+    }
+
+    pub async fn settings_backup_status(&self) -> Result<BackupStatusResponse, ClientError> {
+        #[derive(Serialize)]
+        struct P {}
+        let val = self.call("settings.backup.status", &P {}).await?;
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
+    }
+
+    /// Back up this device to the cloud now, outside its schedule.
+    pub async fn settings_backup_remote_run(&self) -> Result<BackupRemoteRunResult, ClientError> {
+        #[derive(Serialize)]
+        struct P {}
+        let val = self.call("settings.backup.remote.run", &P {}).await?;
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
+    }
+
+    pub async fn settings_backup_remote_list(&self) -> Result<BackupRemoteListResult, ClientError> {
+        #[derive(Serialize)]
+        struct P {}
+        let val = self.call("settings.backup.remote.list", &P {}).await?;
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
+    }
+
+    /// Restore this device from a cloud snapshot. Core restarts to finish
+    /// applying it once this answers.
+    pub async fn settings_backup_remote_restore(
+        &self,
+        id: &str,
+    ) -> Result<BackupRemoteRestoreResult, ClientError> {
+        #[derive(Serialize)]
+        struct P<'a> {
+            id: &'a str,
+        }
+        let val = self
+            .call("settings.backup.remote.restore", &P { id })
+            .await?;
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
+    }
+
+    /// The remote-control poller's current status and recent activity, for
+    /// the Online settings page. Local clients only.
+    pub async fn remote_activity(&self) -> Result<RemoteActivityResult, ClientError> {
+        #[derive(Serialize)]
+        struct P {}
+        let val = self.call("remote.activity", &P {}).await?;
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
+    }
+
     pub async fn settings_logs_download(&self) -> Result<LogDownloadResult, ClientError> {
         #[derive(Serialize)]
         struct P {}
         let val = self.call("settings.logs.download", &P {}).await?;
-        serde_json::from_value(val).map_err(|e| ClientError {
-            message: e.to_string(),
-        })
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
+    }
+
+    /// Start pairing a device. Core only accepts this from a local
+    /// client, and answers the PIN to read out plus the deadline it stops
+    /// working at. It can refuse, for instance when the paired-client cap
+    /// is already reached.
+    pub async fn clients_pair_start(&self) -> Result<PairStartResult, ClientError> {
+        #[derive(Serialize)]
+        struct P {}
+        let val = self.call("clients.pair.start", &P {}).await?;
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
+    }
+
+    /// Drop the pending pairing. Core accepts this whether or not one is
+    /// still open, so it is safe on every exit path.
+    pub async fn clients_pair_cancel(&self) -> Result<(), ClientError> {
+        #[derive(Serialize)]
+        struct P {}
+        self.call("clients.pair.cancel", &P {}).await?;
+        Ok(())
     }
 
     pub async fn launchers(&self) -> Result<LaunchersResult, ClientError> {
         #[derive(Serialize)]
         struct P {}
         let val = self.call("launchers", &P {}).await?;
-        serde_json::from_value(val).map_err(|e| ClientError {
-            message: e.to_string(),
-        })
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
+    }
+
+    /// Ask Core to re-evaluate which launchers are installed.
+    pub async fn launchers_refresh(&self) -> Result<(), ClientError> {
+        #[derive(Serialize)]
+        struct P {}
+        self.call("launchers.refresh", &P {}).await?;
+        Ok(())
     }
 
     pub async fn media_search(
@@ -680,9 +1031,7 @@ impl Client {
         params: MediaImageParams,
     ) -> Result<MediaImageResult, ClientError> {
         let val = self.call("media.image", &params).await?;
-        serde_json::from_value(val).map_err(|e| ClientError {
-            message: e.to_string(),
-        })
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
     }
 
     /// Fetches the full metadata graph for a single media row —
@@ -698,6 +1047,17 @@ impl Client {
     ) -> Result<MediaMetaResult, ClientError> {
         let val = self.call("media.meta", &params).await?;
         deserialize_timed("media.meta", val)
+    }
+
+    /// Resolves a game name within one system to its indexed media row
+    /// (`media.lookup`). `matched` is `None` when Core finds no title or is
+    /// not confident enough in one.
+    pub async fn media_lookup(
+        &self,
+        params: MediaLookupParams,
+    ) -> Result<MediaLookupResult, ClientError> {
+        let val = self.call("media.lookup", &params).await?;
+        deserialize_timed("media.lookup", val)
     }
 
     /// Sets or clears the per-media launcher override, then returns the
@@ -736,9 +1096,25 @@ impl Client {
         let val = self
             .call("media.history.latest", &serde_json::json!({}))
             .await?;
-        serde_json::from_value(val).map_err(|e| ClientError {
-            message: e.to_string(),
-        })
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
+    }
+
+    /// Lists the tags available for browse filtering (`media.tags`),
+    /// scoped to `params.systems` or every system when empty. Core caps
+    /// long-tail types at 100 entries each.
+    pub async fn media_tags(
+        &self,
+        params: MediaTagsParams,
+    ) -> Result<MediaTagsResult, ClientError> {
+        let val = self.call("media.tags", &params).await?;
+        deserialize_timed("media.tags", val)
+    }
+
+    /// Lists every deck without its items (`decks`, Core 2.18), most
+    /// recently changed first.
+    pub async fn decks(&self) -> Result<DecksResult, ClientError> {
+        let val = self.call("decks", &serde_json::json!({})).await?;
+        deserialize_timed("decks", val)
     }
 
     /// Adds or removes mutable user tags for one indexed media item.
@@ -747,9 +1123,7 @@ impl Client {
         params: MediaTagsUpdateParams,
     ) -> Result<MediaTagsUpdateResult, ClientError> {
         let val = self.call("media.tags.update", &params).await?;
-        serde_json::from_value(val).map_err(|e| ClientError {
-            message: e.to_string(),
-        })
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
     }
 
     /// Snapshot of Core's media state — database build status plus the
@@ -760,9 +1134,7 @@ impl Client {
         #[derive(Serialize)]
         struct P {}
         let val = self.call("media", &P {}).await?;
-        serde_json::from_value(val).map_err(|e| ClientError {
-            message: e.to_string(),
-        })
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
     }
 
     /// Triggers a (re)build of Core's media database. With an empty
@@ -808,9 +1180,7 @@ impl Client {
         #[derive(Serialize)]
         struct P {}
         let val = self.call("media.scrape.status", &P {}).await?;
-        serde_json::from_value(val).map_err(|e| ClientError {
-            message: e.to_string(),
-        })
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
     }
 
     /// Lists the scrapers Core knows how to run. Used to resolve a
@@ -819,9 +1189,7 @@ impl Client {
         #[derive(Serialize)]
         struct P {}
         let val = self.call("scrapers", &P {}).await?;
-        serde_json::from_value(val).map_err(|e| ClientError {
-            message: e.to_string(),
-        })
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
     }
 
     pub async fn run(&self, params: RunParams) -> Result<(), ClientError> {
@@ -842,9 +1210,7 @@ impl Client {
         #[derive(Serialize)]
         struct P {}
         let val = self.call("version", &P {}).await?;
-        serde_json::from_value(val).map_err(|e| ClientError {
-            message: e.to_string(),
-        })
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
     }
 }
 
@@ -879,9 +1245,278 @@ pub(crate) fn backoff_delay(failures: u32, boot_window: bool) -> Duration {
     Duration::from_secs(secs.min(MAX_BACKOFF_SECS))
 }
 
+/// The size of an RPC result for the round-trip debug line. Measuring it
+/// re-serializes the whole result, so it only happens when that line would
+/// actually be written.
+fn debug_payload_bytes(val: &Value) -> Option<usize> {
+    tracing::enabled!(tracing::Level::DEBUG)
+        .then(|| serde_json::to_vec(val).map_or(0, |bytes| bytes.len()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::pin::Pin;
+    use std::task::{Context, Poll};
+
+    struct BackpressuredSocket(Option<oneshot::Sender<()>>);
+
+    impl futures_util::Stream for BackpressuredSocket {
+        type Item = Result<Message, tokio_tungstenite::tungstenite::Error>;
+        fn poll_next(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+            Poll::Pending
+        }
+    }
+
+    impl futures_util::Sink<Message> for BackpressuredSocket {
+        type Error = tokio_tungstenite::tungstenite::Error;
+        fn poll_ready(
+            mut self: Pin<&mut Self>,
+            _: &mut Context<'_>,
+        ) -> Poll<Result<(), Self::Error>> {
+            if let Some(waiting) = self.0.take() {
+                let _ = waiting.send(());
+            }
+            Poll::Pending
+        }
+        fn start_send(self: Pin<&mut Self>, _: Message) -> Result<(), Self::Error> {
+            Ok(())
+        }
+        fn poll_flush(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            Poll::Pending
+        }
+        fn poll_close(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            Poll::Pending
+        }
+    }
+
+    #[tokio::test]
+    #[allow(clippy::unwrap_used, reason = "bounded fake-transport regression test")]
+    async fn endpoint_change_cancels_a_backpressured_write() {
+        tokio::time::timeout(Duration::from_secs(2), async {
+            let transport = Transport::tcp("ws://localhost/api/v0.1".into(), None);
+            let (target, mut target_rx) = watch::channel(Some(transport.clone()));
+            let (outgoing, outgoing_rx) = mpsc::unbounded_channel();
+            let (waiting, blocked) = oneshot::channel();
+            let session = tokio::spawn(async move {
+                let pending = PendingMap::default();
+                let (notifications, _) = broadcast::channel(1);
+                serve_session(
+                    Box::pin(BackpressuredSocket(Some(waiting))),
+                    &transport,
+                    &mut target_rx,
+                    outgoing_rx,
+                    &pending,
+                    &notifications,
+                )
+                .await
+            });
+            outgoing.send("queued request".into()).unwrap();
+            blocked.await.unwrap();
+            target.send_replace(None);
+            assert!(matches!(session.await.unwrap(), SessionEnd::Replaced));
+        })
+        .await
+        .unwrap();
+    }
+
+    /// Callers retry a request that never reached Core, and must not
+    /// treat Core's own refusal the same way.
+    #[tokio::test]
+    #[allow(clippy::unwrap_used, reason = "bounded in-memory RPC fixtures")]
+    async fn only_link_failures_are_transport_errors() {
+        let (notifications, _) = broadcast::channel(1);
+        let client = Client {
+            tx: Arc::new(Mutex::new(None)),
+            pending: PendingMap::default(),
+            notifications: notifications.clone(),
+            connection: Arc::new(watch::channel(ConnectionState::Connecting).0),
+            transport: watch::channel(None).0,
+        };
+        let not_connected = client.call("media.image", &Value::Null).await.unwrap_err();
+        assert!(not_connected.is_transport());
+
+        let (msg_tx, _msg_rx) = mpsc::unbounded_channel();
+        let tx_slot: OutboundSlot = Arc::new(Mutex::new(Some(msg_tx)));
+        let pending = PendingMap::default();
+        let (tx, rx) = oneshot::channel();
+        pending.lock().unwrap().insert("waiting".into(), tx);
+        teardown_session(&tx_slot, &pending);
+        assert!(
+            rx.await.unwrap().unwrap_err().is_transport(),
+            "a session ending mid-request"
+        );
+
+        let (tx, rx) = oneshot::channel();
+        pending.lock().unwrap().insert("refused".into(), tx);
+        let response: RpcResponse = serde_json::from_value(serde_json::json!({
+            "id": "refused", "error": {"message": "not allowed"}
+        }))
+        .unwrap();
+        handle_incoming(response, &pending, &notifications);
+        assert!(
+            !rx.await.unwrap().unwrap_err().is_transport(),
+            "Core's own refusal"
+        );
+    }
+
+    #[allow(clippy::unwrap_used, reason = "test constructs known-good JSON")]
+    fn error_from(value: &Value) -> ClientError {
+        let response: RpcResponse = serde_json::from_value(serde_json::json!({
+            "id": "x", "error": value
+        }))
+        .unwrap();
+        ClientError::from_rpc(response.error.unwrap())
+    }
+
+    #[test]
+    fn a_launch_repair_error_carries_its_reason_and_params() {
+        let err = error_from(&serde_json::json!({
+            "message": "this launcher's plugin for this system is not installed",
+            "data": {
+                "category": "launch_repair",
+                "reason": "launcher_plugin_missing",
+                "params": {"launcher": "RetroArch", "plugin": "Mesen"},
+            },
+        }));
+        assert!(err.is_launch_repair());
+        assert_eq!(err.category.as_deref(), Some("launch_repair"));
+        assert_eq!(err.reason.as_deref(), Some("launcher_plugin_missing"));
+        assert_eq!(
+            err.params.as_ref().and_then(|p| p.get("launcher")),
+            Some(&"RetroArch".to_string())
+        );
+        assert_eq!(
+            err.params.as_ref().and_then(|p| p.get("plugin")),
+            Some(&"Mesen".to_string())
+        );
+        assert_eq!(
+            err.message,
+            "this launcher's plugin for this system is not installed"
+        );
+    }
+
+    #[test]
+    fn a_category_with_no_reason_or_params_leaves_them_absent() {
+        let err = error_from(&serde_json::json!({
+            "message": "media not found",
+            "data": {"category": "media_not_found"},
+        }));
+        assert!(!err.is_launch_repair());
+        assert_eq!(err.category.as_deref(), Some("media_not_found"));
+        assert_eq!(err.reason, None);
+        assert_eq!(err.params, None);
+    }
+
+    #[test]
+    fn an_older_core_with_no_data_field_leaves_everything_absent() {
+        let err = error_from(&serde_json::json!({ "message": "something failed" }));
+        assert!(!err.is_launch_repair());
+        assert_eq!(err.category, None);
+        assert_eq!(err.reason, None);
+        assert_eq!(err.params, None);
+        assert_eq!(err.message, "something failed");
+    }
+
+    #[test]
+    fn an_absent_param_key_is_absent_not_empty() {
+        let err = error_from(&serde_json::json!({
+            "message": "this launcher is not installed",
+            "data": {
+                "category": "launch_repair",
+                "reason": "launcher_not_installed",
+                "params": {"launcher": "RetroArch"},
+            },
+        }));
+        assert!(err
+            .params
+            .as_ref()
+            .is_some_and(|p| !p.contains_key("plugin")));
+    }
+
+    #[tokio::test]
+    #[allow(clippy::unwrap_used, reason = "bounded transport regression test")]
+    async fn endpoint_replacement_fails_pending_work_and_drop_closes_session() {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            let first = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let second = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let first_target = Transport::tcp(
+                format!("ws://{}/api/v0.1", first.local_addr().unwrap()),
+                None,
+            );
+            let second_target = Transport::tcp(
+                format!("ws://{}/api/v0.1", second.local_addr().unwrap()),
+                None,
+            );
+            let (received_tx, received_rx) = oneshot::channel();
+            let first_server = tokio::spawn(async move {
+                let (stream, _) = first.accept().await.unwrap();
+                let mut socket = tokio_tungstenite::accept_async(stream).await.unwrap();
+                assert!(matches!(socket.next().await, Some(Ok(Message::Text(_)))));
+                received_tx.send(()).unwrap();
+                // Replacement must drop this socket, not replay its queued request.
+                assert!(!matches!(socket.next().await, Some(Ok(Message::Text(_)))));
+            });
+            let second_server = tokio::spawn(async move {
+                let (stream, _) = second.accept().await.unwrap();
+                let mut socket = tokio_tungstenite::accept_async(stream).await.unwrap();
+                let request = socket.next().await.unwrap().unwrap();
+                let request: Value = serde_json::from_str(request.to_text().unwrap()).unwrap();
+                assert_eq!(request["method"], "replacement");
+                socket
+                    .send(Message::Text(
+                        serde_json::json!({
+                            "jsonrpc": "2.0", "id": request["id"], "result": "new-session"
+                        })
+                        .to_string()
+                        .into(),
+                    ))
+                    .await
+                    .unwrap();
+                // Dropping the last Client must stop its background connection task.
+                assert!(!matches!(socket.next().await, Some(Ok(Message::Text(_)))));
+            });
+            let client = Client::waiting(&tokio::runtime::Handle::current());
+            assert!(!client.is_local());
+            assert!(client.call("offline", &Value::Null).await.is_err());
+            let mut connection = client.connection.subscribe();
+            client.set_transport(Some(first_target.clone()));
+            drop(
+                connection
+                    .wait_for(|state| matches!(state, ConnectionState::Connected))
+                    .await
+                    .unwrap(),
+            );
+            assert!(client.is_local());
+            let pending = tokio::spawn({
+                let client = client.clone();
+                async move { client.call("old-pending", &Value::Null).await }
+            });
+            received_rx.await.unwrap();
+            client.set_transport(Some(first_target)); // Same identity must not tear down.
+            assert!(matches!(*connection.borrow(), ConnectionState::Connected));
+            client.set_transport(None);
+            assert!(!client.is_local());
+            assert_eq!(pending.await.unwrap().unwrap_err().message, "disconnected");
+            assert!(client.call("offline", &Value::Null).await.is_err());
+            first_server.await.unwrap();
+            client.set_transport(Some(second_target));
+            drop(
+                connection
+                    .wait_for(|state| matches!(state, ConnectionState::Connected))
+                    .await
+                    .unwrap(),
+            );
+            assert_eq!(
+                client.call("replacement", &Value::Null).await.unwrap(),
+                "new-session"
+            );
+            drop(client);
+            second_server.await.unwrap();
+        })
+        .await
+        .unwrap();
+    }
 
     #[test]
     #[allow(clippy::unwrap_used, reason = "test mutex must remain healthy")]
@@ -914,6 +1549,7 @@ mod tests {
             pending: pending.clone(),
             notifications,
             connection: Arc::new(connection),
+            transport: watch::channel(None).0,
         });
         let barrier = Arc::new(tokio::sync::Barrier::new(2));
 
@@ -940,6 +1576,63 @@ mod tests {
             error.message.as_str(),
             "disconnected" | "not connected"
         ));
+    }
+
+    fn connected_client() -> (Client, mpsc::UnboundedReceiver<String>, PendingMap) {
+        let (msg_tx, msg_rx) = mpsc::unbounded_channel();
+        let pending = PendingMap::default();
+        let (notifications, _) = broadcast::channel(1);
+        let (connection, _) = watch::channel(ConnectionState::Connected);
+        let client = Client {
+            tx: Arc::new(Mutex::new(Some(msg_tx))),
+            pending: pending.clone(),
+            notifications,
+            connection: Arc::new(connection),
+            transport: watch::channel(None).0,
+        };
+        (client, msg_rx, pending)
+    }
+
+    #[tokio::test]
+    async fn a_request_core_never_answers_fails_after_its_deadline() {
+        let (client, _outbound, pending) = connected_client();
+        let answer = client
+            .call_within(
+                "media.browse",
+                &Value::Null,
+                Some(Duration::from_millis(30)),
+            )
+            .await;
+        assert!(
+            answer.is_err(),
+            "an unanswered request must not wait forever"
+        );
+        let Err(error) = answer else {
+            return;
+        };
+        assert!(error.is_transport(), "the cursor it carried is still good");
+        assert_eq!(error.message, "request timed out");
+        #[allow(clippy::unwrap_used, reason = "mutex poisoning is unrecoverable")]
+        let waiting = pending.lock().unwrap().len();
+        assert_eq!(waiting, 0, "a late answer has nobody left to wake");
+    }
+
+    #[test]
+    fn only_the_methods_core_leaves_unbounded_have_no_deadline() {
+        assert_eq!(request_deadline("media.browse"), Some(REQUEST_DEADLINE));
+        assert_eq!(request_deadline("run"), Some(REQUEST_DEADLINE));
+        assert_eq!(request_deadline("readers.write"), Some(REQUEST_DEADLINE));
+        for method in [
+            "settings.backup",
+            "settings.backup.restore",
+            "settings.backup.remote.run",
+            "settings.backup.remote.restore",
+            "update.apply",
+        ] {
+            assert_eq!(request_deadline(method), None, "{method}");
+        }
+        // Core answers a bounded request first; this is only the backstop.
+        assert!(REQUEST_DEADLINE > Duration::from_secs(30));
     }
 
     #[test]
@@ -1164,5 +1857,29 @@ mod tests {
             log,
             vec![ConnectionState::Connecting, ConnectionState::Connected],
         );
+    }
+
+    #[test]
+    fn payload_size_is_measured_only_when_debug_is_on() {
+        let val = serde_json::json!({ "entries": [1, 2, 3] });
+        // No subscriber: the debug line is off, so nothing is re-serialized.
+        assert_eq!(debug_payload_bytes(&val), None);
+        let info = tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::INFO)
+            .with_writer(std::io::sink)
+            .finish();
+        tracing::subscriber::with_default(info, || {
+            assert_eq!(debug_payload_bytes(&val), None);
+        });
+        let debug = tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::DEBUG)
+            .with_writer(std::io::sink)
+            .finish();
+        tracing::subscriber::with_default(debug, || {
+            assert_eq!(
+                debug_payload_bytes(&val),
+                Some(serde_json::to_vec(&val).map_or(0, |b| b.len()))
+            );
+        });
     }
 }

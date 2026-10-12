@@ -40,6 +40,14 @@ pub trait Endpoint: 'static {
         args: Self::Args,
     ) -> BoxFuture<'static, Result<Self::Output, ClientError>>;
 
+    /// Retained allocation size of a Ready payload, including nested strings
+    /// and vector capacity. Opt out unless every heap-owning field is counted;
+    /// unmeasured outputs are released with their last consumer. Store adds
+    /// entry/tag overhead and enforces its inactive-byte and entry limits.
+    fn cache_bytes(_output: &Self::Output) -> Option<usize> {
+        None
+    }
+
     /// Tags this endpoint's data provides. The default — a single
     /// `Tag::any(NAME)` — means any mutation invalidating
     /// `Tag::any(NAME)` *or* `Tag::specific(NAME, _)` will refetch this
@@ -47,16 +55,9 @@ pub trait Endpoint: 'static {
     /// results that should only invalidate when *that* system's data
     /// changes).
     ///
-    /// The store's per-entry watcher recomputes `provides` only on
-    /// transitions through `Ready`, and `tokio::sync::watch` is
-    /// intentionally lossy: a rapid `Ready → Loading → Ready` sequence
-    /// can collapse into a single watcher wake-up that observes the
-    /// later state. Today every implementation derives `provides`
-    /// purely from `args`, so the value is invariant across successive
-    /// fetches and the lossiness is harmless. If you derive provides
-    /// from `output` (e.g. a server-issued id), the tags must be
-    /// stable across fetches with the same args — otherwise an
-    /// invalidation matched against stale provides will miss.
+    /// Recomputed from every successful fetch before Ready is published, not
+    /// through a lossy status watcher. Inactive cached pages keep these tags
+    /// so invalidation can mark them stale without waking old folders.
     fn provides(_args: &Self::Args, _output: &Self::Output) -> Vec<Tag> {
         vec![Tag::any(Self::NAME)]
     }

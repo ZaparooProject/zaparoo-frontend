@@ -1,12 +1,12 @@
 # Runtime script fonts
 
 Static Regular instances of the Noto Sans Arabic, Devanagari, Hebrew, JP,
-KR and TC faces, embedded into the binary by `rust/frontend/src/fonts.rs`
+KR, SC and TC faces, embedded into the binary by `rust/frontend/src/fonts.rs`
 (`include_bytes!`) and registered for script fallback at startup.
 
 Why static: Slint's runtime text path renders a variable font's default
 instance and does not apply the weight the UI asks for. Noto Sans Hebrew,
-JP, KR and TC default to Thin (wght 100), which rendered as spindly text in
+JP, KR, SC and TC default to Thin (wght 100), which rendered as spindly text in
 the offline probe. Instancing at wght 400 (and wdth 100 where the axis
 exists) sidesteps that and also drops the variation tables, so the files
 are smaller than their variable sources.
@@ -22,10 +22,20 @@ cd resources/fonts
 for f in NotoSansArabic NotoSansDevanagari NotoSansHebrew; do
   fonttools varLib.instancer -q -o runtime/$f-Regular.ttf $f.ttf wght=400 wdth=100
 done
-for f in NotoSansJP NotoSansKR NotoSansTC; do
+for f in NotoSansJP NotoSansKR NotoSansSC NotoSansTC; do
   fonttools varLib.instancer -q -o runtime/$f-Regular.ttf $f.ttf wght=400
 done
 ```
+
+An instance must name itself as the Regular of its family (name IDs 1, 2,
+4 and 6, with no typographic family in IDs 16 and 17). The Noto Sans SC
+source carries its default instance's "Thin" names through instancing, so
+check with `fc-query` and rewrite the `name` table when it does.
+
+Han ideographs are drawn by four of these faces (JP, KR, SC, TC), each with
+its own glyph shapes. Which one is tried first follows the interface
+language; see `zaparoo_app::han_fonts` and `set_han_preference` in
+`rust/frontend/src/fonts.rs`.
 
 Only Regular is shipped. A label that asks for a heavier weight in one of
 these scripts renders Regular until Slint applies variation axes at runtime.

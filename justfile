@@ -28,6 +28,13 @@ default:
 build:
     cd rust && cargo build -p frontend
 
+# rust/private/zaparoo-update is a checkout of the private Update module. It is
+# gitignored, and cargo does not notice it appearing or disappearing, so this
+# refreshes the crate that compiles it in. Run it after cloning or removing it.
+# Make cargo re-detect the private Update module checkout
+update-module:
+    touch rust/zaparoo-update/build.rs
+
 # Desktop release build
 build-release:
     cd rust && cargo build --release -p frontend
@@ -55,6 +62,16 @@ slint-ui *args:
     python3 scripts/slint-ui.py "$@"
 
 # --- test ---
+
+# Clippy and tests for the hosted library on the software renderer. An
+# embedding host supplies its own backend and renderer; this builds for none.
+hosted-check:
+    ./scripts/toolchain.sh just _hosted-check
+
+[private]
+_hosted-check:
+    cd rust && cargo clippy -p frontend --lib --no-default-features --features hosted,slint/renderer-software -- -D warnings
+    cd rust && cargo nextest run -p frontend --lib --no-default-features --features hosted,slint/renderer-software
 
 # Workspace tests plus the MiSTer feature set (toolchain image)
 test:
@@ -111,9 +128,11 @@ notices:
 # --- embedded art ---
 
 # Rasterizes resources/images/systems/*.svg and scales
-# resources/images/systems-color/*.png into rust/frontend/assets/, the two
-# logo sets build.rs embeds. Needs resvg, rsvg-convert, or inkscape on PATH
-# plus Pillow. `just logos --color-only` skips the SVG step.
+# resources/images/systems-color/*.png into rust/frontend/assets/, the logo
+# sets build.rs embeds, along with the half-size grayscale copies small
+# tiles decode. Needs resvg, rsvg-convert, or inkscape on PATH plus Pillow.
+# `just logos --color-only` skips the SVG step; `--half-only` only rebuilds
+# the half-size copies.
 # Regenerate the embedded system logo sets from resources/images
 logos *args:
     python3 scripts/prepare-system-logos.py {{args}}
@@ -186,3 +205,7 @@ toolchain-shell:
 clean:
     rm -rf output
     cd rust && cargo clean
+
+# Validate scanout release bundle handling without a MiSTer device.
+test-scanout-bundle:
+    python3 -B -m unittest discover -s scripts/tests -p 'test_scanout_bundle.py'

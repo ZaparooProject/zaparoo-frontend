@@ -43,6 +43,10 @@ impl Endpoint for MediaHistoryEndpoint {
     type Output = MediaHistoryResult;
     const NAME: &'static str = "MediaHistory";
 
+    fn cache_bytes(output: &Self::Output) -> Option<usize> {
+        Some(super::retained::bytes(output))
+    }
+
     fn fetch(
         client: Arc<Client>,
         args: Self::Args,
@@ -60,7 +64,10 @@ impl Endpoint for MediaHistoryEndpoint {
     }
 
     fn provides(args: &Self::Args, _output: &Self::Output) -> Vec<Tag> {
-        vec![Tag::specific(Self::NAME, args.systems.join(","))]
+        vec![
+            Tag::specific(Self::NAME, args.systems.join(",")),
+            Tag::MEDIA_DB,
+        ]
     }
 }
 

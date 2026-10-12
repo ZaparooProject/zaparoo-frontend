@@ -388,13 +388,12 @@ lowers artwork, caption, and ring together without scaling cover art.
 
 ### Launch feedback stays on the control that was pressed
 
-The press-in is the launch cue, and it lasts as long as the launch does. An
-ordinary push is a fixed 90 ms, which is over before Core has answered, so a
-commit that starts work outliving its own push keeps the control down
-(`press_feedback::keep_held`) and lifts it when the work resolves, fails, or
-the frontend goes dormant behind the game it started. A cap (`HOLD_MAX_MS`)
-releases anything still held after ten seconds: a Core that never answers must
-not leave a tile pushed in.
+Accept dispatches immediately; feedback never delays the action. Work that
+finishes in the same turn retires its feedback with it. A launch or deferred
+route keeps the accepting control down (`press_feedback::keep_held`) until the
+work resolves, fails, or the frontend goes dormant behind the game it started.
+A cap (`HOLD_MAX_MS`) releases anything still held after ten seconds: a Core
+that never answers must not leave a tile pushed in.
 
 The reason to keep it there rather than in the header is that the eye is on
 the tile that was just pressed, and on a handheld at arm's length or a TV
@@ -405,15 +404,15 @@ from its resting state if colour is the only difference, and that it have a
 form under Reduce Motion.
 
 The header line is the second, worded cue, on the same pattern as a hidden
-tile's muted edge plus its worded reason. It waits out `LOADING_CUE_DELAY_MS`
+tile's muted edge plus its worded reason. It waits out `CUE_DELAY_MS`
 first, so a launch that answers quickly never flashes a word into the header
 and away again. Nothing floats on the tile itself: no spinner, no badge, no
 looping cue over content.
 
 ### Hidden and disabled tiles, muted material, worded reason, never a badge
 
-A tile that isn't in its normal, fully-live state, a user-hidden game or
-system, or a Hub tile whose live precondition isn't currently met (Resume
+A tile that isn't in its normal, fully-live state, a user-hidden game,
+folder or system, or a Hub tile whose live precondition isn't currently met (Resume
 with no history, Update with no internet, a category Core hasn't confirmed)
 never disappears and never dims via opacity. Two cues, neither a floating
 badge:
@@ -429,7 +428,8 @@ badge:
   already shows rather than an overlay drawn on top of the tile. Captioned
   tiles (`show-caption: true`, Games/Favorites/Recents) fold it into the
   same dim suffix slot disambiguating tags already use (`MarqueeCaption`'s
-  `tags`, e.g. "Cave Story · Hidden"). Non-captioned tiles (Hub, Systems) have
+  `tags`, e.g. "Cave Story · Hidden"; a hidden folder keeps its file count
+  ahead of it). Non-captioned tiles (Hub, Systems) have
   no per-tile text to fold into, so it surfaces through the screen's
   `ActiveLabel` (also a `tags` suffix) while that tile is focused instead.
 
@@ -455,6 +455,19 @@ warns against overlay pills as clutter when they compete with the content
 they're stuck on. Reusing an existing screen surface for the reason (rather
 than adding a new overlay) avoids both: it's read, not scanned for, and nothing
 new is drawn on top of the artwork.
+
+### Folder rows, the icon until artwork arrives, a disc token on disc sets
+
+A folder draws the folder icon. When Core reports artwork for it, the art
+replaces the icon once it has loaded; the icon never gives way to a blank
+slot, and it stays when the request finds nothing. The folder's art is asked
+for by its path, never by a media id, so a folder's own artwork wins over
+that of the game inside it.
+
+A folder holding the discs of one game is a single launchable row. Its dim
+suffix leads with the disc Accept launches, in the same compact token a
+separate disc file carries (`D1`), and its menu's `Choose disc` lists the
+rest.
 
 ### Inverse-video rows (browse lists, Settings rows, menus, and pickers)
 
@@ -543,6 +556,73 @@ one, or the widest label can elide the moment it becomes selected, both
 measure every label in a hidden `VerticalLayout` fixed at `FontWeight.medium`
 for exactly this.
 
+#### Info rows only report
+
+`ControlKind.info` rows (the Online page's Status, Warp and remote Status)
+show a live value and nothing else. The value sits flush right in
+`Theme.text-label`, there is no chevron, and the cursor steps over the row:
+`Row::is_navigable` in `zaparoo_app::settings` is false for it, and it does
+not count toward the "N/M" position cue. A value row drawn as a picker with
+no options took focus and drew a chevron but did nothing on Accept, which
+read as a broken button next to the action row beside it.
+
+#### Disabled controls
+
+One rule for every control that cannot be used right now, on every screen:
+a Hub tile whose precondition is not met, a Settings row waiting on an
+account or on another job, a snapshot this Zaparoo cannot restore.
+
+1. **It stays, and it takes focus.** A controller has no hover: focus is the
+   only way to ask a control what it is and why it is unavailable. Skipping
+   it hides the reason and makes the cursor jump past a row the user can
+   see. (The exception is a row that was never a control: an info row only
+   reports, so it is skipped. See "Info rows only report".)
+2. **It is muted through its color tier, never through opacity.** A raw
+   alpha multiplier has no contrast floor; see "Hidden and disabled tiles"
+   for the measurement. A Settings row drops its label and value to
+   `Theme.text-label`, or `Theme.on-accent-muted` under the selection fill.
+3. **It says why, in text the screen already shows.** The Hub's active
+   label, a captioned tile's tag suffix, a list row's detail column, or the
+   Settings hint line, where `SettingsLabels.disabled-reason` replaces the
+   row's description. No badge, no dialog on Accept.
+4. **The help bar stops offering Accept.** The help bar is the contract for
+   what each button does. A control that will not act must not advertise
+   "Open", "Change" or "Select"; the bar shows Move and Back only.
+5. **Nothing acts on it.** Not Accept, not Left or Right on a toggle, not
+   the pointer. In Settings every input path asks `blocked` in
+   `frontend::settings` first, so a new path cannot forget. It gets no
+   press cue either: `press_feedback` gives a disabled control no target.
+
+Rules 4 and 5 go together. A disabled row that still showed "Select" and
+then did nothing on Accept read as a broken button; a muted row with its
+reason on screen and no Accept in the bar reads as what it is.
+
+Where this applies today:
+
+| Control | Why it is unavailable | Where the reason shows |
+|---|---|---|
+| Hub tile (Resume, Update, a category) | no history, no internet, not confirmed by Core | active label suffix |
+| Online toggles, Schedule, Manage backups | no linked account (`needs_online_link`) | Settings hint line |
+| Update media database / Update metadata | the other job is running | Settings hint line |
+| Cloud backup snapshot | made by a newer Zaparoo | the row's detail column |
+
+A launcher picker row that is not ready is not disabled: it stays
+pickable on purpose and only folds its reason into its label.
+
+The same honesty goes for a request Core refuses: name the cause when
+Core's answer gives one, and fall back to the network wording only for
+the rest. A backups list that fails to load says so in the modal (not
+linked, no Warp subscription). A backup or restore that fails opens the
+`backup` error dialog, whose body is chosen by cause: uploaded too
+recently, storage full, another backup running, a game running, a restart
+pending, a snapshot from a newer Zaparoo, no room on the device. Core
+sends all of these as plain messages with no error category, so
+`online_lists::failure` matches the phrases Core's own TUI matches
+(`backupActionErrorText`); a cause it does not recognize gets the generic
+body. Two earlier versions got this wrong the same way: an unlinked
+device was told to check its network, and a rate-limited backup was
+reported as "Online account unavailable" on an account that was working.
+
 #### Action rows are the one row kind that centers its label
 
 `ControlKind.action` rows (`updateMediaDb`, `runScraper`, `uploadLog`) used
@@ -581,6 +661,13 @@ track), with a border in the track's own "on" color for that register**:
 |---|---|---|---|---|
 | Unselected row | `Theme.accent` | `Theme.border-mid` | `Theme.surface-card` | `Theme.accent` |
 | Selected row | `Theme.on-accent` | `Theme.on-accent-muted` | `Theme.selection-fill` | `Theme.on-accent` |
+
+A tri-toggle (`ControlKind.tri-toggle`, the Online page's "All" row) is the
+same control with a third knob position: left when everything it covers is
+off, centred when some of it is on, right when all of it is. The centred
+track is the on and off colors mixed half and half on an unselected row and
+stays `on-accent-muted` on a selected one; position is still the primary
+cue. It never shows its state as a word.
 
 Before this rule, the track and the knob branched on row-selection
 independently of each other, so which element carried state flipped
@@ -660,11 +747,21 @@ viewport, so a band that grew and shrank with the focused row's
 description would reflow the list under the cursor, which is the bug the
 unconditional reservation was there to prevent in the first place.
 
+A hint line is one line of the body face: 1.362 em on Noto Sans, and exactly
+the font size on the bitmap face, which has no leading. Two 8px lines are
+16px, where the scaled figure reserved 22px and left a blank strip under
+every description. The card's position, its inset, the hint height and the
+rows viewport are solved together in whole pixels by
+`zaparoo_app::settings::page_geometry` and pushed through `SettingsView`;
+the view does not derive them again, because a card placed on fractional
+percentages put the band's clip edge between two pixels of the rule.
+
 The divider above the band is a structural line: the rows clip and scroll
 under a pinned band, so it runs the **full card width**, edge to edge like
-the card's own frame, with `surface-pad` either side of it. That is the
-opposite job to a `SectionHeader` rule, which runs the row width because it
-belongs to the rows. See "Lines".
+the card's own frame, with `surface-pad` either side of it. The rows band
+stops one hairline above it, so a row gliding out never touches the rule.
+That is the opposite job to a `SectionHeader` rule, which runs the row width
+because it belongs to the rows. See "Lines".
 
 A right-hand detail pane (the more common modern pattern, Kodi, Android
 TV, Switch) was considered and rejected: the card is already capped at
@@ -732,6 +829,106 @@ Pressable content belongs on card/control surface.
 Focus is always `Theme.accent`. No second focus color. Accent configurability is
 future theme work, not per-surface override.
 
+## Text entry
+
+Text is typed on the shared on-screen keyboard (`OnScreenKeyboard` in
+`ui/keyboard.slint`; layout and editing rules in `zaparoo_app::keyboard`).
+The Search screen is its first user.
+
+- **Layout.** QWERTY, every row ten units wide, with a digit row on top.
+  A use that does not care about case or punctuation takes the basic
+  layer only (letters, digits, Space, Backspace and the submit key); the
+  full keyboard adds Shift and Symbols and their layers.
+- **Keys are raised controls** (the pressable front edge), and one focus
+  ring travels between them.
+- **The field being typed in has a block cursor, not a ring.** A ring there
+  would be a second one on screen beside the focused key's. It blinks while the
+  keyboard has focus and rests dimmed while anything else does. Moved back
+  into the text, it sits on a character and inverts it. Reduce motion
+  holds it solid.
+- **Buttons.** Accept presses the focused key, and repeats while held on a
+  key that types or deletes. View deletes and repeats while held; held past
+  `TEXT_CLEAR_HOLD_MS` it clears the whole field. Options types a space and
+  the shoulder buttons move the cursor. They work from anywhere on the
+  screen, so fixing a typo never needs a trip to the Backspace key. The
+  help bar names them.
+- **A real keyboard types directly.** Characters go to the field before
+  any key binding sees them, Backspace deletes, and focus moves to the
+  submit key so Enter runs the action. The help bar then drops the Delete
+  and Space hints, which that keyboard's own keys already cover.
+- **Every edge wraps.** The fields above the keyboard and its key rows are
+  one vertical loop: Down from the bottom row reaches the field above that
+  half of the keyboard, and Up from a field reaches the bottom row. A key
+  row and the card beside it are one horizontal loop: Right from the last
+  key enters the card, Right again comes round to the row's first key, and
+  Left from the card returns to the key it was entered from. With nothing
+  beside the keyboard a row wraps on itself. The card's rows loop top to
+  bottom, like a list picker's.
+- **No system keyboard.** Latin letters and digits only; other scripts
+  need a real keyboard.
+
+The Search screen puts the Name field on top, then the System and Tags
+fields side by side above the keyboard, with a card beside them: recent
+searches while there is nothing to search on, then the matches as the query
+is typed: every title on the first page of results, once per system. Variants
+of one title are told apart in the results, which the row opens on the first
+of them. Each field carries its name on the left and no placeholder.
+A focused System or Tags field wears the accent ring; inverting it left
+the name unreadable on the fill. The stack fills the height between the
+strip and the help bar. The Tags field shows
+the chosen tags as one line (`Platformer +1`), the same summary the Games
+header shows; values are changed and cleared in the tags picker. The card follows the Settings card: a
+`SectionHeader`, rows the selection fill travels over, and as many rows as
+its height fits. A longer list scrolls, with a `ScrollCue` above and below
+it as in the list pickers. Clearing the recent searches is an action row at the
+card's foot, drawn as Settings draws one: centered, in the accent, and
+inverted under the fill. The match count heads the card and counts every
+match, so it can exceed the rows listed; it is exact up to one page of
+results and reads `Matches: 100+` beyond it, because Core reports no total. At the 240p tier and on a rotated scene or one narrower
+than 4:3 the card collapses and the count moves into the query field.
+
+The Search results have a View menu with one row, "Add to Hub", which pins
+the search on screen as a Hub tile and reads "Remove from Hub" once it is
+there. Results opened from such a tile have no Search screen behind them:
+Back returns to the Hub, and the search is not added to the recent searches.
+
+## Form lists
+
+`FormListModal` is the list picker for a list that is long or has structure:
+the system picker and the tags picker. The plain `ListPickerModal` stays
+for short menus of centered commands.
+
+- **Rows read like Settings rows:** the name on the left, its value on the
+  right in the muted tier (a chosen tag, a game count).
+- **Section headers** name the rows under them, in the caption tier over a
+  rule. They take no focus: Up and Down pass over them, and the row under
+  a header brings the header into view with it.
+- **Sideways or the shoulder buttons jump a section**, forward to the next
+  one's first row, back to the start of this one and then the one before.
+  On a page of plain values they page instead.
+- **Actions sit at the foot, apart from the options:** centered, in the
+  accent, under a rule, as a Settings action row. An action never looks
+  like an option. There is no Apply: a pick is kept as it is made, Back
+  leaves, and the help bar says Back rather than Cancel.
+- Only the rows on screen are built, so a list of every system costs no
+  more than a short one. The window snaps rather than glides.
+
+The system list is the same wherever it is offered (the Search screen, the
+media update setup): All systems, the systems used lately where the screen
+has a notion of that, then every system under its manufacturer, with the
+ones Core names no manufacturer for under Other. Eight systems or fewer are
+one plain alphabetical list. Rules: `zaparoo_app::system_picker` and
+`zaparoo_app::form_list`.
+
+The tags picker is the same from the Games View menu and from the Search
+screen's Tags field: a page of categories, each showing its chosen value
+or Any, then a page of one category's values with their game counts. It is
+called Tags everywhere. Its Collections category lists the built-in
+collections first (Favorites, Liked, Play later), then the user's decks by
+name. Core tags a deck's games with the deck's id alone, so the names come
+from its `decks` list, asked for only when the library has such tags; a
+deck whose name is not known is left out rather than shown as an id.
+
 ## Pills
 
 Toggle track/thumb use `height / 2` or `width / 2`. Pills are distinct from
@@ -773,8 +970,9 @@ for it ("999999 scraped") left a visibly blank void next to the track
 whenever the actual count was short or absent (every optimize/vacuum
 phase); sizing it to live content instead fixed the void but reintroduced
 the exact kind of shifting anchor point the fixed-slot rules elsewhere in
-this file exist to prevent. The bar alone conveys progress, the same as the
-mobile app.
+this file exist to prevent. What does sit between the label and the track is
+a whole percent, when the task has a known total: it has a fixed width
+(measured from "100%"), so it never moves the label's anchor.
 
 Label and detail join with a plain colon (`"Indexing: {}"`), not a
 mid-dot, the bitmap CRT font renders `·` as a genuine pixel glyph (it's
@@ -791,7 +989,12 @@ already carry the reason-vs-detail distinction ("error", "paused",
 "failed" vs. a bare progress readout), so nothing is lost by collapsing
 the two joins into one.
 
-One slot, resolved in priority order by `zaparoo_app::status_line`: a Core
+The router's own cue (`crate::cue`: what the user's action is waiting on, or
+its confirmation) shares the slot. It yields to a Core connection problem and
+takes the line from everything below that for as long as it has something to
+say, because a page load lasts a second and an index lasts minutes.
+
+Otherwise one slot, resolved in priority order by `zaparoo_app::status_line`: a Core
 connection problem; an active
 background task (including why it's paused, "game running"); a terminal
 message held ~6 s after a task ends (a scrape failure lands here too, not as
@@ -886,29 +1089,25 @@ chroma) rather than mixing toward `primary`/`text` in sRGB, which is what
 fixed a focused amber tile reading near-white and a focused blue tile reading
 closer to brown than orange.
 
-### Header logo asset ladder
+### Header logo rasterization
 
-The bundled wordmark logo cannot be recolored by a palette role, it's a
-full-color brand mark, not a single-hue tinted glyph. `HeaderBar` instead
-selects between two pre-rendered PNG variants under
-`resources/images/logo/logo-<variant>-<w>.png`, embedded through the `Brand`
-global in `chrome.slint`:
+The bundled wordmark is full-color artwork, not a tinted glyph.
+`Theme.light-surface` (from `zaparoo_app::palette::is_light_surface`) selects
+the embedded `logo-on-dark-600.png` or `logo-on-light-600.png` master under
+`resources/images/logo/`. This selects an asset, not a palette color.
 
-- `on-dark-<w>`, light wordmark, for `zaparoo-dark` / `classic-purple`.
-- `on-light-<w>`, dark wordmark, for `zaparoo-light`.
+`Brand.logo(light, painted-width)` delegates to `rust/frontend/src/brand.rs`,
+which resizes the master to the painted width with a premultiplied-alpha
+Lanczos filter. Slint's software renderer uses nearest-neighbor bitmap
+sampling: drawing a larger asset rung at a smaller size skips source rows
+and makes diagonals uneven. Preparing the final raster avoids that extra
+resampling without changing layout geometry or the source artwork.
 
-`Theme.light-surface` (pushed from `zaparoo_app::palette::is_light_surface`)
-picks the variant. It is deliberately not a palette role (it is not a field
-of `palette::Palette`), because it selects an asset, not a color.
-`w` is one of `96, 144, 192, 256, 384, 600` (600 is the largest rung, at the
-master's own aspect ratio). `Brand.logo(light, painted-width)` is the single
-place that snaps a painted width up to a rung (the same "snap up" contract
-`zaparoo_app::sizing::snap_cover_tier` uses for grid covers) and picks the
-variant; `HeaderBar`, `AboutScreen`, and the screensaver's bouncing copy
-(through `Brand.saver-logo`, always the on-dark variant over its black
-backstop) all call it instead of naming an image, so none of them ever
-decode a texture larger than their own painted size. There is no unscaled
-monolithic `logo.png` any more, every call site goes through the ladder.
+Header, About, and screensaver share this provider; `Brand.saver-logo`
+always selects the on-dark variant over its black backstop. Each window's
+LRU retains at most four rasters and 2 MiB, with a 1024-pixel raster-width
+cap. Repainting or moving an unchanged logo shares its existing image;
+filtering happens only on a size or surface-color cache miss.
 
 ## Resolution tiers
 
@@ -1032,6 +1231,16 @@ half the thickness of the Settings card at 800p and 1080p.
 
 The screensaver overlay, the CRT calibration plate and the help bar are screen
 chrome rather than containers and keep their own treatment.
+
+The help bar is one row, `pct-h(6)` tall, at every tier. Only 240p can run out
+of width for its entries, which are atomic icon-plus-label groups and never
+split: when the row would overflow the bar's safe width they wrap to two
+centered rows and the bar grows to `pct-h(10)`. The bar measures that itself
+(`HelpBar.wrap-entries`), Rust copies it into the `help_bar_two_rows` sizing
+input and re-solves the sizing table and every screen, so the grid or card
+above gives up exactly the second row and gets it back when the entries fit
+again. The wrap is decided from the entries' width alone, never from the
+bar's height, so growing the bar cannot change the answer.
 
 ## Padding scale
 
@@ -1192,13 +1401,27 @@ deep they are or how many Back presses get out. The rules:
    would split what the user sees from what takes input.
 2. A choice made inside a modal is made inside that modal. The panel swaps
    its content to the option list and back: a *page* of the same panel,
-   the modal title unchanged, the row's own name as a section header over
-   the list. A picks and returns; Back returns without changing, with
+   the row's own name replacing the form title while the picker is open.
+   Do not repeat that name in a second heading above the options. A picks
+   and returns; Back returns without changing, with
    focus on the row that opened the page. One level of pages only. See
    `SetupModal` in `rust/frontend/ui/setup.slint`, whose `picker-page` swaps
    the form for its picker page, and its driver
    `rust/frontend/src/media_setup.rs`, where Back clears the page and leaves
    the form's `index` on the row that opened it.
+
+   A page that takes several values has no confirm button, least of all one
+   under the list: on a d-pad it sits a hundred rows away. The setup panel's
+   Systems page is the pattern. A on a system row checks or unchecks it and
+   the page stays (the help bar reads Toggle there, and the row's box fills
+   instead of flashing); Back returns to the form with the checks as its
+   value, which the row words as a count; the panel title counts them
+   while the page is open. Leaving with nothing checked keeps the value the
+   form had. One-press rows (All systems, a category) still pick and
+   return, and clear the checks. What was checked when the page opened
+   leads the list under a Selected heading, and no row moves while the page
+   is open. The form's own Start is the only commit, the same way the tag
+   filter applies on Back.
 3. A modal task that needs more than one such page, or a decision that
    needs information the panel can't show, is a screen (a Settings
    sub-page), not a modal.
@@ -1209,13 +1432,18 @@ deep they are or how many Back presses get out. The rules:
    before every other modal. It opens nothing itself. Two alerts never stack:
    `ErrorQueue` in `zaparoo_app::action_error` shows one failure at a time,
    drops a duplicate of one already showing or queued, and holds the rest
-   until the dialog is free. A failed alternate-version discovery closes the
-   context menu first (`closes_context_menu`), so Back never returns to a
-   "Searching…" row that can never resolve.
+   until the dialog is free. A context-menu page that fails to load
+   (alternate versions, a game's discs) closes the context menu first
+   (`closes_context_menu`), so Back never returns to a waiting row that can
+   never resolve.
 5. `ContextMenu` is an anchored transient, not a card. It closes before
-   anything it triggers opens, and its alternate-versions page
-   (`rust/frontend/src/alternates.rs`) is an in-place swap of its rows:
-   Back returns to the rows it replaced (`context_action` in `router.rs`).
+   anything it triggers opens. Its pages are an in-place swap of its rows
+   through `rust/frontend/src/context_page.rs`: Manage and Write to token,
+   whose rows are the menu's own, and alternate versions
+   (`rust/frontend/src/alternates.rs`) and a multi-disc game's discs
+   (`rust/frontend/src/discs.rs`), which Core is asked for. Back returns to
+   the rows the page replaced, on the row that opened it (`context_action`
+   in `router.rs`). One level only: a row on a page never opens a page.
 6. A screen may open a modal (Settings rows open `ListPickerModal`); a
    modal that closes and *then* opens another (View menu -> letter jump,
    error -> retry) is a sequence, not a stack, and is fine.
@@ -1326,10 +1554,25 @@ the panel carries `clip: true` as a shipped-build safety net. Judge a menu by
 whether it still fits without scrolling at 240p: a scrolled-past entry is an
 undiscoverable one.
 
+**Pages.** A row that turns the menu to a page (`MenuRole.submenu`) draws a
+trailing `icons/NavRight` chevron at the Settings row's size, and reserves the
+same room on its leading side so its label stays centered with the others. The
+chevron marks a page of this menu, not every row that ends in another surface:
+`Change launcher` opens a picker after the menu has closed and draws none, and
+`Write to token` draws none when the App is the only way to write, since it
+then runs directly. While a page shows (`Overlays.context-page`, the
+`ContextPage` enum), its name is pinned above the rows in `Theme.text-label`,
+in a band one row tall that never scrolls with them; the name is the opening
+row's own label. The menu's own rows have no title: the bright anchor already
+says what they are about. There is no Back row; the help bar reads Back in
+place of Close.
+
 Row labels center the `Text` item itself on its measured width
 (`ContextRowBody`), per the integer-pixel rule below, never a full-width
 `Text` with `horizontal-alignment: center`. Panel width tracks content:
-`panel-w` clamps `desired-panel-w` (the widest entry label plus padding)
+`panel-w` clamps `desired-panel-w` (the widest of the entry labels, with a
+chevron's room on both sides where a row has one, and the page title, plus
+padding)
 between a degenerate-case floor (`min-panel-w: Sizing.pct-w(12)`) and the
 available width, so a menu with short labels narrows instead of always paying
 for a fixed minimum panel width.
@@ -1407,6 +1650,19 @@ tiers already use the compact 4×2 shape and remain unchanged. A separate lever,
 `image-fit: cover` for game covers, remains set aside: it enlarges art
 but crops the top and bottom, where title art often sits.
 
+### Screenshots and title screens keep their pixels
+
+A screenshot or title screen is a raw capture, often 256×224 or 320×240, and
+blurring it when it is enlarged loses what it shows. In Game Info and the
+detail pane, which paint one image at a time, a capture smaller than its art
+box is enlarged in Rust before it is cached: by the largest whole multiple
+that fits, with hard pixel edges, then smoothed only over the remainder to
+fill the box (`zaparoo_app::covers::Fit::enlarged`,
+`media_cache::fitted`). Every source pixel stays sharp and the same size at
+any resolution. Box art and other scanned art are never enlarged this way, a
+capture larger than its box is shrunk like any cover, and grid and Hub tiles
+keep the decoded size.
+
 ### Spent cues
 
 A directional cue whose direction has nothing left to reach stays painted and
@@ -1474,17 +1730,17 @@ there's only **one** page or item total, both chevrons hide entirely
 (`has-navigation-range`, the same gate the "N / M" text already used) rather
 than painting two permanently-dim arrows that will never do anything,
 dimming is for "this direction specifically has nothing," not for "nothing
-here scrolls at all." It sits alongside `TopStatusStrip`'s title,
-baseline-aligned to it (`TopStatusStrip`'s `page-indicator-mode`), on every
-theme except CRT, CRT hides that strip entirely
-(`Layout.top-strip-visible: false`) and keeps the same cue in the host screen's
-**footer** instead, alongside `ActiveLabel` (`Layout.page-cue-in-footer`,
-resolved by `zaparoo_app::layouts`, is the profile flag both placements key
-off). Wherever it lives, the badge and
-`PageIndicator` are unconditionally reserved, only the count text's and
-each chevron pair's presence, and each chevron's own colour, toggle, so a
+here scrolls at all." Non-CRT browse screens put the **count and position cue
+together at the right of the existing title strip**, with the title centered.
+The group fits within one side slot and elides its count rather than colliding
+with the title. Settings detail pages put item position there; About/License
+puts scroll percentage there. Loading status stays independent. Hub has no
+title strip or total count, so its cue stays beside the focused caption rather
+than taking space from its grid. CRT retains its calibrated footer and
+in-card About cues. Modal cues remain inside their panels, and the fast-scroll
+rail remains on the right. Cue visibility never changes grid geometry: a
 single-page grid becoming multi-page (arming Hub Options → Move always
-reserves a second page) never shifts anything. The Settings card, the About
+reserves a second page) cannot shift or shrink its tiles. The Settings card, the About
 card, and `GameInfoModal`'s own scroll chevrons got the same
 dim-plus-hide-on-single-page treatment for one consistent rule. The list
 picker's chevrons were once claimed to satisfy it by construction and did not:
@@ -1492,14 +1748,15 @@ they hid one arrow per direction and painted the other dim in *both* states.
 Every one of them now goes through `ScrollCue`; see "Spent cues" above,
 which is where the dim/hide rule and the colour now live.
 
-Two placements exist because putting the cue at the top, next to a title
-that's already there, was tried first (pre-round-5) and reads better once a
-footer that's ALSO carrying the focused item's own title has room to spare,
-`ActiveLabel`'s `side-inset` reverts to its own default (`Sizing.pct-w(3)`)
-instead of a corner-slot reservation whenever the footer isn't hosting the
-count/page slots, roughly doubling the room a long focused title gets before
-eliding. CRT's footer is the one place that still needs the full three-slot
-arrangement, since CRT has nowhere else to put it. `PageIndicator` in
+Digital list, Settings, and About cards reserve only their normal help-bar
+clearance, not a second navigation footer. Rust viewport calculations use the
+same restored content height. Hub and CRT captions reserve their footer cue's
+measured width even on a single-page screen, so names cannot collide with a
+large page count; digital browse captions can use that width for their names.
+CRT retains its three-slot count/name/position arrangement. Geometry is resolved
+per output, not from the platform: HDMI and CRT in a dual-head session use
+different placements.
+`PageIndicator` in
 `chrome.slint` places each chevron and the text at a fixed x off the element
 before it rather than in a layout, so hiding the chevrons never shifts the
 "N / M" text, and its `chevron-spacing` is a tighter gap between the two
@@ -1508,8 +1765,41 @@ Gestalt proximity: the chevrons are one control, the text is a separate
 readout, and the glyphs' own baked-in side bearing already makes an *equal*
 gap read backwards. Detailed `BrowseList` layouts use this same cue for
 single-item movement and omit the separate left-side total. The Settings card
-uses it too, in item mode in the page's own `TopStatusStrip`, so the cue costs
-the card no room.
+uses it too, in item mode below its card. Pointer cues call Rust drivers;
+Slint does not change screen selection or persisted scroll state itself.
+
+### Navigation memory
+
+A fresh forward visit starts at the first item and first page. Selecting a
+category starts its Systems list at the top; selecting a system opens its
+root, not the folder from an earlier visit. Favorites, Recently played,
+Search, Settings and About follow the same fresh-entry rule: Search opens
+with an empty query and no filters, and offers the recent searches instead. An explicit Hub folder
+shortcut still opens its named folder.
+
+Back is different: it restores the parent selection and viewport. Process
+resume uses the existing saved screen, browse stacks, selections and scroll
+positions rather than taking a fresh-entry path. Closing a modal, delivering
+artwork, changing the view or refreshing a list never starts a new visit.
+`navigation::EntryMode` makes intent explicit where entry paths are shared;
+reset only after retaining the source so canceled loads cannot erase it.
+The persisted schema is unchanged; legacy per-system memories remain readable
+but no longer choose a fresh visit's destination.
+
+### Hub pages and Go to…
+
+Hub page changes follow navigation direction, including wraps and pages crossed
+while arranging tiles. Every MiSTer presenter moves cached endpoint frames, in
+every orientation; where one cannot (the vblank-latch presenter holding a
+dynamic-resolution pair) HDMI cuts rather than repainting a large grid every
+frame. Desktop uses the live page strip, as does the CRT head of a dual-head
+pair and a CRT scene that was not granted a cached slide. Repeated input
+interrupts obsolete motion; Reduce motion cuts immediately. Persistence records
+the destination, never an animation phase.
+
+The Go to… modal keeps letter and count together as a centered group. One retained
+focus ring travels between adjacent buckets and follows the selected surface's
+press depth; opening, reflow, and nonadjacent jumps snap.
 
 ### Empty slots
 
@@ -1554,8 +1844,11 @@ session.
 
 ### The held tile in Move mode
 
-A tile held for a Move (Hub Options → Move) blinks out of existence and
-back on a `Motion.held-blink-ms` cycle: nothing is painted in that cell for
+A stationary tile held for a Move (Hub Options → Move) blinks out of existence
+and back on a `Motion.held-blink-ms` cycle. While moving, it stays visible:
+movement is already the cue. On arrival, a full visible interval starts before
+blinking resumes, including when movement started in the hidden half-cycle.
+Nothing is painted in that cell for
 the instant it is off, focus ring included, and it returns exactly as it
 was. No tint, no recolor, no lift, a hard on/off cut, implemented as
 `opacity` toggling between exactly 0 and 1 so one binding takes the art,
@@ -1650,11 +1943,70 @@ Anything beyond `travel-limit` row heights is treated as a jump and snaps
 too, which is what catches a wrap inside a short list where the pixel
 distance alone would look harmless.
 
+### Scrolling lists
+
+A list that scrolls glides to its new position over `Motion.page-ms`, the
+same duration as a grid page turn; it does not jump. This covers the
+Settings card, `ListPickerModal`, the context menu, the media setup picker,
+the Online list modal, and the free-text bodies of Game info and About. All
+of the row lists share one mechanism: `ScrollOffset` with `reveal: true`,
+over rows and their `SelectionCursor` hung off one translated parent. The
+cursor is positioned against where the list will settle, so the highlight
+rides in with the row it is on and the pair moves as one rigid piece. A
+cursor that chased the moving offset instead lagged its row and grew and
+shrank for the length of every scroll.
+
+`reveal` is what lets a row that starts outside the clip slide into view.
+Without it `ScrollOffset` snaps whenever the newly focused row is not
+already visible, which is right for a list whose cursor does not travel
+with its content and wrong for these.
+
+What still snaps: a jump of more than one viewport (a wrap from the last
+row to the first), a scope change, and everything when motion is off. A
+drag tracks the finger exactly; only stepped moves glide.
+
+**Edges.** A modal list keeps its `ScrollCue` arrows in a reserved band
+above and below the rows, so its rows clip at row edges between them. The
+Settings card has no arrows and clips against its own frame at the top and
+one hairline above the hint rule at the bottom, so both edges are fixed and
+rows leave under them. The card's lip above the first row scrolls away with the rows: once
+scrolled, the band starts on a row top, flush with the frame, so no sliver
+of the previous row hangs there. The bottom edge may cut a row; with the
+rows gliding under it that reads as "more below". An earlier rule trimmed
+the band back to the last whole row instead, which kept every row intact
+but moved the bottom edge by a different amount at each scroll position,
+because headers and rows are not the same height.
+
+**One list, every modal.** A modal that lists rows is built from the same
+parts as `ListPickerModal`: `SelectionCursor` with each row drawn a second
+time inside `SelectionClip`, `ScrollCue` arrows in a reserved band with the
+spent one dimmed, a `TouchArea` per row routed through
+`Overlays.pointer-choice`, its own `PressOwner` so Accept presses the
+focused row and never a control under the modal, and the gliding scroll
+above. The Online list modal first shipped with a hand-drawn highlight,
+text triangles that vanished when spent, and no pointer or press cue; a
+new list modal starts from the picker, not from a blank `Rectangle`.
+
+**Long lists stay windowed.** The media setup picker can hold every system,
+so Rust keeps publishing a window of rows around the cursor rather than the
+whole list, plus a few slots either side of the viewport (`PICKER_OVERSCAN`)
+so a held scroll that runs ahead of the glide still has rows to draw. Slots
+past either end of the list are empty, which keeps the slot count, and so
+the delegates, fixed. Short lists (pickers, the context menu, the Online
+lists) publish every row and let the view window them.
+
 ### Focus zoom on tiles
 
 A focused grid tile scales to `Motion.focus-zoom` (104%) about its own
-centre, and its ring scales with it so the two stay matched. Three rules
+centre, and its ring scales with it so the two stay matched. Four rules
 govern it.
+
+**Not at the 240p tier.** A tile there grows by a pixel or two, which reads
+as a jitter and not as a zoom, so a scene in the 240p sizing tier (the
+352x240 and 352x288 CRT modes, a 240p-class HDMI render) has no focus zoom.
+The rule is `zaparoo_app::sizing::focus_zoom_percent`, pushed with every
+scene, so the tier and the zoom never disagree. Larger tiers, 720x480 CRT
+included, keep it.
 
 **It is an addition, never the indicator.** WCAG 2.4.13 Focus Appearance
 requires the focus indicator to carry a 3:1 contrast change over a minimum
@@ -1679,13 +2031,26 @@ growth and pushes the cell layer back in by the same amount, so a tile on
 the grid's own edge is not trimmed on its outer side and no tile changes
 size to make room.
 
-The software renderer has no transform support, so neither the tile nor its
-ring scales there, and they stay consistent with each other. So that nothing
-reserves room for growth that never happens (the clip headroom, the context
-menu's scrim hole), `main.rs` pushes `Motion.focus-zoom` as 100% on MiSTer and
-`PagedGridView` skips the zoom on CRT. Snapshots render through that same
-renderer, which means the zoom cannot be checked offline; it is a
-device-verified effect.
+The software renderer has no transform support, so where it draws (the
+MiSTer build, HDMI and CRT alike, and the snapshot binary) `lib.rs` sets
+`Motion.zoom-by-size` and `PagedGridView` grows the focused cell and its
+ring by their real geometry about the same centre instead, as a cut: the
+resting state matches the transform, the transition does not exist. Animated,
+a growth of a few pixels moves in whole-pixel steps with the art resampled at
+each one, and that read as a shimmer on a 960x540 HDMI render. The cell
+covers the rectangle the transform would. The
+card and its art are sized from the cell and grow with it; type, padding,
+border and ring stroke keep their size, and the ring is laid out on the
+grown cell so it keeps its gap to the card's edge. The growth, 2% of the
+cell on each side, is smaller than every grid's gap, so a grown tile never
+reaches its neighbour. The clip headroom and the context menu's scrim hole
+follow `Motion.focus-zoom` on every renderer.
+
+`Motion.focus-zoom` at 100% turns the growth off and everything that
+reserves room for it reserves nothing, and no larger copy of the focused
+tile's art is prepared. The 240p tier does that, and so does the `zoom`
+name of the `ZAPAROO_MOTION` test switch on the MiSTer build
+(`docs/slint-gotchas.md` → "Motion on the software renderer").
 
 ### Reduce motion
 
@@ -1708,8 +2073,9 @@ and `display::motion_enabled` also folds in framebuffer height, so native
   vertical option lists (browse, Settings, menus, pickers) use the list's own
   `SelectionCursor`, and never a focus ring as well.
 - Focus uses `Theme.accent`; an inverted row uses `Theme.selection-fill`.
-- A rows band clips on row edges, never through a row. `band_extent` in
-  `zaparoo_app::settings` owns that rule for the Settings card.
+- A scrolled Settings band starts on a row top and clips against the card's
+  frame and one hairline above the hint rule. `band_extent` in `zaparoo_app::settings` owns that
+  rule; see "Scrolling lists".
 - Ordinary text chooses six-role ladder.
 - Geometry comes from `Sizing` and `Layout` tokens (`pct-h()`, `pct-w()`,
   `pct-min()`, `stroke()`), never a hardcoded pixel size, and Slint snaps it

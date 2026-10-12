@@ -68,6 +68,34 @@ The toolchain image is linux/amd64. On Apple Silicon, Docker Desktop runs it
 under emulation; turn on "Use Rosetta for x86_64/amd64 emulation" in Docker
 Desktop's settings, which is far faster than QEMU.
 
+## The private Update module
+
+The Hub's Update tile and its screen come from a private repository,
+`theypsilon/zaparoo-update`. Public builds use a stand-in and have no Update
+tile; official builds compile the real module in. Architecture:
+`docs/architecture.md` ("Update module").
+
+To build with it (needs read access to that repository):
+
+```sh
+git clone git@github.com:theypsilon/zaparoo-update.git rust/private/zaparoo-update
+just update-module    # cargo does not notice the checkout appearing
+just build
+```
+
+`rust/private/` is gitignored. Run `just update-module` again after removing
+the checkout to go back to the stand-in. The container recipes (`just lint`,
+`just test`, `just arm32`) see the same directory, so they build the same
+variant. The private code is linted and tested under this workspace's rules
+through the stub crate, on top of the private repository's own checks.
+
+The release workflow clones it with the `ZAPAROO_UPDATE_DEPLOY_KEY` secret
+(a read-only deploy key) at `inputs.update_ref`, then the
+`ZAPAROO_UPDATE_REF` repository variable, then `main`. A release that would
+be published fails when the key is missing; a dispatch that uploads nothing
+only warns and builds the stand-in. The stand-in ships
+`LICENSES/zaparoo-update-NOTICE.txt` in every bundle either way.
+
 ## Toolchain image
 
 [`Dockerfile.toolchain`](../Dockerfile.toolchain) defines the build
@@ -198,12 +226,30 @@ Frontend never maps the FPGA registers. Missing components or mismatched old/new
 handshakes fall back to ordinary fb0; `--no-latch` opts out. Managed display
 restarts go through Main for a fresh lease.
 
-Initial eligibility is HDMI on the qualified `6.18.38-MiSTer` stack, with
-`/dev/zaparoo-scanout` ABI v1. Main optionally loads
-`/media/fat/zaparoo/modules/6.18.38-MiSTer/zaparoo_scanout.ko`. Older/unknown
-kernels, native CRT and Direct Video retain existing paths. Never force-load the
+Eligibility is an exact qualified kernel build, with `/dev/zaparoo-scanout`
+ABI v2. Main selects
+`/media/fat/zaparoo/modules/<release>/<kernel-build-id>/zaparoo_scanout.ko`
+using the running kernel's GNU build ID from `/sys/kernel/notes`. It verifies
+the module SHA-256 before loading and its loaded build ID before granting access.
+The old flat release-only module path no longer enables scanout. Older/unknown
+kernels and HDMI under Direct Video retain existing paths. Never force-load the
 prototype's 5.15 module, replace `mem_wc`/MagiK modules, or claim independent
 renderers can safely run concurrently.
+
+On the native CRT path Main answers the same request with a native grant
+instead: no bus proxy, only permission to map the Menu core's native video
+window through the module. The window lies outside the kernel's RAM, so
+`/dev/mem` can only map it as uncached device memory, where writing one PAL
+frame takes about 27 ms. The module maps the frame slots write-combined (about
+1 ms) and keeps the two control words on an uncached page so a publish never
+queues behind its pixels. The DDR presenter copies only the rows that changed
+since each slot was last filled, and waits on the raster's own vertical sync
+through the module instead of sleeping. Without a grant it maps the window
+through `/dev/mem` and paces by sleep, as before; the changed-row copy and
+whole-word stores apply there too. In dual head the HDMI side stays on fb0.
+
+The `frame profile` log line reports `copy_avg_us` beside `avg_us` and judges
+overruns against the presenter's own refresh period (20 ms in PAL).
 
 Automatic keeps **960x540 rendering into 1920x1080 HDMI**. Physical output timing
 and source geometry remain separate. Default rendering is fixed at the resolved
@@ -374,3 +420,39 @@ To bundle a specific menu or host build instead of latest, set the workflow's
 The bundle layout: `zaparoo/frontend`, `zaparoo/MiSTer_Zaparoo`,
 `zaparoo/menu_zaparoo.rbf`, `LICENSES/` (asset attributions plus
 `THIRD-PARTY-NOTICES.txt`), `README.txt`, and `COPYING`.
+
+### Bundling scanout modules
+
+Update All 2.11 offers a Linux-pinned default distribution and Edge Linux. Keep
+one frontend installation across both; bundle each device-qualified kernel
+build under its own release/build-ID directory. Do not infer compatibility from
+the channel name, `uname -r` alone, or an updated kernel image awaiting reboot.
+Unknown builds retain fb0 without changing the user's Linux update policy.
+
+Menu CI produces `zaparoo-scanout.zip` with profiles, module objects, build
+provenance and matching source. Building that ZIP does not qualify a stock
+kernel: the exact running-image identity and matched Main/Menu/frontend stack
+need hardware testing, including kill/relaunch, ownership handoff and fallback.
+The default Menu build reproduces the pinned official September 12, 2026 stock
+image. Packaging requires byte equality outside its GNU build-ID descriptor,
+matching config/symbol-table hashes, and records both stock and reproduced IDs.
+See Menu's `kernel/stock-20260912.json` and `kernel/scanout-slots/README.md`.
+The older prototype build remains separate. This does not qualify future pinned
+or Edge images or waive hardware checks for a newly produced bundle.
+
+After qualification, attach the ZIP to the matching Menu release and use
+`ZAPAROO_INCLUDE_SCANOUT=1 just release-zip vX.Y.Z`. The release workflow has
+an `include_scanout` input; set repository variable `ZAPAROO_INCLUDE_SCANOUT=1`
+only once automatically selected Menu releases carry qualified bundles. A
+requested missing or invalid bundle fails the release. For local packaging,
+`ZAPAROO_SCANOUT_BUNDLE=/absolute/path/zaparoo-scanout.zip` supplies the artifact.
+Without either setting, packaging continues to ship the fb0 baseline.
+Combine separately qualified builds with
+`python3 scripts/scanout_bundle.py pinned.zip edge.zip --merge zaparoo-scanout.zip`;
+the validator rejects duplicate profiles, including builds sharing a release
+string and build ID. Distinct build IDs under the same release coexist.
+
+`just test-scanout-bundle` checks bundle validation without a device.
+Main's identity tests cross-compile with its ARM GNU toolchain; target execution
+and physical scanout qualification are separate gates. No MagiK kernel/RTL code
+or licensing changes are imported by this profile and packaging integration.

@@ -23,7 +23,7 @@
 /// A real keyboard event arrived, so the help bar should show keycaps
 /// until the pad is touched again. No-op unless the pad reader owns the
 /// controller-report channel: on `MiSTer` the report comes from Main.
-#[cfg(feature = "mister")]
+#[cfg(not(feature = "desktop"))]
 pub fn note_keyboard_input() {}
 
 #[cfg(feature = "desktop")]

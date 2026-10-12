@@ -21,6 +21,23 @@ pub const ALLOWED_EXTENSIONS: [&str; 6] = ["png", "jpg", "jpeg", "webp", "bmp", 
 /// action id.
 pub const NAMESPACES: [&str; 2] = ["systems", "hub"];
 
+/// Preparation budgets, separate from the cover-art cache and screen geometry.
+pub const ART_CACHE_BYTES: usize = 16 * 1024 * 1024;
+pub const ART_FILE_BYTES: u64 = 8 * 1024 * 1024;
+pub const ART_SVG_BYTES: u64 = 256 * 1024;
+pub const ART_DECODE_BYTES: u64 = 32 * 1024 * 1024;
+pub const ART_SOURCE_EDGE: u32 = 8192;
+pub const ART_OUTPUT_EDGE: u32 = 1024;
+pub const ART_PENDING: usize = 32;
+pub const ART_INDEX_BYTES: usize = 1024 * 1024;
+pub const ART_INDEX_ENTRIES: usize = 1024;
+
+/// Keep decode keys stable within a display size. The upper bound is a memory
+/// safeguard, not a layout rule; callers supply the actual destination extent.
+pub fn artwork_size(width: f32, height: f32) -> u32 {
+    width.max(height).ceil().clamp(1.0, ART_OUTPUT_EDGE as f32) as u32
+}
+
 pub fn is_allowed_extension(extension: &str) -> bool {
     ALLOWED_EXTENSIONS
         .iter()

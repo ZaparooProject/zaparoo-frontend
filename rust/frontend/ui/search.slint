@@ -1,0 +1,482 @@
+// Zaparoo Frontend
+// Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
+// SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
+//
+// The Search screen: the query, its system and filter fields, the on-screen
+// keyboard, and a pane of recent searches or live matches. Pure view. The
+// driver is `src/search.rs` and the rules are `zaparoo_app::search`.
+
+import { Theme, Sizing, Layout, Motion } from "theme.slint";
+import { TopStatusStrip, SectionHeader, ScrollCue } from "chrome.slint";
+import { SelectionCursor, SelectionClip } from "focus.slint";
+import { KeyKind, SearchZone, SearchPane } from "state_types.slint";
+import { KeyCell, OnScreenKeyboard } from "keyboard.slint";
+
+// One pane row: a match and its system, or a recent search and its filters.
+export struct SearchPaneRow {
+    title: string,
+    detail: string,
+}
+
+export global SearchView {
+    // The query around the cursor: the text before it, the character it
+    // sits on (empty at the end), and the rest.
+    in-out property <string> before;
+    in-out property <string> at;
+    in-out property <string> after;
+    // A folder search: the system field states the scope and takes no focus.
+    in-out property <bool> scoped: false;
+    // Empty for every system.
+    in-out property <string> system-name;
+    // The folder a scoped search is limited to; empty at a system's top level.
+    in-out property <string> scope-name;
+    // The chosen filter as one line ("Platformer +1"); empty for none.
+    in-out property <string> filter-text;
+    in-out property <[KeyCell]> keys;
+    in-out property <int> key-rows: 4;
+    in-out property <int> key-index: 0;
+    in-out property <int> pressed-key: -1;
+    in-out property <bool> shift-active: false;
+    in-out property <bool> symbols-active: false;
+    in-out property <SearchZone> zone: SearchZone.keys;
+    in-out property <SearchPane> pane: SearchPane.none;
+    in-out property <[SearchPaneRow]> pane-rows;
+    in-out property <int> pane-index: 0;
+    in-out property <int> pane-top: 0;
+    // Rows the pane has room for at this size; the view measures it.
+    in-out property <int> pane-fit: 6;
+    // The Clear button under the recent searches, and whether it has focus.
+    in-out property <bool> pane-clear: false;
+    in-out property <bool> pane-on-clear: false;
+    // No room for the pane: the count moves into the query field.
+    in-out property <bool> pane-collapsed: false;
+    in-out property <bool> count-known: false;
+    in-out property <int> count: 0;
+    in-out property <bool> count-more: false;
+    in-out property <bool> searching: false;
+    in-out property <bool> failed: false;
+    in-out property <bool> can-search: false;
+    // The kind of key under the focus, for the help bar.
+    in-out property <KeyKind> key-kind: KeyKind.char;
+
+    public pure function count-text() -> string {
+        if (self.failed) { return @tr("Search failed"); }
+        if (self.searching && !self.count-known) { return @tr("Searching…"); }
+        if (!self.count-known) { return ""; }
+        if (self.count == 0) { return @tr("No matches"); }
+        // Worded as a label so no language needs a plural form of it.
+        if (self.count-more) { return @tr("Matches: {}+", self.count); }
+        return @tr("Matches: {}", self.count);
+    }
+}
+
+export global SearchInput {
+    callback hovered(SearchZone, int);
+    callback clicked(SearchZone, int);
+    // The pane's room for rows changed.
+    callback layout-changed();
+}
+
+// A named field: its name, then its value. Focus is the accent ring, the
+// same ring the keys wear, so the name keeps its contrast.
+component Field inherits Rectangle {
+    in property <string> label;
+    in property <string> value;
+    in property <bool> focused;
+    // Where a host's own content starts, after the name.
+    out property <length> value-x: name.x + name.width + Sizing.surface-pad;
+    background: Theme.surface-card;
+    border-radius: Sizing.radius-sm;
+    border-width: root.focused ? Sizing.card-border-width * 2 : Sizing.card-border-width;
+    border-color: root.focused ? Theme.accent : Theme.border-mid;
+    clip: true;
+    name := Text {
+        x: Sizing.surface-pad;
+        height: parent.height;
+        text: root.label;
+        color: Theme.text-label;
+        font-size: Sizing.font-caption;
+        vertical-alignment: center;
+    }
+    if root.value != "": Text {
+        x: root.value-x;
+        width: Math.max(0px, parent.width - self.x - Sizing.surface-pad);
+        height: parent.height;
+        text: root.value;
+        color: Theme.text-primary;
+        font-size: Sizing.font-body;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+    @children
+}
+
+// A pane row's text, drawn once at rest and once inverted under the fill.
+component PaneRowBody inherits Rectangle {
+    in property <SearchPaneRow> entry;
+    in property <color> ink;
+    in property <color> ink-muted;
+    in property <int> weight;
+    Text {
+        x: Sizing.surface-pad;
+        width: Math.max(0px, parent.width - 2 * Sizing.surface-pad
+            - (detail.text != "" ? detail.width + Sizing.surface-pad : 0px));
+        height: parent.height;
+        text: root.entry.title;
+        color: root.ink;
+        font-size: Sizing.font-body;
+        font-weight: root.weight;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+    detail := Text {
+        x: parent.width - self.width - Sizing.surface-pad;
+        width: Math.min(self.preferred-width, parent.width * 0.45);
+        height: parent.height;
+        text: root.entry.detail;
+        color: root.ink-muted;
+        font-size: Sizing.font-small;
+        vertical-alignment: center;
+        horizontal-alignment: right;
+        overflow: elide;
+    }
+}
+
+// The card's action row: one centered label.
+component ClearRowBody inherits Rectangle {
+    in property <color> ink;
+    in property <int> weight;
+    Text {
+        x: Sizing.surface-pad;
+        width: Math.max(0px, parent.width - 2 * Sizing.surface-pad);
+        height: parent.height;
+        text: @tr("Clear recent searches");
+        color: root.ink;
+        font-size: Sizing.font-body;
+        font-weight: root.weight;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+}
+
+export component SearchScreen inherits Rectangle {
+    property <length> side: Layout.card-side-margin;
+    property <length> gap: Sizing.pct-h(1);
+    property <length> top: Sizing.header-bottom + Layout.top-margin
+        + (Layout.top-strip-visible ? Layout.strip-height : 0px) + root.gap;
+    property <length> avail-h: Math.max(1px, root.height - Sizing.help-bar-clearance - root.top);
+    // Three stacked bands share the height: the query, the fields and the
+    // four key rows, weighted 1.2, 1 and 1.1 a row.
+    property <length> unit: (root.avail-h - 2 * root.gap) / 6.6;
+    property <length> query-h: root.unit * 1.2;
+    property <length> row-h: root.unit;
+    property <length> keys-h: root.unit * 1.1 * SearchView.key-rows;
+    property <length> content-w: Math.max(1px, root.width - 2 * root.side);
+    property <bool> pane-shown: !SearchView.pane-collapsed;
+    property <length> pane-w: root.pane-shown ? root.content-w * 0.36 : 0px;
+    property <length> pane-gap: root.pane-shown ? Sizing.pct-w(2) : 0px;
+    // Keys no wider than twice their height, so a wide screen does not
+    // stretch them into bars.
+    property <length> keys-w: Math.min(root.content-w - root.pane-w - root.pane-gap,
+        10 * 2 * root.unit * 1.1);
+    property <length> block-w: root.keys-w + root.pane-gap + root.pane-w;
+    property <length> block-x: root.side + (root.content-w - root.block-w) / 2;
+    property <length> fields-y: root.top + root.query-h + root.gap;
+    property <length> field-gap: Sizing.pct-w(1);
+    property <length> pane-row-h: root.unit * 0.72;
+    property <bool> typing: SearchView.zone == SearchZone.keys;
+
+    TopStatusStrip {
+        x: 0;
+        y: Sizing.header-bottom + Layout.top-margin;
+        height: Layout.strip-height;
+        slot-margin: Layout.slot-margin;
+        title: @tr("Search");
+        show-page-counter: false;
+        visible: Layout.top-strip-visible;
+    }
+
+    // The query, named like the fields under it. A block cursor marks
+    // where typing lands: it blinks while the keyboard has focus and rests
+    // dimmed while anything else does.
+    query := Field {
+        x: root.block-x;
+        y: root.top;
+        width: root.block-w;
+        height: root.query-h;
+        label: @tr("Name");
+        focused: false;
+
+        property <bool> blink-on: true;
+        property <string> edited: SearchView.before + "\u{1f}" + SearchView.at;
+        changed edited => { self.blink-on = true; }
+        property <bool> block-shown: !root.typing || self.blink-on;
+        Timer {
+            interval: 530ms;
+            running: root.typing && Motion.enabled;
+            triggered => { query.blink-on = !query.blink-on; }
+        }
+
+        Text {
+            visible: SearchView.pane-collapsed && self.text != "";
+            x: parent.width - self.width - Sizing.surface-pad;
+            height: parent.height;
+            text: SearchView.count-text();
+            color: SearchView.failed ? Theme.error : Theme.text-label;
+            font-size: Sizing.font-small;
+            vertical-alignment: center;
+        }
+        before := Text {
+            x: query.value-x;
+            // An empty Text still claims a sliver of width, which pushed
+            // the cursor off the gap the other fields keep.
+            width: SearchView.before == "" ? 0px : self.preferred-width;
+            height: parent.height;
+            // Rust swaps a space beside the cursor for a no-break one,
+            // which keeps its advance, so the cursor clears the last letter.
+            text: SearchView.before;
+            color: Theme.text-primary;
+            font-size: Sizing.font-body;
+            font-weight: FontWeight.medium;
+            vertical-alignment: center;
+        }
+        at-measure := Text {
+            visible: false;
+            text: SearchView.at;
+            font-size: Sizing.font-body;
+            font-weight: FontWeight.medium;
+        }
+        cursor := Rectangle {
+            x: before.x + before.width + (SearchView.before != "" ? Sizing.stroke(1) : 0px);
+            y: (parent.height - self.height) / 2;
+            width: SearchView.at != "" ? Math.max(at-measure.preferred-width, Sizing.font-body * 0.3)
+                : Sizing.font-body * 0.55;
+            height: Sizing.font-body * 1.25;
+            background: !query.block-shown ? transparent
+                : (root.typing ? Theme.accent : Theme.text-label);
+            Text {
+                width: parent.width;
+                height: parent.height;
+                text: SearchView.at;
+                color: query.block-shown ? Theme.on-accent : Theme.text-primary;
+                font-size: Sizing.font-body;
+                font-weight: FontWeight.medium;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+        Text {
+            x: cursor.x + cursor.width + Sizing.stroke(1);
+            height: parent.height;
+            text: SearchView.after;
+            color: Theme.text-primary;
+            font-size: Sizing.font-body;
+            font-weight: FontWeight.medium;
+            vertical-alignment: center;
+        }
+    }
+
+    // The system, or the folder a scoped search is limited to, beside the
+    // tag filter.
+    system-field := Field {
+        x: root.block-x;
+        y: root.fields-y;
+        width: (root.keys-w - root.field-gap) / 2;
+        height: root.row-h;
+        label: SearchView.scoped ? @tr("Search in") : @tr("System");
+        value: SearchView.system-name == "" ? @tr("All systems")
+            : (SearchView.scope-name == "" ? SearchView.system-name
+                : @tr("{} / {}", SearchView.system-name, SearchView.scope-name));
+        focused: SearchView.zone == SearchZone.system;
+        if !SearchView.scoped: TouchArea {
+            mouse-cursor: pointer;
+            changed has-hover => { if (self.has-hover) { SearchInput.hovered(SearchZone.system, 0); } }
+            clicked => { SearchInput.clicked(SearchZone.system, 0); }
+        }
+    }
+    Field {
+        x: system-field.x + system-field.width + root.field-gap;
+        y: root.fields-y;
+        width: root.keys-w - system-field.width - root.field-gap;
+        height: root.row-h;
+        label: @tr("Tags");
+        value: SearchView.filter-text == "" ? @tr("Any") : SearchView.filter-text;
+        focused: SearchView.zone == SearchZone.filter;
+        TouchArea {
+            mouse-cursor: pointer;
+            changed has-hover => { if (self.has-hover) { SearchInput.hovered(SearchZone.filter, 0); } }
+            clicked => { SearchInput.clicked(SearchZone.filter, 0); }
+        }
+    }
+
+    keyboard := OnScreenKeyboard {
+        x: root.block-x;
+        y: root.fields-y + root.row-h + root.gap;
+        width: root.keys-w;
+        height: root.keys-h;
+        keys: SearchView.keys;
+        rows: SearchView.key-rows;
+        current-index: SearchView.key-index;
+        pressed-index: SearchView.pressed-key;
+        focused: root.typing;
+        submit-enabled: SearchView.can-search;
+        shift-active: SearchView.shift-active;
+        symbols-active: SearchView.symbols-active;
+        scope: "search";
+        key-hovered(i) => { SearchInput.hovered(SearchZone.keys, i); }
+        key-clicked(i) => { SearchInput.clicked(SearchZone.keys, i); }
+    }
+
+    // Recent searches while there is nothing to search on, live matches
+    // once there is. A card of rows the selection fill travels over.
+    if root.pane-shown: pane := Rectangle {
+        x: keyboard.x + keyboard.width + root.pane-gap;
+        y: root.fields-y;
+        width: root.pane-w;
+        height: root.row-h + root.gap + root.keys-h;
+        background: Theme.surface-card;
+        border-radius: Sizing.radius-md;
+        border-width: Sizing.card-border-width;
+        border-color: Theme.border-mid;
+        clip: true;
+        property <length> pad: Sizing.surface-pad;
+        property <length> rows-y: heading.height + Sizing.pct-h(0.6);
+        // Clear sits on the card's last row, apart from the list above it.
+        property <length> body-h: Math.max(0px, self.height - self.rows-y - self.pad / 2);
+        property <length> clear-y: self.body-h - root.pane-row-h;
+        property <length> list-h: self.body-h - (SearchView.pane-clear ? root.pane-row-h : 0px);
+        // A list longer than the card scrolls, and gives up a band at each
+        // end to the cues that say so.
+        property <length> arrow: Sizing.pct-h(3);
+        property <length> band: self.arrow + Sizing.pct-h(0.5);
+        property <bool> scrollable: SearchView.pane-rows.length > Math.floor(self.list-h / root.pane-row-h);
+        property <length> list-y: self.scrollable ? self.band : 0px;
+        property <int> fit: Math.max(1, Math.floor((self.list-h - 2 * self.list-y) / root.pane-row-h));
+        // A scrolling list spreads its rows over the whole band between
+        // the cues, so the last row meets the lower cue and the cue sits
+        // at the card's foot.
+        property <length> row-h: self.scrollable ? (self.list-h - 2 * self.list-y) / self.fit : root.pane-row-h;
+        changed fit => {
+            SearchView.pane-fit = self.fit;
+            SearchInput.layout-changed();
+        }
+        init => {
+            SearchView.pane-fit = self.fit;
+            SearchInput.layout-changed();
+        }
+
+        heading := SectionHeader {
+            x: 0;
+            y: 0;
+            label-inset: pane.pad;
+            label: SearchView.pane == SearchPane.preview ? SearchView.count-text() : @tr("Recent searches");
+        }
+        if SearchView.pane-rows.length == 0 && SearchView.pane != SearchPane.preview: Text {
+            x: pane.pad;
+            y: pane.rows-y;
+            width: parent.width - 2 * pane.pad;
+            height: root.pane-row-h;
+            text: @tr("Nothing yet");
+            color: Theme.text-label;
+            font-size: Sizing.font-body;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+
+        Rectangle {
+            x: pane.pad / 2;
+            y: pane.rows-y;
+            width: parent.width - pane.pad;
+            height: pane.body-h;
+
+            sel := SelectionCursor {
+                target: {
+                    x: 0px,
+                    y: SearchView.pane-on-clear ? pane.clear-y
+                        : pane.list-y + (SearchView.pane-index - SearchView.pane-top) * pane.row-h,
+                    w: parent.width,
+                    h: SearchView.pane-on-clear ? root.pane-row-h : pane.row-h,
+                    column: 0,
+                    row: SearchView.pane-index,
+                    scope: "search-pane:" + (SearchView.pane == SearchPane.preview ? "p" : "r") + SearchView.pane-top,
+                    valid: SearchView.zone == SearchZone.pane
+                        && (SearchView.pane-on-clear || SearchView.pane-index < SearchView.pane-rows.length)
+                };
+            }
+            for row[i] in SearchView.pane-rows: Rectangle {
+                property <bool> lit: sel.visible && sel.fill-bottom > self.y && sel.fill-top < self.y + self.height;
+                visible: i >= SearchView.pane-top && i < SearchView.pane-top + pane.fit;
+                x: 0;
+                y: pane.list-y + (i - SearchView.pane-top) * pane.row-h;
+                height: pane.row-h;
+                PaneRowBody {
+                    entry: row;
+                    ink: Theme.text-primary;
+                    ink-muted: Theme.text-label;
+                    weight: FontWeight.normal;
+                }
+                if lit: SelectionClip {
+                    row-top: parent.y;
+                    row-height: parent.height;
+                    fill-top: sel.fill-top;
+                    fill-bottom: sel.fill-bottom;
+                    fill: sel.fill;
+                    PaneRowBody {
+                        entry: row;
+                        ink: sel.content;
+                        ink-muted: sel.content-muted;
+                        weight: FontWeight.medium;
+                    }
+                }
+                TouchArea {
+                    mouse-cursor: pointer;
+                    changed has-hover => { if (self.has-hover) { SearchInput.hovered(SearchZone.pane, i); } }
+                    clicked => { SearchInput.clicked(SearchZone.pane, i); }
+                }
+            }
+
+            // Both cues stand while the list scrolls at all, and the spent
+            // one dims (docs/style.md, "Spent cues").
+            if pane.scrollable: ScrollCue {
+                x: (parent.width - self.width) / 2;
+                y: 0;
+                width: pane.arrow;
+                glyph: "icons/ScrollUp";
+                live: SearchView.pane-top > 0;
+            }
+            if pane.scrollable: ScrollCue {
+                x: (parent.width - self.width) / 2;
+                y: pane.list-h - self.height;
+                width: pane.arrow;
+                glyph: "icons/ScrollDown";
+                live: SearchView.pane-top + pane.fit < SearchView.pane-rows.length;
+            }
+
+            // An action row, as a Settings card draws one: centered, in the
+            // accent, inverting under the selection fill like any row.
+            if SearchView.pane-clear: Rectangle {
+                property <bool> lit: sel.visible && sel.fill-bottom > self.y && sel.fill-top < self.y + self.height;
+                x: 0;
+                y: pane.clear-y;
+                height: root.pane-row-h;
+                ClearRowBody { ink: Theme.accent; weight: FontWeight.normal; }
+                if lit: SelectionClip {
+                    row-top: parent.y;
+                    row-height: parent.height;
+                    fill-top: sel.fill-top;
+                    fill-bottom: sel.fill-bottom;
+                    fill: sel.fill;
+                    ClearRowBody { ink: sel.content; weight: FontWeight.medium; }
+                }
+                TouchArea {
+                    mouse-cursor: pointer;
+                    changed has-hover => {
+                        if (self.has-hover) { SearchInput.hovered(SearchZone.pane, SearchView.pane-rows.length); }
+                    }
+                    clicked => { SearchInput.clicked(SearchZone.pane, SearchView.pane-rows.length); }
+                }
+            }
+        }
+    }
+}

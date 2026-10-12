@@ -34,3 +34,6 @@ rust/target/
 
 # Python bytecode from scripts/
 __pycache__/
+
+# Local checkout of the private zaparoo-update module (docs/architecture.md)
+rust/private/

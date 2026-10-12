@@ -9,7 +9,7 @@
 // crate's `Inputs`. The transition-geometry helpers at the bottom are
 // Slint-only (they describe this frontend's own chrome) and stay here.
 
-use crate::{App, GamesView, Layout, Shell, Sizing as SizingGlobal, SystemsView};
+use crate::{App, GamesView, Layout, Motion, Shell, Sizing as SizingGlobal, SystemsView};
 use slint::ComponentHandle;
 use zaparoo_app::layouts::{self, Body, Profile, ThemeId, View};
 pub use zaparoo_app::sizing::GridShape;
@@ -34,6 +34,8 @@ pub struct Scene {
     pub swap_axes: bool,
     /// The handheld interface profile (Settings > Display).
     pub handheld: bool,
+    /// The help entries on screen wrap, so a 240p help bar is two rows.
+    pub help_bar_two_rows: bool,
 }
 
 impl Scene {
@@ -48,6 +50,7 @@ impl Scene {
             bitmap_fonts: sizing.get_bitmap_fonts(),
             swap_axes: sizing.get_swap_axes(),
             handheld: sizing.get_handheld(),
+            help_bar_two_rows: sizing.get_help_bar_two_rows(),
         }
     }
 
@@ -63,8 +66,21 @@ impl Scene {
             } else {
                 InterfaceProfile::Standard
             },
+            help_bar_two_rows: self.help_bar_two_rows,
         }
     }
+}
+
+/// Copy the help bar's wrap measurement into the `Sizing` input the scene
+/// reads. Returns whether it changed, so the caller re-solves only then.
+pub fn sync_help_bar_rows(app: &App) -> bool {
+    let wraps = app.get_help_entries_wrap();
+    let sizing = app.global::<SizingGlobal>();
+    if sizing.get_help_bar_two_rows() == wraps {
+        return false;
+    }
+    sizing.set_help_bar_two_rows(wraps);
+    true
 }
 
 /// Push everything the scene decides: the derived `Sizing` table, the
@@ -88,37 +104,49 @@ pub fn refresh_layout(app: &App, scene: Scene) {
     apply_layout(app, &scene.inputs());
 }
 
-/// `MainLayout._browseViewId`: Systems screens follow the systems layout
-/// preference, games-style screens the games one, rotated scenes use the
-/// TATE list; every other screen resolves against the games grid.
-fn current_view(app: &App) -> View {
+/// The grid and list views of the active screen's family: Systems screens
+/// follow the systems tables, every other screen the games ones, and a
+/// rotated scene uses the TATE list.
+fn family_views(app: &App) -> (View, View) {
     let shell = app.global::<Shell>();
     let rotated = matches!(
         shell.get_orientation(),
         crate::Orientation::Cw | crate::Orientation::Ccw
     );
-    let pick = |list: bool, grid: View, list_view: View, tate: View| {
-        if !list {
-            grid
-        } else if rotated {
-            tate
-        } else {
-            list_view
-        }
-    };
     match shell.get_active_screen() {
-        crate::Screen::Systems | crate::Screen::FavoriteSystems => pick(
-            shell.get_systems_list_layout(),
+        crate::Screen::Systems | crate::Screen::FavoriteSystems => (
             View::SystemsGrid,
-            View::SystemsList,
-            View::SystemsListTate,
+            if rotated {
+                View::SystemsListTate
+            } else {
+                View::SystemsList
+            },
         ),
-        _ => pick(
-            shell.get_browse_list_layout(),
+        _ => (
             View::GamesGrid,
-            View::GamesList,
-            View::GamesListTate,
+            if rotated {
+                View::GamesListTate
+            } else {
+                View::GamesList
+            },
         ),
+    }
+}
+
+/// `MainLayout._browseViewId`: Systems screens follow the systems layout
+/// preference, games-style screens the games one; every other screen
+/// resolves against the games preference.
+fn current_view(app: &App) -> View {
+    let shell = app.global::<Shell>();
+    let (grid, list) = family_views(app);
+    let list_layout = match shell.get_active_screen() {
+        crate::Screen::Systems | crate::Screen::FavoriteSystems => shell.get_systems_list_layout(),
+        _ => shell.get_browse_list_layout(),
+    };
+    if list_layout {
+        list
+    } else {
+        grid
     }
 }
 
@@ -134,12 +162,18 @@ fn apply_layout(app: &App, inputs: &Inputs) {
         });
     let theme = ThemeId::current(inputs);
     let profile = layouts::profile(theme, current_view(app), inputs);
+    // `Layout` carries a grid table and a list table, and views read both
+    // whatever the browse layout is: Search takes the list card's side
+    // margin, a list keeps the grid footer's cue slot. Both are resolved
+    // on every push so neither holds a `.slint` default or the last
+    // screen's values.
+    let (grid_view, list_view) = family_views(app);
+    let grid = layouts::profile(theme, grid_view, inputs);
+    let list = layouts::profile(theme, list_view, inputs);
     // The page cue's size and placement live in the grid tables, but the
-    // cue itself is on screen in both layouts. Resolve the theme's grid
-    // profile alongside so a list view pushes its own values rather than
-    // inheriting whatever grid was shown last.
+    // cue itself is on screen in both layouts, on every screen.
     let cue = layouts::profile(theme, View::GamesGrid, inputs);
-    push_profile(app, &profile, &cue);
+    push_profile(app, &profile, &grid, &list, &cue);
 }
 
 fn px(value: i32) -> f32 {
@@ -150,7 +184,26 @@ fn px(value: i32) -> f32 {
     clippy::too_many_lines,
     reason = "one setter per derived sizing value keeps the inventory reviewable"
 )]
+/// The `zoom` name of the `ZAPAROO_MOTION` test switch, as startup read it.
+static FOCUS_ZOOM_DISABLED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// Record whether the test switch turned the focus zoom off. The zoom is
+/// pushed with every scene, so this takes effect at the next one.
+#[allow(dead_code, reason = "the snapshot tool has no test switch")]
+pub fn set_focus_zoom_disabled(disabled: bool) {
+    FOCUS_ZOOM_DISABLED.store(disabled, std::sync::atomic::Ordering::SeqCst);
+}
+
 fn apply_derived(app: &App, d: &Derived) {
+    // The focus zoom follows the tier, so it is pushed with it: everything
+    // that reserves room for the growth, and the larger art prepared for a
+    // grown tile, reads this one value.
+    app.global::<Motion>()
+        .set_focus_zoom(rules::focus_zoom_percent(
+            d.tier,
+            FOCUS_ZOOM_DISABLED.load(std::sync::atomic::Ordering::SeqCst),
+        ));
     let s = app.global::<SizingGlobal>();
     s.set_tier_240(d.tier == rules::Tier::T240);
     s.set_handheld(d.handheld_profile);
@@ -193,7 +246,7 @@ fn apply_derived(app: &App, d: &Derived) {
     clippy::too_many_lines,
     reason = "one setter per browse layout profile key keeps the inventory reviewable"
 )]
-fn push_profile(app: &App, p: &Profile, cue: &Profile) {
+fn push_profile(app: &App, p: &Profile, grid: &Profile, list: &Profile, cue: &Profile) {
     let l = app.global::<Layout>();
     if let Body::Grid { grid, footer } = &cue.body {
         l.set_grid_page_chevron_size(px(grid.page_chevron_size));
@@ -209,70 +262,68 @@ fn push_profile(app: &App, p: &Profile, cue: &Profile) {
     l.set_card_radius(px(p.surface.card_radius));
     l.set_row_radius(px(p.surface.row_radius));
     l.set_bottom_unsafe_height(px(p.bottom_unsafe_height()));
-    match &p.body {
-        Body::Grid { grid, footer } => {
-            l.set_grid_left_inset(px(grid.left_inset));
-            l.set_grid_right_inset(px(grid.right_inset));
-            l.set_grid_column_gap(px(grid.column_gap));
-            l.set_grid_top_inset(px(grid.top_inset));
-            l.set_grid_bottom_inset(px(grid.bottom_inset));
-            l.set_grid_row_gap(px(grid.row_gap));
-            l.set_active_label_height(px(footer.active_label_height));
-            l.set_active_label_bottom_margin(px(footer.active_label_bottom_margin));
-            l.set_bottom_status_left_margin(px(footer.bottom_status_left_margin));
-            l.set_bottom_status_right_margin(px(footer.bottom_status_right_margin));
-            l.set_grid_bottom_margin(px(footer.grid_bottom_margin));
-        }
-        Body::List { list, detail, .. } => {
-            l.set_list_vertical(list.content_axis == layouts::Axis::Vertical);
-            l.set_list_share(list.list_share);
-            l.set_detail_share(list.detail_share);
-            l.set_divider_width(px(list.divider_width));
-            l.set_divider_margin(px(list.divider_margin));
-            l.set_card_side_margin(px(list.card_side_margin));
-            l.set_card_top_margin(px(list.card_top_margin));
-            l.set_card_bottom_margin(px(list.card_bottom_margin));
-            l.set_card_padding_left(px(list.card_padding_left));
-            l.set_card_padding_right(px(list.card_padding_right));
-            l.set_card_padding_top(px(list.card_padding_top));
-            l.set_card_padding_bottom(px(list.card_padding_bottom));
-            l.set_row_height(px(list.row_height));
-            l.set_row_spacing(px(list.row_spacing));
-            l.set_center_slot(list.center_slot);
-            l.set_row_text_left_padding(px(list.row_text_left_padding));
-            l.set_row_text_right_padding(px(list.row_text_right_padding));
-            l.set_favorite_right_padding(px(list.favorite_right_padding));
-            l.set_overlay_bottom_margin(px(list.overlay_bottom_margin));
-            l.set_detail_vertical(detail.content_axis == layouts::Axis::Vertical);
-            l.set_section_gap(px(detail.section_gap));
-            l.set_image_share(detail.image_share);
-            l.set_metadata_share(detail.metadata_share);
-            l.set_image_height_ratio_with_title(detail.image_height_ratio_with_title);
-            l.set_image_reserved_width(px(detail.image_reserved_width));
-            l.set_image_reserved_height(px(detail.image_reserved_height));
-            l.set_image_bottom_margin(px(detail.image_bottom_margin));
-            l.set_pane_padding_left(px(detail.pane_padding_left));
-            l.set_pane_padding_right(px(detail.pane_padding_right));
-            l.set_pane_padding_top(px(detail.pane_padding_top));
-            l.set_pane_padding_bottom(px(detail.pane_padding_bottom));
-            l.set_image_padding_left(px(detail.image_padding_left));
-            l.set_image_padding_right(px(detail.image_padding_right));
-            l.set_image_padding_top(px(detail.image_padding_top));
-            l.set_image_padding_bottom(px(detail.image_padding_bottom));
-            l.set_metadata_padding_left(px(detail.metadata_padding_left));
-            l.set_metadata_padding_right(px(detail.metadata_padding_right));
-            l.set_metadata_padding_top(px(detail.metadata_padding_top));
-            l.set_metadata_padding_bottom(px(detail.metadata_padding_bottom));
-            l.set_metadata_top_margin(px(detail.metadata_top_margin));
-            l.set_metadata_left_margin(px(detail.metadata_left_margin));
-            l.set_metadata_right_margin(px(detail.metadata_right_margin));
-            l.set_metadata_height_adjustment(px(detail.metadata_height_adjustment));
-            l.set_metadata_bottom_aligned(detail.metadata_bottom_aligned);
-            l.set_metadata_label_max_width(px(detail.metadata_label_max_width.unwrap_or(0)));
-            l.set_title_bottom_margin(px(detail.title_bottom_margin));
-            l.set_tag_row_height(px(detail.tag_row_height));
-            l.set_tag_row_spacing(px(detail.tag_row_spacing));
-        }
+    if let Body::Grid { grid, footer } = &grid.body {
+        l.set_grid_left_inset(px(grid.left_inset));
+        l.set_grid_right_inset(px(grid.right_inset));
+        l.set_grid_column_gap(px(grid.column_gap));
+        l.set_grid_top_inset(px(grid.top_inset));
+        l.set_grid_bottom_inset(px(grid.bottom_inset));
+        l.set_grid_row_gap(px(grid.row_gap));
+        l.set_active_label_height(px(footer.active_label_height));
+        l.set_active_label_bottom_margin(px(footer.active_label_bottom_margin));
+        l.set_bottom_status_left_margin(px(footer.bottom_status_left_margin));
+        l.set_bottom_status_right_margin(px(footer.bottom_status_right_margin));
+        l.set_grid_bottom_margin(px(footer.grid_bottom_margin));
+    }
+    if let Body::List { list, detail, .. } = &list.body {
+        l.set_list_vertical(list.content_axis == layouts::Axis::Vertical);
+        l.set_list_share(list.list_share);
+        l.set_detail_share(list.detail_share);
+        l.set_divider_width(px(list.divider_width));
+        l.set_divider_margin(px(list.divider_margin));
+        l.set_card_side_margin(px(list.card_side_margin));
+        l.set_card_top_margin(px(list.card_top_margin));
+        l.set_card_bottom_margin(px(list.card_bottom_margin));
+        l.set_card_padding_left(px(list.card_padding_left));
+        l.set_card_padding_right(px(list.card_padding_right));
+        l.set_card_padding_top(px(list.card_padding_top));
+        l.set_card_padding_bottom(px(list.card_padding_bottom));
+        l.set_row_height(px(list.row_height));
+        l.set_row_spacing(px(list.row_spacing));
+        l.set_center_slot(list.center_slot);
+        l.set_row_text_left_padding(px(list.row_text_left_padding));
+        l.set_row_text_right_padding(px(list.row_text_right_padding));
+        l.set_favorite_right_padding(px(list.favorite_right_padding));
+        l.set_overlay_bottom_margin(px(list.overlay_bottom_margin));
+        l.set_detail_vertical(detail.content_axis == layouts::Axis::Vertical);
+        l.set_section_gap(px(detail.section_gap));
+        l.set_image_share(detail.image_share);
+        l.set_metadata_share(detail.metadata_share);
+        l.set_image_height_ratio_with_title(detail.image_height_ratio_with_title);
+        l.set_image_reserved_width(px(detail.image_reserved_width));
+        l.set_image_reserved_height(px(detail.image_reserved_height));
+        l.set_image_bottom_margin(px(detail.image_bottom_margin));
+        l.set_pane_padding_left(px(detail.pane_padding_left));
+        l.set_pane_padding_right(px(detail.pane_padding_right));
+        l.set_pane_padding_top(px(detail.pane_padding_top));
+        l.set_pane_padding_bottom(px(detail.pane_padding_bottom));
+        l.set_image_padding_left(px(detail.image_padding_left));
+        l.set_image_padding_right(px(detail.image_padding_right));
+        l.set_image_padding_top(px(detail.image_padding_top));
+        l.set_image_padding_bottom(px(detail.image_padding_bottom));
+        l.set_metadata_padding_left(px(detail.metadata_padding_left));
+        l.set_metadata_padding_right(px(detail.metadata_padding_right));
+        l.set_metadata_padding_top(px(detail.metadata_padding_top));
+        l.set_metadata_padding_bottom(px(detail.metadata_padding_bottom));
+        l.set_metadata_top_margin(px(detail.metadata_top_margin));
+        l.set_metadata_left_margin(px(detail.metadata_left_margin));
+        l.set_metadata_right_margin(px(detail.metadata_right_margin));
+        l.set_metadata_height_adjustment(px(detail.metadata_height_adjustment));
+        l.set_metadata_bottom_aligned(detail.metadata_bottom_aligned);
+        l.set_metadata_label_max_width(px(detail.metadata_label_max_width.unwrap_or(0)));
+        l.set_title_bottom_margin(px(detail.title_bottom_margin));
+        l.set_tag_row_height(px(detail.tag_row_height));
+        l.set_tag_row_spacing(px(detail.tag_row_spacing));
     }
 }
 
@@ -328,9 +379,10 @@ pub struct BrowseGridTransitionGeometry {
     pub gap: u32,
 }
 
-/// Published non-CRT browse viewport in Slint render pixels. Horizontal,
-/// one-to-one cached scenes move the same full-width band as the live UI,
-/// leaving header, counter, active label and help bar stationary.
+/// Published browse viewport in the scene's own pixels, before any
+/// rotation the presenter renders it with. One-to-one cached scenes move
+/// the same full-width band as the live UI, leaving header, counter, active
+/// label and help bar stationary.
 #[cfg_attr(
     not(feature = "mister"),
     allow(

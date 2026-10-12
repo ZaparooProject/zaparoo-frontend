@@ -6,15 +6,31 @@
 // them into translated text. Kept in its own file so every screen and
 // modal can reach it without importing the app tree.
 
-import { Screen, AppCue, DisabledReason, DialogKind, DialogProgress, DialogButton, FirstRunPhase, ErrorKind } from "state_types.slint";
+import { Screen, AppCue, BootStatus, DisabledReason, DialogKind, DialogButton, ErrorKind } from "state_types.slint";
 
 // Key-to-copy vocabulary for labels Rust hands over as stable ids.
 export global Labels {
+    public pure function boot(status: BootStatus) -> string {
+        if (status == BootStatus.starting) { return @tr("Starting Zaparoo Core…"); }
+        if (status == BootStatus.migrating) { return @tr("Updating Zaparoo Core data…"); }
+        if (status == BootStatus.reconnecting) { return @tr("Reconnecting to Zaparoo Core…"); }
+        if (status == BootStatus.loading) { return @tr("Loading library…"); }
+        if (status == BootStatus.unreachable) { return @tr("Can't reach Zaparoo Core. Check the connection."); }
+        return @tr("Connecting to Zaparoo Core…");
+    }
+    // The dim suffix beside an item's name: its own tags, and the word that
+    // says a hidden item is hidden while hidden items are being shown.
+    public pure function tags(tags: string, hidden: bool) -> string {
+        if (!hidden) { return tags; }
+        if (tags == "") { return @tr("Hidden"); }
+        return @tr("{} · {}", tags, @tr("Hidden"));
+    }
     public pure function loading(target: Screen) -> string {
-        if (target == Screen.systems) { return @tr("Loading systems…"); }
+        if (target == Screen.favorite-systems) { return @tr("Loading favorite systems…"); }
         if (target == Screen.games) { return @tr("Loading games…"); }
         if (target == Screen.favorites) { return @tr("Loading favorites…"); }
         if (target == Screen.recents) { return @tr("Loading recently played…"); }
+        if (target == Screen.search-results) { return @tr("Searching…"); }
         return @tr("Loading…");
     }
     public pure function hub(key: string, name: string) -> string {
@@ -29,6 +45,7 @@ export global Labels {
         if (key == "action:resume") { return name == "" ? @tr("Resume") : @tr("Resume: {}", name); }
         if (key == "action:favorites") { return @tr("Favorites"); }
         if (key == "action:recents") { return @tr("Recently played"); }
+        if (key == "action:search") { return @tr("Search"); }
         if (key == "action:update") { return @tr("Update"); }
         if (key == "action:settings") { return @tr("Settings"); }
         return name;
@@ -56,6 +73,29 @@ export global Labels {
         return "";
     }
 
+    // What a browse filter row shows after its colon: the chosen value, or
+    // "Any" when none is chosen (the driver sends an empty name).
+    public pure function filter-value(name: string) -> string {
+        return name == "" ? @tr("Any") : name;
+    }
+
+    // The tags picker's category names, which also title their value
+    // pages. Listed out so each name is extracted once.
+    public pure function filter-category(key: string, name: string) -> string {
+        if (key == "title:filter_cat:genre") { return @tr("Genre"); }
+        if (key == "title:filter_cat:year") { return @tr("Year"); }
+        if (key == "title:filter_cat:players") { return @tr("Players"); }
+        if (key == "title:filter_cat:developer") { return @tr("Developer"); }
+        if (key == "title:filter_cat:publisher") { return @tr("Publisher"); }
+        if (key == "title:filter_cat:region") { return @tr("Region"); }
+        if (key == "title:filter_cat:language") { return @tr("Language"); }
+        if (key == "title:filter_cat:perspective") { return @tr("Perspective"); }
+        if (key == "title:filter_cat:input") { return @tr("Input"); }
+        if (key == "title:filter_cat:arcadeboard") { return @tr("Arcade board"); }
+        if (key == "title:filter_cat:lists") { return @tr("Collections"); }
+        return "";
+    }
+
     // Menu rows and picker titles. Rust pushes the id it routes on; a
     // key this table does not know falls through to the Hub vocabulary
     // (a hub item's own `category:`/`action:` key) and then to the name
@@ -71,21 +111,54 @@ export global Labels {
         if (key == "discover") { return @tr("Discover alt. versions"); }
         if (key == "discover:searching") { return @tr("Searching…"); }
         if (key == "discover:none") { return @tr("No alternates found"); }
+        if (key == "choose_disc") { return @tr("Choose disc"); }
+        if (key == "choose_disc:loading") { return @tr("Loading…"); }
+        if (key == "choose_disc:none") { return @tr("No discs found"); }
+        if (key == "disc") { return @tr("Disc {}", name); }
         if (key == "add_to_hub") { return @tr("Add to Hub"); }
+        if (key == "hub:remove") { return @tr("Remove from Hub"); }
         if (key == "scrape_game") { return @tr("Update metadata"); }
+        // Rows that turn the menu to a page, which they also title.
+        if (key == "write_token") { return @tr("Write to token"); }
+        if (key == "manage_game") { return @tr("Manage game"); }
+        if (key == "manage_system") { return @tr("Manage system"); }
+        if (key == "manage_category") { return @tr("Manage category"); }
+        // Games, folders and systems share the toggle.
+        if (key == "hide:hide") { return @tr("Hide"); }
+        if (key == "hide:unhide") { return @tr("Unhide"); }
+        // On a Hub shortcut the row names what it hides, since the shortcut
+        // has a Remove of its own.
+        if (key == "hide:game") { return @tr("Hide game"); }
+        if (key == "unhide:game") { return @tr("Unhide game"); }
+        if (key == "hide:system") { return @tr("Hide system"); }
+        if (key == "unhide:system") { return @tr("Unhide system"); }
         // Systems rows.
         if (key == "launch_system") { return @tr("Launch system"); }
         if (key == "launch_random_system" || key == "launch_random_favorite") { return @tr("Random game"); }
-        if (key == "hide:hide") { return @tr("Hide"); }
-        if (key == "hide:unhide") { return @tr("Unhide"); }
+        if (key == "random_favorite") { return @tr("Random favorite game"); }
         if (key == "index_category" || key == "index_system") { return @tr("Update media database"); }
         if (key == "scrape_category" || key == "scrape_system") { return @tr("Update metadata"); }
         if (key == "jump_letter") { return @tr("Go to…"); }
+        if (key == "search_here") { return @tr("Search here…"); }
+        if (key == "search:all_systems") { return @tr("All systems"); }
+        if (key == "section:recent") { return @tr("Recent"); }
+        if (key == "section:other") { return @tr("Other"); }
+        // The tags picker, from the games View menu and the Search screen.
+        if (key == "filter") { return @tr("Tags: {}", Labels.filter-value(name)); }
+        if (key == "filter_clear") { return @tr("Clear tags"); }
+        if (key == "filter:any") { return @tr("Any"); }
+        if (key == "filter:loading") { return @tr("Loading tags…"); }
+        // The tags are in flight, not yet long enough to say so.
+        if (key == "filter:pending") { return ""; }
+        if (key == "filter:failed") { return @tr("Failed to load tags"); }
+        if (key == "filter:none") { return @tr("No tags available"); }
+        if (Labels.filter-category(key, name) != "") { return Labels.filter-category(key, name); }
         // Hub rows and its View menu.
         if (key == "hub_add") { return @tr("Add item…"); }
         if (key == "hub_move") { return @tr("Move"); }
         if (key == "hub_remove:hide") { return @tr("Hide"); }
-        if (key == "hub_remove:remove") { return @tr("Remove"); }
+        if (key == "hub_move:tile") { return @tr("Move tile"); }
+        if (key == "hub_remove:resume") { return @tr("Hide Resume tile"); }
         if (key == "hub_reset") { return @tr("Reset layout"); }
         if (key == "hub_settings") { return @tr("Settings"); }
         if (key == "hub_quit") { return @tr("Quit"); }
@@ -104,18 +177,34 @@ export global Labels {
         if (key == "launcher:current") { return @tr("Current: {}", name); }
         // Picker titles.
         if (key == "title:view") { return @tr("View"); }
+        if (key == "title:filter") { return @tr("Tags"); }
+        if (key == "title:search_system") { return @tr("System"); }
         if (key == "title:add_item") { return @tr("Add item"); }
         if (key == "title:sort") { return @tr("Sort"); }
         if (key == "title:group_by") { return @tr("Group by"); }
         if (key == "title:change_launcher") { return @tr("Change launcher"); }
-        if (key == "title:alternate_versions") { return @tr("Alternate versions"); }
         return Labels.hub(key, name);
     }
 
-    // The header's transient app line. Rust pushes a key; today the
-    // only one is the launch cue.
-    public pure function status(key: AppCue) -> string {
-        if (key == AppCue.launching) { return @tr("Launching…"); }
+    // The header's transient app line. Rust pushes a key and its values:
+    // what the user's action is waiting on, or the brief confirmation of
+    // one that changed something off screen. `loading-list` is worded by
+    // `loading` from the screen it reloads.
+    public pure function status(key: AppCue, arg: string, arg2: string) -> string {
+        if (key == AppCue.launching) {
+            if (arg == "") { return @tr("Launching…"); }
+            return @tr("Launching {}…", arg);
+        }
+        if (key == AppCue.loading-more) { return @tr("Loading more…"); }
+        if (key == AppCue.loading-progress) { return @tr("Loading {} of {}…", arg, arg2); }
+        if (key == AppCue.loading-launchers) { return @tr("Loading launchers…"); }
+        if (key == AppCue.saving) { return @tr("Saving…"); }
+        if (key == AppCue.starting) { return @tr("Starting…"); }
+        if (key == AppCue.cancelling) { return @tr("Cancelling…"); }
+        if (key == AppCue.unlinking) { return @tr("Unlinking…"); }
+        if (key == AppCue.added-to-hub) { return @tr("Added to Hub"); }
+        if (key == AppCue.removed-from-hub) { return @tr("Removed from Hub"); }
+        if (key == AppCue.token-written) { return @tr("Token written"); }
         return "";
     }
 
@@ -123,6 +212,14 @@ export global Labels {
         if (reason == DisabledReason.no-recent-games) { return @tr("No recent games"); }
         if (reason == DisabledReason.no-internet) { return @tr("No internet connection"); }
         if (reason == DisabledReason.not-available) { return @tr("Not available"); }
+        return "";
+    }
+
+    // Why a launcher picker row can't currently be picked usefully,
+    // folded into the row's own text (see `entry-reason-suffix`).
+    public pure function launcher-reason(key: string) -> string {
+        if (key == "launcher:not_installed") { return @tr("not installed"); }
+        if (key == "launcher:unavailable") { return @tr("unavailable"); }
         return "";
     }
 }
@@ -138,14 +235,23 @@ export global DialogLabels {
         if (kind == DialogKind.core-version) { return @tr("Update Zaparoo Core"); }
         if (kind == DialogKind.first-run) { return @tr("First-time setup"); }
         if (kind == DialogKind.hub-full) { return @tr("Nothing left to add"); }
+        if (kind == DialogKind.unlink-online) { return @tr("Unlink Online account?"); }
+        if (kind == DialogKind.restore-online-backup) { return @tr("Restore this backup?"); }
+        if (kind == DialogKind.update-stop) { return @tr("Stop update?"); }
         if (kind == DialogKind.action-error) { return DialogLabels.error-title(error); }
         return "";
     }
 
-    public pure function body(kind: DialogKind, error: ErrorKind, phase: FirstRunPhase, detail: string, arg: string) -> string {
+    public pure function body(
+        kind: DialogKind, error: ErrorKind, detail: string, arg: string,
+        repair-reason: string, repair-launcher: string, repair-plugin: string,
+    ) -> string {
         if (kind == DialogKind.quit-confirm) { return @tr("Are you sure you want to exit?"); }
         if (kind == DialogKind.quit-blocked) { return @tr("Close the running game before exiting Zaparoo Frontend."); }
         if (kind == DialogKind.restart-setting) { return @tr("This setting needs a frontend restart to take effect."); }
+        if (kind == DialogKind.unlink-online) { return @tr("This device stops backing up and syncing with your Zaparoo Online account. Local play history stays on this device."); }
+        if (kind == DialogKind.restore-online-backup) { return @tr("This replaces this device's settings and data with the backup from {}. Zaparoo restarts when it finishes.", detail); }
+        if (kind == DialogKind.update-stop) { return @tr("An update is still running. Leaving this screen stops it."); }
         if (kind == DialogKind.notice) {
             return @tr("Copyright 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.\n\nThis free source-available build is for personal and non-commercial use only. Commercial use requires a separate license.\n\nContact: legal@zaparoo.com\n\nFull details available any time under Settings > About / License.\n\nCreated by\nAndrea Bogazzi, BossRighteous, Tim Wilsie, Wizzo");
         }
@@ -153,24 +259,13 @@ export global DialogLabels {
             return @tr("This frontend needs Zaparoo Core {} or newer. You're running {}. Some features may not work until you update.", detail, arg);
         }
         if (kind == DialogKind.first-run) {
-            if (phase == FirstRunPhase.done) { return @tr("Done. {} files indexed.", arg); }
-            return @tr("Zaparoo needs to scan your games before you can use the frontend. This usually takes a few minutes.");
+            return @tr("Start a media database update to find your games. It runs in the background, and systems appear as they are indexed.");
         }
         if (kind == DialogKind.hub-full) {
             return @tr("All categories and actions are already on the Hub. To add a game or system, open its Options menu and choose \"Add to Hub\".");
         }
-        if (kind == DialogKind.action-error) { return DialogLabels.error-body(error, arg); }
-        return "";
-    }
-
-    // The first-run scan's progress line.
-    public pure function status(key: DialogProgress, step: int, total: int, name: string) -> string {
-        if (key == DialogProgress.preparing) { return @tr("Preparing…"); }
-        if (key == DialogProgress.optimizing) { return @tr("Optimizing database - almost done"); }
-        if (key == DialogProgress.paused) { return @tr("Indexing paused"); }
-        if (key == DialogProgress.step) {
-            if (name == "") { return @tr("Step {} of {}", step, total); }
-            return @tr("Step {} of {} - {}", step, total, name);
+        if (kind == DialogKind.action-error) {
+            return DialogLabels.error-body(error, arg, repair-reason, repair-launcher, repair-plugin);
         }
         return "";
     }
@@ -182,15 +277,17 @@ export global DialogLabels {
         if (key == DialogButton.retry) { return @tr("Retry"); }
         if (key == DialogButton.cancel) { return @tr("Cancel"); }
         if (key == DialogButton.i-understand) { return @tr("I understand"); }
-        if (key == DialogButton.start-scan) { return @tr("Start scan"); }
+        if (key == DialogButton.start-media-update) { return @tr("Start media update"); }
         return "";
     }
 
     // A failed user action. The technical detail is already in the log;
     // these say what failed and what the user can do about it.
     public pure function error-title(kind: ErrorKind) -> string {
-        if (kind == ErrorKind.launch) { return @tr("Launch failed"); }
+        if (kind == ErrorKind.launch || kind == ErrorKind.launch-repair) { return @tr("Launch failed"); }
         if (kind == ErrorKind.favorite) { return @tr("Favorite update failed"); }
+        if (kind == ErrorKind.media-visibility) { return @tr("Visibility update failed"); }
+        if (kind == ErrorKind.media-busy) { return @tr("Media database is busy"); }
         if (kind == ErrorKind.add-to-hub) { return @tr("Add to Hub failed"); }
         if (kind == ErrorKind.media-index) { return @tr("Media update failed"); }
         if (kind == ErrorKind.media-scrape) { return @tr("Update metadata failed"); }
@@ -198,18 +295,31 @@ export global DialogLabels {
         if (kind == ErrorKind.media-cancel) { return @tr("Cancel failed"); }
         if (kind == ErrorKind.launcher || kind == ErrorKind.launcher-save) { return @tr("Launcher update failed"); }
         if (kind == ErrorKind.alternate-discovery) { return @tr("Alternate versions unavailable"); }
+        if (kind == ErrorKind.disc-list) { return @tr("Disc list unavailable"); }
         if (kind == ErrorKind.qr-code) { return @tr("QR code failed"); }
         if (kind == ErrorKind.card-write) { return @tr("Token write failed"); }
         if (kind == ErrorKind.setting) { return @tr("Setting not saved"); }
+        if (kind == ErrorKind.pairing) { return @tr("Pairing could not start"); }
+        if (kind == ErrorKind.online) { return @tr("Online account unavailable"); }
+        if (kind == ErrorKind.backup) { return @tr("Cloud backup failed"); }
+        if (kind == ErrorKind.config-file) { return @tr("Config file not loaded"); }
         return @tr("Action failed");
     }
 
-    public pure function error-body(kind: ErrorKind, context: string) -> string {
+    public pure function error-body(
+        kind: ErrorKind, context: string, reason: string, launcher: string, plugin: string,
+    ) -> string {
         if (kind == ErrorKind.launch) {
             if (context == "") { return @tr("Could not start this item. Check Zaparoo Core and try again."); }
             return @tr("Could not start {}. Check Zaparoo Core and try again.", context);
         }
+        if (kind == ErrorKind.launch-repair) {
+            return DialogLabels.launch-repair-body(reason, launcher, plugin, context);
+        }
         if (kind == ErrorKind.favorite) { return @tr("Could not update this favorite. Check Zaparoo Core and try again."); }
+        if (kind == ErrorKind.media-visibility) { return @tr("Could not hide or unhide this game. Check Zaparoo Core and try again."); }
+        // Core refuses a tag write while a job owns the media database.
+        if (kind == ErrorKind.media-busy) { return @tr("Zaparoo Core is updating the media database. Try again when it finishes."); }
         if (kind == ErrorKind.add-to-hub) {
             if (context == "") { return @tr("Could not add this item to the Hub. Check Zaparoo Core and try again."); }
             return @tr("Could not add {} to the Hub. Check Zaparoo Core and try again.", context);
@@ -220,9 +330,80 @@ export global DialogLabels {
         if (kind == ErrorKind.media-cancel) { return @tr("Could not cancel the media operation. Check Zaparoo Core and try again."); }
         if (kind == ErrorKind.launcher || kind == ErrorKind.launcher-save) { return @tr("Could not change the launcher. Check Zaparoo Core and try again."); }
         if (kind == ErrorKind.alternate-discovery) { return @tr("Could not find alternate versions. Check Zaparoo Core and try again."); }
+        if (kind == ErrorKind.disc-list) { return @tr("Could not list the discs of this game. Check Zaparoo Core and try again."); }
         if (kind == ErrorKind.qr-code) { return @tr("Could not create the QR code for this item."); }
         if (kind == ErrorKind.card-write) { return @tr("Could not write to this token. Check that it is writable and try again."); }
         if (kind == ErrorKind.setting) { return @tr("Could not save this setting. Try again."); }
+        if (kind == ErrorKind.pairing) { return @tr("Core would not start a pairing. It may already have as many paired devices as it allows, or it may be running on another device."); }
+        if (kind == ErrorKind.online) { return @tr("Core could not reach or update your Zaparoo Online account. Check the network connection and try again."); }
+        // A cloud backup or restore Core refused. `context` is the cause
+        // `zaparoo_app::online_lists::Failure::token` named, or empty.
+        if (kind == ErrorKind.backup) {
+            if (context == "rate_limited") { return @tr("A backup was uploaded recently. Wait a few minutes, then try again."); }
+            if (context == "needs_warp") { return @tr("Cloud backup needs an active Zaparoo Warp subscription."); }
+            if (context == "unlinked") { return @tr("This device is not linked. Link your Zaparoo Online account, then try again."); }
+            if (context == "quota_exceeded") { return @tr("Your cloud backup storage is full."); }
+            if (context == "busy") { return @tr("Zaparoo is busy with another backup or request. Wait for it to finish, then try again."); }
+            if (context == "media_active") { return @tr("Stop the game that is running, then try again."); }
+            if (context == "restart_needed") { return @tr("Restart Zaparoo to finish the previous restore, then try again."); }
+            if (context == "needs_newer") { return @tr("This backup was made by a newer Zaparoo. Update Zaparoo, then try again."); }
+            if (context == "disk_space") { return @tr("Free some storage space on this device, then try again."); }
+            return @tr("Could not finish the cloud backup. Check the network connection and try again.");
+        }
+        // `context` is the path of the file that did not load.
+        if (kind == ErrorKind.config-file) { return @tr("{} could not be read, so defaults are in use and changes will not be saved. Fix or remove the file, then restart.", context); }
         return @tr("The action could not be completed. Check Zaparoo Core and try again.");
+    }
+
+    // A `launch_repair` error's closed `reason` set (see
+    // docs/api/methods.md#launch-repair-errors upstream). `launcher`/
+    // `plugin` are short display names Core sent, or empty when it had
+    // none - each reason falls back a tier rather than naming a blank.
+    // `unspecified`, the reserved `launcher_ambiguous`, and any reason
+    // this build doesn't recognize all show `message` verbatim, exactly
+    // as Core's own client contract requires.
+    public pure function launch-repair-body(reason: string, launcher: string, plugin: string, message: string) -> string {
+        if (reason == "launcher_not_installed") {
+            if (launcher == "") { return @tr("This launcher isn't installed."); }
+            return @tr("{} isn't installed.", launcher);
+        }
+        if (reason == "launcher_component_missing") {
+            if (launcher == "") { return @tr("This launcher is installed, but its entry point is missing or disabled."); }
+            return @tr("{} is installed, but its entry point is missing or disabled.", launcher);
+        }
+        if (reason == "launcher_plugin_missing") {
+            if (launcher == "") { return @tr("This launcher's plugin for this system isn't installed."); }
+            if (plugin == "") { return @tr("{}'s plugin for this system isn't installed.", launcher); }
+            return @tr("{}'s {} plugin isn't installed.", launcher, plugin);
+        }
+        if (reason == "launcher_version_unsupported") {
+            if (launcher == "") { return @tr("This build of the launcher can't be used for this media. A different build is needed."); }
+            return @tr("This build of {} can't be used for this media. A different build is needed.", launcher);
+        }
+        if (reason == "launcher_unsupported_media") {
+            if (launcher == "") { return @tr("This launcher can't play this media."); }
+            return @tr("{} can't play this media.", launcher);
+        }
+        if (reason == "launcher_options_unsupported") {
+            if (launcher == "") { return @tr("This launcher doesn't support the requested launch options."); }
+            return @tr("{} doesn't support the requested launch options.", launcher);
+        }
+        if (reason == "storage_permission_required") {
+            if (launcher == "") { return @tr("This launcher doesn't have the storage permission it needs."); }
+            return @tr("{} doesn't have the storage permission it needs.", launcher);
+        }
+        if (reason == "storage_provider_unsupported") {
+            if (launcher == "") { return @tr("This launcher can't read media from where it's stored."); }
+            return @tr("{} can't read media from where it's stored.", launcher);
+        }
+        if (reason == "storage_unavailable") { return @tr("The storage holding this media isn't available."); }
+        if (reason == "media_unavailable") { return @tr("This media could not be resolved or opened."); }
+        if (reason == "media_access_revoked") { return @tr("Access to this media's folder was revoked. Re-grant it in Settings > Library."); }
+        if (reason == "host_unavailable") { return @tr("The launcher service isn't responding."); }
+        if (reason == "host_foreground_required") { return @tr("Return to Zaparoo before launching this."); }
+        if (reason == "cancelled") { return @tr("The launch was cancelled before it started."); }
+        if (reason == "outcome_unknown") { return @tr("The launch was sent, but its outcome could not be confirmed."); }
+        if (reason == "refused") { return @tr("The system refused the launch request."); }
+        return message;
     }
 }

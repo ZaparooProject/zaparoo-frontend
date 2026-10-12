@@ -21,6 +21,7 @@ raw cargo as the default path; the justfile carries the expected environment
 | Dev run against mock Core | `just run-dev` (starts and stops the mock itself) |
 | Mock Core only | `just mock-core` |
 | Full test gate | `just test` (workspace plus the `mister` feature set) |
+| Hosted seam check | `just hosted-check` (clippy and tests for the hosted library on the software renderer; builds for no host target) |
 | Full lint gate | `just lint` (fmt, clippy for desktop, mister, and snapshot, deny, toolkit guard, translation template, notices, logo parity) |
 | Format | `just fmt` (`just fix` applies clippy fixes first) |
 | Regenerate the translation template | `just tr-extract` |
@@ -46,15 +47,19 @@ private `_` recipe. Container builds write to `rust/target/docker/`.
 
 ## Stack Facts
 
-- Slint 1.17.1, pinned exactly (`=1.17.1`) with `slint-build` and
+- Slint 1.18.0, pinned exactly (`=1.18.0`) with `slint-build` and
   `slint-tr-extractor` at the same version. Used under the paid Slint Software
   License.
 - Rust workspace under `rust/`, edition 2021, MSRV and toolchain 1.97
   (`rust-toolchain.toml`).
 - `rust/frontend` features: `desktop` (default: winit backend, FemtoVG
   renderer, gilrs gamepads), `mister` (custom `slint::platform`, `std` software
-  renderer, own presenters), `snapshot` (desktop plus the software renderer for
-  the offline `snapshot` binary). Exactly one of `desktop`/`mister`.
+  renderer, own presenters), `hosted` (library only: an embedding host
+  supplies the Slint backend, paths, logging and Core transport through
+  `frontend::host`), `snapshot` (desktop plus the software renderer for the
+  offline `snapshot` binary). Exactly one of `desktop`/`mister`/`hosted`;
+  `desktop` and `mister` imply `standalone`, which the `frontend` binary
+  requires. See `docs/architecture.md#hosted-library`.
 - The MiSTer binary is a static `armv7-unknown-linux-musleabihf` build made
   in the toolchain image, landing in
   `rust/target/docker/armv7-unknown-linux-musleabihf/release/frontend`. Fonts,
@@ -99,6 +104,13 @@ private `_` recipe. Container builds write to `rust/target/docker/`.
 - Take geometry from the `Sizing` and `Layout` globals (pushed from
   `zaparoo_app::sizing` and `zaparoo_app::layouts`), not hardcoded pixel sizes
   or element counts. The UI must run cleanly at 240p.
+- Keep every `Layout` property pushed on every layout change. `Layout` holds
+  the active screen family's grid table and list table, and `push_profile` in
+  `rust/frontend/src/sizing.rs` writes both whatever the browse layout is, so
+  a view never reads a `.slint` default or the last screen's value. A new
+  `Layout` property gets its setter there, unconditionally. Where Rust solves
+  a grid's cells and offsets, the view places them with the same insets and
+  gaps Rust solved with (Settings and the Hub use `Sizing.hub-grid-*`).
 - Put product rules (sizing, palette, grid navigation, menus, input timing,
   status ladders) in the toolkit-free `rust/zaparoo-app` crate with tests, and
   keep `rust/frontend` as the Slint adapter. `scripts/check-toolkit-free.sh`
@@ -162,18 +174,23 @@ private `_` recipe. Container builds write to `rust/target/docker/`.
   competes with Core, the FPGA wrapper, and the active core for it.
   **Scoped exception:** `rust/frontend/src/hub_covers.rs` persists a small
   path *list* (`hub_covers.toml` in the cache dir; never image bytes or
-  metadata) mapping each Hub `zapscript` tile and the Resume tile to the Core
-  thumbnail path Core itself already wrote to
-  `/media/fat/zaparoo/cache/thumbs/`, so those covers can seed the in-memory
-  cache before the first frame on a cold boot. Bounded by
-  `zaparoo_app::covers::MAX_HUB_ENTRIES` plus the Resume tile, colocated
-  `MiSTer` only, and self-healing: a stale path just fails to open and falls
+  metadata) mapping each Hub `zapscript` tile, the Resume tile, and the browse
+  page a game was last launched from to the Core thumbnail path Core itself
+  already wrote to its thumbnail cache (on MiSTer
+  `/media/fat/zaparoo/cache/thumbs/`), so those covers can seed the in-memory
+  cache on a cold boot: before the first frame for the Hub, and while the rows
+  load for a browse screen. The browse section is written when a launch starts
+  or the frontend goes dormant, never while browsing. Bounded by
+  `zaparoo_app::covers::MAX_HUB_ENTRIES` plus the Resume tile and
+  `MAX_BROWSE_ENTRIES`, only where Core
+  is colocated and its files are readable (MiSTer, and an embedding host that
+  runs Core in the same app), and self-healing: a stale path just fails to open and falls
   through to a normal Core request. Do not extend this carve-out to any other
   cache without discussing it first.
 - Do not open a modal from a modal. A choice made inside a modal is a page of
   that modal's own panel (the setup panel in `ui/setup.slint` swaps between
-  its form and its picker page; the context menu hosts the alternate-versions
-  page); only an action-error alert (shown through the decision dialog) may
+  its form and its picker page; the context menu hosts its Manage, Write to
+  token, disc and alternate-versions pages); only an action-error alert (shown through the decision dialog) may
   sit above an open modal. See `docs/style.md` → "Modal depth".
 - Do not add `.git/` rerun-if triggers or `ZAPAROO_BUILD_*` provenance baking
   to `rust/frontend/build.rs`. Provenance lives in the `rust/build-info` leaf
@@ -196,7 +213,9 @@ update rules, in short:
 - Any `Dockerfile.toolchain` change bumps `scripts/toolchain/VERSION` in the
   same PR; CI publishes the new tag and fails a PR that skips the bump.
 - Bumping Slint touches `slint` and `slint-build` in `rust/frontend/Cargo.toml`
-  (plus `fontique` and `resvg`, which must match the versions Slint resolves),
+  (plus `fontique` and `resvg`, which must match the versions Slint resolves,
+  and the exact `i-slint-core` pin that gives the MiSTer and hosted builds
+  their image decoders),
   `SLINT_TR_EXTRACTOR_VERSION` in `Dockerfile.toolchain` (with a
   `scripts/toolchain/VERSION` bump), and the Slint exceptions in
   `rust/deny.toml`; then regenerate `just notices`.
@@ -208,19 +227,23 @@ update rules, in short:
 
 | Path | Purpose |
 |---|---|
-| `rust/frontend/src/main.rs` | Entry point: config, logger, tokio runtime, `Client`/`Store`, persisted state, window, language, services |
+| `rust/frontend/src/main.rs` | Thin binary entry calling `frontend::run()` |
+| `rust/frontend/src/lib.rs` | Application wiring: config, logger, tokio runtime, `Client`/`Store`, persisted state, window, language, services |
+| `rust/frontend/src/host.rs` | Hosted entry (`host::run`) and the `Input` seam an embedding host drives |
 | `rust/frontend/src/router.rs` | All forward orchestration and the single input dispatch (`dispatch_action`) |
 | `rust/frontend/src/navigation.rs`, `folder_motion.rs`, `route_motion.rs` | Deferred routes that keep the source until the destination is ready; motion tests on a stepped clock |
 | `rust/frontend/src/{hub,systems,games,settings,about}.rs` | Per-screen drivers |
-| `rust/frontend/src/{game_info,media_setup,log_upload,launchers,alternates,card_write,qr}.rs` | Modal drivers |
+| `rust/frontend/src/{game_info,media_setup,log_upload,launchers,card_write,qr}.rs` | Modal drivers |
+| `rust/frontend/src/{context_page,alternates,discs}.rs` | Context-menu pages: the shared page (Manage and Write to token included), alternate versions, a multi-disc game's discs |
 | `rust/frontend/src/{input,actions,gamepad}.rs` | Key path: duplicate guard, swaps, hold-repeat; keyboard bindings; desktop gamepads |
 | `rust/frontend/src/{media_cache,hub_covers,customization}.rs` | Bounded in-memory cover cache, cold-boot cover manifest, user overrides |
+| `rust/frontend/src/hub_refresh.rs` | Refreshes pinned Hub tiles' stored identifiers from Core after a catalog load or rescan |
 | `rust/frontend/src/{theme,sizing,glyphs,system_logos,fonts}.rs` | Palette push, scene sizing adapter, embedded art and fonts |
 | `rust/frontend/src/mister/` | MiSTer platform: fb0, DDR and vblank-latch presenters, evdev input, lease, service kick |
 | `rust/frontend/src/dual_head.rs` | Projects the HDMI component's state onto the CRT component |
 | `rust/frontend/src/bin/snapshot.rs` | Offline software-rendered screen snapshots |
 | `rust/frontend/ui/` | `.slint` views: `app.slint` (root, globals, modals), `chrome.slint`, `tiles.slint`, `browse_list.slint`, `settings.slint`, `setup.slint`, `game_info.slint`, `about.slint`, `focus.slint`, `theme.slint`, `labels.slint`, `state_types.slint` |
-| `rust/frontend/assets/` | Embedded system logo PNGs: grayscale `systems/` and full-color `systems-color/`, generated by `just logos` |
+| `rust/frontend/assets/` | Embedded system logo PNGs: grayscale `systems/`, its half-size copy `systems-half/` for small tiles, and full-color `systems-color/`, generated by `just logos` |
 | `rust/frontend/translations/` | Canonical gettext catalogs, bundled by `build.rs` |
 | `rust/zaparoo-app/` | Toolkit-free product rules with golden fixtures |
 | `rust/zaparoo-core/src/client.rs` | WebSocket JSON-RPC client for Zaparoo Core |
@@ -234,7 +257,7 @@ update rules, in short:
 ## Screens and routing
 
 The frontend has root screens (Hub, Systems, Favorite systems, Games,
-Favorites, Recents, Settings, About) plus modals. The `.slint` views are
+Favorites, Recents, Search, Search results, Settings, About) plus modals. The `.slint` views are
 **pure views**: every key press is forwarded to Rust, `router::dispatch_action`
 maps it to an action, and Rust mutates the globals the views render. All
 forward orchestration lives in `rust/frontend/src/router.rs` and the
@@ -264,6 +287,14 @@ When adding a new screen or routing path, follow this contract:
    directional moves (selection persist is debounced 250 ms and flushed on
    Accept, Back and hold release).
 
+6. **A cold start shows the curtain, then the restored screen.** Nothing
+   else is ever painted in between. A restore fills its target under the
+   boot curtain and `router::transition_to_screen` lifts it through
+   `router::finish_restore`, the only place the curtain comes down. A new
+   restore target must not publish a parent or source screen first, and a
+   new way for a restore to end must call `finish_restore`. See
+   `docs/architecture.md` → "Cold-start restore".
+
 The class of bug this layout prevents: a stale pending flag or callback from
 screen A firing during screen B's fill and routing somewhere the user did not
 ask to go.
@@ -281,6 +312,16 @@ ask to go.
 - MiSTer state/log: `/tmp/zaparoo/state.toml`, `/tmp/zaparoo/frontend.log`.
 - `ZAPAROO_CORE_ENDPOINT` overrides `[core] endpoint`; `ZAPAROO_STATE_FILE`
   redirects state for tests and ad-hoc runs.
+- `ZAPAROO_MOTION` is a test switch for the MiSTer build, which runs the
+  same motion as the GPU build. It is a comma-separated list of effects to
+  turn back off for one run, so each can be measured on a device against
+  the cut it replaced: `zoom` (focused tile growth), `cover-fade` (cover
+  art fading in as it lands), `rail` (fast-scroll rail fade and glide),
+  `slides` (cached page slides on the native CRT and fb0 presenters; the
+  vblank-latch presenter keeps its own), `clock` (the fixed-step animation
+  clock; wall time instead). Unset or empty leaves everything on; unknown
+  names are logged and ignored. `zaparoo_app::motion_test` parses it, `lib.rs` reads it once.
+  See `docs/slint-gotchas.md` → "Motion on the software renderer".
 - `Runtime` has three values: `Mister`, `SteamOs`, `Desktop`. SteamOS is a
   desktop-Linux runtime and answers `is_desktop()`, so `platform_paths.rs`
   stays a two-way `is_mister()` split; the variant only changes defaults for
@@ -318,7 +359,7 @@ ask to go.
   report (written on every button press; source is
   `support/zaparoo/launcher_input_metadata.cpp` in the `Main_MiSTer` repo).
   `zaparoo_core::controller_report` polls it, and `apply_buttons` in
-  `main.rs` feeds it through `zaparoo_app::buttons::resolve`, which drives the
+  `lib.rs` feeds it through `zaparoo_app::buttons::resolve`, which drives the
   help bar's icon style and accept/cancel positions.
   `ZAPAROO_INPUT_REPORT_FILE` redirects it and forces the watcher on
   off-MiSTer, mirroring `ZAPAROO_STATE_FILE`. Off MiSTer the `gamepad` module

@@ -166,6 +166,15 @@ pub fn logo_artwork_stem(system_id: &str, region: Region) -> &str {
         .unwrap_or(system_id)
 }
 
+/// The system an artwork stem belongs to; a stem that is not a regional
+/// variant is its own id.
+pub fn logo_system_id(stem: &str) -> &str {
+    REGIONAL_LOGOS
+        .iter()
+        .find_map(|(id, _, s)| (*s == stem).then_some(*id))
+        .unwrap_or(stem)
+}
+
 /// The catalog fields the projection reads.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct CatalogSystem {
@@ -218,6 +227,18 @@ impl SystemRow {
     /// media; whitespace never counts.
     pub fn is_launchable(&self) -> bool {
         !self.zap_script.trim().is_empty()
+    }
+
+    /// The name a Hub tile for this system stores. A launchable keeps its
+    /// own, since its id is an opaque token and no regional name exists for
+    /// it; an indexed system stores none and resolves on every draw, so it
+    /// follows the region and `[custom.system_names]`.
+    pub fn hub_name(&self) -> &str {
+        if self.is_launchable() {
+            &self.name
+        } else {
+            ""
+        }
     }
 
     /// The `ZapScript` a system launches (or writes to a card) with.
@@ -496,6 +517,14 @@ mod tests {
         assert_eq!(logo_artwork_stem("SMS", Region::Eu), "SMS");
     }
 
+    #[test]
+    fn logo_stems_name_their_system() {
+        assert_eq!(logo_system_id("Genesis.eu"), "Genesis");
+        assert_eq!(logo_system_id("TurboGrafx16CD.jp"), "TurboGrafx16CD");
+        assert_eq!(logo_system_id("Genesis"), "Genesis");
+        assert_eq!(logo_system_id("SMS"), "SMS");
+    }
+
     fn sys(id: &str, name: &str, category: &str) -> CatalogSystem {
         CatalogSystem {
             id: id.into(),
@@ -682,16 +711,20 @@ mod tests {
     fn launch_texts_and_random_directive() {
         let normal = SystemRow {
             id: "SNES".into(),
+            name: "Super Nintendo".into(),
             ..SystemRow::default()
         };
         assert!(!normal.is_launchable());
+        assert_eq!(normal.hub_name(), "");
         assert_eq!(normal.launch_text(), "**launch.system:SNES");
         let virtual_system = SystemRow {
             id: "Menu".into(),
+            name: "MiSTer Menu".into(),
             zap_script: "zaparoo://launch/Menu".into(),
             ..SystemRow::default()
         };
         assert!(virtual_system.is_launchable());
+        assert_eq!(virtual_system.hub_name(), "MiSTer Menu");
         assert_eq!(virtual_system.launch_text(), "zaparoo://launch/Menu");
         assert_eq!(
             random_launch_text(&["SNES".into(), "a,b".into(), "c^d".into(), String::new()]),

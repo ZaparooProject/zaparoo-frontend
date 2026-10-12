@@ -29,6 +29,10 @@ impl Endpoint for CatalogEndpoint {
     type Output = CatalogData;
     const NAME: &'static str = "Catalog";
 
+    fn cache_bytes(output: &Self::Output) -> Option<usize> {
+        Some(super::retained::bytes(output))
+    }
+
     fn fetch(
         client: Arc<Client>,
         _args: Self::Args,

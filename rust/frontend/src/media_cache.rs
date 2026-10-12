@@ -7,8 +7,11 @@
 //   frontend re-fetches after a cold start;
 // - strict bytes cap with LRU eviction (MiSTer shares <512 MB with
 //   Core, the wrapper, and the active core);
-// - one fetch driver task, one outstanding `media.image` RPC at a
-//   time, so a page fill serializes instead of flooding Core;
+// - one fetch driver with at most `PARALLEL_FETCHES` `media.image` RPCs
+//   in flight, so a page fill cannot flood Core;
+// - the queue is most recent first and deduplicated: what the user is
+//   looking at now is fetched before what scrolled past, and a browse
+//   view can drop queued covers it no longer shows;
 // - negative results memoized for the process lifetime.
 //
 // Images are stored decoded (RGBA8) because the LRU cap must account
@@ -17,7 +20,9 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
-use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
+use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
+use tokio::sync::Notify;
+use zaparoo_app::covers::Fit;
 use zaparoo_core::client::Client;
 use zaparoo_core::media_types::MediaImageParams;
 
@@ -33,8 +38,21 @@ pub struct MediaKey {
     pub system: String,
     pub path: String,
     pub max_size: u32,
+    /// The painted box the decoded image is resized to before it is
+    /// cached; `max_size` stays the size Core is asked for.
+    pub fit: Fit,
     /// Explicit carousel slot; None retains the browse artwork preference ladder.
     pub image_type: Option<String>,
+}
+
+impl MediaKey {
+    pub fn color_preview(&self) -> Self {
+        Self {
+            max_size: zaparoo_app::covers::COLOR_PREVIEW_MAX_SIZE,
+            fit: Fit::SOURCE,
+            ..self.clone()
+        }
+    }
 }
 
 /// Decoded pixels stored directly as a Slint pixel buffer: it is
@@ -53,25 +71,144 @@ impl DecodedImage {
     }
 }
 
+#[derive(Debug)]
+struct CachedImage {
+    image: DecodedImage,
+    average_color: Option<[u8; 3]>,
+    /// Recency stamp: the cache's tick at the last read or insert.
+    used: u64,
+    /// Set by `clear`: the image stays paintable, but Core is asked for
+    /// it again the next time it is wanted.
+    stale: bool,
+    /// The thumbnail file Core named for this image, when it delivered one.
+    local_path: Option<String>,
+}
+
 #[derive(Debug, Default)]
 struct CacheInner {
-    map: HashMap<MediaKey, DecodedImage>,
-    /// LRU order: front = oldest. Touched on read and insert.
-    order: VecDeque<MediaKey>,
+    map: HashMap<MediaKey, CachedImage>,
+    /// Advances on every read and insert; the entry with the lowest
+    /// stamp is the least recently used.
+    tick: u64,
     bytes: usize,
     negatives: HashSet<MediaKey>,
     negative_order: VecDeque<MediaKey>,
+    /// Every key waiting in `pending` or in flight.
     queued: HashSet<MediaKey>,
+    /// Keys waiting for a fetch slot, most recent first.
+    pending: VecDeque<MediaKey>,
+    /// The covers the browse view last asked for (`request_wanted`).
+    /// Only these can be dropped from `pending` by its next request.
+    wanted: HashSet<MediaKey>,
+    /// Bumped by `clear`. A fetch that started under an older generation
+    /// may carry art from before the run that cleared the cache, so its
+    /// result is dropped and the key fetched again.
+    generation: u64,
+    /// Invalidates deferred disk seeds on either a data reset or memory trim.
+    seed_epoch: u64,
+}
+
+impl CacheInner {
+    fn stamp(&mut self) -> u64 {
+        self.tick += 1;
+        self.tick
+    }
+
+    /// Put `key` at the front of the queue. False when there is nothing
+    /// to fetch: it is cached and current, known missing, or already in
+    /// flight.
+    fn push_front(&mut self, key: MediaKey) -> bool {
+        if self.map.get(&key).is_some_and(|entry| !entry.stale) || self.negatives.contains(&key) {
+            return false;
+        }
+        if self.queued.contains(&key) {
+            // Waiting: move it up. In flight: nothing to do.
+            let Some(at) = self.pending.iter().position(|k| *k == key) else {
+                return false;
+            };
+            if at > 0 {
+                if let Some(moved) = self.pending.remove(at) {
+                    self.pending.push_front(moved);
+                }
+            }
+            return true;
+        }
+        self.queued.insert(key.clone());
+        self.pending.push_front(key);
+        true
+    }
+
+    fn insert(&mut self, key: MediaKey, image: DecodedImage, local_path: Option<String>) {
+        self.queued.remove(&key);
+        let used = self.stamp();
+        self.bytes += image.byte_size();
+        let average_color = zaparoo_app::covers::average_cover_color(
+            image.buffer.as_bytes(),
+            image.buffer.width() as usize,
+            image.buffer.height() as usize,
+        );
+        if let Some(replaced) = self.map.insert(
+            key,
+            CachedImage {
+                image,
+                average_color,
+                used,
+                stale: false,
+                local_path,
+            },
+        ) {
+            self.bytes -= replaced.image.byte_size();
+        }
+        self.evict_to_cap();
+    }
+
+    fn insert_negative(&mut self, key: MediaKey) {
+        self.queued.remove(&key);
+        // Art kept through a rescan that Core no longer has.
+        if let Some(removed) = self.map.remove(&key) {
+            self.bytes -= removed.image.byte_size();
+        }
+        if self.negatives.insert(key.clone()) {
+            self.negative_order.push_back(key);
+            while self.negative_order.len() > NEGATIVE_CAP {
+                if let Some(old) = self.negative_order.pop_front() {
+                    self.negatives.remove(&old);
+                }
+            }
+        }
+    }
+
+    /// Evict least recently used images until the cap holds. The scan is
+    /// linear, but only runs when an insert overflows the cap.
+    fn evict_to_cap(&mut self) {
+        while self.bytes > CACHE_CAP_BYTES {
+            let Some(oldest) = self
+                .map
+                .iter()
+                .min_by_key(|(_, entry)| entry.used)
+                .map(|(key, _)| key.clone())
+            else {
+                break;
+            };
+            if let Some(evicted) = self.map.remove(&oldest) {
+                self.bytes -= evicted.image.byte_size();
+            }
+        }
+    }
 }
 
 #[derive(Debug)]
 pub struct MediaCache {
     inner: Mutex<CacheInner>,
-    tx: UnboundedSender<MediaKey>,
+    /// Wakes the fetch driver when `pending` gains a key.
+    wake: Notify,
     /// User-preferred artwork type ("Preferred artwork" setting):
     /// prepended to the request ladder when set. "auto"/empty keeps
     /// the default order.
     preferred_type: Mutex<String>,
+    /// The Hub tile's painted art box, packed width over height. Held
+    /// here because the Hub and its cold-boot seeds both key covers by it.
+    hub_fit: std::sync::atomic::AtomicU64,
 }
 
 fn lock_inner(inner: &Mutex<CacheInner>) -> MutexGuard<'_, CacheInner> {
@@ -79,23 +216,34 @@ fn lock_inner(inner: &Mutex<CacheInner>) -> MutexGuard<'_, CacheInner> {
 }
 
 impl MediaCache {
-    /// Create the cache and hand back the receiver the fetch driver
-    /// consumes (`spawn_driver` owns it).
-    pub fn new() -> (Arc<Self>, UnboundedReceiver<MediaKey>) {
-        let (tx, rx) = unbounded_channel();
-        (
-            Arc::new(Self {
-                inner: Mutex::new(CacheInner::default()),
-                tx,
-                preferred_type: Mutex::new(String::new()),
-            }),
-            rx,
-        )
+    /// Create the cache; `spawn_driver` then fetches what it queues.
+    pub fn new() -> Arc<Self> {
+        Arc::new(Self {
+            inner: Mutex::new(CacheInner::default()),
+            wake: Notify::new(),
+            preferred_type: Mutex::new(String::new()),
+            hub_fit: std::sync::atomic::AtomicU64::new(0),
+        })
     }
 
-    /// Set the preferred artwork type. Cached images keep their old
-    /// art until they age out of the LRU; new fetches prefer the new
-    /// type.
+    pub fn set_hub_fit(&self, fit: Fit) {
+        let packed = (u64::from(fit.width) << 32) | u64::from(fit.height);
+        self.hub_fit
+            .store(packed, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    pub fn hub_fit(&self) -> Fit {
+        let packed = self.hub_fit.load(std::sync::atomic::Ordering::Relaxed);
+        Fit {
+            width: (packed >> 32) as u32,
+            height: packed as u32,
+            crisp: false,
+        }
+    }
+
+    /// Set the preferred artwork type for new fetches. A caller changing
+    /// it mid-session follows with `clear`, so cached covers of the old
+    /// type are asked for again.
     pub fn set_preferred_image_type(&self, value: &str) {
         let mut preferred = self
             .preferred_type
@@ -114,14 +262,20 @@ impl MediaCache {
     /// Cached image for `key`, touching LRU recency.
     pub fn get(&self, key: &MediaKey) -> Option<DecodedImage> {
         let mut inner = lock_inner(&self.inner);
-        let hit = inner.map.get(key).cloned();
-        if hit.is_some() {
-            if let Some(pos) = inner.order.iter().position(|k| k == key) {
-                inner.order.remove(pos);
-                inner.order.push_back(key.clone());
-            }
-        }
-        hit
+        let stamp = inner.stamp();
+        let entry = inner.map.get_mut(key)?;
+        entry.used = stamp;
+        Some(entry.image.clone())
+    }
+
+    /// The average is prepared once with cache insertion, never while painting.
+    /// It shares the image's LRU lifetime and memory-pressure invalidation.
+    pub fn average_color(&self, key: &MediaKey) -> Option<[u8; 3]> {
+        let mut inner = lock_inner(&self.inner);
+        let stamp = inner.stamp();
+        let entry = inner.map.get_mut(key)?;
+        entry.used = stamp;
+        entry.average_color
     }
 
     /// Core answered "no image" for this key earlier in the process.
@@ -129,19 +283,70 @@ impl MediaCache {
         lock_inner(&self.inner).negatives.contains(key)
     }
 
-    /// Queue a fetch unless the key is cached, memoized-negative, or
-    /// already queued.
+    /// Queue a fetch ahead of everything already waiting, unless the key
+    /// is cached, memoized-negative, or in flight. A key that is already
+    /// waiting moves to the front.
     pub fn enqueue(&self, key: MediaKey) {
-        {
-            let mut inner = lock_inner(&self.inner);
-            if inner.map.contains_key(&key)
-                || inner.negatives.contains(&key)
-                || !inner.queued.insert(key.clone())
-            {
-                return;
-            }
+        let queued = lock_inner(&self.inner).push_front(key);
+        if queued {
+            self.wake.notify_one();
         }
-        let _ = self.tx.send(key);
+    }
+
+    /// The browse view's covers, in priority order. They go to the front
+    /// of the queue in that order, and whatever its previous request
+    /// queued that is not in this one is dropped before it is fetched:
+    /// covers that scrolled past are not worth a round trip. Keys queued
+    /// through `enqueue` alone are never dropped here.
+    pub fn request_wanted(&self, keys: Vec<MediaKey>) {
+        let queued = {
+            let mut inner = lock_inner(&self.inner);
+            let wanted: HashSet<MediaKey> = keys.iter().cloned().collect();
+            let stale: HashSet<MediaKey> = inner.wanted.difference(&wanted).cloned().collect();
+            if !stale.is_empty() {
+                let CacheInner {
+                    pending, queued, ..
+                } = &mut *inner;
+                pending.retain(|key| {
+                    let keep = !stale.contains(key);
+                    if !keep {
+                        queued.remove(key);
+                    }
+                    keep
+                });
+            }
+            inner.wanted = wanted;
+            let mut any = false;
+            for key in keys.into_iter().rev() {
+                any |= inner.push_front(key);
+            }
+            any
+        };
+        if queued {
+            self.wake.notify_one();
+        }
+    }
+
+    /// The next key to fetch, waiting until there is one.
+    async fn next_pending(&self) -> MediaKey {
+        loop {
+            let woken = self.wake.notified();
+            let next = {
+                let mut inner = lock_inner(&self.inner);
+                // A full cover must not overtake its tiny color preview when
+                // several fetch slots are free. Other ready work can proceed.
+                let ready = inner.pending.iter().position(|key| {
+                    key.image_type.is_some()
+                        || key.max_size <= zaparoo_app::covers::COLOR_PREVIEW_MAX_SIZE
+                        || !inner.queued.contains(&key.color_preview())
+                });
+                ready.and_then(|index| inner.pending.remove(index))
+            };
+            if let Some(key) = next {
+                return key;
+            }
+            woken.await;
+        }
     }
 
     /// True when the key already has an image in memory.
@@ -149,10 +354,39 @@ impl MediaCache {
         lock_inner(&self.inner).map.contains_key(key)
     }
 
-    /// Put an in-flight request back behind the dormancy gate. Its queued
-    /// identity remains set, so no duplicate can join it while it waits.
-    fn retry_after_dormancy(&self, key: MediaKey) {
-        let _ = self.tx.send(key);
+    /// The browse view's current covers that Core delivered as files, the
+    /// most recently painted first, with the file each one came from.
+    pub(crate) fn wanted_local_paths(&self, limit: usize) -> Vec<(MediaKey, String)> {
+        let inner = lock_inner(&self.inner);
+        let mut found: Vec<(u64, &MediaKey, &String)> = inner
+            .wanted
+            .iter()
+            .filter(|key| key.image_type.is_none())
+            .filter_map(|key| {
+                let entry = inner.map.get(key)?;
+                Some((entry.used, key, entry.local_path.as_ref()?))
+            })
+            .collect();
+        found.sort_unstable_by_key(|entry| std::cmp::Reverse(entry.0));
+        found
+            .into_iter()
+            .take(limit)
+            .map(|(_, key, path)| (key.clone(), path.clone()))
+            .collect()
+    }
+
+    /// Put an in-flight request back on the queue, behind the dormancy
+    /// gate or a reconnect. Its queued identity remains set, so no
+    /// duplicate can join it while it waits; it waits behind newer work.
+    fn requeue(&self, key: MediaKey) {
+        lock_inner(&self.inner).pending.push_back(key);
+        self.wake.notify_one();
+    }
+
+    /// A request ended without a result to store; its key may queue again.
+    fn forget_queued(&self, key: &MediaKey) {
+        lock_inner(&self.inner).queued.remove(key);
+        self.wake.notify_one();
     }
 
     /// Release decoded image storage before `MiSTer` hands RAM to a
@@ -161,67 +395,126 @@ impl MediaCache {
     pub fn clear_decoded(&self) {
         let mut inner = lock_inner(&self.inner);
         inner.map.clear();
-        inner.order.clear();
         inner.bytes = 0;
+        inner.seed_epoch = inner.seed_epoch.wrapping_add(1);
     }
 
-    /// Put an image the cache did not fetch itself into it (the
-    /// cold-boot manifest's own seed).
+    /// Stop trusting every image and every "no image" answer. An index or
+    /// a metadata import can add, replace or remove art for any game, and
+    /// a remembered answer would otherwise hold for the whole session.
+    /// Images stay paintable until Core answers again, so a tile whose art
+    /// did not change never goes back to its placeholder. Queued requests
+    /// stay queued; one already in flight is fetched again when it lands
+    /// (see `store_fetched`).
+    pub fn clear(&self) {
+        let mut inner = lock_inner(&self.inner);
+        for entry in inner.map.values_mut() {
+            entry.stale = true;
+        }
+        inner.negatives.clear();
+        inner.negative_order.clear();
+        inner.generation = inner.generation.wrapping_add(1);
+        inner.seed_epoch = inner.seed_epoch.wrapping_add(1);
+    }
+
+    fn generation(&self) -> u64 {
+        lock_inner(&self.inner).generation
+    }
+
+    /// Store what a fetch that began under `generation` found: an image,
+    /// or `None` for no image. When `clear` ran since, the answer may
+    /// predate it, so it is dropped and the still-queued key goes back on
+    /// the queue. Returns whether the result was stored.
+    fn store_fetched(
+        &self,
+        key: MediaKey,
+        generation: u64,
+        image: Option<DecodedImage>,
+        local_path: Option<String>,
+    ) -> bool {
+        {
+            let mut inner = lock_inner(&self.inner);
+            if inner.generation == generation {
+                match image {
+                    Some(image) => inner.insert(key, image, local_path),
+                    None => inner.insert_negative(key),
+                }
+                self.wake.notify_one();
+                return true;
+            }
+        }
+        self.requeue(key);
+        false
+    }
+
+    #[cfg(test)]
     pub fn seed(&self, key: MediaKey, image: DecodedImage) {
         self.insert(key, image);
     }
 
-    fn insert(&self, key: MediaKey, image: DecodedImage) {
-        let mut inner = lock_inner(&self.inner);
-        inner.queued.remove(&key);
-        inner.bytes += image.byte_size();
-        inner.map.insert(key.clone(), image);
-        inner.order.push_back(key);
-        while inner.bytes > CACHE_CAP_BYTES {
-            let Some(oldest) = inner.order.pop_front() else {
-                break;
-            };
-            if let Some(evicted) = inner.map.remove(&oldest) {
-                inner.bytes -= evicted.byte_size();
-            }
-        }
+    #[cfg(test)]
+    pub(crate) fn seed_with_path(&self, key: MediaKey, image: DecodedImage, local_path: &str) {
+        lock_inner(&self.inner).insert(key, image, Some(local_path.to_string()));
     }
 
-    fn insert_negative(&self, key: MediaKey) {
+    pub(crate) fn seed_epoch(&self) -> u64 {
+        lock_inner(&self.inner).seed_epoch
+    }
+
+    /// Disk seeding must not overwrite newer Core results or repopulate art
+    /// after a memory trim/rescan canceled its generation.
+    pub(crate) fn seed_current(
+        &self,
+        key: MediaKey,
+        image: DecodedImage,
+        local_path: &str,
+        epoch: u64,
+    ) -> bool {
         let mut inner = lock_inner(&self.inner);
-        inner.queued.remove(&key);
-        if inner.negatives.insert(key.clone()) {
-            inner.negative_order.push_back(key);
-            while inner.negative_order.len() > NEGATIVE_CAP {
-                if let Some(old) = inner.negative_order.pop_front() {
-                    inner.negatives.remove(&old);
-                }
-            }
+        if inner.seed_epoch != epoch
+            || inner.map.contains_key(&key)
+            || inner.negatives.contains(&key)
+        {
+            return false;
         }
+        inner.insert(key, image, Some(local_path.to_string()));
+        true
+    }
+
+    #[cfg(test)]
+    fn insert(&self, key: MediaKey, image: DecodedImage) {
+        lock_inner(&self.inner).insert(key, image, None);
+        self.wake.notify_one();
+    }
+
+    #[cfg(test)]
+    pub(crate) fn pending_keys(&self) -> Vec<MediaKey> {
+        lock_inner(&self.inner).pending.iter().cloned().collect()
+    }
+
+    #[cfg(test)]
+    fn insert_negative(&self, key: MediaKey) {
+        lock_inner(&self.inner).insert_negative(key);
     }
 }
 
-/// Spawn the serialized fetch driver. `on_ready` runs on the driver
-/// task for every successful decode; it is expected to marshal onto
-/// the UI event loop itself.
 /// Latched once a Core that does not know the delivery field rejects
 /// it: the session stops asking rather than paying a failed round trip
 /// per cover.
 static LOCAL_PATH_DISABLED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 /// Whether Core runs on this machine, so the paths it names are ours to
-/// open. Set once at startup from the configured endpoint.
+/// open. Updated when the host replaces the active transport.
 static CORE_IS_LOCAL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-static IS_MISTER: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static READS_CORE_FILES: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-/// Record the runtime facts the local-path fast path depends on.
-pub fn configure_local_path(is_mister: bool, core_endpoint: &str) {
+/// Record the runtime facts the local-path fast path depends on:
+/// whether this frontend can open files Core names, and whether Core is
+/// local.
+pub fn configure_local_path(reads_core_files: bool, is_local: bool) {
     use std::sync::atomic::Ordering;
-    IS_MISTER.store(is_mister, Ordering::Release);
-    CORE_IS_LOCAL.store(
-        zaparoo_app::covers::endpoint_is_loopback(core_endpoint),
-        Ordering::Release,
-    );
+    READS_CORE_FILES.store(reads_core_files, Ordering::Release);
+    CORE_IS_LOCAL.store(is_local, Ordering::Release);
 }
 
 /// Whether a request for `max_size` may ask Core for a path.
@@ -229,7 +522,7 @@ pub fn should_request_local_path(max_size: u32) -> bool {
     use std::sync::atomic::Ordering;
     zaparoo_app::covers::local_path_request_allowed(
         max_size,
-        IS_MISTER.load(Ordering::Acquire),
+        READS_CORE_FILES.load(Ordering::Acquire),
         CORE_IS_LOCAL.load(Ordering::Acquire),
         LOCAL_PATH_DISABLED.load(Ordering::Acquire),
     )
@@ -270,17 +563,52 @@ pub fn read_local_image_file(path: &str, max_bytes: usize) -> Result<Vec<u8>, St
     Ok(bytes)
 }
 
-/// Decode bytes already in hand (a local read, or the manifest's own
-/// seed) into the cache's image form.
-pub fn decode_bytes(bytes: &[u8]) -> Option<DecodedImage> {
+/// Decode bytes Core delivered as a file into the cache's image form.
+fn decode_bytes(bytes: &[u8], fit: Fit, capture: bool) -> Option<DecodedImage> {
     let decoded = image::load_from_memory(bytes).ok()?;
-    let rgba = decoded.to_rgba8();
+    Some(fitted(decoded, fit, capture))
+}
+
+/// Resize a decoded cover to its painted box and take the cache's image
+/// form. The software renderer samples bitmaps nearest-neighbor, so the
+/// filtering has to happen here, off the event loop. Art that already
+/// fits is left alone, except a `capture` (a screenshot or title screen)
+/// on a surface that enlarges them: it is grown by a whole multiple with
+/// hard edges and only the remainder is smoothed, so its pixels stay
+/// sharp and even at any box.
+pub fn fitted(decoded: image::DynamicImage, fit: Fit, capture: bool) -> DecodedImage {
+    use image::imageops::FilterType;
+    let (source_width, source_height) = (decoded.width(), decoded.height());
+    let enlarged = if capture {
+        fit.enlarged(source_width, source_height)
+    } else {
+        None
+    };
+    let rgba = if let Some((width, height)) = fit.size_for(source_width, source_height) {
+        decoded
+            .resize_exact(width, height, FilterType::Triangle)
+            .into_rgba8()
+    } else if let Some(plan) = enlarged {
+        let whole = image::imageops::resize(
+            &decoded.into_rgba8(),
+            source_width * plan.factor,
+            source_height * plan.factor,
+            FilterType::Nearest,
+        );
+        if whole.dimensions() == (plan.width, plan.height) {
+            whole
+        } else {
+            image::imageops::resize(&whole, plan.width, plan.height, FilterType::Triangle)
+        }
+    } else {
+        decoded.into_rgba8()
+    };
     let (width, height) = rgba.dimensions();
-    Some(DecodedImage {
+    DecodedImage {
         buffer: slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(
             &rgba, width, height,
         ),
-    })
+    }
 }
 
 /// Build one Core request. Media identity fields are exclusive, and artwork
@@ -321,101 +649,203 @@ fn request_params(cache: &MediaCache, key: &MediaKey) -> MediaImageParams {
     }
 }
 
+/// Requests allowed in flight at once. Core serves them concurrently, so a
+/// page of tiles fills in about this many times faster than one at a time,
+/// while a long list still cannot flood the connection.
+const PARALLEL_FETCHES: usize = 4;
+
+/// Spawn the fetch driver. `on_settled` runs on a driver task for every
+/// key that got an image or a remembered "no image"; it is expected to
+/// marshal onto the UI event loop itself (see `Landings`).
 pub fn spawn_driver(
     cache: Arc<MediaCache>,
     client: Arc<Client>,
     handle: &tokio::runtime::Handle,
-    mut rx: UnboundedReceiver<MediaKey>,
-    mut dormant: tokio::sync::watch::Receiver<bool>,
-    on_ready: impl Fn(MediaKey, DecodedImage) + Send + 'static,
+    dormant: tokio::sync::watch::Receiver<bool>,
+    on_settled: impl Fn(MediaKey) + Send + 'static,
 ) {
+    // Fetches finish in any order; one task hands them to `on_settled`,
+    // so the callback keeps its single caller.
+    let (done_tx, mut done_rx) = unbounded_channel::<MediaKey>();
     handle.spawn(async move {
-        while let Some(key) = rx.recv().await {
-            // Preserve queued work while a local game owns the screen.
-            // One RPC already in flight may finish; the next one waits.
-            while *dormant.borrow_and_update() {
-                if dormant.changed().await.is_err() {
-                    return;
-                }
-            }
-            // A key can be enqueued, then satisfied by an earlier
-            // in-flight duplicate before we get to it.
-            if cache.get(&key).is_some() {
-                continue;
-            }
-            // On a colocated MiSTer the bytes are already on the SD card:
-            // request its path instead of making Core base64 a local file.
-            let params = request_params(&cache, &key);
-            let asked_for_path = params.delivery.is_some();
-            let mut outcome = client.media_image(params.clone()).await;
-            if let Err(e) = &outcome {
-                if asked_for_path && zaparoo_app::covers::is_unsupported_delivery_error(&e.message)
-                {
-                    // This Core predates the delivery field; stop
-                    // asking for the rest of the session and retry the
-                    // ordinary way.
-                    LOCAL_PATH_DISABLED.store(true, std::sync::atomic::Ordering::Release);
-                    tracing::info!("core does not support localPath delivery; using inline images");
-                    outcome = client
-                        .media_image(MediaImageParams {
-                            delivery: None,
-                            ..params
-                        })
-                        .await;
-                }
-            }
-            match outcome {
-                Ok(result) => {
-                    // Finish any asynchronous local read before taking the
-                    // dormancy guard; no decoded pixels exist yet.
-                    let local_bytes = if result.delivery
-                        == zaparoo_core::media_types::MEDIA_IMAGE_DELIVERY_LOCAL_PATH
-                    {
-                        match result.local_path.as_deref().filter(|p| !p.is_empty()) {
-                            Some(path) => read_local(path.to_string()).await,
-                            None => None,
-                        }
-                    } else {
-                        None
-                    };
-                    // Holding the watch read guard makes this result atomic
-                    // with set_dormant's send_replace. Either this finishes
-                    // first and clear_decoded removes it, or dormancy wins and
-                    // the undecoded request goes back through the gate.
-                    let dormant_guard = dormant.borrow_and_update();
-                    if *dormant_guard {
-                        drop(dormant_guard);
-                        cache.retry_after_dormancy(key);
-                        continue;
-                    }
-                    let image = if result.delivery
-                        == zaparoo_core::media_types::MEDIA_IMAGE_DELIVERY_LOCAL_PATH
-                    {
-                        local_bytes.as_deref().and_then(decode_bytes)
-                    } else {
-                        decode(&result.data)
-                    };
-                    match image {
-                        Some(image) => {
-                            cache.insert(key.clone(), image.clone());
-                            on_ready(key, image);
-                        }
-                        None => cache.insert_negative(key),
-                    }
-                }
-                Err(e) => {
-                    let dormant_guard = dormant.borrow_and_update();
-                    if *dormant_guard {
-                        drop(dormant_guard);
-                        cache.retry_after_dormancy(key);
-                        continue;
-                    }
-                    tracing::debug!(path = %key.path, "media.image failed: {}", e.message);
-                    cache.insert_negative(key);
-                }
-            }
+        while let Some(key) = done_rx.recv().await {
+            on_settled(key);
         }
     });
+    let permits = Arc::new(tokio::sync::Semaphore::new(PARALLEL_FETCHES));
+    let spawner = handle.clone();
+    handle.spawn(async move {
+        loop {
+            // Take the slot first, then the key: the queue's order is
+            // decided when a fetch can actually start, so anything queued
+            // while every slot was busy still goes first.
+            let Ok(permit) = permits.clone().acquire_owned().await else {
+                return;
+            };
+            let key = cache.next_pending().await;
+            let cache = cache.clone();
+            let client = client.clone();
+            let dormant = dormant.clone();
+            let done = done_tx.clone();
+            spawner.spawn(async move {
+                let _permit = permit;
+                fetch_one(&cache, &client, key, dormant, &done).await;
+            });
+        }
+    });
+}
+
+/// Keys settled on the driver side and not yet delivered to the UI. The
+/// first key of a batch schedules one delivery; keys that settle before
+/// it runs join that same delivery, so a page of covers landing together
+/// repaints once, not once per cover.
+#[derive(Debug, Default)]
+pub struct Landings {
+    inner: Mutex<(Vec<MediaKey>, bool)>,
+}
+
+impl Landings {
+    /// Record a settled key. True when the caller must schedule the
+    /// delivery that will `take` it.
+    pub fn push(&self, key: MediaKey) -> bool {
+        let mut inner = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
+        if !inner.0.contains(&key) {
+            inner.0.push(key);
+        }
+        !std::mem::replace(&mut inner.1, true)
+    }
+
+    /// Everything settled since the last delivery; the next key schedules
+    /// a new one.
+    pub fn take(&self) -> Vec<MediaKey> {
+        let mut inner = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
+        inner.1 = false;
+        std::mem::take(&mut inner.0)
+    }
+}
+
+/// One cover request, from the dormancy gate to a decoded image or a
+/// remembered "no image".
+async fn fetch_one(
+    cache: &Arc<MediaCache>,
+    client: &Client,
+    key: MediaKey,
+    mut dormant: tokio::sync::watch::Receiver<bool>,
+    done: &UnboundedSender<MediaKey>,
+) {
+    // Preserve queued work while a local game owns the screen.
+    // One RPC already in flight may finish; the next one waits.
+    while *dormant.borrow_and_update() {
+        if dormant.changed().await.is_err() {
+            return;
+        }
+    }
+    // A key can be enqueued, then satisfied by a seed before we get to
+    // it.
+    if cache.is_cached(&key) {
+        cache.forget_queued(&key);
+        return;
+    }
+    // When this frontend can open Core's files (a colocated MiSTer, or an
+    // embedding host running Core as the same app), request the path
+    // instead of making Core base64 a local file.
+    let params = request_params(cache, &key);
+    let generation = cache.generation();
+    let asked_for_path = params.delivery.is_some();
+    let mut outcome = client.media_image(params.clone()).await;
+    if let Err(e) = &outcome {
+        if asked_for_path && zaparoo_app::covers::is_unsupported_delivery_error(&e.message) {
+            // This Core predates the delivery field; stop
+            // asking for the rest of the session and retry the
+            // ordinary way.
+            LOCAL_PATH_DISABLED.store(true, std::sync::atomic::Ordering::Release);
+            tracing::info!("core does not support localPath delivery; using inline images");
+            outcome = client
+                .media_image(MediaImageParams {
+                    delivery: None,
+                    ..params
+                })
+                .await;
+        }
+    }
+    match outcome {
+        Ok(result) => {
+            // Finish any asynchronous local read before taking the
+            // dormancy guard; no decoded pixels exist yet.
+            let local_bytes =
+                if result.delivery == zaparoo_core::media_types::MEDIA_IMAGE_DELIVERY_LOCAL_PATH {
+                    match result.local_path.as_deref().filter(|p| !p.is_empty()) {
+                        Some(path) => read_local(path.to_string()).await,
+                        None => None,
+                    }
+                } else {
+                    None
+                };
+            // Holding the watch read guard makes this result atomic
+            // with set_dormant's send_replace. Either this finishes
+            // first and clear_decoded removes it, or dormancy wins and
+            // the undecoded request goes back through the gate.
+            let dormant_guard = dormant.borrow_and_update();
+            if *dormant_guard {
+                drop(dormant_guard);
+                cache.requeue(key);
+                return;
+            }
+            // A carousel slot names its type; anywhere else Core picked
+            // one from the ladder and says which.
+            let capture = zaparoo_app::covers::is_capture_type(
+                key.image_type.as_deref().unwrap_or(&result.type_tag),
+            );
+            let image =
+                if result.delivery == zaparoo_core::media_types::MEDIA_IMAGE_DELIVERY_LOCAL_PATH {
+                    local_bytes
+                        .as_deref()
+                        .and_then(|bytes| decode_bytes(bytes, key.fit, capture))
+                } else {
+                    decode(&result.data, key.fit, capture)
+                };
+            let local_path = result
+                .local_path
+                .filter(|path| !path.is_empty() && local_bytes.is_some());
+            if cache.store_fetched(key.clone(), generation, image, local_path) {
+                let _ = done.send(key);
+            }
+        }
+        Err(e) => {
+            // Scoped so the read guard is not held across the
+            // reconnect wait below.
+            let is_dormant = *dormant.borrow_and_update();
+            if is_dormant {
+                cache.requeue(key);
+                return;
+            }
+            // No link is not Core saying there is no image: a
+            // tile asked for before Core was reachable (every Hub
+            // tile on a cold Android start) would stay blank for
+            // the whole session. Ask again once Core is connected.
+            if e.is_transport() {
+                tracing::debug!(path = %key.path, "media.image waits for Core: {}", e.message);
+                wait_until_connected(client).await;
+                cache.requeue(key);
+                return;
+            }
+            tracing::debug!(path = %key.path, "media.image failed: {}", e.message);
+            if cache.store_fetched(key.clone(), generation, None, None) {
+                let _ = done.send(key);
+            }
+        }
+    }
+}
+
+/// Resolve once the client has a live link. A session that just ended can
+/// still read as connected for a moment, so a short pause keeps a request
+/// that failed on it from spinning.
+async fn wait_until_connected(client: &Client) {
+    let mut state = client.connection.subscribe();
+    let _ = state
+        .wait_for(|s| *s == zaparoo_core::client::ConnectionState::Connected)
+        .await;
+    tokio::time::sleep(std::time::Duration::from_millis(250)).await;
 }
 
 /// Read a Core-named thumbnail off the event loop.
@@ -439,7 +869,7 @@ async fn read_local(path: String) -> Option<Vec<u8>> {
 
 /// Base64 payload -> decoded RGBA8. Returns None for empty payloads
 /// or undecodable data (both memoized as negatives by the caller).
-fn decode(data_b64: &str) -> Option<DecodedImage> {
+fn decode(data_b64: &str, fit: Fit, capture: bool) -> Option<DecodedImage> {
     use base64::Engine as _;
     if data_b64.is_empty() {
         return None;
@@ -448,18 +878,11 @@ fn decode(data_b64: &str) -> Option<DecodedImage> {
         .decode(data_b64)
         .ok()?;
     let decoded = image::load_from_memory(&bytes).ok()?;
-    let rgba = decoded.to_rgba8();
-    let (width, height) = rgba.dimensions();
-    Some(DecodedImage {
-        buffer: slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(
-            rgba.as_raw(),
-            width,
-            height,
-        ),
-    })
+    Some(fitted(decoded, fit, capture))
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used, reason = "test fixtures fail fast")]
 mod tests {
     use super::*;
 
@@ -469,13 +892,65 @@ mod tests {
             system: String::new(),
             path: format!("/g/{id}"),
             max_size: 256,
+            fit: Fit::SOURCE,
             image_type: None,
         }
     }
 
+    #[tokio::test]
+    async fn full_art_waits_for_its_preview_without_blocking_other_ready_work() {
+        use std::future::Future;
+        use std::task::{Context, Poll, Waker};
+        let cache = MediaCache::new();
+        let full = key(1);
+        let preview = full.color_preview();
+        let other = key(2);
+        cache.request_wanted(vec![preview.clone(), full.clone(), other.clone()]);
+        assert_eq!(
+            cache.pending_keys(),
+            [preview.clone(), full.clone(), other.clone()]
+        );
+        assert_eq!(cache.next_pending().await, preview);
+        assert_eq!(cache.next_pending().await, other);
+        let mut next = std::pin::pin!(cache.next_pending());
+        let mut context = Context::from_waker(Waker::noop());
+        assert!(matches!(next.as_mut().poll(&mut context), Poll::Pending));
+        // A failed preview must release the dependency too: the full art can
+        // still succeed, and no synthetic color is stored for the failure.
+        assert!(cache.store_fetched(preview.clone(), cache.generation(), None, None));
+        assert!(matches!(next.as_mut().poll(&mut context), Poll::Ready(key) if key == full));
+        assert_eq!(cache.average_color(&preview), None);
+    }
+
+    #[tokio::test]
+    async fn preview_colors_share_image_invalidation_and_stale_fetch_rules() {
+        let cache = MediaCache::new();
+        let full = key(1);
+        let preview = full.color_preview();
+        let image = || DecodedImage {
+            buffer: slint::SharedPixelBuffer::clone_from_slice(&[20_u8, 60, 100, 255], 1, 1),
+        };
+        cache.request_wanted(vec![preview.clone(), full.clone()]);
+        assert_eq!(cache.next_pending().await, preview);
+        let generation = cache.generation();
+        cache.clear();
+        assert!(!cache.store_fetched(preview.clone(), generation, Some(image()), None));
+        assert_eq!(cache.average_color(&preview), None);
+        assert_eq!(
+            cache.next_pending().await,
+            preview,
+            "stale preview retries before full cover"
+        );
+        assert!(cache.store_fetched(preview.clone(), cache.generation(), Some(image()), None));
+        assert_eq!(cache.average_color(&preview), Some([20, 60, 100]));
+        assert_eq!(cache.next_pending().await, full);
+        cache.clear_decoded();
+        assert_eq!(cache.average_color(&preview), None);
+    }
+
     #[test]
     fn carousel_types_do_not_alias_each_other_or_browse_art() {
-        let (cache, _) = MediaCache::new();
+        let cache = MediaCache::new();
         let browse = key(1);
         let boxart = MediaKey {
             image_type: Some("boxart".into()),
@@ -495,6 +970,68 @@ mod tests {
         assert!(!cache.is_negative(&browse));
     }
 
+    #[test]
+    fn a_decoded_cover_is_resized_to_its_painted_box() {
+        let source = || image::DynamicImage::new_rgba8(256, 512);
+        let fit = fitted(source(), Fit::new(100, 120), false);
+        assert_eq!((fit.buffer.width(), fit.buffer.height()), (60, 120));
+        // Smaller art and a missing box both keep the decoded size.
+        let small = fitted(
+            image::DynamicImage::new_rgba8(40, 60),
+            Fit::new(100, 120),
+            false,
+        );
+        assert_eq!((small.buffer.width(), small.buffer.height()), (40, 60));
+        let unboxed = fitted(source(), Fit::SOURCE, false);
+        assert_eq!(
+            (unboxed.buffer.width(), unboxed.buffer.height()),
+            (256, 512)
+        );
+    }
+
+    #[test]
+    fn a_small_capture_fills_a_crisp_box_with_its_pixels_kept_sharp() {
+        let size = |image: &DecodedImage| (image.buffer.width(), image.buffer.height());
+        // One white pixel on black, so a smoothed enlargement would show
+        // as grays inside the pixel.
+        let capture = || {
+            let mut source = image::RgbaImage::from_pixel(4, 4, image::Rgba([0, 0, 0, 255]));
+            source.put_pixel(1, 1, image::Rgba([255, 255, 255, 255]));
+            image::DynamicImage::ImageRgba8(source)
+        };
+        let crisp = Fit::new(8, 8).crisp();
+        let doubled = fitted(capture(), crisp, true);
+        assert_eq!(size(&doubled), (8, 8));
+        let pixels = doubled.buffer.as_slice();
+        for (x, y) in [(2, 2), (3, 2), (2, 3), (3, 3)] {
+            assert_eq!(pixels[y * 8 + x].r, 255, "({x}, {y}) is the white pixel");
+        }
+        assert_eq!(pixels[8 + 1].r, 0);
+        assert_eq!(pixels[4 * 8 + 4].r, 0);
+        // A remainder is smoothed onto the whole multiple.
+        assert_eq!(
+            size(&fitted(capture(), Fit::new(10, 10).crisp(), true)),
+            (10, 10)
+        );
+        // Box art on the same surface, and a capture on a tile, keep the
+        // decoded size.
+        assert_eq!(size(&fitted(capture(), crisp, false)), (4, 4));
+        assert_eq!(size(&fitted(capture(), Fit::new(8, 8), true)), (4, 4));
+        // A capture larger than its box shrinks like any cover.
+        assert_eq!(
+            size(&fitted(capture(), Fit::new(2, 2).crisp(), true)),
+            (2, 2)
+        );
+    }
+
+    #[test]
+    fn the_hub_fit_round_trips() {
+        let cache = MediaCache::new();
+        assert_eq!(cache.hub_fit(), Fit::SOURCE);
+        cache.set_hub_fit(Fit::new(135, 181));
+        assert_eq!(cache.hub_fit(), Fit::new(135, 181));
+    }
+
     fn img(bytes: usize) -> DecodedImage {
         let px = (bytes / 4).max(1) as u32;
         DecodedImage {
@@ -504,7 +1041,7 @@ mod tests {
 
     #[test]
     fn lru_evicts_oldest_when_over_cap() {
-        let (cache, _rx) = MediaCache::new();
+        let cache = MediaCache::new();
         // Three entries of ~half the cap: inserting the third must
         // evict the first (oldest).
         let half = CACHE_CAP_BYTES / 2;
@@ -518,7 +1055,7 @@ mod tests {
 
     #[test]
     fn read_recency_protects_from_eviction() {
-        let (cache, _rx) = MediaCache::new();
+        let cache = MediaCache::new();
         let half = CACHE_CAP_BYTES / 2;
         cache.insert(key(1), img(half));
         cache.insert(key(2), img(half));
@@ -531,7 +1068,7 @@ mod tests {
 
     #[test]
     fn clear_decoded_releases_images_but_keeps_negative_memo() {
-        let (cache, _rx) = MediaCache::new();
+        let cache = MediaCache::new();
         cache.seed(key(1), img(64));
         cache.insert_negative(key(2));
 
@@ -540,26 +1077,257 @@ mod tests {
         assert!(!cache.is_cached(&key(1)));
         assert!(cache.is_negative(&key(2)));
         let inner = lock_inner(&cache.inner);
-        assert!(inner.order.is_empty());
+        assert!(inner.map.is_empty());
         assert_eq!(inner.bytes, 0);
+    }
+
+    fn pending(cache: &MediaCache) -> Vec<i64> {
+        lock_inner(&cache.inner)
+            .pending
+            .iter()
+            .filter_map(|k| k.media_id)
+            .collect()
+    }
+
+    fn pop(cache: &MediaCache) -> Option<MediaKey> {
+        lock_inner(&cache.inner).pending.pop_front()
+    }
+
+    #[test]
+    fn a_fetch_that_lands_after_clear_is_fetched_again() {
+        let cache = MediaCache::new();
+        cache.enqueue(key(1));
+        cache.enqueue(key(2));
+        // Both are in flight.
+        assert!(pop(&cache).is_some());
+        assert!(pop(&cache).is_some());
+        let before = cache.generation();
+
+        cache.clear();
+
+        // Both answers predate the clear: neither is stored, and each key
+        // goes back on the queue instead of staying stuck queued.
+        assert!(!cache.store_fetched(key(1), before, Some(img(64)), None));
+        assert!(!cache.store_fetched(key(2), before, None, None));
+        assert!(!cache.is_cached(&key(1)));
+        assert!(!cache.is_negative(&key(2)));
+        let mut again = pending(&cache);
+        again.sort_unstable();
+        assert_eq!(again, vec![1, 2]);
+
+        // The retry runs under the new generation and lands.
+        let current = cache.generation();
+        assert!(cache.store_fetched(key(1), current, Some(img(64)), None));
+        assert!(cache.store_fetched(key(2), current, None, None));
+        assert!(cache.is_cached(&key(1)));
+        assert!(cache.is_negative(&key(2)));
+    }
+
+    #[test]
+    fn a_cleared_cover_stays_paintable_and_is_asked_for_again() {
+        let cache = MediaCache::new();
+        cache.seed(key(1), img(64));
+        cache.enqueue(key(1));
+        assert!(pending(&cache).is_empty(), "a current cover is not fetched");
+
+        cache.clear();
+
+        assert!(cache.get(&key(1)).is_some(), "the old art stays on screen");
+        cache.enqueue(key(1));
+        assert_eq!(pending(&cache), vec![1]);
+        assert_eq!(pop(&cache), Some(key(1)));
+
+        // Core's answer replaces it in place, and it is current again.
+        let fresh = img(128);
+        let bytes = fresh.byte_size();
+        assert!(cache.store_fetched(key(1), cache.generation(), Some(fresh), None));
+        assert_eq!(lock_inner(&cache.inner).bytes, bytes);
+        cache.enqueue(key(1));
+        assert!(pending(&cache).is_empty());
+    }
+
+    #[test]
+    fn a_cleared_cover_core_no_longer_has_is_dropped() {
+        let cache = MediaCache::new();
+        cache.seed(key(1), img(64));
+        cache.clear();
+        cache.enqueue(key(1));
+        assert_eq!(pop(&cache), Some(key(1)));
+
+        assert!(cache.store_fetched(key(1), cache.generation(), None, None));
+
+        assert!(!cache.is_cached(&key(1)));
+        assert!(cache.is_negative(&key(1)));
+        assert_eq!(lock_inner(&cache.inner).bytes, 0);
+    }
+
+    #[test]
+    fn cleared_covers_still_count_toward_the_cap() {
+        let cache = MediaCache::new();
+        let half = CACHE_CAP_BYTES / 2;
+        cache.seed(key(1), img(half));
+        cache.seed(key(2), img(half));
+        cache.clear();
+
+        cache.seed(key(3), img(half));
+
+        assert!(
+            !cache.is_cached(&key(1)),
+            "the oldest stale cover is evicted"
+        );
+        assert!(lock_inner(&cache.inner).bytes <= CACHE_CAP_BYTES);
+    }
+
+    #[test]
+    fn wanted_local_paths_are_the_browse_window_most_recent_first() {
+        let cache = MediaCache::new();
+        cache.seed_with_path(key(1), img(16), "/thumbs/1");
+        cache.seed_with_path(key(2), img(16), "/thumbs/2");
+        cache.seed_with_path(key(3), img(16), "/thumbs/3");
+        // Delivered inline: there is no file to point at.
+        cache.seed(key(4), img(16));
+        // Cached with a file, but not in the browse window.
+        cache.seed_with_path(key(5), img(16), "/thumbs/5");
+        cache.request_wanted(vec![key(1), key(2), key(3), key(4), key(6)]);
+        // Painted last, so it leads.
+        assert!(cache.get(&key(2)).is_some());
+
+        let ids = |limit| -> Vec<(i64, String)> {
+            cache
+                .wanted_local_paths(limit)
+                .into_iter()
+                .filter_map(|(key, path)| Some((key.media_id?, path)))
+                .collect()
+        };
+        assert_eq!(
+            ids(8),
+            vec![
+                (2, "/thumbs/2".to_string()),
+                (3, "/thumbs/3".to_string()),
+                (1, "/thumbs/1".to_string()),
+            ]
+        );
+        assert_eq!(ids(1), vec![(2, "/thumbs/2".to_string())]);
     }
 
     #[test]
     fn enqueue_dedupes_and_skips_negatives() {
-        let (cache, mut rx) = MediaCache::new();
+        let cache = MediaCache::new();
         cache.enqueue(key(1));
         cache.enqueue(key(1));
-        assert_eq!(rx.try_recv().ok(), Some(key(1)));
-        assert!(rx.try_recv().is_err(), "duplicate must not re-queue");
+        assert_eq!(pending(&cache), vec![1], "duplicate must not re-queue");
 
         cache.insert_negative(key(2));
         cache.enqueue(key(2));
-        assert!(rx.try_recv().is_err(), "negative must not queue");
+        assert_eq!(pending(&cache), vec![1], "negative must not queue");
+
+        // In flight: taken off the queue but not finished. Asking again
+        // must not queue a second request for it.
+        assert_eq!(pop(&cache), Some(key(1)));
+        cache.enqueue(key(1));
+        assert!(pending(&cache).is_empty());
+    }
+
+    #[test]
+    fn the_most_recent_request_is_fetched_first() {
+        let cache = MediaCache::new();
+        cache.enqueue(key(1));
+        cache.enqueue(key(2));
+        cache.enqueue(key(3));
+        assert_eq!(pending(&cache), vec![3, 2, 1]);
+        // Asking again for a waiting key moves it up.
+        cache.enqueue(key(1));
+        assert_eq!(pending(&cache), vec![1, 3, 2]);
+        // A requeued request waits behind newer work.
+        let first = pop(&cache).expect("queued");
+        cache.requeue(first);
+        assert_eq!(pending(&cache), vec![3, 2, 1]);
+    }
+
+    #[test]
+    fn a_browse_request_keeps_its_order_and_drops_what_scrolled_past() {
+        let cache = MediaCache::new();
+        // Queued outside the browse view (the detail pane, the Hub).
+        cache.enqueue(key(99));
+        cache.request_wanted(vec![key(1), key(2), key(3)]);
+        assert_eq!(pending(&cache), vec![1, 2, 3, 99]);
+        // One page on: 1 and 2 left the view before they were fetched.
+        cache.request_wanted(vec![key(3), key(4)]);
+        assert_eq!(pending(&cache), vec![3, 4, 99]);
+        // A dropped key can be asked for again later.
+        cache.request_wanted(vec![key(1)]);
+        assert_eq!(pending(&cache), vec![1, 99]);
+        // An empty request (a fast scroll) drops the whole browse queue
+        // but never what was queued without it.
+        cache.request_wanted(Vec::new());
+        assert_eq!(pending(&cache), vec![99]);
+    }
+
+    #[test]
+    fn the_driver_takes_the_newest_key() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .expect("runtime");
+        let cache = MediaCache::new();
+        cache.enqueue(key(1));
+        cache.enqueue(key(2));
+        let next = runtime.block_on(cache.next_pending());
+        assert_eq!(next, key(2));
+        // An empty queue waits for the next enqueue.
+        let _ = runtime.block_on(cache.next_pending());
+        let waiter = cache.clone();
+        let late = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            waiter.enqueue(key(7));
+        });
+        assert_eq!(runtime.block_on(cache.next_pending()), key(7));
+        late.join().expect("enqueue thread");
+    }
+
+    #[test]
+    fn eviction_follows_recency_across_many_entries() {
+        let cache = MediaCache::new();
+        // Ten entries of a tenth of the cap each fill it exactly.
+        let tenth = CACHE_CAP_BYTES / 10;
+        for id in 0..10 {
+            cache.insert(key(id), img(tenth));
+        }
+        // Touch the even ones; the odd ones are now the oldest.
+        for id in (0..10).step_by(2) {
+            assert!(cache.get(&key(id)).is_some());
+        }
+        for id in 10..13 {
+            cache.insert(key(id), img(tenth));
+        }
+        for id in [1, 3, 5] {
+            assert!(!cache.is_cached(&key(id)), "{id} was least recent");
+        }
+        for id in [0, 2, 4, 6, 7, 8, 9, 10, 11, 12] {
+            assert!(cache.is_cached(&key(id)), "{id} must survive");
+        }
+        assert!(lock_inner(&cache.inner).bytes <= CACHE_CAP_BYTES);
+        // Replacing an entry does not count its bytes twice.
+        cache.insert(key(12), img(tenth));
+        assert!(cache.is_cached(&key(0)));
+    }
+
+    #[test]
+    fn landings_schedule_one_delivery_per_batch() {
+        let landings = Landings::default();
+        assert!(landings.push(key(1)), "the first key schedules");
+        assert!(!landings.push(key(2)), "later keys join the batch");
+        assert!(!landings.push(key(1)), "a repeat joins without a copy");
+        assert_eq!(landings.take(), vec![key(1), key(2)]);
+        assert!(landings.take().is_empty());
+        assert!(
+            landings.push(key(3)),
+            "after a delivery the next key schedules again"
+        );
     }
 
     #[test]
     fn empty_payload_decodes_to_none() {
-        assert!(decode("").is_none());
-        assert!(decode("bm90IGFuIGltYWdl").is_none());
+        assert!(decode("", Fit::SOURCE, false).is_none());
+        assert!(decode("bm90IGFuIGltYWdl", Fit::SOURCE, false).is_none());
     }
 }

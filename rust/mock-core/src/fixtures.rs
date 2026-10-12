@@ -9,7 +9,7 @@
 // into it.
 
 use serde_json::{json, Value};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Mutex, OnceLock};
 
 static SYSTEM_DEFAULTS: OnceLock<Mutex<Vec<SystemDefaultFixture>>> = OnceLock::new();
@@ -18,6 +18,15 @@ static SYSTEM_DEFAULTS: OnceLock<Mutex<Vec<SystemDefaultFixture>>> = OnceLock::n
 // Mirrors `SYSTEM_DEFAULTS`'s in-memory, process-lifetime pattern -- this
 // is dev-server state, not a real database.
 static LAUNCHER_OVERRIDES: OnceLock<Mutex<HashMap<(String, String), String>>> = OnceLock::new();
+
+// Paths hidden via `media.tags.update`: a file's own, or a folder's, which
+// leaves its parent's listing and takes what is under it out of search.
+// Dev-server state like the two above.
+static HIDDEN_PATHS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+
+/// The folder every mock system lists as one game on several discs.
+const DISC_FOLDER: &str = "Disc Game";
+const DISC_COUNT: u64 = 2;
 
 pub(crate) const MOCK_SYSTEMS: &[(&str, &str, &str)] = &[
     ("NES", "Nintendo Entertainment System", "Console"),
@@ -49,16 +58,16 @@ pub fn version_response() -> Value {
 pub fn launchers_response() -> Value {
     json!({
         "launchers": [
-            { "id": "nestopia",          "systemId": "NES",        "systemName": "Nintendo Entertainment System", "groups": ["libretro"] },
-            { "id": "fceumm",           "systemId": "NES",        "systemName": "Nintendo Entertainment System", "groups": ["libretro"] },
-            { "id": "snes9x",           "systemId": "SNES",       "systemName": "Super Nintendo",                "groups": ["libretro"] },
-            { "id": "bsnes",            "systemId": "SNES",       "systemName": "Super Nintendo",                "groups": ["libretro"] },
-            { "id": "genesis-plus-gx",  "systemId": "Genesis",    "systemName": "Sega Genesis",                  "groups": ["libretro"] },
-            { "id": "mupen64plus-next", "systemId": "Nintendo64", "systemName": "Nintendo 64",                   "groups": ["libretro"] },
-            { "id": "gambatte",         "systemId": "Gameboy",    "systemName": "Game Boy",                      "groups": ["libretro"] },
-            { "id": "mgba",             "systemId": "GBA",        "systemName": "Game Boy Advance",              "groups": ["libretro"] },
-            { "id": "mame",             "systemId": "MAME",       "systemName": "MAME",                          "groups": ["arcade"] },
-            { "id": "fbneo",            "systemId": "NeoGeo",     "systemName": "Neo Geo",                       "groups": ["arcade"] }
+            { "id": "nestopia",          "systemId": "NES",        "systemName": "Nintendo Entertainment System", "groups": ["libretro"], "available": true },
+            { "id": "fceumm",           "systemId": "NES",        "systemName": "Nintendo Entertainment System", "groups": ["libretro"], "available": true },
+            { "id": "snes9x",           "systemId": "SNES",       "systemName": "Super Nintendo",                "groups": ["libretro"], "available": true },
+            { "id": "bsnes",            "systemId": "SNES",       "systemName": "Super Nintendo",                "groups": ["libretro"], "available": true },
+            { "id": "genesis-plus-gx",  "systemId": "Genesis",    "systemName": "Sega Genesis",                  "groups": ["libretro"], "available": true },
+            { "id": "mupen64plus-next", "systemId": "Nintendo64", "systemName": "Nintendo 64",                   "groups": ["libretro"], "available": true },
+            { "id": "gambatte",         "systemId": "Gameboy",    "systemName": "Game Boy",                      "groups": ["libretro"], "available": true },
+            { "id": "mgba",             "systemId": "GBA",        "systemName": "Game Boy Advance",              "groups": ["libretro"], "available": true },
+            { "id": "mame",             "systemId": "MAME",       "systemName": "MAME",                          "groups": ["arcade"], "available": true },
+            { "id": "fbneo",            "systemId": "NeoGeo",     "systemName": "Neo Geo",                       "groups": ["arcade"], "available": true }
         ]
     })
 }
@@ -147,6 +156,79 @@ fn system_defaults() -> &'static Mutex<Vec<SystemDefaultFixture>> {
     })
 }
 
+fn hidden_paths() -> std::sync::MutexGuard<'static, HashSet<String>> {
+    HIDDEN_PATHS
+        .get_or_init(|| Mutex::new(HashSet::new()))
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// `media.tags.update` for `user:hidden` on a path. Returns whether the
+/// path is hidden afterwards.
+pub fn set_hidden(path: &str, hidden: bool) -> bool {
+    let mut paths = hidden_paths();
+    if hidden {
+        paths.insert(path.to_string());
+    } else {
+        paths.remove(path);
+    }
+    hidden
+}
+
+/// Hidden itself, as a file or folder Core was told to hide.
+fn hidden_itself(path: &str) -> bool {
+    hidden_paths().contains(path)
+}
+
+/// Hidden itself or by a folder above it: what a search leaves out. A
+/// listing asks only `hidden_itself`, so a hidden folder still browses by
+/// its own path.
+fn hidden(path: &str) -> bool {
+    hidden_paths().iter().any(|folder| under_path(path, folder))
+}
+
+fn include_hidden(params: &Value) -> bool {
+    params
+        .get("includeHidden")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+}
+
+fn hidden_tag() -> Value {
+    json!({ "type": "user", "tag": "hidden" })
+}
+
+/// Apply Core's visibility to the entries `is_hidden` picks out: they are
+/// dropped, or kept and tagged when the caller asked for them.
+fn apply_visibility(
+    entries: Vec<Value>,
+    include_hidden: bool,
+    is_hidden: fn(&str) -> bool,
+) -> Vec<Value> {
+    entries
+        .into_iter()
+        .filter_map(|mut entry| {
+            let path = entry
+                .get("path")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            if !is_hidden(path) {
+                return Some(entry);
+            }
+            if !include_hidden {
+                return None;
+            }
+            if hidden_itself(path) {
+                match entry.get_mut("tags").and_then(Value::as_array_mut) {
+                    Some(tags) => tags.push(hidden_tag()),
+                    None => entry["tags"] = json!([hidden_tag()]),
+                }
+            }
+            Some(entry)
+        })
+        .collect()
+}
+
 fn launcher_overrides() -> &'static Mutex<HashMap<(String, String), String>> {
     LAUNCHER_OVERRIDES.get_or_init(|| Mutex::new(HashMap::new()))
 }
@@ -171,6 +253,10 @@ fn media_ref_key(reference: &Value) -> (String, String) {
 }
 
 pub fn systems_response(params: &Value) -> Value {
+    systems_response_for_count(params, crate::media_state::indexed_system_count())
+}
+
+fn systems_response_for_count(params: &Value, indexed_systems: usize) -> Value {
     let tags = params
         .get("tags")
         .and_then(Value::as_array)
@@ -178,6 +264,7 @@ pub fn systems_response(params: &Value) -> Value {
         .unwrap_or_default();
     let systems = MOCK_SYSTEMS
         .iter()
+        .take(indexed_systems)
         .copied()
         .filter_map(|(id, name, category)| {
             let media_count = ALL_GAMES
@@ -228,9 +315,36 @@ pub fn media_search_response(params: &Value) -> Value {
         .and_then(|c| c.parse::<usize>().ok())
         .unwrap_or(0);
 
-    let mut matching: Vec<Value> = games_for_systems(&systems)
-        .filter(|game| tags.iter().all(|tag| game_has_tag(game, tag)))
+    let words: Vec<String> = params
+        .get("query")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .split_whitespace()
+        .map(slug)
+        .filter(|word| !word.is_empty())
         .collect();
+    let path_prefix = params
+        .get("pathPrefix")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+
+    let matching: Vec<Value> = games_for_systems(&systems)
+        .filter(|game| tags.iter().all(|tag| game_has_tag(game, tag)))
+        .filter(|game| {
+            let name = slug(game.get("name").and_then(Value::as_str).unwrap_or_default());
+            words.iter().all(|word| name.contains(word.as_str()))
+        })
+        .filter(|game| {
+            under_path(
+                game.get("path").and_then(Value::as_str).unwrap_or_default(),
+                path_prefix,
+            )
+        })
+        .collect();
+    // Search and browse name a game by the same path, so one hidden from a
+    // listing leaves the search too. A mock folder is a view of its whole
+    // system, though, so hiding one takes no game out of the search.
+    let mut matching = apply_visibility(matching, include_hidden(params), hidden);
     match params.get("sort").and_then(Value::as_str) {
         Some("name-asc") => matching.sort_by_key(|game| {
             game.get("name")
@@ -273,6 +387,25 @@ pub fn media_search_response(params: &Value) -> Value {
     })
 }
 
+/// Core matches each query word as a substring of the title's slug:
+/// lowercased, punctuation dropped.
+fn slug(text: &str) -> String {
+    text.chars()
+        .filter(|c| c.is_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect()
+}
+
+/// Core's `pathPrefix`: at or below the folder, never a sibling that
+/// merely starts with its name.
+fn under_path(path: &str, prefix: &str) -> bool {
+    let prefix = prefix.trim_end_matches('/');
+    prefix.is_empty()
+        || path
+            .strip_prefix(prefix)
+            .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
+}
+
 /// Match one `type:value` filter against a search row's `tags` array, the
 /// same shape Core returns. Only the AND form is modelled; the frontend
 /// never sends the `-`/`~` operators.
@@ -299,17 +432,18 @@ fn matching_media_rows(path_prefix: &str, systems: &[&str], filters: &[&str]) ->
         .enumerate()
         .filter(|(_, (_, _, system))| systems.is_empty() || systems.contains(system))
         .filter_map(|(index, (name, file, system))| {
-            let row = json!({
+            let mut row = json!({
                 "name": name,
                 "path": format!("{path_prefix}/{file}"),
                 "type": "media",
                 "systemId": system,
                 "zapScript": format!("@{system}/{file}"),
-                "relativePath": file,
+                "relativePath": format!("{system}/{file}"),
                 "tags": tags_for(file, index),
                 "disambiguatingTags": disambiguating_tags_for(file),
                 "hasCover": true,
             });
+            with_cover_color(&mut row, index);
             filters
                 .iter()
                 .all(|filter| game_has_tag(&row, filter))
@@ -326,14 +460,73 @@ fn matching_media_rows(path_prefix: &str, systems: &[&str], filters: &[&str]) ->
     matching
 }
 
-fn mock_directory_entry(name: &str, path: &str, file_count: u64) -> Value {
+fn mock_directory_entry(
+    system: &str,
+    name: &str,
+    path: &str,
+    file_count: u64,
+    has_cover: bool,
+) -> Value {
     json!({
         "name": name,
         "path": path,
         "type": "directory",
         "fileCount": file_count,
-        "hasCover": false,
+        "systemIds": [system],
+        "relativePath": format!("{system}/{name}"),
+        "hasCover": has_cover,
     })
+}
+
+fn disc_file(folder: &str, disc: u64) -> String {
+    format!("{folder}/{DISC_FOLDER} (Disc {disc}).chd")
+}
+
+/// A folder of one game's discs, collapsed to a single launchable entry
+/// as Core does: its launch fields are the first disc's, whose `disc` tag
+/// stays in `tags` and leaves `disambiguatingTags`.
+fn mock_multi_disc_entry(system: &str, path: &str) -> Value {
+    json!({
+        "name": DISC_FOLDER,
+        "path": path,
+        "type": "directory",
+        "fileCount": DISC_COUNT,
+        "systemId": system,
+        "systemIds": [system],
+        "zapScript": format!("@{system}/{DISC_FOLDER} (disc:1)"),
+        "relativePath": format!("{system}/{}", disc_file(DISC_FOLDER, 1)),
+        "tags": [{ "type": "disc", "tag": "1" }],
+        "hasCover": true,
+        "multiDisc": true,
+    })
+}
+
+/// The discs inside a multi-disc folder, or None when `path` is not one.
+fn mock_disc_rows(path: &str, systems: &[&str]) -> Option<Vec<Value>> {
+    let system = path
+        .strip_suffix(&format!("/{DISC_FOLDER}"))
+        .and_then(|root| root.rsplit('/').next())?;
+    if !systems.is_empty() && !systems.contains(&system) {
+        return None;
+    }
+    Some(
+        (1..=DISC_COUNT)
+            .map(|disc| {
+                let tag = json!({ "type": "disc", "tag": disc.to_string() });
+                json!({
+                    "name": DISC_FOLDER,
+                    "path": disc_file(path, disc),
+                    "type": "media",
+                    "systemId": system,
+                    "zapScript": format!("@{system}/{DISC_FOLDER} (disc:{disc})"),
+                    "relativePath": format!("{system}/{}", disc_file(DISC_FOLDER, disc)),
+                    "tags": [tag],
+                    "disambiguatingTags": [tag],
+                    "hasCover": true,
+                })
+            })
+            .collect(),
+    )
 }
 
 /// A virtual-scheme route. Core never merges these into a system's
@@ -361,13 +554,14 @@ fn mock_route_root_entry(path: &str, system: &str, file_count: u64) -> Value {
         "type": "root",
         "systemId": system,
         "systemIds": [system],
+        "relativePath": system,
         "fileCount": file_count,
         "hasCover": false,
     })
 }
 
 /// Core's merged system-root view (`rootView: "contents"`): a virtual
-/// route (first page only), two mock directories, then the system's
+/// route (first page only), the mock directories, then the system's
 /// media, all under one pathless response. Mirrors
 /// `browseSystemRootContents` in zaparoo-core's `media_browse.go`.
 fn media_browse_root_contents_response(
@@ -376,18 +570,28 @@ fn media_browse_root_contents_response(
     max: usize,
     offset: usize,
     cursor_present: bool,
+    include_hidden: bool,
 ) -> Value {
     let path_prefix = format!("/mock/games/{system}");
-    let dirs = if cursor_present {
-        Vec::new()
-    } else {
+    let folder = |name: &str| format!("{path_prefix}/{name}");
+    let all_dirs = apply_visibility(
         vec![
-            mock_directory_entry("Favorites", &format!("{path_prefix}/Favorites"), 1),
-            mock_directory_entry("Extras", &format!("{path_prefix}/Extras"), 1),
-        ]
-    };
+            // Only Extras has artwork of its own.
+            mock_directory_entry(system, "Favorites", &folder("Favorites"), 1, false),
+            mock_directory_entry(system, "Extras", &folder("Extras"), 1, true),
+            mock_multi_disc_entry(system, &folder(DISC_FOLDER)),
+        ],
+        include_hidden,
+        hidden_itself,
+    );
+    let total_dirs = all_dirs.len();
+    let dirs = if cursor_present { Vec::new() } else { all_dirs };
     let remaining = max.saturating_sub(dirs.len());
-    let matching = matching_media_rows(&path_prefix, &[system], filters);
+    let matching = apply_visibility(
+        matching_media_rows(&path_prefix, &[system], filters),
+        include_hidden,
+        hidden_itself,
+    );
     let total_files = matching.len();
     let media_page: Vec<Value> = matching.into_iter().skip(offset).take(remaining).collect();
     let next_offset = offset.saturating_add(media_page.len());
@@ -410,7 +614,7 @@ fn media_browse_root_contents_response(
         "entries": entries,
         // Virtual roots are excluded, mirroring Core: `totalDirs` counts
         // merged physical directories only.
-        "totalDirs": 2,
+        "totalDirs": total_dirs,
         "totalFiles": total_files,
         "pagination": pagination,
     })
@@ -472,13 +676,30 @@ pub fn media_browse_response(params: &Value) -> Value {
                     max,
                     offset,
                     cursor.is_some(),
+                    include_hidden(params),
                 );
             }
         } else if !systems.is_empty() {
             return media_browse_route_roots_response(&systems);
         }
     }
-    let matching = matching_media_rows(path, &systems, &filters);
+    // A launcher-relative path (`NES/Favorites`) browses the folder it
+    // names under the mock's first root, as Core resolves it.
+    let resolved;
+    let path = if is_relative_browse_path(path) {
+        resolved = format!("/mock/games/{path}");
+        resolved.as_str()
+    } else {
+        path
+    };
+    // A hidden folder still lists by its own path; only what is hidden
+    // inside it is left out.
+    let matching = apply_visibility(
+        mock_disc_rows(path, &systems)
+            .unwrap_or_else(|| matching_media_rows(path, &systems, &filters)),
+        include_hidden(params),
+        hidden_itself,
+    );
     let total_files = matching.len();
     let entries: Vec<Value> = matching.into_iter().skip(offset).take(max).collect();
     let next_offset = offset.saturating_add(entries.len());
@@ -490,7 +711,7 @@ pub fn media_browse_response(params: &Value) -> Value {
     if has_next_page {
         pagination["nextCursor"] = json!(next_offset.to_string());
     }
-    json!({
+    let mut result = json!({
         "path": path,
         "entries": entries,
         "totalFiles": total_files,
@@ -498,12 +719,40 @@ pub fn media_browse_response(params: &Value) -> Value {
         // an ordinary path browse.
         "totalDirs": 0,
         "pagination": pagination,
-    })
+    });
+    // Core reports the browsed folder's own relative path for a
+    // single-system browse under that system's launcher folder.
+    if let [system] = systems.as_slice() {
+        let root = format!("/mock/games/{system}");
+        if path == root {
+            result["relativePath"] = json!(system);
+        } else if let Some(rest) = path.strip_prefix(&format!("{root}/")) {
+            result["relativePath"] = json!(format!("{system}/{rest}"));
+        }
+    }
+    result
+}
+
+/// Whether `path` has Core's launcher-relative shape: a known system id,
+/// optionally followed by a path below that system's launcher folder.
+fn is_relative_browse_path(path: &str) -> bool {
+    if path.is_empty() || path.starts_with('/') || path.contains("://") {
+        return false;
+    }
+    let system = path.split('/').next().unwrap_or_default();
+    MOCK_SYSTEMS.iter().any(|(id, ..)| *id == system)
 }
 
 pub fn media_meta_response(params: &Value) -> Value {
     fn media_for(reference: &Value) -> Value {
         let (system, path) = media_ref_key(reference);
+        // Core accepts the launcher-relative shape and answers with the
+        // canonical path.
+        let path = match path.strip_prefix(&format!("{system}/")) {
+            Some(rest) => format!("/mock/games/{system}/{rest}"),
+            None => path,
+        };
+        let file = path.rsplit('/').next().unwrap_or_default().to_string();
         let name = path
             .rsplit('/')
             .next()
@@ -518,6 +767,8 @@ pub fn media_meta_response(params: &Value) -> Value {
             .and_then(|overrides| overrides.get(&(system.clone(), path.clone())).cloned());
         let mut media = json!({
             "path": path,
+            "relativePath": format!("{system}/{file}"),
+            "zapScript": format!("@{system}/{file}"),
             "parentDir": "/mock",
             "isMissing": false,
             "tags": [{"type": "region", "tag": "world"}],
@@ -622,8 +873,20 @@ pub fn media_browse_index_response(params: &Value) -> Value {
         .iter()
         .filter(|entry| entry["type"] == "media")
         .collect();
+    // A scope with no media files of its own (a system whose games each
+    // live in their own folder) is bucketed over its directory entries
+    // instead, with offsets counted among those, and says so.
+    let directories = media_entries.is_empty();
+    let indexed: Vec<&Value> = if directories {
+        entries
+            .iter()
+            .filter(|entry| entry["type"] == "directory")
+            .collect()
+    } else {
+        media_entries
+    };
     let mut groups: Vec<Value> = Vec::new();
-    for (offset, entry) in media_entries.iter().enumerate() {
+    for (offset, entry) in indexed.iter().enumerate() {
         let first = entry["name"]
             .as_str()
             .and_then(|name| name.chars().next())
@@ -648,7 +911,30 @@ pub fn media_browse_index_response(params: &Value) -> Value {
             }));
         }
     }
-    json!({ "scheme": "latin", "groups": groups })
+    json!({
+        "scheme": "latin",
+        "entryType": if directories && !groups.is_empty() { "directory" } else { "media" },
+        "groups": groups,
+    })
+}
+
+/// Mirrors Core's `media.lookup`: the game in `system` whose name matches
+/// `name`, in the `media.search` row shape, or a null match.
+pub fn media_lookup_response(params: &Value) -> Value {
+    let system = params.get("system").and_then(Value::as_str).unwrap_or("");
+    let name = params.get("name").and_then(Value::as_str).unwrap_or("");
+    let matched = games_for_systems(&[system]).find(|game| {
+        game.get("name")
+            .and_then(Value::as_str)
+            .is_some_and(|candidate| candidate.eq_ignore_ascii_case(name))
+    });
+    match matched {
+        Some(mut game) => {
+            game["confidence"] = json!(1.0);
+            json!({ "match": game })
+        }
+        None => json!({ "match": null }),
+    }
 }
 
 pub fn media_history_latest_response() -> Value {
@@ -658,7 +944,8 @@ pub fn media_history_latest_response() -> Value {
             "systemId": system,
             "systemName": system_display_for(system),
             "mediaName": name,
-            "mediaPath": format!("/mock/{system}/{file}"),
+            "mediaPath": format!("/mock/games/{system}/{file}"),
+            "relativePath": format!("{system}/{file}"),
             "launcherId": system,
             "startedAt": "2026-04-29T23:00:00Z",
         }
@@ -708,17 +995,21 @@ pub fn media_history_response(params: &Value) -> Value {
         .map(|(i, (name, file, system))| {
             let started = format!("2026-04-29T{:02}:00:00Z", 23 - i.min(23));
             let ended = format!("2026-04-29T{:02}:30:00Z", 23 - i.min(23));
-            json!({
+            let mut entry = json!({
                 "systemId": system,
                 "systemName": system_display_for(system),
                 "mediaName": name,
-                "mediaPath": format!("/mock/{system}/{file}"),
+                "mediaPath": format!("/mock/games/{system}/{file}"),
+                "relativePath": format!("{system}/{file}"),
+                "zapScript": format!("@{system}/{file}"),
                 "launcherId": system,
                 "hasCover": true,
                 "startedAt": started,
                 "endedAt": ended,
                 "playTime": 1800,
-            })
+            });
+            with_cover_color(&mut entry, i);
+            entry
         })
         .collect();
     // Core's docs say `pagination` is only present when entries are
@@ -738,6 +1029,17 @@ pub fn media_history_response(params: &Value) -> Value {
         }
     }
     response
+}
+
+/// Core's `coverColor`: the average colour of a sized cover. Every fifth
+/// game has none yet, the way Core omits it for covers it has not sized.
+fn with_cover_color(row: &mut Value, index: usize) {
+    const COLORS: [&str; 6] = [
+        "#8a2f2a", "#2c4f7c", "#3d6b3a", "#7a622b", "#5b3a6e", "#2f6a6a",
+    ];
+    if index % 5 != 4 {
+        row["coverColor"] = json!(COLORS[index % COLORS.len()]);
+    }
 }
 
 // Mirrors the display names in `systems_response`. The history fixture
@@ -768,15 +1070,18 @@ fn games_for_systems<'a>(systems: &'a [&'a str]) -> impl Iterator<Item = Value> 
                 return None;
             }
             let (system_name, category) = system_meta(system);
-            Some(json!({
+            let mut item = json!({
                 "name": name,
-                "path": format!("/mock/{system}/{file}"),
+                "path": format!("/mock/games/{system}/{file}"),
+                "relativePath": format!("{system}/{file}"),
                 "zapScript": format!("@{system}/{file}"),
                 "system": { "id": system, "name": system_name, "category": category },
                 "tags": tags_for(file, index),
                 "disambiguatingTags": disambiguating_tags_for(file),
                 "hasCover": true,
-            }))
+            });
+            with_cover_color(&mut item, index);
+            Some(item)
         })
 }
 
@@ -789,11 +1094,37 @@ fn system_meta(system: &str) -> (&'static str, &'static str) {
         .unwrap_or(("Unknown", ""))
 }
 
+/// The mock library's one deck.
+const MOCK_DECK_ID: &str = "0k3v9x2rq7bm";
+
+/// `decks`: the deck list without items. Its members carry the tag
+/// `user:deck:<id>`, which the list alone gives a name to.
+pub fn decks_response() -> Value {
+    json!({
+        "decks": [{
+            "deckId": MOCK_DECK_ID,
+            "name": "Couch co-op",
+            "description": "",
+            "itemCount": 8,
+            "owned": true,
+            "locked": false,
+            "createdAt": 0,
+            "updatedAt": 0,
+        }]
+    })
+}
+
 /// Full tag list for a search row: the disambiguation tags plus, for every
 /// third entry, the `user:favorite` tag. A deterministic spread means the
 /// mock's Favorites screen holds entries from several systems, which is what
 /// the favorites sort and system-filter paths need to exercise.
 fn tags_for(file: &str, index: usize) -> Value {
+    // A deterministic spread of the filterable categories, so the browse
+    // filter has genres (flat and nested), years, player counts and
+    // developers to pick from.
+    const GENRES: [&str; 5] = ["action", "action:platformer", "rpg", "puzzle", "sports"];
+    const DEVELOPERS: [&str; 4] = ["Nintendo", "Capcom", "Konami", "Sega"];
+    const PLAYERS: [&str; 3] = ["1", "2", "4"];
     let mut tags = disambiguating_tags_for(file)
         .as_array()
         .cloned()
@@ -801,7 +1132,63 @@ fn tags_for(file: &str, index: usize) -> Value {
     if index.is_multiple_of(3) {
         tags.push(json!({ "tag": "favorite", "type": "user" }));
     }
+    // Every fourth entry is in the one mock deck, tagged as Core tags a
+    // deck's members.
+    if index % 4 == 1 {
+        tags.push(json!({ "tag": format!("deck:{MOCK_DECK_ID}"), "type": "user" }));
+    }
+    tags.push(json!({ "tag": GENRES[index % GENRES.len()], "type": "genre" }));
+    tags.push(json!({ "tag": (1985 + index % 12).to_string(), "type": "year" }));
+    tags.push(json!({ "tag": PLAYERS[(index + 1) % PLAYERS.len()], "type": "players" }));
+    tags.push(json!({ "tag": DEVELOPERS[index % DEVELOPERS.len()], "type": "developer" }));
     Value::Array(tags)
+}
+
+/// `media.tags`: every tag on the games of the requested systems (all
+/// systems when none are named) with its game count, most used first. Core
+/// labels some tags and not others, so the mock labels the nested genre only.
+pub fn media_tags_response(params: &Value) -> Value {
+    let systems = params
+        .get("systems")
+        .and_then(Value::as_array)
+        .map(|a| a.iter().filter_map(Value::as_str).collect::<Vec<_>>())
+        .unwrap_or_default();
+    let mut counts: std::collections::BTreeMap<(String, String), u64> =
+        std::collections::BTreeMap::new();
+    for game in games_for_systems(&systems) {
+        let Some(tags) = game.get("tags").and_then(Value::as_array) else {
+            continue;
+        };
+        for tag in tags {
+            let (Some(tag_type), Some(value)) = (
+                tag.get("type").and_then(Value::as_str),
+                tag.get("tag").and_then(Value::as_str),
+            ) else {
+                continue;
+            };
+            *counts
+                .entry((tag_type.to_string(), value.to_string()))
+                .or_default() += 1;
+        }
+    }
+    let mut rows: Vec<((String, String), u64)> = counts.into_iter().collect();
+    rows.sort_by(|a, b| {
+        a.0 .0
+            .cmp(&b.0 .0)
+            .then(b.1.cmp(&a.1))
+            .then(a.0 .1.cmp(&b.0 .1))
+    });
+    let tags: Vec<Value> = rows
+        .into_iter()
+        .map(|((tag_type, value), count)| {
+            let mut row = json!({ "type": tag_type, "tag": value, "count": count });
+            if tag_type == "genre" && value == "action:platformer" {
+                row["label"] = json!("Platformer");
+            }
+            row
+        })
+        .collect();
+    json!({ "tags": tags })
 }
 
 // Synthesize disambiguating tags for a handful of mock entries so the
@@ -983,4 +1370,26 @@ pub fn media_image_response(params: &Value) -> Result<Value, String> {
         "extension": "png",
         "data": base64::engine::general_purpose::STANDARD.encode(&png_bytes),
     }))
+}
+
+#[cfg(test)]
+#[allow(clippy::expect_used, reason = "tests fail fast on malformed fixtures")]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn empty_mock_catalog_grows_before_indexing_finishes() {
+        let empty = systems_response_for_count(&json!({}), 0);
+        assert!(empty["systems"]
+            .as_array()
+            .expect("systems array")
+            .is_empty());
+        let partial = systems_response_for_count(&json!({}), 2);
+        let systems = partial["systems"].as_array().expect("systems array");
+        assert_eq!(systems.len(), 2);
+        assert!(systems
+            .iter()
+            .all(|system| system["mediaCount"].as_u64().is_some_and(|count| count > 0)));
+        assert!(systems.len() < MOCK_SYSTEMS.len());
+    }
 }

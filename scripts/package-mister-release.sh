@@ -24,6 +24,9 @@ wrapper assets, and writes output/release/zaparoo-frontend-vX.Y.Z.zip.
 
 Set ZAPAROO_SKIP_FRONTEND_BUILD=1 to reuse the existing binary for
 packaging tests.
+Set ZAPAROO_INCLUDE_SCANOUT=1 to include the device-qualified zaparoo-scanout.zip
+asset from the exact Menu release. ZAPAROO_SCANOUT_BUNDLE may name a local bundle
+instead. Omit both to package the fb0 baseline without scanout modules.
 EOF_USAGE
 }
 
@@ -185,6 +188,19 @@ fi
 install -m 0644 "$MENU_DIR/$MENU_ASSET" "$STAGE/zaparoo/menu_zaparoo.rbf"
 install -m 0755 "$MAIN_DIR/$MAIN_ASSET" "$STAGE/zaparoo/MiSTer_Zaparoo"
 install -m 0755 "$FRONTEND_BIN" "$STAGE/zaparoo/frontend"
+
+SCANOUT_BUNDLE="${ZAPAROO_SCANOUT_BUNDLE:-}"
+if [ "${ZAPAROO_INCLUDE_SCANOUT:-0}" = "1" ] || [ -n "$SCANOUT_BUNDLE" ]; then
+    if [ -z "$SCANOUT_BUNDLE" ]; then
+        gh release download "$MENU_TAG" \
+            --repo "$MENU_REPO" \
+            --pattern zaparoo-scanout.zip \
+            --dir "$MENU_DIR"
+        SCANOUT_BUNDLE="$MENU_DIR/zaparoo-scanout.zip"
+    fi
+    python3 "$PROJECT_ROOT/scripts/scanout_bundle.py" "$SCANOUT_BUNDLE" \
+        --destination "$STAGE/zaparoo"
+fi
 install -m 0644 "$PROJECT_ROOT/COPYING" "$STAGE/COPYING"
 # The asset attributions (fonts, logos, glyphs) plus the generated notices
 # for every Rust crate linked into the binary (`just notices`).

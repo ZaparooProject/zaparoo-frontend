@@ -10,6 +10,8 @@
 
 import { Theme, Sizing, Motion, Layout } from "theme.slint";
 import { GlyphSource } from "chrome.slint";
+import { Labels } from "labels.slint";
+import { Wordmark } from "wordmark.slint";
 import { FocusCursor, TileDisplacement } from "focus.slint";
 
 // One grid cell, as Rust projects it. Art is either a glyph key the
@@ -24,6 +26,10 @@ export struct GridCell {
     cover-focus: image,
     has-cover: bool,
     has-cover-focus: bool,
+    // The cover is a bitmap prepared for this tile's art box (a system
+    // logo), to be painted one pixel for one where bitmaps are painted
+    // that way. Media covers and user images are fitted to the box.
+    cover-exact: bool,
     // The name doubles as a fitted wordmark when there is no art.
     wordmark: bool,
     favorite: bool,
@@ -34,6 +40,10 @@ export struct GridCell {
     top-label: string,
     // A structural placeholder: paints nothing, ever.
     is-empty: bool,
+    // Core's average cover colour: fills the art slot while the art
+    // loads, then fades out under it. A solid fill, cheap everywhere.
+    placeholder: color,
+    has-placeholder: bool,
 }
 
 // One-line caption with the focused-overflow marquee: fits -> static
@@ -242,15 +252,13 @@ export component Tile inherits Rectangle {
     in property <GridCell> cell;
     in property <bool> selected: false;
     in property <bool> own-ring: true;
-    // The router holds the accepting face down until dispatch.
+    // One shared owner moves both face and retained ring, through launch reply.
     in property <bool> press-held: false;
     // The section owning this tile has user focus.
     in property <bool> section-focused: true;
     in property <bool> focus-ready: true;
     in property <bool> held: false;
-    in property <int> activate-pulse: 0;
-    in property <int> release-pulse: 0;
-    in property <bool> settling: false;
+    in property <bool> moving: false;
     // Hub and Settings tiles: art fills the card up to the ring's inner
     // edge plus a small clearance instead of the 2% band.
     in property <bool> compact-padding: false;
@@ -258,17 +266,26 @@ export component Tile inherits Rectangle {
     // Resolved caption text (the host composes translations).
     in property <string> caption: "";
     in property <length> card-radius: Layout.card-radius;
-    // Flying through the grid: paint the plate and nothing else. No art, no
-    // caption, no heart, and a face that recedes toward the page, so what
-    // is left is the grid's structure without any of its detail and the
-    // letter plate over it has something quiet to sit on.
-    //
-    // This is cheaper than what it replaces, because the cover work stops,
-    // which is the point of a rapid scroll anyway. It is also the only
-    // "dim the grid" available here: there is no cheap subtree grab to
-    // freeze and fade, and blur needs a shader, which the MiSTer renderer
-    // cannot run (see docs/slint-gotchas.md).
-    in property <bool> quiet: false;
+    // The size this tile rests at. A host that animates the tile's size
+    // (the focus zoom drawn by size) names where it is heading, so glyphs
+    // are rasterized once for that size and not again at every step on the
+    // way there.
+    in property <length> settled-width: self.width;
+    in property <length> settled-height: self.height;
+    // The focused tile's larger copy of an exact cover, prepared for the
+    // art box of the grown tile, in the focus tint and in the resting one
+    // a muted tile keeps. Until it lands the tile paints its resting copy.
+    in property <image> zoomed-cover;
+    in property <image> zoomed-cover-muted;
+    in property <bool> has-zoomed-cover: false;
+
+    // Exact-pixel contract. The software renderer samples bitmaps
+    // nearest-neighbor, so a glyph or logo fitted to a box that is not its
+    // own size loses or repeats rows and columns: uneven strokes, stepped
+    // diagonals. Where that renderer draws (`Motion.zoom-by-size`), these
+    // bitmaps are prepared for the whole pixels of the art box and painted
+    // at their own pixel size, centered on a whole pixel, never fitted.
+    property <bool> exact-art: Motion.zoom-by-size;
 
     property <length> outline-gap: Sizing.pct-h(0.4);
     property <length> outline-width: Sizing.focus-ring-width;
@@ -284,33 +301,6 @@ export component Tile inherits Rectangle {
     property <color> art-tint: (!root.muted && root.focused-selection) ? Theme.logo-focus-primary : Theme.logo-primary;
     property <bool> system-cover: root.cell.wordmark;
 
-    // Press cue: lowered on activate while focused, raised on release,
-    // on settling (screen going off-screen) and when the cell changes.
-    property <bool> pressed: false;
-    property <bool> mounted: false;
-    Timer {
-        interval: 1ms;
-        running: !root.mounted;
-        triggered => { root.mounted = true; }
-    }
-    property <{ activate: int, release: int }> press-signal: { activate: root.activate-pulse, release: root.release-pulse };
-    property <int> last-release: root.release-pulse;
-    changed press-signal => {
-        // A release arriving before the next paint wins over activation;
-        // independent changed callbacks have no guaranteed ordering.
-        if (root.release-pulse != root.last-release) {
-            root.pressed = false;
-        } else if (root.mounted && root.focused-selection) {
-            root.pressed = true;
-        }
-        root.last-release = root.release-pulse;
-    }
-    init => { root.last-release = root.release-pulse; }
-    changed settling => {
-        if (root.settling) { root.pressed = false; }
-    }
-    changed cell => { root.pressed = false; }
-
     // Held cue (Options -> Move), and only this: the WHOLE tile blinks out
     // of existence and back. No tint, no recolor, no lift -- nothing is
     // painted in that cell for the instant it is off, focus ring included,
@@ -320,20 +310,23 @@ export component Tile inherits Rectangle {
     // it. Under Reduce motion the tile just stays on: freezing a
     // disappear cue on "gone" would hide the very thing being moved, and
     // the help bar's move-mode line carries the state instead.
+    // Movement is already the cue: reveal immediately, then restart a full
+    // visible blink interval once the retained tile reaches its destination.
+    property <bool> blinking: root.held && !root.moving && Motion.enabled;
     property <bool> held-blink-on: true;
-    opacity: (root.held && Motion.enabled && !root.held-blink-on) ? 0.0 : 1.0;
+    opacity: (root.blinking && !root.held-blink-on) ? 0.0 : 1.0;
     Timer {
-        interval: Motion.dur(Motion.held-blink-ms);
-        running: root.held && Motion.enabled;
+        interval: Motion.held-blink-ms;
+        running: root.blinking;
         triggered => { root.held-blink-on = !root.held-blink-on; }
     }
-    changed held => { root.held-blink-on = true; }
+    changed blinking => { root.held-blink-on = true; }
 
     surface := PressableSurface {
         radius: root.card-radius;
-        face-color: root.quiet ? Theme.bg-bar : Theme.surface-card;
-        edge-color: root.quiet ? Theme.bg-bar : (root.muted ? Theme.border-mid : Theme.tile-edge);
-        pressed: root.pressed || root.press-held;
+        face-color: Theme.surface-card;
+        edge-color: root.muted ? Theme.border-mid : Theme.tile-edge;
+        pressed: root.press-held;
 
         // Focus ring inside the card edge: an accent pill and a face
         // colored mask punched back out of its center. Sized to the face
@@ -350,17 +343,22 @@ export component Tile inherits Rectangle {
                 y: root.outline-width;
                 width: parent.width - 2 * root.outline-width;
                 height: parent.height - 2 * root.outline-width;
-                background: root.quiet ? Theme.bg-bar : Theme.surface-card;
+                background: Theme.surface-card;
                 border-radius: Math.max(0px, parent.border-radius - root.outline-width);
             }
         }
 
+        // `zaparoo_app::sizing::tile_art_box` mirrors this box: covers are
+        // resized to it before they are cached. Change both together.
         property <length> art-top: root.has-top-label ? root.top-label-height + root.top-label-gap : root.pad;
         property <length> art-bottom: root.show-caption ? root.caption-height + root.caption-gap : root.pad;
         property <length> art-w: Math.max(0px, self.width - 2 * root.pad);
         property <length> art-h: Math.max(0px, self.face-height - self.art-top - self.art-bottom);
+        // The same box at the tile's settled size.
+        property <length> settled-art-w: Math.max(0px, self.art-w + root.settled-width - root.width);
+        property <length> settled-art-h: Math.max(0px, self.art-h + root.settled-height - root.height);
 
-        if root.has-top-label && !root.quiet: MarqueeCaption {
+        if root.has-top-label: MarqueeCaption {
             x: root.pad;
             y: 0;
             width: parent.art-w;
@@ -371,62 +369,97 @@ export component Tile inherits Rectangle {
             caption-color: root.focused-selection ? Theme.text-primary : Theme.text-label;
         }
 
-        if root.cell.glyph-key != "" && !root.quiet: Image {
-            x: root.pad;
-            y: parent.art-top;
-            width: parent.art-w;
-            height: parent.art-h;
-            source: GlyphSource.glyph(root.cell.glyph-key, Math.min(self.width, self.height), root.art-tint);
+        if root.cell.glyph-key != "": Image {
+            // The square raster is asked for at the whole pixels of the
+            // settled art box and painted at the size it came back at.
+            property <length> side: Math.min(parent.settled-art-w, parent.settled-art-h);
+            x: root.exact-art ? Math.round((root.pad + (parent.art-w - self.width) / 2) / 1px) * 1px : root.pad;
+            y: root.exact-art ? Math.round((parent.art-top + (parent.art-h - self.height) / 2) / 1px) * 1px : parent.art-top;
+            width: root.exact-art ? self.source.width * 1px : parent.art-w;
+            height: root.exact-art ? self.source.height * 1px : parent.art-h;
+            source: GlyphSource.glyph(root.cell.glyph-key,
+                root.exact-art ? Math.floor(self.side / 1px) * 1px : self.side, root.art-tint);
             image-fit: contain;
         }
 
-        if root.cell.glyph-key == "" && root.cell.has-cover && !root.quiet: Image {
+        // The art's own colour stands in until the art lands, then fades
+        // out as the art fades in over it.
+        if root.cell.glyph-key == "" && root.cell.has-placeholder: Rectangle {
             x: root.pad;
             y: parent.art-top;
             width: parent.art-w;
             height: parent.art-h;
-            source: (!root.muted && root.focused-selection && root.cell.has-cover-focus)
-                ? root.cell.cover-focus : root.cell.cover;
+            background: root.cell.placeholder;
+            border-radius: Math.max(0px, root.card-radius - root.pad);
+            opacity: 1;
+            states [
+                covered when root.cell.has-cover: {
+                    opacity: 0;
+                    in {
+                        animate opacity { duration: Motion.dur(Motion.tile-cover-reveal-ms); easing: ease-out; }
+                    }
+                }
+            ]
+        }
+
+        // Kept mounted so its art can fade in when it lands (see
+        // `Motion.tile-cover-reveal-ms`); invisible until then.
+        if root.cell.glyph-key == "": Image {
+            property <bool> zoomed: root.exact-art && root.cell.cover-exact && root.has-zoomed-cover;
+            // One pixel for one when the bitmap fits the box the tile is
+            // settling at; anything larger is fitted as it always was. The
+            // focused tile's larger copy is painted at once while the card
+            // grows to meet it, so it is never scaled on the way.
+            property <bool> exact: root.exact-art && root.cell.cover-exact
+                && self.source.width * 1px <= parent.settled-art-w + 0.01px
+                && self.source.height * 1px <= parent.settled-art-h + 0.01px;
+            x: self.exact ? Math.round((root.pad + (parent.art-w - self.width) / 2) / 1px) * 1px : root.pad;
+            y: self.exact ? Math.round((parent.art-top + (parent.art-h - self.height) / 2) / 1px) * 1px : parent.art-top;
+            width: self.exact ? self.source.width * 1px : parent.art-w;
+            height: self.exact ? self.source.height * 1px : parent.art-h;
+            source: self.zoomed
+                ? (root.muted ? root.zoomed-cover-muted : root.zoomed-cover)
+                : (!root.muted && root.focused-selection && root.cell.has-cover-focus)
+                    ? root.cell.cover-focus : root.cell.cover;
             image-fit: contain;
+            opacity: 0;
+            states [
+                shown when root.cell.has-cover: {
+                    opacity: 1;
+                    in {
+                        animate opacity { duration: Motion.dur(Motion.tile-cover-reveal-ms); easing: ease-out; }
+                    }
+                }
+            ]
         }
 
         // Wordmark fallback for a system without art; other tiles stay
         // blank until their art lands (the caption already names them).
-        // Slint has no fit mode, so rather than shrinking the wordmark
-        // until it fits, the size is capped to let two lines sit in the
-        // art area and the rest elides.
-        if root.cell.glyph-key == "" && !root.cell.has-cover && root.system-cover && !root.show-caption && !root.quiet: Text {
-            property <length> box-h: Math.max(0px, parent.art-h - 2 * Sizing.pct-h(1));
+        if root.cell.glyph-key == "" && !root.cell.has-cover && root.system-cover && !root.show-caption: Wordmark {
             x: root.pad + Sizing.pct-h(1);
             y: parent.art-top + Sizing.pct-h(1);
             width: Math.max(0px, parent.art-w - 2 * Sizing.pct-h(1));
-            height: self.box-h;
+            height: Math.max(0px, parent.art-h - 2 * Sizing.pct-h(1));
             text: root.cell.name;
-            color: root.art-tint;
-            font-size: Math.max(Sizing.font-size(2.8), Math.min(Sizing.font-size(5.8), Math.floor(self.box-h / 2 / 1.362 / 1px) * 1px));
-            font-weight: FontWeight.semi-bold;
-            wrap: word-wrap;
-            overflow: elide;
-            horizontal-alignment: center;
-            vertical-alignment: center;
+            ink: root.art-tint;
         }
 
-        if root.cell.favorite && !root.quiet: Image {
-            x: parent.width / 12;
-            y: parent.width / 12;
-            width: parent.width / 6;
+        if root.cell.favorite: Image {
+            x: root.exact-art ? Math.round(parent.width / 12 / 1px) * 1px : parent.width / 12;
+            y: self.x;
+            width: root.exact-art ? self.source.width * 1px : parent.width / 6;
             height: self.width;
-            source: GlyphSource.glyph("icons/Heart", self.width, Colors.transparent);
+            source: GlyphSource.glyph("icons/Heart", root.settled-width / 6, Colors.transparent);
             image-fit: contain;
         }
 
-        if root.show-caption && !root.quiet: MarqueeCaption {
+        if root.show-caption: MarqueeCaption {
             x: root.pad;
             y: parent.face-height - root.caption-height;
             width: parent.art-w;
             height: root.caption-height;
             content: root.caption;
-            tags: root.cell.tags;
+            tags: Labels.tags(root.cell.tags, root.cell.hidden);
             focused: root.focused-selection;
             caption-font-size: Sizing.font-small;
             caption-color: root.focused-selection ? Theme.text-primary : Theme.text-label;
@@ -464,13 +497,14 @@ export component PagedGridView inherits Rectangle {
     // as it did minus the ring. `section-focused` used to carry this and
     // dropped all four.
     in property <bool> ring-suppressed: false;
+    // The focused tile's larger copy of its art, for the cell at
+    // `focus-art-local` of this page; -1 while there is none to paint.
+    in property <image> focus-art;
+    in property <image> focus-art-muted;
+    in property <int> focus-art-local: -1;
     in property <bool> press-held: false;
-    in property <int> activate-pulse: 0;
-    in property <int> release-pulse: 0;
-    in property <bool> settling: false;
     in property <bool> compact-padding: false;
     in property <bool> show-caption: false;
-    in property <bool> quiet: false;
     in property <length> card-radius: Layout.card-radius;
     // Blank cells refuse the pointer while this is set.
     in property <bool> skip-empty-cells: false;
@@ -501,9 +535,14 @@ export component PagedGridView inherits Rectangle {
     // so the clip is widened by exactly that growth and the cell layer is
     // pushed back in by the same amount. Nothing moves, and a tile on the
     // grid's own edge is no longer trimmed on its outer side.
-    property <percent> zoom: Motion.enabled && !Sizing.crt ? Motion.focus-zoom : 100%;
+    property <percent> zoom: Motion.enabled ? Motion.focus-zoom : 100%;
     property <length> headroom:
         Math.max(root.cell-width, root.cell-height) * (Motion.focus-zoom - 100%) / 2;
+    // Where the growth is drawn by size (`Motion.zoom-by-size`) the ring is
+    // laid out on the grown cell, so it keeps its gap to the card's edge.
+    property <float> ring-grow: Motion.zoom-by-size ? root.zoom - 100% : 0%;
+    property <length> ring-grow-x: root.cell-width * root.ring-grow / 2;
+    property <length> ring-grow-y: root.cell-height * root.ring-grow / 2;
 
     Rectangle {
         x: -root.headroom;
@@ -533,16 +572,27 @@ export component PagedGridView inherits Rectangle {
             allowed: root.held-local >= 0 && i != root.held-local && parent.origin >= 0
                 && Math.abs(parent.origin-col - parent.cell-col) + Math.abs(parent.origin-row - parent.cell-row) == 1;
         }
-        x: root.left-inset + root.block-offset-x + self.cell-col * (root.cell-width + root.column-gap) + displacement.offset-x;
-        y: root.top-inset + root.block-offset-y + self.cell-row * (root.cell-height + root.row-gap) + displacement.offset-y;
-        width: root.cell-width;
-        height: root.cell-height;
+        property <bool> zoomed: root.has-selection && i == root.selected-local;
+        // The growth drawn by size, as a share of the cell: the cell's own
+        // rectangle grows about its center to the one the transform below
+        // would cover. It is a cut, not an animation: the growth is a few
+        // pixels, so its steps in between are whole-pixel jumps with the
+        // art resampled at each one, which reads as a shimmer. Zero
+        // wherever the transform does the work.
+        property <float> settled-grow: Motion.zoom-by-size && self.zoomed ? root.zoom - 100% : 0%;
+        property <float> grow: self.settled-grow;
+        x: root.left-inset + root.block-offset-x + self.cell-col * (root.cell-width + root.column-gap) + displacement.offset-x
+            - root.cell-width * self.grow / 2;
+        y: root.top-inset + root.block-offset-y + self.cell-row * (root.cell-height + root.row-gap) + displacement.offset-y
+            - root.cell-height * self.grow / 2;
+        width: root.cell-width * (1 + self.grow);
+        height: root.cell-height * (1 + self.grow);
         // On the cell, not on the Tile inside it: the Tile is destroyed
         // and rebuilt when focus moves, and a new element starts at its
         // target value, so an animation on it never runs. The cell
         // survives, so this scales both up and down.
-        transform-scale-x: root.has-selection && i == root.selected-local ? root.zoom : 100%;
-        transform-scale-y: root.has-selection && i == root.selected-local ? root.zoom : 100%;
+        transform-scale-x: !Motion.zoom-by-size && self.zoomed ? root.zoom : 100%;
+        transform-scale-y: !Motion.zoom-by-size && self.zoomed ? root.zoom : 100%;
         animate transform-scale-x, transform-scale-y {
             duration: Motion.dur(Motion.zoom-ms);
             easing: ease-out-quad;
@@ -550,34 +600,33 @@ export component PagedGridView inherits Rectangle {
 
         if !cell.is-empty && i != root.selected-local: Tile {
             cell: cell;
+            settled-width: root.cell-width * (1 + parent.settled-grow);
+            settled-height: root.cell-height * (1 + parent.settled-grow);
             selected: i == root.selected-local;
             section-focused: root.section-focused;
             focus-ready: root.focus-ready;
             held: i == root.held-local;
-            activate-pulse: root.activate-pulse;
-            release-pulse: root.release-pulse;
-            settling: root.settling;
             compact-padding: root.compact-padding;
             show-caption: root.show-caption;
-            quiet: root.quiet;
             caption: root.caption-for(cell);
             card-radius: root.card-radius;
         }
 
         if !cell.is-empty && i == root.selected-local && root.held-local < 0: Tile {
             cell: cell;
+            settled-width: root.cell-width * (1 + parent.settled-grow);
+            settled-height: root.cell-height * (1 + parent.settled-grow);
             selected: true;
+            zoomed-cover: root.focus-art;
+            zoomed-cover-muted: root.focus-art-muted;
+            has-zoomed-cover: root.focus-art-local == i;
             own-ring: false;
             press-held: root.press-held;
             section-focused: root.section-focused;
             focus-ready: root.focus-ready;
             held: i == root.held-local;
-            activate-pulse: root.activate-pulse;
-            release-pulse: root.release-pulse;
-            settling: root.settling;
             compact-padding: root.compact-padding;
             show-caption: root.show-caption;
-            quiet: root.quiet;
             caption: root.caption-for(cell);
             card-radius: root.card-radius;
         }
@@ -610,24 +659,25 @@ export component PagedGridView inherits Rectangle {
 
     // Scales about the same centre as the tile, so the ring stays on it.
     FocusCursor {
-        transform-scale-x: root.zoom;
-        transform-scale-y: root.zoom;
+        transform-scale-x: Motion.zoom-by-size ? 100% : root.zoom;
+        transform-scale-y: Motion.zoom-by-size ? 100% : root.zoom;
         animate transform-scale-x, transform-scale-y {
             duration: Motion.dur(Motion.zoom-ms);
             easing: ease-out-quad;
         }
         motion: Motion.enabled && root.focus-motion;
         radius: Math.max(0px, root.card-radius - root.ring-gap);
-        target: { x: root.selected-x + root.ring-gap, y: root.selected-y + root.ring-gap + root.press-y,
-            w: root.cell-width - 2 * root.ring-gap,
-            h: root.cell-height - Sizing.press-edge-height - 2 * root.ring-gap,
+        target: { x: root.selected-x + root.ring-gap - root.ring-grow-x,
+            y: root.selected-y + root.ring-gap + root.press-y - root.ring-grow-y,
+            w: root.cell-width - 2 * root.ring-gap + 2 * root.ring-grow-x,
+            h: root.cell-height - Sizing.press-edge-height - 2 * root.ring-gap + 2 * root.ring-grow-y,
             column: root.selected-col, row: root.selected-row, scope: root.focus-scope,
             valid: root.has-selection && root.held-local < 0 && !root.ring-suppressed };
     }
 
     // One retained held tile retargets from its current position on repeated
     // moves. Cross-page changes snap through focus-scope, like the cursor.
-    FocusCursor {
+    held-cursor := FocusCursor {
         motion: Motion.enabled && root.focus-motion;
         stroke: 0px;
         target: { x: root.selected-x, y: root.selected-y,
@@ -638,9 +688,9 @@ export component PagedGridView inherits Rectangle {
             cell: root.cells[root.selected-local];
             selected: true;
             held: true;
+            moving: held-cursor.moving || !root.focus-motion;
             compact-padding: root.compact-padding;
             show-caption: root.show-caption;
-            quiet: root.quiet;
             caption: root.caption-for(root.cells[root.selected-local]);
             card-radius: root.card-radius;
         }

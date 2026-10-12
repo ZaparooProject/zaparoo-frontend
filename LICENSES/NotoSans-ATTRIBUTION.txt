@@ -11,6 +11,7 @@ This software bundles Noto Sans font files under resources/fonts/:
   resources/fonts/runtime/NotoSansHebrew-Regular.ttf
   resources/fonts/runtime/NotoSansJP-Regular.ttf
   resources/fonts/runtime/NotoSansKR-Regular.ttf
+  resources/fonts/runtime/NotoSansSC-Regular.ttf
   resources/fonts/runtime/NotoSansTC-Regular.ttf
 
 The files under resources/fonts/runtime/ are static Regular instances cut
@@ -21,7 +22,7 @@ Sources:
   Noto Sans / Noto Sans Arabic / Devanagari / Hebrew
   https://github.com/notofonts/
 
-  Noto Sans CJK (JP, KR, TC)
+  Noto Sans CJK (JP, KR, SC, TC)
   https://github.com/notofonts/noto-cjk
 
 Copyright 2022 The Noto Project Authors and contributors.

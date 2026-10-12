@@ -24,7 +24,7 @@ fn default_true() -> bool {
     true
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SystemInfo {
     pub id: String,
@@ -81,6 +81,13 @@ pub struct MediaSearchParams {
     /// `name-asc`, `name-desc`, `filename-asc`, and `filename-desc`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sort: Option<String>,
+    /// Limit results to media at or below this folder or virtual route.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path_prefix: Option<String>,
+    /// Include media tagged `user:hidden` or under a hidden folder. Repeat
+    /// on every cursor page.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub include_hidden: Option<bool>,
 }
 
 /// Image types Core's `media.image` endpoint can actually serve.
@@ -108,6 +115,45 @@ pub struct TagInfo {
     pub tag_type: String,
     #[serde(default)]
     pub label: String,
+    /// Games carrying this tag. Core sends it on `media.tags` but the
+    /// upstream docs do not list it, so it is optional (0 when absent).
+    #[serde(default)]
+    pub count: i64,
+}
+
+/// Parameters for `media.tags`: the tags available for filtering, scoped to
+/// the given systems (all systems when empty).
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaTagsParams {
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub systems: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct MediaTagsResult {
+    #[serde(default)]
+    pub tags: Vec<TagInfo>,
+}
+
+/// One deck as the `decks` list names it. Core sends more (description,
+/// timestamps, ownership); the frontend reads only what it shows.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeckInfo {
+    /// Also the value of the deck's membership tag, `user:deck:<id>`.
+    #[serde(default)]
+    pub deck_id: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub item_count: u32,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct DecksResult {
+    #[serde(default)]
+    pub decks: Vec<DeckInfo>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -143,6 +189,11 @@ pub struct MediaItem {
     /// probe `media.image`.
     #[serde(default = "default_true")]
     pub has_cover: bool,
+    /// Core's average colour of the cover thumbnail, as `#rrggbb`, for a
+    /// placeholder until the art itself loads. Omitted when Core has not
+    /// sized that cover yet, and by Core builds that predate it.
+    #[serde(default)]
+    pub cover_color: Option<String>,
 }
 
 impl Default for MediaItem {
@@ -157,6 +208,7 @@ impl Default for MediaItem {
             disambiguating_tags: Vec::new(),
             relative_path: None,
             has_cover: true,
+            cover_color: None,
         }
     }
 }
@@ -251,6 +303,9 @@ pub struct MediaBrowseParams {
     pub path: String,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub systems: Vec<String>,
+    /// Include media tagged `user:hidden`. Repeat on every cursor page.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub include_hidden: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_results: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -315,8 +370,9 @@ pub struct BrowseEntry {
     pub group: String,
     #[serde(default)]
     pub description: String,
-    /// Tags attached to media-capable entries. Empty for normal folders;
-    /// Core can populate this on singleton media-container directories.
+    /// Tags attached to media-capable entries, singleton media-container
+    /// directories included. A normal folder carries only `user:hidden`,
+    /// and only when hidden entries were asked for.
     #[serde(default)]
     pub tags: Vec<TagInfo>,
     /// Subset of `tags` whose values differ across same-named siblings of this
@@ -327,9 +383,20 @@ pub struct BrowseEntry {
     /// When `false`, Core has confirmed this media has no cover image in
     /// its properties tables. Defaults to `true` when the field is absent
     /// (older Core builds don't send it) so cover requests are still made.
-    /// Only meaningful for `media` entries; folders always behave as `true`.
+    /// On a folder it reports artwork of the folder's own or, for a
+    /// media-container directory, of its launch target.
     #[serde(default = "default_true")]
     pub has_cover: bool,
+    /// Core's average colour of the cover thumbnail, as `#rrggbb`, for a
+    /// placeholder until the art itself loads. Omitted when Core has not
+    /// sized that cover yet, and by Core builds that predate it.
+    #[serde(default)]
+    pub cover_color: Option<String>,
+    /// A `directory` entry standing for several disc images of one game. Its
+    /// launch fields point at one disc, whose `disc` tag stays in `tags`; the
+    /// others are listed by browsing the entry's `path`.
+    #[serde(default)]
+    pub multi_disc: bool,
 }
 
 impl Default for BrowseEntry {
@@ -351,6 +418,8 @@ impl Default for BrowseEntry {
             // Default to true so callers that don't set this field (tests,
             // struct-update syntax) still request covers from Core.
             has_cover: true,
+            cover_color: None,
+            multi_disc: false,
         }
     }
 }
@@ -369,6 +438,11 @@ impl BrowseEntry {
 pub struct MediaBrowseResult {
     #[serde(default)]
     pub path: String,
+    /// Core's launcher-relative path of the browsed folder itself. Present
+    /// only for a single-system browse of a folder under that system's
+    /// launcher folders, and absent from Core builds that predate it.
+    #[serde(default)]
+    pub relative_path: Option<String>,
     pub entries: Vec<BrowseEntry>,
     #[serde(default)]
     pub total_files: u32,
@@ -400,6 +474,9 @@ pub struct MediaBrowseIndexParams {
     pub path: String,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub systems: Vec<String>,
+    /// Must match the visibility mode of the corresponding browse pages.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub include_hidden: Option<bool>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -426,9 +503,11 @@ pub struct BrowseIndexGroup {
     pub count: u32,
     #[serde(default)]
     pub cursor: String,
-    /// 0-based position of the bucket's first item among the scope's files
-    /// (excludes leading directories, which the client adds). Authoritative
-    /// browse-order position from Core, used to jump to the bucket.
+    /// 0-based position of the bucket's first item, in browse order: among
+    /// the scope's files (excluding leading directories, which the client
+    /// adds), or among its directories when the index describes those
+    /// (`MediaBrowseIndexResult::indexes_directories`). Authoritative
+    /// position from Core, used to jump to the bucket.
     #[serde(default)]
     pub offset: u32,
 }
@@ -443,8 +522,23 @@ pub struct MediaBrowseIndexResult {
     pub scheme: String,
     #[serde(default)]
     pub total_files: u32,
+    /// What the buckets count: `media` (files), or `directory` for a
+    /// folder that holds only directories, such as a system whose games
+    /// each live in their own folder. Absent from a Core that predates it,
+    /// which only ever indexed files.
+    #[serde(default)]
+    pub entry_type: String,
     #[serde(default)]
     pub groups: Vec<BrowseIndexGroup>,
+}
+
+impl MediaBrowseIndexResult {
+    /// Whether the buckets' offsets are positions among the scope's
+    /// directory entries rather than its files. Any other value, a future
+    /// one included, reads as files: the only shape older clients know.
+    pub fn indexes_directories(&self) -> bool {
+        self.entry_type == "directory"
+    }
 }
 
 /// Parameters for `media.history`. Cursor-driven pagination shares the
@@ -490,6 +584,17 @@ pub struct MediaHistoryEntry {
     pub media_name: String,
     #[serde(default)]
     pub media_path: String,
+    /// Core's launcher-relative path for this media. `None` when Core could
+    /// not derive one.
+    #[serde(default)]
+    pub relative_path: Option<String>,
+    /// Core's title command for this media. Empty when the media is no
+    /// longer indexed, and from Core builds that predate the field.
+    #[serde(default)]
+    pub zap_script: String,
+    /// Current tags when Core can resolve this history entry to indexed media.
+    #[serde(default, deserialize_with = "deserialize_null_default")]
+    pub tags: Vec<TagInfo>,
     #[serde(default)]
     pub launcher_id: String,
     #[serde(default)]
@@ -505,6 +610,11 @@ pub struct MediaHistoryEntry {
     /// probe `media.image`.
     #[serde(default = "default_true")]
     pub has_cover: bool,
+    /// Core's average colour of the cover thumbnail, as `#rrggbb`, for a
+    /// placeholder until the art itself loads. Omitted when Core has not
+    /// sized that cover yet, and by Core builds that predate it.
+    #[serde(default)]
+    pub cover_color: Option<String>,
 }
 
 impl Default for MediaHistoryEntry {
@@ -515,11 +625,15 @@ impl Default for MediaHistoryEntry {
             system_name: String::new(),
             media_name: String::new(),
             media_path: String::new(),
+            relative_path: None,
+            zap_script: String::new(),
+            tags: Vec::new(),
             launcher_id: String::new(),
             started_at: String::new(),
             ended_at: None,
             play_time: 0,
             has_cover: true,
+            cover_color: None,
         }
     }
 }
@@ -557,6 +671,10 @@ pub struct MediaHistoryLatestEntry {
     pub media_name: String,
     #[serde(default)]
     pub media_path: String,
+    /// Core's launcher-relative path for this media. `None` when Core could
+    /// not derive one, and from Core builds that predate the field.
+    #[serde(default)]
+    pub relative_path: Option<String>,
     #[serde(default)]
     pub launcher_id: String,
     #[serde(default)]
@@ -647,6 +765,27 @@ pub struct MediaImageResult {
     pub type_tag: String,
 }
 
+/// Parameters for `media.lookup`: resolve a game name within one system to
+/// its indexed media row, through the title matcher `@System/Name` launches
+/// use.
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaLookupParams {
+    pub system: String,
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fuzzy_system: Option<bool>,
+}
+
+/// Response for `media.lookup`. The match has the `media.search` row shape
+/// (plus a `confidence` score this client does not read) and is `None` when
+/// Core found no title or was not confident enough in one.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct MediaLookupResult {
+    #[serde(default, rename = "match")]
+    pub matched: Option<MediaItem>,
+}
+
 /// Parameters for `media.meta`. Identifies the media row by `media_id`
 /// when available, otherwise by `(system, path)`. The result includes
 /// ROM-level and title-level metadata — tags, properties (text or
@@ -677,6 +816,17 @@ impl MediaMetaParams {
             system: String::new(),
             path: String::new(),
         }
+    }
+
+    /// For a browse row, which may or may not carry Core's id. Core
+    /// rejects a request that names both the id and the pair, so the id
+    /// is sent alone when the row has one.
+    pub fn for_row(
+        media_id: Option<i64>,
+        system: impl Into<String>,
+        path: impl Into<String>,
+    ) -> Self {
+        media_id.map_or_else(|| Self::for_media(system, path), Self::for_media_id)
     }
 }
 
@@ -729,6 +879,14 @@ pub struct MediaMetaResult {
 pub struct MediaMeta {
     #[serde(default)]
     pub path: String,
+    /// Core's launcher-relative path for this media. `None` when Core could
+    /// not derive one, and from Core builds that predate the field.
+    #[serde(default)]
+    pub relative_path: Option<String>,
+    /// Core's title command for this media. Empty for a missing row, and
+    /// from Core builds that predate the field.
+    #[serde(default)]
+    pub zap_script: String,
     #[serde(default)]
     pub parent_dir: String,
     #[serde(default)]
@@ -830,17 +988,33 @@ pub struct MediaIndexParams {
     pub systems: Option<Vec<String>>,
 }
 
+/// One indexed item for `media.scrape` to run over instead of whole
+/// systems. Core takes exactly one form, and prefers the media ID where
+/// the client has it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum MediaScrapeScope {
+    /// An indexed media ID, as `media.browse` and `media.search` list it.
+    MediaId(i64),
+    /// One indexed file or virtual URI, matched exactly within a system.
+    File { system: String, path: String },
+}
+
 /// Parameters for `media.scrape` — runs the named scraper across the
 /// indexed media database. `scraper_id` is required server-side
 /// (validated as `min=1`); the frontend resolves it from the `scrapers`
-/// RPC. `systems` optionally narrows the run; `force` re-scrapes media
-/// already attached to a title slug.
+/// RPC. `systems` optionally narrows the run, or `scope` narrows it to one
+/// item: Core refuses the two together, an empty `systems` included, so a
+/// scoped request leaves `systems` empty. `force` re-scrapes media already
+/// attached to a title slug.
 #[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MediaScrapeParams {
     pub scraper_id: String,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub systems: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scope: Option<MediaScrapeScope>,
     #[serde(default)]
     pub force: bool,
 }
@@ -1026,6 +1200,283 @@ pub struct SystemDefault {
 pub struct SettingsResult {
     #[serde(default)]
     pub system_defaults: Vec<SystemDefault>,
+    /// Play history upload consent. Core returns it only to local and admin
+    /// clients, so its presence is also the capability to change it.
+    #[serde(default)]
+    pub playtime_sync_enabled: Option<bool>,
+    /// The Zaparoo Online service Core links accounts against. Local and
+    /// admin clients only.
+    #[serde(default)]
+    pub online_base_url: Option<String>,
+    /// Whether a linked account may send this device remote commands. Local
+    /// and admin clients only, like every other Online consent setting here.
+    #[serde(default)]
+    pub remote_control_enabled: Option<bool>,
+    /// Whether this device's game list, favorites, likes and decks sync with
+    /// a linked account.
+    #[serde(default)]
+    pub library_sync_enabled: Option<bool>,
+    /// Whether this device uploads scheduled backups to a linked account.
+    /// Scheduling itself still needs Zaparoo Warp; see `BackupStatusResponse`.
+    #[serde(default)]
+    pub backup_remote_enabled: Option<bool>,
+    /// "daily", "weekly", or "manual".
+    #[serde(default)]
+    pub backup_remote_schedule: Option<String>,
+}
+
+/// `settings.auth.status`: whether Core holds a credential for a URL. No
+/// token material ever comes back.
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+pub struct AuthStatusResult {
+    #[serde(default)]
+    pub linked: bool,
+}
+
+/// A `settings.auth.link*` status. The code and URLs come only with the
+/// link call's own answer and a local status poll; notifications omit them.
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AuthLinkStatus {
+    #[serde(default)]
+    pub status: String,
+    #[serde(default)]
+    pub user_code: String,
+    #[serde(default)]
+    pub verification_url: String,
+    #[serde(default)]
+    pub verification_url_complete: String,
+    #[serde(default)]
+    pub expires_at: String,
+    #[serde(default)]
+    pub error: String,
+}
+
+/// One category's current backup accounting: how much it holds, and
+/// whether it is included at all (a device with nothing to back up for a
+/// category still reports it, `enabled: false`).
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupCategoryStatus {
+    #[serde(default)]
+    pub files: i64,
+    #[serde(default)]
+    pub bytes: i64,
+    #[serde(default)]
+    pub enabled: bool,
+}
+
+/// One file or folder a backup pass could not collect, and why.
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupWarning {
+    #[serde(default)]
+    pub category: String,
+    #[serde(default)]
+    pub path: String,
+    #[serde(default)]
+    pub reason: String,
+}
+
+/// One of `BackupStatusResponse`'s two sides (local, remote): the same
+/// shape either way, though a field only ever means something on one side
+/// (`deviceName`/`linkedAt`/`availability` are remote-only; Core sends its
+/// zero value on the other side rather than omitting the field).
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupStatusEntry {
+    #[serde(default)]
+    pub last_run_at: Option<String>,
+    #[serde(default)]
+    pub last_success_at: Option<String>,
+    #[serde(default)]
+    pub last_snapshot_created_at: Option<String>,
+    #[serde(default)]
+    pub availability_checked_at: Option<String>,
+    #[serde(default)]
+    pub device_name: Option<String>,
+    #[serde(default)]
+    pub linked_at: Option<String>,
+    #[serde(default)]
+    pub categories: HashMap<String, BackupCategoryStatus>,
+    /// "daily", "weekly", or "manual"; meaningless on the local side.
+    #[serde(default)]
+    pub schedule: String,
+    #[serde(default)]
+    pub last_error: String,
+    /// "available", "unavailable", or "" while Core is still checking
+    /// (Zaparoo Warp); meaningless on the local side.
+    #[serde(default)]
+    pub availability: String,
+    #[serde(default)]
+    pub last_status: String,
+    #[serde(default)]
+    pub warnings: Vec<BackupWarning>,
+    #[serde(default)]
+    pub last_backup_size: i64,
+    #[serde(default)]
+    pub skipped_files: i64,
+    #[serde(default)]
+    pub linked: bool,
+    #[serde(default)]
+    pub enabled: bool,
+    /// The most recent successful run found the account already held an
+    /// identical snapshot: `lastSuccessAt` still advanced, nothing new was
+    /// stored.
+    #[serde(default)]
+    pub last_run_no_changes: bool,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupStatusResponse {
+    #[serde(default)]
+    pub active_since: Option<String>,
+    #[serde(default)]
+    pub active_operation: String,
+    #[serde(default)]
+    pub local: BackupStatusEntry,
+    #[serde(default)]
+    pub remote: BackupStatusEntry,
+}
+
+/// Identifies the account device that created a cloud snapshot. `current`
+/// is relative to the device asking, so exactly one entry in a listing
+/// (if any) ever has it set.
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupRemoteSourceDevice {
+    #[serde(default)]
+    pub platform: Option<String>,
+    #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub linked: bool,
+    #[serde(default)]
+    pub current: bool,
+}
+
+/// One cloud snapshot's metadata, as the account's own catalog answers it
+/// (listing) or as the snapshot a run just created/a restore just read
+/// (`backup`/`restoredFrom` below).
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupRemoteInfo {
+    #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    pub created_at: String,
+    #[serde(default)]
+    pub core_version: Option<String>,
+    #[serde(default)]
+    pub platform: Option<String>,
+    #[serde(default)]
+    pub verified_at: Option<String>,
+    #[serde(default)]
+    pub restored_at: Option<String>,
+    #[serde(default)]
+    pub source_device: Option<BackupRemoteSourceDevice>,
+    #[serde(default)]
+    pub categories: HashMap<String, BackupCategorySummary>,
+    #[serde(default)]
+    pub size_bytes: i64,
+    /// This snapshot was committed with a newer schema than this Core
+    /// supports: it still lists, but refuses to restore.
+    #[serde(default)]
+    pub incompatible: bool,
+}
+
+/// A cloud snapshot's per-category footprint: just the accounting, since a
+/// listed snapshot has nothing to enable or disable.
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupCategorySummary {
+    #[serde(default)]
+    pub files: i64,
+    #[serde(default)]
+    pub bytes: i64,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupRemoteListResult {
+    #[serde(default)]
+    pub items: Vec<BackupRemoteInfo>,
+    #[serde(default)]
+    pub storage_used_bytes: i64,
+    #[serde(default)]
+    pub storage_quota_bytes: i64,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupRemoteRunResult {
+    #[serde(default)]
+    pub backup: BackupRemoteInfo,
+    #[serde(default)]
+    pub warnings: Vec<BackupWarning>,
+    #[serde(default)]
+    pub uploaded_files: i64,
+    #[serde(default)]
+    pub deduped_files: i64,
+    #[serde(default)]
+    pub skipped_files: i64,
+    #[serde(default)]
+    pub uploaded_bytes: i64,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupRemoteRestoreResult {
+    #[serde(default)]
+    pub restored_from: BackupRemoteInfo,
+}
+
+/// One remote operation Core already executed or attempted for the
+/// account, newest-first play-by-play for the Remote activity page.
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteActivityEntry {
+    #[serde(default)]
+    pub created_at: String,
+    #[serde(default)]
+    pub operation_type: String,
+    #[serde(default)]
+    pub origin_kind: String,
+    #[serde(default)]
+    pub origin_key_name: String,
+    #[serde(default)]
+    pub state: String,
+    #[serde(default)]
+    pub status: String,
+    #[serde(default)]
+    pub error_code: String,
+}
+
+/// The remote operations poller's last observation: why this device is or
+/// is not currently reachable for a linked account's commands. `state` is
+/// one of unknown, disabled, unlinked, connecting, waiting,
+/// `not_remote_device`, unavailable, `credential_rejected`, or error.
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteStatusInfo {
+    #[serde(default)]
+    pub state: String,
+    #[serde(default)]
+    pub last_contact_at: String,
+    #[serde(default)]
+    pub last_error_code: String,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteActivityResult {
+    #[serde(default)]
+    pub status: RemoteStatusInfo,
+    #[serde(default)]
+    pub entries: Vec<RemoteActivityEntry>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
@@ -1096,6 +1547,17 @@ pub struct TokensHistoryResult {
 pub struct UpdateSettingsParams {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub system_defaults: Option<Vec<SystemDefault>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub playtime_sync_enabled: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub remote_control_enabled: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub library_sync_enabled: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub backup_remote_enabled: Option<bool>,
+    /// "daily", "weekly", or "manual"; Core rejects any other value.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub backup_remote_schedule: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
@@ -1109,6 +1571,20 @@ pub struct LauncherInfo {
     pub system_name: String,
     #[serde(default)]
     pub groups: Vec<String>,
+    /// Whether this launcher's runtime dependencies are currently satisfied.
+    /// Required on the wire; defaults to `false` (fail closed) if an older
+    /// fixture or Core build omits it.
+    #[serde(default)]
+    pub available: bool,
+    /// Why `available` is `false`. Plain English from Core, not a stable,
+    /// localizable contract (same status as an error's `message`): show it
+    /// only as a last resort, never as the primary reason wording.
+    #[serde(default)]
+    pub availability_reason: Option<String>,
+    /// Whether the platform looked for this launcher and found it installed.
+    /// `None` means the platform never checks (unknown, not "missing").
+    #[serde(default)]
+    pub detected: Option<bool>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -1194,6 +1670,17 @@ pub struct VersionResult {
     pub platform: String,
 }
 
+/// `clients.pair.start`: the PIN to read out and Core's own deadline for
+/// it, in whole seconds since the Unix epoch.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PairStartResult {
+    #[serde(default)]
+    pub pin: String,
+    #[serde(default)]
+    pub expires_at: i64,
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(
@@ -1204,15 +1691,16 @@ mod tests {
     )]
 
     use super::{
-        merged_root_view, BrowseEntry, HealthResult, IndexingStatusResponse, LaunchersResult,
-        LogDownloadResult, MediaBrowseIndexParams, MediaBrowseIndexResult, MediaBrowseParams,
-        MediaBrowseResult, MediaHistoryEntry, MediaHistoryLatestResult, MediaHistoryParams,
-        MediaHistoryResult, MediaImageParams, MediaImageResult, MediaIndexParams, MediaItem,
+        merged_root_view, BrowseEntry, DecksResult, HealthResult, IndexingStatusResponse,
+        LauncherInfo, LaunchersResult, LogDownloadResult, MediaBrowseIndexParams,
+        MediaBrowseIndexResult, MediaBrowseParams, MediaBrowseResult, MediaHistoryEntry,
+        MediaHistoryLatestResult, MediaHistoryParams, MediaHistoryResult, MediaImageParams,
+        MediaImageResult, MediaIndexParams, MediaItem, MediaLookupParams, MediaLookupResult,
         MediaMetaParams, MediaMetaResult, MediaMetaUpdateParams, MediaResult, MediaScrapeParams,
-        MediaSearchParams, MediaSearchResult, ReaderInfo, ReadersResult, ScrapersResult,
-        ScrapingStatusResponse, SettingsResult, SystemDefault, SystemsParams, SystemsResult,
-        TagInfo, TokensHistoryResult, TokensResult, UpdateSettingsParams, VersionResult,
-        MEDIA_IMAGE_DELIVERY_LOCAL_PATH,
+        MediaScrapeScope, MediaSearchParams, MediaSearchResult, ReaderInfo, ReadersResult,
+        ScrapersResult, ScrapingStatusResponse, SettingsResult, SystemDefault, SystemsParams,
+        SystemsResult, TagInfo, TokensHistoryResult, TokensResult, UpdateSettingsParams,
+        VersionResult, MEDIA_IMAGE_DELIVERY_LOCAL_PATH,
     };
 
     #[test]
@@ -1382,6 +1870,24 @@ mod tests {
     }
 
     #[test]
+    fn decks_result_reads_ids_and_names_and_ignores_the_rest() {
+        let result: DecksResult = serde_json::from_value(serde_json::json!({
+            "decks": [
+                { "deckId": "0k3v9x2rq7bm", "name": "Couch co-op", "itemCount": 8,
+                  "description": "x", "owned": true, "locked": false,
+                  "createdAt": 1, "updatedAt": 2 },
+                { "deckId": "aa11bb22" }
+            ]
+        }))
+        .expect("decks");
+        assert_eq!(result.decks.len(), 2);
+        assert_eq!(result.decks[0].deck_id, "0k3v9x2rq7bm");
+        assert_eq!(result.decks[0].name, "Couch co-op");
+        assert_eq!(result.decks[0].item_count, 8);
+        assert_eq!(result.decks[1].name, "");
+    }
+
+    #[test]
     fn media_search_params_omits_unset_fields() {
         let params = MediaSearchParams::default();
         let json = serde_json::to_value(&params).expect("serialise");
@@ -1399,10 +1905,18 @@ mod tests {
             tags: vec!["region:usa".into()],
             letter: Some("M".into()),
             sort: Some("name-asc".into()),
+            path_prefix: Some("/roms/SNES/RPG".into()),
+            include_hidden: Some(true),
         };
         let json = serde_json::to_value(&params).expect("serialise");
         let object = json.as_object().expect("object");
         assert_eq!(object.get("query").and_then(|v| v.as_str()), Some("mario"));
+        assert_eq!(
+            object
+                .get("includeHidden")
+                .and_then(serde_json::Value::as_bool),
+            Some(true)
+        );
         assert_eq!(
             object.get("maxResults").and_then(serde_json::Value::as_u64),
             Some(50)
@@ -1419,6 +1933,10 @@ mod tests {
         assert_eq!(
             object.get("tags").and_then(|v| v.as_array()).map(Vec::len),
             Some(1)
+        );
+        assert_eq!(
+            object.get("pathPrefix").and_then(|v| v.as_str()),
+            Some("/roms/SNES/RPG")
         );
         assert!(!object.contains_key("fuzzySystem"));
     }
@@ -1548,6 +2066,7 @@ mod tests {
             tags: vec!["user:favorite".into()],
             sort: None,
             root_view: None,
+            include_hidden: Some(false),
         };
         let json = serde_json::to_value(&params).expect("serialise");
         let object = json.as_object().expect("object");
@@ -1602,6 +2121,7 @@ mod tests {
             letter: Some("M".into()),
             sort: Some("name-asc".into()),
             root_view: None,
+            include_hidden: Some(true),
         };
         let json = serde_json::to_value(&params).expect("serialise");
         let object = json.as_object().expect("object");
@@ -1630,6 +2150,54 @@ mod tests {
             Some(1)
         );
         assert!(!object.contains_key("fuzzySystem"));
+        assert_eq!(
+            object
+                .get("includeHidden")
+                .and_then(serde_json::Value::as_bool),
+            Some(true)
+        );
+    }
+
+    #[test]
+    fn browse_and_letter_index_share_the_optional_visibility_flag() {
+        for include_hidden in [None, Some(false), Some(true)] {
+            let browse = serde_json::to_value(MediaBrowseParams {
+                include_hidden,
+                ..MediaBrowseParams::default()
+            })
+            .expect("serialize browse");
+            let index = serde_json::to_value(MediaBrowseIndexParams {
+                include_hidden,
+                ..MediaBrowseIndexParams::default()
+            })
+            .expect("serialize index");
+            assert_eq!(
+                browse
+                    .get("includeHidden")
+                    .and_then(serde_json::Value::as_bool),
+                include_hidden
+            );
+            assert_eq!(index.get("includeHidden"), browse.get("includeHidden"));
+            assert!(!browse
+                .as_object()
+                .expect("object")
+                .contains_key("include_hidden"));
+        }
+    }
+
+    #[test]
+    fn history_deserializes_current_hidden_tags_and_older_responses() {
+        let tagged: MediaHistoryEntry = serde_json::from_value(serde_json::json!({
+            "mediaId": 42,
+            "tags": [{"type": "user", "tag": "hidden"}]
+        }))
+        .expect("tagged history");
+        assert_eq!(tagged.tags.len(), 1);
+        assert_eq!(tagged.tags[0].tag, "hidden");
+        for response in [serde_json::json!({}), serde_json::json!({"tags": null})] {
+            let older: MediaHistoryEntry = serde_json::from_value(response).expect("older history");
+            assert!(older.tags.is_empty());
+        }
     }
 
     #[test]
@@ -1792,6 +2360,84 @@ mod tests {
     }
 
     #[test]
+    fn portable_identifiers_parse_where_core_sends_them_and_default_where_it_does_not() {
+        let history: MediaHistoryResult = serde_json::from_str(
+            r#"{"entries": [
+                {"systemId": "SNES", "mediaPath": "/roms/snes/smw.sfc",
+                 "relativePath": "SNES/smw.sfc", "zapScript": "@SNES/Super Mario World"},
+                {"systemId": "SNES", "mediaPath": "/roms/snes/gone.sfc"}
+            ]}"#,
+        )
+        .expect("history");
+        assert_eq!(
+            history.entries[0].relative_path.as_deref(),
+            Some("SNES/smw.sfc")
+        );
+        assert_eq!(history.entries[0].zap_script, "@SNES/Super Mario World");
+        assert!(history.entries[1].relative_path.is_none());
+        assert!(history.entries[1].zap_script.is_empty());
+
+        let latest: MediaHistoryLatestResult = serde_json::from_str(
+            r#"{"entry": {"mediaPath": "/roms/snes/smw.sfc", "relativePath": "SNES/smw.sfc"}}"#,
+        )
+        .expect("latest");
+        assert_eq!(
+            latest.entry.expect("entry").relative_path.as_deref(),
+            Some("SNES/smw.sfc")
+        );
+
+        let meta: MediaMetaResult = serde_json::from_str(
+            r#"{"media": {"path": "/roms/snes/smw.sfc", "relativePath": "SNES/smw.sfc",
+                "zapScript": "@SNES/Super Mario World"}}"#,
+        )
+        .expect("meta");
+        assert_eq!(meta.media.relative_path.as_deref(), Some("SNES/smw.sfc"));
+        assert_eq!(meta.media.zap_script, "@SNES/Super Mario World");
+        let older: MediaMetaResult =
+            serde_json::from_str(r#"{"media": {"path": "/roms/snes/smw.sfc"}}"#).expect("older");
+        assert!(older.media.relative_path.is_none());
+        assert!(older.media.zap_script.is_empty());
+    }
+
+    #[test]
+    fn media_lookup_parses_a_match_and_a_null_match() {
+        let params = serde_json::to_value(MediaLookupParams {
+            system: "SNES".into(),
+            name: "Super Mario World".into(),
+            fuzzy_system: None,
+        })
+        .expect("params");
+        assert_eq!(
+            params,
+            serde_json::json!({"system": "SNES", "name": "Super Mario World"})
+        );
+
+        let found: MediaLookupResult = serde_json::from_str(
+            r#"{"match": {
+                "mediaId": 42,
+                "system": {"id": "SNES", "name": "Super Nintendo Entertainment System"},
+                "name": "Super Mario World",
+                "path": "/roms/snes/Super Mario World (USA).sfc",
+                "relativePath": "SNES/Super Mario World (USA).sfc",
+                "zapScript": "@SNES/Super Mario World",
+                "tags": [],
+                "confidence": 0.95
+            }}"#,
+        )
+        .expect("match");
+        let matched = found.matched.expect("matched");
+        assert_eq!(matched.path, "/roms/snes/Super Mario World (USA).sfc");
+        assert_eq!(
+            matched.relative_path.as_deref(),
+            Some("SNES/Super Mario World (USA).sfc")
+        );
+        assert_eq!(matched.zap_script, "@SNES/Super Mario World");
+
+        let none: MediaLookupResult = serde_json::from_str(r#"{"match": null}"#).expect("null");
+        assert!(none.matched.is_none());
+    }
+
+    #[test]
     fn tag_info_parses_label() {
         let tag: TagInfo =
             serde_json::from_str(r#"{"type":"developer","tag":"nintendo","label":"Nintendo"}"#)
@@ -1937,6 +2583,19 @@ mod tests {
             Some("/roms/snes/x.sfc")
         );
         assert!(!object.contains_key("mediaId"));
+    }
+
+    #[test]
+    fn media_meta_params_for_a_row_never_mix_the_id_with_the_pair() {
+        let with_id = serde_json::to_value(MediaMetaParams::for_row(Some(7), "SNES", "/x.sfc"))
+            .expect("serialise");
+        assert_eq!(with_id, serde_json::json!({ "mediaId": 7 }));
+        let without = serde_json::to_value(MediaMetaParams::for_row(None, "SNES", "/x.sfc"))
+            .expect("serialise");
+        assert_eq!(
+            without,
+            serde_json::json!({ "system": "SNES", "path": "/x.sfc" })
+        );
     }
 
     #[test]
@@ -2187,6 +2846,7 @@ mod tests {
                 launcher: "snes9x".into(),
                 before_exit: String::new(),
             }]),
+            ..Default::default()
         };
         let json = serde_json::to_value(&params).expect("serialise");
         let defaults = json
@@ -2212,7 +2872,8 @@ mod tests {
     fn launchers_result_parses_payload() {
         let json = r#"{
             "launchers": [
-                {"id":"snes9x","systemId":"SNES","systemName":"Super Nintendo","groups":["libretro"]}
+                {"id":"snes9x","systemId":"SNES","systemName":"Super Nintendo","groups":["libretro"],
+                 "available":true,"detected":true}
             ]
         }"#;
         let result: LaunchersResult = serde_json::from_str(json).expect("parse");
@@ -2220,6 +2881,38 @@ mod tests {
         assert_eq!(result.launchers[0].id, "snes9x");
         assert_eq!(result.launchers[0].system_id, "SNES");
         assert_eq!(result.launchers[0].groups, vec!["libretro"]);
+        assert!(result.launchers[0].available);
+        assert_eq!(result.launchers[0].detected, Some(true));
+    }
+
+    #[test]
+    fn launcher_unavailable_carries_a_reason_and_no_detection() {
+        let json = r#"{"id":"x","availabilityReason":"not installed","available":false}"#;
+        let launcher: LauncherInfo = serde_json::from_str(json).expect("parse");
+        assert!(!launcher.available);
+        assert_eq!(
+            launcher.availability_reason.as_deref(),
+            Some("not installed")
+        );
+        assert_eq!(launcher.detected, None, "the platform never checked");
+    }
+
+    #[test]
+    fn launcher_missing_available_defaults_closed() {
+        // `available` is required on the wire; a fixture or older Core that
+        // omits it should never read as usable.
+        let launcher: LauncherInfo = serde_json::from_str(r#"{"id":"x"}"#).expect("parse");
+        assert!(!launcher.available);
+        assert_eq!(launcher.detected, None);
+        assert_eq!(launcher.availability_reason, None);
+    }
+
+    #[test]
+    fn launcher_detected_false_is_distinct_from_absent() {
+        let launcher: LauncherInfo =
+            serde_json::from_str(r#"{"id":"x","available":false,"detected":false}"#)
+                .expect("parse");
+        assert_eq!(launcher.detected, Some(false));
     }
 
     #[test]
@@ -2282,6 +2975,34 @@ mod tests {
         );
         // `systems` is skipped when empty.
         assert!(!object.contains_key("systems"));
+        assert!(!object.contains_key("scope"));
+    }
+
+    #[test]
+    fn media_scrape_params_serialises_one_scope_form_without_systems() {
+        let by_id = MediaScrapeParams {
+            scraper_id: "screenscraper".into(),
+            scope: Some(MediaScrapeScope::MediaId(42)),
+            ..MediaScrapeParams::default()
+        };
+        let json = serde_json::to_value(&by_id).expect("serialise");
+        assert_eq!(json["scope"], serde_json::json!({ "mediaId": 42 }));
+        // Core refuses `scope` beside `systems`, even an empty list.
+        assert!(!json.as_object().expect("object").contains_key("systems"));
+
+        let by_file = MediaScrapeParams {
+            scraper_id: "screenscraper".into(),
+            scope: Some(MediaScrapeScope::File {
+                system: "SNES".into(),
+                path: "/games/SNES/Game.sfc".into(),
+            }),
+            ..MediaScrapeParams::default()
+        };
+        let json = serde_json::to_value(&by_file).expect("serialise");
+        assert_eq!(
+            json["scope"],
+            serde_json::json!({ "file": { "system": "SNES", "path": "/games/SNES/Game.sfc" } })
+        );
     }
 
     #[test]
@@ -2289,6 +3010,7 @@ mod tests {
         let params = MediaScrapeParams {
             scraper_id: "screenscraper".into(),
             systems: vec!["SNES".into()],
+            scope: None,
             force: true,
         };
         let json = serde_json::to_value(&params).expect("serialise");
@@ -2500,5 +3222,32 @@ mod tests {
         // syntax in tests/callers doesn't accidentally suppress cover requests.
         let entry = BrowseEntry::default();
         assert!(entry.has_cover, "Default::has_cover must be true");
+    }
+
+    #[test]
+    fn cover_color_is_optional_on_every_row_shape() {
+        let entry: BrowseEntry = serde_json::from_str(
+            r##"{"name":"Zelda","path":"/z","type":"media","coverColor":"#a1b2c3"}"##,
+        )
+        .expect("browse entry");
+        assert_eq!(entry.cover_color.as_deref(), Some("#a1b2c3"));
+        let item: MediaItem =
+            serde_json::from_str(r##"{"name":"Zelda","path":"/z","coverColor":"#000000"}"##)
+                .expect("search item");
+        assert_eq!(item.cover_color.as_deref(), Some("#000000"));
+        let history: MediaHistoryEntry =
+            serde_json::from_str(r##"{"mediaPath":"/z","coverColor":"#ffffff"}"##)
+                .expect("history entry");
+        assert_eq!(history.cover_color.as_deref(), Some("#ffffff"));
+        // Older Core builds, and covers Core has not sized yet, omit it.
+        let entry: BrowseEntry =
+            serde_json::from_str(r#"{"name":"Zelda","path":"/z"}"#).expect("browse entry");
+        assert_eq!(entry.cover_color, None);
+        let item: MediaItem =
+            serde_json::from_str(r#"{"name":"Zelda","path":"/z"}"#).expect("search item");
+        assert_eq!(item.cover_color, None);
+        let history: MediaHistoryEntry =
+            serde_json::from_str(r#"{"mediaPath":"/z"}"#).expect("history entry");
+        assert_eq!(history.cover_color, None);
     }
 }

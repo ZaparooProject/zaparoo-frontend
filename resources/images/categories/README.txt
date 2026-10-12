@@ -9,7 +9,7 @@ Favorites.svg is the art for the Favorites entry.
 
 Media.svg is bundled ahead of the Media screen (tracked in #21). The
 "Media" category is currently filtered from the Hub via
-HIDDEN_CATEGORIES in rust/frontend/src/main.rs.
+HIDDEN_CATEGORIES in rust/frontend/src/lib.rs.
 
 Other.svg is the icon for Core's synthesized "Other" category, which holds
 launchables (launch-only virtual systems) and other uncategorized systems.

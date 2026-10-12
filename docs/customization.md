@@ -58,6 +58,7 @@ systems/turbografx16.png
 | `resume`    | Resume Game          |
 | `favorites` | Favorites            |
 | `recents`   | Recently played      |
+| `search`    | Search               |
 | `settings`  | Settings             |
 
 ```text
@@ -66,10 +67,79 @@ hub/favorites.svg
 hub/settings.svg
 ```
 
-A custom Hub tile (a specific system, a folder, or arbitrary ZapScript — see
+A custom Hub tile (a specific system, a folder, a saved search, or arbitrary ZapScript — see
 `[[hub.items]]` in `frontend.toml`) can set its own `icon = "name"` and drop
 a matching `hub/name.png` here, the same way a built-in tile's id works
 above.
+
+### Hub tile entries
+
+Each tile is one `[[hub.items]]` table in `frontend.toml`. "Add to Hub"
+writes these for you; they can also be written by hand.
+
+| `type`      | Keys                                                  |
+|-------------|-------------------------------------------------------|
+| `system`    | `id`: the system id                                   |
+| `folder`    | `path`, `system`, and optionally `relative`           |
+| `zapscript` | `script`, and optionally `relative`, `path`, `system` |
+| `search`    | any of `query`, `systems`, `tags`, `path`             |
+
+Any tile can also set `name` and `icon`.
+
+```toml
+[[hub.items]]
+type = "zapscript"
+relative = "NES/Zelda.nes"
+script = "@NES/The Legend of Zelda"
+path = "/media/fat/games/NES/Zelda.nes"
+name = "The Legend of Zelda"
+system = "NES"
+```
+
+A pinned game keeps every way Zaparoo Core identified it, and launches by
+the first one Core can still resolve:
+
+1. `relative`: the path under the system's games folder. It keeps working
+   when the games move to another drive.
+2. `script`: a ZapScript title launch. It keeps working when the file moves
+   to a different folder.
+3. `path`: the full path at the time the game was pinned.
+
+`path` and `system` also select the tile's cover art. After Core rescans
+your games, the frontend asks Core where each pinned game and folder is now
+and updates `path` to match, so covers and folder tiles follow a move too.
+A tile with only a `script` is launched exactly as written and is never
+changed.
+
+#### Saved searches
+
+A `search` tile opens the results of a search. "Add to Hub" in the Search
+results' View menu writes one for the search on screen; Back from results
+opened this way returns to the Hub.
+
+```toml
+[[hub.items]]
+type = "search"
+name = "SNES and Genesis RPGs"
+query = "final"
+systems = ["SNES", "Genesis"]
+tags = ["genre:rpg", "year:1994"]
+icon = "rpgs"
+```
+
+- `query`: the text to match in names. Leave it out to list everything the
+  other keys allow.
+- `systems`: the system ids to search. Leave it out to search every system.
+  A hand-written tile can name several, which the Search screen cannot.
+- `tags`: `type:value` tags a game must carry. They are sent to Zaparoo Core
+  exactly as written, so a tile can also use tags the tags picker does not
+  offer.
+- `path`: limits the search to one folder, as "Search here…" does. It is
+  the full path, so it has to be edited by hand if the games move to another
+  drive.
+
+A tile needs at least one of the four. Without an `icon` it shows the Search
+glyph.
 
 ### Rendered as-is (no tinting)
 
@@ -80,6 +150,23 @@ logo un-tinted. Hub icons remain theme-tinted. **Your override images are not
 tinted** - they are shown exactly as they are on disk, in full color. If you
 want an image that tracks the theme colors, supply a monochrome SVG drawn in
 the theme's terms; otherwise expect your PNG/JPG to appear unchanged.
+
+### Loading and memory limits
+
+Artwork discovery, file reads, decoding, and resizing run in the background.
+Built-in art remains visible until an override is ready. Original files are
+never changed; prepared images keep their colors and aspect ratio.
+
+Preparation is serial, with at most 32 queued requests and a 16 MiB in-memory
+LRU cache. Bitmaps must fit an 8 MiB file limit, an 8192-pixel source-edge limit,
+and the decoder's 32 MiB allocation budget. Output follows the displayed size,
+capped at 1024 pixels per edge. Small bitmaps are not enlarged during preparation.
+
+SVG files are limited to 256 KiB and must be self-contained vector artwork:
+referenced/embedded images and filter graphs fall back to built-in art rather
+than bypassing the decode-memory limits. Paths, gradients, clipping, and masks
+remain supported. Discovery retains up to 512 files per namespace within a
+shared 1 MiB index budget. Invalid or over-budget files use built-in art.
 
 ## Color scheme
 
@@ -124,3 +211,13 @@ reported by Zaparoo Core.
 
 - **MiSTer:** `/media/fat/zaparoo/frontend.toml`
 - **Desktop:** `~/.config/zaparoo/frontend.toml`
+
+Save the file as UTF-8. A file in another encoding still loads, with any
+character that is not valid UTF-8 replaced by `�`; the next time the frontend
+saves a setting it rewrites the file as UTF-8 and keeps the original beside it
+as `frontend.toml.bak`.
+
+A file that is not valid TOML, or that gives a key the wrong type of value, is
+not loaded at all. The frontend starts on its defaults, shows an alert naming
+the file, and writes nothing to it until it is fixed or removed and the
+frontend is restarted. The log names the line.

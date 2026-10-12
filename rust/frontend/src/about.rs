@@ -14,6 +14,21 @@ pub fn bind(ctx: &Arc<Ctx>, app: &App) {
     view.set_scroll_milli(
         i32::try_from(lock(&ctx.shared).persist.about_scroll_milli.min(1000)).unwrap_or(0),
     );
+    let ctx_direction = ctx.clone();
+    let weak = app.as_weak();
+    view.on_direction_requested(move |delta| {
+        let Some(app) = weak.upgrade() else {
+            return;
+        };
+        if delta != 0 && app.global::<crate::Shell>().get_active_screen() == crate::Screen::About {
+            let action = if delta < 0 {
+                zaparoo_core::input_actions::actions::UP
+            } else {
+                zaparoo_core::input_actions::actions::DOWN
+            };
+            crate::router::handle_action(&ctx_direction, &app, action);
+        }
+    });
     let ctx = ctx.clone();
     let weak = app.as_weak();
     view.on_scroll_requested(move |position| {

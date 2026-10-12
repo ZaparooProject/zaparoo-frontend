@@ -12,9 +12,12 @@ use std::path::PathBuf;
 
 use slint::{ComponentHandle, SharedString};
 use zaparoo_app::hub::{self as rules, Entry, Kind, LayoutItem, Live, Resolver, Saved};
+use zaparoo_app::options_menu::{self as menu, Tile};
 use zaparoo_app::paged_grid::Grid;
 use zaparoo_core::hub_layout::{load_hub_layout, save_hub_layout, HubLayout};
-use zaparoo_core::media_types::MediaHistoryLatestEntry;
+use zaparoo_core::media_types::{MediaHistoryLatestEntry, MediaMeta, MediaMetaParams};
+
+use crate::navigation::EntryMode;
 
 use crate::media_cache::{MediaCache, MediaKey};
 use crate::router::{lock, Ctx, Shared};
@@ -30,6 +33,35 @@ const CUSTOM_PREFIX: &str = "custom:";
 const LOADING_KEY: &str = "icons/Loading";
 /// Cover decode tier for Hub tiles: a fixed 256 px raster.
 const HUB_COVER_TIER: u32 = 256;
+const PAGE_SETTLE_MS: u64 = 260;
+const PAGE_REARM_MS: u64 = 50;
+
+/// What the open Options menu acts on besides the tile itself. Captured
+/// when the menu opens, so a Resume refresh or a layout change while it
+/// is open cannot point an action at something else.
+#[derive(Debug, Clone, Default)]
+pub enum MenuTarget {
+    /// The tile alone: its layout actions.
+    #[default]
+    Tile,
+    /// The game a tile stands for, or a script known only by its text.
+    Game {
+        row: Box<crate::games::GameRow>,
+        system: String,
+    },
+    System(zaparoo_app::systems::SystemRow),
+}
+
+/// A game tile's menu waiting on Core for the game's current state.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct GameRequest {
+    seq: u64,
+    hub_index: i32,
+    tile: Tile,
+    system: String,
+    path: String,
+    name: String,
+}
 
 /// What Core history says about the resumable game.
 #[derive(Debug, Clone, Default)]
@@ -47,6 +79,9 @@ pub struct Resume {
 pub struct HubModel {
     pub layout: HubLayout,
     pub layout_path: PathBuf,
+    /// `frontend.toml` did not load, so the layout stays in memory: a save
+    /// would write this session's layout over the file the user has to fix.
+    pub read_only: bool,
     pub grid: Grid,
     pub entries: Vec<Entry>,
     /// Focus paints once the user has driven it or the restore has run.
@@ -59,14 +94,21 @@ pub struct HubModel {
     pub resume: Resume,
     pub categories_loaded: bool,
     pub internet_available: bool,
-    pub activate_pulse: i32,
-    pub release_pulse: i32,
     /// Layout position the open Options menu targets.
     pub menu_hub_index: i32,
-    pub menu_kind: Option<Kind>,
+    pub menu_target: MenuTarget,
+    /// Bumped by every Hub input, so a game's state that Core answers
+    /// after the user moved on opens no menu.
+    menu_seq: u64,
     /// The layout was persisted since the last rebuild, so the
     /// cold-boot cover manifest needs rebuilding too.
     pub layout_dirty: bool,
+    pub sliding: bool,
+    page_seq: u64,
+    /// One serialized disk writer, with only the latest pending snapshot.
+    layout_save: Option<tokio::sync::watch::Sender<HubLayout>>,
+    /// The running pass that keeps pinned tiles on Core's current rows.
+    pub(crate) refresh: crate::scoped_task::ScopedTask,
 }
 
 impl HubModel {
@@ -74,9 +116,14 @@ impl HubModel {
         Self {
             layout: load_hub_layout(&layout_path),
             layout_path,
+            read_only: false,
             grid: Grid::new(5, 2),
             entries: Vec::new(),
             layout_dirty: false,
+            sliding: false,
+            page_seq: 0,
+            layout_save: None,
+            refresh: crate::scoped_task::ScopedTask::default(),
             focus_armed: false,
             restore_done: false,
             move_snapshot: None,
@@ -86,10 +133,9 @@ impl HubModel {
             resume: Resume::default(),
             categories_loaded: false,
             internet_available: false,
-            activate_pulse: 0,
-            release_pulse: 0,
             menu_hub_index: -1,
-            menu_kind: None,
+            menu_target: MenuTarget::Tile,
+            menu_seq: 0,
         }
     }
 
@@ -104,10 +150,14 @@ impl HubModel {
                 kind: item.kind_raw.clone(),
                 id: item.id.clone(),
                 path: item.path.clone(),
+                relative: item.relative.clone(),
                 script: item.script.clone(),
                 name: item.name.clone(),
                 icon: item.icon.clone(),
                 system: item.system.clone(),
+                query: item.query.clone(),
+                systems: item.systems.clone(),
+                tags: item.tags.clone(),
             })
             .collect()
     }
@@ -125,14 +175,35 @@ impl HubModel {
         self.resume.requested && !self.resume.loading && self.resume.entry.is_none() && connected
     }
 
-    /// Persist the layout and mark it changed, so the next rebuild
-    /// refreshes the cold-boot cover manifest once rather than per
-    /// mutation.
-    fn save(&mut self) {
-        if let Err(e) = save_hub_layout(&self.layout_path, &self.layout) {
-            tracing::warn!("could not save hub layout: {e}");
-        }
+    /// Serialize disk writes away from the UI thread. A watch channel bounds
+    /// pending work to one snapshot and prevents an older catalog save from
+    /// overwriting a newer user edit. No shared UI lock is held during I/O.
+    pub(crate) fn save(&mut self, handle: &tokio::runtime::Handle) {
         self.layout_dirty = true;
+        if self.read_only {
+            return;
+        }
+        if let Some(writer) = &self.layout_save {
+            writer.send_replace(self.layout.clone());
+            return;
+        }
+        let (writer, mut pending) = tokio::sync::watch::channel(self.layout.clone());
+        self.layout_save = Some(writer);
+        let path = self.layout_path.clone();
+        handle.spawn(async move {
+            loop {
+                let layout = pending.borrow_and_update().clone();
+                let path = path.clone();
+                match tokio::task::spawn_blocking(move || save_hub_layout(&path, &layout)).await {
+                    Ok(Ok(())) => {}
+                    Ok(Err(error)) => tracing::warn!("could not save hub layout: {error}"),
+                    Err(error) => tracing::warn!("hub layout writer failed: {error}"),
+                }
+                if pending.changed().await.is_err() {
+                    return;
+                }
+            }
+        });
     }
 }
 
@@ -148,7 +219,11 @@ impl Resolver for SharedResolver<'_> {
     }
 
     fn system_cover_key(&self, id: &str) -> String {
-        format!("systems/{id}")
+        let region = crate::systems::region(self.shared);
+        format!(
+            "systems/{}",
+            zaparoo_app::systems::logo_artwork_stem(id, region)
+        )
     }
 
     /// A user icon wins over the bundled glyph for any key the Hub
@@ -164,22 +239,55 @@ impl Resolver for SharedResolver<'_> {
             system: system.to_string(),
             path: path.to_string(),
             max_size: HUB_COVER_TIER,
+            fit: self.media.hub_fit(),
             image_type: None,
         };
-        if self.media.get(&key).is_some() {
-            return format!("{MEDIA_PREFIX}{system}\u{1f}{path}");
-        }
+        // A cover Core has none for resolves like a present one: the tile
+        // stays blank either way, but it is settled rather than loading.
+        let settled = self.media.get(&key).is_some() || self.media.is_negative(&key);
+        // A cover kept on screen through a rescan is asked for again here;
+        // a current one is not.
         self.media.enqueue(key);
-        LOADING_KEY.to_string()
+        if settled {
+            format!("{MEDIA_PREFIX}{system}\u{1f}{path}")
+        } else {
+            LOADING_KEY.to_string()
+        }
     }
+}
+
+/// Whether a resolved media cover key has art in memory. The Resume
+/// tile keeps its glyph while its art loads or when there is none.
+fn media_key_cached(media: &MediaCache, key: &str) -> bool {
+    let Some((system, path)) = key
+        .strip_prefix(MEDIA_PREFIX)
+        .and_then(|rest| rest.split_once('\u{1f}'))
+    else {
+        return true;
+    };
+    media.is_cached(&MediaKey {
+        media_id: None,
+        system: system.to_string(),
+        path: path.to_string(),
+        max_size: HUB_COVER_TIER,
+        fit: media.hub_fit(),
+        image_type: None,
+    })
 }
 
 /// Re-resolve the entries from the layout and the live state, then paint.
 pub fn rebuild(ctx: &Ctx, app: &App) {
+    resolve_entries(ctx, app);
+    render(ctx, app);
+}
+
+fn resolve_entries(ctx: &Ctx, app: &App) {
     // One refresh per layout change, not per mutation: every writer
     // goes through `save`, and every writer ends in a rebuild.
     if std::mem::take(&mut lock(&ctx.shared).hub.layout_dirty) {
         crate::hub_covers::refresh_hub_entries(ctx);
+    } else {
+        crate::hub_covers::ensure_hub_entries(ctx);
     }
     // The page size below is the grid's, so its shape has to match the
     // scene before the entries are padded to it.
@@ -208,13 +316,7 @@ pub fn rebuild(ctx: &Ctx, app: &App) {
                 }
                 .media_cover_key(&e.system_id, &e.media_path)
             })
-            .map(|key| {
-                if key == LOADING_KEY {
-                    String::new()
-                } else {
-                    key
-                }
-            })
+            .filter(|key| key != LOADING_KEY && media_key_cached(&ctx.media, key))
             .unwrap_or_default();
         let live = Live {
             categories_loaded: hub.categories_loaded,
@@ -223,11 +325,10 @@ pub fn rebuild(ctx: &Ctx, app: &App) {
             resume_name: &resume_name,
             resume_cover_key: &resume_cover,
             resume_known_unavailable: hub.resume_known_unavailable(connected),
-            // There is no Update screen: the previous one came from the
-            // external `zaparoo-update` crate, which has no Slint
-            // counterpart. The tile stays a structural absence rather
-            // than a dead row until one exists.
-            update_enabled: false,
+            // Only when the private `zaparoo-update` module is built in
+            // and the device has an updater tool: otherwise the tile is a
+            // structural absence rather than a dead row.
+            update_enabled: crate::update::available(),
             internet_available: hub.internet_available,
         };
         let page_size = hub.grid.page_size();
@@ -254,18 +355,26 @@ pub fn rebuild(ctx: &Ctx, app: &App) {
         hub.grid.skip_empty_cells = !hub.move_armed();
         hub.entries = entries;
     }
-    render(ctx, app);
 }
 
-fn logo_image(px: &crate::system_logos::LogoPixels) -> slint::Image {
-    slint::Image::from_rgba8(
-        slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(
-            &px.rgba, px.width, px.height,
-        ),
-    )
+/// The logo for a `systems/{stem}` cover key, in the user's logo style.
+pub(crate) fn logo_key(
+    ctx: &Ctx,
+    stem: &str,
+    style: &str,
+    bounds: zaparoo_app::logo_cache::Bounds,
+) -> Option<crate::system_logos::Key> {
+    let id = zaparoo_app::systems::logo_system_id(stem);
+    ctx.logos.key(id, stem, style == "color", bounds)
 }
 
-fn cell_for(ctx: &Ctx, entry: &Entry) -> GridCell {
+fn cell_for(
+    ctx: &Ctx,
+    entry: &Entry,
+    logo_style: &str,
+    bounds: zaparoo_app::logo_cache::Bounds,
+    art_size: u32,
+) -> GridCell {
     let mut cell = GridCell {
         label_key: SharedString::from(entry.label_key.as_str()),
         name: SharedString::from(entry.name.as_str()),
@@ -277,23 +386,27 @@ fn cell_for(ctx: &Ctx, entry: &Entry) -> GridCell {
     if entry.is_empty() {
         return cell;
     }
-    let key = entry.cover_key.as_str();
-    // The user's own icon, as supplied: no tint, no glyph fallback.
+    let mut key = entry.cover_key.as_str();
+    // Prepared overrides retain their colors. Until then, keep built-in art.
     if let Some(id) = key.strip_prefix(CUSTOM_PREFIX) {
-        if let Some(image) = crate::customization::hub_image(id) {
+        if let Some(image) = crate::customization::hub_image(id, art_size) {
             cell.cover = image;
             cell.has_cover = true;
             return cell;
         }
+        key = &entry.fallback_cover_key;
     }
-    if let Some(id) = key.strip_prefix("systems/") {
+    if let Some(stem) = key.strip_prefix("systems/") {
         cell.wordmark = true;
-        if let Some(rest) = crate::system_logos::tinted_logo_for(id, false) {
-            cell.cover = logo_image(&rest);
-            cell.has_cover = true;
-            if let Some(focus) = crate::system_logos::tinted_logo_for(id, true) {
-                cell.cover_focus = logo_image(&focus);
+        if let Some(key) = logo_key(ctx, stem, logo_style, bounds) {
+            if let Some(pair) = ctx.logos.get(&key) {
+                (cell.cover, cell.cover_focus) = pair.images();
+                cell.has_cover = true;
                 cell.has_cover_focus = true;
+                // Prepared for the box it is painted in.
+                cell.cover_exact = true;
+            } else {
+                cell.wordmark = ctx.logos.is_negative(&key);
             }
         }
     } else if let Some(rest) = key.strip_prefix(MEDIA_PREFIX) {
@@ -303,6 +416,7 @@ fn cell_for(ctx: &Ctx, entry: &Entry) -> GridCell {
                 system: system.to_string(),
                 path: path.to_string(),
                 max_size: HUB_COVER_TIER,
+                fit: ctx.media.hub_fit(),
                 image_type: None,
             };
             if let Some(decoded) = ctx.media.get(&media_key) {
@@ -316,6 +430,28 @@ fn cell_for(ctx: &Ctx, entry: &Entry) -> GridCell {
     cell
 }
 
+/// For a tile that shows game art: whether that art is still missing.
+/// A cover Core has none for counts as settled. `None` for other tiles.
+fn cover_outstanding(ctx: &Ctx, entry: &Entry, cell: &GridCell) -> Option<bool> {
+    if entry.is_empty() {
+        return None;
+    }
+    let key = entry.cover_key.as_str();
+    if key == LOADING_KEY {
+        return Some(true);
+    }
+    let (system, path) = key.strip_prefix(MEDIA_PREFIX)?.split_once('\u{1f}')?;
+    let negative = ctx.media.is_negative(&MediaKey {
+        media_id: None,
+        system: system.to_string(),
+        path: path.to_string(),
+        max_size: HUB_COVER_TIER,
+        fit: ctx.media.hub_fit(),
+        image_type: None,
+    });
+    Some(!cell.has_cover && !negative)
+}
+
 /// The Hub's geometry for the current scene, with the model's own grid
 /// shape kept in step. The shape is the fixed per-tier table (7x3, or
 /// 4x2 on the low tiers), so a viewport change can move it: navigation
@@ -326,6 +462,18 @@ fn geometry_for(ctx: &Ctx, app: &App) -> rules::Geometry {
     let inputs = scene.inputs();
     let derived = zaparoo_app::sizing::derive(&inputs);
     let geometry = rules::geometry(&inputs, &derived);
+    let (art_width, art_height) = zaparoo_app::sizing::tile_art_box(
+        &inputs,
+        geometry.fit.cell_width,
+        geometry.fit.cell_height,
+        zaparoo_app::sizing::TileArt {
+            compact_padding: true,
+            caption: false,
+            top_label: false,
+        },
+    );
+    ctx.media
+        .set_hub_fit(zaparoo_app::covers::Fit::new(art_width, art_height));
     let mut shared = lock(&ctx.shared);
     let columns = usize::try_from(geometry.columns).unwrap_or(1);
     let rows = usize::try_from(geometry.rows).unwrap_or(1);
@@ -335,24 +483,183 @@ fn geometry_for(ctx: &Ctx, app: &App) -> rules::Geometry {
     geometry
 }
 
-/// Push the current page, the cursor, the caption and the geometry.
-pub fn render(ctx: &Ctx, app: &App) {
-    let geometry = geometry_for(ctx, app);
-    let view = app.global::<HubView>();
-    let shared = lock(&ctx.shared);
-    let hub = &shared.hub;
+/// What a Hub tile gives its art: it runs to the focus ring's inner edge.
+const TILE_ART: zaparoo_app::sizing::TileArt = zaparoo_app::sizing::TileArt {
+    compact_padding: true,
+    caption: false,
+    top_label: false,
+};
+
+/// The focused tile's system logo at the art box of the grown tile: the
+/// larger copy the view paints for the focused tile where it draws the
+/// focus zoom by size. Only ever the one tile.
+fn focus_art_key(
+    ctx: &Ctx,
+    app: &App,
+    hub: &HubModel,
+    logo_style: &str,
+    geometry: &rules::Geometry,
+) -> Option<crate::system_logos::Key> {
+    let zoom = crate::system_logos::focus_zoom(app)?;
+    let stem = hub.current()?.cover_key.strip_prefix("systems/")?;
+    let bounds = crate::system_logos::tile_bounds(
+        app,
+        geometry.fit.cell_width,
+        geometry.fit.cell_height,
+        zoom,
+        TILE_ART,
+    );
+    logo_key(ctx, stem, logo_style, bounds)
+}
+
+/// The bounds a tile's system logo is prepared to. Where logos are painted
+/// one pixel for one, the whole pixels of the tile's art box, so a logo is
+/// never fitted; elsewhere the bucketed cell the renderer fits it from.
+fn logo_bounds(app: &App, geometry: &rules::Geometry) -> zaparoo_app::logo_cache::Bounds {
+    if crate::system_logos::exact_art(app) {
+        crate::system_logos::tile_bounds(
+            app,
+            geometry.fit.cell_width,
+            geometry.fit.cell_height,
+            1.0,
+            TILE_ART,
+        )
+    } else {
+        zaparoo_app::logo_cache::Bounds::new(
+            geometry.fit.cell_width.max(1) as u32,
+            geometry.fit.cell_height.max(1) as u32,
+        )
+    }
+}
+
+/// The focused tile's larger copy, once it is prepared. Until then the
+/// tile paints its resting copy at that copy's own size.
+fn push_focus_art(
+    ctx: &Ctx,
+    view: &HubView<'_>,
+    key: Option<crate::system_logos::Key>,
+    selected_local: i32,
+) {
+    match key.and_then(|key| ctx.logos.get(&key)) {
+        Some(pair) if selected_local >= 0 => {
+            let (rest, focus) = pair.images();
+            view.set_focus_art(focus);
+            view.set_focus_art_muted(rest);
+            view.set_focus_art_local(selected_local);
+        }
+        _ => view.set_focus_art_local(-1),
+    }
+}
+
+fn request_logos(
+    ctx: &Ctx,
+    hub: &HubModel,
+    logo_style: &str,
+    bounds: zaparoo_app::logo_cache::Bounds,
+    focus: Option<crate::system_logos::Key>,
+) {
     let page_size = hub.grid.page_size();
-    let page = hub.grid.current_page();
-    let start = page * page_size;
-    let cells: Vec<GridCell> = hub
+    let start = hub.grid.current_page() * page_size;
+    let key = |entry: &Entry| {
+        entry
+            .cover_key
+            .strip_prefix("systems/")
+            .and_then(|stem| logo_key(ctx, stem, logo_style, bounds))
+    };
+    let visible = hub
         .entries
         .iter()
         .skip(start)
         .take(page_size)
-        .map(|entry| cell_for(ctx, entry))
-        .collect();
-    crate::view_model::publish_hub_cells(&view.get_cells(), cells, |rows| view.set_cells(rows));
-    view.set_selected_local(i32::try_from(hub.grid.current_index() - start).unwrap_or(0));
+        .filter_map(key)
+        .chain(focus);
+    let neighbors = [
+        start.saturating_add(page_size),
+        start.saturating_sub(page_size),
+    ]
+    .into_iter()
+    .flat_map(|first| hub.entries.iter().skip(first).take(page_size))
+    .filter_map(key);
+    ctx.logos.request_window(visible, neighbors);
+}
+
+fn page_cells(
+    ctx: &Ctx,
+    hub: &HubModel,
+    logo_style: &str,
+    bounds: zaparoo_app::logo_cache::Bounds,
+    geometry: &rules::Geometry,
+) -> Vec<GridCell> {
+    let art_size = zaparoo_app::customization::artwork_size(
+        geometry.fit.cell_width as f32,
+        geometry.fit.cell_height as f32,
+    );
+    let page_size = hub.grid.page_size();
+    hub.entries
+        .iter()
+        .skip(hub.grid.current_page() * page_size)
+        .take(page_size)
+        .map(|entry| cell_for(ctx, entry, logo_style, bounds, art_size))
+        .collect()
+}
+
+fn grid_geometry_changed(view: &HubView<'_>, geometry: &rules::Geometry) -> bool {
+    view.get_columns() != geometry.columns
+        || view.get_rows() != geometry.rows
+        || (view.get_grid_height() - geometry.grid_height as f32).abs() > f32::EPSILON
+        || (view.get_cell_width() - geometry.fit.cell_width as f32).abs() > f32::EPSILON
+}
+
+/// Push the current page, the cursor, the caption and the geometry.
+pub fn render(ctx: &Ctx, app: &App) {
+    let geometry = geometry_for(ctx, app);
+    let view = app.global::<HubView>();
+    if grid_geometry_changed(&view, &geometry) && lock(&ctx.shared).hub.sliding {
+        interrupt_page(ctx, app);
+        return;
+    }
+    let shared = lock(&ctx.shared);
+    let hub = &shared.hub;
+    let logo_style = shared.persist.settings.system_logo_style.as_str();
+    let page_size = hub.grid.page_size();
+    let page = hub.grid.current_page();
+    let start = page * page_size;
+    let bounds = logo_bounds(app, &geometry);
+    let focus_art = focus_art_key(ctx, app, hub, logo_style, &geometry);
+    if app.global::<crate::Shell>().get_active_screen() == crate::Screen::Hub {
+        request_logos(ctx, hub, logo_style, bounds, focus_art);
+    } else {
+        crate::system_logos::defer_refresh(ctx, app);
+    }
+    let cells = page_cells(ctx, hub, logo_style, bounds, &geometry);
+    if crate::perf::enabled() {
+        let (mut covers, mut outstanding) = (0, 0);
+        for (entry, cell) in hub.entries.iter().skip(start).zip(&cells) {
+            if let Some(missing) = cover_outstanding(ctx, entry, cell) {
+                covers += 1;
+                outstanding += usize::from(missing);
+            }
+        }
+        // Until Core has answered, the page is the persisted layout without its live tiles.
+        let settled = hub.categories_loaded && !hub.resume.loading;
+        crate::perf::hub_rendered(settled, cells.len(), covers, outstanding);
+    }
+    let strip_sliding = hub.sliding && !view.get_cached_transition();
+    if strip_sliding {
+        crate::view_model::publish_hub_cells(&view.get_next_cells(), cells, |rows| {
+            view.set_next_cells(rows);
+        });
+    } else {
+        crate::view_model::publish_hub_cells(&view.get_cells(), cells, |rows| view.set_cells(rows));
+        view.set_next_cells(slint::ModelRc::default());
+    }
+    let selected_local = if strip_sliding {
+        -1
+    } else {
+        i32::try_from(hub.grid.current_index() - start).unwrap_or(0)
+    };
+    view.set_selected_local(selected_local);
+    push_focus_art(ctx, &view, focus_art, selected_local);
     view.set_columns(geometry.columns);
     view.set_rows(geometry.rows);
     view.set_cell_width(geometry.fit.cell_width as f32);
@@ -369,16 +676,13 @@ pub fn render(ctx: &Ctx, app: &App) {
     view.set_has_pages_below(hub.grid.has_pages_below());
     view.set_focus_ready(hub.focus_armed || hub.restore_done);
     view.set_move_armed(hub.move_armed());
-    view.set_held_local(if hub.move_armed() {
+    view.set_held_local(if hub.move_armed() && !strip_sliding {
         i32::try_from(hub.grid.current_index() - start).unwrap_or(-1)
     } else {
         -1
     });
-    view.set_activate_pulse(hub.activate_pulse);
-    view.set_release_pulse(hub.release_pulse);
     view.set_loaded(hub.categories_loaded);
     view.set_catalog_empty(shared.all_categories.is_empty());
-    view.set_indexing(app.global::<crate::Status>().get_kind() == crate::StatusKind::Indexing);
     let error = !view.get_hub_error().is_empty();
     match hub.current() {
         Some(entry) if !entry.is_empty() => {
@@ -405,34 +709,74 @@ pub fn render(ctx: &Ctx, app: &App) {
     }
 }
 
-/// A media cover landed: repaint if a tile shows that game.
-pub fn cover_landed(ctx: &Ctx, app: &App, key: &MediaKey) {
+/// Thumbnail identities on the restored page, before the first frame. Layout
+/// indices include folders/actions, so never treat the manifest as page order.
+pub(crate) fn visible_cover_targets(ctx: &Ctx) -> (Vec<(String, String)>, bool) {
+    let shared = lock(&ctx.shared);
+    let hub = &shared.hub;
+    let mut targets = Vec::new();
+    let mut resume = false;
+    for entry in hub
+        .entries
+        .iter()
+        .skip(hub.grid.current_page() * hub.grid.page_size())
+        .take(hub.grid.page_size())
+    {
+        if entry.cover_key.starts_with(CUSTOM_PREFIX) {
+            continue;
+        }
+        if entry.kind == Some(Kind::Action) && entry.id == "resume" {
+            resume = true;
+        }
+        if entry.kind != Some(Kind::ZapScript) {
+            continue;
+        }
+        if let Ok(index) = usize::try_from(entry.hub_index) {
+            if let Some(item) = hub.layout.visible().nth(index) {
+                if !item.system.is_empty() && !item.path.is_empty() {
+                    targets.push((item.system.clone(), item.path.clone()));
+                }
+            }
+        }
+    }
+    (targets, resume)
+}
+
+/// Covers landed or were found missing: repaint once if any tile shows
+/// one of those games. A missing cover counts, so the tile settles.
+pub fn covers_landed(ctx: &Ctx, app: &App, keys: &[MediaKey]) {
     let relevant = {
         let shared = lock(&ctx.shared);
         let hub = &shared.hub;
-        let resume_match = hub
-            .resume
-            .entry
-            .as_ref()
-            .is_some_and(|e| e.system_id == key.system && e.media_path == key.path);
-        resume_match
-            || hub.layout.visible().any(|item| {
-                item.kind_raw == "zapscript" && item.system == key.system && item.path == key.path
-            })
+        keys.iter().any(|key| {
+            let resume_match = hub
+                .resume
+                .entry
+                .as_ref()
+                .is_some_and(|e| e.system_id == key.system && e.media_path == key.path);
+            resume_match
+                || hub.layout.visible().any(|item| {
+                    item.kind_raw == "zapscript"
+                        && item.system == key.system
+                        && item.path == key.path
+                })
+        })
     };
     if relevant {
         rebuild(ctx, app);
     }
 }
 
-/// The catalog answered: reconcile the layout (add-only), note the
-/// categories, and seat the persisted focus.
+/// Reconcile new categories without reseating the user's live focus. Only
+/// the first catalog restores focus from disk.
 pub fn on_catalog_ready(ctx: &Ctx, app: &App) {
-    let (ids, migrate_hidden) = {
+    let (ids, migrate_hidden, was_loaded, focused) = {
         let shared = lock(&ctx.shared);
         (
             shared.all_categories.clone(),
             shared.hidden_categories.clone(),
+            shared.hub.categories_loaded,
+            shared.hub.current().cloned(),
         )
     };
     {
@@ -440,16 +784,34 @@ pub fn on_catalog_ready(ctx: &Ctx, app: &App) {
         let hub = &mut shared.hub;
         hub.categories_loaded = true;
         if hub.layout.reconcile(&ids, &migrate_hidden) {
-            hub.save();
+            hub.save(&ctx.handle);
         }
     }
     rebuild(ctx, app);
-    restore(ctx, app);
+    if was_loaded {
+        if let Some(focused) = focused {
+            let mut shared = lock(&ctx.shared);
+            let hub = &mut shared.hub;
+            if let Some(index) = hub.entries.iter().position(|entry| {
+                entry.kind == focused.kind
+                    && entry.id == focused.id
+                    && entry.path == focused.path
+                    && entry.script == focused.script
+                    && entry.system == focused.system
+            }) {
+                hub.grid.set_current_index_immediate(index);
+            }
+        }
+        render(ctx, app);
+    } else {
+        restore(ctx, app);
+    }
 }
 
 /// Seat focus from persisted state after a categories reset. Nothing
 /// cascades into the Systems screen: it projects its rows on entry.
 pub fn restore(ctx: &Ctx, app: &App) {
+    interrupt_page(ctx, app);
     {
         let mut shared = lock(&ctx.shared);
         let connected = app.global::<crate::Shell>().get_boot_complete();
@@ -505,14 +867,142 @@ fn set_index(ctx: &Ctx, app: &App, index: usize) {
     render(ctx, app);
 }
 
+#[cfg(feature = "mister")]
+fn request_cached_page_transition(app: &App, direction: i32) -> bool {
+    let view = app.global::<HubView>();
+    crate::mister::request_browse_page_transition(
+        app,
+        view.get_grid_y(),
+        view.get_grid_height(),
+        direction,
+    )
+}
+
+#[cfg(not(feature = "mister"))]
+fn request_cached_page_transition(_app: &App, _direction: i32) -> bool {
+    false
+}
+
+/// A new command commits the logical destination before acting on it, never
+/// queues another page behind an old animation. Its completion ticket expires.
+pub(crate) fn interrupt_page(ctx: &Ctx, app: &App) -> bool {
+    {
+        let mut shared = lock(&ctx.shared);
+        if !shared.hub.sliding {
+            return false;
+        }
+        shared.hub.sliding = false;
+        shared.hub.page_seq = shared.hub.page_seq.wrapping_add(1);
+    }
+    let view = app.global::<HubView>();
+    #[cfg(feature = "mister")]
+    if view.get_cached_transition() {
+        crate::mister::cancel_page_transition();
+    }
+    view.set_cached_transition(false);
+    view.set_slide_anim(false);
+    view.set_page_slide(0.0);
+    render(ctx, app);
+    app.window().request_redraw();
+    true
+}
+
+fn show_page(ctx: &Ctx, app: &App, from_page: usize, animate: bool) {
+    let (page, direction, local, reduce) = {
+        let shared = lock(&ctx.shared);
+        let grid = &shared.hub.grid;
+        (
+            grid.current_page(),
+            grid.page_direction().offset(),
+            grid.current_index() % grid.page_size(),
+            shared.persist.settings.reduce_motion,
+        )
+    };
+    let view = app.global::<HubView>();
+    if page == from_page
+        || !animate
+        || reduce
+        || !app.global::<crate::Motion>().get_enabled()
+        || crate::input::rapid_page(ctx)
+    {
+        render(ctx, app);
+        return;
+    }
+    let cached = request_cached_page_transition(app, direction);
+    // Without cached endpoints, never animate a full HDMI grid at native
+    // resolution on MiSTer's software renderer. Desktop and small CRT scenes
+    // can use the live strip; a cached slide paints each endpoint just once.
+    if !cached && ctx.is_mister && !app.global::<crate::Sizing>().get_crt() {
+        render(ctx, app);
+        return;
+    }
+    let seq = {
+        let mut shared = lock(&ctx.shared);
+        shared.hub.sliding = true;
+        shared.hub.page_seq = shared.hub.page_seq.wrapping_add(1);
+        shared.hub.page_seq
+    };
+    view.set_slide_dir(direction);
+    view.set_transition_target_index(i32::try_from(local).unwrap_or(0));
+    view.set_cached_transition(cached);
+    view.set_slide_anim(!cached);
+    render(ctx, app);
+    // Resolving a changed viewport can invalidate this ticket during render.
+    if lock(&ctx.shared).hub.page_seq != seq {
+        return;
+    }
+    if !cached {
+        crate::drs::heavy_begin();
+        view.set_page_slide(direction as f32);
+    }
+    let weak = app.as_weak();
+    let ctx = ctx.clone();
+    slint::Timer::single_shot(
+        std::time::Duration::from_millis(PAGE_SETTLE_MS),
+        move || {
+            if !cached {
+                crate::drs::heavy_end();
+            }
+            let Some(app) = weak.upgrade() else {
+                return;
+            };
+            {
+                let mut shared = lock(&ctx.shared);
+                if shared.hub.page_seq != seq {
+                    return;
+                }
+                shared.hub.sliding = false;
+            }
+            let view = app.global::<HubView>();
+            view.set_cached_transition(false);
+            view.set_slide_anim(false);
+            view.set_page_slide(0.0);
+            if app.global::<crate::Shell>().get_active_screen() == crate::Screen::Hub {
+                render(&ctx, &app);
+            }
+            let weak = app.as_weak();
+            slint::Timer::single_shot(std::time::Duration::from_millis(PAGE_REARM_MS), move || {
+                if lock(&ctx.shared).hub.page_seq == seq {
+                    if let Some(app) = weak.upgrade() {
+                        app.global::<HubView>().set_slide_anim(true);
+                    }
+                }
+            });
+        },
+    );
+}
+
 pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
+    let interrupted = interrupt_page(ctx, app);
+    let from_page = lock(&ctx.shared).hub.grid.current_page();
     let move_armed = {
         let mut shared = lock(&ctx.shared);
         shared.hub.focus_armed = true;
+        shared.hub.menu_seq += 1;
         shared.hub.move_armed()
     };
     if move_armed {
-        handle_move_action(ctx, app, action);
+        handle_move_action(ctx, app, action, !interrupted);
         return;
     }
     let moved = {
@@ -532,7 +1022,7 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
         if moved {
             commit_current(ctx);
         }
-        render(ctx, app);
+        show_page(ctx, app, from_page, !interrupted);
         return;
     }
     match action {
@@ -546,39 +1036,12 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
 }
 
 fn activate_current(ctx: &Ctx, app: &App) {
-    let pulse = {
-        let mut shared = lock(&ctx.shared);
-        let hub = &mut shared.hub;
-        if hub.current().is_none_or(Entry::is_empty) {
-            return;
-        }
-        hub.activate_pulse += 1;
-        hub.activate_pulse
-    };
+    if lock(&ctx.shared).hub.current().is_none_or(Entry::is_empty) {
+        return;
+    }
     commit_current(ctx);
-    render(ctx, app);
-    let ctx2 = ctx.clone();
-    let weak = app.as_weak();
-    let duration = if app.global::<crate::Motion>().get_enabled() {
-        34
-    } else {
-        0
-    };
-    slint::Timer::single_shot(std::time::Duration::from_millis(duration), move || {
-        if lock(&ctx2.shared).hub.activate_pulse == pulse {
-            if let Some(app) = weak.upgrade() {
-                release_activate(&ctx2, &app);
-            }
-        }
-    });
     // The router has already held the accepting tile through its push.
     emit_activate(ctx, app);
-}
-
-/// Settle the push-in cue for accepts that keep the Hub on screen.
-fn release_activate(ctx: &Ctx, app: &App) {
-    lock(&ctx.shared).hub.release_pulse += 1;
-    render(ctx, app);
 }
 
 fn emit_activate(ctx: &Ctx, app: &App) {
@@ -599,7 +1062,7 @@ fn emit_activate(ctx: &Ctx, app: &App) {
                 crate::router::retry_catalog(ctx);
                 return;
             }
-            crate::systems::enter(ctx, app, &entry.id, true);
+            crate::systems::enter(ctx, app, &entry.id, EntryMode::Fresh, true);
         }
         Some(Kind::Action) => {
             if entry.disabled {
@@ -607,31 +1070,35 @@ fn emit_activate(ctx: &Ctx, app: &App) {
             }
             match entry.id.as_str() {
                 "resume" => {
-                    let path = lock(&ctx.shared)
+                    let candidates = lock(&ctx.shared)
                         .hub
                         .resume
                         .entry
                         .as_ref()
-                        .map(|e| e.media_path.clone());
-                    match path {
-                        Some(path) if !path.is_empty() => {
-                            crate::router::launch(ctx, app, path, &entry.name);
-                        }
-                        _ => {}
-                    }
+                        .map(|e| {
+                            zaparoo_app::hub::launch_candidates(
+                                e.relative_path.as_deref().unwrap_or_default(),
+                                "",
+                                &e.media_path,
+                            )
+                        })
+                        .unwrap_or_default();
+                    crate::router::launch_first(ctx, app, candidates, &entry.name);
                 }
                 // Group by: System stops at the systems that hold
                 // favorites; None goes straight to the flat list.
                 "favorites" => {
                     let grouped = lock(&ctx.shared).persist.settings.favorites_grouping == "system";
                     if grouped {
-                        crate::systems::enter_favorites(ctx, app);
+                        crate::systems::enter_favorites(ctx, app, EntryMode::Fresh);
                     } else {
-                        crate::games::enter_favorites(ctx, app);
+                        crate::games::enter_favorites(ctx, app, EntryMode::Fresh);
                     }
                 }
-                "recents" => crate::games::enter_recents(ctx, app),
-                "settings" => crate::settings::enter(ctx, app),
+                "recents" => crate::games::enter_recents(ctx, app, EntryMode::Fresh),
+                "search" => crate::search::enter(ctx, app, EntryMode::Fresh),
+                "settings" => crate::settings::enter(ctx, app, EntryMode::Fresh),
+                "update" => crate::update::enter(app),
                 _ => {}
             }
         }
@@ -653,7 +1120,19 @@ fn emit_activate(ctx: &Ctx, app: &App) {
             crate::games::enter_folder_from_hub(ctx, app, &entry.system, &entry.path);
         }
         Some(Kind::ZapScript) => {
-            crate::router::launch(ctx, app, entry.script.clone(), &entry.name);
+            let candidates =
+                zaparoo_app::hub::launch_candidates(&entry.relative, &entry.script, &entry.path);
+            crate::router::launch_first(ctx, app, candidates, &entry.name);
+        }
+        Some(Kind::Search) => {
+            crate::search::enter_saved(
+                ctx,
+                app,
+                &entry.query,
+                &entry.systems,
+                &entry.tags,
+                &entry.path,
+            );
         }
         _ => {}
     }
@@ -718,7 +1197,7 @@ fn accept_move(ctx: &Ctx, app: &App) {
             return;
         }
         hub.layout.trim_trailing_blanks();
-        hub.save();
+        hub.save(&ctx.handle);
         clear_move_state(hub);
     }
     rebuild(ctx, app);
@@ -756,7 +1235,7 @@ fn same_item(a: &Entry, b: &Entry) -> bool {
         && a.system == b.system
 }
 
-fn move_step(ctx: &Ctx, app: &App, d_col: i32, d_row: i32, page_delta: i32) {
+fn move_step(ctx: &Ctx, app: &App, d_col: i32, d_row: i32, page_delta: i32, animate: bool) {
     let (from_page, before) = {
         let shared = lock(&ctx.shared);
         let hub = &shared.hub;
@@ -804,7 +1283,7 @@ fn move_step(ctx: &Ctx, app: &App, d_col: i32, d_row: i32, page_delta: i32) {
         }
     };
     if moved {
-        rebuild(ctx, app);
+        resolve_entries(ctx, app);
         let origins = {
             let shared = lock(&ctx.shared);
             let hub = &shared.hub;
@@ -833,19 +1312,20 @@ fn move_step(ctx: &Ctx, app: &App, d_col: i32, d_row: i32, page_delta: i32) {
         view.set_move_origins(slint::ModelRc::new(slint::VecModel::from(origins)));
         view.set_move_pulse(view.get_move_pulse().wrapping_add(1));
         commit_current(ctx);
+        show_page(ctx, app, from_page, animate);
     } else {
         render(ctx, app);
     }
 }
 
-fn handle_move_action(ctx: &Ctx, app: &App, action: &str) {
+fn handle_move_action(ctx: &Ctx, app: &App, action: &str, animate: bool) {
     match action {
-        actions::LEFT => move_step(ctx, app, -1, 0, 0),
-        actions::RIGHT => move_step(ctx, app, 1, 0, 0),
-        actions::DOWN => move_step(ctx, app, 0, 1, 0),
-        actions::UP => move_step(ctx, app, 0, -1, 0),
-        actions::PAGE_PREV => move_step(ctx, app, 0, 0, -1),
-        actions::PAGE_NEXT => move_step(ctx, app, 0, 0, 1),
+        actions::LEFT => move_step(ctx, app, -1, 0, 0, animate),
+        actions::RIGHT => move_step(ctx, app, 1, 0, 0, animate),
+        actions::DOWN => move_step(ctx, app, 0, 1, 0, animate),
+        actions::UP => move_step(ctx, app, 0, -1, 0, animate),
+        actions::PAGE_PREV => move_step(ctx, app, 0, 0, -1, animate),
+        actions::PAGE_NEXT => move_step(ctx, app, 0, 0, 1, animate),
         actions::ACCEPT => accept_move(ctx, app),
         actions::CANCEL => cancel_move(ctx, app),
         _ => {}
@@ -854,101 +1334,242 @@ fn handle_move_action(ctx: &Ctx, app: &App, action: &str) {
 
 // ---------- Menus ----------
 
-/// Options on the focused tile: kind-specific entries first, then the
-/// universal Move and Hide (category, action) or Remove (shortcut).
+/// Options on the focused tile. A tile that stands for a game or a system
+/// shows that item's own menu with the tile's layout actions added; one
+/// that cannot be resolved keeps the layout actions alone.
 fn open_context_menu(ctx: &Ctx, app: &App) {
-    let entry = {
-        let shared = lock(&ctx.shared);
-        shared.hub.current().cloned()
-    };
-    let Some(entry) = entry else {
-        return;
-    };
-    let Some(kind) = entry.kind else {
-        return;
-    };
-    if kind == Kind::Empty || entry.hub_index < 0 {
-        return;
+    enum Plan {
+        Show(menu::Menu, MenuTarget),
+        Ask(GameRequest),
     }
     let error = !app.global::<HubView>().get_hub_error().is_empty();
-    if kind == Kind::Category && error {
-        return;
-    }
-    // "Random game" waits for the shared random-launch helper the
-    // Systems and Favorites rows bring.
-    let mut entries = Vec::new();
-    if kind == Kind::Category {
-        let has_indexable = crate::router::category_has_indexable(ctx, &entry.id);
-        entries.push(crate::router::menu_row("hub_move"));
-        entries.push(crate::router::menu_row_keyed(
-            "hub_remove",
-            "hub_remove:hide",
-            "",
-        ));
-        if has_indexable && !crate::router::media_busy(app) {
-            entries.push(crate::router::menu_row("index_category"));
-            entries.push(crate::router::menu_row("scrape_category"));
-        }
-    } else {
-        entries.push(crate::router::menu_row("hub_move"));
-        entries.push(crate::router::menu_row_keyed(
-            "hub_remove",
-            if kind == Kind::Action {
-                "hub_remove:hide"
-            } else {
-                "hub_remove:remove"
-            },
-            "",
-        ));
-    }
-    {
+    let plan = {
         let mut shared = lock(&ctx.shared);
-        shared.hub.menu_hub_index = entry.hub_index;
-        shared.hub.menu_kind = Some(kind);
-    }
-    {
-        // Anchor the menu on the focused tile.
-        let inputs = crate::router::output_scene(app).inputs();
-        let derived = zaparoo_app::sizing::derive(&inputs);
-        let geometry = rules::geometry(&inputs, &derived);
-        let (row, column) = {
-            let shared = lock(&ctx.shared);
-            (
-                shared.hub.grid.current_row(),
-                shared.hub.grid.current_column(),
-            )
+        let Some(entry) = shared.hub.current().cloned() else {
+            return;
         };
-        let rect = zaparoo_app::paged_grid::cell_rect(
-            &geometry.fit,
-            &geometry.insets,
-            i32::try_from(row).unwrap_or(0),
-            i32::try_from(column).unwrap_or(0),
-        );
-        crate::router::set_context_anchor(
-            app,
-            &crate::router::ContextAnchor {
-                x: rect.x as f32,
-                y: (geometry.grid_y + rect.y) as f32,
-                w: rect.width as f32,
-                h: rect.height as f32,
-                radius: derived.radius_md as f32,
-                zoomed: true,
+        let Some(kind) = entry.kind else {
+            return;
+        };
+        if kind == Kind::Empty || entry.hub_index < 0 {
+            return;
+        }
+        if kind == Kind::Category && error {
+            return;
+        }
+        let item = usize::try_from(entry.hub_index)
+            .ok()
+            .and_then(|index| shared.hub.layout.visible().nth(index).cloned());
+        shared.hub.menu_seq += 1;
+        let seq = shared.hub.menu_seq;
+        let ask = |tile, system: &str, path: &str, name: &str| {
+            Plan::Ask(GameRequest {
+                seq,
+                hub_index: entry.hub_index,
+                tile,
+                system: system.to_string(),
+                path: path.to_string(),
+                name: name.to_string(),
+            })
+        };
+        let plan = match kind {
+            Kind::Category => {
+                let maintainable = crate::router::has_indexable(&shared, &entry.id)
+                    && !crate::router::media_busy(app);
+                Plan::Show(menu::category(maintainable), MenuTarget::Tile)
+            }
+            Kind::Action => match shared.hub.resume.entry.as_ref() {
+                Some(resume)
+                    if entry.id == "resume"
+                        && !resume.system_id.is_empty()
+                        && !resume.media_path.is_empty() =>
+                {
+                    ask(
+                        Tile::Resume,
+                        &resume.system_id,
+                        &resume.media_path,
+                        &resume.media_name,
+                    )
+                }
+                _ => Plan::Show(menu::built_in(), MenuTarget::Tile),
             },
-        );
+            Kind::System => match crate::systems::row_for(&shared, &entry.id) {
+                Some(row) => Plan::Show(
+                    menu::system(&crate::systems::menu_input(app, &shared, &row, false, true)),
+                    MenuTarget::System(row),
+                ),
+                None => Plan::Show(menu::unresolved_shortcut(), MenuTarget::Tile),
+            },
+            // A folder's visibility is reported only by its parent's
+            // listing, which a tile does not record.
+            Kind::Folder => Plan::Show(menu::unresolved_shortcut(), MenuTarget::Tile),
+            Kind::ZapScript => match item {
+                // A game pinned from a list stores where the game is; a
+                // hand-written script stores only its text.
+                Some(item) if !item.system.is_empty() && !item.path.is_empty() => {
+                    ask(Tile::Pinned, &item.system, &item.path, &entry.name)
+                }
+                _ => {
+                    let has_script = !entry.script.trim().is_empty();
+                    Plan::Show(
+                        menu::shortcut(has_script, shared.has_nfc),
+                        MenuTarget::Game {
+                            row: Box::new(crate::games::GameRow::from_script(
+                                &entry.name,
+                                &entry.script,
+                            )),
+                            system: String::new(),
+                        },
+                    )
+                }
+            },
+            Kind::Search => Plan::Show(menu::shortcut(false, false), MenuTarget::Tile),
+            Kind::Empty => return,
+        };
+        shared.hub.menu_hub_index = entry.hub_index;
+        plan
+    };
+    match plan {
+        Plan::Show(menu, target) => present_menu(ctx, app, menu, target),
+        Plan::Ask(request) => ask_game(ctx, app, request),
     }
-    crate::router::present_hub_context_menu(ctx, app, entries);
+}
+
+/// Anchor the menu on the focused tile and show it.
+fn present_menu(ctx: &Ctx, app: &App, menu: menu::Menu, target: MenuTarget) {
+    lock(&ctx.shared).hub.menu_target = target;
+    let inputs = crate::router::output_scene(app).inputs();
+    let derived = zaparoo_app::sizing::derive(&inputs);
+    let geometry = rules::geometry(&inputs, &derived);
+    let (row, column) = {
+        let shared = lock(&ctx.shared);
+        (
+            shared.hub.grid.current_row(),
+            shared.hub.grid.current_column(),
+        )
+    };
+    let rect = zaparoo_app::paged_grid::cell_rect(
+        &geometry.fit,
+        &geometry.insets,
+        i32::try_from(row).unwrap_or(0),
+        i32::try_from(column).unwrap_or(0),
+    );
+    crate::router::set_context_anchor(
+        app,
+        &crate::router::ContextAnchor {
+            x: rect.x as f32,
+            y: (geometry.grid_y + rect.y) as f32,
+            w: rect.width as f32,
+            h: rect.height as f32,
+            radius: derived.radius_md as f32,
+            zoomed: true,
+        },
+    );
+    crate::router::present_hub_context_menu(ctx, app, menu);
+    crate::router::refresh_readers(ctx);
+}
+
+/// A tile only records where its game is. Ask Core what the game's state
+/// is now, then open the menu; the header says so if that takes a while.
+fn ask_game(ctx: &Ctx, app: &App, request: GameRequest) {
+    let client = ctx.store.client();
+    let ctx2 = ctx.clone();
+    let weak = app.as_weak();
+    let wait = crate::cue::begin(ctx, app, crate::AppCue::LoadingList, "", "");
+    let params = MediaMetaParams::for_media(request.system.clone(), request.path.clone());
+    ctx.handle.spawn(async move {
+        let meta = client
+            .media_meta(params)
+            .await
+            .ok()
+            .map(|result| result.media);
+        let _ = weak.upgrade_in_event_loop(move |app| {
+            crate::cue::end(&ctx2, &app, wait);
+            game_answered(&ctx2, &app, &request, meta.as_ref());
+        });
+    });
+}
+
+/// The request the Hub is waiting on, for a test to answer or outrun.
+#[cfg(all(test, feature = "mister"))]
+pub(crate) fn pending_game_request(ctx: &Ctx, tile: Tile, system: &str, path: &str) -> GameRequest {
+    let shared = lock(&ctx.shared);
+    GameRequest {
+        seq: shared.hub.menu_seq,
+        hub_index: shared.hub.menu_hub_index,
+        tile,
+        system: system.to_string(),
+        path: path.to_string(),
+        name: String::new(),
+    }
+}
+
+/// Core said what it knows about a tile's game: open the game's menu, or
+/// the tile's own when Core no longer has the game.
+pub(crate) fn game_answered(ctx: &Ctx, app: &App, request: &GameRequest, meta: Option<&MediaMeta>) {
+    let (menu, target) = {
+        let shared = lock(&ctx.shared);
+        let hub = &shared.hub;
+        let shell = app.global::<crate::Shell>();
+        // The answer is for the tile the user asked about, still focused,
+        // on a Hub nothing else has taken over since.
+        if hub.menu_seq != request.seq
+            || hub.move_armed()
+            || shell.get_active_screen() != crate::Screen::Hub
+            || shell.get_transitioning()
+            || app.global::<crate::Overlays>().get_context_open()
+            || hub
+                .current()
+                .is_none_or(|entry| entry.hub_index != request.hub_index)
+        {
+            return;
+        }
+        let found = meta.filter(|meta| !meta.is_missing && !meta.path.is_empty());
+        match found {
+            Some(meta) => {
+                let row = crate::games::GameRow::from_meta(&request.system, &request.name, meta);
+                let input = crate::games::game_input(
+                    app,
+                    &shared,
+                    crate::games::GamesMode::Favorites,
+                    &row,
+                    &request.system,
+                    Some(request.tile),
+                );
+                (
+                    menu::game(&input),
+                    MenuTarget::Game {
+                        row: Box::new(row),
+                        system: request.system.clone(),
+                    },
+                )
+            }
+            None if request.tile == Tile::Resume => (menu::built_in(), MenuTarget::Tile),
+            None => (menu::unresolved_shortcut(), MenuTarget::Tile),
+        }
+    };
+    present_menu(ctx, app, menu, target);
+}
+
+/// A page Core has to be asked for, opened from a tile's game.
+pub fn begin_context_page(ctx: &Ctx, app: &App, id: &str) -> bool {
+    let target = lock(&ctx.shared).hub.menu_target.clone();
+    let MenuTarget::Game { row, system } = target else {
+        return false;
+    };
+    crate::games::begin_game_page(ctx, app, id, &row, &system)
 }
 
 /// Options menu accept for a Hub-owned menu.
 pub fn context_accept(ctx: &Ctx, app: &App, id: &str) {
-    let (hub_index, category) = {
+    let (hub_index, category, target) = {
         let shared = lock(&ctx.shared);
         let hub = &shared.hub;
         let category = rules::flat_index_for_hub_index(&hub.entries, hub.menu_hub_index)
             .and_then(|flat| hub.entries.get(flat))
             .filter(|e| e.kind == Some(Kind::Category))
             .map(|e| e.id.clone());
-        (hub.menu_hub_index, category)
+        (hub.menu_hub_index, category, hub.menu_target.clone())
     };
     match id {
         "hub_move" => begin_move(ctx, app, hub_index),
@@ -959,7 +1580,7 @@ pub fn context_accept(ctx: &Ctx, app: &App, id: &str) {
                     let hub = &mut shared.hub;
                     let removed = hub.layout.remove_visible_item(index);
                     if removed {
-                        hub.save();
+                        hub.save(&ctx.handle);
                     }
                     removed
                 };
@@ -978,7 +1599,33 @@ pub fn context_accept(ctx: &Ctx, app: &App, id: &str) {
                 crate::router::scrape_category(ctx, app, &category);
             }
         }
-        _ => {}
+        _ => match target {
+            MenuTarget::Game { row, system } => match id {
+                "toggle_favorite" | "toggle_hidden" => crate::games::toggle_tag_detached(
+                    ctx,
+                    app,
+                    &row,
+                    &system,
+                    id == "toggle_favorite",
+                    |_, _, _| {},
+                ),
+                "add_to_hub" => crate::games::add_to_hub(
+                    ctx,
+                    app,
+                    crate::games::GamesMode::Favorites,
+                    &row,
+                    &system,
+                ),
+                _ => crate::games::game_action(ctx, app, id, &row, &system),
+            },
+            MenuTarget::System(row) => {
+                crate::systems::system_action(ctx, app, id, &row);
+                if id == "toggle_hide_system" {
+                    rebuild(ctx, app);
+                }
+            }
+            MenuTarget::Tile => {}
+        },
     }
 }
 
@@ -1006,11 +1653,11 @@ pub fn page_menu_accept(ctx: &Ctx, app: &App, id: &str) {
                 let mut shared = lock(&ctx.shared);
                 let hub = &mut shared.hub;
                 hub.layout.reset(&ids);
-                hub.save();
+                hub.save(&ctx.handle);
             }
             rebuild(ctx, app);
         }
-        "hub_settings" => crate::settings::enter(ctx, app),
+        "hub_settings" => crate::settings::enter(ctx, app, EntryMode::Fresh),
         "hub_quit" => crate::router::open_quit_confirm(app),
         _ => {}
     }
@@ -1032,7 +1679,7 @@ fn open_add_picker(ctx: &Ctx, app: &App) {
         let live = Live {
             categories_loaded: hub.categories_loaded,
             confirmed_categories: &shared.all_categories,
-            update_enabled: false,
+            update_enabled: crate::update::available(),
             ..Live::default()
         };
         rules::add_entries(
@@ -1051,46 +1698,142 @@ fn open_add_picker(ctx: &Ctx, app: &App) {
     let rows: Vec<crate::MenuEntry> = entries
         .iter()
         .map(|e| crate::MenuEntry {
+            role: crate::MenuRole::default(),
+            detail_key: SharedString::default(),
             id: SharedString::from(e.id.as_str()),
             label: SharedString::default(),
             // The picker shows the same words the tile will; the view
             // maps the key.
             label_key: SharedString::from(e.label_key.as_str()),
+            enabled: true,
+            reason_key: SharedString::default(),
+            detail: SharedString::default(),
         })
         .collect();
     crate::router::present_hub_add_picker(ctx, app, rows);
 }
 
-/// "Add to Hub" from a browse screen: append a system, folder or
-/// `ZapScript` shortcut after the last real tile.
+/// Whether the tile a browse screen's "Add to Hub" would create for this
+/// target is already on the Hub, so its menu offers "Remove from Hub".
+pub fn has_target(
+    shared: &Shared,
+    kind: &str,
+    id: &str,
+    path: &str,
+    relative: &str,
+    script: &str,
+    system: &str,
+) -> bool {
+    shared
+        .hub
+        .layout
+        .target_position(kind, id, path, relative, script, system)
+        .is_some()
+}
+
+/// "Add to Hub" / "Remove from Hub" from a browse screen, for a system,
+/// folder or `ZapScript` shortcut. A target not on the Hub takes the first
+/// gap, or the end when there is none; one already there is removed the
+/// way the Hub's own Remove does it, leaving a gap. Either way the header
+/// line confirms it, since the Hub itself is not on screen.
 #[allow(
     clippy::too_many_arguments,
     reason = "one argument per HubItem column, mirroring the core API"
 )]
-pub fn add_target(
+pub fn toggle_target(
     ctx: &Ctx,
     app: &App,
     kind: &str,
     id: &str,
     path: &str,
+    relative: &str,
     script: &str,
     name: &str,
     icon: &str,
     system: &str,
 ) {
-    let added = {
+    let cue = {
         let mut shared = lock(&ctx.shared);
         let hub = &mut shared.hub;
-        let added = hub
+        let found = hub
             .layout
-            .add_target_item(kind, id, path, script, name, icon, system);
-        if added {
-            hub.save();
+            .target_position(kind, id, path, relative, script, system);
+        let cue = match found {
+            Some(index) => hub
+                .layout
+                .remove_visible_item(index)
+                .then_some(crate::AppCue::RemovedFromHub),
+            None => hub
+                .layout
+                .add_target_item(kind, id, path, relative, script, name, icon, system)
+                .then_some(crate::AppCue::AddedToHub),
+        };
+        if cue.is_some() {
+            hub.save(&ctx.handle);
         }
-        added
+        cue
     };
-    if added {
+    if let Some(cue) = cue {
         rebuild(ctx, app);
+        crate::cue::flash(ctx, app, cue, zaparoo_app::wait_cue::CONFIRM_MS);
+    } else {
+        tracing::warn!("hub update did nothing for {kind} {name}{id}");
+        crate::router::report_action_error(ctx, app, "add_to_hub", name);
+    }
+}
+
+/// Whether this search already has a tile on the Hub, so the results' View
+/// menu offers "Remove from Hub".
+pub fn has_search(
+    shared: &Shared,
+    query: &str,
+    systems: &[String],
+    tags: &[String],
+    path: &str,
+) -> bool {
+    shared
+        .hub
+        .layout
+        .search_position(query, systems, tags, path)
+        .is_some()
+}
+
+/// "Add to Hub" / "Remove from Hub" from the Search results, for the
+/// search on screen: the same gap-or-end placement, removal and header
+/// confirmation as `toggle_target`.
+pub fn toggle_search(
+    ctx: &Ctx,
+    app: &App,
+    query: &str,
+    systems: &[String],
+    tags: &[String],
+    path: &str,
+    name: &str,
+) {
+    let cue = {
+        let mut shared = lock(&ctx.shared);
+        let hub = &mut shared.hub;
+        let cue = match hub.layout.search_position(query, systems, tags, path) {
+            Some(index) => hub
+                .layout
+                .remove_visible_item(index)
+                .then_some(crate::AppCue::RemovedFromHub),
+            None => hub
+                .layout
+                .add_search_item(query, systems, tags, path, name)
+                .then_some(crate::AppCue::AddedToHub),
+        };
+        if cue.is_some() {
+            hub.save(&ctx.handle);
+        }
+        cue
+    };
+    if let Some(cue) = cue {
+        rebuild(ctx, app);
+        crate::cue::flash(ctx, app, cue, zaparoo_app::wait_cue::CONFIRM_MS);
+    } else {
+        tracing::warn!("hub update did nothing for search {name}");
+        crate::router::report_action_error(ctx, app, "add_to_hub", name);
     }
 }
 
@@ -1110,7 +1853,7 @@ pub fn add_picked(ctx: &Ctx, app: &App, id: &str) {
         let hub = &mut shared.hub;
         let added = hub.layout.add_item(kind, item_id, target);
         if added {
-            hub.save();
+            hub.save(&ctx.handle);
         }
         added.then(|| {
             hub.layout
@@ -1134,6 +1877,9 @@ fn pointer_select(ctx: &Ctx, app: &App, local: i32) -> bool {
     {
         let mut shared = lock(&ctx.shared);
         let hub = &mut shared.hub;
+        if hub.sliding {
+            return false;
+        }
         hub.focus_armed = true;
         let Ok(local) = usize::try_from(local) else {
             return false;
@@ -1200,15 +1946,17 @@ fn page_handler(ctx: std::sync::Arc<Ctx>, weak: slint::Weak<App>) -> impl Fn(i32
         let Some(app) = weak.upgrade() else {
             return;
         };
-        if lock(&ctx.shared).hub.move_armed() {
-            move_step(&ctx, &app, 0, 0, delta);
-            return;
+        if delta != 0 && app.global::<crate::Shell>().get_active_screen() == crate::Screen::Hub {
+            crate::router::handle_action(
+                &ctx,
+                &app,
+                if delta < 0 {
+                    actions::PAGE_PREV
+                } else {
+                    actions::PAGE_NEXT
+                },
+            );
         }
-        let moved = lock(&ctx.shared).hub.grid.page_by(delta);
-        if moved {
-            commit_current(&ctx);
-        }
-        render(&ctx, &app);
     }
 }
 
@@ -1216,6 +1964,21 @@ fn page_handler(ctx: std::sync::Arc<Ctx>, weak: slint::Weak<App>) -> impl Fn(i32
 pub fn set_resume(ctx: &Ctx, app: &App, resume: Resume) {
     lock(&ctx.shared).hub.resume = resume;
     rebuild(ctx, app);
+    // A cold start on the Hub waits for this before it shows: the Resume
+    // tile is part of the restored screen. A restore still filling another
+    // screen is a pending route, and its own commit ends it.
+    if resume_settled(ctx)
+        && crate::router::restoring(app)
+        && !app.global::<crate::Shell>().get_transitioning()
+    {
+        crate::router::finish_restore(app);
+    }
+}
+
+/// Core has answered what there is to resume, or that there is nothing.
+pub fn resume_settled(ctx: &Ctx) -> bool {
+    let shared = lock(&ctx.shared);
+    shared.hub.resume.requested && !shared.hub.resume.loading
 }
 
 pub fn set_internet(ctx: &Ctx, app: &App, available: bool) {
@@ -1227,5 +1990,38 @@ pub fn set_internet(ctx: &Ctx, app: &App, available: bool) {
     };
     if changed {
         rebuild(ctx, app);
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::expect_used, reason = "tests fail fast on persistence errors")]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn background_layout_writer_saves_latest_snapshot_in_order() {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let dir =
+            std::env::temp_dir().join(format!("zaparoo-hub-save-{}-{stamp}", std::process::id()));
+        std::fs::create_dir(&dir).expect("isolated directory");
+        let path = dir.join("hub.toml");
+        let mut hub = HubModel::new(path.clone());
+        for category in ["Console", "Arcade", "Computer"] {
+            hub.layout.reset(&[category.into()]);
+            hub.save(&tokio::runtime::Handle::current());
+        }
+        let expected = hub.layout.clone();
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            while load_hub_layout(&path) != expected {
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("latest layout saved");
+        drop(hub);
+        std::fs::remove_dir_all(&dir).expect("cleanup");
     }
 }

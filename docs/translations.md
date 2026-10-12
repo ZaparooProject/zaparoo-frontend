@@ -20,11 +20,18 @@ The step-by-step workflow for changing strings and adding a language lives in
 | Language setting (`[general] language = "ja"` in `frontend.toml`) | 1: explicit choice |
 | `auto` or unset | 2: `LC_ALL`, then `LC_MESSAGES`, then `LANG` |
 
-`apply_language` in `rust/frontend/src/main.rs` runs before the first frame and
+`apply_language` in `rust/frontend/src/lib.rs` runs before the first frame and
 again whenever the Language setting changes, so a switch applies live without
 a relaunch. It normalizes `-` to `_`, tries the exact tag (`zh_CN`), then the
 language part (`zh`), and falls back to the English source strings when no
 bundled catalog matches.
+
+The same call orders the fonts that draw Han ideographs. Japanese, Korean,
+Simplified Chinese and Traditional Chinese share code points but not glyph
+shapes, and Slint does not tag text runs with a language, so the interface
+language decides which embedded face is tried first
+(`zaparoo_app::han_fonts`); the others follow as fallback. A Japanese game
+title on a Simplified Chinese interface therefore takes Chinese shapes.
 
 ## Writing translatable strings
 
@@ -75,7 +82,7 @@ Run `just tr-extract` and merge the catalogs after any `@tr` edit.
 
 ## Requirements
 
-- `slint-tr-extractor` 1.17.1, matching the pinned Slint. The toolchain image
+- `slint-tr-extractor` 1.18.0, matching the pinned Slint. The toolchain image
   provides it, so `just tr-extract` and `just lint` need no local install.
 - gettext (`msgmerge`, `msgattrib`, `msginit`) for catalog maintenance.
 

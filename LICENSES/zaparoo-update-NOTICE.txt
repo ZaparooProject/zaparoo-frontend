@@ -1,0 +1,14 @@
+zaparoo-update Notice
+
+zaparoo-update is an optional third-party dependency used by the Zaparoo
+Frontend update integration.
+
+zaparoo-update is separately owned and licensed under the PolyForm
+Noncommercial License 1.0.0, unless another license is granted by its
+copyright holder.
+
+Commercial licenses for Zaparoo Frontend do not grant commercial rights to
+zaparoo-update. Commercial use, distribution, or bundling of Zaparoo Frontend
+with zaparoo-update enabled requires a separate commercial license from the
+zaparoo-update copyright holder, José Manuel Barroso Galindo
+<theypsilon@gmail.com>.

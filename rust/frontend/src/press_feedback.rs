@@ -1,13 +1,9 @@
-//! Keep the accepting control visible through its physical push, then dispatch.
+//! Keep Accept visible through its push, then retain feedback while work is pending.
 
 use crate::{App, Overlays, PressFeedback, PressOwner, Screen, Shell};
 use slint::{ComponentHandle, Model};
 use std::cell::Cell;
 use std::time::Duration;
-
-// 34 ms downstroke plus a short fully depressed hold. This is local button
-// feedback, not a route animation; reduced motion dispatches without waiting.
-pub(crate) const PUSH_MS: u64 = 90;
 
 /// The longest a commit may keep a control pressed. Nothing should reach it:
 /// a launch answers, and a launch that takes the screen puts the frontend
@@ -20,13 +16,9 @@ thread_local! {
     /// Set by `keep_held` from inside a commit, read by `dispatch` once the
     /// commit returns.
     static HELD: Cell<bool> = const { Cell::new(false) };
-    /// Whether the press currently down is a hold rather than a push. The two
-    /// last very different lengths of time, and callers gating on a press
-    /// need to tell them apart.
-    static HOLDING: Cell<bool> = const { Cell::new(false) };
 }
 
-/// A press a commit has kept down past its push.
+/// A press retained while its operation is pending.
 ///
 /// Releasing a stale hold does nothing: every new press bumps the same
 /// ticket, so a launch that answers after the user has moved on cannot lift
@@ -76,7 +68,7 @@ pub fn prepare(ctx: &crate::router::Ctx, app: &App) -> Option<Target> {
         // resolving the button, since the outgoing strip can hide its focus.
         match app.global::<Shell>().get_active_screen() {
             Screen::Systems | Screen::FavoriteSystems => crate::systems::interrupt_page(ctx, app),
-            Screen::Games | Screen::Favorites | Screen::Recents => {
+            Screen::Games | Screen::Favorites | Screen::Recents | Screen::SearchResults => {
                 crate::games::interrupt_page(ctx, app);
             }
             _ => {}
@@ -93,14 +85,32 @@ fn dialog_target(ov: &Overlays<'_>) -> Option<Target> {
         PressOwner::Dialog,
         index,
         format!(
-            "{:?}:{:?}:{:?}:{}:{}:{button:?}",
+            "{:?}:{:?}:{}:{}:{button:?}",
             ov.get_dialog_kind(),
             ov.get_dialog_error(),
-            ov.get_first_run_phase(),
             ov.get_dialog_detail(),
             ov.get_dialog_arg()
         ),
     ))
+}
+
+/// The Online lists: only a backup row can be accepted, and only while
+/// nothing is already running. The activity log is read only.
+fn online_list_target(ov: &Overlays<'_>) -> Option<Target> {
+    if ov.get_online_list_kind() != crate::OnlineListKind::Backups
+        || matches!(
+            ov.get_online_list_status(),
+            crate::OnlineListStatus::BackingUp | crate::OnlineListStatus::Restoring
+        )
+    {
+        return None;
+    }
+    let index = ov.get_online_list_index();
+    let row = ov
+        .get_online_list_rows()
+        .row_data(usize::try_from(index).ok()?)?;
+    row.enabled
+        .then(|| target(PressOwner::OnlineList, index, row.id.to_string()))
 }
 
 fn current_with(app: &App, prepare_grid: impl FnOnce()) -> Option<Target> {
@@ -137,6 +147,20 @@ fn current_with(app: &App, prepare_grid: impl FnOnce()) -> Option<Target> {
     }
     if ov.get_qr_open() {
         return None;
+    }
+    // The pairing panel carries no pressable control: its two keys are
+    // named in the help bar and nothing on the screen below it may take
+    // the push.
+    if ov.get_pair_open() {
+        return None;
+    }
+    // The link panel has nothing to press either: Accept is named in its
+    // own text, and the settings row under it must not take the push.
+    if ov.get_online_open() {
+        return None;
+    }
+    if ov.get_online_list_open() {
+        return online_list_target(&ov);
     }
     if ov.get_card_write_open() {
         return Some(target(
@@ -190,8 +214,28 @@ fn current_with(app: &App, prepare_grid: impl FnOnce()) -> Option<Target> {
             &view.get_rows(),
         );
     }
+    if shell.get_active_screen() == Screen::Update {
+        return update_target(app);
+    }
     prepare_grid();
     grid_target(app)
+}
+
+fn update_target(app: &App) -> Option<Target> {
+    let view = app.global::<crate::UpdateView>();
+    if !matches!(
+        view.get_page(),
+        crate::UpdatePage::Intro | crate::UpdatePage::Finished
+    ) {
+        return None;
+    }
+    let index = view.get_button_focus();
+    let button = view.get_buttons().row_data(usize::try_from(index).ok()?)?;
+    Some(target(
+        PressOwner::Update,
+        index,
+        format!("{:?}:{:?}:{button:?}", view.get_page(), view.get_outcome()),
+    ))
 }
 
 fn grid_target(app: &App) -> Option<Target> {
@@ -226,7 +270,7 @@ fn grid_target(app: &App) -> Option<Target> {
                 view.get_cells(),
             )
         }
-        Screen::Games | Screen::Favorites | Screen::Recents => {
+        Screen::Games | Screen::Favorites | Screen::Recents | Screen::SearchResults => {
             let view = app.global::<crate::GamesView>();
             if shell.get_browse_list_layout() {
                 return None;
@@ -263,17 +307,14 @@ pub fn pending(app: &App) -> bool {
     app.global::<PressFeedback>().get_owner() != PressOwner::None
 }
 
-/// True while the press down is a hold, not the 90 ms push. A push is short
-/// enough that the key interrupting it can be dropped; a hold can last as
-/// long as a launch takes, and dropping a key for that long loses presses the
-/// user meant.
-pub fn holding() -> bool {
-    HOLDING.with(Cell::get)
+#[cfg(all(test, feature = "mister"))]
+pub(crate) fn held_ticket(app: &App) -> Option<Hold> {
+    (HELD.with(Cell::get) && pending(app)).then(|| Hold(TICKET.with(Cell::get)))
 }
 
 pub fn cancel(app: &App) {
     TICKET.with(|ticket| ticket.set(ticket.get().wrapping_add(1)));
-    HOLDING.with(|holding| holding.set(false));
+    HELD.with(|held| held.set(false));
     let feedback = app.global::<PressFeedback>();
     if feedback.get_owner() == PressOwner::Settings {
         let view = app.global::<crate::SettingsView>();
@@ -282,19 +323,10 @@ pub fn cancel(app: &App) {
     feedback.set_owner(PressOwner::None);
 }
 
-/// Keep the accepting control pressed after the push, for work that outlives
-/// it. Call from inside a commit; the press then lifts on `release` instead
-/// of when the push ends.
-///
-/// A launch is why this exists. The run is dispatched while the tile is
-/// still pushed in and the press settles afterwards, so the tile the user
-/// pressed is the thing that says something is happening. A fixed 90 ms
-/// push is over long before Core has answered, which would leave the
-/// header text as the only sign the press did anything, a long way from
-/// where the eye is.
+/// Keep the accepting control pressed while asynchronous work runs. Launches
+/// release their own ticket; deferred navigation releases when its route ends.
 pub fn keep_held(app: &App) -> Hold {
     HELD.with(|held| held.set(true));
-    HOLDING.with(|holding| holding.set(true));
     let ticket = TICKET.with(Cell::get);
     let weak = app.as_weak();
     slint::Timer::single_shot(Duration::from_millis(HOLD_MAX_MS), move || {
@@ -312,12 +344,12 @@ pub fn release(app: &App, hold: Hold) {
     }
 }
 
-/// Retain the source control for the downstroke and depressed hold. A new
-/// action cancels this ticket; a changed owner can never receive an old Accept.
+/// Retain the source control through its downstroke and short depressed hold.
+/// Disabled motion dispatches immediately; interrupted or changed targets never
+/// receive an old Accept.
 pub fn dispatch(app: &App, target: &Target, commit: impl FnOnce(&App) + 'static) {
     cancel(app);
-    if !app.global::<crate::Motion>().get_enabled() {
-        commit(app);
+    if current(app).as_ref() != Some(target) {
         return;
     }
     let ticket = TICKET.with(Cell::get);
@@ -335,28 +367,45 @@ pub fn dispatch(app: &App, target: &Target, commit: impl FnOnce(&App) + 'static)
         }
         _ => {}
     }
-    let weak = app.as_weak();
-    let target = target.clone();
-    slint::Timer::single_shot(Duration::from_millis(PUSH_MS), move || {
-        if TICKET.with(Cell::get) != ticket {
-            return;
-        }
-        let Some(app) = weak.upgrade() else {
-            return;
-        };
-        if current(&app).as_ref() != Some(&target) {
-            cancel(&app);
-            return;
-        }
-        // Cancel after the commit, not before, so a commit that calls
-        // `keep_held` never lets the control come up for a frame in between.
-        // A commit that started a press of its own owns the ticket now, and
-        // lifting that one would be lifting the wrong control.
-        HELD.with(|held| held.set(false));
-        commit(&app);
+    // Commit before lifting so a launch or pending route can retain the same
+    // pressed face without a raised frame between the push and its hold.
+    let dispatch = move |app: &App| {
+        commit(app);
         if TICKET.with(Cell::get) == ticket && !HELD.with(Cell::get) {
-            cancel(&app);
+            if app.global::<Shell>().get_transitioning() {
+                keep_held(app);
+            } else {
+                cancel(app);
+            }
         }
-    });
+    };
+    if app.global::<crate::Motion>().get_enabled() {
+        let weak = app.as_weak();
+        let target = target.clone();
+        slint::Timer::single_shot(
+            Duration::from_millis(zaparoo_app::input::PRESS_FEEDBACK_MS),
+            move || {
+                if TICKET.with(Cell::get) != ticket {
+                    return;
+                }
+                let Some(app) = weak.upgrade() else {
+                    return;
+                };
+                if current(&app).as_ref() != Some(&target) {
+                    // The target's key can hold a game name or dialog text.
+                    tracing::debug!(
+                        owner = ?target.owner,
+                        index = target.index,
+                        "accept dropped: its target changed"
+                    );
+                    cancel(&app);
+                    return;
+                }
+                dispatch(&app);
+            },
+        );
+    } else {
+        dispatch(app);
+    }
     app.window().request_redraw();
 }

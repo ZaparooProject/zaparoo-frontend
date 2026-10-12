@@ -53,11 +53,15 @@ pub fn install_at(config: &Config, log_path: &Path) -> LoggerGuard {
     );
     let (non_blocking_file, file_guard) = tracing_appender::non_blocking(file_appender);
 
-    let stderr_layer = fmt::layer()
-        .with_writer(io::stderr)
-        .with_ansi(false)
-        .with_target(false)
-        .with_timer(fmt::time::UtcTime::rfc_3339());
+    // On MiSTer stderr is the launcher's virtual console, which is what the
+    // display shows until the first frame: nothing may be printed there.
+    let stderr_layer = (!crate::runtime::current().is_mister()).then(|| {
+        fmt::layer()
+            .with_writer(io::stderr)
+            .with_ansi(false)
+            .with_target(false)
+            .with_timer(fmt::time::UtcTime::rfc_3339())
+    });
 
     let file_layer = fmt::layer()
         .with_writer(non_blocking_file)

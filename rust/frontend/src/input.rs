@@ -7,14 +7,41 @@
 // navigation flag. The rules and their thresholds live in
 // `zaparoo_app::input`; this file owns the timers and the wiring.
 
+use std::cell::Cell;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use slint::ComponentHandle;
 use zaparoo_app::input as rules;
+use zaparoo_core::input_actions::actions;
 
 use crate::router::{lock, Ctx};
 use crate::App;
+
+thread_local! {
+    /// When the key event being dispatched happened, where the platform
+    /// knows it.
+    static EVENT_MS: Cell<Option<u64>> = const { Cell::new(None) };
+}
+
+/// Dispatch a key event stamped with the time it happened. A platform that
+/// reads input in batches hands over presses long after they were made, and
+/// the duplicate guard must time them as pressed, not as handled.
+#[cfg(feature = "mister")]
+pub(crate) fn with_event_time(time_ms: u64, dispatch: impl FnOnce()) {
+    EVENT_MS.with(|event| event.set(Some(time_ms)));
+    dispatch();
+    EVENT_MS.with(|event| event.set(None));
+}
+
+/// Why a press was not routed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Rejected {
+    /// The key is already down: a press with no release in between.
+    AlreadyPressed,
+    /// The same key again inside the duplicate window.
+    Duplicate,
+}
 
 /// The key path's state. Held in `Shared` because the repeat timers
 /// fire on the event loop with nothing else to hang it from.
@@ -33,8 +60,15 @@ pub struct InputModel {
     repeat_seq: u64,
     /// The same ticket for the rapid navigation quiet tail.
     quiet_seq: u64,
-    /// True only during a qualified held-repeat dispatch, never its async tail.
-    rapid_dispatch: bool,
+    /// The held tier only during a held-repeat dispatch, never its async
+    /// tail; `Row` otherwise.
+    dispatch_tier: rules::HoldTier,
+    /// A held-repeat dispatch is in flight, at any tier. An early repeat
+    /// is `Row` like a tap, but it is still a hold.
+    dispatching_repeat: bool,
+    /// Non-text navigation count for embedding-host input diagnostics.
+    #[cfg(feature = "hosted")]
+    navigation_events: u64,
 }
 
 impl InputModel {
@@ -47,7 +81,30 @@ impl InputModel {
             epoch: Instant::now(),
             repeat_seq: 0,
             quiet_seq: 0,
-            rapid_dispatch: false,
+            dispatch_tier: rules::HoldTier::Row,
+            dispatching_repeat: false,
+            #[cfg(feature = "hosted")]
+            navigation_events: 0,
+        }
+    }
+
+    #[cfg(feature = "hosted")]
+    pub(crate) fn navigation_events(&self) -> u64 {
+        self.navigation_events
+    }
+
+    /// Take a press through the held-key check and the duplicate guard.
+    /// `event_ms` is when the press happened; without it the press is timed
+    /// from now.
+    fn accept(&mut self, key: &str, event_ms: Option<u64>) -> Result<(), Rejected> {
+        if !self.pressed_keys.insert(key.to_string()) {
+            return Err(Rejected::AlreadyPressed);
+        }
+        let now = event_ms.unwrap_or_else(|| self.now_ms());
+        if self.guard.accept(key, now) {
+            Ok(())
+        } else {
+            Err(Rejected::Duplicate)
         }
     }
 
@@ -64,6 +121,25 @@ impl InputModel {
     #[cfg(all(test, feature = "mister"))]
     pub(crate) fn advance_test_clock(&mut self, milliseconds: u64) {
         self.epoch -= Duration::from_millis(milliseconds);
+    }
+
+    /// How a browse list follows a selection that just moved `rows` rows:
+    /// whether it glides, and the linear glide's length in milliseconds (0
+    /// for the eased glide of a tap). A held key that steps one row glides
+    /// at constant speed for a quarter longer than its repeat interval, so
+    /// the list is still moving when the next repeat lands and never falls
+    /// more than a row behind; that holds at every tier. A held step that
+    /// jumps a page or a letter cuts. For a driver that already holds the
+    /// shared state.
+    pub(crate) fn list_follow(&self, rows: usize) -> (bool, i32) {
+        if !self.dispatching_repeat {
+            return (true, 0);
+        }
+        if rows > 1 {
+            return (false, 0);
+        }
+        let interval = self.dispatch_tier.repeat_ms();
+        (true, i32::try_from(interval + interval / 4).unwrap_or(0))
     }
 
     fn now_ms(&self) -> u64 {
@@ -94,7 +170,7 @@ fn keyboard_active() -> bool {
 /// owns input above it. A repeat that lands while a modal is open still
 /// routes to the modal, but it must not arm rapid navigation behind it:
 /// the grid is still painted under the scrim.
-fn modal_open(app: &App) -> bool {
+pub(crate) fn modal_open(app: &App) -> bool {
     let overlays = app.global::<crate::Overlays>();
     app.global::<crate::LogUploadView>().get_open()
         || app.global::<crate::SetupModalView>().get_open()
@@ -115,12 +191,21 @@ fn accept_press(ctx: &Ctx, app: &App, key: &str) -> bool {
     if app.global::<crate::Shell>().get_dormant() {
         return false;
     }
-    let mut shared = lock(&ctx.shared);
-    if !shared.input.pressed_keys.insert(key.to_string()) {
-        return false;
+    let event_ms = EVENT_MS.with(Cell::get);
+    match lock(&ctx.shared).input.accept(key, event_ms) {
+        Ok(()) => true,
+        Err(reason) => {
+            // A key that types is logged as rejected, never by name.
+            let mut chars = key.chars();
+            let typed = matches!(
+                (chars.next(), chars.next()),
+                (Some(c), None) if zaparoo_app::keyboard::is_text(c)
+            );
+            let key = if typed { "" } else { key };
+            tracing::debug!(key, ?reason, ?event_ms, "press rejected");
+            false
+        }
     }
-    let now = shared.input.now_ms();
-    shared.input.guard.accept(key, now)
 }
 
 /// Apply the swaps to a resolved action, route it, then arm the repeat.
@@ -133,10 +218,35 @@ fn route_press(ctx: &Ctx, app: &App, action: &str, key: &str) {
         (s.swap_confirm_cancel, s.swap_options_view)
     };
     let action = rules::swap_actions(action, swap_cc, swap_ov, keyboard_active()).to_string();
+    // The View button deletes while a text field has the input; as its own
+    // action it repeats while held.
+    // Accept likewise becomes its own repeating action on a key that types.
+    let action = if !crate::search::owns_input(app) {
+        action
+    } else if action == actions::PAGE_MENU {
+        rules::TEXT_DELETE.to_string()
+    } else if action == actions::ACCEPT && crate::search::key_repeats(ctx) {
+        rules::TEXT_KEY.to_string()
+    } else {
+        action
+    };
     // The screensaver eats the waking press whole, repeat included: a
     // held direction that only woke the screen must not start walking
     // the list behind it.
     let waking = app.global::<crate::Shell>().get_saver_armed();
+    #[cfg(feature = "hosted")]
+    if matches!(
+        action.as_str(),
+        actions::UP
+            | actions::DOWN
+            | actions::LEFT
+            | actions::RIGHT
+            | actions::PAGE_PREV
+            | actions::PAGE_NEXT
+    ) {
+        let mut shared = lock(&ctx.shared);
+        shared.input.navigation_events = shared.input.navigation_events.saturating_add(1);
+    }
     crate::router::handle_action(ctx, app, &action);
     if !waking {
         arm_repeat(ctx, app, &action, key);
@@ -148,10 +258,34 @@ fn key_pressed(ctx: &Ctx, app: &App, bindings: &std::collections::HashMap<i32, S
     if !accept_press(ctx, app, key) {
         return;
     }
+    // A text field takes what is typed before any binding sees it, so a
+    // letter bound to an action still types.
+    if crate::search::owns_input(app) && type_key(ctx, app, key) {
+        return;
+    }
     let Some(action) = crate::actions::action_for_key_with(bindings, key) else {
         return;
     };
     route_press(ctx, app, &action, key);
+}
+
+/// Feed a key press to the text field with the input: a character types,
+/// Backspace deletes and repeats while held. False for any other key,
+/// which then keeps its bound action.
+fn type_key(ctx: &Ctx, app: &App, key: &str) -> bool {
+    if key == slint::SharedString::from(slint::platform::Key::Backspace).as_str() {
+        route_press(ctx, app, rules::TEXT_DELETE, key);
+        return true;
+    }
+    let mut chars = key.chars();
+    match (chars.next(), chars.next()) {
+        (Some(c), None) if zaparoo_app::keyboard::is_text(c) => {
+            crate::router::reset_idle(ctx, app);
+            crate::search::type_char(ctx, app, c);
+            true
+        }
+        _ => false,
+    }
 }
 
 /// A gamepad button already resolved to an action. It arrives here
@@ -159,7 +293,7 @@ fn key_pressed(ctx: &Ctx, app: &App, bindings: &std::collections::HashMap<i32, S
 /// knowable: the help bar's glyphs and whether the swap settings apply
 /// both depend on which device is driving. `[input.keyboard]` does not
 /// enter into it -- that file remaps keyboard keys, not pad buttons.
-#[cfg(feature = "desktop")]
+#[cfg(any(feature = "desktop", feature = "hosted"))]
 pub fn gamepad_pressed(ctx: &Ctx, app: &App, action: &str, key: &str) {
     if !accept_press(ctx, app, key) {
         return;
@@ -169,7 +303,7 @@ pub fn gamepad_pressed(ctx: &Ctx, app: &App, action: &str, key: &str) {
 
 /// The pad button came up. Same retirement as a key release: only the
 /// hold that started the repeat cancels it.
-#[cfg(feature = "desktop")]
+#[cfg(any(feature = "desktop", feature = "hosted"))]
 pub fn gamepad_released(ctx: &Ctx, key: &str) {
     key_released(ctx, key);
 }
@@ -244,17 +378,47 @@ fn repeat_fire(ctx: &Ctx, app: &App) {
             .input
             .hold
             .tick(now)
-            .map(|(action, long_enough)| (action.to_string(), long_enough))
+            .map(|(action, tier)| (action.to_string(), tier))
     };
-    let Some((action, long_enough)) = fired else {
+    let Some((action, tier)) = fired else {
         return;
     };
-    dispatch_repeat(ctx, app, &action, long_enough);
-    schedule_repeat(ctx, app, rules::REPEAT_TICK_MS);
+    // Modals take one row per repeat, never a page or letter. Their timer
+    // must use that same tier rather than slowing down a one-row move as
+    // the background browse hold crosses its acceleration thresholds.
+    let tier = if modal_open(app) {
+        rules::HoldTier::Row
+    } else {
+        rules::repeat_tier(&action, tier)
+    };
+    dispatch_repeat(ctx, app, &action, tier);
+    schedule_repeat(ctx, app, tier.repeat_ms());
 }
 
 pub(crate) fn rapid_page(ctx: &Ctx) -> bool {
-    lock(&ctx.shared).input.rapid_dispatch
+    lock(&ctx.shared).input.dispatch_tier.is_rapid()
+}
+
+/// The dispatch in flight is a held repeat, including one from before the
+/// hold turned into a fast scroll.
+pub(crate) fn dispatching_repeat(ctx: &Ctx) -> bool {
+    lock(&ctx.shared).input.dispatching_repeat
+}
+
+/// How long the hold behind the repeat in flight has lasted; 0 for a
+/// fresh press.
+pub(crate) fn repeat_held_ms(ctx: &Ctx) -> u64 {
+    let shared = lock(&ctx.shared);
+    if shared.input.dispatching_repeat {
+        shared.input.hold.held_ms(shared.input.now_ms())
+    } else {
+        0
+    }
+}
+
+/// The dispatch in flight is a long hold's letter step.
+pub(crate) fn letter_step(ctx: &Ctx) -> bool {
+    lock(&ctx.shared).input.dispatch_tier == rules::HoldTier::Letter
 }
 
 /// Async page fills use the input state, never its mirrored render flag.
@@ -264,18 +428,29 @@ pub(crate) fn rapid_navigation(ctx: &Ctx) -> bool {
 
 /// Keep repeat identity through screen dispatch; rapid rendering state is
 /// not suitable because ordinary actions reset it before navigating.
-pub(crate) fn dispatch_repeat(ctx: &Ctx, app: &App, action: &str, long_enough: bool) {
+pub(crate) fn dispatch_repeat(ctx: &Ctx, app: &App, action: &str, tier: rules::HoldTier) {
     // Read before dispatch: a modal that owns input keeps this repeat
     // off the rapid flag even though the action still routes to it.
     let owns_input = !modal_open(app);
-    lock(&ctx.shared).input.rapid_dispatch =
-        owns_input && long_enough && rules::is_rapid_navigation_action(action);
+    {
+        let mut shared = lock(&ctx.shared);
+        shared.input.dispatch_tier = if owns_input && rules::is_rapid_navigation_action(action) {
+            tier
+        } else {
+            rules::HoldTier::Row
+        };
+        shared.input.dispatching_repeat = owns_input;
+    }
     crate::router::handle_action(ctx, app, action);
-    lock(&ctx.shared).input.rapid_dispatch = false;
+    {
+        let mut shared = lock(&ctx.shared);
+        shared.input.dispatch_tier = rules::HoldTier::Row;
+        shared.input.dispatching_repeat = false;
+    }
     if owns_input {
         // Publish the held state after dispatch. Qualified repeats preserve
         // the previous rapid state; early repeats still behave like taps.
-        note_rapid(ctx, app, action, long_enough);
+        note_rapid(ctx, app, action, tier.is_rapid());
     }
 }
 
@@ -328,7 +503,10 @@ fn schedule_quiet(ctx: &Ctx, app: &App) {
 fn push_rapid(ctx: &Ctx, app: &App, active: bool) {
     let on_list = matches!(
         app.global::<crate::Shell>().get_active_screen(),
-        crate::Screen::Games | crate::Screen::Favorites | crate::Screen::Recents
+        crate::Screen::Games
+            | crate::Screen::Favorites
+            | crate::Screen::Recents
+            | crate::Screen::SearchResults
     );
     crate::games::set_rapid(ctx, app, active && on_list);
 }
@@ -360,7 +538,29 @@ pub fn bind(ctx: &Arc<Ctx>, app: &App, bindings: std::collections::HashMap<i32, 
 
 #[cfg(test)]
 mod tests {
-    use super::{keyboard_active_for_layout, InputModel};
+    use super::{keyboard_active_for_layout, InputModel, Rejected};
+
+    #[test]
+    fn presses_are_timed_from_the_event_not_from_handling() {
+        // Three taps handled in the same instant, as one slow frame hands
+        // them over. Only their own times decide which is a bounce.
+        let mut model = InputModel::new();
+        assert_eq!(model.accept("down", Some(1_000)), Ok(()));
+        model.release("down");
+        assert_eq!(model.accept("down", Some(1_120)), Ok(()));
+        model.release("down");
+        assert_eq!(model.accept("down", Some(1_130)), Err(Rejected::Duplicate));
+    }
+
+    #[test]
+    fn a_press_without_a_release_is_rejected() {
+        let mut model = InputModel::new();
+        assert_eq!(model.accept("down", Some(1_000)), Ok(()));
+        assert_eq!(
+            model.accept("down", Some(2_000)),
+            Err(Rejected::AlreadyPressed)
+        );
+    }
 
     #[test]
     fn missing_controller_report_means_keyboard_input() {

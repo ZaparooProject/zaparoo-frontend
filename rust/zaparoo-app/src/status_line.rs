@@ -169,6 +169,11 @@ pub struct Output {
     pub total_steps: i32,
     /// Whole percent, present only when the active task has a known total.
     pub percent: Option<i32>,
+    /// The line is reporting trouble with the Core link, which outranks
+    /// everything. Otherwise the user's own action (a load, a launch, a
+    /// confirmation) takes the line from a background task while it has
+    /// something to say: the task will still be there in two seconds.
+    pub link_trouble: bool,
 }
 
 /// Formats a count for the terminal messages; the ladder does not know
@@ -309,7 +314,9 @@ impl Ladder {
     /// Resolve the ladder at `now`.
     pub fn render(&self, link: &LinkInput, task: &TaskInput, now: Instant) -> Output {
         let task_active = self.task_active(link, task);
-        let message = if let Some(message) = connection_message(link) {
+        let link_message = connection_message(link);
+        let link_trouble = link_message.is_some();
+        let message = if let Some(message) = link_message {
             message
         } else if task_active {
             task_message(task)
@@ -347,6 +354,7 @@ impl Ladder {
             current_step,
             total_steps,
             percent,
+            link_trouble,
         }
     }
 
@@ -408,6 +416,45 @@ mod tests {
             link: Link::Connected,
             ..LinkInput::default()
         }
+    }
+
+    #[test]
+    fn only_link_trouble_keeps_the_line_from_the_users_own_action() {
+        let mut ladder = Ladder::new();
+        let task = TaskInput {
+            indexing: true,
+            ..TaskInput::default()
+        };
+        ladder.enable_media_activity(&TaskInput::default());
+        let now = Instant::now();
+        ladder.observe_task(&task, now, &plain);
+        // An index runs for minutes; a page load or a launch may speak over it.
+        let connected = LinkInput {
+            link: Link::Connected,
+            ..LinkInput::default()
+        };
+        let out = ladder.render(&connected, &task, now);
+        assert_eq!(out.message.kind, Kind::Indexing);
+        assert!(!out.link_trouble);
+        // Nothing the user asked for matters more than a lost link.
+        for link in [
+            Link::Disconnected,
+            Link::Connecting,
+            Link::Reconnecting,
+            Link::Unreachable,
+        ] {
+            let trouble = LinkInput {
+                link,
+                ..LinkInput::default()
+            };
+            assert!(ladder.render(&trouble, &task, now).link_trouble, "{link:?}");
+        }
+        let core_error = LinkInput {
+            link: Link::Connected,
+            catalog_error: true,
+            ..LinkInput::default()
+        };
+        assert!(ladder.render(&core_error, &task, now).link_trouble);
     }
 
     #[test]

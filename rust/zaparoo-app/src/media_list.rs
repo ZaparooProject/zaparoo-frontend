@@ -15,14 +15,24 @@ pub const LIST_VISIBLE_ROWS: usize = 10;
 pub const TATE_LIST_VISIBLE_ROWS: usize = 16;
 /// Rows fetched per chunk while held rapid scrolling or restoring.
 pub const RAPID_FETCH_CHUNK: u32 = 300;
+/// Rows fetched when a page move (left or right) in a list reaches the
+/// loaded edge. A request's cost is mostly fixed, so one screenful per
+/// trip cannot keep up with a held page move.
+pub const LIST_PAGE_FETCH: u32 = 50;
 /// Ceiling for one jump-to-letter fetch (Core's `max_results` cap).
 pub const JUMP_FETCH_CEILING: u32 = 1000;
+/// Core's `media.history` `limit` ceiling.
+pub const HISTORY_FETCH_CAP: u32 = 100;
+/// Rows fetched per chunk while a cold start walks to a deep saved row:
+/// as many as Core allows at once, so the walk takes the fewest trips.
+pub const RESTORE_FETCH_CHUNK: u32 = JUMP_FETCH_CEILING;
 /// The focused-detail load waits this long after the last move.
-pub const DETAIL_DEBOUNCE_MS: u64 = 220;
+pub const DETAIL_DEBOUNCE_MS: u64 = 150;
 /// Selection writes coalesce over this window during a held move.
 pub const PERSIST_DEBOUNCE_MS: u64 = 250;
-/// The badge clears this long after the last flip.
-pub const RAPID_LETTER_HOLD_MS: u64 = 700;
+/// The fast-scroll rail stays this long after the scroll stops, so the
+/// letter it landed on can be read.
+pub const RAIL_LINGER_MS: u64 = 600;
 /// Prefetch this many pages of covers past the visible page.
 pub const COVER_PREFETCH_NEXT_PAGES: usize = 1;
 /// And this many before it.
@@ -80,14 +90,26 @@ pub fn browses(entry_type: EntryType, has_media_id: bool, zap_script: &str) -> b
     entry_type.is_folder() && !is_media_capable(entry_type, has_media_id, zap_script)
 }
 
-/// The on-disk file name without its extension, else `name`.
-pub fn file_stem_or_name(path: &str, name: &str) -> String {
+/// The longest trailing token read as a file extension.
+const MAX_EXTENSION_LEN: usize = 8;
+
+/// The on-disk name, else `name`. A file loses its extension; a folder has
+/// none, and neither does a tail that only follows a dot in the title
+/// (`Marvel vs. Capcom`).
+pub fn file_stem_or_name(path: &str, name: &str, is_folder: bool) -> String {
     let file = path
         .trim_end_matches(['/', '\\'])
         .rsplit(['/', '\\'])
         .next()
         .unwrap_or_default();
-    let stem = file.rsplit_once('.').map_or(file, |(stem, _)| stem).trim();
+    let stem = if is_folder {
+        file
+    } else {
+        file.rsplit_once('.')
+            .filter(|(_, ext)| is_extension(ext))
+            .map_or(file, |(stem, _)| stem)
+    }
+    .trim();
     if stem.is_empty() {
         name.to_string()
     } else {
@@ -95,22 +117,48 @@ pub fn file_stem_or_name(path: &str, name: &str) -> String {
     }
 }
 
-/// Core's cleaned title, falling back to the file stem when Core sent none.
-pub fn display_title(name: &str, path: &str) -> String {
+fn is_extension(tail: &str) -> bool {
+    (1..=MAX_EXTENSION_LEN).contains(&tail.len()) && tail.bytes().all(|b| b.is_ascii_alphanumeric())
+}
+
+/// Core's cleaned title, falling back to the on-disk name when Core sent none.
+pub fn display_title(name: &str, path: &str, is_folder: bool) -> String {
     if name.is_empty() {
-        file_stem_or_name(path, name)
+        file_stem_or_name(path, name, is_folder)
     } else {
         name.to_string()
     }
 }
 
 /// The row title honoring Show original filenames.
-pub fn display_name(name: &str, path: &str, show_original_filenames: bool) -> String {
+pub fn display_name(
+    name: &str,
+    path: &str,
+    is_folder: bool,
+    show_original_filenames: bool,
+) -> String {
     if show_original_filenames {
-        file_stem_or_name(path, name)
+        file_stem_or_name(path, name, is_folder)
     } else {
-        display_title(name, path)
+        display_title(name, path, is_folder)
     }
+}
+
+/// Appending can change suffixes in the preceding equal-title run, but never
+/// in unrelated earlier rows. Empty appends need no projection work.
+pub fn sibling_group_start<T>(
+    rows: &[T],
+    appended_from: usize,
+    name: impl Fn(&T) -> &str,
+) -> usize {
+    let Some(first) = rows.get(appended_from) else {
+        return rows.len();
+    };
+    let mut start = appended_from;
+    while start > 0 && name(&rows[start - 1]) == name(first) {
+        start -= 1;
+    }
+    start
 }
 
 /// The last path component.
@@ -251,14 +299,36 @@ pub fn jump_target(total_dirs: usize, item_offset: usize) -> usize {
     total_dirs + item_offset
 }
 
-/// The rapid-paging badge letter: the title's first character, upper-cased,
-/// `#` for a blank title.
-pub fn rapid_letter(title: &str) -> String {
-    title
-        .trim()
-        .chars()
-        .next()
-        .map_or_else(|| "#".to_string(), |c| c.to_uppercase().collect())
+/// The letter bucket holding browse position `index`, from the buckets'
+/// first-item offsets (ascending, after `leading` directories and
+/// virtual roots). None on a leading directory or with no buckets.
+pub fn letter_at(offsets: &[u32], leading: usize, index: usize) -> Option<usize> {
+    let item = u32::try_from(index.checked_sub(leading)?).ok()?;
+    offsets.iter().rposition(|&offset| offset <= item)
+}
+
+/// The bucket a letter step lands on from browse position `index`: the
+/// next bucket going down (the first from a leading directory), the
+/// previous one going up. None at either end.
+pub fn letter_step(offsets: &[u32], leading: usize, index: usize, forward: bool) -> Option<usize> {
+    if offsets.is_empty() {
+        return None;
+    }
+    match (letter_at(offsets, leading, index), forward) {
+        (None, true) => Some(0),
+        (None, false) => None,
+        (Some(at), true) => (at + 1 < offsets.len()).then_some(at + 1),
+        (Some(at), false) => at.checked_sub(1),
+    }
+}
+
+/// Where the fast-scroll rail's position marker sits, 0.0 at the top and
+/// 1.0 at the last item of `total`.
+pub fn rail_fraction(index: usize, total: usize) -> f32 {
+    if total <= 1 {
+        return 0.0;
+    }
+    (index.min(total - 1) as f32 / (total - 1) as f32).clamp(0.0, 1.0)
 }
 
 /// The rows to fetch covers for around the visible page: the page, the
@@ -275,6 +345,18 @@ pub fn prefetch_rows(count: usize, page_size: usize, first_visible_row: usize) -
     (first..current_end)
         .chain(current_end..next_end)
         .chain(previous_start..first)
+        .collect()
+}
+
+/// Only the selected detail image is painted in a list. Warm its immediate
+/// neighbors at the same decode size, with the next row ahead of the previous.
+pub fn detail_prefetch_rows(count: usize, selected: usize) -> Vec<usize> {
+    if selected >= count {
+        return Vec::new();
+    }
+    std::iter::once(selected)
+        .chain(selected.checked_add(1).filter(|&next| next < count))
+        .chain(selected.checked_sub(1))
         .collect()
 }
 
@@ -391,11 +473,19 @@ pub fn list_geometry(list: &List, frame: &ListFrame) -> ListGeometry {
         detail_width,
         detail_height,
         row_height,
+        // A profile with its own row height (the 240p tier's 12 px rows)
+        // holds as many rows as its card is tall: a PAL scene is 48 lines
+        // taller than an NTSC one and shows the rows that fit them. A
+        // target count only applies where the row height is fitted to it.
         visible_rows: list_visible_count(
             content_height,
             row_height,
             list.row_spacing,
-            frame.target_rows,
+            if list.row_height > 0 {
+                0
+            } else {
+                frame.target_rows
+            },
         ),
     }
 }
@@ -440,11 +530,16 @@ pub enum LinearMove {
     FetchMore,
     /// Stay put; `fetch` still asks for the next page.
     Stay { fetch: bool },
+    /// Wrap off the top onto the list's true last row, which is not
+    /// loaded yet: the caller walks there.
+    WrapToTail,
 }
 
-/// A linear move: wrap at the ends, but past the last loaded row with more
-/// coming, fetch instead of wrapping; near the loaded edge, fetch alongside
-/// the move.
+/// A linear move: wrap at the ends of the whole list, not of the loaded
+/// rows. Off the top with more coming, the wrap target is the unloaded
+/// tail. Past the last loaded row with more coming, a page move lands on
+/// that row and fetches, and a move already on it only fetches. Near the
+/// loaded edge, fetch alongside the move.
 pub fn linear_move(current: usize, count: usize, delta: i64, has_more: bool) -> LinearMove {
     if count == 0 {
         return LinearMove::Stay { fetch: false };
@@ -452,9 +547,18 @@ pub fn linear_move(current: usize, count: usize, delta: i64, has_more: bool) -> 
     let count_i = count as i64;
     let mut next = current as i64 + delta;
     if next < 0 {
+        if has_more {
+            return LinearMove::WrapToTail;
+        }
         next = count_i - 1;
     } else if next >= count_i {
         if has_more {
+            if current + 1 < count {
+                return LinearMove::To {
+                    index: count - 1,
+                    fetch: true,
+                };
+            }
             return LinearMove::FetchMore;
         }
         next = 0;
@@ -479,6 +583,21 @@ pub fn list_tail_prefetch(
     loading_more: bool,
 ) -> bool {
     !loading_more && has_more && index + visible_rows >= count
+}
+
+/// The first fetch of a list, sized so its answer already holds the
+/// rows the screen keeps loaded: a grid's page plus its lookahead pages,
+/// or two screens of a list. Capped at Core's `max_results` ceiling.
+pub fn first_fill_limit(page_size: u32, list: bool, load_ahead_pages: usize) -> u32 {
+    let page = page_size.max(1);
+    let pages = if list {
+        2
+    } else {
+        u32::try_from(load_ahead_pages)
+            .unwrap_or(u32::MAX)
+            .saturating_add(1)
+    };
+    page.saturating_mul(pages).min(JUMP_FETCH_CEILING)
 }
 
 /// One list page holds fewer rows than a screenful: fill it.
@@ -605,73 +724,37 @@ pub fn page_menu_allowed(state: State, enabled_when_empty: bool) -> bool {
     state == State::Ready || (enabled_when_empty && state == State::Empty)
 }
 
-/// Which list the menu belongs to.
+/// Keep focus near a newly hidden row: next visible sibling, then previous.
+/// Returning none lets a refill clear an empty list's saved selection.
+pub fn selection_after_hide(index: usize, hidden: &[bool]) -> Option<usize> {
+    (index.saturating_add(1)..hidden.len())
+        .chain((0..index.min(hidden.len())).rev())
+        .find(|&candidate| !hidden[candidate])
+}
+
+/// What kind of thing a row is to its Options menu.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Owner {
-    Games,
-    Favorites,
-    Recents,
+pub enum MenuTarget {
+    /// A game, or a folder or archive Core launches as one.
+    Game,
+    Folder(crate::options_menu::Folder),
+    /// Nothing the menu has an action for.
+    None,
 }
 
-/// Everything `buildContextMenuEntries` reads for a media row.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(
-    clippy::struct_excessive_bools,
-    reason = "one flag per menu gate: media, root, NFC, favorite, arcade, launchers, busy"
-)]
-pub struct MenuInput {
-    pub owner: Owner,
-    pub entry_type: EntryType,
-    pub media_capable: bool,
-    pub pinnable_root: bool,
-    pub has_nfc: bool,
-    pub is_favorite: bool,
-    pub is_arcade_system: bool,
-    pub has_launchers: bool,
-    pub media_busy: bool,
-}
-
-/// The menu ids in display order, empty when the row gets no menu.
-pub fn context_entries(input: &MenuInput) -> Vec<&'static str> {
-    let folder = input.entry_type.is_folder() && !input.media_capable;
-    if input.owner != Owner::Recents {
-        if input.entry_type == EntryType::Root && !input.media_capable && !input.pinnable_root {
-            return Vec::new();
+pub fn menu_target(entry_type: EntryType, media_capable: bool, path: &str) -> MenuTarget {
+    use crate::options_menu::Folder;
+    if media_capable {
+        return MenuTarget::Game;
+    }
+    match entry_type {
+        EntryType::Directory => MenuTarget::Folder(Folder::Directory),
+        EntryType::Root if is_filesystem_root(entry_type, path) => {
+            MenuTarget::Folder(Folder::FilesystemRoot)
         }
-        if folder {
-            return if input.owner == Owner::Games {
-                vec!["add_to_hub"]
-            } else {
-                Vec::new()
-            };
-        }
-    } else if folder {
-        return Vec::new();
+        EntryType::Root => MenuTarget::Folder(Folder::VirtualRoot),
+        EntryType::Media | EntryType::Other => MenuTarget::None,
     }
-    let mut entries = vec!["more_info"];
-    if input.owner != Owner::Recents {
-        entries.push("toggle_favorite");
-        if input.owner == Owner::Games && input.has_launchers {
-            entries.push("change_launcher");
-        }
-    }
-    if input.has_nfc {
-        entries.push("write_card");
-    }
-    entries.push("qr_code");
-    if input.is_arcade_system {
-        entries.push("discover");
-    }
-    entries.push("add_to_hub");
-    if !input.media_busy {
-        entries.push("scrape_game");
-    }
-    entries
-}
-
-/// Whether the row at the current position gets a context menu at all.
-pub fn context_menu_enabled(entry_type: EntryType, media_capable: bool, path: &str) -> bool {
-    media_capable || entry_type == EntryType::Directory || is_filesystem_root(entry_type, path)
 }
 
 /// Escape zapscript separators while leaving path text readable.
@@ -722,8 +805,9 @@ pub enum CoverState {
     Absent,
 }
 
-/// The cover-key policy: folders get the glyph; otherwise cached art wins, a
-/// confirmed miss shows the chip and everything else stays blank.
+/// The cover-key policy: a folder keeps its glyph until artwork of its own
+/// has arrived; otherwise cached art wins, a confirmed miss shows the chip
+/// and everything else stays blank.
 #[allow(
     clippy::fn_params_excessive_bools,
     reason = "media capable, has cover, cached, and confirmed miss, one bool each"
@@ -736,7 +820,11 @@ pub fn cover_state(
     negative: bool,
 ) -> CoverState {
     if !media_capable && entry_type.is_folder() {
-        return CoverState::Folder;
+        return if cached && has_cover {
+            CoverState::Art
+        } else {
+            CoverState::Folder
+        };
     }
     if cached && has_cover {
         CoverState::Art
@@ -760,8 +848,83 @@ pub enum DetailStep {
     Disarm,
 }
 
+/// What the detailed list does about artwork for the row in focus.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CoverSettleStep {
+    /// The selection has rested here: ask for its artwork.
+    Request,
+    /// The selection moved and its timer is already running: ask for none.
+    Hold,
+    /// The selection moved: ask for none and start the timer for this
+    /// sequence number.
+    Arm(u64),
+}
+
+/// Holds the detailed list's artwork demand until the selection rests for
+/// `DETAIL_DEBOUNCE_MS`. Core resizes one cold image at a time and a
+/// request in flight cannot be withdrawn, so artwork asked for on every
+/// row passed queues ahead of the row the user stops on.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CoverSettle {
+    settled: Option<usize>,
+    pending: Option<usize>,
+    seq: u64,
+}
+
+impl CoverSettle {
+    /// A new list: its first selection needs no wait.
+    pub fn reset(&mut self) {
+        self.settled = None;
+        self.pending = None;
+        self.seq += 1;
+    }
+
+    /// The selection is known to have rested on `index` already.
+    pub fn settle_now(&mut self, index: usize) {
+        self.settled = Some(index);
+        self.pending = None;
+        self.seq += 1;
+    }
+
+    /// The list is about to draw with `index` in focus.
+    pub fn observe(&mut self, index: usize) -> CoverSettleStep {
+        match self.settled {
+            None => {
+                self.settle_now(index);
+                CoverSettleStep::Request
+            }
+            Some(settled) if settled == index => {
+                self.pending = None;
+                CoverSettleStep::Request
+            }
+            Some(_) if self.pending == Some(index) => CoverSettleStep::Hold,
+            Some(_) => {
+                self.pending = Some(index);
+                self.seq += 1;
+                CoverSettleStep::Arm(self.seq)
+            }
+        }
+    }
+
+    /// The timer armed with `seq` ran out. True when the selection is
+    /// still where that timer left it, so its artwork may be asked for.
+    pub fn fire(&mut self, seq: u64) -> bool {
+        if self.seq != seq {
+            return false;
+        }
+        match self.pending.take() {
+            Some(index) => {
+                self.settled = Some(index);
+                true
+            }
+            None => false,
+        }
+    }
+}
+
 /// The focused-detail policy: peek immediately, load after the debounce,
-/// never reload the same identity, clear on empty or rapid.
+/// never reload the same identity, clear on empty. A fast scroll peeks
+/// but never loads: the row's own metadata is local, Core's is not.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct FocusedDetail {
     requested: String,
@@ -797,13 +960,19 @@ impl FocusedDetail {
         if !enabled {
             return Vec::new();
         }
-        if rapid || identity.is_empty() {
+        if identity.is_empty() {
             return self.reset(true);
         }
         let mut steps = Vec::new();
+        if rapid && self.pending.take().is_some() {
+            steps.push(DetailStep::Disarm);
+        }
         if self.peeked != identity {
             self.peeked = identity.to_string();
             steps.push(DetailStep::Peek(index));
+        }
+        if rapid {
+            return steps;
         }
         if !force && identity == self.requested {
             return steps;
@@ -904,25 +1073,55 @@ mod tests {
     #[test]
     fn file_stem_handles_separators_and_blank_stems() {
         assert_eq!(
-            file_stem_or_name("/g/Sonic (USA).md", "Sonic"),
+            file_stem_or_name("/g/Sonic (USA).md", "Sonic", false),
             "Sonic (USA)"
         );
-        assert_eq!(file_stem_or_name("C:\\g\\Sonic.md\\", "Sonic"), "Sonic");
-        assert_eq!(file_stem_or_name("", "Sonic"), "Sonic");
-        assert_eq!(file_stem_or_name("/g/.hidden", "Fallback"), "Fallback");
+        assert_eq!(
+            file_stem_or_name("C:\\g\\Sonic.md\\", "Sonic", false),
+            "Sonic"
+        );
+        assert_eq!(file_stem_or_name("", "Sonic", false), "Sonic");
+        assert_eq!(file_stem_or_name("", "Sonic", true), "Sonic");
+        assert_eq!(
+            file_stem_or_name("/g/.hidden", "Fallback", false),
+            "Fallback"
+        );
+    }
+
+    #[test]
+    fn file_stem_keeps_a_dot_that_is_part_of_the_title() {
+        for title in ["Dr. Slump (Japan)", "Marvel vs. Capcom"] {
+            let folder = format!("/g/PSX/{title}");
+            assert_eq!(file_stem_or_name(&folder, "x", true), title);
+            assert_eq!(file_stem_or_name(&format!("{folder}/"), "x", true), title);
+            assert_eq!(
+                file_stem_or_name(&format!("{folder}.chd"), "x", false),
+                title
+            );
+            assert_eq!(file_stem_or_name(&folder, "x", false), title);
+        }
+        assert_eq!(file_stem_or_name("/g/Game.v1.2", "x", true), "Game.v1.2");
+        assert_eq!(file_stem_or_name("/g/Game.", "x", false), "Game.");
     }
 
     #[test]
     fn display_name_prefers_core_title_unless_original_filenames() {
         assert_eq!(
-            display_name("Friendly Alias", "/g/InternalContainer.zip", false),
+            display_name("Friendly Alias", "/g/InternalContainer.zip", false, false),
             "Friendly Alias"
         );
         assert_eq!(
-            display_name("Friendly Alias", "/g/InternalContainer.zip", true),
+            display_name("Friendly Alias", "/g/InternalContainer.zip", false, true),
             "InternalContainer"
         );
-        assert_eq!(display_name("", "/g/D (Disc 1).chd", false), "D (Disc 1)");
+        assert_eq!(
+            display_name("Dr Slump", "/g/Dr. Slump (Japan)", true, true),
+            "Dr. Slump (Japan)"
+        );
+        assert_eq!(
+            display_name("", "/g/D (Disc 1).chd", false, false),
+            "D (Disc 1)"
+        );
     }
 
     #[test]
@@ -1035,10 +1234,57 @@ mod tests {
     }
 
     #[test]
-    fn rapid_letter_upper_cases_and_falls_back_to_hash() {
-        assert_eq!(rapid_letter("  sonic"), "S");
-        assert_eq!(rapid_letter(""), "#");
-        assert_eq!(rapid_letter("ßeta"), "SS");
+    fn letter_at_finds_the_bucket_after_leading_directories() {
+        // #: 0..3, A: 3..10, C: 10..
+        let offsets = [0, 3, 10];
+        assert_eq!(letter_at(&offsets, 2, 0), None, "a leading directory");
+        assert_eq!(letter_at(&offsets, 2, 2), Some(0));
+        assert_eq!(letter_at(&offsets, 2, 5), Some(1));
+        assert_eq!(letter_at(&offsets, 2, 11), Some(1));
+        assert_eq!(letter_at(&offsets, 2, 12), Some(2));
+        assert_eq!(letter_at(&offsets, 2, 500), Some(2));
+        assert_eq!(letter_at(&[], 0, 5), None);
+    }
+
+    #[test]
+    fn letter_step_moves_one_bucket_and_stops_at_the_ends() {
+        let offsets = [0, 3, 10];
+        assert_eq!(letter_step(&offsets, 2, 0, true), Some(0));
+        assert_eq!(letter_step(&offsets, 2, 0, false), None);
+        assert_eq!(letter_step(&offsets, 2, 5, true), Some(2));
+        assert_eq!(letter_step(&offsets, 2, 5, false), Some(0));
+        assert_eq!(letter_step(&offsets, 2, 12, true), None);
+        assert_eq!(letter_step(&offsets, 2, 2, false), None);
+        assert_eq!(letter_step(&[], 0, 2, true), None);
+    }
+
+    #[test]
+    fn rail_fraction_spans_first_to_last_item() {
+        assert!(rail_fraction(0, 0).abs() < f32::EPSILON);
+        assert!(rail_fraction(0, 1).abs() < f32::EPSILON);
+        assert!(rail_fraction(0, 101).abs() < f32::EPSILON);
+        assert!((rail_fraction(50, 101) - 0.5).abs() < f32::EPSILON);
+        assert!((rail_fraction(100, 101) - 1.0).abs() < f32::EPSILON);
+        assert!((rail_fraction(500, 101) - 1.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn append_projection_only_revisits_the_boundary_sibling_group() {
+        let names = ["Alpha", "Beta", "Beta", "Beta", "Gamma"];
+        assert_eq!(sibling_group_start(&names, 3, |name| *name), 1);
+        assert_eq!(sibling_group_start(&names, 4, |name| *name), 4);
+        assert_eq!(sibling_group_start(&names, 0, |name| *name), 0);
+        assert_eq!(sibling_group_start(&names, 5, |name| *name), 5);
+    }
+
+    #[test]
+    fn detail_prefetch_is_selected_then_immediate_neighbors() {
+        assert_eq!(detail_prefetch_rows(50, 10), vec![10, 11, 9]);
+        assert_eq!(detail_prefetch_rows(3, 0), vec![0, 1]);
+        assert_eq!(detail_prefetch_rows(3, 2), vec![2, 1]);
+        assert_eq!(detail_prefetch_rows(1, 0), vec![0]);
+        assert!(detail_prefetch_rows(0, 0).is_empty());
+        assert!(detail_prefetch_rows(3, 3).is_empty());
     }
 
     #[test]
@@ -1076,6 +1322,7 @@ mod tests {
             bitmap_type: false,
             swap_percentage_axes: false,
             interface_profile: crate::sizing::InterfaceProfile::Standard,
+            help_bar_two_rows: false,
         };
         let profile = crate::layouts::profile(
             crate::layouts::ThemeId::Default,
@@ -1107,6 +1354,7 @@ mod tests {
             bitmap_type: false,
             swap_percentage_axes: false,
             interface_profile: crate::sizing::InterfaceProfile::Standard,
+            help_bar_two_rows: false,
         };
         let profile = crate::layouts::profile(
             crate::layouts::ThemeId::Default,
@@ -1169,6 +1417,7 @@ mod tests {
             }
         );
         assert_eq!(linear_move(29, 30, 1, true), LinearMove::FetchMore);
+        assert_eq!(linear_move(29, 30, 10, true), LinearMove::FetchMore);
         assert_eq!(
             linear_move(27, 30, 1, true),
             LinearMove::To {
@@ -1201,6 +1450,106 @@ mod tests {
     }
 
     #[test]
+    fn a_burst_of_moves_asks_for_artwork_only_where_it_stops() {
+        let mut settle = CoverSettle::default();
+        // The first row of a new list is asked for at once.
+        assert_eq!(settle.observe(0), CoverSettleStep::Request);
+        assert_eq!(settle.observe(0), CoverSettleStep::Request);
+        // Each row passed re-arms; a redraw on the same row holds.
+        let step = settle.observe(1);
+        assert!(matches!(step, CoverSettleStep::Arm(_)), "a move arms");
+        let CoverSettleStep::Arm(first) = step else {
+            return;
+        };
+        assert_eq!(settle.observe(1), CoverSettleStep::Hold);
+        let step = settle.observe(2);
+        assert!(
+            matches!(step, CoverSettleStep::Arm(_)),
+            "a new move re-arms"
+        );
+        let CoverSettleStep::Arm(second) = step else {
+            return;
+        };
+        // Only the timer of the row it stopped on releases the demand.
+        assert!(!settle.fire(first));
+        assert_eq!(settle.observe(2), CoverSettleStep::Hold);
+        assert!(settle.fire(second));
+        assert_eq!(settle.observe(2), CoverSettleStep::Request);
+        assert!(!settle.fire(second));
+    }
+
+    #[test]
+    fn returning_to_the_settled_row_cancels_the_wait() {
+        let mut settle = CoverSettle::default();
+        assert_eq!(settle.observe(4), CoverSettleStep::Request);
+        let step = settle.observe(5);
+        assert!(matches!(step, CoverSettleStep::Arm(_)), "a move arms");
+        let CoverSettleStep::Arm(seq) = step else {
+            return;
+        };
+        assert_eq!(settle.observe(4), CoverSettleStep::Request);
+        assert!(!settle.fire(seq));
+        // A new list starts settled on whatever row it opens on.
+        settle.reset();
+        assert_eq!(settle.observe(9), CoverSettleStep::Request);
+        // A fast scroll that just ended has already rested.
+        settle.settle_now(30);
+        assert_eq!(settle.observe(30), CoverSettleStep::Request);
+    }
+
+    #[test]
+    fn linear_move_wraps_over_the_whole_list_not_the_loaded_rows() {
+        // Off the top of a partly loaded list the target is the true tail.
+        assert_eq!(linear_move(0, 20, -1, true), LinearMove::WrapToTail);
+        assert_eq!(linear_move(0, 20, -10, true), LinearMove::WrapToTail);
+        assert_eq!(linear_move(3, 20, -10, true), LinearMove::WrapToTail);
+        // Fully loaded, the last loaded row is the tail.
+        assert_eq!(
+            linear_move(0, 20, -10, false),
+            LinearMove::To {
+                index: 19,
+                fetch: false
+            }
+        );
+    }
+
+    #[test]
+    fn a_page_move_past_the_loaded_edge_lands_on_the_last_loaded_row() {
+        assert_eq!(
+            linear_move(126, 130, 10, true),
+            LinearMove::To {
+                index: 129,
+                fetch: true
+            }
+        );
+        // Already on the last loaded row: nothing to land on yet.
+        assert_eq!(linear_move(129, 130, 10, true), LinearMove::FetchMore);
+        // Nothing more is coming: wrap to the top as before.
+        assert_eq!(
+            linear_move(126, 130, 10, false),
+            LinearMove::To {
+                index: 0,
+                fetch: false
+            }
+        );
+    }
+
+    #[test]
+    fn the_first_fill_covers_the_lookahead_in_one_fetch() {
+        // A 7x3 grid keeps its page plus two lookahead pages loaded.
+        assert_eq!(first_fill_limit(21, false, 2), 63);
+        assert_eq!(first_fill_limit(21, false, 0), 21);
+        // A list asks for two screens, so no fill-page follow-up runs.
+        assert_eq!(first_fill_limit(10, true, 2), 20);
+        assert!(!list_fill_page(20, 10, true));
+        // Never past Core's cap, never zero.
+        assert_eq!(first_fill_limit(600, false, 2), JUMP_FETCH_CEILING);
+        assert_eq!(first_fill_limit(0, false, 2), 3);
+        assert_eq!(RESTORE_FETCH_CHUNK, JUMP_FETCH_CEILING);
+        assert_eq!(DETAIL_DEBOUNCE_MS, 150);
+    }
+
+    #[test]
     fn list_tail_and_fill_rules() {
         assert!(list_tail_prefetch(25, 30, 10, true, false));
         assert!(!list_tail_prefetch(25, 30, 10, true, true));
@@ -1219,6 +1568,55 @@ mod tests {
         assert_eq!(list_view_top(59, 60, 10, None), 50);
         assert_eq!(list_view_top(5, 60, 10, Some(0)), 5);
         assert_eq!(list_view_top(3, 5, 10, None), 0);
+    }
+
+    #[test]
+    fn a_fixed_row_height_fills_the_card_whatever_the_target_count() {
+        let frame = |screen_height: i32| ListFrame {
+            screen_width: 316,
+            screen_height,
+            header_bottom: 30,
+            status_top_margin: 2,
+            strip_height: 0,
+            help_bar_height: 20,
+            tier_240: true,
+            safe_bottom_gap: 13,
+            target_rows: 10,
+            min_row_height: 6,
+            default_row_height: 13,
+        };
+        let inputs = crate::sizing::Inputs {
+            screen_width: 316.0,
+            screen_height: 216.0,
+            bitmap_type: true,
+            ..crate::sizing::Inputs::default()
+        };
+        let profile = crate::layouts::profile(
+            crate::layouts::ThemeId::current(&inputs),
+            crate::layouts::View::GamesList,
+            &inputs,
+        );
+        let crate::layouts::Body::List { list, .. } = profile.body else {
+            unreachable!("the games list resolves to a list body");
+        };
+        assert!(list.row_height > 0, "the 240p tier fixes its row height");
+        let mut previous = 0;
+        // NTSC and PAL scenes after the action-safe inset.
+        for screen_height in [216, 260] {
+            let geometry = list_geometry(&list, &frame(screen_height));
+            let content = geometry.list_height - list.card_padding_top - list.card_padding_bottom;
+            let rows = i32::try_from(geometry.visible_rows).unwrap_or(0);
+            assert!(rows * geometry.row_height <= content, "{screen_height}");
+            assert!(
+                (rows + 1) * geometry.row_height > content,
+                "{screen_height}"
+            );
+            assert!(
+                geometry.visible_rows > previous,
+                "a taller card holds more rows"
+            );
+            previous = geometry.visible_rows;
+        }
     }
 
     #[test]
@@ -1261,104 +1659,40 @@ mod tests {
         assert!(!page_menu_allowed(State::Loading, true));
     }
 
-    fn menu(owner: Owner) -> MenuInput {
-        MenuInput {
-            owner,
-            entry_type: EntryType::Media,
-            media_capable: true,
-            pinnable_root: false,
-            has_nfc: false,
-            is_favorite: false,
-            is_arcade_system: false,
-            has_launchers: false,
-            media_busy: false,
-        }
+    #[test]
+    fn a_row_is_a_game_a_folder_or_nothing_to_the_menu() {
+        use crate::options_menu::Folder;
+        assert_eq!(
+            menu_target(EntryType::Media, true, "/x.rom"),
+            MenuTarget::Game
+        );
+        // A folder or archive Core launches as one item is a game.
+        assert_eq!(
+            menu_target(EntryType::Directory, true, "/x"),
+            MenuTarget::Game
+        );
+        assert_eq!(
+            menu_target(EntryType::Directory, false, "/x"),
+            MenuTarget::Folder(Folder::Directory)
+        );
+        assert_eq!(
+            menu_target(EntryType::Root, false, "/x"),
+            MenuTarget::Folder(Folder::FilesystemRoot)
+        );
+        assert_eq!(
+            menu_target(EntryType::Root, false, "mame://"),
+            MenuTarget::Folder(Folder::VirtualRoot)
+        );
+        assert_eq!(menu_target(EntryType::Other, false, "/x"), MenuTarget::None);
     }
 
     #[test]
-    fn games_menu_orders_details_first_and_maintenance_last() {
-        let input = MenuInput {
-            has_nfc: true,
-            has_launchers: true,
-            is_arcade_system: true,
-            ..menu(Owner::Games)
-        };
-        assert_eq!(
-            context_entries(&input),
-            vec![
-                "more_info",
-                "toggle_favorite",
-                "change_launcher",
-                "write_card",
-                "qr_code",
-                "discover",
-                "add_to_hub",
-                "scrape_game"
-            ]
-        );
-        let busy = MenuInput {
-            media_busy: true,
-            ..menu(Owner::Games)
-        };
-        assert_eq!(
-            context_entries(&busy),
-            vec!["more_info", "toggle_favorite", "qr_code", "add_to_hub"]
-        );
-    }
-
-    #[test]
-    fn favorites_menu_has_no_launcher_override() {
-        let input = MenuInput {
-            has_launchers: true,
-            ..menu(Owner::Favorites)
-        };
-        assert_eq!(
-            context_entries(&input),
-            vec![
-                "more_info",
-                "toggle_favorite",
-                "qr_code",
-                "add_to_hub",
-                "scrape_game"
-            ]
-        );
-    }
-
-    #[test]
-    fn recents_menu_has_no_favorite_toggle() {
-        assert_eq!(
-            context_entries(&menu(Owner::Recents)),
-            vec!["more_info", "qr_code", "add_to_hub", "scrape_game"]
-        );
-    }
-
-    #[test]
-    fn folder_rows_get_only_add_to_hub_on_games() {
-        let folder = MenuInput {
-            entry_type: EntryType::Directory,
-            media_capable: false,
-            ..menu(Owner::Games)
-        };
-        assert_eq!(context_entries(&folder), vec!["add_to_hub"]);
-        let virtual_root = MenuInput {
-            entry_type: EntryType::Root,
-            media_capable: false,
-            ..menu(Owner::Games)
-        };
-        assert!(context_entries(&virtual_root).is_empty());
-        let fs_root = MenuInput {
-            pinnable_root: true,
-            ..virtual_root
-        };
-        assert_eq!(context_entries(&fs_root), vec!["add_to_hub"]);
-        let favorites_folder = MenuInput {
-            owner: Owner::Favorites,
-            ..folder
-        };
-        assert!(context_entries(&favorites_folder).is_empty());
-        assert!(context_menu_enabled(EntryType::Directory, false, "/x"));
-        assert!(context_menu_enabled(EntryType::Root, false, "/x"));
-        assert!(!context_menu_enabled(EntryType::Root, false, "mame://"));
+    fn hiding_keeps_focus_on_the_nearest_visible_sibling() {
+        assert_eq!(selection_after_hide(1, &[false, true, false]), Some(2));
+        assert_eq!(selection_after_hide(2, &[false, false, true]), Some(1));
+        assert_eq!(selection_after_hide(0, &[true, true, false]), Some(2));
+        assert_eq!(selection_after_hide(1, &[true, true]), None);
+        assert_eq!(selection_after_hide(0, &[]), None);
     }
 
     #[test]
@@ -1377,7 +1711,19 @@ mod tests {
     #[test]
     fn cover_state_follows_the_qt_key_policy() {
         assert_eq!(
-            cover_state(EntryType::Directory, false, true, false, false),
+            cover_state(EntryType::Directory, false, true, true, false),
+            CoverState::Art
+        );
+        // A folder is never blank: the glyph holds until its art lands,
+        // and stays when Core has none.
+        for (cached, negative) in [(false, false), (false, true)] {
+            assert_eq!(
+                cover_state(EntryType::Directory, false, true, cached, negative),
+                CoverState::Folder
+            );
+        }
+        assert_eq!(
+            cover_state(EntryType::Directory, false, false, true, false),
             CoverState::Folder
         );
         assert_eq!(
@@ -1446,16 +1792,21 @@ mod tests {
     }
 
     #[test]
-    fn detail_rapid_scroll_hides_detail_and_reloads_after_stop() {
+    fn detail_rapid_scroll_peeks_without_loading_and_loads_after_stop() {
         let mut d = FocusedDetail::new();
         d.schedule(true, false, "NES\n/a", 0, false);
         assert_eq!(d.fire(true, "NES\n/a"), Some(0));
         let steps = d.schedule(true, true, "NES\n/b", 1, false);
-        assert_eq!(steps, vec![DetailStep::Disarm, DetailStep::Clear]);
+        assert_eq!(steps, vec![DetailStep::Peek(1)]);
         assert_eq!(d.fire(true, "NES\n/b"), None);
-        let steps = d.schedule(true, false, "NES\n/b", 1, false);
-        assert_eq!(steps, vec![DetailStep::Peek(1), DetailStep::Arm]);
-        assert_eq!(d.fire(true, "NES\n/b"), Some(1));
+        // A load armed before the scroll turned fast is dropped.
+        d.schedule(true, false, "NES\n/c", 2, false);
+        let steps = d.schedule(true, true, "NES\n/d", 3, false);
+        assert_eq!(steps, vec![DetailStep::Disarm, DetailStep::Peek(3)]);
+        // Stopping loads the row the scroll landed on.
+        let steps = d.schedule(true, false, "NES\n/d", 3, false);
+        assert_eq!(steps, vec![DetailStep::Arm]);
+        assert_eq!(d.fire(true, "NES\n/d"), Some(3));
     }
 
     #[test]

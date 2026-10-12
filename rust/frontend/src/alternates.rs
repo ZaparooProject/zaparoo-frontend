@@ -9,37 +9,13 @@
 
 use std::collections::HashSet;
 
-use slint::{ComponentHandle, ModelRc, VecModel};
 use zaparoo_app::alternate_versions as rules;
 use zaparoo_core::client::Client;
 use zaparoo_core::media_types::{MediaBrowseParams, MediaMetaParams, MediaSearchParams};
 
-use crate::router::{lock, Ctx};
+use crate::context_page::{Page, PageRow};
+use crate::router::Ctx;
 use crate::App;
-
-/// One discovered build: what to show, and what to run.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AlternateRow {
-    pub name: String,
-    pub launch_text: String,
-}
-
-/// The context menu's alternates page.
-#[derive(Debug, Clone, Default)]
-pub struct AlternatesModel {
-    pub rows: Vec<AlternateRow>,
-    /// True while the menu is showing the alternates rather than its
-    /// own entries.
-    pub showing: bool,
-    /// Bumped per run so a late discovery cannot land on a menu the
-    /// user has moved on from.
-    pub seq: u64,
-}
-
-/// The row id for an entry on the alternates page.
-fn row_id(index: usize) -> String {
-    format!("alternate_version:{index}")
-}
 
 /// Menu row accepted: start discovery, leaving the menu open with its
 /// "Discover alt. versions" row relabelled to say it is searching.
@@ -47,117 +23,13 @@ pub fn begin(ctx: &Ctx, app: &App, system_id: &str, name: &str, path: &str) {
     if !rules::can_discover(system_id, name, path) {
         return;
     }
-    let ticket = {
-        let mut shared = lock(&ctx.shared);
-        shared.alternates.seq += 1;
-        shared.alternates.rows.clear();
-        shared.alternates.showing = false;
-        shared.alternates.seq
-    };
-    relabel_discover(app, "discover:searching");
     let client = ctx.store.client();
-    let ctx2 = ctx.clone();
-    let weak = app.as_weak();
     let system_id = system_id.to_string();
     let name = name.to_string();
     let path = path.to_string();
-    ctx.handle.spawn(async move {
-        let found = discover(&client, &system_id, &name, &path).await;
-        let _ = weak.upgrade_in_event_loop(move |app| {
-            if lock(&ctx2.shared).alternates.seq != ticket {
-                return;
-            }
-            // The menu the discovery belongs to has to still be open.
-            if !app.global::<crate::Overlays>().get_context_open() {
-                return;
-            }
-            match found {
-                Ok(rows) if rows.is_empty() => relabel_discover(&app, "discover:none"),
-                Ok(rows) => {
-                    lock(&ctx2.shared).alternates.rows = rows;
-                    present(&ctx2, &app);
-                }
-                Err(message) => {
-                    tracing::warn!("discover alternate versions failed: {message}");
-                    crate::router::report_action_error(&ctx2, &app, "alternate_discovery", "");
-                }
-            }
-        });
+    crate::context_page::begin(ctx, app, Page::Alternates, async move {
+        discover(&client, &system_id, &name, &path).await
     });
-}
-
-/// Swap the open menu's "Discover alt. versions" row for one that says
-/// what happened. The replacement carries no id, so pressing it does
-/// nothing.
-fn relabel_discover(app: &App, key: &str) {
-    use slint::Model as _;
-    let entries = app.global::<crate::Overlays>().get_context_entries();
-    let rows: Vec<crate::MenuEntry> = entries
-        .iter()
-        .map(|entry| {
-            if entry.id.as_str() == "discover" || entry.label_key.as_str().starts_with("discover:")
-            {
-                crate::router::menu_row_keyed("", key, "")
-            } else {
-                entry
-            }
-        })
-        .collect();
-    app.global::<crate::Overlays>()
-        .set_context_entries(ModelRc::new(VecModel::from(rows)));
-}
-
-/// Replace the menu's rows with the alternates.
-fn present(ctx: &Ctx, app: &App) {
-    let entries: Vec<crate::MenuEntry> = {
-        let mut shared = lock(&ctx.shared);
-        shared.alternates.showing = true;
-        shared
-            .alternates
-            .rows
-            .iter()
-            .enumerate()
-            .map(|(index, row)| crate::router::menu_entry(&row_id(index), &row.name))
-            .collect()
-    };
-    let overlays = app.global::<crate::Overlays>();
-    overlays.set_context_entries(ModelRc::new(VecModel::from(entries)));
-    overlays.set_context_index(0);
-}
-
-/// True when the menu is showing the alternates page.
-pub fn showing(ctx: &Ctx) -> bool {
-    lock(&ctx.shared).alternates.showing
-}
-
-/// Back on the alternates page returns to the menu it came from
-/// instead of closing it.
-pub fn leave(ctx: &Ctx, app: &App) {
-    {
-        let mut shared = lock(&ctx.shared);
-        shared.alternates.showing = false;
-        shared.alternates.rows.clear();
-        shared.alternates.seq += 1;
-    }
-    crate::games::reopen_context_menu(ctx, app);
-}
-
-/// A row on the alternates page was accepted: run it and close.
-pub fn accept(ctx: &Ctx, app: &App, id: &str) {
-    let index = id
-        .strip_prefix("alternate_version:")
-        .and_then(|index| index.parse::<usize>().ok());
-    let row = index.and_then(|index| lock(&ctx.shared).alternates.rows.get(index).cloned());
-    {
-        let mut shared = lock(&ctx.shared);
-        shared.alternates.showing = false;
-        shared.alternates.rows.clear();
-        shared.alternates.seq += 1;
-    }
-    app.global::<crate::Overlays>().set_context_open(false);
-    if let Some(row) = row {
-        crate::router::launch(ctx, app, row.launch_text, &row.name);
-    }
 }
 
 /// The Core side: resolve the game's canonical title, search the
@@ -168,7 +40,7 @@ async fn discover(
     system_id: &str,
     name: &str,
     selected_path: &str,
-) -> Result<Vec<AlternateRow>, String> {
+) -> Result<Vec<PageRow>, String> {
     // The scraped title is the better seed; the row's own name stands
     // in when Core has no metadata for it.
     let canonical_title = client
@@ -187,6 +59,10 @@ async fn discover(
             query: Some(canonical_title.clone()),
             systems: vec![rules::ARCADE_SYSTEM_ID.to_string()],
             max_results: Some(rules::MAX_ALT_RESULTS),
+            // The builds are still alternates of this game when their
+            // folder is hidden from the list, which takes them out of an
+            // ordinary search. The folder itself still browses.
+            include_hidden: Some(true),
             ..MediaSearchParams::default()
         })
         .await
@@ -235,9 +111,16 @@ async fn discover(
             if launch_text.is_empty() {
                 continue;
             }
-            rows.push(AlternateRow {
-                // The filename is what tells two builds apart.
-                name: zaparoo_app::media_list::file_stem_or_name(&entry.path, &entry.name),
+            // The filename is what tells two builds apart.
+            let name = zaparoo_app::media_list::file_stem_or_name(
+                &entry.path,
+                &entry.name,
+                entry.is_folder(),
+            );
+            rows.push(PageRow {
+                label_key: "",
+                label: name.clone(),
+                name,
                 launch_text,
             });
         }

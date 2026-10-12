@@ -66,6 +66,10 @@ const SOURCES: &[(&str, &str)] = &[
         include_str!("../../../resources/images/icons/File.svg"),
     ),
     (
+        "icons/Filter",
+        include_str!("../../../resources/images/icons/Filter.svg"),
+    ),
+    (
         "icons/Folder",
         include_str!("../../../resources/images/icons/Folder.svg"),
     ),
@@ -94,6 +98,10 @@ const SOURCES: &[(&str, &str)] = &[
         include_str!("../../../resources/images/icons/Loading.svg"),
     ),
     (
+        "icons/Minus",
+        include_str!("../../../resources/images/icons/Minus.svg"),
+    ),
+    (
         "icons/NavDown",
         include_str!("../../../resources/images/icons/NavDown.svg"),
     ),
@@ -110,8 +118,16 @@ const SOURCES: &[(&str, &str)] = &[
         include_str!("../../../resources/images/icons/NavUp.svg"),
     ),
     (
+        "icons/Online",
+        include_str!("../../../resources/images/icons/Online.svg"),
+    ),
+    (
         "icons/PlayOutline",
         include_str!("../../../resources/images/icons/PlayOutline.svg"),
+    ),
+    (
+        "icons/Plus",
+        include_str!("../../../resources/images/icons/Plus.svg"),
     ),
     (
         "icons/RefreshCw",
@@ -126,6 +142,10 @@ const SOURCES: &[(&str, &str)] = &[
         include_str!("../../../resources/images/icons/ScrollUp.svg"),
     ),
     (
+        "icons/Search",
+        include_str!("../../../resources/images/icons/Search.svg"),
+    ),
+    (
         "icons/Settings",
         include_str!("../../../resources/images/icons/Settings.svg"),
     ),
@@ -136,6 +156,10 @@ const SOURCES: &[(&str, &str)] = &[
     (
         "icons/Tools",
         include_str!("../../../resources/images/icons/Tools.svg"),
+    ),
+    (
+        "icons/Warning",
+        include_str!("../../../resources/images/icons/Warning.svg"),
     ),
     // Header HUD status icons.
     (
@@ -404,6 +428,7 @@ const ALIASES: &[(&str, &str)] = &[
     ("Resume", "icons/PlayOutline"),
     ("Favorites", "icons/HeartOutline"),
     ("Recents", "icons/History"),
+    ("Search", "icons/Search"),
     ("Update", "icons/RefreshCw"),
     ("Settings", "icons/Tools"),
     ("NFC", "status/NFC"),

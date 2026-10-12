@@ -39,6 +39,10 @@ impl Endpoint for MediaFavoritesEndpoint {
     type Output = MediaSearchResult;
     const NAME: &'static str = "MediaFavorites";
 
+    fn cache_bytes(output: &Self::Output) -> Option<usize> {
+        Some(super::retained::bytes(output))
+    }
+
     fn fetch(
         client: Arc<Client>,
         args: Self::Args,
@@ -57,7 +61,7 @@ impl Endpoint for MediaFavoritesEndpoint {
     }
 
     fn provides(_args: &Self::Args, _output: &Self::Output) -> Vec<Tag> {
-        vec![Tag::any(Self::NAME)]
+        vec![Tag::any(Self::NAME), Tag::MEDIA_DB]
     }
 }
 

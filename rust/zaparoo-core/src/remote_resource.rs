@@ -67,6 +67,8 @@ pub struct RemoteResource<T: Clone + Send + Sync + 'static> {
     // pulse queues, then fires on the next reconnect (one extra fetch
     // atop the natural refresh-on-reconnect; harmless).
     refetch: Arc<Notify>,
+    // Background refreshes coalesce without aborting an in-flight RPC.
+    background_refresh: Arc<Notify>,
     // Held only for its Drop side-effect: when the resource is dropped,
     // this sender drops, which fires the cancellation receiver inside
     // the spawned task and unwinds it (cancelling any in-flight fetch
@@ -87,7 +89,19 @@ impl<T: Clone + Send + Sync + 'static> RemoteResource<T> {
     /// next reconnect. The store layer drives tag-based invalidation
     /// through this method; direct callers rarely need it.
     pub fn refetch(&self) {
+        // A subscriber created immediately after a mutation must not consume
+        // the old Ready value before the fetch task processes its wake-up.
+        let ready = { matches!(&*self.status.borrow(), ResourceStatus::Ready(_)) };
+        if ready {
+            self.status.send_replace(ResourceStatus::Loading);
+        }
         self.refetch.notify_one();
+    }
+
+    /// Refresh without cancelling a slow fetch or clearing the last good value
+    /// on failure. Repeated requests queue at most one follow-up fetch.
+    pub fn refresh_in_background(&self) {
+        self.background_refresh.notify_one();
     }
 
     /// Spawn a task on `runtime` that drives the resource lifecycle off
@@ -113,11 +127,30 @@ impl<T: Clone + Send + Sync + 'static> RemoteResource<T> {
         Self::spawn_with(connection_rx, runtime, fetch)
     }
 
+    /// Reopen a clean inactive cache entry without a speculative refetch.
+    /// Its connection marker prevents reuse across a Core session change.
+    pub(crate) fn driven_by_cached<F, Fut>(
+        client: Arc<Client>,
+        runtime: &Handle,
+        fetch: F,
+        cached: Option<(T, watch::Receiver<ConnectionState>)>,
+    ) -> Self
+    where
+        F: Fn(Arc<Client>) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<T, ClientError>> + Send + 'static,
+    {
+        let (value, connection) = match cached {
+            Some((value, connection)) => (Some(value), connection),
+            None => (None, client.connection.subscribe()),
+        };
+        Self::spawn_seeded(connection, runtime, move || fetch(client.clone()), value)
+    }
+
     /// Internal entry point used by `driven_by` and tests. Decoupled
     /// from `Client` so tests can drive a synthetic `ConnectionState`
     /// watch without standing up a real WebSocket.
     pub(crate) fn spawn_with<F, Fut>(
-        mut connection_rx: watch::Receiver<ConnectionState>,
+        connection_rx: watch::Receiver<ConnectionState>,
         runtime: &Handle,
         fetch: F,
     ) -> Self
@@ -125,6 +158,24 @@ impl<T: Clone + Send + Sync + 'static> RemoteResource<T> {
         F: Fn() -> Fut + Send + Sync + 'static,
         Fut: Future<Output = Result<T, ClientError>> + Send + 'static,
     {
+        Self::spawn_seeded(connection_rx, runtime, fetch, None)
+    }
+
+    fn spawn_seeded<F, Fut>(
+        mut connection_rx: watch::Receiver<ConnectionState>,
+        runtime: &Handle,
+        fetch: F,
+        cached: Option<T>,
+    ) -> Self
+    where
+        F: Fn() -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<T, ClientError>> + Send + 'static,
+    {
+        let cached = cached.filter(|_| {
+            !connection_rx.has_changed().unwrap_or(true)
+                && *connection_rx.borrow() == ConnectionState::Connected
+        });
+        let mut reuse_ready = cached.is_some();
         // Seed the watch from the *current* connection state so a
         // subscriber that calls `borrow()` before the spawned task
         // runs sees the right value. Without this seed a singleton
@@ -143,14 +194,19 @@ impl<T: Clone + Send + Sync + 'static> RemoteResource<T> {
                 retrying: false,
             },
         };
-        let (status_tx, _) = watch::channel(initial_status);
+        let (status_tx, _) = watch::channel(cached.map_or(initial_status, ResourceStatus::Ready));
         let status_for_task = status_tx.clone();
         let (cancel_tx, mut cancel_rx) = oneshot::channel::<()>();
         let refetch = Arc::new(Notify::new());
         let refetch_for_task = refetch.clone();
+        let background_refresh = Arc::new(Notify::new());
+        let background_refresh_for_task = background_refresh.clone();
 
         runtime.spawn(async move {
             loop {
+                if connection_rx.has_changed().unwrap_or(true) {
+                    reuse_ready = false;
+                }
                 let conn = connection_rx.borrow_and_update().clone();
                 match conn {
                     ConnectionState::Disconnected => {
@@ -166,6 +222,15 @@ impl<T: Clone + Send + Sync + 'static> RemoteResource<T> {
                         });
                     }
                     ConnectionState::Connected => {
+                        if std::mem::take(&mut reuse_ready) {
+                            tokio::select! {
+                                biased;
+                                _ = &mut cancel_rx => return,
+                                _ = connection_rx.changed() => {},
+                                () = refetch_for_task.notified() => {},
+                            }
+                            continue;
+                        }
                         status_for_task.send_replace(ResourceStatus::Loading);
                         // Race the connected loop against cancellation
                         // so dropping the resource mid-fetch aborts the
@@ -178,6 +243,7 @@ impl<T: Clone + Send + Sync + 'static> RemoteResource<T> {
                                 &mut connection_rx,
                                 &status_for_task,
                                 &refetch_for_task,
+                                &background_refresh_for_task,
                             ) => {}
                         }
                         // run_connected returns when the connection
@@ -202,6 +268,7 @@ impl<T: Clone + Send + Sync + 'static> RemoteResource<T> {
         Self {
             status: status_tx,
             refetch,
+            background_refresh,
             _cancel_tx: cancel_tx,
         }
     }
@@ -215,12 +282,14 @@ async fn run_connected<T, F, Fut>(
     connection_rx: &mut watch::Receiver<ConnectionState>,
     status: &watch::Sender<ResourceStatus<T>>,
     refetch: &Arc<Notify>,
+    background_refresh: &Arc<Notify>,
 ) where
     T: Clone + Send + Sync + 'static,
     F: Fn() -> Fut,
     Fut: Future<Output = Result<T, ClientError>> + Send,
 {
     let mut rpc_failures: u32 = 0;
+    let mut background = false;
     loop {
         // Race the fetch against (a) a connection-state change — abort
         // and let the outer loop publish the appropriate state — or
@@ -231,7 +300,10 @@ async fn run_connected<T, F, Fut>(
         let result = tokio::select! {
             biased;
             _ = connection_rx.changed() => return,
-            () = refetch.notified() => continue,
+            () = refetch.notified() => {
+                background = false;
+                continue;
+            }
             r = &mut attempt => r,
         };
 
@@ -249,7 +321,8 @@ async fn run_connected<T, F, Fut>(
                 tokio::select! {
                     biased;
                     _ = connection_rx.changed() => return,
-                    () = refetch.notified() => {}
+                    () = refetch.notified() => background = false,
+                    () = background_refresh.notified() => background = true,
                 }
             }
             Err(e) => {
@@ -258,10 +331,13 @@ async fn run_connected<T, F, Fut>(
                     "RemoteResource fetch failed (attempt {rpc_failures}): {}",
                     e.message
                 );
-                status.send_replace(ResourceStatus::Errored {
-                    message: e.message,
-                    retrying: true,
-                });
+                let keep_ready = background && matches!(*status.borrow(), ResourceStatus::Ready(_));
+                if !keep_ready {
+                    status.send_replace(ResourceStatus::Errored {
+                        message: e.message,
+                        retrying: true,
+                    });
+                }
                 // RPC-level retries always use the steady-state curve;
                 // the connect-loop's boot-window fast retry doesn't
                 // apply here because we only reach this path after a
@@ -274,7 +350,7 @@ async fn run_connected<T, F, Fut>(
                 tokio::select! {
                     biased;
                     _ = connection_rx.changed() => return,
-                    () = refetch.notified() => {}
+                    () = refetch.notified() => background = false,
                     () = tokio::time::sleep(delay) => {}
                 }
             }
@@ -365,6 +441,37 @@ mod tests {
     }
 
     #[test]
+    fn refetch_retires_cached_ready_before_a_new_subscriber_can_read_it() {
+        let runtime = rt();
+        runtime.block_on(async {
+            let (_conn_tx, conn_rx) = watch::channel(ConnectionState::Connected);
+            let calls = Arc::new(AtomicUsize::new(0));
+            let count = calls.clone();
+            // The refetch is held until the assertion has read the status,
+            // so a fast worker cannot publish the next Ready first.
+            let release = Arc::new(Notify::new());
+            let gate = release.clone();
+            let res = RemoteResource::<usize>::spawn_with(conn_rx, runtime.handle(), move || {
+                let value = count.fetch_add(1, Ordering::SeqCst) + 1;
+                let gate = gate.clone();
+                async move {
+                    if value > 1 {
+                        gate.notified().await;
+                    }
+                    Ok(value)
+                }
+            });
+            let mut sub = res.subscribe();
+            wait_for(&mut sub, |s| matches!(s, ResourceStatus::Ready(1))).await;
+            res.refetch();
+            let mut fresh = res.subscribe();
+            assert!(matches!(*fresh.borrow(), ResourceStatus::Loading));
+            release.notify_one();
+            wait_for(&mut fresh, |s| matches!(s, ResourceStatus::Ready(2))).await;
+        });
+    }
+
+    #[test]
     fn reconnect_triggers_refetch() {
         let runtime = rt();
         runtime.block_on(async {
@@ -403,9 +510,7 @@ mod tests {
                     let n = calls_clone.fetch_add(1, Ordering::SeqCst) + 1;
                     async move {
                         if n == 1 {
-                            Err(ClientError {
-                                message: "transient".into(),
-                            })
+                            Err(ClientError::plain("transient"))
                         } else {
                             Ok("ok")
                         }
@@ -559,6 +664,91 @@ mod tests {
             assert_eq!(calls.load(Ordering::SeqCst), 2);
 
             drop(conn_tx);
+        });
+    }
+
+    #[test]
+    fn background_refresh_coalesces_without_cancelling_slow_reads() {
+        let runtime = rt();
+        runtime.block_on(async {
+            let (_conn_tx, conn_rx) = watch::channel(ConnectionState::Connected);
+            let calls = Arc::new(AtomicUsize::new(0));
+            let started = Arc::new(Notify::new());
+            let gate = Arc::new(tokio::sync::Semaphore::new(0));
+            let res = RemoteResource::<usize>::spawn_with(conn_rx, runtime.handle(), {
+                let calls = calls.clone();
+                let started = started.clone();
+                let gate = gate.clone();
+                move || {
+                    let n = calls.fetch_add(1, Ordering::SeqCst) + 1;
+                    let started = started.clone();
+                    let gate = gate.clone();
+                    async move {
+                        if n > 1 {
+                            started.notify_one();
+                            gate.acquire().await.expect("released read").forget();
+                        }
+                        Ok(n)
+                    }
+                }
+            });
+            let mut sub = res.subscribe();
+            wait_for(&mut sub, |s| matches!(s, ResourceStatus::Ready(1))).await;
+            res.refresh_in_background();
+            timeout(Duration::from_secs(5), started.notified())
+                .await
+                .expect("read started");
+            for _ in 0..20 {
+                res.refresh_in_background();
+            }
+            // The runtime remains runnable while the RPC is deliberately stuck.
+            tokio::task::yield_now().await;
+            assert_eq!(*sub.borrow(), ResourceStatus::Ready(1));
+            assert_eq!(calls.load(Ordering::SeqCst), 2);
+            gate.add_permits(1);
+            timeout(Duration::from_secs(5), started.notified())
+                .await
+                .expect("follow-up started");
+            assert_eq!(*sub.borrow(), ResourceStatus::Ready(2));
+            assert_eq!(calls.load(Ordering::SeqCst), 3);
+            gate.add_permits(1);
+            wait_for(&mut sub, |s| matches!(s, ResourceStatus::Ready(3))).await;
+            tokio::time::sleep(Duration::from_millis(30)).await;
+            assert_eq!(calls.load(Ordering::SeqCst), 3, "only one follow-up queues");
+        });
+    }
+
+    #[test]
+    fn failed_background_refresh_keeps_ready_data_and_retries() {
+        let runtime = rt();
+        runtime.block_on(async {
+            let (_conn_tx, conn_rx) = watch::channel(ConnectionState::Connected);
+            let calls = Arc::new(AtomicUsize::new(0));
+            let failed = Arc::new(Notify::new());
+            let res = RemoteResource::<usize>::spawn_with(conn_rx, runtime.handle(), {
+                let calls = calls.clone();
+                let failed = failed.clone();
+                move || {
+                    let n = calls.fetch_add(1, Ordering::SeqCst) + 1;
+                    let failed = failed.clone();
+                    async move {
+                        if n == 2 {
+                            failed.notify_one();
+                            Err(ClientError::plain("database busy"))
+                        } else {
+                            Ok(n)
+                        }
+                    }
+                }
+            });
+            let mut sub = res.subscribe();
+            wait_for(&mut sub, |s| matches!(s, ResourceStatus::Ready(1))).await;
+            res.refresh_in_background();
+            timeout(Duration::from_secs(5), failed.notified())
+                .await
+                .expect("failed refresh");
+            assert_eq!(*sub.borrow(), ResourceStatus::Ready(1));
+            wait_for(&mut sub, |s| matches!(s, ResourceStatus::Ready(3))).await;
         });
     }
 

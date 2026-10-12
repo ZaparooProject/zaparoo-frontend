@@ -87,6 +87,7 @@ enum TransitionPhase {
 
 #[derive(Default)]
 struct SyncState {
+    hub: TransitionPhase,
     systems: TransitionPhase,
     games: TransitionPhase,
     /// Screen the CRT head last resolved its layout profile for.
@@ -120,7 +121,7 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_battery_percent => set_battery_percent,
         get_boot_curtain => set_boot_curtain,
         get_boot_complete => set_boot_complete,
-        get_boot_text => set_boot_text,
+        get_boot_status => set_boot_status,
         get_reduce_motion => set_reduce_motion,
         get_mouse_enabled => set_mouse_enabled,
         get_saver_armed => set_saver_armed,
@@ -153,6 +154,7 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_arg => set_arg,
         get_arg2 => set_arg2,
         get_is_error => set_is_error,
+        get_link_trouble => set_link_trouble,
         get_show_track => set_show_track,
         get_paused => set_paused,
         get_total_known => set_total_known,
@@ -188,7 +190,6 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_loaded => set_loaded,
         get_catalog_empty => set_catalog_empty,
         get_indexing => set_indexing,
-        get_cells => set_cells,
         get_selected_local => set_selected_local,
         get_columns => set_columns,
         get_rows => set_rows,
@@ -207,9 +208,40 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_move_origins => set_move_origins,
         get_move_pulse => set_move_pulse,
         get_options_available => set_options_available,
-        get_activate_pulse => set_activate_pulse,
-        get_release_pulse => set_release_pulse,
+        get_transition_target_index => set_transition_target_index,
     );
+    let hub_transition =
+        source.get_cached_transition() || source.get_page_slide().abs() > f32::EPSILON;
+    if hub_transition {
+        target.set_selected_local(-1);
+        target.set_held_local(-1);
+        if state.hub != TransitionPhase::Active {
+            target.set_next_cells(if source.get_cached_transition() {
+                source.get_cells()
+            } else {
+                source.get_next_cells()
+            });
+            target.set_slide_dir(source.get_slide_dir());
+            target.set_slide_anim(true);
+            target.set_page_slide(source.get_slide_dir() as f32);
+            state.hub = TransitionPhase::Active;
+        }
+    } else {
+        if state.hub == TransitionPhase::Active {
+            target.set_slide_anim(false);
+        }
+        set_if_changed!(target, get_cells => set_cells, source.get_cells());
+        set_if_changed!(target, get_next_cells => set_next_cells, ModelRc::default());
+        if target.get_page_slide().abs() > f32::EPSILON {
+            target.set_page_slide(0.0);
+        }
+        if state.hub == TransitionPhase::Active {
+            state.hub = TransitionPhase::Rearm;
+        } else {
+            target.set_slide_anim(true);
+            state.hub = TransitionPhase::Idle;
+        }
+    }
     {
         let sizing = crt.global::<crate::Sizing>();
         let scene = crate::sizing::Scene::of(
@@ -243,6 +275,9 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
 
     let source = primary.global::<SystemsView>();
     let target = crt.global::<SystemsView>();
+    // How the list follows a step is set before the offset it applies to.
+    target.set_list_glide(source.get_list_glide());
+    target.set_list_step_ms(source.get_list_step_ms());
     target.set_list_scroll_top(source.get_list_scroll_top());
     copy_properties!(source, target;
         get_mode => set_mode,
@@ -420,7 +455,13 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_rows => set_rows,
         get_index => set_index,
         get_picker_rows => set_picker_rows,
+        get_picker_first => set_picker_first,
+        get_picker_top => set_picker_top,
+        get_picker_visible => set_picker_visible,
+        get_picker_count => set_picker_count,
         get_picker_sel => set_picker_sel,
+        get_picker_checked => set_picker_checked,
+        get_picker_toggle => set_picker_toggle,
         get_has_above => set_has_above,
         get_has_below => set_has_below,
         get_activate_pulse => set_activate_pulse,
@@ -440,31 +481,73 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
 
     crate::settings::mirror_geometry(primary, crt);
 
+    let source = primary.global::<crate::SearchView>();
+    let target = crt.global::<crate::SearchView>();
+    // The CRT head is the 240p tier, which has no room for the pane.
+    set_if_changed!(target, get_pane_collapsed => set_pane_collapsed, true);
+    copy_properties!(source, target;
+        get_before => set_before,
+        get_at => set_at,
+        get_after => set_after,
+        get_scoped => set_scoped,
+        get_system_name => set_system_name,
+        get_scope_name => set_scope_name,
+        get_filter_text => set_filter_text,
+        get_keys => set_keys,
+        get_key_rows => set_key_rows,
+        get_key_index => set_key_index,
+        get_pressed_key => set_pressed_key,
+        get_shift_active => set_shift_active,
+        get_symbols_active => set_symbols_active,
+        get_zone => set_zone,
+        get_pane_index => set_pane_index,
+        get_pane_top => set_pane_top,
+        get_pane_clear => set_pane_clear,
+        get_pane_on_clear => set_pane_on_clear,
+        get_pane => set_pane,
+        get_pane_rows => set_pane_rows,
+        get_count_known => set_count_known,
+        get_count => set_count,
+        get_count_more => set_count_more,
+        get_searching => set_searching,
+        get_failed => set_failed,
+        get_can_search => set_can_search,
+        get_key_kind => set_key_kind,
+    );
+
     let source = primary.global::<GamesView>();
     let target = crt.global::<GamesView>();
+    // How the list follows a step is set before the offset it applies to.
+    target.set_list_glide(source.get_list_glide());
+    target.set_list_step_ms(source.get_list_step_ms());
     target.set_list_scroll_top(source.get_list_scroll_top());
     copy_properties!(source, target;
         get_mode => set_mode,
         get_folder_slide => set_folder_slide,
         get_title => set_title,
+        get_options_available => set_options_available,
         get_loading => set_loading,
-        get_loading_more => set_loading_more,
         get_error => set_error,
         get_count => set_count,
         get_total_items => set_total_items,
         get_total_known => set_total_known,
         get_total_files => set_total_files,
+        get_filter_text => set_filter_text,
         get_has_more => set_has_more,
-        get_page_loading => set_page_loading,
         get_focus_ready => set_focus_ready,
         get_current_index => set_current_index,
         get_has_pages_above => set_has_pages_above,
         get_has_pages_below => set_has_pages_below,
         get_label_name => set_label_name,
         get_label_tags => set_label_tags,
+        get_label_hidden => set_label_hidden,
         get_activate_pulse => set_activate_pulse,
         get_release_pulse => set_release_pulse,
-        get_rapid_letter => set_rapid_letter,
+        get_rail_visible => set_rail_visible,
+        get_rail_letters => set_rail_letters,
+        get_rail_index => set_rail_index,
+        get_rail_letter => set_rail_letter,
+        get_rail_fraction => set_rail_fraction,
         get_list_rows => set_list_rows,
         get_list_sel => set_list_sel,
         get_list_view_top => set_list_view_top,
@@ -477,6 +560,8 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_detail_path => set_detail_path,
         get_detail_has_cover => set_detail_has_cover,
         get_detail_cover_absent => set_detail_cover_absent,
+        get_detail_placeholder => set_detail_placeholder,
+        get_detail_has_placeholder => set_detail_has_placeholder,
         get_detail_rows => set_detail_rows,
         get_detail_loading => set_detail_loading,
         get_rapid_active => set_rapid_active,
@@ -627,6 +712,47 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_scroll_milli => set_scroll_milli,
     );
 
+    let source = primary.global::<crate::UpdateView>();
+    let target = crt.global::<crate::UpdateView>();
+    copy_properties!(source, target;
+        get_page => set_page,
+        get_version => set_version,
+        get_available => set_available,
+        get_status_kind => set_status_kind,
+        get_status_arg => set_status_arg,
+        get_progress_bp => set_progress_bp,
+        get_progress_decimals => set_progress_decimals,
+        get_progress_known => set_progress_known,
+        get_outcome => set_outcome,
+        get_error => set_error,
+        get_error_arg => set_error_arg,
+        get_counts => set_counts,
+        get_linux_phase => set_linux_phase,
+        get_linux_current_version => set_linux_current_version,
+        get_linux_new_version => set_linux_new_version,
+        get_linux_failed => set_linux_failed,
+        get_membership => set_membership,
+        get_membership_index => set_membership_index,
+        get_transition => set_transition,
+        get_buttons => set_buttons,
+        get_button_focus => set_button_focus,
+        get_countdown_secs => set_countdown_secs,
+        get_rows => set_rows,
+        get_filter => set_filter,
+        get_filter_focus => set_filter_focus,
+        get_filter_visible => set_filter_visible,
+        get_filter_focused => set_filter_focused,
+        get_focused_row => set_focused_row,
+        get_row_count => set_row_count,
+        get_database_count => set_database_count,
+        get_details_counts => set_details_counts,
+        get_info_open => set_info_open,
+        get_info_row => set_info_row,
+        get_info_databases => set_info_databases,
+        get_help => set_help,
+        get_allows_screensaver => set_allows_screensaver,
+    );
+
     let source = primary.global::<GameInfoView>();
     let target = crt.global::<GameInfoView>();
     copy_properties!(source, target;
@@ -643,6 +769,7 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_scroll_position => set_scroll_position,
         get_modal_description => set_modal_description,
         get_modal_has_cover => set_modal_has_cover,
+        get_modal_cover_absent => set_modal_cover_absent,
     );
     let modal_cover = source.get_modal_cover();
     if !same_image(&target.get_modal_cover(), &modal_cover) {
@@ -655,6 +782,7 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_context_open => set_context_open,
         get_context_entries => set_context_entries,
         get_context_index => set_context_index,
+        get_context_page => set_context_page,
         get_context_anchor_x => set_context_anchor_x,
         get_context_anchor_y => set_context_anchor_y,
         get_context_anchor_w => set_context_anchor_w,
@@ -668,7 +796,7 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_letter_open => set_letter_open,
         get_letter_buckets => set_letter_buckets,
         get_letter_index => set_letter_index,
-        get_letter_loading => set_letter_loading,
+        get_letter_state => set_letter_state,
         get_card_write_open => set_card_write_open,
         get_card_write_key => set_card_write_key,
         get_qr_open => set_qr_open,
@@ -677,13 +805,8 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_dialog_open => set_dialog_open,
         get_dialog_kind => set_dialog_kind,
         get_dialog_error => set_dialog_error,
-        get_first_run_phase => set_first_run_phase,
         get_dialog_detail => set_dialog_detail,
         get_dialog_arg => set_dialog_arg,
-        get_dialog_status => set_dialog_status,
-        get_dialog_status_step => set_dialog_status_step,
-        get_dialog_status_total => set_dialog_status_total,
-        get_dialog_status_name => set_dialog_status_name,
         get_dialog_buttons => set_dialog_buttons,
         get_dialog_focus => set_dialog_focus,
         get_crt_calibration_open => set_crt_calibration_open,
@@ -789,7 +912,14 @@ mod tests {
         let mut persisted = zaparoo_core::persist::PersistedState::default();
         persisted.settings.orientation = "future-orientation".into();
         persisted.settings.crt_video_standard = "future-standard".into();
-        crate::seed_display_globals(&primary, &persisted, false, false, (960, 540));
+        crate::seed_display_globals(
+            &primary,
+            &persisted,
+            false,
+            false,
+            (960, 540),
+            zaparoo_app::motion_test::Disabled::default(),
+        );
         assert_eq!(
             primary.global::<Shell>().get_orientation(),
             crate::Orientation::Horizontal
@@ -820,16 +950,80 @@ mod tests {
             Some(crate::DialogButton::Retry)
         );
         source.set_dialog_kind(crate::DialogKind::FirstRun);
-        source.set_first_run_phase(crate::FirstRunPhase::Done);
-        source.set_dialog_status(crate::DialogProgress::Step);
-        source.set_dialog_status_step(2);
-        source.set_dialog_status_total(3);
+        source.set_dialog_buttons(ModelRc::new(VecModel::from(vec![
+            crate::DialogButton::StartMediaUpdate,
+        ])));
         sync_with_state(&primary, &crt, &mut state);
         assert_eq!(target.get_dialog_kind(), crate::DialogKind::FirstRun);
-        assert_eq!(target.get_first_run_phase(), crate::FirstRunPhase::Done);
-        assert_eq!(target.get_dialog_status(), crate::DialogProgress::Step);
-        assert_eq!(target.get_dialog_status_step(), 2);
-        assert_eq!(target.get_dialog_status_total(), 3);
+        assert_eq!(
+            target.get_dialog_buttons().row_data(0),
+            Some(crate::DialogButton::StartMediaUpdate)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn hub_pages_preserve_crt_source_for_cached_and_live_transitions(
+    ) -> Result<(), slint::PlatformError> {
+        assert!(slint::platform::set_platform(Box::new(TestPlatform)).is_ok());
+        let primary = App::new()?;
+        let crt = App::new()?;
+        primary.global::<crate::Sizing>().set_screen_width(960.0);
+        primary.global::<crate::Sizing>().set_screen_height(540.0);
+        crt.global::<crate::Sizing>().set_screen_width(352.0);
+        crt.global::<crate::Sizing>().set_screen_height(240.0);
+        let source = primary.global::<HubView>();
+        let target = crt.global::<HubView>();
+        source.set_columns(3);
+        source.set_rows(2);
+        source.set_cell_width(200.0);
+        let cells = |name: &str| {
+            ModelRc::new(VecModel::from(vec![
+                GridCell {
+                    name: name.into(),
+                    ..Default::default()
+                };
+                6
+            ]))
+        };
+        for cached in [false, true] {
+            let old = cells("Old");
+            let incoming = cells("New");
+            let mut state = SyncState::default();
+            source.set_cells(old.clone());
+            source.set_page(0);
+            sync_with_state(&primary, &crt, &mut state);
+            source.set_page(1);
+            source.set_slide_dir(-1);
+            source.set_transition_target_index(2);
+            if cached {
+                source.set_cells(incoming.clone());
+                source.set_cached_transition(true);
+            } else {
+                source.set_next_cells(incoming.clone());
+                source.set_page_slide(-1.0);
+            }
+            sync_with_state(&primary, &crt, &mut state);
+            assert_eq!(target.get_cells(), old);
+            assert_eq!(target.get_next_cells(), incoming);
+            assert!((target.get_page_slide() + 1.0).abs() < f32::EPSILON);
+            assert_eq!(target.get_transition_target_index(), 2);
+            assert!(target.get_cell_width() < source.get_cell_width());
+            sync_with_state(&primary, &crt, &mut state);
+            assert_eq!(target.get_cells(), old, "mirror ticks cannot commit midway");
+            source.set_cached_transition(false);
+            source.set_page_slide(0.0);
+            source.set_cells(incoming.clone());
+            source.set_selected_local(2);
+            sync_with_state(&primary, &crt, &mut state);
+            assert_eq!(target.get_cells(), incoming);
+            assert_eq!(target.get_selected_local(), 2);
+            assert_eq!(target.get_next_cells().row_count(), 0);
+            assert!(target.get_page_slide().abs() < f32::EPSILON);
+            assert!(!target.get_slide_anim());
+            sync_with_state(&primary, &crt, &mut state);
+            assert!(target.get_slide_anim());
+        }
         Ok(())
     }
 
@@ -904,11 +1098,19 @@ mod tests {
                     })
                     .collect::<Vec<_>>(),
             )));
+        primary.global::<GamesView>().set_list_glide(false);
+        primary.global::<GamesView>().set_list_step_ms(81);
+        primary.global::<SystemsView>().set_list_step_ms(112);
         crt.global::<GamesView>().set_columns(4);
         crt.global::<GamesView>().set_rows(1);
         crt.global::<Theme>().set_crt(true);
 
         sync(&primary, &crt);
+
+        assert!(!crt.global::<GamesView>().get_list_glide());
+        assert_eq!(crt.global::<GamesView>().get_list_step_ms(), 81);
+        assert!(crt.global::<SystemsView>().get_list_glide());
+        assert_eq!(crt.global::<SystemsView>().get_list_step_ms(), 112);
 
         assert_eq!(
             crt.global::<Shell>().get_active_screen(),

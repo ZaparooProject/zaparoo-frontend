@@ -17,11 +17,13 @@ lang="${1:-}"
 
 cd "$repo_root/rust"
 cargo build -q -p frontend --features snapshot --bin snapshot
-snapshot="$repo_root/rust/target/debug/snapshot"
+# Match cargo's command-scoped target directory instead of running a stale
+# host binary when rendering from an isolated or container build.
+snapshot="${CARGO_TARGET_DIR:-target}/debug/snapshot"
 mkdir -p "$out"
 
-digital_screens=(hub systems systems-list favorite-systems games games-list favorites favorites-list recents settings settings-page setup setup-picker log-upload picker palette-picker about about-scrolled context context-alt letters dialog alert notice saver launcher-saving token-write token-error qr-docs qr-write game-info game-info-short game-info-scrolled game-info-loading game-info-error)
-crt_screens=(crt-hub crt-systems crt-games crt-games-list crt-favorites crt-settings crt-settings-page crt-about crt-about-scrolled crt-setup crt-picker crt-palette-picker crt-letters crt-dialog crt-alert crt-notice crt-launcher-saving crt-token-write crt-token-error crt-qr-docs crt-qr-write crt-game-info crt-game-info-short crt-game-info-scrolled crt-game-info-loading crt-game-info-error calibration)
+digital_screens=(hub systems systems-list favorite-systems games games-list games-filter games-list-filter games-filter-empty filter-picker filter-values favorites favorites-list recents search search-recents search-scoped search-results system-picker settings settings-page settings-page-online settings-page-online-unlinked settings-page-online-backups settings-page-online-activity online-link setup setup-picker log-upload picker palette-picker about about-scrolled context context-alt context-manage context-write context-list letters fast-scroll dialog alert config-alert notice saver launcher-picker launcher-saving token-write token-error qr-docs qr-write game-info game-info-short game-info-scrolled game-info-loading game-info-error update-intro update-unavailable update-running update-progress update-stopping update-finished update-finished-errors update-membership update-reboot update-linux update-rebooting update-details update-info)
+crt_screens=(crt-hub crt-systems crt-games crt-games-list crt-games-filter crt-games-list-filter crt-filter-picker crt-filter-values crt-favorites crt-search crt-search-scoped crt-search-results crt-system-picker crt-settings crt-settings-page crt-about crt-about-scrolled crt-setup crt-picker crt-palette-picker crt-context crt-context-manage crt-context-write crt-letters crt-fast-scroll crt-dialog crt-alert crt-config-alert crt-notice crt-launcher-saving crt-token-write crt-token-error crt-qr-docs crt-qr-write crt-game-info crt-game-info-short crt-game-info-scrolled crt-game-info-loading crt-game-info-error crt-update-intro crt-update-unavailable crt-update-running crt-update-progress crt-update-stopping crt-update-finished crt-update-finished-errors crt-update-membership crt-update-reboot crt-update-linux crt-update-rebooting crt-update-details crt-update-info calibration)
 
 render() {
     local w="$1" h="$2" screen="$3"
@@ -43,4 +45,9 @@ for size in "960 540" "1280 720" "1920 1080"; do
 done
 for screen in "${crt_screens[@]}"; do
     render 352 240 "$screen"
+done
+# The PAL CRT scene is 48 lines taller: the list card and its row window
+# are the part of the layout that has to follow it.
+for screen in crt-games-list crt-fast-scroll; do
+    render 352 288 "$screen"
 done
