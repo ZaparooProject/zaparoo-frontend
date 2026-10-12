@@ -173,9 +173,11 @@ pub fn pack_word1(h_offset: i32, v_offset: i32, mode: u32) -> u32 {
 /// Pack the interim size control word2: `[31:16]` magic 0x5A52,
 /// `[15:8]` v size (reserved, always 0 since the blank-line vertical
 /// shrink was dropped), `[7:0]` analog `h_size` as signed int8
-/// (core-clamped to -8..+2; 0 = retimer bypass). Same ownership as
-/// word1's offsets: this writer owns the byte while it runs, and
-/// Main's OSD row edits the saved value then respawns the frontend.
+/// (core-clamped to -8..+2; 0 = retimer bypass). Same ownership and
+/// cadence as word1's offsets: this writer owns the word while it runs
+/// and re-asserts it every frame (see `publish`), so it survives Main's
+/// DDR blank without Main restoring it. Main's OSD row edits the saved
+/// value then respawns the frontend.
 pub fn pack_word2(h_size: i32) -> u32 {
     let h = (h_size as i8) as u8;
     (0x5A52_u32 << 16) | u32::from(h)
@@ -273,6 +275,13 @@ pub struct DdrPresenter {
     h_offset: i32,
     v_offset: i32,
     h_size: i32,
+    /// Last packed word1 (timing+mode) and word2 (H size). Re-asserted
+    /// every frame in `publish` so both self-heal after an external wipe
+    /// (e.g. Main's DDR blank on the CRT handoff), exactly as word0's
+    /// frame counter already does; the reader latches all three with
+    /// word0 at vblank.
+    word1: u32,
+    word2: u32,
     pace_in_present: bool,
     pacing: FrameDeadline,
     /// Slots whose vacated inset strips must be cleared before their
@@ -356,6 +365,8 @@ impl DdrPresenter {
             h_offset,
             v_offset,
             h_size,
+            word1: pack_word1(timing_h, timing_v, mode.mode),
+            word2: pack_word2(h_size),
             pace_in_present,
             pacing: FrameDeadline::new(
                 Instant::now(),
@@ -372,8 +383,8 @@ impl DdrPresenter {
         // word0 stays 0 ("writer stopped") until the first frame.
         presenter.clear_slot(0);
         presenter.clear_slot(1);
-        presenter.write_word(WORD1_OFFSET, pack_word1(timing_h, timing_v, mode.mode));
-        presenter.write_word(WORD2_OFFSET, pack_word2(h_size));
+        presenter.write_word(WORD1_OFFSET, presenter.word1);
+        presenter.write_word(WORD2_OFFSET, presenter.word2);
         presenter.write_word(WORD0_OFFSET, 0);
 
         tracing::info!(
@@ -482,7 +493,8 @@ impl Presenter for DdrPresenter {
         let h_size = requested_h_size();
         if h_size != self.h_size {
             self.h_size = h_size;
-            self.write_word(WORD2_OFFSET, pack_word2(h_size));
+            self.word2 = pack_word2(h_size);
+            self.write_word(WORD2_OFFSET, self.word2);
             tracing::info!(h_size, "native video h size updated");
         }
         let (h_offset, v_offset) = requested_offsets();
@@ -517,7 +529,8 @@ impl Presenter for DdrPresenter {
         }
         // Next frame's seq_cst publish orders this control word ahead
         // of word0, so timing and pixels latch together at vblank.
-        self.write_word(WORD1_OFFSET, pack_word1(timing_h, timing_v, self.mode.mode));
+        self.word1 = pack_word1(timing_h, timing_v, self.mode.mode);
+        self.write_word(WORD1_OFFSET, self.word1);
         tracing::info!(
             h_offset,
             v_offset,
@@ -646,6 +659,14 @@ impl DdrPresenter {
                 to_copy,
             );
         }
+
+        // Re-assert the control words every frame, ahead of word0, so
+        // word1 (timing/mode) and word2 (H size) self-heal on the next
+        // frame after any external wipe of the DDR window (Main blanks it
+        // on the CRT handoff). The reader latches all three with word0 at
+        // vblank, and the writes are idempotent when nothing changed.
+        self.write_word(WORD1_OFFSET, self.word1);
+        self.write_word(WORD2_OFFSET, self.word2);
 
         // The fence orders the pixel stores ahead of the word0
         // publish, mirroring the C++ writer's seq_cst fence.
