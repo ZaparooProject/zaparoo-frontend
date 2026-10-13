@@ -965,6 +965,7 @@ pub(crate) fn mirror_of(s: &persist::SettingsState) -> zaparoo_core::config::Set
         crt_video_standard: &s.crt_video_standard,
         crt_h_offset: s.crt_h_offset,
         crt_v_offset: s.crt_v_offset,
+        crt_h_size: s.crt_h_size,
     }
 }
 

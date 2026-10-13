@@ -15,7 +15,11 @@
 
 pub use super::latch::ResolutionPolicy;
 use super::{
-    ddr::DdrPresenter, fb0::Fb0Presenter, input::InputReader, latch::LatchPresenter, Presenter,
+    ddr::{CrtTrims, DdrPresenter},
+    fb0::Fb0Presenter,
+    input::InputReader,
+    latch::LatchPresenter,
+    Presenter,
 };
 use slint::platform::software_renderer::{
     MinimalSoftwareWindow, RenderingRotation, RepaintBufferType,
@@ -305,7 +309,7 @@ pub struct MisterPlatform {
     /// CRT native path: present through the DDR contract instead of fb0.
     crt: bool,
     crt_size: (u32, u32),
-    crt_offsets: (i32, i32),
+    crt_trims: CrtTrims,
     /// Render normal HDMI and CRT-profile component instances together.
     dual_head: bool,
     /// Main offered its scanout lease. Off the native CRT path that is the
@@ -322,7 +326,7 @@ impl MisterPlatform {
     fn new(
         crt: bool,
         crt_size: (u32, u32),
-        crt_offsets: (i32, i32),
+        crt_trims: CrtTrims,
         latch: bool,
         dual_head: bool,
         resolution_policy: ResolutionPolicy,
@@ -336,7 +340,7 @@ impl MisterPlatform {
             clock: Cell::new(None),
             crt,
             crt_size,
-            crt_offsets,
+            crt_trims,
             dual_head,
             latch,
             resolution_policy,
@@ -402,8 +406,7 @@ impl MisterPlatform {
             match DdrPresenter::open(
                 self.crt_size.0,
                 self.crt_size.1,
-                self.crt_offsets.0,
-                self.crt_offsets.1,
+                self.crt_trims,
                 true,
                 self.latch,
                 !crate::motion_test().slides(),
@@ -427,8 +430,7 @@ impl MisterPlatform {
         let mut crt: Box<dyn Presenter> = Box::new(DdrPresenter::open(
             self.crt_size.0,
             self.crt_size.1,
-            self.crt_offsets.0,
-            self.crt_offsets.1,
+            self.crt_trims,
             false,
             self.latch,
             // The HDMI presenter paces this pair and owns its cached page
@@ -790,7 +792,7 @@ impl FrameProfile {
 pub fn install_platform(
     crt: bool,
     crt_size: (u32, u32),
-    crt_offsets: (i32, i32),
+    crt_trims: CrtTrims,
     latch: bool,
     dual_head: bool,
     resolution_policy: ResolutionPolicy,
@@ -802,7 +804,7 @@ pub fn install_platform(
     slint::platform::set_platform(Box::new(MisterPlatform::new(
         crt,
         crt_size,
-        crt_offsets,
+        crt_trims,
         latch,
         dual_head,
         resolution_policy,
@@ -823,7 +825,7 @@ mod tests {
         MisterPlatform::new(
             false,
             (352, 240),
-            (0, 0),
+            CrtTrims::default(),
             false,
             false,
             ResolutionPolicy::Adaptive,

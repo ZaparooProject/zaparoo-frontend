@@ -250,6 +250,15 @@ pub(crate) fn set_live_crt_offsets(h_offset: i32, v_offset: i32) {
     let _ = (h_offset, v_offset);
 }
 
+/// Apply a calibration width nudge to the live DDR presenter (word2
+/// analog H size). Desktop keeps only the UI state, same as offsets.
+pub(crate) fn set_live_crt_h_size(h_size: i32) {
+    #[cfg(feature = "mister")]
+    mister::set_crt_h_size(h_size);
+    #[cfg(not(feature = "mister"))]
+    let _ = h_size;
+}
+
 pub(crate) fn set_live_orientation(app: &App, value: Orientation, framebuffer_size: (u32, u32)) {
     #[cfg(feature = "mister")]
     {
@@ -359,6 +368,7 @@ fn merge_config_settings(
     );
     s.crt_h_offset = h;
     s.crt_v_offset = v;
+    s.crt_h_size = zaparoo_core::config::clamp_crt_h_size(c.crt_h_size.unwrap_or(s.crt_h_size));
 }
 
 /// Runtimes that present like a console rather than a desktop: held in
@@ -684,10 +694,15 @@ fn run_application(
 
     #[cfg(feature = "mister")]
     {
-        let offsets = zaparoo_core::config::clamp_crt_offsets(
+        let (trim_h, trim_v) = zaparoo_core::config::clamp_crt_offsets(
             persisted.settings.crt_h_offset,
             persisted.settings.crt_v_offset,
         );
+        let crt_trims = mister::CrtTrims {
+            h_offset: trim_h,
+            v_offset: trim_v,
+            h_size: zaparoo_core::config::clamp_crt_h_size(persisted.settings.crt_h_size),
+        };
         // Ask for Core before the window exists, so its boot overlaps
         // ours.
         mister::ensure_core_running();
@@ -697,7 +712,7 @@ fn run_application(
         mister::install_platform(
             crt,
             crt_framebuffer_size,
-            offsets,
+            crt_trims,
             latch,
             dual_head,
             if adaptive_render {
@@ -2128,6 +2143,7 @@ mod tests {
         config.settings.crt_video_standard = Some("pal".to_string());
         config.settings.crt_h_offset = Some(99);
         config.settings.crt_v_offset = Some(-99);
+        config.settings.crt_h_size = Some(-99);
 
         merge_config_settings(&mut persisted, &config);
 
@@ -2144,6 +2160,9 @@ mod tests {
         assert!(h < 99 && v > -99);
         assert_eq!(persisted.settings.crt_h_offset, h);
         assert_eq!(persisted.settings.crt_v_offset, v);
+        let w = zaparoo_core::config::clamp_crt_h_size(-99);
+        assert!(w > -99);
+        assert_eq!(persisted.settings.crt_h_size, w);
     }
 
     /// `MiSTer` loses the state snapshot on every reboot, so a setting the
@@ -2181,6 +2200,7 @@ mod tests {
             crt_video_standard: "pal".to_string(),
             crt_h_offset: 2,
             crt_v_offset: -1,
+            crt_h_size: -3,
             ..persist::SettingsState::default()
         };
         let dir = std::env::temp_dir().join(format!("zaparoo-mirror-merge-{}", std::process::id()));
