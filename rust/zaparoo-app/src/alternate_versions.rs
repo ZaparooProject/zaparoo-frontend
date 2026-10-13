@@ -50,15 +50,16 @@ pub fn classify_alternate(
 }
 
 /// The folder to browse for an `_alternatives` hit: the alternates
-/// directory plus the one level under it that names the game, when there
-/// is one.
+/// directory plus the one level under it that names the game, when that
+/// level is a folder. A file directly in the alternates directory keeps
+/// the directory itself.
 fn alternate_folder_path(path: &str) -> Option<String> {
     let trimmed = path.trim_matches('/');
     let parts: Vec<&str> = trimmed.split('/').filter(|part| !part.is_empty()).collect();
     let index = parts
         .iter()
         .position(|part| part.to_lowercase().contains(FOLDER_MARKER))?;
-    let folder_end = if index + 2 <= parts.len() {
+    let folder_end = if index + 2 < parts.len() {
         index + 2
     } else {
         index + 1
@@ -168,7 +169,7 @@ mod tests {
                 "/media/fat/_Arcade/_alternatives/Bubble Bobble".into()
             ))
         );
-        // A file directly in the alternates folder keeps that folder.
+        // A file directly in the alternates folder browses that folder.
         assert_eq!(
             classify_alternate(
                 "/media/fat/_Arcade/_alternatives/Bubble Bobble.mra",
@@ -176,7 +177,7 @@ mod tests {
                 SELECTED,
             ),
             Some(AlternateSource::Folder(
-                "/media/fat/_Arcade/_alternatives/Bubble Bobble.mra".into()
+                "/media/fat/_Arcade/_alternatives".into()
             ))
         );
     }
