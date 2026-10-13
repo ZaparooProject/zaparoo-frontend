@@ -33,8 +33,10 @@ pub fn begin(ctx: &Ctx, app: &App, system_id: &str, name: &str, path: &str) {
 }
 
 /// The Core side: resolve the game's canonical title, search the
-/// Arcade system for the same title under an alternates folder, then
-/// browse each folder those hits name and collect the files.
+/// Arcade system for the same title under an alternates location, then
+/// collect the files: browse each `_alternatives` folder the hits name,
+/// and take hits under `_Arcade Patches` as they are, since those
+/// folders hold many unrelated games.
 async fn discover(
     client: &Client,
     system_id: &str,
@@ -69,23 +71,25 @@ async fn discover(
         .map_err(|e| e.message)?;
     let selected_norm = rules::normalize_seed_title(&canonical_title);
     let mut folders = HashSet::new();
+    let mut seen = HashSet::new();
+    let mut rows = Vec::new();
     for entry in result.results {
         let relative = entry.relative_path.unwrap_or_default();
-        if !rules::is_alternate_candidate(&entry.path, &relative, selected_path) {
+        let Some(source) = rules::classify_alternate(&entry.path, &relative, selected_path) else {
             continue;
-        }
+        };
         if rules::normalize_seed_title(&entry.name) != selected_norm {
             continue;
         }
-        if let Some(folder) = rules::alternate_folder_path(&entry.path) {
-            folders.insert(folder);
+        match source {
+            rules::AlternateSource::Folder(folder) => {
+                folders.insert(folder);
+            }
+            rules::AlternateSource::Direct => {
+                push_row(&mut rows, &mut seen, &entry.path, &entry.name, "", false);
+            }
         }
     }
-    if folders.is_empty() {
-        return Ok(Vec::new());
-    }
-    let mut seen = HashSet::new();
-    let mut rows = Vec::new();
     for folder in folders {
         let page = client
             .media_browse(MediaBrowseParams {
@@ -100,30 +104,46 @@ async fn discover(
             if !rules::is_discovered_entry(entry.is_folder(), &entry.path, selected_path) {
                 continue;
             }
-            if !seen.insert(entry.path.clone()) {
-                continue;
-            }
-            let launch_text = if entry.path.trim().is_empty() {
-                entry.zap_script.clone()
-            } else {
-                entry.path.clone()
-            };
-            if launch_text.is_empty() {
-                continue;
-            }
-            // The filename is what tells two builds apart.
-            let name = zaparoo_app::media_list::file_stem_or_name(
+            push_row(
+                &mut rows,
+                &mut seen,
                 &entry.path,
                 &entry.name,
+                &entry.zap_script,
                 entry.is_folder(),
             );
-            rows.push(PageRow {
-                label_key: "",
-                label: name.clone(),
-                name,
-                launch_text,
-            });
         }
     }
     Ok(rows)
+}
+
+/// Add one alternate to the page unless it was already collected or has
+/// nothing to launch.
+fn push_row(
+    rows: &mut Vec<PageRow>,
+    seen: &mut HashSet<String>,
+    path: &str,
+    entry_name: &str,
+    zap_script: &str,
+    is_folder: bool,
+) {
+    if !seen.insert(path.to_string()) {
+        return;
+    }
+    let launch_text = if path.trim().is_empty() {
+        zap_script
+    } else {
+        path
+    };
+    if launch_text.is_empty() {
+        return;
+    }
+    // The filename is what tells two builds apart.
+    let name = zaparoo_app::media_list::file_stem_or_name(path, entry_name, is_folder);
+    rows.push(PageRow {
+        label_key: "",
+        label: name.clone(),
+        name,
+        launch_text: launch_text.to_string(),
+    });
 }

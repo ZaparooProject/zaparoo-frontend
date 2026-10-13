@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 
 //! Arcade alternate-version discovery: which search results count as
-//! another build of the same game, which folder to browse for the rest,
+//! another build of the same game, where to find the rest,
 //! and how a title is normalized so "Bubble Bobble (Japan)" and
 //! "Bubble Bobble" compare equal. The Core calls stay in the shell.
 
@@ -14,35 +14,57 @@ pub const MAX_ALT_RESULTS: u32 = 64;
 /// Browse cap for each alternate folder.
 pub const MAX_FOLDER_RESULTS: u32 = 1000;
 /// The path marker `MiSTer`'s own `_alternatives` folders carry
-/// (`_alternatives`, `_Alternatives`, `_alternates`, ...).
-const MARKER: &str = "_alternat";
+/// (`_alternatives`, `_Alternatives`, `_alternates`, ...), compared
+/// case-insensitively.
+const FOLDER_MARKER: &str = "_alternat";
+/// The folder the arcadepatches kit installs into. Its subfolders are
+/// categories (`_Enhanced Versions`, `_Restorations`, ...) holding many
+/// games, so a hit under it is an alternate by itself and the folder is
+/// never browsed.
+const PATCHES_MARKER: &str = "_arcade patches";
 
-/// A search hit is a candidate when it is not the selected row itself
-/// and it sits under an alternates folder.
-pub fn is_alternate_candidate(path: &str, relative_path: &str, selected_path: &str) -> bool {
-    if path.is_empty() || path == selected_path {
-        return false;
-    }
-    path.contains(MARKER) || relative_path.contains(MARKER)
+/// Where an alternate build was found, and so how to collect it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AlternateSource {
+    /// An `_alternatives/<Game>/` folder: browse it for the other builds.
+    Folder(String),
+    /// A category folder of unrelated games: take the search hit itself.
+    Direct,
 }
 
-/// The folder to browse for a candidate: the alternates directory plus
-/// the one level under it that names the game, when there is one.
-pub fn alternate_folder_path(path: &str) -> Option<String> {
+/// Classify a search hit. `None` when it is the selected row itself, has
+/// no path, or sits outside every alternates location.
+pub fn classify_alternate(
+    path: &str,
+    relative_path: &str,
+    selected_path: &str,
+) -> Option<AlternateSource> {
+    if path.is_empty() || path == selected_path {
+        return None;
+    }
+    if let Some(folder) = alternate_folder_path(path) {
+        return Some(AlternateSource::Folder(folder));
+    }
+    let under_patches = |value: &str| value.to_lowercase().contains(PATCHES_MARKER);
+    (under_patches(path) || under_patches(relative_path)).then_some(AlternateSource::Direct)
+}
+
+/// The folder to browse for an `_alternatives` hit: the alternates
+/// directory plus the one level under it that names the game, when that
+/// level is a folder. A file directly in the alternates directory keeps
+/// the directory itself.
+fn alternate_folder_path(path: &str) -> Option<String> {
     let trimmed = path.trim_matches('/');
     let parts: Vec<&str> = trimmed.split('/').filter(|part| !part.is_empty()).collect();
-    for (index, part) in parts.iter().enumerate() {
-        if !part.contains(MARKER) {
-            continue;
-        }
-        let folder_end = if index + 2 <= parts.len() {
-            index + 2
-        } else {
-            index + 1
-        };
-        return Some(format!("/{}", parts[..folder_end].join("/")));
-    }
-    None
+    let index = parts
+        .iter()
+        .position(|part| part.to_lowercase().contains(FOLDER_MARKER))?;
+    let folder_end = if index + 2 < parts.len() {
+        index + 2
+    } else {
+        index + 1
+    };
+    Some(format!("/{}", parts[..folder_end].join("/")))
 }
 
 /// Lower-cased alphanumerics only, so punctuation and spacing cannot
@@ -133,48 +155,93 @@ mod tests {
         );
     }
 
+    const SELECTED: &str = "/media/fat/_Arcade/Bubble Bobble.mra";
+
     #[test]
-    fn alternate_folder_path_returns_the_game_folder_under_the_marker() {
+    fn folder_hit_names_the_game_folder_under_the_marker() {
         assert_eq!(
-            alternate_folder_path(
-                "/media/fat/_Arcade/_alternatives/Bubble Bobble/Bubble Bobble.mra"
+            classify_alternate(
+                "/media/fat/_Arcade/_alternatives/Bubble Bobble/Bubble Bobble (Japan).mra",
+                "_alternatives/Bubble Bobble/Bubble Bobble (Japan).mra",
+                SELECTED,
             ),
-            Some("/media/fat/_Arcade/_alternatives/Bubble Bobble".into())
+            Some(AlternateSource::Folder(
+                "/media/fat/_Arcade/_alternatives/Bubble Bobble".into()
+            ))
         );
-        // A file directly in the alternates folder keeps that folder.
+        // A file directly in the alternates folder browses that folder.
         assert_eq!(
-            alternate_folder_path("/media/fat/_Arcade/_alternatives/Bubble Bobble.mra"),
-            Some("/media/fat/_Arcade/_alternatives/Bubble Bobble.mra".into())
+            classify_alternate(
+                "/media/fat/_Arcade/_alternatives/Bubble Bobble.mra",
+                "",
+                SELECTED,
+            ),
+            Some(AlternateSource::Folder(
+                "/media/fat/_Arcade/_alternatives".into()
+            ))
         );
     }
 
     #[test]
-    fn alternate_folder_path_returns_none_when_missing_marker() {
+    fn folder_marker_is_case_insensitive() {
         assert_eq!(
-            alternate_folder_path("/media/fat/_Arcade/Bubble Bobble/Bubble Bobble.mra"),
+            classify_alternate(
+                "/media/fat/_Arcade/_Alternatives/Bubble Bobble/Bubble Bobble (Japan).mra",
+                "",
+                SELECTED,
+            ),
+            Some(AlternateSource::Folder(
+                "/media/fat/_Arcade/_Alternatives/Bubble Bobble".into()
+            ))
+        );
+    }
+
+    #[test]
+    fn arcade_patches_hits_are_taken_directly() {
+        for path in [
+            "/media/fat/_Arcade/_Arcade Patches/_Restorations/Street Fighter Alpha 2 (USA) [English Restoration].mra",
+            "/media/fat/_Arcade/_arcade patches/_Enhanced Versions/Street Fighter Alpha 2 (USA).mra",
+        ] {
+            assert_eq!(
+                classify_alternate(path, "", "/media/fat/_Arcade/Street Fighter Alpha 2.mra"),
+                Some(AlternateSource::Direct),
+                "{path}"
+            );
+        }
+        // The marker can be on the relative path alone.
+        assert_eq!(
+            classify_alternate(
+                "/x/Street Fighter Alpha 2 (USA).mra",
+                "_Arcade Patches/_Restorations/Street Fighter Alpha 2 (USA).mra",
+                SELECTED,
+            ),
+            Some(AlternateSource::Direct)
+        );
+    }
+
+    #[test]
+    fn selected_empty_and_unmarked_paths_are_not_alternates() {
+        assert_eq!(
+            classify_alternate(SELECTED, "Bubble Bobble.mra", SELECTED),
             None
         );
-    }
-
-    #[test]
-    fn alternate_candidate_accepts_alternate_path_and_rejects_selected() {
-        assert!(is_alternate_candidate(
-            "/media/fat/_Arcade/_alternatives/Bubble Bobble/Bubble Bobble (Japan).mra",
-            "_alternatives/Bubble Bobble/Bubble Bobble (Japan).mra",
-            "/media/fat/_Arcade/Bubble Bobble.mra",
-        ));
-        assert!(!is_alternate_candidate(
-            "/media/fat/_Arcade/Bubble Bobble.mra",
-            "Bubble Bobble.mra",
-            "/media/fat/_Arcade/Bubble Bobble.mra",
-        ));
-        // The marker can be on the relative path alone.
-        assert!(is_alternate_candidate(
-            "/x/Bubble Bobble (Japan).mra",
-            "_alternates/Bubble Bobble (Japan).mra",
-            "/media/fat/_Arcade/Bubble Bobble.mra",
-        ));
-        assert!(!is_alternate_candidate("", "", "/other"));
+        assert_eq!(
+            classify_alternate(
+                "/media/fat/_Arcade/_alternatives/Bubble Bobble/Bubble Bobble.mra",
+                "",
+                "/media/fat/_Arcade/_alternatives/Bubble Bobble/Bubble Bobble.mra",
+            ),
+            None
+        );
+        assert_eq!(classify_alternate("", "", "/other"), None);
+        assert_eq!(
+            classify_alternate(
+                "/media/fat/_Arcade/Bubble Bobble/Bubble Bobble.mra",
+                "Bubble Bobble/Bubble Bobble.mra",
+                SELECTED,
+            ),
+            None
+        );
     }
 
     #[test]
