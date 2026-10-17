@@ -334,10 +334,16 @@ fn merge_config_settings(
         s.clock_format.clone_from(v);
     }
     if let Some(v) = &c.games_browse_layout {
-        s.games_browse_layout = if v == "list" { "list" } else { "grid" }.to_string();
+        s.games_browse_layout = match v.as_str() {
+            "list" | "list-only" => v.clone(),
+            _ => "grid".to_string(),
+        };
     }
     if let Some(v) = &c.systems_browse_layout {
-        s.systems_browse_layout = if v == "list" { "list" } else { "grid" }.to_string();
+        s.systems_browse_layout = match v.as_str() {
+            "list" | "list-only" => v.clone(),
+            _ => "grid".to_string(),
+        };
     }
     if let Some(v) = &c.system_logo_style {
         s.system_logo_style.clone_from(v);
