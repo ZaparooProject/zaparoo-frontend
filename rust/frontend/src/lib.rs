@@ -511,10 +511,18 @@ fn seed_display_globals(
     let rotated = orientation != Orientation::Horizontal;
     app.global::<Sizing>().set_swap_axes(rotated);
     app.global::<Shell>().set_orientation(orientation);
+    app.global::<Shell>().set_browse_list_layout(matches!(
+        persisted.settings.games_browse_layout.as_str(),
+        "list" | "list-only"
+    ));
     app.global::<Shell>()
-        .set_browse_list_layout(persisted.settings.games_browse_layout == "list");
+        .set_browse_list_only(persisted.settings.games_browse_layout == "list-only");
+    app.global::<Shell>().set_systems_list_layout(matches!(
+        persisted.settings.systems_browse_layout.as_str(),
+        "list" | "list-only"
+    ));
     app.global::<Shell>()
-        .set_systems_list_layout(persisted.settings.systems_browse_layout == "list");
+        .set_systems_list_only(persisted.settings.systems_browse_layout == "list-only");
     apply_interface_profile(app, &persisted.settings.interface_profile);
     let embedded = cfg!(feature = "mister");
     let motion = app.global::<Motion>();

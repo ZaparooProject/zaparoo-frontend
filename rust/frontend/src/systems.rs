@@ -525,7 +525,14 @@ fn geometry(app: &App) -> Geometry {
 }
 
 fn list_layout(shared: &Shared) -> bool {
-    shared.persist.settings.systems_browse_layout == "list"
+    matches!(
+        shared.persist.settings.systems_browse_layout.as_str(),
+        "list" | "list-only"
+    )
+}
+
+fn list_only_layout(shared: &Shared) -> bool {
+    shared.persist.settings.systems_browse_layout == "list-only"
 }
 
 /// The list card's geometry from the systems list profile (the TATE
@@ -948,6 +955,7 @@ fn render_list(ctx: &Ctx, app: &App, shared: &Shared, bounds: zaparoo_app::logo_
         view.set_list_view_top(i32::try_from(top).unwrap_or(0));
         view.set_list_scroll_top(i32::try_from(scroll_top).unwrap_or(0));
         if let Some(row) = model.current() {
+            if !list_only_layout(shared) {
             let cell = cell_for(
                 ctx,
                 row,
@@ -978,6 +986,7 @@ fn render_list(ctx: &Ctx, app: &App, shared: &Shared, bounds: zaparoo_app::logo_
             view.set_detail_has_cover(false);
             view.set_detail_wordmark(false);
             view.set_detail_rows(ModelRc::new(VecModel::from(Vec::<crate::DetailRow>::new())));
+        }
         }
     } else {
         view.set_list_rows(ModelRc::new(VecModel::from(Vec::<GridCell>::new())));
@@ -1235,7 +1244,7 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
         };
         if moved {
             persist_selection(ctx);
-            let list_layout = lock(&ctx.shared).persist.settings.systems_browse_layout == "list";
+            let list_layout = list_layout(&lock(&ctx.shared));
             let to_page = lock(&ctx.shared).systems_model.grid.current_page();
             if !list_layout && to_page != from_page {
                 slide_to_current_page(ctx, app);

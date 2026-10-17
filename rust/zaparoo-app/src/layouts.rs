@@ -428,8 +428,8 @@ const CRT: ThemeT = ThemeT {
         // Hand-calibrated pixels, not a derived inset: the 240p canvas is
         // measured against a real analog frame, so it keeps its own
         // numbers rather than the square token the HD tiers use.
-        card_padding_left: px(3),
-        card_padding_right: px(2),
+        card_padding_left: px(1),
+        card_padding_right: px(1),
         card_padding_top: px(3),
         card_padding_bottom: px(2),
         row_height: 12,
@@ -452,8 +452,8 @@ const CRT: ThemeT = ThemeT {
         // Hand-calibrated pixels, not a derived inset: the 240p canvas is
         // measured against a real analog frame, so it keeps its own
         // numbers rather than the square token the HD tiers use.
-        card_padding_left: px(3),
-        card_padding_right: px(2),
+        card_padding_left: px(1),
+        card_padding_right: px(1),
         card_padding_top: px(3),
         card_padding_bottom: px(2),
         row_height: 12,

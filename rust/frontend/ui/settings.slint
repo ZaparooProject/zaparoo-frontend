@@ -300,6 +300,7 @@ export global SettingsLabels {
         }
         if (id == "systemsLayout" || id == "gamesLayout") {
             if (value == "list") { return @tr("Detailed list view"); }
+            if (value == "list-only") { return @tr("Text only"); }
             return @tr("Grid view");
         }
         if (id == "systemLogoStyle") {
