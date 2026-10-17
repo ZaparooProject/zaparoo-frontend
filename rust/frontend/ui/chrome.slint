@@ -971,32 +971,59 @@ export component HelpBar inherits Rectangle {
         for e in root.entries: HelpEntryView { entry: e; }
     }
 
+    // Two-row layout: measure each row with its own dedicated
+    // HorizontalLayout that iterates only that row's entries by index,
+    // avoiding the visible-toggle preferred-width bug.
+    property <int> r1-count: root.split-index;
+    property <int> r2-count: root.entries.length - root.split-index;
+    row1-measure := HorizontalLayout {
+        visible: false;
+        spacing: root.entry-gap;
+        if root.r1-count > 0: HelpEntryView { entry: root.entries[0]; }
+        if root.r1-count > 1: HelpEntryView { entry: root.entries[1]; }
+        if root.r1-count > 2: HelpEntryView { entry: root.entries[2]; }
+        if root.r1-count > 3: HelpEntryView { entry: root.entries[3]; }
+        if root.r1-count > 4: HelpEntryView { entry: root.entries[4]; }
+    }
+    row2-measure := HorizontalLayout {
+        visible: false;
+        spacing: root.entry-gap;
+        if root.r2-count > 0: HelpEntryView { entry: root.entries[root.split-index]; }
+        if root.r2-count > 1: HelpEntryView { entry: root.entries[root.split-index + 1]; }
+        if root.r2-count > 2: HelpEntryView { entry: root.entries[root.split-index + 2]; }
+        if root.r2-count > 3: HelpEntryView { entry: root.entries[root.split-index + 3]; }
+    }
+
     if root.wrap-entries: Rectangle {
+        property <int> si: root.split-index;
+        property <int> n1: root.r1-count;
+        property <int> n2: root.r2-count;
         x: root.side-margin;
         y: (parent.height - self.height) / 2;
         width: root.safe-width;
         height: 2 * root.entry-height + root.row-spacing;
-        first := HorizontalLayout {
-            x: (parent.width - self.preferred-width) / 2;
+        HorizontalLayout {
+            x: (parent.width - row1-measure.preferred-width) / 2;
             y: 0;
-            width: self.preferred-width;
+            width: row1-measure.preferred-width;
             height: root.entry-height;
             spacing: root.entry-gap;
-            for e[i] in root.entries: HelpEntryView {
-                visible: i < root.split-index;
-                entry: e;
-            }
+            if n1 > 0: HelpEntryView { entry: root.entries[0]; }
+            if n1 > 1: HelpEntryView { entry: root.entries[1]; }
+            if n1 > 2: HelpEntryView { entry: root.entries[2]; }
+            if n1 > 3: HelpEntryView { entry: root.entries[3]; }
+            if n1 > 4: HelpEntryView { entry: root.entries[4]; }
         }
-        second := HorizontalLayout {
-            x: (parent.width - self.preferred-width) / 2;
+        HorizontalLayout {
+            x: (parent.width - row2-measure.preferred-width) / 2;
             y: root.entry-height + root.row-spacing;
-            width: self.preferred-width;
+            width: row2-measure.preferred-width;
             height: root.entry-height;
             spacing: root.entry-gap;
-            for e[i] in root.entries: HelpEntryView {
-                visible: i >= root.split-index;
-                entry: e;
-            }
+            if n2 > 0: HelpEntryView { entry: root.entries[si]; }
+            if n2 > 1: HelpEntryView { entry: root.entries[si + 1]; }
+            if n2 > 2: HelpEntryView { entry: root.entries[si + 2]; }
+            if n2 > 3: HelpEntryView { entry: root.entries[si + 3]; }
         }
     }
 }
