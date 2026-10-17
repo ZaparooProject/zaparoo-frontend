@@ -457,6 +457,10 @@ fn fullscreen_requested(
         && !args.iter().any(|a| a == "--windowed")
 }
 
+/// CRT horizontal inset: fixed 12px total (6px per side), matching the
+/// Slint `crt-inset-w` in `app.slint`. The vertical inset stays at 5%.
+const CRT_INSET_W: f64 = 12.0;
+
 pub(crate) fn scene_size(
     width: f64,
     height: f64,
@@ -464,7 +468,7 @@ pub(crate) fn scene_size(
     crt: bool,
 ) -> (f64, f64) {
     let inset_w = if crt {
-        2.0 * (width * 0.05).round()
+        CRT_INSET_W
     } else {
         0.0
     };
