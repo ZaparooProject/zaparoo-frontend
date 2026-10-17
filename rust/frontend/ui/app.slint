@@ -15,7 +15,7 @@ import { GridCell, MarqueeCaption, PressableSurface, Tile, PagedGridView } from 
 import { ScrollOffset, SelectionCursor, SelectionClip, FocusCursor } from "focus.slint";
 import { PressFeedback } from "press_feedback.slint";
 export { PressFeedback }
-import { DetailRow, MetaLabels, BrowseListDetailView } from "browse_list.slint";
+import { DetailRow, MetaLabels, BrowseList, BrowseListDetailView } from "browse_list.slint";
 import { SettingsRow, SettingsLabels, SettingsRowView } from "settings.slint";
 import { SetupPickerRow, SetupModal, LogUploadModal } from "setup.slint";
 import { Labels, DialogLabels } from "labels.slint";
@@ -141,7 +141,9 @@ export global Shell {
     // shared by Systems and games-style screens.
     in-out property <Orientation> orientation: Orientation.horizontal;
     in-out property <bool> browse-list-layout: false;
+    in-out property <bool> browse-list-only: false;
     in-out property <bool> systems-list-layout: false;
+    in-out property <bool> systems-list-only: false;
     in-out property <bool> is-mister: false;
     in-out property <bool> crt-enabled: false;
     in-out property <VideoStandard> crt-standard: VideoStandard.ntsc;
@@ -1025,7 +1027,7 @@ component HubScreen inherits Rectangle {
     // the right corner (the same inset paid on the left for symmetry).
     label := ActiveLabel {
         x: 0;
-        y: HubView.label-y;
+        y: HubView.label-y - (Sizing.crt ? 1px : 0px);
         height: HubView.label-height;
         side-inset: indicator.width + Sizing.hub-grid-side-inset;
         text: Labels.hub(HubView.label-key, HubView.label-name);
@@ -1065,6 +1067,7 @@ component HubScreen inherits Rectangle {
 component SystemsScreen inherits Rectangle {
     in property <bool> gated: false;
     property <bool> list-layout: Shell.systems-list-layout;
+    property <bool> list-only: Shell.systems-list-only;
     property <bool> tate-list: self.list-layout && Shell.orientation != Orientation.horizontal;
     property <ContentState> state: SystemsView.error != "" ? ContentState.error
         : (SystemsView.loading ? ContentState.loading : (SystemsView.count == 0 ? ContentState.empty : ContentState.ready));
@@ -1176,7 +1179,7 @@ component SystemsScreen inherits Rectangle {
     property <length> list-card-w: self.width - 2 * self.list-card-x;
     property <length> list-card-h: self.height - self.list-card-y - (Sizing.tier-240 ? Sizing.help-bar-height + Layout.card-bottom-margin - Sizing.pct-h(6) : Layout.card-bottom-margin);
 
-    if root.list-layout && !root.gate-hide: BrowseListDetailView {
+    if root.list-layout && !root.list-only && !root.gate-hide: BrowseListDetailView {
         x: root.list-card-x;
         y: root.list-card-y;
         width: root.list-card-w;
@@ -1203,6 +1206,31 @@ component SystemsScreen inherits Rectangle {
         wordmark: SystemsView.detail-wordmark;
         placeholder-key: "icons/Console";
         detail-rows: SystemsView.detail-rows;
+        row-hovered(i) => { SystemsInput.cell-hovered(i); }
+        row-clicked(i) => { SystemsInput.cell-clicked(i); }
+        row-right-clicked(i) => { SystemsInput.cell-right-clicked(i); }
+        wheel(delta) => { SystemsInput.wheel(delta); }
+    }
+
+    // Text-only list: BrowseList standalone, no detail pane.
+    if root.list-only && !root.gate-hide: BrowseList {
+        x: root.list-card-x;
+        y: root.list-card-y;
+        width: root.list-card-w;
+        height: root.list-card-h;
+        show-chrome: true;
+        rows: SystemsView.list-rows;
+        model-top: SystemsView.list-view-top;
+        glide: SystemsView.list-glide;
+        step: SystemsView.list-step-ms * 1ms;
+        scroll-top: SystemsView.list-scroll-top;
+        scope: StateTokens.systems(SystemsView.mode) + ":" + SystemsView.category;
+        selected: SystemsView.list-sel;
+        focus-ready: SystemsView.focus-ready;
+        activate-pulse: SystemsView.activate-pulse;
+        release-pulse: SystemsView.release-pulse;
+        settling: Shell.active-screen != SystemsView.screen;
+        row-height: SystemsView.list-row-height;
         row-hovered(i) => { SystemsInput.cell-hovered(i); }
         row-clicked(i) => { SystemsInput.cell-clicked(i); }
         row-right-clicked(i) => { SystemsInput.cell-right-clicked(i); }
@@ -2784,7 +2812,9 @@ component FastScrollRail inherits Rectangle {
         border-radius: Sizing.radius-md;
     }
 
-    if root.has-letters && root.current >= 0: Rectangle {
+    // Letter-based highlight and labels: hidden on CRT where the
+    // small text cannot resolve on the scanline grid.
+    if root.has-letters && !Sizing.crt && root.current >= 0: Rectangle {
         x: Sizing.card-border-width;
         y: root.mark-y;
         width: parent.width - 2 * Sizing.card-border-width;
@@ -2794,17 +2824,31 @@ component FastScrollRail inherits Rectangle {
         animate y { duration: root.glide; easing: ease-out; }
     }
 
-    for label[i] in root.letters: Text {
-        y: i * root.cell;
-        width: parent.width;
-        height: root.cell;
-        text: label;
-        horizontal-alignment: center;
-        vertical-alignment: center;
-        font-size: root.label-size;
-        color: i == root.current ? Theme.on-accent : Theme.text-label;
+    if !Sizing.crt: Rectangle {
+        for label[i] in root.letters: Text {
+            y: i * root.cell;
+            width: parent.width;
+            height: root.cell;
+            text: label;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            font-size: root.label-size;
+            color: i == root.current ? Theme.on-accent : Theme.text-label;
+        }
     }
 
+    // CRT thumb: a wide bar with 1px inset from the rail edges.
+    if Sizing.crt && root.has-letters && root.current >= 0: Rectangle {
+        x: 1px + Sizing.card-border-width;
+        y: root.mark-y;
+        width: parent.width - 2px - 2 * Sizing.card-border-width;
+        height: root.cell;
+        background: Theme.accent;
+        border-radius: 1px;
+        animate y { duration: root.glide; easing: ease-out; }
+    }
+
+    // Simple thumb rail: used when there are no letters.
     if !root.has-letters: Rectangle {
         x: (parent.width - self.width) / 2;
         y: root.fraction * (parent.height - self.height);
@@ -2835,7 +2879,7 @@ component FastScrollRail inherits Rectangle {
             // blank in every cell, so the cell's center is half of each
             // away from the ink's; the box is offset by that half.
             property <length> ink-bias: Theme.crt ? self.font-size / 16 : 0px;
-            x: self.ink-bias;
+            x: self.ink-bias - (Sizing.crt ? 2px : 0px);
             y: self.ink-bias;
             width: parent.width;
             height: parent.height;
@@ -2851,6 +2895,7 @@ component FastScrollRail inherits Rectangle {
 component GamesScreen inherits Rectangle {
     in property <bool> gated: false;
     property <bool> list-layout: Shell.browse-list-layout;
+    property <bool> list-only: Shell.browse-list-only;
     property <bool> tate-list: self.list-layout && Shell.orientation != Orientation.horizontal;
     property <bool> is-games: GamesView.mode == GamesMode.browse;
     property <string> title: GamesView.mode == GamesMode.favorites ? @tr("Favorites")
@@ -2968,7 +3013,7 @@ component GamesScreen inherits Rectangle {
     property <length> list-card-w: self.width - 2 * self.list-card-x;
     property <length> list-card-h: self.height - self.list-card-y - (Sizing.tier-240 ? Sizing.help-bar-height + Layout.card-bottom-margin - Sizing.pct-h(6) : Layout.card-bottom-margin);
 
-    if root.list-layout && !root.gate-hide: BrowseListDetailView {
+    if root.list-layout && !root.list-only && !root.gate-hide: BrowseListDetailView {
         x: root.list-card-x;
         y: root.list-card-y;
         width: root.list-card-w;
@@ -2995,6 +3040,31 @@ component GamesScreen inherits Rectangle {
         detail-rows: GamesView.detail-rows;
         detail-loading: GamesView.detail-loading;
         loading-text: @tr("Loading game…");
+        row-hovered(i) => { GamesInput.cell-hovered(i); }
+        row-clicked(i) => { GamesInput.cell-clicked(i); }
+        row-right-clicked(i) => { GamesInput.cell-right-clicked(i); }
+        wheel(delta) => { GamesInput.wheel(delta); }
+    }
+
+    // Text-only list: BrowseList standalone, no detail pane.
+    if root.list-only && !root.gate-hide: BrowseList {
+        x: root.list-card-x;
+        y: root.list-card-y;
+        width: root.list-card-w;
+        height: root.list-card-h;
+        show-chrome: true;
+        rows: GamesView.list-rows;
+        model-top: GamesView.list-view-top;
+        glide: GamesView.list-glide;
+        step: GamesView.list-step-ms * 1ms;
+        scroll-top: GamesView.list-scroll-top;
+        scope: StateTokens.games(GamesView.mode) + ":" + GamesView.title;
+        selected: GamesView.list-sel;
+        focus-ready: GamesView.focus-ready;
+        activate-pulse: GamesView.activate-pulse;
+        release-pulse: GamesView.release-pulse;
+        settling: Shell.active-screen != GamesView.screen;
+        row-height: GamesView.list-row-height;
         row-hovered(i) => { GamesInput.cell-hovered(i); }
         row-clicked(i) => { GamesInput.cell-clicked(i); }
         row-right-clicked(i) => { GamesInput.cell-right-clicked(i); }
@@ -3056,7 +3126,7 @@ component GamesScreen inherits Rectangle {
 
     // Where a fast scroll is, on the right edge of the grid or list.
     FastScrollRail {
-        x: root.width - self.width - Sizing.pct-w(1);
+        x: root.width - self.width - (Sizing.crt ? Layout.card-side-margin : Sizing.pct-w(1));
         y: root.list-layout ? root.list-card-y : GamesView.grid-y;
         height: root.list-layout ? root.list-card-h : GamesView.grid-height;
         shown: !root.gate-hide && GamesView.rail-visible && GamesView.count > 0;
@@ -3214,12 +3284,18 @@ export component App inherits Window {
     preferred-width: 1280px;
     preferred-height: 720px;
 
-    // Native CRT keeps all interaction inside the central 90% action-
-    // safe area while App's own background remains full bleed.
+    // Native CRT keeps all interaction inside the action-safe area while
+    // App's own background remains full bleed. The 12px inset follows the
+    // scanline axis (framebuffer width) and the 5% inset follows the
+    // other axis (framebuffer height). In TATE the window axes swap, so
+    // the formulas swap with them to stay on the correct physical axis.
+    property <bool> tate: Shell.orientation == Orientation.cw || Shell.orientation == Orientation.ccw;
     property <length> crt-inset-w: Theme.crt
-        ? 2 * Math.round(self.width * 0.05 / 1px) * 1px : 0px;
+        ? (root.tate ? 2 * Math.round(self.width * 0.05 / 1px) * 1px : 12px)
+        : 0px;
     property <length> crt-inset-h: Theme.crt
-        ? 2 * Math.round(self.height * 0.05 / 1px) * 1px : 0px;
+        ? (root.tate ? 12px : 2 * Math.round(self.height * 0.05 / 1px) * 1px)
+        : 0px;
     property <length> scene-width: Math.max(1px, self.width - self.crt-inset-w);
     property <length> scene-height: Math.max(1px, self.height - self.crt-inset-h);
 
@@ -3946,10 +4022,11 @@ export component App inherits Window {
         bleed: Math.max(root.crt-inset-w, root.crt-inset-h) / 2;
     }
 
-    // Topmost within the logical scene: burn protection covers header,
-    // screens, and regular modals, and rotates with the display.
-    if Shell.saver-armed: ScreensaverOverlay {}
     }
+
+    // Burn protection covers the entire framebuffer including the CRT
+    // overscan bands, so no UI bleeds through at the edges.
+    if Shell.saver-armed: ScreensaverOverlay {}
 
     // Desktop remains mapped behind the launched game. If the compositor
     // exposes it, cover every live pixel with a static, opaque dormant face:

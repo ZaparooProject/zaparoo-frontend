@@ -1,6 +1,6 @@
 msgid ""
 msgstr ""
-"POT-Creation-Date: 2026-10-10 12:47+0000\n"
+"POT-Creation-Date: 2026-10-17 15:51+0000\n"
 "Language: ar\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
@@ -11,7 +11,7 @@ msgstr ""
 msgid "About / License"
 msgstr "حول / الترخيص"
 
-#: rust/frontend/ui/about.slint:108 rust/frontend/ui/app.slint:3203
+#: rust/frontend/ui/about.slint:108 rust/frontend/ui/app.slint:3281
 msgid "Zaparoo Frontend"
 msgstr "Zaparoo Frontend"
 
@@ -63,92 +63,92 @@ msgstr ""
 msgid "Full license text in COPYING."
 msgstr "نص الترخيص الكامل موجود في COPYING."
 
-#: rust/frontend/ui/app.slint:1050
+#: rust/frontend/ui/app.slint:1056
 msgid "Updating the media database"
 msgstr "جارٍ تحديث قاعدة بيانات الوسائط"
 
-#: rust/frontend/ui/app.slint:1050
+#: rust/frontend/ui/app.slint:1056
 msgid "No games found yet"
 msgstr "لم يعثر على ألعاب بعد"
 
-#: rust/frontend/ui/app.slint:1052
+#: rust/frontend/ui/app.slint:1058
 msgid "Your games appear here as Core finds them."
 msgstr "تظهر ألعابك هنا فور عثور Core عليها."
 
-#: rust/frontend/ui/app.slint:1053
+#: rust/frontend/ui/app.slint:1059
 msgid "Update media database in Settings > Library."
 msgstr "حدّث قاعدة بيانات الوسائط من الإعدادات > المكتبة."
 
-#: rust/frontend/ui/app.slint:1073 rust/frontend/ui/app.slint:2852
-#: rust/frontend/ui/app.slint:3224
+#: rust/frontend/ui/app.slint:1080 rust/frontend/ui/app.slint:2901
+#: rust/frontend/ui/app.slint:3301
 msgid "Favorites"
 msgstr "المفضلة"
 
-#: rust/frontend/ui/app.slint:1080
+#: rust/frontend/ui/app.slint:1087
 msgid "{} systems"
 msgstr "{0} أنظمة"
 
-#: rust/frontend/ui/app.slint:1230 rust/frontend/ui/labels.slint:25
+#: rust/frontend/ui/app.slint:1262 rust/frontend/ui/labels.slint:25
 msgid "Hidden"
 msgstr "مخفي"
 
-#: rust/frontend/ui/app.slint:1267 rust/frontend/ui/app.slint:3071
+#: rust/frontend/ui/app.slint:1299 rust/frontend/ui/app.slint:3145
 msgid "No favorites yet"
 msgstr "لا توجد مفضلات بعد"
 
-#: rust/frontend/ui/app.slint:1267
+#: rust/frontend/ui/app.slint:1299
 msgid "No systems in this category"
 msgstr "لا توجد أنظمة في هذه الفئة"
 
-#: rust/frontend/ui/app.slint:1312 rust/frontend/ui/app.slint:1314
+#: rust/frontend/ui/app.slint:1344 rust/frontend/ui/app.slint:1346
 #: rust/frontend/ui/labels.slint:26
 msgid "{} · {}"
 msgstr "{} · {}"
 
-#: rust/frontend/ui/app.slint:1393 rust/frontend/ui/app.slint:1410
+#: rust/frontend/ui/app.slint:1425 rust/frontend/ui/app.slint:1442
 msgid "Saving…"
 msgstr "جارٍ الحفظ…"
 
-#: rust/frontend/ui/app.slint:1643 rust/frontend/ui/labels.slint:141
+#: rust/frontend/ui/app.slint:1675 rust/frontend/ui/labels.slint:141
 msgid "Go to…"
 msgstr "انتقال إلى…"
 
-#: rust/frontend/ui/app.slint:1653
+#: rust/frontend/ui/app.slint:1685
 msgid "Loading sections…"
 msgstr "جارٍ تحميل الأقسام…"
 
-#: rust/frontend/ui/app.slint:1658
+#: rust/frontend/ui/app.slint:1690
 msgid "Failed to load sections"
 msgstr "تعذّر تحميل الأقسام"
 
-#: rust/frontend/ui/app.slint:1658
+#: rust/frontend/ui/app.slint:1690
 msgid "No sections"
 msgstr "لا توجد أقسام"
 
-#: rust/frontend/ui/app.slint:1727
+#: rust/frontend/ui/app.slint:1759
 msgid "Hold a writable token near the reader"
 msgstr "قرّب رمزًا قابلًا للكتابة من القارئ"
 
-#: rust/frontend/ui/app.slint:1751 rust/frontend/ui/app.slint:3271
-#: rust/frontend/ui/app.slint:3391 rust/frontend/ui/app.slint:3438
-#: rust/frontend/ui/app.slint:3486 rust/frontend/ui/app.slint:3509
+#: rust/frontend/ui/app.slint:1783 rust/frontend/ui/app.slint:3348
+#: rust/frontend/ui/app.slint:3468 rust/frontend/ui/app.slint:3515
+#: rust/frontend/ui/app.slint:3563 rust/frontend/ui/app.slint:3587
 #: rust/frontend/ui/settings.slint:253
 msgid "Cancel"
 msgstr "إلغاء"
 
-#: rust/frontend/ui/app.slint:1773 rust/frontend/ui/settings.slint:183
+#: rust/frontend/ui/app.slint:1805 rust/frontend/ui/settings.slint:183
 msgid "Pair a device"
 msgstr "إقران جهاز"
 
-#: rust/frontend/ui/app.slint:1797 rust/frontend/ui/app.slint:1902
+#: rust/frontend/ui/app.slint:1829 rust/frontend/ui/app.slint:1934
 msgid "Starting…"
 msgstr "جارٍ البدء…"
 
-#: rust/frontend/ui/app.slint:1819
+#: rust/frontend/ui/app.slint:1851
 msgid "Enter this PIN on the device you are pairing."
 msgstr "أدخل رمز PIN هذا على الجهاز الذي تريد إقرانه."
 
-#: rust/frontend/ui/app.slint:1833 rust/frontend/ui/app.slint:1991
+#: rust/frontend/ui/app.slint:1865 rust/frontend/ui/app.slint:2023
 msgid "Expires in {n} minute"
 msgid_plural "Expires in {n} minutes"
 msgstr[0] "تنتهي الصلاحية خلال {n} دقيقة"
@@ -158,7 +158,7 @@ msgstr[3] "تنتهي الصلاحية خلال {n} دقائق"
 msgstr[4] "تنتهي الصلاحية خلال {n} دقيقة"
 msgstr[5] "تنتهي الصلاحية خلال {n} دقيقة"
 
-#: rust/frontend/ui/app.slint:1834 rust/frontend/ui/app.slint:1992
+#: rust/frontend/ui/app.slint:1866 rust/frontend/ui/app.slint:2024
 msgid "Expires in {n} second"
 msgid_plural "Expires in {n} seconds"
 msgstr[0] "تنتهي الصلاحية خلال {n} ثانية"
@@ -168,287 +168,299 @@ msgstr[3] "تنتهي الصلاحية خلال {n} ثوانٍ"
 msgstr[4] "تنتهي الصلاحية خلال {n} ثانية"
 msgstr[5] "تنتهي الصلاحية خلال {n} ثانية"
 
-#: rust/frontend/ui/app.slint:1851
+#: rust/frontend/ui/app.slint:1883
 msgid "A device is now paired with Core."
 msgstr "تم إقران جهاز مع Core."
 
-#: rust/frontend/ui/app.slint:1852
+#: rust/frontend/ui/app.slint:1884
 msgid "{} is now paired with Core."
 msgstr "تم إقران {} مع Core."
 
-#: rust/frontend/ui/app.slint:1866
+#: rust/frontend/ui/app.slint:1898
 msgid "The PIN expired before a device used it. Pair again for a new one."
 msgstr "انتهت صلاحية رمز PIN قبل أن يستخدمه أي جهاز. أعد الإقران للحصول على رمز جديد."
 
-#: rust/frontend/ui/app.slint:1888
+#: rust/frontend/ui/app.slint:1920
 msgid "Link Online account"
 msgstr "ربط حساب Online"
 
-#: rust/frontend/ui/app.slint:1912
+#: rust/frontend/ui/app.slint:1944
 msgid "This device is now linked to your Zaparoo Online account."
 msgstr "تم ربط هذا الجهاز بحسابك في Zaparoo Online."
 
-#: rust/frontend/ui/app.slint:1913
+#: rust/frontend/ui/app.slint:1945
 msgid "The code expired before it was approved. Link again for a new one."
 msgstr "انتهت صلاحية الكود قبل الموافقة عليه. أعد الربط للحصول على كود جديد."
 
-#: rust/frontend/ui/app.slint:1914
+#: rust/frontend/ui/app.slint:1946
 msgid "Linking failed. Check the network connection and try again."
 msgstr "فشل الربط. تحقق من اتصال الشبكة وحاول مجددًا."
 
-#: rust/frontend/ui/app.slint:1928
+#: rust/frontend/ui/app.slint:1960
 msgid "Scan this code with your phone, or open the address below and enter the code."
 msgstr "امسح رمز QR هذا بهاتفك، أو افتح العنوان أدناه وأدخل الكود."
 
-#: rust/frontend/ui/app.slint:1941
+#: rust/frontend/ui/app.slint:1973
 msgid "Or press Accept to open it on this device."
 msgstr "أو اضغط زر التأكيد لفتحه على هذا الجهاز."
 
-#: rust/frontend/ui/app.slint:2079 rust/frontend/ui/labels.slint:344
+#: rust/frontend/ui/app.slint:2111 rust/frontend/ui/labels.slint:344
 msgid "This device is not linked. Link your Zaparoo Online account, then try again."
 msgstr "هذا الجهاز غير مرتبط. اربط حسابك في Zaparoo Online ثم حاول مجددًا."
 
-#: rust/frontend/ui/app.slint:2082 rust/frontend/ui/labels.slint:343
+#: rust/frontend/ui/app.slint:2114 rust/frontend/ui/labels.slint:343
 msgid "Cloud backup needs an active Zaparoo Warp subscription."
 msgstr "يتطلب النسخ الاحتياطي السحابي اشتراكًا فعالًا في Zaparoo Warp."
 
-#: rust/frontend/ui/app.slint:2084
+#: rust/frontend/ui/app.slint:2116
 msgid "Could not load this. Check the network connection and try again."
 msgstr "تعذّر التحميل. تحقق من اتصال الشبكة وحاول مجددًا."
 
-#: rust/frontend/ui/app.slint:2087
+#: rust/frontend/ui/app.slint:2119
 msgid "Back up now"
 msgstr "نسخ احتياطي الآن"
 
 #. Zaparoo made; it says so where its detail already is.
-#: rust/frontend/ui/app.slint:2092
+#: rust/frontend/ui/app.slint:2124
 msgid "{}, needs a newer Zaparoo"
 msgstr "{}، يتطلب إصدارًا أحدث من Zaparoo"
 
-#: rust/frontend/ui/app.slint:2093
+#: rust/frontend/ui/app.slint:2125
 msgid "{}, this device"
 msgstr "{}، هذا الجهاز"
 
-#: rust/frontend/ui/app.slint:2100
+#: rust/frontend/ui/app.slint:2132
 msgid "Cloud backups"
 msgstr "النسخ الاحتياطية السحابية"
 
-#: rust/frontend/ui/app.slint:2100
+#: rust/frontend/ui/app.slint:2132
 msgid "Remote activity"
 msgstr "نشاط التحكم عن بعد"
 
-#: rust/frontend/ui/app.slint:2121
+#: rust/frontend/ui/app.slint:2153
 msgid "Backing up…"
 msgstr "جارٍ النسخ الاحتياطي…"
 
-#: rust/frontend/ui/app.slint:2122
+#: rust/frontend/ui/app.slint:2154
 msgid "Restoring…"
 msgstr "جارٍ الاستعادة…"
 
-#: rust/frontend/ui/app.slint:2123
+#: rust/frontend/ui/app.slint:2155
 msgid "Loading backups…"
 msgstr "جارٍ تحميل النسخ الاحتياطية…"
 
-#: rust/frontend/ui/app.slint:2123
+#: rust/frontend/ui/app.slint:2155
 msgid "Loading activity…"
 msgstr "جارٍ تحميل النشاط…"
 
-#: rust/frontend/ui/app.slint:2134
+#: rust/frontend/ui/app.slint:2166
 msgid "No cloud backups yet."
 msgstr "لا توجد نسخ احتياطية سحابية بعد."
 
-#: rust/frontend/ui/app.slint:2134
+#: rust/frontend/ui/app.slint:2166
 msgid "Nothing has run through remote control yet."
 msgstr "لم ينفّذ أي شيء عبر التحكم عن بعد بعد."
 
-#: rust/frontend/ui/app.slint:2230 rust/frontend/ui/settings.slint:185
+#: rust/frontend/ui/app.slint:2262 rust/frontend/ui/settings.slint:185
 msgid "Documentation"
 msgstr "الوثائق"
 
-#: rust/frontend/ui/app.slint:2230 rust/frontend/ui/labels.slint:110
+#: rust/frontend/ui/app.slint:2262 rust/frontend/ui/labels.slint:110
 msgid "Write with App"
 msgstr "الكتابة عبر التطبيق"
 
-#: rust/frontend/ui/app.slint:2249
+#: rust/frontend/ui/app.slint:2281
 msgid "Scan this code to open the Zaparoo Frontend guide on your phone."
 msgstr "امسح رمز QR هذا لفتح دليل Zaparoo Frontend على هاتفك."
 
-#: rust/frontend/ui/app.slint:2250
+#: rust/frontend/ui/app.slint:2282
 msgid "Scan this code with the Zaparoo App to write this game to a Zaparoo token."
 msgstr "امسح رمز QR هذا بتطبيق Zaparoo لكتابة هذه اللعبة على رمز Zaparoo."
 
-#: rust/frontend/ui/app.slint:2853 rust/frontend/ui/app.slint:3225
+#: rust/frontend/ui/app.slint:2902 rust/frontend/ui/app.slint:3302
 msgid "Recently played"
 msgstr "آخر ما تم لعبه"
 
-#: rust/frontend/ui/app.slint:2854 rust/frontend/ui/app.slint:3226
-#: rust/frontend/ui/app.slint:3302 rust/frontend/ui/labels.slint:48
+#: rust/frontend/ui/app.slint:2903 rust/frontend/ui/app.slint:3303
+#: rust/frontend/ui/app.slint:3379 rust/frontend/ui/labels.slint:48
 msgid "Search"
 msgstr "بحث"
 
-#: rust/frontend/ui/app.slint:2864
+#: rust/frontend/ui/app.slint:2913
 msgid "{} games"
 msgstr "{} لعبة"
 
-#: rust/frontend/ui/app.slint:2993
+#: rust/frontend/ui/app.slint:3042
 msgid "Loading game…"
 msgstr "جارٍ تحميل اللعبة…"
 
-#: rust/frontend/ui/app.slint:3072
+#: rust/frontend/ui/app.slint:3146
 msgid "Nothing played yet"
 msgstr "لم يتم لعب أي شيء بعد"
 
-#: rust/frontend/ui/app.slint:3073 rust/frontend/ui/search.slint:66
+#: rust/frontend/ui/app.slint:3147 rust/frontend/ui/search.slint:66
 msgid "No matches"
 msgstr "لا توجد نتائج"
 
-#: rust/frontend/ui/app.slint:3074
+#: rust/frontend/ui/app.slint:3148
 msgid "No games match these tags"
 msgstr "لا توجد ألعاب تطابق هذه الوسوم"
 
-#: rust/frontend/ui/app.slint:3074
+#: rust/frontend/ui/app.slint:3148
 msgid "No games in this system"
 msgstr "لا توجد ألعاب في هذا النظام"
 
-#: rust/frontend/ui/app.slint:3075 rust/frontend/ui/labels.slint:31
+#: rust/frontend/ui/app.slint:3149 rust/frontend/ui/labels.slint:31
 msgid "Loading favorites…"
 msgstr "جارٍ تحميل المفضلة…"
 
-#: rust/frontend/ui/app.slint:3076 rust/frontend/ui/labels.slint:32
+#: rust/frontend/ui/app.slint:3150 rust/frontend/ui/labels.slint:32
 msgid "Loading recently played…"
 msgstr "جارٍ تحميل آخر ما تم لعبه…"
 
-#: rust/frontend/ui/app.slint:3077 rust/frontend/ui/labels.slint:33
+#: rust/frontend/ui/app.slint:3151 rust/frontend/ui/labels.slint:33
 #: rust/frontend/ui/search.slint:64
 msgid "Searching…"
 msgstr "جارٍ البحث…"
 
-#: rust/frontend/ui/app.slint:3077 rust/frontend/ui/labels.slint:30
+#: rust/frontend/ui/app.slint:3151 rust/frontend/ui/labels.slint:30
 msgid "Loading games…"
 msgstr "جارٍ تحميل الألعاب…"
 
-#: rust/frontend/ui/app.slint:3154
+#: rust/frontend/ui/app.slint:3232
+msgid "Left/Right adjust width"
+msgstr ""
+
+#: rust/frontend/ui/app.slint:3233
 msgid "Arrows adjust position"
 msgstr "الأسهم تضبط الموضع"
 
-#: rust/frontend/ui/app.slint:3162
+#: rust/frontend/ui/app.slint:3239
 msgid "Accept or Back saves"
 msgstr "التأكيد أو الرجوع يحفظ"
 
-#: rust/frontend/ui/app.slint:3254 rust/frontend/ui/app.slint:3268
-#: rust/frontend/ui/app.slint:3293 rust/frontend/ui/app.slint:3308
-#: rust/frontend/ui/app.slint:3323 rust/frontend/ui/app.slint:3355
-#: rust/frontend/ui/app.slint:3383 rust/frontend/ui/app.slint:3415
-#: rust/frontend/ui/app.slint:3586 rust/frontend/ui/app.slint:3604
-#: rust/frontend/ui/app.slint:3619 rust/frontend/ui/labels.slint:158
+#: rust/frontend/ui/app.slint:3331 rust/frontend/ui/app.slint:3345
+#: rust/frontend/ui/app.slint:3370 rust/frontend/ui/app.slint:3385
+#: rust/frontend/ui/app.slint:3400 rust/frontend/ui/app.slint:3432
+#: rust/frontend/ui/app.slint:3460 rust/frontend/ui/app.slint:3492
+#: rust/frontend/ui/app.slint:3664 rust/frontend/ui/app.slint:3682
+#: rust/frontend/ui/app.slint:3697 rust/frontend/ui/labels.slint:158
 msgid "Move"
 msgstr "تحريك"
 
-#: rust/frontend/ui/app.slint:3269 rust/frontend/ui/app.slint:3302
-#: rust/frontend/ui/app.slint:3318 rust/frontend/ui/app.slint:3384
-#: rust/frontend/ui/app.slint:3469 rust/frontend/ui/settings.slint:105
+#: rust/frontend/ui/app.slint:3346 rust/frontend/ui/app.slint:3379
+#: rust/frontend/ui/app.slint:3395 rust/frontend/ui/app.slint:3461
+#: rust/frontend/ui/app.slint:3546 rust/frontend/ui/settings.slint:105
 msgid "Select"
 msgstr "تحديد"
 
-#: rust/frontend/ui/app.slint:3270 rust/frontend/ui/settings.slint:106
+#: rust/frontend/ui/app.slint:3347 rust/frontend/ui/settings.slint:106
 msgid "Start"
 msgstr "ابدأ"
 
-#: rust/frontend/ui/app.slint:3272 rust/frontend/ui/app.slint:3387
-#: rust/frontend/ui/app.slint:3410 rust/frontend/ui/app.slint:3419
-#: rust/frontend/ui/app.slint:3435 rust/frontend/ui/app.slint:3451
-#: rust/frontend/ui/app.slint:3460
+#: rust/frontend/ui/app.slint:3349 rust/frontend/ui/app.slint:3464
+#: rust/frontend/ui/app.slint:3487 rust/frontend/ui/app.slint:3496
+#: rust/frontend/ui/app.slint:3512 rust/frontend/ui/app.slint:3528
+#: rust/frontend/ui/app.slint:3537
 msgid "Close"
 msgstr "إغلاق"
 
-#: rust/frontend/ui/app.slint:3273 rust/frontend/ui/app.slint:3606
+#: rust/frontend/ui/app.slint:3350 rust/frontend/ui/app.slint:3684
 msgid "Toggle"
 msgstr "تبديل"
 
-#: rust/frontend/ui/app.slint:3274
+#: rust/frontend/ui/app.slint:3351
 msgid "Info"
 msgstr "معلومات"
 
-#: rust/frontend/ui/app.slint:3275 rust/frontend/ui/app.slint:3289
-#: rust/frontend/ui/app.slint:3303 rust/frontend/ui/app.slint:3319
-#: rust/frontend/ui/app.slint:3335 rust/frontend/ui/app.slint:3351
-#: rust/frontend/ui/app.slint:3387 rust/frontend/ui/app.slint:3543
-#: rust/frontend/ui/app.slint:3556 rust/frontend/ui/app.slint:3572
-#: rust/frontend/ui/app.slint:3588 rust/frontend/ui/app.slint:3599
-#: rust/frontend/ui/app.slint:3614 rust/frontend/ui/app.slint:3627
-#: rust/frontend/ui/app.slint:3641 rust/frontend/ui/app.slint:3655
-#: rust/frontend/ui/app.slint:3668 rust/frontend/ui/app.slint:3685
-#: rust/frontend/ui/app.slint:3701
+#: rust/frontend/ui/app.slint:3352 rust/frontend/ui/app.slint:3366
+#: rust/frontend/ui/app.slint:3380 rust/frontend/ui/app.slint:3396
+#: rust/frontend/ui/app.slint:3412 rust/frontend/ui/app.slint:3428
+#: rust/frontend/ui/app.slint:3464 rust/frontend/ui/app.slint:3621
+#: rust/frontend/ui/app.slint:3634 rust/frontend/ui/app.slint:3650
+#: rust/frontend/ui/app.slint:3666 rust/frontend/ui/app.slint:3677
+#: rust/frontend/ui/app.slint:3692 rust/frontend/ui/app.slint:3705
+#: rust/frontend/ui/app.slint:3719 rust/frontend/ui/app.slint:3733
+#: rust/frontend/ui/app.slint:3746 rust/frontend/ui/app.slint:3763
+#: rust/frontend/ui/app.slint:3779
 msgid "Back"
 msgstr "رجوع"
 
-#: rust/frontend/ui/app.slint:3294 rust/frontend/ui/app.slint:3310
+#: rust/frontend/ui/app.slint:3371 rust/frontend/ui/app.slint:3387
 msgid "Delete"
 msgstr "حذف"
 
-#: rust/frontend/ui/app.slint:3295 rust/frontend/ui/app.slint:3311
+#: rust/frontend/ui/app.slint:3372 rust/frontend/ui/app.slint:3388
 msgid "Space"
 msgstr "مسافة"
 
-#: rust/frontend/ui/app.slint:3318 rust/frontend/ui/app.slint:3530
-#: rust/frontend/ui/app.slint:3569 rust/frontend/ui/app.slint:3587
-#: rust/frontend/ui/app.slint:3626 rust/frontend/ui/app.slint:3683
-#: rust/frontend/ui/app.slint:3698
+#: rust/frontend/ui/app.slint:3395 rust/frontend/ui/app.slint:3608
+#: rust/frontend/ui/app.slint:3647 rust/frontend/ui/app.slint:3665
+#: rust/frontend/ui/app.slint:3704 rust/frontend/ui/app.slint:3761
+#: rust/frontend/ui/app.slint:3776
 msgid "Open"
 msgstr "فتح"
 
-#: rust/frontend/ui/app.slint:3324 rust/frontend/ui/app.slint:3605
+#: rust/frontend/ui/app.slint:3401 rust/frontend/ui/app.slint:3683
 #: rust/frontend/ui/settings.slint:108
 msgid "Change"
 msgstr "تغيير"
 
-#: rust/frontend/ui/app.slint:3338 rust/frontend/ui/app.slint:3530
-#: rust/frontend/ui/app.slint:3554 rust/frontend/ui/app.slint:3654
-#: rust/frontend/ui/app.slint:3666 rust/frontend/ui/setup.slint:378
+#: rust/frontend/ui/app.slint:3415 rust/frontend/ui/app.slint:3608
+#: rust/frontend/ui/app.slint:3632 rust/frontend/ui/app.slint:3732
+#: rust/frontend/ui/app.slint:3744 rust/frontend/ui/setup.slint:378
 msgid "Retry"
 msgstr "إعادة المحاولة"
 
-#: rust/frontend/ui/app.slint:3338 rust/frontend/ui/app.slint:3425
+#: rust/frontend/ui/app.slint:3415 rust/frontend/ui/app.slint:3502
 #: rust/frontend/ui/setup.slint:378
 msgid "Done"
 msgstr "تم"
 
-#: rust/frontend/ui/app.slint:3378 rust/frontend/ui/labels.slint:276
+#: rust/frontend/ui/app.slint:3455 rust/frontend/ui/labels.slint:276
 msgid "OK"
 msgstr "حسنًا"
 
-#: rust/frontend/ui/app.slint:3443 rust/frontend/ui/app.slint:3456
+#: rust/frontend/ui/app.slint:3520 rust/frontend/ui/app.slint:3533
 msgid "Scroll"
 msgstr "تمرير"
 
-#: rust/frontend/ui/app.slint:3444 rust/frontend/ui/app.slint:3450
+#: rust/frontend/ui/app.slint:3521 rust/frontend/ui/app.slint:3527
 msgid "Image"
 msgstr "الصورة"
 
-#: rust/frontend/ui/app.slint:3498
+#: rust/frontend/ui/app.slint:3575
 msgid "Adjust"
 msgstr "ضبط"
 
-#: rust/frontend/ui/app.slint:3499
+#: rust/frontend/ui/app.slint:3576
+msgid "Position"
+msgstr ""
+
+#: rust/frontend/ui/app.slint:3576
+msgid "Size"
+msgstr ""
+
+#: rust/frontend/ui/app.slint:3577
 msgid "Save"
 msgstr "حفظ"
 
-#: rust/frontend/ui/app.slint:3507
+#: rust/frontend/ui/app.slint:3585
 msgid "Reposition"
 msgstr "تغيير الموضع"
 
-#: rust/frontend/ui/app.slint:3508
+#: rust/frontend/ui/app.slint:3586
 msgid "Place"
 msgstr "تثبيت"
 
-#: rust/frontend/ui/app.slint:3518 rust/frontend/ui/app.slint:3531
-#: rust/frontend/ui/app.slint:3578 rust/frontend/ui/app.slint:3699
+#: rust/frontend/ui/app.slint:3596 rust/frontend/ui/app.slint:3609
+#: rust/frontend/ui/app.slint:3656 rust/frontend/ui/app.slint:3777
 msgid "Options"
 msgstr "الخيارات"
 
-#: rust/frontend/ui/app.slint:3519 rust/frontend/ui/app.slint:3524
-#: rust/frontend/ui/app.slint:3538 rust/frontend/ui/app.slint:3571
-#: rust/frontend/ui/app.slint:3692 rust/frontend/ui/labels.slint:179
+#: rust/frontend/ui/app.slint:3597 rust/frontend/ui/app.slint:3602
+#: rust/frontend/ui/app.slint:3616 rust/frontend/ui/app.slint:3649
+#: rust/frontend/ui/app.slint:3770 rust/frontend/ui/labels.slint:179
 msgid "View"
 msgstr "العرض"
 
@@ -565,7 +577,7 @@ msgstr "تقييم"
 msgid "File"
 msgstr "ملف"
 
-#: rust/frontend/ui/browse_list.slint:261 rust/frontend/ui/chrome.slint:1037
+#: rust/frontend/ui/browse_list.slint:262 rust/frontend/ui/chrome.slint:1042
 #: rust/frontend/ui/labels.slint:34
 msgid "Loading…"
 msgstr "جارٍ التحميل…"
@@ -578,7 +590,7 @@ msgstr "غير متصل"
 msgid "Reconnecting…"
 msgstr "جارٍ إعادة الاتصال…"
 
-#: rust/frontend/ui/chrome.slint:104 rust/frontend/ui/settings.slint:339
+#: rust/frontend/ui/chrome.slint:104 rust/frontend/ui/settings.slint:340
 msgid "Connecting…"
 msgstr "جارٍ الاتصال…"
 
@@ -645,55 +657,55 @@ msgid "Playtime limit in {}"
 msgstr "حد وقت اللعب بعد {}"
 
 #: rust/frontend/ui/chrome.slint:130 rust/frontend/ui/chrome.slint:241
-#: rust/frontend/ui/chrome.slint:383
+#: rust/frontend/ui/chrome.slint:386
 msgid "{}%"
 msgstr "{}%"
 
-#: rust/frontend/ui/chrome.slint:614 rust/frontend/ui/chrome.slint:616
+#: rust/frontend/ui/chrome.slint:618 rust/frontend/ui/chrome.slint:620
 msgid "{}/{}"
 msgstr "{}/{}"
 
-#: rust/frontend/ui/chrome.slint:617
+#: rust/frontend/ui/chrome.slint:621
 msgid "{}"
 msgstr "{}"
 
-#: rust/frontend/ui/chrome.slint:709
+#: rust/frontend/ui/chrome.slint:713
 msgid "Page {} / {}"
 msgstr "الصفحة {0} / {1}"
 
-#: rust/frontend/ui/chrome.slint:710
+#: rust/frontend/ui/chrome.slint:714
 msgid "Page {}"
 msgstr "الصفحة {}"
 
-#: rust/frontend/ui/chrome.slint:1104
+#: rust/frontend/ui/chrome.slint:1109
 msgid "Nothing here"
 msgstr "لا يوجد شيء هنا"
 
-#: rust/frontend/ui/chrome.slint:1106
+#: rust/frontend/ui/chrome.slint:1111
 msgid "Check Zaparoo Core and try again."
 msgstr "تحقق من Zaparoo Core وحاول مجددًا."
 
-#: rust/frontend/ui/chrome.slint:1118
+#: rust/frontend/ui/chrome.slint:1123
 msgid "Failed to load"
 msgstr "فشل التحميل"
 
-#: rust/frontend/ui/game_info.slint:90
+#: rust/frontend/ui/game_info.slint:92
 msgid "Loading details…"
 msgstr "جارٍ تحميل التفاصيل…"
 
-#: rust/frontend/ui/game_info.slint:96
+#: rust/frontend/ui/game_info.slint:98
 msgid "Could not load details. Check Zaparoo Core and try again."
 msgstr "تعذّر تحميل التفاصيل. تحقق من Zaparoo Core وحاول مجددًا."
 
-#: rust/frontend/ui/game_info.slint:146
+#: rust/frontend/ui/game_info.slint:149
 msgid "Loading image…"
 msgstr "جارٍ تحميل الصورة…"
 
-#: rust/frontend/ui/game_info.slint:168
+#: rust/frontend/ui/game_info.slint:171
 msgid "This game's file is missing."
 msgstr "ملف هذه اللعبة مفقود."
 
-#: rust/frontend/ui/game_info.slint:203
+#: rust/frontend/ui/game_info.slint:206
 msgid "Description"
 msgstr "الوصف"
 
@@ -789,7 +801,7 @@ msgstr "A-Z"
 msgid "Default"
 msgstr "افتراضي"
 
-#: rust/frontend/ui/labels.slint:71 rust/frontend/ui/settings.slint:320
+#: rust/frontend/ui/labels.slint:71 rust/frontend/ui/settings.slint:321
 msgid "None"
 msgstr "بلا"
 
@@ -1063,7 +1075,7 @@ msgstr "لا توجد ألعاب حديثة"
 msgid "No internet connection"
 msgstr "لا يوجد اتصال بالإنترنت"
 
-#: rust/frontend/ui/labels.slint:214 rust/frontend/ui/settings.slint:342
+#: rust/frontend/ui/labels.slint:214 rust/frontend/ui/settings.slint:343
 msgid "Not available"
 msgstr "غير متاح"
 
@@ -1595,7 +1607,7 @@ msgstr "إيقاف: لا يمكن التحقق من وقت اللعب"
 msgid "Linked to Zaparoo Online"
 msgstr "مرتبط بـ Zaparoo Online"
 
-#: rust/frontend/ui/settings.slint:72 rust/frontend/ui/settings.slint:329
+#: rust/frontend/ui/settings.slint:72 rust/frontend/ui/settings.slint:330
 msgid "Not linked"
 msgstr "غير مرتبط"
 
@@ -2079,7 +2091,7 @@ msgid "Unlink"
 msgstr "إلغاء الربط"
 
 #: rust/frontend/ui/settings.slint:265 rust/frontend/ui/settings.slint:278
-#: rust/frontend/ui/settings.slint:289 rust/frontend/ui/settings.slint:419
+#: rust/frontend/ui/settings.slint:289 rust/frontend/ui/settings.slint:420
 msgid "Automatic"
 msgstr "تلقائي"
 
@@ -2156,314 +2168,318 @@ msgid "Detailed list view"
 msgstr "عرض قائمة مفصلة"
 
 #: rust/frontend/ui/settings.slint:303
+msgid "Text only"
+msgstr "نص فقط"
+
+#: rust/frontend/ui/settings.slint:304
 msgid "Grid view"
 msgstr "عرض الشبكة"
 
-#: rust/frontend/ui/settings.slint:306
+#: rust/frontend/ui/settings.slint:307
 msgid "Full color"
 msgstr "ألوان كاملة"
 
-#: rust/frontend/ui/settings.slint:307
+#: rust/frontend/ui/settings.slint:308
 msgid "Tinted"
 msgstr "ملوّن"
 
-#: rust/frontend/ui/settings.slint:310
+#: rust/frontend/ui/settings.slint:311
 msgid "Vivid"
 msgstr "زاهٍ"
 
-#: rust/frontend/ui/settings.slint:311
+#: rust/frontend/ui/settings.slint:312
 msgid "Subtle"
 msgstr "خافت"
 
-#: rust/frontend/ui/settings.slint:314
+#: rust/frontend/ui/settings.slint:315
 msgid "PAL (50 Hz)"
 msgstr "PAL (50 Hz)"
 
-#: rust/frontend/ui/settings.slint:315
+#: rust/frontend/ui/settings.slint:316
 msgid "480i (60 Hz)"
 msgstr "480i (60 Hz)"
 
-#: rust/frontend/ui/settings.slint:316
+#: rust/frontend/ui/settings.slint:317
 msgid "NTSC (60 Hz)"
 msgstr "NTSC (60 Hz)"
 
-#: rust/frontend/ui/settings.slint:323
+#: rust/frontend/ui/settings.slint:324
 msgid "Daily"
 msgstr "يوميًا"
 
-#: rust/frontend/ui/settings.slint:324
+#: rust/frontend/ui/settings.slint:325
 msgid "Weekly"
 msgstr "أسبوعيًا"
 
-#: rust/frontend/ui/settings.slint:325
+#: rust/frontend/ui/settings.slint:326
 msgid "Manual"
 msgstr "يدوي"
 
-#: rust/frontend/ui/settings.slint:328
+#: rust/frontend/ui/settings.slint:329
 msgid "Linked"
 msgstr "مرتبط"
 
-#: rust/frontend/ui/settings.slint:332
+#: rust/frontend/ui/settings.slint:333
 msgid "Active"
 msgstr "فعال"
 
-#: rust/frontend/ui/settings.slint:333
+#: rust/frontend/ui/settings.slint:334
 msgid "Not active"
 msgstr "غير فعال"
 
-#: rust/frontend/ui/settings.slint:334
+#: rust/frontend/ui/settings.slint:335
 msgid "Checking…"
 msgstr "جارٍ التحقق…"
 
-#: rust/frontend/ui/settings.slint:337 rust/frontend/ui/settings.slint:395
+#: rust/frontend/ui/settings.slint:338 rust/frontend/ui/settings.slint:396
 msgid "Off"
 msgstr "إيقاف"
 
-#: rust/frontend/ui/settings.slint:340
+#: rust/frontend/ui/settings.slint:341
 msgid "Waiting for commands…"
 msgstr "بانتظار الأوامر…"
 
-#: rust/frontend/ui/settings.slint:341
+#: rust/frontend/ui/settings.slint:342
 msgid "Not the remote device"
 msgstr "ليس الجهاز المعين للتحكم عن بعد"
 
-#: rust/frontend/ui/settings.slint:343
+#: rust/frontend/ui/settings.slint:344
 msgid "Link rejected"
 msgstr "رفض الربط"
 
-#: rust/frontend/ui/settings.slint:344
+#: rust/frontend/ui/settings.slint:345
 msgid "Server unreachable"
 msgstr "تعذّر الوصول إلى الخادم"
 
-#: rust/frontend/ui/settings.slint:345
+#: rust/frontend/ui/settings.slint:346
 msgid "Unknown"
 msgstr "غير معروف"
 
-#: rust/frontend/ui/settings.slint:351
+#: rust/frontend/ui/settings.slint:352
 msgid "English"
 msgstr "الإنجليزية"
 
-#: rust/frontend/ui/settings.slint:352
+#: rust/frontend/ui/settings.slint:353
 msgid "Italian"
 msgstr "الإيطالية"
 
-#: rust/frontend/ui/settings.slint:353
+#: rust/frontend/ui/settings.slint:354
 msgid "Spanish"
 msgstr "الإسبانية"
 
-#: rust/frontend/ui/settings.slint:354
+#: rust/frontend/ui/settings.slint:355
 msgid "Basque"
 msgstr "الباسكية"
 
-#: rust/frontend/ui/settings.slint:355
+#: rust/frontend/ui/settings.slint:356
 msgid "German"
 msgstr "الألمانية"
 
-#: rust/frontend/ui/settings.slint:356
+#: rust/frontend/ui/settings.slint:357
 msgid "Greek"
 msgstr "اليونانية"
 
-#: rust/frontend/ui/settings.slint:357
+#: rust/frontend/ui/settings.slint:358
 msgid "Japanese"
 msgstr "اليابانية"
 
-#: rust/frontend/ui/settings.slint:358
+#: rust/frontend/ui/settings.slint:359
 msgid "Korean"
 msgstr "الكورية"
 
-#: rust/frontend/ui/settings.slint:359
+#: rust/frontend/ui/settings.slint:360
 msgid "Dutch"
 msgstr "الهولندية"
 
-#: rust/frontend/ui/settings.slint:360
+#: rust/frontend/ui/settings.slint:361
 msgid "Romanian"
 msgstr "الرومانية"
 
-#: rust/frontend/ui/settings.slint:361
+#: rust/frontend/ui/settings.slint:362
 msgid "Slovak"
 msgstr "السلوفاكية"
 
-#: rust/frontend/ui/settings.slint:362
+#: rust/frontend/ui/settings.slint:363
 msgid "Ukrainian"
 msgstr "الأوكرانية"
 
-#: rust/frontend/ui/settings.slint:363
+#: rust/frontend/ui/settings.slint:364
 msgid "Chinese (Simplified)"
 msgstr "الصينية المبسطة"
 
-#: rust/frontend/ui/settings.slint:364
+#: rust/frontend/ui/settings.slint:365
 msgid "Chinese (Traditional)"
 msgstr "الصينية التقليدية"
 
-#: rust/frontend/ui/settings.slint:365
+#: rust/frontend/ui/settings.slint:366
 msgid "Hebrew"
 msgstr "العبرية"
 
-#: rust/frontend/ui/settings.slint:366
+#: rust/frontend/ui/settings.slint:367
 msgid "Arabic"
 msgstr "العربية"
 
-#: rust/frontend/ui/settings.slint:367
+#: rust/frontend/ui/settings.slint:368
 msgid "Hindi"
 msgstr "الهندية"
 
-#: rust/frontend/ui/settings.slint:368
+#: rust/frontend/ui/settings.slint:369
 msgid "French"
 msgstr "الفرنسية"
 
-#: rust/frontend/ui/settings.slint:373
+#: rust/frontend/ui/settings.slint:374
 msgid "Zaparoo Light"
 msgstr "Zaparoo Light"
 
-#: rust/frontend/ui/settings.slint:374
+#: rust/frontend/ui/settings.slint:375
 msgid "Classic Purple"
 msgstr "Classic Purple"
 
-#: rust/frontend/ui/settings.slint:375
+#: rust/frontend/ui/settings.slint:376
 msgid "Amber Phosphor"
 msgstr "Amber Phosphor"
 
-#: rust/frontend/ui/settings.slint:376
+#: rust/frontend/ui/settings.slint:377
 msgid "Game Boy"
 msgstr "Game Boy"
 
-#: rust/frontend/ui/settings.slint:377
+#: rust/frontend/ui/settings.slint:378
 msgid "Green Phosphor"
 msgstr "Green Phosphor"
 
-#: rust/frontend/ui/settings.slint:378
+#: rust/frontend/ui/settings.slint:379
 msgid "Neo Geo"
 msgstr "Neo Geo"
 
-#: rust/frontend/ui/settings.slint:379
+#: rust/frontend/ui/settings.slint:380
 msgid "NES"
 msgstr "NES"
 
-#: rust/frontend/ui/settings.slint:380
+#: rust/frontend/ui/settings.slint:381
 msgid "Virtual Boy"
 msgstr "Virtual Boy"
 
-#: rust/frontend/ui/settings.slint:381
+#: rust/frontend/ui/settings.slint:382
 msgid "Dracula"
 msgstr "Dracula"
 
-#: rust/frontend/ui/settings.slint:382
+#: rust/frontend/ui/settings.slint:383
 msgid "Everforest"
 msgstr "Everforest"
 
-#: rust/frontend/ui/settings.slint:383
+#: rust/frontend/ui/settings.slint:384
 msgid "Gruvbox"
 msgstr "Gruvbox"
 
-#: rust/frontend/ui/settings.slint:384
+#: rust/frontend/ui/settings.slint:385
 msgid "Nord"
 msgstr "Nord"
 
-#: rust/frontend/ui/settings.slint:385
+#: rust/frontend/ui/settings.slint:386
 msgid "Oxocarbon"
 msgstr "Oxocarbon"
 
-#: rust/frontend/ui/settings.slint:386
+#: rust/frontend/ui/settings.slint:387
 msgid "Rosé Pine"
 msgstr "Rosé Pine"
 
-#: rust/frontend/ui/settings.slint:387
+#: rust/frontend/ui/settings.slint:388
 msgid "Solarized Dark"
 msgstr "Solarized Dark"
 
-#: rust/frontend/ui/settings.slint:388
+#: rust/frontend/ui/settings.slint:389
 msgid "Synthwave '84"
 msgstr "Synthwave '84"
 
-#: rust/frontend/ui/settings.slint:389
+#: rust/frontend/ui/settings.slint:390
 msgid "Flexoki Paper"
 msgstr "Flexoki Paper"
 
-#: rust/frontend/ui/settings.slint:390
+#: rust/frontend/ui/settings.slint:391
 msgid "Solarized Light"
 msgstr "Solarized Light"
 
-#: rust/frontend/ui/settings.slint:391
+#: rust/frontend/ui/settings.slint:392
 msgid "Zaparoo Dark"
 msgstr "Zaparoo Dark"
 
-#: rust/frontend/ui/settings.slint:396
+#: rust/frontend/ui/settings.slint:397
 msgid "1 second (testing)"
 msgstr "ثانية واحدة (اختبار)"
 
-#: rust/frontend/ui/settings.slint:397
+#: rust/frontend/ui/settings.slint:398
 msgid "1 minute"
 msgstr "دقيقة واحدة"
 
-#: rust/frontend/ui/settings.slint:398
+#: rust/frontend/ui/settings.slint:399
 msgid "2 minutes"
 msgstr "دقيقتان"
 
-#: rust/frontend/ui/settings.slint:399
+#: rust/frontend/ui/settings.slint:400
 msgid "5 minutes"
 msgstr "5 دقائق"
 
-#: rust/frontend/ui/settings.slint:400
+#: rust/frontend/ui/settings.slint:401
 msgid "10 minutes"
 msgstr "10 دقائق"
 
-#: rust/frontend/ui/settings.slint:401
+#: rust/frontend/ui/settings.slint:402
 msgid "15 minutes"
 msgstr "15 دقيقة"
 
-#: rust/frontend/ui/settings.slint:402
+#: rust/frontend/ui/settings.slint:403
 msgid "30 minutes"
 msgstr "30 دقيقة"
 
-#: rust/frontend/ui/settings.slint:403
+#: rust/frontend/ui/settings.slint:404
 msgid "{} seconds"
 msgstr "{0} ثوانٍ"
 
-#: rust/frontend/ui/settings.slint:408
+#: rust/frontend/ui/settings.slint:409
 msgid "Thumbnail"
 msgstr "صورة مصغرة"
 
-#: rust/frontend/ui/settings.slint:409
+#: rust/frontend/ui/settings.slint:410
 msgid "Box art"
 msgstr "غلاف العلبة"
 
-#: rust/frontend/ui/settings.slint:410
+#: rust/frontend/ui/settings.slint:411
 msgid "3D box art"
 msgstr "غلاف ثلاثي الأبعاد"
 
-#: rust/frontend/ui/settings.slint:411
+#: rust/frontend/ui/settings.slint:412
 msgid "Screenshot"
 msgstr "لقطة شاشة"
 
-#: rust/frontend/ui/settings.slint:412
+#: rust/frontend/ui/settings.slint:413
 msgid "Wheel"
 msgstr "شعار اللعبة"
 
-#: rust/frontend/ui/settings.slint:413
+#: rust/frontend/ui/settings.slint:414
 msgid "Title screen"
 msgstr "شاشة العنوان"
 
-#: rust/frontend/ui/settings.slint:414
+#: rust/frontend/ui/settings.slint:415
 msgid "Map"
 msgstr "خريطة"
 
-#: rust/frontend/ui/settings.slint:415
+#: rust/frontend/ui/settings.slint:416
 msgid "Marquee"
 msgstr "لافتة الأركيد"
 
-#: rust/frontend/ui/settings.slint:416
+#: rust/frontend/ui/settings.slint:417
 msgid "Fan art"
 msgstr "رسوم المعجبين"
 
-#: rust/frontend/ui/settings.slint:417
+#: rust/frontend/ui/settings.slint:418
 msgid "Box side"
 msgstr "جانب العلبة"
 
-#: rust/frontend/ui/settings.slint:418
+#: rust/frontend/ui/settings.slint:419
 msgid "Box back"
 msgstr "ظهر العلبة"
 
-#: rust/frontend/ui/settings.slint:500
+#: rust/frontend/ui/settings.slint:501
 msgid "Linked as {}"
 msgstr "مرتبط باسم {}"
 

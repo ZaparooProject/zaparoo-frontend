@@ -922,13 +922,17 @@ fn apply(ctx: &Ctx, app: &App, id: &str, value: &str) {
         "screensaverTimeout" => crate::router::reset_idle(ctx, app),
         "systemsLayout" => {
             app.global::<crate::Shell>()
-                .set_systems_list_layout(value == "list");
+                .set_systems_list_layout(value == "list" || value == "list-only");
+            app.global::<crate::Shell>()
+                .set_systems_list_only(value == "list-only");
             crate::router::refresh_layout(app);
             crate::systems::render(ctx, app);
         }
         "gamesLayout" => {
             app.global::<crate::Shell>()
-                .set_browse_list_layout(value == "list");
+                .set_browse_list_layout(value == "list" || value == "list-only");
+            app.global::<crate::Shell>()
+                .set_browse_list_only(value == "list-only");
             crate::router::refresh_layout(app);
             crate::games::on_layout_changed(ctx, app);
         }
