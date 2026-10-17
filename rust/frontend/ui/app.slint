@@ -4022,10 +4022,11 @@ export component App inherits Window {
         bleed: Math.max(root.crt-inset-w, root.crt-inset-h) / 2;
     }
 
-    // Topmost within the logical scene: burn protection covers header,
-    // screens, and regular modals, and rotates with the display.
-    if Shell.saver-armed: ScreensaverOverlay {}
     }
+
+    // Burn protection covers the entire framebuffer including the CRT
+    // overscan bands, so no UI bleeds through at the edges.
+    if Shell.saver-armed: ScreensaverOverlay {}
 
     // Desktop remains mapped behind the launched game. If the compositor
     // exposes it, cover every live pixel with a static, opaque dormant face:
