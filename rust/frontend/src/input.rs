@@ -271,8 +271,14 @@ fn key_pressed(ctx: &Ctx, app: &App, bindings: &std::collections::HashMap<i32, S
 
 /// Feed a key press to the text field with the input: a character types,
 /// Backspace deletes and repeats while held. False for any other key,
-/// which then keeps its bound action.
+/// which then keeps its bound action. On `MiSTer`, Main sends a pad's View
+/// button as Space on the keyboard's own device, so Space keeps its bound
+/// action when the report says a pad sent it.
 fn type_key(ctx: &Ctx, app: &App, key: &str) -> bool {
+    #[cfg(feature = "mister")]
+    if key == " " && zaparoo_core::controller_report::controller_drove_last_press() {
+        return false;
+    }
     if key == slint::SharedString::from(slint::platform::Key::Backspace).as_str() {
         route_press(ctx, app, rules::TEXT_DELETE, key);
         return true;
