@@ -1251,7 +1251,7 @@ component SystemsScreen inherits Rectangle {
 
     if !root.list-layout: ActiveLabel {
         x: 0;
-        y: root.label-y;
+        y: root.label-y - (Sizing.crt ? 1px : 0px);
         height: Layout.active-label-height;
         side-inset: root.page-cue-in-footer
             ? (Layout.top-strip-visible ? root.footer-right-inset : Math.max(root.footer-left-inset, root.footer-right-inset))
@@ -1265,7 +1265,7 @@ component SystemsScreen inherits Rectangle {
 
     if !root.list-layout && !Layout.top-strip-visible && root.page-cue-in-footer && root.count-text != "": Text {
         x: Layout.bottom-status-left-margin;
-        y: root.label-y + (Layout.active-label-height - self.height) / 2;
+        y: root.label-y + (Layout.active-label-height - self.height) / 2 - (Sizing.crt ? 1px : 0px);
         width: root.footer-left-inset - Layout.bottom-status-left-margin;
         height: Sizing.font-section;
         vertical-alignment: center;
@@ -1278,7 +1278,7 @@ component SystemsScreen inherits Rectangle {
 
     footer-indicator := FooterIndicator {
         right-margin: Layout.bottom-status-right-margin;
-        cue-y: root.label-y + (Layout.active-label-height - self.height) / 2;
+        cue-y: root.label-y + (Layout.active-label-height - self.height) / 2 - (Sizing.crt ? 1px : 0px);
         current-page: root.list-layout ? SystemsView.list-page : SystemsView.page;
         total-pages: root.list-layout ? SystemsView.list-total-pages : SystemsView.total-pages;
         item-position-mode: root.list-layout;
@@ -2483,6 +2483,7 @@ component ScreensaverOverlay inherits Rectangle {
         height: root.lh;
         source: root.logo;
         image-fit: contain;
+        image-rendering: Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
     }
 }
 
@@ -3086,7 +3087,7 @@ component GamesScreen inherits Rectangle {
 
     if !root.list-layout: ActiveLabel {
         x: 0;
-        y: root.label-y;
+        y: root.label-y - (Sizing.crt ? 1px : 0px);
         height: GamesView.label-height;
         side-inset: root.page-cue-in-footer
             ? (Layout.top-strip-visible ? root.footer-right-inset : Math.max(root.footer-left-inset, root.footer-right-inset))
@@ -3098,7 +3099,7 @@ component GamesScreen inherits Rectangle {
 
     if !Layout.top-strip-visible && root.page-cue-in-footer && root.footer-left-text != "": Text {
         x: Layout.bottom-status-left-margin;
-        y: root.label-y + (GamesView.label-height - self.height) / 2;
+        y: root.label-y + (GamesView.label-height - self.height) / 2 - (Sizing.crt ? 1px : 0px);
         width: root.footer-left-inset - Layout.bottom-status-left-margin;
         height: Sizing.font-section;
         vertical-alignment: center;
@@ -3111,7 +3112,7 @@ component GamesScreen inherits Rectangle {
 
     footer-indicator := FooterIndicator {
         right-margin: Layout.bottom-status-right-margin;
-        cue-y: root.label-y + (GamesView.label-height - self.height) / 2;
+        cue-y: root.label-y + (GamesView.label-height - self.height) / 2 - (Sizing.crt ? 1px : 0px);
         current-page: root.list-layout ? GamesView.list-page : GamesView.page;
         total-pages: root.list-layout ? GamesView.list-total-pages : GamesView.total-pages;
         item-position-mode: root.list-layout;
