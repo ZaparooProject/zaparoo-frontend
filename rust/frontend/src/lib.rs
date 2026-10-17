@@ -150,11 +150,18 @@ const HIDDEN_CATEGORIES: &[&str] = &["Media"];
 /// windowed case.
 const DESKTOP_WINDOW_SIZE: (u32, u32) = (1280, 720);
 
-/// Physical output raster when a `MiSTer` presenter owns the screen;
-/// None on desktop (window == output). Under dynamic resolution the
-/// Slint window is smaller than the output while things move, so
-/// anything that must stay stable across res switches (grid shapes,
-/// cover tiers) reads this instead of the window size.
+/// CRT canvas raster for desktop `--crt`. Mirrors `mister::OUTPUT_SIZE`
+/// so `output_size()` can lock the layout to CRT dimensions when the
+/// desktop window is integer-scaled larger than the native canvas.
+#[cfg(not(feature = "mister"))]
+static DESKTOP_CRT_SIZE: std::sync::OnceLock<(u32, u32)> = std::sync::OnceLock::new();
+
+/// Physical output raster when a `MiSTer` presenter owns the screen,
+/// or the CRT canvas raster on desktop `--crt`; `None` on a plain
+/// desktop window. Under dynamic resolution the Slint window is
+/// smaller than the output while things move, so anything that must
+/// stay stable across res switches (grid shapes, cover tiers) reads
+/// this instead of the window size.
 pub(crate) fn output_size() -> Option<(u32, u32)> {
     #[cfg(feature = "mister")]
     {
@@ -162,7 +169,7 @@ pub(crate) fn output_size() -> Option<(u32, u32)> {
     }
     #[cfg(not(feature = "mister"))]
     {
-        None
+        DESKTOP_CRT_SIZE.get().copied()
     }
 }
 
@@ -416,7 +423,11 @@ pub(crate) fn apply_interface_profile(app: &App, setting: &str) {
 fn pin_logical_pixels_to_physical() {
     const VAR: &str = "SLINT_SCALE_FACTOR";
     if std::env::var_os(VAR).is_none() {
-        std::env::set_var(VAR, "1");
+        // Desktop CRT preview: integer-scale the native CRT canvas so
+        // layout, fonts, and images all scale uniformly instead of the
+        // window recalculating against its actual pixel dimensions.
+        let crt = std::env::args().any(|a| a == "--crt");
+        std::env::set_var(VAR, if crt { "3" } else { "1" });
     }
 }
 
@@ -675,6 +686,10 @@ fn run_application(
     let crt_framebuffer_size =
         zaparoo_core::config::crt_video_dimensions(&persisted.settings.crt_video_standard);
     let visual_crt = crt && !dual_head;
+    #[cfg(not(feature = "mister"))]
+    if visual_crt {
+        DESKTOP_CRT_SIZE.set(crt_framebuffer_size).ok();
+    }
     #[cfg(feature = "mister")]
     let hdmi_framebuffer_size = if visual_crt {
         hdmi_framebuffer_size
@@ -863,6 +878,22 @@ fn run_application(
         let ctx = ctx.clone();
         app.on_viewport_changed(move |w, h| {
             if let Some(app) = weak.upgrade() {
+                // Desktop CRT: the window is fixed at the CRT canvas
+                // size (× the integer scale factor set at init). Snap
+                // back if the compositor resized us. TATE swaps the
+                // axes so the window becomes portrait.
+                #[cfg(not(feature = "mister"))]
+                if let Some(&(cw, ch)) = DESKTOP_CRT_SIZE.get() {
+                    let orientation = app.global::<Shell>().get_orientation();
+                    let rotated = matches!(orientation, Orientation::Cw | Orientation::Ccw);
+                    let (tw, th) = if rotated { (ch, cw) } else { (cw, ch) };
+                    let scale = app.window().scale_factor().round().max(1.0) as u32;
+                    let target = slint::PhysicalSize::new(tw * scale, th * scale);
+                    if app.window().size() != target {
+                        app.window().set_size(target);
+                        return;
+                    }
+                }
                 let orientation = app.global::<Shell>().get_orientation();
                 let (w, h) = output_size().map_or((f64::from(w), f64::from(h)), |(ow, oh)| {
                     scene_size(f64::from(ow), f64::from(oh), orientation, visual_crt)

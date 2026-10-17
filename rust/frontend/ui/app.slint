@@ -1025,7 +1025,7 @@ component HubScreen inherits Rectangle {
     // the right corner (the same inset paid on the left for symmetry).
     label := ActiveLabel {
         x: 0;
-        y: HubView.label-y;
+        y: HubView.label-y - (Sizing.crt ? 1px : 0px);
         height: HubView.label-height;
         side-inset: indicator.width + Sizing.hub-grid-side-inset;
         text: Labels.hub(HubView.label-key, HubView.label-name);
@@ -2784,7 +2784,9 @@ component FastScrollRail inherits Rectangle {
         border-radius: Sizing.radius-md;
     }
 
-    if root.has-letters && root.current >= 0: Rectangle {
+    // Letter-based highlight and labels: hidden on CRT where the
+    // small text cannot resolve on the scanline grid.
+    if root.has-letters && !Sizing.crt && root.current >= 0: Rectangle {
         x: Sizing.card-border-width;
         y: root.mark-y;
         width: parent.width - 2 * Sizing.card-border-width;
@@ -2794,17 +2796,31 @@ component FastScrollRail inherits Rectangle {
         animate y { duration: root.glide; easing: ease-out; }
     }
 
-    for label[i] in root.letters: Text {
-        y: i * root.cell;
-        width: parent.width;
-        height: root.cell;
-        text: label;
-        horizontal-alignment: center;
-        vertical-alignment: center;
-        font-size: root.label-size;
-        color: i == root.current ? Theme.on-accent : Theme.text-label;
+    if !Sizing.crt: Rectangle {
+        for label[i] in root.letters: Text {
+            y: i * root.cell;
+            width: parent.width;
+            height: root.cell;
+            text: label;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            font-size: root.label-size;
+            color: i == root.current ? Theme.on-accent : Theme.text-label;
+        }
     }
 
+    // CRT thumb: a wide bar with 1px inset from the rail edges.
+    if Sizing.crt && root.has-letters && root.current >= 0: Rectangle {
+        x: 1px + Sizing.card-border-width;
+        y: root.mark-y;
+        width: parent.width - 2px - 2 * Sizing.card-border-width;
+        height: root.cell;
+        background: Theme.accent;
+        border-radius: 1px;
+        animate y { duration: root.glide; easing: ease-out; }
+    }
+
+    // Simple thumb rail: used when there are no letters.
     if !root.has-letters: Rectangle {
         x: (parent.width - self.width) / 2;
         y: root.fraction * (parent.height - self.height);
@@ -2835,7 +2851,7 @@ component FastScrollRail inherits Rectangle {
             // blank in every cell, so the cell's center is half of each
             // away from the ink's; the box is offset by that half.
             property <length> ink-bias: Theme.crt ? self.font-size / 16 : 0px;
-            x: self.ink-bias;
+            x: self.ink-bias - (Sizing.crt ? 2px : 0px);
             y: self.ink-bias;
             width: parent.width;
             height: parent.height;
@@ -3056,7 +3072,7 @@ component GamesScreen inherits Rectangle {
 
     // Where a fast scroll is, on the right edge of the grid or list.
     FastScrollRail {
-        x: root.width - self.width - Sizing.pct-w(1);
+        x: root.width - self.width - (Sizing.crt ? Layout.card-side-margin : Sizing.pct-w(1));
         y: root.list-layout ? root.list-card-y : GamesView.grid-y;
         height: root.list-layout ? root.list-card-h : GamesView.grid-height;
         shown: !root.gate-hide && GamesView.rail-visible && GamesView.count > 0;
@@ -3216,8 +3232,7 @@ export component App inherits Window {
 
     // Native CRT keeps all interaction inside the central 90% action-
     // safe area while App's own background remains full bleed.
-    property <length> crt-inset-w: Theme.crt
-        ? 2 * Math.round(self.width * 0.05 / 1px) * 1px : 0px;
+    property <length> crt-inset-w: Theme.crt ? 12px : 0px;
     property <length> crt-inset-h: Theme.crt
         ? 2 * Math.round(self.height * 0.05 / 1px) * 1px : 0px;
     property <length> scene-width: Math.max(1px, self.width - self.crt-inset-w);

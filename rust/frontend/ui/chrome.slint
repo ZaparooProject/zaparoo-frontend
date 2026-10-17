@@ -315,6 +315,7 @@ export component HeaderBar inherits Rectangle {
         height: root.logo-h;
         source: Brand.logo(Theme.light-surface, root.logo-painted-width);
         image-fit: contain;
+        image-rendering: Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
         horizontal-alignment: left;
         vertical-alignment: bottom;
     }
@@ -368,6 +369,7 @@ export component HeaderBar inherits Rectangle {
             width: root.icon-size;
             height: root.icon-size;
             source: GlyphSource.glyph("status/" + key, root.icon-size, Theme.text-primary);
+            image-rendering: Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
         }
         if root.battery-visible: Image {
             x: root.status-keys.length * (root.icon-size + root.hud-spacing);
@@ -375,6 +377,7 @@ export component HeaderBar inherits Rectangle {
             width: root.icon-size;
             height: root.icon-size;
             source: GlyphSource.glyph(root.battery-icon, root.icon-size, Theme.text-primary);
+            image-rendering: Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
         }
         if root.battery-label-visible: Text {
             x: root.icon-count * (root.icon-size + root.hud-spacing);
@@ -575,6 +578,7 @@ export component ScrollCue inherits Image {
     in property <bool> live: true;
     width: GlyphSource.side(Sizing.pct-h(3));
     height: self.width;
+    image-rendering: Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
     source: GlyphSource.glyph(root.glyph, Math.max(1px, self.width),
         root.live ? Theme.text-primary : Theme.cue-spent);
 }
@@ -631,7 +635,7 @@ export component PageIndicator inherits Rectangle {
 
     up := ScrollCue {
         x: 0;
-        y: (parent.height - self.height) / 2;
+        y: (parent.height - self.height) / 2 - (Sizing.crt ? 2px : 0px);
         width: root.chevron-size;
         visible: root.has-navigation-range;
         glyph: "icons/ScrollUp";
@@ -643,7 +647,7 @@ export component PageIndicator inherits Rectangle {
     }
     down := ScrollCue {
         x: up.x + up.width + root.chevron-spacing;
-        y: (parent.height - self.height) / 2;
+        y: (parent.height - self.height) / 2 - (Sizing.crt ? 2px : 0px);
         width: root.chevron-size;
         visible: root.has-navigation-range;
         glyph: "icons/ScrollDown";
@@ -655,7 +659,7 @@ export component PageIndicator inherits Rectangle {
     }
     page-count := Text {
         x: down.x + down.width + root.item-spacing;
-        y: (parent.height - self.preferred-height) / 2;
+        y: (parent.height - self.preferred-height) / 2 - (Sizing.crt ? 1px : 0px);
         width: root.text-width;
         visible: root.has-navigation-range;
         overflow: elide;
@@ -902,6 +906,7 @@ component HelpEntryView inherits HorizontalLayout {
         width: root.icon-size;
         height: root.icon-size;
         source: GlyphSource.glyph(Buttons.key(token), root.icon-size, Theme.text-primary);
+        image-rendering: Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
     }
     Text {
         vertical-alignment: center;

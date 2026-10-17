@@ -777,7 +777,7 @@ struct HubMetrics {
 
 fn derive_hub(inputs: &Inputs, header_bottom: i32, help_bar_height: i32) -> HubMetrics {
     let is_240 = inputs.tier() == Tier::T240;
-    let header_side_margin = inputs.pct_w(2.0);
+    let header_side_margin = if is_240 { 2 } else { inputs.pct_w(2.0) };
     let shape = hub_grid_shape(inputs);
     let hub_active_label_height = if is_240 { 8 } else { inputs.pct_h(7.0) };
     let hub_grid_top_margin = if is_240 { inputs.pct_h(1.0) } else { 0 };
@@ -854,7 +854,7 @@ pub fn derive(inputs: &Inputs) -> Derived {
     let header_row_height = inputs.font_size(3.4);
     let header_stack_gap = inputs.pct_h(0.8);
     let header_top_margin = inputs.pct_h(2.0);
-    let header_side_margin = inputs.pct_w(2.0);
+    let header_side_margin = if is_240 { 2 } else { inputs.pct_w(2.0) };
     let header_height = 2 * header_row_height + header_stack_gap;
     let header_bottom = header_top_margin + header_height;
 
