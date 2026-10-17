@@ -276,19 +276,21 @@ fn read_and_parse(path: &Path) -> Option<ControllerGlyphs> {
     parse_report(&bytes)
 }
 
-/// Whether report bytes say a controller, not the keyboard, drove the last
-/// press. No report, or one that does not parse, is not a controller.
+/// Whether report bytes explicitly say a controller drove the last press.
+/// No report, one that does not parse, a missing `active_source`, or any
+/// value other than `controller` is not a controller press.
 fn controller_drove(bytes: Option<&[u8]>) -> bool {
     bytes
-        .and_then(parse_report)
-        .is_some_and(|glyphs| glyphs.layout != "style_e")
+        .and_then(|bytes| serde_json::from_slice::<RawReport>(bytes).ok())
+        .and_then(|raw| raw.active_source)
+        .is_some_and(|source| source.trim().eq_ignore_ascii_case("controller"))
 }
 
 /// Whether the last press on `Main_MiSTer`'s uinput device came from a pad.
-/// Main bridges a pad's Y and Select as Space and Backspace on the same
-/// device a real keyboard uses, and writes the report before it sends the
-/// key, so a fresh read at the press says which one it was. Read from disk
-/// rather than the watched value, which lags by a poll interval.
+/// Main bridges a pad's View button as Space on the same device a real
+/// keyboard uses, and writes the report before it sends the key, so a fresh
+/// read at the press says which one it was. Read from disk rather than the
+/// watched value, which lags by a poll interval.
 #[must_use]
 pub fn controller_drove_last_press() -> bool {
     let bytes = std::fs::read(launcher_input_report_path()).ok();
@@ -605,6 +607,14 @@ mod tests {
         assert!(!controller_drove(Some(keys)));
         assert!(!controller_drove(Some(b"not json")));
         assert!(!controller_drove(None));
+    }
+
+    #[test]
+    fn a_missing_or_unrecognized_source_is_not_a_pad_press() {
+        let omitted = br#"{ "controller": { "glyph_profile": "xbox" } }"#;
+        let unknown = br#"{ "active_source": "touch", "controller": { "glyph_profile": "xbox" } }"#;
+        assert!(!controller_drove(Some(omitted)));
+        assert!(!controller_drove(Some(unknown)));
     }
 
     #[test]
