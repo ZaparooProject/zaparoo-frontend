@@ -3284,11 +3284,18 @@ export component App inherits Window {
     preferred-width: 1280px;
     preferred-height: 720px;
 
-    // Native CRT keeps all interaction inside the central 90% action-
-    // safe area while App's own background remains full bleed.
-    property <length> crt-inset-w: Theme.crt ? 12px : 0px;
+    // Native CRT keeps all interaction inside the action-safe area while
+    // App's own background remains full bleed. The 12px inset follows the
+    // scanline axis (framebuffer width) and the 5% inset follows the
+    // other axis (framebuffer height). In TATE the window axes swap, so
+    // the formulas swap with them to stay on the correct physical axis.
+    property <bool> tate: Shell.orientation == Orientation.cw || Shell.orientation == Orientation.ccw;
+    property <length> crt-inset-w: Theme.crt
+        ? (root.tate ? 2 * Math.round(self.width * 0.05 / 1px) * 1px : 12px)
+        : 0px;
     property <length> crt-inset-h: Theme.crt
-        ? 2 * Math.round(self.height * 0.05 / 1px) * 1px : 0px;
+        ? (root.tate ? 12px : 2 * Math.round(self.height * 0.05 / 1px) * 1px)
+        : 0px;
     property <length> scene-width: Math.max(1px, self.width - self.crt-inset-w);
     property <length> scene-height: Math.max(1px, self.height - self.crt-inset-h);
 
