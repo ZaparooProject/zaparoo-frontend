@@ -955,7 +955,14 @@ fn render_list(ctx: &Ctx, app: &App, shared: &Shared, bounds: zaparoo_app::logo_
         view.set_list_view_top(i32::try_from(top).unwrap_or(0));
         view.set_list_scroll_top(i32::try_from(scroll_top).unwrap_or(0));
         if let Some(row) = model.current() {
-            if !list_only_layout(shared) {
+            if list_only_layout(shared) {
+                view.set_detail_title(SharedString::default());
+                view.set_detail_has_cover(false);
+                view.set_detail_wordmark(false);
+                view.set_detail_rows(ModelRc::new(VecModel::from(
+                    Vec::<crate::DetailRow>::new(),
+                )));
+            } else {
                 let cell = cell_for(
                     ctx,
                     row,
@@ -981,11 +988,6 @@ fn render_list(ctx: &Ctx, app: &App, shared: &Shared, bounds: zaparoo_app::logo_
                     })
                     .collect();
                 view.set_detail_rows(ModelRc::new(VecModel::from(rows)));
-            } else {
-                view.set_detail_title(SharedString::default());
-                view.set_detail_has_cover(false);
-                view.set_detail_wordmark(false);
-                view.set_detail_rows(ModelRc::new(VecModel::from(Vec::<crate::DetailRow>::new())));
             }
         }
     } else {
