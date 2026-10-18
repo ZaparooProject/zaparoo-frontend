@@ -136,7 +136,7 @@ export component MarqueeCaption inherits Rectangle {
 
     label := Text {
         x: root.block-x;
-        y: (parent.height - self.height) / 2;
+        y: Sizing.snap((parent.height - self.height) / 2);
         width: root.name-render-w;
         overflow: elide;
         text: root.content;
@@ -147,7 +147,7 @@ export component MarqueeCaption inherits Rectangle {
 
     if root.has-tags: suffix-view := Text {
         x: root.block-x + root.name-render-w + root.gap-w;
-        y: (parent.height - self.height) / 2;
+        y: Sizing.snap((parent.height - self.height) / 2);
         width: root.tags-render-w;
         overflow: elide;
         text: root.tags;

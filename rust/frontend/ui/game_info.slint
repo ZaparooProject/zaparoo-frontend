@@ -152,7 +152,7 @@ export component GameInfoModal inherits ModalShell {
                     // arrows; this pair used to sit one type step larger.
                     for next in [false, true]: ScrollCue {
                         x: next ? parent.width - self.width : 0px;
-                        y: (parent.art-h - self.height) / 2;
+                        y: Sizing.snap((parent.art-h - self.height) / 2);
                         width: root.arrow;
                         glyph: next ? "icons/NavRight" : "icons/NavLeft";
                         live: next ? GameInfoView.image-index + 1 < GameInfoView.image-count : GameInfoView.image-index > 0;
@@ -160,7 +160,7 @@ export component GameInfoModal inherits ModalShell {
                     }
                     // Direction alone never said how many there were.
                     if GameInfoView.image-count > 1: Text {
-                        x: (parent.width - self.width) / 2;
+                        x: Sizing.snap((parent.width - self.width) / 2);
                         y: parent.height - self.height;
                         text: @tr("{}/{}", GameInfoView.image-index + 1, GameInfoView.image-count);
                         color: Theme.text-label;
@@ -230,7 +230,7 @@ export component GameInfoModal inherits ModalShell {
             }
         }
         for down in [false, true]: ScrollCue {
-            x: (root.panel-width - self.width) / 2;
+            x: Sizing.snap((root.panel-width - self.width) / 2);
             y: down ? viewport.y + viewport.height + Sizing.pct-h(0.5) : viewport.y - self.height - Sizing.pct-h(0.5);
             width: root.arrow;
             glyph: down ? "icons/ScrollDown" : "icons/ScrollUp";

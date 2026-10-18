@@ -203,7 +203,7 @@ export component BrowseList inherits Rectangle {
 
         if row.favorite: Image {
             x: parent.width - Layout.favorite-right-padding - root.heart-size;
-            y: (parent.height - self.height) / 2;
+            y: Sizing.snap((parent.height - self.height) / 2);
             width: root.heart-size;
             height: root.heart-size;
             source: GlyphSource.glyph("icons/Heart", root.heart-size, Colors.transparent);
@@ -479,7 +479,7 @@ export component BrowseDetailPane inherits Rectangle {
                     height: root.tag-row-h;
                     Text {
                         x: 0;
-                        y: (parent.height - self.height) / 2;
+                        y: Sizing.snap((parent.height - self.height) / 2);
                         width: Math.min(root.label-w, parent.width);
                         horizontal-alignment: right;
                         overflow: elide;
@@ -489,7 +489,7 @@ export component BrowseDetailPane inherits Rectangle {
                     }
                     Text {
                         x: root.label-w + root.label-gap;
-                        y: (parent.height - self.height) / 2;
+                        y: Sizing.snap((parent.height - self.height) / 2);
                         width: Math.max(0px, parent.width - root.label-w - root.label-gap);
                         overflow: elide;
                         text: meta.value;

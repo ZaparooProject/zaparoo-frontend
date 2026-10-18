@@ -166,10 +166,16 @@ export global Sizing {
     in-out property <bool> help-bar-two-rows: false;
 
     public pure function pct-h(p: float) -> length {
-        return p / 100 * (self.swap-axes ? self.screen-width : self.screen-height);
+        // CRT: round to whole pixels so containers and their children
+        // never land on fractional positions across the scanline grid.
+        return self.crt
+            ? Math.round(p / 100 * (self.swap-axes ? self.screen-width : self.screen-height) / 1px) * 1px
+            : p / 100 * (self.swap-axes ? self.screen-width : self.screen-height);
     }
     public pure function pct-w(p: float) -> length {
-        return p / 100 * (self.swap-axes ? self.screen-height : self.screen-width);
+        return self.crt
+            ? Math.round(p / 100 * (self.swap-axes ? self.screen-height : self.screen-width) / 1px) * 1px
+            : p / 100 * (self.swap-axes ? self.screen-height : self.screen-width);
     }
     // Percentage of the shorter axis, for insets that have to measure the
     // same on both of them. A card or panel lip is one margin seen four
@@ -196,6 +202,12 @@ export global Sizing {
     }
     pure function quantize(size: int) -> int {
         return self.bitmap-fonts ? (size < 12 ? 8 : 16) : size;
+    }
+    // Snap a length to the nearest whole pixel on CRT, where the bitmap
+    // font and the 240p scanline grid need integer coordinates. A no-op
+    // on HD outputs where Slint's own sub-pixel placement is fine.
+    public pure function snap(v: length) -> length {
+        return self.crt ? Math.round(v / 1px) * 1px : v;
     }
     // Hairline width in device pixels that never rounds to zero:
     // `max(1, round(value))`. The argument is a pixel count, NOT a
