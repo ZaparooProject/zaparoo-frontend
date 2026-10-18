@@ -46,8 +46,10 @@ export component GameInfoModal inherits ModalShell {
     out property <bool> scrollable: !GameInfoView.loading && !GameInfoView.failed && root.maximum-scroll > 0px;
 
     title: GameInfoView.modal-name;
-    panel-width: Math.min(Math.min(root.width * 0.92, Sizing.pct-h(150)),
-        root.width - Sizing.pct-w(6));
+    panel-width: Sizing.crt
+        ? root.width - 12px
+        : Math.min(Math.min(root.width * 0.92, Sizing.pct-h(150)),
+            root.width - Sizing.pct-w(6));
     content-height: root.viewport-height + 2 * root.arrow-band;
 
     property <length> scroll-y: Math.min(root.maximum-scroll,
@@ -134,6 +136,7 @@ export component GameInfoModal inherits ModalShell {
                         height: parent.art-h;
                         source: GameInfoView.modal-cover;
                         image-fit: contain;
+                        image-rendering: Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
                         visible: GameInfoView.modal-has-cover;
                         init => { GameInfoView.art-box(Math.round(self.width / 1px), Math.round(self.height / 1px)); }
                         changed width => { GameInfoView.art-box(Math.round(self.width / 1px), Math.round(self.height / 1px)); }
@@ -149,7 +152,7 @@ export component GameInfoModal inherits ModalShell {
                     // arrows; this pair used to sit one type step larger.
                     for next in [false, true]: ScrollCue {
                         x: next ? parent.width - self.width : 0px;
-                        y: (parent.art-h - self.height) / 2;
+                        y: Sizing.snap((parent.art-h - self.height) / 2);
                         width: root.arrow;
                         glyph: next ? "icons/NavRight" : "icons/NavLeft";
                         live: next ? GameInfoView.image-index + 1 < GameInfoView.image-count : GameInfoView.image-index > 0;
@@ -157,7 +160,7 @@ export component GameInfoModal inherits ModalShell {
                     }
                     // Direction alone never said how many there were.
                     if GameInfoView.image-count > 1: Text {
-                        x: (parent.width - self.width) / 2;
+                        x: Sizing.snap((parent.width - self.width) / 2);
                         y: parent.height - self.height;
                         text: @tr("{}/{}", GameInfoView.image-index + 1, GameInfoView.image-count);
                         color: Theme.text-label;
@@ -227,7 +230,7 @@ export component GameInfoModal inherits ModalShell {
             }
         }
         for down in [false, true]: ScrollCue {
-            x: (root.panel-width - self.width) / 2;
+            x: Sizing.snap((root.panel-width - self.width) / 2);
             y: down ? viewport.y + viewport.height + Sizing.pct-h(0.5) : viewport.y - self.height - Sizing.pct-h(0.5);
             width: root.arrow;
             glyph: down ? "icons/ScrollDown" : "icons/ScrollUp";

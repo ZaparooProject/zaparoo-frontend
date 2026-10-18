@@ -150,11 +150,18 @@ const HIDDEN_CATEGORIES: &[&str] = &["Media"];
 /// windowed case.
 const DESKTOP_WINDOW_SIZE: (u32, u32) = (1280, 720);
 
-/// Physical output raster when a `MiSTer` presenter owns the screen;
-/// None on desktop (window == output). Under dynamic resolution the
-/// Slint window is smaller than the output while things move, so
-/// anything that must stay stable across res switches (grid shapes,
-/// cover tiers) reads this instead of the window size.
+/// CRT canvas raster for desktop `--crt`. Mirrors `mister::OUTPUT_SIZE`
+/// so `output_size()` can lock the layout to CRT dimensions when the
+/// desktop window is integer-scaled larger than the native canvas.
+#[cfg(not(feature = "mister"))]
+static DESKTOP_CRT_SIZE: std::sync::OnceLock<(u32, u32)> = std::sync::OnceLock::new();
+
+/// Physical output raster when a `MiSTer` presenter owns the screen,
+/// or the CRT canvas raster on desktop `--crt`; `None` on a plain
+/// desktop window. Under dynamic resolution the Slint window is
+/// smaller than the output while things move, so anything that must
+/// stay stable across res switches (grid shapes, cover tiers) reads
+/// this instead of the window size.
 pub(crate) fn output_size() -> Option<(u32, u32)> {
     #[cfg(feature = "mister")]
     {
@@ -162,7 +169,7 @@ pub(crate) fn output_size() -> Option<(u32, u32)> {
     }
     #[cfg(not(feature = "mister"))]
     {
-        None
+        DESKTOP_CRT_SIZE.get().copied()
     }
 }
 
@@ -327,10 +334,16 @@ fn merge_config_settings(
         s.clock_format.clone_from(v);
     }
     if let Some(v) = &c.games_browse_layout {
-        s.games_browse_layout = if v == "list" { "list" } else { "grid" }.to_string();
+        s.games_browse_layout = match v.as_str() {
+            "list" | "list-only" => v.clone(),
+            _ => "grid".to_string(),
+        };
     }
     if let Some(v) = &c.systems_browse_layout {
-        s.systems_browse_layout = if v == "list" { "list" } else { "grid" }.to_string();
+        s.systems_browse_layout = match v.as_str() {
+            "list" | "list-only" => v.clone(),
+            _ => "grid".to_string(),
+        };
     }
     if let Some(v) = &c.system_logo_style {
         s.system_logo_style.clone_from(v);
@@ -416,7 +429,11 @@ pub(crate) fn apply_interface_profile(app: &App, setting: &str) {
 fn pin_logical_pixels_to_physical() {
     const VAR: &str = "SLINT_SCALE_FACTOR";
     if std::env::var_os(VAR).is_none() {
-        std::env::set_var(VAR, "1");
+        // Desktop CRT preview: integer-scale the native CRT canvas so
+        // layout, fonts, and images all scale uniformly instead of the
+        // window recalculating against its actual pixel dimensions.
+        let crt = std::env::args().any(|a| a == "--crt");
+        std::env::set_var(VAR, if crt { "3" } else { "1" });
     }
 }
 
@@ -440,17 +457,17 @@ fn fullscreen_requested(
         && !args.iter().any(|a| a == "--windowed")
 }
 
+/// CRT horizontal inset: fixed 12px total (6px per side), matching the
+/// Slint `crt-inset-w` in `app.slint`. The vertical inset stays at 5%.
+const CRT_INSET_W: f64 = 12.0;
+
 pub(crate) fn scene_size(
     width: f64,
     height: f64,
     orientation: Orientation,
     crt: bool,
 ) -> (f64, f64) {
-    let inset_w = if crt {
-        2.0 * (width * 0.05).round()
-    } else {
-        0.0
-    };
+    let inset_w = if crt { CRT_INSET_W } else { 0.0 };
     let inset_h = if crt {
         2.0 * (height * 0.05).round()
     } else {
@@ -500,10 +517,18 @@ fn seed_display_globals(
     let rotated = orientation != Orientation::Horizontal;
     app.global::<Sizing>().set_swap_axes(rotated);
     app.global::<Shell>().set_orientation(orientation);
+    app.global::<Shell>().set_browse_list_layout(matches!(
+        persisted.settings.games_browse_layout.as_str(),
+        "list" | "list-only"
+    ));
     app.global::<Shell>()
-        .set_browse_list_layout(persisted.settings.games_browse_layout == "list");
+        .set_browse_list_only(persisted.settings.games_browse_layout == "list-only");
+    app.global::<Shell>().set_systems_list_layout(matches!(
+        persisted.settings.systems_browse_layout.as_str(),
+        "list" | "list-only"
+    ));
     app.global::<Shell>()
-        .set_systems_list_layout(persisted.settings.systems_browse_layout == "list");
+        .set_systems_list_only(persisted.settings.systems_browse_layout == "list-only");
     apply_interface_profile(app, &persisted.settings.interface_profile);
     let embedded = cfg!(feature = "mister");
     let motion = app.global::<Motion>();
@@ -675,6 +700,10 @@ fn run_application(
     let crt_framebuffer_size =
         zaparoo_core::config::crt_video_dimensions(&persisted.settings.crt_video_standard);
     let visual_crt = crt && !dual_head;
+    #[cfg(not(feature = "mister"))]
+    if visual_crt {
+        DESKTOP_CRT_SIZE.set(crt_framebuffer_size).ok();
+    }
     #[cfg(feature = "mister")]
     let hdmi_framebuffer_size = if visual_crt {
         hdmi_framebuffer_size
@@ -863,6 +892,22 @@ fn run_application(
         let ctx = ctx.clone();
         app.on_viewport_changed(move |w, h| {
             if let Some(app) = weak.upgrade() {
+                // Desktop CRT: the window is fixed at the CRT canvas
+                // size (× the integer scale factor set at init). Snap
+                // back if the compositor resized us. TATE swaps the
+                // axes so the window becomes portrait.
+                #[cfg(not(feature = "mister"))]
+                if let Some(&(cw, ch)) = DESKTOP_CRT_SIZE.get() {
+                    let orientation = app.global::<Shell>().get_orientation();
+                    let rotated = matches!(orientation, Orientation::Cw | Orientation::Ccw);
+                    let (tw, th) = if rotated { (ch, cw) } else { (cw, ch) };
+                    let scale = app.window().scale_factor().round().max(1.0) as u32;
+                    let target = slint::PhysicalSize::new(tw * scale, th * scale);
+                    if app.window().size() != target {
+                        app.window().set_size(target);
+                        return;
+                    }
+                }
                 let orientation = app.global::<Shell>().get_orientation();
                 let (w, h) = output_size().map_or((f64::from(w), f64::from(h)), |(ow, oh)| {
                     scene_size(f64::from(ow), f64::from(oh), orientation, visual_crt)
@@ -2074,15 +2119,15 @@ mod tests {
         );
         assert_eq!(
             scene_size(720.0, 480.0, Orientation::Horizontal, true),
-            (648.0, 432.0)
+            (708.0, 432.0)
         );
         assert_eq!(
             scene_size(720.0, 480.0, Orientation::Cw, true),
-            (432.0, 648.0)
+            (432.0, 708.0)
         );
         assert_eq!(
             scene_size(720.0, 480.0, Orientation::Ccw, true),
-            (432.0, 648.0)
+            (432.0, 708.0)
         );
     }
 

@@ -525,7 +525,14 @@ fn geometry(app: &App) -> Geometry {
 }
 
 fn list_layout(shared: &Shared) -> bool {
-    shared.persist.settings.systems_browse_layout == "list"
+    matches!(
+        shared.persist.settings.systems_browse_layout.as_str(),
+        "list" | "list-only"
+    )
+}
+
+fn list_only_layout(shared: &Shared) -> bool {
+    shared.persist.settings.systems_browse_layout == "list-only"
 }
 
 /// The list card's geometry from the systems list profile (the TATE
@@ -948,36 +955,38 @@ fn render_list(ctx: &Ctx, app: &App, shared: &Shared, bounds: zaparoo_app::logo_
         view.set_list_view_top(i32::try_from(top).unwrap_or(0));
         view.set_list_scroll_top(i32::try_from(scroll_top).unwrap_or(0));
         if let Some(row) = model.current() {
-            let cell = cell_for(
-                ctx,
-                row,
-                &shared.persist.settings.system_logo_style,
-                bounds,
-                crate::sizing::detail_cover_source_size(crate::router::output_scene(app)),
-            );
-            view.set_detail_title(SharedString::from(row.name.as_str()));
-            view.set_detail_has_cover(cell.has_cover);
-            view.set_detail_cover_exact(cell.cover_exact);
-            view.set_detail_wordmark(!cell.has_cover);
-            view.set_detail_cover(if cell.has_cover_focus {
-                cell.cover_focus
+            if list_only_layout(shared) {
+                view.set_detail_title(SharedString::default());
+                view.set_detail_has_cover(false);
+                view.set_detail_wordmark(false);
+                view.set_detail_rows(ModelRc::new(VecModel::from(Vec::<crate::DetailRow>::new())));
             } else {
-                cell.cover
-            });
-            let rows: Vec<crate::DetailRow> = row
-                .detail_rows()
-                .into_iter()
-                .map(|(key, value)| crate::DetailRow {
-                    key: SharedString::from(key),
-                    value: SharedString::from(value.as_str()),
-                })
-                .collect();
-            view.set_detail_rows(ModelRc::new(VecModel::from(rows)));
-        } else {
-            view.set_detail_title(SharedString::default());
-            view.set_detail_has_cover(false);
-            view.set_detail_wordmark(false);
-            view.set_detail_rows(ModelRc::new(VecModel::from(Vec::<crate::DetailRow>::new())));
+                let cell = cell_for(
+                    ctx,
+                    row,
+                    &shared.persist.settings.system_logo_style,
+                    bounds,
+                    crate::sizing::detail_cover_source_size(crate::router::output_scene(app)),
+                );
+                view.set_detail_title(SharedString::from(row.name.as_str()));
+                view.set_detail_has_cover(cell.has_cover);
+                view.set_detail_cover_exact(cell.cover_exact);
+                view.set_detail_wordmark(!cell.has_cover);
+                view.set_detail_cover(if cell.has_cover_focus {
+                    cell.cover_focus
+                } else {
+                    cell.cover
+                });
+                let rows: Vec<crate::DetailRow> = row
+                    .detail_rows()
+                    .into_iter()
+                    .map(|(key, value)| crate::DetailRow {
+                        key: SharedString::from(key),
+                        value: SharedString::from(value.as_str()),
+                    })
+                    .collect();
+                view.set_detail_rows(ModelRc::new(VecModel::from(rows)));
+            }
         }
     } else {
         view.set_list_rows(ModelRc::new(VecModel::from(Vec::<GridCell>::new())));
@@ -1235,7 +1244,7 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
         };
         if moved {
             persist_selection(ctx);
-            let list_layout = lock(&ctx.shared).persist.settings.systems_browse_layout == "list";
+            let list_layout = list_layout(&lock(&ctx.shared));
             let to_page = lock(&ctx.shared).systems_model.grid.current_page();
             if !list_layout && to_page != from_page {
                 slide_to_current_page(ctx, app);
