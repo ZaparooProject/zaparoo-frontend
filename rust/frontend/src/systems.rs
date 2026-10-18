@@ -956,37 +956,37 @@ fn render_list(ctx: &Ctx, app: &App, shared: &Shared, bounds: zaparoo_app::logo_
         view.set_list_scroll_top(i32::try_from(scroll_top).unwrap_or(0));
         if let Some(row) = model.current() {
             if !list_only_layout(shared) {
-            let cell = cell_for(
-                ctx,
-                row,
-                &shared.persist.settings.system_logo_style,
-                bounds,
-                crate::sizing::detail_cover_source_size(crate::router::output_scene(app)),
-            );
-            view.set_detail_title(SharedString::from(row.name.as_str()));
-            view.set_detail_has_cover(cell.has_cover);
-            view.set_detail_cover_exact(cell.cover_exact);
-            view.set_detail_wordmark(!cell.has_cover);
-            view.set_detail_cover(if cell.has_cover_focus {
-                cell.cover_focus
+                let cell = cell_for(
+                    ctx,
+                    row,
+                    &shared.persist.settings.system_logo_style,
+                    bounds,
+                    crate::sizing::detail_cover_source_size(crate::router::output_scene(app)),
+                );
+                view.set_detail_title(SharedString::from(row.name.as_str()));
+                view.set_detail_has_cover(cell.has_cover);
+                view.set_detail_cover_exact(cell.cover_exact);
+                view.set_detail_wordmark(!cell.has_cover);
+                view.set_detail_cover(if cell.has_cover_focus {
+                    cell.cover_focus
+                } else {
+                    cell.cover
+                });
+                let rows: Vec<crate::DetailRow> = row
+                    .detail_rows()
+                    .into_iter()
+                    .map(|(key, value)| crate::DetailRow {
+                        key: SharedString::from(key),
+                        value: SharedString::from(value.as_str()),
+                    })
+                    .collect();
+                view.set_detail_rows(ModelRc::new(VecModel::from(rows)));
             } else {
-                cell.cover
-            });
-            let rows: Vec<crate::DetailRow> = row
-                .detail_rows()
-                .into_iter()
-                .map(|(key, value)| crate::DetailRow {
-                    key: SharedString::from(key),
-                    value: SharedString::from(value.as_str()),
-                })
-                .collect();
-            view.set_detail_rows(ModelRc::new(VecModel::from(rows)));
-        } else {
-            view.set_detail_title(SharedString::default());
-            view.set_detail_has_cover(false);
-            view.set_detail_wordmark(false);
-            view.set_detail_rows(ModelRc::new(VecModel::from(Vec::<crate::DetailRow>::new())));
-        }
+                view.set_detail_title(SharedString::default());
+                view.set_detail_has_cover(false);
+                view.set_detail_wordmark(false);
+                view.set_detail_rows(ModelRc::new(VecModel::from(Vec::<crate::DetailRow>::new())));
+            }
         }
     } else {
         view.set_list_rows(ModelRc::new(VecModel::from(Vec::<GridCell>::new())));

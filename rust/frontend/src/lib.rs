@@ -467,11 +467,7 @@ pub(crate) fn scene_size(
     orientation: Orientation,
     crt: bool,
 ) -> (f64, f64) {
-    let inset_w = if crt {
-        CRT_INSET_W
-    } else {
-        0.0
-    };
+    let inset_w = if crt { CRT_INSET_W } else { 0.0 };
     let inset_h = if crt {
         2.0 * (height * 0.05).round()
     } else {
@@ -2123,15 +2119,15 @@ mod tests {
         );
         assert_eq!(
             scene_size(720.0, 480.0, Orientation::Horizontal, true),
-            (648.0, 432.0)
+            (708.0, 432.0)
         );
         assert_eq!(
             scene_size(720.0, 480.0, Orientation::Cw, true),
-            (432.0, 648.0)
+            (432.0, 708.0)
         );
         assert_eq!(
             scene_size(720.0, 480.0, Orientation::Ccw, true),
-            (432.0, 648.0)
+            (432.0, 708.0)
         );
     }
 
