@@ -959,9 +959,7 @@ fn render_list(ctx: &Ctx, app: &App, shared: &Shared, bounds: zaparoo_app::logo_
                 view.set_detail_title(SharedString::default());
                 view.set_detail_has_cover(false);
                 view.set_detail_wordmark(false);
-                view.set_detail_rows(ModelRc::new(VecModel::from(
-                    Vec::<crate::DetailRow>::new(),
-                )));
+                view.set_detail_rows(ModelRc::new(VecModel::from(Vec::<crate::DetailRow>::new())));
             } else {
                 let cell = cell_for(
                     ctx,

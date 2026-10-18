@@ -790,9 +790,9 @@ fn derive_hub(inputs: &Inputs, header_bottom: i32, help_bar_height: i32) -> HubM
         };
     let hub_grid_height_budget = (inputs.screen_height - hub_reserved).max(0.0) as i32;
     // CRT keeps the grid inset independent of the header margin: the
-    // header margin is tight (2px) so labels can use the scanline width,
-    // but the hub tiles need a symmetric inset around the centered block.
-    let hub_grid_side_inset = if is_240 { 0 } else { inputs.pct_w(3.0) };
+    // CRT hub tiles are centered by block_offset_x; the inset matches
+    // the header margin so the grid's outer edge aligns with the header.
+    let hub_grid_side_inset = if is_240 { 2 } else { inputs.pct_w(3.0) };
     let hub_grid_column_gap = if is_240 { 4 } else { inputs.pct_w(2.0) };
     let hub_grid_top_inset = if is_240 { 2 } else { inputs.pct_h(2.0) };
     let hub_grid_bottom_inset = if is_240 { 4 } else { inputs.pct_h(2.0) };

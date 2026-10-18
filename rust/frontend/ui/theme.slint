@@ -166,16 +166,10 @@ export global Sizing {
     in-out property <bool> help-bar-two-rows: false;
 
     public pure function pct-h(p: float) -> length {
-        // CRT: round to whole pixels so containers and their children
-        // never land on fractional positions across the scanline grid.
-        return self.crt
-            ? Math.round(p / 100 * (self.swap-axes ? self.screen-width : self.screen-height) / 1px) * 1px
-            : p / 100 * (self.swap-axes ? self.screen-width : self.screen-height);
+        return p / 100 * (self.swap-axes ? self.screen-width : self.screen-height);
     }
     public pure function pct-w(p: float) -> length {
-        return self.crt
-            ? Math.round(p / 100 * (self.swap-axes ? self.screen-height : self.screen-width) / 1px) * 1px
-            : p / 100 * (self.swap-axes ? self.screen-height : self.screen-width);
+        return p / 100 * (self.swap-axes ? self.screen-height : self.screen-width);
     }
     // Percentage of the shorter axis, for insets that have to measure the
     // same on both of them. A card or panel lip is one margin seen four
