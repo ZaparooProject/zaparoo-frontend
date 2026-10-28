@@ -855,7 +855,9 @@ The Search screen is its first user.
 - **A real keyboard types directly.** Characters go to the field before
   any key binding sees them, Backspace deletes, and focus moves to the
   submit key so Enter runs the action. The help bar then drops the Delete
-  and Space hints, which that keyboard's own keys already cover.
+  and Space hints, which that keyboard's own keys already cover. On MiSTer
+  the host sends a pad's View button as Space, so Space keeps its pad
+  meaning (delete) whenever the input report says a controller sent it.
 - **Every edge wraps.** The fields above the keyboard and its key rows are
   one vertical loop: Down from the bottom row reaches the field above that
   half of the keyboard, and Up from a field reaches the bottom row. A key

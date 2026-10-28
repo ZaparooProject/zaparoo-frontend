@@ -14,10 +14,14 @@ db-urls = ["https://github.com/rustsec/advisory-db"]
 yanked  = "deny"
 # Unmaintained-crate notices (not vulnerabilities) carried by the Slint
 # dependency tree: `ttf-parser` through the winit backend's window
-# decorations. Nothing in this repository can replace it; re-check the list
-# on every Slint bump.
+# decorations, and the zbus 5 helper crates through the winit backend's
+# AccessKit AT-SPI bridge (folded into zbus 6). Nothing in this repository can
+# replace them; re-check the list on every Slint bump.
 ignore  = [
     "RUSTSEC-2026-0192", # ttf-parser
+    "RUSTSEC-2026-0370", # zvariant
+    "RUSTSEC-2026-0371", # zbus_names
+    "RUSTSEC-2026-0372", # zvariant_derive
 ]
 
 [licenses]
