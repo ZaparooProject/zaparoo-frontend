@@ -244,7 +244,7 @@ export component StatusLine inherits Rectangle {
 
     track := ProgressTrack {
         x: parent.width - self.width;
-        y: (parent.height - self.height) / 2;
+        y: Sizing.snap((parent.height - self.height) / 2);
         visible: root.show-track;
         active: root.show-track;
         paused: Status.paused;
@@ -255,7 +255,7 @@ export component StatusLine inherits Rectangle {
 
     if root.percent-known: Text {
         x: track.x - root.cells-spacing - self.width;
-        y: (parent.height - self.preferred-height) / 2;
+        y: Sizing.snap((parent.height - self.preferred-height) / 2);
         width: root.percent-slot;
         horizontal-alignment: right;
         text: Status.percent-text();
@@ -265,7 +265,7 @@ export component StatusLine inherits Rectangle {
 
     Text {
         x: parent.width - root.track-reserve - root.percent-reserve - self.width;
-        y: (parent.height - self.preferred-height) / 2;
+        y: Sizing.snap((parent.height - self.preferred-height) / 2);
         width: root.label-width;
         overflow: elide;
         text: root.label;
@@ -315,6 +315,7 @@ export component HeaderBar inherits Rectangle {
         height: root.logo-h;
         source: Brand.logo(Theme.light-surface, root.logo-painted-width);
         image-fit: contain;
+        image-rendering: Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
         horizontal-alignment: left;
         vertical-alignment: bottom;
     }
@@ -364,21 +365,23 @@ export component HeaderBar inherits Rectangle {
         height: Sizing.header-row-height;
         for key[i] in root.status-keys: Image {
             x: i * (root.icon-size + root.hud-spacing);
-            y: (parent.height - self.height) / 2;
+            y: Sizing.snap((parent.height - self.height) / 2);
             width: root.icon-size;
             height: root.icon-size;
             source: GlyphSource.glyph("status/" + key, root.icon-size, Theme.text-primary);
+            image-rendering: Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
         }
         if root.battery-visible: Image {
             x: root.status-keys.length * (root.icon-size + root.hud-spacing);
-            y: (parent.height - self.height) / 2;
+            y: Sizing.snap((parent.height - self.height) / 2);
             width: root.icon-size;
             height: root.icon-size;
             source: GlyphSource.glyph(root.battery-icon, root.icon-size, Theme.text-primary);
+            image-rendering: Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
         }
         if root.battery-label-visible: Text {
             x: root.icon-count * (root.icon-size + root.hud-spacing);
-            y: (parent.height - self.preferred-height) / 2;
+            y: Sizing.snap((parent.height - self.preferred-height) / 2);
             width: root.battery-label-width;
             text: @tr("{}%", root.battery-percent);
             color: Theme.text-primary;
@@ -387,7 +390,7 @@ export component HeaderBar inherits Rectangle {
     }
     if root.clock-visible: Text {
         x: parent.width - Sizing.header-side-margin - root.clock-width;
-        y: root.hud-y + (Sizing.header-row-height - self.preferred-height) / 2;
+        y: Sizing.snap(root.hud-y + (Sizing.header-row-height - self.preferred-height) / 2);
         width: root.clock-width;
         horizontal-alignment: right;
         text: root.clock-text;
@@ -398,9 +401,9 @@ export component HeaderBar inherits Rectangle {
     // Browse title in the header (CRT profile only).
     if Layout.title-in-header && root.browse-title != "": Text {
         property <length> natural: Math.ceil(title-measure.preferred-width / 1px) * 1px;
-        x: (parent.width - self.width) / 2;
+        x: Sizing.snap((parent.width - self.width) / 2);
         y: parent.height - Sizing.header-row-height
-            + (Sizing.header-row-height - self.preferred-height) / 2;
+            + Sizing.snap((Sizing.header-row-height - self.preferred-height) / 2);
         width: Math.min(Math.floor(parent.width / 3px) * 1px, self.natural);
         overflow: elide;
         text: root.browse-title;
@@ -537,8 +540,8 @@ export component ModalShell inherits Rectangle {
     background: Theme.scrim;
 
     Rectangle {
-        x: (parent.width - self.width) / 2;
-        y: (parent.height - self.height) / 2;
+        x: Sizing.snap((parent.width - self.width) / 2);
+        y: Sizing.snap((parent.height - self.height) / 2);
         width: root.panel-width;
         height: root.panel-height;
         background: Theme.bg-panel;
@@ -548,7 +551,7 @@ export component ModalShell inherits Rectangle {
         clip: true;
 
         shell-title := Text {
-            x: (parent.width - self.width) / 2;
+            x: Sizing.snap((parent.width - self.width) / 2);
             y: root.pad;
             width: Math.min(self.preferred-width, parent.width - 2 * root.pad);
             overflow: elide;
@@ -575,6 +578,7 @@ export component ScrollCue inherits Image {
     in property <bool> live: true;
     width: GlyphSource.side(Sizing.pct-h(3));
     height: self.width;
+    image-rendering: Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
     source: GlyphSource.glyph(root.glyph, Math.max(1px, self.width),
         root.live ? Theme.text-primary : Theme.cue-spent);
 }
@@ -631,7 +635,7 @@ export component PageIndicator inherits Rectangle {
 
     up := ScrollCue {
         x: 0;
-        y: (parent.height - self.height) / 2;
+        y: Sizing.snap((parent.height - self.height) / 2) - (Sizing.crt ? 2px : 0px);
         width: root.chevron-size;
         visible: root.has-navigation-range;
         glyph: "icons/ScrollUp";
@@ -643,7 +647,7 @@ export component PageIndicator inherits Rectangle {
     }
     down := ScrollCue {
         x: up.x + up.width + root.chevron-spacing;
-        y: (parent.height - self.height) / 2;
+        y: Sizing.snap((parent.height - self.height) / 2) - (Sizing.crt ? 2px : 0px);
         width: root.chevron-size;
         visible: root.has-navigation-range;
         glyph: "icons/ScrollDown";
@@ -655,7 +659,7 @@ export component PageIndicator inherits Rectangle {
     }
     page-count := Text {
         x: down.x + down.width + root.item-spacing;
-        y: (parent.height - self.preferred-height) / 2;
+        y: Sizing.snap((parent.height - self.preferred-height) / 2) - (Sizing.crt ? 1px : 0px);
         width: root.text-width;
         visible: root.has-navigation-range;
         overflow: elide;
@@ -725,7 +729,7 @@ export component TopStatusStrip inherits Rectangle {
     property <length> title-text-width: Math.min(root.slot-width, root.title-measured);
     // Center the full line box, not the em size: otherwise descenders can
     // spill into the cached grid band and travel with a page transition.
-    property <length> title-y: (root.height - title-measure.preferred-height) / 2;
+    property <length> title-y: Sizing.snap((root.height - title-measure.preferred-height) / 2);
     // Side texts share the title's baseline: offset by the difference
     // of the two ascents, since Slint has no baseline alignment.
     property <length> side-y: root.title-y + Theme.ascent(Sizing.font-hero) - Theme.ascent(Sizing.font-section);
@@ -771,7 +775,7 @@ export component TopStatusStrip inherits Rectangle {
 
     if root.filter-shown: Image {
         x: root.filter-x;
-        y: root.side-y + (filter-measure.preferred-height - self.height) / 2;
+        y: Sizing.snap(root.side-y + (filter-measure.preferred-height - self.height) / 2);
         width: root.filter-glyph-size;
         height: root.filter-glyph-size;
         source: GlyphSource.glyph("icons/Filter", self.height, Theme.text-primary);
@@ -790,7 +794,7 @@ export component TopStatusStrip inherits Rectangle {
 
     // Keep the natural line box so descenders remain intact.
     Text {
-        x: (parent.width - self.width) / 2;
+        x: Sizing.snap((parent.width - self.width) / 2);
         y: root.title-y;
         width: root.title-text-width;
         overflow: elide;
@@ -850,8 +854,8 @@ export component ActiveLabel inherits Rectangle {
     property <length> tags-width: Math.min(root.tags-measured, Math.max(0px, root.avail-width - root.name-width - root.requested-gap));
     property <length> gap: root.tags-width > 0px ? root.requested-gap : 0px;
     property <length> block-width: root.name-width + root.gap + root.tags-width;
-    property <length> block-x: (root.width - root.block-width) / 2;
-    property <length> text-y: (root.height - Sizing.font-hero) / 2;
+    property <length> block-x: Sizing.snap((root.width - root.block-width) / 2);
+    property <length> text-y: Sizing.snap((root.height - Sizing.font-hero) / 2);
 
     name-measure := Text {
         visible: false;
@@ -868,7 +872,7 @@ export component ActiveLabel inherits Rectangle {
 
     Text {
         x: root.block-x;
-        y: root.text-y + (Sizing.font-hero - self.preferred-height) / 2;
+        y: Sizing.snap(root.text-y + (Sizing.font-hero - self.preferred-height) / 2);
         width: root.name-width;
         overflow: elide;
         text: root.text;
@@ -878,7 +882,7 @@ export component ActiveLabel inherits Rectangle {
     }
     if root.has-tags: Text {
         x: root.block-x + root.name-width + root.gap;
-        y: root.text-y + (Sizing.font-hero - self.preferred-height) / 2;
+        y: Sizing.snap(root.text-y + (Sizing.font-hero - self.preferred-height) / 2);
         width: root.tags-width;
         overflow: elide;
         text: root.tags;
@@ -898,10 +902,11 @@ component HelpEntryView inherits HorizontalLayout {
     height: Math.max(root.icon-size, Sizing.font-body);
 
     for token in root.entry.buttons: Image {
-        y: (root.height - self.height) / 2;
+        y: Sizing.snap((root.height - self.height) / 2);
         width: root.icon-size;
         height: root.icon-size;
         source: GlyphSource.glyph(Buttons.key(token), root.icon-size, Theme.text-primary);
+        image-rendering: Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
     }
     Text {
         vertical-alignment: center;
@@ -958,40 +963,67 @@ export component HelpBar inherits Rectangle {
     }
 
     if !root.wrap-entries: HorizontalLayout {
-        x: (parent.width - self.preferred-width) / 2;
-        y: (parent.height - root.entry-height) / 2 + Sizing.pct-h(0.2);
+        x: Sizing.snap((parent.width - self.preferred-width) / 2);
+        y: Sizing.snap((parent.height - root.entry-height) / 2 + Sizing.pct-h(0.2));
         width: self.preferred-width;
         height: root.entry-height;
         spacing: root.entry-gap;
         for e in root.entries: HelpEntryView { entry: e; }
     }
 
+    // Two-row layout: measure each row with its own dedicated
+    // HorizontalLayout that iterates only that row's entries by index,
+    // avoiding the visible-toggle preferred-width bug.
+    property <int> r1-count: root.split-index;
+    property <int> r2-count: root.entries.length - root.split-index;
+    row1-measure := HorizontalLayout {
+        visible: false;
+        spacing: root.entry-gap;
+        if root.r1-count > 0: HelpEntryView { entry: root.entries[0]; }
+        if root.r1-count > 1: HelpEntryView { entry: root.entries[1]; }
+        if root.r1-count > 2: HelpEntryView { entry: root.entries[2]; }
+        if root.r1-count > 3: HelpEntryView { entry: root.entries[3]; }
+        if root.r1-count > 4: HelpEntryView { entry: root.entries[4]; }
+    }
+    row2-measure := HorizontalLayout {
+        visible: false;
+        spacing: root.entry-gap;
+        if root.r2-count > 0: HelpEntryView { entry: root.entries[root.split-index]; }
+        if root.r2-count > 1: HelpEntryView { entry: root.entries[root.split-index + 1]; }
+        if root.r2-count > 2: HelpEntryView { entry: root.entries[root.split-index + 2]; }
+        if root.r2-count > 3: HelpEntryView { entry: root.entries[root.split-index + 3]; }
+    }
+
     if root.wrap-entries: Rectangle {
+        property <int> si: root.split-index;
+        property <int> n1: root.r1-count;
+        property <int> n2: root.r2-count;
         x: root.side-margin;
-        y: (parent.height - self.height) / 2;
+        y: Sizing.snap((parent.height - self.height) / 2);
         width: root.safe-width;
         height: 2 * root.entry-height + root.row-spacing;
-        first := HorizontalLayout {
-            x: (parent.width - self.preferred-width) / 2;
+        HorizontalLayout {
+            x: Sizing.snap((parent.width - row1-measure.preferred-width) / 2);
             y: 0;
-            width: self.preferred-width;
+            width: row1-measure.preferred-width;
             height: root.entry-height;
             spacing: root.entry-gap;
-            for e[i] in root.entries: HelpEntryView {
-                visible: i < root.split-index;
-                entry: e;
-            }
+            if n1 > 0: HelpEntryView { entry: root.entries[0]; }
+            if n1 > 1: HelpEntryView { entry: root.entries[1]; }
+            if n1 > 2: HelpEntryView { entry: root.entries[2]; }
+            if n1 > 3: HelpEntryView { entry: root.entries[3]; }
+            if n1 > 4: HelpEntryView { entry: root.entries[4]; }
         }
-        second := HorizontalLayout {
-            x: (parent.width - self.preferred-width) / 2;
+        HorizontalLayout {
+            x: Sizing.snap((parent.width - row2-measure.preferred-width) / 2);
             y: root.entry-height + root.row-spacing;
-            width: self.preferred-width;
+            width: row2-measure.preferred-width;
             height: root.entry-height;
             spacing: root.entry-gap;
-            for e[i] in root.entries: HelpEntryView {
-                visible: i >= root.split-index;
-                entry: e;
-            }
+            if n2 > 0: HelpEntryView { entry: root.entries[si]; }
+            if n2 > 1: HelpEntryView { entry: root.entries[si + 1]; }
+            if n2 > 2: HelpEntryView { entry: root.entries[si + 2]; }
+            if n2 > 3: HelpEntryView { entry: root.entries[si + 3]; }
         }
     }
 }
@@ -1074,7 +1106,7 @@ export component WaitCue inherits Rectangle {
     }
 
     Image {
-        x: (parent.width - root.content-w) / 2;
+        x: Sizing.snap((parent.width - root.content-w) / 2);
         y: (parent.height - root.glyph) / 2;
         width: root.glyph;
         height: root.glyph;
@@ -1082,7 +1114,7 @@ export component WaitCue inherits Rectangle {
         source: GlyphSource.glyph("icons/Loading", root.glyph, root.ink);
     }
     label := Text {
-        x: (parent.width - root.content-w) / 2 + root.icon-w;
+        x: Sizing.snap((parent.width - root.content-w) / 2) + root.icon-w;
         y: (parent.height - root.glyph) / 2;
         width: root.label-w;
         height: root.glyph;
@@ -1125,15 +1157,15 @@ export component StateCue inherits Rectangle {
     // `cue-center-y`.
     wait := WaitCue {
         x: 0;
-        y: root.cue-center-y - self.height / 2;
+        y: Sizing.snap(root.cue-center-y - self.height / 2);
         height: self.glyph;
         waiting: root.loading;
         text: root.loading-text;
     }
 
     headline-text := Text {
-        x: (parent.width - self.width) / 2;
-        y: (parent.height - root.block-h) / 2;
+        x: Sizing.snap((parent.width - self.width) / 2);
+        y: Sizing.snap((parent.height - root.block-h) / 2);
         width: root.text-w;
         visible: root.message-state != ContentState.ready;
         wrap: word-wrap;
@@ -1143,7 +1175,7 @@ export component StateCue inherits Rectangle {
         font-size: Sizing.font-section;
     }
     detail-text := Text {
-        x: (parent.width - self.width) / 2;
+        x: Sizing.snap((parent.width - self.width) / 2);
         y: headline-text.y + headline-text.preferred-height + root.gap;
         width: root.text-w;
         visible: root.message-state != ContentState.ready && root.detail != "";

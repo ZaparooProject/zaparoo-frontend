@@ -527,7 +527,14 @@ impl Default for GamesModel {
 // ---------- Shared state helpers ----------
 
 fn list_layout(shared: &Shared) -> bool {
-    shared.persist.settings.games_browse_layout == "list"
+    matches!(
+        shared.persist.settings.games_browse_layout.as_str(),
+        "list" | "list-only"
+    )
+}
+
+fn list_only_layout(shared: &Shared) -> bool {
+    shared.persist.settings.games_browse_layout == "list-only"
 }
 
 fn rotated(shared: &Shared) -> bool {
@@ -2688,6 +2695,7 @@ fn schedule_detail(ctx: &Ctx, app: &App, force: bool) {
     let (steps, seq) = {
         let mut shared = lock(&ctx.shared);
         let enabled = list_layout(&shared)
+            && !list_only_layout(&shared)
             && !shared.games.loading
             && shared.games.error.is_empty()
             && !app.global::<crate::Shell>().get_transitioning();

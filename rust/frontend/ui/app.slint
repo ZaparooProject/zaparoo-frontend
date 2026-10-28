@@ -15,7 +15,7 @@ import { GridCell, MarqueeCaption, PressableSurface, Tile, PagedGridView } from 
 import { ScrollOffset, SelectionCursor, SelectionClip, FocusCursor } from "focus.slint";
 import { PressFeedback } from "press_feedback.slint";
 export { PressFeedback }
-import { DetailRow, MetaLabels, BrowseListDetailView } from "browse_list.slint";
+import { DetailRow, MetaLabels, BrowseList, BrowseListDetailView } from "browse_list.slint";
 import { SettingsRow, SettingsLabels, SettingsRowView } from "settings.slint";
 import { SetupPickerRow, SetupModal, LogUploadModal } from "setup.slint";
 import { Labels, DialogLabels } from "labels.slint";
@@ -141,7 +141,9 @@ export global Shell {
     // shared by Systems and games-style screens.
     in-out property <Orientation> orientation: Orientation.horizontal;
     in-out property <bool> browse-list-layout: false;
+    in-out property <bool> browse-list-only: false;
     in-out property <bool> systems-list-layout: false;
+    in-out property <bool> systems-list-only: false;
     in-out property <bool> is-mister: false;
     in-out property <bool> crt-enabled: false;
     in-out property <VideoStandard> crt-standard: VideoStandard.ntsc;
@@ -645,8 +647,8 @@ component PickerRowBody inherits Rectangle {
     in property <int> weight;
 
     Text {
-        x: root.swatches ? Sizing.pct-w(2) : (parent.width - self.width) / 2;
-        y: (parent.height - self.height) / 2;
+        x: root.swatches ? Sizing.pct-w(2) : Sizing.snap((parent.width - self.width) / 2);
+        y: Sizing.snap((parent.height - self.height) / 2);
         width: Math.min(self.preferred-width, Math.max(0px, parent.width - 2 * Sizing.pct-w(2) - root.swatch-band));
         overflow: elide;
         text: root.label;
@@ -656,7 +658,7 @@ component PickerRowBody inherits Rectangle {
     }
     if root.swatches: Rectangle {
         x: parent.width - Sizing.pct-w(2) - self.width;
-        y: (parent.height - self.height) / 2;
+        y: Sizing.snap((parent.height - self.height) / 2);
         width: 3 * root.swatch-size + 2 * root.swatch-gap;
         height: root.swatch-size;
         for n in 3: Rectangle {
@@ -685,15 +687,15 @@ component ContextRowBody inherits Rectangle {
 
     if root.opens-page: Image {
         x: parent.width - self.width - root.inset;
-        y: (parent.height - self.height) / 2;
+        y: Sizing.snap((parent.height - self.height) / 2);
         width: root.chevron;
         height: self.width;
         source: GlyphSource.glyph("icons/NavRight", Math.max(1px, self.width), root.content-color);
     }
 
     Text {
-        x: (parent.width - Math.min(self.preferred-width, parent.width - 2 * root.pad-x)) / 2;
-        y: (parent.height - self.height) / 2;
+        x: Sizing.snap((parent.width - Math.min(self.preferred-width, parent.width - 2 * root.pad-x)) / 2);
+        y: Sizing.snap((parent.height - self.height) / 2);
         width: Math.min(self.preferred-width, parent.width - 2 * root.pad-x);
         overflow: elide;
         text: root.label;
@@ -772,7 +774,7 @@ component SettingsScreen inherits Rectangle {
     // Page: rows in a card, with the hint band pinned to its bottom.
     // The card carries its own margins rather than the browse profile's
     // card values, which belong to whichever browse view was last shown.
-    property <length> card-x: (self.width - self.card-w) / 2;
+    property <length> card-x: Sizing.snap((self.width - self.card-w) / 2);
     property <length> card-y: SettingsView.card-y;
     property <length> card-w: Math.min(self.width - 2 * Sizing.pct-w(3), Sizing.pct-w(70));
     property <length> card-h: SettingsView.card-height;
@@ -1025,7 +1027,7 @@ component HubScreen inherits Rectangle {
     // the right corner (the same inset paid on the left for symmetry).
     label := ActiveLabel {
         x: 0;
-        y: HubView.label-y;
+        y: HubView.label-y - (Sizing.crt ? 1px : 0px);
         height: HubView.label-height;
         side-inset: indicator.width + Sizing.hub-grid-side-inset;
         text: Labels.hub(HubView.label-key, HubView.label-name);
@@ -1035,7 +1037,7 @@ component HubScreen inherits Rectangle {
 
     indicator := FooterIndicator {
         right-margin: Sizing.hub-grid-side-inset;
-        cue-y: label.y + (label.height - self.height) / 2;
+        cue-y: Sizing.snap(label.y + (label.height - self.height) / 2);
         current-page: HubView.page;
         total-pages: HubView.total-pages;
         has-pages-above: HubView.has-pages-above;
@@ -1065,6 +1067,7 @@ component HubScreen inherits Rectangle {
 component SystemsScreen inherits Rectangle {
     in property <bool> gated: false;
     property <bool> list-layout: Shell.systems-list-layout;
+    property <bool> list-only: Shell.systems-list-only;
     property <bool> tate-list: self.list-layout && Shell.orientation != Orientation.horizontal;
     property <ContentState> state: SystemsView.error != "" ? ContentState.error
         : (SystemsView.loading ? ContentState.loading : (SystemsView.count == 0 ? ContentState.empty : ContentState.ready));
@@ -1176,7 +1179,7 @@ component SystemsScreen inherits Rectangle {
     property <length> list-card-w: self.width - 2 * self.list-card-x;
     property <length> list-card-h: self.height - self.list-card-y - (Sizing.tier-240 ? Sizing.help-bar-height + Layout.card-bottom-margin - Sizing.pct-h(6) : Layout.card-bottom-margin);
 
-    if root.list-layout && !root.gate-hide: BrowseListDetailView {
+    if root.list-layout && !root.list-only && !root.gate-hide: BrowseListDetailView {
         x: root.list-card-x;
         y: root.list-card-y;
         width: root.list-card-w;
@@ -1209,6 +1212,31 @@ component SystemsScreen inherits Rectangle {
         wheel(delta) => { SystemsInput.wheel(delta); }
     }
 
+    // Text-only list: BrowseList standalone, no detail pane.
+    if root.list-only && !root.gate-hide: BrowseList {
+        x: root.list-card-x;
+        y: root.list-card-y;
+        width: root.list-card-w;
+        height: root.list-card-h;
+        show-chrome: true;
+        rows: SystemsView.list-rows;
+        model-top: SystemsView.list-view-top;
+        glide: SystemsView.list-glide;
+        step: SystemsView.list-step-ms * 1ms;
+        scroll-top: SystemsView.list-scroll-top;
+        scope: StateTokens.systems(SystemsView.mode) + ":" + SystemsView.category;
+        selected: SystemsView.list-sel;
+        focus-ready: SystemsView.focus-ready;
+        activate-pulse: SystemsView.activate-pulse;
+        release-pulse: SystemsView.release-pulse;
+        settling: Shell.active-screen != SystemsView.screen;
+        row-height: SystemsView.list-row-height;
+        row-hovered(i) => { SystemsInput.cell-hovered(i); }
+        row-clicked(i) => { SystemsInput.cell-clicked(i); }
+        row-right-clicked(i) => { SystemsInput.cell-right-clicked(i); }
+        wheel(delta) => { SystemsInput.wheel(delta); }
+    }
+
     // Footer: the focused system's name, with the count and page cue
     // in the corners on CRT. Digital counts remain in the top strip.
     property <length> label-y: root.height - (Sizing.tier-240 ? Sizing.help-bar-height : Layout.active-label-bottom-margin) - Layout.active-label-height;
@@ -1223,7 +1251,7 @@ component SystemsScreen inherits Rectangle {
 
     if !root.list-layout: ActiveLabel {
         x: 0;
-        y: root.label-y;
+        y: root.label-y - (Sizing.crt ? 1px : 0px);
         height: Layout.active-label-height;
         side-inset: root.page-cue-in-footer
             ? (Layout.top-strip-visible ? root.footer-right-inset : Math.max(root.footer-left-inset, root.footer-right-inset))
@@ -1237,7 +1265,7 @@ component SystemsScreen inherits Rectangle {
 
     if !root.list-layout && !Layout.top-strip-visible && root.page-cue-in-footer && root.count-text != "": Text {
         x: Layout.bottom-status-left-margin;
-        y: root.label-y + (Layout.active-label-height - self.height) / 2;
+        y: Sizing.snap(root.label-y + (Layout.active-label-height - self.height) / 2) - (Sizing.crt ? 1px : 0px);
         width: root.footer-left-inset - Layout.bottom-status-left-margin;
         height: Sizing.font-section;
         vertical-alignment: center;
@@ -1250,7 +1278,7 @@ component SystemsScreen inherits Rectangle {
 
     footer-indicator := FooterIndicator {
         right-margin: Layout.bottom-status-right-margin;
-        cue-y: root.label-y + (Layout.active-label-height - self.height) / 2;
+        cue-y: Sizing.snap(root.label-y + (Layout.active-label-height - self.height) / 2) - (Sizing.crt ? 1px : 0px);
         current-page: root.list-layout ? SystemsView.list-page : SystemsView.page;
         total-pages: root.list-layout ? SystemsView.list-total-pages : SystemsView.total-pages;
         item-position-mode: root.list-layout;
@@ -1350,7 +1378,7 @@ component ListPickerModal inherits ModalShell {
         // dims; hiding one per direction was the pre-round-9 rule the browse
         // grids already moved off. See docs/style.md, "Spent cues".
         if root.scrollable: ScrollCue {
-            x: (root.panel-width - self.width) / 2;
+            x: Sizing.snap((root.panel-width - self.width) / 2);
             y: root.content-y;
             width: root.arrow;
             glyph: "icons/ScrollUp";
@@ -1431,7 +1459,7 @@ component ListPickerModal inherits ModalShell {
         }
 
         if root.scrollable: ScrollCue {
-            x: (root.panel-width - self.width) / 2;
+            x: Sizing.snap((root.panel-width - self.width) / 2);
             y: root.content-y + root.content-height - root.arrow;
             width: root.arrow;
             glyph: "icons/ScrollDown";
@@ -1549,7 +1577,7 @@ component FormListModal inherits ModalShell {
     content-height: root.viewport-h + 2 * root.arrow-band;
 
         if root.scrollable: ScrollCue {
-            x: (root.panel-width - self.width) / 2;
+            x: Sizing.snap((root.panel-width - self.width) / 2);
             y: root.content-y;
             width: root.arrow;
             glyph: "icons/ScrollUp";
@@ -1611,7 +1639,7 @@ component FormListModal inherits ModalShell {
             }
         }
         if root.scrollable: ScrollCue {
-            x: (root.panel-width - self.width) / 2;
+            x: Sizing.snap((root.panel-width - self.width) / 2);
             y: root.content-y + root.content-height - root.arrow;
             width: root.arrow;
             glyph: "icons/ScrollDown";
@@ -1657,7 +1685,7 @@ component LetterJumpModal inherits ModalShell {
         text: @tr("Loading sections…");
     }
     if root.buckets.length == 0 && root.state != ContentState.loading && !wait.shown: Text {
-        x: (root.panel-width - self.width) / 2;
+        x: Sizing.snap((root.panel-width - self.width) / 2);
         y: root.content-y + (root.grid-h - self.height) / 2;
         text: root.state == ContentState.error ? @tr("Failed to load sections") : @tr("No sections");
         color: Theme.text-label;
@@ -1743,15 +1771,15 @@ component CardWriteModal inherits ModalShell {
     property <length> title-width: Math.ceil(title-measure.preferred-width / 1px) * 1px;
 
     cancel-button := PressableSurface {
-        x: (root.panel-width - self.width) / 2;
+        x: Sizing.snap((root.panel-width - self.width) / 2);
         y: root.content-y;
         width: Math.min(Sizing.pct-w(28), root.content-width);
         height: root.btn-h;
         focused: true;
         pressed: PressFeedback.active(PressOwner.card-write, 0);
         Text {
-            x: (parent.width - self.width) / 2;
-            y: (cancel-button.face-height - self.height) / 2;
+            x: Sizing.snap((parent.width - self.width) / 2);
+            y: Sizing.snap((cancel-button.face-height - self.height) / 2);
             text: @tr("Cancel");
             color: Theme.text-primary;
             font-size: Sizing.font-body;
@@ -1804,7 +1832,7 @@ component PairDeviceModal inherits ModalShell {
         if Overlays.pair-phase == PairPhase.showing: Rectangle {
             height: Math.ceil(pin.preferred-height / 1px) * 1px;
             pin := Text {
-                x: (parent.width - self.width) / 2;
+                x: Sizing.snap((parent.width - self.width) / 2);
                 y: 0px;
                 width: Math.min(Math.ceil(self.preferred-width / 1px) * 1px, parent.width);
                 text: Overlays.pair-pin;
@@ -1816,7 +1844,7 @@ component PairDeviceModal inherits ModalShell {
         if Overlays.pair-phase == PairPhase.showing: Rectangle {
             height: Math.ceil(instructions.preferred-height / 1px) * 1px;
             instructions := Text {
-                x: (parent.width - self.width) / 2;
+                x: Sizing.snap((parent.width - self.width) / 2);
                 y: 0px;
                 width: parent.width;
                 horizontal-alignment: center;
@@ -1829,7 +1857,7 @@ component PairDeviceModal inherits ModalShell {
         if Overlays.pair-phase == PairPhase.showing: Rectangle {
             height: Math.ceil(expiry.preferred-height / 1px) * 1px;
             expiry := Text {
-                x: (parent.width - self.width) / 2;
+                x: Sizing.snap((parent.width - self.width) / 2);
                 y: 0px;
                 width: parent.width;
                 horizontal-alignment: center;
@@ -1845,7 +1873,7 @@ component PairDeviceModal inherits ModalShell {
         if Overlays.pair-phase == PairPhase.paired: Rectangle {
             height: Math.ceil(paired.preferred-height / 1px) * 1px;
             paired := Text {
-                x: (parent.width - self.width) / 2;
+                x: Sizing.snap((parent.width - self.width) / 2);
                 y: 0px;
                 width: parent.width;
                 horizontal-alignment: center;
@@ -1863,7 +1891,7 @@ component PairDeviceModal inherits ModalShell {
         if Overlays.pair-phase == PairPhase.expired: Rectangle {
             height: Math.ceil(expired.preferred-height / 1px) * 1px;
             expired := Text {
-                x: (parent.width - self.width) / 2;
+                x: Sizing.snap((parent.width - self.width) / 2);
                 y: 0px;
                 width: parent.width;
                 horizontal-alignment: center;
@@ -1951,7 +1979,7 @@ component OnlineLinkModal inherits ModalShell {
         if root.showing && Overlays.online-qr-modules > 0: Rectangle {
             height: root.qr-px;
             QrPlate {
-                x: (parent.width - self.width) / 2;
+                x: Sizing.snap((parent.width - self.width) / 2);
                 y: 0px;
                 width: root.qr-px;
                 height: root.qr-px;
@@ -1962,7 +1990,7 @@ component OnlineLinkModal inherits ModalShell {
         if root.showing: Rectangle {
             height: Math.ceil(code.preferred-height / 1px) * 1px;
             code := Text {
-                x: (parent.width - self.width) / 2;
+                x: Sizing.snap((parent.width - self.width) / 2);
                 y: 0px;
                 width: Math.min(Math.ceil(self.preferred-width / 1px) * 1px, parent.width);
                 text: Overlays.online-code;
@@ -2014,7 +2042,7 @@ component OnlineListRowBody inherits Rectangle {
 
     Text {
         x: Sizing.pct-w(2);
-        y: (parent.height - self.height) / 2;
+        y: Sizing.snap((parent.height - self.height) / 2);
         width: parent.width * 0.55 - Sizing.pct-w(2);
         overflow: elide;
         text: root.label;
@@ -2024,7 +2052,7 @@ component OnlineListRowBody inherits Rectangle {
     }
     Text {
         x: parent.width * 0.55;
-        y: (parent.height - self.height) / 2;
+        y: Sizing.snap((parent.height - self.height) / 2);
         width: parent.width * 0.45 - Sizing.pct-w(2);
         horizontal-alignment: right;
         overflow: elide;
@@ -2141,7 +2169,7 @@ component OnlineListModal inherits ModalShell {
     }
 
     if root.scrollable: ScrollCue {
-        x: (root.panel-width - self.width) / 2;
+        x: Sizing.snap((root.panel-width - self.width) / 2);
         y: root.list-y;
         width: root.arrow;
         glyph: "icons/ScrollUp";
@@ -2211,7 +2239,7 @@ component OnlineListModal inherits ModalShell {
     }
 
     if root.scrollable: ScrollCue {
-        x: (root.panel-width - self.width) / 2;
+        x: Sizing.snap((root.panel-width - self.width) / 2);
         y: root.list-y + root.arrow-band + root.viewport-h + root.arrow-band - root.arrow;
         width: root.arrow;
         glyph: "icons/ScrollDown";
@@ -2246,7 +2274,7 @@ component QrCodeModal inherits ModalShell {
         Rectangle {
             height: Math.ceil(instructions.preferred-height / 1px) * 1px;
             instructions := Text {
-                x: (parent.width - self.width) / 2;
+                x: Sizing.snap((parent.width - self.width) / 2);
                 y: 0px;
                 width: Math.min(Math.ceil(self.preferred-width / 1px) * 1px, parent.width);
                 text: Overlays.qr-documentation
@@ -2260,7 +2288,7 @@ component QrCodeModal inherits ModalShell {
         Rectangle {
             height: root.qr-px;
             QrPlate {
-                x: (parent.width - self.width) / 2;
+                x: Sizing.snap((parent.width - self.width) / 2);
                 y: 0px;
                 width: root.qr-px;
                 height: root.qr-px;
@@ -2271,7 +2299,7 @@ component QrCodeModal inherits ModalShell {
         if Overlays.qr-documentation: Rectangle {
             height: Math.ceil(url.preferred-height / 1px) * 1px;
             url := Text {
-                x: (parent.width - self.width) / 2;
+                x: Sizing.snap((parent.width - self.width) / 2);
                 y: 0px;
                 width: Math.min(Math.ceil(self.preferred-width / 1px) * 1px, parent.width);
                 text: "zaparoo.org/docs/frontend";
@@ -2334,7 +2362,7 @@ component DialogModal inherits ModalShell {
     content-height: root.button-y + root.btn-h - root.content-y;
 
         body-t := Text {
-            x: (root.panel-width - self.width) / 2;
+            x: Sizing.snap((root.panel-width - self.width) / 2);
             y: root.body-y;
             width: Math.min(Math.ceil(body-measure.preferred-width / 1px) * 1px, root.content-width);
             wrap: word-wrap;
@@ -2370,8 +2398,8 @@ component DialogModal inherits ModalShell {
             pressed: PressFeedback.active(PressOwner.dialog, i);
 
             Text {
-                x: (parent.width - self.width) / 2;
-                y: (button.face-height - self.height) / 2;
+                x: Sizing.snap((parent.width - self.width) / 2);
+                y: Sizing.snap((button.face-height - self.height) / 2);
                 max-width: parent.width - Sizing.pct-w(1);
                 overflow: elide;
                 text: DialogLabels.button(label);
@@ -2455,6 +2483,7 @@ component ScreensaverOverlay inherits Rectangle {
         height: root.lh;
         source: root.logo;
         image-fit: contain;
+        image-rendering: Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
     }
 }
 
@@ -2578,15 +2607,15 @@ component ContextMenu inherits Rectangle {
     property <bool> fits-left: root.hole-x - root.gap - root.panel-w >= root.margin;
     property <bool> beside: root.fits-right || root.fits-left;
     property <bool> fits-below: root.hole-y + root.hole-h + root.gap + root.panel-h <= root.usable-bottom;
-    property <length> panel-x: Math.min(Math.max(root.beside
+    property <length> panel-x: Sizing.snap(Math.min(Math.max(root.beside
         ? (root.fits-right ? root.hole-x + root.hole-w + root.gap : root.hole-x - root.gap - root.panel-w)
         : root.hole-x + (root.hole-w - root.panel-w) / 2, root.margin),
-        root.width - root.margin - root.panel-w);
+        root.width - root.margin - root.panel-w));
     property <length> raw-y: root.beside
         ? root.hole-y + (root.hole-h - root.panel-h) / 2
         : (root.fits-below ? root.hole-y + root.hole-h + root.gap : root.hole-y - root.gap - root.panel-h);
-    property <length> panel-y: Math.min(Math.max(root.raw-y, root.margin),
-        root.usable-bottom - root.panel-h);
+    property <length> panel-y: Sizing.snap(Math.min(Math.max(root.raw-y, root.margin),
+        root.usable-bottom - root.panel-h));
 
     // Four bands around the hole: the tile the menu is about stays bright
     // while the rest of the screen dims.
@@ -2628,7 +2657,7 @@ component ContextMenu inherits Rectangle {
         clip: true;
 
         if root.titled: Text {
-            x: (parent.width - self.width) / 2;
+            x: Sizing.snap((parent.width - self.width) / 2);
             y: root.pad + (root.row-h - self.height) / 2;
             width: Math.min(self.preferred-width, parent.width - 2 * root.pad - 2 * root.label-inset);
             overflow: elide;
@@ -2639,14 +2668,14 @@ component ContextMenu inherits Rectangle {
         }
 
         if root.scrollable: ScrollCue {
-            x: (parent.width - self.width) / 2;
+            x: Sizing.snap((parent.width - self.width) / 2);
             y: root.pad + root.title-band;
             width: root.arrow;
             glyph: "icons/ScrollUp";
             live: root.scroll > 0px;
         }
         if root.scrollable: ScrollCue {
-            x: (parent.width - self.width) / 2;
+            x: Sizing.snap((parent.width - self.width) / 2);
             y: parent.height - root.pad - root.arrow;
             width: root.arrow;
             glyph: "icons/ScrollDown";
@@ -2784,7 +2813,9 @@ component FastScrollRail inherits Rectangle {
         border-radius: Sizing.radius-md;
     }
 
-    if root.has-letters && root.current >= 0: Rectangle {
+    // Letter-based highlight and labels: hidden on CRT where the
+    // small text cannot resolve on the scanline grid.
+    if root.has-letters && !Sizing.crt && root.current >= 0: Rectangle {
         x: Sizing.card-border-width;
         y: root.mark-y;
         width: parent.width - 2 * Sizing.card-border-width;
@@ -2794,19 +2825,33 @@ component FastScrollRail inherits Rectangle {
         animate y { duration: root.glide; easing: ease-out; }
     }
 
-    for label[i] in root.letters: Text {
-        y: i * root.cell;
-        width: parent.width;
-        height: root.cell;
-        text: label;
-        horizontal-alignment: center;
-        vertical-alignment: center;
-        font-size: root.label-size;
-        color: i == root.current ? Theme.on-accent : Theme.text-label;
+    if !Sizing.crt: Rectangle {
+        for label[i] in root.letters: Text {
+            y: i * root.cell;
+            width: parent.width;
+            height: root.cell;
+            text: label;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            font-size: root.label-size;
+            color: i == root.current ? Theme.on-accent : Theme.text-label;
+        }
     }
 
+    // CRT thumb: a wide bar with 1px inset from the rail edges.
+    if Sizing.crt && root.has-letters && root.current >= 0: Rectangle {
+        x: 1px + Sizing.card-border-width;
+        y: root.mark-y;
+        width: parent.width - 2px - 2 * Sizing.card-border-width;
+        height: root.cell;
+        background: Theme.accent;
+        border-radius: 1px;
+        animate y { duration: root.glide; easing: ease-out; }
+    }
+
+    // Simple thumb rail: used when there are no letters.
     if !root.has-letters: Rectangle {
-        x: (parent.width - self.width) / 2;
+        x: Sizing.snap((parent.width - self.width) / 2);
         y: root.fraction * (parent.height - self.height);
         width: parent.width * 0.5;
         height: root.thumb;
@@ -2835,7 +2880,7 @@ component FastScrollRail inherits Rectangle {
             // blank in every cell, so the cell's center is half of each
             // away from the ink's; the box is offset by that half.
             property <length> ink-bias: Theme.crt ? self.font-size / 16 : 0px;
-            x: self.ink-bias;
+            x: self.ink-bias - (Sizing.crt ? 2px : 0px);
             y: self.ink-bias;
             width: parent.width;
             height: parent.height;
@@ -2851,6 +2896,7 @@ component FastScrollRail inherits Rectangle {
 component GamesScreen inherits Rectangle {
     in property <bool> gated: false;
     property <bool> list-layout: Shell.browse-list-layout;
+    property <bool> list-only: Shell.browse-list-only;
     property <bool> tate-list: self.list-layout && Shell.orientation != Orientation.horizontal;
     property <bool> is-games: GamesView.mode == GamesMode.browse;
     property <string> title: GamesView.mode == GamesMode.favorites ? @tr("Favorites")
@@ -2968,7 +3014,7 @@ component GamesScreen inherits Rectangle {
     property <length> list-card-w: self.width - 2 * self.list-card-x;
     property <length> list-card-h: self.height - self.list-card-y - (Sizing.tier-240 ? Sizing.help-bar-height + Layout.card-bottom-margin - Sizing.pct-h(6) : Layout.card-bottom-margin);
 
-    if root.list-layout && !root.gate-hide: BrowseListDetailView {
+    if root.list-layout && !root.list-only && !root.gate-hide: BrowseListDetailView {
         x: root.list-card-x;
         y: root.list-card-y;
         width: root.list-card-w;
@@ -3001,6 +3047,31 @@ component GamesScreen inherits Rectangle {
         wheel(delta) => { GamesInput.wheel(delta); }
     }
 
+    // Text-only list: BrowseList standalone, no detail pane.
+    if root.list-only && !root.gate-hide: BrowseList {
+        x: root.list-card-x;
+        y: root.list-card-y;
+        width: root.list-card-w;
+        height: root.list-card-h;
+        show-chrome: true;
+        rows: GamesView.list-rows;
+        model-top: GamesView.list-view-top;
+        glide: GamesView.list-glide;
+        step: GamesView.list-step-ms * 1ms;
+        scroll-top: GamesView.list-scroll-top;
+        scope: StateTokens.games(GamesView.mode) + ":" + GamesView.title;
+        selected: GamesView.list-sel;
+        focus-ready: GamesView.focus-ready;
+        activate-pulse: GamesView.activate-pulse;
+        release-pulse: GamesView.release-pulse;
+        settling: Shell.active-screen != GamesView.screen;
+        row-height: GamesView.list-row-height;
+        row-hovered(i) => { GamesInput.cell-hovered(i); }
+        row-clicked(i) => { GamesInput.cell-clicked(i); }
+        row-right-clicked(i) => { GamesInput.cell-right-clicked(i); }
+        wheel(delta) => { GamesInput.wheel(delta); }
+    }
+
     // The focused row's name and dim suffix stay below the grid. CRT,
     // which has no title strip, also keeps its count and cue here.
     // A page fetch the user is waiting on replaces the name.
@@ -3016,7 +3087,7 @@ component GamesScreen inherits Rectangle {
 
     if !root.list-layout: ActiveLabel {
         x: 0;
-        y: root.label-y;
+        y: root.label-y - (Sizing.crt ? 1px : 0px);
         height: GamesView.label-height;
         side-inset: root.page-cue-in-footer
             ? (Layout.top-strip-visible ? root.footer-right-inset : Math.max(root.footer-left-inset, root.footer-right-inset))
@@ -3028,7 +3099,7 @@ component GamesScreen inherits Rectangle {
 
     if !Layout.top-strip-visible && root.page-cue-in-footer && root.footer-left-text != "": Text {
         x: Layout.bottom-status-left-margin;
-        y: root.label-y + (GamesView.label-height - self.height) / 2;
+        y: Sizing.snap(root.label-y + (GamesView.label-height - self.height) / 2) - (Sizing.crt ? 1px : 0px);
         width: root.footer-left-inset - Layout.bottom-status-left-margin;
         height: Sizing.font-section;
         vertical-alignment: center;
@@ -3041,7 +3112,7 @@ component GamesScreen inherits Rectangle {
 
     footer-indicator := FooterIndicator {
         right-margin: Layout.bottom-status-right-margin;
-        cue-y: root.label-y + (GamesView.label-height - self.height) / 2;
+        cue-y: Sizing.snap(root.label-y + (GamesView.label-height - self.height) / 2) - (Sizing.crt ? 1px : 0px);
         current-page: root.list-layout ? GamesView.list-page : GamesView.page;
         total-pages: root.list-layout ? GamesView.list-total-pages : GamesView.total-pages;
         item-position-mode: root.list-layout;
@@ -3056,7 +3127,7 @@ component GamesScreen inherits Rectangle {
 
     // Where a fast scroll is, on the right edge of the grid or list.
     FastScrollRail {
-        x: root.width - self.width - Sizing.pct-w(1);
+        x: root.width - self.width - (Sizing.crt ? Layout.card-side-margin : Sizing.pct-w(1));
         y: root.list-layout ? root.list-card-y : GamesView.grid-y;
         height: root.list-layout ? root.list-card-h : GamesView.grid-height;
         shown: !root.gate-hide && GamesView.rail-visible && GamesView.count > 0;
@@ -3138,7 +3209,7 @@ component CrtCalibrationPattern inherits Rectangle {
     // readable, and parked on the lower third so the center crossing
     // stays clear while adjusting.
     plate := Rectangle {
-        x: (parent.width - self.width) / 2;
+        x: Sizing.snap((parent.width - self.width) / 2);
         y: parent.height * 0.62;
         width: plate-rows.preferred-width;
         height: plate-rows.preferred-height;
@@ -3214,12 +3285,18 @@ export component App inherits Window {
     preferred-width: 1280px;
     preferred-height: 720px;
 
-    // Native CRT keeps all interaction inside the central 90% action-
-    // safe area while App's own background remains full bleed.
+    // Native CRT keeps all interaction inside the action-safe area while
+    // App's own background remains full bleed. The 12px inset follows the
+    // scanline axis (framebuffer width) and the 5% inset follows the
+    // other axis (framebuffer height). In TATE the window axes swap, so
+    // the formulas swap with them to stay on the correct physical axis.
+    property <bool> tate: Shell.orientation == Orientation.cw || Shell.orientation == Orientation.ccw;
     property <length> crt-inset-w: Theme.crt
-        ? 2 * Math.round(self.width * 0.05 / 1px) * 1px : 0px;
+        ? (root.tate ? 2 * Math.round(self.width * 0.05 / 1px) * 1px : 12px)
+        : 0px;
     property <length> crt-inset-h: Theme.crt
-        ? 2 * Math.round(self.height * 0.05 / 1px) * 1px : 0px;
+        ? (root.tate ? 12px : 2 * Math.round(self.height * 0.05 / 1px) * 1px)
+        : 0px;
     property <length> scene-width: Math.max(1px, self.width - self.crt-inset-w);
     property <length> scene-height: Math.max(1px, self.height - self.crt-inset-h);
 
@@ -3788,8 +3865,8 @@ export component App inherits Window {
     }
 
     scene := Rectangle {
-        x: (root.width - self.width) / 2;
-        y: (root.height - self.height) / 2;
+        x: Sizing.snap((root.width - self.width) / 2);
+        y: Sizing.snap((root.height - self.height) / 2);
         width: root.scene-width;
         height: root.scene-height;
     // Only one live screen. Async navigation retains this coherent source;
@@ -3946,10 +4023,11 @@ export component App inherits Window {
         bleed: Math.max(root.crt-inset-w, root.crt-inset-h) / 2;
     }
 
-    // Topmost within the logical scene: burn protection covers header,
-    // screens, and regular modals, and rotates with the display.
-    if Shell.saver-armed: ScreensaverOverlay {}
     }
+
+    // Burn protection covers the entire framebuffer including the CRT
+    // overscan bands, so no UI bleeds through at the edges.
+    if Shell.saver-armed: ScreensaverOverlay {}
 
     // Desktop remains mapped behind the launched game. If the compositor
     // exposes it, cover every live pixel with a static, opaque dormant face:
@@ -3962,8 +4040,8 @@ export component App inherits Window {
         if !Shell.is-mister: Image {
             width: Sizing.pct-w(24);
             height: self.width / Brand.aspect;
-            x: (parent.width - self.width) / 2;
-            y: (parent.height - self.height) / 2;
+            x: Sizing.snap((parent.width - self.width) / 2);
+            y: Sizing.snap((parent.height - self.height) / 2);
             source: Brand.logo(false, self.width);
             image-fit: contain;
         }
