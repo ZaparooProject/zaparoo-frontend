@@ -170,7 +170,7 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_confirm => set_confirm,
         get_cancel => set_cancel,
         get_options => set_options,
-        get_view => set_view,
+        get_menu => set_menu,
     );
 
     let source = primary.global::<Motion>();

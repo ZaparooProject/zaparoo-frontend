@@ -165,6 +165,10 @@ pub struct Inputs {
     /// width against the bar's safe width, never from the bar's height, so
     /// the answer cannot depend on what it changes. Larger tiers ignore it.
     pub help_bar_two_rows: bool,
+    /// The Menu chip row is turned on (Settings > Appearance). Off, every
+    /// tier lays out as 240p does for it: no band, and the Menu button
+    /// opens the Menu list.
+    pub menu_row: bool,
 }
 
 impl Default for Inputs {
@@ -179,6 +183,7 @@ impl Default for Inputs {
             swap_percentage_axes: false,
             interface_profile: InterfaceProfile::Standard,
             help_bar_two_rows: false,
+            menu_row: true,
         }
     }
 }
@@ -750,6 +755,16 @@ pub struct Derived {
     pub header_side_margin: i32,
     pub header_height: i32,
     pub header_bottom: i32,
+
+    /// The Menu chip row (`crate::page_bar`): its height, the gap above it,
+    /// and the band the two take from a screen that has one. Zero where
+    /// there is no row.
+    pub menu_row_height: i32,
+    pub menu_row_gap: i32,
+    pub menu_row_block: i32,
+    /// The scene has a Menu chip row: above the 240p tier, and only while
+    /// the setting has it on.
+    pub menu_row: bool,
 }
 
 /// The Hub's resolved page geometry: its fixed per-tier shape plus the insets,
@@ -775,19 +790,27 @@ struct HubMetrics {
     tile_height: i32,
 }
 
-fn derive_hub(inputs: &Inputs, header_bottom: i32, help_bar_height: i32) -> HubMetrics {
+fn derive_hub(
+    inputs: &Inputs,
+    header_bottom: i32,
+    help_bar_height: i32,
+    menu_row_block: i32,
+) -> HubMetrics {
     let is_240 = inputs.tier() == Tier::T240;
     let shape = hub_grid_shape(inputs);
     let hub_active_label_height = if is_240 { 8 } else { inputs.pct_h(7.0) };
     let hub_grid_top_margin = if is_240 { inputs.pct_h(1.0) } else { 0 };
     // Kept in f64 to the end: the golden fixture computed this in
     // double-precision and truncated only at the final assignment.
-    let hub_reserved = f64::from(header_bottom + help_bar_height + hub_active_label_height)
-        + if is_240 {
-            f64::from(hub_grid_top_margin)
-        } else {
-            f64::from(3 * inputs.pct_h(2.0))
-        };
+    // The Menu chip row under the header takes its band first; zero where
+    // there is no row (240p, or the setting off).
+    let hub_reserved =
+        f64::from(header_bottom + menu_row_block + help_bar_height + hub_active_label_height)
+            + if is_240 {
+                f64::from(hub_grid_top_margin)
+            } else {
+                f64::from(3 * inputs.pct_h(2.0))
+            };
     let hub_grid_height_budget = (inputs.screen_height - hub_reserved).max(0.0) as i32;
     // CRT keeps the grid inset independent of the header margin: the
     // CRT hub tiles are centered by block_offset_x; the inset matches
@@ -867,7 +890,21 @@ pub fn derive(inputs: &Inputs) -> Derived {
 
     let radius_md = tier.radius_md();
 
-    let hub = derive_hub(inputs, header_bottom, help_bar_height);
+    // A chip holds one line of body text with room to breathe, the same
+    // height a list picker row gets.
+    let menu_row = !is_240 && inputs.menu_row;
+    let (menu_row_height, menu_row_gap) = if menu_row {
+        (inputs.pct_h(6.0), inputs.pct_h(1.0))
+    } else {
+        (0, 0)
+    };
+
+    let hub = derive_hub(
+        inputs,
+        header_bottom,
+        help_bar_height,
+        menu_row_gap + menu_row_height,
+    );
 
     let systems_shape = systems_grid_shape(inputs, inputs.screen_width, inputs.screen_height);
     let games_shape = games_grid_shape(inputs, inputs.screen_width, inputs.screen_height);
@@ -933,13 +970,18 @@ pub fn derive(inputs: &Inputs) -> Derived {
         header_side_margin,
         header_height,
         header_bottom,
+
+        menu_row_height,
+        menu_row_gap,
+        menu_row_block: menu_row_gap + menu_row_height,
+        menu_row,
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::InterfaceProfile;
-    use super::{tile_art_box, tile_art_pixels, Inputs, TileArt};
+    use super::{derive, tile_art_box, tile_art_pixels, Inputs, TileArt};
 
     #[test]
     fn tile_art_box_follows_the_tile_bands() {
@@ -985,6 +1027,38 @@ mod tests {
         assert_eq!(focus_zoom_percent(Tier::T240, false), 100.0);
         assert_eq!(focus_zoom_percent(Tier::T240, true), 100.0);
         assert_eq!(FOCUS_ZOOM_PERCENT, 104.0);
+    }
+
+    #[test]
+    fn the_menu_row_setting_lays_out_as_240p_does() {
+        let on = derive(&Inputs {
+            screen_width: 960.0,
+            screen_height: 540.0,
+            ..Inputs::default()
+        });
+        assert!(on.menu_row);
+        assert_eq!(on.menu_row_block, on.menu_row_gap + on.menu_row_height);
+        assert!(on.menu_row_block > 0);
+        let off = derive(&Inputs {
+            screen_width: 960.0,
+            screen_height: 540.0,
+            menu_row: false,
+            ..Inputs::default()
+        });
+        assert!(!off.menu_row);
+        assert_eq!(off.menu_row_block, 0);
+        // The Hub gets the band back.
+        assert_eq!(
+            off.hub_grid_height_budget - on.hub_grid_height_budget,
+            on.menu_row_block
+        );
+        let t240 = derive(&Inputs {
+            screen_width: 320.0,
+            screen_height: 240.0,
+            ..Inputs::default()
+        });
+        assert!(!t240.menu_row);
+        assert_eq!(t240.menu_row_block, 0);
     }
 
     #[test]

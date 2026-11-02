@@ -463,6 +463,11 @@ pub struct SettingsState {
     pub mouse_enabled: bool,
     #[serde(default)]
     pub reduce_motion: bool,
+    /// The Menu chip row above 240p. Off, the Menu button opens the Menu
+    /// list at every tier. A state file from before the setting existed
+    /// keeps the row.
+    #[serde(default = "default_show_menu_row")]
+    pub show_menu_row: bool,
     #[serde(default)]
     pub debug_logging: bool,
     #[serde(default = "default_screensaver_timeout")]
@@ -537,6 +542,7 @@ impl Default for SettingsState {
             button_layout: default_button_layout(),
             mouse_enabled: default_mouse_enabled(),
             reduce_motion: false,
+            show_menu_row: default_show_menu_row(),
             debug_logging: false,
             screensaver_timeout: default_screensaver_timeout(),
             media_image_type: default_media_image_type(),
@@ -612,6 +618,10 @@ fn default_button_layout() -> String {
 }
 
 fn default_mouse_enabled() -> bool {
+    true
+}
+
+fn default_show_menu_row() -> bool {
     true
 }
 
@@ -878,6 +888,7 @@ mod tests {
                 button_layout: "b".into(),
                 mouse_enabled: false,
                 reduce_motion: true,
+                show_menu_row: true,
                 debug_logging: true,
                 screensaver_timeout: "300".into(),
                 media_image_type: "auto".into(),

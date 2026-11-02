@@ -328,8 +328,8 @@ mod desktop {
             return;
         }
         let ctx = ctx.clone();
-        let _ = weak.upgrade_in_event_loop(move |_app| {
-            crate::input::gamepad_released(&ctx, &hold_key(action));
+        let _ = weak.upgrade_in_event_loop(move |app| {
+            crate::input::gamepad_released(&ctx, &app, &hold_key(action));
         });
     }
 

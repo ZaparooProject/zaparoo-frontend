@@ -84,6 +84,7 @@ fn inputs_of(row: &BTreeMap<&str, &str>) -> Inputs {
         // rows open, which is now the wrapped state. The one-row default
         // is pinned by `a_240p_help_bar_is_one_row_until_it_wraps`.
         help_bar_two_rows: true,
+        menu_row: true,
     }
 }
 

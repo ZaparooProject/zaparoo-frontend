@@ -42,6 +42,7 @@ pub mod online_link;
 pub mod online_lists;
 pub mod online_settings;
 pub mod options_menu;
+pub mod page_bar;
 pub mod paged_grid;
 pub mod pairing;
 pub mod palette;

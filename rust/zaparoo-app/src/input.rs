@@ -56,6 +56,85 @@ pub const TEXT_KEY: &str = "text_key";
 /// A delete held this long stops stepping and clears the whole field.
 pub const TEXT_CLEAR_HOLD_MS: u64 = 1_200;
 
+/// Holding Back this long goes straight to the Hub, with no step back on
+/// the way. Released sooner, it was a tap and goes back one level then: a
+/// Back that can be held waits for its release to know which it was.
+pub const BACK_HOLD_TO_HUB_MS: u64 = 500;
+
+/// Two shoulder presses this close together are one L1+R1 press. A shoulder
+/// press waits this long for its partner before it pages, on screens where
+/// the chord means something: about three frames, under what a page flip
+/// can be seen to lag.
+pub const CHORD_WINDOW_MS: u64 = 50;
+
+/// Whether a Back press can be held to the Hub, and so waits for its
+/// release. Only a press a screen takes counts: not one on the Hub, which
+/// has nowhere to go back to, and not one that closes a modal, leaves the
+/// Menu row or deletes text, which act the moment the button goes down.
+pub fn back_hold_arms(action: &str, on_hub: bool, surface_owned: bool) -> bool {
+    action == "cancel" && !on_hub && !surface_owned
+}
+
+/// The shoulder actions, the two halves of the Go to chord.
+pub fn is_shoulder(action: &str) -> bool {
+    matches!(action, "page_prev" | "page_next")
+}
+
+/// What a shoulder press does while the chord window can be open.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChordPress {
+    /// The first half: hold it, and arm the window timer.
+    Wait,
+    /// The other shoulder arrived inside the window: the chord. The held
+    /// press is dropped, never paged.
+    Chord,
+    /// Not part of a chord: route it as usual, after any held press.
+    Pass,
+}
+
+/// The L1+R1 chord. The first shoulder press is held for the window; the
+/// shell pages with it when the window closes or the key comes up first,
+/// and opens Go to instead when the other shoulder lands in time.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ShoulderChord {
+    pending: Option<(String, String)>,
+}
+
+impl ShoulderChord {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// A press arrived with the chord in play.
+    pub fn press(&mut self, action: &str, key: &str) -> ChordPress {
+        if !is_shoulder(action) {
+            return ChordPress::Pass;
+        }
+        match &self.pending {
+            Some((first, _)) if first != action => {
+                self.pending = None;
+                ChordPress::Chord
+            }
+            Some(_) => ChordPress::Pass,
+            None => {
+                self.pending = Some((action.to_string(), key.to_string()));
+                ChordPress::Wait
+            }
+        }
+    }
+
+    /// The held press, for the shell to route now: the window closed, its
+    /// key came up, or another press needs the held one handled first.
+    pub fn take(&mut self) -> Option<(String, String)> {
+        self.pending.take()
+    }
+
+    /// The key of the held press, if one is held.
+    pub fn pending_key(&self) -> Option<&str> {
+        self.pending.as_ref().map(|(_, key)| key.as_str())
+    }
+}
+
 /// The directions that repeat while held, and typing or deleting text.
 pub fn is_repeatable_action(action: &str) -> bool {
     matches!(
@@ -327,6 +406,46 @@ mod tests {
         assert_eq!(hold.held_ms(1_000 + TEXT_CLEAR_HOLD_MS), TEXT_CLEAR_HOLD_MS);
         assert!(hold.release("west"));
         assert_eq!(hold.held_ms(9_000), 0);
+    }
+
+    #[test]
+    fn only_a_back_a_screen_takes_waits_for_its_release() {
+        assert!(back_hold_arms("cancel", false, false));
+        assert!(!back_hold_arms("cancel", true, false));
+        assert!(!back_hold_arms("cancel", false, true));
+        assert!(!back_hold_arms("accept", false, false));
+        assert!(!back_hold_arms(TEXT_DELETE, false, false));
+        assert_eq!(BACK_HOLD_TO_HUB_MS, 500);
+    }
+
+    #[test]
+    fn the_other_shoulder_inside_the_window_is_the_chord() {
+        let mut chord = ShoulderChord::new();
+        assert_eq!(chord.press("page_prev", "L"), ChordPress::Wait);
+        assert_eq!(chord.pending_key(), Some("L"));
+        assert_eq!(chord.press("page_next", "R"), ChordPress::Chord);
+        // The held press is spent: nothing is left to page with.
+        assert_eq!(chord.take(), None);
+        assert_eq!(chord.pending_key(), None);
+    }
+
+    #[test]
+    fn a_lone_shoulder_is_handed_back_to_page_with() {
+        let mut chord = ShoulderChord::new();
+        assert_eq!(chord.press("page_next", "R"), ChordPress::Wait);
+        assert_eq!(
+            chord.take(),
+            Some(("page_next".to_string(), "R".to_string()))
+        );
+        assert_eq!(chord.take(), None);
+        // Anything else passes straight through.
+        assert_eq!(chord.press("down", "Down"), ChordPress::Pass);
+        assert_eq!(chord.pending_key(), None);
+        // The same shoulder twice is not a chord.
+        assert_eq!(chord.press("page_next", "R"), ChordPress::Wait);
+        assert_eq!(chord.press("page_next", "R2"), ChordPress::Pass);
+        assert_eq!(chord.pending_key(), Some("R"));
+        assert_eq!(CHORD_WINDOW_MS, 50);
     }
 
     #[test]

@@ -156,6 +156,29 @@ impl Logos {
         self.lock().cache.get(key).cloned().flatten()
     }
 
+    /// Prepare `key` on the calling thread unless it is already cached: for
+    /// the one logo a route cannot commit without. One decode and tint, a
+    /// few tens of milliseconds on `MiSTer`; no lock is held across it.
+    pub fn prepare_now(&self, key: Key) -> Option<Prepared> {
+        let ramps = {
+            let mut inner = self.lock();
+            if let Some(ready) = inner.cache.get(&key) {
+                return ready.clone();
+            }
+            if inner.paused || key.generation != inner.generation {
+                return None;
+            }
+            inner.ramps
+        };
+        let image = prepare(key, ramps);
+        let bytes = image.as_ref().map_or(0, Prepared::bytes);
+        let mut inner = self.lock();
+        if key.generation == inner.generation {
+            inner.cache.insert(key, image.clone(), bytes);
+        }
+        image
+    }
+
     /// Distinguish an unusable asset from one still waiting for preparation.
     /// Only the former needs the text fallback before another cache reset.
     pub fn is_negative(&self, key: &Key) -> bool {

@@ -36,6 +36,8 @@ pub struct Scene {
     pub handheld: bool,
     /// The help entries on screen wrap, so a 240p help bar is two rows.
     pub help_bar_two_rows: bool,
+    /// The Menu chip row setting (Settings > Appearance).
+    pub menu_row: bool,
 }
 
 impl Scene {
@@ -51,6 +53,7 @@ impl Scene {
             swap_axes: sizing.get_swap_axes(),
             handheld: sizing.get_handheld(),
             help_bar_two_rows: sizing.get_help_bar_two_rows(),
+            menu_row: sizing.get_menu_row_enabled() && !sizing.get_menu_row_blocked(),
         }
     }
 
@@ -67,6 +70,7 @@ impl Scene {
                 InterfaceProfile::Standard
             },
             help_bar_two_rows: self.help_bar_two_rows,
+            menu_row: self.menu_row,
         }
     }
 }
@@ -160,6 +164,16 @@ fn apply_layout(app: &App, inputs: &Inputs) {
                 f64::from(gap),
             ) as i32
         });
+    app.global::<SizingGlobal>()
+        .on_fit_letter_cell(|count, columns, width, height, gap| {
+            zaparoo_app::letter_jump::cell_size(
+                count.max(0) as usize,
+                columns.max(1) as usize,
+                f64::from(width),
+                f64::from(height),
+                f64::from(gap),
+            ) as f32
+        });
     let theme = ThemeId::current(inputs);
     let profile = layouts::profile(theme, current_view(app), inputs);
     // `Layout` carries a grid table and a list table, and views read both
@@ -225,6 +239,10 @@ fn apply_derived(app: &App, d: &Derived) {
     s.set_header_side_margin(px(d.header_side_margin));
     s.set_header_height(px(d.header_height));
     s.set_header_bottom(px(d.header_bottom));
+    s.set_menu_row_height(px(d.menu_row_height));
+    s.set_menu_row_gap(px(d.menu_row_gap));
+    s.set_menu_row_block(px(d.menu_row_block));
+    s.set_menu_row(d.menu_row);
     s.set_help_bar_height(px(d.help_bar_height));
     s.set_help_bar_clearance(px(d.help_bar_clearance));
     s.set_visible_covers(d.visible_covers);

@@ -114,7 +114,7 @@ changed.
 #### Saved searches
 
 A `search` tile opens the results of a search. "Add to Hub" in the Search
-results' View menu writes one for the search on screen; Back from results
+results' Menu writes one for the search on screen; Back from results
 opened this way returns to the Hub.
 
 ```toml

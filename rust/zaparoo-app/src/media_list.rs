@@ -1323,6 +1323,7 @@ mod tests {
             swap_percentage_axes: false,
             interface_profile: crate::sizing::InterfaceProfile::Standard,
             help_bar_two_rows: false,
+            menu_row: true,
         };
         let profile = crate::layouts::profile(
             crate::layouts::ThemeId::Default,
@@ -1355,6 +1356,7 @@ mod tests {
             swap_percentage_axes: false,
             interface_profile: crate::sizing::InterfaceProfile::Standard,
             help_bar_two_rows: false,
+            menu_row: true,
         };
         let profile = crate::layouts::profile(
             crate::layouts::ThemeId::Default,

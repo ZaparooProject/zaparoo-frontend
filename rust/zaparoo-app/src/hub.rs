@@ -898,6 +898,10 @@ pub fn geometry(inputs: &Inputs, d: &Derived) -> Geometry {
     };
     let height = inputs.screen_height as i32;
     let width = inputs.screen_width as i32;
+    // The Menu chip row sits under the header; the sizing budget has
+    // already given up its band. `menu_row_block` is zero where there is
+    // no row: at 240p, or with the setting off.
+    let row = d.menu_row_block;
     let mut fit = paged_grid::fit(
         d.hub_grid_columns,
         d.hub_grid_rows,
@@ -919,11 +923,12 @@ pub fn geometry(inputs: &Inputs, d: &Derived) -> Geometry {
     // down by half the band.
     fit.available_height = (grid_height - insets.top - insets.bottom).max(0);
     fit.block_offset_y = 0;
-    let vertical_band = (height - d.header_bottom - d.help_bar_height).max(0);
+    let vertical_band = (height - d.header_bottom - row - d.help_bar_height).max(0);
     let vertical_gap = ((f64::from(vertical_band - grid_height - d.hub_active_label_height) / 3.0)
         .round() as i32)
         .max(0);
     let grid_y = d.header_bottom
+        + row
         + if compact {
             inputs.pct_h(1.0)
         } else {

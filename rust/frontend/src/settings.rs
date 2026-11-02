@@ -92,6 +92,7 @@ fn checked(ctx: &Ctx, id: &str) -> bool {
         "showHidden" => shared.show_hidden,
         "showOriginalFilenames" => s.show_original_filenames,
         "reduceMotion" => s.reduce_motion,
+        "showMenuRow" => s.show_menu_row,
         "mouseEnabled" => s.mouse_enabled,
         "debugLogging" => s.debug_logging,
         "swapConfirmCancel" => s.swap_confirm_cancel,
@@ -741,6 +742,11 @@ fn toggle(ctx: &Ctx, app: &App, id: &str) {
                 shared.persist.settings.reduce_motion = v;
                 v
             }
+            "showMenuRow" => {
+                let v = !shared.persist.settings.show_menu_row;
+                shared.persist.settings.show_menu_row = v;
+                v
+            }
             "mouseEnabled" => {
                 let v = !shared.persist.settings.mouse_enabled;
                 shared.persist.settings.mouse_enabled = v;
@@ -784,6 +790,13 @@ fn toggle(ctx: &Ctx, app: &App, id: &str) {
                 ));
         }
         "mouseEnabled" => app.global::<crate::Shell>().set_mouse_enabled(value),
+        "showMenuRow" => {
+            // The row's band is in the sizing table and every screen's
+            // geometry: the same push a help bar wrap uses.
+            app.global::<crate::Sizing>().set_menu_row_enabled(value);
+            crate::sizing::apply_scene(app, crate::router::output_scene(app));
+            crate::router::relayout(ctx, app);
+        }
         "swapConfirmCancel" | "swapOptionsView" => crate::apply_buttons(ctx, app),
         _ => {}
     }
@@ -957,6 +970,7 @@ pub(crate) fn mirror_of(s: &persist::SettingsState) -> zaparoo_core::config::Set
         button_layout: &s.button_layout,
         mouse_enabled: s.mouse_enabled,
         reduce_motion: s.reduce_motion,
+        show_menu_row: s.show_menu_row,
         debug_logging: s.debug_logging,
         screensaver_timeout: &s.screensaver_timeout,
         media_image_type: &s.media_image_type,

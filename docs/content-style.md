@@ -11,8 +11,8 @@ may itself predate them.
 
 ## Menu ordering
 
-Order every `ContextMenu` ("Options") and `ListPickerModal` ("View") entry
-list by this priority, top to bottom:
+Order every `ContextMenu` ("Options") and `ListPickerModal` ("Menu") entry
+list, and every Menu chip row, by this priority, top to bottom:
 
 1. The primary action — what most users came to this menu to do (usually
    `Launch game` / `Launch system`) — **unless Accept on the anchor
