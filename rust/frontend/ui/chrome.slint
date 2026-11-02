@@ -399,13 +399,18 @@ export component HeaderBar inherits Rectangle {
         font-size: Sizing.header-row-height;
     }
 
-    // Browse title in the header (CRT profile only).
+    // Browse title in the header (CRT profile only), centered between the
+    // logo and the HUD and kept clear of the wider of the two; never less
+    // than a third of the header.
+    property <length> title-side: Sizing.header-side-margin + Math.max(root.logo-painted-width,
+        Layout.hud-bottom-aligned ? root.hud-width : 0px) + Sizing.pct-w(1.5);
     if Layout.title-in-header && root.browse-title != "": Text {
         property <length> natural: Math.ceil(title-measure.preferred-width / 1px) * 1px;
+        property <length> room: parent.width - 2 * root.title-side;
         x: Sizing.snap((parent.width - self.width) / 2);
         y: parent.height - Sizing.header-row-height
             + Sizing.snap((Sizing.header-row-height - self.preferred-height) / 2);
-        width: Math.min(Math.floor(parent.width / 3px) * 1px, self.natural);
+        width: Math.min(Math.max(Math.floor(parent.width / 3px) * 1px, self.room), self.natural);
         overflow: elide;
         text: root.browse-title;
         color: Theme.text-primary;
@@ -681,7 +686,8 @@ export component FooterIndicator inherits PageIndicator {
 }
 
 // Centered title, the item count at the far left and the page position at
-// the right. Each side is bounded by its slot so it cannot overlap the title.
+// the right. The title takes what the sides leave it, and never less than a
+// third, and each side is bounded so it cannot overlap the title.
 export component TopStatusStrip inherits Rectangle {
     in property <string> title: "";
     in property <int> current-page: 0;
@@ -727,7 +733,20 @@ export component TopStatusStrip inherits Rectangle {
         : (Sizing.crt ? root.side-slot-width : Math.min(total-measure.preferred-width, root.left-room));
     property <length> filter-x: root.slot-margin + (root.total-text == "" ? 0px : root.count-width + Sizing.pct-w(1.5));
     property <length> title-measured: Math.ceil(title-measure.preferred-width / 1px) * 1px;
-    property <length> title-text-width: Math.min(root.slot-width, root.title-measured);
+    // What the sides show at their natural width. The centered title keeps
+    // clear of the wider one on both sides; a side wider than its third
+    // gives way to the title instead.
+    property <length> left-natural: (root.total-text == "" ? 0px : total-measure.preferred-width)
+        + (root.filter-shown
+            ? (root.total-text == "" ? 0px : Sizing.pct-w(1.5)) + root.filter-glyph-size
+                + 2 * root.filter-glyph-gap + filter-text-measure.preferred-width
+            : 0px);
+    property <length> right-natural: root.plain-counter ? page-measure.preferred-width
+        : (indicator.visible ? indicator.width : 0px);
+    property <length> side-need: Math.min(root.side-slot-width, Math.max(root.left-natural, root.right-natural));
+    property <length> title-room: root.width - 2 * (root.slot-margin + root.side-need
+        + (root.side-need > 0 ? Sizing.pct-w(1.5) : 0px));
+    property <length> title-text-width: Math.min(Math.max(root.slot-width, root.title-room), root.title-measured);
     // Center the full line box, not the em size: otherwise descenders can
     // spill into the cached grid band and travel with a page transition.
     property <length> title-y: Sizing.snap((root.height - title-measure.preferred-height) / 2);
@@ -771,6 +790,11 @@ export component TopStatusStrip inherits Rectangle {
     filter-measure := Text {
         visible: false;
         text: "A";
+        font-size: Sizing.font-section;
+    }
+    filter-text-measure := Text {
+        visible: false;
+        text: root.filter-text;
         font-size: Sizing.font-section;
     }
 

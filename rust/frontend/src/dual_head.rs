@@ -782,6 +782,7 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_context_open => set_context_open,
         get_context_entries => set_context_entries,
         get_context_index => set_context_index,
+        get_context_step_ms => set_context_step_ms,
         get_context_page => set_context_page,
         get_context_anchor_x => set_context_anchor_x,
         get_context_anchor_y => set_context_anchor_y,
@@ -919,6 +920,7 @@ mod tests {
             false,
             (960, 540),
             zaparoo_app::motion_test::Disabled::default(),
+            true,
         );
         assert_eq!(
             primary.global::<Shell>().get_orientation(),

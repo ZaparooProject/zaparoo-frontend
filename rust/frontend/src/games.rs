@@ -42,7 +42,8 @@ use crate::router::{lock, Ctx, Shared};
 use crate::{App, GamesInput, GamesView, GridCell};
 
 /// Swoop duration and the settle before the strip re-arms.
-pub(crate) const SWOOP_MS: u64 = 260;
+/// `Motion.page-ms` and a frame or so.
+pub(crate) const SWOOP_MS: u64 = 220;
 pub(crate) const REARM_MS: u64 = 50;
 const FAVORITE_TAG: &str = "user:favorite";
 const HIDDEN_TAG: &str = "user:hidden";
@@ -695,6 +696,21 @@ fn detail_ctx() -> Option<(Arc<zaparoo_core::client::Client>, Handle)> {
 
 /// Client and runtime handle for the detail pane's media.meta fetch.
 static DETAIL_CTX: OnceLock<(Arc<zaparoo_core::client::Client>, Handle)> = OnceLock::new();
+
+/// The detail pane's rows from Core (`rules::DetailCache`).
+static DETAIL_CACHE: std::sync::Mutex<rules::DetailCache> =
+    std::sync::Mutex::new(rules::DetailCache::new(rules::DETAIL_CACHE_BYTES));
+
+/// Core's metadata may have changed: ask again as each row is shown.
+pub fn clear_detail_cache() {
+    *detail_cache() = rules::DetailCache::new(rules::DETAIL_CACHE_BYTES);
+}
+
+fn detail_cache() -> std::sync::MutexGuard<'static, rules::DetailCache> {
+    DETAIL_CACHE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
 
 pub fn seed_detail_ctx(client: Arc<zaparoo_core::client::Client>, handle: Handle) {
     let _ = DETAIL_CTX.set((client, handle));
@@ -1932,6 +1948,7 @@ fn cell_for(
         ctx.media.is_negative(&key),
     );
     if matches!(state, CoverState::Art | CoverState::Pending) {
+        cell.fetched = true;
         if let Some(color) = placeholder_color(ctx, row, &key) {
             cell.placeholder = color;
             cell.has_placeholder = true;
@@ -1975,6 +1992,34 @@ fn placeholder_color(ctx: &Ctx, row: &GameRow, key: &MediaKey) -> Option<slint::
 }
 
 /// A row that will show art but has none cached yet.
+/// Whether the grid page on screen still waits on any of its covers, for
+/// `zaparoo_app::cover_landing`. A list's one detail cover never waits.
+#[cfg(feature = "mister")]
+pub fn page_covers_waiting(ctx: &Ctx, app: &App) -> bool {
+    if !matches!(
+        app.global::<crate::Shell>().get_active_screen(),
+        crate::Screen::Games
+            | crate::Screen::Favorites
+            | crate::Screen::Recents
+            | crate::Screen::SearchResults
+    ) {
+        return false;
+    }
+    let shared = lock(&ctx.shared);
+    if list_layout(&shared) {
+        return false;
+    }
+    let model = &shared.games;
+    let tier = cover_tier(app, model.mode);
+    let page_size = model.grid.page_size();
+    model
+        .rows
+        .iter()
+        .skip(model.grid.current_page() * page_size)
+        .take(page_size)
+        .any(|row| cover_waiting(ctx, model, row, tier))
+}
+
 fn cover_waiting(ctx: &Ctx, model: &GamesModel, row: &GameRow, tier: CoverSize) -> bool {
     let key = media_key(row, &model.system_id, tier);
     let state = rules::cover_state(
@@ -2300,11 +2345,19 @@ pub fn render(ctx: &Ctx, app: &App) {
     } else if list {
         view.set_cells(ModelRc::new(VecModel::from(Vec::<GridCell>::new())));
     } else {
-        crate::view_model::publish_cells(
+        let landed = crate::view_model::publish_cells(
             &view.get_cells(),
             page_cells(ctx, model, logos, page, tier),
             |rows| view.set_cells(rows),
         );
+        let grid = crate::cover_fade::Grid {
+            fit: &geometry.fit,
+            insets: &geometry.insets,
+            top: geometry.grid_y,
+            columns: geometry.columns,
+        };
+        let selected = model.grid.current_index().checked_sub(start);
+        crate::cover_fade::request(app, &grid, &landed, selected);
     }
     if !strip_sliding {
         view.set_next_cells(ModelRc::new(VecModel::from(Vec::<GridCell>::new())));
@@ -2728,14 +2781,18 @@ fn schedule_detail(ctx: &Ctx, app: &App, force: bool) {
                 view.set_detail_loading(false);
             }
             // The row's own metadata shows at once, so the table never
-            // holds the previous row's values through the load window.
+            // holds the previous row's values through the load window; what
+            // Core already sent for it, when it has, so it does not blank.
             DetailStep::Peek(index) => {
                 let shared = lock(&ctx.shared);
                 let model = &shared.games;
                 let rows = model
                     .rows
                     .get(index)
-                    .map(|row| detail_rows_for(model, row, &row.detail_rows))
+                    .map(|row| {
+                        let fetched = detail_cache().get(&row.identity(&model.system_id));
+                        detail_rows_for(model, row, fetched.as_deref().unwrap_or(&row.detail_rows))
+                    })
                     .unwrap_or_default();
                 view.set_detail_rows(ModelRc::new(VecModel::from(rows)));
                 refresh_detail_cover(ctx, app, model);
@@ -2769,7 +2826,7 @@ fn detail_pairs_from_meta(meta: &MediaMeta, path: &str) -> Vec<(&'static str, St
 }
 
 fn fire_detail(ctx: &Ctx, app: &App, seq: u64) {
-    let (row, system) = {
+    let (row, system, identity, neighbors) = {
         let mut shared = lock(&ctx.shared);
         if shared.games.detail_seq != seq {
             return;
@@ -2789,9 +2846,16 @@ fn fire_detail(ctx: &Ctx, app: &App, seq: u64) {
             return;
         };
         let system = row.system_or(&model.system_id).to_string();
-        (row, system)
+        let identity = row.identity(&model.system_id);
+        (row, system, identity, detail_neighbors(model, index))
     };
+    prefetch_details(ctx, app, neighbors);
     if row.is_dir() {
+        app.global::<GamesView>().set_detail_loading(false);
+        return;
+    }
+    // Already shown by the peek.
+    if detail_cache().contains(&identity) {
         app.global::<GamesView>().set_detail_loading(false);
         return;
     }
@@ -2814,7 +2878,9 @@ fn fire_detail(ctx: &Ctx, app: &App, seq: u64) {
                 // record's own tags stand in when Core sent none.
                 result.ok().map(|result| {
                     let pairs = detail_pairs_from_meta(&result.media, &row.path);
-                    detail_rows_for(&shared.games, &row, &pairs)
+                    let rows = detail_rows_for(&shared.games, &row, &pairs);
+                    detail_cache().insert(identity, pairs);
+                    rows
                 })
             };
             let view = app.global::<GamesView>();
@@ -2823,6 +2889,67 @@ fn fire_detail(ctx: &Ctx, app: &App, seq: u64) {
             }
             view.set_detail_loading(false);
         });
+    });
+}
+
+/// The rows beside `index` whose covers the pane already warms
+/// (`rules::detail_prefetch_rows`), with Core's metadata not yet cached:
+/// each row with its system and identity.
+fn detail_neighbors(model: &GamesModel, index: usize) -> Vec<(GameRow, String, String)> {
+    let cache = detail_cache();
+    rules::detail_prefetch_rows(model.rows.len(), index)
+        .into_iter()
+        .filter(|&neighbor| neighbor != index)
+        .filter_map(|neighbor| model.rows.get(neighbor))
+        .filter(|row| !row.is_dir())
+        .filter_map(|row| {
+            let identity = row.identity(&model.system_id);
+            (!identity.is_empty() && !cache.contains(&identity)).then(|| {
+                let system = row.system_or(&model.system_id).to_string();
+                (row.clone(), system, identity)
+            })
+        })
+        .collect()
+}
+
+/// Fetches the neighbors' metadata one at a time into the cache, so a
+/// step onto one shows it at once. One that the selection has reached by
+/// the time it lands is shown then.
+fn prefetch_details(ctx: &Ctx, app: &App, rows: Vec<(GameRow, String, String)>) {
+    if rows.is_empty() {
+        return;
+    }
+    let Some((client, handle)) = detail_ctx() else {
+        return;
+    };
+    let weak = app.as_weak();
+    let ctx = ctx.clone();
+    handle.spawn(async move {
+        for (row, system, identity) in rows {
+            let params = zaparoo_core::media_types::MediaMetaParams::for_row(
+                row.media_id,
+                system,
+                row.path.clone(),
+            );
+            let Ok(result) = client.media_meta(params).await else {
+                continue;
+            };
+            let pairs = detail_pairs_from_meta(&result.media, &row.path);
+            detail_cache().insert(identity.clone(), pairs.clone());
+            let ctx = ctx.clone();
+            let _ = weak.upgrade_in_event_loop(move |app| {
+                let shared = lock(&ctx.shared);
+                let model = &shared.games;
+                let current = model
+                    .current()
+                    .filter(|current| current.identity(&model.system_id) == identity);
+                if let Some(current) = current {
+                    let rows = detail_rows_for(model, current, &pairs);
+                    app.global::<GamesView>()
+                        .set_detail_rows(ModelRc::new(VecModel::from(rows)));
+                }
+            });
+        }
     });
 }
 

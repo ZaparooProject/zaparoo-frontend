@@ -33,7 +33,8 @@ const CUSTOM_PREFIX: &str = "custom:";
 const LOADING_KEY: &str = "icons/Loading";
 /// Cover decode tier for Hub tiles: a fixed 256 px raster.
 const HUB_COVER_TIER: u32 = 256;
-const PAGE_SETTLE_MS: u64 = 260;
+/// `Motion.page-ms` and a frame or so.
+const PAGE_SETTLE_MS: u64 = 220;
 const PAGE_REARM_MS: u64 = 50;
 
 /// What the open Options menu acts on besides the tile itself. Captured
@@ -419,6 +420,7 @@ fn cell_for(
                 fit: ctx.media.hub_fit(),
                 image_type: None,
             };
+            cell.fetched = true;
             if let Some(decoded) = ctx.media.get(&media_key) {
                 cell.cover = slint::Image::from_rgba8(decoded.buffer);
                 cell.has_cover = true;
@@ -428,6 +430,40 @@ fn cell_for(
         cell.glyph_key = SharedString::from(key);
     }
     cell
+}
+
+/// Whether the Hub page on screen still waits on any of its game art, for
+/// `zaparoo_app::cover_landing`.
+#[cfg(feature = "mister")]
+pub fn page_covers_waiting(ctx: &Ctx, app: &App) -> bool {
+    if app.global::<crate::Shell>().get_active_screen() != crate::Screen::Hub {
+        return false;
+    }
+    let shared = lock(&ctx.shared);
+    let hub = &shared.hub;
+    let page_size = hub.grid.page_size();
+    hub.entries
+        .iter()
+        .skip(hub.grid.current_page() * page_size)
+        .take(page_size)
+        .any(|entry| {
+            let Some((system, path)) = entry
+                .cover_key
+                .strip_prefix(MEDIA_PREFIX)
+                .and_then(|rest| rest.split_once('\u{1f}'))
+            else {
+                return false;
+            };
+            let key = MediaKey {
+                media_id: None,
+                system: system.to_string(),
+                path: path.to_string(),
+                max_size: HUB_COVER_TIER,
+                fit: ctx.media.hub_fit(),
+                image_type: None,
+            };
+            ctx.media.get(&key).is_none() && !ctx.media.is_negative(&key)
+        })
 }
 
 /// For a tile that shows game art: whether that art is still missing.
@@ -603,6 +639,26 @@ fn page_cells(
         .collect()
 }
 
+/// Publishes the page's cells and fades in the covers that just landed on
+/// them.
+fn publish_page(
+    app: &App,
+    geometry: &rules::Geometry,
+    cells: Vec<GridCell>,
+    selected: Option<usize>,
+) {
+    let view = app.global::<HubView>();
+    let landed =
+        crate::view_model::publish_hub_cells(&view.get_cells(), cells, |rows| view.set_cells(rows));
+    let grid = crate::cover_fade::Grid {
+        fit: &geometry.fit,
+        insets: &geometry.insets,
+        top: geometry.grid_y,
+        columns: geometry.columns,
+    };
+    crate::cover_fade::request(app, &grid, &landed, selected);
+}
+
 fn grid_geometry_changed(view: &HubView<'_>, geometry: &rules::Geometry) -> bool {
     view.get_columns() != geometry.columns
         || view.get_rows() != geometry.rows
@@ -651,7 +707,12 @@ pub fn render(ctx: &Ctx, app: &App) {
             view.set_next_cells(rows);
         });
     } else {
-        crate::view_model::publish_hub_cells(&view.get_cells(), cells, |rows| view.set_cells(rows));
+        publish_page(
+            app,
+            &geometry,
+            cells,
+            hub.grid.current_index().checked_sub(start),
+        );
         view.set_next_cells(slint::ModelRc::default());
     }
     let selected_local = if strip_sliding {

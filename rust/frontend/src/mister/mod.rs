@@ -30,7 +30,8 @@ pub use platform::{install_platform, set_orientation, ResolutionPolicy};
 pub use service::ensure_core_running;
 pub use tty::TtyGuard;
 
-const BROWSE_TRANSITION_FRAMES: u32 = 15;
+/// `Motion.page-ms` at 60 Hz.
+const BROWSE_TRANSITION_FRAMES: u32 = 12;
 
 pub fn cancel_page_transition() {
     transition::cancel();
@@ -99,7 +100,16 @@ pub fn request_page_transition(
         crate::Orientation::Cw => Rotation::Cw,
         crate::Orientation::Ccw => Rotation::Ccw,
     };
-    let Some(rect) = window_rect(geometry, scene, window) else {
+    let Some(rect) = window_rect(
+        crate::frame_transition::Rect {
+            x: geometry.x as usize,
+            y: geometry.y as usize,
+            width: geometry.width as usize,
+            height: geometry.height as usize,
+        },
+        scene,
+        window,
+    ) else {
         return false;
     };
     let Some((rect, direction)) = to_frame(
@@ -130,7 +140,7 @@ pub fn request_page_transition(
 /// A scene region in window pixels. None when the scene cannot sit centered
 /// on whole pixels inside the window.
 fn window_rect(
-    geometry: crate::sizing::BrowseGridTransitionGeometry,
+    rect: crate::frame_transition::Rect,
     scene: (u32, u32),
     window: (u32, u32),
 ) -> Option<crate::frame_transition::Rect> {
@@ -139,11 +149,49 @@ fn window_rect(
         spare.is_multiple_of(2).then_some(spare / 2)
     };
     Some(crate::frame_transition::Rect {
-        x: (inset(window.0, scene.0)? + geometry.x) as usize,
-        y: (inset(window.1, scene.1)? + geometry.y) as usize,
-        width: geometry.width as usize,
-        height: geometry.height as usize,
+        x: inset(window.0, scene.0)? as usize + rect.x,
+        y: inset(window.1, scene.1)? as usize + rect.y,
+        ..rect
     })
+}
+
+/// Asks the presenter that owns the screen to fade in the covers that just
+/// landed in `rects`, scene regions. False when none can; the covers have
+/// already cut in, which is the fallback.
+pub fn request_cover_fades(app: &crate::App, rects: &[crate::frame_transition::Rect]) -> bool {
+    use crate::frame_transition::{rect_to_frame, Rotation};
+    use slint::ComponentHandle;
+    let sizing = app.global::<crate::Sizing>();
+    let scene = (
+        sizing.get_screen_width().round().max(0.0) as u32,
+        sizing.get_screen_height().round().max(0.0) as u32,
+    );
+    let window = app.window().size();
+    let window = (window.width, window.height);
+    let rotation = match app.global::<crate::Shell>().get_orientation() {
+        crate::Orientation::Horizontal => Rotation::None,
+        crate::Orientation::Cw => Rotation::Cw,
+        crate::Orientation::Ccw => Rotation::Ccw,
+    };
+    let framed: Vec<_> = rects
+        .iter()
+        .filter_map(|&rect| {
+            // A grown tile at the scene's edge reaches past it.
+            let right = (rect.x + rect.width).min(scene.0 as usize);
+            let bottom = (rect.y + rect.height).min(scene.1 as usize);
+            let rect = crate::frame_transition::Rect {
+                width: right.checked_sub(rect.x)?,
+                height: bottom.checked_sub(rect.y)?,
+                ..rect
+            };
+            rect_to_frame(
+                window_rect(rect, scene, window)?,
+                rotation,
+                (window.0 as usize, window.1 as usize),
+            )
+        })
+        .collect();
+    !framed.is_empty() && transition::request_fades(&framed)
 }
 
 /// The pending request, for a test to play the presenter's part.
@@ -203,6 +251,11 @@ pub trait Presenter {
     fn present_cached_transition(&mut self) -> Option<std::time::Duration> {
         None
     }
+    /// Publish one step of the cover fades on a turn Slint had nothing to
+    /// render. None means no fade is running.
+    fn present_cover_fades(&mut self) -> Option<std::time::Duration> {
+        None
+    }
     /// Scale physical render pixels into stable logical UI space.
     /// DRS presenters vary this with their backing geometry so a
     /// fidelity switch never causes responsive layout reflow.
@@ -244,16 +297,14 @@ pub trait Presenter {
 mod tests {
     use super::*;
     use crate::frame_transition::Rect;
-    use crate::sizing::BrowseGridTransitionGeometry;
 
     #[test]
     fn a_scene_band_lands_where_the_scene_sits_in_the_window() {
-        let band = BrowseGridTransitionGeometry {
+        let band = Rect {
             x: 0,
             y: 40,
             width: 316,
             height: 150,
-            gap: 0,
         };
         // HDMI: the scene is the window.
         assert_eq!(

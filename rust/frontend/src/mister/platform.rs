@@ -434,7 +434,8 @@ impl MisterPlatform {
             false,
             self.latch,
             // The HDMI presenter paces this pair and owns its cached page
-            // slides; the CRT head replays the page as a live strip.
+            // slides and cover fades; the CRT head replays the page as a
+            // live strip and fades its covers in Slint.
             false,
         )?);
         let mut rotation = requested_rotation();
@@ -499,6 +500,10 @@ impl MisterPlatform {
             if hdmi_rendered && force_full_redraw {
                 drs.full_redraw_complete();
             }
+            if !hdmi_rendered {
+                hdmi_busy = hdmi.present_cover_fades();
+            }
+            let hdmi_rendered = hdmi_rendered || hdmi_busy.is_some();
             let mut crt_busy = None;
             crt_window.draw_if_needed(|renderer| {
                 renderer.set_rendering_rotation(rotation);
@@ -643,6 +648,17 @@ impl Platform for MisterPlatform {
             });
             if rendered && force_full_redraw {
                 drs.full_redraw_complete();
+            }
+            // A cover fade still running when Slint has nothing to render
+            // publishes its next step on its own.
+            if !rendered {
+                if let Some(busy) = presenter.present_cover_fades() {
+                    profile.record(busy, presenter.last_copy(), period);
+                    profile.record_turn(preparation, turn_started.elapsed());
+                    pace.drew();
+                    previous = Some(Turn::Presented);
+                    continue;
+                }
             }
             if let Some(busy) = busy {
                 profile.record(busy, presenter.last_copy(), period);

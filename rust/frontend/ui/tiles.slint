@@ -44,6 +44,9 @@ export struct GridCell {
     // loads, then fades out under it. A solid fill, cheap everywhere.
     placeholder: color,
     has-placeholder: bool,
+    // The art comes from Core, so the cover and its placeholder fade in
+    // when they land. Built-in logos and glyphs cut in.
+    fetched: bool,
 }
 
 // One-line caption with the focused-overflow marquee: fits -> static
@@ -384,20 +387,28 @@ export component Tile inherits Rectangle {
         }
 
         // The art's own colour stands in until the art lands, then fades
-        // out as the art fades in over it.
-        if root.cell.glyph-key == "" && root.cell.has-placeholder: Rectangle {
+        // out as the art fades in over it. Kept mounted, like the art, so a
+        // colour that arrives while the tile is on screen fades in too.
+        property <duration> reveal: root.cell.fetched ? Motion.tile-cover-reveal-ms : 0ms;
+        if root.cell.glyph-key == "": Rectangle {
             x: root.pad;
             y: parent.art-top;
             width: parent.art-w;
             height: parent.art-h;
             background: root.cell.placeholder;
             border-radius: Math.max(0px, root.card-radius - root.pad);
-            opacity: 1;
+            opacity: 0;
             states [
                 covered when root.cell.has-cover: {
                     opacity: 0;
                     in {
-                        animate opacity { duration: Motion.dur(Motion.tile-cover-reveal-ms); easing: ease-out; }
+                        animate opacity { duration: Motion.dur(parent.reveal); easing: ease-out; }
+                    }
+                }
+                shown when root.cell.has-placeholder: {
+                    opacity: 1;
+                    in {
+                        animate opacity { duration: Motion.dur(parent.reveal); easing: ease-out; }
                     }
                 }
             ]
@@ -429,7 +440,7 @@ export component Tile inherits Rectangle {
                 shown when root.cell.has-cover: {
                     opacity: 1;
                     in {
-                        animate opacity { duration: Motion.dur(Motion.tile-cover-reveal-ms); easing: ease-out; }
+                        animate opacity { duration: Motion.dur(parent.reveal); easing: ease-out; }
                     }
                 }
             ]

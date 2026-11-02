@@ -673,6 +673,7 @@ fn cover_art_fades_in_only_when_it_lands() {
         cover_focus: red.clone(),
         has_cover,
         has_cover_focus: has_cover,
+        fetched: true,
         ..Default::default()
     };
     let view = app.global::<HubView>();
@@ -698,6 +699,17 @@ fn cover_art_fades_in_only_when_it_lands() {
     assert!(art(&window) < shown, "landed art does not pop in");
     settle(&window);
     assert_eq!(art(&window), shown, "the fade ends at full strength");
+
+    // A built-in logo is not fetched art: it cuts in.
+    let logo = |has_cover: bool| GridCell {
+        fetched: false,
+        ..cell(has_cover)
+    };
+    let cells = Rc::new(VecModel::from(vec![logo(false)]));
+    view.set_cells(ModelRc::from(cells.clone()));
+    settle(&window);
+    cells.set_row_data(0, logo(true));
+    assert_eq!(art(&window), shown, "a logo lands whole");
 }
 
 /// The pairing panel's one promise: Core is never left holding a PIN the
@@ -6092,13 +6104,13 @@ fn grid_push_lowers_face_art_and_ring_before_navigation() {
             raised, depressed,
             "{owner}: unchanged pixels are not push feedback"
         );
-        advance(32);
+        advance(zaparoo_app::input::PRESS_FEEDBACK_MS - 48 - 1);
         assert_eq!(
             shell.get_active_screen(),
             screen,
             "fully depressed source must remain visible"
         );
-        advance(zaparoo_app::input::PRESS_FEEDBACK_MS - 80);
+        advance(1);
         assert_eq!(shell.get_active_screen(), Screen::About);
         assert!(!crate::press_feedback::pending(&app));
         save_push_evidence(&format!("{owner}-3-destination"), &pixels(&window));
@@ -9115,6 +9127,7 @@ fn cached_slides_match_the_live_strip_in_every_orientation_and_on_crt() {
                     crt,
                     frame,
                     zaparoo_app::motion_test::Disabled::default(),
+                    true,
                 );
                 let turned = orientation != Orientation::Horizontal;
                 window.set_size(if turned {
@@ -9388,6 +9401,7 @@ fn tile_glyphs_and_logos_are_painted_at_their_own_pixel_size() {
             crt,
             frame,
             zaparoo_app::motion_test::Disabled::default(),
+            true,
         );
         // The software-rendered builds set this; the probe build may not.
         motion.set_zoom_by_size(true);

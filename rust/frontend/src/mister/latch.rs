@@ -19,7 +19,7 @@
 
 use super::fb0::{query_fb, FBIO_WAITFORVSYNC};
 use super::scanout::{open_device, Damage, Layout, SLOT_COUNT};
-use super::transition::CachedSlide;
+use super::transition::{CachedSlide, PresenterFades};
 use super::uio::Uio;
 use super::Presenter;
 use crate::latch_protocol::{
@@ -72,6 +72,8 @@ pub struct LatchPresenter {
     /// Cached page motion and the presentation-only frame it shows.
     slide: CachedSlide<Rgb565Pixel>,
     cached_transitions_available: bool,
+    /// Cover art fading in on grid tiles, mixed in as rows are published.
+    fades: PresenterFades<Rgb565Pixel>,
     width: u32,
     height: u32,
     /// Scaler raster the posted frame is stretched onto. Main reports it;
@@ -324,6 +326,9 @@ impl LatchPresenter {
             frame: vec![Rgb565Pixel::default(); frame_capacity as usize],
             slide: CachedSlide::new(frame_capacity as usize, TRANSITION_BACKGROUND),
             cached_transitions_available,
+            // Dynamic resolution resizes the frame under the grids' own
+            // geometry, so it keeps the Slint fade's cut instead.
+            fades: PresenterFades::new(res_modes.is_none()),
             width,
             height,
             out_width: raster.0,
@@ -376,16 +381,24 @@ impl LatchPresenter {
         } else {
             &self.frame
         };
+        let base = self.maps.ptrs[slot];
         for y in y0..y1 {
             let src = &source[y * width + x0..y * width + x1];
             // SAFETY: the slot mapping is map_bytes >= slot capacity
             // >= width*height*2; x/y are clamped above.
             unsafe {
-                let dst = self.maps.ptrs[slot]
-                    .add((y * width + x0) * 2)
-                    .cast::<Rgb565Pixel>();
+                let dst = base.add((y * width + x0) * 2).cast::<Rgb565Pixel>();
                 std::ptr::copy_nonoverlapping(src.as_ptr(), dst, row_px);
             }
+            // Fading covers overwrite their stretch of the row just copied.
+            let row = &source[y * width..(y + 1) * width];
+            self.fades.mixed_segments(y, x0, x1, row, |x, mixed| {
+                // SAFETY: each stretch lies inside the span copied above.
+                unsafe {
+                    let dst = base.add((y * width + x) * 2).cast::<Rgb565Pixel>();
+                    std::ptr::copy_nonoverlapping(mixed.as_ptr(), dst, mixed.len());
+                }
+            });
         }
     }
 
@@ -533,6 +546,7 @@ impl Presenter for LatchPresenter {
         }
         self.width = w;
         self.height = h;
+        self.fades.clear();
         // Slot contents are the other geometry's pixels now: both
         // need a full rewrite before their next post.
         let full = Damage {
@@ -571,11 +585,19 @@ impl Presenter for LatchPresenter {
         let cancelled = super::transition::take_cancelled();
         if cancelled {
             self.slide.abandon();
+            self.fades.clear();
         }
         // A request arrives before destination properties render. Preserve
         // outgoing pixels first, then let Slint build its canonical endpoint.
         self.begin_cached_transition();
+        self.fades.before_render(
+            &self.frame[..frame_len],
+            width,
+            height,
+            self.slide.is_active(),
+        );
         let region = renderer.render(&mut self.frame[..frame_len], width);
+        self.fades.rendered(&self.frame[..frame_len], &region);
 
         let origin = region.bounding_box_origin();
         let size = region.bounding_box_size();
@@ -585,6 +607,7 @@ impl Presenter for LatchPresenter {
             x1: origin.x.max(0) as u32 + size.width,
             y1: origin.y.max(0) as u32 + size.height,
         };
+        let slint_damage = slint_damage.union(super::transition::bounds(self.fades.step()));
         let (damage, transition_frame, finished) = self
             .compose_cached_transition()
             .map_or((slint_damage, false, false), |(damage, done)| {
@@ -610,6 +633,7 @@ impl Presenter for LatchPresenter {
     fn present_cached_transition(&mut self) -> Option<Duration> {
         if super::transition::take_cancelled() {
             self.slide.abandon();
+            self.fades.clear();
             let start = Instant::now();
             self.publish(self.full_damage(), false);
             let busy = start.elapsed();
@@ -625,6 +649,18 @@ impl Presenter for LatchPresenter {
         if finished {
             self.finish_cached_transition();
         }
+        let busy = start.elapsed();
+        self.wait_vsync();
+        Some(busy)
+    }
+
+    fn present_cover_fades(&mut self) -> Option<Duration> {
+        if !self.fades.is_active() {
+            return None;
+        }
+        let start = Instant::now();
+        let damage = super::transition::bounds(self.fades.step());
+        self.publish(damage, false);
         let busy = start.elapsed();
         self.wait_vsync();
         Some(busy)

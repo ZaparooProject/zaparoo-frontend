@@ -24,7 +24,7 @@
 // own vertical sync. `/dev/mem` and a sleep remain the fallback.
 
 use super::scanout::{self, Damage, Mapping};
-use super::transition::{CachedSlide, BACKGROUND_RGBA};
+use super::transition::{CachedSlide, PresenterFades, BACKGROUND_RGBA};
 use super::Presenter;
 use slint::platform::software_renderer::{PremultipliedRgbaColor, SoftwareRenderer};
 use std::fs::{File, OpenOptions};
@@ -266,6 +266,10 @@ pub struct DdrPresenter {
     /// second head of a dual-head pair, which the other head's presenter
     /// paces.
     cached_transitions_available: bool,
+    /// Cover art fading in on grid tiles, mixed in as rows are copied.
+    /// Off for the second head of a dual-head pair, which mirrors the other
+    /// head's state rather than its pixels and keeps Slint's own fade.
+    fades: PresenterFades<PremultipliedRgbaColor>,
     /// Content inset (right/down spill past the timing window). The
     /// Slint window shrinks by this much and the content lands at
     /// (`inset_h`, `inset_v`) in the raster; the vacated strip stays
@@ -360,6 +364,9 @@ impl DdrPresenter {
                 BACKGROUND_RGBA,
             ),
             cached_transitions_available: allow_cached_transitions,
+            // A presenter that paces itself owns the screen; the second
+            // head of a dual-head pair does not.
+            fades: PresenterFades::new(pace_in_present),
             inset_h,
             inset_v,
             h_offset,
@@ -521,6 +528,7 @@ impl Presenter for DdrPresenter {
             if self.cached_transitions_available {
                 self.slide.resize(self.buffer.len());
             }
+            self.fades.clear();
             // A shifted window leaves different strips untouched. Mark
             // both slots for clearing before their next write; never clear
             // the slot the FPGA may currently be scanning.
@@ -557,16 +565,20 @@ impl Presenter for DdrPresenter {
         let cancelled = self.cached_transitions_available && super::transition::take_cancelled();
         if cancelled {
             self.slide.abandon();
+            self.fades.clear();
         }
         // A request arrives before destination properties render. Preserve
         // outgoing pixels first, then let Slint build its canonical endpoint.
         if self.cached_transitions_available {
             self.slide.begin(&self.buffer, win_w, win_h);
         }
+        self.fades
+            .before_render(&self.buffer, win_w, win_h, self.slide.is_active());
         // Render to cached RAM, then convert-copy what changed into the
         // slot. The window lands at (inset_h, inset_v) in the raster; the
         // strip it vacates was blacked at open() and is never touched.
         let region = renderer.render(self.buffer.as_mut_slice(), win_w);
+        self.fades.rendered(&self.buffer, &region);
         let origin = region.bounding_box_origin();
         let size = region.bounding_box_size();
         let slint_damage = Damage {
@@ -574,7 +586,8 @@ impl Presenter for DdrPresenter {
             y0: origin.y.max(0) as u32,
             x1: origin.x.max(0) as u32 + size.width,
             y1: origin.y.max(0) as u32 + size.height,
-        };
+        }
+        .union(super::transition::bounds(self.fades.step()));
         let (damage, slide_frame, finished) = self
             .slide
             .compose(&self.buffer, win_w, win_h)
@@ -599,6 +612,7 @@ impl Presenter for DdrPresenter {
         }
         if super::transition::take_cancelled() {
             self.slide.abandon();
+            self.fades.clear();
             let start = Instant::now();
             self.publish(FULL, false);
             let busy = start.elapsed();
@@ -624,6 +638,20 @@ impl Presenter for DdrPresenter {
         }
         Some(busy)
     }
+
+    fn present_cover_fades(&mut self) -> Option<Duration> {
+        if !self.fades.is_active() {
+            return None;
+        }
+        let start = Instant::now();
+        let damage = super::transition::bounds(self.fades.step());
+        self.publish(damage, false);
+        let busy = start.elapsed();
+        if self.pace_in_present {
+            self.wait_vsync();
+        }
+        Some(busy)
+    }
 }
 
 impl DdrPresenter {
@@ -642,6 +670,7 @@ impl DdrPresenter {
             self.stale[slot] = FULL;
         }
         let to_copy = take_stale(&mut self.stale, slot, damage);
+        let dst = self.slot_ptr(slot);
         let source = if slide_frame {
             self.slide.frame()
         } else {
@@ -653,7 +682,8 @@ impl DdrPresenter {
             copy_rows(
                 source,
                 (win_w, win_h),
-                self.slot_ptr(slot),
+                &mut self.fades,
+                dst,
                 self.mode.width as usize,
                 (self.inset_h, self.inset_v),
                 to_copy,
@@ -787,7 +817,7 @@ fn take_stale(stale: &mut [Damage; 2], slot: usize, damage: Damage) -> Damage {
 }
 
 /// Converts and stores the damaged part of the window into a slot, one
-/// aligned word per pixel. The window is uncached device memory on the
+/// aligned word per pixel, with any cover fade across it mixed in. The window is uncached device memory on the
 /// fallback mapping, where a narrower or unaligned store faults or costs a
 /// bus cycle each, so the stores are volatile to keep them whole.
 ///
@@ -797,6 +827,7 @@ fn take_stale(stale: &mut [Damage; 2], slot: usize, damage: Damage) -> Damage {
 unsafe fn copy_rows(
     src: &[PremultipliedRgbaColor],
     (win_w, win_h): (usize, usize),
+    fades: &mut PresenterFades<PremultipliedRgbaColor>,
     dst: *mut u32,
     raster_w: usize,
     (inset_h, inset_v): (usize, usize),
@@ -805,10 +836,13 @@ unsafe fn copy_rows(
     let x1 = (damage.x1 as usize).min(win_w);
     let y1 = (damage.y1 as usize).min(win_h);
     let (x0, y0) = (damage.x0 as usize, damage.y0 as usize);
+    if x1 <= x0 {
+        return;
+    }
     for y in y0..y1 {
-        let row = &src[y * win_w..(y + 1) * win_w];
-        let dst_row = (y + inset_v) * raster_w + inset_h;
-        for (x, px) in row.iter().enumerate().take(x1).skip(x0) {
+        let row = fades.row(y, x0, &src[y * win_w + x0..y * win_w + x1]);
+        let dst_row = (y + inset_v) * raster_w + inset_h + x0;
+        for (x, px) in row.iter().enumerate() {
             let word = u32::from(px.blue) | u32::from(px.green) << 8 | u32::from(px.red) << 16;
             // SAFETY: (x, y) is inside the window, which the caller
             // guarantees the slot holds at this inset.
@@ -863,6 +897,7 @@ mod tests {
             copy_rows(
                 &src,
                 (win_w, win_h),
+                &mut PresenterFades::new(false),
                 slot.as_mut_ptr(),
                 raster_w,
                 (1, 2),
@@ -889,7 +924,17 @@ mod tests {
         let src = vec![px(1, 2, 3); 6];
         let mut slot = vec![0_u32; 12];
         // SAFETY: a 3x2 window at the origin of a 4x3 raster.
-        unsafe { copy_rows(&src, (3, 2), slot.as_mut_ptr(), 4, (0, 0), FULL) };
+        unsafe {
+            copy_rows(
+                &src,
+                (3, 2),
+                &mut PresenterFades::new(false),
+                slot.as_mut_ptr(),
+                4,
+                (0, 0),
+                FULL,
+            );
+        };
         let stored = slot.iter().filter(|w| **w == 0x0001_0203).count();
         assert_eq!(stored, 6);
         assert_eq!(slot[3], 0);

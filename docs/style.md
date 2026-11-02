@@ -2015,10 +2015,13 @@ distance alone would look harmless.
 
 ### Scrolling lists
 
-A list that scrolls glides to its new position over `Motion.page-ms`, the
-same duration as a grid page turn; it does not jump. This covers the
-Settings card, `ListPickerModal`, the context menu, the media setup picker,
-the Online list modal, and the free-text bodies of Game info and About. All
+A list that scrolls glides to its new position over `Motion.scroll-ms`,
+shorter than a grid page turn because a list scrolls far more often; it
+does not jump. A held key walks the browse lists and the context menu at
+constant speed instead (`list_follow`). This covers the Settings card,
+`ListPickerModal`, the context menu, the media setup picker and the Online
+list modal. The free-text bodies of Game info and About page over
+`Motion.page-ms`. All
 of the row lists share one mechanism: `ScrollOffset` with `reveal: true`,
 over rows and their `SelectionCursor` hung off one translated parent. The
 cursor is positioned against where the list will settle, so the highlight

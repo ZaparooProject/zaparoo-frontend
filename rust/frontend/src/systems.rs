@@ -23,7 +23,8 @@ use crate::router::{lock, Ctx, Shared};
 use crate::{App, GridCell, SystemsInput, SystemsView};
 
 /// Swoop duration and the settle before the strip re-arms.
-const SWOOP_MS: u64 = 260;
+/// `Motion.page-ms` and a frame or so.
+const SWOOP_MS: u64 = 220;
 const REARM_MS: u64 = 50;
 
 /// Which list the screen shows: one category's systems, or the systems
