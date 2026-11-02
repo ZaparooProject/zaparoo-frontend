@@ -2479,7 +2479,7 @@ fn context_action(ctx: &Ctx, app: &App, action: &str) {
     let index = app.global::<crate::Overlays>().get_context_index().max(0) as usize;
     match action {
         actions::UP | actions::DOWN if len > 0 => {
-            let (_, step_ms) = lock(&ctx.shared).input.list_follow(1);
+            let step_ms = lock(&ctx.shared).input.modal_follow();
             let overlays = app.global::<crate::Overlays>();
             overlays.set_context_step_ms(step_ms);
             overlays.set_context_index(if action == actions::UP {

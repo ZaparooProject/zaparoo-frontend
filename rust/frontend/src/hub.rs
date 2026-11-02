@@ -656,7 +656,7 @@ fn publish_page(
         top: geometry.grid_y,
         columns: geometry.columns,
     };
-    crate::cover_fade::request(app, &grid, &landed, selected);
+    crate::cover_fade::request(app, &[crate::Screen::Hub], &grid, &landed, selected);
 }
 
 fn grid_geometry_changed(view: &HubView<'_>, geometry: &rules::Geometry) -> bool {

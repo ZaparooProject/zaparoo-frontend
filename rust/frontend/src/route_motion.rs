@@ -9895,6 +9895,49 @@ fn a_held_walk_scrolls_the_systems_list_continuously() {
     assert!(pixels(&window) == rest, "nothing moves after the release");
 }
 
+/// A held key in the options menu walks its rows at a steady pace, as a
+/// list does, though the modal keeps the hold to one row at a time and off
+/// the screen behind it.
+#[test]
+fn a_held_key_in_the_options_menu_scrolls_steadily() {
+    use zaparoo_core::input_actions::actions;
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    app.global::<Shell>().set_active_screen(Screen::Games);
+    let overlays = app.global::<crate::Overlays>();
+    let entries: Vec<crate::MenuEntry> = (0..20)
+        .map(|i| crate::MenuEntry {
+            id: format!("row{i}").into(),
+            label: format!("Row {i}").into(),
+            enabled: true,
+            ..Default::default()
+        })
+        .collect();
+    overlays.set_context_entries(ModelRc::new(VecModel::from(entries)));
+    overlays.set_context_index(0);
+    overlays.set_context_open(true);
+
+    crate::input::dispatch_repeat(&ctx, &app, actions::DOWN, HoldTier::Page);
+    assert_eq!(
+        overlays.get_context_index(),
+        1,
+        "a held step in a modal is one row"
+    );
+    assert!(
+        overlays.get_context_step_ms() > 0,
+        "a held step glides at constant speed"
+    );
+    assert!(
+        !crate::input::dispatching_repeat(&ctx),
+        "the hold never reaches the screen behind"
+    );
+
+    crate::router::handle_action(&ctx, &app, actions::DOWN);
+    assert_eq!(overlays.get_context_index(), 2);
+    assert_eq!(overlays.get_context_step_ms(), 0, "a tap eases");
+}
+
 /// The Games list walks row by row the same way until the hold turns into
 /// a fast scroll, which steps pages and may cut.
 #[cfg(feature = "mister")]

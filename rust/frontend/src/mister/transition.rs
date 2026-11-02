@@ -17,7 +17,11 @@ static BUSY: AtomicBool = AtomicBool::new(false);
 static CANCELLED: AtomicBool = AtomicBool::new(false);
 static PENDING: Mutex<Option<Spec>> = Mutex::new(None);
 static FADES_AVAILABLE: AtomicBool = AtomicBool::new(false);
-static FADE_REQUESTS: Mutex<Vec<Rect>> = Mutex::new(Vec::new());
+static FADE_REQUESTS: Mutex<Vec<(Rect, std::time::Instant)>> = Mutex::new(Vec::new());
+
+/// A fade request no render has taken by now belongs to a frame that never
+/// came; starting it would fade whatever the next frame shows there.
+const FADE_REQUEST_TTL: std::time::Duration = std::time::Duration::from_millis(100);
 
 pub(super) fn set_available(available: bool) {
     AVAILABLE.store(available, Ordering::SeqCst);
@@ -75,15 +79,20 @@ pub(super) fn request_fades(rects: &[Rect]) -> bool {
     if !FADES_AVAILABLE.load(Ordering::SeqCst) || BUSY.load(Ordering::SeqCst) {
         return false;
     }
+    let now = std::time::Instant::now();
     FADE_REQUESTS
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
-        .extend_from_slice(rects);
+        .extend(rects.iter().map(|&rect| (rect, now)));
     true
 }
 
 pub(super) fn take_fade_requests() -> Vec<Rect> {
     std::mem::take(&mut *FADE_REQUESTS.lock().unwrap_or_else(PoisonError::into_inner))
+        .into_iter()
+        .filter(|(_, at)| at.elapsed() < FADE_REQUEST_TTL)
+        .map(|(rect, _)| rect)
+        .collect()
 }
 
 /// Theme.bg (`#0f0f23`) for the inter-page gap, as the 32-bit presenters

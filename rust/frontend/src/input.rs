@@ -68,6 +68,9 @@ pub struct InputModel {
     /// A held-repeat dispatch is in flight, at any tier. An early repeat
     /// is `Row` like a tap, but it is still a hold.
     dispatching_repeat: bool,
+    /// The same for a repeat a modal owns, which `dispatching_repeat`
+    /// leaves out so nothing behind the modal treats it as a hold.
+    dispatching_modal_repeat: bool,
     /// The key of a Back press waiting for its release: a tap goes back one
     /// level, a hold to the Hub. With the ticket its timer carries.
     back_hold: Option<String>,
@@ -79,6 +82,12 @@ pub struct InputModel {
     /// Non-text navigation count for embedding-host input diagnostics.
     #[cfg(feature = "hosted")]
     navigation_events: u64,
+}
+
+/// A held step's constant-speed glide: a quarter longer than the repeat
+/// interval, so the list is still moving when the next repeat lands.
+fn steady_glide_ms(interval: u64) -> i32 {
+    i32::try_from(interval + interval / 4).unwrap_or(0)
 }
 
 impl InputModel {
@@ -93,6 +102,7 @@ impl InputModel {
             quiet_seq: 0,
             dispatch_tier: rules::HoldTier::Row,
             dispatching_repeat: false,
+            dispatching_modal_repeat: false,
             back_hold: None,
             back_hold_seq: 0,
             chord: rules::ShoulderChord::new(),
@@ -152,8 +162,17 @@ impl InputModel {
         if rows > 1 {
             return (false, 0);
         }
-        let interval = self.dispatch_tier.repeat_ms();
-        (true, i32::try_from(interval + interval / 4).unwrap_or(0))
+        (true, steady_glide_ms(self.dispatch_tier.repeat_ms()))
+    }
+
+    /// The same for a menu inside a modal: a modal keeps a hold on its
+    /// own rows at the row tier, so a held step is always one row.
+    pub(crate) fn modal_follow(&self) -> i32 {
+        if self.dispatching_modal_repeat {
+            steady_glide_ms(rules::HoldTier::Row.repeat_ms())
+        } else {
+            0
+        }
     }
 
     fn now_ms(&self) -> u64 {
@@ -626,12 +645,14 @@ pub(crate) fn dispatch_repeat(ctx: &Ctx, app: &App, action: &str, tier: rules::H
             rules::HoldTier::Row
         };
         shared.input.dispatching_repeat = owns_input;
+        shared.input.dispatching_modal_repeat = !owns_input;
     }
     crate::router::handle_action(ctx, app, action);
     {
         let mut shared = lock(&ctx.shared);
         shared.input.dispatch_tier = rules::HoldTier::Row;
         shared.input.dispatching_repeat = false;
+        shared.input.dispatching_modal_repeat = false;
     }
     if owns_input {
         // Publish the held state after dispatch. Qualified repeats preserve

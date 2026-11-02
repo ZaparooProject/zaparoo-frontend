@@ -703,7 +703,7 @@ static DETAIL_CACHE: std::sync::Mutex<rules::DetailCache> =
 
 /// Core's metadata may have changed: ask again as each row is shown.
 pub fn clear_detail_cache() {
-    *detail_cache() = rules::DetailCache::new(rules::DETAIL_CACHE_BYTES);
+    detail_cache().clear();
 }
 
 fn detail_cache() -> std::sync::MutexGuard<'static, rules::DetailCache> {
@@ -2357,7 +2357,13 @@ pub fn render(ctx: &Ctx, app: &App) {
             columns: geometry.columns,
         };
         let selected = model.grid.current_index().checked_sub(start);
-        crate::cover_fade::request(app, &grid, &landed, selected);
+        let screens = [
+            crate::Screen::Games,
+            crate::Screen::Favorites,
+            crate::Screen::Recents,
+            crate::Screen::SearchResults,
+        ];
+        crate::cover_fade::request(app, &screens, &grid, &landed, selected);
     }
     if !strip_sliding {
         view.set_next_cells(ModelRc::new(VecModel::from(Vec::<GridCell>::new())));
@@ -2864,6 +2870,7 @@ fn fire_detail(ctx: &Ctx, app: &App, seq: u64) {
     };
     let params =
         zaparoo_core::media_types::MediaMetaParams::for_row(row.media_id, system, row.path.clone());
+    let generation = detail_cache().generation();
     let weak = app.as_weak();
     let ctx = ctx.clone();
     handle.spawn(async move {
@@ -2879,7 +2886,7 @@ fn fire_detail(ctx: &Ctx, app: &App, seq: u64) {
                 result.ok().map(|result| {
                     let pairs = detail_pairs_from_meta(&result.media, &row.path);
                     let rows = detail_rows_for(&shared.games, &row, &pairs);
-                    detail_cache().insert(identity, pairs);
+                    detail_cache().insert(generation, identity, pairs);
                     rows
                 })
             };
@@ -2931,11 +2938,12 @@ fn prefetch_details(ctx: &Ctx, app: &App, rows: Vec<(GameRow, String, String)>) 
                 system,
                 row.path.clone(),
             );
+            let generation = detail_cache().generation();
             let Ok(result) = client.media_meta(params).await else {
                 continue;
             };
             let pairs = detail_pairs_from_meta(&result.media, &row.path);
-            detail_cache().insert(identity.clone(), pairs.clone());
+            detail_cache().insert(generation, identity.clone(), pairs.clone());
             let ctx = ctx.clone();
             let _ = weak.upgrade_in_event_loop(move |app| {
                 let shared = lock(&ctx.shared);

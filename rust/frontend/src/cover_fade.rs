@@ -26,12 +26,24 @@ pub struct Grid<'a> {
 
 /// Fades in the covers that just landed on the page-local cells `landed`
 /// (from `view_model::publish_cells`). `selected` is the focused cell,
-/// which is drawn grown by the focus zoom.
+/// which is drawn grown by the focus zoom. `screens` are the screens that
+/// show this grid: a driver can publish one that is not on display, and
+/// the frame it asks for would then show something else.
 #[cfg(feature = "mister")]
-pub fn request(app: &App, grid: &Grid, landed: &[usize], selected: Option<usize>) {
+pub fn request(
+    app: &App,
+    screens: &[crate::Screen],
+    grid: &Grid,
+    landed: &[usize],
+    selected: Option<usize>,
+) {
     use slint::ComponentHandle;
     let motion = app.global::<crate::Motion>();
-    if landed.is_empty() || !motion.get_enabled() || crate::motion_test().cover_fade() {
+    if landed.is_empty()
+        || !motion.get_enabled()
+        || crate::motion_test().cover_fade()
+        || !screens.contains(&app.global::<crate::Shell>().get_active_screen())
+    {
         return;
     }
     let grow = if motion.get_zoom_by_size() {
@@ -53,7 +65,14 @@ pub fn request(app: &App, grid: &Grid, landed: &[usize], selected: Option<usize>
 }
 
 #[cfg(not(feature = "mister"))]
-pub fn request(_app: &App, _grid: &Grid, _landed: &[usize], _selected: Option<usize>) {}
+pub fn request(
+    _app: &App,
+    _screens: &[crate::Screen],
+    _grid: &Grid,
+    _landed: &[usize],
+    _selected: Option<usize>,
+) {
+}
 
 /// The scene region cell `index` covers, grown about its center by `grow`
 /// (0.04 for a 104% zoom) the way `ui/tiles.slint` grows the focused cell.
