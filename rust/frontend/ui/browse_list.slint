@@ -203,10 +203,11 @@ export component BrowseList inherits Rectangle {
 
         if row.favorite: Image {
             x: parent.width - Layout.favorite-right-padding - root.heart-size;
-            y: (parent.height - self.height) / 2;
+            y: Sizing.snap((parent.height - self.height) / 2);
             width: root.heart-size;
             height: root.heart-size;
             source: GlyphSource.glyph("icons/Heart", root.heart-size, Colors.transparent);
+            image-rendering: Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
         }
 
         TouchArea {
@@ -413,6 +414,7 @@ export component BrowseDetailPane inherits Rectangle {
                 height: self.exact ? self.source.height * 1px : parent.art-h;
                 source: root.cover;
                 image-fit: contain;
+                image-rendering: Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
                 opacity: 0;
                 states [
                     shown when root.has-cover: {
@@ -432,6 +434,7 @@ export component BrowseDetailPane inherits Rectangle {
                 width: self.s;
                 height: self.s;
                 source: GlyphSource.glyph(root.placeholder-key, self.s, Theme.text-label);
+                image-rendering: Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
             }
             // Wordmark fallback for a system without curated logo art
             // (the grid tile's fitted-text treatment).
@@ -476,7 +479,7 @@ export component BrowseDetailPane inherits Rectangle {
                     height: root.tag-row-h;
                     Text {
                         x: 0;
-                        y: (parent.height - self.height) / 2;
+                        y: Sizing.snap((parent.height - self.height) / 2);
                         width: Math.min(root.label-w, parent.width);
                         horizontal-alignment: right;
                         overflow: elide;
@@ -486,7 +489,7 @@ export component BrowseDetailPane inherits Rectangle {
                     }
                     Text {
                         x: root.label-w + root.label-gap;
-                        y: (parent.height - self.height) / 2;
+                        y: Sizing.snap((parent.height - self.height) / 2);
                         width: Math.max(0px, parent.width - root.label-w - root.label-gap);
                         overflow: elide;
                         text: meta.value;

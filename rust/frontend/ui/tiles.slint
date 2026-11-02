@@ -380,6 +380,7 @@ export component Tile inherits Rectangle {
             source: GlyphSource.glyph(root.cell.glyph-key,
                 root.exact-art ? Math.floor(self.side / 1px) * 1px : self.side, root.art-tint);
             image-fit: contain;
+            image-rendering: Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
         }
 
         // The art's own colour stands in until the art lands, then fades
@@ -422,6 +423,7 @@ export component Tile inherits Rectangle {
                 : (!root.muted && root.focused-selection && root.cell.has-cover-focus)
                     ? root.cell.cover-focus : root.cell.cover;
             image-fit: contain;
+            image-rendering: Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
             opacity: 0;
             states [
                 shown when root.cell.has-cover: {
@@ -451,6 +453,7 @@ export component Tile inherits Rectangle {
             height: self.width;
             source: GlyphSource.glyph("icons/Heart", root.settled-width / 6, Colors.transparent);
             image-fit: contain;
+            image-rendering: Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
         }
 
         if root.show-caption: MarqueeCaption {

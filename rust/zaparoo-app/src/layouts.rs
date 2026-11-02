@@ -428,7 +428,9 @@ const CRT: ThemeT = ThemeT {
         // Hand-calibrated pixels, not a derived inset: the 240p canvas is
         // measured against a real analog frame, so it keeps its own
         // numbers rather than the square token the HD tiers use.
-        card_padding_left: px(3),
+        // The 1px border sits inside the card, so 2px padding leaves
+        // 1px visible space between the border and the content.
+        card_padding_left: px(2),
         card_padding_right: px(2),
         card_padding_top: px(3),
         card_padding_bottom: px(2),
@@ -452,7 +454,9 @@ const CRT: ThemeT = ThemeT {
         // Hand-calibrated pixels, not a derived inset: the 240p canvas is
         // measured against a real analog frame, so it keeps its own
         // numbers rather than the square token the HD tiers use.
-        card_padding_left: px(3),
+        // The 1px border sits inside the card, so 2px padding leaves
+        // 1px visible space between the border and the content.
+        card_padding_left: px(2),
         card_padding_right: px(2),
         card_padding_top: px(3),
         card_padding_bottom: px(2),
@@ -477,16 +481,16 @@ const CRT: ThemeT = ThemeT {
         pane_padding_right: px(1),
         pane_padding_top: px(3),
         pane_padding_bottom: px(2),
-        image_padding_left: px(2),
+        image_padding_left: px(0),
         image_padding_right: px(2),
         image_padding_top: px(0),
         image_padding_bottom: px(2),
-        metadata_padding_left: px(2),
+        metadata_padding_left: px(0),
         metadata_padding_right: px(1),
         metadata_padding_top: px(0),
         metadata_padding_bottom: px(0),
         metadata_top_margin: 0,
-        metadata_left_margin: 2,
+        metadata_left_margin: 1,
         metadata_right_margin: 1,
         metadata_height_adjustment: 2,
         metadata_label_max_width: Some(24),
