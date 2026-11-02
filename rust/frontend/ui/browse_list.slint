@@ -79,7 +79,7 @@ export component BrowseList inherits Rectangle {
     in property <length> row-height: Sizing.pct-h(6);
     in property <bool> show-chrome: true;
     // The list glides to follow the selection. A tap eases a row or a page
-    // over `Motion.page-ms`, as the Settings cards do. A held key that
+    // over `Motion.scroll-ms`, as the Settings cards do. A held key that
     // walks row by row sets `step`, a little over its repeat interval, and
     // the list follows at constant speed: it is still moving when the next
     // repeat lands, so the walk reads as one continuous scroll at any
@@ -113,7 +113,7 @@ export component BrowseList inherits Rectangle {
         // past the window rides in with it.
         reveal: true;
         glide-span: root.glide ? Math.max(root.stride, self.viewport + root.stride) : 0px;
-        duration: root.step > 0ms ? root.step : Motion.page-ms;
+        duration: root.step > 0ms ? root.step : Motion.scroll-ms;
         steady: root.step > 0ms;
     }
 

@@ -90,7 +90,12 @@ export global Motion {
     // numbers as `zaparoo_app::wait_cue`, which times the header's cue.
     out property <duration> cue-delay-ms: 300ms;
     out property <duration> cue-hold-ms: 200ms;
-    out property <duration> page-ms: 240ms;
+    // A page that slides in, and a body of text paged by a key.
+    out property <duration> page-ms: 200ms;
+    // A list or menu that scrolls to follow one press. Shorter than a page
+    // because it is far more frequent: a scroll the eye waits on reads as
+    // a slow list.
+    out property <duration> scroll-ms: 120ms;
     // How far a focused grid tile grows. Small on purpose: our tiles are
     // large and the screen is close, and scale is the motion class that
     // vestibular guidance singles out, so this sits well under the 1.1 a
@@ -112,11 +117,10 @@ export global Motion {
     // same center instead: the card and its art are sized from the cell and
     // grow with it, while type, padding and stroke widths keep their size.
     in-out property <bool> zoom-by-size: false;
-    // Longer than a focus move on purpose. A slide is a short-distance
-    // movement and a scale is an expansion, which Carbon separates as
-    // 150ms and 240ms; at `focus-ms` a 4% scale gets about five frames and
-    // reads as a step rather than a motion.
-    out property <duration> zoom-ms: 160ms;
+    // A little longer than a focus move on purpose: at `focus-ms` a 4%
+    // scale gets about five frames and reads as a step rather than a
+    // motion. Kept short because it runs on every focus move.
+    out property <duration> zoom-ms: 110ms;
     // Full cycle of the held-tile blink in Hub's Move mode: ~0.77 Hz, well
     // under the 3 Hz WCAG flash-safety threshold, and slow enough that the
     // tile is legible in its "on" half rather than strobing.
@@ -128,14 +132,16 @@ export global Motion {
     // by the `cover-fade` name of the `ZAPAROO_MOTION` test switch on the
     // software-rendered build, where a fading tile repaints every frame of
     // the fade (docs/slint-gotchas.md).
-    in-out property <duration> cover-reveal-ms: 180ms;
-    // The same fade on a grid tile. Separate because a page of covers lands
+    in-out property <duration> cover-reveal-ms: 120ms;
+    // The same fade on a grid tile, for art from Core and its placeholder
+    // colour (`GridCell.fetched`). Separate because a page of covers lands
     // together, and on the software renderer every fading tile repaints
     // every frame: at a 960x540 HDMI render that is most of the grid for
     // the length of the fade, which missed the frame budget and looked
-    // sluggish. Rust pushes 0 there (`display::tile_cover_fade`); the native
-    // CRT modes are small enough to keep it, and one cover in a list's
-    // detail pane fades everywhere.
+    // sluggish. There the presenter fades the covers on the way to the
+    // display and Rust pushes 0, a cut, here (`display::tile_cover_fade`);
+    // only the CRT head of a dual-head pair keeps this one. One cover in a
+    // list's detail pane fades here everywhere.
     in-out property <duration> tile-cover-reveal-ms: 180ms;
     // The fast-scroll rail's fade in and out and its highlight's glide
     // between letters. The same on every renderer. Pushed to 0 only by the

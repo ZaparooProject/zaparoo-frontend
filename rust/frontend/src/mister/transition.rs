@@ -3,11 +3,12 @@
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 
 //! Single-threaded handoff between router page commits and the presenter
-//! that owns the screen, and the cached page slide every presenter runs
-//! from it.
+//! that owns the screen, and the cached page slide and cover fades every
+//! presenter runs from it.
 
 use super::scanout::Damage;
-use crate::frame_transition::{Active, Spec};
+use crate::frame_transition::{Active, Blend, CoverFades, Rect, Spec, Started, BLEND_ONE};
+use slint::platform::software_renderer::{PhysicalRegion, PremultipliedRgbaColor, Rgb565Pixel};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, PoisonError};
 
@@ -15,6 +16,12 @@ static AVAILABLE: AtomicBool = AtomicBool::new(false);
 static BUSY: AtomicBool = AtomicBool::new(false);
 static CANCELLED: AtomicBool = AtomicBool::new(false);
 static PENDING: Mutex<Option<Spec>> = Mutex::new(None);
+static FADES_AVAILABLE: AtomicBool = AtomicBool::new(false);
+static FADE_REQUESTS: Mutex<Vec<(Rect, std::time::Instant)>> = Mutex::new(Vec::new());
+
+/// A fade request no render has taken by now belongs to a frame that never
+/// came; starting it would fade whatever the next frame shows there.
+const FADE_REQUEST_TTL: std::time::Duration = std::time::Duration::from_millis(100);
 
 pub(super) fn set_available(available: bool) {
     AVAILABLE.store(available, Ordering::SeqCst);
@@ -58,15 +65,44 @@ pub(super) fn take_cancelled() -> bool {
     CANCELLED.swap(false, Ordering::SeqCst)
 }
 
+pub(super) fn set_fades_available(available: bool) {
+    FADES_AVAILABLE.store(available, Ordering::SeqCst);
+    if !available {
+        take_fade_requests();
+    }
+}
+
+/// Asks for the covers that just landed in `rects`, in the presenter's
+/// frame, to fade in. False when no presenter runs cover fades or a page
+/// slide owns the frame.
+pub(super) fn request_fades(rects: &[Rect]) -> bool {
+    if !FADES_AVAILABLE.load(Ordering::SeqCst) || BUSY.load(Ordering::SeqCst) {
+        return false;
+    }
+    let now = std::time::Instant::now();
+    FADE_REQUESTS
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .extend(rects.iter().map(|&rect| (rect, now)));
+    true
+}
+
+pub(super) fn take_fade_requests() -> Vec<Rect> {
+    std::mem::take(&mut *FADE_REQUESTS.lock().unwrap_or_else(PoisonError::into_inner))
+        .into_iter()
+        .filter(|(_, at)| at.elapsed() < FADE_REQUEST_TTL)
+        .map(|(rect, _)| rect)
+        .collect()
+}
+
 /// Theme.bg (`#0f0f23`) for the inter-page gap, as the 32-bit presenters
 /// render it.
-pub(super) const BACKGROUND_RGBA: slint::platform::software_renderer::PremultipliedRgbaColor =
-    slint::platform::software_renderer::PremultipliedRgbaColor {
-        red: 0x0f,
-        green: 0x0f,
-        blue: 0x23,
-        alpha: 0xff,
-    };
+pub(super) const BACKGROUND_RGBA: PremultipliedRgbaColor = PremultipliedRgbaColor {
+    red: 0x0f,
+    green: 0x0f,
+    blue: 0x23,
+    alpha: 0xff,
+};
 
 /// One presenter's cached page slide. Slint renders the outgoing and the
 /// incoming page once each into the presenter's canonical frame; between
@@ -197,11 +233,189 @@ impl<T: Copy + Default> CachedSlide<T> {
     }
 }
 
+impl Blend for Rgb565Pixel {
+    fn same(self, other: Self) -> bool {
+        self == other
+    }
+
+    fn same_run(left: &[Self], right: &[Self]) -> bool {
+        left == right
+    }
+
+    fn mix(old: Self, new: Self, weight: u32) -> Self {
+        // Green moves to the high half so each channel has room for the
+        // product: one multiply mixes all three.
+        const SPREAD: u32 = 0x07E0_F81F;
+        let spread = |pixel: Self| (u32::from(pixel.0) | u32::from(pixel.0) << 16) & SPREAD;
+        let mixed =
+            ((spread(old) * (BLEND_ONE - weight) + spread(new) * weight) / BLEND_ONE) & SPREAD;
+        Self((mixed | mixed >> 16) as u16)
+    }
+}
+
+impl Blend for PremultipliedRgbaColor {
+    fn same(self, other: Self) -> bool {
+        (self.red, self.green, self.blue, self.alpha)
+            == (other.red, other.green, other.blue, other.alpha)
+    }
+
+    fn mix(old: Self, new: Self, weight: u32) -> Self {
+        let channel = |old: u8, new: u8| {
+            ((u32::from(old) * (BLEND_ONE - weight) + u32::from(new) * weight) / BLEND_ONE) as u8
+        };
+        Self {
+            red: channel(old.red, new.red),
+            green: channel(old.green, new.green),
+            blue: channel(old.blue, new.blue),
+            alpha: channel(old.alpha, new.alpha),
+        }
+    }
+}
+
+/// One presenter's cover fades. Unlike a page slide they never take the
+/// frame over: Slint goes on rendering everything else, and the presenter
+/// reads each row it publishes through `row`.
+pub(super) struct PresenterFades<T> {
+    fades: CoverFades<T>,
+    available: bool,
+}
+
+impl<T: Blend> PresenterFades<T> {
+    /// `available` is whether this presenter owns the screen the drivers
+    /// lay their grids out on. It answers fade requests for as long as it
+    /// lives.
+    pub(super) fn new(available: bool) -> Self {
+        if available {
+            set_fades_available(true);
+        }
+        Self {
+            fades: CoverFades::new(),
+            available,
+        }
+    }
+
+    pub(super) fn is_active(&self) -> bool {
+        self.fades.is_active()
+    }
+
+    /// Drops every fade, for a caller about to republish the whole frame.
+    pub(super) fn clear(&mut self) {
+        self.fades.clear();
+    }
+
+    /// Before Slint renders: keeps what is under each cover about to land.
+    /// A page slide owns the frame while it runs, so `sliding` ends the
+    /// fades rather than starting more.
+    pub(super) fn before_render(
+        &mut self,
+        canonical: &[T],
+        width: usize,
+        height: usize,
+        sliding: bool,
+    ) {
+        if !self.available {
+            return;
+        }
+        let requests = take_fade_requests();
+        if sliding {
+            self.fades.clear();
+        } else if !requests.is_empty() {
+            let started = super::platform::timeline().map_or_else(
+                || Started::Wall(std::time::Instant::now()),
+                Started::Timeline,
+            );
+            self.fades
+                .begin(canonical, width, height, &requests, started);
+        }
+    }
+
+    /// After Slint renders `region` into `canonical`.
+    pub(super) fn rendered(&mut self, canonical: &[T], region: &PhysicalRegion) {
+        if !self.fades.is_active() {
+            return;
+        }
+        let damage: Vec<Rect> = region
+            .iter()
+            .map(|(origin, size)| Rect {
+                x: origin.x.max(0) as usize,
+                y: origin.y.max(0) as usize,
+                width: size.width as usize,
+                height: size.height as usize,
+            })
+            .collect();
+        self.fades.rendered(canonical, &damage);
+    }
+
+    /// Advances every fade to this frame and returns the regions the
+    /// display has to be brought up to date with.
+    pub(super) fn step(&mut self) -> &[Rect] {
+        self.fades
+            .step(super::platform::timeline().unwrap_or_default())
+    }
+
+    /// See `CoverFades::mixed_segments`.
+    pub(super) fn mixed_segments(
+        &mut self,
+        y: usize,
+        x0: usize,
+        x1: usize,
+        row: &[T],
+        out: impl FnMut(usize, &[T]),
+    ) {
+        self.fades.mixed_segments(y, x0, x1, row, out);
+    }
+
+    /// See `CoverFades::row`.
+    pub(super) fn row<'a>(&'a mut self, y: usize, x0: usize, canonical: &'a [T]) -> &'a [T] {
+        self.fades.row(y, x0, canonical)
+    }
+}
+
+impl<T> Drop for PresenterFades<T> {
+    fn drop(&mut self) {
+        if self.available {
+            set_fades_available(false);
+        }
+    }
+}
+
+/// `rects` as one box, for the presenters that bring a slot up to date by
+/// box.
+pub(super) fn bounds(rects: &[Rect]) -> Damage {
+    rects.iter().fold(Damage::EMPTY, |damage, rect| {
+        damage.union(Damage {
+            x0: rect.x as u32,
+            y0: rect.y as u32,
+            x1: (rect.x + rect.width) as u32,
+            y1: (rect.y + rect.height) as u32,
+        })
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::frame_transition::{Direction, Rect, Started};
+    use crate::frame_transition::Direction;
     use std::time::{Duration, Instant};
+
+    #[test]
+    fn rgb565_mixes_each_channel_on_its_own() {
+        // All red against all green and blue.
+        let old = Rgb565Pixel(0xF800);
+        let new = Rgb565Pixel(0x07FF);
+        assert_eq!(Rgb565Pixel::mix(old, new, 0), old);
+        assert_eq!(Rgb565Pixel::mix(old, new, BLEND_ONE), new);
+        let half = Rgb565Pixel::mix(old, new, BLEND_ONE / 2).0;
+        assert_eq!((half >> 11, (half >> 5) & 0x3f, half & 0x1f), (15, 31, 15));
+        let white = Rgb565Pixel(0xffff);
+        for weight in 0..=BLEND_ONE {
+            assert_eq!(
+                Rgb565Pixel::mix(white, white, weight),
+                white,
+                "no channel bleeds"
+            );
+        }
+    }
 
     #[test]
     fn cancellation_discards_obsolete_request_and_allows_immediate_retarget() {

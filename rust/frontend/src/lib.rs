@@ -17,6 +17,7 @@ mod browse_filter;
 mod browse_motion;
 mod card_write;
 mod context_page;
+mod cover_fade;
 mod cue;
 mod customization;
 mod discs;
@@ -513,6 +514,7 @@ fn seed_display_globals(
     crt_enabled: bool,
     framebuffer_size: (u32, u32),
     motion_off: zaparoo_app::motion_test::Disabled,
+    presenter_fades: bool,
 ) {
     app.global::<Theme>().set_crt(visual_crt);
     app.global::<Sizing>().set_crt(visual_crt);
@@ -560,7 +562,7 @@ fn seed_display_globals(
     if embedded && motion_off.cover_fade() {
         motion.set_cover_reveal_ms(0);
     }
-    if !display::tile_cover_fade(embedded, visual_crt) || embedded && motion_off.cover_fade() {
+    if !display::tile_cover_fade(embedded, presenter_fades) || embedded && motion_off.cover_fade() {
         motion.set_tile_cover_reveal_ms(0);
     }
     if embedded && motion_off.rail() {
@@ -796,6 +798,7 @@ fn run_application(
         crt,
         ui_framebuffer_size,
         motion_test(),
+        true,
     );
     brand::register(&app);
     app.global::<GlyphSource>().on_glyph(|key, px, tint| {
@@ -817,6 +820,7 @@ fn run_application(
             true,
             crt_framebuffer_size,
             motion_test(),
+            false,
         );
         brand::register(&mirror);
         mirror.global::<GlyphSource>().on_glyph(|key, px, tint| {
@@ -1156,6 +1160,10 @@ fn bind_media_status(ctx: &Arc<Ctx>, app: &App, store: &Arc<Store>) {
             prev = curr;
             if art_changed {
                 ctx.media.clear();
+            }
+            // A scrape or a reindex can change any game's metadata too.
+            if art_changed || finished {
+                games::clear_detail_cache();
             }
             let ctx = ctx.clone();
             let _ = weak.upgrade_in_event_loop(move |app| {
@@ -1662,6 +1670,8 @@ fn start_media_cache(ctx: &Arc<Ctx>, app: &App, client: &Arc<Client>) {
     let handle = ctx.handle.clone();
     let ctx = ctx.clone();
     let landings = Arc::new(media_cache::Landings::default());
+    #[cfg(feature = "mister")]
+    let held = Arc::new(Mutex::new(HeldCovers::default()));
     media_cache::spawn_driver(
         media,
         client.clone(),
@@ -1673,15 +1683,91 @@ fn start_media_cache(ctx: &Arc<Ctx>, app: &App, client: &Arc<Client>) {
             }
             let ctx = ctx.clone();
             let landings = landings.clone();
+            #[cfg(feature = "mister")]
+            let held = held.clone();
             let _ = weak.upgrade_in_event_loop(move |app| {
                 let keys = landings.take();
                 if *ctx.dormant.borrow() {
                     return;
                 }
+                #[cfg(feature = "mister")]
+                land_covers(&ctx, &app, &held, keys);
+                #[cfg(not(feature = "mister"))]
                 deliver_covers(&ctx, &app, &keys);
             });
         },
     );
+}
+
+/// Browse covers held for the rest of their page (`land_covers`).
+#[cfg(feature = "mister")]
+#[derive(Default)]
+struct HeldCovers {
+    keys: Vec<media_cache::MediaKey>,
+    hold: zaparoo_app::cover_landing::Hold,
+}
+
+/// Settled covers, where the presenter fades covers in: browse covers for
+/// the page on screen wait for the rest of it and land together
+/// (`zaparoo_app::cover_landing`); everything else lands as it arrives.
+/// Other builds deliver every cover as it arrives.
+#[cfg(feature = "mister")]
+fn land_covers(
+    ctx: &Arc<Ctx>,
+    app: &App,
+    held: &Arc<Mutex<HeldCovers>>,
+    keys: Vec<media_cache::MediaKey>,
+) {
+    {
+        use zaparoo_app::cover_landing::Landing;
+        let (carousel, browse): (Vec<_>, Vec<_>) =
+            keys.into_iter().partition(|key| key.image_type.is_some());
+        if !carousel.is_empty() {
+            deliver_covers(ctx, app, &carousel);
+        }
+        if browse.is_empty() {
+            return;
+        }
+        // Without motion nothing fades, so nothing is worth waiting for.
+        let waiting = app.global::<Motion>().get_enabled()
+            && (games::page_covers_waiting(ctx, app) || hub::page_covers_waiting(ctx, app));
+        let now = std::time::Instant::now();
+        let (land, deadline) = {
+            let mut held = held
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            held.keys.extend(browse);
+            match held.hold.arrived(now, waiting) {
+                Landing::Now => (std::mem::take(&mut held.keys), None),
+                Landing::Hold(deadline) => (Vec::new(), deadline),
+            }
+        };
+        if !land.is_empty() {
+            deliver_covers(ctx, app, &land);
+        }
+        let Some((at, generation)) = deadline else {
+            return;
+        };
+        let ctx = ctx.clone();
+        let held = held.clone();
+        let weak = app.as_weak();
+        slint::Timer::single_shot(at.saturating_duration_since(now), move || {
+            let keys = {
+                let mut held = held
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                if !held.hold.expired(generation) {
+                    return;
+                }
+                std::mem::take(&mut held.keys)
+            };
+            if let Some(app) = weak.upgrade() {
+                if !*ctx.dormant.borrow() {
+                    deliver_covers(&ctx, &app, &keys);
+                }
+            }
+        });
+    }
 }
 
 /// One batch of settled covers: each screen that shows any of them

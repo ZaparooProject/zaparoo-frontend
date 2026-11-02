@@ -10,12 +10,29 @@ pub fn publish<T: Clone + PartialEq + 'static>(
     publish_by(current, rows, PartialEq::eq, set);
 }
 
+/// Returns the cells whose cover landed in place (see `landed`).
 pub fn publish_cells(
     current: &ModelRc<crate::GridCell>,
     rows: Vec<crate::GridCell>,
     set: impl FnOnce(ModelRc<crate::GridCell>),
-) {
-    publish_keyed(current, rows, same_cell, same_slot, set);
+) -> Vec<usize> {
+    let mut covers = Vec::new();
+    publish_keyed_with(current, rows, same_cell, same_slot, set, |i, old, new| {
+        if landed(old, new) {
+            covers.push(i);
+        }
+    });
+    covers
+}
+
+/// The tile kept its slot and its art from Core, or that art's colour,
+/// arrived: what fades in where it is on screen. Art already there when a
+/// tile appears does not, nor do built-in logos.
+fn landed(old: &crate::GridCell, new: &crate::GridCell) -> bool {
+    new.fetched
+        && same_slot(old, new)
+        && ((!old.has_cover && new.has_cover)
+            || (!old.has_placeholder && new.has_placeholder && !new.has_cover))
 }
 
 /// Whether two cells are the same slot of the same page, so a cell whose
@@ -35,18 +52,28 @@ fn same_slot(left: &crate::GridCell, right: &crate::GridCell) -> bool {
 /// sliding it there. `same_slot` cannot serve here because a swap changes
 /// both names by definition, which is exactly the case it treats as a
 /// different list.
+///
+/// Returns the cells whose cover landed in place, as `publish_cells` does;
+/// an entry swapped into a slot is not one.
 pub fn publish_hub_cells(
     current: &ModelRc<crate::GridCell>,
     rows: Vec<crate::GridCell>,
     set: impl FnOnce(ModelRc<crate::GridCell>),
-) {
-    publish_keyed(
+) -> Vec<usize> {
+    let mut covers = Vec::new();
+    publish_keyed_with(
         current,
         rows,
         same_cell,
         |left, right| left.is_empty == right.is_empty,
         set,
+        |i, old, new| {
+            if landed(old, new) {
+                covers.push(i);
+            }
+        },
     );
+    covers
 }
 
 pub fn same_image(left: &slint::Image, right: &slint::Image) -> bool {
@@ -75,6 +102,7 @@ pub fn same_cell(left: &crate::GridCell, right: &crate::GridCell) -> bool {
         && left.is_empty == right.is_empty
         && left.has_placeholder == right.has_placeholder
         && left.placeholder == right.placeholder
+        && left.fetched == right.fetched
 }
 
 fn publish_by<T: Clone + 'static>(
@@ -120,6 +148,19 @@ pub fn publish_keyed<T: Clone + 'static>(
     keyed: impl Fn(&T, &T) -> bool,
     set: impl FnOnce(ModelRc<T>),
 ) {
+    publish_keyed_with(current, rows, same, keyed, set, |_, _, _| {});
+}
+
+/// `publish_keyed`, telling `written` about each row it writes in place
+/// with the row it replaces.
+fn publish_keyed_with<T: Clone + 'static>(
+    current: &ModelRc<T>,
+    rows: Vec<T>,
+    same: impl Fn(&T, &T) -> bool,
+    keyed: impl Fn(&T, &T) -> bool,
+    set: impl FnOnce(ModelRc<T>),
+    mut written: impl FnMut(usize, &T, &T),
+) {
     if current.row_count() != rows.len() {
         set(ModelRc::new(VecModel::from(rows)));
         return;
@@ -135,11 +176,12 @@ pub fn publish_keyed<T: Clone + 'static>(
             return;
         }
         if !same(&old, row) {
-            stale.push(i);
+            stale.push((i, old));
         }
     }
     // No new model means no delegate reset and no lost press state.
-    for i in stale {
+    for (i, old) in stale {
+        written(i, &old, &rows[i]);
         current.set_row_data(i, rows[i].clone());
     }
 }
@@ -215,6 +257,48 @@ mod tests {
             },
         );
         assert_eq!(resized.map(|rows| rows.row_count()), Some(1));
+    }
+
+    #[test]
+    fn only_art_arriving_in_its_own_slot_has_landed() {
+        let placeholder = crate::GridCell {
+            name: "Sonic".into(),
+            fetched: true,
+            ..Default::default()
+        };
+        let mut loaded = placeholder.clone();
+        loaded.has_cover = true;
+        let mut colored = placeholder.clone();
+        colored.has_placeholder = true;
+        let mut logo = loaded.clone();
+        logo.fetched = false;
+        let page = || ModelRc::new(VecModel::from(vec![placeholder.clone()]));
+        assert_eq!(
+            publish_cells(&page(), vec![colored], |_| {}),
+            [0],
+            "a cover's colour fades in too"
+        );
+        assert!(
+            publish_cells(&page(), vec![logo], |_| {}).is_empty(),
+            "a built-in logo cuts in"
+        );
+        let current = ModelRc::new(VecModel::from(vec![
+            placeholder.clone(),
+            placeholder.clone(),
+        ]));
+        let landed = publish_cells(&current, vec![placeholder.clone(), loaded.clone()], |_| {});
+        assert_eq!(landed, [1]);
+        assert!(
+            publish_cells(&current, vec![placeholder.clone(), loaded.clone()], |_| {}).is_empty(),
+            "art already showing does not land again"
+        );
+        let mut moved = loaded;
+        moved.name = "Mario".into();
+        let board = ModelRc::new(VecModel::from(vec![placeholder]));
+        assert!(
+            publish_hub_cells(&board, vec![moved], |_| {}).is_empty(),
+            "a tile swapped into the slot brings its art with it"
+        );
     }
 
     #[test]

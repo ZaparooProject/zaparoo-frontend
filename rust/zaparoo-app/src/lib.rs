@@ -18,6 +18,7 @@ pub mod alternate_versions;
 pub mod browse_filter;
 pub mod buttons;
 pub mod clock;
+pub mod cover_landing;
 pub mod covers;
 pub mod customization;
 pub mod folder_picker;

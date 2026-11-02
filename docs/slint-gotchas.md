@@ -75,7 +75,7 @@ Two follow-on rules:
   through `ScrollOffset` (`ui/focus.slint`), and
   `zaparoo_app::input::InputModel::list_follow` picks how from the rows the
   selection just moved. A tap, one row or a page, is an eased glide over
-  `Motion.page-ms`. A held walk of one row per repeat is a constant-speed
+  `Motion.scroll-ms`. A held walk of one row per repeat is a constant-speed
   glide that lasts a quarter longer than the repeat interval, so the list
   keeps moving between repeats instead of easing to a stop on each one. A
   held step of more than one row (the Games list paging or jumping letters)
@@ -152,17 +152,29 @@ the cut it replaced. Unset or empty leaves everything on.
 | Name | Effect when on | With the name listed |
 |---|---|---|
 | `zoom` | Above the 240p tier, the focused tile and its ring cut to `Motion.focus-zoom`; a focus move repaints the two cells involved once | `Motion.focus-zoom` is 100%: no growth, no clip headroom, no larger scrim hole |
-| `cover-fade` | Cover art that lands while it is on screen fades in: a list's detail pane over `Motion.cover-reveal-ms` everywhere, a grid tile over `Motion.tile-cover-reveal-ms` on native CRT output only (see below); a fading tile repaints every frame of the fade | Both are 0: art cuts in |
+| `cover-fade` | Cover art that lands while it is on screen fades in: a list's detail pane over `Motion.cover-reveal-ms` in Slint, a grid tile in the presenter (see below) | Both cut in |
 | `rail` | The fast-scroll rail fades over `Motion.rail-ms` and its highlight glides | `Motion.rail-ms` is 0: the rail appears, moves and leaves in cuts |
 | `slides` | The native CRT and fb0 presenters run cached page slides | Only the vblank-latch presenter does; CRT slides its live strip, and on fb0 the Hub cuts while the browse grids slide theirs |
 | `clock` | The fixed-step animation clock | Wall time drives timers, animations and cached slides, and a late slide frame jumps to the current step |
 
-Grid tiles do not fade their covers on a MiSTer HDMI render
-(`display::tile_cover_fade`). A page of covers lands together, each fading
-tile repaints every frame, and Slint repaints the area enclosing them, so
-the fade redrew most of a 960x540 grid for its whole length: on hardware a
-fifth to a quarter of rendered frames missed the 16.7 ms budget and the
-load looked sluggish. The native CRT modes keep the fade.
+Grid tiles fade art from Core in, its cover and the placeholder colour
+that stands in for it (`GridCell.fetched`); built-in logos and glyphs cut
+in. On the software renderer the presenter does the fade, not Slint
+(`display::tile_cover_fade` pushes `Motion.tile-cover-reveal-ms` to 0). A
+page of covers lands together, and a Slint opacity fade repaints each
+fading tile every frame and the area enclosing them: it redrew most of a
+960x540 grid for its whole length, and on hardware a fifth to a quarter of
+rendered frames missed the 16.7 ms budget. Instead Slint paints each cover
+once, as a cut. The grid driver hands the cells whose covers just landed to
+`cover_fade::request`; the presenter keeps the pixels that were under them
+before that render, narrows each to the pixels the cover changed, and for
+the length of the fade mixes the old pixels into each row it publishes
+(`frame_transition::CoverFades`). Slint keeps rendering everything else.
+A fade ends early, showing what Slint painted, when Slint repaints its
+pixels with something else (the focus ring arriving, a page change, a
+modal), when a page slide starts, and when the frame changes size. Only
+the CRT head of a dual-head pair keeps the Slint fade: its presenter
+mirrors the other head's state, not its pixels.
 
 The switch only acts on the MiSTer build. `zaparoo_app::motion_test` parses
 it and `lib.rs` reads it once at startup, logging any name it does not know.
@@ -175,7 +187,7 @@ does not ban short one-shot cues on one small element at a state change:
 
 | Cue | Why it is cheap |
 |---|---|
-| Tile physical press on activate or launch (`rust/frontend/src/press_feedback.rs`: 90 ms feedback window with a 34 ms downstroke) | One opaque face moves; the dirty region is one tile |
+| Tile physical press on activate or launch (`rust/frontend/src/press_feedback.rs`: 50 ms feedback window with a 34 ms downstroke) | One opaque face moves; the dirty region is one tile |
 | List, settings and menu row inverse blink on activate (`Motion.press-ms`) | The selected row swaps fill and ink, then swaps back: two repaints, nothing moves |
 | Held tile blink in Hub Move mode (`Motion.held-blink-ms`) | One tile, a hard on/off cut, only while a Move session holds it |
 
@@ -228,14 +240,16 @@ expensive for the A9.
 | `press-ms` | 34 ms | Press downstroke and row inverse blink |
 | `settle-ms` | 110 ms | Release leg, toggle knob |
 | `pulse-ms` | 250 ms | ProgressTrack blink on/off time |
-| `zoom-ms` | 160 ms | Focus zoom, where a transform draws it |
-| `cover-reveal-ms` | 180 ms | Cover art fading in as it lands |
-| `tile-cover-reveal-ms` | 180 ms, 0 on a MiSTer HDMI render | The same on a grid tile |
+| `scroll-ms` | 120 ms | A list or menu scrolling to follow one press |
+| `page-ms` | 200 ms | Page slides, paged text bodies |
+| `zoom-ms` | 110 ms | Focus zoom, where a transform draws it |
+| `cover-reveal-ms` | 120 ms | Cover art fading in as it lands in a list's detail pane |
+| `tile-cover-reveal-ms` | 180 ms, 0 where the presenter fades covers | Art from Core fading in on a grid tile |
 | `rail-ms` | 160 ms | Fast-scroll rail fade |
 | `held-blink-ms` | 650 ms | Hub Move held-tile blink cycle |
 
 `press-ms` has a one-frame floor at the slowest target (about 30 fps, so
-33.3 ms rounded up to 34). Accept waits through a shared 90 ms feedback window
+33.3 ms rounded up to 34). Accept waits through a shared 50 ms feedback window
 (`zaparoo_app::input::PRESS_FEEDBACK_MS`): the downstroke plus a short depressed
 hold before the action can replace its control. Launches and pending routes
 retain that press until completion. Disabled motion skips the wait, and

@@ -28,6 +28,94 @@ pub const HISTORY_FETCH_CAP: u32 = 100;
 pub const RESTORE_FETCH_CHUNK: u32 = JUMP_FETCH_CEILING;
 /// The focused-detail load waits this long after the last move.
 pub const DETAIL_DEBOUNCE_MS: u64 = 150;
+/// The most the detail pane's rows from Core may hold in memory.
+pub const DETAIL_CACHE_BYTES: usize = 256 * 1024;
+
+/// The detail pane's rows from Core, by row identity, so a row the user
+/// comes back to, or one fetched ahead beside the selection, shows its
+/// metadata at once instead of blanking while it loads. Process memory
+/// only, bounded by `cap` bytes, least recently used out first.
+#[derive(Debug)]
+pub struct DetailCache {
+    entries: std::collections::VecDeque<(String, Vec<(&'static str, String)>)>,
+    bytes: usize,
+    cap: usize,
+    /// Bumped by `clear`, so a fetch that started before it cannot put
+    /// what it fetched back.
+    generation: u64,
+}
+
+impl DetailCache {
+    pub const fn new(cap: usize) -> Self {
+        Self {
+            entries: std::collections::VecDeque::new(),
+            bytes: 0,
+            cap,
+            generation: 0,
+        }
+    }
+
+    /// Taken before a fetch and handed to `insert` with its result.
+    pub const fn generation(&self) -> u64 {
+        self.generation
+    }
+
+    /// Core's metadata may have changed: forget everything, including
+    /// what fetches in flight bring back.
+    pub fn clear(&mut self) {
+        self.entries.clear();
+        self.bytes = 0;
+        self.generation = self.generation.wrapping_add(1);
+    }
+
+    fn cost(identity: &str, rows: &[(&'static str, String)]) -> usize {
+        identity.len()
+            + rows
+                .iter()
+                .map(|(_, value)| value.len() + 16)
+                .sum::<usize>()
+            + 48
+    }
+
+    pub fn contains(&self, identity: &str) -> bool {
+        self.entries.iter().any(|(key, _)| key == identity)
+    }
+
+    /// The rows for `identity`, which become the most recently used.
+    pub fn get(&mut self, identity: &str) -> Option<Vec<(&'static str, String)>> {
+        let index = self.entries.iter().position(|(key, _)| key == identity)?;
+        let entry = self.entries.remove(index)?;
+        let rows = entry.1.clone();
+        self.entries.push_back(entry);
+        Some(rows)
+    }
+
+    /// Keeps `rows`, fetched from `generation`, unless the cache has been
+    /// cleared since that fetch started.
+    pub fn insert(&mut self, generation: u64, identity: String, rows: Vec<(&'static str, String)>) {
+        if generation != self.generation {
+            return;
+        }
+        if let Some(index) = self.entries.iter().position(|(key, _)| *key == identity) {
+            if let Some((key, old)) = self.entries.remove(index) {
+                self.bytes -= Self::cost(&key, &old);
+            }
+        }
+        let cost = Self::cost(&identity, &rows);
+        if cost > self.cap {
+            return;
+        }
+        while self.bytes + cost > self.cap {
+            let Some((key, old)) = self.entries.pop_front() else {
+                break;
+            };
+            self.bytes -= Self::cost(&key, &old);
+        }
+        self.bytes += cost;
+        self.entries.push_back((identity, rows));
+    }
+}
+
 /// Selection writes coalesce over this window during a held move.
 pub const PERSIST_DEBOUNCE_MS: u64 = 250;
 /// The fast-scroll rail stays this long after the scroll stops, so the
@@ -1047,6 +1135,51 @@ impl SelectionPersist {
 
 #[cfg(test)]
 mod tests {
+    use super::DetailCache;
+
+    #[test]
+    fn the_detail_cache_keeps_recent_rows_within_its_bytes() {
+        let rows = |value: &str| vec![("year", value.to_string())];
+        let cost = DetailCache::cost("a", &rows("1991"));
+        let mut cache = DetailCache::new(cost * 2);
+        let generation = cache.generation();
+        cache.insert(generation, "a".into(), rows("1991"));
+        cache.insert(generation, "b".into(), rows("1992"));
+        assert_eq!(
+            cache.get("a"),
+            Some(rows("1991")),
+            "a is now the most recent"
+        );
+        cache.insert(generation, "c".into(), rows("1993"));
+        assert!(!cache.contains("b"), "the least recently used goes first");
+        assert!(cache.contains("a") && cache.contains("c"));
+        cache.insert(generation, "a".into(), rows("1994"));
+        assert_eq!(
+            cache.get("a"),
+            Some(rows("1994")),
+            "a refetch replaces the rows"
+        );
+        assert!(cache.bytes <= cost * 2);
+    }
+
+    #[test]
+    fn a_fetch_from_before_a_clear_is_not_kept() {
+        let mut cache = DetailCache::new(1024);
+        let before = cache.generation();
+        cache.clear();
+        cache.insert(before, "a".into(), vec![("year", "1991".into())]);
+        assert!(
+            !cache.contains("a"),
+            "it may hold what Core has since changed"
+        );
+        cache.insert(
+            cache.generation(),
+            "a".into(),
+            vec![("year", "1992".into())],
+        );
+        assert!(cache.contains("a"));
+    }
+
     use super::*;
 
     fn count(n: u32) -> String {

@@ -673,6 +673,7 @@ fn cover_art_fades_in_only_when_it_lands() {
         cover_focus: red.clone(),
         has_cover,
         has_cover_focus: has_cover,
+        fetched: true,
         ..Default::default()
     };
     let view = app.global::<HubView>();
@@ -698,6 +699,17 @@ fn cover_art_fades_in_only_when_it_lands() {
     assert!(art(&window) < shown, "landed art does not pop in");
     settle(&window);
     assert_eq!(art(&window), shown, "the fade ends at full strength");
+
+    // A built-in logo is not fetched art: it cuts in.
+    let logo = |has_cover: bool| GridCell {
+        fetched: false,
+        ..cell(has_cover)
+    };
+    let cells = Rc::new(VecModel::from(vec![logo(false)]));
+    view.set_cells(ModelRc::from(cells.clone()));
+    settle(&window);
+    cells.set_row_data(0, logo(true));
+    assert_eq!(art(&window), shown, "a logo lands whole");
 }
 
 /// The pairing panel's one promise: Core is never left holding a PIN the
@@ -6092,13 +6104,13 @@ fn grid_push_lowers_face_art_and_ring_before_navigation() {
             raised, depressed,
             "{owner}: unchanged pixels are not push feedback"
         );
-        advance(32);
+        advance(zaparoo_app::input::PRESS_FEEDBACK_MS - 48 - 1);
         assert_eq!(
             shell.get_active_screen(),
             screen,
             "fully depressed source must remain visible"
         );
-        advance(zaparoo_app::input::PRESS_FEEDBACK_MS - 80);
+        advance(1);
         assert_eq!(shell.get_active_screen(), Screen::About);
         assert!(!crate::press_feedback::pending(&app));
         save_push_evidence(&format!("{owner}-3-destination"), &pixels(&window));
@@ -9115,6 +9127,7 @@ fn cached_slides_match_the_live_strip_in_every_orientation_and_on_crt() {
                     crt,
                     frame,
                     zaparoo_app::motion_test::Disabled::default(),
+                    true,
                 );
                 let turned = orientation != Orientation::Horizontal;
                 window.set_size(if turned {
@@ -9388,6 +9401,7 @@ fn tile_glyphs_and_logos_are_painted_at_their_own_pixel_size() {
             crt,
             frame,
             zaparoo_app::motion_test::Disabled::default(),
+            true,
         );
         // The software-rendered builds set this; the probe build may not.
         motion.set_zoom_by_size(true);
@@ -9879,6 +9893,49 @@ fn a_held_walk_scrolls_the_systems_list_continuously() {
     let rest = pixels(&window);
     advance(TICK_MS);
     assert!(pixels(&window) == rest, "nothing moves after the release");
+}
+
+/// A held key in the options menu walks its rows at a steady pace, as a
+/// list does, though the modal keeps the hold to one row at a time and off
+/// the screen behind it.
+#[test]
+fn a_held_key_in_the_options_menu_scrolls_steadily() {
+    use zaparoo_core::input_actions::actions;
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    app.global::<Shell>().set_active_screen(Screen::Games);
+    let overlays = app.global::<crate::Overlays>();
+    let entries: Vec<crate::MenuEntry> = (0..20)
+        .map(|i| crate::MenuEntry {
+            id: format!("row{i}").into(),
+            label: format!("Row {i}").into(),
+            enabled: true,
+            ..Default::default()
+        })
+        .collect();
+    overlays.set_context_entries(ModelRc::new(VecModel::from(entries)));
+    overlays.set_context_index(0);
+    overlays.set_context_open(true);
+
+    crate::input::dispatch_repeat(&ctx, &app, actions::DOWN, HoldTier::Page);
+    assert_eq!(
+        overlays.get_context_index(),
+        1,
+        "a held step in a modal is one row"
+    );
+    assert!(
+        overlays.get_context_step_ms() > 0,
+        "a held step glides at constant speed"
+    );
+    assert!(
+        !crate::input::dispatching_repeat(&ctx),
+        "the hold never reaches the screen behind"
+    );
+
+    crate::router::handle_action(&ctx, &app, actions::DOWN);
+    assert_eq!(overlays.get_context_index(), 2);
+    assert_eq!(overlays.get_context_step_ms(), 0, "a tap eases");
 }
 
 /// The Games list walks row by row the same way until the hold turns into

@@ -198,7 +198,7 @@ export component SetupModal inherits ModalShell {
                 target: root.picker-top * root.picker-stride;
                 step: root.picker-viewport-h;
                 reveal: true;
-                duration: Motion.page-ms;
+                duration: Motion.scroll-ms;
                 viewport: root.picker-viewport-h;
                 scope: StateTokens.picker(root.picker-title) + ":" + Motion.epoch;
             }

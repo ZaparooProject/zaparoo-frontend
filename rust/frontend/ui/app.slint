@@ -555,8 +555,11 @@ export global Overlays {
     in-out property <bool> context-open: false;
     in-out property <[MenuEntry]> context-entries: [];
     in-out property <int> context-index: 0;
-    // The page the rows belong to. A page is named above its rows; the
-    // menu's own rows are not.
+    // The repeat interval of the held key that moved `context-index`, 0
+    // for a single press: how the rows scroll to follow it.
+    in-out property <int> context-step-ms: 0;
+    // The page the rows belong to. Pages carry no title: the row that
+    // opened one already named it, and Back returns to the menu.
     in-out property <ContextPage> context-page: ContextPage.root;
     // The scene rect of the row or tile the menu is about; the scrim
     // hole and the panel placement follow it.
@@ -855,7 +858,7 @@ component SettingsScreen inherits Rectangle {
             target: root.scroll;
             step: root.rows-height;
             reveal: true;
-            duration: Motion.page-ms;
+            duration: Motion.scroll-ms;
             focus-start: root.rows[root.index].y-offset;
             focus-size: root.rows[root.index].height;
             viewport: root.rows-height;
@@ -1110,7 +1113,7 @@ component HubScreen inherits Rectangle {
             y: -self.progress * HubView.grid-height;
             animate progress {
                 duration: HubView.slide-anim ? Motion.dur(Motion.page-ms) : 0ms;
-                easing: ease-in-out;
+                easing: ease-out;
             }
 
             grid := PagedGridView {
@@ -1282,7 +1285,7 @@ component SystemsScreen inherits Rectangle {
             x: 0;
             property <float> page-progress: SystemsView.page-slide;
             y: -self.page-progress * root.period;
-            animate page-progress { duration: SystemsView.slide-anim && !Shell.reduce-motion && Motion.enabled ? 240ms : 0ms; easing: ease-in-out; }
+            animate page-progress { duration: SystemsView.slide-anim && !Shell.reduce-motion && Motion.enabled ? Motion.page-ms : 0ms; easing: ease-out; }
 
             PagedGridView {
                 x: 0;
@@ -1557,7 +1560,7 @@ component ListPickerModal inherits ModalShell {
             target: root.top * root.stride;
             step: root.viewport-h;
             reveal: true;
-            duration: Motion.page-ms;
+            duration: Motion.scroll-ms;
             viewport: root.viewport-h;
             scope: root.title-text + ":" + root.setting-id + ":" + Motion.epoch;
         }
@@ -2372,7 +2375,7 @@ component OnlineListModal inherits ModalShell {
         target: root.top * root.stride;
         step: root.viewport-h;
         reveal: true;
-        duration: Motion.page-ms;
+        duration: Motion.scroll-ms;
         viewport: root.viewport-h;
         scope: "online-list:" + (root.backups ? "backups" : "activity") + ":" + Motion.epoch;
     }
@@ -2693,17 +2696,6 @@ component ContextMenu inherits Rectangle {
     in property <length> anchor-h;
     in property <length> anchor-radius: 0px;
     in property <bool> anchor-zoomed: false;
-    in property <ContextPage> page: ContextPage.root;
-
-    // A page is named after the row that opened it.
-    property <string> title: root.page == ContextPage.write-token ? Labels.menu("write_token", "")
-        : root.page == ContextPage.manage-game ? Labels.menu("manage_game", "")
-        : root.page == ContextPage.manage-system ? Labels.menu("manage_system", "")
-        : root.page == ContextPage.manage-category ? Labels.menu("manage_category", "")
-        : root.page == ContextPage.discs ? Labels.menu("choose_disc", "")
-        : root.page == ContextPage.alternates ? Labels.menu("discover", "")
-        : "";
-    property <bool> titled: root.page != ContextPage.root;
 
     // The bright hole, which is the anchored thing's painted silhouette
     // rather than its layout rect. A focused tile grows about its own
@@ -2744,17 +2736,11 @@ component ContextMenu inherits Rectangle {
     // is the measurement the panel sizes around; measured at the
     // selected row's weight so a row cannot outgrow the panel when it
     // gains focus.
-    // A row that opens a page reserves its chevron on both sides, and
-    // the page's title is one more line the panel has to hold.
+    // A row that opens a page reserves its chevron on both sides.
     property <length> chevron: Sizing.pct-h(3);
     property <length> chevron-room: root.chevron + Sizing.pct-w(1);
     measure := VerticalLayout {
         visible: false;
-        Text {
-            text: root.title;
-            font-size: Sizing.font-caption;
-            font-weight: FontWeight.medium;
-        }
         for entry in root.entries: HorizontalLayout {
             padding-left: entry.role == MenuRole.submenu ? root.chevron-room : 0px;
             padding-right: entry.role == MenuRole.submenu ? root.chevron-room : 0px;
@@ -2769,12 +2755,9 @@ component ContextMenu inherits Rectangle {
         + 2 * root.pad + 2 * Sizing.stroke(2);
     property <length> panel-w: Math.min(Math.max(root.min-panel-w, root.desired-panel-w),
         Math.max(0px, root.width - 2 * root.margin));
-    // The title is pinned above the rows: it takes a row of its own and
-    // never scrolls with them.
-    property <length> title-band: root.titled ? root.row-h + root.row-sp : 0px;
     property <length> rows-h: root.entries.length * root.row-h
         + Math.max(0, root.entries.length - 1) * root.row-sp;
-    property <length> content-h: root.rows-h + root.title-band + 2 * root.pad;
+    property <length> content-h: root.rows-h + 2 * root.pad;
     property <length> usable-bottom: Math.max(root.margin,
         root.height - Sizing.help-bar-clearance - root.margin);
     property <length> panel-h: Math.min(root.content-h,
@@ -2786,7 +2769,7 @@ component ContextMenu inherits Rectangle {
     property <length> arrow: Sizing.pct-h(3);
     property <length> arrow-band: root.scrollable ? root.arrow + Sizing.pct-h(0.5) : 0px;
     property <length> viewport-h: Math.max(0px,
-        root.panel-h - 2 * root.pad - root.title-band - 2 * root.arrow-band);
+        root.panel-h - 2 * root.pad - 2 * root.arrow-band);
     // Keep the focused row in view.
     property <length> row-bottom: (root.current-index + 1) * root.row-h
         + root.current-index * root.row-sp;
@@ -2848,20 +2831,9 @@ component ContextMenu inherits Rectangle {
         border-radius: root.panel-radius;
         clip: true;
 
-        if root.titled: Text {
-            x: Sizing.snap((parent.width - self.width) / 2);
-            y: root.pad + (root.row-h - self.height) / 2;
-            width: Math.min(self.preferred-width, parent.width - 2 * root.pad - 2 * root.label-inset);
-            overflow: elide;
-            text: root.title;
-            color: Theme.text-label;
-            font-size: Sizing.font-caption;
-            font-weight: FontWeight.medium;
-        }
-
         if root.scrollable: ScrollCue {
             x: Sizing.snap((parent.width - self.width) / 2);
-            y: root.pad + root.title-band;
+            y: root.pad;
             width: root.arrow;
             glyph: "icons/ScrollUp";
             live: root.scroll > 0px;
@@ -2876,17 +2848,19 @@ component ContextMenu inherits Rectangle {
 
         // The rows glide under the cues instead of jumping; the fill
         // travels with them, the same way the settings card scrolls.
+        // A held key walks the rows at its repeat cadence, as a list does.
         context-scroll := ScrollOffset {
             target: root.scroll;
             step: root.viewport-h;
             reveal: true;
-            duration: Motion.page-ms;
+            duration: Overlays.context-step-ms > 0 ? Overlays.context-step-ms * 1ms : Motion.scroll-ms;
+            steady: Overlays.context-step-ms > 0;
             viewport: root.viewport-h;
             scope: "context:" + Motion.epoch;
         }
         Rectangle {
         x: 0;
-        y: root.pad + root.title-band + root.arrow-band;
+        y: root.pad + root.arrow-band;
         height: root.viewport-h;
         clip: true;
 
@@ -3158,8 +3132,8 @@ component GamesScreen inherits Rectangle {
             x: GamesView.folder-slide ? -GamesView.page-slide * parent.width : 0px;
             property <float> page-progress: GamesView.page-slide;
             y: GamesView.folder-slide ? 0px : -self.page-progress * root.period;
-            animate x { duration: GamesView.slide-anim && !Shell.reduce-motion && Motion.enabled ? 240ms : 0ms; easing: ease-in-out; }
-            animate page-progress { duration: GamesView.slide-anim && !Shell.reduce-motion && Motion.enabled ? 240ms : 0ms; easing: ease-in-out; }
+            animate x { duration: GamesView.slide-anim && !Shell.reduce-motion && Motion.enabled ? Motion.page-ms : 0ms; easing: ease-out; }
+            animate page-progress { duration: GamesView.slide-anim && !Shell.reduce-motion && Motion.enabled ? Motion.page-ms : 0ms; easing: ease-out; }
 
             PagedGridView {
                 x: 0;
@@ -3331,11 +3305,18 @@ component GamesScreen inherits Rectangle {
         page-requested(delta) => { GamesInput.page-requested(delta); }
     }
 
-    // Where a fast scroll is, on the right edge of the grid or list.
+    // Where a fast scroll is, on the right edge of the grid or list. Over
+    // the HDMI list it sits inside the card, clear of its border by the
+    // card's own padding: lined up with the border, a pixel of rounding
+    // reads as a near miss.
+    property <bool> rail-in-card: root.list-layout && !Sizing.crt;
     FastScrollRail {
-        x: root.width - self.width - (Sizing.crt ? Layout.card-side-margin : Sizing.pct-w(1));
-        y: root.list-layout ? root.list-card-y : GamesView.grid-y;
-        height: root.list-layout ? root.list-card-h : GamesView.grid-height;
+        x: root.width - self.width - (Sizing.crt ? Layout.card-side-margin
+            : root.rail-in-card ? root.list-card-x + Layout.card-padding-right : Sizing.pct-w(1));
+        y: root.list-layout ? root.list-card-y + (root.rail-in-card ? Layout.card-padding-top : 0px) : GamesView.grid-y;
+        height: root.list-layout
+            ? root.list-card-h - (root.rail-in-card ? Layout.card-padding-top + Layout.card-padding-bottom : 0px)
+            : GamesView.grid-height;
         shown: !root.gate-hide && GamesView.rail-visible && GamesView.count > 0;
         letters: GamesView.rail-letters;
         current: GamesView.rail-index;
@@ -4204,7 +4185,6 @@ export component App inherits Window {
         anchor-h: Overlays.context-anchor-h;
         anchor-radius: Overlays.context-anchor-radius;
         anchor-zoomed: Overlays.context-anchor-zoomed;
-        page: Overlays.context-page;
     }
 
     if Overlays.list-open && Overlays.list-form: FormListModal {

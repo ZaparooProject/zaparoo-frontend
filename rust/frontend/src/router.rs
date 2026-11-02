@@ -2478,13 +2478,15 @@ fn context_action(ctx: &Ctx, app: &App, action: &str) {
         .row_count();
     let index = app.global::<crate::Overlays>().get_context_index().max(0) as usize;
     match action {
-        actions::UP if len > 0 => {
-            app.global::<crate::Overlays>()
-                .set_context_index(((index + len - 1) % len) as i32);
-        }
-        actions::DOWN if len > 0 => {
-            app.global::<crate::Overlays>()
-                .set_context_index(((index + 1) % len) as i32);
+        actions::UP | actions::DOWN if len > 0 => {
+            let step_ms = lock(&ctx.shared).input.modal_follow();
+            let overlays = app.global::<crate::Overlays>();
+            overlays.set_context_step_ms(step_ms);
+            overlays.set_context_index(if action == actions::UP {
+                ((index + len - 1) % len) as i32
+            } else {
+                ((index + 1) % len) as i32
+            });
         }
         actions::ACCEPT => {
             if let Some(entry) = app
