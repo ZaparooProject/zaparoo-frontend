@@ -214,6 +214,10 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
             false,
         ) == zaparoo_app::sizing::InterfaceProfile::Handheld,
     );
+    // ZAPAROO_SNAPSHOT_MENU_ROW=off renders with the Menu chip row turned
+    // off in Settings, which gives its band back to the content.
+    app.global::<Sizing>()
+        .set_menu_row_enabled(std::env::var("ZAPAROO_SNAPSHOT_MENU_ROW").as_deref() != Ok("off"));
     sizing::apply_scene(&app, sizing::Scene::of(&app, scene_w, scene_h, crt));
     // Chrome fixtures: a full HUD with a battery reading, and an
     // indexing run in the status line so the track and percent render.
@@ -482,7 +486,14 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
         overlays.set_context_open(true);
         // The list layout anchors the menu on a row, not a tile.
         if screen.contains("list") {
-            if let Some(g) = list_geometry(&app, scene_w, scene_h, crt, 0) {
+            if let Some(g) = list_geometry(
+                &app,
+                scene_w,
+                scene_h,
+                crt,
+                0,
+                games_mode != GamesMode::Recents,
+            ) {
                 let layout = app.global::<Layout>();
                 let row_h = g.row_height as f32;
                 overlays.set_context_anchor_x(
@@ -524,10 +535,15 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
     }
     // "letters" renders the games screen with the letter picker open.
     if screen.contains("letters") {
-        let labels = [
-            "#", "A", "B", "C", "D", "E", "F", "G", "H", "J", "K", "L", "M", "N", "P", "R", "S",
-            "T", "V", "W", "Y", "Z",
-        ];
+        // "letters-few": a list with only a handful of sections.
+        let labels: &[&str] = if screen.contains("letters-few") {
+            &["A", "D", "M", "S"]
+        } else {
+            &[
+                "#", "A", "B", "C", "D", "E", "F", "G", "H", "J", "K", "L", "M", "N", "P", "R",
+                "S", "T", "V", "W", "Y", "Z",
+            ]
+        };
         app.global::<generated::Overlays>()
             .set_letter_buckets(slint::ModelRc::new(slint::VecModel::from(
                 labels
@@ -539,7 +555,8 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
                     })
                     .collect::<Vec<_>>(),
             )));
-        app.global::<generated::Overlays>().set_letter_index(4);
+        app.global::<generated::Overlays>()
+            .set_letter_index(i32::try_from(labels.len().min(5) - 1).unwrap_or(0));
         app.global::<generated::Overlays>().set_letter_open(true);
     }
     let about = app.global::<generated::AboutView>();
@@ -907,6 +924,12 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
     }
     app.global::<Shell>()
         .set_active_screen(fixture_screen(screen));
+    // "*-bar": the Menu chip row with focus on its first chip.
+    if screen.ends_with("-bar") {
+        let bar = app.global::<generated::PageBar>();
+        bar.set_index(0);
+        bar.set_focused(true);
+    }
     if screen == "route-forward" {
         app.global::<Shell>().set_active_screen(Screen::Systems);
     }
@@ -1148,6 +1171,7 @@ fn fixture_screen(screen: &str) -> Screen {
         Screen::Update
     } else if screen.contains("context")
         || screen == "letters"
+        || screen == "letters-few"
         || (screen.contains("list") && !screen.contains("systems"))
         || screen.contains("games")
         || screen.contains("filter")
@@ -1719,8 +1743,9 @@ fn list_metrics(
     scene_h: f64,
     crt: bool,
     target_rows: usize,
+    menu_row: bool,
 ) -> (f32, usize) {
-    list_geometry(app, scene_w, scene_h, crt, target_rows)
+    list_geometry(app, scene_w, scene_h, crt, target_rows, menu_row)
         .map_or((0.0, 1), |g| (g.row_height as f32, g.visible_rows.max(1)))
 }
 
@@ -1732,6 +1757,7 @@ fn list_geometry(
     scene_h: f64,
     crt: bool,
     target_rows: usize,
+    menu_row: bool,
 ) -> Option<zaparoo_app::media_list::ListGeometry> {
     use zaparoo_app::layouts::{self, Body, ThemeId, View};
     let inputs = sizing::Scene::of(app, scene_w, scene_h, crt).inputs();
@@ -1754,7 +1780,8 @@ fn list_geometry(
             screen_height: inputs.screen_height as i32,
             header_bottom: derived.header_bottom,
             status_top_margin: profile.status.top_margin,
-            strip_height: profile.status.strip_height,
+            strip_height: profile.status.strip_height
+                + if menu_row { derived.menu_row_block } else { 0 },
             help_bar_height: derived.help_bar_height,
             tier_240: derived.tier == zaparoo_app::sizing::Tier::T240,
             safe_bottom_gap: inputs.pct_h(6.0),
@@ -1970,6 +1997,42 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
     view.set_grid_height(grid_height as f32);
 }
 
+/// The Hub's and a games-style screen's Menu chips, as their drivers
+/// publish them.
+fn fixture_chips(app: &App, mode: GamesMode) {
+    let chip = |id: &str, key: &str, name: &str| MenuEntry {
+        role: generated::MenuRole::Option,
+        detail_key: "".into(),
+        id: id.into(),
+        label: name.into(),
+        label_key: key.into(),
+        enabled: true,
+        reason_key: "".into(),
+        detail: "".into(),
+    };
+    let games = match mode {
+        GamesMode::Browse => vec![
+            chip("jump_letter", "jump_letter", ""),
+            chip("filter", "filter", ""),
+            chip("search_here", "search_here", ""),
+        ],
+        GamesMode::Favorites => vec![
+            chip("favorites_sort", "favorites_sort", "sort:name"),
+            chip("favorites_grouping", "favorites_grouping", "group:none"),
+            chip("launch_random_favorite", "launch_random_favorite", ""),
+            chip("more", "more", ""),
+        ],
+        GamesMode::Search => vec![chip("add_to_hub", "add_to_hub", "")],
+        GamesMode::Recents => Vec::new(),
+    };
+    let bar = app.global::<generated::PageBar>();
+    bar.set_games_chips(slint::ModelRc::new(slint::VecModel::from(games)));
+    bar.set_hub_chips(slint::ModelRc::new(slint::VecModel::from(vec![
+        chip("hub_add", "hub_add", ""),
+        chip("more", "more", ""),
+    ])));
+}
+
 /// The Games grid at its browse geometry: a page of captioned tiles with
 /// a favorite heart, a tag suffix and a folder row, page 1 of 4 with more
 /// pages loaded behind it, at the Games footer profile.
@@ -2001,7 +2064,15 @@ fn fixture_games(
     let t240 = derived.tier == zaparoo_app::sizing::Tier::T240;
     let flat = mode != GamesMode::Browse;
     let screen_h = inputs.screen_height as i32;
-    let grid_y = derived.header_bottom + profile.status.top_margin + profile.status.strip_height;
+    fixture_chips(app, mode);
+    let grid_y = derived.header_bottom
+        + profile.status.top_margin
+        + profile.status.strip_height
+        + if mode == GamesMode::Recents {
+            0
+        } else {
+            derived.menu_row_block
+        };
     let label_height = if flat {
         inputs.pct_h(7.0)
     } else {
@@ -2100,7 +2171,8 @@ fn fixture_games(
     // card beside the focused row's detail pane. Filled here too so the
     // `*-list` screens render what the driver would push, not an empty
     // card.
-    let (list_row_height, list_visible) = list_metrics(app, scene_w, scene_h, crt, 0);
+    let (list_row_height, list_visible) =
+        list_metrics(app, scene_w, scene_h, crt, 0, mode != GamesMode::Recents);
     let list_rows: Vec<GridCell> = (1..=list_visible)
         .map(|i| GridCell {
             name: if i == 1 && !flat {
@@ -2190,7 +2262,30 @@ fn fixture_systems(app: &App, scene_w: f64, scene_h: f64, crt: bool, favorites: 
     let Body::Grid { grid, footer } = profile.body else {
         return;
     };
-    let grid_y = derived.header_bottom + profile.status.top_margin + profile.status.strip_height;
+    let chip = |id: &str, key: &str, name: &str| MenuEntry {
+        role: generated::MenuRole::Option,
+        detail_key: "".into(),
+        id: id.into(),
+        label: name.into(),
+        label_key: key.into(),
+        enabled: true,
+        reason_key: "".into(),
+        detail: "".into(),
+    };
+    app.global::<generated::PageBar>()
+        .set_systems_chips(slint::ModelRc::new(slint::VecModel::from(if favorites {
+            vec![chip(
+                "favorites_grouping",
+                "favorites_grouping",
+                "group:system",
+            )]
+        } else {
+            Vec::new()
+        })));
+    let grid_y = derived.header_bottom
+        + profile.status.top_margin
+        + profile.status.strip_height
+        + if favorites { derived.menu_row_block } else { 0 };
     let bottom = if derived.tier == zaparoo_app::sizing::Tier::T240 {
         derived.help_bar_height + footer.active_label_height
     } else {
@@ -2224,7 +2319,7 @@ fn fixture_systems(app: &App, scene_w: f64, scene_h: f64, crt: bool, favorites: 
             ..Default::default()
         })
         .collect();
-    let (row_height, visible) = list_metrics(app, scene_w, scene_h, crt, 0);
+    let (row_height, visible) = list_metrics(app, scene_w, scene_h, crt, 0, favorites);
     let list_rows: Vec<GridCell> = (13..13 + visible)
         .map(|i| GridCell {
             name: format!("Example System {i}").into(),

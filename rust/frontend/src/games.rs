@@ -577,7 +577,9 @@ fn list_geometry(ctx: &Ctx, app: &App, shared: &Shared) -> rules::ListGeometry {
             screen_height: inputs.screen_height as i32,
             header_bottom: derived.header_bottom,
             status_top_margin: profile.status.top_margin,
-            strip_height: profile.status.strip_height,
+            // The Menu chip row sits between the strip and the card.
+            strip_height: profile.status.strip_height
+                + crate::page_bar::games_row_block(shared.games.mode, &derived),
             help_bar_height: derived.help_bar_height,
             tier_240: derived.tier == zaparoo_app::sizing::Tier::T240,
             safe_bottom_gap: inputs.pct_h(6.0),
@@ -1749,7 +1751,10 @@ pub fn geometry_for(inputs: &zaparoo_app::sizing::Inputs, mode: GamesMode) -> Ge
         Body::List { .. } => unreachable!("the games grid view resolves to a grid body"),
     };
     let screen_h = inputs.screen_height as i32;
-    let grid_y = derived.header_bottom + profile.status.top_margin + profile.status.strip_height;
+    let grid_y = derived.header_bottom
+        + profile.status.top_margin
+        + profile.status.strip_height
+        + crate::page_bar::games_row_block(mode, &derived);
     let t240 = derived.tier == zaparoo_app::sizing::Tier::T240;
     let (bottom, label_y, label_height) = match mode {
         GamesMode::Browse => {
@@ -2268,6 +2273,7 @@ pub fn render(ctx: &Ctx, app: &App) {
     view.set_focus_ready(model.focus_armed || model.restore_done);
     view.set_rapid_active(model.rapid_active);
     publish_rail(app, &shared);
+    crate::page_bar::publish_games(app, &shared, mode);
 
     if !model.folder_sliding {
         if view.get_folder_slide() {
@@ -2973,6 +2979,24 @@ fn letter_leading(shared: &Shared) -> usize {
     }
 }
 
+/// Go to has something to jump through: a ready browse list. The L1+R1
+/// chord holds a shoulder press back only where this is true.
+pub(crate) fn go_to_available(shared: &Shared) -> bool {
+    shared.games.mode == GamesMode::Browse && shared.games.state() == State::Ready
+}
+
+/// The letter bucket the selection is in, where the folder on screen has
+/// its letters: where Go to opens.
+pub(crate) fn current_letter_bucket(shared: &Shared) -> Option<usize> {
+    let groups = scope_letters(shared)?;
+    let offsets: Vec<u32> = groups.iter().map(|group| group.offset).collect();
+    rules::letter_at(
+        &offsets,
+        letter_leading(shared),
+        shared.games.grid.current_index(),
+    )
+}
+
 /// The scope's letter buckets, when the list is browsed by title and the
 /// fetched index belongs to the folder on screen.
 fn scope_letters(shared: &Shared) -> Option<&[zaparoo_core::media_types::BrowseIndexGroup]> {
@@ -3276,9 +3300,13 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
             }
         }
         actions::PAGE_MENU => {
-            // Favorites scope can produce an empty folder: keep View
+            // Favorites scope can produce an empty folder: keep the Menu
             // reachable so the user can clear the filter.
             if !rules::page_menu_allowed(state, true) {
+                return;
+            }
+            // Above 240p the page actions are a chip row on the page.
+            if crate::page_bar::enter(ctx, app) {
                 return;
             }
             match mode {

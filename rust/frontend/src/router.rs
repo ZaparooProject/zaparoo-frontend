@@ -92,7 +92,7 @@ pub struct Shared {
     /// The open menu's rows and the pages they open, kept so Back from a
     /// page returns to the same rows.
     pub context_menu: zaparoo_app::options_menu::Menu,
-    /// What the open `ListPickerModal` is for (View menu vs a settings
+    /// What the open `ListPickerModal` is for (the Menu list vs a settings
     /// picker field).
     pub list_context: ListContext,
     /// Restart-applied Display setting waiting behind the confirmation
@@ -182,21 +182,22 @@ pub enum PendingRestart {
 /// What the shared `ListPickerModal` is currently picking.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ListContext {
-    /// The games-screen West "View" menu.
+    /// The games screen's Menu list.
     ViewMenu,
-    /// The Hub's West "View" menu (Add item, Reset layout, Settings, Quit).
+    /// The Hub's Menu list (Add item, Reset layout, Settings, Quit), and
+    /// its More list behind the chip row.
     HubPageMenu,
     /// The Hub's "Add item" picker.
     HubAdd,
-    /// The favorites list's West "View" menu.
+    /// The favorites list's Menu list, and its More list.
     FavoritesPageMenu,
     /// Its "Group by" and "Sort" pages.
     FavoritesGrouping,
     FavoritesSort,
-    /// The Search results' West "View" menu.
+    /// The Search results' Menu list.
     SearchResultsPageMenu,
     /// The Games "Filter" page: one row per category, and the values page
-    /// of the category being chosen. Both stay inside the View menu's panel.
+    /// of the category being chosen. Both stay inside one panel.
     FilterCategories,
     FilterValues(zaparoo_app::browse_filter::Category),
     /// The Search screen's system picker.
@@ -896,6 +897,7 @@ pub(crate) fn clear_pending(app: &App) {
 /// screen is the first one shown.
 pub(crate) fn transition_to_screen(app: &App, target: crate::Screen, _direction: i32) {
     clear_pending(app);
+    crate::page_bar::screen_changed(app);
     let motion = app.global::<crate::Motion>();
     motion.set_epoch(motion.get_epoch().wrapping_add(1));
     app.global::<crate::Shell>().set_active_screen(target);
@@ -909,6 +911,20 @@ pub(crate) fn transition_to_screen(app: &App, target: crate::Screen, _direction:
 pub(crate) fn return_to_hub(ctx: &Ctx, app: &App) {
     transition_to_screen(app, crate::Screen::Hub, -1);
     crate::hub::render(ctx, app);
+}
+
+/// Straight back to the Hub from wherever the user is: Back to Hub in the
+/// favorites Menu, and a held Back. A route still pending is called off
+/// first, so its fill cannot land after the Hub is up, and the Hub is the
+/// screen a relaunch restores.
+pub(crate) fn go_home(ctx: &Ctx, app: &App) {
+    if app.global::<crate::Shell>().get_transitioning() {
+        crate::navigation::cancel(ctx, app);
+    }
+    crate::games::flush_persist(ctx);
+    lock(&ctx.shared).persist.active_screen = crate::Screen::Hub.token().to_string();
+    save_persist(&ctx.shared);
+    return_to_hub(ctx, app);
 }
 
 type RestoreHook = std::rc::Rc<dyn Fn(&App)>;
@@ -1155,7 +1171,7 @@ fn dispatch_action(ctx: &Ctx, app: &App, action: &str) {
     // Decision dialogs (quit confirm / startup chain) own all input
     // while open, above every other surface.
     if app.global::<crate::Overlays>().get_dialog_open() {
-        dialog_action(ctx, app, action);
+        overlay_action(ctx, app, action, dialog_action);
         return;
     }
     // Cold-launch curtain swallows input except Cancel, which still
@@ -1218,11 +1234,11 @@ fn dispatch_action(ctx: &Ctx, app: &App, action: &str) {
         return;
     }
     if app.global::<crate::Overlays>().get_letter_open() {
-        letter_action(ctx, app, action);
+        overlay_action(ctx, app, action, letter_action);
         return;
     }
     if app.global::<crate::Overlays>().get_list_open() {
-        list_action(ctx, app, action);
+        overlay_action(ctx, app, action, list_action);
         return;
     }
     if app.global::<crate::Overlays>().get_context_open() {
@@ -1245,6 +1261,23 @@ fn dispatch_action(ctx: &Ctx, app: &App, action: &str) {
     // repeat path may set the flag.
     if !crate::input::rapid_page(ctx) {
         crate::input::note_rapid(ctx, app, action, false);
+    }
+    screen_action(ctx, app, action);
+}
+
+/// An overlay's own handler, then where focus goes if it just closed: back
+/// to the Menu chip that opened it, when it was backed out of.
+fn overlay_action(ctx: &Ctx, app: &App, action: &str, handler: fn(&Ctx, &App, &str)) {
+    handler(ctx, app, action);
+    crate::page_bar::overlay_settled(app, action);
+}
+
+/// The screen on show takes the action, or its Menu chip row while the
+/// Menu button has put focus there.
+fn screen_action(ctx: &Ctx, app: &App, action: &str) {
+    if crate::page_bar::focused(app) {
+        crate::page_bar::handle_action(ctx, app, action);
+        return;
     }
     match app.global::<crate::Shell>().get_active_screen() {
         crate::Screen::Hub => crate::hub::handle_action(ctx, app, action),
@@ -1510,6 +1543,7 @@ pub(crate) fn refresh_layout(app: &App) {
     );
     let crt = sizing_global.get_crt();
     sizing::refresh_layout(app, sizing::Scene::of(app, w, h, crt));
+    crate::page_bar::sync(app);
 }
 
 /// The scene changed size (a desktop window resize, a live orientation
@@ -1535,17 +1569,18 @@ pub(crate) fn apply_clock_setting(ctx: &Ctx, app: &App) {
     crate::push_clock(app, twelve);
 }
 
-/// Open the West "View" menu (the page/list-scoped operations menu,
-/// counterpart to North's item-scoped Options). Go to... is pre-focused
-/// so the common path is a fixed West-then-Accept chord, then the filter
-/// rows. The letter facet and the filter's tag list are fetched here so
-/// both are likely ready by the time the user gets into them.
+/// Open the games screen's Menu list (the page-scoped operations, the
+/// counterpart to North's item-scoped Options), where the Menu chip row
+/// is not on screen. Go to... is pre-focused so the common path is a
+/// fixed Menu-then-Accept chord, then the filter rows. The letter facet
+/// and the filter's tag list are fetched here so both are likely ready by
+/// the time the user gets into them.
 pub(crate) fn open_view_menu(ctx: &Ctx, app: &App) {
-    fetch_letter_index(ctx, app);
+    ensure_letter_index(ctx, app);
     crate::browse_filter::begin(ctx, app);
     let mut entries = vec![menu_row("jump_letter"), menu_row("search_here")];
     entries.extend(crate::browse_filter::view_rows(&lock(&ctx.shared)));
-    present_list(ctx, app, ListContext::ViewMenu, "title:view", entries);
+    present_list(ctx, app, ListContext::ViewMenu, "title:menu", entries);
 }
 
 /// What each row of the open list is, for the cursor rules.
@@ -1615,7 +1650,7 @@ fn list_action(ctx: &Ctx, app: &App, action: &str) {
                 }
                 match context {
                     ListContext::ViewMenu => match id.as_str() {
-                        "jump_letter" => open_letter_jump(ctx, app),
+                        "jump_letter" => open_go_to(ctx, app),
                         "search_here" => crate::search::enter_scoped(ctx, app),
                         "filter" => crate::browse_filter::open(ctx, app),
                         "filter_clear" => crate::browse_filter::clear(ctx, app),
@@ -1755,11 +1790,28 @@ pub(crate) fn fetch_letter_index(ctx: &Ctx, app: &App) {
     });
 }
 
-/// Open the jump-to-letter picker over whatever facet state the View
-/// menu's prefetch has reached (loading or filled).
-fn open_letter_jump(_ctx: &Ctx, app: &App) {
-    app.global::<crate::Overlays>().set_letter_index(0);
-    app.global::<crate::Overlays>().set_letter_open(true);
+/// Fetch the browse facet unless the folder on screen already has it.
+pub(crate) fn ensure_letter_index(ctx: &Ctx, app: &App) {
+    let fetched = {
+        let shared = lock(&ctx.shared);
+        shared.letter_scope.as_ref().is_some_and(|(system, path)| {
+            *system == shared.games.system_id && *path == shared.games.browse_path
+        })
+    };
+    if !fetched {
+        fetch_letter_index(ctx, app);
+    }
+}
+
+/// Open the jump-to-letter picker (Go to) over whatever facet state the
+/// prefetch has reached (loading or filled), on the letter the selection
+/// is in.
+pub(crate) fn open_go_to(ctx: &Ctx, app: &App) {
+    ensure_letter_index(ctx, app);
+    let at = crate::games::current_letter_bucket(&lock(&ctx.shared)).unwrap_or(0);
+    let overlays = app.global::<crate::Overlays>();
+    overlays.set_letter_index(i32::try_from(at).unwrap_or(0));
+    overlays.set_letter_open(true);
 }
 
 fn close_letter_jump(_ctx: &Ctx, app: &App) {
@@ -2054,45 +2106,26 @@ pub(crate) fn menu_value(
 }
 
 pub(crate) fn present_hub_page_menu(ctx: &Ctx, app: &App, entries: Vec<crate::MenuEntry>) {
-    present_list(ctx, app, ListContext::HubPageMenu, "title:view", entries);
+    present_list(ctx, app, ListContext::HubPageMenu, "title:menu", entries);
 }
 
 pub(crate) fn present_hub_add_picker(ctx: &Ctx, app: &App, entries: Vec<crate::MenuEntry>) {
     present_list(ctx, app, ListContext::HubAdd, "title:add_item", entries);
 }
 
-/// The vocabulary key for the current grouping, so the View menu row
-/// can name it in the reader's language.
-fn favorites_grouping_label(ctx: &Ctx) -> &'static str {
-    if lock(&ctx.shared).persist.settings.favorites_grouping == "system" {
-        "group:system"
-    } else {
-        "group:none"
-    }
-}
-
-fn favorites_sort_label(ctx: &Ctx) -> &'static str {
-    if lock(&ctx.shared).favorites_sort == "name" {
-        "sort:name"
-    } else {
-        "sort:default"
-    }
-}
-
-/// The favorites list's West "View" menu: order, grouping, a random
-/// favorite, and the way back to the Hub.
+/// The favorites list's Menu list: order, grouping, a random favorite,
+/// and the way back to the Hub.
 pub(crate) fn open_favorites_page_menu(ctx: &Ctx, app: &App) {
+    let (sort, grouping) = {
+        let shared = lock(&ctx.shared);
+        (
+            crate::page_bar::favorites_sort_label(&shared),
+            crate::page_bar::favorites_grouping_label(&shared),
+        )
+    };
     let entries = vec![
-        menu_row_keyed(
-            "favorites_sort",
-            "favorites_sort",
-            favorites_sort_label(ctx),
-        ),
-        menu_row_keyed(
-            "favorites_grouping",
-            "favorites_grouping",
-            favorites_grouping_label(ctx),
-        ),
+        menu_row_keyed("favorites_sort", "favorites_sort", sort),
+        menu_row_keyed("favorites_grouping", "favorites_grouping", grouping),
         menu_row("launch_random_favorite"),
         menu_row("back_to_hub"),
     ];
@@ -2100,13 +2133,13 @@ pub(crate) fn open_favorites_page_menu(ctx: &Ctx, app: &App) {
         ctx,
         app,
         ListContext::FavoritesPageMenu,
-        "title:view",
+        "title:menu",
         entries,
     );
 }
 
-/// The Search results' West "View" menu: keep the search on the Hub, or
-/// take its tile back off.
+/// The Search results' Menu list: keep the search on the Hub, or take its
+/// tile back off.
 pub(crate) fn open_search_results_page_menu(ctx: &Ctx, app: &App) {
     let on_hub = crate::search::on_hub(&lock(&ctx.shared));
     let entries = vec![menu_row_keyed(
@@ -2118,12 +2151,12 @@ pub(crate) fn open_search_results_page_menu(ctx: &Ctx, app: &App) {
         ctx,
         app,
         ListContext::SearchResultsPageMenu,
-        "title:view",
+        "title:menu",
         entries,
     );
 }
 
-fn favorites_page_menu_accept(ctx: &Ctx, app: &App, id: &str) {
+pub(crate) fn favorites_page_menu_accept(ctx: &Ctx, app: &App, id: &str) {
     match id {
         "favorites_sort" => open_favorites_sort_menu(ctx, app),
         "favorites_grouping" => open_favorites_grouping_menu(ctx, app),
@@ -2136,11 +2169,7 @@ fn favorites_page_menu_accept(ctx: &Ctx, app: &App, id: &str) {
                 "",
             );
         }
-        "back_to_hub" => {
-            lock(&ctx.shared).persist.active_screen = "hub".to_string();
-            save_persist(&ctx.shared);
-            return_to_hub(ctx, app);
-        }
+        "back_to_hub" => go_home(ctx, app),
         _ => {}
     }
 }
@@ -2188,7 +2217,7 @@ fn favorites_grouping_picked(ctx: &Ctx, app: &App, id: &str) {
     }
 }
 
-fn open_favorites_sort_menu(ctx: &Ctx, app: &App) {
+pub(crate) fn open_favorites_sort_menu(ctx: &Ctx, app: &App) {
     let entries = vec![
         menu_row_keyed("default", "sort:default", ""),
         menu_row_keyed("name", "sort:name", ""),

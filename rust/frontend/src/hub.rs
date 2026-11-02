@@ -619,6 +619,7 @@ pub fn render(ctx: &Ctx, app: &App) {
         return;
     }
     let shared = lock(&ctx.shared);
+    crate::page_bar::publish_hub(app, &shared);
     let hub = &shared.hub;
     let logo_style = shared.persist.settings.system_logo_style.as_str();
     let page_size = hub.grid.page_size();
@@ -1028,9 +1029,11 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
     match action {
         actions::ACCEPT => activate_current(ctx, app),
         actions::CONTEXT_MENU => open_context_menu(ctx, app),
-        actions::PAGE_MENU => open_page_menu(ctx, app),
+        // Above 240p the page actions are the chip row; at 240p the
+        // Menu list.
+        actions::PAGE_MENU if !crate::page_bar::enter(ctx, app) => open_page_menu(ctx, app),
         // Cancel is a deliberate no-op on the Hub root; Quit lives in
-        // the View menu.
+        // the Menu, behind More on the chip row.
         _ => {}
     }
 }
@@ -1629,7 +1632,7 @@ pub fn context_accept(ctx: &Ctx, app: &App, id: &str) {
     }
 }
 
-/// West: the page-scoped View menu.
+/// The Menu list, where the chip row is not on screen.
 fn open_page_menu(ctx: &Ctx, app: &App) {
     crate::router::present_hub_page_menu(
         ctx,
@@ -1643,7 +1646,7 @@ fn open_page_menu(ctx: &Ctx, app: &App) {
     );
 }
 
-/// View menu accept.
+/// A Menu list row, or the Add item chip.
 pub fn page_menu_accept(ctx: &Ctx, app: &App, id: &str) {
     match id {
         "hub_add" => open_add_picker(ctx, app),

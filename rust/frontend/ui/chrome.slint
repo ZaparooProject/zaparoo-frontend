@@ -49,20 +49,21 @@ export global Brand {
 
 // Help-bar glyph resolution. Rust pushes the style directory and the four
 // positional files from the controller report and the Controls settings;
-// "ButtonA"/"ButtonB"/"ButtonX"/"ButtonY" are semantic tokens that
+// "ButtonA"/"ButtonB"/"ButtonX"/"ButtonY" (confirm, cancel, options, menu)
+// are semantic tokens that
 // resolve through them, never literal letters.
 export global Buttons {
     in-out property <string> style: "style_d";
     in-out property <string> confirm: "FaceEast";
     in-out property <string> cancel: "FaceSouth";
     in-out property <string> options: "FaceNorth";
-    in-out property <string> view: "FaceWest";
+    in-out property <string> menu: "FaceWest";
 
     public pure function file(token: string) -> string {
         if (token == "ButtonA") { return self.confirm; }
         if (token == "ButtonB") { return self.cancel; }
         if (token == "ButtonX") { return self.options; }
-        if (token == "ButtonY") { return self.view; }
+        if (token == "ButtonY") { return self.menu; }
         if (token == "ButtonL") { return "ShoulderL"; }
         if (token == "ButtonR") { return "ShoulderR"; }
         return token;

@@ -139,11 +139,12 @@ export global Labels {
         if (key == "index_category" || key == "index_system") { return @tr("Update media database"); }
         if (key == "scrape_category" || key == "scrape_system") { return @tr("Update metadata"); }
         if (key == "jump_letter") { return @tr("Go to…"); }
+        // The Go to chip names the letter the selection is in.
         if (key == "search_here") { return @tr("Search here…"); }
         if (key == "search:all_systems") { return @tr("All systems"); }
         if (key == "section:recent") { return @tr("Recent"); }
         if (key == "section:other") { return @tr("Other"); }
-        // The tags picker, from the games View menu and the Search screen.
+        // The tags picker, from the games Menu and the Search screen.
         if (key == "filter") { return @tr("Tags: {}", Labels.filter-value(name)); }
         if (key == "filter_clear") { return @tr("Clear tags"); }
         if (key == "filter:any") { return @tr("Any"); }
@@ -153,7 +154,7 @@ export global Labels {
         if (key == "filter:failed") { return @tr("Failed to load tags"); }
         if (key == "filter:none") { return @tr("No tags available"); }
         if (Labels.filter-category(key, name) != "") { return Labels.filter-category(key, name); }
-        // Hub rows and its View menu.
+        // Hub rows and its Menu.
         if (key == "hub_add") { return @tr("Add item…"); }
         if (key == "hub_move") { return @tr("Move"); }
         if (key == "hub_remove:hide") { return @tr("Hide"); }
@@ -163,7 +164,8 @@ export global Labels {
         if (key == "hub_settings") { return @tr("Settings"); }
         if (key == "hub_quit") { return @tr("Quit"); }
         if (key == "back_to_hub") { return @tr("Back to Hub"); }
-        // The favorites View menu and its pages.
+        if (key == "more") { return @tr("More"); }
+        // The favorites Menu and its pages.
         // The two rows that show their current value; `name` carries the
         // value's own key so both halves get translated.
         if (key == "favorites_sort") { return @tr("Sort: {}", Labels.menu-value(name)); }
@@ -176,7 +178,8 @@ export global Labels {
         if (key == "launcher:default") { return @tr("Default"); }
         if (key == "launcher:current") { return @tr("Current: {}", name); }
         // Picker titles.
-        if (key == "title:view") { return @tr("View"); }
+        if (key == "title:menu") { return @tr("Menu"); }
+        if (key == "title:more") { return @tr("More"); }
         if (key == "title:filter") { return @tr("Tags"); }
         if (key == "title:search_system") { return @tr("System"); }
         if (key == "title:add_item") { return @tr("Add item"); }

@@ -239,6 +239,10 @@ fn update_target(app: &App) -> Option<Target> {
 }
 
 fn grid_target(app: &App) -> Option<Target> {
+    // The Menu chip row has focus: no tile under it takes the push.
+    if app.global::<crate::PageBar>().get_focused() {
+        return None;
+    }
     let shell = app.global::<Shell>();
     let (owner, index, scope, rows) = match shell.get_active_screen() {
         Screen::Hub => {

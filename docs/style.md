@@ -847,7 +847,7 @@ The Search screen is its first user.
   into the text, it sits on a character and inverts it. Reduce motion
   holds it solid.
 - **Buttons.** Accept presses the focused key, and repeats while held on a
-  key that types or deletes. View deletes and repeats while held; held past
+  key that types or deletes. Menu deletes and repeats while held; held past
   `TEXT_CLEAR_HOLD_MS` it clears the whole field. Options types a space and
   the shoulder buttons move the cursor. They work from anywhere on the
   screen, so fixing a typo never needs a trip to the Backspace key. The
@@ -856,7 +856,7 @@ The Search screen is its first user.
   any key binding sees them, Backspace deletes, and focus moves to the
   submit key so Enter runs the action. The help bar then drops the Delete
   and Space hints, which that keyboard's own keys already cover. On MiSTer
-  the host sends a pad's View button as Space, so Space keeps its pad
+  the host sends a pad's Menu button as Space, so Space keeps its pad
   meaning (delete) whenever the input report says a controller sent it.
 - **Every edge wraps.** The fields above the keyboard and its key rows are
   one vertical loop: Down from the bottom row reaches the field above that
@@ -889,10 +889,74 @@ match, so it can exceed the rows listed; it is exact up to one page of
 results and reads `Matches: 100+` beyond it, because Core reports no total. At the 240p tier and on a rotated scene or one narrower
 than 4:3 the card collapses and the count moves into the query field.
 
-The Search results have a View menu with one row, "Add to Hub", which pins
-the search on screen as a Hub tile and reads "Remove from Hub" once it is
-there. Results opened from such a tile have no Search screen behind them:
+The Search results' Menu has one action, "Add to Hub", which pins the
+search on screen as a Hub tile and reads "Remove from Hub" once it is there.
+Above 240p it is the results' one chip, and focus stays on it after a press
+so the changed words show what happened; at 240p it is the Menu list's one
+row. Results opened from such a tile have no Search screen behind them:
 Back returns to the Hub, and the search is not added to the recent searches.
+
+## Menu chip row
+
+Two buttons act on two scopes. Options (North) acts on the focused item and
+is anchored to it. Menu (West) acts on the screen. Above the 240p tier a
+screen's page actions are a row of chips on the page, so they can be seen
+before anyone thinks to look for them; Menu puts focus on the row. At 240p
+there is no room for the row, and Menu opens the same actions as the Menu
+list. Rules and their tests: `zaparoo_app::page_bar`.
+
+The row can be turned off: Settings > Appearance > Show Menu row
+(`show_menu_row` in the persisted settings and `[settings]` in
+`frontend.toml`, on by default; a state file from before the setting keeps
+the row). Off, every tier lays out as 240p does for the row: no band, the
+content takes the height back, and Menu opens the Menu list. It applies at
+once, through the same relayout a scene change runs.
+
+| Screen | Chips | More |
+|---|---|---|
+| Hub | Add item | Reset layout, Settings, Quit |
+| Games | Go to, Tags [value], Search here | |
+| Favorites | Sort [value], Group by [value], Random game | Back to Hub |
+| Favorite systems | Group by [value] | |
+| Search results | Add to Hub / Remove from Hub | |
+
+- **Placement.** Directly under the title strip and above the grid or list
+  card; on the Hub, under the header at the header's side margin, so it
+  reads as part of the header. The row's band (`Sizing.menu-row-block`,
+  zero at 240p) comes out of the content's budget on every screen that has
+  chips, and only there, so it never appears or disappears under a grid.
+- **Way in.** The row opens with the Menu button's glyph, the same glyph
+  the help bar uses. The row is never drawn as disabled: its chips work,
+  and a muted or grayed look would say they do not.
+- **Chips.** Text in `text-label`, with no fill or border, so the row reads
+  as header chrome rather than a strip of cards. A chip is as wide as its
+  words, up to an even share of the row, and names its current value where
+  it has one (`Sort: A-Z`), so the row doubles as the screen's state.
+- **Focus.** Only Menu enters the row; the d-pad never walks into it from
+  the content, so grid wrap and paging are untouched. The focused chip
+  turns `text-primary` and takes the accent ring, which glides and resizes
+  between chips and carries the tile focus zoom (a transform where the
+  renderer has one, a grown ring where it does not). Left and Right walk
+  the chips and wrap. Accept runs a chip. Back, Menu and Down return to the
+  content at the same selection; Up does nothing. While the row has focus
+  the content shows no selection: no ring, zoom, tint, fill or caption. Row focus is
+  not persisted, like an open modal.
+- **Pickers.** A chip opens the same picker its Menu list row does. Backing
+  out of it returns focus to the chip; a pick returns it to the content.
+- **More.** Rare actions sit behind a last chip, More, which opens the Menu
+  list titled More. A screen with nothing rare has no More chip.
+- **Dual head.** The CRT head of a dual-head pair draws the 240p layout,
+  which has no row, so Menu opens the Menu list there too.
+- **Shortcuts.** Every shortcut duplicates something reachable on screen,
+  so a pad without the buttons loses nothing. Holding Back for
+  `BACK_HOLD_TO_HUB_MS` (half a second) goes straight to the Hub, with no
+  step back on the way and no progress indicator: the route is the
+  feedback. So a screen's Back waits for its release to know which it
+  was, and a tap goes back one level when the button comes up. A Back
+  that closes a modal, leaves the Menu row or deletes text has no hold
+  and still acts on the press. L1 and R1 together open Go to: on a screen
+  with Go to, a shoulder press waits `CHORD_WINDOW_MS` for its partner
+  before it pages.
 
 ## Form lists
 
@@ -922,8 +986,8 @@ ones Core names no manufacturer for under Other. Eight systems or fewer are
 one plain alphabetical list. Rules: `zaparoo_app::system_picker` and
 `zaparoo_app::form_list`.
 
-The tags picker is the same from the Games View menu and from the Search
-screen's Tags field: a page of categories, each showing its chosen value
+The tags picker is the same from the Games Menu (its Tags chip, or the Menu
+list's row at 240p) and from the Search screen's Tags field: a page of categories, each showing its chosen value
 or Any, then a page of one category's values with their game counts. It is
 called Tags everywhere. Its Collections category lists the built-in
 collections first (Favorites, Liked, Play later), then the user's decks by
@@ -1447,7 +1511,7 @@ deep they are or how many Back presses get out. The rules:
    the rows the page replaced, on the row that opened it (`context_action`
    in `router.rs`). One level only: a row on a page never opens a page.
 6. A screen may open a modal (Settings rows open `ListPickerModal`); a
-   modal that closes and *then* opens another (View menu -> letter jump,
+   modal that closes and *then* opens another (Menu list -> letter jump,
    error -> retry) is a sequence, not a stack, and is fine.
 
 Panel width is content-driven for the decision dialog (`DialogModal`),
@@ -1738,7 +1802,8 @@ The group fits within one side slot and elides its count rather than colliding
 with the title. Settings detail pages put item position there; About/License
 puts scroll percentage there. Loading status stays independent. Hub has no
 title strip or total count, so its cue stays beside the focused caption rather
-than taking space from its grid. CRT retains its calibrated footer and
+than taking space from its grid. The Menu chip row is not a cue: a screen that
+has one always reserves it (see [Menu chip row](#menu-chip-row)). CRT retains its calibrated footer and
 in-card About cues. Modal cues remain inside their panels, and the fast-scroll
 rail remains on the right. Cue visibility never changes grid geometry: a
 single-page grid becoming multi-page (arming Hub Options → Move always
@@ -1799,7 +1864,8 @@ pair and a CRT scene that was not granted a cached slide. Repeated input
 interrupts obsolete motion; Reduce motion cuts immediately. Persistence records
 the destination, never an animation phase.
 
-The Go to… modal keeps letter and count together as a centered group. One retained
+Go to… opens on the letter the selection is in. The Go to… modal keeps letter
+and count together as a centered group. One retained
 focus ring travels between adjacent buckets and follows the selected surface's
 press depth; opening, reflow, and nonadjacent jumps snap.
 

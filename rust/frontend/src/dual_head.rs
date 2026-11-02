@@ -170,7 +170,7 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_confirm => set_confirm,
         get_cancel => set_cancel,
         get_options => set_options,
-        get_view => set_view,
+        get_menu => set_menu,
     );
 
     let source = primary.global::<Motion>();
@@ -824,9 +824,24 @@ pub fn sync(primary: &App, crt: &App) {
     sync_with_state(primary, crt, &mut SyncState::default());
 }
 
+/// A CRT head is mirroring the HDMI one. It shows the 240p layout, which
+/// has no Menu chip row, so the Menu button keeps the Menu list both heads
+/// can show.
+static ACTIVE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub fn active() -> bool {
+    ACTIVE.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 pub struct Runtime {
     _mirror: App,
     _timer: slint::Timer,
+}
+
+impl Drop for Runtime {
+    fn drop(&mut self) {
+        ACTIVE.store(false, std::sync::atomic::Ordering::Relaxed);
+    }
 }
 
 impl Runtime {
@@ -834,6 +849,7 @@ impl Runtime {
         let mut state = SyncState::default();
         sync_with_state(primary, &mirror, &mut state);
         mirror.show()?;
+        ACTIVE.store(true, std::sync::atomic::Ordering::Relaxed);
 
         let primary = primary.as_weak();
         let mirror_weak = mirror.as_weak();

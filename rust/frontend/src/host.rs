@@ -286,7 +286,7 @@ impl Input {
             if pressed {
                 crate::input::gamepad_pressed(&ctx, &app, name, &key);
             } else {
-                crate::input::gamepad_released(&ctx, &key);
+                crate::input::gamepad_released(&ctx, &app, &key);
             }
         })
     }

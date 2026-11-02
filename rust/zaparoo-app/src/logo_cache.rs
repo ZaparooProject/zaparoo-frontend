@@ -112,6 +112,18 @@ impl<K: Clone + Eq + Hash, V> Cache<K, V> {
         }
     }
 
+    /// A value its caller prepared itself because it could not wait for the
+    /// queue: wanted from now on, and never queued again.
+    pub fn insert(&mut self, key: K, value: V, bytes: usize) -> bool {
+        self.pending.retain(|queued| queued != &key);
+        self.wanted.insert(key.clone());
+        if self.running.as_ref() == Some(&key) {
+            // The worker's own result lands on top of this one; same value.
+            return false;
+        }
+        self.finish(key, value, bytes)
+    }
+
     pub fn next_job(&mut self) -> Option<K> {
         if self.running.is_some() {
             return None;
@@ -246,5 +258,19 @@ mod tests {
                 height: 32
             }
         );
+    }
+
+    #[test]
+    fn an_inserted_value_is_kept_and_never_queued_again() {
+        let mut cache = Cache::<u32, u32>::new(CACHE_BYTES);
+        cache.request([1, 2]);
+        assert!(cache.insert(2, 20, 1));
+        assert_eq!(cache.get(&2), Some(&20));
+        assert_eq!(cache.next_job(), Some(1));
+        assert!(cache.finish(1, 10, 1));
+        assert_eq!(cache.next_job(), None);
+        // Inserted outside any window, it is still kept.
+        assert!(cache.insert(3, 30, 1));
+        assert_eq!(cache.get(&3), Some(&30));
     }
 }

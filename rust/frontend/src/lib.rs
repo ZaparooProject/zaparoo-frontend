@@ -62,6 +62,7 @@ mod navigation;
 mod online;
 mod online_list;
 mod open_url;
+mod page_bar;
 mod pairing;
 #[cfg_attr(
     not(feature = "hosted"),
@@ -344,6 +345,9 @@ fn merge_config_settings(
     if let Some(v) = c.reduce_motion {
         s.reduce_motion = v;
     }
+    if let Some(v) = c.show_menu_row {
+        s.show_menu_row = v;
+    }
     if let Some(v) = &c.screensaver_timeout {
         s.screensaver_timeout.clone_from(v);
     }
@@ -505,6 +509,8 @@ fn seed_display_globals(
     app.global::<Shell>()
         .set_systems_list_layout(persisted.settings.systems_browse_layout == "list");
     apply_interface_profile(app, &persisted.settings.interface_profile);
+    app.global::<Sizing>()
+        .set_menu_row_enabled(persisted.settings.show_menu_row);
     let embedded = cfg!(feature = "mister");
     let motion = app.global::<Motion>();
     motion.set_enabled(display::motion_enabled(
@@ -965,6 +971,7 @@ fn run_application(
     // start shows it at once and the catalog reconciles it when Core
     // answers; a relaunch keeps it behind the curtain until then.
     hub::bind_input(&ctx, &app);
+    page_bar::bind(&ctx, &app);
     systems::bind_input(&ctx, &app);
     games::bind_input(&ctx, &app);
     search::bind(&ctx, &app);
@@ -1370,7 +1377,7 @@ pub(crate) fn apply_buttons(ctx: &Ctx, app: &App) {
     buttons.set_confirm(SharedString::from(resolved.confirm));
     buttons.set_cancel(SharedString::from(resolved.cancel));
     buttons.set_options(SharedString::from(resolved.options));
-    buttons.set_view(SharedString::from(resolved.view));
+    buttons.set_menu(SharedString::from(resolved.menu));
 }
 
 /// Fetch `media.history.latest` once the connection is up and hand the
@@ -2189,6 +2196,7 @@ mod tests {
             button_layout: "style_b".to_string(),
             mouse_enabled: false,
             reduce_motion: true,
+            show_menu_row: false,
             debug_logging: true,
             screensaver_timeout: "600".to_string(),
             media_image_type: "boxart".to_string(),
