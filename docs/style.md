@@ -946,7 +946,9 @@ once, through the same relayout a scene change runs.
 - **More.** Rare actions sit behind a last chip, More, which opens the Menu
   list titled More. A screen with nothing rare has no More chip.
 - **Dual head.** The CRT head of a dual-head pair draws the 240p layout,
-  which has no row, so Menu opens the Menu list there too.
+  which has no row, and one input drives both heads, so neither head
+  draws the row (`Sizing.menu-row-blocked` on the HDMI head) and Menu
+  opens the Menu list on both.
 - **Shortcuts.** Every shortcut duplicates something reachable on screen,
   so a pad without the buttons loses nothing. Holding Back for
   `BACK_HOLD_TO_HUB_MS` (half a second) goes straight to the Hub, with no

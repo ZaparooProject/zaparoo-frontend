@@ -72,20 +72,10 @@ fn active_surface(app: &App) -> Surface {
     surface_of(app.global::<Shell>().get_active_screen())
 }
 
-/// The scene has a row: above 240p, with the setting on.
+/// The scene has a row: above 240p, with the setting on, and not on the
+/// HDMI head of a dual-head pair.
 fn scene_row(app: &App) -> bool {
     app.global::<crate::Sizing>().get_menu_row()
-}
-
-fn dual_head() -> bool {
-    #[cfg(feature = "mister")]
-    {
-        crate::dual_head::active()
-    }
-    #[cfg(not(feature = "mister"))]
-    {
-        false
-    }
 }
 
 /// The chips of the screen on show, as published.
@@ -229,8 +219,7 @@ fn clamp_focus(app: &App) {
 /// Whether the Menu button focuses the row on the screen on show, rather
 /// than opening the Menu list.
 fn row_takes_menu(app: &App) -> bool {
-    rules::row_takes_menu(active_surface(app), scene_row(app), dual_head())
-        && active_chips(app).row_count() > 0
+    rules::has_row(active_surface(app), scene_row(app)) && active_chips(app).row_count() > 0
 }
 
 /// The row has focus.

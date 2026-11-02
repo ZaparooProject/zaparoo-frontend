@@ -252,6 +252,10 @@ export global Sizing {
     in-out property <bool> menu-row: true;
     // The setting (Settings > Appearance), an input to the scene.
     in-out property <bool> menu-row-enabled: true;
+    // No row whatever the setting: the HDMI head of a dual-head pair. Its
+    // CRT twin draws the 240p layout, which has none, and one input drives
+    // both, so both keep the Menu list.
+    in-out property <bool> menu-row-blocked: false;
     // Bottom help bar band and the clearance content keeps above it.
     in-out property <length> help-bar-height: 43px;
     in-out property <length> help-bar-clearance: 57px;

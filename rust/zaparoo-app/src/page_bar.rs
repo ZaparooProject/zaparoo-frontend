@@ -97,14 +97,6 @@ pub fn has_row(surface: Surface, scene_row: bool) -> bool {
     scene_row && !chips(surface).is_empty()
 }
 
-/// Whether the Menu button focuses the row rather than opening the Menu
-/// list. The row has to be on screen, and in dual-head mode the CRT head
-/// shows the 240p layout, where the row does not exist: the list is the
-/// one surface both heads can show.
-pub fn row_takes_menu(surface: Surface, scene_row: bool, dual_head: bool) -> bool {
-    has_row(surface, scene_row) && !dual_head
-}
-
 /// Left and Right along the row. Wraps, like every other focus walk.
 pub fn step(index: usize, count: usize, forward: bool) -> usize {
     if count == 0 {
@@ -166,13 +158,6 @@ mod tests {
             assert!(!has_row(surface, false), "{surface:?}");
         }
         assert!(!has_row(Surface::Other, true));
-    }
-
-    #[test]
-    fn dual_head_keeps_the_menu_list() {
-        assert!(row_takes_menu(Surface::Games, true, false));
-        assert!(!row_takes_menu(Surface::Games, true, true));
-        assert!(!row_takes_menu(Surface::Games, false, false));
     }
 
     #[test]

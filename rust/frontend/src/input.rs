@@ -198,6 +198,17 @@ pub(crate) fn modal_open(app: &App) -> bool {
         || overlays.get_crt_calibration_open()
 }
 
+/// Something over the screen takes Back the moment it goes down: every
+/// modal, and the pairing and Online panels, whose own Back handling
+/// cleans up. Wider than `modal_open`, which repeat handling also reads.
+fn back_owned(app: &App) -> bool {
+    let overlays = app.global::<crate::Overlays>();
+    modal_open(app)
+        || overlays.get_pair_open()
+        || overlays.get_online_open()
+        || overlays.get_online_list_open()
+}
+
 /// A real press: guard against a double delivery. Runs before the
 /// action lookup so an unbound key still consumes its slot, which is
 /// what stops native autorepeat on a key nothing is listening for.
@@ -298,7 +309,7 @@ fn dispatch_press(ctx: &Ctx, app: &App, action: &str, key: &str) {
     } else {
         shell.get_active_screen()
     };
-    let owned = modal_open(app) || crate::page_bar::focused(app) || shell.get_boot_curtain();
+    let owned = back_owned(app) || crate::page_bar::focused(app) || shell.get_boot_curtain();
     if rules::back_hold_arms(action, landing == crate::Screen::Hub, owned) {
         hold_back(ctx, app, key);
         return;
@@ -510,7 +521,7 @@ fn hold_back(ctx: &Ctx, app: &App, key: &str) {
             }
             // Something opened over the screen while Back was down: it
             // takes the Back, as it would have from a tap.
-            if modal_open(&app) {
+            if back_owned(&app) {
                 crate::router::handle_action(&ctx, &app, actions::CANCEL);
                 return;
             }

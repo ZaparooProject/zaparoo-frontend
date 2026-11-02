@@ -53,7 +53,7 @@ impl Scene {
             swap_axes: sizing.get_swap_axes(),
             handheld: sizing.get_handheld(),
             help_bar_two_rows: sizing.get_help_bar_two_rows(),
-            menu_row: sizing.get_menu_row_enabled(),
+            menu_row: sizing.get_menu_row_enabled() && !sizing.get_menu_row_blocked(),
         }
     }
 

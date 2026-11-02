@@ -114,14 +114,12 @@ impl<K: Clone + Eq + Hash, V> Cache<K, V> {
 
     /// A value its caller prepared itself because it could not wait for the
     /// queue: wanted from now on, and never queued again.
+    /// A worker already preparing the same key keeps its slot and lands
+    /// the same value on top when it finishes.
     pub fn insert(&mut self, key: K, value: V, bytes: usize) -> bool {
         self.pending.retain(|queued| queued != &key);
         self.wanted.insert(key.clone());
-        if self.running.as_ref() == Some(&key) {
-            // The worker's own result lands on top of this one; same value.
-            return false;
-        }
-        self.finish(key, value, bytes)
+        self.store(key, value, bytes)
     }
 
     pub fn next_job(&mut self) -> Option<K> {
@@ -139,7 +137,15 @@ impl<K: Clone + Eq + Hash, V> Cache<K, V> {
         if self.running.as_ref() == Some(&key) {
             self.running = None;
         }
-        if !self.wanted.contains(&key) || bytes > self.cap {
+        if !self.wanted.contains(&key) {
+            return false;
+        }
+        self.store(key, value, bytes)
+    }
+
+    /// Keep `value`, evicting the least recently used past the caps.
+    fn store(&mut self, key: K, value: V, bytes: usize) -> bool {
+        if bytes > self.cap {
             return false;
         }
         self.tick = self.tick.wrapping_add(1);
@@ -272,5 +278,19 @@ mod tests {
         // Inserted outside any window, it is still kept.
         assert!(cache.insert(3, 30, 1));
         assert_eq!(cache.get(&3), Some(&30));
+    }
+
+    #[test]
+    fn an_insert_while_the_worker_runs_the_same_key_is_kept() {
+        let mut cache = Cache::<u32, u32>::new(CACHE_BYTES);
+        cache.request([1, 2]);
+        assert_eq!(cache.next_job(), Some(1));
+        assert!(cache.insert(1, 10, 1));
+        assert_eq!(cache.get(&1), Some(&10));
+        // The worker still holds its slot until it finishes.
+        assert_eq!(cache.next_job(), None);
+        assert!(cache.finish(1, 10, 1));
+        assert_eq!(cache.get(&1), Some(&10));
+        assert_eq!(cache.next_job(), Some(2));
     }
 }

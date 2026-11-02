@@ -10221,6 +10221,51 @@ fn back_tapped_goes_back_on_release_and_held_goes_straight_to_the_hub() {
 }
 
 #[test]
+fn back_over_a_pairing_or_online_panel_is_never_held_to_the_hub() {
+    use slint::platform::Key;
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let ctx = std::sync::Arc::new(ctx);
+    crate::input::bind(&ctx, &app, std::collections::HashMap::new());
+    crate::router::enter_about(&ctx, &app, EntryMode::Fresh);
+    settle(&window);
+    let overlays = app.global::<crate::Overlays>();
+    let open = |panel: usize, on: bool| match panel {
+        0 => overlays.set_pair_open(on),
+        1 => overlays.set_online_open(on),
+        _ => overlays.set_online_list_open(on),
+    };
+    for panel in 0..3 {
+        open(panel, true);
+        key_down(&app, Key::Escape);
+        pass(&ctx, zaparoo_app::input::BACK_HOLD_TO_HUB_MS * 2);
+        key_up(&app, Key::Escape);
+        assert_eq!(app.global::<Shell>().get_active_screen(), Screen::About);
+        open(panel, false);
+        pass(&ctx, 100);
+    }
+}
+
+#[test]
+fn the_hdmi_head_of_a_dual_head_pair_keeps_the_menu_list() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    seed_hub_tiles(&ctx, &app);
+    let sizing = app.global::<Sizing>();
+    sizing.set_menu_row_blocked(true);
+    crate::sizing::apply_scene(&app, crate::sizing::Scene::of(&app, 1280.0, 720.0, false));
+    settle(&window);
+    assert!(sizing.get_menu_row_enabled());
+    assert!(!sizing.get_menu_row());
+    assert!(sizing.get_menu_row_block().abs() < f32::EPSILON);
+    crate::router::handle_action(&ctx, &app, "page_menu");
+    assert!(!app.global::<crate::PageBar>().get_focused());
+    assert!(app.global::<crate::Overlays>().get_list_open());
+}
+
+#[test]
 fn l1_and_r1_together_open_go_to_and_a_lone_shoulder_pages() {
     use slint::platform::Key;
     assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());

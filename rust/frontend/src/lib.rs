@@ -759,6 +759,7 @@ fn run_application(
     let (rest, focus) = theme::logo_tints(&palette);
     let logos = system_logos::Logos::new();
     logos.set_tints(rest, focus);
+    app.global::<Sizing>().set_menu_row_blocked(dual_head);
     seed_display_globals(
         &app,
         &persisted,
