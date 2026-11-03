@@ -900,7 +900,18 @@ match, so it can exceed the rows listed; it is exact up to one page of
 results and reads `Matches: 100+` beyond it, because Core reports no total. At the 240p tier and on a rotated scene or one narrower
 than 4:3 the card collapses and the count moves into the query field.
 
-The Search results' Menu has one action, "Add to Hub", which pins the
+"Search here…" opens the same screen limited to what the screen it came
+from shows: a system and, inside a folder, that folder (with the folder's
+tags carried into the Tags field); a category's systems; or the favorites,
+all of them or one system's. Recently played has none, as Core cannot
+limit a search to it. The title strip, and the header title at 240p, read
+`Search in {}` with the folder, system, category or Favorites; the System
+field becomes "Search in", shows the scope from the system down, and takes
+no focus. Back returns to the screen the search was opened from, and the
+search is not added to the recent searches. The results' title names the
+scope where the systems would be (`"mario" · Consoles · RPG`).
+
+The Search results' Menu has one action, "Save to Hub", which pins the
 search on screen as a Hub tile and reads "Remove from Hub" once it is there.
 Above 240p it is the results' one chip, and focus stays on it after a press
 so the changed words show what happened; at 240p it is the Menu list's one
@@ -958,7 +969,7 @@ is anchored to it. Menu (West) acts on the screen. Above the 240p tier a
 screen's page actions are a row of chips on the page, so they can be seen
 before anyone thinks to look for them; Menu puts focus on the row. At 240p
 there is no room for the row, and Menu opens the same actions as the Menu
-list. Rules and their tests: `zaparoo_app::page_bar`.
+list; where there is only one (Systems' Search here), Menu runs it. Rules and their tests: `zaparoo_app::page_bar`.
 
 The row can be turned off: Settings > Appearance > Show Menu row
 (`show_menu_row` in the persisted settings and `[settings]` in
@@ -971,9 +982,10 @@ once, through the same relayout a scene change runs.
 |---|---|---|
 | Hub | Add item | Reset layout, Settings, Quit |
 | Games | Go to, Tags [value], Search here | |
-| Favorites | Sort [value], Group by [value], Random game | Back to Hub |
-| Favorite systems | Group by [value] | |
-| Search results | Add to Hub / Remove from Hub | |
+| Systems | Search here | |
+| Favorites | Sort [value], Group by [value], Random game, Search here | Back to Hub |
+| Favorite systems | Group by [value], Search here | |
+| Search results | Save to Hub / Remove from Hub | |
 
 - **Placement.** Directly under the title strip and above the grid or list
   card; on the Hub, under the header at the header's side margin, so it

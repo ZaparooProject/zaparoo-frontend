@@ -2236,8 +2236,8 @@ pub(crate) fn present_hub_add_picker(ctx: &Ctx, app: &App, entries: Vec<crate::M
     present_list(ctx, app, ListContext::HubAdd, "title:add_item", entries);
 }
 
-/// The favorites list's Menu list: order, grouping, a random favorite,
-/// and the way back to the Hub.
+/// The favorites list's Menu list: order, grouping, a random favorite, a
+/// search of the favorites, and the way back to the Hub.
 pub(crate) fn open_favorites_page_menu(ctx: &Ctx, app: &App) {
     let (sort, grouping) = {
         let shared = lock(&ctx.shared);
@@ -2250,7 +2250,25 @@ pub(crate) fn open_favorites_page_menu(ctx: &Ctx, app: &App) {
         menu_row_keyed("favorites_sort", "favorites_sort", sort),
         menu_row_keyed("favorites_grouping", "favorites_grouping", grouping),
         menu_row("launch_random_favorite"),
+        menu_row("search_here"),
         menu_row("back_to_hub"),
+    ];
+    present_list(
+        ctx,
+        app,
+        ListContext::FavoritesPageMenu,
+        "title:menu",
+        entries,
+    );
+}
+
+/// The favorite systems' Menu list: the grouping switch and a search of
+/// the favorites.
+pub(crate) fn open_favorite_systems_page_menu(ctx: &Ctx, app: &App) {
+    let grouping = crate::page_bar::favorites_grouping_label(&lock(&ctx.shared));
+    let entries = vec![
+        menu_row_keyed("favorites_grouping", "favorites_grouping", grouping),
+        menu_row("search_here"),
     ];
     present_list(
         ctx,
@@ -2267,7 +2285,7 @@ pub(crate) fn open_search_results_page_menu(ctx: &Ctx, app: &App) {
     let on_hub = crate::search::on_hub(&lock(&ctx.shared));
     let entries = vec![menu_row_keyed(
         "add_to_hub",
-        if on_hub { "hub:remove" } else { "add_to_hub" },
+        if on_hub { "hub:remove" } else { "save_to_hub" },
         "",
     )];
     present_list(
@@ -2292,6 +2310,7 @@ pub(crate) fn favorites_page_menu_accept(ctx: &Ctx, app: &App, id: &str) {
                 "",
             );
         }
+        "search_here" => crate::search::enter_scoped(ctx, app),
         "back_to_hub" => go_home(ctx, app),
         _ => {}
     }

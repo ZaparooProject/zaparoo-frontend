@@ -26,6 +26,7 @@ thread_local! {
 fn surface_of(screen: Screen) -> Surface {
     match screen {
         Screen::Hub => Surface::Hub,
+        Screen::Systems => Surface::Systems,
         Screen::FavoriteSystems => Surface::FavoriteSystems,
         Screen::Games => Surface::Games,
         Screen::Favorites => Surface::Favorites,
@@ -54,14 +55,18 @@ pub(crate) fn games_row_block(mode: GamesMode, derived: &zaparoo_app::sizing::De
     }
 }
 
-/// The same for the Systems screen, which has a row only for favorites.
-pub(crate) fn systems_row_block(favorites: bool, derived: &zaparoo_app::sizing::Derived) -> i32 {
-    let surface = if favorites {
+/// The Systems screen's surface: a category's systems or the favorites'.
+fn systems_surface(favorites: bool) -> Surface {
+    if favorites {
         Surface::FavoriteSystems
     } else {
-        Surface::Other
-    };
-    if rules::has_row(surface, derived.menu_row) {
+        Surface::Systems
+    }
+}
+
+/// The same for the Systems screen.
+pub(crate) fn systems_row_block(favorites: bool, derived: &zaparoo_app::sizing::Derived) -> i32 {
+    if rules::has_row(systems_surface(favorites), derived.menu_row) {
         derived.menu_row_block
     } else {
         0
@@ -83,7 +88,7 @@ fn active_chips(app: &App) -> ModelRc<crate::MenuEntry> {
     let bar = app.global::<PageBar>();
     match active_surface(app) {
         Surface::Hub => bar.get_hub_chips(),
-        Surface::FavoriteSystems => bar.get_systems_chips(),
+        Surface::Systems | Surface::FavoriteSystems => bar.get_systems_chips(),
         Surface::Games | Surface::Favorites | Surface::SearchResults => bar.get_games_chips(),
         Surface::Other => ModelRc::default(),
     }
@@ -129,7 +134,7 @@ fn entry(chip: Chip, shared: &Shared) -> crate::MenuEntry {
             if crate::search::on_hub(shared) {
                 "hub:remove"
             } else {
-                "add_to_hub"
+                "save_to_hub"
             },
             "",
         ),
@@ -173,15 +178,10 @@ pub(crate) fn publish_games(app: &App, shared: &Shared, mode: GamesMode) {
     clamp_focus(app);
 }
 
-/// Publish the Systems screen's chips: favorites only.
+/// Publish the Systems screen's chips.
 pub(crate) fn publish_systems(app: &App, shared: &Shared, favorites: bool) {
     let bar = app.global::<PageBar>();
-    let surface = if favorites {
-        Surface::FavoriteSystems
-    } else {
-        Surface::Other
-    };
-    let next = entries(surface, shared);
+    let next = entries(systems_surface(favorites), shared);
     set_if_changed(&bar.get_systems_chips(), next, |model| {
         bar.set_systems_chips(model);
     });

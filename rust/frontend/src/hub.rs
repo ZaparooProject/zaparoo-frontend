@@ -1964,7 +1964,7 @@ pub fn has_search(
         .is_some()
 }
 
-/// "Add to Hub" / "Remove from Hub" from the Search results, for the
+/// "Save to Hub" / "Remove from Hub" from the Search results, for the
 /// search on screen: the same gap-or-end placement, removal and header
 /// confirmation as `toggle_target`.
 pub fn toggle_search(
@@ -1987,7 +1987,7 @@ pub fn toggle_search(
             None => hub
                 .layout
                 .add_search_item(query, systems, tags, path, name)
-                .then_some(crate::AppCue::AddedToHub),
+                .then_some(crate::AppCue::SavedToHub),
         };
         if cue.is_some() {
             hub.save(&ctx.handle);
@@ -1999,7 +1999,7 @@ pub fn toggle_search(
         crate::cue::flash(ctx, app, cue, zaparoo_app::wait_cue::CONFIRM_MS);
     } else {
         tracing::warn!("hub update did nothing for search {name}");
-        crate::router::report_action_error(ctx, app, "add_to_hub", name);
+        crate::router::report_action_error(ctx, app, "save_to_hub", name);
     }
 }
 

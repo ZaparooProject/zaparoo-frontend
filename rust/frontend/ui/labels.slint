@@ -138,6 +138,7 @@ export global Labels {
         if (key == "choose_disc:none") { return @tr("No discs found"); }
         if (key == "disc") { return @tr("Disc {}", name); }
         if (key == "add_to_hub") { return @tr("Add to Hub"); }
+        if (key == "save_to_hub") { return @tr("Save to Hub"); }
         if (key == "hub:remove") { return @tr("Remove from Hub"); }
         if (key == "scrape_game") { return @tr("Update metadata"); }
         // Rows that turn the menu to a page, which they also title.
@@ -232,6 +233,7 @@ export global Labels {
         if (key == AppCue.cancelling) { return @tr("Cancelling…"); }
         if (key == AppCue.unlinking) { return @tr("Unlinking…"); }
         if (key == AppCue.added-to-hub) { return @tr("Added to Hub"); }
+        if (key == AppCue.saved-to-hub) { return @tr("Saved to Hub"); }
         if (key == AppCue.removed-from-hub) { return @tr("Removed from Hub"); }
         if (key == AppCue.token-written) { return @tr("Token written"); }
         return "";
@@ -318,6 +320,7 @@ export global DialogLabels {
         if (kind == ErrorKind.media-visibility) { return @tr("Visibility update failed"); }
         if (kind == ErrorKind.media-busy) { return @tr("Media database is busy"); }
         if (kind == ErrorKind.add-to-hub) { return @tr("Add to Hub failed"); }
+        if (kind == ErrorKind.save-to-hub) { return @tr("Save to Hub failed"); }
         if (kind == ErrorKind.media-index) { return @tr("Media update failed"); }
         if (kind == ErrorKind.media-scrape) { return @tr("Update metadata failed"); }
         if (kind == ErrorKind.media-scrapers) { return @tr("Source list unavailable"); }
@@ -353,6 +356,10 @@ export global DialogLabels {
         if (kind == ErrorKind.add-to-hub) {
             if (context == "") { return @tr("Could not add this item to the Hub. Check Zaparoo Core and try again."); }
             return @tr("Could not add {} to the Hub. Check Zaparoo Core and try again.", context);
+        }
+        if (kind == ErrorKind.save-to-hub) {
+            if (context == "") { return @tr("Could not save this search to the Hub. Check Zaparoo Core and try again."); }
+            return @tr("Could not save {} to the Hub. Check Zaparoo Core and try again.", context);
         }
         if (kind == ErrorKind.media-index) { return @tr("Could not start the media database update. Check Zaparoo Core and try again."); }
         if (kind == ErrorKind.media-scrape) { return @tr("Could not start updating metadata. Check Zaparoo Core and try again."); }

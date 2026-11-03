@@ -40,6 +40,7 @@ tokens!(VideoStandard { Ntsc => "ntsc", Pal => "pal" });
 tokens!(ErrorKind {
     Generic => "", Launch => "launch", LaunchRepair => "launch_repair", Favorite => "favorite",
     MediaVisibility => "media_visibility", MediaBusy => "media_busy", AddToHub => "add_to_hub",
+    SaveToHub => "save_to_hub",
     MediaIndex => "media_index", MediaScrape => "media_scrape", MediaScrapers => "media_scrapers",
     MediaCancel => "media_cancel", Launcher => "launcher", LauncherSave => "launcher_save",
     AlternateDiscovery => "alternate_discovery", DiscList => "disc_list", QrCode => "qr_code", CardWrite => "card_write", Setting => "setting",
