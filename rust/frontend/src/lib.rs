@@ -2095,12 +2095,13 @@ fn restore_screens(ctx: &Arc<Ctx>, app: &App) {
 }
 
 fn restore_target(ctx: &Arc<Ctx>, app: &App) {
-    let (target, category, system_id) = {
+    let (target, category, system_id, entered_from_hub) = {
         let shared = lock(&ctx.shared);
         (
             shared.persist.active_screen.clone(),
             shared.persist.hub.category.clone(),
             shared.persist.games.system_id.clone(),
+            shared.persist.games.entered_from_hub,
         )
     };
     // Favorites/Recents restore straight from the Hub - they don't
@@ -2143,6 +2144,19 @@ fn restore_target(ctx: &Arc<Ctx>, app: &App) {
             return;
         }
         _ => {}
+    }
+    // A Hub shortcut skipped Systems: no category stands behind it and
+    // Back returns to the Hub, which is also where a failed restore ends.
+    if target == "games" && entered_from_hub {
+        let sys = lock(&ctx.shared)
+            .systems
+            .iter()
+            .find(|s| s.id == system_id)
+            .cloned();
+        if let Some(sys) = sys {
+            games::enter_restored(ctx, app, &sys);
+        }
+        return;
     }
     let category_exists = lock(&ctx.shared).categories.contains(&category);
     if !category_exists {
