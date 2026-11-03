@@ -671,18 +671,7 @@ fn run_application(
     let has_saved_state = persist::has_saved_state();
     let mut persisted = persist::load();
     merge_config_settings(&mut persisted, &config);
-    let restore_pending = matches!(
-        persisted.active_screen.as_str(),
-        "systems"
-            | "favorite-systems"
-            | "games"
-            | "favorites"
-            | "recents"
-            | "search"
-            | "search-results"
-            | "settings"
-            | "about"
-    );
+    let restore_pending = restores_screen(&persisted.active_screen);
     // The cold-launch curtain covers every Core-dependent restore until
     // the restored screen is complete, so nothing is shown in between.
     // Settings and About never need the catalog and paint final from the
@@ -2014,6 +2003,25 @@ fn finish_hub_restore(ctx: &Arc<Ctx>, app: &App) {
     }
 }
 
+/// Whether a start with this saved screen restores it, rather than
+/// showing the Hub. Every screen `restore_target` can restore is here.
+fn restores_screen(active_screen: &str) -> bool {
+    matches!(
+        active_screen,
+        "systems"
+            | "favorite-systems"
+            | "games"
+            | "favorites"
+            | "recents"
+            | "search"
+            | "search-results"
+            | "rename"
+            | "file-browser"
+            | "settings"
+            | "about"
+    )
+}
+
 /// Whether a start with this saved screen opens behind the curtain.
 fn boot_curtain_for(active_screen: &str, has_saved_state: bool) -> bool {
     match active_screen {
@@ -2186,7 +2194,10 @@ mod tests {
         ] {
             assert!(boot_curtain_for(screen, true), "{screen}");
             assert!(boot_curtain_for(screen, false), "{screen}");
+            assert!(restores_screen(screen), "{screen} is restored");
         }
+        assert!(restores_screen("settings") && restores_screen("about"));
+        assert!(!restores_screen("hub") && !restores_screen("screen-from-the-future"));
         // Settings and About paint final without Core.
         for screen in ["settings", "about"] {
             assert!(!boot_curtain_for(screen, true), "{screen}");

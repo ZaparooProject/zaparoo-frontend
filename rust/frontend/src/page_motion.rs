@@ -228,22 +228,25 @@ pub(crate) fn turn<S: PagedScreen>(
         let Some(app) = weak.upgrade() else {
             return;
         };
-        {
+        let fresh = {
             let mut shared = lock(&ctx.shared);
-            if S::epoch(&shared) != epoch {
-                return;
-            }
+            let fresh = S::epoch(&shared) == epoch;
             let motion = S::motion(&mut shared);
             if !motion.is_current(seq) {
+                // A newer turn, or the interrupt that cut this one, owns
+                // the strip now.
                 return;
             }
             motion.sliding = false;
-        }
+            fresh
+        };
+        // The strip comes back to rest even when the rows it showed were
+        // replaced under it; only the repaint is the fill's to do.
         let view = S::view(&app);
         view.strip_cached(false);
         view.strip_anim(false);
         view.strip_slide(0.0);
-        if S::on_screen(&app) {
+        if fresh && S::on_screen(&app) {
             S::render(&ctx, &app);
         }
         let weak = app.as_weak();

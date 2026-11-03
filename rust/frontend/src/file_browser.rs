@@ -1095,6 +1095,12 @@ impl Shared {
     pub(crate) fn file_browser_sliding(&self) -> bool {
         self.file_browser.page.sliding
     }
+
+    /// A fill started, as a folder read would, for route tests.
+    #[cfg(all(test, feature = "mister"))]
+    pub(crate) fn file_browser_bump_ticket(&mut self) {
+        self.file_browser.ticket = self.file_browser.ticket.wrapping_add(1);
+    }
 }
 
 /// The folder read a route test cannot run on its undriven runtime: read
@@ -1127,16 +1133,20 @@ fn pointer_allowed(ctx: &Ctx, app: &App) -> bool {
 }
 
 /// Move focus to the visible entry `local`; false when there is none.
-fn point_at(ctx: &Ctx, local: i32) -> bool {
+fn point_at(ctx: &Ctx, app: &App, local: i32) -> bool {
     let Ok(local) = usize::try_from(local) else {
         return false;
     };
+    // The list reports rows from the start of its published window, which
+    // runs a page ahead of the rows on screen, as the games lists do.
+    let list_base =
+        usize::try_from(app.global::<FileBrowserView>().get_list_view_top()).unwrap_or(0);
     let mut shared = lock(&ctx.shared);
     let model = &mut shared.file_browser;
     let first = if model.mode == Mode::Images {
         model.grid.current_page() * model.grid.page_size()
     } else {
-        model.list_top
+        list_base
     };
     let index = first + local;
     if index >= model.rows.len() {
@@ -1156,7 +1166,7 @@ pub fn bind(ctx: &Ctx, app: &App) {
             let Some(app) = weak.upgrade() else {
                 return;
             };
-            if pointer_allowed(&ctx, &app) && point_at(&ctx, local) {
+            if pointer_allowed(&ctx, &app) && point_at(&ctx, &app, local) {
                 render(&ctx, &app);
             }
         });
@@ -1168,7 +1178,7 @@ pub fn bind(ctx: &Ctx, app: &App) {
             let Some(app) = weak.upgrade() else {
                 return;
             };
-            if pointer_allowed(&ctx, &app) && point_at(&ctx, local) {
+            if pointer_allowed(&ctx, &app) && point_at(&ctx, &app, local) {
                 render(&ctx, &app);
                 // Through the router, so a click gets the press cue too.
                 crate::router::handle_action(&ctx, &app, actions::ACCEPT);

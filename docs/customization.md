@@ -134,6 +134,8 @@ Hub). Both write the tile's `[[hub.items]]` entry for you.
 - **Rename tile…** opens the name on the on-screen keyboard. Save keeps
   it; Back leaves it as it was. Saving an empty name, or the tile's own
   name, goes back to the tile's own name and removes `name` from the file.
+  A script tile has no name of its own to go back to, so it cannot be
+  saved empty.
 - **Change icon…** opens the file browser on the folder of the tile's
   current icon, or `custom/hub/` the first time. It lists folders and
   images as previews. Picking an image saves its absolute path as `icon`.

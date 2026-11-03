@@ -10960,11 +10960,16 @@ fn change_launcher_keeps_the_menu_up_while_core_is_asked() {
         "its row stays pressed"
     );
     let seq = crate::router::lock(&ctx.shared).game_launcher_seq;
+    let index = overlays.get_context_index();
     crate::router::handle_action(&ctx, &app, "down");
+    crate::router::handle_action(&ctx, &app, "accept");
+    advance(zaparoo_app::input::PRESS_FEEDBACK_MS);
     assert!(
         overlays.get_context_open(),
         "nothing else acts while it waits"
     );
+    assert_eq!(overlays.get_context_index(), index, "focus does not move");
+    assert!(!overlays.get_list_open() && !overlays.get_qr_open());
     crate::router::handle_action(&ctx, &app, "cancel");
     assert!(!overlays.get_context_open(), "Back closes it");
     assert_ne!(
@@ -11033,4 +11038,34 @@ fn shift_covers_one_letter_and_held_it_locks_caps() {
     tap(50);
     assert!(!view.get_shift_active());
     assert!(!view.get_shift_locked());
+}
+
+#[test]
+fn a_turn_whose_rows_were_replaced_still_comes_back_to_rest() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    crate::router::lock(&ctx.shared)
+        .persist
+        .settings
+        .reduce_motion = false;
+    let root = browser_on_images(&ctx, &app, &window, "browser-epoch", 60);
+    let view = app.global::<crate::FileBrowserView>();
+    crate::router::handle_action(&ctx, &app, "page_next");
+    assert!(view.get_page_slide().abs() > f32::EPSILON);
+    // A new folder read starts under the turn, without any input.
+    crate::router::lock(&ctx.shared).file_browser_bump_ticket();
+    CLOCK.with(|clock| clock.set(clock.get() + crate::page_motion::SETTLE_MS));
+    slint::platform::update_timers_and_animations();
+    assert!(
+        view.get_page_slide().abs() < f32::EPSILON,
+        "the strip is at rest"
+    );
+    assert!(!view.get_cached_transition());
+    assert!(!crate::router::lock(&ctx.shared).file_browser_sliding());
+    let _ = std::fs::remove_dir_all(&root);
 }

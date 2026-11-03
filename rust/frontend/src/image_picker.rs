@@ -93,9 +93,18 @@ pub(crate) fn answered(ctx: &Ctx, app: &App, revision: u64, state: State) {
         return;
     };
     match state {
-        State::Picked(path) => {
+        // The host promised a readable file; one that is not would save an
+        // icon that can never show.
+        State::Picked(path)
+            if std::fs::File::open(&path)
+                .is_ok_and(|file| file.metadata().is_ok_and(|meta| meta.is_file())) =>
+        {
             crate::hub::set_tile_icon(ctx, app, &target, &path);
             crate::hub::rebuild(ctx, app);
+        }
+        State::Picked(path) => {
+            tracing::warn!("host image picker answered with a file that cannot be read: {path}");
+            crate::router::report_action_error(ctx, app, "image_picker", "");
         }
         State::Denied | State::Failed => {
             crate::router::report_action_error(ctx, app, "image_picker", "");

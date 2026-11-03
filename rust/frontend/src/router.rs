@@ -2600,6 +2600,14 @@ fn context_action(ctx: &Ctx, app: &App, action: &str) {
         .get_context_entries()
         .row_count();
     let index = app.global::<crate::Overlays>().get_context_index().max(0) as usize;
+    // A row's route or wait is on its way: Back calls it off, which closes
+    // the menu; nothing else acts until it lands.
+    if held_menu() == HeldMenu::Context {
+        if action == actions::CANCEL {
+            cancel_held(ctx, app);
+        }
+        return;
+    }
     match action {
         actions::UP | actions::DOWN if len > 0 => {
             let step_ms = lock(&ctx.shared).input.modal_follow();
@@ -2618,13 +2626,6 @@ fn context_action(ctx: &Ctx, app: &App, action: &str) {
                 .row_data(index)
             {
                 context_accept(ctx, app, entry.id.as_str());
-            }
-        }
-        // A row's route is on its way: Back calls it off, which closes the
-        // menu; nothing else acts until it lands.
-        _ if held_menu() == HeldMenu::Context => {
-            if action == actions::CANCEL {
-                cancel_held(ctx, app);
             }
         }
         actions::CANCEL | actions::CONTEXT_MENU => {

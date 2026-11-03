@@ -115,7 +115,7 @@ fn mirror_file_browser(primary: &App, crt: &App) {
         let g = crate::games::grid_geometry_for(&inputs, crate::GamesMode::Favorites, 0);
         let capacity = g.columns * g.rows;
         let selected = source.get_current_index().max(0);
-        let (cells, local, pages) = project_page(
+        let (cells, local, _) = project_page(
             &source.get_cells(),
             &target.get_cells(),
             source.get_selected_local(),
@@ -127,15 +127,16 @@ fn mirror_file_browser(primary: &App, crt: &App) {
         set_if_changed!(target, get_selected_local => set_selected_local, local);
         set_if_changed!(target, get_columns => set_columns, g.columns);
         set_if_changed!(target, get_rows => set_rows, g.rows);
-        set_if_changed!(target, get_page => set_page, selected / capacity.max(1));
-        let total = i32::try_from(pages).unwrap_or(1).max(1);
-        set_if_changed!(
-            target,
-            get_total_pages => set_total_pages,
-            source.get_total_pages().max(total)
-        );
-        target.set_has_pages_above(source.get_has_pages_above());
-        target.set_has_pages_below(source.get_has_pages_below());
+        // The page cue on the CRT's own scale: its pages of the whole
+        // folder, not of the HDMI page on show.
+        let capacity = capacity.max(1);
+        let page = selected / capacity;
+        let total = (source.get_count().max(0) + capacity - 1) / capacity;
+        let total = total.max(1);
+        set_if_changed!(target, get_page => set_page, page);
+        set_if_changed!(target, get_total_pages => set_total_pages, total);
+        set_if_changed!(target, get_has_pages_above => set_has_pages_above, page > 0);
+        set_if_changed!(target, get_has_pages_below => set_has_pages_below, page + 1 < total);
         target.set_cell_width(g.fit.cell_width as f32);
         target.set_cell_height(g.fit.cell_height as f32);
         target.set_block_offset_x(g.fit.block_offset_x as f32);
