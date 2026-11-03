@@ -302,7 +302,11 @@ fn scrape_summary(result: &ScrapingStatusResponse) -> Vec<String> {
     push_non_zero(&mut lines, "Scrape total", result.total);
     push_non_zero(&mut lines, "Scrape matched", result.matched);
     push_non_zero(&mut lines, "Scrape skipped", result.skipped);
-    push_non_zero(&mut lines, "Total scraped", result.total_scraped);
+    push_non_zero(
+        &mut lines,
+        "Total scraped",
+        result.total_scraped.unwrap_or(0),
+    );
     push_non_empty(&mut lines, "Scrape error", &result.error);
     lines
 }
