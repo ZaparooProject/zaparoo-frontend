@@ -25,6 +25,7 @@ mod display;
 mod drs;
 #[cfg(feature = "mister")]
 mod dual_head;
+mod file_browser;
 mod folder_motion;
 mod folder_picker;
 mod fonts;
@@ -41,6 +42,7 @@ pub mod host;
 mod hub;
 mod hub_covers;
 mod hub_refresh;
+mod image_picker;
 mod input;
 mod keyboard;
 mod latch_protocol;
@@ -64,6 +66,7 @@ mod online;
 mod online_list;
 mod open_url;
 mod page_bar;
+mod page_motion;
 mod pairing;
 #[cfg_attr(
     not(feature = "hosted"),
@@ -79,6 +82,7 @@ mod playtime_access;
 #[cfg(feature = "desktop")]
 mod power_supply;
 mod qr;
+mod rename;
 // Route motion has to be checked by rendering, and that needs the
 // software renderer, which only the MiSTer feature set links.
 mod press_feedback;
@@ -855,6 +859,7 @@ fn run_application(
     let (dormant, _) = tokio::sync::watch::channel(false);
     let ctx = Arc::new(Ctx {
         folders: folder_picker::Model::default(),
+        images: image_picker::Model::default(),
         launcher_scan: launcher_scan::Model::default(),
         playtime_access: playtime_access::Model::default(),
         open_url: open_url::Model::default(),
@@ -1025,6 +1030,8 @@ fn run_application(
     systems::bind_input(&ctx, &app);
     games::bind_input(&ctx, &app);
     search::bind(&ctx, &app);
+    rename::bind(&ctx, &app);
+    file_browser::bind(&ctx, &app);
     settings::bind_input(&ctx, &app);
     media_setup::bind_input(&ctx, &app);
     game_info::bind(&ctx, &app);
@@ -2012,7 +2019,7 @@ fn boot_curtain_for(active_screen: &str, has_saved_state: bool) -> bool {
     match active_screen {
         "settings" | "about" => false,
         "systems" | "favorite-systems" | "games" | "favorites" | "recents" | "search"
-        | "search-results" => true,
+        | "search-results" | "rename" | "file-browser" => true,
         _ => has_saved_state,
     }
 }
@@ -2111,6 +2118,14 @@ fn restore_target(ctx: &Arc<Ctx>, app: &App) {
             search::restore_results(ctx, app);
             return;
         }
+        "rename" => {
+            rename::restore(ctx, app);
+            return;
+        }
+        "file-browser" => {
+            file_browser::restore(ctx, app);
+            return;
+        }
         "settings" => {
             settings::enter(ctx, app, EntryMode::Restore);
             return;
@@ -2166,6 +2181,8 @@ mod tests {
             "recents",
             "search",
             "search-results",
+            "rename",
+            "file-browser",
         ] {
             assert!(boot_curtain_for(screen, true), "{screen}");
             assert!(boot_curtain_for(screen, false), "{screen}");

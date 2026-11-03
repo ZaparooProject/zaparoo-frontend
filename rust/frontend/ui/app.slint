@@ -8,10 +8,10 @@
 // logic; forward orchestration lives in the router.
 
 import { Theme, Sizing, Motion, Layout } from "theme.slint";
-import { MenuRole, ContextPage, KeyKind, SearchZone, SearchPane, Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, StateTokens, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogButton, ErrorKind } from "state_types.slint";
-export { MenuRole, ContextPage, KeyKind, SearchZone, SearchPane, Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogButton, ErrorKind }
-import { GlyphSource, Brand, Buttons, HelpEntry, Status, HeaderBar, StatusLine, ProgressTrack, WaitCue, TopStatusStrip, FooterIndicator, ActiveLabel, HelpBar, SectionHeader, Divider, ScrollCue, ModalShell, QrPlate, StateCue } from "chrome.slint";
-import { GridCell, MarqueeCaption, PressableSurface, Tile, PagedGridView } from "tiles.slint";
+import { MenuRole, ContextPage, KeyKind, SearchZone, SearchPane, FileBrowserMode, Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, StateTokens, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogButton, ErrorKind } from "state_types.slint";
+export { MenuRole, ContextPage, KeyKind, SearchZone, SearchPane, FileBrowserMode, Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogButton, ErrorKind }
+import { FastScrollRail, GlyphSource, Brand, Buttons, HelpEntry, Status, HeaderBar, StatusLine, ProgressTrack, WaitCue, TopStatusStrip, FooterIndicator, ActiveLabel, HelpBar, SectionHeader, Divider, ScrollCue, ModalShell, QrPlate, StateCue } from "chrome.slint";
+import { GridCell, MarqueeCaption, PressableSurface, Tile, PagedGridView, PageStrip } from "tiles.slint";
 import { ScrollOffset, SelectionCursor, SelectionClip, FocusCursor } from "focus.slint";
 import { PressFeedback } from "press_feedback.slint";
 export { PressFeedback }
@@ -24,6 +24,10 @@ import { AboutView, AboutScreen } from "about.slint";
 import { KeyCell } from "keyboard.slint";
 import { SearchView, SearchInput, SearchPaneRow, SearchScreen } from "search.slint";
 export { KeyCell, SearchView, SearchInput, SearchPaneRow }
+import { RenameView, RenameInput, RenameScreen } from "rename.slint";
+export { RenameView, RenameInput }
+import { FileBrowserView, FileBrowserInput, FileBrowserScreen } from "file_browser.slint";
+export { FileBrowserView, FileBrowserInput }
 import { UpdateView, UpdatePage, UpdateButton, UpdateOutcome, UpdateStatusKind, UpdateError, UpdateLinuxPhase, UpdateFilter, UpdateRowKind, UpdateRowStatus, UpdateFolderKind, UpdateHelpLabel, UpdateCounts, UpdateRow, UpdateMembership, UpdateHelp } from "update_view.slint";
 // The screen itself comes from the `zaparoo-update` crate: an empty stand-in
 // in public builds, the real module in official ones.
@@ -213,6 +217,8 @@ export global HubView {
     // worded reason while it is disabled.
     in-out property <string> label-key: "";
     in-out property <string> label-name: "";
+    // The user's own name for a built-in tile; empty for none.
+    in-out property <string> label-custom: "";
     in-out property <DisabledReason> label-reason: DisabledReason.none;
     in-out property <bool> label-visible: true;
     in-out property <bool> focused-is-category: false;
@@ -1103,77 +1109,71 @@ component HubScreen inherits Rectangle {
         visible: !root.gated && PageBar.shown(PageBar.hub-chips);
     }
 
-    Rectangle {
+    strip := PageStrip {
         y: HubView.grid-y;
         height: HubView.grid-height;
-        clip: true;
         visible: !root.gated && !root.error;
-        Rectangle {
-            property <float> progress: HubView.page-slide;
-            y: -self.progress * HubView.grid-height;
-            animate progress {
-                duration: HubView.slide-anim ? Motion.dur(Motion.page-ms) : 0ms;
-                easing: ease-out;
-            }
+        page-slide: HubView.page-slide;
+        slide-anim: HubView.slide-anim;
+        slide-dir: HubView.slide-dir;
 
-            grid := PagedGridView {
-                x: 0;
-                y: 0;
-                height: HubView.grid-height;
-                cells: HubView.cells;
-                press-held: PressFeedback.active(PressOwner.hub, HubView.selected-local);
-                focus-scope: "hub:" + HubView.page;
-                focus-motion: HubView.page-slide == 0 && !HubView.cached-transition;
-                columns: HubView.columns;
-                cell-width: HubView.cell-width;
-                cell-height: HubView.cell-height;
-                block-offset-x: HubView.block-offset-x;
-                block-offset-y: HubView.block-offset-y;
-                left-inset: Sizing.hub-grid-side-inset;
-                top-inset: Sizing.hub-grid-top-inset;
-                column-gap: Sizing.hub-grid-column-gap;
-                row-gap: Sizing.hub-grid-row-gap;
-                selected-local: HubView.cached-transition ? -1 : HubView.selected-local;
-                focus-art: HubView.focus-art;
-                focus-art-muted: HubView.focus-art-muted;
-                focus-art-local: HubView.focus-art-local;
-                ring-suppressed: Overlays.context-open;
-                // Focus is on the Menu chip row: the tile drops its zoom, tint and
-                // focused cover as well as its ring.
-                section-focused: !PageBar.focused;
-                focus-ready: HubView.focus-ready;
-                held-local: HubView.cached-transition ? -1 : HubView.held-local;
-                move-origins: HubView.move-origins;
-                move-pulse: HubView.move-pulse;
-                compact-padding: true;
-                card-radius: Sizing.radius-md;
-                skip-empty-cells: !HubView.move-armed;
-                caption-for(cell) => { return Labels.hub(cell.label-key, cell.name); }
-                cell-hovered(i) => { HubInput.cell-hovered(i); }
-                cell-clicked(i) => { HubInput.cell-clicked(i); }
-                cell-right-clicked(i) => { HubInput.cell-right-clicked(i); }
-                wheel(delta) => { HubInput.wheel(delta); }
-            }
-            PagedGridView {
-                y: HubView.slide-dir * HubView.grid-height;
-                height: HubView.grid-height;
-                cells: HubView.next-cells;
-                columns: HubView.columns;
-                cell-width: HubView.cell-width;
-                cell-height: HubView.cell-height;
-                block-offset-x: HubView.block-offset-x;
-                block-offset-y: HubView.block-offset-y;
-                left-inset: Sizing.hub-grid-side-inset;
-                top-inset: Sizing.hub-grid-top-inset;
-                column-gap: Sizing.hub-grid-column-gap;
-                row-gap: Sizing.hub-grid-row-gap;
-                selected-local: HubView.move-armed ? HubView.transition-target-index : -1;
-                held-local: HubView.move-armed ? HubView.transition-target-index : -1;
-                focus-motion: false;
-                compact-padding: true;
-                card-radius: Sizing.radius-md;
-                caption-for(cell) => { return Labels.hub(cell.label-key, cell.name); }
-            }
+        grid := PagedGridView {
+            x: 0;
+            y: 0;
+            height: HubView.grid-height;
+            cells: HubView.cells;
+            press-held: PressFeedback.active(PressOwner.hub, HubView.selected-local);
+            focus-scope: "hub:" + HubView.page;
+            focus-motion: HubView.page-slide == 0 && !HubView.cached-transition;
+            columns: HubView.columns;
+            cell-width: HubView.cell-width;
+            cell-height: HubView.cell-height;
+            block-offset-x: HubView.block-offset-x;
+            block-offset-y: HubView.block-offset-y;
+            left-inset: Sizing.hub-grid-side-inset;
+            top-inset: Sizing.hub-grid-top-inset;
+            column-gap: Sizing.hub-grid-column-gap;
+            row-gap: Sizing.hub-grid-row-gap;
+            selected-local: HubView.cached-transition ? -1 : HubView.selected-local;
+            focus-art: HubView.focus-art;
+            focus-art-muted: HubView.focus-art-muted;
+            focus-art-local: HubView.focus-art-local;
+            ring-suppressed: Overlays.context-open;
+            // Focus is on the Menu chip row: the tile drops its zoom, tint and
+            // focused cover as well as its ring.
+            section-focused: !PageBar.focused;
+            focus-ready: HubView.focus-ready;
+            held-local: HubView.cached-transition ? -1 : HubView.held-local;
+            move-origins: HubView.move-origins;
+            move-pulse: HubView.move-pulse;
+            compact-padding: true;
+            card-radius: Sizing.radius-md;
+            skip-empty-cells: !HubView.move-armed;
+            caption-for(cell) => { return Labels.hub-tile(cell.label-key, cell.name, cell.custom-name); }
+            cell-hovered(i) => { HubInput.cell-hovered(i); }
+            cell-clicked(i) => { HubInput.cell-clicked(i); }
+            cell-right-clicked(i) => { HubInput.cell-right-clicked(i); }
+            wheel(delta) => { HubInput.wheel(delta); }
+        }
+        PagedGridView {
+            y: strip.incoming-y;
+            height: HubView.grid-height;
+            cells: HubView.next-cells;
+            columns: HubView.columns;
+            cell-width: HubView.cell-width;
+            cell-height: HubView.cell-height;
+            block-offset-x: HubView.block-offset-x;
+            block-offset-y: HubView.block-offset-y;
+            left-inset: Sizing.hub-grid-side-inset;
+            top-inset: Sizing.hub-grid-top-inset;
+            column-gap: Sizing.hub-grid-column-gap;
+            row-gap: Sizing.hub-grid-row-gap;
+            selected-local: HubView.move-armed ? HubView.transition-target-index : -1;
+            held-local: HubView.move-armed ? HubView.transition-target-index : -1;
+            focus-motion: false;
+            compact-padding: true;
+            card-radius: Sizing.radius-md;
+            caption-for(cell) => { return Labels.hub-tile(cell.label-key, cell.name, cell.custom-name); }
         }
     }
 
@@ -1184,7 +1184,7 @@ component HubScreen inherits Rectangle {
         y: HubView.label-y - (Sizing.crt ? 1px : 0px);
         height: HubView.label-height;
         side-inset: indicator.width + Sizing.hub-grid-side-inset;
-        text: Labels.hub(HubView.label-key, HubView.label-name);
+        text: Labels.hub-tile(HubView.label-key, HubView.label-name, HubView.label-custom);
         tags: Labels.hub-reason(HubView.label-reason);
         visible: !root.gated && HubView.label-visible && !PageBar.focused;
     }
@@ -1271,72 +1271,65 @@ component SystemsScreen inherits Rectangle {
         visible: !root.gate-hide && PageBar.shown(PageBar.systems-chips);
     }
 
-    // Page-swoop viewport: the current and the incoming page in one
-    // clipped strip that translates by a page period.
-    property <length> period: SystemsView.grid-height;
-    if !root.list-layout: Rectangle {
+    // The current and the incoming page in the shared page-turn strip.
+    if !root.list-layout: systems-strip := PageStrip {
         x: 0;
         y: SystemsView.grid-y;
         height: SystemsView.grid-height;
-        clip: true;
         visible: !root.gate-hide;
+        page-slide: SystemsView.page-slide;
+        slide-anim: SystemsView.slide-anim;
+        slide-dir: SystemsView.slide-dir;
 
-        Rectangle {
+        PagedGridView {
             x: 0;
-            property <float> page-progress: SystemsView.page-slide;
-            y: -self.page-progress * root.period;
-            animate page-progress { duration: SystemsView.slide-anim && !Shell.reduce-motion && Motion.enabled ? Motion.page-ms : 0ms; easing: ease-out; }
-
-            PagedGridView {
-                x: 0;
-                y: 0;
-                cells: SystemsView.cells;
-                focus-scope: StateTokens.systems(SystemsView.mode) + ":" + SystemsView.page;
-                focus-motion: SystemsView.page-slide == 0 && !SystemsView.cached-transition;
-                columns: SystemsView.columns;
-                cell-width: SystemsView.cell-width;
-                cell-height: SystemsView.cell-height;
-                block-offset-x: SystemsView.block-offset-x;
-                block-offset-y: SystemsView.block-offset-y;
-                left-inset: Layout.grid-left-inset;
-                top-inset: Layout.grid-top-inset;
-                column-gap: Layout.grid-column-gap;
-                row-gap: Layout.grid-row-gap;
-                selected-local: SystemsView.cached-transition ? -1 : SystemsView.selected-local;
-                focus-art: SystemsView.focus-art;
-                focus-art-muted: SystemsView.focus-art-muted;
-                focus-art-local: SystemsView.focus-art-local;
-                ring-suppressed: Overlays.context-open;
-                // Focus is on the Menu chip row: the tile drops its zoom, tint and
-                // focused cover as well as its ring.
-                section-focused: !PageBar.focused;
-                focus-ready: SystemsView.focus-ready;
-                press-held: PressFeedback.active(PressOwner.systems, SystemsView.selected-local);
-                card-radius: Layout.card-radius;
-                caption-for(cell) => { return cell.name; }
-                cell-hovered(i) => { SystemsInput.cell-hovered(i); }
-                cell-clicked(i) => { SystemsInput.cell-clicked(i); }
-                cell-right-clicked(i) => { SystemsInput.cell-right-clicked(i); }
-                wheel(delta) => { SystemsInput.wheel(delta); }
-            }
-            PagedGridView {
-                x: 0;
-                y: SystemsView.slide-dir * root.period;
-                cells: SystemsView.next-cells;
-                columns: SystemsView.columns;
-                cell-width: SystemsView.cell-width;
-                cell-height: SystemsView.cell-height;
-                block-offset-x: SystemsView.block-offset-x;
-                block-offset-y: SystemsView.block-offset-y;
-                left-inset: Layout.grid-left-inset;
-                top-inset: Layout.grid-top-inset;
-                column-gap: Layout.grid-column-gap;
-                row-gap: Layout.grid-row-gap;
-                selected-local: -1;
-                focus-ready: false;
-                card-radius: Layout.card-radius;
-                caption-for(cell) => { return cell.name; }
-            }
+            y: 0;
+            cells: SystemsView.cells;
+            focus-scope: StateTokens.systems(SystemsView.mode) + ":" + SystemsView.page;
+            focus-motion: SystemsView.page-slide == 0 && !SystemsView.cached-transition;
+            columns: SystemsView.columns;
+            cell-width: SystemsView.cell-width;
+            cell-height: SystemsView.cell-height;
+            block-offset-x: SystemsView.block-offset-x;
+            block-offset-y: SystemsView.block-offset-y;
+            left-inset: Layout.grid-left-inset;
+            top-inset: Layout.grid-top-inset;
+            column-gap: Layout.grid-column-gap;
+            row-gap: Layout.grid-row-gap;
+            selected-local: SystemsView.cached-transition ? -1 : SystemsView.selected-local;
+            focus-art: SystemsView.focus-art;
+            focus-art-muted: SystemsView.focus-art-muted;
+            focus-art-local: SystemsView.focus-art-local;
+            ring-suppressed: Overlays.context-open;
+            // Focus is on the Menu chip row: the tile drops its zoom, tint and
+            // focused cover as well as its ring.
+            section-focused: !PageBar.focused;
+            focus-ready: SystemsView.focus-ready;
+            press-held: PressFeedback.active(PressOwner.systems, SystemsView.selected-local);
+            card-radius: Layout.card-radius;
+            caption-for(cell) => { return cell.name; }
+            cell-hovered(i) => { SystemsInput.cell-hovered(i); }
+            cell-clicked(i) => { SystemsInput.cell-clicked(i); }
+            cell-right-clicked(i) => { SystemsInput.cell-right-clicked(i); }
+            wheel(delta) => { SystemsInput.wheel(delta); }
+        }
+        PagedGridView {
+            x: 0;
+            y: systems-strip.incoming-y;
+            cells: SystemsView.next-cells;
+            columns: SystemsView.columns;
+            cell-width: SystemsView.cell-width;
+            cell-height: SystemsView.cell-height;
+            block-offset-x: SystemsView.block-offset-x;
+            block-offset-y: SystemsView.block-offset-y;
+            left-inset: Layout.grid-left-inset;
+            top-inset: Layout.grid-top-inset;
+            column-gap: Layout.grid-column-gap;
+            row-gap: Layout.grid-row-gap;
+            selected-local: -1;
+            focus-ready: false;
+            card-radius: Layout.card-radius;
+            caption-for(cell) => { return cell.name; }
         }
     }
 
@@ -2924,140 +2917,6 @@ component ContextMenu inherits Rectangle {
 // grid. The folder rules, paging and persistence live in src/games.rs;
 // this paints the page Rust pushes into GamesView. The detailed list
 // still uses the prototype rows.
-// The fast-scroll rail. With letters, it lists them top to bottom with
-// the current one highlighted and repeated large in a bubble beside it;
-// without, it is a track with a position marker. Only the rail's own area
-// changes as the scroll moves, and it never waits on art. Where
-// `Motion.rail-ms` is pushed to 0 it appears, moves and leaves in cuts.
-// The rail and the bubble are as wide as their widest label needs: a digits
-// bucket reads "0-9", three glyphs where every letter is one.
-component FastScrollRail inherits Rectangle {
-    in property <bool> shown: false;
-    in property <[string]> letters: [];
-    in property <int> current: -1;
-    in property <string> letter: "";
-    in property <float> fraction: 0;
-
-    property <bool> has-letters: root.letters.length > 0;
-    property <length> cell: root.has-letters ? root.height / root.letters.length : 0px;
-    property <length> bubble: Sizing.pct-h(14);
-    property <length> label-size: Math.min(Sizing.font-size(2.2), root.cell * 0.8);
-    // Clear space between a label and the border on either side.
-    property <length> label-inset: Sizing.card-border-width + Sizing.pct-h(1.5);
-    property <length> bubble-width: Math.max(root.bubble,
-        Math.ceil(bubble-measure.preferred-width / 1px) * 1px + 2 * root.label-inset);
-    property <length> thumb: Math.max(Sizing.pct-h(4), root.height * 0.08);
-    property <length> mark-y: root.current >= 0 ? root.current * root.cell : 0px;
-    // Glides keep pace with the steps (a page every 90 ms), so the marks
-    // never trail the letter; no glide where the rail cuts.
-    property <duration> glide: Motion.rail-ms > 0ms ? Motion.dur(Motion.focus-ms) : 0ms;
-
-    width: Math.max(Sizing.pct-h(5),
-        Math.ceil(measure.preferred-width / 1px) * 1px + 2 * root.label-inset);
-    opacity: root.shown ? 1 : 0;
-    visible: self.opacity > 0;
-    animate opacity { duration: Motion.dur(Motion.rail-ms); easing: ease-out; }
-
-    // Measuring twins: a column is as wide as its widest label.
-    measure := VerticalLayout {
-        visible: false;
-        for label in root.letters: Text {
-            text: label;
-            font-size: root.label-size;
-        }
-    }
-    bubble-measure := Text {
-        visible: false;
-        text: root.letter;
-        font-size: Sizing.font-size(7);
-    }
-
-    Rectangle {
-        background: Theme.surface-card;
-        border-width: Sizing.card-border-width;
-        border-color: Theme.border-mid;
-        border-radius: Sizing.radius-md;
-    }
-
-    // Letter-based highlight and labels: hidden on CRT where the
-    // small text cannot resolve on the scanline grid.
-    if root.has-letters && !Sizing.crt && root.current >= 0: Rectangle {
-        x: Sizing.card-border-width;
-        y: root.mark-y;
-        width: parent.width - 2 * Sizing.card-border-width;
-        height: root.cell;
-        background: Theme.accent;
-        border-radius: Math.min(Sizing.radius-md, self.height / 2);
-        animate y { duration: root.glide; easing: ease-out; }
-    }
-
-    if !Sizing.crt: Rectangle {
-        for label[i] in root.letters: Text {
-            y: i * root.cell;
-            width: parent.width;
-            height: root.cell;
-            text: label;
-            horizontal-alignment: center;
-            vertical-alignment: center;
-            font-size: root.label-size;
-            color: i == root.current ? Theme.on-accent : Theme.text-label;
-        }
-    }
-
-    // CRT thumb: a wide bar with 1px inset from the rail edges.
-    if Sizing.crt && root.has-letters && root.current >= 0: Rectangle {
-        x: 1px + Sizing.card-border-width;
-        y: root.mark-y;
-        width: parent.width - 2px - 2 * Sizing.card-border-width;
-        height: root.cell;
-        background: Theme.accent;
-        border-radius: 1px;
-        animate y { duration: root.glide; easing: ease-out; }
-    }
-
-    // Simple thumb rail: used when there are no letters.
-    if !root.has-letters: Rectangle {
-        x: Sizing.snap((parent.width - self.width) / 2);
-        y: root.fraction * (parent.height - self.height);
-        width: parent.width * 0.5;
-        height: root.thumb;
-        background: Theme.accent;
-        border-radius: self.width / 2;
-        animate y { duration: root.glide; easing: ease-out; }
-    }
-
-    // The bubble: the current letter at reading size, level with the
-    // highlight and kept inside the rail's span.
-    if root.has-letters && root.letter != "": Rectangle {
-        x: -root.bubble-width - Sizing.pct-h(1.5);
-        y: Math.max(0px, Math.min(parent.height - root.bubble, root.mark-y + root.cell / 2 - root.bubble / 2));
-        width: root.bubble-width;
-        height: root.bubble;
-        background: Theme.surface-card;
-        border-width: Sizing.card-border-width;
-        border-color: Theme.accent;
-        border-radius: Sizing.radius-md;
-        animate y { duration: root.glide; easing: ease-out; }
-
-        Text {
-            // The bubble's own box: without one a Text is its preferred
-            // size at the origin and its alignment centers nothing.
-            // The 6x8 bitmap face leaves its last column and its last row
-            // blank in every cell, so the cell's center is half of each
-            // away from the ink's; the box is offset by that half.
-            property <length> ink-bias: Theme.crt ? self.font-size / 16 : 0px;
-            x: self.ink-bias - (Sizing.crt ? 2px : 0px);
-            y: self.ink-bias;
-            width: parent.width;
-            height: parent.height;
-            text: root.letter;
-            horizontal-alignment: center;
-            vertical-alignment: center;
-            color: Theme.text-primary;
-            font-size: Sizing.font-size(7);
-        }
-    }
-}
 
 component GamesScreen inherits Rectangle {
     in property <bool> gated: false;
@@ -3118,72 +2977,63 @@ component GamesScreen inherits Rectangle {
         visible: !root.gate-hide && PageBar.shown(PageBar.games-chips);
     }
 
-    // Page-swoop viewport: the current and the incoming page in one
-    // clipped strip that translates by a page period.
-    property <length> period: GamesView.grid-height;
-    if !root.list-layout: Rectangle {
+    // The current and the incoming page in the shared page-turn strip.
+    if !root.list-layout: games-strip := PageStrip {
         x: 0;
         y: GamesView.grid-y;
         height: GamesView.grid-height;
-        clip: true;
         visible: !root.gate-hide;
+        page-slide: GamesView.page-slide;
+        slide-anim: GamesView.slide-anim;
+        slide-dir: GamesView.slide-dir;
 
-        Rectangle {
-            x: GamesView.folder-slide ? -GamesView.page-slide * parent.width : 0px;
-            property <float> page-progress: GamesView.page-slide;
-            y: GamesView.folder-slide ? 0px : -self.page-progress * root.period;
-            animate x { duration: GamesView.slide-anim && !Shell.reduce-motion && Motion.enabled ? Motion.page-ms : 0ms; easing: ease-out; }
-            animate page-progress { duration: GamesView.slide-anim && !Shell.reduce-motion && Motion.enabled ? Motion.page-ms : 0ms; easing: ease-out; }
-
-            PagedGridView {
-                x: 0;
-                y: 0;
-                cells: GamesView.cells;
-                focus-scope: StateTokens.games(GamesView.mode) + ":" + GamesView.title + ":" + GamesView.page;
-                focus-motion: GamesView.page-slide == 0 && !GamesView.cached-transition;
-                columns: GamesView.columns;
-                cell-width: GamesView.cell-width;
-                cell-height: GamesView.cell-height;
-                block-offset-x: GamesView.block-offset-x;
-                block-offset-y: GamesView.block-offset-y;
-                left-inset: Layout.grid-left-inset;
-                top-inset: Layout.grid-top-inset;
-                column-gap: Layout.grid-column-gap;
-                row-gap: Layout.grid-row-gap;
-                selected-local: GamesView.cached-transition ? -1 : GamesView.selected-local;
-                ring-suppressed: Overlays.context-open;
-                // Focus is on the Menu chip row: the tile drops its zoom, tint and
-                // focused cover as well as its ring.
-                section-focused: !PageBar.focused;
-                focus-ready: GamesView.focus-ready;
-                press-held: PressFeedback.active(PressOwner.games, GamesView.selected-local);
-                show-caption: true;
-                card-radius: Layout.card-radius;
-                caption-for(cell) => { return cell.name; }
-                cell-hovered(i) => { GamesInput.cell-hovered(i); }
-                cell-clicked(i) => { GamesInput.cell-clicked(i); }
-                cell-right-clicked(i) => { GamesInput.cell-right-clicked(i); }
-                wheel(delta) => { GamesInput.wheel(delta); }
-            }
-            PagedGridView {
-                x: GamesView.folder-slide ? GamesView.slide-dir * parent.width : 0px;
-                y: GamesView.folder-slide ? 0px : GamesView.slide-dir * root.period;
-                cells: GamesView.next-cells;
-                columns: GamesView.columns;
-                cell-width: GamesView.cell-width;
-                cell-height: GamesView.cell-height;
-                block-offset-x: GamesView.block-offset-x;
-                block-offset-y: GamesView.block-offset-y;
-                left-inset: Layout.grid-left-inset;
-                top-inset: Layout.grid-top-inset;
-                column-gap: Layout.grid-column-gap;
-                row-gap: Layout.grid-row-gap;
-                selected-local: -1;
-                focus-ready: false;
-                show-caption: true;
-                card-radius: Layout.card-radius;
-                caption-for(cell) => { return cell.name; }
-            }
+        PagedGridView {
+            x: 0;
+            y: 0;
+            cells: GamesView.cells;
+            focus-scope: StateTokens.games(GamesView.mode) + ":" + GamesView.title + ":" + GamesView.page;
+            focus-motion: GamesView.page-slide == 0 && !GamesView.cached-transition;
+            columns: GamesView.columns;
+            cell-width: GamesView.cell-width;
+            cell-height: GamesView.cell-height;
+            block-offset-x: GamesView.block-offset-x;
+            block-offset-y: GamesView.block-offset-y;
+            left-inset: Layout.grid-left-inset;
+            top-inset: Layout.grid-top-inset;
+            column-gap: Layout.grid-column-gap;
+            row-gap: Layout.grid-row-gap;
+            selected-local: GamesView.cached-transition ? -1 : GamesView.selected-local;
+            ring-suppressed: Overlays.context-open;
+            // Focus is on the Menu chip row: the tile drops its zoom, tint and
+            // focused cover as well as its ring.
+            section-focused: !PageBar.focused;
+            focus-ready: GamesView.focus-ready;
+            press-held: PressFeedback.active(PressOwner.games, GamesView.selected-local);
+            show-caption: true;
+            card-radius: Layout.card-radius;
+            caption-for(cell) => { return cell.name; }
+            cell-hovered(i) => { GamesInput.cell-hovered(i); }
+            cell-clicked(i) => { GamesInput.cell-clicked(i); }
+            cell-right-clicked(i) => { GamesInput.cell-right-clicked(i); }
+            wheel(delta) => { GamesInput.wheel(delta); }
+        }
+        PagedGridView {
+            y: games-strip.incoming-y;
+            cells: GamesView.next-cells;
+            columns: GamesView.columns;
+            cell-width: GamesView.cell-width;
+            cell-height: GamesView.cell-height;
+            block-offset-x: GamesView.block-offset-x;
+            block-offset-y: GamesView.block-offset-y;
+            left-inset: Layout.grid-left-inset;
+            top-inset: Layout.grid-top-inset;
+            column-gap: Layout.grid-column-gap;
+            row-gap: Layout.grid-row-gap;
+            selected-local: -1;
+            focus-ready: false;
+            show-caption: true;
+            card-radius: Layout.card-radius;
+            caption-for(cell) => { return cell.name; }
         }
     }
 
@@ -3457,6 +3307,10 @@ component RouteScreen inherits Rectangle {
 
     if root.screen-token == Screen.search: SearchScreen {}
 
+    if root.screen-token == Screen.rename: RenameScreen {}
+
+    if root.screen-token == Screen.file-browser: FileBrowserScreen {}
+
     if root.screen-token == Screen.games || root.screen-token == Screen.favorites
         || root.screen-token == Screen.recents || root.screen-token == Screen.search-results: GamesScreen {
         gated: root.gated;
@@ -3496,6 +3350,10 @@ export component App inherits Window {
         if (Shell.active-screen == Screen.favorites) { return @tr("Favorites"); }
         if (Shell.active-screen == Screen.recents) { return @tr("Recently played"); }
         if (Shell.active-screen == Screen.search) { return @tr("Search"); }
+        if (Shell.active-screen == Screen.rename) { return @tr("Rename tile"); }
+        if (Shell.active-screen == Screen.file-browser) {
+            return FileBrowserView.places ? @tr("Places") : FileBrowserView.title;
+        }
         if (Shell.active-screen == Screen.search-results) {
             return GamesView.title == "" ? @tr("Search") : GamesView.title;
         }
@@ -3594,6 +3452,68 @@ export component App inherits Window {
         return [
             { buttons: ["Dpad"], label: @tr("Move") },
             { buttons: ["ButtonA"], label: @tr("Change") },
+            { buttons: ["ButtonB"], label: @tr("Back") },
+        ];
+    }
+    // The rename screen: the Search keyboard's buttons, with Save on its
+    // submit key. A real keyboard types, deletes and spaces with its own
+    // keys.
+    pure function rename-help-entries() -> [HelpEntry] {
+        if (RenameView.key-kind == KeyKind.submit && !RenameView.can-save) {
+            if (Buttons.style == "style_e") {
+                return [
+                    { buttons: ["Dpad"], label: @tr("Move") },
+                    { buttons: ["ButtonB"], label: @tr("Back") },
+                ];
+            }
+            return [
+                { buttons: ["Dpad"], label: @tr("Move") },
+                { buttons: ["ButtonY"], label: @tr("Delete") },
+                { buttons: ["ButtonX"], label: @tr("Space") },
+                { buttons: ["ButtonB"], label: @tr("Back") },
+            ];
+        }
+        if (Buttons.style == "style_e") {
+            return [
+                { buttons: ["Dpad"], label: @tr("Move") },
+                { buttons: ["ButtonA"], label: RenameView.key-kind == KeyKind.submit ? @tr("Save") : @tr("Select") },
+                { buttons: ["ButtonB"], label: @tr("Back") },
+            ];
+        }
+        return [
+            { buttons: ["Dpad"], label: @tr("Move") },
+            { buttons: ["ButtonA"], label: RenameView.key-kind == KeyKind.submit ? @tr("Save") : @tr("Select") },
+            { buttons: ["ButtonY"], label: @tr("Delete") },
+            { buttons: ["ButtonX"], label: @tr("Space") },
+            { buttons: ["ButtonB"], label: @tr("Back") },
+        ];
+    }
+    // The file browser: Open a folder or a Place, Select a file.
+    pure function file-browser-help-entries() -> [HelpEntry] {
+        if (FileBrowserView.focused-opens || FileBrowserView.focused-picks) {
+            if (FileBrowserView.has-menu) {
+                return [
+                    self.move-cue(FileBrowserView.mode == FileBrowserMode.plain ? FileBrowserView.list-total-pages : FileBrowserView.total-pages),
+                    { buttons: ["ButtonA"], label: FileBrowserView.focused-opens ? @tr("Open") : @tr("Select") },
+                    { buttons: ["ButtonY"], label: @tr("Menu") },
+                    { buttons: ["ButtonB"], label: @tr("Back") },
+                ];
+            }
+            return [
+                self.move-cue(FileBrowserView.mode == FileBrowserMode.plain ? FileBrowserView.list-total-pages : FileBrowserView.total-pages),
+                { buttons: ["ButtonA"], label: FileBrowserView.focused-opens ? @tr("Open") : @tr("Select") },
+                { buttons: ["ButtonB"], label: @tr("Back") },
+            ];
+        }
+        if (FileBrowserView.has-menu) {
+            return [
+                self.move-cue(FileBrowserView.mode == FileBrowserMode.plain ? FileBrowserView.list-total-pages : FileBrowserView.total-pages),
+                { buttons: ["ButtonY"], label: @tr("Menu") },
+                { buttons: ["ButtonB"], label: @tr("Back") },
+            ];
+        }
+        return [
+            self.move-cue(FileBrowserView.mode == FileBrowserMode.plain ? FileBrowserView.list-total-pages : FileBrowserView.total-pages),
             { buttons: ["ButtonB"], label: @tr("Back") },
         ];
     }
@@ -3931,6 +3851,12 @@ export component App inherits Window {
         }
         if (Shell.active-screen == Screen.search && !Shell.transitioning) {
             return root.search-help-entries();
+        }
+        if (Shell.active-screen == Screen.rename && !Shell.transitioning) {
+            return root.rename-help-entries();
+        }
+        if (Shell.active-screen == Screen.file-browser && !Shell.transitioning) {
+            return root.file-browser-help-entries();
         }
         // Games, Favorites, Recents and Search results share the
         // games-style rows.

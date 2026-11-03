@@ -57,6 +57,17 @@ Two follow-on rules:
   vblank-latch presenter while it holds a dynamic-resolution pair. In dual
   head the HDMI presenter owns the slide and the CRT head replays the page
   as a live strip.
+- **One page turn for every paged grid.** The Hub, Systems, the games grids
+  and the file browser all turn pages through `rust/frontend/src/page_motion.rs`
+  (the cut rules, the cached-slide request, the settle and re-arm timers,
+  interrupting a turn) and draw it with `PageStrip` in `ui/tiles.slint`. A
+  screen plugs in with a `PagedScreen` impl and keeps only its own render.
+  Every grid cuts while a held direction runs fast. The one place the
+  screens still differ is `LIVE_STRIP_ON_HDMI` on that impl: with no cached
+  slide on MiSTer HDMI (only under the `slides` motion switch or
+  `--adaptive-render`), the Hub cuts while the other grids slide live. The browse lists share
+  their row window and glide the same way (`browse_motion::publish_list`).
+  Do not give a new grid screen its own copy.
 - **A fixed-step animation clock** (`zaparoo_app::frame_clock`, driven from
   `rust/frontend/src/mister/platform.rs`). The clock Slint's timers and
   animations read moves one refresh period per presented frame, so motion

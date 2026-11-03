@@ -832,8 +832,11 @@ future theme work, not per-surface override.
 ## Text entry
 
 Text is typed on the shared on-screen keyboard (`OnScreenKeyboard` in
-`ui/keyboard.slint`; layout and editing rules in `zaparoo_app::keyboard`).
-The Search screen is its first user.
+`ui/keyboard.slint`; layout and editing rules in `zaparoo_app::keyboard`),
+into the shared field (`TextField` in the same file). The Search screen and
+the rename screen use it; `frontend::keyboard` holds the buttons both share,
+and `input::text_owner` names the one screen whose field takes what a real
+keyboard types.
 
 - **Layout.** QWERTY, every row ten units wide, with a digit row on top.
   A use that does not care about case or punctuation takes the basic
@@ -841,6 +844,14 @@ The Search screen is its first user.
   full keyboard adds Shift and Symbols and their layers.
 - **Keys are raised controls** (the pressable front edge), and one focus
   ring travels between them.
+- **Shift covers one letter.** A tap makes the next character uppercase,
+  then Shift lets go; tapping it again first cancels it. Holding Accept on
+  Shift for `SHIFT_LOCK_HOLD_MS` (half a second) locks caps until Shift is
+  tapped again: the tap takes effect at once, and holding past the
+  threshold upgrades it. A one-letter Shift shows as the accent arrow; caps
+  adds a bar under it, since colour alone does not tell the two apart at
+  240p. Symbols drops a one-letter Shift and keeps caps for the letters'
+  return. The rules are `keyboard::Case` in `zaparoo_app`.
 - **The field being typed in has a block cursor, not a ring.** A ring there
   would be a second one on screen beside the focused key's. It blinks while the
   keyboard has focus and rests dimmed while anything else does. Moved back
@@ -895,6 +906,50 @@ Above 240p it is the results' one chip, and focus stays on it after a press
 so the changed words show what happened; at 240p it is the Menu list's one
 row. Results opened from such a tile have no Search screen behind them:
 Back returns to the Hub, and the search is not added to the recent searches.
+
+### Rename tile
+
+Rename tile… on a Hub tile's Options menu opens a screen of its own, not a
+panel: a tile name needs case and punctuation, so it takes the full keyboard
+(Shift and Symbols), and five key rows under a field do not fit a modal at
+240p. The name field is on top, labelled Name, with the keyboard filling the
+rest; nothing sits beside it, so every edge wraps on the keyboard itself.
+The submit key is a check and the help bar calls it Save. Back leaves
+without saving. The draft is persisted with the tile it belongs to, and a
+cold start restores it only while that tile is still where it was.
+
+## File browser
+
+One reusable browser over the frontend's own disk (`ui/file_browser.slint`,
+`frontend::file_browser`, rules in `zaparoo_app::file_browser`). A caller
+opens it with a purpose, which decides what a pick does; the browser only
+walks folders. It is a screen, because folders are more than one page of a
+panel (see "Modal depth").
+
+- **Two modes.** Plain lists every file in a `BrowseList`, folders first
+  and ending in a slash. Images lists folders and the image types the
+  artwork loader accepts as tiles in a `PagedGridView` on the shared
+  `PageStrip`, each image fading in as a cover does once it is prepared; the
+  file glyph holds its place until then. Both use the games family's
+  layout tables, with no Menu chip band.
+- **It moves as the games screens do**, from the same parts: page turns
+  (`page_motion`), the list window and glide, the press cue, the strip and
+  footer page cues, a long hold paging and then stepping a letter at a
+  time with the fast-scroll rail (a folder's total is fixed, so it gets
+  one), held page flips stopping at the ends, and the debounced selection
+  write.
+- **Places** sit above every folder: the custom folder, then the drives
+  the machine has. Back goes up a folder, from a drive's top to Places,
+  and from Places back to where the browser was opened.
+- **Folder reads** run off the event loop under a ticket. The folder on
+  screen stays, taking only Back, until the next one is ready, and the
+  header shows the loading cue past the usual delay. A folder that cannot
+  be read says so in the content area. Hidden names are left out, and a
+  folder past 2,000 entries ends in a row counting the rest.
+- **Previews** go through the customization pipeline: the same decode
+  limits, the same serial worker and the same 16 MiB cache.
+- **Menu** opens the Menu list of the caller's screen actions (Change
+  icon… offers Use default icon). There is no chip row.
 
 ## Menu chip row
 
@@ -1505,7 +1560,17 @@ deep they are or how many Back presses get out. The rules:
    (`closes_context_menu`), so Back never returns to a waiting row that can
    never resolve.
 5. `ContextMenu` is an anchored transient, not a card. It closes before
-   anything it triggers opens. Its pages are an in-place swap of its rows
+   anything it triggers opens. A row that opens a screen of its own
+   or a picker that waits on Core (`options_menu::Menu::holds_open`:
+   Rename tile…, Change icon…, and a game's Change launcher) is the
+   exception: the menu stays up with the row held down until what it opens
+   is ready, as any deferred route keeps its control down, and leaves in
+   the frame that appears. Closing it first showed the screen underneath
+   on its own for a moment. Back while it waits calls off the route and
+   closes the menu. The Menu list does the same for a pick that routes to a
+   screen that has to fill first (Group by, between Favorites and Favorite
+   systems); `router::hold_menu_through` holds either, and the route's end
+   closes it, however it ends. Its pages are an in-place swap of its rows
    through `rust/frontend/src/context_page.rs`: Manage and Write to token,
    whose rows are the menu's own, and alternate versions
    (`rust/frontend/src/alternates.rs`) and a multi-disc game's discs
@@ -1807,7 +1872,10 @@ title strip or total count, so its cue stays beside the focused caption rather
 than taking space from its grid. The Menu chip row is not a cue: a screen that
 has one always reserves it (see [Menu chip row](#menu-chip-row)). CRT retains its calibrated footer and
 in-card About cues. Modal cues remain inside their panels, and the fast-scroll
-rail remains on the right. Cue visibility never changes grid geometry: a
+rail remains on the right, on a list with a fixed total only: Games, where
+Core counts the folder. Favorites, Recently played and Search results are paged
+with no total, so a marker there would rescale as each page landed; they get no
+rail (`media_list::rail_offered`). Cue visibility never changes grid geometry: a
 single-page grid becoming multi-page (arming Hub Options → Move always
 reserves a second page) cannot shift or shrink its tiles. The Settings card, the About
 card, and `GameInfoModal`'s own scroll chevrons got the same

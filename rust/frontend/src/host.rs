@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 use slint::ComponentHandle;
 pub use zaparoo_app::folder_picker::State as FolderPickerState;
+pub use zaparoo_app::image_picker::State as ImagePickerState;
 pub use zaparoo_app::launcher_scan::State as LauncherScanState;
 pub use zaparoo_core::platform_paths::HostPaths;
 pub use zaparoo_core::transport::Transport;
@@ -125,6 +126,44 @@ impl Input {
             ctx.folders.configure(request);
             crate::settings::refresh(&ctx, &app);
         })
+    }
+
+    /// Offer a host-owned image picker for Change icon… on a Hub tile. The
+    /// host answers through `image_picker_result` with a readable absolute
+    /// path, which the tile then names as its `icon`; making the file
+    /// readable (a copy into the host's own storage, say) is the host's.
+    pub fn configure_image_picker(
+        &self,
+        request: Arc<dyn Fn() -> bool + Send + Sync>,
+    ) -> Result<(), slint::EventLoopError> {
+        let ctx = self.ctx.clone();
+        self.app.upgrade_in_event_loop(move |_app| {
+            ctx.images.configure(request);
+        })
+    }
+
+    /// The host picker's answer, ordered by revision. A stale revision, or
+    /// an answer with no request open, is ignored.
+    pub fn image_picker_result(
+        &self,
+        revision: u64,
+        state: ImagePickerState,
+    ) -> Result<(), slint::EventLoopError> {
+        let ctx = self.ctx.clone();
+        self.app.upgrade_in_event_loop(move |app| {
+            crate::image_picker::answered(&ctx, &app, revision, state);
+        })
+    }
+
+    pub fn image_picker_pending(&self) -> bool {
+        self.ctx.images.pending()
+    }
+
+    /// Change icon… on the focused Hub tile, as its Options row runs it.
+    pub fn request_image_picker(&self) -> Result<(), slint::EventLoopError> {
+        let ctx = self.ctx.clone();
+        self.app
+            .upgrade_in_event_loop(move |app| crate::hub::change_focused_icon(&ctx, &app))
     }
 
     /// Offer a handoff to the system setting that lets the host measure

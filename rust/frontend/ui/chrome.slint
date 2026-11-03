@@ -1211,3 +1211,138 @@ export component StateCue inherits Rectangle {
         font-size: Sizing.font-caption;
     }
 }
+
+// The fast-scroll rail. With letters, it lists them top to bottom with
+// the current one highlighted and repeated large in a bubble beside it;
+// without, it is a track with a position marker. Only the rail's own area
+// changes as the scroll moves, and it never waits on art. Where
+// `Motion.rail-ms` is pushed to 0 it appears, moves and leaves in cuts.
+// The rail and the bubble are as wide as their widest label needs: a digits
+// bucket reads "0-9", three glyphs where every letter is one.
+export component FastScrollRail inherits Rectangle {
+    in property <bool> shown: false;
+    in property <[string]> letters: [];
+    in property <int> current: -1;
+    in property <string> letter: "";
+    in property <float> fraction: 0;
+
+    property <bool> has-letters: root.letters.length > 0;
+    property <length> cell: root.has-letters ? root.height / root.letters.length : 0px;
+    property <length> bubble: Sizing.pct-h(14);
+    property <length> label-size: Math.min(Sizing.font-size(2.2), root.cell * 0.8);
+    // Clear space between a label and the border on either side.
+    property <length> label-inset: Sizing.card-border-width + Sizing.pct-h(1.5);
+    property <length> bubble-width: Math.max(root.bubble,
+        Math.ceil(bubble-measure.preferred-width / 1px) * 1px + 2 * root.label-inset);
+    property <length> thumb: Math.max(Sizing.pct-h(4), root.height * 0.08);
+    property <length> mark-y: root.current >= 0 ? root.current * root.cell : 0px;
+    // Glides keep pace with the steps (a page every 90 ms), so the marks
+    // never trail the letter; no glide where the rail cuts.
+    property <duration> glide: Motion.rail-ms > 0ms ? Motion.dur(Motion.focus-ms) : 0ms;
+
+    width: Math.max(Sizing.pct-h(5),
+        Math.ceil(measure.preferred-width / 1px) * 1px + 2 * root.label-inset);
+    opacity: root.shown ? 1 : 0;
+    visible: self.opacity > 0;
+    animate opacity { duration: Motion.dur(Motion.rail-ms); easing: ease-out; }
+
+    // Measuring twins: a column is as wide as its widest label.
+    measure := VerticalLayout {
+        visible: false;
+        for label in root.letters: Text {
+            text: label;
+            font-size: root.label-size;
+        }
+    }
+    bubble-measure := Text {
+        visible: false;
+        text: root.letter;
+        font-size: Sizing.font-size(7);
+    }
+
+    Rectangle {
+        background: Theme.surface-card;
+        border-width: Sizing.card-border-width;
+        border-color: Theme.border-mid;
+        border-radius: Sizing.radius-md;
+    }
+
+    // Letter-based highlight and labels: hidden on CRT where the
+    // small text cannot resolve on the scanline grid.
+    if root.has-letters && !Sizing.crt && root.current >= 0: Rectangle {
+        x: Sizing.card-border-width;
+        y: root.mark-y;
+        width: parent.width - 2 * Sizing.card-border-width;
+        height: root.cell;
+        background: Theme.accent;
+        border-radius: Math.min(Sizing.radius-md, self.height / 2);
+        animate y { duration: root.glide; easing: ease-out; }
+    }
+
+    if !Sizing.crt: Rectangle {
+        for label[i] in root.letters: Text {
+            y: i * root.cell;
+            width: parent.width;
+            height: root.cell;
+            text: label;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            font-size: root.label-size;
+            color: i == root.current ? Theme.on-accent : Theme.text-label;
+        }
+    }
+
+    // CRT thumb: a wide bar with 1px inset from the rail edges.
+    if Sizing.crt && root.has-letters && root.current >= 0: Rectangle {
+        x: 1px + Sizing.card-border-width;
+        y: root.mark-y;
+        width: parent.width - 2px - 2 * Sizing.card-border-width;
+        height: root.cell;
+        background: Theme.accent;
+        border-radius: 1px;
+        animate y { duration: root.glide; easing: ease-out; }
+    }
+
+    // Simple thumb rail: used when there are no letters.
+    if !root.has-letters: Rectangle {
+        x: Sizing.snap((parent.width - self.width) / 2);
+        y: root.fraction * (parent.height - self.height);
+        width: parent.width * 0.5;
+        height: root.thumb;
+        background: Theme.accent;
+        border-radius: self.width / 2;
+        animate y { duration: root.glide; easing: ease-out; }
+    }
+
+    // The bubble: the current letter at reading size, level with the
+    // highlight and kept inside the rail's span.
+    if root.has-letters && root.letter != "": Rectangle {
+        x: -root.bubble-width - Sizing.pct-h(1.5);
+        y: Math.max(0px, Math.min(parent.height - root.bubble, root.mark-y + root.cell / 2 - root.bubble / 2));
+        width: root.bubble-width;
+        height: root.bubble;
+        background: Theme.surface-card;
+        border-width: Sizing.card-border-width;
+        border-color: Theme.accent;
+        border-radius: Sizing.radius-md;
+        animate y { duration: root.glide; easing: ease-out; }
+
+        Text {
+            // The bubble's own box: without one a Text is its preferred
+            // size at the origin and its alignment centers nothing.
+            // The 6x8 bitmap face leaves its last column and its last row
+            // blank in every cell, so the cell's center is half of each
+            // away from the ink's; the box is offset by that half.
+            property <length> ink-bias: Theme.crt ? self.font-size / 16 : 0px;
+            x: self.ink-bias - (Sizing.crt ? 2px : 0px);
+            y: self.ink-bias;
+            width: parent.width;
+            height: parent.height;
+            text: root.letter;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            color: Theme.text-primary;
+            font-size: Sizing.font-size(7);
+        }
+    }
+}

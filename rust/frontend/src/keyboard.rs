@@ -8,7 +8,9 @@
 // editing rules live in `zaparoo_app::keyboard`.
 
 use slint::SharedString;
-use zaparoo_app::keyboard::{self as rules, Cell, Edge, Key, Layer, Layers, Position, TextBuffer};
+use zaparoo_app::keyboard::{
+    self as rules, Case, Cell, Edge, Key, Layer, Layers, Position, Shift, TextBuffer,
+};
 
 /// What pressing a key did.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -18,13 +20,15 @@ pub enum Press {
     Edited,
     /// The layer on show changed; the cells need republishing.
     Layer,
+    /// The caret moved; the field needs repainting.
+    Moved,
     Submit,
 }
 
 #[derive(Debug, Clone)]
 pub struct Keyboard {
     layers: Layers,
-    layer: Layer,
+    case: Case,
     position: Position,
     buffer: TextBuffer,
 }
@@ -33,7 +37,7 @@ impl Keyboard {
     pub fn new(layers: Layers, max_chars: usize) -> Self {
         Self {
             layers,
-            layer: Layer::default(),
+            case: Case::default(),
             // The home row's first key: the shortest reach to most letters.
             position: Position { row: 2, index: 0 },
             buffer: TextBuffer::new(max_chars),
@@ -41,7 +45,7 @@ impl Keyboard {
     }
 
     fn rows(&self) -> Vec<Vec<Cell>> {
-        rules::rows(self.layers, self.layer)
+        rules::rows(self.layers, self.case.layer)
     }
 
     pub fn row_count(&self) -> usize {
@@ -49,7 +53,17 @@ impl Keyboard {
     }
 
     pub fn layer(&self) -> Layer {
-        self.layer
+        self.case.layer
+    }
+
+    pub fn shift(&self) -> Shift {
+        self.case.shift
+    }
+
+    /// Shift held down: caps until it is tapped again.
+    pub fn lock_shift(&mut self) {
+        self.case.lock_shift();
+        self.position = rules::clamp(&self.rows(), self.position);
     }
 
     pub fn text(&self) -> &str {
@@ -58,6 +72,14 @@ impl Keyboard {
 
     pub fn set_text(&mut self, text: &str) {
         self.buffer.set(text);
+    }
+
+    pub fn caret(&self) -> usize {
+        self.buffer.caret()
+    }
+
+    pub fn set_caret(&mut self, caret: usize) {
+        self.buffer.set_caret(caret);
     }
 
     /// The text around the cursor, as the field draws it: what comes
@@ -105,7 +127,7 @@ impl Keyboard {
                     Key::Shift => (crate::KeyKind::Shift, String::new()),
                     Key::Symbols => (
                         crate::KeyKind::Symbols,
-                        if self.layer == Layer::Symbols {
+                        if self.case.layer == Layer::Symbols {
                             "abc"
                         } else {
                             "#+="
@@ -199,8 +221,13 @@ impl Keyboard {
             Some(Key::Char(c)) => self.insert(c),
             Some(Key::Space) => self.insert(' '),
             Some(Key::Backspace) => self.backspace(),
-            Some(key @ (Key::Shift | Key::Symbols)) => {
-                self.layer = rules::toggle(self.layer, key);
+            Some(Key::Shift) => {
+                self.case.tap_shift();
+                self.position = rules::clamp(&self.rows(), self.position);
+                Press::Layer
+            }
+            Some(Key::Symbols) => {
+                self.case.tap_symbols();
                 self.position = rules::clamp(&self.rows(), self.position);
                 Press::Layer
             }
@@ -209,12 +236,17 @@ impl Keyboard {
         }
     }
 
+    /// Type one character. A one-character Shift lets go once it has.
     pub fn insert(&mut self, c: char) -> Press {
-        if self.buffer.insert(c) {
-            Press::Edited
-        } else {
-            Press::None
+        if !self.buffer.insert(c) {
+            return Press::None;
         }
+        let layer = self.case.layer;
+        self.case.typed();
+        if self.case.layer != layer {
+            self.position = rules::clamp(&self.rows(), self.position);
+        }
+        Press::Edited
     }
 
     pub fn backspace(&mut self) -> Press {
@@ -227,6 +259,97 @@ impl Keyboard {
 
     pub fn move_caret(&mut self, forward: bool) -> bool {
         self.buffer.move_caret(forward)
+    }
+
+    /// The focused key's kind, for the help bar.
+    pub fn key_kind(&self) -> crate::KeyKind {
+        match self.key() {
+            Some(Key::Submit) => crate::KeyKind::Submit,
+            Some(Key::Space) => crate::KeyKind::Space,
+            Some(Key::Backspace) => crate::KeyKind::Backspace,
+            Some(Key::Shift) => crate::KeyKind::Shift,
+            Some(Key::Symbols) => crate::KeyKind::Symbols,
+            Some(Key::Char(_)) | None => crate::KeyKind::Char,
+        }
+    }
+
+    /// Whether Accept on the focused key repeats while held: a key that
+    /// types or deletes, never submit or a layer key.
+    pub fn key_repeats(&self) -> bool {
+        matches!(self.key(), Some(Key::Char(_) | Key::Space | Key::Backspace))
+    }
+
+    /// Delete the character before the cursor. A delete held long enough
+    /// stops stepping and empties the field.
+    pub fn delete(&mut self, held_ms: u64) -> Press {
+        if held_ms >= zaparoo_app::input::TEXT_CLEAR_HOLD_MS {
+            self.clear()
+        } else {
+            self.backspace()
+        }
+    }
+
+    /// The text-editing buttons every keyboard screen shares: a held Accept
+    /// on a key, Delete (and Menu), Options as a space, and the shoulders
+    /// moving the caret. `None` for any other action, which the screen
+    /// handles itself. `held_ms` is how long the repeat in flight has
+    /// been held.
+    pub fn text_action(&mut self, action: &str, held_ms: u64) -> Option<Press> {
+        use zaparoo_core::input_actions::actions;
+        Some(match action {
+            zaparoo_app::input::TEXT_KEY => {
+                if self.key() == Some(Key::Backspace) {
+                    self.delete(held_ms)
+                } else {
+                    self.press()
+                }
+            }
+            zaparoo_app::input::TEXT_DELETE | actions::PAGE_MENU => self.delete(held_ms),
+            actions::CONTEXT_MENU => self.insert(' '),
+            actions::PAGE_PREV | actions::PAGE_NEXT => {
+                if self.move_caret(action == actions::PAGE_NEXT) {
+                    Press::Moved
+                } else {
+                    Press::None
+                }
+            }
+            _ => return None,
+        })
+    }
+}
+
+/// One keyboard's press cue: the key held down and the ticket that lifts it.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Flash {
+    pub pressed: Option<usize>,
+    seq: u64,
+}
+
+impl Flash {
+    /// Hold `index` down; the returned ticket lifts it.
+    pub fn start(&mut self, index: usize) -> u64 {
+        self.pressed = Some(index);
+        self.seq = self.seq.wrapping_add(1);
+        self.seq
+    }
+
+    /// Lift the key if `seq` is still the latest press.
+    pub fn lift(&mut self, seq: u64) -> bool {
+        if self.seq != seq {
+            return false;
+        }
+        self.pressed = None;
+        true
+    }
+
+    pub fn clear(&mut self) {
+        self.pressed = None;
+    }
+
+    pub fn index(&self) -> i32 {
+        self.pressed
+            .and_then(|index| i32::try_from(index).ok())
+            .unwrap_or(-1)
     }
 }
 
@@ -328,6 +451,49 @@ mod tests {
     }
 
     #[test]
+    fn the_shared_text_buttons_delete_space_and_move_the_caret() {
+        use zaparoo_core::input_actions::actions;
+        let mut keyboard = basic();
+        keyboard.set_text("ab");
+        assert_eq!(
+            keyboard.text_action(actions::CONTEXT_MENU, 0),
+            Some(Press::Edited)
+        );
+        assert_eq!(keyboard.text(), "ab ");
+        assert_eq!(
+            keyboard.text_action(zaparoo_app::input::TEXT_DELETE, 0),
+            Some(Press::Edited)
+        );
+        assert_eq!(
+            keyboard.text_action(actions::PAGE_PREV, 0),
+            Some(Press::Moved)
+        );
+        assert_eq!(keyboard.caret(), 1);
+        assert_eq!(
+            keyboard.text_action(actions::PAGE_MENU, zaparoo_app::input::TEXT_CLEAR_HOLD_MS),
+            Some(Press::Edited)
+        );
+        assert_eq!(keyboard.text(), "", "a long hold clears the field");
+        assert_eq!(keyboard.text_action(actions::UP, 0), None);
+        keyboard.focus(Key::Backspace);
+        assert!(keyboard.key_repeats());
+        keyboard.focus(Key::Submit);
+        assert!(!keyboard.key_repeats());
+        assert_eq!(keyboard.key_kind(), crate::KeyKind::Submit);
+    }
+
+    #[test]
+    fn a_flash_lifts_only_for_its_own_press() {
+        let mut flash = Flash::default();
+        let first = flash.start(3);
+        let second = flash.start(4);
+        assert!(!flash.lift(first));
+        assert_eq!(flash.index(), 4);
+        assert!(flash.lift(second));
+        assert_eq!(flash.index(), -1);
+    }
+
+    #[test]
     fn the_full_keyboard_switches_layers_and_keeps_focus_in_range() {
         let mut keyboard = Keyboard::new(Layers::Full, 16);
         assert_eq!(keyboard.row_count(), 5);
@@ -337,6 +503,18 @@ mod tests {
         keyboard.focus(Key::Char('Q'));
         assert_eq!(keyboard.press(), Press::Edited);
         assert_eq!(keyboard.text(), "Q");
+        assert_eq!(
+            keyboard.layer(),
+            Layer::Lower,
+            "one character, then lowercase"
+        );
+        assert_eq!(keyboard.key(), Some(Key::Char('q')));
+        keyboard.lock_shift();
+        keyboard.focus(Key::Char('W'));
+        keyboard.press();
+        keyboard.press();
+        assert_eq!(keyboard.text(), "QWW", "caps stay on");
+        assert_eq!(keyboard.shift(), Shift::Locked);
         keyboard.focus(Key::Symbols);
         assert_eq!(keyboard.press(), Press::Layer);
         assert_eq!(keyboard.layer(), Layer::Symbols);

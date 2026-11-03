@@ -21,6 +21,8 @@ import { FocusCursor, TileDisplacement } from "focus.slint";
 export struct GridCell {
     label-key: string,
     name: string,
+    // The user's own name for a built-in Hub tile; empty for none.
+    custom-name: string,
     glyph-key: string,
     cover: image,
     cover-focus: image,
@@ -485,6 +487,29 @@ export component Tile inherits Rectangle {
 // the cell fit and centering (`zaparoo_app::paged_grid::fit`) and hands
 // the page's cells over; this lays them out row-major and reports
 // pointer events by page-local index. Blank cells paint nothing.
+// The page turn every paged grid shares: a band one page tall, clipped,
+// holding the page on show and the incoming page one period past it, which
+// `page-slide` carries together (0 at rest, 1 or -1 a whole turn). Rust drives
+// it through `frontend::page_motion`; the two `PagedGridView`s are the
+// caller's children, the incoming one placed at `incoming-y`.
+export component PageStrip inherits Rectangle {
+    in property <float> page-slide: 0;
+    in property <bool> slide-anim: false;
+    in property <int> slide-dir: 1;
+    out property <length> incoming-y: root.slide-dir * root.height;
+    clip: true;
+
+    Rectangle {
+        property <float> progress: root.page-slide;
+        y: -self.progress * root.height;
+        animate progress {
+            duration: root.slide-anim ? Motion.dur(Motion.page-ms) : 0ms;
+            easing: ease-out;
+        }
+        @children
+    }
+}
+
 export component PagedGridView inherits Rectangle {
     in property <[GridCell]> cells: [];
     in property <string> focus-scope: "";

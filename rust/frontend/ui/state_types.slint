@@ -1,5 +1,5 @@
 // Closed UI discriminants shared with the generated Rust API.
-export enum Screen { hub, systems, favorite-systems, games, favorites, recents, search, search-results, settings, about, update, none }
+export enum Screen { hub, systems, favorite-systems, games, favorites, recents, search, search-results, settings, about, update, rename, file-browser, none }
 export enum GamesMode { browse, favorites, recents, search }
 export enum SystemsMode { category, favorites }
 // What a menu row is: something to pick, a section's name (never focused),
@@ -14,6 +14,7 @@ export enum ContextPage { root, write-token, manage-game, manage-system, manage-
 export enum KeyKind { char, space, backspace, shift, symbols, submit }
 export enum SearchZone { system, filter, keys, pane }
 export enum SearchPane { none, recents, preview }
+export enum FileBrowserMode { plain, images }
 export enum SettingsPage { root, appearance, library, online, display, controls, language, about }
 export enum ContentState { ready, loading, empty, error }
 // The header line's app cue. A wait (`launching` to `cancelling`) follows
@@ -49,7 +50,7 @@ export enum LogPhase { uploading, done, failed }
 export enum PairPhase { closed, starting, showing, paired, expired }
 // The "link Online account" panel, on the same terms as pairing.
 export enum OnlineLinkPhase { closed, starting, showing, linked, failed, expired }
-export enum PressOwner { none, hub, systems, games, settings, setup, context, list, online-list, letter, card-write, dialog, log, wake, update }
+export enum PressOwner { none, hub, systems, games, file-browser, settings, setup, context, list, online-list, letter, card-write, dialog, log, wake, update }
 export enum StatusKind {
     none, disconnected, reconnecting, connecting, core-error, indexing-paused,
     indexing, optimizing, importing-paused, importing, indexed-files,
@@ -59,7 +60,7 @@ export enum Orientation { horizontal, cw, ccw }
 export enum VideoStandard { ntsc, pal }
 export enum DialogKind { none, quit-confirm, quit-blocked, restart-setting, notice, core-version, first-run, hub-full, action-error, unlink-online, restore-online-backup, update-stop }
 export enum DialogButton { ok, yes, no, retry, cancel, i-understand, start-media-update }
-export enum ErrorKind { generic, launch, launch-repair, favorite, media-visibility, media-busy, add-to-hub, media-index, media-scrape, media-scrapers, media-cancel, launcher, launcher-save, alternate-discovery, disc-list, qr-code, card-write, setting, pairing, online, backup, config-file }
+export enum ErrorKind { generic, launch, launch-repair, favorite, media-visibility, media-busy, add-to-hub, media-index, media-scrape, media-scrapers, media-cancel, launcher, launcher-save, alternate-discovery, disc-list, qr-code, card-write, setting, pairing, online, backup, config-file, image-picker }
 
 // Text adapters are for vocabulary/resource keys and focus identity only,
 // never routing. Runtime decisions use the enums themselves.

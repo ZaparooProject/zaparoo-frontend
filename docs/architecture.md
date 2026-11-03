@@ -194,6 +194,16 @@ crate still owns all UI, navigation and input semantics.
   launcher list. `request_folder_picker` and `request_launcher_scan` trigger
   the same guarded request as the rows. Configuration and status live with
   the window, so a host configures them again for every new window.
+- `Input::configure_image_picker` registers the host's own image picker
+  for Change icon… on a Hub tile; without one, a hosted build does not
+  offer that row. The host answers with `image_picker_result`: an ordered
+  revision and `Picked(path)`, `Cancelled`, `Denied` or `Failed`, where a
+  stale revision or an answer with no request open is ignored. Unlike the
+  folder picker, a path crosses this seam: it must be absolute and readable
+  by the frontend, and it becomes the tile's `icon` as written, so making
+  the file readable (a copy into the host's own storage, say) is the
+  host's. `request_image_picker` runs it for the focused Hub tile, and
+  `image_picker_pending` is a diagnostic.
 - `Input::configure_playtime_access` offers a handoff to the system
   setting that lets the host measure foreground playtime exactly; it adds
   "Verify playtime…" to Settings > Library. `playtime_access_status`

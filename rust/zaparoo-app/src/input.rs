@@ -55,6 +55,10 @@ pub const TEXT_KEY: &str = "text_key";
 
 /// A delete held this long stops stepping and clears the whole field.
 pub const TEXT_CLEAR_HOLD_MS: u64 = 1_200;
+/// How long Accept is held on the on-screen keyboard's Shift key before
+/// Shift locks into caps. The tap takes effect at once; holding past this
+/// upgrades it.
+pub const SHIFT_LOCK_HOLD_MS: u64 = 500;
 
 /// Holding Back this long goes straight to the Hub, with no step back on
 /// the way. Released sooner, it was a tap and goes back one level then: a

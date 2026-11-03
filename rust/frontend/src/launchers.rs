@@ -281,7 +281,12 @@ pub fn open_game_picker(ctx: &Ctx, app: &App, system_id: &str, path: &str, media
     let weak = app.as_weak();
     let system_id = system_id.to_string();
     let path = path.to_string();
-    // The menu has closed and the picker is not up yet.
+    // Opened from Options, the menu stays up with its row held until the
+    // picker can take its place; Back there calls the read off.
+    let hold = crate::router::hold_menu_for(|ctx| {
+        lock(&ctx.shared).game_launcher_seq += 1;
+    })
+    .then(|| crate::press_feedback::keep_held(app));
     let wait = crate::cue::begin(ctx, app, crate::AppCue::LoadingLaunchers, "", "");
     ctx.handle.spawn(async move {
         let current = match client.media_meta(params).await {
@@ -297,6 +302,10 @@ pub fn open_game_picker(ctx: &Ctx, app: &App, system_id: &str, path: &str, media
             crate::cue::end(&ctx2, &app, wait);
             if lock(&ctx2.shared).game_launcher_seq != ticket {
                 return;
+            }
+            if let Some(hold) = hold {
+                crate::press_feedback::release(&app, hold);
+                crate::router::end_held_wait(&app);
             }
             present(
                 &ctx2,

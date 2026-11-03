@@ -19,7 +19,7 @@ use zaparoo_core::media_types::MediaSearchResult;
 use zaparoo_core::remote_resource::ResourceStatus;
 
 use crate::browse_filter::Target;
-use crate::keyboard::{Keyboard, Press};
+use crate::keyboard::{Flash, Keyboard, Press};
 use crate::navigation::EntryMode;
 use crate::router::{lock, menu_header, menu_row_keyed, menu_value, Ctx, ListContext, Shared};
 use crate::{App, SearchInput, SearchPane, SearchPaneRow, SearchView, SearchZone};
@@ -54,9 +54,8 @@ pub struct Model {
     task: crate::scoped_task::ScopedTask,
     /// First pane row on show.
     pane_top: usize,
-    /// The key held down for its press cue, and the ticket that lifts it.
-    pressed: Option<usize>,
-    press_seq: u64,
+    /// The key held down for its press cue.
+    flash: Flash,
     /// The browse folder a scoped search opened on is still loaded behind
     /// it, so Back can return without refetching.
     browse_intact: bool,
@@ -76,8 +75,7 @@ impl Default for Model {
             seq: 0,
             task: crate::scoped_task::ScopedTask::default(),
             pane_top: 0,
-            pressed: None,
-            press_seq: 0,
+            flash: Flash::default(),
             browse_intact: false,
             prune_pending: false,
         }
@@ -288,20 +286,8 @@ pub(crate) fn render(ctx: &Ctx, app: &App) {
     view.set_shift_active(model.keyboard.layer() == Layer::Upper);
     view.set_symbols_active(model.keyboard.layer() == Layer::Symbols);
     view.set_key_index(i32::try_from(model.keyboard.index()).unwrap_or(0));
-    view.set_key_kind(match model.keyboard.key() {
-        Some(Key::Submit) => crate::KeyKind::Submit,
-        Some(Key::Space) => crate::KeyKind::Space,
-        Some(Key::Backspace) => crate::KeyKind::Backspace,
-        Some(Key::Shift) => crate::KeyKind::Shift,
-        Some(Key::Symbols) => crate::KeyKind::Symbols,
-        Some(Key::Char(_)) | None => crate::KeyKind::Char,
-    });
-    view.set_pressed_key(
-        model
-            .pressed
-            .and_then(|index| i32::try_from(index).ok())
-            .unwrap_or(-1),
-    );
+    view.set_key_kind(model.keyboard.key_kind());
+    view.set_pressed_key(model.flash.index());
     view.set_zone(zone(focus.zone));
     view.set_pane_index(i32::try_from(focus.pane_index).unwrap_or(0));
     view.set_pane_top(i32::try_from(model.pane_top).unwrap_or(0));
@@ -332,7 +318,7 @@ fn show(ctx: &Ctx, app: &App, direction: i32) {
         shared.persist.active_screen = crate::Screen::Search.token().to_string();
         let query = shared.persist.search.query.clone();
         shared.search.keyboard.set_text(&query);
-        shared.search.pressed = None;
+        shared.search.flash.clear();
     }
     crate::router::save_persist(&ctx.shared);
     crate::browse_filter::begin_for(ctx, app, Target::Search);
@@ -486,12 +472,7 @@ pub(crate) fn resume(ctx: &Ctx, app: &App) {
 /// Whether typed text belongs to the query right now: the screen is up
 /// with nothing over it.
 pub(crate) fn owns_input(app: &App) -> bool {
-    let shell = app.global::<crate::Shell>();
-    shell.get_active_screen() == crate::Screen::Search
-        && !shell.get_transitioning()
-        && !shell.get_saver_armed()
-        && !shell.get_boot_curtain()
-        && !crate::input::modal_open(app)
+    crate::input::text_owner(app) == Some(crate::input::TextOwner::Search)
 }
 
 /// The query changed: keep the persisted copy in step and refetch.
@@ -525,36 +506,20 @@ pub(crate) fn type_char(ctx: &Ctx, app: &App, c: char) {
 fn apply_press(ctx: &Ctx, app: &App, press: Press) {
     match press {
         Press::Edited => edited(ctx, app),
-        Press::Layer | Press::None => render(ctx, app),
+        Press::Layer | Press::Moved | Press::None => render(ctx, app),
         Press::Submit => submit(ctx, app),
     }
 }
 
 /// Hold the pressed key down for the press cue, then lift it.
 fn flash_key(ctx: &Ctx, app: &App) {
-    let seq = {
-        let mut shared = lock(&ctx.shared);
-        shared.search.pressed = Some(shared.search.keyboard.index());
-        shared.search.press_seq = shared.search.press_seq.wrapping_add(1);
-        shared.search.press_seq
-    };
-    let ctx = ctx.clone();
-    let weak = app.as_weak();
-    slint::Timer::single_shot(
-        Duration::from_millis(zaparoo_app::input::PRESS_FEEDBACK_MS),
-        move || {
-            let Some(app) = weak.upgrade() else {
-                return;
-            };
-            {
-                let mut shared = lock(&ctx.shared);
-                if shared.search.press_seq != seq {
-                    return;
-                }
-                shared.search.pressed = None;
-            }
-            app.global::<SearchView>().set_pressed_key(-1);
-        },
+    let index = lock(&ctx.shared).search.keyboard.index();
+    crate::input::flash_key(
+        ctx,
+        app,
+        index,
+        |shared| &mut shared.search.flash,
+        |app| app.global::<SearchView>().set_pressed_key(-1),
     );
 }
 
@@ -945,30 +910,11 @@ fn leave(ctx: &Ctx, app: &App) {
     crate::router::return_to_hub(ctx, app);
 }
 
-/// Delete the character before the cursor. A delete held long enough
-/// stops stepping and empties the field.
-fn delete(ctx: &Ctx, app: &App) {
-    let clear = crate::input::repeat_held_ms(ctx) >= zaparoo_app::input::TEXT_CLEAR_HOLD_MS;
-    let press = {
-        let mut shared = lock(&ctx.shared);
-        if clear {
-            shared.search.keyboard.clear()
-        } else {
-            shared.search.keyboard.backspace()
-        }
-    };
-    apply_press(ctx, app, press);
-}
-
 /// Whether Accept on the focused key should repeat while held: a key that
 /// types or deletes, never Search or a layer key.
 pub(crate) fn key_repeats(ctx: &Ctx) -> bool {
     let shared = lock(&ctx.shared);
-    shared.search.focus.zone == Zone::Keys
-        && matches!(
-            shared.search.keyboard.key(),
-            Some(Key::Char(_) | Key::Space | Key::Backspace)
-        )
+    shared.search.focus.zone == Zone::Keys && shared.search.keyboard.key_repeats()
 }
 
 pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
@@ -1011,33 +957,24 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
                 Zone::Pane => accept_pane(ctx, app, focus.pane_index),
             }
         }
-        // A held Accept on a key that types or deletes.
-        KEY => {
-            // Mark the key pressed first, so the paint that follows the
-            // edit shows it down.
-            flash_key(ctx, app);
-            let key = lock(&ctx.shared).search.keyboard.key();
-            if key == Some(Key::Backspace) {
-                delete(ctx, app);
-            } else {
-                let press = lock(&ctx.shared).search.keyboard.press();
-                apply_press(ctx, app, press);
+        // A held Accept on a key that types or deletes; West deletes and
+        // North spaces from anywhere on the screen, so a typo is one press
+        // away whichever key has focus.
+        KEY
+        | DELETE
+        | actions::PAGE_MENU
+        | actions::CONTEXT_MENU
+        | actions::PAGE_PREV
+        | actions::PAGE_NEXT => {
+            if action == KEY {
+                // Mark the key pressed first, so the paint that follows the
+                // edit shows it down.
+                flash_key(ctx, app);
             }
-        }
-        // West deletes and North spaces from anywhere on the screen, so a
-        // typo is one press away whichever key has focus.
-        DELETE | actions::PAGE_MENU => delete(ctx, app),
-        actions::CONTEXT_MENU => {
-            let press = lock(&ctx.shared).search.keyboard.insert(' ');
-            apply_press(ctx, app, press);
-        }
-        actions::PAGE_PREV | actions::PAGE_NEXT => {
-            let moved = lock(&ctx.shared)
-                .search
-                .keyboard
-                .move_caret(action == actions::PAGE_NEXT);
-            if moved {
-                render(ctx, app);
+            let held = crate::input::repeat_held_ms(ctx);
+            let press = lock(&ctx.shared).search.keyboard.text_action(action, held);
+            if let Some(press) = press {
+                apply_press(ctx, app, press);
             }
         }
         actions::CANCEL => leave(ctx, app),

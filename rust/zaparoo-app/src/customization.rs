@@ -44,6 +44,23 @@ pub fn is_allowed_extension(extension: &str) -> bool {
         .any(|allowed| allowed.eq_ignore_ascii_case(extension))
 }
 
+/// Cover-key prefix for a Hub icon given as an absolute image path.
+pub const PATH_ICON_PREFIX: &str = "custom-path:";
+
+/// Whether a Hub `icon` value names an image file directly. Anything else
+/// is a file name matched in the `hub` namespace.
+pub fn is_absolute_icon(icon: &str) -> bool {
+    icon.starts_with('/')
+}
+
+/// Whether a file name has an accepted image extension.
+pub fn is_image_file(name: &str) -> bool {
+    std::path::Path::new(name)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(is_allowed_extension)
+}
+
 /// The lookup key for a file stem or an id. Matching is
 /// case-insensitive, so `Arcade.png`, `arcade.png` and `ARCADE.png` all
 /// answer the `Arcade` category; applied identically on both sides so
@@ -86,6 +103,22 @@ mod tests {
             .iter()
             .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
             .collect()
+    }
+
+    #[test]
+    fn an_absolute_icon_is_a_path_and_anything_else_a_name() {
+        assert!(is_absolute_icon("/media/usb0/art/zelda.png"));
+        assert!(!is_absolute_icon("rpgs"));
+        assert!(!is_absolute_icon("art/zelda.png"));
+        assert!(!is_absolute_icon(""));
+    }
+
+    #[test]
+    fn image_files_are_the_accepted_extensions_in_any_case() {
+        assert!(is_image_file("a.PNG"));
+        assert!(is_image_file("b.jpeg"));
+        assert!(!is_image_file("c.txt"));
+        assert!(!is_image_file("png"));
     }
 
     #[test]
