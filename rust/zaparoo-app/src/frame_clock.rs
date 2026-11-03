@@ -7,6 +7,10 @@
 //! Each presented frame moves the timeline by exactly one refresh period,
 //! however long the frame took, so motion is sampled at even steps and a
 //! late frame slows it by that frame instead of enlarging the next step.
+//! The slowing is bounded: once a run of presented frames has fallen
+//! [`FrameClock::MAX_LAG`] behind real time, the next frames step by whole
+//! periods enough to stay within it, so frames that stay slow under load
+//! play motion at real speed rather than stretching it out.
 //! A turn that presented nothing moves it by the real time that passed, in
 //! whole periods, so timers keep real time while nothing animates.
 //!
@@ -32,15 +36,27 @@ pub struct FrameClock {
     /// Real idle time not yet on the timeline, in nanoseconds. Negative
     /// while the timeline is ahead of it.
     idle_balance: i128,
+    /// How far the current run of presented frames has fallen behind real
+    /// time, in nanoseconds. Signed and never clamped, so a frame that
+    /// returns early repays one that returned late and the jitter of the
+    /// display's pacing does not add up over a long run. An idle turn ends
+    /// the run.
+    present_lag: i128,
 }
 
 impl FrameClock {
+    /// The most a run of presented frames may fall behind real time. Longer
+    /// than a focus move or the focus zoom, so a late frame or two still
+    /// gives them even steps, and shorter than a page turn.
+    pub const MAX_LAG: Duration = Duration::from_millis(100);
+
     /// A timeline that starts level with real time.
     pub const fn new(real_now: Duration) -> Self {
         Self {
             now: real_now,
             last_real: real_now,
             idle_balance: 0,
+            present_lag: 0,
         }
     }
 
@@ -54,7 +70,9 @@ impl FrameClock {
     /// little early still moves the timers; the borrowed time is repaid by
     /// the waits that follow, and a turn adds nothing once the timeline is
     /// a whole period ahead. Over a long idle it therefore tracks real time
-    /// without ever leading it by more than two periods.
+    /// without ever leading it by more than two periods. A presented turn
+    /// advances one period unless that would leave the run of presented
+    /// frames more than [`Self::MAX_LAG`] behind real time.
     pub fn advance(&mut self, previous: Turn, real_now: Duration, period: Duration) -> Duration {
         let elapsed = real_now.saturating_sub(self.last_real);
         self.last_real = self.last_real.max(real_now);
@@ -63,8 +81,20 @@ impl FrameClock {
             return self.now;
         }
         let periods = match previous {
-            Turn::Presented => 1,
+            Turn::Presented => {
+                let elapsed_ns = i128::try_from(elapsed.as_nanos()).unwrap_or(i128::MAX);
+                self.present_lag = self
+                    .present_lag
+                    .saturating_add(elapsed_ns)
+                    .saturating_sub(period_ns);
+                let max_lag = i128::try_from(Self::MAX_LAG.as_nanos()).unwrap_or(i128::MAX);
+                let over = self.present_lag.saturating_sub(max_lag).max(0);
+                let catch_up = (over + period_ns - 1) / period_ns;
+                self.present_lag -= catch_up * period_ns;
+                1 + catch_up
+            }
             Turn::Idle => {
+                self.present_lag = 0;
                 self.idle_balance = self
                     .idle_balance
                     .saturating_add(i128::try_from(elapsed.as_nanos()).unwrap_or(i128::MAX));
@@ -152,7 +182,7 @@ mod tests {
         let start = Duration::from_secs(3);
         let mut clock = FrameClock::new(start);
         let mut real = start;
-        for (frame, took_ms) in [1_u32, 16, 17, 45, 400, 2].into_iter().enumerate() {
+        for (frame, took_ms) in [1_u32, 16, 17, 45, 80, 2].into_iter().enumerate() {
             real += Duration::from_millis(u64::from(took_ms));
             let now = clock.advance(Turn::Presented, real, NTSC);
             assert_eq!(now, start + NTSC * (frame as u32 + 1));
@@ -213,15 +243,75 @@ mod tests {
     fn late_frames_slow_motion_and_idle_does_not_win_the_time_back() {
         let mut clock = FrameClock::new(Duration::ZERO);
         let mut real = Duration::ZERO;
-        // Ten frames that each took 50 ms.
-        for _ in 0..10 {
+        // Three frames that each took 50 ms stay inside the lag bound.
+        for _ in 0..3 {
             real += Duration::from_millis(50);
             clock.advance(Turn::Presented, real, NTSC);
         }
-        assert_eq!(clock.now(), NTSC * 10);
+        assert_eq!(clock.now(), NTSC * 3);
         // The idle turn after them counts only its own wait.
         real += NTSC;
-        assert_eq!(clock.advance(Turn::Idle, real, NTSC), NTSC * 11);
+        assert_eq!(clock.advance(Turn::Idle, real, NTSC), NTSC * 4);
+    }
+
+    #[test]
+    fn frames_that_stay_slow_play_motion_at_real_speed() {
+        let mut clock = FrameClock::new(Duration::ZERO);
+        let mut real = Duration::ZERO;
+        for _ in 0..20 {
+            real += Duration::from_millis(200);
+            let now = clock.advance(Turn::Presented, real, NTSC);
+            assert!(now <= real, "{now:?} leads {real:?}");
+            assert!(now + FrameClock::MAX_LAG >= real, "{now:?} trails {real:?}");
+            assert_eq!(now.as_nanos() % NTSC.as_nanos(), 0);
+        }
+        // Past the bound each 200 ms frame is the 200 ms that passed, to
+        // within a period.
+        let before = clock.now();
+        real += Duration::from_millis(200);
+        let step = clock
+            .advance(Turn::Presented, real, NTSC)
+            .saturating_sub(before);
+        assert!(
+            step.abs_diff(Duration::from_millis(200)) <= NTSC,
+            "{step:?}"
+        );
+    }
+
+    #[test]
+    fn pacing_jitter_does_not_add_up_to_the_bound() {
+        let mut clock = FrameClock::new(Duration::ZERO);
+        let mut real = Duration::ZERO;
+        // A long run of frames paced by the display, each returning a
+        // little early or late.
+        for frame in 1..=100_000_u32 {
+            real += if frame % 2 == 0 {
+                Duration::from_micros(17_067)
+            } else {
+                Duration::from_micros(16_267)
+            };
+            assert_eq!(clock.advance(Turn::Presented, real, NTSC), NTSC * frame);
+        }
+        // So one late frame after it is still one period.
+        real += Duration::from_millis(90);
+        assert_eq!(clock.advance(Turn::Presented, real, NTSC), NTSC * 100_001);
+    }
+
+    #[test]
+    fn a_single_stall_is_one_period_until_the_bound() {
+        let mut clock = FrameClock::new(Duration::ZERO);
+        // One frame that took 400 ms falls the bound behind and no more.
+        let now = clock.advance(Turn::Presented, Duration::from_millis(400), NTSC);
+        assert!(now + FrameClock::MAX_LAG >= Duration::from_millis(400));
+        assert!(now + FrameClock::MAX_LAG < Duration::from_millis(400) + NTSC);
+        // An idle turn ends the run, so the next late frame is one period.
+        let mut real = Duration::from_millis(400) + NTSC;
+        let after_idle = clock.advance(Turn::Idle, real, NTSC);
+        real += Duration::from_millis(60);
+        assert_eq!(
+            clock.advance(Turn::Presented, real, NTSC),
+            after_idle + NTSC
+        );
     }
 
     #[test]
@@ -252,7 +342,7 @@ mod tests {
         let mut clock = FrameClock::new(Duration::ZERO);
         let mut real = Duration::ZERO;
         for frame in 1..=50_u32 {
-            real += Duration::from_millis(23);
+            real += Duration::from_millis(21);
             assert_eq!(clock.advance(Turn::Presented, real, PAL), PAL * frame);
         }
         assert_eq!(clock.now(), Duration::from_secs(1));
