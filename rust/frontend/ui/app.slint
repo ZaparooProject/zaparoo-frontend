@@ -8,8 +8,8 @@
 // logic; forward orchestration lives in the router.
 
 import { Theme, Sizing, Motion, Layout } from "theme.slint";
-import { MenuRole, ContextPage, KeyKind, SearchZone, SearchPane, FileBrowserMode, Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, StateTokens, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogButton, ErrorKind } from "state_types.slint";
-export { MenuRole, ContextPage, KeyKind, SearchZone, SearchPane, FileBrowserMode, Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogButton, ErrorKind }
+import { MenuRole, ContextPage, KeyKind, SearchZone, SearchPane, SearchScope, FileBrowserMode, Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, StateTokens, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogButton, ErrorKind } from "state_types.slint";
+export { MenuRole, ContextPage, KeyKind, SearchZone, SearchPane, SearchScope, FileBrowserMode, Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogButton, ErrorKind }
 import { FastScrollRail, GlyphSource, Brand, Buttons, HelpEntry, Status, HeaderBar, StatusLine, ProgressTrack, WaitCue, TopStatusStrip, FooterIndicator, ActiveLabel, HelpBar, SectionHeader, Divider, ScrollCue, ModalShell, QrPlate, StateCue } from "chrome.slint";
 import { GridCell, MarqueeCaption, PressableSurface, Tile, PagedGridView, PageStrip } from "tiles.slint";
 import { ScrollOffset, SelectionCursor, SelectionClip, FocusCursor } from "focus.slint";
@@ -173,7 +173,9 @@ export global PageBar {
     // How many chips the screen on show has.
     public pure function active-count() -> int {
         if (Shell.active-screen == Screen.hub) { return self.hub-chips.length; }
-        if (Shell.active-screen == Screen.favorite-systems) { return self.systems-chips.length; }
+        if (Shell.active-screen == Screen.systems || Shell.active-screen == Screen.favorite-systems) {
+            return self.systems-chips.length;
+        }
         if (Shell.active-screen == Screen.games || Shell.active-screen == Screen.favorites
             || Shell.active-screen == Screen.search-results) {
             return self.games-chips.length;
@@ -453,6 +455,25 @@ export global GamesView {
     // Games: the system's display name, or the folder's own name below
     // the system root. The flat lists compose their titles in the view.
     in-out property <string> title: "";
+    // Search results limited to a category or the favorites: the title's
+    // parts before and after the scope, which only the view can name.
+    in-out property <SearchScope> search-scope: SearchScope.none;
+    in-out property <string> search-category: "";
+    in-out property <string> title-head: "";
+    in-out property <string> title-tail: "";
+
+    // The title as shown. Empty when a search has nothing to name.
+    public pure function display-title() -> string {
+        if (self.mode != GamesMode.search
+            || (self.search-scope != SearchScope.category && self.search-scope != SearchScope.favorites)) {
+            return self.title;
+        }
+        let scope = self.search-scope == SearchScope.category
+            ? Labels.hub("category:" + self.search-category, self.search-category)
+            : @tr("Favorites");
+        let lead = self.title-head == "" ? scope : @tr("{} · {}", self.title-head, scope);
+        return self.title-tail == "" ? lead : @tr("{} · {}", lead, self.title-tail);
+    }
     // Whether Options opens a menu on the focused row; the help bar offers
     // it only then.
     in-out property <bool> options-available: true;
@@ -2926,7 +2947,7 @@ component GamesScreen inherits Rectangle {
     property <bool> is-games: GamesView.mode == GamesMode.browse;
     property <string> title: GamesView.mode == GamesMode.favorites ? @tr("Favorites")
         : (GamesView.mode == GamesMode.recents ? @tr("Recently played")
-        : (GamesView.mode == GamesMode.search && GamesView.title == "" ? @tr("Search") : GamesView.title));
+        : (GamesView.mode == GamesMode.search && GamesView.display-title() == "" ? @tr("Search") : GamesView.display-title()));
     property <ContentState> state: GamesView.error != "" ? ContentState.error
         : (GamesView.loading ? ContentState.loading : (GamesView.count == 0 ? ContentState.empty : ContentState.ready));
     property <bool> gate-hide: root.gated || GamesView.loading || cue.loading-visible || GamesView.error != "";
@@ -3349,13 +3370,13 @@ export component App inherits Window {
         if (Shell.active-screen == Screen.games) { return GamesView.title; }
         if (Shell.active-screen == Screen.favorites) { return @tr("Favorites"); }
         if (Shell.active-screen == Screen.recents) { return @tr("Recently played"); }
-        if (Shell.active-screen == Screen.search) { return @tr("Search"); }
+        if (Shell.active-screen == Screen.search) { return SearchView.title(); }
         if (Shell.active-screen == Screen.rename) { return @tr("Rename tile"); }
         if (Shell.active-screen == Screen.file-browser) {
             return FileBrowserView.places ? @tr("Places") : FileBrowserView.title;
         }
         if (Shell.active-screen == Screen.search-results) {
-            return GamesView.title == "" ? @tr("Search") : GamesView.title;
+            return GamesView.display-title() == "" ? @tr("Search") : GamesView.display-title();
         }
         return "";
     }
@@ -3769,21 +3790,11 @@ export component App inherits Window {
                     { buttons: ["ButtonB"], label: @tr("Back") },
                 ];
             }
-            // The favorites list adds the View menu, which carries the
-            // grouping switch.
-            if (Shell.active-screen == Screen.favorite-systems) {
-                return [
-                    self.move-cue(SystemsView.total-pages),
-                    { buttons: ["ButtonA"], label: @tr("Open") },
-                    { buttons: ["ButtonX"], label: @tr("Options") },
-                    { buttons: ["ButtonY"], label: @tr("Menu") },
-                    { buttons: ["ButtonB"], label: @tr("Back") },
-                ];
-            }
             return [
                 self.move-cue(SystemsView.total-pages),
                 { buttons: ["ButtonA"], label: @tr("Open") },
                 { buttons: ["ButtonX"], label: @tr("Options") },
+                { buttons: ["ButtonY"], label: @tr("Menu") },
                 { buttons: ["ButtonB"], label: @tr("Back") },
             ];
         }

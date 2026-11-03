@@ -1034,7 +1034,7 @@ fn state(app: &App) -> &'static str {
     }
 }
 
-fn persist_selection(ctx: &Ctx) {
+pub(crate) fn persist_selection(ctx: &Ctx) {
     {
         let mut shared = lock(&ctx.shared);
         let id = shared.systems_model.current().map(|s| s.id.clone());
@@ -1203,16 +1203,24 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
                 open_context_menu(ctx, app);
             }
         }
-        // The favorites list's Menu carries the grouping switch, so it
-        // must stay reachable even when the list came back empty. Above
-        // 240p it is the chip row; at 240p the grouping picker opens
-        // straight away.
+        // Above 240p the Menu is the chip row. The favorites list's Menu
+        // carries the grouping switch, so it stays reachable even when the
+        // list came back empty. At 240p a category's one action, Search
+        // here, runs straight away.
         actions::PAGE_MENU => {
-            if favorites(&lock(&ctx.shared)) && matches!(state(app), "ready" | "empty") {
-                if crate::page_bar::enter(ctx, app) {
-                    return;
-                }
-                crate::router::open_favorites_grouping_menu(ctx, app);
+            let favorites = favorites(&lock(&ctx.shared));
+            let reachable = match state(app) {
+                "ready" => true,
+                "empty" => favorites,
+                _ => false,
+            };
+            if !reachable || crate::page_bar::enter(ctx, app) {
+                return;
+            }
+            if favorites {
+                crate::router::open_favorite_systems_page_menu(ctx, app);
+            } else {
+                crate::search::enter_scoped(ctx, app);
             }
         }
         actions::CANCEL => {

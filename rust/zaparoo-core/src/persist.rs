@@ -295,10 +295,16 @@ pub struct SearchState {
     /// `type:value` tags: at most one per type from the Search screen, as
     /// written from a saved search's Hub tile.
     pub tags: Vec<String>,
-    /// True when the search was opened on a browse folder, which fixes the
-    /// system and returns there on Back.
+    /// True when "Search here" opened the search, which fixes its scope
+    /// and returns to where it was opened on Back.
     pub scoped: bool,
-    /// The folder a scoped search is limited to; empty at a system's top
+    /// What a scoped search is limited to, as a `SEARCH_SCOPE_*` token:
+    /// the system on a browse screen, a category of systems, or the
+    /// favorites. Empty when not scoped.
+    pub scope_kind: String,
+    /// The category a category scope covers.
+    pub scope_category: String,
+    /// The folder a browse scope is limited to; empty at a system's top
     /// level.
     pub scope_path: String,
     /// The folder's display name, for the scope row.
@@ -332,6 +338,8 @@ struct SearchStateRepr {
     systems: Vec<String>,
     tags: Vec<String>,
     scoped: bool,
+    scope_kind: String,
+    scope_category: String,
     scope_path: String,
     scope_name: String,
     selected_path: String,
@@ -359,13 +367,40 @@ fn systems_from_disk(systems: Vec<String>, system_id: String) -> Vec<String> {
     }
 }
 
+/// "Search here" on a system's games, limited to it and maybe a folder.
+pub const SEARCH_SCOPE_BROWSE: &str = "browse";
+/// "Search here" on a category's systems.
+pub const SEARCH_SCOPE_CATEGORY: &str = "category";
+/// "Search here" on the favorites list, maybe within one system.
+pub const SEARCH_SCOPE_FAVORITES: &str = "favorites";
+/// "Search here" on the systems that hold favorites.
+pub const SEARCH_SCOPE_FAVORITE_SYSTEMS: &str = "favorite_systems";
+
+/// The scope a state file holds. A file written before there was more
+/// than one kind only ever scoped a browse screen; a kind this build does
+/// not know leaves the search unscoped.
+fn scope_from_disk(scoped: bool, kind: String) -> (bool, String) {
+    match kind.as_str() {
+        _ if !scoped => (false, String::new()),
+        "" => (true, SEARCH_SCOPE_BROWSE.to_string()),
+        SEARCH_SCOPE_BROWSE
+        | SEARCH_SCOPE_CATEGORY
+        | SEARCH_SCOPE_FAVORITES
+        | SEARCH_SCOPE_FAVORITE_SYSTEMS => (true, kind),
+        _ => (false, String::new()),
+    }
+}
+
 impl From<SearchStateRepr> for SearchState {
     fn from(repr: SearchStateRepr) -> Self {
+        let (scoped, scope_kind) = scope_from_disk(repr.scoped, repr.scope_kind);
         Self {
             query: repr.query,
             systems: systems_from_disk(repr.systems, repr.system_id),
             tags: repr.tags,
-            scoped: repr.scoped,
+            scoped,
+            scope_kind,
+            scope_category: repr.scope_category,
             scope_path: repr.scope_path,
             scope_name: repr.scope_name,
             selected_path: repr.selected_path,
@@ -800,7 +835,7 @@ mod tests {
         load_from, save_to, FavoriteSystemsState, FavoritesState, FileBrowserState, GamesState,
         HubState, HubTarget, PersistedState, RecentSearch, RecentsState, RenameState, SearchState,
         SettingsState, SystemFilter, SystemFocus, SystemsState, MAX_RECENT_SEARCHES,
-        MAX_SYSTEM_FILTERS, MAX_SYSTEM_FOCUS,
+        MAX_SYSTEM_FILTERS, MAX_SYSTEM_FOCUS, SEARCH_SCOPE_BROWSE, SEARCH_SCOPE_FAVORITES,
     };
     use std::thread;
 
@@ -899,6 +934,8 @@ mod tests {
                 systems: vec!["NES".into(), "SNES".into()],
                 tags: vec!["genre:platformer".into()],
                 scoped: false,
+                scope_kind: String::new(),
+                scope_category: String::new(),
                 scope_path: String::new(),
                 scope_name: String::new(),
                 selected_path: "/roms/nes/mario/smb.nes".into(),
@@ -1368,6 +1405,30 @@ future_field = "ignored"
     }
 
     #[test]
+    fn a_search_scope_from_an_older_file_is_a_browse_scope() {
+        let old: PersistedState =
+            toml::from_str("[search]\nscoped = true\nscope_path = '/roms/SNES/RPG'\n").unwrap();
+        assert!(old.search.scoped);
+        assert_eq!(old.search.scope_kind, SEARCH_SCOPE_BROWSE);
+
+        let favorites: PersistedState =
+            toml::from_str("[search]\nscoped = true\nscope_kind = 'favorites'\n").unwrap();
+        assert_eq!(favorites.search.scope_kind, SEARCH_SCOPE_FAVORITES);
+        let reread: PersistedState = toml::from_str(&toml::to_string(&favorites).unwrap()).unwrap();
+        assert_eq!(reread.search, favorites.search);
+
+        let unknown: PersistedState =
+            toml::from_str("[search]\nscoped = true\nscope_kind = 'decks'\n").unwrap();
+        assert!(!unknown.search.scoped);
+        assert!(unknown.search.scope_kind.is_empty());
+
+        let unscoped: PersistedState =
+            toml::from_str("[search]\nscope_kind = 'category'\n").unwrap();
+        assert!(!unscoped.search.scoped);
+        assert!(unscoped.search.scope_kind.is_empty());
+    }
+
+    #[test]
     fn recent_searches_ignore_the_order_of_their_systems() {
         let mut search = SearchState {
             systems: vec!["SNES".into(), "Genesis".into()],
@@ -1435,6 +1496,7 @@ future_field = "ignored"
         assert_eq!(search.recent[0].query, "game 12");
 
         search.scoped = true;
+        search.scope_kind = SEARCH_SCOPE_BROWSE.into();
         search.scope_path = "/roms/SNES/RPG".into();
         search.scope_name = "RPG".into();
         search.selected_path = "/roms/SNES/RPG/ct.sfc".into();

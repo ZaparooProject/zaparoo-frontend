@@ -149,7 +149,7 @@ file browser. A host without one does not offer Change icon….
 
 #### Saved searches
 
-A `search` tile opens the results of a search. "Add to Hub" in the Search
+A `search` tile opens the results of a search. "Save to Hub" in the Search
 results' Menu writes one for the search on screen; Back from results
 opened this way returns to the Hub.
 
@@ -166,10 +166,11 @@ icon = "rpgs"
 - `query`: the text to match in names. Leave it out to list everything the
   other keys allow.
 - `systems`: the system ids to search. Leave it out to search every system.
-  A hand-written tile can name several, which the Search screen cannot.
+  A tile can name several, as one saved from a category's "Search here…"
+  does; the Search screen's System field picks one.
 - `tags`: `type:value` tags a game must carry. They are sent to Zaparoo Core
   exactly as written, so a tile can also use tags the tags picker does not
-  offer.
+  offer. A search saved from the favorites carries `user:favorite`.
 - `path`: limits the search to one folder, as "Search here…" does. It is
   the full path, so it has to be edited by hand if the games move to another
   drive.

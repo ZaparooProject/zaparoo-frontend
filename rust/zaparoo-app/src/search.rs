@@ -35,6 +35,69 @@ pub fn can_search(query: &str, systems: &[String], tags: &[String], path_prefix:
         || !path_prefix.is_empty()
 }
 
+/// What "Search here" limited a search to.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Scope {
+    /// Not limited: the Hub's Search, a recent search, a saved one.
+    #[default]
+    None,
+    /// The system on a browse screen and, inside a folder, that folder.
+    Browse,
+    /// The systems of one category.
+    Category,
+    /// The favorites, all of them or one system's, from the Favorites list.
+    Favorites,
+    /// The favorites, from the systems that hold them.
+    FavoriteSystems,
+}
+
+/// The tag Core keeps favorites under.
+pub const FAVORITE_TAG: &str = "user:favorite";
+
+impl Scope {
+    /// The kind as the state file keeps it (`persist::SEARCH_SCOPE_*`).
+    pub fn token(self) -> &'static str {
+        match self {
+            Self::None => "",
+            Self::Browse => "browse",
+            Self::Category => "category",
+            Self::Favorites => "favorites",
+            Self::FavoriteSystems => "favorite_systems",
+        }
+    }
+
+    /// A kind read back from the state file; anything else is no scope.
+    pub fn from_token(token: &str) -> Self {
+        match token {
+            "browse" => Self::Browse,
+            "category" => Self::Category,
+            "favorites" => Self::Favorites,
+            "favorite_systems" => Self::FavoriteSystems,
+            _ => Self::None,
+        }
+    }
+
+    /// The tags Core is sent: the chosen ones, plus the one the scope
+    /// itself stands for. The scope's tag is kept apart from the chosen
+    /// ones so the Tags field cannot take it away.
+    pub fn request_tags(self, chosen: Vec<String>) -> Vec<String> {
+        let mut tags = chosen;
+        let favorites = matches!(self, Self::Favorites | Self::FavoriteSystems);
+        if favorites && !tags.iter().any(|t| t == FAVORITE_TAG) {
+            tags.push(FAVORITE_TAG.to_string());
+        }
+        tags
+    }
+}
+
+/// Whether Core should include hidden games: when the setting says so, or
+/// when a chosen tag is a user tag (a List), which browse answers with
+/// hidden games included. The favorites scope's own tag does not count,
+/// as the Favorites list itself does not.
+pub fn includes_hidden(show_hidden: bool, chosen: &[String]) -> bool {
+    show_hidden || chosen.iter().any(|t| t.starts_with("user:"))
+}
+
 /// A saved search's systems or tags as its Hub tile wrote them: trimmed,
 /// without blanks or repeats, in the tile's order. Unlike the picker's
 /// `browse_filter::normalize`, no tag is dropped for its type or for
@@ -300,6 +363,53 @@ mod tests {
         assert!(can_search("", &[], &tags(&["genre:rpg"]), ""));
         assert!(can_search("", &[], &[], "/roms/SNES/RPG"));
         assert_eq!(query_text("  mario kart "), "mario kart");
+    }
+
+    #[test]
+    fn a_scope_round_trips_its_token_and_drops_an_unknown_one() {
+        for scope in [
+            Scope::None,
+            Scope::Browse,
+            Scope::Category,
+            Scope::Favorites,
+            Scope::FavoriteSystems,
+        ] {
+            assert_eq!(Scope::from_token(scope.token()), scope);
+        }
+        assert_eq!(Scope::from_token("decks"), Scope::None);
+    }
+
+    #[test]
+    fn the_favorites_scope_adds_its_tag_once() {
+        assert_eq!(
+            Scope::Favorites.request_tags(tags(&["genre:rpg"])),
+            tags(&["genre:rpg", FAVORITE_TAG])
+        );
+        assert_eq!(
+            Scope::Favorites.request_tags(tags(&[FAVORITE_TAG])),
+            tags(&[FAVORITE_TAG])
+        );
+        assert_eq!(
+            Scope::FavoriteSystems.request_tags(Vec::new()),
+            tags(&[FAVORITE_TAG])
+        );
+        assert_eq!(
+            Scope::Browse.request_tags(tags(&["genre:rpg"])),
+            tags(&["genre:rpg"])
+        );
+        assert!(can_search(
+            "",
+            &[],
+            &Scope::Favorites.request_tags(Vec::new()),
+            ""
+        ));
+    }
+
+    #[test]
+    fn a_chosen_user_tag_includes_hidden_games() {
+        assert!(!includes_hidden(false, &tags(&["genre:rpg"])));
+        assert!(includes_hidden(false, &tags(&["user:deck:abc"])));
+        assert!(includes_hidden(true, &[]));
     }
 
     #[test]

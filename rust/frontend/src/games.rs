@@ -2317,11 +2317,15 @@ pub fn render(ctx: &Ctx, app: &App) {
     let count = model.rows.len();
 
     view.set_mode(mode);
-    view.set_title(SharedString::from(if mode == GamesMode::Search {
-        crate::search::results_title(&shared)
+    if mode == GamesMode::Search {
+        crate::search::publish_results_title(&view, &shared);
     } else {
-        rules::screen_title(path_stack_len, &model.browse_path, &model.system_name)
-    }));
+        view.set_title(SharedString::from(rules::screen_title(
+            path_stack_len,
+            &model.browse_path,
+            &model.system_name,
+        )));
+    }
     view.set_options_available(options_available(app, &shared));
     view.set_loading(model.loading);
     view.set_error(SharedString::from(model.error.as_str()));

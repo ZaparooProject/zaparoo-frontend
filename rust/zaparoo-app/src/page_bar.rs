@@ -17,13 +17,15 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Surface {
     Hub,
+    /// One category's systems.
+    Systems,
     FavoriteSystems,
     /// A system's games: the browse screen.
     Games,
     Favorites,
     SearchResults,
-    /// Everything with no page actions: Systems, Recents, Settings, About,
-    /// the Search screen itself.
+    /// Everything with no page actions: Recents, Settings, About, the
+    /// Search screen itself.
     Other,
 }
 
@@ -34,7 +36,8 @@ pub enum Chip {
     GoTo,
     /// The tags picker. Shows the active tags, or that there are none.
     Filter,
-    /// Search scoped to the system on screen.
+    /// Search scoped to what the screen shows: the system and folder, the
+    /// category's systems, or the favorites.
     SearchHere,
     /// The favorites order. Shows the current order.
     Sort,
@@ -74,8 +77,15 @@ pub fn chips(surface: Surface) -> &'static [Chip] {
     match surface {
         Surface::Hub => &[Chip::AddItem, Chip::More],
         Surface::Games => &[Chip::GoTo, Chip::Filter, Chip::SearchHere],
-        Surface::Favorites => &[Chip::Sort, Chip::GroupBy, Chip::RandomFavorite, Chip::More],
-        Surface::FavoriteSystems => &[Chip::GroupBy],
+        Surface::Systems => &[Chip::SearchHere],
+        Surface::Favorites => &[
+            Chip::Sort,
+            Chip::GroupBy,
+            Chip::RandomFavorite,
+            Chip::SearchHere,
+            Chip::More,
+        ],
+        Surface::FavoriteSystems => &[Chip::GroupBy, Chip::SearchHere],
         Surface::SearchResults => &[Chip::AddToHub],
         Surface::Other => &[],
     }
@@ -149,6 +159,7 @@ mod tests {
     fn every_screen_with_page_actions_has_a_row_where_the_scene_does() {
         for surface in [
             Surface::Hub,
+            Surface::Systems,
             Surface::FavoriteSystems,
             Surface::Games,
             Surface::Favorites,
@@ -164,6 +175,7 @@ mod tests {
     fn more_is_last_and_only_where_it_has_rows() {
         for surface in [
             Surface::Hub,
+            Surface::Systems,
             Surface::FavoriteSystems,
             Surface::Games,
             Surface::Favorites,

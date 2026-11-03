@@ -9,7 +9,8 @@
 import { Theme, Sizing, Layout, Motion } from "theme.slint";
 import { TopStatusStrip, SectionHeader, ScrollCue } from "chrome.slint";
 import { SelectionCursor, SelectionClip } from "focus.slint";
-import { KeyKind, SearchZone, SearchPane } from "state_types.slint";
+import { KeyKind, SearchZone, SearchPane, SearchScope } from "state_types.slint";
+import { Labels } from "labels.slint";
 import { KeyCell, OnScreenKeyboard, Field, TextField } from "keyboard.slint";
 
 // One pane row: a match and its system, or a recent search and its filters.
@@ -24,11 +25,14 @@ export global SearchView {
     in-out property <string> before;
     in-out property <string> at;
     in-out property <string> after;
-    // A folder search: the system field states the scope and takes no focus.
-    in-out property <bool> scoped: false;
+    // A "Search here" search: the title and the system field state the
+    // scope, and the field takes no focus.
+    in-out property <SearchScope> scope: SearchScope.none;
+    // The category a category scope covers.
+    in-out property <string> scope-category;
     // Empty for every system.
     in-out property <string> system-name;
-    // The folder a scoped search is limited to; empty at a system's top level.
+    // The folder a folder scope is limited to.
     in-out property <string> scope-name;
     // The chosen filter as one line ("Platformer +1"); empty for none.
     in-out property <string> filter-text;
@@ -58,6 +62,33 @@ export global SearchView {
     in-out property <bool> can-search: false;
     // The kind of key under the focus, for the help bar.
     in-out property <KeyKind> key-kind: KeyKind.char;
+
+    public pure function scoped() -> bool {
+        return self.scope != SearchScope.none;
+    }
+    // What a scoped search is limited to, by its own name.
+    public pure function scope-label() -> string {
+        if (self.scope == SearchScope.folder) { return self.scope-name; }
+        if (self.scope == SearchScope.system) { return self.system-name; }
+        if (self.scope == SearchScope.category) {
+            return Labels.hub("category:" + self.scope-category, self.scope-category);
+        }
+        if (self.scope == SearchScope.favorites) { return @tr("Favorites"); }
+        return "";
+    }
+    public pure function title() -> string {
+        return self.scoped() ? @tr("Search in {}", self.scope-label()) : @tr("Search");
+    }
+    // The system field's value: the systems searched, or the whole scope
+    // from the system down.
+    public pure function system-text() -> string {
+        if (self.scope == SearchScope.folder) { return @tr("{} / {}", self.system-name, self.scope-name); }
+        if (self.scope == SearchScope.category) { return self.scope-label(); }
+        if (self.scope == SearchScope.favorites) {
+            return self.system-name == "" ? self.scope-label() : @tr("{} / {}", self.scope-label(), self.system-name);
+        }
+        return self.system-name == "" ? @tr("All systems") : self.system-name;
+    }
 
     public pure function count-text() -> string {
         if (self.failed) { return @tr("Search failed"); }
@@ -158,7 +189,7 @@ export component SearchScreen inherits Rectangle {
         y: Sizing.header-bottom + Layout.top-margin;
         height: Layout.strip-height;
         slot-margin: Layout.slot-margin;
-        title: @tr("Search");
+        title: SearchView.title();
         show-page-counter: false;
         visible: Layout.top-strip-visible;
     }
@@ -185,19 +216,17 @@ export component SearchScreen inherits Rectangle {
         vertical-alignment: center;
     }
 
-    // The system, or the folder a scoped search is limited to, beside the
-    // tag filter.
+    // The system, or what a scoped search is limited to, beside the tag
+    // filter.
     system-field := Field {
         x: root.block-x;
         y: root.fields-y;
         width: (root.keys-w - root.field-gap) / 2;
         height: root.row-h;
-        label: SearchView.scoped ? @tr("Search in") : @tr("System");
-        value: SearchView.system-name == "" ? @tr("All systems")
-            : (SearchView.scope-name == "" ? SearchView.system-name
-                : @tr("{} / {}", SearchView.system-name, SearchView.scope-name));
+        label: SearchView.scoped() ? @tr("Search in") : @tr("System");
+        value: SearchView.system-text();
         focused: SearchView.zone == SearchZone.system;
-        if !SearchView.scoped: TouchArea {
+        if !SearchView.scoped(): TouchArea {
             mouse-cursor: pointer;
             changed has-hover => { if (self.has-hover) { SearchInput.hovered(SearchZone.system, 0); } }
             clicked => { SearchInput.clicked(SearchZone.system, 0); }

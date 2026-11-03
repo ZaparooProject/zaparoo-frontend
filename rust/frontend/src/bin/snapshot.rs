@@ -55,7 +55,7 @@ use generated::{App, Brand, GlyphSource, GridCell, LetterBucket, MenuEntry, Sizi
     reason = "reached through crate:: paths from the shared sizing adapter"
 )]
 use generated::{FileBrowserMode, FileBrowserView, GamesView, Layout, Motion, Shell, SystemsView};
-use generated::{KeyCell, KeyKind, SearchPane, SearchPaneRow, SearchView, SearchZone};
+use generated::{KeyCell, KeyKind, SearchPane, SearchPaneRow, SearchScope, SearchView, SearchZone};
 #[path = "../state_types.rs"]
 #[allow(
     dead_code,
@@ -1140,7 +1140,7 @@ fn fixture_search(app: &App, screen: &str) {
     if screen.contains("scoped") {
         // A folder search with a filter chosen, the cursor moved back into
         // the query and focus on the Filter field.
-        view.set_scoped(true);
+        view.set_scope(SearchScope::Folder);
         view.set_system_name("Super Nintendo".into());
         view.set_scope_name("Racing".into());
         view.set_filter_text("Racing +1".into());
@@ -2184,9 +2184,10 @@ fn fixture_chips(app: &App, mode: GamesMode) {
             chip("favorites_sort", "favorites_sort", "sort:name"),
             chip("favorites_grouping", "favorites_grouping", "group:none"),
             chip("launch_random_favorite", "launch_random_favorite", ""),
+            chip("search_here", "search_here", ""),
             chip("more", "more", ""),
         ],
-        GamesMode::Search => vec![chip("add_to_hub", "add_to_hub", "")],
+        GamesMode::Search => vec![chip("add_to_hub", "save_to_hub", "")],
         GamesMode::Recents => Vec::new(),
     };
     let bar = app.global::<generated::PageBar>();
@@ -2438,18 +2439,17 @@ fn fixture_systems(app: &App, scene_w: f64, scene_h: f64, crt: bool, favorites: 
     };
     app.global::<generated::PageBar>()
         .set_systems_chips(slint::ModelRc::new(slint::VecModel::from(if favorites {
-            vec![chip(
-                "favorites_grouping",
-                "favorites_grouping",
-                "group:system",
-            )]
+            vec![
+                chip("favorites_grouping", "favorites_grouping", "group:system"),
+                chip("search_here", "search_here", ""),
+            ]
         } else {
-            Vec::new()
+            vec![chip("search_here", "search_here", "")]
         })));
     let grid_y = derived.header_bottom
         + profile.status.top_margin
         + profile.status.strip_height
-        + if favorites { derived.menu_row_block } else { 0 };
+        + derived.menu_row_block;
     let bottom = if derived.tier == zaparoo_app::sizing::Tier::T240 {
         derived.help_bar_height + footer.active_label_height
     } else {

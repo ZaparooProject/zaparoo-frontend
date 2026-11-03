@@ -7486,7 +7486,7 @@ fn a_saved_search_tile_opens_its_results_and_back_returns_to_the_hub() {
     };
     for (key, cue, left) in [
         ("hub:remove", crate::AppCue::RemovedFromHub, 0),
-        ("add_to_hub", crate::AppCue::AddedToHub, 1),
+        ("save_to_hub", crate::AppCue::SavedToHub, 1),
     ] {
         crate::router::handle_action(&ctx, &app, "page_menu");
         assert!(overlays.get_list_open());
@@ -7617,13 +7617,19 @@ fn search_here_scopes_to_the_folder_and_back_returns_to_it() {
         shared.persist.games.selected_at_level = vec![String::new(), String::new()];
         shared.persist.search.query = "left over".into();
         shared.persist.active_screen = "games".into();
+        shared
+            .persist
+            .games
+            .set_filter("System08", vec!["genre:rpg".into()]);
     }
     shell.set_active_screen(Screen::Games);
 
     crate::search::enter_scoped(&ctx, &app);
     assert_eq!(shell.get_active_screen(), Screen::Search);
     let view = app.global::<crate::SearchView>();
-    assert!(view.get_scoped());
+    assert_eq!(view.get_scope(), crate::SearchScope::Folder);
+    assert_eq!(view.invoke_title(), "Search in RPG");
+    assert_eq!(view.invoke_system_text(), "System 08 / RPG");
     assert_eq!(view.get_system_name(), "System 08");
     assert_eq!(view.get_scope_name(), "RPG");
     assert_eq!(view.get_before(), "");
@@ -7634,7 +7640,12 @@ fn search_here_scopes_to_the_folder_and_back_returns_to_it() {
         let args = crate::search::args(&shared);
         assert_eq!(args.systems, ["System08"]);
         assert_eq!(args.path_prefix, "/roms/System08/RPG");
+        // The folder's filter came along.
+        assert_eq!(args.tags, ["genre:rpg"]);
+        assert_eq!(shared.persist.search.tags, ["genre:rpg"]);
     }
+    // Clearing it here leaves the folder's own filter as it was.
+    crate::router::lock(&ctx.shared).persist.search.tags.clear();
     // The scope field takes no focus: Up from the top row lands on the
     // tags, and Up again loops round to the bottom key row.
     crate::router::handle_action(&ctx, &app, "up");
@@ -7656,6 +7667,10 @@ fn search_here_scopes_to_the_folder_and_back_returns_to_it() {
     let shared = crate::router::lock(&ctx.shared);
     assert_eq!(shared.persist.active_screen, "games");
     assert_eq!(shared.games.browse_path, "/roms/System08/RPG");
+    assert_eq!(
+        shared.persist.games.filter_for("System08"),
+        ["genre:rpg".to_string()]
+    );
     drop(shared);
 
     // At a system's top level only the system narrows the search.
@@ -7670,6 +7685,122 @@ fn search_here_scopes_to_the_folder_and_back_returns_to_it() {
     assert!(shared.persist.search.scoped);
     assert_eq!(shared.persist.search.scope_path, "");
     assert_eq!(crate::search::args(&shared).systems, ["System08"]);
+    drop(shared);
+    assert_eq!(view.get_scope(), crate::SearchScope::System);
+    assert_eq!(view.invoke_title(), "Search in System 08");
+}
+
+#[test]
+fn search_here_on_a_category_searches_its_systems_and_back_returns() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let shell = app.global::<Shell>();
+    crate::router::lock(&ctx.shared).systems = navigation_catalog();
+    crate::systems::prepare_parent(&ctx, &app, "Console");
+    crate::router::lock(&ctx.shared).persist.active_screen = "systems".into();
+    shell.set_active_screen(Screen::Systems);
+
+    crate::search::enter_scoped(&ctx, &app);
+    assert_eq!(shell.get_active_screen(), Screen::Search);
+    let view = app.global::<crate::SearchView>();
+    assert_eq!(view.get_scope(), crate::SearchScope::Category);
+    assert_eq!(view.invoke_title(), "Search in Consoles");
+    // The category names the systems; the field never lists all twenty.
+    assert_eq!(view.invoke_system_text(), "Consoles");
+    assert!(view.get_can_search());
+    {
+        let shared = crate::router::lock(&ctx.shared);
+        let args = crate::search::args(&shared);
+        assert_eq!(args.systems.len(), 20);
+        assert!(args.tags.is_empty());
+    }
+    // With no query, the results are titled by the category alone.
+    let games = app.global::<crate::GamesView>();
+    games.set_mode(GamesMode::Search);
+    crate::search::publish_results_title(&games, &crate::router::lock(&ctx.shared));
+    assert_eq!(games.get_title(), "");
+    assert_eq!(games.invoke_display_title(), "Consoles");
+    games.set_mode(GamesMode::Browse);
+
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert_eq!(shell.get_active_screen(), Screen::Systems);
+    assert_eq!(
+        crate::router::lock(&ctx.shared).persist.active_screen,
+        "systems"
+    );
+}
+
+#[test]
+fn search_here_on_favorites_keeps_the_favorite_tag_and_back_returns() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let shell = app.global::<Shell>();
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.systems = navigation_catalog();
+        shared.games.mode = GamesMode::Favorites;
+        shared.games.favorites_system = "System03".into();
+        shared.persist.active_screen = "favorites".into();
+    }
+    shell.set_active_screen(Screen::Favorites);
+
+    crate::search::enter_scoped(&ctx, &app);
+    let view = app.global::<crate::SearchView>();
+    assert_eq!(view.get_scope(), crate::SearchScope::Favorites);
+    assert_eq!(view.invoke_title(), "Search in Favorites");
+    assert_eq!(view.invoke_system_text(), "Favorites / System 03");
+    {
+        let shared = crate::router::lock(&ctx.shared);
+        let args = crate::search::args(&shared);
+        assert_eq!(args.systems, ["System03"]);
+        assert_eq!(args.tags, [zaparoo_app::search::FAVORITE_TAG]);
+        // The scope's tag is not one the Tags field can clear.
+        assert!(shared.persist.search.tags.is_empty());
+        // Nor a chosen user tag, so hidden games stay out as on the list.
+        assert!(!args.include_hidden);
+    }
+    // The results name the scope after the systems.
+    crate::router::lock(&ctx.shared).persist.search.query = "mario".into();
+    let games = app.global::<crate::GamesView>();
+    games.set_mode(GamesMode::Search);
+    crate::search::publish_results_title(&games, &crate::router::lock(&ctx.shared));
+    assert_eq!(
+        games.invoke_display_title(),
+        "\u{201c}mario\u{201d} \u{b7} System 03 \u{b7} Favorites"
+    );
+    games.set_mode(GamesMode::Favorites);
+    crate::router::lock(&ctx.shared)
+        .persist
+        .search
+        .query
+        .clear();
+
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert_eq!(shell.get_active_screen(), Screen::Favorites);
+    assert_eq!(
+        crate::router::lock(&ctx.shared).persist.active_screen,
+        "favorites"
+    );
+
+    // From the systems that hold favorites: every favorite, and Back goes
+    // to that screen.
+    crate::router::lock(&ctx.shared).persist.active_screen = "favorite-systems".into();
+    shell.set_active_screen(Screen::FavoriteSystems);
+    crate::search::enter_scoped(&ctx, &app);
+    assert_eq!(view.invoke_system_text(), "Favorites");
+    {
+        let shared = crate::router::lock(&ctx.shared);
+        let args = crate::search::args(&shared);
+        assert!(args.systems.is_empty());
+        assert_eq!(args.tags, [zaparoo_app::search::FAVORITE_TAG]);
+    }
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert_eq!(
+        crate::router::lock(&ctx.shared).persist.active_screen,
+        "favorite-systems"
+    );
 }
 
 #[test]
@@ -10225,6 +10356,67 @@ fn turning_the_menu_row_off_gives_back_its_band_and_menu_opens_the_list() {
     let overlays = app.global::<crate::Overlays>();
     assert!(overlays.get_list_open());
     assert_eq!(overlays.get_list_title(), "title:menu");
+}
+
+#[test]
+fn search_here_sits_on_the_systems_screens_and_runs_from_menu_at_240p() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let shell = app.global::<Shell>();
+    let overlays = app.global::<crate::Overlays>();
+    crate::router::lock(&ctx.shared).systems = navigation_catalog();
+    crate::sizing::apply_scene(&app, crate::sizing::Scene::of(&app, 1280.0, 720.0, false));
+    crate::systems::enter(&ctx, &app, "Console", EntryMode::Fresh, false);
+    settle(&window);
+    assert_eq!(shell.get_active_screen(), Screen::Systems);
+    assert_eq!(crate::page_bar::chip_ids(&app), ["search_here"]);
+    crate::router::handle_action(&ctx, &app, "page_menu");
+    assert!(app.global::<crate::PageBar>().get_focused());
+    crate::router::handle_action(&ctx, &app, "accept");
+    assert_eq!(shell.get_active_screen(), Screen::Search);
+    assert_eq!(
+        app.global::<crate::SearchView>().get_scope(),
+        crate::SearchScope::Category
+    );
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert_eq!(shell.get_active_screen(), Screen::Systems);
+
+    // At 240p a category's one page action runs straight from Menu.
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    crate::router::handle_action(&ctx, &app, "page_menu");
+    assert!(!overlays.get_list_open());
+    assert_eq!(shell.get_active_screen(), Screen::Search);
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert_eq!(shell.get_active_screen(), Screen::Systems);
+
+    // The favorite systems' Menu list carries the grouping and the search,
+    // even on an empty list.
+    crate::router::lock(&ctx.shared).systems_model.mode = SystemsMode::Favorites;
+    let systems = app.global::<SystemsView>();
+    systems.set_loading(false);
+    systems.set_error("".into());
+    systems.set_count(0);
+    shell.set_active_screen(Screen::FavoriteSystems);
+    crate::router::handle_action(&ctx, &app, "page_menu");
+    assert!(overlays.get_list_open());
+    let rows: Vec<String> = overlays
+        .get_list_entries()
+        .iter()
+        .map(|row| row.id.to_string())
+        .collect();
+    assert_eq!(rows, ["favorites_grouping", "search_here"]);
+    crate::router::handle_action(&ctx, &app, "down");
+    crate::router::handle_action(&ctx, &app, "accept");
+    advance(zaparoo_app::input::PRESS_FEEDBACK_MS + 10);
+    assert_eq!(shell.get_active_screen(), Screen::Search);
+    assert_eq!(
+        app.global::<crate::SearchView>().get_scope(),
+        crate::SearchScope::Favorites
+    );
 }
 
 #[test]

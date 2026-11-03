@@ -4,7 +4,8 @@
 //
 // The Search screen driver: the query being typed, its system and tag
 // filters, the pane of recent searches or live matches, and the routes in
-// (the Hub tile, a folder's View menu) and out (results, back). The search
+// (the Hub tile, "Search here" on a browse screen) and out (results,
+// back). The search
 // itself is held in `persist.search`, so the results list and a cold
 // start read the same one. Rules live in `zaparoo_app::search`.
 
@@ -12,7 +13,7 @@ use std::time::Duration;
 
 use slint::{ComponentHandle, SharedString};
 use zaparoo_app::keyboard::{Key, Layer, Layers};
-use zaparoo_app::search::{self as rules, Count, Focus, Landing, Shape, Zone};
+use zaparoo_app::search::{self as rules, Count, Focus, Landing, Scope, Shape, Zone};
 use zaparoo_core::endpoints::media_search::{MediaSearchEndpoint, SearchArgs};
 use zaparoo_core::input_actions::actions;
 use zaparoo_core::media_types::MediaSearchResult;
@@ -22,7 +23,7 @@ use crate::browse_filter::Target;
 use crate::keyboard::{Flash, Keyboard, Press};
 use crate::navigation::EntryMode;
 use crate::router::{lock, menu_header, menu_row_keyed, menu_value, Ctx, ListContext, Shared};
-use crate::{App, SearchInput, SearchPane, SearchPaneRow, SearchView, SearchZone};
+use crate::{App, SearchInput, SearchPane, SearchPaneRow, SearchScope, SearchView, SearchZone};
 
 /// The held West button or Backspace key: delete, repeating while held.
 pub(crate) const DELETE: &str = zaparoo_app::input::TEXT_DELETE;
@@ -56,9 +57,9 @@ pub struct Model {
     pane_top: usize,
     /// The key held down for its press cue.
     flash: Flash,
-    /// The browse folder a scoped search opened on is still loaded behind
-    /// it, so Back can return without refetching.
-    browse_intact: bool,
+    /// The screen a scoped search opened on is still loaded behind it, so
+    /// Back can return without refetching.
+    source_intact: bool,
     /// The system changed: once its tag list lands, drop the tags it lacks.
     prune_pending: bool,
 }
@@ -76,9 +77,30 @@ impl Default for Model {
             task: crate::scoped_task::ScopedTask::default(),
             pane_top: 0,
             flash: Flash::default(),
-            browse_intact: false,
+            source_intact: false,
             prune_pending: false,
         }
+    }
+}
+
+/// What "Search here" limited the search to.
+pub(crate) fn scope(shared: &Shared) -> Scope {
+    let search = &shared.persist.search;
+    if search.scoped {
+        Scope::from_token(&search.scope_kind)
+    } else {
+        Scope::None
+    }
+}
+
+/// The tags the user chose. A Hub tile's go to Core as written; the
+/// picker's are held to what it can produce.
+fn chosen_tags(shared: &Shared) -> Vec<String> {
+    let search = &shared.persist.search;
+    if search.from_hub {
+        rules::tile_list(&search.tags)
+    } else {
+        zaparoo_app::browse_filter::normalize(&search.tags)
     }
 }
 
@@ -86,20 +108,15 @@ impl Default for Model {
 /// both read one cached first page.
 pub(crate) fn args(shared: &Shared) -> SearchArgs {
     let search = &shared.persist.search;
+    let chosen = chosen_tags(shared);
     SearchArgs {
         query: rules::query_text(&search.query).to_string(),
         systems: SearchArgs::systems(&search.systems),
-        // A Hub tile's tags go to Core as written; the picker's are held to
-        // what it can produce.
-        tags: if search.from_hub {
-            rules::tile_list(&search.tags)
-        } else {
-            zaparoo_app::browse_filter::normalize(&search.tags)
-        },
+        include_hidden: rules::includes_hidden(shared.show_hidden, &chosen),
+        tags: scope(shared).request_tags(chosen),
         path_prefix: search.scope_path.clone(),
         max_results: rules::PREVIEW_LIMIT,
         sort: rules::RESULT_SORT.to_string(),
-        include_hidden: shared.show_hidden,
     }
 }
 
@@ -108,7 +125,7 @@ fn can_search(shared: &Shared) -> bool {
     rules::can_search(
         &search.query,
         &search.systems,
-        &search.tags,
+        &scope(shared).request_tags(chosen_tags(shared)),
         &search.scope_path,
     )
 }
@@ -124,25 +141,65 @@ fn tag_labels(shared: &Shared, tags: &[String]) -> Vec<String> {
         .collect()
 }
 
-/// The results screen's title: the query in quotes, then whatever narrows
-/// it. Empty when a search has nothing to name, which the view words.
-pub(crate) fn results_title(shared: &Shared) -> String {
+/// The results screen's title in two parts around the scope: the query in
+/// quotes and the systems or folder, then the tags. A category or
+/// favorites scope is named between them by the view, in the reader's
+/// language; a category's systems are not listed, as the category names
+/// them.
+pub(crate) fn results_title_parts(shared: &Shared) -> (String, String) {
     let search = &shared.persist.search;
-    let mut parts = Vec::new();
+    let mut head = Vec::new();
     let query = rules::query_text(&search.query);
     if !query.is_empty() {
-        parts.push(format!("\u{201c}{query}\u{201d}"));
+        head.push(format!("\u{201c}{query}\u{201d}"));
     }
-    parts.extend(search.systems.iter().map(|id| system_name(shared, id)));
+    if scope(shared) != Scope::Category {
+        head.extend(search.systems.iter().map(|id| system_name(shared, id)));
+    }
     if !search.scope_name.is_empty() {
-        parts.push(search.scope_name.clone());
+        head.push(search.scope_name.clone());
     }
-    if search.from_hub {
-        parts.extend(tag_labels(shared, &rules::tile_list(&search.tags)));
+    let tail = if search.from_hub {
+        tag_labels(shared, &rules::tile_list(&search.tags))
     } else {
-        parts.extend(tag_labels(shared, &search.tags));
+        tag_labels(shared, &search.tags)
+    };
+    (head.join(" \u{b7} "), tail.join(" \u{b7} "))
+}
+
+/// The results screen's title without a category or favorites scope:
+/// the query in quotes, then whatever narrows it. Empty when a search has
+/// nothing to name, which the view words.
+pub(crate) fn results_title(shared: &Shared) -> String {
+    match results_title_parts(shared) {
+        (head, tail) if head.is_empty() => tail,
+        (head, tail) if tail.is_empty() => head,
+        (head, tail) => format!("{head} \u{b7} {tail}"),
     }
-    parts.join(" \u{b7} ")
+}
+
+/// The scope as the views name it.
+pub(crate) fn view_scope(shared: &Shared) -> SearchScope {
+    match scope(shared) {
+        Scope::None => SearchScope::None,
+        Scope::Browse if shared.persist.search.scope_path.is_empty() => SearchScope::System,
+        Scope::Browse => SearchScope::Folder,
+        Scope::Category => SearchScope::Category,
+        Scope::Favorites | Scope::FavoriteSystems => SearchScope::Favorites,
+    }
+}
+
+/// Publish the results' title, and the parts the view composes it from
+/// when the scope is one only the view can name.
+pub(crate) fn publish_results_title(view: &crate::GamesView, shared: &Shared) {
+    let (head, tail) = results_title_parts(shared);
+    view.set_title(SharedString::from(results_title(shared)));
+    view.set_title_head(SharedString::from(head));
+    view.set_title_tail(SharedString::from(tail));
+    view.set_search_scope(view_scope(shared));
+    view.set_search_category(SharedString::from(
+        shared.persist.search.scope_category.as_str(),
+    ));
 }
 
 /// Whether the pane has room: not at 240p, and not on a rotated scene or
@@ -266,7 +323,8 @@ pub(crate) fn render(ctx: &Ctx, app: &App) {
     view.set_before(before);
     view.set_at(at);
     view.set_after(after);
-    view.set_scoped(search.scoped);
+    view.set_scope(view_scope(shared));
+    view.set_scope_category(SharedString::from(search.scope_category.as_str()));
     view.set_system_name(SharedString::from(
         search
             .systems
@@ -349,31 +407,99 @@ pub fn enter(ctx: &Ctx, app: &App, entry: EntryMode) {
     show(ctx, app, 1);
 }
 
-/// "Search here…" from a browse folder's View menu: the same screen,
-/// limited to the system on screen and, inside a folder, to that folder.
+/// What "Search here" on the screen on show limits the search to.
+#[derive(Debug, Default)]
+struct Here {
+    scope: Scope,
+    systems: Vec<String>,
+    tags: Vec<String>,
+    category: String,
+    path: String,
+    name: String,
+}
+
+fn here(shared: &Shared, screen: crate::Screen) -> Option<Here> {
+    use crate::{GamesMode, Screen, SystemsMode};
+    let games = &shared.games;
+    match screen {
+        // The system on screen and, inside a folder, that folder, with the
+        // folder's filter carried over.
+        Screen::Games if games.mode == GamesMode::Browse && !games.system_id.is_empty() => {
+            let path = games.browse_path.clone();
+            let in_folder =
+                zaparoo_app::media_list::at_folder_level(shared.persist.games.path_stack.len())
+                    && !path.is_empty();
+            Some(Here {
+                scope: Scope::Browse,
+                systems: vec![games.system_id.clone()],
+                tags: crate::browse_filter::active_tags(shared),
+                name: if in_folder {
+                    zaparoo_app::media_list::folder_name_for_path(&path)
+                } else {
+                    String::new()
+                },
+                path: if in_folder { path } else { String::new() },
+                ..Here::default()
+            })
+        }
+        Screen::Favorites if games.mode == GamesMode::Favorites => Some(Here {
+            scope: Scope::Favorites,
+            systems: Some(games.favorites_system.trim())
+                .filter(|id| !id.is_empty())
+                .map(str::to_string)
+                .into_iter()
+                .collect(),
+            ..Here::default()
+        }),
+        Screen::Systems if shared.systems_model.mode == SystemsMode::Category => {
+            let systems: Vec<String> = shared
+                .systems_model
+                .rows
+                .iter()
+                .map(|row| row.id.clone())
+                .collect();
+            (!systems.is_empty()).then(|| Here {
+                scope: Scope::Category,
+                systems,
+                category: shared.systems_model.category.clone(),
+                ..Here::default()
+            })
+        }
+        Screen::FavoriteSystems => Some(Here {
+            scope: Scope::FavoriteSystems,
+            ..Here::default()
+        }),
+        _ => None,
+    }
+}
+
+/// "Search here…" from a browse screen's Menu: the same screen, limited
+/// to what that screen shows.
 pub(crate) fn enter_scoped(ctx: &Ctx, app: &App) {
+    let screen = app.global::<crate::Shell>().get_active_screen();
     {
         let mut shared = lock(&ctx.shared);
-        if shared.games.mode != crate::GamesMode::Browse || shared.games.system_id.is_empty() {
+        let Some(here) = here(&shared, screen) else {
             return;
-        }
+        };
         reset_model(&mut shared);
-        shared.search.browse_intact = true;
-        let system_id = shared.games.system_id.clone();
-        let path = shared.games.browse_path.clone();
-        let in_folder =
-            zaparoo_app::media_list::at_folder_level(shared.persist.games.path_stack.len())
-                && !path.is_empty();
+        shared.search.source_intact = true;
         let search = &mut shared.persist.search;
         search.reset();
         search.scoped = true;
-        search.systems = vec![system_id];
-        if in_folder {
-            search.scope_name = zaparoo_app::media_list::folder_name_for_path(&path);
-            search.scope_path = path;
-        }
+        search.scope_kind = here.scope.token().to_string();
+        search.systems = here.systems;
+        search.tags = here.tags;
+        search.scope_category = here.category;
+        search.scope_path = here.path;
+        search.scope_name = here.name;
     }
-    crate::games::flush_persist(ctx);
+    match screen {
+        crate::Screen::Systems | crate::Screen::FavoriteSystems => {
+            crate::systems::persist_selection(ctx);
+        }
+        _ => crate::games::flush_persist(ctx),
+    }
     show(ctx, app, 1);
 }
 
@@ -427,21 +553,22 @@ fn tile_parts(shared: &Shared) -> (String, Vec<String>, Vec<String>, String) {
 }
 
 /// Whether the search on screen already has a Hub tile, so the results'
-/// View menu offers "Remove from Hub".
+/// Menu offers "Remove from Hub".
 pub(crate) fn on_hub(shared: &Shared) -> bool {
     let (query, systems, tags, path) = tile_parts(shared);
     crate::hub::has_search(shared, &query, &systems, &tags, &path)
 }
 
-/// "Add to Hub" / "Remove from Hub" in the results' View menu: pin the
-/// search on screen as a tile named by the results' title, or take its tile
-/// back off.
+/// "Save to Hub" / "Remove from Hub" in the results' Menu: pin the search
+/// on screen as a tile named by the results' title, or take its tile back
+/// off. The title is read back from the view, which names a category or
+/// the favorites in the reader's language.
 pub(crate) fn toggle_hub(ctx: &Ctx, app: &App) {
-    let (query, systems, tags, path, name) = {
-        let shared = lock(&ctx.shared);
-        let (query, systems, tags, path) = tile_parts(&shared);
-        (query, systems, tags, path, results_title(&shared))
-    };
+    let name = app
+        .global::<crate::GamesView>()
+        .invoke_display_title()
+        .to_string();
+    let (query, systems, tags, path) = tile_parts(&lock(&ctx.shared));
     crate::hub::toggle_search(ctx, app, &query, &systems, &tags, &path, &name);
 }
 
@@ -534,7 +661,7 @@ fn submit(ctx: &Ctx, app: &App) {
         }
         shared.search.task.cancel();
         shared.search.seq = shared.search.seq.wrapping_add(1);
-        shared.search.browse_intact = false;
+        shared.search.source_intact = false;
         let query = rules::query_text(&shared.persist.search.query).to_string();
         shared.persist.search.query = query;
         shared.persist.search.remember();
@@ -552,7 +679,7 @@ fn open_match(ctx: &Ctx, app: &App, index: usize) {
         };
         shared.search.task.cancel();
         shared.search.seq = shared.search.seq.wrapping_add(1);
-        shared.search.browse_intact = false;
+        shared.search.source_intact = false;
         shared.persist.search.remember();
         path
     };
@@ -866,14 +993,15 @@ pub(crate) fn preview_landed(
     }
 }
 
-/// Back: to the folder a scoped search opened on, otherwise to the Hub.
+/// Back: to the screen a scoped search opened on, otherwise to the Hub.
 fn leave(ctx: &Ctx, app: &App) {
-    let (scoped, intact, system) = {
+    let (scope, intact, system, category) = {
         let mut shared = lock(&ctx.shared);
         shared.search.task.cancel();
         shared.search.seq = shared.search.seq.wrapping_add(1);
-        let scoped = shared.persist.search.scoped;
-        // A folder search covers the one system it was opened on.
+        let scope = scope(&shared);
+        // A browse search covers the one system it was opened on, and a
+        // favorites search at most one.
         let scope_system = shared
             .persist
             .search
@@ -886,24 +1014,67 @@ fn leave(ctx: &Ctx, app: &App) {
             .iter()
             .find(|s| s.id == scope_system)
             .cloned();
-        let intact = shared.search.browse_intact
-            && shared.games.mode == crate::GamesMode::Browse
-            && shared.games.system_id == scope_system;
-        (scoped, intact, system)
+        let category = shared.persist.search.scope_category.clone();
+        let games = &shared.games;
+        let model = &shared.systems_model;
+        let intact = shared.search.source_intact
+            && match scope {
+                Scope::Browse => {
+                    games.mode == crate::GamesMode::Browse && games.system_id == scope_system
+                }
+                Scope::Favorites => {
+                    games.mode == crate::GamesMode::Favorites
+                        && games.favorites_system.trim() == scope_system
+                }
+                Scope::Category => {
+                    model.mode == crate::SystemsMode::Category && model.category == category
+                }
+                Scope::FavoriteSystems | Scope::None => false,
+            };
+        (scope, intact, system, category)
     };
-    if scoped {
-        if intact {
-            lock(&ctx.shared).persist.active_screen = crate::Screen::Games.token().to_string();
-            crate::router::save_persist(&ctx.shared);
-            crate::router::transition_to_screen(app, crate::Screen::Games, -1);
+    let retained = |screen: crate::Screen| {
+        lock(&ctx.shared).persist.active_screen = screen.token().to_string();
+        crate::router::save_persist(&ctx.shared);
+        crate::router::transition_to_screen(app, screen, -1);
+    };
+    match scope {
+        Scope::Browse if intact => {
+            retained(crate::Screen::Games);
             crate::games::render(ctx, app);
             return;
         }
-        if let Some(system) = system {
-            crate::navigation::stage(ctx, app);
-            crate::games::enter_restored(ctx, app, &system);
+        Scope::Browse => {
+            if let Some(system) = system {
+                crate::navigation::stage(ctx, app);
+                crate::games::enter_restored(ctx, app, &system);
+                return;
+            }
+        }
+        Scope::Favorites if intact => {
+            retained(crate::Screen::Favorites);
+            crate::games::render(ctx, app);
             return;
         }
+        Scope::Favorites => {
+            crate::games::enter_favorites(ctx, app, EntryMode::Restore);
+            return;
+        }
+        Scope::Category if !category.is_empty() => {
+            if !intact {
+                crate::systems::prepare_parent(ctx, app, &category);
+            }
+            retained(crate::Screen::Systems);
+            crate::systems::render(ctx, app);
+            return;
+        }
+        Scope::FavoriteSystems => {
+            lock(&ctx.shared).persist.active_screen =
+                crate::Screen::FavoriteSystems.token().to_string();
+            crate::systems::return_to_favorites(ctx, app);
+            return;
+        }
+        Scope::Category | Scope::None => {}
     }
     lock(&ctx.shared).persist.active_screen = crate::Screen::Hub.token().to_string();
     crate::router::save_persist(&ctx.shared);
