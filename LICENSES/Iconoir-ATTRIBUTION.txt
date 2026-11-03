@@ -34,6 +34,8 @@ fill="none"):
   resources/images/icons/ScrollUp.svg
   resources/images/icons/Search.svg
   resources/images/icons/Settings.svg
+  resources/images/icons/ShiftLock.svg (NavUp.svg's chevron with a bar
+    under it, for caps on the on-screen keyboard)
   resources/images/icons/Support.svg
   resources/images/icons/Tools.svg
   resources/images/status/Bluetooth.svg

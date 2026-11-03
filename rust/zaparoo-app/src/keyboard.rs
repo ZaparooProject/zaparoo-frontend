@@ -242,13 +242,79 @@ pub fn find(rows: &[Vec<Cell>], key: Key) -> Option<Position> {
     })
 }
 
-/// The layer after a Shift or Symbols press: each toggles its own layer.
-pub fn toggle(layer: Layer, key: Key) -> Layer {
-    match (key, layer) {
-        (Key::Shift, Layer::Upper) | (Key::Symbols, Layer::Symbols) => Layer::Lower,
-        (Key::Shift, _) => Layer::Upper,
-        (Key::Symbols, _) => Layer::Symbols,
-        _ => layer,
+/// How Shift is set. A tap shifts the next character only, as phone
+/// keyboards do; a long press (`input::SHIFT_LOCK_HOLD_MS`) locks it.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Shift {
+    #[default]
+    Off,
+    /// The next character is uppercase, then Shift lets go.
+    Once,
+    /// Caps: every letter is uppercase until Shift is tapped again.
+    Locked,
+}
+
+/// The layer on show and how Shift is set.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Case {
+    pub layer: Layer,
+    pub shift: Shift,
+}
+
+impl Case {
+    /// Shift tapped: on for one character from lowercase or the symbols,
+    /// off again from either shifted state.
+    pub fn tap_shift(&mut self) {
+        *self = match (self.layer, self.shift) {
+            (Layer::Upper, Shift::Once | Shift::Locked) => Self::default(),
+            _ => Self {
+                layer: Layer::Upper,
+                shift: Shift::Once,
+            },
+        };
+    }
+
+    /// Shift held: caps, until it is tapped again.
+    pub fn lock_shift(&mut self) {
+        *self = Self {
+            layer: Layer::Upper,
+            shift: Shift::Locked,
+        };
+    }
+
+    /// Symbols tapped: to the symbols and back. A one-character Shift is
+    /// dropped on the way; caps come back with the letters.
+    pub fn tap_symbols(&mut self) {
+        *self = if self.layer == Layer::Symbols {
+            Self {
+                layer: if self.shift == Shift::Locked {
+                    Layer::Upper
+                } else {
+                    Layer::Lower
+                },
+                shift: if self.shift == Shift::Locked {
+                    Shift::Locked
+                } else {
+                    Shift::Off
+                },
+            }
+        } else {
+            Self {
+                layer: Layer::Symbols,
+                shift: if self.shift == Shift::Locked {
+                    Shift::Locked
+                } else {
+                    Shift::Off
+                },
+            }
+        };
+    }
+
+    /// A character went into the text: a one-character Shift lets go.
+    pub fn typed(&mut self) {
+        if self.shift == Shift::Once {
+            *self = Self::default();
+        }
     }
 }
 
@@ -281,6 +347,11 @@ impl TextBuffer {
 
     pub fn caret(&self) -> usize {
         self.caret
+    }
+
+    /// Put the caret back where it was, clamped to the text.
+    pub fn set_caret(&mut self, caret: usize) {
+        self.caret = caret.min(self.len());
     }
 
     pub fn is_empty(&self) -> bool {
@@ -457,13 +528,49 @@ mod tests {
     }
 
     #[test]
-    fn shift_and_symbols_each_toggle_their_own_layer() {
-        assert_eq!(toggle(Layer::Lower, Key::Shift), Layer::Upper);
-        assert_eq!(toggle(Layer::Upper, Key::Shift), Layer::Lower);
-        assert_eq!(toggle(Layer::Symbols, Key::Shift), Layer::Upper);
-        assert_eq!(toggle(Layer::Lower, Key::Symbols), Layer::Symbols);
-        assert_eq!(toggle(Layer::Symbols, Key::Symbols), Layer::Lower);
-        assert_eq!(toggle(Layer::Upper, Key::Space), Layer::Upper);
+    fn a_tapped_shift_covers_one_character_and_a_held_one_locks() {
+        let mut case = Case::default();
+        case.tap_shift();
+        assert_eq!(case.layer, Layer::Upper);
+        assert_eq!(case.shift, Shift::Once);
+        case.typed();
+        assert_eq!(case, Case::default(), "one character, then it lets go");
+        case.tap_shift();
+        case.tap_shift();
+        assert_eq!(case, Case::default(), "a second tap cancels it");
+        case.lock_shift();
+        case.typed();
+        case.typed();
+        assert_eq!(case.shift, Shift::Locked, "caps stay on");
+        assert_eq!(case.layer, Layer::Upper);
+        case.tap_shift();
+        assert_eq!(case, Case::default(), "a tap turns caps off");
+    }
+
+    #[test]
+    fn symbols_drop_a_one_character_shift_and_keep_caps() {
+        let mut case = Case::default();
+        case.tap_shift();
+        case.tap_symbols();
+        assert_eq!(case.layer, Layer::Symbols);
+        assert_eq!(case.shift, Shift::Off);
+        case.tap_symbols();
+        assert_eq!(case, Case::default());
+        case.lock_shift();
+        case.tap_symbols();
+        assert_eq!(case.layer, Layer::Symbols);
+        case.typed();
+        case.tap_symbols();
+        assert_eq!(case.layer, Layer::Upper, "caps come back with the letters");
+        assert_eq!(case.shift, Shift::Locked);
+        // Shift from the symbols goes to the letters for one character.
+        let mut symbols = Case {
+            layer: Layer::Symbols,
+            shift: Shift::Off,
+        };
+        symbols.tap_shift();
+        assert_eq!(symbols.shift, Shift::Once);
+        assert_eq!(symbols.layer, Layer::Upper);
     }
 
     #[test]

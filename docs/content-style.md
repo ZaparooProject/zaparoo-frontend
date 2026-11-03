@@ -55,7 +55,9 @@ game` in place of `Random game`, not beside it.
 On a Hub shortcut the item's rows and the tile's own share a menu, so
 their labels say which they act on: `Hide game` or `Hide system` for the
 item, `Move tile` and `Remove from Hub` for the shortcut, and `Hide Resume
-tile` for the built-in Resume tile.
+tile` for the built-in Resume tile. Every tile also has `Rename tile…` and
+`Change icon…`, which configure the tile itself and so lead its layout
+rows, wherever those sit (Options, or the Manage page).
 
 A destructive or permanent action is never first, and sits with the
 other organizational actions rather than at the very bottom next to

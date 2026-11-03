@@ -410,6 +410,15 @@ pub fn letter_step(offsets: &[u32], leading: usize, index: usize, forward: bool)
     }
 }
 
+/// Whether a list gets the fast-scroll rail at all. The rail stands for the
+/// whole list, so it needs a total that holds still: Core's folder count on
+/// Games. A list Core pages with no total (Favorites, Recently played,
+/// Search results) would show a marker whose scale changes as pages load,
+/// so it gets none.
+pub fn rail_offered(known_total: Option<usize>) -> bool {
+    known_total.is_some()
+}
+
 /// Where the fast-scroll rail's position marker sits, 0.0 at the top and
 /// 1.0 at the last item of `total`.
 pub fn rail_fraction(index: usize, total: usize) -> f32 {
@@ -1389,6 +1398,13 @@ mod tests {
         assert_eq!(letter_step(&offsets, 2, 12, true), None);
         assert_eq!(letter_step(&offsets, 2, 2, false), None);
         assert_eq!(letter_step(&[], 0, 2, true), None);
+    }
+
+    #[test]
+    fn only_a_list_with_a_fixed_total_gets_the_rail() {
+        assert!(rail_offered(Some(120)));
+        assert!(rail_offered(Some(0)));
+        assert!(!rail_offered(None));
     }
 
     #[test]

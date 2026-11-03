@@ -75,6 +75,9 @@ pub struct InputModel {
     /// level, a hold to the Hub. With the ticket its timer carries.
     back_hold: Option<String>,
     back_hold_seq: u64,
+    /// The ticket of the timer a Shift press arms: held to its end, Shift
+    /// locks.
+    shift_lock_seq: u64,
     /// The first half of an L1+R1 chord, held for the window, and the
     /// ticket its timer carries.
     chord: rules::ShoulderChord,
@@ -105,6 +108,7 @@ impl InputModel {
             dispatching_modal_repeat: false,
             back_hold: None,
             back_hold_seq: 0,
+            shift_lock_seq: 0,
             chord: rules::ShoulderChord::new(),
             chord_seq: 0,
             #[cfg(feature = "hosted")]
@@ -217,6 +221,47 @@ pub(crate) fn modal_open(app: &App) -> bool {
         || overlays.get_crt_calibration_open()
 }
 
+/// A screen whose text field takes what is typed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TextOwner {
+    Search,
+    Rename,
+}
+
+impl TextOwner {
+    fn key_repeats(self, ctx: &Ctx) -> bool {
+        match self {
+            Self::Search => crate::search::key_repeats(ctx),
+            Self::Rename => crate::rename::key_repeats(ctx),
+        }
+    }
+
+    fn type_char(self, ctx: &Ctx, app: &App, c: char) {
+        match self {
+            Self::Search => crate::search::type_char(ctx, app, c),
+            Self::Rename => crate::rename::type_char(ctx, app, c),
+        }
+    }
+}
+
+/// The text field with the input right now: its screen is up with nothing
+/// over it.
+pub(crate) fn text_owner(app: &App) -> Option<TextOwner> {
+    let shell = app.global::<crate::Shell>();
+    if shell.get_transitioning()
+        || shell.get_saver_armed()
+        || shell.get_boot_curtain()
+        || modal_open(app)
+    {
+        return None;
+    }
+    match shell.get_active_screen() {
+        crate::Screen::Search => Some(TextOwner::Search),
+        crate::Screen::Rename => Some(TextOwner::Rename),
+        _ => None,
+    }
+}
+
 /// Something over the screen takes Back the moment it goes down: every
 /// modal, and the pairing and Online panels, whose own Back handling
 /// cleans up. Wider than `modal_open`, which repeat handling also reads.
@@ -265,11 +310,12 @@ fn route_press(ctx: &Ctx, app: &App, action: &str, key: &str) {
     // The View button deletes while a text field has the input; as its own
     // action it repeats while held.
     // Accept likewise becomes its own repeating action on a key that types.
-    let action = if !crate::search::owns_input(app) {
+    let owner = text_owner(app);
+    let action = if owner.is_none() {
         action
     } else if action == actions::PAGE_MENU {
         rules::TEXT_DELETE.to_string()
-    } else if action == actions::ACCEPT && crate::search::key_repeats(ctx) {
+    } else if action == actions::ACCEPT && owner.is_some_and(|owner| owner.key_repeats(ctx)) {
         rules::TEXT_KEY.to_string()
     } else {
         action
@@ -335,6 +381,41 @@ fn dispatch_press(ctx: &Ctx, app: &App, action: &str, key: &str) {
     }
     crate::router::handle_action(ctx, app, action);
     arm_repeat(ctx, app, action, key);
+    if action == actions::ACCEPT {
+        arm_shift_lock(ctx, app, key);
+    }
+}
+
+/// Accept on the on-screen keyboard's Shift has already shifted the next
+/// character. Still held after `SHIFT_LOCK_HOLD_MS`, it locks Shift.
+fn arm_shift_lock(ctx: &Ctx, app: &App, key: &str) {
+    if text_owner(app) != Some(TextOwner::Rename) || !crate::rename::on_shift(ctx) {
+        return;
+    }
+    let seq = {
+        let mut shared = lock(&ctx.shared);
+        shared.input.shift_lock_seq += 1;
+        shared.input.shift_lock_seq
+    };
+    let ctx = ctx.clone();
+    let weak = app.as_weak();
+    let key = key.to_string();
+    slint::Timer::single_shot(
+        Duration::from_millis(rules::SHIFT_LOCK_HOLD_MS),
+        move || {
+            let Some(app) = weak.upgrade() else {
+                return;
+            };
+            let held = {
+                let shared = lock(&ctx.shared);
+                shared.input.shift_lock_seq == seq && shared.input.pressed_keys.contains(&key)
+            };
+            if held && text_owner(&app) == Some(TextOwner::Rename) && crate::rename::on_shift(&ctx)
+            {
+                crate::rename::lock_shift(&ctx, &app);
+            }
+        },
+    );
 }
 
 /// A keyboard press: guard it, map the key to an action, route it.
@@ -344,8 +425,10 @@ fn key_pressed(ctx: &Ctx, app: &App, bindings: &std::collections::HashMap<i32, S
     }
     // A text field takes what is typed before any binding sees it, so a
     // letter bound to an action still types.
-    if crate::search::owns_input(app) && type_key(ctx, app, key) {
-        return;
+    if let Some(owner) = text_owner(app) {
+        if type_key(ctx, app, owner, key) {
+            return;
+        }
     }
     let Some(action) = crate::actions::action_for_key_with(bindings, key) else {
         return;
@@ -358,7 +441,7 @@ fn key_pressed(ctx: &Ctx, app: &App, bindings: &std::collections::HashMap<i32, S
 /// which then keeps its bound action. On `MiSTer`, Main sends a pad's View
 /// button as Space on the keyboard's own device, so Space keeps its bound
 /// action when the report says a pad sent it.
-fn type_key(ctx: &Ctx, app: &App, key: &str) -> bool {
+fn type_key(ctx: &Ctx, app: &App, owner: TextOwner, key: &str) -> bool {
     #[cfg(feature = "mister")]
     if key == " " && zaparoo_core::controller_report::controller_drove_last_press() {
         return false;
@@ -371,7 +454,7 @@ fn type_key(ctx: &Ctx, app: &App, key: &str) -> bool {
     match (chars.next(), chars.next()) {
         (Some(c), None) if zaparoo_app::keyboard::is_text(c) => {
             crate::router::reset_idle(ctx, app);
-            crate::search::type_char(ctx, app, c);
+            owner.type_char(ctx, app, c);
             true
         }
         _ => false,
@@ -716,6 +799,8 @@ fn push_rapid(ctx: &Ctx, app: &App, active: bool) {
             | crate::Screen::SearchResults
     );
     crate::games::set_rapid(ctx, app, active && on_list);
+    let on_browser = app.global::<crate::Shell>().get_active_screen() == crate::Screen::FileBrowser;
+    crate::file_browser::set_rapid(ctx, app, active && on_browser);
 }
 
 /// Key events -> normalized actions -> router, honoring the merged
@@ -747,6 +832,31 @@ pub fn bind(ctx: &Arc<Ctx>, app: &App, bindings: std::collections::HashMap<i32, 
             crate::press_feedback::cancel(&app);
         }
     });
+}
+
+/// Hold the focused key down for the press cue, then lift it. `cue` finds
+/// the screen's `Flash` and `paint` clears the view's pressed key.
+pub(crate) fn flash_key(
+    ctx: &Ctx,
+    app: &App,
+    index: usize,
+    cue: fn(&mut crate::router::Shared) -> &mut crate::keyboard::Flash,
+    paint: fn(&App),
+) {
+    let seq = cue(&mut lock(&ctx.shared)).start(index);
+    let ctx = ctx.clone();
+    let weak = app.as_weak();
+    slint::Timer::single_shot(
+        Duration::from_millis(zaparoo_app::input::PRESS_FEEDBACK_MS),
+        move || {
+            let Some(app) = weak.upgrade() else {
+                return;
+            };
+            if cue(&mut lock(&ctx.shared)).lift(seq) {
+                paint(&app);
+            }
+        },
+    );
 }
 
 #[cfg(test)]

@@ -1,0 +1,243 @@
+// Zaparoo Frontend
+// Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
+// SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
+//
+// The file browser: a folder's contents as a list, or folders and images
+// as a grid of previews, with Places above every folder. Pure view, built
+// from the same parts as the games screens (the page-turn strip, the browse
+// list, the strip and footer cues, the fast-scroll rail and the state cue)
+// with the same bindings, so the two cannot drift apart. The driver is
+// `src/file_browser.rs` and the rules are `zaparoo_app::file_browser`.
+
+import { Theme, Sizing, Layout } from "theme.slint";
+import { TopStatusStrip, ActiveLabel, StateCue, FooterIndicator, FastScrollRail } from "chrome.slint";
+import { GridCell, PagedGridView, PageStrip } from "tiles.slint";
+import { BrowseList } from "browse_list.slint";
+import { PressFeedback } from "press_feedback.slint";
+import { ContentState, FileBrowserMode, PressOwner } from "state_types.slint";
+
+export global FileBrowserView {
+    in-out property <FileBrowserMode> mode: FileBrowserMode.plain;
+    // The folder's name, or empty on Places.
+    in-out property <string> title;
+    in-out property <bool> places: false;
+    in-out property <ContentState> state: ContentState.ready;
+    in-out property <bool> focus-ready: false;
+    // What Accept does on the focused entry: open a folder or a Place, or
+    // pick a file. Nothing on an entry that only reports.
+    in-out property <bool> focused-opens: false;
+    in-out property <bool> focused-picks: false;
+    // The caller offered screen actions for the Menu list.
+    in-out property <bool> has-menu: false;
+    in-out property <int> count: 0;
+    in-out property <int> current-index: 0;
+    // Grid (images), on the shared page-turn strip.
+    in-out property <[GridCell]> cells;
+    in-out property <[GridCell]> next-cells;
+    in-out property <int> columns: 1;
+    in-out property <int> rows: 1;
+    in-out property <length> cell-width: 0px;
+    in-out property <length> cell-height: 0px;
+    in-out property <length> block-offset-x: 0px;
+    in-out property <length> block-offset-y: 0px;
+    in-out property <length> grid-y: 0px;
+    in-out property <length> grid-height: 0px;
+    in-out property <length> label-y: 0px;
+    in-out property <length> label-height: 0px;
+    in-out property <int> selected-local: -1;
+    in-out property <float> page-slide: 0;
+    in-out property <bool> slide-anim: true;
+    in-out property <int> slide-dir: 1;
+    in-out property <bool> cached-transition: false;
+    in-out property <int> transition-target-index: 0;
+    in-out property <int> page: 0;
+    in-out property <int> total-pages: 1;
+    in-out property <bool> has-pages-above: false;
+    in-out property <bool> has-pages-below: false;
+    in-out property <string> label-name;
+    // List (plain), on the shared browse list.
+    in-out property <[GridCell]> list-rows;
+    in-out property <int> list-view-top: 0;
+    in-out property <int> list-scroll-top: 0;
+    in-out property <int> list-sel: -1;
+    in-out property <bool> list-glide: true;
+    in-out property <int> list-step-ms: 0;
+    in-out property <length> list-x: 0px;
+    in-out property <length> list-y: 0px;
+    in-out property <length> list-width: 0px;
+    in-out property <length> list-height: 0px;
+    in-out property <length> list-row-height: 0px;
+    in-out property <int> list-page: 0;
+    in-out property <int> list-total-pages: 1;
+    in-out property <bool> has-items-above: false;
+    in-out property <bool> has-items-below: false;
+    in-out property <int> activate-pulse: 0;
+    in-out property <int> release-pulse: 0;
+    // The fast-scroll rail.
+    in-out property <bool> rail-visible: false;
+    in-out property <[string]> rail-letters: [];
+    in-out property <int> rail-index: -1;
+    in-out property <string> rail-letter: "";
+    in-out property <float> rail-fraction: 0;
+}
+
+export global FileBrowserInput {
+    callback hovered(int);
+    callback clicked(int);
+    callback wheel(int);
+    callback page-requested(int);
+}
+
+export component FileBrowserScreen inherits Rectangle {
+    property <bool> list-layout: FileBrowserView.mode == FileBrowserMode.plain;
+    property <bool> gate-hide: FileBrowserView.state != ContentState.ready || cue.loading-visible;
+    property <bool> page-cue-in-footer: Layout.page-cue-in-footer;
+    property <bool> show-top-page-cue: !root.page-cue-in-footer;
+    property <string> title: FileBrowserView.places ? @tr("Places") : FileBrowserView.title;
+
+    TopStatusStrip {
+        x: 0;
+        y: Sizing.header-bottom + Layout.top-margin;
+        height: Layout.strip-height;
+        slot-margin: Layout.slot-margin;
+        title: root.title;
+        current-page: root.list-layout ? FileBrowserView.list-page : FileBrowserView.page;
+        total-pages: root.list-layout ? FileBrowserView.list-total-pages : FileBrowserView.total-pages;
+        show-page-counter: root.show-top-page-cue;
+        page-indicator-mode: root.show-top-page-cue;
+        item-position-mode: root.list-layout;
+        current-item: FileBrowserView.current-index;
+        total-items: FileBrowserView.count;
+        page-indicator-chevron-size: Layout.grid-page-chevron-size;
+        has-pages-above: root.list-layout ? FileBrowserView.has-items-above : FileBrowserView.has-pages-above;
+        has-pages-below: root.list-layout ? FileBrowserView.has-items-below : FileBrowserView.has-pages-below;
+        visible: !root.gate-hide && Layout.top-strip-visible;
+        page-requested(delta) => { FileBrowserInput.page-requested(delta); }
+    }
+
+    // The current and the incoming page in the shared page-turn strip.
+    if !root.list-layout: strip := PageStrip {
+        x: 0;
+        y: FileBrowserView.grid-y;
+        height: FileBrowserView.grid-height;
+        visible: !root.gate-hide;
+        page-slide: FileBrowserView.page-slide;
+        slide-anim: FileBrowserView.slide-anim;
+        slide-dir: FileBrowserView.slide-dir;
+
+        PagedGridView {
+            x: 0;
+            y: 0;
+            cells: FileBrowserView.cells;
+            focus-scope: "file-browser:" + FileBrowserView.title + ":" + FileBrowserView.page;
+            focus-motion: FileBrowserView.page-slide == 0 && !FileBrowserView.cached-transition;
+            columns: FileBrowserView.columns;
+            cell-width: FileBrowserView.cell-width;
+            cell-height: FileBrowserView.cell-height;
+            block-offset-x: FileBrowserView.block-offset-x;
+            block-offset-y: FileBrowserView.block-offset-y;
+            left-inset: Layout.grid-left-inset;
+            top-inset: Layout.grid-top-inset;
+            column-gap: Layout.grid-column-gap;
+            row-gap: Layout.grid-row-gap;
+            selected-local: FileBrowserView.cached-transition ? -1 : FileBrowserView.selected-local;
+            focus-ready: FileBrowserView.focus-ready;
+            press-held: PressFeedback.active(PressOwner.file-browser, FileBrowserView.selected-local);
+            show-caption: true;
+            card-radius: Layout.card-radius;
+            caption-for(cell) => { return cell.name; }
+            cell-hovered(i) => { FileBrowserInput.hovered(i); }
+            cell-clicked(i) => { FileBrowserInput.clicked(i); }
+            wheel(delta) => { FileBrowserInput.wheel(delta); }
+        }
+        PagedGridView {
+            y: strip.incoming-y;
+            cells: FileBrowserView.next-cells;
+            columns: FileBrowserView.columns;
+            cell-width: FileBrowserView.cell-width;
+            cell-height: FileBrowserView.cell-height;
+            block-offset-x: FileBrowserView.block-offset-x;
+            block-offset-y: FileBrowserView.block-offset-y;
+            left-inset: Layout.grid-left-inset;
+            top-inset: Layout.grid-top-inset;
+            column-gap: Layout.grid-column-gap;
+            row-gap: Layout.grid-row-gap;
+            selected-local: -1;
+            focus-ready: false;
+            show-caption: true;
+            card-radius: Layout.card-radius;
+            caption-for(cell) => { return cell.name; }
+        }
+    }
+
+    if root.list-layout && !root.gate-hide: BrowseList {
+        x: FileBrowserView.list-x;
+        y: FileBrowserView.list-y;
+        width: FileBrowserView.list-width;
+        height: FileBrowserView.list-height;
+        show-chrome: true;
+        rows: FileBrowserView.list-rows;
+        model-top: FileBrowserView.list-view-top;
+        glide: FileBrowserView.list-glide;
+        step: FileBrowserView.list-step-ms * 1ms;
+        scroll-top: FileBrowserView.list-scroll-top;
+        scope: "file-browser:" + FileBrowserView.title;
+        selected: FileBrowserView.list-sel;
+        focus-ready: FileBrowserView.focus-ready;
+        activate-pulse: FileBrowserView.activate-pulse;
+        release-pulse: FileBrowserView.release-pulse;
+        row-height: FileBrowserView.list-row-height;
+        row-hovered(i) => { FileBrowserInput.hovered(i); }
+        row-clicked(i) => { FileBrowserInput.clicked(i); }
+        wheel(delta) => { FileBrowserInput.wheel(delta); }
+    }
+
+    // The focused entry's name under the grid, as on the games grids.
+    property <length> footer-right-inset: footer-indicator.width + Layout.bottom-status-right-margin;
+    if !root.list-layout: ActiveLabel {
+        x: 0;
+        y: FileBrowserView.label-y - (Sizing.crt ? 1px : 0px);
+        height: FileBrowserView.label-height;
+        side-inset: root.page-cue-in-footer ? root.footer-right-inset : Layout.slot-margin;
+        text: FileBrowserView.label-name;
+        visible: !root.gate-hide;
+    }
+
+    footer-indicator := FooterIndicator {
+        right-margin: Layout.bottom-status-right-margin;
+        cue-y: Sizing.snap(FileBrowserView.label-y + (FileBrowserView.label-height - self.height) / 2) - (Sizing.crt ? 1px : 0px);
+        current-page: root.list-layout ? FileBrowserView.list-page : FileBrowserView.page;
+        total-pages: root.list-layout ? FileBrowserView.list-total-pages : FileBrowserView.total-pages;
+        item-position-mode: root.list-layout;
+        current-item: FileBrowserView.current-index;
+        total-items: FileBrowserView.count;
+        has-pages-above: root.list-layout ? FileBrowserView.has-items-above : FileBrowserView.has-pages-above;
+        has-pages-below: root.list-layout ? FileBrowserView.has-items-below : FileBrowserView.has-pages-below;
+        visible: !root.gate-hide && root.page-cue-in-footer;
+        page-requested(delta) => { FileBrowserInput.page-requested(delta); }
+    }
+
+    property <bool> rail-in-card: root.list-layout && !Sizing.crt;
+    FastScrollRail {
+        x: root.width - self.width - (Sizing.crt ? Layout.card-side-margin
+            : root.rail-in-card ? FileBrowserView.list-x + Layout.card-padding-right : Sizing.pct-w(1));
+        y: root.list-layout ? FileBrowserView.list-y + (root.rail-in-card ? Layout.card-padding-top : 0px) : FileBrowserView.grid-y;
+        height: root.list-layout
+            ? FileBrowserView.list-height - (root.rail-in-card ? Layout.card-padding-top + Layout.card-padding-bottom : 0px)
+            : FileBrowserView.grid-height;
+        shown: !root.gate-hide && FileBrowserView.rail-visible && FileBrowserView.count > 0;
+        letters: FileBrowserView.rail-letters;
+        current: FileBrowserView.rail-index;
+        letter: FileBrowserView.rail-letter;
+        fraction: FileBrowserView.rail-fraction;
+    }
+
+    cue := StateCue {
+        x: 0;
+        y: root.list-layout ? FileBrowserView.list-y : FileBrowserView.grid-y;
+        height: root.list-layout ? FileBrowserView.list-height : FileBrowserView.grid-height;
+        cue-center-y: root.height / 2 - self.y;
+        state: FileBrowserView.state;
+        error-detail: @tr("This folder can't be opened.");
+    }
+}

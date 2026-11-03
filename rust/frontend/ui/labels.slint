@@ -33,6 +33,28 @@ export global Labels {
         if (target == Screen.search-results) { return @tr("Searching…"); }
         return @tr("Loading…");
     }
+    // A file browser Place, by the key Rust sends; a drive is called by its
+    // own volume name.
+    public pure function place(key: string, name: string) -> string {
+        if (key == "custom") { return @tr("Custom folder"); }
+        if (key == "sd") { return @tr("SD card"); }
+        if (key == "usb") { return @tr("USB {}", name); }
+        if (key == "network") { return @tr("Network"); }
+        if (key == "home") { return @tr("Home"); }
+        if (key == "root") { return @tr("Root"); }
+        return name;
+    }
+    // The file browser's last row when a folder holds more than it lists.
+    public pure function more-not-shown(n: int) -> string {
+        return @tr("{n} more not shown" | "{n} more not shown" % n);
+    }
+    // A Hub tile's caption: the user's own name where it has one. Resume
+    // keeps its game after it.
+    public pure function hub-tile(key: string, name: string, custom: string) -> string {
+        if (custom == "") { return Labels.hub(key, name); }
+        if (key == "action:resume" && name != "") { return @tr("{}: {}", custom, name); }
+        return custom;
+    }
     public pure function hub(key: string, name: string) -> string {
         if (key == "category:Arcade") { return @tr("Arcade"); }
         // Core sends the canonical singular ids; the plurals are what an
@@ -159,6 +181,10 @@ export global Labels {
         if (key == "hub_move") { return @tr("Move"); }
         if (key == "hub_remove:hide") { return @tr("Hide"); }
         if (key == "hub_move:tile") { return @tr("Move tile"); }
+        if (key == "hub_rename:tile") { return @tr("Rename tile…"); }
+        if (key == "hub_icon:tile") { return @tr("Change icon…"); }
+        // The file browser's Menu.
+        if (key == "file_default_icon") { return @tr("Use default icon"); }
         if (key == "hub_remove:resume") { return @tr("Hide Resume tile"); }
         if (key == "hub_reset") { return @tr("Reset layout"); }
         if (key == "hub_settings") { return @tr("Settings"); }
@@ -301,6 +327,7 @@ export global DialogLabels {
         if (kind == ErrorKind.disc-list) { return @tr("Disc list unavailable"); }
         if (kind == ErrorKind.qr-code) { return @tr("QR code failed"); }
         if (kind == ErrorKind.card-write) { return @tr("Token write failed"); }
+        if (kind == ErrorKind.image-picker) { return @tr("Image picker failed"); }
         if (kind == ErrorKind.setting) { return @tr("Setting not saved"); }
         if (kind == ErrorKind.pairing) { return @tr("Pairing could not start"); }
         if (kind == ErrorKind.online) { return @tr("Online account unavailable"); }
@@ -336,6 +363,7 @@ export global DialogLabels {
         if (kind == ErrorKind.disc-list) { return @tr("Could not list the discs of this game. Check Zaparoo Core and try again."); }
         if (kind == ErrorKind.qr-code) { return @tr("Could not create the QR code for this item."); }
         if (kind == ErrorKind.card-write) { return @tr("Could not write to this token. Check that it is writable and try again."); }
+        if (kind == ErrorKind.image-picker) { return @tr("Could not open an image picker, or the image chosen could not be read."); }
         if (kind == ErrorKind.setting) { return @tr("Could not save this setting. Try again."); }
         if (kind == ErrorKind.pairing) { return @tr("Core would not start a pairing. It may already have as many paired devices as it allows, or it may be running on another device."); }
         if (kind == ErrorKind.online) { return @tr("Core could not reach or update your Zaparoo Online account. Check the network connection and try again."); }

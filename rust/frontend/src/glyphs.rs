@@ -58,6 +58,10 @@ const SOURCES: &[(&str, &str)] = &[
         include_str!("../../../resources/images/icons/Controls.svg"),
     ),
     (
+        "icons/Check",
+        include_str!("../../../resources/images/icons/Check.svg"),
+    ),
+    (
         "icons/Display",
         include_str!("../../../resources/images/icons/Display.svg"),
     ),
@@ -148,6 +152,10 @@ const SOURCES: &[(&str, &str)] = &[
     (
         "icons/Settings",
         include_str!("../../../resources/images/icons/Settings.svg"),
+    ),
+    (
+        "icons/ShiftLock",
+        include_str!("../../../resources/images/icons/ShiftLock.svg"),
     ),
     (
         "icons/Support",

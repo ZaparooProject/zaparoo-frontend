@@ -71,6 +71,7 @@ pub fn prepare(ctx: &crate::router::Ctx, app: &App) -> Option<Target> {
             Screen::Games | Screen::Favorites | Screen::Recents | Screen::SearchResults => {
                 crate::games::interrupt_page(ctx, app);
             }
+            Screen::FileBrowser => crate::file_browser::interrupt_page(ctx, app),
             _ => {}
         }
     })
@@ -288,6 +289,18 @@ fn grid_target(app: &App) -> Option<Target> {
                     view.get_title(),
                     view.get_page()
                 ),
+                view.get_cells(),
+            )
+        }
+        Screen::FileBrowser => {
+            let view = app.global::<crate::FileBrowserView>();
+            if view.get_mode() != crate::FileBrowserMode::Images {
+                return None;
+            }
+            (
+                PressOwner::FileBrowser,
+                view.get_selected_local(),
+                format!("{}:{}", view.get_title(), view.get_page()),
                 view.get_cells(),
             )
         }

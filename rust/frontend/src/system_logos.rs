@@ -514,13 +514,13 @@ pub(crate) fn refresh(ctx: &crate::router::Ctx, app: &crate::App) {
     }
     match app.global::<crate::Shell>().get_active_screen() {
         crate::Screen::Systems | crate::Screen::FavoriteSystems => {
-            let sliding = crate::router::lock(&ctx.shared).systems_model.sliding;
+            let sliding = crate::router::lock(&ctx.shared).systems_model.page.sliding;
             if !sliding {
                 crate::systems::render(ctx, app);
             }
         }
         crate::Screen::Hub => {
-            if !crate::router::lock(&ctx.shared).hub.sliding {
+            if !crate::router::lock(&ctx.shared).hub.page.sliding {
                 crate::hub::render(ctx, app);
             }
         }
@@ -530,7 +530,7 @@ pub(crate) fn refresh(ctx: &crate::router::Ctx, app: &crate::App) {
         | crate::Screen::SearchResults => {
             let sliding = {
                 let shared = crate::router::lock(&ctx.shared);
-                shared.games.sliding || shared.games.folder_sliding
+                shared.games.page.sliding || shared.games.folder_sliding
             };
             if !sliding {
                 crate::games::render(ctx, app);

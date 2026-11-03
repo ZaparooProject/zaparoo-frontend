@@ -33,9 +33,6 @@ const CUSTOM_PREFIX: &str = "custom:";
 const LOADING_KEY: &str = "icons/Loading";
 /// Cover decode tier for Hub tiles: a fixed 256 px raster.
 const HUB_COVER_TIER: u32 = 256;
-/// `Motion.page-ms` and a frame or so.
-const PAGE_SETTLE_MS: u64 = 220;
-const PAGE_REARM_MS: u64 = 50;
 
 /// What the open Options menu acts on besides the tile itself. Captured
 /// when the menu opens, so a Resume refresh or a layout change while it
@@ -104,8 +101,8 @@ pub struct HubModel {
     /// The layout was persisted since the last rebuild, so the
     /// cold-boot cover manifest needs rebuilding too.
     pub layout_dirty: bool,
-    pub sliding: bool,
-    page_seq: u64,
+    /// The page turn in flight (`page_motion`).
+    pub page: crate::page_motion::PageMotion,
     /// One serialized disk writer, with only the latest pending snapshot.
     layout_save: Option<tokio::sync::watch::Sender<HubLayout>>,
     /// The running pass that keeps pinned tiles on Core's current rows.
@@ -121,8 +118,7 @@ impl HubModel {
             grid: Grid::new(5, 2),
             entries: Vec::new(),
             layout_dirty: false,
-            sliding: false,
-            page_seq: 0,
+            page: crate::page_motion::PageMotion::default(),
             layout_save: None,
             refresh: crate::scoped_task::ScopedTask::default(),
             focus_armed: false,
@@ -379,6 +375,7 @@ fn cell_for(
     let mut cell = GridCell {
         label_key: SharedString::from(entry.label_key.as_str()),
         name: SharedString::from(entry.name.as_str()),
+        custom_name: SharedString::from(entry.custom_name.as_str()),
         hidden: false,
         disabled: entry.disabled,
         is_empty: entry.is_empty(),
@@ -391,6 +388,14 @@ fn cell_for(
     // Prepared overrides retain their colors. Until then, keep built-in art.
     if let Some(id) = key.strip_prefix(CUSTOM_PREFIX) {
         if let Some(image) = crate::customization::hub_image(id, art_size) {
+            cell.cover = image;
+            cell.has_cover = true;
+            return cell;
+        }
+        key = &entry.fallback_cover_key;
+    }
+    if let Some(path) = key.strip_prefix(zaparoo_app::customization::PATH_ICON_PREFIX) {
+        if let Some(image) = crate::customization::path_image(path, art_size) {
             cell.cover = image;
             cell.has_cover = true;
             return cell;
@@ -670,7 +675,7 @@ fn grid_geometry_changed(view: &HubView<'_>, geometry: &rules::Geometry) -> bool
 pub fn render(ctx: &Ctx, app: &App) {
     let geometry = geometry_for(ctx, app);
     let view = app.global::<HubView>();
-    if grid_geometry_changed(&view, &geometry) && lock(&ctx.shared).hub.sliding {
+    if grid_geometry_changed(&view, &geometry) && lock(&ctx.shared).hub.page.sliding {
         interrupt_page(ctx, app);
         return;
     }
@@ -701,7 +706,7 @@ pub fn render(ctx: &Ctx, app: &App) {
         let settled = hub.categories_loaded && !hub.resume.loading;
         crate::perf::hub_rendered(settled, cells.len(), covers, outstanding);
     }
-    let strip_sliding = hub.sliding && !view.get_cached_transition();
+    let strip_sliding = hub.page.sliding && !view.get_cached_transition();
     if strip_sliding {
         crate::view_model::publish_hub_cells(&view.get_next_cells(), cells, |rows| {
             view.set_next_cells(rows);
@@ -745,11 +750,17 @@ pub fn render(ctx: &Ctx, app: &App) {
     });
     view.set_loaded(hub.categories_loaded);
     view.set_catalog_empty(shared.all_categories.is_empty());
+    publish_label(&view, hub.current());
+}
+
+/// The focused tile's caption under the grid, and whether it has Options.
+fn publish_label(view: &HubView, current: Option<&Entry>) {
     let error = !view.get_hub_error().is_empty();
-    match hub.current() {
+    match current {
         Some(entry) if !entry.is_empty() => {
             view.set_label_key(SharedString::from(entry.label_key.as_str()));
             view.set_label_name(SharedString::from(entry.name.as_str()));
+            view.set_label_custom(SharedString::from(entry.custom_name.as_str()));
             view.set_label_reason(if entry.disabled {
                 entry.reason.into()
             } else {
@@ -763,6 +774,7 @@ pub fn render(ctx: &Ctx, app: &App) {
         _ => {
             view.set_label_key(SharedString::default());
             view.set_label_name(SharedString::default());
+            view.set_label_custom(SharedString::default());
             view.set_label_reason(crate::DisabledReason::None);
             view.set_focused_is_category(false);
             view.set_label_visible(true);
@@ -784,7 +796,11 @@ pub(crate) fn visible_cover_targets(ctx: &Ctx) -> (Vec<(String, String)>, bool) 
         .skip(hub.grid.current_page() * hub.grid.page_size())
         .take(hub.grid.page_size())
     {
-        if entry.cover_key.starts_with(CUSTOM_PREFIX) {
+        if entry.cover_key.starts_with(CUSTOM_PREFIX)
+            || entry
+                .cover_key
+                .starts_with(zaparoo_app::customization::PATH_ICON_PREFIX)
+        {
             continue;
         }
         if entry.kind == Some(Kind::Action) && entry.id == "resume" {
@@ -929,129 +945,50 @@ fn set_index(ctx: &Ctx, app: &App, index: usize) {
     render(ctx, app);
 }
 
-#[cfg(feature = "mister")]
-fn request_cached_page_transition(app: &App, direction: i32) -> bool {
-    let view = app.global::<HubView>();
-    crate::mister::request_browse_page_transition(
-        app,
-        view.get_grid_y(),
-        view.get_grid_height(),
-        direction,
-    )
-}
+/// The Hub's grid on the shared page turn.
+pub(crate) struct HubScreen;
 
-#[cfg(not(feature = "mister"))]
-fn request_cached_page_transition(_app: &App, _direction: i32) -> bool {
-    false
+impl crate::page_motion::PagedScreen for HubScreen {
+    type View<'a> = HubView<'a>;
+    const LIVE_STRIP_ON_HDMI: bool = false;
+    fn view(app: &App) -> HubView<'_> {
+        app.global::<HubView>()
+    }
+    fn motion(shared: &mut Shared) -> &mut crate::page_motion::PageMotion {
+        &mut shared.hub.page
+    }
+    fn render(ctx: &Ctx, app: &App) {
+        render(ctx, app);
+    }
+    fn on_screen(app: &App) -> bool {
+        app.global::<crate::Shell>().get_active_screen() == crate::Screen::Hub
+    }
+    fn list_layout(_app: &App) -> bool {
+        false
+    }
 }
 
 /// A new command commits the logical destination before acting on it, never
 /// queues another page behind an old animation. Its completion ticket expires.
 pub(crate) fn interrupt_page(ctx: &Ctx, app: &App) -> bool {
-    {
-        let mut shared = lock(&ctx.shared);
-        if !shared.hub.sliding {
-            return false;
-        }
-        shared.hub.sliding = false;
-        shared.hub.page_seq = shared.hub.page_seq.wrapping_add(1);
-    }
-    let view = app.global::<HubView>();
-    #[cfg(feature = "mister")]
-    if view.get_cached_transition() {
-        crate::mister::cancel_page_transition();
-    }
-    view.set_cached_transition(false);
-    view.set_slide_anim(false);
-    view.set_page_slide(0.0);
-    render(ctx, app);
-    app.window().request_redraw();
-    true
+    crate::page_motion::interrupt::<HubScreen>(ctx, app)
 }
 
 fn show_page(ctx: &Ctx, app: &App, from_page: usize, animate: bool) {
-    let (page, direction, local, reduce) = {
+    let (page, direction, local) = {
         let shared = lock(&ctx.shared);
         let grid = &shared.hub.grid;
         (
             grid.current_page(),
             grid.page_direction().offset(),
             grid.current_index() % grid.page_size(),
-            shared.persist.settings.reduce_motion,
         )
     };
-    let view = app.global::<HubView>();
-    if page == from_page
-        || !animate
-        || reduce
-        || !app.global::<crate::Motion>().get_enabled()
-        || crate::input::rapid_page(ctx)
-    {
+    if page == from_page {
         render(ctx, app);
         return;
     }
-    let cached = request_cached_page_transition(app, direction);
-    // Without cached endpoints, never animate a full HDMI grid at native
-    // resolution on MiSTer's software renderer. Desktop and small CRT scenes
-    // can use the live strip; a cached slide paints each endpoint just once.
-    if !cached && ctx.is_mister && !app.global::<crate::Sizing>().get_crt() {
-        render(ctx, app);
-        return;
-    }
-    let seq = {
-        let mut shared = lock(&ctx.shared);
-        shared.hub.sliding = true;
-        shared.hub.page_seq = shared.hub.page_seq.wrapping_add(1);
-        shared.hub.page_seq
-    };
-    view.set_slide_dir(direction);
-    view.set_transition_target_index(i32::try_from(local).unwrap_or(0));
-    view.set_cached_transition(cached);
-    view.set_slide_anim(!cached);
-    render(ctx, app);
-    // Resolving a changed viewport can invalidate this ticket during render.
-    if lock(&ctx.shared).hub.page_seq != seq {
-        return;
-    }
-    if !cached {
-        crate::drs::heavy_begin();
-        view.set_page_slide(direction as f32);
-    }
-    let weak = app.as_weak();
-    let ctx = ctx.clone();
-    slint::Timer::single_shot(
-        std::time::Duration::from_millis(PAGE_SETTLE_MS),
-        move || {
-            if !cached {
-                crate::drs::heavy_end();
-            }
-            let Some(app) = weak.upgrade() else {
-                return;
-            };
-            {
-                let mut shared = lock(&ctx.shared);
-                if shared.hub.page_seq != seq {
-                    return;
-                }
-                shared.hub.sliding = false;
-            }
-            let view = app.global::<HubView>();
-            view.set_cached_transition(false);
-            view.set_slide_anim(false);
-            view.set_page_slide(0.0);
-            if app.global::<crate::Shell>().get_active_screen() == crate::Screen::Hub {
-                render(&ctx, &app);
-            }
-            let weak = app.as_weak();
-            slint::Timer::single_shot(std::time::Duration::from_millis(PAGE_REARM_MS), move || {
-                if lock(&ctx.shared).hub.page_seq == seq {
-                    if let Some(app) = weak.upgrade() {
-                        app.global::<HubView>().set_slide_anim(true);
-                    }
-                }
-            });
-        },
-    );
+    crate::page_motion::turn::<HubScreen>(ctx, app, direction, local, animate);
 }
 
 pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
@@ -1501,6 +1438,7 @@ fn open_context_menu(ctx: &Ctx, app: &App) {
 
 /// Anchor the menu on the focused tile and show it.
 fn present_menu(ctx: &Ctx, app: &App, menu: menu::Menu, target: MenuTarget) {
+    let menu = menu.with_tile_edits(can_change_icon(ctx));
     lock(&ctx.shared).hub.menu_target = target;
     let inputs = crate::router::output_scene(app).inputs();
     let derived = zaparoo_app::sizing::derive(&inputs);
@@ -1637,6 +1575,8 @@ pub fn context_accept(ctx: &Ctx, app: &App, id: &str) {
     };
     match id {
         "hub_move" => begin_move(ctx, app, hub_index),
+        "hub_rename" => crate::rename::open(ctx, app, hub_index),
+        "hub_icon" => open_icon_picker(ctx, app, hub_index),
         "hub_remove" => {
             if let Ok(index) = usize::try_from(hub_index) {
                 let removed = {
@@ -1691,6 +1631,168 @@ pub fn context_accept(ctx: &Ctx, app: &App, id: &str) {
             MenuTarget::Tile => {}
         },
     }
+}
+
+// ---------- Tile edits ----------
+
+/// What the rename screen and the icon picker know about the tile they act
+/// on.
+#[derive(Debug, Clone)]
+pub(crate) struct EditTarget {
+    pub target: zaparoo_core::persist::HubTarget,
+    /// The tile's own `name`; empty when it has none.
+    pub custom_name: String,
+    /// What the tile is called without one.
+    pub default_name: String,
+    /// The tile's kind has a name to fall back to.
+    pub has_default: bool,
+    pub icon: String,
+}
+
+/// The tile at visible layout position `hub_index`, if it is one that can
+/// be named and drawn.
+pub(crate) fn edit_target(ctx: &Ctx, app: &App, hub_index: i32) -> Option<EditTarget> {
+    let (entry, item) = {
+        let shared = lock(&ctx.shared);
+        let hub = &shared.hub;
+        let flat = rules::flat_index_for_hub_index(&hub.entries, hub_index)?;
+        let entry = hub
+            .entries
+            .get(flat)
+            .filter(|entry| !entry.is_empty())?
+            .clone();
+        let index = usize::try_from(hub_index).ok()?;
+        let item = hub.items().into_iter().nth(index)?;
+        (entry, item)
+    };
+    let identity = rules::commit(&entry)?.selected_item;
+    let default_name = if entry.label_key.is_empty() {
+        let shared = lock(&ctx.shared);
+        let resolver = SharedResolver {
+            shared: &shared,
+            media: &ctx.media,
+        };
+        rules::default_name(&resolver, &item)
+    } else {
+        // A built-in tile's own word, in the language on screen.
+        Some(
+            app.global::<crate::Labels>()
+                .invoke_hub(
+                    SharedString::from(entry.label_key.as_str()),
+                    SharedString::new(),
+                )
+                .to_string(),
+        )
+    };
+    Some(EditTarget {
+        target: crate::rename::target(hub_index, &identity),
+        custom_name: item.name.trim().to_string(),
+        has_default: default_name.is_some(),
+        default_name: default_name.unwrap_or_default(),
+        icon: item.icon,
+    })
+}
+
+/// The persisted target, only while the same tile is still where it was.
+pub(crate) fn edit_target_matching(
+    ctx: &Ctx,
+    app: &App,
+    target: &zaparoo_core::persist::HubTarget,
+) -> Option<EditTarget> {
+    let hub_index = i32::try_from(target.hub_index).ok()?;
+    edit_target(ctx, app, hub_index).filter(|tile| tile.target.identity == target.identity)
+}
+
+/// Write one field of the target tile, if it is still the same tile.
+fn edit_tile(
+    ctx: &Ctx,
+    app: &App,
+    target: &zaparoo_core::persist::HubTarget,
+    edit: impl FnOnce(&mut HubLayout, usize) -> bool,
+) {
+    if edit_target_matching(ctx, app, target).is_none() {
+        tracing::warn!("hub tile edit dropped: the tile moved");
+        return;
+    }
+    let Ok(index) = usize::try_from(target.hub_index) else {
+        return;
+    };
+    let mut shared = lock(&ctx.shared);
+    let hub = &mut shared.hub;
+    if edit(&mut hub.layout, index) {
+        hub.save(&ctx.handle);
+    }
+}
+
+pub(crate) fn set_tile_name(
+    ctx: &Ctx,
+    app: &App,
+    target: &zaparoo_core::persist::HubTarget,
+    name: &str,
+) {
+    edit_tile(ctx, app, target, |layout, index| {
+        layout.set_visible_name(index, name)
+    });
+}
+
+pub(crate) fn set_tile_icon(
+    ctx: &Ctx,
+    app: &App,
+    target: &zaparoo_core::persist::HubTarget,
+    icon: &str,
+) {
+    edit_tile(ctx, app, target, |layout, index| {
+        layout.set_visible_icon(index, icon)
+    });
+}
+
+/// Back on the Hub with focus on the tile an edit acted on.
+pub(crate) fn return_to_tile(ctx: &Ctx, app: &App, target: &zaparoo_core::persist::HubTarget) {
+    resolve_entries(ctx, app);
+    {
+        let mut shared = lock(&ctx.shared);
+        let hub = &mut shared.hub;
+        let flat = i32::try_from(target.hub_index)
+            .ok()
+            .and_then(|hub_index| rules::flat_index_for_hub_index(&hub.entries, hub_index));
+        if let Some(flat) = flat {
+            hub.grid.set_current_index_immediate(flat);
+            hub.focus_armed = true;
+        }
+    }
+    commit_current(ctx);
+    crate::router::return_to_hub(ctx, app);
+}
+
+/// Change icon… opens the image browser, or the host's own picker where an
+/// embedding host provides one.
+fn open_icon_picker(ctx: &Ctx, app: &App, hub_index: i32) {
+    let Some(tile) = edit_target(ctx, app, hub_index) else {
+        return;
+    };
+    if ctx.images.available() {
+        crate::image_picker::request(ctx, app, tile.target);
+        return;
+    }
+    crate::file_browser::open_hub_icon(ctx, app, tile.target, &tile.icon);
+}
+
+/// Change icon… on the focused tile, for an embedding host's own trigger.
+#[cfg(feature = "hosted")]
+pub(crate) fn change_focused_icon(ctx: &Ctx, app: &App) {
+    let hub_index = lock(&ctx.shared)
+        .hub
+        .current()
+        .map_or(-1, |entry| entry.hub_index);
+    if hub_index >= 0 && app.global::<crate::Shell>().get_active_screen() == crate::Screen::Hub {
+        open_icon_picker(ctx, app, hub_index);
+    }
+}
+
+/// Change icon… is offered where there is a way to pick one: a host picker,
+/// or the in-app browser on a build that reads its own disk.
+pub(crate) fn can_change_icon(ctx: &Ctx) -> bool {
+    ctx.images.available() || cfg!(not(feature = "hosted"))
 }
 
 /// The Menu list, where the chip row is not on screen.
@@ -1941,7 +2043,7 @@ fn pointer_select(ctx: &Ctx, app: &App, local: i32) -> bool {
     {
         let mut shared = lock(&ctx.shared);
         let hub = &mut shared.hub;
-        if hub.sliding {
+        if hub.page.sliding {
             return false;
         }
         hub.focus_armed = true;

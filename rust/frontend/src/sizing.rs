@@ -145,6 +145,10 @@ fn current_view(app: &App) -> View {
     let (grid, list) = family_views(app);
     let list_layout = match shell.get_active_screen() {
         crate::Screen::Systems | crate::Screen::FavoriteSystems => shell.get_systems_list_layout(),
+        // The browser shows the layout its mode is, not the games setting.
+        crate::Screen::FileBrowser => {
+            app.global::<crate::FileBrowserView>().get_mode() == crate::FileBrowserMode::Plain
+        }
         _ => shell.get_browse_list_layout(),
     };
     if list_layout {

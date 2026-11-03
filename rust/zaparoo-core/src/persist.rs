@@ -35,6 +35,40 @@ pub struct PersistedState {
     pub recents: RecentsState,
     pub search: SearchState,
     pub settings: SettingsState,
+    pub rename: RenameState,
+    pub file_browser: FileBrowserState,
+}
+
+/// The Hub tile a rename or icon pick acts on: its visible layout position
+/// and the `"<kind>:<id>"` it had there, checked again on restore so a
+/// layout edited in between never renames the wrong tile.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct HubTarget {
+    pub hub_index: u32,
+    pub identity: String,
+}
+
+/// The rename screen: its tile, the text being typed and the caret.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct RenameState {
+    pub target: HubTarget,
+    pub draft: String,
+    /// Caret position in characters.
+    pub caret: usize,
+}
+
+/// The file browser: its tile, what it lists, the folder on screen (empty
+/// for Places) and the entry selected there (a name, or a Place's path).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct FileBrowserState {
+    pub target: HubTarget,
+    /// `"plain"` or `"images"`.
+    pub mode: String,
+    pub dir: String,
+    pub selected: String,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -763,9 +797,10 @@ mod tests {
     )]
 
     use super::{
-        load_from, save_to, FavoriteSystemsState, FavoritesState, GamesState, HubState,
-        PersistedState, RecentSearch, RecentsState, SearchState, SettingsState, SystemFilter,
-        SystemFocus, SystemsState, MAX_RECENT_SEARCHES, MAX_SYSTEM_FILTERS, MAX_SYSTEM_FOCUS,
+        load_from, save_to, FavoriteSystemsState, FavoritesState, FileBrowserState, GamesState,
+        HubState, HubTarget, PersistedState, RecentSearch, RecentsState, RenameState, SearchState,
+        SettingsState, SystemFilter, SystemFocus, SystemsState, MAX_RECENT_SEARCHES,
+        MAX_SYSTEM_FILTERS, MAX_SYSTEM_FOCUS,
     };
     use std::thread;
 
@@ -807,6 +842,10 @@ mod tests {
     }
 
     #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one fixture fills every persisted section"
+    )]
     fn save_then_load_round_trips_all_sections() {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("state.toml");
@@ -901,6 +940,23 @@ mod tests {
                 crt_h_offset: -3,
                 crt_v_offset: 2,
                 crt_h_size: -5,
+            },
+            rename: RenameState {
+                target: HubTarget {
+                    hub_index: 2,
+                    identity: "action:settings".into(),
+                },
+                draft: "Setup".into(),
+                caret: 5,
+            },
+            file_browser: FileBrowserState {
+                target: HubTarget {
+                    hub_index: 2,
+                    identity: "action:settings".into(),
+                },
+                mode: "images".into(),
+                dir: "/media/fat".into(),
+                selected: "art".into(),
             },
         };
         save_to(&path, &original);
@@ -1079,6 +1135,8 @@ resolution = "1920x1080"
                             recents: RecentsState::default(),
                             search: SearchState::default(),
                             settings: SettingsState::default(),
+                            rename: RenameState::default(),
+                            file_browser: FileBrowserState::default(),
                         };
                         save_to(&path, &state);
                     }
@@ -1389,6 +1447,36 @@ future_field = "ignored"
         assert_eq!(decoded, state);
         let old: PersistedState = toml::from_str("active_screen = 'hub'").unwrap();
         assert_eq!(old.search, SearchState::default());
+    }
+
+    #[test]
+    fn rename_and_file_browser_sections_round_trip_and_default_when_absent() {
+        let state = PersistedState {
+            active_screen: "file-browser".into(),
+            rename: RenameState {
+                target: HubTarget {
+                    hub_index: 3,
+                    identity: "category:Arcade".into(),
+                },
+                draft: "Coin-op".into(),
+                caret: 4,
+            },
+            file_browser: FileBrowserState {
+                target: HubTarget {
+                    hub_index: 3,
+                    identity: "category:Arcade".into(),
+                },
+                mode: "images".into(),
+                dir: "/media/usb0/art".into(),
+                selected: "arcade.png".into(),
+            },
+            ..PersistedState::default()
+        };
+        let decoded: PersistedState = toml::from_str(&toml::to_string(&state).unwrap()).unwrap();
+        assert_eq!(decoded, state);
+        let old: PersistedState = toml::from_str("active_screen = 'hub'").unwrap();
+        assert_eq!(old.rename, RenameState::default());
+        assert_eq!(old.file_browser, FileBrowserState::default());
     }
 
     #[test]

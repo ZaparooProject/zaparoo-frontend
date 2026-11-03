@@ -288,7 +288,10 @@ pub fn start(ctx: &Arc<Ctx>, app: &App) -> crate::scoped_task::ScopedTask {
                             );
                         });
                         match (namespace, app.global::<Shell>().get_active_screen()) {
-                            ("hub", Screen::Hub) => crate::hub::render(&ctx, &app),
+                            ("hub" | PATH_NAMESPACE, Screen::Hub) => crate::hub::render(&ctx, &app),
+                            (PATH_NAMESPACE, Screen::FileBrowser) => {
+                                crate::file_browser::images_landed(&ctx, &app);
+                            }
                             ("systems", Screen::Systems | Screen::FavoriteSystems) => {
                                 crate::systems::render(&ctx, &app);
                             }
@@ -347,6 +350,51 @@ fn image_for(namespace: &'static str, id: &str, size: u32) -> Option<slint::Imag
         }
     });
     None
+}
+
+/// The cache namespace for an image named by its own absolute path: a Hub
+/// tile's `icon`, or a preview in the file browser. Paths keep their case.
+const PATH_NAMESPACE: &str = "path";
+
+/// An image file by its absolute path, prepared under the same limits as
+/// the customization folder's art. A file that is missing or over budget is
+/// remembered as rejected for the session, so a drive that is not mounted
+/// is not read again on every paint.
+pub fn path_image(path: &str, size: u32) -> Option<slint::Image> {
+    if !rules::is_absolute_icon(path) {
+        return None;
+    }
+    let key = Key {
+        namespace: PATH_NAMESPACE,
+        id: path.to_string(),
+        size: size.clamp(1, rules::ART_OUTPUT_EDGE),
+    };
+    match DECODED.with(|cache| cache.borrow_mut().get(&key)) {
+        Lookup::Ready(image) => return Some(image),
+        Lookup::Rejected => return None,
+        Lookup::Missing => {}
+    }
+    WORKER.with(|slot| {
+        if let Some(worker) = slot.borrow().as_ref() {
+            worker
+                .queue
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .push(Job {
+                    key,
+                    path: PathBuf::from(path),
+                });
+            worker.wake.notify_one();
+        }
+    });
+    None
+}
+
+/// The customization folder, where the file browser starts.
+pub fn root() -> PathBuf {
+    ROOT.get()
+        .and_then(|root| root.read().ok().map(|root| root.clone()))
+        .unwrap_or_default()
 }
 
 pub fn system_image(system_id: &str, size: u32) -> Option<slint::Image> {

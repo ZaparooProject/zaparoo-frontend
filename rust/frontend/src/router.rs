@@ -143,6 +143,8 @@ pub struct Shared {
     pub filter: crate::browse_filter::Model,
     /// The Search screen: keyboard, focus and live matches.
     pub search: crate::search::Model,
+    pub rename: crate::rename::Model,
+    pub file_browser: crate::file_browser::Model,
     /// Ticket for the per-game launcher read, so a picker only opens
     /// for the row the user is still on.
     pub game_launcher_seq: u64,
@@ -189,6 +191,8 @@ pub enum ListContext {
     HubPageMenu,
     /// The Hub's "Add item" picker.
     HubAdd,
+    /// The file browser's Menu list: the actions its caller offers.
+    FileBrowserMenu,
     /// The favorites list's Menu list, and its More list.
     FavoritesPageMenu,
     /// Its "Group by" and "Sort" pages.
@@ -214,6 +218,7 @@ pub enum ListContext {
 #[derive(Debug, Clone)]
 pub struct Ctx {
     pub folders: crate::folder_picker::Model,
+    pub images: crate::image_picker::Model,
     pub launcher_scan: crate::launcher_scan::Model,
     pub playtime_access: crate::playtime_access::Model,
     pub open_url: crate::open_url::Model,
@@ -301,6 +306,8 @@ impl Shared {
             letter_seq: 0,
             filter: crate::browse_filter::Model::default(),
             search: crate::search::Model::default(),
+            rename: crate::rename::Model::default(),
+            file_browser: crate::file_browser::Model::default(),
             game_launcher_seq: 0,
             persist,
             restore_pending,
@@ -876,8 +883,90 @@ pub(crate) fn begin_pending_with_direction(app: &App, target: crate::Screen, _di
     });
 }
 
+/// A menu whose row started a route to another screen. It stays up, its
+/// row held down, until the route ends, and goes in the same turn: closing
+/// it first would show the screen underneath on its own for a moment.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HeldMenu {
+    None,
+    Context,
+    List,
+}
+
+/// What Back does to the wait a held menu is in, other than a route.
+type HeldWait = Box<dyn FnOnce(&Ctx)>;
+
+thread_local! {
+    static HELD_MENU: std::cell::Cell<HeldMenu> = const { std::cell::Cell::new(HeldMenu::None) };
+    static HELD_WAIT: std::cell::RefCell<Option<HeldWait>> = const { std::cell::RefCell::new(None) };
+}
+
+fn held_menu() -> HeldMenu {
+    HELD_MENU.with(std::cell::Cell::get)
+}
+
+/// Run a menu row's action that may route to another screen or wait on
+/// Core first, holding the menu open while it does. Whatever is ready in
+/// this turn, or nothing at all, takes the menu with it now.
+fn hold_menu_through(app: &App, menu: HeldMenu, action: impl FnOnce()) {
+    HELD_MENU.with(|held| held.set(menu));
+    action();
+    let waiting = HELD_WAIT.with(|wait| wait.borrow().is_some());
+    if !app.global::<crate::Shell>().get_transitioning() && !waiting {
+        release_held_menu(app);
+    }
+}
+
+/// The action of a held menu row has to wait on Core before it can show
+/// what it opens. True when a menu is held for it: it stays up until
+/// `end_held_wait`, and Back runs `cancel` and closes it.
+pub(crate) fn hold_menu_for(cancel: impl FnOnce(&Ctx) + 'static) -> bool {
+    if held_menu() == HeldMenu::None {
+        return false;
+    }
+    HELD_WAIT.with(|wait| *wait.borrow_mut() = Some(Box::new(cancel)));
+    true
+}
+
+/// The wait is over: the held menu goes now, in the turn that opens what
+/// it was waiting for.
+pub(crate) fn end_held_wait(app: &App) {
+    HELD_WAIT.with(|wait| wait.borrow_mut().take());
+    release_held_menu(app);
+}
+
+/// Back on a held menu: call off what it is waiting for, and close it.
+fn cancel_held(ctx: &Ctx, app: &App) {
+    let wait = HELD_WAIT.with(|wait| wait.borrow_mut().take());
+    match wait {
+        Some(cancel) => {
+            cancel(ctx);
+            crate::press_feedback::cancel(app);
+            release_held_menu(app);
+        }
+        None => {
+            crate::navigation::cancel(ctx, app);
+        }
+    }
+}
+
+/// The route a held menu was waiting on ended (it landed, was called off,
+/// failed or timed out): the menu goes in this turn.
+fn release_held_menu(app: &App) {
+    let overlays = app.global::<crate::Overlays>();
+    match HELD_MENU.with(|held| held.replace(HeldMenu::None)) {
+        HeldMenu::Context => {
+            overlays.set_context_open(false);
+            overlays.set_context_page(crate::ContextPage::Root);
+        }
+        HeldMenu::List => overlays.set_list_open(false),
+        HeldMenu::None => {}
+    }
+}
+
 pub(crate) fn clear_pending(app: &App) {
     crate::press_feedback::cancel(app);
+    release_held_menu(app);
     let shell = app.global::<crate::Shell>();
     shell.set_transitioning(false);
     let (clear, shown) = ROUTE_CUE.with(|cue| {
@@ -1291,6 +1380,8 @@ fn screen_action(ctx: &Ctx, app: &App, action: &str) {
             crate::games::handle_action(ctx, app, action);
         }
         crate::Screen::Search => crate::search::handle_action(ctx, app, action),
+        crate::Screen::Rename => crate::rename::handle_action(ctx, app, action),
+        crate::Screen::FileBrowser => crate::file_browser::handle_action(ctx, app, action),
         crate::Screen::Settings => crate::settings::handle_action(ctx, app, action),
         crate::Screen::About => about_action(ctx, app, action),
         crate::Screen::Update => crate::update::handle_action(ctx, app, action),
@@ -1557,6 +1648,7 @@ pub(crate) fn relayout(ctx: &Ctx, app: &App) {
     crate::systems::render(ctx, app);
     crate::games::on_layout_changed(ctx, app);
     crate::settings::refresh(ctx, app);
+    crate::file_browser::relayout(ctx, app);
 }
 
 /// Clock format or language changed: re-decide 12/24 hour and repaint.
@@ -1599,7 +1691,56 @@ fn list_roles(app: &App) -> Vec<zaparoo_app::form_list::Role> {
         .collect()
 }
 
+/// A Menu list pick, by the list it was made on.
+fn list_accept(ctx: &Ctx, app: &App, context: ListContext, id: &str) {
+    match context {
+        ListContext::ViewMenu => match id {
+            "jump_letter" => open_go_to(ctx, app),
+            "search_here" => crate::search::enter_scoped(ctx, app),
+            "filter" => crate::browse_filter::open(ctx, app),
+            "filter_clear" => crate::browse_filter::clear(ctx, app),
+            _ => {}
+        },
+        ListContext::FilterCategories | ListContext::FilterValues(_) => {
+            crate::browse_filter::accept(ctx, app, &context, id);
+        }
+        ListContext::SearchSystem => crate::search::system_picked(ctx, app, id),
+        ListContext::HubPageMenu => crate::hub::page_menu_accept(ctx, app, id),
+        ListContext::FileBrowserMenu => crate::file_browser::menu_accept(ctx, app, id),
+        ListContext::HubAdd => crate::hub::add_picked(ctx, app, id),
+        ListContext::FavoritesPageMenu => favorites_page_menu_accept(ctx, app, id),
+        ListContext::SearchResultsPageMenu => {
+            if id == "add_to_hub" {
+                crate::search::toggle_hub(ctx, app);
+            }
+        }
+        ListContext::FavoritesGrouping => {
+            hold_menu_through(app, HeldMenu::List, || {
+                favorites_grouping_picked(ctx, app, id);
+            });
+        }
+        ListContext::FavoritesSort => favorites_sort_picked(ctx, app, id),
+        ListContext::SettingsPicker(field) => {
+            crate::settings::picker_selected(ctx, app, &field, id);
+        }
+        ListContext::SystemLauncher(system_id) => {
+            crate::launchers::set_system_launcher(ctx, app, &system_id, id);
+        }
+        ListContext::GameLauncher(system_id, path) => {
+            crate::launchers::set_game_launcher(ctx, app, &system_id, &path, id);
+        }
+    }
+}
+
 fn list_action(ctx: &Ctx, app: &App, action: &str) {
+    // A pick's route is on its way: Back calls it off, which closes the
+    // list; nothing else acts until it lands.
+    if held_menu() == HeldMenu::List {
+        if action == actions::CANCEL {
+            cancel_held(ctx, app);
+        }
+        return;
+    }
     if app.global::<crate::Overlays>().get_launcher_saving() {
         // A save Core has not answered holds the picker still, but never
         // hostage: Cancel gives up on it and closes as usual.
@@ -1645,41 +1786,13 @@ fn list_action(ctx: &Ctx, app: &App, action: &str) {
                     ListContext::ViewMenu => id == "filter",
                     _ => false,
                 };
-                if !stays_open {
+                // A pick that opens another screen keeps the list up until
+                // that screen is ready (`hold_menu_through`).
+                let routes = matches!(context, ListContext::FavoritesGrouping);
+                if !stays_open && !routes {
                     app.global::<crate::Overlays>().set_list_open(false);
                 }
-                match context {
-                    ListContext::ViewMenu => match id.as_str() {
-                        "jump_letter" => open_go_to(ctx, app),
-                        "search_here" => crate::search::enter_scoped(ctx, app),
-                        "filter" => crate::browse_filter::open(ctx, app),
-                        "filter_clear" => crate::browse_filter::clear(ctx, app),
-                        _ => {}
-                    },
-                    ListContext::FilterCategories | ListContext::FilterValues(_) => {
-                        crate::browse_filter::accept(ctx, app, &context, &id);
-                    }
-                    ListContext::SearchSystem => crate::search::system_picked(ctx, app, &id),
-                    ListContext::HubPageMenu => crate::hub::page_menu_accept(ctx, app, &id),
-                    ListContext::HubAdd => crate::hub::add_picked(ctx, app, &id),
-                    ListContext::FavoritesPageMenu => favorites_page_menu_accept(ctx, app, &id),
-                    ListContext::SearchResultsPageMenu => {
-                        if id == "add_to_hub" {
-                            crate::search::toggle_hub(ctx, app);
-                        }
-                    }
-                    ListContext::FavoritesGrouping => favorites_grouping_picked(ctx, app, &id),
-                    ListContext::FavoritesSort => favorites_sort_picked(ctx, app, &id),
-                    ListContext::SettingsPicker(field) => {
-                        crate::settings::picker_selected(ctx, app, &field, &id);
-                    }
-                    ListContext::SystemLauncher(system_id) => {
-                        crate::launchers::set_system_launcher(ctx, app, &system_id, &id);
-                    }
-                    ListContext::GameLauncher(system_id, path) => {
-                        crate::launchers::set_game_launcher(ctx, app, &system_id, &path, &id);
-                    }
-                }
+                list_accept(ctx, app, context, &id);
             }
         }
         actions::LEFT | actions::RIGHT | actions::PAGE_PREV | actions::PAGE_NEXT
@@ -2109,6 +2222,16 @@ pub(crate) fn present_hub_page_menu(ctx: &Ctx, app: &App, entries: Vec<crate::Me
     present_list(ctx, app, ListContext::HubPageMenu, "title:menu", entries);
 }
 
+pub(crate) fn present_file_browser_menu(ctx: &Ctx, app: &App, entries: Vec<crate::MenuEntry>) {
+    present_list(
+        ctx,
+        app,
+        ListContext::FileBrowserMenu,
+        "title:menu",
+        entries,
+    );
+}
+
 pub(crate) fn present_hub_add_picker(ctx: &Ctx, app: &App, entries: Vec<crate::MenuEntry>) {
     present_list(ctx, app, ListContext::HubAdd, "title:add_item", entries);
 }
@@ -2477,6 +2600,14 @@ fn context_action(ctx: &Ctx, app: &App, action: &str) {
         .get_context_entries()
         .row_count();
     let index = app.global::<crate::Overlays>().get_context_index().max(0) as usize;
+    // A row's route or wait is on its way: Back calls it off, which closes
+    // the menu; nothing else acts until it lands.
+    if held_menu() == HeldMenu::Context {
+        if action == actions::CANCEL {
+            cancel_held(ctx, app);
+        }
+        return;
+    }
     match action {
         actions::UP | actions::DOWN if len > 0 => {
             let step_ms = lock(&ctx.shared).input.modal_follow();
@@ -2547,11 +2678,29 @@ fn context_accept(ctx: &Ctx, app: &App, id: &str) {
     if began {
         return;
     }
+    if OptionsMenu::holds_open(id) {
+        run_held_row(ctx, app, owner, id);
+        return;
+    }
     close_context_menu(ctx, app);
     match owner {
         ContextOwner::Games => crate::games::context_accept(ctx, app, id),
         ContextOwner::Systems => crate::systems::context_accept(ctx, app, id),
         ContextOwner::Hub => crate::hub::context_accept(ctx, app, id),
+    }
+}
+
+/// A row that opens something that may not be ready at once: the menu
+/// stays up, its row held, until it is (`hold_menu_through`).
+fn run_held_row(ctx: &Ctx, app: &App, owner: ContextOwner, id: &str) {
+    hold_menu_through(app, HeldMenu::Context, || match owner {
+        ContextOwner::Games => crate::games::context_accept(ctx, app, id),
+        ContextOwner::Systems => crate::systems::context_accept(ctx, app, id),
+        ContextOwner::Hub => crate::hub::context_accept(ctx, app, id),
+    });
+    if !app.global::<crate::Overlays>().get_context_open() {
+        // The rest of the menu's own state goes with it.
+        close_context_menu(ctx, app);
     }
 }
 

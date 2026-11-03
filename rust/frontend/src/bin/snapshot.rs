@@ -54,7 +54,7 @@ use generated::{App, Brand, GlyphSource, GridCell, LetterBucket, MenuEntry, Sizi
     unused_imports,
     reason = "reached through crate:: paths from the shared sizing adapter"
 )]
-use generated::{GamesView, Layout, Motion, Shell, SystemsView};
+use generated::{FileBrowserMode, FileBrowserView, GamesView, Layout, Motion, Shell, SystemsView};
 use generated::{KeyCell, KeyKind, SearchPane, SearchPaneRow, SearchView, SearchZone};
 #[path = "../state_types.rs"]
 #[allow(
@@ -280,6 +280,10 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
             .set_title("\u{201c}mario\u{201d} \u{b7} Super Nintendo".into());
     } else if screen.contains("search") || screen.ends_with("system-picker") {
         fixture_search(&app, screen);
+    } else if screen.contains("rename") {
+        fixture_rename(&app, screen.contains("caps"));
+    } else if screen.contains("file-browser") {
+        fixture_file_browser(&app, scene_w, scene_h, crt, screen);
     }
     // The browse filter: the header cue on the games screen, the picker's
     // categories page with a filter set, its values page with counts, and
@@ -1160,9 +1164,169 @@ fn fixture_search(app: &App, screen: &str) {
     })));
 }
 
+/// The rename screen: a tile's name being edited, the cursor inside it.
+fn fixture_rename(app: &App, caps: bool) {
+    let view = app.global::<generated::RenameView>();
+    let mut keys = keyboard::Keyboard::new(
+        zaparoo_app::keyboard::Layers::Full,
+        zaparoo_app::text_entry::TILE_NAME_MAX_CHARS,
+    );
+    keys.set_text("Role-playing games");
+    keys.move_caret(false);
+    keys.move_caret(false);
+    if caps {
+        keys.lock_shift();
+        keys.focus(zaparoo_app::keyboard::Key::Shift);
+    } else {
+        keys.focus(zaparoo_app::keyboard::Key::Char('e'));
+    }
+    let (before, at, after) = keys.display();
+    view.set_before(before);
+    view.set_at(at);
+    view.set_after(after);
+    view.set_keys(slint::ModelRc::new(slint::VecModel::from(keys.cells())));
+    view.set_key_rows(i32::try_from(keys.row_count()).unwrap_or(5));
+    view.set_key_index(i32::try_from(keys.index()).unwrap_or(0));
+    view.set_key_kind(KeyKind::Char);
+    view.set_shift_active(caps);
+    view.set_shift_locked(caps);
+}
+
+/// The file browser: a folder of images as previews, the same folder as a
+/// list, or Places.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one fixture projects the same folder into grid and list layouts"
+)]
+fn fixture_file_browser(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &str) {
+    use zaparoo_app::layouts::{self, Body, ThemeId, View};
+    let view = app.global::<FileBrowserView>();
+    let places = screen.contains("places");
+    let list = screen.contains("list");
+    let names: Vec<(&str, &str)> = if places {
+        vec![
+            ("Custom folder", "/media/fat/zaparoo/custom"),
+            ("SD card", "/media/fat"),
+            ("USB 0", "/media/usb0"),
+            ("Network", "/media/network"),
+            ("Root", "/"),
+        ]
+    } else {
+        vec![
+            ("Consoles", ""),
+            ("Handhelds", ""),
+            ("arcade.png", ""),
+            ("favorites.svg", ""),
+            ("rpg-night.jpg", ""),
+            ("search.png", ""),
+            ("settings.webp", ""),
+        ]
+    };
+    let folders = if places { names.len() } else { 2 };
+    let cell = |i: usize, (name, path): (&str, &str)| GridCell {
+        name: if list && !places && i < folders {
+            format!("{name}/").into()
+        } else {
+            name.into()
+        },
+        glyph_key: if i < folders {
+            "icons/Folder"
+        } else {
+            "icons/File"
+        }
+        .into(),
+        tags: if list { path.into() } else { "".into() },
+        ..Default::default()
+    };
+    let cells: Vec<GridCell> = names.iter().enumerate().map(|(i, n)| cell(i, *n)).collect();
+    view.set_mode(if list {
+        FileBrowserMode::Plain
+    } else {
+        FileBrowserMode::Images
+    });
+    view.set_places(places);
+    view.set_title(if places { "" } else { "hub" }.into());
+    view.set_focus_ready(true);
+    let selected = if places { 0 } else { 2 };
+    view.set_focused_opens(selected < folders);
+    view.set_focused_picks(selected >= folders);
+    view.set_has_menu(true);
+    let inputs = sizing::Scene::of(app, scene_w, scene_h, crt).inputs();
+    if list {
+        if let Some(geometry) = list_geometry(app, scene_w, scene_h, crt, 10, false) {
+            view.set_list_x(geometry.card_x as f32);
+            view.set_list_y(geometry.card_y as f32);
+            view.set_list_width(geometry.card_width as f32);
+            view.set_list_height(geometry.card_height as f32);
+            view.set_list_row_height(geometry.row_height as f32);
+        }
+        view.set_list_rows(slint::ModelRc::new(slint::VecModel::from(cells)));
+        view.set_list_view_top(0);
+        view.set_list_scroll_top(0);
+        view.set_list_sel(selected as i32);
+        view.set_count(names.len() as i32);
+        view.set_current_index(selected as i32);
+        return;
+    }
+    let derived = zaparoo_app::sizing::derive(&inputs);
+    let profile = layouts::profile(ThemeId::current(&inputs), View::GamesGrid, &inputs);
+    let Body::Grid { grid, .. } = profile.body else {
+        return;
+    };
+    let t240 = derived.tier == zaparoo_app::sizing::Tier::T240;
+    let grid_y = derived.header_bottom + profile.status.top_margin + profile.status.strip_height;
+    let label_height = inputs.pct_h(7.0);
+    let bottom = if t240 {
+        derived.help_bar_height + label_height
+    } else {
+        inputs.pct_h(15.0)
+    };
+    let grid_height = (inputs.screen_height as i32 - grid_y - bottom).max(0);
+    let insets = zaparoo_app::paged_grid::Insets {
+        left: grid.left_inset,
+        right: grid.right_inset,
+        top: grid.top_inset,
+        bottom: grid.bottom_inset,
+        column_gap: grid.column_gap,
+        row_gap: grid.row_gap,
+    };
+    let (columns, rows) = (derived.games_grid_columns, derived.games_grid_rows);
+    let fit = zaparoo_app::paged_grid::fit(
+        columns,
+        rows,
+        inputs.screen_width as i32,
+        grid_height,
+        None,
+        false,
+        &insets,
+    );
+    let page = (columns * rows).max(1) as usize;
+    let label = names[selected].0;
+    let cells: Vec<GridCell> = cells.into_iter().take(page).collect();
+    view.set_cells(slint::ModelRc::new(slint::VecModel::from(cells)));
+    view.set_columns(columns);
+    view.set_rows(rows);
+    view.set_cell_width(fit.cell_width as f32);
+    view.set_cell_height(fit.cell_height as f32);
+    view.set_block_offset_x(fit.block_offset_x as f32);
+    view.set_block_offset_y(fit.block_offset_y as f32);
+    view.set_grid_y(grid_y as f32);
+    view.set_grid_height(grid_height as f32);
+    view.set_label_y((grid_y + grid_height) as f32);
+    view.set_label_height(label_height as f32);
+    view.set_selected_local(selected as i32);
+    view.set_label_name(label.into());
+    view.set_count(names.len() as i32);
+    view.set_current_index(selected as i32);
+}
+
 fn fixture_screen(screen: &str) -> Screen {
     if screen.starts_with("route-") {
         Screen::Hub
+    } else if screen.contains("rename") {
+        Screen::Rename
+    } else if screen.contains("file-browser") {
+        Screen::FileBrowser
     } else if screen.contains("search-results") {
         Screen::SearchResults
     } else if screen.contains("search") || screen.ends_with("system-picker") {
@@ -2422,6 +2586,8 @@ mod fixture_tests {
             ("search", Screen::Search),
             ("crt-search-scoped", Screen::Search),
             ("search-results", Screen::SearchResults),
+            ("rename", Screen::Rename),
+            ("crt-file-browser-list", Screen::FileBrowser),
             ("game-info", Screen::Games),
             ("settings-page", Screen::Settings),
             ("about", Screen::About),
