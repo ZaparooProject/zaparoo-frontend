@@ -8,8 +8,8 @@
 // logic; forward orchestration lives in the router.
 
 import { Theme, Sizing, Motion, Layout } from "theme.slint";
-import { MenuRole, ContextPage, KeyKind, SearchZone, SearchPane, SearchScope, FileBrowserMode, Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, StateTokens, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogButton, ErrorKind } from "state_types.slint";
-export { MenuRole, ContextPage, KeyKind, SearchZone, SearchPane, SearchScope, FileBrowserMode, Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogButton, ErrorKind }
+import { MenuRole, ContextPage, KeyKind, SearchZone, SearchPane, SearchScope, FileBrowserMode, Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, StateTokens, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogButton, ErrorKind, ManualState, ManualFit } from "state_types.slint";
+export { MenuRole, ContextPage, KeyKind, SearchZone, SearchPane, SearchScope, FileBrowserMode, Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogButton, ErrorKind, ManualState, ManualFit }
 import { FastScrollRail, GlyphSource, Brand, Buttons, HelpEntry, Status, HeaderBar, StatusLine, ProgressTrack, WaitCue, TopStatusStrip, FooterIndicator, ActiveLabel, HelpBar, SectionHeader, Divider, ScrollCue, ModalShell, QrPlate, StateCue } from "chrome.slint";
 import { GridCell, MarqueeCaption, PressableSurface, Tile, PagedGridView, PageStrip } from "tiles.slint";
 import { ScrollOffset, SelectionCursor, SelectionClip, FocusCursor } from "focus.slint";
@@ -555,6 +555,10 @@ export global GamesView {
     in-out property <image> detail-cover;
     in-out property <bool> detail-has-cover: false;
     in-out property <bool> detail-cover-absent: false;
+    // The pane's place among the game's images when Left and Right step
+    // them; a count under two shows nothing.
+    in-out property <int> detail-image-index: 0;
+    in-out property <int> detail-image-count: 0;
     in-out property <color> detail-placeholder;
     in-out property <bool> detail-has-placeholder: false;
     in-out property <[DetailRow]> detail-rows: [];
@@ -3087,6 +3091,8 @@ component GamesScreen inherits Rectangle {
         cover: GamesView.detail-cover;
         has-cover: GamesView.detail-has-cover;
         cover-absent: GamesView.detail-cover-absent;
+        image-index: GamesView.detail-image-index;
+        image-count: GamesView.detail-image-count;
         art-box(w, h) => { GamesInput.detail-art-box(Math.round(w / 1px), Math.round(h / 1px)); }
         wordmark: false;
         detail-rows: GamesView.detail-rows;
@@ -3401,6 +3407,17 @@ export component App inherits Window {
     // Move cue only when there is a second page to jump to. The source
     // row stays put during a forward transition: the input gate
     // swallows presses, but a bar that empties reads as dismantling.
+    // A manual's page turn, and the fit Accept switches to.
+    pure function manual-page-cue() -> HelpEntry {
+        return { buttons: ["ButtonL", "ButtonR", "DpadLeft", "DpadRight"], label: @tr("Page") };
+    }
+    pure function manual-fit-cue() -> HelpEntry {
+        return { buttons: ["ButtonA"], label: GameInfoView.manual-fit == ManualFit.width ? @tr("Whole page") : @tr("Fit width") };
+    }
+    // A list whose Left and Right step images moves only up and down.
+    pure function list-move-cue(pages: int) -> HelpEntry {
+        return { buttons: pages > 1 ? ["ButtonL", "ButtonR", "DpadUp", "DpadDown"] : ["DpadUp", "DpadDown"], label: @tr("Move") };
+    }
     pure function move-cue(pages: int) -> HelpEntry {
         return { buttons: pages > 1 ? ["ButtonL", "ButtonR", "Dpad"] : ["Dpad"], label: @tr("Move") };
     }
@@ -3650,6 +3667,65 @@ export component App inherits Window {
             }
             return [{ buttons: ["ButtonB"], label: @tr("Cancel") }];
         }
+        if (GameInfoView.modal-open && info-modal.reading) {
+            if (GameInfoView.manual-state != ManualState.ready) {
+                return [{ buttons: ["ButtonB"], label: @tr("Back") }];
+            }
+            if (GameInfoView.manual-pages > 1 && info-modal.manual-scrollable) {
+                return [
+                    self.manual-page-cue(),
+                    { buttons: ["DpadUp", "DpadDown"], label: @tr("Scroll") },
+                    self.manual-fit-cue(),
+                    { buttons: ["ButtonB"], label: @tr("Back") },
+                ];
+            }
+            if (GameInfoView.manual-pages > 1) {
+                return [
+                    self.manual-page-cue(),
+                    self.manual-fit-cue(),
+                    { buttons: ["ButtonB"], label: @tr("Back") },
+                ];
+            }
+            if (info-modal.manual-scrollable) {
+                return [
+                    { buttons: ["DpadUp", "DpadDown"], label: @tr("Scroll") },
+                    self.manual-fit-cue(),
+                    { buttons: ["ButtonB"], label: @tr("Back") },
+                ];
+            }
+            return [
+                self.manual-fit-cue(),
+                { buttons: ["ButtonB"], label: @tr("Back") },
+            ];
+        }
+        if (GameInfoView.modal-open && GameInfoView.has-manual) {
+            if (info-modal.scrollable && GameInfoView.image-count > 1) {
+                return [
+                    { buttons: ["Dpad"], label: @tr("Scroll") },
+                    { buttons: ["DpadLeft", "DpadRight"], label: @tr("Image") },
+                    { buttons: ["ButtonY"], label: @tr("Manual") },
+                    { buttons: ["ButtonB"], label: @tr("Close") },
+                ];
+            }
+            if (GameInfoView.image-count > 1) {
+                return [
+                    { buttons: ["DpadLeft", "DpadRight"], label: @tr("Image") },
+                    { buttons: ["ButtonY"], label: @tr("Manual") },
+                    { buttons: ["ButtonB"], label: @tr("Close") },
+                ];
+            }
+            if (info-modal.scrollable) {
+                return [
+                    { buttons: ["Dpad"], label: @tr("Scroll") },
+                    { buttons: ["ButtonY"], label: @tr("Manual") },
+                    { buttons: ["ButtonB"], label: @tr("Close") },
+                ];
+            }
+            return [
+                { buttons: ["ButtonY"], label: @tr("Manual") },
+                { buttons: ["ButtonB"], label: @tr("Close") },
+            ];
+        }
         if (GameInfoView.modal-open) {
             if (info-modal.scrollable && GameInfoView.image-count > 1) {
                 return [
@@ -3889,6 +3965,44 @@ export component App inherits Window {
             }
             return [
                 { buttons: ["ButtonA"], label: @tr("Retry") },
+                { buttons: ["ButtonY"], label: @tr("Menu") },
+                { buttons: ["ButtonB"], label: @tr("Back") },
+            ];
+        }
+        // Left and Right step the pane's images when set to and there is
+        // more than one: the move cue keeps only what still moves.
+        if (GamesView.detail-image-count > 1) {
+            if (Shell.active-screen == Screen.recents) {
+                if (!GamesView.options-available) {
+                    return [
+                        self.list-move-cue(GamesView.total-pages),
+                        { buttons: ["DpadLeft", "DpadRight"], label: @tr("Image") },
+                        { buttons: ["ButtonA"], label: @tr("Open") },
+                        { buttons: ["ButtonB"], label: @tr("Back") },
+                    ];
+                }
+                return [
+                    self.list-move-cue(GamesView.total-pages),
+                    { buttons: ["DpadLeft", "DpadRight"], label: @tr("Image") },
+                    { buttons: ["ButtonA"], label: @tr("Open") },
+                    { buttons: ["ButtonX"], label: @tr("Options") },
+                    { buttons: ["ButtonB"], label: @tr("Back") },
+                ];
+            }
+            if (!GamesView.options-available) {
+                return [
+                    self.list-move-cue(GamesView.total-pages),
+                    { buttons: ["DpadLeft", "DpadRight"], label: @tr("Image") },
+                    { buttons: ["ButtonA"], label: @tr("Open") },
+                    { buttons: ["ButtonY"], label: @tr("Menu") },
+                    { buttons: ["ButtonB"], label: @tr("Back") },
+                ];
+            }
+            return [
+                self.list-move-cue(GamesView.total-pages),
+                { buttons: ["DpadLeft", "DpadRight"], label: @tr("Image") },
+                { buttons: ["ButtonA"], label: @tr("Open") },
+                { buttons: ["ButtonX"], label: @tr("Options") },
                 { buttons: ["ButtonY"], label: @tr("Menu") },
                 { buttons: ["ButtonB"], label: @tr("Back") },
             ];

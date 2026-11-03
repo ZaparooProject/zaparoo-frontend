@@ -165,6 +165,8 @@ export global SettingsLabels {
         if (id == "mediaImageType") { return @tr("Preferred artwork"); }
         if (id == "showHidden") { return @tr("Show hidden items"); }
         if (id == "showOriginalFilenames") { return @tr("Show original filenames"); }
+        if (id == "showTags") { return @tr("Show tags"); }
+        if (id == "listLeftRight") { return @tr("Left and Right in lists"); }
         // Online.
         if (id == "onlineUnavailable") { return @tr("Online features are not available for this client"); }
         if (id == "onlineStatus") { return @tr("Status"); }
@@ -232,6 +234,8 @@ export global SettingsLabels {
         if (id == "mediaImageType") { return @tr("Prefers an artwork type when games have multiple images."); }
         if (id == "showHidden") { return @tr("Shows hidden items so they can be unhidden."); }
         if (id == "showOriginalFilenames") { return @tr("Shows real filenames instead of cleaned-up display titles."); }
+        if (id == "showTags") { return @tr("Shows region, revision, and disc tags after game names."); }
+        if (id == "listLeftRight") { return @tr("Turns the page or changes the image in the detailed list."); }
         if (id == "onlineLinkAccount") { return @tr("Connects this device to your Zaparoo Online account with a code."); }
         if (id == "onlineUnlinkAccount") { return @tr("Removes this device's Zaparoo Online account credentials."); }
         if (id == "onlineAllFeatures") { return @tr("Turns every online feature on or off. Each can still be changed on its own."); }
@@ -271,6 +275,10 @@ export global SettingsLabels {
         if (id == "colorScheme") { return SettingsLabels.color-scheme(value); }
         if (id == "screensaverTimeout") { return SettingsLabels.screensaver(value); }
         if (id == "mediaImageType") { return SettingsLabels.artwork(value); }
+        if (id == "listLeftRight") {
+            if (value == "image") { return @tr("Change image"); }
+            return @tr("Change page");
+        }
         if (id == "buttonLayout") {
             if (value == "style_a") { return @tr("Style A"); }
             if (value == "style_b") { return @tr("Style B"); }

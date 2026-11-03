@@ -66,9 +66,12 @@ allow-wildcard-paths = true  # Workspace path deps have no version pin; this is 
 
 # Known transitive duplicates we can't resolve without forking upstream go
 # in `skip`, version-pinned so a future additional duplicate trips the
-# check rather than being silently swallowed. None outside the Slint tree
-# today.
-skip = []
+# check rather than being silently swallowed.
+skip = [
+    # hayro 0.9 (game manuals) uses fearless_simd 1.x itself while its
+    # vello_cpu 0.3 renderer still pins 0.7; both are inside hayro's tree.
+    { crate = "fearless_simd@0.7.0", reason = "hayro's vello_cpu 0.3 pins it" },
+]
 
 # The Slint dependency tree carries its own duplicate versions (bitflags,
 # hashbrown, rustix, skrifa/read-fonts, tiny-skia, ...). They are internal to

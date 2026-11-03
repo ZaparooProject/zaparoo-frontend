@@ -163,7 +163,10 @@ export component BrowseList inherits Rectangle {
         property <bool> lit: root.focus-ready
             && sel.fill-bottom > self.y && sel.fill-top < self.y + self.height;
         property <length> favorite-slot: row.favorite ? Layout.favorite-right-padding + root.heart-size : 0px;
-        property <length> caption-w: Math.max(0px, self.width - Layout.row-text-left-padding - Layout.row-text-right-padding - favorite-slot);
+        // The same chevron and size as a context-menu row that opens a page.
+        property <length> chevron: GlyphSource.side(Sizing.pct-h(3));
+        property <length> chevron-slot: row.opens ? Layout.favorite-right-padding + self.chevron : 0px;
+        property <length> caption-w: Math.max(0px, self.width - Layout.row-text-left-padding - Layout.row-text-right-padding - favorite-slot - chevron-slot);
 
         MarqueeCaption {
             x: Layout.row-text-left-padding;
@@ -175,7 +178,7 @@ export component BrowseList inherits Rectangle {
             center-content: false;
             caption-font-size: Sizing.font-section;
             caption-weight: FontWeight.normal;
-            caption-color: row.hidden ? Theme.text-variant : Theme.text-label;
+            caption-color: row.hidden ? Theme.text-variant : Theme.text-primary;
             tags-color: Theme.text-variant;
         }
         if lit: SelectionClip {
@@ -201,6 +204,14 @@ export component BrowseList inherits Rectangle {
             }
         }
 
+        if row.opens: Image {
+            x: parent.width - Layout.favorite-right-padding - parent.favorite-slot - self.width;
+            y: Sizing.snap((parent.height - self.height) / 2);
+            width: parent.chevron;
+            height: self.width;
+            source: GlyphSource.glyph("icons/NavRight", Math.max(1px, self.width), highlighted ? sel.content : Theme.text-label);
+            image-rendering: Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
+        }
         if row.favorite: Image {
             x: parent.width - Layout.favorite-right-padding - root.heart-size;
             y: Sizing.snap((parent.height - self.height) / 2);
@@ -261,6 +272,10 @@ export component BrowseDetailPane inherits Rectangle {
     in property <bool> loading: false;
     in property <string> loading-text: @tr("Loading…");
     in property <bool> show-chrome: true;
+    // Which of the game's images the art is, when Left and Right step
+    // them; a count under two shows nothing.
+    in property <int> image-index: 0;
+    in property <int> image-count: 0;
 
     background: root.show-chrome ? Theme.surface-card : transparent;
     border-radius: root.show-chrome ? Layout.card-radius : 0px;
@@ -436,6 +451,22 @@ export component BrowseDetailPane inherits Rectangle {
                 source: GlyphSource.glyph(root.placeholder-key, self.s, Theme.text-label);
                 image-rendering: Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
             }
+            // Over the art's corner on a card-colored plate, so the art box
+            // and the covers fitted to it stay the size they always are.
+            if root.image-count > 1: Rectangle {
+                property <length> pad: Sizing.pct-h(0.5);
+                x: parent.art-x + parent.art-w - self.width;
+                y: parent.art-y + parent.art-h - self.height;
+                width: count-text.preferred-width + 2 * self.pad;
+                height: count-text.preferred-height + self.pad;
+                background: Theme.surface-card;
+                border-radius: Sizing.radius-md;
+                count-text := Text {
+                    text: @tr("{}/{}", root.image-index + 1, root.image-count);
+                    color: Theme.text-label;
+                    font-size: Sizing.font-small;
+                }
+            }
             // Wordmark fallback for a system without curated logo art
             // (the grid tile's fitted-text treatment).
             if !root.has-cover && root.wordmark && root.title != "": Wordmark {
@@ -535,6 +566,8 @@ export component BrowseListDetailView inherits Rectangle {
     in property <[DetailRow]> detail-rows: [];
     in property <bool> detail-loading: false;
     in property <string> loading-text: @tr("Loading…");
+    in property <int> image-index: 0;
+    in property <int> image-count: 0;
     callback row-hovered(int);
     callback row-clicked(int);
     callback row-right-clicked(int);
@@ -608,5 +641,7 @@ export component BrowseListDetailView inherits Rectangle {
         rows: root.detail-rows;
         loading: root.detail-loading;
         loading-text: root.loading-text;
+        image-index: root.image-index;
+        image-count: root.image-count;
     }
 }

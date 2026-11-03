@@ -37,6 +37,7 @@ pub mod layouts;
 pub mod letter_jump;
 pub mod log_upload;
 pub mod logo_cache;
+pub mod manual;
 pub mod media_list;
 pub mod media_setup;
 pub mod motion_test;

@@ -243,6 +243,7 @@ update rules, in short:
 | `rust/frontend/src/{hub,systems,games,settings,about}.rs` | Per-screen drivers |
 | `rust/frontend/src/{rename,file_browser}.rs` | Rename tile (shared keyboard) and the reusable file browser with its image-preview mode |
 | `rust/frontend/src/{game_info,media_setup,log_upload,launchers,card_write,qr}.rs` | Modal drivers |
+| `rust/frontend/src/manual.rs` | A game's manual as a page of Game Info: `media.asset` chunks, hayro rendering on a worker thread, pages in memory only |
 | `rust/frontend/src/{context_page,alternates,discs}.rs` | Context-menu pages: the shared page (Manage and Write to token included), alternate versions, a multi-disc game's discs |
 | `rust/frontend/src/{input,actions,gamepad,keyboard}.rs` | Key path: duplicate guard, swaps, hold-repeat, the text field owner; keyboard bindings; desktop gamepads; the on-screen keyboard's shared state and buttons |
 | `rust/frontend/src/{media_cache,hub_covers,customization}.rs` | Bounded in-memory cover cache, cold-boot cover manifest, user overrides |

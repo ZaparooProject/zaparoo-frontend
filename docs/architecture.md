@@ -38,6 +38,9 @@ rust/frontend/  [frontend library and binary; Slint UI]
   │                        token from the menu's own rows, and the two Core
   │                        is asked for, alternates.rs and discs.rs
   ├── src/game_info_data.rs : Game Info metadata and carousel ordering
+  ├── src/manual.rs      : a game's manual as a page of Game Info: fetched
+  │                        through `media.asset`, rendered a page at a time
+  │                        by hayro on a worker thread, memory only
   ├── src/tag_utils.rs   : compact tag tokens for inline metadata
   ├── src/qr.rs          : QR matrix for the write deep-link and doc links
   ├── src/{input,actions,gamepad}.rs

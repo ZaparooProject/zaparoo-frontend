@@ -552,6 +552,14 @@ pub struct SettingsState {
     /// name is shown.
     #[serde(default)]
     pub show_original_filenames: bool,
+    /// The short region, revision and other tags after a game's name. A
+    /// state file from before the setting existed keeps them.
+    #[serde(default = "default_show_tags")]
+    pub show_tags: bool,
+    /// What Left and Right do in the detailed list: `"page"` turns a page as
+    /// L and R do, `"image"` steps the detail pane through the game's images.
+    #[serde(default = "default_list_left_right")]
+    pub list_left_right: String,
     /// When true, flips which physical button accepts vs cancels at the
     /// key->action dispatch seam (see the frontend's `input.rs`),
     /// compensating for a misconfigured OK/Cancel swap in `Main_MiSTer`'s own
@@ -617,6 +625,8 @@ impl Default for SettingsState {
             media_image_type: default_media_image_type(),
             show_hidden: false,
             show_original_filenames: false,
+            show_tags: default_show_tags(),
+            list_left_right: default_list_left_right(),
             swap_confirm_cancel: false,
             swap_options_view: false,
             region: default_region(),
@@ -692,6 +702,14 @@ fn default_mouse_enabled() -> bool {
 
 fn default_show_menu_row() -> bool {
     true
+}
+
+fn default_show_tags() -> bool {
+    true
+}
+
+fn default_list_left_right() -> String {
+    "page".into()
 }
 
 fn default_screensaver_timeout() -> String {
@@ -970,6 +988,8 @@ mod tests {
                 media_image_type: "auto".into(),
                 show_hidden: true,
                 show_original_filenames: true,
+                show_tags: false,
+                list_left_right: "image".into(),
                 swap_confirm_cancel: true,
                 swap_options_view: true,
                 region: "us".into(),
@@ -1256,6 +1276,8 @@ resolution = "1920x1080"
         assert_eq!(state.settings.crt_h_offset, 0);
         assert_eq!(state.settings.crt_v_offset, 0);
         assert_eq!(state.settings.crt_h_size, 0);
+        assert!(state.settings.show_tags);
+        assert_eq!(state.settings.list_left_right, "page");
     }
 
     #[test]

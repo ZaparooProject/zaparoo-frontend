@@ -190,6 +190,8 @@ pub struct SettingsConfig {
     pub favorites_grouping: Option<String>,
     pub show_hidden: Option<bool>,
     pub show_original_filenames: Option<bool>,
+    pub show_tags: Option<bool>,
+    pub list_left_right: Option<String>,
     pub swap_confirm_cancel: Option<bool>,
     pub swap_options_view: Option<bool>,
     /// Retired from Hub use (the Hub grid is a persisted `[[hub.items]]`
@@ -237,6 +239,8 @@ pub struct SettingsMirror<'a> {
     pub favorites_grouping: &'a str,
     pub show_hidden: bool,
     pub show_original_filenames: bool,
+    pub show_tags: bool,
+    pub list_left_right: &'a str,
     pub swap_confirm_cancel: bool,
     pub swap_options_view: bool,
     pub region: &'a str,
@@ -348,6 +352,8 @@ struct RawSettings {
     favorites_grouped: Option<bool>,
     show_hidden: Option<bool>,
     show_original_filenames: Option<bool>,
+    show_tags: Option<bool>,
+    list_left_right: Option<String>,
     swap_confirm_cancel: Option<bool>,
     swap_options_view: Option<bool>,
     #[serde(default)]
@@ -514,6 +520,8 @@ fn settings_config_from_raw(raw: RawSettings) -> SettingsConfig {
         }),
         show_hidden: raw.show_hidden,
         show_original_filenames: raw.show_original_filenames,
+        show_tags: raw.show_tags,
+        list_left_right: trim_opt(raw.list_left_right),
         swap_confirm_cancel: raw.swap_confirm_cancel,
         swap_options_view: raw.swap_options_view,
         hidden_categories: normalize_string_list(raw.hidden_categories),
@@ -729,6 +737,8 @@ pub fn save_settings_mirror(path: &Path, mirror: SettingsMirror<'_>) -> Result<(
         "show_original_filenames",
         mirror.show_original_filenames,
     );
+    set_bool(settings, "show_tags", mirror.show_tags);
+    set_str(settings, "list_left_right", mirror.list_left_right.trim());
     set_bool(settings, "swap_confirm_cancel", mirror.swap_confirm_cancel);
     set_bool(settings, "swap_options_view", mirror.swap_options_view);
     set_str(settings, "region", mirror.region.trim());
@@ -991,6 +1001,8 @@ mod tests {
             favorites_grouping: "system",
             show_hidden: false,
             show_original_filenames: false,
+            show_tags: true,
+            list_left_right: "page",
             swap_confirm_cancel: false,
             swap_options_view: false,
             region: "auto",
@@ -1547,6 +1559,8 @@ mod tests {
                 favorites_grouping: "system",
                 show_hidden: true,
                 show_original_filenames: true,
+                show_tags: false,
+                list_left_right: "image",
                 swap_confirm_cancel: true,
                 swap_options_view: true,
                 region: "us",
@@ -1577,6 +1591,8 @@ mod tests {
         assert_eq!(cfg.settings.favorites_grouping.as_deref(), Some("system"));
         assert_eq!(cfg.settings.show_hidden, Some(true));
         assert_eq!(cfg.settings.show_original_filenames, Some(true));
+        assert_eq!(cfg.settings.show_tags, Some(false));
+        assert_eq!(cfg.settings.list_left_right.as_deref(), Some("image"));
         assert_eq!(cfg.settings.swap_confirm_cancel, Some(true));
         assert_eq!(cfg.settings.swap_options_view, Some(true));
         assert_eq!(cfg.settings.region.as_deref(), Some("us"));
@@ -1616,6 +1632,8 @@ mod tests {
                 favorites_grouping: "system",
                 show_hidden: false,
                 show_original_filenames: false,
+                show_tags: true,
+                list_left_right: "page",
                 swap_confirm_cancel: false,
                 swap_options_view: false,
                 region: "auto",
@@ -1674,6 +1692,8 @@ mod tests {
             favorites_grouping: "system",
             show_hidden: false,
             show_original_filenames: false,
+            show_tags: true,
+            list_left_right: "page",
             swap_confirm_cancel: false,
             swap_options_view: false,
             region: "auto",

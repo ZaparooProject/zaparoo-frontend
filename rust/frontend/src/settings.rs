@@ -57,6 +57,7 @@ fn current_value(ctx: &Ctx, id: &str) -> String {
         "colorScheme" => s.color_scheme.clone(),
         "colorIntensity" => s.color_intensity.clone(),
         "mediaImageType" => s.media_image_type.clone(),
+        "listLeftRight" => s.list_left_right.clone(),
         "language" => s.language.clone(),
         "region" => s.region.clone(),
         "clockFormat" => s.clock_format.clone(),
@@ -91,6 +92,7 @@ fn checked(ctx: &Ctx, id: &str) -> bool {
     match id {
         "showHidden" => shared.show_hidden,
         "showOriginalFilenames" => s.show_original_filenames,
+        "showTags" => s.show_tags,
         "reduceMotion" => s.reduce_motion,
         "showMenuRow" => s.show_menu_row,
         "mouseEnabled" => s.mouse_enabled,
@@ -737,6 +739,11 @@ fn toggle(ctx: &Ctx, app: &App, id: &str) {
                 shared.persist.settings.show_original_filenames = v;
                 v
             }
+            "showTags" => {
+                let v = !shared.persist.settings.show_tags;
+                shared.persist.settings.show_tags = v;
+                v
+            }
             "reduceMotion" => {
                 let v = !shared.persist.settings.reduce_motion;
                 shared.persist.settings.reduce_motion = v;
@@ -777,7 +784,7 @@ fn toggle(ctx: &Ctx, app: &App, id: &str) {
             crate::systems::reproject(ctx, app);
             crate::games::refresh_visibility(ctx, app);
         }
-        "showOriginalFilenames" => crate::games::reproject(ctx, app),
+        "showOriginalFilenames" | "showTags" => crate::games::reproject(ctx, app),
         "reduceMotion" => {
             app.global::<crate::Shell>().set_reduce_motion(value);
             let scene = crate::router::output_scene(app);
@@ -870,6 +877,7 @@ pub fn picker_selected(ctx: &Ctx, app: &App, id: &str, value: &str) {
             "colorScheme" => s.color_scheme = value.to_string(),
             "colorIntensity" => s.color_intensity = value.to_string(),
             "mediaImageType" => s.media_image_type = value.to_string(),
+            "listLeftRight" => s.list_left_right = value.to_string(),
             "language" => {
                 s.language = value.to_string();
                 crate::apply_language(value);
@@ -933,6 +941,7 @@ fn apply(ctx: &Ctx, app: &App, id: &str, value: &str) {
             crate::games::reproject(ctx, app);
         }
         "screensaverTimeout" => crate::router::reset_idle(ctx, app),
+        "listLeftRight" => crate::games::reproject(ctx, app),
         "systemsLayout" => {
             app.global::<crate::Shell>()
                 .set_systems_list_layout(value == "list" || value == "list-only");
@@ -977,6 +986,8 @@ pub(crate) fn mirror_of(s: &persist::SettingsState) -> zaparoo_core::config::Set
         favorites_grouping: &s.favorites_grouping,
         show_hidden: s.show_hidden,
         show_original_filenames: s.show_original_filenames,
+        show_tags: s.show_tags,
+        list_left_right: &s.list_left_right,
         swap_confirm_cancel: s.swap_confirm_cancel,
         swap_options_view: s.swap_options_view,
         region: &s.region,

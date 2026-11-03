@@ -136,6 +136,7 @@ const TOGGLES: &[&str] = &[
     "mouseEnabled",
     "showHidden",
     "showOriginalFilenames",
+    "showTags",
     "debugLogging",
     "reduceMotion",
     "showMenuRow",
@@ -207,6 +208,35 @@ fn field(id: &'static str) -> Row {
     }
 }
 
+/// Library & data. Maintenance leads: these are rows a user comes here to
+/// do, not one-time preferences.
+fn library_rows(inputs: &Inputs) -> Vec<Row> {
+    let mut rows = Vec::new();
+    if inputs.can_pick_folder {
+        rows.push(field("addGameFolder"));
+    }
+    if inputs.can_scan_launchers {
+        rows.push(field("detectLaunchers"));
+    }
+    if inputs.can_request_playtime_access {
+        rows.push(field("playtimeAccess"));
+    }
+    rows.extend([
+        Row::Header("maintenance"),
+        field("updateMediaDb"),
+        field("runScraper"),
+        Row::Header("browsing"),
+        field("systemsLayout"),
+        field("gamesLayout"),
+        field("listLeftRight"),
+        field("mediaImageType"),
+        field("showHidden"),
+        field("showOriginalFilenames"),
+        field("showTags"),
+    ]);
+    rows
+}
+
 /// The rows of one page; the empty page id is the root category grid.
 pub fn page_rows(page: &str, inputs: &Inputs) -> Vec<Row> {
     match page {
@@ -248,32 +278,7 @@ pub fn page_rows(page: &str, inputs: &Inputs) -> Vec<Row> {
             field("swapOptionsView"),
             field("mouseEnabled"),
         ],
-        // Maintenance leads: these are rows a user comes here to do, not
-        // one-time preferences.
-        "pageLibraryData" => {
-            let mut rows = Vec::new();
-            if inputs.can_pick_folder {
-                rows.push(field("addGameFolder"));
-            }
-            if inputs.can_scan_launchers {
-                rows.push(field("detectLaunchers"));
-            }
-            if inputs.can_request_playtime_access {
-                rows.push(field("playtimeAccess"));
-            }
-            rows.extend([
-                Row::Header("maintenance"),
-                field("updateMediaDb"),
-                field("runScraper"),
-                Row::Header("browsing"),
-                field("systemsLayout"),
-                field("gamesLayout"),
-                field("mediaImageType"),
-                field("showHidden"),
-                field("showOriginalFilenames"),
-            ]);
-            rows
-        }
+        "pageLibraryData" => library_rows(inputs),
         // Account first: everything else on the page needs it. Status and
         // Warp only report (info rows, never focused); the one thing to do
         // there is link or unlink. Features lead with the one switch that
@@ -344,6 +349,9 @@ pub const INTERFACE_PROFILES: &[&str] = &["device", "standard", "handheld"];
 pub const ORIENTATIONS: &[&str] = &["horizontal", "cw", "ccw"];
 pub const BROWSE_LAYOUTS: &[&str] = &["grid", "list", "list-only"];
 pub const FAVORITES_GROUPINGS: &[&str] = &["none", "system"];
+/// What Left and Right do in the detailed list: turn a page, or step the
+/// detail pane through the game's images.
+pub const LIST_LEFT_RIGHT: &[&str] = &["page", "image"];
 pub const SYSTEM_LOGO_STYLES: &[&str] = &["tinted", "color"];
 pub const COLOR_INTENSITIES: &[&str] = &["subtle", "vivid"];
 pub const BUTTON_LAYOUTS: &[&str] = &[
@@ -380,6 +388,7 @@ pub fn options(id: &str, inputs: &Inputs) -> Option<Vec<&'static str>> {
         "orientation" => ORIENTATIONS,
         "systemsLayout" | "gamesLayout" => BROWSE_LAYOUTS,
         "favoritesGrouping" => FAVORITES_GROUPINGS,
+        "listLeftRight" => LIST_LEFT_RIGHT,
         "systemLogoStyle" => SYSTEM_LOGO_STYLES,
         "colorIntensity" => COLOR_INTENSITIES,
         "buttonLayout" => BUTTON_LAYOUTS,

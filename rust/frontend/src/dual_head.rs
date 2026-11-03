@@ -688,6 +688,8 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_detail_path => set_detail_path,
         get_detail_has_cover => set_detail_has_cover,
         get_detail_cover_absent => set_detail_cover_absent,
+        get_detail_image_index => set_detail_image_index,
+        get_detail_image_count => set_detail_image_count,
         get_detail_placeholder => set_detail_placeholder,
         get_detail_has_placeholder => set_detail_has_placeholder,
         get_detail_rows => set_detail_rows,
@@ -898,10 +900,21 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_modal_description => set_modal_description,
         get_modal_has_cover => set_modal_has_cover,
         get_modal_cover_absent => set_modal_cover_absent,
+        get_has_manual => set_has_manual,
+        get_manual_state => set_manual_state,
+        get_manual_has_image => set_manual_has_image,
+        get_manual_page => set_manual_page,
+        get_manual_pages => set_manual_pages,
+        get_manual_fit => set_manual_fit,
+        get_manual_scroll => set_manual_scroll,
     );
     let modal_cover = source.get_modal_cover();
     if !same_image(&target.get_modal_cover(), &modal_cover) {
         target.set_modal_cover(modal_cover);
+    }
+    let manual_image = source.get_manual_image();
+    if !same_image(&target.get_manual_image(), &manual_image) {
+        target.set_manual_image(manual_image);
     }
 
     let source = primary.global::<Overlays>();

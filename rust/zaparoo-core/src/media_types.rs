@@ -765,6 +765,58 @@ pub struct MediaImageResult {
     pub type_tag: String,
 }
 
+/// The one `media.asset` type Core serves today: a game's PDF manual.
+pub const MEDIA_ASSET_MANUAL: &str = "manual";
+
+/// The largest chunk Core returns from one `media.asset` call.
+pub const MEDIA_ASSET_MAX_CHUNK: u64 = 131_072;
+
+/// Parameters for `media.asset`: one bounded chunk of an allowlisted
+/// file-backed property. Identified by `media_id` when available, otherwise
+/// `(system, path)`. A nonzero `offset` needs the `etag` of the response
+/// before it.
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaAssetParams {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub media_id: Option<i64>,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub system: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub path: String,
+    pub asset_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub offset: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub length: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub etag: Option<String>,
+}
+
+/// One `media.asset` chunk. `data` is base64; `next_offset` is absent once
+/// `complete` is true.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaAssetResult {
+    #[serde(default)]
+    pub asset_type: String,
+    #[serde(default)]
+    pub type_tag: String,
+    #[serde(default)]
+    pub content_type: String,
+    #[serde(default)]
+    pub extension: String,
+    pub size: u64,
+    pub etag: String,
+    pub offset: u64,
+    pub length: u64,
+    #[serde(default)]
+    pub data: String,
+    #[serde(default)]
+    pub next_offset: Option<u64>,
+    pub complete: bool,
+}
+
 /// Parameters for `media.lookup`: resolve a game name within one system to
 /// its indexed media row, through the title matcher `@System/Name` launches
 /// use.

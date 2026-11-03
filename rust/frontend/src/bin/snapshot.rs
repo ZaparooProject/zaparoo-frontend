@@ -275,6 +275,12 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
         games_mode,
         screen.contains("context").then_some(6),
     );
+    // `…-list-images`: Left and Right step the pane's images.
+    if screen.ends_with("list-images") {
+        let view = app.global::<GamesView>();
+        view.set_detail_image_index(1);
+        view.set_detail_image_count(4);
+    }
     if screen.contains("search-results") {
         app.global::<GamesView>()
             .set_title("\u{201c}mario\u{201d} \u{b7} Super Nintendo".into());
@@ -1756,8 +1762,9 @@ fn fixture_game_info(app: &App, screen: &str) {
     let view = app.global::<generated::GameInfoView>();
     view.set_modal_open(true);
     view.set_modal_name("Chrono Trigger".into());
-    view.set_loading(screen.ends_with("loading"));
-    view.set_failed(screen.ends_with("error"));
+    let manual = screen.contains("manual");
+    view.set_loading(!manual && screen.ends_with("loading"));
+    view.set_failed(!manual && screen.ends_with("error"));
     if view.get_loading() || view.get_failed() {
         return;
     }
@@ -1794,6 +1801,97 @@ fn fixture_game_info(app: &App, screen: &str) {
             view.set_scroll_position(10.0);
         }
     }
+    view.set_has_manual(true);
+    // `game-info-manual` is the manual page at fit width, scrolled a
+    // little; `…-manual-page` shows the whole page; `…-manual-loading`
+    // and `…-manual-error` the states before a page.
+    if screen.contains("manual") {
+        fixture_manual(&view, screen);
+    }
+}
+
+fn fixture_manual(view: &generated::GameInfoView, screen: &str) {
+    use generated::{ManualFit, ManualState};
+    if screen.ends_with("loading") {
+        view.set_manual_state(ManualState::Loading);
+        return;
+    }
+    if screen.ends_with("error") {
+        view.set_manual_state(ManualState::TooLarge);
+        return;
+    }
+    let pdf = hayro::hayro_syntax::Pdf::new(fixture_manual_pdf()).expect("fixture PDF");
+    let page = &pdf.pages()[0];
+    let (page_w, _) = page.render_dimensions();
+    let scale = 1280.0 / page_w;
+    let pixmap = hayro::render(
+        page,
+        &hayro::RenderCache::new(),
+        &hayro::hayro_interpret::InterpreterSettings::default(),
+        &hayro::RenderSettings::default(),
+        &hayro::PixmapSettings {
+            x_scale: scale,
+            y_scale: scale,
+            bg_color: hayro::vello_cpu::color::palette::css::WHITE,
+        },
+    );
+    let buffer = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(
+        pixmap.data_as_u8_slice(),
+        u32::from(pixmap.width()),
+        u32::from(pixmap.height()),
+    );
+    view.set_manual_state(ManualState::Ready);
+    view.set_manual_image(slint::Image::from_rgba8(buffer));
+    view.set_manual_has_image(true);
+    view.set_manual_pages(12);
+    view.set_manual_page(2);
+    if screen.ends_with("page") {
+        view.set_manual_fit(ManualFit::Page);
+    } else {
+        view.set_manual_scroll(0.1);
+    }
+}
+
+/// One US Letter page of manual-like text, built as the mock Core builds
+/// its manuals.
+fn fixture_manual_pdf() -> Vec<u8> {
+    use std::fmt::Write as _;
+    let mut text = String::from(
+        "BT /F1 28 Tf 72 700 Td (Chrono Trigger) Tj ET\nBT /F1 16 Tf 72 664 Td (Starting the game) Tj ET\n",
+    );
+    for line in 0..32 {
+        let _ = writeln!(
+            text,
+            "BT /F1 12 Tf 72 {} Td (Press START on the title screen, then choose New Game or Continue. {}) Tj ET",
+            630 - line * 18,
+            line + 1
+        );
+    }
+    let objects = [
+        "<< /Type /Catalog /Pages 2 0 R >>".to_string(),
+        "<< /Type /Pages /Kids [4 0 R] /Count 1 >>".into(),
+        "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".into(),
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 5 0 R >>".into(),
+        format!("<< /Length {} >>\nstream\n{text}endstream", text.len()),
+    ];
+    let mut out = b"%PDF-1.4\n".to_vec();
+    let mut offsets = Vec::new();
+    for (i, object) in objects.iter().enumerate() {
+        offsets.push(out.len());
+        out.extend_from_slice(format!("{} 0 obj\n{object}\nendobj\n", i + 1).as_bytes());
+    }
+    let xref = out.len();
+    let mut tail = format!("xref\n0 {}\n0000000000 65535 f \n", objects.len() + 1);
+    for offset in offsets {
+        let _ = writeln!(tail, "{offset:010} 00000 n ");
+    }
+    let _ = write!(
+        tail,
+        "trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n",
+        objects.len() + 1
+    );
+    out.extend_from_slice(tail.as_bytes());
+    out
 }
 
 fn fixture_hub(app: &App, scene_w: f64, scene_h: f64, crt: bool, selected: usize) {
@@ -2355,6 +2453,7 @@ fn fixture_games(
             } else {
                 "".into()
             },
+            opens: i == 1 && !flat,
             favorite: i == 2,
             ..Default::default()
         })

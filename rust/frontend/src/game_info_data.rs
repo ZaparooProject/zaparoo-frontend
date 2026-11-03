@@ -78,7 +78,8 @@ pub fn rows(meta: &MediaMeta, path: &str) -> Vec<(String, String)> {
                 continue;
             }
             let name = normalize_type(name);
-            if name == "description" || !seen.insert(name.clone()) {
+            // The manual opens from the panel; its path means nothing here.
+            if name == "description" || name == "manual" || !seen.insert(name.clone()) {
                 continue;
             }
             if let Some(property) = properties.get(key) {

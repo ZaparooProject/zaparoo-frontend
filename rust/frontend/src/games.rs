@@ -316,6 +316,14 @@ impl From<&MediaHistoryEntry> for GameRow {
 pub struct GamesModel {
     pub mode: GamesMode,
     pub rows: Vec<GameRow>,
+    /// The Show tags setting: off, a row's tags never reach its suffix.
+    pub show_tags: bool,
+    /// Left and Right step the detail pane's images instead of turning
+    /// the page (the "Left and Right in lists" setting).
+    pub list_images: bool,
+    /// The detail pane's image: the row's identity and its index in the
+    /// row's image order. Another row starts again at its cover.
+    pub detail_image: (String, usize),
     pub grid: Grid,
     pub next_cursor: Option<String>,
     /// The initial fill is in flight (the in-screen loading cue).
@@ -383,6 +391,9 @@ impl GamesModel {
         Self {
             mode: GamesMode::Browse,
             rows: Vec::new(),
+            show_tags: true,
+            list_images: false,
+            detail_image: (String::new(), 0),
             grid: Grid::new(4, 3),
             next_cursor: None,
             loading: false,
@@ -489,10 +500,14 @@ impl GamesModel {
         let displays = crate::tag_utils::sibling_disambiguation_displays(&names);
         let count = |n: u32| zaparoo_app::format::count(i64::from(n), language);
         for (row, tags) in self.rows[start..].iter_mut().zip(displays) {
-            let tags = if row.root_distinguisher.is_empty() {
+            // Two same-named roots keep what tells them apart: that is not
+            // a tag, and hiding it would leave two identical rows.
+            let tags = if !row.root_distinguisher.is_empty() {
+                row.root_distinguisher.clone()
+            } else if self.show_tags {
                 tags
             } else {
-                row.root_distinguisher.clone()
+                String::default()
             };
             row.suffix = rules::row_suffix(
                 row.entry_type,
@@ -688,6 +703,8 @@ fn write_saved_path(shared: &mut Shared, path: String) {
 }
 
 fn refresh_display(shared: &mut Shared) {
+    shared.games.show_tags = shared.persist.settings.show_tags;
+    shared.games.list_images = shared.persist.settings.list_left_right == "image";
     let show_original = shared.persist.settings.show_original_filenames;
     let language = crate::effective_language(&shared.persist.settings.language);
     shared.games.refresh_display(show_original, &language);
@@ -1587,6 +1604,8 @@ pub(crate) fn on_append(
         let list = list_layout(&shared);
         let show_original = shared.persist.settings.show_original_filenames;
         let language = crate::effective_language(&shared.persist.settings.language);
+        shared.games.show_tags = shared.persist.settings.show_tags;
+        shared.games.list_images = shared.persist.settings.list_left_right == "image";
         let model = &mut shared.games;
         let from_page = model.grid.current_page();
         model.loading_more = false;
@@ -1934,6 +1953,7 @@ fn text_cell(row: &GameRow) -> GridCell {
         tags: SharedString::from(row.suffix.as_str()),
         favorite: row.is_favorite,
         hidden: row.is_hidden,
+        opens: row.is_dir(),
         ..Default::default()
     }
 }
@@ -2228,12 +2248,94 @@ fn hold_list_covers(ctx: &Ctx, app: &App) -> bool {
     }
 }
 
-fn wanted_detail_covers(model: &GamesModel, tier: CoverSize) -> Vec<MediaKey> {
-    cover_keys(
+fn wanted_detail_covers(ctx: &Ctx, model: &GamesModel, tier: CoverSize) -> Vec<MediaKey> {
+    let mut keys = cover_keys(
         model,
         rules::detail_prefetch_rows(model.rows.len(), model.grid.current_index()),
         tier,
-    )
+    );
+    // A stepped-to image leads; the row's cover stays wanted for the step
+    // back to it.
+    if let Some(key) = model
+        .current()
+        .map(|row| detail_key(ctx, model, row, tier))
+        .filter(|key| key.image_type.is_some())
+    {
+        keys.insert(0, key);
+    }
+    keys
+}
+
+/// The selected row's image order and the pane's place in it. Empty
+/// unless Left and Right step images and Core's metadata for the row has
+/// arrived.
+fn detail_images(ctx: &Ctx, model: &GamesModel) -> (usize, Vec<String>) {
+    if !model.list_images {
+        return (0, Vec::new());
+    }
+    let Some(row) = model.current() else {
+        return (0, Vec::new());
+    };
+    let identity = row.identity(&model.system_id);
+    let types = detail_cache()
+        .image_types(&identity)
+        .map(|types| rules::detail_image_order(types, &ctx.media.preferred_image_type()))
+        .unwrap_or_default();
+    let index = if model.detail_image.0 == identity {
+        model.detail_image.1.min(types.len().saturating_sub(1))
+    } else {
+        0
+    };
+    (index, types)
+}
+
+/// The key the detail pane shows for `row`: its cover, or the image type
+/// the pane was stepped to. The first image is the cover itself, asked for
+/// as browsing asks, so it is never fetched twice.
+fn detail_key(ctx: &Ctx, model: &GamesModel, row: &GameRow, tier: CoverSize) -> MediaKey {
+    let key = media_key(row, &model.system_id, tier);
+    let (index, types) = detail_images(ctx, model);
+    match types.get(index) {
+        Some(kind) if index > 0 => MediaKey {
+            image_type: Some(kind.clone()),
+            ..key
+        },
+        _ => key,
+    }
+}
+
+/// Left or Right in the list: a step through the pane's images when set
+/// to, else a page as L and R turn. Text only has no pane.
+fn list_left_right(ctx: &Ctx, app: &App, dir: i64, ready: bool, list_page: i64) {
+    let images = {
+        let shared = lock(&ctx.shared);
+        shared.games.list_images && !list_only_layout(&shared)
+    };
+    if images {
+        step_detail_image(ctx, app, dir);
+    } else if ready {
+        list_move(ctx, app, dir * list_page);
+    }
+}
+
+/// Steps the detail pane's image. False when there is nowhere to go, so
+/// the press does nothing.
+fn step_detail_image(ctx: &Ctx, app: &App, delta: i64) -> bool {
+    {
+        let mut shared = lock(&ctx.shared);
+        let (index, types) = detail_images(ctx, &shared.games);
+        let next = (index as i64 + delta).clamp(0, types.len().saturating_sub(1) as i64) as usize;
+        if types.len() < 2 || next == index {
+            return false;
+        }
+        let model = &mut shared.games;
+        let Some(identity) = model.current().map(|row| row.identity(&model.system_id)) else {
+            return false;
+        };
+        model.detail_image = (identity, next);
+    }
+    render(ctx, app);
+    true
 }
 
 fn cover_keys(model: &GamesModel, indices: Vec<usize>, tier: CoverSize) -> Vec<MediaKey> {
@@ -2469,7 +2571,7 @@ pub fn render(ctx: &Ctx, app: &App) {
         let wanted = if covers_held {
             Vec::new()
         } else {
-            wanted_detail_covers(model, detail_tier)
+            wanted_detail_covers(ctx, model, detail_tier)
         };
         request_covers(ctx, model, wanted);
         refresh_detail_cover(ctx, app, model);
@@ -2582,7 +2684,11 @@ fn refresh_detail_cover(ctx: &Ctx, app: &App, model: &GamesModel) {
         return;
     };
     view.set_detail_title(SharedString::from(row.display.as_str()));
-    let key = media_key(row, &model.system_id, CoverSize::detail(app));
+    let (index, types) = detail_images(ctx, model);
+    let count = if types.len() > 1 { types.len() } else { 0 };
+    view.set_detail_image_count(i32::try_from(count).unwrap_or(0));
+    view.set_detail_image_index(i32::try_from(index).unwrap_or(0));
+    let key = detail_key(ctx, model, row, CoverSize::detail(app));
     let placeholder =
         placeholder_color(ctx, row, &key).filter(|_| row.media_capable && row.has_cover);
     let folder = !row.media_capable;
@@ -2637,6 +2743,7 @@ pub fn covers_landed(ctx: &Ctx, app: &App, keys: &[MediaKey]) {
         model.rows.iter().skip(first).take(window).any(|row| {
             let key = media_key(row, &model.system_id, tier);
             keys.contains(&key)
+                || (list && keys.contains(&detail_key(ctx, model, row, tier)))
                 || (!list
                     && row.has_cover
                     && row.cover_color.is_none()
@@ -2797,7 +2904,15 @@ fn schedule_detail(ctx: &Ctx, app: &App, force: bool) {
                     .get(index)
                     .map(|row| {
                         let fetched = detail_cache().get(&row.identity(&model.system_id));
-                        detail_rows_for(model, row, fetched.as_deref().unwrap_or(&row.detail_rows))
+                        detail_rows_for(
+                            model,
+                            row,
+                            fetched
+                                .as_ref()
+                                .map_or(row.detail_rows.as_slice(), |detail| {
+                                    detail.rows.as_slice()
+                                }),
+                        )
                     })
                     .unwrap_or_default();
                 view.set_detail_rows(ModelRc::new(VecModel::from(rows)));
@@ -2827,8 +2942,11 @@ fn schedule_detail(ctx: &Ctx, app: &App, force: bool) {
 /// is where scraped metadata lives), cut down to the pane's fixed rows. A
 /// game whose year, developer or publisher is a property and not a tag
 /// would otherwise show nothing under its cover.
-fn detail_pairs_from_meta(meta: &MediaMeta, path: &str) -> Vec<(&'static str, String)> {
-    rules::detail_rows_from_tags(&crate::game_info_data::rows(meta, path))
+fn detail_from_meta(meta: &MediaMeta, path: &str) -> rules::Detail {
+    rules::Detail {
+        rows: rules::detail_rows_from_tags(&crate::game_info_data::rows(meta, path)),
+        image_types: crate::game_info_data::image_types(meta),
+    }
 }
 
 fn fire_detail(ctx: &Ctx, app: &App, seq: u64) {
@@ -2884,17 +3002,25 @@ fn fire_detail(ctx: &Ctx, app: &App, seq: u64) {
                 // The title-level tags describe the game; the media
                 // record's own tags stand in when Core sent none.
                 result.ok().map(|result| {
-                    let pairs = detail_pairs_from_meta(&result.media, &row.path);
-                    let rows = detail_rows_for(&shared.games, &row, &pairs);
-                    detail_cache().insert(generation, identity, pairs);
+                    let detail = detail_from_meta(&result.media, &row.path);
+                    let rows = detail_rows_for(&shared.games, &row, &detail.rows);
+                    detail_cache().insert(generation, identity, detail);
                     rows
                 })
             };
             let view = app.global::<GamesView>();
+            let landed = rows.is_some();
             if let Some(rows) = rows {
                 view.set_detail_rows(ModelRc::new(VecModel::from(rows)));
             }
             view.set_detail_loading(false);
+            // The image count arrived with the metadata.
+            if landed {
+                let shared = lock(&ctx.shared);
+                if shared.games.list_images {
+                    refresh_detail_cover(&ctx, &app, &shared.games);
+                }
+            }
         });
     });
 }
@@ -2942,8 +3068,9 @@ fn prefetch_details(ctx: &Ctx, app: &App, rows: Vec<(GameRow, String, String)>) 
             let Ok(result) = client.media_meta(params).await else {
                 continue;
             };
-            let pairs = detail_pairs_from_meta(&result.media, &row.path);
-            detail_cache().insert(generation, identity.clone(), pairs.clone());
+            let detail = detail_from_meta(&result.media, &row.path);
+            let pairs = detail.rows.clone();
+            detail_cache().insert(generation, identity.clone(), detail);
             let ctx = ctx.clone();
             let _ = weak.upgrade_in_event_loop(move |app| {
                 let shared = lock(&ctx.shared);
@@ -2955,6 +3082,9 @@ fn prefetch_details(ctx: &Ctx, app: &App, rows: Vec<(GameRow, String, String)>) 
                     let rows = detail_rows_for(model, current, &pairs);
                     app.global::<GamesView>()
                         .set_detail_rows(ModelRc::new(VecModel::from(rows)));
+                    if model.list_images {
+                        refresh_detail_cover(&ctx, &app, model);
+                    }
                 }
             });
         }
@@ -3208,6 +3338,7 @@ fn list_move(ctx: &Ctx, app: &App, delta: i64) {
         let visible = list_rows_visible(ctx, app, &shared);
         let model = &mut shared.games;
         model.focus_armed = true;
+        model.detail_image = (String::new(), 0);
         let count = model.rows.len();
         let has_more = rules::list_has_more(count, model.known_total(), model.has_more());
         let mut outcome = rules::linear_move(model.grid.current_index(), count, delta, has_more);
@@ -3280,9 +3411,7 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
         actions::LEFT | actions::RIGHT => {
             let dir: i64 = if action == actions::LEFT { -1 } else { 1 };
             if list {
-                if state == State::Ready {
-                    list_move(ctx, app, dir * list_page);
-                }
+                list_left_right(ctx, app, dir, state == State::Ready, list_page);
             } else {
                 grid_move(ctx, app, dir as i32, 0, 0);
             }
@@ -4228,7 +4357,7 @@ mod tests {
             .insert("property:year".into(), property("1987"));
         meta.properties
             .insert("property:description".into(), property("A long text."));
-        let rows = detail_pairs_from_meta(&meta, "/games/Desert Falcon.a78");
+        let rows = detail_from_meta(&meta, "/games/Desert Falcon.a78").rows;
         assert_eq!(
             rows,
             vec![
@@ -4242,7 +4371,7 @@ mod tests {
             tag: "1988".into(),
             ..Default::default()
         });
-        let rows = detail_pairs_from_meta(&meta, "/games/Desert Falcon.a78");
+        let rows = detail_from_meta(&meta, "/games/Desert Falcon.a78").rows;
         assert_eq!(rows[0], ("year", "1988".to_string()));
     }
 
@@ -4472,6 +4601,24 @@ mod tests {
             tag_type: tag_type.into(),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn show_tags_off_drops_tags_but_keeps_folder_counts() {
+        let mut model = GamesModel::new();
+        let mut folder = GameRow::from(&entry("directory", "RPGs", "/g/RPGs"));
+        folder.file_count = 5;
+        let game = GameRow::from(&BrowseEntry {
+            disambiguating_tags: vec![tag("region", "us")],
+            ..entry("media", "Sonic CD", "/g/Sonic CD (USA).chd")
+        });
+        model.rows = vec![folder, game];
+        model.refresh_display(false, "en");
+        assert_eq!(model.rows[1].suffix, "US");
+        model.show_tags = false;
+        model.refresh_display(false, "en");
+        assert_eq!(model.rows[0].suffix, "5");
+        assert_eq!(model.rows[1].suffix, "");
     }
 
     #[test]

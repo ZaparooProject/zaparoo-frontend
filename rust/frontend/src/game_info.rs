@@ -15,6 +15,8 @@ pub struct GameInfoModel {
     /// The panel's painted art box as it last reported it; kept across
     /// opens so the next one asks for fitted art straight away.
     fit: zaparoo_app::covers::Fit,
+    /// The game's manual, read as a page of this panel.
+    pub manual: crate::manual::ManualModel,
 }
 
 impl GameInfoModel {
@@ -88,6 +90,7 @@ pub fn open(ctx: &Ctx, app: &App, entry: &GameRow) {
     view.set_image_index(0);
     view.set_modal_has_cover(false);
     view.set_modal_cover(slint::Image::default());
+    crate::manual::clear(ctx, app);
     view.set_modal_open(true);
     let valid = !system.trim().is_empty() && !entry.path.trim().is_empty();
     view.set_loading(valid);
@@ -134,6 +137,7 @@ pub fn open(ctx: &Ctx, app: &App, entry: &GameRow) {
                         })
                         .collect::<Vec<_>>();
                     view.set_rows(ModelRc::new(VecModel::from(rows)));
+                    publish_documents(&ctx, &app, &key, &meta);
                     {
                         let mut shared = lock(&ctx.shared);
                         // The box may have been reported since the panel opened.
@@ -158,8 +162,30 @@ pub fn open(ctx: &Ctx, app: &App, entry: &GameRow) {
     });
 }
 
+/// The game's documents, from its properties: the menu button opens them.
+fn publish_documents(
+    ctx: &Ctx,
+    app: &App,
+    key: &MediaKey,
+    meta: &zaparoo_core::media_types::MediaMeta,
+) {
+    let documents = zaparoo_app::manual::documents(
+        meta.properties
+            .keys()
+            .chain(meta.title.properties.keys())
+            .map(String::as_str),
+    );
+    let source = crate::manual::Source {
+        media_id: key.media_id,
+        system: key.system.clone(),
+        path: key.path.clone(),
+    };
+    crate::manual::set_documents(ctx, app, source, documents);
+}
+
 pub fn close(ctx: &Ctx, app: &App) {
     lock(&ctx.shared).game_info.reset();
+    crate::manual::clear(ctx, app);
     let view = app.global::<GameInfoView>();
     view.set_modal_open(false);
     view.set_loading(false);
@@ -221,8 +247,18 @@ pub fn cover_landed(ctx: &Ctx, app: &App, key: &MediaKey, decoded: &DecodedImage
 }
 
 pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
+    let (manual_open, has_manual) = {
+        let shared = lock(&ctx.shared);
+        let manual = &shared.game_info.manual;
+        (manual.is_open(), manual.has_documents())
+    };
+    if manual_open {
+        crate::manual::handle_action(ctx, app, action);
+        return;
+    }
     match action {
         actions::ACCEPT | actions::CANCEL => close(ctx, app),
+        actions::PAGE_MENU if has_manual => crate::manual::open(ctx, app),
         actions::LEFT | actions::RIGHT => {
             let delta = if action == actions::LEFT { -1 } else { 1 };
             let changed = lock(&ctx.shared).game_info.cycle(delta);
