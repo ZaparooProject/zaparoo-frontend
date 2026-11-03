@@ -1108,7 +1108,7 @@ pub struct ScrapingStatusResponse {
     #[serde(default)]
     pub skipped: i32,
     #[serde(default)]
-    pub total_scraped: i32,
+    pub total_scraped: Option<i32>,
     #[serde(default)]
     pub force: Option<bool>,
     #[serde(default)]
@@ -3108,7 +3108,7 @@ mod tests {
         assert_eq!(result.total, 200);
         assert_eq!(result.matched, 10);
         assert_eq!(result.skipped, 2);
-        assert_eq!(result.total_scraped, 50);
+        assert_eq!(result.total_scraped, Some(50));
         assert_eq!(result.force, Some(true));
         assert!(result.scraping);
         assert!(!result.done);

@@ -108,7 +108,14 @@ impl MediaStatusState {
             .unwrap_or_default()
             .clone_into(&mut self.current_step_display);
         self.total_files = status.total_files.unwrap_or(0);
-        self.total_media = status.total_media.unwrap_or(0);
+        // Core only reports the library size on some frames (older Core
+        // only in the `media` query), so a frame without it keeps the
+        // last known count. A missing database has no titles at all.
+        if let Some(total) = status.total_media {
+            self.total_media = total;
+        } else if !status.exists {
+            self.total_media = 0;
+        }
     }
 
     fn apply_active(&mut self, active: &[ActiveMediaInfo]) {
@@ -126,7 +133,9 @@ impl MediaStatusState {
         self.scrape_total = status.total;
         self.scrape_matched = status.matched;
         self.scrape_skipped = status.skipped;
-        self.scrape_total_scraped = status.total_scraped;
+        if let Some(total) = status.total_scraped {
+            self.scrape_total_scraped = total;
+        }
         self.scrape_force = status.force.unwrap_or(false);
         self.scrape_force_known = status.force.is_some();
         self.scrape_system_id.clone_from(&status.system_id);
@@ -143,6 +152,13 @@ impl MediaStatusState {
         self.apply_current_system(status.current_system.as_ref());
     }
 
+    fn busy(&self) -> Busy {
+        Busy {
+            index: self.indexing || self.optimizing,
+            scrape: self.scraping,
+        }
+    }
+
     fn apply_current_system(&mut self, current: Option<&ScrapeSystemProgressResponse>) {
         let current = current.cloned().unwrap_or_default();
         self.scrape_current_system_id = current.system_id;
@@ -151,6 +167,33 @@ impl MediaStatusState {
         self.scrape_current_total = current.total;
         self.scrape_current_matched = current.matched;
         self.scrape_current_skipped = current.skipped;
+    }
+}
+
+/// Which jobs were running, read before and after folding a notification
+/// to spot the moment one finishes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Busy {
+    index: bool,
+    scrape: bool,
+}
+
+/// A job that just finished, whose counts are re-queried from Core
+/// rather than trusted from the final notification.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Settled {
+    None,
+    Index,
+    Scrape,
+}
+
+fn settled(before: Busy, after: Busy) -> Settled {
+    if before.index && !after.index {
+        Settled::Index
+    } else if before.scrape && !after.scrape {
+        Settled::Scrape
+    } else {
+        Settled::None
     }
 }
 
@@ -231,6 +274,11 @@ impl MediaStatusResource {
 /// inside one cycle.
 const SEED_RETRY_DELAY: Duration = Duration::from_secs(2);
 
+/// Retries for a failed `media.scrape.status` seed. Scrape notifications
+/// only arrive while a scrape runs, so without a retry an idle Core's
+/// scraped count would stay unknown until the next reconnect.
+const SCRAPE_SEED_ATTEMPTS: u32 = 3;
+
 async fn run_task(
     client: Arc<Client>,
     mut connection_rx: watch::Receiver<ConnectionState>,
@@ -253,7 +301,12 @@ async fn run_task(
                 tokio::select! {
                     notification = notifications_rx.recv() => {
                         match notification {
-                            Ok(n) => fold_notification(&n, &state),
+                            Ok(n) => {
+                                let before = { state.borrow().busy() };
+                                fold_notification(&n, &state);
+                                let after = { state.borrow().busy() };
+                                refresh_settled(&client, &state, settled(before, after)).await;
+                            }
                             Err(broadcast::error::RecvError::Lagged(skipped)) => {
                                 // Lossy broadcast caught up — re-seed
                                 // so we don't drift from Core.
@@ -280,15 +333,8 @@ async fn run_task(
 }
 
 async fn seed_now(client: &Arc<Client>, state: &Arc<watch::Sender<MediaStatusState>>) {
-    match client.media().await {
-        Ok(media) => {
-            state.send_modify(|s| {
-                s.apply_indexing(&media.database);
-                s.apply_active(&media.active);
-                s.seeded = true;
-            });
-            debug!("media_status: seeded from media query");
-        }
+    match seed_database(client, state).await {
+        Ok(()) => debug!("media_status: seeded from media query"),
         Err(e) => {
             // Don't hammer the RPC layer — wait a beat and let the
             // outer connection loop re-trigger the seed on the next
@@ -304,12 +350,79 @@ async fn seed_now(client: &Arc<Client>, state: &Arc<watch::Sender<MediaStatusSta
     // notifications only fire while a scrape is running, so without
     // this call a fresh frontend seeing an idle Core would always
     // report `total_scraped = 0`. Mirrors the TUI's `getScrapeStatus`.
-    match client.media_scrape_status().await {
-        Ok(status) => {
-            state.send_modify(|s| s.apply_scraping(&status));
-            debug!("media_status: seeded scrape status");
+    match seed_scrape(client, state).await {
+        Ok(()) => debug!("media_status: seeded scrape status"),
+        Err(e) => {
+            warn!("media_status: scrape status seed failed: {e}");
+            // Retry off the notification loop so a slow Core can't hold
+            // up indexing and launch updates.
+            let client = client.clone();
+            let state = state.clone();
+            tokio::spawn(async move { retry_scrape_seed(&client, &state).await });
         }
-        Err(e) => warn!("media_status: scrape status seed failed: {e}"),
+    }
+}
+
+async fn seed_database(
+    client: &Arc<Client>,
+    state: &Arc<watch::Sender<MediaStatusState>>,
+) -> Result<(), ClientError> {
+    let media = client.media().await?;
+    state.send_modify(|s| {
+        s.apply_indexing(&media.database);
+        s.apply_active(&media.active);
+        s.seeded = true;
+    });
+    Ok(())
+}
+
+async fn seed_scrape(
+    client: &Arc<Client>,
+    state: &Arc<watch::Sender<MediaStatusState>>,
+) -> Result<(), ClientError> {
+    let status = client.media_scrape_status().await?;
+    state.send_modify(|s| s.apply_scraping(&status));
+    Ok(())
+}
+
+async fn retry_scrape_seed(client: &Arc<Client>, state: &Arc<watch::Sender<MediaStatusState>>) {
+    for attempt in 1..=SCRAPE_SEED_ATTEMPTS {
+        sleep(SEED_RETRY_DELAY).await;
+        let connected = { matches!(*client.connection.borrow(), ConnectionState::Connected) };
+        if !connected {
+            // The reconnect seeds again.
+            return;
+        }
+        match seed_scrape(client, state).await {
+            Ok(()) => {
+                debug!(attempt, "media_status: seeded scrape status on retry");
+                return;
+            }
+            Err(e) => warn!(
+                attempt,
+                "media_status: scrape status seed retry failed: {e}"
+            ),
+        }
+    }
+}
+
+/// Re-query the counts once a job finishes. Older Core leaves them out of
+/// its notifications, so the final frame can't be trusted to carry them.
+async fn refresh_settled(
+    client: &Arc<Client>,
+    state: &Arc<watch::Sender<MediaStatusState>>,
+    settled: Settled,
+) {
+    let result = match settled {
+        Settled::None => return,
+        Settled::Index => seed_database(client, state).await,
+        Settled::Scrape => seed_scrape(client, state).await,
+    };
+    if let Err(e) = result {
+        warn!(
+            ?settled,
+            "media_status: refresh after job finished failed: {e}"
+        );
     }
 }
 
@@ -405,7 +518,7 @@ mod tests {
     }
 
     #[test]
-    fn apply_indexing_treats_missing_counters_as_zero() {
+    fn apply_indexing_treats_missing_progress_as_zero() {
         // Idle Core sends `*int omitempty` with the counters absent —
         // the wire-level `None` lands as a numeric zero, not as a
         // sentinel that breaks the UI projection.
@@ -418,6 +531,120 @@ mod tests {
         assert_eq!(state.current_step, 0);
         assert_eq!(state.total_steps, 0);
         assert_eq!(state.current_step_display, "");
+        assert_eq!(state.total_files, 0);
+    }
+
+    #[test]
+    fn apply_indexing_keeps_total_media_when_absent() {
+        let mut state = MediaStatusState {
+            exists: true,
+            total_media: 567,
+            ..MediaStatusState::default()
+        };
+        state.apply_indexing(&IndexingStatusResponse {
+            exists: true,
+            indexing: true,
+            current_step: Some(1),
+            ..IndexingStatusResponse::default()
+        });
+        assert_eq!(state.total_media, 567);
+
+        state.apply_indexing(&IndexingStatusResponse {
+            exists: true,
+            total_media: Some(600),
+            ..IndexingStatusResponse::default()
+        });
+        assert_eq!(state.total_media, 600);
+    }
+
+    #[test]
+    fn apply_indexing_clears_total_media_without_a_database() {
+        let mut state = MediaStatusState {
+            exists: true,
+            total_media: 567,
+            ..MediaStatusState::default()
+        };
+        state.apply_indexing(&IndexingStatusResponse::default());
+        assert!(!state.exists);
+        assert_eq!(state.total_media, 0);
+    }
+
+    #[test]
+    fn fold_notification_keeps_total_media_through_an_index_run() {
+        let (tx, rx) = watch::channel(MediaStatusState {
+            seeded: true,
+            exists: true,
+            total_media: 567,
+            ..MediaStatusState::default()
+        });
+        let tx = Arc::new(tx);
+        fold_notification(
+            &Notification {
+                method: "media.indexing".into(),
+                params: json!({
+                    "totalSteps": 3, "currentStep": 1, "currentStepDisplay": "Discovering files",
+                    "exists": true, "indexing": true, "optimizing": false, "paused": false
+                }),
+            },
+            &tx,
+        );
+        assert_eq!(rx.borrow().total_media, 567);
+    }
+
+    #[test]
+    fn fold_notification_keeps_total_scraped_only_when_absent() {
+        let (tx, rx) = watch::channel(MediaStatusState {
+            scrape_total_scraped: 50,
+            ..MediaStatusState::default()
+        });
+        let tx = Arc::new(tx);
+        let scraping = |params| Notification {
+            method: "media.scraping".into(),
+            params,
+        };
+        fold_notification(
+            &scraping(json!({ "scraperId": "screenscraper", "scraping": true })),
+            &tx,
+        );
+        assert_eq!(rx.borrow().scrape_total_scraped, 50);
+
+        // A reported zero is real: scraped data can be cleared.
+        fold_notification(
+            &scraping(json!({ "scraperId": "screenscraper", "done": true, "totalScraped": 0 })),
+            &tx,
+        );
+        assert_eq!(rx.borrow().scrape_total_scraped, 0);
+    }
+
+    #[test]
+    fn settled_reports_the_job_that_finished() {
+        let idle = Busy {
+            index: false,
+            scrape: false,
+        };
+        let indexing = Busy {
+            index: true,
+            scrape: false,
+        };
+        let scraping = Busy {
+            index: false,
+            scrape: true,
+        };
+        assert_eq!(settled(indexing, idle), Settled::Index);
+        assert_eq!(settled(scraping, idle), Settled::Scrape);
+        assert_eq!(settled(idle, indexing), Settled::None);
+        assert_eq!(settled(indexing, indexing), Settled::None);
+        assert_eq!(settled(idle, idle), Settled::None);
+    }
+
+    #[test]
+    fn busy_counts_optimizing_as_indexing() {
+        let state = MediaStatusState {
+            optimizing: true,
+            ..MediaStatusState::default()
+        };
+        assert!(state.busy().index);
+        assert!(!state.busy().scrape);
     }
 
     #[test]
