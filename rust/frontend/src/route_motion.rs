@@ -6862,8 +6862,6 @@ fn cold_games_restore_the_folder_selection_and_back_stack() {
     {
         let mut shared = crate::router::lock(&ctx.shared);
         shared.systems = navigation_catalog();
-        shared.categories = vec!["Console".into()];
-        shared.persist.hub.category = "Console".into();
         shared.persist.active_screen = "games".into();
         shared.persist.settings.games_browse_layout = "list".into();
         shared.persist.games.system_id = "System08".into();
@@ -8046,6 +8044,84 @@ fn cold_games_restore_shows_the_curtain_then_games_and_never_systems() {
     crate::router::handle_action(&ctx, &app, "cancel");
     assert_eq!(shell.get_active_screen(), Screen::Systems);
     assert_eq!(app.global::<SystemsView>().get_category(), "Console");
+}
+
+#[test]
+fn cold_hub_shortcut_games_restore_without_its_category() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    // No category ever opened, or one left over from an earlier visit.
+    for saved_category in ["", "Console"] {
+        for folder in [false, true] {
+            let (app, window, _runtime, ctx) = cold_start("games");
+            {
+                let mut shared = crate::router::lock(&ctx.shared);
+                shared.persist.hub.category = saved_category.into();
+                shared.persist.games.entered_from_hub = true;
+                if folder {
+                    shared.persist.games.path_stack = vec![String::new(), "/rpg".into()];
+                    shared.persist.games.selected_at_level = vec![String::new(), String::new()];
+                }
+            }
+            let curtain = pixels(&window);
+            crate::restore_screens(&ctx, &app);
+            assert_still_curtained(&app, &window, &ctx, &curtain, "games");
+            let ticket = {
+                let shared = crate::router::lock(&ctx.shared);
+                assert_eq!(shared.games.browse_path, if folder { "/rpg" } else { "" });
+                shared.games.ticket
+            };
+            crate::games::apply_fill(&ctx, &app, ticket, navigation_rows(), None, None, true);
+            let shell = app.global::<Shell>();
+            assert_eq!(
+                shell.get_active_screen(),
+                Screen::Games,
+                "{saved_category:?}"
+            );
+            assert!(!shell.get_boot_curtain());
+            assert!(
+                crate::router::lock(&ctx.shared)
+                    .systems_model
+                    .rows
+                    .is_empty(),
+                "no category is filled beneath a Hub shortcut"
+            );
+            if folder {
+                crate::router::handle_action(&ctx, &app, "cancel");
+                let ticket = crate::router::lock(&ctx.shared).games.ticket;
+                crate::games::apply_fill(&ctx, &app, ticket, navigation_rows(), None, None, false);
+                assert_eq!(shell.get_active_screen(), Screen::Games);
+                assert_eq!(crate::router::lock(&ctx.shared).games.browse_path, "");
+            }
+            crate::router::handle_action(&ctx, &app, "cancel");
+            assert_eq!(shell.get_active_screen(), Screen::Hub);
+        }
+    }
+
+    // The system is gone: the Hub it was entered from is the restored screen.
+    let (app, _window, _runtime, ctx) = cold_start("games");
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.persist.games.entered_from_hub = true;
+        shared.persist.games.system_id = "Gone".into();
+    }
+    crate::restore_screens(&ctx, &app);
+    let shell = app.global::<Shell>();
+    assert!(!shell.get_transitioning());
+    crate::hub::set_resume(
+        &ctx,
+        &app,
+        crate::hub::Resume {
+            requested: true,
+            loading: false,
+            entry: None,
+        },
+    );
+    assert_eq!(shell.get_active_screen(), Screen::Hub);
+    assert!(!shell.get_boot_curtain());
+    assert!(crate::router::lock(&ctx.shared)
+        .systems_model
+        .rows
+        .is_empty());
 }
 
 #[test]
