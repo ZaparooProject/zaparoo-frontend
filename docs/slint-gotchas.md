@@ -72,7 +72,11 @@ Two follow-on rules:
   `rust/frontend/src/mister/platform.rs`). The clock Slint's timers and
   animations read moves one refresh period per presented frame, so motion
   is sampled at even steps and a late frame slows it by that frame instead
-  of enlarging the next step. The native CRT presenter reports its period
+  of enlarging the next step. The slowing is bounded: once a run of
+  presented frames is `FrameClock::MAX_LAG` (100 ms) behind real time, the
+  clock steps enough whole periods to stay within it, so frames that stay
+  slow under load (an index running) play motion at real speed instead of
+  stretching an 80 ms focus glide over a second. The native CRT presenter reports its period
   (16.667 ms, 20 ms on PAL); the HDMI presenters do not know theirs, so the
   platform measures it from the vertical-blank waits of turns that drew
   nothing (`RefreshEstimate`) and a 50 Hz mode steps 20 ms. A turn that
