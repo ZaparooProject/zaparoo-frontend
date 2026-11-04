@@ -22,8 +22,13 @@ export global GlyphSource {
     // draw-time `colorize`: one cached image per (key, size, color), and
     // no per-item offscreen colorize pass in the renderer. A fully
     // transparent color keeps the artwork's own colors (the two-tone
-    // heart, real art).
-    pure callback glyph(string, length, color) -> image;
+    // heart, real art). The last argument is `Sizing.pixel-grid`, where the
+    // small glyphs swap to hand-drawn pixel art; passing it here makes the
+    // binding depend on it, so a switch between CRT and HDMI redraws them.
+    pure callback raster(string, length, color, bool) -> image;
+    public pure function glyph(key: string, size: length, tint: color) -> image {
+        return self.raster(key, size, tint, Sizing.pixel-grid);
+    }
     // Exact-pixel contract: the side a square glyph is both rasterized and
     // painted at. A glyph is rasterized at a whole pixel size, and the
     // software renderer samples bitmaps nearest-neighbor, so a box that is
@@ -31,6 +36,12 @@ export global GlyphSource {
     // renderer draws (`Motion.zoom-by-size`) the box is the raster's size.
     public pure function side(length: length) -> length {
         return Motion.zoom-by-size ? Math.round(length / 1px) * 1px : length;
+    }
+    // The help bar's controller glyphs: the 16 px the button art is drawn
+    // at on the 240p tier, whose bar Rust sizes around them; 4% of the
+    // height above it.
+    public pure function help-side() -> length {
+        return Sizing.tier-240 ? Sizing.help-glyph-size : self.side(Sizing.pct-h(4));
     }
 }
 
@@ -921,7 +932,7 @@ export component ActiveLabel inherits Rectangle {
 // split across rows.
 component HelpEntryView inherits HorizontalLayout {
     in property <HelpEntry> entry;
-    property <length> icon-size: GlyphSource.side(Sizing.pct-h(4));
+    property <length> icon-size: GlyphSource.help-side();
 
     spacing: Sizing.pct-w(0.6);
     height: Math.max(root.icon-size, Sizing.font-body);
@@ -958,7 +969,7 @@ export component HelpBar inherits Rectangle {
 
     height: Sizing.help-bar-height;
 
-    property <length> entry-height: Math.max(Sizing.pct-h(4), Sizing.font-body);
+    property <length> entry-height: Math.max(Sizing.tier-240 ? Sizing.help-glyph-size : Sizing.pct-h(4), Sizing.font-body);
     property <length> row-spacing: Sizing.pct-h(1);
     property <length> entry-gap: Sizing.pct-w(2);
     property <int> split-index: Math.ceil(root.entries.length / 2);

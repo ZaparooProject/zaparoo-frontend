@@ -141,6 +141,12 @@ impl InterfaceProfile {
     }
 }
 
+/// A bottom margin from the layout tables, which reserves the help bar's
+/// 6% of the height, less that share while the bar is hidden.
+pub fn less_hidden_bar(inputs: &Inputs, derived: &Derived, margin: i32) -> i32 {
+    margin - (inputs.pct_h(6.0) - derived.help_bar_band)
+}
+
 /// Everything the sizing rules read. `screen_width` and `screen_height` are
 /// the *scene's* logical dimensions, so they already have the CRT safe-area
 /// inset removed and the axes swapped in a rotated layout.
@@ -169,6 +175,9 @@ pub struct Inputs {
     /// tier lays out as 240p does for it: no band, and the Menu button
     /// opens the Menu list.
     pub menu_row: bool,
+    /// The help bar is shown (Settings > Appearance). Off, it takes no
+    /// height and every screen spends the room on content.
+    pub help_bar: bool,
 }
 
 impl Default for Inputs {
@@ -184,6 +193,7 @@ impl Default for Inputs {
             interface_profile: InterfaceProfile::Standard,
             help_bar_two_rows: false,
             menu_row: true,
+            help_bar: true,
         }
     }
 }
@@ -726,6 +736,11 @@ pub struct Derived {
 
     pub help_bar_height: i32,
     pub help_bar_clearance: i32,
+    pub help_glyph_size: i32,
+    /// The share of the height the layout tables reserve for the help bar
+    /// inside their bottom margins (`layouts::Tok::LessHiddenBar`): 6%, or
+    /// nothing while the bar is hidden.
+    pub help_bar_band: i32,
     pub visible_covers: i32,
 
     pub hub_grid_columns: i32,
@@ -879,11 +894,26 @@ pub fn derive(inputs: &Inputs) -> Derived {
     let header_height = 2 * header_row_height + header_stack_gap;
     let header_bottom = header_top_margin + header_height;
 
+    // The help bar's controller glyphs. The button art is pixel art on a
+    // 16 px grid, and the 240p tier draws it at that size: squeezed to the
+    // 4% the larger tiers give it, it is 9 px of grey blur. Above 240p the
+    // view sizes them from the height (`GlyphSource.side(pct-h(4))`).
+    let help_glyph_size = if is_240 { 16 } else { inputs.pct_h(4.0) };
+
     // One row everywhere. Only 240p can run out of width for the atomic
     // icon-plus-label help groups, and it takes the two-row height while the
-    // entries on screen actually wrap.
-    let help_bar_height = if is_240 && inputs.help_bar_two_rows {
-        inputs.pct_h(10.0)
+    // entries on screen actually wrap. At 240p the bar is sized from its
+    // glyphs: a 1% pad above and below, and a 1% gap between two rows (the
+    // view's `row-spacing`).
+    let help_bar_height = if !inputs.help_bar {
+        0
+    } else if is_240 {
+        let pad = inputs.pct_h(1.0);
+        if inputs.help_bar_two_rows {
+            2 * help_glyph_size + 3 * pad
+        } else {
+            help_glyph_size + 2 * pad
+        }
     } else {
         inputs.pct_h(6.0)
     };
@@ -933,6 +963,12 @@ pub fn derive(inputs: &Inputs) -> Derived {
 
         help_bar_height,
         help_bar_clearance: help_bar_height + inputs.pct_h(2.0),
+        help_glyph_size,
+        help_bar_band: if inputs.help_bar {
+            inputs.pct_h(6.0)
+        } else {
+            0
+        },
         // Fewer visible covers at very low resolution, to avoid crowding.
         visible_covers: if inputs.effective_height() < 300 {
             3
@@ -1027,6 +1063,44 @@ mod tests {
         assert_eq!(focus_zoom_percent(Tier::T240, false), 100.0);
         assert_eq!(focus_zoom_percent(Tier::T240, true), 100.0);
         assert_eq!(FOCUS_ZOOM_PERCENT, 104.0);
+    }
+
+    #[test]
+    fn a_hidden_help_bar_takes_no_height_and_the_hub_gets_it_back() {
+        for (w, h, crt) in [
+            (316.0, 216.0, true),
+            (960.0, 540.0, false),
+            (1920.0, 1080.0, false),
+        ] {
+            let shown = Inputs {
+                screen_width: w,
+                screen_height: h,
+                crt_native_path: crt,
+                bitmap_type: crt,
+                ..Inputs::default()
+            };
+            let hidden = Inputs {
+                help_bar: false,
+                ..shown
+            };
+            let (on, off) = (derive(&shown), derive(&hidden));
+            assert!(on.help_bar_height > 0);
+            assert_eq!((off.help_bar_height, off.help_bar_band), (0, 0), "{w}x{h}");
+            assert_eq!(on.help_bar_band, shown.pct_h(6.0), "{w}x{h}");
+            // Content still keeps its gap off the bottom edge.
+            assert_eq!(off.help_bar_clearance, hidden.pct_h(2.0), "{w}x{h}");
+            assert_eq!(
+                off.hub_grid_height_budget - on.hub_grid_height_budget,
+                on.help_bar_height,
+                "{w}x{h}"
+            );
+            // Hidden, the wrap measurement has nothing to grow.
+            let wrapped = derive(&Inputs {
+                help_bar_two_rows: true,
+                ..hidden
+            });
+            assert_eq!(wrapped.help_bar_height, 0, "{w}x{h}");
+        }
     }
 
     #[test]

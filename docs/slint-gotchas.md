@@ -307,7 +307,12 @@ One timing rule, three places, nothing else.
 
 - Let Slint snap geometry, images and text to physical pixels. Rounding by hand
   is reserved for exact-pixel contracts (CRT calibration guides, bitmap raster
-  sizes, QR modules). See the rule in `AGENTS.md`.
+  sizes, QR modules, bitmap-font labels). See the rule in `AGENTS.md`.
+- The software renderer does not snap text: it places glyphs at quarter-pixel
+  positions, which smears the bitmap face. Under `Sizing.pixel-grid` every
+  label starts on a whole pixel, through `Sizing.snap` and `Sizing.even`;
+  `just crt-text-check` enforces it. See `docs/style.md` → "Integer-pixel
+  drawing".
 - Tokens come from the `Sizing` and `Layout` globals, which Rust pushes from
   `zaparoo_app::sizing` and `zaparoo_app::layouts` on every scene change. The
   golden fixtures under `rust/zaparoo-app/tests/fixtures/` pin those rules.

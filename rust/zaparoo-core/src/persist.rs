@@ -537,6 +537,11 @@ pub struct SettingsState {
     /// keeps the row.
     #[serde(default = "default_show_menu_row")]
     pub show_menu_row: bool,
+    /// The help bar along the bottom of every screen. Off, it is hidden and
+    /// the screens take its height back. A state file from before the
+    /// setting existed keeps the bar.
+    #[serde(default = "default_show_help_bar")]
+    pub show_help_bar: bool,
     #[serde(default)]
     pub debug_logging: bool,
     #[serde(default = "default_screensaver_timeout")]
@@ -620,6 +625,7 @@ impl Default for SettingsState {
             mouse_enabled: default_mouse_enabled(),
             reduce_motion: false,
             show_menu_row: default_show_menu_row(),
+            show_help_bar: default_show_help_bar(),
             debug_logging: false,
             screensaver_timeout: default_screensaver_timeout(),
             media_image_type: default_media_image_type(),
@@ -710,6 +716,10 @@ fn default_show_tags() -> bool {
 
 fn default_list_left_right() -> String {
     "page".into()
+}
+
+fn default_show_help_bar() -> bool {
+    true
 }
 
 fn default_screensaver_timeout() -> String {
@@ -983,6 +993,7 @@ mod tests {
                 mouse_enabled: false,
                 reduce_motion: true,
                 show_menu_row: true,
+                show_help_bar: true,
                 debug_logging: true,
                 screensaver_timeout: "300".into(),
                 media_image_type: "auto".into(),

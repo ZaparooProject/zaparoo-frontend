@@ -173,6 +173,7 @@ fn checked(ctx: &Ctx, id: &str) -> bool {
         "showTags" => s.show_tags,
         "reduceMotion" => s.reduce_motion,
         "showMenuRow" => s.show_menu_row,
+        "showHelpBar" => s.show_help_bar,
         "mouseEnabled" => s.mouse_enabled,
         "debugLogging" => s.debug_logging,
         "swapConfirmCancel" => s.swap_confirm_cancel,
@@ -384,7 +385,7 @@ fn root_geometry_for(
     let bottom = if compact {
         derived.help_bar_height + derived.hub_active_label_height
     } else {
-        inputs.pct_h(15.0)
+        zaparoo_app::sizing::less_hidden_bar(inputs, &derived, inputs.pct_h(15.0))
     };
     let grid_height = (inputs.screen_height as i32 - grid_y - bottom).max(0);
     let insets = Insets {
@@ -828,6 +829,12 @@ fn accept(ctx: &Ctx, app: &App, id: &str, control: Control) {
     }
 }
 
+/// Invert a persisted switch and return its new value.
+fn flip(value: &mut bool) -> bool {
+    *value = !*value;
+    *value
+}
+
 /// Flip a toggle and apply it. The CRT switch restarts instead.
 fn toggle(ctx: &Ctx, app: &App, id: &str) {
     if id == "crtEnabled" {
@@ -850,53 +857,24 @@ fn toggle(ctx: &Ctx, app: &App, id: &str) {
     }
     let value = {
         let mut shared = lock(&ctx.shared);
-        match id {
-            "showHidden" => {
-                shared.show_hidden = !shared.show_hidden;
-                shared.persist.settings.show_hidden = shared.show_hidden;
-                shared.show_hidden
+        if id == "showHidden" {
+            shared.show_hidden = !shared.show_hidden;
+            shared.persist.settings.show_hidden = shared.show_hidden;
+            shared.show_hidden
+        } else {
+            let s = &mut shared.persist.settings;
+            match id {
+                "showOriginalFilenames" => flip(&mut s.show_original_filenames),
+                "showTags" => flip(&mut s.show_tags),
+                "reduceMotion" => flip(&mut s.reduce_motion),
+                "showMenuRow" => flip(&mut s.show_menu_row),
+                "showHelpBar" => flip(&mut s.show_help_bar),
+                "mouseEnabled" => flip(&mut s.mouse_enabled),
+                "swapConfirmCancel" => flip(&mut s.swap_confirm_cancel),
+                "swapOptionsView" => flip(&mut s.swap_options_view),
+                "debugLogging" => flip(&mut s.debug_logging),
+                _ => return,
             }
-            "showOriginalFilenames" => {
-                let v = !shared.persist.settings.show_original_filenames;
-                shared.persist.settings.show_original_filenames = v;
-                v
-            }
-            "showTags" => {
-                let v = !shared.persist.settings.show_tags;
-                shared.persist.settings.show_tags = v;
-                v
-            }
-            "reduceMotion" => {
-                let v = !shared.persist.settings.reduce_motion;
-                shared.persist.settings.reduce_motion = v;
-                v
-            }
-            "showMenuRow" => {
-                let v = !shared.persist.settings.show_menu_row;
-                shared.persist.settings.show_menu_row = v;
-                v
-            }
-            "mouseEnabled" => {
-                let v = !shared.persist.settings.mouse_enabled;
-                shared.persist.settings.mouse_enabled = v;
-                v
-            }
-            "swapConfirmCancel" => {
-                let v = !shared.persist.settings.swap_confirm_cancel;
-                shared.persist.settings.swap_confirm_cancel = v;
-                v
-            }
-            "swapOptionsView" => {
-                let v = !shared.persist.settings.swap_options_view;
-                shared.persist.settings.swap_options_view = v;
-                v
-            }
-            "debugLogging" => {
-                let v = !shared.persist.settings.debug_logging;
-                shared.persist.settings.debug_logging = v;
-                v
-            }
-            _ => return,
         }
     };
     save(ctx, app);
@@ -923,6 +901,12 @@ fn toggle(ctx: &Ctx, app: &App, id: &str) {
             // The row's band is in the sizing table and every screen's
             // geometry: the same push a help bar wrap uses.
             app.global::<crate::Sizing>().set_menu_row_enabled(value);
+            crate::sizing::apply_scene(app, crate::router::output_scene(app));
+            crate::router::relayout(ctx, app);
+        }
+        "showHelpBar" => {
+            // Same push: the bar's height is in the sizing table.
+            app.global::<crate::Sizing>().set_help_bar_enabled(value);
             crate::sizing::apply_scene(app, crate::router::output_scene(app));
             crate::router::relayout(ctx, app);
         }
@@ -1106,6 +1090,7 @@ pub(crate) fn mirror_of(s: &persist::SettingsState) -> zaparoo_core::config::Set
         mouse_enabled: s.mouse_enabled,
         reduce_motion: s.reduce_motion,
         show_menu_row: s.show_menu_row,
+        show_help_bar: s.show_help_bar,
         debug_logging: s.debug_logging,
         screensaver_timeout: &s.screensaver_timeout,
         media_image_type: &s.media_image_type,
