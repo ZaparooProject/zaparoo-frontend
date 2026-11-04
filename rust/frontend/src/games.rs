@@ -142,7 +142,26 @@ impl GameRow {
         if system.is_empty() || self.path.is_empty() {
             return String::new();
         }
-        format!("{system}\n{}", self.path)
+        // A multi-disc folder's details are its launch disc's.
+        match self
+            .media_id
+            .filter(|_| self.entry_type == EntryType::Directory)
+        {
+            Some(disc) => format!("{system}\n{}\n{disc}", self.path),
+            None => format!("{system}\n{}", self.path),
+        }
+    }
+
+    /// The `media.meta` request for the detail pane: a game by its id, a
+    /// multi-disc folder by its path with the disc it launches.
+    fn meta_params(&self, system: String) -> zaparoo_core::media_types::MediaMetaParams {
+        use zaparoo_core::media_types::MediaMetaParams;
+        match self.media_id {
+            Some(disc) if self.entry_type == EntryType::Directory => {
+                MediaMetaParams::for_folder_disc(disc, system, self.path.clone())
+            }
+            _ => MediaMetaParams::for_row(self.media_id, system, self.path.clone()),
+        }
     }
 
     /// Core has artwork to ask for: a game's, or a folder's own. A system
@@ -994,6 +1013,27 @@ pub fn refresh_recents(ctx: &Ctx, app: &App) {
     if visible {
         enter_flat(ctx, app, GamesMode::Recents, false);
     }
+}
+
+/// Refill a visible browse list in place after a game was launched, when
+/// it holds a multi-disc folder: Core points each folder at the disc last
+/// played from it, so the row's launch target and art may have changed.
+pub fn refresh_after_launch(ctx: &Ctx, app: &App) {
+    let path = {
+        let shared = lock(&ctx.shared);
+        let model = &shared.games;
+        (model.mode == GamesMode::Browse && model.rows.iter().any(|row| row.multi_disc))
+            .then(|| model.browse_path.clone())
+    };
+    let Some(path) = path else {
+        return;
+    };
+    let shell = app.global::<crate::Shell>();
+    if shell.get_active_screen() != GamesMode::Browse.screen() || shell.get_transitioning() {
+        return;
+    }
+    persist_now(ctx);
+    browse(ctx, app, &path, false);
 }
 
 fn enter_flat(ctx: &Ctx, app: &App, mode: GamesMode, flip: bool) {
@@ -1930,18 +1970,17 @@ pub(crate) fn grid_cover_fit(app: &App, mode: GamesMode) -> zaparoo_app::covers:
     cover_tier(app, mode).fit
 }
 
-/// A folder's art is asked for by path: Core then answers with artwork of
-/// the folder's own before its launch target's, which is all a media id
-/// names.
+/// A folder's art is asked for by path, with the disc it launches when it
+/// has one: Core then answers with the folder's own artwork before that
+/// disc's, and each disc caches under its own key.
 fn media_key(row: &GameRow, fallback_system: &str, tier: CoverSize) -> MediaKey {
     MediaKey {
-        media_id: row
-            .media_id
-            .filter(|_| row.entry_type != EntryType::Directory),
+        media_id: row.media_id,
         system: row.system_or(fallback_system).to_string(),
         path: row.path.clone(),
         max_size: tier.tier,
         fit: tier.fit,
+        folder: row.entry_type == EntryType::Directory,
         image_type: None,
     }
 }
@@ -3002,8 +3041,7 @@ fn fire_detail(ctx: &Ctx, app: &App, seq: u64) {
     let Some((client, handle)) = detail_ctx() else {
         return;
     };
-    let params =
-        zaparoo_core::media_types::MediaMetaParams::for_row(row.media_id, system, row.path.clone());
+    let params = row.meta_params(system);
     let generation = detail_cache().generation();
     let weak = app.as_weak();
     let ctx = ctx.clone();
@@ -3075,11 +3113,7 @@ fn prefetch_details(ctx: &Ctx, app: &App, rows: Vec<(GameRow, String, String)>) 
     let ctx = ctx.clone();
     handle.spawn(async move {
         for (row, system, identity) in rows {
-            let params = zaparoo_core::media_types::MediaMetaParams::for_row(
-                row.media_id,
-                system,
-                row.path.clone(),
-            );
+            let params = row.meta_params(system);
             let generation = detail_cache().generation();
             let Ok(result) = client.media_meta(params).await else {
                 continue;
@@ -4647,7 +4681,7 @@ mod tests {
     }
 
     #[test]
-    fn a_multi_disc_folder_names_its_launch_disc_and_asks_for_art_by_path() {
+    fn a_multi_disc_folder_asks_for_art_by_path_and_launch_disc() {
         let mut model = GamesModel::new();
         model.rows = vec![GameRow::from(&BrowseEntry {
             media_id: Some(4),
@@ -4670,16 +4704,31 @@ mod tests {
         };
         let key = media_key(row, "PSX", tier);
         assert_eq!(
-            key.media_id, None,
-            "a media id names the disc, not the folder"
+            (key.media_id, key.path.as_str(), key.folder),
+            (Some(4), "/g/PSX/Chrono Cross", true)
         );
-        assert_eq!(key.path, "/g/PSX/Chrono Cross");
-        // A game keeps its id.
+        let meta = row.meta_params("PSX".into());
+        assert_eq!(
+            (meta.media_id, meta.path.as_str()),
+            (Some(4), "/g/PSX/Chrono Cross")
+        );
+
+        // After disc 2 is played, Core names it: the art and the details
+        // are asked for again rather than served from disc 1's.
+        let mut disc_two = row.clone();
+        disc_two.media_id = Some(5);
+        assert_ne!(media_key(&disc_two, "PSX", tier), key);
+        assert_ne!(disc_two.identity("PSX"), row.identity("PSX"));
+
+        // A game keeps its id alone.
         let game = GameRow::from(&BrowseEntry {
             media_id: Some(7),
             ..entry("media", "Game", "/g/Game.nes")
         });
-        assert_eq!(media_key(&game, "NES", tier).media_id, Some(7));
+        let key = media_key(&game, "NES", tier);
+        assert_eq!((key.media_id, key.folder), (Some(7), false));
+        let meta = game.meta_params("NES".into());
+        assert_eq!((meta.media_id, meta.path.as_str()), (Some(7), ""));
     }
 
     #[test]

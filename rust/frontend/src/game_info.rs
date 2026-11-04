@@ -165,17 +165,26 @@ pub fn open(ctx: &Ctx, app: &App, entry: &GameRow) {
     .then(|| crate::press_feedback::keep_held(app));
     let wait = crate::cue::begin(ctx, app, crate::AppCue::LoadingDetails, "", "");
 
-    let params =
-        zaparoo_core::media_types::MediaMetaParams::for_media(system.clone(), entry.path.clone());
+    let folder = entry.entry_type == zaparoo_app::media_list::EntryType::Directory;
+    let params = match entry.media_id.filter(|_| folder) {
+        Some(disc) => zaparoo_core::media_types::MediaMetaParams::for_folder_disc(
+            disc,
+            system.clone(),
+            entry.path.clone(),
+        ),
+        None => zaparoo_core::media_types::MediaMetaParams::for_media(
+            system.clone(),
+            entry.path.clone(),
+        ),
+    };
+    // A multi-disc folder follows the disc it launches, as the list does.
     let key = MediaKey {
-        // A folder's art is asked for by path, as the list asks for it.
-        media_id: entry
-            .media_id
-            .filter(|_| entry.entry_type != zaparoo_app::media_list::EntryType::Directory),
+        media_id: entry.media_id,
         system,
         path: entry.path.clone(),
         max_size: crate::sizing::detail_cover_source_size(crate::router::output_scene(app)),
         fit,
+        folder,
         image_type: None,
     };
     let ctx = ctx.clone();
@@ -344,6 +353,7 @@ pub(crate) fn land_for_test(ctx: &Ctx, app: &App, meta: &zaparoo_core::media_typ
             path: entry.path,
             max_size: 256,
             fit: model.fit,
+            folder: entry.entry_type == zaparoo_app::media_list::EntryType::Directory,
             image_type: None,
         }
     };
@@ -801,6 +811,7 @@ mod tests {
                 path: "same.sfc".into(),
                 max_size: 256,
                 fit: zaparoo_app::covers::Fit::SOURCE,
+                folder: false,
                 image_type: Some(kind.into()),
             })
             .collect();

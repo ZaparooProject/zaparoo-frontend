@@ -870,9 +870,23 @@ impl MediaMetaParams {
         }
     }
 
-    /// For a browse row, which may or may not carry Core's id. Core
-    /// rejects a request that names both the id and the pair, so the id
-    /// is sent alone when the row has one.
+    /// A multi-disc folder with the disc it launches (`media.browse`'s
+    /// `mediaId` for the entry): Core lists the folder's own art types with
+    /// that disc's metadata.
+    pub fn for_folder_disc(
+        media_id: i64,
+        system: impl Into<String>,
+        path: impl Into<String>,
+    ) -> Self {
+        Self {
+            media_id: Some(media_id),
+            system: system.into(),
+            path: path.into(),
+        }
+    }
+
+    /// For a browse game row, which may or may not carry Core's id. The
+    /// id is sent alone when the row has one; only a folder names both.
     pub fn for_row(
         media_id: Option<i64>,
         system: impl Into<String>,
