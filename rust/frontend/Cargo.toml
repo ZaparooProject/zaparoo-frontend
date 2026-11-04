@@ -69,7 +69,7 @@ mister = [
     "dep:fontique",
 ]
 # Desktop build plus the software renderer, for the snapshot bin.
-snapshot = ["desktop", "slint/renderer-software"]
+snapshot = ["desktop", "slint/renderer-software", "dep:i-slint-core"]
 
 [dependencies]
 zaparoo-core = { path = "../zaparoo-core" }

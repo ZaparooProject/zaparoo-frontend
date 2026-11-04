@@ -95,6 +95,10 @@ enum Tok {
     HeaderSideMargin,
     Sum(&'static [Tok]),
     Min(&'static Tok, &'static Tok),
+    /// A bottom margin that reserves the help bar's 6% of the height: the
+    /// whole margin while the bar is shown, less that share while it is
+    /// hidden (Settings > Appearance), so content takes the room back.
+    LessHiddenBar(&'static Tok),
 }
 
 impl Tok {
@@ -109,6 +113,9 @@ impl Tok {
             Self::HeaderSideMargin => derived.header_side_margin,
             Self::Sum(terms) => terms.iter().map(|t| t.resolve(inputs, derived)).sum(),
             Self::Min(a, b) => a.resolve(inputs, derived).min(b.resolve(inputs, derived)),
+            Self::LessHiddenBar(inner) => {
+                sizing::less_hidden_bar(inputs, derived, inner.resolve(inputs, derived))
+            }
         }
     }
 }
@@ -260,11 +267,11 @@ const DEFAULT: ThemeT = ThemeT {
     grid_footer: GridFooterT {
         page_cue_in_footer: false,
         active_label_height: ph(7.0),
-        active_label_bottom_margin: ph(8.0),
+        active_label_bottom_margin: Tok::LessHiddenBar(&ph(8.0)),
         bottom_status_left_margin: pw(3.0),
         bottom_status_right_margin: pw(3.0),
-        grid_bottom_margin: Tok::Sum(&[ph(8.0), ph(7.0)]),
-        bottom_unsafe_height: Tok::Sum(&[ph(6.0), ph(2.0)]),
+        grid_bottom_margin: Tok::LessHiddenBar(&Tok::Sum(&[ph(8.0), ph(7.0)])),
+        bottom_unsafe_height: Tok::LessHiddenBar(&Tok::Sum(&[ph(6.0), ph(2.0)])),
     },
     list: ListT {
         content_axis: Axis::Horizontal,
@@ -274,7 +281,7 @@ const DEFAULT: ThemeT = ThemeT {
         divider_margin: 0,
         card_side_margin: pw(3.0),
         card_top_margin: ph(2.0),
-        card_bottom_margin: ph(8.0),
+        card_bottom_margin: Tok::LessHiddenBar(&ph(8.0)),
         // Square on all four sides: the sides came off the width and the
         // ends off the height, which put 26px beside 14px at 720p and got
         // worse the wider the screen. `docs/style.md` -> "Surface
@@ -290,7 +297,7 @@ const DEFAULT: ThemeT = ThemeT {
         row_text_left_padding: pw(1.6),
         row_text_right_padding: pw(1.6),
         favorite_right_padding: pw(1.6),
-        overlay_bottom_margin: ph(15.0),
+        overlay_bottom_margin: Tok::LessHiddenBar(&ph(15.0)),
     },
     list_tate: ListT {
         content_axis: Axis::Vertical,
@@ -300,7 +307,7 @@ const DEFAULT: ThemeT = ThemeT {
         divider_margin: 0,
         card_side_margin: pw(3.0),
         card_top_margin: ph(2.0),
-        card_bottom_margin: ph(8.0),
+        card_bottom_margin: Tok::LessHiddenBar(&ph(8.0)),
         // Square on all four sides: the sides came off the width and the
         // ends off the height, which put 26px beside 14px at 720p and got
         // worse the wider the screen. `docs/style.md` -> "Surface
@@ -316,7 +323,7 @@ const DEFAULT: ThemeT = ThemeT {
         row_text_left_padding: pw(1.6),
         row_text_right_padding: pw(1.6),
         favorite_right_padding: pw(1.6),
-        overlay_bottom_margin: ph(15.0),
+        overlay_bottom_margin: Tok::LessHiddenBar(&ph(15.0)),
     },
     detail: DetailT {
         content_axis: Axis::Vertical,
@@ -383,7 +390,7 @@ const DEFAULT: ThemeT = ThemeT {
         tag_row_height: ph(2.6),
         tag_row_spacing: ph(0.35),
     },
-    list_bottom_unsafe_height: Tok::Sum(&[ph(6.0), ph(2.0)]),
+    list_bottom_unsafe_height: Tok::LessHiddenBar(&Tok::Sum(&[ph(6.0), ph(2.0)])),
 };
 
 const CRT: ThemeT = ThemeT {
@@ -410,10 +417,10 @@ const CRT: ThemeT = ThemeT {
     grid_footer: GridFooterT {
         page_cue_in_footer: true,
         active_label_height: px(8),
-        active_label_bottom_margin: ph(6.0),
+        active_label_bottom_margin: Tok::LessHiddenBar(&ph(6.0)),
         bottom_status_left_margin: Tok::HeaderSideMargin,
         bottom_status_right_margin: Tok::HeaderSideMargin,
-        grid_bottom_margin: Tok::Sum(&[ph(6.0), px(8)]),
+        grid_bottom_margin: Tok::LessHiddenBar(&Tok::Sum(&[ph(6.0), px(8)])),
         bottom_unsafe_height: px(16),
     },
     list: ListT {
@@ -424,7 +431,7 @@ const CRT: ThemeT = ThemeT {
         divider_margin: -16,
         card_side_margin: Tok::HeaderSideMargin,
         card_top_margin: px(2),
-        card_bottom_margin: Tok::Sum(&[ph(6.0), px(12)]),
+        card_bottom_margin: Tok::LessHiddenBar(&Tok::Sum(&[ph(6.0), px(12)])),
         // Hand-calibrated pixels, not a derived inset: the 240p canvas is
         // measured against a real analog frame, so it keeps its own
         // numbers rather than the square token the HD tiers use.
@@ -440,7 +447,7 @@ const CRT: ThemeT = ThemeT {
         row_text_left_padding: px(4),
         row_text_right_padding: px(2),
         favorite_right_padding: px(2),
-        overlay_bottom_margin: ph(14.0),
+        overlay_bottom_margin: Tok::LessHiddenBar(&ph(14.0)),
     },
     list_tate: ListT {
         content_axis: Axis::Vertical,
@@ -450,7 +457,7 @@ const CRT: ThemeT = ThemeT {
         divider_margin: 0,
         card_side_margin: Tok::HeaderSideMargin,
         card_top_margin: px(2),
-        card_bottom_margin: Tok::Sum(&[ph(6.0), px(12)]),
+        card_bottom_margin: Tok::LessHiddenBar(&Tok::Sum(&[ph(6.0), px(12)])),
         // Hand-calibrated pixels, not a derived inset: the 240p canvas is
         // measured against a real analog frame, so it keeps its own
         // numbers rather than the square token the HD tiers use.
@@ -466,7 +473,7 @@ const CRT: ThemeT = ThemeT {
         row_text_left_padding: px(4),
         row_text_right_padding: px(2),
         favorite_right_padding: px(2),
-        overlay_bottom_margin: ph(14.0),
+        overlay_bottom_margin: Tok::LessHiddenBar(&ph(14.0)),
     },
     detail: DetailT {
         content_axis: Axis::Vertical,
@@ -1007,6 +1014,67 @@ pub fn profile(theme: ThemeId, view: View, inputs: &Inputs) -> Profile {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every bottom margin that holds the help bar's 6% gives exactly that
+    /// back when the bar is hidden, and nothing else moves.
+    #[test]
+    #[allow(clippy::panic, reason = "tests should fail fast on a body kind change")]
+    fn a_hidden_help_bar_gives_its_share_back_to_every_bottom_margin() {
+        for (w, h, crt) in [
+            (316.0, 216.0, true),
+            (960.0, 540.0, false),
+            (1280.0, 720.0, false),
+        ] {
+            let shown = Inputs {
+                screen_width: w,
+                screen_height: h,
+                crt_native_path: crt,
+                bitmap_type: crt,
+                ..Inputs::default()
+            };
+            let hidden = Inputs {
+                help_bar: false,
+                ..shown
+            };
+            let share = shown.pct_h(6.0);
+            for view in [
+                View::SystemsGrid,
+                View::GamesGrid,
+                View::GamesList,
+                View::GamesListTate,
+            ] {
+                let theme = ThemeId::current(&shown);
+                let (on, off) = (profile(theme, view, &shown), profile(theme, view, &hidden));
+                assert_eq!(on.header, off.header);
+                assert_eq!(on.status, off.status);
+                match (on.body, off.body) {
+                    (
+                        Body::Grid {
+                            grid: g_on,
+                            footer: on,
+                        },
+                        Body::Grid {
+                            grid: g_off,
+                            footer: off,
+                        },
+                    ) => {
+                        assert_eq!(g_on, g_off);
+                        assert_eq!(
+                            on.active_label_bottom_margin - off.active_label_bottom_margin,
+                            share
+                        );
+                        assert_eq!(on.grid_bottom_margin - off.grid_bottom_margin, share);
+                    }
+                    (Body::List { list: on, .. }, Body::List { list: off, .. }) => {
+                        assert_eq!(on.card_bottom_margin - off.card_bottom_margin, share);
+                        assert_eq!(on.overlay_bottom_margin - off.overlay_bottom_margin, share);
+                        assert_eq!(on.card_top_margin, off.card_top_margin);
+                    }
+                    _ => panic!("{view:?} changed body kind"),
+                }
+            }
+        }
+    }
 
     #[test]
     fn crt_theme_only_at_the_240p_tier() {

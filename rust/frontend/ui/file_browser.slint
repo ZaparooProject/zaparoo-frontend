@@ -119,7 +119,7 @@ export component FileBrowserScreen inherits Rectangle {
     if !root.list-layout: strip := PageStrip {
         x: 0;
         y: FileBrowserView.grid-y;
-        height: FileBrowserView.grid-height;
+        height: FileBrowserView.grid-height - Sizing.label-raise;
         visible: !root.gate-hide;
         page-slide: FileBrowserView.page-slide;
         slide-anim: FileBrowserView.slide-anim;
@@ -196,7 +196,7 @@ export component FileBrowserScreen inherits Rectangle {
     property <length> footer-right-inset: footer-indicator.width + Layout.bottom-status-right-margin;
     if !root.list-layout: ActiveLabel {
         x: 0;
-        y: FileBrowserView.label-y - (Sizing.crt ? 1px : 0px);
+        y: FileBrowserView.label-y - Sizing.label-raise;
         height: FileBrowserView.label-height;
         side-inset: root.page-cue-in-footer ? root.footer-right-inset : Layout.slot-margin;
         text: FileBrowserView.label-name;
@@ -205,7 +205,7 @@ export component FileBrowserScreen inherits Rectangle {
 
     footer-indicator := FooterIndicator {
         right-margin: Layout.bottom-status-right-margin;
-        cue-y: Sizing.snap(FileBrowserView.label-y + (FileBrowserView.label-height - self.height) / 2) - (Sizing.crt ? 1px : 0px);
+        cue-y: Sizing.snap(FileBrowserView.label-y + (FileBrowserView.label-height - self.height) / 2) - Sizing.label-raise;
         current-page: root.list-layout ? FileBrowserView.list-page : FileBrowserView.page;
         total-pages: root.list-layout ? FileBrowserView.list-total-pages : FileBrowserView.total-pages;
         item-position-mode: root.list-layout;

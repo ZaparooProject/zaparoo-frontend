@@ -104,7 +104,11 @@ export component MarqueeCaption inherits Rectangle {
     // width, so a long suffix cannot crowd it out, and the suffix takes
     // what the name leaves. The suffix elides on the right (Slint has no
     // left elide); the marquee reveals the full text.
-    property <length> name-static-w: Math.min(root.name-full-w, Math.max(root.width * 0.58, root.width - root.gap-w - root.tags-full-w));
+    // Floored to a whole pixel on the pixel grid, so the suffix after it
+    // starts on one.
+    property <length> name-static-w: Sizing.pixel-grid
+        ? Math.floor(Math.min(root.name-full-w, Math.max(root.width * 0.58, root.width - root.gap-w - root.tags-full-w)) / 1px) * 1px
+        : Math.min(root.name-full-w, Math.max(root.width * 0.58, root.width - root.gap-w - root.tags-full-w));
     property <length> name-render-w: (root.marquee || !root.overflows) ? root.name-full-w : root.name-static-w;
     property <length> tags-render-w: (root.marquee || !root.overflows)
         ? root.tags-full-w
@@ -113,7 +117,7 @@ export component MarqueeCaption inherits Rectangle {
         ? root.scroll-x * 1px
         : (root.overflows || !root.center-content
             ? 0px
-            : (root.width - root.full-w) / 2);
+            : Sizing.snap((root.width - root.full-w) / 2));
 
     changed marquee => {
         if (!self.marquee) {

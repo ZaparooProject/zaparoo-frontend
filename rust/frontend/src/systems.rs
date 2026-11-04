@@ -575,7 +575,7 @@ fn list_geometry(app: &App, shared: &Shared) -> list_rules::ListGeometry {
                 + crate::page_bar::systems_row_block(favorites(shared), &derived),
             help_bar_height: derived.help_bar_height,
             tier_240: derived.tier == zaparoo_app::sizing::Tier::T240,
-            safe_bottom_gap: inputs.pct_h(6.0),
+            safe_bottom_gap: derived.help_bar_band,
             target_rows: 0,
             min_row_height: inputs.pct_h(3.0),
             default_row_height: inputs.pct_h(6.0),

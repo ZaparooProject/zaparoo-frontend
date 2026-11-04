@@ -857,7 +857,9 @@ component SettingsScreen inherits Rectangle {
     // the tiles carry art only.
     if root.root-grid: ActiveLabel {
         x: 0;
-        y: parent.height - (Sizing.tier-240 ? Sizing.help-bar-height : Sizing.pct-h(8)) - self.height;
+        // Above 240p, 8% below the label holds the bar's 6% and a gap.
+        y: parent.height - (Sizing.tier-240 ? Sizing.help-bar-height
+            : Sizing.pct-h(8) - Sizing.pct-h(6) + Sizing.help-bar-band) - self.height;
         height: Sizing.tier-240 ? Sizing.hub-active-label-height : Sizing.pct-h(7);
         text: (root.index >= 0 && root.index < SettingsView.cells.length)
             ? SettingsLabels.label(SettingsView.cells[root.index].label-key)
@@ -1162,7 +1164,7 @@ component HubScreen inherits Rectangle {
 
     strip := PageStrip {
         y: HubView.grid-y;
-        height: HubView.grid-height;
+        height: HubView.grid-height - Sizing.label-raise;
         visible: !root.gated && !root.error;
         page-slide: HubView.page-slide;
         slide-anim: HubView.slide-anim;
@@ -1232,7 +1234,7 @@ component HubScreen inherits Rectangle {
     // the right corner (the same inset paid on the left for symmetry).
     label := ActiveLabel {
         x: 0;
-        y: HubView.label-y - (Sizing.crt ? 1px : 0px);
+        y: HubView.label-y - Sizing.label-raise;
         height: HubView.label-height;
         side-inset: indicator.width + Sizing.hub-grid-side-inset;
         text: Labels.hub-tile(HubView.label-key, HubView.label-name, HubView.label-custom);
@@ -1326,7 +1328,7 @@ component SystemsScreen inherits Rectangle {
     if !root.list-layout: systems-strip := PageStrip {
         x: 0;
         y: SystemsView.grid-y;
-        height: SystemsView.grid-height;
+        height: SystemsView.grid-height - Sizing.label-raise;
         visible: !root.gate-hide;
         page-slide: SystemsView.page-slide;
         slide-anim: SystemsView.slide-anim;
@@ -1389,7 +1391,7 @@ component SystemsScreen inherits Rectangle {
     property <length> list-card-y: Sizing.header-bottom + Layout.top-margin + Layout.strip-height
         + (PageBar.shown(PageBar.systems-chips) ? Sizing.menu-row-block : 0px) + Layout.card-top-margin;
     property <length> list-card-w: self.width - 2 * self.list-card-x;
-    property <length> list-card-h: self.height - self.list-card-y - (Sizing.tier-240 ? Sizing.help-bar-height + Layout.card-bottom-margin - Sizing.pct-h(6) : Layout.card-bottom-margin);
+    property <length> list-card-h: self.height - self.list-card-y - (Sizing.tier-240 ? Sizing.help-bar-height + Layout.card-bottom-margin - Sizing.help-bar-band : Layout.card-bottom-margin);
 
     if root.list-layout && !root.list-only && !root.gate-hide: BrowseListDetailView {
         x: root.list-card-x;
@@ -1463,7 +1465,7 @@ component SystemsScreen inherits Rectangle {
 
     if !root.list-layout: ActiveLabel {
         x: 0;
-        y: root.label-y - (Sizing.crt ? 1px : 0px);
+        y: root.label-y - Sizing.label-raise;
         height: Layout.active-label-height;
         side-inset: root.page-cue-in-footer
             ? (Layout.top-strip-visible ? root.footer-right-inset : Math.max(root.footer-left-inset, root.footer-right-inset))
@@ -1477,7 +1479,7 @@ component SystemsScreen inherits Rectangle {
 
     if !root.list-layout && !Layout.top-strip-visible && root.page-cue-in-footer && root.count-text != "": Text {
         x: Layout.bottom-status-left-margin;
-        y: Sizing.snap(root.label-y + (Layout.active-label-height - self.height) / 2) - (Sizing.crt ? 1px : 0px);
+        y: Sizing.snap(root.label-y + (Layout.active-label-height - self.height) / 2) - Sizing.label-raise;
         width: root.footer-left-inset - Layout.bottom-status-left-margin;
         height: Sizing.font-section;
         vertical-alignment: center;
@@ -1490,7 +1492,7 @@ component SystemsScreen inherits Rectangle {
 
     footer-indicator := FooterIndicator {
         right-margin: Layout.bottom-status-right-margin;
-        cue-y: Sizing.snap(root.label-y + (Layout.active-label-height - self.height) / 2) - (Sizing.crt ? 1px : 0px);
+        cue-y: Sizing.snap(root.label-y + (Layout.active-label-height - self.height) / 2) - Sizing.label-raise;
         current-page: root.list-layout ? SystemsView.list-page : SystemsView.page;
         total-pages: root.list-layout ? SystemsView.list-total-pages : SystemsView.total-pages;
         item-position-mode: root.list-layout;
@@ -1709,7 +1711,7 @@ component FormRowBody inherits Rectangle {
     }
     if root.entry.role == MenuRole.action: Text {
         x: root.pad;
-        width: Math.max(0px, parent.width - 2 * root.pad);
+        width: Sizing.even(Math.max(0px, parent.width - 2 * root.pad));
         height: parent.height;
         text: root.label;
         color: root.ink-action;
@@ -1874,9 +1876,9 @@ component LetterJumpModal inherits ModalShell {
     // The widest the grid may grow. The panel then hugs what it shows: the
     // grid, or the title or status line where those are wider.
     property <length> max-content: Sizing.pct-w(78) - 2 * root.pad;
-    property <length> cell: Math.max(Sizing.pct-w(7), Math.min(Sizing.pct-w(13),
+    property <length> cell: Sizing.snap(Math.max(Sizing.pct-w(7), Math.min(Sizing.pct-w(13),
         Sizing.fit-letter-cell(root.buckets.length, root.columns, root.max-content,
-            Sizing.pct-h(52), root.gap)));
+            Sizing.pct-h(52), root.gap))));
     property <length> grid-h: root.rows * root.cell + (root.rows - 1) * root.gap;
     property <length> grid-w: root.columns * root.cell + (root.columns - 1) * root.gap;
     property <length> ring-gap: Sizing.card-border-width;
@@ -1925,7 +1927,7 @@ component LetterJumpModal inherits ModalShell {
     }
 
     Rectangle {
-        x: (root.panel-width - root.grid-w) / 2;
+        x: Sizing.snap((root.panel-width - root.grid-w) / 2);
         y: root.content-y;
         width: root.grid-w;
         height: root.grid-h;
@@ -1944,7 +1946,7 @@ component LetterJumpModal inherits ModalShell {
             letter := Text {
                 x: 2 * root.ring-gap;
                 y: (cell.face-height - root.stack-h) / 2;
-                width: parent.width - 4 * root.ring-gap;
+                width: Sizing.even(parent.width - 4 * root.ring-gap);
                 height: Sizing.font-hero;
                 text: bucket.label;
                 color: i == root.current-index ? Theme.text-primary : Theme.text-label;
@@ -1996,8 +1998,8 @@ component CardWriteModal inherits ModalShell {
     property <length> btn-h: Sizing.pct-h(7);
 
     title: @tr("Hold a writable token near the reader");
-    panel-width: Math.min(Math.min(root.width * 0.92, Sizing.pct-h(90)),
-        Math.max(Sizing.pct-w(30), root.title-width + 2 * root.pad));
+    panel-width: Sizing.snap(Math.min(Math.min(root.width * 0.92, Sizing.pct-h(90)),
+        Math.max(Sizing.pct-w(30), root.title-width + 2 * root.pad)));
     content-height: root.btn-h;
 
     // The shell centres and elides its title; this one wants to wrap, so
@@ -2044,8 +2046,8 @@ component PairDeviceModal inherits ModalShell {
     title: @tr("Pair a device");
     // Sized around the PIN itself: it is the widest thing here and the
     // whole point of the panel, so it never elides.
-    panel-width: Math.min(Math.min(root.width * 0.92, Sizing.pct-h(110)),
-        Math.max(Sizing.pct-w(50), pin-measure.preferred-width + 2 * root.pad));
+    panel-width: Sizing.snap(Math.min(Math.min(root.width * 0.92, Sizing.pct-h(110)),
+        Math.max(Sizing.pct-w(50), pin-measure.preferred-width + 2 * root.pad)));
     content-height: Math.ceil(content.preferred-height / 1px) * 1px;
 
     pin-measure := Text {
@@ -2157,7 +2159,7 @@ component OnlineLinkModal inherits ModalShell {
     property <length> qr-px: root.module-px * Overlays.online-qr-modules;
 
     title: @tr("Link Online account");
-    panel-width: Math.min(root.width * 0.78, Sizing.pct-h(110));
+    panel-width: Sizing.snap(Math.min(root.width * 0.78, Sizing.pct-h(110)));
     content-height: Math.ceil(content.preferred-height / 1px) * 1px;
 
     content := VerticalLayout {
@@ -2289,10 +2291,11 @@ component OnlineListRowBody inherits Rectangle {
         font-size: Sizing.font-body;
         font-weight: root.weight;
     }
+    // Right-aligned, so its right edge is what lands on the pixel grid.
     Text {
-        x: parent.width * 0.55;
+        x: Sizing.snap(parent.width * 0.55);
         y: Sizing.snap((parent.height - self.height) / 2);
-        width: parent.width * 0.45 - Sizing.pct-w(2);
+        width: Sizing.snap(parent.width - Sizing.pct-w(2)) - self.x;
         horizontal-alignment: right;
         overflow: elide;
         text: root.detail;
@@ -2369,7 +2372,7 @@ component OnlineListModal inherits ModalShell {
     property <length> list-y: root.content-y + root.note-h + root.status-h;
 
     title: root.backups ? @tr("Cloud backups") : @tr("Remote activity");
-    panel-width: Math.min(root.width * 0.84, Sizing.pct-h(120));
+    panel-width: Sizing.snap(Math.min(root.width * 0.84, Sizing.pct-h(120)));
     content-height: root.note-h + root.status-h + root.viewport-h + 2 * root.arrow-band;
 
     if root.has-note: Text {
@@ -2657,7 +2660,7 @@ component QrCodeModal inherits ModalShell {
     title: Overlays.qr-documentation ? @tr("Documentation") : @tr("Write with App");
     // Not content-sized: the code fixes the width, so this takes the plain
     // 0.78 cap rather than the 0.92 a measured panel gets.
-    panel-width: Math.min(root.width * 0.78, Sizing.pct-h(105));
+    panel-width: Sizing.snap(Math.min(root.width * 0.78, Sizing.pct-h(105)));
     content-height: Math.ceil(content.preferred-height / 1px) * 1px;
 
     content := VerticalLayout {
@@ -2782,9 +2785,9 @@ component DialogModal inherits ModalShell {
                     ? Math.min(self.available-btn-w, button-measure.preferred-width)
                     : self.available-btn-w);
         for label[i] in Overlays.dialog-buttons: button := PressableSurface {
-            x: (root.panel-width
+            x: Sizing.snap((root.panel-width
                 - (Overlays.dialog-buttons.length * parent.btn-w
-                    + (Overlays.dialog-buttons.length - 1) * root.btn-gap)) / 2
+                    + (Overlays.dialog-buttons.length - 1) * root.btn-gap)) / 2)
                 + i * (parent.btn-w + root.btn-gap);
             y: root.button-y;
             width: parent.btn-w;
@@ -3189,7 +3192,7 @@ component GamesScreen inherits Rectangle {
     if !root.list-layout: games-strip := PageStrip {
         x: 0;
         y: GamesView.grid-y;
-        height: GamesView.grid-height;
+        height: GamesView.grid-height - Sizing.label-raise;
         visible: !root.gate-hide;
         page-slide: GamesView.page-slide;
         slide-anim: GamesView.slide-anim;
@@ -3250,7 +3253,7 @@ component GamesScreen inherits Rectangle {
     property <length> list-card-y: Sizing.header-bottom + Layout.top-margin + Layout.strip-height
         + (PageBar.shown(PageBar.games-chips) ? Sizing.menu-row-block : 0px) + Layout.card-top-margin;
     property <length> list-card-w: self.width - 2 * self.list-card-x;
-    property <length> list-card-h: self.height - self.list-card-y - (Sizing.tier-240 ? Sizing.help-bar-height + Layout.card-bottom-margin - Sizing.pct-h(6) : Layout.card-bottom-margin);
+    property <length> list-card-h: self.height - self.list-card-y - (Sizing.tier-240 ? Sizing.help-bar-height + Layout.card-bottom-margin - Sizing.help-bar-band : Layout.card-bottom-margin);
 
     if root.list-layout && !root.list-only && !root.gate-hide: BrowseListDetailView {
         x: root.list-card-x;
@@ -3328,7 +3331,7 @@ component GamesScreen inherits Rectangle {
 
     if !root.list-layout: ActiveLabel {
         x: 0;
-        y: root.label-y - (Sizing.crt ? 1px : 0px);
+        y: root.label-y - Sizing.label-raise;
         height: GamesView.label-height;
         side-inset: root.page-cue-in-footer
             ? (Layout.top-strip-visible ? root.footer-right-inset : Math.max(root.footer-left-inset, root.footer-right-inset))
@@ -3340,7 +3343,7 @@ component GamesScreen inherits Rectangle {
 
     if !Layout.top-strip-visible && root.page-cue-in-footer && root.footer-left-text != "": Text {
         x: Layout.bottom-status-left-margin;
-        y: Sizing.snap(root.label-y + (GamesView.label-height - self.height) / 2) - (Sizing.crt ? 1px : 0px);
+        y: Sizing.snap(root.label-y + (GamesView.label-height - self.height) / 2) - Sizing.label-raise;
         width: root.footer-left-inset - Layout.bottom-status-left-margin;
         height: Sizing.font-section;
         vertical-alignment: center;
@@ -3353,7 +3356,7 @@ component GamesScreen inherits Rectangle {
 
     footer-indicator := FooterIndicator {
         right-margin: Layout.bottom-status-right-margin;
-        cue-y: Sizing.snap(root.label-y + (GamesView.label-height - self.height) / 2) - (Sizing.crt ? 1px : 0px);
+        cue-y: Sizing.snap(root.label-y + (GamesView.label-height - self.height) / 2) - Sizing.label-raise;
         current-page: root.list-layout ? GamesView.list-page : GamesView.page;
         total-pages: root.list-layout ? GamesView.list-total-pages : GamesView.total-pages;
         item-position-mode: root.list-layout;
@@ -3482,6 +3485,30 @@ component CrtCalibrationPattern inherits Rectangle {
                     : @tr("Arrows adjust position");
                 color: Theme.accent;
                 font-size: Sizing.font-size(2.4);
+            }
+            // The mode switch, named with the controller's own button: the
+            // help bar that also lists it is under this full-screen pattern.
+            Rectangle {
+                property <length> glyph: GlyphSource.help-side();
+                property <length> gap: Sizing.pct-w(1);
+                property <length> row-w: self.glyph + self.gap + switch-label.preferred-width;
+                min-width: self.row-w;
+                height: Math.max(self.glyph, switch-label.preferred-height);
+                Image {
+                    x: Sizing.snap((parent.width - parent.row-w) / 2);
+                    y: (parent.height - self.height) / 2;
+                    width: parent.glyph;
+                    height: parent.glyph;
+                    source: GlyphSource.glyph(Buttons.key("ButtonX"), parent.glyph, Theme.text-primary);
+                    image-rendering: Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
+                }
+                switch-label := Text {
+                    x: Sizing.snap((parent.width - parent.row-w) / 2) + parent.glyph + parent.gap;
+                    y: (parent.height - self.height) / 2;
+                    text: Overlays.crt-size-mode ? @tr("Adjust position") : @tr("Adjust width");
+                    color: Theme.text-primary;
+                    font-size: Sizing.font-size(2.4);
+                }
             }
             Text {
                 horizontal-alignment: center;
@@ -4553,9 +4580,12 @@ export component App inherits Window {
     }
     if Overlays.dialog-open: DialogModal {}
 
+    // Hidden with the setting off (Settings > Appearance), when Rust gives
+    // it no height. It stays instantiated so its wrap measurement holds.
     help-bar := HelpBar {
         x: 0;
         y: parent.height - self.height;
+        visible: Sizing.help-bar-enabled;
         entries: root.help-entries();
         changed wrap-entries => { root.help-wrap-changed(); }
         // Bleed past the CRT safe-area inset so the fill reaches the

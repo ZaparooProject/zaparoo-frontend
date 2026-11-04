@@ -82,6 +82,7 @@ test:
 _test:
     cd rust && cargo nextest run --workspace
     cd rust && cargo nextest run -p frontend --no-default-features --features mister
+    bash scripts/check-crt-text.sh
 
 # --- lint and format ---
 
@@ -180,6 +181,10 @@ package-desktop *args:
 # Render the main screens offline into output/snapshots/
 snapshots *args:
     bash scripts/render-snapshots.sh {{args}}
+
+# Fail if a CRT snapshot draws a label off the whole-pixel grid
+crt-text-check:
+    bash scripts/check-crt-text.sh
 
 # --- deploy ---
 

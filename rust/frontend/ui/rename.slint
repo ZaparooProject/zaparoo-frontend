@@ -49,7 +49,7 @@ export component RenameScreen inherits Rectangle {
     // Keys no wider than twice their height, so a wide screen does not
     // stretch them into bars.
     property <length> keys-w: Math.min(root.content-w, 10 * 2 * root.unit * 1.1);
-    property <length> block-x: root.side + (root.content-w - root.keys-w) / 2;
+    property <length> block-x: Sizing.snap(root.side + (root.content-w - root.keys-w) / 2);
 
     TopStatusStrip {
         x: 0;

@@ -235,6 +235,21 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_crt_enabled => set_crt_enabled,
         get_crt_standard => set_crt_standard,
     );
+    // The help bar setting is a sizing input, and the CRT head owns its
+    // own `Sizing`: copy it and re-solve that head's scene when it flips.
+    let help_bar = primary.global::<crate::Sizing>().get_help_bar_enabled();
+    let crt_sizing = crt.global::<crate::Sizing>();
+    if crt_sizing.get_help_bar_enabled() != help_bar {
+        crt_sizing.set_help_bar_enabled(help_bar);
+        let scene = crate::sizing::Scene::of(
+            crt,
+            f64::from(crt_sizing.get_screen_width()),
+            f64::from(crt_sizing.get_screen_height()),
+            true,
+        );
+        crate::sizing::apply_scene(crt, scene);
+    }
+
     // The CRT head resolves its own layout profile (its scene is the
     // 240p tier) whenever the mirrored screen changes.
     let screen = target.get_active_screen();

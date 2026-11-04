@@ -174,11 +174,14 @@ export global Sizing {
     // re-solves the table below; nothing else writes it.
     in-out property <bool> help-bar-two-rows: false;
 
+    // Whole pixels on the pixel grid (see `snap`), as
+    // `zaparoo_app::sizing`'s percentages always are: a fractional gap
+    // upstream of a label smears the bitmap face across two columns.
     public pure function pct-h(p: float) -> length {
-        return p / 100 * (self.swap-axes ? self.screen-width : self.screen-height);
+        return self.snap(p / 100 * (self.swap-axes ? self.screen-width : self.screen-height));
     }
     public pure function pct-w(p: float) -> length {
-        return p / 100 * (self.swap-axes ? self.screen-height : self.screen-width);
+        return self.snap(p / 100 * (self.swap-axes ? self.screen-height : self.screen-width));
     }
     // Percentage of the shorter axis, for insets that have to measure the
     // same on both of them. A card or panel lip is one margin seen four
@@ -206,11 +209,26 @@ export global Sizing {
     pure function quantize(size: int) -> int {
         return self.bitmap-fonts ? (size < 12 ? 8 : 16) : size;
     }
-    // Snap a length to the nearest whole pixel on CRT, where the bitmap
-    // font and the 240p scanline grid need integer coordinates. A no-op
-    // on HD outputs where Slint's own sub-pixel placement is fine.
+    // Whole pixels wherever the 6x8 bitmap face is in use (CRT, and a
+    // low-resolution MiSTer HDMI mode). The software renderer places glyphs
+    // at quarter-pixel positions and blends the remainder into them, so a
+    // bitmap label is only sharp when it starts on a whole pixel. A no-op
+    // on HD outputs, where sub-pixel placement is what keeps text even.
+    out property <bool> pixel-grid: self.crt || self.bitmap-fonts;
     public pure function snap(v: length) -> length {
-        return self.crt ? Math.round(v / 1px) * 1px : v;
+        return self.pixel-grid ? Math.round(v / 1px) * 1px : v;
+    }
+    // How far a grid screen's footer label sits above its `label-y` on CRT,
+    // into the grid's empty bottom inset. A page turn slides the grid's band
+    // and clips the live strip short of it by the same amount, so the
+    // label's top row never moves with the page.
+    out property <length> label-raise: self.crt ? 1px : 0px;
+    // Width for a `horizontal-alignment: center` label: even on the pixel
+    // grid, so the bitmap face's even advances center on a whole pixel.
+    // Pair it with an explicit `x`, or Slint centers the narrower box by
+    // half a pixel.
+    public pure function even(v: length) -> length {
+        return self.pixel-grid ? Math.floor(v / 2px) * 2px : v;
     }
     // Hairline width in device pixels that never rounds to zero:
     // `max(1, round(value))`. The argument is a pixel count, NOT a
@@ -268,9 +286,19 @@ export global Sizing {
     // CRT twin draws the 240p layout, which has none, and one input drives
     // both, so both keep the Menu list.
     in-out property <bool> menu-row-blocked: false;
-    // Bottom help bar band and the clearance content keeps above it.
+    // Bottom help bar band and the clearance content keeps above it. The
+    // height is zero while the bar is hidden.
     in-out property <length> help-bar-height: 43px;
     in-out property <length> help-bar-clearance: 57px;
+    // The setting (Settings > Appearance), an input to the scene.
+    in-out property <bool> help-bar-enabled: true;
+    // The 6% the `Layout` bottom margins reserve for the bar, or zero while
+    // it is hidden (`zaparoo_app::sizing::Derived::help_bar_band`).
+    in-out property <length> help-bar-band: 43px;
+    // The help bar's controller glyphs at 240p, where the bar is sized
+    // around them (`zaparoo_app::sizing`). Larger tiers size them from the
+    // height in the view.
+    in-out property <length> help-glyph-size: 29px;
     in-out property <int> visible-covers: 5;
     // Hub page geometry (Settings previews reuse it).
     in-out property <int> hub-grid-columns: 5;

@@ -73,6 +73,7 @@ fn parse(line: &str) -> Case {
             interface_profile: InterfaceProfile::Standard,
             help_bar_two_rows: false,
             menu_row: true,
+            help_bar: true,
         },
         tier: head["tier"].to_string(),
         current_theme: ThemeId::from_name(head["currentTheme"]).expect("currentTheme"),

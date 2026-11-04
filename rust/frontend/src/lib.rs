@@ -329,12 +329,8 @@ fn merge_config_settings(
     if let Some(v) = &c.favorites_grouping {
         s.favorites_grouping.clone_from(v);
     }
-    if let Some(v) = c.swap_confirm_cancel {
-        s.swap_confirm_cancel = v;
-    }
-    if let Some(v) = c.swap_options_view {
-        s.swap_options_view = v;
-    }
+    s.swap_confirm_cancel = c.swap_confirm_cancel.unwrap_or(s.swap_confirm_cancel);
+    s.swap_options_view = c.swap_options_view.unwrap_or(s.swap_options_view);
     if let Some(v) = &c.orientation {
         s.orientation = if matches!(v.as_str(), "cw" | "ccw") {
             v.clone()
@@ -363,30 +359,21 @@ fn merge_config_settings(
     if let Some(v) = &c.button_layout {
         s.button_layout.clone_from(v);
     }
-    if let Some(v) = c.mouse_enabled {
-        s.mouse_enabled = v;
-    }
-    if let Some(v) = c.reduce_motion {
-        s.reduce_motion = v;
-    }
-    if let Some(v) = c.show_menu_row {
-        s.show_menu_row = v;
-    }
+    s.mouse_enabled = c.mouse_enabled.unwrap_or(s.mouse_enabled);
+    s.reduce_motion = c.reduce_motion.unwrap_or(s.reduce_motion);
+    s.show_menu_row = c.show_menu_row.unwrap_or(s.show_menu_row);
+    s.show_help_bar = c.show_help_bar.unwrap_or(s.show_help_bar);
     if let Some(v) = &c.screensaver_timeout {
         s.screensaver_timeout.clone_from(v);
     }
     if let Some(v) = &c.media_image_type {
         s.media_image_type.clone_from(v);
     }
-    if let Some(v) = c.show_hidden {
-        s.show_hidden = v;
-    }
-    if let Some(v) = c.show_original_filenames {
-        s.show_original_filenames = v;
-    }
-    if let Some(v) = c.show_tags {
-        s.show_tags = v;
-    }
+    s.show_hidden = c.show_hidden.unwrap_or(s.show_hidden);
+    s.show_original_filenames = c
+        .show_original_filenames
+        .unwrap_or(s.show_original_filenames);
+    s.show_tags = c.show_tags.unwrap_or(s.show_tags);
     if let Some(v) = &c.list_left_right {
         s.list_left_right.clone_from(v);
     }
@@ -554,6 +541,8 @@ fn seed_display_globals(
     apply_interface_profile(app, &persisted.settings.interface_profile);
     app.global::<Sizing>()
         .set_menu_row_enabled(persisted.settings.show_menu_row);
+    app.global::<Sizing>()
+        .set_help_bar_enabled(persisted.settings.show_help_bar);
     let embedded = cfg!(feature = "mister");
     let motion = app.global::<Motion>();
     motion.set_enabled(display::motion_enabled(
@@ -806,9 +795,11 @@ fn run_application(
         true,
     );
     brand::register(&app);
-    app.global::<GlyphSource>().on_glyph(|key, px, tint| {
-        glyphs::render(key.as_str(), px.round().max(0.0) as u32, tint).unwrap_or_default()
-    });
+    app.global::<GlyphSource>()
+        .on_raster(|key, px, tint, pixel_grid| {
+            glyphs::render(key.as_str(), px.round().max(0.0) as u32, tint, pixel_grid)
+                .unwrap_or_default()
+        });
 
     #[cfg(feature = "mister")]
     let crt_mirror = if dual_head {
@@ -828,9 +819,12 @@ fn run_application(
             false,
         );
         brand::register(&mirror);
-        mirror.global::<GlyphSource>().on_glyph(|key, px, tint| {
-            glyphs::render(key.as_str(), px.round().max(0.0) as u32, tint).unwrap_or_default()
-        });
+        mirror
+            .global::<GlyphSource>()
+            .on_raster(|key, px, tint, pixel_grid| {
+                glyphs::render(key.as_str(), px.round().max(0.0) as u32, tint, pixel_grid)
+                    .unwrap_or_default()
+            });
         Some(mirror)
     } else {
         None
@@ -2399,6 +2393,7 @@ mod tests {
             mouse_enabled: false,
             reduce_motion: true,
             show_menu_row: false,
+            show_help_bar: false,
             debug_logging: true,
             screensaver_timeout: "600".to_string(),
             media_image_type: "boxart".to_string(),

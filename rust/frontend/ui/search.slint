@@ -178,7 +178,7 @@ export component SearchScreen inherits Rectangle {
     property <length> keys-w: Math.min(root.content-w - root.pane-w - root.pane-gap,
         10 * 2 * root.unit * 1.1);
     property <length> block-w: root.keys-w + root.pane-gap + root.pane-w;
-    property <length> block-x: root.side + (root.content-w - root.block-w) / 2;
+    property <length> block-x: Sizing.snap(root.side + (root.content-w - root.block-w) / 2);
     property <length> fields-y: root.top + root.query-h + root.gap;
     property <length> field-gap: Sizing.pct-w(1);
     property <length> pane-row-h: root.unit * 0.72;
@@ -221,7 +221,7 @@ export component SearchScreen inherits Rectangle {
     system-field := Field {
         x: root.block-x;
         y: root.fields-y;
-        width: (root.keys-w - root.field-gap) / 2;
+        width: Sizing.snap((root.keys-w - root.field-gap) / 2);
         height: root.row-h;
         label: SearchView.scoped() ? @tr("Search in") : @tr("System");
         value: SearchView.system-text();

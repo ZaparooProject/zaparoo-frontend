@@ -153,6 +153,7 @@ const TOGGLES: &[&str] = &[
     "debugLogging",
     "reduceMotion",
     "showMenuRow",
+    "showHelpBar",
     "crtEnabled",
     "swapConfirmCancel",
     "swapOptionsView",
@@ -307,6 +308,7 @@ pub fn page_rows(page: &str, inputs: &Inputs) -> Vec<Row> {
             field("colorIntensity"),
             field("systemLogoStyle"),
             field("showMenuRow"),
+            field("showHelpBar"),
             field("reduceMotion"),
             field("screensaverTimeout"),
         ],
@@ -1283,9 +1285,9 @@ mod tests {
     fn the_page_card_is_whole_pixels_that_add_up() {
         use super::page_geometry;
         let g = page_geometry(&crt_scene());
-        assert_eq!((g.card_y, g.card_height, g.pad), (33, 161, 4));
+        assert_eq!((g.card_y, g.card_height, g.pad), (33, 154, 4));
         assert_eq!(g.row_height, 17);
-        assert_eq!(g.rows_viewport, 127);
+        assert_eq!(g.rows_viewport, 120);
         // Top to bottom: lip, rows, lip, the clear line, the rule, lip,
         // hint, lip.
         for inputs in [
@@ -1317,11 +1319,11 @@ mod tests {
             help_bar_two_rows: true,
             ..crt_scene()
         });
-        // The bar grows from 13px to 22px and the card gives up exactly
+        // The bar grows from 20px to 38px and the card gives up exactly
         // that; nothing above it moves.
         assert_eq!(two.card_y, one.card_y);
-        assert_eq!(one.card_height - two.card_height, 9);
-        assert_eq!(one.rows_viewport - two.rows_viewport, 9);
+        assert_eq!(one.card_height - two.card_height, 18);
+        assert_eq!(one.rows_viewport - two.rows_viewport, 18);
     }
 
     #[test]
