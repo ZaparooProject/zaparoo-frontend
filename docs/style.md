@@ -469,6 +469,16 @@ suffix leads with the disc Accept launches, in the same compact token a
 separate disc file carries (`D1`), and its menu's `Choose disc` lists the
 rest.
 
+Search results work the same way for one title's versions. Core groups the
+search by title and system, so regional releases, revisions and copies in
+other folders are one row, carrying the version Core would launch. Its dim
+suffix keeps that version's tags and adds the count (`US (3)`),
+and its menu's `Choose version` lists every version the search matched,
+told apart by their tags and, where those match, by the folder each copy
+sits in (`Hacks`, `Mario`), or where those folders share a name, by the
+first folder where their paths part (`fat` and `usb0`). Favorites and Recently
+played stay one row per file: they hold the files the user chose.
+
 ### Inverse-video rows (browse lists, Settings rows, menus, and pickers)
 
 Browse lists and Settings rows are both one containing card with flat rows;
@@ -891,9 +901,8 @@ names the one screen whose field takes what a real keyboard types.
 The Search screen puts the Name field on top, then the System and Tags
 fields side by side above the keyboard, with a card beside them: recent
 searches while there is nothing to search on, then the matches as the query
-is typed: every title on the first page of results, once per system. Variants
-of one title are told apart in the results, which the row opens on the first
-of them. Each field carries its name on the left and no placeholder.
+is typed: every title on the first page of results, once per system, as
+Core groups them. Each field carries its name on the left and no placeholder.
 A focused System or Tags field wears the accent ring; inverting it left
 the name unreadable on the fill. The stack fills the height between the
 strip and the help bar. The Tags field shows
@@ -903,9 +912,9 @@ header shows; values are changed and cleared in the tags picker. The card follow
 its height fits. A longer list scrolls, with a `ScrollCue` above and below
 it as in the list pickers. Clearing the recent searches is an action row at the
 card's foot, drawn as Settings draws one: centered, in the accent, and
-inverted under the fill. The match count heads the card and counts every
-match, so it can exceed the rows listed; it is exact up to one page of
-results and reads `Matches: 100+` beyond it, because Core reports no total. At the 240p tier and on a rotated scene or one narrower
+inverted under the fill. The match count heads the card and counts the
+titles listed; it is exact up to one page of results and reads
+`Matches: 100+` beyond it, because Core reports no total. At the 240p tier and on a rotated scene or one narrower
 than 4:3 the card collapses and the count moves into the query field.
 
 "Search here…" opens the same screen limited to what the screen it came
@@ -1606,8 +1615,9 @@ deep they are or how many Back presses get out. The rules:
    closes it, however it ends. Its pages are an in-place swap of its rows
    through `rust/frontend/src/context_page.rs`: Manage and Write to token,
    whose rows are the menu's own, and alternate versions
-   (`rust/frontend/src/alternates.rs`) and a multi-disc game's discs
-   (`rust/frontend/src/discs.rs`), which Core is asked for. Back returns to
+   (`rust/frontend/src/alternates.rs`), a multi-disc game's discs
+   (`rust/frontend/src/discs.rs`) and a search result's versions
+   (`rust/frontend/src/title_versions.rs`), which Core is asked for. Back returns to
    the rows the page replaced, on the row that opened it (`context_action`
    in `router.rs`). One level only: a row on a page never opens a page.
 6. A screen may open a modal (Settings rows open `ListPickerModal`); a

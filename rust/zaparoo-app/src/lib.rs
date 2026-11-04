@@ -60,4 +60,5 @@ pub mod status_line;
 pub mod system_picker;
 pub mod systems;
 pub mod text_entry;
+pub mod title_versions;
 pub mod wait_cue;

@@ -1016,13 +1016,11 @@ pub(crate) fn preview_landed(
             Ok(result) => {
                 let more = result.pagination.as_ref().is_some_and(|p| p.has_next_page);
                 model.count = Some(rules::count(result.results.len(), more));
-                let titles = result
+                // Core groups the search by title, so each row is one game
+                // on one system and the count is of games.
+                model.preview = result
                     .results
                     .iter()
-                    .map(|item| (item.name.as_str(), item.system.id.as_str()));
-                model.preview = rules::pane_matches(titles)
-                    .into_iter()
-                    .map(|index| &result.results[index])
                     .map(|item| Preview {
                         name: item.name.clone(),
                         system: item.system.name.clone(),

@@ -220,6 +220,8 @@ pub struct GameInput {
     pub is_favorite: bool,
     /// A folder of one game's discs.
     pub multi_disc: bool,
+    /// A search result standing for several versions of one title.
+    pub versions: bool,
     /// There is a script or path to write to a token.
     pub has_payload: bool,
     pub has_nfc: bool,
@@ -248,6 +250,9 @@ pub fn game(input: &GameInput) -> Menu {
     }
     if input.multi_disc {
         menu.root.push(row("choose_disc"));
+    }
+    if input.versions {
+        menu.root.push(row("choose_version"));
     }
     if input.has_payload {
         push_write(&mut menu, input.has_nfc);
@@ -534,6 +539,25 @@ mod tests {
                 "manage_game"
             ]
         );
+    }
+
+    #[test]
+    fn a_title_with_versions_offers_them_where_discs_sit() {
+        let stacked = game(&GameInput {
+            versions: true,
+            ..regular()
+        });
+        assert_eq!(
+            keys(&stacked.root),
+            [
+                "more_info",
+                "favorite:add",
+                "choose_version",
+                "write_token",
+                "manage_game"
+            ]
+        );
+        assert_eq!(stacked.page_for("choose_version"), None);
     }
 
     #[test]

@@ -88,6 +88,16 @@ pub struct MediaSearchParams {
     /// on every cursor page.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub include_hidden: Option<bool>,
+    /// `title` returns one result per title and system, carrying the
+    /// version Core would launch and how many versions match. Pages and
+    /// cursors then count titles. Core builds that predate it ignore it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub group_by: Option<String>,
+    /// List the versions of one title (a result's `titleId`), filtered by
+    /// `tags`, `pathPrefix` and visibility like the grouped search that
+    /// counted them. Core ignores `query`, `systems` and `letter` here.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title_id: Option<i64>,
 }
 
 /// Image types Core's `media.image` endpoint can actually serve.
@@ -194,6 +204,14 @@ pub struct MediaItem {
     /// sized that cover yet, and by Core builds that predate it.
     #[serde(default)]
     pub cover_color: Option<String>,
+    /// The title the row belongs to, for a `titleId` search listing its
+    /// versions. Opaque, and changes when media is re-indexed.
+    #[serde(default)]
+    pub title_id: Option<i64>,
+    /// Grouped searches only: how many versions of the title match the
+    /// search, across the whole search rather than the page.
+    #[serde(default)]
+    pub version_count: Option<u32>,
 }
 
 impl Default for MediaItem {
@@ -209,6 +227,8 @@ impl Default for MediaItem {
             relative_path: None,
             has_cover: true,
             cover_color: None,
+            title_id: None,
+            version_count: None,
         }
     }
 }
@@ -1996,6 +2016,8 @@ mod tests {
             sort: Some("name-asc".into()),
             path_prefix: Some("/roms/SNES/RPG".into()),
             include_hidden: Some(true),
+            group_by: Some("title".into()),
+            title_id: Some(42),
         };
         let json = serde_json::to_value(&params).expect("serialise");
         let object = json.as_object().expect("object");
@@ -2027,7 +2049,32 @@ mod tests {
             object.get("pathPrefix").and_then(|v| v.as_str()),
             Some("/roms/SNES/RPG")
         );
+        assert_eq!(
+            object.get("groupBy").and_then(|v| v.as_str()),
+            Some("title")
+        );
+        assert_eq!(
+            object.get("titleId").and_then(serde_json::Value::as_i64),
+            Some(42)
+        );
         assert!(!object.contains_key("fuzzySystem"));
+    }
+
+    #[test]
+    fn a_grouped_search_result_carries_its_title_and_version_count() {
+        let item: MediaItem = serde_json::from_value(serde_json::json!({
+            "name": "Super Mario World",
+            "path": "/roms/SNES/Super Mario World (USA).sfc",
+            "titleId": 7,
+            "versionCount": 3,
+        }))
+        .expect("grouped row");
+        assert_eq!(item.title_id, Some(7));
+        assert_eq!(item.version_count, Some(3));
+        let flat: MediaItem =
+            serde_json::from_value(serde_json::json!({ "name": "A", "path": "/a" }))
+                .expect("flat row");
+        assert_eq!((flat.title_id, flat.version_count), (None, None));
     }
 
     #[test]

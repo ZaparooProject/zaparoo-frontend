@@ -688,6 +688,7 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_label_name => set_label_name,
         get_label_tags => set_label_tags,
         get_label_hidden => set_label_hidden,
+        get_label_versions => set_label_versions,
         get_activate_pulse => set_activate_pulse,
         get_release_pulse => set_release_pulse,
         get_rail_visible => set_rail_visible,

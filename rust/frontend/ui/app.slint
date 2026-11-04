@@ -528,6 +528,8 @@ export global GamesView {
     in-out property <string> label-tags: "";
     // The focused game is hidden, shown because hidden games are.
     in-out property <bool> label-hidden: false;
+    // The versions the focused search result stands for; zero for one.
+    in-out property <int> label-versions: 0;
     in-out property <int> activate-pulse: 0;
     in-out property <int> release-pulse: 0;
     // Folder changes reuse the mounted strip horizontally; page changes move vertically.
@@ -3334,7 +3336,7 @@ component GamesScreen inherits Rectangle {
             ? (Layout.top-strip-visible ? root.footer-right-inset : Math.max(root.footer-left-inset, root.footer-right-inset))
             : Layout.slot-margin;
         text: GamesView.label-name;
-        tags: Labels.tags(GamesView.label-tags, GamesView.label-hidden);
+        tags: Labels.tags(GamesView.label-tags, GamesView.label-hidden, GamesView.label-versions);
         visible: !root.gate-hide && !PageBar.focused;
     }
 

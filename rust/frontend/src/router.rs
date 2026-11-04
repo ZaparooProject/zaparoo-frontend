@@ -2866,7 +2866,10 @@ fn context_accept(ctx: &Ctx, app: &App, id: &str) {
         };
         (shared.context_owner, showing, opens)
     };
-    if matches!(showing, Some(Page::Alternates | Page::Discs)) {
+    if matches!(
+        showing,
+        Some(Page::Alternates | Page::Discs | Page::Versions)
+    ) {
         crate::context_page::accept(ctx, app, id);
         return;
     }

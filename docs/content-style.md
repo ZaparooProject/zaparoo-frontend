@@ -34,9 +34,9 @@ more than a handful of actions, groups 3 and 4 move to one **Manage**
 page (`Manage game`, `Manage system`, `Manage category`), the last row of
 Options, and the two ways of writing a token share one `Write to token`
 row. Within Manage the same order holds: configuration (`Change
-launcher`), then organization, then maintenance last. `Choose disc` and
-`Discover alt. versions` stay on Options, since they are what the user
-opened the menu for. A menu whose organizational actions number two or
+launcher`), then organization, then maintenance last. `Choose disc`,
+`Choose version` and `Discover alt. versions` stay on Options, since they
+are what the user opened the menu for. A menu whose organizational actions number two or
 three keeps them on Options (a folder, a launch-only system, a built-in
 Hub tile): a Manage page is for overflow, not for uniformity. The rules
 and their tests are `rust/zaparoo-app/src/options_menu.rs`.
