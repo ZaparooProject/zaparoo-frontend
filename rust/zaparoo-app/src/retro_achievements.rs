@@ -345,7 +345,9 @@ pub fn mister_ini_has_ra(ini: &str) -> bool {
             let name = section.split(']').next().unwrap_or("");
             in_ra = name.split('+').any(|part| {
                 let part = part.trim();
-                part.len() >= 3 && part[..3].eq_ignore_ascii_case("ra_")
+                part.as_bytes()
+                    .get(..3)
+                    .is_some_and(|head| head.eq_ignore_ascii_case(b"ra_"))
             });
             continue;
         }
@@ -565,6 +567,10 @@ mod tests {
         assert!(!mister_ini_has_ra("[RA_*]\n;main=MiSTer_RA\n"));
         assert!(!mister_ini_has_ra("[RA_*]\nmain=MiSTer\n"));
         assert!(!mister_ini_has_ra(""));
+        assert!(
+            !mister_ini_has_ra("[ñña]\nmain=MiSTer_RA\n"),
+            "a name that is not ASCII is read, not sliced mid-character"
+        );
         assert!(installed(true, true, true));
         assert!(!installed(true, false, true));
     }

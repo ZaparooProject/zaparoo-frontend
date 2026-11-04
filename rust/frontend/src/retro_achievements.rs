@@ -85,9 +85,12 @@ fn write_in_place(path: &Path, edits: &[Edit]) -> std::io::Result<RaConfig> {
     let mut original = Vec::new();
     file.read_to_end(&mut original)?;
     let updated = rules::rewrite(&original, edits);
-    file.set_len(0)?;
+    // Overwrite first and shrink after, so the file is never empty: a
+    // reader never sees a blank cfg, and a failed write leaves the old
+    // contents rather than nothing.
     file.rewind()?;
     file.write_all(&updated)?;
+    file.set_len(u64::try_from(updated.len()).unwrap_or(u64::MAX))?;
     file.sync_all()?;
     Ok(rules::parse(&updated))
 }
@@ -99,15 +102,27 @@ pub(crate) fn refresh(ctx: &Ctx, app: &App) {
         return;
     }
     let shared = ctx.shared.clone();
+    // A change made while the card is read is newer than what the read
+    // finds; the read only lands while nothing has changed since.
+    let seq = lock(&shared).ra.seq;
     let ctx2 = ctx.clone();
     let weak = app.as_weak();
     ctx.handle.spawn(async move {
-        let Ok((cfg, ra_main, ini_ra)) = tokio::task::spawn_blocking(|| read(&root())).await else {
+        let read = tokio::task::spawn_blocking(|| {
+            let _turn = WRITER
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            read(&root())
+        })
+        .await;
+        let Ok((cfg, ra_main, ini_ra)) = read else {
             return;
         };
         {
             let mut shared = lock(&shared);
-            shared.ra.cfg = cfg;
+            if shared.ra.seq == seq {
+                shared.ra.cfg = cfg;
+            }
             shared.ra.ra_main = ra_main;
             shared.ra.ini_ra = ini_ra;
         }
