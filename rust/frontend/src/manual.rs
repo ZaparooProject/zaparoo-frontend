@@ -12,9 +12,7 @@ use zaparoo_app::manual::{self as rules, Chunk, Document, Download, Fit, Reader,
 use zaparoo_core::input_actions::actions;
 use zaparoo_core::media_types::{MediaAssetParams, MEDIA_ASSET_MAX_CHUNK};
 
-/// Rendered pages kept for turning back and forth: the shown page and the
-/// one prefetched after it, with room for the one before.
-const PAGE_CACHE_BYTES: usize = 24 * 1024 * 1024;
+use zaparoo_app::manual::PAGE_CACHE_BYTES;
 
 /// Which game's documents Game Info is showing.
 #[derive(Debug, Clone, Default)]
@@ -34,8 +32,10 @@ pub struct ManualModel {
     /// Each page's size in PDF units, as the worker read it.
     page_sizes: Vec<(f32, f32)>,
     worker: Option<mpsc::Sender<Job>>,
-    /// The panel's page box in pixels, as the view last reported it.
+    /// The whole-page box in pixels, as the view last reported it, and the
+    /// room the arrows take from each side of it at fit width.
     page_box: (u32, u32),
+    arrow_room: u32,
     pages: VecDeque<Rendered>,
 }
 
@@ -69,6 +69,12 @@ impl ManualModel {
         self.documents = documents;
     }
 
+    /// The reader's whole box and the arrows' room, which the image viewer
+    /// shares.
+    pub fn page_box(&self) -> (u32, u32, u32) {
+        (self.page_box.0, self.page_box.1, self.arrow_room)
+    }
+
     pub fn has_documents(&self) -> bool {
         !self.documents.is_empty()
     }
@@ -90,8 +96,14 @@ impl ManualModel {
     fn wanted(&self, page: usize) -> Option<Wanted> {
         let reader = self.reader?;
         let (page_w, page_h) = *self.page_sizes.get(page)?;
-        let (width, height) =
-            rules::render_size(page_w, page_h, self.page_box.0, self.page_box.1, reader.fit)?;
+        let (box_w, box_h) = match reader.fit {
+            Fit::Page => self.page_box,
+            Fit::Width => (
+                self.page_box.0.saturating_sub(2 * self.arrow_room),
+                self.page_box.1.saturating_sub(2 * self.arrow_room),
+            ),
+        };
+        let (width, height) = rules::render_size(page_w, page_h, box_w, box_h, reader.fit)?;
         Some(Wanted {
             page,
             width,
@@ -126,7 +138,7 @@ pub fn bind(ctx: &std::sync::Arc<Ctx>, app: &App) {
     let ctx = ctx.clone();
     let weak = app.as_weak();
     app.global::<GameInfoView>()
-        .on_manual_box(move |width, height| {
+        .on_manual_box(move |width, height, room| {
             // A turn later, as `art-box` is: the view reports while it lays out.
             let ctx = ctx.clone();
             let weak = weak.clone();
@@ -136,18 +148,21 @@ pub fn bind(ctx: &std::sync::Arc<Ctx>, app: &App) {
                     u32::try_from(width).unwrap_or(0),
                     u32::try_from(height).unwrap_or(0),
                 );
+                let room = u32::try_from(room).unwrap_or(0);
                 let open = {
                     let mut shared = lock(&ctx.shared);
                     let model = &mut shared.game_info.manual;
-                    if model.page_box == page_box {
+                    if model.page_box == page_box && model.arrow_room == room {
                         return;
                     }
                     model.page_box = page_box;
+                    model.arrow_room = room;
                     model.open
                 };
                 if open {
                     show_page(&ctx, &app);
                 }
+                crate::game_info::viewer_box_changed(&ctx, &app);
             });
         });
 }
@@ -178,7 +193,7 @@ fn publish_closed(app: &App) {
     view.set_manual_has_image(false);
     view.set_manual_page(0);
     view.set_manual_pages(0);
-    view.set_manual_fit(ManualFit::Width);
+    view.set_manual_fit(ManualFit::Page);
     view.set_manual_scroll(0.0);
 }
 
@@ -593,6 +608,18 @@ mod tests {
         };
         assert_eq!(model.wanted(0), None);
         model.reader = Some(Reader::new(2));
+        // A manual opens on the whole page.
+        assert_eq!(
+            model.wanted(0),
+            Some(Wanted {
+                page: 0,
+                width: 386,
+                height: 500
+            })
+        );
+        if let Some(reader) = model.reader.as_mut() {
+            reader.toggle_fit();
+        }
         assert_eq!(
             model.wanted(0),
             Some(Wanted {
@@ -601,15 +628,22 @@ mod tests {
                 height: 1294
             })
         );
-        if let Some(reader) = model.reader.as_mut() {
-            reader.toggle_fit();
-        }
         assert_eq!(
             model.wanted(1),
             Some(Wanted {
                 page: 1,
-                width: 647,
-                height: 500
+                width: 1000,
+                height: 773
+            })
+        );
+        // Fit width gives the arrows their room on each side.
+        model.arrow_room = 50;
+        assert_eq!(
+            model.wanted(1),
+            Some(Wanted {
+                page: 1,
+                width: 900,
+                height: 695
             })
         );
     }

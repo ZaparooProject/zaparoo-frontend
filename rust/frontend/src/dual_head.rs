@@ -690,6 +690,7 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_detail_cover_absent => set_detail_cover_absent,
         get_detail_image_index => set_detail_image_index,
         get_detail_image_count => set_detail_image_count,
+        get_detail_image_kind => set_detail_image_kind,
         get_detail_placeholder => set_detail_placeholder,
         get_detail_has_placeholder => set_detail_has_placeholder,
         get_detail_rows => set_detail_rows,
@@ -890,7 +891,20 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_modal_name => set_modal_name,
         get_modal_system => set_modal_system,
         get_modal_path => set_modal_path,
-        get_rows => set_rows,
+        get_info_rows => set_info_rows,
+        get_scroll_snap => set_scroll_snap,
+        get_image_kind => set_image_kind,
+        get_focus => set_focus,
+        get_image_stop => set_image_stop,
+        get_manual_stop => set_manual_stop,
+        get_description_stop => set_description_stop,
+        get_values_open => set_values_open,
+        get_values_kind => set_values_kind,
+        get_values => set_values,
+        get_values_index => set_values_index,
+        get_viewer_open => set_viewer_open,
+        get_viewer_has_image => set_viewer_has_image,
+        get_viewer_absent => set_viewer_absent,
         get_loading => set_loading,
         get_failed => set_failed,
         get_media_missing => set_media_missing,
@@ -915,6 +929,10 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
     let manual_image = source.get_manual_image();
     if !same_image(&target.get_manual_image(), &manual_image) {
         target.set_manual_image(manual_image);
+    }
+    let viewer_image = source.get_viewer_image();
+    if !same_image(&target.get_viewer_image(), &viewer_image) {
+        target.set_viewer_image(viewer_image);
     }
 
     let source = primary.global::<Overlays>();

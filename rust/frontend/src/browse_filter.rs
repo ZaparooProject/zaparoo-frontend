@@ -98,7 +98,15 @@ fn set_picker_tags(shared: &mut Shared, tags: Vec<String>) {
             let system_id = shared.games.system_id.clone();
             shared.persist.games.set_filter(&system_id, tags);
         }
-        Target::Search => shared.persist.search.tags = tags,
+        // Tags the picker has no category for stay, as written.
+        Target::Search => {
+            let extras = if crate::search::as_written(shared) {
+                zaparoo_app::search::extra_tags(&shared.persist.search.tags)
+            } else {
+                Vec::new()
+            };
+            shared.persist.search.tags = [tags, extras].concat();
+        }
     }
 }
 
@@ -150,11 +158,14 @@ pub(crate) fn search_tag_label(shared: &Shared, tag: &str) -> String {
     rules::display_label(&label, value)
 }
 
-/// The search's filter as one line ("Platformer +1"). None without one.
+/// The search's filter as one line ("Platformer +1"), counting the tags
+/// the picker cannot show. None without one.
 pub(crate) fn search_summary(shared: &Shared) -> Option<String> {
-    let tags = rules::normalize(&shared.persist.search.tags);
-    rules::summary(&tags, |tag| {
-        search_groups(shared).and_then(|groups| label_for(groups, tag))
+    let tags = crate::search::field_tags(shared);
+    let label = search_tag_label(shared, tags.first()?);
+    Some(match tags.len() - 1 {
+        0 => label,
+        extra => format!("{label} +{extra}"),
     })
 }
 
@@ -503,8 +514,13 @@ fn set_selection(ctx: &Ctx, category: Category, value: Option<&str>) {
     set_picker_tags(&mut shared, next);
 }
 
+/// Clear filter drops every tag, the ones the picker cannot show too.
 fn clear_selection(ctx: &Ctx) {
-    set_picker_tags(&mut lock(&ctx.shared), Vec::new());
+    let mut shared = lock(&ctx.shared);
+    match shared.filter.target {
+        Target::Browse => set_picker_tags(&mut shared, Vec::new()),
+        Target::Search => shared.persist.search.tags.clear(),
+    }
 }
 
 /// The View menu's Clear tags row: the list closes with the menu.

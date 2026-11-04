@@ -113,6 +113,30 @@ pub fn tile_list(values: &[String]) -> Vec<String> {
     kept
 }
 
+/// The search's tags of a type the tags picker has no category for
+/// (`series:...`, a revision), as written. Only a tag search from Game Info
+/// or a Hub tile puts one there; the picker leaves them alone, so editing
+/// the search's other tags or its systems keeps them.
+pub fn extra_tags(tags: &[String]) -> Vec<String> {
+    tile_list(tags)
+        .into_iter()
+        .filter(|tag| {
+            let tag_type = tag.split_once(':').map_or(tag.as_str(), |(t, _)| t);
+            !browse_filter::Category::ALL
+                .iter()
+                .any(|category| category.tag_type() == tag_type)
+        })
+        .collect()
+}
+
+/// The search's tags: the picker's, one per category in menu order, then
+/// the extras it cannot show (`extra_tags`).
+pub fn search_tags(tags: &[String]) -> Vec<String> {
+    let mut all = browse_filter::normalize(tags);
+    all.extend(extra_tags(tags));
+    all
+}
+
 /// How many games match, as far as one page can tell.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Count {
@@ -167,6 +191,15 @@ pub fn prune_tags(tags: &[String], groups: &[Group]) -> Vec<String> {
             })
         })
         .collect()
+}
+
+/// `prune_tags` for a search whose tags are kept as written (a Hub tile's,
+/// a tag search from Game Info): the tags the picker cannot show stay, as
+/// no tag list names them to rule them out.
+pub fn prune_written_tags(tags: &[String], groups: &[Group]) -> Vec<String> {
+    let mut kept = prune_tags(tags, groups);
+    kept.extend(extra_tags(tags));
+    kept
 }
 
 /// The focusable regions: the two fields above the keyboard, the
@@ -352,6 +385,26 @@ mod tests {
 
     fn go(focus: Focus, action: &str, shape: Shape) -> Focus {
         step(focus, action, shape).0
+    }
+
+    #[test]
+    fn tags_the_picker_cannot_show_survive_it_and_a_change_of_system() {
+        let tags: Vec<String> = ["series:Resident Evil", "genre:horror", "user:hidden"]
+            .map(String::from)
+            .to_vec();
+        assert_eq!(extra_tags(&tags), ["series:Resident Evil"]);
+        assert_eq!(search_tags(&tags), ["genre:horror", "series:Resident Evil"]);
+        let groups = vec![Group {
+            category: Category::Players,
+            values: Vec::new(),
+        }];
+        // The new system has no genre list: the genre goes, the series stays.
+        assert_eq!(prune_written_tags(&tags, &groups), ["series:Resident Evil"]);
+        assert_eq!(
+            prune_written_tags(&tags, &[]),
+            ["genre:horror", "series:Resident Evil"]
+        );
+        assert!(prune_tags(&tags, &groups).is_empty());
     }
 
     #[test]

@@ -26,6 +26,7 @@ pub mod folder_picker;
 pub mod form_list;
 pub mod format;
 pub mod frame_clock;
+pub mod game_details;
 pub mod han_fonts;
 pub mod hub;
 pub mod image_picker;

@@ -415,19 +415,7 @@ export global SettingsLabels {
     }
 
     pure function artwork(value: string) -> string {
-        if (value == "image") { return @tr("Image"); }
-        if (value == "thumbnail") { return @tr("Thumbnail"); }
-        if (value == "boxart") { return @tr("Box art"); }
-        if (value == "boxart3d") { return @tr("3D box art"); }
-        if (value == "screenshot") { return @tr("Screenshot"); }
-        if (value == "wheel") { return @tr("Wheel"); }
-        if (value == "titleshot") { return @tr("Title screen"); }
-        if (value == "map") { return @tr("Map"); }
-        if (value == "marquee") { return @tr("Marquee"); }
-        if (value == "fanart") { return @tr("Fan art"); }
-        if (value == "boxartside") { return @tr("Box side"); }
-        if (value == "boxartback") { return @tr("Box back"); }
-        return @tr("Automatic");
+        return Labels.image-type(value) == "" ? @tr("Automatic") : Labels.image-type(value);
     }
 }
 

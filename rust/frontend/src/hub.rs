@@ -1201,6 +1201,7 @@ fn accept_move(ctx: &Ctx, app: &App) {
         hub.save(&ctx.handle);
         clear_move_state(hub);
     }
+    crate::router::forget_menu_return(ctx);
     rebuild(ctx, app);
 }
 
@@ -1218,6 +1219,7 @@ fn cancel_move(ctx: &Ctx, app: &App) {
     }
     rebuild(ctx, app);
     commit_current(ctx);
+    crate::router::return_to_menu(ctx, app, zaparoo_app::options_menu::Opens::Move);
 }
 
 /// Rebuild from the session snapshot with the held tile at `to`.
@@ -1440,6 +1442,13 @@ fn open_context_menu(ctx: &Ctx, app: &App) {
 fn present_menu(ctx: &Ctx, app: &App, menu: menu::Menu, target: MenuTarget) {
     let menu = menu.with_tile_edits(can_change_icon(ctx));
     lock(&ctx.shared).hub.menu_target = target;
+    crate::router::set_context_anchor(app, &context_anchor(ctx, app));
+    crate::router::present_hub_context_menu(ctx, app, menu);
+    crate::router::refresh_readers(ctx);
+}
+
+/// The focused tile's rect, where the menu sits.
+pub(crate) fn context_anchor(ctx: &Ctx, app: &App) -> crate::router::ContextAnchor {
     let inputs = crate::router::output_scene(app).inputs();
     let derived = zaparoo_app::sizing::derive(&inputs);
     let geometry = rules::geometry(&inputs, &derived);
@@ -1456,19 +1465,14 @@ fn present_menu(ctx: &Ctx, app: &App, menu: menu::Menu, target: MenuTarget) {
         i32::try_from(row).unwrap_or(0),
         i32::try_from(column).unwrap_or(0),
     );
-    crate::router::set_context_anchor(
-        app,
-        &crate::router::ContextAnchor {
-            x: rect.x as f32,
-            y: (geometry.grid_y + rect.y) as f32,
-            w: rect.width as f32,
-            h: rect.height as f32,
-            radius: derived.radius_md as f32,
-            zoomed: true,
-        },
-    );
-    crate::router::present_hub_context_menu(ctx, app, menu);
-    crate::router::refresh_readers(ctx);
+    crate::router::ContextAnchor {
+        x: rect.x as f32,
+        y: (geometry.grid_y + rect.y) as f32,
+        w: rect.width as f32,
+        h: rect.height as f32,
+        radius: derived.radius_md as f32,
+        zoomed: true,
+    }
 }
 
 /// A tile only records where its game is. Ask Core what the game's state

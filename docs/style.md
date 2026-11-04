@@ -911,12 +911,23 @@ no focus. Back returns to the screen the search was opened from, and the
 search is not added to the recent searches. The results' title names the
 scope where the systems would be (`"mario" · Consoles · RPG`).
 
-The Search results' Menu has one action, "Save to Hub", which pins the
-search on screen as a Hub tile and reads "Remove from Hub" once it is there.
-Above 240p it is the results' one chip, and focus stays on it after a press
-so the changed words show what happened; at 240p it is the Menu list's one
-row. Results opened from such a tile have no Search screen behind them:
-Back returns to the Hub, and the search is not added to the recent searches.
+The Search results' Menu has two actions. "Edit search…" opens the Search
+screen with the search on screen, to change its name, systems or tags.
+"Save to Hub" pins the search as a Hub tile and reads "Remove from Hub"
+once it is there; focus stays on its chip after a press so the changed
+words show what happened. At 240p both are rows of the Menu list. Results
+opened from such a tile have no Search screen behind them: Back returns to
+the Hub, and the search is not added to the recent searches. A tag search
+from Game Info has none either: Back returns to Game Info, and Edit search
+is how to widen it (another system, or every one). Back from the Search
+screen it opens goes to Game Info as well, and so does Back from the
+results of the edited search.
+
+A tag search or a Hub tile can carry tags of a type the tags picker has no
+category for (a series, a revision). The Tags field counts them in its
+summary, the picker leaves them alone when it changes the others, a change
+of system keeps them, and Clear filter drops them with the rest
+(`zaparoo_app::search::extra_tags`).
 
 ### Rename tile
 
@@ -985,7 +996,7 @@ once, through the same relayout a scene change runs.
 | Systems | Search here | |
 | Favorites | Sort [value], Group by [value], Random game, Search here | Back to Hub |
 | Favorite systems | Group by [value], Search here | |
-| Search results | Save to Hub / Remove from Hub | |
+| Search results | Edit search, Save to Hub / Remove from Hub | |
 
 - **Placement.** Directly under the title strip and above the grid or list
   card; on the Hub, under the header at the header's side margin, so it
@@ -1607,6 +1618,51 @@ same 92% ceiling, not the 78% cap meant for content nobody measured. (Round 6
 follow-up: the picker's swatch band routinely pushes its measured width past
 78% of a small screen, so a 78% cap still truncated rows even after the
 label-measurement fix below.)
+
+### Game Info
+
+Game Info follows the Zaparoo App's details modal: the art, an action row
+(Manual), the description, then a Details table and Technical details.
+The system, years and players are rows of the table, not a caption under
+the art as well. Under the art, the image's type and its place in the
+set (`Box art 1/3`); the list's detail pane names it the same way. A tag type is one
+row with its values joined; internal tags (preferences, decks, `scraper.*`)
+never show, and tags without a row of their own share one Tags row as
+`type:name`. `zaparoo_app::game_details` decides all of that and names the
+values; `ui/tag_names.slint` holds the strings, each with a translation
+context so a tag's "Save" or "Menu" is never a button's.
+
+Focus moves over what acts, not over every line: the art (A views it full
+screen), each action, the description (Up and Down read through it before
+moving on) and each row that searches. A on a row searches the game's
+system for that tag; a row with several values lists them first, as a page
+of the panel. Back from those results returns to the screen Game Info was
+opened on, with Game Info open on the same row and image; the screen and
+the panel come back in one frame, from the metadata the panel already had.
+Left and Right always step
+the images. A new thing to do in Game Info is a new focus stop with its own
+A, never a button of its own. The selection fill travels between rows as
+it does in Settings (`SelectionCursor` with each row drawn again inside a
+`SelectionClip`); the art and the description take a ring, and the Manual
+button its own fill. Opening the panel, or coming back to it, scrolls
+straight to the focused row; only the user's moves glide.
+
+### Back to Options
+
+An Options row that opens something in the menu's place (Update metadata,
+Change launcher, Write to token and its QR code, Details, a Hub tile's
+Rename, Change icon and Move) hands Back to that thing, and Back there
+brings the menu back: on the page it was on, with that row focused, so a
+second try or a different row is one press away. Finishing it (Start, a
+pick, Save, a token written, a move accepted) ends on the screen instead,
+and so does an error. Details and the QR code have nothing to finish, so
+either way out is Back. Back while a row is still waiting on Core or a
+route calls that off and leaves the menu open on the row.
+
+`zaparoo_app::options_menu::Menu::opens` names what each row opens;
+`router::return_to_menu` brings the menu back and `forget_menu_return`
+marks a finish. A new row that opens a surface adds itself to `opens` and
+calls one or the other from that surface's Back and finish paths.
 
 ### Picker swatch preview
 

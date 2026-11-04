@@ -97,10 +97,27 @@ pub(crate) fn scope(shared: &Shared) -> Scope {
 /// picker's are held to what it can produce.
 fn chosen_tags(shared: &Shared) -> Vec<String> {
     let search = &shared.persist.search;
-    if search.from_hub {
+    if as_written(shared) {
         rules::tile_list(&search.tags)
     } else {
         zaparoo_app::browse_filter::normalize(&search.tags)
+    }
+}
+
+/// Whether the search's tags are a Hub tile's or a Game Info tag's, kept
+/// as written, including the ones the tags picker has no category for.
+pub(crate) fn as_written(shared: &Shared) -> bool {
+    shared.persist.search.from_hub || crate::game_info::drilled(shared)
+}
+
+/// The search's tags as the Tags field and its picker see them: the
+/// picker's, then, for a search kept as written, the ones it cannot show.
+pub(crate) fn field_tags(shared: &Shared) -> Vec<String> {
+    let tags = &shared.persist.search.tags;
+    if as_written(shared) {
+        rules::search_tags(tags)
+    } else {
+        zaparoo_app::browse_filter::normalize(tags)
     }
 }
 
@@ -159,7 +176,7 @@ pub(crate) fn results_title_parts(shared: &Shared) -> (String, String) {
     if !search.scope_name.is_empty() {
         head.push(search.scope_name.clone());
     }
-    let tail = if search.from_hub {
+    let tail = if as_written(shared) {
         tag_labels(shared, &rules::tile_list(&search.tags))
     } else {
         tag_labels(shared, &search.tags)
@@ -400,6 +417,7 @@ pub fn enter(ctx: &Ctx, app: &App, entry: EntryMode) {
     {
         let mut shared = lock(&ctx.shared);
         reset_model(&mut shared);
+        crate::game_info::forget_drill(&mut shared);
         if entry == EntryMode::Fresh {
             shared.persist.search.reset();
         }
@@ -483,6 +501,7 @@ pub(crate) fn enter_scoped(ctx: &Ctx, app: &App) {
             return;
         };
         reset_model(&mut shared);
+        crate::game_info::forget_drill(&mut shared);
         shared.search.source_intact = true;
         let search = &mut shared.persist.search;
         search.reset();
@@ -517,6 +536,7 @@ pub(crate) fn enter_saved(
     {
         let mut shared = lock(&ctx.shared);
         reset_model(&mut shared);
+        crate::game_info::forget_drill(&mut shared);
         let search = &mut shared.persist.search;
         search.reset();
         search.from_hub = true;
@@ -535,6 +555,26 @@ pub(crate) fn enter_saved(
         }
     }
     // The tag list names the tags in the results' title once it lands.
+    crate::browse_filter::begin_for(ctx, app, Target::Search);
+    crate::games::enter_search(ctx, app, EntryMode::Fresh);
+}
+
+/// A tag from Game Info: the game's system searched for that tag, straight
+/// to the results. Back returns to Game Info (`game_info::return_from_drill`).
+pub(crate) fn enter_tag(ctx: &Ctx, app: &App, system: &str, tag: &str) {
+    {
+        let mut shared = lock(&ctx.shared);
+        reset_model(&mut shared);
+        let search = &mut shared.persist.search;
+        search.reset();
+        search.systems = rules::tile_list(&[system.to_string()]);
+        search.tags = rules::tile_list(&[tag.to_string()]);
+        shared.search.keyboard.focus(Key::Submit);
+        if !can_search(&shared) {
+            return;
+        }
+    }
+    // The tag list names the tag in the results' title once it lands.
     crate::browse_filter::begin_for(ctx, app, Target::Search);
     crate::games::enter_search(ctx, app, EntryMode::Fresh);
 }
@@ -583,6 +623,14 @@ pub fn restore_results(ctx: &Ctx, app: &App) {
         shared.search.keyboard.focus(Key::Submit);
     }
     crate::games::enter_search(ctx, app, EntryMode::Restore);
+}
+
+/// Edit search on the results: the Search screen with the search as it
+/// is. Back there leaves as the results would have: a tag search Game Info
+/// opened goes back to Game Info, a Hub tile's to the Hub.
+pub(crate) fn edit(ctx: &Ctx, app: &App) {
+    crate::games::flush_persist(ctx);
+    return_from_results(ctx, app);
 }
 
 /// Back from the results: the search as it was, focus on the Search key.
@@ -834,6 +882,9 @@ pub(crate) fn tags_loaded(ctx: &Ctx, app: &App) {
         let mut shared = lock(&ctx.shared);
         let prune = std::mem::take(&mut shared.search.prune_pending);
         let pruned = match crate::browse_filter::search_groups(&shared) {
+            Some(groups) if prune && as_written(&shared) => {
+                rules::prune_written_tags(&shared.persist.search.tags, groups)
+            }
             Some(groups) if prune => rules::prune_tags(&shared.persist.search.tags, groups),
             Some(_) => shared.persist.search.tags.clone(),
             None => {
@@ -999,6 +1050,11 @@ fn leave(ctx: &Ctx, app: &App) {
         let mut shared = lock(&ctx.shared);
         shared.search.task.cancel();
         shared.search.seq = shared.search.seq.wrapping_add(1);
+        if crate::game_info::drilled(&shared) {
+            drop(shared);
+            crate::game_info::return_from_drill(ctx, app);
+            return;
+        }
         let scope = scope(&shared);
         // A browse search covers the one system it was opened on, and a
         // favorites search at most one.

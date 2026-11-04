@@ -9,6 +9,26 @@
 // so the same game reads the same in Games, Favorites, Search results,
 // Recently played and on the Hub.
 
+/// What an Options row opens in the menu's place, for Back to return from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Opens {
+    /// The Update metadata setup panel.
+    Setup,
+    /// The launcher picker.
+    Picker,
+    QrCode,
+    /// Waiting for a token to write.
+    TokenWrite,
+    /// Game Info.
+    Details,
+    /// The Rename screen for a Hub tile.
+    Rename,
+    /// The file browser picking a Hub tile's icon.
+    IconBrowser,
+    /// Moving a Hub tile.
+    Move,
+}
+
 /// A page of the menu, shown in place of its own rows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Page {
@@ -90,13 +110,33 @@ impl Menu {
         }
     }
 
+    /// What the row `id` opens in the menu's place, when Back there returns
+    /// to the menu: on the page it was on, with the row focused. Finishing
+    /// what it opened (Start, Save, a pick) goes to the screen instead.
+    pub fn opens(id: &str) -> Option<Opens> {
+        Some(match id {
+            "scrape_game" | "scrape_system" | "scrape_category" => Opens::Setup,
+            "change_launcher" => Opens::Picker,
+            "qr_code" => Opens::QrCode,
+            "write_card" => Opens::TokenWrite,
+            "more_info" => Opens::Details,
+            "hub_rename" => Opens::Rename,
+            "hub_icon" => Opens::IconBrowser,
+            "hub_move" => Opens::Move,
+            _ => return None,
+        })
+    }
+
     /// Whether the row `id` opens something that may not be ready at once:
     /// a screen of its own, or a picker Core has to be asked about first.
     /// The menu stays up, its row held down, until that is ready, and
     /// leaves in the same frame it appears: closing it first would show the
     /// screen underneath on its own for a moment.
     pub fn holds_open(id: &str) -> bool {
-        matches!(id, "hub_rename" | "hub_icon" | "change_launcher")
+        matches!(
+            id,
+            "hub_rename" | "hub_icon" | "change_launcher" | "more_info"
+        )
     }
 
     /// A Hub tile's own Rename and Change icon rows, ahead of its layout
@@ -814,12 +854,28 @@ mod tests {
     }
 
     #[test]
+    fn rows_that_open_a_surface_say_which() {
+        assert_eq!(Menu::opens("scrape_system"), Some(Opens::Setup));
+        assert_eq!(Menu::opens("change_launcher"), Some(Opens::Picker));
+        assert_eq!(Menu::opens("qr_code"), Some(Opens::QrCode));
+        assert_eq!(Menu::opens("write_card"), Some(Opens::TokenWrite));
+        assert_eq!(Menu::opens("more_info"), Some(Opens::Details));
+        assert_eq!(Menu::opens("hub_rename"), Some(Opens::Rename));
+        assert_eq!(Menu::opens("hub_icon"), Some(Opens::IconBrowser));
+        assert_eq!(Menu::opens("hub_move"), Some(Opens::Move));
+        // Rows that act at once, and rows that turn a page, open nothing.
+        assert_eq!(Menu::opens("toggle_favorite"), None);
+        assert_eq!(Menu::opens("index_system"), None);
+        assert_eq!(Menu::opens("manage_game"), None);
+    }
+
+    #[test]
     fn only_rows_that_open_something_slow_keep_the_menu_up() {
         assert!(Menu::holds_open("hub_rename"));
         assert!(Menu::holds_open("hub_icon"));
         assert!(Menu::holds_open("change_launcher"));
         assert!(!Menu::holds_open("hub_move"));
-        assert!(!Menu::holds_open("more_info"));
+        assert!(Menu::holds_open("more_info"));
     }
 
     #[test]

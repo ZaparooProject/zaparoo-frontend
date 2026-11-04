@@ -2291,15 +2291,20 @@ fn detail_images(ctx: &Ctx, model: &GamesModel) -> (usize, Vec<String>) {
 
 /// The key the detail pane shows for `row`: its cover, or the image type
 /// the pane was stepped to. The first image is the cover itself, asked for
-/// as browsing asks, so it is never fetched twice.
+/// as browsing asks, so it is never fetched twice, unless a plain cover
+/// request cannot return it (a game with only a map and fanart).
 fn detail_key(ctx: &Ctx, model: &GamesModel, row: &GameRow, tier: CoverSize) -> MediaKey {
     let key = media_key(row, &model.system_id, tier);
     let (index, types) = detail_images(ctx, model);
     match types.get(index) {
-        Some(kind) if index > 0 => MediaKey {
-            image_type: Some(kind.clone()),
-            ..key
-        },
+        Some(kind)
+            if index > 0 || !rules::plain_cover_serves(kind, &ctx.media.preferred_image_type()) =>
+        {
+            MediaKey {
+                image_type: Some(kind.clone()),
+                ..key
+            }
+        }
         _ => key,
     }
 }
@@ -2678,6 +2683,9 @@ fn refresh_detail_cover(ctx: &Ctx, app: &App, model: &GamesModel) {
     let Some(row) = model.current() else {
         view.set_detail_title(SharedString::default());
         view.set_detail_path(SharedString::default());
+        view.set_detail_image_count(0);
+        view.set_detail_image_index(0);
+        view.set_detail_image_kind(SharedString::default());
         view.set_detail_has_cover(false);
         view.set_detail_cover_absent(false);
         view.set_detail_has_placeholder(false);
@@ -2688,6 +2696,14 @@ fn refresh_detail_cover(ctx: &Ctx, app: &App, model: &GamesModel) {
     let count = if types.len() > 1 { types.len() } else { 0 };
     view.set_detail_image_count(i32::try_from(count).unwrap_or(0));
     view.set_detail_image_index(i32::try_from(index).unwrap_or(0));
+    view.set_detail_image_kind(
+        types
+            .get(index)
+            .filter(|_| count > 0)
+            .map(String::as_str)
+            .unwrap_or_default()
+            .into(),
+    );
     let key = detail_key(ctx, model, row, CoverSize::detail(app));
     let placeholder =
         placeholder_color(ctx, row, &key).filter(|_| row.media_capable && row.has_cover);
@@ -3635,6 +3651,10 @@ fn cancel(ctx: &Ctx, app: &App) {
     }
     // A typed search steps back to the Search screen; one a Hub tile opened
     // has no Search screen behind it and leaves for the Hub below.
+    // A tag search Game Info opened goes back to it.
+    if mode == GamesMode::Search && crate::game_info::return_from_drill(ctx, app) {
+        return;
+    }
     if mode == GamesMode::Search && !lock(&ctx.shared).persist.search.from_hub {
         crate::search::return_from_results(ctx, app);
         return;
@@ -3849,6 +3869,11 @@ fn open_context_menu(ctx: &Ctx, app: &App) {
     let index = lock(&ctx.shared).games.grid.current_index();
     crate::router::present_games_context_menu(ctx, app, index, menu);
     crate::router::refresh_readers(ctx);
+}
+
+/// Where the menu sits when Back brings it back: the focused cell now.
+pub(crate) fn context_anchor(ctx: &Ctx, app: &App) -> crate::router::ContextAnchor {
+    cell_anchor(ctx, app)
 }
 
 /// A menu entry was accepted (the menu is already closed).

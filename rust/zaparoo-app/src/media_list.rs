@@ -143,6 +143,13 @@ impl DetailCache {
 /// The user's preferred artwork, when set, goes in front.
 pub const COVER_LADDER: &[&str] = &["boxart", "image", "thumbnail", "boxart3d", "screenshot"];
 
+/// Whether a plain cover request (no image type named) can come back as
+/// `kind`: it is the preferred artwork or on the cover ladder.
+pub fn plain_cover_serves(kind: &str, preferred: &str) -> bool {
+    (!preferred.is_empty() && preferred != "auto" && kind == preferred)
+        || COVER_LADDER.contains(&kind)
+}
+
 /// A game's image types in the order the detail pane steps through them:
 /// Core's order, except that the one a plain cover request resolves to
 /// leads, so the first image is the cover the pane already shows.
@@ -1224,6 +1231,14 @@ mod tests {
             "a refetch replaces the rows"
         );
         assert!(cache.bytes <= cost * 2);
+    }
+
+    #[test]
+    fn only_the_ladder_or_the_preference_comes_back_from_a_plain_cover() {
+        assert!(plain_cover_serves("boxart", "auto"));
+        assert!(plain_cover_serves("titleshot", "titleshot"));
+        assert!(!plain_cover_serves("map", "auto"));
+        assert!(!plain_cover_serves("titleshot", "boxart"));
     }
 
     #[test]

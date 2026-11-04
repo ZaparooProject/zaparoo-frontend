@@ -276,6 +276,7 @@ export component BrowseDetailPane inherits Rectangle {
     // them; a count under two shows nothing.
     in property <int> image-index: 0;
     in property <int> image-count: 0;
+    in property <string> image-kind: "";
 
     background: root.show-chrome ? Theme.surface-card : transparent;
     border-radius: root.show-chrome ? Layout.card-radius : 0px;
@@ -453,15 +454,28 @@ export component BrowseDetailPane inherits Rectangle {
             }
             // Over the art's corner on a card-colored plate, so the art box
             // and the covers fitted to it stay the size they always are.
+            // The image's type names what it is: a map or the box's back
+            // is not always plain from the picture alone.
             if root.image-count > 1: Rectangle {
                 property <length> pad: Sizing.pct-h(0.5);
+                property <length> gap: Labels.image-type(root.image-kind) == "" ? 0px : Sizing.pct-w(0.8);
                 x: parent.art-x + parent.art-w - self.width;
                 y: parent.art-y + parent.art-h - self.height;
-                width: count-text.preferred-width + 2 * self.pad;
+                width: Math.min(parent.art-w, kind-text.preferred-width + self.gap + count-text.preferred-width + 2 * self.pad);
                 height: count-text.preferred-height + self.pad;
                 background: Theme.surface-card;
                 border-radius: Sizing.radius-md;
+                kind-text := Text {
+                    x: parent.pad;
+                    width: Math.max(0px, parent.width - 2 * parent.pad - parent.gap - count-text.preferred-width);
+                    text: Labels.image-type(root.image-kind);
+                    color: Theme.text-primary;
+                    font-size: Sizing.font-small;
+                    overflow: elide;
+                }
                 count-text := Text {
+                    x: parent.width - parent.pad - self.width;
+                    width: self.preferred-width;
                     text: @tr("{}/{}", root.image-index + 1, root.image-count);
                     color: Theme.text-label;
                     font-size: Sizing.font-small;
@@ -568,6 +582,7 @@ export component BrowseListDetailView inherits Rectangle {
     in property <string> loading-text: @tr("Loading…");
     in property <int> image-index: 0;
     in property <int> image-count: 0;
+    in property <string> image-kind: "";
     callback row-hovered(int);
     callback row-clicked(int);
     callback row-right-clicked(int);
@@ -643,5 +658,6 @@ export component BrowseListDetailView inherits Rectangle {
         loading-text: root.loading-text;
         image-index: root.image-index;
         image-count: root.image-count;
+        image-kind: root.image-kind;
     }
 }

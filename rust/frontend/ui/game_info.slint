@@ -1,7 +1,18 @@
 import { Theme, Sizing, Motion } from "theme.slint";
-import { ScrollAction, ManualState, ManualFit } from "state_types.slint";
-import { DetailRow, MetaLabels } from "browse_list.slint";
+import { ScrollAction, ManualState, ManualFit, RowKind } from "state_types.slint";
+import { TagNames } from "tag_names.slint";
 import { GlyphSource, SectionHeader, ScrollCue, ModalShell, WaitCue } from "chrome.slint";
+import { Labels } from "labels.slint";
+import { FocusTarget, SelectionCursor, SelectionClip } from "focus.slint";
+
+// One row of the details table: a section heading (`key` "details" or
+// "technical"), or a fact whose label is `TagNames.label(key)`.
+export struct InfoRow {
+    kind: RowKind,
+    key: string,
+    value: string,
+    stop: int,
+}
 
 export global GameInfoView {
     in-out property <bool> modal-open: false;
@@ -9,7 +20,25 @@ export global GameInfoView {
     in-out property <string> modal-system: "";
     in-out property <string> modal-path: "";
     in-out property <string> modal-description: "";
-    in-out property <[DetailRow]> rows: [];
+    // The details table (`game_info_data::info_rows`): headings, and
+    // rows whose `stop` is the focus index A acts on, or -1.
+    in-out property <[InfoRow]> info-rows: [];
+    // Where focus rests, by stop; each item says which stop it is, or -1.
+    in-out property <int> focus: 0;
+    in-out property <int> image-stop: -1;
+    in-out property <int> manual-stop: -1;
+    in-out property <int> description-stop: -1;
+    // A row with several values lists them in the panel's place.
+    in-out property <bool> values-open: false;
+    in-out property <string> values-kind: "";
+    in-out property <[string]> values: [];
+    in-out property <int> values-index: 0;
+    // The focused image, full screen (`ManualReader`'s image mode).
+    in-out property <bool> viewer-open: false;
+    in-out property <image> viewer-image;
+    in-out property <bool> viewer-has-image: false;
+    // Core has no image at that size: nothing is coming.
+    in-out property <bool> viewer-absent: false;
     in-out property <bool> loading: false;
     in-out property <bool> failed: false;
     in-out property <bool> media-missing: false;
@@ -19,30 +48,88 @@ export global GameInfoView {
     in-out property <bool> modal-cover-absent: false;
     in-out property <int> image-index: 0;
     in-out property <int> image-count: 0;
+    // The type of the image on show (`boxart`, ...), named under it.
+    in-out property <string> image-kind: "";
     // Screen-height units keep mirrored windows independent of pixel density.
     in-out property <float> scroll-position: 0;
+    // True while the panel opens: scrolling to its focus cuts. A move the
+    // user makes clears it, so the scroll glides.
+    in-out property <bool> scroll-snap: true;
     // The painted art box, in pixels, so a cover can be resized to it.
     callback art-box(int, int);
-    // The game has a manual Core can serve; the menu button opens it.
+    // The game has a manual Core can serve; the action row offers it.
     in-out property <bool> has-manual: false;
-    // The manual page, read in this panel's place; `closed` shows the details.
+    // The manual, read in the details' place (`ManualReader`); `closed`
+    // shows the details.
     in-out property <ManualState> manual-state: ManualState.closed;
     in-out property <image> manual-image;
     in-out property <bool> manual-has-image: false;
     in-out property <int> manual-page: 0;
     in-out property <int> manual-pages: 0;
-    in-out property <ManualFit> manual-fit: ManualFit.width;
+    in-out property <ManualFit> manual-fit: ManualFit.page;
     // Screen-height units, as `scroll-position` is.
     in-out property <float> manual-scroll: 0;
-    // The page box, in pixels, so a page is rendered to fit it.
-    callback manual-box(int, int);
+    // The whole-page box, in pixels, and the room the arrows take from
+    // each side of it zoomed in, so a page is rendered to fit either.
+    callback manual-box(int, int, int);
+}
+
+// A details row's label and value. A row is drawn twice, resting and
+// inverted under the travelling fill, so the two copies share this.
+component InfoRowText inherits Rectangle {
+    in property <InfoRow> entry;
+    in property <length> label-w;
+    in property <length> pad;
+    in property <bool> bold: false;
+    in property <color> ink: Theme.text-primary;
+    in property <color> ink-muted: Theme.text-label;
+    out property <length> value-h: value.preferred-height;
+    Text {
+        x: root.pad;
+        y: root.pad;
+        width: Math.min(root.label-w, root.width);
+        text: TagNames.label(root.entry.key);
+        font-size: Sizing.font-body;
+        color: root.ink-muted;
+        overflow: elide;
+    }
+    value := Text {
+        x: root.pad + root.label-w + Sizing.pct-w(1.4);
+        y: root.pad;
+        width: Math.max(0px, root.width - self.x - root.pad);
+        text: root.entry.value;
+        font-size: Sizing.font-body;
+        font-weight: root.bold ? FontWeight.medium : FontWeight.normal;
+        color: root.ink;
+        wrap: word-wrap;
+    }
+}
+
+// One value on a row's values page, drawn twice as a details row is.
+component ValueText inherits Rectangle {
+    in property <string> text;
+    in property <length> pad;
+    in property <bool> bold: false;
+    in property <color> ink: Theme.text-primary;
+    Text {
+        x: root.pad;
+        width: root.width - 2 * root.pad;
+        text: root.text;
+        font-size: Sizing.font-body;
+        font-weight: root.bold ? FontWeight.medium : FontWeight.normal;
+        color: root.ink;
+        overflow: elide;
+    }
 }
 
 export component GameInfoModal inherits ModalShell {
-    visible: GameInfoView.modal-open;
+    visible: GameInfoView.modal-open && GameInfoView.manual-state == ManualState.closed
+        && !GameInfoView.viewer-open;
+    property <bool> paging: GameInfoView.values-open;
     property <length> line-h: Math.ceil(Sizing.font-body * 1.362 / 1px) * 1px;
     property <length> body-h: GameInfoView.loading ? loading-label.height
-        : GameInfoView.failed ? error-label.preferred-height : contents.preferred-height;
+        : GameInfoView.failed ? error-label.preferred-height
+        : root.paging ? values-list.preferred-height : contents.preferred-height;
     // Lip, title, gap, rule, gap, scroll cue, body, scroll cue, lip. The
     // cues sit in a reserved band outside the viewport rather than in the
     // lip, the same shape `ListPickerModal` uses, so the panel does not
@@ -56,43 +143,16 @@ export component GameInfoModal inherits ModalShell {
         - root.content-y - root.pad - 2 * root.arrow-band);
     out property <length> viewport-height: Math.min(root.body-budget, root.body-h);
     out property <length> maximum-scroll: Math.max(0px, root.body-h - root.viewport-height);
-    out property <bool> scrollable: !root.reading && !GameInfoView.loading && !GameInfoView.failed && root.maximum-scroll > 0px;
+    out property <bool> scrollable: !GameInfoView.loading && !GameInfoView.failed && root.maximum-scroll > 0px;
 
-    // The manual takes the panel at its largest, the page under the title,
-    // once there is a page; its wait and its errors are one line in the
-    // details' own panel.
-    out property <bool> reading: GameInfoView.manual-state != ManualState.closed;
-    property <bool> paging: GameInfoView.manual-state == ManualState.ready;
-    property <length> manual-status-h: GameInfoView.manual-state == ManualState.loading
-        ? manual-wait.height : manual-error.preferred-height;
-    property <length> page-count-band: Math.ceil(Sizing.font-small * 1.362 / 1px) * 1px;
-    property <length> page-box-h: Math.max(0px, root.body-budget - root.page-count-band);
-    // Pages arrive rendered for this box, one image pixel per screen pixel.
-    // Only a mirror on a smaller screen gets one larger than its box, and
-    // scales it down rather than cropping it.
-    property <length> page-raw-w: GameInfoView.manual-image.width * 1phx;
-    property <length> page-raw-h: GameInfoView.manual-image.height * 1phx;
-    property <float> page-scale: Math.min(1,
-        root.page-raw-w > root.content-width ? root.content-width / root.page-raw-w : 1,
-        GameInfoView.manual-fit == ManualFit.page && root.page-raw-h > root.page-box-h ? root.page-box-h / root.page-raw-h : 1);
-    property <length> page-image-w: root.page-raw-w * root.page-scale;
-    property <length> page-image-h: root.page-raw-h * root.page-scale;
-    property <length> manual-max-scroll: GameInfoView.manual-has-image ? Math.max(0px, root.page-image-h - root.page-box-h) : 0px;
-    out property <bool> manual-scrollable: GameInfoView.manual-state == ManualState.ready && root.manual-max-scroll > 0px;
-    // Not animated: a glide repaints the whole page every frame, which the
-    // software renderer cannot afford at this size.
-    property <length> manual-scroll-y: Math.min(root.manual-max-scroll,
-        Math.max(0px, GameInfoView.manual-scroll * Sizing.screen-height));
-
-    title: GameInfoView.modal-name;
+    // The values page names the row it lists, as a picker page names its
+    // field.
+    title: root.paging ? TagNames.label(GameInfoView.values-kind) : GameInfoView.modal-name;
     panel-width: Sizing.crt
         ? root.width - 12px
-        : root.paging ? root.width - Sizing.pct-w(6)
         : Math.min(Math.min(root.width * 0.92, Sizing.pct-h(150)),
             root.width - Sizing.pct-w(6));
-    content-height: root.paging ? root.body-budget + 2 * root.arrow-band
-        : root.reading ? root.manual-status-h + 2 * root.arrow-band
-        : root.viewport-height + 2 * root.arrow-band;
+    content-height: root.viewport-height + 2 * root.arrow-band;
 
     property <length> scroll-y: Math.min(root.maximum-scroll,
         Math.max(0px, GameInfoView.scroll-position * Sizing.screen-height));
@@ -100,7 +160,10 @@ export component GameInfoModal inherits ModalShell {
     // What the body is drawn at: it glides to a stepped position, and
     // tracks a drag exactly so the text stays under the finger.
     property <length> shown-y: root.scroll-y;
-    animate shown-y { duration: body-touch.pressed ? 0ms : Motion.dur(Motion.page-ms); easing: ease-out; }
+    animate shown-y { duration: body-touch.pressed || GameInfoView.scroll-snap ? 0ms : Motion.dur(Motion.page-ms); easing: ease-out; }
+
+    property <length> step: Sizing.pct-h(8);
+    property <length> reveal-margin: Sizing.pct-h(2);
 
     public function move-scroll(delta: length) {
         if (!GameInfoView.loading && !GameInfoView.failed) {
@@ -109,36 +172,72 @@ export component GameInfoModal inherits ModalShell {
         }
     }
     public function scroll(action: ScrollAction) {
-        if (root.reading) {
-            if (action == ScrollAction.up || action == ScrollAction.down) {
-                GameInfoView.manual-scroll = Math.max(0px, Math.min(root.manual-max-scroll,
-                    root.manual-scroll-y + (action == ScrollAction.up ? -1 : 1) * Math.max(Sizing.pct-h(12), root.page-box-h / 2)))
-                    / Math.max(1px, Sizing.screen-height);
-            }
-            return;
+        if (action == ScrollAction.up) { root.move-scroll(-root.step); }
+        if (action == ScrollAction.down) { root.move-scroll(root.step); }
+        if (action == ScrollAction.page-prev) { root.move-scroll(-Math.max(Sizing.pct-h(12), root.viewport-height - root.step)); }
+        if (action == ScrollAction.page-next) { root.move-scroll(Math.max(Sizing.pct-h(12), root.viewport-height - root.step)); }
+    }
+    // Brings a focused item from `top` to `top + span` (body coordinates)
+    // into view, with a margin so its neighbours show it is not the end.
+    function reveal(top: length, span: length) {
+        if (top - root.reveal-margin < root.scroll-y) {
+            root.move-scroll(top - root.reveal-margin - root.scroll-y);
+        } else if (top + span + root.reveal-margin > root.scroll-y + root.viewport-height) {
+            root.move-scroll(Math.min(top - root.reveal-margin, top + span + root.reveal-margin - root.viewport-height) - root.scroll-y);
         }
-        if (action == ScrollAction.up) { root.move-scroll(-Sizing.pct-h(8)); }
-        if (action == ScrollAction.down) { root.move-scroll(Sizing.pct-h(8)); }
-        if (action == ScrollAction.page-prev) { root.move-scroll(-Math.max(Sizing.pct-h(12), root.viewport-height - Sizing.pct-h(8))); }
-        if (action == ScrollAction.page-next) { root.move-scroll(Math.max(Sizing.pct-h(12), root.viewport-height - Sizing.pct-h(8))); }
+    }
+    // The focused item's band in body coordinates, set by the item itself
+    // as it gains focus or moves. Valid only for a row, which the
+    // selection fill travels to as it does in Settings; the art and the
+    // description carry a ring instead.
+    property <FocusTarget> focus-box;
+    changed focus-box => { root.reveal(root.focus-box.y, root.focus-box.h); }
+    function seat(top: length, span: length, fill: bool) {
+        root.focus-box = {
+            x: 0px, y: top, w: contents.width, h: span,
+            column: 0, row: GameInfoView.focus,
+            // Opening cuts to the focus; only the user's moves glide.
+            scope: GameInfoView.scroll-snap ? "open:" + top / 1px : "info",
+            valid: fill,
+        };
+    }
+    // Up or Down on the focused description reads through it before focus
+    // moves on. True when the press scrolled.
+    public function step-within(down: bool) -> bool {
+        if (GameInfoView.focus != GameInfoView.description-stop || GameInfoView.description-stop < 0) {
+            return false;
+        }
+        if (down && description.y + description.height > root.scroll-y + root.viewport-height) {
+            root.move-scroll(Math.min(root.step, description.y + description.height - root.scroll-y - root.viewport-height + root.reveal-margin));
+            return true;
+        }
+        if (!down && description.y < root.scroll-y) {
+            root.move-scroll(-Math.min(root.step, root.scroll-y - description.y + root.reveal-margin));
+            return true;
+        }
+        false
     }
 
     label-measure := VerticalLayout {
         visible: false;
-        for key in ["system", "platform", "year", "release_date", "genre", "players", "play_mode", "cooperative", "developer", "publisher", "rating", "filename"]: Text {
-            text: MetaLabels.label(key);
+        for row in GameInfoView.info-rows: Text {
+            text: row.kind == RowKind.header ? "" : TagNames.label(row.key);
             font-size: Sizing.font-body;
         }
     }
-    property <length> label-w: Math.ceil(label-measure.preferred-width / 1px) * 1px + Sizing.stroke(2);
+    property <length> label-w: Math.min(Math.ceil(label-measure.preferred-width / 1px) * 1px + Sizing.stroke(2),
+        root.content-width * 0.4);
+    property <length> row-pad: Sizing.pct-w(0.8);
+    property <length> value-row-h: root.line-h + 2 * root.row-pad;
+    property <length> value-gap: Sizing.pct-h(0.4);
 
         loading-label := WaitCue {
             x: root.pad;
             y: root.content-y + root.arrow-band;
             width: root.content-width;
-            height: self.glyph;
+            height: Math.ceil(self.glyph * 1.362 / 1px) * 1px;
             glyph: Sizing.font-body;
-            waiting: GameInfoView.loading && !root.reading;
+            waiting: GameInfoView.loading;
             text: @tr("Loading details…");
         }
         error-label := Text {
@@ -149,7 +248,7 @@ export component GameInfoModal inherits ModalShell {
             font-size: Sizing.font-body;
             color: Theme.text-primary;
             wrap: word-wrap;
-            visible: !root.reading && !GameInfoView.loading && GameInfoView.failed;
+            visible: !GameInfoView.loading && GameInfoView.failed;
         }
 
         viewport := Rectangle {
@@ -158,16 +257,32 @@ export component GameInfoModal inherits ModalShell {
             width: root.content-width;
             height: root.viewport-height;
             clip: true;
-            visible: !root.reading && !GameInfoView.loading && !GameInfoView.failed;
+            visible: !GameInfoView.loading && !GameInfoView.failed;
 
-            contents := VerticalLayout {
+            Rectangle {
                 y: -root.shown-y;
+                height: contents.preferred-height;
+                visible: !root.paging;
+
+            sel := SelectionCursor {
+                radius: Sizing.radius-sm;
+                target: root.focus-box;
+            }
+            contents := VerticalLayout {
                 height: self.preferred-height;
-                spacing: Sizing.pct-h(2.4);
+                spacing: Sizing.pct-h(1.6);
 
                 if GameInfoView.image-count > 0: Rectangle {
+                    property <bool> focused: GameInfoView.focus == GameInfoView.image-stop && GameInfoView.image-stop >= 0;
+                    init => { if (self.focused) { root.seat(self.y, self.height, false); } }
+                    changed focused => { if (self.focused) { root.seat(self.y, self.height, false); } }
+                    changed y => { if (self.focused) { root.seat(self.y, self.height, false); } }
                     height: Sizing.pct-h(32);
-                    property <length> gutter: GameInfoView.image-count > 1 ? Sizing.pct-w(4) : 0px;
+                    border-radius: Sizing.radius-sm;
+                    border-width: self.focused ? Sizing.focus-ring-width : 0px;
+                    border-color: Theme.selection-fill;
+                    property <length> inset: Sizing.focus-ring-width + Sizing.pct-h(0.5);
+                    property <length> gutter: GameInfoView.image-count > 1 ? Sizing.pct-w(4) : self.inset;
                     // The count gets its own strip rather than sitting over
                     // the art, where it lands on whatever the picture has
                     // at that spot.
@@ -175,13 +290,12 @@ export component GameInfoModal inherits ModalShell {
                         ? Math.ceil(Sizing.font-small * 1.362 / 1px) * 1px : 0px;
                     // `self`, not `parent`: this property is declared on the
                     // row, so `parent` here is the layout around it.
-                    property <length> art-h: self.height - self.count-band;
+                    property <length> art-h: self.height - self.count-band - 2 * self.inset;
                     Image {
                         x: parent.gutter;
                         // Pinned to the top: an element with no `y` is
-                        // centred in its parent, which slid the art down
-                        // into the count's strip by half its height.
-                        y: 0px;
+                        // centred in its parent.
+                        y: parent.inset;
                         width: parent.width - 2 * parent.gutter;
                         height: parent.art-h;
                         source: GameInfoView.modal-cover;
@@ -192,29 +306,67 @@ export component GameInfoModal inherits ModalShell {
                         changed width => { GameInfoView.art-box(Math.round(self.width / 1px), Math.round(self.height / 1px)); }
                         changed height => { GameInfoView.art-box(Math.round(self.width / 1px), Math.round(self.height / 1px)); }
                     }
+                    // Gone the moment the art lands: the cue's minimum
+                    // hold would otherwise leave it over the picture.
                     WaitCue {
+                        y: parent.inset;
                         height: parent.art-h;
+                        visible: !GameInfoView.modal-has-cover;
                         glyph: Sizing.font-caption;
                         waiting: !GameInfoView.modal-has-cover && !GameInfoView.modal-cover-absent;
                         text: @tr("Loading image…");
                     }
-                    // Same cue and the same size as the body's scroll
-                    // arrows; this pair used to sit one type step larger.
                     for next in [false, true]: ScrollCue {
-                        x: next ? parent.width - self.width : 0px;
-                        y: Sizing.snap((parent.art-h - self.height) / 2);
+                        x: next ? parent.width - self.width - parent.inset : parent.inset;
+                        y: parent.inset + (parent.art-h - self.height) / 2;
                         width: root.arrow;
                         glyph: next ? "icons/NavRight" : "icons/NavLeft";
                         live: next ? GameInfoView.image-index + 1 < GameInfoView.image-count : GameInfoView.image-index > 0;
                         visible: GameInfoView.image-count > 1;
                     }
-                    // Direction alone never said how many there were.
-                    if GameInfoView.image-count > 1: Text {
-                        x: Sizing.snap((parent.width - self.width) / 2);
-                        y: parent.height - self.height;
-                        text: @tr("{}/{}", GameInfoView.image-index + 1, GameInfoView.image-count);
-                        color: Theme.text-label;
-                        font-size: Sizing.font-small;
+                    // Direction alone never said how many there were, and
+                    // the type names what the picture is.
+                    if GameInfoView.image-count > 1: HorizontalLayout {
+                        x: parent.inset;
+                        y: parent.height - parent.inset - self.height;
+                        width: parent.width - 2 * parent.inset;
+                        height: parent.count-band;
+                        alignment: center;
+                        spacing: Labels.image-type(GameInfoView.image-kind) == "" ? 0px : Sizing.pct-w(0.8);
+                        Text {
+                            text: Labels.image-type(GameInfoView.image-kind);
+                            color: Theme.text-primary;
+                            font-size: Sizing.font-small;
+                            overflow: elide;
+                        }
+                        Text {
+                            text: @tr("{}/{}", GameInfoView.image-index + 1, GameInfoView.image-count);
+                            color: Theme.text-label;
+                            font-size: Sizing.font-small;
+                        }
+                    }
+                }
+                // Its own fill, not the travelling one: the button is as
+                // wide as its word.
+                if GameInfoView.has-manual: manual-row := HorizontalLayout {
+                    property <bool> focused: GameInfoView.focus == GameInfoView.manual-stop && GameInfoView.manual-stop >= 0;
+                    init => { if (self.focused) { root.seat(self.y, self.height, false); } }
+                    changed focused => { if (self.focused) { root.seat(self.y, self.height, false); } }
+                    changed y => { if (self.focused) { root.seat(self.y, self.height, false); } }
+                    alignment: start;
+                    Rectangle {
+                        width: manual-label.preferred-width + 2 * Sizing.pct-w(2);
+                        height: root.line-h + Sizing.pct-h(1.6);
+                        border-radius: Sizing.radius-sm;
+                        background: parent.focused ? Theme.selection-fill : Theme.surface-card;
+                        border-width: parent.focused ? 0px : Sizing.stroke(1);
+                        border-color: Theme.border-mid;
+                        manual-label := Text {
+                            text: @tr("game-document" => "Manual");
+                            font-size: Sizing.font-body;
+                            font-weight: manual-row.focused ? FontWeight.medium : FontWeight.normal;
+                            color: manual-row.focused ? Theme.on-accent : Theme.text-primary;
+                        }
                     }
                 }
                 if GameInfoView.media-missing: Text {
@@ -223,44 +375,110 @@ export component GameInfoModal inherits ModalShell {
                     font-size: Sizing.font-body;
                     wrap: word-wrap;
                 }
-                if GameInfoView.rows.length > 0: VerticalLayout {
-                    spacing: Sizing.pct-h(0.8);
-                    for row[i] in GameInfoView.rows: Rectangle {
-                        property <length> top: i > 0 ? Sizing.pct-h(0.8) : 0px;
-                        height: Math.max(Sizing.pct-h(3), value.height) + self.top;
-                        if i > 0: Rectangle { y: 0px; height: Sizing.stroke(1); background: Theme.border-subtle; }
-                        Text {
-                            x: 0px;
-                            y: parent.top;
-                            width: Math.min(root.label-w, parent.width);
-                            text: MetaLabels.label(row.key);
-                            font-size: Sizing.font-body;
-                            color: Theme.text-label;
-                            overflow: elide;
-                        }
-                        value := Text {
-                            x: root.label-w + Sizing.pct-w(1.4);
-                            y: parent.top;
-                            width: Math.max(0px, parent.width - self.x);
-                            height: Math.min(Math.ceil(self.preferred-height / 1px) * 1px, root.line-h * 2);
-                            text: row.value;
-                            font-size: Sizing.font-body;
-                            color: Theme.text-primary;
-                            wrap: word-wrap;
-                            overflow: elide;
+                description := Rectangle {
+                    property <bool> focused: GameInfoView.focus == GameInfoView.description-stop && GameInfoView.description-stop >= 0;
+                    init => { if (self.focused) { root.seat(self.y, Math.min(self.height, root.viewport-height - 2 * root.reveal-margin), false); } }
+                    changed focused => { if (self.focused) { root.seat(self.y, Math.min(self.height, root.viewport-height - 2 * root.reveal-margin), false); } }
+                    changed y => { if (self.focused) { root.seat(self.y, Math.min(self.height, root.viewport-height - 2 * root.reveal-margin), false); } }
+                    visible: GameInfoView.modal-description != "";
+                    height: self.visible ? description-text.preferred-height + 2 * root.row-pad : 0px;
+                    border-radius: Sizing.radius-sm;
+                    border-width: self.focused ? Sizing.focus-ring-width : 0px;
+                    border-color: Theme.selection-fill;
+                    description-text := Text {
+                        x: root.row-pad;
+                        y: root.row-pad;
+                        width: parent.width - 2 * root.row-pad;
+                        text: GameInfoView.modal-description;
+                        font-size: Sizing.font-body;
+                        color: Theme.text-primary;
+                        wrap: word-wrap;
+                    }
+                }
+                for row in GameInfoView.info-rows: Rectangle {
+                    property <bool> focused: row.stop >= 0 && GameInfoView.focus == row.stop;
+                    property <bool> is-field: row.kind != RowKind.header;
+                    // Only while the fill is on a row: focus on the art, the
+                    // Manual button or the description hides it, and the
+                    // inverted copy must go with it, so one item reads as
+                    // focused.
+                    property <bool> lit: root.focus-box.valid
+                        && sel.fill-bottom > self.y && sel.fill-top < self.y + self.height;
+                    init => { if (self.focused) { root.seat(self.y, self.height, self.is-field); } }
+                    changed focused => { if (self.focused) { root.seat(self.y, self.height, self.is-field); } }
+                    changed y => { if (self.focused) { root.seat(self.y, self.height, self.is-field); } }
+                    changed height => { if (self.focused) { root.seat(self.y, self.height, self.is-field); } }
+                    height: self.is-field
+                        ? Math.max(root.line-h, body.value-h) + 2 * root.row-pad
+                        : header.height;
+                    header := SectionHeader {
+                        visible: !parent.is-field;
+                        label-inset: 0px;
+                        label: row.key == "technical" ? @tr("Technical details") : @tr("Details");
+                    }
+                    body := InfoRowText {
+                        visible: parent.is-field;
+                        entry: row;
+                        label-w: root.label-w;
+                        pad: root.row-pad;
+                    }
+                    // The same row again, colored as selected and clipped to
+                    // the travelling fill, as a settings row is.
+                    if is-field && lit: SelectionClip {
+                        row-top: parent.y;
+                        row-height: parent.height;
+                        fill-top: sel.fill-top;
+                        fill-bottom: sel.fill-bottom;
+                        fill: sel.fill;
+                        InfoRowText {
+                            entry: row;
+                            label-w: root.label-w;
+                            pad: root.row-pad;
+                            bold: true;
+                            ink: sel.content;
+                            ink-muted: sel.content-muted;
                         }
                     }
                 }
-                if GameInfoView.modal-description != "": SectionHeader {
-                    label-inset: 0px;
-                    label: @tr("Description");
+            }
+            }
+
+            // A row with more than one value lists them here, in the
+            // panel's place, for A to search by one.
+            Rectangle {
+                y: -root.shown-y;
+                height: values-list.preferred-height;
+                visible: root.paging;
+            value-sel := SelectionCursor {
+                radius: Sizing.radius-sm;
+                target: {
+                    x: 0px,
+                    y: GameInfoView.values-index * (root.value-row-h + root.value-gap),
+                    w: values-list.width, h: root.value-row-h,
+                    column: 0, row: GameInfoView.values-index,
+                    scope: "values:" + GameInfoView.values-kind,
+                    valid: root.paging && GameInfoView.values-index < GameInfoView.values.length,
+                };
+            }
+            values-list := VerticalLayout {
+                height: self.preferred-height;
+                spacing: root.value-gap;
+                for value[i] in GameInfoView.values: Rectangle {
+                    property <bool> focused: i == GameInfoView.values-index;
+                    changed focused => { if (self.focused) { root.reveal(self.y, self.height); } }
+                    height: root.value-row-h;
+                    property <bool> lit: value-sel.fill-bottom > self.y && value-sel.fill-top < self.y + self.height;
+                    ValueText { text: value; pad: root.row-pad; }
+                    if lit: SelectionClip {
+                        row-top: parent.y;
+                        row-height: parent.height;
+                        fill-top: value-sel.fill-top;
+                        fill-bottom: value-sel.fill-bottom;
+                        fill: value-sel.fill;
+                        ValueText { text: value; pad: root.row-pad; bold: true; ink: value-sel.content; }
+                    }
                 }
-                if GameInfoView.modal-description != "": Text {
-                    text: GameInfoView.modal-description;
-                    font-size: Sizing.font-body;
-                    color: Theme.text-primary;
-                    wrap: word-wrap;
-                }
+            }
             }
             body-touch := TouchArea {
                 property <length> drag-y;
@@ -280,85 +498,201 @@ export component GameInfoModal inherits ModalShell {
             }
         }
         for down in [false, true]: ScrollCue {
-            x: Sizing.snap((root.panel-width - self.width) / 2);
+            x: (root.panel-width - self.width) / 2;
             y: down ? viewport.y + viewport.height + Sizing.pct-h(0.5) : viewport.y - self.height - Sizing.pct-h(0.5);
             width: root.arrow;
             glyph: down ? "icons/ScrollDown" : "icons/ScrollUp";
             live: down ? root.scroll-y < root.maximum-scroll : root.scroll-y > 0px;
             visible: root.scrollable;
         }
+}
 
-        manual-wait := WaitCue {
-            x: root.pad;
-            y: root.content-y + root.arrow-band;
-            width: root.content-width;
-            height: self.glyph;
-            glyph: Sizing.font-body;
-            waiting: GameInfoView.manual-state == ManualState.loading;
-            text: @tr("Loading manual…");
+// One of the reader's arrows on its black plate. A spent direction dims
+// rather than going away, as `ScrollCue` does.
+component ReaderCue inherits Rectangle {
+    in property <string> glyph;
+    in property <bool> live: true;
+    in property <length> side;
+    in property <length> pad;
+    width: root.side + 2 * root.pad;
+    height: self.width;
+    background: #000000;
+    border-radius: Sizing.radius-sm;
+    Image {
+        width: root.side;
+        height: root.side;
+        image-rendering: Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
+        source: GlyphSource.glyph(root.glyph, Math.max(1px, root.side),
+            root.live ? #ffffff : #ffffff59);
+    }
+}
+
+// A game's manual, in the details' place: the page alone on the scrim,
+// as large as the screen allows with an even margin, and its number under
+// it. Fit width scrolls a page down; the arrows say which ways still go.
+// The whole page needs none. Pages arrive rendered for the page box, one
+// image pixel per screen pixel; only a mirror on a smaller screen gets one
+// larger than its box, and scales it down rather than cropping it.
+export component ManualReader inherits Rectangle {
+    // The same view shows the game's images full screen.
+    property <bool> images: GameInfoView.viewer-open;
+    out property <bool> reading: GameInfoView.modal-open
+        && (GameInfoView.manual-state != ManualState.closed || root.images);
+    visible: root.reading;
+    background: Theme.scrim;
+
+    property <bool> ready: root.images || GameInfoView.manual-state == ManualState.ready;
+    property <bool> zoomed: !root.images && GameInfoView.manual-fit == ManualFit.width;
+    property <int> index: root.images ? GameInfoView.image-index : GameInfoView.manual-page;
+    property <int> count: root.images ? GameInfoView.image-count : GameInfoView.manual-pages;
+    property <image> source: root.images ? GameInfoView.viewer-image : GameInfoView.manual-image;
+    property <bool> has-image: root.images ? GameInfoView.viewer-has-image : GameInfoView.manual-has-image;
+    // Images step left and right; a manual's pages only show which ways
+    // go when zoomed in.
+    property <bool> side-arrows: root.ready && root.count > 1 && (root.zoomed || root.images);
+    property <length> margin: Sizing.pct-h(4);
+    property <length> arrow: GlyphSource.side(Sizing.pct-h(3));
+    property <length> arrow-gap: Sizing.pct-h(1);
+    // The page number and the arrows sit on black plates, whatever the
+    // scrim lets through behind them.
+    property <length> plate-pad: Sizing.pct-h(0.6);
+    property <length> cue: root.arrow + 2 * root.plate-pad;
+    property <length> count-h: Math.ceil(Sizing.font-small * 1.362 / 1px) * 1px + 2 * root.plate-pad;
+    // The arrows only show zoomed in, or between images; otherwise the
+    // page takes their room.
+    property <length> arrow-room: root.cue + root.arrow-gap;
+    property <length> cue-room: root.zoomed || (root.images && root.count > 1) ? root.arrow-room : 0px;
+    // Everything above the help bar, which stays readable over the scrim.
+    property <length> bottom: root.height - Sizing.help-bar-height;
+    property <length> whole-w: Math.max(0px, root.width - 2 * root.margin);
+    property <length> whole-h: Math.max(0px, root.bottom - 2 * root.margin - root.arrow-gap - root.count-h);
+    property <length> box-x: root.margin + root.cue-room;
+    property <length> box-y: root.margin + root.cue-room;
+    property <length> box-w: Math.max(0px, root.whole-w - 2 * root.cue-room);
+    property <length> box-h: Math.max(0px, root.whole-h - 2 * root.cue-room);
+    // Reported once for both fits, so a turn between them renders once.
+    function report-box() {
+        GameInfoView.manual-box(Math.round(root.whole-w / 1phx), Math.round(root.whole-h / 1phx),
+            Math.round(root.arrow-room / 1phx));
+    }
+    init => { root.report-box(); }
+    changed whole-w => { root.report-box(); }
+    changed whole-h => { root.report-box(); }
+
+    property <length> raw-w: root.source.width * 1phx;
+    property <length> raw-h: root.source.height * 1phx;
+    // A page is never enlarged: it was rendered for this box. An image
+    // fills the box, whatever size Core had it at.
+    property <float> fit: Math.min(root.box-w / Math.max(1phx, root.raw-w), root.box-h / Math.max(1phx, root.raw-h));
+    property <float> scale: root.images ? root.fit : Math.min(1,
+        root.raw-w > root.box-w ? root.box-w / root.raw-w : 1,
+        !root.zoomed && root.raw-h > root.box-h ? root.box-h / root.raw-h : 1);
+    property <length> image-w: root.raw-w * root.scale;
+    property <length> image-h: root.raw-h * root.scale;
+    property <length> max-scroll: root.has-image ? Math.max(0px, root.image-h - root.box-h) : 0px;
+    out property <bool> scrollable: root.ready && root.max-scroll > 0px;
+    // Not animated: a glide repaints the whole page every frame, which the
+    // software renderer cannot afford at this size.
+    property <length> scroll-y: Math.min(root.max-scroll,
+        Math.max(0px, GameInfoView.manual-scroll * Sizing.screen-height));
+
+    public function scroll(action: ScrollAction) {
+        if (action == ScrollAction.up || action == ScrollAction.down) {
+            GameInfoView.manual-scroll = Math.max(0px, Math.min(root.max-scroll,
+                root.scroll-y + (action == ScrollAction.up ? -1 : 1) * Math.max(Sizing.pct-h(12), root.box-h / 2)))
+                / Math.max(1px, Sizing.screen-height);
         }
-        manual-error := Text {
-            x: root.pad;
-            y: root.content-y + root.arrow-band;
-            width: root.content-width;
+    }
+
+    // Swallows pointer input meant for the screen underneath.
+    TouchArea {}
+
+    page-box := Rectangle {
+        x: root.box-x;
+        y: root.box-y;
+        width: root.box-w;
+        height: root.box-h;
+        clip: true;
+
+        Image {
+            x: (parent.width - self.width) / 2;
+            y: root.max-scroll > 0px ? -root.scroll-y : (parent.height - self.height) / 2;
+            width: root.image-w;
+            height: root.image-h;
+            source: root.source;
+            visible: root.has-image;
+            image-rendering: root.images && Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
+        }
+        WaitCue {
+            height: Math.ceil(Sizing.font-body * 1.362 / 1px) * 1px;
+            visible: !root.has-image;
+            glyph: Sizing.font-body;
+            waiting: GameInfoView.manual-state == ManualState.loading
+                || (root.ready && !root.has-image && !(root.images && GameInfoView.viewer-absent));
+            text: root.images ? @tr("Loading image…")
+                : GameInfoView.manual-state == ManualState.loading ? @tr("Loading manual…") : @tr("Loading page…");
+        }
+        Text {
+            width: Math.min(self.preferred-width, parent.width);
             text: GameInfoView.manual-state == ManualState.too-large
                 ? @tr("This manual is too large to open.")
                 : @tr("Could not open the manual. Check Zaparoo Core and try again.");
             font-size: Sizing.font-body;
             color: Theme.text-primary;
             wrap: word-wrap;
-            visible: GameInfoView.manual-state == ManualState.too-large || GameInfoView.manual-state == ManualState.failed;
+            horizontal-alignment: center;
+            visible: !root.images && (GameInfoView.manual-state == ManualState.too-large || GameInfoView.manual-state == ManualState.failed);
         }
+    }
 
-        if root.paging: Rectangle {
-            x: root.pad;
-            y: root.content-y + root.arrow-band;
-            width: root.content-width;
-            height: root.body-budget;
-
-            page-box := Rectangle {
-                y: 0px;
-                height: root.page-box-h;
-                clip: true;
-                init => { GameInfoView.manual-box(Math.round(self.width / 1phx), Math.round(self.height / 1phx)); }
-                changed width => { GameInfoView.manual-box(Math.round(self.width / 1phx), Math.round(self.height / 1phx)); }
-                changed height => { GameInfoView.manual-box(Math.round(self.width / 1phx), Math.round(self.height / 1phx)); }
-
-                // Rendered at the size it is shown: one image pixel per
-                // screen pixel, never scaled again here.
-                Image {
-                    x: Sizing.snap((parent.width - self.width) / 2);
-                    y: root.manual-max-scroll > 0px ? -root.manual-scroll-y : Sizing.snap((parent.height - self.height) / 2);
-                    width: root.page-image-w;
-                    height: root.page-image-h;
-                    source: GameInfoView.manual-image;
-                    visible: GameInfoView.manual-has-image;
-                }
-                WaitCue {
-                    x: 0px;
-                    y: 0px;
-                    height: self.glyph;
-                    glyph: Sizing.font-body;
-                    waiting: GameInfoView.manual-state == ManualState.ready && !GameInfoView.manual-has-image;
-                    text: @tr("Loading page…");
-                }
-            }
-            // At the side: the scroll cue holds the middle of this strip.
-            if GameInfoView.manual-state == ManualState.ready && GameInfoView.manual-pages > 1: Text {
-                x: parent.width - self.width;
-                y: parent.height - self.height;
-                text: @tr("{}/{}", GameInfoView.manual-page + 1, GameInfoView.manual-pages);
-                color: Theme.text-label;
-                font-size: Sizing.font-small;
-            }
+    // Zoomed in, the arrows say which ways still go: up and down through
+    // the page, left and right to the pages either side.
+    for down in [false, true]: ReaderCue {
+        x: (root.width - self.width) / 2;
+        y: down ? page-box.y + page-box.height + root.arrow-gap : page-box.y - root.arrow-gap - self.height;
+        side: root.arrow;
+        pad: root.plate-pad;
+        glyph: down ? "icons/ScrollDown" : "icons/ScrollUp";
+        live: down ? root.scroll-y < root.max-scroll : root.scroll-y > 0px;
+        visible: root.zoomed && root.scrollable;
+    }
+    for next in [false, true]: ReaderCue {
+        x: next ? page-box.x + page-box.width + root.arrow-gap : page-box.x - root.arrow-gap - self.width;
+        y: page-box.y + (page-box.height - self.height) / 2;
+        side: root.arrow;
+        pad: root.plate-pad;
+        glyph: next ? "icons/NavRight" : "icons/NavLeft";
+        live: next ? root.index + 1 < root.count : root.index > 0;
+        visible: root.side-arrows;
+    }
+    // In the image viewer the plate names the image's type too, as the
+    // carousel under the art does.
+    property <string> kind: root.images ? Labels.image-type(GameInfoView.image-kind) : "";
+    if root.ready && (root.count > 1 || root.kind != ""): Rectangle {
+        property <length> gap: root.kind != "" && root.count > 1 ? Sizing.pct-w(0.8) : 0px;
+        property <length> count-w: root.count > 1 ? count-text.preferred-width : 0px;
+        x: (root.width - self.width) / 2;
+        y: root.bottom - root.margin - self.height;
+        width: Math.min(root.width - 2 * root.margin,
+            kind-text.preferred-width + self.gap + self.count-w + 4 * root.plate-pad);
+        height: root.count-h;
+        background: #000000;
+        border-radius: Sizing.radius-sm;
+        kind-text := Text {
+            x: 2 * root.plate-pad;
+            width: Math.max(0px, parent.width - 4 * root.plate-pad - parent.gap - parent.count-w);
+            text: root.kind;
+            color: #ffffff;
+            font-size: Sizing.font-small;
+            overflow: elide;
         }
-        for down in [false, true]: ScrollCue {
-            x: Sizing.snap((root.panel-width - self.width) / 2);
-            y: down ? root.content-y + root.arrow-band + root.page-box-h + Sizing.pct-h(0.5)
-                : root.content-y + root.arrow-band - self.height - Sizing.pct-h(0.5);
-            width: root.arrow;
-            glyph: down ? "icons/ScrollDown" : "icons/ScrollUp";
-            live: down ? root.manual-scroll-y < root.manual-max-scroll : root.manual-scroll-y > 0px;
-            visible: root.manual-scrollable;
+        count-text := Text {
+            x: parent.width - 2 * root.plate-pad - self.width;
+            width: self.preferred-width;
+            visible: root.count > 1;
+            text: @tr("{}/{}", root.index + 1, root.count);
+            color: root.kind != "" ? #c8c8c8 : #ffffff;
+            font-size: Sizing.font-small;
         }
+    }
 }

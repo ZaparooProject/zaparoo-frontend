@@ -11,10 +11,14 @@
 /// read, next to Core and the running core in `MiSTer`'s shared RAM.
 pub const MAX_BYTES: u64 = 32 * 1024 * 1024;
 
-/// The most pixels one rendered page may have. A fit-width page is as tall
-/// as its aspect says; a strip-shaped page would otherwise ask for a buffer
-/// many screens high.
-pub const MAX_PAGE_PIXELS: u64 = 4096 * 4096;
+/// The bytes of rendered pages the reader keeps in memory: the page shown
+/// and the next one, rendered ahead.
+pub const PAGE_CACHE_BYTES: usize = 24 * 1024 * 1024;
+
+/// The most pixels one rendered page may have, so the shown page and the
+/// one rendered ahead both fit the cache. A fit-width page is as tall as its
+/// aspect says; a tall one is scaled down to this, and its text with it.
+pub const MAX_PAGE_PIXELS: u64 = (PAGE_CACHE_BYTES / 2 / 4) as u64;
 
 /// A document Core can serve for a game. Only manuals exist today; a later
 /// asset type joins here and the reader gains a list page in front.
@@ -133,9 +137,9 @@ impl Download {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Fit {
     /// As wide as the box: the largest text, scrolled down the page.
-    #[default]
     Width,
-    /// The whole page inside the box.
+    /// The whole page inside the box, where a manual opens.
+    #[default]
     Page,
 }
 
@@ -152,7 +156,7 @@ impl Reader {
         Self {
             page: 0,
             pages,
-            fit: Fit::Width,
+            fit: Fit::Page,
         }
     }
 
@@ -312,10 +316,11 @@ mod tests {
         assert!(reader.turn(5));
         assert_eq!(reader.page, 2);
         assert!(!reader.turn(1));
-        reader.toggle_fit();
-        assert_eq!(reader.fit, Fit::Page);
+        assert_eq!(reader.fit, Fit::Page, "a manual opens on the whole page");
         reader.toggle_fit();
         assert_eq!(reader.fit, Fit::Width);
+        reader.toggle_fit();
+        assert_eq!(reader.fit, Fit::Page);
         assert!(!Reader::new(0).turn(1));
     }
 

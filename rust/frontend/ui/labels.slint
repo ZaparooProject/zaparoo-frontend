@@ -10,6 +10,23 @@ import { Screen, AppCue, BootStatus, DisabledReason, DialogKind, DialogButton, E
 
 // Key-to-copy vocabulary for labels Rust hands over as stable ids.
 export global Labels {
+    // One of a game's image types, as Core names them (`boxart`, ...);
+    // empty for one this list does not know.
+    public pure function image-type(value: string) -> string {
+        if (value == "image") { return @tr("Image"); }
+        if (value == "thumbnail") { return @tr("Thumbnail"); }
+        if (value == "boxart") { return @tr("Box art"); }
+        if (value == "boxart3d") { return @tr("3D box art"); }
+        if (value == "screenshot") { return @tr("Screenshot"); }
+        if (value == "wheel") { return @tr("Wheel"); }
+        if (value == "titleshot") { return @tr("Title screen"); }
+        if (value == "map") { return @tr("Map"); }
+        if (value == "marquee") { return @tr("Marquee"); }
+        if (value == "fanart") { return @tr("Fan art"); }
+        if (value == "boxartside") { return @tr("Box side"); }
+        if (value == "boxartback") { return @tr("Box back"); }
+        return "";
+    }
     public pure function boot(status: BootStatus) -> string {
         if (status == BootStatus.starting) { return @tr("Starting Zaparoo Core…"); }
         if (status == BootStatus.migrating) { return @tr("Updating Zaparoo Core data…"); }
@@ -164,6 +181,7 @@ export global Labels {
         if (key == "jump_letter") { return @tr("Go to…"); }
         // The Go to chip names the letter the selection is in.
         if (key == "search_here") { return @tr("Search here…"); }
+        if (key == "edit_search") { return @tr("Edit search…"); }
         if (key == "search:all_systems") { return @tr("All systems"); }
         if (key == "section:recent") { return @tr("Recent"); }
         if (key == "section:other") { return @tr("Other"); }
@@ -228,6 +246,7 @@ export global Labels {
         if (key == AppCue.loading-more) { return @tr("Loading more…"); }
         if (key == AppCue.loading-progress) { return @tr("Loading {} of {}…", arg, arg2); }
         if (key == AppCue.loading-launchers) { return @tr("Loading launchers…"); }
+        if (key == AppCue.loading-details) { return @tr("Loading details…"); }
         if (key == AppCue.saving) { return @tr("Saving…"); }
         if (key == AppCue.starting) { return @tr("Starting…"); }
         if (key == AppCue.cancelling) { return @tr("Cancelling…"); }

@@ -280,6 +280,7 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
         let view = app.global::<GamesView>();
         view.set_detail_image_index(1);
         view.set_detail_image_count(4);
+        view.set_detail_image_kind("screenshot".into());
     }
     if screen.contains("search-results") {
         app.global::<GamesView>()
@@ -1769,27 +1770,69 @@ fn fixture_game_info(app: &App, screen: &str) {
         return;
     }
     let short = screen.ends_with("short");
-    let rows: Vec<_> = [
-        ("system", "Super Nintendo Entertainment System"),
-        ("release_date", "1995"),
-        ("genre", "Role-playing"),
-        ("players", "1"),
-        ("developer", "Square"),
-        ("publisher", "Square"),
-        ("filename", "Chrono Trigger (USA)"),
-    ]
-    .into_iter()
-    .take(if short { 2 } else { 7 })
-    .map(|(key, value)| generated::DetailRow {
+    // The table `game_info_data::info_rows` lays out: the facts under
+    // Details, the leftover tags, then Technical details. `stop` is the
+    // focus index after the art (0), the manual (1) and the description (2).
+    let header = |key: &str| generated::InfoRow {
+        kind: RowKind::Header,
+        key: key.into(),
+        value: "".into(),
+        stop: -1,
+    };
+    let row = |key: &str, value: &str, stop: i32| generated::InfoRow {
+        kind: RowKind::Field,
         key: key.into(),
         value: value.into(),
-    })
-    .collect();
-    view.set_rows(slint::ModelRc::new(slint::VecModel::from(rows)));
+        stop,
+    };
+    let rows: Vec<_> = if short {
+        vec![
+            header("details"),
+            row("system", "Super Nintendo Entertainment System", -1),
+            row("year", "1995", 3),
+        ]
+    } else {
+        vec![
+            header("details"),
+            row("system", "Super Nintendo Entertainment System", -1),
+            row("year", "1995", 3),
+            row("players", "1 player", 4),
+            row("developer", "Square", 5),
+            row("publisher", "Square", 6),
+            row("genre", "RPG, JRPG", 7),
+            row("region", "United States", 8),
+            row("tags", "custom:anniversary, user:hidden", 9),
+            header("technical"),
+            row("dump", "Verified", 10),
+            row("path", "/media/fat/games/SNES/Chrono Trigger (USA).sfc", -1),
+        ]
+    };
+    view.set_info_rows(slint::ModelRc::new(slint::VecModel::from(rows)));
+    view.set_image_stop(if short { -1 } else { 0 });
+    view.set_manual_stop(1);
+    view.set_description_stop(if short { -1 } else { 2 });
+    // `…-focus-row` puts focus on Genre; `…-values` lists its values.
+    view.set_focus(
+        if screen.contains("focus-row") || screen.ends_with("values") {
+            7
+        } else {
+            i32::from(short)
+        },
+    );
+    if screen.ends_with("values") {
+        view.set_values_kind("genre".into());
+        view.set_values(slint::ModelRc::new(slint::VecModel::from(vec![
+            slint::SharedString::from("RPG"),
+            slint::SharedString::from("JRPG"),
+        ])));
+        view.set_values_index(1);
+        view.set_values_open(true);
+    }
     if !short {
         view.set_media_missing(true);
         view.set_modal_description("A journey through time, from prehistoric lands to a distant future. Meet companions, explore unfamiliar places, and discover how each era connects to the next. Choices made along the way shape the adventure.\n\nThis long fixture checks that descriptions stay readable and can be scrolled rather than silently truncated.".into());
         view.set_image_count(2);
+        view.set_image_kind("boxart".into());
         let logo = slint::Image::load_from_path(std::path::Path::new(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/assets/systems/SNES.png"
@@ -1802,11 +1845,22 @@ fn fixture_game_info(app: &App, screen: &str) {
         }
     }
     view.set_has_manual(true);
-    // `game-info-manual` is the manual page at fit width, scrolled a
-    // little; `…-manual-page` shows the whole page; `…-manual-loading`
-    // and `…-manual-error` the states before a page.
+    // `game-info-manual` is the manual's whole page, `…-manual-width` fit
+    // width; `…-manual-loading` and `…-manual-error` the states before a
+    // page.
     if screen.contains("manual") {
         fixture_manual(&view, screen);
+    }
+    // `game-info-viewer`: the art full screen, named and counted.
+    if screen.ends_with("viewer") {
+        let art = slint::Image::load_from_path(std::path::Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/assets/systems/SNES.png"
+        )))
+        .expect("fixture logo");
+        view.set_viewer_image(art);
+        view.set_viewer_has_image(true);
+        view.set_viewer_open(true);
     }
 }
 
@@ -1845,9 +1899,10 @@ fn fixture_manual(view: &generated::GameInfoView, screen: &str) {
     view.set_manual_has_image(true);
     view.set_manual_pages(12);
     view.set_manual_page(2);
-    if screen.ends_with("page") {
-        view.set_manual_fit(ManualFit::Page);
-    } else {
+    // A manual opens on the whole page; `…-manual-width` is fit width,
+    // scrolled a little.
+    if screen.ends_with("width") {
+        view.set_manual_fit(ManualFit::Width);
         view.set_manual_scroll(0.1);
     }
 }
@@ -2285,7 +2340,10 @@ fn fixture_chips(app: &App, mode: GamesMode) {
             chip("search_here", "search_here", ""),
             chip("more", "more", ""),
         ],
-        GamesMode::Search => vec![chip("add_to_hub", "save_to_hub", "")],
+        GamesMode::Search => vec![
+            chip("edit_search", "edit_search", ""),
+            chip("add_to_hub", "save_to_hub", ""),
+        ],
         GamesMode::Recents => Vec::new(),
     };
     let bar = app.global::<generated::PageBar>();

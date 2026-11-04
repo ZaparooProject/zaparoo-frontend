@@ -1482,6 +1482,12 @@ fn context_ids(app: &App) -> Vec<String> {
 }
 
 /// Put the open menu's focus on row `id`, returning where it sits.
+/// The id of the menu row that has focus.
+fn context_row_id(app: &App) -> Option<String> {
+    let index = usize::try_from(app.global::<crate::Overlays>().get_context_index()).ok()?;
+    context_ids(app).get(index).cloned()
+}
+
 fn focus_context_row(app: &App, id: &str) -> i32 {
     let index = context_ids(app).iter().position(|row| row == id);
     assert!(index.is_some(), "the menu has no {id} row");
@@ -1882,6 +1888,12 @@ fn the_resume_tile_shows_its_games_menu_once_core_says_what_it_is() {
     assert!(crate::router::lock(&ctx.shared).hub.move_armed());
     crate::router::handle_action(&ctx, &app, "cancel");
     settle(&window);
+    // Back from the move brings the menu back on its row; two more leave it.
+    assert!(overlays.get_context_open());
+    assert_eq!(context_row_id(&app).as_deref(), Some("hub_move"));
+    crate::router::handle_action(&ctx, &app, "cancel");
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert!(!overlays.get_context_open());
 
     // A game Core no longer has leaves the tile its layout actions.
     crate::router::handle_action(&ctx, &app, "context_menu");
@@ -4293,9 +4305,11 @@ fn game_info_scrolls_long_content_but_not_short_or_loading_content() {
     let info = app.global::<crate::GameInfoView>();
     info.set_modal_open(true);
     info.set_modal_name("Details".into());
-    info.set_rows(ModelRc::new(VecModel::from(vec![crate::DetailRow {
+    info.set_info_rows(ModelRc::new(VecModel::from(vec![crate::InfoRow {
+        kind: RowKind::Field,
         key: "system".into(),
         value: "SNES".into(),
+        stop: -1,
     }])));
     settle(&window);
     app.invoke_game_info_scroll(crate::ScrollAction::Down);
@@ -4670,14 +4684,18 @@ fn game_info_short_modal_keeps_close_help_at_desktop_size() {
     let info = app.global::<crate::GameInfoView>();
     info.set_modal_open(true);
     info.set_modal_name("Chrono Trigger".into());
-    info.set_rows(ModelRc::new(VecModel::from(vec![
-        crate::DetailRow {
+    info.set_info_rows(ModelRc::new(VecModel::from(vec![
+        crate::InfoRow {
+            kind: RowKind::Field,
             key: "system".into(),
             value: "Super Nintendo Entertainment System".into(),
+            stop: -1,
         },
-        crate::DetailRow {
+        crate::InfoRow {
+            kind: RowKind::Field,
             key: "year".into(),
             value: "1995".into(),
+            stop: -1,
         },
     ])));
     let mut pixels = vec![Rgb565Pixel(0); (width * height) as usize];
@@ -4718,14 +4736,18 @@ fn game_info_metadata_labels_paint_left_of_values() {
     let info = app.global::<crate::GameInfoView>();
     info.set_modal_open(true);
     info.set_modal_name("Details".into());
-    info.set_rows(ModelRc::new(VecModel::from(vec![
-        crate::DetailRow {
+    info.set_info_rows(ModelRc::new(VecModel::from(vec![
+        crate::InfoRow {
+            kind: RowKind::Field,
             key: "system".into(),
             value: "Super Nintendo".into(),
+            stop: -1,
         },
-        crate::DetailRow {
+        crate::InfoRow {
+            kind: RowKind::Field,
             key: "year".into(),
             value: "1994".into(),
+            stop: -1,
         },
     ])));
     settle(&window);
@@ -7488,11 +7510,17 @@ fn a_saved_search_tile_opens_its_results_and_back_returns_to_the_hub() {
     ] {
         crate::router::handle_action(&ctx, &app, "page_menu");
         assert!(overlays.get_list_open());
-        let row = overlays.get_list_entries().row_data(0).expect("one row");
+        let entries = overlays.get_list_entries();
+        assert_eq!(
+            entries.row_data(0).map(|row| row.id.to_string()).as_deref(),
+            Some("edit_search")
+        );
+        let row = entries.row_data(1).expect("the Hub row");
         assert_eq!(
             (row.id.as_str(), row.label_key.as_str()),
             ("add_to_hub", key)
         );
+        crate::router::handle_action(&ctx, &app, "down");
         crate::router::handle_action(&ctx, &app, "accept");
         advance(zaparoo_app::input::PRESS_FEEDBACK_MS + 10);
         assert!(!overlays.get_list_open());
@@ -8330,6 +8358,71 @@ fn update_metadata_opens_the_setup_panel_on_the_menus_scope() {
     // A category with nothing to scrape opens nothing.
     crate::router::scrape_category(&ctx, &app, "Empty");
     assert!(!opened(&ctx).0);
+}
+
+#[test]
+fn back_from_what_an_options_row_opened_returns_to_the_menu_on_its_row() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    seat_visibility_list(&ctx, &app, GamesMode::Browse);
+    let overlays = app.global::<crate::Overlays>();
+    let setup_open = |ctx: &crate::router::Ctx| crate::router::lock(&ctx.shared).setup.open;
+    let open_manage_row = |id: &str| {
+        crate::router::handle_action(&ctx, &app, "context_menu");
+        focus_context_row(&app, "manage_game");
+        crate::router::handle_action(&ctx, &app, "accept");
+        advance(zaparoo_app::input::PRESS_FEEDBACK_MS);
+        settle(&window);
+        focus_context_row(&app, id);
+        crate::router::handle_action(&ctx, &app, "accept");
+        advance(zaparoo_app::input::PRESS_FEEDBACK_MS);
+        settle(&window);
+    };
+
+    // Update metadata, then Back: the Manage page again, on that row.
+    open_manage_row("scrape_game");
+    assert!(setup_open(&ctx));
+    assert!(!overlays.get_context_open());
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert!(!setup_open(&ctx));
+    assert!(overlays.get_context_open(), "the menu comes back");
+    assert_eq!(
+        overlays.get_context_page(),
+        crate::ContextPage::ManageGame,
+        "on its page"
+    );
+    assert_eq!(context_row_id(&app).as_deref(), Some("scrape_game"));
+    // Back on the page then leaves it as it always did.
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert_eq!(overlays.get_context_page(), crate::ContextPage::Root);
+    assert_eq!(context_row_id(&app).as_deref(), Some("manage_game"));
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert!(!overlays.get_context_open());
+
+    // Once it has finished, Back from anything later is the screen's own.
+    open_manage_row("scrape_game");
+    crate::router::forget_menu_return(&ctx);
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert!(!setup_open(&ctx));
+    assert!(
+        !overlays.get_context_open(),
+        "a finished action ends on the screen"
+    );
+
+    // Write to token with no reader shows the QR code; Back returns to
+    // the row that opened it.
+    crate::router::handle_action(&ctx, &app, "context_menu");
+    focus_context_row(&app, "write_token");
+    crate::router::handle_action(&ctx, &app, "accept");
+    advance(zaparoo_app::input::PRESS_FEEDBACK_MS);
+    settle(&window);
+    assert!(overlays.get_qr_open());
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert!(!overlays.get_qr_open());
+    assert!(overlays.get_context_open());
+    assert_eq!(overlays.get_context_page(), crate::ContextPage::Root);
+    assert_eq!(context_row_id(&app).as_deref(), Some("write_token"));
 }
 
 #[test]
@@ -10782,6 +10875,13 @@ fn rename_back_keeps_the_name_and_a_blank_name_resets_it() {
         Some("RPGs".to_string()),
         "Back saves nothing"
     );
+    assert!(
+        app.global::<crate::Overlays>().get_context_open(),
+        "and brings the menu back"
+    );
+    assert_eq!(context_row_id(&app).as_deref(), Some("hub_rename"));
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert!(!app.global::<crate::Overlays>().get_context_open());
 
     open(&ctx);
     for _ in 0.."RPGs".len() {
@@ -10793,6 +10893,10 @@ fn rename_back_keeps_the_name_and_a_blank_name_resets_it() {
     crate::router::handle_action(&ctx, &app, "accept");
     settle(&window);
     assert_eq!(shell.get_active_screen(), Screen::Hub);
+    assert!(
+        !app.global::<crate::Overlays>().get_context_open(),
+        "Save ends on the screen"
+    );
     let shared = crate::router::lock(&ctx.shared);
     let item = shared.hub.layout.visible().next().expect("the tile");
     assert_eq!(item.name, "", "a blank name is the tile's own again");
@@ -11118,7 +11222,7 @@ fn every_grid_jumps_pages_while_a_held_direction_runs_fast() {
 }
 
 #[test]
-fn back_while_a_menu_row_opens_its_screen_calls_off_both() {
+fn back_while_a_menu_row_opens_its_screen_calls_it_off_and_keeps_the_menu() {
     assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
     let (app, window) = boot();
     let (_runtime, ctx) = offline_ctx();
@@ -11137,12 +11241,17 @@ fn back_while_a_menu_row_opens_its_screen_calls_off_both() {
     settle(&window);
     assert!(shell.get_transitioning());
     assert!(overlays.get_context_open());
-    // Moves wait for the route; Back calls it off with the menu.
+    // Moves wait for the route; Back calls it off and keeps the menu.
     crate::router::handle_action(&ctx, &app, "down");
     assert!(overlays.get_context_open());
     crate::router::handle_action(&ctx, &app, "cancel");
     assert!(!shell.get_transitioning());
-    assert!(!overlays.get_context_open());
+    assert!(overlays.get_context_open(), "the menu stays, on its row");
+    assert_eq!(context_row_id(&app).as_deref(), Some("hub_icon"));
+    assert_eq!(
+        app.global::<crate::PressFeedback>().get_owner(),
+        PressOwner::None
+    );
     assert_eq!(shell.get_active_screen(), Screen::Hub);
     // The read that lands after that is dropped.
     crate::file_browser::land_now(&ctx, &app, None, "");
@@ -11239,7 +11348,9 @@ fn change_launcher_keeps_the_menu_up_while_core_is_asked() {
     assert_eq!(overlays.get_context_index(), index, "focus does not move");
     assert!(!overlays.get_list_open() && !overlays.get_qr_open());
     crate::router::handle_action(&ctx, &app, "cancel");
-    assert!(!overlays.get_context_open(), "Back closes it");
+    assert!(overlays.get_context_open(), "Back keeps the menu");
+    assert!(!overlays.get_list_open());
+    assert_eq!(context_row_id(&app).as_deref(), Some("change_launcher"));
     assert_ne!(
         crate::router::lock(&ctx.shared).game_launcher_seq,
         seq,
@@ -11248,6 +11359,191 @@ fn change_launcher_keeps_the_menu_up_while_core_is_asked() {
     assert_eq!(
         app.global::<crate::PressFeedback>().get_owner(),
         PressOwner::None
+    );
+}
+
+#[test]
+fn game_info_moves_focus_over_what_acts_and_a_tag_searches_and_comes_back() {
+    use zaparoo_core::media_types::{MediaMeta, MediaMetaProperty, TagInfo};
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let row = seat_visibility_list(&ctx, &app, GamesMode::Browse);
+    let shell = app.global::<Shell>();
+    let info = app.global::<crate::GameInfoView>();
+    let tag = |tag_type: &str, tag: &str| TagInfo {
+        tag_type: tag_type.into(),
+        tag: tag.into(),
+        ..Default::default()
+    };
+    let mut meta = MediaMeta {
+        available_image_types: vec!["boxart".into(), "screenshot".into()],
+        ..Default::default()
+    };
+    meta.title.system.name = "Nintendo".into();
+    meta.title.tags = vec![
+        tag("developer", "Square"),
+        tag("genre", "rpg"),
+        tag("genre", "rpg:j"),
+        tag("scraper.gamelist.xml", "matched"),
+    ];
+    meta.title.properties.insert(
+        "property:description".into(),
+        MediaMetaProperty {
+            text: "A journey through time.".into(),
+            ..Default::default()
+        },
+    );
+    let land = |ctx: &crate::router::Ctx| {
+        crate::game_info::land_for_test(ctx, &app, &meta);
+        settle(&window);
+    };
+    crate::game_info::open(&ctx, &app, &row);
+    land(&ctx);
+    let rows: Vec<(String, String, i32)> = info
+        .get_info_rows()
+        .iter()
+        .map(|row| (row.key.to_string(), row.value.to_string(), row.stop))
+        .collect();
+    // One row per type, the internal tag gone, the system first.
+    assert_eq!(
+        rows,
+        [
+            ("details".into(), String::new(), -1),
+            ("system".into(), "Nintendo".into(), -1),
+            ("developer".into(), "Square".into(), 2),
+            ("genre".into(), "RPG, JRPG".into(), 3),
+            ("technical".into(), String::new(), -1),
+            ("path".into(), "/g/Game 0.nes".into(), -1),
+        ]
+    );
+    // The art, the description, then the rows that search.
+    assert_eq!(info.get_focus(), 0);
+    assert_eq!(info.get_image_stop(), 0);
+    assert_eq!(info.get_manual_stop(), -1);
+    assert_eq!(info.get_description_stop(), 1);
+    for _ in 0..3 {
+        crate::router::handle_action(&ctx, &app, "down");
+    }
+    assert_eq!(info.get_focus(), 3, "on Genre");
+    // Two values: A lists them; Back returns to the row.
+    crate::router::handle_action(&ctx, &app, "accept");
+    assert!(info.get_values_open());
+    assert_eq!(info.get_values_kind(), "genre");
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert!(!info.get_values_open());
+    assert!(info.get_modal_open());
+    assert_eq!(info.get_focus(), 3);
+
+    // One value: A searches the game's system for it.
+    crate::router::handle_action(&ctx, &app, "up");
+    assert_eq!(info.get_focus(), 2, "on Developer");
+    crate::router::handle_action(&ctx, &app, "accept");
+    advance(zaparoo_app::input::PRESS_FEEDBACK_MS);
+    assert!(!info.get_modal_open());
+    {
+        let shared = crate::router::lock(&ctx.shared);
+        assert_eq!(shared.persist.search.systems, ["NES"]);
+        assert_eq!(shared.persist.search.tags, ["developer:Square"]);
+        assert!(crate::game_info::drilled(&shared));
+    }
+    let ticket = crate::router::lock(&ctx.shared).games.ticket;
+    crate::games::apply_fill(&ctx, &app, ticket, game_rows("Square", 2), None, None, true);
+    assert_eq!(shell.get_active_screen(), Screen::SearchResults);
+
+    // Back: the list as it was, and Game Info again on Developer, in the
+    // same turn: nothing waits on Core, so nothing flickers between them.
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert_eq!(shell.get_active_screen(), Screen::Games);
+    {
+        let shared = crate::router::lock(&ctx.shared);
+        assert_eq!(shared.games.rows.len(), 3);
+        assert_eq!(shared.games.mode, GamesMode::Browse);
+        assert!(!crate::game_info::drilled(&shared));
+    }
+    assert!(info.get_modal_open());
+    assert!(!info.get_loading());
+    assert!(
+        info.get_scroll_snap(),
+        "the reopened panel cuts to its focus"
+    );
+    assert_eq!(info.get_focus(), 2, "back on the row it searched from");
+}
+
+#[test]
+fn edit_search_on_a_tag_search_keeps_its_way_back_to_game_info() {
+    use zaparoo_core::media_types::{MediaMeta, TagInfo};
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let row = seat_visibility_list(&ctx, &app, GamesMode::Browse);
+    let shell = app.global::<Shell>();
+    let info = app.global::<crate::GameInfoView>();
+    let mut meta = MediaMeta::default();
+    meta.title.tags = vec![TagInfo {
+        tag_type: "developer".into(),
+        tag: "Square".into(),
+        ..Default::default()
+    }];
+    crate::game_info::open(&ctx, &app, &row);
+    crate::game_info::land_for_test(&ctx, &app, &meta);
+    settle(&window);
+    // Developer is the one stop: A searches the game's system for it.
+    assert_eq!(info.get_focus(), 0);
+    crate::router::handle_action(&ctx, &app, "accept");
+    advance(zaparoo_app::input::PRESS_FEEDBACK_MS);
+    let ticket = crate::router::lock(&ctx.shared).games.ticket;
+    crate::games::apply_fill(&ctx, &app, ticket, game_rows("Square", 2), None, None, true);
+    assert_eq!(shell.get_active_screen(), Screen::SearchResults);
+
+    // Edit search opens the Search screen with the search as it was; Back
+    // there is Back to Game Info, as it is from the results.
+    crate::search::edit(&ctx, &app);
+    assert_eq!(shell.get_active_screen(), Screen::Search);
+    {
+        let shared = crate::router::lock(&ctx.shared);
+        assert_eq!(shared.persist.search.systems, ["NES"]);
+        assert_eq!(shared.persist.search.tags, ["developer:Square"]);
+        assert!(crate::game_info::drilled(&shared));
+    }
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert_eq!(shell.get_active_screen(), Screen::Games);
+    assert!(info.get_modal_open());
+    assert_eq!(info.get_focus(), 0);
+}
+
+#[test]
+fn more_info_keeps_the_menu_up_until_the_details_are_ready() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    seat_visibility_list(&ctx, &app, GamesMode::Browse);
+    let overlays = app.global::<crate::Overlays>();
+    let info = app.global::<crate::GameInfoView>();
+    crate::router::handle_action(&ctx, &app, "context_menu");
+    focus_context_row(&app, "more_info");
+    crate::router::handle_action(&ctx, &app, "accept");
+    advance(zaparoo_app::input::PRESS_FEEDBACK_MS);
+    settle(&window);
+    assert!(
+        !info.get_modal_open(),
+        "the panel is not shown before its metadata"
+    );
+    assert!(overlays.get_context_open(), "the menu waits for it");
+    assert_eq!(
+        app.global::<crate::PressFeedback>().get_owner(),
+        PressOwner::Context,
+        "its row stays pressed"
+    );
+    let ticket = crate::router::lock(&ctx.shared).game_info.ticket();
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert!(overlays.get_context_open(), "Back keeps the menu");
+    assert_eq!(context_row_id(&app).as_deref(), Some("more_info"));
+    assert!(!info.get_modal_open());
+    assert_ne!(
+        crate::router::lock(&ctx.shared).game_info.ticket(),
+        ticket,
+        "and details that answer late are dropped"
     );
 }
 

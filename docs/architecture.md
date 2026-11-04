@@ -37,7 +37,9 @@ rust/frontend/  [frontend library and binary; Slint UI]
   ├── src/context_page.rs : a page of the context menu: Manage and Write to
   │                        token from the menu's own rows, and the two Core
   │                        is asked for, alternates.rs and discs.rs
-  ├── src/game_info_data.rs : Game Info metadata and carousel ordering
+  ├── src/game_info_data.rs : Game Info's table and image order;
+  │                        tags are grouped and named by
+  │                        zaparoo_app::game_details and ui/tag_names.slint
   ├── src/manual.rs      : a game's manual as a page of Game Info: fetched
   │                        through `media.asset`, rendered a page at a time
   │                        by hayro on a worker thread, memory only
