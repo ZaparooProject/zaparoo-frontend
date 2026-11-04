@@ -448,6 +448,7 @@ fn list_artwork_requests_only_detail_neighbors_and_retires_old_focus() {
         path: "/hub/game".into(),
         max_size: 256,
         fit: ctx.media.hub_fit(),
+        folder: false,
         image_type: None,
     };
     ctx.media.enqueue(hub.clone());
@@ -2487,6 +2488,7 @@ fn missing_browse_colors_use_real_previews_on_every_page_before_full_art() {
             path: row.path.clone(),
             max_size: zaparoo_app::covers::COLOR_PREVIEW_MAX_SIZE,
             fit: zaparoo_app::covers::Fit::SOURCE,
+            folder: false,
             image_type: None,
         })
         .collect();
@@ -2600,6 +2602,7 @@ fn cover_colors_survive_appended_pages_and_warm_to_cold_tile_replacement() {
                 path: row.path.clone(),
                 max_size: tier,
                 fit: crate::games::grid_cover_fit(&app, GamesMode::Browse),
+                folder: false,
                 image_type: None,
             },
             crate::media_cache::DecodedImage {
@@ -11934,4 +11937,34 @@ fn a_turn_whose_rows_were_replaced_still_comes_back_to_rest() {
     assert!(!view.get_cached_transition());
     assert!(!crate::router::lock(&ctx.shared).file_browser_sliding());
     let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn a_launch_refills_a_browse_list_only_when_it_holds_a_multi_disc_folder() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    let psx = zaparoo_core::media_types::SystemInfo {
+        id: "PSX".into(),
+        name: "PSX".into(),
+        ..Default::default()
+    };
+    crate::games::enter(&ctx, &app, &psx);
+    let ticket = crate::router::lock(&ctx.shared).games.ticket;
+    crate::games::apply_fill(&ctx, &app, ticket, game_rows("Game", 12), None, None, true);
+    settle(&window);
+    assert_eq!(app.global::<Shell>().get_active_screen(), Screen::Games);
+    let ticket = crate::router::lock(&ctx.shared).games.ticket;
+
+    // No folder could have changed its launch disc.
+    crate::games::refresh_after_launch(&ctx, &app);
+    assert_eq!(crate::router::lock(&ctx.shared).games.ticket, ticket);
+
+    crate::router::lock(&ctx.shared).games.rows[3].multi_disc = true;
+    crate::games::refresh_after_launch(&ctx, &app);
+    assert_eq!(crate::router::lock(&ctx.shared).games.ticket, ticket + 1);
 }

@@ -500,6 +500,7 @@ mod tests {
             path: "/a".into(),
             max_size: 256,
             fit: zaparoo_app::covers::Fit::SOURCE,
+            folder: false,
             image_type: None,
         };
         media.seed(

@@ -67,6 +67,8 @@ struct BrowseEntry {
     fit_height: u32,
     #[serde(default)]
     fit_crisp: bool,
+    #[serde(default)]
+    folder: bool,
 }
 
 impl BrowseEntry {
@@ -81,6 +83,7 @@ impl BrowseEntry {
                 height: self.fit_height,
                 crisp: self.fit_crisp,
             },
+            folder: self.folder,
             image_type: None,
         }
     }
@@ -95,6 +98,7 @@ impl BrowseEntry {
             fit_width: key.fit.width,
             fit_height: key.fit.height,
             fit_crisp: key.fit.crisp,
+            folder: key.folder,
         }
     }
 }
@@ -207,6 +211,7 @@ fn entry_key(cache: &MediaCache, entry: &ManifestEntry) -> MediaKey {
         path: entry.path.clone(),
         max_size: entry.max_size,
         fit: cache.hub_fit(),
+        folder: false,
         image_type: None,
     }
 }
@@ -601,10 +606,14 @@ pub fn refresh_resume_entry(ctx: &Ctx, target: Option<(String, String)>) {
 }
 
 /// The preferred artwork type changed: every recorded path names a file
-/// of the old type, so both halves are resolved again. A Resume tile
-/// that has not loaded yet is left to its own load.
+/// of the old type, so the Hub and Resume halves are resolved again and
+/// the browse page is dropped until the next launch records it. A Resume
+/// tile that has not loaded yet is left to its own load.
 pub fn refresh_for_image_type(ctx: &Ctx) {
     refresh_hub_entries(ctx);
+    if eligible() {
+        ctx.handle.spawn_blocking(|| update_manifest(clear_browse));
+    }
     let resume = {
         let shared = lock(&ctx.shared);
         let resume = &shared.hub.resume;
@@ -619,6 +628,11 @@ pub fn refresh_for_image_type(ctx: &Ctx) {
     if let Some(target) = resume {
         refresh_resume_entry(ctx, target);
     }
+}
+
+/// Drop the recorded browse page; false when there was none to write.
+fn clear_browse(manifest: &mut Manifest) -> bool {
+    !std::mem::take(&mut manifest.browse).is_empty()
 }
 
 #[cfg(test)]
@@ -705,6 +719,7 @@ mod tests {
             fit_width: 200,
             fit_height: 200,
             fit_crisp: false,
+            folder: false,
         };
         let cache = MediaCache::new();
         let epoch = cache.seed_epoch();
@@ -767,6 +782,7 @@ mod tests {
                 fit_width: 100,
                 fit_height: 100,
                 fit_crisp: false,
+                folder: false,
             })
             .collect();
         write_manifest_to(
@@ -788,13 +804,14 @@ mod tests {
         let path = dir.join(MANIFEST_FILE_NAME);
         let browse = BrowseEntry {
             media_id: Some(42),
-            system_id: "SNES".into(),
-            path: "/games/SNES/Metroid.sfc".into(),
+            system_id: "PSX".into(),
+            path: "/games/PSX/Chrono Cross".into(),
             local_path: "/media/fat/zaparoo/cache/thumbs/v2/a/c.webp".into(),
             max_size: 512,
             fit_width: 227,
             fit_height: 208,
             fit_crisp: false,
+            folder: true,
         };
         let manifest = Manifest {
             hub_entries: vec![ManifestEntry {
@@ -813,6 +830,13 @@ mod tests {
         assert_eq!(read.hub_entries[0].system_id, "SNES");
         assert_eq!(read.hub_entries[0].max_size, HUB_TILE_MAX_SIZE);
         assert!(read.resume.is_none());
+        // A new preferred image type drops the browse page and keeps the Hub.
+        update_manifest_at(&path, clear_browse);
+        let read = read_manifest_from(&path);
+        assert!(read.browse.is_empty());
+        assert_eq!(read.hub_entries.len(), 1);
+        let mut empty = read;
+        assert!(!clear_browse(&mut empty), "nothing to write");
         // A missing or corrupt file reads as an empty manifest rather
         // than an error: the tiles just fetch normally.
         std::fs::write(&path, b"not toml at all {{{").expect("write");

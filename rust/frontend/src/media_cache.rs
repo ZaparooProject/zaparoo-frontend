@@ -37,6 +37,10 @@ pub struct MediaKey {
     pub media_id: Option<i64>,
     pub system: String,
     pub path: String,
+    /// A multi-disc folder: Core is asked by `(system, path)` together
+    /// with `media_id`, the disc the folder launches, and answers the
+    /// folder's own art before that disc's.
+    pub folder: bool,
     pub max_size: u32,
     /// The painted box the decoded image is resized to before it is
     /// cached; `max_size` stays the size Core is asked for.
@@ -364,6 +368,11 @@ impl MediaCache {
             .filter(|key| key.image_type.is_none())
             .filter_map(|key| {
                 let entry = inner.map.get(key)?;
+                // A stale file may be the old preferred type's, or art
+                // an index has since replaced.
+                if entry.stale {
+                    return None;
+                }
                 Some((entry.used, key, entry.local_path.as_ref()?))
             })
             .collect();
@@ -611,8 +620,10 @@ pub fn fitted(decoded: image::DynamicImage, fit: Fit, capture: bool) -> DecodedI
     }
 }
 
-/// Build one Core request. Media identity fields are exclusive, and artwork
-/// preference leads the fallback ladder unless a carousel slot names one type.
+/// Build one Core request. A game is asked for by its media id alone, a
+/// multi-disc folder by its path and its launch disc together, anything
+/// else by path. Artwork preference leads the fallback ladder unless a
+/// carousel slot names one type.
 fn request_params(cache: &MediaCache, key: &MediaKey) -> MediaImageParams {
     let mut image_types: Vec<String> = zaparoo_app::media_list::COVER_LADDER
         .iter()
@@ -628,7 +639,7 @@ fn request_params(cache: &MediaCache, key: &MediaKey) -> MediaImageParams {
     }
     let delivery = should_request_local_path(key.max_size)
         .then(|| zaparoo_core::media_types::MEDIA_IMAGE_DELIVERY_LOCAL_PATH.to_string());
-    if key.media_id.is_some() {
+    if key.media_id.is_some() && !key.folder {
         MediaImageParams {
             media_id: key.media_id,
             system: String::new(),
@@ -639,7 +650,7 @@ fn request_params(cache: &MediaCache, key: &MediaKey) -> MediaImageParams {
         }
     } else {
         MediaImageParams {
-            media_id: None,
+            media_id: key.media_id.filter(|_| key.folder),
             system: key.system.clone(),
             path: key.path.clone(),
             image_types,
@@ -893,6 +904,7 @@ mod tests {
             path: format!("/g/{id}"),
             max_size: 256,
             fit: Fit::SOURCE,
+            folder: false,
             image_type: None,
         }
     }
@@ -1208,6 +1220,52 @@ mod tests {
             ]
         );
         assert_eq!(ids(1), vec![(2, "/thumbs/2".to_string())]);
+
+        // After a clear, every file may be the old preferred type's.
+        cache.clear();
+        assert!(ids(8).is_empty());
+    }
+
+    #[test]
+    fn a_folder_is_asked_for_by_path_and_launch_disc_together() {
+        let cache = MediaCache::new();
+        let folder = MediaKey {
+            media_id: Some(12),
+            system: "PSX".into(),
+            path: "/g/PSX/Game".into(),
+            folder: true,
+            ..key(0)
+        };
+        let params = request_params(&cache, &folder);
+        assert_eq!(
+            (
+                params.media_id,
+                params.system.as_str(),
+                params.path.as_str()
+            ),
+            (Some(12), "PSX", "/g/PSX/Game")
+        );
+        let disc_two = MediaKey {
+            media_id: Some(13),
+            ..folder.clone()
+        };
+        assert_ne!(folder, disc_two, "each disc caches on its own");
+
+        let game = MediaKey {
+            media_id: Some(7),
+            system: "NES".into(),
+            path: "/g/Game.nes".into(),
+            ..key(0)
+        };
+        let params = request_params(&cache, &game);
+        assert_eq!(
+            (
+                params.media_id,
+                params.system.as_str(),
+                params.path.as_str()
+            ),
+            (Some(7), "", "")
+        );
     }
 
     #[test]

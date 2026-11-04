@@ -237,6 +237,7 @@ impl Resolver for SharedResolver<'_> {
             path: path.to_string(),
             max_size: HUB_COVER_TIER,
             fit: self.media.hub_fit(),
+            folder: false,
             image_type: None,
         };
         // A cover Core has none for resolves like a present one: the tile
@@ -268,6 +269,7 @@ fn media_key_cached(media: &MediaCache, key: &str) -> bool {
         path: path.to_string(),
         max_size: HUB_COVER_TIER,
         fit: media.hub_fit(),
+        folder: false,
         image_type: None,
     })
 }
@@ -423,6 +425,7 @@ fn cell_for(
                 path: path.to_string(),
                 max_size: HUB_COVER_TIER,
                 fit: ctx.media.hub_fit(),
+                folder: false,
                 image_type: None,
             };
             cell.fetched = true;
@@ -465,6 +468,7 @@ pub fn page_covers_waiting(ctx: &Ctx, app: &App) -> bool {
                 path: path.to_string(),
                 max_size: HUB_COVER_TIER,
                 fit: ctx.media.hub_fit(),
+                folder: false,
                 image_type: None,
             };
             ctx.media.get(&key).is_none() && !ctx.media.is_negative(&key)
@@ -488,6 +492,7 @@ fn cover_outstanding(ctx: &Ctx, entry: &Entry, cell: &GridCell) -> Option<bool> 
         path: path.to_string(),
         max_size: HUB_COVER_TIER,
         fit: ctx.media.hub_fit(),
+        folder: false,
         image_type: None,
     });
     Some(!cell.has_cover && !negative)
