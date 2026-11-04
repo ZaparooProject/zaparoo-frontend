@@ -173,7 +173,7 @@ export component BrowseList inherits Rectangle {
             y: 0;
             width: caption-w;
             content: row.name;
-            tags: Labels.tags(row.tags, row.hidden);
+            tags: Labels.tags(row.tags, row.hidden, row.versions);
             focused: highlighted;
             center-content: false;
             caption-font-size: Sizing.font-section;
@@ -194,7 +194,7 @@ export component BrowseList inherits Rectangle {
                 y: 0;
                 width: caption-w;
                 content: row.name;
-                tags: Labels.tags(row.tags, row.hidden);
+                tags: Labels.tags(row.tags, row.hidden, row.versions);
                 focused: highlighted;
                 center-content: false;
                 caption-font-size: Sizing.font-section;

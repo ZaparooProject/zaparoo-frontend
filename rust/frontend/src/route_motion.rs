@@ -1818,6 +1818,104 @@ fn a_disc_list_that_fails_or_is_empty_never_strands_the_menu() {
     assert_eq!(overlays.get_dialog_error(), ErrorKind::DiscList);
 }
 
+fn version_rows() -> Vec<crate::context_page::PageRow> {
+    ["US", "EU"]
+        .into_iter()
+        .map(|region| crate::context_page::PageRow {
+            label_key: "",
+            label: region.into(),
+            name: "Game 0".into(),
+            launch_text: format!("/g/Game 0 ({region}).nes"),
+        })
+        .collect()
+}
+
+#[test]
+fn a_search_result_with_versions_counts_them_and_lists_them_as_a_page() {
+    use crate::context_page::Page;
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    seat_visibility_list(&ctx, &app, GamesMode::Search);
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        let row = &mut shared.games.rows[0];
+        row.title_id = Some(9);
+        row.version_count = 3;
+        // One version counts as none: the suffix and the menu stay plain.
+        let single = &mut shared.games.rows[1];
+        single.title_id = Some(10);
+        single.version_count = 1;
+    }
+    let view = app.global::<crate::GamesView>();
+    let overlays = app.global::<crate::Overlays>();
+    let focus = |index: usize| {
+        crate::router::lock(&ctx.shared)
+            .games
+            .grid
+            .set_current_index_immediate(index);
+        crate::games::render(&ctx, &app);
+    };
+
+    // A title Core found once offers no versions.
+    focus(1);
+    assert_eq!(view.get_label_versions(), 0);
+    crate::router::handle_action(&ctx, &app, "context_menu");
+    assert!(overlays.get_context_open());
+    assert!(!context_ids(&app).iter().any(|id| id == "choose_version"));
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert!(!overlays.get_context_open());
+
+    focus(0);
+    assert_eq!(view.get_label_versions(), 3);
+    crate::router::handle_action(&ctx, &app, "context_menu");
+    let menu = context_ids(&app);
+
+    // Accept launches Core's pick; the menu lists every version.
+    let opener = focus_context_row(&app, "choose_version");
+    crate::router::handle_action(&ctx, &app, "accept");
+    settle(&window);
+    assert!(overlays.get_context_open());
+    let ticket = crate::context_page::ticket(&ctx);
+    crate::context_page::landed(&ctx, &app, Page::Versions, ticket, Ok(version_rows()));
+    assert!(crate::context_page::showing(&ctx));
+    assert_eq!(overlays.get_context_page(), crate::ContextPage::Versions);
+    let labels: Vec<String> = overlays
+        .get_context_entries()
+        .iter()
+        .map(|entry| entry.label.to_string())
+        .collect();
+    assert_eq!(labels, ["US", "EU"]);
+
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert!(overlays.get_context_open() && !crate::context_page::showing(&ctx));
+    assert_eq!(context_ids(&app), menu);
+    assert_eq!(overlays.get_context_index(), opener);
+
+    // A chosen version closes the menu and launches.
+    crate::router::handle_action(&ctx, &app, "accept");
+    settle(&window);
+    let ticket = crate::context_page::ticket(&ctx);
+    crate::context_page::landed(&ctx, &app, Page::Versions, ticket, Ok(version_rows()));
+    crate::router::handle_action(&ctx, &app, "accept");
+    settle(&window);
+    assert!(!overlays.get_context_open() && !crate::context_page::showing(&ctx));
+
+    // A list Core cannot give closes the menu under its alert.
+    crate::router::handle_action(&ctx, &app, "context_menu");
+    focus_context_row(&app, "choose_version");
+    crate::router::handle_action(&ctx, &app, "accept");
+    settle(&window);
+    let ticket = crate::context_page::ticket(&ctx);
+    crate::context_page::landed(&ctx, &app, Page::Versions, ticket, Err("offline".into()));
+    assert!(!overlays.get_context_open());
+    assert!(overlays.get_dialog_open());
+    assert_eq!(overlays.get_dialog_error(), ErrorKind::VersionList);
+    crate::router::handle_action(&ctx, &app, "cancel");
+    settle(&window);
+    assert!(!overlays.get_dialog_open());
+}
+
 fn context_keys(app: &App) -> Vec<String> {
     app.global::<crate::Overlays>()
         .get_context_entries()
@@ -7575,7 +7673,7 @@ fn search_result(names: &[&str], more: bool) -> zaparoo_core::media_types::Media
 }
 
 #[test]
-fn the_search_pane_lists_a_whole_page_with_each_title_once() {
+fn the_search_pane_lists_and_counts_each_title_core_grouped() {
     assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
     let (app, _window) = boot();
     let (_runtime, ctx) = offline_ctx();
@@ -7584,19 +7682,16 @@ fn the_search_pane_lists_a_whole_page_with_each_title_once() {
     crate::search::type_char(&ctx, &app, 'g');
     let seq = crate::search::preview_seq(&crate::router::lock(&ctx.shared));
 
-    // Three variants of one title, then enough others to pass the old cap.
+    // Core sends one row per title, the first standing for three versions.
     let titles: Vec<String> = (0..20).map(|n| format!("Game {n:02}")).collect();
-    let mut names = vec!["Game 00", "Game 00"];
-    names.extend(titles.iter().map(String::as_str));
+    let names: Vec<&str> = titles.iter().map(String::as_str).collect();
     let mut result = search_result(&names, false);
-    for (index, item) in result.results.iter_mut().enumerate() {
-        item.path = format!("/games/{index}");
-    }
+    result.results[0].version_count = Some(3);
     crate::search::preview_landed(&ctx, &app, seq, Ok(&result));
     assert_eq!(view.get_pane_rows().row_count(), 20);
-    assert_eq!(view.get_count(), 22, "the heading counts every match");
+    assert_eq!(view.get_count(), 20, "the heading counts the games listed");
 
-    // The one row for the title opens the results on its first variant.
+    // The row for the title opens the results on the version Core picked.
     crate::router::handle_action(&ctx, &app, "right");
     crate::router::handle_action(&ctx, &app, "accept");
     assert_eq!(
@@ -7604,7 +7699,7 @@ fn the_search_pane_lists_a_whole_page_with_each_title_once() {
             .persist
             .search
             .selected_path,
-        "/games/0"
+        "/games/Game 00"
     );
 }
 

@@ -97,6 +97,12 @@ pub struct GameRow {
     /// A folder of one game's discs: Accept launches the disc Core chose
     /// and the menu lists the rest.
     pub multi_disc: bool,
+    /// The title a grouped search result stands for, which its versions
+    /// page asks Core for.
+    pub title_id: Option<i64>,
+    /// How many versions of the title the search matched. Zero outside a
+    /// grouped search.
+    pub version_count: u32,
     /// The roots page distinguisher, when siblings share a name.
     pub root_distinguisher: String,
     /// The metadata rows Core sent with the row (the detail pane's
@@ -122,6 +128,16 @@ impl GameRow {
     /// Accept browses into this row.
     pub fn is_dir(&self) -> bool {
         rules::browses(self.entry_type, self.media_id.is_some(), &self.zap_script)
+    }
+
+    /// How many versions the row stands for, for its suffix: zero unless
+    /// it stands for more than one.
+    pub(crate) fn versions(&self) -> i32 {
+        if zaparoo_app::title_versions::has_versions(self.title_id, self.version_count) {
+            i32::try_from(self.version_count).unwrap_or(i32::MAX)
+        } else {
+            0
+        }
     }
 
     /// The run text (`run_text_for_entry`): a media-capable directory
@@ -218,6 +234,8 @@ impl From<&BrowseEntry> for GameRow {
             tags_known: true,
             media_capable: rules::is_media_capable(entry_type, e.media_id.is_some(), &e.zap_script),
             multi_disc: e.multi_disc,
+            title_id: None,
+            version_count: 0,
             root_distinguisher: String::new(),
             detail_rows: rules::detail_rows_from_tags(&tag_pairs(&e.tags)),
             display: String::new(),
@@ -246,6 +264,8 @@ impl From<&MediaItem> for GameRow {
             tags_known: true,
             media_capable: true,
             multi_disc: false,
+            title_id: item.title_id,
+            version_count: item.version_count.unwrap_or(0),
             root_distinguisher: String::new(),
             detail_rows: rules::detail_rows_from_tags(&tag_pairs(&item.tags)),
             display: String::new(),
@@ -277,6 +297,8 @@ impl GameRow {
             media_capable: true,
             // `media.meta` does not say whether a game spans several discs.
             multi_disc: false,
+            title_id: None,
+            version_count: 0,
             root_distinguisher: String::new(),
             detail_rows: Vec::new(),
             display: name.to_string(),
@@ -318,6 +340,8 @@ impl From<&MediaHistoryEntry> for GameRow {
             tags_known: e.media_id.is_some(),
             media_capable: true,
             multi_disc: false,
+            title_id: None,
+            version_count: 0,
             root_distinguisher: String::new(),
             detail_rows: Vec::new(),
             display: String::new(),
@@ -1993,6 +2017,7 @@ fn text_cell(row: &GameRow) -> GridCell {
         favorite: row.is_favorite,
         hidden: row.is_hidden,
         opens: row.is_dir(),
+        versions: row.versions(),
         ..Default::default()
     }
 }
@@ -2560,10 +2585,12 @@ pub fn render(ctx: &Ctx, app: &App) {
         view.set_label_name(SharedString::from(row.display.as_str()));
         view.set_label_tags(SharedString::from(row.suffix.as_str()));
         view.set_label_hidden(row.is_hidden);
+        view.set_label_versions(row.versions());
     } else {
         view.set_label_name(SharedString::default());
         view.set_label_tags(SharedString::default());
         view.set_label_hidden(false);
+        view.set_label_versions(0);
     }
 
     // Detailed list: the window around the centered slot.
@@ -3828,6 +3855,7 @@ pub(crate) fn game_input(
         favorite_known: row.tags_known && addressable,
         is_favorite: row.is_favorite,
         multi_disc: row.multi_disc,
+        versions: row.versions() > 0,
         has_payload: !row.zap_script.trim().is_empty() || !row.path.is_empty(),
         has_nfc: shared.has_nfc,
         can_discover: zaparoo_app::alternate_versions::can_discover(system, &row.name, &row.path),
@@ -3955,9 +3983,9 @@ pub(crate) fn game_action(ctx: &Ctx, app: &App, id: &str, row: &GameRow, system:
     }
 }
 
-/// "Discover alt. versions" and "Choose disc" turn the menu to a page of
-/// its own: it stays open while Core answers. False when `id` is an
-/// ordinary entry.
+/// "Discover alt. versions", "Choose disc" and "Choose version" turn the
+/// menu to a page of its own: it stays open while Core answers. False when
+/// `id` is an ordinary entry.
 pub fn begin_context_page(ctx: &Ctx, app: &App, id: &str) -> bool {
     if !crate::context_page::asks_core(id) {
         return false;
@@ -3981,6 +4009,13 @@ pub(crate) fn begin_game_page(ctx: &Ctx, app: &App, id: &str, row: &GameRow, sys
     } else if id == Page::Discs.menu_id() {
         let include_hidden = include_hidden(&lock(&ctx.shared));
         crate::discs::begin(ctx, app, system, &row.path, &row.display, include_hidden);
+    } else if id == Page::Versions.menu_id() {
+        let Some(title_id) = row.title_id else {
+            return true;
+        };
+        // The search that counted the versions filters the list of them.
+        let search = crate::search::args(&lock(&ctx.shared));
+        crate::title_versions::begin(ctx, app, title_id, &row.display, &search);
     } else {
         return false;
     }

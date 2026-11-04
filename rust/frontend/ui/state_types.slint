@@ -8,7 +8,7 @@ export enum SystemsMode { category, favorites }
 export enum MenuRole { option, header, action, submenu }
 // What the context menu is showing: its own rows, or the page one of them
 // opened in their place.
-export enum ContextPage { root, write-token, manage-game, manage-system, manage-category, discs, alternates }
+export enum ContextPage { root, write-token, manage-game, manage-system, manage-category, discs, versions, alternates }
 // The on-screen keyboard's key kinds, and the Search screen's focus zones
 // and what its side pane lists.
 export enum KeyKind { char, space, backspace, shift, symbols, submit }
@@ -75,7 +75,7 @@ export enum Orientation { horizontal, cw, ccw }
 export enum VideoStandard { ntsc, pal }
 export enum DialogKind { none, quit-confirm, quit-blocked, restart-setting, notice, core-version, first-run, hub-full, action-error, unlink-online, restore-online-backup, update-stop, ra-log-out }
 export enum DialogButton { ok, yes, no, retry, cancel, i-understand, start-media-update }
-export enum ErrorKind { generic, launch, launch-repair, favorite, media-visibility, media-busy, add-to-hub, save-to-hub, media-index, media-scrape, media-scrapers, media-cancel, launcher, launcher-save, alternate-discovery, disc-list, qr-code, card-write, setting, pairing, online, backup, config-file, image-picker }
+export enum ErrorKind { generic, launch, launch-repair, favorite, media-visibility, media-busy, add-to-hub, save-to-hub, media-index, media-scrape, media-scrapers, media-cancel, launcher, launcher-save, alternate-discovery, disc-list, version-list, qr-code, card-write, setting, pairing, online, backup, config-file, image-picker }
 
 // Text adapters are for vocabulary/resource keys and focus identity only,
 // never routing. Runtime decisions use the enums themselves.

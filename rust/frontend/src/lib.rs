@@ -108,6 +108,7 @@ mod system_status;
 mod systems;
 mod tag_utils;
 mod theme;
+mod title_versions;
 mod update;
 mod view_model;
 

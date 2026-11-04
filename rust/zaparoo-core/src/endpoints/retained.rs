@@ -136,6 +136,8 @@ fields!(MediaItem {
     relative_path,
     has_cover,
     cover_color,
+    title_id,
+    version_count,
 });
 fields!(MediaSearchResult {
     results,
