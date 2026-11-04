@@ -7,6 +7,7 @@
 //! visible pushes before dispatch, command ownership, and eventual quiescence.
 
 use crate::navigation::EntryMode;
+use zaparoo_app::user_flags::Flag;
 
 use crate::{App, GridCell, HubView, Shell, Sizing, SystemsView};
 use crate::{
@@ -1680,6 +1681,7 @@ fn disc_rows() -> Vec<crate::context_page::PageRow> {
             label: disc.to_string(),
             name: "Game 0".into(),
             launch_text: format!("/g/Game 0/Game 0 (Disc {disc}).chd"),
+            deck: None,
         })
         .collect()
 }
@@ -1916,6 +1918,15 @@ fn a_search_result_with_versions_counts_them_and_lists_them_as_a_page() {
     assert!(!overlays.get_dialog_open());
 }
 
+/// Which of the strip's four buttons are on, in its order.
+fn strip_states(app: &App) -> Vec<bool> {
+    app.global::<crate::Overlays>()
+        .get_context_strip()
+        .iter()
+        .map(|button| button.on)
+        .collect()
+}
+
 fn context_keys(app: &App) -> Vec<String> {
     app.global::<crate::Overlays>()
         .get_context_entries()
@@ -1937,7 +1948,7 @@ fn manage_and_write_to_token_are_pages_that_back_returns_from() {
     crate::router::handle_action(&ctx, &app, "context_menu");
     assert_eq!(
         context_ids(&app),
-        ["more_info", "toggle_favorite", "write_token", "manage_game"]
+        ["more_info", "add_to_deck", "write_token", "manage_game"]
     );
     assert_eq!(overlays.get_context_page(), crate::ContextPage::Root);
     let write = overlays.get_context_entries().row_data(2);
@@ -2028,7 +2039,7 @@ fn a_game_reads_the_same_on_every_list() {
     let (_, root, manage) = menus[0].clone();
     assert_eq!(
         root,
-        ["more_info", "favorite:add", "write_token", "manage_game"]
+        ["more_info", "add_to_deck", "write_token", "manage_game"]
     );
     assert_eq!(
         manage,
@@ -2038,6 +2049,200 @@ fn a_game_reads_the_same_on_every_list() {
         assert_eq!(other_root, &root, "{mode:?}");
         assert_eq!(other_manage, &manage, "{mode:?}");
     }
+}
+
+#[test]
+fn the_collections_strip_sits_above_the_rows_and_toggles_in_place() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    seat_visibility_list(&ctx, &app, GamesMode::Browse);
+    crate::router::lock(&ctx.shared).games.rows[0].flags = zaparoo_app::user_flags::Flags {
+        liked: true,
+        ..Default::default()
+    };
+    let overlays = app.global::<crate::Overlays>();
+    crate::router::handle_action(&ctx, &app, "context_menu");
+    assert_eq!(strip_states(&app), [false, true, false, false]);
+    // The menu opens on its first row, not on the strip.
+    assert_eq!(overlays.get_context_index(), 0);
+    assert_eq!(overlays.get_context_strip_index(), -1);
+
+    // Up from the first row reaches the strip; Left stops at its end.
+    crate::router::handle_action(&ctx, &app, "up");
+    assert_eq!(overlays.get_context_strip_index(), 0);
+    assert_eq!(overlays.get_context_index(), -1);
+    crate::router::handle_action(&ctx, &app, "left");
+    assert_eq!(overlays.get_context_strip_index(), 0);
+    crate::router::handle_action(&ctx, &app, "right");
+    crate::router::handle_action(&ctx, &app, "right");
+    assert_eq!(overlays.get_context_strip_index(), 2);
+
+    // Dislike drops the Like at once, on the strip and on the row, and
+    // the menu stays open on the same button.
+    crate::router::handle_action(&ctx, &app, "accept");
+    assert!(overlays.get_context_open());
+    assert_eq!(overlays.get_context_strip_index(), 2);
+    assert_eq!(strip_states(&app), [false, false, true, false]);
+    assert!(
+        crate::router::lock(&ctx.shared).games.rows[0]
+            .flags
+            .disliked
+    );
+
+    // Down returns to the first row; Up from the strip wraps to the last.
+    crate::router::handle_action(&ctx, &app, "down");
+    assert_eq!(overlays.get_context_strip_index(), -1);
+    assert_eq!(overlays.get_context_index(), 0);
+    crate::router::handle_action(&ctx, &app, "up");
+    crate::router::handle_action(&ctx, &app, "up");
+    assert_eq!(overlays.get_context_strip_index(), -1);
+    assert_eq!(
+        overlays.get_context_index(),
+        i32::try_from(context_ids(&app).len() - 1).unwrap_or_default()
+    );
+    // Down from the last row comes back around to the strip, on the
+    // button it left.
+    crate::router::handle_action(&ctx, &app, "down");
+    assert_eq!(overlays.get_context_strip_index(), 2);
+
+    // A page hides the strip and keeps focus on its rows.
+    crate::router::handle_action(&ctx, &app, "down");
+    focus_context_row(&app, "manage_game");
+    crate::router::handle_action(&ctx, &app, "accept");
+    crate::router::handle_action(&ctx, &app, "up");
+    assert_eq!(overlays.get_context_strip_index(), -1);
+    crate::router::close_context_menu(&ctx, &app);
+    assert_eq!(overlays.get_context_strip().row_count(), 0);
+}
+
+#[test]
+fn add_to_deck_checks_in_place_and_new_deck_names_one_on_the_keyboard() {
+    use crate::context_page::Page;
+    use zaparoo_core::collections::Deck;
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    seat_visibility_list(&ctx, &app, GamesMode::Favorites);
+    let overlays = app.global::<crate::Overlays>();
+    crate::router::handle_action(&ctx, &app, "context_menu");
+    focus_context_row(&app, "add_to_deck");
+    crate::router::handle_action(&ctx, &app, "accept");
+    settle(&window);
+    let deck = |id: &str, owned: bool, holds: &[i64], count: u32| Deck {
+        deck_id: id.into(),
+        name: id.into(),
+        owned,
+        item_count: count,
+        contains_item_ids: Some(holds.to_vec()),
+        ..Deck::default()
+    };
+    let decks = [
+        deck("Couch", true, &[5], 3),
+        deck("Copy", false, &[], 3),
+        deck("Full", true, &[], zaparoo_core::collections::MAX_DECK_ITEMS),
+        deck("Weekend", true, &[], 0),
+    ];
+    let ticket = crate::context_page::ticket(&ctx);
+    crate::context_page::landed(
+        &ctx,
+        &app,
+        Page::AddToDeck,
+        ticket,
+        Ok(crate::add_to_deck::rows(&decks)),
+    );
+    settle(&window);
+    assert_eq!(overlays.get_context_page(), crate::ContextPage::AddToDeck);
+    let roles: Vec<_> = overlays
+        .get_context_entries()
+        .iter()
+        .map(|entry| (entry.label.to_string(), entry.role, entry.enabled))
+        .collect();
+    assert_eq!(
+        roles,
+        [
+            ("Couch".into(), crate::MenuRole::CheckOn, true),
+            ("Full".into(), crate::MenuRole::CheckOff, false),
+            ("Weekend".into(), crate::MenuRole::CheckOff, true),
+            (String::new(), crate::MenuRole::Option, true),
+        ]
+    );
+    // Accept checks the deck at once and the page stays up.
+    overlays.set_context_index(2);
+    crate::router::handle_action(&ctx, &app, "accept");
+    settle(&window);
+    assert!(overlays.get_context_open());
+    assert_eq!(
+        overlays.get_context_entries().row_data(2).map(|e| e.role),
+        Some(crate::MenuRole::CheckOn)
+    );
+    // A full deck does nothing.
+    overlays.set_context_index(1);
+    crate::router::handle_action(&ctx, &app, "accept");
+    settle(&window);
+    assert_eq!(
+        overlays.get_context_entries().row_data(1).map(|e| e.role),
+        Some(crate::MenuRole::CheckOff)
+    );
+
+    // New deck names the deck on the keyboard, and Back returns to the
+    // list the menu was opened on.
+    overlays.set_context_index(3);
+    crate::router::handle_action(&ctx, &app, "accept");
+    settle(&window);
+    assert!(!overlays.get_context_open());
+    assert_eq!(app.global::<Shell>().get_active_screen(), Screen::Rename);
+    assert_eq!(
+        app.global::<crate::RenameView>().get_purpose(),
+        crate::RenamePurpose::NewDeck
+    );
+    assert!(!app.global::<crate::RenameView>().get_can_save());
+    // The name and the game it is for are kept, so a kill while naming
+    // comes back to them.
+    {
+        let shared = crate::router::lock(&ctx.shared);
+        assert_eq!(shared.persist.active_screen, Screen::Rename.token());
+        assert_eq!(shared.persist.rename.purpose, "new_deck");
+        assert!(!shared.persist.rename.deck_path.is_empty());
+    }
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert_eq!(app.global::<Shell>().get_active_screen(), Screen::Favorites);
+    {
+        let shared = crate::router::lock(&ctx.shared);
+        assert_eq!(shared.persist.active_screen, Screen::Favorites.token());
+        assert_eq!(shared.persist.rename.purpose, "");
+    }
+}
+
+#[test]
+fn a_new_deck_name_comes_back_after_a_kill() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.persist.active_screen = Screen::Rename.token().into();
+        shared.persist.rename = zaparoo_core::persist::RenameState {
+            purpose: "new_deck".into(),
+            deck_system: "SNES".into(),
+            deck_path: "/snes/mario.sfc".into(),
+            draft: "Couch".into(),
+            caret: 5,
+            ..zaparoo_core::persist::RenameState::default()
+        };
+    }
+    crate::rename::restore(&ctx, &app);
+    settle(&window);
+    assert_eq!(app.global::<Shell>().get_active_screen(), Screen::Rename);
+    let view = app.global::<crate::RenameView>();
+    assert_eq!(view.get_purpose(), crate::RenamePurpose::NewDeck);
+    assert_eq!(view.get_before(), "Couch");
+    assert!(view.get_can_save());
+    // Without the screen it was opened on behind it, Back goes to the Hub.
+    crate::router::handle_action(&ctx, &app, "cancel");
+    settle(&window);
+    assert_eq!(app.global::<Shell>().get_active_screen(), Screen::Hub);
+    assert_eq!(crate::router::lock(&ctx.shared).persist.rename.purpose, "");
 }
 
 #[test]
@@ -2159,8 +2364,9 @@ fn the_resume_tile_shows_its_games_menu_once_core_says_what_it_is() {
     assert!(overlays.get_context_open());
     assert_eq!(
         context_keys(&app),
-        ["more_info", "favorite:remove", "write_token", "manage_game"]
+        ["more_info", "add_to_deck", "write_token", "manage_game"]
     );
+    assert!(strip_states(&app)[0], "the strip shows the game's favorite");
     focus_context_row(&app, "manage_game");
     crate::router::handle_action(&ctx, &app, "accept");
     settle(&window);
@@ -2250,8 +2456,9 @@ fn pinned_tiles_show_what_they_stand_for_or_their_layout_actions() {
     crate::hub::game_answered(&ctx, &app, &request, Some(&favorite_meta("/g/Pinned.nes")));
     assert_eq!(
         context_keys(&app),
-        ["more_info", "favorite:remove", "write_token", "manage_game"]
+        ["more_info", "add_to_deck", "write_token", "manage_game"]
     );
+    assert!(strip_states(&app)[0], "the strip shows the game's favorite");
     focus_context_row(&app, "manage_game");
     crate::router::handle_action(&ctx, &app, "accept");
     settle(&window);
@@ -2409,7 +2616,7 @@ fn hiding_restarts_browse_and_letters_without_losing_favorites_or_neighbor_focus
     crate::games::on_hidden_updated(&ctx, &app, 0, &target, "NES", Ok(visibility_reply(true)));
     let shared = crate::router::lock(&ctx.shared);
     assert!(shared.games.rows[0].is_hidden);
-    assert!(shared.games.rows[0].is_favorite);
+    assert!(shared.games.rows[0].flags.favorite);
     assert_eq!(shared.persist.games.selected_at_level[0], "/g/Game 1.nes");
     assert!(shared.games.loading);
     assert_eq!(shared.games.ticket, 1);
@@ -2447,6 +2654,7 @@ fn hidden_management_keeps_favorites_recents_and_recovery_selection() {
             GamesMode::Favorites => &shared.persist.favorites.selected_path,
             GamesMode::Recents => &shared.persist.recents.selected_path,
             GamesMode::Search => &shared.persist.search.selected_path,
+            GamesMode::Deck => &shared.persist.deck.selected_item,
         };
         assert_eq!(selected, &target.path);
         let ticket = shared.games.ticket;
@@ -4710,14 +4918,24 @@ fn favorite_count_labels_use_real_plural_forms() {
     assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
     let (app, _) = boot();
     let labels = app.global::<crate::Labels>();
-    assert_eq!(labels.invoke_favorite_systems(1), "1 system with favorites");
+    let fav = crate::UserFlag::Favorite;
     assert_eq!(
-        labels.invoke_favorite_systems(2),
+        labels.invoke_list_systems(fav, 1),
+        "1 system with favorites"
+    );
+    assert_eq!(
+        labels.invoke_list_systems(fav, 2),
         "2 systems with favorites"
     );
-    assert_eq!(labels.invoke_favorites(0), "0 favorites");
-    assert_eq!(labels.invoke_favorites(1), "1 favorite");
-    assert_eq!(labels.invoke_favorites(2), "2 favorites");
+    assert_eq!(labels.invoke_list_count(fav, 0), "0 favorites");
+    assert_eq!(labels.invoke_list_count(fav, 1), "1 favorite");
+    assert_eq!(labels.invoke_list_count(fav, 2), "2 favorites");
+    let liked = crate::UserFlag::Like;
+    assert_eq!(labels.invoke_list_count(liked, 1), "1 liked game");
+    assert_eq!(
+        labels.invoke_list_systems(crate::UserFlag::PlayLater, 2),
+        "2 systems in Play later"
+    );
 }
 
 #[test]
@@ -6220,7 +6438,7 @@ fn cold_and_cached_favorite_systems_restore_the_same_list_viewport() {
             shared.persist.favorite_systems.list_top = Some(6);
         }
         settle(&window);
-        crate::systems::enter_favorites(&ctx, &app, EntryMode::Restore);
+        crate::systems::enter_list(&ctx, &app, Flag::Favorite, EntryMode::Restore);
         if !cached {
             assert!(app.global::<Shell>().get_transitioning());
             assert_eq!(
@@ -7116,10 +7334,12 @@ fn flat_entries_reset_only_when_fresh_and_resume_scoped_favorites() {
         crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
     );
     for mode in [GamesMode::Favorites, GamesMode::Recents] {
-        let enter = if mode == GamesMode::Favorites {
-            crate::games::enter_favorites
-        } else {
-            crate::games::enter_recents
+        let enter = |ctx: &crate::router::Ctx, app: &App, entry: EntryMode| {
+            if mode == GamesMode::Favorites {
+                crate::games::enter_list(ctx, app, Flag::Favorite, entry);
+            } else {
+                crate::games::enter_recents(ctx, app, entry);
+            }
         };
         for entry in [EntryMode::Restore, EntryMode::Fresh] {
             app.global::<Shell>().set_active_screen(Screen::Hub);
@@ -7152,7 +7372,7 @@ fn flat_entries_reset_only_when_fresh_and_resume_scoped_favorites() {
             assert_eq!(view.get_list_scroll_top(), top);
             if mode == GamesMode::Favorites {
                 assert_eq!(
-                    crate::router::lock(&ctx.shared).games.favorites_system,
+                    crate::router::lock(&ctx.shared).games.list_system,
                     if entry == EntryMode::Restore {
                         "System08"
                     } else {
@@ -7164,7 +7384,7 @@ fn flat_entries_reset_only_when_fresh_and_resume_scoped_favorites() {
             crate::games::reproject(&ctx, &app);
             crate::games::render(&ctx, &app);
             if mode == GamesMode::Favorites {
-                crate::games::refresh_favorites(&ctx, &app);
+                crate::games::refresh_list(&ctx, &app);
             } else {
                 crate::games::refresh_recents(&ctx, &app);
             }
@@ -7174,13 +7394,100 @@ fn flat_entries_reset_only_when_fresh_and_resume_scoped_favorites() {
             assert_eq!(view.get_list_scroll_top(), top);
         }
     }
-    crate::games::enter_favorites_for_system(&ctx, &app, "System12");
+    crate::games::enter_list_for_system(&ctx, &app, "System12");
     let ticket = crate::router::lock(&ctx.shared).games.ticket;
     crate::games::apply_fill(&ctx, &app, ticket, navigation_rows(), None, None, true);
     assert_eq!(app.global::<crate::GamesView>().get_current_index(), 0);
     assert_eq!(
-        crate::router::lock(&ctx.shared).games.favorites_system,
+        crate::router::lock(&ctx.shared).games.list_system,
         "System12"
+    );
+}
+
+#[test]
+fn each_list_keeps_its_own_place_order_and_grouping() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.persist.active_screen = Screen::Favorites.token().into();
+        shared.persist.lists.active = "liked".into();
+        shared.persist.lists.liked.selected_path = "/games/8".into();
+        shared.persist.favorites.selected_path = "/games/3".into();
+    }
+    // A cold start comes back to Liked, where it was left.
+    crate::restore_screens(&std::sync::Arc::new(ctx.clone()), &app);
+    let ticket = crate::router::lock(&ctx.shared).games.ticket;
+    crate::games::apply_fill(&ctx, &app, ticket, navigation_rows(), None, None, true);
+    settle(&window);
+    let shell = app.global::<Shell>();
+    assert_eq!(shell.get_active_screen(), Screen::Favorites);
+    assert_eq!(shell.get_active_list(), crate::UserFlag::Like);
+    assert_eq!(app.global::<crate::GamesView>().get_current_index(), 8);
+    // Moving keeps Liked's place, not Favorites'.
+    crate::router::handle_action(&ctx, &app, "right");
+    crate::games::flush_persist(&ctx);
+    {
+        let shared = crate::router::lock(&ctx.shared);
+        assert_eq!(shared.persist.lists.liked.selected_path, "/games/9");
+        assert_eq!(shared.persist.favorites.selected_path, "/games/3");
+    }
+    // Liked's order is its own, and Play later starts newest first.
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        assert!(crate::user_lists::set_sort(
+            &mut shared,
+            Flag::Like,
+            zaparoo_app::user_lists::ListSort::Name
+        ));
+        assert_eq!(shared.persist.lists.liked.sort, "name");
+        assert_eq!(shared.favorites_sort, "");
+        assert_eq!(
+            crate::user_lists::core_sort(&shared).as_deref(),
+            Some("name-asc")
+        );
+        assert_eq!(
+            crate::user_lists::sort(&shared, Flag::PlayLater),
+            zaparoo_app::user_lists::ListSort::Added
+        );
+    }
+    // Play later from the Hub: fresh, and named on the screen.
+    crate::router::enter_list(&ctx, &app, Flag::PlayLater, EntryMode::Fresh);
+    let ticket = crate::router::lock(&ctx.shared).games.ticket;
+    crate::games::apply_fill(&ctx, &app, ticket, navigation_rows(), None, None, true);
+    settle(&window);
+    assert_eq!(shell.get_active_list(), crate::UserFlag::PlayLater);
+    assert_eq!(app.global::<crate::GamesView>().get_current_index(), 0);
+    assert_eq!(
+        crate::router::lock(&ctx.shared).persist.lists.active,
+        "playlater"
+    );
+    // Grouping one list by system leaves the others flat.
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        assert!(crate::user_lists::set_grouped(
+            &mut shared,
+            Flag::PlayLater,
+            true
+        ));
+        assert!(!crate::user_lists::grouped(&shared, Flag::Like));
+        assert!(!crate::user_lists::grouped(&shared, Flag::Favorite));
+    }
+    crate::router::enter_list(&ctx, &app, Flag::PlayLater, EntryMode::Fresh);
+    assert_eq!(
+        crate::router::lock(&ctx.shared).systems_model.mode,
+        SystemsMode::Favorites
+    );
+    assert_eq!(
+        crate::router::lock(&ctx.shared)
+            .systems_model
+            .favorites_list,
+        Flag::PlayLater
     );
 }
 
@@ -7202,7 +7509,7 @@ fn favorite_systems_fresh_entry_resets_but_return_preserves_the_viewport() {
         shared.persist.favorite_systems.selected_path = "System08".into();
         shared.persist.favorite_systems.list_top = Some(6);
     }
-    crate::systems::enter_favorites(&ctx, &app, EntryMode::Fresh);
+    crate::systems::enter_list(&ctx, &app, Flag::Favorite, EntryMode::Fresh);
     crate::systems::apply_favorites(&ctx, &app, &result, 1, true);
     settle(&window);
     let view = app.global::<SystemsView>();
@@ -7213,10 +7520,10 @@ fn favorite_systems_fresh_entry_resets_but_return_preserves_the_viewport() {
         shared.persist.favorite_systems.selected_path = "System08".into();
         shared.persist.favorite_systems.list_top = Some(6);
     }
-    crate::systems::return_to_favorites(&ctx, &app);
+    crate::systems::return_to_list(&ctx, &app);
     assert_eq!(view.get_current_index(), 8);
     assert_eq!(view.get_list_scroll_top(), 6);
-    crate::systems::enter_favorites(&ctx, &app, EntryMode::Fresh);
+    crate::systems::enter_list(&ctx, &app, Flag::Favorite, EntryMode::Fresh);
     assert_eq!(
         view.get_current_index(),
         0,
@@ -8118,14 +8425,14 @@ fn search_here_on_favorites_keeps_the_favorite_tag_and_back_returns() {
         let mut shared = crate::router::lock(&ctx.shared);
         shared.systems = navigation_catalog();
         shared.games.mode = GamesMode::Favorites;
-        shared.games.favorites_system = "System03".into();
+        shared.games.list_system = "System03".into();
         shared.persist.active_screen = "favorites".into();
     }
     shell.set_active_screen(Screen::Favorites);
 
     crate::search::enter_scoped(&ctx, &app);
     let view = app.global::<crate::SearchView>();
-    assert_eq!(view.get_scope(), crate::SearchScope::Favorites);
+    assert_eq!(view.get_scope(), crate::SearchScope::List);
     assert_eq!(view.invoke_title(), "Search in Favorites");
     assert_eq!(view.invoke_system_text(), "Favorites / System 03");
     {
@@ -10985,7 +11292,7 @@ fn search_here_sits_on_the_systems_screens_and_runs_from_menu_at_240p() {
     assert_eq!(shell.get_active_screen(), Screen::Search);
     assert_eq!(
         app.global::<crate::SearchView>().get_scope(),
-        crate::SearchScope::Favorites
+        crate::SearchScope::List
     );
 }
 
@@ -11448,6 +11755,7 @@ fn a_cold_start_restores_the_rename_draft_only_on_the_same_tile() {
         },
         draft: "Role-playing".into(),
         caret: 4,
+        ..zaparoo_core::persist::RenameState::default()
     };
     {
         let mut shared = crate::router::lock(&ctx.shared);
@@ -12348,4 +12656,141 @@ fn a_live_folder_restores_inside_its_last_folder() {
     assert!(shared.games.live);
     assert_eq!(shared.games.browse_path, "/media/fat/_Arcade/_Organized");
     assert_eq!(shared.games.system_name, "_Arcade");
+}
+
+fn core_state(revision: u64, events: &serde_json::Value) -> zaparoo_core::ui_events::UiState {
+    serde_json::from_value(serde_json::json!({
+        "revision": revision, "events": events, "resolved": []
+    }))
+    .unwrap_or_else(|_| unreachable!("a fixed UI state deserializes"))
+}
+
+fn core_picker() -> serde_json::Value {
+    serde_json::json!([{
+        "id": "e1", "kind": "picker", "title": "Couch co-op", "dismissible": true,
+        "selectedChoiceId": "c2",
+        "choices": [
+            {"id": "c1", "label": "Super Mario World",
+             "media": {"system": "SNES", "path": "/g/smw.sfc", "name": "Super Mario World"}},
+            {"id": "c2", "label": "F-Zero",
+             "media": {"system": "SNES", "path": "/g/fzero.sfc", "name": "F-Zero"}},
+            {"id": "c3", "label": "Random Genesis game"}
+        ]
+    }])
+}
+
+#[test]
+fn a_core_picker_opens_on_the_preselected_choice_and_closes_when_resolved() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    crate::core_ui::apply_state(&ctx, &app, core_state(3, &core_picker()));
+    frame(&window);
+    let view = app.global::<crate::CoreUiView>();
+    assert_eq!(view.get_kind(), crate::CoreUiKind::Picker);
+    assert_eq!(view.get_title(), "Couch co-op");
+    assert_eq!(view.get_rows().row_count(), 3);
+    assert_eq!(view.get_index(), 1, "focus starts on Core's choice");
+    assert!(view.get_has_art());
+    // The picker owns input: moves stay in it and wrap.
+    crate::router::handle_action(&ctx, &app, "down");
+    crate::router::handle_action(&ctx, &app, "down");
+    assert_eq!(view.get_index(), 0);
+    // A stale state changes nothing.
+    crate::core_ui::apply_state(&ctx, &app, core_state(2, &serde_json::json!([])));
+    assert_eq!(view.get_kind(), crate::CoreUiKind::Picker);
+    // Another client answered: Core lists it no more, and it closes here.
+    crate::core_ui::apply_state(&ctx, &app, core_state(4, &serde_json::json!([])));
+    assert_eq!(view.get_kind(), crate::CoreUiKind::None);
+    frame(&window);
+}
+
+#[test]
+fn answering_a_core_picker_closes_it_for_good() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    crate::core_ui::apply_state(&ctx, &app, core_state(1, &core_picker()));
+    crate::core_ui::handle_action(&ctx, &app, "accept");
+    let view = app.global::<crate::CoreUiView>();
+    assert_eq!(view.get_kind(), crate::CoreUiKind::None);
+    // A state from before Core took the answer still lists it: it stays shut.
+    crate::core_ui::apply_state(&ctx, &app, core_state(1, &core_picker()));
+    assert_eq!(view.get_kind(), crate::CoreUiKind::None);
+}
+
+#[test]
+fn a_core_event_waits_under_the_boot_curtain() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    app.global::<Shell>().set_boot_curtain(true);
+    crate::core_ui::apply_state(&ctx, &app, core_state(1, &core_picker()));
+    let view = app.global::<crate::CoreUiView>();
+    assert_eq!(view.get_kind(), crate::CoreUiKind::None);
+    app.global::<Shell>().set_boot_curtain(false);
+    crate::core_ui::present(&ctx, &app);
+    assert_eq!(view.get_kind(), crate::CoreUiKind::Picker);
+}
+
+#[test]
+fn a_core_confirmation_uses_the_dialog_and_waits_for_one_already_up() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let overlays = app.global::<crate::Overlays>();
+    crate::router::open_quit_confirm(&app);
+    assert!(overlays.get_dialog_open());
+    let confirm = serde_json::json!([{
+        "id": "e2", "kind": "confirm", "title": "Change game?",
+        "message": "Launch Tetris?", "dismissible": true
+    }]);
+    crate::core_ui::apply_state(&ctx, &app, core_state(1, &confirm));
+    assert_eq!(overlays.get_dialog_kind(), DialogKind::QuitConfirm);
+    // The quit prompt is declined; the confirmation takes the dialog.
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert!(overlays.get_dialog_open());
+    assert_eq!(overlays.get_dialog_kind(), DialogKind::CoreConfirm);
+    assert_eq!(overlays.get_dialog_detail(), "Change game?");
+    assert_eq!(overlays.get_dialog_arg(), "Launch Tetris?");
+    frame(&window);
+    // Back dismisses it.
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert!(!overlays.get_dialog_open());
+}
+
+#[test]
+fn core_loaders_and_notices_take_the_header_line() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let status = app.global::<crate::Status>();
+    crate::status::set_link(
+        &ctx.status,
+        &app,
+        &ctx.handle,
+        zaparoo_app::status_line::Link::Connected,
+        None,
+    );
+    let loader = serde_json::json!([{
+        "id": "e3", "kind": "loader", "title": "Fetching deck", "dismissible": false
+    }]);
+    crate::core_ui::apply_state(&ctx, &app, core_state(1, &loader));
+    assert_eq!(status.get_kind(), crate::StatusKind::CoreLoader);
+    assert_eq!(status.get_arg(), "Fetching deck");
+    let notice = serde_json::json!([{
+        "id": "e4", "kind": "notice", "title": "Deck", "message": "Deck saved",
+        "dismissible": true
+    }]);
+    crate::core_ui::apply_state(&ctx, &app, core_state(2, &notice));
+    assert_eq!(status.get_kind(), crate::StatusKind::CoreNotice);
+    assert_eq!(status.get_arg(), "Deck saved");
+    crate::core_ui::apply_state(&ctx, &app, core_state(3, &serde_json::json!([])));
+    assert_ne!(status.get_kind(), crate::StatusKind::CoreNotice);
+    // Nothing modal opened for either.
+    assert!(!app.global::<crate::Overlays>().get_dialog_open());
+    assert_eq!(
+        app.global::<crate::CoreUiView>().get_kind(),
+        crate::CoreUiKind::None
+    );
 }

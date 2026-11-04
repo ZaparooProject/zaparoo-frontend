@@ -24,6 +24,10 @@ pub enum Surface {
     Games,
     Favorites,
     SearchResults,
+    /// The user's decks.
+    Decks,
+    /// One deck's items.
+    Deck,
     /// Everything with no page actions: Recents, Settings, About, the
     /// Search screen itself.
     Other,
@@ -54,6 +58,10 @@ pub enum Chip {
     AddItem,
     /// The rare actions, as the Menu list titled "More".
     More,
+    /// Make an empty deck.
+    NewDeck,
+    /// Play the deck on screen from its first item.
+    PlayDeck,
 }
 
 impl Chip {
@@ -71,6 +79,8 @@ impl Chip {
             Self::AddToHub => "add_to_hub",
             Self::AddItem => "hub_add",
             Self::More => "more",
+            Self::NewDeck => "new_deck",
+            Self::PlayDeck => "play_deck",
         }
     }
 }
@@ -91,6 +101,8 @@ pub fn chips(surface: Surface) -> &'static [Chip] {
         ],
         Surface::FavoriteSystems => &[Chip::GroupBy, Chip::SearchHere],
         Surface::SearchResults => &[Chip::EditSearch, Chip::AddToHub],
+        Surface::Decks => &[Chip::NewDeck],
+        Surface::Deck => &[Chip::PlayDeck, Chip::More],
         Surface::Other => &[],
     }
 }
@@ -100,6 +112,14 @@ pub fn more_rows(surface: Surface) -> &'static [&'static str] {
     match surface {
         Surface::Hub => &["hub_reset", "hub_settings", "hub_quit"],
         Surface::Favorites => &["back_to_hub"],
+        // The adapter drops the rows the deck on screen cannot take.
+        Surface::Deck => &[
+            "deck_hub",
+            "deck_rename",
+            "deck_cover_choose",
+            "deck_cover_remove",
+            "deck_delete",
+        ],
         _ => &[],
     }
 }
@@ -168,6 +188,8 @@ mod tests {
             Surface::Games,
             Surface::Favorites,
             Surface::SearchResults,
+            Surface::Decks,
+            Surface::Deck,
         ] {
             assert!(has_row(surface, true), "{surface:?}");
             assert!(!has_row(surface, false), "{surface:?}");
@@ -184,6 +206,8 @@ mod tests {
             Surface::Games,
             Surface::Favorites,
             Surface::SearchResults,
+            Surface::Decks,
+            Surface::Deck,
         ] {
             let chips = chips(surface);
             let has_more = chips.contains(&Chip::More);

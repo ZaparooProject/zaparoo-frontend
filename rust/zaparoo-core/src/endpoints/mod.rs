@@ -7,14 +7,15 @@
 // invalidation system.
 
 pub mod catalog;
+pub mod decks;
 pub mod launchers;
 pub mod media_browse;
-pub mod media_favorites;
 pub mod media_history;
 pub mod media_search;
 pub mod media_tags_update;
+pub mod media_user_list;
 pub mod readers_write;
 mod retained;
 pub mod run;
 pub mod system_launcher_default;
-pub mod systems_favorites;
+pub mod systems_user_list;

@@ -9,10 +9,13 @@
 // override point at this address; production frontend.toml still
 // defaults to 7497.
 
+mod decks;
 mod events;
 mod fixtures;
 mod handler;
+mod library;
 mod media_state;
+mod ui_events;
 
 use futures_util::{SinkExt, StreamExt};
 use media_state::Notifier;

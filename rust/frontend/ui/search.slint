@@ -9,7 +9,7 @@
 import { Theme, Sizing, Layout, Motion } from "theme.slint";
 import { TopStatusStrip, SectionHeader, ScrollCue } from "chrome.slint";
 import { SelectionCursor, SelectionClip } from "focus.slint";
-import { KeyKind, SearchZone, SearchPane, SearchScope } from "state_types.slint";
+import { KeyKind, SearchZone, SearchPane, SearchScope, UserFlag } from "state_types.slint";
 import { Labels } from "labels.slint";
 import { KeyCell, OnScreenKeyboard, Field, TextField } from "keyboard.slint";
 
@@ -28,6 +28,8 @@ export global SearchView {
     // A "Search here" search: the title and the system field state the
     // scope, and the field takes no focus.
     in-out property <SearchScope> scope: SearchScope.none;
+    // The built-in list a list scope searches.
+    in-out property <UserFlag> scope-list: UserFlag.favorite;
     // The category a category scope covers.
     in-out property <string> scope-category;
     // Empty for every system.
@@ -73,7 +75,7 @@ export global SearchView {
         if (self.scope == SearchScope.category) {
             return Labels.hub("category:" + self.scope-category, self.scope-category);
         }
-        if (self.scope == SearchScope.favorites) { return @tr("Favorites"); }
+        if (self.scope == SearchScope.list) { return Labels.list-title(self.scope-list); }
         return "";
     }
     public pure function title() -> string {
@@ -84,7 +86,7 @@ export global SearchView {
     public pure function system-text() -> string {
         if (self.scope == SearchScope.folder) { return @tr("{} / {}", self.system-name, self.scope-name); }
         if (self.scope == SearchScope.category) { return self.scope-label(); }
-        if (self.scope == SearchScope.favorites) {
+        if (self.scope == SearchScope.list) {
             return self.system-name == "" ? self.scope-label() : @tr("{} / {}", self.scope-label(), self.system-name);
         }
         return self.system-name == "" ? @tr("All systems") : self.system-name;

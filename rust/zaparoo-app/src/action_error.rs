@@ -12,10 +12,14 @@ use std::collections::VecDeque;
 
 /// Every kind the alert vocabulary knows. An unknown kind still shows,
 /// with the generic copy.
-pub const KINDS: [&str; 23] = [
+pub const KINDS: [&str; 27] = [
     "launch",
     "launch_repair",
     "favorite",
+    "collection",
+    "deck_list",
+    "deck_update",
+    "deck_create",
     "media_busy",
     "add_to_hub",
     "save_to_hub",
@@ -43,7 +47,10 @@ pub const KINDS: [&str; 23] = [
 /// allowed above a modal, but at depth 2 Back would return to a row that
 /// can never resolve.
 pub fn closes_context_menu(kind: &str) -> bool {
-    matches!(kind, "alternate_discovery" | "disc_list" | "version_list")
+    matches!(
+        kind,
+        "alternate_discovery" | "disc_list" | "version_list" | "deck_list"
+    )
 }
 
 /// One queued failure. The key is what deduplication compares, so the

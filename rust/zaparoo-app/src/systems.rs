@@ -320,18 +320,7 @@ pub fn favorites_total(rows: &[SystemRow]) -> Option<u32> {
 /// A random favorite from one system, or from every system when the id is
 /// blank (`random_favorite_script`).
 pub fn random_favorite_launch_text(system_id: &str) -> String {
-    let scope = system_id.trim();
-    if scope.is_empty() {
-        return "**launch.random:all?tags=user:favorite".to_string();
-    }
-    let mut escaped = String::with_capacity(scope.len());
-    for ch in scope.chars() {
-        if matches!(ch, '^' | '?' | ',' | '&' | '|') {
-            escaped.push('^');
-        }
-        escaped.push(ch);
-    }
-    format!("**launch.random:{escaped}?tags=user:favorite")
+    crate::user_lists::random_launch_text(crate::user_flags::Flag::Favorite, system_id)
 }
 
 fn project_rows(

@@ -8,6 +8,7 @@
 
 use crate::browse_filter::{self, Group};
 use crate::keyboard::Edge;
+use crate::user_flags::Flag;
 
 /// Characters a query may hold.
 pub const QUERY_MAX_CHARS: usize = 48;
@@ -45,10 +46,11 @@ pub enum Scope {
     Browse,
     /// The systems of one category.
     Category,
-    /// The favorites, all of them or one system's, from the Favorites list.
-    Favorites,
-    /// The favorites, from the systems that hold them.
-    FavoriteSystems,
+    /// One built-in list (Favorites, Liked, Play later, Disliked), all of
+    /// it or one system's, from the list itself.
+    List(Flag),
+    /// The same list, from the systems that hold it.
+    ListSystems(Flag),
 }
 
 /// The tag Core keeps favorites under.
@@ -56,13 +58,16 @@ pub const FAVORITE_TAG: &str = "user:favorite";
 
 impl Scope {
     /// The kind as the state file keeps it (`persist::SEARCH_SCOPE_*`).
-    pub fn token(self) -> &'static str {
+    /// Favorites keeps the names it had before the other lists.
+    pub fn token(self) -> String {
         match self {
-            Self::None => "",
-            Self::Browse => "browse",
-            Self::Category => "category",
-            Self::Favorites => "favorites",
-            Self::FavoriteSystems => "favorite_systems",
+            Self::None => String::new(),
+            Self::Browse => "browse".to_string(),
+            Self::Category => "category".to_string(),
+            Self::List(Flag::Favorite) => "favorites".to_string(),
+            Self::ListSystems(Flag::Favorite) => "favorite_systems".to_string(),
+            Self::List(flag) => flag.tag_value().to_string(),
+            Self::ListSystems(flag) => format!("{}_systems", flag.tag_value()),
         }
     }
 
@@ -71,9 +76,22 @@ impl Scope {
         match token {
             "browse" => Self::Browse,
             "category" => Self::Category,
-            "favorites" => Self::Favorites,
-            "favorite_systems" => Self::FavoriteSystems,
-            _ => Self::None,
+            "favorites" => Self::List(Flag::Favorite),
+            "favorite_systems" => Self::ListSystems(Flag::Favorite),
+            _ => token
+                .strip_suffix("_systems")
+                .and_then(Flag::from_tag_value)
+                .map(Self::ListSystems)
+                .or_else(|| Flag::from_tag_value(token).map(Self::List))
+                .unwrap_or(Self::None),
+        }
+    }
+
+    /// The list a list scope stands for.
+    pub const fn list(self) -> Option<Flag> {
+        match self {
+            Self::List(flag) | Self::ListSystems(flag) => Some(flag),
+            Self::None | Self::Browse | Self::Category => None,
         }
     }
 
@@ -82,9 +100,10 @@ impl Scope {
     /// ones so the Tags field cannot take it away.
     pub fn request_tags(self, chosen: Vec<String>) -> Vec<String> {
         let mut tags = chosen;
-        let favorites = matches!(self, Self::Favorites | Self::FavoriteSystems);
-        if favorites && !tags.iter().any(|t| t == FAVORITE_TAG) {
-            tags.push(FAVORITE_TAG.to_string());
+        if let Some(flag) = self.list() {
+            if !tags.iter().any(|t| t == flag.tag()) {
+                tags.push(flag.tag().to_string());
+            }
         }
         tags
     }
@@ -471,31 +490,37 @@ mod tests {
 
     #[test]
     fn a_scope_round_trips_its_token_and_drops_an_unknown_one() {
-        for scope in [
-            Scope::None,
-            Scope::Browse,
-            Scope::Category,
-            Scope::Favorites,
-            Scope::FavoriteSystems,
-        ] {
-            assert_eq!(Scope::from_token(scope.token()), scope);
+        let mut scopes = vec![Scope::None, Scope::Browse, Scope::Category];
+        for flag in Flag::ALL {
+            scopes.push(Scope::List(flag));
+            scopes.push(Scope::ListSystems(flag));
         }
+        for scope in scopes {
+            assert_eq!(Scope::from_token(&scope.token()), scope);
+        }
+        assert_eq!(Scope::List(Flag::Favorite).token(), "favorites");
+        assert_eq!(Scope::ListSystems(Flag::Like).token(), "liked_systems");
         assert_eq!(Scope::from_token("decks"), Scope::None);
+        assert_eq!(Scope::from_token("hidden_systems"), Scope::None);
     }
 
     #[test]
     fn the_favorites_scope_adds_its_tag_once() {
         assert_eq!(
-            Scope::Favorites.request_tags(tags(&["genre:rpg"])),
+            Scope::List(Flag::Favorite).request_tags(tags(&["genre:rpg"])),
             tags(&["genre:rpg", FAVORITE_TAG])
         );
         assert_eq!(
-            Scope::Favorites.request_tags(tags(&[FAVORITE_TAG])),
+            Scope::List(Flag::Favorite).request_tags(tags(&[FAVORITE_TAG])),
             tags(&[FAVORITE_TAG])
         );
         assert_eq!(
-            Scope::FavoriteSystems.request_tags(Vec::new()),
+            Scope::ListSystems(Flag::Favorite).request_tags(Vec::new()),
             tags(&[FAVORITE_TAG])
+        );
+        assert_eq!(
+            Scope::List(Flag::PlayLater).request_tags(Vec::new()),
+            tags(&["user:playlater"])
         );
         assert_eq!(
             Scope::Browse.request_tags(tags(&["genre:rpg"])),
@@ -504,7 +529,7 @@ mod tests {
         assert!(can_search(
             "",
             &[],
-            &Scope::Favorites.request_tags(Vec::new()),
+            &Scope::List(Flag::Favorite).request_tags(Vec::new()),
             ""
         ));
     }

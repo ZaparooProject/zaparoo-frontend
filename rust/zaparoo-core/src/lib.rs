@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 
 pub mod client;
+pub mod collections;
 pub mod config;
 pub mod controller_report;
 pub mod display_class;
@@ -18,3 +19,4 @@ pub mod runtime;
 pub mod store;
 pub mod systems_catalog;
 pub mod transport;
+pub mod ui_events;

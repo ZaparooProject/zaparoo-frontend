@@ -242,7 +242,16 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
     // Representative persisted Hub layout: Resume first, the detected
     // categories, then the built-in actions, with one hidden system
     // shortcut and one folder shortcut the user added.
-    fixture_hub(&app, scene_w, scene_h, crt, 1);
+    // "hub-deck" focuses the pinned deck.
+    let hub_selected = if screen.ends_with("hub-deck") {
+        fixture_hub_items()
+            .iter()
+            .position(|item| item.kind == "collection")
+            .unwrap_or(1)
+    } else {
+        1
+    };
+    fixture_hub(&app, scene_w, scene_h, crt, hub_selected);
     // Games fixtures so the grid, top strip, and page counter render.
     // `*-i18n` screens swap the fixture titles for one string per script
     // the catalogs ship, so shaping (Arabic, Devanagari), bidi (Hebrew,
@@ -264,10 +273,14 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
     ];
     let games_mode = if screen.contains("search-results") {
         GamesMode::Search
-    } else if screen.contains("favorites") {
+    } else if screen.contains("favorites")
+        || (fixture_list(screen).is_some() && !screen.contains("-systems"))
+    {
         GamesMode::Favorites
     } else if screen.contains("recents") {
         GamesMode::Recents
+    } else if fixture_screen(screen) == Screen::Deck {
+        GamesMode::Deck
     } else {
         GamesMode::Browse
     };
@@ -287,6 +300,9 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
         view.set_detail_image_index(1);
         view.set_detail_image_count(4);
         view.set_detail_image_kind("screenshot".into());
+    }
+    if games_mode == GamesMode::Deck {
+        app.global::<GamesView>().set_title("Couch co-op".into());
     }
     if screen.contains("search-results") {
         app.global::<GamesView>()
@@ -424,10 +440,17 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
     // an arcade game's own rows with a reader connected; the other screens
     // are the pages those rows open, the Manage page being the Resume
     // tile's, which is the tallest and has the longest labels.
-    if screen.contains("context") {
+    if screen.contains("context") || screen.contains("deck-item") {
         use zaparoo_app::options_menu::{self as menu, GameInput, Page, Tile};
+        use zaparoo_app::user_flags::{Flag, Flags};
+        let flags = Flags {
+            favorite: true,
+            liked: true,
+            ..Flags::default()
+        };
         let game = menu::game(&GameInput {
-            favorite_known: true,
+            flags: Some(flags),
+            can_add_to_deck: true,
             has_payload: true,
             has_nfc: true,
             can_discover: true,
@@ -438,6 +461,13 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
             tile: screen.ends_with("context-manage").then_some(Tile::Resume),
             ..GameInput::default()
         });
+        // An item of an editable deck: the game's rows, with its place in
+        // the deck leading the Manage page.
+        let game = if screen.contains("deck-item") {
+            game.with_deck_item(menu::DeckItem { can_be_cover: true })
+        } else {
+            game
+        };
         let entry = |id: &str, key: &str, label: &str, opens: bool| MenuEntry {
             role: if opens {
                 generated::MenuRole::Submenu
@@ -458,7 +488,33 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
                 .map(|row| entry(row.id, row.key, "", false))
                 .collect()
         };
-        let (page, rows, index) = if screen.ends_with("context-alt") {
+        let check = |index: usize, label: &str, checked: bool, enabled: bool| MenuEntry {
+            role: if checked {
+                generated::MenuRole::CheckOn
+            } else {
+                generated::MenuRole::CheckOff
+            },
+            enabled,
+            ..entry(&format!("page_row:{index}"), "", label, false)
+        };
+        let (page, rows, index) = if screen.ends_with("deck-item-manage") {
+            (
+                generated::ContextPage::ManageGame,
+                page_rows(Page::ManageGame),
+                0,
+            )
+        } else if screen.ends_with("context-deck") {
+            (
+                generated::ContextPage::AddToDeck,
+                vec![
+                    check(0, "Couch co-op", true, true),
+                    check(1, "Weekend", false, true),
+                    check(2, "Arcade night", false, false),
+                    entry("page_row:3", "new_deck", "", false),
+                ],
+                1,
+            )
+        } else if screen.ends_with("context-alt") {
             let names = [
                 "Bubble Bobble (Japan)",
                 "Bubble Bobble (Bootleg)",
@@ -491,7 +547,9 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
                 game.root
                     .iter()
                     .map(|row| {
-                        let opens = game.page_for(row.id).is_some() || row.id == "discover";
+                        let opens = game.page_for(row.id).is_some()
+                            || row.id == "discover"
+                            || row.id == "add_to_deck";
                         entry(row.id, row.key, "", opens)
                     })
                     .collect(),
@@ -502,6 +560,25 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
         overlays.set_context_entries(slint::ModelRc::new(slint::VecModel::from(rows)));
         overlays.set_context_page(page);
         overlays.set_context_index(index);
+        // The collections strip above the rows; "context-strip" has the
+        // focus on its Like button.
+        let buttons: Vec<generated::FlagButton> = Flag::ALL
+            .iter()
+            .map(|&flag| generated::FlagButton {
+                flag: match flag {
+                    Flag::Favorite => generated::UserFlag::Favorite,
+                    Flag::Like => generated::UserFlag::Like,
+                    Flag::Dislike => generated::UserFlag::Dislike,
+                    Flag::PlayLater => generated::UserFlag::PlayLater,
+                },
+                on: game.strip.is_some_and(|flags| flags.has(flag)),
+            })
+            .collect();
+        overlays.set_context_strip(slint::ModelRc::new(slint::VecModel::from(buttons)));
+        if screen.ends_with("context-strip") {
+            overlays.set_context_index(-1);
+            overlays.set_context_strip_index(1);
+        }
         overlays.set_context_open(true);
         // The list layout anchors the menu on a row, not a tile.
         if screen.contains("list") {
@@ -593,7 +670,15 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
         scene_w,
         scene_h,
         crt,
-        screen.contains("favorite-systems"),
+        if screen.ends_with("decks") {
+            SystemsMode::Decks
+        } else if screen.contains("favorite-systems")
+            || (fixture_list(screen).is_some() && screen.contains("-systems"))
+        {
+            SystemsMode::Favorites
+        } else {
+            SystemsMode::Category
+        },
     );
     app.global::<Shell>()
         .set_status_keys(slint::ModelRc::new(slint::VecModel::from(vec![
@@ -1017,6 +1102,55 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
         }
         overlays.set_dialog_open(true);
     }
+    // Core's UI events: a deck's picker, with the focused game's cover
+    // beside the list, and a confirmation in the decision dialog.
+    if screen.ends_with("core-picker") {
+        let view = app.global::<generated::CoreUiView>();
+        let rows = [
+            ("The Legend of Zelda", "NES"),
+            ("Super Mario World", "SNES"),
+            ("F-Zero", "SNES"),
+            ("Gunstar Heroes", "Genesis"),
+            ("GoldenEye 007", "Nintendo 64"),
+            ("Pokemon Red", "Game Boy"),
+            ("Pokemon Crystal", "Game Boy Color"),
+            ("Shantae", "Game Boy Color"),
+            ("EarthBound", ""),
+            ("Party night", ""),
+            ("Random Genesis game", ""),
+        ]
+        .into_iter()
+        .map(|(label, detail)| generated::CorePickerRow {
+            label: label.into(),
+            detail: detail.into(),
+        })
+        .collect::<Vec<_>>();
+        view.set_title("Couch co-op".into());
+        view.set_rows(slint::ModelRc::new(slint::VecModel::from(rows)));
+        view.set_index(1);
+        view.set_dismissible(true);
+        view.set_has_art(true);
+        let cover = slint::Image::load_from_path(std::path::Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/assets/systems-color/SNES.png"
+        )))
+        .expect("fixture cover");
+        view.set_cover(cover);
+        view.set_has_cover(true);
+        view.set_kind(generated::CoreUiKind::Picker);
+    }
+    if screen.ends_with("core-confirm") {
+        let overlays = app.global::<generated::Overlays>();
+        overlays.set_dialog_kind(DialogKind::CoreConfirm);
+        overlays.set_dialog_detail("Change game?".into());
+        overlays.set_dialog_arg("Super Mario World is running. Launch F-Zero instead?".into());
+        overlays.set_dialog_buttons(slint::ModelRc::new(slint::VecModel::from(vec![
+            DialogButton::Ok,
+            DialogButton::Cancel,
+        ])));
+        overlays.set_dialog_focus(0);
+        overlays.set_dialog_open(true);
+    }
     if screen.starts_with("calibration") {
         let overlays = app.global::<generated::Overlays>();
         overlays.set_crt_h_offset(4);
@@ -1032,6 +1166,9 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
     }
     app.global::<Shell>()
         .set_active_screen(fixture_screen(screen));
+    if let Some(list) = fixture_list(screen) {
+        app.global::<Shell>().set_active_list(list);
+    }
     // "*-bar": the Menu chip row with focus on its first chip.
     if screen.ends_with("-bar") {
         let bar = app.global::<generated::PageBar>();
@@ -1573,9 +1710,31 @@ fn fixture_file_browser(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen
     view.set_current_index(selected as i32);
 }
 
+/// "liked", "play-later" and "disliked" (and their "-systems" screens)
+/// render the Favorites screens showing that list.
+fn fixture_list(screen: &str) -> Option<generated::UserFlag> {
+    if screen.contains("liked") && !screen.contains("disliked") {
+        Some(generated::UserFlag::Like)
+    } else if screen.contains("play-later") {
+        Some(generated::UserFlag::PlayLater)
+    } else if screen.contains("disliked") {
+        Some(generated::UserFlag::Dislike)
+    } else {
+        None
+    }
+}
+
 fn fixture_screen(screen: &str) -> Screen {
-    if screen.starts_with("route-") {
+    if screen.starts_with("route-")
+        || screen.ends_with("hub-deck")
+        || screen.ends_with("core-picker")
+        || screen.ends_with("core-confirm")
+    {
         Screen::Hub
+    } else if screen.ends_with("decks") {
+        Screen::Decks
+    } else if screen.ends_with("deck") || screen.contains("deck-item") {
+        Screen::Deck
     } else if screen.contains("rename") {
         Screen::Rename
     } else if screen.contains("ra-login") {
@@ -1598,9 +1757,11 @@ fn fixture_screen(screen: &str) -> Screen {
         || screen.contains("game-info")
     {
         Screen::Games
-    } else if screen.contains("favorite-systems") {
+    } else if screen.contains("favorite-systems")
+        || (fixture_list(screen).is_some() && screen.contains("-systems"))
+    {
         Screen::FavoriteSystems
-    } else if screen.contains("favorites") {
+    } else if screen.contains("favorites") || fixture_list(screen).is_some() {
         Screen::Favorites
     } else if screen.contains("recents") {
         Screen::Recents
@@ -2203,8 +2364,41 @@ fn fixture_manual_pdf() -> Vec<u8> {
     out
 }
 
+/// The Hub fixture's tiles: Resume, the five categories, the built-in
+/// actions and a pinned folder.
+fn fixture_hub_items() -> Vec<zaparoo_app::hub::LayoutItem> {
+    use zaparoo_app::hub::LayoutItem;
+    let item = |kind: &str, id: &str| LayoutItem {
+        kind: kind.into(),
+        id: id.into(),
+        ..LayoutItem::default()
+    };
+    vec![
+        item("action", "resume"),
+        item("category", "Arcade"),
+        item("category", "Console"),
+        item("category", "Computer"),
+        item("category", "Handheld"),
+        item("category", "Other"),
+        item("action", "favorites"),
+        item("action", "liked"),
+        item("action", "playlater"),
+        item("action", "decks"),
+        item("collection", "0k3v9x2rq7bm"),
+        item("action", "recents"),
+        item("action", "update"),
+        item("action", "settings"),
+        LayoutItem {
+            kind: "folder".into(),
+            path: "/media/fat/games/SNES/Homebrew".into(),
+            system: "SNES".into(),
+            ..LayoutItem::default()
+        },
+    ]
+}
+
 fn fixture_hub(app: &App, scene_w: f64, scene_h: f64, crt: bool, selected: usize) {
-    use zaparoo_app::hub::{self, LayoutItem, Live, Resolver};
+    use zaparoo_app::hub::{self, Live, Resolver};
     struct Names;
     impl Resolver for Names {
         fn system_name(&self, id: &str) -> String {
@@ -2216,30 +2410,14 @@ fn fixture_hub(app: &App, scene_w: f64, scene_h: f64, crt: bool, selected: usize
         fn media_cover_key(&self, _system: &str, _path: &str) -> String {
             "icons/File".to_string()
         }
+        fn deck(&self, _id: &str) -> hub::DeckLookup {
+            hub::DeckLookup::Found {
+                name: "Couch co-op".into(),
+                cover_key: String::new(),
+            }
+        }
     }
-    let item = |kind: &str, id: &str| LayoutItem {
-        kind: kind.into(),
-        id: id.into(),
-        ..LayoutItem::default()
-    };
-    let items = vec![
-        item("action", "resume"),
-        item("category", "Arcade"),
-        item("category", "Console"),
-        item("category", "Computer"),
-        item("category", "Handheld"),
-        item("category", "Other"),
-        item("action", "favorites"),
-        item("action", "recents"),
-        item("action", "update"),
-        item("action", "settings"),
-        LayoutItem {
-            kind: "folder".into(),
-            path: "/media/fat/games/SNES/Homebrew".into(),
-            system: "SNES".into(),
-            ..LayoutItem::default()
-        },
-    ];
+    let items = fixture_hub_items();
     let confirmed: Vec<String> = ["Arcade", "Console", "Computer", "Handheld", "Other"]
         .iter()
         .map(|c| (*c).to_string())
@@ -2636,6 +2814,7 @@ fn fixture_chips(app: &App, mode: GamesMode) {
             chip("edit_search", "edit_search", ""),
             chip("add_to_hub", "save_to_hub", ""),
         ],
+        GamesMode::Deck => vec![chip("play_deck", "play_deck", ""), chip("more", "more", "")],
         GamesMode::Recents => Vec::new(),
     };
     let bar = app.global::<generated::PageBar>();
@@ -2868,8 +3047,24 @@ fn fixture_games(
     clippy::too_many_lines,
     reason = "one fixture projects the same systems into grid and list layouts"
 )]
-fn fixture_systems(app: &App, scene_w: f64, scene_h: f64, crt: bool, favorites: bool) {
+/// The Decks fixture's deck names.
+const DECKS: [&str; 6] = [
+    "Couch co-op",
+    "Weekend",
+    "Club night",
+    "Arcade classics",
+    "Party games",
+    "Retro RPGs",
+];
+
+#[allow(
+    clippy::too_many_lines,
+    reason = "one fixture for every Systems mode keeps their states side by side"
+)]
+fn fixture_systems(app: &App, scene_w: f64, scene_h: f64, crt: bool, mode: SystemsMode) {
     use zaparoo_app::layouts::{self, Body, ThemeId, View};
+    let favorites = mode == SystemsMode::Favorites;
+    let decks = mode == SystemsMode::Decks;
     let inputs = sizing::Scene::of(app, scene_w, scene_h, crt).inputs();
     let derived = zaparoo_app::sizing::derive(&inputs);
     let profile = layouts::profile(ThemeId::current(&inputs), View::SystemsGrid, &inputs);
@@ -2887,7 +3082,9 @@ fn fixture_systems(app: &App, scene_w: f64, scene_h: f64, crt: bool, favorites: 
         detail: "".into(),
     };
     app.global::<generated::PageBar>()
-        .set_systems_chips(slint::ModelRc::new(slint::VecModel::from(if favorites {
+        .set_systems_chips(slint::ModelRc::new(slint::VecModel::from(if decks {
+            vec![chip("new_deck", "new_deck", "")]
+        } else if favorites {
             vec![
                 chip("favorites_grouping", "favorites_grouping", "group:system"),
                 chip("search_here", "search_here", ""),
@@ -2926,9 +3123,15 @@ fn fixture_systems(app: &App, scene_w: f64, scene_h: f64, crt: bool, favorites: 
     let page_size = (columns * rows).max(1) as usize;
     let cells: Vec<GridCell> = (13..13 + page_size)
         .map(|i| GridCell {
-            name: format!("Example System {i}").into(),
+            name: if decks {
+                DECKS[i % DECKS.len()].into()
+            } else {
+                format!("Example System {i}").into()
+            },
             wordmark: true,
-            hidden: i == 15,
+            // Club night is locked and Arcade classics a saved copy.
+            locked: decks && matches!(i % DECKS.len(), 2 | 3),
+            hidden: i == 15 && !decks,
             ..Default::default()
         })
         .collect();
@@ -2942,11 +3145,7 @@ fn fixture_systems(app: &App, scene_w: f64, scene_h: f64, crt: bool, favorites: 
         })
         .collect();
     let view = app.global::<SystemsView>();
-    view.set_mode(if favorites {
-        SystemsMode::Favorites
-    } else {
-        SystemsMode::Category
-    });
+    view.set_mode(mode);
     view.set_favorites_total(if favorites { 87 } else { -1 });
     view.set_label_count(if favorites { 12 } else { -1 });
     view.set_cells(slint::ModelRc::new(slint::VecModel::from(cells)));
@@ -2984,8 +3183,15 @@ fn fixture_systems(app: &App, scene_w: f64, scene_h: f64, crt: bool, favorites: 
     view.set_has_pages_above(true);
     view.set_has_pages_below(true);
     view.set_selected_local(2);
-    view.set_label_name("Example System 15".into());
-    view.set_label_hidden(true);
+    if decks {
+        view.set_label_name(DECKS[15 % DECKS.len()].into());
+        view.set_label_owner("wizzo".into());
+        view.set_label_locked(true);
+        view.set_count(i32::try_from(DECKS.len()).unwrap_or(0));
+    } else {
+        view.set_label_name("Example System 15".into());
+        view.set_label_hidden(true);
+    }
     view.set_focus_ready(true);
     view.set_columns(columns);
     view.set_rows(rows);
@@ -3031,6 +3237,9 @@ mod fixture_tests {
             ("crt-systems", Screen::Systems),
             ("favorite-systems", Screen::FavoriteSystems),
             ("favorites", Screen::Favorites),
+            ("liked", Screen::Favorites),
+            ("crt-play-later", Screen::Favorites),
+            ("liked-systems", Screen::FavoriteSystems),
             ("recents", Screen::Recents),
             ("search", Screen::Search),
             ("crt-search-scoped", Screen::Search),
@@ -3044,6 +3253,12 @@ mod fixture_tests {
             ("about", Screen::About),
             ("update-intro", Screen::Update),
             ("crt-update-details", Screen::Update),
+            ("decks", Screen::Decks),
+            ("crt-deck", Screen::Deck),
+            ("deck-item-manage", Screen::Deck),
+            ("crt-hub-deck", Screen::Hub),
+            ("core-picker", Screen::Hub),
+            ("crt-core-confirm", Screen::Hub),
         ] {
             assert_eq!(fixture_screen(name), screen, "{name}");
         }

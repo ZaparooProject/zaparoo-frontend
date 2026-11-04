@@ -12,10 +12,10 @@ use zaparoo_app::layouts::{self, Body, ThemeId, View};
 use zaparoo_app::media_list as list_rules;
 use zaparoo_app::paged_grid::{self, Grid, Insets};
 use zaparoo_app::systems::{self as rules, CatalogSystem, Region, SystemRow};
-use zaparoo_core::endpoints::systems_favorites::SystemsFavoritesEndpoint;
+use zaparoo_app::user_flags::Flag;
+use zaparoo_core::endpoints::systems_user_list::SystemsUserListEndpoint;
 use zaparoo_core::input_actions::actions;
 use zaparoo_core::media_types::{SystemInfo, SystemsResult};
-use zaparoo_core::persist::FavoriteSystemsState;
 use zaparoo_core::remote_resource::ResourceStatus;
 
 use crate::navigation::EntryMode;
@@ -37,9 +37,11 @@ pub struct SystemsModel {
     pub rows: Vec<SystemRow>,
     pub mode: SystemsMode,
     pub category: String,
-    /// The favorites catalog Core answered with, kept so a hide toggle
-    /// or region change can re-project without refetching.
+    /// The list's catalog Core answered with, kept so a hide toggle or
+    /// region change can re-project without refetching.
     pub favorites: Vec<CatalogSystem>,
+    /// The list `favorites` is the catalog of.
+    pub favorites_list: Flag,
     pub loading: bool,
     pub focus_armed: bool,
     pub restore_done: bool,
@@ -59,6 +61,7 @@ impl SystemsModel {
             mode: SystemsMode::Category,
             category: String::new(),
             favorites: Vec::new(),
+            favorites_list: Flag::Favorite,
             loading: false,
             focus_armed: false,
             restore_done: false,
@@ -240,28 +243,34 @@ fn fill(ctx: &Ctx, app: &App, category: &str, entry: EntryMode) {
     render(ctx, app);
 }
 
-/// The Hub's Favorites action with Group by: System: the systems that
-/// hold favorites, from Core's favorites-scoped catalog.
-pub fn enter_favorites(ctx: &Ctx, app: &App, entry: EntryMode) {
-    enter_favorites_with_direction(ctx, app, entry, 1);
+/// A built-in list's Hub action with Group by: System: the systems that
+/// hold its games, from Core's list-scoped catalog.
+pub fn enter_list(ctx: &Ctx, app: &App, list: Flag, entry: EntryMode) {
+    crate::user_lists::set_active(&mut lock(&ctx.shared), app, list);
+    enter_list_with_direction(ctx, app, entry, 1);
 }
 
-/// Back out of a scoped favorites list onto the systems that hold them.
-pub fn return_to_favorites(ctx: &Ctx, app: &App) {
-    enter_favorites_with_direction(ctx, app, EntryMode::Restore, -1);
+/// Back out of a scoped list onto the systems that hold its games.
+pub fn return_to_list(ctx: &Ctx, app: &App) {
+    enter_list_with_direction(ctx, app, EntryMode::Restore, -1);
 }
 
-fn enter_favorites_with_direction(ctx: &Ctx, app: &App, entry: EntryMode, direction: i32) {
+fn enter_list_with_direction(ctx: &Ctx, app: &App, entry: EntryMode, direction: i32) {
     crate::navigation::stage(ctx, app);
-    {
+    let list = {
         let mut shared = lock(&ctx.shared);
+        let list = crate::user_lists::active(&shared);
         if entry == EntryMode::Fresh {
-            shared.persist.favorite_systems = FavoriteSystemsState::default();
+            crate::user_lists::reset_systems(&mut shared.persist, list);
         }
         shared.persist.active_screen = "favorite-systems".to_string();
         let model = &mut shared.systems_model;
         model.fill_task.cancel();
         model.mode = SystemsMode::Favorites;
+        if model.favorites_list != list {
+            model.favorites.clear();
+            model.favorites_list = list;
+        }
         model.loading = model.favorites.is_empty();
         model.focus_armed = false;
         model.restore_done = false;
@@ -270,7 +279,8 @@ fn enter_favorites_with_direction(ctx: &Ctx, app: &App, entry: EntryMode, direct
         model.grid.prepare_for_model_replacement();
         let rows = project_favorites(&shared);
         seat_favorites(&mut shared, rows);
-    }
+        list
+    };
     crate::router::save_persist(&ctx.shared);
     let waiting_for_data = lock(&ctx.shared).systems_model.loading;
     let ticket = lock(&ctx.shared).systems_model.transition_seq;
@@ -286,7 +296,9 @@ fn enter_favorites_with_direction(ctx: &Ctx, app: &App, entry: EntryMode, direct
         crate::router::transition_to_screen(app, crate::Screen::FavoriteSystems, direction);
     }
 
-    let resource = ctx.store.subscribe::<SystemsFavoritesEndpoint>(());
+    let resource = ctx
+        .store
+        .subscribe::<SystemsUserListEndpoint>(crate::user_lists::user_list(list));
     let mut rx = resource.subscribe();
     let weak = app.as_weak();
     let ctx2 = ctx.clone();
@@ -368,10 +380,11 @@ pub(crate) fn apply_favorites(
     }
 }
 
-/// Seat the persisted favorite system on the rows (the restore path and
+/// Seat the list's persisted system on the rows (the restore path and
 /// every re-projection share it).
 fn seat_favorites(shared: &mut Shared, rows: Vec<SystemRow>) {
-    let restore_id = shared.persist.favorite_systems.selected_path.clone();
+    let list = crate::user_lists::active(shared);
+    let restore_id = crate::user_lists::systems_focus(&shared.persist, list).0;
     let index = rows.iter().position(|s| s.id == restore_id).unwrap_or(0);
     let model = &mut shared.systems_model;
     model.rows = rows;
@@ -388,6 +401,7 @@ pub fn reproject(ctx: &Ctx, app: &App) {
         let mut shared = lock(&ctx.shared);
         let rows = match shared.systems_model.mode {
             SystemsMode::Favorites => project_favorites(&shared),
+            SystemsMode::Decks => crate::decks::system_rows(&shared),
             SystemsMode::Category => {
                 let category = shared.systems_model.category.clone();
                 if category.is_empty() {
@@ -497,7 +511,7 @@ fn geometry(app: &App, shared: &Shared) -> Geometry {
     let grid_y = derived.header_bottom
         + profile.status.top_margin
         + profile.status.strip_height
-        + crate::page_bar::systems_row_block(favorites(shared), &derived);
+        + crate::page_bar::systems_row_block(shared.systems_model.mode, &derived);
     let bottom = if derived.tier == zaparoo_app::sizing::Tier::T240 {
         derived.help_bar_height + footer.active_label_height
     } else {
@@ -533,6 +547,10 @@ fn geometry(app: &App, shared: &Shared) -> Geometry {
 }
 
 /// The favorite systems, the one Systems mode with page actions.
+fn decks(shared: &Shared) -> bool {
+    shared.systems_model.mode == SystemsMode::Decks
+}
+
 fn favorites(shared: &Shared) -> bool {
     shared.systems_model.mode == SystemsMode::Favorites
 }
@@ -572,7 +590,7 @@ fn list_geometry(app: &App, shared: &Shared) -> list_rules::ListGeometry {
             status_top_margin: profile.status.top_margin,
             // The Menu chip row sits between the strip and the card.
             strip_height: profile.status.strip_height
-                + crate::page_bar::systems_row_block(favorites(shared), &derived),
+                + crate::page_bar::systems_row_block(shared.systems_model.mode, &derived),
             help_bar_height: derived.help_bar_height,
             tier_240: derived.tier == zaparoo_app::sizing::Tier::T240,
             safe_bottom_gap: derived.help_bar_band,
@@ -613,6 +631,10 @@ fn logo_key(
     style: &str,
     bounds: zaparoo_app::logo_cache::Bounds,
 ) -> Option<crate::system_logos::Key> {
+    // A deck has no logo.
+    if row.cover_key == crate::decks::ROW_COVER_KEY {
+        return None;
+    }
     let stem = row.cover_key.strip_prefix("systems/").unwrap_or(&row.id);
     ctx.logos.key(&row.id, stem, style == "color", bounds)
 }
@@ -749,7 +771,7 @@ pub(crate) fn warm_logos(ctx: &Ctx, app: &App) {
 fn request_logos(ctx: &Ctx, app: &App, shared: &Shared, bounds: zaparoo_app::logo_cache::Bounds) {
     if !matches!(
         app.global::<crate::Shell>().get_active_screen(),
-        crate::Screen::Systems | crate::Screen::FavoriteSystems
+        crate::Screen::Systems | crate::Screen::FavoriteSystems | crate::Screen::Decks
     ) {
         crate::system_logos::defer_refresh(ctx, app);
         return;
@@ -796,6 +818,9 @@ fn page_cells(
         .skip(page * page_size)
         .take(page_size)
         .map(|row| {
+            if model.mode == SystemsMode::Decks {
+                return crate::decks::cell(ctx, shared, &row.id, art_size);
+            }
             cell_for(
                 ctx,
                 row,
@@ -816,7 +841,7 @@ pub fn render(ctx: &Ctx, app: &App) {
     // A pending route keeps the source's row, as it keeps its page.
     if !crate::navigation::active() {
         let shared = lock(&ctx.shared);
-        crate::page_bar::publish_systems(app, &shared, favorites(&shared));
+        crate::page_bar::publish_systems(app, &shared, shared.systems_model.mode);
     }
 }
 
@@ -909,27 +934,38 @@ fn render_with_page(ctx: &Ctx, app: &App, reuse_page: bool) {
     view.set_has_pages_above(model.grid.has_pages_above());
     view.set_has_pages_below(model.grid.has_pages_below());
     publish_press(app, model.activate_pulse, model.release_pulse);
-    if let Some(row) = model.current() {
+    publish_label(&view, &shared);
+    render_list(ctx, app, &shared, bounds);
+    drop(shared);
+    remember_list_top(&mut lock(&ctx.shared), app);
+}
+
+/// The focused tile's footer: its name, and what the screen notes of it.
+fn publish_label(view: &SystemsView<'_>, shared: &Shared) {
+    if let Some(row) = shared.systems_model.current() {
         view.set_label_name(SharedString::from(row.name.as_str()));
         view.set_label_hidden(row.hidden);
         view.set_label_count(
             row.media_count
                 .map_or(-1, |c| i32::try_from(c).unwrap_or(0)),
         );
+        let (owner, locked) = crate::decks::note(shared, &row.id);
+        view.set_label_owner(SharedString::from(owner.as_str()));
+        view.set_label_locked(locked);
     } else {
         view.set_label_name(SharedString::default());
         view.set_label_hidden(false);
         view.set_label_count(-1);
     }
-    render_list(ctx, app, &shared, bounds);
-    drop(shared);
-    remember_list_top(&mut lock(&ctx.shared), app);
 }
 
 fn saved_list_top(shared: &Shared) -> Option<usize> {
     match shared.systems_model.mode {
         SystemsMode::Category => shared.persist.systems.list_top,
-        SystemsMode::Favorites => shared.persist.favorite_systems.list_top,
+        SystemsMode::Decks => shared.persist.decks.list_top,
+        SystemsMode::Favorites => {
+            crate::user_lists::systems_focus(&shared.persist, crate::user_lists::active(shared)).1
+        }
     }
 }
 
@@ -948,7 +984,11 @@ fn remember_list_top(shared: &mut Shared, app: &App) {
     ));
     match model.mode {
         SystemsMode::Category => shared.persist.systems.list_top = top,
-        SystemsMode::Favorites => shared.persist.favorite_systems.list_top = top,
+        SystemsMode::Decks => shared.persist.decks.list_top = top,
+        SystemsMode::Favorites => {
+            let list = crate::user_lists::active(shared);
+            crate::user_lists::set_systems_top(&mut shared.persist, list, top);
+        }
     }
 }
 
@@ -1041,7 +1081,11 @@ pub(crate) fn persist_selection(ctx: &Ctx) {
         if let Some(id) = id {
             match shared.systems_model.mode {
                 SystemsMode::Category => shared.persist.systems.system_id = id,
-                SystemsMode::Favorites => shared.persist.favorite_systems.selected_path = id,
+                SystemsMode::Decks => shared.persist.decks.selected_deck = id,
+                SystemsMode::Favorites => {
+                    let list = crate::user_lists::active(&shared);
+                    crate::user_lists::set_systems_path(&mut shared.persist, list, id);
+                }
             }
         }
     }
@@ -1065,7 +1109,7 @@ impl crate::page_motion::PagedScreen for SystemsScreen {
     fn on_screen(app: &App) -> bool {
         matches!(
             app.global::<crate::Shell>().get_active_screen(),
-            crate::Screen::Systems | crate::Screen::FavoriteSystems
+            crate::Screen::Systems | crate::Screen::FavoriteSystems | crate::Screen::Decks
         )
     }
     fn list_layout(app: &App) -> bool {
@@ -1194,6 +1238,7 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
     match action {
         actions::ACCEPT => match state(app) {
             "loading" => {}
+            "error" | "empty" if decks(&lock(&ctx.shared)) => crate::decks::refresh(ctx, app),
             "error" | "empty" => crate::router::retry_catalog(ctx),
             _ => activate_current(ctx, app),
         },
@@ -1209,15 +1254,19 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
         // here, runs straight away.
         actions::PAGE_MENU => {
             let favorites = favorites(&lock(&ctx.shared));
+            let decks = decks(&lock(&ctx.shared));
             let reachable = match state(app) {
                 "ready" => true,
-                "empty" => favorites,
+                // New deck… is on the Decks screen's Menu.
+                "empty" => favorites || decks,
                 _ => false,
             };
             if !reachable || crate::page_bar::enter(ctx, app) {
                 return;
             }
-            if favorites {
+            if decks {
+                crate::decks::open_list_menu(ctx, app);
+            } else if favorites {
                 crate::router::open_favorite_systems_page_menu(ctx, app);
             } else {
                 crate::search::enter_scoped(ctx, app);
@@ -1258,7 +1307,13 @@ fn activate_current(ctx: &Ctx, app: &App) {
     };
     if mode == SystemsMode::Favorites {
         if let Some(id) = id {
-            crate::games::enter_favorites_for_system(ctx, app, &id);
+            crate::games::enter_list_for_system(ctx, app, &id);
+        }
+        return;
+    }
+    if mode == SystemsMode::Decks {
+        if let Some(id) = id {
+            crate::decks::open_deck(ctx, app, &id, false);
         }
         return;
     }
@@ -1351,10 +1406,12 @@ fn open_context_menu(ctx: &Ctx, app: &App) {
             return;
         };
         let favorites = model.mode == SystemsMode::Favorites;
-        (
-            zaparoo_app::options_menu::system(&menu_input(app, &shared, row, favorites, false)),
-            model.grid.current_index(),
-        )
+        let menu = if model.mode == SystemsMode::Decks {
+            crate::decks::menu(&shared, &row.id, false)
+        } else {
+            zaparoo_app::options_menu::system(&menu_input(app, &shared, row, favorites, false))
+        };
+        (menu, model.grid.current_index())
     };
     let anchor = cell_anchor(ctx, app);
     crate::router::set_context_anchor(app, &anchor);
@@ -1416,6 +1473,10 @@ pub fn context_accept(ctx: &Ctx, app: &App, id: &str) {
     let Some(row) = row else {
         return;
     };
+    if decks(&lock(&ctx.shared)) {
+        crate::decks::context_accept(ctx, app, id, &row.id, crate::Screen::Decks);
+        return;
+    }
     if id == "add_to_hub" {
         crate::hub::toggle_target(
             ctx,

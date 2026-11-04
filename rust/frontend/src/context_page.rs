@@ -7,7 +7,7 @@
 // either part of the menu itself (Manage, Write to token: the rows are
 // already known) or a list Core has to be asked for, in which case the menu
 // stays open while Core answers and what the page lists is its own module's
-// business (`alternates`, `discs`, `title_versions`).
+// business (`alternates`, `discs`, `title_versions`, `add_to_deck`).
 
 use std::future::Future;
 
@@ -24,6 +24,8 @@ pub enum Page {
     Alternates,
     Discs,
     Versions,
+    /// The decks a game can be added to or removed from.
+    AddToDeck,
     /// A page of the menu's own rows.
     Menu(MenuPage),
 }
@@ -35,6 +37,7 @@ impl Page {
             Self::Alternates => "discover",
             Self::Discs => "choose_disc",
             Self::Versions => "choose_version",
+            Self::AddToDeck => "add_to_deck",
             Self::Menu(page) => page.menu_id(),
         }
     }
@@ -45,6 +48,7 @@ impl Page {
             Self::Alternates => "discover:searching",
             Self::Discs => "choose_disc:loading",
             Self::Versions => "choose_version:loading",
+            Self::AddToDeck => "add_to_deck:loading",
             Self::Menu(_) => "",
         }
     }
@@ -55,7 +59,8 @@ impl Page {
             Self::Alternates => "discover:none",
             Self::Discs => "choose_disc:none",
             Self::Versions => "choose_version:none",
-            Self::Menu(_) => "",
+            // Never empty: New deck is always there.
+            Self::AddToDeck | Self::Menu(_) => "",
         }
     }
 
@@ -64,6 +69,7 @@ impl Page {
             Self::Alternates => "alternate_discovery",
             Self::Discs => "disc_list",
             Self::Versions => "version_list",
+            Self::AddToDeck => "deck_list",
             Self::Menu(_) => "",
         }
     }
@@ -74,16 +80,18 @@ impl Page {
             Self::Alternates => crate::ContextPage::Alternates,
             Self::Discs => crate::ContextPage::Discs,
             Self::Versions => crate::ContextPage::Versions,
+            Self::AddToDeck => crate::ContextPage::AddToDeck,
             Self::Menu(MenuPage::WriteToken) => crate::ContextPage::WriteToken,
             Self::Menu(MenuPage::ManageGame) => crate::ContextPage::ManageGame,
             Self::Menu(MenuPage::ManageSystem) => crate::ContextPage::ManageSystem,
             Self::Menu(MenuPage::ManageCategory) => crate::ContextPage::ManageCategory,
+            Self::Menu(MenuPage::ManageDeck) => crate::ContextPage::ManageDeck,
         }
     }
 
     /// The row as it reads once the wait or the empty answer replaced it.
     fn owns_label(self, key: &str) -> bool {
-        key == self.waiting_key() || key == self.empty_key()
+        !key.is_empty() && (key == self.waiting_key() || key == self.empty_key())
     }
 }
 
@@ -97,6 +105,41 @@ pub struct PageRow {
     /// The name the launch cue shows.
     pub name: String,
     pub launch_text: String,
+    /// On the Add to deck page, the deck the row toggles the game in, or
+    /// New deck. `None` on a page whose rows launch.
+    pub deck: Option<DeckChoice>,
+}
+
+/// What a row of the Add to deck page does.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DeckChoice {
+    Deck {
+        deck_id: String,
+        /// The deck's items that are the game; empty when it is not in it.
+        item_ids: Vec<i64>,
+        /// The deck holds all it can, so the game cannot be added.
+        full: bool,
+    },
+    New,
+}
+
+impl DeckChoice {
+    fn entry(&self, id: &str, label: &str) -> crate::MenuEntry {
+        match self {
+            Self::Deck { item_ids, full, .. } => {
+                let checked = !item_ids.is_empty();
+                crate::MenuEntry {
+                    role: if checked {
+                        crate::MenuRole::CheckOn
+                    } else {
+                        crate::MenuRole::CheckOff
+                    },
+                    ..crate::router::menu_row_full(id, "", label, checked || !full, "")
+                }
+            }
+            Self::New => crate::router::menu_row_keyed(id, "new_deck", ""),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -109,6 +152,11 @@ pub struct PageModel {
     pub seq: u64,
     /// The opening row's wait while Core has not answered.
     pub wait: Option<crate::cue::LocalWait>,
+    /// The game the Add to deck page adds and removes.
+    pub deck_game: Option<crate::add_to_deck::DeckGame>,
+    /// Decks a change was sent for that Core has not answered yet. Their
+    /// rows keep the state the user chose until it does.
+    pub deck_pending: Vec<String>,
 }
 
 impl PageModel {
@@ -117,12 +165,14 @@ impl PageModel {
         self.seq += 1;
         self.showing = None;
         self.rows.clear();
+        self.deck_game = None;
+        self.deck_pending.clear();
     }
 }
 
 /// Whether the menu row `id` opens a page Core has to be asked for.
 pub fn asks_core(id: &str) -> bool {
-    [Page::Alternates, Page::Discs, Page::Versions]
+    [Page::Alternates, Page::Discs, Page::Versions, Page::AddToDeck]
         .iter()
         .any(|page| id == page.menu_id())
 }
@@ -245,27 +295,60 @@ fn restore(app: &App, page: Page) {
 
 /// Replace the menu's rows with the page's.
 fn present(ctx: &Ctx, app: &App, page: Page) {
-    let entries: Vec<crate::MenuEntry> = {
+    present_at(ctx, app, page, 0);
+}
+
+/// The page's rows as the view takes them.
+fn page_entries(rows: &[PageRow]) -> Vec<crate::MenuEntry> {
+    rows.iter()
+        .enumerate()
+        .map(|(index, row)| {
+            if let Some(deck) = &row.deck {
+                deck.entry(&row_id(index), &row.label)
+            } else if row.label_key.is_empty() {
+                crate::router::menu_entry(&row_id(index), &row.label)
+            } else {
+                crate::router::menu_row_keyed(&row_id(index), row.label_key, &row.label)
+            }
+        })
+        .collect()
+}
+
+/// Show the page's rows with focus on row `index`.
+pub(crate) fn present_at(ctx: &Ctx, app: &App, page: Page, index: usize) {
+    let entries = {
         let mut shared = lock(&ctx.shared);
         shared.context_page.showing = Some(page);
-        shared
-            .context_page
-            .rows
-            .iter()
-            .enumerate()
-            .map(|(index, row)| {
-                if row.label_key.is_empty() {
-                    crate::router::menu_entry(&row_id(index), &row.label)
-                } else {
-                    crate::router::menu_row_keyed(&row_id(index), row.label_key, &row.label)
-                }
-            })
-            .collect()
+        page_entries(&shared.context_page.rows)
     };
+    let last = entries.len().saturating_sub(1);
     let overlays = app.global::<crate::Overlays>();
     overlays.set_context_entries(ModelRc::new(VecModel::from(entries)));
     overlays.set_context_page(page.view());
-    overlays.set_context_index(0);
+    overlays.set_context_index(i32::try_from(index.min(last)).unwrap_or(0));
+}
+
+/// Redraw one row of the page in place, after its state changed.
+pub(crate) fn refresh_row(ctx: &Ctx, app: &App, index: usize) {
+    let entry = {
+        let shared = lock(&ctx.shared);
+        let Some(row) = shared.context_page.rows.get(index) else {
+            return;
+        };
+        page_entries(std::slice::from_ref(row))
+            .pop()
+            .map(|mut entry| {
+                entry.id = slint::SharedString::from(row_id(index));
+                entry
+            })
+    };
+    let Some(entry) = entry else {
+        return;
+    };
+    let model = app.global::<crate::Overlays>().get_context_entries();
+    if index < model.row_count() {
+        model.set_row_data(index, entry);
+    }
 }
 
 /// Turn the menu to one of its own pages: the rows are the menu's, so
@@ -321,11 +404,22 @@ pub fn leave(ctx: &Ctx, app: &App) {
     );
 }
 
-/// A row on the page was accepted: run it and close.
+/// The page row an entry id names.
+pub(crate) fn row_index(id: &str) -> Option<usize> {
+    id.strip_prefix("page_row:")
+        .and_then(|index| index.parse::<usize>().ok())
+}
+
+/// A row on the page was accepted: run it and close. The Add to deck page
+/// stays open, its rows toggling in place.
 pub fn accept(ctx: &Ctx, app: &App, id: &str) {
-    let index = id
-        .strip_prefix("page_row:")
-        .and_then(|index| index.parse::<usize>().ok());
+    let index = row_index(id);
+    if lock(&ctx.shared).context_page.showing == Some(Page::AddToDeck) {
+        if let Some(index) = index {
+            crate::add_to_deck::accept(ctx, app, index);
+        }
+        return;
+    }
     let row = {
         let mut shared = lock(&ctx.shared);
         let row = index.and_then(|index| shared.context_page.rows.get(index).cloned());

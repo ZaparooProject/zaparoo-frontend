@@ -35,6 +35,8 @@ export struct GridCell {
     // The name doubles as a fitted wordmark when there is no art.
     wordmark: bool,
     favorite: bool,
+    // A deck this device cannot change: a saved copy or a locked deck.
+    locked: bool,
     hidden: bool,
     disabled: bool,
     // Dim suffix after the caption (tags, "Hidden").
@@ -476,6 +478,17 @@ export component Tile inherits Rectangle {
             height: self.width;
             source: GlyphSource.glyph("icons/Heart", root.settled-width / 6, Colors.transparent);
             image-fit: contain;
+            image-rendering: Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
+        }
+
+        // A small corner badge, clear of the centered name.
+        if root.cell.locked: Image {
+            property <length> inset: Sizing.pct-h(1.6);
+            width: GlyphSource.side(Sizing.pct-h(3.2));
+            height: self.width;
+            x: parent.width - self.width - self.inset;
+            y: self.inset;
+            source: GlyphSource.glyph("icons/Lock", self.width, root.art-tint);
             image-rendering: Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
         }
 

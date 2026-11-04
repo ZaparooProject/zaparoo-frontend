@@ -23,6 +23,8 @@ use crate::browse_filter::Target;
 use crate::keyboard::{Flash, Keyboard, Press};
 use crate::navigation::EntryMode;
 use crate::router::{lock, menu_header, menu_row_keyed, menu_value, Ctx, ListContext, Shared};
+use zaparoo_app::user_flags::Flag;
+
 use crate::{App, SearchInput, SearchPane, SearchPaneRow, SearchScope, SearchView, SearchZone};
 
 /// The held West button or Backspace key: delete, repeating while held.
@@ -202,8 +204,14 @@ pub(crate) fn view_scope(shared: &Shared) -> SearchScope {
         Scope::Browse if shared.persist.search.scope_path.is_empty() => SearchScope::System,
         Scope::Browse => SearchScope::Folder,
         Scope::Category => SearchScope::Category,
-        Scope::Favorites | Scope::FavoriteSystems => SearchScope::Favorites,
+        Scope::List(_) | Scope::ListSystems(_) => SearchScope::List,
     }
+}
+
+/// The list a list scope searches, for the views to name; Favorites when
+/// the scope is not a list's.
+pub(crate) fn view_scope_list(shared: &Shared) -> crate::UserFlag {
+    crate::router::user_flag(scope(shared).list().unwrap_or(Flag::Favorite))
 }
 
 /// Publish the results' title, and the parts the view composes it from
@@ -214,6 +222,7 @@ pub(crate) fn publish_results_title(view: &crate::GamesView, shared: &Shared) {
     view.set_title_head(SharedString::from(head));
     view.set_title_tail(SharedString::from(tail));
     view.set_search_scope(view_scope(shared));
+    view.set_search_list(view_scope_list(shared));
     view.set_search_category(SharedString::from(
         shared.persist.search.scope_category.as_str(),
     ));
@@ -341,6 +350,7 @@ pub(crate) fn render(ctx: &Ctx, app: &App) {
     view.set_at(at);
     view.set_after(after);
     view.set_scope(view_scope(shared));
+    view.set_scope_list(view_scope_list(shared));
     view.set_scope_category(SharedString::from(search.scope_category.as_str()));
     view.set_system_name(SharedString::from(
         search
@@ -461,8 +471,8 @@ fn here(shared: &Shared, screen: crate::Screen) -> Option<Here> {
             })
         }
         Screen::Favorites if games.mode == GamesMode::Favorites => Some(Here {
-            scope: Scope::Favorites,
-            systems: Some(games.favorites_system.trim())
+            scope: Scope::List(crate::user_lists::active(shared)),
+            systems: Some(games.list_system.trim())
                 .filter(|id| !id.is_empty())
                 .map(str::to_string)
                 .into_iter()
@@ -484,7 +494,7 @@ fn here(shared: &Shared, screen: crate::Screen) -> Option<Here> {
             })
         }
         Screen::FavoriteSystems => Some(Here {
-            scope: Scope::FavoriteSystems,
+            scope: Scope::ListSystems(crate::user_lists::active(shared)),
             ..Here::default()
         }),
         _ => None,
@@ -506,7 +516,7 @@ pub(crate) fn enter_scoped(ctx: &Ctx, app: &App) {
         let search = &mut shared.persist.search;
         search.reset();
         search.scoped = true;
-        search.scope_kind = here.scope.token().to_string();
+        search.scope_kind = here.scope.token();
         search.systems = here.systems;
         search.tags = here.tags;
         search.scope_category = here.category;
@@ -1076,14 +1086,15 @@ fn leave(ctx: &Ctx, app: &App) {
                 Scope::Browse => {
                     games.mode == crate::GamesMode::Browse && games.system_id == scope_system
                 }
-                Scope::Favorites => {
+                Scope::List(list) => {
                     games.mode == crate::GamesMode::Favorites
-                        && games.favorites_system.trim() == scope_system
+                        && crate::user_lists::active(&shared) == list
+                        && games.list_system.trim() == scope_system
                 }
                 Scope::Category => {
                     model.mode == crate::SystemsMode::Category && model.category == category
                 }
-                Scope::FavoriteSystems | Scope::None => false,
+                Scope::ListSystems(_) | Scope::None => false,
             };
         (scope, intact, system, category)
     };
@@ -1105,13 +1116,13 @@ fn leave(ctx: &Ctx, app: &App) {
                 return;
             }
         }
-        Scope::Favorites if intact => {
+        Scope::List(_) if intact => {
             retained(crate::Screen::Favorites);
             crate::games::render(ctx, app);
             return;
         }
-        Scope::Favorites => {
-            crate::games::enter_favorites(ctx, app, EntryMode::Restore);
+        Scope::List(list) => {
+            crate::games::enter_list(ctx, app, list, EntryMode::Restore);
             return;
         }
         Scope::Category if !category.is_empty() => {
@@ -1122,10 +1133,13 @@ fn leave(ctx: &Ctx, app: &App) {
             crate::systems::render(ctx, app);
             return;
         }
-        Scope::FavoriteSystems => {
-            lock(&ctx.shared).persist.active_screen =
-                crate::Screen::FavoriteSystems.token().to_string();
-            crate::systems::return_to_favorites(ctx, app);
+        Scope::ListSystems(list) => {
+            {
+                let mut shared = lock(&ctx.shared);
+                shared.persist.active_screen = crate::Screen::FavoriteSystems.token().to_string();
+                crate::user_lists::set_active(&mut shared, app, list);
+            }
+            crate::systems::return_to_list(ctx, app);
             return;
         }
         Scope::Category | Scope::None => {}

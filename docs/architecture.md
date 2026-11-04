@@ -340,6 +340,42 @@ half-filled list.
   mid-restore comes back to the same place. Startup notices open only after the
   curtain lifts.
 
+### Core UI events
+
+Core asks its clients to show small interactions of its own: a picker (the
+items of a deck or playlist a card opened), a confirmation (the launch guard),
+a loader and a notice. It publishes the whole current state with `ui` and
+`ui.changed`, and the first `ui.respond` from any client wins. On `MiSTer`,
+while Main_MiSTer reports the frontend active in
+`/tmp/zaparoo/frontend_status.json`, Core shows none of them through its own
+menu widget: this frontend is the only renderer, and an event raised during a
+game makes Core return to the menu so the frontend starts and shows it.
+
+`rust/frontend/src/core_ui.rs` owns them; the rules (revision order, the line a
+loader or notice shows, picker focus) are in `zaparoo_app::core_ui`.
+
+- **State.** The event is Core's, never persisted. The frontend asks for it on
+  every connect and keeps only the newest revision; a connect starts the order
+  over, since a restarted Core counts from zero again. Nothing shows under the
+  boot curtain or while the frontend is dormant: `router::finish_restore` and
+  the return from dormancy present whatever is still open.
+- **Surfaces.** A picker is its own panel (`CoreUiView`, `CorePickerModal`),
+  with the focused game's cover beside the list when choices carry `media`. A
+  confirmation is the decision dialog (`DialogKind::CoreConfirm`); while
+  another dialog is up it waits, and takes the dialog when that one closes. A
+  loader or notice takes the header status line
+  (`zaparoo_app::status_line::CoreLine`), below link trouble and above a
+  background task, for as long as Core keeps it open. Nothing paints over the
+  screen for them.
+- **Input.** In `router::dispatch_action` the picker sits right after the
+  decision dialog, so it is above every modal and screen but takes no input
+  while a dialog is over it. An event that wants an answer wakes the
+  screensaver.
+- **Closing.** Answering closes the surface at once and remembers the event,
+  so a late state still listing it does not reopen it. When Core no longer
+  lists the event on screen (another client answered, it timed out, it was
+  replaced), the surface closes without an answer.
+
 ## Runtime vs Platform
 
 The frontend tracks two separate facts. Do not collapse them; that is how old

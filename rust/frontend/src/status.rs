@@ -168,6 +168,17 @@ pub fn observe_event(shared: &Shared, app: &App, handle: &tokio::runtime::Handle
     push(shared, app, handle);
 }
 
+/// Core opened, changed or closed a loader or notice (`crate::core_ui`).
+pub fn set_core_line(
+    shared: &Shared,
+    app: &App,
+    handle: &tokio::runtime::Handle,
+    line: Option<zaparoo_app::status_line::CoreLine>,
+) {
+    lock(shared).ladder.set_core(line);
+    push(shared, app, handle);
+}
+
 /// Render the ladder into the `Status` global and arm the next dwell
 /// wake-up, if any.
 pub fn push(shared: &Shared, app: &App, handle: &tokio::runtime::Handle) {

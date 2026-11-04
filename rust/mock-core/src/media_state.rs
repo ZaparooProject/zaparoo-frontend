@@ -22,7 +22,6 @@
 
 use crate::fixtures::MOCK_SYSTEMS;
 use serde_json::{json, Value};
-use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::time::sleep;
@@ -60,6 +59,14 @@ impl Notifier {
     pub fn noop() -> Self {
         let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
         Self { sender }
+    }
+
+    /// A `Notifier` whose notifications a test reads back from the
+    /// returned receiver.
+    #[cfg(test)]
+    pub fn channel() -> (Self, tokio::sync::mpsc::UnboundedReceiver<Value>) {
+        let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+        (Self { sender }, receiver)
     }
 
     pub(crate) fn send(&self, method: &str, params: &Value) {
@@ -114,26 +121,41 @@ struct MediaState {
     scrape_generation: u64,
 }
 
-fn state() -> &'static Mutex<MediaState> {
-    static STATE: OnceLock<Mutex<MediaState>> = OnceLock::new();
-    STATE.get_or_init(|| {
-        let indexed_systems = if std::env::var("MOCK_CORE_EMPTY_DB").as_deref() == Ok("1") {
-            0
-        } else {
-            MOCK_SYSTEMS.len()
-        };
-        Mutex::new(MediaState {
-            indexed_systems,
-            ..MediaState::default()
-        })
-    })
+fn initial_state() -> MediaState {
+    let indexed_systems = if std::env::var("MOCK_CORE_EMPTY_DB").as_deref() == Ok("1") {
+        0
+    } else {
+        MOCK_SYSTEMS.len()
+    };
+    MediaState {
+        indexed_systems,
+        ..MediaState::default()
+    }
 }
 
+/// Runs `f` on the media state. The server shares one state across every
+/// connection; unit tests get one per test thread (a `#[tokio::test]`
+/// runtime runs its spawned sequence tasks on that same thread), so a
+/// plain `cargo test` never races one test's index run against another's.
 fn with_state<R>(f: impl FnOnce(&mut MediaState) -> R) -> R {
-    let mut guard = state()
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    f(&mut guard)
+    #[cfg(not(test))]
+    {
+        use std::sync::{Mutex, OnceLock};
+        static STATE: OnceLock<Mutex<MediaState>> = OnceLock::new();
+        let mut guard = STATE
+            .get_or_init(|| Mutex::new(initial_state()))
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        f(&mut guard)
+    }
+    #[cfg(test)]
+    {
+        thread_local! {
+            static STATE: std::cell::RefCell<MediaState> =
+                std::cell::RefCell::new(initial_state());
+        }
+        STATE.with_borrow_mut(f)
+    }
 }
 
 /// An opt-in empty database exposes one more system after each index step.

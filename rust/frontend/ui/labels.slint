@@ -6,7 +6,7 @@
 // them into translated text. Kept in its own file so every screen and
 // modal can reach it without importing the app tree.
 
-import { Screen, AppCue, BootStatus, DisabledReason, DialogKind, DialogButton, ErrorKind } from "state_types.slint";
+import { Screen, UserFlag, AppCue, BootStatus, DisabledReason, DialogKind, DialogButton, ErrorKind } from "state_types.slint";
 
 // Key-to-copy vocabulary for labels Rust hands over as stable ids.
 export global Labels {
@@ -45,12 +45,23 @@ export global Labels {
         if (counted == "") { return @tr("Hidden"); }
         return @tr("{} · {}", counted, @tr("Hidden"));
     }
-    public pure function loading(target: Screen) -> string {
-        if (target == Screen.favorite-systems) { return @tr("Loading favorite systems…"); }
+    // What the Decks screen says under the focused deck: who a saved
+    // deck is from, that a deck is locked, or how many items it holds.
+    public pure function deck-note(count: int, owner: string, locked: bool) -> string {
+        if (owner != "") { return @tr("By {}", owner); }
+        if (locked) { return @tr("Locked"); }
+        if (count < 0) { return ""; }
+        return @tr("{n} item" | "{n} items" % count);
+    }
+    // `list` names the built-in list the two list screens show.
+    public pure function loading(target: Screen, list: UserFlag) -> string {
+        if (target == Screen.favorite-systems) { return Labels.list-systems-loading(list); }
         if (target == Screen.games) { return @tr("Loading games…"); }
-        if (target == Screen.favorites) { return @tr("Loading favorites…"); }
+        if (target == Screen.favorites) { return Labels.list-loading(list); }
         if (target == Screen.recents) { return @tr("Loading recently played…"); }
         if (target == Screen.search-results) { return @tr("Searching…"); }
+        if (target == Screen.decks) { return @tr("Loading decks…"); }
+        if (target == Screen.deck) { return @tr("Loading deck…"); }
         return @tr("Loading…");
     }
     // A file browser Place, by the key Rust sends; a drive is called by its
@@ -86,6 +97,10 @@ export global Labels {
         if (key == "category:Other") { return @tr("Other"); }
         if (key == "action:resume") { return name == "" ? @tr("Resume") : @tr("Resume: {}", name); }
         if (key == "action:favorites") { return @tr("Favorites"); }
+        if (key == "action:liked") { return @tr("Liked"); }
+        if (key == "action:playlater") { return @tr("Play later"); }
+        if (key == "action:disliked") { return @tr("Disliked"); }
+        if (key == "action:decks") { return @tr("Decks"); }
         if (key == "action:recents") { return @tr("Recently played"); }
         if (key == "action:search") { return @tr("Search"); }
         if (key == "action:update") { return @tr("Update"); }
@@ -98,10 +113,43 @@ export global Labels {
     public pure function count(n: int) -> string {
         return n;
     }
-    public pure function favorite-systems(n: int) -> string {
+    // A built-in list's name, which titles its screens and a search of it.
+    public pure function list-title(list: UserFlag) -> string {
+        if (list == UserFlag.like) { return @tr("Liked"); }
+        if (list == UserFlag.play-later) { return @tr("Play later"); }
+        if (list == UserFlag.dislike) { return @tr("Disliked"); }
+        return @tr("Favorites");
+    }
+    public pure function list-empty(list: UserFlag) -> string {
+        if (list == UserFlag.like) { return @tr("No liked games yet"); }
+        if (list == UserFlag.play-later) { return @tr("Nothing to play later yet"); }
+        if (list == UserFlag.dislike) { return @tr("No disliked games"); }
+        return @tr("No favorites yet");
+    }
+    public pure function list-loading(list: UserFlag) -> string {
+        if (list == UserFlag.like) { return @tr("Loading liked games…"); }
+        if (list == UserFlag.play-later) { return @tr("Loading Play later…"); }
+        if (list == UserFlag.dislike) { return @tr("Loading disliked games…"); }
+        return @tr("Loading favorites…");
+    }
+    public pure function list-systems-loading(list: UserFlag) -> string {
+        if (list == UserFlag.like) { return @tr("Loading systems with liked games…"); }
+        if (list == UserFlag.play-later) { return @tr("Loading systems in Play later…"); }
+        if (list == UserFlag.dislike) { return @tr("Loading systems with disliked games…"); }
+        return @tr("Loading favorite systems…");
+    }
+    // How many systems hold a list's games.
+    public pure function list-systems(list: UserFlag, n: int) -> string {
+        if (list == UserFlag.like) { return @tr("{n} system with liked games" | "{n} systems with liked games" % n); }
+        if (list == UserFlag.play-later) { return @tr("{n} system in Play later" | "{n} systems in Play later" % n); }
+        if (list == UserFlag.dislike) { return @tr("{n} system with disliked games" | "{n} systems with disliked games" % n); }
         return @tr("{n} system with favorites" | "{n} systems with favorites" % n);
     }
-    public pure function favorites(n: int) -> string {
+    // How many of a list's games one system holds.
+    public pure function list-count(list: UserFlag, n: int) -> string {
+        if (list == UserFlag.like) { return @tr("{n} liked game" | "{n} liked games" % n); }
+        if (list == UserFlag.dislike) { return @tr("{n} disliked game" | "{n} disliked games" % n); }
+        if (list == UserFlag.play-later) { return @tr("{n} game" | "{n} games" % n); }
         return @tr("{n} favorite" | "{n} favorites" % n);
     }
     // The values the two favorites rows can carry, named on their own so
@@ -110,6 +158,7 @@ export global Labels {
     public pure function menu-value(key: string) -> string {
         if (key == "sort:name") { return @tr("A-Z"); }
         if (key == "sort:default") { return @tr("Default"); }
+        if (key == "sort:added") { return @tr("Recently added"); }
         if (key == "group:none") { return @tr("None"); }
         if (key == "group:system") { return @tr("System"); }
         return "";
@@ -147,6 +196,16 @@ export global Labels {
         if (key == "more_info") { return @tr("Details"); }
         if (key == "favorite:add") { return @tr("Add to favorites"); }
         if (key == "favorite:remove") { return @tr("Remove from favorites"); }
+        // The collections strip, as the help bar names its buttons.
+        if (key == "like:add") { return @tr("Like"); }
+        if (key == "like:remove") { return @tr("Remove like"); }
+        if (key == "dislike:add") { return @tr("Dislike"); }
+        if (key == "dislike:remove") { return @tr("Remove dislike"); }
+        if (key == "play_later:add") { return @tr("Play later"); }
+        if (key == "play_later:remove") { return @tr("Remove from Play later"); }
+        if (key == "add_to_deck") { return @tr("Add to deck"); }
+        if (key == "add_to_deck:loading") { return @tr("Loading…"); }
+        if (key == "new_deck") { return @tr("New deck…"); }
         if (key == "change_launcher") { return @tr("Change launcher"); }
         if (key == "write_card") { return @tr("Write to NFC token"); }
         if (key == "qr_code") { return @tr("Write with App"); }
@@ -169,6 +228,16 @@ export global Labels {
         if (key == "manage_game") { return @tr("Manage game"); }
         if (key == "manage_system") { return @tr("Manage system"); }
         if (key == "manage_category") { return @tr("Manage category"); }
+        if (key == "manage_deck") { return @tr("Manage deck"); }
+        // Deck rows, on a deck and on the items of one.
+        if (key == "play_deck") { return @tr("Play deck"); }
+        if (key == "deck_rename") { return @tr("Rename deck…"); }
+        if (key == "deck_cover_choose") { return @tr("Choose cover image…"); }
+        if (key == "deck_cover_remove") { return @tr("Remove cover"); }
+        if (key == "deck_delete") { return @tr("Delete deck"); }
+        if (key == "deck_use_cover") { return @tr("Use as deck cover"); }
+        if (key == "deck_move") { return @tr("Move"); }
+        if (key == "deck_remove") { return @tr("Remove from deck"); }
         // Games, folders and systems share the toggle.
         if (key == "hide:hide") { return @tr("Hide"); }
         if (key == "hide:unhide") { return @tr("Unhide"); }
@@ -225,7 +294,7 @@ export global Labels {
         // value's own key so both halves get translated.
         if (key == "favorites_sort") { return @tr("Sort: {}", Labels.menu-value(name)); }
         if (key == "favorites_grouping") { return @tr("Group by: {}", Labels.menu-value(name)); }
-        if (key == "sort:name" || key == "sort:default"
+        if (key == "sort:name" || key == "sort:default" || key == "sort:added"
             || key == "group:none" || key == "group:system") {
             return Labels.menu-value(key);
         }
@@ -272,6 +341,7 @@ export global Labels {
         if (reason == DisabledReason.no-recent-games) { return @tr("No recent games"); }
         if (reason == DisabledReason.no-internet) { return @tr("No internet connection"); }
         if (reason == DisabledReason.not-available) { return @tr("Not available"); }
+        if (reason == DisabledReason.deck-missing) { return @tr("Deck not found"); }
         return "";
     }
 
@@ -285,9 +355,12 @@ export global Labels {
 }
 
 // Typed dialog state stays separate from runtime text. `detail` carries
-// the minimum Core version; `arg` carries context, running version, or count.
+// the minimum Core version, or a Core confirmation's own heading; `arg`
+// carries context, running version, count, or a Core confirmation's text.
 export global DialogLabels {
-    public pure function title(kind: DialogKind, error: ErrorKind) -> string {
+    public pure function title(kind: DialogKind, error: ErrorKind, detail: string) -> string {
+        // Core words its own confirmations; they read as Core sent them.
+        if (kind == DialogKind.core-confirm) { return detail != "" ? detail : @tr("Confirm"); }
         if (kind == DialogKind.quit-confirm) { return @tr("Quit Zaparoo Frontend?"); }
         if (kind == DialogKind.quit-blocked) { return @tr("Game still running"); }
         if (kind == DialogKind.restart-setting) { return @tr("Quit and restart Zaparoo Frontend?"); }
@@ -299,6 +372,7 @@ export global DialogLabels {
         if (kind == DialogKind.ra-log-out) { return @tr("Log out of RetroAchievements?"); }
         if (kind == DialogKind.restore-online-backup) { return @tr("Restore this backup?"); }
         if (kind == DialogKind.update-stop) { return @tr("Stop update?"); }
+        if (kind == DialogKind.delete-deck) { return @tr("Delete deck?"); }
         if (kind == DialogKind.action-error) { return DialogLabels.error-title(error); }
         return "";
     }
@@ -314,6 +388,8 @@ export global DialogLabels {
         if (kind == DialogKind.restore-online-backup) { return @tr("This replaces this device's settings and data with the backup from {}. Zaparoo restarts when it finishes.", detail); }
         if (kind == DialogKind.update-stop) { return @tr("An update is still running. Leaving this screen stops it."); }
         if (kind == DialogKind.ra-log-out) { return @tr("Games stop earning achievements until you log in again."); }
+        if (kind == DialogKind.delete-deck) { return @tr("{} and the list of what is in it are deleted. This cannot be undone.", detail); }
+        if (kind == DialogKind.core-confirm) { return arg; }
         if (kind == DialogKind.notice) {
             return @tr("Copyright 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.\n\nThis free source-available build is for personal and non-commercial use only. Commercial use requires a separate license.\n\nContact: legal@zaparoo.com\n\nFull details available any time under Settings > About / License.\n\nCreated by\nAndrea Bogazzi, BossRighteous, Tim Wilsie, Wizzo");
         }
@@ -348,6 +424,10 @@ export global DialogLabels {
     public pure function error-title(kind: ErrorKind) -> string {
         if (kind == ErrorKind.launch || kind == ErrorKind.launch-repair) { return @tr("Launch failed"); }
         if (kind == ErrorKind.favorite) { return @tr("Favorite update failed"); }
+        if (kind == ErrorKind.collection) { return @tr("Collection update failed"); }
+        if (kind == ErrorKind.deck-list) { return @tr("Deck list unavailable"); }
+        if (kind == ErrorKind.deck-update) { return @tr("Deck update failed"); }
+        if (kind == ErrorKind.deck-create) { return @tr("Deck not created"); }
         if (kind == ErrorKind.media-visibility) { return @tr("Visibility update failed"); }
         if (kind == ErrorKind.media-busy) { return @tr("Media database is busy"); }
         if (kind == ErrorKind.add-to-hub) { return @tr("Add to Hub failed"); }
@@ -382,6 +462,19 @@ export global DialogLabels {
             return DialogLabels.launch-repair-body(reason, launcher, plugin, context);
         }
         if (kind == ErrorKind.favorite) { return @tr("Could not update this favorite. Check Zaparoo Core and try again."); }
+        if (kind == ErrorKind.collection) {
+            if (context == "") { return @tr("Could not update the collections of this game. Check Zaparoo Core and try again."); }
+            return @tr("Could not update the collections of {}. Check Zaparoo Core and try again.", context);
+        }
+        if (kind == ErrorKind.deck-list) { return @tr("Could not load your decks. Check Zaparoo Core and try again."); }
+        if (kind == ErrorKind.deck-update) {
+            if (context == "") { return @tr("Could not update this deck. Check Zaparoo Core and try again."); }
+            return @tr("Could not update {}. Check Zaparoo Core and try again.", context);
+        }
+        if (kind == ErrorKind.deck-create) {
+            if (context == "") { return @tr("Could not create the deck. Check Zaparoo Core and try again."); }
+            return @tr("Could not create {}. Check Zaparoo Core and try again.", context);
+        }
         if (kind == ErrorKind.media-visibility) { return @tr("Could not hide or unhide this game. Check Zaparoo Core and try again."); }
         // Core refuses a tag write while a job owns the media database.
         if (kind == ErrorKind.media-busy) { return @tr("Zaparoo Core is updating the media database. Try again when it finishes."); }

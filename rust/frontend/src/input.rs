@@ -819,6 +819,7 @@ fn push_rapid(ctx: &Ctx, app: &App, active: bool) {
             | crate::Screen::Favorites
             | crate::Screen::Recents
             | crate::Screen::SearchResults
+            | crate::Screen::Deck
     );
     crate::games::set_rapid(ctx, app, active && on_list);
     let on_browser = app.global::<crate::Shell>().get_active_screen() == crate::Screen::FileBrowser;

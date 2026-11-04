@@ -88,6 +88,9 @@ export component BrowseList inherits Rectangle {
     // a glide has rows to show the whole way.
     in property <bool> glide: true;
     in property <duration> step: 0ms;
+    // The selected row is picked up (Options -> Move) and blinks, the
+    // same hard cut as a held tile; see `Tile` in tiles.slint.
+    in property <bool> held: false;
     callback row-hovered(int);
     callback row-clicked(int);
     callback row-right-clicked(int);
@@ -102,6 +105,18 @@ export component BrowseList inherits Rectangle {
 
     property <length> stride: root.row-height + Layout.row-spacing;
     property <length> heart-size: GlyphSource.side(Sizing.pct-h(3.2));
+    // Under Reduce motion the row stays on; the help bar's move line
+    // carries the state. Each step restarts a full visible interval.
+    property <bool> blinking: root.held && Motion.enabled;
+    property <bool> held-blink-on: true;
+    property <bool> held-off: root.blinking && !root.held-blink-on;
+    Timer {
+        interval: Motion.held-blink-ms;
+        running: root.blinking;
+        triggered => { root.held-blink-on = !root.held-blink-on; }
+    }
+    changed blinking => { root.held-blink-on = true; }
+    changed selected => { root.held-blink-on = true; }
     scroll := ScrollOffset {
         target: root.scroll-top * root.stride;
         step: root.stride;
@@ -137,6 +152,7 @@ export component BrowseList inherits Rectangle {
     height: Math.max(0px, root.height - Layout.card-padding-top - Layout.card-padding-bottom);
     clip: true;
     sel := SelectionCursor {
+        opacity: root.held-off ? 0.0 : 1.0;
         motion: Motion.enabled && !scroll.moving;
         radius: Layout.row-radius;
         activate-pulse: root.activate-pulse;
@@ -154,6 +170,7 @@ export component BrowseList inherits Rectangle {
         y: (i + root.model-top) * root.stride - scroll.offset;
         width: parent.width - Layout.card-padding-left - Layout.card-padding-right;
         height: root.row-height;
+        opacity: (root.held-off && i == root.selected) ? 0.0 : 1.0;
         // The highlight waits for the host to finalize the selection, so
         // row 0 never lights up before a restore lands.
         property <bool> highlighted: i == root.selected && root.focus-ready;
@@ -569,6 +586,7 @@ export component BrowseListDetailView inherits Rectangle {
     in property <length> row-height: Sizing.pct-h(6);
     in property <bool> glide: true;
     in property <duration> step: 0ms;
+    in property <bool> held: false;
     in property <string> detail-title: "";
     in property <bool> show-title: true;
     in property <image> cover;
@@ -618,6 +636,7 @@ export component BrowseListDetailView inherits Rectangle {
         glide: root.glide;
         step: root.step;
         selected: root.selected;
+        held: root.held;
         focus-ready: root.focus-ready;
         activate-pulse: root.activate-pulse;
         release-pulse: root.release-pulse;

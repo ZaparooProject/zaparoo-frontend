@@ -50,6 +50,14 @@ const SOURCES: &[(&str, &str)] = &[
         include_str!("../../../resources/images/icons/Appearance.svg"),
     ),
     (
+        "icons/Bookmark",
+        include_str!("../../../resources/images/icons/Bookmark.svg"),
+    ),
+    (
+        "icons/BookmarkOutline",
+        include_str!("../../../resources/images/icons/BookmarkOutline.svg"),
+    ),
+    (
         "icons/Browsing",
         include_str!("../../../resources/images/icons/Browsing.svg"),
     ),
@@ -92,6 +100,14 @@ const SOURCES: &[(&str, &str)] = &[
     (
         "icons/Language",
         include_str!("../../../resources/images/icons/Language.svg"),
+    ),
+    (
+        "icons/Layers",
+        include_str!("../../../resources/images/icons/Layers.svg"),
+    ),
+    (
+        "icons/Lock",
+        include_str!("../../../resources/images/icons/Lock.svg"),
     ),
     (
         "icons/Library",
@@ -160,6 +176,22 @@ const SOURCES: &[(&str, &str)] = &[
     (
         "icons/Support",
         include_str!("../../../resources/images/icons/Support.svg"),
+    ),
+    (
+        "icons/ThumbsDown",
+        include_str!("../../../resources/images/icons/ThumbsDown.svg"),
+    ),
+    (
+        "icons/ThumbsDownOutline",
+        include_str!("../../../resources/images/icons/ThumbsDownOutline.svg"),
+    ),
+    (
+        "icons/ThumbsUp",
+        include_str!("../../../resources/images/icons/ThumbsUp.svg"),
+    ),
+    (
+        "icons/ThumbsUpOutline",
+        include_str!("../../../resources/images/icons/ThumbsUpOutline.svg"),
     ),
     (
         "icons/Tools",

@@ -122,7 +122,7 @@ fn family_views(app: &App) -> (View, View) {
         crate::Orientation::Cw | crate::Orientation::Ccw
     );
     match shell.get_active_screen() {
-        crate::Screen::Systems | crate::Screen::FavoriteSystems => (
+        crate::Screen::Systems | crate::Screen::FavoriteSystems | crate::Screen::Decks => (
             View::SystemsGrid,
             if rotated {
                 View::SystemsListTate
@@ -148,7 +148,9 @@ fn current_view(app: &App) -> View {
     let shell = app.global::<Shell>();
     let (grid, list) = family_views(app);
     let list_layout = match shell.get_active_screen() {
-        crate::Screen::Systems | crate::Screen::FavoriteSystems => shell.get_systems_list_layout(),
+        crate::Screen::Systems | crate::Screen::FavoriteSystems | crate::Screen::Decks => {
+            shell.get_systems_list_layout()
+        }
         // The browser shows the layout its mode is, not the games setting.
         crate::Screen::FileBrowser => {
             app.global::<crate::FileBrowserView>().get_mode() == crate::FileBrowserMode::Plain

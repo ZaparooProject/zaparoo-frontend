@@ -2,13 +2,14 @@
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 //
-// The rename screen: a tile's name over the full on-screen keyboard. Pure
+// The rename screen: a tile's name, or a new deck's, over the full
+// on-screen keyboard. Pure
 // view. The driver is `src/rename.rs` and the rules are
 // `zaparoo_app::text_entry`.
 
 import { Theme, Sizing, Layout } from "theme.slint";
 import { TopStatusStrip } from "chrome.slint";
-import { KeyKind } from "state_types.slint";
+import { KeyKind, RenamePurpose } from "state_types.slint";
 import { KeyCell, OnScreenKeyboard, TextField } from "keyboard.slint";
 
 export global RenameView {
@@ -27,6 +28,7 @@ export global RenameView {
     in-out property <bool> can-save: true;
     // The kind of key under the focus, for the help bar.
     in-out property <KeyKind> key-kind: KeyKind.char;
+    in-out property <RenamePurpose> purpose: RenamePurpose.tile;
 }
 
 export global RenameInput {
@@ -56,7 +58,8 @@ export component RenameScreen inherits Rectangle {
         y: Sizing.header-bottom + Layout.top-margin;
         height: Layout.strip-height;
         slot-margin: Layout.slot-margin;
-        title: @tr("Rename tile");
+        title: RenameView.purpose == RenamePurpose.new-deck ? @tr("New deck")
+            : (RenameView.purpose == RenamePurpose.rename-deck ? @tr("Rename deck") : @tr("Rename tile"));
         show-page-counter: false;
         visible: Layout.top-strip-visible;
     }

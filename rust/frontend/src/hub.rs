@@ -48,6 +48,8 @@ pub enum MenuTarget {
         system: String,
     },
     System(zaparoo_app::systems::SystemRow),
+    /// A pinned deck, by its id.
+    Deck(String),
 }
 
 /// A game tile's menu waiting on Core for the game's current state.
@@ -231,8 +233,38 @@ impl Resolver for SharedResolver<'_> {
         crate::customization::has_hub_override(id).then(|| format!("{CUSTOM_PREFIX}{id}"))
     }
 
+    /// A pinned deck from the session's deck list; its cover is fetched
+    /// like a game's, under a deck art key.
+    fn deck(&self, id: &str) -> zaparoo_app::hub::DeckLookup {
+        use zaparoo_app::hub::DeckLookup;
+        let Some(list) = self.shared.decks.list.as_ref() else {
+            return DeckLookup::Unknown;
+        };
+        let Some(deck) = list
+            .iter()
+            .find(|deck| deck.deck_id.eq_ignore_ascii_case(id))
+        else {
+            return DeckLookup::Missing;
+        };
+        let cover_key = if deck.has_image {
+            self.cover_key_for(MediaKey::deck_art(
+                &deck.deck_id,
+                None,
+                deck.updated_at,
+                HUB_COVER_TIER,
+                self.media.hub_fit(),
+            ))
+        } else {
+            String::new()
+        };
+        DeckLookup::Found {
+            name: deck.name.clone(),
+            cover_key,
+        }
+    }
+
     fn media_cover_key(&self, system: &str, path: &str) -> String {
-        let key = MediaKey {
+        self.cover_key_for(MediaKey {
             media_id: None,
             system: system.to_string(),
             path: path.to_string(),
@@ -240,7 +272,15 @@ impl Resolver for SharedResolver<'_> {
             fit: self.media.hub_fit(),
             folder: false,
             image_type: None,
-        };
+        })
+    }
+}
+
+impl SharedResolver<'_> {
+    /// The cover key for art the cache fetches, asked for now: the media
+    /// key once it is settled, the loading glyph until then.
+    fn cover_key_for(&self, key: MediaKey) -> String {
+        let (system, path) = (key.system.clone(), key.path.clone());
         // A cover Core has none for resolves like a present one: the tile
         // stays blank either way, but it is settled rather than loading.
         let settled = self.media.get(&key).is_some() || self.media.is_negative(&key);
@@ -944,6 +984,24 @@ fn commit_current(ctx: &Ctx) {
     crate::router::save_persist(&ctx.shared);
 }
 
+/// A removed last tile takes the layout's trailing gap with it, so focus
+/// moves to the tile before it instead of resting on padding.
+fn keep_focus_in_range(ctx: &Ctx, app: &App) {
+    let moved = {
+        let mut shared = lock(&ctx.shared);
+        let hub = &mut shared.hub;
+        let target = rules::focus_in_range(&hub.entries, hub.grid.current_index());
+        if let Some(index) = target {
+            hub.grid.set_current_index_immediate(index);
+        }
+        target.is_some()
+    };
+    if moved {
+        render(ctx, app);
+        commit_current(ctx);
+    }
+}
+
 fn set_index(ctx: &Ctx, app: &App, index: usize) {
     lock(&ctx.shared)
         .hub
@@ -1093,16 +1151,13 @@ fn emit_activate(ctx: &Ctx, app: &App) {
                         .unwrap_or_default();
                     crate::router::launch_first(ctx, app, candidates, &entry.name);
                 }
-                // Group by: System stops at the systems that hold
-                // favorites; None goes straight to the flat list.
-                "favorites" => {
-                    let grouped = lock(&ctx.shared).persist.settings.favorites_grouping == "system";
-                    if grouped {
-                        crate::systems::enter_favorites(ctx, app, EntryMode::Fresh);
-                    } else {
-                        crate::games::enter_favorites(ctx, app, EntryMode::Fresh);
-                    }
+                // A built-in list. Group by: System stops at the systems
+                // that hold its games; None goes straight to the list.
+                "favorites" | "liked" | "playlater" | "disliked" => {
+                    let list = list_for_action(&entry.id);
+                    crate::router::enter_list(ctx, app, list, EntryMode::Fresh);
                 }
+                "decks" => crate::decks::enter(ctx, app, EntryMode::Fresh),
                 "recents" => crate::games::enter_recents(ctx, app, EntryMode::Fresh),
                 "search" => crate::search::enter(ctx, app, EntryMode::Fresh),
                 "settings" => crate::settings::enter(ctx, app, EntryMode::Fresh),
@@ -1134,6 +1189,11 @@ fn emit_activate(ctx: &Ctx, app: &App) {
             let candidates =
                 zaparoo_app::hub::launch_candidates(&entry.relative, &entry.script, &entry.path);
             crate::router::launch_first(ctx, app, candidates, &entry.name);
+        }
+        Some(Kind::Collection) => {
+            if !entry.disabled {
+                crate::decks::open_deck(ctx, app, &entry.id, true);
+            }
         }
         Some(Kind::Search) => {
             crate::search::enter_saved(
@@ -1437,6 +1497,10 @@ fn open_context_menu(ctx: &Ctx, app: &App) {
                 }
             },
             Kind::Search => Plan::Show(menu::shortcut(false, false), MenuTarget::Tile),
+            Kind::Collection => Plan::Show(
+                crate::decks::menu(&shared, &entry.id, true),
+                MenuTarget::Deck(entry.id.clone()),
+            ),
             Kind::Empty => return,
         };
         shared.hub.menu_hub_index = entry.hub_index;
@@ -1567,6 +1631,24 @@ pub(crate) fn game_answered(ctx: &Ctx, app: &App, request: &GameRequest, meta: O
     present_menu(ctx, app, menu, target);
 }
 
+/// A strip button on a tile game's Options menu. The tile draws none of
+/// the flags; the menu's own copy of the game keeps them for the next
+/// toggle.
+pub(crate) fn strip_toggle(ctx: &Ctx, app: &App, flag: zaparoo_app::user_flags::Flag) {
+    let target = lock(&ctx.shared).hub.menu_target.clone();
+    let MenuTarget::Game { row, system } = target else {
+        return;
+    };
+    let path = row.path.clone();
+    crate::games::change_flag(ctx, app, &row, &system, flag, move |ctx, _app, flags| {
+        if let MenuTarget::Game { row, .. } = &mut lock(&ctx.shared).hub.menu_target {
+            if row.path == path {
+                row.flags = flags;
+            }
+        }
+    });
+}
+
 /// A page Core has to be asked for, opened from a tile's game.
 pub fn begin_context_page(ctx: &Ctx, app: &App, id: &str) -> bool {
     let target = lock(&ctx.shared).hub.menu_target.clone();
@@ -1604,6 +1686,7 @@ pub fn context_accept(ctx: &Ctx, app: &App, id: &str) {
                 };
                 if removed {
                     rebuild(ctx, app);
+                    keep_focus_in_range(ctx, app);
                 }
             }
         }
@@ -1619,14 +1702,9 @@ pub fn context_accept(ctx: &Ctx, app: &App, id: &str) {
         }
         _ => match target {
             MenuTarget::Game { row, system } => match id {
-                "toggle_favorite" | "toggle_hidden" => crate::games::toggle_tag_detached(
-                    ctx,
-                    app,
-                    &row,
-                    &system,
-                    id == "toggle_favorite",
-                    |_, _, _| {},
-                ),
+                "toggle_hidden" => {
+                    crate::games::toggle_hidden_detached(ctx, app, &row, &system, |_, _, _| {});
+                }
                 "add_to_hub" => crate::games::add_to_hub(
                     ctx,
                     app,
@@ -1641,6 +1719,9 @@ pub fn context_accept(ctx: &Ctx, app: &App, id: &str) {
                 if id == "toggle_hide_system" {
                     rebuild(ctx, app);
                 }
+            }
+            MenuTarget::Deck(deck_id) => {
+                crate::decks::context_accept(ctx, app, id, &deck_id, crate::Screen::Hub);
             }
             MenuTarget::Tile => {}
         },
@@ -2270,6 +2351,17 @@ pub fn set_internet(ctx: &Ctx, app: &App, available: bool) {
     };
     if changed {
         rebuild(ctx, app);
+    }
+}
+
+/// The built-in list a Hub action opens.
+fn list_for_action(id: &str) -> zaparoo_app::user_flags::Flag {
+    use zaparoo_app::user_flags::Flag;
+    match id {
+        "liked" => Flag::Like,
+        "playlater" => Flag::PlayLater,
+        "disliked" => Flag::Dislike,
+        _ => Flag::Favorite,
     }
 }
 

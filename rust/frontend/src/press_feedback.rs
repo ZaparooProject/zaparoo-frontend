@@ -67,8 +67,14 @@ pub fn prepare(ctx: &crate::router::Ctx, app: &App) -> Option<Target> {
         // A moving page already owns its incoming selection. Seat it before
         // resolving the button, since the outgoing strip can hide its focus.
         match app.global::<Shell>().get_active_screen() {
-            Screen::Systems | Screen::FavoriteSystems => crate::systems::interrupt_page(ctx, app),
-            Screen::Games | Screen::Favorites | Screen::Recents | Screen::SearchResults => {
+            Screen::Systems | Screen::FavoriteSystems | Screen::Decks => {
+                crate::systems::interrupt_page(ctx, app);
+            }
+            Screen::Games
+            | Screen::Favorites
+            | Screen::Recents
+            | Screen::SearchResults
+            | Screen::Deck => {
                 crate::games::interrupt_page(ctx, app);
             }
             Screen::FileBrowser => crate::file_browser::interrupt_page(ctx, app),
@@ -92,6 +98,30 @@ fn dialog_target(ov: &Overlays<'_>) -> Option<Target> {
             ov.get_dialog_detail(),
             ov.get_dialog_arg()
         ),
+    ))
+}
+
+/// The log uploader: nothing to press while it uploads.
+fn log_target(app: &App) -> Option<Target> {
+    let log = app.global::<crate::LogUploadView>();
+    (log.get_phase() != crate::LogPhase::Uploading).then(|| Target {
+        owner: PressOwner::Log,
+        index: 0,
+        key: format!("{:?}", log.get_phase()),
+    })
+}
+
+/// Core's picker, above every surface but the decision dialog.
+fn core_picker_target(app: &App) -> Option<Target> {
+    let core = app.global::<crate::CoreUiView>();
+    if core.get_kind() != crate::CoreUiKind::Picker {
+        return None;
+    }
+    let index = core.get_index();
+    Some(target(
+        PressOwner::CorePicker,
+        index,
+        format!("{}:{index}", core.get_title()),
     ))
 }
 
@@ -157,13 +187,11 @@ fn current_with(app: &App, prepare_grid: impl FnOnce()) -> Option<Target> {
     if shell.get_boot_curtain() {
         return None;
     }
-    let log = app.global::<crate::LogUploadView>();
-    if log.get_open() {
-        return (log.get_phase() != crate::LogPhase::Uploading).then(|| Target {
-            owner: PressOwner::Log,
-            index: 0,
-            key: format!("{:?}", log.get_phase()),
-        });
+    if let Some(target) = core_picker_target(app) {
+        return Some(target);
+    }
+    if app.global::<crate::LogUploadView>().get_open() {
+        return log_target(app);
     }
     let setup = app.global::<crate::SetupModalView>();
     if setup.get_open() {
@@ -289,7 +317,7 @@ fn grid_target(app: &App) -> Option<Target> {
                 view.get_cells(),
             )
         }
-        Screen::Systems | Screen::FavoriteSystems => {
+        Screen::Systems | Screen::FavoriteSystems | Screen::Decks => {
             let view = app.global::<crate::SystemsView>();
             if shell.get_systems_list_layout() {
                 return None;
@@ -306,7 +334,11 @@ fn grid_target(app: &App) -> Option<Target> {
                 view.get_cells(),
             )
         }
-        Screen::Games | Screen::Favorites | Screen::Recents | Screen::SearchResults => {
+        Screen::Games
+        | Screen::Favorites
+        | Screen::Recents
+        | Screen::SearchResults
+        | Screen::Deck => {
             let view = app.global::<crate::GamesView>();
             if shell.get_browse_list_layout() {
                 return None;

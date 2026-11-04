@@ -1264,6 +1264,10 @@ mod tests {
         assert_eq!(cfg.settings.button_layout.as_deref(), Some("b"));
         assert_eq!(cfg.settings.favorites_sort.as_deref(), Some("name"));
 
+        save_favorites_sort(f.path(), "added").expect("save added sort");
+        let cfg = load_config(f.path());
+        assert_eq!(cfg.settings.favorites_sort.as_deref(), Some("added"));
+
         save_favorites_sort(f.path(), "").expect("save default sort");
         let cfg = load_config(f.path());
         assert_eq!(cfg.settings.favorites_sort, None);

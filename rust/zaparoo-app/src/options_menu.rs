@@ -9,6 +9,8 @@
 // so the same game reads the same in Games, Favorites, Search results,
 // Recently played and on the Hub.
 
+use crate::user_flags::Flags;
+
 /// What an Options row opens in the menu's place, for Back to return from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Opens {
@@ -36,6 +38,7 @@ pub enum Page {
     ManageGame,
     ManageSystem,
     ManageCategory,
+    ManageDeck,
 }
 
 impl Page {
@@ -46,6 +49,7 @@ impl Page {
             Self::ManageGame => "manage_game",
             Self::ManageSystem => "manage_system",
             Self::ManageCategory => "manage_category",
+            Self::ManageDeck => "manage_deck",
         }
     }
 }
@@ -68,6 +72,9 @@ const fn keyed(id: &'static str, key: &'static str) -> Row {
 /// An item's whole menu: its own rows and the pages they open.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Menu {
+    /// A game's four collections, shown as a strip of toggles above the
+    /// rows. `None` when the item is not a game or its flags are unknown.
+    pub strip: Option<Flags>,
     pub root: Vec<Row>,
     /// The Write to token page: the ways to write. Empty when only one way
     /// exists, and the root row then runs it directly.
@@ -89,6 +96,7 @@ impl Menu {
             "manage_game" => Page::ManageGame,
             "manage_system" => Page::ManageSystem,
             "manage_category" => Page::ManageCategory,
+            "manage_deck" => Page::ManageDeck,
             _ => return None,
         };
         (self.root.iter().any(|row| row.id == id) && !self.rows(page).is_empty()).then_some(page)
@@ -97,7 +105,9 @@ impl Menu {
     pub fn rows(&self, page: Page) -> &[Row] {
         match page {
             Page::WriteToken => &self.write,
-            Page::ManageGame | Page::ManageSystem | Page::ManageCategory => &self.manage,
+            Page::ManageGame | Page::ManageSystem | Page::ManageCategory | Page::ManageDeck => {
+                &self.manage
+            }
         }
     }
 
@@ -135,7 +145,12 @@ impl Menu {
     pub fn holds_open(id: &str) -> bool {
         matches!(
             id,
-            "hub_rename" | "hub_icon" | "change_launcher" | "more_info"
+            "hub_rename"
+                | "hub_icon"
+                | "change_launcher"
+                | "more_info"
+                | "deck_rename"
+                | "deck_cover_choose"
         )
     }
 
@@ -158,12 +173,95 @@ impl Menu {
         self
     }
 
+    /// An item of a deck the user can change, on the Deck screen: its deck
+    /// rows join the item's own. They are the item's place in the deck, so
+    /// they lead its organization, on its Manage page when it has one.
+    #[must_use]
+    pub fn with_deck_item(mut self, item: DeckItem) -> Self {
+        let mut rows = Vec::new();
+        if item.can_be_cover {
+            rows.push(row("deck_use_cover"));
+        }
+        rows.push(row("deck_move"));
+        rows.push(row("deck_remove"));
+        let manage = self
+            .root
+            .iter()
+            .position(|row| row.id.starts_with("manage_"));
+        if manage.is_some() {
+            self.manage.splice(0..0, rows);
+        } else {
+            self.root.extend(rows);
+        }
+        self
+    }
+
     fn with_manage(mut self, page: Page) -> Self {
         if !self.manage.is_empty() {
             self.root.push(row(page.menu_id()));
         }
         self
     }
+}
+
+/// An item of an editable deck, for its deck rows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DeckItem {
+    /// A game this device has, whose art can be the deck's cover.
+    pub can_be_cover: bool,
+}
+
+/// A deck, on the Decks screen or as a Hub tile.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "each flag is an independent capability of the deck"
+)]
+pub struct DeckInput {
+    /// The user's own and not locked: it can be renamed, changed, deleted.
+    pub editable: bool,
+    pub has_items: bool,
+    pub has_cover: bool,
+    /// An image file can be chosen for the cover: Core runs here and can
+    /// read what the file browser shows.
+    pub can_choose_cover: bool,
+    pub on_hub: bool,
+    /// Opened on the deck's Hub tile, whose own rows join.
+    pub tile: bool,
+}
+
+/// A deck's menu. Accept opens the deck, so playing it leads; then its
+/// place on the Hub, and for a deck the user can change, the edits on a
+/// Manage page.
+pub fn deck(input: &DeckInput) -> Menu {
+    let mut menu = Menu::default();
+    if input.has_items {
+        menu.root.push(row("play_deck"));
+    }
+    if input.tile {
+        menu.root.push(keyed("hub_move", "hub_move:tile"));
+        menu.root.push(keyed("hub_remove", "hub:remove"));
+    } else {
+        menu.root.push(keyed(
+            "deck_hub",
+            if input.on_hub {
+                "hub:remove"
+            } else {
+                "add_to_hub"
+            },
+        ));
+    }
+    if input.editable {
+        menu.manage.push(row("deck_rename"));
+        if input.can_choose_cover {
+            menu.manage.push(row("deck_cover_choose"));
+        }
+        if input.has_cover {
+            menu.manage.push(row("deck_cover_remove"));
+        }
+        menu.manage.push(row("deck_delete"));
+    }
+    menu.with_manage(Page::ManageDeck)
 }
 
 /// The Hub shortcut a game or system menu was opened on. Its layout actions
@@ -174,17 +272,6 @@ pub enum Tile {
     Resume,
     /// A shortcut pinned to the Hub.
     Pinned,
-}
-
-fn favorite_row(is_favorite: bool) -> Row {
-    keyed(
-        "toggle_favorite",
-        if is_favorite {
-            "favorite:remove"
-        } else {
-            "favorite:add"
-        },
-    )
 }
 
 fn pin_row(on_hub: bool) -> Row {
@@ -215,9 +302,11 @@ fn push_write(menu: &mut Menu, has_nfc: bool) {
     reason = "one flag per menu gate, each independent of the others"
 )]
 pub struct GameInput {
-    /// Core reported the game's tags, so its favorite state is known.
-    pub favorite_known: bool,
-    pub is_favorite: bool,
+    /// The game's collections, when Core reported its tags and can address
+    /// it to change them.
+    pub flags: Option<Flags>,
+    /// Core can add the game to a deck: it has a system and a path.
+    pub can_add_to_deck: bool,
     /// A folder of one game's discs.
     pub multi_disc: bool,
     /// A search result standing for several versions of one title.
@@ -245,13 +334,17 @@ pub struct GameInput {
 
 /// A game, or a folder or archive Core launches as one.
 pub fn game(input: &GameInput) -> Menu {
-    let mut menu = Menu::default();
-    // Accept already launches the game, so Details leads.
+    // The collections sit above every row, in the strip; Accept already
+    // launches the game, so Details leads the rows.
+    let mut menu = Menu {
+        strip: input.flags,
+        ..Menu::default()
+    };
     if !input.details_unknown {
         menu.root.push(row("more_info"));
     }
-    if input.favorite_known {
-        menu.root.push(favorite_row(input.is_favorite));
+    if input.can_add_to_deck {
+        menu.root.push(row("add_to_deck"));
     }
     if input.multi_disc {
         menu.root.push(row("choose_disc"));
@@ -450,6 +543,93 @@ pub fn shortcut(has_script: bool, has_nfc: bool) -> Menu {
 }
 
 #[cfg(test)]
+mod deck_tests {
+    use super::*;
+
+    fn ids(rows: &[Row]) -> Vec<&'static str> {
+        rows.iter().map(|row| row.id).collect()
+    }
+
+    #[test]
+    fn an_editable_deck_plays_first_and_keeps_its_edits_on_manage() {
+        let menu = deck(&DeckInput {
+            editable: true,
+            has_items: true,
+            has_cover: true,
+            can_choose_cover: true,
+            ..DeckInput::default()
+        });
+        assert_eq!(ids(&menu.root), ["play_deck", "deck_hub", "manage_deck"]);
+        assert_eq!(
+            ids(&menu.manage),
+            [
+                "deck_rename",
+                "deck_cover_choose",
+                "deck_cover_remove",
+                "deck_delete"
+            ]
+        );
+        assert_eq!(menu.page_for("manage_deck"), Some(Page::ManageDeck));
+    }
+
+    #[test]
+    fn a_saved_deck_only_plays_and_pins() {
+        let menu = deck(&DeckInput {
+            has_items: true,
+            on_hub: true,
+            ..DeckInput::default()
+        });
+        assert_eq!(ids(&menu.root), ["play_deck", "deck_hub"]);
+        assert_eq!(menu.root[1].key, "hub:remove");
+        assert!(menu.manage.is_empty());
+    }
+
+    #[test]
+    fn an_empty_deck_has_nothing_to_play() {
+        let menu = deck(&DeckInput::default());
+        assert_eq!(ids(&menu.root), ["deck_hub"]);
+    }
+
+    #[test]
+    fn a_deck_tile_has_the_tiles_rows() {
+        let menu = deck(&DeckInput {
+            has_items: true,
+            tile: true,
+            ..DeckInput::default()
+        })
+        .with_tile_edits(true);
+        assert_eq!(
+            ids(&menu.root),
+            [
+                "play_deck",
+                "hub_rename",
+                "hub_icon",
+                "hub_move",
+                "hub_remove"
+            ]
+        );
+    }
+
+    #[test]
+    fn deck_rows_lead_a_games_manage_page_and_sit_on_options_otherwise() {
+        let game = Menu {
+            root: vec![row("more_info"), row("manage_game")],
+            manage: vec![row("scrape_game")],
+            ..Menu::default()
+        }
+        .with_deck_item(DeckItem { can_be_cover: true });
+        assert_eq!(
+            ids(&game.manage),
+            ["deck_use_cover", "deck_move", "deck_remove", "scrape_game"]
+        );
+        let card = Menu::default().with_deck_item(DeckItem {
+            can_be_cover: false,
+        });
+        assert_eq!(ids(&card.root), ["deck_move", "deck_remove"]);
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -464,7 +644,8 @@ mod tests {
     /// A regular game with everything Core can report for it.
     fn regular() -> GameInput {
         GameInput {
-            favorite_known: true,
+            flags: Some(Flags::default()),
+            can_add_to_deck: true,
             has_payload: true,
             has_launchers: true,
             pinnable: true,
@@ -479,7 +660,7 @@ mod tests {
         let menu = game(&regular());
         assert_eq!(
             keys(&menu.root),
-            ["more_info", "favorite:add", "write_token", "manage_game"]
+            ["more_info", "add_to_deck", "write_token", "manage_game"]
         );
         assert_eq!(
             keys(&menu.manage),
@@ -546,7 +727,7 @@ mod tests {
             keys(&arcade.root),
             [
                 "more_info",
-                "favorite:add",
+                "add_to_deck",
                 "write_token",
                 "discover",
                 "manage_game"
@@ -561,7 +742,7 @@ mod tests {
             keys(&discs.root),
             [
                 "more_info",
-                "favorite:add",
+                "add_to_deck",
                 "choose_disc",
                 "write_token",
                 "manage_game"
@@ -576,7 +757,7 @@ mod tests {
             keys(&both.root),
             [
                 "more_info",
-                "favorite:add",
+                "add_to_deck",
                 "choose_disc",
                 "write_token",
                 "discover",
@@ -606,13 +787,17 @@ mod tests {
 
     #[test]
     fn toggles_word_the_state_they_would_change() {
+        let flags = Flags {
+            favorite: true,
+            ..Flags::default()
+        };
         let menu = game(&GameInput {
-            is_favorite: true,
+            flags: Some(flags),
             on_hub: true,
             is_hidden: true,
             ..regular()
         });
-        assert_eq!(menu.root[1], keyed("toggle_favorite", "favorite:remove"));
+        assert_eq!(menu.strip, Some(flags));
         assert_eq!(
             keys(&menu.manage),
             [
@@ -636,12 +821,15 @@ mod tests {
         );
         assert_eq!(keys(&busy.root), keys(&game(&regular()).root));
 
-        // History Core could not resolve: no tags, so no favorite state to
-        // toggle, and nothing is assumed in its place.
+        // History Core could not resolve: no tags, so no collections to
+        // toggle and no deck to add to, and nothing is assumed in their
+        // place.
         let unresolved = game(&GameInput {
-            favorite_known: false,
+            flags: None,
+            can_add_to_deck: false,
             ..regular()
         });
+        assert_eq!(unresolved.strip, None);
         assert_eq!(
             keys(&unresolved.root),
             ["more_info", "write_token", "manage_game"]
@@ -659,20 +847,20 @@ mod tests {
         });
         assert_eq!(
             keys(&no_payload.root),
-            ["more_info", "favorite:add", "manage_game"]
+            ["more_info", "add_to_deck", "manage_game"]
         );
     }
 
     #[test]
     fn an_empty_manage_page_is_never_offered() {
         let menu = game(&GameInput {
-            favorite_known: true,
+            can_add_to_deck: true,
             has_payload: true,
             ..GameInput::default()
         });
         assert_eq!(
             keys(&menu.root),
-            ["more_info", "favorite:add", "write_token"]
+            ["more_info", "add_to_deck", "write_token"]
         );
         assert_eq!(menu.page_for("manage_game"), None);
     }
@@ -685,7 +873,7 @@ mod tests {
         });
         assert_eq!(
             keys(&menu.root),
-            ["more_info", "favorite:add", "write_token", "manage_game"]
+            ["more_info", "add_to_deck", "write_token", "manage_game"]
         );
         assert_eq!(
             menu.manage,
@@ -958,6 +1146,7 @@ mod tests {
                 root: vec![row(page.menu_id())],
                 write: vec![row("write_card")],
                 manage: vec![row("scrape_game")],
+                ..Menu::default()
             };
             assert_eq!(menu.page_for(page.menu_id()), Some(page));
         }

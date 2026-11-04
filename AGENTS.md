@@ -250,6 +250,8 @@ update rules, in short:
 | `rust/frontend/src/{launcher_prefs,retro_achievements,ra_login}.rs` | Core's global launcher preference modal; `MiSTer_RA`'s cfg and install check; the RetroAchievements login screen (masked password, checked with RetroAchievements before saving) |
 | `rust/frontend/src/{game_info,media_setup,log_upload,launchers,card_write,qr}.rs` | Modal drivers |
 | `rust/frontend/src/manual.rs` | A game's manual as a page of Game Info: `media.asset` chunks, hayro rendering on a worker thread, pages in memory only |
+| `rust/frontend/src/core_ui.rs` | Core's UI events (`ui`, `ui.changed`, `ui.respond`): the picker panel, confirmations in the decision dialog, loaders and notices in the header line. See `docs/architecture.md` → "Core UI events" |
+| `rust/frontend/src/decks.rs` | Decks: the Decks screen (Systems grid in its `decks` mode), the Deck screen (games list in its `deck` mode), deck menus, Move, covers and the session deck list |
 | `rust/frontend/src/{context_page,alternates,discs,title_versions}.rs` | Context-menu pages: the shared page (Manage and Write to token included), alternate versions, a multi-disc game's discs, a search result's versions |
 | `rust/frontend/src/{input,actions,gamepad,keyboard}.rs` | Key path: duplicate guard, swaps, hold-repeat, the text field owner; keyboard bindings; desktop gamepads; the on-screen keyboard's shared state and buttons |
 | `rust/frontend/src/{media_cache,hub_covers,customization}.rs` | Bounded in-memory cover cache, cold-boot cover manifest, user overrides |
