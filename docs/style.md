@@ -833,10 +833,10 @@ future theme work, not per-surface override.
 
 Text is typed on the shared on-screen keyboard (`OnScreenKeyboard` in
 `ui/keyboard.slint`; layout and editing rules in `zaparoo_app::keyboard`),
-into the shared field (`TextField` in the same file). The Search screen and
-the rename screen use it; `frontend::keyboard` holds the buttons both share,
-and `input::text_owner` names the one screen whose field takes what a real
-keyboard types.
+into the shared field (`TextField` in the same file). The Search screen,
+the rename screen and the RetroAchievements login use it;
+`frontend::keyboard` holds the buttons they share, and `input::text_owner`
+names the one screen whose field takes what a real keyboard types.
 
 - **Layout.** QWERTY, every row ten units wide, with a digit row on top.
   A use that does not care about case or punctuation takes the basic
@@ -877,6 +877,14 @@ keyboard types.
   Left from the card returns to the key it was entered from. With nothing
   beside the keyboard a row wraps on itself. The card's rows loop top to
   bottom, like a list picker's.
+- **A password shows only the character just typed.** Every other
+  character is a dot. The new one stays readable for
+  `PASSWORD_REVEAL_MS` (a second and a half), then joins the dots; the
+  next character, a delete or a cursor move hides it at once. The same
+  rule covers the on-screen keys, a pad and a real keyboard. Only the
+  field repaints when the reveal runs out. A password keeps its spaces
+  as typed (`TextBuffer::verbatim`), and is never written to the state
+  file. The rules are `keyboard::Mask` in `zaparoo_app`.
 - **No system keyboard.** Latin letters and digits only; other scripts
   need a real keyboard.
 

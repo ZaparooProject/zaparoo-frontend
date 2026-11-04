@@ -289,6 +289,8 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
         fixture_search(&app, screen);
     } else if screen.contains("rename") {
         fixture_rename(&app, screen.contains("caps"));
+    } else if screen.contains("ra-login") {
+        fixture_ra_login(&app, screen.contains("error"));
     } else if screen.contains("file-browser") {
         fixture_file_browser(&app, scene_w, scene_h, crt, screen);
     }
@@ -869,6 +871,93 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
         ov.set_online_list_index(if backups { 4 } else { 1 });
         ov.set_online_list_open(true);
     }
+    // "…-launcher-prefs" renders the launcher preference list over the
+    // Library page, an entry held mid-move; "…-launcher-prefs-add" its Add
+    // page.
+    if screen.contains("launcher-prefs") {
+        use generated::{LauncherPrefsPage, LauncherPrefsRow, LauncherPrefsRowKind};
+        let ov = app.global::<generated::Overlays>();
+        let row =
+            |kind: LauncherPrefsRowKind, id: &str, detail: &str, enabled: bool, held: bool| {
+                LauncherPrefsRow {
+                    kind,
+                    id: id.into(),
+                    detail: detail.into(),
+                    enabled,
+                    held,
+                }
+            };
+        let add = screen.contains("launcher-prefs-add");
+        let rows = if add {
+            vec![
+                row(LauncherPrefsRowKind::Group, "DB9", "", false, false),
+                row(LauncherPrefsRowKind::Group, "DualRAM", "", true, false),
+                row(LauncherPrefsRowKind::Group, "LLAPI", "", true, false),
+                row(
+                    LauncherPrefsRowKind::Launcher,
+                    "NESdb9",
+                    "Nintendo Entertainment System",
+                    false,
+                    false,
+                ),
+                row(
+                    LauncherPrefsRowKind::Launcher,
+                    "RAMegaDrive",
+                    "Sega Genesis",
+                    true,
+                    false,
+                ),
+                row(
+                    LauncherPrefsRowKind::Launcher,
+                    "SNES",
+                    "Super Nintendo",
+                    true,
+                    false,
+                ),
+                row(
+                    LauncherPrefsRowKind::Launcher,
+                    "SNES_dualsdram",
+                    "Super Nintendo",
+                    true,
+                    false,
+                ),
+                row(
+                    LauncherPrefsRowKind::Launcher,
+                    "PSX",
+                    "PlayStation",
+                    true,
+                    false,
+                ),
+            ]
+        } else {
+            vec![
+                row(
+                    LauncherPrefsRowKind::Group,
+                    "RetroAchievements",
+                    "",
+                    true,
+                    false,
+                ),
+                row(LauncherPrefsRowKind::Group, "Sinden", "", true, true),
+                row(
+                    LauncherPrefsRowKind::Launcher,
+                    "SNES_dualsdram",
+                    "Super Nintendo",
+                    true,
+                    false,
+                ),
+            ]
+        };
+        ov.set_launcher_prefs_page(if add {
+            LauncherPrefsPage::Add
+        } else {
+            LauncherPrefsPage::List
+        });
+        ov.set_launcher_prefs_rows(slint::ModelRc::new(slint::VecModel::from(rows)));
+        ov.set_launcher_prefs_index(if add { 2 } else { 1 });
+        ov.set_launcher_prefs_moving(!add);
+        ov.set_launcher_prefs_open(true);
+    }
     // "log-upload" renders the uploader's finished state with its link.
     if screen.contains("log-upload") {
         let lv = app.global::<generated::LogUploadView>();
@@ -1171,6 +1260,40 @@ fn fixture_search(app: &App, screen: &str) {
     })));
 }
 
+/// The `RetroAchievements` login on its password, the character just typed
+/// still showing; "…-error" after `RetroAchievements` turned it down.
+fn fixture_ra_login(app: &App, error: bool) {
+    let view = app.global::<generated::RaLoginView>();
+    let mut keys = keyboard::Keyboard::masked(
+        zaparoo_app::keyboard::Layers::Full,
+        zaparoo_app::retro_achievements::FIELD_MAX_CHARS,
+    );
+    for c in "hunter2".chars() {
+        keys.insert(c);
+    }
+    if error {
+        if let Some(ticket) = keys.reveal_ticket() {
+            keys.expire_reveal(ticket);
+        }
+    }
+    keys.focus(zaparoo_app::keyboard::Key::Char('2'));
+    let (before, at, after) = keys.display();
+    view.set_before(before);
+    view.set_at(at);
+    view.set_after(after);
+    view.set_keys(slint::ModelRc::new(slint::VecModel::from(keys.cells())));
+    view.set_key_rows(i32::try_from(keys.row_count()).unwrap_or(5));
+    view.set_key_index(i32::try_from(keys.index()).unwrap_or(0));
+    view.set_key_kind(KeyKind::Char);
+    view.set_step(generated::RaLoginStep::Password);
+    view.set_can_submit(true);
+    view.set_status(if error {
+        generated::RaLoginStatus::WrongCredentials
+    } else {
+        generated::RaLoginStatus::Idle
+    });
+}
+
 /// The rename screen: a tile's name being edited, the cursor inside it.
 fn fixture_rename(app: &App, caps: bool) {
     let view = app.global::<generated::RenameView>();
@@ -1332,6 +1455,8 @@ fn fixture_screen(screen: &str) -> Screen {
         Screen::Hub
     } else if screen.contains("rename") {
         Screen::Rename
+    } else if screen.contains("ra-login") {
+        Screen::RaLogin
     } else if screen.contains("file-browser") {
         Screen::FileBrowser
     } else if screen.contains("search-results") {
@@ -2121,6 +2246,12 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
     let page = screen.contains("settings-page");
     let playtime = screen.contains("settings-page-playtime");
     let online = screen.contains("settings-page-online");
+    // "…-settings-page-ra": the Library page's RetroAchievements section,
+    // logged in with a system whose own default wins; "…-ra-new" before
+    // anything is set up. "…-launcher-prefs" puts the preference list
+    // over the Library page, "…-launcher-prefs-add" its Add page.
+    let ra = screen.contains("settings-page-ra") || screen.contains("launcher-prefs");
+    let ra_setup = screen.contains("ra-new");
     // "…-online-unlinked": the same page before an account is linked, with
     // the cursor on a row that waits for one.
     let unlinked = screen.contains("online-unlinked");
@@ -2144,6 +2275,11 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
         can_request_playtime_access: playtime,
         can_link_online: online,
         online_linked: online && !unlinked,
+        launcher_preference: ra,
+        retro_achievements: ra,
+        ra_logged_in: ra && !ra_setup,
+        ra_installed: ra && !ra_setup,
+        ra_conflict: ra && !ra_setup,
     };
     // The card and its row heights, from the rule the driver uses.
     let geometry = rules::page_geometry(&inputs);
@@ -2166,10 +2302,21 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
                 Row::Header(_) => geometry.header_height,
                 Row::Field { id, control } => {
                     out.control = control.into();
-                    out.enabled = !(unlinked && rules::needs_online_link(id));
+                    let waits = (unlinked && rules::needs_online_link(id))
+                        || (ra_setup && rules::needs_ra_install(id));
+                    out.enabled = !waits;
                     match control {
                         Control::Toggle => {
-                            out.checked = id == "showHidden" || (id == "playtimeSync" && !unlinked);
+                            out.checked = id == "showHidden"
+                                || (id == "playtimeSync" && !unlinked)
+                                || (!ra_setup
+                                    && matches!(
+                                        id,
+                                        "raLaunchers"
+                                            | "raProgressPopups"
+                                            | "raChallengePopups"
+                                            | "raLeaderboardPopups"
+                                    ));
                         }
                         Control::Picker | Control::Info => {
                             out.value = match id {
@@ -2180,7 +2327,17 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
                                 "onlineWarp" => "active",
                                 "onlineBackupSchedule" => "daily",
                                 "onlineRemoteStatus" => "waiting",
+                                "raAccount" if ra_setup => "loggedOut",
+                                "raAccount" => "loggedIn",
+                                "raConflict" => "1",
+                                "raPopupPosition" => "left",
                                 _ => "auto",
+                            }
+                            .into();
+                            out.value_name = match id {
+                                "raAccount" => "Callan",
+                                "raConflict" => "Super Nintendo",
+                                _ => "",
                             }
                             .into();
                         }
@@ -2234,6 +2391,11 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
                         "onlineUnlinkAccount"
                     }
             })
+            .and_then(|i| i32::try_from(i).ok())
+            .unwrap_or(2)
+    } else if ra {
+        rows.iter()
+            .position(|row| row.id == if ra_setup { "raLogIn" } else { "raLaunchers" })
             .and_then(|i| i32::try_from(i).ok())
             .unwrap_or(2)
     } else if page {
@@ -2744,6 +2906,8 @@ mod fixture_tests {
             ("crt-search-scoped", Screen::Search),
             ("search-results", Screen::SearchResults),
             ("rename", Screen::Rename),
+            ("crt-ra-login", Screen::RaLogin),
+            ("settings-page-launcher-prefs", Screen::Settings),
             ("crt-file-browser-list", Screen::FileBrowser),
             ("game-info", Screen::Games),
             ("settings-page", Screen::Settings),

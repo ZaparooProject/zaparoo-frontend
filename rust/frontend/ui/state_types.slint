@@ -1,5 +1,5 @@
 // Closed UI discriminants shared with the generated Rust API.
-export enum Screen { hub, systems, favorite-systems, games, favorites, recents, search, search-results, settings, about, update, rename, file-browser, none }
+export enum Screen { hub, systems, favorite-systems, games, favorites, recents, search, search-results, settings, about, update, rename, ra-login, file-browser, none }
 export enum GamesMode { browse, favorites, recents, search }
 export enum SystemsMode { category, favorites }
 // What a menu row is: something to pick, a section's name (never focused),
@@ -45,6 +45,13 @@ export enum ManualState { closed, loading, ready, too-large, failed }
 export enum ManualFit { width, page }
 // The Online page's two list screens, and what the open one is doing.
 export enum OnlineListKind { none, backups, activity }
+// The RetroAchievements login screen: which field is up, and what the last
+// login attempt came to.
+export enum RaLoginStep { username, password }
+export enum RaLoginStatus { idle, verifying, wrong-credentials, refused, unreachable, save-failed, unsupported }
+// The launcher preference modal's pages, and what each of its rows is.
+export enum LauncherPrefsPage { list, entry, add }
+export enum LauncherPrefsRowKind { launcher, group, add, move, remove }
 export enum OnlineListStatus { ready, loading, failed, empty, backing-up, restoring }
 // Why a list failed to load, when Core's answer says.
 export enum OnlineListFailure { other, unlinked, needs-warp }
@@ -58,7 +65,7 @@ export enum LogPhase { uploading, done, failed }
 export enum PairPhase { closed, starting, showing, paired, expired }
 // The "link Online account" panel, on the same terms as pairing.
 export enum OnlineLinkPhase { closed, starting, showing, linked, failed, expired }
-export enum PressOwner { none, hub, systems, games, file-browser, settings, setup, context, list, online-list, letter, card-write, dialog, log, wake, update }
+export enum PressOwner { none, hub, systems, games, file-browser, settings, setup, context, list, online-list, letter, card-write, dialog, log, wake, update, launcher-prefs }
 export enum StatusKind {
     none, disconnected, reconnecting, connecting, core-error, indexing-paused,
     indexing, optimizing, importing-paused, importing, indexed-files,
@@ -66,7 +73,7 @@ export enum StatusKind {
 }
 export enum Orientation { horizontal, cw, ccw }
 export enum VideoStandard { ntsc, pal }
-export enum DialogKind { none, quit-confirm, quit-blocked, restart-setting, notice, core-version, first-run, hub-full, action-error, unlink-online, restore-online-backup, update-stop }
+export enum DialogKind { none, quit-confirm, quit-blocked, restart-setting, notice, core-version, first-run, hub-full, action-error, unlink-online, restore-online-backup, update-stop, ra-log-out }
 export enum DialogButton { ok, yes, no, retry, cancel, i-understand, start-media-update }
 export enum ErrorKind { generic, launch, launch-repair, favorite, media-visibility, media-busy, add-to-hub, save-to-hub, media-index, media-scrape, media-scrapers, media-cancel, launcher, launcher-save, alternate-discovery, disc-list, qr-code, card-write, setting, pairing, online, backup, config-file, image-picker }
 
@@ -94,6 +101,11 @@ export global StateTokens {
     }
     public pure function setup(kind: SetupKind) -> string {
         return kind == SetupKind.scrape ? "scrape" : "index";
+    }
+    public pure function launcher-prefs-page(page: LauncherPrefsPage) -> string {
+        if (page == LauncherPrefsPage.entry) { return "entry"; }
+        if (page == LauncherPrefsPage.add) { return "add"; }
+        return "list";
     }
     public pure function picker(picker: SetupPicker) -> string {
         return picker == SetupPicker.source ? "source" : "systems";

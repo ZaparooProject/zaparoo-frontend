@@ -131,6 +131,8 @@ export global SettingsLabels {
         if (id == "features") { return @tr("Features"); }
         if (id == "backup") { return @tr("Backup"); }
         if (id == "remote") { return @tr("Remote"); }
+        if (id == "launchers") { return @tr("Launchers"); }
+        if (id == "retroAchievements") { return @tr("RetroAchievements"); }
         // Appearance.
         if (id == "colorScheme") { return @tr("Color scheme"); }
         if (id == "colorIntensity") { return @tr("Color intensity"); }
@@ -167,6 +169,19 @@ export global SettingsLabels {
         if (id == "showOriginalFilenames") { return @tr("Show original filenames"); }
         if (id == "showTags") { return @tr("Show tags"); }
         if (id == "listLeftRight") { return @tr("Left and Right in lists"); }
+        if (id == "launcherPreference") { return @tr("Launcher preference"); }
+        // RetroAchievements.
+        if (id == "raAccount") { return @tr("Account"); }
+        if (id == "raLogIn") { return @tr("Log in…"); }
+        if (id == "raLogOut") { return @tr("Log out"); }
+        if (id == "raLaunchers") { return @tr("RetroAchievements launchers"); }
+        if (id == "raInstall") { return @tr("Install RetroAchievements with Update All"); }
+        if (id == "raHardcore") { return @tr("Hardcore mode"); }
+        if (id == "raProgressPopups") { return @tr("Progress popups"); }
+        if (id == "raChallengePopups") { return @tr("Challenge popups"); }
+        if (id == "raLeaderboardPopups") { return @tr("Leaderboard popups"); }
+        if (id == "raPopupPosition") { return @tr("Popup position"); }
+        if (id == "raListHotkey") { return @tr("Achievement list shortcut"); }
         // Online.
         if (id == "onlineUnavailable") { return @tr("Online features are not available for this client"); }
         if (id == "onlineStatus") { return @tr("Status"); }
@@ -202,6 +217,7 @@ export global SettingsLabels {
         // The two media jobs cannot run at once; each waits for the other.
         if (id == "updateMediaDb") { return @tr("Wait for the metadata update to finish."); }
         if (id == "runScraper") { return @tr("Wait for the media database update to finish."); }
+        if (id == "raLaunchers") { return @tr("Install RetroAchievements with Update All first."); }
         return "";
     }
     public pure function description(id: string) -> string {
@@ -236,6 +252,16 @@ export global SettingsLabels {
         if (id == "showOriginalFilenames") { return @tr("Shows real filenames instead of cleaned-up display titles."); }
         if (id == "showTags") { return @tr("Shows region, revision, and disc tags after game names."); }
         if (id == "listLeftRight") { return @tr("Turns the page or changes the image in the detailed list."); }
+        if (id == "launcherPreference") { return @tr("Launchers and groups tried first on every system."); }
+        if (id == "raLogIn") { return @tr("Saves your RetroAchievements login on this MiSTer."); }
+        if (id == "raLogOut") { return @tr("Removes your RetroAchievements login from this MiSTer."); }
+        if (id == "raLaunchers") { return @tr("Uses RetroAchievements launchers where a system has one."); }
+        if (id == "raHardcore") { return @tr("Earns hardcore unlocks. Turns off save states and cheats."); }
+        if (id == "raProgressPopups") { return @tr("Shows progress toward an achievement while you play."); }
+        if (id == "raChallengePopups") { return @tr("Shows when a timed or conditional challenge starts."); }
+        if (id == "raLeaderboardPopups") { return @tr("Shows leaderboard attempts and submitted scores."); }
+        if (id == "raPopupPosition") { return @tr("Where achievement popups appear on screen."); }
+        if (id == "raListHotkey") { return @tr("Hold Y and press Menu in a game to see its achievements."); }
         if (id == "onlineLinkAccount") { return @tr("Connects this device to your Zaparoo Online account with a code."); }
         if (id == "onlineUnlinkAccount") { return @tr("Removes this device's Zaparoo Online account credentials."); }
         if (id == "onlineAllFeatures") { return @tr("Turns every online feature on or off. Each can still be changed on its own."); }
@@ -263,6 +289,8 @@ export global SettingsLabels {
         if (key == "pair") { return @tr("Pair"); }
         if (key == "link") { return @tr("Link"); }
         if (key == "unlink") { return @tr("Unlink"); }
+        if (key == "logIn") { return @tr("Log in"); }
+        if (key == "logOut") { return @tr("Log out"); }
         return @tr("Open");
     }
 
@@ -335,6 +363,17 @@ export global SettingsLabels {
             if (value == "weekly") { return @tr("Weekly"); }
             return @tr("Manual");
         }
+        if (id == "raPopupPosition") {
+            if (value == "center") { return @tr("Center"); }
+            if (value == "right") { return @tr("Right"); }
+            return @tr("Left");
+        }
+        if (id == "raAccount") {
+            if (value == "loggedIn") { return @tr("Logged in"); }
+            return @tr("Not logged in");
+        }
+        // The count only picks the label's plural; the row has no value.
+        if (id == "raConflict") { return ""; }
         if (id == "onlineStatus") {
             if (value == "linked") { return @tr("Linked"); }
             return @tr("Not linked");
@@ -458,9 +497,14 @@ export component SettingsRowView inherits Rectangle {
         ? label.height + root.status-gap + status-measure.preferred-height
         : label.height;
 
+    // The conflict row names the systems it is about in its own label.
+    property <string> label-text: root.entry.id == "raConflict"
+        ? @tr("{0} uses its own launcher" | "{0} use their own launcher" % root.entry.value.to-float(), root.entry.value-name)
+        : SettingsLabels.label(root.entry.id);
+
     label-measure := Text {
         visible: false;
-        text: SettingsLabels.label(root.entry.id);
+        text: root.label-text;
         font-size: Sizing.font-body;
         font-weight: FontWeight.medium;
     }
@@ -475,7 +519,7 @@ export component SettingsRowView inherits Rectangle {
         width: Math.min(Math.ceil(label-measure.preferred-width / 1px) * 1px + Sizing.stroke(2),
             parent.width - 2 * root.pad);
         overflow: elide;
-        text: SettingsLabels.label(root.entry.id);
+        text: root.label-text;
         color: root.focused ? (root.dim ? Theme.on-accent-muted : root.content-color)
             : (root.dim ? Theme.text-label : (root.is-action ? Theme.accent : Theme.text-primary));
         font-size: Sizing.font-body;
@@ -497,7 +541,9 @@ export component SettingsRowView inherits Rectangle {
         ? SettingsLabels.scope(root.entry.scope-kind, root.entry.value-name)
         : (root.entry.id == "onlineStatus" && root.entry.value == "linked" && root.entry.value-name != "")
             ? @tr("Linked as {}", root.entry.value-name)
-            : SettingsLabels.value(root.entry.id, root.entry.value);
+            : (root.entry.id == "raAccount" && root.entry.value == "loggedIn" && root.entry.value-name != "")
+                ? @tr("Logged in as {}", root.entry.value-name)
+                : SettingsLabels.value(root.entry.id, root.entry.value);
 
     // An info row only reports: its value sits flush right in the label
     // color, with no chevron, so it does not read as something to open.

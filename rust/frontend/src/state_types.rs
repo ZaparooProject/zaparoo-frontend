@@ -28,7 +28,7 @@ tokens!(Screen {
     Games => "games", Favorites => "favorites", Recents => "recents",
     Search => "search", SearchResults => "search-results",
     Settings => "settings", About => "about", Update => "update", Rename => "rename",
-    FileBrowser => "file-browser", None => "",
+    RaLogin => "ra-login", FileBrowser => "file-browser", None => "",
 });
 tokens!(SettingsPage {
     Root => "", Appearance => "pageAppearance", Library => "pageLibraryData",
@@ -176,6 +176,7 @@ mod tests {
             Screen::About,
             Screen::Update,
             Screen::Rename,
+            Screen::RaLogin,
             Screen::FileBrowser,
             Screen::None,
         ] {

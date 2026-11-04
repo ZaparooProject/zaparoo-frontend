@@ -114,6 +114,37 @@ fn online_list_target(ov: &Overlays<'_>) -> Option<Target> {
         .then(|| target(PressOwner::OnlineList, index, row.id.to_string()))
 }
 
+/// The launcher preference list: any row but a held one, which Accept
+/// sets down rather than presses.
+fn launcher_prefs_target(ov: &Overlays<'_>) -> Option<Target> {
+    if ov.get_launcher_prefs_moving() {
+        return None;
+    }
+    let index = ov.get_launcher_prefs_index();
+    let row = ov
+        .get_launcher_prefs_rows()
+        .row_data(usize::try_from(index).ok()?)?;
+    Some(target(
+        PressOwner::LauncherPrefs,
+        index,
+        format!(
+            "{:?}:{:?}:{}",
+            ov.get_launcher_prefs_page(),
+            row.kind,
+            row.id
+        ),
+    ))
+}
+
+/// The open Settings list modal's row, or none to press.
+fn list_modal_target(ov: &Overlays<'_>) -> Option<Target> {
+    if ov.get_online_list_open() {
+        online_list_target(ov)
+    } else {
+        launcher_prefs_target(ov)
+    }
+}
+
 fn current_with(app: &App, prepare_grid: impl FnOnce()) -> Option<Target> {
     let shell = app.global::<Shell>();
     let ov = app.global::<Overlays>();
@@ -160,8 +191,8 @@ fn current_with(app: &App, prepare_grid: impl FnOnce()) -> Option<Target> {
     if ov.get_online_open() {
         return None;
     }
-    if ov.get_online_list_open() {
-        return online_list_target(&ov);
+    if ov.get_online_list_open() || ov.get_launcher_prefs_open() {
+        return list_modal_target(&ov);
     }
     if ov.get_card_write_open() {
         return Some(target(

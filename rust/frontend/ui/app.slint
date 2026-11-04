@@ -8,8 +8,8 @@
 // logic; forward orchestration lives in the router.
 
 import { Theme, Sizing, Motion, Layout } from "theme.slint";
-import { MenuRole, ContextPage, KeyKind, SearchZone, SearchPane, SearchScope, FileBrowserMode, Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, StateTokens, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogButton, ErrorKind, ManualState, ManualFit } from "state_types.slint";
-export { MenuRole, ContextPage, KeyKind, SearchZone, SearchPane, SearchScope, FileBrowserMode, Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogButton, ErrorKind, ManualState, ManualFit }
+import { MenuRole, ContextPage, KeyKind, SearchZone, SearchPane, SearchScope, FileBrowserMode, Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, StateTokens, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogButton, ErrorKind, ManualState, ManualFit, RaLoginStep, RaLoginStatus, LauncherPrefsPage, LauncherPrefsRowKind } from "state_types.slint";
+export { MenuRole, ContextPage, KeyKind, SearchZone, SearchPane, SearchScope, FileBrowserMode, Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogButton, ErrorKind, ManualState, ManualFit, RaLoginStep, RaLoginStatus, LauncherPrefsPage, LauncherPrefsRowKind }
 import { FastScrollRail, GlyphSource, Brand, Buttons, HelpEntry, Status, HeaderBar, StatusLine, ProgressTrack, WaitCue, TopStatusStrip, FooterIndicator, ActiveLabel, HelpBar, SectionHeader, Divider, ScrollCue, ModalShell, QrPlate, StateCue } from "chrome.slint";
 import { GridCell, MarqueeCaption, PressableSurface, Tile, PagedGridView, PageStrip } from "tiles.slint";
 import { ScrollOffset, SelectionCursor, SelectionClip, FocusCursor } from "focus.slint";
@@ -27,6 +27,8 @@ import { SearchView, SearchInput, SearchPaneRow, SearchScreen } from "search.sli
 export { KeyCell, SearchView, SearchInput, SearchPaneRow }
 import { RenameView, RenameInput, RenameScreen } from "rename.slint";
 export { RenameView, RenameInput }
+import { RaLoginView, RaLoginInput, RaLoginScreen } from "ra_login.slint";
+export { RaLoginView, RaLoginInput }
 import { FileBrowserView, FileBrowserInput, FileBrowserScreen } from "file_browser.slint";
 export { FileBrowserView, FileBrowserInput }
 import { UpdateView, UpdatePage, UpdateButton, UpdateOutcome, UpdateStatusKind, UpdateError, UpdateLinuxPhase, UpdateFilter, UpdateRowKind, UpdateRowStatus, UpdateFolderKind, UpdateHelpLabel, UpdateCounts, UpdateRow, UpdateMembership, UpdateHelp } from "update_view.slint";
@@ -79,6 +81,19 @@ export struct OnlineListRow {
     detail: string,
     enabled: bool,
     this-device: bool,
+}
+
+// One row of the launcher preference modal. `id` is the launcher or group
+// as Core names it; the view gives a group its display name.
+export struct LauncherPrefsRow {
+    kind: LauncherPrefsRowKind,
+    id: string,
+    // The system a launcher runs; empty for a group.
+    detail: string,
+    // Something Core lists here is installed for it.
+    enabled: bool,
+    // The entry a Move is carrying.
+    held: bool,
 }
 
 // One first-character bucket of the jump-to-letter picker.
@@ -660,6 +675,14 @@ export global Overlays {
     in-out property <string> online-list-note: "";
     in-out property <[OnlineListRow]> online-list-rows: [];
     in-out property <int> online-list-index: 0;
+    // Settings > Library's launcher preference: one modal, three pages of
+    // its own panel. `entry` is the entry the Entry page acts on.
+    in-out property <bool> launcher-prefs-open: false;
+    in-out property <LauncherPrefsPage> launcher-prefs-page: LauncherPrefsPage.list;
+    in-out property <[LauncherPrefsRow]> launcher-prefs-rows: [];
+    in-out property <int> launcher-prefs-index: 0;
+    in-out property <bool> launcher-prefs-moving: false;
+    in-out property <LauncherPrefsRow> launcher-prefs-entry;
     // QR write deep-link modal: the matrix image is rendered by Rust
     // at module resolution (quiet zone baked in) and scaled up
     // pixelated to the largest whole multiple.
@@ -2463,6 +2486,162 @@ component OnlineListModal inherits ModalShell {
     }
 }
 
+// Settings > Library's launcher preference: Core's ordered list of
+// launchers and groups, with Add… at its end, one entry's Move and Remove,
+// and what can be added, as three pages of one panel. Rust builds every
+// row; groups get their display names here, launchers keep Core's ids.
+// The list is the picker's: the shared cursor, the reserved scroll cues,
+// a window that glides, and rows that answer the pointer.
+component LauncherPrefsModal inherits ModalShell {
+    property <[LauncherPrefsRow]> entries: Overlays.launcher-prefs-rows;
+    property <int> current-index: Overlays.launcher-prefs-index;
+
+    property <length> row-h: Sizing.pct-h(7);
+    property <length> row-sp: Sizing.pct-h(1);
+    property <length> stride: root.row-h + root.row-sp;
+    property <length> arrow: Sizing.pct-h(3);
+    property <length> max-viewport: Sizing.pct-h(46);
+    property <int> visible-rows: Math.max(1, Math.min(root.entries.length,
+        Math.floor((root.max-viewport + root.row-sp) / root.stride)));
+    property <bool> scrollable: root.entries.length > root.visible-rows;
+    property <length> arrow-band: root.scrollable ? root.arrow + Sizing.pct-h(0.5) : 0px;
+    property <length> viewport-h: root.entries.length == 0 ? 0px
+        : root.visible-rows * root.row-h + Math.max(0, root.visible-rows - 1) * root.row-sp;
+    property <int> top: 0;
+    function reveal-current() {
+        root.top = Math.max(0, Math.min(Math.max(0, root.entries.length - root.visible-rows),
+            Math.min(root.current-index, Math.max(root.top, root.current-index - root.visible-rows + 1))));
+    }
+    changed current-index => {
+        root.reveal-current();
+        root.blink-on = true;
+    }
+    changed visible-rows => { root.reveal-current(); }
+    init => { root.reveal-current(); }
+
+    // A held entry blinks, as a held Hub tile does: only its own text
+    // repaints.
+    property <bool> blink-on: true;
+    Timer {
+        interval: Motion.held-blink-ms;
+        running: Overlays.launcher-prefs-moving && Motion.enabled;
+        triggered => { root.blink-on = !root.blink-on; }
+    }
+
+    pure function group-name(id: string) -> string {
+        if (id == "DualRAM") { return @tr("Dual SDRAM"); }
+        if (id == "KodiTV") { return @tr("Kodi TV"); }
+        if (id == "KodiMusic") { return @tr("Kodi music"); }
+        if (id == "MisterArcade") { return @tr("MiSTer arcade"); }
+        if (id == "MediaPlayers") { return @tr("Media players"); }
+        if (id == "Native") { return @tr("Native"); }
+        if (id == "Unstable") { return @tr("Unstable"); }
+        if (id == "Video") { return @tr("Video"); }
+        return id;
+    }
+    pure function row-label(row: LauncherPrefsRow) -> string {
+        if (row.kind == LauncherPrefsRowKind.add) { return @tr("Add…"); }
+        if (row.kind == LauncherPrefsRowKind.move) { return @tr("Move"); }
+        if (row.kind == LauncherPrefsRowKind.remove) { return @tr("Remove"); }
+        if (row.kind == LauncherPrefsRowKind.group) { return root.group-name(row.id); }
+        return row.id;
+    }
+    pure function row-detail(row: LauncherPrefsRow) -> string {
+        if (row.kind == LauncherPrefsRowKind.group) {
+            return row.enabled ? @tr("Group") : @tr("Group, not installed");
+        }
+        if (row.kind == LauncherPrefsRowKind.launcher) {
+            if (row.enabled) { return row.detail; }
+            return row.detail == "" ? @tr("Not installed") : @tr("{}, not installed", row.detail);
+        }
+        return "";
+    }
+
+    title: Overlays.launcher-prefs-page == LauncherPrefsPage.entry ? root.row-label(Overlays.launcher-prefs-entry)
+        : Overlays.launcher-prefs-page == LauncherPrefsPage.add ? @tr("Add")
+        : @tr("Launcher preference");
+    panel-width: Math.min(root.width * 0.84, Sizing.pct-h(120));
+    content-height: root.viewport-h + 2 * root.arrow-band;
+
+    if root.scrollable: ScrollCue {
+        x: Sizing.snap((root.panel-width - self.width) / 2);
+        y: root.content-y;
+        width: root.arrow;
+        glyph: "icons/ScrollUp";
+        live: root.top > 0;
+    }
+
+    list-scroll := ScrollOffset {
+        target: root.top * root.stride;
+        step: root.viewport-h;
+        reveal: true;
+        duration: Motion.scroll-ms;
+        viewport: root.viewport-h;
+        scope: "launcher-prefs:" + StateTokens.launcher-prefs-page(Overlays.launcher-prefs-page) + ":" + Motion.epoch;
+    }
+    Rectangle {
+        x: root.pad;
+        y: root.content-y + root.arrow-band;
+        width: root.content-width;
+        height: root.viewport-h;
+        clip: true;
+
+        Rectangle {
+        y: root.top * root.stride - list-scroll.offset;
+        height: parent.height;
+
+        sel := SelectionCursor {
+            press-held: PressFeedback.active(PressOwner.launcher-prefs, root.current-index);
+            target: { x: 0px, y: (root.current-index - root.top) * root.stride,
+                w: parent.width, h: root.row-h, column: 0, row: root.current-index,
+                scope: "launcher-prefs:" + StateTokens.launcher-prefs-page(Overlays.launcher-prefs-page) + ":" + root.top,
+                valid: root.current-index >= 0 && root.current-index < root.entries.length };
+        }
+        for row[i] in root.entries: Rectangle {
+            x: 0;
+            y: (i - root.top) * root.stride;
+            height: root.row-h;
+            property <bool> lit: sel.fill-bottom > self.y && sel.fill-top < self.y + self.height;
+            if !(row.held && !root.blink-on): OnlineListRowBody {
+                label: root.row-label(row);
+                detail: root.row-detail(row);
+                // Muted, never hidden: docs/style.md, "Hidden and disabled
+                // tiles". Core keeps an entry that is not installed yet.
+                label-color: !row.enabled ? Theme.text-label
+                    : (row.kind == LauncherPrefsRowKind.add ? Theme.accent : Theme.text-primary);
+                detail-color: Theme.text-label;
+                weight: FontWeight.normal;
+            }
+            if lit && !(row.held && !root.blink-on): SelectionClip {
+                row-top: parent.y; row-height: parent.height;
+                fill-top: sel.fill-top; fill-bottom: sel.fill-bottom;
+                fill: sel.fill;
+                OnlineListRowBody {
+                    label: root.row-label(row);
+                    detail: root.row-detail(row);
+                    label-color: sel.content;
+                    detail-color: sel.content;
+                    weight: FontWeight.medium;
+                }
+            }
+            TouchArea {
+                mouse-cursor: pointer;
+                changed has-hover => { if (self.has-hover) { Overlays.pointer-choice(PressOwner.launcher-prefs, i, false); } }
+                clicked => { Overlays.pointer-choice(PressOwner.launcher-prefs, i, true); }
+            }
+        }
+        }
+    }
+
+    if root.scrollable: ScrollCue {
+        x: Sizing.snap((root.panel-width - self.width) / 2);
+        y: root.content-y + root.arrow-band + root.viewport-h + root.arrow-band - root.arrow;
+        width: root.arrow;
+        glyph: "icons/ScrollDown";
+        live: root.top + root.visible-rows < root.entries.length;
+    }
+}
+
 // QR shell: translated purpose and instructions above an integer module
 // matrix, with a readable documentation URL for composite video.
 component QrCodeModal inherits ModalShell {
@@ -3340,6 +3519,7 @@ component RouteScreen inherits Rectangle {
     if root.screen-token == Screen.search: SearchScreen {}
 
     if root.screen-token == Screen.rename: RenameScreen {}
+    if root.screen-token == Screen.ra-login: RaLoginScreen {}
 
     if root.screen-token == Screen.file-browser: FileBrowserScreen {}
 
@@ -3393,6 +3573,7 @@ export component App inherits Window {
         if (Shell.active-screen == Screen.recents) { return @tr("Recently played"); }
         if (Shell.active-screen == Screen.search) { return SearchView.title(); }
         if (Shell.active-screen == Screen.rename) { return @tr("Rename tile"); }
+        if (Shell.active-screen == Screen.ra-login) { return @tr("RetroAchievements"); }
         if (Shell.active-screen == Screen.file-browser) {
             return FileBrowserView.places ? @tr("Places") : FileBrowserView.title;
         }
@@ -3404,7 +3585,7 @@ export component App inherits Window {
 
     pure function has-modal() -> bool {
         return LogUploadView.open || SetupModalView.open || GameInfoView.modal-open || Overlays.card-write-open || Overlays.qr-open
-            || Overlays.pair-open || Overlays.online-open || Overlays.online-list-open || Overlays.dialog-open || Overlays.list-open || Overlays.letter-open
+            || Overlays.pair-open || Overlays.online-open || Overlays.online-list-open || Overlays.launcher-prefs-open || Overlays.dialog-open || Overlays.list-open || Overlays.letter-open
             || Overlays.context-open;
     }
 
@@ -3556,6 +3737,69 @@ export component App inherits Window {
             { buttons: ["ButtonB"], label: @tr("Back") },
         ];
     }
+    // The RetroAchievements login: the rename keyboard's buttons, with Next
+    // on the username and Log in on the password. While the login is
+    // checked, Back is the only thing that does anything.
+    pure function ra-login-help-entries() -> [HelpEntry] {
+        if (RaLoginView.status == RaLoginStatus.verifying) {
+            return [{ buttons: ["ButtonB"], label: @tr("Cancel") }];
+        }
+        if (RaLoginView.key-kind == KeyKind.submit && !RaLoginView.can-submit) {
+            if (Buttons.style == "style_e") {
+                return [
+                    { buttons: ["Dpad"], label: @tr("Move") },
+                    { buttons: ["ButtonB"], label: @tr("Back") },
+                ];
+            }
+            return [
+                { buttons: ["Dpad"], label: @tr("Move") },
+                { buttons: ["ButtonY"], label: @tr("Delete") },
+                { buttons: ["ButtonX"], label: @tr("Space") },
+                { buttons: ["ButtonB"], label: @tr("Back") },
+            ];
+        }
+        if (Buttons.style == "style_e") {
+            return [
+                { buttons: ["Dpad"], label: @tr("Move") },
+                { buttons: ["ButtonA"], label: root.ra-login-accept() },
+                { buttons: ["ButtonB"], label: @tr("Back") },
+            ];
+        }
+        return [
+            { buttons: ["Dpad"], label: @tr("Move") },
+            { buttons: ["ButtonA"], label: root.ra-login-accept() },
+            { buttons: ["ButtonY"], label: @tr("Delete") },
+            { buttons: ["ButtonX"], label: @tr("Space") },
+            { buttons: ["ButtonB"], label: @tr("Back") },
+        ];
+    }
+    pure function ra-login-accept() -> string {
+        if (RaLoginView.key-kind != KeyKind.submit) { return @tr("Select"); }
+        return RaLoginView.step == RaLoginStep.password ? @tr("Log in") : @tr("Next");
+    }
+    // The launcher preference modal: a held entry moves, everything else
+    // is a list to walk.
+    pure function launcher-prefs-help-entries() -> [HelpEntry] {
+        if (Overlays.launcher-prefs-moving) {
+            return [
+                { buttons: ["Dpad"], label: @tr("Move") },
+                { buttons: ["ButtonA"], label: @tr("Done") },
+                { buttons: ["ButtonB"], label: @tr("Cancel") },
+            ];
+        }
+        if (Overlays.launcher-prefs-page == LauncherPrefsPage.add) {
+            return [
+                { buttons: ["Dpad"], label: @tr("Move") },
+                { buttons: ["ButtonA"], label: @tr("Add") },
+                { buttons: ["ButtonB"], label: @tr("Back") },
+            ];
+        }
+        return [
+            { buttons: ["Dpad"], label: @tr("Move") },
+            { buttons: ["ButtonA"], label: @tr("Select") },
+            { buttons: ["ButtonB"], label: Overlays.launcher-prefs-page == LauncherPrefsPage.list ? @tr("Close") : @tr("Back") },
+        ];
+    }
     // The file browser: Open a folder or a Place, Select a file.
     pure function file-browser-help-entries() -> [HelpEntry] {
         if (FileBrowserView.focused-opens || FileBrowserView.focused-picks) {
@@ -3658,6 +3902,9 @@ export component App inherits Window {
         // spent there is nothing to call off, so both buttons just close.
         // Online link: while a code is live, Back calls it off; once it has
         // an outcome both buttons just close.
+        if (Overlays.launcher-prefs-open) {
+            return root.launcher-prefs-help-entries();
+        }
         if (Overlays.online-list-open) {
             if (Overlays.online-list-kind == OnlineListKind.backups && Overlays.online-list-rows.length > 0
                 && Overlays.online-list-index >= 0 && Overlays.online-list-index < Overlays.online-list-rows.length
@@ -3978,6 +4225,9 @@ export component App inherits Window {
         if (Shell.active-screen == Screen.rename && !Shell.transitioning) {
             return root.rename-help-entries();
         }
+        if (Shell.active-screen == Screen.ra-login && !Shell.transitioning) {
+            return root.ra-login-help-entries();
+        }
         if (Shell.active-screen == Screen.file-browser && !Shell.transitioning) {
             return root.file-browser-help-entries();
         }
@@ -4231,6 +4481,7 @@ export component App inherits Window {
 
     if Overlays.online-open: OnlineLinkModal {}
     if Overlays.online-list-open: OnlineListModal {}
+    if Overlays.launcher-prefs-open: LauncherPrefsModal {}
 
     if LogUploadView.open: LogUploadModal {
         phase: LogUploadView.phase;

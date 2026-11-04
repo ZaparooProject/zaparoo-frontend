@@ -19,6 +19,8 @@ mod card_write;
 mod context_page;
 mod cover_fade;
 mod cue;
+#[cfg(not(feature = "hosted"))]
+mod curl;
 mod customization;
 mod discs;
 mod display;
@@ -46,6 +48,7 @@ mod image_picker;
 mod input;
 mod keyboard;
 mod latch_protocol;
+mod launcher_prefs;
 mod launcher_scan;
 mod launchers;
 mod log_upload;
@@ -83,7 +86,9 @@ mod playtime_access;
 #[cfg(feature = "desktop")]
 mod power_supply;
 mod qr;
+mod ra_login;
 mod rename;
+mod retro_achievements;
 // Route motion has to be checked by rendering, and that needs the
 // software renderer, which only the MiSTer feature set links.
 mod press_feedback;
@@ -1027,6 +1032,7 @@ fn run_application(
     games::bind_input(&ctx, &app);
     search::bind(&ctx, &app);
     rename::bind(&ctx, &app);
+    ra_login::bind(&ctx, &app);
     file_browser::bind(&ctx, &app);
     settings::bind_input(&ctx, &app);
     media_setup::bind_input(&ctx, &app);
@@ -1056,7 +1062,8 @@ fn run_application(
     bind_history_changes(&ctx, &app, &client);
     pairing::bind_events(&ctx, &app, &client);
     online::bind_events(&ctx, &app, &client);
-    bind_launchers(&ctx, &store);
+    bind_launchers(&ctx, &app, &store);
+    retro_achievements::refresh(&ctx, &app);
     bind_controller_report(&ctx, &app);
     start_clock(&app, &handle, clock_twelve_hour, ctx.dormant.subscribe());
     start_status(&app, &ctx);
@@ -1178,7 +1185,7 @@ fn bind_media_status(ctx: &Arc<Ctx>, app: &App, store: &Arc<Store>) {
                     hub::rebuild(&ctx, &app);
                     hub_refresh::schedule(&ctx, &app);
                     games::reproject(&ctx, &app);
-                    fetch_system_defaults(&ctx);
+                    fetch_settings(&ctx, &app);
                 }
             });
         }
@@ -1960,7 +1967,7 @@ fn apply_catalog(ctx: &Arc<Ctx>, app: &App, status: &ResourceStatus<CatalogData>
             if first_catalog {
                 app.global::<Shell>().set_boot_complete(true);
                 router::reset_idle(ctx, app);
-                fetch_system_defaults(ctx);
+                fetch_settings(ctx, app);
                 hub_refresh::schedule(ctx, app);
             }
             // The curtain stays up until the restored screen is complete.
@@ -2059,16 +2066,21 @@ fn seed_startup_state(app: &App, persisted: &persist::PersistedState, boot_curta
 /// Launcher inventory + per-system defaults for the "Change launcher"
 /// picker: the launchers endpoint streams into Shared, the defaults
 /// come from the settings RPC at startup and after a media job finishes.
-fn bind_launchers(ctx: &Arc<Ctx>, store: &Arc<Store>) {
+fn bind_launchers(ctx: &Arc<Ctx>, app: &App, store: &Arc<Store>) {
     use zaparoo_core::endpoints::launchers::LaunchersEndpoint;
     let resource = store.subscribe::<LaunchersEndpoint>(());
     let mut rx = resource.subscribe();
     let shared = ctx.shared.clone();
+    let ctx2 = ctx.clone();
+    let weak = app.as_weak();
     ctx.handle.spawn(async move {
         loop {
             let snapshot = rx.borrow_and_update().clone();
             if let ResourceStatus::Ready(data) = snapshot {
                 lock(&shared).launchers.clone_from(&data.launchers);
+                // What is installed decides rows on the Library page.
+                let ctx = ctx2.clone();
+                let _ = weak.upgrade_in_event_loop(move |app| settings::refresh(&ctx, &app));
             }
             if rx.changed().await.is_err() {
                 return;
@@ -2077,12 +2089,16 @@ fn bind_launchers(ctx: &Arc<Ctx>, store: &Arc<Store>) {
     });
 }
 
-fn fetch_system_defaults(ctx: &Arc<Ctx>) {
+/// Core's per-system defaults and global launcher preference.
+fn fetch_settings(ctx: &Arc<Ctx>, app: &App) {
     let client = ctx.store.client();
-    let shared = ctx.shared.clone();
-    ctx.handle.spawn(async move {
+    let ctx = ctx.clone();
+    let weak = app.as_weak();
+    ctx.handle.clone().spawn(async move {
         if let Ok(result) = client.settings().await {
-            lock(&shared).system_defaults = result.system_defaults;
+            lock(&ctx.shared).system_defaults = result.system_defaults;
+            launcher_prefs::observe(&ctx, result.launcher_preference);
+            let _ = weak.upgrade_in_event_loop(move |app| settings::refresh(&ctx, &app));
         }
     });
 }

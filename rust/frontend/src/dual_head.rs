@@ -637,6 +637,25 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_key_kind => set_key_kind,
     );
 
+    let source = primary.global::<crate::RaLoginView>();
+    let target = crt.global::<crate::RaLoginView>();
+    copy_properties!(source, target;
+        get_before => set_before,
+        get_at => set_at,
+        get_after => set_after,
+        get_keys => set_keys,
+        get_key_rows => set_key_rows,
+        get_key_index => set_key_index,
+        get_pressed_key => set_pressed_key,
+        get_shift_active => set_shift_active,
+        get_shift_locked => set_shift_locked,
+        get_symbols_active => set_symbols_active,
+        get_can_submit => set_can_submit,
+        get_step => set_step,
+        get_status => set_status,
+        get_key_kind => set_key_kind,
+    );
+
     mirror_file_browser(primary, crt);
 
     let source = primary.global::<GamesView>();
@@ -969,6 +988,12 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_dialog_arg => set_dialog_arg,
         get_dialog_buttons => set_dialog_buttons,
         get_dialog_focus => set_dialog_focus,
+        get_launcher_prefs_open => set_launcher_prefs_open,
+        get_launcher_prefs_page => set_launcher_prefs_page,
+        get_launcher_prefs_rows => set_launcher_prefs_rows,
+        get_launcher_prefs_index => set_launcher_prefs_index,
+        get_launcher_prefs_moving => set_launcher_prefs_moving,
+        get_launcher_prefs_entry => set_launcher_prefs_entry,
         get_crt_calibration_open => set_crt_calibration_open,
         get_crt_h_offset => set_crt_h_offset,
         get_crt_v_offset => set_crt_v_offset,

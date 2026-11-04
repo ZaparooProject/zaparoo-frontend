@@ -1275,6 +1275,10 @@ pub struct SettingsResult {
     /// "daily", "weekly", or "manual".
     #[serde(default)]
     pub backup_remote_schedule: Option<String>,
+    /// The global launcher preference: launcher ids and groups, tried in
+    /// order for every system. `None` when Core predates it (v2.21.0).
+    #[serde(default)]
+    pub launcher_preference: Option<Vec<String>>,
 }
 
 /// `settings.auth.status`: whether Core holds a credential for a URL. No
@@ -1610,6 +1614,11 @@ pub struct UpdateSettingsParams {
     /// "daily", "weekly", or "manual"; Core rejects any other value.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub backup_remote_schedule: Option<String>,
+    /// Replaces the whole global launcher preference; an empty list clears
+    /// it. Core refuses an entry that names no launcher or group unless the
+    /// stored list already holds it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub launcher_preference: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
@@ -1754,6 +1763,34 @@ mod tests {
         SystemsResult, TagInfo, TokensHistoryResult, TokensResult, UpdateSettingsParams,
         VersionResult, MEDIA_IMAGE_DELIVERY_LOCAL_PATH,
     };
+
+    #[test]
+    fn launcher_preference_is_absent_on_an_older_core_and_round_trips() {
+        let old: SettingsResult = serde_json::from_str(r#"{"systemDefaults":[]}"#).unwrap();
+        assert_eq!(old.launcher_preference, None);
+        let empty: SettingsResult = serde_json::from_str(r#"{"launcherPreference":[]}"#).unwrap();
+        assert_eq!(empty.launcher_preference, Some(Vec::new()));
+        let set: SettingsResult =
+            serde_json::from_str(r#"{"launcherPreference":["RetroAchievements","RANES"]}"#)
+                .unwrap();
+        assert_eq!(
+            set.launcher_preference,
+            Some(vec!["RetroAchievements".to_string(), "RANES".to_string()])
+        );
+
+        let clear = UpdateSettingsParams {
+            launcher_preference: Some(Vec::new()),
+            ..UpdateSettingsParams::default()
+        };
+        assert_eq!(
+            serde_json::to_string(&clear).unwrap(),
+            r#"{"launcherPreference":[]}"#
+        );
+        assert_eq!(
+            serde_json::to_string(&UpdateSettingsParams::default()).unwrap(),
+            "{}"
+        );
+    }
 
     #[test]
     fn is_folder_accepts_directory_and_root() {
