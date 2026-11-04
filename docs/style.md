@@ -923,11 +923,13 @@ is how to widen it (another system, or every one). Back from the Search
 screen it opens goes to Game Info as well, and so does Back from the
 results of the edited search.
 
-A tag search or a Hub tile can carry tags of a type the tags picker has no
-category for (a series, a revision). The Tags field counts them in its
-summary, the picker leaves them alone when it changes the others, a change
-of system keeps them, and Clear filter drops them with the rest
-(`zaparoo_app::search::extra_tags`).
+A tag search or a Hub tile can carry tags the tags picker cannot show: a
+type it has no category for (a series, a revision), or a value its category
+cannot hold (a second genre, `user:hidden`). The Tags field counts them in
+its summary and offers Clear filter for them alone. Changing a category in
+the picker replaces that category's extras and leaves the rest, a change of
+system keeps the ones it cannot rule out, and Clear filter drops them all
+(`zaparoo_app::search::extra_tags`, `with_picked`).
 
 ### Rename tile
 

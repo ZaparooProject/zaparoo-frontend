@@ -3425,6 +3425,9 @@ export component App inherits Window {
     // What A does on the focused item of Game Info, or "" where it does
     // nothing.
     pure function info-action() -> string {
+        // Nothing focused (a failed panel, or nothing on it acts): every
+        // stop is -1 then, so the comparisons below would all match.
+        if (GameInfoView.focus < 0) { return ""; }
         if (GameInfoView.focus == GameInfoView.image-stop) { return @tr("View"); }
         if (GameInfoView.focus == GameInfoView.manual-stop) { return @tr("Open"); }
         if (GameInfoView.focus == GameInfoView.description-stop) { return ""; }

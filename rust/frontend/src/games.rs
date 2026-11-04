@@ -3030,12 +3030,12 @@ fn fire_detail(ctx: &Ctx, app: &App, seq: u64) {
                 view.set_detail_rows(ModelRc::new(VecModel::from(rows)));
             }
             view.set_detail_loading(false);
-            // The image count arrived with the metadata.
-            if landed {
-                let shared = lock(&ctx.shared);
-                if shared.games.list_images {
-                    refresh_detail_cover(&ctx, &app, &shared.games);
-                }
+            // The image count arrived with the metadata, and with it maybe
+            // a typed image in the cover's place (a game with only a map):
+            // a render asks for it, as stepping an image does, since the
+            // detail demand is the render's to own.
+            if landed && lock(&ctx.shared).games.list_images {
+                render(&ctx, &app);
             }
         });
     });

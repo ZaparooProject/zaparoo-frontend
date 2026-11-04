@@ -1,6 +1,6 @@
 msgid ""
 msgstr ""
-"POT-Creation-Date: 2026-11-04 00:46+0000\n"
+"POT-Creation-Date: 2026-11-04 01:32+0000\n"
 "Language: ar\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
@@ -130,9 +130,9 @@ msgstr "لا توجد أقسام"
 msgid "Hold a writable token near the reader"
 msgstr "قرّب رمزًا قابلًا للكتابة من القارئ"
 
-#: rust/frontend/ui/app.slint:1999 rust/frontend/ui/app.slint:3466
-#: rust/frontend/ui/app.slint:3648 rust/frontend/ui/app.slint:3695
-#: rust/frontend/ui/app.slint:3808 rust/frontend/ui/app.slint:3847
+#: rust/frontend/ui/app.slint:1999 rust/frontend/ui/app.slint:3469
+#: rust/frontend/ui/app.slint:3651 rust/frontend/ui/app.slint:3698
+#: rust/frontend/ui/app.slint:3811 rust/frontend/ui/app.slint:3850
 #: rust/frontend/ui/settings.slint:259
 msgid "Cancel"
 msgstr "إلغاء"
@@ -283,7 +283,7 @@ msgid "Recently played"
 msgstr "آخر ما تم لعبه"
 
 #: rust/frontend/ui/app.slint:2958 rust/frontend/ui/app.slint:3400
-#: rust/frontend/ui/app.slint:3497 rust/frontend/ui/app.slint:3740
+#: rust/frontend/ui/app.slint:3500 rust/frontend/ui/app.slint:3743
 #: rust/frontend/ui/search.slint:80
 msgid "Search"
 msgstr "بحث"
@@ -349,161 +349,161 @@ msgstr "إعادة تسمية المربع"
 msgid "Places"
 msgstr "الأماكن"
 
-#: rust/frontend/ui/app.slint:3428 rust/frontend/ui/app.slint:3750
+#: rust/frontend/ui/app.slint:3431 rust/frontend/ui/app.slint:3753
 msgid "View"
 msgstr "عرض"
 
-#: rust/frontend/ui/app.slint:3429 rust/frontend/ui/app.slint:3513
-#: rust/frontend/ui/app.slint:3569 rust/frontend/ui/app.slint:3875
-#: rust/frontend/ui/app.slint:3915 rust/frontend/ui/app.slint:3954
-#: rust/frontend/ui/app.slint:4020 rust/frontend/ui/app.slint:4037
-#: rust/frontend/ui/app.slint:4055 rust/frontend/ui/app.slint:4070
+#: rust/frontend/ui/app.slint:3432 rust/frontend/ui/app.slint:3516
+#: rust/frontend/ui/app.slint:3572 rust/frontend/ui/app.slint:3878
+#: rust/frontend/ui/app.slint:3918 rust/frontend/ui/app.slint:3957
+#: rust/frontend/ui/app.slint:4023 rust/frontend/ui/app.slint:4040
+#: rust/frontend/ui/app.slint:4058 rust/frontend/ui/app.slint:4073
 msgid "Open"
 msgstr "فتح"
 
-#: rust/frontend/ui/app.slint:3439
+#: rust/frontend/ui/app.slint:3442
 msgid "Page"
 msgstr "الصفحة"
 
-#: rust/frontend/ui/app.slint:3442
+#: rust/frontend/ui/app.slint:3445
 msgid "Whole page"
 msgstr "الصفحة كاملة"
 
-#: rust/frontend/ui/app.slint:3442
+#: rust/frontend/ui/app.slint:3445
 msgid "Fit width"
 msgstr "ملاءمة العرض"
 
-#: rust/frontend/ui/app.slint:3446 rust/frontend/ui/app.slint:3449
-#: rust/frontend/ui/app.slint:3483 rust/frontend/ui/app.slint:3496
-#: rust/frontend/ui/app.slint:3512 rust/frontend/ui/app.slint:3530
-#: rust/frontend/ui/app.slint:3543 rust/frontend/ui/app.slint:3607
-#: rust/frontend/ui/app.slint:3627 rust/frontend/ui/app.slint:3665
-#: rust/frontend/ui/app.slint:3739 rust/frontend/ui/app.slint:3756
-#: rust/frontend/ui/app.slint:3771 rust/frontend/ui/app.slint:3830
-#: rust/frontend/ui/app.slint:3926 rust/frontend/ui/app.slint:3940
-#: rust/frontend/ui/app.slint:3953
+#: rust/frontend/ui/app.slint:3449 rust/frontend/ui/app.slint:3452
+#: rust/frontend/ui/app.slint:3486 rust/frontend/ui/app.slint:3499
+#: rust/frontend/ui/app.slint:3515 rust/frontend/ui/app.slint:3533
+#: rust/frontend/ui/app.slint:3546 rust/frontend/ui/app.slint:3610
+#: rust/frontend/ui/app.slint:3630 rust/frontend/ui/app.slint:3668
+#: rust/frontend/ui/app.slint:3742 rust/frontend/ui/app.slint:3759
+#: rust/frontend/ui/app.slint:3774 rust/frontend/ui/app.slint:3833
+#: rust/frontend/ui/app.slint:3929 rust/frontend/ui/app.slint:3943
+#: rust/frontend/ui/app.slint:3956
 msgid "Move"
 msgstr "تحريك"
 
-#: rust/frontend/ui/app.slint:3464 rust/frontend/ui/app.slint:3497
-#: rust/frontend/ui/app.slint:3513 rust/frontend/ui/app.slint:3550
-#: rust/frontend/ui/app.slint:3569 rust/frontend/ui/app.slint:3641
-#: rust/frontend/ui/app.slint:3791 rust/frontend/ui/app.slint:3831
+#: rust/frontend/ui/app.slint:3467 rust/frontend/ui/app.slint:3500
+#: rust/frontend/ui/app.slint:3516 rust/frontend/ui/app.slint:3553
+#: rust/frontend/ui/app.slint:3572 rust/frontend/ui/app.slint:3644
+#: rust/frontend/ui/app.slint:3794 rust/frontend/ui/app.slint:3834
 #: rust/frontend/ui/settings.slint:105
 msgid "Select"
 msgstr "تحديد"
 
-#: rust/frontend/ui/app.slint:3465 rust/frontend/ui/settings.slint:106
+#: rust/frontend/ui/app.slint:3468 rust/frontend/ui/settings.slint:106
 msgid "Start"
 msgstr "ابدأ"
 
-#: rust/frontend/ui/app.slint:3467 rust/frontend/ui/app.slint:3644
-#: rust/frontend/ui/app.slint:3667 rust/frontend/ui/app.slint:3676
-#: rust/frontend/ui/app.slint:3692 rust/frontend/ui/app.slint:3759
-#: rust/frontend/ui/app.slint:3773 rust/frontend/ui/app.slint:3782
+#: rust/frontend/ui/app.slint:3470 rust/frontend/ui/app.slint:3647
+#: rust/frontend/ui/app.slint:3670 rust/frontend/ui/app.slint:3679
+#: rust/frontend/ui/app.slint:3695 rust/frontend/ui/app.slint:3762
+#: rust/frontend/ui/app.slint:3776 rust/frontend/ui/app.slint:3785
 msgid "Close"
 msgstr "إغلاق"
 
-#: rust/frontend/ui/app.slint:3468 rust/frontend/ui/app.slint:3934
+#: rust/frontend/ui/app.slint:3471 rust/frontend/ui/app.slint:3937
 msgid "Toggle"
 msgstr "تبديل"
 
-#: rust/frontend/ui/app.slint:3469
+#: rust/frontend/ui/app.slint:3472
 msgid "Info"
 msgstr "معلومات"
 
-#: rust/frontend/ui/app.slint:3470 rust/frontend/ui/app.slint:3484
-#: rust/frontend/ui/app.slint:3498 rust/frontend/ui/app.slint:3514
-#: rust/frontend/ui/app.slint:3531 rust/frontend/ui/app.slint:3545
-#: rust/frontend/ui/app.slint:3564 rust/frontend/ui/app.slint:3577
-#: rust/frontend/ui/app.slint:3592 rust/frontend/ui/app.slint:3608
-#: rust/frontend/ui/app.slint:3644 rust/frontend/ui/app.slint:3704
-#: rust/frontend/ui/app.slint:3715 rust/frontend/ui/app.slint:3729
-#: rust/frontend/ui/app.slint:3741 rust/frontend/ui/app.slint:3832
-#: rust/frontend/ui/app.slint:3881 rust/frontend/ui/app.slint:3894
-#: rust/frontend/ui/app.slint:3907 rust/frontend/ui/app.slint:3921
-#: rust/frontend/ui/app.slint:3935 rust/frontend/ui/app.slint:3949
-#: rust/frontend/ui/app.slint:3966 rust/frontend/ui/app.slint:3984
-#: rust/frontend/ui/app.slint:3996 rust/frontend/ui/app.slint:4014
-#: rust/frontend/ui/app.slint:4031 rust/frontend/ui/app.slint:4050
-#: rust/frontend/ui/app.slint:4065
+#: rust/frontend/ui/app.slint:3473 rust/frontend/ui/app.slint:3487
+#: rust/frontend/ui/app.slint:3501 rust/frontend/ui/app.slint:3517
+#: rust/frontend/ui/app.slint:3534 rust/frontend/ui/app.slint:3548
+#: rust/frontend/ui/app.slint:3567 rust/frontend/ui/app.slint:3580
+#: rust/frontend/ui/app.slint:3595 rust/frontend/ui/app.slint:3611
+#: rust/frontend/ui/app.slint:3647 rust/frontend/ui/app.slint:3707
+#: rust/frontend/ui/app.slint:3718 rust/frontend/ui/app.slint:3732
+#: rust/frontend/ui/app.slint:3744 rust/frontend/ui/app.slint:3835
+#: rust/frontend/ui/app.slint:3884 rust/frontend/ui/app.slint:3897
+#: rust/frontend/ui/app.slint:3910 rust/frontend/ui/app.slint:3924
+#: rust/frontend/ui/app.slint:3938 rust/frontend/ui/app.slint:3952
+#: rust/frontend/ui/app.slint:3969 rust/frontend/ui/app.slint:3987
+#: rust/frontend/ui/app.slint:3999 rust/frontend/ui/app.slint:4017
+#: rust/frontend/ui/app.slint:4034 rust/frontend/ui/app.slint:4053
+#: rust/frontend/ui/app.slint:4068
 msgid "Back"
 msgstr "رجوع"
 
-#: rust/frontend/ui/app.slint:3489 rust/frontend/ui/app.slint:3505
-#: rust/frontend/ui/app.slint:3551
+#: rust/frontend/ui/app.slint:3492 rust/frontend/ui/app.slint:3508
+#: rust/frontend/ui/app.slint:3554
 msgid "Delete"
 msgstr "حذف"
 
-#: rust/frontend/ui/app.slint:3490 rust/frontend/ui/app.slint:3506
-#: rust/frontend/ui/app.slint:3552
+#: rust/frontend/ui/app.slint:3493 rust/frontend/ui/app.slint:3509
+#: rust/frontend/ui/app.slint:3555
 msgid "Space"
 msgstr "مسافة"
 
-#: rust/frontend/ui/app.slint:3519 rust/frontend/ui/app.slint:3933
+#: rust/frontend/ui/app.slint:3522 rust/frontend/ui/app.slint:3936
 #: rust/frontend/ui/settings.slint:108
 msgid "Change"
 msgstr "تغيير"
 
-#: rust/frontend/ui/app.slint:3544 rust/frontend/ui/app.slint:3550
+#: rust/frontend/ui/app.slint:3547 rust/frontend/ui/app.slint:3553
 msgid "Save"
 msgstr "حفظ"
 
-#: rust/frontend/ui/app.slint:3563 rust/frontend/ui/app.slint:3576
-#: rust/frontend/ui/app.slint:3862 rust/frontend/ui/app.slint:3876
-#: rust/frontend/ui/app.slint:3906 rust/frontend/ui/app.slint:4030
-#: rust/frontend/ui/app.slint:4064 rust/frontend/ui/labels.slint:226
+#: rust/frontend/ui/app.slint:3566 rust/frontend/ui/app.slint:3579
+#: rust/frontend/ui/app.slint:3865 rust/frontend/ui/app.slint:3879
+#: rust/frontend/ui/app.slint:3909 rust/frontend/ui/app.slint:4033
+#: rust/frontend/ui/app.slint:4067 rust/frontend/ui/labels.slint:226
 msgid "Menu"
 msgstr "القائمة"
 
-#: rust/frontend/ui/app.slint:3595 rust/frontend/ui/app.slint:3868
-#: rust/frontend/ui/app.slint:3892 rust/frontend/ui/app.slint:3988
-#: rust/frontend/ui/app.slint:4000 rust/frontend/ui/setup.slint:378
+#: rust/frontend/ui/app.slint:3598 rust/frontend/ui/app.slint:3871
+#: rust/frontend/ui/app.slint:3895 rust/frontend/ui/app.slint:3991
+#: rust/frontend/ui/app.slint:4003 rust/frontend/ui/setup.slint:378
 msgid "Retry"
 msgstr "إعادة المحاولة"
 
-#: rust/frontend/ui/app.slint:3595 rust/frontend/ui/app.slint:3682
+#: rust/frontend/ui/app.slint:3598 rust/frontend/ui/app.slint:3685
 #: rust/frontend/ui/setup.slint:378
 msgid "Done"
 msgstr "تم"
 
-#: rust/frontend/ui/app.slint:3635 rust/frontend/ui/labels.slint:326
+#: rust/frontend/ui/app.slint:3638 rust/frontend/ui/labels.slint:326
 msgid "OK"
 msgstr "حسنًا"
 
-#: rust/frontend/ui/app.slint:3700 rust/frontend/ui/app.slint:3749
-#: rust/frontend/ui/app.slint:3764 rust/frontend/ui/app.slint:4019
-#: rust/frontend/ui/app.slint:4036
+#: rust/frontend/ui/app.slint:3703 rust/frontend/ui/app.slint:3752
+#: rust/frontend/ui/app.slint:3767 rust/frontend/ui/app.slint:4022
+#: rust/frontend/ui/app.slint:4039
 msgid "Image"
 msgstr "الصورة"
 
-#: rust/frontend/ui/app.slint:3713 rust/frontend/ui/app.slint:3727
-#: rust/frontend/ui/app.slint:3968
+#: rust/frontend/ui/app.slint:3716 rust/frontend/ui/app.slint:3730
+#: rust/frontend/ui/app.slint:3971
 msgid "Scroll"
 msgstr "تمرير"
 
-#: rust/frontend/ui/app.slint:3820
+#: rust/frontend/ui/app.slint:3823
 msgid "Adjust"
 msgstr "ضبط"
 
-#: rust/frontend/ui/app.slint:3821
+#: rust/frontend/ui/app.slint:3824
 msgid "Position"
 msgstr "الموضع"
 
-#: rust/frontend/ui/app.slint:3821
+#: rust/frontend/ui/app.slint:3824
 msgid "Size"
 msgstr "الحجم"
 
-#: rust/frontend/ui/app.slint:3845
+#: rust/frontend/ui/app.slint:3848
 msgid "Reposition"
 msgstr "تغيير الموضع"
 
-#: rust/frontend/ui/app.slint:3846
+#: rust/frontend/ui/app.slint:3849
 msgid "Place"
 msgstr "تثبيت"
 
-#: rust/frontend/ui/app.slint:3856 rust/frontend/ui/app.slint:3869
-#: rust/frontend/ui/app.slint:4021 rust/frontend/ui/app.slint:4056
+#: rust/frontend/ui/app.slint:3859 rust/frontend/ui/app.slint:3872
+#: rust/frontend/ui/app.slint:4024 rust/frontend/ui/app.slint:4059
 msgid "Options"
 msgstr "الخيارات"
 

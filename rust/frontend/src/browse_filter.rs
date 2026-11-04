@@ -92,6 +92,16 @@ fn picker_tags(shared: &Shared) -> Vec<String> {
     }
 }
 
+/// Every tag the filter holds: the picker's, and for a search kept as
+/// written the ones it cannot show. What Clear clears and what a change
+/// is judged on.
+fn held_tags(shared: &Shared) -> Vec<String> {
+    match shared.filter.target {
+        Target::Browse => active_tags(shared),
+        Target::Search => crate::search::field_tags(shared),
+    }
+}
+
 fn set_picker_tags(shared: &mut Shared, tags: Vec<String>) {
     match shared.filter.target {
         Target::Browse => {
@@ -100,12 +110,11 @@ fn set_picker_tags(shared: &mut Shared, tags: Vec<String>) {
         }
         // Tags the picker has no category for stay, as written.
         Target::Search => {
-            let extras = if crate::search::as_written(shared) {
-                zaparoo_app::search::extra_tags(&shared.persist.search.tags)
+            shared.persist.search.tags = if crate::search::as_written(shared) {
+                zaparoo_app::search::with_picked(&shared.persist.search.tags, tags)
             } else {
-                Vec::new()
+                tags
             };
-            shared.persist.search.tags = [tags, extras].concat();
         }
     }
 }
@@ -213,7 +222,7 @@ pub(crate) fn begin_for(ctx: &Ctx, app: &App, target: Target) {
         let retarget = shared.filter.target != target;
         shared.filter.target = target;
         let systems = target_systems(&shared);
-        shared.filter.baseline = picker_tags(&shared);
+        shared.filter.baseline = held_tags(&shared);
         if retarget || shared.filter.systems != systems {
             shared.filter.groups.clear();
             shared.filter.systems.clone_from(&systems);
@@ -375,7 +384,7 @@ fn category_rows(shared: &Shared) -> Vec<crate::MenuEntry> {
         })
         .collect();
     // The one action, set apart at the foot.
-    if !picker_tags(shared).is_empty() {
+    if !held_tags(shared).is_empty() {
         rows.push(menu_action("filter_clear"));
     }
     rows
@@ -534,7 +543,7 @@ pub(crate) fn clear(ctx: &Ctx, app: &App) {
 pub(crate) fn apply(ctx: &Ctx, app: &App) {
     let (changed, target) = {
         let mut shared = lock(&ctx.shared);
-        let now = picker_tags(&shared);
+        let now = held_tags(&shared);
         let changed = now != shared.filter.baseline;
         shared.filter.baseline = now;
         (changed, shared.filter.target)
@@ -724,6 +733,21 @@ mod tests {
         // Flat lists clear the system id, so they never inherit a filter.
         shared.games.system_id.clear();
         assert!(active_tags(&shared).is_empty());
+    }
+
+    #[test]
+    fn a_written_search_with_only_an_extra_tag_offers_clear_and_clears_it() {
+        let mut shared = shared_with(vec![genre_group()], &[]);
+        shared.filter.target = Target::Search;
+        shared.persist.search.from_hub = true;
+        shared.persist.search.systems = vec!["NES".into()];
+        shared.persist.search.tags = vec!["series:Resident Evil".into()];
+        assert!(picker_tags(&shared).is_empty());
+        assert!(ids(&category_rows(&shared)).contains(&"filter_clear".to_string()));
+        // Clear empties it, and the change is one `apply` sees.
+        let before = held_tags(&shared);
+        shared.persist.search.tags.clear();
+        assert_ne!(held_tags(&shared), before);
     }
 
     #[test]
