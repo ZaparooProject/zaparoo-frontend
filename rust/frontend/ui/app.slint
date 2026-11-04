@@ -493,6 +493,9 @@ export global GamesView {
     // Whether Options opens a menu on the focused row; the help bar offers
     // it only then.
     in-out property <bool> options-available: true;
+    // Whether the screen has a Menu: not Recently played, and not a folder
+    // read straight from disk.
+    in-out property <bool> page-menu: true;
     in-out property <bool> loading: false;
     in-out property <string> error: "";
     // Loaded rows, Core's totals and whether the total is final.
@@ -4270,7 +4273,7 @@ export component App inherits Window {
             ];
         }
         if (GamesView.count == 0 && !GamesView.loading) {
-            if (Shell.active-screen == Screen.recents) {
+            if (!GamesView.page-menu) {
                 return [
                     { buttons: ["ButtonA"], label: @tr("Retry") },
                     { buttons: ["ButtonB"], label: @tr("Back") },
@@ -4285,7 +4288,7 @@ export component App inherits Window {
         // Left and Right step the pane's images when set to and there is
         // more than one: the move cue keeps only what still moves.
         if (GamesView.detail-image-count > 1) {
-            if (Shell.active-screen == Screen.recents) {
+            if (!GamesView.page-menu) {
                 if (!GamesView.options-available) {
                     return [
                         self.list-move-cue(GamesView.total-pages),
@@ -4321,8 +4324,8 @@ export component App inherits Window {
             ];
         }
         // Options only where the focused row has a menu to open. Recents
-        // has no View menu.
-        if (Shell.active-screen == Screen.recents) {
+        // and a live folder have no Menu.
+        if (!GamesView.page-menu) {
             if (!GamesView.options-available) {
                 return [
                     self.move-cue(GamesView.total-pages),

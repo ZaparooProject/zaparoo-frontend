@@ -513,6 +513,17 @@ mod tests {
     }
 
     #[test]
+    fn a_live_browse_lists_folders_then_files_that_launch_their_path() {
+        let req = r#"{"jsonrpc":"2.0","id":"1","method":"media.browse","params":{"path":"/media/fat/_RA_Cores","live":true}}"#;
+        let resp = parse(&dispatch(req));
+        let entries = resp["result"]["entries"].as_array().expect("array");
+        assert_eq!(entries[0]["type"], Value::from("directory"));
+        let file = entries.last().expect("a file");
+        assert_eq!(file["zapScript"], file["path"]);
+        assert!(file.get("systemId").is_none());
+    }
+
+    #[test]
     fn media_browse_filters_and_pages_favorites() {
         let first = parse(&dispatch(
             r#"{"jsonrpc":"2.0","id":"1","method":"media.browse","params":{"path":"/games","maxResults":2,"tags":["user:favorite"]}}"#,

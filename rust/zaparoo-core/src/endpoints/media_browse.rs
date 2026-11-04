@@ -33,6 +33,10 @@ pub struct BrowseArgs {
     pub max_results: u32,
     /// Visibility is part of the cache identity, not a client-side filter.
     pub include_hidden: bool,
+    /// Read `path` straight from disk (`media.browse` `live`). A live
+    /// browse carries no systems, tags or visibility; `with_live` clears
+    /// them so the key and the request agree.
+    pub live: bool,
 }
 
 impl BrowseArgs {
@@ -52,6 +56,17 @@ impl BrowseArgs {
             tags,
             max_results,
             include_hidden: false,
+            live: false,
+        }
+    }
+
+    /// A live browse of `path`: no systems, tags or visibility, which Core
+    /// rejects or ignores there.
+    #[must_use]
+    pub fn live(path: String, max_results: u32) -> Self {
+        Self {
+            live: true,
+            ..Self::new(path, Vec::new(), max_results, Vec::new())
         }
     }
 
@@ -65,6 +80,9 @@ impl BrowseArgs {
     /// the cache key already carries `path` and `systems`, so the view can
     /// never drift from the key it was fetched under.
     pub fn root_view(&self) -> Option<String> {
+        if self.live {
+            return None;
+        }
         merged_root_view(&self.path, &self.systems)
     }
 }
@@ -91,13 +109,14 @@ impl Endpoint for MediaBrowseEndpoint {
                 .media_browse(MediaBrowseParams {
                     path: args.path,
                     systems: args.systems,
-                    include_hidden: Some(args.include_hidden),
+                    include_hidden: (!args.live).then_some(args.include_hidden),
                     max_results: Some(args.max_results),
                     cursor: None,
                     tags: args.tags,
                     letter: None,
                     sort: None,
                     root_view,
+                    live: args.live,
                 })
                 .await
         })
@@ -110,10 +129,11 @@ impl Endpoint for MediaBrowseEndpoint {
             Tag::specific(
                 Self::NAME,
                 format!(
-                    "{}::{}::{}",
+                    "{}::{}::{}{}",
                     args.path,
                     args.systems.join(","),
-                    args.tags.join(",")
+                    args.tags.join(","),
+                    if args.live { "::live" } else { "" }
                 ),
             ),
             Tag::MEDIA_DB,
@@ -192,6 +212,15 @@ mod tests {
         assert!(!visible.include_hidden);
         assert!(hidden.include_hidden);
         assert_eq!(visible, hidden.with_hidden(false));
+    }
+
+    #[test]
+    fn a_live_browse_has_its_own_key_and_no_root_view() {
+        let indexed = BrowseArgs::new("/media/fat/_Fav".into(), Vec::new(), 100, Vec::new());
+        let live = BrowseArgs::live("/media/fat/_Fav".into(), 100);
+        assert_ne!(indexed, live);
+        assert!(live.systems.is_empty() && live.tags.is_empty());
+        assert_eq!(BrowseArgs::live(String::new(), 100).root_view(), None);
     }
 
     #[test]

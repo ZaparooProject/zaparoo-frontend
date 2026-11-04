@@ -41,6 +41,8 @@ pub struct LayoutItem {
     pub query: String,
     pub systems: Vec<String>,
     pub tags: Vec<String>,
+    /// A `folder` read straight from disk instead of from Core's index.
+    pub live: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -103,6 +105,8 @@ pub struct Entry {
     pub script: String,
     /// Owning system of a folder shortcut, carried through to Accept.
     pub system: String,
+    /// A folder read straight from disk; it opens without a system.
+    pub live: bool,
     /// A saved search's text, systems and tags, carried through to Accept.
     /// Its folder limit travels in `path`.
     pub query: String,
@@ -163,6 +167,9 @@ pub struct Live<'a> {
     /// This build carries the Update screen.
     pub update_enabled: bool,
     pub internet_available: bool,
+    /// The frontend reads the same disk Core does, so a folder picked from
+    /// it is one Core can browse live (`MiSTer`).
+    pub pick_folders: bool,
 }
 
 /// Name and art lookups the caller owns.
@@ -382,6 +389,7 @@ fn resolve_folder(resolver: &dyn Resolver, item: &LayoutItem) -> Option<Entry> {
         id: item.path.clone(),
         path: item.path.clone(),
         system: item.system.clone(),
+        live: item.live,
         name: if item.name.is_empty() {
             folder_name_for_path(&item.path)
         } else {
@@ -520,7 +528,7 @@ pub enum Refresh {
 /// current row. A hand-written `zapscript` tile (a script that is not the
 /// tile's own path, and no relative path) is never touched.
 pub fn refresh_kind(item: &LayoutItem) -> Option<Refresh> {
-    if item.system.is_empty() || item.path.is_empty() {
+    if item.live || item.system.is_empty() || item.path.is_empty() {
         return None;
     }
     match item.kind.as_str() {
@@ -885,16 +893,20 @@ pub struct AddEntry {
     pub label_key: String,
 }
 
+/// The Add item row that picks a folder from disk for a live folder tile.
+pub const CUSTOM_FOLDER_ENTRY: &str = "custom_folder:";
+
 /// Entries for View > Add item: every known category or action not in
 /// the layout. Resume always offers its plain label. Once categories have
 /// loaded, a category Core does not list is left out: adding it back would
-/// only make a "Not available" tile.
+/// only make a "Not available" tile. Where folders can be picked, a last
+/// row opens the folder picker for a live folder tile.
 pub fn add_entries(
     available: &[(String, String)],
     live: &Live,
     resolver: &dyn Resolver,
 ) -> Vec<AddEntry> {
-    available
+    let mut entries: Vec<AddEntry> = available
         .iter()
         .filter_map(|(kind, id)| {
             let label_key = match kind.as_str() {
@@ -914,7 +926,14 @@ pub fn add_entries(
                 label_key,
             })
         })
-        .collect()
+        .collect();
+    if live.pick_folders {
+        entries.push(AddEntry {
+            id: CUSTOM_FOLDER_ENTRY.to_string(),
+            label_key: "hub_add:folder".to_string(),
+        });
+    }
+    entries
 }
 
 /// The Hub's vertical composition: the grid band between the header and
@@ -1040,6 +1059,7 @@ mod tests {
             resume_known_unavailable: false,
             update_enabled: true,
             internet_available: false,
+            pick_folders: false,
         }
     }
 
@@ -1313,6 +1333,52 @@ mod tests {
     }
 
     #[test]
+    fn add_entries_end_with_the_folder_picker_where_folders_can_be_picked() {
+        let confirmed = vec!["Console".to_string()];
+        let available = vec![("category".to_string(), "Console".to_string())];
+        let mut l = live(&confirmed);
+        assert_eq!(add_entries(&available, &l, &Names).len(), 1);
+        l.pick_folders = true;
+        let out = add_entries(&available, &l, &Names);
+        assert_eq!(
+            (out[1].id.as_str(), out[1].label_key.as_str()),
+            (CUSTOM_FOLDER_ENTRY, "hub_add:folder")
+        );
+        // Nothing else to add: the picker row still is.
+        let out = add_entries(&[], &l, &Names);
+        assert_eq!(out.len(), 1);
+    }
+
+    #[test]
+    fn a_live_folder_opens_without_a_system_and_is_never_refreshed() {
+        let folder = LayoutItem {
+            kind: "folder".into(),
+            path: "/media/fat/_RA_Cores".into(),
+            live: true,
+            ..LayoutItem::default()
+        };
+        let out = entries(
+            std::slice::from_ref(&folder),
+            false,
+            &live(&[]),
+            &Names,
+            4,
+            0,
+        );
+        assert_eq!(out[0].kind, Some(Kind::Folder));
+        assert!(out[0].live);
+        assert!(out[0].system.is_empty());
+        assert_eq!(out[0].name, "_RA_Cores");
+        assert_eq!(
+            refresh_kind(&LayoutItem {
+                system: "SNES".into(),
+                ..folder
+            }),
+            None
+        );
+    }
+
+    #[test]
     fn folder_names_use_the_last_segment() {
         assert_eq!(
             folder_name_for_path("/media/fat/games/SNES/Homebrew/"),
@@ -1343,6 +1409,7 @@ mod tests {
                 resume_known_unavailable: false,
                 update_enabled: false,
                 internet_available: true,
+                pick_folders: false,
             };
             let entry = resolve_category(&live, &resolver, layout_id);
             assert!(
@@ -1360,6 +1427,7 @@ mod tests {
             resume_known_unavailable: false,
             update_enabled: false,
             internet_available: true,
+            pick_folders: false,
         };
         assert!(resolve_category(&live, &resolver, "Arcade").disabled);
     }

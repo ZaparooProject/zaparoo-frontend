@@ -704,8 +704,64 @@ fn media_browse_route_roots_response(systems: &[&str]) -> Value {
     })
 }
 
+/// `live: true`: a folder read from disk, as a `MiSTer` menu folder lists.
+/// Two subfolders under the browsed folder and its parent's, then `.mgl`
+/// and `.rbf` files that launch their own path, with no system, media id
+/// or tags, as Core sends a file its index has not matched.
+fn media_browse_live_response(path: &str, max: usize, offset: usize) -> Value {
+    let path = path.trim_end_matches('/');
+    let depth = path.matches('/').count();
+    let mut entries = Vec::new();
+    if depth < 4 {
+        for name in ["_Arcade", "_Computer"] {
+            entries.push(json!({
+                "name": name,
+                "path": format!("{path}/{name}"),
+                "type": "directory",
+            }));
+        }
+    }
+    for (index, ext) in ["mgl", "rbf", "mgl", "rbf", "mgl"].iter().enumerate() {
+        let file = format!("{path}/Entry {index}.{ext}");
+        entries.push(json!({
+            "name": format!("Entry {index}"),
+            "path": file,
+            "type": "media",
+            "zapScript": file,
+            "hasCover": false,
+        }));
+    }
+    let total = entries.len();
+    let page: Vec<Value> = entries.into_iter().skip(offset).take(max).collect();
+    let next_offset = offset.saturating_add(page.len());
+    let has_next_page = !page.is_empty() && next_offset < total;
+    let mut pagination = json!({ "hasNextPage": has_next_page, "pageSize": max });
+    if has_next_page {
+        pagination["nextCursor"] = json!(next_offset.to_string());
+    }
+    json!({
+        "path": path,
+        "entries": page,
+        "totalFiles": 5,
+        "totalDirs": total - 5,
+        "pagination": pagination,
+    })
+}
+
 pub fn media_browse_response(params: &Value) -> Value {
     let path = params.get("path").and_then(Value::as_str).unwrap_or("");
+    if params.get("live").and_then(Value::as_bool) == Some(true) {
+        let max = params
+            .get("maxResults")
+            .and_then(Value::as_u64)
+            .unwrap_or(100) as usize;
+        let offset = params
+            .get("cursor")
+            .and_then(Value::as_str)
+            .and_then(|cursor| cursor.parse::<usize>().ok())
+            .unwrap_or(0);
+        return media_browse_live_response(path, max, offset);
+    }
     let systems = params
         .get("systems")
         .and_then(Value::as_array)

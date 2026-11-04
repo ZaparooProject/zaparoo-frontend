@@ -197,6 +197,8 @@ export global Labels {
         if (Labels.filter-category(key, name) != "") { return Labels.filter-category(key, name); }
         // Hub rows and its Menu.
         if (key == "hub_add") { return @tr("Add item…"); }
+        // The Add item row that picks a folder from disk.
+        if (key == "hub_add:folder") { return @tr("Custom folder…"); }
         if (key == "hub_move") { return @tr("Move"); }
         if (key == "hub_remove:hide") { return @tr("Hide"); }
         if (key == "hub_move:tile") { return @tr("Move tile"); }
@@ -204,6 +206,8 @@ export global Labels {
         if (key == "hub_icon:tile") { return @tr("Change icon…"); }
         // The file browser's Menu.
         if (key == "file_default_icon") { return @tr("Use default icon"); }
+        // The folder picker's first row, which picks the folder on screen.
+        if (key == "file_add_folder") { return @tr("Add this folder"); }
         if (key == "hub_remove:resume") { return @tr("Hide Resume tile"); }
         if (key == "hub_reset") { return @tr("Reset layout"); }
         if (key == "hub_settings") { return @tr("Settings"); }

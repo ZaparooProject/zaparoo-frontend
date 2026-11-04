@@ -94,6 +94,11 @@ impl HubItemKind {
 /// It survives the media moving to another drive, which `path` (Core's
 /// absolute path at pin time) does not. Empty on a hand-written tile and on
 /// one pinned before Core reported it.
+///
+/// `live` marks a `folder` read straight from disk (`media.browse` `live`)
+/// instead of from Core's index: a `MiSTer` menu folder of `.mgl` or `.rbf`
+/// files. A live folder has no `system` and no `relative`; `path` is the
+/// folder as picked.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct HubItem {
     pub kind_raw: String,
@@ -110,6 +115,7 @@ pub struct HubItem {
     pub systems: Vec<String>,
     /// A saved search's `type:value` tags, sent to Core as written.
     pub tags: Vec<String>,
+    pub live: bool,
 }
 
 /// A list as a set: trimmed, without blanks or repeats, in one order.
@@ -158,6 +164,20 @@ impl HubItem {
             id: id.to_string(),
             ..Self::default()
         }
+    }
+
+    fn live_folder(path: &str) -> Self {
+        Self {
+            kind_raw: HubItemKind::Folder.as_str().to_string(),
+            path: path.to_string(),
+            live: true,
+            ..Self::default()
+        }
+    }
+
+    /// A `folder` read straight from disk; see the struct doc comment.
+    pub fn is_live_folder(&self) -> bool {
+        self.live && self.kind() == HubItemKind::Folder
     }
 }
 
@@ -583,6 +603,39 @@ impl HubLayout {
         true
     }
 
+    /// Place a live `folder` tile for `path`. With a `target`, it lands
+    /// where the Hub's own "Add item…" puts a tile: on that visible cell
+    /// when it is a `blank`, after the last tile otherwise. Without one, as
+    /// a browse screen's "Add to Hub" places a shortcut: the first gap, or
+    /// the end. Returns `false` for an empty path or a folder already
+    /// pinned live.
+    pub fn add_live_folder(&mut self, path: &str, target: Option<usize>) -> bool {
+        if path.is_empty() || self.live_folder_position(path).is_some() {
+            return false;
+        }
+        let entry = HubItem::live_folder(path);
+        let Some(target) = target else {
+            self.place_in_first_gap(entry);
+            return true;
+        };
+        let indices = self.visible_indices();
+        match indices.get(target) {
+            Some(&real) if self.items[real].kind() == HubItemKind::Blank => {
+                self.items[real] = entry;
+            }
+            _ => self.items.push(entry),
+        }
+        self.trim_trailing_blanks();
+        true
+    }
+
+    /// The visible position of the live `folder` tile for `path`.
+    pub fn live_folder_position(&self, path: &str) -> Option<usize> {
+        self.visible_indices()
+            .into_iter()
+            .position(|real| self.items[real].is_live_folder() && self.items[real].path == path)
+    }
+
     /// The visible position of the `search` tile that runs this search,
     /// when one is already on the Hub.
     pub fn search_position(
@@ -621,7 +674,9 @@ impl HubLayout {
         let wanted = HubItemKind::from_str(kind);
         self.visible_indices().into_iter().position(|real| {
             let item = &self.items[real];
-            if item.kind() != wanted {
+            // A live folder is found by `live_folder_position` only: the
+            // same path pinned from the index is a different tile.
+            if item.kind() != wanted || item.live {
                 return false;
             }
             match wanted {
@@ -707,6 +762,8 @@ struct RawHubItem {
     systems: Vec<String>,
     #[serde(default, deserialize_with = "string_or_list")]
     tags: Vec<String>,
+    #[serde(default)]
+    live: bool,
 }
 
 /// A list key that also takes one bare string, so a hand-written
@@ -773,6 +830,7 @@ pub fn load_hub_layout(path: &Path) -> HubLayout {
                 query: raw.query,
                 systems: raw.systems,
                 tags: raw.tags,
+                live: raw.live,
             })
             .collect(),
     }
@@ -817,6 +875,9 @@ pub fn save_hub_layout(path: &Path, layout: &HubLayout) -> Result<(), String> {
         }
         if !item.query.is_empty() {
             table.insert("query", toml_edit::value(item.query.as_str()));
+        }
+        if item.live {
+            table.insert("live", toml_edit::value(true));
         }
         for (key, values) in [("systems", &item.systems), ("tags", &item.tags)] {
             if !values.is_empty() {
@@ -926,6 +987,72 @@ type = "blank"
         assert_eq!(layout.items[2].script, "**launch.random:NES");
         assert_eq!(layout.items[2].icon, "Dice");
         assert_eq!(layout.items[3].kind(), HubItemKind::Blank);
+    }
+
+    #[test]
+    fn a_live_folder_round_trips_and_an_indexed_one_stays_unmarked() {
+        let f = write_tmp(
+            "[[hub.items]]\ntype = \"folder\"\npath = \"/media/fat/_RA_Cores\"\nlive = true\n\n\
+             [[hub.items]]\ntype = \"folder\"\npath = \"/media/fat/games/SNES\"\nsystem = \"SNES\"\n",
+        );
+        let layout = load_hub_layout(f.path());
+        assert!(layout.items[0].is_live_folder());
+        assert!(!layout.items[1].live);
+        save_hub_layout(f.path(), &layout).expect("save");
+        let text = std::fs::read_to_string(f.path()).expect("read");
+        assert_eq!(text.matches("live = true").count(), 1);
+        assert_eq!(load_hub_layout(f.path()), layout);
+    }
+
+    #[test]
+    fn a_live_folder_lands_on_the_focused_gap_or_the_first_one() {
+        let mut layout = HubLayout::default();
+        layout.items.push(HubItem::category("Arcade"));
+        layout.items.push(HubItem {
+            kind_raw: "blank".into(),
+            ..HubItem::default()
+        });
+        layout.items.push(HubItem::action("settings"));
+        assert!(layout.add_live_folder("/media/fat/_RA_Cores", Some(1)));
+        assert!(layout.items[1].is_live_folder());
+        // Focus on a tile: appended.
+        assert!(layout.add_live_folder("/media/fat/_Favorites", Some(0)));
+        assert_eq!(layout.items[3].path, "/media/fat/_Favorites");
+        // Already pinned live: refused.
+        assert!(!layout.add_live_folder("/media/fat/_RA_Cores", None));
+        assert!(!layout.add_live_folder("", None));
+        assert_eq!(
+            layout.live_folder_position("/media/fat/_Favorites"),
+            Some(3)
+        );
+    }
+
+    #[test]
+    fn a_live_folder_and_an_indexed_folder_on_one_path_are_different_tiles() {
+        let mut layout = HubLayout::default();
+        assert!(layout.add_live_folder("/media/fat/games/SNES", None));
+        assert_eq!(
+            layout.target_position("folder", "", "/media/fat/games/SNES", "", "", "SNES"),
+            None
+        );
+        assert!(layout.add_target_item(
+            "folder",
+            "",
+            "/media/fat/games/SNES",
+            "SNES",
+            "",
+            "",
+            "",
+            "SNES"
+        ));
+        assert_eq!(
+            layout.target_position("folder", "", "/media/fat/games/SNES", "", "", "SNES"),
+            Some(1)
+        );
+        assert_eq!(
+            layout.live_folder_position("/media/fat/games/SNES"),
+            Some(0)
+        );
     }
 
     #[test]

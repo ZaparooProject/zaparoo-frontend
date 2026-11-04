@@ -349,6 +349,9 @@ pub struct GamesModel {
     pub total_known: bool,
     pub system_id: String,
     pub system_name: String,
+    /// Browse reads its folders straight from disk (`media.browse` `live`),
+    /// with no system: a live folder tile's. Mirrors `GamesState::live`.
+    pub live: bool,
     /// Favorites scope: the system the Favorite Systems screen drilled
     /// into, empty for the whole favorites list.
     pub favorites_system: String,
@@ -409,6 +412,7 @@ impl GamesModel {
             total_known: true,
             system_id: String::new(),
             system_name: String::new(),
+            live: false,
             favorites_system: String::new(),
             browse_path: String::new(),
             ticket: 0,
@@ -880,6 +884,75 @@ fn begin_browse_mode(shared: &mut Shared, sys: &SystemInfo) {
     model.focus_armed = false;
     model.restore_done = false;
     model.focus_recalled = false;
+    set_live(shared, false);
+}
+
+/// Whether Browse reads from disk; kept in the model, the persisted state
+/// and the chip row's surface together.
+fn set_live(shared: &mut Shared, live: bool) {
+    shared.games.live = live;
+    shared.persist.games.live = live;
+    crate::page_bar::set_live_browse(live);
+}
+
+/// Browse a live folder: no system, titled by the folder it starts from.
+fn begin_live_mode(shared: &mut Shared, root: &str) {
+    let model = &mut shared.games;
+    model.mode = GamesMode::Browse;
+    model.system_id.clear();
+    model.system_name = zaparoo_app::hub::folder_name_for_path(root);
+    model.focus_armed = false;
+    model.restore_done = false;
+    model.focus_recalled = false;
+    set_live(shared, true);
+}
+
+/// A Hub live folder tile: browse `path` straight from disk. The folder is
+/// the stack's base, so Back climbs to it and then returns to the Hub.
+pub fn enter_live_folder_from_hub(ctx: &Ctx, app: &App, path: &str) {
+    if path.is_empty() {
+        return;
+    }
+    crate::perf::open_pressed("folder");
+    crate::navigation::stage(ctx, app);
+    {
+        let mut shared = lock(&ctx.shared);
+        let games = &mut shared.persist.games;
+        games.system_id.clear();
+        games.path_stack = vec![path.to_string()];
+        games.selected_at_level = vec![String::new()];
+        games.list_top_at_level.clear();
+        games.entered_from_hub = true;
+        begin_live_mode(&mut shared, path);
+    }
+    browse(ctx, app, path, true);
+}
+
+/// Cold-start re-entry into a live folder: the persisted stack's top
+/// level, as `enter_restored` does for a system.
+pub fn enter_live_restored(ctx: &Ctx, app: &App) {
+    let top = {
+        let mut shared = lock(&ctx.shared);
+        let root = shared
+            .persist
+            .games
+            .path_stack
+            .first()
+            .cloned()
+            .unwrap_or_default();
+        if root.is_empty() {
+            return;
+        }
+        begin_live_mode(&mut shared, &root);
+        shared
+            .persist
+            .games
+            .path_stack
+            .last()
+            .cloned()
+            .unwrap_or_default()
+    };
+    browse(ctx, app, &top, true);
 }
 
 /// Favorites (Hub action): media tagged `user:favorite`.
@@ -1140,7 +1213,7 @@ fn browse(ctx: &Ctx, app: &App, path: &str, flip: bool) {
 
 fn browse_with_motion(ctx: &Ctx, app: &App, path: &str, flip: bool, direction: i32) {
     crate::folder_motion::capture(app, direction);
-    let (ticket, system_id, tags, page_size, include_hidden) = {
+    let (ticket, args, live) = {
         let mut shared = lock(&ctx.shared);
         // One round trip fills the lookahead the grid keeps loaded (or two
         // list screens), instead of a page and then follow-up fetches.
@@ -1157,7 +1230,13 @@ fn browse_with_motion(ctx: &Ctx, app: &App, path: &str, flip: bool, direction: i
         model.total_known = true;
         let ticket = begin_fill(model);
         model.folder_direction = direction;
-        (ticket, model.system_id.clone(), tags, size, include_hidden)
+        let args = if model.live {
+            BrowseArgs::live(path.to_string(), size)
+        } else {
+            BrowseArgs::new(path.to_string(), vec![model.system_id.clone()], size, tags)
+                .with_hidden(include_hidden)
+        };
+        (ticket, args, model.live)
     };
     crate::router::save_persist(&ctx.shared);
     if flip {
@@ -1166,8 +1245,6 @@ fn browse_with_motion(ctx: &Ctx, app: &App, path: &str, flip: bool, direction: i
         render(ctx, app);
     }
 
-    let args = BrowseArgs::new(path.to_string(), vec![system_id], page_size, tags)
-        .with_hidden(include_hidden);
     let resource = ctx.store.subscribe::<MediaBrowseEndpoint>(args);
     let mut rx = resource.subscribe();
     let weak = app.as_weak();
@@ -1179,7 +1256,7 @@ fn browse_with_motion(ctx: &Ctx, app: &App, path: &str, flip: bool, direction: i
             match snapshot {
                 ResourceStatus::Ready(result) => {
                     let _ = weak.upgrade_in_event_loop(move |app| {
-                        on_browse_ready(&ctx2, &app, ticket, &result, at_root, flip);
+                        on_browse_ready(&ctx2, &app, ticket, &result, at_root, flip, live);
                     });
                     return;
                 }
@@ -1199,7 +1276,9 @@ fn browse_with_motion(ctx: &Ctx, app: &App, path: &str, flip: bool, direction: i
     lock(&ctx.shared).games.fill_task.replace(task);
 }
 
-fn browse_rows(entries: &[BrowseEntry]) -> Vec<GameRow> {
+/// A browse page's rows. A live page carries no tags, so its rows' favorite
+/// and hidden state is not known.
+fn browse_rows(entries: &[BrowseEntry], live: bool) -> Vec<GameRow> {
     let roots: Vec<Option<&str>> = entries
         .iter()
         .map(|e| (e.entry_type == "root" && !e.path.is_empty()).then_some(e.path.as_str()))
@@ -1220,6 +1299,7 @@ fn browse_rows(entries: &[BrowseEntry]) -> Vec<GameRow> {
         .map(|(e, distinguisher)| {
             let mut row = GameRow::from(*e);
             row.root_distinguisher = distinguisher;
+            row.tags_known = !live;
             row
         })
         .collect()
@@ -1232,11 +1312,12 @@ pub(crate) fn on_browse_ready(
     result: &zaparoo_core::media_types::MediaBrowseResult,
     at_root: bool,
     flip: bool,
+    live: bool,
 ) {
     if lock(&ctx.shared).games.ticket != ticket {
         return;
     }
-    let rows = browse_rows(&result.entries);
+    let rows = browse_rows(&result.entries, live);
     if rows.is_empty() && !at_root && fall_back_from_recalled_focus(ctx, app, flip) {
         return;
     }
@@ -1267,7 +1348,11 @@ pub(crate) fn on_browse_ready(
         flip,
     );
     // The fast-scroll rail and letter steps need the scope's letters
-    // before the first long hold, not only once the picker opens.
+    // before the first long hold, not only once the picker opens. A live
+    // folder has no letter index.
+    if live {
+        return;
+    }
     let fetched = {
         let shared = lock(&ctx.shared);
         shared.letter_scope.as_ref().is_some_and(|(system, path)| {
@@ -1433,8 +1518,39 @@ fn fetch_cap(mode: GamesMode) -> u32 {
     }
 }
 
+/// A cursor page of the folder on screen. A live folder sends only its
+/// path; Core rejects systems, tags and the root view there.
+fn browse_page_params(
+    model: &GamesModel,
+    tags: Vec<String>,
+    include_hidden: bool,
+    cursor: &str,
+) -> MediaBrowseParams {
+    let path = model.browse_path.clone();
+    if model.live {
+        return MediaBrowseParams {
+            path,
+            cursor: Some(cursor.to_string()),
+            live: true,
+            ..MediaBrowseParams::default()
+        };
+    }
+    MediaBrowseParams {
+        root_view: merged_root_view(&path, std::slice::from_ref(&model.system_id)),
+        path,
+        systems: vec![model.system_id.clone()],
+        include_hidden: Some(include_hidden),
+        max_results: None,
+        cursor: Some(cursor.to_string()),
+        tags,
+        letter: None,
+        sort: None,
+        live: false,
+    }
+}
+
 fn fetch_more(ctx: &Ctx, app: &App, limit: u32, bulk: bool) {
-    let (mode, cursor, system_id, browse_path, tags, ticket, sort, scope, include_hidden, search) = {
+    let (mode, cursor, browse, ticket, sort, scope, search, live) = {
         let mut shared = lock(&ctx.shared);
         let search = crate::search::args(&shared);
         let include_hidden = include_hidden(&shared);
@@ -1453,17 +1569,16 @@ fn fetch_more(ctx: &Ctx, app: &App, limit: u32, bulk: bool) {
         if bulk {
             model.covers_paused = true;
         }
+        let browse = browse_page_params(model, tags, include_hidden, &cursor);
         (
             model.mode,
             cursor,
-            model.system_id.clone(),
-            model.browse_path.clone(),
-            tags,
+            browse,
             model.ticket,
             sort,
             scope,
-            include_hidden,
             search,
+            model.live,
         )
     };
     render(ctx, app);
@@ -1475,20 +1590,13 @@ fn fetch_more(ctx: &Ctx, app: &App, limit: u32, bulk: bool) {
         let outcome: Result<(Vec<GameRow>, Option<String>), PageError> = match mode {
             GamesMode::Browse => client
                 .media_browse(MediaBrowseParams {
-                    root_view: merged_root_view(&browse_path, std::slice::from_ref(&system_id)),
-                    path: browse_path,
-                    systems: vec![system_id],
-                    include_hidden: Some(include_hidden),
                     max_results: Some(limit),
-                    cursor: Some(cursor),
-                    tags,
-                    letter: None,
-                    sort: None,
+                    ..browse
                 })
                 .await
                 .map(|r| {
                     let cursor = next_cursor(r.pagination.as_ref());
-                    (browse_rows(&r.entries), cursor)
+                    (browse_rows(&r.entries, live), cursor)
                 })
                 .map_err(PageError::from),
             GamesMode::Favorites | GamesMode::Search => client
@@ -2434,6 +2542,7 @@ pub fn render(ctx: &Ctx, app: &App) {
         )));
     }
     view.set_options_available(options_available(app, &shared));
+    view.set_page_menu(mode != GamesMode::Recents && !(mode == GamesMode::Browse && model.live));
     view.set_loading(model.loading);
     view.set_error(SharedString::from(model.error.as_str()));
     view.set_count(i32::try_from(count).unwrap_or(0));
@@ -2441,7 +2550,7 @@ pub fn render(ctx: &Ctx, app: &App) {
     view.set_total_known(model.total_known);
     view.set_total_files(i32::try_from(model.total_files).unwrap_or(0));
     view.set_filter_text(SharedString::from(
-        if mode == GamesMode::Browse {
+        if mode == GamesMode::Browse && !model.live {
             crate::browse_filter::summary(&shared)
         } else {
             None
@@ -3172,7 +3281,9 @@ fn letter_leading(shared: &Shared) -> usize {
 /// Go to has something to jump through: a ready browse list. The L1+R1
 /// chord holds a shoulder press back only where this is true.
 pub(crate) fn go_to_available(shared: &Shared) -> bool {
-    shared.games.mode == GamesMode::Browse && shared.games.state() == State::Ready
+    shared.games.mode == GamesMode::Browse
+        && !shared.games.live
+        && shared.games.state() == State::Ready
 }
 
 /// The letter bucket the selection is in, where the folder on screen has
@@ -3482,6 +3593,9 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
                 return;
             }
             match mode {
+                // A live folder has nothing to jump through, filter or
+                // search.
+                GamesMode::Browse if lock(&ctx.shared).games.live => {}
                 GamesMode::Browse => crate::router::open_view_menu(ctx, app),
                 GamesMode::Favorites => crate::router::open_favorites_page_menu(ctx, app),
                 GamesMode::Search => crate::router::open_search_results_page_menu(ctx, app),
@@ -3790,6 +3904,7 @@ pub(crate) fn game_input(
 ) -> menu::GameInput {
     let pin = hub_pin(mode, row);
     let addressable = row.media_id.is_some() || (!system.is_empty() && !row.path.is_empty());
+    let live = mode == GamesMode::Browse && shared.games.live;
     menu::GameInput {
         favorite_known: row.tags_known && addressable,
         is_favorite: row.is_favorite,
@@ -3815,6 +3930,7 @@ pub(crate) fn game_input(
         has_system: !system.is_empty(),
         media_busy: crate::router::media_busy(app),
         tile,
+        details_unknown: live && row.media_id.is_none(),
     }
 }
 
@@ -3824,6 +3940,9 @@ fn row_menu(app: &App, shared: &Shared, row: &GameRow) -> menu::Menu {
     let system = row.system_or(&model.system_id);
     match rules::menu_target(row.entry_type, row.media_capable, &row.path) {
         rules::MenuTarget::None => menu::Menu::default(),
+        rules::MenuTarget::Folder(_) if model.live && model.mode == GamesMode::Browse => {
+            menu::live_folder(crate::hub::has_live_folder(shared, &row.path))
+        }
         rules::MenuTarget::Folder(kind) => {
             let on_hub = hub_pin(model.mode, row).is_some_and(|pin| {
                 crate::hub::has_target(
@@ -3878,16 +3997,18 @@ pub(crate) fn context_anchor(ctx: &Ctx, app: &App) -> crate::router::ContextAnch
 
 /// A menu entry was accepted (the menu is already closed).
 pub fn context_accept(ctx: &Ctx, app: &App, id: &str) {
-    let (row, index, mode, system) = {
+    let (row, index, mode, system, live) = {
         let shared = lock(&ctx.shared);
         let model = &shared.games;
         let Some(row) = model.current().cloned() else {
             return;
         };
         let system = row.system_or(&model.system_id).to_string();
-        (row, model.grid.current_index(), model.mode, system)
+        let live = model.live && model.mode == GamesMode::Browse;
+        (row, model.grid.current_index(), model.mode, system, live)
     };
     match id {
+        "add_to_hub" if live && row.is_dir() => crate::hub::toggle_live_folder(ctx, app, &row.path),
         "toggle_favorite" => toggle_favorite(ctx, app, index, &row, &system),
         "toggle_hidden" => toggle_hidden(ctx, app, &row, &system),
         "add_to_hub" => add_to_hub(ctx, app, mode, &row, &system),
@@ -4430,7 +4551,7 @@ mod tests {
             entry("root", "NES", "/media/usb0/games/NES"),
             entry("root", "games", "/media/fat/games"),
         ];
-        let rows = browse_rows(&entries);
+        let rows = browse_rows(&entries, false);
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0].root_distinguisher, "fat");
         assert_eq!(rows[1].root_distinguisher, "usb0");

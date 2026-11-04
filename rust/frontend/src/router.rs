@@ -1877,6 +1877,10 @@ fn list_action(ctx: &Ctx, app: &App, action: &str) {
 /// properties and the fast-scroll rail as it lands; the seq ticket drops
 /// stale responses.
 pub(crate) fn fetch_letter_index(ctx: &Ctx, app: &App) {
+    // Core has no letter index for a folder read from disk.
+    if lock(&ctx.shared).games.live {
+        return;
+    }
     let (browse_path, system_id, ticket, include_hidden, tags) = {
         let mut guard = lock(&ctx.shared);
         guard.letter_seq += 1;

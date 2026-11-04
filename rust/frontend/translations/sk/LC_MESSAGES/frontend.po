@@ -1,6 +1,6 @@
 msgid ""
 msgstr ""
-"POT-Creation-Date: 2026-11-04 05:14+0000\n"
+"POT-Creation-Date: 2026-11-04 10:33+0000\n"
 "Language: sk\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
@@ -11,7 +11,7 @@ msgstr ""
 msgid "About / License"
 msgstr "O aplikácii / Licencia"
 
-#: rust/frontend/ui/about.slint:108 rust/frontend/ui/app.slint:3572
+#: rust/frontend/ui/about.slint:108 rust/frontend/ui/app.slint:3575
 msgid "Zaparoo Frontend"
 msgstr "Zaparoo Frontend"
 
@@ -63,528 +63,528 @@ msgstr ""
 msgid "Full license text in COPYING."
 msgstr "Úplný text licencie v súbore COPYING."
 
-#: rust/frontend/ui/app.slint:489 rust/frontend/ui/app.slint:1287
-#: rust/frontend/ui/app.slint:3597 rust/frontend/ui/labels.slint:85
+#: rust/frontend/ui/app.slint:489 rust/frontend/ui/app.slint:1290
+#: rust/frontend/ui/app.slint:3600 rust/frontend/ui/labels.slint:85
 msgid "Favorites"
 msgstr "Obľúbené"
 
 #: rust/frontend/ui/app.slint:490 rust/frontend/ui/app.slint:491
-#: rust/frontend/ui/app.slint:1560 rust/frontend/ui/labels.slint:43
+#: rust/frontend/ui/app.slint:1563 rust/frontend/ui/labels.slint:43
 msgid "{} · {}"
 msgstr "{} · {}"
 
-#: rust/frontend/ui/app.slint:1263
+#: rust/frontend/ui/app.slint:1266
 msgid "Updating the media database"
 msgstr "Aktualizuje sa databáza médií"
 
-#: rust/frontend/ui/app.slint:1263
+#: rust/frontend/ui/app.slint:1266
 msgid "No games found yet"
 msgstr "Zatiaľ sa nenašli žiadne hry"
 
-#: rust/frontend/ui/app.slint:1265
+#: rust/frontend/ui/app.slint:1268
 msgid "Your games appear here as Core finds them."
 msgstr "Hry sa tu zobrazia, keď ich Core nájde."
 
-#: rust/frontend/ui/app.slint:1266
+#: rust/frontend/ui/app.slint:1269
 msgid "Update media database in Settings > Library."
 msgstr "Aktualizujte databázu médií v časti Nastavenia > Knižnica."
 
-#: rust/frontend/ui/app.slint:1294
+#: rust/frontend/ui/app.slint:1297
 msgid "{} systems"
 msgstr "{0} systémov"
 
-#: rust/frontend/ui/app.slint:1476 rust/frontend/ui/labels.slint:42
+#: rust/frontend/ui/app.slint:1479 rust/frontend/ui/labels.slint:42
 msgid "Hidden"
 msgstr "Skryté"
 
-#: rust/frontend/ui/app.slint:1513 rust/frontend/ui/app.slint:3397
+#: rust/frontend/ui/app.slint:1516 rust/frontend/ui/app.slint:3400
 msgid "No favorites yet"
 msgstr "Zatiaľ žiadne obľúbené"
 
-#: rust/frontend/ui/app.slint:1513
+#: rust/frontend/ui/app.slint:1516
 msgid "No systems in this category"
 msgstr "V tejto kategórii nie sú žiadne systémy"
 
-#: rust/frontend/ui/app.slint:1639 rust/frontend/ui/app.slint:1656
+#: rust/frontend/ui/app.slint:1642 rust/frontend/ui/app.slint:1659
 msgid "Saving…"
 msgstr "Ukladanie…"
 
-#: rust/frontend/ui/app.slint:1894 rust/frontend/ui/labels.slint:181
+#: rust/frontend/ui/app.slint:1897 rust/frontend/ui/labels.slint:181
 msgid "Go to…"
 msgstr "Prejsť na…"
 
 #. The status line in place of the grid, with the wait cue's hourglass.
-#: rust/frontend/ui/app.slint:1896
+#: rust/frontend/ui/app.slint:1899
 msgid "Loading sections…"
 msgstr "Načítanie sekcií…"
 
-#: rust/frontend/ui/app.slint:1897
+#: rust/frontend/ui/app.slint:1900
 msgid "Failed to load sections"
 msgstr "Sekcie sa nepodarilo načítať"
 
-#: rust/frontend/ui/app.slint:1897
+#: rust/frontend/ui/app.slint:1900
 msgid "No sections"
 msgstr "Žiadne sekcie"
 
-#: rust/frontend/ui/app.slint:2000
+#: rust/frontend/ui/app.slint:2003
 msgid "Hold a writable token near the reader"
 msgstr "Priložte zapisovateľný token k čítačke"
 
-#: rust/frontend/ui/app.slint:2024 rust/frontend/ui/app.slint:3677
-#: rust/frontend/ui/app.slint:3814 rust/frontend/ui/app.slint:3922
-#: rust/frontend/ui/app.slint:3972 rust/frontend/ui/app.slint:4085
-#: rust/frontend/ui/app.slint:4124 rust/frontend/ui/settings.slint:287
+#: rust/frontend/ui/app.slint:2027 rust/frontend/ui/app.slint:3680
+#: rust/frontend/ui/app.slint:3817 rust/frontend/ui/app.slint:3925
+#: rust/frontend/ui/app.slint:3975 rust/frontend/ui/app.slint:4088
+#: rust/frontend/ui/app.slint:4127 rust/frontend/ui/settings.slint:287
 msgid "Cancel"
 msgstr "Zrušiť"
 
-#: rust/frontend/ui/app.slint:2046 rust/frontend/ui/settings.slint:202
+#: rust/frontend/ui/app.slint:2049 rust/frontend/ui/settings.slint:202
 msgid "Pair a device"
 msgstr "Spárovať zariadenie"
 
-#: rust/frontend/ui/app.slint:2070 rust/frontend/ui/app.slint:2175
+#: rust/frontend/ui/app.slint:2073 rust/frontend/ui/app.slint:2178
 msgid "Starting…"
 msgstr "Spúšťanie…"
 
-#: rust/frontend/ui/app.slint:2092
+#: rust/frontend/ui/app.slint:2095
 msgid "Enter this PIN on the device you are pairing."
 msgstr "Zadajte tento PIN na zariadení, ktoré párujete."
 
-#: rust/frontend/ui/app.slint:2106 rust/frontend/ui/app.slint:2264
+#: rust/frontend/ui/app.slint:2109 rust/frontend/ui/app.slint:2267
 msgid "Expires in {n} minute"
 msgid_plural "Expires in {n} minutes"
 msgstr[0] "Vyprší o {n} minútu"
 msgstr[1] "Vyprší o {n} minúty"
 msgstr[2] "Vyprší o {n} minút"
 
-#: rust/frontend/ui/app.slint:2107 rust/frontend/ui/app.slint:2265
+#: rust/frontend/ui/app.slint:2110 rust/frontend/ui/app.slint:2268
 msgid "Expires in {n} second"
 msgid_plural "Expires in {n} seconds"
 msgstr[0] "Vyprší o {n} sekundu"
 msgstr[1] "Vyprší o {n} sekundy"
 msgstr[2] "Vyprší o {n} sekúnd"
 
-#: rust/frontend/ui/app.slint:2124
+#: rust/frontend/ui/app.slint:2127
 msgid "A device is now paired with Core."
 msgstr "Zariadenie je teraz spárované s Core."
 
-#: rust/frontend/ui/app.slint:2125
+#: rust/frontend/ui/app.slint:2128
 msgid "{} is now paired with Core."
 msgstr "Zariadenie {} je teraz spárované s Core."
 
-#: rust/frontend/ui/app.slint:2139
+#: rust/frontend/ui/app.slint:2142
 msgid "The PIN expired before a device used it. Pair again for a new one."
 msgstr "PIN vypršal skôr, než ho zariadenie použilo. Spárujte znova a získajte nový."
 
-#: rust/frontend/ui/app.slint:2161
+#: rust/frontend/ui/app.slint:2164
 msgid "Link Online account"
 msgstr "Prepojiť účet Online"
 
-#: rust/frontend/ui/app.slint:2185
+#: rust/frontend/ui/app.slint:2188
 msgid "This device is now linked to your Zaparoo Online account."
 msgstr "Toto zariadenie je teraz prepojené s vaším účtom Zaparoo Online."
 
-#: rust/frontend/ui/app.slint:2186
+#: rust/frontend/ui/app.slint:2189
 msgid "The code expired before it was approved. Link again for a new one."
 msgstr "Kód vypršal pred schválením. Prepojte znova a získajte nový."
 
-#: rust/frontend/ui/app.slint:2187
+#: rust/frontend/ui/app.slint:2190
 msgid "Linking failed. Check the network connection and try again."
 msgstr "Prepojenie zlyhalo. Skontrolujte sieťové pripojenie a skúste to znova."
 
-#: rust/frontend/ui/app.slint:2201
+#: rust/frontend/ui/app.slint:2204
 msgid "Scan this code with your phone, or open the address below and enter the code."
 msgstr "Naskenujte tento kód telefónom alebo otvorte adresu nižšie a zadajte kód."
 
-#: rust/frontend/ui/app.slint:2214
+#: rust/frontend/ui/app.slint:2217
 msgid "Or press Accept to open it on this device."
 msgstr "Alebo ju stlačením Potvrdiť otvorte na tomto zariadení."
 
-#: rust/frontend/ui/app.slint:2353 rust/frontend/ui/labels.slint:403
+#: rust/frontend/ui/app.slint:2356 rust/frontend/ui/labels.slint:407
 msgid "This device is not linked. Link your Zaparoo Online account, then try again."
 msgstr "Toto zariadenie nie je prepojené. Prepojte svoj účet Zaparoo Online a skúste to znova."
 
-#: rust/frontend/ui/app.slint:2356 rust/frontend/ui/labels.slint:402
+#: rust/frontend/ui/app.slint:2359 rust/frontend/ui/labels.slint:406
 msgid "Cloud backup needs an active Zaparoo Warp subscription."
 msgstr "Cloudová záloha vyžaduje aktívne predplatné Zaparoo Warp."
 
-#: rust/frontend/ui/app.slint:2358
+#: rust/frontend/ui/app.slint:2361
 msgid "Could not load this. Check the network connection and try again."
 msgstr "Nepodarilo sa načítať. Skontrolujte sieťové pripojenie a skúste to znova."
 
-#: rust/frontend/ui/app.slint:2361
+#: rust/frontend/ui/app.slint:2364
 msgid "Back up now"
 msgstr "Zálohovať teraz"
 
 #. Zaparoo made; it says so where its detail already is.
-#: rust/frontend/ui/app.slint:2366
+#: rust/frontend/ui/app.slint:2369
 msgid "{}, needs a newer Zaparoo"
 msgstr "{}, vyžaduje novšie Zaparoo"
 
-#: rust/frontend/ui/app.slint:2367
+#: rust/frontend/ui/app.slint:2370
 msgid "{}, this device"
 msgstr "{}, toto zariadenie"
 
-#: rust/frontend/ui/app.slint:2374
+#: rust/frontend/ui/app.slint:2377
 msgid "Cloud backups"
 msgstr "Cloudové zálohy"
 
-#: rust/frontend/ui/app.slint:2374
+#: rust/frontend/ui/app.slint:2377
 msgid "Remote activity"
 msgstr "Vzdialená aktivita"
 
-#: rust/frontend/ui/app.slint:2395
+#: rust/frontend/ui/app.slint:2398
 msgid "Backing up…"
 msgstr "Zálohovanie…"
 
-#: rust/frontend/ui/app.slint:2396
+#: rust/frontend/ui/app.slint:2399
 msgid "Restoring…"
 msgstr "Obnovovanie…"
 
-#: rust/frontend/ui/app.slint:2397
+#: rust/frontend/ui/app.slint:2400
 msgid "Loading backups…"
 msgstr "Načítanie záloh…"
 
-#: rust/frontend/ui/app.slint:2397
+#: rust/frontend/ui/app.slint:2400
 msgid "Loading activity…"
 msgstr "Načítanie aktivity…"
 
-#: rust/frontend/ui/app.slint:2408
+#: rust/frontend/ui/app.slint:2411
 msgid "No cloud backups yet."
 msgstr "Zatiaľ žiadne cloudové zálohy."
 
-#: rust/frontend/ui/app.slint:2408
+#: rust/frontend/ui/app.slint:2411
 msgid "Nothing has run through remote control yet."
 msgstr "Cez diaľkové ovládanie sa zatiaľ nič nespustilo."
 
-#: rust/frontend/ui/app.slint:2535
+#: rust/frontend/ui/app.slint:2538
 msgid "Dual SDRAM"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:2536
+#: rust/frontend/ui/app.slint:2539
 msgid "Kodi TV"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:2537
+#: rust/frontend/ui/app.slint:2540
 msgid "Kodi music"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:2538
+#: rust/frontend/ui/app.slint:2541
 msgid "MiSTer arcade"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:2539
+#: rust/frontend/ui/app.slint:2542
 msgid "Media players"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:2540
+#: rust/frontend/ui/app.slint:2543
 msgid "Native"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:2541
+#: rust/frontend/ui/app.slint:2544
 msgid "Unstable"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:2542
+#: rust/frontend/ui/app.slint:2545
 msgid "Video"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:2546
+#: rust/frontend/ui/app.slint:2549
 msgid "Add…"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:2547 rust/frontend/ui/app.slint:3657
-#: rust/frontend/ui/app.slint:3674 rust/frontend/ui/app.slint:3699
-#: rust/frontend/ui/app.slint:3714 rust/frontend/ui/app.slint:3729
-#: rust/frontend/ui/app.slint:3746 rust/frontend/ui/app.slint:3760
-#: rust/frontend/ui/app.slint:3782 rust/frontend/ui/app.slint:3796
-#: rust/frontend/ui/app.slint:3819 rust/frontend/ui/app.slint:3881
-#: rust/frontend/ui/app.slint:3901 rust/frontend/ui/app.slint:3942
-#: rust/frontend/ui/app.slint:4016 rust/frontend/ui/app.slint:4033
-#: rust/frontend/ui/app.slint:4048 rust/frontend/ui/app.slint:4107
-#: rust/frontend/ui/app.slint:4203 rust/frontend/ui/app.slint:4217
-#: rust/frontend/ui/app.slint:4230
+#: rust/frontend/ui/app.slint:2550 rust/frontend/ui/app.slint:3660
+#: rust/frontend/ui/app.slint:3677 rust/frontend/ui/app.slint:3702
+#: rust/frontend/ui/app.slint:3717 rust/frontend/ui/app.slint:3732
+#: rust/frontend/ui/app.slint:3749 rust/frontend/ui/app.slint:3763
+#: rust/frontend/ui/app.slint:3785 rust/frontend/ui/app.slint:3799
+#: rust/frontend/ui/app.slint:3822 rust/frontend/ui/app.slint:3884
+#: rust/frontend/ui/app.slint:3904 rust/frontend/ui/app.slint:3945
+#: rust/frontend/ui/app.slint:4019 rust/frontend/ui/app.slint:4036
+#: rust/frontend/ui/app.slint:4051 rust/frontend/ui/app.slint:4110
+#: rust/frontend/ui/app.slint:4206 rust/frontend/ui/app.slint:4220
+#: rust/frontend/ui/app.slint:4233
 msgid "Move"
 msgstr "Presunúť"
 
-#: rust/frontend/ui/app.slint:2548
+#: rust/frontend/ui/app.slint:2551
 msgid "Remove"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:2554
+#: rust/frontend/ui/app.slint:2557
 msgid "Group"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:2554
+#: rust/frontend/ui/app.slint:2557
 msgid "Group, not installed"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:2558
+#: rust/frontend/ui/app.slint:2561
 msgid "Not installed"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:2558
+#: rust/frontend/ui/app.slint:2561
 msgid "{}, not installed"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:2564 rust/frontend/ui/app.slint:3820
+#: rust/frontend/ui/app.slint:2567 rust/frontend/ui/app.slint:3823
 msgid "Add"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:2565 rust/frontend/ui/settings.slint:173
+#: rust/frontend/ui/app.slint:2568 rust/frontend/ui/settings.slint:173
 msgid "Launcher preference"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:2660 rust/frontend/ui/settings.slint:204
+#: rust/frontend/ui/app.slint:2663 rust/frontend/ui/settings.slint:204
 msgid "Documentation"
 msgstr "Dokumentácia"
 
-#: rust/frontend/ui/app.slint:2660 rust/frontend/ui/labels.slint:149
+#: rust/frontend/ui/app.slint:2663 rust/frontend/ui/labels.slint:149
 msgid "Write with App"
 msgstr "Zapísať cez App"
 
-#: rust/frontend/ui/app.slint:2679
+#: rust/frontend/ui/app.slint:2682
 msgid "Scan this code to open the Zaparoo Frontend guide on your phone."
 msgstr "Naskenujte tento kód a otvorte príručku Zaparoo Frontend v telefóne."
 
-#: rust/frontend/ui/app.slint:2680
+#: rust/frontend/ui/app.slint:2683
 msgid "Scan this code with the Zaparoo App to write this game to a Zaparoo token."
 msgstr "Naskenujte tento kód v Zaparoo App a zapíšte túto hru na token Zaparoo."
 
-#: rust/frontend/ui/app.slint:3139 rust/frontend/ui/app.slint:3600
+#: rust/frontend/ui/app.slint:3142 rust/frontend/ui/app.slint:3603
 msgid "Recently played"
 msgstr "Nedávno hrané"
 
-#: rust/frontend/ui/app.slint:3140 rust/frontend/ui/app.slint:3608
-#: rust/frontend/ui/app.slint:3708 rust/frontend/ui/app.slint:4017
+#: rust/frontend/ui/app.slint:3143 rust/frontend/ui/app.slint:3611
+#: rust/frontend/ui/app.slint:3711 rust/frontend/ui/app.slint:4020
 #: rust/frontend/ui/search.slint:80
 msgid "Search"
 msgstr "Hľadať"
 
-#: rust/frontend/ui/app.slint:3150
+#: rust/frontend/ui/app.slint:3153
 msgid "{} games"
 msgstr "{} hier"
 
-#: rust/frontend/ui/app.slint:3287
+#: rust/frontend/ui/app.slint:3290
 msgid "Loading game…"
 msgstr "Načítanie hry…"
 
-#: rust/frontend/ui/app.slint:3398
+#: rust/frontend/ui/app.slint:3401
 msgid "Nothing played yet"
 msgstr "Zatiaľ nič hrané"
 
-#: rust/frontend/ui/app.slint:3399 rust/frontend/ui/search.slint:97
+#: rust/frontend/ui/app.slint:3402 rust/frontend/ui/search.slint:97
 msgid "No matches"
 msgstr "Žiadne výsledky"
 
-#: rust/frontend/ui/app.slint:3400
+#: rust/frontend/ui/app.slint:3403
 msgid "No games match these tags"
 msgstr "Týmto značkám nezodpovedajú žiadne hry"
 
-#: rust/frontend/ui/app.slint:3400
+#: rust/frontend/ui/app.slint:3403
 msgid "No games in this system"
 msgstr "V tomto systéme nie sú žiadne hry"
 
-#: rust/frontend/ui/app.slint:3401 rust/frontend/ui/labels.slint:48
+#: rust/frontend/ui/app.slint:3404 rust/frontend/ui/labels.slint:48
 msgid "Loading favorites…"
 msgstr "Načítanie obľúbených…"
 
-#: rust/frontend/ui/app.slint:3402 rust/frontend/ui/labels.slint:49
+#: rust/frontend/ui/app.slint:3405 rust/frontend/ui/labels.slint:49
 msgid "Loading recently played…"
 msgstr "Načítanie nedávno hraných…"
 
-#: rust/frontend/ui/app.slint:3403 rust/frontend/ui/labels.slint:50
+#: rust/frontend/ui/app.slint:3406 rust/frontend/ui/labels.slint:50
 #: rust/frontend/ui/search.slint:95
 msgid "Searching…"
 msgstr "Hľadanie…"
 
-#: rust/frontend/ui/app.slint:3403 rust/frontend/ui/labels.slint:47
+#: rust/frontend/ui/app.slint:3406 rust/frontend/ui/labels.slint:47
 msgid "Loading games…"
 msgstr "Načítanie hier…"
 
-#: rust/frontend/ui/app.slint:3484
+#: rust/frontend/ui/app.slint:3487
 msgid "Left/Right adjust width"
 msgstr "Vľavo/Vpravo upravujú šírku"
 
-#: rust/frontend/ui/app.slint:3485
+#: rust/frontend/ui/app.slint:3488
 msgid "Arrows adjust position"
 msgstr "Šípky upravujú polohu"
 
-#: rust/frontend/ui/app.slint:3508
+#: rust/frontend/ui/app.slint:3511
 msgid "Adjust position"
 msgstr "Upraviť polohu"
 
-#: rust/frontend/ui/app.slint:3508
+#: rust/frontend/ui/app.slint:3511
 msgid "Adjust width"
 msgstr "Upraviť šírku"
 
-#: rust/frontend/ui/app.slint:3515
+#: rust/frontend/ui/app.slint:3518
 msgid "Accept or Back saves"
 msgstr "Potvrdiť alebo Späť uloží"
 
-#: rust/frontend/ui/app.slint:3602 rust/frontend/ui/rename.slint:59
+#: rust/frontend/ui/app.slint:3605 rust/frontend/ui/rename.slint:59
 msgid "Rename tile"
 msgstr "Premenovať dlaždicu"
 
-#: rust/frontend/ui/app.slint:3603 rust/frontend/ui/ra_login.slint:70
+#: rust/frontend/ui/app.slint:3606 rust/frontend/ui/ra_login.slint:70
 msgid "RetroAchievements"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:3605 rust/frontend/ui/file_browser.slint:96
+#: rust/frontend/ui/app.slint:3608 rust/frontend/ui/file_browser.slint:96
 msgid "Places"
 msgstr "Umiestnenia"
 
-#: rust/frontend/ui/app.slint:3639 rust/frontend/ui/app.slint:4027
+#: rust/frontend/ui/app.slint:3642 rust/frontend/ui/app.slint:4030
 msgid "View"
 msgstr "Zobraziť"
 
-#: rust/frontend/ui/app.slint:3640 rust/frontend/ui/app.slint:3724
-#: rust/frontend/ui/app.slint:3843 rust/frontend/ui/app.slint:4152
-#: rust/frontend/ui/app.slint:4192 rust/frontend/ui/app.slint:4231
-#: rust/frontend/ui/app.slint:4300 rust/frontend/ui/app.slint:4317
-#: rust/frontend/ui/app.slint:4335 rust/frontend/ui/app.slint:4350
+#: rust/frontend/ui/app.slint:3643 rust/frontend/ui/app.slint:3727
+#: rust/frontend/ui/app.slint:3846 rust/frontend/ui/app.slint:4155
+#: rust/frontend/ui/app.slint:4195 rust/frontend/ui/app.slint:4234
+#: rust/frontend/ui/app.slint:4303 rust/frontend/ui/app.slint:4320
+#: rust/frontend/ui/app.slint:4338 rust/frontend/ui/app.slint:4353
 msgid "Open"
 msgstr "Otvoriť"
 
-#: rust/frontend/ui/app.slint:3650
+#: rust/frontend/ui/app.slint:3653
 msgid "Page"
 msgstr "Strana"
 
-#: rust/frontend/ui/app.slint:3653
+#: rust/frontend/ui/app.slint:3656
 msgid "Whole page"
 msgstr "Celá strana"
 
-#: rust/frontend/ui/app.slint:3653
+#: rust/frontend/ui/app.slint:3656
 msgid "Fit width"
 msgstr "Prispôsobiť šírke"
 
-#: rust/frontend/ui/app.slint:3675 rust/frontend/ui/app.slint:3708
-#: rust/frontend/ui/app.slint:3724 rust/frontend/ui/app.slint:3761
-#: rust/frontend/ui/app.slint:3826 rust/frontend/ui/app.slint:3843
-#: rust/frontend/ui/app.slint:3915 rust/frontend/ui/app.slint:4068
-#: rust/frontend/ui/app.slint:4108 rust/frontend/ui/settings.slint:105
+#: rust/frontend/ui/app.slint:3678 rust/frontend/ui/app.slint:3711
+#: rust/frontend/ui/app.slint:3727 rust/frontend/ui/app.slint:3764
+#: rust/frontend/ui/app.slint:3829 rust/frontend/ui/app.slint:3846
+#: rust/frontend/ui/app.slint:3918 rust/frontend/ui/app.slint:4071
+#: rust/frontend/ui/app.slint:4111 rust/frontend/ui/settings.slint:105
 msgid "Select"
 msgstr "Vybrať"
 
-#: rust/frontend/ui/app.slint:3676 rust/frontend/ui/settings.slint:106
+#: rust/frontend/ui/app.slint:3679 rust/frontend/ui/settings.slint:106
 msgid "Start"
 msgstr "Spustiť"
 
-#: rust/frontend/ui/app.slint:3678 rust/frontend/ui/app.slint:3827
-#: rust/frontend/ui/app.slint:3925 rust/frontend/ui/app.slint:3950
-#: rust/frontend/ui/app.slint:3960 rust/frontend/ui/app.slint:4028
-#: rust/frontend/ui/app.slint:4042 rust/frontend/ui/app.slint:4056
+#: rust/frontend/ui/app.slint:3681 rust/frontend/ui/app.slint:3830
+#: rust/frontend/ui/app.slint:3928 rust/frontend/ui/app.slint:3953
+#: rust/frontend/ui/app.slint:3963 rust/frontend/ui/app.slint:4031
+#: rust/frontend/ui/app.slint:4045 rust/frontend/ui/app.slint:4059
 msgid "Close"
 msgstr "Zavrieť"
 
-#: rust/frontend/ui/app.slint:3679 rust/frontend/ui/app.slint:4211
+#: rust/frontend/ui/app.slint:3682 rust/frontend/ui/app.slint:4214
 msgid "Toggle"
 msgstr "Prepínať"
 
-#: rust/frontend/ui/app.slint:3680
+#: rust/frontend/ui/app.slint:3683
 msgid "Info"
 msgstr "Info"
 
-#: rust/frontend/ui/app.slint:3681 rust/frontend/ui/app.slint:3695
-#: rust/frontend/ui/app.slint:3709 rust/frontend/ui/app.slint:3725
-#: rust/frontend/ui/app.slint:3742 rust/frontend/ui/app.slint:3756
-#: rust/frontend/ui/app.slint:3778 rust/frontend/ui/app.slint:3792
-#: rust/frontend/ui/app.slint:3821 rust/frontend/ui/app.slint:3838
-#: rust/frontend/ui/app.slint:3851 rust/frontend/ui/app.slint:3866
-#: rust/frontend/ui/app.slint:3882 rust/frontend/ui/app.slint:3918
-#: rust/frontend/ui/app.slint:3981 rust/frontend/ui/app.slint:3992
-#: rust/frontend/ui/app.slint:4006 rust/frontend/ui/app.slint:4018
-#: rust/frontend/ui/app.slint:4109 rust/frontend/ui/app.slint:4158
-#: rust/frontend/ui/app.slint:4171 rust/frontend/ui/app.slint:4184
-#: rust/frontend/ui/app.slint:4198 rust/frontend/ui/app.slint:4212
-#: rust/frontend/ui/app.slint:4226 rust/frontend/ui/app.slint:4243
-#: rust/frontend/ui/app.slint:4264 rust/frontend/ui/app.slint:4276
-#: rust/frontend/ui/app.slint:4294 rust/frontend/ui/app.slint:4311
-#: rust/frontend/ui/app.slint:4330 rust/frontend/ui/app.slint:4345
+#: rust/frontend/ui/app.slint:3684 rust/frontend/ui/app.slint:3698
+#: rust/frontend/ui/app.slint:3712 rust/frontend/ui/app.slint:3728
+#: rust/frontend/ui/app.slint:3745 rust/frontend/ui/app.slint:3759
+#: rust/frontend/ui/app.slint:3781 rust/frontend/ui/app.slint:3795
+#: rust/frontend/ui/app.slint:3824 rust/frontend/ui/app.slint:3841
+#: rust/frontend/ui/app.slint:3854 rust/frontend/ui/app.slint:3869
+#: rust/frontend/ui/app.slint:3885 rust/frontend/ui/app.slint:3921
+#: rust/frontend/ui/app.slint:3984 rust/frontend/ui/app.slint:3995
+#: rust/frontend/ui/app.slint:4009 rust/frontend/ui/app.slint:4021
+#: rust/frontend/ui/app.slint:4112 rust/frontend/ui/app.slint:4161
+#: rust/frontend/ui/app.slint:4174 rust/frontend/ui/app.slint:4187
+#: rust/frontend/ui/app.slint:4201 rust/frontend/ui/app.slint:4215
+#: rust/frontend/ui/app.slint:4229 rust/frontend/ui/app.slint:4246
+#: rust/frontend/ui/app.slint:4267 rust/frontend/ui/app.slint:4279
+#: rust/frontend/ui/app.slint:4297 rust/frontend/ui/app.slint:4314
+#: rust/frontend/ui/app.slint:4333 rust/frontend/ui/app.slint:4348
 msgid "Back"
 msgstr "Späť"
 
-#: rust/frontend/ui/app.slint:3700 rust/frontend/ui/app.slint:3716
-#: rust/frontend/ui/app.slint:3762 rust/frontend/ui/app.slint:3798
+#: rust/frontend/ui/app.slint:3703 rust/frontend/ui/app.slint:3719
+#: rust/frontend/ui/app.slint:3765 rust/frontend/ui/app.slint:3801
 msgid "Delete"
 msgstr "Vymazať"
 
-#: rust/frontend/ui/app.slint:3701 rust/frontend/ui/app.slint:3717
-#: rust/frontend/ui/app.slint:3763 rust/frontend/ui/app.slint:3799
+#: rust/frontend/ui/app.slint:3704 rust/frontend/ui/app.slint:3720
+#: rust/frontend/ui/app.slint:3766 rust/frontend/ui/app.slint:3802
 msgid "Space"
 msgstr "Medzera"
 
-#: rust/frontend/ui/app.slint:3730 rust/frontend/ui/app.slint:4210
+#: rust/frontend/ui/app.slint:3733 rust/frontend/ui/app.slint:4213
 #: rust/frontend/ui/settings.slint:108
 msgid "Change"
 msgstr "Zmeniť"
 
-#: rust/frontend/ui/app.slint:3755 rust/frontend/ui/app.slint:3761
+#: rust/frontend/ui/app.slint:3758 rust/frontend/ui/app.slint:3764
 msgid "Save"
 msgstr "Uložiť"
 
-#: rust/frontend/ui/app.slint:3805 rust/frontend/ui/settings.slint:294
+#: rust/frontend/ui/app.slint:3808 rust/frontend/ui/settings.slint:294
 msgid "Log in"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:3805
+#: rust/frontend/ui/app.slint:3808
 msgid "Next"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:3813 rust/frontend/ui/app.slint:3869
-#: rust/frontend/ui/app.slint:3968
+#: rust/frontend/ui/app.slint:3816 rust/frontend/ui/app.slint:3872
+#: rust/frontend/ui/app.slint:3971
 msgid "Done"
 msgstr "Hotovo"
 
-#: rust/frontend/ui/app.slint:3837 rust/frontend/ui/app.slint:3850
-#: rust/frontend/ui/app.slint:4139 rust/frontend/ui/app.slint:4153
-#: rust/frontend/ui/app.slint:4183 rust/frontend/ui/app.slint:4310
-#: rust/frontend/ui/app.slint:4344 rust/frontend/ui/labels.slint:226
+#: rust/frontend/ui/app.slint:3840 rust/frontend/ui/app.slint:3853
+#: rust/frontend/ui/app.slint:4142 rust/frontend/ui/app.slint:4156
+#: rust/frontend/ui/app.slint:4186 rust/frontend/ui/app.slint:4313
+#: rust/frontend/ui/app.slint:4347 rust/frontend/ui/labels.slint:230
 msgid "Menu"
 msgstr "Ponuka"
 
-#: rust/frontend/ui/app.slint:3869 rust/frontend/ui/app.slint:4145
-#: rust/frontend/ui/app.slint:4169 rust/frontend/ui/app.slint:4268
-#: rust/frontend/ui/app.slint:4280 rust/frontend/ui/setup.slint:378
+#: rust/frontend/ui/app.slint:3872 rust/frontend/ui/app.slint:4148
+#: rust/frontend/ui/app.slint:4172 rust/frontend/ui/app.slint:4271
+#: rust/frontend/ui/app.slint:4283 rust/frontend/ui/setup.slint:378
 msgid "Retry"
 msgstr "Skúsiť znova"
 
-#: rust/frontend/ui/app.slint:3909 rust/frontend/ui/labels.slint:328
+#: rust/frontend/ui/app.slint:3912 rust/frontend/ui/labels.slint:332
 msgid "OK"
 msgstr "V poriadku"
 
-#: rust/frontend/ui/app.slint:3977 rust/frontend/ui/app.slint:4026
-#: rust/frontend/ui/app.slint:4041 rust/frontend/ui/app.slint:4299
-#: rust/frontend/ui/app.slint:4316
+#: rust/frontend/ui/app.slint:3980 rust/frontend/ui/app.slint:4029
+#: rust/frontend/ui/app.slint:4044 rust/frontend/ui/app.slint:4302
+#: rust/frontend/ui/app.slint:4319
 msgid "Image"
 msgstr "Obrázok"
 
-#: rust/frontend/ui/app.slint:3990 rust/frontend/ui/app.slint:4004
-#: rust/frontend/ui/app.slint:4245
+#: rust/frontend/ui/app.slint:3993 rust/frontend/ui/app.slint:4007
+#: rust/frontend/ui/app.slint:4248
 msgid "Scroll"
 msgstr "Posúvať"
 
-#: rust/frontend/ui/app.slint:4097
+#: rust/frontend/ui/app.slint:4100
 msgid "Adjust"
 msgstr "Upraviť"
 
-#: rust/frontend/ui/app.slint:4098
+#: rust/frontend/ui/app.slint:4101
 msgid "Position"
 msgstr "Poloha"
 
-#: rust/frontend/ui/app.slint:4098
+#: rust/frontend/ui/app.slint:4101
 msgid "Size"
 msgstr "Veľkosť"
 
-#: rust/frontend/ui/app.slint:4122
+#: rust/frontend/ui/app.slint:4125
 msgid "Reposition"
 msgstr "Premiestniť"
 
-#: rust/frontend/ui/app.slint:4123
+#: rust/frontend/ui/app.slint:4126
 msgid "Place"
 msgstr "Umiestniť"
 
-#: rust/frontend/ui/app.slint:4133 rust/frontend/ui/app.slint:4146
-#: rust/frontend/ui/app.slint:4301 rust/frontend/ui/app.slint:4336
+#: rust/frontend/ui/app.slint:4136 rust/frontend/ui/app.slint:4149
+#: rust/frontend/ui/app.slint:4304 rust/frontend/ui/app.slint:4339
 msgid "Options"
 msgstr "Možnosti"
 
@@ -818,7 +818,7 @@ msgstr "Načítanie zlyhalo"
 msgid "This folder can't be opened."
 msgstr "Tento priečinok sa nedá otvoriť."
 
-#: rust/frontend/ui/game_info.slint:241 rust/frontend/ui/labels.slint:249
+#: rust/frontend/ui/game_info.slint:241 rust/frontend/ui/labels.slint:253
 msgid "Loading details…"
 msgstr "Načítanie podrobností…"
 
@@ -1003,7 +1003,7 @@ msgstr "Pokračovať: {}"
 msgid "Update"
 msgstr "Aktualizácia"
 
-#: rust/frontend/ui/labels.slint:89 rust/frontend/ui/labels.slint:209
+#: rust/frontend/ui/labels.slint:89 rust/frontend/ui/labels.slint:213
 msgid "Settings"
 msgstr "Nastavenia"
 
@@ -1025,7 +1025,7 @@ msgstr[2] "{n} obľúbených"
 msgid "A-Z"
 msgstr "A-Z"
 
-#: rust/frontend/ui/labels.slint:109 rust/frontend/ui/labels.slint:223
+#: rust/frontend/ui/labels.slint:109 rust/frontend/ui/labels.slint:227
 msgid "Default"
 msgstr "Predvolené"
 
@@ -1069,7 +1069,7 @@ msgstr "Pridať do obľúbených"
 msgid "Remove from favorites"
 msgstr "Odstrániť z obľúbených"
 
-#: rust/frontend/ui/labels.slint:147 rust/frontend/ui/labels.slint:233
+#: rust/frontend/ui/labels.slint:147 rust/frontend/ui/labels.slint:237
 msgid "Change launcher"
 msgstr "Zmeniť spúšťač"
 
@@ -1130,7 +1130,7 @@ msgstr "Spravovať systém"
 msgid "Manage category"
 msgstr "Spravovať kategóriu"
 
-#: rust/frontend/ui/labels.slint:167 rust/frontend/ui/labels.slint:201
+#: rust/frontend/ui/labels.slint:167 rust/frontend/ui/labels.slint:203
 msgid "Hide"
 msgstr "Skryť"
 
@@ -1210,207 +1210,215 @@ msgstr "Žiadne značky nie sú k dispozícii"
 msgid "Add item…"
 msgstr "Pridať položku…"
 
-#: rust/frontend/ui/labels.slint:202
+#: rust/frontend/ui/labels.slint:201
+msgid "Custom folder…"
+msgstr ""
+
+#: rust/frontend/ui/labels.slint:204
 msgid "Move tile"
 msgstr "Presunúť dlaždicu"
 
-#: rust/frontend/ui/labels.slint:203
+#: rust/frontend/ui/labels.slint:205
 msgid "Rename tile…"
 msgstr "Premenovať dlaždicu…"
 
-#: rust/frontend/ui/labels.slint:204
+#: rust/frontend/ui/labels.slint:206
 msgid "Change icon…"
 msgstr "Zmeniť ikonu…"
 
-#: rust/frontend/ui/labels.slint:206
+#: rust/frontend/ui/labels.slint:208
 msgid "Use default icon"
 msgstr "Použiť predvolenú ikonu"
 
-#: rust/frontend/ui/labels.slint:207
+#: rust/frontend/ui/labels.slint:210
+msgid "Add this folder"
+msgstr ""
+
+#: rust/frontend/ui/labels.slint:211
 msgid "Hide Resume tile"
 msgstr "Skryť dlaždicu Pokračovať"
 
-#: rust/frontend/ui/labels.slint:208
+#: rust/frontend/ui/labels.slint:212
 msgid "Reset layout"
 msgstr "Obnoviť rozloženie"
 
-#: rust/frontend/ui/labels.slint:210
+#: rust/frontend/ui/labels.slint:214
 msgid "Quit"
 msgstr "Ukončiť"
 
-#: rust/frontend/ui/labels.slint:211
+#: rust/frontend/ui/labels.slint:215
 msgid "Back to Hub"
 msgstr "Späť na Hub"
 
-#: rust/frontend/ui/labels.slint:212 rust/frontend/ui/labels.slint:227
+#: rust/frontend/ui/labels.slint:216 rust/frontend/ui/labels.slint:231
 msgid "More"
 msgstr "Viac"
 
-#: rust/frontend/ui/labels.slint:216
+#: rust/frontend/ui/labels.slint:220
 msgid "Sort: {}"
 msgstr "Zoradenie: {}"
 
-#: rust/frontend/ui/labels.slint:217
+#: rust/frontend/ui/labels.slint:221
 msgid "Group by: {}"
 msgstr "Zoskupenie: {}"
 
-#: rust/frontend/ui/labels.slint:224
+#: rust/frontend/ui/labels.slint:228
 msgid "Current: {}"
 msgstr "Aktuálne: {}"
 
-#: rust/frontend/ui/labels.slint:228 rust/frontend/ui/search.slint:240
+#: rust/frontend/ui/labels.slint:232 rust/frontend/ui/search.slint:240
 msgid "Tags"
 msgstr "Značky"
 
-#: rust/frontend/ui/labels.slint:230
+#: rust/frontend/ui/labels.slint:234
 msgid "Add item"
 msgstr "Pridať položku"
 
-#: rust/frontend/ui/labels.slint:231
+#: rust/frontend/ui/labels.slint:235
 msgid "Sort"
 msgstr "Zoradiť"
 
-#: rust/frontend/ui/labels.slint:232
+#: rust/frontend/ui/labels.slint:236
 msgid "Group by"
 msgstr "Zoskupiť podľa"
 
-#: rust/frontend/ui/labels.slint:243
+#: rust/frontend/ui/labels.slint:247
 msgid "Launching…"
 msgstr "Spúšťanie…"
 
-#: rust/frontend/ui/labels.slint:244
+#: rust/frontend/ui/labels.slint:248
 msgid "Launching {}…"
 msgstr "Spúšťa sa {}…"
 
-#: rust/frontend/ui/labels.slint:246
+#: rust/frontend/ui/labels.slint:250
 msgid "Loading more…"
 msgstr "Načítava sa viac…"
 
-#: rust/frontend/ui/labels.slint:247
+#: rust/frontend/ui/labels.slint:251
 msgid "Loading {} of {}…"
 msgstr "Načítanie {0} z {1}…"
 
-#: rust/frontend/ui/labels.slint:248
+#: rust/frontend/ui/labels.slint:252
 msgid "Loading launchers…"
 msgstr "Načítanie spúšťačov…"
 
-#: rust/frontend/ui/labels.slint:252
+#: rust/frontend/ui/labels.slint:256
 msgid "Cancelling…"
 msgstr "Rušenie…"
 
-#: rust/frontend/ui/labels.slint:253
+#: rust/frontend/ui/labels.slint:257
 msgid "Unlinking…"
 msgstr "Ruší sa prepojenie…"
 
-#: rust/frontend/ui/labels.slint:254
+#: rust/frontend/ui/labels.slint:258
 msgid "Added to Hub"
 msgstr "Pridané na Hub"
 
-#: rust/frontend/ui/labels.slint:255
+#: rust/frontend/ui/labels.slint:259
 msgid "Saved to Hub"
 msgstr "Uložené na Hub"
 
-#: rust/frontend/ui/labels.slint:256
+#: rust/frontend/ui/labels.slint:260
 msgid "Removed from Hub"
 msgstr "Odstránené z Hubu"
 
-#: rust/frontend/ui/labels.slint:257
+#: rust/frontend/ui/labels.slint:261
 msgid "Token written"
 msgstr "Token zapísaný"
 
-#: rust/frontend/ui/labels.slint:262
+#: rust/frontend/ui/labels.slint:266
 msgid "No recent games"
 msgstr "Žiadne nedávne hry"
 
-#: rust/frontend/ui/labels.slint:263
+#: rust/frontend/ui/labels.slint:267
 msgid "No internet connection"
 msgstr "Žiadne internetové pripojenie"
 
-#: rust/frontend/ui/labels.slint:264 rust/frontend/ui/settings.slint:394
+#: rust/frontend/ui/labels.slint:268 rust/frontend/ui/settings.slint:394
 msgid "Not available"
 msgstr "Nedostupné"
 
-#: rust/frontend/ui/labels.slint:271
+#: rust/frontend/ui/labels.slint:275
 msgid "not installed"
 msgstr "nie je nainštalovaný"
 
-#: rust/frontend/ui/labels.slint:272
+#: rust/frontend/ui/labels.slint:276
 msgid "unavailable"
 msgstr "nedostupný"
 
-#: rust/frontend/ui/labels.slint:281
+#: rust/frontend/ui/labels.slint:285
 msgid "Quit Zaparoo Frontend?"
 msgstr "Ukončiť Zaparoo Frontend?"
 
-#: rust/frontend/ui/labels.slint:282
+#: rust/frontend/ui/labels.slint:286
 msgid "Game still running"
 msgstr "Hra stále beží"
 
-#: rust/frontend/ui/labels.slint:283
+#: rust/frontend/ui/labels.slint:287
 msgid "Quit and restart Zaparoo Frontend?"
 msgstr "Ukončiť a reštartovať Zaparoo Frontend?"
 
-#: rust/frontend/ui/labels.slint:284
+#: rust/frontend/ui/labels.slint:288
 msgid "Welcome to Zaparoo Frontend"
 msgstr "Vitajte v Zaparoo Frontend"
 
-#: rust/frontend/ui/labels.slint:285
+#: rust/frontend/ui/labels.slint:289
 msgid "Update Zaparoo Core"
 msgstr "Aktualizujte Zaparoo Core"
 
-#: rust/frontend/ui/labels.slint:286
+#: rust/frontend/ui/labels.slint:290
 msgid "First-time setup"
 msgstr "Prvotné nastavenie"
 
-#: rust/frontend/ui/labels.slint:287
+#: rust/frontend/ui/labels.slint:291
 msgid "Nothing left to add"
 msgstr "Už nie je čo pridať"
 
-#: rust/frontend/ui/labels.slint:288
+#: rust/frontend/ui/labels.slint:292
 msgid "Unlink Online account?"
 msgstr "Zrušiť prepojenie účtu Online?"
 
-#: rust/frontend/ui/labels.slint:289
+#: rust/frontend/ui/labels.slint:293
 msgid "Log out of RetroAchievements?"
 msgstr ""
 
-#: rust/frontend/ui/labels.slint:290
+#: rust/frontend/ui/labels.slint:294
 msgid "Restore this backup?"
 msgstr "Obnoviť túto zálohu?"
 
-#: rust/frontend/ui/labels.slint:291
+#: rust/frontend/ui/labels.slint:295
 msgid "Stop update?"
 msgstr "Zastaviť aktualizáciu?"
 
-#: rust/frontend/ui/labels.slint:300
+#: rust/frontend/ui/labels.slint:304
 msgid "Are you sure you want to exit?"
 msgstr "Naozaj chcete ukončiť?"
 
-#: rust/frontend/ui/labels.slint:301
+#: rust/frontend/ui/labels.slint:305
 msgid "Close the running game before exiting Zaparoo Frontend."
 msgstr "Pred ukončením Zaparoo Frontend zatvorte spustenú hru."
 
-#: rust/frontend/ui/labels.slint:302
+#: rust/frontend/ui/labels.slint:306
 msgid "This setting needs a frontend restart to take effect."
 msgstr "Toto nastavenie sa prejaví až po reštarte frontendu."
 
-#: rust/frontend/ui/labels.slint:303
+#: rust/frontend/ui/labels.slint:307
 msgid "This device stops backing up and syncing with your Zaparoo Online account. Local play history stays on this device."
 msgstr "Toto zariadenie prestane zálohovať a synchronizovať s vaším účtom Zaparoo Online. Miestna história hrania zostane na tomto zariadení."
 
-#: rust/frontend/ui/labels.slint:304
+#: rust/frontend/ui/labels.slint:308
 msgid "This replaces this device's settings and data with the backup from {}. Zaparoo restarts when it finishes."
 msgstr "Nastavenia a údaje tohto zariadenia sa nahradia zálohou z {}. Zaparoo sa po dokončení reštartuje."
 
-#: rust/frontend/ui/labels.slint:305
+#: rust/frontend/ui/labels.slint:309
 msgid "An update is still running. Leaving this screen stops it."
 msgstr "Aktualizácia stále prebieha. Opustením tejto obrazovky ju zastavíte."
 
-#: rust/frontend/ui/labels.slint:306
+#: rust/frontend/ui/labels.slint:310
 msgid "Games stop earning achievements until you log in again."
 msgstr ""
 
-#: rust/frontend/ui/labels.slint:308
+#: rust/frontend/ui/labels.slint:312
 msgid ""
 "Copyright 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.\n"
 "\n"
@@ -1434,347 +1442,347 @@ msgstr ""
 "Vytvorili\n"
 "Andrea Bogazzi, BossRighteous, Tim Wilsie, Wizzo"
 
-#: rust/frontend/ui/labels.slint:311
+#: rust/frontend/ui/labels.slint:315
 msgid "This frontend needs Zaparoo Core {} or newer. You're running {}. Some features may not work until you update."
 msgstr "Tento frontend vyžaduje Zaparoo Core {0} alebo novšie. Používate {1}. Niektoré funkcie nemusia fungovať, kým neaktualizujete."
 
-#: rust/frontend/ui/labels.slint:314
+#: rust/frontend/ui/labels.slint:318
 msgid "Start a media database update to find your games. It runs in the background, and systems appear as they are indexed."
 msgstr "Spustite aktualizáciu databázy médií a nájdite svoje hry. Beží na pozadí a systémy sa zobrazujú priebežne počas indexovania."
 
-#: rust/frontend/ui/labels.slint:317
+#: rust/frontend/ui/labels.slint:321
 msgid "All categories and actions are already on the Hub. To add a game or system, open its Options menu and choose \"Add to Hub\"."
 msgstr "Všetky kategórie a akcie už sú na Hube. Ak chcete pridať hru alebo systém, otvorte jeho ponuku Možnosti a vyberte \"Pridať na Hub\"."
 
-#: rust/frontend/ui/labels.slint:326
+#: rust/frontend/ui/labels.slint:330
 msgid "Yes"
 msgstr "Áno"
 
-#: rust/frontend/ui/labels.slint:327
+#: rust/frontend/ui/labels.slint:331
 msgid "No"
 msgstr "Nie"
 
-#: rust/frontend/ui/labels.slint:331
+#: rust/frontend/ui/labels.slint:335
 msgid "I understand"
 msgstr "Rozumiem"
 
-#: rust/frontend/ui/labels.slint:332
+#: rust/frontend/ui/labels.slint:336
 msgid "Start media update"
 msgstr "Spustiť aktualizáciu médií"
 
-#: rust/frontend/ui/labels.slint:339
+#: rust/frontend/ui/labels.slint:343
 msgid "Launch failed"
 msgstr "Spustenie zlyhalo"
 
-#: rust/frontend/ui/labels.slint:340
+#: rust/frontend/ui/labels.slint:344
 msgid "Favorite update failed"
 msgstr "Úprava obľúbených zlyhala"
 
-#: rust/frontend/ui/labels.slint:341
+#: rust/frontend/ui/labels.slint:345
 msgid "Visibility update failed"
 msgstr "Zmena viditeľnosti zlyhala"
 
-#: rust/frontend/ui/labels.slint:342
+#: rust/frontend/ui/labels.slint:346
 msgid "Media database is busy"
 msgstr "Databáza médií je zaneprázdnená"
 
-#: rust/frontend/ui/labels.slint:343
+#: rust/frontend/ui/labels.slint:347
 msgid "Add to Hub failed"
 msgstr "Pridanie na Hub zlyhalo"
 
-#: rust/frontend/ui/labels.slint:344
+#: rust/frontend/ui/labels.slint:348
 msgid "Save to Hub failed"
 msgstr "Uloženie na Hub zlyhalo"
 
-#: rust/frontend/ui/labels.slint:345
+#: rust/frontend/ui/labels.slint:349
 msgid "Media update failed"
 msgstr "Aktualizácia médií zlyhala"
 
-#: rust/frontend/ui/labels.slint:346
+#: rust/frontend/ui/labels.slint:350
 msgid "Update metadata failed"
 msgstr "Aktualizácia metadát zlyhala"
 
-#: rust/frontend/ui/labels.slint:347
+#: rust/frontend/ui/labels.slint:351
 msgid "Source list unavailable"
 msgstr "Zoznam zdrojov nedostupný"
 
-#: rust/frontend/ui/labels.slint:348
+#: rust/frontend/ui/labels.slint:352
 msgid "Cancel failed"
 msgstr "Zrušenie zlyhalo"
 
-#: rust/frontend/ui/labels.slint:349
+#: rust/frontend/ui/labels.slint:353
 msgid "Launcher update failed"
 msgstr "Zmena spúšťača zlyhala"
 
-#: rust/frontend/ui/labels.slint:350
+#: rust/frontend/ui/labels.slint:354
 msgid "Alternate versions unavailable"
 msgstr "Alternatívne verzie nedostupné"
 
-#: rust/frontend/ui/labels.slint:351
+#: rust/frontend/ui/labels.slint:355
 msgid "Disc list unavailable"
 msgstr "Zoznam diskov nedostupný"
 
-#: rust/frontend/ui/labels.slint:352
+#: rust/frontend/ui/labels.slint:356
 msgid "QR code failed"
 msgstr "QR kód zlyhal"
 
-#: rust/frontend/ui/labels.slint:353
+#: rust/frontend/ui/labels.slint:357
 msgid "Token write failed"
 msgstr "Zápis na token zlyhal"
 
-#: rust/frontend/ui/labels.slint:354
+#: rust/frontend/ui/labels.slint:358
 msgid "Image picker failed"
 msgstr "Výber obrázka zlyhal"
 
-#: rust/frontend/ui/labels.slint:355
+#: rust/frontend/ui/labels.slint:359
 msgid "Setting not saved"
 msgstr "Nastavenie sa neuložilo"
 
-#: rust/frontend/ui/labels.slint:356
+#: rust/frontend/ui/labels.slint:360
 msgid "Pairing could not start"
 msgstr "Párovanie sa nespustilo"
 
-#: rust/frontend/ui/labels.slint:357
+#: rust/frontend/ui/labels.slint:361
 msgid "Online account unavailable"
 msgstr "Účet Online nedostupný"
 
-#: rust/frontend/ui/labels.slint:358
+#: rust/frontend/ui/labels.slint:362
 msgid "Cloud backup failed"
 msgstr "Cloudová záloha zlyhala"
 
-#: rust/frontend/ui/labels.slint:359
+#: rust/frontend/ui/labels.slint:363
 msgid "Config file not loaded"
 msgstr "Konfigurácia sa nenačítala"
 
-#: rust/frontend/ui/labels.slint:360
+#: rust/frontend/ui/labels.slint:364
 msgid "Action failed"
 msgstr "Akcia zlyhala"
 
-#: rust/frontend/ui/labels.slint:367
+#: rust/frontend/ui/labels.slint:371
 msgid "Could not start this item. Check Zaparoo Core and try again."
 msgstr "Položku sa nepodarilo spustiť. Skontrolujte Zaparoo Core a skúste to znova."
 
-#: rust/frontend/ui/labels.slint:368
+#: rust/frontend/ui/labels.slint:372
 msgid "Could not start {}. Check Zaparoo Core and try again."
 msgstr "Nepodarilo sa spustiť {}. Skontrolujte Zaparoo Core a skúste to znova."
 
-#: rust/frontend/ui/labels.slint:373
+#: rust/frontend/ui/labels.slint:377
 msgid "Could not update this favorite. Check Zaparoo Core and try again."
 msgstr "Obľúbenú položku sa nepodarilo upraviť. Skontrolujte Zaparoo Core a skúste to znova."
 
-#: rust/frontend/ui/labels.slint:374
+#: rust/frontend/ui/labels.slint:378
 msgid "Could not hide or unhide this game. Check Zaparoo Core and try again."
 msgstr "Hru sa nepodarilo skryť ani zobraziť. Skontrolujte Zaparoo Core a skúste to znova."
 
-#: rust/frontend/ui/labels.slint:376
+#: rust/frontend/ui/labels.slint:380
 msgid "Zaparoo Core is updating the media database. Try again when it finishes."
 msgstr "Zaparoo Core aktualizuje databázu médií. Skúste to znova po dokončení."
 
-#: rust/frontend/ui/labels.slint:378
+#: rust/frontend/ui/labels.slint:382
 msgid "Could not add this item to the Hub. Check Zaparoo Core and try again."
 msgstr "Položku sa nepodarilo pridať na Hub. Skontrolujte Zaparoo Core a skúste to znova."
 
-#: rust/frontend/ui/labels.slint:379
+#: rust/frontend/ui/labels.slint:383
 msgid "Could not add {} to the Hub. Check Zaparoo Core and try again."
 msgstr "Nepodarilo sa pridať {} na Hub. Skontrolujte Zaparoo Core a skúste to znova."
 
-#: rust/frontend/ui/labels.slint:382
+#: rust/frontend/ui/labels.slint:386
 msgid "Could not save this search to the Hub. Check Zaparoo Core and try again."
 msgstr "Vyhľadávanie sa nepodarilo uložiť na Hub. Skontrolujte Zaparoo Core a skúste to znova."
 
-#: rust/frontend/ui/labels.slint:383
+#: rust/frontend/ui/labels.slint:387
 msgid "Could not save {} to the Hub. Check Zaparoo Core and try again."
 msgstr "Nepodarilo sa uložiť {} na Hub. Skontrolujte Zaparoo Core a skúste to znova."
 
-#: rust/frontend/ui/labels.slint:385
+#: rust/frontend/ui/labels.slint:389
 msgid "Could not start the media database update. Check Zaparoo Core and try again."
 msgstr "Aktualizáciu databázy médií sa nepodarilo spustiť. Skontrolujte Zaparoo Core a skúste to znova."
 
-#: rust/frontend/ui/labels.slint:386
+#: rust/frontend/ui/labels.slint:390
 msgid "Could not start updating metadata. Check Zaparoo Core and try again."
 msgstr "Aktualizáciu metadát sa nepodarilo spustiť. Skontrolujte Zaparoo Core a skúste to znova."
 
-#: rust/frontend/ui/labels.slint:387
+#: rust/frontend/ui/labels.slint:391
 msgid "Could not load the list of metadata sources. Check Zaparoo Core and try again."
 msgstr "Zoznam zdrojov metadát sa nepodarilo načítať. Skontrolujte Zaparoo Core a skúste to znova."
 
-#: rust/frontend/ui/labels.slint:388
+#: rust/frontend/ui/labels.slint:392
 msgid "Could not cancel the media operation. Check Zaparoo Core and try again."
 msgstr "Operáciu s médiami sa nepodarilo zrušiť. Skontrolujte Zaparoo Core a skúste to znova."
 
-#: rust/frontend/ui/labels.slint:389
+#: rust/frontend/ui/labels.slint:393
 msgid "Could not change the launcher. Check Zaparoo Core and try again."
 msgstr "Spúšťač sa nepodarilo zmeniť. Skontrolujte Zaparoo Core a skúste to znova."
 
-#: rust/frontend/ui/labels.slint:390
+#: rust/frontend/ui/labels.slint:394
 msgid "Could not find alternate versions. Check Zaparoo Core and try again."
 msgstr "Alternatívne verzie sa nepodarilo nájsť. Skontrolujte Zaparoo Core a skúste to znova."
 
-#: rust/frontend/ui/labels.slint:391
+#: rust/frontend/ui/labels.slint:395
 msgid "Could not list the discs of this game. Check Zaparoo Core and try again."
 msgstr "Disky tejto hry sa nepodarilo načítať. Skontrolujte Zaparoo Core a skúste to znova."
 
-#: rust/frontend/ui/labels.slint:392
+#: rust/frontend/ui/labels.slint:396
 msgid "Could not create the QR code for this item."
 msgstr "Pre túto položku sa nepodarilo vytvoriť QR kód."
 
-#: rust/frontend/ui/labels.slint:393
+#: rust/frontend/ui/labels.slint:397
 msgid "Could not write to this token. Check that it is writable and try again."
 msgstr "Na tento token sa nepodarilo zapísať. Skontrolujte, či je zapisovateľný, a skúste to znova."
 
-#: rust/frontend/ui/labels.slint:394
+#: rust/frontend/ui/labels.slint:398
 msgid "Could not open an image picker, or the image chosen could not be read."
 msgstr "Výber obrázka sa nepodarilo otvoriť alebo sa nepodarilo načítať vybraný obrázok."
 
-#: rust/frontend/ui/labels.slint:395
+#: rust/frontend/ui/labels.slint:399
 msgid "Could not save this setting. Try again."
 msgstr "Nastavenie sa nepodarilo uložiť. Skúste to znova."
 
-#: rust/frontend/ui/labels.slint:396
+#: rust/frontend/ui/labels.slint:400
 msgid "Core would not start a pairing. It may already have as many paired devices as it allows, or it may be running on another device."
 msgstr "Core nespustilo párovanie. Možno už má maximálny povolený počet spárovaných zariadení alebo beží na inom zariadení."
 
-#: rust/frontend/ui/labels.slint:397
+#: rust/frontend/ui/labels.slint:401
 msgid "Core could not reach or update your Zaparoo Online account. Check the network connection and try again."
 msgstr "Core sa nepodarilo spojiť s vaším účtom Zaparoo Online ani ho aktualizovať. Skontrolujte sieťové pripojenie a skúste to znova."
 
-#: rust/frontend/ui/labels.slint:401
+#: rust/frontend/ui/labels.slint:405
 msgid "A backup was uploaded recently. Wait a few minutes, then try again."
 msgstr "Záloha bola nahraná nedávno. Počkajte niekoľko minút a skúste to znova."
 
-#: rust/frontend/ui/labels.slint:404
+#: rust/frontend/ui/labels.slint:408
 msgid "Your cloud backup storage is full."
 msgstr "Úložisko cloudových záloh je plné."
 
-#: rust/frontend/ui/labels.slint:405
+#: rust/frontend/ui/labels.slint:409
 msgid "Zaparoo is busy with another backup or request. Wait for it to finish, then try again."
 msgstr "Zaparoo je zaneprázdnené inou zálohou alebo požiadavkou. Počkajte na jej dokončenie a skúste to znova."
 
-#: rust/frontend/ui/labels.slint:406
+#: rust/frontend/ui/labels.slint:410
 msgid "Stop the game that is running, then try again."
 msgstr "Zastavte spustenú hru a skúste to znova."
 
-#: rust/frontend/ui/labels.slint:407
+#: rust/frontend/ui/labels.slint:411
 msgid "Restart Zaparoo to finish the previous restore, then try again."
 msgstr "Reštartujte Zaparoo, aby sa dokončilo predchádzajúce obnovenie, a skúste to znova."
 
-#: rust/frontend/ui/labels.slint:408
+#: rust/frontend/ui/labels.slint:412
 msgid "This backup was made by a newer Zaparoo. Update Zaparoo, then try again."
 msgstr "Túto zálohu vytvorilo novšie Zaparoo. Aktualizujte Zaparoo a skúste to znova."
 
-#: rust/frontend/ui/labels.slint:409
+#: rust/frontend/ui/labels.slint:413
 msgid "Free some storage space on this device, then try again."
 msgstr "Uvoľnite miesto v úložisku tohto zariadenia a skúste to znova."
 
-#: rust/frontend/ui/labels.slint:410
+#: rust/frontend/ui/labels.slint:414
 msgid "Could not finish the cloud backup. Check the network connection and try again."
 msgstr "Cloudovú zálohu sa nepodarilo dokončiť. Skontrolujte sieťové pripojenie a skúste to znova."
 
-#: rust/frontend/ui/labels.slint:413
+#: rust/frontend/ui/labels.slint:417
 msgid "{} could not be read, so defaults are in use and changes will not be saved. Fix or remove the file, then restart."
 msgstr "Súbor {} sa nepodarilo prečítať, preto sa používajú predvolené hodnoty a zmeny sa neuložia. Opravte alebo odstráňte súbor a potom reštartujte."
 
-#: rust/frontend/ui/labels.slint:414
+#: rust/frontend/ui/labels.slint:418
 msgid "The action could not be completed. Check Zaparoo Core and try again."
 msgstr "Akciu sa nepodarilo dokončiť. Skontrolujte Zaparoo Core a skúste to znova."
 
-#: rust/frontend/ui/labels.slint:426
+#: rust/frontend/ui/labels.slint:430
 msgid "This launcher isn't installed."
 msgstr "Tento spúšťač nie je nainštalovaný."
 
-#: rust/frontend/ui/labels.slint:427
+#: rust/frontend/ui/labels.slint:431
 msgid "{} isn't installed."
 msgstr "{} nie je nainštalovaný."
 
-#: rust/frontend/ui/labels.slint:430
+#: rust/frontend/ui/labels.slint:434
 msgid "This launcher is installed, but its entry point is missing or disabled."
 msgstr "Tento spúšťač je nainštalovaný, ale jeho vstupný bod chýba alebo je vypnutý."
 
-#: rust/frontend/ui/labels.slint:431
+#: rust/frontend/ui/labels.slint:435
 msgid "{} is installed, but its entry point is missing or disabled."
 msgstr "{} je nainštalovaný, ale jeho vstupný bod chýba alebo je vypnutý."
 
-#: rust/frontend/ui/labels.slint:434
+#: rust/frontend/ui/labels.slint:438
 msgid "This launcher's plugin for this system isn't installed."
 msgstr "Doplnok tohto spúšťača pre tento systém nie je nainštalovaný."
 
-#: rust/frontend/ui/labels.slint:435
+#: rust/frontend/ui/labels.slint:439
 msgid "{}'s plugin for this system isn't installed."
 msgstr "Doplnok spúšťača {} pre tento systém nie je nainštalovaný."
 
-#: rust/frontend/ui/labels.slint:436
+#: rust/frontend/ui/labels.slint:440
 msgid "{}'s {} plugin isn't installed."
 msgstr "Doplnok {1} spúšťača {0} nie je nainštalovaný."
 
-#: rust/frontend/ui/labels.slint:439
+#: rust/frontend/ui/labels.slint:443
 msgid "This build of the launcher can't be used for this media. A different build is needed."
 msgstr "Toto zostavenie spúšťača sa pre tieto médiá nedá použiť. Je potrebné iné zostavenie."
 
-#: rust/frontend/ui/labels.slint:440
+#: rust/frontend/ui/labels.slint:444
 msgid "This build of {} can't be used for this media. A different build is needed."
 msgstr "Toto zostavenie {} sa pre tieto médiá nedá použiť. Je potrebné iné zostavenie."
 
-#: rust/frontend/ui/labels.slint:443
+#: rust/frontend/ui/labels.slint:447
 msgid "This launcher can't play this media."
 msgstr "Tento spúšťač nedokáže prehrať tieto médiá."
 
-#: rust/frontend/ui/labels.slint:444
+#: rust/frontend/ui/labels.slint:448
 msgid "{} can't play this media."
 msgstr "{} nedokáže prehrať tieto médiá."
 
-#: rust/frontend/ui/labels.slint:447
+#: rust/frontend/ui/labels.slint:451
 msgid "This launcher doesn't support the requested launch options."
 msgstr "Tento spúšťač nepodporuje požadované možnosti spustenia."
 
-#: rust/frontend/ui/labels.slint:448
+#: rust/frontend/ui/labels.slint:452
 msgid "{} doesn't support the requested launch options."
 msgstr "{} nepodporuje požadované možnosti spustenia."
 
-#: rust/frontend/ui/labels.slint:451
+#: rust/frontend/ui/labels.slint:455
 msgid "This launcher doesn't have the storage permission it needs."
 msgstr "Tento spúšťač nemá potrebné povolenie na prístup k úložisku."
 
-#: rust/frontend/ui/labels.slint:452
+#: rust/frontend/ui/labels.slint:456
 msgid "{} doesn't have the storage permission it needs."
 msgstr "{} nemá potrebné povolenie na prístup k úložisku."
 
-#: rust/frontend/ui/labels.slint:455
+#: rust/frontend/ui/labels.slint:459
 msgid "This launcher can't read media from where it's stored."
 msgstr "Tento spúšťač nedokáže čítať médiá z miesta, kde sú uložené."
 
-#: rust/frontend/ui/labels.slint:456
+#: rust/frontend/ui/labels.slint:460
 msgid "{} can't read media from where it's stored."
 msgstr "{} nedokáže čítať médiá z miesta, kde sú uložené."
 
-#: rust/frontend/ui/labels.slint:458
+#: rust/frontend/ui/labels.slint:462
 msgid "The storage holding this media isn't available."
 msgstr "Úložisko s týmito médiami nie je dostupné."
 
-#: rust/frontend/ui/labels.slint:459
+#: rust/frontend/ui/labels.slint:463
 msgid "This media could not be resolved or opened."
 msgstr "Tieto médiá sa nepodarilo nájsť ani otvoriť."
 
-#: rust/frontend/ui/labels.slint:460
+#: rust/frontend/ui/labels.slint:464
 msgid "Access to this media's folder was revoked. Re-grant it in Settings > Library."
 msgstr "Prístup k priečinku týchto médií bol odobratý. Udeľte ho znova v časti Nastavenia > Knižnica."
 
-#: rust/frontend/ui/labels.slint:461
+#: rust/frontend/ui/labels.slint:465
 msgid "The launcher service isn't responding."
 msgstr "Služba spúšťača neodpovedá."
 
-#: rust/frontend/ui/labels.slint:462
+#: rust/frontend/ui/labels.slint:466
 msgid "Return to Zaparoo before launching this."
 msgstr "Pred spustením sa vráťte do Zaparoo."
 
-#: rust/frontend/ui/labels.slint:463
+#: rust/frontend/ui/labels.slint:467
 msgid "The launch was cancelled before it started."
 msgstr "Spustenie bolo zrušené skôr, než sa začalo."
 
-#: rust/frontend/ui/labels.slint:464
+#: rust/frontend/ui/labels.slint:468
 msgid "The launch was sent, but its outcome could not be confirmed."
 msgstr "Spustenie bolo odoslané, ale jeho výsledok sa nepodarilo potvrdiť."
 
-#: rust/frontend/ui/labels.slint:465
+#: rust/frontend/ui/labels.slint:469
 msgid "The system refused the launch request."
 msgstr "Systém odmietol požiadavku na spustenie."
 

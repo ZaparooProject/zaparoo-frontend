@@ -236,13 +236,18 @@ pub struct GameInput {
     pub has_system: bool,
     pub media_busy: bool,
     pub tile: Option<Tile>,
+    /// Core has nothing to show in Game Info: a file a live folder read
+    /// from disk that Core has not indexed.
+    pub details_unknown: bool,
 }
 
 /// A game, or a folder or archive Core launches as one.
 pub fn game(input: &GameInput) -> Menu {
     let mut menu = Menu::default();
     // Accept already launches the game, so Details leads.
-    menu.root.push(row("more_info"));
+    if !input.details_unknown {
+        menu.root.push(row("more_info"));
+    }
     if input.favorite_known {
         menu.root.push(favorite_row(input.is_favorite));
     }
@@ -309,6 +314,15 @@ pub fn folder(kind: Folder, on_hub: bool, is_hidden: bool) -> Menu {
     };
     Menu {
         root,
+        ..Menu::default()
+    }
+}
+
+/// A folder inside a live folder: Core reads it from disk and cannot hide
+/// it, so pinning it is all there is.
+pub fn live_folder(on_hub: bool) -> Menu {
+    Menu {
+        root: vec![pin_row(on_hub)],
         ..Menu::default()
     }
 }
@@ -467,6 +481,36 @@ mod tests {
             ["change_launcher", "add_to_hub", "hide:hide", "scrape_game"]
         );
         assert_eq!(menu.page_for("manage_game"), Some(Page::ManageGame));
+    }
+
+    #[test]
+    fn a_file_in_a_live_folder_offers_what_its_data_supports() {
+        // Not indexed: no tags, no system, nothing for Game Info.
+        let unmatched = game(&GameInput {
+            has_payload: true,
+            pinnable: true,
+            details_unknown: true,
+            ..GameInput::default()
+        });
+        assert_eq!(keys(&unmatched.root), ["write_token", "manage_game"]);
+        assert_eq!(keys(&unmatched.manage), ["add_to_hub"]);
+        // Matched to Core's index: Game Info and the system's rows return.
+        let matched = game(&GameInput {
+            has_payload: true,
+            pinnable: true,
+            has_system: true,
+            has_launchers: true,
+            ..GameInput::default()
+        });
+        assert_eq!(keys(&matched.root)[0], "more_info");
+        assert!(!keys(&matched.root).contains(&"favorite:add"));
+        assert!(!keys(&matched.manage).contains(&"hide:hide"));
+    }
+
+    #[test]
+    fn a_folder_in_a_live_folder_only_pins() {
+        assert_eq!(keys(&live_folder(false).root), ["add_to_hub"]);
+        assert_eq!(keys(&live_folder(true).root), ["hub:remove"]);
     }
 
     #[test]
