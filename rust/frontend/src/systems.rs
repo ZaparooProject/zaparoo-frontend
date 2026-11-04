@@ -1361,6 +1361,11 @@ fn open_context_menu(ctx: &Ctx, app: &App) {
     crate::router::present_systems_context_menu(ctx, app, index, menu);
 }
 
+/// Where the menu sits when Back brings it back: the focused cell now.
+pub(crate) fn context_anchor(ctx: &Ctx, app: &App) -> crate::router::ContextAnchor {
+    cell_anchor(ctx, app)
+}
+
 /// The scene rect of the focused tile or list row (the menu anchor).
 fn cell_anchor(ctx: &Ctx, app: &App) -> crate::router::ContextAnchor {
     let shared = lock(&ctx.shared);

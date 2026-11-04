@@ -73,6 +73,7 @@ pub fn dispatch(text: &str, notifier: &Notifier) -> String {
         "media.meta" => Some(Ok(fixtures::media_meta_response(&req.params))),
         "media.meta.update" => Some(fixtures::media_meta_update_response(&req.params)),
         "media.image" => Some(fixtures::media_image_response(&req.params)),
+        "media.asset" => Some(fixtures::media_asset_response(&req.params)),
         "media.tags" => Some(Ok(fixtures::media_tags_response(&req.params))),
         "decks" => Some(Ok(fixtures::decks_response())),
         "media.tags.update" => Some(media_tags_update(&req.params)),
@@ -1039,6 +1040,43 @@ mod tests {
         let resp = parse(&dispatch_with_notifier(req, &notifier));
         assert!(resp["result"].is_null());
         assert_eq!(resp["error"]["code"], -32000);
+    }
+
+    #[test]
+    fn media_asset_serves_a_pdf_manual_in_chunks() {
+        use base64::Engine as _;
+        let mut bytes = Vec::new();
+        let mut offset = 0u64;
+        let mut etag = String::new();
+        loop {
+            let req = format!(
+                r#"{{"jsonrpc":"2.0","id":"1","method":"media.asset","params":{{"system":"SNES","path":"/games/manual.sfc","assetType":"manual","offset":{offset},"length":1024,"etag":"{etag}"}}}}"#
+            );
+            let resp = parse(&dispatch(&req));
+            let result = &resp["result"];
+            assert_eq!(result["contentType"], "application/pdf");
+            bytes.extend(
+                base64::engine::general_purpose::STANDARD
+                    .decode(result["data"].as_str().expect("data"))
+                    .expect("valid base64"),
+            );
+            if result["complete"].as_bool().expect("complete") {
+                assert_eq!(bytes.len() as u64, result["size"].as_u64().expect("size"));
+                break;
+            }
+            offset = result["nextOffset"].as_u64().expect("next offset");
+            etag = result["etag"].as_str().expect("etag").to_string();
+        }
+        assert!(bytes.starts_with(b"%PDF-"));
+        assert!(bytes.ends_with(b"%%EOF\n"));
+    }
+
+    #[test]
+    fn media_asset_rejects_other_types_and_a_stale_etag() {
+        let req = r#"{"jsonrpc":"2.0","id":"1","method":"media.asset","params":{"system":"SNES","path":"/games/a.sfc","assetType":"video"}}"#;
+        assert_eq!(parse(&dispatch(req))["error"]["code"], -32000);
+        let req = r#"{"jsonrpc":"2.0","id":"1","method":"media.asset","params":{"system":"SNES","path":"/games/a.sfc","assetType":"manual","offset":10,"etag":"old"}}"#;
+        assert_eq!(parse(&dispatch(req))["error"]["code"], -32000);
     }
 
     #[test]

@@ -49,6 +49,7 @@ mod latch_protocol;
 mod launcher_scan;
 mod launchers;
 mod log_upload;
+mod manual;
 mod media_cache;
 mod media_setup;
 #[cfg(feature = "mister")]
@@ -377,6 +378,12 @@ fn merge_config_settings(
     }
     if let Some(v) = c.show_original_filenames {
         s.show_original_filenames = v;
+    }
+    if let Some(v) = c.show_tags {
+        s.show_tags = v;
+    }
+    if let Some(v) = &c.list_left_right {
+        s.list_left_right.clone_from(v);
     }
     if let Some(v) = &c.region {
         s.region.clone_from(v);
@@ -1024,6 +1031,7 @@ fn run_application(
     settings::bind_input(&ctx, &app);
     media_setup::bind_input(&ctx, &app);
     game_info::bind(&ctx, &app);
+    manual::bind(&ctx, &app);
     log_upload::bind_input(&ctx, &app);
     update::bind(&ctx, &app);
     router::bind_context_input(&ctx, &app);
@@ -1780,6 +1788,10 @@ pub(crate) fn deliver_covers(ctx: &Ctx, app: &App, keys: &[media_cache::MediaKey
             game_info::cover_absent(ctx, app, key);
         }
     }
+    // The detailed list's pane steps through the same typed images.
+    if !carousel.is_empty() {
+        games::covers_landed(ctx, app, &carousel);
+    }
     if !browse.is_empty() {
         hub::covers_landed(ctx, app, &browse);
         games::covers_landed(ctx, app, &browse);
@@ -2376,6 +2388,8 @@ mod tests {
             media_image_type: "boxart".to_string(),
             show_hidden: true,
             show_original_filenames: true,
+            show_tags: false,
+            list_left_right: "image".to_string(),
             swap_confirm_cancel: true,
             swap_options_view: true,
             region: "jp".to_string(),

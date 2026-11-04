@@ -16,15 +16,15 @@
 use crate::media_types::{
     AuthLinkStatus, AuthStatusResult, BackupRemoteListResult, BackupRemoteRestoreResult,
     BackupRemoteRunResult, BackupStatusResponse, DecksResult, HealthResult, LaunchersResult,
-    LogDownloadResult, MediaBrowseIndexParams, MediaBrowseIndexResult, MediaBrowseParams,
-    MediaBrowseResult, MediaHistoryLatestResult, MediaHistoryParams, MediaHistoryResult,
-    MediaImageParams, MediaImageResult, MediaIndexParams, MediaLookupParams, MediaLookupResult,
-    MediaMetaParams, MediaMetaResult, MediaMetaUpdateParams, MediaResult, MediaScrapeParams,
-    MediaSearchParams, MediaSearchResult, MediaTagsParams, MediaTagsResult, MediaTagsUpdateParams,
-    MediaTagsUpdateResult, PairStartResult, ReadersResult, ReadersWriteParams,
-    RemoteActivityResult, RunParams, ScrapersResult, ScrapingStatusResponse, SettingsResult,
-    SystemsParams, SystemsResult, TokensHistoryResult, TokensResult, UpdateSettingsParams,
-    VersionResult,
+    LogDownloadResult, MediaAssetParams, MediaAssetResult, MediaBrowseIndexParams,
+    MediaBrowseIndexResult, MediaBrowseParams, MediaBrowseResult, MediaHistoryLatestResult,
+    MediaHistoryParams, MediaHistoryResult, MediaImageParams, MediaImageResult, MediaIndexParams,
+    MediaLookupParams, MediaLookupResult, MediaMetaParams, MediaMetaResult, MediaMetaUpdateParams,
+    MediaResult, MediaScrapeParams, MediaSearchParams, MediaSearchResult, MediaTagsParams,
+    MediaTagsResult, MediaTagsUpdateParams, MediaTagsUpdateResult, PairStartResult, ReadersResult,
+    ReadersWriteParams, RemoteActivityResult, RunParams, ScrapersResult, ScrapingStatusResponse,
+    SettingsResult, SystemsParams, SystemsResult, TokensHistoryResult, TokensResult,
+    UpdateSettingsParams, VersionResult,
 };
 use crate::transport::Transport;
 use futures_util::{SinkExt, StreamExt};
@@ -1031,6 +1031,17 @@ impl Client {
         params: MediaImageParams,
     ) -> Result<MediaImageResult, ClientError> {
         let val = self.call("media.image", &params).await?;
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
+    }
+
+    /// Fetches one chunk of an allowlisted file-backed asset (`media.asset`),
+    /// today only a game's PDF manual. Start at offset zero, then follow
+    /// `next_offset` with the same `etag` until `complete`.
+    pub async fn media_asset(
+        &self,
+        params: MediaAssetParams,
+    ) -> Result<MediaAssetResult, ClientError> {
+        let val = self.call("media.asset", &params).await?;
         serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
     }
 

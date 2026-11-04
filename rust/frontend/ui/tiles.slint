@@ -39,6 +39,9 @@ export struct GridCell {
     disabled: bool,
     // Dim suffix after the caption (tags, "Hidden").
     tags: string,
+    // A list row Accept browses into rather than launches: it ends in a
+    // chevron.
+    opens: bool,
     top-label: string,
     // A structural placeholder: paints nothing, ever.
     is-empty: bool,

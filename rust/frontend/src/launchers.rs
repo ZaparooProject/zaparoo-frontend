@@ -48,6 +48,8 @@ pub(crate) fn finish_save(ctx: &Ctx, app: &App, ticket: u64, failure: Option<&st
             return;
         }
         shared.launcher_save_seq = shared.launcher_save_seq.wrapping_add(1);
+        // A pick ends on the screen, saved or not.
+        shared.menu_return = None;
         (shared.launcher_save_wait.take(), shared.launcher_save_seq)
     };
     let ctx = ctx.clone();

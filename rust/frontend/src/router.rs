@@ -92,6 +92,9 @@ pub struct Shared {
     /// The open menu's rows and the pages they open, kept so Back from a
     /// page returns to the same rows.
     pub context_menu: zaparoo_app::options_menu::Menu,
+    /// Where the menu was when one of its rows opened something in its
+    /// place, so Back there reopens it (`return_to_menu`).
+    pub menu_return: Option<MenuReturn>,
     /// What the open `ListPickerModal` is for (the Menu list vs a settings
     /// picker field).
     pub list_context: ListContext,
@@ -285,6 +288,7 @@ impl Shared {
             context_owner: ContextOwner::Games,
             context_target: 0,
             context_menu: zaparoo_app::options_menu::Menu::default(),
+            menu_return: None,
             list_context: ListContext::ViewMenu,
             pending_restart: None,
             launchers: Vec::new(),
@@ -935,9 +939,16 @@ pub(crate) fn end_held_wait(app: &App) {
     release_held_menu(app);
 }
 
-/// Back on a held menu: call off what it is waiting for, and close it.
+/// Back on a held menu: call off what it is waiting for. A held Options
+/// menu stays open on its row; a route the Menu list was waiting on closes it.
 fn cancel_held(ctx: &Ctx, app: &App) {
     let wait = HELD_WAIT.with(|wait| wait.borrow_mut().take());
+    // Back from an Options row still on its way calls that off and leaves
+    // the menu as it was, on the row.
+    if held_menu() == HeldMenu::Context {
+        HELD_MENU.with(|held| held.set(HeldMenu::None));
+        forget_menu_return(ctx);
+    }
     match wait {
         Some(cancel) => {
             cancel(ctx);
@@ -1293,6 +1304,7 @@ fn dispatch_action(ctx: &Ctx, app: &App, action: &str) {
         // Static display: any Cancel closes, everything else swallowed.
         if action == actions::CANCEL {
             app.global::<crate::Overlays>().set_qr_open(false);
+            return_to_menu(ctx, app, zaparoo_app::options_menu::Opens::QrCode);
         }
         return;
     }
@@ -1319,6 +1331,7 @@ fn dispatch_action(ctx: &Ctx, app: &App, action: &str) {
         // Accept commits the focused Cancel button; Back cancels directly.
         if action == actions::CANCEL || action == actions::ACCEPT {
             crate::card_write::cancel(ctx, app);
+            return_to_menu(ctx, app, zaparoo_app::options_menu::Opens::TokenWrite);
         }
         return;
     }
@@ -1709,11 +1722,11 @@ fn list_accept(ctx: &Ctx, app: &App, context: ListContext, id: &str) {
         ListContext::FileBrowserMenu => crate::file_browser::menu_accept(ctx, app, id),
         ListContext::HubAdd => crate::hub::add_picked(ctx, app, id),
         ListContext::FavoritesPageMenu => favorites_page_menu_accept(ctx, app, id),
-        ListContext::SearchResultsPageMenu => {
-            if id == "add_to_hub" {
-                crate::search::toggle_hub(ctx, app);
-            }
-        }
+        ListContext::SearchResultsPageMenu => match id {
+            "edit_search" => crate::search::edit(ctx, app),
+            "add_to_hub" => crate::search::toggle_hub(ctx, app),
+            _ => {}
+        },
         ListContext::FavoritesGrouping => {
             hold_menu_through(app, HeldMenu::List, || {
                 favorites_grouping_picked(ctx, app, id);
@@ -1809,6 +1822,9 @@ fn list_action(ctx: &Ctx, app: &App, action: &str) {
                 crate::browse_filter::back(ctx, app, &context, action == actions::PAGE_MENU);
             } else {
                 app.global::<crate::Overlays>().set_list_open(false);
+                if action == actions::CANCEL {
+                    return_to_menu(ctx, app, zaparoo_app::options_menu::Opens::Picker);
+                }
             }
         }
         _ => {}
@@ -2279,15 +2295,18 @@ pub(crate) fn open_favorite_systems_page_menu(ctx: &Ctx, app: &App) {
     );
 }
 
-/// The Search results' Menu list: keep the search on the Hub, or take its
-/// tile back off.
+/// The Search results' Menu list: change the search, keep it on the Hub,
+/// or take its tile back off.
 pub(crate) fn open_search_results_page_menu(ctx: &Ctx, app: &App) {
     let on_hub = crate::search::on_hub(&lock(&ctx.shared));
-    let entries = vec![menu_row_keyed(
-        "add_to_hub",
-        if on_hub { "hub:remove" } else { "save_to_hub" },
-        "",
-    )];
+    let entries = vec![
+        menu_row("edit_search"),
+        menu_row_keyed(
+            "add_to_hub",
+            if on_hub { "hub:remove" } else { "save_to_hub" },
+            "",
+        ),
+    ];
     present_list(
         ctx,
         app,
@@ -2404,6 +2423,8 @@ pub(crate) fn config_writable(ctx: &Ctx) -> bool {
 }
 
 pub(crate) fn report_action_error(ctx: &Ctx, app: &App, kind: &str, context: &str) {
+    // An error ends on the screen, never back in a menu.
+    forget_menu_return(ctx);
     // An alert is the one thing allowed above a modal, but a failed
     // discovery arrives while the context menu still holds its
     // "Searching…" row: close the menu first so Back returns to the
@@ -2493,6 +2514,7 @@ fn present_context_menu(
     let entries = root_entries(&menu);
     {
         let mut guard = lock(&ctx.shared);
+        guard.menu_return = None;
         guard.context_owner = owner;
         guard.context_target = target;
         guard.context_menu = menu;
@@ -2503,6 +2525,131 @@ fn present_context_menu(
     overlays.set_context_page(crate::ContextPage::Root);
     overlays.set_context_index(0);
     overlays.set_context_open(true);
+}
+
+/// Where the Options menu was when a row opened something in its place.
+#[derive(Debug, Clone)]
+pub struct MenuReturn {
+    opens: zaparoo_app::options_menu::Opens,
+    owner: ContextOwner,
+    screen: crate::Screen,
+    page: Option<zaparoo_app::options_menu::Page>,
+    row: String,
+}
+
+/// A row is about to open something: note where the menu is, so Back
+/// there brings it back. Rows that act at once leave nothing to return to.
+fn remember_menu_return(ctx: &Ctx, app: &App, id: &str) {
+    let mut shared = lock(&ctx.shared);
+    let page = match shared.context_page.showing {
+        Some(crate::context_page::Page::Menu(page)) => Some(page),
+        _ => None,
+    };
+    // Write to token with one way to write opens it straight from its row.
+    let opens = OptionsMenu::opens(id).or_else(|| {
+        shared
+            .context_page
+            .showing
+            .is_none()
+            .then(|| OptionsMenu::opens(OptionsMenu::direct_action(id)))
+            .flatten()
+    });
+    shared.menu_return = opens.map(|opens| MenuReturn {
+        opens,
+        owner: shared.context_owner,
+        screen: app.global::<crate::Shell>().get_active_screen(),
+        page,
+        row: id.to_string(),
+    });
+}
+
+/// The menu Back would bring back, with its rows and owner, taken out of
+/// the way while something else (a tag search from Game Info) borrows the
+/// screen.
+#[derive(Debug, Clone)]
+pub struct HeldReturn {
+    back: MenuReturn,
+    owner: ContextOwner,
+    menu: zaparoo_app::options_menu::Menu,
+}
+
+pub(crate) fn take_menu_return(shared: &mut Shared) -> Option<HeldReturn> {
+    let back = shared.menu_return.take()?;
+    Some(HeldReturn {
+        back,
+        owner: shared.context_owner,
+        menu: shared.context_menu.clone(),
+    })
+}
+
+/// Puts a taken menu return back, rows and all, or clears it.
+pub(crate) fn restore_menu_return(shared: &mut Shared, held: Option<HeldReturn>) {
+    shared.menu_return = None;
+    if let Some(held) = held {
+        shared.menu_return = Some(held.back);
+        shared.context_owner = held.owner;
+        shared.context_menu = held.menu;
+    }
+}
+
+/// What a row opened has finished (Start, Save, a pick): it ends on the
+/// screen, so Back from anything later does not bring the menu back.
+pub(crate) fn forget_menu_return(ctx: &Ctx) {
+    lock(&ctx.shared).menu_return = None;
+}
+
+/// Back from what an Options row opened: the menu again, on the page it
+/// was on, with that row focused. Its rows are the ones it had: Back means
+/// nothing changed. False when `opens` is not what the menu opened, or the
+/// screen has moved on, and the caller ends on the screen as before.
+pub(crate) fn return_to_menu(
+    ctx: &Ctx,
+    app: &App,
+    opens: zaparoo_app::options_menu::Opens,
+) -> bool {
+    let back = {
+        let mut shared = lock(&ctx.shared);
+        if shared
+            .menu_return
+            .as_ref()
+            .is_none_or(|back| back.opens != opens)
+        {
+            return false;
+        }
+        shared.menu_return.take()
+    };
+    let Some(back) = back else {
+        return false;
+    };
+    if app.global::<crate::Shell>().get_active_screen() != back.screen {
+        return false;
+    }
+    let anchor = match back.owner {
+        ContextOwner::Games => crate::games::context_anchor(ctx, app),
+        ContextOwner::Systems => crate::systems::context_anchor(ctx, app),
+        ContextOwner::Hub => crate::hub::context_anchor(ctx, app),
+    };
+    set_context_anchor(app, &anchor);
+    let entries = {
+        let mut shared = lock(&ctx.shared);
+        shared.context_page.reset();
+        root_entries(&shared.context_menu)
+    };
+    let overlays = app.global::<crate::Overlays>();
+    overlays.set_context_entries(ModelRc::new(VecModel::from(entries)));
+    overlays.set_context_page(crate::ContextPage::Root);
+    if let Some(page) = back.page {
+        crate::context_page::turn(ctx, app, page);
+    }
+    let index = overlays
+        .get_context_entries()
+        .iter()
+        .position(|entry| entry.id.as_str() == back.row)
+        .and_then(|index| i32::try_from(index).ok())
+        .unwrap_or(0);
+    overlays.set_context_index(index);
+    overlays.set_context_open(true);
+    true
 }
 
 pub(crate) fn close_context_menu(ctx: &Ctx, app: &App) {
@@ -2662,6 +2809,7 @@ fn context_action(ctx: &Ctx, app: &App, action: &str) {
 
 fn context_accept(ctx: &Ctx, app: &App, id: &str) {
     use crate::context_page::Page;
+    remember_menu_return(ctx, app, id);
     let (owner, showing, opens) = {
         let shared = lock(&ctx.shared);
         let showing = shared.context_page.showing;

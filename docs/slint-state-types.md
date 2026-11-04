@@ -23,6 +23,7 @@ and consumers, the snapshot binary, and the MiSTer dual-head mirror/tests.
 | Input | `PressOwner`, `ScrollAction`: delayed-accept ownership, overlay pointer dispatch and Details scroll commands |
 | Display | `Orientation`, `VideoStandard`: UI selection; orientation stays typed through scene sizing and live backend updates |
 | Log upload | `LogPhase`: uploading, done, failed |
+| Manual | `ManualState`, `ManualFit`: Game Info's manual page (closed, loading, ready, too large, failed) and whether a page fits the box's width or sits wholly inside it |
 | Pairing | `PairPhase`: closed, starting, showing, paired, expired |
 | Online | `OnlineLinkPhase`: the link panel's progress; `OnlineListKind`, `OnlineListStatus`: which list the Online modal shows (backups or activity) and whether it is ready, loading, failed, empty or working |
 

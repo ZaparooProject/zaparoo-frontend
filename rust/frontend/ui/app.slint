@@ -8,8 +8,8 @@
 // logic; forward orchestration lives in the router.
 
 import { Theme, Sizing, Motion, Layout } from "theme.slint";
-import { MenuRole, ContextPage, KeyKind, SearchZone, SearchPane, SearchScope, FileBrowserMode, Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, StateTokens, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogButton, ErrorKind } from "state_types.slint";
-export { MenuRole, ContextPage, KeyKind, SearchZone, SearchPane, SearchScope, FileBrowserMode, Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogButton, ErrorKind }
+import { MenuRole, ContextPage, KeyKind, SearchZone, SearchPane, SearchScope, FileBrowserMode, Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, StateTokens, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogButton, ErrorKind, ManualState, ManualFit } from "state_types.slint";
+export { MenuRole, ContextPage, KeyKind, SearchZone, SearchPane, SearchScope, FileBrowserMode, Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogButton, ErrorKind, ManualState, ManualFit }
 import { FastScrollRail, GlyphSource, Brand, Buttons, HelpEntry, Status, HeaderBar, StatusLine, ProgressTrack, WaitCue, TopStatusStrip, FooterIndicator, ActiveLabel, HelpBar, SectionHeader, Divider, ScrollCue, ModalShell, QrPlate, StateCue } from "chrome.slint";
 import { GridCell, MarqueeCaption, PressableSurface, Tile, PagedGridView, PageStrip } from "tiles.slint";
 import { ScrollOffset, SelectionCursor, SelectionClip, FocusCursor } from "focus.slint";
@@ -19,7 +19,8 @@ import { DetailRow, MetaLabels, BrowseList, BrowseListDetailView } from "browse_
 import { SettingsRow, SettingsLabels, SettingsRowView } from "settings.slint";
 import { SetupPickerRow, SetupModal, LogUploadModal } from "setup.slint";
 import { Labels, DialogLabels } from "labels.slint";
-import { GameInfoView, GameInfoModal } from "game_info.slint";
+import { GameInfoView, GameInfoModal, ManualReader, InfoRow } from "game_info.slint";
+import { TagNames } from "tag_names.slint";
 import { AboutView, AboutScreen } from "about.slint";
 import { KeyCell } from "keyboard.slint";
 import { SearchView, SearchInput, SearchPaneRow, SearchScreen } from "search.slint";
@@ -45,7 +46,7 @@ import "../../../resources/fonts/NotoSans-Medium.ttf";
 import "../../../resources/fonts/NotoSans-DemiBold.ttf";
 import "../../../resources/fonts/MxPlus_HP_100LX_6x8.ttf";
 
-export { Theme, Sizing, Motion, Layout, GlyphSource, Brand, Buttons, Status, HelpEntry, GridCell, DetailRow, SettingsRow, SettingsLabels, SetupPickerRow, GameInfoView, Labels, AboutView }
+export { Theme, Sizing, Motion, Layout, GlyphSource, Brand, Buttons, Status, HelpEntry, GridCell, DetailRow, SettingsRow, SettingsLabels, SetupPickerRow, GameInfoView, InfoRow, TagNames, Labels, AboutView }
 export { UpdateView, UpdatePage, UpdateButton, UpdateOutcome, UpdateStatusKind, UpdateError, UpdateLinuxPhase, UpdateFilter, UpdateRowKind, UpdateRowStatus, UpdateFolderKind, UpdateHelpLabel, UpdateCounts, UpdateRow, UpdateMembership, UpdateHelp }
 
 // Context-menu row: `id` is the dispatch key the router switches on,
@@ -555,6 +556,12 @@ export global GamesView {
     in-out property <image> detail-cover;
     in-out property <bool> detail-has-cover: false;
     in-out property <bool> detail-cover-absent: false;
+    // The pane's place among the game's images when Left and Right step
+    // them; a count under two shows nothing.
+    in-out property <int> detail-image-index: 0;
+    in-out property <int> detail-image-count: 0;
+    // The image type the pane shows while it counts, for its label.
+    in-out property <string> detail-image-kind: "";
     in-out property <color> detail-placeholder;
     in-out property <bool> detail-has-placeholder: false;
     in-out property <[DetailRow]> detail-rows: [];
@@ -735,13 +742,13 @@ component PickerRowBody inherits Rectangle {
     }
 }
 
-// A context-menu row's label, centered on its own measured width rather
-// than stretched. Drawn twice for the same reason as `PickerRowBody`. A row
-// that turns the menu to a page carries a trailing chevron, and reserves the
-// same room on its leading side so the label stays centered.
+// A context-menu row's label, set from the leading edge. Drawn twice for the
+// same reason as `PickerRowBody`. A row that turns the menu to a page
+// carries a chevron at the trailing edge, and its label stops short of it.
 component ContextRowBody inherits Rectangle {
     in property <string> label;
     in property <length> pad-x;
+    in property <length> pad-end;
     in property <color> content-color;
     in property <int> weight;
     in property <bool> opens-page;
@@ -757,9 +764,9 @@ component ContextRowBody inherits Rectangle {
     }
 
     Text {
-        x: Sizing.snap((parent.width - Math.min(self.preferred-width, parent.width - 2 * root.pad-x)) / 2);
+        x: root.pad-x;
         y: Sizing.snap((parent.height - self.height) / 2);
-        width: Math.min(self.preferred-width, parent.width - 2 * root.pad-x);
+        width: Math.max(0px, parent.width - root.pad-x - root.pad-end);
         overflow: elide;
         text: root.label;
         color: root.content-color;
@@ -2750,13 +2757,12 @@ component ContextMenu inherits Rectangle {
     // is the measurement the panel sizes around; measured at the
     // selected row's weight so a row cannot outgrow the panel when it
     // gains focus.
-    // A row that opens a page reserves its chevron on both sides.
+    // A row that opens a page reserves its chevron at the trailing edge.
     property <length> chevron: Sizing.pct-h(3);
     property <length> chevron-room: root.chevron + Sizing.pct-w(1);
     measure := VerticalLayout {
         visible: false;
         for entry in root.entries: HorizontalLayout {
-            padding-left: entry.role == MenuRole.submenu ? root.chevron-room : 0px;
             padding-right: entry.role == MenuRole.submenu ? root.chevron-room : 0px;
             Text {
                 text: entry.label-key != "" ? Labels.menu(entry.label-key, entry.label) : entry.label;
@@ -2899,7 +2905,8 @@ component ContextMenu inherits Rectangle {
 
             ContextRowBody {
                 label: entry.label-key != "" ? Labels.menu(entry.label-key, entry.label) : entry.label;
-                pad-x: root.label-inset + (entry.role == MenuRole.submenu ? root.chevron-room : 0px);
+                pad-x: root.label-inset;
+                pad-end: root.label-inset + (entry.role == MenuRole.submenu ? root.chevron-room : 0px);
                 content-color: Theme.text-primary;
                 weight: FontWeight.normal;
                 opens-page: entry.role == MenuRole.submenu;
@@ -2912,7 +2919,8 @@ component ContextMenu inherits Rectangle {
                 fill: sel.fill;
                 ContextRowBody {
                     label: entry.label-key != "" ? Labels.menu(entry.label-key, entry.label) : entry.label;
-                    pad-x: root.label-inset + (entry.role == MenuRole.submenu ? root.chevron-room : 0px);
+                    pad-x: root.label-inset;
+                    pad-end: root.label-inset + (entry.role == MenuRole.submenu ? root.chevron-room : 0px);
                     content-color: sel.content;
                     weight: FontWeight.medium;
                     opens-page: entry.role == MenuRole.submenu;
@@ -3087,6 +3095,9 @@ component GamesScreen inherits Rectangle {
         cover: GamesView.detail-cover;
         has-cover: GamesView.detail-has-cover;
         cover-absent: GamesView.detail-cover-absent;
+        image-index: GamesView.detail-image-index;
+        image-count: GamesView.detail-image-count;
+        image-kind: GamesView.detail-image-kind;
         art-box(w, h) => { GamesInput.detail-art-box(Math.round(w / 1px), Math.round(h / 1px)); }
         wordmark: false;
         detail-rows: GamesView.detail-rows;
@@ -3340,7 +3351,17 @@ component RouteScreen inherits Rectangle {
 
 export component App inherits Window {
     callback game-info-scroll(ScrollAction);
-    game-info-scroll(action) => { info-modal.scroll(action); }
+    // Up or Down on the focused description scrolls it first; true when
+    // it did, so focus stays.
+    callback game-info-step-within(bool) -> bool;
+    game-info-step-within(down) => { info-modal.step-within(down) }
+    game-info-scroll(action) => {
+        if (manual-reader.reading) {
+            manual-reader.scroll(action);
+        } else {
+            info-modal.scroll(action);
+        }
+    }
     title: @tr("Zaparoo Frontend");
     background: Theme.bg-deep;
     default-font-family: Theme.font-ui;
@@ -3401,6 +3422,32 @@ export component App inherits Window {
     // Move cue only when there is a second page to jump to. The source
     // row stays put during a forward transition: the input gate
     // swallows presses, but a bar that empties reads as dismantling.
+    // What A does on the focused item of Game Info, or "" where it does
+    // nothing.
+    pure function info-action() -> string {
+        // Nothing focused (a failed panel, or nothing on it acts): every
+        // stop is -1 then, so the comparisons below would all match.
+        if (GameInfoView.focus < 0) { return ""; }
+        if (GameInfoView.focus == GameInfoView.image-stop) { return @tr("View"); }
+        if (GameInfoView.focus == GameInfoView.manual-stop) { return @tr("Open"); }
+        if (GameInfoView.focus == GameInfoView.description-stop) { return ""; }
+        if (GameInfoView.focus >= 0 && GameInfoView.focus > GameInfoView.description-stop
+            && GameInfoView.focus > GameInfoView.manual-stop && GameInfoView.focus > GameInfoView.image-stop) {
+            return @tr("Search");
+        }
+        return "";
+    }
+    // A manual's page turn, and the fit Accept switches to.
+    pure function manual-page-cue() -> HelpEntry {
+        return { buttons: ["ButtonL", "ButtonR", "DpadLeft", "DpadRight"], label: @tr("Page") };
+    }
+    pure function manual-fit-cue() -> HelpEntry {
+        return { buttons: ["ButtonA"], label: GameInfoView.manual-fit == ManualFit.width ? @tr("Whole page") : @tr("Fit width") };
+    }
+    // A list whose Left and Right step images moves only up and down.
+    pure function list-move-cue(pages: int) -> HelpEntry {
+        return { buttons: pages > 1 ? ["ButtonL", "ButtonR", "DpadUp", "DpadDown"] : ["DpadUp", "DpadDown"], label: @tr("Move") };
+    }
     pure function move-cue(pages: int) -> HelpEntry {
         return { buttons: pages > 1 ? ["ButtonL", "ButtonR", "Dpad"] : ["Dpad"], label: @tr("Move") };
     }
@@ -3650,23 +3697,88 @@ export component App inherits Window {
             }
             return [{ buttons: ["ButtonB"], label: @tr("Cancel") }];
         }
-        if (GameInfoView.modal-open) {
-            if (info-modal.scrollable && GameInfoView.image-count > 1) {
+        if (manual-reader.reading && GameInfoView.viewer-open) {
+            if (GameInfoView.image-count > 1) {
                 return [
-                    { buttons: ["Dpad"], label: @tr("Scroll") },
+                    { buttons: ["ButtonL", "ButtonR", "DpadLeft", "DpadRight"], label: @tr("Image") },
+                    { buttons: ["ButtonB"], label: @tr("Back") },
+                ];
+            }
+            return [{ buttons: ["ButtonB"], label: @tr("Back") }];
+        }
+        if (manual-reader.reading) {
+            if (GameInfoView.manual-state != ManualState.ready) {
+                return [{ buttons: ["ButtonB"], label: @tr("Back") }];
+            }
+            if (GameInfoView.manual-pages > 1 && manual-reader.scrollable) {
+                return [
+                    self.manual-page-cue(),
+                    { buttons: ["DpadUp", "DpadDown"], label: @tr("Scroll") },
+                    self.manual-fit-cue(),
+                    { buttons: ["ButtonB"], label: @tr("Back") },
+                ];
+            }
+            if (GameInfoView.manual-pages > 1) {
+                return [
+                    self.manual-page-cue(),
+                    self.manual-fit-cue(),
+                    { buttons: ["ButtonB"], label: @tr("Back") },
+                ];
+            }
+            if (manual-reader.scrollable) {
+                return [
+                    { buttons: ["DpadUp", "DpadDown"], label: @tr("Scroll") },
+                    self.manual-fit-cue(),
+                    { buttons: ["ButtonB"], label: @tr("Back") },
+                ];
+            }
+            return [
+                self.manual-fit-cue(),
+                { buttons: ["ButtonB"], label: @tr("Back") },
+            ];
+        }
+        if (GameInfoView.modal-open && GameInfoView.values-open) {
+            return [
+                { buttons: ["DpadUp", "DpadDown"], label: @tr("Move") },
+                { buttons: ["ButtonA"], label: @tr("Search") },
+                { buttons: ["ButtonB"], label: @tr("Back") },
+            ];
+        }
+        // What A does follows focus; Left and Right always step the images.
+        if (GameInfoView.modal-open && GameInfoView.image-count > 1) {
+            if (GameInfoView.focus == GameInfoView.image-stop) {
+                return [
+                    { buttons: ["DpadUp", "DpadDown"], label: @tr("Move") },
                     { buttons: ["DpadLeft", "DpadRight"], label: @tr("Image") },
+                    { buttons: ["ButtonA"], label: @tr("View") },
                     { buttons: ["ButtonB"], label: @tr("Close") },
                 ];
             }
-            if (GameInfoView.image-count > 1) {
+            if (self.info-action() != "") {
                 return [
+                    { buttons: ["DpadUp", "DpadDown"], label: @tr("Move") },
                     { buttons: ["DpadLeft", "DpadRight"], label: @tr("Image") },
+                    { buttons: ["ButtonA"], label: self.info-action() },
+                    { buttons: ["ButtonB"], label: @tr("Close") },
+                ];
+            }
+            return [
+                { buttons: ["DpadUp", "DpadDown"], label: @tr("Move") },
+                { buttons: ["DpadLeft", "DpadRight"], label: @tr("Image") },
+                { buttons: ["ButtonB"], label: @tr("Close") },
+            ];
+        }
+        if (GameInfoView.modal-open) {
+            if (self.info-action() != "") {
+                return [
+                    { buttons: ["DpadUp", "DpadDown"], label: @tr("Move") },
+                    { buttons: ["ButtonA"], label: self.info-action() },
                     { buttons: ["ButtonB"], label: @tr("Close") },
                 ];
             }
             if (info-modal.scrollable) {
                 return [
-                    { buttons: ["Dpad"], label: @tr("Scroll") },
+                    { buttons: ["DpadUp", "DpadDown"], label: @tr("Scroll") },
                     { buttons: ["ButtonB"], label: @tr("Close") },
                 ];
             }
@@ -3893,6 +4005,44 @@ export component App inherits Window {
                 { buttons: ["ButtonB"], label: @tr("Back") },
             ];
         }
+        // Left and Right step the pane's images when set to and there is
+        // more than one: the move cue keeps only what still moves.
+        if (GamesView.detail-image-count > 1) {
+            if (Shell.active-screen == Screen.recents) {
+                if (!GamesView.options-available) {
+                    return [
+                        self.list-move-cue(GamesView.total-pages),
+                        { buttons: ["DpadLeft", "DpadRight"], label: @tr("Image") },
+                        { buttons: ["ButtonA"], label: @tr("Open") },
+                        { buttons: ["ButtonB"], label: @tr("Back") },
+                    ];
+                }
+                return [
+                    self.list-move-cue(GamesView.total-pages),
+                    { buttons: ["DpadLeft", "DpadRight"], label: @tr("Image") },
+                    { buttons: ["ButtonA"], label: @tr("Open") },
+                    { buttons: ["ButtonX"], label: @tr("Options") },
+                    { buttons: ["ButtonB"], label: @tr("Back") },
+                ];
+            }
+            if (!GamesView.options-available) {
+                return [
+                    self.list-move-cue(GamesView.total-pages),
+                    { buttons: ["DpadLeft", "DpadRight"], label: @tr("Image") },
+                    { buttons: ["ButtonA"], label: @tr("Open") },
+                    { buttons: ["ButtonY"], label: @tr("Menu") },
+                    { buttons: ["ButtonB"], label: @tr("Back") },
+                ];
+            }
+            return [
+                self.list-move-cue(GamesView.total-pages),
+                { buttons: ["DpadLeft", "DpadRight"], label: @tr("Image") },
+                { buttons: ["ButtonA"], label: @tr("Open") },
+                { buttons: ["ButtonX"], label: @tr("Options") },
+                { buttons: ["ButtonY"], label: @tr("Menu") },
+                { buttons: ["ButtonB"], label: @tr("Back") },
+            ];
+        }
         // Options only where the focused row has a menu to open. Recents
         // has no View menu.
         if (Shell.active-screen == Screen.recents) {
@@ -4068,6 +4218,7 @@ export component App inherits Window {
     // earns its place at this resolution too. The one-frame repaint on
     // open is fine.
     info-modal := GameInfoModal {}
+    manual-reader := ManualReader {}
 
     if Overlays.card-write-open: CardWriteModal {}
 

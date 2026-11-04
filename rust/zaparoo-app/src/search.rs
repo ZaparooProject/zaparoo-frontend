@@ -113,6 +113,58 @@ pub fn tile_list(values: &[String]) -> Vec<String> {
     kept
 }
 
+/// The search's written tags the tags picker cannot show, as written: a
+/// type it has no category for (`series:...`, a revision), or a value its
+/// category cannot hold (a second genre, `user:hidden`). Only a tag search
+/// from Game Info or a Hub tile puts one there.
+pub fn extra_tags(tags: &[String]) -> Vec<String> {
+    let shown = browse_filter::normalize(tags);
+    tile_list(tags)
+        .into_iter()
+        .filter(|tag| !shown.contains(tag))
+        .collect()
+}
+
+/// The picker category a tag belongs to, if any.
+fn category_of(tag: &str) -> Option<browse_filter::Category> {
+    let tag_type = tag.split_once(':').map_or(tag, |(t, _)| t);
+    browse_filter::Category::ALL
+        .into_iter()
+        .find(|category| category.tag_type() == tag_type)
+}
+
+/// `written`'s extras that still hold beside `picked`: one with no
+/// category always does; one with a category only while that category's
+/// choice is the one it was, so changing a category replaces all of it
+/// and changing another leaves it alone.
+fn kept_extras(written: &[String], picked: &[String]) -> Vec<String> {
+    let before = browse_filter::normalize(written);
+    extra_tags(written)
+        .into_iter()
+        .filter(|tag| {
+            category_of(tag).is_none_or(|category| {
+                browse_filter::selected(&before, category)
+                    == browse_filter::selected(picked, category)
+            })
+        })
+        .collect()
+}
+
+/// A written search's tags after the picker set `picked`: the picker's,
+/// then the extras it did not touch (`kept_extras`).
+pub fn with_picked(written: &[String], picked: Vec<String>) -> Vec<String> {
+    let extras = kept_extras(written, &picked);
+    [picked, extras].concat()
+}
+
+/// The search's tags: the picker's, one per category in menu order, then
+/// the extras it cannot show (`extra_tags`).
+pub fn search_tags(tags: &[String]) -> Vec<String> {
+    let mut all = browse_filter::normalize(tags);
+    all.extend(extra_tags(tags));
+    all
+}
+
 /// How many games match, as far as one page can tell.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Count {
@@ -167,6 +219,13 @@ pub fn prune_tags(tags: &[String], groups: &[Group]) -> Vec<String> {
             })
         })
         .collect()
+}
+
+/// `prune_tags` for a search whose tags are kept as written (a Hub tile's,
+/// a tag search from Game Info): the tags the picker cannot show stay, as
+/// no tag list names them to rule them out.
+pub fn prune_written_tags(tags: &[String], groups: &[Group]) -> Vec<String> {
+    with_picked(tags, prune_tags(tags, groups))
 }
 
 /// The focusable regions: the two fields above the keyboard, the
@@ -352,6 +411,62 @@ mod tests {
 
     fn go(focus: Focus, action: &str, shape: Shape) -> Focus {
         step(focus, action, shape).0
+    }
+
+    #[test]
+    fn a_written_searchs_tags_stay_until_their_own_category_changes() {
+        let written: Vec<String> = ["genre:rpg", "genre:action", "user:hidden", "year:1994"]
+            .map(String::from)
+            .to_vec();
+        // The picker shows one genre and the year; the rest are extras.
+        assert_eq!(extra_tags(&written), ["genre:action", "user:hidden"]);
+        // A new year leaves both genres and the hidden tag alone.
+        let picked = browse_filter::with_selection(
+            &browse_filter::normalize(&written),
+            Category::Year,
+            Some("1995"),
+        );
+        assert_eq!(
+            with_picked(&written, picked),
+            ["genre:rpg", "year:1995", "genre:action", "user:hidden"]
+        );
+        // A new genre replaces both.
+        let picked = browse_filter::with_selection(
+            &browse_filter::normalize(&written),
+            Category::Genre,
+            Some("racing"),
+        );
+        assert_eq!(
+            with_picked(&written, picked),
+            ["genre:racing", "year:1994", "user:hidden"]
+        );
+    }
+
+    #[test]
+    fn tags_the_picker_cannot_show_survive_it_and_a_change_of_system() {
+        let tags: Vec<String> = ["series:Resident Evil", "genre:horror", "user:hidden"]
+            .map(String::from)
+            .to_vec();
+        // `user:hidden` is a Lists tag the picker cannot select: an extra too.
+        assert_eq!(extra_tags(&tags), ["series:Resident Evil", "user:hidden"]);
+        assert_eq!(
+            search_tags(&tags),
+            ["genre:horror", "series:Resident Evil", "user:hidden"]
+        );
+        let groups = vec![Group {
+            category: Category::Players,
+            values: Vec::new(),
+        }];
+        // The new system has no genre list: the genre goes, the rest stays.
+        assert_eq!(
+            prune_written_tags(&tags, &groups),
+            ["series:Resident Evil", "user:hidden"]
+        );
+        assert_eq!(
+            prune_written_tags(&tags, &[]),
+            ["genre:horror", "series:Resident Evil", "user:hidden"]
+        );
+        assert!(prune_tags(&tags, &groups).is_empty());
     }
 
     #[test]

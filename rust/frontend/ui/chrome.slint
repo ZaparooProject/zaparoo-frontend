@@ -1138,11 +1138,13 @@ export component WaitCue inherits Rectangle {
         visible: root.shown && root.icon;
         source: GlyphSource.glyph("icons/Loading", root.glyph, root.ink);
     }
+    // A full line tall, centered on the glyph: a box one font size tall
+    // cuts off descenders.
     label := Text {
         x: Sizing.snap((parent.width - root.content-w) / 2) + root.icon-w;
-        y: (parent.height - root.glyph) / 2;
+        y: (parent.height - self.height) / 2;
         width: root.label-w;
-        height: root.glyph;
+        height: Math.ceil(root.glyph * 1.362 / 1px) * 1px;
         visible: root.shown;
         vertical-alignment: center;
         overflow: elide;

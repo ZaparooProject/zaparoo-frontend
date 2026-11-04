@@ -22,6 +22,10 @@ ignore  = [
     "RUSTSEC-2026-0370", # zvariant
     "RUSTSEC-2026-0371", # zbus_names
     "RUSTSEC-2026-0372", # zvariant_derive
+    # pin-utils, through `slint-macros` -> `spin_on` (a build-time executor
+    # for the Slint macros; still there in Slint 1.18.1). The advisory-db
+    # entry has no ID yet: replace this placeholder when it gets one.
+    "RUSTSEC-0000-0000", # pin-utils
 ]
 
 [licenses]
@@ -66,9 +70,12 @@ allow-wildcard-paths = true  # Workspace path deps have no version pin; this is 
 
 # Known transitive duplicates we can't resolve without forking upstream go
 # in `skip`, version-pinned so a future additional duplicate trips the
-# check rather than being silently swallowed. None outside the Slint tree
-# today.
-skip = []
+# check rather than being silently swallowed.
+skip = [
+    # hayro 0.9 (game manuals) uses fearless_simd 1.x itself while its
+    # vello_cpu 0.3 renderer still pins 0.7; both are inside hayro's tree.
+    { crate = "fearless_simd@0.7.0", reason = "hayro's vello_cpu 0.3 pins it" },
+]
 
 # The Slint dependency tree carries its own duplicate versions (bitflags,
 # hashbrown, rustix, skrifa/read-fonts, tiny-skia, ...). They are internal to

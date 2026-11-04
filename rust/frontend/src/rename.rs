@@ -160,6 +160,7 @@ fn save(ctx: &Ctx, app: &App) {
         )
     };
     crate::hub::set_tile_name(ctx, app, &target, &name);
+    crate::router::forget_menu_return(ctx);
     leave(ctx, app);
 }
 
@@ -239,7 +240,10 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
             flash_key(ctx, app);
             apply_press(ctx, app, press);
         }
-        actions::CANCEL => leave(ctx, app),
+        actions::CANCEL => {
+            leave(ctx, app);
+            crate::router::return_to_menu(ctx, app, zaparoo_app::options_menu::Opens::Rename);
+        }
         _ => {
             if action == zaparoo_app::input::TEXT_KEY {
                 flash_key(ctx, app);

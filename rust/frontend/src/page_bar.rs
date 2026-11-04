@@ -138,9 +138,12 @@ fn entry(chip: Chip, shared: &Shared) -> crate::MenuEntry {
             },
             "",
         ),
-        Chip::GoTo | Chip::SearchHere | Chip::RandomFavorite | Chip::AddItem | Chip::More => {
-            menu_row(chip.id())
-        }
+        Chip::GoTo
+        | Chip::SearchHere
+        | Chip::EditSearch
+        | Chip::RandomFavorite
+        | Chip::AddItem
+        | Chip::More => menu_row(chip.id()),
     }
 }
 
@@ -301,6 +304,7 @@ fn activate(ctx: &Ctx, app: &App, index: usize) {
         "jump_letter" => crate::router::open_go_to(ctx, app),
         "filter" => crate::browse_filter::open(ctx, app),
         "search_here" => crate::search::enter_scoped(ctx, app),
+        "edit_search" => crate::search::edit(ctx, app),
         "favorites_sort" => crate::router::open_favorites_sort_menu(ctx, app),
         "favorites_grouping" => crate::router::open_favorites_grouping_menu(ctx, app),
         "launch_random_favorite" => crate::router::favorites_page_menu_accept(ctx, app, &id),

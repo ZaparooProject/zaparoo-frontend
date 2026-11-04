@@ -31,13 +31,22 @@ pub const DETAIL_DEBOUNCE_MS: u64 = 150;
 /// The most the detail pane's rows from Core may hold in memory.
 pub const DETAIL_CACHE_BYTES: usize = 256 * 1024;
 
+/// What the detail pane keeps of one game's `media.meta`: its rows, and the
+/// image types Core can serve for it, in the order the pane steps through
+/// them.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Detail {
+    pub rows: Vec<(&'static str, String)>,
+    pub image_types: Vec<String>,
+}
+
 /// The detail pane's rows from Core, by row identity, so a row the user
 /// comes back to, or one fetched ahead beside the selection, shows its
 /// metadata at once instead of blanking while it loads. Process memory
 /// only, bounded by `cap` bytes, least recently used out first.
 #[derive(Debug)]
 pub struct DetailCache {
-    entries: std::collections::VecDeque<(String, Vec<(&'static str, String)>)>,
+    entries: std::collections::VecDeque<(String, Detail)>,
     bytes: usize,
     cap: usize,
     /// Bumped by `clear`, so a fetch that started before it cannot put
@@ -68,11 +77,17 @@ impl DetailCache {
         self.generation = self.generation.wrapping_add(1);
     }
 
-    fn cost(identity: &str, rows: &[(&'static str, String)]) -> usize {
+    fn cost(identity: &str, detail: &Detail) -> usize {
         identity.len()
-            + rows
+            + detail
+                .rows
                 .iter()
                 .map(|(_, value)| value.len() + 16)
+                .sum::<usize>()
+            + detail
+                .image_types
+                .iter()
+                .map(|kind| kind.len() + 24)
                 .sum::<usize>()
             + 48
     }
@@ -81,18 +96,26 @@ impl DetailCache {
         self.entries.iter().any(|(key, _)| key == identity)
     }
 
-    /// The rows for `identity`, which become the most recently used.
-    pub fn get(&mut self, identity: &str) -> Option<Vec<(&'static str, String)>> {
+    /// The detail for `identity`, which becomes the most recently used.
+    pub fn get(&mut self, identity: &str) -> Option<Detail> {
         let index = self.entries.iter().position(|(key, _)| key == identity)?;
         let entry = self.entries.remove(index)?;
-        let rows = entry.1.clone();
+        let detail = entry.1.clone();
         self.entries.push_back(entry);
-        Some(rows)
+        Some(detail)
     }
 
-    /// Keeps `rows`, fetched from `generation`, unless the cache has been
+    /// The image types for `identity`, without touching its recency.
+    pub fn image_types(&self, identity: &str) -> Option<&[String]> {
+        self.entries
+            .iter()
+            .find(|(key, _)| key == identity)
+            .map(|(_, detail)| detail.image_types.as_slice())
+    }
+
+    /// Keeps `detail`, fetched from `generation`, unless the cache has been
     /// cleared since that fetch started.
-    pub fn insert(&mut self, generation: u64, identity: String, rows: Vec<(&'static str, String)>) {
+    pub fn insert(&mut self, generation: u64, identity: String, detail: Detail) {
         if generation != self.generation {
             return;
         }
@@ -101,7 +124,7 @@ impl DetailCache {
                 self.bytes -= Self::cost(&key, &old);
             }
         }
-        let cost = Self::cost(&identity, &rows);
+        let cost = Self::cost(&identity, &detail);
         if cost > self.cap {
             return;
         }
@@ -112,8 +135,44 @@ impl DetailCache {
             self.bytes -= Self::cost(&key, &old);
         }
         self.bytes += cost;
-        self.entries.push_back((identity, rows));
+        self.entries.push_back((identity, detail));
     }
+}
+
+/// The image types a cover asks Core for when it names none, best first.
+/// The user's preferred artwork, when set, goes in front.
+pub const COVER_LADDER: &[&str] = &["boxart", "image", "thumbnail", "boxart3d", "screenshot"];
+
+/// Whether a plain cover request (no image type named) can come back as
+/// `kind`: it is the preferred artwork or on the cover ladder.
+pub fn plain_cover_serves(kind: &str, preferred: &str) -> bool {
+    (!preferred.is_empty() && preferred != "auto" && kind == preferred)
+        || COVER_LADDER.contains(&kind)
+}
+
+/// A game's image types in the order the detail pane steps through them:
+/// Core's order, except that the one a plain cover request resolves to
+/// leads, so the first image is the cover the pane already shows.
+pub fn detail_image_order(types: &[String], preferred: &str) -> Vec<String> {
+    let preferred = (!preferred.is_empty() && preferred != "auto").then_some(preferred);
+    let rank = |kind: &str| {
+        preferred
+            .into_iter()
+            .chain(COVER_LADDER.iter().copied())
+            .position(|wanted| wanted == kind)
+    };
+    let mut ordered = types.to_vec();
+    if let Some(lead) = ordered
+        .iter()
+        .enumerate()
+        .filter_map(|(index, kind)| rank(kind).map(|rank| (rank, index)))
+        .min()
+        .map(|(_, index)| index)
+    {
+        let kind = ordered.remove(lead);
+        ordered.insert(0, kind);
+    }
+    ordered
 }
 
 /// Selection writes coalesce over this window during a held move.
@@ -1144,11 +1203,14 @@ impl SelectionPersist {
 
 #[cfg(test)]
 mod tests {
-    use super::DetailCache;
+    use super::{Detail, DetailCache};
 
     #[test]
     fn the_detail_cache_keeps_recent_rows_within_its_bytes() {
-        let rows = |value: &str| vec![("year", value.to_string())];
+        let rows = |value: &str| Detail {
+            rows: vec![("year", value.to_string())],
+            image_types: vec!["boxart".into()],
+        };
         let cost = DetailCache::cost("a", &rows("1991"));
         let mut cache = DetailCache::new(cost * 2);
         let generation = cache.generation();
@@ -1172,20 +1234,46 @@ mod tests {
     }
 
     #[test]
+    fn only_the_ladder_or_the_preference_comes_back_from_a_plain_cover() {
+        assert!(plain_cover_serves("boxart", "auto"));
+        assert!(plain_cover_serves("titleshot", "titleshot"));
+        assert!(!plain_cover_serves("map", "auto"));
+        assert!(!plain_cover_serves("titleshot", "boxart"));
+    }
+
+    #[test]
+    fn the_detail_image_order_leads_with_the_plain_cover() {
+        let types = |list: &[&str]| list.iter().map(ToString::to_string).collect::<Vec<_>>();
+        let core = types(&["screenshot", "titleshot", "boxart", "marquee"]);
+        assert_eq!(
+            detail_image_order(&core, "auto"),
+            types(&["boxart", "screenshot", "titleshot", "marquee"])
+        );
+        assert_eq!(
+            detail_image_order(&core, "titleshot"),
+            types(&["titleshot", "screenshot", "boxart", "marquee"])
+        );
+        assert_eq!(
+            detail_image_order(&types(&["map", "fanart"]), "auto"),
+            types(&["map", "fanart"])
+        );
+    }
+
+    #[test]
     fn a_fetch_from_before_a_clear_is_not_kept() {
         let mut cache = DetailCache::new(1024);
         let before = cache.generation();
         cache.clear();
-        cache.insert(before, "a".into(), vec![("year", "1991".into())]);
+        let detail = |year: &str| Detail {
+            rows: vec![("year", year.into())],
+            image_types: Vec::new(),
+        };
+        cache.insert(before, "a".into(), detail("1991"));
         assert!(
             !cache.contains("a"),
             "it may hold what Core has since changed"
         );
-        cache.insert(
-            cache.generation(),
-            "a".into(),
-            vec![("year", "1992".into())],
-        );
+        cache.insert(cache.generation(), "a".into(), detail("1992"));
         assert!(cache.contains("a"));
     }
 

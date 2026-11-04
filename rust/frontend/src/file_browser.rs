@@ -933,6 +933,7 @@ fn pick(ctx: &Ctx, app: &App, path: &str) {
         Some(Purpose::HubIcon(target)) => crate::hub::set_tile_icon(ctx, app, &target, path),
         None => {}
     }
+    crate::router::forget_menu_return(ctx);
     leave(ctx, app);
 }
 
@@ -947,6 +948,7 @@ fn back(ctx: &Ctx, app: &App) {
     };
     let Some(dir) = dir else {
         leave(ctx, app);
+        crate::router::return_to_menu(ctx, app, zaparoo_app::options_menu::Opens::IconBrowser);
         return;
     };
     let root = rules::place_for(&places, &dir).map_or("/", |place| place.path.as_str());
@@ -1028,6 +1030,7 @@ pub(crate) fn menu_accept(ctx: &Ctx, app: &App, id: &str) {
         if let Some(Purpose::HubIcon(target)) = purpose {
             crate::hub::set_tile_icon(ctx, app, &target, "");
         }
+        crate::router::forget_menu_return(ctx);
         leave(ctx, app);
     }
 }

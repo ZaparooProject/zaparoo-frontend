@@ -275,6 +275,13 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
         games_mode,
         screen.contains("context").then_some(6),
     );
+    // `…-list-images`: Left and Right step the pane's images.
+    if screen.ends_with("list-images") {
+        let view = app.global::<GamesView>();
+        view.set_detail_image_index(1);
+        view.set_detail_image_count(4);
+        view.set_detail_image_kind("screenshot".into());
+    }
     if screen.contains("search-results") {
         app.global::<GamesView>()
             .set_title("\u{201c}mario\u{201d} \u{b7} Super Nintendo".into());
@@ -1756,33 +1763,76 @@ fn fixture_game_info(app: &App, screen: &str) {
     let view = app.global::<generated::GameInfoView>();
     view.set_modal_open(true);
     view.set_modal_name("Chrono Trigger".into());
-    view.set_loading(screen.ends_with("loading"));
-    view.set_failed(screen.ends_with("error"));
+    let manual = screen.contains("manual");
+    view.set_loading(!manual && screen.ends_with("loading"));
+    view.set_failed(!manual && screen.ends_with("error"));
     if view.get_loading() || view.get_failed() {
         return;
     }
     let short = screen.ends_with("short");
-    let rows: Vec<_> = [
-        ("system", "Super Nintendo Entertainment System"),
-        ("release_date", "1995"),
-        ("genre", "Role-playing"),
-        ("players", "1"),
-        ("developer", "Square"),
-        ("publisher", "Square"),
-        ("filename", "Chrono Trigger (USA)"),
-    ]
-    .into_iter()
-    .take(if short { 2 } else { 7 })
-    .map(|(key, value)| generated::DetailRow {
+    // The table `game_info_data::info_rows` lays out: the facts under
+    // Details, the leftover tags, then Technical details. `stop` is the
+    // focus index after the art (0), the manual (1) and the description (2).
+    let header = |key: &str| generated::InfoRow {
+        kind: RowKind::Header,
+        key: key.into(),
+        value: "".into(),
+        stop: -1,
+    };
+    let row = |key: &str, value: &str, stop: i32| generated::InfoRow {
+        kind: RowKind::Field,
         key: key.into(),
         value: value.into(),
-    })
-    .collect();
-    view.set_rows(slint::ModelRc::new(slint::VecModel::from(rows)));
+        stop,
+    };
+    let rows: Vec<_> = if short {
+        vec![
+            header("details"),
+            row("system", "Super Nintendo Entertainment System", -1),
+            row("year", "1995", 3),
+        ]
+    } else {
+        vec![
+            header("details"),
+            row("system", "Super Nintendo Entertainment System", -1),
+            row("year", "1995", 3),
+            row("players", "1 player", 4),
+            row("developer", "Square", 5),
+            row("publisher", "Square", 6),
+            row("genre", "RPG, JRPG", 7),
+            row("region", "United States", 8),
+            row("tags", "custom:anniversary, user:hidden", 9),
+            header("technical"),
+            row("dump", "Verified", 10),
+            row("path", "/media/fat/games/SNES/Chrono Trigger (USA).sfc", -1),
+        ]
+    };
+    view.set_info_rows(slint::ModelRc::new(slint::VecModel::from(rows)));
+    view.set_image_stop(if short { -1 } else { 0 });
+    view.set_manual_stop(1);
+    view.set_description_stop(if short { -1 } else { 2 });
+    // `…-focus-row` puts focus on Genre; `…-values` lists its values.
+    view.set_focus(
+        if screen.contains("focus-row") || screen.ends_with("values") {
+            7
+        } else {
+            i32::from(short)
+        },
+    );
+    if screen.ends_with("values") {
+        view.set_values_kind("genre".into());
+        view.set_values(slint::ModelRc::new(slint::VecModel::from(vec![
+            slint::SharedString::from("RPG"),
+            slint::SharedString::from("JRPG"),
+        ])));
+        view.set_values_index(1);
+        view.set_values_open(true);
+    }
     if !short {
         view.set_media_missing(true);
         view.set_modal_description("A journey through time, from prehistoric lands to a distant future. Meet companions, explore unfamiliar places, and discover how each era connects to the next. Choices made along the way shape the adventure.\n\nThis long fixture checks that descriptions stay readable and can be scrolled rather than silently truncated.".into());
         view.set_image_count(2);
+        view.set_image_kind("boxart".into());
         let logo = slint::Image::load_from_path(std::path::Path::new(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/assets/systems/SNES.png"
@@ -1794,6 +1844,109 @@ fn fixture_game_info(app: &App, screen: &str) {
             view.set_scroll_position(10.0);
         }
     }
+    view.set_has_manual(true);
+    // `game-info-manual` is the manual's whole page, `…-manual-width` fit
+    // width; `…-manual-loading` and `…-manual-error` the states before a
+    // page.
+    if screen.contains("manual") {
+        fixture_manual(&view, screen);
+    }
+    // `game-info-viewer`: the art full screen, named and counted.
+    if screen.ends_with("viewer") {
+        let art = slint::Image::load_from_path(std::path::Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/assets/systems/SNES.png"
+        )))
+        .expect("fixture logo");
+        view.set_viewer_image(art);
+        view.set_viewer_has_image(true);
+        view.set_viewer_open(true);
+    }
+}
+
+fn fixture_manual(view: &generated::GameInfoView, screen: &str) {
+    use generated::{ManualFit, ManualState};
+    if screen.ends_with("loading") {
+        view.set_manual_state(ManualState::Loading);
+        return;
+    }
+    if screen.ends_with("error") {
+        view.set_manual_state(ManualState::TooLarge);
+        return;
+    }
+    let pdf = hayro::hayro_syntax::Pdf::new(fixture_manual_pdf()).expect("fixture PDF");
+    let page = &pdf.pages()[0];
+    let (page_w, _) = page.render_dimensions();
+    let scale = 1280.0 / page_w;
+    let pixmap = hayro::render(
+        page,
+        &hayro::RenderCache::new(),
+        &hayro::hayro_interpret::InterpreterSettings::default(),
+        &hayro::RenderSettings::default(),
+        &hayro::PixmapSettings {
+            x_scale: scale,
+            y_scale: scale,
+            bg_color: hayro::vello_cpu::color::palette::css::WHITE,
+        },
+    );
+    let buffer = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(
+        pixmap.data_as_u8_slice(),
+        u32::from(pixmap.width()),
+        u32::from(pixmap.height()),
+    );
+    view.set_manual_state(ManualState::Ready);
+    view.set_manual_image(slint::Image::from_rgba8(buffer));
+    view.set_manual_has_image(true);
+    view.set_manual_pages(12);
+    view.set_manual_page(2);
+    // A manual opens on the whole page; `…-manual-width` is fit width,
+    // scrolled a little.
+    if screen.ends_with("width") {
+        view.set_manual_fit(ManualFit::Width);
+        view.set_manual_scroll(0.1);
+    }
+}
+
+/// One US Letter page of manual-like text, built as the mock Core builds
+/// its manuals.
+fn fixture_manual_pdf() -> Vec<u8> {
+    use std::fmt::Write as _;
+    let mut text = String::from(
+        "BT /F1 28 Tf 72 700 Td (Chrono Trigger) Tj ET\nBT /F1 16 Tf 72 664 Td (Starting the game) Tj ET\n",
+    );
+    for line in 0..32 {
+        let _ = writeln!(
+            text,
+            "BT /F1 12 Tf 72 {} Td (Press START on the title screen, then choose New Game or Continue. {}) Tj ET",
+            630 - line * 18,
+            line + 1
+        );
+    }
+    let objects = [
+        "<< /Type /Catalog /Pages 2 0 R >>".to_string(),
+        "<< /Type /Pages /Kids [4 0 R] /Count 1 >>".into(),
+        "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".into(),
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 5 0 R >>".into(),
+        format!("<< /Length {} >>\nstream\n{text}endstream", text.len()),
+    ];
+    let mut out = b"%PDF-1.4\n".to_vec();
+    let mut offsets = Vec::new();
+    for (i, object) in objects.iter().enumerate() {
+        offsets.push(out.len());
+        out.extend_from_slice(format!("{} 0 obj\n{object}\nendobj\n", i + 1).as_bytes());
+    }
+    let xref = out.len();
+    let mut tail = format!("xref\n0 {}\n0000000000 65535 f \n", objects.len() + 1);
+    for offset in offsets {
+        let _ = writeln!(tail, "{offset:010} 00000 n ");
+    }
+    let _ = write!(
+        tail,
+        "trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n",
+        objects.len() + 1
+    );
+    out.extend_from_slice(tail.as_bytes());
+    out
 }
 
 fn fixture_hub(app: &App, scene_w: f64, scene_h: f64, crt: bool, selected: usize) {
@@ -2187,7 +2340,10 @@ fn fixture_chips(app: &App, mode: GamesMode) {
             chip("search_here", "search_here", ""),
             chip("more", "more", ""),
         ],
-        GamesMode::Search => vec![chip("add_to_hub", "save_to_hub", "")],
+        GamesMode::Search => vec![
+            chip("edit_search", "edit_search", ""),
+            chip("add_to_hub", "save_to_hub", ""),
+        ],
         GamesMode::Recents => Vec::new(),
     };
     let bar = app.global::<generated::PageBar>();
@@ -2355,6 +2511,7 @@ fn fixture_games(
             } else {
                 "".into()
             },
+            opens: i == 1 && !flat,
             favorite: i == 2,
             ..Default::default()
         })

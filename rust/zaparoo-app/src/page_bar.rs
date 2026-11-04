@@ -45,6 +45,9 @@ pub enum Chip {
     GroupBy,
     /// A random favorite.
     RandomFavorite,
+    /// The Search screen with the search on screen, to change it. The way
+    /// to widen a tag search Game Info opened, which Back does not offer.
+    EditSearch,
     /// Pin the search on screen to the Hub, or take it off.
     AddToHub,
     /// The Hub's Add item picker.
@@ -64,6 +67,7 @@ impl Chip {
             Self::Sort => "favorites_sort",
             Self::GroupBy => "favorites_grouping",
             Self::RandomFavorite => "launch_random_favorite",
+            Self::EditSearch => "edit_search",
             Self::AddToHub => "add_to_hub",
             Self::AddItem => "hub_add",
             Self::More => "more",
@@ -86,7 +90,7 @@ pub fn chips(surface: Surface) -> &'static [Chip] {
             Chip::More,
         ],
         Surface::FavoriteSystems => &[Chip::GroupBy, Chip::SearchHere],
-        Surface::SearchResults => &[Chip::AddToHub],
+        Surface::SearchResults => &[Chip::EditSearch, Chip::AddToHub],
         Surface::Other => &[],
     }
 }

@@ -1,17 +1,17 @@
 msgid ""
 msgstr ""
-"POT-Creation-Date: 2026-11-03 01:31+0000\n"
+"POT-Creation-Date: 2026-11-04 01:32+0000\n"
 "Language: ro\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=3; plural=(n==1 ? 0 : (n==0 || (n%100 > 0 && n%100 < 20)) ? 1 : 2);\n"
 
-#: rust/frontend/ui/about.slint:52 rust/frontend/ui/settings.slint:185
+#: rust/frontend/ui/about.slint:52 rust/frontend/ui/settings.slint:187
 msgid "About / License"
 msgstr "Despre / Licență"
 
-#: rust/frontend/ui/about.slint:108 rust/frontend/ui/app.slint:3344
+#: rust/frontend/ui/about.slint:108 rust/frontend/ui/app.slint:3365
 msgid "Zaparoo Frontend"
 msgstr "Zaparoo Frontend"
 
@@ -63,419 +63,445 @@ msgstr ""
 msgid "Full license text in COPYING."
 msgstr "Textul complet al licenței se găsește în COPYING."
 
-#: rust/frontend/ui/app.slint:473 rust/frontend/ui/app.slint:1255
-#: rust/frontend/ui/app.slint:3369 rust/frontend/ui/labels.slint:68
+#: rust/frontend/ui/app.slint:474 rust/frontend/ui/app.slint:1262
+#: rust/frontend/ui/app.slint:3390 rust/frontend/ui/labels.slint:85
 msgid "Favorites"
 msgstr "Favorite"
 
-#: rust/frontend/ui/app.slint:474 rust/frontend/ui/app.slint:475
-#: rust/frontend/ui/app.slint:1528 rust/frontend/ui/labels.slint:26
+#: rust/frontend/ui/app.slint:475 rust/frontend/ui/app.slint:476
+#: rust/frontend/ui/app.slint:1535 rust/frontend/ui/labels.slint:43
 msgid "{} · {}"
 msgstr "{} · {}"
 
-#: rust/frontend/ui/app.slint:1231
+#: rust/frontend/ui/app.slint:1238
 msgid "Updating the media database"
 msgstr "Se actualizează baza de date media"
 
-#: rust/frontend/ui/app.slint:1231
+#: rust/frontend/ui/app.slint:1238
 msgid "No games found yet"
 msgstr "Niciun joc găsit încă"
 
-#: rust/frontend/ui/app.slint:1233
+#: rust/frontend/ui/app.slint:1240
 msgid "Your games appear here as Core finds them."
 msgstr "Jocurile apar aici pe măsură ce Core le găsește."
 
-#: rust/frontend/ui/app.slint:1234
+#: rust/frontend/ui/app.slint:1241
 msgid "Update media database in Settings > Library."
 msgstr "Actualizați baza de date media din Setări > Bibliotecă."
 
-#: rust/frontend/ui/app.slint:1262
+#: rust/frontend/ui/app.slint:1269
 msgid "{} systems"
 msgstr "{0} sisteme"
 
-#: rust/frontend/ui/app.slint:1444 rust/frontend/ui/labels.slint:25
+#: rust/frontend/ui/app.slint:1451 rust/frontend/ui/labels.slint:42
 msgid "Hidden"
 msgstr "Ascuns"
 
-#: rust/frontend/ui/app.slint:1481 rust/frontend/ui/app.slint:3204
+#: rust/frontend/ui/app.slint:1488 rust/frontend/ui/app.slint:3215
 msgid "No favorites yet"
 msgstr "Nicio intrare la favorite"
 
-#: rust/frontend/ui/app.slint:1481
+#: rust/frontend/ui/app.slint:1488
 msgid "No systems in this category"
 msgstr "Niciun sistem în această categorie"
 
-#: rust/frontend/ui/app.slint:1607 rust/frontend/ui/app.slint:1624
+#: rust/frontend/ui/app.slint:1614 rust/frontend/ui/app.slint:1631
 msgid "Saving…"
 msgstr "Se salvează…"
 
-#: rust/frontend/ui/app.slint:1862 rust/frontend/ui/labels.slint:164
+#: rust/frontend/ui/app.slint:1869 rust/frontend/ui/labels.slint:181
 msgid "Go to…"
 msgstr "Salt la…"
 
 #. The status line in place of the grid, with the wait cue's hourglass.
-#: rust/frontend/ui/app.slint:1864
+#: rust/frontend/ui/app.slint:1871
 msgid "Loading sections…"
 msgstr "Se încarcă secțiunile…"
 
-#: rust/frontend/ui/app.slint:1865
+#: rust/frontend/ui/app.slint:1872
 msgid "Failed to load sections"
 msgstr "Secțiunile nu au putut fi încărcate"
 
-#: rust/frontend/ui/app.slint:1865
+#: rust/frontend/ui/app.slint:1872
 msgid "No sections"
 msgstr "Nicio secțiune"
 
-#: rust/frontend/ui/app.slint:1968
+#: rust/frontend/ui/app.slint:1975
 msgid "Hold a writable token near the reader"
 msgstr "Țineți un token inscriptibil lângă cititor"
 
-#: rust/frontend/ui/app.slint:1992 rust/frontend/ui/app.slint:3422
-#: rust/frontend/ui/app.slint:3604 rust/frontend/ui/app.slint:3651
-#: rust/frontend/ui/app.slint:3699 rust/frontend/ui/app.slint:3738
-#: rust/frontend/ui/settings.slint:255
+#: rust/frontend/ui/app.slint:1999 rust/frontend/ui/app.slint:3469
+#: rust/frontend/ui/app.slint:3651 rust/frontend/ui/app.slint:3698
+#: rust/frontend/ui/app.slint:3811 rust/frontend/ui/app.slint:3850
+#: rust/frontend/ui/settings.slint:259
 msgid "Cancel"
 msgstr "Anulare"
 
-#: rust/frontend/ui/app.slint:2014 rust/frontend/ui/settings.slint:184
+#: rust/frontend/ui/app.slint:2021 rust/frontend/ui/settings.slint:186
 msgid "Pair a device"
 msgstr "Împerechere dispozitiv"
 
-#: rust/frontend/ui/app.slint:2038 rust/frontend/ui/app.slint:2143
+#: rust/frontend/ui/app.slint:2045 rust/frontend/ui/app.slint:2150
 msgid "Starting…"
 msgstr "Se pornește…"
 
-#: rust/frontend/ui/app.slint:2060
+#: rust/frontend/ui/app.slint:2067
 msgid "Enter this PIN on the device you are pairing."
 msgstr "Introduceți acest PIN pe dispozitivul pe care îl împerecheați."
 
-#: rust/frontend/ui/app.slint:2074 rust/frontend/ui/app.slint:2232
+#: rust/frontend/ui/app.slint:2081 rust/frontend/ui/app.slint:2239
 msgid "Expires in {n} minute"
 msgid_plural "Expires in {n} minutes"
 msgstr[0] "Expiră în {n} minut"
 msgstr[1] "Expiră în {n} minute"
 msgstr[2] "Expiră în {n} de minute"
 
-#: rust/frontend/ui/app.slint:2075 rust/frontend/ui/app.slint:2233
+#: rust/frontend/ui/app.slint:2082 rust/frontend/ui/app.slint:2240
 msgid "Expires in {n} second"
 msgid_plural "Expires in {n} seconds"
 msgstr[0] "Expiră în {n} secundă"
 msgstr[1] "Expiră în {n} secunde"
 msgstr[2] "Expiră în {n} de secunde"
 
-#: rust/frontend/ui/app.slint:2092
+#: rust/frontend/ui/app.slint:2099
 msgid "A device is now paired with Core."
 msgstr "Un dispozitiv este acum împerecheat cu Core."
 
-#: rust/frontend/ui/app.slint:2093
+#: rust/frontend/ui/app.slint:2100
 msgid "{} is now paired with Core."
 msgstr "{} este acum împerecheat cu Core."
 
-#: rust/frontend/ui/app.slint:2107
+#: rust/frontend/ui/app.slint:2114
 msgid "The PIN expired before a device used it. Pair again for a new one."
 msgstr "PIN-ul a expirat înainte de a fi folosit. Împerecheați din nou pentru unul nou."
 
-#: rust/frontend/ui/app.slint:2129
+#: rust/frontend/ui/app.slint:2136
 msgid "Link Online account"
 msgstr "Asociere cont Online"
 
-#: rust/frontend/ui/app.slint:2153
+#: rust/frontend/ui/app.slint:2160
 msgid "This device is now linked to your Zaparoo Online account."
 msgstr "Acest dispozitiv este acum asociat cu contul dvs. Zaparoo Online."
 
-#: rust/frontend/ui/app.slint:2154
+#: rust/frontend/ui/app.slint:2161
 msgid "The code expired before it was approved. Link again for a new one."
 msgstr "Codul a expirat înainte de a fi aprobat. Asociați din nou pentru unul nou."
 
-#: rust/frontend/ui/app.slint:2155
+#: rust/frontend/ui/app.slint:2162
 msgid "Linking failed. Check the network connection and try again."
 msgstr "Asocierea a eșuat. Verificați conexiunea la rețea și încercați din nou."
 
-#: rust/frontend/ui/app.slint:2169
+#: rust/frontend/ui/app.slint:2176
 msgid "Scan this code with your phone, or open the address below and enter the code."
 msgstr "Scanați acest cod cu telefonul sau deschideți adresa de mai jos și introduceți codul."
 
-#: rust/frontend/ui/app.slint:2182
+#: rust/frontend/ui/app.slint:2189
 msgid "Or press Accept to open it on this device."
 msgstr "Sau apăsați Accept pentru a o deschide pe acest dispozitiv."
 
-#: rust/frontend/ui/app.slint:2320 rust/frontend/ui/labels.slint:382
+#: rust/frontend/ui/app.slint:2327 rust/frontend/ui/labels.slint:401
 msgid "This device is not linked. Link your Zaparoo Online account, then try again."
 msgstr "Acest dispozitiv nu este asociat. Asociați contul Zaparoo Online, apoi încercați din nou."
 
-#: rust/frontend/ui/app.slint:2323 rust/frontend/ui/labels.slint:381
+#: rust/frontend/ui/app.slint:2330 rust/frontend/ui/labels.slint:400
 msgid "Cloud backup needs an active Zaparoo Warp subscription."
 msgstr "Backupul în cloud necesită un abonament Zaparoo Warp activ."
 
-#: rust/frontend/ui/app.slint:2325
+#: rust/frontend/ui/app.slint:2332
 msgid "Could not load this. Check the network connection and try again."
 msgstr "Încărcarea a eșuat. Verificați conexiunea la rețea și încercați din nou."
 
-#: rust/frontend/ui/app.slint:2328
+#: rust/frontend/ui/app.slint:2335
 msgid "Back up now"
 msgstr "Backup acum"
 
 #. Zaparoo made; it says so where its detail already is.
-#: rust/frontend/ui/app.slint:2333
+#: rust/frontend/ui/app.slint:2340
 msgid "{}, needs a newer Zaparoo"
 msgstr "{}, necesită un Zaparoo mai nou"
 
-#: rust/frontend/ui/app.slint:2334
+#: rust/frontend/ui/app.slint:2341
 msgid "{}, this device"
 msgstr "{}, acest dispozitiv"
 
-#: rust/frontend/ui/app.slint:2341
+#: rust/frontend/ui/app.slint:2348
 msgid "Cloud backups"
 msgstr "Backupuri în cloud"
 
-#: rust/frontend/ui/app.slint:2341
+#: rust/frontend/ui/app.slint:2348
 msgid "Remote activity"
 msgstr "Activitate la distanță"
 
-#: rust/frontend/ui/app.slint:2362
+#: rust/frontend/ui/app.slint:2369
 msgid "Backing up…"
 msgstr "Se face backup…"
 
-#: rust/frontend/ui/app.slint:2363
+#: rust/frontend/ui/app.slint:2370
 msgid "Restoring…"
 msgstr "Se restaurează…"
 
-#: rust/frontend/ui/app.slint:2364
+#: rust/frontend/ui/app.slint:2371
 msgid "Loading backups…"
 msgstr "Se încarcă backupurile…"
 
-#: rust/frontend/ui/app.slint:2364
+#: rust/frontend/ui/app.slint:2371
 msgid "Loading activity…"
 msgstr "Se încarcă activitatea…"
 
-#: rust/frontend/ui/app.slint:2375
+#: rust/frontend/ui/app.slint:2382
 msgid "No cloud backups yet."
 msgstr "Niciun backup în cloud încă."
 
-#: rust/frontend/ui/app.slint:2375
+#: rust/frontend/ui/app.slint:2382
 msgid "Nothing has run through remote control yet."
 msgstr "Nimic nu a fost rulat încă prin controlul la distanță."
 
-#: rust/frontend/ui/app.slint:2471 rust/frontend/ui/settings.slint:186
+#: rust/frontend/ui/app.slint:2478 rust/frontend/ui/settings.slint:188
 msgid "Documentation"
 msgstr "Documentație"
 
-#: rust/frontend/ui/app.slint:2471 rust/frontend/ui/labels.slint:132
+#: rust/frontend/ui/app.slint:2478 rust/frontend/ui/labels.slint:149
 msgid "Write with App"
 msgstr "Scriere cu aplicația"
 
-#: rust/frontend/ui/app.slint:2490
+#: rust/frontend/ui/app.slint:2497
 msgid "Scan this code to open the Zaparoo Frontend guide on your phone."
 msgstr "Scanați acest cod pentru a deschide ghidul Zaparoo Frontend pe telefon."
 
-#: rust/frontend/ui/app.slint:2491
+#: rust/frontend/ui/app.slint:2498
 msgid "Scan this code with the Zaparoo App to write this game to a Zaparoo token."
 msgstr "Scanați acest cod cu Zaparoo App pentru a scrie acest joc pe un token Zaparoo."
 
-#: rust/frontend/ui/app.slint:2949 rust/frontend/ui/app.slint:3372
+#: rust/frontend/ui/app.slint:2957 rust/frontend/ui/app.slint:3393
 msgid "Recently played"
 msgstr "Jucate recent"
 
-#: rust/frontend/ui/app.slint:2950 rust/frontend/ui/app.slint:3379
-#: rust/frontend/ui/app.slint:3460 rust/frontend/ui/search.slint:80
+#: rust/frontend/ui/app.slint:2958 rust/frontend/ui/app.slint:3400
+#: rust/frontend/ui/app.slint:3500 rust/frontend/ui/app.slint:3743
+#: rust/frontend/ui/search.slint:80
 msgid "Search"
 msgstr "Căutare"
 
-#: rust/frontend/ui/app.slint:2960
+#: rust/frontend/ui/app.slint:2968
 msgid "{} games"
 msgstr "{} jocuri"
 
-#: rust/frontend/ui/app.slint:3094
+#: rust/frontend/ui/app.slint:3105
 msgid "Loading game…"
 msgstr "Se încarcă jocul…"
 
-#: rust/frontend/ui/app.slint:3205
+#: rust/frontend/ui/app.slint:3216
 msgid "Nothing played yet"
 msgstr "Nimic jucat încă"
 
-#: rust/frontend/ui/app.slint:3206 rust/frontend/ui/search.slint:97
+#: rust/frontend/ui/app.slint:3217 rust/frontend/ui/search.slint:97
 msgid "No matches"
 msgstr "Niciun rezultat"
 
-#: rust/frontend/ui/app.slint:3207
+#: rust/frontend/ui/app.slint:3218
 msgid "No games match these tags"
 msgstr "Niciun joc nu corespunde acestor etichete"
 
-#: rust/frontend/ui/app.slint:3207
+#: rust/frontend/ui/app.slint:3218
 msgid "No games in this system"
 msgstr "Niciun joc în acest sistem"
 
-#: rust/frontend/ui/app.slint:3208 rust/frontend/ui/labels.slint:31
+#: rust/frontend/ui/app.slint:3219 rust/frontend/ui/labels.slint:48
 msgid "Loading favorites…"
 msgstr "Se încarcă favoritele…"
 
-#: rust/frontend/ui/app.slint:3209 rust/frontend/ui/labels.slint:32
+#: rust/frontend/ui/app.slint:3220 rust/frontend/ui/labels.slint:49
 msgid "Loading recently played…"
 msgstr "Se încarcă recent jucatele…"
 
-#: rust/frontend/ui/app.slint:3210 rust/frontend/ui/labels.slint:33
+#: rust/frontend/ui/app.slint:3221 rust/frontend/ui/labels.slint:50
 #: rust/frontend/ui/search.slint:95
 msgid "Searching…"
 msgstr "Se caută…"
 
-#: rust/frontend/ui/app.slint:3210 rust/frontend/ui/labels.slint:30
+#: rust/frontend/ui/app.slint:3221 rust/frontend/ui/labels.slint:47
 msgid "Loading games…"
 msgstr "Se încarcă jocurile…"
 
-#: rust/frontend/ui/app.slint:3291
+#: rust/frontend/ui/app.slint:3302
 msgid "Left/Right adjust width"
 msgstr "Stânga/Dreapta ajustează lățimea"
 
-#: rust/frontend/ui/app.slint:3292
+#: rust/frontend/ui/app.slint:3303
 msgid "Arrows adjust position"
 msgstr "Săgețile ajustează poziția"
 
-#: rust/frontend/ui/app.slint:3298
+#: rust/frontend/ui/app.slint:3309
 msgid "Accept or Back saves"
 msgstr "Accept sau Înapoi salvează"
 
-#: rust/frontend/ui/app.slint:3374 rust/frontend/ui/rename.slint:59
+#: rust/frontend/ui/app.slint:3395 rust/frontend/ui/rename.slint:59
 msgid "Rename tile"
 msgstr "Redenumește dala"
 
-#: rust/frontend/ui/app.slint:3376 rust/frontend/ui/file_browser.slint:96
+#: rust/frontend/ui/app.slint:3397 rust/frontend/ui/file_browser.slint:96
 msgid "Places"
 msgstr "Locații"
 
-#: rust/frontend/ui/app.slint:3405 rust/frontend/ui/app.slint:3419
-#: rust/frontend/ui/app.slint:3444 rust/frontend/ui/app.slint:3459
-#: rust/frontend/ui/app.slint:3474 rust/frontend/ui/app.slint:3491
-#: rust/frontend/ui/app.slint:3505 rust/frontend/ui/app.slint:3568
-#: rust/frontend/ui/app.slint:3596 rust/frontend/ui/app.slint:3628
-#: rust/frontend/ui/app.slint:3721 rust/frontend/ui/app.slint:3817
-#: rust/frontend/ui/app.slint:3831 rust/frontend/ui/app.slint:3844
+#: rust/frontend/ui/app.slint:3431 rust/frontend/ui/app.slint:3753
+msgid "View"
+msgstr "Vizualizare"
+
+#: rust/frontend/ui/app.slint:3432 rust/frontend/ui/app.slint:3516
+#: rust/frontend/ui/app.slint:3572 rust/frontend/ui/app.slint:3878
+#: rust/frontend/ui/app.slint:3918 rust/frontend/ui/app.slint:3957
+#: rust/frontend/ui/app.slint:4023 rust/frontend/ui/app.slint:4040
+#: rust/frontend/ui/app.slint:4058 rust/frontend/ui/app.slint:4073
+msgid "Open"
+msgstr "Deschidere"
+
+#: rust/frontend/ui/app.slint:3442
+msgid "Page"
+msgstr "Pagină"
+
+#: rust/frontend/ui/app.slint:3445
+msgid "Whole page"
+msgstr "Pagina întreagă"
+
+#: rust/frontend/ui/app.slint:3445
+msgid "Fit width"
+msgstr "Potrivire la lățime"
+
+#: rust/frontend/ui/app.slint:3449 rust/frontend/ui/app.slint:3452
+#: rust/frontend/ui/app.slint:3486 rust/frontend/ui/app.slint:3499
+#: rust/frontend/ui/app.slint:3515 rust/frontend/ui/app.slint:3533
+#: rust/frontend/ui/app.slint:3546 rust/frontend/ui/app.slint:3610
+#: rust/frontend/ui/app.slint:3630 rust/frontend/ui/app.slint:3668
+#: rust/frontend/ui/app.slint:3742 rust/frontend/ui/app.slint:3759
+#: rust/frontend/ui/app.slint:3774 rust/frontend/ui/app.slint:3833
+#: rust/frontend/ui/app.slint:3929 rust/frontend/ui/app.slint:3943
+#: rust/frontend/ui/app.slint:3956
 msgid "Move"
 msgstr "Mutare"
 
-#: rust/frontend/ui/app.slint:3420 rust/frontend/ui/app.slint:3453
-#: rust/frontend/ui/app.slint:3469 rust/frontend/ui/app.slint:3506
-#: rust/frontend/ui/app.slint:3525 rust/frontend/ui/app.slint:3597
-#: rust/frontend/ui/app.slint:3682 rust/frontend/ui/app.slint:3722
+#: rust/frontend/ui/app.slint:3467 rust/frontend/ui/app.slint:3500
+#: rust/frontend/ui/app.slint:3516 rust/frontend/ui/app.slint:3553
+#: rust/frontend/ui/app.slint:3572 rust/frontend/ui/app.slint:3644
+#: rust/frontend/ui/app.slint:3794 rust/frontend/ui/app.slint:3834
 #: rust/frontend/ui/settings.slint:105
 msgid "Select"
 msgstr "Selectare"
 
-#: rust/frontend/ui/app.slint:3421 rust/frontend/ui/settings.slint:106
+#: rust/frontend/ui/app.slint:3468 rust/frontend/ui/settings.slint:106
 msgid "Start"
 msgstr "Pornire"
 
-#: rust/frontend/ui/app.slint:3423 rust/frontend/ui/app.slint:3600
-#: rust/frontend/ui/app.slint:3623 rust/frontend/ui/app.slint:3632
-#: rust/frontend/ui/app.slint:3648 rust/frontend/ui/app.slint:3664
-#: rust/frontend/ui/app.slint:3673
+#: rust/frontend/ui/app.slint:3470 rust/frontend/ui/app.slint:3647
+#: rust/frontend/ui/app.slint:3670 rust/frontend/ui/app.slint:3679
+#: rust/frontend/ui/app.slint:3695 rust/frontend/ui/app.slint:3762
+#: rust/frontend/ui/app.slint:3776 rust/frontend/ui/app.slint:3785
 msgid "Close"
 msgstr "Închidere"
 
-#: rust/frontend/ui/app.slint:3424 rust/frontend/ui/app.slint:3825
+#: rust/frontend/ui/app.slint:3471 rust/frontend/ui/app.slint:3937
 msgid "Toggle"
 msgstr "Comutare"
 
-#: rust/frontend/ui/app.slint:3425
+#: rust/frontend/ui/app.slint:3472
 msgid "Info"
 msgstr "Info"
 
-#: rust/frontend/ui/app.slint:3426 rust/frontend/ui/app.slint:3440
-#: rust/frontend/ui/app.slint:3454 rust/frontend/ui/app.slint:3470
-#: rust/frontend/ui/app.slint:3487 rust/frontend/ui/app.slint:3501
-#: rust/frontend/ui/app.slint:3520 rust/frontend/ui/app.slint:3533
-#: rust/frontend/ui/app.slint:3548 rust/frontend/ui/app.slint:3564
-#: rust/frontend/ui/app.slint:3600 rust/frontend/ui/app.slint:3723
-#: rust/frontend/ui/app.slint:3772 rust/frontend/ui/app.slint:3785
-#: rust/frontend/ui/app.slint:3798 rust/frontend/ui/app.slint:3812
-#: rust/frontend/ui/app.slint:3826 rust/frontend/ui/app.slint:3840
-#: rust/frontend/ui/app.slint:3857 rust/frontend/ui/app.slint:3875
-#: rust/frontend/ui/app.slint:3887 rust/frontend/ui/app.slint:3903
-#: rust/frontend/ui/app.slint:3918
+#: rust/frontend/ui/app.slint:3473 rust/frontend/ui/app.slint:3487
+#: rust/frontend/ui/app.slint:3501 rust/frontend/ui/app.slint:3517
+#: rust/frontend/ui/app.slint:3534 rust/frontend/ui/app.slint:3548
+#: rust/frontend/ui/app.slint:3567 rust/frontend/ui/app.slint:3580
+#: rust/frontend/ui/app.slint:3595 rust/frontend/ui/app.slint:3611
+#: rust/frontend/ui/app.slint:3647 rust/frontend/ui/app.slint:3707
+#: rust/frontend/ui/app.slint:3718 rust/frontend/ui/app.slint:3732
+#: rust/frontend/ui/app.slint:3744 rust/frontend/ui/app.slint:3835
+#: rust/frontend/ui/app.slint:3884 rust/frontend/ui/app.slint:3897
+#: rust/frontend/ui/app.slint:3910 rust/frontend/ui/app.slint:3924
+#: rust/frontend/ui/app.slint:3938 rust/frontend/ui/app.slint:3952
+#: rust/frontend/ui/app.slint:3969 rust/frontend/ui/app.slint:3987
+#: rust/frontend/ui/app.slint:3999 rust/frontend/ui/app.slint:4017
+#: rust/frontend/ui/app.slint:4034 rust/frontend/ui/app.slint:4053
+#: rust/frontend/ui/app.slint:4068
 msgid "Back"
 msgstr "Înapoi"
 
-#: rust/frontend/ui/app.slint:3445 rust/frontend/ui/app.slint:3461
-#: rust/frontend/ui/app.slint:3507
+#: rust/frontend/ui/app.slint:3492 rust/frontend/ui/app.slint:3508
+#: rust/frontend/ui/app.slint:3554
 msgid "Delete"
 msgstr "Șterge"
 
-#: rust/frontend/ui/app.slint:3446 rust/frontend/ui/app.slint:3462
-#: rust/frontend/ui/app.slint:3508
+#: rust/frontend/ui/app.slint:3493 rust/frontend/ui/app.slint:3509
+#: rust/frontend/ui/app.slint:3555
 msgid "Space"
 msgstr "Spațiu"
 
-#: rust/frontend/ui/app.slint:3469 rust/frontend/ui/app.slint:3518
-#: rust/frontend/ui/app.slint:3759 rust/frontend/ui/app.slint:3795
-#: rust/frontend/ui/app.slint:3811 rust/frontend/ui/app.slint:3902
-#: rust/frontend/ui/app.slint:3916 rust/frontend/ui/settings.slint:262
-msgid "Open"
-msgstr "Deschidere"
-
-#: rust/frontend/ui/app.slint:3475 rust/frontend/ui/app.slint:3824
+#: rust/frontend/ui/app.slint:3522 rust/frontend/ui/app.slint:3936
 #: rust/frontend/ui/settings.slint:108
 msgid "Change"
 msgstr "Schimbare"
 
-#: rust/frontend/ui/app.slint:3500 rust/frontend/ui/app.slint:3506
+#: rust/frontend/ui/app.slint:3547 rust/frontend/ui/app.slint:3553
 msgid "Save"
 msgstr "Salvare"
 
-#: rust/frontend/ui/app.slint:3519 rust/frontend/ui/app.slint:3532
-#: rust/frontend/ui/app.slint:3753 rust/frontend/ui/app.slint:3767
-#: rust/frontend/ui/app.slint:3797 rust/frontend/ui/app.slint:3917
-#: rust/frontend/ui/labels.slint:208
+#: rust/frontend/ui/app.slint:3566 rust/frontend/ui/app.slint:3579
+#: rust/frontend/ui/app.slint:3865 rust/frontend/ui/app.slint:3879
+#: rust/frontend/ui/app.slint:3909 rust/frontend/ui/app.slint:4033
+#: rust/frontend/ui/app.slint:4067 rust/frontend/ui/labels.slint:226
 msgid "Menu"
 msgstr "Meniu"
 
-#: rust/frontend/ui/app.slint:3551 rust/frontend/ui/app.slint:3759
-#: rust/frontend/ui/app.slint:3783 rust/frontend/ui/app.slint:3879
-#: rust/frontend/ui/app.slint:3891 rust/frontend/ui/setup.slint:378
+#: rust/frontend/ui/app.slint:3598 rust/frontend/ui/app.slint:3871
+#: rust/frontend/ui/app.slint:3895 rust/frontend/ui/app.slint:3991
+#: rust/frontend/ui/app.slint:4003 rust/frontend/ui/setup.slint:378
 msgid "Retry"
 msgstr "Reîncercare"
 
-#: rust/frontend/ui/app.slint:3551 rust/frontend/ui/app.slint:3638
+#: rust/frontend/ui/app.slint:3598 rust/frontend/ui/app.slint:3685
 #: rust/frontend/ui/setup.slint:378
 msgid "Done"
 msgstr "Gata"
 
-#: rust/frontend/ui/app.slint:3591 rust/frontend/ui/labels.slint:307
+#: rust/frontend/ui/app.slint:3638 rust/frontend/ui/labels.slint:326
 msgid "OK"
 msgstr "În regulă"
 
-#: rust/frontend/ui/app.slint:3656 rust/frontend/ui/app.slint:3669
-msgid "Scroll"
-msgstr "Derulare"
-
-#: rust/frontend/ui/app.slint:3657 rust/frontend/ui/app.slint:3663
+#: rust/frontend/ui/app.slint:3703 rust/frontend/ui/app.slint:3752
+#: rust/frontend/ui/app.slint:3767 rust/frontend/ui/app.slint:4022
+#: rust/frontend/ui/app.slint:4039
 msgid "Image"
 msgstr "Imagine"
 
-#: rust/frontend/ui/app.slint:3711
+#: rust/frontend/ui/app.slint:3716 rust/frontend/ui/app.slint:3730
+#: rust/frontend/ui/app.slint:3971
+msgid "Scroll"
+msgstr "Derulare"
+
+#: rust/frontend/ui/app.slint:3823
 msgid "Adjust"
 msgstr "Ajustare"
 
-#: rust/frontend/ui/app.slint:3712
+#: rust/frontend/ui/app.slint:3824
 msgid "Position"
 msgstr "Poziție"
 
-#: rust/frontend/ui/app.slint:3712
+#: rust/frontend/ui/app.slint:3824
 msgid "Size"
 msgstr "Dimensiune"
 
-#: rust/frontend/ui/app.slint:3736
+#: rust/frontend/ui/app.slint:3848
 msgid "Reposition"
 msgstr "Repoziționare"
 
-#: rust/frontend/ui/app.slint:3737
+#: rust/frontend/ui/app.slint:3849
 msgid "Place"
 msgstr "Plasare"
 
-#: rust/frontend/ui/app.slint:3747 rust/frontend/ui/app.slint:3760
-#: rust/frontend/ui/app.slint:3909
+#: rust/frontend/ui/app.slint:3859 rust/frontend/ui/app.slint:3872
+#: rust/frontend/ui/app.slint:4024 rust/frontend/ui/app.slint:4059
 msgid "Options"
 msgstr "Opțiuni"
 
-#: rust/frontend/ui/browse_list.slint:29 rust/frontend/ui/labels.slint:94
+#: rust/frontend/ui/browse_list.slint:29 rust/frontend/ui/labels.slint:111
 #: rust/frontend/ui/search.slint:226
 msgid "System"
 msgstr "Sistem"
@@ -488,7 +514,7 @@ msgstr "Platformă"
 msgid "Category"
 msgstr "Categorie"
 
-#: rust/frontend/ui/browse_list.slint:32 rust/frontend/ui/labels.slint:108
+#: rust/frontend/ui/browse_list.slint:32 rust/frontend/ui/labels.slint:125
 msgid "Year"
 msgstr "An"
 
@@ -496,11 +522,11 @@ msgstr "An"
 msgid "Release date"
 msgstr "Data lansării"
 
-#: rust/frontend/ui/browse_list.slint:34 rust/frontend/ui/labels.slint:107
+#: rust/frontend/ui/browse_list.slint:34 rust/frontend/ui/labels.slint:124
 msgid "Genre"
 msgstr "Gen"
 
-#: rust/frontend/ui/browse_list.slint:35 rust/frontend/ui/labels.slint:109
+#: rust/frontend/ui/browse_list.slint:35 rust/frontend/ui/labels.slint:126
 msgid "Players"
 msgstr "Jucători"
 
@@ -512,11 +538,11 @@ msgstr "Mod de joc"
 msgid "Cooperative"
 msgstr "Cooperativ"
 
-#: rust/frontend/ui/browse_list.slint:38 rust/frontend/ui/labels.slint:110
+#: rust/frontend/ui/browse_list.slint:38 rust/frontend/ui/labels.slint:127
 msgid "Developer"
 msgstr "Dezvoltator"
 
-#: rust/frontend/ui/browse_list.slint:39 rust/frontend/ui/labels.slint:111
+#: rust/frontend/ui/browse_list.slint:39 rust/frontend/ui/labels.slint:128
 msgid "Publisher"
 msgstr "Editor"
 
@@ -588,10 +614,15 @@ msgstr "Eval"
 msgid "File"
 msgstr "Fișier"
 
-#: rust/frontend/ui/browse_list.slint:262 rust/frontend/ui/chrome.slint:1094
-#: rust/frontend/ui/labels.slint:34
+#: rust/frontend/ui/browse_list.slint:273 rust/frontend/ui/chrome.slint:1094
+#: rust/frontend/ui/labels.slint:51
 msgid "Loading…"
 msgstr "Se încarcă…"
+
+#: rust/frontend/ui/browse_list.slint:479 rust/frontend/ui/chrome.slint:624
+#: rust/frontend/ui/game_info.slint:343
+msgid "{}/{}"
+msgstr "{}/{}"
 
 #: rust/frontend/ui/chrome.slint:103
 msgid "Disconnected"
@@ -601,7 +632,7 @@ msgstr "Deconectat"
 msgid "Reconnecting…"
 msgstr "Reconectare…"
 
-#: rust/frontend/ui/chrome.slint:105 rust/frontend/ui/settings.slint:342
+#: rust/frontend/ui/chrome.slint:105 rust/frontend/ui/settings.slint:350
 msgid "Connecting…"
 msgstr "Conectare…"
 
@@ -672,10 +703,6 @@ msgstr "Limită timp de joc în {}"
 msgid "{}%"
 msgstr "{}%"
 
-#: rust/frontend/ui/chrome.slint:624 rust/frontend/ui/chrome.slint:626
-msgid "{}/{}"
-msgstr "{}/{}"
-
 #: rust/frontend/ui/chrome.slint:627
 msgid "{}"
 msgstr "{}"
@@ -688,15 +715,15 @@ msgstr "Pagina {0} / {1}"
 msgid "Page {}"
 msgstr "Pagina {}"
 
-#: rust/frontend/ui/chrome.slint:1161
+#: rust/frontend/ui/chrome.slint:1163
 msgid "Nothing here"
 msgstr "Nimic aici"
 
-#: rust/frontend/ui/chrome.slint:1163
+#: rust/frontend/ui/chrome.slint:1165
 msgid "Check Zaparoo Core and try again."
 msgstr "Verificați Zaparoo Core și încercați din nou."
 
-#: rust/frontend/ui/chrome.slint:1175
+#: rust/frontend/ui/chrome.slint:1177
 msgid "Failed to load"
 msgstr "Încărcare eșuată"
 
@@ -704,522 +731,591 @@ msgstr "Încărcare eșuată"
 msgid "This folder can't be opened."
 msgstr "Acest dosar nu poate fi deschis."
 
-#: rust/frontend/ui/game_info.slint:92
+#: rust/frontend/ui/game_info.slint:241 rust/frontend/ui/labels.slint:249
 msgid "Loading details…"
 msgstr "Se încarcă detaliile…"
 
-#: rust/frontend/ui/game_info.slint:98
+#: rust/frontend/ui/game_info.slint:247
 msgid "Could not load details. Check Zaparoo Core and try again."
 msgstr "Detaliile nu au putut fi încărcate. Verificați Zaparoo Core și încercați din nou."
 
-#: rust/frontend/ui/game_info.slint:149
+#: rust/frontend/ui/game_info.slint:317 rust/frontend/ui/game_info.slint:632
 msgid "Loading image…"
 msgstr "Se încarcă imaginea…"
 
-#: rust/frontend/ui/game_info.slint:171
+#: rust/frontend/ui/game_info.slint:365
+msgctxt "game-document"
+msgid "Manual"
+msgstr "Manual"
+
+#: rust/frontend/ui/game_info.slint:373
 msgid "This game's file is missing."
 msgstr "Fișierul acestui joc lipsește."
 
-#: rust/frontend/ui/game_info.slint:206
-msgid "Description"
-msgstr "Descriere"
+#: rust/frontend/ui/game_info.slint:417
+msgid "Technical details"
+msgstr "Detalii tehnice"
 
-#: rust/frontend/ui/labels.slint:14
+#. Games, favorites and recents rows.
+#: rust/frontend/ui/game_info.slint:417 rust/frontend/ui/labels.slint:144
+msgid "Details"
+msgstr "Detalii"
+
+#: rust/frontend/ui/game_info.slint:633
+msgid "Loading manual…"
+msgstr "Se încarcă manualul…"
+
+#: rust/frontend/ui/game_info.slint:633
+msgid "Loading page…"
+msgstr "Se încarcă pagina…"
+
+#: rust/frontend/ui/game_info.slint:638
+msgid "This manual is too large to open."
+msgstr "Acest manual este prea mare pentru a fi deschis."
+
+#: rust/frontend/ui/game_info.slint:639
+msgid "Could not open the manual. Check Zaparoo Core and try again."
+msgstr "Manualul nu a putut fi deschis. Verificați Zaparoo Core și încercați din nou."
+
+#: rust/frontend/ui/labels.slint:17
+msgid "Thumbnail"
+msgstr "Miniatură"
+
+#: rust/frontend/ui/labels.slint:18
+msgid "Box art"
+msgstr "Copertă"
+
+#: rust/frontend/ui/labels.slint:19
+msgid "3D box art"
+msgstr "Copertă 3D"
+
+#: rust/frontend/ui/labels.slint:20
+msgid "Screenshot"
+msgstr "Captură de ecran"
+
+#: rust/frontend/ui/labels.slint:21
+msgid "Wheel"
+msgstr "Wheel"
+
+#: rust/frontend/ui/labels.slint:22
+msgid "Title screen"
+msgstr "Ecran de titlu"
+
+#: rust/frontend/ui/labels.slint:23
+msgid "Map"
+msgstr "Hartă"
+
+#: rust/frontend/ui/labels.slint:24
+msgid "Marquee"
+msgstr "Marquee"
+
+#: rust/frontend/ui/labels.slint:25
+msgid "Fan art"
+msgstr "Fan art"
+
+#: rust/frontend/ui/labels.slint:26
+msgid "Box side"
+msgstr "Lateral cutie"
+
+#: rust/frontend/ui/labels.slint:27
+msgid "Box back"
+msgstr "Spate cutie"
+
+#: rust/frontend/ui/labels.slint:31
 msgid "Starting Zaparoo Core…"
 msgstr "Se pornește Zaparoo Core…"
 
-#: rust/frontend/ui/labels.slint:15
+#: rust/frontend/ui/labels.slint:32
 msgid "Updating Zaparoo Core data…"
 msgstr "Se actualizează datele Zaparoo Core…"
 
-#: rust/frontend/ui/labels.slint:16
+#: rust/frontend/ui/labels.slint:33
 msgid "Reconnecting to Zaparoo Core…"
 msgstr "Reconectare la Zaparoo Core…"
 
-#: rust/frontend/ui/labels.slint:17
+#: rust/frontend/ui/labels.slint:34
 msgid "Loading library…"
 msgstr "Se încarcă biblioteca…"
 
-#: rust/frontend/ui/labels.slint:18
+#: rust/frontend/ui/labels.slint:35
 msgid "Can't reach Zaparoo Core. Check the connection."
 msgstr "Zaparoo Core nu poate fi contactat. Verificați conexiunea."
 
-#: rust/frontend/ui/labels.slint:19
+#: rust/frontend/ui/labels.slint:36
 msgid "Connecting to Zaparoo Core…"
 msgstr "Conectare la Zaparoo Core…"
 
-#: rust/frontend/ui/labels.slint:29
+#: rust/frontend/ui/labels.slint:46
 msgid "Loading favorite systems…"
 msgstr "Se încarcă sistemele favorite…"
 
-#: rust/frontend/ui/labels.slint:39
+#: rust/frontend/ui/labels.slint:56
 msgid "Custom folder"
 msgstr "Dosar personalizat"
 
-#: rust/frontend/ui/labels.slint:40
+#: rust/frontend/ui/labels.slint:57
 msgid "SD card"
 msgstr "Card SD"
 
-#: rust/frontend/ui/labels.slint:41
+#: rust/frontend/ui/labels.slint:58
 msgid "USB {}"
 msgstr "USB {}"
 
-#: rust/frontend/ui/labels.slint:42
+#: rust/frontend/ui/labels.slint:59
 msgid "Network"
 msgstr "Rețea"
 
-#: rust/frontend/ui/labels.slint:43
+#: rust/frontend/ui/labels.slint:60
 msgid "Home"
 msgstr "Dosar personal"
 
-#: rust/frontend/ui/labels.slint:44
+#: rust/frontend/ui/labels.slint:61
 msgid "Root"
 msgstr "Rădăcină"
 
-#: rust/frontend/ui/labels.slint:49
+#: rust/frontend/ui/labels.slint:66
 msgid "{n} more not shown"
 msgid_plural "{n} more not shown"
 msgstr[0] "Încă {n} neafișat"
 msgstr[1] "Încă {n} neafișate"
 msgstr[2] "Încă {n} de elemente neafișate"
 
-#: rust/frontend/ui/labels.slint:55
+#: rust/frontend/ui/labels.slint:72
 msgid "{}: {}"
 msgstr "{}: {}"
 
-#: rust/frontend/ui/labels.slint:59
+#: rust/frontend/ui/labels.slint:76
 msgid "Arcade"
 msgstr "Arcade"
 
-#: rust/frontend/ui/labels.slint:63
+#: rust/frontend/ui/labels.slint:80
 msgid "Computers"
 msgstr "Calculatoare"
 
-#: rust/frontend/ui/labels.slint:64
+#: rust/frontend/ui/labels.slint:81
 msgid "Consoles"
 msgstr "Console"
 
-#: rust/frontend/ui/labels.slint:65
+#: rust/frontend/ui/labels.slint:82
 msgid "Handhelds"
 msgstr "Portabile"
 
-#: rust/frontend/ui/labels.slint:66 rust/frontend/ui/labels.slint:169
+#: rust/frontend/ui/labels.slint:83 rust/frontend/ui/labels.slint:187
 msgid "Other"
 msgstr "Altele"
 
-#: rust/frontend/ui/labels.slint:67
+#: rust/frontend/ui/labels.slint:84
 msgid "Resume"
 msgstr "Reluare"
 
-#: rust/frontend/ui/labels.slint:67
+#: rust/frontend/ui/labels.slint:84
 msgid "Resume: {}"
 msgstr "Reluare: {}"
 
-#: rust/frontend/ui/labels.slint:71
+#: rust/frontend/ui/labels.slint:88
 msgid "Update"
 msgstr "Actualizare"
 
-#: rust/frontend/ui/labels.slint:72 rust/frontend/ui/labels.slint:191
+#: rust/frontend/ui/labels.slint:89 rust/frontend/ui/labels.slint:209
 msgid "Settings"
 msgstr "Setări"
 
-#: rust/frontend/ui/labels.slint:82
+#: rust/frontend/ui/labels.slint:99
 msgid "{n} system with favorites"
 msgid_plural "{n} systems with favorites"
 msgstr[0] "{n} sistem cu favorite"
 msgstr[1] "{n} sisteme cu favorite"
 msgstr[2] "{n} de sisteme cu favorite"
 
-#: rust/frontend/ui/labels.slint:85
+#: rust/frontend/ui/labels.slint:102
 msgid "{n} favorite"
 msgid_plural "{n} favorites"
 msgstr[0] "{n} favorit"
 msgstr[1] "{n} favorite"
 msgstr[2] "{n} de favorite"
 
-#: rust/frontend/ui/labels.slint:91
+#: rust/frontend/ui/labels.slint:108
 msgid "A-Z"
 msgstr "A-Z"
 
-#: rust/frontend/ui/labels.slint:92 rust/frontend/ui/labels.slint:205
+#: rust/frontend/ui/labels.slint:109 rust/frontend/ui/labels.slint:223
 msgid "Default"
 msgstr "Implicit"
 
-#: rust/frontend/ui/labels.slint:93 rust/frontend/ui/settings.slint:323
+#: rust/frontend/ui/labels.slint:110 rust/frontend/ui/settings.slint:331
 msgid "None"
 msgstr "Fără"
 
-#: rust/frontend/ui/labels.slint:101 rust/frontend/ui/labels.slint:173
+#: rust/frontend/ui/labels.slint:118 rust/frontend/ui/labels.slint:191
 msgid "Any"
 msgstr "Oricare"
 
-#: rust/frontend/ui/labels.slint:112 rust/frontend/ui/settings.slint:150
+#: rust/frontend/ui/labels.slint:129 rust/frontend/ui/settings.slint:150
 msgid "Region"
 msgstr "Regiune"
 
-#: rust/frontend/ui/labels.slint:113 rust/frontend/ui/settings.slint:124
+#: rust/frontend/ui/labels.slint:130 rust/frontend/ui/settings.slint:124
 msgid "Language"
 msgstr "Limbă"
 
-#: rust/frontend/ui/labels.slint:114
+#: rust/frontend/ui/labels.slint:131
 msgid "Perspective"
 msgstr "Perspectivă"
 
-#: rust/frontend/ui/labels.slint:115
+#: rust/frontend/ui/labels.slint:132
 msgid "Input"
 msgstr "Intrare"
 
-#: rust/frontend/ui/labels.slint:116
+#: rust/frontend/ui/labels.slint:133
 msgid "Arcade board"
 msgstr "Placă arcade"
 
-#: rust/frontend/ui/labels.slint:117
+#: rust/frontend/ui/labels.slint:134
 msgid "Collections"
 msgstr "Colecții"
 
-#. Games, favorites and recents rows.
-#: rust/frontend/ui/labels.slint:127
-msgid "Details"
-msgstr "Detalii"
-
-#: rust/frontend/ui/labels.slint:128
+#: rust/frontend/ui/labels.slint:145
 msgid "Add to favorites"
 msgstr "Adaugă la favorite"
 
-#: rust/frontend/ui/labels.slint:129
+#: rust/frontend/ui/labels.slint:146
 msgid "Remove from favorites"
 msgstr "Elimină din favorite"
 
-#: rust/frontend/ui/labels.slint:130 rust/frontend/ui/labels.slint:215
+#: rust/frontend/ui/labels.slint:147 rust/frontend/ui/labels.slint:233
 msgid "Change launcher"
 msgstr "Schimbă lansatorul"
 
-#: rust/frontend/ui/labels.slint:131
+#: rust/frontend/ui/labels.slint:148
 msgid "Write to NFC token"
 msgstr "Scriere pe token NFC"
 
-#: rust/frontend/ui/labels.slint:133
+#: rust/frontend/ui/labels.slint:150
 msgid "Discover alt. versions"
 msgstr "Caută versiuni alt."
 
-#: rust/frontend/ui/labels.slint:135
+#: rust/frontend/ui/labels.slint:152
 msgid "No alternates found"
 msgstr "Nicio versiune alternativă"
 
-#: rust/frontend/ui/labels.slint:136
+#: rust/frontend/ui/labels.slint:153
 msgid "Choose disc"
 msgstr "Alege discul"
 
-#: rust/frontend/ui/labels.slint:138
+#: rust/frontend/ui/labels.slint:155
 msgid "No discs found"
 msgstr "Niciun disc găsit"
 
-#: rust/frontend/ui/labels.slint:139
+#: rust/frontend/ui/labels.slint:156
 msgid "Disc {}"
 msgstr "Disc {}"
 
-#: rust/frontend/ui/labels.slint:140
+#: rust/frontend/ui/labels.slint:157
 msgid "Add to Hub"
 msgstr "Adaugă în Hub"
 
-#: rust/frontend/ui/labels.slint:141
+#: rust/frontend/ui/labels.slint:158
 msgid "Save to Hub"
 msgstr "Salvează în Hub"
 
-#: rust/frontend/ui/labels.slint:142
+#: rust/frontend/ui/labels.slint:159
 msgid "Remove from Hub"
 msgstr "Elimină din Hub"
 
-#: rust/frontend/ui/labels.slint:143 rust/frontend/ui/labels.slint:163
+#: rust/frontend/ui/labels.slint:160 rust/frontend/ui/labels.slint:180
 #: rust/frontend/ui/settings.slint:162
 msgid "Update metadata"
 msgstr "Actualizare metadate"
 
-#: rust/frontend/ui/labels.slint:145
+#: rust/frontend/ui/labels.slint:162
 msgid "Write to token"
 msgstr "Scriere pe token"
 
-#: rust/frontend/ui/labels.slint:146
+#: rust/frontend/ui/labels.slint:163
 msgid "Manage game"
 msgstr "Gestionează jocul"
 
-#: rust/frontend/ui/labels.slint:147
+#: rust/frontend/ui/labels.slint:164
 msgid "Manage system"
 msgstr "Gestionează sistemul"
 
-#: rust/frontend/ui/labels.slint:148
+#: rust/frontend/ui/labels.slint:165
 msgid "Manage category"
 msgstr "Gestionează categoria"
 
-#: rust/frontend/ui/labels.slint:150 rust/frontend/ui/labels.slint:183
+#: rust/frontend/ui/labels.slint:167 rust/frontend/ui/labels.slint:201
 msgid "Hide"
 msgstr "Ascunde"
 
-#: rust/frontend/ui/labels.slint:151
+#: rust/frontend/ui/labels.slint:168
 msgid "Unhide"
 msgstr "Reafișează"
 
-#: rust/frontend/ui/labels.slint:154
+#: rust/frontend/ui/labels.slint:171
 msgid "Hide game"
 msgstr "Ascunde jocul"
 
-#: rust/frontend/ui/labels.slint:155
+#: rust/frontend/ui/labels.slint:172
 msgid "Unhide game"
 msgstr "Reafișează jocul"
 
-#: rust/frontend/ui/labels.slint:156
+#: rust/frontend/ui/labels.slint:173
 msgid "Hide system"
 msgstr "Ascunde sistemul"
 
-#: rust/frontend/ui/labels.slint:157
+#: rust/frontend/ui/labels.slint:174
 msgid "Unhide system"
 msgstr "Reafișează sistemul"
 
-#: rust/frontend/ui/labels.slint:159
+#: rust/frontend/ui/labels.slint:176
 msgid "Launch system"
 msgstr "Lansează sistemul"
 
-#: rust/frontend/ui/labels.slint:160
+#: rust/frontend/ui/labels.slint:177
 msgid "Random game"
 msgstr "Joc aleatoriu"
 
-#: rust/frontend/ui/labels.slint:161
+#: rust/frontend/ui/labels.slint:178
 msgid "Random favorite game"
 msgstr "Joc favorit aleatoriu"
 
-#: rust/frontend/ui/labels.slint:162 rust/frontend/ui/settings.slint:88
+#: rust/frontend/ui/labels.slint:179 rust/frontend/ui/settings.slint:88
 msgid "Update media database"
 msgstr "Actualizare bază de date media"
 
-#: rust/frontend/ui/labels.slint:166
+#: rust/frontend/ui/labels.slint:183
 msgid "Search here…"
 msgstr "Caută aici…"
 
-#: rust/frontend/ui/labels.slint:167 rust/frontend/ui/search.slint:90
+#: rust/frontend/ui/labels.slint:184
+msgid "Edit search…"
+msgstr "Editează căutarea…"
+
+#: rust/frontend/ui/labels.slint:185 rust/frontend/ui/search.slint:90
 msgid "All systems"
 msgstr "Toate sistemele"
 
-#: rust/frontend/ui/labels.slint:168
+#: rust/frontend/ui/labels.slint:186
 msgid "Recent"
 msgstr "Recente"
 
-#: rust/frontend/ui/labels.slint:171
+#: rust/frontend/ui/labels.slint:189
 msgid "Tags: {}"
 msgstr "Etichete: {}"
 
-#: rust/frontend/ui/labels.slint:172
+#: rust/frontend/ui/labels.slint:190
 msgid "Clear tags"
 msgstr "Șterge etichetele"
 
-#: rust/frontend/ui/labels.slint:174
+#: rust/frontend/ui/labels.slint:192
 msgid "Loading tags…"
 msgstr "Se încarcă etichetele…"
 
-#: rust/frontend/ui/labels.slint:177
+#: rust/frontend/ui/labels.slint:195
 msgid "Failed to load tags"
 msgstr "Etichetele nu au putut fi încărcate"
 
-#: rust/frontend/ui/labels.slint:178
+#: rust/frontend/ui/labels.slint:196
 msgid "No tags available"
 msgstr "Nicio etichetă disponibilă"
 
-#: rust/frontend/ui/labels.slint:181
+#: rust/frontend/ui/labels.slint:199
 msgid "Add item…"
 msgstr "Adaugă element…"
 
-#: rust/frontend/ui/labels.slint:184
+#: rust/frontend/ui/labels.slint:202
 msgid "Move tile"
 msgstr "Mută dala"
 
-#: rust/frontend/ui/labels.slint:185
+#: rust/frontend/ui/labels.slint:203
 msgid "Rename tile…"
 msgstr "Redenumește dala…"
 
-#: rust/frontend/ui/labels.slint:186
+#: rust/frontend/ui/labels.slint:204
 msgid "Change icon…"
 msgstr "Schimbă pictograma…"
 
-#: rust/frontend/ui/labels.slint:188
+#: rust/frontend/ui/labels.slint:206
 msgid "Use default icon"
 msgstr "Folosește pictograma implicită"
 
-#: rust/frontend/ui/labels.slint:189
+#: rust/frontend/ui/labels.slint:207
 msgid "Hide Resume tile"
 msgstr "Ascunde dala Reluare"
 
-#: rust/frontend/ui/labels.slint:190
+#: rust/frontend/ui/labels.slint:208
 msgid "Reset layout"
 msgstr "Resetează dispunerea"
 
-#: rust/frontend/ui/labels.slint:192
+#: rust/frontend/ui/labels.slint:210
 msgid "Quit"
 msgstr "Ieșire"
 
-#: rust/frontend/ui/labels.slint:193
+#: rust/frontend/ui/labels.slint:211
 msgid "Back to Hub"
 msgstr "Înapoi la Hub"
 
-#: rust/frontend/ui/labels.slint:194 rust/frontend/ui/labels.slint:209
+#: rust/frontend/ui/labels.slint:212 rust/frontend/ui/labels.slint:227
 msgid "More"
 msgstr "Mai multe"
 
-#: rust/frontend/ui/labels.slint:198
+#: rust/frontend/ui/labels.slint:216
 msgid "Sort: {}"
 msgstr "Sortare: {}"
 
-#: rust/frontend/ui/labels.slint:199
+#: rust/frontend/ui/labels.slint:217
 msgid "Group by: {}"
 msgstr "Grupare după: {}"
 
-#: rust/frontend/ui/labels.slint:206
+#: rust/frontend/ui/labels.slint:224
 msgid "Current: {}"
 msgstr "Curent: {}"
 
-#: rust/frontend/ui/labels.slint:210 rust/frontend/ui/search.slint:240
+#: rust/frontend/ui/labels.slint:228 rust/frontend/ui/search.slint:240
 msgid "Tags"
 msgstr "Etichete"
 
-#: rust/frontend/ui/labels.slint:212
+#: rust/frontend/ui/labels.slint:230
 msgid "Add item"
 msgstr "Adaugă element"
 
-#: rust/frontend/ui/labels.slint:213
+#: rust/frontend/ui/labels.slint:231
 msgid "Sort"
 msgstr "Sortare"
 
-#: rust/frontend/ui/labels.slint:214
+#: rust/frontend/ui/labels.slint:232
 msgid "Group by"
 msgstr "Grupare după"
 
-#: rust/frontend/ui/labels.slint:225
+#: rust/frontend/ui/labels.slint:243
 msgid "Launching…"
 msgstr "Se lansează…"
 
-#: rust/frontend/ui/labels.slint:226
+#: rust/frontend/ui/labels.slint:244
 msgid "Launching {}…"
 msgstr "Se lansează {}…"
 
-#: rust/frontend/ui/labels.slint:228
+#: rust/frontend/ui/labels.slint:246
 msgid "Loading more…"
 msgstr "Se încarcă mai multe…"
 
-#: rust/frontend/ui/labels.slint:229
+#: rust/frontend/ui/labels.slint:247
 msgid "Loading {} of {}…"
 msgstr "Se încarcă {} din {}…"
 
-#: rust/frontend/ui/labels.slint:230
+#: rust/frontend/ui/labels.slint:248
 msgid "Loading launchers…"
 msgstr "Se încarcă lansatoarele…"
 
-#: rust/frontend/ui/labels.slint:233
+#: rust/frontend/ui/labels.slint:252
 msgid "Cancelling…"
 msgstr "Se anulează…"
 
-#: rust/frontend/ui/labels.slint:234
+#: rust/frontend/ui/labels.slint:253
 msgid "Unlinking…"
 msgstr "Se dezasociază…"
 
-#: rust/frontend/ui/labels.slint:235
+#: rust/frontend/ui/labels.slint:254
 msgid "Added to Hub"
 msgstr "Adăugat în Hub"
 
-#: rust/frontend/ui/labels.slint:236
+#: rust/frontend/ui/labels.slint:255
 msgid "Saved to Hub"
 msgstr "Salvat în Hub"
 
-#: rust/frontend/ui/labels.slint:237
+#: rust/frontend/ui/labels.slint:256
 msgid "Removed from Hub"
 msgstr "Eliminat din Hub"
 
-#: rust/frontend/ui/labels.slint:238
+#: rust/frontend/ui/labels.slint:257
 msgid "Token written"
 msgstr "Token scris"
 
-#: rust/frontend/ui/labels.slint:243
+#: rust/frontend/ui/labels.slint:262
 msgid "No recent games"
 msgstr "Niciun joc recent"
 
-#: rust/frontend/ui/labels.slint:244
+#: rust/frontend/ui/labels.slint:263
 msgid "No internet connection"
 msgstr "Fără conexiune la internet"
 
-#: rust/frontend/ui/labels.slint:245 rust/frontend/ui/settings.slint:345
+#: rust/frontend/ui/labels.slint:264 rust/frontend/ui/settings.slint:353
 msgid "Not available"
 msgstr "Indisponibil"
 
-#: rust/frontend/ui/labels.slint:252
+#: rust/frontend/ui/labels.slint:271
 msgid "not installed"
 msgstr "neinstalat"
 
-#: rust/frontend/ui/labels.slint:253
+#: rust/frontend/ui/labels.slint:272
 msgid "unavailable"
 msgstr "indisponibil"
 
-#: rust/frontend/ui/labels.slint:262
+#: rust/frontend/ui/labels.slint:281
 msgid "Quit Zaparoo Frontend?"
 msgstr "Ieșiți din Zaparoo Frontend?"
 
-#: rust/frontend/ui/labels.slint:263
+#: rust/frontend/ui/labels.slint:282
 msgid "Game still running"
 msgstr "Jocul încă rulează"
 
-#: rust/frontend/ui/labels.slint:264
+#: rust/frontend/ui/labels.slint:283
 msgid "Quit and restart Zaparoo Frontend?"
 msgstr "Ieșiți și reporniți Zaparoo Frontend?"
 
-#: rust/frontend/ui/labels.slint:265
+#: rust/frontend/ui/labels.slint:284
 msgid "Welcome to Zaparoo Frontend"
 msgstr "Bun venit la Zaparoo Frontend"
 
-#: rust/frontend/ui/labels.slint:266
+#: rust/frontend/ui/labels.slint:285
 msgid "Update Zaparoo Core"
 msgstr "Actualizare Zaparoo Core"
 
-#: rust/frontend/ui/labels.slint:267
+#: rust/frontend/ui/labels.slint:286
 msgid "First-time setup"
 msgstr "Configurare inițială"
 
-#: rust/frontend/ui/labels.slint:268
+#: rust/frontend/ui/labels.slint:287
 msgid "Nothing left to add"
 msgstr "Nimic de adăugat"
 
-#: rust/frontend/ui/labels.slint:269
+#: rust/frontend/ui/labels.slint:288
 msgid "Unlink Online account?"
 msgstr "Dezasociați contul Online?"
 
-#: rust/frontend/ui/labels.slint:270
+#: rust/frontend/ui/labels.slint:289
 msgid "Restore this backup?"
 msgstr "Restaurați acest backup?"
 
-#: rust/frontend/ui/labels.slint:271
+#: rust/frontend/ui/labels.slint:290
 msgid "Stop update?"
 msgstr "Opriți actualizarea?"
 
-#: rust/frontend/ui/labels.slint:280
+#: rust/frontend/ui/labels.slint:299
 msgid "Are you sure you want to exit?"
 msgstr "Sigur doriți să ieșiți?"
 
-#: rust/frontend/ui/labels.slint:281
+#: rust/frontend/ui/labels.slint:300
 msgid "Close the running game before exiting Zaparoo Frontend."
 msgstr "Închideți jocul care rulează înainte de a ieși din Zaparoo Frontend."
 
-#: rust/frontend/ui/labels.slint:282
+#: rust/frontend/ui/labels.slint:301
 msgid "This setting needs a frontend restart to take effect."
 msgstr "Această setare necesită repornirea frontendului pentru a se aplica."
 
-#: rust/frontend/ui/labels.slint:283
+#: rust/frontend/ui/labels.slint:302
 msgid "This device stops backing up and syncing with your Zaparoo Online account. Local play history stays on this device."
 msgstr "Acest dispozitiv nu va mai face backup și nu se va mai sincroniza cu contul dvs. Zaparoo Online. Istoricul local de joc rămâne pe acest dispozitiv."
 
-#: rust/frontend/ui/labels.slint:284
+#: rust/frontend/ui/labels.slint:303
 msgid "This replaces this device's settings and data with the backup from {}. Zaparoo restarts when it finishes."
 msgstr "Setările și datele acestui dispozitiv vor fi înlocuite cu backupul din {}. Zaparoo repornește la final."
 
-#: rust/frontend/ui/labels.slint:285
+#: rust/frontend/ui/labels.slint:304
 msgid "An update is still running. Leaving this screen stops it."
 msgstr "O actualizare este încă în curs. Părăsirea acestui ecran o oprește."
 
-#: rust/frontend/ui/labels.slint:287
+#: rust/frontend/ui/labels.slint:306
 msgid ""
 "Copyright 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.\n"
 "\n"
@@ -1243,347 +1339,347 @@ msgstr ""
 "Creat de\n"
 "Andrea Bogazzi, BossRighteous, Tim Wilsie, Wizzo"
 
-#: rust/frontend/ui/labels.slint:290
+#: rust/frontend/ui/labels.slint:309
 msgid "This frontend needs Zaparoo Core {} or newer. You're running {}. Some features may not work until you update."
 msgstr "Acest frontend necesită Zaparoo Core {} sau mai nou. Aveți versiunea {}. Unele funcții pot să nu meargă până la actualizare."
 
-#: rust/frontend/ui/labels.slint:293
+#: rust/frontend/ui/labels.slint:312
 msgid "Start a media database update to find your games. It runs in the background, and systems appear as they are indexed."
 msgstr "Porniți o actualizare a bazei de date media pentru a vă găsi jocurile. Rulează în fundal, iar sistemele apar pe măsură ce sunt indexate."
 
-#: rust/frontend/ui/labels.slint:296
+#: rust/frontend/ui/labels.slint:315
 msgid "All categories and actions are already on the Hub. To add a game or system, open its Options menu and choose \"Add to Hub\"."
 msgstr "Toate categoriile și acțiunile sunt deja în Hub. Pentru a adăuga un joc sau un sistem, deschideți meniul Opțiuni al acestuia și alegeți \"Adaugă în Hub\"."
 
-#: rust/frontend/ui/labels.slint:305
+#: rust/frontend/ui/labels.slint:324
 msgid "Yes"
 msgstr "Da"
 
-#: rust/frontend/ui/labels.slint:306
+#: rust/frontend/ui/labels.slint:325
 msgid "No"
 msgstr "Nu"
 
-#: rust/frontend/ui/labels.slint:310
+#: rust/frontend/ui/labels.slint:329
 msgid "I understand"
 msgstr "Am înțeles"
 
-#: rust/frontend/ui/labels.slint:311
+#: rust/frontend/ui/labels.slint:330
 msgid "Start media update"
 msgstr "Pornire actualizare media"
 
-#: rust/frontend/ui/labels.slint:318
+#: rust/frontend/ui/labels.slint:337
 msgid "Launch failed"
 msgstr "Lansare eșuată"
 
-#: rust/frontend/ui/labels.slint:319
+#: rust/frontend/ui/labels.slint:338
 msgid "Favorite update failed"
 msgstr "Actualizare favorite eșuată"
 
-#: rust/frontend/ui/labels.slint:320
+#: rust/frontend/ui/labels.slint:339
 msgid "Visibility update failed"
 msgstr "Actualizare vizibilitate eșuată"
 
-#: rust/frontend/ui/labels.slint:321
+#: rust/frontend/ui/labels.slint:340
 msgid "Media database is busy"
 msgstr "Baza de date media este ocupată"
 
-#: rust/frontend/ui/labels.slint:322
+#: rust/frontend/ui/labels.slint:341
 msgid "Add to Hub failed"
 msgstr "Adăugare în Hub eșuată"
 
-#: rust/frontend/ui/labels.slint:323
+#: rust/frontend/ui/labels.slint:342
 msgid "Save to Hub failed"
 msgstr "Salvare în Hub eșuată"
 
-#: rust/frontend/ui/labels.slint:324
+#: rust/frontend/ui/labels.slint:343
 msgid "Media update failed"
 msgstr "Actualizare media eșuată"
 
-#: rust/frontend/ui/labels.slint:325
+#: rust/frontend/ui/labels.slint:344
 msgid "Update metadata failed"
 msgstr "Actualizare metadate eșuată"
 
-#: rust/frontend/ui/labels.slint:326
+#: rust/frontend/ui/labels.slint:345
 msgid "Source list unavailable"
 msgstr "Listă de surse indisponibilă"
 
-#: rust/frontend/ui/labels.slint:327
+#: rust/frontend/ui/labels.slint:346
 msgid "Cancel failed"
 msgstr "Anulare eșuată"
 
-#: rust/frontend/ui/labels.slint:328
+#: rust/frontend/ui/labels.slint:347
 msgid "Launcher update failed"
 msgstr "Actualizare lansator eșuată"
 
-#: rust/frontend/ui/labels.slint:329
+#: rust/frontend/ui/labels.slint:348
 msgid "Alternate versions unavailable"
 msgstr "Versiuni alternative indisponibile"
 
-#: rust/frontend/ui/labels.slint:330
+#: rust/frontend/ui/labels.slint:349
 msgid "Disc list unavailable"
 msgstr "Listă de discuri indisponibilă"
 
-#: rust/frontend/ui/labels.slint:331
+#: rust/frontend/ui/labels.slint:350
 msgid "QR code failed"
 msgstr "Generare cod QR eșuată"
 
-#: rust/frontend/ui/labels.slint:332
+#: rust/frontend/ui/labels.slint:351
 msgid "Token write failed"
 msgstr "Scriere token eșuată"
 
-#: rust/frontend/ui/labels.slint:333
+#: rust/frontend/ui/labels.slint:352
 msgid "Image picker failed"
 msgstr "Selectorul de imagini a eșuat"
 
-#: rust/frontend/ui/labels.slint:334
+#: rust/frontend/ui/labels.slint:353
 msgid "Setting not saved"
 msgstr "Setare nesalvată"
 
-#: rust/frontend/ui/labels.slint:335
+#: rust/frontend/ui/labels.slint:354
 msgid "Pairing could not start"
 msgstr "Împerecherea nu a putut porni"
 
-#: rust/frontend/ui/labels.slint:336
+#: rust/frontend/ui/labels.slint:355
 msgid "Online account unavailable"
 msgstr "Cont Online indisponibil"
 
-#: rust/frontend/ui/labels.slint:337
+#: rust/frontend/ui/labels.slint:356
 msgid "Cloud backup failed"
 msgstr "Backup în cloud eșuat"
 
-#: rust/frontend/ui/labels.slint:338
+#: rust/frontend/ui/labels.slint:357
 msgid "Config file not loaded"
 msgstr "Configurație neîncărcată"
 
-#: rust/frontend/ui/labels.slint:339
+#: rust/frontend/ui/labels.slint:358
 msgid "Action failed"
 msgstr "Acțiune eșuată"
 
-#: rust/frontend/ui/labels.slint:346
+#: rust/frontend/ui/labels.slint:365
 msgid "Could not start this item. Check Zaparoo Core and try again."
 msgstr "Elementul nu a putut fi pornit. Verificați Zaparoo Core și încercați din nou."
 
-#: rust/frontend/ui/labels.slint:347
+#: rust/frontend/ui/labels.slint:366
 msgid "Could not start {}. Check Zaparoo Core and try again."
 msgstr "{} nu a putut fi pornit. Verificați Zaparoo Core și încercați din nou."
 
-#: rust/frontend/ui/labels.slint:352
+#: rust/frontend/ui/labels.slint:371
 msgid "Could not update this favorite. Check Zaparoo Core and try again."
 msgstr "Favoritul nu a putut fi actualizat. Verificați Zaparoo Core și încercați din nou."
 
-#: rust/frontend/ui/labels.slint:353
+#: rust/frontend/ui/labels.slint:372
 msgid "Could not hide or unhide this game. Check Zaparoo Core and try again."
 msgstr "Jocul nu a putut fi ascuns sau reafișat. Verificați Zaparoo Core și încercați din nou."
 
-#: rust/frontend/ui/labels.slint:355
+#: rust/frontend/ui/labels.slint:374
 msgid "Zaparoo Core is updating the media database. Try again when it finishes."
 msgstr "Zaparoo Core actualizează baza de date media. Încercați din nou când termină."
 
-#: rust/frontend/ui/labels.slint:357
+#: rust/frontend/ui/labels.slint:376
 msgid "Could not add this item to the Hub. Check Zaparoo Core and try again."
 msgstr "Elementul nu a putut fi adăugat în Hub. Verificați Zaparoo Core și încercați din nou."
 
-#: rust/frontend/ui/labels.slint:358
+#: rust/frontend/ui/labels.slint:377
 msgid "Could not add {} to the Hub. Check Zaparoo Core and try again."
 msgstr "{} nu a putut fi adăugat în Hub. Verificați Zaparoo Core și încercați din nou."
 
-#: rust/frontend/ui/labels.slint:361
+#: rust/frontend/ui/labels.slint:380
 msgid "Could not save this search to the Hub. Check Zaparoo Core and try again."
 msgstr "Căutarea nu a putut fi salvată în Hub. Verificați Zaparoo Core și încercați din nou."
 
-#: rust/frontend/ui/labels.slint:362
+#: rust/frontend/ui/labels.slint:381
 msgid "Could not save {} to the Hub. Check Zaparoo Core and try again."
 msgstr "{} nu a putut fi salvat în Hub. Verificați Zaparoo Core și încercați din nou."
 
-#: rust/frontend/ui/labels.slint:364
+#: rust/frontend/ui/labels.slint:383
 msgid "Could not start the media database update. Check Zaparoo Core and try again."
 msgstr "Actualizarea bazei de date media nu a putut porni. Verificați Zaparoo Core și încercați din nou."
 
-#: rust/frontend/ui/labels.slint:365
+#: rust/frontend/ui/labels.slint:384
 msgid "Could not start updating metadata. Check Zaparoo Core and try again."
 msgstr "Actualizarea metadatelor nu a putut porni. Verificați Zaparoo Core și încercați din nou."
 
-#: rust/frontend/ui/labels.slint:366
+#: rust/frontend/ui/labels.slint:385
 msgid "Could not load the list of metadata sources. Check Zaparoo Core and try again."
 msgstr "Lista surselor de metadate nu a putut fi încărcată. Verificați Zaparoo Core și încercați din nou."
 
-#: rust/frontend/ui/labels.slint:367
+#: rust/frontend/ui/labels.slint:386
 msgid "Could not cancel the media operation. Check Zaparoo Core and try again."
 msgstr "Operațiunea media nu a putut fi anulată. Verificați Zaparoo Core și încercați din nou."
 
-#: rust/frontend/ui/labels.slint:368
+#: rust/frontend/ui/labels.slint:387
 msgid "Could not change the launcher. Check Zaparoo Core and try again."
 msgstr "Lansatorul nu a putut fi schimbat. Verificați Zaparoo Core și încercați din nou."
 
-#: rust/frontend/ui/labels.slint:369
+#: rust/frontend/ui/labels.slint:388
 msgid "Could not find alternate versions. Check Zaparoo Core and try again."
 msgstr "Nu s-au putut găsi versiuni alternative. Verificați Zaparoo Core și încercați din nou."
 
-#: rust/frontend/ui/labels.slint:370
+#: rust/frontend/ui/labels.slint:389
 msgid "Could not list the discs of this game. Check Zaparoo Core and try again."
 msgstr "Discurile acestui joc nu au putut fi listate. Verificați Zaparoo Core și încercați din nou."
 
-#: rust/frontend/ui/labels.slint:371
+#: rust/frontend/ui/labels.slint:390
 msgid "Could not create the QR code for this item."
 msgstr "Codul QR pentru acest element nu a putut fi creat."
 
-#: rust/frontend/ui/labels.slint:372
+#: rust/frontend/ui/labels.slint:391
 msgid "Could not write to this token. Check that it is writable and try again."
 msgstr "Nu s-a putut scrie pe acest token. Verificați că este inscriptibil și încercați din nou."
 
-#: rust/frontend/ui/labels.slint:373
+#: rust/frontend/ui/labels.slint:392
 msgid "Could not open an image picker, or the image chosen could not be read."
 msgstr "Nu s-a putut deschide un selector de imagini sau nu s-a putut citi imaginea aleasă."
 
-#: rust/frontend/ui/labels.slint:374
+#: rust/frontend/ui/labels.slint:393
 msgid "Could not save this setting. Try again."
 msgstr "Setarea nu a putut fi salvată. Încercați din nou."
 
-#: rust/frontend/ui/labels.slint:375
+#: rust/frontend/ui/labels.slint:394
 msgid "Core would not start a pairing. It may already have as many paired devices as it allows, or it may be running on another device."
 msgstr "Core nu a pornit împerecherea. Poate are deja numărul maxim de dispozitive împerecheate sau rulează pe alt dispozitiv."
 
-#: rust/frontend/ui/labels.slint:376
+#: rust/frontend/ui/labels.slint:395
 msgid "Core could not reach or update your Zaparoo Online account. Check the network connection and try again."
 msgstr "Core nu a putut contacta sau actualiza contul dvs. Zaparoo Online. Verificați conexiunea la rețea și încercați din nou."
 
-#: rust/frontend/ui/labels.slint:380
+#: rust/frontend/ui/labels.slint:399
 msgid "A backup was uploaded recently. Wait a few minutes, then try again."
 msgstr "Un backup a fost încărcat recent. Așteptați câteva minute, apoi încercați din nou."
 
-#: rust/frontend/ui/labels.slint:383
+#: rust/frontend/ui/labels.slint:402
 msgid "Your cloud backup storage is full."
 msgstr "Spațiul de stocare pentru backup în cloud este plin."
 
-#: rust/frontend/ui/labels.slint:384
+#: rust/frontend/ui/labels.slint:403
 msgid "Zaparoo is busy with another backup or request. Wait for it to finish, then try again."
 msgstr "Zaparoo este ocupat cu alt backup sau altă solicitare. Așteptați să termine, apoi încercați din nou."
 
-#: rust/frontend/ui/labels.slint:385
+#: rust/frontend/ui/labels.slint:404
 msgid "Stop the game that is running, then try again."
 msgstr "Opriți jocul care rulează, apoi încercați din nou."
 
-#: rust/frontend/ui/labels.slint:386
+#: rust/frontend/ui/labels.slint:405
 msgid "Restart Zaparoo to finish the previous restore, then try again."
 msgstr "Reporniți Zaparoo pentru a finaliza restaurarea anterioară, apoi încercați din nou."
 
-#: rust/frontend/ui/labels.slint:387
+#: rust/frontend/ui/labels.slint:406
 msgid "This backup was made by a newer Zaparoo. Update Zaparoo, then try again."
 msgstr "Acest backup a fost creat de un Zaparoo mai nou. Actualizați Zaparoo, apoi încercați din nou."
 
-#: rust/frontend/ui/labels.slint:388
+#: rust/frontend/ui/labels.slint:407
 msgid "Free some storage space on this device, then try again."
 msgstr "Eliberați spațiu de stocare pe acest dispozitiv, apoi încercați din nou."
 
-#: rust/frontend/ui/labels.slint:389
+#: rust/frontend/ui/labels.slint:408
 msgid "Could not finish the cloud backup. Check the network connection and try again."
 msgstr "Backupul în cloud nu a putut fi finalizat. Verificați conexiunea la rețea și încercați din nou."
 
-#: rust/frontend/ui/labels.slint:392
+#: rust/frontend/ui/labels.slint:411
 msgid "{} could not be read, so defaults are in use and changes will not be saved. Fix or remove the file, then restart."
 msgstr "{} nu a putut fi citit, așa că se folosesc valorile implicite, iar modificările nu vor fi salvate. Corectează sau șterge fișierul, apoi repornește."
 
-#: rust/frontend/ui/labels.slint:393
+#: rust/frontend/ui/labels.slint:412
 msgid "The action could not be completed. Check Zaparoo Core and try again."
 msgstr "Acțiunea nu a putut fi finalizată. Verificați Zaparoo Core și încercați din nou."
 
-#: rust/frontend/ui/labels.slint:405
+#: rust/frontend/ui/labels.slint:424
 msgid "This launcher isn't installed."
 msgstr "Acest lansator nu este instalat."
 
-#: rust/frontend/ui/labels.slint:406
+#: rust/frontend/ui/labels.slint:425
 msgid "{} isn't installed."
 msgstr "{} nu este instalat."
 
-#: rust/frontend/ui/labels.slint:409
+#: rust/frontend/ui/labels.slint:428
 msgid "This launcher is installed, but its entry point is missing or disabled."
 msgstr "Acest lansator este instalat, dar punctul său de intrare lipsește sau este dezactivat."
 
-#: rust/frontend/ui/labels.slint:410
+#: rust/frontend/ui/labels.slint:429
 msgid "{} is installed, but its entry point is missing or disabled."
 msgstr "{} este instalat, dar punctul său de intrare lipsește sau este dezactivat."
 
-#: rust/frontend/ui/labels.slint:413
+#: rust/frontend/ui/labels.slint:432
 msgid "This launcher's plugin for this system isn't installed."
 msgstr "Pluginul acestui lansator pentru acest sistem nu este instalat."
 
-#: rust/frontend/ui/labels.slint:414
+#: rust/frontend/ui/labels.slint:433
 msgid "{}'s plugin for this system isn't installed."
 msgstr "Pluginul {} pentru acest sistem nu este instalat."
 
-#: rust/frontend/ui/labels.slint:415
+#: rust/frontend/ui/labels.slint:434
 msgid "{}'s {} plugin isn't installed."
 msgstr "Pluginul {1} pentru {0} nu este instalat."
 
-#: rust/frontend/ui/labels.slint:418
+#: rust/frontend/ui/labels.slint:437
 msgid "This build of the launcher can't be used for this media. A different build is needed."
 msgstr "Această versiune a lansatorului nu poate fi folosită pentru acest conținut media. Este necesară o altă versiune."
 
-#: rust/frontend/ui/labels.slint:419
+#: rust/frontend/ui/labels.slint:438
 msgid "This build of {} can't be used for this media. A different build is needed."
 msgstr "Această versiune de {} nu poate fi folosită pentru acest conținut media. Este necesară o altă versiune."
 
-#: rust/frontend/ui/labels.slint:422
+#: rust/frontend/ui/labels.slint:441
 msgid "This launcher can't play this media."
 msgstr "Acest lansator nu poate reda acest conținut media."
 
-#: rust/frontend/ui/labels.slint:423
+#: rust/frontend/ui/labels.slint:442
 msgid "{} can't play this media."
 msgstr "{} nu poate reda acest conținut media."
 
-#: rust/frontend/ui/labels.slint:426
+#: rust/frontend/ui/labels.slint:445
 msgid "This launcher doesn't support the requested launch options."
 msgstr "Acest lansator nu acceptă opțiunile de lansare solicitate."
 
-#: rust/frontend/ui/labels.slint:427
+#: rust/frontend/ui/labels.slint:446
 msgid "{} doesn't support the requested launch options."
 msgstr "{} nu acceptă opțiunile de lansare solicitate."
 
-#: rust/frontend/ui/labels.slint:430
+#: rust/frontend/ui/labels.slint:449
 msgid "This launcher doesn't have the storage permission it needs."
 msgstr "Acest lansator nu are permisiunea de stocare necesară."
 
-#: rust/frontend/ui/labels.slint:431
+#: rust/frontend/ui/labels.slint:450
 msgid "{} doesn't have the storage permission it needs."
 msgstr "{} nu are permisiunea de stocare necesară."
 
-#: rust/frontend/ui/labels.slint:434
+#: rust/frontend/ui/labels.slint:453
 msgid "This launcher can't read media from where it's stored."
 msgstr "Acest lansator nu poate citi conținutul media din locul în care este stocat."
 
-#: rust/frontend/ui/labels.slint:435
+#: rust/frontend/ui/labels.slint:454
 msgid "{} can't read media from where it's stored."
 msgstr "{} nu poate citi conținutul media din locul în care este stocat."
 
-#: rust/frontend/ui/labels.slint:437
+#: rust/frontend/ui/labels.slint:456
 msgid "The storage holding this media isn't available."
 msgstr "Spațiul de stocare cu acest conținut media nu este disponibil."
 
-#: rust/frontend/ui/labels.slint:438
+#: rust/frontend/ui/labels.slint:457
 msgid "This media could not be resolved or opened."
 msgstr "Acest conținut media nu a putut fi găsit sau deschis."
 
-#: rust/frontend/ui/labels.slint:439
+#: rust/frontend/ui/labels.slint:458
 msgid "Access to this media's folder was revoked. Re-grant it in Settings > Library."
 msgstr "Accesul la folderul acestui conținut media a fost revocat. Acordați-l din nou în Setări > Bibliotecă."
 
-#: rust/frontend/ui/labels.slint:440
+#: rust/frontend/ui/labels.slint:459
 msgid "The launcher service isn't responding."
 msgstr "Serviciul lansatorului nu răspunde."
 
-#: rust/frontend/ui/labels.slint:441
+#: rust/frontend/ui/labels.slint:460
 msgid "Return to Zaparoo before launching this."
 msgstr "Reveniți la Zaparoo înainte de a lansa."
 
-#: rust/frontend/ui/labels.slint:442
+#: rust/frontend/ui/labels.slint:461
 msgid "The launch was cancelled before it started."
 msgstr "Lansarea a fost anulată înainte de a începe."
 
-#: rust/frontend/ui/labels.slint:443
+#: rust/frontend/ui/labels.slint:462
 msgid "The launch was sent, but its outcome could not be confirmed."
 msgstr "Lansarea a fost trimisă, dar rezultatul nu a putut fi confirmat."
 
-#: rust/frontend/ui/labels.slint:444
+#: rust/frontend/ui/labels.slint:463
 msgid "The system refused the launch request."
 msgstr "Sistemul a refuzat cererea de lansare."
 
@@ -1699,7 +1795,7 @@ msgstr "Dezactivat: timpul de joc nu poate fi verificat"
 msgid "Linked to Zaparoo Online"
 msgstr "Asociat cu Zaparoo Online"
 
-#: rust/frontend/ui/settings.slint:72 rust/frontend/ui/settings.slint:332
+#: rust/frontend/ui/settings.slint:72 rust/frontend/ui/settings.slint:340
 msgid "Not linked"
 msgstr "Neasociat"
 
@@ -1915,668 +2011,648 @@ msgstr "Afișare elemente ascunse"
 msgid "Show original filenames"
 msgstr "Afișare nume fișiere originale"
 
+#: rust/frontend/ui/settings.slint:168
+msgid "Show tags"
+msgstr "Afișare etichete"
+
 #: rust/frontend/ui/settings.slint:169
+msgid "Left and Right in lists"
+msgstr "Stânga și dreapta în liste"
+
+#: rust/frontend/ui/settings.slint:171
 msgid "Online features are not available for this client"
 msgstr "Funcțiile online nu sunt disponibile pentru acest client"
 
-#: rust/frontend/ui/settings.slint:170 rust/frontend/ui/settings.slint:181
+#: rust/frontend/ui/settings.slint:172 rust/frontend/ui/settings.slint:183
 msgid "Status"
 msgstr "Stare"
 
-#: rust/frontend/ui/settings.slint:171
+#: rust/frontend/ui/settings.slint:173
 msgid "Warp"
 msgstr "Warp"
 
-#: rust/frontend/ui/settings.slint:172
+#: rust/frontend/ui/settings.slint:174
 msgid "Link account"
 msgstr "Asociere cont"
 
-#: rust/frontend/ui/settings.slint:173
+#: rust/frontend/ui/settings.slint:175
 msgid "Unlink account"
 msgstr "Dezasociere cont"
 
-#: rust/frontend/ui/settings.slint:174
+#: rust/frontend/ui/settings.slint:176
 msgid "All"
 msgstr "Toate"
 
-#: rust/frontend/ui/settings.slint:175
+#: rust/frontend/ui/settings.slint:177
 msgid "Sync play history"
 msgstr "Sincronizare istoric de joc"
 
-#: rust/frontend/ui/settings.slint:176
+#: rust/frontend/ui/settings.slint:178
 msgid "Remote control"
 msgstr "Control la distanță"
 
-#: rust/frontend/ui/settings.slint:177
+#: rust/frontend/ui/settings.slint:179
 msgid "Library sync"
 msgstr "Sincronizare bibliotecă"
 
-#: rust/frontend/ui/settings.slint:178
+#: rust/frontend/ui/settings.slint:180
 msgid "Cloud backup"
 msgstr "Backup în cloud"
 
-#: rust/frontend/ui/settings.slint:179
+#: rust/frontend/ui/settings.slint:181
 msgid "Schedule"
 msgstr "Programare"
 
-#: rust/frontend/ui/settings.slint:180
+#: rust/frontend/ui/settings.slint:182
 msgid "Manage backups…"
 msgstr "Gestionare backupuri…"
 
-#: rust/frontend/ui/settings.slint:182
+#: rust/frontend/ui/settings.slint:184
 msgid "Activity…"
 msgstr "Activitate…"
 
-#: rust/frontend/ui/settings.slint:187
+#: rust/frontend/ui/settings.slint:189
 msgid "Debug logging"
 msgstr "Jurnal depanare"
 
-#: rust/frontend/ui/settings.slint:188 rust/frontend/ui/setup.slint:319
+#: rust/frontend/ui/settings.slint:190 rust/frontend/ui/setup.slint:319
 msgid "Upload log file"
 msgstr "Încărcare fișier jurnal"
 
-#: rust/frontend/ui/settings.slint:198
+#: rust/frontend/ui/settings.slint:200
 msgid "Link your Zaparoo Online account first."
 msgstr "Asociați mai întâi contul Zaparoo Online."
 
-#: rust/frontend/ui/settings.slint:201
+#: rust/frontend/ui/settings.slint:203
 msgid "Wait for the metadata update to finish."
 msgstr "Așteptați finalizarea actualizării metadatelor."
 
-#: rust/frontend/ui/settings.slint:202
+#: rust/frontend/ui/settings.slint:204
 msgid "Wait for the media database update to finish."
 msgstr "Așteptați finalizarea actualizării bazei de date media."
 
-#: rust/frontend/ui/settings.slint:206
+#: rust/frontend/ui/settings.slint:208
 msgid "Choose a folder containing system folders, then use Update media database to scan."
 msgstr "Alegeți un folder cu foldere de sisteme, apoi scanați cu Actualizare bază de date media."
 
-#: rust/frontend/ui/settings.slint:207
+#: rust/frontend/ui/settings.slint:209
 msgid "Scans a folder you choose for launchers already installed."
 msgstr "Scanează un folder ales de dvs. pentru lansatoare deja instalate."
 
-#: rust/frontend/ui/settings.slint:208
+#: rust/frontend/ui/settings.slint:210
 msgid "Allow exact game time in system settings. Optional."
 msgstr "Permiteți timpul de joc exact în setările sistemului. Opțional."
 
-#: rust/frontend/ui/settings.slint:209
+#: rust/frontend/ui/settings.slint:211
 msgid "Changes colors across screens, including text and highlights."
 msgstr "Schimbă culorile pe toate ecranele, inclusiv textul și evidențierile."
 
-#: rust/frontend/ui/settings.slint:210
+#: rust/frontend/ui/settings.slint:212
 msgid "Controls how strongly accent colors tint tiles and backgrounds."
 msgstr "Stabilește cât de intens nuanțează culorile de accent dalele și fundalurile."
 
-#: rust/frontend/ui/settings.slint:211
+#: rust/frontend/ui/settings.slint:213
 msgid "Shows system logos in original colors or tinted to match colors."
 msgstr "Afișează logourile sistemelor în culorile originale sau nuanțate după schemă."
 
-#: rust/frontend/ui/settings.slint:212
+#: rust/frontend/ui/settings.slint:214
 msgid "Shows page actions as a row. Off, the Menu button lists them."
 msgstr "Afișează acțiunile paginii pe un rând. Altfel, butonul Meniu le listează."
 
-#: rust/frontend/ui/settings.slint:213
+#: rust/frontend/ui/settings.slint:215
 msgid "Turns off animation throughout the interface."
 msgstr "Dezactivează animațiile din toată interfața."
 
-#: rust/frontend/ui/settings.slint:214
+#: rust/frontend/ui/settings.slint:216
 msgid "Sets idle time before the screensaver starts. Off disables it."
 msgstr "Setează timpul de inactivitate până la economizorul de ecran. Dezactivat îl oprește."
 
-#: rust/frontend/ui/settings.slint:215
+#: rust/frontend/ui/settings.slint:217
 msgid "The resolution the interface renders at. Restarts the frontend."
 msgstr "Rezoluția la care este redată interfața. Repornește frontendul."
 
-#: rust/frontend/ui/settings.slint:216
+#: rust/frontend/ui/settings.slint:218
 msgid "Adjusts layout density for standard and handheld screens."
 msgstr "Ajustează densitatea dispunerii pentru ecrane standard și portabile."
 
-#: rust/frontend/ui/settings.slint:217
+#: rust/frontend/ui/settings.slint:219
 msgid "Rotates the interface for a sideways screen or tate cabinet."
 msgstr "Rotește interfața pentru un ecran pe verticală sau un cabinet tate."
 
-#: rust/frontend/ui/settings.slint:218
+#: rust/frontend/ui/settings.slint:220
 msgid "Outputs 15 kHz analog video through MiSTer. Restarts frontend."
 msgstr "Emite video analogic de 15 kHz prin MiSTer. Repornește frontendul."
 
-#: rust/frontend/ui/settings.slint:219
+#: rust/frontend/ui/settings.slint:221
 msgid "Matches analog output to NTSC or PAL. Restarts the frontend."
 msgstr "Potrivește ieșirea analogică la NTSC sau PAL. Repornește frontendul."
 
-#: rust/frontend/ui/settings.slint:220
+#: rust/frontend/ui/settings.slint:222
 msgid "Opens a test pattern to position the analog picture with arrows."
 msgstr "Deschide o miră de test pentru a poziționa imaginea analogică cu săgețile."
 
-#: rust/frontend/ui/settings.slint:221
+#: rust/frontend/ui/settings.slint:223
 msgid "The language used for interface text. Restarts the frontend."
 msgstr "Limba textului din interfață. Repornește frontendul."
 
-#: rust/frontend/ui/settings.slint:222
+#: rust/frontend/ui/settings.slint:224
 msgid "Selects regional system and game names, such as Mega Drive."
 msgstr "Selectează numele regionale ale sistemelor și jocurilor, precum Mega Drive."
 
-#: rust/frontend/ui/settings.slint:223
+#: rust/frontend/ui/settings.slint:225
 msgid "12-hour or 24-hour time in the top bar."
 msgstr "Format de 12 sau 24 de ore în bara de sus."
 
-#: rust/frontend/ui/settings.slint:224
+#: rust/frontend/ui/settings.slint:226
 msgid "Matches on-screen prompt icons to your controller."
 msgstr "Potrivește pictogramele de pe ecran cu controlerul dvs."
 
-#: rust/frontend/ui/settings.slint:225
+#: rust/frontend/ui/settings.slint:227
 msgid "Flips which controller button accepts and which cancels."
 msgstr "Inversează butoanele de confirmare și anulare ale controlerului."
 
-#: rust/frontend/ui/settings.slint:226
+#: rust/frontend/ui/settings.slint:228
 msgid "Swaps which controller button opens Options and Menu."
 msgstr "Inversează butoanele controlerului pentru Opțiuni și Meniu."
 
-#: rust/frontend/ui/settings.slint:227
+#: rust/frontend/ui/settings.slint:229
 msgid "Lets a mouse click tiles and menu rows."
 msgstr "Permite clicuri de mouse pe dale și pe rândurile meniurilor."
 
-#: rust/frontend/ui/settings.slint:228
+#: rust/frontend/ui/settings.slint:230
 msgid "Rescans game folders for added or removed files. Choose systems."
 msgstr "Rescanează folderele de jocuri pentru fișiere adăugate sau eliminate. Alegeți sistemele."
 
-#: rust/frontend/ui/settings.slint:229
+#: rust/frontend/ui/settings.slint:231
 msgid "Adds artwork and details from the sources Core offers."
 msgstr "Adaugă grafică și detalii din sursele oferite de Core."
 
-#: rust/frontend/ui/settings.slint:230
+#: rust/frontend/ui/settings.slint:232
 msgid "Shows systems as a cover grid or a list with details."
 msgstr "Afișează sistemele ca grilă de coperte sau ca listă cu detalii."
 
-#: rust/frontend/ui/settings.slint:231
+#: rust/frontend/ui/settings.slint:233
 msgid "Sets grid or list layout for Games, Favorites, and Recents."
 msgstr "Setează dispunerea grilă sau listă pentru Jocuri, Favorite și Recente."
 
-#: rust/frontend/ui/settings.slint:232
+#: rust/frontend/ui/settings.slint:234
 msgid "Prefers an artwork type when games have multiple images."
 msgstr "Preferă un tip de grafică atunci când jocurile au mai multe imagini."
 
-#: rust/frontend/ui/settings.slint:233
+#: rust/frontend/ui/settings.slint:235
 msgid "Shows hidden items so they can be unhidden."
 msgstr "Afișează elementele ascunse pentru a putea fi reafișate."
 
-#: rust/frontend/ui/settings.slint:234
+#: rust/frontend/ui/settings.slint:236
 msgid "Shows real filenames instead of cleaned-up display titles."
 msgstr "Afișează numele reale ale fișierelor în locul titlurilor curățate."
 
-#: rust/frontend/ui/settings.slint:235
+#: rust/frontend/ui/settings.slint:237
+msgid "Shows region, revision, and disc tags after game names."
+msgstr "Afișează etichetele de regiune, revizie și disc după nume."
+
+#: rust/frontend/ui/settings.slint:238
+msgid "Turns the page or changes the image in the detailed list."
+msgstr "Întoarce pagina sau schimbă imaginea în lista detaliată."
+
+#: rust/frontend/ui/settings.slint:239
 msgid "Connects this device to your Zaparoo Online account with a code."
 msgstr "Conectează acest dispozitiv la contul dvs. Zaparoo Online printr-un cod."
 
-#: rust/frontend/ui/settings.slint:236
+#: rust/frontend/ui/settings.slint:240
 msgid "Removes this device's Zaparoo Online account credentials."
 msgstr "Elimină datele de autentificare Zaparoo Online de pe acest dispozitiv."
 
-#: rust/frontend/ui/settings.slint:237
+#: rust/frontend/ui/settings.slint:241
 msgid "Turns every online feature on or off. Each can still be changed on its own."
 msgstr "Activează sau dezactivează toate funcțiile online. Fiecare poate fi schimbată separat."
 
-#: rust/frontend/ui/settings.slint:238
+#: rust/frontend/ui/settings.slint:242
 msgid "Uploads verified playtime to your account. Estimates stay local."
 msgstr "Încarcă timpul de joc verificat în contul dvs. Estimările rămân locale."
 
-#: rust/frontend/ui/settings.slint:239
+#: rust/frontend/ui/settings.slint:243
 msgid "Allows your linked Zaparoo Online account to send approved commands to this device."
 msgstr "Permite contului Zaparoo Online asociat să trimită comenzi aprobate către acest dispozitiv."
 
-#: rust/frontend/ui/settings.slint:240
+#: rust/frontend/ui/settings.slint:244
 msgid "Syncs your game list, favorites, likes and decks with your linked Zaparoo Online account."
 msgstr "Sincronizează lista de jocuri, favoritele, aprecierile și pachetele cu contul Zaparoo Online asociat."
 
-#: rust/frontend/ui/settings.slint:241
+#: rust/frontend/ui/settings.slint:245
 msgid "Backs up this device to the cloud on a schedule."
 msgstr "Face backup în cloud al acestui dispozitiv, după un program."
 
-#: rust/frontend/ui/settings.slint:242
+#: rust/frontend/ui/settings.slint:246
 msgid "How often automatic cloud backup runs."
 msgstr "Cât de des rulează backupul automat în cloud."
 
-#: rust/frontend/ui/settings.slint:243
+#: rust/frontend/ui/settings.slint:247
 msgid "Back up now, view and restore cloud backup snapshots."
 msgstr "Faceți backup acum, vedeți și restaurați backupurile din cloud."
 
-#: rust/frontend/ui/settings.slint:244
+#: rust/frontend/ui/settings.slint:248
 msgid "See what a linked account's remote commands have done on this device."
 msgstr "Vedeți ce au făcut pe acest dispozitiv comenzile la distanță ale unui cont asociat."
 
-#: rust/frontend/ui/settings.slint:245
+#: rust/frontend/ui/settings.slint:249
 msgid "Shows a PIN for pairing a new device with Core."
 msgstr "Afișează un PIN pentru împerecherea unui dispozitiv nou cu Core."
 
-#: rust/frontend/ui/settings.slint:246
+#: rust/frontend/ui/settings.slint:250
 msgid "Version, build date, license terms, and contributors."
 msgstr "Versiune, data compilării, termenii licenței și colaboratori."
 
-#: rust/frontend/ui/settings.slint:247
+#: rust/frontend/ui/settings.slint:251
 msgid "Shows a code for opening the Frontend guide on your phone."
 msgstr "Afișează un cod pentru deschiderea ghidului Frontend pe telefon."
 
-#: rust/frontend/ui/settings.slint:248
+#: rust/frontend/ui/settings.slint:252
 msgid "Adds troubleshooting detail to logs. Restarts the frontend."
 msgstr "Adaugă detalii de depanare în jurnale. Repornește frontendul."
 
-#: rust/frontend/ui/settings.slint:249
+#: rust/frontend/ui/settings.slint:253
 msgid "Uploads the log and provides a link for problem reports."
 msgstr "Încarcă jurnalul și oferă un link pentru raportarea problemelor."
 
-#: rust/frontend/ui/settings.slint:256
+#: rust/frontend/ui/settings.slint:260
 msgid "Configure"
 msgstr "Configurare"
 
-#: rust/frontend/ui/settings.slint:257
+#: rust/frontend/ui/settings.slint:261
 msgid "Upload"
 msgstr "Încărcare"
 
-#: rust/frontend/ui/settings.slint:258
+#: rust/frontend/ui/settings.slint:262
 msgid "Detect"
 msgstr "Detectare"
 
-#: rust/frontend/ui/settings.slint:259
+#: rust/frontend/ui/settings.slint:263
 msgid "Pair"
 msgstr "Împerechere"
 
-#: rust/frontend/ui/settings.slint:260
+#: rust/frontend/ui/settings.slint:264
 msgid "Link"
 msgstr "Asociere"
 
-#: rust/frontend/ui/settings.slint:261
+#: rust/frontend/ui/settings.slint:265
 msgid "Unlink"
 msgstr "Dezasociere"
 
-#: rust/frontend/ui/settings.slint:267 rust/frontend/ui/settings.slint:280
-#: rust/frontend/ui/settings.slint:291 rust/frontend/ui/settings.slint:422
+#: rust/frontend/ui/settings.slint:271 rust/frontend/ui/settings.slint:288
+#: rust/frontend/ui/settings.slint:299 rust/frontend/ui/settings.slint:418
 msgid "Automatic"
 msgstr "Automat"
 
-#: rust/frontend/ui/settings.slint:268
+#: rust/frontend/ui/settings.slint:272
 msgid "{} × {}"
 msgstr "{} × {}"
 
-#: rust/frontend/ui/settings.slint:275
+#: rust/frontend/ui/settings.slint:279
+msgid "Change image"
+msgstr "Schimbare imagine"
+
+#: rust/frontend/ui/settings.slint:280
+msgid "Change page"
+msgstr "Schimbare pagină"
+
+#: rust/frontend/ui/settings.slint:283
 msgid "Style A"
 msgstr "Stil A"
 
-#: rust/frontend/ui/settings.slint:276
+#: rust/frontend/ui/settings.slint:284
 msgid "Style B"
 msgstr "Stil B"
 
-#: rust/frontend/ui/settings.slint:277
+#: rust/frontend/ui/settings.slint:285
 msgid "Style C"
 msgstr "Stil C"
 
-#: rust/frontend/ui/settings.slint:278
+#: rust/frontend/ui/settings.slint:286
 msgid "Style D"
 msgstr "Stil D"
 
-#: rust/frontend/ui/settings.slint:279
+#: rust/frontend/ui/settings.slint:287
 msgid "Style E"
 msgstr "Stil E"
 
-#: rust/frontend/ui/settings.slint:283
+#: rust/frontend/ui/settings.slint:291
 msgid "12-hour"
 msgstr "12 ore"
 
-#: rust/frontend/ui/settings.slint:284
+#: rust/frontend/ui/settings.slint:292
 msgid "24-hour"
 msgstr "24 de ore"
 
-#: rust/frontend/ui/settings.slint:288
+#: rust/frontend/ui/settings.slint:296
 msgid "Americas"
 msgstr "America"
 
-#: rust/frontend/ui/settings.slint:289
+#: rust/frontend/ui/settings.slint:297
 msgid "Europe"
 msgstr "Europa"
 
-#: rust/frontend/ui/settings.slint:290
+#: rust/frontend/ui/settings.slint:298
 msgid "Japan"
 msgstr "Japonia"
 
-#: rust/frontend/ui/settings.slint:294
+#: rust/frontend/ui/settings.slint:302
 msgid "Standard"
 msgstr "Standard"
 
-#: rust/frontend/ui/settings.slint:295
+#: rust/frontend/ui/settings.slint:303
 msgid "Handheld"
 msgstr "Portabil"
 
-#: rust/frontend/ui/settings.slint:296
+#: rust/frontend/ui/settings.slint:304
 msgid "Device default"
 msgstr "Implicit pentru dispozitiv"
 
-#: rust/frontend/ui/settings.slint:299
+#: rust/frontend/ui/settings.slint:307
 msgid "Rotated CW"
 msgstr "Rotit orar"
 
-#: rust/frontend/ui/settings.slint:300
+#: rust/frontend/ui/settings.slint:308
 msgid "Rotated CCW"
 msgstr "Rotit antiorar"
 
-#: rust/frontend/ui/settings.slint:301
+#: rust/frontend/ui/settings.slint:309
 msgid "Horizontal"
 msgstr "Orizontal"
 
-#: rust/frontend/ui/settings.slint:304
+#: rust/frontend/ui/settings.slint:312
 msgid "Detailed list view"
 msgstr "Vizualizare listă detaliată"
 
-#: rust/frontend/ui/settings.slint:305
+#: rust/frontend/ui/settings.slint:313
 msgid "Text only"
 msgstr "Doar text"
 
-#: rust/frontend/ui/settings.slint:306
+#: rust/frontend/ui/settings.slint:314
 msgid "Grid view"
 msgstr "Vizualizare grilă"
 
-#: rust/frontend/ui/settings.slint:309
+#: rust/frontend/ui/settings.slint:317
 msgid "Full color"
 msgstr "Culori complete"
 
-#: rust/frontend/ui/settings.slint:310
+#: rust/frontend/ui/settings.slint:318
 msgid "Tinted"
 msgstr "Nuanțate"
 
-#: rust/frontend/ui/settings.slint:313
+#: rust/frontend/ui/settings.slint:321
 msgid "Vivid"
 msgstr "Intens"
 
-#: rust/frontend/ui/settings.slint:314
+#: rust/frontend/ui/settings.slint:322
 msgid "Subtle"
 msgstr "Subtil"
 
-#: rust/frontend/ui/settings.slint:317
+#: rust/frontend/ui/settings.slint:325
 msgid "PAL (50 Hz)"
 msgstr "PAL (50 Hz)"
 
-#: rust/frontend/ui/settings.slint:318
+#: rust/frontend/ui/settings.slint:326
 msgid "480i (60 Hz)"
 msgstr "480i (60 Hz)"
 
-#: rust/frontend/ui/settings.slint:319
+#: rust/frontend/ui/settings.slint:327
 msgid "NTSC (60 Hz)"
 msgstr "NTSC (60 Hz)"
 
-#: rust/frontend/ui/settings.slint:326
+#: rust/frontend/ui/settings.slint:334
 msgid "Daily"
 msgstr "Zilnic"
 
-#: rust/frontend/ui/settings.slint:327
+#: rust/frontend/ui/settings.slint:335
 msgid "Weekly"
 msgstr "Săptămânal"
 
-#: rust/frontend/ui/settings.slint:328
+#: rust/frontend/ui/settings.slint:336
 msgid "Manual"
 msgstr "Manual"
 
-#: rust/frontend/ui/settings.slint:331
+#: rust/frontend/ui/settings.slint:339
 msgid "Linked"
 msgstr "Asociat"
 
-#: rust/frontend/ui/settings.slint:335
+#: rust/frontend/ui/settings.slint:343
 msgid "Active"
 msgstr "Activ"
 
-#: rust/frontend/ui/settings.slint:336
+#: rust/frontend/ui/settings.slint:344
 msgid "Not active"
 msgstr "Inactiv"
 
-#: rust/frontend/ui/settings.slint:337
+#: rust/frontend/ui/settings.slint:345
 msgid "Checking…"
 msgstr "Se verifică…"
 
-#: rust/frontend/ui/settings.slint:340 rust/frontend/ui/settings.slint:398
+#: rust/frontend/ui/settings.slint:348 rust/frontend/ui/settings.slint:406
 msgid "Off"
 msgstr "Dezactivat"
 
-#: rust/frontend/ui/settings.slint:343
+#: rust/frontend/ui/settings.slint:351
 msgid "Waiting for commands…"
 msgstr "Se așteaptă comenzi…"
 
-#: rust/frontend/ui/settings.slint:344
+#: rust/frontend/ui/settings.slint:352
 msgid "Not the remote device"
 msgstr "Nu este dispozitivul la distanță"
 
-#: rust/frontend/ui/settings.slint:346
+#: rust/frontend/ui/settings.slint:354
 msgid "Link rejected"
 msgstr "Asociere respinsă"
 
-#: rust/frontend/ui/settings.slint:347
+#: rust/frontend/ui/settings.slint:355
 msgid "Server unreachable"
 msgstr "Server inaccesibil"
 
-#: rust/frontend/ui/settings.slint:348
+#: rust/frontend/ui/settings.slint:356
 msgid "Unknown"
 msgstr "Necunoscut"
 
-#: rust/frontend/ui/settings.slint:354
+#: rust/frontend/ui/settings.slint:362
 msgid "English"
 msgstr "Engleză"
 
-#: rust/frontend/ui/settings.slint:355
+#: rust/frontend/ui/settings.slint:363
 msgid "Italian"
 msgstr "Italiană"
 
-#: rust/frontend/ui/settings.slint:356
+#: rust/frontend/ui/settings.slint:364
 msgid "Spanish"
 msgstr "Spaniolă"
 
-#: rust/frontend/ui/settings.slint:357
+#: rust/frontend/ui/settings.slint:365
 msgid "Basque"
 msgstr "Bască"
 
-#: rust/frontend/ui/settings.slint:358
+#: rust/frontend/ui/settings.slint:366
 msgid "German"
 msgstr "Germană"
 
-#: rust/frontend/ui/settings.slint:359
+#: rust/frontend/ui/settings.slint:367
 msgid "Greek"
 msgstr "Greacă"
 
-#: rust/frontend/ui/settings.slint:360
+#: rust/frontend/ui/settings.slint:368
 msgid "Japanese"
 msgstr "Japoneză"
 
-#: rust/frontend/ui/settings.slint:361
+#: rust/frontend/ui/settings.slint:369
 msgid "Korean"
 msgstr "Coreeană"
 
-#: rust/frontend/ui/settings.slint:362
+#: rust/frontend/ui/settings.slint:370
 msgid "Dutch"
 msgstr "Olandeză"
 
-#: rust/frontend/ui/settings.slint:363
+#: rust/frontend/ui/settings.slint:371
 msgid "Romanian"
 msgstr "Română"
 
-#: rust/frontend/ui/settings.slint:364
+#: rust/frontend/ui/settings.slint:372
 msgid "Slovak"
 msgstr "Slovacă"
 
-#: rust/frontend/ui/settings.slint:365
+#: rust/frontend/ui/settings.slint:373
 msgid "Ukrainian"
 msgstr "Ucraineană"
 
-#: rust/frontend/ui/settings.slint:366
+#: rust/frontend/ui/settings.slint:374
 msgid "Chinese (Simplified)"
 msgstr "Chineză (simplificată)"
 
-#: rust/frontend/ui/settings.slint:367
+#: rust/frontend/ui/settings.slint:375
 msgid "Chinese (Traditional)"
 msgstr "Chineză (tradițională)"
 
-#: rust/frontend/ui/settings.slint:368
+#: rust/frontend/ui/settings.slint:376
 msgid "Hebrew"
 msgstr "Ebraică"
 
-#: rust/frontend/ui/settings.slint:369
+#: rust/frontend/ui/settings.slint:377
 msgid "Arabic"
 msgstr "Arabă"
 
-#: rust/frontend/ui/settings.slint:370
+#: rust/frontend/ui/settings.slint:378
 msgid "Hindi"
 msgstr "Hindi"
 
-#: rust/frontend/ui/settings.slint:371
+#: rust/frontend/ui/settings.slint:379
 msgid "French"
 msgstr "Franceză"
 
-#: rust/frontend/ui/settings.slint:376
+#: rust/frontend/ui/settings.slint:384
 msgid "Zaparoo Light"
 msgstr "Zaparoo Light"
 
-#: rust/frontend/ui/settings.slint:377
+#: rust/frontend/ui/settings.slint:385
 msgid "Classic Purple"
 msgstr "Classic Purple"
 
-#: rust/frontend/ui/settings.slint:378
+#: rust/frontend/ui/settings.slint:386
 msgid "Amber Phosphor"
 msgstr "Amber Phosphor"
 
-#: rust/frontend/ui/settings.slint:379
+#: rust/frontend/ui/settings.slint:387
 msgid "Game Boy"
 msgstr "Game Boy"
 
-#: rust/frontend/ui/settings.slint:380
+#: rust/frontend/ui/settings.slint:388
 msgid "Green Phosphor"
 msgstr "Green Phosphor"
 
-#: rust/frontend/ui/settings.slint:381
+#: rust/frontend/ui/settings.slint:389
 msgid "Neo Geo"
 msgstr "Neo Geo"
 
-#: rust/frontend/ui/settings.slint:382
+#: rust/frontend/ui/settings.slint:390
 msgid "NES"
 msgstr "NES"
 
-#: rust/frontend/ui/settings.slint:383
+#: rust/frontend/ui/settings.slint:391
 msgid "Virtual Boy"
 msgstr "Virtual Boy"
 
-#: rust/frontend/ui/settings.slint:384
+#: rust/frontend/ui/settings.slint:392
 msgid "Dracula"
 msgstr "Dracula"
 
-#: rust/frontend/ui/settings.slint:385
+#: rust/frontend/ui/settings.slint:393
 msgid "Everforest"
 msgstr "Everforest"
 
-#: rust/frontend/ui/settings.slint:386
+#: rust/frontend/ui/settings.slint:394
 msgid "Gruvbox"
 msgstr "Gruvbox"
 
-#: rust/frontend/ui/settings.slint:387
+#: rust/frontend/ui/settings.slint:395
 msgid "Nord"
 msgstr "Nord"
 
-#: rust/frontend/ui/settings.slint:388
+#: rust/frontend/ui/settings.slint:396
 msgid "Oxocarbon"
 msgstr "Oxocarbon"
 
-#: rust/frontend/ui/settings.slint:389
+#: rust/frontend/ui/settings.slint:397
 msgid "Rosé Pine"
 msgstr "Rosé Pine"
 
-#: rust/frontend/ui/settings.slint:390
+#: rust/frontend/ui/settings.slint:398
 msgid "Solarized Dark"
 msgstr "Solarized Dark"
 
-#: rust/frontend/ui/settings.slint:391
+#: rust/frontend/ui/settings.slint:399
 msgid "Synthwave '84"
 msgstr "Synthwave '84"
 
-#: rust/frontend/ui/settings.slint:392
+#: rust/frontend/ui/settings.slint:400
 msgid "Flexoki Paper"
 msgstr "Flexoki Paper"
 
-#: rust/frontend/ui/settings.slint:393
+#: rust/frontend/ui/settings.slint:401
 msgid "Solarized Light"
 msgstr "Solarized Light"
 
-#: rust/frontend/ui/settings.slint:394
+#: rust/frontend/ui/settings.slint:402
 msgid "Zaparoo Dark"
 msgstr "Zaparoo Dark"
 
-#: rust/frontend/ui/settings.slint:399
+#: rust/frontend/ui/settings.slint:407
 msgid "1 second (testing)"
 msgstr "1 secundă (test)"
 
-#: rust/frontend/ui/settings.slint:400
+#: rust/frontend/ui/settings.slint:408
 msgid "1 minute"
 msgstr "1 minut"
 
-#: rust/frontend/ui/settings.slint:401
+#: rust/frontend/ui/settings.slint:409
 msgid "2 minutes"
 msgstr "2 minute"
 
-#: rust/frontend/ui/settings.slint:402
+#: rust/frontend/ui/settings.slint:410
 msgid "5 minutes"
 msgstr "5 minute"
 
-#: rust/frontend/ui/settings.slint:403
+#: rust/frontend/ui/settings.slint:411
 msgid "10 minutes"
 msgstr "10 minute"
 
-#: rust/frontend/ui/settings.slint:404
+#: rust/frontend/ui/settings.slint:412
 msgid "15 minutes"
 msgstr "15 minute"
 
-#: rust/frontend/ui/settings.slint:405
+#: rust/frontend/ui/settings.slint:413
 msgid "30 minutes"
 msgstr "30 de minute"
 
-#: rust/frontend/ui/settings.slint:406
+#: rust/frontend/ui/settings.slint:414
 msgid "{} seconds"
 msgstr "{0} secunde"
 
-#: rust/frontend/ui/settings.slint:411
-msgid "Thumbnail"
-msgstr "Miniatură"
-
-#: rust/frontend/ui/settings.slint:412
-msgid "Box art"
-msgstr "Copertă"
-
-#: rust/frontend/ui/settings.slint:413
-msgid "3D box art"
-msgstr "Copertă 3D"
-
-#: rust/frontend/ui/settings.slint:414
-msgid "Screenshot"
-msgstr "Captură de ecran"
-
-#: rust/frontend/ui/settings.slint:415
-msgid "Wheel"
-msgstr "Wheel"
-
-#: rust/frontend/ui/settings.slint:416
-msgid "Title screen"
-msgstr "Ecran de titlu"
-
-#: rust/frontend/ui/settings.slint:417
-msgid "Map"
-msgstr "Hartă"
-
-#: rust/frontend/ui/settings.slint:418
-msgid "Marquee"
-msgstr "Marquee"
-
-#: rust/frontend/ui/settings.slint:419
-msgid "Fan art"
-msgstr "Fan art"
-
-#: rust/frontend/ui/settings.slint:420
-msgid "Box side"
-msgstr "Lateral cutie"
-
-#: rust/frontend/ui/settings.slint:421
-msgid "Box back"
-msgstr "Spate cutie"
-
-#: rust/frontend/ui/settings.slint:503
+#: rust/frontend/ui/settings.slint:499
 msgid "Linked as {}"
 msgstr "Asociat ca {}"
 
@@ -2594,3 +2670,1966 @@ msgstr "Încărcarea a eșuat. Verificați conexiunea la rețea și încercați 
 #: rust/frontend/ui/setup.slint:341
 msgid "Uploading log file. This may take a moment."
 msgstr "Se încarcă fișierul jurnal. Poate dura puțin."
+
+#: rust/frontend/ui/tag_names.slint:10
+msgctxt "tag-type"
+msgid "Release year"
+msgstr "Anul lansării"
+
+#: rust/frontend/ui/tag_names.slint:11
+msgctxt "tag-type"
+msgid "Players"
+msgstr "Jucători"
+
+#: rust/frontend/ui/tag_names.slint:12
+msgctxt "tag-type"
+msgid "Developer"
+msgstr "Dezvoltator"
+
+#: rust/frontend/ui/tag_names.slint:13
+msgctxt "tag-type"
+msgid "Publisher"
+msgstr "Editor"
+
+#: rust/frontend/ui/tag_names.slint:14
+msgctxt "tag-type"
+msgid "Genre"
+msgstr "Gen"
+
+#: rust/frontend/ui/tag_names.slint:15
+msgctxt "tag-type"
+msgid "Game Genre"
+msgstr "Gen de joc"
+
+#: rust/frontend/ui/tag_names.slint:16
+msgctxt "tag-type"
+msgid "Rating"
+msgstr "Evaluare"
+
+#: rust/frontend/ui/tag_names.slint:17 rust/frontend/ui/tag_names.slint:18
+msgctxt "tag-type"
+msgid "Series"
+msgstr "Serie"
+
+#: rust/frontend/ui/tag_names.slint:19
+msgctxt "tag-type"
+msgid "Arcade board"
+msgstr "Placă arcade"
+
+#: rust/frontend/ui/tag_names.slint:20
+msgctxt "tag-type"
+msgid "Region"
+msgstr "Regiune"
+
+#: rust/frontend/ui/tag_names.slint:21
+msgctxt "tag-type"
+msgid "Language"
+msgstr "Limbă"
+
+#: rust/frontend/ui/tag_names.slint:22
+msgctxt "tag-type"
+msgid "Edition"
+msgstr "Ediție"
+
+#: rust/frontend/ui/tag_names.slint:23
+msgctxt "tag-type"
+msgid "Revision"
+msgstr "Revizie"
+
+#: rust/frontend/ui/tag_names.slint:24
+msgctxt "tag-type"
+msgid "Disc"
+msgstr "Disc"
+
+#: rust/frontend/ui/tag_names.slint:25
+msgctxt "tag-type"
+msgid "Total Discs"
+msgstr "Total discuri"
+
+#: rust/frontend/ui/tag_names.slint:26
+msgctxt "tag-type"
+msgid "Release"
+msgstr "Lansare"
+
+#: rust/frontend/ui/tag_names.slint:27
+msgctxt "tag-type"
+msgid "Re-release"
+msgstr "Relansare"
+
+#: rust/frontend/ui/tag_names.slint:28
+msgctxt "tag-type"
+msgid "Build Date"
+msgstr "Data compilării"
+
+#: rust/frontend/ui/tag_names.slint:29
+msgctxt "tag-type"
+msgid "Input"
+msgstr "Control"
+
+#: rust/frontend/ui/tag_names.slint:30
+msgctxt "tag-type"
+msgid "Perspective"
+msgstr "Perspectivă"
+
+#: rust/frontend/ui/tag_names.slint:31
+msgctxt "tag-type"
+msgid "Art Style"
+msgstr "Stil grafic"
+
+#: rust/frontend/ui/tag_names.slint:32
+msgctxt "tag-type"
+msgid "Category"
+msgstr "Categorie"
+
+#: rust/frontend/ui/tag_names.slint:33
+msgctxt "tag-type"
+msgid "Based On"
+msgstr "Bazat pe"
+
+#: rust/frontend/ui/tag_names.slint:34
+msgctxt "tag-type"
+msgid "Platform"
+msgstr "Platformă"
+
+#: rust/frontend/ui/tag_names.slint:35
+msgctxt "tag-type"
+msgid "Port"
+msgstr "Portare"
+
+#: rust/frontend/ui/tag_names.slint:36
+msgctxt "tag-type"
+msgid "Media"
+msgstr "Suport"
+
+#: rust/frontend/ui/tag_names.slint:37
+msgctxt "tag-type"
+msgid "Video"
+msgstr "Video"
+
+#: rust/frontend/ui/tag_names.slint:38
+msgctxt "tag-type"
+msgid "Save"
+msgstr "Salvare"
+
+#: rust/frontend/ui/tag_names.slint:39
+msgctxt "tag-type"
+msgid "Add-on"
+msgstr "Supliment"
+
+#: rust/frontend/ui/tag_names.slint:40
+msgctxt "tag-type"
+msgid "Embedded"
+msgstr "Integrat"
+
+#: rust/frontend/ui/tag_names.slint:41
+msgctxt "tag-type"
+msgid "Arcade Cabinet"
+msgstr "Cabinet arcade"
+
+#: rust/frontend/ui/tag_names.slint:42
+msgctxt "tag-type"
+msgid "Copy Protection"
+msgstr "Protecție la copiere"
+
+#: rust/frontend/ui/tag_names.slint:43
+msgctxt "tag-type"
+msgid "MAME Parent"
+msgstr "Părinte MAME"
+
+#: rust/frontend/ui/tag_names.slint:44
+msgctxt "tag-type"
+msgid "Compatibility"
+msgstr "Compatibilitate"
+
+#: rust/frontend/ui/tag_names.slint:45
+msgctxt "tag-type"
+msgid "Accessibility"
+msgstr "Accesibilitate"
+
+#: rust/frontend/ui/tag_names.slint:46
+msgctxt "tag-type"
+msgid "Distribution"
+msgstr "Distribuție"
+
+#: rust/frontend/ui/tag_names.slint:47
+msgctxt "tag-type"
+msgid "Copyright"
+msgstr "Drepturi de autor"
+
+#: rust/frontend/ui/tag_names.slint:48
+msgctxt "tag-type"
+msgid "Credit"
+msgstr "Credite"
+
+#: rust/frontend/ui/tag_names.slint:49
+msgctxt "tag-type"
+msgid "Dump Status"
+msgstr "Starea dumpului"
+
+#: rust/frontend/ui/tag_names.slint:50
+msgctxt "tag-type"
+msgid "Alternate"
+msgstr "Variantă"
+
+#: rust/frontend/ui/tag_names.slint:51
+msgctxt "tag-type"
+msgid "Patch"
+msgstr "Patch"
+
+#: rust/frontend/ui/tag_names.slint:52
+msgctxt "tag-type"
+msgid "Unfinished"
+msgstr "Neterminat"
+
+#: rust/frontend/ui/tag_names.slint:53
+msgctxt "tag-type"
+msgid "Unlicensed"
+msgstr "Fără licență"
+
+#: rust/frontend/ui/tag_names.slint:54
+msgctxt "tag-type"
+msgid "Reboxed"
+msgstr "Reambalat"
+
+#: rust/frontend/ui/tag_names.slint:55
+msgctxt "tag-type"
+msgid "Multi-game"
+msgstr "Multi-joc"
+
+#: rust/frontend/ui/tag_names.slint:56
+msgctxt "tag-type"
+msgid "Set"
+msgstr "Set"
+
+#: rust/frontend/ui/tag_names.slint:57
+msgctxt "tag-type"
+msgid "Supplement"
+msgstr "Supliment"
+
+#: rust/frontend/ui/tag_names.slint:58
+msgctxt "tag-type"
+msgid "Season"
+msgstr "Sezon"
+
+#: rust/frontend/ui/tag_names.slint:59
+msgctxt "tag-type"
+msgid "Episode"
+msgstr "Episod"
+
+#: rust/frontend/ui/tag_names.slint:60
+msgctxt "tag-type"
+msgid "Volume"
+msgstr "Volum"
+
+#: rust/frontend/ui/tag_names.slint:61
+msgctxt "tag-type"
+msgid "Issue"
+msgstr "Număr"
+
+#: rust/frontend/ui/tag_names.slint:62
+msgctxt "tag-type"
+msgid "Track"
+msgstr "Pistă"
+
+#: rust/frontend/ui/tag_names.slint:63
+msgctxt "tag-type"
+msgid "Extension"
+msgstr "Extensie"
+
+#: rust/frontend/ui/tag_names.slint:64
+msgctxt "tag-type"
+msgid "System"
+msgstr "Sistem"
+
+#: rust/frontend/ui/tag_names.slint:65
+msgctxt "tag-type"
+msgid "Tags"
+msgstr "Etichete"
+
+#: rust/frontend/ui/tag_names.slint:66
+msgctxt "tag-type"
+msgid "Path"
+msgstr "Cale"
+
+#: rust/frontend/ui/tag_names.slint:67
+msgctxt "tag-type"
+msgid "Launcher"
+msgstr "Lansator"
+
+#: rust/frontend/ui/tag_names.slint:74
+msgctxt "tag-value"
+msgid "Revision {}"
+msgstr "Revizia {}"
+
+#: rust/frontend/ui/tag_names.slint:76
+msgctxt "tag-value"
+msgid "{n} player"
+msgid_plural "{n} players"
+msgstr[0] "{n} jucător"
+msgstr[1] "{n} jucători"
+msgstr[2] "{n} de jucători"
+
+#: rust/frontend/ui/tag_names.slint:78
+msgctxt "tag-value"
+msgid "{} players"
+msgstr "{} jucători"
+
+#: rust/frontend/ui/tag_names.slint:79
+msgctxt "tag-value"
+msgid "{} {}"
+msgstr "{} {}"
+
+#: rust/frontend/ui/tag_names.slint:84
+msgctxt "tag-value"
+msgid "Worldwide"
+msgstr "Mondial"
+
+#: rust/frontend/ui/tag_names.slint:85
+msgctxt "tag-value"
+msgid "United States"
+msgstr "Statele Unite"
+
+#: rust/frontend/ui/tag_names.slint:86
+msgctxt "tag-value"
+msgid "Europe"
+msgstr "Europa"
+
+#: rust/frontend/ui/tag_names.slint:87
+msgctxt "tag-value"
+msgid "Japan"
+msgstr "Japonia"
+
+#: rust/frontend/ui/tag_names.slint:88
+msgctxt "tag-value"
+msgid "Australia"
+msgstr "Australia"
+
+#: rust/frontend/ui/tag_names.slint:89
+msgctxt "tag-value"
+msgid "South Korea"
+msgstr "Coreea de Sud"
+
+#: rust/frontend/ui/tag_names.slint:90
+msgctxt "tag-value"
+msgid "China"
+msgstr "China"
+
+#: rust/frontend/ui/tag_names.slint:91
+msgctxt "tag-value"
+msgid "Taiwan"
+msgstr "Taiwan"
+
+#: rust/frontend/ui/tag_names.slint:92
+msgctxt "tag-value"
+msgid "Hong Kong"
+msgstr "Hong Kong"
+
+#: rust/frontend/ui/tag_names.slint:93
+msgctxt "tag-value"
+msgid "Brazil"
+msgstr "Brazilia"
+
+#: rust/frontend/ui/tag_names.slint:94
+msgctxt "tag-value"
+msgid "Canada"
+msgstr "Canada"
+
+#: rust/frontend/ui/tag_names.slint:95
+msgctxt "tag-value"
+msgid "United Kingdom"
+msgstr "Regatul Unit"
+
+#: rust/frontend/ui/tag_names.slint:96
+msgctxt "tag-value"
+msgid "France"
+msgstr "Franța"
+
+#: rust/frontend/ui/tag_names.slint:97
+msgctxt "tag-value"
+msgid "Germany"
+msgstr "Germania"
+
+#: rust/frontend/ui/tag_names.slint:98
+msgctxt "tag-value"
+msgid "Italy"
+msgstr "Italia"
+
+#: rust/frontend/ui/tag_names.slint:99
+msgctxt "tag-value"
+msgid "Spain"
+msgstr "Spania"
+
+#: rust/frontend/ui/tag_names.slint:100
+msgctxt "tag-value"
+msgid "Scandinavia"
+msgstr "Scandinavia"
+
+#: rust/frontend/ui/tag_names.slint:101
+msgctxt "tag-value"
+msgid "Asia"
+msgstr "Asia"
+
+#: rust/frontend/ui/tag_names.slint:102
+msgctxt "tag-value"
+msgid "English"
+msgstr "Engleză"
+
+#: rust/frontend/ui/tag_names.slint:103
+msgctxt "tag-value"
+msgid "French"
+msgstr "Franceză"
+
+#: rust/frontend/ui/tag_names.slint:104
+msgctxt "tag-value"
+msgid "German"
+msgstr "Germană"
+
+#: rust/frontend/ui/tag_names.slint:105
+msgctxt "tag-value"
+msgid "Spanish"
+msgstr "Spaniolă"
+
+#: rust/frontend/ui/tag_names.slint:106
+msgctxt "tag-value"
+msgid "Italian"
+msgstr "Italiană"
+
+#: rust/frontend/ui/tag_names.slint:107
+msgctxt "tag-value"
+msgid "Japanese"
+msgstr "Japoneză"
+
+#: rust/frontend/ui/tag_names.slint:108
+msgctxt "tag-value"
+msgid "Korean"
+msgstr "Coreeană"
+
+#: rust/frontend/ui/tag_names.slint:109
+msgctxt "tag-value"
+msgid "Chinese"
+msgstr "Chineză"
+
+#: rust/frontend/ui/tag_names.slint:110
+msgctxt "tag-value"
+msgid "Portuguese"
+msgstr "Portugheză"
+
+#: rust/frontend/ui/tag_names.slint:111
+msgctxt "tag-value"
+msgid "Dutch"
+msgstr "Neerlandeză"
+
+#: rust/frontend/ui/tag_names.slint:112
+msgctxt "tag-value"
+msgid "Swedish"
+msgstr "Suedeză"
+
+#: rust/frontend/ui/tag_names.slint:113
+msgctxt "tag-value"
+msgid "Norwegian"
+msgstr "Norvegiană"
+
+#: rust/frontend/ui/tag_names.slint:114
+msgctxt "tag-value"
+msgid "Danish"
+msgstr "Daneză"
+
+#: rust/frontend/ui/tag_names.slint:115
+msgctxt "tag-value"
+msgid "Finnish"
+msgstr "Finlandeză"
+
+#: rust/frontend/ui/tag_names.slint:116
+msgctxt "tag-value"
+msgid "Polish"
+msgstr "Poloneză"
+
+#: rust/frontend/ui/tag_names.slint:117
+msgctxt "tag-value"
+msgid "Russian"
+msgstr "Rusă"
+
+#: rust/frontend/ui/tag_names.slint:118
+msgctxt "tag-value"
+msgid "Arabic"
+msgstr "Arabă"
+
+#: rust/frontend/ui/tag_names.slint:119
+msgctxt "tag-value"
+msgid "English (US)"
+msgstr "Engleză (SUA)"
+
+#: rust/frontend/ui/tag_names.slint:120
+msgctxt "tag-value"
+msgid "English (UK)"
+msgstr "Engleză (Regatul Unit)"
+
+#: rust/frontend/ui/tag_names.slint:121
+msgctxt "tag-value"
+msgid "Director's cut"
+msgstr "Director's cut"
+
+#: rust/frontend/ui/tag_names.slint:122
+msgctxt "tag-value"
+msgid "Collector's edition"
+msgstr "Ediție de colecție"
+
+#: rust/frontend/ui/tag_names.slint:123
+msgctxt "tag-value"
+msgid "Limited edition"
+msgstr "Ediție limitată"
+
+#: rust/frontend/ui/tag_names.slint:124
+msgctxt "tag-value"
+msgid "Special edition"
+msgstr "Ediție specială"
+
+#: rust/frontend/ui/tag_names.slint:125
+msgctxt "tag-value"
+msgid "Deluxe edition"
+msgstr "Ediție deluxe"
+
+#: rust/frontend/ui/tag_names.slint:126
+msgctxt "tag-value"
+msgid "Ultimate edition"
+msgstr "Ediție ultimate"
+
+#: rust/frontend/ui/tag_names.slint:127
+msgctxt "tag-value"
+msgid "Anniversary edition"
+msgstr "Ediție aniversară"
+
+#: rust/frontend/ui/tag_names.slint:128
+msgctxt "tag-value"
+msgid "Remastered"
+msgstr "Remasterizat"
+
+#: rust/frontend/ui/tag_names.slint:129
+msgctxt "tag-value"
+msgid "Remake"
+msgstr "Remake"
+
+#: rust/frontend/ui/tag_names.slint:130
+msgctxt "tag-value"
+msgid "Remix"
+msgstr "Remix"
+
+#: rust/frontend/ui/tag_names.slint:131
+msgctxt "tag-value"
+msgid "Complete edition"
+msgstr "Ediție completă"
+
+#: rust/frontend/ui/tag_names.slint:132
+msgctxt "tag-value"
+msgid "Game of the Year edition"
+msgstr "Ediția Jocul anului"
+
+#: rust/frontend/ui/tag_names.slint:133
+msgctxt "tag-value"
+msgid "Action"
+msgstr "Acțiune"
+
+#: rust/frontend/ui/tag_names.slint:134
+msgctxt "tag-value"
+msgid "Platformer"
+msgstr "Platforme"
+
+#: rust/frontend/ui/tag_names.slint:135
+msgctxt "tag-value"
+msgid "Maze"
+msgstr "Labirint"
+
+#: rust/frontend/ui/tag_names.slint:136
+msgctxt "tag-value"
+msgid "Block breaker"
+msgstr "Spart cărămizi"
+
+#: rust/frontend/ui/tag_names.slint:137
+msgctxt "tag-value"
+msgid "Run and gun"
+msgstr "Run and gun"
+
+#: rust/frontend/ui/tag_names.slint:138
+msgctxt "tag-value"
+msgid "Hack and slash"
+msgstr "Hack and slash"
+
+#: rust/frontend/ui/tag_names.slint:139
+msgctxt "tag-value"
+msgid "Metroidvania"
+msgstr "Metroidvania"
+
+#: rust/frontend/ui/tag_names.slint:140
+msgctxt "tag-value"
+msgid "Roguelite"
+msgstr "Roguelite"
+
+#: rust/frontend/ui/tag_names.slint:141
+msgctxt "tag-value"
+msgid "Adventure"
+msgstr "Aventură"
+
+#: rust/frontend/ui/tag_names.slint:142
+msgctxt "tag-value"
+msgid "Point and click"
+msgstr "Point and click"
+
+#: rust/frontend/ui/tag_names.slint:143
+msgctxt "tag-value"
+msgid "Visual novel"
+msgstr "Visual novel"
+
+#: rust/frontend/ui/tag_names.slint:144
+msgctxt "tag-value"
+msgid "Survival horror"
+msgstr "Survival horror"
+
+#: rust/frontend/ui/tag_names.slint:145
+msgctxt "tag-value"
+msgid "Text adventure"
+msgstr "Aventură text"
+
+#: rust/frontend/ui/tag_names.slint:146
+msgctxt "tag-value"
+msgid "Board game"
+msgstr "Joc de societate"
+
+#: rust/frontend/ui/tag_names.slint:147
+msgctxt "tag-value"
+msgid "Cards"
+msgstr "Cărți de joc"
+
+#: rust/frontend/ui/tag_names.slint:148
+msgctxt "tag-value"
+msgid "Hanafuda"
+msgstr "Hanafuda"
+
+#: rust/frontend/ui/tag_names.slint:149
+msgctxt "tag-value"
+msgid "Chess"
+msgstr "Șah"
+
+#: rust/frontend/ui/tag_names.slint:150
+msgctxt "tag-value"
+msgid "Shogi"
+msgstr "Shogi"
+
+#: rust/frontend/ui/tag_names.slint:151
+msgctxt "tag-value"
+msgid "Go"
+msgstr "Go"
+
+#: rust/frontend/ui/tag_names.slint:152
+msgctxt "tag-value"
+msgid "Mahjong"
+msgstr "Mahjong"
+
+#: rust/frontend/ui/tag_names.slint:153
+msgctxt "tag-value"
+msgid "Reversi"
+msgstr "Reversi"
+
+#: rust/frontend/ui/tag_names.slint:154
+msgctxt "tag-value"
+msgid "Othello"
+msgstr "Othello"
+
+#: rust/frontend/ui/tag_names.slint:155
+msgctxt "tag-value"
+msgid "Backgammon"
+msgstr "Table"
+
+#: rust/frontend/ui/tag_names.slint:156
+msgctxt "tag-value"
+msgid "Party game"
+msgstr "Joc de petrecere"
+
+#: rust/frontend/ui/tag_names.slint:157
+msgctxt "tag-value"
+msgid "Rock paper scissors"
+msgstr "Piatră, hârtie, foarfecă"
+
+#: rust/frontend/ui/tag_names.slint:158
+msgctxt "tag-value"
+msgid "Beat 'em up"
+msgstr "Beat 'em up"
+
+#: rust/frontend/ui/tag_names.slint:159
+msgctxt "tag-value"
+msgid "Fighting"
+msgstr "Luptă"
+
+#: rust/frontend/ui/tag_names.slint:160
+msgctxt "tag-value"
+msgid "Melee fighting"
+msgstr "Luptă corp la corp"
+
+#: rust/frontend/ui/tag_names.slint:161
+msgctxt "tag-value"
+msgid "Minigames"
+msgstr "Minijocuri"
+
+#: rust/frontend/ui/tag_names.slint:162
+msgctxt "tag-value"
+msgid "Parlor game"
+msgstr "Joc de salon"
+
+#: rust/frontend/ui/tag_names.slint:163
+msgctxt "tag-value"
+msgid "Pinball"
+msgstr "Pinball"
+
+#: rust/frontend/ui/tag_names.slint:164
+msgctxt "tag-value"
+msgid "Jackpot"
+msgstr "Jackpot"
+
+#: rust/frontend/ui/tag_names.slint:165
+msgctxt "tag-value"
+msgid "Pachinko"
+msgstr "Pachinko"
+
+#: rust/frontend/ui/tag_names.slint:166
+msgctxt "tag-value"
+msgid "Darts"
+msgstr "Darts"
+
+#: rust/frontend/ui/tag_names.slint:167
+msgctxt "tag-value"
+msgid "Bowling"
+msgstr "Bowling"
+
+#: rust/frontend/ui/tag_names.slint:168
+msgctxt "tag-value"
+msgid "Billiards"
+msgstr "Biliard"
+
+#: rust/frontend/ui/tag_names.slint:169
+msgctxt "tag-value"
+msgid "Whack-a-mole"
+msgstr "Lovește cârtița"
+
+#: rust/frontend/ui/tag_names.slint:170
+msgctxt "tag-value"
+msgid "Kiddie ride"
+msgstr "Căluț pentru copii"
+
+#: rust/frontend/ui/tag_names.slint:171
+msgctxt "tag-value"
+msgid "Mechanical game"
+msgstr "Joc mecanic"
+
+#: rust/frontend/ui/tag_names.slint:172
+msgctxt "tag-value"
+msgid "Quiz"
+msgstr "Quiz"
+
+#: rust/frontend/ui/tag_names.slint:173
+msgctxt "tag-value"
+msgid "Racing"
+msgstr "Curse"
+
+#: rust/frontend/ui/tag_names.slint:174
+msgctxt "tag-value"
+msgid "Combat racing"
+msgstr "Curse cu luptă"
+
+#: rust/frontend/ui/tag_names.slint:175
+msgctxt "tag-value"
+msgid "Driving"
+msgstr "Condus"
+
+#: rust/frontend/ui/tag_names.slint:176
+msgctxt "tag-value"
+msgid "RPG"
+msgstr "RPG"
+
+#: rust/frontend/ui/tag_names.slint:177
+msgctxt "tag-value"
+msgid "Action RPG"
+msgstr "RPG de acțiune"
+
+#: rust/frontend/ui/tag_names.slint:178
+msgctxt "tag-value"
+msgid "JRPG"
+msgstr "JRPG"
+
+#: rust/frontend/ui/tag_names.slint:179
+msgctxt "tag-value"
+msgid "Strategy RPG"
+msgstr "RPG de strategie"
+
+#: rust/frontend/ui/tag_names.slint:180
+msgctxt "tag-value"
+msgid "Dungeon crawler"
+msgstr "Dungeon crawler"
+
+#: rust/frontend/ui/tag_names.slint:181
+msgctxt "tag-value"
+msgid "MMORPG"
+msgstr "MMORPG"
+
+#: rust/frontend/ui/tag_names.slint:182
+msgctxt "tag-value"
+msgid "Rhythm"
+msgstr "Ritm"
+
+#: rust/frontend/ui/tag_names.slint:183
+msgctxt "tag-value"
+msgid "Karaoke"
+msgstr "Karaoke"
+
+#: rust/frontend/ui/tag_names.slint:184
+msgctxt "tag-value"
+msgid "Dance"
+msgstr "Dans"
+
+#: rust/frontend/ui/tag_names.slint:185
+msgctxt "tag-value"
+msgid "Shoot 'em up"
+msgstr "Shoot 'em up"
+
+#: rust/frontend/ui/tag_names.slint:186
+msgctxt "tag-value"
+msgid "Horizontal shooter"
+msgstr "Shooter orizontal"
+
+#: rust/frontend/ui/tag_names.slint:187
+msgctxt "tag-value"
+msgid "Vertical shooter"
+msgstr "Shooter vertical"
+
+#: rust/frontend/ui/tag_names.slint:188
+msgctxt "tag-value"
+msgid "Isometric shooter"
+msgstr "Shooter izometric"
+
+#: rust/frontend/ui/tag_names.slint:189
+msgctxt "tag-value"
+msgid "Bullet hell"
+msgstr "Bullet hell"
+
+#: rust/frontend/ui/tag_names.slint:190
+msgctxt "tag-value"
+msgid "Shooter"
+msgstr "Shooter"
+
+#: rust/frontend/ui/tag_names.slint:191
+msgctxt "tag-value"
+msgid "Shooting gallery"
+msgstr "Poligon de tragere"
+
+#: rust/frontend/ui/tag_names.slint:192
+msgctxt "tag-value"
+msgid "Rail shooter"
+msgstr "Rail shooter"
+
+#: rust/frontend/ui/tag_names.slint:193
+msgctxt "tag-value"
+msgid "First-person shooter"
+msgstr "Shooter la persoana întâi"
+
+#: rust/frontend/ui/tag_names.slint:194
+msgctxt "tag-value"
+msgid "Third-person shooter"
+msgstr "Shooter la persoana a treia"
+
+#: rust/frontend/ui/tag_names.slint:195
+msgctxt "tag-value"
+msgid "Puzzle"
+msgstr "Puzzle"
+
+#: rust/frontend/ui/tag_names.slint:196
+msgctxt "tag-value"
+msgid "Falling block puzzle"
+msgstr "Puzzle cu blocuri căzătoare"
+
+#: rust/frontend/ui/tag_names.slint:197
+msgctxt "tag-value"
+msgid "Logic puzzle"
+msgstr "Puzzle de logică"
+
+#: rust/frontend/ui/tag_names.slint:198
+msgctxt "tag-value"
+msgid "Simulation"
+msgstr "Simulare"
+
+#: rust/frontend/ui/tag_names.slint:199
+msgctxt "tag-value"
+msgid "Strategy"
+msgstr "Strategie"
+
+#: rust/frontend/ui/tag_names.slint:200
+msgctxt "tag-value"
+msgid "Trading card game"
+msgstr "Joc de cărți de colecție"
+
+#: rust/frontend/ui/tag_names.slint:201
+msgctxt "tag-value"
+msgid "Flight sim"
+msgstr "Simulator de zbor"
+
+#: rust/frontend/ui/tag_names.slint:202
+msgctxt "tag-value"
+msgid "Train sim"
+msgstr "Simulator feroviar"
+
+#: rust/frontend/ui/tag_names.slint:203
+msgctxt "tag-value"
+msgid "Dating sim"
+msgstr "Simulator de întâlniri"
+
+#: rust/frontend/ui/tag_names.slint:204
+msgctxt "tag-value"
+msgid "Otome game"
+msgstr "Joc otome"
+
+#: rust/frontend/ui/tag_names.slint:205
+msgctxt "tag-value"
+msgid "Life sim"
+msgstr "Simulator de viață"
+
+#: rust/frontend/ui/tag_names.slint:206
+msgctxt "tag-value"
+msgid "Farming sim"
+msgstr "Simulator agricol"
+
+#: rust/frontend/ui/tag_names.slint:207
+msgctxt "tag-value"
+msgid "Pet sim"
+msgstr "Simulator de animale de companie"
+
+#: rust/frontend/ui/tag_names.slint:208
+msgctxt "tag-value"
+msgid "Fishing"
+msgstr "Pescuit"
+
+#: rust/frontend/ui/tag_names.slint:209
+msgctxt "tag-value"
+msgid "God game"
+msgstr "God game"
+
+#: rust/frontend/ui/tag_names.slint:210
+msgctxt "tag-value"
+msgid "Horse racing sim"
+msgstr "Simulator de curse de cai"
+
+#: rust/frontend/ui/tag_names.slint:211
+msgctxt "tag-value"
+msgid "Building sim"
+msgstr "Simulator de construcție"
+
+#: rust/frontend/ui/tag_names.slint:212
+msgctxt "tag-value"
+msgid "Cooking"
+msgstr "Gătit"
+
+#: rust/frontend/ui/tag_names.slint:213
+msgctxt "tag-value"
+msgid "Sports"
+msgstr "Sport"
+
+#: rust/frontend/ui/tag_names.slint:214
+msgctxt "tag-value"
+msgid "Soccer"
+msgstr "Fotbal"
+
+#: rust/frontend/ui/tag_names.slint:215
+msgctxt "tag-value"
+msgid "Basketball"
+msgstr "Baschet"
+
+#: rust/frontend/ui/tag_names.slint:216
+msgctxt "tag-value"
+msgid "Baseball"
+msgstr "Baseball"
+
+#: rust/frontend/ui/tag_names.slint:217
+msgctxt "tag-value"
+msgid "Volleyball"
+msgstr "Volei"
+
+#: rust/frontend/ui/tag_names.slint:218
+msgctxt "tag-value"
+msgid "Rugby"
+msgstr "Rugby"
+
+#: rust/frontend/ui/tag_names.slint:219
+msgctxt "tag-value"
+msgid "Football"
+msgstr "Fotbal american"
+
+#: rust/frontend/ui/tag_names.slint:220
+msgctxt "tag-value"
+msgid "Dodgeball"
+msgstr "Dodgeball"
+
+#: rust/frontend/ui/tag_names.slint:221
+msgctxt "tag-value"
+msgid "Hockey"
+msgstr "Hochei"
+
+#: rust/frontend/ui/tag_names.slint:222
+msgctxt "tag-value"
+msgid "Skiing"
+msgstr "Schi"
+
+#: rust/frontend/ui/tag_names.slint:223
+msgctxt "tag-value"
+msgid "Skateboarding"
+msgstr "Skateboarding"
+
+#: rust/frontend/ui/tag_names.slint:224
+msgctxt "tag-value"
+msgid "Snowboarding"
+msgstr "Snowboarding"
+
+#: rust/frontend/ui/tag_names.slint:225
+msgctxt "tag-value"
+msgid "Tennis"
+msgstr "Tenis"
+
+#: rust/frontend/ui/tag_names.slint:226
+msgctxt "tag-value"
+msgid "Table tennis"
+msgstr "Tenis de masă"
+
+#: rust/frontend/ui/tag_names.slint:227
+msgctxt "tag-value"
+msgid "Paddle tennis"
+msgstr "Padel"
+
+#: rust/frontend/ui/tag_names.slint:228
+msgctxt "tag-value"
+msgid "Squash"
+msgstr "Squash"
+
+#: rust/frontend/ui/tag_names.slint:229
+msgctxt "tag-value"
+msgid "Badminton"
+msgstr "Badminton"
+
+#: rust/frontend/ui/tag_names.slint:230
+msgctxt "tag-value"
+msgid "Flying disc"
+msgstr "Frisbee"
+
+#: rust/frontend/ui/tag_names.slint:231
+msgctxt "tag-value"
+msgid "Cycling"
+msgstr "Ciclism"
+
+#: rust/frontend/ui/tag_names.slint:232
+msgctxt "tag-value"
+msgid "Formula 1"
+msgstr "Formula 1"
+
+#: rust/frontend/ui/tag_names.slint:233
+msgctxt "tag-value"
+msgid "Rally"
+msgstr "Raliu"
+
+#: rust/frontend/ui/tag_names.slint:234
+msgctxt "tag-value"
+msgid "NASCAR"
+msgstr "NASCAR"
+
+#: rust/frontend/ui/tag_names.slint:235
+msgctxt "tag-value"
+msgid "MotoGP"
+msgstr "MotoGP"
+
+#: rust/frontend/ui/tag_names.slint:236
+msgctxt "tag-value"
+msgid "Motocross"
+msgstr "Motocros"
+
+#: rust/frontend/ui/tag_names.slint:237
+msgctxt "tag-value"
+msgid "Karting"
+msgstr "Karting"
+
+#: rust/frontend/ui/tag_names.slint:238
+msgctxt "tag-value"
+msgid "Jet ski"
+msgstr "Jet ski"
+
+#: rust/frontend/ui/tag_names.slint:239
+msgctxt "tag-value"
+msgid "Golf"
+msgstr "Golf"
+
+#: rust/frontend/ui/tag_names.slint:240
+msgctxt "tag-value"
+msgid "Cricket"
+msgstr "Cricket"
+
+#: rust/frontend/ui/tag_names.slint:241
+msgctxt "tag-value"
+msgid "Boxing"
+msgstr "Box"
+
+#: rust/frontend/ui/tag_names.slint:242
+msgctxt "tag-value"
+msgid "Kickboxing"
+msgstr "Kickboxing"
+
+#: rust/frontend/ui/tag_names.slint:243
+msgctxt "tag-value"
+msgid "Wrestling"
+msgstr "Wrestling"
+
+#: rust/frontend/ui/tag_names.slint:244
+msgctxt "tag-value"
+msgid "Sumo"
+msgstr "Sumo"
+
+#: rust/frontend/ui/tag_names.slint:245
+msgctxt "tag-value"
+msgid "Karate"
+msgstr "Karate"
+
+#: rust/frontend/ui/tag_names.slint:246
+msgctxt "tag-value"
+msgid "Judo"
+msgstr "Judo"
+
+#: rust/frontend/ui/tag_names.slint:247
+msgctxt "tag-value"
+msgid "Kendo"
+msgstr "Kendo"
+
+#: rust/frontend/ui/tag_names.slint:248
+msgctxt "tag-value"
+msgid "Taekwondo"
+msgstr "Taekwondo"
+
+#: rust/frontend/ui/tag_names.slint:249
+msgctxt "tag-value"
+msgid "MMA"
+msgstr "MMA"
+
+#: rust/frontend/ui/tag_names.slint:250
+msgctxt "tag-value"
+msgid "Decathlon"
+msgstr "Decatlon"
+
+#: rust/frontend/ui/tag_names.slint:251
+msgctxt "tag-value"
+msgid "Running"
+msgstr "Alergare"
+
+#: rust/frontend/ui/tag_names.slint:252
+msgctxt "tag-value"
+msgid "Archery"
+msgstr "Tir cu arcul"
+
+#: rust/frontend/ui/tag_names.slint:253
+msgctxt "tag-value"
+msgid "Swimming"
+msgstr "Înot"
+
+#: rust/frontend/ui/tag_names.slint:254
+msgctxt "tag-value"
+msgid "Rowing"
+msgstr "Canotaj"
+
+#: rust/frontend/ui/tag_names.slint:255
+msgctxt "tag-value"
+msgid "Kayaking"
+msgstr "Caiac"
+
+#: rust/frontend/ui/tag_names.slint:256
+msgctxt "tag-value"
+msgid "Surfing"
+msgstr "Surf"
+
+#: rust/frontend/ui/tag_names.slint:257
+msgctxt "tag-value"
+msgid "Not a game"
+msgstr "Nu este un joc"
+
+#: rust/frontend/ui/tag_names.slint:258
+msgctxt "tag-value"
+msgid "Educational"
+msgstr "Educațional"
+
+#: rust/frontend/ui/tag_names.slint:259
+msgctxt "tag-value"
+msgid "Drawing"
+msgstr "Desen"
+
+#: rust/frontend/ui/tag_names.slint:260
+msgctxt "tag-value"
+msgid "Popcorn machine"
+msgstr "Aparat de popcorn"
+
+#: rust/frontend/ui/tag_names.slint:261
+msgctxt "tag-value"
+msgid "Photo booth"
+msgstr "Cabină foto"
+
+#: rust/frontend/ui/tag_names.slint:262
+msgctxt "tag-value"
+msgid "Redemption game"
+msgstr "Joc cu tichete"
+
+#: rust/frontend/ui/tag_names.slint:263
+msgctxt "tag-value"
+msgid "Media"
+msgstr "Media"
+
+#: rust/frontend/ui/tag_names.slint:264
+msgctxt "tag-value"
+msgid "Magazine"
+msgstr "Revistă"
+
+#: rust/frontend/ui/tag_names.slint:265
+msgctxt "tag-value"
+msgid "Application"
+msgstr "Aplicație"
+
+#: rust/frontend/ui/tag_names.slint:266
+msgctxt "tag-value"
+msgid "Test program"
+msgstr "Program de test"
+
+#: rust/frontend/ui/tag_names.slint:267
+msgctxt "tag-value"
+msgid "SDK"
+msgstr "SDK"
+
+#: rust/frontend/ui/tag_names.slint:268
+msgctxt "tag-value"
+msgid "Slideshow"
+msgstr "Prezentare de diapozitive"
+
+#: rust/frontend/ui/tag_names.slint:269
+msgctxt "tag-value"
+msgid "Sound"
+msgstr "Sunet"
+
+#: rust/frontend/ui/tag_names.slint:270
+msgctxt "tag-value"
+msgid "Management sim"
+msgstr "Simulator de management"
+
+#: rust/frontend/ui/tag_names.slint:271
+msgctxt "tag-value"
+msgid "Roller skating"
+msgstr "Patinaj pe role"
+
+#: rust/frontend/ui/tag_names.slint:272
+msgctxt "tag-value"
+msgid "Versus"
+msgstr "Versus"
+
+#: rust/frontend/ui/tag_names.slint:273
+msgctxt "tag-value"
+msgid "Co-op"
+msgstr "Cooperativ"
+
+#: rust/frontend/ui/tag_names.slint:274
+msgctxt "tag-value"
+msgid "Alternating"
+msgstr "Alternativ"
+
+#: rust/frontend/ui/tag_names.slint:275
+msgctxt "tag-value"
+msgid "Simultaneous"
+msgstr "Simultan"
+
+#: rust/frontend/ui/tag_names.slint:276
+msgctxt "tag-value"
+msgid "MMO"
+msgstr "MMO"
+
+#: rust/frontend/ui/tag_names.slint:277
+msgctxt "tag-value"
+msgid "Joystick"
+msgstr "Joystick"
+
+#: rust/frontend/ui/tag_names.slint:278
+msgctxt "tag-value"
+msgid "2-way joystick (horizontal)"
+msgstr "Joystick cu 2 direcții (orizontal)"
+
+#: rust/frontend/ui/tag_names.slint:279
+msgctxt "tag-value"
+msgid "2-way joystick (vertical)"
+msgstr "Joystick cu 2 direcții (vertical)"
+
+#: rust/frontend/ui/tag_names.slint:280
+msgctxt "tag-value"
+msgid "{}-way joystick"
+msgstr "Joystick cu {} direcții"
+
+#: rust/frontend/ui/tag_names.slint:281
+msgctxt "tag-value"
+msgid "Double joystick"
+msgstr "Joystick dublu"
+
+#: rust/frontend/ui/tag_names.slint:282
+msgctxt "tag-value"
+msgid "Rotary joystick"
+msgstr "Joystick rotativ"
+
+#: rust/frontend/ui/tag_names.slint:283
+msgctxt "tag-value"
+msgid "Stick"
+msgstr "Manetă"
+
+#: rust/frontend/ui/tag_names.slint:284
+msgctxt "tag-value"
+msgid "Twin stick"
+msgstr "Manetă dublă"
+
+#: rust/frontend/ui/tag_names.slint:285
+msgctxt "tag-value"
+msgid "Trackball"
+msgstr "Trackball"
+
+#: rust/frontend/ui/tag_names.slint:286
+msgctxt "tag-value"
+msgid "Paddle"
+msgstr "Paddle"
+
+#: rust/frontend/ui/tag_names.slint:287
+msgctxt "tag-value"
+msgid "Spinner"
+msgstr "Spinner"
+
+#: rust/frontend/ui/tag_names.slint:288
+msgctxt "tag-value"
+msgid "Steering wheel"
+msgstr "Volan"
+
+#: rust/frontend/ui/tag_names.slint:289
+msgctxt "tag-value"
+msgid "Dial"
+msgstr "Rotiță"
+
+#: rust/frontend/ui/tag_names.slint:290
+msgctxt "tag-value"
+msgid "Light gun"
+msgstr "Pistol optic"
+
+#: rust/frontend/ui/tag_names.slint:291
+msgctxt "tag-value"
+msgid "Optical"
+msgstr "Optic"
+
+#: rust/frontend/ui/tag_names.slint:292
+msgctxt "tag-value"
+msgid "Positional"
+msgstr "Pozițional"
+
+#: rust/frontend/ui/tag_names.slint:293
+msgctxt "tag-value"
+msgid "Positional: {}"
+msgstr "Pozițional: {}"
+
+#: rust/frontend/ui/tag_names.slint:294
+msgctxt "tag-value"
+msgid "Buttons"
+msgstr "Butoane"
+
+#: rust/frontend/ui/tag_names.slint:295
+msgctxt "tag-value"
+msgid "Buttons: {}"
+msgstr "Butoane: {}"
+
+#: rust/frontend/ui/tag_names.slint:296
+msgctxt "tag-value"
+msgid "Pneumatic buttons"
+msgstr "Butoane pneumatice"
+
+#: rust/frontend/ui/tag_names.slint:297
+msgctxt "tag-value"
+msgid "Pedals"
+msgstr "Pedale"
+
+#: rust/frontend/ui/tag_names.slint:298
+msgctxt "tag-value"
+msgid "Pedals: {}"
+msgstr "Pedale: {}"
+
+#: rust/frontend/ui/tag_names.slint:299
+msgctxt "tag-value"
+msgid "Punch pad"
+msgstr "Țintă de lovit"
+
+#: rust/frontend/ui/tag_names.slint:300
+msgctxt "tag-value"
+msgid "Punch pads: {}"
+msgstr "Ținte de lovit: {}"
+
+#: rust/frontend/ui/tag_names.slint:301
+msgctxt "tag-value"
+msgid "Motion controls"
+msgstr "Control prin mișcare"
+
+#: rust/frontend/ui/tag_names.slint:302
+msgctxt "tag-value"
+msgid "Keyboard"
+msgstr "Tastatură"
+
+#: rust/frontend/ui/tag_names.slint:303
+msgctxt "tag-value"
+msgid "Mahjong panel"
+msgstr "Panou mahjong"
+
+#: rust/frontend/ui/tag_names.slint:304
+msgctxt "tag-value"
+msgid "Touchscreen"
+msgstr "Ecran tactil"
+
+#: rust/frontend/ui/tag_names.slint:305
+msgctxt "tag-value"
+msgid "Resistive touchscreen"
+msgstr "Ecran tactil rezistiv"
+
+#: rust/frontend/ui/tag_names.slint:306
+msgctxt "tag-value"
+msgid "Capacitive touchscreen"
+msgstr "Ecran tactil capacitiv"
+
+#: rust/frontend/ui/tag_names.slint:307
+msgctxt "tag-value"
+msgid "Accelerometer"
+msgstr "Accelerometru"
+
+#: rust/frontend/ui/tag_names.slint:308
+msgctxt "tag-value"
+msgid "Dance pad"
+msgstr "Covoraș de dans"
+
+#: rust/frontend/ui/tag_names.slint:309
+msgctxt "tag-value"
+msgid "Heart rate monitor"
+msgstr "Monitor de puls"
+
+#: rust/frontend/ui/tag_names.slint:310
+msgctxt "tag-value"
+msgid "Backup save"
+msgstr "Salvare cu baterie"
+
+#: rust/frontend/ui/tag_names.slint:311
+msgctxt "tag-value"
+msgid "Password"
+msgstr "Parolă"
+
+#: rust/frontend/ui/tag_names.slint:312
+msgctxt "tag-value"
+msgid "Disc"
+msgstr "Disc"
+
+#: rust/frontend/ui/tag_names.slint:313
+msgctxt "tag-value"
+msgid "Disk"
+msgstr "Dischetă"
+
+#: rust/frontend/ui/tag_names.slint:314
+msgctxt "tag-value"
+msgid "File"
+msgstr "Fișier"
+
+#: rust/frontend/ui/tag_names.slint:315
+msgctxt "tag-value"
+msgid "Part"
+msgstr "Parte"
+
+#: rust/frontend/ui/tag_names.slint:316
+msgctxt "tag-value"
+msgid "Side"
+msgstr "Fața"
+
+#: rust/frontend/ui/tag_names.slint:317
+msgctxt "tag-value"
+msgid "Side {}"
+msgstr "Fața {}"
+
+#: rust/frontend/ui/tag_names.slint:318
+msgctxt "tag-value"
+msgid "Tape"
+msgstr "Casetă"
+
+#: rust/frontend/ui/tag_names.slint:319
+msgctxt "tag-value"
+msgid "Cartridge"
+msgstr "Cartuș"
+
+#: rust/frontend/ui/tag_names.slint:320
+msgctxt "tag-value"
+msgid "Alpha"
+msgstr "Alfa"
+
+#: rust/frontend/ui/tag_names.slint:321
+msgctxt "tag-value"
+msgid "Beta"
+msgstr "Beta"
+
+#: rust/frontend/ui/tag_names.slint:322
+msgctxt "tag-value"
+msgid "Prototype"
+msgstr "Prototip"
+
+#: rust/frontend/ui/tag_names.slint:323
+msgctxt "tag-value"
+msgid "Demo"
+msgstr "Demo"
+
+#: rust/frontend/ui/tag_names.slint:324
+msgctxt "tag-value"
+msgid "Auto demo"
+msgstr "Demo automat"
+
+#: rust/frontend/ui/tag_names.slint:325
+msgctxt "tag-value"
+msgid "Kiosk demo"
+msgstr "Demo de expunere"
+
+#: rust/frontend/ui/tag_names.slint:326
+msgctxt "tag-value"
+msgid "Playable demo"
+msgstr "Demo jucabil"
+
+#: rust/frontend/ui/tag_names.slint:327
+msgctxt "tag-value"
+msgid "Rolling demo"
+msgstr "Demo în buclă"
+
+#: rust/frontend/ui/tag_names.slint:328
+msgctxt "tag-value"
+msgid "Slideshow demo"
+msgstr "Demo cu diapozitive"
+
+#: rust/frontend/ui/tag_names.slint:329
+msgctxt "tag-value"
+msgid "Sample"
+msgstr "Mostră"
+
+#: rust/frontend/ui/tag_names.slint:330
+msgctxt "tag-value"
+msgid "Debug build"
+msgstr "Versiune de depanare"
+
+#: rust/frontend/ui/tag_names.slint:331
+msgctxt "tag-value"
+msgid "Competition version"
+msgstr "Versiune de competiție"
+
+#: rust/frontend/ui/tag_names.slint:332
+msgctxt "tag-value"
+msgid "Preview"
+msgstr "Previzualizare"
+
+#: rust/frontend/ui/tag_names.slint:333
+msgctxt "tag-value"
+msgid "Pre-release"
+msgstr "Prelansare"
+
+#: rust/frontend/ui/tag_names.slint:334
+msgctxt "tag-value"
+msgid "Final"
+msgstr "Final"
+
+#: rust/frontend/ui/tag_names.slint:335
+msgctxt "tag-value"
+msgid "Work in progress"
+msgstr "În dezvoltare"
+
+#: rust/frontend/ui/tag_names.slint:336
+msgctxt "tag-value"
+msgid "Unlicensed"
+msgstr "Fără licență"
+
+#: rust/frontend/ui/tag_names.slint:337
+msgctxt "tag-value"
+msgid "Bootleg"
+msgstr "Bootleg"
+
+#: rust/frontend/ui/tag_names.slint:338
+msgctxt "tag-value"
+msgid "Hack"
+msgstr "Hack"
+
+#: rust/frontend/ui/tag_names.slint:339
+msgctxt "tag-value"
+msgid "Clone"
+msgstr "Clonă"
+
+#: rust/frontend/ui/tag_names.slint:340
+msgctxt "tag-value"
+msgid "Pirate"
+msgstr "Pirat"
+
+#: rust/frontend/ui/tag_names.slint:341
+msgctxt "tag-value"
+msgid "Translation"
+msgstr "Traducere"
+
+#: rust/frontend/ui/tag_names.slint:342
+msgctxt "tag-value"
+msgid "Old translation"
+msgstr "Traducere veche"
+
+#: rust/frontend/ui/tag_names.slint:343
+msgctxt "tag-value"
+msgid "Aftermarket"
+msgstr "Aftermarket"
+
+#: rust/frontend/ui/tag_names.slint:344
+msgctxt "tag-value"
+msgid "Homebrew"
+msgstr "Homebrew"
+
+#: rust/frontend/ui/tag_names.slint:345
+msgctxt "tag-value"
+msgid "Unreleased"
+msgstr "Nelansat"
+
+#: rust/frontend/ui/tag_names.slint:346 rust/frontend/ui/tag_names.slint:377
+msgctxt "tag-value"
+msgid "Public domain"
+msgstr "Domeniu public"
+
+#: rust/frontend/ui/tag_names.slint:347
+msgctxt "tag-value"
+msgid "Reissue"
+msgstr "Reeditare"
+
+#: rust/frontend/ui/tag_names.slint:348
+msgctxt "tag-value"
+msgid "Classics"
+msgstr "Clasice"
+
+#: rust/frontend/ui/tag_names.slint:349
+msgctxt "tag-value"
+msgid "Promo"
+msgstr "Promoțional"
+
+#: rust/frontend/ui/tag_names.slint:350
+msgctxt "tag-value"
+msgid "Not for resale"
+msgstr "Nu se vinde"
+
+#: rust/frontend/ui/tag_names.slint:351
+msgctxt "tag-value"
+msgid "Kiosk"
+msgstr "Expunere"
+
+#: rust/frontend/ui/tag_names.slint:352
+msgctxt "tag-value"
+msgid "Cracked"
+msgstr "Spart"
+
+#: rust/frontend/ui/tag_names.slint:353
+msgctxt "tag-value"
+msgid "Fixed"
+msgstr "Corectat"
+
+#: rust/frontend/ui/tag_names.slint:354
+msgctxt "tag-value"
+msgid "Hacked"
+msgstr "Modificat (hack)"
+
+#: rust/frontend/ui/tag_names.slint:355
+msgctxt "tag-value"
+msgid "Modified"
+msgstr "Modificat"
+
+#: rust/frontend/ui/tag_names.slint:356
+msgctxt "tag-value"
+msgid "Pirated"
+msgstr "Piratat"
+
+#: rust/frontend/ui/tag_names.slint:357
+msgctxt "tag-value"
+msgid "Trained"
+msgstr "Cu trainer"
+
+#: rust/frontend/ui/tag_names.slint:358
+msgctxt "tag-value"
+msgid "Translated"
+msgstr "Tradus"
+
+#: rust/frontend/ui/tag_names.slint:359
+msgctxt "tag-value"
+msgid "Overdump"
+msgstr "Overdump"
+
+#: rust/frontend/ui/tag_names.slint:360
+msgctxt "tag-value"
+msgid "Underdump"
+msgstr "Underdump"
+
+#: rust/frontend/ui/tag_names.slint:361
+msgctxt "tag-value"
+msgid "Virus"
+msgstr "Virus"
+
+#: rust/frontend/ui/tag_names.slint:362
+msgctxt "tag-value"
+msgid "Bad dump"
+msgstr "Dump defect"
+
+#: rust/frontend/ui/tag_names.slint:363 rust/frontend/ui/tag_names.slint:416
+msgctxt "tag-value"
+msgid "Alternate"
+msgstr "Alternativ"
+
+#: rust/frontend/ui/tag_names.slint:364
+msgctxt "tag-value"
+msgid "Verified"
+msgstr "Verificat"
+
+#: rust/frontend/ui/tag_names.slint:365
+msgctxt "tag-value"
+msgid "Pending"
+msgstr "În așteptare"
+
+#: rust/frontend/ui/tag_names.slint:366
+msgctxt "tag-value"
+msgid "Bad checksum"
+msgstr "Sumă de control greșită"
+
+#: rust/frontend/ui/tag_names.slint:367
+msgctxt "tag-value"
+msgid "Unknown checksum"
+msgstr "Sumă de control necunoscută"
+
+#: rust/frontend/ui/tag_names.slint:368
+msgctxt "tag-value"
+msgid "Intro added"
+msgstr "Intro adăugat"
+
+#: rust/frontend/ui/tag_names.slint:369
+msgctxt "tag-value"
+msgid "Intro removed"
+msgstr "Intro eliminat"
+
+#: rust/frontend/ui/tag_names.slint:370
+msgctxt "tag-value"
+msgid "Does not boot"
+msgstr "Nu pornește"
+
+#: rust/frontend/ui/tag_names.slint:371
+msgctxt "tag-value"
+msgid "Cardware"
+msgstr "Cardware"
+
+#: rust/frontend/ui/tag_names.slint:372
+msgctxt "tag-value"
+msgid "Cardware (registered)"
+msgstr "Cardware (înregistrat)"
+
+#: rust/frontend/ui/tag_names.slint:373
+msgctxt "tag-value"
+msgid "Freeware"
+msgstr "Freeware"
+
+#: rust/frontend/ui/tag_names.slint:374
+msgctxt "tag-value"
+msgid "Giftware"
+msgstr "Giftware"
+
+#: rust/frontend/ui/tag_names.slint:375
+msgctxt "tag-value"
+msgid "Giftware (registered)"
+msgstr "Giftware (înregistrat)"
+
+#: rust/frontend/ui/tag_names.slint:376
+msgctxt "tag-value"
+msgid "Licenseware"
+msgstr "Licenseware"
+
+#: rust/frontend/ui/tag_names.slint:378
+msgctxt "tag-value"
+msgid "Shareware"
+msgstr "Shareware"
+
+#: rust/frontend/ui/tag_names.slint:379
+msgctxt "tag-value"
+msgid "Shareware (registered)"
+msgstr "Shareware (înregistrat)"
+
+#: rust/frontend/ui/tag_names.slint:380
+msgctxt "tag-value"
+msgid "First person"
+msgstr "Persoana întâi"
+
+#: rust/frontend/ui/tag_names.slint:381
+msgctxt "tag-value"
+msgid "Third person"
+msgstr "Persoana a treia"
+
+#: rust/frontend/ui/tag_names.slint:382
+msgctxt "tag-value"
+msgid "Top-down"
+msgstr "Vedere de sus"
+
+#: rust/frontend/ui/tag_names.slint:383
+msgctxt "tag-value"
+msgid "Isometric"
+msgstr "Izometric"
+
+#: rust/frontend/ui/tag_names.slint:384
+msgctxt "tag-value"
+msgid "Fixed camera"
+msgstr "Cameră fixă"
+
+#: rust/frontend/ui/tag_names.slint:385
+msgctxt "tag-value"
+msgid "Side-scrolling"
+msgstr "Defilare orizontală"
+
+#: rust/frontend/ui/tag_names.slint:386
+msgctxt "tag-value"
+msgid "Vertical scrolling"
+msgstr "Defilare verticală"
+
+#: rust/frontend/ui/tag_names.slint:387
+msgctxt "tag-value"
+msgid "Pixel art"
+msgstr "Pixel art"
+
+#: rust/frontend/ui/tag_names.slint:388
+msgctxt "tag-value"
+msgid "Cel-shaded"
+msgstr "Cel shading"
+
+#: rust/frontend/ui/tag_names.slint:389
+msgctxt "tag-value"
+msgid "Vector"
+msgstr "Vectorial"
+
+#: rust/frontend/ui/tag_names.slint:390
+msgctxt "tag-value"
+msgid "Digitized"
+msgstr "Digitalizat"
+
+#: rust/frontend/ui/tag_names.slint:391
+msgctxt "tag-value"
+msgid "Hand-drawn"
+msgstr "Desenat de mână"
+
+#: rust/frontend/ui/tag_names.slint:392
+msgctxt "tag-value"
+msgid "Colorblind mode"
+msgstr "Mod pentru daltoniști"
+
+#: rust/frontend/ui/tag_names.slint:393
+msgctxt "tag-value"
+msgid "High contrast"
+msgstr "Contrast ridicat"
+
+#: rust/frontend/ui/tag_names.slint:394
+msgctxt "tag-value"
+msgid "Adjustable text size"
+msgstr "Dimensiune text ajustabilă"
+
+#: rust/frontend/ui/tag_names.slint:395
+msgctxt "tag-value"
+msgid "Subtitles"
+msgstr "Subtitrări"
+
+#: rust/frontend/ui/tag_names.slint:396
+msgctxt "tag-value"
+msgid "Mono audio"
+msgstr "Audio mono"
+
+#: rust/frontend/ui/tag_names.slint:397
+msgctxt "tag-value"
+msgid "Visual cues"
+msgstr "Indicii vizuale"
+
+#: rust/frontend/ui/tag_names.slint:398
+msgctxt "tag-value"
+msgid "Remappable controls"
+msgstr "Comenzi reconfigurabile"
+
+#: rust/frontend/ui/tag_names.slint:399
+msgctxt "tag-value"
+msgid "One-button mode"
+msgstr "Mod cu un singur buton"
+
+#: rust/frontend/ui/tag_names.slint:400
+msgctxt "tag-value"
+msgid "Upright"
+msgstr "Vertical"
+
+#: rust/frontend/ui/tag_names.slint:401
+msgctxt "tag-value"
+msgid "Cocktail"
+msgstr "Cocktail"
+
+#: rust/frontend/ui/tag_names.slint:402
+msgctxt "tag-value"
+msgid "Cabaret"
+msgstr "Cabaret"
+
+#: rust/frontend/ui/tag_names.slint:403
+msgctxt "tag-value"
+msgid "Sit-down"
+msgstr "Cu scaun"
+
+#: rust/frontend/ui/tag_names.slint:404
+msgctxt "tag-value"
+msgid "No protection"
+msgstr "Fără protecție"
+
+#: rust/frontend/ui/tag_names.slint:405
+msgctxt "tag-value"
+msgid "Encrypted"
+msgstr "Criptat"
+
+#: rust/frontend/ui/tag_names.slint:406
+msgctxt "tag-value"
+msgid "Decrypted"
+msgstr "Decriptat"
+
+#: rust/frontend/ui/tag_names.slint:407
+msgctxt "tag-value"
+msgid "Update"
+msgstr "Actualizare"
+
+#: rust/frontend/ui/tag_names.slint:408
+msgctxt "tag-value"
+msgid "Expansion"
+msgstr "Expansiune"
+
+#: rust/frontend/ui/tag_names.slint:409
+msgctxt "tag-value"
+msgid "Theme"
+msgstr "Temă"
+
+#: rust/frontend/ui/tag_names.slint:410
+msgctxt "tag-value"
+msgid "Avatar"
+msgstr "Avatar"
+
+#: rust/frontend/ui/tag_names.slint:411
+msgctxt "tag-value"
+msgid "Manga/anime"
+msgstr "Manga/anime"
+
+#: rust/frontend/ui/tag_names.slint:412
+msgctxt "tag-value"
+msgid "Movie"
+msgstr "Film"
+
+#: rust/frontend/ui/tag_names.slint:413
+msgctxt "tag-value"
+msgid "Compilation"
+msgstr "Compilație"
+
+#: rust/frontend/ui/tag_names.slint:414
+msgctxt "tag-value"
+msgid "Menu"
+msgstr "Meniu"
+
+#: rust/frontend/ui/tag_names.slint:415
+msgctxt "tag-value"
+msgid "Volume {}"
+msgstr "Volumul {}"

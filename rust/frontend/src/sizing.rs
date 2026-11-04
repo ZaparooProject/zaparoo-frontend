@@ -369,6 +369,10 @@ pub fn games_grid_cover_source_size(scene: Scene) -> u32 {
     ))
 }
 
+/// The largest side Game Info's full-screen viewer asks Core for: a 1080p
+/// screen's height, so a 1080p output shows art at its own size.
+pub const VIEWER_MAX_SIZE: u32 = 1080;
+
 /// Detail-pane cover decode size: about twice the grid cover, snapped to its
 /// own tier and capped at what the viewport can express.
 pub fn detail_cover_source_size(scene: Scene) -> u32 {

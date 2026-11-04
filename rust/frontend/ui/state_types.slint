@@ -24,7 +24,7 @@ export enum ContentState { ready, loading, empty, error }
 // the shared delay and hold; a confirmation shows at once for a fixed time.
 export enum AppCue {
     none,
-    launching, loading-list, loading-more, loading-progress, loading-launchers, saving, starting, cancelling, unlinking,
+    launching, loading-list, loading-more, loading-progress, loading-launchers, loading-details, saving, starting, cancelling, unlinking,
     added-to-hub, saved-to-hub, removed-from-hub, token-written
 }
 export enum BootStatus { connecting, starting, migrating, reconnecting, loading, unreachable }
@@ -38,6 +38,11 @@ export enum ActionStatus {
     playtime-verified, playtime-unverified, online-linked, online-unlinked
 }
 export enum ScrollAction { up, down, page-prev, page-next }
+// Game Info's manual page: shut, fetching, showing pages, or why it could
+// not open. `closed` is the details themselves.
+export enum ManualState { closed, loading, ready, too-large, failed }
+// How a manual page sits in its box: as wide as it, or wholly inside it.
+export enum ManualFit { width, page }
 // The Online page's two list screens, and what the open one is doing.
 export enum OnlineListKind { none, backups, activity }
 export enum OnlineListStatus { ready, loading, failed, empty, backing-up, restoring }
