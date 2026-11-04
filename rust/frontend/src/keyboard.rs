@@ -9,7 +9,7 @@
 
 use slint::SharedString;
 use zaparoo_app::keyboard::{
-    self as rules, Case, Cell, Edge, Key, Layer, Layers, Position, Shift, TextBuffer,
+    self as rules, Case, Cell, Edge, Key, Layer, Layers, Mask, Position, Shift, TextBuffer,
 };
 
 /// What pressing a key did.
@@ -31,6 +31,9 @@ pub struct Keyboard {
     case: Case,
     position: Position,
     buffer: TextBuffer,
+    /// A password field: every character drawn as a dot but the one just
+    /// typed. `None` for a field shown as typed.
+    mask: Option<Mask>,
 }
 
 impl Keyboard {
@@ -41,7 +44,36 @@ impl Keyboard {
             // The home row's first key: the shortest reach to most letters.
             position: Position { row: 2, index: 0 },
             buffer: TextBuffer::new(max_chars),
+            mask: None,
         }
+    }
+
+    /// A password field: spaces kept as typed, and drawn masked.
+    pub fn masked(layers: Layers, max_chars: usize) -> Self {
+        Self {
+            buffer: TextBuffer::verbatim(max_chars),
+            mask: Some(Mask::default()),
+            ..Self::new(layers, max_chars)
+        }
+    }
+
+    fn hide(&mut self) {
+        if let Some(mask) = &mut self.mask {
+            mask.hide();
+        }
+    }
+
+    /// The ticket of the character on show, while a password field shows
+    /// one; its timer hands it to `expire_reveal`.
+    pub fn reveal_ticket(&self) -> Option<u64> {
+        self.mask
+            .filter(|mask| mask.revealed().is_some())
+            .map(|mask| mask.ticket())
+    }
+
+    /// The reveal timer ran out: true when the field needs repainting.
+    pub fn expire_reveal(&mut self, ticket: u64) -> bool {
+        self.mask.as_mut().is_some_and(|mask| mask.expire(ticket))
     }
 
     fn rows(&self) -> Vec<Vec<Cell>> {
@@ -72,6 +104,7 @@ impl Keyboard {
 
     pub fn set_text(&mut self, text: &str) {
         self.buffer.set(text);
+        self.hide();
     }
 
     pub fn caret(&self) -> usize {
@@ -80,6 +113,7 @@ impl Keyboard {
 
     pub fn set_caret(&mut self, caret: usize) {
         self.buffer.set_caret(caret);
+        self.hide();
     }
 
     /// The text around the cursor, as the field draws it: what comes
@@ -88,7 +122,18 @@ impl Keyboard {
     /// width.
     pub fn display(&self) -> (SharedString, SharedString, SharedString) {
         const NBSP: &str = "\u{a0}";
-        let (before, rest) = self.buffer.split();
+        let shown;
+        let (before, rest) = match self.mask {
+            Some(mask) => {
+                shown = rules::masked(self.buffer.text(), mask.revealed());
+                let at = shown
+                    .char_indices()
+                    .nth(self.buffer.caret())
+                    .map_or(shown.len(), |(byte, _)| byte);
+                shown.split_at(at)
+            }
+            None => self.buffer.split(),
+        };
         let before = before
             .strip_suffix(' ')
             .map_or_else(|| before.to_string(), |head| format!("{head}{NBSP}"));
@@ -107,6 +152,7 @@ impl Keyboard {
 
     /// Empty the field.
     pub fn clear(&mut self) -> Press {
+        self.hide();
         if self.buffer.clear() {
             Press::Edited
         } else {
@@ -241,6 +287,10 @@ impl Keyboard {
         if !self.buffer.insert(c) {
             return Press::None;
         }
+        let caret = self.buffer.caret();
+        if let Some(mask) = &mut self.mask {
+            mask.typed(caret - 1);
+        }
         let layer = self.case.layer;
         self.case.typed();
         if self.case.layer != layer {
@@ -250,6 +300,7 @@ impl Keyboard {
     }
 
     pub fn backspace(&mut self) -> Press {
+        self.hide();
         if self.buffer.backspace() {
             Press::Edited
         } else {
@@ -258,6 +309,7 @@ impl Keyboard {
     }
 
     pub fn move_caret(&mut self, forward: bool) -> bool {
+        self.hide();
         self.buffer.move_caret(forward)
     }
 
@@ -519,5 +571,45 @@ mod tests {
         assert_eq!(keyboard.press(), Press::Layer);
         assert_eq!(keyboard.layer(), Layer::Symbols);
         assert!(keyboard.key().is_some());
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used, reason = "a missing reveal is a test failure")]
+    fn a_masked_field_shows_only_the_newest_character() {
+        let mut keyboard = Keyboard::masked(Layers::Full, 16);
+        keyboard.insert('a');
+        assert_eq!(keyboard.display(), ("a".into(), "".into(), "".into()));
+        let first = keyboard.reveal_ticket().unwrap();
+        keyboard.insert('b');
+        assert_eq!(
+            keyboard.display(),
+            ("\u{2022}b".into(), "".into(), "".into())
+        );
+        assert!(!keyboard.expire_reveal(first));
+        let second = keyboard.reveal_ticket().unwrap();
+        assert!(keyboard.expire_reveal(second));
+        assert_eq!(keyboard.reveal_ticket(), None);
+        assert_eq!(
+            keyboard.display(),
+            ("\u{2022}\u{2022}".into(), "".into(), "".into())
+        );
+        keyboard.insert('c');
+        keyboard.move_caret(false);
+        assert_eq!(keyboard.reveal_ticket(), None, "a caret move hides it");
+        assert_eq!(
+            keyboard.display(),
+            ("\u{2022}\u{2022}".into(), "\u{2022}".into(), "".into())
+        );
+        assert_eq!(keyboard.text(), "abc");
+        assert_eq!(keyboard.insert(' '), Press::Edited);
+        assert_eq!(
+            keyboard.insert(' '),
+            Press::Edited,
+            "a password keeps doubled spaces"
+        );
+        let mut plain = basic();
+        plain.insert('a');
+        assert_eq!(plain.reveal_ticket(), None);
+        assert_eq!(plain.display(), ("a".into(), "".into(), "".into()));
     }
 }

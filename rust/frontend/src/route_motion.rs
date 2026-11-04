@@ -927,6 +927,216 @@ fn online_rows_follow_core_and_unlinking_asks_first() {
     assert!(crate::router::lock(&ctx.shared).online.linked);
 }
 
+fn launcher(
+    id: &str,
+    system: &str,
+    groups: &[&str],
+    available: bool,
+) -> zaparoo_core::media_types::LauncherInfo {
+    zaparoo_core::media_types::LauncherInfo {
+        id: id.into(),
+        system_id: system.into(),
+        system_name: system.into(),
+        groups: groups.iter().map(|g| (*g).to_string()).collect(),
+        available,
+        ..Default::default()
+    }
+}
+
+/// Put the Settings cursor on a row by id.
+fn focus_settings_row(app: &App, id: &str) {
+    let view = app.global::<crate::SettingsView>();
+    let index = view
+        .get_rows()
+        .iter()
+        .position(|row| row.id == id)
+        .and_then(|i| i32::try_from(i).ok())
+        .unwrap_or(-1);
+    assert!(index >= 0, "{id} is on the page");
+    view.set_index(index);
+}
+
+fn launcher_prefs_ids(app: &App) -> Vec<String> {
+    app.global::<crate::Overlays>()
+        .get_launcher_prefs_rows()
+        .iter()
+        .map(|row| row.id.to_string())
+        .collect()
+}
+
+/// The launcher preference row only shows for a Core that has the setting;
+/// its list adds at the end and holds the new entry, a move walks it and
+/// Back puts it back, and Remove takes an entry out. Every change is the
+/// list the page shows straight away.
+#[test]
+fn the_launcher_preference_list_adds_moves_and_removes_in_its_own_panel() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    app.global::<crate::Motion>().set_enabled(false);
+    app.global::<Shell>().set_active_screen(Screen::Settings);
+
+    crate::settings::open_page(&ctx, &app, SettingsPage::Library);
+    assert_eq!(
+        settings_row(&app, "launcherPreference").id,
+        "",
+        "an older Core has no list"
+    );
+
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.launchers = vec![
+            launcher("RANES", "NES", &["RetroAchievements"], true),
+            launcher("NESdb9", "NES", &["DB9"], false),
+            launcher("SNES", "SNES", &[], true),
+        ];
+        shared.launcher_preference = Some(vec!["SNES".into()]);
+        shared.launcher_pref_confirmed = Some(vec!["SNES".into()]);
+    }
+    crate::settings::open_page(&ctx, &app, SettingsPage::Library);
+    let row = settings_row(&app, "launcherPreference");
+    assert_eq!(row.control, ControlKind::Navigate);
+    focus_settings_row(&app, "launcherPreference");
+    crate::router::handle_action(&ctx, &app, "accept");
+    let ov = app.global::<crate::Overlays>();
+    assert!(ov.get_launcher_prefs_open());
+    assert_eq!(
+        launcher_prefs_ids(&app),
+        vec!["SNES", ""],
+        "the list, then Add…"
+    );
+
+    // Add…: groups first, then launchers, without what is already listed.
+    crate::router::handle_action(&ctx, &app, "down");
+    crate::router::handle_action(&ctx, &app, "accept");
+    assert_eq!(ov.get_launcher_prefs_page(), crate::LauncherPrefsPage::Add);
+    assert_eq!(
+        launcher_prefs_ids(&app),
+        vec!["DB9", "RetroAchievements", "NESdb9", "RANES"]
+    );
+    crate::router::handle_action(&ctx, &app, "down");
+    crate::router::handle_action(&ctx, &app, "accept");
+    assert_eq!(ov.get_launcher_prefs_page(), crate::LauncherPrefsPage::List);
+    assert!(
+        ov.get_launcher_prefs_moving(),
+        "a new entry is held where it landed"
+    );
+    assert_eq!(
+        crate::launcher_prefs::current(&ctx),
+        Some(vec!["SNES".to_string(), "RetroAchievements".to_string()])
+    );
+
+    // Up takes it first; Back puts it back where the move began.
+    crate::router::handle_action(&ctx, &app, "up");
+    assert_eq!(
+        crate::launcher_prefs::shown_for_test(&ctx),
+        vec!["RetroAchievements", "SNES"]
+    );
+    crate::router::handle_action(&ctx, &app, "up");
+    assert_eq!(ov.get_launcher_prefs_index(), 0, "a move stops at the top");
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert!(!ov.get_launcher_prefs_moving());
+    assert!(
+        ov.get_launcher_prefs_open(),
+        "Back ends the move, not the list"
+    );
+    assert_eq!(
+        crate::launcher_prefs::shown_for_test(&ctx),
+        vec!["SNES", "RetroAchievements"]
+    );
+
+    // Move then Done writes the new order.
+    crate::router::handle_action(&ctx, &app, "accept");
+    assert_eq!(
+        ov.get_launcher_prefs_page(),
+        crate::LauncherPrefsPage::Entry
+    );
+    crate::router::handle_action(&ctx, &app, "accept");
+    crate::router::handle_action(&ctx, &app, "up");
+    crate::router::handle_action(&ctx, &app, "accept");
+    assert_eq!(
+        crate::launcher_prefs::current(&ctx),
+        Some(vec!["RetroAchievements".to_string(), "SNES".to_string()])
+    );
+
+    // Remove.
+    crate::router::handle_action(&ctx, &app, "down");
+    crate::router::handle_action(&ctx, &app, "accept");
+    crate::router::handle_action(&ctx, &app, "down");
+    crate::router::handle_action(&ctx, &app, "accept");
+    assert_eq!(
+        crate::launcher_prefs::current(&ctx),
+        Some(vec!["RetroAchievements".to_string()])
+    );
+
+    // Back closes the panel onto the page under it.
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert!(!ov.get_launcher_prefs_open());
+    assert_eq!(app.global::<Shell>().get_active_screen(), Screen::Settings);
+    assert_eq!(
+        app.global::<crate::SettingsView>().get_page(),
+        SettingsPage::Library
+    );
+}
+
+/// The login screen keeps the password masked but for the character just
+/// typed, never takes the persisted screen from Settings, and Back steps
+/// from the password to the username and then out to Settings.
+#[test]
+fn the_retroachievements_login_masks_the_password_and_is_never_restored() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    app.global::<crate::Motion>().set_enabled(false);
+    crate::settings::enter(&ctx, &app, EntryMode::Fresh);
+    crate::settings::open_page(&ctx, &app, SettingsPage::Library);
+    crate::router::lock(&ctx.shared).ra.cfg.username = "Callan".into();
+
+    crate::ra_login::open(&ctx, &app);
+    assert_eq!(app.global::<Shell>().get_active_screen(), Screen::RaLogin);
+    let view = app.global::<crate::RaLoginView>();
+    assert_eq!(view.get_step(), crate::RaLoginStep::Username);
+    assert_eq!(view.get_before(), "Callan", "the saved username comes back");
+    assert_eq!(
+        crate::router::lock(&ctx.shared).persist.active_screen,
+        "settings"
+    );
+
+    crate::router::handle_action(&ctx, &app, "accept");
+    for c in "pw".chars() {
+        crate::ra_login::type_char(&ctx, &app, c);
+    }
+    // Typing moved focus to the submit key; Accept there goes on.
+    crate::router::handle_action(&ctx, &app, "accept");
+    assert_eq!(view.get_step(), crate::RaLoginStep::Password);
+    for c in "ab".chars() {
+        crate::ra_login::type_char(&ctx, &app, c);
+    }
+    assert_eq!(
+        view.get_before(),
+        "\u{2022}b",
+        "only the newest character shows"
+    );
+    assert!(view.get_can_submit());
+    assert_eq!(
+        crate::router::lock(&ctx.shared).persist.active_screen,
+        "settings"
+    );
+
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert_eq!(view.get_step(), crate::RaLoginStep::Username);
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert_eq!(app.global::<Shell>().get_active_screen(), Screen::Settings);
+    assert_eq!(
+        app.global::<crate::SettingsView>().get_page(),
+        SettingsPage::Library
+    );
+    assert_eq!(
+        crate::router::lock(&ctx.shared).persist.active_screen,
+        "settings"
+    );
+}
+
 /// The link panel shows Core's code until Core decides, and every way out
 /// takes the code off screen.
 #[test]

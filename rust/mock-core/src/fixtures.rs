@@ -24,6 +24,10 @@ static LAUNCHER_OVERRIDES: OnceLock<Mutex<HashMap<(String, String), String>>> = 
 // Dev-server state like the two above.
 static HIDDEN_PATHS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
 
+// The global launcher preference set via `settings.update`. Dev-server
+// state like the others.
+static LAUNCHER_PREFERENCE: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
 /// The folder every mock system lists as one game on several discs.
 const DISC_FOLDER: &str = "Disc Game";
 const DISC_COUNT: u64 = 2;
@@ -67,7 +71,11 @@ pub fn launchers_response() -> Value {
             { "id": "gambatte",         "systemId": "Gameboy",    "systemName": "Game Boy",                      "groups": ["libretro"], "available": true },
             { "id": "mgba",             "systemId": "GBA",        "systemName": "Game Boy Advance",              "groups": ["libretro"], "available": true },
             { "id": "mame",             "systemId": "MAME",       "systemName": "MAME",                          "groups": ["arcade"], "available": true },
-            { "id": "fbneo",            "systemId": "NeoGeo",     "systemName": "Neo Geo",                       "groups": ["arcade"], "available": true }
+            { "id": "fbneo",            "systemId": "NeoGeo",     "systemName": "Neo Geo",                       "groups": ["arcade"], "available": true },
+            { "id": "RANES",            "systemId": "NES",        "systemName": "Nintendo Entertainment System", "groups": ["RetroAchievements"], "available": true },
+            { "id": "RASNES",           "systemId": "SNES",       "systemName": "Super Nintendo",                "groups": ["RetroAchievements"], "available": true },
+            { "id": "RAMegaDrive",      "systemId": "Genesis",    "systemName": "Sega Genesis",                  "groups": ["RetroAchievements"], "available": true },
+            { "id": "NESdb9",           "systemId": "NES",        "systemName": "Nintendo Entertainment System", "groups": ["DB9"], "available": false, "detected": false, "availabilityReason": "core not installed: _Console/NES_db9" }
         ]
     })
 }
@@ -115,10 +123,60 @@ pub fn settings_response() -> Value {
         "errorReporting": false,
         "readersConnect": [],
         "systemDefaults": system_defaults,
+        "launcherPreference": launcher_preference().clone(),
     })
 }
 
-pub fn settings_update_response(params: &Value) -> Value {
+fn launcher_preference() -> std::sync::MutexGuard<'static, Vec<String>> {
+    LAUNCHER_PREFERENCE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// Core's check for a new `launcherPreference`: an entry already stored
+/// passes, so a stored list can always be reordered; any other must name a
+/// launcher or a group, in any case. The whole list is refused otherwise.
+fn validate_launcher_preference(next: &[String]) -> Result<(), String> {
+    let stored = launcher_preference().clone();
+    let launchers = launchers_response();
+    let known = launchers["launchers"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    for entry in next {
+        if entry.is_empty() {
+            return Err("launcherPreference entries must not be empty".to_string());
+        }
+        if stored.iter().any(|s| s.eq_ignore_ascii_case(entry)) {
+            continue;
+        }
+        let names = known.iter().any(|launcher| {
+            launcher["id"]
+                .as_str()
+                .is_some_and(|id| id.eq_ignore_ascii_case(entry))
+                || launcher["groups"].as_array().is_some_and(|groups| {
+                    groups
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .any(|g| g.eq_ignore_ascii_case(entry))
+                })
+        });
+        if !names {
+            return Err(format!("unknown launcher {entry:?} in launcherPreference"));
+        }
+    }
+    Ok(())
+}
+
+pub fn settings_update_response(params: &Value) -> Result<Value, String> {
+    if let Some(items) = params.get("launcherPreference").and_then(Value::as_array) {
+        let next: Vec<String> = items
+            .iter()
+            .map(|item| item.as_str().unwrap_or_default().to_string())
+            .collect();
+        validate_launcher_preference(&next)?;
+        *launcher_preference() = next;
+    }
     if let Some(items) = params.get("systemDefaults").and_then(Value::as_array) {
         let next = items
             .iter()
@@ -143,7 +201,7 @@ pub fn settings_update_response(params: &Value) -> Value {
             *defaults = next;
         }
     }
-    Value::Null
+    Ok(Value::Null)
 }
 
 fn system_defaults() -> &'static Mutex<Vec<SystemDefaultFixture>> {

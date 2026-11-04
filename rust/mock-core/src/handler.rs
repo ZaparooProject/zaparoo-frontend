@@ -65,7 +65,7 @@ pub fn dispatch(text: &str, notifier: &Notifier) -> String {
         "launchers" => Some(Ok(fixtures::launchers_response())),
         "scrapers" => Some(Ok(fixtures::scrapers_response())),
         "settings" => Some(Ok(fixtures::settings_response())),
-        "settings.update" => Some(Ok(fixtures::settings_update_response(&req.params))),
+        "settings.update" => Some(fixtures::settings_update_response(&req.params)),
         "media.search" => Some(Ok(fixtures::media_search_response(&req.params))),
         "media.browse" => Some(Ok(fixtures::media_browse_response(&req.params))),
         "media.browse.index" => Some(Ok(fixtures::media_browse_index_response(&req.params))),
@@ -280,6 +280,31 @@ mod tests {
         assert_eq!(defaults.len(), 1);
         assert_eq!(defaults[0]["system"], "NES");
         assert_eq!(defaults[0]["launcher"], "nestopia");
+    }
+
+    #[test]
+    fn settings_update_keeps_the_launcher_preference_like_core() {
+        let set = |list: &str| {
+            parse(&dispatch(&format!(
+                r#"{{"jsonrpc":"2.0","id":"1","method":"settings.update","params":{{"launcherPreference":{list}}}}}"#
+            )))
+        };
+        let stored = || {
+            parse(&dispatch(
+                r#"{"jsonrpc":"2.0","id":"2","method":"settings","params":{}}"#,
+            ))["result"]["launcherPreference"]
+                .clone()
+        };
+        assert!(set(r#"["retroachievements","snes9x"]"#)["result"].is_null());
+        assert_eq!(stored(), serde_json::json!(["retroachievements", "snes9x"]));
+        let refused = set(r#"["Nope"]"#);
+        assert!(
+            refused["error"].is_object(),
+            "an unknown entry refuses the list"
+        );
+        assert_eq!(stored(), serde_json::json!(["retroachievements", "snes9x"]));
+        assert!(set("[]")["result"].is_null());
+        assert_eq!(stored(), serde_json::json!([]));
     }
 
     #[test]

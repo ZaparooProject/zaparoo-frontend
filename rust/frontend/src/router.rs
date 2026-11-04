@@ -106,6 +106,17 @@ pub struct Shared {
     /// "Change launcher" picker (`SystemLaunchers` model port).
     pub launchers: Vec<zaparoo_core::media_types::LauncherInfo>,
     pub system_defaults: Vec<zaparoo_core::media_types::SystemDefault>,
+    /// Core's global launcher preference with any change of ours still on
+    /// its way, and the list Core last accepted. `None` before Core has
+    /// answered, or when it predates the setting.
+    pub launcher_preference: Option<Vec<String>>,
+    pub launcher_pref_confirmed: Option<Vec<String>>,
+    /// The launcher preference modal.
+    pub launcher_prefs: crate::launcher_prefs::State,
+    /// `MiSTer_RA`'s cfg and install state, as last read from the card.
+    pub ra: crate::retro_achievements::Model,
+    /// The `RetroAchievements` login screen.
+    pub ra_login: crate::ra_login::Model,
     /// Commercial-notice acknowledgement (durable, frontend.toml).
     pub notice_ack: bool,
     /// `frontend.toml` exists but did not load: the path, for the startup
@@ -293,6 +304,11 @@ impl Shared {
             pending_restart: None,
             launchers: Vec::new(),
             system_defaults: Vec::new(),
+            launcher_preference: None,
+            launcher_pref_confirmed: None,
+            launcher_prefs: crate::launcher_prefs::State::default(),
+            ra: crate::retro_achievements::Model::default(),
+            ra_login: crate::ra_login::Model::default(),
             notice_ack: false,
             config_fault: None,
             config_fault_shown: false,
@@ -708,6 +724,12 @@ fn dialog_accept(ctx: &Ctx, app: &App, kind: DialogKind, focus: usize) {
             close_dialog(app);
             if confirmed {
                 crate::online::unlink(ctx, app);
+            }
+        }
+        DialogKind::RaLogOut => {
+            close_dialog(app);
+            if confirmed {
+                crate::retro_achievements::log_out(ctx, app);
             }
         }
         DialogKind::RestoreOnlineBackup => {
@@ -1327,6 +1349,12 @@ fn dispatch_action(ctx: &Ctx, app: &App, action: &str) {
         crate::online_list::handle_action(ctx, app, action);
         return;
     }
+    // Settings > Library's launcher preference. A refused change raises an
+    // alert, which takes input before this is reached.
+    if app.global::<crate::Overlays>().get_launcher_prefs_open() {
+        crate::launcher_prefs::handle_action(ctx, app, action);
+        return;
+    }
     if app.global::<crate::Overlays>().get_card_write_open() {
         // Accept commits the focused Cancel button; Back cancels directly.
         if action == actions::CANCEL || action == actions::ACCEPT {
@@ -1394,6 +1422,7 @@ fn screen_action(ctx: &Ctx, app: &App, action: &str) {
         }
         crate::Screen::Search => crate::search::handle_action(ctx, app, action),
         crate::Screen::Rename => crate::rename::handle_action(ctx, app, action),
+        crate::Screen::RaLogin => crate::ra_login::handle_action(ctx, app, action),
         crate::Screen::FileBrowser => crate::file_browser::handle_action(ctx, app, action),
         crate::Screen::Settings => crate::settings::handle_action(ctx, app, action),
         crate::Screen::About => about_action(ctx, app, action),
@@ -1451,6 +1480,18 @@ pub(crate) fn confirm_unlink_online(app: &App) {
     open_dialog(
         app,
         DialogKind::UnlinkOnline,
+        "",
+        "",
+        &[DialogButton::No, DialogButton::Yes],
+        0,
+    );
+}
+
+/// Ask before removing the `RetroAchievements` login; No is focused.
+pub(crate) fn confirm_ra_log_out(app: &App) {
+    open_dialog(
+        app,
+        DialogKind::RaLogOut,
         "",
         "",
         &[DialogButton::No, DialogButton::Yes],
@@ -2714,6 +2755,10 @@ pub fn bind_context_input(ctx: &Arc<Ctx>, app: &App) {
                         if !ov.get_dialog_open()
                             && ov.get_online_list_open()
                             && crate::online_list::focus(&ctx, &app, row) => {}
+                    crate::PressOwner::LauncherPrefs
+                        if !ov.get_dialog_open()
+                            && ov.get_launcher_prefs_open()
+                            && crate::launcher_prefs::focus(&ctx, &app, row) => {}
                     crate::PressOwner::Letter
                         if !ov.get_dialog_open()
                             && ov.get_letter_open()

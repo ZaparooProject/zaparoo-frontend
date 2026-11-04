@@ -226,6 +226,7 @@ pub(crate) fn modal_open(app: &App) -> bool {
 pub(crate) enum TextOwner {
     Search,
     Rename,
+    RaLogin,
 }
 
 impl TextOwner {
@@ -233,6 +234,7 @@ impl TextOwner {
         match self {
             Self::Search => crate::search::key_repeats(ctx),
             Self::Rename => crate::rename::key_repeats(ctx),
+            Self::RaLogin => crate::ra_login::key_repeats(ctx),
         }
     }
 
@@ -240,6 +242,25 @@ impl TextOwner {
         match self {
             Self::Search => crate::search::type_char(ctx, app, c),
             Self::Rename => crate::rename::type_char(ctx, app, c),
+            Self::RaLogin => crate::ra_login::type_char(ctx, app, c),
+        }
+    }
+
+    /// Focus is on a Shift key that a long press locks. Search's keyboard
+    /// has none.
+    fn on_shift(self, ctx: &Ctx) -> bool {
+        match self {
+            Self::Search => false,
+            Self::Rename => crate::rename::on_shift(ctx),
+            Self::RaLogin => crate::ra_login::on_shift(ctx),
+        }
+    }
+
+    fn lock_shift(self, ctx: &Ctx, app: &App) {
+        match self {
+            Self::Search => {}
+            Self::Rename => crate::rename::lock_shift(ctx, app),
+            Self::RaLogin => crate::ra_login::lock_shift(ctx, app),
         }
     }
 }
@@ -258,6 +279,7 @@ pub(crate) fn text_owner(app: &App) -> Option<TextOwner> {
     match shell.get_active_screen() {
         crate::Screen::Search => Some(TextOwner::Search),
         crate::Screen::Rename => Some(TextOwner::Rename),
+        crate::Screen::RaLogin => Some(TextOwner::RaLogin),
         _ => None,
     }
 }
@@ -271,6 +293,7 @@ fn back_owned(app: &App) -> bool {
         || overlays.get_pair_open()
         || overlays.get_online_open()
         || overlays.get_online_list_open()
+        || overlays.get_launcher_prefs_open()
 }
 
 /// A real press: guard against a double delivery. Runs before the
@@ -389,9 +412,9 @@ fn dispatch_press(ctx: &Ctx, app: &App, action: &str, key: &str) {
 /// Accept on the on-screen keyboard's Shift has already shifted the next
 /// character. Still held after `SHIFT_LOCK_HOLD_MS`, it locks Shift.
 fn arm_shift_lock(ctx: &Ctx, app: &App, key: &str) {
-    if text_owner(app) != Some(TextOwner::Rename) || !crate::rename::on_shift(ctx) {
+    let Some(owner) = text_owner(app).filter(|owner| owner.on_shift(ctx)) else {
         return;
-    }
+    };
     let seq = {
         let mut shared = lock(&ctx.shared);
         shared.input.shift_lock_seq += 1;
@@ -410,9 +433,8 @@ fn arm_shift_lock(ctx: &Ctx, app: &App, key: &str) {
                 let shared = lock(&ctx.shared);
                 shared.input.shift_lock_seq == seq && shared.input.pressed_keys.contains(&key)
             };
-            if held && text_owner(&app) == Some(TextOwner::Rename) && crate::rename::on_shift(&ctx)
-            {
-                crate::rename::lock_shift(&ctx, &app);
+            if held && text_owner(&app) == Some(owner) && owner.on_shift(&ctx) {
+                owner.lock_shift(&ctx, &app);
             }
         },
     );

@@ -26,6 +26,8 @@ and consumers, the snapshot binary, and the MiSTer dual-head mirror/tests.
 | Manual | `ManualState`, `ManualFit`: Game Info's manual page (closed, loading, ready, too large, failed) and whether a page fits the box's width or sits wholly inside it |
 | Pairing | `PairPhase`: closed, starting, showing, paired, expired |
 | Online | `OnlineLinkPhase`: the link panel's progress; `OnlineListKind`, `OnlineListStatus`: which list the Online modal shows (backups or activity) and whether it is ready, loading, failed, empty or working |
+| Launcher preference | `LauncherPrefsPage`, `LauncherPrefsRowKind`: the modal's page (list, an entry's actions, what can be added) and what each row is (launcher, group, Add, Move, Remove) |
+| RetroAchievements | `RaLoginStep`, `RaLoginStatus`: the login screen's field (username or password) and what the last login check came to; `zaparoo_app::retro_achievements::LoginOutcome` maps onto the status explicitly |
 
 UI-owned browse and dialog enums are reused directly by Rust. Toolkit-free
 rules (`zaparoo-app`) retain their own enums; exhaustive `From` matches in

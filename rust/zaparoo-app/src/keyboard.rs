@@ -331,12 +331,24 @@ pub struct TextBuffer {
     /// Caret position in characters, `0..=len`.
     caret: usize,
     max_chars: usize,
+    /// Spaces go in as typed, doubled ones included; only a leading space
+    /// is still refused. A password is not a name to tidy.
+    verbatim: bool,
 }
 
 impl TextBuffer {
     pub fn new(max_chars: usize) -> Self {
         Self {
             max_chars,
+            ..Self::default()
+        }
+    }
+
+    /// A buffer that keeps spaces as typed; see `verbatim`.
+    pub fn verbatim(max_chars: usize) -> Self {
+        Self {
+            max_chars,
+            verbatim: true,
             ..Self::default()
         }
     }
@@ -398,7 +410,9 @@ impl TextBuffer {
         }
         if c == ' ' {
             let (before, after) = self.split();
-            if before.is_empty() || before.ends_with(' ') || after.starts_with(' ') {
+            if before.is_empty()
+                || (!self.verbatim && (before.ends_with(' ') || after.starts_with(' ')))
+            {
                 return false;
             }
         }
@@ -434,6 +448,64 @@ impl TextBuffer {
         }
         true
     }
+}
+
+/// How long a password field shows the character just typed before it
+/// joins the dots.
+pub const PASSWORD_REVEAL_MS: u64 = 1500;
+
+/// The dot a hidden character shows as.
+pub const MASK_CHAR: char = '\u{2022}';
+
+/// A password field's one visible character: the one just typed, until the
+/// reveal time runs out or anything else changes the field. Each reveal has
+/// a ticket, so a timer from an earlier character cannot hide a later one.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Mask {
+    reveal: Option<usize>,
+    ticket: u64,
+}
+
+impl Mask {
+    /// The character at `index` was just typed: show it, hide any other,
+    /// and return the ticket its timer expires.
+    pub fn typed(&mut self, index: usize) -> u64 {
+        self.reveal = Some(index);
+        self.ticket = self.ticket.wrapping_add(1);
+        self.ticket
+    }
+
+    /// Any other edit or caret move hides everything at once.
+    pub fn hide(&mut self) {
+        self.reveal = None;
+        self.ticket = self.ticket.wrapping_add(1);
+    }
+
+    /// The reveal timer for `ticket` ran out; true when that hid something.
+    pub fn expire(&mut self, ticket: u64) -> bool {
+        if self.ticket != ticket || self.reveal.is_none() {
+            return false;
+        }
+        self.reveal = None;
+        true
+    }
+
+    pub fn revealed(&self) -> Option<usize> {
+        self.reveal
+    }
+
+    pub fn ticket(&self) -> u64 {
+        self.ticket
+    }
+}
+
+/// The text a password field draws: a dot for every character but the
+/// revealed one.
+pub fn masked(text: &str, reveal: Option<usize>) -> String {
+    text.chars()
+        .enumerate()
+        .map(|(i, c)| if Some(i) == reveal { c } else { MASK_CHAR })
+        .collect()
 }
 
 #[cfg(test)]
@@ -639,5 +711,45 @@ mod tests {
         assert!(!is_text('\u{F700}'));
         assert!(!is_text('\u{8}'));
         assert!(!is_text('\u{1b}'));
+    }
+
+    #[test]
+    fn a_password_shows_only_the_character_just_typed() {
+        let mut mask = Mask::default();
+        assert_eq!(masked("abc", mask.revealed()), "\u{2022}\u{2022}\u{2022}");
+        let first = mask.typed(0);
+        assert_eq!(masked("a", mask.revealed()), "a");
+        let second = mask.typed(1);
+        assert_eq!(
+            masked("ab", mask.revealed()),
+            "\u{2022}b",
+            "the next character hides the last at once"
+        );
+        assert!(
+            !mask.expire(first),
+            "an earlier timer cannot hide a later character"
+        );
+        assert_eq!(mask.revealed(), Some(1));
+        assert!(mask.expire(second));
+        assert_eq!(masked("ab", mask.revealed()), "\u{2022}\u{2022}");
+        assert!(!mask.expire(second));
+        mask.typed(1);
+        mask.hide();
+        assert_eq!(mask.revealed(), None);
+        assert_eq!(masked("", None), "");
+    }
+
+    #[test]
+    fn a_verbatim_buffer_keeps_doubled_spaces_but_not_a_leading_one() {
+        let mut buffer = TextBuffer::verbatim(10);
+        assert!(!buffer.insert(' '));
+        assert!(buffer.insert('a'));
+        assert!(buffer.insert(' '));
+        assert!(buffer.insert(' '));
+        assert_eq!(buffer.text(), "a  ");
+        let mut name = TextBuffer::new(10);
+        name.insert('a');
+        name.insert(' ');
+        assert!(!name.insert(' '));
     }
 }

@@ -242,6 +242,7 @@ update rules, in short:
 | `rust/frontend/src/navigation.rs`, `folder_motion.rs`, `route_motion.rs` | Deferred routes that keep the source until the destination is ready; motion tests on a stepped clock |
 | `rust/frontend/src/{hub,systems,games,settings,about}.rs` | Per-screen drivers |
 | `rust/frontend/src/{rename,file_browser}.rs` | Rename tile (shared keyboard) and the reusable file browser with its image-preview mode |
+| `rust/frontend/src/{launcher_prefs,retro_achievements,ra_login}.rs` | Core's global launcher preference modal; `MiSTer_RA`'s cfg and install check; the RetroAchievements login screen (masked password, checked with RetroAchievements before saving) |
 | `rust/frontend/src/{game_info,media_setup,log_upload,launchers,card_write,qr}.rs` | Modal drivers |
 | `rust/frontend/src/manual.rs` | A game's manual as a page of Game Info: `media.asset` chunks, hayro rendering on a worker thread, pages in memory only |
 | `rust/frontend/src/{context_page,alternates,discs}.rs` | Context-menu pages: the shared page (Manage and Write to token included), alternate versions, a multi-disc game's discs |
@@ -353,6 +354,14 @@ ask to go.
 - `[video] fullscreen` is tri-state on purpose. An absent key lets the
   runtime decide; only an explicit `false` puts a Deck back in a window.
   `--fullscreen` and `--windowed` override it for one run.
+- RetroAchievements on MiSTer goes through odelot's `MiSTer_RA`, which
+  reads `/media/fat/retroachievements.cfg` (plaintext login, `key=value`).
+  `retro_achievements.rs` writes that file in place, never through a
+  temporary file and a rename: Core can bind-mount a per-profile copy over
+  the path, and a rename would replace the mount instead of the profile's
+  file. MiSTer.ini's `[RA_*] main=MiSTer_RA` section is only read, never
+  written; installing is Update All's job. The login screen is the one
+  screen never restored after a kill.
 - Debug logging is enabled with `[logging] debug = true` or `ZAPAROO_DEBUG=1`.
 - The header's battery reading has two probes behind one HUD field.
   `MiSTer` reads the optional pi-top-style `SMBus` fuel gauge
