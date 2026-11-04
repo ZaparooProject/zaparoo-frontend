@@ -1907,6 +1907,7 @@ fn a_search_result_with_versions_counts_them_and_lists_them_as_a_page() {
     settle(&window);
     let ticket = crate::context_page::ticket(&ctx);
     crate::context_page::landed(&ctx, &app, Page::Versions, ticket, Err("offline".into()));
+    assert!(!overlays.get_context_open());
     assert!(overlays.get_dialog_open());
     assert_eq!(overlays.get_dialog_error(), ErrorKind::VersionList);
     crate::router::handle_action(&ctx, &app, "cancel");
