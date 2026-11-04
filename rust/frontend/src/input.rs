@@ -3,9 +3,11 @@
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 //
 // The key path: raw key events -> duplicate guard -> swaps -> action ->
-// router, plus the hold-repeat cadence and the press-and-hold rapid
-// navigation flag. The rules and their thresholds live in
-// `zaparoo_app::input`; this file owns the timers and the wiring.
+// router, plus the hold-repeat cadence, the press-and-hold rapid
+// navigation flag, Back tapped or held to the Hub, and the L1+R1 Go to
+// chord. The
+// rules and their thresholds live in `zaparoo_app::input`; this file owns
+// the timers and the wiring.
 
 use std::cell::Cell;
 use std::sync::Arc;
@@ -66,9 +68,29 @@ pub struct InputModel {
     /// A held-repeat dispatch is in flight, at any tier. An early repeat
     /// is `Row` like a tap, but it is still a hold.
     dispatching_repeat: bool,
+    /// The same for a repeat a modal owns, which `dispatching_repeat`
+    /// leaves out so nothing behind the modal treats it as a hold.
+    dispatching_modal_repeat: bool,
+    /// The key of a Back press waiting for its release: a tap goes back one
+    /// level, a hold to the Hub. With the ticket its timer carries.
+    back_hold: Option<String>,
+    back_hold_seq: u64,
+    /// The ticket of the timer a Shift press arms: held to its end, Shift
+    /// locks.
+    shift_lock_seq: u64,
+    /// The first half of an L1+R1 chord, held for the window, and the
+    /// ticket its timer carries.
+    chord: rules::ShoulderChord,
+    chord_seq: u64,
     /// Non-text navigation count for embedding-host input diagnostics.
     #[cfg(feature = "hosted")]
     navigation_events: u64,
+}
+
+/// A held step's constant-speed glide: a quarter longer than the repeat
+/// interval, so the list is still moving when the next repeat lands.
+fn steady_glide_ms(interval: u64) -> i32 {
+    i32::try_from(interval + interval / 4).unwrap_or(0)
 }
 
 impl InputModel {
@@ -83,6 +105,12 @@ impl InputModel {
             quiet_seq: 0,
             dispatch_tier: rules::HoldTier::Row,
             dispatching_repeat: false,
+            dispatching_modal_repeat: false,
+            back_hold: None,
+            back_hold_seq: 0,
+            shift_lock_seq: 0,
+            chord: rules::ShoulderChord::new(),
+            chord_seq: 0,
             #[cfg(feature = "hosted")]
             navigation_events: 0,
         }
@@ -138,8 +166,17 @@ impl InputModel {
         if rows > 1 {
             return (false, 0);
         }
-        let interval = self.dispatch_tier.repeat_ms();
-        (true, i32::try_from(interval + interval / 4).unwrap_or(0))
+        (true, steady_glide_ms(self.dispatch_tier.repeat_ms()))
+    }
+
+    /// The same for a menu inside a modal: a modal keeps a hold on its
+    /// own rows at the row tier, so a held step is always one row.
+    pub(crate) fn modal_follow(&self) -> i32 {
+        if self.dispatching_modal_repeat {
+            steady_glide_ms(rules::HoldTier::Row.repeat_ms())
+        } else {
+            0
+        }
     }
 
     fn now_ms(&self) -> u64 {
@@ -184,6 +221,81 @@ pub(crate) fn modal_open(app: &App) -> bool {
         || overlays.get_crt_calibration_open()
 }
 
+/// A screen whose text field takes what is typed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TextOwner {
+    Search,
+    Rename,
+    RaLogin,
+}
+
+impl TextOwner {
+    fn key_repeats(self, ctx: &Ctx) -> bool {
+        match self {
+            Self::Search => crate::search::key_repeats(ctx),
+            Self::Rename => crate::rename::key_repeats(ctx),
+            Self::RaLogin => crate::ra_login::key_repeats(ctx),
+        }
+    }
+
+    fn type_char(self, ctx: &Ctx, app: &App, c: char) {
+        match self {
+            Self::Search => crate::search::type_char(ctx, app, c),
+            Self::Rename => crate::rename::type_char(ctx, app, c),
+            Self::RaLogin => crate::ra_login::type_char(ctx, app, c),
+        }
+    }
+
+    /// Focus is on a Shift key that a long press locks. Search's keyboard
+    /// has none.
+    fn on_shift(self, ctx: &Ctx) -> bool {
+        match self {
+            Self::Search => false,
+            Self::Rename => crate::rename::on_shift(ctx),
+            Self::RaLogin => crate::ra_login::on_shift(ctx),
+        }
+    }
+
+    fn lock_shift(self, ctx: &Ctx, app: &App) {
+        match self {
+            Self::Search => {}
+            Self::Rename => crate::rename::lock_shift(ctx, app),
+            Self::RaLogin => crate::ra_login::lock_shift(ctx, app),
+        }
+    }
+}
+
+/// The text field with the input right now: its screen is up with nothing
+/// over it.
+pub(crate) fn text_owner(app: &App) -> Option<TextOwner> {
+    let shell = app.global::<crate::Shell>();
+    if shell.get_transitioning()
+        || shell.get_saver_armed()
+        || shell.get_boot_curtain()
+        || modal_open(app)
+    {
+        return None;
+    }
+    match shell.get_active_screen() {
+        crate::Screen::Search => Some(TextOwner::Search),
+        crate::Screen::Rename => Some(TextOwner::Rename),
+        crate::Screen::RaLogin => Some(TextOwner::RaLogin),
+        _ => None,
+    }
+}
+
+/// Something over the screen takes Back the moment it goes down: every
+/// modal, and the pairing and Online panels, whose own Back handling
+/// cleans up. Wider than `modal_open`, which repeat handling also reads.
+fn back_owned(app: &App) -> bool {
+    let overlays = app.global::<crate::Overlays>();
+    modal_open(app)
+        || overlays.get_pair_open()
+        || overlays.get_online_open()
+        || overlays.get_online_list_open()
+        || overlays.get_launcher_prefs_open()
+}
+
 /// A real press: guard against a double delivery. Runs before the
 /// action lookup so an unbound key still consumes its slot, which is
 /// what stops native autorepeat on a key nothing is listening for.
@@ -221,11 +333,12 @@ fn route_press(ctx: &Ctx, app: &App, action: &str, key: &str) {
     // The View button deletes while a text field has the input; as its own
     // action it repeats while held.
     // Accept likewise becomes its own repeating action on a key that types.
-    let action = if !crate::search::owns_input(app) {
+    let owner = text_owner(app);
+    let action = if owner.is_none() {
         action
     } else if action == actions::PAGE_MENU {
         rules::TEXT_DELETE.to_string()
-    } else if action == actions::ACCEPT && crate::search::key_repeats(ctx) {
+    } else if action == actions::ACCEPT && owner.is_some_and(|owner| owner.key_repeats(ctx)) {
         rules::TEXT_KEY.to_string()
     } else {
         action
@@ -247,10 +360,84 @@ fn route_press(ctx: &Ctx, app: &App, action: &str, key: &str) {
         let mut shared = lock(&ctx.shared);
         shared.input.navigation_events = shared.input.navigation_events.saturating_add(1);
     }
-    crate::router::handle_action(ctx, app, &action);
-    if !waking {
-        arm_repeat(ctx, app, &action, key);
+    if waking {
+        flush_chord(ctx, app);
+        crate::router::handle_action(ctx, app, &action);
+        return;
     }
+    // L1+R1: where Go to has somewhere to go, the first shoulder press
+    // waits a beat for its partner.
+    if chord_applies(ctx, app) {
+        let step = lock(&ctx.shared).input.chord.press(&action, key);
+        match step {
+            rules::ChordPress::Wait => {
+                schedule_chord(ctx, app);
+                return;
+            }
+            rules::ChordPress::Chord => {
+                lock(&ctx.shared).input.chord_seq += 1;
+                crate::router::reset_idle(ctx, app);
+                crate::router::open_go_to(ctx, app);
+                return;
+            }
+            rules::ChordPress::Pass => {}
+        }
+    }
+    flush_chord(ctx, app);
+    dispatch_press(ctx, app, &action, key);
+}
+
+/// Route one press and arm its repeat. A Back a screen would take waits
+/// for its release instead: a tap goes back one level, a hold goes
+/// straight to the Hub.
+fn dispatch_press(ctx: &Ctx, app: &App, action: &str, key: &str) {
+    let shell = app.global::<crate::Shell>();
+    let landing = if shell.get_transitioning() {
+        shell.get_transition_target()
+    } else {
+        shell.get_active_screen()
+    };
+    let owned = back_owned(app) || crate::page_bar::focused(app) || shell.get_boot_curtain();
+    if rules::back_hold_arms(action, landing == crate::Screen::Hub, owned) {
+        hold_back(ctx, app, key);
+        return;
+    }
+    crate::router::handle_action(ctx, app, action);
+    arm_repeat(ctx, app, action, key);
+    if action == actions::ACCEPT {
+        arm_shift_lock(ctx, app, key);
+    }
+}
+
+/// Accept on the on-screen keyboard's Shift has already shifted the next
+/// character. Still held after `SHIFT_LOCK_HOLD_MS`, it locks Shift.
+fn arm_shift_lock(ctx: &Ctx, app: &App, key: &str) {
+    let Some(owner) = text_owner(app).filter(|owner| owner.on_shift(ctx)) else {
+        return;
+    };
+    let seq = {
+        let mut shared = lock(&ctx.shared);
+        shared.input.shift_lock_seq += 1;
+        shared.input.shift_lock_seq
+    };
+    let ctx = ctx.clone();
+    let weak = app.as_weak();
+    let key = key.to_string();
+    slint::Timer::single_shot(
+        Duration::from_millis(rules::SHIFT_LOCK_HOLD_MS),
+        move || {
+            let Some(app) = weak.upgrade() else {
+                return;
+            };
+            let held = {
+                let shared = lock(&ctx.shared);
+                shared.input.shift_lock_seq == seq && shared.input.pressed_keys.contains(&key)
+            };
+            if held && text_owner(&app) == Some(owner) && owner.on_shift(&ctx) {
+                owner.lock_shift(&ctx, &app);
+            }
+        },
+    );
 }
 
 /// A keyboard press: guard it, map the key to an action, route it.
@@ -260,8 +447,10 @@ fn key_pressed(ctx: &Ctx, app: &App, bindings: &std::collections::HashMap<i32, S
     }
     // A text field takes what is typed before any binding sees it, so a
     // letter bound to an action still types.
-    if crate::search::owns_input(app) && type_key(ctx, app, key) {
-        return;
+    if let Some(owner) = text_owner(app) {
+        if type_key(ctx, app, owner, key) {
+            return;
+        }
     }
     let Some(action) = crate::actions::action_for_key_with(bindings, key) else {
         return;
@@ -274,7 +463,7 @@ fn key_pressed(ctx: &Ctx, app: &App, bindings: &std::collections::HashMap<i32, S
 /// which then keeps its bound action. On `MiSTer`, Main sends a pad's View
 /// button as Space on the keyboard's own device, so Space keeps its bound
 /// action when the report says a pad sent it.
-fn type_key(ctx: &Ctx, app: &App, key: &str) -> bool {
+fn type_key(ctx: &Ctx, app: &App, owner: TextOwner, key: &str) -> bool {
     #[cfg(feature = "mister")]
     if key == " " && zaparoo_core::controller_report::controller_drove_last_press() {
         return false;
@@ -287,7 +476,7 @@ fn type_key(ctx: &Ctx, app: &App, key: &str) -> bool {
     match (chars.next(), chars.next()) {
         (Some(c), None) if zaparoo_app::keyboard::is_text(c) => {
             crate::router::reset_idle(ctx, app);
-            crate::search::type_char(ctx, app, c);
+            owner.type_char(ctx, app, c);
             true
         }
         _ => false,
@@ -310,13 +499,25 @@ pub fn gamepad_pressed(ctx: &Ctx, app: &App, action: &str, key: &str) {
 /// The pad button came up. Same retirement as a key release: only the
 /// hold that started the repeat cancels it.
 #[cfg(any(feature = "desktop", feature = "hosted"))]
-pub fn gamepad_released(ctx: &Ctx, key: &str) {
-    key_released(ctx, key);
+pub fn gamepad_released(ctx: &Ctx, app: &App, key: &str) {
+    key_released(ctx, app, key);
 }
 
 /// The key came up. Only the key that started the repeat cancels it; a
-/// release of any other key in flight is ignored.
-fn key_released(ctx: &Ctx, key: &str) {
+/// release of any other key in flight is ignored. A shoulder still held
+/// for the chord window was a tap: it pages now. Back coming up calls off
+/// its way to the Hub.
+fn key_released(ctx: &Ctx, app: &App, key: &str) {
+    let chord_held = lock(&ctx.shared).input.chord.pending_key() == Some(key);
+    if chord_held {
+        flush_chord(ctx, app);
+    }
+    let back_tapped = lock(&ctx.shared).input.back_hold.as_deref() == Some(key);
+    if back_tapped {
+        // Up before the hold ran out: a tap, and it goes back one level.
+        cancel_back_hold(ctx);
+        crate::router::handle_action(ctx, app, actions::CANCEL);
+    }
     let stopped = lock(&ctx.shared).input.release(key);
     if stopped {
         // Hold::release already cleared the hold. Stopping it again would
@@ -350,11 +551,114 @@ pub fn stop_repeat(ctx: &Ctx) {
         let mut shared = lock(&ctx.shared);
         shared.input.repeat_seq += 1;
         shared.input.pressed_keys.clear();
+        // A chord half or a Back hold dies with the input it came from.
+        shared.input.chord.take();
+        shared.input.chord_seq += 1;
+        shared.input.back_hold = None;
+        shared.input.back_hold_seq += 1;
         shared.input.hold.stop()
     };
     if held {
         crate::games::flush_persist(ctx);
     }
+}
+
+/// The L1+R1 chord means Go to only on a ready browse list with nothing
+/// over it; everywhere else a shoulder press pages at once.
+fn chord_applies(ctx: &Ctx, app: &App) -> bool {
+    let shell = app.global::<crate::Shell>();
+    shell.get_active_screen() == crate::Screen::Games
+        && !shell.get_transitioning()
+        && !modal_open(app)
+        && !crate::page_bar::focused(app)
+        && crate::games::go_to_available(&lock(&ctx.shared))
+}
+
+/// Close the chord window after `CHORD_WINDOW_MS`: a shoulder press still
+/// waiting by then was a tap, and pages.
+fn schedule_chord(ctx: &Ctx, app: &App) {
+    let seq = {
+        let mut shared = lock(&ctx.shared);
+        shared.input.chord_seq += 1;
+        shared.input.chord_seq
+    };
+    let ctx = ctx.clone();
+    let weak = app.as_weak();
+    slint::Timer::single_shot(Duration::from_millis(rules::CHORD_WINDOW_MS), move || {
+        let Some(app) = weak.upgrade() else {
+            return;
+        };
+        if lock(&ctx.shared).input.chord_seq != seq {
+            return;
+        }
+        flush_chord(&ctx, &app);
+    });
+}
+
+/// Route the shoulder press the chord window was holding, if there is one.
+fn flush_chord(ctx: &Ctx, app: &App) {
+    let pending = {
+        let mut shared = lock(&ctx.shared);
+        let pending = shared.input.chord.take();
+        if pending.is_some() {
+            shared.input.chord_seq += 1;
+        }
+        pending
+    };
+    if let Some((action, key)) = pending {
+        dispatch_press(ctx, app, &action, &key);
+    }
+}
+
+/// A Back press a screen would take: wait to see whether it is a tap or
+/// a hold. Held for `BACK_HOLD_TO_HUB_MS`, it goes straight to the Hub.
+fn hold_back(ctx: &Ctx, app: &App, key: &str) {
+    let seq = {
+        let mut shared = lock(&ctx.shared);
+        shared.input.back_hold = Some(key.to_string());
+        shared.input.back_hold_seq += 1;
+        shared.input.back_hold_seq
+    };
+    crate::router::reset_idle(ctx, app);
+    let ctx = ctx.clone();
+    let weak = app.as_weak();
+    slint::Timer::single_shot(
+        Duration::from_millis(rules::BACK_HOLD_TO_HUB_MS),
+        move || {
+            let Some(app) = weak.upgrade() else {
+                return;
+            };
+            let live = {
+                let mut shared = lock(&ctx.shared);
+                let live = shared.input.back_hold_seq == seq && shared.input.back_hold.is_some();
+                if live {
+                    shared.input.back_hold = None;
+                }
+                live
+            };
+            if !live {
+                return;
+            }
+            let shell = app.global::<crate::Shell>();
+            if shell.get_dormant() || shell.get_saver_armed() {
+                return;
+            }
+            // Something opened over the screen while Back was down: it
+            // takes the Back, as it would have from a tap.
+            if back_owned(&app) {
+                crate::router::handle_action(&ctx, &app, actions::CANCEL);
+                return;
+            }
+            crate::router::go_home(&ctx, &app);
+        },
+    );
+}
+
+/// The input went away with Back down: it was neither a tap nor a hold.
+fn cancel_back_hold(ctx: &Ctx) {
+    let mut shared = lock(&ctx.shared);
+    shared.input.back_hold = None;
+    shared.input.back_hold_seq += 1;
 }
 
 fn schedule_repeat(ctx: &Ctx, app: &App, delay_ms: u64) {
@@ -446,12 +750,14 @@ pub(crate) fn dispatch_repeat(ctx: &Ctx, app: &App, action: &str, tier: rules::H
             rules::HoldTier::Row
         };
         shared.input.dispatching_repeat = owns_input;
+        shared.input.dispatching_modal_repeat = !owns_input;
     }
     crate::router::handle_action(ctx, app, action);
     {
         let mut shared = lock(&ctx.shared);
         shared.input.dispatch_tier = rules::HoldTier::Row;
         shared.input.dispatching_repeat = false;
+        shared.input.dispatching_modal_repeat = false;
     }
     if owns_input {
         // Publish the held state after dispatch. Qualified repeats preserve
@@ -515,6 +821,8 @@ fn push_rapid(ctx: &Ctx, app: &App, active: bool) {
             | crate::Screen::SearchResults
     );
     crate::games::set_rapid(ctx, app, active && on_list);
+    let on_browser = app.global::<crate::Shell>().get_active_screen() == crate::Screen::FileBrowser;
+    crate::file_browser::set_rapid(ctx, app, active && on_browser);
 }
 
 /// Key events -> normalized actions -> router, honoring the merged
@@ -531,15 +839,46 @@ pub fn bind(ctx: &Arc<Ctx>, app: &App, bindings: std::collections::HashMap<i32, 
         }
     });
     let released_ctx = ctx.clone();
-    app.on_key_released(move |text| key_released(&released_ctx, &text));
+    let weak = app.as_weak();
+    app.on_key_released(move |text| {
+        if let Some(app) = weak.upgrade() {
+            key_released(&released_ctx, &app, &text);
+        }
+    });
     let lost_ctx = ctx.clone();
     let weak = app.as_weak();
     app.on_input_lost(move || {
         stop_repeat(&lost_ctx);
+        cancel_back_hold(&lost_ctx);
         if let Some(app) = weak.upgrade() {
             crate::press_feedback::cancel(&app);
         }
     });
+}
+
+/// Hold the focused key down for the press cue, then lift it. `cue` finds
+/// the screen's `Flash` and `paint` clears the view's pressed key.
+pub(crate) fn flash_key(
+    ctx: &Ctx,
+    app: &App,
+    index: usize,
+    cue: fn(&mut crate::router::Shared) -> &mut crate::keyboard::Flash,
+    paint: fn(&App),
+) {
+    let seq = cue(&mut lock(&ctx.shared)).start(index);
+    let ctx = ctx.clone();
+    let weak = app.as_weak();
+    slint::Timer::single_shot(
+        Duration::from_millis(zaparoo_app::input::PRESS_FEEDBACK_MS),
+        move || {
+            let Some(app) = weak.upgrade() else {
+                return;
+            };
+            if cue(&mut lock(&ctx.shared)).lift(seq) {
+                paint(&app);
+            }
+        },
+    );
 }
 
 #[cfg(test)]

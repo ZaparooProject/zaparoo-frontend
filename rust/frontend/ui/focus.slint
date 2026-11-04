@@ -306,10 +306,15 @@ export component FocusCursor inherits Rectangle {
     in property <length> radius: Sizing.radius-sm;
     in property <length> stroke: Sizing.focus-ring-width;
     in property <bool> motion: Motion.enabled;
+    // Targets of different sizes glide too, the ring resizing on the way:
+    // a row of controls as wide as their words. Off, a size change snaps.
+    in property <bool> glide-size: false;
     property <FocusTarget> previous;
     property <bool> glide: false;
     property <length> position-x: 0px;
     property <length> position-y: 0px;
+    property <length> size-w: 0px;
+    property <length> size-h: 0px;
     property <int> epoch: Motion.epoch;
     out property <bool> moving: root.target.valid && root.motion
         && (root.position-x != root.target.x || root.position-y != root.target.y);
@@ -317,13 +322,15 @@ export component FocusCursor inherits Rectangle {
     changed target => {
         root.glide = root.motion && root.previous.valid && root.target.valid
             && root.previous.scope == root.target.scope
-            && root.previous.w == root.target.w && root.previous.h == root.target.h
+            && (root.glide-size || (root.previous.w == root.target.w && root.previous.h == root.target.h))
             && Math.abs(root.target.x - root.position-x) + Math.abs(root.target.y - root.position-y)
                 <= 1.5 * (Math.abs(root.target.x - root.previous.x) + Math.abs(root.target.y - root.previous.y))
             && Math.abs(root.target.column - root.previous.column)
                 + Math.abs(root.target.row - root.previous.row) == 1;
         root.position-x = root.target.x;
         root.position-y = root.target.y;
+        root.size-w = root.target.w;
+        root.size-h = root.target.h;
         root.previous = root.target;
     }
     changed epoch => { root.snap(); }
@@ -332,17 +339,19 @@ export component FocusCursor inherits Rectangle {
         root.glide = false;
         root.position-x = root.target.x;
         root.position-y = root.target.y;
+        root.size-w = root.target.w;
+        root.size-h = root.target.h;
         root.previous = root.target;
     }
     init => { root.snap(); }
-    animate position-x, position-y {
+    animate position-x, position-y, size-w, size-h {
         duration: root.glide && root.motion ? Motion.focus-ms : 0ms;
         easing: ease-out-quad;
     }
     x: root.position-x;
     y: root.position-y;
-    width: root.target.w;
-    height: root.target.h;
+    width: root.size-w;
+    height: root.size-h;
     visible: root.target.valid;
     border-width: root.stroke;
     border-color: Theme.accent;

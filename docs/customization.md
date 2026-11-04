@@ -5,8 +5,10 @@ artwork, the Hub menu icons, and the display names of systems. Everything
 lives in one place and falls back to the built-in defaults, so you only supply
 what you want to change.
 
-All customization is read **once at startup**. After adding, changing, or
-removing files, restart the frontend to pick them up.
+Files in the `custom/` folder are read **once at startup**. After adding,
+changing, or removing files there, restart the frontend to pick them up. A
+Hub tile's name and icon can also be set from the Hub itself (see "Renaming
+a tile and changing its icon" below), and those apply at once.
 
 ## The `custom/` folder
 
@@ -67,10 +69,19 @@ hub/favorites.svg
 hub/settings.svg
 ```
 
-A custom Hub tile (a specific system, a folder, a saved search, or arbitrary ZapScript — see
-`[[hub.items]]` in `frontend.toml`) can set its own `icon = "name"` and drop
-a matching `hub/name.png` here, the same way a built-in tile's id works
-above.
+Any Hub tile (a built-in one, a specific system, a folder, a saved search,
+or arbitrary ZapScript; see `[[hub.items]]` in `frontend.toml`) can set its
+own `icon`, which takes one of two forms:
+
+- A name, `icon = "name"`, matched against `hub/name.png` (or any of the
+  extensions above) in this folder, the same way a built-in tile's id is.
+- An absolute path, `icon = "/media/usb0/art/zelda.png"`, which is read from
+  where it is. The file stays where it is; nothing is copied. A file that
+  has moved, or a drive that is not mounted yet, shows the tile's own icon,
+  and stays that way until the next restart.
+
+A tile's own `icon` wins over a `hub/<id>` file for a built-in tile, which
+wins over the bundled icon.
 
 ### Hub tile entries
 
@@ -84,7 +95,10 @@ writes these for you; they can also be written by hand.
 | `zapscript` | `script`, and optionally `relative`, `path`, `system` |
 | `search`    | any of `query`, `systems`, `tags`, `path`             |
 
-Any tile can also set `name` and `icon`.
+Any tile can also set `name` and `icon`, the built-in categories and actions
+included. A `name` on a built-in tile replaces its translated word, so it
+stays the same in every language; on Resume it leads the game's name
+(`Continue: Zelda`).
 
 ```toml
 [[hub.items]]
@@ -111,10 +125,32 @@ and updates `path` to match, so covers and folder tiles follow a move too.
 A tile with only a `script` is launched exactly as written and is never
 changed.
 
+### Renaming a tile and changing its icon
+
+A tile's Options menu has **Rename tile…** and **Change icon…** (on a game or
+system tile they are on its Manage page, with Move tile and Remove from
+Hub). Both write the tile's `[[hub.items]]` entry for you.
+
+- **Rename tile…** opens the name on the on-screen keyboard. Save keeps
+  it; Back leaves it as it was. Saving an empty name, or the tile's own
+  name, goes back to the tile's own name and removes `name` from the file.
+  A script tile has no name of its own to go back to, so it cannot be
+  saved empty.
+- **Change icon…** opens the file browser on the folder of the tile's
+  current icon, or `custom/hub/` the first time. It lists folders and
+  images as previews. Picking an image saves its absolute path as `icon`.
+  Back goes up a folder and, from the top of a drive, to Places (the
+  custom folder, the SD card, USB drives and network shares on MiSTer;
+  Home and removable drives on a desktop). The Menu button has **Use
+  default icon**, which removes `icon` from the file.
+
+An embedding host that runs its own image picker shows that instead of the
+file browser. A host without one does not offer Change icon….
+
 #### Saved searches
 
-A `search` tile opens the results of a search. "Add to Hub" in the Search
-results' View menu writes one for the search on screen; Back from results
+A `search` tile opens the results of a search. "Save to Hub" in the Search
+results' Menu writes one for the search on screen; Back from results
 opened this way returns to the Hub.
 
 ```toml
@@ -130,10 +166,11 @@ icon = "rpgs"
 - `query`: the text to match in names. Leave it out to list everything the
   other keys allow.
 - `systems`: the system ids to search. Leave it out to search every system.
-  A hand-written tile can name several, which the Search screen cannot.
+  A tile can name several, as one saved from a category's "Search here…"
+  does; the Search screen's System field picks one.
 - `tags`: `type:value` tags a game must carry. They are sent to Zaparoo Core
   exactly as written, so a tile can also use tags the tags picker does not
-  offer.
+  offer. A search saved from the favorites carries `user:favorite`.
 - `path`: limits the search to one folder, as "Search here…" does. It is
   the full path, so it has to be edited by hand if the games move to another
   drive.
@@ -158,7 +195,8 @@ Built-in art remains visible until an override is ready. Original files are
 never changed; prepared images keep their colors and aspect ratio.
 
 Preparation is serial, with at most 32 queued requests and a 16 MiB in-memory
-LRU cache. Bitmaps must fit an 8 MiB file limit, an 8192-pixel source-edge limit,
+LRU cache, shared with the file browser's image previews and the icons named
+by an absolute path. Bitmaps must fit an 8 MiB file limit, an 8192-pixel source-edge limit,
 and the decoder's 32 MiB allocation budget. Output follows the displayed size,
 capped at 1024 pixels per edge. Small bitmaps are not enlarged during preparation.
 

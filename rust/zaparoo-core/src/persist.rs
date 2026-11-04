@@ -35,6 +35,40 @@ pub struct PersistedState {
     pub recents: RecentsState,
     pub search: SearchState,
     pub settings: SettingsState,
+    pub rename: RenameState,
+    pub file_browser: FileBrowserState,
+}
+
+/// The Hub tile a rename or icon pick acts on: its visible layout position
+/// and the `"<kind>:<id>"` it had there, checked again on restore so a
+/// layout edited in between never renames the wrong tile.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct HubTarget {
+    pub hub_index: u32,
+    pub identity: String,
+}
+
+/// The rename screen: its tile, the text being typed and the caret.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct RenameState {
+    pub target: HubTarget,
+    pub draft: String,
+    /// Caret position in characters.
+    pub caret: usize,
+}
+
+/// The file browser: its tile, what it lists, the folder on screen (empty
+/// for Places) and the entry selected there (a name, or a Place's path).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct FileBrowserState {
+    pub target: HubTarget,
+    /// `"plain"` or `"images"`.
+    pub mode: String,
+    pub dir: String,
+    pub selected: String,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -261,10 +295,16 @@ pub struct SearchState {
     /// `type:value` tags: at most one per type from the Search screen, as
     /// written from a saved search's Hub tile.
     pub tags: Vec<String>,
-    /// True when the search was opened on a browse folder, which fixes the
-    /// system and returns there on Back.
+    /// True when "Search here" opened the search, which fixes its scope
+    /// and returns to where it was opened on Back.
     pub scoped: bool,
-    /// The folder a scoped search is limited to; empty at a system's top
+    /// What a scoped search is limited to, as a `SEARCH_SCOPE_*` token:
+    /// the system on a browse screen, a category of systems, or the
+    /// favorites. Empty when not scoped.
+    pub scope_kind: String,
+    /// The category a category scope covers.
+    pub scope_category: String,
+    /// The folder a browse scope is limited to; empty at a system's top
     /// level.
     pub scope_path: String,
     /// The folder's display name, for the scope row.
@@ -298,6 +338,8 @@ struct SearchStateRepr {
     systems: Vec<String>,
     tags: Vec<String>,
     scoped: bool,
+    scope_kind: String,
+    scope_category: String,
     scope_path: String,
     scope_name: String,
     selected_path: String,
@@ -325,13 +367,40 @@ fn systems_from_disk(systems: Vec<String>, system_id: String) -> Vec<String> {
     }
 }
 
+/// "Search here" on a system's games, limited to it and maybe a folder.
+pub const SEARCH_SCOPE_BROWSE: &str = "browse";
+/// "Search here" on a category's systems.
+pub const SEARCH_SCOPE_CATEGORY: &str = "category";
+/// "Search here" on the favorites list, maybe within one system.
+pub const SEARCH_SCOPE_FAVORITES: &str = "favorites";
+/// "Search here" on the systems that hold favorites.
+pub const SEARCH_SCOPE_FAVORITE_SYSTEMS: &str = "favorite_systems";
+
+/// The scope a state file holds. A file written before there was more
+/// than one kind only ever scoped a browse screen; a kind this build does
+/// not know leaves the search unscoped.
+fn scope_from_disk(scoped: bool, kind: String) -> (bool, String) {
+    match kind.as_str() {
+        _ if !scoped => (false, String::new()),
+        "" => (true, SEARCH_SCOPE_BROWSE.to_string()),
+        SEARCH_SCOPE_BROWSE
+        | SEARCH_SCOPE_CATEGORY
+        | SEARCH_SCOPE_FAVORITES
+        | SEARCH_SCOPE_FAVORITE_SYSTEMS => (true, kind),
+        _ => (false, String::new()),
+    }
+}
+
 impl From<SearchStateRepr> for SearchState {
     fn from(repr: SearchStateRepr) -> Self {
+        let (scoped, scope_kind) = scope_from_disk(repr.scoped, repr.scope_kind);
         Self {
             query: repr.query,
             systems: systems_from_disk(repr.systems, repr.system_id),
             tags: repr.tags,
-            scoped: repr.scoped,
+            scoped,
+            scope_kind,
+            scope_category: repr.scope_category,
             scope_path: repr.scope_path,
             scope_name: repr.scope_name,
             selected_path: repr.selected_path,
@@ -463,6 +532,16 @@ pub struct SettingsState {
     pub mouse_enabled: bool,
     #[serde(default)]
     pub reduce_motion: bool,
+    /// The Menu chip row above 240p. Off, the Menu button opens the Menu
+    /// list at every tier. A state file from before the setting existed
+    /// keeps the row.
+    #[serde(default = "default_show_menu_row")]
+    pub show_menu_row: bool,
+    /// The help bar along the bottom of every screen. Off, it is hidden and
+    /// the screens take its height back. A state file from before the
+    /// setting existed keeps the bar.
+    #[serde(default = "default_show_help_bar")]
+    pub show_help_bar: bool,
     #[serde(default)]
     pub debug_logging: bool,
     #[serde(default = "default_screensaver_timeout")]
@@ -478,6 +557,14 @@ pub struct SettingsState {
     /// name is shown.
     #[serde(default)]
     pub show_original_filenames: bool,
+    /// The short region, revision and other tags after a game's name. A
+    /// state file from before the setting existed keeps them.
+    #[serde(default = "default_show_tags")]
+    pub show_tags: bool,
+    /// What Left and Right do in the detailed list: `"page"` turns a page as
+    /// L and R do, `"image"` steps the detail pane through the game's images.
+    #[serde(default = "default_list_left_right")]
+    pub list_left_right: String,
     /// When true, flips which physical button accepts vs cancels at the
     /// key->action dispatch seam (see the frontend's `input.rs`),
     /// compensating for a misconfigured OK/Cancel swap in `Main_MiSTer`'s own
@@ -537,11 +624,15 @@ impl Default for SettingsState {
             button_layout: default_button_layout(),
             mouse_enabled: default_mouse_enabled(),
             reduce_motion: false,
+            show_menu_row: default_show_menu_row(),
+            show_help_bar: default_show_help_bar(),
             debug_logging: false,
             screensaver_timeout: default_screensaver_timeout(),
             media_image_type: default_media_image_type(),
             show_hidden: false,
             show_original_filenames: false,
+            show_tags: default_show_tags(),
+            list_left_right: default_list_left_right(),
             swap_confirm_cancel: false,
             swap_options_view: false,
             region: default_region(),
@@ -612,6 +703,22 @@ fn default_button_layout() -> String {
 }
 
 fn default_mouse_enabled() -> bool {
+    true
+}
+
+fn default_show_menu_row() -> bool {
+    true
+}
+
+fn default_show_tags() -> bool {
+    true
+}
+
+fn default_list_left_right() -> String {
+    "page".into()
+}
+
+fn default_show_help_bar() -> bool {
     true
 }
 
@@ -753,9 +860,10 @@ mod tests {
     )]
 
     use super::{
-        load_from, save_to, FavoriteSystemsState, FavoritesState, GamesState, HubState,
-        PersistedState, RecentSearch, RecentsState, SearchState, SettingsState, SystemFilter,
-        SystemFocus, SystemsState, MAX_RECENT_SEARCHES, MAX_SYSTEM_FILTERS, MAX_SYSTEM_FOCUS,
+        load_from, save_to, FavoriteSystemsState, FavoritesState, FileBrowserState, GamesState,
+        HubState, HubTarget, PersistedState, RecentSearch, RecentsState, RenameState, SearchState,
+        SettingsState, SystemFilter, SystemFocus, SystemsState, MAX_RECENT_SEARCHES,
+        MAX_SYSTEM_FILTERS, MAX_SYSTEM_FOCUS, SEARCH_SCOPE_BROWSE, SEARCH_SCOPE_FAVORITES,
     };
     use std::thread;
 
@@ -797,6 +905,10 @@ mod tests {
     }
 
     #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one fixture fills every persisted section"
+    )]
     fn save_then_load_round_trips_all_sections() {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("state.toml");
@@ -850,6 +962,8 @@ mod tests {
                 systems: vec!["NES".into(), "SNES".into()],
                 tags: vec!["genre:platformer".into()],
                 scoped: false,
+                scope_kind: String::new(),
+                scope_category: String::new(),
                 scope_path: String::new(),
                 scope_name: String::new(),
                 selected_path: "/roms/nes/mario/smb.nes".into(),
@@ -878,11 +992,15 @@ mod tests {
                 button_layout: "b".into(),
                 mouse_enabled: false,
                 reduce_motion: true,
+                show_menu_row: true,
+                show_help_bar: true,
                 debug_logging: true,
                 screensaver_timeout: "300".into(),
                 media_image_type: "auto".into(),
                 show_hidden: true,
                 show_original_filenames: true,
+                show_tags: false,
+                list_left_right: "image".into(),
                 swap_confirm_cancel: true,
                 swap_options_view: true,
                 region: "us".into(),
@@ -890,6 +1008,23 @@ mod tests {
                 crt_h_offset: -3,
                 crt_v_offset: 2,
                 crt_h_size: -5,
+            },
+            rename: RenameState {
+                target: HubTarget {
+                    hub_index: 2,
+                    identity: "action:settings".into(),
+                },
+                draft: "Setup".into(),
+                caret: 5,
+            },
+            file_browser: FileBrowserState {
+                target: HubTarget {
+                    hub_index: 2,
+                    identity: "action:settings".into(),
+                },
+                mode: "images".into(),
+                dir: "/media/fat".into(),
+                selected: "art".into(),
             },
         };
         save_to(&path, &original);
@@ -1068,6 +1203,8 @@ resolution = "1920x1080"
                             recents: RecentsState::default(),
                             search: SearchState::default(),
                             settings: SettingsState::default(),
+                            rename: RenameState::default(),
+                            file_browser: FileBrowserState::default(),
                         };
                         save_to(&path, &state);
                     }
@@ -1150,6 +1287,8 @@ resolution = "1920x1080"
         assert_eq!(state.settings.crt_h_offset, 0);
         assert_eq!(state.settings.crt_v_offset, 0);
         assert_eq!(state.settings.crt_h_size, 0);
+        assert!(state.settings.show_tags);
+        assert_eq!(state.settings.list_left_right, "page");
     }
 
     #[test]
@@ -1299,6 +1438,30 @@ future_field = "ignored"
     }
 
     #[test]
+    fn a_search_scope_from_an_older_file_is_a_browse_scope() {
+        let old: PersistedState =
+            toml::from_str("[search]\nscoped = true\nscope_path = '/roms/SNES/RPG'\n").unwrap();
+        assert!(old.search.scoped);
+        assert_eq!(old.search.scope_kind, SEARCH_SCOPE_BROWSE);
+
+        let favorites: PersistedState =
+            toml::from_str("[search]\nscoped = true\nscope_kind = 'favorites'\n").unwrap();
+        assert_eq!(favorites.search.scope_kind, SEARCH_SCOPE_FAVORITES);
+        let reread: PersistedState = toml::from_str(&toml::to_string(&favorites).unwrap()).unwrap();
+        assert_eq!(reread.search, favorites.search);
+
+        let unknown: PersistedState =
+            toml::from_str("[search]\nscoped = true\nscope_kind = 'decks'\n").unwrap();
+        assert!(!unknown.search.scoped);
+        assert!(unknown.search.scope_kind.is_empty());
+
+        let unscoped: PersistedState =
+            toml::from_str("[search]\nscope_kind = 'category'\n").unwrap();
+        assert!(!unscoped.search.scoped);
+        assert!(unscoped.search.scope_kind.is_empty());
+    }
+
+    #[test]
     fn recent_searches_ignore_the_order_of_their_systems() {
         let mut search = SearchState {
             systems: vec!["SNES".into(), "Genesis".into()],
@@ -1366,6 +1529,7 @@ future_field = "ignored"
         assert_eq!(search.recent[0].query, "game 12");
 
         search.scoped = true;
+        search.scope_kind = SEARCH_SCOPE_BROWSE.into();
         search.scope_path = "/roms/SNES/RPG".into();
         search.scope_name = "RPG".into();
         search.selected_path = "/roms/SNES/RPG/ct.sfc".into();
@@ -1378,6 +1542,36 @@ future_field = "ignored"
         assert_eq!(decoded, state);
         let old: PersistedState = toml::from_str("active_screen = 'hub'").unwrap();
         assert_eq!(old.search, SearchState::default());
+    }
+
+    #[test]
+    fn rename_and_file_browser_sections_round_trip_and_default_when_absent() {
+        let state = PersistedState {
+            active_screen: "file-browser".into(),
+            rename: RenameState {
+                target: HubTarget {
+                    hub_index: 3,
+                    identity: "category:Arcade".into(),
+                },
+                draft: "Coin-op".into(),
+                caret: 4,
+            },
+            file_browser: FileBrowserState {
+                target: HubTarget {
+                    hub_index: 3,
+                    identity: "category:Arcade".into(),
+                },
+                mode: "images".into(),
+                dir: "/media/usb0/art".into(),
+                selected: "arcade.png".into(),
+            },
+            ..PersistedState::default()
+        };
+        let decoded: PersistedState = toml::from_str(&toml::to_string(&state).unwrap()).unwrap();
+        assert_eq!(decoded, state);
+        let old: PersistedState = toml::from_str("active_screen = 'hub'").unwrap();
+        assert_eq!(old.rename, RenameState::default());
+        assert_eq!(old.file_browser, FileBrowserState::default());
     }
 
     #[test]

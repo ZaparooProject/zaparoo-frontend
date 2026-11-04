@@ -54,8 +54,8 @@ use generated::{App, Brand, GlyphSource, GridCell, LetterBucket, MenuEntry, Sizi
     unused_imports,
     reason = "reached through crate:: paths from the shared sizing adapter"
 )]
-use generated::{GamesView, Layout, Motion, Shell, SystemsView};
-use generated::{KeyCell, KeyKind, SearchPane, SearchPaneRow, SearchView, SearchZone};
+use generated::{FileBrowserMode, FileBrowserView, GamesView, Layout, Motion, Shell, SystemsView};
+use generated::{KeyCell, KeyKind, SearchPane, SearchPaneRow, SearchScope, SearchView, SearchZone};
 #[path = "../state_types.rs"]
 #[allow(
     dead_code,
@@ -154,10 +154,12 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
         fonts::set_han_preference(&lang);
     }
     brand::register(&app);
-    app.global::<GlyphSource>().on_glyph(|key, px, tint| {
-        glyphs::render(key.as_str(), px.round().max(0.0) as u32, tint).unwrap_or_default()
-    });
-    let crt = screen.starts_with("crt-") || screen == "calibration";
+    app.global::<GlyphSource>()
+        .on_raster(|key, px, tint, pixel_grid| {
+            glyphs::render(key.as_str(), px.round().max(0.0) as u32, tint, pixel_grid)
+                .unwrap_or_default()
+        });
+    let crt = screen.starts_with("crt-") || screen.starts_with("calibration");
     let ccw = screen.contains("ccw");
     let tate = screen.contains("tate") || ccw;
     let list = screen.contains("list");
@@ -214,6 +216,14 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
             false,
         ) == zaparoo_app::sizing::InterfaceProfile::Handheld,
     );
+    // ZAPAROO_SNAPSHOT_MENU_ROW=off renders with the Menu chip row turned
+    // off in Settings, which gives its band back to the content.
+    app.global::<Sizing>()
+        .set_menu_row_enabled(std::env::var("ZAPAROO_SNAPSHOT_MENU_ROW").as_deref() != Ok("off"));
+    // ZAPAROO_SNAPSHOT_HELP_BAR=off renders with the help bar hidden in
+    // Settings, which gives its height back to every screen.
+    app.global::<Sizing>()
+        .set_help_bar_enabled(std::env::var("ZAPAROO_SNAPSHOT_HELP_BAR").as_deref() != Ok("off"));
     sizing::apply_scene(&app, sizing::Scene::of(&app, scene_w, scene_h, crt));
     // Chrome fixtures: a full HUD with a battery reading, and an
     // indexing run in the status line so the track and percent render.
@@ -271,11 +281,24 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
         games_mode,
         screen.contains("context").then_some(6),
     );
+    // `…-list-images`: Left and Right step the pane's images.
+    if screen.ends_with("list-images") {
+        let view = app.global::<GamesView>();
+        view.set_detail_image_index(1);
+        view.set_detail_image_count(4);
+        view.set_detail_image_kind("screenshot".into());
+    }
     if screen.contains("search-results") {
         app.global::<GamesView>()
             .set_title("\u{201c}mario\u{201d} \u{b7} Super Nintendo".into());
     } else if screen.contains("search") || screen.ends_with("system-picker") {
         fixture_search(&app, screen);
+    } else if screen.contains("rename") {
+        fixture_rename(&app, screen.contains("caps"));
+    } else if screen.contains("ra-login") {
+        fixture_ra_login(&app, screen.contains("error"));
+    } else if screen.contains("file-browser") {
+        fixture_file_browser(&app, scene_w, scene_h, crt, screen);
     }
     // The browse filter: the header cue on the games screen, the picker's
     // categories page with a filter set, its values page with counts, and
@@ -482,7 +505,14 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
         overlays.set_context_open(true);
         // The list layout anchors the menu on a row, not a tile.
         if screen.contains("list") {
-            if let Some(g) = list_geometry(&app, scene_w, scene_h, crt, 0) {
+            if let Some(g) = list_geometry(
+                &app,
+                scene_w,
+                scene_h,
+                crt,
+                0,
+                games_mode != GamesMode::Recents,
+            ) {
                 let layout = app.global::<Layout>();
                 let row_h = g.row_height as f32;
                 overlays.set_context_anchor_x(
@@ -524,10 +554,15 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
     }
     // "letters" renders the games screen with the letter picker open.
     if screen.contains("letters") {
-        let labels = [
-            "#", "A", "B", "C", "D", "E", "F", "G", "H", "J", "K", "L", "M", "N", "P", "R", "S",
-            "T", "V", "W", "Y", "Z",
-        ];
+        // "letters-few": a list with only a handful of sections.
+        let labels: &[&str] = if screen.contains("letters-few") {
+            &["A", "D", "M", "S"]
+        } else {
+            &[
+                "#", "A", "B", "C", "D", "E", "F", "G", "H", "J", "K", "L", "M", "N", "P", "R",
+                "S", "T", "V", "W", "Y", "Z",
+            ]
+        };
         app.global::<generated::Overlays>()
             .set_letter_buckets(slint::ModelRc::new(slint::VecModel::from(
                 labels
@@ -539,7 +574,8 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
                     })
                     .collect::<Vec<_>>(),
             )));
-        app.global::<generated::Overlays>().set_letter_index(4);
+        app.global::<generated::Overlays>()
+            .set_letter_index(i32::try_from(labels.len().min(5) - 1).unwrap_or(0));
         app.global::<generated::Overlays>().set_letter_open(true);
     }
     let about = app.global::<generated::AboutView>();
@@ -841,6 +877,93 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
         ov.set_online_list_index(if backups { 4 } else { 1 });
         ov.set_online_list_open(true);
     }
+    // "…-launcher-prefs" renders the launcher preference list over the
+    // Library page, an entry held mid-move; "…-launcher-prefs-add" its Add
+    // page.
+    if screen.contains("launcher-prefs") {
+        use generated::{LauncherPrefsPage, LauncherPrefsRow, LauncherPrefsRowKind};
+        let ov = app.global::<generated::Overlays>();
+        let row =
+            |kind: LauncherPrefsRowKind, id: &str, detail: &str, enabled: bool, held: bool| {
+                LauncherPrefsRow {
+                    kind,
+                    id: id.into(),
+                    detail: detail.into(),
+                    enabled,
+                    held,
+                }
+            };
+        let add = screen.contains("launcher-prefs-add");
+        let rows = if add {
+            vec![
+                row(LauncherPrefsRowKind::Group, "DB9", "", false, false),
+                row(LauncherPrefsRowKind::Group, "DualRAM", "", true, false),
+                row(LauncherPrefsRowKind::Group, "LLAPI", "", true, false),
+                row(
+                    LauncherPrefsRowKind::Launcher,
+                    "NESdb9",
+                    "Nintendo Entertainment System",
+                    false,
+                    false,
+                ),
+                row(
+                    LauncherPrefsRowKind::Launcher,
+                    "RAMegaDrive",
+                    "Sega Genesis",
+                    true,
+                    false,
+                ),
+                row(
+                    LauncherPrefsRowKind::Launcher,
+                    "SNES",
+                    "Super Nintendo",
+                    true,
+                    false,
+                ),
+                row(
+                    LauncherPrefsRowKind::Launcher,
+                    "SNES_dualsdram",
+                    "Super Nintendo",
+                    true,
+                    false,
+                ),
+                row(
+                    LauncherPrefsRowKind::Launcher,
+                    "PSX",
+                    "PlayStation",
+                    true,
+                    false,
+                ),
+            ]
+        } else {
+            vec![
+                row(
+                    LauncherPrefsRowKind::Group,
+                    "RetroAchievements",
+                    "",
+                    true,
+                    false,
+                ),
+                row(LauncherPrefsRowKind::Group, "Sinden", "", true, true),
+                row(
+                    LauncherPrefsRowKind::Launcher,
+                    "SNES_dualsdram",
+                    "Super Nintendo",
+                    true,
+                    false,
+                ),
+            ]
+        };
+        ov.set_launcher_prefs_page(if add {
+            LauncherPrefsPage::Add
+        } else {
+            LauncherPrefsPage::List
+        });
+        ov.set_launcher_prefs_rows(slint::ModelRc::new(slint::VecModel::from(rows)));
+        ov.set_launcher_prefs_index(if add { 2 } else { 1 });
+        ov.set_launcher_prefs_moving(!add);
+        ov.set_launcher_prefs_open(true);
+    }
     // "log-upload" renders the uploader's finished state with its link.
     if screen.contains("log-upload") {
         let lv = app.global::<generated::LogUploadView>();
@@ -894,10 +1017,12 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
         }
         overlays.set_dialog_open(true);
     }
-    if screen == "calibration" {
+    if screen.starts_with("calibration") {
         let overlays = app.global::<generated::Overlays>();
         overlays.set_crt_h_offset(4);
         overlays.set_crt_v_offset(-2);
+        // `calibration-width`: the mode the options button switches to.
+        overlays.set_crt_size_mode(screen == "calibration-width");
         overlays.set_crt_calibration_open(true);
     }
     // "update-*" renders the Update screen from a seeded `UpdateView`, with
@@ -907,6 +1032,12 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
     }
     app.global::<Shell>()
         .set_active_screen(fixture_screen(screen));
+    // "*-bar": the Menu chip row with focus on its first chip.
+    if screen.ends_with("-bar") {
+        let bar = app.global::<generated::PageBar>();
+        bar.set_index(0);
+        bar.set_focused(true);
+    }
     if screen == "route-forward" {
         app.global::<Shell>().set_active_screen(Screen::Systems);
     }
@@ -1039,6 +1170,12 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
         return false;
     }
 
+    if crt && std::env::var_os("ZAPAROO_SNAPSHOT_TEXT_PROBE").is_some() {
+        for line in off_grid_text(&app) {
+            println!("off-grid text: {line}");
+        }
+    }
+
     // Diagnostic: dump what the Sizing global actually saw, so stale
     // screen-size plumbing is visible in the output, not just the PNG.
     let sizing = app.global::<Sizing>();
@@ -1059,6 +1196,91 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
     img.save(out).expect("write png");
     println!("wrote {out}");
     true
+}
+
+/// Every visible CRT label whose glyphs would start off a whole pixel.
+///
+/// Slint's software renderer places glyphs at quarter-pixel positions and
+/// bakes the remainder into their coverage, so the 6x8 bitmap face only
+/// stays sharp when each glyph's pen lands on a whole pixel. Its advances
+/// are 6 or 12 px, always even, so the pen of every glyph shares the
+/// fraction of the line's start, and a line's start depends only on the
+/// item's absolute x and its alignment: x, x + width / 2, or x + width.
+fn off_grid_text(app: &App) -> Vec<String> {
+    use i_slint_core::item_tree::ItemRc;
+    use i_slint_core::items::{ComplexText, SimpleText, TextHorizontalAlignment};
+    use i_slint_core::window::WindowInner;
+
+    let root = ItemRc::new_root(WindowInner::from_pub(app.window()).component());
+    let mut found = Vec::new();
+    root.visit_descendants(|item| {
+        let text = item
+            .downcast::<ComplexText>()
+            .map(|t| {
+                let t = t.as_pin_ref();
+                (t.text(), t.horizontal_alignment())
+            })
+            .or_else(|| {
+                item.downcast::<SimpleText>().map(|t| {
+                    let t = t.as_pin_ref();
+                    (t.text(), t.horizontal_alignment())
+                })
+            });
+        if let Some((text, align)) = text {
+            if !text.trim().is_empty() && item.is_visible() {
+                let geometry = item.geometry();
+                let x = item.map_to_window(geometry.origin).x;
+                let start = match align {
+                    TextHorizontalAlignment::Center => x + geometry.width() / 2.0,
+                    TextHorizontalAlignment::Right | TextHorizontalAlignment::End => {
+                        x + geometry.width()
+                    }
+                    _ => x,
+                };
+                // The renderer's own quantization: quarter-pixel bins.
+                if (start * 4.0).round() as i32 % 4 != 0 {
+                    found.push(format!(
+                        "{text:?} starts at x={start:.2} (x={x:.2} w={:.2}){}",
+                        geometry.width(),
+                        element_path(item)
+                    ));
+                }
+            }
+        }
+        std::ops::ControlFlow::<()>::Continue(())
+    });
+    found
+}
+
+/// The element and its nearest named ancestors, when the build carries
+/// Slint's debug info (`SLINT_EMIT_DEBUG_INFO=1`); empty otherwise.
+fn element_path(item: &i_slint_core::item_tree::ItemRc) -> String {
+    use i_slint_core::item_tree::ParentItemTraversalMode;
+    let mut names = Vec::new();
+    let mut current = Some(item.clone());
+    while let Some(node) = current {
+        if let Some(infos) = node.element_type_names_and_ids(0) {
+            for (type_name, id) in infos {
+                let name = if id.is_empty() {
+                    type_name.to_string()
+                } else {
+                    format!("{type_name}#{id}")
+                };
+                if names.last() != Some(&name) {
+                    names.push(name);
+                }
+            }
+        }
+        if names.len() >= 6 {
+            break;
+        }
+        current = node.parent_item(ParentItemTraversalMode::StopAtPopups);
+    }
+    if names.is_empty() {
+        String::new()
+    } else {
+        format!(" in {}", names.join(" < "))
+    }
 }
 
 /// Push a Hub page built from a representative layout through the same
@@ -1113,7 +1335,7 @@ fn fixture_search(app: &App, screen: &str) {
     if screen.contains("scoped") {
         // A folder search with a filter chosen, the cursor moved back into
         // the query and focus on the Filter field.
-        view.set_scoped(true);
+        view.set_scope(SearchScope::Folder);
         view.set_system_name("Super Nintendo".into());
         view.set_scope_name("Racing".into());
         view.set_filter_text("Racing +1".into());
@@ -1137,9 +1359,205 @@ fn fixture_search(app: &App, screen: &str) {
     })));
 }
 
+/// The `RetroAchievements` login on its password, the character just typed
+/// still showing; "…-error" after `RetroAchievements` turned it down.
+fn fixture_ra_login(app: &App, error: bool) {
+    let view = app.global::<generated::RaLoginView>();
+    let mut keys = keyboard::Keyboard::masked(
+        zaparoo_app::keyboard::Layers::Full,
+        zaparoo_app::retro_achievements::FIELD_MAX_CHARS,
+    );
+    for c in "hunter2".chars() {
+        keys.insert(c);
+    }
+    if error {
+        if let Some(ticket) = keys.reveal_ticket() {
+            keys.expire_reveal(ticket);
+        }
+    }
+    keys.focus(zaparoo_app::keyboard::Key::Char('2'));
+    let (before, at, after) = keys.display();
+    view.set_before(before);
+    view.set_at(at);
+    view.set_after(after);
+    view.set_keys(slint::ModelRc::new(slint::VecModel::from(keys.cells())));
+    view.set_key_rows(i32::try_from(keys.row_count()).unwrap_or(5));
+    view.set_key_index(i32::try_from(keys.index()).unwrap_or(0));
+    view.set_key_kind(KeyKind::Char);
+    view.set_step(generated::RaLoginStep::Password);
+    view.set_can_submit(true);
+    view.set_status(if error {
+        generated::RaLoginStatus::WrongCredentials
+    } else {
+        generated::RaLoginStatus::Idle
+    });
+}
+
+/// The rename screen: a tile's name being edited, the cursor inside it.
+fn fixture_rename(app: &App, caps: bool) {
+    let view = app.global::<generated::RenameView>();
+    let mut keys = keyboard::Keyboard::new(
+        zaparoo_app::keyboard::Layers::Full,
+        zaparoo_app::text_entry::TILE_NAME_MAX_CHARS,
+    );
+    keys.set_text("Role-playing games");
+    keys.move_caret(false);
+    keys.move_caret(false);
+    if caps {
+        keys.lock_shift();
+        keys.focus(zaparoo_app::keyboard::Key::Shift);
+    } else {
+        keys.focus(zaparoo_app::keyboard::Key::Char('e'));
+    }
+    let (before, at, after) = keys.display();
+    view.set_before(before);
+    view.set_at(at);
+    view.set_after(after);
+    view.set_keys(slint::ModelRc::new(slint::VecModel::from(keys.cells())));
+    view.set_key_rows(i32::try_from(keys.row_count()).unwrap_or(5));
+    view.set_key_index(i32::try_from(keys.index()).unwrap_or(0));
+    view.set_key_kind(KeyKind::Char);
+    view.set_shift_active(caps);
+    view.set_shift_locked(caps);
+}
+
+/// The file browser: a folder of images as previews, the same folder as a
+/// list, or Places.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one fixture projects the same folder into grid and list layouts"
+)]
+fn fixture_file_browser(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &str) {
+    use zaparoo_app::layouts::{self, Body, ThemeId, View};
+    let view = app.global::<FileBrowserView>();
+    let places = screen.contains("places");
+    let list = screen.contains("list");
+    let names: Vec<(&str, &str)> = if places {
+        vec![
+            ("Custom folder", "/media/fat/zaparoo/custom"),
+            ("SD card", "/media/fat"),
+            ("USB 0", "/media/usb0"),
+            ("Network", "/media/network"),
+            ("Root", "/"),
+        ]
+    } else {
+        vec![
+            ("Consoles", ""),
+            ("Handhelds", ""),
+            ("arcade.png", ""),
+            ("favorites.svg", ""),
+            ("rpg-night.jpg", ""),
+            ("search.png", ""),
+            ("settings.webp", ""),
+        ]
+    };
+    let folders = if places { names.len() } else { 2 };
+    let cell = |i: usize, (name, path): (&str, &str)| GridCell {
+        name: if list && !places && i < folders {
+            format!("{name}/").into()
+        } else {
+            name.into()
+        },
+        glyph_key: if i < folders {
+            "icons/Folder"
+        } else {
+            "icons/File"
+        }
+        .into(),
+        tags: if list { path.into() } else { "".into() },
+        ..Default::default()
+    };
+    let cells: Vec<GridCell> = names.iter().enumerate().map(|(i, n)| cell(i, *n)).collect();
+    view.set_mode(if list {
+        FileBrowserMode::Plain
+    } else {
+        FileBrowserMode::Images
+    });
+    view.set_places(places);
+    view.set_title(if places { "" } else { "hub" }.into());
+    view.set_focus_ready(true);
+    let selected = if places { 0 } else { 2 };
+    view.set_focused_opens(selected < folders);
+    view.set_focused_picks(selected >= folders);
+    view.set_has_menu(true);
+    let inputs = sizing::Scene::of(app, scene_w, scene_h, crt).inputs();
+    if list {
+        if let Some(geometry) = list_geometry(app, scene_w, scene_h, crt, 10, false) {
+            view.set_list_x(geometry.card_x as f32);
+            view.set_list_y(geometry.card_y as f32);
+            view.set_list_width(geometry.card_width as f32);
+            view.set_list_height(geometry.card_height as f32);
+            view.set_list_row_height(geometry.row_height as f32);
+        }
+        view.set_list_rows(slint::ModelRc::new(slint::VecModel::from(cells)));
+        view.set_list_view_top(0);
+        view.set_list_scroll_top(0);
+        view.set_list_sel(selected as i32);
+        view.set_count(names.len() as i32);
+        view.set_current_index(selected as i32);
+        return;
+    }
+    let derived = zaparoo_app::sizing::derive(&inputs);
+    let profile = layouts::profile(ThemeId::current(&inputs), View::GamesGrid, &inputs);
+    let Body::Grid { grid, .. } = profile.body else {
+        return;
+    };
+    let t240 = derived.tier == zaparoo_app::sizing::Tier::T240;
+    let grid_y = derived.header_bottom + profile.status.top_margin + profile.status.strip_height;
+    let label_height = inputs.pct_h(7.0);
+    let bottom = if t240 {
+        derived.help_bar_height + label_height
+    } else {
+        zaparoo_app::sizing::less_hidden_bar(&inputs, &derived, inputs.pct_h(15.0))
+    };
+    let grid_height = (inputs.screen_height as i32 - grid_y - bottom).max(0);
+    let insets = zaparoo_app::paged_grid::Insets {
+        left: grid.left_inset,
+        right: grid.right_inset,
+        top: grid.top_inset,
+        bottom: grid.bottom_inset,
+        column_gap: grid.column_gap,
+        row_gap: grid.row_gap,
+    };
+    let (columns, rows) = (derived.games_grid_columns, derived.games_grid_rows);
+    let fit = zaparoo_app::paged_grid::fit(
+        columns,
+        rows,
+        inputs.screen_width as i32,
+        grid_height,
+        None,
+        false,
+        &insets,
+    );
+    let page = (columns * rows).max(1) as usize;
+    let label = names[selected].0;
+    let cells: Vec<GridCell> = cells.into_iter().take(page).collect();
+    view.set_cells(slint::ModelRc::new(slint::VecModel::from(cells)));
+    view.set_columns(columns);
+    view.set_rows(rows);
+    view.set_cell_width(fit.cell_width as f32);
+    view.set_cell_height(fit.cell_height as f32);
+    view.set_block_offset_x(fit.block_offset_x as f32);
+    view.set_block_offset_y(fit.block_offset_y as f32);
+    view.set_grid_y(grid_y as f32);
+    view.set_grid_height(grid_height as f32);
+    view.set_label_y((grid_y + grid_height) as f32);
+    view.set_label_height(label_height as f32);
+    view.set_selected_local(selected as i32);
+    view.set_label_name(label.into());
+    view.set_count(names.len() as i32);
+    view.set_current_index(selected as i32);
+}
+
 fn fixture_screen(screen: &str) -> Screen {
     if screen.starts_with("route-") {
         Screen::Hub
+    } else if screen.contains("rename") {
+        Screen::Rename
+    } else if screen.contains("ra-login") {
+        Screen::RaLogin
+    } else if screen.contains("file-browser") {
+        Screen::FileBrowser
     } else if screen.contains("search-results") {
         Screen::SearchResults
     } else if screen.contains("search") || screen.ends_with("system-picker") {
@@ -1148,6 +1566,7 @@ fn fixture_screen(screen: &str) -> Screen {
         Screen::Update
     } else if screen.contains("context")
         || screen == "letters"
+        || screen == "letters-few"
         || (screen.contains("list") && !screen.contains("systems"))
         || screen.contains("games")
         || screen.contains("filter")
@@ -1169,7 +1588,13 @@ fn fixture_screen(screen: &str) -> Screen {
         Screen::Settings
     } else if matches!(
         screen,
-        "saver" | "dialog" | "alert" | "config-alert" | "notice" | "calibration"
+        "saver"
+            | "dialog"
+            | "alert"
+            | "config-alert"
+            | "notice"
+            | "calibration"
+            | "calibration-width"
     ) {
         Screen::Hub
     } else if screen.contains("about") {
@@ -1568,33 +1993,76 @@ fn fixture_game_info(app: &App, screen: &str) {
     let view = app.global::<generated::GameInfoView>();
     view.set_modal_open(true);
     view.set_modal_name("Chrono Trigger".into());
-    view.set_loading(screen.ends_with("loading"));
-    view.set_failed(screen.ends_with("error"));
+    let manual = screen.contains("manual");
+    view.set_loading(!manual && screen.ends_with("loading"));
+    view.set_failed(!manual && screen.ends_with("error"));
     if view.get_loading() || view.get_failed() {
         return;
     }
     let short = screen.ends_with("short");
-    let rows: Vec<_> = [
-        ("system", "Super Nintendo Entertainment System"),
-        ("release_date", "1995"),
-        ("genre", "Role-playing"),
-        ("players", "1"),
-        ("developer", "Square"),
-        ("publisher", "Square"),
-        ("filename", "Chrono Trigger (USA)"),
-    ]
-    .into_iter()
-    .take(if short { 2 } else { 7 })
-    .map(|(key, value)| generated::DetailRow {
+    // The table `game_info_data::info_rows` lays out: the facts under
+    // Details, the leftover tags, then Technical details. `stop` is the
+    // focus index after the art (0), the manual (1) and the description (2).
+    let header = |key: &str| generated::InfoRow {
+        kind: RowKind::Header,
+        key: key.into(),
+        value: "".into(),
+        stop: -1,
+    };
+    let row = |key: &str, value: &str, stop: i32| generated::InfoRow {
+        kind: RowKind::Field,
         key: key.into(),
         value: value.into(),
-    })
-    .collect();
-    view.set_rows(slint::ModelRc::new(slint::VecModel::from(rows)));
+        stop,
+    };
+    let rows: Vec<_> = if short {
+        vec![
+            header("details"),
+            row("system", "Super Nintendo Entertainment System", -1),
+            row("year", "1995", 3),
+        ]
+    } else {
+        vec![
+            header("details"),
+            row("system", "Super Nintendo Entertainment System", -1),
+            row("year", "1995", 3),
+            row("players", "1 player", 4),
+            row("developer", "Square", 5),
+            row("publisher", "Square", 6),
+            row("genre", "RPG, JRPG", 7),
+            row("region", "United States", 8),
+            row("tags", "custom:anniversary, user:hidden", 9),
+            header("technical"),
+            row("dump", "Verified", 10),
+            row("path", "/media/fat/games/SNES/Chrono Trigger (USA).sfc", -1),
+        ]
+    };
+    view.set_info_rows(slint::ModelRc::new(slint::VecModel::from(rows)));
+    view.set_image_stop(if short { -1 } else { 0 });
+    view.set_manual_stop(1);
+    view.set_description_stop(if short { -1 } else { 2 });
+    // `…-focus-row` puts focus on Genre; `…-values` lists its values.
+    view.set_focus(
+        if screen.contains("focus-row") || screen.ends_with("values") {
+            7
+        } else {
+            i32::from(short)
+        },
+    );
+    if screen.ends_with("values") {
+        view.set_values_kind("genre".into());
+        view.set_values(slint::ModelRc::new(slint::VecModel::from(vec![
+            slint::SharedString::from("RPG"),
+            slint::SharedString::from("JRPG"),
+        ])));
+        view.set_values_index(1);
+        view.set_values_open(true);
+    }
     if !short {
         view.set_media_missing(true);
         view.set_modal_description("A journey through time, from prehistoric lands to a distant future. Meet companions, explore unfamiliar places, and discover how each era connects to the next. Choices made along the way shape the adventure.\n\nThis long fixture checks that descriptions stay readable and can be scrolled rather than silently truncated.".into());
         view.set_image_count(2);
+        view.set_image_kind("boxart".into());
         let logo = slint::Image::load_from_path(std::path::Path::new(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/assets/systems/SNES.png"
@@ -1606,6 +2074,109 @@ fn fixture_game_info(app: &App, screen: &str) {
             view.set_scroll_position(10.0);
         }
     }
+    view.set_has_manual(true);
+    // `game-info-manual` is the manual's whole page, `…-manual-width` fit
+    // width; `…-manual-loading` and `…-manual-error` the states before a
+    // page.
+    if screen.contains("manual") {
+        fixture_manual(&view, screen);
+    }
+    // `game-info-viewer`: the art full screen, named and counted.
+    if screen.ends_with("viewer") {
+        let art = slint::Image::load_from_path(std::path::Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/assets/systems/SNES.png"
+        )))
+        .expect("fixture logo");
+        view.set_viewer_image(art);
+        view.set_viewer_has_image(true);
+        view.set_viewer_open(true);
+    }
+}
+
+fn fixture_manual(view: &generated::GameInfoView, screen: &str) {
+    use generated::{ManualFit, ManualState};
+    if screen.ends_with("loading") {
+        view.set_manual_state(ManualState::Loading);
+        return;
+    }
+    if screen.ends_with("error") {
+        view.set_manual_state(ManualState::TooLarge);
+        return;
+    }
+    let pdf = hayro::hayro_syntax::Pdf::new(fixture_manual_pdf()).expect("fixture PDF");
+    let page = &pdf.pages()[0];
+    let (page_w, _) = page.render_dimensions();
+    let scale = 1280.0 / page_w;
+    let pixmap = hayro::render(
+        page,
+        &hayro::RenderCache::new(),
+        &hayro::hayro_interpret::InterpreterSettings::default(),
+        &hayro::RenderSettings::default(),
+        &hayro::PixmapSettings {
+            x_scale: scale,
+            y_scale: scale,
+            bg_color: hayro::vello_cpu::color::palette::css::WHITE,
+        },
+    );
+    let buffer = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(
+        pixmap.data_as_u8_slice(),
+        u32::from(pixmap.width()),
+        u32::from(pixmap.height()),
+    );
+    view.set_manual_state(ManualState::Ready);
+    view.set_manual_image(slint::Image::from_rgba8(buffer));
+    view.set_manual_has_image(true);
+    view.set_manual_pages(12);
+    view.set_manual_page(2);
+    // A manual opens on the whole page; `…-manual-width` is fit width,
+    // scrolled a little.
+    if screen.ends_with("width") {
+        view.set_manual_fit(ManualFit::Width);
+        view.set_manual_scroll(0.1);
+    }
+}
+
+/// One US Letter page of manual-like text, built as the mock Core builds
+/// its manuals.
+fn fixture_manual_pdf() -> Vec<u8> {
+    use std::fmt::Write as _;
+    let mut text = String::from(
+        "BT /F1 28 Tf 72 700 Td (Chrono Trigger) Tj ET\nBT /F1 16 Tf 72 664 Td (Starting the game) Tj ET\n",
+    );
+    for line in 0..32 {
+        let _ = writeln!(
+            text,
+            "BT /F1 12 Tf 72 {} Td (Press START on the title screen, then choose New Game or Continue. {}) Tj ET",
+            630 - line * 18,
+            line + 1
+        );
+    }
+    let objects = [
+        "<< /Type /Catalog /Pages 2 0 R >>".to_string(),
+        "<< /Type /Pages /Kids [4 0 R] /Count 1 >>".into(),
+        "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".into(),
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 5 0 R >>".into(),
+        format!("<< /Length {} >>\nstream\n{text}endstream", text.len()),
+    ];
+    let mut out = b"%PDF-1.4\n".to_vec();
+    let mut offsets = Vec::new();
+    for (i, object) in objects.iter().enumerate() {
+        offsets.push(out.len());
+        out.extend_from_slice(format!("{} 0 obj\n{object}\nendobj\n", i + 1).as_bytes());
+    }
+    let xref = out.len();
+    let mut tail = format!("xref\n0 {}\n0000000000 65535 f \n", objects.len() + 1);
+    for offset in offsets {
+        let _ = writeln!(tail, "{offset:010} 00000 n ");
+    }
+    let _ = write!(
+        tail,
+        "trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n",
+        objects.len() + 1
+    );
+    out.extend_from_slice(tail.as_bytes());
+    out
 }
 
 fn fixture_hub(app: &App, scene_w: f64, scene_h: f64, crt: bool, selected: usize) {
@@ -1719,8 +2290,9 @@ fn list_metrics(
     scene_h: f64,
     crt: bool,
     target_rows: usize,
+    menu_row: bool,
 ) -> (f32, usize) {
-    list_geometry(app, scene_w, scene_h, crt, target_rows)
+    list_geometry(app, scene_w, scene_h, crt, target_rows, menu_row)
         .map_or((0.0, 1), |g| (g.row_height as f32, g.visible_rows.max(1)))
 }
 
@@ -1732,6 +2304,7 @@ fn list_geometry(
     scene_h: f64,
     crt: bool,
     target_rows: usize,
+    menu_row: bool,
 ) -> Option<zaparoo_app::media_list::ListGeometry> {
     use zaparoo_app::layouts::{self, Body, ThemeId, View};
     let inputs = sizing::Scene::of(app, scene_w, scene_h, crt).inputs();
@@ -1754,10 +2327,11 @@ fn list_geometry(
             screen_height: inputs.screen_height as i32,
             header_bottom: derived.header_bottom,
             status_top_margin: profile.status.top_margin,
-            strip_height: profile.status.strip_height,
+            strip_height: profile.status.strip_height
+                + if menu_row { derived.menu_row_block } else { 0 },
             help_bar_height: derived.help_bar_height,
             tier_240: derived.tier == zaparoo_app::sizing::Tier::T240,
-            safe_bottom_gap: inputs.pct_h(6.0),
+            safe_bottom_gap: derived.help_bar_band,
             target_rows,
             min_row_height: inputs.pct_h(3.0),
             default_row_height: inputs.pct_h(6.0),
@@ -1777,6 +2351,12 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
     let page = screen.contains("settings-page");
     let playtime = screen.contains("settings-page-playtime");
     let online = screen.contains("settings-page-online");
+    // "…-settings-page-ra": the Library page's RetroAchievements section,
+    // logged in with a system whose own default wins; "…-ra-new" before
+    // anything is set up. "…-launcher-prefs" puts the preference list
+    // over the Library page, "…-launcher-prefs-add" its Add page.
+    let ra = screen.contains("settings-page-ra") || screen.contains("launcher-prefs");
+    let ra_setup = screen.contains("ra-new");
     // "…-online-unlinked": the same page before an account is linked, with
     // the cursor on a row that waits for one.
     let unlinked = screen.contains("online-unlinked");
@@ -1800,6 +2380,11 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
         can_request_playtime_access: playtime,
         can_link_online: online,
         online_linked: online && !unlinked,
+        launcher_preference: ra,
+        retro_achievements: ra,
+        ra_logged_in: ra && !ra_setup,
+        ra_installed: ra && !ra_setup,
+        ra_conflict: ra && !ra_setup,
     };
     // The card and its row heights, from the rule the driver uses.
     let geometry = rules::page_geometry(&inputs);
@@ -1822,10 +2407,21 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
                 Row::Header(_) => geometry.header_height,
                 Row::Field { id, control } => {
                     out.control = control.into();
-                    out.enabled = !(unlinked && rules::needs_online_link(id));
+                    let waits = (unlinked && rules::needs_online_link(id))
+                        || (ra_setup && rules::needs_ra_install(id));
+                    out.enabled = !waits;
                     match control {
                         Control::Toggle => {
-                            out.checked = id == "showHidden" || (id == "playtimeSync" && !unlinked);
+                            out.checked = id == "showHidden"
+                                || (id == "playtimeSync" && !unlinked)
+                                || (!ra_setup
+                                    && matches!(
+                                        id,
+                                        "raLaunchers"
+                                            | "raProgressPopups"
+                                            | "raChallengePopups"
+                                            | "raLeaderboardPopups"
+                                    ));
                         }
                         Control::Picker | Control::Info => {
                             out.value = match id {
@@ -1836,7 +2432,17 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
                                 "onlineWarp" => "active",
                                 "onlineBackupSchedule" => "daily",
                                 "onlineRemoteStatus" => "waiting",
+                                "raAccount" if ra_setup => "loggedOut",
+                                "raAccount" => "loggedIn",
+                                "raConflict" => "1",
+                                "raPopupPosition" => "left",
                                 _ => "auto",
+                            }
+                            .into();
+                            out.value_name = match id {
+                                "raAccount" => "Callan",
+                                "raConflict" => "Super Nintendo",
+                                _ => "",
                             }
                             .into();
                         }
@@ -1890,6 +2496,11 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
                         "onlineUnlinkAccount"
                     }
             })
+            .and_then(|i| i32::try_from(i).ok())
+            .unwrap_or(2)
+    } else if ra {
+        rows.iter()
+            .position(|row| row.id == if ra_setup { "raLogIn" } else { "raLaunchers" })
             .and_then(|i| i32::try_from(i).ok())
             .unwrap_or(2)
     } else if page {
@@ -1970,6 +2581,46 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
     view.set_grid_height(grid_height as f32);
 }
 
+/// The Hub's and a games-style screen's Menu chips, as their drivers
+/// publish them.
+fn fixture_chips(app: &App, mode: GamesMode) {
+    let chip = |id: &str, key: &str, name: &str| MenuEntry {
+        role: generated::MenuRole::Option,
+        detail_key: "".into(),
+        id: id.into(),
+        label: name.into(),
+        label_key: key.into(),
+        enabled: true,
+        reason_key: "".into(),
+        detail: "".into(),
+    };
+    let games = match mode {
+        GamesMode::Browse => vec![
+            chip("jump_letter", "jump_letter", ""),
+            chip("filter", "filter", ""),
+            chip("search_here", "search_here", ""),
+        ],
+        GamesMode::Favorites => vec![
+            chip("favorites_sort", "favorites_sort", "sort:name"),
+            chip("favorites_grouping", "favorites_grouping", "group:none"),
+            chip("launch_random_favorite", "launch_random_favorite", ""),
+            chip("search_here", "search_here", ""),
+            chip("more", "more", ""),
+        ],
+        GamesMode::Search => vec![
+            chip("edit_search", "edit_search", ""),
+            chip("add_to_hub", "save_to_hub", ""),
+        ],
+        GamesMode::Recents => Vec::new(),
+    };
+    let bar = app.global::<generated::PageBar>();
+    bar.set_games_chips(slint::ModelRc::new(slint::VecModel::from(games)));
+    bar.set_hub_chips(slint::ModelRc::new(slint::VecModel::from(vec![
+        chip("hub_add", "hub_add", ""),
+        chip("more", "more", ""),
+    ])));
+}
+
 /// The Games grid at its browse geometry: a page of captioned tiles with
 /// a favorite heart, a tag suffix and a folder row, page 1 of 4 with more
 /// pages loaded behind it, at the Games footer profile.
@@ -2001,7 +2652,15 @@ fn fixture_games(
     let t240 = derived.tier == zaparoo_app::sizing::Tier::T240;
     let flat = mode != GamesMode::Browse;
     let screen_h = inputs.screen_height as i32;
-    let grid_y = derived.header_bottom + profile.status.top_margin + profile.status.strip_height;
+    fixture_chips(app, mode);
+    let grid_y = derived.header_bottom
+        + profile.status.top_margin
+        + profile.status.strip_height
+        + if mode == GamesMode::Recents {
+            0
+        } else {
+            derived.menu_row_block
+        };
     let label_height = if flat {
         inputs.pct_h(7.0)
     } else {
@@ -2010,7 +2669,7 @@ fn fixture_games(
     let bottom = if t240 {
         derived.help_bar_height + label_height
     } else if flat {
-        inputs.pct_h(15.0)
+        zaparoo_app::sizing::less_hidden_bar(&inputs, &derived, inputs.pct_h(15.0))
     } else {
         footer.grid_bottom_margin
     };
@@ -2100,7 +2759,8 @@ fn fixture_games(
     // card beside the focused row's detail pane. Filled here too so the
     // `*-list` screens render what the driver would push, not an empty
     // card.
-    let (list_row_height, list_visible) = list_metrics(app, scene_w, scene_h, crt, 0);
+    let (list_row_height, list_visible) =
+        list_metrics(app, scene_w, scene_h, crt, 0, mode != GamesMode::Recents);
     let list_rows: Vec<GridCell> = (1..=list_visible)
         .map(|i| GridCell {
             name: if i == 1 && !flat {
@@ -2118,6 +2778,7 @@ fn fixture_games(
             } else {
                 "".into()
             },
+            opens: i == 1 && !flat,
             favorite: i == 2,
             ..Default::default()
         })
@@ -2190,7 +2851,29 @@ fn fixture_systems(app: &App, scene_w: f64, scene_h: f64, crt: bool, favorites: 
     let Body::Grid { grid, footer } = profile.body else {
         return;
     };
-    let grid_y = derived.header_bottom + profile.status.top_margin + profile.status.strip_height;
+    let chip = |id: &str, key: &str, name: &str| MenuEntry {
+        role: generated::MenuRole::Option,
+        detail_key: "".into(),
+        id: id.into(),
+        label: name.into(),
+        label_key: key.into(),
+        enabled: true,
+        reason_key: "".into(),
+        detail: "".into(),
+    };
+    app.global::<generated::PageBar>()
+        .set_systems_chips(slint::ModelRc::new(slint::VecModel::from(if favorites {
+            vec![
+                chip("favorites_grouping", "favorites_grouping", "group:system"),
+                chip("search_here", "search_here", ""),
+            ]
+        } else {
+            vec![chip("search_here", "search_here", "")]
+        })));
+    let grid_y = derived.header_bottom
+        + profile.status.top_margin
+        + profile.status.strip_height
+        + derived.menu_row_block;
     let bottom = if derived.tier == zaparoo_app::sizing::Tier::T240 {
         derived.help_bar_height + footer.active_label_height
     } else {
@@ -2224,7 +2907,7 @@ fn fixture_systems(app: &App, scene_w: f64, scene_h: f64, crt: bool, favorites: 
             ..Default::default()
         })
         .collect();
-    let (row_height, visible) = list_metrics(app, scene_w, scene_h, crt, 0);
+    let (row_height, visible) = list_metrics(app, scene_w, scene_h, crt, 0, favorites);
     let list_rows: Vec<GridCell> = (13..13 + visible)
         .map(|i| GridCell {
             name: format!("Example System {i}").into(),
@@ -2327,6 +3010,10 @@ mod fixture_tests {
             ("search", Screen::Search),
             ("crt-search-scoped", Screen::Search),
             ("search-results", Screen::SearchResults),
+            ("rename", Screen::Rename),
+            ("crt-ra-login", Screen::RaLogin),
+            ("settings-page-launcher-prefs", Screen::Settings),
+            ("crt-file-browser-list", Screen::FileBrowser),
             ("game-info", Screen::Games),
             ("settings-page", Screen::Settings),
             ("about", Screen::About),

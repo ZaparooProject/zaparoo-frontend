@@ -37,7 +37,12 @@ rust/frontend/  [frontend library and binary; Slint UI]
   ├── src/context_page.rs : a page of the context menu: Manage and Write to
   │                        token from the menu's own rows, and the two Core
   │                        is asked for, alternates.rs and discs.rs
-  ├── src/game_info_data.rs : Game Info metadata and carousel ordering
+  ├── src/game_info_data.rs : Game Info's table and image order;
+  │                        tags are grouped and named by
+  │                        zaparoo_app::game_details and ui/tag_names.slint
+  ├── src/manual.rs      : a game's manual as a page of Game Info: fetched
+  │                        through `media.asset`, rendered a page at a time
+  │                        by hayro on a worker thread, memory only
   ├── src/tag_utils.rs   : compact tag tokens for inline metadata
   ├── src/qr.rs          : QR matrix for the write deep-link and doc links
   ├── src/{input,actions,gamepad}.rs
@@ -194,6 +199,16 @@ crate still owns all UI, navigation and input semantics.
   launcher list. `request_folder_picker` and `request_launcher_scan` trigger
   the same guarded request as the rows. Configuration and status live with
   the window, so a host configures them again for every new window.
+- `Input::configure_image_picker` registers the host's own image picker
+  for Change icon… on a Hub tile; without one, a hosted build does not
+  offer that row. The host answers with `image_picker_result`: an ordered
+  revision and `Picked(path)`, `Cancelled`, `Denied` or `Failed`, where a
+  stale revision or an answer with no request open is ignored. Unlike the
+  folder picker, a path crosses this seam: it must be absolute and readable
+  by the frontend, and it becomes the tile's `icon` as written, so making
+  the file readable (a copy into the host's own storage, say) is the
+  host's. `request_image_picker` runs it for the focused Hub tile, and
+  `image_picker_pending` is a diagnostic.
 - `Input::configure_playtime_access` offers a handoff to the system
   setting that lets the host measure foreground playtime exactly; it adds
   "Verify playtime…" to Settings > Library. `playtime_access_status`
@@ -410,3 +425,9 @@ connected, which is why the desktop build pins `SLINT_SCALE_FACTOR=1`.
 
 **Never gate runtime behavior on `Platform`, never gate Core
 assumptions on `Runtime`.** They are independent.
+
+Settings > Library's RetroAchievements section is a runtime gate:
+`retro_achievements::available()` reads `Runtime`, because it edits files
+on the card of the machine the frontend runs on (odelot's `MiSTer_RA` and
+its `/media/fat/retroachievements.cfg`), whatever Core reports. Hosted
+builds never show it.

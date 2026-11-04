@@ -22,10 +22,6 @@ use crate::navigation::EntryMode;
 use crate::router::{lock, Ctx, Shared};
 use crate::{App, GridCell, SystemsInput, SystemsView};
 
-/// Swoop duration and the settle before the strip re-arms.
-const SWOOP_MS: u64 = 260;
-const REARM_MS: u64 = 50;
-
 /// Which list the screen shows: one category's systems, or the systems
 /// that hold favorites (structurally a Systems screen, and grouped with
 /// it by the layout profile).
@@ -49,12 +45,10 @@ pub struct SystemsModel {
     pub restore_done: bool,
     pub activate_pulse: i32,
     pub release_pulse: i32,
-    /// A page swoop is in flight; input waits for the commit.
-    pub sliding: bool,
+    /// The page turn in flight (`page_motion`); input waits for it.
+    pub page: crate::page_motion::PageMotion,
     pub transition_seq: u64,
     pub fill_task: crate::scoped_task::ScopedTask,
-    pub page_seq: u64,
-    pub cut_next_page: bool,
 }
 
 impl SystemsModel {
@@ -70,11 +64,9 @@ impl SystemsModel {
             restore_done: false,
             activate_pulse: 0,
             release_pulse: 0,
-            sliding: false,
+            page: crate::page_motion::PageMotion::default(),
             transition_seq: 0,
             fill_task: crate::scoped_task::ScopedTask::default(),
-            page_seq: 0,
-            cut_next_page: false,
         }
     }
 
@@ -187,6 +179,19 @@ fn catalog_entry(shared: &Shared, id: &str) -> Option<SystemInfo> {
 pub fn enter(ctx: &Ctx, app: &App, category: &str, entry: EntryMode, animate: bool) {
     lock(&ctx.shared).persist.active_screen = "systems".to_string();
     fill(ctx, app, category, entry);
+    // The focused tile paints its zoomed logo from the first frame. It is
+    // normally warm already; when it is not, prepare that one logo now
+    // rather than commit a frame with the resting copy in a grown card.
+    let missing = {
+        let shared = lock(&ctx.shared);
+        focus_art_key(ctx, app, &shared, &geometry(app, &shared))
+            .filter(|key| ctx.logos.get(key).is_none() && !ctx.logos.is_negative(key))
+    };
+    if let Some(key) = missing {
+        if ctx.logos.prepare_now(key).is_some() {
+            render(ctx, app);
+        }
+    }
     if animate {
         crate::router::transition_to_screen(app, crate::Screen::Systems, 1);
     } else {
@@ -224,7 +229,7 @@ fn fill(ctx: &Ctx, app: &App, category: &str, entry: EntryMode) {
         model.grid.set_item_count(model.rows.len());
         model.grid.set_current_index_immediate(index);
         model.restore_done = true;
-        model.sliding = false;
+        model.page.sliding = false;
         model.transition_seq += 1;
     }
     crate::router::save_persist(&ctx.shared);
@@ -260,7 +265,7 @@ fn enter_favorites_with_direction(ctx: &Ctx, app: &App, entry: EntryMode, direct
         model.loading = model.favorites.is_empty();
         model.focus_armed = false;
         model.restore_done = false;
-        model.sliding = false;
+        model.page.sliding = false;
         model.transition_seq += 1;
         model.grid.prepare_for_model_replacement();
         let rows = project_favorites(&shared);
@@ -481,7 +486,7 @@ impl Geometry {
     }
 }
 
-fn geometry(app: &App) -> Geometry {
+fn geometry(app: &App, shared: &Shared) -> Geometry {
     let inputs = crate::router::output_scene(app).inputs();
     let derived = zaparoo_app::sizing::derive(&inputs);
     let profile = layouts::profile(ThemeId::current(&inputs), View::SystemsGrid, &inputs);
@@ -489,7 +494,10 @@ fn geometry(app: &App) -> Geometry {
         Body::Grid { grid, footer } => (grid, footer),
         Body::List { .. } => unreachable!("the systems grid view resolves to a grid body"),
     };
-    let grid_y = derived.header_bottom + profile.status.top_margin + profile.status.strip_height;
+    let grid_y = derived.header_bottom
+        + profile.status.top_margin
+        + profile.status.strip_height
+        + crate::page_bar::systems_row_block(favorites(shared), &derived);
     let bottom = if derived.tier == zaparoo_app::sizing::Tier::T240 {
         derived.help_bar_height + footer.active_label_height
     } else {
@@ -522,6 +530,11 @@ fn geometry(app: &App) -> Geometry {
             &insets,
         ),
     }
+}
+
+/// The favorite systems, the one Systems mode with page actions.
+fn favorites(shared: &Shared) -> bool {
+    shared.systems_model.mode == SystemsMode::Favorites
 }
 
 fn list_layout(shared: &Shared) -> bool {
@@ -557,10 +570,12 @@ fn list_geometry(app: &App, shared: &Shared) -> list_rules::ListGeometry {
             screen_height: inputs.screen_height as i32,
             header_bottom: derived.header_bottom,
             status_top_margin: profile.status.top_margin,
-            strip_height: profile.status.strip_height,
+            // The Menu chip row sits between the strip and the card.
+            strip_height: profile.status.strip_height
+                + crate::page_bar::systems_row_block(favorites(shared), &derived),
             help_bar_height: derived.help_bar_height,
             tier_240: derived.tier == zaparoo_app::sizing::Tier::T240,
-            safe_bottom_gap: inputs.pct_h(6.0),
+            safe_bottom_gap: derived.help_bar_band,
             target_rows: 0,
             min_row_height: inputs.pct_h(3.0),
             default_row_height: inputs.pct_h(6.0),
@@ -646,23 +661,32 @@ fn focus_art_key(
     shared: &Shared,
     geometry: &Geometry,
 ) -> Option<crate::system_logos::Key> {
+    logo_key(
+        ctx,
+        shared.systems_model.current()?,
+        &shared.persist.settings.system_logo_style,
+        focus_bounds(app, shared, geometry)?,
+    )
+}
+
+/// The bounds of the focused tile's larger copy of its logo, where the
+/// grid paints one.
+fn focus_bounds(
+    app: &App,
+    shared: &Shared,
+    geometry: &Geometry,
+) -> Option<zaparoo_app::logo_cache::Bounds> {
     if list_layout(shared) {
         return None;
     }
     let zoom = crate::system_logos::focus_zoom(app)?;
-    let bounds = crate::system_logos::tile_bounds(
+    Some(crate::system_logos::tile_bounds(
         app,
         geometry.fit.cell_width,
         geometry.fit.cell_height,
         zoom,
         TILE_ART,
-    );
-    logo_key(
-        ctx,
-        shared.systems_model.current()?,
-        &shared.persist.settings.system_logo_style,
-        bounds,
-    )
+    ))
 }
 
 /// Tell the logo cache which logos the Systems grid can ever show, so it
@@ -678,10 +702,12 @@ pub(crate) fn warm_logos(ctx: &Ctx, app: &App) {
     let keys = {
         let shared = lock(&ctx.shared);
         let list = list_layout(&shared);
-        let bounds = logo_bounds(app, &shared, &geometry(app));
+        let geometry = geometry(app, &shared);
+        let bounds = logo_bounds(app, &shared, &geometry);
+        let focus = focus_bounds(app, &shared, &geometry);
         let style = &shared.persist.settings.system_logo_style;
         let built_from = format!(
-            "{style}|{list}|{bounds:?}|{:?}|{}|{}|{}|{:?}",
+            "{style}|{list}|{bounds:?}|{focus:?}|{:?}|{}|{}|{}|{:?}",
             region(&shared),
             shared.categories.len(),
             shared.systems.len(),
@@ -694,14 +720,27 @@ pub(crate) fn warm_logos(ctx: &Ctx, app: &App) {
         if list {
             Vec::new()
         } else {
-            let mut seen = std::collections::HashSet::new();
-            shared
+            // First, the larger copy for the tile each category opens on,
+            // so entering a category paints its focused tile zoomed from
+            // the first frame. Then every logo at grid size.
+            let projected: Vec<Vec<SystemRow>> = shared
                 .categories
                 .iter()
-                .flat_map(|category| project(&shared, category))
+                .map(|category| project(&shared, category))
+                .collect();
+            let entry_focus = focus.into_iter().flat_map(|focus| {
+                projected
+                    .iter()
+                    .filter_map(move |rows| rows.first())
+                    .filter_map(move |row| logo_key(ctx, row, style, focus))
+            });
+            let mut seen = std::collections::HashSet::new();
+            let grid = projected
+                .iter()
+                .flatten()
                 .filter(|row| seen.insert(row.id.clone()))
-                .filter_map(|row| logo_key(ctx, &row, style, bounds))
-                .collect()
+                .filter_map(|row| logo_key(ctx, row, style, bounds));
+            entry_focus.chain(grid).collect()
         }
     };
     ctx.logos.set_warm(keys);
@@ -731,7 +770,7 @@ fn request_logos(ctx: &Ctx, app: &App, shared: &Shared, bounds: zaparoo_app::log
         .into_iter()
         .chain(model.rows.iter().skip(start).take(size))
         .filter_map(|row| logo_key(ctx, row, style, bounds))
-        .chain(focus_art_key(ctx, app, shared, &geometry(app)));
+        .chain(focus_art_key(ctx, app, shared, &geometry(app, shared)));
     let neighbors = [start.saturating_add(size), start.saturating_sub(size)]
         .into_iter()
         .flat_map(|first| model.rows.iter().skip(first).take(size))
@@ -774,13 +813,18 @@ pub fn render(ctx: &Ctx, app: &App) {
     // of logos to keep ready was built.
     warm_logos(ctx, app);
     render_with_page(ctx, app, false);
+    // A pending route keeps the source's row, as it keeps its page.
+    if !crate::navigation::active() {
+        let shared = lock(&ctx.shared);
+        crate::page_bar::publish_systems(app, &shared, favorites(&shared));
+    }
 }
 
 fn render_with_page(ctx: &Ctx, app: &App, reuse_page: bool) {
     if crate::navigation::active() {
         return;
     }
-    let geometry = geometry(app);
+    let geometry = geometry(app, &lock(&ctx.shared));
     let art_size = geometry.artwork_size();
     let view = app.global::<SystemsView>();
     let mut shared = lock(&ctx.shared);
@@ -805,12 +849,12 @@ fn render_with_page(ctx: &Ctx, app: &App, reuse_page: bool) {
     let model = &shared.systems_model;
     let page = model.grid.current_page();
     let start = page * model.grid.page_size();
-    if !model.sliding && view.get_page_slide().abs() > f32::EPSILON {
+    if !model.page.sliding && view.get_page_slide().abs() > f32::EPSILON {
         view.set_slide_anim(false);
         view.set_page_slide(0.0);
         view.set_cached_transition(false);
     }
-    let strip_sliding = model.sliding && !view.get_cached_transition();
+    let strip_sliding = model.page.sliding && !view.get_cached_transition();
     if strip_sliding {
         crate::view_model::publish_cells(
             &view.get_next_cells(),
@@ -927,33 +971,16 @@ fn render_list(ctx: &Ctx, app: &App, shared: &Shared, bounds: zaparoo_app::logo_
     if list_layout(shared) {
         let previous = saved_list_top(shared)
             .unwrap_or_else(|| list_rules::list_view_top(current, count, visible, None));
-        let scroll_top = crate::browse_motion::window_top(current, count, visible, previous);
-        // A page of rows either side of the window, so a glide to the
-        // next row or the next page has rows to show the whole way.
-        let top = scroll_top.saturating_sub(visible);
-        let rows: Vec<GridCell> = model
-            .rows
-            .iter()
-            .skip(top)
-            .take(scroll_top - top + 2 * visible)
-            .map(text_cell)
-            .collect();
-        // How the list follows this move. Only a render that moved the
-        // selection decides: one that did not must leave a glide in flight
-        // as it is.
-        let was = usize::try_from(view.get_list_view_top() + view.get_list_sel()).unwrap_or(0);
-        let moved = current.abs_diff(was);
-        if moved > 0 {
-            let (glide, step_ms) = shared.input.list_follow(moved);
-            view.set_list_glide(glide);
-            view.set_list_step_ms(step_ms);
-        }
-        crate::view_model::publish_cells(&view.get_list_rows(), rows, |rows| {
-            view.set_list_rows(rows);
-        });
-        view.set_list_sel(i32::try_from(current.saturating_sub(top)).unwrap_or(0));
-        view.set_list_view_top(i32::try_from(top).unwrap_or(0));
-        view.set_list_scroll_top(i32::try_from(scroll_top).unwrap_or(0));
+        crate::browse_motion::publish_list(
+            &view,
+            &shared.input,
+            current,
+            count,
+            visible,
+            previous,
+            &model.rows,
+            text_cell,
+        );
         if let Some(row) = model.current() {
             if list_only_layout(shared) {
                 view.set_detail_title(SharedString::default());
@@ -1007,7 +1034,7 @@ fn state(app: &App) -> &'static str {
     }
 }
 
-fn persist_selection(ctx: &Ctx) {
+pub(crate) fn persist_selection(ctx: &Ctx) {
     {
         let mut shared = lock(&ctx.shared);
         let id = shared.systems_model.current().map(|s| s.id.clone());
@@ -1021,116 +1048,43 @@ fn persist_selection(ctx: &Ctx) {
     crate::router::save_persist(&ctx.shared);
 }
 
-#[cfg(feature = "mister")]
-fn request_cached_page_transition(app: &App, direction: i32, _columns: i32, _rows: i32) -> bool {
-    if app.global::<crate::Shell>().get_systems_list_layout() {
-        return false;
+/// The systems grid on the shared page turn.
+pub(crate) struct SystemsScreen;
+
+impl crate::page_motion::PagedScreen for SystemsScreen {
+    type View<'a> = SystemsView<'a>;
+    fn view(app: &App) -> SystemsView<'_> {
+        app.global::<SystemsView>()
     }
-    let view = app.global::<SystemsView>();
-    crate::mister::request_browse_page_transition(
-        app,
-        view.get_grid_y(),
-        view.get_grid_height(),
-        direction,
-    )
+    fn motion(shared: &mut Shared) -> &mut crate::page_motion::PageMotion {
+        &mut shared.systems_model.page
+    }
+    fn render(ctx: &Ctx, app: &App) {
+        render(ctx, app);
+    }
+    fn on_screen(app: &App) -> bool {
+        matches!(
+            app.global::<crate::Shell>().get_active_screen(),
+            crate::Screen::Systems | crate::Screen::FavoriteSystems
+        )
+    }
+    fn list_layout(app: &App) -> bool {
+        app.global::<crate::Shell>().get_systems_list_layout()
+    }
 }
 
-#[cfg(not(feature = "mister"))]
-fn request_cached_page_transition(_app: &App, _direction: i32, _columns: i32, _rows: i32) -> bool {
-    false
-}
-
-/// Swoop one period in the grid's committed navigation direction, including
-/// wrapped turns. Reduce motion cuts instead.
+/// Turn to the grid's current page in its committed direction, including
+/// wrapped turns.
 fn slide_to_current_page(ctx: &Ctx, app: &App) {
-    let rapid = crate::input::rapid_page(ctx);
-    let (to_page, columns, rows, reduce_motion, dir) = {
-        let mut shared = lock(&ctx.shared);
-        let reduce_motion =
-            shared.persist.settings.reduce_motion || !app.global::<crate::Motion>().get_enabled();
-        let model = &mut shared.systems_model;
-        model.sliding = true;
-        model.page_seq = model.page_seq.wrapping_add(1);
-        let reduce_motion = reduce_motion || std::mem::take(&mut model.cut_next_page);
+    let (direction, local) = {
+        let shared = lock(&ctx.shared);
+        let grid = &shared.systems_model.grid;
         (
-            model.grid.current_page(),
-            model.grid.columns() as i32,
-            model.grid.rows() as i32,
-            reduce_motion,
-            model.grid.page_direction().offset(),
+            grid.page_direction().offset(),
+            grid.current_index() - grid.current_page() * grid.page_size(),
         )
     };
-    let view = app.global::<SystemsView>();
-    let target_local = {
-        let shared = lock(&ctx.shared);
-        let model = &shared.systems_model;
-        model.grid.current_index() - to_page * model.grid.page_size()
-    };
-    view.set_slide_dir(dir);
-    view.set_transition_target_index(i32::try_from(target_local).unwrap_or(0));
-    if reduce_motion || rapid {
-        lock(&ctx.shared).systems_model.sliding = false;
-        render(ctx, app);
-        return;
-    }
-    let seq = lock(&ctx.shared).systems_model.page_seq;
-    if request_cached_page_transition(app, dir, columns, rows) {
-        view.set_slide_anim(false);
-        view.set_cached_transition(true);
-        render(ctx, app);
-        let weak = app.as_weak();
-        let ctx = ctx.clone();
-        slint::Timer::single_shot(std::time::Duration::from_millis(SWOOP_MS), move || {
-            if let Some(app) = weak.upgrade() {
-                if lock(&ctx.shared).systems_model.page_seq != seq {
-                    return;
-                }
-                lock(&ctx.shared).systems_model.sliding = false;
-                let view = app.global::<SystemsView>();
-                view.set_cached_transition(false);
-                view.set_slide_anim(true);
-                render(&ctx, &app);
-            }
-        });
-        return;
-    }
-    crate::drs::heavy_begin();
-    let next: Vec<GridCell> = {
-        let shared = lock(&ctx.shared);
-        let geometry = geometry(app);
-        let bounds = logo_bounds(app, &shared, &geometry);
-        request_logos(ctx, app, &shared, bounds);
-        page_cells(ctx, &shared, to_page, bounds, geometry.artwork_size())
-    };
-    view.set_slide_anim(true);
-    view.set_selected_local(-1);
-    view.set_next_cells(ModelRc::new(VecModel::from(next)));
-    view.set_page_slide(dir as f32);
-    let weak = app.as_weak();
-    let ctx = ctx.clone();
-    slint::Timer::single_shot(std::time::Duration::from_millis(SWOOP_MS), move || {
-        crate::drs::heavy_end();
-        let Some(app) = weak.upgrade() else {
-            return;
-        };
-        if lock(&ctx.shared).systems_model.page_seq != seq {
-            return;
-        }
-        lock(&ctx.shared).systems_model.sliding = false;
-        let view = app.global::<SystemsView>();
-        view.set_slide_anim(false);
-        render(&ctx, &app);
-        view.set_page_slide(0.0);
-        let weak = app.as_weak();
-        slint::Timer::single_shot(std::time::Duration::from_millis(REARM_MS), move || {
-            if lock(&ctx.shared).systems_model.page_seq != seq {
-                return;
-            }
-            if let Some(app) = weak.upgrade() {
-                app.global::<SystemsView>().set_slide_anim(true);
-            }
-        });
-    });
+    crate::page_motion::turn::<SystemsScreen>(ctx, app, direction, local, true);
 }
 
 /// A directional or page move: returns whether the index changed and the
@@ -1140,7 +1094,7 @@ fn move_cursor(ctx: &Ctx, app: &App, action: &str) -> Option<(bool, usize)> {
     let list_layout = list_layout(&shared);
     let list_page = list_visible_rows(app, &shared) as i64;
     let model = &mut shared.systems_model;
-    if model.sliding {
+    if model.page.sliding {
         return None;
     }
     let from_page = model.grid.current_page();
@@ -1193,30 +1147,7 @@ fn move_cursor(ctx: &Ctx, app: &App, action: &str) -> Option<(bool, usize)> {
 }
 
 pub(crate) fn interrupt_page(ctx: &Ctx, app: &App) {
-    let interrupted = {
-        let mut shared = lock(&ctx.shared);
-        let model = &mut shared.systems_model;
-        let interrupted = model.sliding;
-        model.cut_next_page = interrupted;
-        if interrupted {
-            model.page_seq = model.page_seq.wrapping_add(1);
-            model.sliding = false;
-        }
-        interrupted
-    };
-    if !interrupted {
-        return;
-    }
-    let view = app.global::<SystemsView>();
-    #[cfg(feature = "mister")]
-    if view.get_cached_transition() {
-        crate::mister::cancel_page_transition();
-    }
-    view.set_cached_transition(false);
-    view.set_slide_anim(false);
-    view.set_page_slide(0.0);
-    render(ctx, app);
-    app.window().request_redraw();
+    crate::page_motion::interrupt::<SystemsScreen>(ctx, app);
 }
 
 pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
@@ -1272,13 +1203,24 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
                 open_context_menu(ctx, app);
             }
         }
-        // The favorites list's View menu carries the grouping switch, so
-        // it must stay reachable even when the list came back empty.
+        // Above 240p the Menu is the chip row. The favorites list's Menu
+        // carries the grouping switch, so it stays reachable even when the
+        // list came back empty. At 240p a category's one action, Search
+        // here, runs straight away.
         actions::PAGE_MENU => {
-            if lock(&ctx.shared).systems_model.mode == SystemsMode::Favorites
-                && matches!(state(app), "ready" | "empty")
-            {
-                crate::router::open_favorites_grouping_menu(ctx, app);
+            let favorites = favorites(&lock(&ctx.shared));
+            let reachable = match state(app) {
+                "ready" => true,
+                "empty" => favorites,
+                _ => false,
+            };
+            if !reachable || crate::page_bar::enter(ctx, app) {
+                return;
+            }
+            if favorites {
+                crate::router::open_favorite_systems_page_menu(ctx, app);
+            } else {
+                crate::search::enter_scoped(ctx, app);
             }
         }
         actions::CANCEL => {
@@ -1419,6 +1361,11 @@ fn open_context_menu(ctx: &Ctx, app: &App) {
     crate::router::present_systems_context_menu(ctx, app, index, menu);
 }
 
+/// Where the menu sits when Back brings it back: the focused cell now.
+pub(crate) fn context_anchor(ctx: &Ctx, app: &App) -> crate::router::ContextAnchor {
+    cell_anchor(ctx, app)
+}
+
 /// The scene rect of the focused tile or list row (the menu anchor).
 fn cell_anchor(ctx: &Ctx, app: &App) -> crate::router::ContextAnchor {
     let shared = lock(&ctx.shared);
@@ -1443,7 +1390,7 @@ fn cell_anchor(ctx: &Ctx, app: &App) -> crate::router::ContextAnchor {
             zoomed: false,
         }
     } else {
-        let geometry = geometry(app);
+        let geometry = geometry(app, &shared);
         let rect = paged_grid::cell_rect(
             &geometry.fit,
             &geometry.insets,
@@ -1524,7 +1471,7 @@ fn pointer_select(ctx: &Ctx, app: &App, local: i32) -> bool {
     {
         let mut shared = lock(&ctx.shared);
         let model = &mut shared.systems_model;
-        if model.sliding {
+        if model.page.sliding {
             return false;
         }
         let Ok(local) = usize::try_from(local) else {

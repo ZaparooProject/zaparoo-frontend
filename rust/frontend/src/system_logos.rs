@@ -156,6 +156,29 @@ impl Logos {
         self.lock().cache.get(key).cloned().flatten()
     }
 
+    /// Prepare `key` on the calling thread unless it is already cached: for
+    /// the one logo a route cannot commit without. One decode and tint, a
+    /// few tens of milliseconds on `MiSTer`; no lock is held across it.
+    pub fn prepare_now(&self, key: Key) -> Option<Prepared> {
+        let ramps = {
+            let mut inner = self.lock();
+            if let Some(ready) = inner.cache.get(&key) {
+                return ready.clone();
+            }
+            if inner.paused || key.generation != inner.generation {
+                return None;
+            }
+            inner.ramps
+        };
+        let image = prepare(key, ramps);
+        let bytes = image.as_ref().map_or(0, Prepared::bytes);
+        let mut inner = self.lock();
+        if key.generation == inner.generation {
+            inner.cache.insert(key, image.clone(), bytes);
+        }
+        image
+    }
+
     /// Distinguish an unusable asset from one still waiting for preparation.
     /// Only the former needs the text fallback before another cache reset.
     pub fn is_negative(&self, key: &Key) -> bool {
@@ -491,13 +514,13 @@ pub(crate) fn refresh(ctx: &crate::router::Ctx, app: &crate::App) {
     }
     match app.global::<crate::Shell>().get_active_screen() {
         crate::Screen::Systems | crate::Screen::FavoriteSystems => {
-            let sliding = crate::router::lock(&ctx.shared).systems_model.sliding;
+            let sliding = crate::router::lock(&ctx.shared).systems_model.page.sliding;
             if !sliding {
                 crate::systems::render(ctx, app);
             }
         }
         crate::Screen::Hub => {
-            if !crate::router::lock(&ctx.shared).hub.sliding {
+            if !crate::router::lock(&ctx.shared).hub.page.sliding {
                 crate::hub::render(ctx, app);
             }
         }
@@ -507,7 +530,7 @@ pub(crate) fn refresh(ctx: &crate::router::Ctx, app: &crate::App) {
         | crate::Screen::SearchResults => {
             let sliding = {
                 let shared = crate::router::lock(&ctx.shared);
-                shared.games.sliding || shared.games.folder_sliding
+                shared.games.page.sliding || shared.games.folder_sliding
             };
             if !sliding {
                 crate::games::render(ctx, app);

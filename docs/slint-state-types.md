@@ -17,13 +17,17 @@ and consumers, the snapshot binary, and the MiSTer dual-head mirror/tests.
 | Settings | `SettingsPage`, `RowKind`, `ControlKind`, `ActionStatus`: root/subpage, outgoing page, field controls (picker, toggle, tri-toggle, action, navigate, and the read-only info row) and job status |
 | Setup | `SetupKind`, `SetupPicker`, `ScopeKind`, `SetupAction`: job, picker, scope label (one system, a count of checked systems, a game, the picker's headings) and help action; Rust selection stores domain `Scope` with its ID payload, and a picker row's check is a `bool` beside its kind |
 | Status | `StatusKind`, `AppCue`, `DisabledReason`, `BootStatus`: status ladder, transient launch cue and Hub add/remove confirmation, disabled Hub captions and the boot curtain line |
+| Search | `KeyKind`, `SearchZone`, `SearchPane`, `SearchScope`: the focused key's kind, the focused field, what the side pane lists, and what "Search here" limited the search to (folder, system, category, favorites); Rust keeps domain `zaparoo_app::search::Scope` and its persisted token, and maps it explicitly |
 | Menus | `MenuRole`, `ContextPage`: what a menu row is (an option, a header, a foot action, or a context-menu row that opens a page), and which page the context menu is showing in place of its own rows (root, Write to token, the three Manage pages, discs, alternate versions). Row ids stay strings: they are dynamic dispatch keys |
 | Dialogs | `DialogKind`, `ErrorKind`, `DialogButton`: kinds and decisions, separate from text payloads; first-time setup ends on Start media update and progress stays in the header |
 | Input | `PressOwner`, `ScrollAction`: delayed-accept ownership, overlay pointer dispatch and Details scroll commands |
 | Display | `Orientation`, `VideoStandard`: UI selection; orientation stays typed through scene sizing and live backend updates |
 | Log upload | `LogPhase`: uploading, done, failed |
+| Manual | `ManualState`, `ManualFit`: Game Info's manual page (closed, loading, ready, too large, failed) and whether a page fits the box's width or sits wholly inside it |
 | Pairing | `PairPhase`: closed, starting, showing, paired, expired |
 | Online | `OnlineLinkPhase`: the link panel's progress; `OnlineListKind`, `OnlineListStatus`: which list the Online modal shows (backups or activity) and whether it is ready, loading, failed, empty or working |
+| Launcher preference | `LauncherPrefsPage`, `LauncherPrefsRowKind`: the modal's page (list, an entry's actions, what can be added) and what each row is (launcher, group, Add, Move, Remove) |
+| RetroAchievements | `RaLoginStep`, `RaLoginStatus`: the login screen's field (username or password) and what the last login check came to; `zaparoo_app::retro_achievements::LoginOutcome` maps onto the status explicitly |
 
 UI-owned browse and dialog enums are reused directly by Rust. Toolkit-free
 rules (`zaparoo-app`) retain their own enums; exhaustive `From` matches in

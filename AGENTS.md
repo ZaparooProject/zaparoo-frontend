@@ -20,12 +20,13 @@ raw cargo as the default path; the justfile carries the expected environment
 | Desktop run | `just run` |
 | Dev run against mock Core | `just run-dev` (starts and stops the mock itself) |
 | Mock Core only | `just mock-core` |
-| Full test gate | `just test` (workspace plus the `mister` feature set) |
+| Full test gate | `just test` (workspace, the `mister` feature set, and the CRT text check) |
 | Hosted seam check | `just hosted-check` (clippy and tests for the hosted library on the software renderer; builds for no host target) |
 | Full lint gate | `just lint` (fmt, clippy for desktop, mister, and snapshot, deny, toolkit guard, translation template, notices, logo parity) |
 | Format | `just fmt` (`just fix` applies clippy fixes first) |
 | Regenerate the translation template | `just tr-extract` |
 | Render the main screens offline | `just snapshots` (optional language, e.g. `just snapshots de`) |
+| Check CRT labels sit on whole pixels | `just crt-text-check` (also part of `just test`) |
 | MiSTer ARM32 static build | `just arm32` |
 | Official MiSTer build with provenance | `just release` |
 | MiSTer release bundle | `just release-zip vX.Y.Z` |
@@ -101,6 +102,10 @@ private `_` recipe. Container builds write to `rust/target/docker/`.
   natural geometry such as `(parent.width - self.width) / 2`. Keep rounding
   only for semantically discrete values or documented exact-pixel contracts
   such as CRT calibration guides, bitmap raster sizing, and QR modules.
+  Bitmap-font text is one: the software renderer places glyphs at
+  quarter-pixel positions, so under `Sizing.pixel-grid` labels start on whole
+  pixels through `Sizing.snap`/`Sizing.even`, and `just crt-text-check`
+  enforces it (`docs/style.md` → "Integer-pixel drawing").
 - Take geometry from the `Sizing` and `Layout` globals (pushed from
   `zaparoo_app::sizing` and `zaparoo_app::layouts`), not hardcoded pixel sizes
   or element counts. The UI must run cleanly at 240p.
@@ -111,6 +116,11 @@ private `_` recipe. Container builds write to `rust/target/docker/`.
   `Layout` property gets its setter there, unconditionally. Where Rust solves
   a grid's cells and offsets, the view places them with the same insets and
   gaps Rust solved with (Settings and the Hub use `Sizing.hub-grid-*`).
+- Turn pages on every paged grid through `rust/frontend/src/page_motion.rs`
+  and draw them with `PageStrip` (`ui/tiles.slint`); build browse lists'
+  row windows with `browse_motion::publish_list`. A new grid or list screen
+  plugs into these instead of carrying its own copy, so motion stays the
+  same everywhere. See `docs/slint-gotchas.md` → "One page turn".
 - Put product rules (sizing, palette, grid navigation, menus, input timing,
   status ladders) in the toolkit-free `rust/zaparoo-app` crate with tests, and
   keep `rust/frontend` as the Slint adapter. `scripts/check-toolkit-free.sh`
@@ -199,8 +209,10 @@ private `_` recipe. Container builds write to `rust/target/docker/`.
 - Do not load assets from loose files at runtime. Fonts, logos, glyph SVGs and
   catalogs are embedded (`include_bytes!`, `include_str!`, `@image-url`,
   bundled translations). The only images read from disk are user overrides
-  from the `custom/` folder and, on a colocated MiSTer, Core's own thumbnail
-  files.
+  from the `custom/` folder, a Hub tile's `icon` when it is an absolute
+  path, the file browser's previews, and, on a colocated MiSTer, Core's own
+  thumbnail files. The two user-chosen kinds go through the customization
+  pipeline's limits and cache and are never copied or cached to disk.
 
 ## Build caching couplings
 
@@ -231,18 +243,22 @@ update rules, in short:
 | `rust/frontend/src/lib.rs` | Application wiring: config, logger, tokio runtime, `Client`/`Store`, persisted state, window, language, services |
 | `rust/frontend/src/host.rs` | Hosted entry (`host::run`) and the `Input` seam an embedding host drives |
 | `rust/frontend/src/router.rs` | All forward orchestration and the single input dispatch (`dispatch_action`) |
+| `rust/frontend/src/page_motion.rs`, `browse_motion.rs` | The page turn every paged grid shares; the browse lists' row window, glide and fast-scroll rail |
 | `rust/frontend/src/navigation.rs`, `folder_motion.rs`, `route_motion.rs` | Deferred routes that keep the source until the destination is ready; motion tests on a stepped clock |
 | `rust/frontend/src/{hub,systems,games,settings,about}.rs` | Per-screen drivers |
+| `rust/frontend/src/{rename,file_browser}.rs` | Rename tile (shared keyboard) and the reusable file browser with its image-preview mode |
+| `rust/frontend/src/{launcher_prefs,retro_achievements,ra_login}.rs` | Core's global launcher preference modal; `MiSTer_RA`'s cfg and install check; the RetroAchievements login screen (masked password, checked with RetroAchievements before saving) |
 | `rust/frontend/src/{game_info,media_setup,log_upload,launchers,card_write,qr}.rs` | Modal drivers |
+| `rust/frontend/src/manual.rs` | A game's manual as a page of Game Info: `media.asset` chunks, hayro rendering on a worker thread, pages in memory only |
 | `rust/frontend/src/{context_page,alternates,discs}.rs` | Context-menu pages: the shared page (Manage and Write to token included), alternate versions, a multi-disc game's discs |
-| `rust/frontend/src/{input,actions,gamepad}.rs` | Key path: duplicate guard, swaps, hold-repeat; keyboard bindings; desktop gamepads |
+| `rust/frontend/src/{input,actions,gamepad,keyboard}.rs` | Key path: duplicate guard, swaps, hold-repeat, the text field owner; keyboard bindings; desktop gamepads; the on-screen keyboard's shared state and buttons |
 | `rust/frontend/src/{media_cache,hub_covers,customization}.rs` | Bounded in-memory cover cache, cold-boot cover manifest, user overrides |
 | `rust/frontend/src/hub_refresh.rs` | Refreshes pinned Hub tiles' stored identifiers from Core after a catalog load or rescan |
 | `rust/frontend/src/{theme,sizing,glyphs,system_logos,fonts}.rs` | Palette push, scene sizing adapter, embedded art and fonts |
 | `rust/frontend/src/mister/` | MiSTer platform: fb0, DDR and vblank-latch presenters, evdev input, lease, service kick |
 | `rust/frontend/src/dual_head.rs` | Projects the HDMI component's state onto the CRT component |
 | `rust/frontend/src/bin/snapshot.rs` | Offline software-rendered screen snapshots |
-| `rust/frontend/ui/` | `.slint` views: `app.slint` (root, globals, modals), `chrome.slint`, `tiles.slint`, `browse_list.slint`, `settings.slint`, `setup.slint`, `game_info.slint`, `about.slint`, `focus.slint`, `theme.slint`, `labels.slint`, `state_types.slint` |
+| `rust/frontend/ui/` | `.slint` views: `app.slint` (root, globals, modals), `chrome.slint`, `tiles.slint`, `browse_list.slint`, `settings.slint`, `setup.slint`, `game_info.slint`, `about.slint`, `keyboard.slint`, `search.slint`, `rename.slint`, `file_browser.slint`, `focus.slint`, `theme.slint`, `labels.slint`, `tag_names.slint` (tag and value names, from the Zaparoo App), `state_types.slint` |
 | `rust/frontend/assets/` | Embedded system logo PNGs: grayscale `systems/`, its half-size copy `systems-half/` for small tiles, and full-color `systems-color/`, generated by `just logos` |
 | `rust/frontend/translations/` | Canonical gettext catalogs, bundled by `build.rs` |
 | `rust/zaparoo-app/` | Toolkit-free product rules with golden fixtures |
@@ -257,7 +273,8 @@ update rules, in short:
 ## Screens and routing
 
 The frontend has root screens (Hub, Systems, Favorite systems, Games,
-Favorites, Recents, Search, Search results, Settings, About) plus modals. The `.slint` views are
+Favorites, Recents, Search, Search results, Rename, File browser, Settings,
+About) plus modals. The `.slint` views are
 **pure views**: every key press is forwarded to Rust, `router::dispatch_action`
 maps it to an action, and Rust mutates the globals the views render. All
 forward orchestration lives in `rust/frontend/src/router.rs` and the
@@ -342,6 +359,14 @@ ask to go.
 - `[video] fullscreen` is tri-state on purpose. An absent key lets the
   runtime decide; only an explicit `false` puts a Deck back in a window.
   `--fullscreen` and `--windowed` override it for one run.
+- RetroAchievements on MiSTer goes through odelot's `MiSTer_RA`, which
+  reads `/media/fat/retroachievements.cfg` (plaintext login, `key=value`).
+  `retro_achievements.rs` writes that file in place, never through a
+  temporary file and a rename: Core can bind-mount a per-profile copy over
+  the path, and a rename would replace the mount instead of the profile's
+  file. MiSTer.ini's `[RA_*] main=MiSTer_RA` section is only read, never
+  written; installing is Update All's job. The login screen is the one
+  screen never restored after a kill.
 - Debug logging is enabled with `[logging] debug = true` or `ZAPAROO_DEBUG=1`.
 - The header's battery reading has two probes behind one HUD field.
   `MiSTer` reads the optional pi-top-style `SMBus` fuel gauge

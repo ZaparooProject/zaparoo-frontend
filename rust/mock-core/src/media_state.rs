@@ -251,19 +251,26 @@ pub fn scrape_status_response() -> Value {
 }
 
 fn index_notification() -> Value {
-    with_state(|s| {
-        json!({
-            "exists": s.exists,
-            "indexing": s.indexing,
-            "optimizing": s.optimizing,
-            "paused": s.paused,
-            "totalSteps": s.total_steps,
-            "currentStep": s.current_step,
-            "currentStepDisplay": s.current_step_display,
-            "totalFiles": s.total_files,
-            "totalMedia": s.total_media,
-        })
-    })
+    with_state(|s| index_notification_for(s))
+}
+
+/// Like Core's `WithMediaCounts`, only a settled frame for an existing
+/// database carries `totalMedia`; an in-progress frame leaves it out.
+fn index_notification_for(s: &MediaState) -> Value {
+    let mut frame = json!({
+        "exists": s.exists,
+        "indexing": s.indexing,
+        "optimizing": s.optimizing,
+        "paused": s.paused,
+        "totalSteps": s.total_steps,
+        "currentStep": s.current_step,
+        "currentStepDisplay": s.current_step_display,
+        "totalFiles": s.total_files,
+    });
+    if !s.indexing && s.exists {
+        frame["totalMedia"] = json!(s.total_media);
+    }
+    frame
 }
 
 fn scrape_notification() -> Value {
@@ -502,5 +509,33 @@ async fn run_scrape_sequence(generation: u64, force: bool, notifier: Notifier) {
     });
     if still_current {
         notifier.send("media.scraping", &scrape_notification());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn index_notification_carries_total_media_only_when_settled() {
+        let running = MediaState {
+            exists: true,
+            indexing: true,
+            total_media: 42,
+            ..MediaState::default()
+        };
+        assert!(index_notification_for(&running).get("totalMedia").is_none());
+
+        let settled = MediaState {
+            indexing: false,
+            ..running
+        };
+        assert_eq!(index_notification_for(&settled)["totalMedia"], 42);
+
+        let missing = MediaState {
+            exists: false,
+            ..settled
+        };
+        assert!(index_notification_for(&missing).get("totalMedia").is_none());
     }
 }

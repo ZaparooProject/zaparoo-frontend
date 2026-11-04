@@ -4,7 +4,7 @@
 //
 // Help-bar glyph resolution: which button style directory the bar draws
 // from and which positional glyph the semantic confirm / cancel / options /
-// view tokens resolve to. "auto" defers the style to the connected
+// menu tokens resolve to. "auto" defers the style to the connected
 // controller (Main_MiSTer's input report); a manual pick pins the family.
 // Confirm and cancel always follow the live report, because which physical
 // button accepts is a fact about the controller, not a look. The swap
@@ -33,7 +33,7 @@ pub struct Resolved<'a> {
     pub confirm: &'a str,
     pub cancel: &'a str,
     pub options: &'static str,
-    pub view: &'static str,
+    pub menu: &'static str,
 }
 
 /// The keyboard is the live input source. The swap settings
@@ -69,7 +69,7 @@ pub fn resolve<'a>(
         confirm: if swap_cc { cancel } else { accept },
         cancel: if swap_cc { accept } else { cancel },
         options: if swap_ov { "FaceWest" } else { "FaceNorth" },
-        view: if swap_ov { "FaceNorth" } else { "FaceWest" },
+        menu: if swap_ov { "FaceNorth" } else { "FaceWest" },
     }
 }
 
@@ -81,7 +81,7 @@ mod tests {
     fn no_report_is_the_neutral_style_with_the_default_faces() {
         let r = resolve(None, "auto", false, false);
         assert_eq!(
-            (r.style, r.confirm, r.cancel, r.options, r.view),
+            (r.style, r.confirm, r.cancel, r.options, r.menu),
             ("style_d", "FaceEast", "FaceSouth", "FaceNorth", "FaceWest")
         );
     }
@@ -116,7 +116,7 @@ mod tests {
         };
         let swapped = resolve(Some(pad), "auto", true, true);
         assert_eq!((swapped.confirm, swapped.cancel), ("FaceSouth", "FaceEast"));
-        assert_eq!((swapped.options, swapped.view), ("FaceWest", "FaceNorth"));
+        assert_eq!((swapped.options, swapped.menu), ("FaceWest", "FaceNorth"));
         let keyboard = Report {
             layout: "style_e",
             accept_button: "FaceEast",
@@ -127,6 +127,6 @@ mod tests {
             (fixed.style, fixed.confirm, fixed.cancel),
             ("style_a", "FaceEast", "FaceSouth")
         );
-        assert_eq!((fixed.options, fixed.view), ("FaceNorth", "FaceWest"));
+        assert_eq!((fixed.options, fixed.menu), ("FaceNorth", "FaceWest"));
     }
 }

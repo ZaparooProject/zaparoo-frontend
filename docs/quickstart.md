@@ -182,7 +182,8 @@ would otherwise inherit the Zaparoo Runtime shortcut's.
 
 A connected gamepad drives the UI alongside the keyboard: d-pad or left
 stick to move, the south face button to confirm, east to cancel, north for
-the context menu, west for the view menu, and the shoulders to page. Steam
+the context menu, west for the Menu, and the shoulders to page (both
+together open Go to). Steam
 Input's virtual pad arrives the same way, so a Steam Deck needs no extra
 setup.
 
@@ -201,9 +202,11 @@ only; pad buttons are not remappable.
 - Enter on a system opens the **games grid**. Enter on a game sends a `run`
   RPC to the mock, which logs the selected game's ZapScript; nothing is
   actually launched.
-- Tab opens the context menu on the focused tile; Space opens the View menu.
-- Escape backs out. On the Hub, Escape does nothing: Quit lives in the View
-  menu.
+- Tab opens the context menu on the focused tile; Space focuses the Menu
+  chip row (the Menu list at 240p).
+- Escape backs out, and held, goes straight to the Hub. On the Hub, Escape
+  does nothing: Quit lives in the Menu, behind More.
+- PageUp and PageDown together open Go to on a games list.
 
 ## 5. Run tests and lints
 

@@ -113,6 +113,9 @@ pub struct Entry {
     pub label_key: String,
     /// Free-text name, or the resumable game's name for `action:resume`.
     pub name: String,
+    /// The user's own name for a category or action tile. It replaces the
+    /// translated word; Resume keeps its game after it.
+    pub custom_name: String,
     /// Resource path of the art: `categories/...`, `icons/...`,
     /// `systems/<id>`, or a media cover key the host resolves.
     pub cover_key: String,
@@ -178,6 +181,29 @@ fn hub_cover_key(resolver: &dyn Resolver, id: &str, fallback: &str) -> String {
         .hub_override(id)
         .filter(|key| !key.is_empty())
         .unwrap_or_else(|| fallback.to_string())
+}
+
+/// The art for a tile's own `icon`: an absolute image path is read as
+/// given, anything else is matched in the custom `hub` folder.
+fn icon_cover_key(resolver: &dyn Resolver, icon: &str, fallback: &str) -> String {
+    if crate::customization::is_absolute_icon(icon) {
+        format!("{}{icon}", crate::customization::PATH_ICON_PREFIX)
+    } else {
+        hub_cover_key(resolver, icon, fallback)
+    }
+}
+
+/// A built-in tile's name and icon from its layout entry. The tile's own
+/// `icon` wins over a `custom/hub/<id>` file, which wins over the glyph.
+fn with_overrides(resolver: &dyn Resolver, item: &LayoutItem, mut entry: Entry) -> Entry {
+    let name = item.name.trim();
+    if !name.is_empty() {
+        entry.custom_name = name.to_string();
+    }
+    if !item.icon.is_empty() {
+        entry.cover_key = icon_cover_key(resolver, &item.icon, &entry.cover_key);
+    }
+    entry
 }
 
 /// Canonicalizes a category id, folding the plural spellings older configs
@@ -333,7 +359,7 @@ fn resolve_system(resolver: &dyn Resolver, item: &LayoutItem) -> Option<Entry> {
         cover_key: if item.icon.is_empty() {
             resolver.system_cover_key(&item.id)
         } else {
-            hub_cover_key(resolver, &item.icon, "icons/File")
+            icon_cover_key(resolver, &item.icon, "icons/File")
         },
         fallback_cover_key: "icons/File".into(),
         hub_index: -1,
@@ -364,7 +390,7 @@ fn resolve_folder(resolver: &dyn Resolver, item: &LayoutItem) -> Option<Entry> {
         cover_key: if item.icon.is_empty() {
             hub_cover_key(resolver, &item.path, "icons/Folder")
         } else {
-            hub_cover_key(resolver, &item.icon, "icons/Folder")
+            icon_cover_key(resolver, &item.icon, "icons/Folder")
         },
         fallback_cover_key: "icons/Folder".into(),
         hub_index: -1,
@@ -377,7 +403,7 @@ fn resolve_zapscript(resolver: &dyn Resolver, item: &LayoutItem) -> Option<Entry
         return None;
     }
     let cover_key = if !item.icon.is_empty() {
-        hub_cover_key(resolver, &item.icon, "icons/File")
+        icon_cover_key(resolver, &item.icon, "icons/File")
     } else if !item.system.is_empty() && !item.path.is_empty() {
         resolver.media_cover_key(&item.system, &item.path)
     } else if !item.system.is_empty() {
@@ -451,7 +477,7 @@ fn resolve_search(resolver: &dyn Resolver, item: &LayoutItem) -> Option<Entry> {
         cover_key: if item.icon.is_empty() {
             "icons/Search".to_string()
         } else {
-            hub_cover_key(resolver, &item.icon, "icons/Search")
+            icon_cover_key(resolver, &item.icon, "icons/Search")
         },
         fallback_cover_key: "icons/Search".into(),
         hub_index: -1,
@@ -560,8 +586,13 @@ fn resolve_item(
         return Some(Entry::blank(hub_index));
     }
     let mut entry = match item.kind.as_str() {
-        "category" => Some(resolve_category(live, resolver, &item.id)),
-        "action" => resolve_action(live, resolver, &item.id),
+        "category" => Some(with_overrides(
+            resolver,
+            item,
+            resolve_category(live, resolver, &item.id),
+        )),
+        "action" => resolve_action(live, resolver, &item.id)
+            .map(|entry| with_overrides(resolver, item, entry)),
         "system" => resolve_system(resolver, item),
         "folder" => resolve_folder(resolver, item),
         "zapscript" => resolve_zapscript(resolver, item),
@@ -570,6 +601,23 @@ fn resolve_item(
     }?;
     entry.hub_index = hub_index;
     Some(entry)
+}
+
+/// The name a pinned tile shows without a `name` of its own, for the rename
+/// screen to start from and to fall back to. `None` for a built-in tile,
+/// which the view words, and for a script, which has no name but its text.
+pub fn default_name(resolver: &dyn Resolver, item: &LayoutItem) -> Option<String> {
+    let item = LayoutItem {
+        name: String::new(),
+        ..item.clone()
+    };
+    match item.kind.as_str() {
+        "system" => resolve_system(resolver, &item),
+        "folder" => resolve_folder(resolver, &item),
+        "search" => resolve_search(resolver, &item),
+        _ => None,
+    }
+    .map(|entry| entry.name)
 }
 
 /// The placeholder categories the bootstrap window shows before Core has
@@ -898,6 +946,10 @@ pub fn geometry(inputs: &Inputs, d: &Derived) -> Geometry {
     };
     let height = inputs.screen_height as i32;
     let width = inputs.screen_width as i32;
+    // The Menu chip row sits under the header; the sizing budget has
+    // already given up its band. `menu_row_block` is zero where there is
+    // no row: at 240p, or with the setting off.
+    let row = d.menu_row_block;
     let mut fit = paged_grid::fit(
         d.hub_grid_columns,
         d.hub_grid_rows,
@@ -919,11 +971,12 @@ pub fn geometry(inputs: &Inputs, d: &Derived) -> Geometry {
     // down by half the band.
     fit.available_height = (grid_height - insets.top - insets.bottom).max(0);
     fit.block_offset_y = 0;
-    let vertical_band = (height - d.header_bottom - d.help_bar_height).max(0);
+    let vertical_band = (height - d.header_bottom - row - d.help_bar_height).max(0);
     let vertical_gap = ((f64::from(vertical_band - grid_height - d.hub_active_label_height) / 3.0)
         .round() as i32)
         .max(0);
     let grid_y = d.header_bottom
+        + row
         + if compact {
             inputs.pct_h(1.0)
         } else {
@@ -1527,6 +1580,99 @@ mod tests {
             ..Saved::default()
         };
         assert_eq!(restore_index(&moved, &saved, &[], false, "settings"), 1);
+    }
+
+    #[test]
+    fn built_in_tiles_take_a_name_and_an_icon_from_their_layout_entry() {
+        struct Custom;
+        impl Resolver for Custom {
+            fn system_name(&self, id: &str) -> String {
+                id.to_string()
+            }
+            fn system_cover_key(&self, id: &str) -> String {
+                format!("systems/{id}")
+            }
+            fn media_cover_key(&self, _system: &str, _path: &str) -> String {
+                String::new()
+            }
+            fn hub_override(&self, id: &str) -> Option<String> {
+                (id == "Arcade" || id == "coins").then(|| format!("custom:{id}"))
+            }
+        }
+        let items = vec![
+            LayoutItem {
+                name: "  Coin-op ".into(),
+                icon: "/media/usb0/art/arcade.png".into(),
+                ..item("category", "Arcade")
+            },
+            LayoutItem {
+                icon: "coins".into(),
+                ..item("action", "favorites")
+            },
+            item("category", "Arcade"),
+            LayoutItem {
+                name: "Continue".into(),
+                ..item("action", "resume")
+            },
+            LayoutItem {
+                icon: "/art/rpg.png".into(),
+                ..search("final", &[], &[])
+            },
+        ];
+        let out = entries(&items, false, &live(&[]), &Custom, 8, 0);
+        assert_eq!(out[0].custom_name, "Coin-op");
+        assert_eq!(
+            out[0].label_key, "category:Arcade",
+            "the word stays the fallback"
+        );
+        assert_eq!(out[0].cover_key, "custom-path:/media/usb0/art/arcade.png");
+        assert_eq!(out[0].fallback_cover_key, "categories/Arcade");
+        assert_eq!(out[1].custom_name, "");
+        assert_eq!(
+            out[1].cover_key, "custom:coins",
+            "the tile's icon beats its id"
+        );
+        assert_eq!(
+            out[2].cover_key, "custom:Arcade",
+            "an id file still applies"
+        );
+        assert_eq!(out[3].custom_name, "Continue");
+        assert_eq!(out[3].label_key, "action:resume");
+        assert_eq!(out[4].cover_key, "custom-path:/art/rpg.png");
+    }
+
+    #[test]
+    fn a_pinned_tile_names_itself_without_its_custom_name() {
+        let system = LayoutItem {
+            name: "Super Nintendo".into(),
+            ..item("system", "SNES")
+        };
+        assert_eq!(
+            default_name(&Names, &system).as_deref(),
+            Some("Name of SNES")
+        );
+        let folder = LayoutItem {
+            path: "/g/SNES/RPG".into(),
+            name: "RPGs".into(),
+            ..item("folder", "")
+        };
+        assert_eq!(default_name(&Names, &folder).as_deref(), Some("RPG"));
+        assert_eq!(default_name(&Names, &item("category", "Arcade")), None);
+        let script = LayoutItem {
+            script: "**launch.random:snes".into(),
+            ..item("zapscript", "")
+        };
+        assert_eq!(default_name(&Names, &script), None);
+    }
+
+    #[test]
+    fn a_folder_path_is_never_read_as_an_image_path() {
+        let items = vec![LayoutItem {
+            path: "/g/SNES".into(),
+            ..item("folder", "")
+        }];
+        let out = entries(&items, false, &live(&[]), &Names, 4, 0);
+        assert_eq!(out[0].cover_key, "icons/Folder");
     }
 
     #[test]

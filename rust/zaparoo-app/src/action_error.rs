@@ -12,12 +12,13 @@ use std::collections::VecDeque;
 
 /// Every kind the alert vocabulary knows. An unknown kind still shows,
 /// with the generic copy.
-pub const KINDS: [&str; 20] = [
+pub const KINDS: [&str; 22] = [
     "launch",
     "launch_repair",
     "favorite",
     "media_busy",
     "add_to_hub",
+    "save_to_hub",
     "media_index",
     "media_scrape",
     "media_scrapers",
@@ -33,6 +34,7 @@ pub const KINDS: [&str; 20] = [
     "online",
     "backup",
     "config_file",
+    "image_picker",
 ];
 
 /// A context-menu page that failed while the menu still holds its

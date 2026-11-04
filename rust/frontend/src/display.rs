@@ -45,11 +45,14 @@ pub fn motion_enabled(reduce_motion: bool, embedded: bool, crt: bool, height: u3
     !(reduce_motion || embedded && !crt && height >= 1080)
 }
 
-/// Whether cover art fades in on grid tiles. On the software renderer a
-/// page of covers fading together repaints most of the grid every frame,
-/// which an HDMI render cannot afford; the native CRT modes can.
-pub const fn tile_cover_fade(embedded: bool, crt: bool) -> bool {
-    !embedded || crt
+/// Whether Slint fades cover art in on grid tiles. On the software renderer
+/// a page of covers fading together repaints most of the grid every frame,
+/// so there the presenter does the fade instead (`frame_transition::
+/// CoverFades`) and Slint cuts. `presenter_fades` is false only for the CRT
+/// head of a dual-head pair, whose presenter mirrors the other head's state
+/// rather than its pixels.
+pub const fn tile_cover_fade(embedded: bool, presenter_fades: bool) -> bool {
+    !embedded || !presenter_fades
 }
 
 /// Keep numeric components untranslated; Slint owns the surrounding message.
@@ -65,11 +68,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn grid_tiles_fade_their_covers_everywhere_but_a_mister_hdmi_render() {
+    fn slint_fades_grid_covers_wherever_no_presenter_does() {
         assert!(tile_cover_fade(false, false));
         assert!(tile_cover_fade(false, true));
-        assert!(tile_cover_fade(true, true));
-        assert!(!tile_cover_fade(true, false));
+        assert!(tile_cover_fade(true, false));
+        assert!(!tile_cover_fade(true, true));
     }
 
     #[test]
@@ -170,6 +173,7 @@ mod tests {
                     crt,
                     (width, height),
                     zaparoo_app::motion_test::Disabled::default(),
+                    true,
                 );
                 let (w, h) =
                     crate::scene_size(f64::from(width), f64::from(height), orientation, crt);

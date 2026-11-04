@@ -21,6 +21,26 @@ pub fn fit_columns(count: usize, width: f64, height: f64, gap: f64) -> usize {
     best
 }
 
+/// A full set of sections: `#` and the 26 letters. A list with fewer
+/// sections keeps the cell size a full set would get, rather than growing
+/// a handful of buttons to fill the panel.
+pub const FULL_SET: usize = 27;
+
+/// The square cell for `count` sections laid out in `columns`: what fits
+/// both axes, and never larger than a full set's cell.
+pub fn cell_size(count: usize, columns: usize, width: f64, height: f64, gap: f64) -> f64 {
+    let fit = |count: usize, columns: usize| {
+        let columns = columns.max(1);
+        let rows = count.max(1).div_ceil(columns);
+        ((width - (columns - 1) as f64 * gap) / columns as f64)
+            .min((height - (rows - 1) as f64 * gap) / rows as f64)
+    };
+    let full = FULL_SET.max(count);
+    fit(count, columns)
+        .min(fit(full, fit_columns(full, width, height, gap)))
+        .max(0.0)
+}
+
 /// Horizontal moves wrap within the current row, including a partial tail.
 /// Vertical moves wrap between the first and last rows, clamping the column
 /// to the final cell when the tail is partial.
@@ -119,5 +139,30 @@ mod tests {
         assert!(cols >= 7);
         assert!(fit_columns(28, 1400.0, 400.0, 10.0) > fit_columns(28, 600.0, 400.0, 10.0));
         assert!(fit_columns(28, 300.0, 600.0, 10.0) < cols);
+    }
+
+    #[test]
+    fn a_short_list_keeps_a_full_sets_cell_size() {
+        let (width, height, gap) = (1500.0, 560.0, 19.0);
+        let full = cell_size(
+            FULL_SET,
+            fit_columns(FULL_SET, width, height, gap),
+            width,
+            height,
+            gap,
+        );
+        for count in [1, 3, 8, 15] {
+            let cell = cell_size(
+                count,
+                fit_columns(count, width, height, gap),
+                width,
+                height,
+                gap,
+            );
+            assert!((cell - full).abs() < 0.01, "{count}: {cell} vs {full}");
+        }
+        // More sections than a full set shrink to fit.
+        let more = cell_size(40, fit_columns(40, width, height, gap), width, height, gap);
+        assert!(more < full);
     }
 }

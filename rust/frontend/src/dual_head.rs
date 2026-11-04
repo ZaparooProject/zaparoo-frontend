@@ -77,6 +77,109 @@ fn project_page<T: MirrorRow>(
     )
 }
 
+/// The file browser at the CRT head's own geometry: its grid or list fitted
+/// to the CRT scene, showing the slice of the HDMI page around the focus.
+/// A page turn cuts on the CRT head, as a grid larger than its page would.
+fn mirror_file_browser(primary: &App, crt: &App) {
+    let source = primary.global::<crate::FileBrowserView>();
+    let target = crt.global::<crate::FileBrowserView>();
+    copy_properties!(source, target;
+        get_mode => set_mode,
+        get_title => set_title,
+        get_places => set_places,
+        get_state => set_state,
+        get_focus_ready => set_focus_ready,
+        get_focused_opens => set_focused_opens,
+        get_focused_picks => set_focused_picks,
+        get_has_menu => set_has_menu,
+        get_count => set_count,
+        get_current_index => set_current_index,
+        get_label_name => set_label_name,
+        get_activate_pulse => set_activate_pulse,
+        get_release_pulse => set_release_pulse,
+        get_rail_visible => set_rail_visible,
+        get_rail_letters => set_rail_letters,
+        get_rail_index => set_rail_index,
+        get_rail_letter => set_rail_letter,
+    );
+    target.set_rail_fraction(source.get_rail_fraction());
+    let sizing = crt.global::<crate::Sizing>();
+    let scene = crate::sizing::Scene::of(
+        crt,
+        f64::from(sizing.get_screen_width()),
+        f64::from(sizing.get_screen_height()),
+        true,
+    );
+    let inputs = scene.inputs();
+    if source.get_mode() == crate::FileBrowserMode::Images {
+        let g = crate::games::grid_geometry_for(&inputs, crate::GamesMode::Favorites, 0);
+        let capacity = g.columns * g.rows;
+        let selected = source.get_current_index().max(0);
+        let (cells, local, _) = project_page(
+            &source.get_cells(),
+            &target.get_cells(),
+            source.get_selected_local(),
+            capacity,
+        );
+        if let Some(cells) = cells {
+            target.set_cells(cells);
+        }
+        set_if_changed!(target, get_selected_local => set_selected_local, local);
+        set_if_changed!(target, get_columns => set_columns, g.columns);
+        set_if_changed!(target, get_rows => set_rows, g.rows);
+        // The page cue on the CRT's own scale: its pages of the whole
+        // folder, not of the HDMI page on show.
+        let capacity = capacity.max(1);
+        let page = selected / capacity;
+        let total = (source.get_count().max(0) + capacity - 1) / capacity;
+        let total = total.max(1);
+        set_if_changed!(target, get_page => set_page, page);
+        set_if_changed!(target, get_total_pages => set_total_pages, total);
+        set_if_changed!(target, get_has_pages_above => set_has_pages_above, page > 0);
+        set_if_changed!(target, get_has_pages_below => set_has_pages_below, page + 1 < total);
+        target.set_cell_width(g.fit.cell_width as f32);
+        target.set_cell_height(g.fit.cell_height as f32);
+        target.set_block_offset_x(g.fit.block_offset_x as f32);
+        target.set_block_offset_y(g.fit.block_offset_y as f32);
+        target.set_grid_y(g.grid_y as f32);
+        target.set_grid_height(g.grid_height as f32);
+        target.set_label_y(g.label_y as f32);
+        target.set_label_height(g.label_height as f32);
+    } else {
+        let g = crate::games::list_geometry_for(
+            &inputs,
+            false,
+            0,
+            zaparoo_app::media_list::list_visible_rows(true, false),
+        );
+        let capacity = i32::try_from(g.visible_rows.max(1)).unwrap_or(1);
+        let (rows, selected, _) = project_page(
+            &source.get_list_rows(),
+            &target.get_list_rows(),
+            source.get_list_sel(),
+            capacity,
+        );
+        if let Some(rows) = rows {
+            target.set_list_rows(rows);
+        }
+        set_if_changed!(target, get_list_sel => set_list_sel, selected);
+        set_if_changed!(target, get_list_view_top => set_list_view_top, 0);
+        set_if_changed!(target, get_list_scroll_top => set_list_scroll_top, 0);
+        set_if_changed!(target, get_list_glide => set_list_glide, false);
+        copy_properties!(source, target;
+            get_list_page => set_list_page,
+            get_list_total_pages => set_list_total_pages,
+            get_has_items_above => set_has_items_above,
+            get_has_items_below => set_has_items_below,
+        );
+        target.set_list_x(g.card_x as f32);
+        target.set_list_y(g.card_y as f32);
+        target.set_list_width(g.card_width as f32);
+        target.set_list_height(g.card_height as f32);
+        target.set_list_row_height(g.row_height as f32);
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 enum TransitionPhase {
     #[default]
@@ -132,6 +235,21 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_crt_enabled => set_crt_enabled,
         get_crt_standard => set_crt_standard,
     );
+    // The help bar setting is a sizing input, and the CRT head owns its
+    // own `Sizing`: copy it and re-solve that head's scene when it flips.
+    let help_bar = primary.global::<crate::Sizing>().get_help_bar_enabled();
+    let crt_sizing = crt.global::<crate::Sizing>();
+    if crt_sizing.get_help_bar_enabled() != help_bar {
+        crt_sizing.set_help_bar_enabled(help_bar);
+        let scene = crate::sizing::Scene::of(
+            crt,
+            f64::from(crt_sizing.get_screen_width()),
+            f64::from(crt_sizing.get_screen_height()),
+            true,
+        );
+        crate::sizing::apply_scene(crt, scene);
+    }
+
     // The CRT head resolves its own layout profile (its scene is the
     // 240p tier) whenever the mirrored screen changes.
     let screen = target.get_active_screen();
@@ -170,7 +288,7 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_confirm => set_confirm,
         get_cancel => set_cancel,
         get_options => set_options,
-        get_view => set_view,
+        get_menu => set_menu,
     );
 
     let source = primary.global::<Motion>();
@@ -199,6 +317,7 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_has_pages_below => set_has_pages_below,
         get_label_key => set_label_key,
         get_label_name => set_label_name,
+        get_label_custom => set_label_custom,
         get_label_reason => set_label_reason,
         get_label_visible => set_label_visible,
         get_focused_is_category => set_focused_is_category,
@@ -489,7 +608,8 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_before => set_before,
         get_at => set_at,
         get_after => set_after,
-        get_scoped => set_scoped,
+        get_scope => set_scope,
+        get_scope_category => set_scope_category,
         get_system_name => set_system_name,
         get_scope_name => set_scope_name,
         get_filter_text => set_filter_text,
@@ -515,6 +635,44 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_key_kind => set_key_kind,
     );
 
+    let source = primary.global::<crate::RenameView>();
+    let target = crt.global::<crate::RenameView>();
+    copy_properties!(source, target;
+        get_before => set_before,
+        get_at => set_at,
+        get_after => set_after,
+        get_keys => set_keys,
+        get_key_rows => set_key_rows,
+        get_key_index => set_key_index,
+        get_pressed_key => set_pressed_key,
+        get_shift_active => set_shift_active,
+        get_shift_locked => set_shift_locked,
+        get_symbols_active => set_symbols_active,
+        get_can_save => set_can_save,
+        get_key_kind => set_key_kind,
+    );
+
+    let source = primary.global::<crate::RaLoginView>();
+    let target = crt.global::<crate::RaLoginView>();
+    copy_properties!(source, target;
+        get_before => set_before,
+        get_at => set_at,
+        get_after => set_after,
+        get_keys => set_keys,
+        get_key_rows => set_key_rows,
+        get_key_index => set_key_index,
+        get_pressed_key => set_pressed_key,
+        get_shift_active => set_shift_active,
+        get_shift_locked => set_shift_locked,
+        get_symbols_active => set_symbols_active,
+        get_can_submit => set_can_submit,
+        get_step => set_step,
+        get_status => set_status,
+        get_key_kind => set_key_kind,
+    );
+
+    mirror_file_browser(primary, crt);
+
     let source = primary.global::<GamesView>();
     let target = crt.global::<GamesView>();
     // How the list follows a step is set before the offset it applies to.
@@ -525,6 +683,10 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_mode => set_mode,
         get_folder_slide => set_folder_slide,
         get_title => set_title,
+        get_search_scope => set_search_scope,
+        get_search_category => set_search_category,
+        get_title_head => set_title_head,
+        get_title_tail => set_title_tail,
         get_options_available => set_options_available,
         get_loading => set_loading,
         get_error => set_error,
@@ -560,6 +722,9 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_detail_path => set_detail_path,
         get_detail_has_cover => set_detail_has_cover,
         get_detail_cover_absent => set_detail_cover_absent,
+        get_detail_image_index => set_detail_image_index,
+        get_detail_image_count => set_detail_image_count,
+        get_detail_image_kind => set_detail_image_kind,
         get_detail_placeholder => set_detail_placeholder,
         get_detail_has_placeholder => set_detail_has_placeholder,
         get_detail_rows => set_detail_rows,
@@ -760,7 +925,20 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_modal_name => set_modal_name,
         get_modal_system => set_modal_system,
         get_modal_path => set_modal_path,
-        get_rows => set_rows,
+        get_info_rows => set_info_rows,
+        get_scroll_snap => set_scroll_snap,
+        get_image_kind => set_image_kind,
+        get_focus => set_focus,
+        get_image_stop => set_image_stop,
+        get_manual_stop => set_manual_stop,
+        get_description_stop => set_description_stop,
+        get_values_open => set_values_open,
+        get_values_kind => set_values_kind,
+        get_values => set_values,
+        get_values_index => set_values_index,
+        get_viewer_open => set_viewer_open,
+        get_viewer_has_image => set_viewer_has_image,
+        get_viewer_absent => set_viewer_absent,
         get_loading => set_loading,
         get_failed => set_failed,
         get_media_missing => set_media_missing,
@@ -770,10 +948,25 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_modal_description => set_modal_description,
         get_modal_has_cover => set_modal_has_cover,
         get_modal_cover_absent => set_modal_cover_absent,
+        get_has_manual => set_has_manual,
+        get_manual_state => set_manual_state,
+        get_manual_has_image => set_manual_has_image,
+        get_manual_page => set_manual_page,
+        get_manual_pages => set_manual_pages,
+        get_manual_fit => set_manual_fit,
+        get_manual_scroll => set_manual_scroll,
     );
     let modal_cover = source.get_modal_cover();
     if !same_image(&target.get_modal_cover(), &modal_cover) {
         target.set_modal_cover(modal_cover);
+    }
+    let manual_image = source.get_manual_image();
+    if !same_image(&target.get_manual_image(), &manual_image) {
+        target.set_manual_image(manual_image);
+    }
+    let viewer_image = source.get_viewer_image();
+    if !same_image(&target.get_viewer_image(), &viewer_image) {
+        target.set_viewer_image(viewer_image);
     }
 
     let source = primary.global::<Overlays>();
@@ -782,6 +975,7 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_context_open => set_context_open,
         get_context_entries => set_context_entries,
         get_context_index => set_context_index,
+        get_context_step_ms => set_context_step_ms,
         get_context_page => set_context_page,
         get_context_anchor_x => set_context_anchor_x,
         get_context_anchor_y => set_context_anchor_y,
@@ -809,6 +1003,12 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_dialog_arg => set_dialog_arg,
         get_dialog_buttons => set_dialog_buttons,
         get_dialog_focus => set_dialog_focus,
+        get_launcher_prefs_open => set_launcher_prefs_open,
+        get_launcher_prefs_page => set_launcher_prefs_page,
+        get_launcher_prefs_rows => set_launcher_prefs_rows,
+        get_launcher_prefs_index => set_launcher_prefs_index,
+        get_launcher_prefs_moving => set_launcher_prefs_moving,
+        get_launcher_prefs_entry => set_launcher_prefs_entry,
         get_crt_calibration_open => set_crt_calibration_open,
         get_crt_h_offset => set_crt_h_offset,
         get_crt_v_offset => set_crt_v_offset,
@@ -919,6 +1119,7 @@ mod tests {
             false,
             (960, 540),
             zaparoo_app::motion_test::Disabled::default(),
+            true,
         );
         assert_eq!(
             primary.global::<Shell>().get_orientation(),

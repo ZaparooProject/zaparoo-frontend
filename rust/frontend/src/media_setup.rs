@@ -539,7 +539,10 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
             }
         }
         actions::ACCEPT => accept(ctx, app),
-        actions::CANCEL => close(ctx, app),
+        actions::CANCEL => {
+            close(ctx, app);
+            crate::router::return_to_menu(ctx, app, zaparoo_app::options_menu::Opens::Setup);
+        }
         _ => {}
     }
 }
@@ -685,6 +688,7 @@ fn scrape_scope(
 
 /// Start the job over the chosen scope and close the panel.
 fn start(ctx: &Ctx, app: &App) {
+    crate::router::forget_menu_return(ctx);
     let (kind, scoped, systems, scraper, rescrape, covered, game, core_version) = {
         let shared = lock(&ctx.shared);
         let systems = scope_systems(&shared);

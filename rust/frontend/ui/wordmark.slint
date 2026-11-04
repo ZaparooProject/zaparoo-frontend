@@ -60,7 +60,8 @@ export component Wordmark inherits Rectangle {
     Text {
         // A Text is its own preferred size unless told otherwise, which
         // here would be the whole name on one line.
-        width: parent.width;
+        x: 0;
+        width: Sizing.even(parent.width);
         height: parent.height;
         text: root.text;
         color: root.ink;

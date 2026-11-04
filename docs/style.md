@@ -242,6 +242,20 @@ keeps the artwork's own colors, which is how the two-tone favorite heart
 renders: `glyphs.rs` maps its fill and keyline to `marker` and
 `marker-outline` before rasterizing.
 
+Where the bitmap face is in use (`Sizing.pixel-grid`: CRT, and MiSTer outputs
+under 400 px tall) the small glyphs come from hand-drawn pixel art instead
+(`resources/images/pixel/`): the status icons, the list and tile heart,
+Filter, the scroll and chevron arrows, and the keyboard's Search, Check and
+Shift glyphs. A vector icon squeezed into 6-9 px turns to grey blur, and
+these are drawn on their own few-pixel grid. `glyph()` passes the pixel-grid
+flag to Rust with every request, and Rust blits the art at the largest whole
+multiple of its grid that fits the slot, centered on whole pixels, with no
+anti-aliasing, at 2x at most; a slot smaller than the art, one three times
+its size or more (the same icon as a Hub tile's art), or any HD output, gets
+the vector source. The heart's `#` and `+` cells are its fill and keyline, so it
+keeps the same two marker roles. A new small glyph that shows on CRT gets
+art there too.
+
 ## Two registers
 
 Everything in the frontend is drawn with one of two visual treatments, and
@@ -832,8 +846,11 @@ future theme work, not per-surface override.
 ## Text entry
 
 Text is typed on the shared on-screen keyboard (`OnScreenKeyboard` in
-`ui/keyboard.slint`; layout and editing rules in `zaparoo_app::keyboard`).
-The Search screen is its first user.
+`ui/keyboard.slint`; layout and editing rules in `zaparoo_app::keyboard`),
+into the shared field (`TextField` in the same file). The Search screen,
+the rename screen and the RetroAchievements login use it;
+`frontend::keyboard` holds the buttons they share, and `input::text_owner`
+names the one screen whose field takes what a real keyboard types.
 
 - **Layout.** QWERTY, every row ten units wide, with a digit row on top.
   A use that does not care about case or punctuation takes the basic
@@ -841,13 +858,21 @@ The Search screen is its first user.
   full keyboard adds Shift and Symbols and their layers.
 - **Keys are raised controls** (the pressable front edge), and one focus
   ring travels between them.
+- **Shift covers one letter.** A tap makes the next character uppercase,
+  then Shift lets go; tapping it again first cancels it. Holding Accept on
+  Shift for `SHIFT_LOCK_HOLD_MS` (half a second) locks caps until Shift is
+  tapped again: the tap takes effect at once, and holding past the
+  threshold upgrades it. A one-letter Shift shows as the accent arrow; caps
+  adds a bar under it, since colour alone does not tell the two apart at
+  240p. Symbols drops a one-letter Shift and keeps caps for the letters'
+  return. The rules are `keyboard::Case` in `zaparoo_app`.
 - **The field being typed in has a block cursor, not a ring.** A ring there
   would be a second one on screen beside the focused key's. It blinks while the
   keyboard has focus and rests dimmed while anything else does. Moved back
   into the text, it sits on a character and inverts it. Reduce motion
   holds it solid.
 - **Buttons.** Accept presses the focused key, and repeats while held on a
-  key that types or deletes. View deletes and repeats while held; held past
+  key that types or deletes. Menu deletes and repeats while held; held past
   `TEXT_CLEAR_HOLD_MS` it clears the whole field. Options types a space and
   the shoulder buttons move the cursor. They work from anywhere on the
   screen, so fixing a typo never needs a trip to the Backspace key. The
@@ -856,7 +881,7 @@ The Search screen is its first user.
   any key binding sees them, Backspace deletes, and focus moves to the
   submit key so Enter runs the action. The help bar then drops the Delete
   and Space hints, which that keyboard's own keys already cover. On MiSTer
-  the host sends a pad's View button as Space, so Space keeps its pad
+  the host sends a pad's Menu button as Space, so Space keeps its pad
   meaning (delete) whenever the input report says a controller sent it.
 - **Every edge wraps.** The fields above the keyboard and its key rows are
   one vertical loop: Down from the bottom row reaches the field above that
@@ -866,6 +891,14 @@ The Search screen is its first user.
   Left from the card returns to the key it was entered from. With nothing
   beside the keyboard a row wraps on itself. The card's rows loop top to
   bottom, like a list picker's.
+- **A password shows only the character just typed.** Every other
+  character is a dot. The new one stays readable for
+  `PASSWORD_REVEAL_MS` (a second and a half), then joins the dots; the
+  next character, a delete or a cursor move hides it at once. The same
+  rule covers the on-screen keys, a pad and a real keyboard. Only the
+  field repaints when the reveal runs out. A password keeps its spaces
+  as typed (`TextBuffer::verbatim`), and is never written to the state
+  file. The rules are `keyboard::Mask` in `zaparoo_app`.
 - **No system keyboard.** Latin letters and digits only; other scripts
   need a real keyboard.
 
@@ -889,10 +922,145 @@ match, so it can exceed the rows listed; it is exact up to one page of
 results and reads `Matches: 100+` beyond it, because Core reports no total. At the 240p tier and on a rotated scene or one narrower
 than 4:3 the card collapses and the count moves into the query field.
 
-The Search results have a View menu with one row, "Add to Hub", which pins
-the search on screen as a Hub tile and reads "Remove from Hub" once it is
-there. Results opened from such a tile have no Search screen behind them:
-Back returns to the Hub, and the search is not added to the recent searches.
+"Search here…" opens the same screen limited to what the screen it came
+from shows: a system and, inside a folder, that folder (with the folder's
+tags carried into the Tags field); a category's systems; or the favorites,
+all of them or one system's. Recently played has none, as Core cannot
+limit a search to it. The title strip, and the header title at 240p, read
+`Search in {}` with the folder, system, category or Favorites; the System
+field becomes "Search in", shows the scope from the system down, and takes
+no focus. Back returns to the screen the search was opened from, and the
+search is not added to the recent searches. The results' title names the
+scope where the systems would be (`"mario" · Consoles · RPG`).
+
+The Search results' Menu has two actions. "Edit search…" opens the Search
+screen with the search on screen, to change its name, systems or tags.
+"Save to Hub" pins the search as a Hub tile and reads "Remove from Hub"
+once it is there; focus stays on its chip after a press so the changed
+words show what happened. At 240p both are rows of the Menu list. Results
+opened from such a tile have no Search screen behind them: Back returns to
+the Hub, and the search is not added to the recent searches. A tag search
+from Game Info has none either: Back returns to Game Info, and Edit search
+is how to widen it (another system, or every one). Back from the Search
+screen it opens goes to Game Info as well, and so does Back from the
+results of the edited search.
+
+A tag search or a Hub tile can carry tags the tags picker cannot show: a
+type it has no category for (a series, a revision), or a value its category
+cannot hold (a second genre, `user:hidden`). The Tags field counts them in
+its summary and offers Clear filter for them alone. Changing a category in
+the picker replaces that category's extras and leaves the rest, a change of
+system keeps the ones it cannot rule out, and Clear filter drops them all
+(`zaparoo_app::search::extra_tags`, `with_picked`).
+
+### Rename tile
+
+Rename tile… on a Hub tile's Options menu opens a screen of its own, not a
+panel: a tile name needs case and punctuation, so it takes the full keyboard
+(Shift and Symbols), and five key rows under a field do not fit a modal at
+240p. The name field is on top, labelled Name, with the keyboard filling the
+rest; nothing sits beside it, so every edge wraps on the keyboard itself.
+The submit key is a check and the help bar calls it Save. Back leaves
+without saving. The draft is persisted with the tile it belongs to, and a
+cold start restores it only while that tile is still where it was.
+
+## File browser
+
+One reusable browser over the frontend's own disk (`ui/file_browser.slint`,
+`frontend::file_browser`, rules in `zaparoo_app::file_browser`). A caller
+opens it with a purpose, which decides what a pick does; the browser only
+walks folders. It is a screen, because folders are more than one page of a
+panel (see "Modal depth").
+
+- **Two modes.** Plain lists every file in a `BrowseList`, folders first
+  and ending in a slash. Images lists folders and the image types the
+  artwork loader accepts as tiles in a `PagedGridView` on the shared
+  `PageStrip`, each image fading in as a cover does once it is prepared; the
+  file glyph holds its place until then. Both use the games family's
+  layout tables, with no Menu chip band.
+- **It moves as the games screens do**, from the same parts: page turns
+  (`page_motion`), the list window and glide, the press cue, the strip and
+  footer page cues, a long hold paging and then stepping a letter at a
+  time with the fast-scroll rail (a folder's total is fixed, so it gets
+  one), held page flips stopping at the ends, and the debounced selection
+  write.
+- **Places** sit above every folder: the custom folder, then the drives
+  the machine has. Back goes up a folder, from a drive's top to Places,
+  and from Places back to where the browser was opened.
+- **Folder reads** run off the event loop under a ticket. The folder on
+  screen stays, taking only Back, until the next one is ready, and the
+  header shows the loading cue past the usual delay. A folder that cannot
+  be read says so in the content area. Hidden names are left out, and a
+  folder past 2,000 entries ends in a row counting the rest.
+- **Previews** go through the customization pipeline: the same decode
+  limits, the same serial worker and the same 16 MiB cache.
+- **Menu** opens the Menu list of the caller's screen actions (Change
+  icon… offers Use default icon). There is no chip row.
+
+## Menu chip row
+
+Two buttons act on two scopes. Options (North) acts on the focused item and
+is anchored to it. Menu (West) acts on the screen. Above the 240p tier a
+screen's page actions are a row of chips on the page, so they can be seen
+before anyone thinks to look for them; Menu puts focus on the row. At 240p
+there is no room for the row, and Menu opens the same actions as the Menu
+list; where there is only one (Systems' Search here), Menu runs it. Rules and their tests: `zaparoo_app::page_bar`.
+
+The row can be turned off: Settings > Appearance > Show Menu row
+(`show_menu_row` in the persisted settings and `[settings]` in
+`frontend.toml`, on by default; a state file from before the setting keeps
+the row). Off, every tier lays out as 240p does for the row: no band, the
+content takes the height back, and Menu opens the Menu list. It applies at
+once, through the same relayout a scene change runs.
+
+| Screen | Chips | More |
+|---|---|---|
+| Hub | Add item | Reset layout, Settings, Quit |
+| Games | Go to, Tags [value], Search here | |
+| Systems | Search here | |
+| Favorites | Sort [value], Group by [value], Random game, Search here | Back to Hub |
+| Favorite systems | Group by [value], Search here | |
+| Search results | Edit search, Save to Hub / Remove from Hub | |
+
+- **Placement.** Directly under the title strip and above the grid or list
+  card; on the Hub, under the header at the header's side margin, so it
+  reads as part of the header. The row's band (`Sizing.menu-row-block`,
+  zero at 240p) comes out of the content's budget on every screen that has
+  chips, and only there, so it never appears or disappears under a grid.
+- **Way in.** The row opens with the Menu button's glyph, the same glyph
+  the help bar uses. The row is never drawn as disabled: its chips work,
+  and a muted or grayed look would say they do not.
+- **Chips.** Text in `text-label`, with no fill or border, so the row reads
+  as header chrome rather than a strip of cards. A chip is as wide as its
+  words, up to an even share of the row, and names its current value where
+  it has one (`Sort: A-Z`), so the row doubles as the screen's state.
+- **Focus.** Only Menu enters the row; the d-pad never walks into it from
+  the content, so grid wrap and paging are untouched. The focused chip
+  turns `text-primary` and takes the accent ring, which glides and resizes
+  between chips and carries the tile focus zoom (a transform where the
+  renderer has one, a grown ring where it does not). Left and Right walk
+  the chips and wrap. Accept runs a chip. Back, Menu and Down return to the
+  content at the same selection; Up does nothing. While the row has focus
+  the content shows no selection: no ring, zoom, tint, fill or caption. Row focus is
+  not persisted, like an open modal.
+- **Pickers.** A chip opens the same picker its Menu list row does. Backing
+  out of it returns focus to the chip; a pick returns it to the content.
+- **More.** Rare actions sit behind a last chip, More, which opens the Menu
+  list titled More. A screen with nothing rare has no More chip.
+- **Dual head.** The CRT head of a dual-head pair draws the 240p layout,
+  which has no row, and one input drives both heads, so neither head
+  draws the row (`Sizing.menu-row-blocked` on the HDMI head) and Menu
+  opens the Menu list on both.
+- **Shortcuts.** Every shortcut duplicates something reachable on screen,
+  so a pad without the buttons loses nothing. Holding Back for
+  `BACK_HOLD_TO_HUB_MS` (half a second) goes straight to the Hub, with no
+  step back on the way and no progress indicator: the route is the
+  feedback. So a screen's Back waits for its release to know which it
+  was, and a tap goes back one level when the button comes up. A Back
+  that closes a modal, leaves the Menu row or deletes text has no hold
+  and still acts on the press. L1 and R1 together open Go to: on a screen
+  with Go to, a shoulder press waits `CHORD_WINDOW_MS` for its partner
+  before it pages.
 
 ## Form lists
 
@@ -922,8 +1090,8 @@ ones Core names no manufacturer for under Other. Eight systems or fewer are
 one plain alphabetical list. Rules: `zaparoo_app::system_picker` and
 `zaparoo_app::form_list`.
 
-The tags picker is the same from the Games View menu and from the Search
-screen's Tags field: a page of categories, each showing its chosen value
+The tags picker is the same from the Games Menu (its Tags chip, or the Menu
+list's row at 240p) and from the Search screen's Tags field: a page of categories, each showing its chosen value
 or Any, then a page of one category's values with their game counts. It is
 called Tags everywhere. Its Collections category lists the built-in
 collections first (Favorites, Liked, Play later), then the user's decks by
@@ -1234,15 +1402,29 @@ half the thickness of the Settings card at 800p and 1080p.
 The screensaver overlay, the CRT calibration plate and the help bar are screen
 chrome rather than containers and keep their own treatment.
 
-The help bar is one row, `pct-h(6)` tall, at every tier. Only 240p can run out
+The help bar is one row, `pct-h(6)` tall, above the 240p tier. At 240p it is
+sized around its controller glyphs instead: the button art is pixel art on a
+16 px grid and squeezed to 4% of the height it is 9 px of blur, so the 240p
+bar draws them at 16 px (`Sizing.help-glyph-size`) and is that plus a
+`pct-h(1)` pad above and below. Only 240p can run out
 of width for its entries, which are atomic icon-plus-label groups and never
 split: when the row would overflow the bar's safe width they wrap to two
-centered rows and the bar grows to `pct-h(10)`. The bar measures that itself
+centered rows and the bar grows to two glyphs plus a `pct-h(1)` row gap. The bar measures that itself
 (`HelpBar.wrap-entries`), Rust copies it into the `help_bar_two_rows` sizing
 input and re-solves the sizing table and every screen, so the grid or card
 above gives up exactly the second row and gets it back when the entries fit
 again. The wrap is decided from the entries' width alone, never from the
 bar's height, so growing the bar cannot change the answer.
+
+The bar can be hidden: Settings > Appearance > Show button hints
+(`show_help_bar` in the persisted settings and `[settings]` in
+`frontend.toml`, on by default; a state file from before the setting keeps
+the bar), for a CRT owner who wants every line. Hidden, it takes no height
+and every screen spends the room on content. The `Layout` bottom margins
+reserve the bar's 6% (`Tok::LessHiddenBar` in `zaparoo_app::layouts`) and
+drop exactly that share while it is hidden; content keeps its `pct-h(2)` gap
+off the bottom edge. It applies at once, through the same relayout a scene
+change runs, and the CRT head of a dual-head pair follows it.
 
 ## Padding scale
 
@@ -1439,7 +1621,17 @@ deep they are or how many Back presses get out. The rules:
    (`closes_context_menu`), so Back never returns to a waiting row that can
    never resolve.
 5. `ContextMenu` is an anchored transient, not a card. It closes before
-   anything it triggers opens. Its pages are an in-place swap of its rows
+   anything it triggers opens. A row that opens a screen of its own
+   or a picker that waits on Core (`options_menu::Menu::holds_open`:
+   Rename tile…, Change icon…, and a game's Change launcher) is the
+   exception: the menu stays up with the row held down until what it opens
+   is ready, as any deferred route keeps its control down, and leaves in
+   the frame that appears. Closing it first showed the screen underneath
+   on its own for a moment. Back while it waits calls off the route and
+   closes the menu. The Menu list does the same for a pick that routes to a
+   screen that has to fill first (Group by, between Favorites and Favorite
+   systems); `router::hold_menu_through` holds either, and the route's end
+   closes it, however it ends. Its pages are an in-place swap of its rows
    through `rust/frontend/src/context_page.rs`: Manage and Write to token,
    whose rows are the menu's own, and alternate versions
    (`rust/frontend/src/alternates.rs`) and a multi-disc game's discs
@@ -1447,7 +1639,7 @@ deep they are or how many Back presses get out. The rules:
    the rows the page replaced, on the row that opened it (`context_action`
    in `router.rs`). One level only: a row on a page never opens a page.
 6. A screen may open a modal (Settings rows open `ListPickerModal`); a
-   modal that closes and *then* opens another (View menu -> letter jump,
+   modal that closes and *then* opens another (Menu list -> letter jump,
    error -> retry) is a sequence, not a stack, and is fine.
 
 Panel width is content-driven for the decision dialog (`DialogModal`),
@@ -1464,6 +1656,51 @@ same 92% ceiling, not the 78% cap meant for content nobody measured. (Round 6
 follow-up: the picker's swatch band routinely pushes its measured width past
 78% of a small screen, so a 78% cap still truncated rows even after the
 label-measurement fix below.)
+
+### Game Info
+
+Game Info follows the Zaparoo App's details modal: the art, an action row
+(Manual), the description, then a Details table and Technical details.
+The system, years and players are rows of the table, not a caption under
+the art as well. Under the art, the image's type and its place in the
+set (`Box art 1/3`); the list's detail pane names it the same way. A tag type is one
+row with its values joined; internal tags (preferences, decks, `scraper.*`)
+never show, and tags without a row of their own share one Tags row as
+`type:name`. `zaparoo_app::game_details` decides all of that and names the
+values; `ui/tag_names.slint` holds the strings, each with a translation
+context so a tag's "Save" or "Menu" is never a button's.
+
+Focus moves over what acts, not over every line: the art (A views it full
+screen), each action, the description (Up and Down read through it before
+moving on) and each row that searches. A on a row searches the game's
+system for that tag; a row with several values lists them first, as a page
+of the panel. Back from those results returns to the screen Game Info was
+opened on, with Game Info open on the same row and image; the screen and
+the panel come back in one frame, from the metadata the panel already had.
+Left and Right always step
+the images. A new thing to do in Game Info is a new focus stop with its own
+A, never a button of its own. The selection fill travels between rows as
+it does in Settings (`SelectionCursor` with each row drawn again inside a
+`SelectionClip`); the art and the description take a ring, and the Manual
+button its own fill. Opening the panel, or coming back to it, scrolls
+straight to the focused row; only the user's moves glide.
+
+### Back to Options
+
+An Options row that opens something in the menu's place (Update metadata,
+Change launcher, Write to token and its QR code, Details, a Hub tile's
+Rename, Change icon and Move) hands Back to that thing, and Back there
+brings the menu back: on the page it was on, with that row focused, so a
+second try or a different row is one press away. Finishing it (Start, a
+pick, Save, a token written, a move accepted) ends on the screen instead,
+and so does an error. Details and the QR code have nothing to finish, so
+either way out is Back. Back while a row is still waiting on Core or a
+route calls that off and leaves the menu open on the row.
+
+`zaparoo_app::options_menu::Menu::opens` names what each row opens;
+`router::return_to_menu` brings the menu back and `forget_menu_return`
+marks a finish. A new row that opens a surface adds itself to `opens` and
+calls one or the other from that surface's Back and finish paths.
 
 ### Picker swatch preview
 
@@ -1738,9 +1975,13 @@ The group fits within one side slot and elides its count rather than colliding
 with the title. Settings detail pages put item position there; About/License
 puts scroll percentage there. Loading status stays independent. Hub has no
 title strip or total count, so its cue stays beside the focused caption rather
-than taking space from its grid. CRT retains its calibrated footer and
+than taking space from its grid. The Menu chip row is not a cue: a screen that
+has one always reserves it (see [Menu chip row](#menu-chip-row)). CRT retains its calibrated footer and
 in-card About cues. Modal cues remain inside their panels, and the fast-scroll
-rail remains on the right. Cue visibility never changes grid geometry: a
+rail remains on the right, on a list with a fixed total only: Games, where
+Core counts the folder. Favorites, Recently played and Search results are paged
+with no total, so a marker there would rescale as each page landed; they get no
+rail (`media_list::rail_offered`). Cue visibility never changes grid geometry: a
 single-page grid becoming multi-page (arming Hub Options → Move always
 reserves a second page) cannot shift or shrink its tiles. The Settings card, the About
 card, and `GameInfoModal`'s own scroll chevrons got the same
@@ -1799,7 +2040,8 @@ pair and a CRT scene that was not granted a cached slide. Repeated input
 interrupts obsolete motion; Reduce motion cuts immediately. Persistence records
 the destination, never an animation phase.
 
-The Go to… modal keeps letter and count together as a centered group. One retained
+Go to… opens on the letter the selection is in. The Go to… modal keeps letter
+and count together as a centered group. One retained
 focus ring travels between adjacent buckets and follows the selected surface's
 press depth; opening, reflow, and nonadjacent jumps snap.
 
@@ -1947,10 +2189,13 @@ distance alone would look harmless.
 
 ### Scrolling lists
 
-A list that scrolls glides to its new position over `Motion.page-ms`, the
-same duration as a grid page turn; it does not jump. This covers the
-Settings card, `ListPickerModal`, the context menu, the media setup picker,
-the Online list modal, and the free-text bodies of Game info and About. All
+A list that scrolls glides to its new position over `Motion.scroll-ms`,
+shorter than a grid page turn because a list scrolls far more often; it
+does not jump. A held key walks the browse lists and the context menu at
+constant speed instead (`list_follow`). This covers the Settings card,
+`ListPickerModal`, the context menu, the media setup picker and the Online
+list modal. The free-text bodies of Game info and About page over
+`Motion.page-ms`. All
 of the row lists share one mechanism: `ScrollOffset` with `reveal: true`,
 over rows and their `SelectionCursor` hung off one translated parent. The
 cursor is positioned against where the list will settle, so the highlight
@@ -2094,5 +2339,23 @@ Rules apply everywhere, not only CRT:
 - user-visible centered text centers item, not a half-pixel glyph run
 
 Rounding by hand is reserved for exact-pixel contracts (CRT calibration
-guides, bitmap raster sizes, QR modules). Document any exception beside code
-that needs it.
+guides, bitmap raster sizes, QR modules, the bitmap-font text grid below).
+Document any exception beside code that needs it.
+
+Text is the exception to the renderer snapping. The software renderer places
+glyphs at quarter-pixel positions and blends the remainder into them, which
+keeps proportional text evenly spaced but smears the 6x8 bitmap face across
+two columns. Wherever that face is in use (`Sizing.pixel-grid`: CRT, and
+MiSTer outputs under 400 px tall), every label must start on a whole pixel:
+
+- `Sizing.pct-w`/`pct-h` already return whole pixels there, as
+  `zaparoo_app::sizing`'s percentages always do
+- other fractional geometry upstream of a label (a centered block, a width
+  split between columns, a share of a panel) goes through `Sizing.snap`
+- a `horizontal-alignment: center` label gets `width: Sizing.even(...)` and
+  an explicit `x`, since the face's advances are even and Slint would center
+  the narrower box by half a pixel
+
+`just crt-text-check` renders every CRT fixture at NTSC and PAL height and
+fails on any label that starts off the grid. All three helpers are no-ops on
+HD outputs.

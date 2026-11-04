@@ -71,6 +71,7 @@ pub fn prepare(ctx: &crate::router::Ctx, app: &App) -> Option<Target> {
             Screen::Games | Screen::Favorites | Screen::Recents | Screen::SearchResults => {
                 crate::games::interrupt_page(ctx, app);
             }
+            Screen::FileBrowser => crate::file_browser::interrupt_page(ctx, app),
             _ => {}
         }
     })
@@ -111,6 +112,37 @@ fn online_list_target(ov: &Overlays<'_>) -> Option<Target> {
         .row_data(usize::try_from(index).ok()?)?;
     row.enabled
         .then(|| target(PressOwner::OnlineList, index, row.id.to_string()))
+}
+
+/// The launcher preference list: any row but a held one, which Accept
+/// sets down rather than presses.
+fn launcher_prefs_target(ov: &Overlays<'_>) -> Option<Target> {
+    if ov.get_launcher_prefs_moving() {
+        return None;
+    }
+    let index = ov.get_launcher_prefs_index();
+    let row = ov
+        .get_launcher_prefs_rows()
+        .row_data(usize::try_from(index).ok()?)?;
+    Some(target(
+        PressOwner::LauncherPrefs,
+        index,
+        format!(
+            "{:?}:{:?}:{}",
+            ov.get_launcher_prefs_page(),
+            row.kind,
+            row.id
+        ),
+    ))
+}
+
+/// The open Settings list modal's row, or none to press.
+fn list_modal_target(ov: &Overlays<'_>) -> Option<Target> {
+    if ov.get_online_list_open() {
+        online_list_target(ov)
+    } else {
+        launcher_prefs_target(ov)
+    }
 }
 
 fn current_with(app: &App, prepare_grid: impl FnOnce()) -> Option<Target> {
@@ -159,8 +191,8 @@ fn current_with(app: &App, prepare_grid: impl FnOnce()) -> Option<Target> {
     if ov.get_online_open() {
         return None;
     }
-    if ov.get_online_list_open() {
-        return online_list_target(&ov);
+    if ov.get_online_list_open() || ov.get_launcher_prefs_open() {
+        return list_modal_target(&ov);
     }
     if ov.get_card_write_open() {
         return Some(target(
@@ -239,6 +271,10 @@ fn update_target(app: &App) -> Option<Target> {
 }
 
 fn grid_target(app: &App) -> Option<Target> {
+    // The Menu chip row has focus: no tile under it takes the push.
+    if app.global::<crate::PageBar>().get_focused() {
+        return None;
+    }
     let shell = app.global::<Shell>();
     let (owner, index, scope, rows) = match shell.get_active_screen() {
         Screen::Hub => {
@@ -284,6 +320,18 @@ fn grid_target(app: &App) -> Option<Target> {
                     view.get_title(),
                     view.get_page()
                 ),
+                view.get_cells(),
+            )
+        }
+        Screen::FileBrowser => {
+            let view = app.global::<crate::FileBrowserView>();
+            if view.get_mode() != crate::FileBrowserMode::Images {
+                return None;
+            }
+            (
+                PressOwner::FileBrowser,
+                view.get_selected_local(),
+                format!("{}:{}", view.get_title(), view.get_page()),
                 view.get_cells(),
             )
         }

@@ -17,13 +17,17 @@ mod browse_filter;
 mod browse_motion;
 mod card_write;
 mod context_page;
+mod cover_fade;
 mod cue;
+#[cfg(not(feature = "hosted"))]
+mod curl;
 mod customization;
 mod discs;
 mod display;
 mod drs;
 #[cfg(feature = "mister")]
 mod dual_head;
+mod file_browser;
 mod folder_motion;
 mod folder_picker;
 mod fonts;
@@ -40,12 +44,15 @@ pub mod host;
 mod hub;
 mod hub_covers;
 mod hub_refresh;
+mod image_picker;
 mod input;
 mod keyboard;
 mod latch_protocol;
+mod launcher_prefs;
 mod launcher_scan;
 mod launchers;
 mod log_upload;
+mod manual;
 mod media_cache;
 mod media_setup;
 #[cfg(feature = "mister")]
@@ -62,6 +69,8 @@ mod navigation;
 mod online;
 mod online_list;
 mod open_url;
+mod page_bar;
+mod page_motion;
 mod pairing;
 #[cfg_attr(
     not(feature = "hosted"),
@@ -77,6 +86,9 @@ mod playtime_access;
 #[cfg(feature = "desktop")]
 mod power_supply;
 mod qr;
+mod ra_login;
+mod rename;
+mod retro_achievements;
 // Route motion has to be checked by rendering, and that needs the
 // software renderer, which only the MiSTer feature set links.
 mod press_feedback;
@@ -317,12 +329,8 @@ fn merge_config_settings(
     if let Some(v) = &c.favorites_grouping {
         s.favorites_grouping.clone_from(v);
     }
-    if let Some(v) = c.swap_confirm_cancel {
-        s.swap_confirm_cancel = v;
-    }
-    if let Some(v) = c.swap_options_view {
-        s.swap_options_view = v;
-    }
+    s.swap_confirm_cancel = c.swap_confirm_cancel.unwrap_or(s.swap_confirm_cancel);
+    s.swap_options_view = c.swap_options_view.unwrap_or(s.swap_options_view);
     if let Some(v) = &c.orientation {
         s.orientation = if matches!(v.as_str(), "cw" | "ccw") {
             v.clone()
@@ -351,23 +359,23 @@ fn merge_config_settings(
     if let Some(v) = &c.button_layout {
         s.button_layout.clone_from(v);
     }
-    if let Some(v) = c.mouse_enabled {
-        s.mouse_enabled = v;
-    }
-    if let Some(v) = c.reduce_motion {
-        s.reduce_motion = v;
-    }
+    s.mouse_enabled = c.mouse_enabled.unwrap_or(s.mouse_enabled);
+    s.reduce_motion = c.reduce_motion.unwrap_or(s.reduce_motion);
+    s.show_menu_row = c.show_menu_row.unwrap_or(s.show_menu_row);
+    s.show_help_bar = c.show_help_bar.unwrap_or(s.show_help_bar);
     if let Some(v) = &c.screensaver_timeout {
         s.screensaver_timeout.clone_from(v);
     }
     if let Some(v) = &c.media_image_type {
         s.media_image_type.clone_from(v);
     }
-    if let Some(v) = c.show_hidden {
-        s.show_hidden = v;
-    }
-    if let Some(v) = c.show_original_filenames {
-        s.show_original_filenames = v;
+    s.show_hidden = c.show_hidden.unwrap_or(s.show_hidden);
+    s.show_original_filenames = c
+        .show_original_filenames
+        .unwrap_or(s.show_original_filenames);
+    s.show_tags = c.show_tags.unwrap_or(s.show_tags);
+    if let Some(v) = &c.list_left_right {
+        s.list_left_right.clone_from(v);
     }
     if let Some(v) = &c.region {
         s.region.clone_from(v);
@@ -509,6 +517,7 @@ fn seed_display_globals(
     crt_enabled: bool,
     framebuffer_size: (u32, u32),
     motion_off: zaparoo_app::motion_test::Disabled,
+    presenter_fades: bool,
 ) {
     app.global::<Theme>().set_crt(visual_crt);
     app.global::<Sizing>().set_crt(visual_crt);
@@ -530,6 +539,10 @@ fn seed_display_globals(
     app.global::<Shell>()
         .set_systems_list_only(persisted.settings.systems_browse_layout == "list-only");
     apply_interface_profile(app, &persisted.settings.interface_profile);
+    app.global::<Sizing>()
+        .set_menu_row_enabled(persisted.settings.show_menu_row);
+    app.global::<Sizing>()
+        .set_help_bar_enabled(persisted.settings.show_help_bar);
     let embedded = cfg!(feature = "mister");
     let motion = app.global::<Motion>();
     motion.set_enabled(display::motion_enabled(
@@ -554,7 +567,7 @@ fn seed_display_globals(
     if embedded && motion_off.cover_fade() {
         motion.set_cover_reveal_ms(0);
     }
-    if !display::tile_cover_fade(embedded, visual_crt) || embedded && motion_off.cover_fade() {
+    if !display::tile_cover_fade(embedded, presenter_fades) || embedded && motion_off.cover_fade() {
         motion.set_tile_cover_reveal_ms(0);
     }
     if embedded && motion_off.rail() {
@@ -659,18 +672,7 @@ fn run_application(
     let has_saved_state = persist::has_saved_state();
     let mut persisted = persist::load();
     merge_config_settings(&mut persisted, &config);
-    let restore_pending = matches!(
-        persisted.active_screen.as_str(),
-        "systems"
-            | "favorite-systems"
-            | "games"
-            | "favorites"
-            | "recents"
-            | "search"
-            | "search-results"
-            | "settings"
-            | "about"
-    );
+    let restore_pending = restores_screen(&persisted.active_screen);
     // The cold-launch curtain covers every Core-dependent restore until
     // the restored screen is complete, so nothing is shown in between.
     // Settings and About never need the catalog and paint final from the
@@ -782,6 +784,7 @@ fn run_application(
     let (rest, focus) = theme::logo_tints(&palette);
     let logos = system_logos::Logos::new();
     logos.set_tints(rest, focus);
+    app.global::<Sizing>().set_menu_row_blocked(dual_head);
     seed_display_globals(
         &app,
         &persisted,
@@ -789,11 +792,14 @@ fn run_application(
         crt,
         ui_framebuffer_size,
         motion_test(),
+        true,
     );
     brand::register(&app);
-    app.global::<GlyphSource>().on_glyph(|key, px, tint| {
-        glyphs::render(key.as_str(), px.round().max(0.0) as u32, tint).unwrap_or_default()
-    });
+    app.global::<GlyphSource>()
+        .on_raster(|key, px, tint, pixel_grid| {
+            glyphs::render(key.as_str(), px.round().max(0.0) as u32, tint, pixel_grid)
+                .unwrap_or_default()
+        });
 
     #[cfg(feature = "mister")]
     let crt_mirror = if dual_head {
@@ -810,11 +816,15 @@ fn run_application(
             true,
             crt_framebuffer_size,
             motion_test(),
+            false,
         );
         brand::register(&mirror);
-        mirror.global::<GlyphSource>().on_glyph(|key, px, tint| {
-            glyphs::render(key.as_str(), px.round().max(0.0) as u32, tint).unwrap_or_default()
-        });
+        mirror
+            .global::<GlyphSource>()
+            .on_raster(|key, px, tint, pixel_grid| {
+                glyphs::render(key.as_str(), px.round().max(0.0) as u32, tint, pixel_grid)
+                    .unwrap_or_default()
+            });
         Some(mirror)
     } else {
         None
@@ -844,6 +854,7 @@ fn run_application(
     let (dormant, _) = tokio::sync::watch::channel(false);
     let ctx = Arc::new(Ctx {
         folders: folder_picker::Model::default(),
+        images: image_picker::Model::default(),
         launcher_scan: launcher_scan::Model::default(),
         playtime_access: playtime_access::Model::default(),
         open_url: open_url::Model::default(),
@@ -1010,12 +1021,17 @@ fn run_application(
     // start shows it at once and the catalog reconciles it when Core
     // answers; a relaunch keeps it behind the curtain until then.
     hub::bind_input(&ctx, &app);
+    page_bar::bind(&ctx, &app);
     systems::bind_input(&ctx, &app);
     games::bind_input(&ctx, &app);
     search::bind(&ctx, &app);
+    rename::bind(&ctx, &app);
+    ra_login::bind(&ctx, &app);
+    file_browser::bind(&ctx, &app);
     settings::bind_input(&ctx, &app);
     media_setup::bind_input(&ctx, &app);
     game_info::bind(&ctx, &app);
+    manual::bind(&ctx, &app);
     log_upload::bind_input(&ctx, &app);
     update::bind(&ctx, &app);
     router::bind_context_input(&ctx, &app);
@@ -1040,7 +1056,8 @@ fn run_application(
     bind_history_changes(&ctx, &app, &client);
     pairing::bind_events(&ctx, &app, &client);
     online::bind_events(&ctx, &app, &client);
-    bind_launchers(&ctx, &store);
+    bind_launchers(&ctx, &app, &store);
+    retro_achievements::refresh(&ctx, &app);
     bind_controller_report(&ctx, &app);
     start_clock(&app, &handle, clock_twelve_hour, ctx.dormant.subscribe());
     start_status(&app, &ctx);
@@ -1149,6 +1166,10 @@ fn bind_media_status(ctx: &Arc<Ctx>, app: &App, store: &Arc<Store>) {
             if art_changed {
                 ctx.media.clear();
             }
+            // A scrape or a reindex can change any game's metadata too.
+            if art_changed || finished {
+                games::clear_detail_cache();
+            }
             let ctx = ctx.clone();
             let _ = weak.upgrade_in_event_loop(move |app| {
                 status::set_task(&ctx.status, &app, &ctx.handle, task);
@@ -1158,7 +1179,7 @@ fn bind_media_status(ctx: &Arc<Ctx>, app: &App, store: &Arc<Store>) {
                     hub::rebuild(&ctx, &app);
                     hub_refresh::schedule(&ctx, &app);
                     games::reproject(&ctx, &app);
-                    fetch_system_defaults(&ctx);
+                    fetch_settings(&ctx, &app);
                 }
             });
         }
@@ -1415,7 +1436,7 @@ pub(crate) fn apply_buttons(ctx: &Ctx, app: &App) {
     buttons.set_confirm(SharedString::from(resolved.confirm));
     buttons.set_cancel(SharedString::from(resolved.cancel));
     buttons.set_options(SharedString::from(resolved.options));
-    buttons.set_view(SharedString::from(resolved.view));
+    buttons.set_menu(SharedString::from(resolved.menu));
 }
 
 /// Fetch `media.history.latest` once the connection is up and hand the
@@ -1654,6 +1675,8 @@ fn start_media_cache(ctx: &Arc<Ctx>, app: &App, client: &Arc<Client>) {
     let handle = ctx.handle.clone();
     let ctx = ctx.clone();
     let landings = Arc::new(media_cache::Landings::default());
+    #[cfg(feature = "mister")]
+    let held = Arc::new(Mutex::new(HeldCovers::default()));
     media_cache::spawn_driver(
         media,
         client.clone(),
@@ -1665,15 +1688,91 @@ fn start_media_cache(ctx: &Arc<Ctx>, app: &App, client: &Arc<Client>) {
             }
             let ctx = ctx.clone();
             let landings = landings.clone();
+            #[cfg(feature = "mister")]
+            let held = held.clone();
             let _ = weak.upgrade_in_event_loop(move |app| {
                 let keys = landings.take();
                 if *ctx.dormant.borrow() {
                     return;
                 }
+                #[cfg(feature = "mister")]
+                land_covers(&ctx, &app, &held, keys);
+                #[cfg(not(feature = "mister"))]
                 deliver_covers(&ctx, &app, &keys);
             });
         },
     );
+}
+
+/// Browse covers held for the rest of their page (`land_covers`).
+#[cfg(feature = "mister")]
+#[derive(Default)]
+struct HeldCovers {
+    keys: Vec<media_cache::MediaKey>,
+    hold: zaparoo_app::cover_landing::Hold,
+}
+
+/// Settled covers, where the presenter fades covers in: browse covers for
+/// the page on screen wait for the rest of it and land together
+/// (`zaparoo_app::cover_landing`); everything else lands as it arrives.
+/// Other builds deliver every cover as it arrives.
+#[cfg(feature = "mister")]
+fn land_covers(
+    ctx: &Arc<Ctx>,
+    app: &App,
+    held: &Arc<Mutex<HeldCovers>>,
+    keys: Vec<media_cache::MediaKey>,
+) {
+    {
+        use zaparoo_app::cover_landing::Landing;
+        let (carousel, browse): (Vec<_>, Vec<_>) =
+            keys.into_iter().partition(|key| key.image_type.is_some());
+        if !carousel.is_empty() {
+            deliver_covers(ctx, app, &carousel);
+        }
+        if browse.is_empty() {
+            return;
+        }
+        // Without motion nothing fades, so nothing is worth waiting for.
+        let waiting = app.global::<Motion>().get_enabled()
+            && (games::page_covers_waiting(ctx, app) || hub::page_covers_waiting(ctx, app));
+        let now = std::time::Instant::now();
+        let (land, deadline) = {
+            let mut held = held
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            held.keys.extend(browse);
+            match held.hold.arrived(now, waiting) {
+                Landing::Now => (std::mem::take(&mut held.keys), None),
+                Landing::Hold(deadline) => (Vec::new(), deadline),
+            }
+        };
+        if !land.is_empty() {
+            deliver_covers(ctx, app, &land);
+        }
+        let Some((at, generation)) = deadline else {
+            return;
+        };
+        let ctx = ctx.clone();
+        let held = held.clone();
+        let weak = app.as_weak();
+        slint::Timer::single_shot(at.saturating_duration_since(now), move || {
+            let keys = {
+                let mut held = held
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                if !held.hold.expired(generation) {
+                    return;
+                }
+                std::mem::take(&mut held.keys)
+            };
+            if let Some(app) = weak.upgrade() {
+                if !*ctx.dormant.borrow() {
+                    deliver_covers(&ctx, &app, &keys);
+                }
+            }
+        });
+    }
 }
 
 /// One batch of settled covers: each screen that shows any of them
@@ -1689,6 +1788,10 @@ pub(crate) fn deliver_covers(ctx: &Ctx, app: &App, keys: &[media_cache::MediaKey
         } else if ctx.media.is_negative(key) {
             game_info::cover_absent(ctx, app, key);
         }
+    }
+    // The detailed list's pane steps through the same typed images.
+    if !carousel.is_empty() {
+        games::covers_landed(ctx, app, &carousel);
     }
     if !browse.is_empty() {
         hub::covers_landed(ctx, app, &browse);
@@ -1858,7 +1961,7 @@ fn apply_catalog(ctx: &Arc<Ctx>, app: &App, status: &ResourceStatus<CatalogData>
             if first_catalog {
                 app.global::<Shell>().set_boot_complete(true);
                 router::reset_idle(ctx, app);
-                fetch_system_defaults(ctx);
+                fetch_settings(ctx, app);
                 hub_refresh::schedule(ctx, app);
             }
             // The curtain stays up until the restored screen is complete.
@@ -1913,12 +2016,31 @@ fn finish_hub_restore(ctx: &Arc<Ctx>, app: &App) {
     }
 }
 
+/// Whether a start with this saved screen restores it, rather than
+/// showing the Hub. Every screen `restore_target` can restore is here.
+fn restores_screen(active_screen: &str) -> bool {
+    matches!(
+        active_screen,
+        "systems"
+            | "favorite-systems"
+            | "games"
+            | "favorites"
+            | "recents"
+            | "search"
+            | "search-results"
+            | "rename"
+            | "file-browser"
+            | "settings"
+            | "about"
+    )
+}
+
 /// Whether a start with this saved screen opens behind the curtain.
 fn boot_curtain_for(active_screen: &str, has_saved_state: bool) -> bool {
     match active_screen {
         "settings" | "about" => false,
         "systems" | "favorite-systems" | "games" | "favorites" | "recents" | "search"
-        | "search-results" => true,
+        | "search-results" | "rename" | "file-browser" => true,
         _ => has_saved_state,
     }
 }
@@ -1938,16 +2060,21 @@ fn seed_startup_state(app: &App, persisted: &persist::PersistedState, boot_curta
 /// Launcher inventory + per-system defaults for the "Change launcher"
 /// picker: the launchers endpoint streams into Shared, the defaults
 /// come from the settings RPC at startup and after a media job finishes.
-fn bind_launchers(ctx: &Arc<Ctx>, store: &Arc<Store>) {
+fn bind_launchers(ctx: &Arc<Ctx>, app: &App, store: &Arc<Store>) {
     use zaparoo_core::endpoints::launchers::LaunchersEndpoint;
     let resource = store.subscribe::<LaunchersEndpoint>(());
     let mut rx = resource.subscribe();
     let shared = ctx.shared.clone();
+    let ctx2 = ctx.clone();
+    let weak = app.as_weak();
     ctx.handle.spawn(async move {
         loop {
             let snapshot = rx.borrow_and_update().clone();
             if let ResourceStatus::Ready(data) = snapshot {
                 lock(&shared).launchers.clone_from(&data.launchers);
+                // What is installed decides rows on the Library page.
+                let ctx = ctx2.clone();
+                let _ = weak.upgrade_in_event_loop(move |app| settings::refresh(&ctx, &app));
             }
             if rx.changed().await.is_err() {
                 return;
@@ -1956,12 +2083,16 @@ fn bind_launchers(ctx: &Arc<Ctx>, store: &Arc<Store>) {
     });
 }
 
-fn fetch_system_defaults(ctx: &Arc<Ctx>) {
+/// Core's per-system defaults and global launcher preference.
+fn fetch_settings(ctx: &Arc<Ctx>, app: &App) {
     let client = ctx.store.client();
-    let shared = ctx.shared.clone();
-    ctx.handle.spawn(async move {
+    let ctx = ctx.clone();
+    let weak = app.as_weak();
+    ctx.handle.clone().spawn(async move {
         if let Ok(result) = client.settings().await {
-            lock(&shared).system_defaults = result.system_defaults;
+            lock(&ctx.shared).system_defaults = result.system_defaults;
+            launcher_prefs::observe(&ctx, result.launcher_preference);
+            let _ = weak.upgrade_in_event_loop(move |app| settings::refresh(&ctx, &app));
         }
     });
 }
@@ -1986,12 +2117,13 @@ fn restore_screens(ctx: &Arc<Ctx>, app: &App) {
 }
 
 fn restore_target(ctx: &Arc<Ctx>, app: &App) {
-    let (target, category, system_id) = {
+    let (target, category, system_id, entered_from_hub) = {
         let shared = lock(&ctx.shared);
         (
             shared.persist.active_screen.clone(),
             shared.persist.hub.category.clone(),
             shared.persist.games.system_id.clone(),
+            shared.persist.games.entered_from_hub,
         )
     };
     // Favorites/Recents restore straight from the Hub - they don't
@@ -2017,6 +2149,14 @@ fn restore_target(ctx: &Arc<Ctx>, app: &App) {
             search::restore_results(ctx, app);
             return;
         }
+        "rename" => {
+            rename::restore(ctx, app);
+            return;
+        }
+        "file-browser" => {
+            file_browser::restore(ctx, app);
+            return;
+        }
         "settings" => {
             settings::enter(ctx, app, EntryMode::Restore);
             return;
@@ -2026,6 +2166,19 @@ fn restore_target(ctx: &Arc<Ctx>, app: &App) {
             return;
         }
         _ => {}
+    }
+    // A Hub shortcut skipped Systems: no category stands behind it and
+    // Back returns to the Hub, which is also where a failed restore ends.
+    if target == "games" && entered_from_hub {
+        let sys = lock(&ctx.shared)
+            .systems
+            .iter()
+            .find(|s| s.id == system_id)
+            .cloned();
+        if let Some(sys) = sys {
+            games::enter_restored(ctx, app, &sys);
+        }
+        return;
     }
     let category_exists = lock(&ctx.shared).categories.contains(&category);
     if !category_exists {
@@ -2072,10 +2225,15 @@ mod tests {
             "recents",
             "search",
             "search-results",
+            "rename",
+            "file-browser",
         ] {
             assert!(boot_curtain_for(screen, true), "{screen}");
             assert!(boot_curtain_for(screen, false), "{screen}");
+            assert!(restores_screen(screen), "{screen} is restored");
         }
+        assert!(restores_screen("settings") && restores_screen("about"));
+        assert!(!restores_screen("hub") && !restores_screen("screen-from-the-future"));
         // Settings and About paint final without Core.
         for screen in ["settings", "about"] {
             assert!(!boot_curtain_for(screen, true), "{screen}");
@@ -2234,11 +2392,15 @@ mod tests {
             button_layout: "style_b".to_string(),
             mouse_enabled: false,
             reduce_motion: true,
+            show_menu_row: false,
+            show_help_bar: false,
             debug_logging: true,
             screensaver_timeout: "600".to_string(),
             media_image_type: "boxart".to_string(),
             show_hidden: true,
             show_original_filenames: true,
+            show_tags: false,
+            list_left_right: "image".to_string(),
             swap_confirm_cancel: true,
             swap_options_view: true,
             region: "jp".to_string(),

@@ -10,6 +10,23 @@ import { Screen, AppCue, BootStatus, DisabledReason, DialogKind, DialogButton, E
 
 // Key-to-copy vocabulary for labels Rust hands over as stable ids.
 export global Labels {
+    // One of a game's image types, as Core names them (`boxart`, ...);
+    // empty for one this list does not know.
+    public pure function image-type(value: string) -> string {
+        if (value == "image") { return @tr("Image"); }
+        if (value == "thumbnail") { return @tr("Thumbnail"); }
+        if (value == "boxart") { return @tr("Box art"); }
+        if (value == "boxart3d") { return @tr("3D box art"); }
+        if (value == "screenshot") { return @tr("Screenshot"); }
+        if (value == "wheel") { return @tr("Wheel"); }
+        if (value == "titleshot") { return @tr("Title screen"); }
+        if (value == "map") { return @tr("Map"); }
+        if (value == "marquee") { return @tr("Marquee"); }
+        if (value == "fanart") { return @tr("Fan art"); }
+        if (value == "boxartside") { return @tr("Box side"); }
+        if (value == "boxartback") { return @tr("Box back"); }
+        return "";
+    }
     public pure function boot(status: BootStatus) -> string {
         if (status == BootStatus.starting) { return @tr("Starting Zaparoo Core…"); }
         if (status == BootStatus.migrating) { return @tr("Updating Zaparoo Core data…"); }
@@ -32,6 +49,28 @@ export global Labels {
         if (target == Screen.recents) { return @tr("Loading recently played…"); }
         if (target == Screen.search-results) { return @tr("Searching…"); }
         return @tr("Loading…");
+    }
+    // A file browser Place, by the key Rust sends; a drive is called by its
+    // own volume name.
+    public pure function place(key: string, name: string) -> string {
+        if (key == "custom") { return @tr("Custom folder"); }
+        if (key == "sd") { return @tr("SD card"); }
+        if (key == "usb") { return @tr("USB {}", name); }
+        if (key == "network") { return @tr("Network"); }
+        if (key == "home") { return @tr("Home"); }
+        if (key == "root") { return @tr("Root"); }
+        return name;
+    }
+    // The file browser's last row when a folder holds more than it lists.
+    public pure function more-not-shown(n: int) -> string {
+        return @tr("{n} more not shown" | "{n} more not shown" % n);
+    }
+    // A Hub tile's caption: the user's own name where it has one. Resume
+    // keeps its game after it.
+    public pure function hub-tile(key: string, name: string, custom: string) -> string {
+        if (custom == "") { return Labels.hub(key, name); }
+        if (key == "action:resume" && name != "") { return @tr("{}: {}", custom, name); }
+        return custom;
     }
     public pure function hub(key: string, name: string) -> string {
         if (key == "category:Arcade") { return @tr("Arcade"); }
@@ -116,6 +155,7 @@ export global Labels {
         if (key == "choose_disc:none") { return @tr("No discs found"); }
         if (key == "disc") { return @tr("Disc {}", name); }
         if (key == "add_to_hub") { return @tr("Add to Hub"); }
+        if (key == "save_to_hub") { return @tr("Save to Hub"); }
         if (key == "hub:remove") { return @tr("Remove from Hub"); }
         if (key == "scrape_game") { return @tr("Update metadata"); }
         // Rows that turn the menu to a page, which they also title.
@@ -139,11 +179,13 @@ export global Labels {
         if (key == "index_category" || key == "index_system") { return @tr("Update media database"); }
         if (key == "scrape_category" || key == "scrape_system") { return @tr("Update metadata"); }
         if (key == "jump_letter") { return @tr("Go to…"); }
+        // The Go to chip names the letter the selection is in.
         if (key == "search_here") { return @tr("Search here…"); }
+        if (key == "edit_search") { return @tr("Edit search…"); }
         if (key == "search:all_systems") { return @tr("All systems"); }
         if (key == "section:recent") { return @tr("Recent"); }
         if (key == "section:other") { return @tr("Other"); }
-        // The tags picker, from the games View menu and the Search screen.
+        // The tags picker, from the games Menu and the Search screen.
         if (key == "filter") { return @tr("Tags: {}", Labels.filter-value(name)); }
         if (key == "filter_clear") { return @tr("Clear tags"); }
         if (key == "filter:any") { return @tr("Any"); }
@@ -153,17 +195,22 @@ export global Labels {
         if (key == "filter:failed") { return @tr("Failed to load tags"); }
         if (key == "filter:none") { return @tr("No tags available"); }
         if (Labels.filter-category(key, name) != "") { return Labels.filter-category(key, name); }
-        // Hub rows and its View menu.
+        // Hub rows and its Menu.
         if (key == "hub_add") { return @tr("Add item…"); }
         if (key == "hub_move") { return @tr("Move"); }
         if (key == "hub_remove:hide") { return @tr("Hide"); }
         if (key == "hub_move:tile") { return @tr("Move tile"); }
+        if (key == "hub_rename:tile") { return @tr("Rename tile…"); }
+        if (key == "hub_icon:tile") { return @tr("Change icon…"); }
+        // The file browser's Menu.
+        if (key == "file_default_icon") { return @tr("Use default icon"); }
         if (key == "hub_remove:resume") { return @tr("Hide Resume tile"); }
         if (key == "hub_reset") { return @tr("Reset layout"); }
         if (key == "hub_settings") { return @tr("Settings"); }
         if (key == "hub_quit") { return @tr("Quit"); }
         if (key == "back_to_hub") { return @tr("Back to Hub"); }
-        // The favorites View menu and its pages.
+        if (key == "more") { return @tr("More"); }
+        // The favorites Menu and its pages.
         // The two rows that show their current value; `name` carries the
         // value's own key so both halves get translated.
         if (key == "favorites_sort") { return @tr("Sort: {}", Labels.menu-value(name)); }
@@ -176,7 +223,8 @@ export global Labels {
         if (key == "launcher:default") { return @tr("Default"); }
         if (key == "launcher:current") { return @tr("Current: {}", name); }
         // Picker titles.
-        if (key == "title:view") { return @tr("View"); }
+        if (key == "title:menu") { return @tr("Menu"); }
+        if (key == "title:more") { return @tr("More"); }
         if (key == "title:filter") { return @tr("Tags"); }
         if (key == "title:search_system") { return @tr("System"); }
         if (key == "title:add_item") { return @tr("Add item"); }
@@ -198,11 +246,13 @@ export global Labels {
         if (key == AppCue.loading-more) { return @tr("Loading more…"); }
         if (key == AppCue.loading-progress) { return @tr("Loading {} of {}…", arg, arg2); }
         if (key == AppCue.loading-launchers) { return @tr("Loading launchers…"); }
+        if (key == AppCue.loading-details) { return @tr("Loading details…"); }
         if (key == AppCue.saving) { return @tr("Saving…"); }
         if (key == AppCue.starting) { return @tr("Starting…"); }
         if (key == AppCue.cancelling) { return @tr("Cancelling…"); }
         if (key == AppCue.unlinking) { return @tr("Unlinking…"); }
         if (key == AppCue.added-to-hub) { return @tr("Added to Hub"); }
+        if (key == AppCue.saved-to-hub) { return @tr("Saved to Hub"); }
         if (key == AppCue.removed-from-hub) { return @tr("Removed from Hub"); }
         if (key == AppCue.token-written) { return @tr("Token written"); }
         return "";
@@ -236,6 +286,7 @@ export global DialogLabels {
         if (kind == DialogKind.first-run) { return @tr("First-time setup"); }
         if (kind == DialogKind.hub-full) { return @tr("Nothing left to add"); }
         if (kind == DialogKind.unlink-online) { return @tr("Unlink Online account?"); }
+        if (kind == DialogKind.ra-log-out) { return @tr("Log out of RetroAchievements?"); }
         if (kind == DialogKind.restore-online-backup) { return @tr("Restore this backup?"); }
         if (kind == DialogKind.update-stop) { return @tr("Stop update?"); }
         if (kind == DialogKind.action-error) { return DialogLabels.error-title(error); }
@@ -252,6 +303,7 @@ export global DialogLabels {
         if (kind == DialogKind.unlink-online) { return @tr("This device stops backing up and syncing with your Zaparoo Online account. Local play history stays on this device."); }
         if (kind == DialogKind.restore-online-backup) { return @tr("This replaces this device's settings and data with the backup from {}. Zaparoo restarts when it finishes.", detail); }
         if (kind == DialogKind.update-stop) { return @tr("An update is still running. Leaving this screen stops it."); }
+        if (kind == DialogKind.ra-log-out) { return @tr("Games stop earning achievements until you log in again."); }
         if (kind == DialogKind.notice) {
             return @tr("Copyright 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.\n\nThis free source-available build is for personal and non-commercial use only. Commercial use requires a separate license.\n\nContact: legal@zaparoo.com\n\nFull details available any time under Settings > About / License.\n\nCreated by\nAndrea Bogazzi, BossRighteous, Tim Wilsie, Wizzo");
         }
@@ -289,6 +341,7 @@ export global DialogLabels {
         if (kind == ErrorKind.media-visibility) { return @tr("Visibility update failed"); }
         if (kind == ErrorKind.media-busy) { return @tr("Media database is busy"); }
         if (kind == ErrorKind.add-to-hub) { return @tr("Add to Hub failed"); }
+        if (kind == ErrorKind.save-to-hub) { return @tr("Save to Hub failed"); }
         if (kind == ErrorKind.media-index) { return @tr("Media update failed"); }
         if (kind == ErrorKind.media-scrape) { return @tr("Update metadata failed"); }
         if (kind == ErrorKind.media-scrapers) { return @tr("Source list unavailable"); }
@@ -298,6 +351,7 @@ export global DialogLabels {
         if (kind == ErrorKind.disc-list) { return @tr("Disc list unavailable"); }
         if (kind == ErrorKind.qr-code) { return @tr("QR code failed"); }
         if (kind == ErrorKind.card-write) { return @tr("Token write failed"); }
+        if (kind == ErrorKind.image-picker) { return @tr("Image picker failed"); }
         if (kind == ErrorKind.setting) { return @tr("Setting not saved"); }
         if (kind == ErrorKind.pairing) { return @tr("Pairing could not start"); }
         if (kind == ErrorKind.online) { return @tr("Online account unavailable"); }
@@ -324,6 +378,10 @@ export global DialogLabels {
             if (context == "") { return @tr("Could not add this item to the Hub. Check Zaparoo Core and try again."); }
             return @tr("Could not add {} to the Hub. Check Zaparoo Core and try again.", context);
         }
+        if (kind == ErrorKind.save-to-hub) {
+            if (context == "") { return @tr("Could not save this search to the Hub. Check Zaparoo Core and try again."); }
+            return @tr("Could not save {} to the Hub. Check Zaparoo Core and try again.", context);
+        }
         if (kind == ErrorKind.media-index) { return @tr("Could not start the media database update. Check Zaparoo Core and try again."); }
         if (kind == ErrorKind.media-scrape) { return @tr("Could not start updating metadata. Check Zaparoo Core and try again."); }
         if (kind == ErrorKind.media-scrapers) { return @tr("Could not load the list of metadata sources. Check Zaparoo Core and try again."); }
@@ -333,6 +391,7 @@ export global DialogLabels {
         if (kind == ErrorKind.disc-list) { return @tr("Could not list the discs of this game. Check Zaparoo Core and try again."); }
         if (kind == ErrorKind.qr-code) { return @tr("Could not create the QR code for this item."); }
         if (kind == ErrorKind.card-write) { return @tr("Could not write to this token. Check that it is writable and try again."); }
+        if (kind == ErrorKind.image-picker) { return @tr("Could not open an image picker, or the image chosen could not be read."); }
         if (kind == ErrorKind.setting) { return @tr("Could not save this setting. Try again."); }
         if (kind == ErrorKind.pairing) { return @tr("Core would not start a pairing. It may already have as many paired devices as it allows, or it may be running on another device."); }
         if (kind == ErrorKind.online) { return @tr("Core could not reach or update your Zaparoo Online account. Check the network connection and try again."); }

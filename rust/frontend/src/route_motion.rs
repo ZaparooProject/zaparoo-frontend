@@ -353,6 +353,7 @@ fn offline_ctx() -> (tokio::runtime::Runtime, crate::router::Ctx) {
     let client = zaparoo_core::client::Client::new("ws://127.0.0.1:1".into(), &handle);
     let ctx = crate::router::Ctx {
         folders: crate::folder_picker::Model::default(),
+        images: crate::image_picker::Model::default(),
         launcher_scan: crate::launcher_scan::Model::default(),
         playtime_access: crate::playtime_access::Model::default(),
         open_url: crate::open_url::Model::default(),
@@ -506,7 +507,7 @@ fn list_artwork_requests_only_detail_neighbors_and_retires_old_focus() {
             .collect::<Vec<_>>(),
         ["/g/20", "/g/21", "/g/19"]
     );
-    crate::router::lock(&ctx.shared).games.rapid_active = true;
+    crate::router::lock(&ctx.shared).games.rapid.active = true;
     crate::games::render(&ctx, &app);
     assert_eq!(ctx.media.pending_keys(), vec![hub]);
 }
@@ -552,7 +553,7 @@ fn controller_report_seed_reaches_help_bar_before_event_loop() {
     assert_eq!(buttons.get_confirm(), "FaceEast");
     assert_eq!(buttons.get_cancel(), "FaceSouth");
     assert_eq!(buttons.get_options(), "FaceWest");
-    assert_eq!(buttons.get_view(), "FaceNorth");
+    assert_eq!(buttons.get_menu(), "FaceNorth");
 }
 
 #[test]
@@ -579,7 +580,7 @@ fn keyboard_report_seed_keeps_fixed_bindings_despite_controller_swaps() {
     assert_eq!(buttons.get_confirm(), "FaceEast");
     assert_eq!(buttons.get_cancel(), "FaceSouth");
     assert_eq!(buttons.get_options(), "FaceNorth");
-    assert_eq!(buttons.get_view(), "FaceWest");
+    assert_eq!(buttons.get_menu(), "FaceWest");
 }
 
 #[test]
@@ -673,6 +674,7 @@ fn cover_art_fades_in_only_when_it_lands() {
         cover_focus: red.clone(),
         has_cover,
         has_cover_focus: has_cover,
+        fetched: true,
         ..Default::default()
     };
     let view = app.global::<HubView>();
@@ -698,6 +700,17 @@ fn cover_art_fades_in_only_when_it_lands() {
     assert!(art(&window) < shown, "landed art does not pop in");
     settle(&window);
     assert_eq!(art(&window), shown, "the fade ends at full strength");
+
+    // A built-in logo is not fetched art: it cuts in.
+    let logo = |has_cover: bool| GridCell {
+        fetched: false,
+        ..cell(has_cover)
+    };
+    let cells = Rc::new(VecModel::from(vec![logo(false)]));
+    view.set_cells(ModelRc::from(cells.clone()));
+    settle(&window);
+    cells.set_row_data(0, logo(true));
+    assert_eq!(art(&window), shown, "a logo lands whole");
 }
 
 /// The pairing panel's one promise: Core is never left holding a PIN the
@@ -912,6 +925,216 @@ fn online_rows_follow_core_and_unlinking_asks_first() {
     crate::router::handle_action(&ctx, &app, "cancel");
     assert!(!ov.get_dialog_open());
     assert!(crate::router::lock(&ctx.shared).online.linked);
+}
+
+fn launcher(
+    id: &str,
+    system: &str,
+    groups: &[&str],
+    available: bool,
+) -> zaparoo_core::media_types::LauncherInfo {
+    zaparoo_core::media_types::LauncherInfo {
+        id: id.into(),
+        system_id: system.into(),
+        system_name: system.into(),
+        groups: groups.iter().map(|g| (*g).to_string()).collect(),
+        available,
+        ..Default::default()
+    }
+}
+
+/// Put the Settings cursor on a row by id.
+fn focus_settings_row(app: &App, id: &str) {
+    let view = app.global::<crate::SettingsView>();
+    let index = view
+        .get_rows()
+        .iter()
+        .position(|row| row.id == id)
+        .and_then(|i| i32::try_from(i).ok())
+        .unwrap_or(-1);
+    assert!(index >= 0, "{id} is on the page");
+    view.set_index(index);
+}
+
+fn launcher_prefs_ids(app: &App) -> Vec<String> {
+    app.global::<crate::Overlays>()
+        .get_launcher_prefs_rows()
+        .iter()
+        .map(|row| row.id.to_string())
+        .collect()
+}
+
+/// The launcher preference row only shows for a Core that has the setting;
+/// its list adds at the end and holds the new entry, a move walks it and
+/// Back puts it back, and Remove takes an entry out. Every change is the
+/// list the page shows straight away.
+#[test]
+fn the_launcher_preference_list_adds_moves_and_removes_in_its_own_panel() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    app.global::<crate::Motion>().set_enabled(false);
+    app.global::<Shell>().set_active_screen(Screen::Settings);
+
+    crate::settings::open_page(&ctx, &app, SettingsPage::Library);
+    assert_eq!(
+        settings_row(&app, "launcherPreference").id,
+        "",
+        "an older Core has no list"
+    );
+
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.launchers = vec![
+            launcher("RANES", "NES", &["RetroAchievements"], true),
+            launcher("NESdb9", "NES", &["DB9"], false),
+            launcher("SNES", "SNES", &[], true),
+        ];
+        shared.launcher_preference = Some(vec!["SNES".into()]);
+        shared.launcher_pref_confirmed = Some(vec!["SNES".into()]);
+    }
+    crate::settings::open_page(&ctx, &app, SettingsPage::Library);
+    let row = settings_row(&app, "launcherPreference");
+    assert_eq!(row.control, ControlKind::Navigate);
+    focus_settings_row(&app, "launcherPreference");
+    crate::router::handle_action(&ctx, &app, "accept");
+    let ov = app.global::<crate::Overlays>();
+    assert!(ov.get_launcher_prefs_open());
+    assert_eq!(
+        launcher_prefs_ids(&app),
+        vec!["SNES", ""],
+        "the list, then Add…"
+    );
+
+    // Add…: groups first, then launchers, without what is already listed.
+    crate::router::handle_action(&ctx, &app, "down");
+    crate::router::handle_action(&ctx, &app, "accept");
+    assert_eq!(ov.get_launcher_prefs_page(), crate::LauncherPrefsPage::Add);
+    assert_eq!(
+        launcher_prefs_ids(&app),
+        vec!["DB9", "RetroAchievements", "NESdb9", "RANES"]
+    );
+    crate::router::handle_action(&ctx, &app, "down");
+    crate::router::handle_action(&ctx, &app, "accept");
+    assert_eq!(ov.get_launcher_prefs_page(), crate::LauncherPrefsPage::List);
+    assert!(
+        ov.get_launcher_prefs_moving(),
+        "a new entry is held where it landed"
+    );
+    assert_eq!(
+        crate::launcher_prefs::current(&ctx),
+        Some(vec!["SNES".to_string(), "RetroAchievements".to_string()])
+    );
+
+    // Up takes it first; Back puts it back where the move began.
+    crate::router::handle_action(&ctx, &app, "up");
+    assert_eq!(
+        crate::launcher_prefs::shown_for_test(&ctx),
+        vec!["RetroAchievements", "SNES"]
+    );
+    crate::router::handle_action(&ctx, &app, "up");
+    assert_eq!(ov.get_launcher_prefs_index(), 0, "a move stops at the top");
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert!(!ov.get_launcher_prefs_moving());
+    assert!(
+        ov.get_launcher_prefs_open(),
+        "Back ends the move, not the list"
+    );
+    assert_eq!(
+        crate::launcher_prefs::shown_for_test(&ctx),
+        vec!["SNES", "RetroAchievements"]
+    );
+
+    // Move then Done writes the new order.
+    crate::router::handle_action(&ctx, &app, "accept");
+    assert_eq!(
+        ov.get_launcher_prefs_page(),
+        crate::LauncherPrefsPage::Entry
+    );
+    crate::router::handle_action(&ctx, &app, "accept");
+    crate::router::handle_action(&ctx, &app, "up");
+    crate::router::handle_action(&ctx, &app, "accept");
+    assert_eq!(
+        crate::launcher_prefs::current(&ctx),
+        Some(vec!["RetroAchievements".to_string(), "SNES".to_string()])
+    );
+
+    // Remove.
+    crate::router::handle_action(&ctx, &app, "down");
+    crate::router::handle_action(&ctx, &app, "accept");
+    crate::router::handle_action(&ctx, &app, "down");
+    crate::router::handle_action(&ctx, &app, "accept");
+    assert_eq!(
+        crate::launcher_prefs::current(&ctx),
+        Some(vec!["RetroAchievements".to_string()])
+    );
+
+    // Back closes the panel onto the page under it.
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert!(!ov.get_launcher_prefs_open());
+    assert_eq!(app.global::<Shell>().get_active_screen(), Screen::Settings);
+    assert_eq!(
+        app.global::<crate::SettingsView>().get_page(),
+        SettingsPage::Library
+    );
+}
+
+/// The login screen keeps the password masked but for the character just
+/// typed, never takes the persisted screen from Settings, and Back steps
+/// from the password to the username and then out to Settings.
+#[test]
+fn the_retroachievements_login_masks_the_password_and_is_never_restored() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    app.global::<crate::Motion>().set_enabled(false);
+    crate::settings::enter(&ctx, &app, EntryMode::Fresh);
+    crate::settings::open_page(&ctx, &app, SettingsPage::Library);
+    crate::router::lock(&ctx.shared).ra.cfg.username = "Callan".into();
+
+    crate::ra_login::open(&ctx, &app);
+    assert_eq!(app.global::<Shell>().get_active_screen(), Screen::RaLogin);
+    let view = app.global::<crate::RaLoginView>();
+    assert_eq!(view.get_step(), crate::RaLoginStep::Username);
+    assert_eq!(view.get_before(), "Callan", "the saved username comes back");
+    assert_eq!(
+        crate::router::lock(&ctx.shared).persist.active_screen,
+        "settings"
+    );
+
+    crate::router::handle_action(&ctx, &app, "accept");
+    for c in "pw".chars() {
+        crate::ra_login::type_char(&ctx, &app, c);
+    }
+    // Typing moved focus to the submit key; Accept there goes on.
+    crate::router::handle_action(&ctx, &app, "accept");
+    assert_eq!(view.get_step(), crate::RaLoginStep::Password);
+    for c in "ab".chars() {
+        crate::ra_login::type_char(&ctx, &app, c);
+    }
+    assert_eq!(
+        view.get_before(),
+        "\u{2022}b",
+        "only the newest character shows"
+    );
+    assert!(view.get_can_submit());
+    assert_eq!(
+        crate::router::lock(&ctx.shared).persist.active_screen,
+        "settings"
+    );
+
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert_eq!(view.get_step(), crate::RaLoginStep::Username);
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert_eq!(app.global::<Shell>().get_active_screen(), Screen::Settings);
+    assert_eq!(
+        app.global::<crate::SettingsView>().get_page(),
+        SettingsPage::Library
+    );
+    assert_eq!(
+        crate::router::lock(&ctx.shared).persist.active_screen,
+        "settings"
+    );
 }
 
 /// The link panel shows Core's code until Core decides, and every way out
@@ -1209,7 +1432,7 @@ fn held_game_pages_cut_at_repeat_cadence_but_taps_keep_slides() {
     }
     crate::games::render(&ctx, &app);
     crate::router::handle_action(&ctx, &app, "page_next");
-    assert!(crate::router::lock(&ctx.shared).games.sliding);
+    assert!(crate::router::lock(&ctx.shared).games.page.sliding);
     let view = app.global::<crate::GamesView>();
     let outgoing = view.get_cells().row_data(0).map(|cell| cell.name);
     let incoming = view.get_next_cells().row_data(0).map(|cell| cell.name);
@@ -1234,13 +1457,13 @@ fn held_game_pages_cut_at_repeat_cadence_but_taps_keep_slides() {
     );
     let first = first + 1;
     distinct_frames(&window, 18);
-    assert!(!crate::router::lock(&ctx.shared).games.sliding);
+    assert!(!crate::router::lock(&ctx.shared).games.page.sliding);
     for expected in first + 1..=first + 5 {
         crate::input::dispatch_repeat(&ctx, &app, "page_next", HoldTier::Page);
         let state = crate::router::lock(&ctx.shared);
         assert_eq!(state.games.grid.current_page(), expected);
         assert!(
-            !state.games.sliding,
+            !state.games.page.sliding,
             "rapid pages must not arm a 260 ms gate"
         );
         drop(state);
@@ -1263,7 +1486,7 @@ fn held_game_pages_cut_at_repeat_cadence_but_taps_keep_slides() {
     app.global::<crate::Overlays>().set_list_open(false);
     crate::router::handle_action(&ctx, &app, "page_next");
     assert!(
-        crate::router::lock(&ctx.shared).games.sliding,
+        crate::router::lock(&ctx.shared).games.page.sliding,
         "ordinary taps retain motion"
     );
     distinct_frames(&window, 18);
@@ -1469,6 +1692,12 @@ fn context_ids(app: &App) -> Vec<String> {
 }
 
 /// Put the open menu's focus on row `id`, returning where it sits.
+/// The id of the menu row that has focus.
+fn context_row_id(app: &App) -> Option<String> {
+    let index = usize::try_from(app.global::<crate::Overlays>().get_context_index()).ok()?;
+    context_ids(app).get(index).cloned()
+}
+
 fn focus_context_row(app: &App, id: &str) -> i32 {
     let index = context_ids(app).iter().position(|row| row == id);
     assert!(index.is_some(), "the menu has no {id} row");
@@ -1841,6 +2070,8 @@ fn the_resume_tile_shows_its_games_menu_once_core_says_what_it_is() {
         [
             "add_to_hub",
             "hide:game",
+            "hub_rename:tile",
+            "hub_icon:tile",
             "hub_move:tile",
             "hub_remove:resume",
             "scrape_game"
@@ -1867,15 +2098,33 @@ fn the_resume_tile_shows_its_games_menu_once_core_says_what_it_is() {
     assert!(crate::router::lock(&ctx.shared).hub.move_armed());
     crate::router::handle_action(&ctx, &app, "cancel");
     settle(&window);
+    // Back from the move brings the menu back on its row; two more leave it.
+    assert!(overlays.get_context_open());
+    assert_eq!(context_row_id(&app).as_deref(), Some("hub_move"));
+    crate::router::handle_action(&ctx, &app, "cancel");
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert!(!overlays.get_context_open());
 
     // A game Core no longer has leaves the tile its layout actions.
     crate::router::handle_action(&ctx, &app, "context_menu");
     let request = crate::hub::pending_game_request(&ctx, Tile::Resume, "NES", "/g/Other.nes");
     crate::hub::game_answered(&ctx, &app, &request, None);
-    assert_eq!(context_keys(&app), ["hub_move", "hub_remove:hide"]);
+    assert_eq!(
+        context_keys(&app),
+        [
+            "hub_rename:tile",
+            "hub_icon:tile",
+            "hub_move",
+            "hub_remove:hide"
+        ]
+    );
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one walk over every pinned tile kind and its menu"
+)]
 fn pinned_tiles_show_what_they_stand_for_or_their_layout_actions() {
     use zaparoo_app::options_menu::Tile;
     assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
@@ -1909,14 +2158,27 @@ fn pinned_tiles_show_what_they_stand_for_or_their_layout_actions() {
     settle(&window);
     assert_eq!(
         context_keys(&app),
-        ["hub:remove", "hide:game", "hub_move:tile", "scrape_game"]
+        [
+            "hub_rename:tile",
+            "hub_icon:tile",
+            "hub:remove",
+            "hide:game",
+            "hub_move:tile",
+            "scrape_game"
+        ]
     );
 
     // A script that is not one game: it can be written as it is.
     next_tile();
     assert_eq!(
         context_keys(&app),
-        ["write_token", "hub:remove", "hub_move:tile"]
+        [
+            "write_token",
+            "hub_rename:tile",
+            "hub_icon:tile",
+            "hub:remove",
+            "hub_move:tile"
+        ]
     );
     focus_context_row(&app, "write_token");
     crate::router::handle_action(&ctx, &app, "accept");
@@ -1940,6 +2202,8 @@ fn pinned_tiles_show_what_they_stand_for_or_their_layout_actions() {
     assert_eq!(
         context_keys(&app),
         [
+            "hub_rename:tile",
+            "hub_icon:tile",
             "hub:remove",
             "hide:system",
             "hub_move:tile",
@@ -1950,11 +2214,22 @@ fn pinned_tiles_show_what_they_stand_for_or_their_layout_actions() {
 
     // A folder's visibility is not something the tile knows.
     next_tile();
-    assert_eq!(context_keys(&app), ["hub_move", "hub:remove"]);
+    assert_eq!(
+        context_keys(&app),
+        ["hub_rename:tile", "hub_icon:tile", "hub_move", "hub:remove"]
+    );
 
     // A saved search is neither a game nor a script to write.
     next_tile();
-    assert_eq!(context_keys(&app), ["hub:remove", "hub_move:tile"]);
+    assert_eq!(
+        context_keys(&app),
+        [
+            "hub_rename:tile",
+            "hub_icon:tile",
+            "hub:remove",
+            "hub_move:tile"
+        ]
+    );
 
     // Removing acts on the tile the menu opened on.
     focus_context_row(&app, "hub_remove");
@@ -2247,7 +2522,7 @@ fn missing_browse_colors_use_real_previews_on_every_page_before_full_art() {
                 > 20
         );
     }
-    crate::router::lock(&ctx.shared).games.rapid_active = true;
+    crate::router::lock(&ctx.shared).games.rapid.active = true;
     crate::games::render(&ctx, &app);
     assert!(
         ctx.media.pending_keys().is_empty(),
@@ -2420,7 +2695,7 @@ fn page_lookahead_is_bounded_and_delayed_partial_pages_wait_then_slide() {
         .games
         .grid
         .has_pending_target());
-    assert!(!crate::router::lock(&ctx.shared).games.sliding);
+    assert!(!crate::router::lock(&ctx.shared).games.page.sliding);
     crate::games::on_append(
         &ctx,
         &app,
@@ -2443,11 +2718,11 @@ fn page_lookahead_is_bounded_and_delayed_partial_pages_wait_then_slide() {
     );
     assert_eq!(view.get_cells().row_data(0).map(|cell| cell.name), outgoing);
     assert!(
-        !crate::router::lock(&ctx.shared).games.sliding,
+        !crate::router::lock(&ctx.shared).games.page.sliding,
         "a partial nonterminal page must wait"
     );
     crate::games::on_append(&ctx, &app, 0, Ok((game_rows("Last", size - 1), None)));
-    assert!(crate::router::lock(&ctx.shared).games.sliding);
+    assert!(crate::router::lock(&ctx.shared).games.page.sliding);
     assert_eq!(view.get_cells().row_data(0).map(|cell| cell.name), outgoing);
     assert_eq!(view.get_next_cells().row_count(), size);
     assert_eq!(
@@ -2475,7 +2750,7 @@ fn rail_needs_a_qualified_hold_and_lingers_after_the_scroll_stops() {
     let view = app.global::<crate::GamesView>();
     for _ in 0..3 {
         crate::router::handle_action(&ctx, &app, "page_next");
-        assert!(crate::router::lock(&ctx.shared).games.sliding);
+        assert!(crate::router::lock(&ctx.shared).games.page.sliding);
         assert!(!view.get_rapid_active());
         assert!(
             !view.get_rail_visible(),
@@ -2486,7 +2761,7 @@ fn rail_needs_a_qualified_hold_and_lingers_after_the_scroll_stops() {
     crate::input::dispatch_repeat(&ctx, &app, "page_next", HoldTier::Page);
     assert!(view.get_rapid_active());
     assert!(view.get_rail_visible());
-    assert!(!crate::router::lock(&ctx.shared).games.sliding);
+    assert!(!crate::router::lock(&ctx.shared).games.page.sliding);
     // A fresh tap ends the fast scroll; the rail lingers, then goes.
     crate::router::handle_action(&ctx, &app, "page_prev");
     assert!(!view.get_rapid_active());
@@ -2592,7 +2867,7 @@ fn wrapped_game_grids_follow_keys_and_pointer_direction_in_every_mode() {
                 direction,
                 "{screen:?} {action} pointer={pointer}"
             );
-            assert!(crate::router::lock(&ctx.shared).games.sliding);
+            assert!(crate::router::lock(&ctx.shared).games.page.sliding);
             assert!(distinct_frames(&window, 18) > 5);
             assert_eq!(view.get_page(), if direction < 0 { 2 } else { 0 });
         }
@@ -2602,7 +2877,7 @@ fn wrapped_game_grids_follow_keys_and_pointer_direction_in_every_mode() {
     assert_eq!(view.get_page(), 2);
     assert_eq!(view.get_slide_dir(), -1);
     assert!(
-        !crate::router::lock(&ctx.shared).games.sliding,
+        !crate::router::lock(&ctx.shared).games.page.sliding,
         "reduced motion still cuts"
     );
 }
@@ -2632,10 +2907,10 @@ fn a_held_page_flip_stops_at_the_ends_from_its_first_repeat() {
     // An early repeat is still a hold, though not yet a fast scroll.
     crate::input::dispatch_repeat(&ctx, &app, "page_next", HoldTier::Row);
     assert_eq!(page(), 1, "a held flip must not wrap past the last page");
-    assert!(!crate::router::lock(&ctx.shared).games.sliding);
+    assert!(!crate::router::lock(&ctx.shared).games.page.sliding);
     // A tap still wraps, continuing forward rather than reversing to page zero.
     crate::router::handle_action(&ctx, &app, "page_next");
-    assert!(crate::router::lock(&ctx.shared).games.sliding);
+    assert!(crate::router::lock(&ctx.shared).games.page.sliding);
     assert_eq!(app.global::<crate::GamesView>().get_slide_dir(), 1);
 }
 
@@ -2801,6 +3076,44 @@ fn entering_systems_queues_logos_after_route_commit_without_an_extra_key() {
     assert!(
         ctx.logos.hold_job().is_none(),
         "an abandoned destination cannot steal current work"
+    );
+}
+
+#[test]
+fn entering_systems_paints_the_focused_tile_zoomed_from_the_first_frame() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    // The MiSTer draws the focus zoom by size, with a larger copy of the
+    // focused tile's logo.
+    let motion = app.global::<crate::Motion>();
+    motion.set_zoom_by_size(true);
+    motion.set_focus_zoom(104.0);
+    crate::router::lock(&ctx.shared).systems = ["SNES", "NES"]
+        .into_iter()
+        .map(|id| zaparoo_core::media_types::SystemInfo {
+            id: id.into(),
+            name: id.into(),
+            category: "Console".into(),
+            media_count: Some(1),
+            ..Default::default()
+        })
+        .collect();
+    app.global::<Shell>().set_active_screen(Screen::Hub);
+    // Nothing is warm: no worker runs here.
+    ctx.logos.clear();
+    crate::systems::enter(&ctx, &app, "Console", EntryMode::Fresh, true);
+    let view = app.global::<SystemsView>();
+    assert_eq!(app.global::<Shell>().get_active_screen(), Screen::Systems);
+    assert!(view.get_focus_ready());
+    assert_eq!(
+        view.get_focus_art_local(),
+        view.get_selected_local(),
+        "the zoomed logo is in place before the route commits"
     );
 }
 
@@ -4023,12 +4336,12 @@ fn a_240p_help_bar_grows_only_while_its_entries_wrap() {
     };
     let sizing = app.global::<Sizing>();
 
-    // Wide enough for one row: the bar is the height every tier has.
+    // Wide enough for one row: one 16 px glyph row and its two pads.
     lay_out(1000);
     assert!(sizing.get_tier_240());
     assert!(!app.get_help_entries_wrap());
     assert!(!sizing.get_help_bar_two_rows());
-    assert_eq!(sizing.get_help_bar_height().round() as i32, 14);
+    assert_eq!(sizing.get_help_bar_height().round() as i32, 20);
     assert_eq!(flips.get(), 0);
 
     // Too narrow: the entries wrap and the bar takes its second row. The
@@ -4036,13 +4349,13 @@ fn a_240p_help_bar_grows_only_while_its_entries_wrap() {
     lay_out(60);
     assert!(app.get_help_entries_wrap());
     assert!(sizing.get_help_bar_two_rows());
-    assert_eq!(sizing.get_help_bar_height().round() as i32, 24);
+    assert_eq!(sizing.get_help_bar_height().round() as i32, 38);
     assert_eq!(flips.get(), 1);
 
     // And gives it back when they fit again.
     lay_out(1000);
     assert!(!sizing.get_help_bar_two_rows());
-    assert_eq!(sizing.get_help_bar_height().round() as i32, 14);
+    assert_eq!(sizing.get_help_bar_height().round() as i32, 20);
     assert_eq!(flips.get(), 2);
 }
 
@@ -4202,9 +4515,11 @@ fn game_info_scrolls_long_content_but_not_short_or_loading_content() {
     let info = app.global::<crate::GameInfoView>();
     info.set_modal_open(true);
     info.set_modal_name("Details".into());
-    info.set_rows(ModelRc::new(VecModel::from(vec![crate::DetailRow {
+    info.set_info_rows(ModelRc::new(VecModel::from(vec![crate::InfoRow {
+        kind: RowKind::Field,
         key: "system".into(),
         value: "SNES".into(),
+        stop: -1,
     }])));
     settle(&window);
     app.invoke_game_info_scroll(crate::ScrollAction::Down);
@@ -4579,14 +4894,18 @@ fn game_info_short_modal_keeps_close_help_at_desktop_size() {
     let info = app.global::<crate::GameInfoView>();
     info.set_modal_open(true);
     info.set_modal_name("Chrono Trigger".into());
-    info.set_rows(ModelRc::new(VecModel::from(vec![
-        crate::DetailRow {
+    info.set_info_rows(ModelRc::new(VecModel::from(vec![
+        crate::InfoRow {
+            kind: RowKind::Field,
             key: "system".into(),
             value: "Super Nintendo Entertainment System".into(),
+            stop: -1,
         },
-        crate::DetailRow {
+        crate::InfoRow {
+            kind: RowKind::Field,
             key: "year".into(),
             value: "1995".into(),
+            stop: -1,
         },
     ])));
     let mut pixels = vec![Rgb565Pixel(0); (width * height) as usize];
@@ -4627,14 +4946,18 @@ fn game_info_metadata_labels_paint_left_of_values() {
     let info = app.global::<crate::GameInfoView>();
     info.set_modal_open(true);
     info.set_modal_name("Details".into());
-    info.set_rows(ModelRc::new(VecModel::from(vec![
-        crate::DetailRow {
+    info.set_info_rows(ModelRc::new(VecModel::from(vec![
+        crate::InfoRow {
+            kind: RowKind::Field,
             key: "system".into(),
             value: "Super Nintendo".into(),
+            stop: -1,
         },
-        crate::DetailRow {
+        crate::InfoRow {
+            kind: RowKind::Field,
             key: "year".into(),
             value: "1994".into(),
+            stop: -1,
         },
     ])));
     settle(&window);
@@ -4961,12 +5284,12 @@ fn hub_page_turns_animate_in_navigation_direction() {
         assert_eq!(view.get_next_cells().row_count(), 0);
     }
     app.global::<crate::HubInput>().invoke_page_requested(1);
-    assert!(crate::router::lock(&ctx.shared).hub.sliding);
+    assert!(crate::router::lock(&ctx.shared).hub.page.sliding);
     advance(32);
     app.global::<crate::HubInput>().invoke_page_requested(1);
     assert_eq!(view.get_page(), 0);
     assert!(
-        !crate::router::lock(&ctx.shared).hub.sliding,
+        !crate::router::lock(&ctx.shared).hub.page.sliding,
         "a new command cuts obsolete motion"
     );
     settle(&window);
@@ -4978,7 +5301,7 @@ fn hub_page_turns_animate_in_navigation_direction() {
     app.global::<crate::Motion>().set_enabled(false);
     crate::router::handle_action(&ctx, &app, "page_next");
     assert_eq!(view.get_page(), 1);
-    assert!(!crate::router::lock(&ctx.shared).hub.sliding);
+    assert!(!crate::router::lock(&ctx.shared).hub.page.sliding);
 }
 
 #[test]
@@ -5009,7 +5332,7 @@ fn cached_hub_pages_interrupt_safely_and_dormancy_clears_motion() {
         assert!(view.get_cached_transition());
         crate::set_dormant(&ctx, &app, true);
         assert!(!view.get_cached_transition());
-        assert!(!crate::router::lock(&ctx.shared).hub.sliding);
+        assert!(!crate::router::lock(&ctx.shared).hub.page.sliding);
         settle(&window);
         assert_eq!(view.get_page(), 1);
     });
@@ -5017,7 +5340,7 @@ fn cached_hub_pages_interrupt_safely_and_dormancy_clears_motion() {
     crate::router::handle_action(&ctx, &app, "page_next");
     assert_eq!(view.get_page(), 2);
     assert!(
-        !crate::router::lock(&ctx.shared).hub.sliding,
+        !crate::router::lock(&ctx.shared).hub.page.sliding,
         "uncached HDMI never repaints a live full grid"
     );
 }
@@ -5032,6 +5355,7 @@ fn hub_move_pages_keep_held_identity_and_cancel_rejects_late_completion() {
     settle(&window);
     crate::router::handle_action(&ctx, &app, "context_menu");
     assert!(app.global::<crate::Overlays>().get_context_open());
+    focus_context_row(&app, "hub_move");
     crate::router::handle_action(&ctx, &app, "accept");
     settle(&window);
     assert!(crate::router::lock(&ctx.shared).hub.move_armed());
@@ -5045,7 +5369,7 @@ fn hub_move_pages_keep_held_identity_and_cancel_rejects_late_completion() {
         "real Move input animates the local swap"
     );
     crate::router::handle_action(&ctx, &app, "page_next");
-    assert!(crate::router::lock(&ctx.shared).hub.sliding);
+    assert!(crate::router::lock(&ctx.shared).hub.page.sliding);
     assert_eq!(
         crate::router::lock(&ctx.shared).hub.grid.current_index(),
         size + 1
@@ -5057,7 +5381,7 @@ fn hub_move_pages_keep_held_identity_and_cancel_rejects_late_completion() {
     assert_eq!(shared.hub.layout, original);
     assert_eq!(shared.hub.grid.current_index(), 0);
     assert!(!shared.hub.move_armed());
-    assert!(!shared.hub.sliding);
+    assert!(!shared.hub.page.sliding);
     assert_eq!(app.global::<HubView>().get_page(), 0);
 }
 
@@ -5367,6 +5691,48 @@ fn folder_title_descenders_stay_out_of_the_cached_grid_band() {
             differences, 0,
             "{width}x{height}: title pixels must not enter cached page band at y={top}"
         );
+    }
+}
+
+/// The CRT presenters slide the grid's band on a page turn, and the live
+/// strip clips to it, so the footer label under it (drawn a pixel up on CRT)
+/// must start at or below the band's bottom, with the help bar shown or
+/// hidden. In pixels: `crt-hub`'s label once had its top row inside it.
+#[test]
+fn crt_hub_footer_label_stays_out_of_the_sliding_band() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    app.global::<crate::Theme>().set_crt(true);
+    app.global::<Sizing>().set_crt(true);
+    seed_hub_tiles(&ctx, &app);
+    let (width, height) = (316u32, 216u32);
+    for help_bar in [true, false] {
+        window.set_size(slint::PhysicalSize::new(width, height));
+        let sizing = app.global::<Sizing>();
+        sizing.set_screen_width(width as f32);
+        sizing.set_screen_height(height as f32);
+        sizing.set_help_bar_enabled(help_bar);
+        crate::sizing::apply_scene(
+            &app,
+            crate::sizing::Scene::of(&app, f64::from(width), f64::from(height), true),
+        );
+        crate::hub::render(&ctx, &app);
+        let view = app.global::<HubView>();
+        let raise = sizing.get_label_raise();
+        assert!(
+            (raise - 1.0).abs() < f32::EPSILON,
+            "the CRT label sits a pixel up"
+        );
+        let (band_y, band_h) = crate::page_motion::cached_band(&view, &app);
+        let label_top = view.get_label_y() - raise;
+        assert!(
+            band_y + band_h <= label_top,
+            "help bar {help_bar}: band ends at {} but the label starts at {label_top}",
+            band_y + band_h
+        );
+        // The live strip clips to the same band.
+        assert!((view.get_grid_height() - raise - band_h).abs() < f32::EPSILON);
     }
 }
 
@@ -6054,13 +6420,13 @@ fn grid_push_lowers_face_art_and_ring_before_navigation() {
             raised, depressed,
             "{owner}: unchanged pixels are not push feedback"
         );
-        advance(32);
+        advance(zaparoo_app::input::PRESS_FEEDBACK_MS - 48 - 1);
         assert_eq!(
             shell.get_active_screen(),
             screen,
             "fully depressed source must remain visible"
         );
-        advance(zaparoo_app::input::PRESS_FEEDBACK_MS - 80);
+        advance(1);
         assert_eq!(shell.get_active_screen(), Screen::About);
         assert!(!crate::press_feedback::pending(&app));
         save_push_evidence(&format!("{owner}-3-destination"), &pixels(&window));
@@ -6228,11 +6594,11 @@ fn accepting_during_page_motion_pushes_the_logical_destination_tile() {
     crate::router::handle_action(&ctx, &app, "page_next");
     let index = {
         let shared = crate::router::lock(&ctx.shared);
-        assert!(shared.games.sliding);
+        assert!(shared.games.page.sliding);
         shared.games.grid.current_index()
     };
     crate::router::handle_action(&ctx, &app, "accept");
-    assert!(!crate::router::lock(&ctx.shared).games.sliding);
+    assert!(!crate::router::lock(&ctx.shared).games.page.sliding);
     assert!(crate::press_feedback::pending(&app));
     let view = app.global::<crate::GamesView>();
     assert_eq!(
@@ -6770,8 +7136,6 @@ fn cold_games_restore_the_folder_selection_and_back_stack() {
     {
         let mut shared = crate::router::lock(&ctx.shared);
         shared.systems = navigation_catalog();
-        shared.categories = vec!["Console".into()];
-        shared.persist.hub.category = "Console".into();
         shared.persist.active_screen = "games".into();
         shared.persist.settings.games_browse_layout = "list".into();
         shared.persist.games.system_id = "System08".into();
@@ -7394,15 +7758,21 @@ fn a_saved_search_tile_opens_its_results_and_back_returns_to_the_hub() {
     };
     for (key, cue, left) in [
         ("hub:remove", crate::AppCue::RemovedFromHub, 0),
-        ("add_to_hub", crate::AppCue::AddedToHub, 1),
+        ("save_to_hub", crate::AppCue::SavedToHub, 1),
     ] {
         crate::router::handle_action(&ctx, &app, "page_menu");
         assert!(overlays.get_list_open());
-        let row = overlays.get_list_entries().row_data(0).expect("one row");
+        let entries = overlays.get_list_entries();
+        assert_eq!(
+            entries.row_data(0).map(|row| row.id.to_string()).as_deref(),
+            Some("edit_search")
+        );
+        let row = entries.row_data(1).expect("the Hub row");
         assert_eq!(
             (row.id.as_str(), row.label_key.as_str()),
             ("add_to_hub", key)
         );
+        crate::router::handle_action(&ctx, &app, "down");
         crate::router::handle_action(&ctx, &app, "accept");
         advance(zaparoo_app::input::PRESS_FEEDBACK_MS + 10);
         assert!(!overlays.get_list_open());
@@ -7525,13 +7895,19 @@ fn search_here_scopes_to_the_folder_and_back_returns_to_it() {
         shared.persist.games.selected_at_level = vec![String::new(), String::new()];
         shared.persist.search.query = "left over".into();
         shared.persist.active_screen = "games".into();
+        shared
+            .persist
+            .games
+            .set_filter("System08", vec!["genre:rpg".into()]);
     }
     shell.set_active_screen(Screen::Games);
 
     crate::search::enter_scoped(&ctx, &app);
     assert_eq!(shell.get_active_screen(), Screen::Search);
     let view = app.global::<crate::SearchView>();
-    assert!(view.get_scoped());
+    assert_eq!(view.get_scope(), crate::SearchScope::Folder);
+    assert_eq!(view.invoke_title(), "Search in RPG");
+    assert_eq!(view.invoke_system_text(), "System 08 / RPG");
     assert_eq!(view.get_system_name(), "System 08");
     assert_eq!(view.get_scope_name(), "RPG");
     assert_eq!(view.get_before(), "");
@@ -7542,7 +7918,12 @@ fn search_here_scopes_to_the_folder_and_back_returns_to_it() {
         let args = crate::search::args(&shared);
         assert_eq!(args.systems, ["System08"]);
         assert_eq!(args.path_prefix, "/roms/System08/RPG");
+        // The folder's filter came along.
+        assert_eq!(args.tags, ["genre:rpg"]);
+        assert_eq!(shared.persist.search.tags, ["genre:rpg"]);
     }
+    // Clearing it here leaves the folder's own filter as it was.
+    crate::router::lock(&ctx.shared).persist.search.tags.clear();
     // The scope field takes no focus: Up from the top row lands on the
     // tags, and Up again loops round to the bottom key row.
     crate::router::handle_action(&ctx, &app, "up");
@@ -7564,6 +7945,10 @@ fn search_here_scopes_to_the_folder_and_back_returns_to_it() {
     let shared = crate::router::lock(&ctx.shared);
     assert_eq!(shared.persist.active_screen, "games");
     assert_eq!(shared.games.browse_path, "/roms/System08/RPG");
+    assert_eq!(
+        shared.persist.games.filter_for("System08"),
+        ["genre:rpg".to_string()]
+    );
     drop(shared);
 
     // At a system's top level only the system narrows the search.
@@ -7578,6 +7963,122 @@ fn search_here_scopes_to_the_folder_and_back_returns_to_it() {
     assert!(shared.persist.search.scoped);
     assert_eq!(shared.persist.search.scope_path, "");
     assert_eq!(crate::search::args(&shared).systems, ["System08"]);
+    drop(shared);
+    assert_eq!(view.get_scope(), crate::SearchScope::System);
+    assert_eq!(view.invoke_title(), "Search in System 08");
+}
+
+#[test]
+fn search_here_on_a_category_searches_its_systems_and_back_returns() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let shell = app.global::<Shell>();
+    crate::router::lock(&ctx.shared).systems = navigation_catalog();
+    crate::systems::prepare_parent(&ctx, &app, "Console");
+    crate::router::lock(&ctx.shared).persist.active_screen = "systems".into();
+    shell.set_active_screen(Screen::Systems);
+
+    crate::search::enter_scoped(&ctx, &app);
+    assert_eq!(shell.get_active_screen(), Screen::Search);
+    let view = app.global::<crate::SearchView>();
+    assert_eq!(view.get_scope(), crate::SearchScope::Category);
+    assert_eq!(view.invoke_title(), "Search in Consoles");
+    // The category names the systems; the field never lists all twenty.
+    assert_eq!(view.invoke_system_text(), "Consoles");
+    assert!(view.get_can_search());
+    {
+        let shared = crate::router::lock(&ctx.shared);
+        let args = crate::search::args(&shared);
+        assert_eq!(args.systems.len(), 20);
+        assert!(args.tags.is_empty());
+    }
+    // With no query, the results are titled by the category alone.
+    let games = app.global::<crate::GamesView>();
+    games.set_mode(GamesMode::Search);
+    crate::search::publish_results_title(&games, &crate::router::lock(&ctx.shared));
+    assert_eq!(games.get_title(), "");
+    assert_eq!(games.invoke_display_title(), "Consoles");
+    games.set_mode(GamesMode::Browse);
+
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert_eq!(shell.get_active_screen(), Screen::Systems);
+    assert_eq!(
+        crate::router::lock(&ctx.shared).persist.active_screen,
+        "systems"
+    );
+}
+
+#[test]
+fn search_here_on_favorites_keeps_the_favorite_tag_and_back_returns() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let shell = app.global::<Shell>();
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.systems = navigation_catalog();
+        shared.games.mode = GamesMode::Favorites;
+        shared.games.favorites_system = "System03".into();
+        shared.persist.active_screen = "favorites".into();
+    }
+    shell.set_active_screen(Screen::Favorites);
+
+    crate::search::enter_scoped(&ctx, &app);
+    let view = app.global::<crate::SearchView>();
+    assert_eq!(view.get_scope(), crate::SearchScope::Favorites);
+    assert_eq!(view.invoke_title(), "Search in Favorites");
+    assert_eq!(view.invoke_system_text(), "Favorites / System 03");
+    {
+        let shared = crate::router::lock(&ctx.shared);
+        let args = crate::search::args(&shared);
+        assert_eq!(args.systems, ["System03"]);
+        assert_eq!(args.tags, [zaparoo_app::search::FAVORITE_TAG]);
+        // The scope's tag is not one the Tags field can clear.
+        assert!(shared.persist.search.tags.is_empty());
+        // Nor a chosen user tag, so hidden games stay out as on the list.
+        assert!(!args.include_hidden);
+    }
+    // The results name the scope after the systems.
+    crate::router::lock(&ctx.shared).persist.search.query = "mario".into();
+    let games = app.global::<crate::GamesView>();
+    games.set_mode(GamesMode::Search);
+    crate::search::publish_results_title(&games, &crate::router::lock(&ctx.shared));
+    assert_eq!(
+        games.invoke_display_title(),
+        "\u{201c}mario\u{201d} \u{b7} System 03 \u{b7} Favorites"
+    );
+    games.set_mode(GamesMode::Favorites);
+    crate::router::lock(&ctx.shared)
+        .persist
+        .search
+        .query
+        .clear();
+
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert_eq!(shell.get_active_screen(), Screen::Favorites);
+    assert_eq!(
+        crate::router::lock(&ctx.shared).persist.active_screen,
+        "favorites"
+    );
+
+    // From the systems that hold favorites: every favorite, and Back goes
+    // to that screen.
+    crate::router::lock(&ctx.shared).persist.active_screen = "favorite-systems".into();
+    shell.set_active_screen(Screen::FavoriteSystems);
+    crate::search::enter_scoped(&ctx, &app);
+    assert_eq!(view.invoke_system_text(), "Favorites");
+    {
+        let shared = crate::router::lock(&ctx.shared);
+        let args = crate::search::args(&shared);
+        assert!(args.systems.is_empty());
+        assert_eq!(args.tags, [zaparoo_app::search::FAVORITE_TAG]);
+    }
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert_eq!(
+        crate::router::lock(&ctx.shared).persist.active_screen,
+        "favorite-systems"
+    );
 }
 
 #[test]
@@ -7826,6 +8327,84 @@ fn cold_games_restore_shows_the_curtain_then_games_and_never_systems() {
 }
 
 #[test]
+fn cold_hub_shortcut_games_restore_without_its_category() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    // No category ever opened, or one left over from an earlier visit.
+    for saved_category in ["", "Console"] {
+        for folder in [false, true] {
+            let (app, window, _runtime, ctx) = cold_start("games");
+            {
+                let mut shared = crate::router::lock(&ctx.shared);
+                shared.persist.hub.category = saved_category.into();
+                shared.persist.games.entered_from_hub = true;
+                if folder {
+                    shared.persist.games.path_stack = vec![String::new(), "/rpg".into()];
+                    shared.persist.games.selected_at_level = vec![String::new(), String::new()];
+                }
+            }
+            let curtain = pixels(&window);
+            crate::restore_screens(&ctx, &app);
+            assert_still_curtained(&app, &window, &ctx, &curtain, "games");
+            let ticket = {
+                let shared = crate::router::lock(&ctx.shared);
+                assert_eq!(shared.games.browse_path, if folder { "/rpg" } else { "" });
+                shared.games.ticket
+            };
+            crate::games::apply_fill(&ctx, &app, ticket, navigation_rows(), None, None, true);
+            let shell = app.global::<Shell>();
+            assert_eq!(
+                shell.get_active_screen(),
+                Screen::Games,
+                "{saved_category:?}"
+            );
+            assert!(!shell.get_boot_curtain());
+            assert!(
+                crate::router::lock(&ctx.shared)
+                    .systems_model
+                    .rows
+                    .is_empty(),
+                "no category is filled beneath a Hub shortcut"
+            );
+            if folder {
+                crate::router::handle_action(&ctx, &app, "cancel");
+                let ticket = crate::router::lock(&ctx.shared).games.ticket;
+                crate::games::apply_fill(&ctx, &app, ticket, navigation_rows(), None, None, false);
+                assert_eq!(shell.get_active_screen(), Screen::Games);
+                assert_eq!(crate::router::lock(&ctx.shared).games.browse_path, "");
+            }
+            crate::router::handle_action(&ctx, &app, "cancel");
+            assert_eq!(shell.get_active_screen(), Screen::Hub);
+        }
+    }
+
+    // The system is gone: the Hub it was entered from is the restored screen.
+    let (app, _window, _runtime, ctx) = cold_start("games");
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.persist.games.entered_from_hub = true;
+        shared.persist.games.system_id = "Gone".into();
+    }
+    crate::restore_screens(&ctx, &app);
+    let shell = app.global::<Shell>();
+    assert!(!shell.get_transitioning());
+    crate::hub::set_resume(
+        &ctx,
+        &app,
+        crate::hub::Resume {
+            requested: true,
+            loading: false,
+            entry: None,
+        },
+    );
+    assert_eq!(shell.get_active_screen(), Screen::Hub);
+    assert!(!shell.get_boot_curtain());
+    assert!(crate::router::lock(&ctx.shared)
+        .systems_model
+        .rows
+        .is_empty());
+}
+
+#[test]
 fn cold_flat_list_restores_show_the_curtain_then_the_list_and_never_the_hub() {
     assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
     for (token, screen) in [
@@ -8031,6 +8610,71 @@ fn update_metadata_opens_the_setup_panel_on_the_menus_scope() {
     // A category with nothing to scrape opens nothing.
     crate::router::scrape_category(&ctx, &app, "Empty");
     assert!(!opened(&ctx).0);
+}
+
+#[test]
+fn back_from_what_an_options_row_opened_returns_to_the_menu_on_its_row() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    seat_visibility_list(&ctx, &app, GamesMode::Browse);
+    let overlays = app.global::<crate::Overlays>();
+    let setup_open = |ctx: &crate::router::Ctx| crate::router::lock(&ctx.shared).setup.open;
+    let open_manage_row = |id: &str| {
+        crate::router::handle_action(&ctx, &app, "context_menu");
+        focus_context_row(&app, "manage_game");
+        crate::router::handle_action(&ctx, &app, "accept");
+        advance(zaparoo_app::input::PRESS_FEEDBACK_MS);
+        settle(&window);
+        focus_context_row(&app, id);
+        crate::router::handle_action(&ctx, &app, "accept");
+        advance(zaparoo_app::input::PRESS_FEEDBACK_MS);
+        settle(&window);
+    };
+
+    // Update metadata, then Back: the Manage page again, on that row.
+    open_manage_row("scrape_game");
+    assert!(setup_open(&ctx));
+    assert!(!overlays.get_context_open());
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert!(!setup_open(&ctx));
+    assert!(overlays.get_context_open(), "the menu comes back");
+    assert_eq!(
+        overlays.get_context_page(),
+        crate::ContextPage::ManageGame,
+        "on its page"
+    );
+    assert_eq!(context_row_id(&app).as_deref(), Some("scrape_game"));
+    // Back on the page then leaves it as it always did.
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert_eq!(overlays.get_context_page(), crate::ContextPage::Root);
+    assert_eq!(context_row_id(&app).as_deref(), Some("manage_game"));
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert!(!overlays.get_context_open());
+
+    // Once it has finished, Back from anything later is the screen's own.
+    open_manage_row("scrape_game");
+    crate::router::forget_menu_return(&ctx);
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert!(!setup_open(&ctx));
+    assert!(
+        !overlays.get_context_open(),
+        "a finished action ends on the screen"
+    );
+
+    // Write to token with no reader shows the QR code; Back returns to
+    // the row that opened it.
+    crate::router::handle_action(&ctx, &app, "context_menu");
+    focus_context_row(&app, "write_token");
+    crate::router::handle_action(&ctx, &app, "accept");
+    advance(zaparoo_app::input::PRESS_FEEDBACK_MS);
+    settle(&window);
+    assert!(overlays.get_qr_open());
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert!(!overlays.get_qr_open());
+    assert!(overlays.get_context_open());
+    assert_eq!(overlays.get_context_page(), crate::ContextPage::Root);
+    assert_eq!(context_row_id(&app).as_deref(), Some("write_token"));
 }
 
 #[test]
@@ -9077,6 +9721,7 @@ fn cached_slides_match_the_live_strip_in_every_orientation_and_on_crt() {
                     crt,
                     frame,
                     zaparoo_app::motion_test::Disabled::default(),
+                    true,
                 );
                 let turned = orientation != Orientation::Horizontal;
                 window.set_size(if turned {
@@ -9099,7 +9744,9 @@ fn cached_slides_match_the_live_strip_in_every_orientation_and_on_crt() {
                 let outgoing = view.get_cells();
                 let incoming: ModelRc<GridCell> =
                     ModelRc::new(VecModel::from(outgoing.iter().take(2).collect::<Vec<_>>()));
-                let (grid_y, grid_height) = (view.get_grid_y(), view.get_grid_height());
+                // The band production requests: the grid's, short of the
+                // CRT footer label, which is also the live strip's height.
+                let (grid_y, grid_height) = crate::page_motion::cached_band(&view, &app);
                 let still = |cells: &ModelRc<GridCell>| {
                     view.set_selected_local(-1);
                     view.set_held_local(-1);
@@ -9321,7 +9968,7 @@ fn tile_glyphs_and_logos_are_painted_at_their_own_pixel_size() {
     {
         let asked = asked.clone();
         app.global::<crate::GlyphSource>()
-            .on_glyph(move |key, px, _| {
+            .on_raster(move |key, px, _, _| {
                 asked.borrow_mut().push((key.to_string(), px));
                 let side = px.round().max(0.0) as u32;
                 // Chrome asks for glyphs too; only the two tiles paint.
@@ -9350,6 +9997,7 @@ fn tile_glyphs_and_logos_are_painted_at_their_own_pixel_size() {
             crt,
             frame,
             zaparoo_app::motion_test::Disabled::default(),
+            true,
         );
         // The software-rendered builds set this; the probe build may not.
         motion.set_zoom_by_size(true);
@@ -9843,6 +10491,49 @@ fn a_held_walk_scrolls_the_systems_list_continuously() {
     assert!(pixels(&window) == rest, "nothing moves after the release");
 }
 
+/// A held key in the options menu walks its rows at a steady pace, as a
+/// list does, though the modal keeps the hold to one row at a time and off
+/// the screen behind it.
+#[test]
+fn a_held_key_in_the_options_menu_scrolls_steadily() {
+    use zaparoo_core::input_actions::actions;
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    app.global::<Shell>().set_active_screen(Screen::Games);
+    let overlays = app.global::<crate::Overlays>();
+    let entries: Vec<crate::MenuEntry> = (0..20)
+        .map(|i| crate::MenuEntry {
+            id: format!("row{i}").into(),
+            label: format!("Row {i}").into(),
+            enabled: true,
+            ..Default::default()
+        })
+        .collect();
+    overlays.set_context_entries(ModelRc::new(VecModel::from(entries)));
+    overlays.set_context_index(0);
+    overlays.set_context_open(true);
+
+    crate::input::dispatch_repeat(&ctx, &app, actions::DOWN, HoldTier::Page);
+    assert_eq!(
+        overlays.get_context_index(),
+        1,
+        "a held step in a modal is one row"
+    );
+    assert!(
+        overlays.get_context_step_ms() > 0,
+        "a held step glides at constant speed"
+    );
+    assert!(
+        !crate::input::dispatching_repeat(&ctx),
+        "the hold never reaches the screen behind"
+    );
+
+    crate::router::handle_action(&ctx, &app, actions::DOWN);
+    assert_eq!(overlays.get_context_index(), 2);
+    assert_eq!(overlays.get_context_step_ms(), 0, "a tap eases");
+}
+
 /// The Games list walks row by row the same way until the hold turns into
 /// a fast scroll, which steps pages and may cut.
 #[cfg(feature = "mister")]
@@ -9861,6 +10552,10 @@ fn a_held_walk_scrolls_the_games_list_continuously() {
         shared.games.focus_armed = true;
         shared.input.advance_test_clock(1);
     }
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
     app.global::<Shell>().set_active_screen(Screen::Games);
     app.global::<Shell>().set_browse_list_layout(true);
     crate::router::refresh_layout(&app);
@@ -9894,4 +10589,1349 @@ fn a_held_walk_scrolls_the_games_list_continuously() {
     let rest = pixels(&window);
     advance(TICK_MS);
     assert!(pixels(&window) == rest, "nothing moves after the release");
+}
+
+/// Let `ms` pass for the timers and for the key path's own clock, which
+/// times the duplicate guard.
+fn pass(ctx: &crate::router::Ctx, ms: u64) {
+    crate::router::lock(&ctx.shared)
+        .input
+        .advance_test_clock(ms);
+    advance(ms);
+}
+
+/// Press and release a key through the window, as the keyboard would.
+fn key_down(app: &App, key: slint::platform::Key) {
+    let text: SharedString = char::from(key).to_string().into();
+    app.window()
+        .dispatch_event(slint::platform::WindowEvent::KeyPressed { text });
+}
+
+fn key_up(app: &App, key: slint::platform::Key) {
+    let text: SharedString = char::from(key).to_string().into();
+    app.window()
+        .dispatch_event(slint::platform::WindowEvent::KeyReleased { text });
+}
+
+/// A ready browse folder of 60 games under three letters.
+fn lettered_folder(ctx: &crate::router::Ctx, app: &App) {
+    let bucket = |label: &str, offset: u32| zaparoo_core::media_types::BrowseIndexGroup {
+        key: label.to_lowercase(),
+        label: label.into(),
+        count: 0,
+        cursor: String::new(),
+        offset,
+    };
+    app.global::<Shell>().set_active_screen(Screen::Games);
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.games.mode = GamesMode::Browse;
+        shared.games.system_id = "NES".into();
+        shared.games.browse_path = "/roms/nes".into();
+        shared.games.rows = game_rows("Game", 60);
+        shared.games.grid.set_item_count(60);
+        shared.games.grid.set_current_index_immediate(0);
+        shared.letter_buckets = vec![bucket("A", 0), bucket("B", 20), bucket("C", 45)];
+        shared.letter_scope = Some(("NES".into(), "/roms/nes".into()));
+    }
+    // The picker's own copy, as the index fetch publishes it.
+    let overlays = app.global::<crate::Overlays>();
+    overlays.set_letter_buckets(ModelRc::new(VecModel::from(
+        ["A", "B", "C"]
+            .map(|label| crate::LetterBucket {
+                label: label.into(),
+                count: 20,
+            })
+            .to_vec(),
+    )));
+    overlays.set_letter_state(crate::ContentState::Ready);
+    crate::games::render(ctx, app);
+}
+
+#[test]
+#[allow(clippy::expect_used, reason = "the row has its chips")]
+fn the_menu_button_focuses_the_chip_row_above_240p_and_back_returns() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    crate::sizing::apply_scene(&app, crate::sizing::Scene::of(&app, 1280.0, 720.0, false));
+    lettered_folder(&ctx, &app);
+    settle(&window);
+    let bar = app.global::<crate::PageBar>();
+    let overlays = app.global::<crate::Overlays>();
+    let index = || crate::router::lock(&ctx.shared).games.grid.current_index();
+    assert_eq!(
+        crate::page_bar::chip_ids(&app),
+        ["jump_letter", "filter", "search_here"]
+    );
+    // Go to keeps one label wherever the selection is.
+    let go_to = || bar.get_games_chips().row_data(0).expect("Go to");
+    let before = go_to();
+    crate::router::lock(&ctx.shared)
+        .games
+        .grid
+        .set_current_index_immediate(25);
+    crate::games::render(&ctx, &app);
+    assert_eq!(go_to(), before);
+    assert_eq!(go_to().label_key.as_str(), "jump_letter");
+
+    // Menu puts focus on the first chip; the list does not open.
+    crate::router::handle_action(&ctx, &app, "page_menu");
+    assert!(bar.get_focused());
+    assert_eq!(bar.get_index(), 0);
+    assert!(!overlays.get_list_open());
+    // Sideways walks the row and wraps; Up has nowhere to go and the grid
+    // under the row stays where it was.
+    crate::router::handle_action(&ctx, &app, "left");
+    assert_eq!(bar.get_index(), 2);
+    crate::router::handle_action(&ctx, &app, "right");
+    assert_eq!(bar.get_index(), 0);
+    crate::router::handle_action(&ctx, &app, "up");
+    crate::router::handle_action(&ctx, &app, "page_next");
+    assert!(bar.get_focused());
+    assert_eq!(index(), 25);
+
+    // Go to opens on the current letter. Backing out returns to the chip.
+    crate::router::handle_action(&ctx, &app, "accept");
+    assert!(overlays.get_letter_open());
+    assert_eq!(overlays.get_letter_index(), 1);
+    assert!(!bar.get_focused());
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert!(!overlays.get_letter_open());
+    assert!(bar.get_focused(), "backing out returns to the chip");
+    assert_eq!(bar.get_index(), 0);
+    // A pick returns to the content it changed.
+    crate::router::handle_action(&ctx, &app, "accept");
+    crate::router::handle_action(&ctx, &app, "right");
+    crate::router::handle_action(&ctx, &app, "accept");
+    advance(zaparoo_app::input::PRESS_FEEDBACK_MS + 10);
+    assert!(!overlays.get_letter_open());
+    assert!(!bar.get_focused());
+    assert_eq!(index(), 45);
+
+    // Back, Menu and Down all leave the row.
+    for leave in ["cancel", "page_menu", "down"] {
+        crate::router::handle_action(&ctx, &app, "page_menu");
+        assert!(bar.get_focused());
+        crate::router::handle_action(&ctx, &app, leave);
+        assert!(!bar.get_focused(), "{leave} leaves the row");
+        assert_eq!(index(), 45, "{leave} does not move the grid");
+    }
+
+    // At 240p there is no row: Menu opens the Menu list.
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    crate::router::handle_action(&ctx, &app, "page_menu");
+    assert!(!bar.get_focused());
+    assert!(overlays.get_list_open());
+    assert_eq!(overlays.get_list_title(), "title:menu");
+}
+
+#[test]
+#[allow(clippy::expect_used, reason = "isolated settings fixture")]
+fn turning_the_menu_row_off_gives_back_its_band_and_menu_opens_the_list() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, mut ctx) = offline_ctx();
+    ctx.config_path =
+        std::path::PathBuf::from(std::env::var("ZAPAROO_STATE_FILE").expect("isolated state"))
+            .with_file_name("frontend.toml");
+    seed_hub_tiles(&ctx, &app);
+    crate::sizing::apply_scene(&app, crate::sizing::Scene::of(&app, 1280.0, 720.0, false));
+    settle(&window);
+    let sizing = app.global::<Sizing>();
+    assert!(sizing.get_menu_row());
+    assert!(sizing.get_menu_row_block() > 0.0);
+
+    // Settings > Appearance > Show Menu row.
+    app.global::<Shell>().set_active_screen(Screen::Settings);
+    let view = app.global::<crate::SettingsView>();
+    view.set_page(SettingsPage::Appearance);
+    let rows = zaparoo_app::settings::page_rows(
+        SettingsPage::Appearance.token(),
+        &crate::settings::inputs(&ctx),
+    );
+    view.set_index(
+        rows.iter()
+            .position(|row| row.id() == "showMenuRow")
+            .and_then(|i| i32::try_from(i).ok())
+            .expect("Show Menu row on Appearance"),
+    );
+    crate::settings::handle_action(&ctx, &app, "accept");
+    assert!(
+        !crate::router::lock(&ctx.shared)
+            .persist
+            .settings
+            .show_menu_row
+    );
+    assert!(!app.global::<crate::Overlays>().get_dialog_open());
+    assert!(!sizing.get_menu_row());
+    assert!(sizing.get_menu_row_block().abs() < f32::EPSILON);
+
+    // Back on the Hub, Menu opens the Menu list instead of focusing a row.
+    crate::router::go_home(&ctx, &app);
+    settle(&window);
+    assert_eq!(app.global::<Shell>().get_active_screen(), Screen::Hub);
+    crate::router::handle_action(&ctx, &app, "page_menu");
+    assert!(!app.global::<crate::PageBar>().get_focused());
+    let overlays = app.global::<crate::Overlays>();
+    assert!(overlays.get_list_open());
+    assert_eq!(overlays.get_list_title(), "title:menu");
+}
+
+#[test]
+#[allow(clippy::expect_used, reason = "isolated settings fixture")]
+fn hiding_the_help_bar_gives_its_height_to_the_screens() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, mut ctx) = offline_ctx();
+    ctx.config_path =
+        std::path::PathBuf::from(std::env::var("ZAPAROO_STATE_FILE").expect("isolated state"))
+            .with_file_name("frontend.toml");
+    seed_hub_tiles(&ctx, &app);
+    crate::sizing::apply_scene(&app, crate::sizing::Scene::of(&app, 316.0, 216.0, true));
+    settle(&window);
+    let sizing = app.global::<Sizing>();
+    let shown_bar = sizing.get_help_bar_height();
+    assert!(shown_bar > 0.0);
+
+    // Settings > Appearance > Show button hints.
+    app.global::<Shell>().set_active_screen(Screen::Settings);
+    let view = app.global::<crate::SettingsView>();
+    view.set_page(SettingsPage::Appearance);
+    let rows = zaparoo_app::settings::page_rows(
+        SettingsPage::Appearance.token(),
+        &crate::settings::inputs(&ctx),
+    );
+    view.set_index(
+        rows.iter()
+            .position(|row| row.id() == "showHelpBar")
+            .and_then(|i| i32::try_from(i).ok())
+            .expect("Show button hints on Appearance"),
+    );
+    crate::settings::handle_action(&ctx, &app, "accept");
+    assert!(
+        !crate::router::lock(&ctx.shared)
+            .persist
+            .settings
+            .show_help_bar
+    );
+    assert!(!sizing.get_help_bar_enabled());
+    assert!(sizing.get_help_bar_height().abs() < f32::EPSILON);
+    assert!(sizing.get_help_bar_band().abs() < f32::EPSILON);
+
+    // And back: the bar takes a height again (sized for the scene the
+    // toggle re-solves, which is the window's).
+    crate::settings::handle_action(&ctx, &app, "accept");
+    assert!(sizing.get_help_bar_enabled());
+    assert!(sizing.get_help_bar_height() > 0.0);
+}
+
+#[test]
+fn search_here_sits_on_the_systems_screens_and_runs_from_menu_at_240p() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let shell = app.global::<Shell>();
+    let overlays = app.global::<crate::Overlays>();
+    crate::router::lock(&ctx.shared).systems = navigation_catalog();
+    crate::sizing::apply_scene(&app, crate::sizing::Scene::of(&app, 1280.0, 720.0, false));
+    crate::systems::enter(&ctx, &app, "Console", EntryMode::Fresh, false);
+    settle(&window);
+    assert_eq!(shell.get_active_screen(), Screen::Systems);
+    assert_eq!(crate::page_bar::chip_ids(&app), ["search_here"]);
+    crate::router::handle_action(&ctx, &app, "page_menu");
+    assert!(app.global::<crate::PageBar>().get_focused());
+    crate::router::handle_action(&ctx, &app, "accept");
+    assert_eq!(shell.get_active_screen(), Screen::Search);
+    assert_eq!(
+        app.global::<crate::SearchView>().get_scope(),
+        crate::SearchScope::Category
+    );
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert_eq!(shell.get_active_screen(), Screen::Systems);
+
+    // At 240p a category's one page action runs straight from Menu.
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    crate::router::handle_action(&ctx, &app, "page_menu");
+    assert!(!overlays.get_list_open());
+    assert_eq!(shell.get_active_screen(), Screen::Search);
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert_eq!(shell.get_active_screen(), Screen::Systems);
+
+    // The favorite systems' Menu list carries the grouping and the search,
+    // even on an empty list.
+    crate::router::lock(&ctx.shared).systems_model.mode = SystemsMode::Favorites;
+    let systems = app.global::<SystemsView>();
+    systems.set_loading(false);
+    systems.set_error("".into());
+    systems.set_count(0);
+    shell.set_active_screen(Screen::FavoriteSystems);
+    crate::router::handle_action(&ctx, &app, "page_menu");
+    assert!(overlays.get_list_open());
+    let rows: Vec<String> = overlays
+        .get_list_entries()
+        .iter()
+        .map(|row| row.id.to_string())
+        .collect();
+    assert_eq!(rows, ["favorites_grouping", "search_here"]);
+    crate::router::handle_action(&ctx, &app, "down");
+    crate::router::handle_action(&ctx, &app, "accept");
+    advance(zaparoo_app::input::PRESS_FEEDBACK_MS + 10);
+    assert_eq!(shell.get_active_screen(), Screen::Search);
+    assert_eq!(
+        app.global::<crate::SearchView>().get_scope(),
+        crate::SearchScope::Favorites
+    );
+}
+
+#[test]
+fn the_hubs_more_chip_holds_quit_and_backing_out_returns_to_it() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    seed_hub_tiles(&ctx, &app);
+    crate::sizing::apply_scene(&app, crate::sizing::Scene::of(&app, 1280.0, 720.0, false));
+    settle(&window);
+    assert_eq!(app.global::<Shell>().get_active_screen(), Screen::Hub);
+    assert_eq!(crate::page_bar::chip_ids(&app), ["hub_add", "more"]);
+    let bar = app.global::<crate::PageBar>();
+    let overlays = app.global::<crate::Overlays>();
+    crate::router::handle_action(&ctx, &app, "page_menu");
+    crate::router::handle_action(&ctx, &app, "right");
+    crate::router::handle_action(&ctx, &app, "accept");
+    assert!(overlays.get_list_open());
+    assert_eq!(overlays.get_list_title(), "title:more");
+    let rows: Vec<String> = overlays
+        .get_list_entries()
+        .iter()
+        .map(|row| row.id.to_string())
+        .collect();
+    assert_eq!(rows, ["hub_reset", "hub_settings", "hub_quit"]);
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert!(!overlays.get_list_open());
+    assert!(bar.get_focused());
+    assert_eq!(bar.get_index(), 1);
+    // Quit still asks first.
+    crate::router::handle_action(&ctx, &app, "accept");
+    crate::router::handle_action(&ctx, &app, "up");
+    crate::router::handle_action(&ctx, &app, "accept");
+    advance(zaparoo_app::input::PRESS_FEEDBACK_MS + 10);
+    assert!(overlays.get_dialog_open());
+    assert_eq!(overlays.get_dialog_kind(), DialogKind::QuitConfirm);
+}
+
+#[test]
+fn back_tapped_goes_back_on_release_and_held_goes_straight_to_the_hub() {
+    use slint::platform::Key;
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let ctx = std::sync::Arc::new(ctx);
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    crate::input::bind(&ctx, &app, std::collections::HashMap::new());
+    let shell = app.global::<Shell>();
+
+    // A tap waits for its release, then goes back one level and no further.
+    crate::router::enter_about(&ctx, &app, EntryMode::Fresh);
+    settle(&window);
+    key_down(&app, Key::Escape);
+    assert_eq!(shell.get_active_screen(), Screen::About);
+    pass(&ctx, zaparoo_app::input::BACK_HOLD_TO_HUB_MS / 2);
+    key_up(&app, Key::Escape);
+    assert_eq!(shell.get_active_screen(), Screen::Settings);
+    pass(&ctx, zaparoo_app::input::BACK_HOLD_TO_HUB_MS);
+    assert_eq!(shell.get_active_screen(), Screen::Settings);
+
+    // Held, it goes straight to the Hub, never stopping on Settings.
+    crate::router::enter_about(&ctx, &app, EntryMode::Fresh);
+    key_down(&app, Key::Backspace);
+    pass(&ctx, zaparoo_app::input::BACK_HOLD_TO_HUB_MS - 1);
+    assert_eq!(shell.get_active_screen(), Screen::About);
+    pass(&ctx, 1);
+    assert_eq!(shell.get_active_screen(), Screen::Hub);
+    assert_eq!(
+        crate::router::lock(&ctx.shared).persist.active_screen,
+        "hub",
+        "a relaunch restores the Hub"
+    );
+    // Its release does nothing more.
+    key_up(&app, Key::Backspace);
+    assert_eq!(shell.get_active_screen(), Screen::Hub);
+
+    // A modal's Back acts the moment it goes down.
+    crate::router::enter_about(&ctx, &app, EntryMode::Fresh);
+    settle(&window);
+    pass(&ctx, 100);
+    crate::router::present_list(
+        &ctx,
+        &app,
+        crate::router::ListContext::HubPageMenu,
+        "title:menu",
+        vec![crate::router::menu_row("hub_settings")],
+    );
+    let overlays = app.global::<crate::Overlays>();
+    assert!(overlays.get_list_open());
+    key_down(&app, Key::Escape);
+    assert!(!overlays.get_list_open());
+    key_up(&app, Key::Escape);
+    pass(&ctx, zaparoo_app::input::BACK_HOLD_TO_HUB_MS);
+    assert_eq!(shell.get_active_screen(), Screen::About);
+}
+
+#[test]
+fn back_over_a_pairing_or_online_panel_is_never_held_to_the_hub() {
+    use slint::platform::Key;
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let ctx = std::sync::Arc::new(ctx);
+    crate::input::bind(&ctx, &app, std::collections::HashMap::new());
+    crate::router::enter_about(&ctx, &app, EntryMode::Fresh);
+    settle(&window);
+    let overlays = app.global::<crate::Overlays>();
+    let open = |panel: usize, on: bool| match panel {
+        0 => overlays.set_pair_open(on),
+        1 => overlays.set_online_open(on),
+        _ => overlays.set_online_list_open(on),
+    };
+    for panel in 0..3 {
+        open(panel, true);
+        key_down(&app, Key::Escape);
+        pass(&ctx, zaparoo_app::input::BACK_HOLD_TO_HUB_MS * 2);
+        key_up(&app, Key::Escape);
+        assert_eq!(app.global::<Shell>().get_active_screen(), Screen::About);
+        open(panel, false);
+        pass(&ctx, 100);
+    }
+}
+
+#[test]
+fn the_hdmi_head_of_a_dual_head_pair_keeps_the_menu_list() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    seed_hub_tiles(&ctx, &app);
+    let sizing = app.global::<Sizing>();
+    sizing.set_menu_row_blocked(true);
+    crate::sizing::apply_scene(&app, crate::sizing::Scene::of(&app, 1280.0, 720.0, false));
+    settle(&window);
+    assert!(sizing.get_menu_row_enabled());
+    assert!(!sizing.get_menu_row());
+    assert!(sizing.get_menu_row_block().abs() < f32::EPSILON);
+    crate::router::handle_action(&ctx, &app, "page_menu");
+    assert!(!app.global::<crate::PageBar>().get_focused());
+    assert!(app.global::<crate::Overlays>().get_list_open());
+}
+
+#[test]
+fn l1_and_r1_together_open_go_to_and_a_lone_shoulder_pages() {
+    use slint::platform::Key;
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let ctx = std::sync::Arc::new(ctx);
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    crate::input::bind(&ctx, &app, std::collections::HashMap::new());
+    lettered_folder(&ctx, &app);
+    settle(&window);
+    let overlays = app.global::<crate::Overlays>();
+    let page = || crate::router::lock(&ctx.shared).games.grid.current_page();
+
+    // Both inside the window: Go to, with no page flipped on the way.
+    key_down(&app, Key::PageUp);
+    assert_eq!(page(), 0, "the first half waits for its partner");
+    pass(&ctx, zaparoo_app::input::CHORD_WINDOW_MS / 2);
+    key_down(&app, Key::PageDown);
+    assert!(overlays.get_letter_open());
+    assert_eq!(page(), 0);
+    key_up(&app, Key::PageUp);
+    key_up(&app, Key::PageDown);
+    pass(&ctx, zaparoo_app::input::CHORD_WINDOW_MS);
+    assert_eq!(page(), 0, "the chord never pages");
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert!(!overlays.get_letter_open());
+
+    // Alone, a shoulder pages once the window closes.
+    pass(&ctx, 100);
+    key_down(&app, Key::PageDown);
+    assert_eq!(page(), 0);
+    pass(&ctx, zaparoo_app::input::CHORD_WINDOW_MS);
+    assert_eq!(page(), 1);
+    assert!(!overlays.get_letter_open());
+    key_up(&app, Key::PageDown);
+
+    // Released inside the window, it pages straight away.
+    pass(&ctx, 100);
+    key_down(&app, Key::PageUp);
+    key_up(&app, Key::PageUp);
+    assert_eq!(page(), 0);
+    assert!(!overlays.get_letter_open());
+}
+
+#[test]
+#[allow(
+    clippy::expect_used,
+    reason = "tests should fail fast on a missing tile or scratch folder"
+)]
+fn rename_tile_types_a_name_saves_it_and_returns_to_the_tile() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    hub_with_saved_search(&ctx, &app);
+    let shell = app.global::<Shell>();
+    settle(&window);
+    crate::router::handle_action(&ctx, &app, "context_menu");
+    focus_context_row(&app, "hub_rename");
+    crate::router::handle_action(&ctx, &app, "accept");
+    advance(zaparoo_app::input::PRESS_FEEDBACK_MS);
+    settle(&window);
+    assert_eq!(shell.get_active_screen(), Screen::Rename);
+    let view = app.global::<crate::RenameView>();
+    assert_eq!(
+        view.get_before(),
+        "RPGs",
+        "the field starts on the tile's name"
+    );
+    assert_eq!(view.get_key_rows(), 5, "a name takes the full keyboard");
+    {
+        let shared = crate::router::lock(&ctx.shared);
+        assert_eq!(shared.persist.active_screen, "rename");
+        assert_eq!(shared.persist.rename.draft, "RPGs");
+        assert!(shared.persist.rename.target.identity.starts_with("search:"));
+    }
+    for c in " 94".chars() {
+        crate::rename::type_char(&ctx, &app, c);
+    }
+    assert_eq!(
+        crate::router::lock(&ctx.shared).persist.rename.draft,
+        "RPGs 94",
+        "every edit is kept for a restore"
+    );
+    // Typing puts focus on Save, so Accept saves.
+    crate::router::handle_action(&ctx, &app, "accept");
+    settle(&window);
+    assert_eq!(shell.get_active_screen(), Screen::Hub);
+    let shared = crate::router::lock(&ctx.shared);
+    assert_eq!(shared.persist.active_screen, "hub");
+    let item = shared.hub.layout.visible().next().expect("the tile");
+    assert_eq!(item.name, "RPGs 94");
+    assert_eq!(shared.hub.entries[0].name, "RPGs 94");
+}
+
+#[test]
+#[allow(
+    clippy::expect_used,
+    reason = "tests should fail fast on a missing tile or scratch folder"
+)]
+fn rename_back_keeps_the_name_and_a_blank_name_resets_it() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    hub_with_saved_search(&ctx, &app);
+    let shell = app.global::<Shell>();
+    settle(&window);
+    let open = |ctx: &crate::router::Ctx| {
+        crate::router::handle_action(ctx, &app, "context_menu");
+        focus_context_row(&app, "hub_rename");
+        crate::router::handle_action(ctx, &app, "accept");
+        advance(zaparoo_app::input::PRESS_FEEDBACK_MS);
+        settle(&window);
+        assert_eq!(app.global::<Shell>().get_active_screen(), Screen::Rename);
+    };
+    open(&ctx);
+    assert!(
+        !app.global::<crate::Overlays>().get_context_open(),
+        "a screen ready at once takes the menu with it"
+    );
+    crate::rename::type_char(&ctx, &app, '!');
+    crate::router::handle_action(&ctx, &app, "cancel");
+    settle(&window);
+    assert_eq!(shell.get_active_screen(), Screen::Hub);
+    assert_eq!(
+        crate::router::lock(&ctx.shared)
+            .hub
+            .layout
+            .visible()
+            .next()
+            .map(|item| item.name.clone()),
+        Some("RPGs".to_string()),
+        "Back saves nothing"
+    );
+    assert!(
+        app.global::<crate::Overlays>().get_context_open(),
+        "and brings the menu back"
+    );
+    assert_eq!(context_row_id(&app).as_deref(), Some("hub_rename"));
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert!(!app.global::<crate::Overlays>().get_context_open());
+
+    open(&ctx);
+    for _ in 0.."RPGs".len() {
+        crate::router::handle_action(&ctx, &app, zaparoo_app::input::TEXT_DELETE);
+    }
+    assert_eq!(app.global::<crate::RenameView>().get_before(), "");
+    // A refused leading space still puts focus on Save.
+    crate::rename::type_char(&ctx, &app, ' ');
+    crate::router::handle_action(&ctx, &app, "accept");
+    settle(&window);
+    assert_eq!(shell.get_active_screen(), Screen::Hub);
+    assert!(
+        !app.global::<crate::Overlays>().get_context_open(),
+        "Save ends on the screen"
+    );
+    let shared = crate::router::lock(&ctx.shared);
+    let item = shared.hub.layout.visible().next().expect("the tile");
+    assert_eq!(item.name, "", "a blank name is the tile's own again");
+    assert_eq!(shared.hub.entries[0].name, "final");
+}
+
+#[test]
+#[allow(
+    clippy::expect_used,
+    clippy::too_many_lines,
+    reason = "one walk through a pick and every way back out, failing fast on a missing tile"
+)]
+fn change_icon_browses_images_and_a_pick_becomes_the_tile_icon() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    let root = std::env::temp_dir().join(format!("zaparoo-icon-pick-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join("hub")).expect("hub folder");
+    std::fs::write(root.join("hub").join("rpg.png"), b"not really a png").expect("file");
+    std::fs::write(root.join("hub").join("notes.txt"), b"x").expect("file");
+    crate::customization::configure(root.clone(), std::collections::HashMap::new());
+    hub_with_saved_search(&ctx, &app);
+    let shell = app.global::<Shell>();
+    settle(&window);
+    crate::router::handle_action(&ctx, &app, "context_menu");
+    focus_context_row(&app, "hub_icon");
+    crate::router::handle_action(&ctx, &app, "accept");
+    advance(zaparoo_app::input::PRESS_FEEDBACK_MS);
+    settle(&window);
+    assert!(
+        shell.get_transitioning(),
+        "the folder read is a deferred route"
+    );
+    assert_eq!(shell.get_active_screen(), Screen::Hub);
+    let overlays = app.global::<crate::Overlays>();
+    assert!(
+        overlays.get_context_open(),
+        "the menu stays up while the folder is read"
+    );
+
+    let hub_dir = root.join("hub").to_string_lossy().into_owned();
+    crate::file_browser::land_now(&ctx, &app, Some(&hub_dir), "");
+    assert!(
+        !overlays.get_context_open(),
+        "and leaves in the turn the browser appears"
+    );
+    settle(&window);
+    assert_eq!(shell.get_active_screen(), Screen::FileBrowser);
+    let view = app.global::<crate::FileBrowserView>();
+    assert_eq!(view.get_mode(), crate::FileBrowserMode::Images);
+    assert_eq!(view.get_title(), "hub");
+    let names: Vec<String> = view
+        .get_cells()
+        .iter()
+        .map(|c| c.name.to_string())
+        .collect();
+    assert_eq!(names, ["rpg.png"], "images only");
+    assert!(view.get_focused_picks());
+    {
+        let shared = crate::router::lock(&ctx.shared);
+        assert_eq!(shared.persist.active_screen, "file-browser");
+        assert_eq!(shared.persist.file_browser.dir, hub_dir);
+        assert_eq!(shared.persist.file_browser.selected, "rpg.png");
+    }
+
+    crate::router::handle_action(&ctx, &app, "accept");
+    settle(&window);
+    assert_eq!(shell.get_active_screen(), Screen::Hub);
+    let picked = root
+        .join("hub")
+        .join("rpg.png")
+        .to_string_lossy()
+        .into_owned();
+    {
+        let shared = crate::router::lock(&ctx.shared);
+        let item = shared.hub.layout.visible().next().expect("the tile");
+        assert_eq!(
+            item.icon, picked,
+            "the file is named where it is, never copied"
+        );
+        assert_eq!(
+            shared.hub.entries[0].cover_key,
+            format!("custom-path:{picked}")
+        );
+    }
+
+    // Back climbs to the custom folder, then Places, then the Hub.
+    crate::router::handle_action(&ctx, &app, "context_menu");
+    focus_context_row(&app, "hub_icon");
+    crate::router::handle_action(&ctx, &app, "accept");
+    advance(zaparoo_app::input::PRESS_FEEDBACK_MS);
+    settle(&window);
+    crate::file_browser::land_now(&ctx, &app, Some(&hub_dir), &picked);
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert!(shell.get_transitioning());
+    let custom = root.to_string_lossy().into_owned();
+    crate::file_browser::land_now(&ctx, &app, Some(&custom), &hub_dir);
+    assert_eq!(
+        view.get_title(),
+        root.file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or_default()
+    );
+    crate::router::handle_action(&ctx, &app, "cancel");
+    crate::file_browser::land_now(&ctx, &app, None, &custom);
+    assert!(view.get_places());
+    crate::router::handle_action(&ctx, &app, "cancel");
+    settle(&window);
+    assert_eq!(shell.get_active_screen(), Screen::Hub);
+    assert_eq!(
+        crate::router::lock(&ctx.shared)
+            .hub
+            .layout
+            .visible()
+            .next()
+            .map(|item| item.icon.clone()),
+        Some(picked),
+        "leaving without a pick changes nothing"
+    );
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn a_cold_start_restores_the_rename_draft_only_on_the_same_tile() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    hub_with_saved_search(&ctx, &app);
+    let identity = {
+        let shared = crate::router::lock(&ctx.shared);
+        zaparoo_app::hub::commit(&shared.hub.entries[0])
+            .map(|commit| commit.selected_item)
+            .unwrap_or_default()
+    };
+    let saved = |identity: &str| zaparoo_core::persist::RenameState {
+        target: zaparoo_core::persist::HubTarget {
+            hub_index: 0,
+            identity: identity.to_string(),
+        },
+        draft: "Role-playing".into(),
+        caret: 4,
+    };
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.persist.active_screen = "rename".into();
+        shared.persist.rename = saved("search:another");
+    }
+    crate::rename::restore(&ctx, &app);
+    assert_eq!(app.global::<Shell>().get_active_screen(), Screen::Hub);
+    assert_eq!(
+        crate::router::lock(&ctx.shared).persist.active_screen,
+        "hub",
+        "a tile that moved restores the Hub"
+    );
+
+    crate::router::lock(&ctx.shared).persist.rename = saved(&identity);
+    crate::rename::restore(&ctx, &app);
+    settle(&window);
+    assert_eq!(app.global::<Shell>().get_active_screen(), Screen::Rename);
+    let view = app.global::<crate::RenameView>();
+    assert_eq!(view.get_before(), "Role");
+    assert_eq!(view.get_at(), "-");
+    assert_eq!(view.get_after(), "playing");
+}
+
+#[test]
+fn a_list_with_no_fixed_total_never_shows_the_rail() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    app.global::<Shell>().set_active_screen(Screen::Games);
+    seat_folder(&ctx, &app, "Game", 0);
+    settle(&window);
+    let view = app.global::<crate::GamesView>();
+    // A paged list Core gives no total for, as Favorites, Recently played
+    // and Search results are.
+    crate::router::lock(&ctx.shared).games.total_known = false;
+    crate::input::dispatch_repeat(&ctx, &app, "page_next", HoldTier::Page);
+    assert!(view.get_rapid_active(), "the fast scroll itself still runs");
+    assert!(!view.get_rail_visible());
+
+    crate::router::lock(&ctx.shared).games.total_known = true;
+    crate::input::dispatch_repeat(&ctx, &app, "page_next", HoldTier::Page);
+    crate::games::render(&ctx, &app);
+    assert!(view.get_rail_visible(), "a counted folder keeps it");
+}
+
+/// A folder of `count` images and the Hub tile's browser opened on it.
+#[allow(
+    clippy::expect_used,
+    reason = "tests should fail fast on a scratch folder"
+)]
+fn browser_on_images(
+    ctx: &crate::router::Ctx,
+    app: &App,
+    window: &Rc<MinimalSoftwareWindow>,
+    name: &str,
+    count: usize,
+) -> std::path::PathBuf {
+    let root = std::env::temp_dir().join(format!("zaparoo-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join("hub")).expect("hub folder");
+    for i in 0..count {
+        let letter = char::from(b'a' + u8::try_from(i % 26).unwrap_or(0));
+        std::fs::write(root.join("hub").join(format!("{letter}{i:03}.png")), b"x").expect("file");
+    }
+    crate::customization::configure(root.clone(), std::collections::HashMap::new());
+    hub_with_saved_search(ctx, app);
+    settle(window);
+    crate::router::handle_action(ctx, app, "context_menu");
+    focus_context_row(app, "hub_icon");
+    crate::router::handle_action(ctx, app, "accept");
+    advance(zaparoo_app::input::PRESS_FEEDBACK_MS);
+    settle(window);
+    let hub_dir = root.join("hub").to_string_lossy().into_owned();
+    crate::file_browser::land_now(ctx, app, Some(&hub_dir), "");
+    settle(window);
+    root
+}
+
+#[test]
+fn the_image_browser_turns_pages_on_the_shared_strip() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    crate::router::lock(&ctx.shared)
+        .persist
+        .settings
+        .reduce_motion = false;
+    let root = browser_on_images(&ctx, &app, &window, "browser-pages", 60);
+    let shell = app.global::<Shell>();
+    assert_eq!(shell.get_active_screen(), Screen::FileBrowser);
+    let view = app.global::<crate::FileBrowserView>();
+    assert!(view.get_total_pages() > 1);
+    crate::router::handle_action(&ctx, &app, "page_next");
+    assert!(
+        view.get_page_slide().abs() > f32::EPSILON,
+        "the page slides"
+    );
+    assert!(
+        view.get_next_cells().iter().count() > 0,
+        "into the incoming half"
+    );
+    assert_eq!(view.get_selected_local(), -1, "no ring while it moves");
+    // Another press lands the turn and takes its own at once.
+    crate::router::handle_action(&ctx, &app, "page_next");
+    assert!(
+        view.get_page_slide().abs() < f32::EPSILON,
+        "the interrupting turn cuts"
+    );
+    assert_eq!(view.get_page(), 2);
+    CLOCK.with(|clock| clock.set(clock.get() + crate::page_motion::SETTLE_MS));
+    slint::platform::update_timers_and_animations();
+    assert!(!crate::router::lock(&ctx.shared).file_browser_sliding());
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn a_long_hold_in_the_image_browser_steps_by_letter_and_raises_the_rail() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    let root = browser_on_images(&ctx, &app, &window, "browser-letters", 52);
+    let view = app.global::<crate::FileBrowserView>();
+    assert_eq!(view.get_rail_letters().iter().count(), 26);
+    crate::input::dispatch_repeat(&ctx, &app, "down", HoldTier::Letter);
+    assert_eq!(view.get_rail_letter(), "B", "one letter per step");
+    assert!(
+        view.get_rail_visible(),
+        "the rail comes up with the fast scroll"
+    );
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn every_grid_jumps_pages_while_a_held_direction_runs_fast() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    seed_hub_pages(&ctx, &app);
+    crate::router::lock(&ctx.shared)
+        .persist
+        .settings
+        .reduce_motion = false;
+    settle(&window);
+    let hub = app.global::<HubView>();
+    crate::page_motion::turn::<crate::hub::HubScreen>(&ctx, &app, 1, 0, true);
+    assert!(hub.get_page_slide().abs() > f32::EPSILON, "a turn slides");
+    CLOCK.with(|clock| clock.set(clock.get() + crate::page_motion::SETTLE_MS));
+    slint::platform::update_timers_and_animations();
+    settle(&window);
+    // A held direction that has run long enough to count as fast: a turn
+    // that lands then (a page arriving mid-scroll) jumps, on every grid.
+    crate::input::note_rapid(&ctx, &app, "down", true);
+    assert!(crate::input::rapid_navigation(&ctx));
+    crate::page_motion::turn::<crate::hub::HubScreen>(&ctx, &app, 1, 0, true);
+    assert!(
+        hub.get_page_slide().abs() < f32::EPSILON,
+        "a held fast move jumps"
+    );
+    assert!(!crate::router::lock(&ctx.shared).hub.page.sliding);
+}
+
+#[test]
+fn back_while_a_menu_row_opens_its_screen_calls_it_off_and_keeps_the_menu() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    hub_with_saved_search(&ctx, &app);
+    settle(&window);
+    let shell = app.global::<Shell>();
+    let overlays = app.global::<crate::Overlays>();
+    crate::router::handle_action(&ctx, &app, "context_menu");
+    focus_context_row(&app, "hub_icon");
+    crate::router::handle_action(&ctx, &app, "accept");
+    advance(zaparoo_app::input::PRESS_FEEDBACK_MS);
+    settle(&window);
+    assert!(shell.get_transitioning());
+    assert!(overlays.get_context_open());
+    // Moves wait for the route; Back calls it off and keeps the menu.
+    crate::router::handle_action(&ctx, &app, "down");
+    assert!(overlays.get_context_open());
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert!(!shell.get_transitioning());
+    assert!(overlays.get_context_open(), "the menu stays, on its row");
+    assert_eq!(context_row_id(&app).as_deref(), Some("hub_icon"));
+    assert_eq!(
+        app.global::<crate::PressFeedback>().get_owner(),
+        PressOwner::None
+    );
+    assert_eq!(shell.get_active_screen(), Screen::Hub);
+    // The read that lands after that is dropped.
+    crate::file_browser::land_now(&ctx, &app, None, "");
+    assert_eq!(shell.get_active_screen(), Screen::Hub);
+}
+
+#[test]
+fn group_by_keeps_its_list_up_until_the_other_screen_is_ready() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    let shell = app.global::<Shell>();
+    let overlays = app.global::<crate::Overlays>();
+    shell.set_active_screen(Screen::FavoriteSystems);
+    crate::router::lock(&ctx.shared)
+        .persist
+        .settings
+        .favorites_grouping = "system".into();
+    settle(&window);
+    let pick_none = |ctx: &crate::router::Ctx| {
+        crate::router::open_favorites_grouping_menu(ctx, &app);
+        assert!(overlays.get_list_open());
+        overlays.set_list_index(0);
+        crate::router::handle_action(ctx, &app, "accept");
+        advance(zaparoo_app::input::PRESS_FEEDBACK_MS);
+    };
+    pick_none(&ctx);
+    assert!(shell.get_transitioning(), "Favorites fills before it shows");
+    assert!(overlays.get_list_open(), "the list stays up meanwhile");
+    assert_eq!(shell.get_active_screen(), Screen::FavoriteSystems);
+    let ticket = crate::router::lock(&ctx.shared).games.ticket;
+    crate::games::apply_fill(&ctx, &app, ticket, navigation_rows(), None, None, true);
+    assert_eq!(shell.get_active_screen(), Screen::Favorites);
+    assert!(!overlays.get_list_open(), "and leaves in the turn it lands");
+
+    // Back while it waits calls off the route and the list.
+    shell.set_active_screen(Screen::FavoriteSystems);
+    crate::router::lock(&ctx.shared)
+        .persist
+        .settings
+        .favorites_grouping = "system".into();
+    settle(&window);
+    pick_none(&ctx);
+    assert!(overlays.get_list_open());
+    crate::router::handle_action(&ctx, &app, "down");
+    assert!(overlays.get_list_open(), "nothing else acts while it waits");
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert!(!shell.get_transitioning());
+    assert!(!overlays.get_list_open());
+    assert_eq!(shell.get_active_screen(), Screen::FavoriteSystems);
+}
+
+#[test]
+fn change_launcher_keeps_the_menu_up_while_core_is_asked() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    seat_visibility_list(&ctx, &app, GamesMode::Browse);
+    crate::router::lock(&ctx.shared).launchers = vec![zaparoo_core::media_types::LauncherInfo {
+        id: "nes".into(),
+        system_id: "NES".into(),
+        ..Default::default()
+    }];
+    let overlays = app.global::<crate::Overlays>();
+    crate::router::handle_action(&ctx, &app, "context_menu");
+    focus_context_row(&app, "manage_game");
+    crate::router::handle_action(&ctx, &app, "accept");
+    advance(zaparoo_app::input::PRESS_FEEDBACK_MS);
+    settle(&window);
+    focus_context_row(&app, "change_launcher");
+    crate::router::handle_action(&ctx, &app, "accept");
+    advance(zaparoo_app::input::PRESS_FEEDBACK_MS);
+    settle(&window);
+    assert!(overlays.get_context_open(), "the menu waits for the picker");
+    assert!(!overlays.get_list_open());
+    assert_eq!(
+        app.global::<crate::PressFeedback>().get_owner(),
+        PressOwner::Context,
+        "its row stays pressed"
+    );
+    let seq = crate::router::lock(&ctx.shared).game_launcher_seq;
+    let index = overlays.get_context_index();
+    crate::router::handle_action(&ctx, &app, "down");
+    crate::router::handle_action(&ctx, &app, "accept");
+    advance(zaparoo_app::input::PRESS_FEEDBACK_MS);
+    assert!(
+        overlays.get_context_open(),
+        "nothing else acts while it waits"
+    );
+    assert_eq!(overlays.get_context_index(), index, "focus does not move");
+    assert!(!overlays.get_list_open() && !overlays.get_qr_open());
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert!(overlays.get_context_open(), "Back keeps the menu");
+    assert!(!overlays.get_list_open());
+    assert_eq!(context_row_id(&app).as_deref(), Some("change_launcher"));
+    assert_ne!(
+        crate::router::lock(&ctx.shared).game_launcher_seq,
+        seq,
+        "and the picker that answers late is dropped"
+    );
+    assert_eq!(
+        app.global::<crate::PressFeedback>().get_owner(),
+        PressOwner::None
+    );
+}
+
+#[test]
+fn game_info_moves_focus_over_what_acts_and_a_tag_searches_and_comes_back() {
+    use zaparoo_core::media_types::{MediaMeta, MediaMetaProperty, TagInfo};
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let row = seat_visibility_list(&ctx, &app, GamesMode::Browse);
+    let shell = app.global::<Shell>();
+    let info = app.global::<crate::GameInfoView>();
+    let tag = |tag_type: &str, tag: &str| TagInfo {
+        tag_type: tag_type.into(),
+        tag: tag.into(),
+        ..Default::default()
+    };
+    let mut meta = MediaMeta {
+        available_image_types: vec!["boxart".into(), "screenshot".into()],
+        ..Default::default()
+    };
+    meta.title.system.name = "Nintendo".into();
+    meta.title.tags = vec![
+        tag("developer", "Square"),
+        tag("genre", "rpg"),
+        tag("genre", "rpg:j"),
+        tag("scraper.gamelist.xml", "matched"),
+    ];
+    meta.title.properties.insert(
+        "property:description".into(),
+        MediaMetaProperty {
+            text: "A journey through time.".into(),
+            ..Default::default()
+        },
+    );
+    let land = |ctx: &crate::router::Ctx| {
+        crate::game_info::land_for_test(ctx, &app, &meta);
+        settle(&window);
+    };
+    crate::game_info::open(&ctx, &app, &row);
+    land(&ctx);
+    let rows: Vec<(String, String, i32)> = info
+        .get_info_rows()
+        .iter()
+        .map(|row| (row.key.to_string(), row.value.to_string(), row.stop))
+        .collect();
+    // One row per type, the internal tag gone, the system first.
+    assert_eq!(
+        rows,
+        [
+            ("details".into(), String::new(), -1),
+            ("system".into(), "Nintendo".into(), -1),
+            ("developer".into(), "Square".into(), 2),
+            ("genre".into(), "RPG, JRPG".into(), 3),
+            ("technical".into(), String::new(), -1),
+            ("path".into(), "/g/Game 0.nes".into(), -1),
+        ]
+    );
+    // The art, the description, then the rows that search.
+    assert_eq!(info.get_focus(), 0);
+    assert_eq!(info.get_image_stop(), 0);
+    assert_eq!(info.get_manual_stop(), -1);
+    assert_eq!(info.get_description_stop(), 1);
+    for _ in 0..3 {
+        crate::router::handle_action(&ctx, &app, "down");
+    }
+    assert_eq!(info.get_focus(), 3, "on Genre");
+    // Two values: A lists them; Back returns to the row.
+    crate::router::handle_action(&ctx, &app, "accept");
+    assert!(info.get_values_open());
+    assert_eq!(info.get_values_kind(), "genre");
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert!(!info.get_values_open());
+    assert!(info.get_modal_open());
+    assert_eq!(info.get_focus(), 3);
+
+    // One value: A searches the game's system for it.
+    crate::router::handle_action(&ctx, &app, "up");
+    assert_eq!(info.get_focus(), 2, "on Developer");
+    crate::router::handle_action(&ctx, &app, "accept");
+    advance(zaparoo_app::input::PRESS_FEEDBACK_MS);
+    assert!(!info.get_modal_open());
+    {
+        let shared = crate::router::lock(&ctx.shared);
+        assert_eq!(shared.persist.search.systems, ["NES"]);
+        assert_eq!(shared.persist.search.tags, ["developer:Square"]);
+        assert!(crate::game_info::drilled(&shared));
+    }
+    let ticket = crate::router::lock(&ctx.shared).games.ticket;
+    crate::games::apply_fill(&ctx, &app, ticket, game_rows("Square", 2), None, None, true);
+    assert_eq!(shell.get_active_screen(), Screen::SearchResults);
+
+    // Back: the list as it was, and Game Info again on Developer, in the
+    // same turn: nothing waits on Core, so nothing flickers between them.
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert_eq!(shell.get_active_screen(), Screen::Games);
+    {
+        let shared = crate::router::lock(&ctx.shared);
+        assert_eq!(shared.games.rows.len(), 3);
+        assert_eq!(shared.games.mode, GamesMode::Browse);
+        assert!(!crate::game_info::drilled(&shared));
+    }
+    assert!(info.get_modal_open());
+    assert!(!info.get_loading());
+    assert!(
+        info.get_scroll_snap(),
+        "the reopened panel cuts to its focus"
+    );
+    assert_eq!(info.get_focus(), 2, "back on the row it searched from");
+}
+
+#[test]
+fn edit_search_on_a_tag_search_keeps_its_way_back_to_game_info() {
+    use zaparoo_core::media_types::{MediaMeta, TagInfo};
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let row = seat_visibility_list(&ctx, &app, GamesMode::Browse);
+    let shell = app.global::<Shell>();
+    let info = app.global::<crate::GameInfoView>();
+    let mut meta = MediaMeta::default();
+    meta.title.tags = vec![TagInfo {
+        tag_type: "developer".into(),
+        tag: "Square".into(),
+        ..Default::default()
+    }];
+    crate::game_info::open(&ctx, &app, &row);
+    crate::game_info::land_for_test(&ctx, &app, &meta);
+    settle(&window);
+    // Developer is the one stop: A searches the game's system for it.
+    assert_eq!(info.get_focus(), 0);
+    crate::router::handle_action(&ctx, &app, "accept");
+    advance(zaparoo_app::input::PRESS_FEEDBACK_MS);
+    let ticket = crate::router::lock(&ctx.shared).games.ticket;
+    crate::games::apply_fill(&ctx, &app, ticket, game_rows("Square", 2), None, None, true);
+    assert_eq!(shell.get_active_screen(), Screen::SearchResults);
+
+    // Edit search opens the Search screen with the search as it was; Back
+    // there is Back to Game Info, as it is from the results.
+    crate::search::edit(&ctx, &app);
+    assert_eq!(shell.get_active_screen(), Screen::Search);
+    {
+        let shared = crate::router::lock(&ctx.shared);
+        assert_eq!(shared.persist.search.systems, ["NES"]);
+        assert_eq!(shared.persist.search.tags, ["developer:Square"]);
+        assert!(crate::game_info::drilled(&shared));
+    }
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert_eq!(shell.get_active_screen(), Screen::Games);
+    assert!(info.get_modal_open());
+    assert_eq!(info.get_focus(), 0);
+}
+
+#[test]
+fn more_info_keeps_the_menu_up_until_the_details_are_ready() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    seat_visibility_list(&ctx, &app, GamesMode::Browse);
+    let overlays = app.global::<crate::Overlays>();
+    let info = app.global::<crate::GameInfoView>();
+    crate::router::handle_action(&ctx, &app, "context_menu");
+    focus_context_row(&app, "more_info");
+    crate::router::handle_action(&ctx, &app, "accept");
+    advance(zaparoo_app::input::PRESS_FEEDBACK_MS);
+    settle(&window);
+    assert!(
+        !info.get_modal_open(),
+        "the panel is not shown before its metadata"
+    );
+    assert!(overlays.get_context_open(), "the menu waits for it");
+    assert_eq!(
+        app.global::<crate::PressFeedback>().get_owner(),
+        PressOwner::Context,
+        "its row stays pressed"
+    );
+    let ticket = crate::router::lock(&ctx.shared).game_info.ticket();
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert!(overlays.get_context_open(), "Back keeps the menu");
+    assert_eq!(context_row_id(&app).as_deref(), Some("more_info"));
+    assert!(!info.get_modal_open());
+    assert_ne!(
+        crate::router::lock(&ctx.shared).game_info.ticket(),
+        ticket,
+        "and details that answer late are dropped"
+    );
+}
+
+#[test]
+fn shift_covers_one_letter_and_held_it_locks_caps() {
+    use slint::platform::Key as PlatformKey;
+    use zaparoo_app::keyboard::Key;
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let ctx = std::sync::Arc::new(ctx);
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    crate::input::bind(&ctx, &app, std::collections::HashMap::new());
+    hub_with_saved_search(&ctx, &app);
+    settle(&window);
+    crate::router::handle_action(&ctx, &app, "context_menu");
+    focus_context_row(&app, "hub_rename");
+    crate::router::handle_action(&ctx, &app, "accept");
+    advance(zaparoo_app::input::PRESS_FEEDBACK_MS);
+    settle(&window);
+    assert_eq!(app.global::<Shell>().get_active_screen(), Screen::Rename);
+    let view = app.global::<crate::RenameView>();
+    let tap = |ms: u64| {
+        key_down(&app, PlatformKey::Return);
+        pass(&ctx, ms);
+        key_up(&app, PlatformKey::Return);
+        pass(&ctx, 200);
+    };
+
+    // A tap shifts the next letter, which lets it go again.
+    crate::rename::focus_key_for_test(&ctx, Key::Shift);
+    tap(50);
+    assert!(view.get_shift_active());
+    assert!(!view.get_shift_locked());
+    crate::rename::focus_key_for_test(&ctx, Key::Char('Q'));
+    tap(50);
+    assert!(view.get_after().is_empty());
+    assert!(view.get_before().ends_with('Q'));
+    assert!(!view.get_shift_active(), "one letter, then lowercase");
+
+    // Held past the threshold, Shift locks; letters stay uppercase.
+    crate::rename::focus_key_for_test(&ctx, Key::Shift);
+    tap(zaparoo_app::input::SHIFT_LOCK_HOLD_MS + 10);
+    assert!(view.get_shift_locked());
+    crate::rename::focus_key_for_test(&ctx, Key::Char('W'));
+    tap(50);
+    tap(50);
+    assert!(view.get_before().ends_with("QWW"));
+    assert!(view.get_shift_locked(), "caps stay on");
+
+    // A tap turns caps off.
+    crate::rename::focus_key_for_test(&ctx, Key::Shift);
+    tap(50);
+    assert!(!view.get_shift_active());
+    assert!(!view.get_shift_locked());
+}
+
+#[test]
+fn a_turn_whose_rows_were_replaced_still_comes_back_to_rest() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    crate::router::lock(&ctx.shared)
+        .persist
+        .settings
+        .reduce_motion = false;
+    let root = browser_on_images(&ctx, &app, &window, "browser-epoch", 60);
+    let view = app.global::<crate::FileBrowserView>();
+    crate::router::handle_action(&ctx, &app, "page_next");
+    assert!(view.get_page_slide().abs() > f32::EPSILON);
+    // A new folder read starts under the turn, without any input.
+    crate::router::lock(&ctx.shared).file_browser_bump_ticket();
+    CLOCK.with(|clock| clock.set(clock.get() + crate::page_motion::SETTLE_MS));
+    slint::platform::update_timers_and_animations();
+    assert!(
+        view.get_page_slide().abs() < f32::EPSILON,
+        "the strip is at rest"
+    );
+    assert!(!view.get_cached_transition());
+    assert!(!crate::router::lock(&ctx.shared).file_browser_sliding());
+    let _ = std::fs::remove_dir_all(&root);
 }

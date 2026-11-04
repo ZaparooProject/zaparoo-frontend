@@ -1,0 +1,94 @@
+// Zaparoo Frontend
+// Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
+// SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
+//
+// The rename screen: a tile's name over the full on-screen keyboard. Pure
+// view. The driver is `src/rename.rs` and the rules are
+// `zaparoo_app::text_entry`.
+
+import { Theme, Sizing, Layout } from "theme.slint";
+import { TopStatusStrip } from "chrome.slint";
+import { KeyKind } from "state_types.slint";
+import { KeyCell, OnScreenKeyboard, TextField } from "keyboard.slint";
+
+export global RenameView {
+    // The name around the cursor: the text before it, the character it
+    // sits on (empty at the end), and the rest.
+    in-out property <string> before;
+    in-out property <string> at;
+    in-out property <string> after;
+    in-out property <[KeyCell]> keys;
+    in-out property <int> key-rows: 5;
+    in-out property <int> key-index: 0;
+    in-out property <int> pressed-key: -1;
+    in-out property <bool> shift-active: false;
+    in-out property <bool> shift-locked: false;
+    in-out property <bool> symbols-active: false;
+    in-out property <bool> can-save: true;
+    // The kind of key under the focus, for the help bar.
+    in-out property <KeyKind> key-kind: KeyKind.char;
+}
+
+export global RenameInput {
+    callback hovered(int);
+    callback clicked(int);
+}
+
+export component RenameScreen inherits Rectangle {
+    property <length> side: Layout.card-side-margin;
+    property <length> gap: Sizing.pct-h(1);
+    property <length> top: Sizing.header-bottom + Layout.top-margin
+        + (Layout.top-strip-visible ? Layout.strip-height : 0px) + root.gap;
+    property <length> avail-h: Math.max(1px, root.height - Sizing.help-bar-clearance - root.top);
+    // The field and the key rows share the height as Search's do: 1.2 for
+    // the field and 1.1 a key row.
+    property <length> unit: (root.avail-h - root.gap) / (1.2 + 1.1 * RenameView.key-rows);
+    property <length> field-h: root.unit * 1.2;
+    property <length> keys-h: root.unit * 1.1 * RenameView.key-rows;
+    property <length> content-w: Math.max(1px, root.width - 2 * root.side);
+    // Keys no wider than twice their height, so a wide screen does not
+    // stretch them into bars.
+    property <length> keys-w: Math.min(root.content-w, 10 * 2 * root.unit * 1.1);
+    property <length> block-x: Sizing.snap(root.side + (root.content-w - root.keys-w) / 2);
+
+    TopStatusStrip {
+        x: 0;
+        y: Sizing.header-bottom + Layout.top-margin;
+        height: Layout.strip-height;
+        slot-margin: Layout.slot-margin;
+        title: @tr("Rename tile");
+        show-page-counter: false;
+        visible: Layout.top-strip-visible;
+    }
+
+    TextField {
+        x: root.block-x;
+        y: root.top;
+        width: root.keys-w;
+        height: root.field-h;
+        label: @tr("Name");
+        before: RenameView.before;
+        at: RenameView.at;
+        after: RenameView.after;
+        typing: true;
+    }
+
+    OnScreenKeyboard {
+        x: root.block-x;
+        y: root.top + root.field-h + root.gap;
+        width: root.keys-w;
+        height: root.keys-h;
+        keys: RenameView.keys;
+        rows: RenameView.key-rows;
+        current-index: RenameView.key-index;
+        pressed-index: RenameView.pressed-key;
+        submit-enabled: RenameView.can-save;
+        submit-glyph: "icons/Check";
+        shift-active: RenameView.shift-active;
+        shift-locked: RenameView.shift-locked;
+        symbols-active: RenameView.symbols-active;
+        scope: "rename";
+        key-hovered(i) => { RenameInput.hovered(i); }
+        key-clicked(i) => { RenameInput.clicked(i); }
+    }
+}

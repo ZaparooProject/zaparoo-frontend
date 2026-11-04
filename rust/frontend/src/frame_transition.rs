@@ -20,6 +20,21 @@ pub(crate) struct Rect {
 }
 
 impl Rect {
+    fn right(self) -> usize {
+        self.x + self.width
+    }
+
+    fn bottom(self) -> usize {
+        self.y + self.height
+    }
+
+    fn intersects(self, other: Self) -> bool {
+        self.x < other.right()
+            && other.x < self.right()
+            && self.y < other.bottom()
+            && other.y < self.bottom()
+    }
+
     fn fits(self, frame_width: usize, frame_height: usize) -> bool {
         self.width > 0
             && self.height > 0
@@ -64,6 +79,32 @@ pub(crate) fn to_frame(
     rotation: Rotation,
     scene: (usize, usize),
 ) -> Option<(Rect, Direction)> {
+    let rect = rect_to_frame(rect, rotation, scene)?;
+    Some((
+        rect,
+        match rotation {
+            Rotation::None => direction,
+            // The scene's top edge is the frame's right edge.
+            Rotation::Cw => match direction {
+                Direction::Up => Direction::Right,
+                Direction::Down => Direction::Left,
+                Direction::Left => Direction::Up,
+                Direction::Right => Direction::Down,
+            },
+            // The scene's top edge is the frame's left edge.
+            Rotation::Ccw => match direction {
+                Direction::Up => Direction::Left,
+                Direction::Down => Direction::Right,
+                Direction::Left => Direction::Down,
+                Direction::Right => Direction::Up,
+            },
+        },
+    ))
+}
+
+/// Maps a region from the scene's own coordinates into the frame the
+/// renderer rotates that scene into. None when it does not fit the scene.
+pub(crate) fn rect_to_frame(rect: Rect, rotation: Rotation, scene: (usize, usize)) -> Option<Rect> {
     if !rect.fits(scene.0, scene.1) {
         return None;
     }
@@ -74,27 +115,9 @@ pub(crate) fn to_frame(
         height: rect.width,
     };
     Some(match rotation {
-        Rotation::None => (rect, direction),
-        // The scene's top edge is the frame's right edge.
-        Rotation::Cw => (
-            turned(scene.1 - rect.y - rect.height, rect.x),
-            match direction {
-                Direction::Up => Direction::Right,
-                Direction::Down => Direction::Left,
-                Direction::Left => Direction::Up,
-                Direction::Right => Direction::Down,
-            },
-        ),
-        // The scene's top edge is the frame's left edge.
-        Rotation::Ccw => (
-            turned(rect.y, scene.0 - rect.x - rect.width),
-            match direction {
-                Direction::Up => Direction::Left,
-                Direction::Down => Direction::Right,
-                Direction::Left => Direction::Down,
-                Direction::Right => Direction::Up,
-            },
-        ),
+        Rotation::None => rect,
+        Rotation::Cw => turned(scene.1 - rect.y - rect.height, rect.x),
+        Rotation::Ccw => turned(rect.y, scene.0 - rect.x - rect.width),
     })
 }
 
@@ -210,7 +233,7 @@ impl<T: Copy> Active<T> {
     /// How far the pages have travelled at `step`, in frame pixels.
     #[cfg(test)]
     pub(crate) fn offset_at(&self, step: u32) -> usize {
-        smoothstep_offset(step, self.spec.total_frames, self.travel())
+        eased_offset(step, self.spec.total_frames, self.travel())
     }
 
     #[cfg(test)]
@@ -261,7 +284,7 @@ impl<T: Copy> Active<T> {
 
         self.fill_region(output);
         let travel = self.travel();
-        let offset = smoothstep_offset(self.frame_index, self.spec.total_frames, travel);
+        let offset = eased_offset(self.frame_index, self.spec.total_frames, travel);
         // Where each page's leading edge sits along the axis of travel.
         let (source_start, destination_start) = match self.spec.direction {
             Direction::Up | Direction::Left => {
@@ -383,9 +406,334 @@ impl<T: Copy> Active<T> {
     }
 }
 
-fn smoothstep_offset(frame: u32, total_frames: u32, travel: usize) -> usize {
-    let t = f64::from(frame) / f64::from(total_frames);
-    let eased = t * t * (3.0 - 2.0 * t);
+/// A presenter pixel the cover fade can mix.
+pub(crate) trait Blend: Copy {
+    fn same(self, other: Self) -> bool;
+    /// Whether two runs of pixels match. Pixel types that can be compared
+    /// as plain memory override this.
+    fn same_run(left: &[Self], right: &[Self]) -> bool {
+        left.len() == right.len() && left.iter().zip(right).all(|(a, b)| a.same(*b))
+    }
+    /// `old` taken `weight` parts in `BLEND_ONE` of the way to `new`.
+    fn mix(old: Self, new: Self, weight: u32) -> Self;
+}
+
+pub(crate) const BLEND_ONE: u32 = 32;
+
+/// Refreshes a cover takes to fade in: `Motion.cover-reveal-ms`, 180 ms,
+/// at 60 Hz.
+const COVER_FADE_FRAMES: u32 = 11;
+
+struct Fade<T> {
+    rect: Rect,
+    /// What was under the cover before it landed.
+    old: Vec<T>,
+    /// What Slint painted when it landed. Empty until that render.
+    new: Vec<T>,
+    started: Started,
+    weight: u32,
+}
+
+/// Covers fading in on grid tiles, composed on the way to the display.
+/// Slint paints a landed cover once, at full strength, and never repaints
+/// it for the fade: each output row that crosses a fading cover mixes the
+/// pixels that were there before into the canonical frame.
+pub(crate) struct CoverFades<T> {
+    fades: Vec<Fade<T>>,
+    frame_width: usize,
+    frame_height: usize,
+    /// Fades that ended early, to republish from the canonical frame.
+    ended: Vec<Rect>,
+    damage: Vec<Rect>,
+    row: Vec<T>,
+}
+
+impl<T: Blend> CoverFades<T> {
+    pub fn new() -> Self {
+        Self {
+            fades: Vec::new(),
+            frame_width: 0,
+            frame_height: 0,
+            ended: Vec::new(),
+            damage: Vec::new(),
+            row: Vec::new(),
+        }
+    }
+
+    pub fn is_active(&self) -> bool {
+        !self.fades.is_empty()
+    }
+
+    /// Drops every fade without republishing anything. For callers that
+    /// are about to republish the region the fades sat in themselves.
+    pub fn clear(&mut self) {
+        self.fades.clear();
+        self.ended.clear();
+    }
+
+    /// Keeps what is under each region before the render that lands their
+    /// covers. A fade already running where a new one starts ends there.
+    pub fn begin(
+        &mut self,
+        canonical: &[T],
+        width: usize,
+        height: usize,
+        rects: &[Rect],
+        started: Started,
+    ) {
+        if (width, height) != (self.frame_width, self.frame_height) {
+            self.clear();
+            self.frame_width = width;
+            self.frame_height = height;
+        }
+        if canonical.len() < width * height {
+            return;
+        }
+        for &rect in rects {
+            if !rect.fits(width, height) {
+                continue;
+            }
+            self.end_where(|fade| fade.rect.intersects(rect));
+            self.fades.push(Fade {
+                rect,
+                old: copy_region(canonical, width, rect),
+                new: Vec::new(),
+                started,
+                weight: 0,
+            });
+        }
+    }
+
+    /// After Slint renders `damage` into `canonical`: a fade that just
+    /// landed narrows to the pixels its cover changed, and one whose pixels
+    /// Slint has since painted over (the focus ring arriving, a page
+    /// change, a modal) ends there, showing what Slint painted.
+    pub fn rendered(&mut self, canonical: &[T], damage: &[Rect]) {
+        let width = self.frame_width;
+        if canonical.len() < width * self.frame_height {
+            self.clear();
+            return;
+        }
+        let mut index = 0;
+        while index < self.fades.len() {
+            let fade = &mut self.fades[index];
+            if fade.new.is_empty() {
+                let Some(bounds) = changed_bounds(&fade.old, canonical, width, fade.rect) else {
+                    // Nothing under it changed, so there is nothing to fade.
+                    self.fades.swap_remove(index);
+                    continue;
+                };
+                fade.old = crop(&fade.old, fade.rect, bounds);
+                fade.new = copy_region(canonical, width, bounds);
+                fade.rect = bounds;
+            } else if damage.iter().any(|&rect| {
+                rect.intersects(fade.rect)
+                    && !region_matches(canonical, width, fade.rect, &fade.new, rect)
+            }) {
+                self.ended.push(fade.rect);
+                self.fades.swap_remove(index);
+                continue;
+            }
+            index += 1;
+        }
+    }
+
+    /// Takes every fade to the step its clock has reached and returns the
+    /// regions that changed on the display: each running fade, each one
+    /// that finished or ended, which now shows the canonical frame.
+    /// `timeline` is the stepped timeline's current value.
+    pub fn step(&mut self, timeline: Duration) -> &[Rect] {
+        self.damage.clear();
+        self.damage.append(&mut self.ended);
+        let damage = &mut self.damage;
+        self.fades.retain_mut(|fade| {
+            if fade.new.is_empty() {
+                return true;
+            }
+            let elapsed = match fade.started {
+                Started::Wall(started) => started.elapsed(),
+                Started::Timeline(started) => timeline.saturating_sub(started),
+            };
+            let step = elapsed.as_micros() / FRAME_PERIOD.as_micros() + 1;
+            damage.push(fade.rect);
+            if step >= u128::from(COVER_FADE_FRAMES) {
+                return false;
+            }
+            fade.weight = fade_weight(step as u32);
+            true
+        });
+        &self.damage
+    }
+
+    /// The span of output row `y` from `x0` that `canonical` holds, with
+    /// every running fade across it mixed in.
+    pub fn row<'a>(&'a mut self, y: usize, x0: usize, canonical: &'a [T]) -> &'a [T] {
+        let x1 = x0 + canonical.len();
+        let mut mixed = false;
+        for fade in &self.fades {
+            let rect = fade.rect;
+            if fade.new.is_empty()
+                || y < rect.y
+                || y >= rect.bottom()
+                || rect.x >= x1
+                || rect.right() <= x0
+            {
+                continue;
+            }
+            if !mixed {
+                self.row.clear();
+                self.row.extend_from_slice(canonical);
+                mixed = true;
+            }
+            let from = rect.x.max(x0);
+            let to = rect.right().min(x1);
+            let start = (y - rect.y) * rect.width + from - rect.x;
+            let old = &fade.old[start..start + to - from];
+            for (out, &before) in self.row[from - x0..to - x0].iter_mut().zip(old) {
+                *out = T::mix(before, *out, fade.weight);
+            }
+        }
+        if mixed {
+            &self.row
+        } else {
+            canonical
+        }
+    }
+
+    /// The stretches of output row `y` between `x0` and `x1` that running
+    /// fades cover, mixed, each handed to `out` with the column it starts
+    /// at. `row` is the whole canonical row. For a presenter that copies
+    /// the row as it is and then overwrites only these.
+    pub fn mixed_segments(
+        &mut self,
+        y: usize,
+        x0: usize,
+        x1: usize,
+        row: &[T],
+        mut out: impl FnMut(usize, &[T]),
+    ) {
+        for fade in &self.fades {
+            let rect = fade.rect;
+            if fade.new.is_empty() || y < rect.y || y >= rect.bottom() {
+                continue;
+            }
+            let from = rect.x.max(x0);
+            let to = rect.right().min(x1);
+            if to <= from {
+                continue;
+            }
+            let start = (y - rect.y) * rect.width + from - rect.x;
+            self.row.clear();
+            self.row.extend(
+                fade.old[start..start + to - from]
+                    .iter()
+                    .zip(&row[from..to])
+                    .map(|(&before, &now)| T::mix(before, now, fade.weight)),
+            );
+            out(from, &self.row);
+        }
+    }
+
+    fn end_where(&mut self, ends: impl Fn(&Fade<T>) -> bool) {
+        let ended = &mut self.ended;
+        self.fades.retain(|fade| {
+            let end = ends(fade);
+            if end && !fade.new.is_empty() {
+                ended.push(fade.rect);
+            }
+            !end
+        });
+    }
+}
+
+/// How far toward the landed cover a fade is at `step`, eased out like
+/// the opacity animation it stands in for.
+fn fade_weight(step: u32) -> u32 {
+    let t = f64::from(step) / f64::from(COVER_FADE_FRAMES);
+    let eased = 1.0 - (1.0 - t) * (1.0 - t);
+    ((eased * f64::from(BLEND_ONE)).round() as u32).min(BLEND_ONE)
+}
+
+fn copy_region<T: Copy>(frame: &[T], width: usize, rect: Rect) -> Vec<T> {
+    let mut region = Vec::with_capacity(rect.width * rect.height);
+    for row in rect.y..rect.bottom() {
+        let start = row * width + rect.x;
+        region.extend_from_slice(&frame[start..start + rect.width]);
+    }
+    region
+}
+
+/// Whether `frame` still holds `region`, copied for `rect`, where `rect`
+/// meets `damage`: nothing outside what was repainted can have changed.
+fn region_matches<T: Blend>(
+    frame: &[T],
+    width: usize,
+    rect: Rect,
+    region: &[T],
+    damage: Rect,
+) -> bool {
+    let x0 = rect.x.max(damage.x);
+    let x1 = rect.right().min(damage.right());
+    let y0 = rect.y.max(damage.y);
+    let y1 = rect.bottom().min(damage.bottom());
+    if x1 <= x0 || y1 <= y0 {
+        return true;
+    }
+    (y0..y1).all(|y| {
+        let start = (y - rect.y) * rect.width + x0 - rect.x;
+        T::same_run(
+            &frame[y * width + x0..y * width + x1],
+            &region[start..start + x1 - x0],
+        )
+    })
+}
+
+/// The smallest region inside `rect` where `frame` no longer holds `old`.
+fn changed_bounds<T: Blend>(old: &[T], frame: &[T], width: usize, rect: Rect) -> Option<Rect> {
+    let (mut x0, mut y0, mut x1, mut y1) = (usize::MAX, usize::MAX, 0, 0);
+    for row in 0..rect.height {
+        let start = (rect.y + row) * width + rect.x;
+        let now = &frame[start..start + rect.width];
+        let then = &old[row * rect.width..(row + 1) * rect.width];
+        if T::same_run(now, then) {
+            continue;
+        }
+        let Some(first) = now.iter().zip(then).position(|(a, b)| !a.same(*b)) else {
+            continue;
+        };
+        let last = now
+            .iter()
+            .zip(then)
+            .rposition(|(a, b)| !a.same(*b))
+            .unwrap_or(first);
+        x0 = x0.min(first);
+        x1 = x1.max(last + 1);
+        y0 = y0.min(row);
+        y1 = row + 1;
+    }
+    (x1 > x0).then(|| Rect {
+        x: rect.x + x0,
+        y: rect.y + y0,
+        width: x1 - x0,
+        height: y1 - y0,
+    })
+}
+
+/// The part of a region copied for `rect` that `bounds`, inside it, covers.
+fn crop<T: Copy>(region: &[T], rect: Rect, bounds: Rect) -> Vec<T> {
+    let mut cropped = Vec::with_capacity(bounds.width * bounds.height);
+    for row in bounds.y - rect.y..bounds.bottom() - rect.y {
+        let start = row * rect.width + bounds.x - rect.x;
+        cropped.extend_from_slice(&region[start..start + bounds.width]);
+    }
+    cropped
+}
+
+/// Eased out, like the slide Slint draws where it draws one: the page
+/// leaves at speed and settles into place.
+fn eased_offset(frame: u32, total_frames: u32, travel: usize) -> usize {
+    let t = (f64::from(frame) / f64::from(total_frames)).min(1.0);
+    let eased = 1.0 - (1.0 - t) * (1.0 - t);
     (eased * travel as f64).round() as usize
 }
 
@@ -409,6 +757,10 @@ mod tests {
     }
 
     fn active(direction: Direction) -> Option<Active<u8>> {
+        active_over(direction, 2)
+    }
+
+    fn active_over(direction: Direction, total_frames: u32) -> Option<Active<u8>> {
         let source = frame(0);
         Active::new(
             &source,
@@ -418,7 +770,7 @@ mod tests {
                 rect: RECT,
                 gap: 1,
                 direction,
-                total_frames: 2,
+                total_frames,
                 started: Started::Wall(Instant::now()),
             },
             0xff,
@@ -550,7 +902,7 @@ mod tests {
         let source = frame(0);
         let destination = frame(100);
         let mut output = source.clone();
-        let transition = active(Direction::Up);
+        let transition = active_over(Direction::Up, 3);
         assert!(transition.is_some(), "valid transition rejected");
         let Some(mut transition) = transition else {
             return;
@@ -565,8 +917,9 @@ mod tests {
             })
         ));
 
-        // Halfway through a five-row journey: final source row, one-row
-        // background gap, then first two destination rows.
+        // A third of the way through a five-row journey, eased out to three
+        // rows: final source row, one-row background gap, then first two
+        // destination rows.
         assert_eq!(region_row(&output, 1), &[17, 18]);
         assert_eq!(region_row(&output, 2), &[0xff, 0xff]);
         assert_eq!(region_row(&output, 3), &[105, 106]);
@@ -579,7 +932,7 @@ mod tests {
         let source = frame(0);
         let destination = frame(100);
         let mut output = source.clone();
-        let transition = active(Direction::Down);
+        let transition = active_over(Direction::Down, 3);
         assert!(transition.is_some(), "valid transition rejected");
         let Some(mut transition) = transition else {
             return;
@@ -622,10 +975,11 @@ mod tests {
         let Ok(mut transition) = transition else {
             return;
         };
-        // Step two of five on a five-column journey is two columns.
-        assert_eq!(transition.offset_at(2), 2);
+        // Step one of five on a five-column journey, eased out, is two
+        // columns.
+        assert_eq!(transition.offset_at(1), 2);
         assert!(transition
-            .compose_step(&destination, &mut output, 2)
+            .compose_step(&destination, &mut output, 1)
             .is_ok());
         // Last two source columns, the one-column gap, first destination
         // column.
@@ -658,7 +1012,7 @@ mod tests {
             return;
         };
         assert!(transition
-            .compose_step(&destination, &mut output, 2)
+            .compose_step(&destination, &mut output, 1)
             .is_ok());
         // Last destination column, the gap, first two source columns.
         assert_eq!(&output[4..8], &[107, 0xff, 4, 5]);
@@ -792,5 +1146,209 @@ mod tests {
             0xff,
         );
         assert!(matches!(result, Err(TransitionError::Rect)));
+    }
+
+    impl Blend for u8 {
+        fn same(self, other: Self) -> bool {
+            self == other
+        }
+
+        fn mix(old: Self, new: Self, weight: u32) -> Self {
+            ((u32::from(old) * (BLEND_ONE - weight) + u32::from(new) * weight) / BLEND_ONE) as u8
+        }
+    }
+
+    const TILE: Rect = Rect {
+        x: 0,
+        y: 0,
+        width: 4,
+        height: 4,
+    };
+
+    /// A 4x6 frame whose rows 1..3, columns 1..3 hold `cover`.
+    fn landed(cover: u8) -> Vec<u8> {
+        let mut frame = vec![10; FRAME_WIDTH * FRAME_HEIGHT];
+        for y in 1..3 {
+            frame[y * FRAME_WIDTH + 1..y * FRAME_WIDTH + 3].fill(cover);
+        }
+        frame
+    }
+
+    fn output_row(fades: &mut CoverFades<u8>, frame: &[u8], y: usize) -> Vec<u8> {
+        fades
+            .row(y, 0, &frame[y * FRAME_WIDTH..(y + 1) * FRAME_WIDTH])
+            .to_vec()
+    }
+
+    #[test]
+    fn a_landed_cover_mixes_in_over_its_changed_pixels_and_ends_on_the_frame() {
+        let before = vec![10; FRAME_WIDTH * FRAME_HEIGHT];
+        let after = landed(250);
+        let mut fades = CoverFades::new();
+        fades.begin(
+            &before,
+            FRAME_WIDTH,
+            FRAME_HEIGHT,
+            &[TILE],
+            Started::Timeline(Duration::ZERO),
+        );
+        fades.rendered(&after, &[TILE]);
+        let changed = Rect {
+            x: 1,
+            y: 1,
+            width: 2,
+            height: 2,
+        };
+        assert_eq!(fades.step(Duration::ZERO), &[changed]);
+        let first = output_row(&mut fades, &after, 1);
+        assert_eq!(first[0], 10, "outside the changed pixels is the frame");
+        assert!(first[1] > 10 && first[1] < 250, "partway: {}", first[1]);
+        assert_eq!(output_row(&mut fades, &after, 3), &after[12..16]);
+
+        let mut last = first[1];
+        for frame in 1..COVER_FADE_FRAMES - 1 {
+            assert_eq!(fades.step(FRAME_PERIOD * frame), &[changed]);
+            let now = output_row(&mut fades, &after, 2)[2];
+            assert!(now > last, "step {frame} moves toward the cover");
+            last = now;
+        }
+        assert_eq!(fades.step(FRAME_PERIOD * COVER_FADE_FRAMES), &[changed]);
+        assert!(!fades.is_active());
+        assert_eq!(output_row(&mut fades, &after, 1), &after[4..8]);
+    }
+
+    #[test]
+    fn mixed_segments_cover_only_the_fading_stretch_of_a_row() {
+        let before = vec![10; FRAME_WIDTH * FRAME_HEIGHT];
+        let after = landed(250);
+        let mut fades = CoverFades::new();
+        fades.begin(
+            &before,
+            FRAME_WIDTH,
+            FRAME_HEIGHT,
+            &[TILE],
+            Started::Timeline(Duration::ZERO),
+        );
+        fades.rendered(&after, &[TILE]);
+        let _ = fades.step(Duration::ZERO);
+        let expected = output_row(&mut fades, &after, 1);
+        let mut segments = Vec::new();
+        fades.mixed_segments(1, 0, FRAME_WIDTH, &after[4..8], |x, mixed| {
+            segments.push((x, mixed.to_vec()));
+        });
+        assert_eq!(segments, [(1, expected[1..3].to_vec())]);
+        let mut none = 0;
+        fades.mixed_segments(4, 0, FRAME_WIDTH, &after[16..20], |_, _| none += 1);
+        assert_eq!(none, 0, "a row the fade does not cross has nothing to mix");
+    }
+
+    #[test]
+    fn a_tile_slint_did_not_change_has_nothing_to_fade() {
+        let frame = landed(250);
+        let mut fades = CoverFades::new();
+        fades.begin(
+            &frame,
+            FRAME_WIDTH,
+            FRAME_HEIGHT,
+            &[TILE],
+            Started::Timeline(Duration::ZERO),
+        );
+        fades.rendered(&frame, &[TILE]);
+        assert!(!fades.is_active());
+        assert!(fades.step(Duration::ZERO).is_empty());
+    }
+
+    #[test]
+    fn a_repaint_over_a_fade_ends_it_only_when_it_changes_its_pixels() {
+        let before = vec![10; FRAME_WIDTH * FRAME_HEIGHT];
+        let after = landed(250);
+        let mut fades = CoverFades::new();
+        fades.begin(
+            &before,
+            FRAME_WIDTH,
+            FRAME_HEIGHT,
+            &[TILE],
+            Started::Timeline(Duration::ZERO),
+        );
+        fades.rendered(&after, &[TILE]);
+        let _ = fades.step(Duration::ZERO);
+
+        // Slint repainted the tile with the same pixels: the fade goes on.
+        fades.rendered(&after, &[TILE]);
+        assert!(fades.is_active());
+
+        // The focus ring arrives over the cover: the fade ends on it.
+        let mut ringed = after.clone();
+        ringed[FRAME_WIDTH + 1] = 99;
+        fades.rendered(&ringed, &[TILE]);
+        assert!(!fades.is_active());
+        assert_eq!(
+            fades.step(FRAME_PERIOD),
+            &[Rect {
+                x: 1,
+                y: 1,
+                width: 2,
+                height: 2
+            }]
+        );
+        assert_eq!(output_row(&mut fades, &ringed, 1), &ringed[4..8]);
+    }
+
+    #[test]
+    fn a_repaint_beside_a_fade_leaves_it_running() {
+        let before = vec![10; FRAME_WIDTH * FRAME_HEIGHT];
+        let after = landed(250);
+        let mut fades = CoverFades::new();
+        fades.begin(
+            &before,
+            FRAME_WIDTH,
+            FRAME_HEIGHT,
+            &[TILE],
+            Started::Timeline(Duration::ZERO),
+        );
+        fades.rendered(&after, &[TILE]);
+        let mut header = after.clone();
+        header[5 * FRAME_WIDTH] = 0;
+        fades.rendered(
+            &header,
+            &[Rect {
+                x: 0,
+                y: 5,
+                width: 4,
+                height: 1,
+            }],
+        );
+        assert!(fades.is_active());
+    }
+
+    #[test]
+    fn a_new_frame_size_drops_fades_composed_for_the_old_one() {
+        let before = vec![10; FRAME_WIDTH * FRAME_HEIGHT];
+        let after = landed(250);
+        let mut fades = CoverFades::new();
+        fades.begin(
+            &before,
+            FRAME_WIDTH,
+            FRAME_HEIGHT,
+            &[TILE],
+            Started::Timeline(Duration::ZERO),
+        );
+        fades.rendered(&after, &[TILE]);
+        fades.begin(
+            &after,
+            FRAME_HEIGHT,
+            FRAME_WIDTH,
+            &[],
+            Started::Timeline(Duration::ZERO),
+        );
+        assert!(!fades.is_active());
+    }
+
+    #[test]
+    fn fade_weights_ease_out_toward_the_cover() {
+        let weights: Vec<u32> = (1..COVER_FADE_FRAMES).map(fade_weight).collect();
+        assert!(weights.windows(2).all(|pair| pair[0] < pair[1]));
+        assert!(weights[0] > BLEND_ONE / COVER_FADE_FRAMES);
+        assert!(weights.iter().all(|&weight| weight <= BLEND_ONE));
     }
 }

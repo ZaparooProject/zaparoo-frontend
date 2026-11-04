@@ -119,7 +119,7 @@ export component SetupModal inherits ModalShell {
         : (root.picker-checked > 0
             ? @tr("{} · {}", root.picker-name, @tr("{n} selected" | "{n} selected" % root.picker-checked))
             : root.picker-name);
-    panel-width: Math.min(root.width * 0.78, Sizing.pct-h(110));
+    panel-width: Sizing.snap(Math.min(root.width * 0.78, Sizing.pct-h(110)));
     content-height: root.body-h;
 
         // The form.
@@ -198,7 +198,7 @@ export component SetupModal inherits ModalShell {
                 target: root.picker-top * root.picker-stride;
                 step: root.picker-viewport-h;
                 reveal: true;
-                duration: Motion.page-ms;
+                duration: Motion.scroll-ms;
                 viewport: root.picker-viewport-h;
                 scope: StateTokens.picker(root.picker-title) + ":" + Motion.epoch;
             }
@@ -317,7 +317,7 @@ export component LogUploadModal inherits ModalShell {
     property <length> wait-band: root.phase == LogPhase.uploading ? wait.glyph + Sizing.pct-h(1) : 0px;
 
     title: @tr("Upload log file");
-    panel-width: Math.min(root.width * 0.78, Sizing.pct-h(110));
+    panel-width: Sizing.snap(Math.min(root.width * 0.78, Sizing.pct-h(110)));
     content-height: root.body-h
         + (root.phase == LogPhase.uploading ? 0px : root.pad + root.button-h);
 

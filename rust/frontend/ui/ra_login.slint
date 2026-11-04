@@ -1,0 +1,127 @@
+// Zaparoo Frontend
+// Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
+// SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
+//
+// The RetroAchievements login screen: the username, then the password,
+// over the full on-screen keyboard, with one line under the field for the
+// login check. Pure view. The driver is `src/ra_login.rs`; the password
+// arrives already masked.
+
+import { Theme, Sizing, Layout } from "theme.slint";
+import { TopStatusStrip, WaitCue } from "chrome.slint";
+import { KeyKind, RaLoginStep, RaLoginStatus } from "state_types.slint";
+import { KeyCell, OnScreenKeyboard, TextField } from "keyboard.slint";
+
+export global RaLoginView {
+    // The field around the cursor: the text before it, the character it
+    // sits on (empty at the end), and the rest.
+    in-out property <string> before;
+    in-out property <string> at;
+    in-out property <string> after;
+    in-out property <[KeyCell]> keys;
+    in-out property <int> key-rows: 5;
+    in-out property <int> key-index: 0;
+    in-out property <int> pressed-key: -1;
+    in-out property <bool> shift-active: false;
+    in-out property <bool> shift-locked: false;
+    in-out property <bool> symbols-active: false;
+    in-out property <bool> can-submit: false;
+    in-out property <RaLoginStep> step: RaLoginStep.username;
+    in-out property <RaLoginStatus> status: RaLoginStatus.idle;
+    // The kind of key under the focus, for the help bar.
+    in-out property <KeyKind> key-kind: KeyKind.char;
+
+    public pure function status-text() -> string {
+        if (RaLoginView.status == RaLoginStatus.wrong-credentials) { return @tr("Wrong username or password."); }
+        if (RaLoginView.status == RaLoginStatus.refused) { return @tr("RetroAchievements refused this login."); }
+        if (RaLoginView.status == RaLoginStatus.unreachable) { return @tr("Could not reach RetroAchievements. Check the network connection."); }
+        if (RaLoginView.status == RaLoginStatus.save-failed) { return @tr("Could not save the login."); }
+        if (RaLoginView.status == RaLoginStatus.unsupported) { return @tr("This login can't be used on MiSTer."); }
+        return "";
+    }
+}
+
+export global RaLoginInput {
+    callback hovered(int);
+    callback clicked(int);
+}
+
+export component RaLoginScreen inherits Rectangle {
+    property <length> side: Layout.card-side-margin;
+    property <length> gap: Sizing.pct-h(1);
+    property <length> top: Sizing.header-bottom + Layout.top-margin
+        + (Layout.top-strip-visible ? Layout.strip-height : 0px) + root.gap;
+    property <length> avail-h: Math.max(1px, root.height - Sizing.help-bar-clearance - root.top);
+    // The field, the status line and the key rows share the height as
+    // Rename's do, with one more 0.9 unit for the status line.
+    property <length> unit: (root.avail-h - 2 * root.gap) / (1.2 + 0.9 + 1.1 * RaLoginView.key-rows);
+    property <length> field-h: root.unit * 1.2;
+    property <length> status-h: root.unit * 0.9;
+    property <length> keys-h: root.unit * 1.1 * RaLoginView.key-rows;
+    property <length> content-w: Math.max(1px, root.width - 2 * root.side);
+    property <length> keys-w: Math.min(root.content-w, 10 * 2 * root.unit * 1.1);
+    property <length> block-x: root.side + (root.content-w - root.keys-w) / 2;
+
+    TopStatusStrip {
+        x: 0;
+        y: Sizing.header-bottom + Layout.top-margin;
+        height: Layout.strip-height;
+        slot-margin: Layout.slot-margin;
+        title: @tr("RetroAchievements");
+        show-page-counter: false;
+        visible: Layout.top-strip-visible;
+    }
+
+    TextField {
+        x: root.block-x;
+        y: root.top;
+        width: root.keys-w;
+        height: root.field-h;
+        label: RaLoginView.step == RaLoginStep.password ? @tr("Password") : @tr("Username");
+        before: RaLoginView.before;
+        at: RaLoginView.at;
+        after: RaLoginView.after;
+        typing: RaLoginView.status != RaLoginStatus.verifying;
+    }
+
+    wait := WaitCue {
+        x: root.block-x;
+        y: root.top + root.field-h;
+        width: root.keys-w;
+        height: root.status-h;
+        glyph: Sizing.font-body;
+        waiting: RaLoginView.status == RaLoginStatus.verifying;
+        text: @tr("Logging in…");
+    }
+    if !wait.shown && RaLoginView.status-text() != "": Text {
+        x: root.block-x;
+        y: root.top + root.field-h;
+        width: root.keys-w;
+        height: root.status-h;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        overflow: elide;
+        text: RaLoginView.status-text();
+        color: Theme.accent;
+        font-size: Sizing.font-caption;
+    }
+
+    OnScreenKeyboard {
+        x: root.block-x;
+        y: root.top + root.field-h + root.status-h + root.gap;
+        width: root.keys-w;
+        height: root.keys-h;
+        keys: RaLoginView.keys;
+        rows: RaLoginView.key-rows;
+        current-index: RaLoginView.key-index;
+        pressed-index: RaLoginView.pressed-key;
+        submit-enabled: RaLoginView.can-submit;
+        submit-glyph: RaLoginView.step == RaLoginStep.password ? "icons/Check" : "icons/NavRight";
+        shift-active: RaLoginView.shift-active;
+        shift-locked: RaLoginView.shift-locked;
+        symbols-active: RaLoginView.symbols-active;
+        scope: "ra-login";
+        key-hovered(i) => { RaLoginInput.hovered(i); }
+        key-clicked(i) => { RaLoginInput.clicked(i); }
+    }
+}

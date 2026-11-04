@@ -252,7 +252,7 @@ impl MediaCache {
         *preferred = value.to_string();
     }
 
-    fn preferred_image_type(&self) -> String {
+    pub(crate) fn preferred_image_type(&self) -> String {
         self.preferred_type
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -614,7 +614,7 @@ pub fn fitted(decoded: image::DynamicImage, fit: Fit, capture: bool) -> DecodedI
 /// Build one Core request. Media identity fields are exclusive, and artwork
 /// preference leads the fallback ladder unless a carousel slot names one type.
 fn request_params(cache: &MediaCache, key: &MediaKey) -> MediaImageParams {
-    let mut image_types: Vec<String> = ["boxart", "image", "thumbnail", "boxart3d", "screenshot"]
+    let mut image_types: Vec<String> = zaparoo_app::media_list::COVER_LADDER
         .iter()
         .map(ToString::to_string)
         .collect();

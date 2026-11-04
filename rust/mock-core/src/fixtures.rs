@@ -24,6 +24,10 @@ static LAUNCHER_OVERRIDES: OnceLock<Mutex<HashMap<(String, String), String>>> = 
 // Dev-server state like the two above.
 static HIDDEN_PATHS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
 
+// The global launcher preference set via `settings.update`. Dev-server
+// state like the others.
+static LAUNCHER_PREFERENCE: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
 /// The folder every mock system lists as one game on several discs.
 const DISC_FOLDER: &str = "Disc Game";
 const DISC_COUNT: u64 = 2;
@@ -67,7 +71,11 @@ pub fn launchers_response() -> Value {
             { "id": "gambatte",         "systemId": "Gameboy",    "systemName": "Game Boy",                      "groups": ["libretro"], "available": true },
             { "id": "mgba",             "systemId": "GBA",        "systemName": "Game Boy Advance",              "groups": ["libretro"], "available": true },
             { "id": "mame",             "systemId": "MAME",       "systemName": "MAME",                          "groups": ["arcade"], "available": true },
-            { "id": "fbneo",            "systemId": "NeoGeo",     "systemName": "Neo Geo",                       "groups": ["arcade"], "available": true }
+            { "id": "fbneo",            "systemId": "NeoGeo",     "systemName": "Neo Geo",                       "groups": ["arcade"], "available": true },
+            { "id": "RANES",            "systemId": "NES",        "systemName": "Nintendo Entertainment System", "groups": ["RetroAchievements"], "available": true },
+            { "id": "RASNES",           "systemId": "SNES",       "systemName": "Super Nintendo",                "groups": ["RetroAchievements"], "available": true },
+            { "id": "RAMegaDrive",      "systemId": "Genesis",    "systemName": "Sega Genesis",                  "groups": ["RetroAchievements"], "available": true },
+            { "id": "NESdb9",           "systemId": "NES",        "systemName": "Nintendo Entertainment System", "groups": ["DB9"], "available": false, "detected": false, "availabilityReason": "core not installed: _Console/NES_db9" }
         ]
     })
 }
@@ -115,10 +123,60 @@ pub fn settings_response() -> Value {
         "errorReporting": false,
         "readersConnect": [],
         "systemDefaults": system_defaults,
+        "launcherPreference": launcher_preference().clone(),
     })
 }
 
-pub fn settings_update_response(params: &Value) -> Value {
+fn launcher_preference() -> std::sync::MutexGuard<'static, Vec<String>> {
+    LAUNCHER_PREFERENCE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// Core's check for a new `launcherPreference`: an entry already stored
+/// passes, so a stored list can always be reordered; any other must name a
+/// launcher or a group, in any case. The whole list is refused otherwise.
+fn validate_launcher_preference(next: &[String]) -> Result<(), String> {
+    let stored = launcher_preference().clone();
+    let launchers = launchers_response();
+    let known = launchers["launchers"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    for entry in next {
+        if entry.is_empty() {
+            return Err("launcherPreference entries must not be empty".to_string());
+        }
+        if stored.iter().any(|s| s.eq_ignore_ascii_case(entry)) {
+            continue;
+        }
+        let names = known.iter().any(|launcher| {
+            launcher["id"]
+                .as_str()
+                .is_some_and(|id| id.eq_ignore_ascii_case(entry))
+                || launcher["groups"].as_array().is_some_and(|groups| {
+                    groups
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .any(|g| g.eq_ignore_ascii_case(entry))
+                })
+        });
+        if !names {
+            return Err(format!("unknown launcher {entry:?} in launcherPreference"));
+        }
+    }
+    Ok(())
+}
+
+pub fn settings_update_response(params: &Value) -> Result<Value, String> {
+    if let Some(items) = params.get("launcherPreference").and_then(Value::as_array) {
+        let next: Vec<String> = items
+            .iter()
+            .map(|item| item.as_str().unwrap_or_default().to_string())
+            .collect();
+        validate_launcher_preference(&next)?;
+        *launcher_preference() = next;
+    }
     if let Some(items) = params.get("systemDefaults").and_then(Value::as_array) {
         let next = items
             .iter()
@@ -143,7 +201,7 @@ pub fn settings_update_response(params: &Value) -> Value {
             *defaults = next;
         }
     }
-    Value::Null
+    Ok(Value::Null)
 }
 
 fn system_defaults() -> &'static Mutex<Vec<SystemDefaultFixture>> {
@@ -788,6 +846,11 @@ pub fn media_meta_response(params: &Value) -> Value {
                     "property:description": {
                         "text": format!("Mock metadata for {name}."),
                         "contentType": ""
+                    },
+                    // Core reports the manual's path; `media.asset` serves it.
+                    "property:manual": {
+                        "text": format!("/mock/manuals/{name}.pdf"),
+                        "contentType": ""
                     }
                 },
                 "availableImageTypes": []
@@ -1300,6 +1363,138 @@ const ALL_GAMES: &[(&str, &str, &str)] = &[
 /// diagonal banding make scaling artifacts visible at a glance. Validates
 /// the media ref the way Core does: `mediaId` or a `(system, path)` pair,
 /// never both, never a bare path.
+/// Mirrors Core's `media.asset`: one bounded base64 chunk of a game's PDF
+/// manual. Every mock game has one, generated from its file name, three
+/// pages long so page turns can be tried.
+pub fn media_asset_response(params: &Value) -> Result<Value, String> {
+    use base64::Engine as _;
+    const MAX_CHUNK: u64 = 131_072;
+    let media_id = params.get("mediaId").and_then(Value::as_i64);
+    let system = params.get("system").and_then(Value::as_str).unwrap_or("");
+    let path = params.get("path").and_then(Value::as_str).unwrap_or("");
+    if media_id.is_none() && (system.is_empty() || path.is_empty()) {
+        return Err("invalid params: mediaId or system/path is required".into());
+    }
+    if params.get("assetType").and_then(Value::as_str) != Some("manual") {
+        return Err("invalid params: unsupported assetType".into());
+    }
+    let name = if path.is_empty() {
+        format!("Mock Game {}", media_id.unwrap_or_default())
+    } else {
+        path.rsplit('/')
+            .next()
+            .unwrap_or("Mock Game")
+            .split('.')
+            .next()
+            .unwrap_or("Mock Game")
+            .to_string()
+    };
+    let pdf = mock_manual_pdf(&name);
+    let size = pdf.len() as u64;
+    let etag = format!("mock-{size:x}");
+    let offset = params.get("offset").and_then(Value::as_u64).unwrap_or(0);
+    if offset > 0 && params.get("etag").and_then(Value::as_str) != Some(etag.as_str()) {
+        return Err("invalid params: etag mismatch".into());
+    }
+    if offset > size {
+        return Err("invalid params: offset past end".into());
+    }
+    let length = params
+        .get("length")
+        .and_then(Value::as_u64)
+        .unwrap_or(MAX_CHUNK)
+        .min(MAX_CHUNK);
+    let end = (offset + length).min(size);
+    let data = &pdf[offset as usize..end as usize];
+    let complete = end == size;
+    let mut result = json!({
+        "assetType": "manual",
+        "typeTag": "property:manual",
+        "contentType": "application/pdf",
+        "extension": "pdf",
+        "size": size,
+        "etag": etag,
+        "offset": offset,
+        "length": data.len(),
+        "data": base64::engine::general_purpose::STANDARD.encode(data),
+        "complete": complete,
+    });
+    if !complete {
+        result["nextOffset"] = json!(end);
+    }
+    Ok(result)
+}
+
+/// A small valid PDF: a few US Letter pages of Helvetica text naming the game.
+fn mock_manual_pdf(name: &str) -> Vec<u8> {
+    use std::fmt::Write as _;
+    const PAGES: usize = 3;
+    let escape = |text: &str| {
+        text.chars()
+            .filter(char::is_ascii)
+            .flat_map(|c| match c {
+                '(' | ')' | '\\' => vec!['\\', c],
+                c => vec![c],
+            })
+            .collect::<String>()
+    };
+    let title = escape(name);
+    let mut objects: Vec<String> = vec![
+        "<< /Type /Catalog /Pages 2 0 R >>".into(),
+        format!(
+            "<< /Type /Pages /Kids [{}] /Count {PAGES} >>",
+            (0..PAGES)
+                .map(|i| format!("{} 0 R", 4 + i * 2))
+                .collect::<Vec<_>>()
+                .join(" ")
+        ),
+        "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".into(),
+    ];
+    for page in 0..PAGES {
+        let mut text = format!(
+            "BT /F1 28 Tf 72 700 Td ({title}) Tj ET\nBT /F1 14 Tf 72 670 Td (Mock manual, page {} of {PAGES}) Tj ET\n",
+            page + 1
+        );
+        for line in 0..30 {
+            let _ = writeln!(
+                text,
+                "BT /F1 12 Tf 72 {} Td (Line {} of the instructions for {title}.) Tj ET",
+                630 - line * 18,
+                line + 1
+            );
+        }
+        objects.push(format!(
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents {} 0 R >>",
+            5 + page * 2
+        ));
+        objects.push(format!(
+            "<< /Length {} >>\nstream\n{text}endstream",
+            text.len()
+        ));
+    }
+    let mut out = b"%PDF-1.4\n".to_vec();
+    let mut offsets = Vec::with_capacity(objects.len());
+    for (i, object) in objects.iter().enumerate() {
+        offsets.push(out.len());
+        out.extend_from_slice(format!("{} 0 obj\n{object}\nendobj\n", i + 1).as_bytes());
+    }
+    let xref = out.len();
+    out.extend_from_slice(
+        format!("xref\n0 {}\n0000000000 65535 f \n", objects.len() + 1).as_bytes(),
+    );
+    for offset in offsets {
+        out.extend_from_slice(format!("{offset:010} 00000 n \n").as_bytes());
+    }
+    out.extend_from_slice(
+        format!(
+            "trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n",
+            objects.len() + 1
+        )
+        .as_bytes(),
+    );
+    out
+}
+
 pub fn media_image_response(params: &Value) -> Result<Value, String> {
     use base64::Engine as _;
     let media_id = params.get("mediaId").and_then(Value::as_i64);

@@ -22,8 +22,13 @@ export global GlyphSource {
     // draw-time `colorize`: one cached image per (key, size, color), and
     // no per-item offscreen colorize pass in the renderer. A fully
     // transparent color keeps the artwork's own colors (the two-tone
-    // heart, real art).
-    pure callback glyph(string, length, color) -> image;
+    // heart, real art). The last argument is `Sizing.pixel-grid`, where the
+    // small glyphs swap to hand-drawn pixel art; passing it here makes the
+    // binding depend on it, so a switch between CRT and HDMI redraws them.
+    pure callback raster(string, length, color, bool) -> image;
+    public pure function glyph(key: string, size: length, tint: color) -> image {
+        return self.raster(key, size, tint, Sizing.pixel-grid);
+    }
     // Exact-pixel contract: the side a square glyph is both rasterized and
     // painted at. A glyph is rasterized at a whole pixel size, and the
     // software renderer samples bitmaps nearest-neighbor, so a box that is
@@ -31,6 +36,12 @@ export global GlyphSource {
     // renderer draws (`Motion.zoom-by-size`) the box is the raster's size.
     public pure function side(length: length) -> length {
         return Motion.zoom-by-size ? Math.round(length / 1px) * 1px : length;
+    }
+    // The help bar's controller glyphs: the 16 px the button art is drawn
+    // at on the 240p tier, whose bar Rust sizes around them; 4% of the
+    // height above it.
+    public pure function help-side() -> length {
+        return Sizing.tier-240 ? Sizing.help-glyph-size : self.side(Sizing.pct-h(4));
     }
 }
 
@@ -49,20 +60,21 @@ export global Brand {
 
 // Help-bar glyph resolution. Rust pushes the style directory and the four
 // positional files from the controller report and the Controls settings;
-// "ButtonA"/"ButtonB"/"ButtonX"/"ButtonY" are semantic tokens that
+// "ButtonA"/"ButtonB"/"ButtonX"/"ButtonY" (confirm, cancel, options, menu)
+// are semantic tokens that
 // resolve through them, never literal letters.
 export global Buttons {
     in-out property <string> style: "style_d";
     in-out property <string> confirm: "FaceEast";
     in-out property <string> cancel: "FaceSouth";
     in-out property <string> options: "FaceNorth";
-    in-out property <string> view: "FaceWest";
+    in-out property <string> menu: "FaceWest";
 
     public pure function file(token: string) -> string {
         if (token == "ButtonA") { return self.confirm; }
         if (token == "ButtonB") { return self.cancel; }
         if (token == "ButtonX") { return self.options; }
-        if (token == "ButtonY") { return self.view; }
+        if (token == "ButtonY") { return self.menu; }
         if (token == "ButtonL") { return "ShoulderL"; }
         if (token == "ButtonR") { return "ShoulderR"; }
         return token;
@@ -398,13 +410,18 @@ export component HeaderBar inherits Rectangle {
         font-size: Sizing.header-row-height;
     }
 
-    // Browse title in the header (CRT profile only).
+    // Browse title in the header (CRT profile only), centered between the
+    // logo and the HUD and kept clear of the wider of the two; never less
+    // than a third of the header.
+    property <length> title-side: Sizing.header-side-margin + Math.max(root.logo-painted-width,
+        Layout.hud-bottom-aligned ? root.hud-width : 0px) + Sizing.pct-w(1.5);
     if Layout.title-in-header && root.browse-title != "": Text {
         property <length> natural: Math.ceil(title-measure.preferred-width / 1px) * 1px;
+        property <length> room: parent.width - 2 * root.title-side;
         x: Sizing.snap((parent.width - self.width) / 2);
         y: parent.height - Sizing.header-row-height
             + Sizing.snap((Sizing.header-row-height - self.preferred-height) / 2);
-        width: Math.min(Math.floor(parent.width / 3px) * 1px, self.natural);
+        width: Math.min(Math.max(Math.floor(parent.width / 3px) * 1px, self.room), self.natural);
         overflow: elide;
         text: root.browse-title;
         color: Theme.text-primary;
@@ -680,7 +697,8 @@ export component FooterIndicator inherits PageIndicator {
 }
 
 // Centered title, the item count at the far left and the page position at
-// the right. Each side is bounded by its slot so it cannot overlap the title.
+// the right. The title takes what the sides leave it, and never less than a
+// third, and each side is bounded so it cannot overlap the title.
 export component TopStatusStrip inherits Rectangle {
     in property <string> title: "";
     in property <int> current-page: 0;
@@ -726,7 +744,20 @@ export component TopStatusStrip inherits Rectangle {
         : (Sizing.crt ? root.side-slot-width : Math.min(total-measure.preferred-width, root.left-room));
     property <length> filter-x: root.slot-margin + (root.total-text == "" ? 0px : root.count-width + Sizing.pct-w(1.5));
     property <length> title-measured: Math.ceil(title-measure.preferred-width / 1px) * 1px;
-    property <length> title-text-width: Math.min(root.slot-width, root.title-measured);
+    // What the sides show at their natural width. The centered title keeps
+    // clear of the wider one on both sides; a side wider than its third
+    // gives way to the title instead.
+    property <length> left-natural: (root.total-text == "" ? 0px : total-measure.preferred-width)
+        + (root.filter-shown
+            ? (root.total-text == "" ? 0px : Sizing.pct-w(1.5)) + root.filter-glyph-size
+                + 2 * root.filter-glyph-gap + filter-text-measure.preferred-width
+            : 0px);
+    property <length> right-natural: root.plain-counter ? page-measure.preferred-width
+        : (indicator.visible ? indicator.width : 0px);
+    property <length> side-need: Math.min(root.side-slot-width, Math.max(root.left-natural, root.right-natural));
+    property <length> title-room: root.width - 2 * (root.slot-margin + root.side-need
+        + (root.side-need > 0 ? Sizing.pct-w(1.5) : 0px));
+    property <length> title-text-width: Math.min(Math.max(root.slot-width, root.title-room), root.title-measured);
     // Center the full line box, not the em size: otherwise descenders can
     // spill into the cached grid band and travel with a page transition.
     property <length> title-y: Sizing.snap((root.height - title-measure.preferred-height) / 2);
@@ -770,6 +801,11 @@ export component TopStatusStrip inherits Rectangle {
     filter-measure := Text {
         visible: false;
         text: "A";
+        font-size: Sizing.font-section;
+    }
+    filter-text-measure := Text {
+        visible: false;
+        text: root.filter-text;
         font-size: Sizing.font-section;
     }
 
@@ -896,7 +932,7 @@ export component ActiveLabel inherits Rectangle {
 // split across rows.
 component HelpEntryView inherits HorizontalLayout {
     in property <HelpEntry> entry;
-    property <length> icon-size: GlyphSource.side(Sizing.pct-h(4));
+    property <length> icon-size: GlyphSource.help-side();
 
     spacing: Sizing.pct-w(0.6);
     height: Math.max(root.icon-size, Sizing.font-body);
@@ -933,7 +969,7 @@ export component HelpBar inherits Rectangle {
 
     height: Sizing.help-bar-height;
 
-    property <length> entry-height: Math.max(Sizing.pct-h(4), Sizing.font-body);
+    property <length> entry-height: Math.max(Sizing.tier-240 ? Sizing.help-glyph-size : Sizing.pct-h(4), Sizing.font-body);
     property <length> row-spacing: Sizing.pct-h(1);
     property <length> entry-gap: Sizing.pct-w(2);
     property <int> split-index: Math.ceil(root.entries.length / 2);
@@ -1113,11 +1149,13 @@ export component WaitCue inherits Rectangle {
         visible: root.shown && root.icon;
         source: GlyphSource.glyph("icons/Loading", root.glyph, root.ink);
     }
+    // A full line tall, centered on the glyph: a box one font size tall
+    // cuts off descenders.
     label := Text {
         x: Sizing.snap((parent.width - root.content-w) / 2) + root.icon-w;
-        y: (parent.height - root.glyph) / 2;
+        y: (parent.height - self.height) / 2;
         width: root.label-w;
-        height: root.glyph;
+        height: Math.ceil(root.glyph * 1.362 / 1px) * 1px;
         visible: root.shown;
         vertical-alignment: center;
         overflow: elide;
@@ -1184,5 +1222,140 @@ export component StateCue inherits Rectangle {
         text: root.detail;
         color: Theme.text-primary;
         font-size: Sizing.font-caption;
+    }
+}
+
+// The fast-scroll rail. With letters, it lists them top to bottom with
+// the current one highlighted and repeated large in a bubble beside it;
+// without, it is a track with a position marker. Only the rail's own area
+// changes as the scroll moves, and it never waits on art. Where
+// `Motion.rail-ms` is pushed to 0 it appears, moves and leaves in cuts.
+// The rail and the bubble are as wide as their widest label needs: a digits
+// bucket reads "0-9", three glyphs where every letter is one.
+export component FastScrollRail inherits Rectangle {
+    in property <bool> shown: false;
+    in property <[string]> letters: [];
+    in property <int> current: -1;
+    in property <string> letter: "";
+    in property <float> fraction: 0;
+
+    property <bool> has-letters: root.letters.length > 0;
+    property <length> cell: root.has-letters ? root.height / root.letters.length : 0px;
+    property <length> bubble: Sizing.pct-h(14);
+    property <length> label-size: Math.min(Sizing.font-size(2.2), root.cell * 0.8);
+    // Clear space between a label and the border on either side.
+    property <length> label-inset: Sizing.card-border-width + Sizing.pct-h(1.5);
+    property <length> bubble-width: Math.max(root.bubble,
+        Math.ceil(bubble-measure.preferred-width / 1px) * 1px + 2 * root.label-inset);
+    property <length> thumb: Math.max(Sizing.pct-h(4), root.height * 0.08);
+    property <length> mark-y: root.current >= 0 ? root.current * root.cell : 0px;
+    // Glides keep pace with the steps (a page every 90 ms), so the marks
+    // never trail the letter; no glide where the rail cuts.
+    property <duration> glide: Motion.rail-ms > 0ms ? Motion.dur(Motion.focus-ms) : 0ms;
+
+    width: Math.max(Sizing.pct-h(5),
+        Math.ceil(measure.preferred-width / 1px) * 1px + 2 * root.label-inset);
+    opacity: root.shown ? 1 : 0;
+    visible: self.opacity > 0;
+    animate opacity { duration: Motion.dur(Motion.rail-ms); easing: ease-out; }
+
+    // Measuring twins: a column is as wide as its widest label.
+    measure := VerticalLayout {
+        visible: false;
+        for label in root.letters: Text {
+            text: label;
+            font-size: root.label-size;
+        }
+    }
+    bubble-measure := Text {
+        visible: false;
+        text: root.letter;
+        font-size: Sizing.font-size(7);
+    }
+
+    Rectangle {
+        background: Theme.surface-card;
+        border-width: Sizing.card-border-width;
+        border-color: Theme.border-mid;
+        border-radius: Sizing.radius-md;
+    }
+
+    // Letter-based highlight and labels: hidden on CRT where the
+    // small text cannot resolve on the scanline grid.
+    if root.has-letters && !Sizing.crt && root.current >= 0: Rectangle {
+        x: Sizing.card-border-width;
+        y: root.mark-y;
+        width: parent.width - 2 * Sizing.card-border-width;
+        height: root.cell;
+        background: Theme.accent;
+        border-radius: Math.min(Sizing.radius-md, self.height / 2);
+        animate y { duration: root.glide; easing: ease-out; }
+    }
+
+    if !Sizing.crt: Rectangle {
+        for label[i] in root.letters: Text {
+            y: i * root.cell;
+            width: parent.width;
+            height: root.cell;
+            text: label;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            font-size: root.label-size;
+            color: i == root.current ? Theme.on-accent : Theme.text-label;
+        }
+    }
+
+    // CRT thumb: a wide bar with 1px inset from the rail edges.
+    if Sizing.crt && root.has-letters && root.current >= 0: Rectangle {
+        x: 1px + Sizing.card-border-width;
+        y: root.mark-y;
+        width: parent.width - 2px - 2 * Sizing.card-border-width;
+        height: root.cell;
+        background: Theme.accent;
+        border-radius: 1px;
+        animate y { duration: root.glide; easing: ease-out; }
+    }
+
+    // Simple thumb rail: used when there are no letters.
+    if !root.has-letters: Rectangle {
+        x: Sizing.snap((parent.width - self.width) / 2);
+        y: root.fraction * (parent.height - self.height);
+        width: parent.width * 0.5;
+        height: root.thumb;
+        background: Theme.accent;
+        border-radius: self.width / 2;
+        animate y { duration: root.glide; easing: ease-out; }
+    }
+
+    // The bubble: the current letter at reading size, level with the
+    // highlight and kept inside the rail's span.
+    if root.has-letters && root.letter != "": Rectangle {
+        x: -root.bubble-width - Sizing.pct-h(1.5);
+        y: Math.max(0px, Math.min(parent.height - root.bubble, root.mark-y + root.cell / 2 - root.bubble / 2));
+        width: root.bubble-width;
+        height: root.bubble;
+        background: Theme.surface-card;
+        border-width: Sizing.card-border-width;
+        border-color: Theme.accent;
+        border-radius: Sizing.radius-md;
+        animate y { duration: root.glide; easing: ease-out; }
+
+        Text {
+            // The bubble's own box: without one a Text is its preferred
+            // size at the origin and its alignment centers nothing.
+            // The 6x8 bitmap face leaves its last column and its last row
+            // blank in every cell, so the cell's center is half of each
+            // away from the ink's; the box is offset by that half.
+            property <length> ink-bias: Theme.crt ? self.font-size / 16 : 0px;
+            x: self.ink-bias - (Sizing.crt ? 2px : 0px);
+            y: self.ink-bias;
+            width: parent.width;
+            height: parent.height;
+            text: root.letter;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            color: Theme.text-primary;
+            font-size: Sizing.font-size(7);
+        }
     }
 }

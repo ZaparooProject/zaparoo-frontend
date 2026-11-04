@@ -20,15 +20,73 @@ use crate::navigation::EntryMode;
 use crate::router::{lock, Ctx, ListContext, PendingRestart};
 use crate::{App, GridCell, SettingsInput, SettingsRow, SettingsView};
 
+/// Whether `RetroAchievements` is ready to play, and the systems whose own
+/// default launcher keeps a `RetroAchievements` preference from reaching
+/// them (only while the preference names `RetroAchievements`).
+fn ra_state(shared: &crate::router::Shared) -> (bool, Vec<String>) {
+    use zaparoo_app::launcher_preference::{self as prefs, LauncherRef};
+    let launchers: Vec<LauncherRef<'_>> = shared
+        .launchers
+        .iter()
+        .map(|l| LauncherRef {
+            id: &l.id,
+            system_id: &l.system_id,
+            system_name: &l.system_name,
+            groups: &l.groups,
+            available: l.available,
+        })
+        .collect();
+    let installed = zaparoo_app::retro_achievements::installed(
+        shared.ra.ra_main,
+        shared.ra.ini_ra,
+        prefs::ra_installed(&launchers),
+    );
+    let preferred = shared
+        .launcher_preference
+        .as_deref()
+        .is_some_and(|list| prefs::contains(list, prefs::RETRO_ACHIEVEMENTS));
+    let conflicts = if preferred {
+        let defaults: Vec<(&str, &str)> = shared
+            .system_defaults
+            .iter()
+            .map(|d| (d.system.as_str(), d.launcher.as_str()))
+            .collect();
+        prefs::ra_conflicts(&launchers, &defaults)
+    } else {
+        Vec::new()
+    };
+    (installed, conflicts)
+}
+
 /// What the registry needs to know about this machine.
 pub(crate) fn inputs(ctx: &Ctx) -> rules::Inputs {
-    // One lock for both: a guard held across the struct literal is still
-    // held when a second `lock` in it runs, which deadlocks.
-    let (can_link_online, online_linked) = {
+    // One lock for all of it: a guard held across the struct literal is
+    // still held when a second `lock` in it runs, which deadlocks.
+    let (
+        can_link_online,
+        online_linked,
+        launcher_preference,
+        ra_logged_in,
+        ra_installed,
+        ra_conflict,
+    ) = {
         let shared = lock(&ctx.shared);
-        (shared.online.available, shared.online.linked)
+        let (installed, conflicts) = ra_state(&shared);
+        (
+            shared.online.available,
+            shared.online.linked,
+            shared.launcher_preference.is_some(),
+            shared.ra.cfg.logged_in(),
+            installed,
+            !conflicts.is_empty(),
+        )
     };
     rules::Inputs {
+        launcher_preference,
+        retro_achievements: crate::retro_achievements::available(),
+        ra_logged_in,
+        ra_installed,
+        ra_conflict,
         can_pick_folder: ctx.folders.available(),
         can_scan_launchers: ctx.launcher_scan.available(),
         can_request_playtime_access: ctx.playtime_access.available(),
@@ -57,6 +115,7 @@ fn current_value(ctx: &Ctx, id: &str) -> String {
         "colorScheme" => s.color_scheme.clone(),
         "colorIntensity" => s.color_intensity.clone(),
         "mediaImageType" => s.media_image_type.clone(),
+        "listLeftRight" => s.list_left_right.clone(),
         "language" => s.language.clone(),
         "region" => s.region.clone(),
         "clockFormat" => s.clock_format.clone(),
@@ -65,7 +124,27 @@ fn current_value(ctx: &Ctx, id: &str) -> String {
         "onlineWarp" => crate::online::warp_value(&shared.online).to_string(),
         "onlineBackupSchedule" => shared.online.backup_schedule.clone(),
         "onlineRemoteStatus" => crate::online::remote_status_value(&shared.online).to_string(),
+        "raPopupPosition" => shared.ra.cfg.popup_position.token().to_string(),
+        "raAccount" => if shared.ra.cfg.logged_in() {
+            "loggedIn"
+        } else {
+            "loggedOut"
+        }
+        .to_string(),
+        "raConflict" => ra_state(&shared).1.len().to_string(),
         _ => String::new(),
+    }
+}
+
+/// The name a value row reads its value with: the linked device, the
+/// `RetroAchievements` user, or the systems a conflict is about.
+fn value_name(ctx: &Ctx, id: &str) -> SharedString {
+    let shared = lock(&ctx.shared);
+    match id {
+        "onlineStatus" => shared.online.device_name.clone().unwrap_or_default().into(),
+        "raAccount" => shared.ra.cfg.username.as_str().into(),
+        "raConflict" => ra_state(&shared).1.join(", ").into(),
+        _ => SharedString::default(),
     }
 }
 
@@ -91,7 +170,10 @@ fn checked(ctx: &Ctx, id: &str) -> bool {
     match id {
         "showHidden" => shared.show_hidden,
         "showOriginalFilenames" => s.show_original_filenames,
+        "showTags" => s.show_tags,
         "reduceMotion" => s.reduce_motion,
+        "showMenuRow" => s.show_menu_row,
+        "showHelpBar" => s.show_help_bar,
         "mouseEnabled" => s.mouse_enabled,
         "debugLogging" => s.debug_logging,
         "swapConfirmCancel" => s.swap_confirm_cancel,
@@ -101,7 +183,13 @@ fn checked(ctx: &Ctx, id: &str) -> bool {
         "onlineRemoteControl" => shared.online.features.remote_control,
         "onlineLibrarySync" => shared.online.features.library,
         "onlineCloudBackup" => shared.online.features.cloud_backup,
-        _ => false,
+        "raLaunchers" => shared.launcher_preference.as_deref().is_some_and(|list| {
+            zaparoo_app::launcher_preference::contains(
+                list,
+                zaparoo_app::launcher_preference::RETRO_ACHIEVEMENTS,
+            )
+        }),
+        _ => zaparoo_app::retro_achievements::option_checked(&shared.ra.cfg, id),
     }
 }
 
@@ -184,8 +272,10 @@ fn rows(ctx: &Ctx, app: &App, page: crate::SettingsPage) -> Vec<SettingsRow> {
             shared.online.linked,
         )
     };
+    let inputs = inputs(ctx);
+    let ra_installed = inputs.ra_installed;
     let mut offset = 0;
-    rules::page_rows(page.token(), &inputs(ctx))
+    rules::page_rows(page.token(), &inputs)
         .into_iter()
         .map(|row| {
             let mut out = SettingsRow {
@@ -207,16 +297,7 @@ fn rows(ctx: &Ctx, app: &App, page: crate::SettingsPage) -> Vec<SettingsRow> {
                         Control::Toggle => out.checked = checked(ctx, id),
                         Control::Picker | Control::Info => {
                             out.value = SharedString::from(current_value(ctx, id).as_str());
-                            if id == "onlineStatus" {
-                                out.value_name = SharedString::from(
-                                    lock(&ctx.shared)
-                                        .online
-                                        .device_name
-                                        .clone()
-                                        .unwrap_or_default()
-                                        .as_str(),
-                                );
-                            }
+                            out.value_name = value_name(ctx, id);
                         }
                         Control::Action => {
                             let busy = rules::action_busy(id, index_busy, ms.scraping);
@@ -260,6 +341,9 @@ fn rows(ctx: &Ctx, app: &App, page: crate::SettingsPage) -> Vec<SettingsRow> {
                     if rules::needs_online_link(id) && !online_linked {
                         out.enabled = false;
                     }
+                    if rules::needs_ra_install(id) && !ra_installed {
+                        out.enabled = false;
+                    }
                     if out.status_key == crate::ActionStatus::None {
                         m.row_height
                     } else {
@@ -301,7 +385,7 @@ fn root_geometry_for(
     let bottom = if compact {
         derived.help_bar_height + derived.hub_active_label_height
     } else {
-        inputs.pct_h(15.0)
+        zaparoo_app::sizing::less_hidden_bar(inputs, &derived, inputs.pct_h(15.0))
     };
     let grid_height = (inputs.screen_height as i32 - grid_y - bottom).max(0);
     let insets = Insets {
@@ -467,6 +551,11 @@ pub(crate) fn navigate_page(ctx: &Ctx, app: &App, page: crate::SettingsPage) {
     if page == crate::SettingsPage::Online {
         crate::online::refresh(ctx, app);
     }
+    // The RetroAchievements files can change behind the frontend's back
+    // (Update All, a hand edit, a Core profile switch).
+    if page == crate::SettingsPage::Library {
+        crate::retro_achievements::refresh(ctx, app);
+    }
     let direction = if page == crate::SettingsPage::Root {
         -1
     } else {
@@ -517,6 +606,28 @@ pub fn return_from_about(ctx: &Ctx, app: &App) {
     lock(&ctx.shared).persist.active_screen = "settings".to_string();
     crate::router::save_persist(&ctx.shared);
     show_about_return(ctx, app);
+}
+
+/// Back onto a page from a screen one of its rows opened, seated on `row`
+/// as the page stands now (Log in becomes Log out once a login is saved).
+pub(crate) fn show_return(ctx: &Ctx, app: &App, page: crate::SettingsPage, row: &str) {
+    open_page(ctx, app, page);
+    let rows = rules::page_rows(page.token(), &inputs(ctx));
+    app.global::<SettingsView>()
+        .set_index(i32::try_from(rules::seat_of(&rows, row)).unwrap_or(0));
+    render(ctx, app);
+    remember_focus(ctx, app);
+    crate::router::transition_to_screen(app, crate::Screen::Settings, -1);
+}
+
+/// Put the cursor on `row` of the open page, after the row it was on has
+/// gone (Log out becomes Log in).
+pub(crate) fn reseat_to(ctx: &Ctx, app: &App, row: &str) {
+    let (_, rows, _) = page_rows_now(ctx, app);
+    app.global::<SettingsView>()
+        .set_index(i32::try_from(rules::seat_of(&rows, row)).unwrap_or(0));
+    refresh(ctx, app);
+    remember_focus(ctx, app);
 }
 
 pub(crate) fn show_about_return(ctx: &Ctx, app: &App) {
@@ -627,6 +738,9 @@ fn blocked(ctx: &Ctx, id: &str) -> bool {
     if rules::needs_online_link(id) && !lock(&ctx.shared).online.linked {
         return true;
     }
+    if rules::needs_ra_install(id) && !inputs(ctx).ra_installed {
+        return true;
+    }
     let ms = crate::router::media_state(ctx);
     rules::action_disabled(id, ms.indexing || ms.optimizing, ms.scraping)
 }
@@ -657,6 +771,9 @@ fn accept(ctx: &Ctx, app: &App, id: &str, control: Control) {
             "onlineManageBackups" => crate::online_list::open_backups(ctx, app),
             "onlineRemoteActivity" => crate::online_list::open_activity(ctx, app),
             "crtCalibration" => crate::router::open_crt_calibration(ctx, app),
+            "launcherPreference" => crate::launcher_prefs::open(ctx, app),
+            "raLogIn" => crate::ra_login::open(ctx, app),
+            "raLogOut" => crate::router::confirm_ra_log_out(app),
             "updateMediaDb" => {
                 if ms.indexing || ms.optimizing {
                     let client = ctx.store.client();
@@ -712,6 +829,12 @@ fn accept(ctx: &Ctx, app: &App, id: &str, control: Control) {
     }
 }
 
+/// Invert a persisted switch and return its new value.
+fn flip(value: &mut bool) -> bool {
+    *value = !*value;
+    *value
+}
+
 /// Flip a toggle and apply it. The CRT switch restarts instead.
 fn toggle(ctx: &Ctx, app: &App, id: &str) {
     if id == "crtEnabled" {
@@ -723,45 +846,35 @@ fn toggle(ctx: &Ctx, app: &App, id: &str) {
         crate::online::toggle_feature(ctx, app, feature);
         return;
     }
+    // Core owns the launcher preference; MiSTer_RA's cfg holds the rest.
+    if id == "raLaunchers" {
+        crate::launcher_prefs::set_retro_achievements(ctx, app, !checked(ctx, id));
+        return;
+    }
+    if !zaparoo_app::retro_achievements::option_edits(id, true).is_empty() {
+        crate::retro_achievements::toggle_option(ctx, app, id);
+        return;
+    }
     let value = {
         let mut shared = lock(&ctx.shared);
-        match id {
-            "showHidden" => {
-                shared.show_hidden = !shared.show_hidden;
-                shared.persist.settings.show_hidden = shared.show_hidden;
-                shared.show_hidden
+        if id == "showHidden" {
+            shared.show_hidden = !shared.show_hidden;
+            shared.persist.settings.show_hidden = shared.show_hidden;
+            shared.show_hidden
+        } else {
+            let s = &mut shared.persist.settings;
+            match id {
+                "showOriginalFilenames" => flip(&mut s.show_original_filenames),
+                "showTags" => flip(&mut s.show_tags),
+                "reduceMotion" => flip(&mut s.reduce_motion),
+                "showMenuRow" => flip(&mut s.show_menu_row),
+                "showHelpBar" => flip(&mut s.show_help_bar),
+                "mouseEnabled" => flip(&mut s.mouse_enabled),
+                "swapConfirmCancel" => flip(&mut s.swap_confirm_cancel),
+                "swapOptionsView" => flip(&mut s.swap_options_view),
+                "debugLogging" => flip(&mut s.debug_logging),
+                _ => return,
             }
-            "showOriginalFilenames" => {
-                let v = !shared.persist.settings.show_original_filenames;
-                shared.persist.settings.show_original_filenames = v;
-                v
-            }
-            "reduceMotion" => {
-                let v = !shared.persist.settings.reduce_motion;
-                shared.persist.settings.reduce_motion = v;
-                v
-            }
-            "mouseEnabled" => {
-                let v = !shared.persist.settings.mouse_enabled;
-                shared.persist.settings.mouse_enabled = v;
-                v
-            }
-            "swapConfirmCancel" => {
-                let v = !shared.persist.settings.swap_confirm_cancel;
-                shared.persist.settings.swap_confirm_cancel = v;
-                v
-            }
-            "swapOptionsView" => {
-                let v = !shared.persist.settings.swap_options_view;
-                shared.persist.settings.swap_options_view = v;
-                v
-            }
-            "debugLogging" => {
-                let v = !shared.persist.settings.debug_logging;
-                shared.persist.settings.debug_logging = v;
-                v
-            }
-            _ => return,
         }
     };
     save(ctx, app);
@@ -771,7 +884,7 @@ fn toggle(ctx: &Ctx, app: &App, id: &str) {
             crate::systems::reproject(ctx, app);
             crate::games::refresh_visibility(ctx, app);
         }
-        "showOriginalFilenames" => crate::games::reproject(ctx, app),
+        "showOriginalFilenames" | "showTags" => crate::games::reproject(ctx, app),
         "reduceMotion" => {
             app.global::<crate::Shell>().set_reduce_motion(value);
             let scene = crate::router::output_scene(app);
@@ -784,6 +897,19 @@ fn toggle(ctx: &Ctx, app: &App, id: &str) {
                 ));
         }
         "mouseEnabled" => app.global::<crate::Shell>().set_mouse_enabled(value),
+        "showMenuRow" => {
+            // The row's band is in the sizing table and every screen's
+            // geometry: the same push a help bar wrap uses.
+            app.global::<crate::Sizing>().set_menu_row_enabled(value);
+            crate::sizing::apply_scene(app, crate::router::output_scene(app));
+            crate::router::relayout(ctx, app);
+        }
+        "showHelpBar" => {
+            // Same push: the bar's height is in the sizing table.
+            app.global::<crate::Sizing>().set_help_bar_enabled(value);
+            crate::sizing::apply_scene(app, crate::router::output_scene(app));
+            crate::router::relayout(ctx, app);
+        }
         "swapConfirmCancel" | "swapOptionsView" => crate::apply_buttons(ctx, app),
         _ => {}
     }
@@ -844,6 +970,10 @@ pub fn picker_selected(ctx: &Ctx, app: &App, id: &str, value: &str) {
         crate::online::set_backup_schedule(ctx, app, value);
         return;
     }
+    if id == "raPopupPosition" {
+        crate::retro_achievements::set_popup_position(ctx, app, value);
+        return;
+    }
     {
         let mut shared = lock(&ctx.shared);
         let s = &mut shared.persist.settings;
@@ -857,6 +987,7 @@ pub fn picker_selected(ctx: &Ctx, app: &App, id: &str, value: &str) {
             "colorScheme" => s.color_scheme = value.to_string(),
             "colorIntensity" => s.color_intensity = value.to_string(),
             "mediaImageType" => s.media_image_type = value.to_string(),
+            "listLeftRight" => s.list_left_right = value.to_string(),
             "language" => {
                 s.language = value.to_string();
                 crate::apply_language(value);
@@ -920,6 +1051,7 @@ fn apply(ctx: &Ctx, app: &App, id: &str, value: &str) {
             crate::games::reproject(ctx, app);
         }
         "screensaverTimeout" => crate::router::reset_idle(ctx, app),
+        "listLeftRight" => crate::games::reproject(ctx, app),
         "systemsLayout" => {
             app.global::<crate::Shell>()
                 .set_systems_list_layout(value == "list" || value == "list-only");
@@ -957,12 +1089,16 @@ pub(crate) fn mirror_of(s: &persist::SettingsState) -> zaparoo_core::config::Set
         button_layout: &s.button_layout,
         mouse_enabled: s.mouse_enabled,
         reduce_motion: s.reduce_motion,
+        show_menu_row: s.show_menu_row,
+        show_help_bar: s.show_help_bar,
         debug_logging: s.debug_logging,
         screensaver_timeout: &s.screensaver_timeout,
         media_image_type: &s.media_image_type,
         favorites_grouping: &s.favorites_grouping,
         show_hidden: s.show_hidden,
         show_original_filenames: s.show_original_filenames,
+        show_tags: s.show_tags,
+        list_left_right: &s.list_left_right,
         swap_confirm_cancel: s.swap_confirm_cancel,
         swap_options_view: s.swap_options_view,
         region: &s.region,

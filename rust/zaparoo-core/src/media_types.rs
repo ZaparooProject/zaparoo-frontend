@@ -765,6 +765,58 @@ pub struct MediaImageResult {
     pub type_tag: String,
 }
 
+/// The one `media.asset` type Core serves today: a game's PDF manual.
+pub const MEDIA_ASSET_MANUAL: &str = "manual";
+
+/// The largest chunk Core returns from one `media.asset` call.
+pub const MEDIA_ASSET_MAX_CHUNK: u64 = 131_072;
+
+/// Parameters for `media.asset`: one bounded chunk of an allowlisted
+/// file-backed property. Identified by `media_id` when available, otherwise
+/// `(system, path)`. A nonzero `offset` needs the `etag` of the response
+/// before it.
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaAssetParams {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub media_id: Option<i64>,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub system: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub path: String,
+    pub asset_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub offset: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub length: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub etag: Option<String>,
+}
+
+/// One `media.asset` chunk. `data` is base64; `next_offset` is absent once
+/// `complete` is true.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaAssetResult {
+    #[serde(default)]
+    pub asset_type: String,
+    #[serde(default)]
+    pub type_tag: String,
+    #[serde(default)]
+    pub content_type: String,
+    #[serde(default)]
+    pub extension: String,
+    pub size: u64,
+    pub etag: String,
+    pub offset: u64,
+    pub length: u64,
+    #[serde(default)]
+    pub data: String,
+    #[serde(default)]
+    pub next_offset: Option<u64>,
+    pub complete: bool,
+}
+
 /// Parameters for `media.lookup`: resolve a game name within one system to
 /// its indexed media row, through the title matcher `@System/Name` launches
 /// use.
@@ -1108,7 +1160,7 @@ pub struct ScrapingStatusResponse {
     #[serde(default)]
     pub skipped: i32,
     #[serde(default)]
-    pub total_scraped: i32,
+    pub total_scraped: Option<i32>,
     #[serde(default)]
     pub force: Option<bool>,
     #[serde(default)]
@@ -1223,6 +1275,10 @@ pub struct SettingsResult {
     /// "daily", "weekly", or "manual".
     #[serde(default)]
     pub backup_remote_schedule: Option<String>,
+    /// The global launcher preference: launcher ids and groups, tried in
+    /// order for every system. `None` when Core predates it (v2.21.0).
+    #[serde(default)]
+    pub launcher_preference: Option<Vec<String>>,
 }
 
 /// `settings.auth.status`: whether Core holds a credential for a URL. No
@@ -1558,6 +1614,11 @@ pub struct UpdateSettingsParams {
     /// "daily", "weekly", or "manual"; Core rejects any other value.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub backup_remote_schedule: Option<String>,
+    /// Replaces the whole global launcher preference; an empty list clears
+    /// it. Core refuses an entry that names no launcher or group unless the
+    /// stored list already holds it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub launcher_preference: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
@@ -1702,6 +1763,34 @@ mod tests {
         SystemsResult, TagInfo, TokensHistoryResult, TokensResult, UpdateSettingsParams,
         VersionResult, MEDIA_IMAGE_DELIVERY_LOCAL_PATH,
     };
+
+    #[test]
+    fn launcher_preference_is_absent_on_an_older_core_and_round_trips() {
+        let old: SettingsResult = serde_json::from_str(r#"{"systemDefaults":[]}"#).unwrap();
+        assert_eq!(old.launcher_preference, None);
+        let empty: SettingsResult = serde_json::from_str(r#"{"launcherPreference":[]}"#).unwrap();
+        assert_eq!(empty.launcher_preference, Some(Vec::new()));
+        let set: SettingsResult =
+            serde_json::from_str(r#"{"launcherPreference":["RetroAchievements","RANES"]}"#)
+                .unwrap();
+        assert_eq!(
+            set.launcher_preference,
+            Some(vec!["RetroAchievements".to_string(), "RANES".to_string()])
+        );
+
+        let clear = UpdateSettingsParams {
+            launcher_preference: Some(Vec::new()),
+            ..UpdateSettingsParams::default()
+        };
+        assert_eq!(
+            serde_json::to_string(&clear).unwrap(),
+            r#"{"launcherPreference":[]}"#
+        );
+        assert_eq!(
+            serde_json::to_string(&UpdateSettingsParams::default()).unwrap(),
+            "{}"
+        );
+    }
 
     #[test]
     fn is_folder_accepts_directory_and_root() {
@@ -3108,7 +3197,7 @@ mod tests {
         assert_eq!(result.total, 200);
         assert_eq!(result.matched, 10);
         assert_eq!(result.skipped, 2);
-        assert_eq!(result.total_scraped, 50);
+        assert_eq!(result.total_scraped, Some(50));
         assert_eq!(result.force, Some(true));
         assert!(result.scraping);
         assert!(!result.done);

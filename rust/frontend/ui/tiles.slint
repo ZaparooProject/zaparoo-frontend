@@ -21,6 +21,8 @@ import { FocusCursor, TileDisplacement } from "focus.slint";
 export struct GridCell {
     label-key: string,
     name: string,
+    // The user's own name for a built-in Hub tile; empty for none.
+    custom-name: string,
     glyph-key: string,
     cover: image,
     cover-focus: image,
@@ -37,6 +39,9 @@ export struct GridCell {
     disabled: bool,
     // Dim suffix after the caption (tags, "Hidden").
     tags: string,
+    // A list row Accept browses into rather than launches: it ends in a
+    // chevron.
+    opens: bool,
     top-label: string,
     // A structural placeholder: paints nothing, ever.
     is-empty: bool,
@@ -44,6 +49,9 @@ export struct GridCell {
     // loads, then fades out under it. A solid fill, cheap everywhere.
     placeholder: color,
     has-placeholder: bool,
+    // The art comes from Core, so the cover and its placeholder fade in
+    // when they land. Built-in logos and glyphs cut in.
+    fetched: bool,
 }
 
 // One-line caption with the focused-overflow marquee: fits -> static
@@ -96,7 +104,11 @@ export component MarqueeCaption inherits Rectangle {
     // width, so a long suffix cannot crowd it out, and the suffix takes
     // what the name leaves. The suffix elides on the right (Slint has no
     // left elide); the marquee reveals the full text.
-    property <length> name-static-w: Math.min(root.name-full-w, Math.max(root.width * 0.58, root.width - root.gap-w - root.tags-full-w));
+    // Floored to a whole pixel on the pixel grid, so the suffix after it
+    // starts on one.
+    property <length> name-static-w: Sizing.pixel-grid
+        ? Math.floor(Math.min(root.name-full-w, Math.max(root.width * 0.58, root.width - root.gap-w - root.tags-full-w)) / 1px) * 1px
+        : Math.min(root.name-full-w, Math.max(root.width * 0.58, root.width - root.gap-w - root.tags-full-w));
     property <length> name-render-w: (root.marquee || !root.overflows) ? root.name-full-w : root.name-static-w;
     property <length> tags-render-w: (root.marquee || !root.overflows)
         ? root.tags-full-w
@@ -105,7 +117,7 @@ export component MarqueeCaption inherits Rectangle {
         ? root.scroll-x * 1px
         : (root.overflows || !root.center-content
             ? 0px
-            : (root.width - root.full-w) / 2);
+            : Sizing.snap((root.width - root.full-w) / 2));
 
     changed marquee => {
         if (!self.marquee) {
@@ -384,20 +396,28 @@ export component Tile inherits Rectangle {
         }
 
         // The art's own colour stands in until the art lands, then fades
-        // out as the art fades in over it.
-        if root.cell.glyph-key == "" && root.cell.has-placeholder: Rectangle {
+        // out as the art fades in over it. Kept mounted, like the art, so a
+        // colour that arrives while the tile is on screen fades in too.
+        property <duration> reveal: root.cell.fetched ? Motion.tile-cover-reveal-ms : 0ms;
+        if root.cell.glyph-key == "": Rectangle {
             x: root.pad;
             y: parent.art-top;
             width: parent.art-w;
             height: parent.art-h;
             background: root.cell.placeholder;
             border-radius: Math.max(0px, root.card-radius - root.pad);
-            opacity: 1;
+            opacity: 0;
             states [
                 covered when root.cell.has-cover: {
                     opacity: 0;
                     in {
-                        animate opacity { duration: Motion.dur(Motion.tile-cover-reveal-ms); easing: ease-out; }
+                        animate opacity { duration: Motion.dur(parent.reveal); easing: ease-out; }
+                    }
+                }
+                shown when root.cell.has-placeholder: {
+                    opacity: 1;
+                    in {
+                        animate opacity { duration: Motion.dur(parent.reveal); easing: ease-out; }
                     }
                 }
             ]
@@ -429,7 +449,7 @@ export component Tile inherits Rectangle {
                 shown when root.cell.has-cover: {
                     opacity: 1;
                     in {
-                        animate opacity { duration: Motion.dur(Motion.tile-cover-reveal-ms); easing: ease-out; }
+                        animate opacity { duration: Motion.dur(parent.reveal); easing: ease-out; }
                     }
                 }
             ]
@@ -474,6 +494,29 @@ export component Tile inherits Rectangle {
 // the cell fit and centering (`zaparoo_app::paged_grid::fit`) and hands
 // the page's cells over; this lays them out row-major and reports
 // pointer events by page-local index. Blank cells paint nothing.
+// The page turn every paged grid shares: a band one page tall, clipped,
+// holding the page on show and the incoming page one period past it, which
+// `page-slide` carries together (0 at rest, 1 or -1 a whole turn). Rust drives
+// it through `frontend::page_motion`; the two `PagedGridView`s are the
+// caller's children, the incoming one placed at `incoming-y`.
+export component PageStrip inherits Rectangle {
+    in property <float> page-slide: 0;
+    in property <bool> slide-anim: false;
+    in property <int> slide-dir: 1;
+    out property <length> incoming-y: root.slide-dir * root.height;
+    clip: true;
+
+    Rectangle {
+        property <float> progress: root.page-slide;
+        y: -self.progress * root.height;
+        animate progress {
+            duration: root.slide-anim ? Motion.dur(Motion.page-ms) : 0ms;
+            easing: ease-out;
+        }
+        @children
+    }
+}
+
 export component PagedGridView inherits Rectangle {
     in property <[GridCell]> cells: [];
     in property <string> focus-scope: "";

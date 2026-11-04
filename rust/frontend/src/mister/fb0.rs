@@ -16,8 +16,9 @@
 // Written against the Linux fbdev UAPI (linux/fb.h).
 
 use super::scanout::Damage;
-use super::transition::{CachedSlide, BACKGROUND_RGBA};
+use super::transition::{CachedSlide, PresenterFades, BACKGROUND_RGBA};
 use super::Presenter;
+use crate::frame_transition::Rect;
 use slint::platform::software_renderer::{PremultipliedRgbaColor, SoftwareRenderer};
 use std::fs::{File, OpenOptions};
 use std::os::fd::AsRawFd;
@@ -141,6 +142,8 @@ pub struct Fb0Presenter {
     /// frame is empty where this presenter does not run page slides.
     slide: CachedSlide<PremultipliedRgbaColor>,
     cached_transitions_available: bool,
+    /// Cover art fading in on grid tiles, mixed in as rows are copied.
+    fades: PresenterFades<PremultipliedRgbaColor>,
     vsync_supported: bool,
     last_copy: std::time::Duration,
 }
@@ -206,6 +209,7 @@ impl Fb0Presenter {
                 BACKGROUND_RGBA,
             ),
             cached_transitions_available: allow_cached_transitions,
+            fades: PresenterFades::new(true),
             vsync_supported: true,
             last_copy: std::time::Duration::ZERO,
         })
@@ -221,7 +225,9 @@ impl Fb0Presenter {
         } else {
             &self.buffer
         };
-        let src = &source[row * stride + x0..row * stride + x0 + w];
+        let src = self
+            .fades
+            .row(row, x0, &source[row * stride + x0..row * stride + x0 + w]);
         let byte_off = row * self.line_length + x0 * 4;
         if byte_off + w * 4 > self.mapping.len() {
             return;
@@ -253,6 +259,14 @@ impl Fb0Presenter {
         let y1 = damage.y1.min(self.height) as usize;
         for row in y0..y1 {
             self.copy_row(slide_frame, row, x0, x1 - x0);
+        }
+    }
+
+    fn copy_rect(&mut self, rect: Rect) {
+        let x0 = rect.x.min(self.width as usize);
+        let x1 = (rect.x + rect.width).min(self.width as usize);
+        for row in rect.y..(rect.y + rect.height).min(self.height as usize) {
+            self.copy_row(false, row, x0, x1 - x0);
         }
     }
 
@@ -298,13 +312,18 @@ impl Presenter for Fb0Presenter {
         let cancelled = self.cached_transitions_available && super::transition::take_cancelled();
         if cancelled {
             self.slide.abandon();
+            self.fades.clear();
         }
         // A request arrives before destination properties render. Preserve
         // outgoing pixels first, then let Slint build its canonical endpoint.
         if self.cached_transitions_available {
             self.slide.begin(&self.buffer, stride, height);
         }
+        self.fades
+            .before_render(&self.buffer, stride, height, self.slide.is_active());
         let region = renderer.render(self.buffer.as_mut_slice(), stride);
+        self.fades.rendered(&self.buffer, &region);
+        let fading = self.fades.step().to_vec();
         let slide_step = self.slide.compose(&self.buffer, stride, height);
         let render_time = render_start.elapsed();
         self.wait_vsync();
@@ -323,6 +342,9 @@ impl Presenter for Fb0Presenter {
                     self.copy_row(false, row, x0, w);
                 }
             }
+            for rect in fading {
+                self.copy_rect(rect);
+            }
         }
         if matches!(slide_step, Some((_, true))) {
             self.slide.finish();
@@ -337,6 +359,7 @@ impl Presenter for Fb0Presenter {
         }
         if super::transition::take_cancelled() {
             self.slide.abandon();
+            self.fades.clear();
             self.wait_vsync();
             let copy_start = std::time::Instant::now();
             self.copy_damage(false, self.full_damage());
@@ -356,6 +379,22 @@ impl Presenter for Fb0Presenter {
         self.copy_damage(true, damage);
         if finished {
             self.slide.finish();
+        }
+        self.last_copy = copy_start.elapsed();
+        Some(compose_time + self.last_copy)
+    }
+
+    fn present_cover_fades(&mut self) -> Option<std::time::Duration> {
+        if !self.fades.is_active() {
+            return None;
+        }
+        let compose_start = std::time::Instant::now();
+        let fading = self.fades.step().to_vec();
+        let compose_time = compose_start.elapsed();
+        self.wait_vsync();
+        let copy_start = std::time::Instant::now();
+        for rect in fading {
+            self.copy_rect(rect);
         }
         self.last_copy = copy_start.elapsed();
         Some(compose_time + self.last_copy)

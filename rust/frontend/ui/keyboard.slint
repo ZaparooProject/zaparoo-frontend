@@ -34,6 +34,10 @@ export component OnScreenKeyboard inherits Rectangle {
     in property <bool> submit-enabled: true;
     in property <string> submit-glyph: "icons/Search";
     in property <bool> shift-active: false;
+    // Shift is locked (caps), not just on for the next character: its
+    // arrow gains a bar, drawn into the glyph so it matches the stroke at
+    // every size, which colour alone could not say at 240p.
+    in property <bool> shift-locked: false;
     in property <bool> symbols-active: false;
     // Separates this keyboard's focus moves from another's.
     in property <string> scope: "keyboard";
@@ -53,11 +57,14 @@ export component OnScreenKeyboard inherits Rectangle {
         easing: ease-out-quad;
     }
 
+    // Key edges land on whole pixels on the pixel grid, where the
+    // centered labels need a whole-pixel origin to stay sharp.
     pure function key-x(key: KeyCell) -> length {
-        return key.start * (root.cell-w + root.gap);
+        return Sizing.snap(key.start * (root.cell-w + root.gap));
     }
     pure function key-w(key: KeyCell) -> length {
-        return key.span * root.cell-w + (key.span - 1) * root.gap;
+        return Sizing.snap(key.start * (root.cell-w + root.gap) + key.span * root.cell-w + (key.span - 1) * root.gap)
+            - root.key-x(key);
     }
     pure function key-ink(key: KeyCell) -> color {
         if (!root.enabled || (key.kind == KeyKind.submit && !root.submit-enabled)) {
@@ -71,7 +78,7 @@ export component OnScreenKeyboard inherits Rectangle {
     }
     pure function key-glyph(key: KeyCell) -> string {
         if (key.kind == KeyKind.backspace) { return "icons/NavLeft"; }
-        if (key.kind == KeyKind.shift) { return "icons/NavUp"; }
+        if (key.kind == KeyKind.shift) { return root.shift-locked ? "icons/ShiftLock" : "icons/NavUp"; }
         if (key.kind == KeyKind.submit) { return root.submit-glyph; }
         return "";
     }
@@ -85,7 +92,8 @@ export component OnScreenKeyboard inherits Rectangle {
         property <length> glyph-size: Math.round(Math.min(self.width, self.face-height) * 0.5 / 1px) * 1px;
 
         if key.kind == KeyKind.char || key.kind == KeyKind.symbols: Text {
-            width: parent.width;
+            x: 0;
+            width: Sizing.even(parent.width);
             height: face.face-height;
             text: key.text;
             color: root.key-ink(key);
@@ -133,5 +141,109 @@ export component OnScreenKeyboard inherits Rectangle {
             scope: root.scope + ":" + root.keys.length,
             valid: root.focused && root.enabled && root.current-index >= 0 && root.current-index < root.keys.length
         };
+    }
+}
+
+// A named field: its name, then its value. Focus is the accent ring, the
+// same ring the keys wear, so the name keeps its contrast.
+export component Field inherits Rectangle {
+    in property <string> label;
+    in property <string> value;
+    in property <bool> focused;
+    // Where a host's own content starts, after the name.
+    out property <length> value-x: name.x + name.width + Sizing.surface-pad;
+    background: Theme.surface-card;
+    border-radius: Sizing.radius-sm;
+    border-width: root.focused ? Sizing.card-border-width * 2 : Sizing.card-border-width;
+    border-color: root.focused ? Theme.accent : Theme.border-mid;
+    clip: true;
+    name := Text {
+        x: Sizing.surface-pad;
+        height: parent.height;
+        text: root.label;
+        color: Theme.text-label;
+        font-size: Sizing.font-caption;
+        vertical-alignment: center;
+    }
+    if root.value != "": Text {
+        x: root.value-x;
+        width: Math.max(0px, parent.width - self.x - Sizing.surface-pad);
+        height: parent.height;
+        text: root.value;
+        color: Theme.text-primary;
+        font-size: Sizing.font-body;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+    @children
+}
+
+// The field being typed in: a block cursor marks where typing lands. It
+// blinks while the keyboard has focus and rests dimmed while anything else
+// does (docs/style.md, "Text entry"). Rust splits the text around the
+// cursor and swaps a space beside it for a no-break one, which keeps its
+// advance, so the cursor clears the last letter.
+export component TextField inherits Field {
+    in property <string> before;
+    in property <string> at;
+    in property <string> after;
+    in property <bool> typing;
+    focused: false;
+
+    property <bool> blink-on: true;
+    property <string> edited: root.before + "\u{1f}" + root.at;
+    changed edited => { self.blink-on = true; }
+    property <bool> block-shown: !root.typing || self.blink-on;
+    Timer {
+        interval: 530ms;
+        running: root.typing && Motion.enabled;
+        triggered => { root.blink-on = !root.blink-on; }
+    }
+
+    before-text := Text {
+        x: root.value-x;
+        // An empty Text still claims a sliver of width, which pushed the
+        // cursor off the gap the other fields keep.
+        width: root.before == "" ? 0px : self.preferred-width;
+        height: parent.height;
+        text: root.before;
+        color: Theme.text-primary;
+        font-size: Sizing.font-body;
+        font-weight: FontWeight.medium;
+        vertical-alignment: center;
+    }
+    at-measure := Text {
+        visible: false;
+        text: root.at;
+        font-size: Sizing.font-body;
+        font-weight: FontWeight.medium;
+    }
+    cursor := Rectangle {
+        x: before-text.x + before-text.width + (root.before != "" ? Sizing.stroke(1) : 0px);
+        y: (parent.height - self.height) / 2;
+        width: root.at != "" ? Math.max(at-measure.preferred-width, Sizing.font-body * 0.3)
+            : Sizing.font-body * 0.55;
+        height: Sizing.font-body * 1.25;
+        background: !root.block-shown ? transparent
+            : (root.typing ? Theme.accent : Theme.text-label);
+        Text {
+            width: parent.width;
+            height: parent.height;
+            text: root.at;
+            color: root.block-shown ? Theme.on-accent : Theme.text-primary;
+            font-size: Sizing.font-body;
+            font-weight: FontWeight.medium;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+    Text {
+        x: cursor.x + cursor.width + Sizing.stroke(1);
+        height: parent.height;
+        text: root.after;
+        color: Theme.text-primary;
+        font-size: Sizing.font-body;
+        font-weight: FontWeight.medium;
+        vertical-alignment: center;
     }
 }

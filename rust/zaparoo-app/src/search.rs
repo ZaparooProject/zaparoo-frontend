@@ -35,6 +35,69 @@ pub fn can_search(query: &str, systems: &[String], tags: &[String], path_prefix:
         || !path_prefix.is_empty()
 }
 
+/// What "Search here" limited a search to.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Scope {
+    /// Not limited: the Hub's Search, a recent search, a saved one.
+    #[default]
+    None,
+    /// The system on a browse screen and, inside a folder, that folder.
+    Browse,
+    /// The systems of one category.
+    Category,
+    /// The favorites, all of them or one system's, from the Favorites list.
+    Favorites,
+    /// The favorites, from the systems that hold them.
+    FavoriteSystems,
+}
+
+/// The tag Core keeps favorites under.
+pub const FAVORITE_TAG: &str = "user:favorite";
+
+impl Scope {
+    /// The kind as the state file keeps it (`persist::SEARCH_SCOPE_*`).
+    pub fn token(self) -> &'static str {
+        match self {
+            Self::None => "",
+            Self::Browse => "browse",
+            Self::Category => "category",
+            Self::Favorites => "favorites",
+            Self::FavoriteSystems => "favorite_systems",
+        }
+    }
+
+    /// A kind read back from the state file; anything else is no scope.
+    pub fn from_token(token: &str) -> Self {
+        match token {
+            "browse" => Self::Browse,
+            "category" => Self::Category,
+            "favorites" => Self::Favorites,
+            "favorite_systems" => Self::FavoriteSystems,
+            _ => Self::None,
+        }
+    }
+
+    /// The tags Core is sent: the chosen ones, plus the one the scope
+    /// itself stands for. The scope's tag is kept apart from the chosen
+    /// ones so the Tags field cannot take it away.
+    pub fn request_tags(self, chosen: Vec<String>) -> Vec<String> {
+        let mut tags = chosen;
+        let favorites = matches!(self, Self::Favorites | Self::FavoriteSystems);
+        if favorites && !tags.iter().any(|t| t == FAVORITE_TAG) {
+            tags.push(FAVORITE_TAG.to_string());
+        }
+        tags
+    }
+}
+
+/// Whether Core should include hidden games: when the setting says so, or
+/// when a chosen tag is a user tag (a List), which browse answers with
+/// hidden games included. The favorites scope's own tag does not count,
+/// as the Favorites list itself does not.
+pub fn includes_hidden(show_hidden: bool, chosen: &[String]) -> bool {
+    show_hidden || chosen.iter().any(|t| t.starts_with("user:"))
+}
+
 /// A saved search's systems or tags as its Hub tile wrote them: trimmed,
 /// without blanks or repeats, in the tile's order. Unlike the picker's
 /// `browse_filter::normalize`, no tag is dropped for its type or for
@@ -48,6 +111,58 @@ pub fn tile_list(values: &[String]) -> Vec<String> {
         }
     }
     kept
+}
+
+/// The search's written tags the tags picker cannot show, as written: a
+/// type it has no category for (`series:...`, a revision), or a value its
+/// category cannot hold (a second genre, `user:hidden`). Only a tag search
+/// from Game Info or a Hub tile puts one there.
+pub fn extra_tags(tags: &[String]) -> Vec<String> {
+    let shown = browse_filter::normalize(tags);
+    tile_list(tags)
+        .into_iter()
+        .filter(|tag| !shown.contains(tag))
+        .collect()
+}
+
+/// The picker category a tag belongs to, if any.
+fn category_of(tag: &str) -> Option<browse_filter::Category> {
+    let tag_type = tag.split_once(':').map_or(tag, |(t, _)| t);
+    browse_filter::Category::ALL
+        .into_iter()
+        .find(|category| category.tag_type() == tag_type)
+}
+
+/// `written`'s extras that still hold beside `picked`: one with no
+/// category always does; one with a category only while that category's
+/// choice is the one it was, so changing a category replaces all of it
+/// and changing another leaves it alone.
+fn kept_extras(written: &[String], picked: &[String]) -> Vec<String> {
+    let before = browse_filter::normalize(written);
+    extra_tags(written)
+        .into_iter()
+        .filter(|tag| {
+            category_of(tag).is_none_or(|category| {
+                browse_filter::selected(&before, category)
+                    == browse_filter::selected(picked, category)
+            })
+        })
+        .collect()
+}
+
+/// A written search's tags after the picker set `picked`: the picker's,
+/// then the extras it did not touch (`kept_extras`).
+pub fn with_picked(written: &[String], picked: Vec<String>) -> Vec<String> {
+    let extras = kept_extras(written, &picked);
+    [picked, extras].concat()
+}
+
+/// The search's tags: the picker's, one per category in menu order, then
+/// the extras it cannot show (`extra_tags`).
+pub fn search_tags(tags: &[String]) -> Vec<String> {
+    let mut all = browse_filter::normalize(tags);
+    all.extend(extra_tags(tags));
+    all
 }
 
 /// How many games match, as far as one page can tell.
@@ -104,6 +219,13 @@ pub fn prune_tags(tags: &[String], groups: &[Group]) -> Vec<String> {
             })
         })
         .collect()
+}
+
+/// `prune_tags` for a search whose tags are kept as written (a Hub tile's,
+/// a tag search from Game Info): the tags the picker cannot show stay, as
+/// no tag list names them to rule them out.
+pub fn prune_written_tags(tags: &[String], groups: &[Group]) -> Vec<String> {
+    with_picked(tags, prune_tags(tags, groups))
 }
 
 /// The focusable regions: the two fields above the keyboard, the
@@ -292,6 +414,62 @@ mod tests {
     }
 
     #[test]
+    fn a_written_searchs_tags_stay_until_their_own_category_changes() {
+        let written: Vec<String> = ["genre:rpg", "genre:action", "user:hidden", "year:1994"]
+            .map(String::from)
+            .to_vec();
+        // The picker shows one genre and the year; the rest are extras.
+        assert_eq!(extra_tags(&written), ["genre:action", "user:hidden"]);
+        // A new year leaves both genres and the hidden tag alone.
+        let picked = browse_filter::with_selection(
+            &browse_filter::normalize(&written),
+            Category::Year,
+            Some("1995"),
+        );
+        assert_eq!(
+            with_picked(&written, picked),
+            ["genre:rpg", "year:1995", "genre:action", "user:hidden"]
+        );
+        // A new genre replaces both.
+        let picked = browse_filter::with_selection(
+            &browse_filter::normalize(&written),
+            Category::Genre,
+            Some("racing"),
+        );
+        assert_eq!(
+            with_picked(&written, picked),
+            ["genre:racing", "year:1994", "user:hidden"]
+        );
+    }
+
+    #[test]
+    fn tags_the_picker_cannot_show_survive_it_and_a_change_of_system() {
+        let tags: Vec<String> = ["series:Resident Evil", "genre:horror", "user:hidden"]
+            .map(String::from)
+            .to_vec();
+        // `user:hidden` is a Lists tag the picker cannot select: an extra too.
+        assert_eq!(extra_tags(&tags), ["series:Resident Evil", "user:hidden"]);
+        assert_eq!(
+            search_tags(&tags),
+            ["genre:horror", "series:Resident Evil", "user:hidden"]
+        );
+        let groups = vec![Group {
+            category: Category::Players,
+            values: Vec::new(),
+        }];
+        // The new system has no genre list: the genre goes, the rest stays.
+        assert_eq!(
+            prune_written_tags(&tags, &groups),
+            ["series:Resident Evil", "user:hidden"]
+        );
+        assert_eq!(
+            prune_written_tags(&tags, &[]),
+            ["genre:horror", "series:Resident Evil", "user:hidden"]
+        );
+        assert!(prune_tags(&tags, &groups).is_empty());
+    }
+
+    #[test]
     fn a_search_needs_a_query_or_something_narrowing_it() {
         assert!(!can_search("", &[], &[], ""));
         assert!(!can_search("   ", &[], &[], ""));
@@ -300,6 +478,53 @@ mod tests {
         assert!(can_search("", &[], &tags(&["genre:rpg"]), ""));
         assert!(can_search("", &[], &[], "/roms/SNES/RPG"));
         assert_eq!(query_text("  mario kart "), "mario kart");
+    }
+
+    #[test]
+    fn a_scope_round_trips_its_token_and_drops_an_unknown_one() {
+        for scope in [
+            Scope::None,
+            Scope::Browse,
+            Scope::Category,
+            Scope::Favorites,
+            Scope::FavoriteSystems,
+        ] {
+            assert_eq!(Scope::from_token(scope.token()), scope);
+        }
+        assert_eq!(Scope::from_token("decks"), Scope::None);
+    }
+
+    #[test]
+    fn the_favorites_scope_adds_its_tag_once() {
+        assert_eq!(
+            Scope::Favorites.request_tags(tags(&["genre:rpg"])),
+            tags(&["genre:rpg", FAVORITE_TAG])
+        );
+        assert_eq!(
+            Scope::Favorites.request_tags(tags(&[FAVORITE_TAG])),
+            tags(&[FAVORITE_TAG])
+        );
+        assert_eq!(
+            Scope::FavoriteSystems.request_tags(Vec::new()),
+            tags(&[FAVORITE_TAG])
+        );
+        assert_eq!(
+            Scope::Browse.request_tags(tags(&["genre:rpg"])),
+            tags(&["genre:rpg"])
+        );
+        assert!(can_search(
+            "",
+            &[],
+            &Scope::Favorites.request_tags(Vec::new()),
+            ""
+        ));
+    }
+
+    #[test]
+    fn a_chosen_user_tag_includes_hidden_games() {
+        assert!(!includes_hidden(false, &tags(&["genre:rpg"])));
+        assert!(includes_hidden(false, &tags(&["user:deck:abc"])));
+        assert!(includes_hidden(true, &[]));
     }
 
     #[test]

@@ -92,13 +92,30 @@ fn picker_tags(shared: &Shared) -> Vec<String> {
     }
 }
 
+/// Every tag the filter holds: the picker's, and for a search kept as
+/// written the ones it cannot show. What Clear clears and what a change
+/// is judged on.
+fn held_tags(shared: &Shared) -> Vec<String> {
+    match shared.filter.target {
+        Target::Browse => active_tags(shared),
+        Target::Search => crate::search::field_tags(shared),
+    }
+}
+
 fn set_picker_tags(shared: &mut Shared, tags: Vec<String>) {
     match shared.filter.target {
         Target::Browse => {
             let system_id = shared.games.system_id.clone();
             shared.persist.games.set_filter(&system_id, tags);
         }
-        Target::Search => shared.persist.search.tags = tags,
+        // Tags the picker has no category for stay, as written.
+        Target::Search => {
+            shared.persist.search.tags = if crate::search::as_written(shared) {
+                zaparoo_app::search::with_picked(&shared.persist.search.tags, tags)
+            } else {
+                tags
+            };
+        }
     }
 }
 
@@ -150,11 +167,14 @@ pub(crate) fn search_tag_label(shared: &Shared, tag: &str) -> String {
     rules::display_label(&label, value)
 }
 
-/// The search's filter as one line ("Platformer +1"). None without one.
+/// The search's filter as one line ("Platformer +1"), counting the tags
+/// the picker cannot show. None without one.
 pub(crate) fn search_summary(shared: &Shared) -> Option<String> {
-    let tags = rules::normalize(&shared.persist.search.tags);
-    rules::summary(&tags, |tag| {
-        search_groups(shared).and_then(|groups| label_for(groups, tag))
+    let tags = crate::search::field_tags(shared);
+    let label = search_tag_label(shared, tags.first()?);
+    Some(match tags.len() - 1 {
+        0 => label,
+        extra => format!("{label} +{extra}"),
     })
 }
 
@@ -202,7 +222,7 @@ pub(crate) fn begin_for(ctx: &Ctx, app: &App, target: Target) {
         let retarget = shared.filter.target != target;
         shared.filter.target = target;
         let systems = target_systems(&shared);
-        shared.filter.baseline = picker_tags(&shared);
+        shared.filter.baseline = held_tags(&shared);
         if retarget || shared.filter.systems != systems {
             shared.filter.groups.clear();
             shared.filter.systems.clone_from(&systems);
@@ -364,7 +384,7 @@ fn category_rows(shared: &Shared) -> Vec<crate::MenuEntry> {
         })
         .collect();
     // The one action, set apart at the foot.
-    if !picker_tags(shared).is_empty() {
+    if !held_tags(shared).is_empty() {
         rows.push(menu_action("filter_clear"));
     }
     rows
@@ -503,8 +523,13 @@ fn set_selection(ctx: &Ctx, category: Category, value: Option<&str>) {
     set_picker_tags(&mut shared, next);
 }
 
+/// Clear filter drops every tag, the ones the picker cannot show too.
 fn clear_selection(ctx: &Ctx) {
-    set_picker_tags(&mut lock(&ctx.shared), Vec::new());
+    let mut shared = lock(&ctx.shared);
+    match shared.filter.target {
+        Target::Browse => set_picker_tags(&mut shared, Vec::new()),
+        Target::Search => shared.persist.search.tags.clear(),
+    }
 }
 
 /// The View menu's Clear tags row: the list closes with the menu.
@@ -518,7 +543,7 @@ pub(crate) fn clear(ctx: &Ctx, app: &App) {
 pub(crate) fn apply(ctx: &Ctx, app: &App) {
     let (changed, target) = {
         let mut shared = lock(&ctx.shared);
-        let now = picker_tags(&shared);
+        let now = held_tags(&shared);
         let changed = now != shared.filter.baseline;
         shared.filter.baseline = now;
         (changed, shared.filter.target)
@@ -708,6 +733,21 @@ mod tests {
         // Flat lists clear the system id, so they never inherit a filter.
         shared.games.system_id.clear();
         assert!(active_tags(&shared).is_empty());
+    }
+
+    #[test]
+    fn a_written_search_with_only_an_extra_tag_offers_clear_and_clears_it() {
+        let mut shared = shared_with(vec![genre_group()], &[]);
+        shared.filter.target = Target::Search;
+        shared.persist.search.from_hub = true;
+        shared.persist.search.systems = vec!["NES".into()];
+        shared.persist.search.tags = vec!["series:Resident Evil".into()];
+        assert!(picker_tags(&shared).is_empty());
+        assert!(ids(&category_rows(&shared)).contains(&"filter_clear".to_string()));
+        // Clear empties it, and the change is one `apply` sees.
+        let before = held_tags(&shared);
+        shared.persist.search.tags.clear();
+        assert_ne!(held_tags(&shared), before);
     }
 
     #[test]

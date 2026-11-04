@@ -1,0 +1,419 @@
+// The names of game tags and their values in the details view, and the
+// view's own labels for them. Keys come from `zaparoo_app::game_details`;
+// the strings are the Zaparoo App's, so both read the same. Every string
+// carries a context: "Save", "Menu" or "Final" as a tag mean something
+// other than the same word on a button.
+
+export global TagNames {
+    // A fact row's label, by tag type.
+    public pure function label(kind: string) -> string {
+        if (kind == "year") { return @tr("tag-type" => "Release year"); }
+        if (kind == "players") { return @tr("tag-type" => "Players"); }
+        if (kind == "developer") { return @tr("tag-type" => "Developer"); }
+        if (kind == "publisher") { return @tr("tag-type" => "Publisher"); }
+        if (kind == "genre") { return @tr("tag-type" => "Genre"); }
+        if (kind == "gamegenre") { return @tr("tag-type" => "Game Genre"); }
+        if (kind == "rating") { return @tr("tag-type" => "Rating"); }
+        if (kind == "gamefamily") { return @tr("tag-type" => "Series"); }
+        if (kind == "series") { return @tr("tag-type" => "Series"); }
+        if (kind == "arcadeboard") { return @tr("tag-type" => "Arcade board"); }
+        if (kind == "region") { return @tr("tag-type" => "Region"); }
+        if (kind == "lang") { return @tr("tag-type" => "Language"); }
+        if (kind == "edition") { return @tr("tag-type" => "Edition"); }
+        if (kind == "rev") { return @tr("tag-type" => "Revision"); }
+        if (kind == "disc") { return @tr("tag-type" => "Disc"); }
+        if (kind == "disctotal") { return @tr("tag-type" => "Total Discs"); }
+        if (kind == "release") { return @tr("tag-type" => "Release"); }
+        if (kind == "rerelease") { return @tr("tag-type" => "Re-release"); }
+        if (kind == "builddate") { return @tr("tag-type" => "Build Date"); }
+        if (kind == "input") { return @tr("tag-type" => "Input"); }
+        if (kind == "perspective") { return @tr("tag-type" => "Perspective"); }
+        if (kind == "art") { return @tr("tag-type" => "Art Style"); }
+        if (kind == "category") { return @tr("tag-type" => "Category"); }
+        if (kind == "based") { return @tr("tag-type" => "Based On"); }
+        if (kind == "platform") { return @tr("tag-type" => "Platform"); }
+        if (kind == "port") { return @tr("tag-type" => "Port"); }
+        if (kind == "media") { return @tr("tag-type" => "Media"); }
+        if (kind == "video") { return @tr("tag-type" => "Video"); }
+        if (kind == "save") { return @tr("tag-type" => "Save"); }
+        if (kind == "addon") { return @tr("tag-type" => "Add-on"); }
+        if (kind == "embedded") { return @tr("tag-type" => "Embedded"); }
+        if (kind == "cabinet") { return @tr("tag-type" => "Arcade Cabinet"); }
+        if (kind == "protection") { return @tr("tag-type" => "Copy Protection"); }
+        if (kind == "mameparent") { return @tr("tag-type" => "MAME Parent"); }
+        if (kind == "compatibility") { return @tr("tag-type" => "Compatibility"); }
+        if (kind == "accessibility") { return @tr("tag-type" => "Accessibility"); }
+        if (kind == "distribution") { return @tr("tag-type" => "Distribution"); }
+        if (kind == "copyright") { return @tr("tag-type" => "Copyright"); }
+        if (kind == "credit") { return @tr("tag-type" => "Credit"); }
+        if (kind == "dump") { return @tr("tag-type" => "Dump Status"); }
+        if (kind == "alt") { return @tr("tag-type" => "Alternate"); }
+        if (kind == "patch") { return @tr("tag-type" => "Patch"); }
+        if (kind == "unfinished") { return @tr("tag-type" => "Unfinished"); }
+        if (kind == "unlicensed") { return @tr("tag-type" => "Unlicensed"); }
+        if (kind == "reboxed") { return @tr("tag-type" => "Reboxed"); }
+        if (kind == "multigame") { return @tr("tag-type" => "Multi-game"); }
+        if (kind == "set") { return @tr("tag-type" => "Set"); }
+        if (kind == "supplement") { return @tr("tag-type" => "Supplement"); }
+        if (kind == "season") { return @tr("tag-type" => "Season"); }
+        if (kind == "episode") { return @tr("tag-type" => "Episode"); }
+        if (kind == "volume") { return @tr("tag-type" => "Volume"); }
+        if (kind == "issue") { return @tr("tag-type" => "Issue"); }
+        if (kind == "track") { return @tr("tag-type" => "Track"); }
+        if (kind == "extension") { return @tr("tag-type" => "Extension"); }
+        if (kind == "system") { return @tr("tag-type" => "System"); }
+        if (kind == "tags") { return @tr("tag-type" => "Tags"); }
+        if (kind == "path") { return @tr("tag-type" => "Path"); }
+        if (kind == "launcher") { return @tr("tag-type" => "Launcher"); }
+        return kind;
+    }
+
+    // A value's name (`game_details::Name`): `key` empty shows `text`.
+    public pure function name(key: string, arg: string, text: string) -> string {
+        if (key == "") { return text; }
+        if (key == "rev") { return @tr("tag-value" => "Revision {}", arg); }
+        if (key == "players") {
+            return @tr("tag-value" => "{n} player" | "{n} players" % Math.round(arg.to-float()));
+        }
+        if (key == "players-of") { return @tr("tag-value" => "{} players", arg); }
+        if (key == "numbered") { return @tr("tag-value" => "{} {}", root.vocabulary(text, ""), arg); }
+        return root.vocabulary(key, arg);
+    }
+
+    pure function vocabulary(key: string, arg: string) -> string {
+        if (key == "v:region.world") { return @tr("tag-value" => "Worldwide"); }
+        if (key == "v:region.us") { return @tr("tag-value" => "United States"); }
+        if (key == "v:region.eu") { return @tr("tag-value" => "Europe"); }
+        if (key == "v:region.jp") { return @tr("tag-value" => "Japan"); }
+        if (key == "v:region.au") { return @tr("tag-value" => "Australia"); }
+        if (key == "v:region.kr") { return @tr("tag-value" => "South Korea"); }
+        if (key == "v:region.cn") { return @tr("tag-value" => "China"); }
+        if (key == "v:region.tw") { return @tr("tag-value" => "Taiwan"); }
+        if (key == "v:region.hk") { return @tr("tag-value" => "Hong Kong"); }
+        if (key == "v:region.br") { return @tr("tag-value" => "Brazil"); }
+        if (key == "v:region.ca") { return @tr("tag-value" => "Canada"); }
+        if (key == "v:region.uk") { return @tr("tag-value" => "United Kingdom"); }
+        if (key == "v:region.fr") { return @tr("tag-value" => "France"); }
+        if (key == "v:region.de") { return @tr("tag-value" => "Germany"); }
+        if (key == "v:region.it") { return @tr("tag-value" => "Italy"); }
+        if (key == "v:region.es") { return @tr("tag-value" => "Spain"); }
+        if (key == "v:region.scandinavia") { return @tr("tag-value" => "Scandinavia"); }
+        if (key == "v:region.asia") { return @tr("tag-value" => "Asia"); }
+        if (key == "v:lang.en") { return @tr("tag-value" => "English"); }
+        if (key == "v:lang.fr") { return @tr("tag-value" => "French"); }
+        if (key == "v:lang.de") { return @tr("tag-value" => "German"); }
+        if (key == "v:lang.es") { return @tr("tag-value" => "Spanish"); }
+        if (key == "v:lang.it") { return @tr("tag-value" => "Italian"); }
+        if (key == "v:lang.ja") { return @tr("tag-value" => "Japanese"); }
+        if (key == "v:lang.ko") { return @tr("tag-value" => "Korean"); }
+        if (key == "v:lang.zh") { return @tr("tag-value" => "Chinese"); }
+        if (key == "v:lang.pt") { return @tr("tag-value" => "Portuguese"); }
+        if (key == "v:lang.nl") { return @tr("tag-value" => "Dutch"); }
+        if (key == "v:lang.sv") { return @tr("tag-value" => "Swedish"); }
+        if (key == "v:lang.no") { return @tr("tag-value" => "Norwegian"); }
+        if (key == "v:lang.da") { return @tr("tag-value" => "Danish"); }
+        if (key == "v:lang.fi") { return @tr("tag-value" => "Finnish"); }
+        if (key == "v:lang.pl") { return @tr("tag-value" => "Polish"); }
+        if (key == "v:lang.ru") { return @tr("tag-value" => "Russian"); }
+        if (key == "v:lang.ar") { return @tr("tag-value" => "Arabic"); }
+        if (key == "v:lang.en-US") { return @tr("tag-value" => "English (US)"); }
+        if (key == "v:lang.en-GB") { return @tr("tag-value" => "English (UK)"); }
+        if (key == "v:edition.directorsCut") { return @tr("tag-value" => "Director's cut"); }
+        if (key == "v:edition.collectors") { return @tr("tag-value" => "Collector's edition"); }
+        if (key == "v:edition.limited") { return @tr("tag-value" => "Limited edition"); }
+        if (key == "v:edition.special") { return @tr("tag-value" => "Special edition"); }
+        if (key == "v:edition.deluxe") { return @tr("tag-value" => "Deluxe edition"); }
+        if (key == "v:edition.ultimate") { return @tr("tag-value" => "Ultimate edition"); }
+        if (key == "v:edition.anniversary") { return @tr("tag-value" => "Anniversary edition"); }
+        if (key == "v:edition.remastered") { return @tr("tag-value" => "Remastered"); }
+        if (key == "v:edition.remake") { return @tr("tag-value" => "Remake"); }
+        if (key == "v:edition.remix") { return @tr("tag-value" => "Remix"); }
+        if (key == "v:edition.complete") { return @tr("tag-value" => "Complete edition"); }
+        if (key == "v:edition.goty") { return @tr("tag-value" => "Game of the Year edition"); }
+        if (key == "v:genre.action") { return @tr("tag-value" => "Action"); }
+        if (key == "v:genre.action_platformer") { return @tr("tag-value" => "Platformer"); }
+        if (key == "v:genre.action_maze") { return @tr("tag-value" => "Maze"); }
+        if (key == "v:genre.action_blockbreaker") { return @tr("tag-value" => "Block breaker"); }
+        if (key == "v:genre.action_runandgun") { return @tr("tag-value" => "Run and gun"); }
+        if (key == "v:genre.action_hackandslash") { return @tr("tag-value" => "Hack and slash"); }
+        if (key == "v:genre.action_metroidvania") { return @tr("tag-value" => "Metroidvania"); }
+        if (key == "v:genre.action_roguelite") { return @tr("tag-value" => "Roguelite"); }
+        if (key == "v:genre.adventure") { return @tr("tag-value" => "Adventure"); }
+        if (key == "v:genre.adventure_pointandclick") { return @tr("tag-value" => "Point and click"); }
+        if (key == "v:genre.adventure_visualnovel") { return @tr("tag-value" => "Visual novel"); }
+        if (key == "v:genre.adventure_survivalhorror") { return @tr("tag-value" => "Survival horror"); }
+        if (key == "v:genre.adventure_text") { return @tr("tag-value" => "Text adventure"); }
+        if (key == "v:genre.board") { return @tr("tag-value" => "Board game"); }
+        if (key == "v:genre.board_cards") { return @tr("tag-value" => "Cards"); }
+        if (key == "v:genre.board_hanafuda") { return @tr("tag-value" => "Hanafuda"); }
+        if (key == "v:genre.board_chess") { return @tr("tag-value" => "Chess"); }
+        if (key == "v:genre.board_shougi") { return @tr("tag-value" => "Shogi"); }
+        if (key == "v:genre.board_go") { return @tr("tag-value" => "Go"); }
+        if (key == "v:genre.board_mahjong") { return @tr("tag-value" => "Mahjong"); }
+        if (key == "v:genre.board_reversi") { return @tr("tag-value" => "Reversi"); }
+        if (key == "v:genre.board_othello") { return @tr("tag-value" => "Othello"); }
+        if (key == "v:genre.board_backgammon") { return @tr("tag-value" => "Backgammon"); }
+        if (key == "v:genre.board_party") { return @tr("tag-value" => "Party game"); }
+        if (key == "v:genre.board_jankenpon") { return @tr("tag-value" => "Rock paper scissors"); }
+        if (key == "v:genre.brawler") { return @tr("tag-value" => "Beat 'em up"); }
+        if (key == "v:genre.fighting") { return @tr("tag-value" => "Fighting"); }
+        if (key == "v:genre.fighting_melee") { return @tr("tag-value" => "Melee fighting"); }
+        if (key == "v:genre.minigames") { return @tr("tag-value" => "Minigames"); }
+        if (key == "v:genre.parlor") { return @tr("tag-value" => "Parlor game"); }
+        if (key == "v:genre.parlor_pinball") { return @tr("tag-value" => "Pinball"); }
+        if (key == "v:genre.parlor_jackpot") { return @tr("tag-value" => "Jackpot"); }
+        if (key == "v:genre.parlor_pachinko") { return @tr("tag-value" => "Pachinko"); }
+        if (key == "v:genre.parlor_darts") { return @tr("tag-value" => "Darts"); }
+        if (key == "v:genre.parlor_bowling") { return @tr("tag-value" => "Bowling"); }
+        if (key == "v:genre.parlor_billiards") { return @tr("tag-value" => "Billiards"); }
+        if (key == "v:genre.parlor_mogurataiji") { return @tr("tag-value" => "Whack-a-mole"); }
+        if (key == "v:genre.parlor_kiddieride") { return @tr("tag-value" => "Kiddie ride"); }
+        if (key == "v:genre.parlor_mechanical") { return @tr("tag-value" => "Mechanical game"); }
+        if (key == "v:genre.quiz") { return @tr("tag-value" => "Quiz"); }
+        if (key == "v:genre.racing") { return @tr("tag-value" => "Racing"); }
+        if (key == "v:genre.racing_combat") { return @tr("tag-value" => "Combat racing"); }
+        if (key == "v:genre.racing_driving") { return @tr("tag-value" => "Driving"); }
+        if (key == "v:genre.rpg") { return @tr("tag-value" => "RPG"); }
+        if (key == "v:genre.rpg_a") { return @tr("tag-value" => "Action RPG"); }
+        if (key == "v:genre.rpg_j") { return @tr("tag-value" => "JRPG"); }
+        if (key == "v:genre.rpg_s") { return @tr("tag-value" => "Strategy RPG"); }
+        if (key == "v:genre.rpg_dungeoncrawler") { return @tr("tag-value" => "Dungeon crawler"); }
+        if (key == "v:genre.rpg_mmo") { return @tr("tag-value" => "MMORPG"); }
+        if (key == "v:genre.rhythm") { return @tr("tag-value" => "Rhythm"); }
+        if (key == "v:genre.rhythm_karaoke") { return @tr("tag-value" => "Karaoke"); }
+        if (key == "v:genre.rhythm_dance") { return @tr("tag-value" => "Dance"); }
+        if (key == "v:genre.shmup") { return @tr("tag-value" => "Shoot 'em up"); }
+        if (key == "v:genre.shmup_h") { return @tr("tag-value" => "Horizontal shooter"); }
+        if (key == "v:genre.shmup_v") { return @tr("tag-value" => "Vertical shooter"); }
+        if (key == "v:genre.shmup_i") { return @tr("tag-value" => "Isometric shooter"); }
+        if (key == "v:genre.shmup_danmaku") { return @tr("tag-value" => "Bullet hell"); }
+        if (key == "v:genre.shooting") { return @tr("tag-value" => "Shooter"); }
+        if (key == "v:genre.shooting_gallery") { return @tr("tag-value" => "Shooting gallery"); }
+        if (key == "v:genre.shooting_rail") { return @tr("tag-value" => "Rail shooter"); }
+        if (key == "v:genre.shooting_fps") { return @tr("tag-value" => "First-person shooter"); }
+        if (key == "v:genre.shooting_tps") { return @tr("tag-value" => "Third-person shooter"); }
+        if (key == "v:genre.puzzle") { return @tr("tag-value" => "Puzzle"); }
+        if (key == "v:genre.puzzle_drop") { return @tr("tag-value" => "Falling block puzzle"); }
+        if (key == "v:genre.puzzle_mind") { return @tr("tag-value" => "Logic puzzle"); }
+        if (key == "v:genre.sim") { return @tr("tag-value" => "Simulation"); }
+        if (key == "v:genre.sim_strategy") { return @tr("tag-value" => "Strategy"); }
+        if (key == "v:genre.sim_cardgame") { return @tr("tag-value" => "Trading card game"); }
+        if (key == "v:genre.sim_flight") { return @tr("tag-value" => "Flight sim"); }
+        if (key == "v:genre.sim_train") { return @tr("tag-value" => "Train sim"); }
+        if (key == "v:genre.sim_date") { return @tr("tag-value" => "Dating sim"); }
+        if (key == "v:genre.sim_otome") { return @tr("tag-value" => "Otome game"); }
+        if (key == "v:genre.sim_life") { return @tr("tag-value" => "Life sim"); }
+        if (key == "v:genre.sim_farm") { return @tr("tag-value" => "Farming sim"); }
+        if (key == "v:genre.sim_pet") { return @tr("tag-value" => "Pet sim"); }
+        if (key == "v:genre.sim_fishing") { return @tr("tag-value" => "Fishing"); }
+        if (key == "v:genre.sim_god") { return @tr("tag-value" => "God game"); }
+        if (key == "v:genre.sim_derby") { return @tr("tag-value" => "Horse racing sim"); }
+        if (key == "v:genre.sim_building") { return @tr("tag-value" => "Building sim"); }
+        if (key == "v:genre.sim_cooking") { return @tr("tag-value" => "Cooking"); }
+        if (key == "v:genre.sports") { return @tr("tag-value" => "Sports"); }
+        if (key == "v:genre.sports_soccer") { return @tr("tag-value" => "Soccer"); }
+        if (key == "v:genre.sports_basketball") { return @tr("tag-value" => "Basketball"); }
+        if (key == "v:genre.sports_baseball") { return @tr("tag-value" => "Baseball"); }
+        if (key == "v:genre.sports_volleyball") { return @tr("tag-value" => "Volleyball"); }
+        if (key == "v:genre.sports_rugby") { return @tr("tag-value" => "Rugby"); }
+        if (key == "v:genre.sports_football") { return @tr("tag-value" => "Football"); }
+        if (key == "v:genre.sports_dodgeball") { return @tr("tag-value" => "Dodgeball"); }
+        if (key == "v:genre.sports_hockey") { return @tr("tag-value" => "Hockey"); }
+        if (key == "v:genre.sports_skiing") { return @tr("tag-value" => "Skiing"); }
+        if (key == "v:genre.sports_skateboarding") { return @tr("tag-value" => "Skateboarding"); }
+        if (key == "v:genre.sports_snowboarding") { return @tr("tag-value" => "Snowboarding"); }
+        if (key == "v:genre.sports_tennis") { return @tr("tag-value" => "Tennis"); }
+        if (key == "v:genre.sports_pingpong") { return @tr("tag-value" => "Table tennis"); }
+        if (key == "v:genre.sports_paddle") { return @tr("tag-value" => "Paddle tennis"); }
+        if (key == "v:genre.sports_squash") { return @tr("tag-value" => "Squash"); }
+        if (key == "v:genre.sports_badminton") { return @tr("tag-value" => "Badminton"); }
+        if (key == "v:genre.sports_flyingdisc") { return @tr("tag-value" => "Flying disc"); }
+        if (key == "v:genre.sports_cycling") { return @tr("tag-value" => "Cycling"); }
+        if (key == "v:genre.sports_formula1") { return @tr("tag-value" => "Formula 1"); }
+        if (key == "v:genre.sports_rally") { return @tr("tag-value" => "Rally"); }
+        if (key == "v:genre.sports_nascar") { return @tr("tag-value" => "NASCAR"); }
+        if (key == "v:genre.sports_motogp") { return @tr("tag-value" => "MotoGP"); }
+        if (key == "v:genre.sports_motocross") { return @tr("tag-value" => "Motocross"); }
+        if (key == "v:genre.sports_karting") { return @tr("tag-value" => "Karting"); }
+        if (key == "v:genre.sports_jetski") { return @tr("tag-value" => "Jet ski"); }
+        if (key == "v:genre.sports_golf") { return @tr("tag-value" => "Golf"); }
+        if (key == "v:genre.sports_cricket") { return @tr("tag-value" => "Cricket"); }
+        if (key == "v:genre.sports_boxing") { return @tr("tag-value" => "Boxing"); }
+        if (key == "v:genre.sports_kickboxing") { return @tr("tag-value" => "Kickboxing"); }
+        if (key == "v:genre.sports_wrestling") { return @tr("tag-value" => "Wrestling"); }
+        if (key == "v:genre.sports_sumo") { return @tr("tag-value" => "Sumo"); }
+        if (key == "v:genre.sports_karate") { return @tr("tag-value" => "Karate"); }
+        if (key == "v:genre.sports_judo") { return @tr("tag-value" => "Judo"); }
+        if (key == "v:genre.sports_kendo") { return @tr("tag-value" => "Kendo"); }
+        if (key == "v:genre.sports_taekwondo") { return @tr("tag-value" => "Taekwondo"); }
+        if (key == "v:genre.sports_mma") { return @tr("tag-value" => "MMA"); }
+        if (key == "v:genre.sports_decathlon") { return @tr("tag-value" => "Decathlon"); }
+        if (key == "v:genre.sports_running") { return @tr("tag-value" => "Running"); }
+        if (key == "v:genre.sports_archery") { return @tr("tag-value" => "Archery"); }
+        if (key == "v:genre.sports_swimming") { return @tr("tag-value" => "Swimming"); }
+        if (key == "v:genre.sports_rowing") { return @tr("tag-value" => "Rowing"); }
+        if (key == "v:genre.sports_kayak") { return @tr("tag-value" => "Kayaking"); }
+        if (key == "v:genre.sports_surf") { return @tr("tag-value" => "Surfing"); }
+        if (key == "v:genre.notagame") { return @tr("tag-value" => "Not a game"); }
+        if (key == "v:genre.notagame_educational") { return @tr("tag-value" => "Educational"); }
+        if (key == "v:genre.notagame_drawing") { return @tr("tag-value" => "Drawing"); }
+        if (key == "v:genre.notagame_popcorn") { return @tr("tag-value" => "Popcorn machine"); }
+        if (key == "v:genre.notagame_purikura") { return @tr("tag-value" => "Photo booth"); }
+        if (key == "v:genre.notagame_redemption") { return @tr("tag-value" => "Redemption game"); }
+        if (key == "v:genre.notagame_media") { return @tr("tag-value" => "Media"); }
+        if (key == "v:genre.notagame_magazine") { return @tr("tag-value" => "Magazine"); }
+        if (key == "v:genre.notagame_application") { return @tr("tag-value" => "Application"); }
+        if (key == "v:genre.notagame_test") { return @tr("tag-value" => "Test program"); }
+        if (key == "v:genre.notagame_sdk") { return @tr("tag-value" => "SDK"); }
+        if (key == "v:genre.notagame_slideshow") { return @tr("tag-value" => "Slideshow"); }
+        if (key == "v:genre.notagame_sound") { return @tr("tag-value" => "Sound"); }
+        if (key == "v:genre.sim_management") { return @tr("tag-value" => "Management sim"); }
+        if (key == "v:genre.sports_roller") { return @tr("tag-value" => "Roller skating"); }
+        if (key == "v:players.vs") { return @tr("tag-value" => "Versus"); }
+        if (key == "v:players.coop") { return @tr("tag-value" => "Co-op"); }
+        if (key == "v:players.alt") { return @tr("tag-value" => "Alternating"); }
+        if (key == "v:players.simultaneous") { return @tr("tag-value" => "Simultaneous"); }
+        if (key == "v:players.mmo") { return @tr("tag-value" => "MMO"); }
+        if (key == "v:input.joystick") { return @tr("tag-value" => "Joystick"); }
+        if (key == "v:input.joystick_2h") { return @tr("tag-value" => "2-way joystick (horizontal)"); }
+        if (key == "v:input.joystick_2v") { return @tr("tag-value" => "2-way joystick (vertical)"); }
+        if (key == "v:input.joystickWays") { return @tr("tag-value" => "{}-way joystick", arg); }
+        if (key == "v:input.joystick_double") { return @tr("tag-value" => "Double joystick"); }
+        if (key == "v:input.joystick_rotary") { return @tr("tag-value" => "Rotary joystick"); }
+        if (key == "v:input.stick") { return @tr("tag-value" => "Stick"); }
+        if (key == "v:input.stick_twin") { return @tr("tag-value" => "Twin stick"); }
+        if (key == "v:input.trackball") { return @tr("tag-value" => "Trackball"); }
+        if (key == "v:input.paddle") { return @tr("tag-value" => "Paddle"); }
+        if (key == "v:input.spinner") { return @tr("tag-value" => "Spinner"); }
+        if (key == "v:input.wheel") { return @tr("tag-value" => "Steering wheel"); }
+        if (key == "v:input.dial") { return @tr("tag-value" => "Dial"); }
+        if (key == "v:input.lightgun") { return @tr("tag-value" => "Light gun"); }
+        if (key == "v:input.optical") { return @tr("tag-value" => "Optical"); }
+        if (key == "v:input.positional") { return @tr("tag-value" => "Positional"); }
+        if (key == "v:input.positionalCount") { return @tr("tag-value" => "Positional: {}", arg); }
+        if (key == "v:input.buttons") { return @tr("tag-value" => "Buttons"); }
+        if (key == "v:input.buttonsCount") { return @tr("tag-value" => "Buttons: {}", arg); }
+        if (key == "v:input.buttons_pneumatic") { return @tr("tag-value" => "Pneumatic buttons"); }
+        if (key == "v:input.pedals") { return @tr("tag-value" => "Pedals"); }
+        if (key == "v:input.pedalsCount") { return @tr("tag-value" => "Pedals: {}", arg); }
+        if (key == "v:input.puncher") { return @tr("tag-value" => "Punch pad"); }
+        if (key == "v:input.puncherCount") { return @tr("tag-value" => "Punch pads: {}", arg); }
+        if (key == "v:input.motion") { return @tr("tag-value" => "Motion controls"); }
+        if (key == "v:input.keyboard") { return @tr("tag-value" => "Keyboard"); }
+        if (key == "v:input.keyboard_mahjong") { return @tr("tag-value" => "Mahjong panel"); }
+        if (key == "v:input.touchscreen") { return @tr("tag-value" => "Touchscreen"); }
+        if (key == "v:input.touchscreen_resistive") { return @tr("tag-value" => "Resistive touchscreen"); }
+        if (key == "v:input.touchscreen_capacitive") { return @tr("tag-value" => "Capacitive touchscreen"); }
+        if (key == "v:input.accelerometer") { return @tr("tag-value" => "Accelerometer"); }
+        if (key == "v:input.ddrpad") { return @tr("tag-value" => "Dance pad"); }
+        if (key == "v:input.hrm") { return @tr("tag-value" => "Heart rate monitor"); }
+        if (key == "v:save.backup") { return @tr("tag-value" => "Backup save"); }
+        if (key == "v:save.password") { return @tr("tag-value" => "Password"); }
+        if (key == "v:media.disc") { return @tr("tag-value" => "Disc"); }
+        if (key == "v:media.disk") { return @tr("tag-value" => "Disk"); }
+        if (key == "v:media.file") { return @tr("tag-value" => "File"); }
+        if (key == "v:media.part") { return @tr("tag-value" => "Part"); }
+        if (key == "v:media.side") { return @tr("tag-value" => "Side"); }
+        if (key == "v:media.sideLetter") { return @tr("tag-value" => "Side {}", arg); }
+        if (key == "v:media.tape") { return @tr("tag-value" => "Tape"); }
+        if (key == "v:media.cart") { return @tr("tag-value" => "Cartridge"); }
+        if (key == "v:unfinished.alpha") { return @tr("tag-value" => "Alpha"); }
+        if (key == "v:unfinished.beta") { return @tr("tag-value" => "Beta"); }
+        if (key == "v:unfinished.proto") { return @tr("tag-value" => "Prototype"); }
+        if (key == "v:unfinished.demo") { return @tr("tag-value" => "Demo"); }
+        if (key == "v:unfinished.demo_auto") { return @tr("tag-value" => "Auto demo"); }
+        if (key == "v:unfinished.demo_kiosk") { return @tr("tag-value" => "Kiosk demo"); }
+        if (key == "v:unfinished.demo_playable") { return @tr("tag-value" => "Playable demo"); }
+        if (key == "v:unfinished.demo_rolling") { return @tr("tag-value" => "Rolling demo"); }
+        if (key == "v:unfinished.demo_slideshow") { return @tr("tag-value" => "Slideshow demo"); }
+        if (key == "v:unfinished.sample") { return @tr("tag-value" => "Sample"); }
+        if (key == "v:unfinished.debug") { return @tr("tag-value" => "Debug build"); }
+        if (key == "v:unfinished.competition") { return @tr("tag-value" => "Competition version"); }
+        if (key == "v:unfinished.preview") { return @tr("tag-value" => "Preview"); }
+        if (key == "v:unfinished.prerelease") { return @tr("tag-value" => "Pre-release"); }
+        if (key == "v:unfinished.final") { return @tr("tag-value" => "Final"); }
+        if (key == "v:unfinished.wip") { return @tr("tag-value" => "Work in progress"); }
+        if (key == "v:unlicensed.unlicensed") { return @tr("tag-value" => "Unlicensed"); }
+        if (key == "v:unlicensed.bootleg") { return @tr("tag-value" => "Bootleg"); }
+        if (key == "v:unlicensed.hack") { return @tr("tag-value" => "Hack"); }
+        if (key == "v:unlicensed.clone") { return @tr("tag-value" => "Clone"); }
+        if (key == "v:unlicensed.pirate") { return @tr("tag-value" => "Pirate"); }
+        if (key == "v:unlicensed.translation") { return @tr("tag-value" => "Translation"); }
+        if (key == "v:unlicensed.translation_old") { return @tr("tag-value" => "Old translation"); }
+        if (key == "v:unlicensed.aftermarket") { return @tr("tag-value" => "Aftermarket"); }
+        if (key == "v:release.homebrew") { return @tr("tag-value" => "Homebrew"); }
+        if (key == "v:release.unreleased") { return @tr("tag-value" => "Unreleased"); }
+        if (key == "v:release.public-domain") { return @tr("tag-value" => "Public domain"); }
+        if (key == "v:release.reissue") { return @tr("tag-value" => "Reissue"); }
+        if (key == "v:release.classics") { return @tr("tag-value" => "Classics"); }
+        if (key == "v:release.promo") { return @tr("tag-value" => "Promo"); }
+        if (key == "v:release.not-for-resale") { return @tr("tag-value" => "Not for resale"); }
+        if (key == "v:release.kiosk") { return @tr("tag-value" => "Kiosk"); }
+        if (key == "v:dump.cracked") { return @tr("tag-value" => "Cracked"); }
+        if (key == "v:dump.fixed") { return @tr("tag-value" => "Fixed"); }
+        if (key == "v:dump.hacked") { return @tr("tag-value" => "Hacked"); }
+        if (key == "v:dump.modified") { return @tr("tag-value" => "Modified"); }
+        if (key == "v:dump.pirated") { return @tr("tag-value" => "Pirated"); }
+        if (key == "v:dump.trained") { return @tr("tag-value" => "Trained"); }
+        if (key == "v:dump.translated") { return @tr("tag-value" => "Translated"); }
+        if (key == "v:dump.overdump") { return @tr("tag-value" => "Overdump"); }
+        if (key == "v:dump.underdump") { return @tr("tag-value" => "Underdump"); }
+        if (key == "v:dump.virus") { return @tr("tag-value" => "Virus"); }
+        if (key == "v:dump.bad") { return @tr("tag-value" => "Bad dump"); }
+        if (key == "v:dump.alternate") { return @tr("tag-value" => "Alternate"); }
+        if (key == "v:dump.verified") { return @tr("tag-value" => "Verified"); }
+        if (key == "v:dump.pending") { return @tr("tag-value" => "Pending"); }
+        if (key == "v:dump.checksum-bad") { return @tr("tag-value" => "Bad checksum"); }
+        if (key == "v:dump.checksum-unknown") { return @tr("tag-value" => "Unknown checksum"); }
+        if (key == "v:dump.hacked_intro") { return @tr("tag-value" => "Intro added"); }
+        if (key == "v:dump.hacked_intro-removed") { return @tr("tag-value" => "Intro removed"); }
+        if (key == "v:dump.no-boot") { return @tr("tag-value" => "Does not boot"); }
+        if (key == "v:copyright.cw") { return @tr("tag-value" => "Cardware"); }
+        if (key == "v:copyright.cw-r") { return @tr("tag-value" => "Cardware (registered)"); }
+        if (key == "v:copyright.fw") { return @tr("tag-value" => "Freeware"); }
+        if (key == "v:copyright.gw") { return @tr("tag-value" => "Giftware"); }
+        if (key == "v:copyright.gw-r") { return @tr("tag-value" => "Giftware (registered)"); }
+        if (key == "v:copyright.lw") { return @tr("tag-value" => "Licenseware"); }
+        if (key == "v:copyright.pd") { return @tr("tag-value" => "Public domain"); }
+        if (key == "v:copyright.sw") { return @tr("tag-value" => "Shareware"); }
+        if (key == "v:copyright.sw-r") { return @tr("tag-value" => "Shareware (registered)"); }
+        if (key == "v:perspective.firstperson") { return @tr("tag-value" => "First person"); }
+        if (key == "v:perspective.thirdperson") { return @tr("tag-value" => "Third person"); }
+        if (key == "v:perspective.topdown") { return @tr("tag-value" => "Top-down"); }
+        if (key == "v:perspective.isometric") { return @tr("tag-value" => "Isometric"); }
+        if (key == "v:perspective.fixedcamera") { return @tr("tag-value" => "Fixed camera"); }
+        if (key == "v:perspective.sidescroll_horizontal") { return @tr("tag-value" => "Side-scrolling"); }
+        if (key == "v:perspective.sidescroll_vertical") { return @tr("tag-value" => "Vertical scrolling"); }
+        if (key == "v:art.pixelart") { return @tr("tag-value" => "Pixel art"); }
+        if (key == "v:art.celshaded") { return @tr("tag-value" => "Cel-shaded"); }
+        if (key == "v:art.vector") { return @tr("tag-value" => "Vector"); }
+        if (key == "v:art.digitized") { return @tr("tag-value" => "Digitized"); }
+        if (key == "v:art.handdrawn") { return @tr("tag-value" => "Hand-drawn"); }
+        if (key == "v:accessibility.visual_colorblindmode") { return @tr("tag-value" => "Colorblind mode"); }
+        if (key == "v:accessibility.visual_highcontrast") { return @tr("tag-value" => "High contrast"); }
+        if (key == "v:accessibility.visual_textsizeadjust") { return @tr("tag-value" => "Adjustable text size"); }
+        if (key == "v:accessibility.audio_subtitles") { return @tr("tag-value" => "Subtitles"); }
+        if (key == "v:accessibility.audio_monoaudio") { return @tr("tag-value" => "Mono audio"); }
+        if (key == "v:accessibility.audio_visualcues") { return @tr("tag-value" => "Visual cues"); }
+        if (key == "v:accessibility.input_remappablecontrols") { return @tr("tag-value" => "Remappable controls"); }
+        if (key == "v:accessibility.input_onebuttonmode") { return @tr("tag-value" => "One-button mode"); }
+        if (key == "v:cabinet.upright") { return @tr("tag-value" => "Upright"); }
+        if (key == "v:cabinet.cocktail") { return @tr("tag-value" => "Cocktail"); }
+        if (key == "v:cabinet.cabaret") { return @tr("tag-value" => "Cabaret"); }
+        if (key == "v:cabinet.sitdown") { return @tr("tag-value" => "Sit-down"); }
+        if (key == "v:protection.no-protection") { return @tr("tag-value" => "No protection"); }
+        if (key == "v:protection.encrypted") { return @tr("tag-value" => "Encrypted"); }
+        if (key == "v:protection.decrypted") { return @tr("tag-value" => "Decrypted"); }
+        if (key == "v:supplement.update") { return @tr("tag-value" => "Update"); }
+        if (key == "v:supplement.expansion") { return @tr("tag-value" => "Expansion"); }
+        if (key == "v:supplement.theme") { return @tr("tag-value" => "Theme"); }
+        if (key == "v:supplement.avatar") { return @tr("tag-value" => "Avatar"); }
+        if (key == "v:based.manganime") { return @tr("tag-value" => "Manga/anime"); }
+        if (key == "v:based.movie") { return @tr("tag-value" => "Movie"); }
+        if (key == "v:multigame.compilation") { return @tr("tag-value" => "Compilation"); }
+        if (key == "v:multigame.menu") { return @tr("tag-value" => "Menu"); }
+        if (key == "v:multigame.volume") { return @tr("tag-value" => "Volume {}", arg); }
+        if (key == "v:alt.alt") { return @tr("tag-value" => "Alternate"); }
+        return key;
+    }
+}

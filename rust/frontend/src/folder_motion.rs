@@ -29,7 +29,7 @@ pub fn start(ctx: &Ctx, app: &App) {
         let mut shared = lock(&ctx.shared);
         let model = &mut shared.games;
         model.folder_sliding = false;
-        model.sliding = false;
+        model.page.sliding = false;
         std::mem::take(&mut model.folder_direction)
     };
     let view = app.global::<GamesView>();

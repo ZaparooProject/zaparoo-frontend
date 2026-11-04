@@ -9,6 +9,26 @@
 // so the same game reads the same in Games, Favorites, Search results,
 // Recently played and on the Hub.
 
+/// What an Options row opens in the menu's place, for Back to return from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Opens {
+    /// The Update metadata setup panel.
+    Setup,
+    /// The launcher picker.
+    Picker,
+    QrCode,
+    /// Waiting for a token to write.
+    TokenWrite,
+    /// Game Info.
+    Details,
+    /// The Rename screen for a Hub tile.
+    Rename,
+    /// The file browser picking a Hub tile's icon.
+    IconBrowser,
+    /// Moving a Hub tile.
+    Move,
+}
+
 /// A page of the menu, shown in place of its own rows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Page {
@@ -88,6 +108,54 @@ impl Menu {
         } else {
             id
         }
+    }
+
+    /// What the row `id` opens in the menu's place, when Back there returns
+    /// to the menu: on the page it was on, with the row focused. Finishing
+    /// what it opened (Start, Save, a pick) goes to the screen instead.
+    pub fn opens(id: &str) -> Option<Opens> {
+        Some(match id {
+            "scrape_game" | "scrape_system" | "scrape_category" => Opens::Setup,
+            "change_launcher" => Opens::Picker,
+            "qr_code" => Opens::QrCode,
+            "write_card" => Opens::TokenWrite,
+            "more_info" => Opens::Details,
+            "hub_rename" => Opens::Rename,
+            "hub_icon" => Opens::IconBrowser,
+            "hub_move" => Opens::Move,
+            _ => return None,
+        })
+    }
+
+    /// Whether the row `id` opens something that may not be ready at once:
+    /// a screen of its own, or a picker Core has to be asked about first.
+    /// The menu stays up, its row held down, until that is ready, and
+    /// leaves in the same frame it appears: closing it first would show the
+    /// screen underneath on its own for a moment.
+    pub fn holds_open(id: &str) -> bool {
+        matches!(
+            id,
+            "hub_rename" | "hub_icon" | "change_launcher" | "more_info"
+        )
+    }
+
+    /// A Hub tile's own Rename and Change icon rows, ahead of its layout
+    /// rows (Remove, Move) wherever those sit: configuration before
+    /// organization. A menu with no layout rows is not a tile's.
+    #[must_use]
+    pub fn with_tile_edits(mut self, can_change_icon: bool) -> Self {
+        let mut edits = vec![keyed("hub_rename", "hub_rename:tile")];
+        if can_change_icon {
+            edits.push(keyed("hub_icon", "hub_icon:tile"));
+        }
+        let is_layout = |row: &Row| row.id == "hub_move" || row.id == "hub_remove";
+        for list in [&mut self.root, &mut self.manage] {
+            if let Some(at) = list.iter().position(is_layout) {
+                list.splice(at..at, edits);
+                break;
+            }
+        }
+        self
     }
 
     fn with_manage(mut self, page: Page) -> Self {
@@ -734,6 +802,80 @@ mod tests {
         );
         assert_eq!(script.page_for("write_token"), Some(Page::WriteToken));
         assert_eq!(shortcut(true, false).page_for("write_token"), None);
+    }
+
+    #[test]
+    fn a_tile_names_and_draws_itself_ahead_of_its_layout_rows() {
+        assert_eq!(
+            keys(&built_in().with_tile_edits(true).root),
+            [
+                "hub_rename:tile",
+                "hub_icon:tile",
+                "hub_move",
+                "hub_remove:hide"
+            ]
+        );
+        assert_eq!(
+            keys(&category(true).with_tile_edits(false).root),
+            [
+                "hub_rename:tile",
+                "hub_move",
+                "hub_remove:hide",
+                "manage_category"
+            ]
+        );
+        assert_eq!(
+            keys(&shortcut(true, false).with_tile_edits(true).root),
+            [
+                "write_token",
+                "hub_rename:tile",
+                "hub_icon:tile",
+                "hub:remove",
+                "hub_move:tile"
+            ]
+        );
+        // A game tile keeps its layout rows on Manage, and the edits join
+        // them there.
+        let pinned = game(&GameInput {
+            tile: Some(Tile::Pinned),
+            ..regular()
+        })
+        .with_tile_edits(true);
+        assert!(!ids(&pinned.root).contains(&"hub_rename"));
+        let manage = ids(&pinned.manage);
+        let rename = manage.iter().position(|id| *id == "hub_rename");
+        let remove = manage.iter().position(|id| *id == "hub_remove");
+        assert_eq!(rename.map(|at| at + 2), remove);
+        // A menu with no layout rows gains nothing.
+        assert_eq!(
+            folder(Folder::Directory, false, false).with_tile_edits(true),
+            folder(Folder::Directory, false, false)
+        );
+    }
+
+    #[test]
+    fn rows_that_open_a_surface_say_which() {
+        assert_eq!(Menu::opens("scrape_system"), Some(Opens::Setup));
+        assert_eq!(Menu::opens("change_launcher"), Some(Opens::Picker));
+        assert_eq!(Menu::opens("qr_code"), Some(Opens::QrCode));
+        assert_eq!(Menu::opens("write_card"), Some(Opens::TokenWrite));
+        assert_eq!(Menu::opens("more_info"), Some(Opens::Details));
+        assert_eq!(Menu::opens("hub_rename"), Some(Opens::Rename));
+        assert_eq!(Menu::opens("hub_icon"), Some(Opens::IconBrowser));
+        assert_eq!(Menu::opens("hub_move"), Some(Opens::Move));
+        // Rows that act at once, and rows that turn a page, open nothing.
+        assert_eq!(Menu::opens("toggle_favorite"), None);
+        assert_eq!(Menu::opens("index_system"), None);
+        assert_eq!(Menu::opens("manage_game"), None);
+    }
+
+    #[test]
+    fn only_rows_that_open_something_slow_keep_the_menu_up() {
+        assert!(Menu::holds_open("hub_rename"));
+        assert!(Menu::holds_open("hub_icon"));
+        assert!(Menu::holds_open("change_launcher"));
+        assert!(!Menu::holds_open("hub_move"));
+        assert!(Menu::holds_open("more_info"));
     }
 
     #[test]

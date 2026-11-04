@@ -385,6 +385,42 @@ impl HubLayout {
         true
     }
 
+    /// Set the `index`-th visible item's display name. An empty `name`
+    /// restores the kind's own name, and the key leaves the saved file.
+    /// A blank cell has no name to set.
+    pub fn set_visible_name(&mut self, index: usize, name: &str) -> bool {
+        self.set_visible_field(index, name, |item| &mut item.name)
+    }
+
+    /// Set the `index`-th visible item's icon: an absolute image path, or a
+    /// file name matched in the custom `hub` folder. Empty restores the
+    /// kind's own art.
+    pub fn set_visible_icon(&mut self, index: usize, icon: &str) -> bool {
+        self.set_visible_field(index, icon, |item| &mut item.icon)
+    }
+
+    fn set_visible_field(
+        &mut self,
+        index: usize,
+        value: &str,
+        field: impl Fn(&mut HubItem) -> &mut String,
+    ) -> bool {
+        let indices = self.visible_indices();
+        let Some(&real) = indices.get(index) else {
+            return false;
+        };
+        let item = &mut self.items[real];
+        if item.kind() == HubItemKind::Blank {
+            return false;
+        }
+        let slot = field(item);
+        if slot == value {
+            return false;
+        }
+        value.clone_into(slot);
+        true
+    }
+
     /// Keys from `known` (`"category:<id>"` / `"action:<id>"`) not
     /// currently present in `items` — the "Add item…" grab bag's contents,
     /// in `known` order. A removed tile only ever comes back through this
@@ -1303,6 +1339,49 @@ type = "blank"
         let mut layout = HubLayout::default();
         layout.reconcile(&["Arcade".to_string()], &[]);
         assert!(!layout.remove_visible_item(999));
+    }
+
+    #[test]
+    fn set_visible_name_and_icon_land_on_the_visible_item_and_round_trip() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("frontend.toml");
+        let mut layout = HubLayout::default();
+        layout.reconcile(&["Arcade".to_string()], &[]);
+        // An unrenderable kind ahead of the target: visible index 1 is
+        // still Arcade.
+        layout.items.insert(
+            0,
+            HubItem {
+                kind_raw: "collection".into(),
+                ..HubItem::default()
+            },
+        );
+        assert!(layout.set_visible_name(1, "Coin-op"));
+        assert!(layout.set_visible_icon(1, "/media/usb0/art/arcade.png"));
+        assert!(!layout.set_visible_name(1, "Coin-op"), "unchanged");
+        assert_eq!(layout.items[2].id, "Arcade");
+        assert_eq!(layout.items[2].name, "Coin-op");
+
+        save_hub_layout(&path, &layout).expect("save");
+        let loaded = load_hub_layout(&path);
+        assert_eq!(loaded, layout);
+
+        let mut reset = loaded;
+        assert!(reset.set_visible_name(1, ""));
+        assert!(reset.set_visible_icon(1, ""));
+        save_hub_layout(&path, &reset).expect("save");
+        let text = std::fs::read_to_string(&path).expect("read");
+        assert!(!text.contains("name ="), "an empty name leaves the file");
+        assert!(!text.contains("icon ="), "an empty icon leaves the file");
+    }
+
+    #[test]
+    fn set_visible_name_skips_blanks_and_out_of_range() {
+        let mut layout = HubLayout::default();
+        layout.reconcile(&["Arcade".to_string(), "Console".to_string()], &[]);
+        assert!(layout.remove_visible_item(1));
+        assert!(!layout.set_visible_name(1, "Gap"));
+        assert!(!layout.set_visible_icon(999, "/x.png"));
     }
 
     #[test]

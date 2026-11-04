@@ -58,6 +58,10 @@ const SOURCES: &[(&str, &str)] = &[
         include_str!("../../../resources/images/icons/Controls.svg"),
     ),
     (
+        "icons/Check",
+        include_str!("../../../resources/images/icons/Check.svg"),
+    ),
+    (
         "icons/Display",
         include_str!("../../../resources/images/icons/Display.svg"),
     ),
@@ -148,6 +152,10 @@ const SOURCES: &[(&str, &str)] = &[
     (
         "icons/Settings",
         include_str!("../../../resources/images/icons/Settings.svg"),
+    ),
+    (
+        "icons/ShiftLock",
+        include_str!("../../../resources/images/icons/ShiftLock.svg"),
     ),
     (
         "icons/Support",
@@ -446,9 +454,101 @@ const ALIASES: &[(&str, &str)] = &[
     ("Heart", "icons/Heart"),
 ];
 
+/// Hand-drawn pixel art for the small glyphs, used instead of the vector
+/// source wherever the bitmap face is (`Sizing.pixel-grid`: CRT, and
+/// `MiSTer` outputs under 400 px tall). A vector icon squeezed into 6-9 px
+/// turns to grey mush there; these are drawn on their own few-pixel grid
+/// and only ever drawn at whole multiples of it. One row per line: `.` is
+/// clear, `#` is the ink (the heart's fill), `+` is the heart's keyline.
+/// See `resources/images/pixel/README.txt`.
+const PIXEL_ART: &[(&str, &str)] = &[
+    (
+        "status/BatteryEmpty",
+        include_str!("../../../resources/images/pixel/status/BatteryEmpty.txt"),
+    ),
+    (
+        "status/BatteryFull",
+        include_str!("../../../resources/images/pixel/status/BatteryFull.txt"),
+    ),
+    (
+        "status/BatteryHalf",
+        include_str!("../../../resources/images/pixel/status/BatteryHalf.txt"),
+    ),
+    (
+        "status/BatteryLow",
+        include_str!("../../../resources/images/pixel/status/BatteryLow.txt"),
+    ),
+    (
+        "status/Bluetooth",
+        include_str!("../../../resources/images/pixel/status/Bluetooth.txt"),
+    ),
+    (
+        "status/NFC",
+        include_str!("../../../resources/images/pixel/status/NFC.txt"),
+    ),
+    (
+        "status/WiFi",
+        include_str!("../../../resources/images/pixel/status/WiFi.txt"),
+    ),
+    (
+        "status/WiredNetwork",
+        include_str!("../../../resources/images/pixel/status/WiredNetwork.txt"),
+    ),
+    (
+        "icons/Check",
+        include_str!("../../../resources/images/pixel/icons/Check.txt"),
+    ),
+    (
+        "icons/Filter",
+        include_str!("../../../resources/images/pixel/icons/Filter.txt"),
+    ),
+    (
+        "icons/Heart",
+        include_str!("../../../resources/images/pixel/icons/Heart.txt"),
+    ),
+    (
+        "icons/NavDown",
+        include_str!("../../../resources/images/pixel/icons/NavDown.txt"),
+    ),
+    (
+        "icons/NavLeft",
+        include_str!("../../../resources/images/pixel/icons/NavLeft.txt"),
+    ),
+    (
+        "icons/NavRight",
+        include_str!("../../../resources/images/pixel/icons/NavRight.txt"),
+    ),
+    (
+        "icons/NavUp",
+        include_str!("../../../resources/images/pixel/icons/NavUp.txt"),
+    ),
+    (
+        "icons/ScrollDown",
+        include_str!("../../../resources/images/pixel/icons/ScrollDown.txt"),
+    ),
+    (
+        "icons/ScrollUp",
+        include_str!("../../../resources/images/pixel/icons/ScrollUp.txt"),
+    ),
+    (
+        "icons/Search",
+        include_str!("../../../resources/images/pixel/icons/Search.txt"),
+    ),
+    (
+        "icons/ShiftLock",
+        include_str!("../../../resources/images/pixel/icons/ShiftLock.txt"),
+    ),
+];
+
 /// Theme tints for the two-tone heart: (white fill, black keyline) as
 /// hex, set from the palette's marker and marker-outline roles.
 type HeartTints = (String, String);
+
+/// The same two tints as RGB, for the pixel heart.
+type Rgb = (u8, u8, u8);
+
+/// A raster: (key, px, tint as ARGB, drawn from pixel art).
+type CacheKey = (String, u32, u32, bool);
 
 thread_local! {
     /// Raster cache keyed by (key, px, tint): res switches alternate
@@ -456,15 +556,21 @@ thread_local! {
     /// colors (a focused row against a resting one) keeps both. Thread
     /// local because slint::Image is not Send and the GlyphSource
     /// callback only runs on the UI thread.
-    static CACHE: RefCell<HashMap<(String, u32, u32), slint::Image>> = RefCell::new(HashMap::new());
+    static CACHE: RefCell<HashMap<CacheKey, slint::Image>> = RefCell::new(HashMap::new());
     static HEART: RefCell<HeartTints> = RefCell::new(("#ec5545".to_string(), "#f6e4e0".to_string()));
+    static HEART_RGB: RefCell<(Rgb, Rgb)> =
+        const { RefCell::new(((0xec, 0x55, 0x45), (0xf6, 0xe4, 0xe0))) };
 }
 
 /// Re-tint the favorite heart for a new palette and drop its rasters.
 pub fn set_heart_tints(fill: (u8, u8, u8), outline: (u8, u8, u8)) {
     let hex = |(r, g, b): (u8, u8, u8)| format!("#{r:02x}{g:02x}{b:02x}");
     HEART.with(|h| *h.borrow_mut() = (hex(fill), hex(outline)));
-    CACHE.with(|c| c.borrow_mut().retain(|(key, _, _), _| key != "icons/Heart"));
+    HEART_RGB.with(|h| *h.borrow_mut() = (fill, outline));
+    CACHE.with(|c| {
+        c.borrow_mut()
+            .retain(|(key, _, _, _), _| key != "icons/Heart");
+    });
 }
 
 fn resolve(key: &str) -> &str {
@@ -567,52 +673,127 @@ fn rasterize_svg_tinted(svg: &str, px: u32, tint: slint::Color) -> Option<slint:
     Some(slint::Image::from_rgba8_premultiplied(buffer))
 }
 
+/// The largest whole multiple pixel art is drawn at. It stands in for a
+/// vector icon squeezed into a small slot (a status icon, a list heart, a
+/// keyboard key); the same key in a large slot (a Hub tile's art) keeps
+/// the vector source, which a CRT shows fine at that size.
+const MAX_PIXEL_SCALE: u32 = 2;
+
+/// Blit `key`'s pixel art into a square `px` image at the largest whole
+/// multiple of its grid that fits, centered on whole pixels. None when the
+/// key has no art, or the slot is smaller than the art or bigger than
+/// `MAX_PIXEL_SCALE` of it.
+fn render_pixel_art(key: &str, px: u32, tint: slint::Color) -> Option<slint::Image> {
+    let (_, art) = PIXEL_ART.iter().find(|(k, _)| *k == key)?;
+    let rows: Vec<&[u8]> = art
+        .lines()
+        .map(str::as_bytes)
+        .filter(|r| !r.is_empty())
+        .collect();
+    let height = u32::try_from(rows.len()).ok()?;
+    let width = u32::try_from(rows.iter().map(|r| r.len()).max()?).ok()?;
+    let scale = px / width.max(height);
+    if scale == 0 || scale > MAX_PIXEL_SCALE {
+        return None;
+    }
+    let ox = (px - width * scale) / 2;
+    let oy = (px - height * scale) / 2;
+    let premultiply = |(r, g, b): (u8, u8, u8), alpha: u8| {
+        let a = u32::from(alpha);
+        let mul = |c: u8| ((u32::from(c) * a) / 255) as u8;
+        slint::Rgba8Pixel {
+            r: mul(r),
+            g: mul(g),
+            b: mul(b),
+            a: alpha,
+        }
+    };
+    let (ink, keyline) = if key == "icons/Heart" {
+        let (fill, outline) = HEART_RGB.with(|h| *h.borrow());
+        (premultiply(fill, 255), premultiply(outline, 255))
+    } else if tint.alpha() == 0 {
+        let white = premultiply((255, 255, 255), 255);
+        (white, white)
+    } else {
+        let ink = premultiply((tint.red(), tint.green(), tint.blue()), tint.alpha());
+        (ink, ink)
+    };
+    let mut buffer = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(px, px);
+    let pixels = buffer.make_mut_slice();
+    for (y, row) in (0u32..).zip(&rows) {
+        for (x, cell) in (0u32..).zip(row.iter()) {
+            let color = match cell {
+                b'#' => ink,
+                b'+' => keyline,
+                _ => continue,
+            };
+            for dy in 0..scale {
+                let line = ((oy + y * scale + dy) * px) as usize;
+                for dx in 0..scale {
+                    pixels[line + (ox + x * scale + dx) as usize] = color;
+                }
+            }
+        }
+    }
+    Some(slint::Image::from_rgba8_premultiplied(buffer))
+}
+
 /// Rasterize `key` at `px` x `px` (every source has a square viewbox),
 /// in `tint`. The color is baked into the artwork rather than applied by
 /// the view: the renderer then draws a plain image, with no per-item
 /// offscreen colorize pass and no second texture per tile. A transparent
-/// tint keeps the artwork's own colors (the two-tone heart).
-pub fn render(key: &str, px: u32, tint: slint::Color) -> Option<slint::Image> {
+/// tint keeps the artwork's own colors (the two-tone heart). On the
+/// bitmap-face pixel grid a key with pixel art draws that instead.
+pub fn render(key: &str, px: u32, tint: slint::Color, pixel_grid: bool) -> Option<slint::Image> {
     // One line per rasterization, not per draw: a glyph that reappears
     // here on every frame means the cache key is moving under it.
-    tracing::trace!(key, px, "glyph raster");
+    tracing::trace!(key, px, pixel_grid, "glyph raster");
     if px == 0 {
         return None;
     }
     let key = resolve(key);
     let tint_key = u32::from_be_bytes([tint.alpha(), tint.red(), tint.green(), tint.blue()]);
-    let cached = CACHE.with(|c| c.borrow().get(&(key.to_string(), px, tint_key)).cloned());
+    let cache_key = (key.to_string(), px, tint_key, pixel_grid);
+    let cached = CACHE.with(|c| c.borrow().get(&cache_key).cloned());
     if let Some(image) = cached {
         return Some(image);
     }
 
-    let generated;
-    let recolored;
-    let svg: &str = if let Some(corner) = key.strip_prefix("corners/cut-") {
-        generated = corner_cut_svg(corner, px)?;
-        generated.as_str()
-    } else if key == "icons/Heart" {
-        let (_, svg) = SOURCES.iter().find(|(k, _)| *k == key)?;
-        let (fill, outline) = HEART.with(|h| h.borrow().clone());
-        recolored = svg.replace("#fff", &fill).replace("#000", &outline);
-        recolored.as_str()
+    let pixel_art = if pixel_grid {
+        render_pixel_art(key, px, tint)
     } else {
-        let (_, svg) = SOURCES.iter().find(|(k, _)| *k == key)?;
-        svg
+        None
     };
-    // Tint the rendered pixels, not the document: the sources paint in
-    // `#fff`, `currentColor` and a couple of other inks, and only the
-    // coverage matters. `tinted_svg_image_provider.cpp` does the same -
-    // render, then run the ramp over the image.
-    let image = if key == "icons/Heart" || tint.alpha() == 0 {
-        rasterize_svg(svg, px)?
+    let image = if let Some(image) = pixel_art {
+        image
     } else {
-        rasterize_svg_tinted(svg, px, tint)?
+        let generated;
+        let recolored;
+        let svg: &str = if let Some(corner) = key.strip_prefix("corners/cut-") {
+            generated = corner_cut_svg(corner, px)?;
+            generated.as_str()
+        } else if key == "icons/Heart" {
+            let (_, svg) = SOURCES.iter().find(|(k, _)| *k == key)?;
+            let (fill, outline) = HEART.with(|h| h.borrow().clone());
+            recolored = svg.replace("#fff", &fill).replace("#000", &outline);
+            recolored.as_str()
+        } else {
+            let (_, svg) = SOURCES.iter().find(|(k, _)| *k == key)?;
+            svg
+        };
+        // Tint the rendered pixels, not the document: the sources paint in
+        // `#fff`, `currentColor` and a couple of other inks, and only the
+        // coverage matters. `tinted_svg_image_provider.cpp` does the same -
+        // render, then run the ramp over the image.
+        if key == "icons/Heart" || tint.alpha() == 0 {
+            rasterize_svg(svg, px)?
+        } else {
+            rasterize_svg_tinted(svg, px, tint)?
+        }
     };
 
     CACHE.with(|c| {
-        c.borrow_mut()
-            .insert((key.to_string(), px, tint_key), image.clone());
+        c.borrow_mut().insert(cache_key, image.clone());
     });
     Some(image)
 }
@@ -643,6 +824,7 @@ mod tests {
                 &format!("corners/cut-{corner}"),
                 px,
                 slint::Color::from_argb_u8(204, 0, 0, 0),
+                false,
             )
             .expect("corner mask renders");
             let buffer = image.to_rgba8_premultiplied().expect("rgba");
@@ -662,7 +844,7 @@ mod tests {
     #[test]
     fn every_glyph_rasterizes_with_visible_pixels() {
         for (key, _) in SOURCES {
-            let image = render(key, 48, slint::Color::from_rgb_u8(255, 255, 255))
+            let image = render(key, 48, slint::Color::from_rgb_u8(255, 255, 255), false)
                 .unwrap_or_else(|| panic!("{key} did not render"));
             assert_eq!(image.size().width, 48, "{key}");
             let buffer = image
@@ -677,7 +859,13 @@ mod tests {
 
     #[test]
     fn aliases_resolve_and_unknown_keys_are_none() {
-        assert!(render("NotAGlyph", 96, slint::Color::from_rgb_u8(255, 255, 255)).is_none());
+        assert!(render(
+            "NotAGlyph",
+            96,
+            slint::Color::from_rgb_u8(255, 255, 255),
+            false
+        )
+        .is_none());
         assert!(!has_glyph("NotAGlyph"));
         assert!(has_glyph("Arcade"));
         assert!(has_glyph("buttons/style_e/FaceEast"));
@@ -693,7 +881,7 @@ mod tests {
         // sources use `#fff`, `currentColor` and a couple of others),
         // and the alpha the rasterizer produced is what shapes it.
         let tint = slint::Color::from_rgb_u8(0x8c, 0x40, 0x20);
-        let image = render("categories/Other", 48, tint).expect("renders");
+        let image = render("categories/Other", 48, tint, false).expect("renders");
         let buffer = image.to_rgba8_premultiplied().expect("pixels");
         let mut opaque = 0usize;
         for p in buffer.as_slice() {
@@ -708,8 +896,92 @@ mod tests {
     #[test]
     fn heart_tints_follow_the_palette() {
         set_heart_tints((1, 2, 3), (4, 5, 6));
-        let image = render("icons/Heart", 32, slint::Color::default()).expect("heart renders");
+        let image =
+            render("icons/Heart", 32, slint::Color::default(), false).expect("heart renders");
         let buffer = image.to_rgba8_premultiplied().expect("pixels");
         assert!(buffer.as_slice().iter().any(|p| p.a > 0));
+    }
+
+    fn opaque_pixels(image: &slint::Image) -> Vec<(u32, u32, slint::Rgba8Pixel)> {
+        let buffer = image.to_rgba8_premultiplied().expect("pixels");
+        let width = buffer.width();
+        (0u32..)
+            .zip(buffer.as_slice())
+            .filter(|(_, p)| p.a > 0)
+            .map(|(i, p)| (i % width, i / width, *p))
+            .collect()
+    }
+
+    #[test]
+    fn pixel_art_only_overrides_real_glyphs_and_uses_known_cells() {
+        for (key, art) in PIXEL_ART {
+            assert!(has_glyph(key), "{key} has art but no vector glyph");
+            assert!(
+                art.bytes().all(|b| matches!(b, b'.' | b'#' | b'+' | b'\n')),
+                "{key} uses an unknown cell"
+            );
+            assert!(art.contains('#'), "{key} has no ink");
+        }
+    }
+
+    #[test]
+    fn pixel_art_lands_whole_and_opaque_at_its_own_size_and_multiples() {
+        let ink = slint::Color::from_rgb_u8(0x8c, 0x40, 0x20);
+        for (key, art) in PIXEL_ART {
+            if *key == "icons/Heart" {
+                continue;
+            }
+            let rows: Vec<&str> = art.lines().filter(|r| !r.is_empty()).collect();
+            let inked = art.bytes().filter(|b| *b == b'#').count();
+            let side = rows
+                .len()
+                .max(rows.iter().map(|r| r.len()).max().unwrap_or(0));
+            for scale in [1usize, 2] {
+                let px = u32::try_from(side * scale + 1).expect("small");
+                let image = render(key, px, ink, true).expect("art renders");
+                let pixels = opaque_pixels(&image);
+                // Every inked cell becomes a solid scale x scale block in
+                // the tint, and nothing else is painted.
+                assert_eq!(pixels.len(), inked * scale * scale, "{key} at {px}");
+                assert!(
+                    pixels
+                        .iter()
+                        .all(|(_, _, p)| p.a == 255 && (p.r, p.g, p.b) == (0x8c, 0x40, 0x20)),
+                    "{key} at {px} has a blended pixel"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn pixel_art_waits_for_the_pixel_grid_and_a_slot_that_fits() {
+        let ink = slint::Color::from_rgb_u8(255, 255, 255);
+        let vector = render("status/WiFi", 8, ink, false).expect("vector");
+        assert!(
+            opaque_pixels(&vector).iter().any(|(_, _, p)| p.a < 255),
+            "the vector raster at 8 px is anti-aliased"
+        );
+        let art = render("status/WiFi", 8, ink, true).expect("art");
+        assert!(opaque_pixels(&art).iter().all(|(_, _, p)| p.a == 255));
+        // Smaller than the art: the vector source again.
+        assert!(render_pixel_art("status/WiFi", 6, ink).is_none());
+        // And a large slot, such as a Hub tile's art: the vector source.
+        assert!(render_pixel_art("icons/Search", 15, ink).is_none());
+        assert!(render_pixel_art("icons/Search", 14, ink).is_some());
+        let tile = render("icons/Search", 60, ink, true).expect("tile art");
+        assert!(opaque_pixels(&tile).iter().any(|(_, _, p)| p.a < 255));
+        let fallback = render("status/WiFi", 6, ink, true).expect("fallback");
+        assert!(opaque_pixels(&fallback).iter().any(|(_, _, p)| p.a < 255));
+    }
+
+    #[test]
+    fn the_pixel_heart_takes_both_palette_roles() {
+        set_heart_tints((1, 2, 3), (4, 5, 6));
+        let image = render("icons/Heart", 7, slint::Color::default(), true).expect("heart");
+        let colors: std::collections::HashSet<(u8, u8, u8)> = opaque_pixels(&image)
+            .iter()
+            .map(|(_, _, p)| (p.r, p.g, p.b))
+            .collect();
+        assert_eq!(colors, [(1, 2, 3), (4, 5, 6)].into_iter().collect());
     }
 }

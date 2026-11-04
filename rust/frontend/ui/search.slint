@@ -9,8 +9,9 @@
 import { Theme, Sizing, Layout, Motion } from "theme.slint";
 import { TopStatusStrip, SectionHeader, ScrollCue } from "chrome.slint";
 import { SelectionCursor, SelectionClip } from "focus.slint";
-import { KeyKind, SearchZone, SearchPane } from "state_types.slint";
-import { KeyCell, OnScreenKeyboard } from "keyboard.slint";
+import { KeyKind, SearchZone, SearchPane, SearchScope } from "state_types.slint";
+import { Labels } from "labels.slint";
+import { KeyCell, OnScreenKeyboard, Field, TextField } from "keyboard.slint";
 
 // One pane row: a match and its system, or a recent search and its filters.
 export struct SearchPaneRow {
@@ -24,11 +25,14 @@ export global SearchView {
     in-out property <string> before;
     in-out property <string> at;
     in-out property <string> after;
-    // A folder search: the system field states the scope and takes no focus.
-    in-out property <bool> scoped: false;
+    // A "Search here" search: the title and the system field state the
+    // scope, and the field takes no focus.
+    in-out property <SearchScope> scope: SearchScope.none;
+    // The category a category scope covers.
+    in-out property <string> scope-category;
     // Empty for every system.
     in-out property <string> system-name;
-    // The folder a scoped search is limited to; empty at a system's top level.
+    // The folder a folder scope is limited to.
     in-out property <string> scope-name;
     // The chosen filter as one line ("Platformer +1"); empty for none.
     in-out property <string> filter-text;
@@ -59,6 +63,33 @@ export global SearchView {
     // The kind of key under the focus, for the help bar.
     in-out property <KeyKind> key-kind: KeyKind.char;
 
+    public pure function scoped() -> bool {
+        return self.scope != SearchScope.none;
+    }
+    // What a scoped search is limited to, by its own name.
+    public pure function scope-label() -> string {
+        if (self.scope == SearchScope.folder) { return self.scope-name; }
+        if (self.scope == SearchScope.system) { return self.system-name; }
+        if (self.scope == SearchScope.category) {
+            return Labels.hub("category:" + self.scope-category, self.scope-category);
+        }
+        if (self.scope == SearchScope.favorites) { return @tr("Favorites"); }
+        return "";
+    }
+    public pure function title() -> string {
+        return self.scoped() ? @tr("Search in {}", self.scope-label()) : @tr("Search");
+    }
+    // The system field's value: the systems searched, or the whole scope
+    // from the system down.
+    public pure function system-text() -> string {
+        if (self.scope == SearchScope.folder) { return @tr("{} / {}", self.system-name, self.scope-name); }
+        if (self.scope == SearchScope.category) { return self.scope-label(); }
+        if (self.scope == SearchScope.favorites) {
+            return self.system-name == "" ? self.scope-label() : @tr("{} / {}", self.scope-label(), self.system-name);
+        }
+        return self.system-name == "" ? @tr("All systems") : self.system-name;
+    }
+
     public pure function count-text() -> string {
         if (self.failed) { return @tr("Search failed"); }
         if (self.searching && !self.count-known) { return @tr("Searching…"); }
@@ -75,40 +106,6 @@ export global SearchInput {
     callback clicked(SearchZone, int);
     // The pane's room for rows changed.
     callback layout-changed();
-}
-
-// A named field: its name, then its value. Focus is the accent ring, the
-// same ring the keys wear, so the name keeps its contrast.
-component Field inherits Rectangle {
-    in property <string> label;
-    in property <string> value;
-    in property <bool> focused;
-    // Where a host's own content starts, after the name.
-    out property <length> value-x: name.x + name.width + Sizing.surface-pad;
-    background: Theme.surface-card;
-    border-radius: Sizing.radius-sm;
-    border-width: root.focused ? Sizing.card-border-width * 2 : Sizing.card-border-width;
-    border-color: root.focused ? Theme.accent : Theme.border-mid;
-    clip: true;
-    name := Text {
-        x: Sizing.surface-pad;
-        height: parent.height;
-        text: root.label;
-        color: Theme.text-label;
-        font-size: Sizing.font-caption;
-        vertical-alignment: center;
-    }
-    if root.value != "": Text {
-        x: root.value-x;
-        width: Math.max(0px, parent.width - self.x - Sizing.surface-pad);
-        height: parent.height;
-        text: root.value;
-        color: Theme.text-primary;
-        font-size: Sizing.font-body;
-        vertical-alignment: center;
-        overflow: elide;
-    }
-    @children
 }
 
 // A pane row's text, drawn once at rest and once inverted under the fill.
@@ -181,7 +178,7 @@ export component SearchScreen inherits Rectangle {
     property <length> keys-w: Math.min(root.content-w - root.pane-w - root.pane-gap,
         10 * 2 * root.unit * 1.1);
     property <length> block-w: root.keys-w + root.pane-gap + root.pane-w;
-    property <length> block-x: root.side + (root.content-w - root.block-w) / 2;
+    property <length> block-x: Sizing.snap(root.side + (root.content-w - root.block-w) / 2);
     property <length> fields-y: root.top + root.query-h + root.gap;
     property <length> field-gap: Sizing.pct-w(1);
     property <length> pane-row-h: root.unit * 0.72;
@@ -192,104 +189,44 @@ export component SearchScreen inherits Rectangle {
         y: Sizing.header-bottom + Layout.top-margin;
         height: Layout.strip-height;
         slot-margin: Layout.slot-margin;
-        title: @tr("Search");
+        title: SearchView.title();
         show-page-counter: false;
         visible: Layout.top-strip-visible;
     }
 
-    // The query, named like the fields under it. A block cursor marks
-    // where typing lands: it blinks while the keyboard has focus and rests
-    // dimmed while anything else does.
-    query := Field {
+    // The query, named like the fields under it.
+    query := TextField {
         x: root.block-x;
         y: root.top;
         width: root.block-w;
         height: root.query-h;
         label: @tr("Name");
-        focused: false;
-
-        property <bool> blink-on: true;
-        property <string> edited: SearchView.before + "\u{1f}" + SearchView.at;
-        changed edited => { self.blink-on = true; }
-        property <bool> block-shown: !root.typing || self.blink-on;
-        Timer {
-            interval: 530ms;
-            running: root.typing && Motion.enabled;
-            triggered => { query.blink-on = !query.blink-on; }
-        }
-
-        Text {
-            visible: SearchView.pane-collapsed && self.text != "";
-            x: parent.width - self.width - Sizing.surface-pad;
-            height: parent.height;
-            text: SearchView.count-text();
-            color: SearchView.failed ? Theme.error : Theme.text-label;
-            font-size: Sizing.font-small;
-            vertical-alignment: center;
-        }
-        before := Text {
-            x: query.value-x;
-            // An empty Text still claims a sliver of width, which pushed
-            // the cursor off the gap the other fields keep.
-            width: SearchView.before == "" ? 0px : self.preferred-width;
-            height: parent.height;
-            // Rust swaps a space beside the cursor for a no-break one,
-            // which keeps its advance, so the cursor clears the last letter.
-            text: SearchView.before;
-            color: Theme.text-primary;
-            font-size: Sizing.font-body;
-            font-weight: FontWeight.medium;
-            vertical-alignment: center;
-        }
-        at-measure := Text {
-            visible: false;
-            text: SearchView.at;
-            font-size: Sizing.font-body;
-            font-weight: FontWeight.medium;
-        }
-        cursor := Rectangle {
-            x: before.x + before.width + (SearchView.before != "" ? Sizing.stroke(1) : 0px);
-            y: (parent.height - self.height) / 2;
-            width: SearchView.at != "" ? Math.max(at-measure.preferred-width, Sizing.font-body * 0.3)
-                : Sizing.font-body * 0.55;
-            height: Sizing.font-body * 1.25;
-            background: !query.block-shown ? transparent
-                : (root.typing ? Theme.accent : Theme.text-label);
-            Text {
-                width: parent.width;
-                height: parent.height;
-                text: SearchView.at;
-                color: query.block-shown ? Theme.on-accent : Theme.text-primary;
-                font-size: Sizing.font-body;
-                font-weight: FontWeight.medium;
-                horizontal-alignment: center;
-                vertical-alignment: center;
-            }
-        }
-        Text {
-            x: cursor.x + cursor.width + Sizing.stroke(1);
-            height: parent.height;
-            text: SearchView.after;
-            color: Theme.text-primary;
-            font-size: Sizing.font-body;
-            font-weight: FontWeight.medium;
-            vertical-alignment: center;
-        }
+        before: SearchView.before;
+        at: SearchView.at;
+        after: SearchView.after;
+        typing: root.typing;
+    }
+    if SearchView.pane-collapsed: Text {
+        x: query.x + query.width - self.width - Sizing.surface-pad;
+        y: query.y;
+        height: query.height;
+        text: SearchView.count-text();
+        color: SearchView.failed ? Theme.error : Theme.text-label;
+        font-size: Sizing.font-small;
+        vertical-alignment: center;
     }
 
-    // The system, or the folder a scoped search is limited to, beside the
-    // tag filter.
+    // The system, or what a scoped search is limited to, beside the tag
+    // filter.
     system-field := Field {
         x: root.block-x;
         y: root.fields-y;
-        width: (root.keys-w - root.field-gap) / 2;
+        width: Sizing.snap((root.keys-w - root.field-gap) / 2);
         height: root.row-h;
-        label: SearchView.scoped ? @tr("Search in") : @tr("System");
-        value: SearchView.system-name == "" ? @tr("All systems")
-            : (SearchView.scope-name == "" ? SearchView.system-name
-                : @tr("{} / {}", SearchView.system-name, SearchView.scope-name));
+        label: SearchView.scoped() ? @tr("Search in") : @tr("System");
+        value: SearchView.system-text();
         focused: SearchView.zone == SearchZone.system;
-        if !SearchView.scoped: TouchArea {
+        if !SearchView.scoped(): TouchArea {
             mouse-cursor: pointer;
             changed has-hover => { if (self.has-hover) { SearchInput.hovered(SearchZone.system, 0); } }
             clicked => { SearchInput.clicked(SearchZone.system, 0); }

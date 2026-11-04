@@ -242,13 +242,79 @@ pub fn find(rows: &[Vec<Cell>], key: Key) -> Option<Position> {
     })
 }
 
-/// The layer after a Shift or Symbols press: each toggles its own layer.
-pub fn toggle(layer: Layer, key: Key) -> Layer {
-    match (key, layer) {
-        (Key::Shift, Layer::Upper) | (Key::Symbols, Layer::Symbols) => Layer::Lower,
-        (Key::Shift, _) => Layer::Upper,
-        (Key::Symbols, _) => Layer::Symbols,
-        _ => layer,
+/// How Shift is set. A tap shifts the next character only, as phone
+/// keyboards do; a long press (`input::SHIFT_LOCK_HOLD_MS`) locks it.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Shift {
+    #[default]
+    Off,
+    /// The next character is uppercase, then Shift lets go.
+    Once,
+    /// Caps: every letter is uppercase until Shift is tapped again.
+    Locked,
+}
+
+/// The layer on show and how Shift is set.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Case {
+    pub layer: Layer,
+    pub shift: Shift,
+}
+
+impl Case {
+    /// Shift tapped: on for one character from lowercase or the symbols,
+    /// off again from either shifted state.
+    pub fn tap_shift(&mut self) {
+        *self = match (self.layer, self.shift) {
+            (Layer::Upper, Shift::Once | Shift::Locked) => Self::default(),
+            _ => Self {
+                layer: Layer::Upper,
+                shift: Shift::Once,
+            },
+        };
+    }
+
+    /// Shift held: caps, until it is tapped again.
+    pub fn lock_shift(&mut self) {
+        *self = Self {
+            layer: Layer::Upper,
+            shift: Shift::Locked,
+        };
+    }
+
+    /// Symbols tapped: to the symbols and back. A one-character Shift is
+    /// dropped on the way; caps come back with the letters.
+    pub fn tap_symbols(&mut self) {
+        *self = if self.layer == Layer::Symbols {
+            Self {
+                layer: if self.shift == Shift::Locked {
+                    Layer::Upper
+                } else {
+                    Layer::Lower
+                },
+                shift: if self.shift == Shift::Locked {
+                    Shift::Locked
+                } else {
+                    Shift::Off
+                },
+            }
+        } else {
+            Self {
+                layer: Layer::Symbols,
+                shift: if self.shift == Shift::Locked {
+                    Shift::Locked
+                } else {
+                    Shift::Off
+                },
+            }
+        };
+    }
+
+    /// A character went into the text: a one-character Shift lets go.
+    pub fn typed(&mut self) {
+        if self.shift == Shift::Once {
+            *self = Self::default();
+        }
     }
 }
 
@@ -265,6 +331,9 @@ pub struct TextBuffer {
     /// Caret position in characters, `0..=len`.
     caret: usize,
     max_chars: usize,
+    /// Spaces go in as typed, doubled ones included; only a leading space
+    /// is still refused. A password is not a name to tidy.
+    verbatim: bool,
 }
 
 impl TextBuffer {
@@ -275,12 +344,26 @@ impl TextBuffer {
         }
     }
 
+    /// A buffer that keeps spaces as typed; see `verbatim`.
+    pub fn verbatim(max_chars: usize) -> Self {
+        Self {
+            max_chars,
+            verbatim: true,
+            ..Self::default()
+        }
+    }
+
     pub fn text(&self) -> &str {
         &self.text
     }
 
     pub fn caret(&self) -> usize {
         self.caret
+    }
+
+    /// Put the caret back where it was, clamped to the text.
+    pub fn set_caret(&mut self, caret: usize) {
+        self.caret = caret.min(self.len());
     }
 
     pub fn is_empty(&self) -> bool {
@@ -327,7 +410,9 @@ impl TextBuffer {
         }
         if c == ' ' {
             let (before, after) = self.split();
-            if before.is_empty() || before.ends_with(' ') || after.starts_with(' ') {
+            if before.is_empty()
+                || (!self.verbatim && (before.ends_with(' ') || after.starts_with(' ')))
+            {
                 return false;
             }
         }
@@ -363,6 +448,64 @@ impl TextBuffer {
         }
         true
     }
+}
+
+/// How long a password field shows the character just typed before it
+/// joins the dots.
+pub const PASSWORD_REVEAL_MS: u64 = 1500;
+
+/// The dot a hidden character shows as.
+pub const MASK_CHAR: char = '\u{2022}';
+
+/// A password field's one visible character: the one just typed, until the
+/// reveal time runs out or anything else changes the field. Each reveal has
+/// a ticket, so a timer from an earlier character cannot hide a later one.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Mask {
+    reveal: Option<usize>,
+    ticket: u64,
+}
+
+impl Mask {
+    /// The character at `index` was just typed: show it, hide any other,
+    /// and return the ticket its timer expires.
+    pub fn typed(&mut self, index: usize) -> u64 {
+        self.reveal = Some(index);
+        self.ticket = self.ticket.wrapping_add(1);
+        self.ticket
+    }
+
+    /// Any other edit or caret move hides everything at once.
+    pub fn hide(&mut self) {
+        self.reveal = None;
+        self.ticket = self.ticket.wrapping_add(1);
+    }
+
+    /// The reveal timer for `ticket` ran out; true when that hid something.
+    pub fn expire(&mut self, ticket: u64) -> bool {
+        if self.ticket != ticket || self.reveal.is_none() {
+            return false;
+        }
+        self.reveal = None;
+        true
+    }
+
+    pub fn revealed(&self) -> Option<usize> {
+        self.reveal
+    }
+
+    pub fn ticket(&self) -> u64 {
+        self.ticket
+    }
+}
+
+/// The text a password field draws: a dot for every character but the
+/// revealed one.
+pub fn masked(text: &str, reveal: Option<usize>) -> String {
+    text.chars()
+        .enumerate()
+        .map(|(i, c)| if Some(i) == reveal { c } else { MASK_CHAR })
+        .collect()
 }
 
 #[cfg(test)]
@@ -457,13 +600,49 @@ mod tests {
     }
 
     #[test]
-    fn shift_and_symbols_each_toggle_their_own_layer() {
-        assert_eq!(toggle(Layer::Lower, Key::Shift), Layer::Upper);
-        assert_eq!(toggle(Layer::Upper, Key::Shift), Layer::Lower);
-        assert_eq!(toggle(Layer::Symbols, Key::Shift), Layer::Upper);
-        assert_eq!(toggle(Layer::Lower, Key::Symbols), Layer::Symbols);
-        assert_eq!(toggle(Layer::Symbols, Key::Symbols), Layer::Lower);
-        assert_eq!(toggle(Layer::Upper, Key::Space), Layer::Upper);
+    fn a_tapped_shift_covers_one_character_and_a_held_one_locks() {
+        let mut case = Case::default();
+        case.tap_shift();
+        assert_eq!(case.layer, Layer::Upper);
+        assert_eq!(case.shift, Shift::Once);
+        case.typed();
+        assert_eq!(case, Case::default(), "one character, then it lets go");
+        case.tap_shift();
+        case.tap_shift();
+        assert_eq!(case, Case::default(), "a second tap cancels it");
+        case.lock_shift();
+        case.typed();
+        case.typed();
+        assert_eq!(case.shift, Shift::Locked, "caps stay on");
+        assert_eq!(case.layer, Layer::Upper);
+        case.tap_shift();
+        assert_eq!(case, Case::default(), "a tap turns caps off");
+    }
+
+    #[test]
+    fn symbols_drop_a_one_character_shift_and_keep_caps() {
+        let mut case = Case::default();
+        case.tap_shift();
+        case.tap_symbols();
+        assert_eq!(case.layer, Layer::Symbols);
+        assert_eq!(case.shift, Shift::Off);
+        case.tap_symbols();
+        assert_eq!(case, Case::default());
+        case.lock_shift();
+        case.tap_symbols();
+        assert_eq!(case.layer, Layer::Symbols);
+        case.typed();
+        case.tap_symbols();
+        assert_eq!(case.layer, Layer::Upper, "caps come back with the letters");
+        assert_eq!(case.shift, Shift::Locked);
+        // Shift from the symbols goes to the letters for one character.
+        let mut symbols = Case {
+            layer: Layer::Symbols,
+            shift: Shift::Off,
+        };
+        symbols.tap_shift();
+        assert_eq!(symbols.shift, Shift::Once);
+        assert_eq!(symbols.layer, Layer::Upper);
     }
 
     #[test]
@@ -532,5 +711,45 @@ mod tests {
         assert!(!is_text('\u{F700}'));
         assert!(!is_text('\u{8}'));
         assert!(!is_text('\u{1b}'));
+    }
+
+    #[test]
+    fn a_password_shows_only_the_character_just_typed() {
+        let mut mask = Mask::default();
+        assert_eq!(masked("abc", mask.revealed()), "\u{2022}\u{2022}\u{2022}");
+        let first = mask.typed(0);
+        assert_eq!(masked("a", mask.revealed()), "a");
+        let second = mask.typed(1);
+        assert_eq!(
+            masked("ab", mask.revealed()),
+            "\u{2022}b",
+            "the next character hides the last at once"
+        );
+        assert!(
+            !mask.expire(first),
+            "an earlier timer cannot hide a later character"
+        );
+        assert_eq!(mask.revealed(), Some(1));
+        assert!(mask.expire(second));
+        assert_eq!(masked("ab", mask.revealed()), "\u{2022}\u{2022}");
+        assert!(!mask.expire(second));
+        mask.typed(1);
+        mask.hide();
+        assert_eq!(mask.revealed(), None);
+        assert_eq!(masked("", None), "");
+    }
+
+    #[test]
+    fn a_verbatim_buffer_keeps_doubled_spaces_but_not_a_leading_one() {
+        let mut buffer = TextBuffer::verbatim(10);
+        assert!(!buffer.insert(' '));
+        assert!(buffer.insert('a'));
+        assert!(buffer.insert(' '));
+        assert!(buffer.insert(' '));
+        assert_eq!(buffer.text(), "a  ");
+        let mut name = TextBuffer::new(10);
+        name.insert('a');
+        name.insert(' ');
+        assert!(!name.insert(' '));
     }
 }

@@ -41,9 +41,6 @@ use crate::navigation::EntryMode;
 use crate::router::{lock, Ctx, Shared};
 use crate::{App, GamesInput, GamesView, GridCell};
 
-/// Swoop duration and the settle before the strip re-arms.
-pub(crate) const SWOOP_MS: u64 = 260;
-pub(crate) const REARM_MS: u64 = 50;
 const FAVORITE_TAG: &str = "user:favorite";
 const HIDDEN_TAG: &str = "user:hidden";
 const FILE_GLYPH: &str = "icons/File";
@@ -319,6 +316,14 @@ impl From<&MediaHistoryEntry> for GameRow {
 pub struct GamesModel {
     pub mode: GamesMode,
     pub rows: Vec<GameRow>,
+    /// The Show tags setting: off, a row's tags never reach its suffix.
+    pub show_tags: bool,
+    /// Left and Right step the detail pane's images instead of turning
+    /// the page (the "Left and Right in lists" setting).
+    pub list_images: bool,
+    /// The detail pane's image: the row's identity and its index in the
+    /// row's image order. Another row starts again at its cover.
+    pub detail_image: (String, usize),
     pub grid: Grid,
     pub next_cursor: Option<String>,
     /// The initial fill is in flight (the in-screen loading cue).
@@ -361,20 +366,14 @@ pub struct GamesModel {
     pub persist_seq: u64,
     pub detail: FocusedDetail,
     pub detail_seq: u64,
-    pub rapid_active: bool,
+    /// The fast scroll and its rail.
+    pub rapid: crate::browse_motion::Rapid,
     /// Holds the detailed list's artwork demand until the selection rests.
     pub cover_settle: CoverSettle,
-    /// The fast-scroll rail is up: from the start of a fast scroll until
-    /// `RAIL_LINGER_MS` after it stops.
-    pub rail_visible: bool,
-    /// Ticket for the rail's linger timer.
-    pub rail_seq: u64,
     pub activate_pulse: i32,
     pub release_pulse: i32,
-    /// A page swoop is in flight; input waits for the commit.
-    pub sliding: bool,
-    pub page_seq: u64,
-    pub cut_next_page: bool,
+    /// The page turn in flight (`page_motion`); input waits for it.
+    pub page: crate::page_motion::PageMotion,
     pub folder_direction: i32,
     pub folder_sliding: bool,
     /// A jump walk is loading its target pages.
@@ -392,6 +391,9 @@ impl GamesModel {
         Self {
             mode: GamesMode::Browse,
             rows: Vec::new(),
+            show_tags: true,
+            list_images: false,
+            detail_image: (String::new(), 0),
             grid: Grid::new(4, 3),
             next_cursor: None,
             loading: false,
@@ -418,15 +420,11 @@ impl GamesModel {
             persist_seq: 0,
             detail: FocusedDetail::new(),
             detail_seq: 0,
-            rapid_active: false,
+            rapid: crate::browse_motion::Rapid::default(),
             cover_settle: CoverSettle::default(),
-            rail_visible: false,
-            rail_seq: 0,
             activate_pulse: 0,
             release_pulse: 0,
-            sliding: false,
-            page_seq: 0,
-            cut_next_page: false,
+            page: crate::page_motion::PageMotion::default(),
             folder_direction: 0,
             folder_sliding: false,
             jump_loading: false,
@@ -502,10 +500,14 @@ impl GamesModel {
         let displays = crate::tag_utils::sibling_disambiguation_displays(&names);
         let count = |n: u32| zaparoo_app::format::count(i64::from(n), language);
         for (row, tags) in self.rows[start..].iter_mut().zip(displays) {
-            let tags = if row.root_distinguisher.is_empty() {
+            // Two same-named roots keep what tells them apart: that is not
+            // a tag, and hiding it would leave two identical rows.
+            let tags = if !row.root_distinguisher.is_empty() {
+                row.root_distinguisher.clone()
+            } else if self.show_tags {
                 tags
             } else {
-                row.root_distinguisher.clone()
+                String::default()
             };
             row.suffix = rules::row_suffix(
                 row.entry_type,
@@ -568,12 +570,30 @@ fn page_size(ctx: &Ctx, app: &App, shared: &Shared) -> u32 {
 fn list_geometry(ctx: &Ctx, app: &App, shared: &Shared) -> rules::ListGeometry {
     let inputs = crate::router::output_scene(app).inputs();
     let derived = zaparoo_app::sizing::derive(&inputs);
-    let view = if rotated(shared) {
+    list_geometry_for(
+        &inputs,
+        rotated(shared),
+        crate::page_bar::games_row_block(shared.games.mode, &derived),
+        list_target_rows(ctx, shared),
+    )
+}
+
+/// The games list profile's card for `inputs`, below a Menu chip band of
+/// `row_block` (zero for a screen without chips). The file browser's list
+/// shares it.
+pub(crate) fn list_geometry_for(
+    inputs: &zaparoo_app::sizing::Inputs,
+    rotated: bool,
+    row_block: i32,
+    target_rows: usize,
+) -> rules::ListGeometry {
+    let derived = zaparoo_app::sizing::derive(inputs);
+    let view = if rotated {
         View::GamesListTate
     } else {
         View::GamesList
     };
-    let profile = layouts::profile(ThemeId::current(&inputs), view, &inputs);
+    let profile = layouts::profile(ThemeId::current(inputs), view, inputs);
     let Body::List { list, .. } = profile.body else {
         unreachable!("the games list views resolve to a list body");
     };
@@ -584,11 +604,12 @@ fn list_geometry(ctx: &Ctx, app: &App, shared: &Shared) -> rules::ListGeometry {
             screen_height: inputs.screen_height as i32,
             header_bottom: derived.header_bottom,
             status_top_margin: profile.status.top_margin,
-            strip_height: profile.status.strip_height,
+            // The Menu chip row sits between the strip and the card.
+            strip_height: profile.status.strip_height + row_block,
             help_bar_height: derived.help_bar_height,
             tier_240: derived.tier == zaparoo_app::sizing::Tier::T240,
-            safe_bottom_gap: inputs.pct_h(6.0),
-            target_rows: list_target_rows(ctx, shared),
+            safe_bottom_gap: derived.help_bar_band,
+            target_rows,
             min_row_height: inputs.pct_h(3.0),
             default_row_height: inputs.pct_h(6.0),
         },
@@ -682,6 +703,8 @@ fn write_saved_path(shared: &mut Shared, path: String) {
 }
 
 fn refresh_display(shared: &mut Shared) {
+    shared.games.show_tags = shared.persist.settings.show_tags;
+    shared.games.list_images = shared.persist.settings.list_left_right == "image";
     let show_original = shared.persist.settings.show_original_filenames;
     let language = crate::effective_language(&shared.persist.settings.language);
     shared.games.refresh_display(show_original, &language);
@@ -693,6 +716,21 @@ fn detail_ctx() -> Option<(Arc<zaparoo_core::client::Client>, Handle)> {
 
 /// Client and runtime handle for the detail pane's media.meta fetch.
 static DETAIL_CTX: OnceLock<(Arc<zaparoo_core::client::Client>, Handle)> = OnceLock::new();
+
+/// The detail pane's rows from Core (`rules::DetailCache`).
+static DETAIL_CACHE: std::sync::Mutex<rules::DetailCache> =
+    std::sync::Mutex::new(rules::DetailCache::new(rules::DETAIL_CACHE_BYTES));
+
+/// Core's metadata may have changed: ask again as each row is shown.
+pub fn clear_detail_cache() {
+    detail_cache().clear();
+}
+
+fn detail_cache() -> std::sync::MutexGuard<'static, rules::DetailCache> {
+    DETAIL_CACHE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
 
 pub fn seed_detail_ctx(client: Arc<zaparoo_core::client::Client>, handle: Handle) {
     let _ = DETAIL_CTX.set((client, handle));
@@ -1073,7 +1111,7 @@ fn next_cursor(pagination: Option<&zaparoo_core::media_types::Pagination>) -> Op
 fn begin_fill(model: &mut GamesModel) -> u64 {
     model.fill_task.cancel();
     model.ticket += 1;
-    model.sliding = false;
+    model.page.sliding = false;
     model.folder_direction = 0;
     model.folder_sliding = false;
     model.loading = true;
@@ -1566,6 +1604,8 @@ pub(crate) fn on_append(
         let list = list_layout(&shared);
         let show_original = shared.persist.settings.show_original_filenames;
         let language = crate::effective_language(&shared.persist.settings.language);
+        shared.games.show_tags = shared.persist.settings.show_tags;
+        shared.games.list_images = shared.persist.settings.list_left_right == "image";
         let model = &mut shared.games;
         let from_page = model.grid.current_page();
         model.loading_more = false;
@@ -1715,7 +1755,7 @@ pub(crate) fn drain_load_requests(ctx: &Ctx, app: &App) {
                 rules::jump_fetch_limit(target, model.rows.len(), size),
                 true,
             )
-        } else if model.rapid_active {
+        } else if model.rapid.active {
             let limit = if urgent {
                 rules::RAPID_FETCH_CHUNK
             } else {
@@ -1750,13 +1790,29 @@ pub struct Geometry {
 /// lists hang it directly under the grid with the shell's default gutter.
 pub fn geometry_for(inputs: &zaparoo_app::sizing::Inputs, mode: GamesMode) -> Geometry {
     let derived = zaparoo_app::sizing::derive(inputs);
+    grid_geometry_for(
+        inputs,
+        mode,
+        crate::page_bar::games_row_block(mode, &derived),
+    )
+}
+
+/// The games grid under a Menu chip band of `row_block`; zero for a screen
+/// without chips, such as the file browser.
+pub(crate) fn grid_geometry_for(
+    inputs: &zaparoo_app::sizing::Inputs,
+    mode: GamesMode,
+    row_block: i32,
+) -> Geometry {
+    let derived = zaparoo_app::sizing::derive(inputs);
     let profile = layouts::profile(ThemeId::current(inputs), View::GamesGrid, inputs);
     let (grid, footer) = match profile.body {
         Body::Grid { grid, footer } => (grid, footer),
         Body::List { .. } => unreachable!("the games grid view resolves to a grid body"),
     };
     let screen_h = inputs.screen_height as i32;
-    let grid_y = derived.header_bottom + profile.status.top_margin + profile.status.strip_height;
+    let grid_y =
+        derived.header_bottom + profile.status.top_margin + profile.status.strip_height + row_block;
     let t240 = derived.tier == zaparoo_app::sizing::Tier::T240;
     let (bottom, label_y, label_height) = match mode {
         GamesMode::Browse => {
@@ -1780,7 +1836,7 @@ pub fn geometry_for(inputs: &zaparoo_app::sizing::Inputs, mode: GamesMode) -> Ge
             let bottom = if t240 {
                 derived.help_bar_height + label_height
             } else {
-                inputs.pct_h(15.0)
+                zaparoo_app::sizing::less_hidden_bar(inputs, &derived, inputs.pct_h(15.0))
             };
             let grid_height = (screen_h - grid_y - bottom).max(0);
             (bottom, grid_y + grid_height, label_height)
@@ -1897,6 +1953,7 @@ fn text_cell(row: &GameRow) -> GridCell {
         tags: SharedString::from(row.suffix.as_str()),
         favorite: row.is_favorite,
         hidden: row.is_hidden,
+        opens: row.is_dir(),
         ..Default::default()
     }
 }
@@ -1927,6 +1984,7 @@ fn cell_for(
         ctx.media.is_negative(&key),
     );
     if matches!(state, CoverState::Art | CoverState::Pending) {
+        cell.fetched = true;
         if let Some(color) = placeholder_color(ctx, row, &key) {
             cell.placeholder = color;
             cell.has_placeholder = true;
@@ -1970,6 +2028,34 @@ fn placeholder_color(ctx: &Ctx, row: &GameRow, key: &MediaKey) -> Option<slint::
 }
 
 /// A row that will show art but has none cached yet.
+/// Whether the grid page on screen still waits on any of its covers, for
+/// `zaparoo_app::cover_landing`. A list's one detail cover never waits.
+#[cfg(feature = "mister")]
+pub fn page_covers_waiting(ctx: &Ctx, app: &App) -> bool {
+    if !matches!(
+        app.global::<crate::Shell>().get_active_screen(),
+        crate::Screen::Games
+            | crate::Screen::Favorites
+            | crate::Screen::Recents
+            | crate::Screen::SearchResults
+    ) {
+        return false;
+    }
+    let shared = lock(&ctx.shared);
+    if list_layout(&shared) {
+        return false;
+    }
+    let model = &shared.games;
+    let tier = cover_tier(app, model.mode);
+    let page_size = model.grid.page_size();
+    model
+        .rows
+        .iter()
+        .skip(model.grid.current_page() * page_size)
+        .take(page_size)
+        .any(|row| cover_waiting(ctx, model, row, tier))
+}
+
 fn cover_waiting(ctx: &Ctx, model: &GamesModel, row: &GameRow, tier: CoverSize) -> bool {
     let key = media_key(row, &model.system_id, tier);
     let state = rules::cover_state(
@@ -2005,7 +2091,7 @@ fn request_covers(ctx: &Ctx, model: &GamesModel, keys: Vec<MediaKey>) {
     // Even a tiny thumbnail makes Core decode its original on a cold miss.
     // Fast navigation reuses prepared colors but starts no artwork work.
     ctx.media
-        .request_wanted(if model.covers_paused || model.rapid_active {
+        .request_wanted(if model.covers_paused || model.rapid.active {
             Vec::new()
         } else {
             keys
@@ -2134,7 +2220,7 @@ fn hold_list_covers(ctx: &Ctx, app: &App) -> bool {
     let step = {
         let mut shared = lock(&ctx.shared);
         let model = &mut shared.games;
-        if model.rapid_active || model.rows.is_empty() {
+        if model.rapid.active || model.rows.is_empty() {
             return false;
         }
         let index = model.grid.current_index();
@@ -2162,12 +2248,99 @@ fn hold_list_covers(ctx: &Ctx, app: &App) -> bool {
     }
 }
 
-fn wanted_detail_covers(model: &GamesModel, tier: CoverSize) -> Vec<MediaKey> {
-    cover_keys(
+fn wanted_detail_covers(ctx: &Ctx, model: &GamesModel, tier: CoverSize) -> Vec<MediaKey> {
+    let mut keys = cover_keys(
         model,
         rules::detail_prefetch_rows(model.rows.len(), model.grid.current_index()),
         tier,
-    )
+    );
+    // A stepped-to image leads; the row's cover stays wanted for the step
+    // back to it.
+    if let Some(key) = model
+        .current()
+        .map(|row| detail_key(ctx, model, row, tier))
+        .filter(|key| key.image_type.is_some())
+    {
+        keys.insert(0, key);
+    }
+    keys
+}
+
+/// The selected row's image order and the pane's place in it. Empty
+/// unless Left and Right step images and Core's metadata for the row has
+/// arrived.
+fn detail_images(ctx: &Ctx, model: &GamesModel) -> (usize, Vec<String>) {
+    if !model.list_images {
+        return (0, Vec::new());
+    }
+    let Some(row) = model.current() else {
+        return (0, Vec::new());
+    };
+    let identity = row.identity(&model.system_id);
+    let types = detail_cache()
+        .image_types(&identity)
+        .map(|types| rules::detail_image_order(types, &ctx.media.preferred_image_type()))
+        .unwrap_or_default();
+    let index = if model.detail_image.0 == identity {
+        model.detail_image.1.min(types.len().saturating_sub(1))
+    } else {
+        0
+    };
+    (index, types)
+}
+
+/// The key the detail pane shows for `row`: its cover, or the image type
+/// the pane was stepped to. The first image is the cover itself, asked for
+/// as browsing asks, so it is never fetched twice, unless a plain cover
+/// request cannot return it (a game with only a map and fanart).
+fn detail_key(ctx: &Ctx, model: &GamesModel, row: &GameRow, tier: CoverSize) -> MediaKey {
+    let key = media_key(row, &model.system_id, tier);
+    let (index, types) = detail_images(ctx, model);
+    match types.get(index) {
+        Some(kind)
+            if index > 0 || !rules::plain_cover_serves(kind, &ctx.media.preferred_image_type()) =>
+        {
+            MediaKey {
+                image_type: Some(kind.clone()),
+                ..key
+            }
+        }
+        _ => key,
+    }
+}
+
+/// Left or Right in the list: a step through the pane's images when set
+/// to, else a page as L and R turn. Text only has no pane.
+fn list_left_right(ctx: &Ctx, app: &App, dir: i64, ready: bool, list_page: i64) {
+    let images = {
+        let shared = lock(&ctx.shared);
+        shared.games.list_images && !list_only_layout(&shared)
+    };
+    if images {
+        step_detail_image(ctx, app, dir);
+    } else if ready {
+        list_move(ctx, app, dir * list_page);
+    }
+}
+
+/// Steps the detail pane's image. False when there is nowhere to go, so
+/// the press does nothing.
+fn step_detail_image(ctx: &Ctx, app: &App, delta: i64) -> bool {
+    {
+        let mut shared = lock(&ctx.shared);
+        let (index, types) = detail_images(ctx, &shared.games);
+        let next = (index as i64 + delta).clamp(0, types.len().saturating_sub(1) as i64) as usize;
+        if types.len() < 2 || next == index {
+            return false;
+        }
+        let model = &mut shared.games;
+        let Some(identity) = model.current().map(|row| row.identity(&model.system_id)) else {
+            return false;
+        };
+        model.detail_image = (identity, next);
+    }
+    render(ctx, app);
+    true
 }
 
 fn cover_keys(model: &GamesModel, indices: Vec<usize>, tier: CoverSize) -> Vec<MediaKey> {
@@ -2251,11 +2424,15 @@ pub fn render(ctx: &Ctx, app: &App) {
     let count = model.rows.len();
 
     view.set_mode(mode);
-    view.set_title(SharedString::from(if mode == GamesMode::Search {
-        crate::search::results_title(&shared)
+    if mode == GamesMode::Search {
+        crate::search::publish_results_title(&view, &shared);
     } else {
-        rules::screen_title(path_stack_len, &model.browse_path, &model.system_name)
-    }));
+        view.set_title(SharedString::from(rules::screen_title(
+            path_stack_len,
+            &model.browse_path,
+            &model.system_name,
+        )));
+    }
     view.set_options_available(options_available(app, &shared));
     view.set_loading(model.loading);
     view.set_error(SharedString::from(model.error.as_str()));
@@ -2273,8 +2450,9 @@ pub fn render(ctx: &Ctx, app: &App) {
     ));
     view.set_has_more(model.has_more());
     view.set_focus_ready(model.focus_armed || model.restore_done);
-    view.set_rapid_active(model.rapid_active);
+    view.set_rapid_active(model.rapid.active);
     publish_rail(app, &shared);
+    crate::page_bar::publish_games(app, &shared, mode);
 
     if !model.folder_sliding {
         if view.get_folder_slide() {
@@ -2284,7 +2462,7 @@ pub fn render(ctx: &Ctx, app: &App) {
             view.set_folder_from_cells(ModelRc::default());
         }
     }
-    let strip_sliding = model.sliding && !view.get_cached_transition();
+    let strip_sliding = model.page.sliding && !view.get_cached_transition();
     if strip_sliding {
         crate::view_model::publish_cells(
             &view.get_next_cells(),
@@ -2294,11 +2472,25 @@ pub fn render(ctx: &Ctx, app: &App) {
     } else if list {
         view.set_cells(ModelRc::new(VecModel::from(Vec::<GridCell>::new())));
     } else {
-        crate::view_model::publish_cells(
+        let landed = crate::view_model::publish_cells(
             &view.get_cells(),
             page_cells(ctx, model, logos, page, tier),
             |rows| view.set_cells(rows),
         );
+        let grid = crate::cover_fade::Grid {
+            fit: &geometry.fit,
+            insets: &geometry.insets,
+            top: geometry.grid_y,
+            columns: geometry.columns,
+        };
+        let selected = model.grid.current_index().checked_sub(start);
+        let screens = [
+            crate::Screen::Games,
+            crate::Screen::Favorites,
+            crate::Screen::Recents,
+            crate::Screen::SearchResults,
+        ];
+        crate::cover_fade::request(app, &screens, &grid, &landed, selected);
     }
     if !strip_sliding {
         view.set_next_cells(ModelRc::new(VecModel::from(Vec::<GridCell>::new())));
@@ -2355,36 +2547,16 @@ pub fn render(ctx: &Ctx, app: &App) {
         let previous = saved_list_top(&shared).unwrap_or_else(|| {
             rules::list_view_top(model.grid.current_index(), count, visible, None)
         });
-        let scroll_top =
-            crate::browse_motion::window_top(model.grid.current_index(), count, visible, previous);
-        // A page of rows either side of the window, so a glide to the
-        // next row or the next page has rows to show the whole way.
-        let top = scroll_top.saturating_sub(visible);
-        let rows: Vec<GridCell> = model
-            .rows
-            .iter()
-            .skip(top)
-            .take(scroll_top - top + 2 * visible)
-            .map(text_cell)
-            .collect();
-        // How the list follows this move. Only a render that moved the
-        // selection decides: one that did not must leave a glide in flight
-        // as it is.
-        let was = usize::try_from(view.get_list_view_top() + view.get_list_sel()).unwrap_or(0);
-        let moved = model.grid.current_index().abs_diff(was);
-        if moved > 0 {
-            let (glide, step_ms) = shared.input.list_follow(moved);
-            view.set_list_glide(glide);
-            view.set_list_step_ms(step_ms);
-        }
-        crate::view_model::publish_cells(&view.get_list_rows(), rows, |rows| {
-            view.set_list_rows(rows);
-        });
-        view.set_list_sel(
-            i32::try_from(model.grid.current_index().saturating_sub(top)).unwrap_or(0),
+        crate::browse_motion::publish_list(
+            &view,
+            &shared.input,
+            model.grid.current_index(),
+            count,
+            visible,
+            previous,
+            &model.rows,
+            text_cell,
         );
-        view.set_list_view_top(i32::try_from(top).unwrap_or(0));
-        view.set_list_scroll_top(i32::try_from(scroll_top).unwrap_or(0));
     } else {
         view.set_list_rows(ModelRc::new(VecModel::from(Vec::<GridCell>::new())));
     }
@@ -2404,7 +2576,7 @@ pub fn render(ctx: &Ctx, app: &App) {
         let wanted = if covers_held {
             Vec::new()
         } else {
-            wanted_detail_covers(model, detail_tier)
+            wanted_detail_covers(ctx, model, detail_tier)
         };
         request_covers(ctx, model, wanted);
         refresh_detail_cover(ctx, app, model);
@@ -2427,7 +2599,7 @@ pub fn render(ctx: &Ctx, app: &App) {
         let bounds = zaparoo_app::logo_cache::Bounds::new(art_tier.tier, art_tier.tier);
         let key = |row: &GameRow| {
             if model.mode == GamesMode::Browse
-                || model.rapid_active
+                || model.rapid.active
                 || (row.has_cover
                     && !ctx
                         .media
@@ -2511,13 +2683,28 @@ fn refresh_detail_cover(ctx: &Ctx, app: &App, model: &GamesModel) {
     let Some(row) = model.current() else {
         view.set_detail_title(SharedString::default());
         view.set_detail_path(SharedString::default());
+        view.set_detail_image_count(0);
+        view.set_detail_image_index(0);
+        view.set_detail_image_kind(SharedString::default());
         view.set_detail_has_cover(false);
         view.set_detail_cover_absent(false);
         view.set_detail_has_placeholder(false);
         return;
     };
     view.set_detail_title(SharedString::from(row.display.as_str()));
-    let key = media_key(row, &model.system_id, CoverSize::detail(app));
+    let (index, types) = detail_images(ctx, model);
+    let count = if types.len() > 1 { types.len() } else { 0 };
+    view.set_detail_image_count(i32::try_from(count).unwrap_or(0));
+    view.set_detail_image_index(i32::try_from(index).unwrap_or(0));
+    view.set_detail_image_kind(
+        types
+            .get(index)
+            .filter(|_| count > 0)
+            .map(String::as_str)
+            .unwrap_or_default()
+            .into(),
+    );
+    let key = detail_key(ctx, model, row, CoverSize::detail(app));
     let placeholder =
         placeholder_color(ctx, row, &key).filter(|_| row.media_capable && row.has_cover);
     let folder = !row.media_capable;
@@ -2572,6 +2759,7 @@ pub fn covers_landed(ctx: &Ctx, app: &App, keys: &[MediaKey]) {
         model.rows.iter().skip(first).take(window).any(|row| {
             let key = media_key(row, &model.system_id, tier);
             keys.contains(&key)
+                || (list && keys.contains(&detail_key(ctx, model, row, tier)))
                 || (!list
                     && row.has_cover
                     && row.cover_color.is_none()
@@ -2705,7 +2893,7 @@ fn schedule_detail(ctx: &Ctx, app: &App, force: bool) {
             .current()
             .map(|row| row.identity(&model.system_id))
             .unwrap_or_default();
-        let rapid = model.rapid_active;
+        let rapid = model.rapid.active;
         let steps = if enabled {
             model.detail.schedule(true, rapid, &identity, index, force)
         } else {
@@ -2722,14 +2910,26 @@ fn schedule_detail(ctx: &Ctx, app: &App, force: bool) {
                 view.set_detail_loading(false);
             }
             // The row's own metadata shows at once, so the table never
-            // holds the previous row's values through the load window.
+            // holds the previous row's values through the load window; what
+            // Core already sent for it, when it has, so it does not blank.
             DetailStep::Peek(index) => {
                 let shared = lock(&ctx.shared);
                 let model = &shared.games;
                 let rows = model
                     .rows
                     .get(index)
-                    .map(|row| detail_rows_for(model, row, &row.detail_rows))
+                    .map(|row| {
+                        let fetched = detail_cache().get(&row.identity(&model.system_id));
+                        detail_rows_for(
+                            model,
+                            row,
+                            fetched
+                                .as_ref()
+                                .map_or(row.detail_rows.as_slice(), |detail| {
+                                    detail.rows.as_slice()
+                                }),
+                        )
+                    })
                     .unwrap_or_default();
                 view.set_detail_rows(ModelRc::new(VecModel::from(rows)));
                 refresh_detail_cover(ctx, app, model);
@@ -2758,12 +2958,15 @@ fn schedule_detail(ctx: &Ctx, app: &App, force: bool) {
 /// is where scraped metadata lives), cut down to the pane's fixed rows. A
 /// game whose year, developer or publisher is a property and not a tag
 /// would otherwise show nothing under its cover.
-fn detail_pairs_from_meta(meta: &MediaMeta, path: &str) -> Vec<(&'static str, String)> {
-    rules::detail_rows_from_tags(&crate::game_info_data::rows(meta, path))
+fn detail_from_meta(meta: &MediaMeta, path: &str) -> rules::Detail {
+    rules::Detail {
+        rows: rules::detail_rows_from_tags(&crate::game_info_data::rows(meta, path)),
+        image_types: crate::game_info_data::image_types(meta),
+    }
 }
 
 fn fire_detail(ctx: &Ctx, app: &App, seq: u64) {
-    let (row, system) = {
+    let (row, system, identity, neighbors) = {
         let mut shared = lock(&ctx.shared);
         if shared.games.detail_seq != seq {
             return;
@@ -2783,9 +2986,16 @@ fn fire_detail(ctx: &Ctx, app: &App, seq: u64) {
             return;
         };
         let system = row.system_or(&model.system_id).to_string();
-        (row, system)
+        let identity = row.identity(&model.system_id);
+        (row, system, identity, detail_neighbors(model, index))
     };
+    prefetch_details(ctx, app, neighbors);
     if row.is_dir() {
+        app.global::<GamesView>().set_detail_loading(false);
+        return;
+    }
+    // Already shown by the peek.
+    if detail_cache().contains(&identity) {
         app.global::<GamesView>().set_detail_loading(false);
         return;
     }
@@ -2794,6 +3004,7 @@ fn fire_detail(ctx: &Ctx, app: &App, seq: u64) {
     };
     let params =
         zaparoo_core::media_types::MediaMetaParams::for_row(row.media_id, system, row.path.clone());
+    let generation = detail_cache().generation();
     let weak = app.as_weak();
     let ctx = ctx.clone();
     handle.spawn(async move {
@@ -2807,168 +3018,145 @@ fn fire_detail(ctx: &Ctx, app: &App, seq: u64) {
                 // The title-level tags describe the game; the media
                 // record's own tags stand in when Core sent none.
                 result.ok().map(|result| {
-                    let pairs = detail_pairs_from_meta(&result.media, &row.path);
-                    detail_rows_for(&shared.games, &row, &pairs)
+                    let detail = detail_from_meta(&result.media, &row.path);
+                    let rows = detail_rows_for(&shared.games, &row, &detail.rows);
+                    detail_cache().insert(generation, identity, detail);
+                    rows
                 })
             };
             let view = app.global::<GamesView>();
+            let landed = rows.is_some();
             if let Some(rows) = rows {
                 view.set_detail_rows(ModelRc::new(VecModel::from(rows)));
             }
             view.set_detail_loading(false);
+            // The image count arrived with the metadata, and with it maybe
+            // a typed image in the cover's place (a game with only a map):
+            // a render asks for it, as stepping an image does, since the
+            // detail demand is the render's to own.
+            if landed && lock(&ctx.shared).games.list_images {
+                render(&ctx, &app);
+            }
         });
+    });
+}
+
+/// The rows beside `index` whose covers the pane already warms
+/// (`rules::detail_prefetch_rows`), with Core's metadata not yet cached:
+/// each row with its system and identity.
+fn detail_neighbors(model: &GamesModel, index: usize) -> Vec<(GameRow, String, String)> {
+    let cache = detail_cache();
+    rules::detail_prefetch_rows(model.rows.len(), index)
+        .into_iter()
+        .filter(|&neighbor| neighbor != index)
+        .filter_map(|neighbor| model.rows.get(neighbor))
+        .filter(|row| !row.is_dir())
+        .filter_map(|row| {
+            let identity = row.identity(&model.system_id);
+            (!identity.is_empty() && !cache.contains(&identity)).then(|| {
+                let system = row.system_or(&model.system_id).to_string();
+                (row.clone(), system, identity)
+            })
+        })
+        .collect()
+}
+
+/// Fetches the neighbors' metadata one at a time into the cache, so a
+/// step onto one shows it at once. One that the selection has reached by
+/// the time it lands is shown then.
+fn prefetch_details(ctx: &Ctx, app: &App, rows: Vec<(GameRow, String, String)>) {
+    if rows.is_empty() {
+        return;
+    }
+    let Some((client, handle)) = detail_ctx() else {
+        return;
+    };
+    let weak = app.as_weak();
+    let ctx = ctx.clone();
+    handle.spawn(async move {
+        for (row, system, identity) in rows {
+            let params = zaparoo_core::media_types::MediaMetaParams::for_row(
+                row.media_id,
+                system,
+                row.path.clone(),
+            );
+            let generation = detail_cache().generation();
+            let Ok(result) = client.media_meta(params).await else {
+                continue;
+            };
+            let detail = detail_from_meta(&result.media, &row.path);
+            let pairs = detail.rows.clone();
+            detail_cache().insert(generation, identity.clone(), detail);
+            let ctx = ctx.clone();
+            let _ = weak.upgrade_in_event_loop(move |app| {
+                let shared = lock(&ctx.shared);
+                let model = &shared.games;
+                let current = model
+                    .current()
+                    .filter(|current| current.identity(&model.system_id) == identity);
+                if let Some(current) = current {
+                    let rows = detail_rows_for(model, current, &pairs);
+                    app.global::<GamesView>()
+                        .set_detail_rows(ModelRc::new(VecModel::from(rows)));
+                    if model.list_images {
+                        refresh_detail_cover(&ctx, &app, model);
+                    }
+                }
+            });
+        }
     });
 }
 
 // ---------- Input ----------
 
-#[cfg(feature = "mister")]
-fn request_cached_page_transition(app: &App, direction: i32, _columns: i32, _rows: i32) -> bool {
-    if app.global::<crate::Shell>().get_browse_list_layout() {
-        return false;
+/// The games grids on the shared page turn.
+pub(crate) struct GamesScreen;
+
+impl crate::page_motion::PagedScreen for GamesScreen {
+    type View<'a> = GamesView<'a>;
+    fn view(app: &App) -> GamesView<'_> {
+        app.global::<GamesView>()
     }
-    let view = app.global::<GamesView>();
-    crate::mister::request_browse_page_transition(
-        app,
-        view.get_grid_y(),
-        view.get_grid_height(),
-        direction,
-    )
+    fn motion(shared: &mut Shared) -> &mut crate::page_motion::PageMotion {
+        &mut shared.games.page
+    }
+    fn render(ctx: &Ctx, app: &App) {
+        render(ctx, app);
+    }
+    fn on_screen(app: &App) -> bool {
+        matches!(
+            app.global::<crate::Shell>().get_active_screen(),
+            crate::Screen::Games
+                | crate::Screen::Favorites
+                | crate::Screen::Recents
+                | crate::Screen::SearchResults
+        )
+    }
+    fn list_layout(app: &App) -> bool {
+        app.global::<crate::Shell>().get_browse_list_layout()
+    }
+    /// A new fill replaces the rows a turn was showing.
+    fn epoch(shared: &Shared) -> u64 {
+        shared.games.ticket
+    }
 }
 
-#[cfg(not(feature = "mister"))]
-fn request_cached_page_transition(_app: &App, _direction: i32, _columns: i32, _rows: i32) -> bool {
-    false
-}
-
-/// Swoop one period in the grid's committed navigation direction, including
-/// wrapped and deferred turns. Reduce motion cuts instead.
+/// Turn to the grid's current page in its committed direction, including
+/// wrapped and deferred turns.
 fn slide_to_current_page(ctx: &Ctx, app: &App) {
-    let rapid = crate::input::rapid_page(ctx) || crate::input::rapid_navigation(ctx);
-    let (to_page, columns, rows, reduce_motion, tier, dir) = {
-        let mut shared = lock(&ctx.shared);
-        let reduce_motion =
-            shared.persist.settings.reduce_motion || !app.global::<crate::Motion>().get_enabled();
-        let model = &mut shared.games;
-        model.sliding = true;
-        model.page_seq = model.page_seq.wrapping_add(1);
-        let reduce_motion = reduce_motion || std::mem::take(&mut model.cut_next_page);
+    let (direction, local) = {
+        let shared = lock(&ctx.shared);
+        let grid = &shared.games.grid;
         (
-            model.grid.current_page(),
-            model.grid.columns() as i32,
-            model.grid.rows() as i32,
-            reduce_motion,
-            cover_tier(app, model.mode),
-            model.grid.page_direction().offset(),
+            grid.page_direction().offset(),
+            grid.current_index() - grid.current_page() * grid.page_size(),
         )
     };
-    let view = app.global::<GamesView>();
-    let target_local = {
-        let shared = lock(&ctx.shared);
-        let model = &shared.games;
-        model.grid.current_index() - to_page * model.grid.page_size()
-    };
-    view.set_slide_dir(dir);
-    view.set_transition_target_index(i32::try_from(target_local).unwrap_or(0));
-    if reduce_motion || rapid {
-        lock(&ctx.shared).games.sliding = false;
-        render(ctx, app);
-        return;
-    }
-    let ticket = lock(&ctx.shared).games.ticket;
-    let page_seq = lock(&ctx.shared).games.page_seq;
-    if request_cached_page_transition(app, dir, columns, rows) {
-        view.set_slide_anim(false);
-        view.set_cached_transition(true);
-        render(ctx, app);
-        let weak = app.as_weak();
-        let ctx = ctx.clone();
-        slint::Timer::single_shot(Duration::from_millis(SWOOP_MS), move || {
-            if let Some(app) = weak.upgrade() {
-                if !page_motion_current(&ctx, ticket, page_seq) {
-                    return;
-                }
-                lock(&ctx.shared).games.sliding = false;
-                let view = app.global::<GamesView>();
-                view.set_cached_transition(false);
-                view.set_slide_anim(true);
-                render(&ctx, &app);
-            }
-        });
-        return;
-    }
-    crate::drs::heavy_begin();
-    let next: Vec<GridCell> = {
-        let shared = lock(&ctx.shared);
-        page_cells(
-            ctx,
-            &shared.games,
-            crate::systems::LogoPrefs::of(&shared),
-            to_page,
-            tier,
-        )
-    };
-    view.set_slide_anim(true);
-    view.set_selected_local(-1);
-    view.set_next_cells(ModelRc::new(VecModel::from(next)));
-    view.set_page_slide(dir as f32);
-    let weak = app.as_weak();
-    let ctx = ctx.clone();
-    slint::Timer::single_shot(Duration::from_millis(SWOOP_MS), move || {
-        crate::drs::heavy_end();
-        let Some(app) = weak.upgrade() else {
-            return;
-        };
-        if !page_motion_current(&ctx, ticket, page_seq) {
-            return;
-        }
-        lock(&ctx.shared).games.sliding = false;
-        let view = app.global::<GamesView>();
-        view.set_slide_anim(false);
-        render(&ctx, &app);
-        view.set_page_slide(0.0);
-        let weak = app.as_weak();
-        slint::Timer::single_shot(Duration::from_millis(REARM_MS), move || {
-            if !page_motion_current(&ctx, ticket, page_seq) {
-                return;
-            }
-            if let Some(app) = weak.upgrade() {
-                app.global::<GamesView>().set_slide_anim(true);
-            }
-        });
-    });
-}
-
-fn page_motion_current(ctx: &Ctx, ticket: u64, seq: u64) -> bool {
-    let shared = lock(&ctx.shared);
-    shared.games.ticket == ticket && shared.games.page_seq == seq
+    crate::page_motion::turn::<GamesScreen>(ctx, app, direction, local, true);
 }
 
 pub(crate) fn interrupt_page(ctx: &Ctx, app: &App) {
-    let interrupted = {
-        let mut shared = lock(&ctx.shared);
-        let model = &mut shared.games;
-        let interrupted = model.sliding;
-        model.cut_next_page = interrupted;
-        if interrupted {
-            model.page_seq = model.page_seq.wrapping_add(1);
-            model.sliding = false;
-        }
-        interrupted
-    };
-    if !interrupted {
-        return;
-    }
-    let view = app.global::<GamesView>();
-    #[cfg(feature = "mister")]
-    if view.get_cached_transition() {
-        crate::mister::cancel_page_transition();
-    }
-    view.set_cached_transition(false);
-    view.set_slide_anim(false);
-    view.set_page_slide(0.0);
-    render(ctx, app);
-    app.window().request_redraw();
+    crate::page_motion::interrupt::<GamesScreen>(ctx, app);
 }
 
 /// Rows ahead of the letter buckets' first item: the virtual roots, plus
@@ -2979,6 +3167,24 @@ fn letter_leading(shared: &Shared) -> usize {
     } else {
         shared.games.non_media_total()
     }
+}
+
+/// Go to has something to jump through: a ready browse list. The L1+R1
+/// chord holds a shoulder press back only where this is true.
+pub(crate) fn go_to_available(shared: &Shared) -> bool {
+    shared.games.mode == GamesMode::Browse && shared.games.state() == State::Ready
+}
+
+/// The letter bucket the selection is in, where the folder on screen has
+/// its letters: where Go to opens.
+pub(crate) fn current_letter_bucket(shared: &Shared) -> Option<usize> {
+    let groups = scope_letters(shared)?;
+    let offsets: Vec<u32> = groups.iter().map(|group| group.offset).collect();
+    rules::letter_at(
+        &offsets,
+        letter_leading(shared),
+        shared.games.grid.current_index(),
+    )
 }
 
 /// The scope's letter buckets, when the list is browsed by title and the
@@ -2994,8 +3200,8 @@ fn scope_letters(shared: &Shared) -> Option<&[zaparoo_core::media_types::BrowseI
 }
 
 /// The fast-scroll rail: the scope's letters with the current one, or,
-/// where letters mean nothing (Favorites, Recently played, no index yet),
-/// only the position marker.
+/// before the letter index has loaded, only the position marker. A list
+/// with no fixed total gets no rail (`rules::rail_offered`).
 fn publish_rail(app: &App, shared: &Shared) {
     let view = app.global::<GamesView>();
     let model = &shared.games;
@@ -3025,7 +3231,7 @@ fn publish_rail(app: &App, shared: &Shared) {
     }
     let total = model.grid.total_items().max(model.rows.len());
     view.set_rail_fraction(rules::rail_fraction(index, total));
-    view.set_rail_visible(model.rail_visible);
+    view.set_rail_visible(model.rapid.rail_visible && rules::rail_offered(model.known_total()));
 }
 
 /// A held page flip stops at the list's ends: a tapped one wraps around,
@@ -3075,42 +3281,25 @@ fn letter_step(ctx: &Ctx, app: &App, forward: bool) -> bool {
 /// while it runs; the rail comes up with it and stays `RAIL_LINGER_MS`
 /// after it ends.
 pub fn set_rapid(ctx: &Ctx, app: &App, active: bool) {
-    let (changed, linger, seq) = {
+    let (changed, linger) = {
         let mut shared = lock(&ctx.shared);
         let model = &mut shared.games;
-        let changed = model.rapid_active != active;
-        model.rapid_active = active;
+        let (changed, linger) = model.rapid.set(active);
         if changed && !active {
             // The quiet period that ended the scroll was the rest.
             let index = model.grid.current_index();
             model.cover_settle.settle_now(index);
         }
-        // Only the transition re-arms the linger: taps after a fast scroll
-        // must not keep pushing its deadline back.
-        if changed {
-            model.rail_seq += 1;
-        }
-        let linger = changed && !active && model.rail_visible;
-        if active {
-            model.rail_visible = true;
-        }
-        (changed, linger, model.rail_seq)
+        (changed, linger)
     };
-    if linger {
-        let weak = app.as_weak();
-        let ctx = ctx.clone();
-        slint::Timer::single_shot(Duration::from_millis(rules::RAIL_LINGER_MS), move || {
-            {
-                let mut shared = lock(&ctx.shared);
-                if shared.games.rail_seq != seq {
-                    return;
-                }
-                shared.games.rail_visible = false;
-            }
-            if let Some(app) = weak.upgrade() {
-                app.global::<GamesView>().set_rail_visible(false);
-            }
-        });
+    if let Some(seq) = linger {
+        crate::browse_motion::linger_rail(
+            ctx,
+            app,
+            seq,
+            |shared| &mut shared.games.rapid,
+            |app| app.global::<GamesView>().set_rail_visible(false),
+        );
     }
     if !changed {
         return;
@@ -3134,7 +3323,7 @@ fn grid_move(ctx: &Ctx, app: &App, d_col: i32, d_row: i32, page_delta: i32) {
     let (moved, from_page, to_page) = {
         let mut shared = lock(&ctx.shared);
         let model = &mut shared.games;
-        if model.sliding {
+        if model.page.sliding {
             return;
         }
         model.focus_armed = true;
@@ -3165,6 +3354,7 @@ fn list_move(ctx: &Ctx, app: &App, delta: i64) {
         let visible = list_rows_visible(ctx, app, &shared);
         let model = &mut shared.games;
         model.focus_armed = true;
+        model.detail_image = (String::new(), 0);
         let count = model.rows.len();
         let has_more = rules::list_has_more(count, model.known_total(), model.has_more());
         let mut outcome = rules::linear_move(model.grid.current_index(), count, delta, has_more);
@@ -3237,9 +3427,7 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
         actions::LEFT | actions::RIGHT => {
             let dir: i64 = if action == actions::LEFT { -1 } else { 1 };
             if list {
-                if state == State::Ready {
-                    list_move(ctx, app, dir * list_page);
-                }
+                list_left_right(ctx, app, dir, state == State::Ready, list_page);
             } else {
                 grid_move(ctx, app, dir as i32, 0, 0);
             }
@@ -3284,9 +3472,13 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
             }
         }
         actions::PAGE_MENU => {
-            // Favorites scope can produce an empty folder: keep View
+            // Favorites scope can produce an empty folder: keep the Menu
             // reachable so the user can clear the filter.
             if !rules::page_menu_allowed(state, true) {
+                return;
+            }
+            // Above 240p the page actions are a chip row on the page.
+            if crate::page_bar::enter(ctx, app) {
                 return;
             }
             match mode {
@@ -3342,7 +3534,7 @@ fn retry(ctx: &Ctx, app: &App) {
     }
 }
 
-fn press_duration(app: &App) -> u64 {
+pub(crate) fn press_duration(app: &App) -> u64 {
     if app.global::<crate::Motion>().get_enabled() {
         34
     } else {
@@ -3459,6 +3651,10 @@ fn cancel(ctx: &Ctx, app: &App) {
     }
     // A typed search steps back to the Search screen; one a Hub tile opened
     // has no Search screen behind it and leaves for the Hub below.
+    // A tag search Game Info opened goes back to it.
+    if mode == GamesMode::Search && crate::game_info::return_from_drill(ctx, app) {
+        return;
+    }
     if mode == GamesMode::Search && !lock(&ctx.shared).persist.search.from_hub {
         crate::search::return_from_results(ctx, app);
         return;
@@ -3673,6 +3869,11 @@ fn open_context_menu(ctx: &Ctx, app: &App) {
     let index = lock(&ctx.shared).games.grid.current_index();
     crate::router::present_games_context_menu(ctx, app, index, menu);
     crate::router::refresh_readers(ctx);
+}
+
+/// Where the menu sits when Back brings it back: the focused cell now.
+pub(crate) fn context_anchor(ctx: &Ctx, app: &App) -> crate::router::ContextAnchor {
+    cell_anchor(ctx, app)
 }
 
 /// A menu entry was accepted (the menu is already closed).
@@ -4054,7 +4255,7 @@ fn pointer_select(ctx: &Ctx, app: &App, local: i32) -> bool {
         let mut shared = lock(&ctx.shared);
         let list = list_layout(&shared);
         let model = &mut shared.games;
-        if model.sliding || model.loading {
+        if model.page.sliding || model.loading {
             return false;
         }
         let Ok(local) = usize::try_from(local) else {
@@ -4181,7 +4382,7 @@ mod tests {
             .insert("property:year".into(), property("1987"));
         meta.properties
             .insert("property:description".into(), property("A long text."));
-        let rows = detail_pairs_from_meta(&meta, "/games/Desert Falcon.a78");
+        let rows = detail_from_meta(&meta, "/games/Desert Falcon.a78").rows;
         assert_eq!(
             rows,
             vec![
@@ -4195,7 +4396,7 @@ mod tests {
             tag: "1988".into(),
             ..Default::default()
         });
-        let rows = detail_pairs_from_meta(&meta, "/games/Desert Falcon.a78");
+        let rows = detail_from_meta(&meta, "/games/Desert Falcon.a78").rows;
         assert_eq!(rows[0], ("year", "1988".to_string()));
     }
 
@@ -4425,6 +4626,24 @@ mod tests {
             tag_type: tag_type.into(),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn show_tags_off_drops_tags_but_keeps_folder_counts() {
+        let mut model = GamesModel::new();
+        let mut folder = GameRow::from(&entry("directory", "RPGs", "/g/RPGs"));
+        folder.file_count = 5;
+        let game = GameRow::from(&BrowseEntry {
+            disambiguating_tags: vec![tag("region", "us")],
+            ..entry("media", "Sonic CD", "/g/Sonic CD (USA).chd")
+        });
+        model.rows = vec![folder, game];
+        model.refresh_display(false, "en");
+        assert_eq!(model.rows[1].suffix, "US");
+        model.show_tags = false;
+        model.refresh_display(false, "en");
+        assert_eq!(model.rows[0].suffix, "5");
+        assert_eq!(model.rows[1].suffix, "");
     }
 
     #[test]

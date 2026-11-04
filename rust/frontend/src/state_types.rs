@@ -27,7 +27,8 @@ tokens!(Screen {
     Hub => "hub", Systems => "systems", FavoriteSystems => "favorite-systems",
     Games => "games", Favorites => "favorites", Recents => "recents",
     Search => "search", SearchResults => "search-results",
-    Settings => "settings", About => "about", Update => "update", None => "",
+    Settings => "settings", About => "about", Update => "update", Rename => "rename",
+    RaLogin => "ra-login", FileBrowser => "file-browser", None => "",
 });
 tokens!(SettingsPage {
     Root => "", Appearance => "pageAppearance", Library => "pageLibraryData",
@@ -39,10 +40,12 @@ tokens!(VideoStandard { Ntsc => "ntsc", Pal => "pal" });
 tokens!(ErrorKind {
     Generic => "", Launch => "launch", LaunchRepair => "launch_repair", Favorite => "favorite",
     MediaVisibility => "media_visibility", MediaBusy => "media_busy", AddToHub => "add_to_hub",
+    SaveToHub => "save_to_hub",
     MediaIndex => "media_index", MediaScrape => "media_scrape", MediaScrapers => "media_scrapers",
     MediaCancel => "media_cancel", Launcher => "launcher", LauncherSave => "launcher_save",
     AlternateDiscovery => "alternate_discovery", DiscList => "disc_list", QrCode => "qr_code", CardWrite => "card_write", Setting => "setting",
     Pairing => "pairing", Online => "online", Backup => "backup", ConfigFile => "config_file",
+    ImagePicker => "image_picker",
 });
 
 impl From<zaparoo_app::hub::Reason> for crate::DisabledReason {
@@ -172,6 +175,9 @@ mod tests {
             Screen::Settings,
             Screen::About,
             Screen::Update,
+            Screen::Rename,
+            Screen::RaLogin,
+            Screen::FileBrowser,
             Screen::None,
         ] {
             assert_eq!(Screen::try_from(value.token()), Ok(value));

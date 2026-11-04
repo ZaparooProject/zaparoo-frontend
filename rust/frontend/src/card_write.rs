@@ -68,6 +68,10 @@ pub fn begin(ctx: &Ctx, app: &App, text: String) {
 
 fn finish(ctx: &Ctx, app: &App, ticket: u64, text: &str, succeeded: bool) {
     let current = lock(&ctx.shared).card_write.finish(ticket);
+    if current {
+        // A write that ran ends on the screen.
+        crate::router::forget_menu_return(ctx);
+    }
     if !current {
         return;
     }

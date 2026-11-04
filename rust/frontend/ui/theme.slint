@@ -90,7 +90,12 @@ export global Motion {
     // numbers as `zaparoo_app::wait_cue`, which times the header's cue.
     out property <duration> cue-delay-ms: 300ms;
     out property <duration> cue-hold-ms: 200ms;
-    out property <duration> page-ms: 240ms;
+    // A page that slides in, and a body of text paged by a key.
+    out property <duration> page-ms: 200ms;
+    // A list or menu that scrolls to follow one press. Shorter than a page
+    // because it is far more frequent: a scroll the eye waits on reads as
+    // a slow list.
+    out property <duration> scroll-ms: 120ms;
     // How far a focused grid tile grows. Small on purpose: our tiles are
     // large and the screen is close, and scale is the motion class that
     // vestibular guidance singles out, so this sits well under the 1.1 a
@@ -112,11 +117,10 @@ export global Motion {
     // same center instead: the card and its art are sized from the cell and
     // grow with it, while type, padding and stroke widths keep their size.
     in-out property <bool> zoom-by-size: false;
-    // Longer than a focus move on purpose. A slide is a short-distance
-    // movement and a scale is an expansion, which Carbon separates as
-    // 150ms and 240ms; at `focus-ms` a 4% scale gets about five frames and
-    // reads as a step rather than a motion.
-    out property <duration> zoom-ms: 160ms;
+    // A little longer than a focus move on purpose: at `focus-ms` a 4%
+    // scale gets about five frames and reads as a step rather than a
+    // motion. Kept short because it runs on every focus move.
+    out property <duration> zoom-ms: 110ms;
     // Full cycle of the held-tile blink in Hub's Move mode: ~0.77 Hz, well
     // under the 3 Hz WCAG flash-safety threshold, and slow enough that the
     // tile is legible in its "on" half rather than strobing.
@@ -128,14 +132,16 @@ export global Motion {
     // by the `cover-fade` name of the `ZAPAROO_MOTION` test switch on the
     // software-rendered build, where a fading tile repaints every frame of
     // the fade (docs/slint-gotchas.md).
-    in-out property <duration> cover-reveal-ms: 180ms;
-    // The same fade on a grid tile. Separate because a page of covers lands
+    in-out property <duration> cover-reveal-ms: 120ms;
+    // The same fade on a grid tile, for art from Core and its placeholder
+    // colour (`GridCell.fetched`). Separate because a page of covers lands
     // together, and on the software renderer every fading tile repaints
     // every frame: at a 960x540 HDMI render that is most of the grid for
     // the length of the fade, which missed the frame budget and looked
-    // sluggish. Rust pushes 0 there (`display::tile_cover_fade`); the native
-    // CRT modes are small enough to keep it, and one cover in a list's
-    // detail pane fades everywhere.
+    // sluggish. There the presenter fades the covers on the way to the
+    // display and Rust pushes 0, a cut, here (`display::tile_cover_fade`);
+    // only the CRT head of a dual-head pair keeps this one. One cover in a
+    // list's detail pane fades here everywhere.
     in-out property <duration> tile-cover-reveal-ms: 180ms;
     // The fast-scroll rail's fade in and out and its highlight's glide
     // between letters. The same on every renderer. Pushed to 0 only by the
@@ -149,6 +155,9 @@ export global Motion {
 
 export global Sizing {
     pure callback fit-letter-columns(int, length, length, length) -> int;
+    // The Go to cell for (count, columns, width, height, gap):
+    // `zaparoo_app::letter_jump::cell_size`.
+    pure callback fit-letter-cell(int, int, length, length, length) -> length;
     // Bound to the Window dimensions by App; Slint snaps rendered geometry
     // to physical pixels.
     in-out property <length> screen-width: 1280px;
@@ -165,11 +174,14 @@ export global Sizing {
     // re-solves the table below; nothing else writes it.
     in-out property <bool> help-bar-two-rows: false;
 
+    // Whole pixels on the pixel grid (see `snap`), as
+    // `zaparoo_app::sizing`'s percentages always are: a fractional gap
+    // upstream of a label smears the bitmap face across two columns.
     public pure function pct-h(p: float) -> length {
-        return p / 100 * (self.swap-axes ? self.screen-width : self.screen-height);
+        return self.snap(p / 100 * (self.swap-axes ? self.screen-width : self.screen-height));
     }
     public pure function pct-w(p: float) -> length {
-        return p / 100 * (self.swap-axes ? self.screen-height : self.screen-width);
+        return self.snap(p / 100 * (self.swap-axes ? self.screen-height : self.screen-width));
     }
     // Percentage of the shorter axis, for insets that have to measure the
     // same on both of them. A card or panel lip is one margin seen four
@@ -197,11 +209,26 @@ export global Sizing {
     pure function quantize(size: int) -> int {
         return self.bitmap-fonts ? (size < 12 ? 8 : 16) : size;
     }
-    // Snap a length to the nearest whole pixel on CRT, where the bitmap
-    // font and the 240p scanline grid need integer coordinates. A no-op
-    // on HD outputs where Slint's own sub-pixel placement is fine.
+    // Whole pixels wherever the 6x8 bitmap face is in use (CRT, and a
+    // low-resolution MiSTer HDMI mode). The software renderer places glyphs
+    // at quarter-pixel positions and blends the remainder into them, so a
+    // bitmap label is only sharp when it starts on a whole pixel. A no-op
+    // on HD outputs, where sub-pixel placement is what keeps text even.
+    out property <bool> pixel-grid: self.crt || self.bitmap-fonts;
     public pure function snap(v: length) -> length {
-        return self.crt ? Math.round(v / 1px) * 1px : v;
+        return self.pixel-grid ? Math.round(v / 1px) * 1px : v;
+    }
+    // How far a grid screen's footer label sits above its `label-y` on CRT,
+    // into the grid's empty bottom inset. A page turn slides the grid's band
+    // and clips the live strip short of it by the same amount, so the
+    // label's top row never moves with the page.
+    out property <length> label-raise: self.crt ? 1px : 0px;
+    // Width for a `horizontal-alignment: center` label: even on the pixel
+    // grid, so the bitmap face's even advances center on a whole pixel.
+    // Pair it with an explicit `x`, or Slint centers the narrower box by
+    // half a pixel.
+    public pure function even(v: length) -> length {
+        return self.pixel-grid ? Math.floor(v / 2px) * 2px : v;
     }
     // Hairline width in device pixels that never rounds to zero:
     // `max(1, round(value))`. The argument is a pixel count, NOT a
@@ -245,9 +272,33 @@ export global Sizing {
     in-out property <length> header-side-margin: 26px;
     in-out property <length> header-height: 54px;
     in-out property <length> header-bottom: 68px;
-    // Bottom help bar band and the clearance content keeps above it.
+    // The Menu chip row on screens with page actions: its height, the gap
+    // above it, and the band the two take. All zero where the scene has no
+    // row (`menu-row`): at 240p, or with the setting off, which keep the
+    // Menu list.
+    in-out property <length> menu-row-height: 43px;
+    in-out property <length> menu-row-gap: 7px;
+    in-out property <length> menu-row-block: 50px;
+    in-out property <bool> menu-row: true;
+    // The setting (Settings > Appearance), an input to the scene.
+    in-out property <bool> menu-row-enabled: true;
+    // No row whatever the setting: the HDMI head of a dual-head pair. Its
+    // CRT twin draws the 240p layout, which has none, and one input drives
+    // both, so both keep the Menu list.
+    in-out property <bool> menu-row-blocked: false;
+    // Bottom help bar band and the clearance content keeps above it. The
+    // height is zero while the bar is hidden.
     in-out property <length> help-bar-height: 43px;
     in-out property <length> help-bar-clearance: 57px;
+    // The setting (Settings > Appearance), an input to the scene.
+    in-out property <bool> help-bar-enabled: true;
+    // The 6% the `Layout` bottom margins reserve for the bar, or zero while
+    // it is hidden (`zaparoo_app::sizing::Derived::help_bar_band`).
+    in-out property <length> help-bar-band: 43px;
+    // The help bar's controller glyphs at 240p, where the bar is sized
+    // around them (`zaparoo_app::sizing`). Larger tiers size them from the
+    // height in the view.
+    in-out property <length> help-glyph-size: 29px;
     in-out property <int> visible-covers: 5;
     // Hub page geometry (Settings previews reuse it).
     in-out property <int> hub-grid-columns: 5;

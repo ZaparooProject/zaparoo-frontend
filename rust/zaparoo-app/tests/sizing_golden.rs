@@ -84,6 +84,8 @@ fn inputs_of(row: &BTreeMap<&str, &str>) -> Inputs {
         // rows open, which is now the wrapped state. The one-row default
         // is pinned by `a_240p_help_bar_is_one_row_until_it_wraps`.
         help_bar_two_rows: true,
+        menu_row: true,
+        help_bar: true,
     }
 }
 
@@ -250,8 +252,12 @@ fn a_240p_help_bar_is_one_row_until_it_wraps() {
             );
             continue;
         }
-        assert_eq!(one.help_bar_height, one_row.pct_h(6.0), "{at}");
-        assert_eq!(two.help_bar_height, one_row.pct_h(10.0), "{at}");
+        // Sized around the 16 px controller glyphs: a 1% pad above and
+        // below, and a 1% gap between two rows.
+        assert_eq!(one.help_glyph_size, 16, "{at}");
+        let pad = one_row.pct_h(1.0);
+        assert_eq!(one.help_bar_height, 16 + 2 * pad, "{at}");
+        assert_eq!(two.help_bar_height, 2 * 16 + 3 * pad, "{at}");
         assert_eq!(
             one.help_bar_clearance,
             one.help_bar_height + one_row.pct_h(2.0),
@@ -281,12 +287,12 @@ fn a_240p_help_bar_is_one_row_until_it_wraps() {
         ..Inputs::default()
     };
     let d = derive(&crt);
-    assert_eq!((d.help_bar_height, d.help_bar_clearance), (13, 17));
+    assert_eq!((d.help_bar_height, d.help_bar_clearance), (20, 24));
     let d = derive(&Inputs {
         help_bar_two_rows: true,
         ..crt
     });
-    assert_eq!((d.help_bar_height, d.help_bar_clearance), (22, 26));
+    assert_eq!((d.help_bar_height, d.help_bar_clearance), (38, 42));
 }
 
 #[test]

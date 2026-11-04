@@ -36,6 +36,10 @@ pub struct Scene {
     pub handheld: bool,
     /// The help entries on screen wrap, so a 240p help bar is two rows.
     pub help_bar_two_rows: bool,
+    /// The Menu chip row setting (Settings > Appearance).
+    pub menu_row: bool,
+    /// The help bar setting (Settings > Appearance).
+    pub help_bar: bool,
 }
 
 impl Scene {
@@ -51,6 +55,8 @@ impl Scene {
             swap_axes: sizing.get_swap_axes(),
             handheld: sizing.get_handheld(),
             help_bar_two_rows: sizing.get_help_bar_two_rows(),
+            menu_row: sizing.get_menu_row_enabled() && !sizing.get_menu_row_blocked(),
+            help_bar: sizing.get_help_bar_enabled(),
         }
     }
 
@@ -67,6 +73,8 @@ impl Scene {
                 InterfaceProfile::Standard
             },
             help_bar_two_rows: self.help_bar_two_rows,
+            menu_row: self.menu_row,
+            help_bar: self.help_bar,
         }
     }
 }
@@ -141,6 +149,10 @@ fn current_view(app: &App) -> View {
     let (grid, list) = family_views(app);
     let list_layout = match shell.get_active_screen() {
         crate::Screen::Systems | crate::Screen::FavoriteSystems => shell.get_systems_list_layout(),
+        // The browser shows the layout its mode is, not the games setting.
+        crate::Screen::FileBrowser => {
+            app.global::<crate::FileBrowserView>().get_mode() == crate::FileBrowserMode::Plain
+        }
         _ => shell.get_browse_list_layout(),
     };
     if list_layout {
@@ -159,6 +171,16 @@ fn apply_layout(app: &App, inputs: &Inputs) {
                 f64::from(height),
                 f64::from(gap),
             ) as i32
+        });
+    app.global::<SizingGlobal>()
+        .on_fit_letter_cell(|count, columns, width, height, gap| {
+            zaparoo_app::letter_jump::cell_size(
+                count.max(0) as usize,
+                columns.max(1) as usize,
+                f64::from(width),
+                f64::from(height),
+                f64::from(gap),
+            ) as f32
         });
     let theme = ThemeId::current(inputs);
     let profile = layouts::profile(theme, current_view(app), inputs);
@@ -225,8 +247,14 @@ fn apply_derived(app: &App, d: &Derived) {
     s.set_header_side_margin(px(d.header_side_margin));
     s.set_header_height(px(d.header_height));
     s.set_header_bottom(px(d.header_bottom));
+    s.set_menu_row_height(px(d.menu_row_height));
+    s.set_menu_row_gap(px(d.menu_row_gap));
+    s.set_menu_row_block(px(d.menu_row_block));
+    s.set_menu_row(d.menu_row);
     s.set_help_bar_height(px(d.help_bar_height));
     s.set_help_bar_clearance(px(d.help_bar_clearance));
+    s.set_help_glyph_size(px(d.help_glyph_size));
+    s.set_help_bar_band(px(d.help_bar_band));
     s.set_visible_covers(d.visible_covers);
     s.set_hub_grid_columns(d.hub_grid_columns);
     s.set_hub_grid_rows(d.hub_grid_rows);
@@ -346,6 +374,10 @@ pub fn games_grid_cover_source_size(scene: Scene) -> u32 {
         scene.height,
     ))
 }
+
+/// The largest side Game Info's full-screen viewer asks Core for: a 1080p
+/// screen's height, so a 1080p output shows art at its own size.
+pub const VIEWER_MAX_SIZE: u32 = 1080;
 
 /// Detail-pane cover decode size: about twice the grid cover, snapped to its
 /// own tier and capped at what the viewport can express.
