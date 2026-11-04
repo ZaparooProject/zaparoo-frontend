@@ -242,6 +242,20 @@ keeps the artwork's own colors, which is how the two-tone favorite heart
 renders: `glyphs.rs` maps its fill and keyline to `marker` and
 `marker-outline` before rasterizing.
 
+Where the bitmap face is in use (`Sizing.pixel-grid`: CRT, and MiSTer outputs
+under 400 px tall) the small glyphs come from hand-drawn pixel art instead
+(`resources/images/pixel/`): the status icons, the list and tile heart,
+Filter, the scroll and chevron arrows, and the keyboard's Search, Check and
+Shift glyphs. A vector icon squeezed into 6-9 px turns to grey blur, and
+these are drawn on their own few-pixel grid. `glyph()` passes the pixel-grid
+flag to Rust with every request, and Rust blits the art at the largest whole
+multiple of its grid that fits the slot, centered on whole pixels, with no
+anti-aliasing, at 2x at most; a slot smaller than the art, one three times
+its size or more (the same icon as a Hub tile's art), or any HD output, gets
+the vector source. The heart's `#` and `+` cells are its fill and keyline, so it
+keeps the same two marker roles. A new small glyph that shows on CRT gets
+art there too.
+
 ## Two registers
 
 Everything in the frontend is drawn with one of two visual treatments, and
@@ -1397,15 +1411,29 @@ half the thickness of the Settings card at 800p and 1080p.
 The screensaver overlay, the CRT calibration plate and the help bar are screen
 chrome rather than containers and keep their own treatment.
 
-The help bar is one row, `pct-h(6)` tall, at every tier. Only 240p can run out
+The help bar is one row, `pct-h(6)` tall, above the 240p tier. At 240p it is
+sized around its controller glyphs instead: the button art is pixel art on a
+16 px grid and squeezed to 4% of the height it is 9 px of blur, so the 240p
+bar draws them at 16 px (`Sizing.help-glyph-size`) and is that plus a
+`pct-h(1)` pad above and below. Only 240p can run out
 of width for its entries, which are atomic icon-plus-label groups and never
 split: when the row would overflow the bar's safe width they wrap to two
-centered rows and the bar grows to `pct-h(10)`. The bar measures that itself
+centered rows and the bar grows to two glyphs plus a `pct-h(1)` row gap. The bar measures that itself
 (`HelpBar.wrap-entries`), Rust copies it into the `help_bar_two_rows` sizing
 input and re-solves the sizing table and every screen, so the grid or card
 above gives up exactly the second row and gets it back when the entries fit
 again. The wrap is decided from the entries' width alone, never from the
 bar's height, so growing the bar cannot change the answer.
+
+The bar can be hidden: Settings > Appearance > Show button hints
+(`show_help_bar` in the persisted settings and `[settings]` in
+`frontend.toml`, on by default; a state file from before the setting keeps
+the bar), for a CRT owner who wants every line. Hidden, it takes no height
+and every screen spends the room on content. The `Layout` bottom margins
+reserve the bar's 6% (`Tok::LessHiddenBar` in `zaparoo_app::layouts`) and
+drop exactly that share while it is hidden; content keeps its `pct-h(2)` gap
+off the bottom edge. It applies at once, through the same relayout a scene
+change runs, and the CRT head of a dual-head pair follows it.
 
 ## Padding scale
 
@@ -2321,5 +2349,23 @@ Rules apply everywhere, not only CRT:
 - user-visible centered text centers item, not a half-pixel glyph run
 
 Rounding by hand is reserved for exact-pixel contracts (CRT calibration
-guides, bitmap raster sizes, QR modules). Document any exception beside code
-that needs it.
+guides, bitmap raster sizes, QR modules, the bitmap-font text grid below).
+Document any exception beside code that needs it.
+
+Text is the exception to the renderer snapping. The software renderer places
+glyphs at quarter-pixel positions and blends the remainder into them, which
+keeps proportional text evenly spaced but smears the 6x8 bitmap face across
+two columns. Wherever that face is in use (`Sizing.pixel-grid`: CRT, and
+MiSTer outputs under 400 px tall), every label must start on a whole pixel:
+
+- `Sizing.pct-w`/`pct-h` already return whole pixels there, as
+  `zaparoo_app::sizing`'s percentages always do
+- other fractional geometry upstream of a label (a centered block, a width
+  split between columns, a share of a panel) goes through `Sizing.snap`
+- a `horizontal-alignment: center` label gets `width: Sizing.even(...)` and
+  an explicit `x`, since the face's advances are even and Slint would center
+  the narrower box by half a pixel
+
+`just crt-text-check` renders every CRT fixture at NTSC and PAL height and
+fails on any label that starts off the grid. All three helpers are no-ops on
+HD outputs.

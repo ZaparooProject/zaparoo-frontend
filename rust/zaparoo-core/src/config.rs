@@ -185,6 +185,7 @@ pub struct SettingsConfig {
     pub mouse_enabled: Option<bool>,
     pub reduce_motion: Option<bool>,
     pub show_menu_row: Option<bool>,
+    pub show_help_bar: Option<bool>,
     pub screensaver_timeout: Option<String>,
     pub media_image_type: Option<String>,
     pub favorites_grouping: Option<String>,
@@ -233,6 +234,7 @@ pub struct SettingsMirror<'a> {
     pub mouse_enabled: bool,
     pub reduce_motion: bool,
     pub show_menu_row: bool,
+    pub show_help_bar: bool,
     pub debug_logging: bool,
     pub screensaver_timeout: &'a str,
     pub media_image_type: &'a str,
@@ -345,6 +347,7 @@ struct RawSettings {
     mouse_enabled: Option<bool>,
     reduce_motion: Option<bool>,
     show_menu_row: Option<bool>,
+    show_help_bar: Option<bool>,
     screensaver_timeout: Option<String>,
     media_image_type: Option<String>,
     favorites_grouping: Option<String>,
@@ -512,6 +515,7 @@ fn settings_config_from_raw(raw: RawSettings) -> SettingsConfig {
         mouse_enabled: raw.mouse_enabled,
         reduce_motion: raw.reduce_motion,
         show_menu_row: raw.show_menu_row,
+        show_help_bar: raw.show_help_bar,
         screensaver_timeout: trim_opt(raw.screensaver_timeout),
         media_image_type: trim_opt(raw.media_image_type),
         favorites_grouping: trim_opt(raw.favorites_grouping).or_else(|| {
@@ -719,6 +723,7 @@ pub fn save_settings_mirror(path: &Path, mirror: SettingsMirror<'_>) -> Result<(
     set_bool(settings, "mouse_enabled", mirror.mouse_enabled);
     set_bool(settings, "reduce_motion", mirror.reduce_motion);
     set_bool(settings, "show_menu_row", mirror.show_menu_row);
+    set_bool(settings, "show_help_bar", mirror.show_help_bar);
     set_str(
         settings,
         "screensaver_timeout",
@@ -995,6 +1000,7 @@ mod tests {
             mouse_enabled: true,
             reduce_motion: false,
             show_menu_row: true,
+            show_help_bar: true,
             debug_logging: false,
             screensaver_timeout: "60",
             media_image_type: "auto",
@@ -1553,6 +1559,7 @@ mod tests {
                 mouse_enabled: false,
                 reduce_motion: true,
                 show_menu_row: false,
+                show_help_bar: false,
                 debug_logging: true,
                 screensaver_timeout: "300",
                 media_image_type: "auto",
@@ -1586,6 +1593,7 @@ mod tests {
         assert_eq!(cfg.settings.button_layout.as_deref(), Some("b"));
         assert_eq!(cfg.settings.mouse_enabled, Some(false));
         assert_eq!(cfg.settings.show_menu_row, Some(false));
+        assert_eq!(cfg.settings.show_help_bar, Some(false));
         assert_eq!(cfg.settings.reduce_motion, Some(true));
         assert_eq!(cfg.settings.screensaver_timeout.as_deref(), Some("300"));
         assert_eq!(cfg.settings.favorites_grouping.as_deref(), Some("system"));
@@ -1626,6 +1634,7 @@ mod tests {
                 mouse_enabled: true,
                 reduce_motion: false,
                 show_menu_row: true,
+                show_help_bar: true,
                 debug_logging: false,
                 screensaver_timeout: "60",
                 media_image_type: "auto",
@@ -1686,6 +1695,7 @@ mod tests {
             mouse_enabled: false,
             reduce_motion: false,
             show_menu_row: true,
+            show_help_bar: true,
             debug_logging: true,
             screensaver_timeout: "off",
             media_image_type: "auto",

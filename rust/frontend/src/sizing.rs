@@ -38,6 +38,8 @@ pub struct Scene {
     pub help_bar_two_rows: bool,
     /// The Menu chip row setting (Settings > Appearance).
     pub menu_row: bool,
+    /// The help bar setting (Settings > Appearance).
+    pub help_bar: bool,
 }
 
 impl Scene {
@@ -54,6 +56,7 @@ impl Scene {
             handheld: sizing.get_handheld(),
             help_bar_two_rows: sizing.get_help_bar_two_rows(),
             menu_row: sizing.get_menu_row_enabled() && !sizing.get_menu_row_blocked(),
+            help_bar: sizing.get_help_bar_enabled(),
         }
     }
 
@@ -71,6 +74,7 @@ impl Scene {
             },
             help_bar_two_rows: self.help_bar_two_rows,
             menu_row: self.menu_row,
+            help_bar: self.help_bar,
         }
     }
 }
@@ -249,6 +253,8 @@ fn apply_derived(app: &App, d: &Derived) {
     s.set_menu_row(d.menu_row);
     s.set_help_bar_height(px(d.help_bar_height));
     s.set_help_bar_clearance(px(d.help_bar_clearance));
+    s.set_help_glyph_size(px(d.help_glyph_size));
+    s.set_help_bar_band(px(d.help_bar_band));
     s.set_visible_covers(d.visible_covers);
     s.set_hub_grid_columns(d.hub_grid_columns);
     s.set_hub_grid_rows(d.hub_grid_rows);

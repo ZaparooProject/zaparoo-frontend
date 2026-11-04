@@ -1,17 +1,17 @@
 msgid ""
 msgstr ""
-"POT-Creation-Date: 2026-11-04 01:32+0000\n"
+"POT-Creation-Date: 2026-11-04 05:14+0000\n"
 "Language: hi\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
 
-#: rust/frontend/ui/about.slint:52 rust/frontend/ui/settings.slint:187
+#: rust/frontend/ui/about.slint:52 rust/frontend/ui/settings.slint:203
 msgid "About / License"
 msgstr "परिचय / लाइसेंस"
 
-#: rust/frontend/ui/about.slint:108 rust/frontend/ui/app.slint:3365
+#: rust/frontend/ui/about.slint:108 rust/frontend/ui/app.slint:3572
 msgid "Zaparoo Frontend"
 msgstr "Zaparoo Frontend"
 
@@ -63,439 +63,526 @@ msgstr ""
 msgid "Full license text in COPYING."
 msgstr "पूरा लाइसेंस पाठ COPYING में है।"
 
-#: rust/frontend/ui/app.slint:474 rust/frontend/ui/app.slint:1262
-#: rust/frontend/ui/app.slint:3390 rust/frontend/ui/labels.slint:85
+#: rust/frontend/ui/app.slint:489 rust/frontend/ui/app.slint:1287
+#: rust/frontend/ui/app.slint:3597 rust/frontend/ui/labels.slint:85
 msgid "Favorites"
 msgstr "पसंदीदा"
 
-#: rust/frontend/ui/app.slint:475 rust/frontend/ui/app.slint:476
-#: rust/frontend/ui/app.slint:1535 rust/frontend/ui/labels.slint:43
+#: rust/frontend/ui/app.slint:490 rust/frontend/ui/app.slint:491
+#: rust/frontend/ui/app.slint:1560 rust/frontend/ui/labels.slint:43
 msgid "{} · {}"
 msgstr "{} · {}"
 
-#: rust/frontend/ui/app.slint:1238
+#: rust/frontend/ui/app.slint:1263
 msgid "Updating the media database"
 msgstr "मीडिया डेटाबेस अपडेट हो रहा है"
 
-#: rust/frontend/ui/app.slint:1238
+#: rust/frontend/ui/app.slint:1263
 msgid "No games found yet"
 msgstr "अभी तक कोई गेम नहीं मिला"
 
-#: rust/frontend/ui/app.slint:1240
+#: rust/frontend/ui/app.slint:1265
 msgid "Your games appear here as Core finds them."
 msgstr "Core को जैसे-जैसे गेम मिलेंगे, वे यहाँ दिखेंगे।"
 
-#: rust/frontend/ui/app.slint:1241
+#: rust/frontend/ui/app.slint:1266
 msgid "Update media database in Settings > Library."
 msgstr "सेटिंग्स > लाइब्रेरी में मीडिया डेटाबेस अपडेट करें।"
 
-#: rust/frontend/ui/app.slint:1269
+#: rust/frontend/ui/app.slint:1294
 msgid "{} systems"
 msgstr "{0} सिस्टम"
 
-#: rust/frontend/ui/app.slint:1451 rust/frontend/ui/labels.slint:42
+#: rust/frontend/ui/app.slint:1476 rust/frontend/ui/labels.slint:42
 msgid "Hidden"
 msgstr "छिपा हुआ"
 
-#: rust/frontend/ui/app.slint:1488 rust/frontend/ui/app.slint:3215
+#: rust/frontend/ui/app.slint:1513 rust/frontend/ui/app.slint:3397
 msgid "No favorites yet"
 msgstr "अभी तक कोई पसंदीदा नहीं"
 
-#: rust/frontend/ui/app.slint:1488
+#: rust/frontend/ui/app.slint:1513
 msgid "No systems in this category"
 msgstr "इस श्रेणी में कोई सिस्टम नहीं है"
 
-#: rust/frontend/ui/app.slint:1614 rust/frontend/ui/app.slint:1631
+#: rust/frontend/ui/app.slint:1639 rust/frontend/ui/app.slint:1656
 msgid "Saving…"
 msgstr "सेव हो रहा है…"
 
-#: rust/frontend/ui/app.slint:1869 rust/frontend/ui/labels.slint:181
+#: rust/frontend/ui/app.slint:1894 rust/frontend/ui/labels.slint:181
 msgid "Go to…"
 msgstr "यहाँ जाएँ…"
 
 #. The status line in place of the grid, with the wait cue's hourglass.
-#: rust/frontend/ui/app.slint:1871
+#: rust/frontend/ui/app.slint:1896
 msgid "Loading sections…"
 msgstr "सेक्शन लोड हो रहे हैं…"
 
-#: rust/frontend/ui/app.slint:1872
+#: rust/frontend/ui/app.slint:1897
 msgid "Failed to load sections"
 msgstr "सेक्शन लोड नहीं हो सके"
 
-#: rust/frontend/ui/app.slint:1872
+#: rust/frontend/ui/app.slint:1897
 msgid "No sections"
 msgstr "कोई सेक्शन नहीं"
 
-#: rust/frontend/ui/app.slint:1975
+#: rust/frontend/ui/app.slint:2000
 msgid "Hold a writable token near the reader"
 msgstr "लिखने योग्य टोकन को रीडर के पास रखें"
 
-#: rust/frontend/ui/app.slint:1999 rust/frontend/ui/app.slint:3469
-#: rust/frontend/ui/app.slint:3651 rust/frontend/ui/app.slint:3698
-#: rust/frontend/ui/app.slint:3811 rust/frontend/ui/app.slint:3850
-#: rust/frontend/ui/settings.slint:259
+#: rust/frontend/ui/app.slint:2024 rust/frontend/ui/app.slint:3677
+#: rust/frontend/ui/app.slint:3814 rust/frontend/ui/app.slint:3922
+#: rust/frontend/ui/app.slint:3972 rust/frontend/ui/app.slint:4085
+#: rust/frontend/ui/app.slint:4124 rust/frontend/ui/settings.slint:287
 msgid "Cancel"
 msgstr "रद्द करें"
 
-#: rust/frontend/ui/app.slint:2021 rust/frontend/ui/settings.slint:186
+#: rust/frontend/ui/app.slint:2046 rust/frontend/ui/settings.slint:202
 msgid "Pair a device"
 msgstr "डिवाइस पेयर करें"
 
-#: rust/frontend/ui/app.slint:2045 rust/frontend/ui/app.slint:2150
+#: rust/frontend/ui/app.slint:2070 rust/frontend/ui/app.slint:2175
 msgid "Starting…"
 msgstr "शुरू हो रहा है…"
 
-#: rust/frontend/ui/app.slint:2067
+#: rust/frontend/ui/app.slint:2092
 msgid "Enter this PIN on the device you are pairing."
 msgstr "जिस डिवाइस को पेयर कर रहे हैं, उस पर यह PIN डालें।"
 
-#: rust/frontend/ui/app.slint:2081 rust/frontend/ui/app.slint:2239
+#: rust/frontend/ui/app.slint:2106 rust/frontend/ui/app.slint:2264
 msgid "Expires in {n} minute"
 msgid_plural "Expires in {n} minutes"
 msgstr[0] "{n} मिनट में समाप्त होगा"
 msgstr[1] "{n} मिनट में समाप्त होगा"
 
-#: rust/frontend/ui/app.slint:2082 rust/frontend/ui/app.slint:2240
+#: rust/frontend/ui/app.slint:2107 rust/frontend/ui/app.slint:2265
 msgid "Expires in {n} second"
 msgid_plural "Expires in {n} seconds"
 msgstr[0] "{n} सेकंड में समाप्त होगा"
 msgstr[1] "{n} सेकंड में समाप्त होगा"
 
-#: rust/frontend/ui/app.slint:2099
+#: rust/frontend/ui/app.slint:2124
 msgid "A device is now paired with Core."
 msgstr "एक डिवाइस अब Core से पेयर हो गया है।"
 
-#: rust/frontend/ui/app.slint:2100
+#: rust/frontend/ui/app.slint:2125
 msgid "{} is now paired with Core."
 msgstr "{} अब Core से पेयर हो गया है।"
 
-#: rust/frontend/ui/app.slint:2114
+#: rust/frontend/ui/app.slint:2139
 msgid "The PIN expired before a device used it. Pair again for a new one."
 msgstr "किसी डिवाइस के इस्तेमाल करने से पहले PIN की समय सीमा खत्म हो गई। नए PIN के लिए फिर से पेयर करें।"
 
-#: rust/frontend/ui/app.slint:2136
+#: rust/frontend/ui/app.slint:2161
 msgid "Link Online account"
 msgstr "Online खाता लिंक करें"
 
-#: rust/frontend/ui/app.slint:2160
+#: rust/frontend/ui/app.slint:2185
 msgid "This device is now linked to your Zaparoo Online account."
 msgstr "यह डिवाइस अब आपके Zaparoo Online खाते से लिंक हो गया है।"
 
-#: rust/frontend/ui/app.slint:2161
+#: rust/frontend/ui/app.slint:2186
 msgid "The code expired before it was approved. Link again for a new one."
 msgstr "मंज़ूरी मिलने से पहले कोड की समय सीमा खत्म हो गई। नए कोड के लिए फिर से लिंक करें।"
 
-#: rust/frontend/ui/app.slint:2162
+#: rust/frontend/ui/app.slint:2187
 msgid "Linking failed. Check the network connection and try again."
 msgstr "लिंक नहीं हो सका। नेटवर्क कनेक्शन जाँचें और फिर से प्रयास करें।"
 
-#: rust/frontend/ui/app.slint:2176
+#: rust/frontend/ui/app.slint:2201
 msgid "Scan this code with your phone, or open the address below and enter the code."
 msgstr "इस कोड को अपने फ़ोन से स्कैन करें, या नीचे दिया गया पता खोलकर कोड डालें।"
 
-#: rust/frontend/ui/app.slint:2189
+#: rust/frontend/ui/app.slint:2214
 msgid "Or press Accept to open it on this device."
 msgstr "या इसे इसी डिवाइस पर खोलने के लिए स्वीकार बटन दबाएँ।"
 
-#: rust/frontend/ui/app.slint:2327 rust/frontend/ui/labels.slint:401
+#: rust/frontend/ui/app.slint:2353 rust/frontend/ui/labels.slint:403
 msgid "This device is not linked. Link your Zaparoo Online account, then try again."
 msgstr "यह डिवाइस लिंक नहीं है। अपना Zaparoo Online खाता लिंक करें, फिर से प्रयास करें।"
 
-#: rust/frontend/ui/app.slint:2330 rust/frontend/ui/labels.slint:400
+#: rust/frontend/ui/app.slint:2356 rust/frontend/ui/labels.slint:402
 msgid "Cloud backup needs an active Zaparoo Warp subscription."
 msgstr "क्लाउड बैकअप के लिए सक्रिय Zaparoo Warp सदस्यता चाहिए।"
 
-#: rust/frontend/ui/app.slint:2332
+#: rust/frontend/ui/app.slint:2358
 msgid "Could not load this. Check the network connection and try again."
 msgstr "इसे लोड नहीं किया जा सका। नेटवर्क कनेक्शन जाँचें और फिर से प्रयास करें।"
 
-#: rust/frontend/ui/app.slint:2335
+#: rust/frontend/ui/app.slint:2361
 msgid "Back up now"
 msgstr "अभी बैकअप लें"
 
 #. Zaparoo made; it says so where its detail already is.
-#: rust/frontend/ui/app.slint:2340
+#: rust/frontend/ui/app.slint:2366
 msgid "{}, needs a newer Zaparoo"
 msgstr "{}, नया Zaparoo चाहिए"
 
-#: rust/frontend/ui/app.slint:2341
+#: rust/frontend/ui/app.slint:2367
 msgid "{}, this device"
 msgstr "{}, यह डिवाइस"
 
-#: rust/frontend/ui/app.slint:2348
+#: rust/frontend/ui/app.slint:2374
 msgid "Cloud backups"
 msgstr "क्लाउड बैकअप"
 
-#: rust/frontend/ui/app.slint:2348
+#: rust/frontend/ui/app.slint:2374
 msgid "Remote activity"
 msgstr "रिमोट गतिविधि"
 
-#: rust/frontend/ui/app.slint:2369
+#: rust/frontend/ui/app.slint:2395
 msgid "Backing up…"
 msgstr "बैकअप लिया जा रहा है…"
 
-#: rust/frontend/ui/app.slint:2370
+#: rust/frontend/ui/app.slint:2396
 msgid "Restoring…"
 msgstr "रीस्टोर किया जा रहा है…"
 
-#: rust/frontend/ui/app.slint:2371
+#: rust/frontend/ui/app.slint:2397
 msgid "Loading backups…"
 msgstr "बैकअप लोड हो रहे हैं…"
 
-#: rust/frontend/ui/app.slint:2371
+#: rust/frontend/ui/app.slint:2397
 msgid "Loading activity…"
 msgstr "गतिविधि लोड हो रही है…"
 
-#: rust/frontend/ui/app.slint:2382
+#: rust/frontend/ui/app.slint:2408
 msgid "No cloud backups yet."
 msgstr "अभी तक कोई क्लाउड बैकअप नहीं है।"
 
-#: rust/frontend/ui/app.slint:2382
+#: rust/frontend/ui/app.slint:2408
 msgid "Nothing has run through remote control yet."
 msgstr "रिमोट कंट्रोल से अभी तक कुछ नहीं चलाया गया है।"
 
-#: rust/frontend/ui/app.slint:2478 rust/frontend/ui/settings.slint:188
+#: rust/frontend/ui/app.slint:2535
+msgid "Dual SDRAM"
+msgstr ""
+
+#: rust/frontend/ui/app.slint:2536
+msgid "Kodi TV"
+msgstr ""
+
+#: rust/frontend/ui/app.slint:2537
+msgid "Kodi music"
+msgstr ""
+
+#: rust/frontend/ui/app.slint:2538
+msgid "MiSTer arcade"
+msgstr ""
+
+#: rust/frontend/ui/app.slint:2539
+msgid "Media players"
+msgstr ""
+
+#: rust/frontend/ui/app.slint:2540
+msgid "Native"
+msgstr ""
+
+#: rust/frontend/ui/app.slint:2541
+msgid "Unstable"
+msgstr ""
+
+#: rust/frontend/ui/app.slint:2542
+msgid "Video"
+msgstr ""
+
+#: rust/frontend/ui/app.slint:2546
+msgid "Add…"
+msgstr ""
+
+#: rust/frontend/ui/app.slint:2547 rust/frontend/ui/app.slint:3657
+#: rust/frontend/ui/app.slint:3674 rust/frontend/ui/app.slint:3699
+#: rust/frontend/ui/app.slint:3714 rust/frontend/ui/app.slint:3729
+#: rust/frontend/ui/app.slint:3746 rust/frontend/ui/app.slint:3760
+#: rust/frontend/ui/app.slint:3782 rust/frontend/ui/app.slint:3796
+#: rust/frontend/ui/app.slint:3819 rust/frontend/ui/app.slint:3881
+#: rust/frontend/ui/app.slint:3901 rust/frontend/ui/app.slint:3942
+#: rust/frontend/ui/app.slint:4016 rust/frontend/ui/app.slint:4033
+#: rust/frontend/ui/app.slint:4048 rust/frontend/ui/app.slint:4107
+#: rust/frontend/ui/app.slint:4203 rust/frontend/ui/app.slint:4217
+#: rust/frontend/ui/app.slint:4230
+msgid "Move"
+msgstr "स्थानांतरित करें"
+
+#: rust/frontend/ui/app.slint:2548
+msgid "Remove"
+msgstr ""
+
+#: rust/frontend/ui/app.slint:2554
+msgid "Group"
+msgstr ""
+
+#: rust/frontend/ui/app.slint:2554
+msgid "Group, not installed"
+msgstr ""
+
+#: rust/frontend/ui/app.slint:2558
+msgid "Not installed"
+msgstr ""
+
+#: rust/frontend/ui/app.slint:2558
+msgid "{}, not installed"
+msgstr ""
+
+#: rust/frontend/ui/app.slint:2564 rust/frontend/ui/app.slint:3820
+msgid "Add"
+msgstr ""
+
+#: rust/frontend/ui/app.slint:2565 rust/frontend/ui/settings.slint:173
+msgid "Launcher preference"
+msgstr ""
+
+#: rust/frontend/ui/app.slint:2660 rust/frontend/ui/settings.slint:204
 msgid "Documentation"
 msgstr "दस्तावेज़"
 
-#: rust/frontend/ui/app.slint:2478 rust/frontend/ui/labels.slint:149
+#: rust/frontend/ui/app.slint:2660 rust/frontend/ui/labels.slint:149
 msgid "Write with App"
 msgstr "ऐप से लिखें"
 
-#: rust/frontend/ui/app.slint:2497
+#: rust/frontend/ui/app.slint:2679
 msgid "Scan this code to open the Zaparoo Frontend guide on your phone."
 msgstr "अपने फ़ोन पर Zaparoo Frontend गाइड खोलने के लिए यह कोड स्कैन करें।"
 
-#: rust/frontend/ui/app.slint:2498
+#: rust/frontend/ui/app.slint:2680
 msgid "Scan this code with the Zaparoo App to write this game to a Zaparoo token."
 msgstr "इस गेम को Zaparoo टोकन पर लिखने के लिए यह कोड Zaparoo App से स्कैन करें।"
 
-#: rust/frontend/ui/app.slint:2957 rust/frontend/ui/app.slint:3393
+#: rust/frontend/ui/app.slint:3139 rust/frontend/ui/app.slint:3600
 msgid "Recently played"
 msgstr "हाल ही में खेले गए"
 
-#: rust/frontend/ui/app.slint:2958 rust/frontend/ui/app.slint:3400
-#: rust/frontend/ui/app.slint:3500 rust/frontend/ui/app.slint:3743
+#: rust/frontend/ui/app.slint:3140 rust/frontend/ui/app.slint:3608
+#: rust/frontend/ui/app.slint:3708 rust/frontend/ui/app.slint:4017
 #: rust/frontend/ui/search.slint:80
 msgid "Search"
 msgstr "खोजें"
 
-#: rust/frontend/ui/app.slint:2968
+#: rust/frontend/ui/app.slint:3150
 msgid "{} games"
 msgstr "{0} गेम"
 
-#: rust/frontend/ui/app.slint:3105
+#: rust/frontend/ui/app.slint:3287
 msgid "Loading game…"
 msgstr "गेम लोड हो रहा है…"
 
-#: rust/frontend/ui/app.slint:3216
+#: rust/frontend/ui/app.slint:3398
 msgid "Nothing played yet"
 msgstr "अभी तक कुछ नहीं खेला गया"
 
-#: rust/frontend/ui/app.slint:3217 rust/frontend/ui/search.slint:97
+#: rust/frontend/ui/app.slint:3399 rust/frontend/ui/search.slint:97
 msgid "No matches"
 msgstr "कोई परिणाम नहीं"
 
-#: rust/frontend/ui/app.slint:3218
+#: rust/frontend/ui/app.slint:3400
 msgid "No games match these tags"
 msgstr "इन टैग से कोई गेम मेल नहीं खाता"
 
-#: rust/frontend/ui/app.slint:3218
+#: rust/frontend/ui/app.slint:3400
 msgid "No games in this system"
 msgstr "इस सिस्टम में कोई गेम नहीं है"
 
-#: rust/frontend/ui/app.slint:3219 rust/frontend/ui/labels.slint:48
+#: rust/frontend/ui/app.slint:3401 rust/frontend/ui/labels.slint:48
 msgid "Loading favorites…"
 msgstr "पसंदीदा लोड हो रहे हैं…"
 
-#: rust/frontend/ui/app.slint:3220 rust/frontend/ui/labels.slint:49
+#: rust/frontend/ui/app.slint:3402 rust/frontend/ui/labels.slint:49
 msgid "Loading recently played…"
 msgstr "हाल ही में खेले गए लोड हो रहे हैं…"
 
-#: rust/frontend/ui/app.slint:3221 rust/frontend/ui/labels.slint:50
+#: rust/frontend/ui/app.slint:3403 rust/frontend/ui/labels.slint:50
 #: rust/frontend/ui/search.slint:95
 msgid "Searching…"
 msgstr "खोज रहे हैं…"
 
-#: rust/frontend/ui/app.slint:3221 rust/frontend/ui/labels.slint:47
+#: rust/frontend/ui/app.slint:3403 rust/frontend/ui/labels.slint:47
 msgid "Loading games…"
 msgstr "गेम लोड हो रहे हैं…"
 
-#: rust/frontend/ui/app.slint:3302
+#: rust/frontend/ui/app.slint:3484
 msgid "Left/Right adjust width"
 msgstr "बाएँ/दाएँ बटन से चौड़ाई बदलें"
 
-#: rust/frontend/ui/app.slint:3303
+#: rust/frontend/ui/app.slint:3485
 msgid "Arrows adjust position"
 msgstr "तीर बटन से स्थिति बदलें"
 
-#: rust/frontend/ui/app.slint:3309
+#: rust/frontend/ui/app.slint:3508
+msgid "Adjust position"
+msgstr "स्थिति बदलें"
+
+#: rust/frontend/ui/app.slint:3508
+msgid "Adjust width"
+msgstr "चौड़ाई बदलें"
+
+#: rust/frontend/ui/app.slint:3515
 msgid "Accept or Back saves"
 msgstr "स्वीकार या वापस से सेव होगा"
 
-#: rust/frontend/ui/app.slint:3395 rust/frontend/ui/rename.slint:59
+#: rust/frontend/ui/app.slint:3602 rust/frontend/ui/rename.slint:59
 msgid "Rename tile"
 msgstr "टाइल का नाम बदलें"
 
-#: rust/frontend/ui/app.slint:3397 rust/frontend/ui/file_browser.slint:96
+#: rust/frontend/ui/app.slint:3603 rust/frontend/ui/ra_login.slint:70
+msgid "RetroAchievements"
+msgstr ""
+
+#: rust/frontend/ui/app.slint:3605 rust/frontend/ui/file_browser.slint:96
 msgid "Places"
 msgstr "स्थान"
 
-#: rust/frontend/ui/app.slint:3431 rust/frontend/ui/app.slint:3753
+#: rust/frontend/ui/app.slint:3639 rust/frontend/ui/app.slint:4027
 msgid "View"
 msgstr "देखें"
 
-#: rust/frontend/ui/app.slint:3432 rust/frontend/ui/app.slint:3516
-#: rust/frontend/ui/app.slint:3572 rust/frontend/ui/app.slint:3878
-#: rust/frontend/ui/app.slint:3918 rust/frontend/ui/app.slint:3957
-#: rust/frontend/ui/app.slint:4023 rust/frontend/ui/app.slint:4040
-#: rust/frontend/ui/app.slint:4058 rust/frontend/ui/app.slint:4073
+#: rust/frontend/ui/app.slint:3640 rust/frontend/ui/app.slint:3724
+#: rust/frontend/ui/app.slint:3843 rust/frontend/ui/app.slint:4152
+#: rust/frontend/ui/app.slint:4192 rust/frontend/ui/app.slint:4231
+#: rust/frontend/ui/app.slint:4300 rust/frontend/ui/app.slint:4317
+#: rust/frontend/ui/app.slint:4335 rust/frontend/ui/app.slint:4350
 msgid "Open"
 msgstr "खोलें"
 
-#: rust/frontend/ui/app.slint:3442
+#: rust/frontend/ui/app.slint:3650
 msgid "Page"
 msgstr "पेज"
 
-#: rust/frontend/ui/app.slint:3445
+#: rust/frontend/ui/app.slint:3653
 msgid "Whole page"
 msgstr "पूरा पेज"
 
-#: rust/frontend/ui/app.slint:3445
+#: rust/frontend/ui/app.slint:3653
 msgid "Fit width"
 msgstr "चौड़ाई में फ़िट"
 
-#: rust/frontend/ui/app.slint:3449 rust/frontend/ui/app.slint:3452
-#: rust/frontend/ui/app.slint:3486 rust/frontend/ui/app.slint:3499
-#: rust/frontend/ui/app.slint:3515 rust/frontend/ui/app.slint:3533
-#: rust/frontend/ui/app.slint:3546 rust/frontend/ui/app.slint:3610
-#: rust/frontend/ui/app.slint:3630 rust/frontend/ui/app.slint:3668
-#: rust/frontend/ui/app.slint:3742 rust/frontend/ui/app.slint:3759
-#: rust/frontend/ui/app.slint:3774 rust/frontend/ui/app.slint:3833
-#: rust/frontend/ui/app.slint:3929 rust/frontend/ui/app.slint:3943
-#: rust/frontend/ui/app.slint:3956
-msgid "Move"
-msgstr "स्थानांतरित करें"
-
-#: rust/frontend/ui/app.slint:3467 rust/frontend/ui/app.slint:3500
-#: rust/frontend/ui/app.slint:3516 rust/frontend/ui/app.slint:3553
-#: rust/frontend/ui/app.slint:3572 rust/frontend/ui/app.slint:3644
-#: rust/frontend/ui/app.slint:3794 rust/frontend/ui/app.slint:3834
-#: rust/frontend/ui/settings.slint:105
+#: rust/frontend/ui/app.slint:3675 rust/frontend/ui/app.slint:3708
+#: rust/frontend/ui/app.slint:3724 rust/frontend/ui/app.slint:3761
+#: rust/frontend/ui/app.slint:3826 rust/frontend/ui/app.slint:3843
+#: rust/frontend/ui/app.slint:3915 rust/frontend/ui/app.slint:4068
+#: rust/frontend/ui/app.slint:4108 rust/frontend/ui/settings.slint:105
 msgid "Select"
 msgstr "चुनें"
 
-#: rust/frontend/ui/app.slint:3468 rust/frontend/ui/settings.slint:106
+#: rust/frontend/ui/app.slint:3676 rust/frontend/ui/settings.slint:106
 msgid "Start"
 msgstr "शुरू करें"
 
-#: rust/frontend/ui/app.slint:3470 rust/frontend/ui/app.slint:3647
-#: rust/frontend/ui/app.slint:3670 rust/frontend/ui/app.slint:3679
-#: rust/frontend/ui/app.slint:3695 rust/frontend/ui/app.slint:3762
-#: rust/frontend/ui/app.slint:3776 rust/frontend/ui/app.slint:3785
+#: rust/frontend/ui/app.slint:3678 rust/frontend/ui/app.slint:3827
+#: rust/frontend/ui/app.slint:3925 rust/frontend/ui/app.slint:3950
+#: rust/frontend/ui/app.slint:3960 rust/frontend/ui/app.slint:4028
+#: rust/frontend/ui/app.slint:4042 rust/frontend/ui/app.slint:4056
 msgid "Close"
 msgstr "बंद करें"
 
-#: rust/frontend/ui/app.slint:3471 rust/frontend/ui/app.slint:3937
+#: rust/frontend/ui/app.slint:3679 rust/frontend/ui/app.slint:4211
 msgid "Toggle"
 msgstr "टॉगल"
 
-#: rust/frontend/ui/app.slint:3472
+#: rust/frontend/ui/app.slint:3680
 msgid "Info"
 msgstr "जानकारी"
 
-#: rust/frontend/ui/app.slint:3473 rust/frontend/ui/app.slint:3487
-#: rust/frontend/ui/app.slint:3501 rust/frontend/ui/app.slint:3517
-#: rust/frontend/ui/app.slint:3534 rust/frontend/ui/app.slint:3548
-#: rust/frontend/ui/app.slint:3567 rust/frontend/ui/app.slint:3580
-#: rust/frontend/ui/app.slint:3595 rust/frontend/ui/app.slint:3611
-#: rust/frontend/ui/app.slint:3647 rust/frontend/ui/app.slint:3707
-#: rust/frontend/ui/app.slint:3718 rust/frontend/ui/app.slint:3732
-#: rust/frontend/ui/app.slint:3744 rust/frontend/ui/app.slint:3835
-#: rust/frontend/ui/app.slint:3884 rust/frontend/ui/app.slint:3897
-#: rust/frontend/ui/app.slint:3910 rust/frontend/ui/app.slint:3924
-#: rust/frontend/ui/app.slint:3938 rust/frontend/ui/app.slint:3952
-#: rust/frontend/ui/app.slint:3969 rust/frontend/ui/app.slint:3987
-#: rust/frontend/ui/app.slint:3999 rust/frontend/ui/app.slint:4017
-#: rust/frontend/ui/app.slint:4034 rust/frontend/ui/app.slint:4053
-#: rust/frontend/ui/app.slint:4068
+#: rust/frontend/ui/app.slint:3681 rust/frontend/ui/app.slint:3695
+#: rust/frontend/ui/app.slint:3709 rust/frontend/ui/app.slint:3725
+#: rust/frontend/ui/app.slint:3742 rust/frontend/ui/app.slint:3756
+#: rust/frontend/ui/app.slint:3778 rust/frontend/ui/app.slint:3792
+#: rust/frontend/ui/app.slint:3821 rust/frontend/ui/app.slint:3838
+#: rust/frontend/ui/app.slint:3851 rust/frontend/ui/app.slint:3866
+#: rust/frontend/ui/app.slint:3882 rust/frontend/ui/app.slint:3918
+#: rust/frontend/ui/app.slint:3981 rust/frontend/ui/app.slint:3992
+#: rust/frontend/ui/app.slint:4006 rust/frontend/ui/app.slint:4018
+#: rust/frontend/ui/app.slint:4109 rust/frontend/ui/app.slint:4158
+#: rust/frontend/ui/app.slint:4171 rust/frontend/ui/app.slint:4184
+#: rust/frontend/ui/app.slint:4198 rust/frontend/ui/app.slint:4212
+#: rust/frontend/ui/app.slint:4226 rust/frontend/ui/app.slint:4243
+#: rust/frontend/ui/app.slint:4264 rust/frontend/ui/app.slint:4276
+#: rust/frontend/ui/app.slint:4294 rust/frontend/ui/app.slint:4311
+#: rust/frontend/ui/app.slint:4330 rust/frontend/ui/app.slint:4345
 msgid "Back"
 msgstr "वापस"
 
-#: rust/frontend/ui/app.slint:3492 rust/frontend/ui/app.slint:3508
-#: rust/frontend/ui/app.slint:3554
+#: rust/frontend/ui/app.slint:3700 rust/frontend/ui/app.slint:3716
+#: rust/frontend/ui/app.slint:3762 rust/frontend/ui/app.slint:3798
 msgid "Delete"
 msgstr "हटाएँ"
 
-#: rust/frontend/ui/app.slint:3493 rust/frontend/ui/app.slint:3509
-#: rust/frontend/ui/app.slint:3555
+#: rust/frontend/ui/app.slint:3701 rust/frontend/ui/app.slint:3717
+#: rust/frontend/ui/app.slint:3763 rust/frontend/ui/app.slint:3799
 msgid "Space"
 msgstr "स्पेस"
 
-#: rust/frontend/ui/app.slint:3522 rust/frontend/ui/app.slint:3936
+#: rust/frontend/ui/app.slint:3730 rust/frontend/ui/app.slint:4210
 #: rust/frontend/ui/settings.slint:108
 msgid "Change"
 msgstr "बदलें"
 
-#: rust/frontend/ui/app.slint:3547 rust/frontend/ui/app.slint:3553
+#: rust/frontend/ui/app.slint:3755 rust/frontend/ui/app.slint:3761
 msgid "Save"
 msgstr "सेव करें"
 
-#: rust/frontend/ui/app.slint:3566 rust/frontend/ui/app.slint:3579
-#: rust/frontend/ui/app.slint:3865 rust/frontend/ui/app.slint:3879
-#: rust/frontend/ui/app.slint:3909 rust/frontend/ui/app.slint:4033
-#: rust/frontend/ui/app.slint:4067 rust/frontend/ui/labels.slint:226
-msgid "Menu"
-msgstr "मेनू"
+#: rust/frontend/ui/app.slint:3805 rust/frontend/ui/settings.slint:294
+msgid "Log in"
+msgstr ""
 
-#: rust/frontend/ui/app.slint:3598 rust/frontend/ui/app.slint:3871
-#: rust/frontend/ui/app.slint:3895 rust/frontend/ui/app.slint:3991
-#: rust/frontend/ui/app.slint:4003 rust/frontend/ui/setup.slint:378
-msgid "Retry"
-msgstr "फिर से प्रयास करें"
+#: rust/frontend/ui/app.slint:3805
+msgid "Next"
+msgstr ""
 
-#: rust/frontend/ui/app.slint:3598 rust/frontend/ui/app.slint:3685
-#: rust/frontend/ui/setup.slint:378
+#: rust/frontend/ui/app.slint:3813 rust/frontend/ui/app.slint:3869
+#: rust/frontend/ui/app.slint:3968
 msgid "Done"
 msgstr "पूरा"
 
-#: rust/frontend/ui/app.slint:3638 rust/frontend/ui/labels.slint:326
+#: rust/frontend/ui/app.slint:3837 rust/frontend/ui/app.slint:3850
+#: rust/frontend/ui/app.slint:4139 rust/frontend/ui/app.slint:4153
+#: rust/frontend/ui/app.slint:4183 rust/frontend/ui/app.slint:4310
+#: rust/frontend/ui/app.slint:4344 rust/frontend/ui/labels.slint:226
+msgid "Menu"
+msgstr "मेनू"
+
+#: rust/frontend/ui/app.slint:3869 rust/frontend/ui/app.slint:4145
+#: rust/frontend/ui/app.slint:4169 rust/frontend/ui/app.slint:4268
+#: rust/frontend/ui/app.slint:4280 rust/frontend/ui/setup.slint:378
+msgid "Retry"
+msgstr "फिर से प्रयास करें"
+
+#: rust/frontend/ui/app.slint:3909 rust/frontend/ui/labels.slint:328
 msgid "OK"
 msgstr "ठीक है"
 
-#: rust/frontend/ui/app.slint:3703 rust/frontend/ui/app.slint:3752
-#: rust/frontend/ui/app.slint:3767 rust/frontend/ui/app.slint:4022
-#: rust/frontend/ui/app.slint:4039
+#: rust/frontend/ui/app.slint:3977 rust/frontend/ui/app.slint:4026
+#: rust/frontend/ui/app.slint:4041 rust/frontend/ui/app.slint:4299
+#: rust/frontend/ui/app.slint:4316
 msgid "Image"
 msgstr "इमेज"
 
-#: rust/frontend/ui/app.slint:3716 rust/frontend/ui/app.slint:3730
-#: rust/frontend/ui/app.slint:3971
+#: rust/frontend/ui/app.slint:3990 rust/frontend/ui/app.slint:4004
+#: rust/frontend/ui/app.slint:4245
 msgid "Scroll"
 msgstr "स्क्रॉल"
 
-#: rust/frontend/ui/app.slint:3823
+#: rust/frontend/ui/app.slint:4097
 msgid "Adjust"
 msgstr "समायोजित करें"
 
-#: rust/frontend/ui/app.slint:3824
+#: rust/frontend/ui/app.slint:4098
 msgid "Position"
 msgstr "स्थिति"
 
-#: rust/frontend/ui/app.slint:3824
+#: rust/frontend/ui/app.slint:4098
 msgid "Size"
 msgstr "आकार"
 
-#: rust/frontend/ui/app.slint:3848
+#: rust/frontend/ui/app.slint:4122
 msgid "Reposition"
 msgstr "जगह बदलें"
 
-#: rust/frontend/ui/app.slint:3849
+#: rust/frontend/ui/app.slint:4123
 msgid "Place"
 msgstr "रखें"
 
-#: rust/frontend/ui/app.slint:3859 rust/frontend/ui/app.slint:3872
-#: rust/frontend/ui/app.slint:4024 rust/frontend/ui/app.slint:4059
+#: rust/frontend/ui/app.slint:4133 rust/frontend/ui/app.slint:4146
+#: rust/frontend/ui/app.slint:4301 rust/frontend/ui/app.slint:4336
 msgid "Options"
 msgstr "विकल्प"
 
@@ -612,116 +699,116 @@ msgstr "रेटिंग"
 msgid "File"
 msgstr "फ़ाइल"
 
-#: rust/frontend/ui/browse_list.slint:273 rust/frontend/ui/chrome.slint:1094
+#: rust/frontend/ui/browse_list.slint:273 rust/frontend/ui/chrome.slint:1105
 #: rust/frontend/ui/labels.slint:51
 msgid "Loading…"
 msgstr "लोड हो रहा है…"
 
-#: rust/frontend/ui/browse_list.slint:479 rust/frontend/ui/chrome.slint:624
-#: rust/frontend/ui/game_info.slint:343
+#: rust/frontend/ui/browse_list.slint:479 rust/frontend/ui/chrome.slint:635
+#: rust/frontend/ui/game_info.slint:346
 msgid "{}/{}"
 msgstr "{}/{}"
 
-#: rust/frontend/ui/chrome.slint:103
+#: rust/frontend/ui/chrome.slint:114
 msgid "Disconnected"
 msgstr "डिस्कनेक्टेड"
 
-#: rust/frontend/ui/chrome.slint:104
+#: rust/frontend/ui/chrome.slint:115
 msgid "Reconnecting…"
 msgstr "फिर से कनेक्ट किया जा रहा है…"
 
-#: rust/frontend/ui/chrome.slint:105 rust/frontend/ui/settings.slint:350
+#: rust/frontend/ui/chrome.slint:116 rust/frontend/ui/settings.slint:391
 msgid "Connecting…"
 msgstr "कनेक्ट किया जा रहा है…"
 
-#: rust/frontend/ui/chrome.slint:107
+#: rust/frontend/ui/chrome.slint:118
 msgid "Core error"
 msgstr "कोर त्रुटि"
 
-#: rust/frontend/ui/chrome.slint:107
+#: rust/frontend/ui/chrome.slint:118
 msgid "Core error: {}"
 msgstr "कोर त्रुटि: {}"
 
-#: rust/frontend/ui/chrome.slint:109
+#: rust/frontend/ui/chrome.slint:120
 msgid "Indexing paused: game running"
 msgstr "इंडेक्सिंग रुकी: गेम चल रहा है"
 
 #. run; a bare "Indexing: " reads as broken.
-#: rust/frontend/ui/chrome.slint:113
+#: rust/frontend/ui/chrome.slint:124
 msgid "Indexing…"
 msgstr "इंडेक्सिंग…"
 
 #. run; a bare "Indexing: " reads as broken.
-#: rust/frontend/ui/chrome.slint:113
+#: rust/frontend/ui/chrome.slint:124
 msgid "Indexing: {}"
 msgstr "इंडेक्सिंग: {}"
 
-#: rust/frontend/ui/chrome.slint:116
+#: rust/frontend/ui/chrome.slint:127
 msgid "Optimizing database…"
 msgstr "डेटाबेस अनुकूलित किया जा रहा है…"
 
-#: rust/frontend/ui/chrome.slint:116
+#: rust/frontend/ui/chrome.slint:127
 msgid "Optimizing database: {}"
 msgstr "डेटाबेस अनुकूलन: {}"
 
-#: rust/frontend/ui/chrome.slint:118
+#: rust/frontend/ui/chrome.slint:129
 msgid "Importing paused: game running"
 msgstr "इम्पोर्ट रुका: गेम चल रहा है"
 
-#: rust/frontend/ui/chrome.slint:120
+#: rust/frontend/ui/chrome.slint:131
 msgid "Importing…"
 msgstr "इम्पोर्ट हो रहा है…"
 
-#: rust/frontend/ui/chrome.slint:120
+#: rust/frontend/ui/chrome.slint:131
 msgid "Importing: {}"
 msgstr "इम्पोर्ट: {}"
 
-#: rust/frontend/ui/chrome.slint:122
+#: rust/frontend/ui/chrome.slint:133
 msgid "Indexed {} files"
 msgstr "{0} फ़ाइलें इंडेक्स की गईं"
 
-#: rust/frontend/ui/chrome.slint:123
+#: rust/frontend/ui/chrome.slint:134
 msgid "Indexing complete"
 msgstr "इंडेक्सिंग पूरी हुई"
 
-#: rust/frontend/ui/chrome.slint:124
+#: rust/frontend/ui/chrome.slint:135
 msgid "Import failed: {}"
 msgstr "इम्पोर्ट विफल: {}"
 
-#: rust/frontend/ui/chrome.slint:125
+#: rust/frontend/ui/chrome.slint:136
 msgid "Imported {} of {}"
 msgstr "{1} में से {0} इम्पोर्ट किए गए"
 
-#: rust/frontend/ui/chrome.slint:126
+#: rust/frontend/ui/chrome.slint:137
 msgid "Playtime limit in {}"
 msgstr "खेल समय सीमा में {0} बाकी"
 
-#: rust/frontend/ui/chrome.slint:131 rust/frontend/ui/chrome.slint:242
-#: rust/frontend/ui/chrome.slint:387
+#: rust/frontend/ui/chrome.slint:142 rust/frontend/ui/chrome.slint:253
+#: rust/frontend/ui/chrome.slint:398
 msgid "{}%"
 msgstr "{}%"
 
-#: rust/frontend/ui/chrome.slint:627
+#: rust/frontend/ui/chrome.slint:638
 msgid "{}"
 msgstr "{}"
 
-#: rust/frontend/ui/chrome.slint:720
+#: rust/frontend/ui/chrome.slint:731
 msgid "Page {} / {}"
 msgstr "पृष्ठ {0} / {1}"
 
-#: rust/frontend/ui/chrome.slint:721
+#: rust/frontend/ui/chrome.slint:732
 msgid "Page {}"
 msgstr "पृष्ठ {0}"
 
-#: rust/frontend/ui/chrome.slint:1163
+#: rust/frontend/ui/chrome.slint:1174
 msgid "Nothing here"
 msgstr "यहाँ कुछ नहीं है"
 
-#: rust/frontend/ui/chrome.slint:1165
+#: rust/frontend/ui/chrome.slint:1176
 msgid "Check Zaparoo Core and try again."
 msgstr "Zaparoo Core जाँचें और फिर से प्रयास करें।"
 
-#: rust/frontend/ui/chrome.slint:1177
+#: rust/frontend/ui/chrome.slint:1188
 msgid "Failed to load"
 msgstr "लोड करने में विफल"
 
@@ -737,41 +824,41 @@ msgstr "विवरण लोड हो रहा है…"
 msgid "Could not load details. Check Zaparoo Core and try again."
 msgstr "विवरण लोड नहीं हो सका। Zaparoo Core जाँचें और फिर से प्रयास करें।"
 
-#: rust/frontend/ui/game_info.slint:317 rust/frontend/ui/game_info.slint:632
+#: rust/frontend/ui/game_info.slint:317 rust/frontend/ui/game_info.slint:635
 msgid "Loading image…"
 msgstr "इमेज लोड हो रही है…"
 
-#: rust/frontend/ui/game_info.slint:365
+#: rust/frontend/ui/game_info.slint:368
 msgctxt "game-document"
 msgid "Manual"
 msgstr "मैनुअल"
 
-#: rust/frontend/ui/game_info.slint:373
+#: rust/frontend/ui/game_info.slint:376
 msgid "This game's file is missing."
 msgstr "इस गेम की फ़ाइल नहीं मिल रही है।"
 
-#: rust/frontend/ui/game_info.slint:417
+#: rust/frontend/ui/game_info.slint:420
 msgid "Technical details"
 msgstr "तकनीकी विवरण"
 
 #. Games, favorites and recents rows.
-#: rust/frontend/ui/game_info.slint:417 rust/frontend/ui/labels.slint:144
+#: rust/frontend/ui/game_info.slint:420 rust/frontend/ui/labels.slint:144
 msgid "Details"
 msgstr "विवरण"
 
-#: rust/frontend/ui/game_info.slint:633
+#: rust/frontend/ui/game_info.slint:636
 msgid "Loading manual…"
 msgstr "मैनुअल लोड हो रहा है…"
 
-#: rust/frontend/ui/game_info.slint:633
+#: rust/frontend/ui/game_info.slint:636
 msgid "Loading page…"
 msgstr "पेज लोड हो रहा है…"
 
-#: rust/frontend/ui/game_info.slint:638
+#: rust/frontend/ui/game_info.slint:641
 msgid "This manual is too large to open."
 msgstr "यह मैनुअल खोलने के लिए बहुत बड़ा है।"
 
-#: rust/frontend/ui/game_info.slint:639
+#: rust/frontend/ui/game_info.slint:642
 msgid "Could not open the manual. Check Zaparoo Core and try again."
 msgstr "मैनुअल नहीं खुल सका। Zaparoo Core जाँचें और फिर से प्रयास करें।"
 
@@ -937,7 +1024,7 @@ msgstr "A-Z"
 msgid "Default"
 msgstr "डिफ़ॉल्ट"
 
-#: rust/frontend/ui/labels.slint:110 rust/frontend/ui/settings.slint:331
+#: rust/frontend/ui/labels.slint:110 rust/frontend/ui/settings.slint:361
 msgid "None"
 msgstr "कोई नहीं"
 
@@ -945,7 +1032,7 @@ msgstr "कोई नहीं"
 msgid "Any"
 msgstr "कोई भी"
 
-#: rust/frontend/ui/labels.slint:129 rust/frontend/ui/settings.slint:150
+#: rust/frontend/ui/labels.slint:129 rust/frontend/ui/settings.slint:153
 msgid "Region"
 msgstr "क्षेत्र"
 
@@ -1018,7 +1105,7 @@ msgid "Remove from Hub"
 msgstr "Hub से हटाएँ"
 
 #: rust/frontend/ui/labels.slint:160 rust/frontend/ui/labels.slint:180
-#: rust/frontend/ui/settings.slint:162
+#: rust/frontend/ui/settings.slint:165
 msgid "Update metadata"
 msgstr "मेटाडेटा अपडेट करें"
 
@@ -1234,7 +1321,7 @@ msgstr "कोई हालिया गेम नहीं"
 msgid "No internet connection"
 msgstr "इंटरनेट कनेक्शन नहीं है"
 
-#: rust/frontend/ui/labels.slint:264 rust/frontend/ui/settings.slint:353
+#: rust/frontend/ui/labels.slint:264 rust/frontend/ui/settings.slint:394
 msgid "Not available"
 msgstr "उपलब्ध नहीं"
 
@@ -1279,38 +1366,46 @@ msgid "Unlink Online account?"
 msgstr "Online खाता अनलिंक करें?"
 
 #: rust/frontend/ui/labels.slint:289
+msgid "Log out of RetroAchievements?"
+msgstr ""
+
+#: rust/frontend/ui/labels.slint:290
 msgid "Restore this backup?"
 msgstr "यह बैकअप रीस्टोर करें?"
 
-#: rust/frontend/ui/labels.slint:290
+#: rust/frontend/ui/labels.slint:291
 msgid "Stop update?"
 msgstr "अपडेट रोकें?"
 
-#: rust/frontend/ui/labels.slint:299
+#: rust/frontend/ui/labels.slint:300
 msgid "Are you sure you want to exit?"
 msgstr "क्या आप वाकई बाहर निकलना चाहते हैं?"
 
-#: rust/frontend/ui/labels.slint:300
+#: rust/frontend/ui/labels.slint:301
 msgid "Close the running game before exiting Zaparoo Frontend."
 msgstr "Zaparoo Frontend से बाहर निकलने से पहले चल रहा गेम बंद करें।"
 
-#: rust/frontend/ui/labels.slint:301
+#: rust/frontend/ui/labels.slint:302
 msgid "This setting needs a frontend restart to take effect."
 msgstr "यह सेटिंग लागू करने के लिए फ़्रंटएंड को फिर से शुरू करना होगा।"
 
-#: rust/frontend/ui/labels.slint:302
+#: rust/frontend/ui/labels.slint:303
 msgid "This device stops backing up and syncing with your Zaparoo Online account. Local play history stays on this device."
 msgstr "यह डिवाइस आपके Zaparoo Online खाते के साथ बैकअप और सिंक करना बंद कर देगा। लोकल खेल इतिहास इसी डिवाइस पर रहेगा।"
 
-#: rust/frontend/ui/labels.slint:303
+#: rust/frontend/ui/labels.slint:304
 msgid "This replaces this device's settings and data with the backup from {}. Zaparoo restarts when it finishes."
 msgstr "इससे इस डिवाइस की सेटिंग्स और डेटा की जगह {} का बैकअप आ जाएगा। पूरा होने पर Zaparoo फिर से शुरू होगा।"
 
-#: rust/frontend/ui/labels.slint:304
+#: rust/frontend/ui/labels.slint:305
 msgid "An update is still running. Leaving this screen stops it."
 msgstr "एक अपडेट अभी चल रहा है। यह स्क्रीन छोड़ने पर वह रुक जाएगा।"
 
 #: rust/frontend/ui/labels.slint:306
+msgid "Games stop earning achievements until you log in again."
+msgstr ""
+
+#: rust/frontend/ui/labels.slint:308
 msgid ""
 "Copyright 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.\n"
 "\n"
@@ -1334,349 +1429,381 @@ msgstr ""
 "निर्माता\n"
 "Andrea Bogazzi, BossRighteous, Tim Wilsie, Wizzo"
 
-#: rust/frontend/ui/labels.slint:309
+#: rust/frontend/ui/labels.slint:311
 msgid "This frontend needs Zaparoo Core {} or newer. You're running {}. Some features may not work until you update."
 msgstr "इस फ़्रंटएंड के लिए Zaparoo Core {} या उससे नया संस्करण चाहिए। अभी {} चल रहा है। अपडेट करने तक कुछ सुविधाएँ शायद काम न करें।"
 
-#: rust/frontend/ui/labels.slint:312
+#: rust/frontend/ui/labels.slint:314
 msgid "Start a media database update to find your games. It runs in the background, and systems appear as they are indexed."
 msgstr "अपने गेम खोजने के लिए मीडिया डेटाबेस अपडेट शुरू करें। यह बैकग्राउंड में चलता है, और इंडेक्स होते ही सिस्टम दिखने लगते हैं।"
 
-#: rust/frontend/ui/labels.slint:315
+#: rust/frontend/ui/labels.slint:317
 msgid "All categories and actions are already on the Hub. To add a game or system, open its Options menu and choose \"Add to Hub\"."
 msgstr "सभी श्रेणियाँ और कार्रवाइयाँ पहले से Hub पर हैं। कोई गेम या सिस्टम जोड़ने के लिए उसका विकल्प मेनू खोलें और \"Hub में जोड़ें\" चुनें।"
 
-#: rust/frontend/ui/labels.slint:324
+#: rust/frontend/ui/labels.slint:326
 msgid "Yes"
 msgstr "हाँ"
 
-#: rust/frontend/ui/labels.slint:325
+#: rust/frontend/ui/labels.slint:327
 msgid "No"
 msgstr "नहीं"
 
-#: rust/frontend/ui/labels.slint:329
+#: rust/frontend/ui/labels.slint:331
 msgid "I understand"
 msgstr "मैं समझ गया"
 
-#: rust/frontend/ui/labels.slint:330
+#: rust/frontend/ui/labels.slint:332
 msgid "Start media update"
 msgstr "मीडिया अपडेट शुरू करें"
 
-#: rust/frontend/ui/labels.slint:337
+#: rust/frontend/ui/labels.slint:339
 msgid "Launch failed"
 msgstr "लॉन्च विफल रहा"
 
-#: rust/frontend/ui/labels.slint:338
+#: rust/frontend/ui/labels.slint:340
 msgid "Favorite update failed"
 msgstr "पसंदीदा अपडेट नहीं हुआ"
 
-#: rust/frontend/ui/labels.slint:339
+#: rust/frontend/ui/labels.slint:341
 msgid "Visibility update failed"
 msgstr "छिपाना या दिखाना विफल रहा"
 
-#: rust/frontend/ui/labels.slint:340
+#: rust/frontend/ui/labels.slint:342
 msgid "Media database is busy"
 msgstr "मीडिया डेटाबेस व्यस्त है"
 
-#: rust/frontend/ui/labels.slint:341
+#: rust/frontend/ui/labels.slint:343
 msgid "Add to Hub failed"
 msgstr "Hub में जोड़ना विफल रहा"
 
-#: rust/frontend/ui/labels.slint:342
+#: rust/frontend/ui/labels.slint:344
 msgid "Save to Hub failed"
 msgstr "Hub में सहेजना विफल रहा"
 
-#: rust/frontend/ui/labels.slint:343
+#: rust/frontend/ui/labels.slint:345
 msgid "Media update failed"
 msgstr "मीडिया अपडेट विफल रहा"
 
-#: rust/frontend/ui/labels.slint:344
+#: rust/frontend/ui/labels.slint:346
 msgid "Update metadata failed"
 msgstr "मेटाडेटा अपडेट विफल रहा"
 
-#: rust/frontend/ui/labels.slint:345
+#: rust/frontend/ui/labels.slint:347
 msgid "Source list unavailable"
 msgstr "स्रोत सूची उपलब्ध नहीं"
 
-#: rust/frontend/ui/labels.slint:346
+#: rust/frontend/ui/labels.slint:348
 msgid "Cancel failed"
 msgstr "रद्द नहीं हो सका"
 
-#: rust/frontend/ui/labels.slint:347
+#: rust/frontend/ui/labels.slint:349
 msgid "Launcher update failed"
 msgstr "लॉन्चर बदला नहीं जा सका"
 
-#: rust/frontend/ui/labels.slint:348
+#: rust/frontend/ui/labels.slint:350
 msgid "Alternate versions unavailable"
 msgstr "अन्य संस्करण उपलब्ध नहीं"
 
-#: rust/frontend/ui/labels.slint:349
+#: rust/frontend/ui/labels.slint:351
 msgid "Disc list unavailable"
 msgstr "डिस्क सूची उपलब्ध नहीं"
 
-#: rust/frontend/ui/labels.slint:350
+#: rust/frontend/ui/labels.slint:352
 msgid "QR code failed"
 msgstr "QR कोड नहीं बन सका"
 
-#: rust/frontend/ui/labels.slint:351
+#: rust/frontend/ui/labels.slint:353
 msgid "Token write failed"
 msgstr "टोकन पर लिखना विफल रहा"
 
-#: rust/frontend/ui/labels.slint:352
+#: rust/frontend/ui/labels.slint:354
 msgid "Image picker failed"
 msgstr "इमेज पिकर विफल"
 
-#: rust/frontend/ui/labels.slint:353
+#: rust/frontend/ui/labels.slint:355
 msgid "Setting not saved"
 msgstr "सेटिंग सेव नहीं हुई"
 
-#: rust/frontend/ui/labels.slint:354
+#: rust/frontend/ui/labels.slint:356
 msgid "Pairing could not start"
 msgstr "पेयरिंग शुरू नहीं हो सकी"
 
-#: rust/frontend/ui/labels.slint:355
+#: rust/frontend/ui/labels.slint:357
 msgid "Online account unavailable"
 msgstr "Online खाता उपलब्ध नहीं"
 
-#: rust/frontend/ui/labels.slint:356
+#: rust/frontend/ui/labels.slint:358
 msgid "Cloud backup failed"
 msgstr "क्लाउड बैकअप विफल रहा"
 
-#: rust/frontend/ui/labels.slint:357
+#: rust/frontend/ui/labels.slint:359
 msgid "Config file not loaded"
 msgstr "कॉन्फ़िग फ़ाइल लोड नहीं हुई"
 
-#: rust/frontend/ui/labels.slint:358
+#: rust/frontend/ui/labels.slint:360
 msgid "Action failed"
 msgstr "कार्रवाई विफल रही"
 
-#: rust/frontend/ui/labels.slint:365
+#: rust/frontend/ui/labels.slint:367
 msgid "Could not start this item. Check Zaparoo Core and try again."
 msgstr "यह आइटम शुरू नहीं हो सका। Zaparoo Core जाँचें और फिर से प्रयास करें।"
 
-#: rust/frontend/ui/labels.slint:366
+#: rust/frontend/ui/labels.slint:368
 msgid "Could not start {}. Check Zaparoo Core and try again."
 msgstr "{} शुरू नहीं हो सका। Zaparoo Core जाँचें और फिर से प्रयास करें।"
 
-#: rust/frontend/ui/labels.slint:371
+#: rust/frontend/ui/labels.slint:373
 msgid "Could not update this favorite. Check Zaparoo Core and try again."
 msgstr "यह पसंदीदा अपडेट नहीं हो सका। Zaparoo Core जाँचें और फिर से प्रयास करें।"
 
-#: rust/frontend/ui/labels.slint:372
+#: rust/frontend/ui/labels.slint:374
 msgid "Could not hide or unhide this game. Check Zaparoo Core and try again."
 msgstr "इस गेम को छिपाया या दिखाया नहीं जा सका। Zaparoo Core जाँचें और फिर से प्रयास करें।"
 
-#: rust/frontend/ui/labels.slint:374
+#: rust/frontend/ui/labels.slint:376
 msgid "Zaparoo Core is updating the media database. Try again when it finishes."
 msgstr "Zaparoo Core मीडिया डेटाबेस अपडेट कर रहा है। पूरा होने पर फिर से प्रयास करें।"
 
-#: rust/frontend/ui/labels.slint:376
+#: rust/frontend/ui/labels.slint:378
 msgid "Could not add this item to the Hub. Check Zaparoo Core and try again."
 msgstr "यह आइटम Hub में नहीं जोड़ा जा सका। Zaparoo Core जाँचें और फिर से प्रयास करें।"
 
-#: rust/frontend/ui/labels.slint:377
+#: rust/frontend/ui/labels.slint:379
 msgid "Could not add {} to the Hub. Check Zaparoo Core and try again."
 msgstr "{} को Hub में नहीं जोड़ा जा सका। Zaparoo Core जाँचें और फिर से प्रयास करें।"
 
-#: rust/frontend/ui/labels.slint:380
+#: rust/frontend/ui/labels.slint:382
 msgid "Could not save this search to the Hub. Check Zaparoo Core and try again."
 msgstr "यह खोज Hub में सहेजी नहीं जा सकी। Zaparoo Core जाँचें और फिर से प्रयास करें।"
 
-#: rust/frontend/ui/labels.slint:381
+#: rust/frontend/ui/labels.slint:383
 msgid "Could not save {} to the Hub. Check Zaparoo Core and try again."
 msgstr "{} को Hub में सहेजा नहीं जा सका। Zaparoo Core जाँचें और फिर से प्रयास करें।"
 
-#: rust/frontend/ui/labels.slint:383
+#: rust/frontend/ui/labels.slint:385
 msgid "Could not start the media database update. Check Zaparoo Core and try again."
 msgstr "मीडिया डेटाबेस अपडेट शुरू नहीं हो सका। Zaparoo Core जाँचें और फिर से प्रयास करें।"
 
-#: rust/frontend/ui/labels.slint:384
+#: rust/frontend/ui/labels.slint:386
 msgid "Could not start updating metadata. Check Zaparoo Core and try again."
 msgstr "मेटाडेटा अपडेट शुरू नहीं हो सका। Zaparoo Core जाँचें और फिर से प्रयास करें।"
 
-#: rust/frontend/ui/labels.slint:385
+#: rust/frontend/ui/labels.slint:387
 msgid "Could not load the list of metadata sources. Check Zaparoo Core and try again."
 msgstr "मेटाडेटा स्रोतों की सूची लोड नहीं हो सकी। Zaparoo Core जाँचें और फिर से प्रयास करें।"
 
-#: rust/frontend/ui/labels.slint:386
+#: rust/frontend/ui/labels.slint:388
 msgid "Could not cancel the media operation. Check Zaparoo Core and try again."
 msgstr "मीडिया का काम रद्द नहीं हो सका। Zaparoo Core जाँचें और फिर से प्रयास करें।"
 
-#: rust/frontend/ui/labels.slint:387
+#: rust/frontend/ui/labels.slint:389
 msgid "Could not change the launcher. Check Zaparoo Core and try again."
 msgstr "लॉन्चर नहीं बदला जा सका। Zaparoo Core जाँचें और फिर से प्रयास करें।"
 
-#: rust/frontend/ui/labels.slint:388
+#: rust/frontend/ui/labels.slint:390
 msgid "Could not find alternate versions. Check Zaparoo Core and try again."
 msgstr "अन्य संस्करण नहीं खोजे जा सके। Zaparoo Core जाँचें और फिर से प्रयास करें।"
 
-#: rust/frontend/ui/labels.slint:389
+#: rust/frontend/ui/labels.slint:391
 msgid "Could not list the discs of this game. Check Zaparoo Core and try again."
 msgstr "इस गेम की डिस्क की सूची नहीं मिल सकी। Zaparoo Core जाँचें और फिर से प्रयास करें।"
 
-#: rust/frontend/ui/labels.slint:390
+#: rust/frontend/ui/labels.slint:392
 msgid "Could not create the QR code for this item."
 msgstr "इस आइटम का QR कोड नहीं बन सका।"
 
-#: rust/frontend/ui/labels.slint:391
+#: rust/frontend/ui/labels.slint:393
 msgid "Could not write to this token. Check that it is writable and try again."
 msgstr "इस टोकन पर लिखा नहीं जा सका। जाँचें कि यह लिखने योग्य है और फिर से प्रयास करें।"
 
-#: rust/frontend/ui/labels.slint:392
+#: rust/frontend/ui/labels.slint:394
 msgid "Could not open an image picker, or the image chosen could not be read."
 msgstr "इमेज पिकर नहीं खुल सका, या चुनी गई इमेज पढ़ी नहीं जा सकी।"
 
-#: rust/frontend/ui/labels.slint:393
+#: rust/frontend/ui/labels.slint:395
 msgid "Could not save this setting. Try again."
 msgstr "यह सेटिंग सेव नहीं हो सकी। फिर से प्रयास करें।"
 
-#: rust/frontend/ui/labels.slint:394
+#: rust/frontend/ui/labels.slint:396
 msgid "Core would not start a pairing. It may already have as many paired devices as it allows, or it may be running on another device."
 msgstr "Core ने पेयरिंग शुरू नहीं की। हो सकता है कि पेयर किए गए डिवाइस की सीमा पूरी हो चुकी हो, या Core किसी दूसरे डिवाइस पर चल रहा हो।"
 
-#: rust/frontend/ui/labels.slint:395
+#: rust/frontend/ui/labels.slint:397
 msgid "Core could not reach or update your Zaparoo Online account. Check the network connection and try again."
 msgstr "Core आपके Zaparoo Online खाते तक पहुँच नहीं सका या उसे अपडेट नहीं कर सका। नेटवर्क कनेक्शन जाँचें और फिर से प्रयास करें।"
 
-#: rust/frontend/ui/labels.slint:399
+#: rust/frontend/ui/labels.slint:401
 msgid "A backup was uploaded recently. Wait a few minutes, then try again."
 msgstr "हाल ही में एक बैकअप अपलोड हुआ है। कुछ मिनट रुकें, फिर से प्रयास करें।"
 
-#: rust/frontend/ui/labels.slint:402
+#: rust/frontend/ui/labels.slint:404
 msgid "Your cloud backup storage is full."
 msgstr "आपका क्लाउड बैकअप स्टोरेज भर गया है।"
 
-#: rust/frontend/ui/labels.slint:403
+#: rust/frontend/ui/labels.slint:405
 msgid "Zaparoo is busy with another backup or request. Wait for it to finish, then try again."
 msgstr "Zaparoo किसी दूसरे बैकअप या अनुरोध में व्यस्त है। उसके पूरा होने तक रुकें, फिर से प्रयास करें।"
 
-#: rust/frontend/ui/labels.slint:404
+#: rust/frontend/ui/labels.slint:406
 msgid "Stop the game that is running, then try again."
 msgstr "चल रहा गेम बंद करें, फिर से प्रयास करें।"
 
-#: rust/frontend/ui/labels.slint:405
+#: rust/frontend/ui/labels.slint:407
 msgid "Restart Zaparoo to finish the previous restore, then try again."
 msgstr "पिछला रीस्टोर पूरा करने के लिए Zaparoo को फिर से शुरू करें, फिर से प्रयास करें।"
 
-#: rust/frontend/ui/labels.slint:406
+#: rust/frontend/ui/labels.slint:408
 msgid "This backup was made by a newer Zaparoo. Update Zaparoo, then try again."
 msgstr "यह बैकअप नए Zaparoo से बना है। Zaparoo अपडेट करें, फिर से प्रयास करें।"
 
-#: rust/frontend/ui/labels.slint:407
+#: rust/frontend/ui/labels.slint:409
 msgid "Free some storage space on this device, then try again."
 msgstr "इस डिवाइस पर कुछ स्टोरेज खाली करें, फिर से प्रयास करें।"
 
-#: rust/frontend/ui/labels.slint:408
+#: rust/frontend/ui/labels.slint:410
 msgid "Could not finish the cloud backup. Check the network connection and try again."
 msgstr "क्लाउड बैकअप पूरा नहीं हो सका। नेटवर्क कनेक्शन जाँचें और फिर से प्रयास करें।"
 
-#: rust/frontend/ui/labels.slint:411
+#: rust/frontend/ui/labels.slint:413
 msgid "{} could not be read, so defaults are in use and changes will not be saved. Fix or remove the file, then restart."
 msgstr "{} पढ़ी नहीं जा सकी, इसलिए डिफ़ॉल्ट सेटिंग उपयोग में हैं और बदलाव सहेजे नहीं जाएँगे। फ़ाइल ठीक करें या हटाएँ, फिर रीस्टार्ट करें।"
 
-#: rust/frontend/ui/labels.slint:412
+#: rust/frontend/ui/labels.slint:414
 msgid "The action could not be completed. Check Zaparoo Core and try again."
 msgstr "कार्रवाई पूरी नहीं हो सकी। Zaparoo Core जाँचें और फिर से प्रयास करें।"
 
-#: rust/frontend/ui/labels.slint:424
+#: rust/frontend/ui/labels.slint:426
 msgid "This launcher isn't installed."
 msgstr "यह लॉन्चर इंस्टॉल नहीं है।"
 
-#: rust/frontend/ui/labels.slint:425
+#: rust/frontend/ui/labels.slint:427
 msgid "{} isn't installed."
 msgstr "{} इंस्टॉल नहीं है।"
 
-#: rust/frontend/ui/labels.slint:428
+#: rust/frontend/ui/labels.slint:430
 msgid "This launcher is installed, but its entry point is missing or disabled."
 msgstr "यह लॉन्चर इंस्टॉल है, लेकिन इसका एंट्री पॉइंट मौजूद नहीं है या बंद है।"
 
-#: rust/frontend/ui/labels.slint:429
+#: rust/frontend/ui/labels.slint:431
 msgid "{} is installed, but its entry point is missing or disabled."
 msgstr "{} इंस्टॉल है, लेकिन इसका एंट्री पॉइंट मौजूद नहीं है या बंद है।"
 
-#: rust/frontend/ui/labels.slint:432
+#: rust/frontend/ui/labels.slint:434
 msgid "This launcher's plugin for this system isn't installed."
 msgstr "इस सिस्टम के लिए इस लॉन्चर का प्लगइन इंस्टॉल नहीं है।"
 
-#: rust/frontend/ui/labels.slint:433
+#: rust/frontend/ui/labels.slint:435
 msgid "{}'s plugin for this system isn't installed."
 msgstr "इस सिस्टम के लिए {0} का प्लगइन इंस्टॉल नहीं है।"
 
-#: rust/frontend/ui/labels.slint:434
+#: rust/frontend/ui/labels.slint:436
 msgid "{}'s {} plugin isn't installed."
 msgstr "{} का {} प्लगइन इंस्टॉल नहीं है।"
 
-#: rust/frontend/ui/labels.slint:437
+#: rust/frontend/ui/labels.slint:439
 msgid "This build of the launcher can't be used for this media. A different build is needed."
 msgstr "लॉन्चर का यह बिल्ड इस मीडिया के लिए इस्तेमाल नहीं हो सकता। कोई दूसरा बिल्ड चाहिए।"
 
-#: rust/frontend/ui/labels.slint:438
+#: rust/frontend/ui/labels.slint:440
 msgid "This build of {} can't be used for this media. A different build is needed."
 msgstr "{} का यह बिल्ड इस मीडिया के लिए इस्तेमाल नहीं हो सकता। कोई दूसरा बिल्ड चाहिए।"
 
-#: rust/frontend/ui/labels.slint:441
+#: rust/frontend/ui/labels.slint:443
 msgid "This launcher can't play this media."
 msgstr "यह लॉन्चर इस मीडिया को नहीं चला सकता।"
 
-#: rust/frontend/ui/labels.slint:442
+#: rust/frontend/ui/labels.slint:444
 msgid "{} can't play this media."
 msgstr "{} इस मीडिया को नहीं चला सकता।"
 
-#: rust/frontend/ui/labels.slint:445
+#: rust/frontend/ui/labels.slint:447
 msgid "This launcher doesn't support the requested launch options."
 msgstr "यह लॉन्चर माँगे गए लॉन्च विकल्पों को सपोर्ट नहीं करता।"
 
-#: rust/frontend/ui/labels.slint:446
+#: rust/frontend/ui/labels.slint:448
 msgid "{} doesn't support the requested launch options."
 msgstr "{} माँगे गए लॉन्च विकल्पों को सपोर्ट नहीं करता।"
 
-#: rust/frontend/ui/labels.slint:449
+#: rust/frontend/ui/labels.slint:451
 msgid "This launcher doesn't have the storage permission it needs."
 msgstr "इस लॉन्चर के पास ज़रूरी स्टोरेज अनुमति नहीं है।"
 
-#: rust/frontend/ui/labels.slint:450
+#: rust/frontend/ui/labels.slint:452
 msgid "{} doesn't have the storage permission it needs."
 msgstr "{} के पास ज़रूरी स्टोरेज अनुमति नहीं है।"
 
-#: rust/frontend/ui/labels.slint:453
+#: rust/frontend/ui/labels.slint:455
 msgid "This launcher can't read media from where it's stored."
 msgstr "यह लॉन्चर मीडिया को उसकी जगह से पढ़ नहीं सकता।"
 
-#: rust/frontend/ui/labels.slint:454
+#: rust/frontend/ui/labels.slint:456
 msgid "{} can't read media from where it's stored."
 msgstr "{} मीडिया को उसकी जगह से पढ़ नहीं सकता।"
 
-#: rust/frontend/ui/labels.slint:456
+#: rust/frontend/ui/labels.slint:458
 msgid "The storage holding this media isn't available."
 msgstr "जिस स्टोरेज में यह मीडिया है, वह उपलब्ध नहीं है।"
 
-#: rust/frontend/ui/labels.slint:457
+#: rust/frontend/ui/labels.slint:459
 msgid "This media could not be resolved or opened."
 msgstr "यह मीडिया मिल नहीं सका या खुल नहीं सका।"
 
-#: rust/frontend/ui/labels.slint:458
+#: rust/frontend/ui/labels.slint:460
 msgid "Access to this media's folder was revoked. Re-grant it in Settings > Library."
 msgstr "इस मीडिया के फ़ोल्डर की अनुमति हटा दी गई है। सेटिंग्स > लाइब्रेरी में फिर से अनुमति दें।"
 
-#: rust/frontend/ui/labels.slint:459
+#: rust/frontend/ui/labels.slint:461
 msgid "The launcher service isn't responding."
 msgstr "लॉन्चर सर्विस जवाब नहीं दे रही है।"
 
-#: rust/frontend/ui/labels.slint:460
+#: rust/frontend/ui/labels.slint:462
 msgid "Return to Zaparoo before launching this."
 msgstr "इसे लॉन्च करने से पहले Zaparoo पर वापस जाएँ।"
 
-#: rust/frontend/ui/labels.slint:461
+#: rust/frontend/ui/labels.slint:463
 msgid "The launch was cancelled before it started."
 msgstr "लॉन्च शुरू होने से पहले ही रद्द कर दिया गया।"
 
-#: rust/frontend/ui/labels.slint:462
+#: rust/frontend/ui/labels.slint:464
 msgid "The launch was sent, but its outcome could not be confirmed."
 msgstr "लॉन्च भेज दिया गया, लेकिन नतीजे की पुष्टि नहीं हो सकी।"
 
-#: rust/frontend/ui/labels.slint:463
+#: rust/frontend/ui/labels.slint:465
 msgid "The system refused the launch request."
 msgstr "सिस्टम ने लॉन्च का अनुरोध ठुकरा दिया।"
+
+#: rust/frontend/ui/ra_login.slint:35
+msgid "Wrong username or password."
+msgstr ""
+
+#: rust/frontend/ui/ra_login.slint:36
+msgid "RetroAchievements refused this login."
+msgstr ""
+
+#: rust/frontend/ui/ra_login.slint:37
+msgid "Could not reach RetroAchievements. Check the network connection."
+msgstr ""
+
+#: rust/frontend/ui/ra_login.slint:38
+msgid "Could not save the login."
+msgstr ""
+
+#: rust/frontend/ui/ra_login.slint:39
+msgid "This login can't be used on MiSTer."
+msgstr ""
+
+#: rust/frontend/ui/ra_login.slint:80
+msgid "Password"
+msgstr ""
+
+#: rust/frontend/ui/ra_login.slint:80
+msgid "Username"
+msgstr ""
+
+#: rust/frontend/ui/ra_login.slint:94
+msgid "Logging in…"
+msgstr ""
 
 #: rust/frontend/ui/rename.slint:69 rust/frontend/ui/search.slint:203
 msgid "Name"
@@ -1790,7 +1917,7 @@ msgstr "बंद: खेल समय सत्यापित नहीं ह
 msgid "Linked to Zaparoo Online"
 msgstr "Zaparoo Online से लिंक है"
 
-#: rust/frontend/ui/settings.slint:72 rust/frontend/ui/settings.slint:340
+#: rust/frontend/ui/settings.slint:72 rust/frontend/ui/settings.slint:381
 msgid "Not linked"
 msgstr "लिंक नहीं है"
 
@@ -1889,7 +2016,7 @@ msgstr "रखरखाव"
 msgid "Browsing"
 msgstr "ब्राउज़िंग"
 
-#: rust/frontend/ui/settings.slint:130
+#: rust/frontend/ui/settings.slint:130 rust/frontend/ui/settings.slint:175
 msgid "Account"
 msgstr "खाता"
 
@@ -1905,750 +2032,876 @@ msgstr "बैकअप"
 msgid "Remote"
 msgstr "रिमोट"
 
-#: rust/frontend/ui/settings.slint:135
+#: rust/frontend/ui/settings.slint:134
+msgid "Launchers"
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:137
 msgid "Color scheme"
 msgstr "रंग योजना"
 
-#: rust/frontend/ui/settings.slint:136
+#: rust/frontend/ui/settings.slint:138
 msgid "Color intensity"
 msgstr "रंग की तीव्रता"
 
-#: rust/frontend/ui/settings.slint:137
+#: rust/frontend/ui/settings.slint:139
 msgid "System logos"
 msgstr "सिस्टम लोगो"
 
-#: rust/frontend/ui/settings.slint:138
+#: rust/frontend/ui/settings.slint:140
 msgid "Show Menu row"
 msgstr "मेनू पंक्ति दिखाएँ"
 
-#: rust/frontend/ui/settings.slint:139
+#: rust/frontend/ui/settings.slint:141
+msgid "Show button hints"
+msgstr "बटन संकेत दिखाएँ"
+
+#: rust/frontend/ui/settings.slint:142
 msgid "Reduce motion"
 msgstr "मोशन कम करें"
 
-#: rust/frontend/ui/settings.slint:140
+#: rust/frontend/ui/settings.slint:143
 msgid "Screensaver"
 msgstr "स्क्रीनसेवर"
 
-#: rust/frontend/ui/settings.slint:142
+#: rust/frontend/ui/settings.slint:145
 msgid "Interface resolution"
 msgstr "इंटरफ़ेस रिज़ॉल्यूशन"
 
-#: rust/frontend/ui/settings.slint:143
+#: rust/frontend/ui/settings.slint:146
 msgid "Interface layout"
 msgstr "इंटरफ़ेस लेआउट"
 
-#: rust/frontend/ui/settings.slint:144
+#: rust/frontend/ui/settings.slint:147
 msgid "Orientation"
 msgstr "ओरिएंटेशन"
 
-#: rust/frontend/ui/settings.slint:145
+#: rust/frontend/ui/settings.slint:148
 msgid "CRT mode"
 msgstr "CRT मोड"
 
-#: rust/frontend/ui/settings.slint:146
+#: rust/frontend/ui/settings.slint:149
 msgid "Video standard"
 msgstr "वीडियो मानक"
 
-#: rust/frontend/ui/settings.slint:147
+#: rust/frontend/ui/settings.slint:150
 msgid "Screen position"
 msgstr "स्क्रीन की स्थिति"
 
-#: rust/frontend/ui/settings.slint:151
+#: rust/frontend/ui/settings.slint:154
 msgid "Clock format"
 msgstr "घड़ी का फ़ॉर्मेट"
 
-#: rust/frontend/ui/settings.slint:153
+#: rust/frontend/ui/settings.slint:156
 msgid "Button style"
 msgstr "बटन शैली"
 
-#: rust/frontend/ui/settings.slint:154
+#: rust/frontend/ui/settings.slint:157
 msgid "Swap controller confirm/cancel"
 msgstr "कंट्रोलर के पुष्टि/रद्द बटन बदलें"
 
-#: rust/frontend/ui/settings.slint:155
+#: rust/frontend/ui/settings.slint:158
 msgid "Swap controller options/menu"
 msgstr "कंट्रोलर के विकल्प/मेनू बटन बदलें"
 
-#: rust/frontend/ui/settings.slint:156
+#: rust/frontend/ui/settings.slint:159
 msgid "Mouse support"
 msgstr "माउस समर्थन"
 
-#: rust/frontend/ui/settings.slint:158
+#: rust/frontend/ui/settings.slint:161
 msgid "Add game folder…"
 msgstr "गेम फ़ोल्डर जोड़ें…"
 
-#: rust/frontend/ui/settings.slint:159
+#: rust/frontend/ui/settings.slint:162
 msgid "Detect launchers…"
 msgstr "लॉन्चर खोजें…"
 
-#: rust/frontend/ui/settings.slint:160
+#: rust/frontend/ui/settings.slint:163
 msgid "Verify playtime…"
 msgstr "खेल समय सत्यापित करें…"
 
-#: rust/frontend/ui/settings.slint:163
+#: rust/frontend/ui/settings.slint:166
 msgid "Systems layout"
 msgstr "सिस्टम लेआउट"
 
-#: rust/frontend/ui/settings.slint:164
+#: rust/frontend/ui/settings.slint:167
 msgid "Games layout"
 msgstr "गेम लेआउट"
 
-#: rust/frontend/ui/settings.slint:165
+#: rust/frontend/ui/settings.slint:168
 msgid "Preferred artwork"
 msgstr "पसंदीदा आर्टवर्क"
 
-#: rust/frontend/ui/settings.slint:166
+#: rust/frontend/ui/settings.slint:169
 msgid "Show hidden items"
 msgstr "छिपे हुए आइटम दिखाएँ"
 
-#: rust/frontend/ui/settings.slint:167
+#: rust/frontend/ui/settings.slint:170
 msgid "Show original filenames"
 msgstr "मूल फ़ाइल नाम दिखाएँ"
 
-#: rust/frontend/ui/settings.slint:168
+#: rust/frontend/ui/settings.slint:171
 msgid "Show tags"
 msgstr "टैग दिखाएँ"
 
-#: rust/frontend/ui/settings.slint:169
+#: rust/frontend/ui/settings.slint:172
 msgid "Left and Right in lists"
 msgstr "सूचियों में बाएँ और दाएँ"
 
-#: rust/frontend/ui/settings.slint:171
+#: rust/frontend/ui/settings.slint:176
+msgid "Log in…"
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:177 rust/frontend/ui/settings.slint:295
+msgid "Log out"
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:178
+msgid "RetroAchievements launchers"
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:179
+msgid "Install RetroAchievements with Update All"
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:180
+msgid "Hardcore mode"
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:181
+msgid "Progress popups"
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:182
+msgid "Challenge popups"
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:183
+msgid "Leaderboard popups"
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:184
+msgid "Popup position"
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:185
+msgid "Achievement list shortcut"
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:187
 msgid "Online features are not available for this client"
 msgstr "इस क्लाइंट के लिए ऑनलाइन सुविधाएँ उपलब्ध नहीं हैं"
 
-#: rust/frontend/ui/settings.slint:172 rust/frontend/ui/settings.slint:183
+#: rust/frontend/ui/settings.slint:188 rust/frontend/ui/settings.slint:199
 msgid "Status"
 msgstr "स्थिति"
 
-#: rust/frontend/ui/settings.slint:173
+#: rust/frontend/ui/settings.slint:189
 msgid "Warp"
 msgstr "Warp"
 
-#: rust/frontend/ui/settings.slint:174
+#: rust/frontend/ui/settings.slint:190
 msgid "Link account"
 msgstr "खाता लिंक करें"
 
-#: rust/frontend/ui/settings.slint:175
+#: rust/frontend/ui/settings.slint:191
 msgid "Unlink account"
 msgstr "खाता अनलिंक करें"
 
-#: rust/frontend/ui/settings.slint:176
+#: rust/frontend/ui/settings.slint:192
 msgid "All"
 msgstr "सभी"
 
-#: rust/frontend/ui/settings.slint:177
+#: rust/frontend/ui/settings.slint:193
 msgid "Sync play history"
 msgstr "खेल इतिहास सिंक करें"
 
-#: rust/frontend/ui/settings.slint:178
+#: rust/frontend/ui/settings.slint:194
 msgid "Remote control"
 msgstr "रिमोट कंट्रोल"
 
-#: rust/frontend/ui/settings.slint:179
+#: rust/frontend/ui/settings.slint:195
 msgid "Library sync"
 msgstr "लाइब्रेरी सिंक"
 
-#: rust/frontend/ui/settings.slint:180
+#: rust/frontend/ui/settings.slint:196
 msgid "Cloud backup"
 msgstr "क्लाउड बैकअप"
 
-#: rust/frontend/ui/settings.slint:181
+#: rust/frontend/ui/settings.slint:197
 msgid "Schedule"
 msgstr "शेड्यूल"
 
-#: rust/frontend/ui/settings.slint:182
+#: rust/frontend/ui/settings.slint:198
 msgid "Manage backups…"
 msgstr "बैकअप प्रबंधित करें…"
 
-#: rust/frontend/ui/settings.slint:184
+#: rust/frontend/ui/settings.slint:200
 msgid "Activity…"
 msgstr "गतिविधि…"
 
-#: rust/frontend/ui/settings.slint:189
+#: rust/frontend/ui/settings.slint:205
 msgid "Debug logging"
 msgstr "डीबग लॉगिंग"
 
-#: rust/frontend/ui/settings.slint:190 rust/frontend/ui/setup.slint:319
+#: rust/frontend/ui/settings.slint:206 rust/frontend/ui/setup.slint:319
 msgid "Upload log file"
 msgstr "लॉग फ़ाइल अपलोड करें"
 
-#: rust/frontend/ui/settings.slint:200
+#: rust/frontend/ui/settings.slint:216
 msgid "Link your Zaparoo Online account first."
 msgstr "पहले अपना Zaparoo Online खाता लिंक करें।"
 
-#: rust/frontend/ui/settings.slint:203
+#: rust/frontend/ui/settings.slint:219
 msgid "Wait for the metadata update to finish."
 msgstr "मेटाडेटा अपडेट पूरा होने तक रुकें।"
 
-#: rust/frontend/ui/settings.slint:204
+#: rust/frontend/ui/settings.slint:220
 msgid "Wait for the media database update to finish."
 msgstr "मीडिया डेटाबेस अपडेट पूरा होने तक रुकें।"
 
-#: rust/frontend/ui/settings.slint:208
+#: rust/frontend/ui/settings.slint:221
+msgid "Install RetroAchievements with Update All first."
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:225
 msgid "Choose a folder containing system folders, then use Update media database to scan."
 msgstr "ऐसा फ़ोल्डर चुनें जिसमें सिस्टम फ़ोल्डर हों, फिर स्कैन के लिए \"मीडिया डेटाबेस अपडेट करें\" चलाएँ।"
 
-#: rust/frontend/ui/settings.slint:209
+#: rust/frontend/ui/settings.slint:226
 msgid "Scans a folder you choose for launchers already installed."
 msgstr "आपके चुने फ़ोल्डर में पहले से इंस्टॉल लॉन्चर खोजता है।"
 
-#: rust/frontend/ui/settings.slint:210
+#: rust/frontend/ui/settings.slint:227
 msgid "Allow exact game time in system settings. Optional."
 msgstr "सिस्टम सेटिंग्स में सटीक खेल समय की अनुमति दें। वैकल्पिक।"
 
-#: rust/frontend/ui/settings.slint:211
+#: rust/frontend/ui/settings.slint:228
 msgid "Changes colors across screens, including text and highlights."
 msgstr "सभी स्क्रीन के रंग बदलता है, टेक्स्ट और हाइलाइट भी।"
 
-#: rust/frontend/ui/settings.slint:212
+#: rust/frontend/ui/settings.slint:229
 msgid "Controls how strongly accent colors tint tiles and backgrounds."
 msgstr "टाइल और बैकग्राउंड पर एक्सेंट रंग कितना गहरा चढ़े, यह तय करता है।"
 
-#: rust/frontend/ui/settings.slint:213
+#: rust/frontend/ui/settings.slint:230
 msgid "Shows system logos in original colors or tinted to match colors."
 msgstr "सिस्टम लोगो मूल रंगों में या रंग योजना के रंग में दिखाता है।"
 
-#: rust/frontend/ui/settings.slint:214
+#: rust/frontend/ui/settings.slint:231
 msgid "Shows page actions as a row. Off, the Menu button lists them."
 msgstr "पेज की क्रियाएँ पंक्ति में दिखाता है। बंद होने पर मेनू बटन उन्हें सूची में दिखाता है।"
 
-#: rust/frontend/ui/settings.slint:215
+#: rust/frontend/ui/settings.slint:232
+msgid "Shows button hints along the bottom. Off, screens use the space."
+msgstr "नीचे बटन संकेत दिखाता है। बंद होने पर स्क्रीन वह जगह इस्तेमाल करती हैं।"
+
+#: rust/frontend/ui/settings.slint:233
 msgid "Turns off animation throughout the interface."
 msgstr "पूरे इंटरफ़ेस में ऐनिमेशन बंद करता है।"
 
-#: rust/frontend/ui/settings.slint:216
+#: rust/frontend/ui/settings.slint:234
 msgid "Sets idle time before the screensaver starts. Off disables it."
 msgstr "स्क्रीनसेवर कितनी देर बाद शुरू हो, यह तय करता है। \"बंद\" से नहीं चलेगा।"
 
-#: rust/frontend/ui/settings.slint:217
+#: rust/frontend/ui/settings.slint:235
 msgid "The resolution the interface renders at. Restarts the frontend."
 msgstr "इंटरफ़ेस का रिज़ॉल्यूशन। फ़्रंटएंड फिर से शुरू होगा।"
 
-#: rust/frontend/ui/settings.slint:218
+#: rust/frontend/ui/settings.slint:236
 msgid "Adjusts layout density for standard and handheld screens."
 msgstr "मानक और हैंडहेल्ड स्क्रीन के लिए लेआउट की सघनता बदलता है।"
 
-#: rust/frontend/ui/settings.slint:219
+#: rust/frontend/ui/settings.slint:237
 msgid "Rotates the interface for a sideways screen or tate cabinet."
 msgstr "आड़ी रखी स्क्रीन या टेट कैबिनेट के लिए इंटरफ़ेस घुमाता है।"
 
-#: rust/frontend/ui/settings.slint:220
+#: rust/frontend/ui/settings.slint:238
 msgid "Outputs 15 kHz analog video through MiSTer. Restarts frontend."
 msgstr "MiSTer से 15 kHz एनालॉग वीडियो देता है। फ़्रंटएंड फिर से शुरू होगा।"
 
-#: rust/frontend/ui/settings.slint:221
+#: rust/frontend/ui/settings.slint:239
 msgid "Matches analog output to NTSC or PAL. Restarts the frontend."
 msgstr "एनालॉग आउटपुट को NTSC या PAL पर रखता है। फ़्रंटएंड फिर से शुरू होगा।"
 
-#: rust/frontend/ui/settings.slint:222
-msgid "Opens a test pattern to position the analog picture with arrows."
-msgstr "तीर बटन से एनालॉग तस्वीर की जगह ठीक करने के लिए टेस्ट पैटर्न खोलता है।"
+#: rust/frontend/ui/settings.slint:240
+msgid "Opens a test pattern to set analog picture position and width."
+msgstr "एनालॉग तस्वीर की जगह और चौड़ाई ठीक करने के लिए टेस्ट पैटर्न खोलता है।"
 
-#: rust/frontend/ui/settings.slint:223
+#: rust/frontend/ui/settings.slint:241
 msgid "The language used for interface text. Restarts the frontend."
 msgstr "इंटरफ़ेस के टेक्स्ट की भाषा। फ़्रंटएंड फिर से शुरू होगा।"
 
-#: rust/frontend/ui/settings.slint:224
+#: rust/frontend/ui/settings.slint:242
 msgid "Selects regional system and game names, such as Mega Drive."
 msgstr "सिस्टम और गेम के क्षेत्रीय नाम चुनता है, जैसे Mega Drive।"
 
-#: rust/frontend/ui/settings.slint:225
+#: rust/frontend/ui/settings.slint:243
 msgid "12-hour or 24-hour time in the top bar."
 msgstr "ऊपरी बार में 12 घंटे या 24 घंटे वाला समय।"
 
-#: rust/frontend/ui/settings.slint:226
+#: rust/frontend/ui/settings.slint:244
 msgid "Matches on-screen prompt icons to your controller."
 msgstr "स्क्रीन पर दिखने वाले बटन आइकन आपके कंट्रोलर जैसे रखता है।"
 
-#: rust/frontend/ui/settings.slint:227
+#: rust/frontend/ui/settings.slint:245
 msgid "Flips which controller button accepts and which cancels."
 msgstr "कंट्रोलर के स्वीकार और रद्द वाले बटन आपस में बदलता है।"
 
-#: rust/frontend/ui/settings.slint:228
+#: rust/frontend/ui/settings.slint:246
 msgid "Swaps which controller button opens Options and Menu."
 msgstr "कंट्रोलर के विकल्प और मेनू खोलने वाले बटन आपस में बदलता है।"
 
-#: rust/frontend/ui/settings.slint:229
+#: rust/frontend/ui/settings.slint:247
 msgid "Lets a mouse click tiles and menu rows."
 msgstr "माउस से टाइल और मेनू की पंक्तियों पर क्लिक करने देता है।"
 
-#: rust/frontend/ui/settings.slint:230
+#: rust/frontend/ui/settings.slint:248
 msgid "Rescans game folders for added or removed files. Choose systems."
 msgstr "जोड़ी या हटाई गई फ़ाइलों के लिए गेम फ़ोल्डर फिर से स्कैन करता है। सिस्टम चुनें।"
 
-#: rust/frontend/ui/settings.slint:231
+#: rust/frontend/ui/settings.slint:249
 msgid "Adds artwork and details from the sources Core offers."
 msgstr "Core के दिए स्रोतों से आर्टवर्क और विवरण जोड़ता है।"
 
-#: rust/frontend/ui/settings.slint:232
+#: rust/frontend/ui/settings.slint:250
 msgid "Shows systems as a cover grid or a list with details."
 msgstr "सिस्टम को कवर ग्रिड या विवरण वाली सूची में दिखाता है।"
 
-#: rust/frontend/ui/settings.slint:233
+#: rust/frontend/ui/settings.slint:251
 msgid "Sets grid or list layout for Games, Favorites, and Recents."
 msgstr "गेम, पसंदीदा और हाल के लिए ग्रिड या सूची लेआउट तय करता है।"
 
-#: rust/frontend/ui/settings.slint:234
+#: rust/frontend/ui/settings.slint:252
 msgid "Prefers an artwork type when games have multiple images."
 msgstr "गेम की कई इमेज होने पर चुने गए आर्टवर्क को प्राथमिकता देता है।"
 
-#: rust/frontend/ui/settings.slint:235
+#: rust/frontend/ui/settings.slint:253
 msgid "Shows hidden items so they can be unhidden."
 msgstr "छिपे हुए आइटम दिखाता है, ताकि उन्हें फिर से दिखाया जा सके।"
 
-#: rust/frontend/ui/settings.slint:236
+#: rust/frontend/ui/settings.slint:254
 msgid "Shows real filenames instead of cleaned-up display titles."
 msgstr "साफ़ किए गए शीर्षकों की जगह असली फ़ाइल नाम दिखाता है।"
 
-#: rust/frontend/ui/settings.slint:237
+#: rust/frontend/ui/settings.slint:255
 msgid "Shows region, revision, and disc tags after game names."
 msgstr "गेम नामों के बाद क्षेत्र, संशोधन और डिस्क टैग दिखाता है।"
 
-#: rust/frontend/ui/settings.slint:238
+#: rust/frontend/ui/settings.slint:256
 msgid "Turns the page or changes the image in the detailed list."
 msgstr "विस्तृत सूची में पेज पलटता है या इमेज बदलता है।"
 
-#: rust/frontend/ui/settings.slint:239
+#: rust/frontend/ui/settings.slint:257
+msgid "Launchers and groups tried first on every system."
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:258
+msgid "Saves your RetroAchievements login on this MiSTer."
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:259
+msgid "Removes your RetroAchievements login from this MiSTer."
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:260
+msgid "Uses RetroAchievements launchers where a system has one."
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:261
+msgid "Earns hardcore unlocks. Turns off save states and cheats."
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:262
+msgid "Shows progress toward an achievement while you play."
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:263
+msgid "Shows when a timed or conditional challenge starts."
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:264
+msgid "Shows leaderboard attempts and submitted scores."
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:265
+msgid "Where achievement popups appear on screen."
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:266
+msgid "Hold Y and press Menu in a game to see its achievements."
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:267
 msgid "Connects this device to your Zaparoo Online account with a code."
 msgstr "कोड के ज़रिए इस डिवाइस को आपके Zaparoo Online खाते से जोड़ता है।"
 
-#: rust/frontend/ui/settings.slint:240
+#: rust/frontend/ui/settings.slint:268
 msgid "Removes this device's Zaparoo Online account credentials."
 msgstr "इस डिवाइस से Zaparoo Online खाते की लॉगिन जानकारी हटाता है।"
 
-#: rust/frontend/ui/settings.slint:241
+#: rust/frontend/ui/settings.slint:269
 msgid "Turns every online feature on or off. Each can still be changed on its own."
 msgstr "सभी ऑनलाइन सुविधाएँ चालू या बंद करता है। हर सुविधा को अलग से भी बदला जा सकता है।"
 
-#: rust/frontend/ui/settings.slint:242
+#: rust/frontend/ui/settings.slint:270
 msgid "Uploads verified playtime to your account. Estimates stay local."
 msgstr "सत्यापित खेल समय आपके खाते में अपलोड करता है। अनुमान डिवाइस पर ही रहते हैं।"
 
-#: rust/frontend/ui/settings.slint:243
+#: rust/frontend/ui/settings.slint:271
 msgid "Allows your linked Zaparoo Online account to send approved commands to this device."
 msgstr "आपके लिंक किए गए Zaparoo Online खाते को इस डिवाइस पर स्वीकृत कमांड भेजने देता है।"
 
-#: rust/frontend/ui/settings.slint:244
+#: rust/frontend/ui/settings.slint:272
 msgid "Syncs your game list, favorites, likes and decks with your linked Zaparoo Online account."
 msgstr "आपकी गेम सूची, पसंदीदा, लाइक और डेक को लिंक किए गए Zaparoo Online खाते से सिंक करता है।"
 
-#: rust/frontend/ui/settings.slint:245
+#: rust/frontend/ui/settings.slint:273
 msgid "Backs up this device to the cloud on a schedule."
 msgstr "तय शेड्यूल पर इस डिवाइस का क्लाउड बैकअप लेता है।"
 
-#: rust/frontend/ui/settings.slint:246
+#: rust/frontend/ui/settings.slint:274
 msgid "How often automatic cloud backup runs."
 msgstr "स्वचालित क्लाउड बैकअप कितनी बार चले।"
 
-#: rust/frontend/ui/settings.slint:247
+#: rust/frontend/ui/settings.slint:275
 msgid "Back up now, view and restore cloud backup snapshots."
 msgstr "अभी बैकअप लें, क्लाउड बैकअप स्नैपशॉट देखें और रीस्टोर करें।"
 
-#: rust/frontend/ui/settings.slint:248
+#: rust/frontend/ui/settings.slint:276
 msgid "See what a linked account's remote commands have done on this device."
 msgstr "देखें कि लिंक किए गए खाते के रिमोट कमांड ने इस डिवाइस पर क्या किया है।"
 
-#: rust/frontend/ui/settings.slint:249
+#: rust/frontend/ui/settings.slint:277
 msgid "Shows a PIN for pairing a new device with Core."
 msgstr "नया डिवाइस Core से पेयर करने के लिए PIN दिखाता है।"
 
-#: rust/frontend/ui/settings.slint:250
+#: rust/frontend/ui/settings.slint:278
 msgid "Version, build date, license terms, and contributors."
 msgstr "संस्करण, बिल्ड की तारीख, लाइसेंस की शर्तें और योगदानकर्ता।"
 
-#: rust/frontend/ui/settings.slint:251
+#: rust/frontend/ui/settings.slint:279
 msgid "Shows a code for opening the Frontend guide on your phone."
 msgstr "अपने फ़ोन पर Frontend गाइड खोलने के लिए कोड दिखाता है।"
 
-#: rust/frontend/ui/settings.slint:252
+#: rust/frontend/ui/settings.slint:280
 msgid "Adds troubleshooting detail to logs. Restarts the frontend."
 msgstr "लॉग में समस्या निवारण की जानकारी जोड़ता है। फ़्रंटएंड फिर से शुरू होगा।"
 
-#: rust/frontend/ui/settings.slint:253
+#: rust/frontend/ui/settings.slint:281
 msgid "Uploads the log and provides a link for problem reports."
 msgstr "लॉग अपलोड करता है और समस्या की रिपोर्ट के लिए लिंक देता है।"
 
-#: rust/frontend/ui/settings.slint:260
+#: rust/frontend/ui/settings.slint:288
 msgid "Configure"
 msgstr "कॉन्फ़िगर करें"
 
-#: rust/frontend/ui/settings.slint:261
+#: rust/frontend/ui/settings.slint:289
 msgid "Upload"
 msgstr "अपलोड"
 
-#: rust/frontend/ui/settings.slint:262
+#: rust/frontend/ui/settings.slint:290
 msgid "Detect"
 msgstr "खोजें"
 
-#: rust/frontend/ui/settings.slint:263
+#: rust/frontend/ui/settings.slint:291
 msgid "Pair"
 msgstr "पेयर करें"
 
-#: rust/frontend/ui/settings.slint:264
+#: rust/frontend/ui/settings.slint:292
 msgid "Link"
 msgstr "लिंक करें"
 
-#: rust/frontend/ui/settings.slint:265
+#: rust/frontend/ui/settings.slint:293
 msgid "Unlink"
 msgstr "अनलिंक करें"
 
-#: rust/frontend/ui/settings.slint:271 rust/frontend/ui/settings.slint:288
-#: rust/frontend/ui/settings.slint:299 rust/frontend/ui/settings.slint:418
+#: rust/frontend/ui/settings.slint:301 rust/frontend/ui/settings.slint:318
+#: rust/frontend/ui/settings.slint:329 rust/frontend/ui/settings.slint:459
 msgid "Automatic"
 msgstr "स्वचालित"
 
-#: rust/frontend/ui/settings.slint:272
+#: rust/frontend/ui/settings.slint:302
 msgid "{} × {}"
 msgstr "{} × {}"
 
-#: rust/frontend/ui/settings.slint:279
+#: rust/frontend/ui/settings.slint:309
 msgid "Change image"
 msgstr "इमेज बदलें"
 
-#: rust/frontend/ui/settings.slint:280
+#: rust/frontend/ui/settings.slint:310
 msgid "Change page"
 msgstr "पेज बदलें"
 
-#: rust/frontend/ui/settings.slint:283
+#: rust/frontend/ui/settings.slint:313
 msgid "Style A"
 msgstr "शैली A"
 
-#: rust/frontend/ui/settings.slint:284
+#: rust/frontend/ui/settings.slint:314
 msgid "Style B"
 msgstr "शैली B"
 
-#: rust/frontend/ui/settings.slint:285
+#: rust/frontend/ui/settings.slint:315
 msgid "Style C"
 msgstr "शैली C"
 
-#: rust/frontend/ui/settings.slint:286
+#: rust/frontend/ui/settings.slint:316
 msgid "Style D"
 msgstr "शैली D"
 
-#: rust/frontend/ui/settings.slint:287
+#: rust/frontend/ui/settings.slint:317
 msgid "Style E"
 msgstr "शैली E"
 
-#: rust/frontend/ui/settings.slint:291
+#: rust/frontend/ui/settings.slint:321
 msgid "12-hour"
 msgstr "12 घंटे"
 
-#: rust/frontend/ui/settings.slint:292
+#: rust/frontend/ui/settings.slint:322
 msgid "24-hour"
 msgstr "24 घंटे"
 
-#: rust/frontend/ui/settings.slint:296
+#: rust/frontend/ui/settings.slint:326
 msgid "Americas"
 msgstr "अमेरिका"
 
-#: rust/frontend/ui/settings.slint:297
+#: rust/frontend/ui/settings.slint:327
 msgid "Europe"
 msgstr "यूरोप"
 
-#: rust/frontend/ui/settings.slint:298
+#: rust/frontend/ui/settings.slint:328
 msgid "Japan"
 msgstr "जापान"
 
-#: rust/frontend/ui/settings.slint:302
+#: rust/frontend/ui/settings.slint:332
 msgid "Standard"
 msgstr "मानक"
 
-#: rust/frontend/ui/settings.slint:303
+#: rust/frontend/ui/settings.slint:333
 msgid "Handheld"
 msgstr "हैंडहेल्ड"
 
-#: rust/frontend/ui/settings.slint:304
+#: rust/frontend/ui/settings.slint:334
 msgid "Device default"
 msgstr "डिवाइस डिफ़ॉल्ट"
 
-#: rust/frontend/ui/settings.slint:307
+#: rust/frontend/ui/settings.slint:337
 msgid "Rotated CW"
 msgstr "घड़ी की दिशा में"
 
-#: rust/frontend/ui/settings.slint:308
+#: rust/frontend/ui/settings.slint:338
 msgid "Rotated CCW"
 msgstr "घड़ी की उलटी दिशा में"
 
-#: rust/frontend/ui/settings.slint:309
+#: rust/frontend/ui/settings.slint:339
 msgid "Horizontal"
 msgstr "क्षैतिज"
 
-#: rust/frontend/ui/settings.slint:312
+#: rust/frontend/ui/settings.slint:342
 msgid "Detailed list view"
 msgstr "विस्तृत सूची दृश्य"
 
-#: rust/frontend/ui/settings.slint:313
+#: rust/frontend/ui/settings.slint:343
 msgid "Text only"
 msgstr "केवल पाठ"
 
-#: rust/frontend/ui/settings.slint:314
+#: rust/frontend/ui/settings.slint:344
 msgid "Grid view"
 msgstr "ग्रिड दृश्य"
 
-#: rust/frontend/ui/settings.slint:317
+#: rust/frontend/ui/settings.slint:347
 msgid "Full color"
 msgstr "पूरे रंग"
 
-#: rust/frontend/ui/settings.slint:318
+#: rust/frontend/ui/settings.slint:348
 msgid "Tinted"
 msgstr "टिंट किए हुए"
 
-#: rust/frontend/ui/settings.slint:321
+#: rust/frontend/ui/settings.slint:351
 msgid "Vivid"
 msgstr "चटकीला"
 
-#: rust/frontend/ui/settings.slint:322
+#: rust/frontend/ui/settings.slint:352
 msgid "Subtle"
 msgstr "हल्का"
 
-#: rust/frontend/ui/settings.slint:325
+#: rust/frontend/ui/settings.slint:355
 msgid "PAL (50 Hz)"
 msgstr "PAL (50 Hz)"
 
-#: rust/frontend/ui/settings.slint:326
+#: rust/frontend/ui/settings.slint:356
 msgid "480i (60 Hz)"
 msgstr "480i (60 Hz)"
 
-#: rust/frontend/ui/settings.slint:327
+#: rust/frontend/ui/settings.slint:357
 msgid "NTSC (60 Hz)"
 msgstr "NTSC (60 Hz)"
 
-#: rust/frontend/ui/settings.slint:334
+#: rust/frontend/ui/settings.slint:364
 msgid "Daily"
 msgstr "दैनिक"
 
-#: rust/frontend/ui/settings.slint:335
+#: rust/frontend/ui/settings.slint:365
 msgid "Weekly"
 msgstr "साप्ताहिक"
 
-#: rust/frontend/ui/settings.slint:336
+#: rust/frontend/ui/settings.slint:366
 msgid "Manual"
 msgstr "मैन्युअल"
 
-#: rust/frontend/ui/settings.slint:339
+#: rust/frontend/ui/settings.slint:369
+msgid "Center"
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:370
+msgid "Right"
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:371
+msgid "Left"
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:374
+msgid "Logged in"
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:375
+msgid "Not logged in"
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:380
 msgid "Linked"
 msgstr "लिंक है"
 
-#: rust/frontend/ui/settings.slint:343
+#: rust/frontend/ui/settings.slint:384
 msgid "Active"
 msgstr "सक्रिय"
 
-#: rust/frontend/ui/settings.slint:344
+#: rust/frontend/ui/settings.slint:385
 msgid "Not active"
 msgstr "सक्रिय नहीं"
 
-#: rust/frontend/ui/settings.slint:345
+#: rust/frontend/ui/settings.slint:386
 msgid "Checking…"
 msgstr "जाँच हो रही है…"
 
-#: rust/frontend/ui/settings.slint:348 rust/frontend/ui/settings.slint:406
+#: rust/frontend/ui/settings.slint:389 rust/frontend/ui/settings.slint:447
 msgid "Off"
 msgstr "बंद"
 
-#: rust/frontend/ui/settings.slint:351
+#: rust/frontend/ui/settings.slint:392
 msgid "Waiting for commands…"
 msgstr "कमांड की प्रतीक्षा है…"
 
-#: rust/frontend/ui/settings.slint:352
+#: rust/frontend/ui/settings.slint:393
 msgid "Not the remote device"
 msgstr "यह रिमोट डिवाइस नहीं है"
 
-#: rust/frontend/ui/settings.slint:354
+#: rust/frontend/ui/settings.slint:395
 msgid "Link rejected"
 msgstr "लिंक अस्वीकृत"
 
-#: rust/frontend/ui/settings.slint:355
+#: rust/frontend/ui/settings.slint:396
 msgid "Server unreachable"
 msgstr "सर्वर से संपर्क नहीं"
 
-#: rust/frontend/ui/settings.slint:356
+#: rust/frontend/ui/settings.slint:397
 msgid "Unknown"
 msgstr "अज्ञात"
 
-#: rust/frontend/ui/settings.slint:362
+#: rust/frontend/ui/settings.slint:403
 msgid "English"
 msgstr "अंग्रेज़ी"
 
-#: rust/frontend/ui/settings.slint:363
+#: rust/frontend/ui/settings.slint:404
 msgid "Italian"
 msgstr "इतालवी"
 
-#: rust/frontend/ui/settings.slint:364
+#: rust/frontend/ui/settings.slint:405
 msgid "Spanish"
 msgstr "स्पेनिश"
 
-#: rust/frontend/ui/settings.slint:365
+#: rust/frontend/ui/settings.slint:406
 msgid "Basque"
 msgstr "बास्क"
 
-#: rust/frontend/ui/settings.slint:366
+#: rust/frontend/ui/settings.slint:407
 msgid "German"
 msgstr "जर्मन"
 
-#: rust/frontend/ui/settings.slint:367
+#: rust/frontend/ui/settings.slint:408
 msgid "Greek"
 msgstr "ग्रीक"
 
-#: rust/frontend/ui/settings.slint:368
+#: rust/frontend/ui/settings.slint:409
 msgid "Japanese"
 msgstr "जापानी"
 
-#: rust/frontend/ui/settings.slint:369
+#: rust/frontend/ui/settings.slint:410
 msgid "Korean"
 msgstr "कोरियाई"
 
-#: rust/frontend/ui/settings.slint:370
+#: rust/frontend/ui/settings.slint:411
 msgid "Dutch"
 msgstr "डच"
 
-#: rust/frontend/ui/settings.slint:371
+#: rust/frontend/ui/settings.slint:412
 msgid "Romanian"
 msgstr "रोमानियाई"
 
-#: rust/frontend/ui/settings.slint:372
+#: rust/frontend/ui/settings.slint:413
 msgid "Slovak"
 msgstr "स्लोवाक"
 
-#: rust/frontend/ui/settings.slint:373
+#: rust/frontend/ui/settings.slint:414
 msgid "Ukrainian"
 msgstr "यूक्रेनी"
 
-#: rust/frontend/ui/settings.slint:374
+#: rust/frontend/ui/settings.slint:415
 msgid "Chinese (Simplified)"
 msgstr "चीनी (सरलीकृत)"
 
-#: rust/frontend/ui/settings.slint:375
+#: rust/frontend/ui/settings.slint:416
 msgid "Chinese (Traditional)"
 msgstr "चीनी (पारंपरिक)"
 
-#: rust/frontend/ui/settings.slint:376
+#: rust/frontend/ui/settings.slint:417
 msgid "Hebrew"
 msgstr "हिब्रू"
 
-#: rust/frontend/ui/settings.slint:377
+#: rust/frontend/ui/settings.slint:418
 msgid "Arabic"
 msgstr "अरबी"
 
-#: rust/frontend/ui/settings.slint:378
+#: rust/frontend/ui/settings.slint:419
 msgid "Hindi"
 msgstr "हिंदी"
 
-#: rust/frontend/ui/settings.slint:379
+#: rust/frontend/ui/settings.slint:420
 msgid "French"
 msgstr "फ़्रेंच"
 
-#: rust/frontend/ui/settings.slint:384
+#: rust/frontend/ui/settings.slint:425
 msgid "Zaparoo Light"
 msgstr "Zaparoo Light"
 
-#: rust/frontend/ui/settings.slint:385
+#: rust/frontend/ui/settings.slint:426
 msgid "Classic Purple"
 msgstr "Classic Purple"
 
-#: rust/frontend/ui/settings.slint:386
+#: rust/frontend/ui/settings.slint:427
 msgid "Amber Phosphor"
 msgstr "Amber Phosphor"
 
-#: rust/frontend/ui/settings.slint:387
+#: rust/frontend/ui/settings.slint:428
 msgid "Game Boy"
 msgstr "Game Boy"
 
-#: rust/frontend/ui/settings.slint:388
+#: rust/frontend/ui/settings.slint:429
 msgid "Green Phosphor"
 msgstr "Green Phosphor"
 
-#: rust/frontend/ui/settings.slint:389
+#: rust/frontend/ui/settings.slint:430
 msgid "Neo Geo"
 msgstr "Neo Geo"
 
-#: rust/frontend/ui/settings.slint:390
+#: rust/frontend/ui/settings.slint:431
 msgid "NES"
 msgstr "NES"
 
-#: rust/frontend/ui/settings.slint:391
+#: rust/frontend/ui/settings.slint:432
 msgid "Virtual Boy"
 msgstr "Virtual Boy"
 
-#: rust/frontend/ui/settings.slint:392
+#: rust/frontend/ui/settings.slint:433
 msgid "Dracula"
 msgstr "Dracula"
 
-#: rust/frontend/ui/settings.slint:393
+#: rust/frontend/ui/settings.slint:434
 msgid "Everforest"
 msgstr "Everforest"
 
-#: rust/frontend/ui/settings.slint:394
+#: rust/frontend/ui/settings.slint:435
 msgid "Gruvbox"
 msgstr "Gruvbox"
 
-#: rust/frontend/ui/settings.slint:395
+#: rust/frontend/ui/settings.slint:436
 msgid "Nord"
 msgstr "Nord"
 
-#: rust/frontend/ui/settings.slint:396
+#: rust/frontend/ui/settings.slint:437
 msgid "Oxocarbon"
 msgstr "Oxocarbon"
 
-#: rust/frontend/ui/settings.slint:397
+#: rust/frontend/ui/settings.slint:438
 msgid "Rosé Pine"
 msgstr "Rosé Pine"
 
-#: rust/frontend/ui/settings.slint:398
+#: rust/frontend/ui/settings.slint:439
 msgid "Solarized Dark"
 msgstr "Solarized Dark"
 
-#: rust/frontend/ui/settings.slint:399
+#: rust/frontend/ui/settings.slint:440
 msgid "Synthwave '84"
 msgstr "Synthwave '84"
 
-#: rust/frontend/ui/settings.slint:400
+#: rust/frontend/ui/settings.slint:441
 msgid "Flexoki Paper"
 msgstr "Flexoki Paper"
 
-#: rust/frontend/ui/settings.slint:401
+#: rust/frontend/ui/settings.slint:442
 msgid "Solarized Light"
 msgstr "Solarized Light"
 
-#: rust/frontend/ui/settings.slint:402
+#: rust/frontend/ui/settings.slint:443
 msgid "Zaparoo Dark"
 msgstr "Zaparoo Dark"
 
-#: rust/frontend/ui/settings.slint:407
+#: rust/frontend/ui/settings.slint:448
 msgid "1 second (testing)"
 msgstr "1 सेकंड (परीक्षण)"
 
-#: rust/frontend/ui/settings.slint:408
+#: rust/frontend/ui/settings.slint:449
 msgid "1 minute"
 msgstr "1 मिनट"
 
-#: rust/frontend/ui/settings.slint:409
+#: rust/frontend/ui/settings.slint:450
 msgid "2 minutes"
 msgstr "2 मिनट"
 
-#: rust/frontend/ui/settings.slint:410
+#: rust/frontend/ui/settings.slint:451
 msgid "5 minutes"
 msgstr "5 मिनट"
 
-#: rust/frontend/ui/settings.slint:411
+#: rust/frontend/ui/settings.slint:452
 msgid "10 minutes"
 msgstr "10 मिनट"
 
-#: rust/frontend/ui/settings.slint:412
+#: rust/frontend/ui/settings.slint:453
 msgid "15 minutes"
 msgstr "15 मिनट"
 
-#: rust/frontend/ui/settings.slint:413
+#: rust/frontend/ui/settings.slint:454
 msgid "30 minutes"
 msgstr "30 मिनट"
 
-#: rust/frontend/ui/settings.slint:414
+#: rust/frontend/ui/settings.slint:455
 msgid "{} seconds"
 msgstr "{0} सेकंड"
 
-#: rust/frontend/ui/settings.slint:499
+#: rust/frontend/ui/settings.slint:504
+msgid "{0} uses its own launcher"
+msgid_plural "{0} use their own launcher"
+msgstr[0] ""
+msgstr[1] ""
+
+#: rust/frontend/ui/settings.slint:545
 msgid "Linked as {}"
 msgstr "{0} के रूप में लिंक"
+
+#: rust/frontend/ui/settings.slint:547
+msgid "Logged in as {}"
+msgstr ""
 
 #: rust/frontend/ui/setup.slint:120
 msgid "{n} selected"

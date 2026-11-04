@@ -158,9 +158,18 @@ pub(crate) fn interrupt<S: PagedScreen>(ctx: &Ctx, app: &App) -> bool {
     true
 }
 
+/// The band a cached turn slides: the grid's own, short of the footer
+/// label that sits `Sizing.label-raise` up into it on CRT.
+#[cfg(feature = "mister")]
+pub(crate) fn cached_band(view: &impl StripView, app: &App) -> (f32, f32) {
+    let (grid_y, grid_height) = view.strip_band();
+    let raise = app.global::<crate::Sizing>().get_label_raise();
+    (grid_y, (grid_height - raise).max(0.0))
+}
+
 #[cfg(feature = "mister")]
 fn request_cached(view: &impl StripView, app: &App, direction: i32) -> bool {
-    let (grid_y, grid_height) = view.strip_band();
+    let (grid_y, grid_height) = cached_band(view, app);
     crate::mister::request_browse_page_transition(app, grid_y, grid_height, direction)
 }
 

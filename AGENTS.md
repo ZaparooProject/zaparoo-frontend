@@ -20,12 +20,13 @@ raw cargo as the default path; the justfile carries the expected environment
 | Desktop run | `just run` |
 | Dev run against mock Core | `just run-dev` (starts and stops the mock itself) |
 | Mock Core only | `just mock-core` |
-| Full test gate | `just test` (workspace plus the `mister` feature set) |
+| Full test gate | `just test` (workspace, the `mister` feature set, and the CRT text check) |
 | Hosted seam check | `just hosted-check` (clippy and tests for the hosted library on the software renderer; builds for no host target) |
 | Full lint gate | `just lint` (fmt, clippy for desktop, mister, and snapshot, deny, toolkit guard, translation template, notices, logo parity) |
 | Format | `just fmt` (`just fix` applies clippy fixes first) |
 | Regenerate the translation template | `just tr-extract` |
 | Render the main screens offline | `just snapshots` (optional language, e.g. `just snapshots de`) |
+| Check CRT labels sit on whole pixels | `just crt-text-check` (also part of `just test`) |
 | MiSTer ARM32 static build | `just arm32` |
 | Official MiSTer build with provenance | `just release` |
 | MiSTer release bundle | `just release-zip vX.Y.Z` |
@@ -101,6 +102,10 @@ private `_` recipe. Container builds write to `rust/target/docker/`.
   natural geometry such as `(parent.width - self.width) / 2`. Keep rounding
   only for semantically discrete values or documented exact-pixel contracts
   such as CRT calibration guides, bitmap raster sizing, and QR modules.
+  Bitmap-font text is one: the software renderer places glyphs at
+  quarter-pixel positions, so under `Sizing.pixel-grid` labels start on whole
+  pixels through `Sizing.snap`/`Sizing.even`, and `just crt-text-check`
+  enforces it (`docs/style.md` → "Integer-pixel drawing").
 - Take geometry from the `Sizing` and `Layout` globals (pushed from
   `zaparoo_app::sizing` and `zaparoo_app::layouts`), not hardcoded pixel sizes
   or element counts. The UI must run cleanly at 240p.

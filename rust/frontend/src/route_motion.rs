@@ -4434,12 +4434,12 @@ fn a_240p_help_bar_grows_only_while_its_entries_wrap() {
     };
     let sizing = app.global::<Sizing>();
 
-    // Wide enough for one row: the bar is the height every tier has.
+    // Wide enough for one row: one 16 px glyph row and its two pads.
     lay_out(1000);
     assert!(sizing.get_tier_240());
     assert!(!app.get_help_entries_wrap());
     assert!(!sizing.get_help_bar_two_rows());
-    assert_eq!(sizing.get_help_bar_height().round() as i32, 14);
+    assert_eq!(sizing.get_help_bar_height().round() as i32, 20);
     assert_eq!(flips.get(), 0);
 
     // Too narrow: the entries wrap and the bar takes its second row. The
@@ -4447,13 +4447,13 @@ fn a_240p_help_bar_grows_only_while_its_entries_wrap() {
     lay_out(60);
     assert!(app.get_help_entries_wrap());
     assert!(sizing.get_help_bar_two_rows());
-    assert_eq!(sizing.get_help_bar_height().round() as i32, 24);
+    assert_eq!(sizing.get_help_bar_height().round() as i32, 38);
     assert_eq!(flips.get(), 1);
 
     // And gives it back when they fit again.
     lay_out(1000);
     assert!(!sizing.get_help_bar_two_rows());
-    assert_eq!(sizing.get_help_bar_height().round() as i32, 14);
+    assert_eq!(sizing.get_help_bar_height().round() as i32, 20);
     assert_eq!(flips.get(), 2);
 }
 
@@ -5789,6 +5789,48 @@ fn folder_title_descenders_stay_out_of_the_cached_grid_band() {
             differences, 0,
             "{width}x{height}: title pixels must not enter cached page band at y={top}"
         );
+    }
+}
+
+/// The CRT presenters slide the grid's band on a page turn, and the live
+/// strip clips to it, so the footer label under it (drawn a pixel up on CRT)
+/// must start at or below the band's bottom, with the help bar shown or
+/// hidden. In pixels: `crt-hub`'s label once had its top row inside it.
+#[test]
+fn crt_hub_footer_label_stays_out_of_the_sliding_band() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    app.global::<crate::Theme>().set_crt(true);
+    app.global::<Sizing>().set_crt(true);
+    seed_hub_tiles(&ctx, &app);
+    let (width, height) = (316u32, 216u32);
+    for help_bar in [true, false] {
+        window.set_size(slint::PhysicalSize::new(width, height));
+        let sizing = app.global::<Sizing>();
+        sizing.set_screen_width(width as f32);
+        sizing.set_screen_height(height as f32);
+        sizing.set_help_bar_enabled(help_bar);
+        crate::sizing::apply_scene(
+            &app,
+            crate::sizing::Scene::of(&app, f64::from(width), f64::from(height), true),
+        );
+        crate::hub::render(&ctx, &app);
+        let view = app.global::<HubView>();
+        let raise = sizing.get_label_raise();
+        assert!(
+            (raise - 1.0).abs() < f32::EPSILON,
+            "the CRT label sits a pixel up"
+        );
+        let (band_y, band_h) = crate::page_motion::cached_band(&view, &app);
+        let label_top = view.get_label_y() - raise;
+        assert!(
+            band_y + band_h <= label_top,
+            "help bar {help_bar}: band ends at {} but the label starts at {label_top}",
+            band_y + band_h
+        );
+        // The live strip clips to the same band.
+        assert!((view.get_grid_height() - raise - band_h).abs() < f32::EPSILON);
     }
 }
 
@@ -9797,7 +9839,9 @@ fn cached_slides_match_the_live_strip_in_every_orientation_and_on_crt() {
                 let outgoing = view.get_cells();
                 let incoming: ModelRc<GridCell> =
                     ModelRc::new(VecModel::from(outgoing.iter().take(2).collect::<Vec<_>>()));
-                let (grid_y, grid_height) = (view.get_grid_y(), view.get_grid_height());
+                // The band production requests: the grid's, short of the
+                // CRT footer label, which is also the live strip's height.
+                let (grid_y, grid_height) = crate::page_motion::cached_band(&view, &app);
                 let still = |cells: &ModelRc<GridCell>| {
                     view.set_selected_local(-1);
                     view.set_held_local(-1);
@@ -10019,7 +10063,7 @@ fn tile_glyphs_and_logos_are_painted_at_their_own_pixel_size() {
     {
         let asked = asked.clone();
         app.global::<crate::GlyphSource>()
-            .on_glyph(move |key, px, _| {
+            .on_raster(move |key, px, _, _| {
                 asked.borrow_mut().push((key.to_string(), px));
                 let side = px.round().max(0.0) as u32;
                 // Chrome asks for glyphs too; only the two tiles paint.
@@ -10830,6 +10874,54 @@ fn turning_the_menu_row_off_gives_back_its_band_and_menu_opens_the_list() {
     let overlays = app.global::<crate::Overlays>();
     assert!(overlays.get_list_open());
     assert_eq!(overlays.get_list_title(), "title:menu");
+}
+
+#[test]
+#[allow(clippy::expect_used, reason = "isolated settings fixture")]
+fn hiding_the_help_bar_gives_its_height_to_the_screens() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, mut ctx) = offline_ctx();
+    ctx.config_path =
+        std::path::PathBuf::from(std::env::var("ZAPAROO_STATE_FILE").expect("isolated state"))
+            .with_file_name("frontend.toml");
+    seed_hub_tiles(&ctx, &app);
+    crate::sizing::apply_scene(&app, crate::sizing::Scene::of(&app, 316.0, 216.0, true));
+    settle(&window);
+    let sizing = app.global::<Sizing>();
+    let shown_bar = sizing.get_help_bar_height();
+    assert!(shown_bar > 0.0);
+
+    // Settings > Appearance > Show button hints.
+    app.global::<Shell>().set_active_screen(Screen::Settings);
+    let view = app.global::<crate::SettingsView>();
+    view.set_page(SettingsPage::Appearance);
+    let rows = zaparoo_app::settings::page_rows(
+        SettingsPage::Appearance.token(),
+        &crate::settings::inputs(&ctx),
+    );
+    view.set_index(
+        rows.iter()
+            .position(|row| row.id() == "showHelpBar")
+            .and_then(|i| i32::try_from(i).ok())
+            .expect("Show button hints on Appearance"),
+    );
+    crate::settings::handle_action(&ctx, &app, "accept");
+    assert!(
+        !crate::router::lock(&ctx.shared)
+            .persist
+            .settings
+            .show_help_bar
+    );
+    assert!(!sizing.get_help_bar_enabled());
+    assert!(sizing.get_help_bar_height().abs() < f32::EPSILON);
+    assert!(sizing.get_help_bar_band().abs() < f32::EPSILON);
+
+    // And back: the bar takes a height again (sized for the scene the
+    // toggle re-solves, which is the window's).
+    crate::settings::handle_action(&ctx, &app, "accept");
+    assert!(sizing.get_help_bar_enabled());
+    assert!(sizing.get_help_bar_height() > 0.0);
 }
 
 #[test]

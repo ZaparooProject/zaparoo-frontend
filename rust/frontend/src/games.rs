@@ -632,7 +632,7 @@ pub(crate) fn list_geometry_for(
             strip_height: profile.status.strip_height + row_block,
             help_bar_height: derived.help_bar_height,
             tier_240: derived.tier == zaparoo_app::sizing::Tier::T240,
-            safe_bottom_gap: inputs.pct_h(6.0),
+            safe_bottom_gap: derived.help_bar_band,
             target_rows,
             min_row_height: inputs.pct_h(3.0),
             default_row_height: inputs.pct_h(6.0),
@@ -1860,7 +1860,7 @@ pub(crate) fn grid_geometry_for(
             let bottom = if t240 {
                 derived.help_bar_height + label_height
             } else {
-                inputs.pct_h(15.0)
+                zaparoo_app::sizing::less_hidden_bar(inputs, &derived, inputs.pct_h(15.0))
             };
             let grid_height = (screen_h - grid_y - bottom).max(0);
             (bottom, grid_y + grid_height, label_height)

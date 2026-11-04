@@ -154,10 +154,12 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
         fonts::set_han_preference(&lang);
     }
     brand::register(&app);
-    app.global::<GlyphSource>().on_glyph(|key, px, tint| {
-        glyphs::render(key.as_str(), px.round().max(0.0) as u32, tint).unwrap_or_default()
-    });
-    let crt = screen.starts_with("crt-") || screen == "calibration";
+    app.global::<GlyphSource>()
+        .on_raster(|key, px, tint, pixel_grid| {
+            glyphs::render(key.as_str(), px.round().max(0.0) as u32, tint, pixel_grid)
+                .unwrap_or_default()
+        });
+    let crt = screen.starts_with("crt-") || screen.starts_with("calibration");
     let ccw = screen.contains("ccw");
     let tate = screen.contains("tate") || ccw;
     let list = screen.contains("list");
@@ -218,6 +220,10 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
     // off in Settings, which gives its band back to the content.
     app.global::<Sizing>()
         .set_menu_row_enabled(std::env::var("ZAPAROO_SNAPSHOT_MENU_ROW").as_deref() != Ok("off"));
+    // ZAPAROO_SNAPSHOT_HELP_BAR=off renders with the help bar hidden in
+    // Settings, which gives its height back to every screen.
+    app.global::<Sizing>()
+        .set_help_bar_enabled(std::env::var("ZAPAROO_SNAPSHOT_HELP_BAR").as_deref() != Ok("off"));
     sizing::apply_scene(&app, sizing::Scene::of(&app, scene_w, scene_h, crt));
     // Chrome fixtures: a full HUD with a battery reading, and an
     // indexing run in the status line so the track and percent render.
@@ -1011,10 +1017,12 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
         }
         overlays.set_dialog_open(true);
     }
-    if screen == "calibration" {
+    if screen.starts_with("calibration") {
         let overlays = app.global::<generated::Overlays>();
         overlays.set_crt_h_offset(4);
         overlays.set_crt_v_offset(-2);
+        // `calibration-width`: the mode the options button switches to.
+        overlays.set_crt_size_mode(screen == "calibration-width");
         overlays.set_crt_calibration_open(true);
     }
     // "update-*" renders the Update screen from a seeded `UpdateView`, with
@@ -1162,6 +1170,12 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
         return false;
     }
 
+    if crt && std::env::var_os("ZAPAROO_SNAPSHOT_TEXT_PROBE").is_some() {
+        for line in off_grid_text(&app) {
+            println!("off-grid text: {line}");
+        }
+    }
+
     // Diagnostic: dump what the Sizing global actually saw, so stale
     // screen-size plumbing is visible in the output, not just the PNG.
     let sizing = app.global::<Sizing>();
@@ -1182,6 +1196,91 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
     img.save(out).expect("write png");
     println!("wrote {out}");
     true
+}
+
+/// Every visible CRT label whose glyphs would start off a whole pixel.
+///
+/// Slint's software renderer places glyphs at quarter-pixel positions and
+/// bakes the remainder into their coverage, so the 6x8 bitmap face only
+/// stays sharp when each glyph's pen lands on a whole pixel. Its advances
+/// are 6 or 12 px, always even, so the pen of every glyph shares the
+/// fraction of the line's start, and a line's start depends only on the
+/// item's absolute x and its alignment: x, x + width / 2, or x + width.
+fn off_grid_text(app: &App) -> Vec<String> {
+    use i_slint_core::item_tree::ItemRc;
+    use i_slint_core::items::{ComplexText, SimpleText, TextHorizontalAlignment};
+    use i_slint_core::window::WindowInner;
+
+    let root = ItemRc::new_root(WindowInner::from_pub(app.window()).component());
+    let mut found = Vec::new();
+    root.visit_descendants(|item| {
+        let text = item
+            .downcast::<ComplexText>()
+            .map(|t| {
+                let t = t.as_pin_ref();
+                (t.text(), t.horizontal_alignment())
+            })
+            .or_else(|| {
+                item.downcast::<SimpleText>().map(|t| {
+                    let t = t.as_pin_ref();
+                    (t.text(), t.horizontal_alignment())
+                })
+            });
+        if let Some((text, align)) = text {
+            if !text.trim().is_empty() && item.is_visible() {
+                let geometry = item.geometry();
+                let x = item.map_to_window(geometry.origin).x;
+                let start = match align {
+                    TextHorizontalAlignment::Center => x + geometry.width() / 2.0,
+                    TextHorizontalAlignment::Right | TextHorizontalAlignment::End => {
+                        x + geometry.width()
+                    }
+                    _ => x,
+                };
+                // The renderer's own quantization: quarter-pixel bins.
+                if (start * 4.0).round() as i32 % 4 != 0 {
+                    found.push(format!(
+                        "{text:?} starts at x={start:.2} (x={x:.2} w={:.2}){}",
+                        geometry.width(),
+                        element_path(item)
+                    ));
+                }
+            }
+        }
+        std::ops::ControlFlow::<()>::Continue(())
+    });
+    found
+}
+
+/// The element and its nearest named ancestors, when the build carries
+/// Slint's debug info (`SLINT_EMIT_DEBUG_INFO=1`); empty otherwise.
+fn element_path(item: &i_slint_core::item_tree::ItemRc) -> String {
+    use i_slint_core::item_tree::ParentItemTraversalMode;
+    let mut names = Vec::new();
+    let mut current = Some(item.clone());
+    while let Some(node) = current {
+        if let Some(infos) = node.element_type_names_and_ids(0) {
+            for (type_name, id) in infos {
+                let name = if id.is_empty() {
+                    type_name.to_string()
+                } else {
+                    format!("{type_name}#{id}")
+                };
+                if names.last() != Some(&name) {
+                    names.push(name);
+                }
+            }
+        }
+        if names.len() >= 6 {
+            break;
+        }
+        current = node.parent_item(ParentItemTraversalMode::StopAtPopups);
+    }
+    if names.is_empty() {
+        String::new()
+    } else {
+        format!(" in {}", names.join(" < "))
+    }
 }
 
 /// Push a Hub page built from a representative layout through the same
@@ -1409,7 +1508,7 @@ fn fixture_file_browser(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen
     let bottom = if t240 {
         derived.help_bar_height + label_height
     } else {
-        inputs.pct_h(15.0)
+        zaparoo_app::sizing::less_hidden_bar(&inputs, &derived, inputs.pct_h(15.0))
     };
     let grid_height = (inputs.screen_height as i32 - grid_y - bottom).max(0);
     let insets = zaparoo_app::paged_grid::Insets {
@@ -1489,7 +1588,13 @@ fn fixture_screen(screen: &str) -> Screen {
         Screen::Settings
     } else if matches!(
         screen,
-        "saver" | "dialog" | "alert" | "config-alert" | "notice" | "calibration"
+        "saver"
+            | "dialog"
+            | "alert"
+            | "config-alert"
+            | "notice"
+            | "calibration"
+            | "calibration-width"
     ) {
         Screen::Hub
     } else if screen.contains("about") {
@@ -2226,7 +2331,7 @@ fn list_geometry(
                 + if menu_row { derived.menu_row_block } else { 0 },
             help_bar_height: derived.help_bar_height,
             tier_240: derived.tier == zaparoo_app::sizing::Tier::T240,
-            safe_bottom_gap: inputs.pct_h(6.0),
+            safe_bottom_gap: derived.help_bar_band,
             target_rows,
             min_row_height: inputs.pct_h(3.0),
             default_row_height: inputs.pct_h(6.0),
@@ -2564,7 +2669,7 @@ fn fixture_games(
     let bottom = if t240 {
         derived.help_bar_height + label_height
     } else if flat {
-        inputs.pct_h(15.0)
+        zaparoo_app::sizing::less_hidden_bar(&inputs, &derived, inputs.pct_h(15.0))
     } else {
         footer.grid_bottom_margin
     };

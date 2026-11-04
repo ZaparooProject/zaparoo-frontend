@@ -57,11 +57,14 @@ export component OnScreenKeyboard inherits Rectangle {
         easing: ease-out-quad;
     }
 
+    // Key edges land on whole pixels on the pixel grid, where the
+    // centered labels need a whole-pixel origin to stay sharp.
     pure function key-x(key: KeyCell) -> length {
-        return key.start * (root.cell-w + root.gap);
+        return Sizing.snap(key.start * (root.cell-w + root.gap));
     }
     pure function key-w(key: KeyCell) -> length {
-        return key.span * root.cell-w + (key.span - 1) * root.gap;
+        return Sizing.snap(key.start * (root.cell-w + root.gap) + key.span * root.cell-w + (key.span - 1) * root.gap)
+            - root.key-x(key);
     }
     pure function key-ink(key: KeyCell) -> color {
         if (!root.enabled || (key.kind == KeyKind.submit && !root.submit-enabled)) {
@@ -89,7 +92,8 @@ export component OnScreenKeyboard inherits Rectangle {
         property <length> glyph-size: Math.round(Math.min(self.width, self.face-height) * 0.5 / 1px) * 1px;
 
         if key.kind == KeyKind.char || key.kind == KeyKind.symbols: Text {
-            width: parent.width;
+            x: 0;
+            width: Sizing.even(parent.width);
             height: face.face-height;
             text: key.text;
             color: root.key-ink(key);

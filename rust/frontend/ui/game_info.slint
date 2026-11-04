@@ -326,12 +326,15 @@ export component GameInfoModal inherits ModalShell {
                     }
                     // Direction alone never said how many there were, and
                     // the type names what the picture is.
+                    // Centered by hand: the layout's own centering puts the
+                    // bitmap face on a half pixel (docs/style.md,
+                    // "Integer-pixel drawing").
                     if GameInfoView.image-count > 1: HorizontalLayout {
-                        x: parent.inset;
+                        property <length> band-w: parent.width - 2 * parent.inset;
+                        x: parent.inset + Sizing.snap((self.band-w - self.width) / 2);
                         y: parent.height - parent.inset - self.height;
-                        width: parent.width - 2 * parent.inset;
+                        width: Math.min(self.preferred-width, self.band-w);
                         height: parent.count-band;
-                        alignment: center;
                         spacing: Labels.image-type(GameInfoView.image-kind) == "" ? 0px : Sizing.pct-w(0.8);
                         Text {
                             text: Labels.image-type(GameInfoView.image-kind);
@@ -671,7 +674,7 @@ export component ManualReader inherits Rectangle {
     if root.ready && (root.count > 1 || root.kind != ""): Rectangle {
         property <length> gap: root.kind != "" && root.count > 1 ? Sizing.pct-w(0.8) : 0px;
         property <length> count-w: root.count > 1 ? count-text.preferred-width : 0px;
-        x: (root.width - self.width) / 2;
+        x: Sizing.snap((root.width - self.width) / 2);
         y: root.bottom - root.margin - self.height;
         width: Math.min(root.width - 2 * root.margin,
             kind-text.preferred-width + self.gap + self.count-w + 4 * root.plate-pad);

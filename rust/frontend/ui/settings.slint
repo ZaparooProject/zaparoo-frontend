@@ -138,6 +138,7 @@ export global SettingsLabels {
         if (id == "colorIntensity") { return @tr("Color intensity"); }
         if (id == "systemLogoStyle") { return @tr("System logos"); }
         if (id == "showMenuRow") { return @tr("Show Menu row"); }
+        if (id == "showHelpBar") { return @tr("Show button hints"); }
         if (id == "reduceMotion") { return @tr("Reduce motion"); }
         if (id == "screensaverTimeout") { return @tr("Screensaver"); }
         // Display.
@@ -228,6 +229,7 @@ export global SettingsLabels {
         if (id == "colorIntensity") { return @tr("Controls how strongly accent colors tint tiles and backgrounds."); }
         if (id == "systemLogoStyle") { return @tr("Shows system logos in original colors or tinted to match colors."); }
         if (id == "showMenuRow") { return @tr("Shows page actions as a row. Off, the Menu button lists them."); }
+        if (id == "showHelpBar") { return @tr("Shows button hints along the bottom. Off, screens use the space."); }
         if (id == "reduceMotion") { return @tr("Turns off animation throughout the interface."); }
         if (id == "screensaverTimeout") { return @tr("Sets idle time before the screensaver starts. Off disables it."); }
         if (id == "resolution") { return @tr("The resolution the interface renders at. Restarts the frontend."); }
@@ -235,7 +237,7 @@ export global SettingsLabels {
         if (id == "orientation") { return @tr("Rotates the interface for a sideways screen or tate cabinet."); }
         if (id == "crtEnabled") { return @tr("Outputs 15 kHz analog video through MiSTer. Restarts frontend."); }
         if (id == "crtVideoStandard") { return @tr("Matches analog output to NTSC or PAL. Restarts the frontend."); }
-        if (id == "crtCalibration") { return @tr("Opens a test pattern to position the analog picture with arrows."); }
+        if (id == "crtCalibration") { return @tr("Opens a test pattern to set analog picture position and width."); }
         if (id == "language") { return @tr("The language used for interface text. Restarts the frontend."); }
         if (id == "region") { return @tr("Selects regional system and game names, such as Mega Drive."); }
         if (id == "clockFormat") { return @tr("12-hour or 24-hour time in the top bar."); }
@@ -514,7 +516,7 @@ export component SettingsRowView inherits Rectangle {
         font-size: Sizing.font-caption;
     }
     label := Text {
-        x: root.is-action ? (parent.width - self.width) / 2 : root.pad;
+        x: root.is-action ? Sizing.snap((parent.width - self.width) / 2) : root.pad;
         y: Sizing.snap((parent.height - root.stack-height) / 2);
         width: Math.min(Math.ceil(label-measure.preferred-width / 1px) * 1px + Sizing.stroke(2),
             parent.width - 2 * root.pad);
