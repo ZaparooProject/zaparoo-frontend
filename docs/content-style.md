@@ -86,6 +86,21 @@ later opens on `Recently added`, since it is a queue, and the others on
 `Recently played` only for play history; never shorten either to
 `Recent`.
 
+`Top played` is the games Core has the most play time for, most first.
+Its Menu has `Group by` only (`System` or `None`, as on Favorites); it
+has no sort, since the ranking is the point. The focused game's total
+play time shows in its info line beside the clock icon, in hours and
+minutes (`12h 5m`, `3h`, `45m`, `<1m`). Say `Top played`, never `Most
+played` or `Top games`.
+
+A tile carries only the Favorite heart. Everything else about the focused
+item is in its info line, in a fixed order: the name, the collection icons
+(Favorite, Like, Dislike, Play later, only the ones set, in the strip's
+order), the versions count, the play time, a deck's owner (`By {owner}`)
+with its lock, the hidden mark, then the tags, dim. The icons carry these
+facts without words; do not add `Locked`, `Hidden` or a collection name
+beside them. See `docs/style.md` → "Tiles and the info line".
+
 On a Hub shortcut the item's rows and the tile's own share a menu, so
 their labels say which they act on: `Hide game` or `Hide system` for the
 item, `Move tile` and `Remove from Hub` for the shortcut, and `Hide Resume

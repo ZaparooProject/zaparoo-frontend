@@ -644,6 +644,55 @@ impl Default for MediaHistoryEntry {
     }
 }
 
+/// Parameters for `media.history.top`: the most played games, by total
+/// play time. Core caps `limit` at 100.
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaHistoryTopParams {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u32>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub systems: Vec<String>,
+}
+
+/// One game in `media.history.top`, ranked by total play time.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaHistoryTopEntry {
+    /// Omitted when the history path cannot be resolved in the current
+    /// media database.
+    #[serde(default)]
+    pub media_id: Option<i64>,
+    #[serde(default)]
+    pub system_id: String,
+    #[serde(default)]
+    pub system_name: String,
+    #[serde(default)]
+    pub media_name: String,
+    #[serde(default)]
+    pub media_path: String,
+    #[serde(default)]
+    pub relative_path: Option<String>,
+    #[serde(default)]
+    pub zap_script: String,
+    /// Seconds across every session.
+    #[serde(default)]
+    pub total_play_time: u64,
+    #[serde(default)]
+    pub session_count: u32,
+    #[serde(default)]
+    pub last_played_at: String,
+    /// Omitted when the media is not resolved; empty when it has no tags.
+    #[serde(default, deserialize_with = "deserialize_null_default")]
+    pub tags: Vec<TagInfo>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct MediaHistoryTopResult {
+    #[serde(default, deserialize_with = "deserialize_null_default")]
+    pub entries: Vec<MediaHistoryTopEntry>,
+}
+
 /// Response envelope for `media.history`. Pagination is "only present
 /// when entries are returned" per Core's docs, so wrap it in `Option`
 /// the same way `MediaBrowseResult` does.

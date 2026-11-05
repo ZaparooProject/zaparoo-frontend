@@ -172,9 +172,14 @@ impl PageModel {
 
 /// Whether the menu row `id` opens a page Core has to be asked for.
 pub fn asks_core(id: &str) -> bool {
-    [Page::Alternates, Page::Discs, Page::Versions, Page::AddToDeck]
-        .iter()
-        .any(|page| id == page.menu_id())
+    [
+        Page::Alternates,
+        Page::Discs,
+        Page::Versions,
+        Page::AddToDeck,
+    ]
+    .iter()
+    .any(|page| id == page.menu_id())
 }
 
 fn row_id(index: usize) -> String {

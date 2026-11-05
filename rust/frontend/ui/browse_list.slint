@@ -12,6 +12,7 @@ import { Wordmark } from "wordmark.slint";
 import { Theme, Sizing, Motion, Layout } from "theme.slint";
 import { GlyphSource, WaitCue } from "chrome.slint";
 import { GridCell, MarqueeCaption } from "tiles.slint";
+import { InfoLineData, InfoFacts, InfoLabels } from "info_line.slint";
 import { Labels } from "labels.slint";
 import { ScrollOffset, SelectionCursor, SelectionClip } from "focus.slint";
 
@@ -40,6 +41,11 @@ export global MetaLabels {
         if (key == "manufacturer") { return @tr("Manufacturer"); }
         if (key == "rating") { return @tr("Rating"); }
         if (key == "filename") { return @tr("Filename"); }
+        if (key == "collections") { return @tr("Collections"); }
+        if (key == "versions") { return @tr("Versions"); }
+        if (key == "play_time") { return @tr("Play time"); }
+        if (key == "owner") { return @tr("Owner"); }
+        if (key == "hidden") { return @tr("Hidden"); }
         return key;
     }
     // The packed form a narrow label column falls back to; empty when
@@ -59,6 +65,11 @@ export global MetaLabels {
         if (key == "manufacturer") { return @tr("Mfr"); }
         if (key == "rating") { return @tr("Rtg"); }
         if (key == "filename") { return @tr("File"); }
+        if (key == "collections") { return @tr("Coll"); }
+        if (key == "versions") { return @tr("Vers"); }
+        if (key == "play_time") { return @tr("Time"); }
+        if (key == "owner") { return @tr("Own"); }
+        if (key == "hidden") { return @tr("Hid"); }
         return "";
     }
 }
@@ -91,6 +102,11 @@ export component BrowseList inherits Rectangle {
     // The selected row is picked up (Options -> Move) and blinks, the
     // same hard cut as a held tile; see `Tile` in tiles.slint.
     in property <bool> held: false;
+    // A text list with no detail pane shows the focused item's facts
+    // (collections, versions, play time, owner, hidden) at its row's right
+    // end; other rows keep only the heart.
+    in property <bool> show-focus-facts: false;
+    in property <InfoLineData> focus-info;
     callback row-hovered(int);
     callback row-clicked(int);
     callback row-right-clicked(int);
@@ -179,7 +195,13 @@ export component BrowseList inherits Rectangle {
         // boundary is the fill's edge rather than the row's.
         property <bool> lit: root.focus-ready
             && sel.fill-bottom > self.y && sel.fill-top < self.y + self.height;
-        property <length> favorite-slot: row.favorite ? Layout.favorite-right-padding + root.heart-size : 0px;
+        // The focused row of a text list trades its heart for the facts,
+        // which carry the heart among the collections.
+        property <bool> facts-here: root.show-focus-facts && highlighted && InfoLabels.has-facts(root.focus-info);
+        property <length> facts-w: self.facts-here ? Math.ceil(facts-measure.preferred-width / 1px) * 1px : 0px;
+        property <length> favorite-slot: self.facts-here
+            ? Layout.favorite-right-padding + self.facts-w
+            : (row.favorite ? Layout.favorite-right-padding + root.heart-size : 0px);
         // The same chevron and size as a context-menu row that opens a page.
         property <length> chevron: GlyphSource.side(Sizing.pct-h(3));
         property <length> chevron-slot: row.opens ? Layout.favorite-right-padding + self.chevron : 0px;
@@ -190,7 +212,7 @@ export component BrowseList inherits Rectangle {
             y: 0;
             width: caption-w;
             content: row.name;
-            tags: Labels.tags(row.tags, row.hidden, row.versions);
+            tags: row.tags;
             focused: highlighted;
             center-content: false;
             caption-font-size: Sizing.font-section;
@@ -211,7 +233,7 @@ export component BrowseList inherits Rectangle {
                 y: 0;
                 width: caption-w;
                 content: row.name;
-                tags: Labels.tags(row.tags, row.hidden, row.versions);
+                tags: row.tags;
                 focused: highlighted;
                 center-content: false;
                 caption-font-size: Sizing.font-section;
@@ -229,12 +251,30 @@ export component BrowseList inherits Rectangle {
             source: GlyphSource.glyph("icons/NavRight", Math.max(1px, self.width), highlighted ? sel.content : Theme.text-label);
             image-rendering: Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
         }
-        if row.favorite: Image {
+        facts-measure := InfoFacts {
+            visible: false;
+            info: root.focus-info;
+            icon-size: root.heart-size;
+            font-size: Sizing.font-section;
+        }
+        if facts-here: InfoFacts {
+            x: parent.width - Layout.favorite-right-padding - parent.facts-w;
+            y: 0;
+            width: parent.facts-w;
+            height: parent.height;
+            info: root.focus-info;
+            icon-size: root.heart-size;
+            font-size: Sizing.font-section;
+            ink: sel.content;
+        }
+        if row.favorite && !facts-here: Image {
             x: parent.width - Layout.favorite-right-padding - root.heart-size;
             y: Sizing.snap((parent.height - self.height) / 2);
             width: root.heart-size;
             height: root.heart-size;
-            source: GlyphSource.glyph("icons/Heart", root.heart-size, Colors.transparent);
+            // On the row's own surface the heart is text colored, like the
+            // info line's icons; only a heart over art keeps its keyline.
+            source: GlyphSource.glyph("icons/HeartFilled", root.heart-size, highlighted ? sel.content : Theme.text-primary);
             image-rendering: Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
         }
 
@@ -268,7 +308,34 @@ export component BrowseList inherits Rectangle {
 // Core confirmed there is none, or the wordmark for a system without
 // logo art), the title, and the label/value metadata table. Sections
 // stack per the detail profile: cover above metadata, or side by side.
+// One fact row of the detail pane, after the metadata: the label as the
+// metadata rows draw theirs, then the fact's icons and text.
+component DetailFactRow inherits Rectangle {
+    in property <length> label-w;
+    in property <length> label-gap;
+    in property <string> label;
+    x: 0;
+    Text {
+        x: 0;
+        y: Sizing.snap((parent.height - self.height) / 2);
+        width: Math.min(root.label-w, parent.width);
+        horizontal-alignment: right;
+        overflow: elide;
+        text: root.label;
+        color: Theme.text-label;
+        font-size: Sizing.font-small;
+    }
+    HorizontalLayout {
+        x: root.label-w + root.label-gap;
+        width: Math.max(0px, parent.width - root.label-w - root.label-gap);
+        alignment: start;
+        @children
+    }
+}
+
 export component BrowseDetailPane inherits Rectangle {
+    // The focused item's facts, as rows after the metadata.
+    in property <InfoLineData> info;
     // The painted art box, reported so a cover can be resized to it
     // before it is shown.
     callback art-box(length, length);
@@ -347,7 +414,22 @@ export component BrowseDetailPane inherits Rectangle {
 
     // Tag rows never sit shorter than the font's real line box.
     property <length> tag-row-h: Math.max(Layout.tag-row-height, row-measure.preferred-height);
-    property <int> row-count: root.rows.length;
+    // The info line's facts as rows ahead of Core's metadata, each only
+    // when it applies: Collections, Versions, Play time, Owner, Hidden.
+    // First, so a long metadata list is what the pane's bottom edge cuts.
+    property <bool> has-collections: root.info.favorite || root.info.liked || root.info.disliked || root.info.play-later;
+    property <bool> has-versions: root.info.versions > 0;
+    property <bool> has-time: root.info.has-play-time;
+    property <bool> has-owner: root.info.owner != "" || root.info.locked;
+    property <bool> has-hidden: root.info.hidden;
+    property <int> at-collections: 0;
+    property <int> at-versions: root.at-collections + (root.has-collections ? 1 : 0);
+    property <int> at-time: root.at-versions + (root.has-versions ? 1 : 0);
+    property <int> at-owner: root.at-time + (root.has-time ? 1 : 0);
+    property <int> at-hidden: root.at-owner + (root.has-owner ? 1 : 0);
+    property <int> fact-count: root.at-hidden + (root.has-hidden ? 1 : 0);
+    property <int> row-count: root.fact-count + root.rows.length;
+    property <length> fact-icon: GlyphSource.side(Sizing.font-small);
     property <length> natural-h: root.row-count <= 0 ? 0px
         : root.row-count * root.tag-row-h + (root.row-count - 1) * Layout.tag-row-spacing;
     property <length> compact-h: Math.min(root.metadata-h, root.natural-h);
@@ -364,11 +446,17 @@ export component BrowseDetailPane inherits Rectangle {
     // slack; when a profile caps the column and the full labels exceed
     // it, every row packs to its short form instead of truncating.
     property <length> slack: Theme.crt ? 0px : 2px;
-    property <length> natural-label-w: Math.max(m0.preferred-width, Math.max(m1.preferred-width, Math.max(m2.preferred-width,
-        Math.max(m3.preferred-width, Math.max(m4.preferred-width, Math.max(m5.preferred-width, Math.max(m6.preferred-width, m7.preferred-width)))))))
+    property <length> facts-label-w: Math.max(root.has-collections ? e0.preferred-width : 0px,
+        Math.max(root.has-versions ? e1.preferred-width : 0px, Math.max(root.has-time ? e2.preferred-width : 0px,
+        Math.max(root.has-owner ? e3.preferred-width : 0px, root.has-hidden ? e4.preferred-width : 0px))));
+    property <length> facts-short-w: Math.max(root.has-collections ? f0.preferred-width : 0px,
+        Math.max(root.has-versions ? f1.preferred-width : 0px, Math.max(root.has-time ? f2.preferred-width : 0px,
+        Math.max(root.has-owner ? f3.preferred-width : 0px, root.has-hidden ? f4.preferred-width : 0px))));
+    property <length> natural-label-w: Math.max(root.facts-label-w, Math.max(m0.preferred-width, Math.max(m1.preferred-width, Math.max(m2.preferred-width,
+        Math.max(m3.preferred-width, Math.max(m4.preferred-width, Math.max(m5.preferred-width, Math.max(m6.preferred-width, m7.preferred-width))))))))
         + (root.row-count > 0 ? root.slack : 0px);
-    property <length> short-label-w: Math.max(s0.preferred-width, Math.max(s1.preferred-width, Math.max(s2.preferred-width,
-        Math.max(s3.preferred-width, Math.max(s4.preferred-width, Math.max(s5.preferred-width, Math.max(s6.preferred-width, s7.preferred-width)))))))
+    property <length> short-label-w: Math.max(root.facts-short-w, Math.max(s0.preferred-width, Math.max(s1.preferred-width, Math.max(s2.preferred-width,
+        Math.max(s3.preferred-width, Math.max(s4.preferred-width, Math.max(s5.preferred-width, Math.max(s6.preferred-width, s7.preferred-width))))))))
         + (root.row-count > 0 ? root.slack : 0px);
     property <bool> use-short: Layout.metadata-label-max-width > 0px && root.natural-label-w > Layout.metadata-label-max-width;
     property <length> label-w: root.use-short
@@ -408,6 +496,16 @@ export component BrowseDetailPane inherits Rectangle {
     s5 := Text { visible: false; text: root.row-label(root.key-at(5)); font-size: Sizing.font-small; }
     s6 := Text { visible: false; text: root.row-label(root.key-at(6)); font-size: Sizing.font-small; }
     s7 := Text { visible: false; text: root.row-label(root.key-at(7)); font-size: Sizing.font-small; }
+    e0 := Text { visible: false; text: MetaLabels.label("collections"); font-size: Sizing.font-small; }
+    e1 := Text { visible: false; text: MetaLabels.label("versions"); font-size: Sizing.font-small; }
+    e2 := Text { visible: false; text: MetaLabels.label("play_time"); font-size: Sizing.font-small; }
+    e3 := Text { visible: false; text: MetaLabels.label("owner"); font-size: Sizing.font-small; }
+    e4 := Text { visible: false; text: MetaLabels.label("hidden"); font-size: Sizing.font-small; }
+    f0 := Text { visible: false; text: root.row-label("collections"); font-size: Sizing.font-small; }
+    f1 := Text { visible: false; text: root.row-label("versions"); font-size: Sizing.font-small; }
+    f2 := Text { visible: false; text: root.row-label("play_time"); font-size: Sizing.font-small; }
+    f3 := Text { visible: false; text: root.row-label("owner"); font-size: Sizing.font-small; }
+    f4 := Text { visible: false; text: root.row-label("hidden"); font-size: Sizing.font-small; }
 
     content := Rectangle {
         x: root.content-x;
@@ -537,7 +635,7 @@ export component BrowseDetailPane inherits Rectangle {
 
                 for meta[j] in root.rows: Rectangle {
                     x: 0;
-                    y: root.table-y + j * (root.tag-row-h + Layout.tag-row-spacing);
+                    y: root.table-y + (root.fact-count + j) * (root.tag-row-h + Layout.tag-row-spacing);
                     height: root.tag-row-h;
                     Text {
                         x: 0;
@@ -556,6 +654,67 @@ export component BrowseDetailPane inherits Rectangle {
                         overflow: elide;
                         text: meta.value;
                         color: Theme.text-primary;
+                        font-size: Sizing.font-small;
+                    }
+                }
+
+                if root.has-collections: DetailFactRow {
+                    y: root.table-y + root.at-collections * (root.tag-row-h + Layout.tag-row-spacing);
+                    height: root.tag-row-h;
+                    label-w: root.label-w;
+                    label-gap: root.label-gap;
+                    label: root.row-label("collections");
+                    InfoFacts {
+                        info: { favorite: root.info.favorite, liked: root.info.liked, disliked: root.info.disliked, play-later: root.info.play-later, item-count: -1 };
+                        icon-size: root.fact-icon;
+                        font-size: Sizing.font-small;
+                    }
+                }
+                if root.has-versions: DetailFactRow {
+                    y: root.table-y + root.at-versions * (root.tag-row-h + Layout.tag-row-spacing);
+                    height: root.tag-row-h;
+                    label-w: root.label-w;
+                    label-gap: root.label-gap;
+                    label: root.row-label("versions");
+                    InfoFacts {
+                        info: { versions: root.info.versions, item-count: -1 };
+                        icon-size: root.fact-icon;
+                        font-size: Sizing.font-small;
+                    }
+                }
+                if root.has-time: DetailFactRow {
+                    y: root.table-y + root.at-time * (root.tag-row-h + Layout.tag-row-spacing);
+                    height: root.tag-row-h;
+                    label-w: root.label-w;
+                    label-gap: root.label-gap;
+                    label: root.row-label("play_time");
+                    InfoFacts {
+                        info: { has-play-time: true, hours: root.info.hours, minutes: root.info.minutes, item-count: -1 };
+                        icon-size: root.fact-icon;
+                        font-size: Sizing.font-small;
+                    }
+                }
+                if root.has-owner: DetailFactRow {
+                    y: root.table-y + root.at-owner * (root.tag-row-h + Layout.tag-row-spacing);
+                    height: root.tag-row-h;
+                    label-w: root.label-w;
+                    label-gap: root.label-gap;
+                    label: root.row-label("owner");
+                    InfoFacts {
+                        info: { owner: root.info.owner, locked: root.info.locked, item-count: -1 };
+                        icon-size: root.fact-icon;
+                        font-size: Sizing.font-small;
+                    }
+                }
+                if root.has-hidden: DetailFactRow {
+                    y: root.table-y + root.at-hidden * (root.tag-row-h + Layout.tag-row-spacing);
+                    height: root.tag-row-h;
+                    label-w: root.label-w;
+                    label-gap: root.label-gap;
+                    label: root.row-label("hidden");
+                    InfoFacts {
+                        info: { hidden: true, item-count: -1 };
+                        icon-size: root.fact-icon;
                         font-size: Sizing.font-small;
                     }
                 }
@@ -587,6 +746,8 @@ export component BrowseListDetailView inherits Rectangle {
     in property <bool> glide: true;
     in property <duration> step: 0ms;
     in property <bool> held: false;
+    // The focused item's facts, as the pane's rows after its metadata.
+    in property <InfoLineData> info;
     in property <string> detail-title: "";
     in property <bool> show-title: true;
     in property <image> cover;
@@ -658,6 +819,7 @@ export component BrowseListDetailView inherits Rectangle {
     }
 
     BrowseDetailPane {
+        info: root.info;
         x: root.vertical ? 0px : root.list-span + Layout.divider-width;
         y: root.vertical ? root.list-span + Layout.divider-width : 0px;
         width: root.vertical ? root.width : root.detail-span;

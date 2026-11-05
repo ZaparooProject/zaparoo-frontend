@@ -34,16 +34,13 @@ export struct GridCell {
     cover-exact: bool,
     // The name doubles as a fitted wordmark when there is no art.
     wordmark: bool,
+    // The one collection a tile carries; the rest live on the focused
+    // item's info line.
     favorite: bool,
-    // A deck this device cannot change: a saved copy or a locked deck.
-    locked: bool,
     hidden: bool,
     disabled: bool,
-    // Dim suffix after the caption (tags, "Hidden").
+    // Dim suffix after the caption: the item's tags.
     tags: string,
-    // How many versions of one title a search result stands for, worded
-    // in the suffix; zero when it stands for one.
-    versions: int,
     // A list row Accept browses into rather than launches: it ends in a
     // chevron.
     opens: bool,
@@ -260,11 +257,13 @@ export component PressableSurface inherits Rectangle {
 }
 
 // Unified grid tile: a raised card with a centered art area, an accent
-// ring inside the card edge while focused, the favorite heart, and, in
-// caption mode, a one-line name band along the bottom. A hidden
+// ring inside the card edge while focused, the favorite heart, a system
+// label riding over the top of the art on its scrim, and, in caption mode,
+// a one-line name band along the bottom. A tile carries identity only;
+// everything else about an item is on its info line (`info_line.slint`). A hidden
 // or disabled tile mutes its front edge and keeps its art at the resting
-// tint; the worded reason lives in the host's caption. Held tiles remain
-// visible throughout a Move session.
+// tint, and a hidden one veils its art. Held tiles remain visible
+// throughout a Move session.
 export component Tile inherits Rectangle {
     in property <GridCell> cell;
     in property <bool> selected: false;
@@ -367,24 +366,15 @@ export component Tile inherits Rectangle {
 
         // `zaparoo_app::sizing::tile_art_box` mirrors this box: covers are
         // resized to it before they are cached. Change both together.
-        property <length> art-top: root.has-top-label ? root.top-label-height + root.top-label-gap : root.pad;
+        // A system label rides over the art on a scrim, so it takes no
+        // room from it.
+        property <length> art-top: root.pad;
         property <length> art-bottom: root.show-caption ? root.caption-height + root.caption-gap : root.pad;
         property <length> art-w: Math.max(0px, self.width - 2 * root.pad);
         property <length> art-h: Math.max(0px, self.face-height - self.art-top - self.art-bottom);
         // The same box at the tile's settled size.
         property <length> settled-art-w: Math.max(0px, self.art-w + root.settled-width - root.width);
         property <length> settled-art-h: Math.max(0px, self.art-h + root.settled-height - root.height);
-
-        if root.has-top-label: MarqueeCaption {
-            x: root.pad;
-            y: 0;
-            width: parent.art-w;
-            height: root.top-label-height;
-            content: root.cell.top-label;
-            focused: root.focused-selection;
-            caption-font-size: Sizing.font-small;
-            caption-color: root.focused-selection ? Theme.text-primary : Theme.text-label;
-        }
 
         if root.cell.glyph-key != "": Image {
             // The square raster is asked for at the whole pixels of the
@@ -471,24 +461,53 @@ export component Tile inherits Rectangle {
             ink: root.art-tint;
         }
 
+        // A hidden item shown because hidden items are: the art sits under
+        // a card-colored veil, static, so the tile reads as set aside.
+        if root.cell.hidden: Rectangle {
+            x: root.pad;
+            y: parent.art-top;
+            width: parent.art-w;
+            height: parent.art-h;
+            background: Theme.surface-card.with-alpha(0.6);
+        }
+
+        // The system label rides over the top of the art on a static dark
+        // scrim, so the art keeps the whole tile. It keeps clear of the
+        // heart by the same margin on both sides, so it stays centered.
+        property <length> heart-x: root.exact-art ? Math.round(self.width / 12 / 1px) * 1px : self.width / 12;
+        property <length> heart-w: root.exact-art ? Math.round(root.settled-width / 6 / 1px) * 1px : self.width / 6;
+        property <length> band-side: root.cell.favorite
+            ? Math.max(Sizing.pct-h(1), self.heart-x + self.heart-w + Sizing.pct-h(0.5) - root.pad)
+            : Sizing.pct-h(1);
+        if root.has-top-label: Rectangle {
+            x: root.pad;
+            y: parent.art-top;
+            width: parent.art-w;
+            // Two stops only: the software renderer leaves a one-pixel
+            // seam at an interior stop. Half a label taller than the band,
+            // so the words sit on the darker part.
+            height: root.top-label-height * 1.5 + root.top-label-gap;
+            border-radius: Math.max(0px, root.card-radius - root.pad);
+            background: @linear-gradient(180deg, #000000d0 0%, #00000000 100%);
+        }
+        if root.has-top-label: MarqueeCaption {
+            x: Sizing.snap(root.pad + parent.band-side);
+            y: parent.art-top;
+            width: Sizing.even(Math.max(0px, parent.art-w - 2 * parent.band-side));
+            height: root.top-label-height;
+            content: root.cell.top-label;
+            focused: root.focused-selection;
+            caption-font-size: Sizing.font-small;
+            caption-color: root.focused-selection ? #ffffff : #ffffffd0;
+        }
+
         if root.cell.favorite: Image {
-            x: root.exact-art ? Math.round(parent.width / 12 / 1px) * 1px : parent.width / 12;
+            x: parent.heart-x;
             y: self.x;
             width: root.exact-art ? self.source.width * 1px : parent.width / 6;
             height: self.width;
             source: GlyphSource.glyph("icons/Heart", root.settled-width / 6, Colors.transparent);
             image-fit: contain;
-            image-rendering: Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
-        }
-
-        // A small corner badge, clear of the centered name.
-        if root.cell.locked: Image {
-            property <length> inset: Sizing.pct-h(1.6);
-            width: GlyphSource.side(Sizing.pct-h(3.2));
-            height: self.width;
-            x: parent.width - self.width - self.inset;
-            y: self.inset;
-            source: GlyphSource.glyph("icons/Lock", self.width, root.art-tint);
             image-rendering: Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
         }
 
@@ -498,7 +517,7 @@ export component Tile inherits Rectangle {
             width: parent.art-w;
             height: root.caption-height;
             content: root.caption;
-            tags: Labels.tags(root.cell.tags, root.cell.hidden, root.cell.versions);
+            tags: root.cell.tags;
             focused: root.focused-selection;
             caption-font-size: Sizing.font-small;
             caption-color: root.focused-selection ? Theme.text-primary : Theme.text-label;

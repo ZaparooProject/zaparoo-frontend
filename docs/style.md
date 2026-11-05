@@ -423,13 +423,13 @@ first, so a launch that answers quickly never flashes a word into the header
 and away again. Nothing floats on the tile itself: no spinner, no badge, no
 looping cue over content.
 
-### Hidden and disabled tiles, muted material, worded reason, never a badge
+### Hidden and disabled tiles, muted material, never a badge
 
 A tile that isn't in its normal, fully-live state, a user-hidden game,
 folder or system, or a Hub tile whose live precondition isn't currently met (Resume
 with no history, Update with no internet, a category Core hasn't confirmed)
-never disappears and never dims via opacity. Two cues, neither a floating
-badge:
+never disappears and never fades its text or icons. The cues, none of them
+a floating badge:
 
 - **Muted front edge**, the glanceable cue, visible on every affected tile
   at once, focused or not. `Tile` in `tiles.slint` swaps its surface's
@@ -438,16 +438,18 @@ badge:
   uses) whenever the `GridCell` is `hidden` or `disabled`. No new palette
   engineering, reusing
   an existing neutral role is the point.
-- **Worded reason**, the detail cue, surfaced through text the screen
-  already shows rather than an overlay drawn on top of the tile. Captioned
-  tiles (`show-caption: true`, Games/Favorites/Recents) fold it into the
-  same dim suffix slot disambiguating tags already use (`MarqueeCaption`'s
-  `tags`, e.g. "Cave Story · Hidden"; a hidden folder keeps its file count
-  ahead of it). Non-captioned tiles (Hub, Systems) have
-  no per-tile text to fold into, so it surfaces through the screen's
-  `ActiveLabel` (also a `tags` suffix) while that tile is focused instead.
+- **Veiled art** on a hidden game or folder: a static card-colored veil
+  over the art box only, so the cover reads as set aside. The name caption,
+  the system label and the heart draw above it at their normal colors, so
+  no text loses contrast. A hidden list row keeps its name in
+  `Theme.text-variant` instead.
+- **The eye-off icon** in the focused item's info line, the detail cue. A
+  games screen never words it: no `Hidden` in the caption or the tags.
+  Non-captioned tiles (Hub, Systems) have no info line, so their reason
+  surfaces through the screen's `ActiveLabel` (a `tags` suffix) while that
+  tile is focused.
 
-This replaces an earlier "Hidden" corner-pill component (`TileBadge`, since
+The muted edge replaces an earlier "Hidden" corner-pill component (`TileBadge`, since
 removed) and a considered opacity-based "disabled" treatment. Both were
 rejected for the same reason: a raw alpha multiplier has no contrast floor.
 Measured against this app's own derived `zaparoo-dark` palette, icon+label at
@@ -1845,6 +1847,72 @@ translucent, so an overlap would composite to a darker patch.
 `anchor-radius: 0px` (the default) keeps the plain square hole. Corners are
 skipped, not overlapped, when the hole is narrower than two radii on either
 axis. `QrPlate` uses the same four masks to round a code's plate.
+
+## Tiles and the info line
+
+A tile carries identity only: the cover, the name caption, the system
+label where the screen has one, and the Favorite heart. Everything else
+about an item belongs to its info line, which describes the one item in
+focus. A fact drawn on every tile at once competes with the art and turns
+the grid into a field of icons; the same fact said once for the focused
+item is read, not scanned for.
+
+### On the tile
+
+- **Art** fills the whole tile height above the caption. Nothing reserves
+  a band above it.
+- **System label** (the flat games lists: Favorites, Recents, Top played,
+  Search results and a deck's games; not a system's own folders or the
+  Decks screen) rides over the top of the art on a static dark
+  gradient scrim, white text, one line. It keeps an equal margin on both
+  sides, wide enough to clear the heart when the heart is there, so the
+  label stays centered and never runs under it. On the 240p CRT it is one
+  line of the bitmap font, placed through `Sizing.snap`/`Sizing.even`.
+- **Favorite heart** sits top-left inside the label band: a light fill
+  with a dark keyline, the same light-on-dark pair as the label on its
+  scrim, in every scheme, so it reads over any cover. It is the one
+  collection a tile shows. Like, Dislike, Play
+  later, a deck's lock and every other fact stay off the tile.
+- **Hidden** veils the art (see "Hidden and disabled tiles").
+
+### The info line
+
+Rust publishes the focused item's fields typed (`zaparoo_app::info_line`,
+pushed as `InfoLineData`); `ui/info_line.slint` lays them out. The order
+is fixed:
+
+1. Name.
+2. Collection icons: Favorite, Like, Dislike, Play later, only the ones
+   set, in the strip's order.
+3. Versions: the stack icon and how many versions of the title a search result stands for (Core's title grouping), shown only when there is more than one.
+4. Play time: the clock icon and the total (`12h 5m`).
+5. A deck's owner and lock: the lock icon, then `By {owner}`.
+6. Hidden: the eye-off icon.
+7. Tags, dim (`Theme.text-variant`). A deck shows its item count here.
+
+When the line does not fit, the icons and the short facts always show,
+the tags keep up to a quarter of the line (or drop out whole when that
+share is narrower than a few characters, never a bare ellipsis), and the
+name elides into what is left. Icons carry their facts without a
+word beside them.
+
+Every icon on the line takes the line's text color, the heart included
+(`icons/HeartFilled`). No per-collection colors and no two-tone icons off
+art. The strip in the context menu and the list rows follow the same rule:
+an "on" button is filled in the strip's foreground color, and a row's
+heart is in the row's text color. The two-tone `icons/Heart` is drawn only
+over cover art.
+
+Where it shows:
+
+- **Grids**: the footer under the grid, as one centered run. A line with
+  nothing but a name is the plain centered title, so the alignment never
+  changes with the content; only the run grows.
+- **List with detail pane**: rows show the heart only; the pane adds one
+  row each for Collections, Versions, Play time, Owner (with the lock)
+  and Hidden, only those that apply.
+- **Text list** (no pane): rows show the heart only, and the focused row
+  shows the facts at its right end in place of the heart.
 
 ## Tile aspect and grid blocks
 

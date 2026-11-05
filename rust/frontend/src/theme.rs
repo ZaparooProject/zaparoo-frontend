@@ -61,7 +61,10 @@ pub fn apply_palette(app: &App, scheme: &str, intensity: &str) -> Palette {
     theme.set_light_surface(palette::is_light_surface(scheme));
     // The scrim is a constant dark veil in every preset; the .slint default
     // carries it.
-    crate::glyphs::set_heart_tints(p.marker.rgb8(), p.marker_outline.rgb8());
+    // The two-tone heart is only drawn over cover art, where the theme is not
+    // what it sits on: it takes the same light-on-dark pair as the system
+    // label on its scrim in every scheme. Off art, hearts are text colored.
+    crate::glyphs::set_heart_tints((0xff, 0xff, 0xff), (0x00, 0x00, 0x00));
     p
 }
 

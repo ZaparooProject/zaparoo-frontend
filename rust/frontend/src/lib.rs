@@ -1249,6 +1249,7 @@ fn bind_desktop_lifecycle(ctx: &Arc<Ctx>, app: &App, client: &Arc<Client>) {
                     let _ = weak_refresh.upgrade_in_event_loop(move |app| {
                         refresh_resume(&ctx_event, &app);
                         games::refresh_recents(&ctx_event, &app);
+                        games::refresh_top_played(&ctx_event, &app);
                         games::refresh_after_launch(&ctx_event, &app);
                     });
                 });
@@ -1404,6 +1405,7 @@ fn bind_history_changes(ctx: &Arc<Ctx>, app: &App, client: &Arc<Client>) {
                 let _ = weak.upgrade_in_event_loop(move |app| {
                     refresh_resume(&ctx_event, &app);
                     games::refresh_recents(&ctx_event, &app);
+                    games::refresh_top_played(&ctx_event, &app);
                 });
             }
         }
@@ -1887,7 +1889,6 @@ pub(crate) fn deliver_covers(ctx: &Ctx, app: &App, keys: &[media_cache::MediaKey
     if !browse.is_empty() {
         hub::covers_landed(ctx, app, &browse);
         games::covers_landed(ctx, app, &browse);
-        decks::covers_landed(ctx, app, &browse);
         core_ui::covers_landed(ctx, app, &browse);
     }
 }
@@ -2048,7 +2049,7 @@ fn apply_catalog(ctx: &Arc<Ctx>, app: &App, status: &ResourceStatus<CatalogData>
             systems::warm_logos(ctx, app);
             if matches!(
                 app.global::<Shell>().get_active_screen(),
-                Screen::Systems | Screen::FavoriteSystems | Screen::Decks
+                Screen::Systems | Screen::FavoriteSystems | Screen::TopPlayedSystems
             ) && !navigation::active()
             {
                 systems::reproject(ctx, app);
@@ -2126,6 +2127,8 @@ fn restores_screen(active_screen: &str) -> bool {
             | "recents"
             | "decks"
             | "deck"
+            | "top-played"
+            | "top-played-systems"
             | "search"
             | "search-results"
             | "rename"
@@ -2140,7 +2143,8 @@ fn boot_curtain_for(active_screen: &str, has_saved_state: bool) -> bool {
     match active_screen {
         "settings" | "about" => false,
         "systems" | "favorite-systems" | "games" | "favorites" | "recents" | "decks" | "deck"
-        | "search" | "search-results" | "rename" | "file-browser" => true,
+        | "top-played" | "top-played-systems" | "search" | "search-results" | "rename"
+        | "file-browser" => true,
         _ => has_saved_state,
     }
 }
@@ -2219,6 +2223,15 @@ fn restore_screens(ctx: &Arc<Ctx>, app: &App) {
     }
 }
 
+/// The Decks and Top played screens restore straight from the Hub.
+fn restore_collection(ctx: &Arc<Ctx>, app: &App, target: &str) {
+    match target {
+        "decks" => decks::enter(ctx, app, EntryMode::Restore),
+        "top-played" => games::enter_top_played(ctx, app, EntryMode::Restore),
+        _ => systems::enter_top_played(ctx, app, EntryMode::Restore),
+    }
+}
+
 fn restore_target(ctx: &Arc<Ctx>, app: &App) {
     let (target, category, system_id, entered_from_hub) = {
         let shared = lock(&ctx.shared);
@@ -2246,8 +2259,8 @@ fn restore_target(ctx: &Arc<Ctx>, app: &App) {
             games::enter_recents(ctx, app, EntryMode::Restore);
             return;
         }
-        "decks" => {
-            decks::enter(ctx, app, EntryMode::Restore);
+        "decks" | "top-played" | "top-played-systems" => {
+            restore_collection(ctx, app, &target);
             return;
         }
         "deck" => {
@@ -2342,6 +2355,10 @@ mod tests {
             "games",
             "favorites",
             "recents",
+            "decks",
+            "deck",
+            "top-played",
+            "top-played-systems",
             "search",
             "search-results",
             "rename",

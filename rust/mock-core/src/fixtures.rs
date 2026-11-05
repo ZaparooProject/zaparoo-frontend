@@ -1228,6 +1228,69 @@ pub fn media_history_response(params: &Value) -> Value {
     response
 }
 
+/// `media.history.top`: the most played games, most total play time first,
+/// at most `limit` (Core caps it at 100), optionally of some systems.
+/// Play times are a deterministic spread: under a minute, minutes, and
+/// hours with and without spare minutes, so every way Top played shows a
+/// time has a row.
+pub fn media_history_top_response(params: &Value) -> Value {
+    let systems = params
+        .get("systems")
+        .and_then(Value::as_array)
+        .map(|a| a.iter().filter_map(Value::as_str).collect::<Vec<_>>())
+        .unwrap_or_default();
+    let limit = params
+        .get("limit")
+        .and_then(Value::as_u64)
+        .unwrap_or(25)
+        .clamp(1, 100) as usize;
+    // Every third game has been played; each play time is unique, so the
+    // ranking is total.
+    let mut played: Vec<(u64, usize)> = ALL_GAMES
+        .iter()
+        .enumerate()
+        .filter(|(index, (_, _, system))| {
+            index % 3 == 0 && (systems.is_empty() || systems.contains(system))
+        })
+        .map(|(index, _)| (top_play_seconds(index), index))
+        .collect();
+    played.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
+    let entries: Vec<Value> = played
+        .into_iter()
+        .take(limit)
+        .map(|(seconds, index)| {
+            let (name, file, system) = ALL_GAMES[index];
+            json!({
+                "mediaId": index + 1,
+                "systemId": system,
+                "systemName": system_display_for(system),
+                "mediaName": name,
+                "mediaPath": format!("/mock/games/{system}/{file}"),
+                "relativePath": format!("{system}/{file}"),
+                "zapScript": format!("@{system}/{file}"),
+                "totalPlayTime": seconds,
+                "sessionCount": 1 + index % 7,
+                "lastPlayedAt": format!("2026-04-{:02}T20:00:00Z", 1 + index % 28),
+                "tags": tags_for(index, file, system),
+            })
+        })
+        .collect();
+    json!({ "entries": entries })
+}
+
+/// A played game's total play time: from 40 seconds to about 60 hours.
+fn top_play_seconds(index: usize) -> u64 {
+    match index {
+        0 => 40,
+        3 => 45 * 60,
+        6 => 3 * 3600,
+        _ => {
+            let i = index as u64;
+            (i * 7919) % (60 * 3600) + i
+        }
+    }
+}
+
 /// Core's `coverColor`: the average colour of a sized cover. Every fifth
 /// game has none yet, the way Core omits it for covers it has not sized.
 fn with_cover_color(row: &mut Value, index: usize) {

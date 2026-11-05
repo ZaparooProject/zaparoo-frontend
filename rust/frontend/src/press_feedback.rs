@@ -67,14 +67,16 @@ pub fn prepare(ctx: &crate::router::Ctx, app: &App) -> Option<Target> {
         // A moving page already owns its incoming selection. Seat it before
         // resolving the button, since the outgoing strip can hide its focus.
         match app.global::<Shell>().get_active_screen() {
-            Screen::Systems | Screen::FavoriteSystems | Screen::Decks => {
+            Screen::Systems | Screen::FavoriteSystems | Screen::TopPlayedSystems => {
                 crate::systems::interrupt_page(ctx, app);
             }
             Screen::Games
             | Screen::Favorites
             | Screen::Recents
             | Screen::SearchResults
-            | Screen::Deck => {
+            | Screen::Deck
+            | Screen::Decks
+            | Screen::TopPlayed => {
                 crate::games::interrupt_page(ctx, app);
             }
             Screen::FileBrowser => crate::file_browser::interrupt_page(ctx, app),
@@ -317,7 +319,7 @@ fn grid_target(app: &App) -> Option<Target> {
                 view.get_cells(),
             )
         }
-        Screen::Systems | Screen::FavoriteSystems | Screen::Decks => {
+        Screen::Systems | Screen::FavoriteSystems | Screen::TopPlayedSystems => {
             let view = app.global::<crate::SystemsView>();
             if shell.get_systems_list_layout() {
                 return None;
@@ -338,7 +340,9 @@ fn grid_target(app: &App) -> Option<Target> {
         | Screen::Favorites
         | Screen::Recents
         | Screen::SearchResults
-        | Screen::Deck => {
+        | Screen::Deck
+        | Screen::Decks
+        | Screen::TopPlayed => {
             let view = app.global::<crate::GamesView>();
             if shell.get_browse_list_layout() {
                 return None;

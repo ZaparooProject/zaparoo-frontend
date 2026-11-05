@@ -62,6 +62,10 @@ const SOURCES: &[(&str, &str)] = &[
         include_str!("../../../resources/images/icons/Browsing.svg"),
     ),
     (
+        "icons/Clock",
+        include_str!("../../../resources/images/icons/Clock.svg"),
+    ),
+    (
         "icons/Controls",
         include_str!("../../../resources/images/icons/Controls.svg"),
     ),
@@ -72,6 +76,10 @@ const SOURCES: &[(&str, &str)] = &[
     (
         "icons/Display",
         include_str!("../../../resources/images/icons/Display.svg"),
+    ),
+    (
+        "icons/EyeOff",
+        include_str!("../../../resources/images/icons/EyeOff.svg"),
     ),
     (
         "icons/File",
@@ -94,6 +102,10 @@ const SOURCES: &[(&str, &str)] = &[
         include_str!("../../../resources/images/icons/HeartOutline.svg"),
     ),
     (
+        "icons/HeartFilled",
+        include_str!("../../../resources/images/icons/HeartFilled.svg"),
+    ),
+    (
         "icons/History",
         include_str!("../../../resources/images/icons/History.svg"),
     ),
@@ -102,8 +114,8 @@ const SOURCES: &[(&str, &str)] = &[
         include_str!("../../../resources/images/icons/Language.svg"),
     ),
     (
-        "icons/Layers",
-        include_str!("../../../resources/images/icons/Layers.svg"),
+        "icons/BookMarked",
+        include_str!("../../../resources/images/icons/BookMarked.svg"),
     ),
     (
         "icons/Lock",
@@ -174,6 +186,10 @@ const SOURCES: &[(&str, &str)] = &[
         include_str!("../../../resources/images/icons/ShiftLock.svg"),
     ),
     (
+        "icons/Stack",
+        include_str!("../../../resources/images/icons/Stack.svg"),
+    ),
+    (
         "icons/Support",
         include_str!("../../../resources/images/icons/Support.svg"),
     ),
@@ -196,6 +212,10 @@ const SOURCES: &[(&str, &str)] = &[
     (
         "icons/Tools",
         include_str!("../../../resources/images/icons/Tools.svg"),
+    ),
+    (
+        "icons/Trophy",
+        include_str!("../../../resources/images/icons/Trophy.svg"),
     ),
     (
         "icons/Warning",
@@ -527,8 +547,20 @@ const PIXEL_ART: &[(&str, &str)] = &[
         include_str!("../../../resources/images/pixel/status/WiredNetwork.txt"),
     ),
     (
+        "icons/Bookmark",
+        include_str!("../../../resources/images/pixel/icons/Bookmark.txt"),
+    ),
+    (
         "icons/Check",
         include_str!("../../../resources/images/pixel/icons/Check.txt"),
+    ),
+    (
+        "icons/Clock",
+        include_str!("../../../resources/images/pixel/icons/Clock.txt"),
+    ),
+    (
+        "icons/EyeOff",
+        include_str!("../../../resources/images/pixel/icons/EyeOff.txt"),
     ),
     (
         "icons/Filter",
@@ -537,6 +569,14 @@ const PIXEL_ART: &[(&str, &str)] = &[
     (
         "icons/Heart",
         include_str!("../../../resources/images/pixel/icons/Heart.txt"),
+    ),
+    (
+        "icons/HeartFilled",
+        include_str!("../../../resources/images/pixel/icons/HeartFilled.txt"),
+    ),
+    (
+        "icons/Lock",
+        include_str!("../../../resources/images/pixel/icons/Lock.txt"),
     ),
     (
         "icons/NavDown",
@@ -569,6 +609,18 @@ const PIXEL_ART: &[(&str, &str)] = &[
     (
         "icons/ShiftLock",
         include_str!("../../../resources/images/pixel/icons/ShiftLock.txt"),
+    ),
+    (
+        "icons/Stack",
+        include_str!("../../../resources/images/pixel/icons/Stack.txt"),
+    ),
+    (
+        "icons/ThumbsDown",
+        include_str!("../../../resources/images/pixel/icons/ThumbsDown.txt"),
+    ),
+    (
+        "icons/ThumbsUp",
+        include_str!("../../../resources/images/pixel/icons/ThumbsUp.txt"),
     ),
 ];
 

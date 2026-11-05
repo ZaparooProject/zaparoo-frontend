@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 //
-// Decks: the Decks screen (the Systems grid in its `decks` mode), the Deck
+// Decks: the Decks screen (the games grid in its `decks` mode), the Deck
 // screen (the games list in its `deck` mode), a deck's menus on both and
 // on its Hub tile, and what they change in Core.
 //
@@ -13,7 +13,6 @@
 
 use slint::{ComponentHandle, SharedString};
 use zaparoo_app::options_menu as menu;
-use zaparoo_app::systems::SystemRow;
 use zaparoo_core::collections::{
     Deck, DeckCover, DeckItemInput, DeckItemKind, DeckUpdateParams, DecksChanged, DecksParams,
 };
@@ -24,13 +23,9 @@ use zaparoo_core::input_actions::actions;
 use zaparoo_core::remote_resource::ResourceStatus;
 
 use crate::games::{DeckItemRow, GameRow};
-use crate::media_cache::MediaKey;
 use crate::navigation::EntryMode;
 use crate::router::{lock, menu_row, Ctx, ListContext, Shared};
-use crate::{App, GridCell, SystemsMode, SystemsView};
-
-/// A deck row's `cover_key` on the Decks screen: it has no system logo.
-pub(crate) const ROW_COVER_KEY: &str = "deck";
+use crate::App;
 
 #[derive(Debug, Default)]
 pub struct Model {
@@ -103,23 +98,21 @@ pub(crate) fn watch(ctx: &Ctx, app: &App) {
 }
 
 fn list_landed(ctx: &Ctx, app: &App, listed: Vec<Deck>) {
-    let showing = {
+    {
         let mut shared = lock(&ctx.shared);
         if shared.decks.list.as_ref() == Some(&listed) {
             return;
         }
         shared.decks.list = Some(listed);
-        shared.systems_model.mode == SystemsMode::Decks
-    };
-    crate::hub::rebuild(ctx, app);
-    if !showing {
-        return;
     }
-    let waiting = lock(&ctx.shared).systems_model.loading;
-    if waiting {
-        land_screen(ctx, app);
-    } else if app.global::<crate::Shell>().get_active_screen() == crate::Screen::Decks {
-        crate::systems::reproject(ctx, app);
+    crate::hub::rebuild(ctx, app);
+    // The Decks screen on show refills from the new list in place.
+    let shell = app.global::<crate::Shell>();
+    if shell.get_active_screen() == crate::Screen::Decks
+        && !shell.get_transitioning()
+        && lock(&ctx.shared).games.mode == crate::GamesMode::Decks
+    {
+        crate::games::refresh_decks(ctx, app);
     }
 }
 
@@ -163,215 +156,23 @@ pub(crate) fn changed(ctx: &Ctx, app: &App, changed: &DecksChanged) {
 
 // ---------- The Decks screen ----------
 
-/// The Decks screen as Systems rows.
-pub(crate) fn system_rows(shared: &Shared) -> Vec<SystemRow> {
-    shared
-        .decks
-        .list
-        .iter()
-        .flatten()
-        .map(|deck| SystemRow {
-            id: deck.deck_id.clone(),
-            name: deck.name.clone(),
-            cover_key: ROW_COVER_KEY.to_string(),
-            media_count: Some(deck.item_count),
-            ..SystemRow::default()
-        })
-        .collect()
-}
-
-/// Who a saved deck is from, and whether the focused deck is read-only.
-pub(crate) fn note(shared: &Shared, deck_id: &str) -> (String, bool) {
-    if shared.systems_model.mode != SystemsMode::Decks {
-        return (String::new(), false);
-    }
-    find(shared, deck_id).map_or((String::new(), false), |deck| {
-        (
-            if deck.saved {
-                deck.owned_by.clone()
-            } else {
-                String::new()
-            },
-            !deck.editable(),
-        )
-    })
-}
-
-/// A deck's cover key at `size`, the Hub's and the Decks grid's alike.
-fn cover_key(deck: &Deck, size: u32, fit: zaparoo_app::covers::Fit) -> Option<MediaKey> {
-    deck.has_image
-        .then(|| MediaKey::deck_art(&deck.deck_id, None, deck.updated_at, size, fit))
-}
-
-/// One Decks tile: its cover, or its name as a wordmark.
-pub(crate) fn cell(ctx: &Ctx, shared: &Shared, deck_id: &str, art_size: u32) -> GridCell {
-    let Some(deck) = find(shared, deck_id) else {
-        return GridCell::default();
-    };
-    let mut cell = GridCell {
-        name: SharedString::from(deck.name.as_str()),
-        wordmark: true,
-        locked: !deck.editable(),
-        ..Default::default()
-    };
-    if let Some(key) = cover_key(deck, art_size, ctx.media.hub_fit()) {
-        if let Some(image) = ctx.media.get(&key) {
-            cell.cover = slint::Image::from_rgba8(image.buffer);
-            cell.has_cover = true;
-            cell.fetched = true;
-        } else if !ctx.media.is_negative(&key) {
-            cell.fetched = true;
-            ctx.media.enqueue(key);
-        }
-    }
-    cell
-}
-
-/// A deck cover the Decks screen shows has landed.
-pub(crate) fn covers_landed(ctx: &Ctx, app: &App, keys: &[MediaKey]) {
-    if !keys.iter().any(MediaKey::is_deck_art) {
-        return;
-    }
-    let shell = app.global::<crate::Shell>();
-    if shell.get_active_screen() == crate::Screen::Decks && !shell.get_transitioning() {
-        crate::systems::render(ctx, app);
-    }
-}
-
 /// The Hub's Decks tile.
 pub(crate) fn enter(ctx: &Ctx, app: &App, entry: EntryMode) {
-    enter_with(ctx, app, entry, 1);
+    crate::games::enter_decks(ctx, app, entry);
 }
 
 /// Back onto the Decks screen, on the deck it was left on.
 pub(crate) fn return_to_decks(ctx: &Ctx, app: &App) {
-    enter_with(ctx, app, EntryMode::Restore, -1);
+    crate::games::enter_decks(ctx, app, EntryMode::Restore);
 }
 
-fn enter_with(ctx: &Ctx, app: &App, entry: EntryMode, direction: i32) {
-    crate::navigation::stage(ctx, app);
-    let waiting = {
-        let mut shared = lock(&ctx.shared);
-        if entry == EntryMode::Fresh {
-            shared.persist.decks = zaparoo_core::persist::DecksState::default();
-        }
-        shared.persist.active_screen = crate::Screen::Decks.token().to_string();
-        let waiting = shared.decks.list.is_none();
-        let model = &mut shared.systems_model;
-        model.fill_task.cancel();
-        model.mode = SystemsMode::Decks;
-        model.loading = waiting;
-        model.focus_armed = false;
-        model.restore_done = false;
-        model.page.sliding = false;
-        model.transition_seq += 1;
-        model.grid.prepare_for_model_replacement();
-        seat(&mut shared);
-        waiting
-    };
-    crate::router::save_persist(&ctx.shared);
-    refresh(ctx, app);
-    if waiting {
-        PENDING_DIRECTION.with(|cell| cell.set(direction));
-        crate::router::begin_pending_with_direction(app, crate::Screen::Decks, direction);
-        wait_for_list(ctx, app);
-        return;
-    }
-    show_screen(ctx, app, direction);
-}
-
-thread_local! {
-    /// The direction a Decks route waiting on the list arrives from.
-    static PENDING_DIRECTION: std::cell::Cell<i32> = const { std::cell::Cell::new(1) };
-}
-
-/// A first visit before Core answered: wait for the answer, or its error,
-/// under the pending route. The session watch delivers a list; this only
-/// catches the error the watch keeps quiet about.
-fn wait_for_list(ctx: &Ctx, app: &App) {
-    let ticket = lock(&ctx.shared).systems_model.transition_seq;
-    let resource = ctx.store.subscribe::<DecksEndpoint>(DecksParams::default());
-    let mut rx = resource.subscribe();
-    let weak = app.as_weak();
-    let ctx2 = ctx.clone();
-    let task = ctx.handle.spawn(async move {
-        loop {
-            let snapshot = rx.borrow_and_update().clone();
-            match snapshot {
-                ResourceStatus::Ready(result) => {
-                    let listed: Vec<Deck> = result.decks.into_iter().filter(Deck::listed).collect();
-                    let _ = weak.upgrade_in_event_loop(move |app| {
-                        if lock(&ctx2.shared).systems_model.transition_seq != ticket {
-                            return;
-                        }
-                        lock(&ctx2.shared).decks.list = Some(listed);
-                        crate::hub::rebuild(&ctx2, &app);
-                        land_screen(&ctx2, &app);
-                    });
-                    return;
-                }
-                ResourceStatus::Errored { message, .. } => {
-                    let _ = weak.upgrade_in_event_loop(move |app| {
-                        if lock(&ctx2.shared).systems_model.transition_seq != ticket {
-                            return;
-                        }
-                        if crate::navigation::fail(&ctx2, &app, &message) {
-                            return;
-                        }
-                        lock(&ctx2.shared).systems_model.loading = false;
-                        let view = app.global::<SystemsView>();
-                        view.set_loading(false);
-                        view.set_error(SharedString::from(message.as_str()));
-                        crate::systems::render(&ctx2, &app);
-                        let direction = PENDING_DIRECTION.with(std::cell::Cell::get);
-                        crate::router::transition_to_screen(&app, crate::Screen::Decks, direction);
-                    });
-                    return;
-                }
-                ResourceStatus::Idle | ResourceStatus::Loading => {}
-            }
-            if rx.changed().await.is_err() {
-                return;
-            }
-        }
-    });
-    lock(&ctx.shared).systems_model.fill_task.replace(task);
-}
-
-/// The list arrived for a Decks route waiting on it.
-fn land_screen(ctx: &Ctx, app: &App) {
-    {
-        let mut shared = lock(&ctx.shared);
-        if !shared.systems_model.loading || shared.systems_model.mode != SystemsMode::Decks {
-            return;
-        }
-        shared.systems_model.loading = false;
-        shared.systems_model.fill_task.cancel();
-        seat(&mut shared);
-    }
-    show_screen(ctx, app, PENDING_DIRECTION.with(std::cell::Cell::get));
-}
-
-fn show_screen(ctx: &Ctx, app: &App, direction: i32) {
-    crate::navigation::finish(app);
-    let view = app.global::<SystemsView>();
-    view.set_error(SharedString::default());
-    view.set_loading(false);
-    crate::systems::render(ctx, app);
-    crate::router::save_persist(&ctx.shared);
-    crate::router::transition_to_screen(app, crate::Screen::Decks, direction);
-}
-
-/// Seat the rows and the saved deck on the Decks screen.
-fn seat(shared: &mut Shared) {
-    let rows = system_rows(shared);
-    let saved = shared.persist.decks.selected_deck.clone();
-    let index = rows.iter().position(|row| row.id == saved).unwrap_or(0);
-    let model = &mut shared.systems_model;
-    model.rows = rows;
-    model.grid.set_item_count(model.rows.len());
-    model.grid.set_current_index_immediate(index);
-    model.restore_done = true;
+/// The decks the Decks screen lists, as rows.
+pub(crate) fn rows_of(decks: &[Deck]) -> Vec<GameRow> {
+    decks
+        .iter()
+        .filter(|deck| deck.listed())
+        .map(GameRow::from_deck)
+        .collect()
 }
 
 /// The Decks screen's Menu list (where the chip row is not on screen).
@@ -615,7 +416,7 @@ fn deck_action(ctx: &Ctx, app: &App, id: &str, deck_id: &str, source: crate::Scr
         "deck_hub" => {
             crate::hub::toggle_target(ctx, app, "collection", deck_id, "", "", "", "", "", "");
             if source == crate::Screen::Decks {
-                crate::systems::render(ctx, app);
+                crate::games::render(ctx, app);
             }
         }
         "deck_rename" => crate::rename::open_deck_rename(ctx, app, deck_id, &name, source),

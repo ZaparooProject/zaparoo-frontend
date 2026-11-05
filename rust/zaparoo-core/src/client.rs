@@ -21,13 +21,14 @@ use crate::media_types::{
     BackupRemoteRunResult, BackupStatusResponse, HealthResult, LaunchersResult, LogDownloadResult,
     MediaAssetParams, MediaAssetResult, MediaBrowseIndexParams, MediaBrowseIndexResult,
     MediaBrowseParams, MediaBrowseResult, MediaHistoryLatestResult, MediaHistoryParams,
-    MediaHistoryResult, MediaImageParams, MediaImageResult, MediaIndexParams, MediaLookupParams,
-    MediaLookupResult, MediaMetaParams, MediaMetaResult, MediaMetaUpdateParams, MediaResult,
-    MediaScrapeParams, MediaSearchParams, MediaSearchResult, MediaTagsParams, MediaTagsResult,
-    MediaTagsUpdateParams, MediaTagsUpdateResult, PairStartResult, ReadersResult,
-    ReadersWriteParams, RemoteActivityResult, RunParams, ScrapersResult, ScrapingStatusResponse,
-    SettingsResult, SystemsParams, SystemsResult, TokensHistoryResult, TokensResult,
-    UpdateSettingsParams, VersionResult,
+    MediaHistoryResult, MediaHistoryTopParams, MediaHistoryTopResult, MediaImageParams,
+    MediaImageResult, MediaIndexParams, MediaLookupParams, MediaLookupResult, MediaMetaParams,
+    MediaMetaResult, MediaMetaUpdateParams, MediaResult, MediaScrapeParams, MediaSearchParams,
+    MediaSearchResult, MediaTagsParams, MediaTagsResult, MediaTagsUpdateParams,
+    MediaTagsUpdateResult, PairStartResult, ReadersResult, ReadersWriteParams,
+    RemoteActivityResult, RunParams, ScrapersResult, ScrapingStatusResponse, SettingsResult,
+    SystemsParams, SystemsResult, TokensHistoryResult, TokensResult, UpdateSettingsParams,
+    VersionResult,
 };
 use crate::transport::Transport;
 use crate::ui_events::{UiRespondParams, UiState};
@@ -1085,6 +1086,16 @@ impl Client {
     ) -> Result<MediaMetaResult, ClientError> {
         let val = self.call("media.meta.update", &params).await?;
         deserialize_timed("media.meta.update", val)
+    }
+
+    /// The most played games, ranked by total play time
+    /// (`media.history.top`).
+    pub async fn media_history_top(
+        &self,
+        params: MediaHistoryTopParams,
+    ) -> Result<MediaHistoryTopResult, ClientError> {
+        let val = self.call("media.history.top", &params).await?;
+        deserialize_timed("media.history.top", val)
     }
 
     pub async fn media_history(

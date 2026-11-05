@@ -77,11 +77,6 @@ impl MediaKey {
         }
     }
 
-    /// A deck's cover or a card's art rather than a game's.
-    pub fn is_deck_art(&self) -> bool {
-        self.system == DECK_ART_SYSTEM
-    }
-
     /// The `decks.image` request a deck art key stands for.
     fn deck_art_params(&self) -> Option<DeckImageParams> {
         if self.system != DECK_ART_SYSTEM {

@@ -23,16 +23,18 @@ use zaparoo_app::media_list::{
 use zaparoo_app::options_menu as menu;
 use zaparoo_app::paged_grid::{self, Grid, Insets};
 use zaparoo_app::user_flags::{Flag, Flags};
-use zaparoo_core::endpoints::decks::DeckEndpoint;
+use zaparoo_core::collections::DecksParams;
+use zaparoo_core::endpoints::decks::{DeckEndpoint, DecksEndpoint};
 use zaparoo_core::endpoints::media_browse::{BrowseArgs, MediaBrowseEndpoint};
 use zaparoo_core::endpoints::media_history::{HistoryArgs, MediaHistoryEndpoint};
+use zaparoo_core::endpoints::media_history_top::{MediaHistoryTopEndpoint, TopArgs};
 use zaparoo_core::endpoints::media_search::MediaSearchEndpoint;
 use zaparoo_core::endpoints::media_user_list::{MediaUserListEndpoint, UserListArgs};
 use zaparoo_core::input_actions::actions;
 use zaparoo_core::media_types::{
     merged_root_view, BrowseEntry, MediaBrowseParams, MediaHistoryEntry, MediaHistoryParams,
-    MediaItem, MediaMeta, MediaSearchParams, MediaSearchResult, MediaTagsUpdateParams,
-    MediaTagsUpdateResult, SystemInfo, TagInfo,
+    MediaHistoryTopEntry, MediaItem, MediaMeta, MediaSearchParams, MediaSearchResult,
+    MediaTagsUpdateParams, MediaTagsUpdateResult, SystemInfo, TagInfo,
 };
 use zaparoo_core::persist::RecentsState;
 use zaparoo_core::remote_resource::ResourceStatus;
@@ -46,6 +48,7 @@ use crate::{App, GamesInput, GamesView, GridCell};
 const HIDDEN_TAG: &str = "user:hidden";
 const FILE_GLYPH: &str = "icons/File";
 const FOLDER_GLYPH: &str = "icons/Folder";
+const DECK_GLYPH: &str = "icons/BookMarked";
 const ARCADE_SYSTEM_ID: &str = "Arcade";
 
 /// Which list the screen shows; the mode picks the fill source, the
@@ -60,6 +63,8 @@ impl GamesMode {
             Self::Recents => crate::Screen::Recents,
             Self::Search => crate::Screen::SearchResults,
             Self::Deck => crate::Screen::Deck,
+            Self::Decks => crate::Screen::Decks,
+            Self::TopPlayed => crate::Screen::TopPlayed,
         }
     }
 }
@@ -116,6 +121,23 @@ pub struct GameRow {
     pub suffix: String,
     /// Set on the Deck screen: which of the deck's items the row is.
     pub deck_item: Option<DeckItemRow>,
+    /// Set on the Decks screen: the deck the row is.
+    pub deck_entry: Option<DeckEntryRow>,
+    /// Set on Top played: the game's total play time, in seconds.
+    pub play_seconds: Option<u64>,
+}
+
+/// A row that is one deck on the Decks screen.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeckEntryRow {
+    pub deck_id: String,
+    /// Who a saved deck is from; empty for the user's own.
+    pub owner: String,
+    /// The user cannot change it: a saved copy or a locked deck.
+    pub locked: bool,
+    pub item_count: u32,
+    /// The deck's `updatedAt`, which its cover is asked for by.
+    pub revision: i64,
 }
 
 /// A row that is one item of the deck on the Deck screen.
@@ -152,8 +174,8 @@ impl GameRow {
         rules::browses(self.entry_type, self.media_id.is_some(), &self.zap_script)
     }
 
-    /// How many versions the row stands for, for its suffix: zero unless
-    /// it stands for more than one.
+    /// How many versions the row stands for, for the info line: zero
+    /// unless it stands for more than one.
     pub(crate) fn versions(&self) -> i32 {
         if zaparoo_app::title_versions::has_versions(self.title_id, self.version_count) {
             i32::try_from(self.version_count).unwrap_or(i32::MAX)
@@ -165,6 +187,9 @@ impl GameRow {
     /// What the row's selection is persisted and restored by: its path, or
     /// on the Deck screen the item, since one game can be in a deck twice.
     pub fn selection_key(&self) -> String {
+        if let Some(deck) = &self.deck_entry {
+            return deck.deck_id.clone();
+        }
         self.deck_item
             .as_ref()
             .map_or_else(|| self.path.clone(), |item| format!("#{}", item.id))
@@ -226,7 +251,10 @@ impl GameRow {
     fn wants_cover(&self) -> bool {
         let card_art = self.deck_item.as_ref().is_some_and(|item| item.card_art);
         self.has_cover
-            && (self.media_capable || self.entry_type == EntryType::Directory || card_art)
+            && (self.media_capable
+                || self.entry_type == EntryType::Directory
+                || card_art
+                || self.deck_entry.is_some())
     }
 
     fn system_or<'a>(&'a self, fallback: &'a str) -> &'a str {
@@ -293,6 +321,8 @@ impl From<&BrowseEntry> for GameRow {
             display: String::new(),
             suffix: String::new(),
             deck_item: None,
+            deck_entry: None,
+            play_seconds: None,
         }
     }
 }
@@ -324,6 +354,8 @@ impl From<&MediaItem> for GameRow {
             display: String::new(),
             suffix: String::new(),
             deck_item: None,
+            deck_entry: None,
+            play_seconds: None,
         }
     }
 }
@@ -358,6 +390,8 @@ impl GameRow {
             display: name.to_string(),
             suffix: String::new(),
             deck_item: None,
+            deck_entry: None,
+            play_seconds: None,
         }
     }
 
@@ -369,6 +403,62 @@ impl GameRow {
             media_capable: false,
             tags_known: false,
             ..Self::from_meta("", name, &MediaMeta::default())
+        }
+    }
+}
+
+impl GameRow {
+    /// One deck on the Decks screen: its name, its cover when it has one.
+    pub(crate) fn from_deck(deck: &zaparoo_core::collections::Deck) -> Self {
+        let mut row = Self::from_script(&deck.name, "");
+        row.has_cover = deck.has_image;
+        row.display.clone_from(&deck.name);
+        row.deck_entry = Some(DeckEntryRow {
+            deck_id: deck.deck_id.clone(),
+            owner: if deck.saved {
+                deck.owned_by.clone()
+            } else {
+                String::new()
+            },
+            locked: !deck.editable(),
+            item_count: deck.item_count,
+            revision: deck.updated_at,
+        });
+        row
+    }
+}
+
+impl From<&MediaHistoryTopEntry> for GameRow {
+    fn from(e: &MediaHistoryTopEntry) -> Self {
+        Self {
+            media_id: e.media_id,
+            name: e.media_name.clone(),
+            path: e.media_path.clone(),
+            entry_type: EntryType::Media,
+            file_count: 0,
+            system_id: e.system_id.clone(),
+            system_name: e.system_name.clone(),
+            zap_script: e.zap_script.clone(),
+            relative_path: e.relative_path.clone().unwrap_or_default(),
+            tag_labels: Vec::new(),
+            has_cover: true,
+            cover_color: None,
+            flags: user_flags(&e.tags),
+            is_hidden: has_user_tag(&e.tags, "hidden"),
+            // Core sends tags only for a game it resolved to indexed
+            // media, which is also when it sends the media id.
+            tags_known: e.media_id.is_some(),
+            media_capable: true,
+            multi_disc: false,
+            root_distinguisher: String::new(),
+            detail_rows: Vec::new(),
+            display: String::new(),
+            suffix: String::new(),
+            deck_item: None,
+            deck_entry: None,
+            play_seconds: Some(e.total_play_time),
+            title_id: None,
+            version_count: 0,
         }
     }
 }
@@ -402,6 +492,8 @@ impl From<&MediaHistoryEntry> for GameRow {
             display: String::new(),
             suffix: String::new(),
             deck_item: None,
+            deck_entry: None,
+            play_seconds: None,
         }
     }
 }
@@ -756,6 +848,8 @@ fn saved_path(shared: &Shared) -> String {
         GamesMode::Recents => shared.persist.recents.selected_path.clone(),
         GamesMode::Search => shared.persist.search.selected_path.clone(),
         GamesMode::Deck => shared.persist.deck.selected_item.clone(),
+        GamesMode::Decks => shared.persist.decks.selected_deck.clone(),
+        GamesMode::TopPlayed => shared.persist.top_played.selected_path.clone(),
     }
 }
 
@@ -773,6 +867,8 @@ fn saved_list_top(shared: &Shared) -> Option<usize> {
         GamesMode::Recents => shared.persist.recents.list_top,
         GamesMode::Search => shared.persist.search.list_top,
         GamesMode::Deck => shared.persist.deck.list_top,
+        GamesMode::Decks => shared.persist.decks.list_top,
+        GamesMode::TopPlayed => shared.persist.top_played.list_top,
     }
 }
 
@@ -805,6 +901,8 @@ fn remember_list_top(shared: &mut Shared, top: usize) {
         GamesMode::Recents => shared.persist.recents.list_top = Some(top),
         GamesMode::Search => shared.persist.search.list_top = Some(top),
         GamesMode::Deck => shared.persist.deck.list_top = Some(top),
+        GamesMode::Decks => shared.persist.decks.list_top = Some(top),
+        GamesMode::TopPlayed => shared.persist.top_played.list_top = Some(top),
     }
 }
 
@@ -822,6 +920,8 @@ fn write_saved_path(shared: &mut Shared, path: String) {
         GamesMode::Recents => shared.persist.recents.selected_path = path,
         GamesMode::Search => shared.persist.search.selected_path = path,
         GamesMode::Deck => shared.persist.deck.selected_item = path,
+        GamesMode::Decks => shared.persist.decks.selected_deck = path,
+        GamesMode::TopPlayed => shared.persist.top_played.selected_path = path,
     }
 }
 
@@ -1135,7 +1235,7 @@ pub(crate) fn apply_tags_changed(
             .iter_mut()
             .filter(|row| same(row, &fallback))
         {
-            repaint |= row.flags.favorite != flags.favorite;
+            repaint |= row.flags != flags;
             row.flags = flags;
         }
         let menu_row = match shared.context_owner {
@@ -1199,7 +1299,12 @@ pub fn refresh_visibility(ctx: &Ctx, app: &App) {
     }
     match mode {
         GamesMode::Browse => browse(ctx, app, &path, false),
-        GamesMode::Favorites | GamesMode::Recents | GamesMode::Search | GamesMode::Deck => {
+        GamesMode::Favorites
+        | GamesMode::Recents
+        | GamesMode::Search
+        | GamesMode::Deck
+        | GamesMode::Decks
+        | GamesMode::TopPlayed => {
             enter_flat(ctx, app, mode, false);
         }
     }
@@ -1250,6 +1355,72 @@ pub fn refresh_deck(ctx: &Ctx, app: &App) {
     enter_flat(ctx, app, GamesMode::Deck, false);
 }
 
+/// The Decks screen: the user's own decks and the ones the account saved.
+/// Fresh starts on the first; a restore or a return lands on the saved one.
+pub fn enter_decks(ctx: &Ctx, app: &App, entry: EntryMode) {
+    crate::navigation::stage(ctx, app);
+    {
+        let mut shared = lock(&ctx.shared);
+        if entry == EntryMode::Fresh {
+            shared.persist.decks = zaparoo_core::persist::DecksState::default();
+        }
+        shared.games.list_system.clear();
+    }
+    enter_flat(ctx, app, GamesMode::Decks, true);
+}
+
+/// Refill the Decks screen in place from the deck list.
+pub fn refresh_decks(ctx: &Ctx, app: &App) {
+    persist_now(ctx);
+    enter_flat(ctx, app, GamesMode::Decks, false);
+}
+
+/// Top played (Hub action): Core's most played games, or their systems
+/// when the list is grouped.
+pub fn enter_top_played(ctx: &Ctx, app: &App, entry: EntryMode) {
+    let grouped = zaparoo_app::top_played::grouped(&lock(&ctx.shared).persist.top_played.grouping);
+    if grouped && entry == EntryMode::Fresh {
+        crate::systems::enter_top_played(ctx, app, entry);
+        return;
+    }
+    crate::navigation::stage(ctx, app);
+    {
+        let mut shared = lock(&ctx.shared);
+        if entry == EntryMode::Fresh {
+            shared.persist.top_played.selected_path.clear();
+            shared.persist.top_played.list_top = None;
+        }
+        shared.games.list_system = if grouped {
+            shared.persist.top_played.system_id.clone()
+        } else {
+            String::new()
+        };
+    }
+    enter_flat(ctx, app, GamesMode::TopPlayed, true);
+}
+
+/// One system's most played games, from Top played's systems.
+pub fn enter_top_played_for_system(ctx: &Ctx, app: &App, system_id: &str) {
+    crate::navigation::stage(ctx, app);
+    {
+        let mut shared = lock(&ctx.shared);
+        shared.games.list_system = system_id.to_string();
+        shared.persist.top_played.system_id = system_id.to_string();
+        shared.persist.top_played.selected_path.clear();
+        shared.persist.top_played.list_top = None;
+    }
+    enter_flat(ctx, app, GamesMode::TopPlayed, true);
+}
+
+/// Refill a Top played screen on show after play history changed.
+pub fn refresh_top_played(ctx: &Ctx, app: &App) {
+    let visible = lock(&ctx.shared).games.mode == GamesMode::TopPlayed
+        && app.global::<crate::Shell>().get_active_screen() == crate::Screen::TopPlayed;
+    if visible {
+        enter_flat(ctx, app, GamesMode::TopPlayed, false);
+    }
+}
+
 /// Recently played (Hub action): Core's play history.
 pub fn enter_recents(ctx: &Ctx, app: &App, entry: EntryMode) {
     crate::navigation::stage(ctx, app);
@@ -1293,11 +1464,12 @@ pub fn refresh_after_launch(ctx: &Ctx, app: &App) {
 }
 
 fn enter_flat(ctx: &Ctx, app: &App, mode: GamesMode, flip: bool) {
-    let (ticket, page_size, sort, scope, search, list) = {
+    let (ticket, page_size, sort, scope, search, list, top_system) = {
         let mut shared = lock(&ctx.shared);
         let size = page_size(ctx, app, &shared);
         let sort = list_sort(&shared);
         let scope = list_scope(&shared);
+        let top_system = shared.games.list_system.clone();
         let list = crate::user_lists::active(&shared);
         let search = crate::search::args(&shared);
         let model = &mut shared.games;
@@ -1311,7 +1483,15 @@ fn enter_flat(ctx: &Ctx, app: &App, mode: GamesMode, flip: bool) {
         model.focus_armed = false;
         model.restore_done = false;
         model.focus_recalled = false;
-        (begin_fill(model), size, sort, scope, search, list)
+        (
+            begin_fill(model),
+            size,
+            sort,
+            scope,
+            search,
+            list,
+            top_system,
+        )
     };
     if flip {
         crate::router::begin_pending(app, mode.screen());
@@ -1348,6 +1528,22 @@ fn enter_flat(ctx: &Ctx, app: &App, mode: GamesMode, flip: bool) {
             },
         ),
         GamesMode::Deck => fill_deck(ctx, app, (ticket, flip)),
+        GamesMode::Decks => {
+            fill_from::<DecksEndpoint>(
+                ctx,
+                app,
+                DecksParams::default(),
+                (ticket, flip),
+                |result| (crate::decks::rows_of(&result.decks), None),
+            );
+        }
+        GamesMode::TopPlayed => fill_from::<MediaHistoryTopEndpoint>(
+            ctx,
+            app,
+            TopArgs::new(&top_system),
+            (ticket, flip),
+            |result| (result.entries.iter().map(GameRow::from).collect(), None),
+        ),
         GamesMode::Browse => {}
     }
 }
@@ -1790,10 +1986,12 @@ pub(crate) fn show_error(ctx: &Ctx, app: &App, ticket: u64, message: &str, flip:
 /// `limit` up to 100, and rejects anything larger.
 fn fetch_cap(mode: GamesMode) -> u32 {
     match mode {
-        GamesMode::Recents => rules::HISTORY_FETCH_CAP,
-        GamesMode::Browse | GamesMode::Favorites | GamesMode::Search | GamesMode::Deck => {
-            rules::JUMP_FETCH_CEILING
-        }
+        GamesMode::Recents | GamesMode::TopPlayed => rules::HISTORY_FETCH_CAP,
+        GamesMode::Browse
+        | GamesMode::Favorites
+        | GamesMode::Search
+        | GamesMode::Deck
+        | GamesMode::Decks => rules::JUMP_FETCH_CEILING,
     }
 }
 
@@ -1914,8 +2112,9 @@ fn fetch_more(ctx: &Ctx, app: &App, limit: u32, bulk: bool) {
                     (r.entries.iter().map(GameRow::from).collect(), cursor)
                 })
                 .map_err(PageError::from),
-            // A deck fills whole: there is never a page to follow.
-            GamesMode::Deck => Ok((Vec::new(), None)),
+            // A deck, the deck list and Top played fill whole: there is
+            // never a page to follow.
+            GamesMode::Deck | GamesMode::Decks | GamesMode::TopPlayed => Ok((Vec::new(), None)),
         };
         let _ = weak.upgrade_in_event_loop(move |app| {
             on_append(&ctx2, &app, ticket, outcome);
@@ -2107,7 +2306,12 @@ fn restart_after_failed_page(ctx: &Ctx, app: &App) {
     };
     match mode {
         GamesMode::Browse => browse(ctx, app, &path, false),
-        GamesMode::Favorites | GamesMode::Recents | GamesMode::Search | GamesMode::Deck => {
+        GamesMode::Favorites
+        | GamesMode::Recents
+        | GamesMode::Search
+        | GamesMode::Deck
+        | GamesMode::Decks
+        | GamesMode::TopPlayed => {
             enter_flat(ctx, app, mode, false);
         }
     }
@@ -2208,7 +2412,7 @@ pub(crate) fn grid_geometry_for(
         derived.header_bottom + profile.status.top_margin + profile.status.strip_height + row_block;
     let t240 = derived.tier == zaparoo_app::sizing::Tier::T240;
     let (bottom, label_y, label_height) = match mode {
-        GamesMode::Browse => {
+        GamesMode::Browse | GamesMode::Decks => {
             let label_height = footer.active_label_height;
             let bottom = if t240 {
                 derived.help_bar_height + label_height
@@ -2224,7 +2428,11 @@ pub(crate) fn grid_geometry_for(
                 - label_height;
             (bottom, label_y, label_height)
         }
-        GamesMode::Favorites | GamesMode::Recents | GamesMode::Search | GamesMode::Deck => {
+        GamesMode::Favorites
+        | GamesMode::Recents
+        | GamesMode::Search
+        | GamesMode::Deck
+        | GamesMode::TopPlayed => {
             let label_height = inputs.pct_h(7.0);
             let bottom = if t240 {
                 derived.help_bar_height + label_height
@@ -2271,7 +2479,9 @@ fn geometry(app: &App, mode: GamesMode) -> Geometry {
 }
 
 /// How a cover is asked for and prepared: Core's size tier, and the
-/// painted box the decoded image is resized to.
+/// painted box the decoded image is resized to. The software renderer
+/// samples a bitmap nearest-neighbor, so the decoded size must be the
+/// painted one.
 #[derive(Clone, Copy)]
 struct CoverSize {
     tier: u32,
@@ -2284,36 +2494,62 @@ impl CoverSize {
     /// image at a time, so a small screenshot or title screen is enlarged.
     fn detail(app: &App) -> Self {
         let view = app.global::<GamesView>();
+        let fit = zaparoo_app::covers::Fit::new(
+            view.get_detail_art_width(),
+            view.get_detail_art_height(),
+        )
+        .crisp();
         Self {
             tier: crate::sizing::detail_cover_source_size(crate::router::output_scene(app)),
-            fit: zaparoo_app::covers::Fit::new(
-                view.get_detail_art_width(),
-                view.get_detail_art_height(),
-            )
-            .crisp(),
+            fit,
         }
     }
 }
 
-/// The grid's cover size at the current output geometry: the decode tier,
-/// and the tile art box for `mode` (the flat lists add a system name band).
+/// The grid's cover size at the current output geometry: the decode tier
+/// and the one art box every tile of `mode` paints in.
 fn cover_tier(app: &App, mode: GamesMode) -> CoverSize {
     let scene = crate::router::output_scene(app);
-    let inputs = scene.inputs();
-    let geometry = geometry_for(&inputs, mode);
+    cover_size(
+        &scene.inputs(),
+        mode,
+        crate::sizing::games_grid_cover_source_size(scene),
+    )
+}
+
+fn cover_size(inputs: &zaparoo_app::sizing::Inputs, mode: GamesMode, tier: u32) -> CoverSize {
+    let geometry = geometry_for(inputs, mode);
+    // Every tile paints its art in the same box: a system label rides over
+    // the art on its scrim instead of taking a band from it.
     let (width, height) = zaparoo_app::sizing::tile_art_box(
-        &inputs,
+        inputs,
         geometry.fit.cell_width,
         geometry.fit.cell_height,
         zaparoo_app::sizing::TileArt {
             compact_padding: false,
             caption: true,
-            top_label: mode != GamesMode::Browse,
         },
     );
     CoverSize {
-        tier: crate::sizing::games_grid_cover_source_size(scene),
+        tier,
         fit: zaparoo_app::covers::Fit::new(width, height),
+    }
+}
+
+/// The flat lists name each tile's system over its art; Games and the
+/// Decks screen do not.
+fn labelled_mode(mode: GamesMode) -> bool {
+    !matches!(mode, GamesMode::Browse | GamesMode::Decks)
+}
+
+/// The system name a flat list's tile shows over its art, empty for a row
+/// with no system (a deck, a card or a script item).
+fn top_label(row: &GameRow) -> &str {
+    let name = row.system_name.trim();
+    if name.is_empty() {
+        row.system_id.as_str()
+    } else {
+        name
     }
 }
 
@@ -2327,6 +2563,9 @@ pub(crate) fn grid_cover_fit(app: &App, mode: GamesMode) -> zaparoo_app::covers:
 /// has one: Core then answers with the folder's own artwork before that
 /// disc's, and each disc caches under its own key.
 fn media_key(row: &GameRow, fallback_system: &str, tier: CoverSize) -> MediaKey {
+    if let Some(deck) = &row.deck_entry {
+        return MediaKey::deck_art(&deck.deck_id, None, deck.revision, tier.tier, tier.fit);
+    }
     if let Some(item) = row.deck_item.as_ref().filter(|item| item.card_art) {
         return MediaKey::deck_art(
             &item.deck_id,
@@ -2355,7 +2594,6 @@ fn text_cell(row: &GameRow) -> GridCell {
         favorite: row.flags.favorite,
         hidden: row.is_hidden,
         opens: row.is_dir(),
-        versions: row.versions(),
         ..Default::default()
     }
 }
@@ -2370,11 +2608,8 @@ fn cell_for(
     tier: CoverSize,
 ) -> GridCell {
     let mut cell = text_cell(row);
-    if model.mode != GamesMode::Browse {
-        cell.top_label = SharedString::from(row.system_name.trim());
-        if cell.top_label.is_empty() {
-            cell.top_label = SharedString::from(row.system_id.as_str());
-        }
+    if labelled_mode(model.mode) {
+        cell.top_label = SharedString::from(top_label(row));
     }
     let key = media_key(row, &model.system_id, tier);
     let cached = ctx.media.get(&key);
@@ -2399,6 +2634,9 @@ fn cell_for(
                 cell.cover = slint::Image::from_rgba8(image.buffer);
                 cell.has_cover = true;
             }
+        }
+        CoverState::Absent if row.deck_entry.is_some() => {
+            cell.glyph_key = SharedString::from(DECK_GLYPH);
         }
         CoverState::Absent if row.deck_item.is_some() && row.system_id.is_empty() => {
             // A card or a script: no system to show the logo of.
@@ -2445,6 +2683,8 @@ pub fn page_covers_waiting(ctx: &Ctx, app: &App) -> bool {
             | crate::Screen::Recents
             | crate::Screen::SearchResults
             | crate::Screen::Deck
+            | crate::Screen::Decks
+            | crate::Screen::TopPlayed
     ) {
         return false;
     }
@@ -2901,6 +3141,8 @@ pub fn render(ctx: &Ctx, app: &App) {
             crate::Screen::Recents,
             crate::Screen::SearchResults,
             crate::Screen::Deck,
+            crate::Screen::Decks,
+            crate::Screen::TopPlayed,
         ];
         crate::cover_fade::request(app, &screens, &grid, &landed, selected);
     }
@@ -2929,17 +3171,7 @@ pub fn render(ctx: &Ctx, app: &App) {
     view.set_has_pages_below(model.grid.has_pages_below());
     view.set_activate_pulse(model.activate_pulse);
     view.set_release_pulse(model.release_pulse);
-    if let Some(row) = model.current() {
-        view.set_label_name(SharedString::from(row.display.as_str()));
-        view.set_label_tags(SharedString::from(row.suffix.as_str()));
-        view.set_label_hidden(row.is_hidden);
-        view.set_label_versions(row.versions());
-    } else {
-        view.set_label_name(SharedString::default());
-        view.set_label_tags(SharedString::default());
-        view.set_label_hidden(false);
-        view.set_label_versions(0);
-    }
+    view.set_info(info_data(&info_line(model.current())));
 
     // Detailed list: the window around the centered slot.
     let paging = rules::list_paging(
@@ -3010,6 +3242,8 @@ pub fn render(ctx: &Ctx, app: &App) {
             | crate::Screen::Recents
             | crate::Screen::SearchResults
             | crate::Screen::Deck
+            | crate::Screen::Decks
+            | crate::Screen::TopPlayed
     ) {
         let bounds = zaparoo_app::logo_cache::Bounds::new(art_tier.tier, art_tier.tier);
         let key = |row: &GameRow| {
@@ -3155,6 +3389,8 @@ pub fn covers_landed(ctx: &Ctx, app: &App, keys: &[MediaKey]) {
             crate::Screen::Recents,
             crate::Screen::SearchResults,
             crate::Screen::Deck,
+            crate::Screen::Decks,
+            crate::Screen::TopPlayed,
         ],
     ) {
         return;
@@ -3296,6 +3532,8 @@ fn schedule_detail(ctx: &Ctx, app: &App, force: bool) {
             crate::Screen::Recents,
             crate::Screen::SearchResults,
             crate::Screen::Deck,
+            crate::Screen::Decks,
+            crate::Screen::TopPlayed,
         ],
     ) {
         return;
@@ -3546,6 +3784,8 @@ impl crate::page_motion::PagedScreen for GamesScreen {
                 | crate::Screen::Recents
                 | crate::Screen::SearchResults
                 | crate::Screen::Deck
+                | crate::Screen::Decks
+                | crate::Screen::TopPlayed
         )
     }
     fn list_layout(app: &App) -> bool {
@@ -3821,6 +4061,21 @@ fn list_move(ctx: &Ctx, app: &App, delta: i64) {
 }
 
 /// The action handler shared by Games, Favorites and Recently played.
+/// Menu on a list below 240p's chip row: the page menu its mode has.
+fn open_page_menu(ctx: &Ctx, app: &App, mode: GamesMode) {
+    match mode {
+        // A live folder has nothing to jump through, filter or search.
+        GamesMode::Browse if lock(&ctx.shared).games.live => {}
+        GamesMode::Browse => crate::router::open_view_menu(ctx, app),
+        GamesMode::Favorites => crate::router::open_favorites_page_menu(ctx, app),
+        GamesMode::Search => crate::router::open_search_results_page_menu(ctx, app),
+        GamesMode::Deck => crate::decks::open_page_menu(ctx, app),
+        GamesMode::Decks => crate::decks::open_list_menu(ctx, app),
+        GamesMode::TopPlayed => crate::router::open_top_played_page_menu(ctx, app),
+        GamesMode::Recents => {}
+    }
+}
+
 pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
     interrupt_page(ctx, app);
     if crate::decks::moving(ctx) {
@@ -3902,16 +4157,7 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
             if crate::page_bar::enter(ctx, app) {
                 return;
             }
-            match mode {
-                // A live folder has nothing to jump through, filter or
-                // search.
-                GamesMode::Browse if lock(&ctx.shared).games.live => {}
-                GamesMode::Browse => crate::router::open_view_menu(ctx, app),
-                GamesMode::Favorites => crate::router::open_favorites_page_menu(ctx, app),
-                GamesMode::Search => crate::router::open_search_results_page_menu(ctx, app),
-                GamesMode::Deck => crate::decks::open_page_menu(ctx, app),
-                GamesMode::Recents => {}
-            }
+            open_page_menu(ctx, app, mode);
         }
         actions::ACCEPT => match state {
             State::Loading => {}
@@ -3953,7 +4199,12 @@ fn retry(ctx: &Ctx, app: &App) {
     };
     match mode {
         GamesMode::Browse => browse(ctx, app, &top, false),
-        GamesMode::Favorites | GamesMode::Recents | GamesMode::Search | GamesMode::Deck => {
+        GamesMode::Favorites
+        | GamesMode::Recents
+        | GamesMode::Search
+        | GamesMode::Deck
+        | GamesMode::Decks
+        | GamesMode::TopPlayed => {
             enter_flat(ctx, app, mode, false);
         }
     }
@@ -3990,6 +4241,10 @@ fn accept_current(ctx: &Ctx, app: &App) {
     let weak = app.as_weak();
     if row.is_dir() {
         navigate_into_folder(ctx, app, &row.path);
+        return;
+    }
+    if let Some(deck) = &row.deck_entry {
+        crate::decks::open_deck(ctx, app, &deck.deck_id, false);
         return;
     }
     if let Some(item) = &row.deck_item {
@@ -4098,6 +4353,8 @@ fn cancel(ctx: &Ctx, app: &App) {
         // the screen it was entered from.
         let grouped_favorites = !shared.games.list_system.is_empty()
             && crate::user_lists::grouped(&shared, crate::user_lists::active(&shared));
+        let grouped_top = !shared.games.list_system.is_empty()
+            && zaparoo_app::top_played::grouped(&shared.persist.top_played.grouping);
         let target = match mode {
             GamesMode::Browse if arcade_bypass => crate::Screen::Hub,
             GamesMode::Browse if shared.persist.games.entered_from_hub => {
@@ -4110,12 +4367,15 @@ fn cancel(ctx: &Ctx, app: &App) {
                 shared.persist.search.from_hub = false;
                 crate::Screen::Hub
             }
-            GamesMode::Favorites | GamesMode::Recents => crate::Screen::Hub,
             GamesMode::Deck if shared.persist.deck.entered_from_hub => {
                 shared.persist.deck.entered_from_hub = false;
                 crate::Screen::Hub
             }
             GamesMode::Deck => crate::Screen::Decks,
+            GamesMode::TopPlayed if grouped_top => crate::Screen::TopPlayedSystems,
+            GamesMode::Favorites | GamesMode::Recents | GamesMode::Decks | GamesMode::TopPlayed => {
+                crate::Screen::Hub
+            }
         };
         shared.persist.active_screen = target.token().to_string();
         target
@@ -4127,6 +4387,10 @@ fn cancel(ctx: &Ctx, app: &App) {
     }
     if target == crate::Screen::Decks {
         crate::decks::return_to_decks(ctx, app);
+        return;
+    }
+    if target == crate::Screen::TopPlayedSystems {
+        crate::systems::return_to_top_played(ctx, app);
         return;
     }
     if target == crate::Screen::Hub {
@@ -4261,6 +4525,9 @@ pub(crate) fn game_input(
 
 /// The focused row's whole Options menu, empty when it gets none.
 fn row_menu(app: &App, shared: &Shared, row: &GameRow) -> menu::Menu {
+    if let Some(deck) = &row.deck_entry {
+        return crate::decks::menu(shared, &deck.deck_id, false);
+    }
     let model = &shared.games;
     let system = row.system_or(&model.system_id);
     let own = item_menu(app, shared, row, system);
@@ -4308,6 +4575,63 @@ fn item_menu(app: &App, shared: &Shared, row: &GameRow, system: &str) -> menu::M
     }
 }
 
+/// The focused item's info line: everything about it its tile does not
+/// carry. See `zaparoo_app::info_line`.
+fn info_line(row: Option<&GameRow>) -> zaparoo_app::info_line::InfoLine {
+    let Some(row) = row else {
+        return zaparoo_app::info_line::InfoLine::default();
+    };
+    let deck = row.deck_entry.as_ref();
+    zaparoo_app::info_line::InfoLine {
+        name: row.display.clone(),
+        flags: row.flags,
+        // A search result standing for several versions of one title: how
+        // many, from Core's title grouping; zero for one.
+        versions: u32::try_from(row.versions()).unwrap_or(0),
+        play_time: row
+            .play_seconds
+            .map(zaparoo_app::top_played::PlayTime::from_seconds),
+        owner: deck.map(|d| d.owner.clone()).unwrap_or_default(),
+        locked: deck.is_some_and(|d| d.locked),
+        hidden: row.is_hidden,
+        item_count: deck.map(|d| d.item_count),
+        tags: if deck.is_some() {
+            String::new()
+        } else {
+            row.suffix.clone()
+        },
+    }
+}
+
+/// The info line as the views take it.
+fn info_data(line: &zaparoo_app::info_line::InfoLine) -> crate::InfoLineData {
+    let (hours, minutes) = line.play_time.map_or((0, -1), |time| {
+        let (hours, minutes) = time.parts();
+        (
+            i32::try_from(hours).unwrap_or(i32::MAX),
+            i32::try_from(minutes).unwrap_or(0),
+        )
+    });
+    crate::InfoLineData {
+        name: SharedString::from(line.name.as_str()),
+        favorite: line.flags.favorite,
+        liked: line.flags.liked,
+        disliked: line.flags.disliked,
+        play_later: line.flags.play_later,
+        versions: i32::try_from(line.versions).unwrap_or(i32::MAX),
+        has_play_time: line.play_time.is_some(),
+        hours,
+        minutes,
+        owner: SharedString::from(line.owner.as_str()),
+        locked: line.locked,
+        hidden: line.hidden,
+        item_count: line
+            .item_count
+            .map_or(-1, |n| i32::try_from(n).unwrap_or(i32::MAX)),
+        tags: SharedString::from(line.tags.as_str()),
+    }
+}
+
 /// Whether Options opens a menu on the focused row, for the help bar.
 fn options_available(app: &App, shared: &Shared) -> bool {
     shared
@@ -4352,6 +4676,10 @@ pub fn context_accept(ctx: &Ctx, app: &App, id: &str) {
         let live = model.live && model.mode == GamesMode::Browse;
         (row, model.mode, system, live)
     };
+    if let Some(deck) = &row.deck_entry {
+        crate::decks::context_accept(ctx, app, id, &deck.deck_id, crate::Screen::Decks);
+        return;
+    }
     match id {
         "add_to_hub" if live && row.is_dir() => crate::hub::toggle_live_folder(ctx, app, &row.path),
         "toggle_hidden" => toggle_hidden(ctx, app, &row, &system),
@@ -4512,18 +4840,17 @@ pub(crate) fn strip_toggle(ctx: &Ctx, app: &App, flag: Flag) {
     };
     let path = row.path.clone();
     change_flag(ctx, app, &row, &system, flag, move |ctx, app, flags| {
-        let favorite_changed = {
+        let flags_changed = {
             let mut shared = lock(&ctx.shared);
             let Some(row) = shared.games.rows.get_mut(index).filter(|r| r.path == path) else {
                 return;
             };
-            let changed = row.flags.favorite != flags.favorite;
+            let changed = row.flags != flags;
             row.flags = flags;
             changed
         };
-        // Only the heart shows on a tile: the other flags change nothing
-        // the list draws.
-        if favorite_changed {
+        // The heart is on the tile and the row; every flag is on the info line.
+        if flags_changed {
             render(ctx, app);
         }
     });
@@ -4869,6 +5196,40 @@ pub fn bind_input(ctx: &Arc<Ctx>, app: &App) {
 
 #[cfg(test)]
 mod tests {
+    /// The software renderer samples bitmaps nearest-neighbor, so a cover
+    /// decoded for any box but the one its tile paints is resampled and
+    /// pixelates. A system label rides over the art, so a labelled game, a
+    /// card with no system and a deck all paint in the same box.
+    #[test]
+    fn every_cover_is_decoded_for_the_box_its_tile_paints() {
+        use zaparoo_app::sizing::{tile_art_box, Inputs, TileArt};
+        let inputs = Inputs::default();
+        for mode in [
+            GamesMode::Deck,
+            GamesMode::Decks,
+            GamesMode::Browse,
+            GamesMode::Favorites,
+            GamesMode::Recents,
+            GamesMode::TopPlayed,
+        ] {
+            let geometry = geometry_for(&inputs, mode);
+            let (width, height) = tile_art_box(
+                &inputs,
+                geometry.fit.cell_width,
+                geometry.fit.cell_height,
+                TileArt {
+                    compact_padding: false,
+                    caption: true,
+                },
+            );
+            assert_eq!(
+                cover_size(&inputs, mode, 256).fit,
+                zaparoo_app::covers::Fit::new(width, height),
+                "{mode:?}"
+            );
+        }
+    }
+
     #[test]
     fn the_detail_pane_shows_scraped_properties_when_no_tag_carries_them() {
         use zaparoo_core::media_types::{MediaMeta, MediaMetaProperty, TagInfo};

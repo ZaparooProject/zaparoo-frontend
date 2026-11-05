@@ -13,9 +13,10 @@ use zaparoo_app::media_list as list_rules;
 use zaparoo_app::paged_grid::{self, Grid, Insets};
 use zaparoo_app::systems::{self as rules, CatalogSystem, Region, SystemRow};
 use zaparoo_app::user_flags::Flag;
+use zaparoo_core::endpoints::media_history_top::{MediaHistoryTopEndpoint, TopArgs};
 use zaparoo_core::endpoints::systems_user_list::SystemsUserListEndpoint;
 use zaparoo_core::input_actions::actions;
-use zaparoo_core::media_types::{SystemInfo, SystemsResult};
+use zaparoo_core::media_types::{MediaHistoryTopResult, SystemInfo, SystemsResult};
 use zaparoo_core::remote_resource::ResourceStatus;
 
 use crate::navigation::EntryMode;
@@ -42,6 +43,9 @@ pub struct SystemsModel {
     pub favorites: Vec<CatalogSystem>,
     /// The list `favorites` is the catalog of.
     pub favorites_list: Flag,
+    /// The systems of Core's most played games, for Top played grouped by
+    /// system, each counting its games in that list.
+    pub top: Vec<CatalogSystem>,
     pub loading: bool,
     pub focus_armed: bool,
     pub restore_done: bool,
@@ -62,6 +66,7 @@ impl SystemsModel {
             category: String::new(),
             favorites: Vec::new(),
             favorites_list: Flag::Favorite,
+            top: Vec::new(),
             loading: false,
             focus_armed: false,
             restore_done: false,
@@ -380,6 +385,186 @@ pub(crate) fn apply_favorites(
     }
 }
 
+// ---------- Top played, grouped by system ----------
+
+/// The systems Top played's games are in, as rows.
+fn project_top(shared: &Shared) -> Vec<SystemRow> {
+    rules::rows_for_favorites(
+        &shared.systems_model.top,
+        &shared.hidden_system_ids,
+        shared.show_hidden,
+        region(shared),
+        &user_name,
+    )
+}
+
+/// The Top played Hub action with Group by: System.
+pub fn enter_top_played(ctx: &Ctx, app: &App, entry: EntryMode) {
+    enter_top_played_with_direction(ctx, app, entry, 1);
+}
+
+/// Back out of one system's Top played onto its systems.
+pub fn return_to_top_played(ctx: &Ctx, app: &App) {
+    enter_top_played_with_direction(ctx, app, EntryMode::Restore, -1);
+}
+
+fn enter_top_played_with_direction(ctx: &Ctx, app: &App, entry: EntryMode, direction: i32) {
+    crate::navigation::stage(ctx, app);
+    {
+        let mut shared = lock(&ctx.shared);
+        if entry == EntryMode::Fresh {
+            shared.persist.top_played.system_id.clear();
+            shared.persist.top_played.systems_list_top = None;
+        }
+        shared.persist.active_screen = crate::Screen::TopPlayedSystems.token().to_string();
+        let model = &mut shared.systems_model;
+        model.fill_task.cancel();
+        model.mode = SystemsMode::TopPlayed;
+        model.loading = model.top.is_empty();
+        model.focus_armed = false;
+        model.restore_done = false;
+        model.page.sliding = false;
+        model.transition_seq += 1;
+        model.grid.prepare_for_model_replacement();
+        let rows = project_top(&shared);
+        seat_top(&mut shared, rows);
+    }
+    crate::router::save_persist(&ctx.shared);
+    let waiting = lock(&ctx.shared).systems_model.loading;
+    let ticket = lock(&ctx.shared).systems_model.transition_seq;
+    if waiting {
+        crate::router::begin_pending_with_direction(
+            app,
+            crate::Screen::TopPlayedSystems,
+            direction,
+        );
+    } else {
+        crate::navigation::finish(app);
+        let view = app.global::<SystemsView>();
+        view.set_error(SharedString::default());
+        view.set_loading(false);
+        render(ctx, app);
+        crate::router::transition_to_screen(app, crate::Screen::TopPlayedSystems, direction);
+    }
+
+    let resource = ctx
+        .store
+        .subscribe::<MediaHistoryTopEndpoint>(TopArgs::default());
+    let mut rx = resource.subscribe();
+    let weak = app.as_weak();
+    let ctx2 = ctx.clone();
+    let task = ctx.handle.spawn(async move {
+        loop {
+            let snapshot = rx.borrow_and_update().clone();
+            match snapshot {
+                ResourceStatus::Ready(result) => {
+                    let _ = weak.upgrade_in_event_loop(move |app| {
+                        if lock(&ctx2.shared).systems_model.transition_seq != ticket {
+                            return;
+                        }
+                        apply_top(&ctx2, &app, &result, direction, waiting);
+                    });
+                    return;
+                }
+                ResourceStatus::Errored { message, .. } => {
+                    let _ = weak.upgrade_in_event_loop(move |app| {
+                        if lock(&ctx2.shared).systems_model.transition_seq != ticket {
+                            return;
+                        }
+                        if waiting && crate::navigation::fail(&ctx2, &app, &message) {
+                            return;
+                        }
+                        lock(&ctx2.shared).systems_model.loading = false;
+                        let view = app.global::<SystemsView>();
+                        view.set_loading(false);
+                        view.set_error(SharedString::from(message.as_str()));
+                        render(&ctx2, &app);
+                        if waiting {
+                            crate::router::transition_to_screen(
+                                &app,
+                                crate::Screen::TopPlayedSystems,
+                                direction,
+                            );
+                        }
+                    });
+                    return;
+                }
+                ResourceStatus::Idle | ResourceStatus::Loading => {}
+            }
+            if rx.changed().await.is_err() {
+                return;
+            }
+        }
+    });
+    lock(&ctx.shared).systems_model.fill_task.replace(task);
+}
+
+/// Core answered Top played: keep its systems, counted, and seat the saved
+/// one. A system the catalog no longer knows keeps Core's name for it.
+fn apply_top(
+    ctx: &Ctx,
+    app: &App,
+    result: &MediaHistoryTopResult,
+    direction: i32,
+    route_when_ready: bool,
+) {
+    {
+        let mut shared = lock(&ctx.shared);
+        let ranked = zaparoo_app::top_played::systems_by_rank(
+            result.entries.iter().map(|entry| entry.system_id.as_str()),
+        );
+        let catalog = catalog_systems(&shared.systems);
+        shared.systems_model.top = ranked
+            .into_iter()
+            .map(|(id, count)| {
+                let mut system = catalog
+                    .iter()
+                    .find(|system| system.id == id)
+                    .cloned()
+                    .unwrap_or_else(|| CatalogSystem {
+                        id: id.clone(),
+                        name: result
+                            .entries
+                            .iter()
+                            .find(|entry| entry.system_id == id)
+                            .map_or_else(|| id.clone(), |entry| entry.system_name.clone()),
+                        category: String::new(),
+                        zap_script: String::new(),
+                        release_date: String::new(),
+                        manufacturer: String::new(),
+                        media_count: None,
+                    });
+                system.media_count = Some(count);
+                system
+            })
+            .collect();
+        shared.systems_model.loading = false;
+        let rows = project_top(&shared);
+        seat_top(&mut shared, rows);
+    }
+    if route_when_ready {
+        crate::navigation::finish(app);
+    }
+    let view = app.global::<SystemsView>();
+    view.set_loading(false);
+    view.set_error(SharedString::default());
+    render(ctx, app);
+    if route_when_ready {
+        crate::router::save_persist(&ctx.shared);
+        crate::router::transition_to_screen(app, crate::Screen::TopPlayedSystems, direction);
+    }
+}
+
+fn seat_top(shared: &mut Shared, rows: Vec<SystemRow>) {
+    let restore_id = shared.persist.top_played.system_id.clone();
+    let index = rows.iter().position(|s| s.id == restore_id).unwrap_or(0);
+    let model = &mut shared.systems_model;
+    model.rows = rows;
+    model.grid.set_item_count(model.rows.len());
+    model.grid.set_current_index_immediate(index);
+    model.restore_done = true;
+}
+
 /// Seat the list's persisted system on the rows (the restore path and
 /// every re-projection share it).
 fn seat_favorites(shared: &mut Shared, rows: Vec<SystemRow>) {
@@ -401,7 +586,7 @@ pub fn reproject(ctx: &Ctx, app: &App) {
         let mut shared = lock(&ctx.shared);
         let rows = match shared.systems_model.mode {
             SystemsMode::Favorites => project_favorites(&shared),
-            SystemsMode::Decks => crate::decks::system_rows(&shared),
+            SystemsMode::TopPlayed => project_top(&shared),
             SystemsMode::Category => {
                 let category = shared.systems_model.category.clone();
                 if category.is_empty() {
@@ -546,9 +731,9 @@ fn geometry(app: &App, shared: &Shared) -> Geometry {
     }
 }
 
-/// The favorite systems, the one Systems mode with page actions.
-fn decks(shared: &Shared) -> bool {
-    shared.systems_model.mode == SystemsMode::Decks
+/// Top played grouped by system.
+fn top_played(shared: &Shared) -> bool {
+    shared.systems_model.mode == SystemsMode::TopPlayed
 }
 
 fn favorites(shared: &Shared) -> bool {
@@ -631,10 +816,6 @@ fn logo_key(
     style: &str,
     bounds: zaparoo_app::logo_cache::Bounds,
 ) -> Option<crate::system_logos::Key> {
-    // A deck has no logo.
-    if row.cover_key == crate::decks::ROW_COVER_KEY {
-        return None;
-    }
     let stem = row.cover_key.strip_prefix("systems/").unwrap_or(&row.id);
     ctx.logos.key(&row.id, stem, style == "color", bounds)
 }
@@ -644,7 +825,6 @@ fn logo_key(
 const TILE_ART: zaparoo_app::sizing::TileArt = zaparoo_app::sizing::TileArt {
     compact_padding: false,
     caption: false,
-    top_label: false,
 };
 
 /// The bounds a logo is prepared to. Where logos are painted one pixel for
@@ -771,7 +951,7 @@ pub(crate) fn warm_logos(ctx: &Ctx, app: &App) {
 fn request_logos(ctx: &Ctx, app: &App, shared: &Shared, bounds: zaparoo_app::logo_cache::Bounds) {
     if !matches!(
         app.global::<crate::Shell>().get_active_screen(),
-        crate::Screen::Systems | crate::Screen::FavoriteSystems | crate::Screen::Decks
+        crate::Screen::Systems | crate::Screen::FavoriteSystems | crate::Screen::TopPlayedSystems
     ) {
         crate::system_logos::defer_refresh(ctx, app);
         return;
@@ -818,9 +998,6 @@ fn page_cells(
         .skip(page * page_size)
         .take(page_size)
         .map(|row| {
-            if model.mode == SystemsMode::Decks {
-                return crate::decks::cell(ctx, shared, &row.id, art_size);
-            }
             cell_for(
                 ctx,
                 row,
@@ -949,9 +1126,6 @@ fn publish_label(view: &SystemsView<'_>, shared: &Shared) {
             row.media_count
                 .map_or(-1, |c| i32::try_from(c).unwrap_or(0)),
         );
-        let (owner, locked) = crate::decks::note(shared, &row.id);
-        view.set_label_owner(SharedString::from(owner.as_str()));
-        view.set_label_locked(locked);
     } else {
         view.set_label_name(SharedString::default());
         view.set_label_hidden(false);
@@ -962,7 +1136,7 @@ fn publish_label(view: &SystemsView<'_>, shared: &Shared) {
 fn saved_list_top(shared: &Shared) -> Option<usize> {
     match shared.systems_model.mode {
         SystemsMode::Category => shared.persist.systems.list_top,
-        SystemsMode::Decks => shared.persist.decks.list_top,
+        SystemsMode::TopPlayed => shared.persist.top_played.systems_list_top,
         SystemsMode::Favorites => {
             crate::user_lists::systems_focus(&shared.persist, crate::user_lists::active(shared)).1
         }
@@ -984,7 +1158,7 @@ fn remember_list_top(shared: &mut Shared, app: &App) {
     ));
     match model.mode {
         SystemsMode::Category => shared.persist.systems.list_top = top,
-        SystemsMode::Decks => shared.persist.decks.list_top = top,
+        SystemsMode::TopPlayed => shared.persist.top_played.systems_list_top = top,
         SystemsMode::Favorites => {
             let list = crate::user_lists::active(shared);
             crate::user_lists::set_systems_top(&mut shared.persist, list, top);
@@ -1081,7 +1255,7 @@ pub(crate) fn persist_selection(ctx: &Ctx) {
         if let Some(id) = id {
             match shared.systems_model.mode {
                 SystemsMode::Category => shared.persist.systems.system_id = id,
-                SystemsMode::Decks => shared.persist.decks.selected_deck = id,
+                SystemsMode::TopPlayed => shared.persist.top_played.system_id = id,
                 SystemsMode::Favorites => {
                     let list = crate::user_lists::active(&shared);
                     crate::user_lists::set_systems_path(&mut shared.persist, list, id);
@@ -1109,7 +1283,9 @@ impl crate::page_motion::PagedScreen for SystemsScreen {
     fn on_screen(app: &App) -> bool {
         matches!(
             app.global::<crate::Shell>().get_active_screen(),
-            crate::Screen::Systems | crate::Screen::FavoriteSystems | crate::Screen::Decks
+            crate::Screen::Systems
+                | crate::Screen::FavoriteSystems
+                | crate::Screen::TopPlayedSystems
         )
     }
     fn list_layout(app: &App) -> bool {
@@ -1238,7 +1414,9 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
     match action {
         actions::ACCEPT => match state(app) {
             "loading" => {}
-            "error" | "empty" if decks(&lock(&ctx.shared)) => crate::decks::refresh(ctx, app),
+            "error" | "empty" if top_played(&lock(&ctx.shared)) => {
+                enter_top_played(ctx, app, EntryMode::Restore);
+            }
             "error" | "empty" => crate::router::retry_catalog(ctx),
             _ => activate_current(ctx, app),
         },
@@ -1254,18 +1432,18 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
         // here, runs straight away.
         actions::PAGE_MENU => {
             let favorites = favorites(&lock(&ctx.shared));
-            let decks = decks(&lock(&ctx.shared));
+            let top = top_played(&lock(&ctx.shared));
             let reachable = match state(app) {
                 "ready" => true,
-                // New deck… is on the Decks screen's Menu.
-                "empty" => favorites || decks,
+                // The grouping switch stays reachable on an empty list.
+                "empty" => favorites || top,
                 _ => false,
             };
             if !reachable || crate::page_bar::enter(ctx, app) {
                 return;
             }
-            if decks {
-                crate::decks::open_list_menu(ctx, app);
+            if top {
+                crate::router::open_top_played_page_menu(ctx, app);
             } else if favorites {
                 crate::router::open_favorite_systems_page_menu(ctx, app);
             } else {
@@ -1311,9 +1489,9 @@ fn activate_current(ctx: &Ctx, app: &App) {
         }
         return;
     }
-    if mode == SystemsMode::Decks {
+    if mode == SystemsMode::TopPlayed {
         if let Some(id) = id {
-            crate::decks::open_deck(ctx, app, &id, false);
+            crate::games::enter_top_played_for_system(ctx, app, &id);
         }
         return;
     }
@@ -1406,11 +1584,8 @@ fn open_context_menu(ctx: &Ctx, app: &App) {
             return;
         };
         let favorites = model.mode == SystemsMode::Favorites;
-        let menu = if model.mode == SystemsMode::Decks {
-            crate::decks::menu(&shared, &row.id, false)
-        } else {
-            zaparoo_app::options_menu::system(&menu_input(app, &shared, row, favorites, false))
-        };
+        let menu =
+            zaparoo_app::options_menu::system(&menu_input(app, &shared, row, favorites, false));
         (menu, model.grid.current_index())
     };
     let anchor = cell_anchor(ctx, app);
@@ -1473,10 +1648,6 @@ pub fn context_accept(ctx: &Ctx, app: &App, id: &str) {
     let Some(row) = row else {
         return;
     };
-    if decks(&lock(&ctx.shared)) {
-        crate::decks::context_accept(ctx, app, id, &row.id, crate::Screen::Decks);
-        return;
-    }
     if id == "add_to_hub" {
         crate::hub::toggle_target(
             ctx,

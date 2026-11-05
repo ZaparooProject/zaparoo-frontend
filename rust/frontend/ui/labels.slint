@@ -35,23 +35,14 @@ export global Labels {
         if (status == BootStatus.unreachable) { return @tr("Can't reach Zaparoo Core. Check the connection."); }
         return @tr("Connecting to Zaparoo Core…");
     }
-    // The dim suffix beside an item's name: its own tags, how many versions
-    // a search result stands for, and the word that says a hidden item is
-    // hidden while hidden items are being shown.
-    public pure function tags(tags: string, hidden: bool, versions: int) -> string {
-        let count = @tr("({})", versions);
-        let counted = versions < 2 ? tags : (tags == "" ? count : @tr("{} {}", tags, count));
-        if (!hidden) { return counted; }
-        if (counted == "") { return @tr("Hidden"); }
-        return @tr("{} · {}", counted, @tr("Hidden"));
-    }
-    // What the Decks screen says under the focused deck: who a saved
-    // deck is from, that a deck is locked, or how many items it holds.
-    public pure function deck-note(count: int, owner: string, locked: bool) -> string {
-        if (owner != "") { return @tr("By {}", owner); }
-        if (locked) { return @tr("Locked"); }
-        if (count < 0) { return ""; }
-        return @tr("{n} item" | "{n} items" % count);
+    // A game's total play time: hours and minutes, minutes alone, or
+    // under a minute (`minutes` -1 is no time to show).
+    public pure function play-time(hours: int, minutes: int) -> string {
+        if (minutes < 0) { return ""; }
+        if (hours > 0 && minutes == 0) { return @tr("{}h", hours); }
+        if (hours > 0) { return @tr("{}h {}m", hours, minutes); }
+        if (minutes > 0) { return @tr("{}m", minutes); }
+        return @tr("<1m");
     }
     // `list` names the built-in list the two list screens show.
     public pure function loading(target: Screen, list: UserFlag) -> string {
@@ -62,6 +53,7 @@ export global Labels {
         if (target == Screen.search-results) { return @tr("Searching…"); }
         if (target == Screen.decks) { return @tr("Loading decks…"); }
         if (target == Screen.deck) { return @tr("Loading deck…"); }
+        if (target == Screen.top-played || target == Screen.top-played-systems) { return @tr("Loading top played…"); }
         return @tr("Loading…");
     }
     // A file browser Place, by the key Rust sends; a drive is called by its
@@ -102,6 +94,7 @@ export global Labels {
         if (key == "action:disliked") { return @tr("Disliked"); }
         if (key == "action:decks") { return @tr("Decks"); }
         if (key == "action:recents") { return @tr("Recently played"); }
+        if (key == "action:topplayed") { return @tr("Top played"); }
         if (key == "action:search") { return @tr("Search"); }
         if (key == "action:update") { return @tr("Update"); }
         if (key == "action:settings") { return @tr("Settings"); }

@@ -29,7 +29,7 @@ tokens!(Screen {
     Search => "search", SearchResults => "search-results",
     Settings => "settings", About => "about", Update => "update", Rename => "rename",
     RaLogin => "ra-login", FileBrowser => "file-browser", Decks => "decks", Deck => "deck",
-    None => "",
+    TopPlayed => "top-played", TopPlayedSystems => "top-played-systems", None => "",
 });
 tokens!(SettingsPage {
     Root => "", Appearance => "pageAppearance", Library => "pageLibraryData",
@@ -187,6 +187,8 @@ mod tests {
             Screen::FileBrowser,
             Screen::Decks,
             Screen::Deck,
+            Screen::TopPlayed,
+            Screen::TopPlayedSystems,
             Screen::None,
         ] {
             assert_eq!(Screen::try_from(value.token()), Ok(value));

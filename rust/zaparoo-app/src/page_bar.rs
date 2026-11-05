@@ -28,6 +28,9 @@ pub enum Surface {
     Decks,
     /// One deck's items.
     Deck,
+    /// The most played games, and their systems when grouped.
+    TopPlayed,
+    TopPlayedSystems,
     /// Everything with no page actions: Recents, Settings, About, the
     /// Search screen itself.
     Other,
@@ -103,6 +106,7 @@ pub fn chips(surface: Surface) -> &'static [Chip] {
         Surface::SearchResults => &[Chip::EditSearch, Chip::AddToHub],
         Surface::Decks => &[Chip::NewDeck],
         Surface::Deck => &[Chip::PlayDeck, Chip::More],
+        Surface::TopPlayed | Surface::TopPlayedSystems => &[Chip::GroupBy],
         Surface::Other => &[],
     }
 }
@@ -190,6 +194,8 @@ mod tests {
             Surface::SearchResults,
             Surface::Decks,
             Surface::Deck,
+            Surface::TopPlayed,
+            Surface::TopPlayedSystems,
         ] {
             assert!(has_row(surface, true), "{surface:?}");
             assert!(!has_row(surface, false), "{surface:?}");
@@ -208,6 +214,8 @@ mod tests {
             Surface::SearchResults,
             Surface::Decks,
             Surface::Deck,
+            Surface::TopPlayed,
+            Surface::TopPlayedSystems,
         ] {
             let chips = chips(surface);
             let has_more = chips.contains(&Chip::More);

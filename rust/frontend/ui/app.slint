@@ -16,6 +16,7 @@ import { ScrollOffset, SelectionCursor, SelectionClip, FocusCursor } from "focus
 import { PressFeedback } from "press_feedback.slint";
 export { PressFeedback }
 import { DetailRow, MetaLabels, BrowseList, BrowseListDetailView } from "browse_list.slint";
+import { InfoLineData, InfoLineLabel } from "info_line.slint";
 import { SettingsRow, SettingsLabels, SettingsRowView } from "settings.slint";
 import { SetupPickerRow, SetupModal, LogUploadModal } from "setup.slint";
 import { Labels, DialogLabels } from "labels.slint";
@@ -220,11 +221,12 @@ export global PageBar {
     public pure function active-count() -> int {
         if (Shell.active-screen == Screen.hub) { return self.hub-chips.length; }
         if (Shell.active-screen == Screen.systems || Shell.active-screen == Screen.favorite-systems
-            || Shell.active-screen == Screen.decks) {
+            || Shell.active-screen == Screen.top-played-systems) {
             return self.systems-chips.length;
         }
         if (Shell.active-screen == Screen.games || Shell.active-screen == Screen.favorites
-            || Shell.active-screen == Screen.search-results || Shell.active-screen == Screen.deck) {
+            || Shell.active-screen == Screen.search-results || Shell.active-screen == Screen.deck
+            || Shell.active-screen == Screen.decks || Shell.active-screen == Screen.top-played) {
             return self.games-chips.length;
         }
         return 0;
@@ -322,7 +324,7 @@ export global HubInput {
 export global SystemsView {
     in-out property <SystemsMode> mode: SystemsMode.category;
     out property <Screen> screen: self.mode == SystemsMode.favorites ? Screen.favorite-systems
-        : (self.mode == SystemsMode.decks ? Screen.decks : Screen.systems);
+        : (self.mode == SystemsMode.top-played ? Screen.top-played-systems : Screen.systems);
     in-out property <[GridCell]> cells: [];
     in-out property <int> selected-local: 0;
     in-out property <string> category: "";
@@ -330,10 +332,6 @@ export global SystemsView {
     // Favorites across every listed system; -1 when Core left any of
     // them uncounted, so no total is shown.
     in-out property <int> favorites-total: -1;
-    // On the Decks screen: the focused deck's note, who owns a saved deck
-    // or that it is locked, empty for the user's own.
-    in-out property <string> label-owner: "";
-    in-out property <bool> label-locked: false;
     in-out property <bool> loading: false;
     in-out property <string> error: "";
     in-out property <bool> focus-ready: false;
@@ -513,7 +511,9 @@ export global GamesView {
     out property <Screen> screen: self.mode == GamesMode.favorites ? Screen.favorites
         : (self.mode == GamesMode.recents ? Screen.recents
         : (self.mode == GamesMode.search ? Screen.search-results
-        : (self.mode == GamesMode.deck ? Screen.deck : Screen.games)));
+        : (self.mode == GamesMode.deck ? Screen.deck
+        : (self.mode == GamesMode.decks ? Screen.decks
+        : (self.mode == GamesMode.top-played ? Screen.top-played : Screen.games)))));
     // Games: the system's display name, or the folder's own name below
     // the system root; the Deck screen: the deck's name. The flat lists
     // compose their titles in the view.
@@ -577,13 +577,9 @@ export global GamesView {
     in-out property <int> total-pages: 1;
     in-out property <bool> has-pages-above: false;
     in-out property <bool> has-pages-below: false;
-    // Footer: the focused row's name and dim suffix.
-    in-out property <string> label-name: "";
-    in-out property <string> label-tags: "";
-    // The focused game is hidden, shown because hidden games are.
-    in-out property <bool> label-hidden: false;
-    // The versions the focused search result stands for; zero for one.
-    in-out property <int> label-versions: 0;
+    // The focused item's info line: the grid's footer, the detail pane's
+    // fact rows and a text list's focused row all show it.
+    in-out property <InfoLineData> info: { item-count: -1 };
     in-out property <int> activate-pulse: 0;
     in-out property <int> release-pulse: 0;
     // Folder changes reuse the mounted strip horizontally; page changes move vertically.
@@ -1367,18 +1363,17 @@ component SystemsScreen inherits Rectangle {
     property <bool> show-grid-page-cue: !root.list-layout && !root.page-cue-in-footer;
     property <bool> show-top-page-cue: root.show-grid-page-cue || (root.list-layout && !root.page-cue-in-footer);
     property <bool> favorites: SystemsView.mode == SystemsMode.favorites;
-    property <bool> decks: SystemsView.mode == SystemsMode.decks;
-    property <string> title: root.decks ? @tr("Decks")
+    property <bool> top-played: SystemsView.mode == SystemsMode.top-played;
+    property <string> title: root.top-played ? @tr("Top played")
         : (root.favorites
             ? Labels.list-title(Shell.active-list)
             : Labels.hub("category:" + SystemsView.category, SystemsView.category));
     property <string> count-text: SystemsView.count <= 0 ? ""
         : (Sizing.tier-240
             ? Labels.count(SystemsView.count)
-            : (root.decks ? @tr("{n} deck" | "{n} decks" % SystemsView.count)
             : (root.favorites
                 ? Labels.list-systems(Shell.active-list, SystemsView.count)
-                : @tr("{} systems", Labels.count(SystemsView.count)))));
+                : @tr("{} systems", Labels.count(SystemsView.count))));
 
     TopStatusStrip {
         x: 0;
@@ -1558,7 +1553,8 @@ component SystemsScreen inherits Rectangle {
             ? (Layout.top-strip-visible ? root.footer-right-inset : Math.max(root.footer-left-inset, root.footer-right-inset))
             : Layout.slot-margin;
         text: SystemsView.label-name;
-        tags: root.decks ? Labels.deck-note(SystemsView.label-count, SystemsView.label-owner, SystemsView.label-locked)
+        tags: root.top-played
+            ? (SystemsView.label-count >= 0 ? @tr("{n} game" | "{n} games" % SystemsView.label-count) : "")
             : (root.favorites
                 ? (SystemsView.label-count >= 0 ? Labels.list-count(Shell.active-list, SystemsView.label-count) : "")
                 : (SystemsView.label-hidden ? @tr("Hidden") : ""));
@@ -1598,7 +1594,7 @@ component SystemsScreen inherits Rectangle {
         height: root.list-layout ? Math.max(0px, root.height - root.list-card-y - Layout.overlay-bottom-margin) : SystemsView.grid-height;
         cue-center-y: root.height / 2 - self.y;
         state: root.state;
-        empty-text: root.decks ? @tr("No decks yet")
+        empty-text: root.top-played ? @tr("Nothing played yet")
             : (root.favorites ? Labels.list-empty(Shell.active-list) : @tr("No systems in this category"));
     }
 }
@@ -3306,13 +3302,12 @@ component ContextMenu inherits Rectangle {
             property <bool> focused: i == root.strip-index;
             property <length> icon: GlyphSource.side(root.strip-button * 60%);
             property <string> glyph: button.flag == UserFlag.favorite
-                ? (button.on ? "icons/Heart" : "icons/HeartOutline")
+                ? (button.on ? "icons/HeartFilled" : "icons/HeartOutline")
                 : button.flag == UserFlag.like ? (button.on ? "icons/ThumbsUp" : "icons/ThumbsUpOutline")
                 : button.flag == UserFlag.dislike ? (button.on ? "icons/ThumbsDown" : "icons/ThumbsDownOutline")
                 : (button.on ? "icons/Bookmark" : "icons/BookmarkOutline");
-            // The two-tone heart keeps its own colors, as on a tile.
-            property <color> tint: button.flag == UserFlag.favorite && button.on ? Colors.transparent
-                : (self.focused ? Theme.on-accent : Theme.text-primary);
+            // Every icon, set (filled) or not (outline), takes the strip's ink.
+            property <color> tint: self.focused ? Theme.on-accent : Theme.text-primary;
             x: (parent.width - root.strip-w) / 2 + i * (root.strip-button + root.strip-gap);
             y: root.pad;
             width: root.strip-button;
@@ -3449,6 +3444,8 @@ component GamesScreen inherits Rectangle {
     property <bool> tate-list: self.list-layout && Shell.orientation != Orientation.horizontal;
     property <bool> is-games: GamesView.mode == GamesMode.browse;
     property <string> title: GamesView.mode == GamesMode.favorites ? Labels.list-title(Shell.active-list)
+        : GamesView.mode == GamesMode.decks ? @tr("Decks")
+        : GamesView.mode == GamesMode.top-played ? @tr("Top played")
         : (GamesView.mode == GamesMode.deck ? GamesView.title
         : (GamesView.mode == GamesMode.recents ? @tr("Recently played")
         : (GamesView.mode == GamesMode.search && GamesView.display-title() == "" ? @tr("Search") : GamesView.display-title())));
@@ -3460,8 +3457,11 @@ component GamesScreen inherits Rectangle {
     property <bool> show-top-page-cue: root.show-grid-page-cue || (root.list-layout && !root.page-cue-in-footer);
     // Core's file total as "{} games" (Games only; the flat lists carry
     // no known total). The 240p footer keeps the bare number.
-    property <string> count-text: !root.is-games || GamesView.total-files <= 0 ? ""
-        : (Sizing.tier-240 ? Labels.count(GamesView.total-files) : @tr("{} games", Labels.count(GamesView.total-files)));
+    property <string> count-text: GamesView.mode == GamesMode.decks
+        ? (GamesView.count <= 0 ? ""
+            : (Sizing.tier-240 ? Labels.count(GamesView.count) : @tr("{n} deck" | "{n} decks" % GamesView.count)))
+        : (!root.is-games || GamesView.total-files <= 0 ? ""
+        : (Sizing.tier-240 ? Labels.count(GamesView.total-files) : @tr("{} games", Labels.count(GamesView.total-files))));
     // The browse filter's name, then the count where the grid shows one.
     property <string> filter-and-count: GamesView.filter-text == "" ? root.count-text
         : (root.count-text == "" ? GamesView.filter-text : @tr("{} · {}", GamesView.filter-text, root.count-text));
@@ -3583,6 +3583,7 @@ component GamesScreen inherits Rectangle {
         scope: StateTokens.games(GamesView.mode) + ":" + GamesView.title;
         selected: GamesView.list-sel;
         held: GamesView.moving;
+        info: GamesView.info;
         focus-ready: GamesView.focus-ready && !PageBar.focused;
         activate-pulse: GamesView.activate-pulse;
         release-pulse: GamesView.release-pulse;
@@ -3622,6 +3623,8 @@ component GamesScreen inherits Rectangle {
         scope: StateTokens.games(GamesView.mode) + ":" + GamesView.title;
         selected: GamesView.list-sel;
         held: GamesView.moving;
+        show-focus-facts: true;
+        focus-info: GamesView.info;
         focus-ready: GamesView.focus-ready;
         activate-pulse: GamesView.activate-pulse;
         release-pulse: GamesView.release-pulse;
@@ -3646,15 +3649,14 @@ component GamesScreen inherits Rectangle {
         font-size: Sizing.font-section;
     }
 
-    if !root.list-layout: ActiveLabel {
+    if !root.list-layout: InfoLineLabel {
         x: 0;
         y: root.label-y - Sizing.label-raise;
         height: GamesView.label-height;
         side-inset: root.page-cue-in-footer
             ? (Layout.top-strip-visible ? root.footer-right-inset : Math.max(root.footer-left-inset, root.footer-right-inset))
             : Layout.slot-margin;
-        text: GamesView.label-name;
-        tags: Labels.tags(GamesView.label-tags, GamesView.label-hidden, GamesView.label-versions);
+        info: GamesView.info;
         visible: !root.gate-hide && !PageBar.focused;
     }
 
@@ -3713,11 +3715,14 @@ component GamesScreen inherits Rectangle {
         state: GamesView.folder-slide ? ContentState.ready : root.state;
         empty-text: GamesView.mode == GamesMode.favorites ? Labels.list-empty(Shell.active-list)
             : GamesView.mode == GamesMode.deck ? @tr("This deck is empty")
-            : (GamesView.mode == GamesMode.recents ? @tr("Nothing played yet")
+            : GamesView.mode == GamesMode.decks ? @tr("No decks yet")
+            : (GamesView.mode == GamesMode.recents || GamesView.mode == GamesMode.top-played ? @tr("Nothing played yet")
             : (GamesView.mode == GamesMode.search ? @tr("No matches")
             : (GamesView.filter-text != "" ? @tr("No games match these tags") : @tr("No games in this system"))));
         loading-text: GamesView.mode == GamesMode.favorites ? Labels.list-loading(Shell.active-list)
             : GamesView.mode == GamesMode.deck ? @tr("Loading deck…")
+            : GamesView.mode == GamesMode.decks ? @tr("Loading decks…")
+            : GamesView.mode == GamesMode.top-played ? @tr("Loading top played…")
             : (GamesView.mode == GamesMode.recents ? @tr("Loading recently played…")
             : (GamesView.mode == GamesMode.search ? @tr("Searching…") : @tr("Loading games…")));
         error-detail: GamesView.error;
@@ -3851,7 +3856,7 @@ component RouteScreen inherits Rectangle {
     }
 
     if root.screen-token == Screen.systems || root.screen-token == Screen.favorite-systems
-        || root.screen-token == Screen.decks: SystemsScreen {
+        || root.screen-token == Screen.top-played-systems: SystemsScreen {
         gated: root.gated;
     }
 
@@ -3872,7 +3877,8 @@ component RouteScreen inherits Rectangle {
 
     if root.screen-token == Screen.games || root.screen-token == Screen.favorites
         || root.screen-token == Screen.recents || root.screen-token == Screen.search-results
-        || root.screen-token == Screen.deck: GamesScreen {
+        || root.screen-token == Screen.deck || root.screen-token == Screen.decks
+        || root.screen-token == Screen.top-played: GamesScreen {
         gated: root.gated;
     }
 }
@@ -3921,6 +3927,8 @@ export component App inherits Window {
         if (Shell.active-screen == Screen.recents) { return @tr("Recently played"); }
         if (Shell.active-screen == Screen.decks) { return @tr("Decks"); }
         if (Shell.active-screen == Screen.deck) { return GamesView.title; }
+        if (Shell.active-screen == Screen.top-played) { return @tr("Top played"); }
+        if (Shell.active-screen == Screen.top-played-systems) { return @tr("Top played"); }
         if (Shell.active-screen == Screen.search) { return SearchView.title(); }
         if (Shell.active-screen == Screen.rename) {
             return RenameView.purpose == RenamePurpose.new-deck ? @tr("New deck")
@@ -4516,7 +4524,7 @@ export component App inherits Window {
             ];
         }
         if (Shell.active-screen == Screen.systems || Shell.active-screen == Screen.favorite-systems
-            || Shell.active-screen == Screen.decks) {
+            || Shell.active-screen == Screen.top-played-systems) {
             if (Shell.transitioning) {
                 return [{ buttons: ["ButtonB"], label: @tr("Back") }];
             }
@@ -4527,7 +4535,7 @@ export component App inherits Window {
                 return [{ buttons: ["ButtonB"], label: @tr("Back") }];
             }
             if (SystemsView.error != "" || SystemsView.count == 0) {
-                if ((Shell.active-screen == Screen.favorite-systems || Shell.active-screen == Screen.decks)
+                if ((Shell.active-screen == Screen.favorite-systems || Shell.active-screen == Screen.top-played-systems)
                     && SystemsView.error == "") {
                     return [
                         { buttons: ["ButtonA"], label: @tr("Retry") },

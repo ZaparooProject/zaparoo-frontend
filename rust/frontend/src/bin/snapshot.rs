@@ -180,6 +180,8 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
     });
     shell.set_browse_list_layout(list);
     shell.set_systems_list_layout(list);
+    // `…-textlist` screens: the list with no detail pane.
+    shell.set_browse_list_only(screen.contains("textlist"));
     shell.set_crt_enabled(crt);
     shell.set_is_mister(crt);
     let rotation = if ccw {
@@ -273,6 +275,10 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
     ];
     let games_mode = if screen.contains("search-results") {
         GamesMode::Search
+    } else if fixture_screen(screen) == Screen::Decks {
+        GamesMode::Decks
+    } else if fixture_screen(screen) == Screen::TopPlayed {
+        GamesMode::TopPlayed
     } else if screen.contains("favorites")
         || (fixture_list(screen).is_some() && !screen.contains("-systems"))
     {
@@ -293,6 +299,7 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
         i18n,
         games_mode,
         screen.contains("context").then_some(6),
+        screen.contains("markers"),
     );
     // `…-list-images`: Left and Right step the pane's images.
     if screen.ends_with("list-images") {
@@ -670,8 +677,8 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
         scene_w,
         scene_h,
         crt,
-        if screen.ends_with("decks") {
-            SystemsMode::Decks
+        if screen.contains("top-played-systems") {
+            SystemsMode::TopPlayed
         } else if screen.contains("favorite-systems")
             || (fixture_list(screen).is_some() && screen.contains("-systems"))
         {
@@ -1731,10 +1738,17 @@ fn fixture_screen(screen: &str) -> Screen {
         || screen.ends_with("core-confirm")
     {
         Screen::Hub
-    } else if screen.ends_with("decks") {
+    } else if screen.ends_with("decks") || screen.ends_with("decks-list") {
         Screen::Decks
-    } else if screen.ends_with("deck") || screen.contains("deck-item") {
+    } else if screen.ends_with("deck")
+        || screen.ends_with("deck-list")
+        || screen.contains("deck-item")
+    {
         Screen::Deck
+    } else if screen.contains("top-played-systems") {
+        Screen::TopPlayedSystems
+    } else if screen.contains("top-played") {
+        Screen::TopPlayed
     } else if screen.contains("rename") {
         Screen::Rename
     } else if screen.contains("ra-login") {
@@ -2386,6 +2400,7 @@ fn fixture_hub_items() -> Vec<zaparoo_app::hub::LayoutItem> {
         item("action", "decks"),
         item("collection", "0k3v9x2rq7bm"),
         item("action", "recents"),
+        item("action", "topplayed"),
         item("action", "update"),
         item("action", "settings"),
         LayoutItem {
@@ -2815,6 +2830,12 @@ fn fixture_chips(app: &App, mode: GamesMode) {
             chip("add_to_hub", "save_to_hub", ""),
         ],
         GamesMode::Deck => vec![chip("play_deck", "play_deck", ""), chip("more", "more", "")],
+        GamesMode::Decks => vec![chip("new_deck", "new_deck", "")],
+        GamesMode::TopPlayed => vec![chip(
+            "favorites_grouping",
+            "favorites_grouping",
+            "group:none",
+        )],
         GamesMode::Recents => Vec::new(),
     };
     let bar = app.global::<generated::PageBar>();
@@ -2845,8 +2866,26 @@ fn fixture_games(
     i18n: bool,
     mode: GamesMode,
     anchor_index: Option<usize>,
+    all_markers: bool,
 ) {
     use zaparoo_app::layouts::{self, Body, ThemeId, View};
+    // Which collections a fixture row is in: (favorite, liked, disliked,
+    // play later). `…-markers` screens walk every combination; the others
+    // show a few.
+    let markers = |i: usize| {
+        let bits = if all_markers {
+            i - 1
+        } else {
+            match i {
+                1 => 0b1001,
+                3 => 0b1011,
+                5 => 0b0100,
+                7 => 0b0001,
+                _ => 0,
+            }
+        };
+        (bits & 1 != 0, bits & 2 != 0, bits & 4 != 0, bits & 8 != 0)
+    };
     let inputs = sizing::Scene::of(app, scene_w, scene_h, crt).inputs();
     let derived = zaparoo_app::sizing::derive(&inputs);
     let profile = layouts::profile(ThemeId::current(&inputs), View::GamesGrid, &inputs);
@@ -2908,9 +2947,17 @@ fn fixture_games(
         &insets,
     );
     let page_size = (columns * rows).max(1) as usize;
+    let decks = mode == GamesMode::Decks;
+    // On a deck, every third item is a card: no system, so no name band.
+    let card = |i: usize| mode == GamesMode::Deck && i % 3 == 1;
+    let labelled = flat && !decks;
     let cells: Vec<GridCell> = (1..=page_size)
         .map(|i| GridCell {
-            name: if i18n {
+            name: if decks {
+                DECKS[(i - 1) % DECKS.len()].into()
+            } else if card(i) {
+                format!("Card {i}").into()
+            } else if i18n {
                 i18n_titles[(i - 1) % i18n_titles.len()].into()
             } else if i == 1 && !flat {
                 "Homebrew".into()
@@ -2919,16 +2966,22 @@ fn fixture_games(
             },
             glyph_key: if i == 1 && !flat {
                 "icons/Folder".into()
+            } else if decks && i % 2 == 0 {
+                "icons/BookMarked".into()
+            } else if card(i) {
+                "icons/File".into()
             } else {
                 "".into()
             },
-            top_label: if flat {
+            top_label: if labelled && !card(i) {
                 ["Genesis", "Super Nintendo", "PlayStation"][i % 3].into()
             } else {
                 "".into()
             },
-            favorite: i == 2 || i == 7,
-            tags: if i == 3 {
+            favorite: !decks && !card(i) && (flat || i != 1) && markers(i).0,
+            // A hidden game, dimmed rather than worded.
+            hidden: !decks && !card(i) && i == 6,
+            tags: if i == 3 && !decks {
                 "USA Rev A".into()
             } else if i == 1 && !flat {
                 "42".into()
@@ -2942,7 +2995,8 @@ fn fixture_games(
             ..Default::default()
         })
         .collect();
-    let selected = anchor_index.unwrap_or(0);
+    // The `…-markers` screens focus the hidden game.
+    let selected = anchor_index.unwrap_or(if all_markers { 5 } else { 0 });
     let label = cells[selected.min(cells.len() - 1)].clone();
     if let Some(index) = anchor_index {
         let rect = zaparoo_app::paged_grid::cell_rect(
@@ -2983,7 +3037,7 @@ fn fixture_games(
                 "".into()
             },
             opens: i == 1 && !flat,
-            favorite: i == 2,
+            favorite: (flat || i != 1) && markers(i).0,
             ..Default::default()
         })
         .collect();
@@ -3028,8 +3082,41 @@ fn fixture_games(
     view.set_total_pages(4);
     view.set_has_pages_below(true);
     view.set_selected_local(i32::try_from(selected).unwrap_or(0));
-    view.set_label_name(label.name);
-    view.set_label_tags(label.tags);
+    // The focused item's info line, as `games::info_line` would publish
+    // it. Versions come from Core's title grouping; the fixture shows a
+    // count on every game so the stack icon is in the snapshots.
+    let focus_i = selected + 1;
+    let game = !decks && !card(focus_i) && (flat || focus_i != 1);
+    let (favorite, liked, disliked, play_later) = if game {
+        markers(focus_i)
+    } else {
+        (false, false, false, false)
+    };
+    let mut info = generated::InfoLineData {
+        name: label.name.clone(),
+        favorite,
+        liked,
+        disliked,
+        play_later,
+        versions: if game { 3 } else { 0 },
+        hidden: label.hidden,
+        item_count: -1,
+        tags: label.tags.clone(),
+        ..Default::default()
+    };
+    if decks {
+        // A saved copy of someone else's deck: the owner and the lock.
+        info.item_count = 12;
+        info.owner = "wizzo".into();
+        info.locked = true;
+        info.tags = "".into();
+        view.set_count(i32::try_from(DECKS.len()).unwrap_or(0));
+    } else if mode == GamesMode::TopPlayed {
+        info.has_play_time = true;
+        info.hours = 12;
+        info.minutes = 5;
+    }
+    view.set_info(info);
     view.set_focus_ready(true);
     view.set_columns(columns);
     view.set_rows(rows);
@@ -3064,7 +3151,7 @@ const DECKS: [&str; 6] = [
 fn fixture_systems(app: &App, scene_w: f64, scene_h: f64, crt: bool, mode: SystemsMode) {
     use zaparoo_app::layouts::{self, Body, ThemeId, View};
     let favorites = mode == SystemsMode::Favorites;
-    let decks = mode == SystemsMode::Decks;
+    let top = mode == SystemsMode::TopPlayed;
     let inputs = sizing::Scene::of(app, scene_w, scene_h, crt).inputs();
     let derived = zaparoo_app::sizing::derive(&inputs);
     let profile = layouts::profile(ThemeId::current(&inputs), View::SystemsGrid, &inputs);
@@ -3082,8 +3169,12 @@ fn fixture_systems(app: &App, scene_w: f64, scene_h: f64, crt: bool, mode: Syste
         detail: "".into(),
     };
     app.global::<generated::PageBar>()
-        .set_systems_chips(slint::ModelRc::new(slint::VecModel::from(if decks {
-            vec![chip("new_deck", "new_deck", "")]
+        .set_systems_chips(slint::ModelRc::new(slint::VecModel::from(if top {
+            vec![chip(
+                "favorites_grouping",
+                "favorites_grouping",
+                "group:system",
+            )]
         } else if favorites {
             vec![
                 chip("favorites_grouping", "favorites_grouping", "group:system"),
@@ -3123,15 +3214,9 @@ fn fixture_systems(app: &App, scene_w: f64, scene_h: f64, crt: bool, mode: Syste
     let page_size = (columns * rows).max(1) as usize;
     let cells: Vec<GridCell> = (13..13 + page_size)
         .map(|i| GridCell {
-            name: if decks {
-                DECKS[i % DECKS.len()].into()
-            } else {
-                format!("Example System {i}").into()
-            },
+            name: format!("Example System {i}").into(),
             wordmark: true,
-            // Club night is locked and Arcade classics a saved copy.
-            locked: decks && matches!(i % DECKS.len(), 2 | 3),
-            hidden: i == 15 && !decks,
+            hidden: i == 15 && !top,
             ..Default::default()
         })
         .collect();
@@ -3147,7 +3232,7 @@ fn fixture_systems(app: &App, scene_w: f64, scene_h: f64, crt: bool, mode: Syste
     let view = app.global::<SystemsView>();
     view.set_mode(mode);
     view.set_favorites_total(if favorites { 87 } else { -1 });
-    view.set_label_count(if favorites { 12 } else { -1 });
+    view.set_label_count(if favorites || top { 12 } else { -1 });
     view.set_cells(slint::ModelRc::new(slint::VecModel::from(cells)));
     view.set_list_rows(slint::ModelRc::new(slint::VecModel::from(list_rows)));
     view.set_list_sel(2);
@@ -3183,15 +3268,8 @@ fn fixture_systems(app: &App, scene_w: f64, scene_h: f64, crt: bool, mode: Syste
     view.set_has_pages_above(true);
     view.set_has_pages_below(true);
     view.set_selected_local(2);
-    if decks {
-        view.set_label_name(DECKS[15 % DECKS.len()].into());
-        view.set_label_owner("wizzo".into());
-        view.set_label_locked(true);
-        view.set_count(i32::try_from(DECKS.len()).unwrap_or(0));
-    } else {
-        view.set_label_name("Example System 15".into());
-        view.set_label_hidden(true);
-    }
+    view.set_label_name("Example System 15".into());
+    view.set_label_hidden(!top);
     view.set_focus_ready(true);
     view.set_columns(columns);
     view.set_rows(rows);
@@ -3254,6 +3332,14 @@ mod fixture_tests {
             ("update-intro", Screen::Update),
             ("crt-update-details", Screen::Update),
             ("decks", Screen::Decks),
+            ("crt-decks", Screen::Decks),
+            ("decks-list", Screen::Decks),
+            ("deck-list", Screen::Deck),
+            ("top-played", Screen::TopPlayed),
+            ("crt-top-played-list", Screen::TopPlayed),
+            ("top-played-systems", Screen::TopPlayedSystems),
+            ("games-markers", Screen::Games),
+            ("crt-games-list-markers", Screen::Games),
             ("crt-deck", Screen::Deck),
             ("deck-item-manage", Screen::Deck),
             ("crt-hub-deck", Screen::Hub),

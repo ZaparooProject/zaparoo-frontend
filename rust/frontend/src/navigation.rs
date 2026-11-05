@@ -124,11 +124,15 @@ pub fn cancel(ctx: &Ctx, app: &App) -> bool {
         | crate::Screen::Favorites
         | crate::Screen::Recents
         | crate::Screen::SearchResults
-        | crate::Screen::Deck => {
+        | crate::Screen::Deck
+        | crate::Screen::Decks
+        | crate::Screen::TopPlayed => {
             crate::games::render(ctx, app);
             crate::games::resume_after_cancel(ctx, app);
         }
-        crate::Screen::Systems | crate::Screen::FavoriteSystems | crate::Screen::Decks => {
+        crate::Screen::Systems
+        | crate::Screen::FavoriteSystems
+        | crate::Screen::TopPlayedSystems => {
             let catalog_loaded = { lock(&ctx.shared).hub.categories_loaded };
             if catalog_loaded {
                 crate::systems::reproject(ctx, app);

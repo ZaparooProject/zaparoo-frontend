@@ -16,13 +16,14 @@ use crate::paged_grid::{self, Fit, Grid, Insets};
 use crate::sizing::{Derived, Inputs, Tier};
 
 /// The built-in action ids in their seed order (`hub_layout.rs`).
-pub const BUILT_IN_ACTIONS: [&str; 9] = [
+pub const BUILT_IN_ACTIONS: [&str; 10] = [
     "resume",
     "favorites",
     "liked",
     "playlater",
     "decks",
     "recents",
+    "topplayed",
     "search",
     "update",
     "settings",
@@ -194,7 +195,7 @@ pub enum DeckLookup {
 }
 
 /// The glyph a deck without a cover shows.
-pub const DECK_GLYPH: &str = "icons/Layers";
+pub const DECK_GLYPH: &str = "icons/BookMarked";
 
 /// Name and art lookups the caller owns.
 pub trait Resolver {
@@ -321,17 +322,18 @@ fn resolve_action(live: &Live, resolver: &dyn Resolver, id: &str) -> Option<Entr
             false,
             Reason::None,
         )),
-        "decks" => Some(action_entry(
-            resolver,
-            id,
-            "icons/Layers",
-            false,
-            Reason::None,
-        )),
+        "decks" => Some(action_entry(resolver, id, DECK_GLYPH, false, Reason::None)),
         "recents" => Some(action_entry(
             resolver,
             id,
             "icons/History",
+            false,
+            Reason::None,
+        )),
+        "topplayed" => Some(action_entry(
+            resolver,
+            id,
+            "icons/Trophy",
             false,
             Reason::None,
         )),
@@ -1303,7 +1305,12 @@ mod tests {
             assert_eq!(entry.fallback_cover_key, icon);
             assert!(!entry.disabled);
         }
-        assert!(!resolve_action(&l, &Names, "decks").expect("decks").disabled);
+        let decks = resolve_action(&l, &Names, "decks").expect("decks");
+        assert!(!decks.disabled);
+        assert_eq!(decks.fallback_cover_key, DECK_GLYPH);
+        let top = resolve_action(&l, &Names, "topplayed").expect("top played");
+        assert!(!top.disabled);
+        assert_eq!(top.fallback_cover_key, "icons/Trophy");
     }
 
     #[test]
@@ -1311,7 +1318,7 @@ mod tests {
         let confirmed: Vec<String> = Vec::new();
         let mut l = live(&confirmed);
         l.update_enabled = false;
-        let out = entries(&[], true, &l, &Names, 13, 0);
+        let out = entries(&[], true, &l, &Names, 14, 0);
         let keys: Vec<&str> = out.iter().map(|e| e.label_key.as_str()).collect();
         assert_eq!(
             keys,
@@ -1327,6 +1334,7 @@ mod tests {
                 "action:playlater",
                 "action:decks",
                 "action:recents",
+                "action:topplayed",
                 "action:search",
                 "action:settings",
             ]

@@ -229,6 +229,10 @@ pub enum ListContext {
     SearchResultsPageMenu,
     /// The Decks screen's Menu list.
     DecksPageMenu,
+    /// Top played's Menu list, on either of its screens, and its "Group
+    /// by" page.
+    TopPlayedPageMenu,
+    TopPlayedGrouping,
     /// The Deck screen's Menu list, and its More list.
     DeckPageMenu,
     /// The Games "Filter" page: one row per category, and the values page
@@ -1274,9 +1278,9 @@ fn focus_index(app: &App) -> i32 {
     match app.global::<crate::Shell>().get_active_screen() {
         crate::Screen::Hub => app.global::<crate::HubView>().get_selected_local(),
         crate::Screen::Settings => app.global::<crate::SettingsView>().get_index(),
-        crate::Screen::Systems | crate::Screen::FavoriteSystems | crate::Screen::Decks => {
-            app.global::<crate::SystemsView>().get_current_index()
-        }
+        crate::Screen::Systems
+        | crate::Screen::FavoriteSystems
+        | crate::Screen::TopPlayedSystems => app.global::<crate::SystemsView>().get_current_index(),
         _ => app.global::<crate::GamesView>().get_current_index(),
     }
 }
@@ -1289,7 +1293,9 @@ fn dispatch_with_focus(ctx: &Ctx, app: &App, action: &str) {
         crate::Screen::Hub
             | crate::Screen::Systems
             | crate::Screen::FavoriteSystems
+            | crate::Screen::TopPlayedSystems
             | crate::Screen::Decks
+            | crate::Screen::TopPlayed
             | crate::Screen::Games
             | crate::Screen::Favorites
             | crate::Screen::Recents
@@ -1319,14 +1325,16 @@ fn dispatch_with_focus(ctx: &Ctx, app: &App, action: &str) {
 fn list_layout_active(app: &App) -> bool {
     let shell = app.global::<crate::Shell>();
     match shell.get_active_screen() {
-        crate::Screen::Systems | crate::Screen::FavoriteSystems | crate::Screen::Decks => {
-            shell.get_systems_list_layout()
-        }
+        crate::Screen::Systems
+        | crate::Screen::FavoriteSystems
+        | crate::Screen::TopPlayedSystems => shell.get_systems_list_layout(),
         crate::Screen::Games
         | crate::Screen::Favorites
         | crate::Screen::Recents
         | crate::Screen::SearchResults
-        | crate::Screen::Deck => shell.get_browse_list_layout(),
+        | crate::Screen::Deck
+        | crate::Screen::Decks
+        | crate::Screen::TopPlayed => shell.get_browse_list_layout(),
         _ => false,
     }
 }
@@ -1476,14 +1484,18 @@ fn screen_action(ctx: &Ctx, app: &App, action: &str) {
     }
     match app.global::<crate::Shell>().get_active_screen() {
         crate::Screen::Hub => crate::hub::handle_action(ctx, app, action),
-        crate::Screen::Systems | crate::Screen::FavoriteSystems | crate::Screen::Decks => {
+        crate::Screen::Systems
+        | crate::Screen::FavoriteSystems
+        | crate::Screen::TopPlayedSystems => {
             crate::systems::handle_action(ctx, app, action);
         }
         crate::Screen::Games
         | crate::Screen::Favorites
         | crate::Screen::Recents
         | crate::Screen::SearchResults
-        | crate::Screen::Deck => {
+        | crate::Screen::Deck
+        | crate::Screen::Decks
+        | crate::Screen::TopPlayed => {
             crate::games::handle_action(ctx, app, action);
         }
         crate::Screen::Search => crate::search::handle_action(ctx, app, action),
@@ -1846,6 +1858,16 @@ fn list_accept(ctx: &Ctx, app: &App, context: ListContext, id: &str) {
             });
         }
         ListContext::FavoritesSort => favorites_sort_picked(ctx, app, id),
+        ListContext::TopPlayedPageMenu => {
+            if id == "top_grouping" {
+                open_top_played_grouping_menu(ctx, app);
+            }
+        }
+        ListContext::TopPlayedGrouping => {
+            hold_menu_through(app, HeldMenu::List, || {
+                top_played_grouping_picked(ctx, app, id);
+            });
+        }
         ListContext::SettingsPicker(field) => {
             crate::settings::picker_selected(ctx, app, &field, id);
         }
@@ -1914,7 +1936,10 @@ fn list_action(ctx: &Ctx, app: &App, action: &str) {
                 };
                 // A pick that opens another screen keeps the list up until
                 // that screen is ready (`hold_menu_through`).
-                let routes = matches!(context, ListContext::FavoritesGrouping);
+                let routes = matches!(
+                    context,
+                    ListContext::FavoritesGrouping | ListContext::TopPlayedGrouping
+                );
                 if !stays_open && !routes {
                     app.global::<crate::Overlays>().set_list_open(false);
                 }
@@ -2465,6 +2490,67 @@ pub(crate) fn enter_list(ctx: &Ctx, app: &App, list: Flag, entry: EntryMode) {
         crate::systems::enter_list(ctx, app, list, entry);
     } else {
         crate::games::enter_list(ctx, app, list, entry);
+    }
+}
+
+/// Top played's Menu list (where the chip row is not on screen): its
+/// grouping switch.
+pub(crate) fn open_top_played_page_menu(ctx: &Ctx, app: &App) {
+    let grouping = crate::page_bar::top_played_grouping_label(&lock(&ctx.shared));
+    let entries = vec![menu_row_keyed(
+        "top_grouping",
+        "favorites_grouping",
+        grouping,
+    )];
+    present_list(
+        ctx,
+        app,
+        ListContext::TopPlayedPageMenu,
+        "title:menu",
+        entries,
+    );
+}
+
+/// Top played's grouping page.
+pub(crate) fn open_top_played_grouping_menu(ctx: &Ctx, app: &App) {
+    let entries = vec![
+        menu_row_keyed("none", "group:none", ""),
+        menu_row_keyed("system", "group:system", ""),
+    ];
+    let grouped = zaparoo_app::top_played::grouped(&lock(&ctx.shared).persist.top_played.grouping);
+    present_list(
+        ctx,
+        app,
+        ListContext::TopPlayedGrouping,
+        "title:group_by",
+        entries,
+    );
+    app.global::<crate::Overlays>()
+        .set_list_index(i32::from(grouped));
+}
+
+/// Switching Top played's grouping re-enters it at the new level.
+fn top_played_grouping_picked(ctx: &Ctx, app: &App, id: &str) {
+    if !matches!(id, "none" | "system") {
+        return;
+    }
+    {
+        let mut shared = lock(&ctx.shared);
+        let value = if id == "system" {
+            zaparoo_app::user_lists::GROUP_SYSTEM
+        } else {
+            "none"
+        };
+        if shared.persist.top_played.grouping == value {
+            return;
+        }
+        value.clone_into(&mut shared.persist.top_played.grouping);
+    }
+    save_persist(&ctx.shared);
+    if id == "system" {
+        crate::systems::enter_top_played(ctx, app, EntryMode::Restore);
+    } else {
+        crate::games::enter_top_played(ctx, app, EntryMode::Restore);
     }
 }
 

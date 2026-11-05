@@ -1828,6 +1828,7 @@ fn version_rows() -> Vec<crate::context_page::PageRow> {
             label: region.into(),
             name: "Game 0".into(),
             launch_text: format!("/g/Game 0 ({region}).nes"),
+            deck: None,
         })
         .collect()
 }
@@ -1844,7 +1845,7 @@ fn a_search_result_with_versions_counts_them_and_lists_them_as_a_page() {
         let row = &mut shared.games.rows[0];
         row.title_id = Some(9);
         row.version_count = 3;
-        // One version counts as none: the suffix and the menu stay plain.
+        // One version counts as none: the info line and the menu stay plain.
         let single = &mut shared.games.rows[1];
         single.title_id = Some(10);
         single.version_count = 1;
@@ -1861,7 +1862,7 @@ fn a_search_result_with_versions_counts_them_and_lists_them_as_a_page() {
 
     // A title Core found once offers no versions.
     focus(1);
-    assert_eq!(view.get_label_versions(), 0);
+    assert_eq!(view.get_info().versions, 0);
     crate::router::handle_action(&ctx, &app, "context_menu");
     assert!(overlays.get_context_open());
     assert!(!context_ids(&app).iter().any(|id| id == "choose_version"));
@@ -1869,7 +1870,7 @@ fn a_search_result_with_versions_counts_them_and_lists_them_as_a_page() {
     assert!(!overlays.get_context_open());
 
     focus(0);
-    assert_eq!(view.get_label_versions(), 3);
+    assert_eq!(view.get_info().versions, 3);
     crate::router::handle_action(&ctx, &app, "context_menu");
     let menu = context_ids(&app);
 
@@ -2655,6 +2656,8 @@ fn hidden_management_keeps_favorites_recents_and_recovery_selection() {
             GamesMode::Recents => &shared.persist.recents.selected_path,
             GamesMode::Search => &shared.persist.search.selected_path,
             GamesMode::Deck => &shared.persist.deck.selected_item,
+            GamesMode::Decks => &shared.persist.decks.selected_deck,
+            GamesMode::TopPlayed => &shared.persist.top_played.selected_path,
         };
         assert_eq!(selected, &target.path);
         let ticket = shared.games.ticket;
@@ -5737,14 +5740,11 @@ fn a_hub_swap_slides_the_neighbour_home() {
     assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
     let (app, window) = boot();
     let hub = app.global::<HubView>();
-    // One cell gets a top label in a color nothing else paints, so its
-    // position can be read straight off the frame. Every
+    // One cell gets a cover placeholder in a color nothing else paints, so
+    // its position can be read straight off the frame. Every
     // `PressableSurface` uses `borderMid` and `tileEdge`, so neither of
     // those singles a tile out, and glyphs do not render here at all --
     // the provider callback belongs to the real app, not to `boot`.
-    crate::fonts::register_embedded_fonts();
-    app.global::<crate::Theme>()
-        .set_text_label(slint::Color::from_rgb_u8(255, 0, 255));
     // `order` is the entry now sitting in each slot, so a swap changes
     // which name each slot carries -- exactly what the app publishes.
     let board = |order: [usize; 3]| {
@@ -5755,11 +5755,8 @@ fn a_hub_swap_slides_the_neighbour_home() {
                 // Entry 0 is the neighbour, wherever it currently sits. The
                 // held entry cannot carry the mark: it blinks, so it is
                 // missing from half the frames.
-                top_label: if entry == 0 {
-                    "X".into()
-                } else {
-                    SharedString::default()
-                },
+                placeholder: slint::Color::from_rgb_u8(255, 0, 255),
+                has_placeholder: entry == 0,
                 ..GridCell::default()
             })
             .collect::<Vec<_>>()
@@ -9829,7 +9826,7 @@ fn a_scraper_list_answer_reaches_only_the_form_that_asked() {
 }
 
 #[test]
-fn a_hidden_game_shown_among_the_rest_is_labelled_hidden() {
+fn a_hidden_game_shown_among_the_rest_is_marked_hidden() {
     assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
     let (app, _window) = boot();
     let (_runtime, ctx) = offline_ctx();
@@ -9840,11 +9837,11 @@ fn a_hidden_game_shown_among_the_rest_is_labelled_hidden() {
     app.global::<Shell>().set_active_screen(Screen::Games);
     seat_folder(&ctx, &app, "Game", 0);
     let view = app.global::<crate::GamesView>();
-    assert!(!view.get_label_hidden());
+    assert!(!view.get_info().hidden);
 
     crate::router::lock(&ctx.shared).games.rows[0].is_hidden = true;
     crate::games::render(&ctx, &app);
-    assert!(view.get_label_hidden(), "the focused game says so");
+    assert!(view.get_info().hidden, "the focused game says so");
     assert!(
         view.get_cells().row_data(0).is_some_and(|cell| cell.hidden),
         "and so does its tile"
@@ -9852,7 +9849,7 @@ fn a_hidden_game_shown_among_the_rest_is_labelled_hidden() {
 
     // Its neighbor is not hidden.
     crate::games::handle_action(&ctx, &app, "right");
-    assert!(!view.get_label_hidden());
+    assert!(!view.get_info().hidden);
 }
 
 #[test]
@@ -10360,7 +10357,6 @@ fn tile_glyphs_and_logos_are_painted_at_their_own_pixel_size() {
     let art = TileArt {
         compact_padding: true,
         caption: false,
-        top_label: false,
     };
     // Every glyph request, and a solid square of the size asked for.
     let asked: Rc<RefCell<Vec<(String, f32)>>> = Rc::default();
@@ -12487,6 +12483,7 @@ fn a_folder_pick_restores_on_its_folder_after_a_kill() {
             mode: "folders".into(),
             dir: dir.clone(),
             selected: "_Favorites".into(),
+            deck_id: String::new(),
         };
     }
     crate::file_browser::restore(&ctx, &app);

@@ -4,8 +4,8 @@
 use crate::collections::{Deck, DeckItem, DeckItemKind, DeckItemMedia, DecksResult};
 use crate::media_types::{
     BrowseEntry, LauncherInfo, LaunchersResult, MediaBrowseResult, MediaHistoryEntry,
-    MediaHistoryResult, MediaItem, MediaSearchResult, Pagination, System, SystemInfo,
-    SystemsResult, TagInfo,
+    MediaHistoryResult, MediaHistoryTopEntry, MediaHistoryTopResult, MediaItem, MediaSearchResult,
+    Pagination, System, SystemInfo, SystemsResult, TagInfo,
 };
 use crate::systems_catalog::CatalogData;
 
@@ -202,6 +202,20 @@ fields!(MediaHistoryResult {
     entries,
     pagination
 });
+fields!(MediaHistoryTopEntry {
+    media_id,
+    system_id,
+    system_name,
+    media_name,
+    media_path,
+    relative_path,
+    zap_script,
+    total_play_time,
+    session_count,
+    last_played_at,
+    tags
+});
+fields!(MediaHistoryTopResult { entries });
 fields!(LauncherInfo {
     id,
     system_id,

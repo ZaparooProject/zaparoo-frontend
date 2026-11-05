@@ -776,7 +776,7 @@ mod tests {
             keys(&stacked.root),
             [
                 "more_info",
-                "favorite:add",
+                "add_to_deck",
                 "choose_version",
                 "write_token",
                 "manage_game"

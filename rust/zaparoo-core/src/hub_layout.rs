@@ -186,6 +186,7 @@ pub const BUILT_IN_ACTIONS: &[&str] = &[
     "playlater",
     "decks",
     "recents",
+    "topplayed",
     "search",
     "update",
     "settings",
@@ -1127,6 +1128,7 @@ type = "blank"
                 "action:playlater",
                 "action:decks",
                 "action:recents",
+                "action:topplayed",
                 "action:search",
                 "action:update",
                 "action:settings",
@@ -1144,6 +1146,7 @@ type = "blank"
                 "playlater",
                 "decks",
                 "recents",
+                "topplayed",
                 "search",
                 "update",
                 "settings"
@@ -1245,6 +1248,7 @@ type = "blank"
                 "playlater",
                 "decks",
                 "recents",
+                "topplayed",
                 "search",
                 "update",
                 "settings"
@@ -1295,15 +1299,15 @@ type = "blank"
             kind_raw: "blank".to_string(),
             ..HubItem::default()
         });
-        // resume, A, B, favorites, liked, playlater, decks, recents, search,
-        // update, settings, blank
-        assert!(layout.place_visible_item(1, 11));
+        // resume, A, B, favorites, liked, playlater, decks, recents,
+        // topplayed, search, update, settings, blank
+        assert!(layout.place_visible_item(1, 12));
         assert_eq!(
             layout.items[1].kind(),
             HubItemKind::Blank,
             "A's old cell must become a blank, not shift anything else"
         );
-        assert_eq!(layout.items[11].id, "A");
+        assert_eq!(layout.items[12].id, "A");
     }
 
     #[test]
@@ -1347,6 +1351,7 @@ type = "blank"
                 "playlater",
                 "decks",
                 "recents",
+                "topplayed",
                 "search",
                 "update",
                 "settings"
@@ -1371,6 +1376,7 @@ type = "blank"
                 "playlater",
                 "decks",
                 "recents",
+                "topplayed",
                 "search",
                 "update",
                 "settings"
@@ -1566,6 +1572,7 @@ type = "blank"
                 "playlater",
                 "decks",
                 "recents",
+                "topplayed",
                 "search",
                 "update",
                 "settings"
@@ -1986,6 +1993,7 @@ type = "blank"
                 "playlater",
                 "decks",
                 "recents",
+                "topplayed",
                 "search",
                 "update",
                 "settings"
@@ -2002,6 +2010,7 @@ type = "blank"
                 "action:playlater",
                 "action:decks",
                 "action:recents",
+                "action:topplayed",
                 "action:search",
                 "action:update",
                 "action:settings"

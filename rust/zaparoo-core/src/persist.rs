@@ -42,6 +42,9 @@ pub struct PersistedState {
     pub file_browser: FileBrowserState,
     pub decks: DecksState,
     pub deck: DeckState,
+    /// The Top played screen and its systems: the same focus, order-free,
+    /// as a built-in list keeps (`sort` stays unused).
+    pub top_played: UserListState,
 }
 
 /// The Decks screen: the deck focused there.
@@ -1146,6 +1149,14 @@ mod tests {
                 list_top: Some(1),
                 entered_from_hub: true,
             },
+            top_played: UserListState {
+                selected_path: "/games/snes/mario.sfc".into(),
+                list_top: Some(3),
+                sort: String::new(),
+                grouping: "system".into(),
+                system_id: "SNES".into(),
+                systems_list_top: Some(1),
+            },
         };
         save_to(&path, &original);
         let loaded = load_from(&path);
@@ -1329,6 +1340,7 @@ resolution = "1920x1080"
                             file_browser: FileBrowserState::default(),
                             decks: DecksState::default(),
                             deck: DeckState::default(),
+                            top_played: UserListState::default(),
                         };
                         save_to(&path, &state);
                     }

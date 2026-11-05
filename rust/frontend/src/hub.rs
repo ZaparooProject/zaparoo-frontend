@@ -557,7 +557,6 @@ fn geometry_for(ctx: &Ctx, app: &App) -> rules::Geometry {
         zaparoo_app::sizing::TileArt {
             compact_padding: true,
             caption: false,
-            top_label: false,
         },
     );
     ctx.media
@@ -575,7 +574,6 @@ fn geometry_for(ctx: &Ctx, app: &App) -> rules::Geometry {
 const TILE_ART: zaparoo_app::sizing::TileArt = zaparoo_app::sizing::TileArt {
     compact_padding: true,
     caption: false,
-    top_label: false,
 };
 
 /// The focused tile's system logo at the art box of the grown tile: the
@@ -1159,6 +1157,7 @@ fn emit_activate(ctx: &Ctx, app: &App) {
                 }
                 "decks" => crate::decks::enter(ctx, app, EntryMode::Fresh),
                 "recents" => crate::games::enter_recents(ctx, app, EntryMode::Fresh),
+                "topplayed" => crate::games::enter_top_played(ctx, app, EntryMode::Fresh),
                 "search" => crate::search::enter(ctx, app, EntryMode::Fresh),
                 "settings" => crate::settings::enter(ctx, app, EntryMode::Fresh),
                 "update" => crate::update::enter(app),

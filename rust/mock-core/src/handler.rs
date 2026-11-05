@@ -86,6 +86,7 @@ pub fn dispatch(text: &str, notifier: &Notifier) -> String {
         "ui.respond" => Some(ui_events::respond(&req.params, notifier)),
         "media.history" => Some(Ok(fixtures::media_history_response(&req.params))),
         "media.history.latest" => Some(Ok(fixtures::media_history_latest_response())),
+        "media.history.top" => Some(Ok(fixtures::media_history_top_response(&req.params))),
         "media" => Some(Ok(media_state::media_response())),
         "media.scrape.status" => Some(Ok(media_state::scrape_status_response())),
         "media.generate" => Some(Ok(media_state::start_index(notifier))),
@@ -889,6 +890,44 @@ mod tests {
         let resp = parse(&dispatch("this is not json"));
         assert_eq!(resp["id"], Value::Null);
         assert_eq!(resp["error"]["code"], -32700);
+    }
+
+    #[test]
+    fn media_history_top_ranks_by_play_time_and_honors_limit_and_systems() {
+        let req =
+            r#"{"jsonrpc":"2.0","id":"1","method":"media.history.top","params":{"limit":100}}"#;
+        let resp = parse(&dispatch(req));
+        let entries = resp["result"]["entries"].as_array().expect("array");
+        assert!(entries.len() > 3);
+        let times: Vec<u64> = entries
+            .iter()
+            .map(|e| e["totalPlayTime"].as_u64().expect("time"))
+            .collect();
+        assert!(times.windows(2).all(|w| w[0] > w[1]), "ranked, no ties");
+        assert!(times.contains(&40), "a game under a minute");
+        for entry in entries {
+            assert!(entry["mediaPath"].is_string());
+            assert!(entry["systemName"].is_string());
+            assert!(entry["tags"].is_array());
+        }
+        let limited =
+            r#"{"jsonrpc":"2.0","id":"2","method":"media.history.top","params":{"limit":2}}"#;
+        let limited = parse(&dispatch(limited));
+        assert_eq!(
+            limited["result"]["entries"]
+                .as_array()
+                .expect("array")
+                .len(),
+            2
+        );
+        let system = entries[0]["systemId"].as_str().expect("system");
+        let filtered = format!(
+            r#"{{"jsonrpc":"2.0","id":"3","method":"media.history.top","params":{{"systems":["{system}"]}}}}"#
+        );
+        let filtered = parse(&dispatch(&filtered));
+        let filtered = filtered["result"]["entries"].as_array().expect("array");
+        assert!(!filtered.is_empty());
+        assert!(filtered.iter().all(|e| e["systemId"] == system));
     }
 
     #[test]

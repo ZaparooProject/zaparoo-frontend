@@ -13,7 +13,7 @@ and consumers, the snapshot binary, and the MiSTer dual-head mirror/tests.
 | Area | Typed state |
 | --- | --- |
 | Routing | `Screen`: active screen, pending destination, route component, Rust route parameters, retained-source checks, mirror layout identity |
-| Browse | `GamesMode`, `SystemsMode`, `ContentState`: list source and ready/loading/empty/error cues, including the jump-to-letter picker's index |
+| Browse | `GamesMode`, `SystemsMode`, `ContentState`: list source and ready/loading/empty/error cues, including the jump-to-letter picker's index. The focused item's info line is the `InfoLineData` struct (`ui/info_line.slint`), typed fields from `zaparoo_app::info_line`, not an enum |
 | Settings | `SettingsPage`, `RowKind`, `ControlKind`, `ActionStatus`: root/subpage, outgoing page, field controls (picker, toggle, tri-toggle, action, navigate, and the read-only info row) and job status |
 | Setup | `SetupKind`, `SetupPicker`, `ScopeKind`, `SetupAction`: job, picker, scope label (one system, a count of checked systems, a game, the picker's headings) and help action; Rust selection stores domain `Scope` with its ID payload, and a picker row's check is a `bool` beside its kind |
 | Status | `StatusKind`, `AppCue`, `DisabledReason`, `BootStatus`: status ladder, transient launch cue and Hub add/remove confirmation, disabled Hub captions and the boot curtain line |

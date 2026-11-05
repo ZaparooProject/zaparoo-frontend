@@ -1,7 +1,8 @@
 // Closed UI discriminants shared with the generated Rust API.
-export enum Screen { hub, systems, favorite-systems, games, favorites, recents, search, search-results, settings, about, update, rename, ra-login, file-browser, decks, deck, none }
-export enum GamesMode { browse, favorites, recents, search, deck }
-export enum SystemsMode { category, favorites, decks }
+export enum Screen { hub, systems, favorite-systems, games, favorites, recents, search, search-results, settings, about, update, rename, ra-login, file-browser, decks, deck, top-played, top-played-systems, none }
+export enum GamesMode { browse, favorites, recents, search, deck, decks, top-played }
+export enum SystemsMode { category, favorites, top-played }
+// What a games-screen footer notes after the focused name.
 // What a menu row is: something to pick, a section's name (never focused),
 // an action set apart at the foot of a form list, or a context-menu row
 // that turns the menu to one of its pages.
@@ -107,10 +108,12 @@ export global StateTokens {
         if (mode == GamesMode.recents) { return "recents"; }
         if (mode == GamesMode.search) { return "search-results"; }
         if (mode == GamesMode.deck) { return "deck"; }
+        if (mode == GamesMode.decks) { return "decks"; }
+        if (mode == GamesMode.top-played) { return "top-played"; }
         return "games";
     }
     public pure function systems(mode: SystemsMode) -> string {
-        if (mode == SystemsMode.decks) { return "decks"; }
+        if (mode == SystemsMode.top-played) { return "top-played-systems"; }
         return mode == SystemsMode.favorites ? "favorite-systems" : "systems";
     }
     public pure function setup(kind: SetupKind) -> string {

@@ -51,6 +51,8 @@ fn surface_of(screen: Screen) -> Surface {
         Screen::SearchResults => Surface::SearchResults,
         Screen::Decks => Surface::Decks,
         Screen::Deck => Surface::Deck,
+        Screen::TopPlayed => Surface::TopPlayed,
+        Screen::TopPlayedSystems => Surface::TopPlayedSystems,
         _ => Surface::Other,
     }
 }
@@ -62,6 +64,8 @@ pub(crate) fn games_surface(mode: GamesMode) -> Surface {
         GamesMode::Favorites => Surface::Favorites,
         GamesMode::Search => Surface::SearchResults,
         GamesMode::Deck => Surface::Deck,
+        GamesMode::Decks => Surface::Decks,
+        GamesMode::TopPlayed => Surface::TopPlayed,
         GamesMode::Recents => Surface::Other,
     }
 }
@@ -76,12 +80,12 @@ pub(crate) fn games_row_block(mode: GamesMode, derived: &zaparoo_app::sizing::De
     }
 }
 
-/// The Systems screen's surface: a category's systems, a list's, or the
-/// decks.
+/// The Systems screen's surface: a category's systems, a list's, or Top
+/// played's.
 fn systems_surface(mode: SystemsMode) -> Surface {
     match mode {
         SystemsMode::Favorites => Surface::FavoriteSystems,
-        SystemsMode::Decks => Surface::Decks,
+        SystemsMode::TopPlayed => Surface::TopPlayedSystems,
         SystemsMode::Category => Surface::Systems,
     }
 }
@@ -110,10 +114,15 @@ fn active_chips(app: &App) -> ModelRc<crate::MenuEntry> {
     let bar = app.global::<PageBar>();
     match active_surface(app) {
         Surface::Hub => bar.get_hub_chips(),
-        Surface::Systems | Surface::FavoriteSystems | Surface::Decks => bar.get_systems_chips(),
-        Surface::Games | Surface::Favorites | Surface::SearchResults | Surface::Deck => {
-            bar.get_games_chips()
+        Surface::Systems | Surface::FavoriteSystems | Surface::TopPlayedSystems => {
+            bar.get_systems_chips()
         }
+        Surface::Games
+        | Surface::Favorites
+        | Surface::SearchResults
+        | Surface::Deck
+        | Surface::Decks
+        | Surface::TopPlayed => bar.get_games_chips(),
         Surface::Other => ModelRc::default(),
     }
 }
@@ -122,6 +131,15 @@ fn active_chips(app: &App) -> ModelRc<crate::MenuEntry> {
 /// can name it in the reader's language.
 pub(crate) fn favorites_sort_label(shared: &Shared) -> &'static str {
     crate::user_lists::sort(shared, crate::user_lists::active(shared)).label_key()
+}
+
+/// Top played's grouping, for its chip and Menu row.
+pub(crate) fn top_played_grouping_label(shared: &Shared) -> &'static str {
+    if zaparoo_app::top_played::grouped(&shared.persist.top_played.grouping) {
+        "group:system"
+    } else {
+        "group:none"
+    }
 }
 
 /// The same for the list's grouping.
@@ -136,7 +154,7 @@ pub(crate) fn favorites_grouping_label(shared: &Shared) -> &'static str {
 /// One chip, worded through `Labels.menu` with its current value. Go to
 /// does not name the letter the selection is in: the picker opens on it,
 /// and a label that changes as the selection moves flickers.
-fn entry(chip: Chip, shared: &Shared) -> crate::MenuEntry {
+fn entry(chip: Chip, surface: Surface, shared: &Shared) -> crate::MenuEntry {
     match chip {
         Chip::Filter => menu_row_keyed(
             chip.id(),
@@ -147,7 +165,11 @@ fn entry(chip: Chip, shared: &Shared) -> crate::MenuEntry {
         Chip::GroupBy => menu_row_keyed(
             chip.id(),
             "favorites_grouping",
-            favorites_grouping_label(shared),
+            if matches!(surface, Surface::TopPlayed | Surface::TopPlayedSystems) {
+                top_played_grouping_label(shared)
+            } else {
+                favorites_grouping_label(shared)
+            },
         ),
         Chip::AddToHub => menu_row_keyed(
             chip.id(),
@@ -172,7 +194,7 @@ fn entry(chip: Chip, shared: &Shared) -> crate::MenuEntry {
 fn entries(surface: Surface, shared: &Shared) -> Vec<crate::MenuEntry> {
     rules::chips(surface)
         .iter()
-        .map(|&chip| entry(chip, shared))
+        .map(|&chip| entry(chip, surface, shared))
         .collect()
 }
 
@@ -328,6 +350,11 @@ fn activate(ctx: &Ctx, app: &App, index: usize) {
         "search_here" => crate::search::enter_scoped(ctx, app),
         "edit_search" => crate::search::edit(ctx, app),
         "favorites_sort" => crate::router::open_favorites_sort_menu(ctx, app),
+        "favorites_grouping"
+            if matches!(surface, Surface::TopPlayed | Surface::TopPlayedSystems) =>
+        {
+            crate::router::open_top_played_grouping_menu(ctx, app);
+        }
         "favorites_grouping" => crate::router::open_favorites_grouping_menu(ctx, app),
         "launch_random_favorite" => crate::router::favorites_page_menu_accept(ctx, app, &id),
         "add_to_hub" => {
