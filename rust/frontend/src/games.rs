@@ -3531,6 +3531,9 @@ fn grid_move(ctx: &Ctx, app: &App, d_col: i32, d_row: i32, page_delta: i32) {
 }
 
 fn list_move(ctx: &Ctx, app: &App, delta: i64) {
+    // A held page move stops at the list's ends, as a held grid page turn
+    // does; a fresh press wraps.
+    let held = rules::is_page_move(delta) && crate::input::dispatching_repeat(ctx);
     let (outcome, size, tail, tail_target) = {
         let mut shared = lock(&ctx.shared);
         let size = page_size(ctx, app, &shared);
@@ -3540,7 +3543,8 @@ fn list_move(ctx: &Ctx, app: &App, delta: i64) {
         model.detail_image = (String::new(), 0);
         let count = model.rows.len();
         let has_more = rules::list_has_more(count, model.known_total(), model.has_more());
-        let mut outcome = rules::linear_move(model.grid.current_index(), count, delta, has_more);
+        let mut outcome =
+            rules::linear_move(model.grid.current_index(), count, delta, has_more, held);
         let tail_target = model.known_total().map(|total| total.saturating_sub(1));
         if outcome == LinearMove::WrapToTail && tail_target.is_none() {
             // No total to aim at: the last loaded row is the best tail known.
@@ -3552,16 +3556,12 @@ fn list_move(ctx: &Ctx, app: &App, delta: i64) {
         let mut tail = false;
         if let LinearMove::To { index, .. } = outcome {
             model.grid.set_current_index_immediate(index);
-            tail = rules::list_tail_prefetch(index, count, visible, has_more, model.loading_more);
+            let lookahead = rules::list_lookahead(delta, visible);
+            tail = rules::list_tail_prefetch(index, count, lookahead, has_more, model.loading_more);
         }
         (outcome, size, tail, tail_target)
     };
-    // A page move outruns one screenful per trip; a single step does not.
-    let limit = if delta.unsigned_abs() > 1 {
-        size.max(rules::LIST_PAGE_FETCH)
-    } else {
-        size
-    };
+    let limit = rules::list_fetch_limit(delta, size);
     match outcome {
         LinearMove::To { fetch, .. } => {
             persist_current(ctx);

@@ -895,13 +895,15 @@ fn grid_move(ctx: &Ctx, app: &App, d_col: i32, d_row: i32, page_delta: i32) {
     }
 }
 
-/// A list move: single steps wrap at the ends, page steps stop there.
+/// A list move: a page step lands on the end before wrapping, and a held
+/// one stops there.
 fn list_move(ctx: &Ctx, app: &App, delta: i64) {
+    let held = list_rules::is_page_move(delta) && crate::input::dispatching_repeat(ctx);
     let moved = {
         let mut shared = lock(&ctx.shared);
         let model = &mut shared.file_browser;
         let count = model.rows.len();
-        match list_rules::linear_move(model.grid.current_index(), count, delta, false) {
+        match list_rules::linear_move(model.grid.current_index(), count, delta, false, held) {
             list_rules::LinearMove::To { index, .. } => {
                 model.grid.set_current_index_immediate(index);
                 true

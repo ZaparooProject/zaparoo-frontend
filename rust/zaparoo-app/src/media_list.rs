@@ -691,22 +691,35 @@ pub enum LinearMove {
     WrapToTail,
 }
 
-/// A linear move: wrap at the ends of the whole list, not of the loaded
-/// rows. Off the top with more coming, the wrap target is the unloaded
-/// tail. Past the last loaded row with more coming, a page move lands on
-/// that row and fetches, and a move already on it only fetches. Near the
-/// loaded edge, fetch alongside the move.
-pub fn linear_move(current: usize, count: usize, delta: i64, has_more: bool) -> LinearMove {
+/// A linear move. A move past either end of the whole list lands on that
+/// end first, and only a move from the end itself wraps; with
+/// `stop_at_ends` (a held page move) it stays there instead. Off the top
+/// with more coming, the wrap target is the unloaded tail. Past the last
+/// loaded row with more coming, a move lands on that row and fetches, and
+/// a move already on it only fetches. Near the loaded edge, fetch
+/// alongside the move.
+pub fn linear_move(
+    current: usize,
+    count: usize,
+    delta: i64,
+    has_more: bool,
+    stop_at_ends: bool,
+) -> LinearMove {
     if count == 0 {
         return LinearMove::Stay { fetch: false };
     }
     let count_i = count as i64;
     let mut next = current as i64 + delta;
     if next < 0 {
-        if has_more {
+        if current > 0 {
+            next = 0;
+        } else if stop_at_ends {
+            return LinearMove::Stay { fetch: false };
+        } else if has_more {
             return LinearMove::WrapToTail;
+        } else {
+            next = count_i - 1;
         }
-        next = count_i - 1;
     } else if next >= count_i {
         if has_more {
             if current + 1 < count {
@@ -717,7 +730,13 @@ pub fn linear_move(current: usize, count: usize, delta: i64, has_more: bool) -> 
             }
             return LinearMove::FetchMore;
         }
-        next = 0;
+        if current + 1 < count {
+            next = count_i - 1;
+        } else if stop_at_ends {
+            return LinearMove::Stay { fetch: false };
+        } else {
+            next = 0;
+        }
     }
     let next = next as usize;
     let near_end = next + 2 >= count;
@@ -730,15 +749,42 @@ pub fn linear_move(current: usize, count: usize, delta: i64, has_more: bool) -> 
     }
 }
 
-/// The list keeps a screenful loaded past the selection.
+/// A list move of more than one row is a page move.
+pub fn is_page_move(delta: i64) -> bool {
+    delta.unsigned_abs() > 1
+}
+
+/// Rows a list move fetches: a page move outruns one screenful per trip,
+/// so it takes at least `LIST_PAGE_FETCH`; a single step takes a page.
+pub fn list_fetch_limit(delta: i64, page_size: u32) -> u32 {
+    if is_page_move(delta) {
+        page_size.max(LIST_PAGE_FETCH)
+    } else {
+        page_size
+    }
+}
+
+/// Rows a list keeps loaded past the selection: a screenful for a single
+/// step, and for a page move enough for several more jumps, so a held
+/// page move does not reach the loaded edge before the next rows land.
+pub fn list_lookahead(delta: i64, visible_rows: usize) -> usize {
+    if is_page_move(delta) {
+        visible_rows.max(LIST_PAGE_FETCH as usize)
+    } else {
+        visible_rows
+    }
+}
+
+/// The list keeps `lookahead` rows (`list_lookahead`) loaded past the
+/// selection.
 pub fn list_tail_prefetch(
     index: usize,
     count: usize,
-    visible_rows: usize,
+    lookahead: usize,
     has_more: bool,
     loading_more: bool,
 ) -> bool {
-    !loading_more && has_more && index + visible_rows >= count
+    !loading_more && has_more && index + lookahead >= count
 }
 
 /// The first fetch of a list, sized so its answer already holds the
@@ -1644,50 +1690,121 @@ mod tests {
     #[test]
     fn linear_move_wraps_and_fetches_at_the_loaded_edge() {
         assert_eq!(
-            linear_move(0, 30, -1, false),
+            linear_move(0, 30, -1, false, false),
             LinearMove::To {
                 index: 29,
                 fetch: false
             }
         );
         assert_eq!(
-            linear_move(29, 30, 1, false),
+            linear_move(29, 30, 1, false, false),
             LinearMove::To {
                 index: 0,
                 fetch: false
             }
         );
-        assert_eq!(linear_move(29, 30, 1, true), LinearMove::FetchMore);
-        assert_eq!(linear_move(29, 30, 10, true), LinearMove::FetchMore);
+        assert_eq!(linear_move(29, 30, 1, true, false), LinearMove::FetchMore);
+        assert_eq!(linear_move(29, 30, 10, true, false), LinearMove::FetchMore);
         assert_eq!(
-            linear_move(27, 30, 1, true),
+            linear_move(27, 30, 1, true, false),
             LinearMove::To {
                 index: 28,
                 fetch: true
             }
         );
         assert_eq!(
-            linear_move(27, 30, 1, false),
+            linear_move(27, 30, 1, false, false),
             LinearMove::To {
                 index: 28,
                 fetch: false
             }
         );
         assert_eq!(
-            linear_move(0, 0, 1, true),
+            linear_move(0, 0, 1, true, false),
             LinearMove::Stay { fetch: false }
         );
         assert_eq!(
-            linear_move(0, 1, 1, false),
+            linear_move(0, 1, 1, false, false),
             LinearMove::Stay { fetch: true }
         );
         assert_eq!(
-            linear_move(0, 30, 10, false),
+            linear_move(0, 30, 10, false, false),
             LinearMove::To {
                 index: 10,
                 fetch: false
             }
         );
+    }
+
+    #[test]
+    fn page_moves_land_on_the_end_before_wrapping() {
+        let to = |index| LinearMove::To {
+            index,
+            fetch: false,
+        };
+        // 19 rows, a 10-row page: 0 -> 10 -> 18 -> 0.
+        assert_eq!(linear_move(0, 19, 10, false, false), to(10));
+        assert_eq!(linear_move(10, 19, 10, false, false), to(18));
+        assert_eq!(linear_move(18, 19, 10, false, false), to(0));
+        // Back: 5 -> 0 -> 18.
+        assert_eq!(linear_move(5, 19, -10, false, false), to(0));
+        assert_eq!(linear_move(0, 19, -10, false, false), to(18));
+        // Back with more coming lands on the top, then wraps to the tail.
+        assert_eq!(linear_move(5, 30, -10, true, false), to(0));
+        assert_eq!(linear_move(0, 30, -10, true, false), LinearMove::WrapToTail);
+    }
+
+    #[test]
+    fn held_page_moves_stop_at_the_ends() {
+        let stay = LinearMove::Stay { fetch: false };
+        assert_eq!(
+            linear_move(10, 19, 10, false, true),
+            LinearMove::To {
+                index: 18,
+                fetch: false
+            }
+        );
+        assert_eq!(linear_move(18, 19, 10, false, true), stay);
+        assert_eq!(linear_move(0, 19, -10, false, true), stay);
+        assert_eq!(linear_move(0, 30, -10, true, true), stay);
+        // The last loaded row is not an end while more rows are coming.
+        assert_eq!(linear_move(29, 30, 10, true, true), LinearMove::FetchMore);
+    }
+
+    #[test]
+    fn page_moves_fetch_at_least_a_list_page() {
+        assert!(!is_page_move(0));
+        assert!(!is_page_move(1));
+        assert!(!is_page_move(-1));
+        assert!(is_page_move(10));
+        assert!(is_page_move(-10));
+        assert_eq!(list_fetch_limit(1, 10), 10);
+        assert_eq!(list_fetch_limit(10, 10), LIST_PAGE_FETCH);
+        assert_eq!(list_fetch_limit(-10, 80), 80);
+    }
+
+    #[test]
+    fn page_moves_keep_more_rows_loaded_ahead() {
+        assert_eq!(list_lookahead(1, 10), 10);
+        assert_eq!(list_lookahead(-1, 10), 10);
+        assert_eq!(list_lookahead(10, 10), LIST_PAGE_FETCH as usize);
+        assert_eq!(list_lookahead(-10, 10), LIST_PAGE_FETCH as usize);
+        assert_eq!(list_lookahead(60, 60), 60);
+        // A page move 30 rows short of the loaded edge already fetches.
+        assert!(list_tail_prefetch(
+            70,
+            100,
+            list_lookahead(10, 10),
+            true,
+            false
+        ));
+        assert!(!list_tail_prefetch(
+            70,
+            100,
+            list_lookahead(1, 10),
+            true,
+            false
+        ));
     }
 
     #[test]
@@ -1741,12 +1858,19 @@ mod tests {
     #[test]
     fn linear_move_wraps_over_the_whole_list_not_the_loaded_rows() {
         // Off the top of a partly loaded list the target is the true tail.
-        assert_eq!(linear_move(0, 20, -1, true), LinearMove::WrapToTail);
-        assert_eq!(linear_move(0, 20, -10, true), LinearMove::WrapToTail);
-        assert_eq!(linear_move(3, 20, -10, true), LinearMove::WrapToTail);
+        assert_eq!(linear_move(0, 20, -1, true, false), LinearMove::WrapToTail);
+        assert_eq!(linear_move(0, 20, -10, true, false), LinearMove::WrapToTail);
+        // A page move short of the top lands on it first.
+        assert_eq!(
+            linear_move(3, 20, -10, true, false),
+            LinearMove::To {
+                index: 0,
+                fetch: false
+            }
+        );
         // Fully loaded, the last loaded row is the tail.
         assert_eq!(
-            linear_move(0, 20, -10, false),
+            linear_move(0, 20, -10, false, false),
             LinearMove::To {
                 index: 19,
                 fetch: false
@@ -1757,19 +1881,22 @@ mod tests {
     #[test]
     fn a_page_move_past_the_loaded_edge_lands_on_the_last_loaded_row() {
         assert_eq!(
-            linear_move(126, 130, 10, true),
+            linear_move(126, 130, 10, true, false),
             LinearMove::To {
                 index: 129,
                 fetch: true
             }
         );
         // Already on the last loaded row: nothing to land on yet.
-        assert_eq!(linear_move(129, 130, 10, true), LinearMove::FetchMore);
-        // Nothing more is coming: wrap to the top as before.
         assert_eq!(
-            linear_move(126, 130, 10, false),
+            linear_move(129, 130, 10, true, false),
+            LinearMove::FetchMore
+        );
+        // Nothing more is coming: land on the last row, not the top.
+        assert_eq!(
+            linear_move(126, 130, 10, false, false),
             LinearMove::To {
-                index: 0,
+                index: 129,
                 fetch: false
             }
         );
