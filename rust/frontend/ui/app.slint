@@ -4654,6 +4654,15 @@ export component App inherits Window {
                 { buttons: ["ButtonB"], label: @tr("Back") },
             ];
         }
+        // A deck item picked up by Move: Up and Down carry it, A puts it
+        // down there, B puts it back.
+        if (GamesView.moving) {
+            return [
+                { buttons: ["Dpad"], label: @tr("Move") },
+                { buttons: ["ButtonA"], label: @tr("Drop") },
+                { buttons: ["ButtonB"], label: @tr("Cancel") },
+            ];
+        }
         // Left and Right step the pane's images when set to and there is
         // more than one: the move cue keeps only what still moves.
         if (GamesView.detail-image-count > 1) {
@@ -4662,14 +4671,14 @@ export component App inherits Window {
                     return [
                         self.list-move-cue(GamesView.total-pages),
                         { buttons: ["DpadLeft", "DpadRight"], label: @tr("Image") },
-                        { buttons: ["ButtonA"], label: @tr("Open") },
+                        { buttons: ["ButtonA"], label: GamesView.mode == GamesMode.deck ? @tr("Play") : @tr("Open") },
                         { buttons: ["ButtonB"], label: @tr("Back") },
                     ];
                 }
                 return [
                     self.list-move-cue(GamesView.total-pages),
                     { buttons: ["DpadLeft", "DpadRight"], label: @tr("Image") },
-                    { buttons: ["ButtonA"], label: @tr("Open") },
+                    { buttons: ["ButtonA"], label: GamesView.mode == GamesMode.deck ? @tr("Play") : @tr("Open") },
                     { buttons: ["ButtonX"], label: @tr("Options") },
                     { buttons: ["ButtonB"], label: @tr("Back") },
                 ];
@@ -4678,7 +4687,7 @@ export component App inherits Window {
                 return [
                     self.list-move-cue(GamesView.total-pages),
                     { buttons: ["DpadLeft", "DpadRight"], label: @tr("Image") },
-                    { buttons: ["ButtonA"], label: @tr("Open") },
+                    { buttons: ["ButtonA"], label: GamesView.mode == GamesMode.deck ? @tr("Play") : @tr("Open") },
                     { buttons: ["ButtonY"], label: @tr("Menu") },
                     { buttons: ["ButtonB"], label: @tr("Back") },
                 ];
@@ -4686,7 +4695,7 @@ export component App inherits Window {
             return [
                 self.list-move-cue(GamesView.total-pages),
                 { buttons: ["DpadLeft", "DpadRight"], label: @tr("Image") },
-                { buttons: ["ButtonA"], label: @tr("Open") },
+                { buttons: ["ButtonA"], label: GamesView.mode == GamesMode.deck ? @tr("Play") : @tr("Open") },
                 { buttons: ["ButtonX"], label: @tr("Options") },
                 { buttons: ["ButtonY"], label: @tr("Menu") },
                 { buttons: ["ButtonB"], label: @tr("Back") },
@@ -4707,15 +4716,6 @@ export component App inherits Window {
                 { buttons: ["ButtonA"], label: @tr("Open") },
                 { buttons: ["ButtonX"], label: @tr("Options") },
                 { buttons: ["ButtonB"], label: @tr("Back") },
-            ];
-        }
-        // A deck item picked up by Move: Up and Down carry it, A puts it
-        // down there, B puts it back.
-        if (GamesView.moving) {
-            return [
-                { buttons: ["Dpad"], label: @tr("Move") },
-                { buttons: ["ButtonA"], label: @tr("Drop") },
-                { buttons: ["ButtonB"], label: @tr("Cancel") },
             ];
         }
         // Inside a deck, A plays the deck from the focused item.

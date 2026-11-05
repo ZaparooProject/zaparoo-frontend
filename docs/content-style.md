@@ -80,7 +80,7 @@ asks nothing; the item can be added back from the game's own menu.
 Favorites, Liked, Play later and Disliked are one kind of screen and read
 alike: the same Menu chips in the same order (`Sort`, `Group by`, the
 random game, `Search here`, then `More`), with only the list's name
-changing. `Sort` offers `Default`, `Name` and `Recently added`; Play
+changing. `Sort` offers `Default`, `A-Z` and `Recently added`; Play
 later opens on `Recently added`, since it is a queue, and the others on
 `Default`. Say `Recently added` for when a game joined a list and
 `Recently played` only for play history; never shorten either to

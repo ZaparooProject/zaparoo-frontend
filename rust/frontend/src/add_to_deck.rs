@@ -253,6 +253,7 @@ fn toggle(
     let ctx2 = ctx.clone();
     let weak = app.as_weak();
     let name = name.to_string();
+    let (system, path) = (game.system.clone(), game.path.clone());
     let wait = crate::cue::begin(ctx, app, crate::AppCue::Saving, "", "");
     ctx.handle.spawn(async move {
         let result = store.run_mutation::<DeckUpdateMutation>(params).await;
@@ -264,29 +265,58 @@ fn toggle(
                 page.deck_pending.retain(|id| *id != deck_id);
                 page.seq == seq
             };
-            if let Err(e) = result {
-                tracing::warn!("deck update failed for {name}: {}", e.message);
-                if current {
-                    if let Some(Some(DeckChoice::Deck {
-                        item_ids: shown, ..
-                    })) = lock(&ctx2.shared)
-                        .context_page
-                        .rows
-                        .get_mut(index)
-                        .map(|row| row.deck.as_mut())
-                    {
-                        *shown = item_ids;
+            let deck = match result {
+                Ok(deck) => deck,
+                Err(e) => {
+                    tracing::warn!("deck update failed for {name}: {}", e.message);
+                    if current {
+                        if let Some(Some(DeckChoice::Deck {
+                            item_ids: shown, ..
+                        })) = lock(&ctx2.shared)
+                            .context_page
+                            .rows
+                            .get_mut(index)
+                            .map(|row| row.deck.as_mut())
+                        {
+                            *shown = item_ids;
+                        }
+                        crate::context_page::refresh_row(&ctx2, &app, index);
                     }
-                    crate::context_page::refresh_row(&ctx2, &app, index);
+                    crate::router::report_action_error(&ctx2, &app, "deck_update", &name);
+                    return;
                 }
-                crate::router::report_action_error(&ctx2, &app, "deck_update", &name);
-                return;
-            }
+            };
             if current {
+                // The updated deck names the game's real item ids, so the
+                // row is right even when the refresh below fails.
+                if let Some(Some(DeckChoice::Deck {
+                    item_ids: shown, ..
+                })) = lock(&ctx2.shared)
+                    .context_page
+                    .rows
+                    .get_mut(index)
+                    .map(|row| row.deck.as_mut())
+                {
+                    *shown = game_item_ids(&deck, &system, &path);
+                }
+                crate::context_page::refresh_row(&ctx2, &app, index);
                 refresh(&ctx2, &app);
             }
         });
     });
+}
+
+/// The ids of a deck's items that are this game.
+fn game_item_ids(deck: &Deck, system: &str, path: &str) -> Vec<i64> {
+    deck.items
+        .iter()
+        .filter(|item| {
+            item.media
+                .as_ref()
+                .is_some_and(|media| media.system == system && media.path == path)
+        })
+        .map(|item| item.id)
+        .collect()
 }
 
 #[cfg(test)]
@@ -366,5 +396,33 @@ mod tests {
         ]);
         let merged = merge(&waiting, fresh, &["a".to_string()]);
         assert_eq!(ids(&merged), ["a:1", "b:1", "d:0", "new"]);
+    }
+
+    #[test]
+    fn the_updated_deck_names_the_games_item_ids() {
+        use zaparoo_core::collections::{DeckItem, DeckItemMedia};
+        let item = |id: i64, system: &str, path: &str| DeckItem {
+            id,
+            media: Some(DeckItemMedia {
+                system: system.into(),
+                path: path.into(),
+                ..DeckItemMedia::default()
+            }),
+            ..DeckItem::default()
+        };
+        let deck = Deck {
+            items: vec![
+                item(4, "SNES", "/a.sfc"),
+                DeckItem {
+                    id: 5,
+                    ..DeckItem::default()
+                },
+                item(6, "NES", "/a.sfc"),
+                item(9, "SNES", "/a.sfc"),
+            ],
+            ..Deck::default()
+        };
+        assert_eq!(game_item_ids(&deck, "SNES", "/a.sfc"), [4, 9]);
+        assert!(game_item_ids(&deck, "SNES", "/b.sfc").is_empty());
     }
 }

@@ -4,10 +4,13 @@
 //
 // `DecksEndpoint` (the deck list, optionally with one game's membership),
 // `DeckEndpoint` (one deck with its items) and the deck mutations. Every
-// mutation, and every `decks.changed`, refreshes both kinds.
+// mutation, and every `decks.changed`, refreshes both kinds, and the
+// browse and search results whose rows carry `user:deck:<id>` membership.
 
 use crate::client::{Client, ClientError};
 use crate::collections::{Deck, DeckNewParams, DeckUpdateParams, DecksParams, DecksResult};
+use crate::endpoints::media_browse::MediaBrowseEndpoint;
+use crate::endpoints::media_search::MediaSearchEndpoint;
 use crate::store::{Endpoint, Mutation, Tag};
 use futures_util::future::BoxFuture;
 use std::sync::Arc;
@@ -57,7 +60,8 @@ impl Endpoint for DeckEndpoint {
     }
 }
 
-/// What a change to one deck, or to the deck list, makes stale.
+/// What a change to one deck, or to the deck list, makes stale: the decks,
+/// and the browse and search rows whose `user:deck:<id>` tags name them.
 #[must_use]
 pub fn deck_tags(deck_id: Option<&str>) -> Vec<Tag> {
     vec![
@@ -65,6 +69,8 @@ pub fn deck_tags(deck_id: Option<&str>) -> Vec<Tag> {
         deck_id.map_or(Tag::any(DeckEndpoint::NAME), |id| {
             Tag::specific(DeckEndpoint::NAME, id)
         }),
+        Tag::any(MediaBrowseEndpoint::NAME),
+        Tag::any(MediaSearchEndpoint::NAME),
     ]
 }
 
@@ -139,7 +145,23 @@ mod tests {
             },
             &Deck::default(),
         );
-        assert_eq!(tags, vec![Tag::any("Decks"), Tag::specific("Deck", "abc")]);
-        assert_eq!(deck_tags(None), vec![Tag::any("Decks"), Tag::any("Deck")]);
+        assert_eq!(
+            tags,
+            vec![
+                Tag::any("Decks"),
+                Tag::specific("Deck", "abc"),
+                Tag::any("MediaBrowse"),
+                Tag::any("MediaSearch"),
+            ]
+        );
+        assert_eq!(
+            deck_tags(None),
+            vec![
+                Tag::any("Decks"),
+                Tag::any("Deck"),
+                Tag::any("MediaBrowse"),
+                Tag::any("MediaSearch"),
+            ]
+        );
     }
 }

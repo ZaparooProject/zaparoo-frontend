@@ -24,6 +24,7 @@ attribute on the SVG root):
   resources/images/icons/EyeOff.svg
   resources/images/icons/Filter.svg
   resources/images/icons/Heart.svg
+  resources/images/icons/HeartFilled.svg
   resources/images/icons/HeartOutline.svg
   resources/images/icons/History.svg
   resources/images/icons/Lock.svg

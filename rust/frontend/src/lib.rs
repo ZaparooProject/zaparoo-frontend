@@ -1420,6 +1420,15 @@ fn bind_collection_changes(ctx: &Arc<Ctx>, app: &App, client: &Arc<Client>) {
     use zaparoo_core::collections::{DecksChanged, MediaTagsChanged};
     use zaparoo_core::store::Tag;
 
+    // The cached results that carry a game's collection tags.
+    const COLLECTION_KINDS: [&str; 5] = [
+        "MediaUserList",
+        "SystemsUserList",
+        "MediaSearch",
+        "MediaBrowse",
+        "Deck",
+    ];
+
     let mut rx = client.subscribe_notifications();
     let weak = app.as_weak();
     let ctx = ctx.clone();
@@ -1427,7 +1436,20 @@ fn bind_collection_changes(ctx: &Arc<Ctx>, app: &App, client: &Arc<Client>) {
         loop {
             let notification = match rx.recv().await {
                 Ok(notification) => notification,
-                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                // A missed notification may have been one of these: drop
+                // every list it could have changed and ask for the decks
+                // again.
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                    for kind in COLLECTION_KINDS {
+                        ctx.store.invalidate(&Tag::any(kind));
+                    }
+                    let ctx_event = ctx.clone();
+                    let _ = weak.upgrade_in_event_loop(move |app| {
+                        decks::refresh(&ctx_event, &app);
+                        add_to_deck::refresh(&ctx_event, &app);
+                    });
+                    continue;
+                }
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
             };
             match notification.method.as_str() {
@@ -1437,13 +1459,7 @@ fn bind_collection_changes(ctx: &Arc<Ctx>, app: &App, client: &Arc<Client>) {
                     else {
                         continue;
                     };
-                    for kind in [
-                        "MediaUserList",
-                        "SystemsUserList",
-                        "MediaSearch",
-                        "MediaBrowse",
-                        "Deck",
-                    ] {
+                    for kind in COLLECTION_KINDS {
                         ctx.store.invalidate(&Tag::any(kind));
                     }
                     let ctx_event = ctx.clone();

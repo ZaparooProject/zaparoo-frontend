@@ -1740,7 +1740,7 @@ fn fixture_screen(screen: &str) -> Screen {
         Screen::Hub
     } else if screen.ends_with("decks") || screen.ends_with("decks-list") {
         Screen::Decks
-    } else if screen.ends_with("deck")
+    } else if (screen.ends_with("deck") && !screen.contains("context"))
         || screen.ends_with("deck-list")
         || screen.contains("deck-item")
     {
@@ -3341,6 +3341,8 @@ mod fixture_tests {
             ("games-markers", Screen::Games),
             ("crt-games-list-markers", Screen::Games),
             ("crt-deck", Screen::Deck),
+            ("context-deck", Screen::Games),
+            ("crt-context-deck", Screen::Games),
             ("deck-item-manage", Screen::Deck),
             ("crt-hub-deck", Screen::Hub),
             ("core-picker", Screen::Hub),
