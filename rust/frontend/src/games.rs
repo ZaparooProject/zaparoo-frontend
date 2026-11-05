@@ -3531,10 +3531,9 @@ fn grid_move(ctx: &Ctx, app: &App, d_col: i32, d_row: i32, page_delta: i32) {
 }
 
 fn list_move(ctx: &Ctx, app: &App, delta: i64) {
-    let page_move = delta.unsigned_abs() > 1;
     // A held page move stops at the list's ends, as a held grid page turn
     // does; a fresh press wraps.
-    let held = page_move && crate::input::dispatching_repeat(ctx);
+    let held = rules::is_page_move(delta) && crate::input::dispatching_repeat(ctx);
     let (outcome, size, tail, tail_target) = {
         let mut shared = lock(&ctx.shared);
         let size = page_size(ctx, app, &shared);
@@ -3562,12 +3561,7 @@ fn list_move(ctx: &Ctx, app: &App, delta: i64) {
         }
         (outcome, size, tail, tail_target)
     };
-    // A page move outruns one screenful per trip; a single step does not.
-    let limit = if page_move {
-        size.max(rules::LIST_PAGE_FETCH)
-    } else {
-        size
-    };
+    let limit = rules::list_fetch_limit(delta, size);
     match outcome {
         LinearMove::To { fetch, .. } => {
             persist_current(ctx);

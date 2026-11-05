@@ -749,11 +749,26 @@ pub fn linear_move(
     }
 }
 
+/// A list move of more than one row is a page move.
+pub fn is_page_move(delta: i64) -> bool {
+    delta.unsigned_abs() > 1
+}
+
+/// Rows a list move fetches: a page move outruns one screenful per trip,
+/// so it takes at least `LIST_PAGE_FETCH`; a single step takes a page.
+pub fn list_fetch_limit(delta: i64, page_size: u32) -> u32 {
+    if is_page_move(delta) {
+        page_size.max(LIST_PAGE_FETCH)
+    } else {
+        page_size
+    }
+}
+
 /// Rows a list keeps loaded past the selection: a screenful for a single
 /// step, and for a page move enough for several more jumps, so a held
 /// page move does not reach the loaded edge before the next rows land.
 pub fn list_lookahead(delta: i64, visible_rows: usize) -> usize {
-    if delta.unsigned_abs() > 1 {
+    if is_page_move(delta) {
         visible_rows.max(LIST_PAGE_FETCH as usize)
     } else {
         visible_rows
@@ -1754,6 +1769,18 @@ mod tests {
         assert_eq!(linear_move(0, 30, -10, true, true), stay);
         // The last loaded row is not an end while more rows are coming.
         assert_eq!(linear_move(29, 30, 10, true, true), LinearMove::FetchMore);
+    }
+
+    #[test]
+    fn page_moves_fetch_at_least_a_list_page() {
+        assert!(!is_page_move(0));
+        assert!(!is_page_move(1));
+        assert!(!is_page_move(-1));
+        assert!(is_page_move(10));
+        assert!(is_page_move(-10));
+        assert_eq!(list_fetch_limit(1, 10), 10);
+        assert_eq!(list_fetch_limit(10, 10), LIST_PAGE_FETCH);
+        assert_eq!(list_fetch_limit(-10, 80), 80);
     }
 
     #[test]

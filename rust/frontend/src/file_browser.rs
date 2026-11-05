@@ -898,7 +898,7 @@ fn grid_move(ctx: &Ctx, app: &App, d_col: i32, d_row: i32, page_delta: i32) {
 /// A list move: a page step lands on the end before wrapping, and a held
 /// one stops there.
 fn list_move(ctx: &Ctx, app: &App, delta: i64) {
-    let held = delta.unsigned_abs() > 1 && crate::input::dispatching_repeat(ctx);
+    let held = list_rules::is_page_move(delta) && crate::input::dispatching_repeat(ctx);
     let moved = {
         let mut shared = lock(&ctx.shared);
         let model = &mut shared.file_browser;
