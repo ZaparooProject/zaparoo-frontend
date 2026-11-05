@@ -1431,8 +1431,23 @@ fn fixture_file_browser(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen
     use zaparoo_app::layouts::{self, Body, ThemeId, View};
     let view = app.global::<FileBrowserView>();
     let places = screen.contains("places");
-    let list = screen.contains("list");
-    let names: Vec<(&str, &str)> = if places {
+    // The Custom folder… picker: folders only, under the row that picks
+    // the folder on screen.
+    let pick = screen.contains("folders");
+    let list = screen.contains("list") || pick;
+    let pick_label = app
+        .global::<generated::Labels>()
+        .invoke_menu("file_add_folder".into(), "".into())
+        .to_string();
+    let names: Vec<(&str, &str)> = if pick {
+        vec![
+            (pick_label.as_str(), ""),
+            ("_Arcade", ""),
+            ("_Computer", ""),
+            ("_RA_Cores", ""),
+            ("_Utility", ""),
+        ]
+    } else if places {
         vec![
             ("Custom folder", "/media/fat/zaparoo/custom"),
             ("SD card", "/media/fat"),
@@ -1451,9 +1466,9 @@ fn fixture_file_browser(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen
             ("settings.webp", ""),
         ]
     };
-    let folders = if places { names.len() } else { 2 };
+    let folders = if places || pick { names.len() } else { 2 };
     let cell = |i: usize, (name, path): (&str, &str)| GridCell {
-        name: if list && !places && i < folders {
+        name: if list && !places && i < folders && !(pick && i == 0) {
             format!("{name}/").into()
         } else {
             name.into()
@@ -1474,12 +1489,21 @@ fn fixture_file_browser(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen
         FileBrowserMode::Images
     });
     view.set_places(places);
-    view.set_title(if places { "" } else { "hub" }.into());
+    view.set_title(
+        if places {
+            ""
+        } else if pick {
+            "fat"
+        } else {
+            "hub"
+        }
+        .into(),
+    );
     view.set_focus_ready(true);
-    let selected = if places { 0 } else { 2 };
-    view.set_focused_opens(selected < folders);
-    view.set_focused_picks(selected >= folders);
-    view.set_has_menu(true);
+    let selected = if places || pick { 0 } else { 2 };
+    view.set_focused_opens(selected < folders && !pick);
+    view.set_focused_picks(selected >= folders || pick);
+    view.set_has_menu(!pick);
     let inputs = sizing::Scene::of(app, scene_w, scene_h, crt).inputs();
     if list {
         if let Some(geometry) = list_geometry(app, scene_w, scene_h, crt, 10, false) {
@@ -2229,6 +2253,7 @@ fn fixture_hub(app: &App, scene_w: f64, scene_h: f64, crt: bool, selected: usize
         resume_known_unavailable: false,
         update_enabled: false,
         internet_available: true,
+        pick_folders: false,
     };
     let inputs = sizing::Scene::of(app, scene_w, scene_h, crt).inputs();
     let derived = zaparoo_app::sizing::derive(&inputs);

@@ -3,8 +3,9 @@
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 //
 // The file browser driver: one folder of the frontend's own disk at a time,
-// as a list (`Mode::Plain`) or as a grid of image previews
-// (`Mode::Images`), with Places above every folder. A caller opens it with
+// as a list (`Mode::Plain`), as a grid of image previews (`Mode::Images`),
+// or as a list of folders with a row that picks the folder itself
+// (`Mode::Folders`), with Places above every folder. A caller opens it with
 // a `Purpose`, which decides what a pick does; the browser itself only
 // walks folders. Folder reads run off the event loop and land under a
 // ticket, and the folder on screen stays until the next one is ready.
@@ -30,11 +31,27 @@ use crate::{App, ContentState, FileBrowserInput, FileBrowserView, GridCell};
 pub enum Purpose {
     /// Change icon… on a Hub tile.
     HubIcon(HubTarget),
+    /// Add item > Custom folder…: a live folder tile, placed on the Hub
+    /// cell `target.hub_index`.
+    HubFolder(HubTarget),
+}
+
+impl Purpose {
+    /// The purpose a browser in `mode` was opened for: the mode is what
+    /// the persisted state records.
+    fn for_mode(mode: Mode, target: HubTarget) -> Self {
+        match mode {
+            Mode::Folders => Self::HubFolder(target),
+            Mode::Plain | Mode::Images => Self::HubIcon(target),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum RowKind {
     Place(PlaceKind),
+    /// "Add this folder": picks the folder on screen.
+    PickFolder,
     Folder,
     File,
     /// The cap left this many entries out.
@@ -181,19 +198,24 @@ fn read_folder(dir: &str, mode: Mode) -> Result<(Vec<Row>, rules::Letters, Fill)
         raw.push(rules::RawEntry { name, is_dir });
     }
     let listing = rules::listing(raw, mode, rules::LIST_CAP);
-    let letters = rules::letters(&listing.entries);
-    let mut rows: Vec<Row> = listing
-        .entries
-        .into_iter()
-        .map(|entry| Row {
-            path: rules::join(dir, &entry.name),
-            kind: match entry.kind {
-                EntryKind::Folder => RowKind::Folder,
-                EntryKind::File => RowKind::File,
-            },
-            name: entry.name,
-        })
-        .collect();
+    let mut letters = rules::letters(&listing.entries);
+    let mut rows = Vec::new();
+    if mode == Mode::Folders {
+        rows.push(Row {
+            kind: RowKind::PickFolder,
+            name: String::new(),
+            path: dir.to_string(),
+        });
+        letters.leading += 1;
+    }
+    rows.extend(listing.entries.into_iter().map(|entry| Row {
+        path: rules::join(dir, &entry.name),
+        kind: match entry.kind {
+            EntryKind::Folder => RowKind::Folder,
+            EntryKind::File => RowKind::File,
+        },
+        name: entry.name,
+    }));
     let omitted = listing.omitted + unread;
     let fill = if rows.is_empty() && omitted == 0 {
         Fill::Empty
@@ -223,8 +245,14 @@ fn place_rows(places: &[Place]) -> Vec<Row> {
 
 /// Read a folder, or Places for `None`, off the event loop. Places are
 /// re-read every time: a drive can come and go while the browser is open.
+/// A folder picked for Core only offers the drives Core browses.
 fn read(platform: Platform, custom_dir: &str, dir: Option<String>, mode: Mode) -> Landing {
     let places = read_places(platform, custom_dir);
+    let places = if mode == Mode::Folders {
+        rules::core_places(places)
+    } else {
+        places
+    };
     match dir {
         None => Landing {
             rows: place_rows(&places),
@@ -367,11 +395,43 @@ pub(crate) fn open_hub_icon(ctx: &Ctx, app: &App, target: HubTarget, icon: &str)
     });
 }
 
+/// Add item > Custom folder…: folders of the disk Core browses, starting
+/// on the SD card, for a live folder tile that lands on Hub cell
+/// `hub_index`.
+pub(crate) fn open_hub_folder(ctx: &Ctx, app: &App, hub_index: u32) {
+    let target = HubTarget {
+        hub_index,
+        identity: String::new(),
+    };
+    {
+        let mut shared = lock(&ctx.shared);
+        shared.file_browser = Model {
+            purpose: Some(Purpose::HubFolder(target.clone())),
+            mode: Mode::Folders,
+            ticket: shared.file_browser.ticket,
+            ..Model::default()
+        };
+        shared.persist.file_browser = FileBrowserState {
+            target,
+            mode: Mode::Folders.as_str().to_string(),
+            dir: String::new(),
+            selected: String::new(),
+        };
+    }
+    start(ctx, app, move |platform, custom_dir, mode| {
+        let dir = Some(rules::FOLDER_START.to_string()).filter(|dir| is_dir(dir));
+        (read(platform, &custom_dir, dir, mode), Seat::First)
+    });
+}
+
 /// Cold start on the browser: the same tile, folder and entry. A tile that
 /// moved restores the Hub; a folder that is gone restores Places.
 pub(crate) fn restore(ctx: &Ctx, app: &App) {
     let saved = lock(&ctx.shared).persist.file_browser.clone();
-    if crate::hub::edit_target_matching(ctx, app, &saved.target).is_none() {
+    let mode = Mode::parse(&saved.mode);
+    // A folder pick has no tile yet; its cell is only where the new one lands.
+    if mode != Mode::Folders && crate::hub::edit_target_matching(ctx, app, &saved.target).is_none()
+    {
         lock(&ctx.shared).persist.active_screen = crate::Screen::Hub.token().to_string();
         crate::router::save_persist(&ctx.shared);
         return;
@@ -380,8 +440,8 @@ pub(crate) fn restore(ctx: &Ctx, app: &App) {
     {
         let mut shared = lock(&ctx.shared);
         shared.file_browser = Model {
-            purpose: Some(Purpose::HubIcon(saved.target.clone())),
-            mode: Mode::parse(&saved.mode),
+            purpose: Some(Purpose::for_mode(mode, saved.target.clone())),
+            mode,
             ticket: shared.file_browser.ticket,
             ..Model::default()
         };
@@ -403,6 +463,7 @@ fn selection_key(model: &Model) -> String {
         .rows
         .get(model.grid.current_index())
         .map(|row| match (&row.kind, &model.dir) {
+            (RowKind::PickFolder, _) => String::new(),
             (RowKind::Place(_), _) | (_, None) => row.path.clone(),
             _ => rules::base_name(&row.path).to_string(),
         })
@@ -527,6 +588,9 @@ fn row_name(app: &App, row: &Row) -> String {
         RowKind::More(n) => labels
             .invoke_more_not_shown(i32::try_from(*n).unwrap_or(i32::MAX))
             .to_string(),
+        RowKind::PickFolder => labels
+            .invoke_menu(SharedString::from("file_add_folder"), SharedString::new())
+            .to_string(),
         RowKind::Folder | RowKind::File => row.name.clone(),
     }
 }
@@ -542,13 +606,14 @@ fn cell_for(app: &App, row: &Row, mode: Mode, art_size: u32) -> GridCell {
         // folder ends in a slash.
         RowKind::Place(_) => {
             cell.glyph_key = "icons/Folder".into();
-            if mode == Mode::Plain {
+            if mode.is_list() {
                 cell.tags = SharedString::from(row.path.as_str());
             }
         }
+        RowKind::PickFolder => cell.glyph_key = "icons/Folder".into(),
         RowKind::Folder => {
             cell.glyph_key = "icons/Folder".into();
-            if mode == Mode::Plain {
+            if mode.is_list() {
                 cell.name = SharedString::from(format!("{}/", row.name));
             }
         }
@@ -674,7 +739,7 @@ pub(crate) fn render(ctx: &Ctx, app: &App) {
     let shared_ref = &*shared;
     let model = &shared_ref.file_browser;
     view.set_mode(match model.mode {
-        Mode::Plain => crate::FileBrowserMode::Plain,
+        Mode::Plain | Mode::Folders => crate::FileBrowserMode::Plain,
         Mode::Images => crate::FileBrowserMode::Images,
     });
     view.set_places(model.dir.is_none());
@@ -698,15 +763,18 @@ pub(crate) fn render(ctx: &Ctx, app: &App) {
         focused.map(|row| &row.kind),
         Some(RowKind::Place(_) | RowKind::Folder)
     ));
-    view.set_focused_picks(matches!(focused.map(|row| &row.kind), Some(RowKind::File)));
-    view.set_has_menu(model.purpose.is_some());
+    view.set_focused_picks(matches!(
+        focused.map(|row| &row.kind),
+        Some(RowKind::File | RowKind::PickFolder)
+    ));
+    view.set_has_menu(matches!(model.purpose, Some(Purpose::HubIcon(_))));
     view.set_count(i32::try_from(count).unwrap_or(i32::MAX));
     view.set_current_index(i32::try_from(current).unwrap_or(0));
     view.set_activate_pulse(model.activate_pulse);
     view.set_release_pulse(model.release_pulse);
     publish_rail(&view, model);
 
-    if model.mode == Mode::Images {
+    if !model.mode.is_list() {
         publish_grid(app, &view, model);
         return;
     }
@@ -738,7 +806,7 @@ pub(crate) fn render(ctx: &Ctx, app: &App) {
 
 /// Prepared previews landed while the browser is on screen.
 pub(crate) fn images_landed(ctx: &Ctx, app: &App) {
-    if lock(&ctx.shared).file_browser.mode == Mode::Images {
+    if !lock(&ctx.shared).file_browser.mode.is_list() {
         render(ctx, app);
     }
 }
@@ -875,7 +943,7 @@ fn letter_step(ctx: &Ctx, app: &App, forward: bool) -> bool {
         let model = &mut shared.file_browser;
         let from_page = model.grid.current_page();
         model.grid.set_current_index_immediate(target);
-        (from_page, model.mode == Mode::Plain)
+        (from_page, model.mode.is_list())
     };
     schedule_persist(ctx);
     let (to_page, local) = {
@@ -923,7 +991,7 @@ fn leave(ctx: &Ctx, app: &App) {
     crate::router::save_persist(&ctx.shared);
     match purpose {
         Some(Purpose::HubIcon(target)) => crate::hub::return_to_tile(ctx, app, &target),
-        None => crate::router::return_to_hub(ctx, app),
+        Some(Purpose::HubFolder(_)) | None => crate::router::return_to_hub(ctx, app),
     }
 }
 
@@ -931,6 +999,14 @@ fn pick(ctx: &Ctx, app: &App, path: &str) {
     let purpose = lock(&ctx.shared).file_browser.purpose.clone();
     match purpose {
         Some(Purpose::HubIcon(target)) => crate::hub::set_tile_icon(ctx, app, &target, path),
+        Some(Purpose::HubFolder(target)) => {
+            // The Hub takes the new tile and arms it for Move once it is
+            // back on screen; leaving first keeps that order.
+            crate::router::forget_menu_return(ctx);
+            leave(ctx, app);
+            crate::hub::add_live_folder(ctx, app, target.hub_index, path);
+            return;
+        }
         None => {}
     }
     crate::router::forget_menu_return(ctx);
@@ -947,8 +1023,16 @@ fn back(ctx: &Ctx, app: &App) {
         )
     };
     let Some(dir) = dir else {
+        let folder_pick = matches!(
+            lock(&ctx.shared).file_browser.purpose,
+            Some(Purpose::HubFolder(_))
+        );
         leave(ctx, app);
-        crate::router::return_to_menu(ctx, app, zaparoo_app::options_menu::Opens::IconBrowser);
+        if folder_pick {
+            crate::hub::open_add_picker(ctx, app);
+        } else {
+            crate::router::return_to_menu(ctx, app, zaparoo_app::options_menu::Opens::IconBrowser);
+        }
         return;
     };
     let root = rules::place_for(&places, &dir).map_or("/", |place| place.path.as_str());
@@ -976,7 +1060,7 @@ fn accept(ctx: &Ctx, app: &App) {
             return;
         }
         model.press_seq += 1;
-        let list = model.mode == Mode::Plain;
+        let list = model.mode.is_list();
         if list {
             model.activate_pulse += 1;
         }
@@ -1009,7 +1093,7 @@ fn accept(ctx: &Ctx, app: &App) {
     }
     match row.kind {
         RowKind::Place(_) | RowKind::Folder => fill(ctx, app, Some(row.path), Seat::First),
-        RowKind::File => pick(ctx, app, &row.path),
+        RowKind::File | RowKind::PickFolder => pick(ctx, app, &row.path),
         RowKind::More(_) => {}
     }
 }
@@ -1018,7 +1102,7 @@ fn open_menu(ctx: &Ctx, app: &App) {
     let purpose = lock(&ctx.shared).file_browser.purpose.clone();
     let entries = match purpose {
         Some(Purpose::HubIcon(_)) => vec![crate::router::menu_row("file_default_icon")],
-        None => return,
+        Some(Purpose::HubFolder(_)) | None => return,
     };
     crate::router::present_file_browser_menu(ctx, app, entries);
 }
@@ -1043,7 +1127,7 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
     let (list, ready) = {
         let shared = lock(&ctx.shared);
         let model = &shared.file_browser;
-        (model.mode == Mode::Plain, model.fill == Fill::Ready)
+        (model.mode.is_list(), model.fill == Fill::Ready)
     };
     let list_page = i64::try_from(list_visible(ctx, app)).unwrap_or(10);
     match action {

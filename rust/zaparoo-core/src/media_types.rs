@@ -348,6 +348,12 @@ pub struct MediaBrowseParams {
     /// [`merged_root_view`].
     #[serde(skip_serializing_if = "Option::is_none")]
     pub root_view: Option<String>,
+    /// List `path` straight from disk instead of from the media index, for
+    /// folders the index never walks (`MiSTer` menu folders of `.mgl` and
+    /// `.rbf` files). Core rejects it with `systems`, `tags` or `rootView`,
+    /// and a cursor from a live page is only valid for another live page.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub live: bool,
 }
 
 /// Core's merged system-root view. Eligible only when browsing the top of
@@ -2272,6 +2278,7 @@ mod tests {
             sort: Some("name-asc".into()),
             root_view: None,
             include_hidden: Some(true),
+            live: false,
         };
         let json = serde_json::to_value(&params).expect("serialise");
         let object = json.as_object().expect("object");
@@ -2358,6 +2365,27 @@ mod tests {
         };
         let json = serde_json::to_value(&params).expect("serialise");
         assert!(!json.as_object().expect("object").contains_key("rootView"));
+    }
+
+    #[test]
+    fn media_browse_params_sends_live_only_when_set() {
+        let indexed = serde_json::to_value(MediaBrowseParams {
+            path: "/media/fat/_RA_Cores".into(),
+            ..MediaBrowseParams::default()
+        })
+        .expect("serialise");
+        assert!(!indexed.as_object().expect("object").contains_key("live"));
+        let live = serde_json::to_value(MediaBrowseParams {
+            path: "/media/fat/_RA_Cores".into(),
+            live: true,
+            ..MediaBrowseParams::default()
+        })
+        .expect("serialise");
+        assert_eq!(
+            live.get("live").and_then(serde_json::Value::as_bool),
+            Some(true)
+        );
+        assert!(!live.as_object().expect("object").contains_key("systems"));
     }
 
     #[test]

@@ -101,6 +101,7 @@ fn layout_item(item: &HubItem) -> LayoutItem {
         query: item.query.clone(),
         systems: item.systems.clone(),
         tags: item.tags.clone(),
+        live: item.live,
     }
 }
 

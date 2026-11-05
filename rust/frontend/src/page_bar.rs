@@ -20,6 +20,24 @@ thread_local! {
     /// A chip opened a picker: the screen and the chip to put focus back on
     /// if the picker is backed out of.
     static RESUME: Cell<Option<(Screen, usize)>> = const { Cell::new(None) };
+    /// Games browses a live folder, which has no chips: Go to, Filter and
+    /// Search here all need Core's index. Set by the games driver with the
+    /// mode, read where only the screen or mode is at hand (geometry).
+    static LIVE_BROWSE: Cell<bool> = const { Cell::new(false) };
+}
+
+/// The games driver entered or left a live folder.
+pub(crate) fn set_live_browse(live: bool) {
+    LIVE_BROWSE.with(|cell| cell.set(live));
+}
+
+/// The Games screen's surface: none for a live folder.
+fn browse_surface() -> Surface {
+    if LIVE_BROWSE.with(Cell::get) {
+        Surface::Other
+    } else {
+        Surface::Games
+    }
 }
 
 /// The screen on show, as far as its page actions go.
@@ -28,7 +46,7 @@ fn surface_of(screen: Screen) -> Surface {
         Screen::Hub => Surface::Hub,
         Screen::Systems => Surface::Systems,
         Screen::FavoriteSystems => Surface::FavoriteSystems,
-        Screen::Games => Surface::Games,
+        Screen::Games => browse_surface(),
         Screen::Favorites => Surface::Favorites,
         Screen::SearchResults => Surface::SearchResults,
         _ => Surface::Other,
@@ -38,7 +56,7 @@ fn surface_of(screen: Screen) -> Surface {
 /// The games-style screens share one driver; its mode says which it is.
 pub(crate) fn games_surface(mode: GamesMode) -> Surface {
     match mode {
-        GamesMode::Browse => Surface::Games,
+        GamesMode::Browse => browse_surface(),
         GamesMode::Favorites => Surface::Favorites,
         GamesMode::Search => Surface::SearchResults,
         GamesMode::Recents => Surface::Other,

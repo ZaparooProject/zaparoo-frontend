@@ -13,6 +13,10 @@ use crate::customization;
 /// how many were left out, so a huge directory cannot exhaust memory.
 pub const LIST_CAP: usize = 2000;
 
+/// Where a folder pick for a live folder tile starts: the `MiSTer` SD card,
+/// home of the main menu's own folders.
+pub const FOLDER_START: &str = "/media/fat";
+
 /// What the browser offers to pick.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Mode {
@@ -21,6 +25,9 @@ pub enum Mode {
     Plain,
     /// Folders and image files, as a grid of previews.
     Images,
+    /// Folders only, as a list, each with a row that picks the folder
+    /// itself.
+    Folders,
 }
 
 impl Mode {
@@ -28,12 +35,19 @@ impl Mode {
         match self {
             Self::Plain => "plain",
             Self::Images => "images",
+            Self::Folders => "folders",
         }
+    }
+
+    /// Shown as a list rather than a grid of previews.
+    pub fn is_list(self) -> bool {
+        self != Self::Images
     }
 
     pub fn parse(value: &str) -> Self {
         match value {
             "images" => Self::Images,
+            "folders" => Self::Folders,
             _ => Self::Plain,
         }
     }
@@ -65,15 +79,17 @@ pub struct Listing {
     pub omitted: usize,
 }
 
-/// Hidden names are left out, and the image mode keeps only folders and
-/// the image types the artwork loader accepts. Folders come first, then
+/// Hidden names are left out, the image mode keeps only folders and the
+/// image types the artwork loader accepts, and the folder mode only folders. Folders come first, then
 /// files, each A to Z whatever the case.
 pub fn listing(raw: Vec<RawEntry>, mode: Mode, cap: usize) -> Listing {
     let mut entries: Vec<Entry> = raw
         .into_iter()
         .filter(|entry| !entry.name.starts_with('.') && !entry.name.is_empty())
-        .filter(|entry| {
-            entry.is_dir || mode == Mode::Plain || customization::is_image_file(&entry.name)
+        .filter(|entry| match mode {
+            Mode::Plain => true,
+            Mode::Images => entry.is_dir || customization::is_image_file(&entry.name),
+            Mode::Folders => entry.is_dir,
         })
         .map(|entry| Entry {
             kind: if entry.is_dir {
@@ -217,6 +233,20 @@ pub fn places(
     out
 }
 
+/// The Places a folder picked for Core can sit under: the drives Core
+/// browses, not the custom folder or the root of the system.
+pub fn core_places(places: Vec<Place>) -> Vec<Place> {
+    places
+        .into_iter()
+        .filter(|place| {
+            matches!(
+                place.kind,
+                PlaceKind::SdCard | PlaceKind::Usb(_) | PlaceKind::Network
+            )
+        })
+        .collect()
+}
+
 /// Where a browse starts: the folder of the current icon when it is a
 /// path, else the custom `hub` folder, else the custom folder. `None`
 /// starts on Places.
@@ -318,6 +348,40 @@ mod tests {
 
     fn names(listing: &Listing) -> Vec<&str> {
         listing.entries.iter().map(|e| e.name.as_str()).collect()
+    }
+
+    #[test]
+    fn the_folder_mode_lists_folders_only_and_round_trips() {
+        let out = listing(
+            vec![
+                raw("a.mgl", false),
+                raw("_Arcade", true),
+                raw("b.rbf", false),
+            ],
+            Mode::Folders,
+            LIST_CAP,
+        );
+        assert_eq!(names(&out), ["_Arcade"]);
+        assert_eq!(Mode::parse(Mode::Folders.as_str()), Mode::Folders);
+        assert!(Mode::Folders.is_list() && Mode::Plain.is_list() && !Mode::Images.is_list());
+    }
+
+    #[test]
+    fn core_places_keep_only_the_drives_core_browses() {
+        let all = places(
+            Platform::Mister,
+            "/media/fat/zaparoo/custom",
+            None,
+            None,
+            &|_| true,
+            &|_| Vec::new(),
+        );
+        let kept: Vec<String> = core_places(all).into_iter().map(|p| p.path).collect();
+        assert_eq!(kept.first().map(String::as_str), Some("/media/fat"));
+        assert!(!kept
+            .iter()
+            .any(|p| p == "/" || p == "/media/fat/zaparoo/custom"));
+        assert!(kept.iter().any(|p| p == "/media/usb0"));
     }
 
     #[test]

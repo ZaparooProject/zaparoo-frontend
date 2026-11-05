@@ -155,6 +155,7 @@ impl HubModel {
                 query: item.query.clone(),
                 systems: item.systems.clone(),
                 tags: item.tags.clone(),
+                live: item.live,
             })
             .collect()
     }
@@ -329,6 +330,7 @@ fn resolve_entries(ctx: &Ctx, app: &App) {
             // structural absence rather than a dead row.
             update_enabled: crate::update::available(),
             internet_available: hub.internet_available,
+            pick_folders: false,
         };
         let page_size = hub.grid.page_size();
         let min_pages = if hub.move_armed() {
@@ -1122,6 +1124,9 @@ fn emit_activate(ctx: &Ctx, app: &App) {
                 None => {}
             }
         }
+        Some(Kind::Folder) if entry.live => {
+            crate::games::enter_live_folder_from_hub(ctx, app, &entry.path);
+        }
         Some(Kind::Folder) => {
             crate::games::enter_folder_from_hub(ctx, app, &entry.system, &entry.path);
         }
@@ -1838,7 +1843,7 @@ pub fn page_menu_accept(ctx: &Ctx, app: &App, id: &str) {
     }
 }
 
-fn open_add_picker(ctx: &Ctx, app: &App) {
+pub(crate) fn open_add_picker(ctx: &Ctx, app: &App) {
     let entries = {
         let shared = lock(&ctx.shared);
         let hub = &shared.hub;
@@ -1855,6 +1860,9 @@ fn open_add_picker(ctx: &Ctx, app: &App) {
             categories_loaded: hub.categories_loaded,
             confirmed_categories: &shared.all_categories,
             update_enabled: crate::update::available(),
+            // A folder picked from this disk is one Core reads only where
+            // the two share it.
+            pick_folders: ctx.is_mister,
             ..Live::default()
         };
         rules::add_entries(
@@ -2012,19 +2020,30 @@ pub fn toggle_search(
     }
 }
 
+/// The layout position an Add item lands on: the focused cell.
+fn add_target(shared: &Shared) -> usize {
+    rules::real_index_for_flat(
+        &shared.hub.entries,
+        shared.hub.grid.current_index(),
+        shared.hub.item_count(),
+    )
+    .unwrap_or(usize::MAX)
+}
+
 /// Add picker accept: place the item, then hand it to the user to carry.
 pub fn add_picked(ctx: &Ctx, app: &App, id: &str) {
+    if id == rules::CUSTOM_FOLDER_ENTRY {
+        let target = add_target(&lock(&ctx.shared));
+        let target = u32::try_from(target).unwrap_or(u32::MAX);
+        crate::file_browser::open_hub_folder(ctx, app, target);
+        return;
+    }
     let Some((kind, item_id)) = id.split_once(':') else {
         return;
     };
     let added = {
         let mut shared = lock(&ctx.shared);
-        let target = rules::real_index_for_flat(
-            &shared.hub.entries,
-            shared.hub.grid.current_index(),
-            shared.hub.item_count(),
-        )
-        .unwrap_or(usize::MAX);
+        let target = add_target(&shared);
         let hub = &mut shared.hub;
         let added = hub.layout.add_item(kind, item_id, target);
         if added {
@@ -2041,6 +2060,92 @@ pub fn add_picked(ctx: &Ctx, app: &App, id: &str) {
     };
     rebuild(ctx, app);
     arm_move_for_hub_index(ctx, app, i32::try_from(hub_index).unwrap_or(-1));
+}
+
+/// The folder picker's pick: a live folder tile on layout position
+/// `target` (where the focus was when Add item opened), handed to the user
+/// to carry as an Add item tile is. A folder already pinned live gets
+/// focus instead of a second tile.
+pub(crate) fn add_live_folder(ctx: &Ctx, app: &App, target: u32, path: &str) {
+    let hub_index = {
+        let mut shared = lock(&ctx.shared);
+        let hub = &mut shared.hub;
+        let target = usize::try_from(target).unwrap_or(usize::MAX);
+        if hub.layout.add_live_folder(path, Some(target)) {
+            hub.save(&ctx.handle);
+            hub.layout.live_folder_position(path).map(|at| (at, true))
+        } else {
+            hub.layout.live_folder_position(path).map(|at| (at, false))
+        }
+    };
+    rebuild(ctx, app);
+    match hub_index {
+        Some((at, true)) => arm_move_for_hub_index(ctx, app, i32::try_from(at).unwrap_or(-1)),
+        Some((at, false)) => {
+            let flat = {
+                let shared = lock(&ctx.shared);
+                rules::flat_index_for_hub_index(
+                    &shared.hub.entries,
+                    i32::try_from(at).unwrap_or(-1),
+                )
+            };
+            if let Some(flat) = flat {
+                set_index(ctx, app, flat);
+                commit_current(ctx);
+            }
+        }
+        None => {
+            tracing::warn!("hub update did nothing for live folder {path}");
+            crate::router::report_action_error(
+                ctx,
+                app,
+                "add_to_hub",
+                rules::folder_name_for_path(path).as_str(),
+            );
+        }
+    }
+}
+
+/// Whether a live folder tile for `path` is on the Hub, so a live browse's
+/// menu offers "Remove from Hub".
+pub fn has_live_folder(shared: &Shared, path: &str) -> bool {
+    shared.hub.layout.live_folder_position(path).is_some()
+}
+
+/// "Add to Hub" / "Remove from Hub" on a folder inside a live browse: the
+/// same gap-or-end placement, removal and header confirmation as
+/// `toggle_target`.
+pub fn toggle_live_folder(ctx: &Ctx, app: &App, path: &str) {
+    let cue = {
+        let mut shared = lock(&ctx.shared);
+        let hub = &mut shared.hub;
+        let cue = match hub.layout.live_folder_position(path) {
+            Some(index) => hub
+                .layout
+                .remove_visible_item(index)
+                .then_some(crate::AppCue::RemovedFromHub),
+            None => hub
+                .layout
+                .add_live_folder(path, None)
+                .then_some(crate::AppCue::AddedToHub),
+        };
+        if cue.is_some() {
+            hub.save(&ctx.handle);
+        }
+        cue
+    };
+    if let Some(cue) = cue {
+        rebuild(ctx, app);
+        crate::cue::flash(ctx, app, cue, zaparoo_app::wait_cue::CONFIRM_MS);
+    } else {
+        tracing::warn!("hub update did nothing for live folder {path}");
+        crate::router::report_action_error(
+            ctx,
+            app,
+            "add_to_hub",
+            rules::folder_name_for_path(path).as_str(),
+        );
+    }
 }
 
 // ---------- Pointer ----------

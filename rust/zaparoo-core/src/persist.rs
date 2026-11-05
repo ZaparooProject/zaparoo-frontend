@@ -61,11 +61,14 @@ pub struct RenameState {
 
 /// The file browser: its tile, what it lists, the folder on screen (empty
 /// for Places) and the entry selected there (a name, or a Place's path).
+/// The mode also says what the browser is for: `"images"` picks a tile's
+/// icon, and `"folders"` picks a folder for a live folder tile, landing on
+/// the Hub cell `target.hub_index` (its `identity` is empty then).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct FileBrowserState {
     pub target: HubTarget,
-    /// `"plain"` or `"images"`.
+    /// `"plain"`, `"images"` or `"folders"`.
     pub mode: String,
     pub dir: String,
     pub selected: String,
@@ -119,6 +122,11 @@ pub struct GamesState {
     /// the games driver sets it on entry from the Hub and reads it on Back
     /// (see the routing contract in `AGENTS.md`).
     pub entered_from_hub: bool,
+    /// The folders are read straight from disk (`media.browse` `live`),
+    /// with no system: a live folder tile's. `path_stack[0]` is the pinned
+    /// folder, the floor Back climbs to before returning to the Hub.
+    /// False in older state files.
+    pub live: bool,
     /// Where each recently browsed system was left, most recent first, so
     /// entering one from Systems returns to that folder and game. Bounded
     /// by `MAX_SYSTEM_FOCUS`; empty in older state files. After the plain
@@ -163,6 +171,7 @@ impl Default for GamesState {
             selected_at_level: vec![String::new()],
             list_top_at_level: Vec::new(),
             entered_from_hub: false,
+            live: false,
             system_focus: Vec::new(),
             filters: Vec::new(),
         }
@@ -931,6 +940,7 @@ mod tests {
                 selected_at_level: vec!["/roms/nes/mario".into(), "/roms/nes/mario/smb.nes".into()],
                 list_top_at_level: vec![4, 9],
                 entered_from_hub: true,
+                live: true,
                 system_focus: vec![SystemFocus {
                     system_id: "SNES".into(),
                     path_stack: vec![String::new(), "/roms/snes/rpg".into()],
@@ -1195,6 +1205,7 @@ resolution = "1920x1080"
                                 selected_at_level: vec![format!("/roms/{i}/{j}.rom")],
                                 list_top_at_level: vec![0],
                                 entered_from_hub: false,
+                                live: false,
                                 system_focus: Vec::new(),
                                 filters: Vec::new(),
                             },

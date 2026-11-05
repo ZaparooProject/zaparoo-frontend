@@ -91,7 +91,7 @@ writes these for you; they can also be written by hand.
 | `type`      | Keys                                                  |
 |-------------|-------------------------------------------------------|
 | `system`    | `id`: the system id                                   |
-| `folder`    | `path`, `system`, and optionally `relative`           |
+| `folder`    | `path`, `system`, and optionally `relative`; or `path` and `live = true` |
 | `zapscript` | `script`, and optionally `relative`, `path`, `system` |
 | `search`    | any of `query`, `systems`, `tags`, `path`             |
 
@@ -124,6 +124,32 @@ your games, the frontend asks Core where each pinned game and folder is now
 and updates `path` to match, so covers and folder tiles follow a move too.
 A tile with only a `script` is launched exactly as written and is never
 changed.
+
+#### Live folders
+
+A `folder` with `live = true` is read straight from disk instead of from
+Zaparoo Core's media database, so it reaches folders the index never
+walks: MiSTer main menu folders such as `_RA_Cores`, `_Chronological` or a
+folder of your own `.mgl` files. It has no `system`. Opening it lists its
+folders, then the files a launcher accepts; each file launches its own
+path. Go to, Tags and Search here are not offered there, since they need
+the media database.
+
+On MiSTer, **Add item… > Custom folder…** on the Hub writes one for you.
+It opens the file browser on the SD card listing folders only; the first
+row of every folder, **Add this folder**, pins the folder on screen. Inside
+a live folder, a subfolder's Options menu has Add to Hub for another live
+folder, and a file's has Add to Hub for a `zapscript` tile.
+
+```toml
+[[hub.items]]
+type = "folder"
+path = "/media/fat/_RA_Cores"
+live = true
+```
+
+Live folders need a Zaparoo Core that supports live browsing. An older
+Core shows them empty.
 
 ### Renaming a tile and changing its icon
 

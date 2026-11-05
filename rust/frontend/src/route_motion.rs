@@ -7389,6 +7389,7 @@ fn restored_missing_folder_falls_back_to_root_but_errors_do_not_reset() {
         &zaparoo_core::media_types::MediaBrowseResult::default(),
         false,
         true,
+        false,
     );
     let shared = crate::router::lock(&ctx.shared);
     assert_eq!(shared.persist.games.path_stack, vec![String::new()]);
@@ -12062,4 +12063,289 @@ fn a_launch_refills_a_browse_list_only_when_it_holds_a_multi_disc_folder() {
     crate::router::lock(&ctx.shared).games.rows[3].multi_disc = true;
     crate::games::refresh_after_launch(&ctx, &app);
     assert_eq!(crate::router::lock(&ctx.shared).games.ticket, ticket + 1);
+}
+
+#[test]
+#[allow(
+    clippy::expect_used,
+    clippy::too_many_lines,
+    reason = "one walk from Add item to a placed live folder tile, failing fast on a missing row"
+)]
+fn add_item_picks_a_folder_from_disk_for_a_live_folder_tile() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, mut ctx) = offline_ctx();
+    // Folders are picked where the frontend shares Core's disk.
+    ctx.is_mister = true;
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    let root = std::env::temp_dir().join(format!("zaparoo-live-pick-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join("_RA_Cores")).expect("folder");
+    std::fs::create_dir_all(root.join("_Arcade")).expect("folder");
+    std::fs::write(root.join("menu.rbf"), b"x").expect("file");
+    hub_with_saved_search(&ctx, &app);
+    let shell = app.global::<Shell>();
+    settle(&window);
+
+    crate::hub::add_picked(&ctx, &app, zaparoo_app::hub::CUSTOM_FOLDER_ENTRY);
+    assert!(
+        shell.get_transitioning(),
+        "the folder read is a deferred route"
+    );
+    let fat = root.to_string_lossy().into_owned();
+    crate::file_browser::land_now(&ctx, &app, Some(&fat), "");
+    settle(&window);
+    assert_eq!(shell.get_active_screen(), Screen::FileBrowser);
+    let view = app.global::<crate::FileBrowserView>();
+    assert_eq!(view.get_mode(), crate::FileBrowserMode::Plain);
+    assert!(!view.get_has_menu());
+    let names: Vec<String> = view
+        .get_list_rows()
+        .iter()
+        .map(|c| c.name.to_string())
+        .collect();
+    assert_eq!(
+        names,
+        ["Add this folder", "_Arcade/", "_RA_Cores/"],
+        "the pick row, then folders only"
+    );
+    assert!(view.get_focused_picks());
+    assert_eq!(
+        crate::router::lock(&ctx.shared).persist.file_browser.mode,
+        "folders"
+    );
+
+    // Into a folder, then pick it.
+    crate::router::handle_action(&ctx, &app, "down");
+    crate::router::handle_action(&ctx, &app, "down");
+    crate::router::handle_action(&ctx, &app, "accept");
+    let cores = root.join("_RA_Cores").to_string_lossy().into_owned();
+    crate::file_browser::land_now(&ctx, &app, Some(&cores), "");
+    assert_eq!(view.get_title(), "_RA_Cores");
+    crate::router::handle_action(&ctx, &app, "accept");
+    settle(&window);
+    assert_eq!(shell.get_active_screen(), Screen::Hub);
+    {
+        let shared = crate::router::lock(&ctx.shared);
+        let tile = shared
+            .hub
+            .layout
+            .visible()
+            .find(|item| item.is_live_folder())
+            .expect("the live folder tile");
+        assert_eq!(tile.path, cores);
+        assert!(tile.system.is_empty());
+        let entry = shared
+            .hub
+            .entries
+            .iter()
+            .find(|entry| entry.live)
+            .expect("its entry");
+        assert_eq!(entry.name, "_RA_Cores");
+        assert!(shared.hub.move_armed(), "handed to the user to carry");
+    }
+
+    // Back out of an empty pick returns to Add item.
+    crate::hub::add_picked(&ctx, &app, zaparoo_app::hub::CUSTOM_FOLDER_ENTRY);
+    crate::file_browser::land_now(&ctx, &app, None, "");
+    assert!(view.get_places());
+    crate::router::handle_action(&ctx, &app, "cancel");
+    settle(&window);
+    assert_eq!(shell.get_active_screen(), Screen::Hub);
+    assert!(app.global::<crate::Overlays>().get_list_open());
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn a_folder_pick_restores_on_its_folder_after_a_kill() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let root = std::env::temp_dir().join(format!("zaparoo-live-restore-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let _ = std::fs::create_dir_all(root.join("_Favorites"));
+    let dir = root.to_string_lossy().into_owned();
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.persist.active_screen = "file-browser".into();
+        shared.persist.file_browser = zaparoo_core::persist::FileBrowserState {
+            target: zaparoo_core::persist::HubTarget {
+                hub_index: 3,
+                identity: String::new(),
+            },
+            mode: "folders".into(),
+            dir: dir.clone(),
+            selected: "_Favorites".into(),
+        };
+    }
+    crate::file_browser::restore(&ctx, &app);
+    assert!(app.global::<Shell>().get_transitioning());
+    crate::file_browser::land_now(
+        &ctx,
+        &app,
+        Some(&dir),
+        &root.join("_Favorites").to_string_lossy(),
+    );
+    let view = app.global::<crate::FileBrowserView>();
+    assert_eq!(view.get_current_index(), 1, "the folder it was on");
+    assert!(!view.get_has_menu(), "still a folder pick");
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one walk through a live folder: its menus, a subfolder and back out"
+)]
+fn a_live_folder_browses_without_a_system_and_back_returns_to_the_hub() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    let shell = app.global::<Shell>();
+    let rows = |base: &str| {
+        let mut rows = game_rows("Core", 3);
+        for (index, row) in rows.iter_mut().enumerate() {
+            row.path = format!("{base}/core{index}.rbf");
+            row.zap_script = row.path.clone();
+        }
+        rows[0].entry_type = zaparoo_app::media_list::EntryType::Directory;
+        rows[0].media_capable = false;
+        rows[0].zap_script.clear();
+        rows[0].path = format!("{base}/Sub");
+        for row in &mut rows {
+            row.tags_known = false;
+        }
+        rows
+    };
+
+    crate::games::enter_live_folder_from_hub(&ctx, &app, "/media/fat/_RA_Cores");
+    let ticket = {
+        let shared = crate::router::lock(&ctx.shared);
+        assert!(shared.games.live && shared.persist.games.live);
+        assert!(shared.games.system_id.is_empty());
+        assert_eq!(shared.games.browse_path, "/media/fat/_RA_Cores");
+        assert_eq!(shared.persist.games.path_stack, ["/media/fat/_RA_Cores"]);
+        shared.games.ticket
+    };
+    crate::games::apply_fill(
+        &ctx,
+        &app,
+        ticket,
+        rows("/media/fat/_RA_Cores"),
+        None,
+        None,
+        true,
+    );
+    settle(&window);
+    assert_eq!(shell.get_active_screen(), Screen::Games);
+    let view = app.global::<crate::GamesView>();
+    assert_eq!(view.get_title(), "_RA_Cores");
+    assert!(!view.get_page_menu());
+    assert!(crate::page_bar::chip_ids(&app).is_empty());
+    {
+        let shared = crate::router::lock(&ctx.shared);
+        assert!(!crate::games::go_to_available(&shared));
+    }
+
+    // Options pins a subfolder as another live folder, and a file as its
+    // own launch script.
+    crate::games::context_accept(&ctx, &app, "add_to_hub");
+    crate::router::handle_action(&ctx, &app, "right");
+    crate::games::context_accept(&ctx, &app, "add_to_hub");
+    {
+        let shared = crate::router::lock(&ctx.shared);
+        let items: Vec<(bool, &str, &str)> = shared
+            .hub
+            .layout
+            .items
+            .iter()
+            .map(|item| (item.live, item.path.as_str(), item.script.as_str()))
+            .collect();
+        assert!(items.contains(&(true, "/media/fat/_RA_Cores/Sub", "")));
+        assert!(items.contains(&(
+            false,
+            "/media/fat/_RA_Cores/core1.rbf",
+            "/media/fat/_RA_Cores/core1.rbf"
+        )));
+        assert!(crate::hub::has_live_folder(
+            &shared,
+            "/media/fat/_RA_Cores/Sub"
+        ));
+    }
+    crate::router::handle_action(&ctx, &app, "left");
+
+    // Into a subfolder and back to the pinned one, then the Hub.
+    crate::router::handle_action(&ctx, &app, "accept");
+    advance(zaparoo_app::input::PRESS_FEEDBACK_MS);
+    let ticket = crate::router::lock(&ctx.shared).games.ticket;
+    assert_eq!(
+        crate::router::lock(&ctx.shared)
+            .persist
+            .games
+            .path_stack
+            .len(),
+        2
+    );
+    crate::games::apply_fill(
+        &ctx,
+        &app,
+        ticket,
+        rows("/media/fat/_RA_Cores/Sub"),
+        None,
+        None,
+        true,
+    );
+    crate::router::handle_action(&ctx, &app, "cancel");
+    let ticket = {
+        let shared = crate::router::lock(&ctx.shared);
+        assert_eq!(shared.games.browse_path, "/media/fat/_RA_Cores");
+        shared.games.ticket
+    };
+    crate::games::apply_fill(
+        &ctx,
+        &app,
+        ticket,
+        rows("/media/fat/_RA_Cores"),
+        None,
+        None,
+        true,
+    );
+    crate::router::handle_action(&ctx, &app, "cancel");
+    settle(&window);
+    assert_eq!(shell.get_active_screen(), Screen::Hub);
+
+    // A plain system browse afterwards is not live.
+    crate::games::enter_from_hub(&ctx, &app, &navigation_catalog()[8]);
+    let shared = crate::router::lock(&ctx.shared);
+    assert!(!shared.games.live && !shared.persist.games.live);
+}
+
+#[test]
+fn a_live_folder_restores_inside_its_last_folder() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.persist.games.live = true;
+        shared.persist.games.entered_from_hub = true;
+        shared.persist.games.path_stack = vec![
+            "/media/fat/_Arcade".into(),
+            "/media/fat/_Arcade/_Organized".into(),
+        ];
+        shared.persist.games.selected_at_level = vec![String::new(), String::new()];
+    }
+    crate::games::enter_live_restored(&ctx, &app);
+    assert!(app.global::<Shell>().get_transitioning());
+    let shared = crate::router::lock(&ctx.shared);
+    assert!(shared.games.live);
+    assert_eq!(shared.games.browse_path, "/media/fat/_Arcade/_Organized");
+    assert_eq!(shared.games.system_name, "_Arcade");
 }

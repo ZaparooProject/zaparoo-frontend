@@ -2191,6 +2191,10 @@ fn restore_target(ctx: &Arc<Ctx>, app: &App) {
     // A Hub shortcut skipped Systems: no category stands behind it and
     // Back returns to the Hub, which is also where a failed restore ends.
     if target == "games" && entered_from_hub {
+        if lock(&ctx.shared).persist.games.live {
+            games::enter_live_restored(ctx, app);
+            return;
+        }
         let sys = lock(&ctx.shared)
             .systems
             .iter()
