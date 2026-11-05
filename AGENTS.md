@@ -200,7 +200,7 @@ private `_` recipe. Container builds write to `rust/target/docker/`.
 - Do not open a modal from a modal. A choice made inside a modal is a page of
   that modal's own panel (the setup panel in `ui/setup.slint` swaps between
   its form and its picker page; the context menu hosts its Manage, Write to
-  token, disc and alternate-versions pages); only an action-error alert (shown through the decision dialog) may
+  token, disc, version and alternate-versions pages); only an action-error alert (shown through the decision dialog) may
   sit above an open modal. See `docs/style.md` → "Modal depth".
 - Do not add `.git/` rerun-if triggers or `ZAPAROO_BUILD_*` provenance baking
   to `rust/frontend/build.rs`. Provenance lives in the `rust/build-info` leaf
@@ -250,7 +250,7 @@ update rules, in short:
 | `rust/frontend/src/{launcher_prefs,retro_achievements,ra_login}.rs` | Core's global launcher preference modal; `MiSTer_RA`'s cfg and install check; the RetroAchievements login screen (masked password, checked with RetroAchievements before saving) |
 | `rust/frontend/src/{game_info,media_setup,log_upload,launchers,card_write,qr}.rs` | Modal drivers |
 | `rust/frontend/src/manual.rs` | A game's manual as a page of Game Info: `media.asset` chunks, hayro rendering on a worker thread, pages in memory only |
-| `rust/frontend/src/{context_page,alternates,discs}.rs` | Context-menu pages: the shared page (Manage and Write to token included), alternate versions, a multi-disc game's discs |
+| `rust/frontend/src/{context_page,alternates,discs,title_versions}.rs` | Context-menu pages: the shared page (Manage and Write to token included), alternate versions, a multi-disc game's discs, a search result's versions |
 | `rust/frontend/src/{input,actions,gamepad,keyboard}.rs` | Key path: duplicate guard, swaps, hold-repeat, the text field owner; keyboard bindings; desktop gamepads; the on-screen keyboard's shared state and buttons |
 | `rust/frontend/src/{media_cache,hub_covers,customization}.rs` | Bounded in-memory cover cache, cold-boot cover manifest, user overrides |
 | `rust/frontend/src/hub_refresh.rs` | Refreshes pinned Hub tiles' stored identifiers from Core after a catalog load or rescan |

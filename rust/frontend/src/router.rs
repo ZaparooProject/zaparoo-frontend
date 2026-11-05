@@ -406,8 +406,9 @@ fn save_hidden_prefs(ctx: &Ctx, app: &App, categories: &[String], system_ids: &[
 // ---------- Startup decision dialogs ----------
 
 /// Dev builds and unparseable versions fail open: only a parsed semver
-/// below the floor triggers the warning.
-const MIN_CORE_VERSION: &str = "2.18.0";
+/// below the floor triggers the warning. 2.22.0 is the first Core that
+/// takes a multi-disc folder's launch disc with its path.
+const MIN_CORE_VERSION: &str = "2.22.0";
 
 pub(crate) fn version_supported(raw: &str) -> bool {
     let v = raw.trim();
@@ -418,7 +419,11 @@ pub(crate) fn version_supported(raw: &str) -> bool {
         semver::Version::parse(v),
         semver::Version::parse(MIN_CORE_VERSION),
     ) {
-        (Ok(current), Ok(min)) => current >= min,
+        // A beta of the floor release already has its API.
+        (Ok(mut current), Ok(min)) => {
+            current.pre = semver::Prerelease::EMPTY;
+            current >= min
+        }
         _ => true,
     }
 }
@@ -456,9 +461,11 @@ mod version_gate_tests {
 
     #[test]
     fn semver_floor_enforced() {
-        assert!(version_supported("2.18.0"));
+        assert!(version_supported("2.22.0"));
+        assert!(version_supported("2.22.0-beta.1"));
         assert!(version_supported("3.0.1"));
-        assert!(!version_supported("2.17.2"));
+        assert!(!version_supported("2.21.0"));
+        assert!(!version_supported("2.21.1-beta.1"));
         assert!(!version_supported("1.0.0"));
     }
 }
@@ -2870,7 +2877,10 @@ fn context_accept(ctx: &Ctx, app: &App, id: &str) {
         };
         (shared.context_owner, showing, opens)
     };
-    if matches!(showing, Some(Page::Alternates | Page::Discs)) {
+    if matches!(
+        showing,
+        Some(Page::Alternates | Page::Discs | Page::Versions)
+    ) {
         crate::context_page::accept(ctx, app, id);
         return;
     }

@@ -39,6 +39,9 @@ export struct GridCell {
     disabled: bool,
     // Dim suffix after the caption (tags, "Hidden").
     tags: string,
+    // How many versions of one title a search result stands for, worded
+    // in the suffix; zero when it stands for one.
+    versions: int,
     // A list row Accept browses into rather than launches: it ends in a
     // chevron.
     opens: bool,
@@ -482,7 +485,7 @@ export component Tile inherits Rectangle {
             width: parent.art-w;
             height: root.caption-height;
             content: root.caption;
-            tags: Labels.tags(root.cell.tags, root.cell.hidden);
+            tags: Labels.tags(root.cell.tags, root.cell.hidden, root.cell.versions);
             focused: root.focused-selection;
             caption-font-size: Sizing.font-small;
             caption-color: root.focused-selection ? Theme.text-primary : Theme.text-label;

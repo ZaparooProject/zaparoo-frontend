@@ -108,6 +108,7 @@ mod system_status;
 mod systems;
 mod tag_utils;
 mod theme;
+mod title_versions;
 mod update;
 mod view_model;
 
@@ -1197,6 +1198,7 @@ fn bind_desktop_lifecycle(ctx: &Arc<Ctx>, app: &App, client: &Arc<Client>) {
     let ctx_media = ctx.clone();
     ctx.handle.clone().spawn(async move {
         let mut was_active = false;
+        let mut last_started: Option<String> = None;
         loop {
             let snapshot = media_rx.borrow_and_update().clone();
             // Core's Steam watcher reports every externally started Steam
@@ -1236,6 +1238,25 @@ fn bind_desktop_lifecycle(ctx: &Arc<Ctx>, app: &App, client: &Arc<Client>) {
                     let _ = weak_refresh.upgrade_in_event_loop(move |app| {
                         refresh_resume(&ctx_event, &app);
                         games::refresh_recents(&ctx_event, &app);
+                        games::refresh_after_launch(&ctx_event, &app);
+                    });
+                });
+            }
+            // A remote Core's launch leaves this frontend on screen, so the
+            // list it launched from is refilled as the game starts.
+            let started = snapshot
+                .primary_active
+                .as_ref()
+                .map(|media| media.media_path.clone());
+            let new_start = started.is_some() && started != last_started;
+            last_started = started;
+            if new_start && !ctx_media.store.client().is_local() {
+                let ctx_refresh = ctx_media.clone();
+                let weak_refresh = weak.clone();
+                ctx_media.handle.spawn(async move {
+                    tokio::time::sleep(Duration::from_millis(200)).await;
+                    let _ = weak_refresh.upgrade_in_event_loop(move |app| {
+                        games::refresh_after_launch(&ctx_refresh, &app);
                     });
                 });
             }

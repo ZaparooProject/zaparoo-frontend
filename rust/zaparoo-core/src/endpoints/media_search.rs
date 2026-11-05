@@ -11,6 +11,9 @@ use crate::store::{Endpoint, Tag};
 use futures_util::future::BoxFuture;
 use std::sync::Arc;
 
+/// `media.search`'s `groupBy` value for one result per title and system.
+pub const GROUP_BY_TITLE: &str = "title";
+
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash)]
 pub struct SearchArgs {
     pub query: String,
@@ -54,6 +57,10 @@ impl SearchArgs {
             sort: some(&self.sort),
             path_prefix: some(&self.path_prefix),
             include_hidden: self.include_hidden.then_some(true),
+            // One result per title and system: the pane and the results
+            // list each game once, and the count is of games, not files.
+            group_by: Some(GROUP_BY_TITLE.to_string()),
+            title_id: None,
         }
     }
 }
@@ -98,7 +105,12 @@ mod tests {
         };
         assert_eq!(
             serde_json::to_value(args.params(None)).expect("serialise"),
-            serde_json::json!({"query": "mario", "maxResults": 100, "sort": "name-asc"})
+            serde_json::json!({
+                "query": "mario",
+                "maxResults": 100,
+                "sort": "name-asc",
+                "groupBy": "title",
+            })
         );
         let scoped = SearchArgs {
             systems: vec!["SNES".into()],
@@ -115,6 +127,7 @@ mod tests {
                 "cursor": "abc",
                 "tags": ["genre:rpg"],
                 "pathPrefix": "/roms/SNES/RPG",
+                "groupBy": "title",
             })
         );
     }
@@ -135,7 +148,11 @@ mod tests {
         };
         assert_eq!(
             serde_json::to_value(args.params(None)).expect("serialise"),
-            serde_json::json!({"systems": ["Genesis", "SNES"], "maxResults": 100})
+            serde_json::json!({
+                "systems": ["Genesis", "SNES"],
+                "maxResults": 100,
+                "groupBy": "title",
+            })
         );
     }
 

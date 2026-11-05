@@ -348,6 +348,25 @@ mod tests {
     }
 
     #[test]
+    fn media_search_groups_versions_by_title_and_lists_them() {
+        let req = r#"{"jsonrpc":"2.0","id":"1","method":"media.search","params":{"query":"arkanoid","systems":["MAME"],"groupBy":"title","maxResults":100}}"#;
+        let resp = parse(&dispatch(req));
+        let results = resp["result"]["results"].as_array().expect("array");
+        assert_eq!(results.len(), 1, "one row per title: {results:?}");
+        let count = results[0]["versionCount"].as_u64().expect("count");
+        assert!(count > 1);
+        let title = results[0]["titleId"].as_i64().expect("title");
+        let list = serde_json::json!({
+            "jsonrpc": "2.0", "id": "2", "method": "media.search",
+            "params": { "titleId": title, "query": "ignored", "maxResults": 100 },
+        });
+        let resp = parse(&dispatch(&list.to_string()));
+        let versions = resp["result"]["results"].as_array().expect("array");
+        assert_eq!(versions.len() as u64, count);
+        assert!(versions.iter().all(|v| v["name"] == "Arkanoid"));
+    }
+
+    #[test]
     fn media_search_limits_results_to_a_path_prefix() {
         let req = r#"{"jsonrpc":"2.0","id":"1","method":"media.search","params":{"pathPrefix":"/mock/games/NES","maxResults":1000}}"#;
         let resp = parse(&dispatch(req));

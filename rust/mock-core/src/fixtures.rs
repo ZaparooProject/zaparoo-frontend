@@ -373,9 +373,13 @@ pub fn media_search_response(params: &Value) -> Value {
         .and_then(|c| c.parse::<usize>().ok())
         .unwrap_or(0);
 
+    // A title's versions ignore the query and systems, as Core's do.
+    let title = params.get("titleId").and_then(Value::as_i64);
+    let systems = if title.is_some() { Vec::new() } else { systems };
     let words: Vec<String> = params
         .get("query")
         .and_then(Value::as_str)
+        .filter(|_| title.is_none())
         .unwrap_or_default()
         .split_whitespace()
         .map(slug)
@@ -398,6 +402,9 @@ pub fn media_search_response(params: &Value) -> Value {
                 path_prefix,
             )
         })
+        .filter(|game| {
+            title.is_none_or(|id| game.get("titleId").and_then(Value::as_i64) == Some(id))
+        })
         .collect();
     // Search and browse name a game by the same path, so one hidden from a
     // listing leaves the search too. A mock folder is a view of its whole
@@ -419,6 +426,9 @@ pub fn media_search_response(params: &Value) -> Value {
             )
         }),
         _ => {}
+    }
+    if params.get("groupBy").and_then(Value::as_str) == Some("title") {
+        matching = group_by_title(matching);
     }
     let total = matching.len();
     let results: Vec<Value> = matching.into_iter().skip(offset).take(max).collect();
@@ -443,6 +453,30 @@ pub fn media_search_response(params: &Value) -> Value {
         "total": page_total,
         "pagination": pagination,
     })
+}
+
+/// Core's `groupBy: "title"`: one row per title, the first of its
+/// versions standing for it, with how many matched.
+fn group_by_title(rows: Vec<Value>) -> Vec<Value> {
+    let mut grouped: Vec<Value> = Vec::new();
+    for row in rows {
+        let id = row.get("titleId").and_then(Value::as_i64);
+        let existing = grouped
+            .iter_mut()
+            .find(|group| group.get("titleId").and_then(Value::as_i64) == id);
+        if let Some(group) = existing {
+            let count = group
+                .get("versionCount")
+                .and_then(Value::as_u64)
+                .unwrap_or(1);
+            group["versionCount"] = json!(count + 1);
+        } else {
+            let mut row = row;
+            row["versionCount"] = json!(1);
+            grouped.push(row);
+        }
+    }
+    grouped
 }
 
 /// Core matches each query word as a substring of the title's slug:
@@ -1198,10 +1232,20 @@ fn games_for_systems<'a>(systems: &'a [&'a str]) -> impl Iterator<Item = Value> 
                 "tags": tags_for(file, index),
                 "disambiguatingTags": disambiguating_tags_for(file),
                 "hasCover": true,
+                "titleId": title_id(name, system),
             });
             with_cover_color(&mut item, index);
             Some(item)
         })
+}
+
+/// One title per name and system, as Core's grouped search sees it: the
+/// position of the first game with that name on that system.
+fn title_id(name: &str, system: &str) -> i64 {
+    ALL_GAMES
+        .iter()
+        .position(|(n, _, s)| *n == name && *s == system)
+        .map_or(0, |index| index as i64 + 1)
 }
 
 /// Display name and category for a mock system id. Unknown ids use an

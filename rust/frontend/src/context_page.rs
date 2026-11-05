@@ -7,7 +7,7 @@
 // either part of the menu itself (Manage, Write to token: the rows are
 // already known) or a list Core has to be asked for, in which case the menu
 // stays open while Core answers and what the page lists is its own module's
-// business (`alternates`, `discs`).
+// business (`alternates`, `discs`, `title_versions`).
 
 use std::future::Future;
 
@@ -23,6 +23,7 @@ use crate::App;
 pub enum Page {
     Alternates,
     Discs,
+    Versions,
     /// A page of the menu's own rows.
     Menu(MenuPage),
 }
@@ -33,6 +34,7 @@ impl Page {
         match self {
             Self::Alternates => "discover",
             Self::Discs => "choose_disc",
+            Self::Versions => "choose_version",
             Self::Menu(page) => page.menu_id(),
         }
     }
@@ -42,6 +44,7 @@ impl Page {
         match self {
             Self::Alternates => "discover:searching",
             Self::Discs => "choose_disc:loading",
+            Self::Versions => "choose_version:loading",
             Self::Menu(_) => "",
         }
     }
@@ -51,6 +54,7 @@ impl Page {
         match self {
             Self::Alternates => "discover:none",
             Self::Discs => "choose_disc:none",
+            Self::Versions => "choose_version:none",
             Self::Menu(_) => "",
         }
     }
@@ -59,6 +63,7 @@ impl Page {
         match self {
             Self::Alternates => "alternate_discovery",
             Self::Discs => "disc_list",
+            Self::Versions => "version_list",
             Self::Menu(_) => "",
         }
     }
@@ -68,6 +73,7 @@ impl Page {
         match self {
             Self::Alternates => crate::ContextPage::Alternates,
             Self::Discs => crate::ContextPage::Discs,
+            Self::Versions => crate::ContextPage::Versions,
             Self::Menu(MenuPage::WriteToken) => crate::ContextPage::WriteToken,
             Self::Menu(MenuPage::ManageGame) => crate::ContextPage::ManageGame,
             Self::Menu(MenuPage::ManageSystem) => crate::ContextPage::ManageSystem,
@@ -116,7 +122,9 @@ impl PageModel {
 
 /// Whether the menu row `id` opens a page Core has to be asked for.
 pub fn asks_core(id: &str) -> bool {
-    id == Page::Alternates.menu_id() || id == Page::Discs.menu_id()
+    [Page::Alternates, Page::Discs, Page::Versions]
+        .iter()
+        .any(|page| id == page.menu_id())
 }
 
 fn row_id(index: usize) -> String {

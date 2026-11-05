@@ -35,12 +35,15 @@ export global Labels {
         if (status == BootStatus.unreachable) { return @tr("Can't reach Zaparoo Core. Check the connection."); }
         return @tr("Connecting to Zaparoo Core…");
     }
-    // The dim suffix beside an item's name: its own tags, and the word that
-    // says a hidden item is hidden while hidden items are being shown.
-    public pure function tags(tags: string, hidden: bool) -> string {
-        if (!hidden) { return tags; }
-        if (tags == "") { return @tr("Hidden"); }
-        return @tr("{} · {}", tags, @tr("Hidden"));
+    // The dim suffix beside an item's name: its own tags, how many versions
+    // a search result stands for, and the word that says a hidden item is
+    // hidden while hidden items are being shown.
+    public pure function tags(tags: string, hidden: bool, versions: int) -> string {
+        let count = @tr("({})", versions);
+        let counted = versions < 2 ? tags : (tags == "" ? count : @tr("{} {}", tags, count));
+        if (!hidden) { return counted; }
+        if (counted == "") { return @tr("Hidden"); }
+        return @tr("{} · {}", counted, @tr("Hidden"));
     }
     public pure function loading(target: Screen) -> string {
         if (target == Screen.favorite-systems) { return @tr("Loading favorite systems…"); }
@@ -153,6 +156,9 @@ export global Labels {
         if (key == "choose_disc") { return @tr("Choose disc"); }
         if (key == "choose_disc:loading") { return @tr("Loading…"); }
         if (key == "choose_disc:none") { return @tr("No discs found"); }
+        if (key == "choose_version") { return @tr("Choose version"); }
+        if (key == "choose_version:loading") { return @tr("Loading…"); }
+        if (key == "choose_version:none") { return @tr("No versions found"); }
         if (key == "disc") { return @tr("Disc {}", name); }
         if (key == "add_to_hub") { return @tr("Add to Hub"); }
         if (key == "save_to_hub") { return @tr("Save to Hub"); }
@@ -353,6 +359,7 @@ export global DialogLabels {
         if (kind == ErrorKind.launcher || kind == ErrorKind.launcher-save) { return @tr("Launcher update failed"); }
         if (kind == ErrorKind.alternate-discovery) { return @tr("Alternate versions unavailable"); }
         if (kind == ErrorKind.disc-list) { return @tr("Disc list unavailable"); }
+        if (kind == ErrorKind.version-list) { return @tr("Version list unavailable"); }
         if (kind == ErrorKind.qr-code) { return @tr("QR code failed"); }
         if (kind == ErrorKind.card-write) { return @tr("Token write failed"); }
         if (kind == ErrorKind.image-picker) { return @tr("Image picker failed"); }
@@ -393,6 +400,7 @@ export global DialogLabels {
         if (kind == ErrorKind.launcher || kind == ErrorKind.launcher-save) { return @tr("Could not change the launcher. Check Zaparoo Core and try again."); }
         if (kind == ErrorKind.alternate-discovery) { return @tr("Could not find alternate versions. Check Zaparoo Core and try again."); }
         if (kind == ErrorKind.disc-list) { return @tr("Could not list the discs of this game. Check Zaparoo Core and try again."); }
+        if (kind == ErrorKind.version-list) { return @tr("Could not list the versions of this game. Check Zaparoo Core and try again."); }
         if (kind == ErrorKind.qr-code) { return @tr("Could not create the QR code for this item."); }
         if (kind == ErrorKind.card-write) { return @tr("Could not write to this token. Check that it is writable and try again."); }
         if (kind == ErrorKind.image-picker) { return @tr("Could not open an image picker, or the image chosen could not be read."); }
