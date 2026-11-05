@@ -532,13 +532,14 @@ mod tests {
     }
 
     #[test]
-    fn a_live_browse_lists_folders_then_files_that_launch_their_path() {
+    fn a_live_browse_lists_folders_then_files_whose_script_launches_their_path() {
         let req = r#"{"jsonrpc":"2.0","id":"1","method":"media.browse","params":{"path":"/media/fat/_RA_Cores","live":true}}"#;
         let resp = parse(&dispatch(req));
         let entries = resp["result"]["entries"].as_array().expect("array");
         assert_eq!(entries[0]["type"], Value::from("directory"));
         let file = entries.last().expect("a file");
-        assert_eq!(file["zapScript"], file["path"]);
+        let path = file["path"].as_str().expect("a path");
+        assert_eq!(file["zapScript"], Value::from(format!("**launch:{path}")));
         assert!(file.get("systemId").is_none());
     }
 

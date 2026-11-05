@@ -150,6 +150,17 @@ impl GameRow {
         non_empty(&self.path).or_else(|| non_empty(&self.zap_script))
     }
 
+    /// The run text for a row of a live folder: Core's `zapScript`
+    /// first, which it quotes when the file name needs it, so a name with
+    /// `ZapScript` syntax in it still launches that file. Elsewhere, as
+    /// `launch_text`.
+    pub fn launch_text_from(&self, live: bool) -> Option<String> {
+        if live && !self.zap_script.trim().is_empty() {
+            return Some(self.zap_script.clone());
+        }
+        self.launch_text()
+    }
+
     fn identity(&self, fallback_system: &str) -> String {
         if !self.media_capable {
             return String::new();
@@ -3721,7 +3732,7 @@ pub(crate) fn press_duration(app: &App) -> u64 {
 /// retires locally without a navigation delay.
 fn accept_current(ctx: &Ctx, app: &App) {
     let list_feedback = app.global::<crate::Shell>().get_browse_list_layout();
-    let (row, seq) = {
+    let (row, seq, live) = {
         let mut shared = lock(&ctx.shared);
         let model = &mut shared.games;
         let Some(row) = model.current().cloned() else {
@@ -3731,7 +3742,8 @@ fn accept_current(ctx: &Ctx, app: &App) {
         if list_feedback {
             model.activate_pulse += 1;
         }
-        (row, model.press_seq)
+        let live = model.live && model.mode == GamesMode::Browse;
+        (row, model.press_seq, live)
     };
     persist_now(ctx);
     render(ctx, app);
@@ -3741,7 +3753,7 @@ fn accept_current(ctx: &Ctx, app: &App) {
         navigate_into_folder(ctx, app, &row.path);
         return;
     }
-    if let Some(text) = row.launch_text() {
+    if let Some(text) = row.launch_text_from(live) {
         crate::router::launch(ctx, app, text, &row.display);
     }
     if !list_feedback {
@@ -4937,6 +4949,21 @@ mod tests {
         assert_eq!(
             model.rows[0].display, "0",
             "naming changes still rebuild every title"
+        );
+    }
+
+    #[test]
+    fn a_live_file_launches_by_cores_script_before_its_path() {
+        let mut e = entry("media", "Atari7800", "/media/fat/_RA_Cores/Atari7800.mgl");
+        e.zap_script = "**launch:/media/fat/_RA_Cores/Atari7800.mgl".into();
+        let row = GameRow::from(&e);
+        assert_eq!(
+            row.launch_text_from(true).as_deref(),
+            Some(e.zap_script.as_str())
+        );
+        assert_eq!(
+            row.launch_text_from(false).as_deref(),
+            Some(e.path.as_str())
         );
     }
 

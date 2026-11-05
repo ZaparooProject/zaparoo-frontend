@@ -740,8 +740,8 @@ fn media_browse_route_roots_response(systems: &[&str]) -> Value {
 
 /// `live: true`: a folder read from disk, as a `MiSTer` menu folder lists.
 /// Two subfolders under the browsed folder and its parent's, then `.mgl`
-/// and `.rbf` files that launch their own path, with no system, media id
-/// or tags, as Core sends a file its index has not matched.
+/// and `.rbf` files whose `zapScript` launches their own path, with no
+/// system, media id or tags, as Core sends a file its index has not matched.
 fn media_browse_live_response(path: &str, max: usize, offset: usize) -> Value {
     let path = path.trim_end_matches('/');
     let depth = path.matches('/').count();
@@ -756,12 +756,12 @@ fn media_browse_live_response(path: &str, max: usize, offset: usize) -> Value {
         }
     }
     for (index, ext) in ["mgl", "rbf", "mgl", "rbf", "mgl"].iter().enumerate() {
-        let file = format!("{path}/Entry {index}.{ext}");
+        let file = format!("{path}/Entry{index}.{ext}");
         entries.push(json!({
-            "name": format!("Entry {index}"),
+            "name": format!("Entry{index}"),
             "path": file,
             "type": "media",
-            "zapScript": file,
+            "zapScript": format!("**launch:{file}"),
             "hasCover": false,
         }));
     }
