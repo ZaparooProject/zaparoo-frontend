@@ -45,9 +45,10 @@ pub enum Category {
     Lists,
 }
 
-/// The collections worth filtering on. `hidden`, `disliked` and the deck
-/// membership tags are bookkeeping, not something to browse by.
-const LIST_VALUES: [&str; 3] = ["favorite", "liked", "playlater"];
+/// The built-in collections worth filtering on.
+/// `hidden` is bookkeeping, not something to browse by. Decks join them
+/// by name (`deck_id`).
+const LIST_VALUES: [&str; 4] = ["favorite", "liked", "playlater", "disliked"];
 
 /// Leads a deck membership tag's value; the deck's id follows.
 const DECK_PREFIX: &str = "deck:";
@@ -196,6 +197,7 @@ fn collection_name(category: Category, value: &str) -> Option<&'static str> {
         "favorite" => Some("Favorites"),
         "liked" => Some("Liked"),
         "playlater" => Some("Play later"),
+        "disliked" => Some("Disliked"),
         _ => None,
     }
 }
@@ -366,10 +368,14 @@ mod tests {
             tag("user", "playlater", "", 1),
             tag("user", "favorite", "", 1),
             tag("user", "liked", "Liked games", 1),
+            tag("user", "disliked", "", 1),
         ];
         let groups = group(&tags);
         let labels: Vec<_> = groups[0].values.iter().map(|v| v.label.as_str()).collect();
-        assert_eq!(labels, ["Favorites", "Liked games", "Play later"]);
+        assert_eq!(
+            labels,
+            ["Disliked", "Favorites", "Liked games", "Play later"]
+        );
     }
 
     #[test]

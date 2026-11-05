@@ -6,9 +6,9 @@
 
 use crate::client::{Client, ClientError};
 use crate::endpoints::{
-    media_browse::MediaBrowseEndpoint, media_favorites::MediaFavoritesEndpoint,
-    media_history::MediaHistoryEndpoint, media_search::MediaSearchEndpoint,
-    systems_favorites::SystemsFavoritesEndpoint,
+    decks::DeckEndpoint, media_browse::MediaBrowseEndpoint, media_history::MediaHistoryEndpoint,
+    media_search::MediaSearchEndpoint, media_user_list::MediaUserListEndpoint,
+    systems_user_list::SystemsUserListEndpoint,
 };
 use crate::media_types::{MediaTagsUpdateParams, MediaTagsUpdateResult};
 use crate::store::{Endpoint, Mutation, Tag};
@@ -32,10 +32,12 @@ impl Mutation for MediaTagsUpdateMutation {
     fn invalidates(_args: &Self::Args, _result: &Self::Output) -> Vec<Tag> {
         vec![
             Tag::any(MediaBrowseEndpoint::NAME),
-            Tag::any(MediaFavoritesEndpoint::NAME),
+            Tag::any(MediaUserListEndpoint::NAME),
             Tag::any(MediaHistoryEndpoint::NAME),
             Tag::any(MediaSearchEndpoint::NAME),
-            Tag::any(SystemsFavoritesEndpoint::NAME),
+            Tag::any(SystemsUserListEndpoint::NAME),
+            // A deck's items carry their files' flags.
+            Tag::any(DeckEndpoint::NAME),
         ]
     }
 }
@@ -59,10 +61,10 @@ mod tests {
         );
         for kind in [
             MediaBrowseEndpoint::NAME,
-            MediaFavoritesEndpoint::NAME,
+            MediaUserListEndpoint::NAME,
             MediaHistoryEndpoint::NAME,
             MediaSearchEndpoint::NAME,
-            SystemsFavoritesEndpoint::NAME,
+            SystemsUserListEndpoint::NAME,
         ] {
             assert!(tags.contains(&Tag::any(kind)));
         }

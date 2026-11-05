@@ -145,5 +145,6 @@ fn push_row(
         label: name.clone(),
         name,
         launch_text: launch_text.to_string(),
+        deck: None,
     });
 }

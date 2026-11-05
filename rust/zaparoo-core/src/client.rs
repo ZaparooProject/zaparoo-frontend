@@ -13,20 +13,25 @@
 // against the next session, and `call()` fails fast with `not connected`
 // instead of disappearing into a queue.
 
+use crate::collections::{
+    Deck, DeckIdParams, DeckImageParams, DeckNewParams, DeckUpdateParams, DecksParams, DecksResult,
+};
 use crate::media_types::{
     AuthLinkStatus, AuthStatusResult, BackupRemoteListResult, BackupRemoteRestoreResult,
-    BackupRemoteRunResult, BackupStatusResponse, DecksResult, HealthResult, LaunchersResult,
-    LogDownloadResult, MediaAssetParams, MediaAssetResult, MediaBrowseIndexParams,
-    MediaBrowseIndexResult, MediaBrowseParams, MediaBrowseResult, MediaHistoryLatestResult,
-    MediaHistoryParams, MediaHistoryResult, MediaImageParams, MediaImageResult, MediaIndexParams,
-    MediaLookupParams, MediaLookupResult, MediaMetaParams, MediaMetaResult, MediaMetaUpdateParams,
-    MediaResult, MediaScrapeParams, MediaSearchParams, MediaSearchResult, MediaTagsParams,
-    MediaTagsResult, MediaTagsUpdateParams, MediaTagsUpdateResult, PairStartResult, ReadersResult,
-    ReadersWriteParams, RemoteActivityResult, RunParams, ScrapersResult, ScrapingStatusResponse,
-    SettingsResult, SystemsParams, SystemsResult, TokensHistoryResult, TokensResult,
-    UpdateSettingsParams, VersionResult,
+    BackupRemoteRunResult, BackupStatusResponse, HealthResult, LaunchersResult, LogDownloadResult,
+    MediaAssetParams, MediaAssetResult, MediaBrowseIndexParams, MediaBrowseIndexResult,
+    MediaBrowseParams, MediaBrowseResult, MediaHistoryLatestResult, MediaHistoryParams,
+    MediaHistoryResult, MediaHistoryTopParams, MediaHistoryTopResult, MediaImageParams,
+    MediaImageResult, MediaIndexParams, MediaLookupParams, MediaLookupResult, MediaMetaParams,
+    MediaMetaResult, MediaMetaUpdateParams, MediaResult, MediaScrapeParams, MediaSearchParams,
+    MediaSearchResult, MediaTagsParams, MediaTagsResult, MediaTagsUpdateParams,
+    MediaTagsUpdateResult, PairStartResult, ReadersResult, ReadersWriteParams,
+    RemoteActivityResult, RunParams, ScrapersResult, ScrapingStatusResponse, SettingsResult,
+    SystemsParams, SystemsResult, TokensHistoryResult, TokensResult, UpdateSettingsParams,
+    VersionResult,
 };
 use crate::transport::Transport;
+use crate::ui_events::{UiRespondParams, UiState};
 use futures_util::{SinkExt, StreamExt};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::Value;
@@ -1083,6 +1088,16 @@ impl Client {
         deserialize_timed("media.meta.update", val)
     }
 
+    /// The most played games, ranked by total play time
+    /// (`media.history.top`).
+    pub async fn media_history_top(
+        &self,
+        params: MediaHistoryTopParams,
+    ) -> Result<MediaHistoryTopResult, ClientError> {
+        let val = self.call("media.history.top", &params).await?;
+        deserialize_timed("media.history.top", val)
+    }
+
     pub async fn media_history(
         &self,
         params: MediaHistoryParams,
@@ -1121,11 +1136,67 @@ impl Client {
         deserialize_timed("media.tags", val)
     }
 
-    /// Lists every deck without its items (`decks`, Core 2.18), most
-    /// recently changed first.
-    pub async fn decks(&self) -> Result<DecksResult, ClientError> {
-        let val = self.call("decks", &serde_json::json!({})).await?;
+    /// Lists every deck without its items (`decks`), most recently changed
+    /// first. Naming a game (`system` and `path`) also says which decks
+    /// hold it.
+    pub async fn decks(&self, params: DecksParams) -> Result<DecksResult, ClientError> {
+        let val = self.call("decks", &params).await?;
         deserialize_timed("decks", val)
+    }
+
+    /// One deck with its items (`decks.get`).
+    pub async fn deck_get(&self, deck_id: &str) -> Result<Deck, ClientError> {
+        let params = DeckIdParams {
+            deck_id: deck_id.to_owned(),
+        };
+        let val = self.call("decks.get", &params).await?;
+        deserialize_timed("decks.get", val)
+    }
+
+    /// Creates a deck (`decks.new`); returns it with its items.
+    pub async fn deck_new(&self, params: DeckNewParams) -> Result<Deck, ClientError> {
+        let val = self.call("decks.new", &params).await?;
+        deserialize_timed("decks.new", val)
+    }
+
+    /// Renames, reorders, adds to, removes from or sets the cover of a deck
+    /// (`decks.update`); returns it with its items.
+    pub async fn deck_update(&self, params: DeckUpdateParams) -> Result<Deck, ClientError> {
+        let val = self.call("decks.update", &params).await?;
+        deserialize_timed("decks.update", val)
+    }
+
+    /// Deletes a deck (`decks.delete`).
+    pub async fn deck_delete(&self, deck_id: &str) -> Result<(), ClientError> {
+        let params = DeckIdParams {
+            deck_id: deck_id.to_owned(),
+        };
+        self.call("decks.delete", &params).await?;
+        Ok(())
+    }
+
+    /// A deck's cover, or a card item's art (`decks.image`). Same result as
+    /// `media.image`.
+    pub async fn deck_image(
+        &self,
+        params: DeckImageParams,
+    ) -> Result<MediaImageResult, ClientError> {
+        let val = self.call("decks.image", &params).await?;
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
+    }
+
+    /// Core's current UI events (`ui`). Ask after every connect; later
+    /// changes arrive as `ui.changed`.
+    pub async fn ui(&self) -> Result<UiState, ClientError> {
+        let val = self.call("ui", &serde_json::json!({})).await?;
+        deserialize_timed("ui", val)
+    }
+
+    /// Answers a UI event (`ui.respond`). The first answer from any client
+    /// wins; a late one is a client error.
+    pub async fn ui_respond(&self, params: UiRespondParams) -> Result<(), ClientError> {
+        self.call("ui.respond", &params).await?;
+        Ok(())
     }
 
     /// Adds or removes mutable user tags for one indexed media item.

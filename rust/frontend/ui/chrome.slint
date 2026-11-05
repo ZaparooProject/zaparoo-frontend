@@ -136,6 +136,9 @@ export global Status {
         if (self.kind == StatusKind.imported) { return @tr("Imported {} of {}", self.arg, self.arg2); }
         if (self.kind == StatusKind.playtime-warning) { return @tr("Playtime limit in {}", self.arg); }
         if (self.kind == StatusKind.inbox) { return self.arg; }
+        // Core's own words, as it sent them.
+        if (self.kind == StatusKind.core-loader) { return self.arg == "" ? @tr("Loading…") : self.arg; }
+        if (self.kind == StatusKind.core-notice) { return self.arg; }
         return "";
     }
     public pure function percent-text() -> string {

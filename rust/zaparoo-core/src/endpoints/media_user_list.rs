@@ -2,28 +2,37 @@
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 //
-// `MediaFavoritesEndpoint` — first page of media tagged `user:favorite`.
+// `MediaUserListEndpoint`: first page of one built-in list (Favorites,
+// Liked, Disliked, Play later), the media tagged with its `user:*` flag.
 
 use crate::client::{Client, ClientError};
+use crate::collections::UserList;
 use crate::media_types::{MediaSearchParams, MediaSearchResult};
 use crate::store::{Endpoint, Tag};
 use futures_util::future::BoxFuture;
 use std::sync::Arc;
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
-pub struct FavoritesArgs {
+pub struct UserListArgs {
+    pub list: UserList,
     pub max_results: u32,
     pub sort: Option<String>,
     pub systems: Vec<String>,
 }
 
-impl FavoritesArgs {
+impl UserListArgs {
     #[must_use]
-    pub fn new(max_results: u32, sort: Option<String>, mut systems: Vec<String>) -> Self {
+    pub fn new(
+        list: UserList,
+        max_results: u32,
+        sort: Option<String>,
+        mut systems: Vec<String>,
+    ) -> Self {
         systems.retain(|system| !system.is_empty());
         systems.sort();
         systems.dedup();
         Self {
+            list,
             max_results,
             sort,
             systems,
@@ -32,12 +41,12 @@ impl FavoritesArgs {
 }
 
 #[derive(Debug)]
-pub struct MediaFavoritesEndpoint;
+pub struct MediaUserListEndpoint;
 
-impl Endpoint for MediaFavoritesEndpoint {
-    type Args = FavoritesArgs;
+impl Endpoint for MediaUserListEndpoint {
+    type Args = UserListArgs;
     type Output = MediaSearchResult;
-    const NAME: &'static str = "MediaFavorites";
+    const NAME: &'static str = "MediaUserList";
 
     fn cache_bytes(output: &Self::Output) -> Option<usize> {
         Some(super::retained::bytes(output))
@@ -52,7 +61,7 @@ impl Endpoint for MediaFavoritesEndpoint {
                 .media_search(MediaSearchParams {
                     systems: args.systems,
                     max_results: Some(args.max_results),
-                    tags: vec!["user:favorite".into()],
+                    tags: vec![args.list.tag().into()],
                     sort: args.sort,
                     ..MediaSearchParams::default()
                 })
@@ -67,18 +76,27 @@ impl Endpoint for MediaFavoritesEndpoint {
 
 #[cfg(test)]
 mod tests {
-    use super::FavoritesArgs;
+    use super::UserListArgs;
+    use crate::collections::UserList;
 
     #[test]
-    fn cache_identity_includes_sort_and_system_scope() {
-        let default = FavoritesArgs::new(25, None, Vec::new());
-        let sorted = FavoritesArgs::new(25, Some("name-asc".into()), Vec::new());
-        let scoped = FavoritesArgs::new(25, None, vec!["SNES".into()]);
+    fn cache_identity_includes_list_sort_and_system_scope() {
+        let fav = UserList::Favorite;
+        let default = UserListArgs::new(fav, 25, None, Vec::new());
+        let sorted = UserListArgs::new(fav, 25, Some("name-asc".into()), Vec::new());
+        let scoped = UserListArgs::new(fav, 25, None, vec!["SNES".into()]);
+        let liked = UserListArgs::new(UserList::Liked, 25, None, Vec::new());
         assert_ne!(default, sorted);
         assert_ne!(default, scoped);
+        assert_ne!(default, liked);
         assert_eq!(
-            FavoritesArgs::new(25, None, vec!["SNES".into(), "NES".into(), "SNES".into()]),
-            FavoritesArgs::new(25, None, vec!["NES".into(), "SNES".into()]),
+            UserListArgs::new(
+                fav,
+                25,
+                None,
+                vec!["SNES".into(), "NES".into(), "SNES".into()]
+            ),
+            UserListArgs::new(fav, 25, None, vec!["NES".into(), "SNES".into()]),
         );
     }
 }

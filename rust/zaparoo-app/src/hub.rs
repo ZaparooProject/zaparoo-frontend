@@ -16,10 +16,14 @@ use crate::paged_grid::{self, Fit, Grid, Insets};
 use crate::sizing::{Derived, Inputs, Tier};
 
 /// The built-in action ids in their seed order (`hub_layout.rs`).
-pub const BUILT_IN_ACTIONS: [&str; 6] = [
+pub const BUILT_IN_ACTIONS: [&str; 10] = [
     "resume",
     "favorites",
+    "liked",
+    "playlater",
+    "decks",
     "recents",
+    "topplayed",
     "search",
     "update",
     "settings",
@@ -54,6 +58,8 @@ pub enum Kind {
     ZapScript,
     /// A saved search, which opens its results.
     Search,
+    /// A deck pinned to the Hub, which opens it.
+    Collection,
     /// A blank cell: a persisted spacer or the last page's tail padding.
     Empty,
 }
@@ -67,6 +73,7 @@ impl Kind {
             Self::Folder => "folder",
             Self::ZapScript => "zapscript",
             Self::Search => "search",
+            Self::Collection => "collection",
             Self::Empty => "empty",
         }
     }
@@ -81,6 +88,8 @@ pub enum Reason {
     NoRecentGames,
     NoInternet,
     NotAvailable,
+    /// A pinned deck Core no longer has.
+    DeckMissing,
 }
 
 impl Reason {
@@ -90,6 +99,7 @@ impl Reason {
             Self::NoRecentGames => "no-recent-games",
             Self::NoInternet => "no-internet",
             Self::NotAvailable => "not-available",
+            Self::DeckMissing => "deck-missing",
         }
     }
 }
@@ -172,8 +182,27 @@ pub struct Live<'a> {
     pub pick_folders: bool,
 }
 
+/// What the caller knows about a pinned deck.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum DeckLookup {
+    /// The deck list has not arrived yet.
+    #[default]
+    Unknown,
+    /// Core answered and has no such deck.
+    Missing,
+    /// Its name, and its cover's key or empty for the deck glyph.
+    Found { name: String, cover_key: String },
+}
+
+/// The glyph a deck without a cover shows.
+pub const DECK_GLYPH: &str = "icons/BookMarked";
+
 /// Name and art lookups the caller owns.
 pub trait Resolver {
+    /// A pinned deck, by its id.
+    fn deck(&self, _id: &str) -> DeckLookup {
+        DeckLookup::Unknown
+    }
     fn system_name(&self, id: &str) -> String;
     fn system_cover_key(&self, id: &str) -> String;
     fn media_cover_key(&self, system: &str, path: &str) -> String;
@@ -249,6 +278,16 @@ fn action_entry(
     }
 }
 
+/// The outline glyph of a built-in list's tile.
+fn list_icon(id: &str) -> &'static str {
+    match id {
+        "liked" => "icons/ThumbsUpOutline",
+        "playlater" => "icons/BookmarkOutline",
+        "disliked" => "icons/ThumbsDownOutline",
+        _ => "icons/HeartOutline",
+    }
+}
+
 fn resolve_action(live: &Live, resolver: &dyn Resolver, id: &str) -> Option<Entry> {
     match id {
         "resume" => {
@@ -276,17 +315,25 @@ fn resolve_action(live: &Live, resolver: &dyn Resolver, id: &str) -> Option<Entr
             entry.name = name.to_string();
             Some(entry)
         }
-        "favorites" => Some(action_entry(
+        "favorites" | "liked" | "playlater" | "disliked" => Some(action_entry(
             resolver,
             id,
-            "icons/HeartOutline",
+            list_icon(id),
             false,
             Reason::None,
         )),
+        "decks" => Some(action_entry(resolver, id, DECK_GLYPH, false, Reason::None)),
         "recents" => Some(action_entry(
             resolver,
             id,
             "icons/History",
+            false,
+            Reason::None,
+        )),
+        "topplayed" => Some(action_entry(
+            resolver,
+            id,
+            "icons/Trophy",
             false,
             Reason::None,
         )),
@@ -493,6 +540,41 @@ fn resolve_search(resolver: &dyn Resolver, item: &LayoutItem) -> Option<Entry> {
     })
 }
 
+/// A pinned deck: its name and cover while Core has it, disabled once Core
+/// says it is gone. Until the deck list arrives it shows the glyph and the
+/// name it was given, if any.
+fn resolve_collection(resolver: &dyn Resolver, item: &LayoutItem) -> Option<Entry> {
+    if item.id.trim().is_empty() {
+        return None;
+    }
+    let (name, cover, reason) = match resolver.deck(&item.id) {
+        DeckLookup::Found { name, cover_key } => (name, cover_key, Reason::None),
+        DeckLookup::Missing => (String::new(), String::new(), Reason::DeckMissing),
+        DeckLookup::Unknown => (String::new(), String::new(), Reason::None),
+    };
+    let cover = if cover.is_empty() {
+        DECK_GLYPH.to_string()
+    } else {
+        cover
+    };
+    Some(Entry {
+        kind: Some(Kind::Collection),
+        id: item.id.clone(),
+        name,
+        cover_key: if item.icon.is_empty() {
+            cover
+        } else {
+            icon_cover_key(resolver, &item.icon, &cover)
+        },
+        fallback_cover_key: DECK_GLYPH.into(),
+        custom_name: item.name.trim().to_string(),
+        disabled: reason != Reason::None,
+        reason,
+        hub_index: -1,
+        ..Entry::default()
+    })
+}
+
 /// What a pinned game tile sends to Core, in the order it is tried: the
 /// launcher-relative path (survives a move to another drive), the title
 /// command (survives a reorganized folder), then the absolute path. Every
@@ -605,6 +687,7 @@ fn resolve_item(
         "folder" => resolve_folder(resolver, item),
         "zapscript" => resolve_zapscript(resolver, item),
         "search" => resolve_search(resolver, item),
+        "collection" => resolve_collection(resolver, item),
         _ => None,
     }?;
     entry.hub_index = hub_index;
@@ -623,6 +706,7 @@ pub fn default_name(resolver: &dyn Resolver, item: &LayoutItem) -> Option<String
         "system" => resolve_system(resolver, &item),
         "folder" => resolve_folder(resolver, &item),
         "search" => resolve_search(resolver, &item),
+        "collection" => resolve_collection(resolver, &item).filter(|entry| !entry.name.is_empty()),
         _ => None,
     }
     .map(|entry| entry.name)
@@ -766,6 +850,7 @@ pub fn restore_index(
             "folder" => Some(Kind::Folder),
             "zapscript" => Some(Kind::ZapScript),
             "search" => Some(Kind::Search),
+            "collection" => Some(Kind::Collection),
             _ => None,
         };
         if let Some(restored) = kind.and_then(|k| index_for(entries, k, id)) {
@@ -834,6 +919,14 @@ pub fn first_pad_flat_index(entries: &[Entry]) -> usize {
         .iter()
         .position(|e| e.hub_index < 0)
         .unwrap_or(entries.len())
+}
+
+/// Where focus goes when the focused tile is gone: removing the last tile
+/// takes the layout's trailing gap with it, leaving `current` on padding or
+/// past the end. Focus then lands on the last real tile; None leaves it be.
+pub fn focus_in_range(entries: &[Entry], current: usize) -> Option<usize> {
+    let end = first_pad_flat_index(entries);
+    (end > 0 && current >= end).then(|| end - 1)
 }
 
 /// The layout position placing a tile at flat index `flat` means: the
@@ -1049,6 +1142,79 @@ mod tests {
         }
     }
 
+    struct Decks;
+    impl Resolver for Decks {
+        fn system_name(&self, id: &str) -> String {
+            id.into()
+        }
+        fn system_cover_key(&self, id: &str) -> String {
+            format!("systems/{id}")
+        }
+        fn media_cover_key(&self, system: &str, path: &str) -> String {
+            format!("media-image/{system}/{path}")
+        }
+        fn deck(&self, id: &str) -> DeckLookup {
+            match id {
+                "couch" => DeckLookup::Found {
+                    name: "Couch co-op".into(),
+                    cover_key: "media:deck".into(),
+                },
+                "plain" => DeckLookup::Found {
+                    name: "Weekend".into(),
+                    cover_key: String::new(),
+                },
+                "gone" => DeckLookup::Missing,
+                _ => DeckLookup::Unknown,
+            }
+        }
+    }
+
+    #[test]
+    fn focus_moves_back_onto_the_last_tile_when_it_went_past_the_end() {
+        // Three tiles, then the page's padding.
+        let entries = [
+            Entry::blank(0),
+            Entry::blank(1),
+            Entry::blank(2),
+            Entry::blank(-1),
+            Entry::blank(-1),
+        ];
+        assert_eq!(focus_in_range(&entries, 3), Some(2));
+        assert_eq!(focus_in_range(&entries, 4), Some(2));
+        assert_eq!(focus_in_range(&entries, 9), Some(2));
+        assert_eq!(focus_in_range(&entries, 1), None);
+        assert_eq!(focus_in_range(&entries, 2), None);
+        // Nothing left to focus.
+        assert_eq!(focus_in_range(&[Entry::blank(-1)], 0), None);
+    }
+
+    #[test]
+    fn a_pinned_deck_shows_its_name_and_cover_and_is_disabled_once_gone() {
+        let couch =
+            resolve_item(&live(&[]), &Decks, 0, &item("collection", "couch")).expect("couch");
+        assert_eq!(couch.kind, Some(Kind::Collection));
+        assert_eq!(
+            (couch.name.as_str(), couch.cover_key.as_str()),
+            ("Couch co-op", "media:deck")
+        );
+        assert!(!couch.disabled);
+        let plain =
+            resolve_item(&live(&[]), &Decks, 1, &item("collection", "plain")).expect("plain");
+        assert_eq!(plain.cover_key, DECK_GLYPH);
+        let gone = resolve_item(&live(&[]), &Decks, 2, &item("collection", "gone")).expect("gone");
+        assert!(gone.disabled);
+        assert_eq!(gone.reason, Reason::DeckMissing);
+        let pending =
+            resolve_item(&live(&[]), &Decks, 3, &item("collection", "later")).expect("pending");
+        assert!(!pending.disabled);
+        assert_eq!(pending.cover_key, DECK_GLYPH);
+        assert!(resolve_item(&live(&[]), &Decks, 4, &item("collection", " ")).is_none());
+        assert_eq!(
+            default_name(&Decks, &item("collection", "couch")).as_deref(),
+            Some("Couch co-op")
+        );
+    }
+
     fn live(confirmed: &[String]) -> Live<'_> {
         Live {
             categories_loaded: true,
@@ -1080,7 +1246,7 @@ mod tests {
                 system: "SNES".into(),
                 ..LayoutItem::default()
             },
-            item("collection", "x"),
+            item("future-kind", "x"),
             item("action", "update"),
         ];
         let out = entries(&items, false, &live(&confirmed), &Names, 4, 0);
@@ -1127,11 +1293,32 @@ mod tests {
     }
 
     #[test]
+    fn list_and_deck_actions_resolve() {
+        let confirmed: Vec<String> = Vec::new();
+        let l = live(&confirmed);
+        for (id, icon) in [
+            ("liked", "icons/ThumbsUpOutline"),
+            ("playlater", "icons/BookmarkOutline"),
+            ("disliked", "icons/ThumbsDownOutline"),
+        ] {
+            let entry = resolve_action(&l, &Names, id).expect("list action");
+            assert_eq!(entry.fallback_cover_key, icon);
+            assert!(!entry.disabled);
+        }
+        let decks = resolve_action(&l, &Names, "decks").expect("decks");
+        assert!(!decks.disabled);
+        assert_eq!(decks.fallback_cover_key, DECK_GLYPH);
+        let top = resolve_action(&l, &Names, "topplayed").expect("top played");
+        assert!(!top.disabled);
+        assert_eq!(top.fallback_cover_key, "icons/Trophy");
+    }
+
+    #[test]
     fn bootstrap_window_seeds_resume_categories_then_actions() {
         let confirmed: Vec<String> = Vec::new();
         let mut l = live(&confirmed);
         l.update_enabled = false;
-        let out = entries(&[], true, &l, &Names, 10, 0);
+        let out = entries(&[], true, &l, &Names, 14, 0);
         let keys: Vec<&str> = out.iter().map(|e| e.label_key.as_str()).collect();
         assert_eq!(
             keys,
@@ -1143,7 +1330,11 @@ mod tests {
                 "category:Handheld",
                 "category:Other",
                 "action:favorites",
+                "action:liked",
+                "action:playlater",
+                "action:decks",
                 "action:recents",
+                "action:topplayed",
                 "action:search",
                 "action:settings",
             ]

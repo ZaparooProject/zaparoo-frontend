@@ -22,8 +22,8 @@ list, and every Menu chip row, by this priority, top to bottom:
    system tile navigates *into* the system on Accept, so `Launch system`
    is not a duplicate and stays first. Apply the test to the anchor, not
    to the verb.
-2. Frequent secondary actions (favorite, write a token, details, Choose
-   disc).
+2. Frequent secondary actions (details, Add to deck, write a token,
+   Choose disc).
 3. Organizational actions (Move, Add to Hub, Hide).
 4. Long-running maintenance actions (Update media database, Update
    metadata) — always last. These start a background job the user waits
@@ -45,12 +45,61 @@ The same item shows the same menu wherever it appears. A row is offered
 because the item has the data and capability for it, never because of the
 screen: a game reads the same in Games, Favorites, Search results,
 Recently played, and on its Hub tile. Omit a row only when what it needs
-is not known (history Core can no longer resolve has no favorite state to
+is not known (history Core can no longer resolve has no collections to
 toggle) or a shared gate applies (a running media job removes the
 maintenance rows and nothing else). Do not guess missing state to paint
 an identical menu. A context may scope an action when the scope is the
 point and the label says so: Favorite systems offers `Random favorite
 game` in place of `Random game`, not beside it.
+
+A game's built-in collections are not rows. Favorite, Like, Dislike and
+Play later sit in a strip of four icon-only toggles above a game's
+Options rows, in that order, filled while on. The menu still opens on its
+first row; Up from it reaches the strip, Left and Right move along it,
+and Down returns to the rows. The strip has no text of its own: the help
+bar names what A does on the focused button (`Add to favorites`, `Remove
+like`, `Play later`, `Remove from Play later`). It shows only where the
+game's flags are known, by the same rule as any other row. Decks are the
+`Add to deck` row, after `Details`: a page that checks each deck the user
+can change where it holds the game, toggles in place, dims a full deck,
+and ends with `New deck…`.
+
+A deck's Options (on the Decks screen and its Hub tile) leads with `Play
+deck`, since Accept opens the deck rather than playing it; then `Add to
+Hub` or `Remove from Hub`. A deck the user can change keeps its edits on
+a `Manage deck` page: `Rename deck…`, `Choose cover image…` (only where
+Core can read the files the browser shows), `Remove cover`, then `Delete
+deck`, which asks first. A saved or locked deck has no edit rows at all.
+The Deck screen's Menu carries the same rows. On the Deck screen, Accept
+plays the deck from the focused item; an item of a deck the user can
+change adds `Use as deck cover` (a game), `Move` and `Remove from deck`,
+which are its place in the deck and so lead its organization: on its
+Manage page when it has one, on Options otherwise. `Remove from deck`
+asks nothing; the item can be added back from the game's own menu.
+
+Favorites, Liked, Play later and Disliked are one kind of screen and read
+alike: the same Menu chips in the same order (`Sort`, `Group by`, the
+random game, `Search here`, then `More`), with only the list's name
+changing. `Sort` offers `Default`, `A-Z` and `Recently added`; Play
+later opens on `Recently added`, since it is a queue, and the others on
+`Default`. Say `Recently added` for when a game joined a list and
+`Recently played` only for play history; never shorten either to
+`Recent`.
+
+`Top played` is the games Core has the most play time for, most first.
+Its Menu has `Group by` only (`System` or `None`, as on Favorites); it
+has no sort, since the ranking is the point. The focused game's total
+play time shows in its info line beside the clock icon, in hours and
+minutes (`12h 5m`, `3h`, `45m`, `<1m`). Say `Top played`, never `Most
+played` or `Top games`.
+
+A tile carries only the Favorite heart. Everything else about the focused
+item is in its info line, in a fixed order: the name, the collection icons
+(Favorite, Like, Dislike, Play later, only the ones set, in the strip's
+order), the versions count, the play time, a deck's owner (`By {owner}`)
+with its lock, the hidden mark, then the tags, dim. The icons carry these
+facts without words; do not add `Locked`, `Hidden` or a collection name
+beside them. See `docs/style.md` → "Tiles and the info line".
 
 On a Hub shortcut the item's rows and the tile's own share a menu, so
 their labels say which they act on: `Hide game` or `Hide system` for the

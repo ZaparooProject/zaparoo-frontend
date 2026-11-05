@@ -6,8 +6,8 @@
 //! view-only CRT component used by `MiSTer` dual-head mode.
 
 use crate::{
-    App, Buttons, GameInfoView, GamesView, GridCell, HubView, Motion, Overlays, SettingsView,
-    Shell, Status, SystemsView,
+    App, Buttons, CoreUiView, GameInfoView, GamesView, GridCell, HubView, Motion, Overlays,
+    SettingsView, Shell, Status, SystemsView,
 };
 use slint::{ComponentHandle as _, Model as _, ModelRc, VecModel};
 
@@ -700,10 +700,7 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_current_index => set_current_index,
         get_has_pages_above => set_has_pages_above,
         get_has_pages_below => set_has_pages_below,
-        get_label_name => set_label_name,
-        get_label_tags => set_label_tags,
-        get_label_hidden => set_label_hidden,
-        get_label_versions => set_label_versions,
+        get_info => set_info,
         get_activate_pulse => set_activate_pulse,
         get_release_pulse => set_release_pulse,
         get_rail_visible => set_rail_visible,
@@ -968,6 +965,23 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
     let viewer_image = source.get_viewer_image();
     if !same_image(&target.get_viewer_image(), &viewer_image) {
         target.set_viewer_image(viewer_image);
+    }
+
+    let source = primary.global::<CoreUiView>();
+    let target = crt.global::<CoreUiView>();
+    copy_properties!(source, target;
+        get_kind => set_kind,
+        get_title => set_title,
+        get_rows => set_rows,
+        get_index => set_index,
+        get_dismissible => set_dismissible,
+        get_has_art => set_has_art,
+        get_has_cover => set_has_cover,
+        get_cover_absent => set_cover_absent,
+    );
+    let core_cover = source.get_cover();
+    if !same_image(&target.get_cover(), &core_cover) {
+        target.set_cover(core_cover);
     }
 
     let source = primary.global::<Overlays>();

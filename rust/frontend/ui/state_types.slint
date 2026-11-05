@@ -1,25 +1,37 @@
 // Closed UI discriminants shared with the generated Rust API.
-export enum Screen { hub, systems, favorite-systems, games, favorites, recents, search, search-results, settings, about, update, rename, ra-login, file-browser, none }
-export enum GamesMode { browse, favorites, recents, search }
-export enum SystemsMode { category, favorites }
+export enum Screen { hub, systems, favorite-systems, games, favorites, recents, search, search-results, settings, about, update, rename, ra-login, file-browser, decks, deck, top-played, top-played-systems, none }
+export enum GamesMode { browse, favorites, recents, search, deck, decks, top-played }
+export enum SystemsMode { category, favorites, top-played }
+// What a games-screen footer notes after the focused name.
 // What a menu row is: something to pick, a section's name (never focused),
 // an action set apart at the foot of a form list, or a context-menu row
 // that turns the menu to one of its pages.
-export enum MenuRole { option, header, action, submenu }
+// `check-off` and `check-on` are rows that toggle a membership, drawn with
+// an empty or filled box (the Add to deck page).
+export enum MenuRole { option, header, action, submenu, check-off, check-on }
+// A game's four built-in collections, in the Options strip's order.
+export enum UserFlag { favorite, like, dislike, play-later }
 // What the context menu is showing: its own rows, or the page one of them
 // opened in their place.
-export enum ContextPage { root, write-token, manage-game, manage-system, manage-category, discs, versions, alternates }
+export enum ContextPage { root, write-token, manage-game, manage-system, manage-category, manage-deck, discs, versions, alternates, add-to-deck }
 // The on-screen keyboard's key kinds, and the Search screen's focus zones
 // and what its side pane lists.
 export enum KeyKind { char, space, backspace, shift, symbols, submit }
+// What the rename screen names: a Hub tile, a new deck, or a deck.
+export enum RenamePurpose { tile, new-deck, rename-deck }
 export enum SearchZone { system, filter, keys, pane }
 export enum SearchPane { none, recents, preview }
 export enum FileBrowserMode { plain, images }
 // What "Search here" limited a search to: a folder, a system's top level,
-// a category's systems, or the favorites. `none` is an unscoped search.
-export enum SearchScope { none, folder, system, category, favorites }
+// a category's systems, or a built-in list (which one is named beside the
+// scope). `none` is an unscoped search.
+export enum SearchScope { none, folder, system, category, list }
 export enum SettingsPage { root, appearance, library, online, display, controls, language, about }
 export enum ContentState { ready, loading, empty, error }
+// What Core's current UI event puts on screen (`ui` / `ui.changed`). A
+// confirmation uses the decision dialog, a loader and a notice the header
+// line; only a picker has a surface of its own.
+export enum CoreUiKind { none, picker, confirm, loader, notice }
 // The header line's app cue. A wait (`launching` to `cancelling`) follows
 // the shared delay and hold; a confirmation shows at once for a fixed time.
 export enum AppCue {
@@ -28,7 +40,7 @@ export enum AppCue {
     added-to-hub, saved-to-hub, removed-from-hub, token-written
 }
 export enum BootStatus { connecting, starting, migrating, reconnecting, loading, unreachable }
-export enum DisabledReason { none, no-recent-games, no-internet, not-available }
+export enum DisabledReason { none, no-recent-games, no-internet, not-available, deck-missing }
 export enum RowKind { header, field }
 export enum ControlKind { none, picker, toggle, action, navigate, tri-toggle, info }
 export enum ActionStatus {
@@ -65,17 +77,18 @@ export enum LogPhase { uploading, done, failed }
 export enum PairPhase { closed, starting, showing, paired, expired }
 // The "link Online account" panel, on the same terms as pairing.
 export enum OnlineLinkPhase { closed, starting, showing, linked, failed, expired }
-export enum PressOwner { none, hub, systems, games, file-browser, settings, setup, context, list, online-list, letter, card-write, dialog, log, wake, update, launcher-prefs }
+export enum PressOwner { none, hub, systems, games, file-browser, settings, setup, context, list, online-list, letter, card-write, dialog, log, wake, update, launcher-prefs, core-picker }
 export enum StatusKind {
     none, disconnected, reconnecting, connecting, core-error, indexing-paused,
     indexing, optimizing, importing-paused, importing, indexed-files,
     indexing-complete, import-failed, imported, playtime-warning, inbox,
+    core-loader, core-notice,
 }
 export enum Orientation { horizontal, cw, ccw }
 export enum VideoStandard { ntsc, pal }
-export enum DialogKind { none, quit-confirm, quit-blocked, restart-setting, notice, core-version, first-run, hub-full, action-error, unlink-online, restore-online-backup, update-stop, ra-log-out }
+export enum DialogKind { none, quit-confirm, quit-blocked, restart-setting, notice, core-version, first-run, hub-full, action-error, unlink-online, restore-online-backup, update-stop, ra-log-out, delete-deck, core-confirm }
 export enum DialogButton { ok, yes, no, retry, cancel, i-understand, start-media-update }
-export enum ErrorKind { generic, launch, launch-repair, favorite, media-visibility, media-busy, add-to-hub, save-to-hub, media-index, media-scrape, media-scrapers, media-cancel, launcher, launcher-save, alternate-discovery, disc-list, version-list, qr-code, card-write, setting, pairing, online, backup, config-file, image-picker }
+export enum ErrorKind { generic, launch, launch-repair, favorite, collection, deck-list, deck-update, deck-create, media-visibility, media-busy, add-to-hub, save-to-hub, media-index, media-scrape, media-scrapers, media-cancel, launcher, launcher-save, alternate-discovery, disc-list, version-list, qr-code, card-write, setting, pairing, online, backup, config-file, image-picker }
 
 // Text adapters are for vocabulary/resource keys and focus identity only,
 // never routing. Runtime decisions use the enums themselves.
@@ -94,9 +107,13 @@ export global StateTokens {
         if (mode == GamesMode.favorites) { return "favorites"; }
         if (mode == GamesMode.recents) { return "recents"; }
         if (mode == GamesMode.search) { return "search-results"; }
+        if (mode == GamesMode.deck) { return "deck"; }
+        if (mode == GamesMode.decks) { return "decks"; }
+        if (mode == GamesMode.top-played) { return "top-played"; }
         return "games";
     }
     public pure function systems(mode: SystemsMode) -> string {
+        if (mode == SystemsMode.top-played) { return "top-played-systems"; }
         return mode == SystemsMode.favorites ? "favorite-systems" : "systems";
     }
     public pure function setup(kind: SetupKind) -> string {

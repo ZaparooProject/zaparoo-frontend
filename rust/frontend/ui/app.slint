@@ -8,14 +8,15 @@
 // logic; forward orchestration lives in the router.
 
 import { Theme, Sizing, Motion, Layout } from "theme.slint";
-import { MenuRole, ContextPage, KeyKind, SearchZone, SearchPane, SearchScope, FileBrowserMode, Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, StateTokens, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogButton, ErrorKind, ManualState, ManualFit, RaLoginStep, RaLoginStatus, LauncherPrefsPage, LauncherPrefsRowKind } from "state_types.slint";
-export { MenuRole, ContextPage, KeyKind, SearchZone, SearchPane, SearchScope, FileBrowserMode, Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogButton, ErrorKind, ManualState, ManualFit, RaLoginStep, RaLoginStatus, LauncherPrefsPage, LauncherPrefsRowKind }
+import { CoreUiKind, MenuRole, UserFlag, RenamePurpose, ContextPage, KeyKind, SearchZone, SearchPane, SearchScope, FileBrowserMode, Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, StateTokens, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogButton, ErrorKind, ManualState, ManualFit, RaLoginStep, RaLoginStatus, LauncherPrefsPage, LauncherPrefsRowKind } from "state_types.slint";
+export { CoreUiKind, MenuRole, UserFlag, RenamePurpose, ContextPage, KeyKind, SearchZone, SearchPane, SearchScope, FileBrowserMode, Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogButton, ErrorKind, ManualState, ManualFit, RaLoginStep, RaLoginStatus, LauncherPrefsPage, LauncherPrefsRowKind }
 import { FastScrollRail, GlyphSource, Brand, Buttons, HelpEntry, Status, HeaderBar, StatusLine, ProgressTrack, WaitCue, TopStatusStrip, FooterIndicator, ActiveLabel, HelpBar, SectionHeader, Divider, ScrollCue, ModalShell, QrPlate, StateCue } from "chrome.slint";
 import { GridCell, MarqueeCaption, PressableSurface, Tile, PagedGridView, PageStrip } from "tiles.slint";
 import { ScrollOffset, SelectionCursor, SelectionClip, FocusCursor } from "focus.slint";
 import { PressFeedback } from "press_feedback.slint";
 export { PressFeedback }
 import { DetailRow, MetaLabels, BrowseList, BrowseListDetailView } from "browse_list.slint";
+import { InfoLineData, InfoLineLabel } from "info_line.slint";
 import { SettingsRow, SettingsLabels, SettingsRowView } from "settings.slint";
 import { SetupPickerRow, SetupModal, LogUploadModal } from "setup.slint";
 import { Labels, DialogLabels } from "labels.slint";
@@ -50,6 +51,33 @@ import "../../../resources/fonts/MxPlus_HP_100LX_6x8.ttf";
 
 export { Theme, Sizing, Motion, Layout, GlyphSource, Brand, Buttons, Status, HelpEntry, GridCell, DetailRow, SettingsRow, SettingsLabels, SetupPickerRow, GameInfoView, InfoRow, TagNames, Labels, AboutView }
 export { UpdateView, UpdatePage, UpdateButton, UpdateOutcome, UpdateStatusKind, UpdateError, UpdateLinuxPhase, UpdateFilter, UpdateRowKind, UpdateRowStatus, UpdateFolderKind, UpdateHelpLabel, UpdateCounts, UpdateRow, UpdateMembership, UpdateHelp }
+
+// One choice of a Core picker: Core's label, and the system of the game it
+// launches, when it is one.
+export struct CorePickerRow {
+    label: string,
+    detail: string,
+}
+
+// Core's current UI event (`ui` / `ui.changed`), as Rust resolved it. Only
+// the picker draws from here; a confirmation is the decision dialog and a
+// loader or notice the header line.
+export global CoreUiView {
+    in-out property <CoreUiKind> kind: CoreUiKind.none;
+    in-out property <string> title: "";
+    in-out property <[CorePickerRow]> rows: [];
+    in-out property <int> index: 0;
+    in-out property <bool> dismissible: false;
+    // Some choice is a game, so the picker keeps a cover beside its list.
+    in-out property <bool> has-art: false;
+    in-out property <image> cover;
+    in-out property <bool> has-cover: false;
+    // Core said the focused game has no art, or the choice is no game.
+    in-out property <bool> cover-absent: false;
+    // The painted cover box in physical pixels, so the cover is asked for
+    // and fitted at that size.
+    callback art-box(int, int);
+}
 
 // Context-menu row: `id` is the dispatch key the router switches on,
 // never the row's position (position-keyed dispatch was a footgun).
@@ -110,6 +138,9 @@ export struct LetterBucket {
 
 export global Shell {
     in-out property <Screen> active-screen: Screen.hub;
+    // The built-in list the Favorites list and systems screens show:
+    // Favorites, Liked, Play later or Disliked.
+    in-out property <UserFlag> active-list: UserFlag.favorite;
     // A Core-backed destination is pending. Preserve source, gate duplicate
     // accepts/pointer changes, and allow Back to cancel.
     in-out property <bool> transitioning: false;
@@ -189,11 +220,13 @@ export global PageBar {
     // How many chips the screen on show has.
     public pure function active-count() -> int {
         if (Shell.active-screen == Screen.hub) { return self.hub-chips.length; }
-        if (Shell.active-screen == Screen.systems || Shell.active-screen == Screen.favorite-systems) {
+        if (Shell.active-screen == Screen.systems || Shell.active-screen == Screen.favorite-systems
+            || Shell.active-screen == Screen.top-played-systems) {
             return self.systems-chips.length;
         }
         if (Shell.active-screen == Screen.games || Shell.active-screen == Screen.favorites
-            || Shell.active-screen == Screen.search-results) {
+            || Shell.active-screen == Screen.search-results || Shell.active-screen == Screen.deck
+            || Shell.active-screen == Screen.decks || Shell.active-screen == Screen.top-played) {
             return self.games-chips.length;
         }
         return 0;
@@ -265,6 +298,15 @@ export global HubView {
 export global ContextInput {
     callback row-hovered(int);
     callback row-clicked(int);
+    // The pointer over, or pressing, a button of the collections strip.
+    callback strip-hovered(int);
+    callback strip-clicked(int);
+}
+
+// One toggle of the Options menu's collections strip.
+export struct FlagButton {
+    flag: UserFlag,
+    on: bool,
 }
 
 export global HubInput {
@@ -281,7 +323,8 @@ export global HubInput {
 // shared with the games grid.
 export global SystemsView {
     in-out property <SystemsMode> mode: SystemsMode.category;
-    out property <Screen> screen: self.mode == SystemsMode.favorites ? Screen.favorite-systems : Screen.systems;
+    out property <Screen> screen: self.mode == SystemsMode.favorites ? Screen.favorite-systems
+        : (self.mode == SystemsMode.top-played ? Screen.top-played-systems : Screen.systems);
     in-out property <[GridCell]> cells: [];
     in-out property <int> selected-local: 0;
     in-out property <string> category: "";
@@ -467,13 +510,21 @@ export global GamesView {
     in-out property <GamesMode> mode: GamesMode.browse;
     out property <Screen> screen: self.mode == GamesMode.favorites ? Screen.favorites
         : (self.mode == GamesMode.recents ? Screen.recents
-        : (self.mode == GamesMode.search ? Screen.search-results : Screen.games));
+        : (self.mode == GamesMode.search ? Screen.search-results
+        : (self.mode == GamesMode.deck ? Screen.deck
+        : (self.mode == GamesMode.decks ? Screen.decks
+        : (self.mode == GamesMode.top-played ? Screen.top-played : Screen.games)))));
     // Games: the system's display name, or the folder's own name below
-    // the system root. The flat lists compose their titles in the view.
+    // the system root; the Deck screen: the deck's name. The flat lists
+    // compose their titles in the view.
     in-out property <string> title: "";
+    // The Deck screen: an item is picked up by Move.
+    in-out property <bool> moving: false;
     // Search results limited to a category or the favorites: the title's
     // parts before and after the scope, which only the view can name.
     in-out property <SearchScope> search-scope: SearchScope.none;
+    // The built-in list a list scope searches.
+    in-out property <UserFlag> search-list: UserFlag.favorite;
     in-out property <string> search-category: "";
     in-out property <string> title-head: "";
     in-out property <string> title-tail: "";
@@ -481,12 +532,12 @@ export global GamesView {
     // The title as shown. Empty when a search has nothing to name.
     public pure function display-title() -> string {
         if (self.mode != GamesMode.search
-            || (self.search-scope != SearchScope.category && self.search-scope != SearchScope.favorites)) {
+            || (self.search-scope != SearchScope.category && self.search-scope != SearchScope.list)) {
             return self.title;
         }
         let scope = self.search-scope == SearchScope.category
             ? Labels.hub("category:" + self.search-category, self.search-category)
-            : @tr("Favorites");
+            : Labels.list-title(self.search-list);
         let lead = self.title-head == "" ? scope : @tr("{} · {}", self.title-head, scope);
         return self.title-tail == "" ? lead : @tr("{} · {}", lead, self.title-tail);
     }
@@ -526,13 +577,9 @@ export global GamesView {
     in-out property <int> total-pages: 1;
     in-out property <bool> has-pages-above: false;
     in-out property <bool> has-pages-below: false;
-    // Footer: the focused row's name and dim suffix.
-    in-out property <string> label-name: "";
-    in-out property <string> label-tags: "";
-    // The focused game is hidden, shown because hidden games are.
-    in-out property <bool> label-hidden: false;
-    // The versions the focused search result stands for; zero for one.
-    in-out property <int> label-versions: 0;
+    // The focused item's info line: the grid's footer, the detail pane's
+    // fact rows and a text list's focused row all show it.
+    in-out property <InfoLineData> info: { item-count: -1 };
     in-out property <int> activate-pulse: 0;
     in-out property <int> release-pulse: 0;
     // Folder changes reuse the mounted strip horizontally; page changes move vertically.
@@ -615,6 +662,11 @@ export global Overlays {
     // The page the rows belong to. Pages carry no title: the row that
     // opened one already named it, and Back returns to the menu.
     in-out property <ContextPage> context-page: ContextPage.root;
+    // A game's collections, toggled in a strip above the rows on the
+    // menu's own page. Empty for anything that is not a game.
+    in-out property <[FlagButton]> context-strip: [];
+    // The strip button that has focus, or -1 while a row has it.
+    in-out property <int> context-strip-index: -1;
     // The scene rect of the row or tile the menu is about; the scrim
     // hole and the panel placement follow it.
     in-out property <length> context-anchor-x: 0px;
@@ -782,6 +834,29 @@ component ContextRowBody inherits Rectangle {
     in property <bool> opens-page;
     in property <length> chevron;
     in property <length> inset;
+    // A membership row ends in a box, filled while the row is checked.
+    in property <bool> checkable: false;
+    in property <bool> checked: false;
+
+    property <length> box-line: Sizing.card-border-width * (Sizing.tier-240 ? 1 : 2);
+    if root.checkable: Rectangle {
+        x: parent.width - self.width - root.inset;
+        y: (parent.height - self.height) / 2;
+        width: root.chevron;
+        height: self.width;
+        border-radius: Sizing.radius-sm;
+        border-width: root.box-line;
+        border-color: root.content-color;
+
+        if root.checked: Rectangle {
+            x: 2 * root.box-line;
+            y: 2 * root.box-line;
+            width: parent.width - 4 * root.box-line;
+            height: parent.height - 4 * root.box-line;
+            border-radius: Math.max(0px, Sizing.radius-sm - 2 * root.box-line);
+            background: root.content-color;
+        }
+    }
 
     if root.opens-page: Image {
         x: parent.width - self.width - root.inset;
@@ -1288,14 +1363,16 @@ component SystemsScreen inherits Rectangle {
     property <bool> show-grid-page-cue: !root.list-layout && !root.page-cue-in-footer;
     property <bool> show-top-page-cue: root.show-grid-page-cue || (root.list-layout && !root.page-cue-in-footer);
     property <bool> favorites: SystemsView.mode == SystemsMode.favorites;
-    property <string> title: root.favorites
-        ? @tr("Favorites")
-        : Labels.hub("category:" + SystemsView.category, SystemsView.category);
+    property <bool> top-played: SystemsView.mode == SystemsMode.top-played;
+    property <string> title: root.top-played ? @tr("Top played")
+        : (root.favorites
+            ? Labels.list-title(Shell.active-list)
+            : Labels.hub("category:" + SystemsView.category, SystemsView.category));
     property <string> count-text: SystemsView.count <= 0 ? ""
         : (Sizing.tier-240
             ? Labels.count(SystemsView.count)
             : (root.favorites
-                ? Labels.favorite-systems(SystemsView.count)
+                ? Labels.list-systems(Shell.active-list, SystemsView.count)
                 : @tr("{} systems", Labels.count(SystemsView.count))));
 
     TopStatusStrip {
@@ -1476,9 +1553,11 @@ component SystemsScreen inherits Rectangle {
             ? (Layout.top-strip-visible ? root.footer-right-inset : Math.max(root.footer-left-inset, root.footer-right-inset))
             : Layout.slot-margin;
         text: SystemsView.label-name;
-        tags: root.favorites
-            ? (SystemsView.label-count >= 0 ? Labels.favorites(SystemsView.label-count) : "")
-            : (SystemsView.label-hidden ? @tr("Hidden") : "");
+        tags: root.top-played
+            ? (SystemsView.label-count >= 0 ? @tr("{n} game" | "{n} games" % SystemsView.label-count) : "")
+            : (root.favorites
+                ? (SystemsView.label-count >= 0 ? Labels.list-count(Shell.active-list, SystemsView.label-count) : "")
+                : (SystemsView.label-hidden ? @tr("Hidden") : ""));
         visible: !root.gate-hide && !PageBar.focused;
     }
 
@@ -1515,7 +1594,8 @@ component SystemsScreen inherits Rectangle {
         height: root.list-layout ? Math.max(0px, root.height - root.list-card-y - Layout.overlay-bottom-margin) : SystemsView.grid-height;
         cue-center-y: root.height / 2 - self.y;
         state: root.state;
-        empty-text: root.favorites ? @tr("No favorites yet") : @tr("No systems in this category");
+        empty-text: root.top-played ? @tr("Nothing played yet")
+            : (root.favorites ? Labels.list-empty(Shell.active-list) : @tr("No systems in this category"));
     }
 }
 
@@ -1684,6 +1764,173 @@ component ListPickerModal inherits ModalShell {
             glyph: "icons/ScrollDown";
             live: root.top + root.visible-rows < root.entries.length;
         }
+}
+
+// Core's picker: a list of Core's choices titled as Core titled it, and,
+// when choices are games, the focused one's cover beside the list. A Core
+// event may sit above any other surface, so this is drawn above them and
+// below only the decision dialog.
+component CorePickerModal inherits ModalShell {
+    property <length> row-h: Sizing.pct-h(7);
+    property <length> row-sp: Sizing.pct-h(1);
+    property <length> stride: root.row-h + root.row-sp;
+    property <length> arrow: Sizing.pct-h(3);
+    property <length> max-viewport: Sizing.pct-h(60);
+    property <int> count: CoreUiView.rows.length;
+    property <int> visible-rows: Math.max(1, Math.min(root.count,
+        Math.floor((root.max-viewport + root.row-sp) / root.stride)));
+    property <bool> scrollable: root.count > root.visible-rows;
+    property <length> arrow-band: root.scrollable ? root.arrow + Sizing.pct-h(0.5) : 0px;
+    property <length> viewport-h: root.visible-rows * root.row-h
+        + Math.max(0, root.visible-rows - 1) * root.row-sp;
+    // The cover box: as tall as the list and never wider than a third of
+    // the panel, so the labels keep the room they need at 240p.
+    // Snapped so the list column, and the labels centered in it, start on a
+    // whole pixel where the bitmap face is in use.
+    property <length> art-side: CoreUiView.has-art
+        ? Sizing.snap(Math.min(root.viewport-h + 2 * root.arrow-band, root.content-width / 3)) : 0px;
+    property <length> art-gap: CoreUiView.has-art ? root.pad : 0px;
+    property <length> list-x: root.pad + root.art-side + root.art-gap;
+    property <length> list-w: Sizing.even(Math.max(0px, root.content-width - root.art-side - root.art-gap));
+    property <int> top: 0;
+    function reveal-current() {
+        root.top = Math.max(0, Math.min(Math.max(0, root.count - root.visible-rows),
+            Math.min(CoreUiView.index, Math.max(root.top, CoreUiView.index - root.visible-rows + 1))));
+    }
+    property <int> current: CoreUiView.index;
+    changed current => { root.reveal-current(); }
+    changed count => { root.top = 0; root.reveal-current(); }
+    init => { root.reveal-current(); }
+    pure function row-label(row: CorePickerRow) -> string {
+        return row.detail != "" ? @tr("{} · {}", row.label, row.detail) : row.label;
+    }
+    measure := VerticalLayout {
+        visible: false;
+        for row in CoreUiView.rows: Text {
+            text: root.row-label(row);
+            font-size: Sizing.font-body;
+            font-weight: FontWeight.medium;
+        }
+    }
+    title-measure := Text {
+        visible: false;
+        text: root.title;
+        font-size: Sizing.font-title;
+    }
+    property <length> list-desired: measure.preferred-width + 2 * Sizing.pct-w(2) + Sizing.stroke(2);
+    property <length> desired-w: Math.max(root.list-desired + (CoreUiView.has-art ? root.list-desired / 2 + root.pad : 0px),
+        title-measure.preferred-width) + 2 * root.pad + Sizing.font-body * 1.5;
+
+    title: CoreUiView.title;
+    panel-width: Math.min(Sizing.pct-w(92), Math.max(CoreUiView.has-art ? Sizing.pct-w(60) : Sizing.pct-w(30),
+        Math.ceil(root.desired-w / 1px) * 1px));
+    content-height: root.viewport-h + 2 * root.arrow-band;
+
+    if CoreUiView.has-art: Rectangle {
+        x: root.pad;
+        y: root.content-y;
+        width: root.art-side;
+        height: root.content-height;
+        init => { CoreUiView.art-box(Math.round(self.width / 1px), Math.round(self.height / 1px)); }
+        changed width => { CoreUiView.art-box(Math.round(self.width / 1px), Math.round(self.height / 1px)); }
+        changed height => { CoreUiView.art-box(Math.round(self.width / 1px), Math.round(self.height / 1px)); }
+        // An Image takes its source's size unless told otherwise.
+        Image {
+            width: parent.width;
+            height: parent.height;
+            source: CoreUiView.cover;
+            image-fit: contain;
+            image-rendering: Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
+            visible: CoreUiView.has-cover;
+        }
+        // Only a confirmed lack of art shows the chip; a cover on its way
+        // leaves the box empty, like the detail pane.
+        if !CoreUiView.has-cover && CoreUiView.cover-absent: Image {
+            property <length> s: GlyphSource.side(parent.width * 0.4);
+            x: (parent.width - self.s) / 2;
+            y: (parent.height - self.s) / 2;
+            width: self.s;
+            height: self.s;
+            source: GlyphSource.glyph("icons/File", self.s, Theme.text-label);
+            image-rendering: Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
+        }
+    }
+
+    if root.scrollable: ScrollCue {
+        x: root.list-x + (root.list-w - self.width) / 2;
+        y: root.content-y;
+        width: root.arrow;
+        glyph: "icons/ScrollUp";
+        live: root.top > 0;
+    }
+    list-scroll := ScrollOffset {
+        target: root.top * root.stride;
+        step: root.viewport-h;
+        reveal: true;
+        duration: Motion.scroll-ms;
+        viewport: root.viewport-h;
+        scope: CoreUiView.title + ":" + Motion.epoch;
+    }
+    Rectangle {
+        x: root.list-x;
+        y: root.content-y + root.arrow-band;
+        width: root.list-w;
+        height: root.viewport-h;
+        clip: true;
+
+        Rectangle {
+        y: root.top * root.stride - list-scroll.offset;
+        height: parent.height;
+
+        sel := SelectionCursor {
+            press-held: PressFeedback.active(PressOwner.core-picker, CoreUiView.index);
+            target: { x: 0px, y: (CoreUiView.index - root.top) * root.stride,
+                w: parent.width, h: root.row-h, column: 0, row: CoreUiView.index,
+                scope: CoreUiView.title + ":" + root.top,
+                valid: CoreUiView.index >= 0 && CoreUiView.index < root.count };
+        }
+        for row[i] in CoreUiView.rows: Rectangle {
+            x: 0;
+            y: (i - root.top) * root.stride;
+            height: root.row-h;
+            property <bool> lit: sel.fill-bottom > self.y && sel.fill-top < self.y + self.height;
+
+            PickerRowBody {
+                label: root.row-label(row);
+                swatches: false;
+                content-color: Theme.text-primary;
+                swatch-edge: Theme.text-label;
+                weight: FontWeight.normal;
+            }
+            if lit: SelectionClip {
+                row-top: parent.y; row-height: parent.height;
+                fill-top: sel.fill-top; fill-bottom: sel.fill-bottom;
+                fill: sel.fill;
+                PickerRowBody {
+                    label: root.row-label(row);
+                    swatches: false;
+                    content-color: sel.content;
+                    swatch-edge: sel.content;
+                    weight: FontWeight.medium;
+                }
+            }
+            TouchArea {
+                mouse-cursor: pointer;
+                changed has-hover => { if (self.has-hover) { Overlays.pointer-choice(PressOwner.core-picker, i, false); } }
+                clicked => { Overlays.pointer-choice(PressOwner.core-picker, i, true); }
+            }
+        }
+        }
+    }
+
+    if root.scrollable: ScrollCue {
+        x: root.list-x + (root.list-w - self.width) / 2;
+        y: root.content-y + root.content-height - root.arrow;
+        width: root.arrow;
+        glyph: "icons/ScrollDown";
+        live: root.top + root.visible-rows < root.count;
+    }
+    changed visible-rows => { root.reveal-current(); }
 }
 
 // One form-list row's content, colors as inputs so the row can draw it at
@@ -2725,7 +2972,7 @@ component DialogModal inherits ModalShell {
     // does not stack up into extra lines on a 240p screen.
     title-measure := Text {
         visible: false;
-        text: DialogLabels.title(Overlays.dialog-kind, Overlays.dialog-error);
+        text: DialogLabels.title(Overlays.dialog-kind, Overlays.dialog-error, Overlays.dialog-detail);
         font-size: Sizing.font-title;
     }
     body-measure := Text {
@@ -2760,7 +3007,7 @@ component DialogModal inherits ModalShell {
     property <length> body-y: root.content-y;
     property <length> button-y: root.body-y + root.body-h + root.pad;
 
-    title: DialogLabels.title(Overlays.dialog-kind, Overlays.dialog-error);
+    title: DialogLabels.title(Overlays.dialog-kind, Overlays.dialog-error, Overlays.dialog-detail);
     panel-width: root.panel-w-raw;
     content-height: root.button-y + root.btn-h - root.content-y;
 
@@ -2904,6 +3151,10 @@ component ContextMenu inherits Rectangle {
     in property <length> anchor-h;
     in property <length> anchor-radius: 0px;
     in property <bool> anchor-zoomed: false;
+    // A game's collections, as a strip of toggles above the rows, and the
+    // strip button with focus (-1 while a row has it).
+    in property <[FlagButton]> strip: [];
+    in property <int> strip-index: -1;
 
     // The bright hole, which is the anchored thing's painted silhouette
     // rather than its layout rect. A focused tile grows about its own
@@ -2947,10 +3198,19 @@ component ContextMenu inherits Rectangle {
     // A row that opens a page reserves its chevron at the trailing edge.
     property <length> chevron: Sizing.pct-h(3);
     property <length> chevron-room: root.chevron + Sizing.pct-w(1);
+    // The collections strip: four square buttons a row tall, centered
+    // above the rows, which keep their own scroll below it.
+    property <bool> has-strip: root.strip.length > 0;
+    property <length> strip-button: root.row-h;
+    property <length> strip-gap: root.gap;
+    property <length> strip-w: root.strip.length * root.strip-button
+        + Math.max(0, root.strip.length - 1) * root.strip-gap;
+    property <length> strip-band: root.has-strip ? root.strip-button + root.row-sp : 0px;
     measure := VerticalLayout {
         visible: false;
         for entry in root.entries: HorizontalLayout {
-            padding-right: entry.role == MenuRole.submenu ? root.chevron-room : 0px;
+            padding-right: entry.role == MenuRole.submenu || entry.role == MenuRole.check-off
+                || entry.role == MenuRole.check-on ? root.chevron-room : 0px;
             Text {
                 text: entry.label-key != "" ? Labels.menu(entry.label-key, entry.label) : entry.label;
                 font-size: Sizing.font-caption;
@@ -2958,13 +3218,13 @@ component ContextMenu inherits Rectangle {
             }
         }
     }
-    property <length> desired-panel-w: measure.preferred-width + 2 * root.label-inset
-        + 2 * root.pad + 2 * Sizing.stroke(2);
+    property <length> desired-panel-w: Math.max(measure.preferred-width + 2 * root.label-inset,
+        root.strip-w) + 2 * root.pad + 2 * Sizing.stroke(2);
     property <length> panel-w: Math.min(Math.max(root.min-panel-w, root.desired-panel-w),
         Math.max(0px, root.width - 2 * root.margin));
     property <length> rows-h: root.entries.length * root.row-h
         + Math.max(0, root.entries.length - 1) * root.row-sp;
-    property <length> content-h: root.rows-h + 2 * root.pad;
+    property <length> content-h: root.rows-h + 2 * root.pad + root.strip-band;
     property <length> usable-bottom: Math.max(root.margin,
         root.height - Sizing.help-bar-clearance - root.margin);
     property <length> panel-h: Math.min(root.content-h,
@@ -2976,7 +3236,7 @@ component ContextMenu inherits Rectangle {
     property <length> arrow: Sizing.pct-h(3);
     property <length> arrow-band: root.scrollable ? root.arrow + Sizing.pct-h(0.5) : 0px;
     property <length> viewport-h: Math.max(0px,
-        root.panel-h - 2 * root.pad - 2 * root.arrow-band);
+        root.panel-h - 2 * root.pad - root.strip-band - 2 * root.arrow-band);
     // Keep the focused row in view.
     property <length> row-bottom: (root.current-index + 1) * root.row-h
         + root.current-index * root.row-sp;
@@ -3038,9 +3298,43 @@ component ContextMenu inherits Rectangle {
         border-radius: root.panel-radius;
         clip: true;
 
+        for button[i] in root.strip: Rectangle {
+            property <bool> focused: i == root.strip-index;
+            property <length> icon: GlyphSource.side(root.strip-button * 60%);
+            property <string> glyph: button.flag == UserFlag.favorite
+                ? (button.on ? "icons/HeartFilled" : "icons/HeartOutline")
+                : button.flag == UserFlag.like ? (button.on ? "icons/ThumbsUp" : "icons/ThumbsUpOutline")
+                : button.flag == UserFlag.dislike ? (button.on ? "icons/ThumbsDown" : "icons/ThumbsDownOutline")
+                : (button.on ? "icons/Bookmark" : "icons/BookmarkOutline");
+            // Every icon, set (filled) or not (outline), takes the strip's ink.
+            property <color> tint: self.focused ? Theme.on-accent : Theme.text-primary;
+            x: (parent.width - root.strip-w) / 2 + i * (root.strip-button + root.strip-gap);
+            y: root.pad;
+            width: root.strip-button;
+            height: root.strip-button;
+            border-radius: Sizing.radius-sm;
+            background: self.focused ? Theme.selection-fill : Colors.transparent;
+
+            Image {
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                width: parent.icon;
+                height: parent.icon;
+                source: GlyphSource.glyph(parent.glyph, parent.icon, parent.tint);
+                image-rendering: Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
+            }
+            TouchArea {
+                mouse-cursor: pointer;
+                changed has-hover => {
+                    if (self.has-hover) { ContextInput.strip-hovered(i); }
+                }
+                clicked => { ContextInput.strip-clicked(i); }
+            }
+        }
+
         if root.scrollable: ScrollCue {
             x: Sizing.snap((parent.width - self.width) / 2);
-            y: root.pad;
+            y: root.pad + root.strip-band;
             width: root.arrow;
             glyph: "icons/ScrollUp";
             live: root.scroll > 0px;
@@ -3067,7 +3361,7 @@ component ContextMenu inherits Rectangle {
         }
         Rectangle {
         x: 0;
-        y: root.pad + root.arrow-band;
+        y: root.pad + root.strip-band + root.arrow-band;
         height: root.viewport-h;
         clip: true;
 
@@ -3088,15 +3382,21 @@ component ContextMenu inherits Rectangle {
             width: parent.width - 2 * root.pad;
             height: root.row-h;
 
-            property <bool> lit: sel.fill-bottom > self.y && sel.fill-top < self.y + self.height;
+            // Entering the strip clears the row selection; the cursor keeps its
+            // last place, so a row is lit only while a row has focus.
+            property <bool> lit: root.current-index >= 0
+                && sel.fill-bottom > self.y && sel.fill-top < self.y + self.height;
 
             ContextRowBody {
                 label: entry.label-key != "" ? Labels.menu(entry.label-key, entry.label) : entry.label;
                 pad-x: root.label-inset;
-                pad-end: root.label-inset + (entry.role == MenuRole.submenu ? root.chevron-room : 0px);
-                content-color: Theme.text-primary;
+                pad-end: root.label-inset + (entry.role == MenuRole.submenu || entry.role == MenuRole.check-off
+                    || entry.role == MenuRole.check-on ? root.chevron-room : 0px);
+                content-color: entry.enabled ? Theme.text-primary : Theme.text-label;
                 weight: FontWeight.normal;
                 opens-page: entry.role == MenuRole.submenu;
+                checkable: entry.role == MenuRole.check-off || entry.role == MenuRole.check-on;
+                checked: entry.role == MenuRole.check-on;
                 chevron: root.chevron;
                 inset: root.label-inset;
             }
@@ -3107,10 +3407,13 @@ component ContextMenu inherits Rectangle {
                 ContextRowBody {
                     label: entry.label-key != "" ? Labels.menu(entry.label-key, entry.label) : entry.label;
                     pad-x: root.label-inset;
-                    pad-end: root.label-inset + (entry.role == MenuRole.submenu ? root.chevron-room : 0px);
-                    content-color: sel.content;
+                    pad-end: root.label-inset + (entry.role == MenuRole.submenu || entry.role == MenuRole.check-off
+                        || entry.role == MenuRole.check-on ? root.chevron-room : 0px);
+                    content-color: entry.enabled ? sel.content : sel.content-muted;
                     weight: FontWeight.medium;
                     opens-page: entry.role == MenuRole.submenu;
+                    checkable: entry.role == MenuRole.check-off || entry.role == MenuRole.check-on;
+                    checked: entry.role == MenuRole.check-on;
                     chevron: root.chevron;
                     inset: root.label-inset;
                 }
@@ -3140,9 +3443,12 @@ component GamesScreen inherits Rectangle {
     property <bool> list-only: Shell.browse-list-only;
     property <bool> tate-list: self.list-layout && Shell.orientation != Orientation.horizontal;
     property <bool> is-games: GamesView.mode == GamesMode.browse;
-    property <string> title: GamesView.mode == GamesMode.favorites ? @tr("Favorites")
+    property <string> title: GamesView.mode == GamesMode.favorites ? Labels.list-title(Shell.active-list)
+        : GamesView.mode == GamesMode.decks ? @tr("Decks")
+        : GamesView.mode == GamesMode.top-played ? @tr("Top played")
+        : (GamesView.mode == GamesMode.deck ? GamesView.title
         : (GamesView.mode == GamesMode.recents ? @tr("Recently played")
-        : (GamesView.mode == GamesMode.search && GamesView.display-title() == "" ? @tr("Search") : GamesView.display-title()));
+        : (GamesView.mode == GamesMode.search && GamesView.display-title() == "" ? @tr("Search") : GamesView.display-title())));
     property <ContentState> state: GamesView.error != "" ? ContentState.error
         : (GamesView.loading ? ContentState.loading : (GamesView.count == 0 ? ContentState.empty : ContentState.ready));
     property <bool> gate-hide: root.gated || GamesView.loading || cue.loading-visible || GamesView.error != "";
@@ -3151,8 +3457,11 @@ component GamesScreen inherits Rectangle {
     property <bool> show-top-page-cue: root.show-grid-page-cue || (root.list-layout && !root.page-cue-in-footer);
     // Core's file total as "{} games" (Games only; the flat lists carry
     // no known total). The 240p footer keeps the bare number.
-    property <string> count-text: !root.is-games || GamesView.total-files <= 0 ? ""
-        : (Sizing.tier-240 ? Labels.count(GamesView.total-files) : @tr("{} games", Labels.count(GamesView.total-files)));
+    property <string> count-text: GamesView.mode == GamesMode.decks
+        ? (GamesView.count <= 0 ? ""
+            : (Sizing.tier-240 ? Labels.count(GamesView.count) : @tr("{n} deck" | "{n} decks" % GamesView.count)))
+        : (!root.is-games || GamesView.total-files <= 0 ? ""
+        : (Sizing.tier-240 ? Labels.count(GamesView.total-files) : @tr("{} games", Labels.count(GamesView.total-files))));
     // The browse filter's name, then the count where the grid shows one.
     property <string> filter-and-count: GamesView.filter-text == "" ? root.count-text
         : (root.count-text == "" ? GamesView.filter-text : @tr("{} · {}", GamesView.filter-text, root.count-text));
@@ -3219,6 +3528,7 @@ component GamesScreen inherits Rectangle {
             column-gap: Layout.grid-column-gap;
             row-gap: Layout.grid-row-gap;
             selected-local: GamesView.cached-transition ? -1 : GamesView.selected-local;
+            held-local: GamesView.moving ? GamesView.selected-local : -1;
             ring-suppressed: Overlays.context-open;
             // Focus is on the Menu chip row: the tile drops its zoom, tint and
             // focused cover as well as its ring.
@@ -3272,6 +3582,8 @@ component GamesScreen inherits Rectangle {
         scroll-top: GamesView.list-scroll-top;
         scope: StateTokens.games(GamesView.mode) + ":" + GamesView.title;
         selected: GamesView.list-sel;
+        held: GamesView.moving;
+        info: GamesView.info;
         focus-ready: GamesView.focus-ready && !PageBar.focused;
         activate-pulse: GamesView.activate-pulse;
         release-pulse: GamesView.release-pulse;
@@ -3310,6 +3622,9 @@ component GamesScreen inherits Rectangle {
         scroll-top: GamesView.list-scroll-top;
         scope: StateTokens.games(GamesView.mode) + ":" + GamesView.title;
         selected: GamesView.list-sel;
+        held: GamesView.moving;
+        show-focus-facts: true;
+        focus-info: GamesView.info;
         focus-ready: GamesView.focus-ready;
         activate-pulse: GamesView.activate-pulse;
         release-pulse: GamesView.release-pulse;
@@ -3334,15 +3649,14 @@ component GamesScreen inherits Rectangle {
         font-size: Sizing.font-section;
     }
 
-    if !root.list-layout: ActiveLabel {
+    if !root.list-layout: InfoLineLabel {
         x: 0;
         y: root.label-y - Sizing.label-raise;
         height: GamesView.label-height;
         side-inset: root.page-cue-in-footer
             ? (Layout.top-strip-visible ? root.footer-right-inset : Math.max(root.footer-left-inset, root.footer-right-inset))
             : Layout.slot-margin;
-        text: GamesView.label-name;
-        tags: Labels.tags(GamesView.label-tags, GamesView.label-hidden, GamesView.label-versions);
+        info: GamesView.info;
         visible: !root.gate-hide && !PageBar.focused;
     }
 
@@ -3399,11 +3713,16 @@ component GamesScreen inherits Rectangle {
         height: root.list-layout ? Math.max(0px, root.height - root.list-card-y - Layout.overlay-bottom-margin) : GamesView.grid-height;
         cue-center-y: root.height / 2 - self.y;
         state: GamesView.folder-slide ? ContentState.ready : root.state;
-        empty-text: GamesView.mode == GamesMode.favorites ? @tr("No favorites yet")
-            : (GamesView.mode == GamesMode.recents ? @tr("Nothing played yet")
+        empty-text: GamesView.mode == GamesMode.favorites ? Labels.list-empty(Shell.active-list)
+            : GamesView.mode == GamesMode.deck ? @tr("This deck is empty")
+            : GamesView.mode == GamesMode.decks ? @tr("No decks yet")
+            : (GamesView.mode == GamesMode.recents || GamesView.mode == GamesMode.top-played ? @tr("Nothing played yet")
             : (GamesView.mode == GamesMode.search ? @tr("No matches")
             : (GamesView.filter-text != "" ? @tr("No games match these tags") : @tr("No games in this system"))));
-        loading-text: GamesView.mode == GamesMode.favorites ? @tr("Loading favorites…")
+        loading-text: GamesView.mode == GamesMode.favorites ? Labels.list-loading(Shell.active-list)
+            : GamesView.mode == GamesMode.deck ? @tr("Loading deck…")
+            : GamesView.mode == GamesMode.decks ? @tr("Loading decks…")
+            : GamesView.mode == GamesMode.top-played ? @tr("Loading top played…")
             : (GamesView.mode == GamesMode.recents ? @tr("Loading recently played…")
             : (GamesView.mode == GamesMode.search ? @tr("Searching…") : @tr("Loading games…")));
         error-detail: GamesView.error;
@@ -3536,7 +3855,8 @@ component RouteScreen inherits Rectangle {
         gated: root.gated;
     }
 
-    if root.screen-token == Screen.systems || root.screen-token == Screen.favorite-systems: SystemsScreen {
+    if root.screen-token == Screen.systems || root.screen-token == Screen.favorite-systems
+        || root.screen-token == Screen.top-played-systems: SystemsScreen {
         gated: root.gated;
     }
 
@@ -3556,7 +3876,9 @@ component RouteScreen inherits Rectangle {
     if root.screen-token == Screen.file-browser: FileBrowserScreen {}
 
     if root.screen-token == Screen.games || root.screen-token == Screen.favorites
-        || root.screen-token == Screen.recents || root.screen-token == Screen.search-results: GamesScreen {
+        || root.screen-token == Screen.recents || root.screen-token == Screen.search-results
+        || root.screen-token == Screen.deck || root.screen-token == Screen.decks
+        || root.screen-token == Screen.top-played: GamesScreen {
         gated: root.gated;
     }
 }
@@ -3599,12 +3921,19 @@ export component App inherits Window {
         if (!Layout.title-in-header) { return ""; }
         if (Shell.active-screen == Screen.settings) { return SettingsLabels.page-title(SettingsView.page); }
         if (Shell.active-screen == Screen.systems) { return Labels.hub("category:" + SystemsView.category, SystemsView.category); }
-        if (Shell.active-screen == Screen.favorite-systems) { return @tr("Favorites"); }
+        if (Shell.active-screen == Screen.favorite-systems) { return Labels.list-title(Shell.active-list); }
         if (Shell.active-screen == Screen.games) { return GamesView.title; }
-        if (Shell.active-screen == Screen.favorites) { return @tr("Favorites"); }
+        if (Shell.active-screen == Screen.favorites) { return Labels.list-title(Shell.active-list); }
         if (Shell.active-screen == Screen.recents) { return @tr("Recently played"); }
+        if (Shell.active-screen == Screen.decks) { return @tr("Decks"); }
+        if (Shell.active-screen == Screen.deck) { return GamesView.title; }
+        if (Shell.active-screen == Screen.top-played) { return @tr("Top played"); }
+        if (Shell.active-screen == Screen.top-played-systems) { return @tr("Top played"); }
         if (Shell.active-screen == Screen.search) { return SearchView.title(); }
-        if (Shell.active-screen == Screen.rename) { return @tr("Rename tile"); }
+        if (Shell.active-screen == Screen.rename) {
+            return RenameView.purpose == RenamePurpose.new-deck ? @tr("New deck")
+                : (RenameView.purpose == RenamePurpose.rename-deck ? @tr("Rename deck") : @tr("Rename tile"));
+        }
         if (Shell.active-screen == Screen.ra-login) { return @tr("RetroAchievements"); }
         if (Shell.active-screen == Screen.file-browser) {
             return FileBrowserView.places ? @tr("Places") : FileBrowserView.title;
@@ -3618,7 +3947,7 @@ export component App inherits Window {
     pure function has-modal() -> bool {
         return LogUploadView.open || SetupModalView.open || GameInfoView.modal-open || Overlays.card-write-open || Overlays.qr-open
             || Overlays.pair-open || Overlays.online-open || Overlays.online-list-open || Overlays.launcher-prefs-open || Overlays.dialog-open || Overlays.list-open || Overlays.letter-open
-            || Overlays.context-open;
+            || Overlays.context-open || CoreUiView.kind == CoreUiKind.picker;
     }
 
     // Router state, owned by Rust.
@@ -3757,13 +4086,15 @@ export component App inherits Window {
         if (Buttons.style == "style_e") {
             return [
                 { buttons: ["Dpad"], label: @tr("Move") },
-                { buttons: ["ButtonA"], label: RenameView.key-kind == KeyKind.submit ? @tr("Save") : @tr("Select") },
+                { buttons: ["ButtonA"], label: RenameView.key-kind != KeyKind.submit ? @tr("Select")
+                    : (RenameView.purpose == RenamePurpose.new-deck ? @tr("Create") : @tr("Save")) },
                 { buttons: ["ButtonB"], label: @tr("Back") },
             ];
         }
         return [
             { buttons: ["Dpad"], label: @tr("Move") },
-            { buttons: ["ButtonA"], label: RenameView.key-kind == KeyKind.submit ? @tr("Save") : @tr("Select") },
+            { buttons: ["ButtonA"], label: RenameView.key-kind != KeyKind.submit ? @tr("Select")
+                    : (RenameView.purpose == RenamePurpose.new-deck ? @tr("Create") : @tr("Save")) },
             { buttons: ["ButtonY"], label: @tr("Delete") },
             { buttons: ["ButtonX"], label: @tr("Space") },
             { buttons: ["ButtonB"], label: @tr("Back") },
@@ -3861,9 +4192,43 @@ export component App inherits Window {
             { buttons: ["ButtonB"], label: @tr("Back") },
         ];
     }
+    // On the collections strip, A says what it would change; on a row it
+    // selects.
+    pure function context-accept-label() -> string {
+        if (Overlays.context-page != ContextPage.root || Overlays.context-strip-index < 0
+            || Overlays.context-strip-index >= Overlays.context-strip.length) {
+            return @tr("Select");
+        }
+        let button = Overlays.context-strip[Overlays.context-strip-index];
+        if (button.flag == UserFlag.favorite) {
+            return Labels.menu(button.on ? "favorite:remove" : "favorite:add", "");
+        }
+        if (button.flag == UserFlag.like) {
+            return Labels.menu(button.on ? "like:remove" : "like:add", "");
+        }
+        if (button.flag == UserFlag.dislike) {
+            return Labels.menu(button.on ? "dislike:remove" : "dislike:add", "");
+        }
+        return Labels.menu(button.on ? "play_later:remove" : "play_later:add", "");
+    }
+
     pure function help-entries() -> [HelpEntry] {
         if (Shell.boot-curtain) {
             return [];
+        }
+        // Core's picker is above every surface but the decision dialog.
+        if (CoreUiView.kind == CoreUiKind.picker && !Overlays.dialog-open) {
+            if (CoreUiView.dismissible) {
+                return [
+                    { buttons: ["DpadUp", "DpadDown"], label: @tr("Move") },
+                    { buttons: ["ButtonA"], label: @tr("Select") },
+                    { buttons: ["ButtonB"], label: @tr("Cancel") },
+                ];
+            }
+            return [
+                { buttons: ["DpadUp", "DpadDown"], label: @tr("Move") },
+                { buttons: ["ButtonA"], label: @tr("Select") },
+            ];
         }
         // The uploader: nothing to confirm while it runs.
         if (LogUploadView.open) {
@@ -3917,7 +4282,7 @@ export component App inherits Window {
         if (Overlays.context-open) {
             return [
                 { buttons: ["Dpad"], label: @tr("Move") },
-                { buttons: ["ButtonA"], label: @tr("Select") },
+                { buttons: ["ButtonA"], label: root.context-accept-label() },
                 // Back on a page returns to the rows it replaced.
                 { buttons: ["ButtonB", "ButtonX"], label: Overlays.context-page == ContextPage.root
                     ? @tr("Close") : @tr("Back") },
@@ -4158,7 +4523,8 @@ export component App inherits Window {
                 { buttons: ["ButtonY"], label: @tr("Menu") },
             ];
         }
-        if (Shell.active-screen == Screen.systems || Shell.active-screen == Screen.favorite-systems) {
+        if (Shell.active-screen == Screen.systems || Shell.active-screen == Screen.favorite-systems
+            || Shell.active-screen == Screen.top-played-systems) {
             if (Shell.transitioning) {
                 return [{ buttons: ["ButtonB"], label: @tr("Back") }];
             }
@@ -4169,7 +4535,8 @@ export component App inherits Window {
                 return [{ buttons: ["ButtonB"], label: @tr("Back") }];
             }
             if (SystemsView.error != "" || SystemsView.count == 0) {
-                if (Shell.active-screen == Screen.favorite-systems && SystemsView.error == "") {
+                if ((Shell.active-screen == Screen.favorite-systems || Shell.active-screen == Screen.top-played-systems)
+                    && SystemsView.error == "") {
                     return [
                         { buttons: ["ButtonA"], label: @tr("Retry") },
                         { buttons: ["ButtonY"], label: @tr("Menu") },
@@ -4287,6 +4654,15 @@ export component App inherits Window {
                 { buttons: ["ButtonB"], label: @tr("Back") },
             ];
         }
+        // A deck item picked up by Move: Up and Down carry it, A puts it
+        // down there, B puts it back.
+        if (GamesView.moving) {
+            return [
+                { buttons: ["Dpad"], label: @tr("Move") },
+                { buttons: ["ButtonA"], label: @tr("Drop") },
+                { buttons: ["ButtonB"], label: @tr("Cancel") },
+            ];
+        }
         // Left and Right step the pane's images when set to and there is
         // more than one: the move cue keeps only what still moves.
         if (GamesView.detail-image-count > 1) {
@@ -4295,14 +4671,14 @@ export component App inherits Window {
                     return [
                         self.list-move-cue(GamesView.total-pages),
                         { buttons: ["DpadLeft", "DpadRight"], label: @tr("Image") },
-                        { buttons: ["ButtonA"], label: @tr("Open") },
+                        { buttons: ["ButtonA"], label: GamesView.mode == GamesMode.deck ? @tr("Play") : @tr("Open") },
                         { buttons: ["ButtonB"], label: @tr("Back") },
                     ];
                 }
                 return [
                     self.list-move-cue(GamesView.total-pages),
                     { buttons: ["DpadLeft", "DpadRight"], label: @tr("Image") },
-                    { buttons: ["ButtonA"], label: @tr("Open") },
+                    { buttons: ["ButtonA"], label: GamesView.mode == GamesMode.deck ? @tr("Play") : @tr("Open") },
                     { buttons: ["ButtonX"], label: @tr("Options") },
                     { buttons: ["ButtonB"], label: @tr("Back") },
                 ];
@@ -4311,7 +4687,7 @@ export component App inherits Window {
                 return [
                     self.list-move-cue(GamesView.total-pages),
                     { buttons: ["DpadLeft", "DpadRight"], label: @tr("Image") },
-                    { buttons: ["ButtonA"], label: @tr("Open") },
+                    { buttons: ["ButtonA"], label: GamesView.mode == GamesMode.deck ? @tr("Play") : @tr("Open") },
                     { buttons: ["ButtonY"], label: @tr("Menu") },
                     { buttons: ["ButtonB"], label: @tr("Back") },
                 ];
@@ -4319,7 +4695,7 @@ export component App inherits Window {
             return [
                 self.list-move-cue(GamesView.total-pages),
                 { buttons: ["DpadLeft", "DpadRight"], label: @tr("Image") },
-                { buttons: ["ButtonA"], label: @tr("Open") },
+                { buttons: ["ButtonA"], label: GamesView.mode == GamesMode.deck ? @tr("Play") : @tr("Open") },
                 { buttons: ["ButtonX"], label: @tr("Options") },
                 { buttons: ["ButtonY"], label: @tr("Menu") },
                 { buttons: ["ButtonB"], label: @tr("Back") },
@@ -4342,17 +4718,18 @@ export component App inherits Window {
                 { buttons: ["ButtonB"], label: @tr("Back") },
             ];
         }
+        // Inside a deck, A plays the deck from the focused item.
         if (!GamesView.options-available) {
             return [
                 self.move-cue(GamesView.total-pages),
-                { buttons: ["ButtonA"], label: @tr("Open") },
+                { buttons: ["ButtonA"], label: GamesView.mode == GamesMode.deck ? @tr("Play") : @tr("Open") },
                 { buttons: ["ButtonY"], label: @tr("Menu") },
                 { buttons: ["ButtonB"], label: @tr("Back") },
             ];
         }
         return [
             self.move-cue(GamesView.total-pages),
-            { buttons: ["ButtonA"], label: @tr("Open") },
+            { buttons: ["ButtonA"], label: GamesView.mode == GamesMode.deck ? @tr("Play") : @tr("Open") },
             { buttons: ["ButtonX"], label: @tr("Options") },
             { buttons: ["ButtonY"], label: @tr("Menu") },
             { buttons: ["ButtonB"], label: @tr("Back") },
@@ -4483,8 +4860,8 @@ export component App inherits Window {
         browse-title: root.browse-header-title();
         // The curtain carries its own cue; a restore filling beneath it
         // does not add a second one here.
-        app-text: Shell.transition-cue && !Shell.boot-curtain ? Labels.loading(Shell.transition-target)
-            : Shell.status-text == AppCue.loading-list ? Labels.loading(Shell.active-screen)
+        app-text: Shell.transition-cue && !Shell.boot-curtain ? Labels.loading(Shell.transition-target, Shell.active-list)
+            : Shell.status-text == AppCue.loading-list ? Labels.loading(Shell.active-screen, Shell.active-list)
             : Labels.status(Shell.status-text, Shell.status-arg, Shell.status-arg2);
     }
 
@@ -4550,6 +4927,8 @@ export component App inherits Window {
     if Overlays.context-open: ContextMenu {
         entries: Overlays.context-entries;
         current-index: Overlays.context-index;
+        strip: Overlays.context-page == ContextPage.root ? Overlays.context-strip : [];
+        strip-index: Overlays.context-strip-index;
         anchor-x: Overlays.context-anchor-x;
         anchor-y: Overlays.context-anchor-y;
         anchor-w: Overlays.context-anchor-w;
@@ -4583,6 +4962,9 @@ export component App inherits Window {
     if Overlays.dialog-open: TouchArea {
         scroll-event(event) => { return accept; }
     }
+    // Core's picker sits above every other surface but the decision dialog.
+    if CoreUiView.kind == CoreUiKind.picker: CorePickerModal {}
+
     if Overlays.dialog-open: DialogModal {}
 
     // Hidden with the setting off (Settings > Appearance), when Rust gives

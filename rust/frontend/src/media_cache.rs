@@ -24,6 +24,7 @@ use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
 use tokio::sync::Notify;
 use zaparoo_app::covers::Fit;
 use zaparoo_core::client::Client;
+use zaparoo_core::collections::DeckImageParams;
 use zaparoo_core::media_types::MediaImageParams;
 
 /// Hard ceiling on the decoded bytes the cache holds.
@@ -49,7 +50,49 @@ pub struct MediaKey {
     pub image_type: Option<String>,
 }
 
+/// The `system` of a key for deck art (`decks.image`) rather than a
+/// game's. No system id starts with a control character.
+const DECK_ART_SYSTEM: &str = "\u{1}deck";
+
 impl MediaKey {
+    /// A deck's cover, or a card item's art with `item_id`. `revision` is
+    /// the deck's `updatedAt`, so a changed cover is a new key and the old
+    /// one ages out of the cache.
+    pub fn deck_art(
+        deck_id: &str,
+        item_id: Option<i64>,
+        revision: i64,
+        max_size: u32,
+        fit: Fit,
+    ) -> Self {
+        let item = item_id.map_or_else(String::new, |id| id.to_string());
+        Self {
+            media_id: None,
+            system: DECK_ART_SYSTEM.to_string(),
+            path: format!("{deck_id}/{item}/{revision}"),
+            max_size,
+            fit,
+            image_type: None,
+            folder: false,
+        }
+    }
+
+    /// The `decks.image` request a deck art key stands for.
+    fn deck_art_params(&self) -> Option<DeckImageParams> {
+        if self.system != DECK_ART_SYSTEM {
+            return None;
+        }
+        let mut parts = self.path.splitn(3, '/');
+        let deck_id = parts.next()?.to_string();
+        let item_id = parts.next().and_then(|item| item.parse().ok());
+        Some(DeckImageParams {
+            deck_id,
+            item_id,
+            max_size: (self.max_size > 0).then_some(self.max_size),
+            delivery: None,
+        })
+    }
+
     pub fn color_preview(&self) -> Self {
         Self {
             max_size: zaparoo_app::covers::COLOR_PREVIEW_MAX_SIZE,
@@ -763,7 +806,23 @@ async fn fetch_one(
     let params = request_params(cache, &key);
     let generation = cache.generation();
     let asked_for_path = params.delivery.is_some();
-    let mut outcome = client.media_image(params.clone()).await;
+    let deck_art = key.deck_art_params();
+    let ask = |delivery: Option<String>| {
+        let params = MediaImageParams {
+            delivery: delivery.clone(),
+            ..params.clone()
+        };
+        let deck_art = deck_art
+            .clone()
+            .map(|deck| DeckImageParams { delivery, ..deck });
+        async move {
+            match deck_art {
+                Some(deck) => client.deck_image(deck).await,
+                None => client.media_image(params).await,
+            }
+        }
+    };
+    let mut outcome = ask(params.delivery.clone()).await;
     if let Err(e) = &outcome {
         if asked_for_path && zaparoo_app::covers::is_unsupported_delivery_error(&e.message) {
             // This Core predates the delivery field; stop
@@ -771,12 +830,7 @@ async fn fetch_one(
             // ordinary way.
             LOCAL_PATH_DISABLED.store(true, std::sync::atomic::Ordering::Release);
             tracing::info!("core does not support localPath delivery; using inline images");
-            outcome = client
-                .media_image(MediaImageParams {
-                    delivery: None,
-                    ..params
-                })
-                .await;
+            outcome = ask(None).await;
         }
     }
     match outcome {

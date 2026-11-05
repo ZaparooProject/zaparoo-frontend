@@ -97,7 +97,6 @@ pub fn same_cell(left: &crate::GridCell, right: &crate::GridCell) -> bool {
         && left.disabled == right.disabled
         && left.favorite == right.favorite
         && left.tags == right.tags
-        && left.versions == right.versions
         && left.top_label == right.top_label
         && left.wordmark == right.wordmark
         && left.is_empty == right.is_empty
@@ -198,16 +197,6 @@ mod tests {
         let mut right = crate::GridCell::default();
         assert!(same_cell(&left, &right));
         right.has_cover_focus = true;
-        assert!(!same_cell(&left, &right));
-    }
-
-    #[test]
-    fn a_changed_version_count_is_a_changed_cell() {
-        let left = crate::GridCell::default();
-        let right = crate::GridCell {
-            versions: 3,
-            ..Default::default()
-        };
         assert!(!same_cell(&left, &right));
     }
 

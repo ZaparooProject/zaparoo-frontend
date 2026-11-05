@@ -12,6 +12,9 @@ use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Mutex, OnceLock};
 
+use crate::decks;
+use crate::library::{self, Flag};
+
 static SYSTEM_DEFAULTS: OnceLock<Mutex<Vec<SystemDefaultFixture>>> = OnceLock::new();
 // Per-media launcher overrides set via `media.meta.update`, keyed by the
 // same `(system, path)` pair `media_ref_key` derives for `media.meta`.
@@ -238,6 +241,12 @@ fn hidden_itself(path: &str) -> bool {
     hidden_paths().contains(path)
 }
 
+/// `hidden_itself` for the user-flag store, which reports `user:hidden`
+/// beside the other user tags.
+pub(crate) fn is_hidden_itself(path: &str) -> bool {
+    hidden_itself(path)
+}
+
 /// Hidden itself or by a folder above it: what a search leaves out. A
 /// listing asks only `hidden_itself`, so a hidden folder still browses by
 /// its own path.
@@ -331,7 +340,7 @@ fn systems_response_for_count(params: &Value, indexed_systems: usize) -> Value {
                 .filter(|(index, (_, file, system))| {
                     *system == id
                         && tags.iter().all(|tag| {
-                            let game = json!({ "tags": tags_for(file, *index) });
+                            let game = json!({ "tags": tags_for(*index, file, system) });
                             game_has_tag(&game, tag)
                         })
                 })
@@ -350,7 +359,7 @@ fn systems_response_for_count(params: &Value, indexed_systems: usize) -> Value {
     json!({ "systems": systems })
 }
 
-pub fn media_search_response(params: &Value) -> Value {
+pub fn media_search_response(params: &Value) -> Result<Value, String> {
     let systems = params
         .get("systems")
         .and_then(Value::as_array)
@@ -425,6 +434,19 @@ pub fn media_search_response(params: &Value) -> Value {
                     .to_lowercase(),
             )
         }),
+        Some("added-desc") => {
+            // The first user list filter names the flag whose set time
+            // orders the rows.
+            let flag = tags
+                .iter()
+                .find_map(|tag| tag.strip_prefix("user:").and_then(Flag::from_tag))
+                .ok_or_else(|| {
+                    "invalid params: sort added-desc needs a user:favorite, user:liked, \
+                     user:disliked or user:playlater tag filter"
+                        .to_string()
+                })?;
+            sort_by_added(&mut matching, flag);
+        }
         _ => {}
     }
     if params.get("groupBy").and_then(Value::as_str) == Some("title") {
@@ -448,11 +470,33 @@ pub fn media_search_response(params: &Value) -> Value {
     if has_next_page {
         pagination["nextCursor"] = json!(next_offset.to_string());
     }
-    json!({
+    Ok(json!({
         "results": results,
         "total": page_total,
         "pagination": pagination,
-    })
+    }))
+}
+
+/// Core's `added-desc`: newest set time first, then rows whose flag has no
+/// recorded time, by name.
+fn sort_by_added(rows: &mut [Value], flag: Flag) {
+    let name = |row: &Value| {
+        row.get("name")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_lowercase()
+    };
+    let added = |row: &Value| {
+        row.get("path")
+            .and_then(Value::as_str)
+            .and_then(|path| library::set_time(path, flag))
+    };
+    rows.sort_by(|a, b| match (added(a), added(b)) {
+        (Some(a), Some(b)) => b.cmp(&a),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => name(a).cmp(&name(b)),
+    });
 }
 
 /// Core's `groupBy: "title"`: one row per title, the first of its
@@ -531,7 +575,7 @@ fn matching_media_rows(path_prefix: &str, systems: &[&str], filters: &[&str]) ->
                 "systemId": system,
                 "zapScript": format!("@{system}/{file}"),
                 "relativePath": format!("{system}/{file}"),
-                "tags": tags_for(file, index),
+                "tags": tags_for(index, file, system),
                 "disambiguatingTags": disambiguating_tags_for(file),
                 "hasCover": true,
             });
@@ -1184,6 +1228,69 @@ pub fn media_history_response(params: &Value) -> Value {
     response
 }
 
+/// `media.history.top`: the most played games, most total play time first,
+/// at most `limit` (Core caps it at 100), optionally of some systems.
+/// Play times are a deterministic spread: under a minute, minutes, and
+/// hours with and without spare minutes, so every way Top played shows a
+/// time has a row.
+pub fn media_history_top_response(params: &Value) -> Value {
+    let systems = params
+        .get("systems")
+        .and_then(Value::as_array)
+        .map(|a| a.iter().filter_map(Value::as_str).collect::<Vec<_>>())
+        .unwrap_or_default();
+    let limit = params
+        .get("limit")
+        .and_then(Value::as_u64)
+        .unwrap_or(25)
+        .clamp(1, 100) as usize;
+    // Every third game has been played; each play time is unique, so the
+    // ranking is total.
+    let mut played: Vec<(u64, usize)> = ALL_GAMES
+        .iter()
+        .enumerate()
+        .filter(|(index, (_, _, system))| {
+            index % 3 == 0 && (systems.is_empty() || systems.contains(system))
+        })
+        .map(|(index, _)| (top_play_seconds(index), index))
+        .collect();
+    played.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
+    let entries: Vec<Value> = played
+        .into_iter()
+        .take(limit)
+        .map(|(seconds, index)| {
+            let (name, file, system) = ALL_GAMES[index];
+            json!({
+                "mediaId": index + 1,
+                "systemId": system,
+                "systemName": system_display_for(system),
+                "mediaName": name,
+                "mediaPath": format!("/mock/games/{system}/{file}"),
+                "relativePath": format!("{system}/{file}"),
+                "zapScript": format!("@{system}/{file}"),
+                "totalPlayTime": seconds,
+                "sessionCount": 1 + index % 7,
+                "lastPlayedAt": format!("2026-04-{:02}T20:00:00Z", 1 + index % 28),
+                "tags": tags_for(index, file, system),
+            })
+        })
+        .collect();
+    json!({ "entries": entries })
+}
+
+/// A played game's total play time: from 40 seconds to about 60 hours.
+fn top_play_seconds(index: usize) -> u64 {
+    match index {
+        0 => 40,
+        3 => 45 * 60,
+        6 => 3 * 3600,
+        _ => {
+            let i = index as u64;
+            (i * 7919) % (60 * 3600) + i
+        }
+    }
+}
+
 /// Core's `coverColor`: the average colour of a sized cover. Every fifth
 /// game has none yet, the way Core omits it for covers it has not sized.
 fn with_cover_color(row: &mut Value, index: usize) {
@@ -1229,7 +1336,7 @@ fn games_for_systems<'a>(systems: &'a [&'a str]) -> impl Iterator<Item = Value> 
                 "relativePath": format!("{system}/{file}"),
                 "zapScript": format!("@{system}/{file}"),
                 "system": { "id": system, "name": system_name, "category": category },
-                "tags": tags_for(file, index),
+                "tags": tags_for(index, file, system),
                 "disambiguatingTags": disambiguating_tags_for(file),
                 "hasCover": true,
                 "titleId": title_id(name, system),
@@ -1257,31 +1364,35 @@ fn system_meta(system: &str) -> (&'static str, &'static str) {
         .unwrap_or(("Unknown", ""))
 }
 
-/// The mock library's one deck.
-const MOCK_DECK_ID: &str = "0k3v9x2rq7bm";
+/// Canonical paths of the library's games, in fixture order.
+pub(crate) fn library_paths() -> impl Iterator<Item = String> {
+    ALL_GAMES
+        .iter()
+        .map(|(_, file, system)| format!("/mock/games/{system}/{file}"))
+}
 
-/// `decks`: the deck list without items. Its members carry the tag
-/// `user:deck:<id>`, which the list alone gives a name to.
-pub fn decks_response() -> Value {
-    json!({
-        "decks": [{
-            "deckId": MOCK_DECK_ID,
-            "name": "Couch co-op",
-            "description": "",
-            "itemCount": 8,
-            "owned": true,
-            "locked": false,
-            "createdAt": 0,
-            "updatedAt": 0,
-        }]
+/// The library game at `index`: `(name, system, canonical path)`.
+pub(crate) fn library_entry(index: usize) -> Option<(&'static str, &'static str, String)> {
+    ALL_GAMES
+        .get(index)
+        .map(|(name, file, system)| (*name, *system, format!("/mock/games/{system}/{file}")))
+}
+
+/// The display name of the library game at `system`/`path`, or None when
+/// the library has no such game.
+pub(crate) fn library_game(system: &str, path: &str) -> Option<&'static str> {
+    ALL_GAMES.iter().find_map(|(name, file, game_system)| {
+        (*game_system == system && path == format!("/mock/games/{game_system}/{file}"))
+            .then_some(*name)
     })
 }
 
-/// Full tag list for a search row: the disambiguation tags plus, for every
-/// third entry, the `user:favorite` tag. A deterministic spread means the
-/// mock's Favorites screen holds entries from several systems, which is what
-/// the favorites sort and system-filter paths need to exercise.
-fn tags_for(file: &str, index: usize) -> Value {
+/// Full tag list for a search row: the disambiguation tags, the user's
+/// flags on the game (see `library`), the membership tag of every deck
+/// holding it, then the filterable categories. The flags' deterministic
+/// seed spreads Favorites over several systems, which is what the
+/// favorites sort and system-filter paths need to exercise.
+fn tags_for(index: usize, file: &str, system: &str) -> Value {
     // A deterministic spread of the filterable categories, so the browse
     // filter has genres (flat and nested), years, player counts and
     // developers to pick from.
@@ -1292,13 +1403,12 @@ fn tags_for(file: &str, index: usize) -> Value {
         .as_array()
         .cloned()
         .unwrap_or_default();
-    if index.is_multiple_of(3) {
-        tags.push(json!({ "tag": "favorite", "type": "user" }));
+    let path = format!("/mock/games/{system}/{file}");
+    for flag in library::flags_for(&path) {
+        tags.push(json!({ "tag": flag.tag(), "type": "user" }));
     }
-    // Every fourth entry is in the one mock deck, tagged as Core tags a
-    // deck's members.
-    if index % 4 == 1 {
-        tags.push(json!({ "tag": format!("deck:{MOCK_DECK_ID}"), "type": "user" }));
+    for deck_id in decks::deck_ids_containing(system, &path) {
+        tags.push(json!({ "tag": format!("deck:{deck_id}"), "type": "user" }));
     }
     tags.push(json!({ "tag": GENRES[index % GENRES.len()], "type": "genre" }));
     tags.push(json!({ "tag": (1985 + index % 12).to_string(), "type": "year" }));

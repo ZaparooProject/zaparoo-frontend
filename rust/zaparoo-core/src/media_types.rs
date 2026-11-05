@@ -118,7 +118,7 @@ pub const CORE_SERVEABLE_IMAGE_TYPES: &[&str] = &[
     "fanart",
 ];
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 pub struct TagInfo {
     pub tag: String,
     #[serde(rename = "type", default)]
@@ -144,26 +144,6 @@ pub struct MediaTagsParams {
 pub struct MediaTagsResult {
     #[serde(default)]
     pub tags: Vec<TagInfo>,
-}
-
-/// One deck as the `decks` list names it. Core sends more (description,
-/// timestamps, ownership); the frontend reads only what it shows.
-#[derive(Debug, Clone, Default, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DeckInfo {
-    /// Also the value of the deck's membership tag, `user:deck:<id>`.
-    #[serde(default)]
-    pub deck_id: String,
-    #[serde(default)]
-    pub name: String,
-    #[serde(default)]
-    pub item_count: u32,
-}
-
-#[derive(Debug, Clone, Default, Deserialize)]
-pub struct DecksResult {
-    #[serde(default)]
-    pub decks: Vec<DeckInfo>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -662,6 +642,55 @@ impl Default for MediaHistoryEntry {
             cover_color: None,
         }
     }
+}
+
+/// Parameters for `media.history.top`: the most played games, by total
+/// play time. Core caps `limit` at 100.
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaHistoryTopParams {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u32>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub systems: Vec<String>,
+}
+
+/// One game in `media.history.top`, ranked by total play time.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaHistoryTopEntry {
+    /// Omitted when the history path cannot be resolved in the current
+    /// media database.
+    #[serde(default)]
+    pub media_id: Option<i64>,
+    #[serde(default)]
+    pub system_id: String,
+    #[serde(default)]
+    pub system_name: String,
+    #[serde(default)]
+    pub media_name: String,
+    #[serde(default)]
+    pub media_path: String,
+    #[serde(default)]
+    pub relative_path: Option<String>,
+    #[serde(default)]
+    pub zap_script: String,
+    /// Seconds across every session.
+    #[serde(default)]
+    pub total_play_time: u64,
+    #[serde(default)]
+    pub session_count: u32,
+    #[serde(default)]
+    pub last_played_at: String,
+    /// Omitted when the media is not resolved; empty when it has no tags.
+    #[serde(default, deserialize_with = "deserialize_null_default")]
+    pub tags: Vec<TagInfo>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct MediaHistoryTopResult {
+    #[serde(default, deserialize_with = "deserialize_null_default")]
+    pub entries: Vec<MediaHistoryTopEntry>,
 }
 
 /// Response envelope for `media.history`. Pagination is "only present
@@ -1792,16 +1821,16 @@ mod tests {
     )]
 
     use super::{
-        merged_root_view, BrowseEntry, DecksResult, HealthResult, IndexingStatusResponse,
-        LauncherInfo, LaunchersResult, LogDownloadResult, MediaBrowseIndexParams,
-        MediaBrowseIndexResult, MediaBrowseParams, MediaBrowseResult, MediaHistoryEntry,
-        MediaHistoryLatestResult, MediaHistoryParams, MediaHistoryResult, MediaImageParams,
-        MediaImageResult, MediaIndexParams, MediaItem, MediaLookupParams, MediaLookupResult,
-        MediaMetaParams, MediaMetaResult, MediaMetaUpdateParams, MediaResult, MediaScrapeParams,
-        MediaScrapeScope, MediaSearchParams, MediaSearchResult, ReaderInfo, ReadersResult,
-        ScrapersResult, ScrapingStatusResponse, SettingsResult, SystemDefault, SystemsParams,
-        SystemsResult, TagInfo, TokensHistoryResult, TokensResult, UpdateSettingsParams,
-        VersionResult, MEDIA_IMAGE_DELIVERY_LOCAL_PATH,
+        merged_root_view, BrowseEntry, HealthResult, IndexingStatusResponse, LauncherInfo,
+        LaunchersResult, LogDownloadResult, MediaBrowseIndexParams, MediaBrowseIndexResult,
+        MediaBrowseParams, MediaBrowseResult, MediaHistoryEntry, MediaHistoryLatestResult,
+        MediaHistoryParams, MediaHistoryResult, MediaImageParams, MediaImageResult,
+        MediaIndexParams, MediaItem, MediaLookupParams, MediaLookupResult, MediaMetaParams,
+        MediaMetaResult, MediaMetaUpdateParams, MediaResult, MediaScrapeParams, MediaScrapeScope,
+        MediaSearchParams, MediaSearchResult, ReaderInfo, ReadersResult, ScrapersResult,
+        ScrapingStatusResponse, SettingsResult, SystemDefault, SystemsParams, SystemsResult,
+        TagInfo, TokensHistoryResult, TokensResult, UpdateSettingsParams, VersionResult,
+        MEDIA_IMAGE_DELIVERY_LOCAL_PATH,
     };
 
     #[test]
@@ -1996,24 +2025,6 @@ mod tests {
         assert_eq!(entry.disambiguating_tags.len(), 1);
         assert_eq!(entry.disambiguating_tags[0].tag, "eu");
         assert_eq!(entry.disambiguating_tags[0].tag_type, "region");
-    }
-
-    #[test]
-    fn decks_result_reads_ids_and_names_and_ignores_the_rest() {
-        let result: DecksResult = serde_json::from_value(serde_json::json!({
-            "decks": [
-                { "deckId": "0k3v9x2rq7bm", "name": "Couch co-op", "itemCount": 8,
-                  "description": "x", "owned": true, "locked": false,
-                  "createdAt": 1, "updatedAt": 2 },
-                { "deckId": "aa11bb22" }
-            ]
-        }))
-        .expect("decks");
-        assert_eq!(result.decks.len(), 2);
-        assert_eq!(result.decks[0].deck_id, "0k3v9x2rq7bm");
-        assert_eq!(result.decks[0].name, "Couch co-op");
-        assert_eq!(result.decks[0].item_count, 8);
-        assert_eq!(result.decks[1].name, "");
     }
 
     #[test]

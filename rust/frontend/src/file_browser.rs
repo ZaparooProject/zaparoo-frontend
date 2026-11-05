@@ -27,10 +27,13 @@ use crate::router::{lock, Ctx, Shared};
 use crate::{App, ContentState, FileBrowserInput, FileBrowserView, GridCell};
 
 /// What a pick is for. A new caller adds a variant here, not a browser.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Purpose {
     /// Change icon… on a Hub tile.
     HubIcon(HubTarget),
+    /// Choose cover image… on a deck, by its id; the screen it was opened
+    /// from is where the browser returns.
+    DeckCover(String, crate::Screen),
     /// Add item > Custom folder…: a live folder tile, placed on the Hub
     /// cell `target.hub_index`.
     HubFolder(HubTarget),
@@ -385,6 +388,7 @@ pub(crate) fn open_hub_icon(ctx: &Ctx, app: &App, target: HubTarget, icon: &str)
             mode: Mode::Images.as_str().to_string(),
             dir: String::new(),
             selected: String::new(),
+            deck_id: String::new(),
         };
     }
     // Where it starts is decided off the event loop too: the icon's folder
@@ -414,8 +418,7 @@ pub(crate) fn open_hub_folder(ctx: &Ctx, app: &App, hub_index: u32) {
         shared.persist.file_browser = FileBrowserState {
             target,
             mode: Mode::Folders.as_str().to_string(),
-            dir: String::new(),
-            selected: String::new(),
+            ..FileBrowserState::default()
         };
     }
     start(ctx, app, move |platform, custom_dir, mode| {
@@ -424,13 +427,45 @@ pub(crate) fn open_hub_folder(ctx: &Ctx, app: &App, hub_index: u32) {
     });
 }
 
-/// Cold start on the browser: the same tile, folder and entry. A tile that
-/// moved restores the Hub; a folder that is gone restores Places.
+/// Choose cover image… on a deck: images, from the custom folder.
+pub(crate) fn open_deck_cover(ctx: &Ctx, app: &App, deck_id: &str, source: crate::Screen) {
+    {
+        let mut shared = lock(&ctx.shared);
+        shared.file_browser = Model {
+            purpose: Some(Purpose::DeckCover(deck_id.to_string(), source)),
+            mode: Mode::Images,
+            ticket: shared.file_browser.ticket,
+            ..Model::default()
+        };
+        shared.persist.file_browser = FileBrowserState {
+            mode: Mode::Images.as_str().to_string(),
+            deck_id: deck_id.to_string(),
+            ..FileBrowserState::default()
+        };
+    }
+    start(ctx, app, move |platform, custom_dir, mode| {
+        let dir = rules::start_dir("", &custom_dir, &is_dir);
+        (read(platform, &custom_dir, dir, mode), Seat::First)
+    });
+}
+
+/// Cold start on the browser: the same tile or deck, folder and entry. A
+/// tile that moved restores the Hub; a folder that is gone restores Places.
+/// A deck's cover returns to the Hub after, as the screen it was opened
+/// from is not restored behind it.
 pub(crate) fn restore(ctx: &Ctx, app: &App) {
     let saved = lock(&ctx.shared).persist.file_browser.clone();
     let mode = Mode::parse(&saved.mode);
-    // A folder pick has no tile yet; its cell is only where the new one lands.
-    if mode != Mode::Folders && crate::hub::edit_target_matching(ctx, app, &saved.target).is_none()
+    let purpose = if saved.deck_id.is_empty() {
+        Purpose::for_mode(mode, saved.target.clone())
+    } else {
+        Purpose::DeckCover(saved.deck_id.clone(), crate::Screen::Hub)
+    };
+    // A folder pick has no tile yet; its cell is only where the new one
+    // lands. A deck's cover has no tile at all.
+    if saved.deck_id.is_empty()
+        && mode != Mode::Folders
+        && crate::hub::edit_target_matching(ctx, app, &saved.target).is_none()
     {
         lock(&ctx.shared).persist.active_screen = crate::Screen::Hub.token().to_string();
         crate::router::save_persist(&ctx.shared);
@@ -440,7 +475,7 @@ pub(crate) fn restore(ctx: &Ctx, app: &App) {
     {
         let mut shared = lock(&ctx.shared);
         shared.file_browser = Model {
-            purpose: Some(Purpose::for_mode(mode, saved.target.clone())),
+            purpose: Some(purpose),
             mode,
             ticket: shared.file_browser.ticket,
             ..Model::default()
@@ -993,7 +1028,15 @@ fn leave(ctx: &Ctx, app: &App) {
     crate::router::save_persist(&ctx.shared);
     match purpose {
         Some(Purpose::HubIcon(target)) => crate::hub::return_to_tile(ctx, app, &target),
-        Some(Purpose::HubFolder(_)) | None => crate::router::return_to_hub(ctx, app),
+        Some(Purpose::DeckCover(_, crate::Screen::Decks)) => {
+            crate::decks::return_to_decks(ctx, app);
+        }
+        Some(Purpose::DeckCover(_, crate::Screen::Deck)) => {
+            crate::games::enter_deck(ctx, app, crate::navigation::EntryMode::Restore);
+        }
+        Some(Purpose::HubFolder(_) | Purpose::DeckCover(..)) | None => {
+            crate::router::return_to_hub(ctx, app);
+        }
     }
 }
 
@@ -1009,6 +1052,14 @@ fn pick(ctx: &Ctx, app: &App, path: &str) {
             crate::hub::add_live_folder(ctx, app, target.hub_index, path);
             return;
         }
+        Some(Purpose::DeckCover(deck_id, _)) => crate::decks::set_cover(
+            ctx,
+            app,
+            &deck_id,
+            zaparoo_core::collections::DeckCover::File {
+                path: path.to_string(),
+            },
+        ),
         None => {}
     }
     crate::router::forget_menu_return(ctx);
@@ -1104,7 +1155,7 @@ fn open_menu(ctx: &Ctx, app: &App) {
     let purpose = lock(&ctx.shared).file_browser.purpose.clone();
     let entries = match purpose {
         Some(Purpose::HubIcon(_)) => vec![crate::router::menu_row("file_default_icon")],
-        Some(Purpose::HubFolder(_)) | None => return,
+        Some(Purpose::HubFolder(_) | Purpose::DeckCover(..)) | None => return,
     };
     crate::router::present_file_browser_menu(ctx, app, entries);
 }

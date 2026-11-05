@@ -32,11 +32,38 @@ pub struct PersistedState {
     pub games: GamesState,
     pub favorites: FavoritesState,
     pub favorite_systems: FavoriteSystemsState,
+    /// The other built-in lists (Liked, Play later, Disliked), and which
+    /// list the list screens show.
+    pub lists: ListsState,
     pub recents: RecentsState,
     pub search: SearchState,
     pub settings: SettingsState,
     pub rename: RenameState,
     pub file_browser: FileBrowserState,
+    pub decks: DecksState,
+    pub deck: DeckState,
+    /// The Top played screen and its systems: the same focus, order-free,
+    /// as a built-in list keeps (`sort` stays unused).
+    pub top_played: UserListState,
+}
+
+/// The Decks screen: the deck focused there.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DecksState {
+    pub selected_deck: String,
+    pub list_top: Option<usize>,
+}
+
+/// The Deck screen: the deck open on it, the item focused there (`#<id>`),
+/// and whether a Hub tile opened it, which is where Back goes.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DeckState {
+    pub deck_id: String,
+    pub selected_item: String,
+    pub list_top: Option<usize>,
+    pub entered_from_hub: bool,
 }
 
 /// The Hub tile a rename or icon pick acts on: its visible layout position
@@ -54,6 +81,13 @@ pub struct HubTarget {
 #[serde(default)]
 pub struct RenameState {
     pub target: HubTarget,
+    /// `new_deck` while naming a new deck (for `deck_system`/`deck_path`,
+    /// or empty), `rename_deck` while renaming `deck_id`; empty for a Hub
+    /// tile.
+    pub purpose: String,
+    pub deck_system: String,
+    pub deck_path: String,
+    pub deck_id: String,
     pub draft: String,
     /// Caret position in characters.
     pub caret: usize,
@@ -72,6 +106,8 @@ pub struct FileBrowserState {
     pub mode: String,
     pub dir: String,
     pub selected: String,
+    /// Set while picking a cover for this deck instead of a tile's icon.
+    pub deck_id: String,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -289,6 +325,40 @@ pub struct FavoritesState {
     pub list_top: Option<usize>,
 }
 
+/// The list a list screen shows: `favorite` (also when empty, as every
+/// state file before the other lists was), `liked`, `playlater` or
+/// `disliked`, the value of the list's `user` tag.
+pub const LIST_FAVORITE: &str = "favorite";
+
+/// The built-in lists after Favorites, which keeps its older sections
+/// (`favorites`, `favorite_systems`, and its order and grouping in the
+/// config and settings).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ListsState {
+    /// The list on the list screens. Empty reads as Favorites.
+    pub active: String,
+    pub liked: UserListState,
+    pub play_later: UserListState,
+    pub disliked: UserListState,
+}
+
+/// One list's focus on both of its screens, its order and its grouping.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct UserListState {
+    pub selected_path: String,
+    pub list_top: Option<usize>,
+    /// `name`, `added` or empty for the list's default order.
+    pub sort: String,
+    /// `system` or empty for none.
+    pub grouping: String,
+    /// The system focused on the list's systems screen, which is also the
+    /// system a grouped list was entered for.
+    pub system_id: String,
+    pub systems_list_top: Option<usize>,
+}
+
 /// Searches kept for the Search screen's recent list.
 pub const MAX_RECENT_SEARCHES: usize = 10;
 
@@ -384,6 +454,15 @@ pub const SEARCH_SCOPE_CATEGORY: &str = "category";
 pub const SEARCH_SCOPE_FAVORITES: &str = "favorites";
 /// "Search here" on the systems that hold favorites.
 pub const SEARCH_SCOPE_FAVORITE_SYSTEMS: &str = "favorite_systems";
+/// The same two for the other lists: `liked`, `liked_systems`, and so on.
+pub const SEARCH_SCOPE_LISTS: [&str; 6] = [
+    "liked",
+    "liked_systems",
+    "playlater",
+    "playlater_systems",
+    "disliked",
+    "disliked_systems",
+];
 
 /// The scope a state file holds. A file written before there was more
 /// than one kind only ever scoped a browse screen; a kind this build does
@@ -396,6 +475,7 @@ fn scope_from_disk(scoped: bool, kind: String) -> (bool, String) {
         | SEARCH_SCOPE_CATEGORY
         | SEARCH_SCOPE_FAVORITES
         | SEARCH_SCOPE_FAVORITE_SYSTEMS => (true, kind),
+        other if SEARCH_SCOPE_LISTS.contains(&other) => (true, kind),
         _ => (false, String::new()),
     }
 }
@@ -869,10 +949,11 @@ mod tests {
     )]
 
     use super::{
-        load_from, save_to, FavoriteSystemsState, FavoritesState, FileBrowserState, GamesState,
-        HubState, HubTarget, PersistedState, RecentSearch, RecentsState, RenameState, SearchState,
-        SettingsState, SystemFilter, SystemFocus, SystemsState, MAX_RECENT_SEARCHES,
-        MAX_SYSTEM_FILTERS, MAX_SYSTEM_FOCUS, SEARCH_SCOPE_BROWSE, SEARCH_SCOPE_FAVORITES,
+        load_from, save_to, DeckState, DecksState, FavoriteSystemsState, FavoritesState,
+        FileBrowserState, GamesState, HubState, HubTarget, ListsState, PersistedState,
+        RecentSearch, RecentsState, RenameState, SearchState, SettingsState, SystemFilter,
+        SystemFocus, SystemsState, UserListState, MAX_RECENT_SEARCHES, MAX_SYSTEM_FILTERS,
+        MAX_SYSTEM_FOCUS, SEARCH_SCOPE_BROWSE, SEARCH_SCOPE_FAVORITES,
     };
     use std::thread;
 
@@ -902,6 +983,7 @@ mod tests {
         assert_eq!(old.favorites.list_top, None);
         assert_eq!(old.recents.list_top, None);
         assert_eq!(old.favorite_systems.list_top, None);
+        assert_eq!(old.lists, ListsState::default());
         assert!(old.games.list_top_at_level.is_empty());
     }
 
@@ -967,6 +1049,22 @@ mod tests {
                 selected_path: "NES".into(),
                 list_top: Some(2),
             },
+            lists: ListsState {
+                active: "playlater".into(),
+                liked: UserListState {
+                    selected_path: "/roms/snes/mario.sfc".into(),
+                    list_top: Some(4),
+                    sort: "name".into(),
+                    grouping: "system".into(),
+                    system_id: "SNES".into(),
+                    systems_list_top: Some(1),
+                },
+                play_later: UserListState {
+                    sort: "added".into(),
+                    ..UserListState::default()
+                },
+                disliked: UserListState::default(),
+            },
             search: SearchState {
                 query: "mario".into(),
                 systems: vec!["NES".into(), "SNES".into()],
@@ -1024,6 +1122,10 @@ mod tests {
                     hub_index: 2,
                     identity: "action:settings".into(),
                 },
+                purpose: "new_deck".into(),
+                deck_system: "SNES".into(),
+                deck_path: "/snes/mario.sfc".into(),
+                deck_id: String::new(),
                 draft: "Setup".into(),
                 caret: 5,
             },
@@ -1035,6 +1137,25 @@ mod tests {
                 mode: "images".into(),
                 dir: "/media/fat".into(),
                 selected: "art".into(),
+                deck_id: "0k3v9x2rq7bm".into(),
+            },
+            decks: DecksState {
+                selected_deck: "0k3v9x2rq7bm".into(),
+                list_top: Some(2),
+            },
+            deck: DeckState {
+                deck_id: "0k3v9x2rq7bm".into(),
+                selected_item: "#4".into(),
+                list_top: Some(1),
+                entered_from_hub: true,
+            },
+            top_played: UserListState {
+                selected_path: "/games/snes/mario.sfc".into(),
+                list_top: Some(3),
+                sort: String::new(),
+                grouping: "system".into(),
+                system_id: "SNES".into(),
+                systems_list_top: Some(1),
             },
         };
         save_to(&path, &original);
@@ -1211,11 +1332,15 @@ resolution = "1920x1080"
                             },
                             favorites: FavoritesState::default(),
                             favorite_systems: FavoriteSystemsState::default(),
+                            lists: ListsState::default(),
                             recents: RecentsState::default(),
                             search: SearchState::default(),
                             settings: SettingsState::default(),
                             rename: RenameState::default(),
                             file_browser: FileBrowserState::default(),
+                            decks: DecksState::default(),
+                            deck: DeckState::default(),
+                            top_played: UserListState::default(),
                         };
                         save_to(&path, &state);
                     }
@@ -1566,6 +1691,7 @@ future_field = "ignored"
                 },
                 draft: "Coin-op".into(),
                 caret: 4,
+                ..RenameState::default()
             },
             file_browser: FileBrowserState {
                 target: HubTarget {
@@ -1575,6 +1701,7 @@ future_field = "ignored"
                 mode: "images".into(),
                 dir: "/media/usb0/art".into(),
                 selected: "arcade.png".into(),
+                ..FileBrowserState::default()
             },
             ..PersistedState::default()
         };
@@ -1583,6 +1710,8 @@ future_field = "ignored"
         let old: PersistedState = toml::from_str("active_screen = 'hub'").unwrap();
         assert_eq!(old.rename, RenameState::default());
         assert_eq!(old.file_browser, FileBrowserState::default());
+        assert_eq!(old.decks, DecksState::default());
+        assert_eq!(old.deck, DeckState::default());
     }
 
     #[test]

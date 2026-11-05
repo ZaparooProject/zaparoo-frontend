@@ -72,6 +72,14 @@ pub enum Event {
     InboxMessage(String),
 }
 
+/// A loader or notice Core asked every client to show (its `ui` events).
+/// It holds the line for as long as Core keeps the event open.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CoreLine {
+    Loader(String),
+    Notice(String),
+}
+
 /// What the line says, as a stable kind the view maps to copy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Kind {
@@ -101,6 +109,11 @@ pub enum Kind {
     PlaytimeWarning,
     /// `arg` carries the inbox title.
     Inbox,
+    /// Core is busy on something it asked every client to show; `arg`
+    /// carries its text, possibly empty.
+    CoreLoader,
+    /// `arg` carries Core's message.
+    CoreNotice,
 }
 
 impl Kind {
@@ -122,6 +135,8 @@ impl Kind {
             Self::Imported => "imported",
             Self::PlaytimeWarning => "playtime-warning",
             Self::Inbox => "inbox",
+            Self::CoreLoader => "core-loader",
+            Self::CoreNotice => "core-notice",
         }
     }
 }
@@ -189,6 +204,7 @@ pub struct Ladder {
     scrape_was_busy: bool,
     terminal: Option<(Message, Instant)>,
     event: Option<(Message, Instant)>,
+    core: Option<CoreLine>,
     terminal_dwell: Duration,
     event_dwell: Duration,
 }
@@ -210,6 +226,7 @@ impl Ladder {
             scrape_was_busy: false,
             terminal: None,
             event: None,
+            core: None,
             terminal_dwell: Self::TERMINAL_DWELL,
             event_dwell: Self::EVENT_DWELL,
         }
@@ -291,6 +308,12 @@ impl Ladder {
         self.event = Some((message, now));
     }
 
+    /// Core opened, changed or closed its loader or notice. Core decides
+    /// when it ends, so it has no dwell of its own.
+    pub fn set_core(&mut self, line: Option<CoreLine>) {
+        self.core = line;
+    }
+
     fn task_active(&self, link: &LinkInput, task: &TaskInput) -> bool {
         self.media_activity_enabled
             && connection_message(link).is_none()
@@ -313,9 +336,31 @@ impl Ladder {
 
     /// Resolve the ladder at `now`.
     pub fn render(&self, link: &LinkInput, task: &TaskInput, now: Instant) -> Output {
-        let task_active = self.task_active(link, task);
         let link_message = connection_message(link);
         let link_trouble = link_message.is_some();
+        // What Core is doing for the user right now speaks over a
+        // background task; only link trouble speaks over it.
+        if let (None, Some(line)) = (&link_message, &self.core) {
+            let (message, loading) = match line {
+                CoreLine::Loader(text) => (Message::with_arg(Kind::CoreLoader, text.clone()), true),
+                CoreLine::Notice(text) => {
+                    (Message::with_arg(Kind::CoreNotice, text.clone()), false)
+                }
+            };
+            return Output {
+                message,
+                is_error: false,
+                // A loader marches one cell: busy, with no fraction to show.
+                show_track: loading,
+                paused: false,
+                total_known: !loading,
+                current_step: 0,
+                total_steps: 0,
+                percent: None,
+                link_trouble: false,
+            };
+        }
+        let task_active = self.task_active(link, task);
         let message = if let Some(message) = link_message {
             message
         } else if task_active {
@@ -455,6 +500,40 @@ mod tests {
             ..LinkInput::default()
         };
         assert!(ladder.render(&core_error, &task, now).link_trouble);
+    }
+
+    #[test]
+    fn core_lines_speak_over_tasks_but_not_over_link_trouble() {
+        let mut ladder = Ladder::new();
+        let task = TaskInput {
+            indexing: true,
+            ..TaskInput::default()
+        };
+        ladder.enable_media_activity(&TaskInput::default());
+        let now = Instant::now();
+        ladder.observe_task(&task, now, &plain);
+        ladder.set_core(Some(CoreLine::Loader("Loading deck".into())));
+        let out = ladder.render(&connected(), &task, now);
+        assert_eq!(out.message.kind, Kind::CoreLoader);
+        assert_eq!(out.message.arg, "Loading deck");
+        assert!(out.show_track && !out.total_known && out.percent.is_none());
+        ladder.set_core(Some(CoreLine::Notice("Saved".into())));
+        let out = ladder.render(&connected(), &task, now);
+        assert_eq!(out.message.kind, Kind::CoreNotice);
+        assert!(!out.show_track);
+        let lost = LinkInput {
+            link: Link::Reconnecting,
+            ..LinkInput::default()
+        };
+        assert_eq!(
+            ladder.render(&lost, &task, now).message.kind,
+            Kind::Reconnecting
+        );
+        ladder.set_core(None);
+        assert_eq!(
+            ladder.render(&connected(), &task, now).message.kind,
+            Kind::Indexing
+        );
     }
 
     #[test]

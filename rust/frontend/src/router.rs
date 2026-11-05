@@ -21,6 +21,7 @@ use std::time::Duration;
 use tokio::runtime::Handle;
 use zaparoo_app::action_error;
 use zaparoo_app::options_menu::Menu as OptionsMenu;
+use zaparoo_app::user_flags::{Flag, Flags};
 use zaparoo_core::endpoints::run::RunMutation;
 use zaparoo_core::input_actions::actions;
 use zaparoo_core::media_types::{RunParams, SystemInfo};
@@ -51,7 +52,8 @@ pub struct Shared {
     /// "Show hidden items" setting: hidden entries reappear dimmed
     /// with the "Hidden" badge instead of being filtered out.
     pub show_hidden: bool,
-    /// Favorites list order: "name" for A-Z, empty for Core's default.
+    /// Favorites list order: "name" for A-Z, "added" for newest first,
+    /// empty for Core's default.
     /// Durable in `frontend.toml`, like the hidden-browse prefs.
     pub favorites_sort: String,
     /// Full sorted systems list from the catalog.
@@ -61,6 +63,8 @@ pub struct Shared {
     /// The games-style screens: rows, cursor, fetch and cue state.
     pub games: crate::games::GamesModel,
     pub game_info: crate::game_info::GameInfoModel,
+    /// Core's current UI event and what of it is on screen.
+    pub core_ui: crate::core_ui::Model,
     /// The media-job setup panel's form state.
     pub setup: crate::media_setup::SetupModel,
     /// The log uploader's own panel state.
@@ -89,12 +93,19 @@ pub struct Shared {
     /// projected index on that surface.
     pub context_owner: ContextOwner,
     pub context_target: usize,
+    /// Collection toggles still waiting on Core, per game.
+    pub flag_requests: zaparoo_app::user_flags::Requests,
     /// The open menu's rows and the pages they open, kept so Back from a
     /// page returns to the same rows.
     pub context_menu: zaparoo_app::options_menu::Menu,
     /// Where the menu was when one of its rows opened something in its
     /// place, so Back there reopens it (`return_to_menu`).
     pub menu_return: Option<MenuReturn>,
+    /// Bumped each time a context menu opens or closes, so a collection
+    /// change Core answers late lands only on the menu it was made in.
+    pub context_seq: u64,
+    /// The strip button focus returns to when Up leaves the rows.
+    pub context_strip_at: usize,
     /// What the open `ListPickerModal` is for (the Menu list vs a settings
     /// picker field).
     pub list_context: ListContext,
@@ -134,6 +145,8 @@ pub struct Shared {
     /// Setup was offered or Core was already updating this session.
     pub first_run_shown: bool,
     pub card_write: crate::card_write::Model,
+    /// The decks the Decks screen and pinned deck tiles show.
+    pub decks: crate::decks::Model,
     pub launcher_save_seq: u64,
     /// The "Saving…" caption's wait while a launcher save is unanswered.
     pub launcher_save_wait: Option<crate::cue::LocalWait>,
@@ -214,6 +227,14 @@ pub enum ListContext {
     FavoritesSort,
     /// The Search results' Menu list.
     SearchResultsPageMenu,
+    /// The Decks screen's Menu list.
+    DecksPageMenu,
+    /// Top played's Menu list, on either of its screens, and its "Group
+    /// by" page.
+    TopPlayedPageMenu,
+    TopPlayedGrouping,
+    /// The Deck screen's Menu list, and its More list.
+    DeckPageMenu,
     /// The Games "Filter" page: one row per category, and the values page
     /// of the category being chosen. Both stay inside one panel.
     FilterCategories,
@@ -285,6 +306,7 @@ impl Shared {
             systems_model: crate::systems::SystemsModel::new(),
             games: crate::games::GamesModel::new(),
             game_info: crate::game_info::GameInfoModel::default(),
+            core_ui: crate::core_ui::Model::default(),
             setup: crate::media_setup::SetupModel::new(),
             log_upload: crate::log_upload::LogUploadModel::new(),
             pairing: zaparoo_app::pairing::Session::default(),
@@ -298,8 +320,11 @@ impl Shared {
             has_nfc: false,
             context_owner: ContextOwner::Games,
             context_target: 0,
+            flag_requests: zaparoo_app::user_flags::Requests::default(),
             context_menu: zaparoo_app::options_menu::Menu::default(),
             menu_return: None,
+            context_seq: 0,
+            context_strip_at: 0,
             list_context: ListContext::ViewMenu,
             pending_restart: None,
             launchers: Vec::new(),
@@ -317,6 +342,7 @@ impl Shared {
             version_warning_shown: false,
             first_run_shown: false,
             card_write: crate::card_write::Model::default(),
+            decks: crate::decks::Model::default(),
             launcher_save_seq: 0,
             launcher_save_wait: None,
             cue: crate::cue::Model::default(),
@@ -673,6 +699,10 @@ fn dialog_action(ctx: &Ctx, app: &App, action: &str) {
             // The config alert opens the startup ladder; the rest follows it.
             maybe_open_startup_notices(ctx, app);
         }
+        // A Core confirmation that waited for this dialog takes it now.
+        if !app.global::<crate::Overlays>().get_dialog_open() {
+            crate::core_ui::surface_free(ctx, app);
+        }
     }
     // Retire the old alert before retrying: an empty payload can fail
     // synchronously and must enqueue a fresh alert, not deduplicate away.
@@ -749,6 +779,18 @@ fn dialog_accept(ctx: &Ctx, app: &App, kind: DialogKind, focus: usize) {
             close_dialog(app);
             crate::update::stop_answered(confirmed);
         }
+        DialogKind::DeleteDeck => {
+            close_dialog(app);
+            crate::decks::delete_answered(ctx, app, confirmed);
+        }
+        DialogKind::CoreConfirm => {
+            let ok = app
+                .global::<crate::Overlays>()
+                .get_dialog_buttons()
+                .row_data(focus)
+                .is_some_and(|id| id == DialogButton::Ok);
+            crate::core_ui::confirm_answered(ctx, app, ok);
+        }
         _ => close_dialog(app),
     }
 }
@@ -769,6 +811,12 @@ fn dialog_cancel(ctx: &Ctx, app: &App, kind: DialogKind) {
             close_dialog(app);
             crate::update::stop_answered(false);
         }
+        DialogKind::DeleteDeck => {
+            close_dialog(app);
+            crate::decks::delete_answered(ctx, app, false);
+        }
+        // Back dismisses, unless Core will not let this one go.
+        DialogKind::CoreConfirm => crate::core_ui::confirm_answered(ctx, app, false),
         _ => close_dialog(app),
     }
 }
@@ -1216,6 +1264,9 @@ fn focus_index(app: &App) -> i32 {
     if overlays.get_dialog_open() {
         return overlays.get_dialog_focus();
     }
+    if crate::core_ui::picker_open(app) {
+        return app.global::<crate::CoreUiView>().get_index();
+    }
     let setup = app.global::<crate::SetupModalView>();
     if setup.get_open() {
         return if setup.get_picker_page() {
@@ -1227,9 +1278,9 @@ fn focus_index(app: &App) -> i32 {
     match app.global::<crate::Shell>().get_active_screen() {
         crate::Screen::Hub => app.global::<crate::HubView>().get_selected_local(),
         crate::Screen::Settings => app.global::<crate::SettingsView>().get_index(),
-        crate::Screen::Systems | crate::Screen::FavoriteSystems => {
-            app.global::<crate::SystemsView>().get_current_index()
-        }
+        crate::Screen::Systems
+        | crate::Screen::FavoriteSystems
+        | crate::Screen::TopPlayedSystems => app.global::<crate::SystemsView>().get_current_index(),
         _ => app.global::<crate::GamesView>().get_current_index(),
     }
 }
@@ -1242,10 +1293,14 @@ fn dispatch_with_focus(ctx: &Ctx, app: &App, action: &str) {
         crate::Screen::Hub
             | crate::Screen::Systems
             | crate::Screen::FavoriteSystems
+            | crate::Screen::TopPlayedSystems
+            | crate::Screen::Decks
+            | crate::Screen::TopPlayed
             | crate::Screen::Games
             | crate::Screen::Favorites
             | crate::Screen::Recents
             | crate::Screen::SearchResults
+            | crate::Screen::Deck
     ) {
         ctx.logos.request([]);
     }
@@ -1270,11 +1325,16 @@ fn dispatch_with_focus(ctx: &Ctx, app: &App, action: &str) {
 fn list_layout_active(app: &App) -> bool {
     let shell = app.global::<crate::Shell>();
     match shell.get_active_screen() {
-        crate::Screen::Systems | crate::Screen::FavoriteSystems => shell.get_systems_list_layout(),
+        crate::Screen::Systems
+        | crate::Screen::FavoriteSystems
+        | crate::Screen::TopPlayedSystems => shell.get_systems_list_layout(),
         crate::Screen::Games
         | crate::Screen::Favorites
         | crate::Screen::Recents
-        | crate::Screen::SearchResults => shell.get_browse_list_layout(),
+        | crate::Screen::SearchResults
+        | crate::Screen::Deck
+        | crate::Screen::Decks
+        | crate::Screen::TopPlayed => shell.get_browse_list_layout(),
         _ => false,
     }
 }
@@ -1301,6 +1361,12 @@ fn dispatch_action(ctx: &Ctx, app: &App, action: &str) {
     // while open, above every other surface.
     if app.global::<crate::Overlays>().get_dialog_open() {
         overlay_action(ctx, app, action, dialog_action);
+        return;
+    }
+    // Core's picker: Core asked for an answer, so it sits above every
+    // other surface but the decision dialog.
+    if crate::core_ui::picker_open(app) {
+        crate::core_ui::handle_action(ctx, app, action);
         return;
     }
     // Cold-launch curtain swallows input except Cancel, which still
@@ -1418,13 +1484,18 @@ fn screen_action(ctx: &Ctx, app: &App, action: &str) {
     }
     match app.global::<crate::Shell>().get_active_screen() {
         crate::Screen::Hub => crate::hub::handle_action(ctx, app, action),
-        crate::Screen::Systems | crate::Screen::FavoriteSystems => {
+        crate::Screen::Systems
+        | crate::Screen::FavoriteSystems
+        | crate::Screen::TopPlayedSystems => {
             crate::systems::handle_action(ctx, app, action);
         }
         crate::Screen::Games
         | crate::Screen::Favorites
         | crate::Screen::Recents
-        | crate::Screen::SearchResults => {
+        | crate::Screen::SearchResults
+        | crate::Screen::Deck
+        | crate::Screen::Decks
+        | crate::Screen::TopPlayed => {
             crate::games::handle_action(ctx, app, action);
         }
         crate::Screen::Search => crate::search::handle_action(ctx, app, action),
@@ -1743,9 +1814,12 @@ fn list_roles(app: &App) -> Vec<zaparoo_app::form_list::Role> {
         .get_list_entries()
         .iter()
         .map(|entry| match entry.role {
-            // A page-opening row is a context-menu row; in a list it
-            // would be picked like any other.
-            crate::MenuRole::Option | crate::MenuRole::Submenu => Role::Option,
+            // Page-opening and membership rows are context-menu rows; in
+            // a list they would be picked like any other.
+            crate::MenuRole::Option
+            | crate::MenuRole::Submenu
+            | crate::MenuRole::CheckOff
+            | crate::MenuRole::CheckOn => Role::Option,
             crate::MenuRole::Header => Role::Header,
             crate::MenuRole::Action => Role::Action,
         })
@@ -1775,12 +1849,25 @@ fn list_accept(ctx: &Ctx, app: &App, context: ListContext, id: &str) {
             "add_to_hub" => crate::search::toggle_hub(ctx, app),
             _ => {}
         },
+        ListContext::DecksPageMenu | ListContext::DeckPageMenu => {
+            crate::decks::page_menu_accept(ctx, app, id);
+        }
         ListContext::FavoritesGrouping => {
             hold_menu_through(app, HeldMenu::List, || {
                 favorites_grouping_picked(ctx, app, id);
             });
         }
         ListContext::FavoritesSort => favorites_sort_picked(ctx, app, id),
+        ListContext::TopPlayedPageMenu => {
+            if id == "top_grouping" {
+                open_top_played_grouping_menu(ctx, app);
+            }
+        }
+        ListContext::TopPlayedGrouping => {
+            hold_menu_through(app, HeldMenu::List, || {
+                top_played_grouping_picked(ctx, app, id);
+            });
+        }
         ListContext::SettingsPicker(field) => {
             crate::settings::picker_selected(ctx, app, &field, id);
         }
@@ -1849,7 +1936,10 @@ fn list_action(ctx: &Ctx, app: &App, action: &str) {
                 };
                 // A pick that opens another screen keeps the list up until
                 // that screen is ready (`hold_menu_through`).
-                let routes = matches!(context, ListContext::FavoritesGrouping);
+                let routes = matches!(
+                    context,
+                    ListContext::FavoritesGrouping | ListContext::TopPlayedGrouping
+                );
                 if !stays_open && !routes {
                     app.global::<crate::Overlays>().set_list_open(false);
                 }
@@ -2373,11 +2463,17 @@ pub(crate) fn favorites_page_menu_accept(ctx: &Ctx, app: &App, id: &str) {
         "favorites_sort" => open_favorites_sort_menu(ctx, app),
         "favorites_grouping" => open_favorites_grouping_menu(ctx, app),
         "launch_random_favorite" => {
-            let scope = lock(&ctx.shared).games.favorites_system.clone();
+            let (list, scope) = {
+                let shared = lock(&ctx.shared);
+                (
+                    crate::user_lists::active(&shared),
+                    shared.games.list_system.clone(),
+                )
+            };
             launch(
                 ctx,
                 app,
-                zaparoo_app::systems::random_favorite_launch_text(&scope),
+                zaparoo_app::user_lists::random_launch_text(list, &scope),
                 "",
             );
         }
@@ -2387,18 +2483,87 @@ pub(crate) fn favorites_page_menu_accept(ctx: &Ctx, app: &App, id: &str) {
     }
 }
 
-/// The grouping page, reachable from either favorites screen.
+/// A built-in list from the Hub or a restore: the systems that hold its
+/// games when it is grouped by system, otherwise the list itself.
+pub(crate) fn enter_list(ctx: &Ctx, app: &App, list: Flag, entry: EntryMode) {
+    if crate::user_lists::grouped(&lock(&ctx.shared), list) {
+        crate::systems::enter_list(ctx, app, list, entry);
+    } else {
+        crate::games::enter_list(ctx, app, list, entry);
+    }
+}
+
+/// Top played's Menu list (where the chip row is not on screen): its
+/// grouping switch.
+pub(crate) fn open_top_played_page_menu(ctx: &Ctx, app: &App) {
+    let grouping = crate::page_bar::top_played_grouping_label(&lock(&ctx.shared));
+    let entries = vec![menu_row_keyed(
+        "top_grouping",
+        "favorites_grouping",
+        grouping,
+    )];
+    present_list(
+        ctx,
+        app,
+        ListContext::TopPlayedPageMenu,
+        "title:menu",
+        entries,
+    );
+}
+
+/// Top played's grouping page.
+pub(crate) fn open_top_played_grouping_menu(ctx: &Ctx, app: &App) {
+    let entries = vec![
+        menu_row_keyed("none", "group:none", ""),
+        menu_row_keyed("system", "group:system", ""),
+    ];
+    let grouped = zaparoo_app::top_played::grouped(&lock(&ctx.shared).persist.top_played.grouping);
+    present_list(
+        ctx,
+        app,
+        ListContext::TopPlayedGrouping,
+        "title:group_by",
+        entries,
+    );
+    app.global::<crate::Overlays>()
+        .set_list_index(i32::from(grouped));
+}
+
+/// Switching Top played's grouping re-enters it at the new level.
+fn top_played_grouping_picked(ctx: &Ctx, app: &App, id: &str) {
+    if !matches!(id, "none" | "system") {
+        return;
+    }
+    {
+        let mut shared = lock(&ctx.shared);
+        let value = if id == "system" {
+            zaparoo_app::user_lists::GROUP_SYSTEM
+        } else {
+            "none"
+        };
+        if shared.persist.top_played.grouping == value {
+            return;
+        }
+        value.clone_into(&mut shared.persist.top_played.grouping);
+    }
+    save_persist(&ctx.shared);
+    if id == "system" {
+        crate::systems::enter_top_played(ctx, app, EntryMode::Restore);
+    } else {
+        crate::games::enter_top_played(ctx, app, EntryMode::Restore);
+    }
+}
+
+/// The grouping page, reachable from either of a list's screens.
 pub(crate) fn open_favorites_grouping_menu(ctx: &Ctx, app: &App) {
     let entries = vec![
         menu_row_keyed("none", "group:none", ""),
         menu_row_keyed("system", "group:system", ""),
     ];
-    let current = lock(&ctx.shared)
-        .persist
-        .settings
-        .favorites_grouping
-        .clone();
-    let index = usize::from(current == "system");
+    let grouped = {
+        let shared = lock(&ctx.shared);
+        crate::user_lists::grouped(&shared, crate::user_lists::active(&shared))
+    };
     present_list(
         ctx,
         app,
@@ -2407,54 +2572,80 @@ pub(crate) fn open_favorites_grouping_menu(ctx: &Ctx, app: &App) {
         entries,
     );
     app.global::<crate::Overlays>()
-        .set_list_index(i32::try_from(index).unwrap_or(0));
+        .set_list_index(i32::from(grouped));
 }
 
-/// Switching the grouping re-enters the favorites at the new level.
+/// Switching the grouping re-enters the list at the new level.
 fn favorites_grouping_picked(ctx: &Ctx, app: &App, id: &str) {
     if !matches!(id, "none" | "system") {
         return;
     }
-    {
+    let list = {
         let mut shared = lock(&ctx.shared);
-        if shared.persist.settings.favorites_grouping == id {
+        let list = crate::user_lists::active(&shared);
+        if !crate::user_lists::set_grouped(&mut shared, list, id == "system") {
             return;
         }
-        shared.persist.settings.favorites_grouping = id.to_string();
-    }
-    crate::settings::save(ctx, app);
-    if id == "system" {
-        crate::systems::enter_favorites(ctx, app, EntryMode::Restore);
+        list
+    };
+    if list == Flag::Favorite {
+        crate::settings::save(ctx, app);
     } else {
-        crate::games::enter_favorites(ctx, app, EntryMode::Restore);
+        save_persist(&ctx.shared);
+    }
+    if id == "system" {
+        crate::systems::enter_list(ctx, app, list, EntryMode::Restore);
+    } else {
+        crate::games::enter_list(ctx, app, list, EntryMode::Restore);
     }
 }
 
 pub(crate) fn open_favorites_sort_menu(ctx: &Ctx, app: &App) {
-    let entries = vec![
-        menu_row_keyed("default", "sort:default", ""),
-        menu_row_keyed("name", "sort:name", ""),
-    ];
-    let index = usize::from(lock(&ctx.shared).favorites_sort == "name");
+    use zaparoo_app::user_lists::ListSort;
+    let entries = ListSort::ALL
+        .iter()
+        .map(|sort| menu_row_keyed(sort.token(), sort.label_key(), ""))
+        .collect();
+    let current = {
+        let shared = lock(&ctx.shared);
+        crate::user_lists::sort(&shared, crate::user_lists::active(&shared))
+    };
+    let index = ListSort::ALL
+        .iter()
+        .position(|sort| *sort == current)
+        .unwrap_or(0);
     present_list(ctx, app, ListContext::FavoritesSort, "title:sort", entries);
     app.global::<crate::Overlays>()
         .set_list_index(i32::try_from(index).unwrap_or(0));
 }
 
-/// The order is a durable preference (`frontend.toml`), not screen state.
+/// Favorites' order is a durable preference (`frontend.toml`); the other
+/// lists keep theirs with their screen state.
 fn favorites_sort_picked(ctx: &Ctx, app: &App, id: &str) {
-    let sort = if id == "name" { "name" } else { "" };
-    if lock(&ctx.shared).favorites_sort == sort {
+    let Some(sort) = zaparoo_app::user_lists::ListSort::from_token(id) else {
         return;
-    }
-    lock(&ctx.shared).favorites_sort = sort.to_string();
-    if config_writable(ctx) {
-        if let Err(e) = zaparoo_core::config::save_favorites_sort(&ctx.config_path, sort) {
-            tracing::warn!("saving the favorites sort failed: {e}");
-            report_action_error(ctx, app, "setting", "");
+    };
+    let (list, favorites_sort) = {
+        let mut shared = lock(&ctx.shared);
+        let list = crate::user_lists::active(&shared);
+        if !crate::user_lists::set_sort(&mut shared, list, sort) {
+            return;
         }
+        (list, shared.favorites_sort.clone())
+    };
+    if list == Flag::Favorite {
+        if config_writable(ctx) {
+            if let Err(e) =
+                zaparoo_core::config::save_favorites_sort(&ctx.config_path, &favorites_sort)
+            {
+                tracing::warn!("saving the favorites sort failed: {e}");
+                report_action_error(ctx, app, "setting", "");
+            }
+        }
+    } else {
+        save_persist(&ctx.shared);
     }
-    crate::games::refresh_favorites(ctx, app);
+    crate::games::refresh_list(ctx, app);
 }
 
 /// A one-button informational alert above the current screen (the
@@ -2488,6 +2679,15 @@ pub(crate) fn report_action_error(ctx: &Ctx, app: &App, kind: &str, context: &st
     let slot_free = !app.global::<crate::Overlays>().get_dialog_open();
     let entry = lock(&ctx.shared).errors.present(kind, context, slot_free);
     if let Some(entry) = entry {
+        show_action_error(app, &entry);
+    }
+}
+
+/// A dialog closed without an answer of the user's (Core resolved its
+/// confirmation elsewhere): hand the surface to whatever alert waited.
+pub(crate) fn dialog_surface_freed(ctx: &Ctx, app: &App) {
+    let next = lock(&ctx.shared).errors.take_next();
+    if let Some(entry) = next {
         show_action_error(app, &entry);
     }
 }
@@ -2564,18 +2764,23 @@ fn present_context_menu(
         return;
     }
     let entries = root_entries(&menu);
+    let strip = menu.strip;
     {
         let mut guard = lock(&ctx.shared);
         guard.menu_return = None;
         guard.context_owner = owner;
         guard.context_target = target;
         guard.context_menu = menu;
+        guard.context_seq += 1;
+        guard.context_strip_at = 0;
         guard.context_page.reset();
     }
     let overlays = app.global::<crate::Overlays>();
     overlays.set_context_entries(ModelRc::new(VecModel::from(entries)));
     overlays.set_context_page(crate::ContextPage::Root);
     overlays.set_context_index(0);
+    publish_strip(app, strip);
+    overlays.set_context_strip_index(-1);
     overlays.set_context_open(true);
 }
 
@@ -2682,14 +2887,22 @@ pub(crate) fn return_to_menu(
         ContextOwner::Hub => crate::hub::context_anchor(ctx, app),
     };
     set_context_anchor(app, &anchor);
-    let entries = {
+    let (entries, strip) = {
         let mut shared = lock(&ctx.shared);
         shared.context_page.reset();
-        root_entries(&shared.context_menu)
+        // A reopened menu is a new menu to a collection change in flight.
+        shared.context_seq += 1;
+        shared.context_strip_at = 0;
+        (
+            root_entries(&shared.context_menu),
+            shared.context_menu.strip,
+        )
     };
     let overlays = app.global::<crate::Overlays>();
     overlays.set_context_entries(ModelRc::new(VecModel::from(entries)));
     overlays.set_context_page(crate::ContextPage::Root);
+    publish_strip(app, strip);
+    overlays.set_context_strip_index(-1);
     if let Some(page) = back.page {
         crate::context_page::turn(ctx, app, page);
     }
@@ -2704,6 +2917,71 @@ pub(crate) fn return_to_menu(
     true
 }
 
+pub(crate) fn user_flag(flag: Flag) -> crate::UserFlag {
+    match flag {
+        Flag::Favorite => crate::UserFlag::Favorite,
+        Flag::Like => crate::UserFlag::Like,
+        Flag::Dislike => crate::UserFlag::Dislike,
+        Flag::PlayLater => crate::UserFlag::PlayLater,
+    }
+}
+
+/// The strip's buttons, or none for a menu without one.
+fn publish_strip(app: &App, flags: Option<Flags>) {
+    let buttons: Vec<crate::FlagButton> = flags
+        .map(|flags| {
+            Flag::ALL
+                .iter()
+                .map(|&flag| crate::FlagButton {
+                    flag: user_flag(flag),
+                    on: flags.has(flag),
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    app.global::<crate::Overlays>()
+        .set_context_strip(ModelRc::new(VecModel::from(buttons)));
+}
+
+/// The open menu, for a collection change to find again when Core answers.
+pub(crate) fn context_seq(ctx: &Ctx) -> u64 {
+    lock(&ctx.shared).context_seq
+}
+
+/// Show `flags` on the strip of menu `seq`, if that menu is still open.
+pub(crate) fn show_strip_flags(ctx: &Ctx, app: &App, seq: u64, flags: Flags) {
+    {
+        let mut shared = lock(&ctx.shared);
+        if shared.context_seq != seq || shared.context_menu.strip.is_none() {
+            return;
+        }
+        shared.context_menu.strip = Some(flags);
+    }
+    if !app.global::<crate::Overlays>().get_context_open() {
+        return;
+    }
+    // Change each button in place: only the toggled icons repaint.
+    let model = app.global::<crate::Overlays>().get_context_strip();
+    for (index, &flag) in Flag::ALL.iter().enumerate() {
+        let button = crate::FlagButton {
+            flag: user_flag(flag),
+            on: flags.has(flag),
+        };
+        if model.row_data(index).is_some_and(|old| old != button) {
+            model.set_row_data(index, button);
+        }
+    }
+}
+
+/// Whether the strip is on screen: a game's menu, on its own rows.
+fn strip_shown(ctx: &Ctx, app: &App) -> bool {
+    app.global::<crate::Overlays>()
+        .get_context_strip()
+        .row_count()
+        > 0
+        && !crate::context_page::showing(ctx)
+}
+
 pub(crate) fn close_context_menu(ctx: &Ctx, app: &App) {
     crate::press_feedback::cancel(app);
     // Bumping the seq abandons any in-flight card write (its result is
@@ -2713,9 +2991,12 @@ pub(crate) fn close_context_menu(ctx: &Ctx, app: &App) {
         shared.card_write.cancel();
         shared.context_page.reset();
     }
-    app.global::<crate::Overlays>().set_context_open(false);
-    app.global::<crate::Overlays>()
-        .set_context_page(crate::ContextPage::Root);
+    lock(&ctx.shared).context_seq += 1;
+    let overlays = app.global::<crate::Overlays>();
+    overlays.set_context_open(false);
+    overlays.set_context_page(crate::ContextPage::Root);
+    overlays.set_context_strip_index(-1);
+    publish_strip(app, None);
 }
 
 /// Pointer input on the context menu's rows: hover moves focus, a click
@@ -2770,6 +3051,11 @@ pub fn bind_context_input(ctx: &Arc<Ctx>, app: &App) {
                         if !ov.get_dialog_open()
                             && ov.get_launcher_prefs_open()
                             && crate::launcher_prefs::focus(&ctx, &app, row) => {}
+                    crate::PressOwner::CorePicker
+                        if !ov.get_dialog_open() && crate::core_ui::picker_open(&app) =>
+                    {
+                        crate::core_ui::focus(&ctx, &app, row);
+                    }
                     crate::PressOwner::Letter
                         if !ov.get_dialog_open()
                             && ov.get_letter_open()
@@ -2798,9 +3084,18 @@ pub fn bind_context_input(ctx: &Arc<Ctx>, app: &App) {
             {
                 return;
             }
-            app.global::<crate::Overlays>().set_context_index(index);
+            let overlays = app.global::<crate::Overlays>();
+            overlays.set_context_strip_index(-1);
+            overlays.set_context_index(index);
         });
     }
+    bind_strip_input(ctx, app);
+    bind_row_clicked(ctx, app);
+}
+
+/// A click on a context-menu row focuses it and accepts.
+fn bind_row_clicked(ctx: &Arc<Ctx>, app: &App) {
+    let input = app.global::<crate::ContextInput>();
     let ctx = ctx.clone();
     let weak = app.as_weak();
     input.on_row_clicked(move |index| {
@@ -2811,9 +3106,94 @@ pub fn bind_context_input(ctx: &Arc<Ctx>, app: &App) {
         {
             return;
         }
-        app.global::<crate::Overlays>().set_context_index(index);
+        let overlays = app.global::<crate::Overlays>();
+        overlays.set_context_strip_index(-1);
+        overlays.set_context_index(index);
         handle_action(&ctx, &app, actions::ACCEPT);
     });
+}
+
+/// Pointer input on the collections strip: hover moves focus to a button,
+/// a click toggles it.
+fn bind_strip_input(ctx: &Arc<Ctx>, app: &App) {
+    let input = app.global::<crate::ContextInput>();
+    {
+        let ctx = ctx.clone();
+        let weak = app.as_weak();
+        input.on_strip_hovered(move |index| {
+            let Some(app) = weak.upgrade() else {
+                return;
+            };
+            if crate::press_feedback::pending(&app)
+                || !lock(&ctx.shared).persist.settings.mouse_enabled
+            {
+                return;
+            }
+            focus_strip(&ctx, &app, index);
+        });
+    }
+    {
+        let ctx = ctx.clone();
+        let weak = app.as_weak();
+        input.on_strip_clicked(move |index| {
+            let Some(app) = weak.upgrade() else {
+                return;
+            };
+            if crate::press_feedback::pending(&app)
+                || !lock(&ctx.shared).persist.settings.mouse_enabled
+            {
+                return;
+            }
+            focus_strip(&ctx, &app, index);
+            handle_action(&ctx, &app, actions::ACCEPT);
+        });
+    }
+}
+
+/// Put focus on strip button `index`, taking it off the rows.
+fn focus_strip(ctx: &Ctx, app: &App, index: i32) {
+    let Ok(at) = usize::try_from(index) else {
+        return;
+    };
+    if !strip_shown(ctx, app) || at >= Flag::ALL.len() {
+        return;
+    }
+    lock(&ctx.shared).context_strip_at = at;
+    let overlays = app.global::<crate::Overlays>();
+    overlays.set_context_index(-1);
+    overlays.set_context_strip_index(index);
+}
+
+/// Put focus back on row `index`, off the strip.
+fn focus_row(app: &App, index: usize) {
+    let overlays = app.global::<crate::Overlays>();
+    overlays.set_context_strip_index(-1);
+    overlays.set_context_index(i32::try_from(index).unwrap_or(0));
+}
+
+/// A key while the strip has focus. Left and Right walk the buttons and
+/// stop at the ends; Down returns to the first row and Up wraps to the
+/// last, as the rows themselves wrap.
+fn strip_action(ctx: &Ctx, app: &App, action: &str, at: usize, rows: usize) {
+    match action {
+        actions::LEFT if at > 0 => focus_strip(ctx, app, (at - 1) as i32),
+        actions::RIGHT if at + 1 < Flag::ALL.len() => focus_strip(ctx, app, (at + 1) as i32),
+        actions::DOWN if rows > 0 => focus_row(app, 0),
+        actions::UP if rows > 0 => focus_row(app, rows - 1),
+        actions::ACCEPT => {
+            let owner = lock(&ctx.shared).context_owner;
+            let Some(&flag) = Flag::ALL.get(at) else {
+                return;
+            };
+            match owner {
+                ContextOwner::Games => crate::games::strip_toggle(ctx, app, flag),
+                ContextOwner::Hub => crate::hub::strip_toggle(ctx, app, flag),
+                ContextOwner::Systems => {}
+            }
+        }
+        actions::CANCEL | actions::CONTEXT_MENU => close_context_menu(ctx, app),
+        _ => {}
+    }
 }
 
 fn context_action(ctx: &Ctx, app: &App, action: &str) {
@@ -2830,7 +3210,24 @@ fn context_action(ctx: &Ctx, app: &App, action: &str) {
         }
         return;
     }
+    let strip_at = app.global::<crate::Overlays>().get_context_strip_index();
+    if strip_shown(ctx, app) {
+        if let Ok(at) = usize::try_from(strip_at) {
+            strip_action(ctx, app, action, at, len);
+            return;
+        }
+    }
     match action {
+        // The strip sits between the last row and the first: Up from the
+        // first row and Down from the last reach it.
+        actions::UP if len > 0 && index == 0 && strip_shown(ctx, app) => {
+            let at = lock(&ctx.shared).context_strip_at;
+            focus_strip(ctx, app, at as i32);
+        }
+        actions::DOWN if len > 0 && index + 1 == len && strip_shown(ctx, app) => {
+            let at = lock(&ctx.shared).context_strip_at;
+            focus_strip(ctx, app, at as i32);
+        }
         actions::UP | actions::DOWN if len > 0 => {
             let step_ms = lock(&ctx.shared).input.modal_follow();
             let overlays = app.global::<crate::Overlays>();
@@ -2879,7 +3276,7 @@ fn context_accept(ctx: &Ctx, app: &App, id: &str) {
     };
     if matches!(
         showing,
-        Some(Page::Alternates | Page::Discs | Page::Versions)
+        Some(Page::Alternates | Page::Discs | Page::Versions | Page::AddToDeck)
     ) {
         crate::context_page::accept(ctx, app, id);
         return;

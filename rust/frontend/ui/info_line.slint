@@ -1,0 +1,209 @@
+// The focused item's info line: everything about the one item in focus
+// that its tile does not carry. A tile shows identity only (cover, name, the
+// system label on its scrim and the favorite heart); the collections,
+// versions, play time, a deck's owner and lock, the hidden mark and the tags
+// live here. Rust publishes the fields typed (`zaparoo_app::info_line`);
+// these views lay them out in its fixed order. See `docs/style.md` ->
+// "Tiles and the info line".
+
+import { Theme, Sizing } from "theme.slint";
+import { GlyphSource } from "chrome.slint";
+import { Labels } from "labels.slint";
+
+export struct InfoLineData {
+    name: string,
+    favorite: bool,
+    liked: bool,
+    disliked: bool,
+    play-later: bool,
+    // Other versions of the same title; zero for none.
+    versions: int,
+    has-play-time: bool,
+    hours: int,
+    minutes: int,
+    // Who a saved deck is from.
+    owner: string,
+    // A deck this device cannot change: a saved copy or a locked deck.
+    locked: bool,
+    hidden: bool,
+    // A deck's item count, shown dim where a game's tags go; -1 for none.
+    item-count: int,
+    tags: string,
+}
+
+export global InfoLabels {
+    // The dim text at the end of the line: a deck's item count, or the
+    // game's tags.
+    public pure function trailing(info: InfoLineData) -> string {
+        if (info.item-count >= 0) { return @tr("{n} item" | "{n} items" % info.item-count); }
+        return info.tags;
+    }
+    public pure function has-facts(info: InfoLineData) -> bool {
+        return info.favorite || info.liked || info.disliked || info.play-later
+            || info.versions > 0 || info.has-play-time || info.owner != "" || info.locked || info.hidden;
+    }
+}
+
+// One icon of the line, in the line's text color.
+component InfoIcon inherits Image {
+    in property <string> key;
+    in property <length> size;
+    in property <color> ink;
+    width: self.size;
+    height: self.size;
+    source: GlyphSource.glyph(self.key, self.size, self.ink);
+    image-rendering: Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
+}
+
+// The facts between the name and the tags, in the fixed order: collection
+// icons, versions, play time, a deck's owner and lock, and the hidden mark.
+// Lays out left to right at its preferred width; the host places it.
+export component InfoFacts inherits HorizontalLayout {
+    in property <InfoLineData> info;
+    in property <length> icon-size;
+    in property <length> font-size;
+    in property <color> ink: Theme.text-primary;
+    // Between the icons of one fact, and between one fact and the next.
+    property <length> icon-gap: Sizing.snap(root.icon-size / 4);
+    property <length> fact-gap: Sizing.snap(root.icon-size / 2);
+
+    spacing: root.fact-gap;
+    alignment: start;
+
+    if root.info.favorite || root.info.liked || root.info.disliked || root.info.play-later: HorizontalLayout {
+        spacing: root.icon-gap;
+        alignment: start;
+        if root.info.favorite: InfoIcon { key: "icons/HeartFilled"; size: root.icon-size; ink: root.ink; y: Sizing.snap((parent.height - self.height) / 2); }
+        if root.info.liked: InfoIcon { key: "icons/ThumbsUp"; size: root.icon-size; ink: root.ink; y: Sizing.snap((parent.height - self.height) / 2); }
+        if root.info.disliked: InfoIcon { key: "icons/ThumbsDown"; size: root.icon-size; ink: root.ink; y: Sizing.snap((parent.height - self.height) / 2); }
+        if root.info.play-later: InfoIcon { key: "icons/Bookmark"; size: root.icon-size; ink: root.ink; y: Sizing.snap((parent.height - self.height) / 2); }
+    }
+    if root.info.versions > 0: HorizontalLayout {
+        spacing: root.icon-gap;
+        InfoIcon { key: "icons/Stack"; size: root.icon-size; ink: root.ink; y: Sizing.snap((parent.height - self.height) / 2); }
+        Text {
+            text: root.info.versions;
+            color: root.ink;
+            font-size: root.font-size;
+            font-weight: FontWeight.medium;
+            vertical-alignment: center;
+        }
+    }
+    if root.info.has-play-time: HorizontalLayout {
+        spacing: root.icon-gap;
+        InfoIcon { key: "icons/Clock"; size: root.icon-size; ink: root.ink; y: Sizing.snap((parent.height - self.height) / 2); }
+        Text {
+            text: Labels.play-time(root.info.hours, root.info.minutes);
+            color: root.ink;
+            font-size: root.font-size;
+            font-weight: FontWeight.medium;
+            vertical-alignment: center;
+        }
+    }
+    if root.info.owner != "" || root.info.locked: HorizontalLayout {
+        spacing: root.icon-gap;
+        if root.info.locked: InfoIcon { key: "icons/Lock"; size: root.icon-size; ink: root.ink; y: Sizing.snap((parent.height - self.height) / 2); }
+        if root.info.owner != "": Text {
+            text: @tr("By {}", root.info.owner);
+            color: root.ink;
+            font-size: root.font-size;
+            font-weight: FontWeight.medium;
+            vertical-alignment: center;
+        }
+    }
+    if root.info.hidden: InfoIcon { key: "icons/EyeOff"; size: root.icon-size; ink: root.ink; y: Sizing.snap((parent.height - self.height) / 2); }
+}
+
+// The line under a grid, for the focused tile: one centered run of the
+// name, the facts and then the dim tags, so a line with nothing but a name
+// is the plain centered title. When it does not fit, the icons and short
+// facts always show, the tags keep a share of the line or drop out whole,
+// and the name elides into what is left.
+export component InfoLineLabel inherits Rectangle {
+    in property <InfoLineData> info;
+    // Margin reserved at each end; footer hosts bind it past the count or
+    // page cue sharing the row, so the run never reaches them.
+    in property <length> side-inset: Sizing.pct-w(3);
+
+    property <length> font: Sizing.font-hero;
+    // A line of the bitmap face is as tall as its pixel-art icons; a
+    // smaller slot would fall back to a blurred vector.
+    property <length> icon-size: GlyphSource.side(Sizing.pixel-grid ? root.font : root.font * 0.8);
+    property <string> trailing: InfoLabels.trailing(root.info);
+    property <bool> has-facts: InfoLabels.has-facts(root.info);
+    property <bool> has-trailing: root.trailing != "";
+    property <length> gap: Sizing.snap(Sizing.pct-w(1.5));
+    property <length> avail-width: Math.max(0px, root.width - 2 * root.side-inset);
+    property <length> facts-width: root.has-facts ? Math.ceil(facts-measure.preferred-width / 1px) * 1px : 0px;
+    property <length> facts-gap: root.has-facts ? root.gap : 0px;
+    property <length> name-measured: Math.ceil(name-measure.preferred-width / 1px) * 1px;
+    property <length> trailing-measured: root.has-trailing ? Math.ceil(trailing-measure.preferred-width / 1px) * 1px : 0px;
+    // The tags' share of a crowded line: a quarter of it, less when they
+    // are shorter. A share narrower than a few characters is not drawn.
+    property <length> trailing-share: Math.min(root.trailing-measured, Math.floor(root.avail-width / 4 / 1px) * 1px);
+    property <bool> show-trailing: root.has-trailing
+        && root.trailing-share >= Math.min(root.trailing-measured, root.font * 3)
+        && root.avail-width - root.facts-width - root.facts-gap - root.gap - root.trailing-share > 0px;
+    property <length> trailing-gap: root.show-trailing ? root.gap : 0px;
+    property <length> name-width: Math.min(root.name-measured,
+        Math.max(0px, root.avail-width - root.facts-width - root.facts-gap
+            - (root.show-trailing ? root.trailing-gap + root.trailing-share : 0px)));
+    property <length> trailing-width: root.show-trailing
+        ? Math.min(root.trailing-measured,
+            Math.max(0px, root.avail-width - root.name-width - root.facts-gap - root.facts-width - root.trailing-gap))
+        : 0px;
+    property <length> run-width: root.name-width + root.facts-gap + root.facts-width + root.trailing-gap + root.trailing-width;
+    property <length> run-x: Sizing.snap(Math.max(root.side-inset, (root.width - root.run-width) / 2));
+    property <length> facts-x: Sizing.snap(root.run-x + root.name-width + root.facts-gap);
+    property <length> trailing-x: Sizing.snap(root.facts-x + root.facts-width + root.trailing-gap);
+    property <length> line-y: Sizing.snap((root.height - root.font) / 2);
+
+    name-measure := Text {
+        visible: false;
+        text: root.info.name;
+        font-weight: FontWeight.medium;
+        font-size: root.font;
+    }
+    trailing-measure := Text {
+        visible: false;
+        text: root.trailing;
+        font-weight: FontWeight.medium;
+        font-size: root.font;
+    }
+    facts-measure := InfoFacts {
+        visible: false;
+        info: root.info;
+        icon-size: root.icon-size;
+        font-size: root.font;
+    }
+
+    Text {
+        x: root.run-x;
+        y: Sizing.snap(root.line-y + (root.font - self.preferred-height) / 2);
+        width: root.name-width;
+        overflow: elide;
+        text: root.info.name;
+        color: Theme.text-primary;
+        font-weight: FontWeight.medium;
+        font-size: root.font;
+    }
+    if root.has-facts: InfoFacts {
+        x: root.facts-x;
+        y: 0;
+        width: root.facts-width;
+        height: root.height;
+        info: root.info;
+        icon-size: root.icon-size;
+        font-size: root.font;
+    }
+    if root.trailing-width > 0px: Text {
+        x: root.trailing-x;
+        y: Sizing.snap(root.line-y + (root.font - self.preferred-height) / 2);
+        width: root.trailing-width;
+        overflow: elide;
+        text: root.trailing;
+        color: Theme.text-variant;
+        font-weight: FontWeight.medium;
+        font-size: root.font;
+    }
+}

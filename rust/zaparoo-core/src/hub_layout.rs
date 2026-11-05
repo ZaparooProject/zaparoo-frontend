@@ -10,14 +10,9 @@
 // edit-UI-editable) from then on.
 //
 // Deliberately a plain, reusable entry schema rather than a Hub-specific
-// one — `HubItem`/`HubItemKind` describe "an addressable target with an
-// optional name/icon override," which is also exactly what a future
-// user-authored collection (an arbitrary list of folders/systems/games,
-// discussed but explicitly not built yet) would need. Keeping this generic
-// now means a collection is a second array of the same item type later,
-// not a schema migration. `known`/reconciliation below is the one
-// Hub-specific piece — nothing should ever auto-populate a hand-authored
-// collection, so that stays out of the shared entry type.
+// one: `HubItem`/`HubItemKind` describe "an addressable target with an
+// optional name/icon override". A `collection` tile is one of Core's
+// decks, pinned by its id; the deck itself lives in Core.
 //
 // Read side uses plain `toml`+serde (`RawHub` below), like `config.rs`'s
 // `RawConfig` — round-tripping formatting only matters on the write side,
@@ -26,10 +21,8 @@
 use serde::Deserialize;
 use std::path::Path;
 
-/// What an entry points at. `Collection` is reserved for the not-yet-built
-/// virtual-collection feature (see the module doc comment) — accepted on
-/// parse so a future build can add it without a schema migration, but
-/// nothing renders or targets it yet. `Unknown` preserves any `type` this
+/// What an entry points at. `Collection` is a deck pinned to the Hub, by
+/// its Core deck id in `id`. `Unknown` preserves any `type` this
 /// build doesn't recognise (a newer build's item, or a typo) so it
 /// round-trips on save instead of silently vanishing from the user's file.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -75,16 +68,16 @@ impl HubItemKind {
     }
 
     /// True for kinds this build actually knows how to render and target.
-    /// `Collection` (reserved, unimplemented) and `Unknown` (a newer
-    /// build's item, or a typo) still round-trip on save but are skipped
-    /// when projecting the layout for display — see `HubLayout::visible`.
+    /// `Unknown` (a newer build's item, or a typo) still round-trips on save
+    /// but is skipped when projecting the layout for display: see
+    /// `HubLayout::visible`.
     fn renderable(&self) -> bool {
-        !matches!(self, Self::Collection | Self::Unknown(_))
+        !matches!(self, Self::Unknown(_))
     }
 }
 
 /// One Hub tile. Fields are used per-kind: `id` for `category`/`action`/
-/// `system`, `path` for `folder`, `script` (+ optional `system`/`path` as a
+/// `system` and for `collection` (the deck id), `path` for `folder`, `script` (+ optional `system`/`path` as a
 /// cover-art hint) for `zapscript`, and `query`/`systems`/`tags` (+ optional
 /// `path` as a folder limit) for `search`. `name`/`icon` are optional
 /// overrides available on any kind. `Blank` uses none of them.
@@ -189,11 +182,21 @@ impl HubItem {
 pub const BUILT_IN_ACTIONS: &[&str] = &[
     "resume",
     "favorites",
+    "liked",
+    "playlater",
+    "decks",
     "recents",
+    "topplayed",
     "search",
     "update",
     "settings",
 ];
+
+/// Built-in actions a layout never gets on its own: "Add item…" offers
+/// them, and once added they are tracked in `known` like any other.
+/// Disliked is here because nobody plays from it; it is where a dislike
+/// is reviewed or taken back.
+pub const OFFERED_ACTIONS: &[&str] = &["disliked"];
 
 /// The persisted Hub layout.
 ///
@@ -446,15 +449,20 @@ impl HubLayout {
     /// in `known` order. A removed tile only ever comes back through this
     /// path, never automatically (see `reconcile`).
     pub fn available_known(&self) -> Vec<String> {
+        let offered = OFFERED_ACTIONS
+            .iter()
+            .map(|id| format!("action:{id}"))
+            .filter(|key| !self.known.contains(key));
         self.known
             .iter()
+            .cloned()
+            .chain(offered)
             .filter(|key| {
                 !self
                     .items
                     .iter()
-                    .any(|item| &format!("{}:{}", item.kind_raw, item.id) == *key)
+                    .any(|item| &format!("{}:{}", item.kind_raw, item.id) == key)
             })
-            .cloned()
             .collect()
     }
 
@@ -475,7 +483,8 @@ impl HubLayout {
             }
         } else {
             let key = format!("{kind}:{id}");
-            if !self.known.iter().any(|k| k == &key) {
+            let offered = kind == "action" && OFFERED_ACTIONS.contains(&id);
+            if !offered && !self.known.iter().any(|k| k == &key) {
                 return false;
             }
             if self
@@ -485,11 +494,15 @@ impl HubLayout {
             {
                 return false;
             }
-            match kind {
+            let entry = match kind {
                 "category" => HubItem::category(id),
                 "action" => HubItem::action(id),
                 _ => return false,
+            };
+            if !self.known.contains(&key) {
+                self.known.push(key);
             }
+            entry
         };
         let indices = self.visible_indices();
         if let Some(&real) = indices.get(target) {
@@ -543,7 +556,10 @@ impl HubLayout {
         let kind_enum = HubItemKind::from_str(kind);
         if !matches!(
             kind_enum,
-            HubItemKind::System | HubItemKind::Folder | HubItemKind::ZapScript
+            HubItemKind::System
+                | HubItemKind::Folder
+                | HubItemKind::ZapScript
+                | HubItemKind::Collection
         ) {
             return false;
         }
@@ -681,6 +697,8 @@ impl HubLayout {
             }
             match wanted {
                 HubItemKind::System => !id.is_empty() && item.id == id,
+                // Deck ids are case-insensitive.
+                HubItemKind::Collection => !id.is_empty() && item.id.eq_ignore_ascii_case(id),
                 HubItemKind::Folder | HubItemKind::ZapScript => {
                     let both_relative = !item.relative.is_empty() && !relative.is_empty();
                     if both_relative
@@ -1067,11 +1085,18 @@ type = "blank"
     }
 
     #[test]
-    fn collection_kind_parses_but_is_not_yet_renderable() {
-        let f = write_tmp("[[hub.items]]\ntype = \"collection\"\nid = \"x\"\n");
-        let layout = load_hub_layout(f.path());
+    fn a_pinned_deck_parses_renders_and_is_found_by_its_id() {
+        let f = write_tmp("[[hub.items]]\ntype = \"collection\"\nid = \"0k3v9x2rq7bm\"\n");
+        let mut layout = load_hub_layout(f.path());
         assert_eq!(layout.items[0].kind(), HubItemKind::Collection);
-        assert_eq!(layout.visible().count(), 0);
+        assert_eq!(layout.visible().count(), 1);
+        assert_eq!(
+            layout.target_position("collection", "0K3V9X2RQ7BM", "", "", "", ""),
+            Some(0)
+        );
+        assert!(layout.add_target_item("collection", "w3k8e7nd2p4x", "", "", "", "", "", ""));
+        assert_eq!(layout.items[1].kind(), HubItemKind::Collection);
+        assert_eq!(layout.items[1].id, "w3k8e7nd2p4x");
     }
 
     #[test]
@@ -1079,7 +1104,7 @@ type = "blank"
         let mut layout = HubLayout::default();
         layout.items.push(HubItem::category("Arcade"));
         layout.items.push(HubItem {
-            kind_raw: "collection".to_string(),
+            kind_raw: "future-kind".to_string(),
             ..HubItem::default()
         });
         layout.items.push(HubItem::action("settings"));
@@ -1099,7 +1124,11 @@ type = "blank"
                 "category:Arcade",
                 "category:Console",
                 "action:favorites",
+                "action:liked",
+                "action:playlater",
+                "action:decks",
                 "action:recents",
+                "action:topplayed",
                 "action:search",
                 "action:update",
                 "action:settings",
@@ -1113,7 +1142,11 @@ type = "blank"
                 "Arcade",
                 "Console",
                 "favorites",
+                "liked",
+                "playlater",
+                "decks",
                 "recents",
+                "topplayed",
                 "search",
                 "update",
                 "settings"
@@ -1211,7 +1244,11 @@ type = "blank"
                 "B",
                 "A",
                 "favorites",
+                "liked",
+                "playlater",
+                "decks",
                 "recents",
+                "topplayed",
                 "search",
                 "update",
                 "settings"
@@ -1262,14 +1299,15 @@ type = "blank"
             kind_raw: "blank".to_string(),
             ..HubItem::default()
         });
-        // resume, A, B, favorites, recents, search, update, settings, blank
-        assert!(layout.place_visible_item(1, 8));
+        // resume, A, B, favorites, liked, playlater, decks, recents,
+        // topplayed, search, update, settings, blank
+        assert!(layout.place_visible_item(1, 12));
         assert_eq!(
             layout.items[1].kind(),
             HubItemKind::Blank,
             "A's old cell must become a blank, not shift anything else"
         );
-        assert_eq!(layout.items[8].id, "A");
+        assert_eq!(layout.items[12].id, "A");
     }
 
     #[test]
@@ -1309,7 +1347,11 @@ type = "blank"
                 "A",
                 "C",
                 "favorites",
+                "liked",
+                "playlater",
+                "decks",
                 "recents",
+                "topplayed",
                 "search",
                 "update",
                 "settings"
@@ -1330,7 +1372,11 @@ type = "blank"
                 "B",
                 "A",
                 "favorites",
+                "liked",
+                "playlater",
+                "decks",
                 "recents",
+                "topplayed",
                 "search",
                 "update",
                 "settings"
@@ -1479,7 +1525,7 @@ type = "blank"
         layout.items.insert(
             0,
             HubItem {
-                kind_raw: "collection".into(),
+                kind_raw: "future-kind".into(),
                 ..HubItem::default()
             },
         );
@@ -1512,17 +1558,82 @@ type = "blank"
     }
 
     #[test]
+    fn new_built_ins_seed_after_favorites_and_land_once_on_old_layouts() {
+        let mut fresh = HubLayout::default();
+        fresh.reconcile(&["Arcade".to_string()], &[]);
+        let ids: Vec<&str> = fresh.items.iter().map(|i| i.id.as_str()).collect();
+        assert_eq!(
+            ids,
+            [
+                "resume",
+                "Arcade",
+                "favorites",
+                "liked",
+                "playlater",
+                "decks",
+                "recents",
+                "topplayed",
+                "search",
+                "update",
+                "settings"
+            ]
+        );
+        // A layout from before the lists: they land at the end, once, and a
+        // removed one stays removed.
+        let mut old = HubLayout {
+            known: vec!["action:resume".into(), "action:favorites".into()],
+            items: vec![HubItem::action("resume"), HubItem::action("favorites")],
+        };
+        assert!(old.reconcile(&[], &[]));
+        assert!(old.items.iter().any(|i| i.id == "liked"));
+        let liked = old
+            .items
+            .iter()
+            .position(|i| i.id == "liked")
+            .expect("liked");
+        old.remove_visible_item(liked);
+        assert!(!old.reconcile(&[], &[]));
+        assert!(!old.items.iter().any(|i| i.id == "liked"));
+    }
+
+    #[test]
+    fn disliked_is_offered_but_never_seeded() {
+        let mut layout = HubLayout::default();
+        layout.reconcile(&["Arcade".to_string()], &[]);
+        assert!(!layout.items.iter().any(|i| i.id == "disliked"));
+        assert!(!layout.reconcile(&["Arcade".to_string()], &[]));
+        assert_eq!(layout.available_known(), vec!["action:disliked"]);
+        assert!(layout.add_item("action", "disliked", 0));
+        assert!(layout.items.iter().any(|i| i.id == "disliked"));
+        assert!(layout.available_known().is_empty());
+        let at = layout
+            .items
+            .iter()
+            .position(|i| i.id == "disliked")
+            .expect("disliked");
+        layout.remove_visible_item(at);
+        assert_eq!(layout.available_known(), vec!["action:disliked"]);
+        let mut reset = HubLayout::default();
+        reset.reset(&["Arcade".to_string()]);
+        assert!(!reset.items.iter().any(|i| i.id == "disliked"));
+    }
+
+    #[test]
     fn available_known_lists_only_known_keys_missing_from_items() {
         let mut layout = HubLayout::default();
         layout.reconcile(&["Arcade".to_string()], &[]);
-        assert!(layout.available_known().is_empty());
+        // Disliked is always on offer until it is on the Hub.
+        assert_eq!(layout.available_known(), vec!["action:disliked"]);
         let arcade_index = layout
             .items
             .iter()
             .position(|i| i.id == "Arcade")
             .expect("Arcade seeded");
         layout.remove_visible_item(arcade_index);
-        assert_eq!(layout.available_known(), vec!["category:Arcade"]);
+        assert_eq!(
+            layout.available_known(),
+            vec!["category:Arcade", "action:disliked"]
+        );
     }
 
     #[test]
@@ -1538,7 +1649,7 @@ type = "blank"
         assert_eq!(layout.items[arcade_index].kind(), HubItemKind::Blank);
         assert!(layout.add_item("category", "Arcade", arcade_index));
         assert_eq!(layout.items[arcade_index].id, "Arcade");
-        assert!(layout.available_known().is_empty());
+        assert_eq!(layout.available_known(), vec!["action:disliked"]);
     }
 
     #[test]
@@ -1878,7 +1989,11 @@ type = "blank"
                 "resume",
                 "Console",
                 "favorites",
+                "liked",
+                "playlater",
+                "decks",
                 "recents",
+                "topplayed",
                 "search",
                 "update",
                 "settings"
@@ -1891,7 +2006,11 @@ type = "blank"
                 "action:resume",
                 "category:Console",
                 "action:favorites",
+                "action:liked",
+                "action:playlater",
+                "action:decks",
                 "action:recents",
+                "action:topplayed",
                 "action:search",
                 "action:update",
                 "action:settings"

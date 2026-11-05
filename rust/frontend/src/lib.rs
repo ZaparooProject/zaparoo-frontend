@@ -11,17 +11,20 @@ use crate::navigation::EntryMode;
 
 mod about;
 mod actions;
+mod add_to_deck;
 mod alternates;
 mod brand;
 mod browse_filter;
 mod browse_motion;
 mod card_write;
 mod context_page;
+mod core_ui;
 mod cover_fade;
 mod cue;
 #[cfg(not(feature = "hosted"))]
 mod curl;
 mod customization;
+mod decks;
 mod discs;
 mod display;
 mod drs;
@@ -110,6 +113,7 @@ mod tag_utils;
 mod theme;
 mod title_versions;
 mod update;
+mod user_lists;
 mod view_model;
 
 #[cfg(any(
@@ -1044,7 +1048,11 @@ fn run_application(
     restore_core_independent(&ctx, &app);
     {
         let ctx = ctx.clone();
-        router::on_restore_finished(move |app| router::refresh_startup_notices(&ctx, app));
+        router::on_restore_finished(move |app| {
+            router::refresh_startup_notices(&ctx, app);
+            // A Core event that arrived under the curtain shows now.
+            core_ui::present(&ctx, app);
+        });
     }
     bind_catalog(&ctx, &app, &store);
     bind_connection_status(&ctx, &app, &client);
@@ -1055,6 +1063,9 @@ fn run_application(
     steam_host::start(&config.core_endpoint);
     bind_status_events(&ctx, &app, &client);
     bind_history_changes(&ctx, &app, &client);
+    bind_collection_changes(&ctx, &app, &client);
+    core_ui::bind(&ctx, &app, &client);
+    decks::watch(&ctx, &app);
     pairing::bind_events(&ctx, &app, &client);
     online::bind_events(&ctx, &app, &client);
     bind_launchers(&ctx, &app, &store);
@@ -1238,6 +1249,7 @@ fn bind_desktop_lifecycle(ctx: &Arc<Ctx>, app: &App, client: &Arc<Client>) {
                     let _ = weak_refresh.upgrade_in_event_loop(move |app| {
                         refresh_resume(&ctx_event, &app);
                         games::refresh_recents(&ctx_event, &app);
+                        games::refresh_top_played(&ctx_event, &app);
                         games::refresh_after_launch(&ctx_event, &app);
                     });
                 });
@@ -1339,6 +1351,9 @@ fn set_dormant(ctx: &Ctx, app: &App, dormant: bool) {
             hub::rebuild(ctx, app);
         }
         system_logos::refresh(ctx, app);
+        // A Core event that is still open shows now; its updates kept
+        // arriving while the frontend was dormant.
+        core_ui::present(ctx, app);
         tracing::info!("primary media stopped; frontend resumed");
     }
 }
@@ -1390,7 +1405,80 @@ fn bind_history_changes(ctx: &Arc<Ctx>, app: &App, client: &Arc<Client>) {
                 let _ = weak.upgrade_in_event_loop(move |app| {
                     refresh_resume(&ctx_event, &app);
                     games::refresh_recents(&ctx_event, &app);
+                    games::refresh_top_played(&ctx_event, &app);
                 });
+            }
+        }
+    });
+}
+
+/// Core's `media.tags.changed` and `decks.changed`: a game's collections,
+/// or a deck, changed from this frontend or any other client. Cached lists
+/// go stale, the rows and the Options strip on screen take the game's new
+/// flags, and an open Add to deck page asks Core again.
+fn bind_collection_changes(ctx: &Arc<Ctx>, app: &App, client: &Arc<Client>) {
+    use zaparoo_core::collections::{DecksChanged, MediaTagsChanged};
+    use zaparoo_core::store::Tag;
+
+    // The cached results that carry a game's collection tags.
+    const COLLECTION_KINDS: [&str; 5] = [
+        "MediaUserList",
+        "SystemsUserList",
+        "MediaSearch",
+        "MediaBrowse",
+        "Deck",
+    ];
+
+    let mut rx = client.subscribe_notifications();
+    let weak = app.as_weak();
+    let ctx = ctx.clone();
+    ctx.handle.clone().spawn(async move {
+        loop {
+            let notification = match rx.recv().await {
+                Ok(notification) => notification,
+                // A missed notification may have been one of these: drop
+                // every list it could have changed and ask for the decks
+                // again.
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                    for kind in COLLECTION_KINDS {
+                        ctx.store.invalidate(&Tag::any(kind));
+                    }
+                    let ctx_event = ctx.clone();
+                    let _ = weak.upgrade_in_event_loop(move |app| {
+                        decks::refresh(&ctx_event, &app);
+                        add_to_deck::refresh(&ctx_event, &app);
+                    });
+                    continue;
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
+            };
+            match notification.method.as_str() {
+                "media.tags.changed" => {
+                    let Ok(changed) =
+                        serde_json::from_value::<MediaTagsChanged>(notification.params)
+                    else {
+                        continue;
+                    };
+                    for kind in COLLECTION_KINDS {
+                        ctx.store.invalidate(&Tag::any(kind));
+                    }
+                    let ctx_event = ctx.clone();
+                    let _ = weak.upgrade_in_event_loop(move |app| {
+                        games::apply_tags_changed(&ctx_event, &app, &changed);
+                    });
+                }
+                "decks.changed" => {
+                    let Ok(changed) = serde_json::from_value::<DecksChanged>(notification.params)
+                    else {
+                        continue;
+                    };
+                    let ctx_event = ctx.clone();
+                    let _ = weak.upgrade_in_event_loop(move |app| {
+                        decks::changed(&ctx_event, &app, &changed);
+                        add_to_deck::refresh(&ctx_event, &app);
+                    });
+                }
+                _ => {}
             }
         }
     });
@@ -1817,6 +1905,7 @@ pub(crate) fn deliver_covers(ctx: &Ctx, app: &App, keys: &[media_cache::MediaKey
     if !browse.is_empty() {
         hub::covers_landed(ctx, app, &browse);
         games::covers_landed(ctx, app, &browse);
+        core_ui::covers_landed(ctx, app, &browse);
     }
 }
 
@@ -1966,12 +2055,17 @@ fn apply_catalog(ctx: &Arc<Ctx>, app: &App, status: &ResourceStatus<CatalogData>
             };
 
             hub::on_catalog_ready(ctx, app);
+            // Core answers: a deck list asked for before it could has its
+            // answer now, for the Hub's deck tiles.
+            if lock(&ctx.shared).decks.list.is_none() {
+                decks::refresh(ctx, app);
+            }
             // Start preparing every system's logo now, behind whatever is
             // on screen, so the Systems grid opens with its art in place.
             systems::warm_logos(ctx, app);
             if matches!(
                 app.global::<Shell>().get_active_screen(),
-                Screen::Systems | Screen::FavoriteSystems
+                Screen::Systems | Screen::FavoriteSystems | Screen::TopPlayedSystems
             ) && !navigation::active()
             {
                 systems::reproject(ctx, app);
@@ -2047,6 +2141,10 @@ fn restores_screen(active_screen: &str) -> bool {
             | "games"
             | "favorites"
             | "recents"
+            | "decks"
+            | "deck"
+            | "top-played"
+            | "top-played-systems"
             | "search"
             | "search-results"
             | "rename"
@@ -2060,8 +2158,9 @@ fn restores_screen(active_screen: &str) -> bool {
 fn boot_curtain_for(active_screen: &str, has_saved_state: bool) -> bool {
     match active_screen {
         "settings" | "about" => false,
-        "systems" | "favorite-systems" | "games" | "favorites" | "recents" | "search"
-        | "search-results" | "rename" | "file-browser" => true,
+        "systems" | "favorite-systems" | "games" | "favorites" | "recents" | "decks" | "deck"
+        | "top-played" | "top-played-systems" | "search" | "search-results" | "rename"
+        | "file-browser" => true,
         _ => has_saved_state,
     }
 }
@@ -2076,6 +2175,9 @@ fn seed_startup_state(app: &App, persisted: &persist::PersistedState, boot_curta
         .set_reduce_motion(persisted.settings.reduce_motion);
     app.global::<Shell>()
         .set_mouse_enabled(persisted.settings.mouse_enabled);
+    let list = zaparoo_app::user_flags::Flag::from_tag_value(persisted.lists.active.trim())
+        .unwrap_or(zaparoo_app::user_flags::Flag::Favorite);
+    user_lists::publish(app, list);
 }
 
 /// Launcher inventory + per-system defaults for the "Change launcher"
@@ -2137,6 +2239,15 @@ fn restore_screens(ctx: &Arc<Ctx>, app: &App) {
     }
 }
 
+/// The Decks and Top played screens restore straight from the Hub.
+fn restore_collection(ctx: &Arc<Ctx>, app: &App, target: &str) {
+    match target {
+        "decks" => decks::enter(ctx, app, EntryMode::Restore),
+        "top-played" => games::enter_top_played(ctx, app, EntryMode::Restore),
+        _ => systems::enter_top_played(ctx, app, EntryMode::Restore),
+    }
+}
+
 fn restore_target(ctx: &Arc<Ctx>, app: &App) {
     let (target, category, system_id, entered_from_hub) = {
         let shared = lock(&ctx.shared);
@@ -2151,15 +2262,27 @@ fn restore_target(ctx: &Arc<Ctx>, app: &App) {
     // pass through a category.
     match target.as_str() {
         "favorites" => {
-            games::enter_favorites(ctx, app, EntryMode::Restore);
+            let list = user_lists::active(&lock(&ctx.shared));
+            games::enter_list(ctx, app, list, EntryMode::Restore);
             return;
         }
         "favorite-systems" => {
-            systems::enter_favorites(ctx, app, EntryMode::Restore);
+            let list = user_lists::active(&lock(&ctx.shared));
+            systems::enter_list(ctx, app, list, EntryMode::Restore);
             return;
         }
         "recents" => {
             games::enter_recents(ctx, app, EntryMode::Restore);
+            return;
+        }
+        "decks" | "top-played" | "top-played-systems" => {
+            restore_collection(ctx, app, &target);
+            return;
+        }
+        "deck" => {
+            if !lock(&ctx.shared).persist.deck.deck_id.is_empty() {
+                games::enter_deck(ctx, app, EntryMode::Restore);
+            }
             return;
         }
         "search" => {
@@ -2248,6 +2371,10 @@ mod tests {
             "games",
             "favorites",
             "recents",
+            "decks",
+            "deck",
+            "top-played",
+            "top-played-systems",
             "search",
             "search-results",
             "rename",

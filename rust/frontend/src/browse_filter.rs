@@ -13,7 +13,8 @@
 use slint::{ComponentHandle, ModelRc, VecModel};
 use zaparoo_app::browse_filter::{self as rules, Category, FilterTag, Group};
 use zaparoo_core::client::ClientError;
-use zaparoo_core::media_types::{DeckInfo, MediaTagsParams, MediaTagsResult, TagInfo};
+use zaparoo_core::collections::{Deck, DecksParams};
+use zaparoo_core::media_types::{MediaTagsParams, MediaTagsResult, TagInfo};
 
 use crate::router::{
     lock, menu_action, menu_row, menu_row_full, menu_row_keyed, menu_value, Ctx, ListContext,
@@ -251,7 +252,7 @@ pub(crate) fn begin_for(ctx: &Ctx, app: &App, target: Target) {
                 .any(|t| t.tag_type == "user" && rules::deck_id(&t.tag).is_some())
         });
         let decks = if has_decks {
-            match client.decks().await {
+            match client.decks(DecksParams::default()).await {
                 Ok(result) => result.decks,
                 Err(e) => {
                     tracing::warn!(error = %e.message, "decks failed");
@@ -284,7 +285,7 @@ pub(crate) fn landed_for_test(ctx: &Ctx, app: &App, tags: &[(&str, &str, &str, i
 
 /// A tag as the rules group it. A deck's membership tag takes the deck's
 /// name as its label; Core matches deck ids without regard to case.
-fn filter_tag(tag: &TagInfo, decks: &[DeckInfo]) -> FilterTag {
+fn filter_tag(tag: &TagInfo, decks: &[Deck]) -> FilterTag {
     let deck_name = (tag.tag_type == "user")
         .then(|| rules::deck_id(&tag.tag))
         .flatten()
@@ -304,7 +305,7 @@ fn landed(
     app: &App,
     seq: u64,
     outcome: Result<MediaTagsResult, ClientError>,
-    decks: &[DeckInfo],
+    decks: &[Deck],
 ) {
     {
         let mut shared = lock(&ctx.shared);
@@ -784,15 +785,17 @@ mod tests {
                 .unwrap_or_else(|_| unreachable!("a fixed tag deserialises"))
         };
         let decks = vec![
-            DeckInfo {
+            Deck {
                 deck_id: "0K3V9X2RQ7BM".into(),
                 name: " Couch co-op ".into(),
                 item_count: 8,
+                ..Deck::default()
             },
-            DeckInfo {
+            Deck {
                 deck_id: "blank".into(),
                 name: "  ".into(),
                 item_count: 1,
+                ..Deck::default()
             },
         ];
         let named = filter_tag(&tag("user", "deck:0k3v9x2rq7bm"), &decks);

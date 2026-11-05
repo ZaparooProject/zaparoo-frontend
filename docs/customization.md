@@ -60,6 +60,7 @@ systems/turbografx16.png
 | `resume`    | Resume Game          |
 | `favorites` | Favorites            |
 | `recents`   | Recently played      |
+| `topplayed` | Top played           |
 | `search`    | Search               |
 | `settings`  | Settings             |
 

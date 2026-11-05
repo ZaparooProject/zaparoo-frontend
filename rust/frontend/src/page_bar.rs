@@ -14,7 +14,7 @@ use slint::{ComponentHandle, Model, ModelRc, VecModel};
 use zaparoo_app::page_bar::{self as rules, Chip, Outcome, Surface};
 
 use crate::router::{lock, menu_row, menu_row_keyed, Ctx, ListContext, Shared};
-use crate::{App, GamesMode, PageBar, Screen, Shell};
+use crate::{App, GamesMode, PageBar, Screen, Shell, SystemsMode};
 
 thread_local! {
     /// A chip opened a picker: the screen and the chip to put focus back on
@@ -49,6 +49,10 @@ fn surface_of(screen: Screen) -> Surface {
         Screen::Games => browse_surface(),
         Screen::Favorites => Surface::Favorites,
         Screen::SearchResults => Surface::SearchResults,
+        Screen::Decks => Surface::Decks,
+        Screen::Deck => Surface::Deck,
+        Screen::TopPlayed => Surface::TopPlayed,
+        Screen::TopPlayedSystems => Surface::TopPlayedSystems,
         _ => Surface::Other,
     }
 }
@@ -59,6 +63,9 @@ pub(crate) fn games_surface(mode: GamesMode) -> Surface {
         GamesMode::Browse => browse_surface(),
         GamesMode::Favorites => Surface::Favorites,
         GamesMode::Search => Surface::SearchResults,
+        GamesMode::Deck => Surface::Deck,
+        GamesMode::Decks => Surface::Decks,
+        GamesMode::TopPlayed => Surface::TopPlayed,
         GamesMode::Recents => Surface::Other,
     }
 }
@@ -73,18 +80,19 @@ pub(crate) fn games_row_block(mode: GamesMode, derived: &zaparoo_app::sizing::De
     }
 }
 
-/// The Systems screen's surface: a category's systems or the favorites'.
-fn systems_surface(favorites: bool) -> Surface {
-    if favorites {
-        Surface::FavoriteSystems
-    } else {
-        Surface::Systems
+/// The Systems screen's surface: a category's systems, a list's, or Top
+/// played's.
+fn systems_surface(mode: SystemsMode) -> Surface {
+    match mode {
+        SystemsMode::Favorites => Surface::FavoriteSystems,
+        SystemsMode::TopPlayed => Surface::TopPlayedSystems,
+        SystemsMode::Category => Surface::Systems,
     }
 }
 
 /// The same for the Systems screen.
-pub(crate) fn systems_row_block(favorites: bool, derived: &zaparoo_app::sizing::Derived) -> i32 {
-    if rules::has_row(systems_surface(favorites), derived.menu_row) {
+pub(crate) fn systems_row_block(mode: SystemsMode, derived: &zaparoo_app::sizing::Derived) -> i32 {
+    if rules::has_row(systems_surface(mode), derived.menu_row) {
         derived.menu_row_block
     } else {
         0
@@ -106,25 +114,37 @@ fn active_chips(app: &App) -> ModelRc<crate::MenuEntry> {
     let bar = app.global::<PageBar>();
     match active_surface(app) {
         Surface::Hub => bar.get_hub_chips(),
-        Surface::Systems | Surface::FavoriteSystems => bar.get_systems_chips(),
-        Surface::Games | Surface::Favorites | Surface::SearchResults => bar.get_games_chips(),
+        Surface::Systems | Surface::FavoriteSystems | Surface::TopPlayedSystems => {
+            bar.get_systems_chips()
+        }
+        Surface::Games
+        | Surface::Favorites
+        | Surface::SearchResults
+        | Surface::Deck
+        | Surface::Decks
+        | Surface::TopPlayed => bar.get_games_chips(),
         Surface::Other => ModelRc::default(),
     }
 }
 
-/// The vocabulary key for the favorites order, so a chip or a Menu row
+/// The vocabulary key for the list's order, so a chip or a Menu row
 /// can name it in the reader's language.
 pub(crate) fn favorites_sort_label(shared: &Shared) -> &'static str {
-    if shared.favorites_sort == "name" {
-        "sort:name"
+    crate::user_lists::sort(shared, crate::user_lists::active(shared)).label_key()
+}
+
+/// Top played's grouping, for its chip and Menu row.
+pub(crate) fn top_played_grouping_label(shared: &Shared) -> &'static str {
+    if zaparoo_app::top_played::grouped(&shared.persist.top_played.grouping) {
+        "group:system"
     } else {
-        "sort:default"
+        "group:none"
     }
 }
 
-/// The same for the favorites grouping.
+/// The same for the list's grouping.
 pub(crate) fn favorites_grouping_label(shared: &Shared) -> &'static str {
-    if shared.persist.settings.favorites_grouping == "system" {
+    if crate::user_lists::grouped(shared, crate::user_lists::active(shared)) {
         "group:system"
     } else {
         "group:none"
@@ -134,7 +154,7 @@ pub(crate) fn favorites_grouping_label(shared: &Shared) -> &'static str {
 /// One chip, worded through `Labels.menu` with its current value. Go to
 /// does not name the letter the selection is in: the picker opens on it,
 /// and a label that changes as the selection moves flickers.
-fn entry(chip: Chip, shared: &Shared) -> crate::MenuEntry {
+fn entry(chip: Chip, surface: Surface, shared: &Shared) -> crate::MenuEntry {
     match chip {
         Chip::Filter => menu_row_keyed(
             chip.id(),
@@ -145,7 +165,11 @@ fn entry(chip: Chip, shared: &Shared) -> crate::MenuEntry {
         Chip::GroupBy => menu_row_keyed(
             chip.id(),
             "favorites_grouping",
-            favorites_grouping_label(shared),
+            if matches!(surface, Surface::TopPlayed | Surface::TopPlayedSystems) {
+                top_played_grouping_label(shared)
+            } else {
+                favorites_grouping_label(shared)
+            },
         ),
         Chip::AddToHub => menu_row_keyed(
             chip.id(),
@@ -161,14 +185,16 @@ fn entry(chip: Chip, shared: &Shared) -> crate::MenuEntry {
         | Chip::EditSearch
         | Chip::RandomFavorite
         | Chip::AddItem
-        | Chip::More => menu_row(chip.id()),
+        | Chip::More
+        | Chip::NewDeck
+        | Chip::PlayDeck => menu_row(chip.id()),
     }
 }
 
 fn entries(surface: Surface, shared: &Shared) -> Vec<crate::MenuEntry> {
     rules::chips(surface)
         .iter()
-        .map(|&chip| entry(chip, shared))
+        .map(|&chip| entry(chip, surface, shared))
         .collect()
 }
 
@@ -200,9 +226,9 @@ pub(crate) fn publish_games(app: &App, shared: &Shared, mode: GamesMode) {
 }
 
 /// Publish the Systems screen's chips.
-pub(crate) fn publish_systems(app: &App, shared: &Shared, favorites: bool) {
+pub(crate) fn publish_systems(app: &App, shared: &Shared, mode: SystemsMode) {
     let bar = app.global::<PageBar>();
-    let next = entries(systems_surface(favorites), shared);
+    let next = entries(systems_surface(mode), shared);
     set_if_changed(&bar.get_systems_chips(), next, |model| {
         bar.set_systems_chips(model);
     });
@@ -324,6 +350,11 @@ fn activate(ctx: &Ctx, app: &App, index: usize) {
         "search_here" => crate::search::enter_scoped(ctx, app),
         "edit_search" => crate::search::edit(ctx, app),
         "favorites_sort" => crate::router::open_favorites_sort_menu(ctx, app),
+        "favorites_grouping"
+            if matches!(surface, Surface::TopPlayed | Surface::TopPlayedSystems) =>
+        {
+            crate::router::open_top_played_grouping_menu(ctx, app);
+        }
         "favorites_grouping" => crate::router::open_favorites_grouping_menu(ctx, app),
         "launch_random_favorite" => crate::router::favorites_page_menu_accept(ctx, app, &id),
         "add_to_hub" => {
@@ -334,6 +365,9 @@ fn activate(ctx: &Ctx, app: &App, index: usize) {
             return;
         }
         "hub_add" => crate::hub::page_menu_accept(ctx, app, &id),
+        "new_deck" => crate::decks::new_deck(ctx, app),
+        "play_deck" => crate::decks::play_open(ctx, app),
+        "more" if surface == Surface::Deck => crate::decks::open_more(ctx, app),
         "more" => open_more(ctx, app, surface),
         _ => {}
     }

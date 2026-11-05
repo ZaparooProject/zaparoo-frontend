@@ -632,8 +632,6 @@ pub struct TileArt {
     pub compact_padding: bool,
     /// A name band along the bottom (the Games grid).
     pub caption: bool,
-    /// A system name band along the top (the flat lists).
-    pub top_label: bool,
 }
 
 /// The painted art area of a grid tile, `(width, height)`: the box
@@ -693,8 +691,10 @@ fn tile_art_extent(inputs: &Inputs, cell_width: f64, cell_height: f64, art: Tile
     } else {
         pct(2.0)
     };
+    // A system label rides over the top of the art on its scrim, so it
+    // takes no room from it.
     let band = pct(5.5) + pct(0.4);
-    let top = if art.top_label { band } else { pad };
+    let top = pad;
     let bottom = if art.caption { band } else { pad };
     let edge = f64::from(derived_press_edge_height(inputs));
     let face = cell_height - edge.min(cell_height);
@@ -1026,27 +1026,21 @@ mod tests {
             screen_height: 540.0,
             ..Inputs::default()
         };
-        let art = |compact_padding, caption, top_label| TileArt {
+        let art = |compact_padding, caption| TileArt {
             compact_padding,
             caption,
-            top_label,
         };
         // Press edge 0.8% (4 px), pad 2% (10.8 px), band 5.9% (31.86 px).
         assert_eq!(
-            tile_art_box(&inputs, 150, 200, art(false, true, false)),
+            tile_art_box(&inputs, 150, 200, art(false, true)),
             (128, 153)
-        );
-        // A top label trades the top pad for a second band.
-        assert_eq!(
-            tile_art_box(&inputs, 150, 200, art(false, true, true)),
-            (128, 132)
         );
         // Compact: 0.4% + the 3 px ring + 0.4% on every side.
         assert_eq!(
-            tile_art_box(&inputs, 150, 200, art(true, false, false)),
+            tile_art_box(&inputs, 150, 200, art(true, false)),
             (135, 181)
         );
-        assert_eq!(tile_art_box(&inputs, 4, 4, art(false, true, true)), (0, 0));
+        assert_eq!(tile_art_box(&inputs, 4, 4, art(false, true)), (0, 0));
     }
 
     #[test]
@@ -1137,10 +1131,9 @@ mod tests {
 
     #[test]
     fn tile_art_pixels_never_exceed_the_box_and_follow_the_zoom() {
-        let art = |compact_padding, caption, top_label| TileArt {
+        let art = |compact_padding, caption| TileArt {
             compact_padding,
             caption,
-            top_label,
         };
         let inputs = Inputs {
             screen_width: 960.0,
@@ -1150,13 +1143,13 @@ mod tests {
         // 150 - 2 * 10.8 = 128.4 wide; 200 - 4 - 10.8 - 31.86 = 153.34 tall.
         // The rounded box agrees here, and would overflow at 128.6.
         assert_eq!(
-            tile_art_pixels(&inputs, 150, 200, 1.0, art(false, true, false)),
+            tile_art_pixels(&inputs, 150, 200, 1.0, art(false, true)),
             (128, 153)
         );
         // 151 - 21.6 = 129.4: floor, where the cover box rounds the same.
         // 201 - 4 - 21.6 = 175.4.
         assert_eq!(
-            tile_art_pixels(&inputs, 151, 201, 1.0, art(false, false, false)),
+            tile_art_pixels(&inputs, 151, 201, 1.0, art(false, false)),
             (129, 175)
         );
         // Whatever the cell, the bitmap is the box's whole pixels: never
@@ -1169,7 +1162,7 @@ mod tests {
         let pad = 416.0 * 0.02;
         let edge = f64::from(tall.stroke(0.8));
         for cell in 60..260 {
-            let (width, height) = tile_art_pixels(&tall, cell, cell, 1.0, art(false, false, false));
+            let (width, height) = tile_art_pixels(&tall, cell, cell, 1.0, art(false, false));
             let (box_w, box_h) = (
                 f64::from(cell) - 2.0 * pad,
                 f64::from(cell) - edge - 2.0 * pad,
@@ -1180,7 +1173,7 @@ mod tests {
         // The focused tile grows 4% about its center and its paddings do
         // not: 156 - 21.6 = 134.4 wide, 208 - 4 - 21.6 = 182.4 tall.
         assert_eq!(
-            tile_art_pixels(&inputs, 150, 200, 1.04, art(false, false, false)),
+            tile_art_pixels(&inputs, 150, 200, 1.04, art(false, false)),
             (134, 182)
         );
         // A whole-number box keeps its last pixel, and nothing goes negative.
@@ -1190,11 +1183,11 @@ mod tests {
             ..Inputs::default()
         };
         assert_eq!(
-            tile_art_pixels(&even, 120, 120, 1.0, art(false, false, false)).0,
+            tile_art_pixels(&even, 120, 120, 1.0, art(false, false)).0,
             100
         );
         assert_eq!(
-            tile_art_pixels(&inputs, 4, 4, 1.0, art(false, true, true)),
+            tile_art_pixels(&inputs, 4, 4, 1.0, art(false, true)),
             (0, 0)
         );
     }

@@ -1,10 +1,11 @@
 //! Allocation accounting for inactive endpoint payloads. Exhaustive field
 //! patterns force new fields to participate before an endpoint can compile.
 
+use crate::collections::{Deck, DeckItem, DeckItemKind, DeckItemMedia, DecksResult};
 use crate::media_types::{
     BrowseEntry, LauncherInfo, LaunchersResult, MediaBrowseResult, MediaHistoryEntry,
-    MediaHistoryResult, MediaItem, MediaSearchResult, Pagination, System, SystemInfo,
-    SystemsResult, TagInfo,
+    MediaHistoryResult, MediaHistoryTopEntry, MediaHistoryTopResult, MediaItem, MediaSearchResult,
+    Pagination, System, SystemInfo, SystemsResult, TagInfo,
 };
 use crate::systems_catalog::CatalogData;
 
@@ -66,6 +67,43 @@ macro_rules! fields {
     };
 }
 
+impl HeapBytes for DeckItemKind {
+    fn heap_bytes(&self) -> usize {
+        0
+    }
+}
+
+fields!(DeckItemMedia {
+    system,
+    path,
+    name,
+    available,
+    user_tags
+});
+fields!(DeckItem {
+    id,
+    position,
+    kind,
+    name,
+    zapscript,
+    card_id,
+    media,
+    has_image
+});
+fields!(Deck {
+    deck_id,
+    name,
+    item_count,
+    owned,
+    locked,
+    saved,
+    owned_by,
+    has_image,
+    updated_at,
+    contains_item_ids,
+    items
+});
+fields!(DecksResult { decks });
 fields!(TagInfo {
     tag,
     tag_type,
@@ -164,6 +202,20 @@ fields!(MediaHistoryResult {
     entries,
     pagination
 });
+fields!(MediaHistoryTopEntry {
+    media_id,
+    system_id,
+    system_name,
+    media_name,
+    media_path,
+    relative_path,
+    zap_script,
+    total_play_time,
+    session_count,
+    last_played_at,
+    tags
+});
+fields!(MediaHistoryTopResult { entries });
 fields!(LauncherInfo {
     id,
     system_id,

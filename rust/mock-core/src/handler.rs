@@ -9,8 +9,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tracing::{debug, info, warn};
 
-use crate::fixtures;
 use crate::media_state::{self, Notifier};
+use crate::{decks, fixtures, library, ui_events};
 
 #[derive(Deserialize)]
 struct RpcRequest {
@@ -66,7 +66,7 @@ pub fn dispatch(text: &str, notifier: &Notifier) -> String {
         "scrapers" => Some(Ok(fixtures::scrapers_response())),
         "settings" => Some(Ok(fixtures::settings_response())),
         "settings.update" => Some(fixtures::settings_update_response(&req.params)),
-        "media.search" => Some(Ok(fixtures::media_search_response(&req.params))),
+        "media.search" => Some(fixtures::media_search_response(&req.params)),
         "media.browse" => Some(Ok(fixtures::media_browse_response(&req.params))),
         "media.browse.index" => Some(Ok(fixtures::media_browse_index_response(&req.params))),
         "media.lookup" => Some(Ok(fixtures::media_lookup_response(&req.params))),
@@ -75,10 +75,18 @@ pub fn dispatch(text: &str, notifier: &Notifier) -> String {
         "media.image" => Some(fixtures::media_image_response(&req.params)),
         "media.asset" => Some(fixtures::media_asset_response(&req.params)),
         "media.tags" => Some(Ok(fixtures::media_tags_response(&req.params))),
-        "decks" => Some(Ok(fixtures::decks_response())),
-        "media.tags.update" => Some(media_tags_update(&req.params)),
+        "decks" => Some(decks::list(&req.params)),
+        "decks.get" => Some(decks::get(&req.params)),
+        "decks.new" => Some(decks::new(&req.params, notifier)),
+        "decks.update" => Some(decks::update(&req.params, notifier)),
+        "decks.delete" => Some(decks::delete(&req.params, notifier)),
+        "decks.image" => Some(decks::image(&req.params)),
+        "media.tags.update" => Some(library::tags_update(&req.params, notifier)),
+        "ui" => Some(Ok(ui_events::state())),
+        "ui.respond" => Some(ui_events::respond(&req.params, notifier)),
         "media.history" => Some(Ok(fixtures::media_history_response(&req.params))),
         "media.history.latest" => Some(Ok(fixtures::media_history_latest_response())),
+        "media.history.top" => Some(Ok(fixtures::media_history_top_response(&req.params))),
         "media" => Some(Ok(media_state::media_response())),
         "media.scrape.status" => Some(Ok(media_state::scrape_status_response())),
         "media.generate" => Some(Ok(media_state::start_index(notifier))),
@@ -88,7 +96,10 @@ pub fn dispatch(text: &str, notifier: &Notifier) -> String {
         "run" => {
             let zap_script = req.params.get("text").and_then(Value::as_str).unwrap_or("");
             info!(%zap_script, "run");
-            Some(Ok(media_state::start_launch(zap_script, notifier)))
+            Some(
+                ui_events::run_script(zap_script, notifier)
+                    .unwrap_or_else(|| Ok(media_state::start_launch(zap_script, notifier))),
+            )
         }
         "readers.write" => {
             let zap_script = req.params.get("text").and_then(Value::as_str).unwrap_or("");
@@ -127,35 +138,6 @@ pub fn dispatch(text: &str, notifier: &Notifier) -> String {
     };
 
     encode(&response)
-}
-
-/// `media.tags.update`: validates the exclusive media ref the way Core does
-/// (a `mediaId` or a `(system, path)` pair, never both) and acknowledges the
-/// change. The mock's catalog is static, so the one tag it keeps is
-/// `user:hidden` on a path, a file's or a folder's, which browse and
-/// search then honor.
-fn media_tags_update(params: &Value) -> Result<Value, String> {
-    let has_id = params.get("mediaId").is_some();
-    let system = params.get("system").and_then(Value::as_str).unwrap_or("");
-    let path = params.get("path").and_then(Value::as_str).unwrap_or("");
-    if has_id && (!system.is_empty() || !path.is_empty()) {
-        return Err("invalid params: mediaId cannot be mixed with system/path".into());
-    }
-    info!(%params, "media.tags.update");
-    let names = |key: &str| {
-        params
-            .get(key)
-            .and_then(Value::as_array)
-            .is_some_and(|tags| tags.iter().any(|tag| tag == "user:hidden"))
-    };
-    let mut tags = Vec::new();
-    if !path.is_empty() && (names("add") || names("remove")) {
-        // Adds win over removes, as in Core.
-        if fixtures::set_hidden(path, names("add")) {
-            tags.push(serde_json::json!({ "type": "user", "tag": "hidden" }));
-        }
-    }
-    Ok(serde_json::json!({ "tags": tags }))
 }
 
 /// `media.scrape` the way Core validates its scope: one of `mediaId`,
@@ -911,6 +893,44 @@ mod tests {
     }
 
     #[test]
+    fn media_history_top_ranks_by_play_time_and_honors_limit_and_systems() {
+        let req =
+            r#"{"jsonrpc":"2.0","id":"1","method":"media.history.top","params":{"limit":100}}"#;
+        let resp = parse(&dispatch(req));
+        let entries = resp["result"]["entries"].as_array().expect("array");
+        assert!(entries.len() > 3);
+        let times: Vec<u64> = entries
+            .iter()
+            .map(|e| e["totalPlayTime"].as_u64().expect("time"))
+            .collect();
+        assert!(times.windows(2).all(|w| w[0] > w[1]), "ranked, no ties");
+        assert!(times.contains(&40), "a game under a minute");
+        for entry in entries {
+            assert!(entry["mediaPath"].is_string());
+            assert!(entry["systemName"].is_string());
+            assert!(entry["tags"].is_array());
+        }
+        let limited =
+            r#"{"jsonrpc":"2.0","id":"2","method":"media.history.top","params":{"limit":2}}"#;
+        let limited = parse(&dispatch(limited));
+        assert_eq!(
+            limited["result"]["entries"]
+                .as_array()
+                .expect("array")
+                .len(),
+            2
+        );
+        let system = entries[0]["systemId"].as_str().expect("system");
+        let filtered = format!(
+            r#"{{"jsonrpc":"2.0","id":"3","method":"media.history.top","params":{{"systems":["{system}"]}}}}"#
+        );
+        let filtered = parse(&dispatch(&filtered));
+        let filtered = filtered["result"]["entries"].as_array().expect("array");
+        assert!(!filtered.is_empty());
+        assert!(filtered.iter().all(|e| e["systemId"] == system));
+    }
+
+    #[test]
     fn media_history_returns_cursor_pages() {
         let first_req = r#"{"jsonrpc":"2.0","id":"1","method":"media.history","params":{"limit":5,"distinctMedia":true}}"#;
         let first = parse(&dispatch(first_req));
@@ -984,14 +1004,11 @@ mod tests {
         assert!(resp["result"].get("pagination").is_none());
     }
 
-    // The media.generate/media.scrape sequence tests below rely on
-    // `media_state`'s single process-wide `Mutex<MediaState>`. That is
-    // only test-safe because `just test` runs on `cargo nextest`,
-    // which gives every test its own process — a plain `cargo test`
-    // invocation would run these in one process and the shared state
-    // could race across tests. Mark new stateful tests `#[tokio::test]`
-    // (media.generate/media.scrape call `tokio::spawn`, which panics
-    // outside a runtime) and keep them independent of one another.
+    // The media.generate/media.scrape sequence tests below read
+    // `media_state`, which unit tests keep per test thread, so they stay
+    // independent under a plain `cargo test` as well as nextest. Mark new
+    // stateful tests `#[tokio::test]` (media.generate/media.scrape call
+    // `tokio::spawn`, which panics outside a runtime).
 
     #[test]
     fn media_returns_seed_response_shape() {
@@ -1175,5 +1192,867 @@ mod tests {
         assert!(dispatch(by_id).contains("\"tags\""));
         let by_pair = r#"{"jsonrpc":"2.0","id":"1","method":"media.tags.update","params":{"system":"nes","path":"/g/x","remove":["user:favorite"]}}"#;
         assert!(dispatch(by_pair).contains("\"tags\""));
+    }
+
+    // The tests below drive the stateful stores (user flags, decks, UI
+    // events). Each test thread gets its own freshly seeded stores, so
+    // they stay independent under a plain `cargo test` too.
+
+    use crate::{decks, ui_events};
+    use serde_json::json;
+    use tokio::sync::mpsc::UnboundedReceiver;
+
+    const ZELDA: &str = "/mock/games/NES/zelda.nes";
+    const SMB: &str = "/mock/games/NES/smb.nes";
+
+    /// One request through `dispatch`, answered as parsed JSON.
+    fn call(method: &str, params: &Value, notifier: &Notifier) -> Value {
+        let req = json!({ "jsonrpc": "2.0", "id": "1", "method": method, "params": params });
+        parse(&dispatch_with_notifier(&req.to_string(), notifier))
+    }
+
+    fn error_message(resp: &Value) -> &str {
+        assert_eq!(resp["error"]["code"], super::DOMAIN_ERROR_CODE, "{resp}");
+        resp["error"]["message"].as_str().expect("message")
+    }
+
+    /// Every notification sent so far, in order.
+    fn drain(rx: &mut UnboundedReceiver<Value>) -> Vec<Value> {
+        std::iter::from_fn(|| rx.try_recv().ok()).collect()
+    }
+
+    fn search(params: &Value) -> Vec<Value> {
+        let resp = call("media.search", params, &Notifier::noop());
+        resp["result"]["results"]
+            .as_array()
+            .expect("results")
+            .clone()
+    }
+
+    fn search_row(path: &str) -> Value {
+        search(&json!({ "maxResults": 1000 }))
+            .into_iter()
+            .find(|row| row["path"] == path)
+            .expect("row")
+    }
+
+    fn user_tags(row: &Value) -> Vec<String> {
+        row["tags"]
+            .as_array()
+            .expect("tags")
+            .iter()
+            .filter(|tag| tag["type"] == "user")
+            .filter_map(|tag| tag["tag"].as_str().map(str::to_string))
+            .collect()
+    }
+
+    fn tags_update(path: &str, add: &[&str], remove: &[&str], notifier: &Notifier) -> Value {
+        call(
+            "media.tags.update",
+            &json!({ "system": "NES", "path": path, "add": add, "remove": remove }),
+            notifier,
+        )
+    }
+
+    fn result_tags(resp: &Value) -> Vec<&str> {
+        resp["result"]["tags"]
+            .as_array()
+            .expect("tags")
+            .iter()
+            .inspect(|tag| assert_eq!(tag["type"], "user"))
+            .filter_map(|tag| tag["tag"].as_str())
+            .collect()
+    }
+
+    #[test]
+    fn every_user_list_is_seeded_and_disliked_stays_apart() {
+        for flag in ["favorite", "liked", "disliked", "playlater"] {
+            let rows = search(&json!({ "maxResults": 1000, "tags": [format!("user:{flag}")] }));
+            assert!(!rows.is_empty(), "{flag} is seeded");
+            assert!(rows
+                .iter()
+                .all(|row| user_tags(row).contains(&flag.to_string())));
+        }
+        for row in search(&json!({ "maxResults": 1000, "tags": ["user:disliked"] })) {
+            let tags = user_tags(&row);
+            assert!(!tags.contains(&"liked".to_string()), "{row}");
+            assert!(!tags.contains(&"favorite".to_string()), "{row}");
+        }
+    }
+
+    #[test]
+    fn tags_update_sets_a_flag_and_announces_the_full_user_tags() {
+        let (notifier, mut rx) = Notifier::channel();
+        let flags = |row: &Value| -> Vec<String> {
+            user_tags(row)
+                .into_iter()
+                .filter(|tag| !tag.starts_with("deck:"))
+                .collect()
+        };
+        assert!(flags(&search_row(ZELDA)).is_empty());
+        let resp = tags_update(ZELDA, &["user:liked", "user:playlater"], &[], &notifier);
+        assert_eq!(result_tags(&resp), ["liked", "playlater"]);
+        let sent = drain(&mut rx);
+        assert_eq!(sent.len(), 1);
+        assert_eq!(sent[0]["method"], "media.tags.changed");
+        assert_eq!(
+            sent[0]["params"],
+            json!({
+                "system": "NES",
+                "path": ZELDA,
+                "tags": [{ "type": "user", "tag": "liked" }, { "type": "user", "tag": "playlater" }],
+            })
+        );
+        assert_eq!(flags(&search_row(ZELDA)), ["liked", "playlater"]);
+
+        // Removing what is not set changes nothing and says nothing.
+        let resp = tags_update(ZELDA, &[], &["user:favorite"], &notifier);
+        assert_eq!(result_tags(&resp), ["liked", "playlater"]);
+        assert!(drain(&mut rx).is_empty());
+
+        let resp = tags_update(ZELDA, &[], &["user:liked"], &notifier);
+        assert_eq!(result_tags(&resp), ["playlater"]);
+        assert_eq!(
+            drain(&mut rx)[0]["params"]["tags"].as_array().map(Vec::len),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn disliked_and_liked_or_favorite_exclude_each_other() {
+        let notifier = Notifier::noop();
+        assert!(user_tags(&search_row(SMB)).contains(&"favorite".to_string()));
+        tags_update(SMB, &["user:liked"], &[], &notifier);
+        let resp = tags_update(SMB, &["user:disliked"], &[], &notifier);
+        assert_eq!(result_tags(&resp), ["disliked"]);
+        let resp = tags_update(SMB, &["user:favorite"], &[], &notifier);
+        assert_eq!(result_tags(&resp), ["favorite"]);
+        tags_update(SMB, &["user:disliked"], &[], &notifier);
+        let resp = tags_update(SMB, &["user:liked"], &[], &notifier);
+        assert_eq!(result_tags(&resp), ["liked"]);
+    }
+
+    #[test]
+    fn tags_update_refuses_both_sides_and_tags_it_cannot_set() {
+        let (notifier, mut rx) = Notifier::channel();
+        let both = tags_update(ZELDA, &["user:liked", "user:disliked"], &[], &notifier);
+        assert_eq!(
+            error_message(&both),
+            "invalid params: a game cannot be liked and disliked at once"
+        );
+        let both = tags_update(ZELDA, &["user:disliked", "user:favorite"], &[], &notifier);
+        assert_eq!(
+            error_message(&both),
+            "invalid params: a favorite cannot be disliked"
+        );
+        // A remove beside the add is no conflict: adds win.
+        let switch = tags_update(ZELDA, &["user:disliked"], &["user:liked"], &notifier);
+        assert_eq!(result_tags(&switch), ["disliked"]);
+        drain(&mut rx);
+
+        let deck = tags_update(ZELDA, &["user:deck:0k3v9x2rq7bm"], &[], &notifier);
+        assert!(error_message(&deck).contains("deck membership is managed"));
+        let genre = tags_update(ZELDA, &["genre:rpg"], &[], &notifier);
+        assert!(error_message(&genre).starts_with("invalid add tags:"));
+        let none = tags_update(ZELDA, &[], &[], &notifier);
+        assert_eq!(
+            error_message(&none),
+            "invalid params: add or remove is required"
+        );
+        assert!(drain(&mut rx).is_empty());
+    }
+
+    fn added_desc(flag: &str, max: usize, cursor: Option<&str>) -> Value {
+        // Hidden rows are included because the hidden set is process
+        // state other tests change while this one walks its pages.
+        let mut params = json!({
+            "maxResults": max,
+            "tags": [format!("user:{flag}")],
+            "sort": "added-desc",
+            "includeHidden": true,
+        });
+        if let Some(cursor) = cursor {
+            params["cursor"] = json!(cursor);
+        }
+        call("media.search", &params, &Notifier::noop())
+    }
+
+    fn paths(rows: &Value) -> Vec<String> {
+        rows["result"]["results"]
+            .as_array()
+            .expect("results")
+            .iter()
+            .filter_map(|row| row["path"].as_str().map(str::to_string))
+            .collect()
+    }
+
+    #[test]
+    fn added_desc_puts_the_newest_first_then_undated_by_name() {
+        use crate::library::{self, Flag};
+        let all = added_desc("favorite", 1000, None);
+        let rows = all["result"]["results"].as_array().expect("results");
+        let times: Vec<Option<u64>> = rows
+            .iter()
+            .map(|row| library::set_time(row["path"].as_str().expect("path"), Flag::Favorite))
+            .collect();
+        let dated = times.iter().take_while(|at| at.is_some()).count();
+        assert!(dated > 0 && dated < times.len(), "seed has both kinds");
+        assert!(times[dated..].iter().all(Option::is_none));
+        assert!(times[..dated].windows(2).all(|pair| pair[0] > pair[1]));
+        let undated: Vec<String> = rows[dated..]
+            .iter()
+            .filter_map(|row| row["name"].as_str().map(str::to_lowercase))
+            .collect();
+        let mut sorted = undated.clone();
+        sorted.sort();
+        assert_eq!(undated, sorted);
+
+        // Pages walk the same order without repeats or gaps.
+        let mut walked = Vec::new();
+        let mut cursor: Option<String> = None;
+        loop {
+            let page = added_desc("favorite", 4, cursor.as_deref());
+            walked.extend(paths(&page));
+            match page["result"]["pagination"]["nextCursor"].as_str() {
+                Some(next) => cursor = Some(next.to_string()),
+                None => break,
+            }
+        }
+        assert_eq!(walked, paths(&all));
+
+        // A flag set now is the newest.
+        tags_update(ZELDA, &["user:favorite"], &[], &Notifier::noop());
+        assert_eq!(paths(&added_desc("favorite", 1, None)), [ZELDA]);
+    }
+
+    #[test]
+    fn added_desc_needs_a_user_list_filter() {
+        let resp = call(
+            "media.search",
+            &json!({ "maxResults": 10, "sort": "added-desc", "tags": ["genre:rpg"] }),
+            &Notifier::noop(),
+        );
+        assert!(error_message(&resp).starts_with("invalid params: sort added-desc"));
+        let liked = added_desc("liked", 1000, None);
+        assert!(!paths(&liked).is_empty());
+    }
+
+    fn deck(id: &str) -> Value {
+        call("decks.get", &json!({ "deckId": id }), &Notifier::noop())["result"].clone()
+    }
+
+    fn deck_list(params: &Value) -> Vec<Value> {
+        call("decks", params, &Notifier::noop())["result"]["decks"]
+            .as_array()
+            .expect("decks")
+            .clone()
+    }
+
+    #[test]
+    fn decks_lists_the_seeded_decks_without_items() {
+        let decks = deck_list(&json!({}));
+        let names: Vec<&str> = decks.iter().filter_map(|d| d["name"].as_str()).collect();
+        assert_eq!(
+            names,
+            [
+                "Couch co-op",
+                "Weekend",
+                "Club night",
+                "Arcade classics",
+                "Tapped deck"
+            ]
+        );
+        assert!(decks.iter().all(|d| d.get("items").is_none()));
+        assert!(decks.iter().all(|d| d.get("containsItemIds").is_none()));
+        let by = |id: &str| decks.iter().find(|d| d["deckId"] == id).expect("deck");
+        let couch = by(decks::COUCH_DECK_ID);
+        assert_eq!(couch["itemCount"], 11);
+        assert_eq!(
+            (couch["owned"].clone(), couch["locked"].clone()),
+            (json!(true), json!(false))
+        );
+        assert_eq!(by(decks::WEEKEND_DECK_ID)["itemCount"], 0);
+        assert_eq!(by(decks::CLUB_DECK_ID)["locked"], true);
+        let arcade = by(decks::ARCADE_DECK_ID);
+        assert_eq!(arcade["owned"], false);
+        assert_eq!(arcade["saved"], true);
+        assert_eq!(arcade["ownedBy"], "wizzo");
+        assert_eq!(arcade["hasImage"], true);
+        let tapped = by(decks::TAPPED_DECK_ID);
+        assert_eq!(
+            (tapped["owned"].clone(), tapped["saved"].clone()),
+            (json!(false), json!(false))
+        );
+    }
+
+    #[test]
+    fn decks_get_returns_games_cards_and_scripts() {
+        let couch = deck(decks::COUCH_DECK_ID);
+        let items = couch["items"].as_array().expect("items");
+        assert_eq!(items.len(), 11);
+        for (index, item) in items.iter().enumerate() {
+            assert_eq!(item["position"], index + 1);
+            assert!(item["id"].is_i64());
+        }
+        let games: Vec<&Value> = items.iter().filter(|i| i["media"].is_object()).collect();
+        assert_eq!(games.len(), 9);
+        assert!(games.iter().all(|g| g["kind"] == "script"));
+        // Every game item says its file's flags, as Core does.
+        assert!(games.iter().all(|g| g["media"]["userTags"].is_array()));
+        assert_eq!(
+            games
+                .iter()
+                .filter(|g| g["media"]["available"] == false)
+                .count(),
+            1
+        );
+        let card = items.iter().find(|i| i["kind"] == "card").expect("card");
+        assert_eq!(card["hasImage"], true);
+        assert!(card["cardId"].is_string());
+        let script = items
+            .iter()
+            .find(|i| i["kind"] == "script" && i["media"].is_null())
+            .expect("script");
+        assert!(script["zapscript"].is_string());
+        assert_eq!(deck(decks::WEEKEND_DECK_ID)["items"], json!([]));
+
+        let missing = call("decks.get", &json!({ "deckId": "nope" }), &Notifier::noop());
+        assert_eq!(error_message(&missing), "deck not found");
+    }
+
+    #[test]
+    fn decks_with_a_game_name_the_items_linked_to_it() {
+        let decks = deck_list(&json!({ "system": "NES", "path": ZELDA }));
+        let zelda_id = deck(decks::COUCH_DECK_ID)["items"]
+            .as_array()
+            .expect("items")
+            .iter()
+            .find(|i| i["media"]["path"] == ZELDA)
+            .expect("zelda item")["id"]
+            .clone();
+        for deck in &decks {
+            let expected = if deck["deckId"] == decks::COUCH_DECK_ID {
+                json!([zelda_id])
+            } else {
+                json!([])
+            };
+            assert_eq!(deck["containsItemIds"], expected, "{}", deck["name"]);
+        }
+        let half = call("decks", &json!({ "system": "NES" }), &Notifier::noop());
+        assert!(error_message(&half).starts_with("invalid params"));
+    }
+
+    #[test]
+    fn deck_membership_tags_follow_deck_contents() {
+        let couch = format!("deck:{}", decks::COUCH_DECK_ID);
+        assert!(user_tags(&search_row(ZELDA)).contains(&couch));
+        let tapped = format!("deck:{}", decks::TAPPED_DECK_ID);
+        assert!(user_tags(&search_row(SMB)).contains(&tapped));
+        // Every seeded member is tagged, and nothing else is.
+        let tagged = search(&json!({ "maxResults": 1000, "tags": [format!("user:{couch}")] }));
+        assert_eq!(tagged.len(), 8);
+
+        let zelda_id = deck(decks::COUCH_DECK_ID)["items"]
+            .as_array()
+            .expect("items")
+            .iter()
+            .find(|i| i["media"]["path"] == ZELDA)
+            .expect("zelda item")["id"]
+            .clone();
+        let resp = call(
+            "decks.update",
+            &json!({ "deckId": decks::COUCH_DECK_ID, "removeItemIds": [zelda_id] }),
+            &Notifier::noop(),
+        );
+        assert_eq!(resp["result"]["itemCount"], 10);
+        assert!(!user_tags(&search_row(ZELDA)).contains(&couch));
+    }
+
+    #[test]
+    fn decks_new_creates_an_owned_deck_and_announces_it() {
+        let (notifier, mut rx) = Notifier::channel();
+        let resp = call(
+            "decks.new",
+            &json!({
+                "name": "  Racing  ",
+                "items": [
+                    { "kind": "media", "system": "NES", "path": ZELDA },
+                    { "kind": "script", "name": "Random NES", "zapscript": "**launch.random:NES" },
+                ],
+            }),
+            &notifier,
+        );
+        let created = &resp["result"];
+        assert_eq!(created["name"], "Racing");
+        assert_eq!(created["owned"], true);
+        assert_eq!(created["itemCount"], 2);
+        assert_eq!(created["items"][0]["media"]["name"], "The Legend of Zelda");
+        assert_eq!(created["items"][0]["media"]["available"], true);
+        let id = created["deckId"].as_str().expect("id");
+        assert_eq!(
+            drain(&mut rx),
+            [
+                json!({ "jsonrpc": "2.0", "method": "decks.changed", "params": { "deckId": id, "action": "created" } })
+            ]
+        );
+        assert!(user_tags(&search_row(ZELDA)).contains(&format!("deck:{id}")));
+        assert_eq!(deck_list(&json!({}))[0]["deckId"], id);
+
+        let unnamed = call("decks.new", &json!({ "name": " ", "items": [] }), &notifier);
+        assert_eq!(error_message(&unnamed), "invalid params: name is required");
+        let unknown = call(
+            "decks.new",
+            &json!({ "name": "x", "items": [{ "kind": "media", "system": "NES", "path": "/nope" }] }),
+            &notifier,
+        );
+        assert_eq!(error_message(&unknown), "invalid item 1: media not found");
+        assert!(drain(&mut rx).is_empty());
+    }
+
+    #[test]
+    fn decks_update_reorders_appends_removes_and_renames() {
+        let (notifier, mut rx) = Notifier::channel();
+        let update = |params: Value| {
+            let mut params = params;
+            params["deckId"] = json!(decks::WEEKEND_DECK_ID);
+            call("decks.update", &params, &notifier)
+        };
+        let added = update(json!({ "addItems": [
+            { "kind": "media", "system": "NES", "path": ZELDA },
+            { "kind": "media", "system": "NES", "path": SMB },
+            { "kind": "script", "name": "Random SNES", "zapscript": "**launch.random:SNES" },
+        ] }));
+        let ids: Vec<i64> = added["result"]["items"]
+            .as_array()
+            .expect("items")
+            .iter()
+            .filter_map(|i| i["id"].as_i64())
+            .collect();
+        assert_eq!(ids.len(), 3);
+        assert_eq!(drain(&mut rx)[0]["params"]["action"], "updated");
+
+        let reordered =
+            update(json!({ "items": [{ "id": ids[2] }, { "id": ids[0] }, { "id": ids[1] }] }));
+        let items = reordered["result"]["items"].as_array().expect("items");
+        assert_eq!(items[0]["id"], ids[2]);
+        assert_eq!(items[0]["position"], 1);
+        assert_eq!(items[2]["id"], ids[1]);
+
+        let renamed = update(json!({ "name": "Sunday", "removeItemIds": [ids[0]] }));
+        assert_eq!(renamed["result"]["name"], "Sunday");
+        assert_eq!(renamed["result"]["itemCount"], 2);
+
+        let unknown = update(json!({ "items": [{ "id": 99_999 }] }));
+        assert_eq!(error_message(&unknown), "deck item not found: item 99999");
+        let repeated = update(json!({ "items": [{ "id": ids[1] }, { "id": ids[1] }] }));
+        assert!(error_message(&repeated).starts_with("deck item listed more than once"));
+        let empty_name = update(json!({ "name": "" }));
+        assert_eq!(
+            error_message(&empty_name),
+            "invalid params: name cannot be empty"
+        );
+        let missing = call(
+            "decks.update",
+            &json!({ "deckId": "nope", "name": "x" }),
+            &notifier,
+        );
+        assert_eq!(error_message(&missing), "deck not found");
+    }
+
+    #[test]
+    fn locked_and_unowned_decks_are_read_only() {
+        let notifier = Notifier::noop();
+        for id in [
+            decks::CLUB_DECK_ID,
+            decks::ARCADE_DECK_ID,
+            decks::TAPPED_DECK_ID,
+        ] {
+            let resp = call(
+                "decks.update",
+                &json!({ "deckId": id, "name": "Mine" }),
+                &notifier,
+            );
+            assert_eq!(error_message(&resp), "deck is read-only", "{id}");
+            let cover = call(
+                "decks.update",
+                &json!({ "deckId": id, "cover": { "kind": "none" } }),
+                &notifier,
+            );
+            assert_eq!(error_message(&cover), "deck is read-only", "{id}");
+            // Asking for no change answers with the deck as it is.
+            let unchanged = call("decks.update", &json!({ "deckId": id }), &notifier);
+            assert_eq!(unchanged["result"]["deckId"], id);
+        }
+    }
+
+    #[test]
+    fn decks_stop_at_the_item_limit() {
+        let items: Vec<Value> = (0..115)
+            .map(|n| json!({ "kind": "script", "name": format!("S{n}"), "zapscript": "**echo:x" }))
+            .collect();
+        let resp = call(
+            "decks.update",
+            &json!({ "deckId": decks::COUCH_DECK_ID, "addItems": items }),
+            &Notifier::noop(),
+        );
+        assert_eq!(error_message(&resp), "deck item limit reached");
+        assert_eq!(deck(decks::COUCH_DECK_ID)["itemCount"], 11);
+    }
+
+    fn deck_image(params: &Value) -> Value {
+        call("decks.image", params, &Notifier::noop())
+    }
+
+    #[test]
+    fn deck_covers_set_from_a_game_render_through_decks_image() {
+        let notifier = Notifier::noop();
+        let weekend = json!({ "deckId": decks::WEEKEND_DECK_ID, "maxSize": 64 });
+        assert_eq!(error_message(&deck_image(&weekend)), "image not found");
+
+        let set = call(
+            "decks.update",
+            &json!({ "deckId": decks::WEEKEND_DECK_ID, "cover": { "kind": "media", "system": "NES", "path": ZELDA } }),
+            &notifier,
+        );
+        assert_eq!(set["result"]["hasImage"], true);
+        let cover = deck_image(&weekend);
+        assert_eq!(cover["result"]["typeTag"], "deck:cover");
+        assert_eq!(cover["result"]["delivery"], "inline");
+        assert_eq!(cover["result"]["contentType"], "image/png");
+        let game = call(
+            "media.image",
+            &json!({ "system": "NES", "path": ZELDA, "maxSize": 64 }),
+            &notifier,
+        );
+        assert_eq!(cover["result"]["data"], game["result"]["data"]);
+
+        let file = call(
+            "decks.update",
+            &json!({ "deckId": decks::WEEKEND_DECK_ID, "cover": { "kind": "file", "path": "relative.png" } }),
+            &notifier,
+        );
+        assert!(error_message(&file).starts_with("invalid params"));
+        let cleared = call(
+            "decks.update",
+            &json!({ "deckId": decks::WEEKEND_DECK_ID, "cover": { "kind": "none" } }),
+            &notifier,
+        );
+        assert_eq!(cleared["result"]["hasImage"], false);
+        assert_eq!(error_message(&deck_image(&weekend)), "image not found");
+
+        let saved = deck_image(&json!({ "deckId": decks::ARCADE_DECK_ID }));
+        assert_eq!(saved["result"]["typeTag"], "deck:cover");
+    }
+
+    #[test]
+    fn decks_image_draws_card_art_but_not_game_items() {
+        let items = deck(decks::COUCH_DECK_ID)["items"].clone();
+        let items = items.as_array().expect("items");
+        let card = items.iter().find(|i| i["kind"] == "card").expect("card");
+        let art = deck_image(&json!({ "deckId": decks::COUCH_DECK_ID, "itemId": card["id"] }));
+        assert_eq!(art["result"]["typeTag"], "deck:card");
+        assert!(art["result"]["data"]
+            .as_str()
+            .is_some_and(|d| !d.is_empty()));
+        let game = items.iter().find(|i| i["media"].is_object()).expect("game");
+        let none = deck_image(&json!({ "deckId": decks::COUCH_DECK_ID, "itemId": game["id"] }));
+        assert_eq!(error_message(&none), "image not found");
+        let missing = deck_image(&json!({ "deckId": decks::COUCH_DECK_ID, "itemId": 99_999 }));
+        assert_eq!(error_message(&missing), "deck item not found");
+    }
+
+    #[test]
+    fn decks_delete_removes_a_deck_and_its_membership_tags() {
+        let (notifier, mut rx) = Notifier::channel();
+        let tapped = format!("deck:{}", decks::TAPPED_DECK_ID);
+        assert!(user_tags(&search_row(SMB)).contains(&tapped));
+        let resp = call(
+            "decks.delete",
+            &json!({ "deckId": decks::TAPPED_DECK_ID }),
+            &notifier,
+        );
+        assert!(resp["result"].is_null() && resp["error"].is_null());
+        assert_eq!(
+            drain(&mut rx)[0]["params"],
+            json!({ "deckId": decks::TAPPED_DECK_ID, "action": "deleted" })
+        );
+        assert!(!user_tags(&search_row(SMB)).contains(&tapped));
+        assert_eq!(deck_list(&json!({})).len(), 4);
+        let again = call(
+            "decks.delete",
+            &json!({ "deckId": decks::TAPPED_DECK_ID }),
+            &notifier,
+        );
+        assert_eq!(error_message(&again), "deck not found");
+    }
+
+    fn ui_changed(rx: &mut UnboundedReceiver<Value>) -> Value {
+        let sent = drain(rx);
+        let changed: Vec<&Value> = sent
+            .iter()
+            .filter(|n| n["method"] == "ui.changed")
+            .collect();
+        assert_eq!(changed.len(), 1, "{sent:?}");
+        changed[0]["params"].clone()
+    }
+
+    fn run(text: &str, notifier: &Notifier) -> Value {
+        call("run", &json!({ "text": text }), notifier)
+    }
+
+    #[test]
+    fn ui_starts_with_nothing_open() {
+        let state = call("ui", &json!({}), &Notifier::noop());
+        assert_eq!(
+            state["result"],
+            json!({ "revision": 0, "events": [], "resolved": [] })
+        );
+    }
+
+    #[tokio::test]
+    async fn a_deck_playlist_opens_a_picker_of_its_items() {
+        let (notifier, mut rx) = Notifier::channel();
+        let resp = run(
+            &format!("**playlist.open:deck://{}", decks::COUCH_DECK_ID),
+            &notifier,
+        );
+        assert!(resp["error"].is_null(), "{resp}");
+        let changed = ui_changed(&mut rx);
+        assert_eq!(changed["revision"], 1);
+        assert_eq!(changed["resolved"], json!([]));
+        let event = &changed["events"][0];
+        assert_eq!(event["kind"], "picker");
+        assert_eq!(event["title"], "Couch co-op");
+        assert_eq!(event["dismissible"], true);
+        assert!(event["expiresAt"].is_string() && event["createdAt"].is_string());
+
+        let items = deck(decks::COUCH_DECK_ID)["items"].clone();
+        let items = items.as_array().expect("items");
+        let choices = event["choices"].as_array().expect("choices");
+        assert_eq!(choices.len(), items.len());
+        for (choice, item) in choices.iter().zip(items) {
+            assert_eq!(choice["id"], item["id"].to_string());
+            assert_eq!(choice["label"], item["name"]);
+            if item["media"]["available"] == true {
+                assert_eq!(choice["media"]["system"], item["media"]["system"]);
+                assert_eq!(choice["media"]["path"], item["media"]["path"]);
+                assert_eq!(choice["media"]["name"], item["media"]["name"]);
+            } else {
+                assert!(choice.get("media").is_none());
+            }
+        }
+        assert_eq!(event["selectedChoiceId"], choices[0]["id"]);
+        assert_eq!(
+            call("ui", &json!({}), &notifier)["result"]["events"][0],
+            *event
+        );
+
+        let missing = run("**playlist.open:deck://nope", &notifier);
+        assert_eq!(error_message(&missing), "deck not found");
+        let empty = run(
+            &format!("**playlist.open:deck://{}", decks::WEEKEND_DECK_ID),
+            &notifier,
+        );
+        assert_eq!(error_message(&empty), "playlist is empty");
+    }
+
+    #[tokio::test]
+    async fn selecting_a_picker_choice_resolves_it_and_launches_the_game() {
+        let (notifier, mut rx) = Notifier::channel();
+        run(
+            &format!("**playlist.open:deck://{}", decks::COUCH_DECK_ID),
+            &notifier,
+        );
+        let opened = ui_changed(&mut rx);
+        let event_id = opened["events"][0]["id"].as_str().expect("id").to_string();
+        let zelda = opened["events"][0]["choices"]
+            .as_array()
+            .expect("choices")
+            .iter()
+            .find(|c| c["media"]["path"] == ZELDA)
+            .expect("zelda choice")["id"]
+            .clone();
+
+        let resp = call(
+            "ui.respond",
+            &json!({ "id": event_id, "action": "select", "choiceId": zelda }),
+            &notifier,
+        );
+        assert!(
+            resp["result"].is_null() && resp["error"].is_null(),
+            "{resp}"
+        );
+        let sent = drain(&mut rx);
+        assert_eq!(sent[0]["method"], "ui.changed");
+        assert_eq!(
+            sent[0]["params"],
+            json!({
+                "revision": 2,
+                "events": [],
+                "resolved": [{ "id": event_id, "outcome": "selected", "choiceId": zelda }],
+            })
+        );
+        assert_eq!(sent[1]["method"], "media.started");
+        assert_eq!(sent[1]["params"]["zapScript"], "@NES/zelda.nes");
+
+        let stale = call(
+            "ui.respond",
+            &json!({ "id": event_id, "action": "dismiss" }),
+            &notifier,
+        );
+        assert_eq!(
+            error_message(&stale),
+            "UI response failed: no active UI event"
+        );
+    }
+
+    #[tokio::test]
+    async fn ui_respond_validates_like_core() {
+        let (notifier, mut rx) = Notifier::channel();
+        run(
+            &format!("**playlist.open:deck://{}", decks::COUCH_DECK_ID),
+            &notifier,
+        );
+        let id = ui_changed(&mut rx)["events"][0]["id"]
+            .as_str()
+            .expect("id")
+            .to_string();
+        let respond = |params: Value| call("ui.respond", &params, &notifier);
+
+        let cases = [
+            (
+                json!({ "id": "stale", "action": "dismiss" }),
+                "UI response failed: UI event is not active",
+            ),
+            (
+                json!({ "id": id, "action": "confirm" }),
+                "UI response failed: invalid UI response action",
+            ),
+            (
+                json!({ "id": id, "action": "select" }),
+                "UI response failed: choice ID is required",
+            ),
+            (
+                json!({ "id": id, "action": "select", "choiceId": "nope" }),
+                "UI response failed: UI choice was not found",
+            ),
+            (
+                json!({ "id": id, "action": "launch" }),
+                "invalid params: action must be one of dismiss, select, confirm",
+            ),
+            (
+                json!({ "action": "dismiss" }),
+                "invalid params: id is required",
+            ),
+        ];
+        for (params, message) in cases {
+            assert_eq!(error_message(&respond(params.clone())), message, "{params}");
+        }
+        assert!(
+            drain(&mut rx).is_empty(),
+            "a refused answer changes nothing"
+        );
+
+        let dismissed = respond(json!({ "id": id, "action": "dismiss" }));
+        assert!(dismissed["error"].is_null());
+        assert_eq!(
+            ui_changed(&mut rx)["resolved"],
+            json!([{ "id": id, "outcome": "dismissed" }])
+        );
+    }
+
+    #[tokio::test]
+    async fn a_new_event_supersedes_the_one_showing() {
+        let (notifier, mut rx) = Notifier::channel();
+        run("**mock.notice:Card saved", &notifier);
+        let notice = ui_changed(&mut rx);
+        let notice_event = &notice["events"][0];
+        assert_eq!(notice_event["kind"], "notice");
+        assert_eq!(notice_event["message"], "Card saved");
+        let notice_id = notice_event["id"].clone();
+
+        run("**mock.confirm", &notifier);
+        let confirm = ui_changed(&mut rx);
+        assert_eq!(confirm["revision"], 2);
+        assert_eq!(confirm["events"][0]["kind"], "confirm");
+        assert_eq!(
+            confirm["resolved"],
+            json!([{ "id": notice_id, "outcome": "superseded" }])
+        );
+        let confirm_id = confirm["events"][0]["id"].clone();
+        let select = call(
+            "ui.respond",
+            &json!({ "id": confirm_id, "action": "select", "choiceId": "1" }),
+            &notifier,
+        );
+        assert_eq!(
+            error_message(&select),
+            "UI response failed: invalid UI response action"
+        );
+        call(
+            "ui.respond",
+            &json!({ "id": confirm_id, "action": "confirm" }),
+            &notifier,
+        );
+        assert_eq!(
+            ui_changed(&mut rx)["resolved"],
+            json!([{ "id": confirm_id, "outcome": "confirmed" }])
+        );
+    }
+
+    #[tokio::test]
+    async fn the_mock_loader_completes_and_cannot_be_dismissed() {
+        let (notifier, mut rx) = Notifier::channel();
+        run("**mock.loader", &notifier);
+        let opened = ui_changed(&mut rx);
+        let event = &opened["events"][0];
+        assert_eq!(event["kind"], "loader");
+        assert_eq!(event["dismissible"], false);
+        assert!(event.get("expiresAt").is_none());
+        let id = event["id"].as_str().expect("id").to_string();
+        let dismiss = call(
+            "ui.respond",
+            &json!({ "id": id, "action": "dismiss" }),
+            &notifier,
+        );
+        assert_eq!(
+            error_message(&dismiss),
+            "UI response failed: UI event is not dismissible"
+        );
+
+        // What the 3 s timer runs.
+        assert!(ui_events::complete_loader(&id, &notifier));
+        let done = ui_changed(&mut rx);
+        assert_eq!(
+            done["resolved"],
+            json!([{ "id": id, "outcome": "completed" }])
+        );
+        assert_eq!(done["events"], json!([]));
+        assert!(!ui_events::complete_loader(&id, &notifier), "only once");
+    }
+
+    #[tokio::test]
+    async fn an_open_event_times_out() {
+        let (notifier, mut rx) = Notifier::channel();
+        run(
+            &format!("**playlist.open:deck://{}", decks::ARCADE_DECK_ID),
+            &notifier,
+        );
+        let id = ui_changed(&mut rx)["events"][0]["id"]
+            .as_str()
+            .expect("id")
+            .to_string();
+        // What the 30 s timer runs.
+        assert!(ui_events::time_out(&id, &notifier));
+        let changed = ui_changed(&mut rx);
+        assert_eq!(changed["revision"], 2);
+        assert_eq!(
+            changed["resolved"],
+            json!([{ "id": id, "outcome": "timed_out" }])
+        );
+        assert_eq!(
+            call("ui", &json!({}), &notifier)["result"]["events"],
+            json!([])
+        );
     }
 }

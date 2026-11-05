@@ -28,7 +28,8 @@ tokens!(Screen {
     Games => "games", Favorites => "favorites", Recents => "recents",
     Search => "search", SearchResults => "search-results",
     Settings => "settings", About => "about", Update => "update", Rename => "rename",
-    RaLogin => "ra-login", FileBrowser => "file-browser", None => "",
+    RaLogin => "ra-login", FileBrowser => "file-browser", Decks => "decks", Deck => "deck",
+    TopPlayed => "top-played", TopPlayedSystems => "top-played-systems", None => "",
 });
 tokens!(SettingsPage {
     Root => "", Appearance => "pageAppearance", Library => "pageLibraryData",
@@ -39,6 +40,8 @@ tokens!(Orientation { Horizontal => "horizontal", Cw => "cw", Ccw => "ccw" });
 tokens!(VideoStandard { Ntsc => "ntsc", Pal => "pal" });
 tokens!(ErrorKind {
     Generic => "", Launch => "launch", LaunchRepair => "launch_repair", Favorite => "favorite",
+    Collection => "collection", DeckList => "deck_list", DeckUpdate => "deck_update",
+    DeckCreate => "deck_create",
     MediaVisibility => "media_visibility", MediaBusy => "media_busy", AddToHub => "add_to_hub",
     SaveToHub => "save_to_hub",
     MediaIndex => "media_index", MediaScrape => "media_scrape", MediaScrapers => "media_scrapers",
@@ -56,6 +59,7 @@ impl From<zaparoo_app::hub::Reason> for crate::DisabledReason {
             zaparoo_app::hub::Reason::NoRecentGames => Self::NoRecentGames,
             zaparoo_app::hub::Reason::NoInternet => Self::NoInternet,
             zaparoo_app::hub::Reason::NotAvailable => Self::NotAvailable,
+            zaparoo_app::hub::Reason::DeckMissing => Self::DeckMissing,
         }
     }
 }
@@ -154,6 +158,8 @@ impl From<zaparoo_app::status_line::Kind> for crate::StatusKind {
             Kind::Imported => Self::Imported,
             Kind::PlaytimeWarning => Self::PlaytimeWarning,
             Kind::Inbox => Self::Inbox,
+            Kind::CoreLoader => Self::CoreLoader,
+            Kind::CoreNotice => Self::CoreNotice,
         }
     }
 }
@@ -179,6 +185,10 @@ mod tests {
             Screen::Rename,
             Screen::RaLogin,
             Screen::FileBrowser,
+            Screen::Decks,
+            Screen::Deck,
+            Screen::TopPlayed,
+            Screen::TopPlayedSystems,
             Screen::None,
         ] {
             assert_eq!(Screen::try_from(value.token()), Ok(value));
