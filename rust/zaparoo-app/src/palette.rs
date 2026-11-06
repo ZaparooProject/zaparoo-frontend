@@ -267,8 +267,77 @@ pub fn ids() -> impl Iterator<Item = &'static str> {
     CATALOG.iter().map(|(id, _)| *id)
 }
 
-/// The id actually used: an unknown id falls back to the default preset.
+/// The id prefix of a scheme the user wrote in `frontend.toml`'s
+/// `[[themes]]`: `custom:<name>`.
+pub const CUSTOM_PREFIX: &str = "custom:";
+
+/// The user's schemes, as `(id, colors)`, in file order.
+static CUSTOM: std::sync::RwLock<Vec<(&'static str, Source)>> = std::sync::RwLock::new(Vec::new());
+
+/// One user scheme: its name and three `#rrggbb` colors, used exactly as
+/// written (the text color is not clamped against the background).
+#[derive(Debug, Clone, Copy)]
+pub struct CustomTheme<'a> {
+    pub name: &'a str,
+    pub primary: &'a str,
+    pub accent: &'a str,
+    pub text: &'a str,
+}
+
+/// Register the user's schemes. Called once at startup with the parsed
+/// `[[themes]]` entries; the strings live for the process, so they are
+/// leaked once here rather than carried as owned values through every
+/// palette lookup.
+pub fn set_custom(themes: &[CustomTheme<'_>]) {
+    fn keep(value: String) -> &'static str {
+        Box::leak(value.into_boxed_str())
+    }
+    let entries = themes
+        .iter()
+        .map(|theme| {
+            (
+                keep(format!("{CUSTOM_PREFIX}{}", theme.name)),
+                Source {
+                    primary: keep(theme.primary.to_string()),
+                    accent: keep(theme.accent.to_string()),
+                    text: keep(theme.text.to_string()),
+                },
+            )
+        })
+        .collect();
+    *CUSTOM
+        .write()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = entries;
+}
+
+fn custom() -> Vec<(&'static str, Source)> {
+    CUSTOM
+        .read()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone()
+}
+
+/// Every scheme id in picker order: the presets, then the user's own.
+pub fn all_ids() -> Vec<&'static str> {
+    ids()
+        .chain(custom().into_iter().map(|(id, _)| id))
+        .collect()
+}
+
+/// A user scheme's display name, shown as written (never translated).
+pub fn custom_name(id: &str) -> Option<&str> {
+    id.strip_prefix(CUSTOM_PREFIX)
+}
+
+/// The id actually used: an unknown id, including a user scheme that is
+/// no longer in the file, falls back to the default preset.
 pub fn effective_id(id: &str) -> &'static str {
+    if id.starts_with(CUSTOM_PREFIX) {
+        if let Some((known, _)) = custom().into_iter().find(|(known, _)| *known == id) {
+            return known;
+        }
+        return DEFAULT_ID;
+    }
     CATALOG
         .iter()
         .map(|(known, _)| *known)
@@ -278,6 +347,9 @@ pub fn effective_id(id: &str) -> &'static str {
 
 fn source(id: &str) -> Source {
     let effective = effective_id(id);
+    if let Some((_, source)) = custom().into_iter().find(|(known, _)| *known == effective) {
+        return source;
+    }
     CATALOG
         .iter()
         .find(|(known, _)| *known == effective)
@@ -791,6 +863,8 @@ pub fn palette(id: &str, intensity_name: &str) -> Palette {
     let source = source(id);
     let primary = hex(source.primary);
     let text = hex(source.text);
+    // A user scheme's accent is clamped like a preset's; only its text is
+    // taken as written.
     let accent = clamp_accent(hex(source.accent), primary);
 
     // `up` is true when text is lighter than the background (a dark
@@ -940,5 +1014,25 @@ mod tests {
         assert_eq!(ids[0], "zaparoo-dark");
         assert_eq!(ids[1], "zaparoo-light");
         assert_eq!(ids[18], "solarized-light");
+    }
+
+    #[test]
+    fn a_user_scheme_derives_like_a_preset_and_falls_back_when_gone() {
+        set_custom(&[CustomTheme {
+            name: "Test Low",
+            primary: "#202020",
+            accent: "#ff00ff",
+            text: "#303030",
+        }]);
+        let id = "custom:Test Low";
+        assert_eq!(effective_id(id), id);
+        assert!(all_ids().contains(&id));
+        assert_eq!(custom_name(id), Some("Test Low"));
+        // Text is used exactly as written, however low its contrast.
+        let roles = palette(id, "subtle").roles();
+        let text = roles.iter().find(|(role, _)| *role == "textPrimary");
+        assert_eq!(text.map(|(_, v)| v.as_str()), Some("#303030"));
+        assert_eq!(effective_id("custom:Gone"), DEFAULT_ID);
+        set_custom(&[]);
     }
 }

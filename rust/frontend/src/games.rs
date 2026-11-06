@@ -2708,7 +2708,12 @@ fn page_cells(
 
 /// Replace this view's demand, including obsolete detail images. Other owners
 /// (Hub and modals) keep their independently enqueued requests.
-fn request_covers(ctx: &Ctx, model: &GamesModel, keys: Vec<MediaKey>) {
+fn request_covers(ctx: &Ctx, model: &GamesModel, mut keys: Vec<MediaKey>) {
+    // The focused game's background art rides the same cancellable
+    // demand, after the covers on screen.
+    if let Some(key) = background_game_key(model) {
+        keys.push(key);
+    }
     // Even a tiny thumbnail makes Core decode its original on a cold miss.
     // Fast navigation reuses prepared colors but starts no artwork work.
     ctx.media
@@ -2717,6 +2722,73 @@ fn request_covers(ctx: &Ctx, model: &GamesModel, keys: Vec<MediaKey>) {
         } else {
             keys
         });
+}
+
+/// The focused row's art for Game background when it is a game: exactly
+/// the chosen type, at a size the blur needs. Folders, decks and deck
+/// cards show their own art instead (`report_background`).
+fn background_game_key(model: &GamesModel) -> Option<MediaKey> {
+    let image_type = crate::background::game_type()?;
+    let row = model.current().filter(|row| row.wants_cover())?;
+    if shows_own_art(row) || !row.media_capable {
+        return None;
+    }
+    Some(MediaKey {
+        media_id: row.media_id,
+        system: row.system_or(&model.system_id).to_string(),
+        path: row.path.clone(),
+        folder: row.entry_type == EntryType::Directory,
+        max_size: crate::background::art_request_size(),
+        fit: zaparoo_app::covers::Fit::SOURCE,
+        image_type: Some(image_type.to_string()),
+    })
+}
+
+/// A folder, a deck or a deck card: its own art is its background,
+/// whatever the Game background type.
+fn shows_own_art(row: &GameRow) -> bool {
+    row.deck_entry.is_some()
+        || row.deck_item.as_ref().is_some_and(|item| item.card_art)
+        || (row.entry_type == EntryType::Directory && !row.media_capable)
+}
+
+/// Tell the background what the focused row puts behind the screen.
+fn report_background(ctx: &Ctx, model: &GamesModel, art_tier: CoverSize) {
+    use crate::background::Focus;
+    if crate::background::game_type().is_none() {
+        return;
+    }
+    if model.rapid.active {
+        crate::background::focus(Focus::Moving);
+        return;
+    }
+    let key = model
+        .current()
+        .filter(|row| row.wants_cover())
+        .and_then(|row| {
+            if shows_own_art(row) {
+                Some(media_key(row, &model.system_id, art_tier))
+            } else {
+                background_game_key(model)
+            }
+        });
+    let Some(key) = key else {
+        crate::background::focus(Focus::None);
+        return;
+    };
+    let id = {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        key.hash(&mut hasher);
+        hasher.finish()
+    };
+    if let Some(image) = ctx.media.get(&key) {
+        crate::background::focus(Focus::Art(id, image.buffer));
+    } else if ctx.media.is_negative(&key) {
+        crate::background::focus(Focus::None);
+    } else {
+        crate::background::focus(Focus::Waiting(id));
+    }
 }
 
 /// The cover keys around the visible window, in fetch priority order.
@@ -3209,6 +3281,7 @@ pub fn render(ctx: &Ctx, app: &App) {
         );
         (first_visible, window, tier)
     };
+    report_background(ctx, model, art_tier);
     if matches!(
         app.global::<crate::Shell>().get_active_screen(),
         crate::Screen::Games
@@ -3386,6 +3459,7 @@ pub fn covers_landed(ctx: &Ctx, app: &App, keys: &[MediaKey]) {
             let key = media_key(row, &model.system_id, tier);
             keys.contains(&key)
                 || (list && keys.contains(&detail_key(ctx, model, row, tier)))
+                || background_game_key(model).is_some_and(|bg| keys.contains(&bg))
                 || (!list
                     && row.has_cover
                     && row.cover_color.is_none()

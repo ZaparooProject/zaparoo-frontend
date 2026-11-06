@@ -45,6 +45,17 @@ pub fn motion_enabled(reduce_motion: bool, embedded: bool, crt: bool, height: u3
     !(reduce_motion || embedded && !crt && height >= 1080)
 }
 
+/// How long a new background fades in over the old one. The software
+/// renderer would repaint the whole screen every frame of it, so there the
+/// background cuts; so it does under Reduce motion.
+pub const fn background_crossfade(embedded: bool, reduce_motion: bool) -> std::time::Duration {
+    if embedded || reduce_motion {
+        std::time::Duration::ZERO
+    } else {
+        std::time::Duration::from_millis(250)
+    }
+}
+
 /// Whether Slint fades cover art in on grid tiles. On the software renderer
 /// a page of covers fading together repaints most of the grid every frame,
 /// so there the presenter does the fade instead (`frame_transition::

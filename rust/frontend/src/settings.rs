@@ -69,6 +69,7 @@ pub(crate) fn inputs(ctx: &Ctx) -> rules::Inputs {
         ra_logged_in,
         ra_installed,
         ra_conflict,
+        background_active,
     ) = {
         let shared = lock(&ctx.shared);
         let (installed, conflicts) = ra_state(&shared);
@@ -79,9 +80,11 @@ pub(crate) fn inputs(ctx: &Ctx) -> rules::Inputs {
             shared.ra.cfg.logged_in(),
             installed,
             !conflicts.is_empty(),
+            crate::background::Settings::from_state(&shared.persist.settings).active(),
         )
     };
     rules::Inputs {
+        background_active,
         launcher_preference,
         retro_achievements: crate::retro_achievements::available(),
         ra_logged_in,
@@ -116,6 +119,11 @@ fn current_value(ctx: &Ctx, id: &str) -> String {
         "colorIntensity" => s.color_intensity.clone(),
         "mediaImageType" => s.media_image_type.clone(),
         "listLeftRight" => s.list_left_right.clone(),
+        "gameBackground" => s.game_background.clone(),
+        "backgroundListStyle" => s.background_list_style.clone(),
+        "backgroundBlur" => s.background_blur.to_string(),
+        "backgroundDim" => s.background_dim.to_string(),
+        "backgroundImage" => s.background_image.clone(),
         "language" => s.language.clone(),
         "region" => s.region.clone(),
         "clockFormat" => s.clock_format.clone(),
@@ -144,6 +152,16 @@ fn value_name(ctx: &Ctx, id: &str) -> SharedString {
         "onlineStatus" => shared.online.device_name.clone().unwrap_or_default().into(),
         "raAccount" => shared.ra.cfg.username.as_str().into(),
         "raConflict" => ra_state(&shared).1.join(", ").into(),
+        // A user scheme and a chosen image are named as written.
+        "colorScheme" => {
+            let id = zaparoo_app::palette::effective_id(&shared.persist.settings.color_scheme);
+            zaparoo_app::palette::custom_name(id)
+                .unwrap_or_default()
+                .into()
+        }
+        "backgroundImage" => {
+            crate::background::setting_name(&shared.persist.settings.background_image).into()
+        }
         _ => SharedString::default(),
     }
 }
@@ -207,9 +225,71 @@ fn options(ctx: &Ctx, id: &str) -> Vec<String> {
             let output = None;
             crate::display::resolution_options(output)
         }
-        "colorScheme" => zaparoo_app::palette::ids().map(str::to_string).collect(),
+        "colorScheme" => zaparoo_app::palette::all_ids()
+            .into_iter()
+            .map(str::to_string)
+            .collect(),
         _ => Vec::new(),
     }
+}
+
+/// The value a slider or the background image row shows.
+fn fill_value(ctx: &Ctx, out: &mut SettingsRow, id: &str) {
+    match out.control {
+        crate::ControlKind::Slider => {
+            let value = current_value(ctx, id);
+            (out.cells, out.lit) = slider_cells(id, value.parse().unwrap_or(0));
+            out.value = SharedString::from(value.as_str());
+        }
+        _ if id == "backgroundImage" => {
+            out.value = SharedString::from(current_value(ctx, id).as_str());
+            out.value_name = value_name(ctx, id);
+        }
+        _ => {}
+    }
+}
+
+/// A slider row's cells and how many are lit.
+fn slider_cells(id: &str, value: i32) -> (i32, i32) {
+    use zaparoo_app::background::{blur_cells, dim_cells};
+    match id {
+        "backgroundDim" => dim_cells(value),
+        _ => blur_cells(value),
+    }
+}
+
+/// Step a slider row and show the result at once.
+fn step_slider(ctx: &Ctx, app: &App, id: &str, direction: i32) {
+    {
+        let mut shared = lock(&ctx.shared);
+        let s = &mut shared.persist.settings;
+        match id {
+            "backgroundBlur" => {
+                s.background_blur =
+                    zaparoo_app::background::step_blur(s.background_blur, direction);
+            }
+            "backgroundDim" => {
+                s.background_dim = zaparoo_app::background::step_dim(s.background_dim, direction);
+            }
+            _ => return,
+        }
+    }
+    save(ctx, app);
+    apply_background(ctx);
+    refresh(ctx, app);
+}
+
+/// Hand the background its settings as they now stand.
+pub(crate) fn apply_background(ctx: &Ctx) {
+    let settings = crate::background::Settings::from_state(&lock(&ctx.shared).persist.settings);
+    crate::background::apply_settings(settings);
+}
+
+/// Set the background image (empty for none), from the picker.
+pub(crate) fn set_background_image(ctx: &Ctx, app: &App, path: &str) {
+    lock(&ctx.shared).persist.settings.background_image = path.to_string();
+    save(ctx, app);
+    apply_background(ctx);
 }
 
 // ---------- Rendering ----------
@@ -331,7 +411,7 @@ fn rows(ctx: &Ctx, app: &App, page: crate::SettingsPage) -> Vec<SettingsRow> {
                                 out.enabled = !pending;
                             }
                         }
-                        Control::Navigate => {}
+                        Control::Navigate | Control::Slider => fill_value(ctx, &mut out, id),
                         Control::TriToggle => {
                             out.value = SharedString::from(tri_toggle_value(ctx, id));
                         }
@@ -740,12 +820,20 @@ fn dispatch(ctx: &Ctx, app: &App, action: &str) {
             view.set_index(i32::try_from(next).unwrap_or(0));
             render(ctx, app);
         }
-        // Left and Right flip a toggle in place; pickers open their list,
-        // so a long option list never has to be cycled blind.
+        // Left and Right flip a toggle in place and step a slider; pickers
+        // open their list, so a long option list never has to be cycled
+        // blind.
         actions::LEFT | actions::RIGHT => {
             if let Some(Row::Field { id, control }) = rows.get(index) {
-                if *control == Control::Toggle && !blocked(ctx, id) {
-                    toggle(ctx, app, id);
+                if blocked(ctx, id) {
+                    return;
+                }
+                match control {
+                    Control::Toggle => toggle(ctx, app, id),
+                    Control::Slider => {
+                        step_slider(ctx, app, id, if action == actions::LEFT { -1 } else { 1 });
+                    }
+                    _ => {}
                 }
             }
         }
@@ -809,8 +897,9 @@ fn accept(ctx: &Ctx, app: &App, id: &str, control: Control) {
         Control::Toggle => toggle(ctx, app, id),
         Control::TriToggle => crate::online::toggle_all_features(ctx, app),
         Control::Picker => open_picker(ctx, app, id),
-        Control::Info => {}
+        Control::Info | Control::Slider => {}
         Control::Navigate | Control::Action => match id {
+            "backgroundImage" => crate::file_browser::open_background(ctx, app),
             "aboutLicense" => crate::router::enter_about(ctx, app, EntryMode::Fresh),
             "documentation" => crate::router::open_documentation_qr(app),
             "uploadLog" => crate::log_upload::open(ctx, app),
@@ -942,6 +1031,10 @@ fn toggle(ctx: &Ctx, app: &App, id: &str) {
         "showOriginalFilenames" | "showTags" => crate::games::reproject(ctx, app),
         "reduceMotion" => {
             app.global::<crate::Shell>().set_reduce_motion(value);
+            crate::background::set_crossfade(crate::display::background_crossfade(
+                ctx.is_mister,
+                value,
+            ));
             let scene = crate::router::output_scene(app);
             app.global::<crate::Motion>()
                 .set_enabled(crate::display::motion_enabled(
@@ -987,7 +1080,14 @@ fn open_picker(ctx: &Ctx, app: &App, id: &str) {
             role: crate::MenuRole::default(),
             detail_key: SharedString::default(),
             id: SharedString::from(value.as_str()),
-            label: SharedString::default(),
+            // A user color scheme is named as written; every other value
+            // is translated by the view.
+            label: SharedString::from(
+                (id == "colorScheme")
+                    .then(|| zaparoo_app::palette::custom_name(value))
+                    .flatten()
+                    .unwrap_or_default(),
+            ),
             label_key: SharedString::default(),
             enabled: true,
             reason_key: SharedString::default(),
@@ -1052,6 +1152,8 @@ pub fn picker_selected(ctx: &Ctx, app: &App, id: &str, value: &str) {
             "region" => s.region = value.to_string(),
             "clockFormat" => s.clock_format = value.to_string(),
             "buttonLayout" => s.button_layout = value.to_string(),
+            "gameBackground" => s.game_background = value.to_string(),
+            "backgroundListStyle" => s.background_list_style = value.to_string(),
             _ => return,
         }
     }
@@ -1096,6 +1198,8 @@ fn apply(ctx: &Ctx, app: &App, id: &str, value: &str) {
             ctx.logos.set_tints(rest, focus);
             crate::systems::reproject(ctx, app);
             crate::router::reproject_hub(ctx, app);
+            // The background dims toward the scheme's ground.
+            crate::background::ground_changed(app);
         }
         "mediaImageType" => {
             // Every cached cover and every recorded cold-boot path is the
@@ -1107,6 +1211,11 @@ fn apply(ctx: &Ctx, app: &App, id: &str, value: &str) {
             crate::games::reproject(ctx, app);
         }
         "screensaverTimeout" => crate::router::reset_idle(ctx, app),
+        "gameBackground" | "backgroundListStyle" => {
+            apply_background(ctx);
+            // The rows that only shape an image come and go with it.
+            reseat_to(ctx, app, id);
+        }
         "listLeftRight" => crate::games::reproject(ctx, app),
         "systemsLayout" => {
             app.global::<crate::Shell>()
@@ -1147,6 +1256,11 @@ pub(crate) fn mirror_of(s: &persist::SettingsState) -> zaparoo_core::config::Set
         reduce_motion: s.reduce_motion,
         show_menu_row: s.show_menu_row,
         show_help_bar: s.show_help_bar,
+        background_image: &s.background_image,
+        game_background: &s.game_background,
+        background_blur: s.background_blur,
+        background_dim: s.background_dim,
+        background_list_style: &s.background_list_style,
         debug_logging: s.debug_logging,
         screensaver_timeout: &s.screensaver_timeout,
         media_image_type: &s.media_image_type,

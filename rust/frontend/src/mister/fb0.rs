@@ -321,7 +321,13 @@ impl Presenter for Fb0Presenter {
         }
         self.fades
             .before_render(&self.buffer, stride, height, self.slide.is_active());
-        let region = renderer.render(self.buffer.as_mut_slice(), stride);
+        let region = super::transition::render_with_backdrop(
+            renderer,
+            &mut self.slide,
+            self.buffer.as_mut_slice(),
+            stride,
+            height,
+        );
         self.fades.rendered(&self.buffer, &region);
         let fading = self.fades.step().to_vec();
         let slide_step = self.slide.compose(&self.buffer, stride, height);

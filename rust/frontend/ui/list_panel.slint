@@ -15,7 +15,7 @@
 import { Theme, Sizing, Motion } from "theme.slint";
 import { GlyphSource, ScrollCue, Divider } from "chrome.slint";
 import { ScrollOffset, SelectionCursor, SelectionClip } from "focus.slint";
-import { ToggleSwitch } from "settings.slint";
+import { ToggleSwitch, SegmentedTrack } from "settings.slint";
 import { MenuRole } from "state_types.slint";
 
 // Every list panel's width: wide enough for a name and its value side by
@@ -142,25 +142,15 @@ export component ListRowBody inherits Rectangle {
             Math.max(1px, self.width), root.role == MenuRole.chosen ? root.ink : root.ink-muted);
         image-rendering: Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
     }
-    if root.slider: Rectangle {
+    if root.slider: SegmentedTrack {
         x: root.control-x;
         y: Sizing.snap((root.height - root.cell-h) / 2);
-        width: root.track-w;
-        height: root.cell-h;
-        for n in 10: Rectangle {
-            property <bool> lit: root.level > n * 10 || (n == 0 && root.level > 0);
-            property <color> ink: root.selected ? Theme.on-accent : Theme.accent;
-            x: n * (root.cell-w + root.cell-gap);
-            width: root.cell-w;
-            height: root.cell-h;
-            border-radius: Sizing.radius-sm;
-            // A lit cell is solid and an unlit one is an outline, so the
-            // level reads by shape on any fill, selected or not, not by
-            // two colors that can sit close together.
-            background: self.lit ? self.ink : transparent;
-            border-width: Sizing.stroke(1);
-            border-color: self.lit ? self.ink : (root.selected ? Theme.on-accent : Theme.text-label);
-        }
+        cells: 10;
+        // Any volume above a step's start lights that step.
+        lit: Math.ceil(root.level / 10);
+        cell-w: root.cell-w;
+        cell-h: root.cell-h;
+        selected: root.selected;
     }
     if root.toggle: ToggleSwitch {
         x: root.control-x;

@@ -28,6 +28,7 @@ pub mod video_mode;
 
 pub use platform::{install_platform, set_orientation, ResolutionPolicy};
 pub use service::ensure_core_running;
+pub(crate) use transition::{set_background, set_cutout, set_ground, to_rgb565, Cutout, Published};
 pub use tty::TtyGuard;
 
 /// `Motion.page-ms` at 60 Hz.

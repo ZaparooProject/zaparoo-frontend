@@ -9,7 +9,7 @@
 // with the same bindings, so the two cannot drift apart. The driver is
 // `src/file_browser.rs` and the rules are `zaparoo_app::file_browser`.
 
-import { Theme, Sizing, Layout } from "theme.slint";
+import { Theme, Backdrop, GlassCard, Sizing, Layout } from "theme.slint";
 import { TopStatusStrip, ActiveLabel, StateCue, FooterIndicator, FastScrollRail } from "chrome.slint";
 import { GridCell, PagedGridView, PageStrip } from "tiles.slint";
 import { BrowseList } from "browse_list.slint";
@@ -170,12 +170,23 @@ export component FileBrowserScreen inherits Rectangle {
         }
     }
 
+    // Reported while the rows load too, so the darker area stays put.
+    GlassCard {
+        shown: root.list-layout;
+        x: FileBrowserView.list-x;
+        y: FileBrowserView.list-y;
+        width: FileBrowserView.list-width;
+        height: FileBrowserView.list-height;
+        radius: Layout.card-radius;
+    }
+
     if root.list-layout && !root.gate-hide: BrowseList {
         x: FileBrowserView.list-x;
         y: FileBrowserView.list-y;
         width: FileBrowserView.list-width;
         height: FileBrowserView.list-height;
         show-chrome: true;
+        glass: Backdrop.glass;
         rows: FileBrowserView.list-rows;
         model-top: FileBrowserView.list-view-top;
         glide: FileBrowserView.list-glide;

@@ -34,6 +34,9 @@ export struct SettingsRow {
     // Setup scope/source rows keep their discriminant separate from text.
     scope-kind: ScopeKind,
     value-name: string,
+    // A slider's cells, and how many of them are lit.
+    cells: int,
+    lit: int,
 }
 
 // The Settings string table: labels, the hint line under the list, and
@@ -134,6 +137,7 @@ export global SettingsLabels {
         if (id == "remote") { return @tr("Remote"); }
         if (id == "launchers") { return @tr("Launchers"); }
         if (id == "retroAchievements") { return @tr("RetroAchievements"); }
+        if (id == "background") { return @tr("Background"); }
         // Appearance.
         if (id == "colorScheme") { return @tr("Color scheme"); }
         if (id == "colorIntensity") { return @tr("Color intensity"); }
@@ -142,6 +146,11 @@ export global SettingsLabels {
         if (id == "showHelpBar") { return @tr("Show button hints"); }
         if (id == "reduceMotion") { return @tr("Reduce motion"); }
         if (id == "screensaverTimeout") { return @tr("Screensaver"); }
+        if (id == "backgroundImage") { return @tr("Background image"); }
+        if (id == "gameBackground") { return @tr("Game background"); }
+        if (id == "backgroundBlur") { return @tr("Blur"); }
+        if (id == "backgroundDim") { return @tr("Dimming"); }
+        if (id == "backgroundListStyle") { return @tr("Card style"); }
         // Display.
         if (id == "resolution") { return @tr("Interface resolution"); }
         if (id == "interfaceProfile") { return @tr("Interface layout"); }
@@ -233,6 +242,11 @@ export global SettingsLabels {
         if (id == "showHelpBar") { return @tr("Shows button hints along the bottom. Off, screens use the space."); }
         if (id == "reduceMotion") { return @tr("Turns off animation throughout the interface."); }
         if (id == "screensaverTimeout") { return @tr("Sets idle time before the screensaver starts. Off disables it."); }
+        if (id == "backgroundImage") { return @tr("Shows an image, or a random one from a folder, behind screens."); }
+        if (id == "gameBackground") { return @tr("Shows the focused game's art behind game lists."); }
+        if (id == "backgroundBlur") { return @tr("Softens the background image."); }
+        if (id == "backgroundDim") { return @tr("Darkens the background so text stays readable."); }
+        if (id == "backgroundListStyle") { return @tr("Glass shows the background through the cards on each screen."); }
         if (id == "resolution") { return @tr("The resolution the interface renders at. Restarts the frontend."); }
         if (id == "interfaceProfile") { return @tr("Adjusts layout density for standard and handheld screens."); }
         if (id == "orientation") { return @tr("Rotates the interface for a sideways screen or tate cabinet."); }
@@ -306,6 +320,22 @@ export global SettingsLabels {
         if (id == "colorScheme") { return SettingsLabels.color-scheme(value); }
         if (id == "screensaverTimeout") { return SettingsLabels.screensaver(value); }
         if (id == "mediaImageType") { return SettingsLabels.artwork(value); }
+        if (id == "backgroundImage") { return @tr("None"); }
+        if (id == "gameBackground") {
+            if (value == "off") { return @tr("Off"); }
+            return Labels.image-type(value);
+        }
+        if (id == "backgroundBlur") { return @tr("{}%", value); }
+        if (id == "backgroundDim") {
+            if (value.to-float() <= -6) { return @tr("No dimming"); }
+            if (value.to-float() < 0) { return @tr("Lighter {}", -value.to-float()); }
+            if (value.to-float() > 0) { return @tr("Darker {}", value); }
+            return @tr("Readable");
+        }
+        if (id == "backgroundListStyle") {
+            if (value == "solid") { return @tr("Solid"); }
+            return @tr("Glass");
+        }
         if (id == "listLeftRight") {
             if (value == "image") { return @tr("Change image"); }
             return @tr("Change page");
@@ -461,6 +491,35 @@ export global SettingsLabels {
     }
 }
 
+// A stepped value as a row of cells, lit from the left: the Volume
+// page's slider, and Blur and Dimming on Settings. Each cell is a whole
+// number of pixels, so the fill moves a cell at a time and stays sharp. A
+// lit cell is solid and an unlit one an outline, so the level reads by
+// shape on any fill, selected or not. `selected` draws it in the
+// selection's colors, `ink` the color on the selection.
+export component SegmentedTrack inherits Rectangle {
+    in property <int> cells: 10;
+    in property <int> lit: 0;
+    in property <length> cell-w;
+    in property <length> cell-h;
+    in property <bool> selected: false;
+    in property <color> ink: Theme.on-accent;
+    property <length> cell-gap: Math.max(1px, Sizing.stroke(1));
+    width: root.cells * root.cell-w + Math.max(0, root.cells - 1) * root.cell-gap;
+    height: root.cell-h;
+    for n in root.cells: Rectangle {
+        property <bool> on: n < root.lit;
+        property <color> fill: root.selected ? root.ink : Theme.accent;
+        x: n * (root.cell-w + root.cell-gap);
+        width: root.cell-w;
+        height: root.cell-h;
+        border-radius: Sizing.radius-sm;
+        background: self.on ? self.fill : transparent;
+        border-width: Sizing.stroke(1);
+        border-color: self.on ? self.fill : (root.selected ? root.ink : Theme.text-label);
+    }
+}
+
 // One settings row: an inverse-video row carrying the label, then the
 // value, the toggle knob or the action label. The host draws it twice --
 // once resting and once with `focused` inside the list's `SelectionClip`
@@ -581,16 +640,32 @@ export component SettingsRowView inherits Rectangle {
             ? @tr("Linked as {}", root.entry.value-name)
             : (root.entry.id == "raAccount" && root.entry.value == "loggedIn" && root.entry.value-name != "")
                 ? @tr("Logged in as {}", root.entry.value-name)
-                : SettingsLabels.value(root.entry.id, root.entry.value);
+                // A user color scheme and a chosen background image show
+                // their own names, as written.
+                : ((root.entry.id == "colorScheme" || root.entry.id == "backgroundImage") && root.entry.value-name != "")
+                    ? root.entry.value-name
+                    : SettingsLabels.value(root.entry.id, root.entry.value);
 
     // An info row only reports: its value sits flush right in the label
     // color, with no chevron, so it does not read as something to open.
     property <bool> is-info: root.entry.control == ControlKind.info;
 
-    if root.entry.control == ControlKind.picker || root.is-info: Text {
+    // The background image row is a navigation that still names its pick.
+    property <bool> shows-value: root.entry.control == ControlKind.picker || root.is-info
+        || root.is-slider || root.entry.id == "backgroundImage";
+    property <bool> is-slider: root.entry.control == ControlKind.slider;
+    // The slider's cells: the Volume page's cell size, from the same
+    // share of the row, so the two sliders match.
+    property <length> cell-w: Math.max(2px, Math.floor((root.width * 0.3 - 9 * Math.max(1px, Sizing.stroke(1))) / 10 / 1px) * 1px);
+    property <length> cell-h: Sizing.pct-h(2.6);
+    property <length> track-w: track.width;
+
+    if root.shows-value: Text {
         x: root.is-info
             ? parent.width - self.width - root.pad
-            : parent.width - self.width - root.pad - chevron.width - Sizing.pct-w(1);
+            : root.is-slider
+                ? parent.width - self.width - root.pad - root.track-w - Sizing.pct-w(2)
+                : parent.width - self.width - root.pad - chevron.width - Sizing.pct-w(1);
         y: Sizing.snap((parent.height - self.height) / 2);
         width: Math.min(self.preferred-width, Math.max(0px,
             chevron.x - Sizing.pct-w(2) - label.x - label.width - Sizing.pct-w(2)));
@@ -600,6 +675,19 @@ export component SettingsRowView inherits Rectangle {
             : (root.is-info || root.dim ? Theme.text-label : Theme.text-primary);
         font-size: Sizing.font-body;
         font-weight: root.content-weight;
+    }
+
+    // A slider's cells. Left and Right step it.
+    track := SegmentedTrack {
+        visible: root.is-slider;
+        x: parent.width - self.width - root.pad;
+        y: Sizing.snap((parent.height - self.height) / 2);
+        cells: root.entry.cells;
+        lit: root.entry.lit;
+        cell-w: root.cell-w;
+        cell-h: root.cell-h;
+        selected: root.focused;
+        ink: root.content-color;
     }
 
     // A toggle's knob rests left (off) or right (on). A tri-toggle adds the

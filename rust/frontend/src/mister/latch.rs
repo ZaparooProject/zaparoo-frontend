@@ -37,8 +37,9 @@ const MODE_ENABLE: u16 = 0x8000;
 /// scale renders jagged. Integer upscaling keeps nearest-neighbor sampling.
 const MODE_FILTER: u16 = 0x4000;
 const MODE_FMT_RGB565: u16 = 0x0014;
-/// Theme.bg (`#0f0f23`) encoded as RGB565 for the inter-page gap.
-const TRANSITION_BACKGROUND: Rgb565Pixel = Rgb565Pixel(0x0864);
+/// The default scheme's `bg-deep` (`#050608`) as RGB565, the inter-page gap
+/// until the frontend publishes the live ground.
+const TRANSITION_BACKGROUND: Rgb565Pixel = Rgb565Pixel(0x0021);
 
 struct SlotMappings {
     ptrs: [*mut u8; SLOT_COUNT],
@@ -596,7 +597,13 @@ impl Presenter for LatchPresenter {
             height,
             self.slide.is_active(),
         );
-        let region = renderer.render(&mut self.frame[..frame_len], width);
+        let region = super::transition::render_with_backdrop(
+            renderer,
+            &mut self.slide,
+            &mut self.frame[..frame_len],
+            width,
+            height,
+        );
         self.fades.rendered(&self.frame[..frame_len], &region);
 
         let origin = region.bounding_box_origin();

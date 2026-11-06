@@ -37,6 +37,9 @@ pub enum Purpose {
     /// Add item > Custom folder…: a live folder tile, placed on the Hub
     /// cell `target.hub_index`.
     HubFolder(HubTarget),
+    /// Settings > Appearance > Background image: an image, or a folder to
+    /// pick one from.
+    Background,
 }
 
 impl Purpose {
@@ -45,6 +48,7 @@ impl Purpose {
     fn for_mode(mode: Mode, target: HubTarget) -> Self {
         match mode {
             Mode::Folders => Self::HubFolder(target),
+            Mode::ImageOrFolder => Self::Background,
             Mode::Plain | Mode::Images => Self::HubIcon(target),
         }
     }
@@ -203,7 +207,7 @@ fn read_folder(dir: &str, mode: Mode) -> Result<(Vec<Row>, rules::Letters, Fill)
     let listing = rules::listing(raw, mode, rules::LIST_CAP);
     let mut letters = rules::letters(&listing.entries);
     let mut rows = Vec::new();
-    if mode == Mode::Folders {
+    if mode.picks_folder() {
         rows.push(Row {
             kind: RowKind::PickFolder,
             name: String::new(),
@@ -427,6 +431,31 @@ pub(crate) fn open_hub_folder(ctx: &Ctx, app: &App, hub_index: u32) {
     });
 }
 
+/// Settings > Appearance > Background image: images and folders, from the
+/// current image's folder or the custom folder.
+pub(crate) fn open_background(ctx: &Ctx, app: &App) {
+    let current = {
+        let mut shared = lock(&ctx.shared);
+        shared.file_browser = Model {
+            purpose: Some(Purpose::Background),
+            mode: Mode::ImageOrFolder,
+            ticket: shared.file_browser.ticket,
+            ..Model::default()
+        };
+        shared.persist.file_browser = FileBrowserState {
+            mode: Mode::ImageOrFolder.as_str().to_string(),
+            ..FileBrowserState::default()
+        };
+        shared.persist.settings.background_image.clone()
+    };
+    start(ctx, app, move |platform, custom_dir, mode| {
+        let dir = crate::background::picker_start(&current, Some(custom_dir.clone().into()))
+            .map(|dir| dir.to_string_lossy().into_owned())
+            .filter(|dir| is_dir(dir));
+        (read(platform, &custom_dir, dir, mode), Seat::Path(current))
+    });
+}
+
 /// Choose cover image… on a deck: images, from the custom folder.
 pub(crate) fn open_deck_cover(ctx: &Ctx, app: &App, deck_id: &str, source: crate::Screen) {
     {
@@ -464,7 +493,7 @@ pub(crate) fn restore(ctx: &Ctx, app: &App) {
     // A folder pick has no tile yet; its cell is only where the new one
     // lands. A deck's cover has no tile at all.
     if saved.deck_id.is_empty()
-        && mode != Mode::Folders
+        && !matches!(mode, Mode::Folders | Mode::ImageOrFolder)
         && crate::hub::edit_target_matching(ctx, app, &saved.target).is_none()
     {
         lock(&ctx.shared).persist.active_screen = crate::Screen::Hub.token().to_string();
@@ -574,7 +603,7 @@ fn grid_geometry(app: &App) -> crate::games::Geometry {
 /// Fit the grid to the scene: the games grid in images mode, a column of
 /// list rows otherwise.
 fn shape(ctx: &Ctx, app: &App) {
-    let (columns, rows) = if lock(&ctx.shared).file_browser.mode == Mode::Images {
+    let (columns, rows) = if lock(&ctx.shared).file_browser.mode.previews() {
         let geometry = grid_geometry(app);
         (
             usize::try_from(geometry.columns).unwrap_or(1),
@@ -603,7 +632,7 @@ fn list_visible(ctx: &Ctx, app: &App) -> usize {
 
 /// The words for a row the view cannot take as a name: a Place, and the
 /// count of entries left out.
-fn row_name(app: &App, row: &Row) -> String {
+fn row_name(app: &App, row: &Row, mode: Mode) -> String {
     let labels = app.global::<crate::Labels>();
     let place = |key: &str, name: &str| {
         labels
@@ -624,7 +653,14 @@ fn row_name(app: &App, row: &Row) -> String {
             .invoke_more_not_shown(i32::try_from(*n).unwrap_or(i32::MAX))
             .to_string(),
         RowKind::PickFolder => labels
-            .invoke_menu(SharedString::from("file_add_folder"), SharedString::new())
+            .invoke_menu(
+                SharedString::from(if mode == Mode::ImageOrFolder {
+                    "file_use_folder"
+                } else {
+                    "file_add_folder"
+                }),
+                SharedString::new(),
+            )
             .to_string(),
         RowKind::Folder | RowKind::File => row.name.clone(),
     }
@@ -632,7 +668,7 @@ fn row_name(app: &App, row: &Row) -> String {
 
 fn cell_for(app: &App, row: &Row, mode: Mode, art_size: u32) -> GridCell {
     let mut cell = GridCell {
-        name: SharedString::from(row_name(app, row)),
+        name: SharedString::from(row_name(app, row, mode)),
         disabled: matches!(row.kind, RowKind::More(_)),
         ..Default::default()
     };
@@ -652,7 +688,7 @@ fn cell_for(app: &App, row: &Row, mode: Mode, art_size: u32) -> GridCell {
                 cell.name = SharedString::from(format!("{}/", row.name));
             }
         }
-        RowKind::File if mode == Mode::Images => {
+        RowKind::File if mode.previews() => {
             // Prepared off the event loop, so it lands like a cover: faded
             // in where the tile is on screen.
             cell.fetched = true;
@@ -761,7 +797,9 @@ fn publish_grid(app: &App, view: &FileBrowserView<'_>, model: &Model) {
     view.set_has_pages_above(model.grid.has_pages_above());
     view.set_has_pages_below(model.grid.has_pages_below());
     view.set_label_name(SharedString::from(
-        focused.map(|row| row_name(app, row)).unwrap_or_default(),
+        focused
+            .map(|row| row_name(app, row, model.mode))
+            .unwrap_or_default(),
     ));
     view.set_list_rows(ModelRc::new(VecModel::from(Vec::<GridCell>::new())));
 }
@@ -775,7 +813,7 @@ pub(crate) fn render(ctx: &Ctx, app: &App) {
     let model = &shared_ref.file_browser;
     view.set_mode(match model.mode {
         Mode::Plain | Mode::Folders => crate::FileBrowserMode::Plain,
-        Mode::Images => crate::FileBrowserMode::Images,
+        Mode::Images | Mode::ImageOrFolder => crate::FileBrowserMode::Images,
     });
     view.set_places(model.dir.is_none());
     view.set_title(SharedString::from(
@@ -1034,6 +1072,16 @@ fn leave(ctx: &Ctx, app: &App) {
         Some(Purpose::DeckCover(_, crate::Screen::Deck)) => {
             crate::games::enter_deck(ctx, app, crate::navigation::EntryMode::Restore);
         }
+        Some(Purpose::Background) => {
+            lock(&ctx.shared).persist.active_screen = "settings".to_string();
+            crate::router::save_persist(&ctx.shared);
+            crate::settings::show_return(
+                ctx,
+                app,
+                crate::SettingsPage::Appearance,
+                "backgroundImage",
+            );
+        }
         Some(Purpose::HubFolder(_) | Purpose::DeckCover(..)) | None => {
             crate::router::return_to_hub(ctx, app);
         }
@@ -1052,6 +1100,7 @@ fn pick(ctx: &Ctx, app: &App, path: &str) {
             crate::hub::add_live_folder(ctx, app, target.hub_index, path);
             return;
         }
+        Some(Purpose::Background) => crate::settings::set_background_image(ctx, app, path),
         Some(Purpose::DeckCover(deck_id, _)) => crate::decks::set_cover(
             ctx,
             app,
@@ -1076,12 +1125,12 @@ fn back(ctx: &Ctx, app: &App) {
         )
     };
     let Some(dir) = dir else {
-        let folder_pick = matches!(
-            lock(&ctx.shared).file_browser.purpose,
-            Some(Purpose::HubFolder(_))
-        );
+        let purpose = lock(&ctx.shared).file_browser.purpose.clone();
+        let folder_pick = matches!(purpose, Some(Purpose::HubFolder(_)));
         leave(ctx, app);
-        if folder_pick {
+        if matches!(purpose, Some(Purpose::Background)) {
+            // `leave` has already gone back to Settings.
+        } else if folder_pick {
             crate::hub::open_add_picker(ctx, app);
         } else {
             crate::router::return_to_menu(ctx, app, zaparoo_app::options_menu::Opens::IconBrowser);
@@ -1155,6 +1204,7 @@ fn open_menu(ctx: &Ctx, app: &App) {
     let purpose = lock(&ctx.shared).file_browser.purpose.clone();
     let entries = match purpose {
         Some(Purpose::HubIcon(_)) => vec![crate::router::menu_row("file_default_icon")],
+        Some(Purpose::Background) => vec![crate::router::menu_row("file_no_background")],
         Some(Purpose::HubFolder(_) | Purpose::DeckCover(..)) | None => return,
     };
     crate::router::present_file_browser_menu(ctx, app, entries);
@@ -1162,6 +1212,12 @@ fn open_menu(ctx: &Ctx, app: &App) {
 
 /// A row of the browser's Menu list.
 pub(crate) fn menu_accept(ctx: &Ctx, app: &App, id: &str) {
+    if id == "file_no_background" {
+        crate::settings::set_background_image(ctx, app, "");
+        crate::router::forget_menu_return(ctx);
+        leave(ctx, app);
+        return;
+    }
     if id == "file_default_icon" {
         let purpose = lock(&ctx.shared).file_browser.purpose.clone();
         if let Some(Purpose::HubIcon(target)) = purpose {
@@ -1283,7 +1339,7 @@ fn point_at(ctx: &Ctx, app: &App, local: i32) -> bool {
         usize::try_from(app.global::<FileBrowserView>().get_list_view_top()).unwrap_or(0);
     let mut shared = lock(&ctx.shared);
     let model = &mut shared.file_browser;
-    let first = if model.mode == Mode::Images {
+    let first = if model.mode.previews() {
         model.grid.current_page() * model.grid.page_size()
     } else {
         list_base

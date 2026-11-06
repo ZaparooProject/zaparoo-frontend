@@ -577,7 +577,13 @@ impl Presenter for DdrPresenter {
         // Render to cached RAM, then convert-copy what changed into the
         // slot. The window lands at (inset_h, inset_v) in the raster; the
         // strip it vacates was blacked at open() and is never touched.
-        let region = renderer.render(self.buffer.as_mut_slice(), win_w);
+        let region = super::transition::render_with_backdrop(
+            renderer,
+            &mut self.slide,
+            self.buffer.as_mut_slice(),
+            win_w,
+            win_h,
+        );
         self.fades.rendered(&self.buffer, &region);
         let origin = region.bounding_box_origin();
         let size = region.bounding_box_size();

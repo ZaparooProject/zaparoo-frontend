@@ -74,6 +74,71 @@ export global Theme {
     }
 }
 
+// The screen background, prepared by Rust (`background.rs`) into one
+// opaque bitmap the size of the window: blur, dimming, the help bar's
+// darker band and the glass list card are already in its pixels, so the
+// view only ever copies it 1:1. With no image the window's own `bg-deep`
+// fill shows.
+export global Backdrop {
+    // An image is showing.
+    in property <bool> on: false;
+    in property <image> image;
+    // The GPU build's crossfade: `next` fades in over `image`, then Rust
+    // makes it the image and drops `fade`.
+    in property <image> next;
+    in property <bool> fade: false;
+    in property <duration> fade-ms: 0ms;
+    // The MiSTer presenter fills the window from the bitmap itself, a plain
+    // copy per dirty row; the view then draws no `Image` of its own.
+    in property <bool> host-painted: false;
+    // The screen's main card is glass: the card paints only its border,
+    // and the same image at the card's darkness shows inside it.
+    in property <bool> glass: false;
+    // That card-darkness image, and its crossfade partner.
+    in property <image> card-image;
+    in property <image> card-next;
+    // Where the screen's main card sits, set by its `GlassCard` and
+    // cleared by Rust for a screen with none. The view draws `card-image`
+    // here at once; the MiSTer presenter fills it from Rust's copy.
+    in-out property <bool> card-shown: false;
+    in-out property <length> card-x;
+    in-out property <length> card-y;
+    in-out property <length> card-w;
+    in-out property <length> card-h;
+    in-out property <length> card-radius;
+    // The same report for Rust: shown, x, y, width, height and corner
+    // radius. And the help bar's top, baked into the image.
+    callback card-moved(bool, length, length, length, length, length);
+    callback bar-moved(length);
+}
+
+// Reports where a screen's main card sits, so a glass background shows
+// its card-darkness image there.
+// Place it over the card (it paints nothing); `shown` false while the
+// screen shows no card. One per screen.
+export component GlassCard inherits Rectangle {
+    in property <bool> shown: true;
+    in property <length> radius: 0px;
+    property <length> left: self.absolute-position.x;
+    property <length> top: self.absolute-position.y;
+    function report() {
+        Backdrop.card-shown = root.shown;
+        Backdrop.card-x = root.left;
+        Backdrop.card-y = root.top;
+        Backdrop.card-w = root.width;
+        Backdrop.card-h = root.height;
+        Backdrop.card-radius = root.radius;
+        Backdrop.card-moved(root.shown, root.left, root.top, root.width, root.height, root.radius);
+    }
+    init => { root.report(); }
+    changed shown => { root.report(); }
+    changed left => { root.report(); }
+    changed top => { root.report(); }
+    changed width => { root.report(); }
+    changed height => { root.report(); }
+    changed radius => { root.report(); }
+}
+
 // The shared animation durations, collapsed to zero under Reduce motion
 // (Rust pushes `enabled` from the persisted setting).
 export global Motion {

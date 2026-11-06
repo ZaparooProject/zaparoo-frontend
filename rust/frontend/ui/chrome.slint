@@ -9,7 +9,7 @@
 // geometry value comes from the Sizing and Layout globals Rust pushes, so
 // these components carry almost no percentages of their own.
 
-import { Theme, Sizing, Motion, Layout } from "theme.slint";
+import { Theme, Sizing, Motion, Layout, Backdrop } from "theme.slint";
 import { ContentState, StatusKind } from "state_types.slint";
 
 // Glyph provider implemented in Rust: the SVG sources under
@@ -995,7 +995,8 @@ export component HelpBar inherits Rectangle {
         y: 0;
         width: parent.width + 2 * root.bleed;
         height: parent.height + root.bleed;
-        background: Theme.bg-bar;
+        // Over a background image the bar's darker band is in the image.
+        background: Backdrop.on ? transparent : Theme.bg-bar;
     }
     Rectangle {
         x: -root.bleed;

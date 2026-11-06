@@ -1095,6 +1095,7 @@ pub(crate) fn transition_to_screen(app: &App, target: crate::Screen, _direction:
     let motion = app.global::<crate::Motion>();
     motion.set_epoch(motion.get_epoch().wrapping_add(1));
     app.global::<crate::Shell>().set_active_screen(target);
+    crate::background::screen_changed(target);
     refresh_layout(app);
     finish_restore(app);
 }
@@ -1155,7 +1156,14 @@ pub(crate) fn finish_restore(app: &App) {
     if !shell.get_boot_curtain() {
         return;
     }
+    // The user's background image is still being prepared: it lifts the
+    // curtain itself when it lands (or gives up), so the restored screen
+    // and its background appear together.
+    if crate::background::holds_curtain() {
+        return;
+    }
     shell.set_boot_curtain(false);
+    crate::background::curtain_lifted();
     RESTORE_SEQ.with(|seq| seq.set(seq.get().wrapping_add(1)));
     // Deferred a turn: a commit can come from deep inside a driver, and
     // the work that waited for it takes the shared state itself.
