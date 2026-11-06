@@ -1,0 +1,17 @@
+Simple Icons Attribution
+========================
+
+This software bundles brand marks from Simple Icons as system logos:
+
+  resources/images/systems/GearVR.svg    (Simple Icons "Samsung")
+  resources/images/systems/SteamVR.svg   (Simple Icons "Steam")
+
+  Source: https://simpleicons.org/
+          https://github.com/simple-icons/simple-icons
+  License: CC0 1.0 Universal
+           https://creativecommons.org/publicdomain/zero/1.0/
+
+The files were cropped to their artwork. The marks themselves remain
+trademarks of their respective owners (Samsung, Valve). They are included on
+a nominative-use basis to identify the platforms whose content the frontend
+organizes; no endorsement or affiliation is implied or claimed.

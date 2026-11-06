@@ -17,6 +17,22 @@ full-color system PNGs are restored from earlier bundled assets and regional
   Mirror copyright (c) 2023 #TheDayG0ne and PRO100BYTE Team
   Licensed under the MIT License.
 
+Later additions take both the black-and-white SVG and, where the set has
+one, the matching "Dark - Color" PNG. Some systems show a maker's mark from
+the set because no mark of their own exists: the Irem, Jaleco, Namco and
+Taito marks for those makers' arcade boards, Acorn for the Atom, and
+"PC Games" for PC. Modified files:
+
+  resources/images/systems/CBMII.svg         Commodore mark cropped from
+                                             the Commodore PET logo
+  resources/images/systems/QL.svg            Sinclair mark cropped from the
+                                             Sinclair ZX81 logo
+  resources/images/systems/SegaSystem18.svg  Sega System 16 logo with the
+                                             "6" redrawn as an "8"
+  resources/images/systems/NESMusic.svg,
+  resources/images/systems/SNESMusic.svg     the bundled NES and SNES logos
+                                             with a Lucide music note added
+
 The MIT license covers the redrawing and compilation work. The platform
 names and logos themselves remain trademarks of their respective owners
 (Nintendo, Sega, Sony, Microsoft, Atari, Commodore, Apple, etc.). They are

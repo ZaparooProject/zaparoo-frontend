@@ -2,8 +2,8 @@ Lucide Attribution
 ==================
 
 This software bundles UI glyphs under resources/images/icons/,
-resources/images/status/, and resources/images/categories/ derived
-from:
+resources/images/status/, resources/images/categories/, and
+resources/images/systems/ derived from:
 
   Lucide
   https://lucide.dev/
@@ -38,6 +38,35 @@ attribute on the SVG root):
   resources/images/icons/Trophy.svg
   resources/images/status/NFC.svg
   resources/images/categories/Other.svg
+
+System logos drawn from Lucide icons (icon name in parentheses), for
+systems that are media types or generic groups rather than platforms:
+
+  resources/images/systems/Application.svg (app-window)
+  resources/images/systems/Audio.svg (headphones)
+  resources/images/systems/Audiobook.svg (book-headphones)
+  resources/images/systems/BluRayPlayer.svg (disc-3)
+  resources/images/systems/DVDPlayer.svg (disc)
+  resources/images/systems/DevErr.svg (bug)
+  resources/images/systems/Image.svg (image)
+  resources/images/systems/LegacyComputer.svg (monitor)
+  resources/images/systems/LegacyMobileDevice.svg (smartphone)
+  resources/images/systems/Movie.svg (clapperboard)
+  resources/images/systems/MusicAlbum.svg (disc-album)
+  resources/images/systems/MusicArtist.svg (mic-vocal)
+  resources/images/systems/MusicTrack.svg (eighth-notes)
+  resources/images/systems/MusicVideo.svg (monitor-play)
+  resources/images/systems/PlugNPlay.svg (gamepad-2)
+  resources/images/systems/PodcastEpisode.svg (mic)
+  resources/images/systems/PodcastSeries.svg (radio)
+  resources/images/systems/Script.svg (square-terminal)
+  resources/images/systems/TVEpisode.svg (tv-minimal-play)
+  resources/images/systems/TVSeason.svg (tv-minimal)
+  resources/images/systems/TVShow.svg (tv)
+  resources/images/systems/Video.svg (film)
+  resources/images/systems/WebBrowser.svg (globe)
+  resources/images/systems/NESMusic.svg (eighth-notes, composited)
+  resources/images/systems/SNESMusic.svg (eighth-notes, composited)
 
 The ISC license text from the upstream project follows.
 

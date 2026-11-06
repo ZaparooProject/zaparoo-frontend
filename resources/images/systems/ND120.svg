@@ -1,0 +1,29 @@
+<!DOCTYPE svg  PUBLIC '-//W3C//DTD SVG 1.1//EN'  'http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd'>
+<svg width="1024" height="451" version="1.1" viewBox="-2.292 -2.292 183.804 80.984" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+ <defs>
+  <clipPath id="g">
+   <path d="m-1-0.438v77.2h29.8v-29.2h9.91v9.62h9.78v9.66h9.75v9.91h102v-9.97h9.78v-9.56h10.4v-38.4h-10.4v-9.56h-9.69v-9.78h-102v29h-9.84v-9.66h-9.72v-9.59h-9.72v-9.78h-29.8zm122 29h29.3v19.2h-29.3v-19.2z"/>
+  </clipPath>
+ </defs>
+ <g clip-path="url(#g)">
+  <g id="c">
+   <g id="d">
+    <g id="a">
+     <g id="e">
+      <g id="f">
+       <circle id="h" cx="4.5" cy="4.5" r="4.5"/>
+       <use transform="translate(0,9.625)" xlink:href="#h"/>
+      </g>
+      <use transform="translate(0,19.2503)" xlink:href="#f"/>
+     </g>
+     <use transform="translate(0,38.3747)" xlink:href="#e"/>
+    </g>
+    <use transform="translate(9.75)" xlink:href="#a"/>
+    <use transform="translate(19.5028)" xlink:href="#a"/>
+   </g>
+   <use id="b" transform="translate(29.25)" xlink:href="#d"/>
+   <use transform="translate(29.2535)" xlink:href="#b"/>
+  </g>
+  <use transform="translate(92.2235)" xlink:href="#c"/>
+ </g>
+</svg>

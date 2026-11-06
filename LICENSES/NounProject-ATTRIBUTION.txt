@@ -6,6 +6,8 @@ system logo composites:
 
   resources/images/systems/Gameboy2P.svg
   resources/images/systems/GBA2P.svg
+  resources/images/systems/AtariLynx2P.svg
+  resources/images/systems/GameGear2P.svg
 
   Icon: "team"
   Creator: AbtoCreative

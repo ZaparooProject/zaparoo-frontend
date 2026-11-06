@@ -2,7 +2,8 @@ Wikimedia Commons Public-Domain Assets
 ======================================
 
 This software bundles the following public-domain text/logo SVGs from
-Wikimedia Commons:
+Wikimedia Commons. "Also drawn for" lists systems that show the same
+file through the shared-logo table in rust/zaparoo-app/src/systems.rs:
 
   resources/images/systems/AliceMC10.svg
   Source: https://commons.wikimedia.org/wiki/File:TRS-80_MC-10_badge.svg
@@ -48,7 +49,297 @@ Wikimedia Commons:
   Note: Placeholder for Super 32X JP regional variant; no authentic Super 32X
         JP logo art was found in the PRO100BYTE set at time of inclusion.
 
-The bundled files were converted to grayscale or single-color SVGs and optimized for runtime tinting.
+  resources/images/systems/Altair8800.svg
+  Source: https://commons.wikimedia.org/wiki/File:MITS_LOGO_1973.svg
+  Original file: MITS LOGO 1973.svg
+  Author listed on Commons: Micro Instrumentation and Telemetry Systems. Scan by Swtpc6800. Vector by Eirik1231
+  Copyright status listed on Commons: public domain
+  Changes: Cropped to drop the street address; recolored to two tones.
+
+  resources/images/systems/AppleI.svg
+  Source: https://commons.wikimedia.org/wiki/File:Apple_Computer_Logo_rainbow.svg
+  Original file: Apple Computer Logo rainbow.svg
+  Author listed on Commons: Rob Janoff
+  Copyright status listed on Commons: public domain
+
+  resources/images/systems/AppleIII.svg
+  Source: https://commons.wikimedia.org/wiki/File:Apple_III_logo.svg
+  Original file: Apple III logo.svg
+  Author listed on Commons: Apple Computer, Inc.
+  Copyright status listed on Commons: public domain
+
+  resources/images/systems/AppleLisa.svg
+  Source: https://commons.wikimedia.org/wiki/File:Apple_Lisa_Logo.svg
+  Original file: Apple Lisa Logo.svg
+  Author listed on Commons: Apple Computer, Inc.
+  Copyright status listed on Commons: public domain
+
+  resources/images/systems/BlackBerryOS.svg
+  Source: https://commons.wikimedia.org/wiki/File:Blackberry_Logo_without_wordmark.svg
+  Original file: Blackberry Logo without wordmark.svg
+  Author listed on Commons: BlackBerry Limited
+  Copyright status listed on Commons: public domain
+
+  resources/images/systems/CommanderX16.svg
+  Source: https://commons.wikimedia.org/wiki/File:CommanderX16_logo_white.svg
+  Original file: CommanderX16 logo white.svg
+  Author listed on Commons: Christian Simpson (Perifractic), Commander X16 team
+  Copyright status listed on Commons: public domain
+  Changes: Dark backing box removed.
+
+  resources/images/systems/Doom.svg
+  Source: https://commons.wikimedia.org/wiki/File:Doom_%E2%80%93_Game%E2%80%99s_logo.svg
+  Original file: Doom – Game’s logo.svg
+  Author listed on Commons: id Software; Bethesda Softworks, LLC
+  Copyright status listed on Commons: public domain
+
+  resources/images/systems/ElektorTVGamesComputer.svg
+  Source: https://commons.wikimedia.org/wiki/File:Elektor-Logo.svg
+  Original file: Elektor-Logo.svg
+  Author listed on Commons: Elektor-Verlag GmbH
+  Copyright status listed on Commons: public domain
+
+  resources/images/systems/Evercade.svg
+  Source: https://commons.wikimedia.org/wiki/File:Evercade_black_logo.svg
+  Original file: Evercade black logo.svg
+  Author listed on Commons: Blaze Entertainment
+  Copyright status listed on Commons: public domain
+
+  resources/images/systems/FireTV.svg
+  Source: https://commons.wikimedia.org/wiki/File:Amazon_Fire_TV_2024.svg
+  Original file: Amazon Fire TV 2024.svg
+  Author listed on Commons: Amazon.com, Inc.
+  Copyright status listed on Commons: public domain
+
+  resources/images/systems/Galaksija.svg
+  Source: https://commons.wikimedia.org/wiki/File:Galaksija_logo.svg
+  Original file: Galaksija logo.svg
+  Copyright status listed on Commons: public domain
+
+  resources/images/systems/GoogleStadia.svg
+  Source: https://commons.wikimedia.org/wiki/File:Google_Stadia_logo.svg
+  Original file: Google Stadia logo.svg
+  Author listed on Commons: Google
+  Copyright status listed on Commons: public domain
+
+  resources/images/systems/GP32.svg
+  Source: https://commons.wikimedia.org/wiki/File:GP32_logo.svg
+  Original file: GP32 logo.svg
+  Author listed on Commons: GamePark
+  Copyright status listed on Commons: public domain
+
+  resources/images/systems/IntellivisionAmico.svg
+  Source: https://commons.wikimedia.org/wiki/File:Intellivision_Amico_Logo.jpeg
+  Original file: Intellivision Amico Logo.jpeg
+  Author listed on Commons: Intellivision Entertainment
+  Copyright status listed on Commons: public domain
+  Changes: Lettering traced to vector from the raster original.
+
+  resources/images/systems/Laser.svg
+  Source: https://commons.wikimedia.org/wiki/File:Vtech_logo.svg
+  Original file: Vtech logo.svg
+  Author listed on Commons: VTech
+  Copyright status listed on Commons: public domain
+  Also drawn for: VSmile
+
+  resources/images/systems/LaserActive.svg
+  Source: https://commons.wikimedia.org/wiki/File:LaserActive_logo.svg
+  Original file: LaserActive logo.svg
+  Author listed on Commons: Pioneer Corporation
+  Copyright status listed on Commons: public domain
+
+  resources/images/systems/Leapster.svg
+  Source: https://commons.wikimedia.org/wiki/File:LeapFrog_Enterprises.svg
+  Original file: LeapFrog Enterprises.svg
+  Author listed on Commons: LeapFrog Enterprises
+  Copyright status listed on Commons: public domain
+  Also drawn for: LeapsterExplorer
+
+  resources/images/systems/LeapTV.svg
+  Source: https://commons.wikimedia.org/wiki/File:LeapTV_Logo.svg
+  Original file: LeapTV Logo.svg
+  Author listed on Commons: LeapFrog Enterprises
+  Copyright status listed on Commons: public domain
+
+  resources/images/systems/Lindbergh.svg
+  Source: https://commons.wikimedia.org/wiki/File:SEGA_logo.svg
+  Original file: SEGA logo.svg
+  Author listed on Commons: SEGAThe original uploader was Tkgd2007 at English Wikipedia.
+  Copyright status listed on Commons: public domain
+  Also drawn for: AdvancedPICOBeena, Chihiro
+
+  resources/images/systems/MetaQuest2.svg
+  Source: https://commons.wikimedia.org/wiki/File:Meta_Quest_2.svg
+  Original file: Meta Quest 2.svg
+  Author listed on Commons: Inner52789
+  Copyright status listed on Commons: public domain
+
+  resources/images/systems/MetaQuest3.svg
+  Source: https://commons.wikimedia.org/wiki/File:Meta_Quest_logo.svg
+  Original file: Meta Quest logo.svg
+  Author listed on Commons: http://oculus.com
+  Copyright status listed on Commons: CC0 1.0 (public-domain dedication)
+
+  resources/images/systems/ND120.svg
+  Source: https://commons.wikimedia.org/wiki/File:Norsk_Data_logo.svg
+  Original file: Norsk Data logo.svg
+  Author listed on Commons: Unknown authorUnknown author
+  Copyright status listed on Commons: public domain
+
+  resources/images/systems/NeXT.svg
+  Source: https://commons.wikimedia.org/wiki/File:NeXT_logo.svg
+  Original file: NeXT logo.svg
+  Author listed on Commons: Paul Rand
+  Copyright status listed on Commons: public domain
+
+  resources/images/systems/NintendoSwitch2.svg
+  Source: https://commons.wikimedia.org/wiki/File:Nintendo_Switch_2_logo_transparent_black.svg
+  Original file: Nintendo Switch 2 logo transparent black.svg
+  Author listed on Commons: Nintendo
+  Copyright status listed on Commons: public domain
+
+  resources/images/systems/Nuon.svg
+  Source: https://commons.wikimedia.org/wiki/File:VM_Labs_Nuon_logo.svg
+  Original file: VM Labs Nuon logo.svg
+  Author listed on Commons: VM Labs, Inc.
+  Copyright status listed on Commons: public domain
+
+  resources/images/systems/OculusQuest.svg
+  Source: https://commons.wikimedia.org/wiki/File:Oculus_Quest_logo_black.svg
+  Original file: Oculus Quest logo black.svg
+  Author listed on Commons: Facebook Technologies, LLC.
+  Copyright status listed on Commons: public domain
+
+  resources/images/systems/OculusRift.svg
+  Source: https://commons.wikimedia.org/wiki/File:Logo_Oculus_horizontal.svg
+  Original file: Logo Oculus horizontal.svg
+  Author listed on Commons: Oculus VR/Facebook Technologies, LLC.
+  Copyright status listed on Commons: public domain
+  Also drawn for: OculusGo, OculusVR
+
+  resources/images/systems/Ouya.svg
+  Source: https://commons.wikimedia.org/wiki/File:Ouya_Logo.svg
+  Original file: Ouya Logo.svg
+  Author listed on Commons: Ouya Incorporated.
+  Copyright status listed on Commons: public domain
+
+  resources/images/systems/PanasonicJungle.svg
+  Source: https://commons.wikimedia.org/wiki/File:Panasonic_logo_(Blue).svg
+  Original file: Panasonic logo (Blue).svg
+  Author listed on Commons: Crotalus horridus, Monaneko
+  Copyright status listed on Commons: public domain
+  Also drawn for: PanasonicM2
+
+  resources/images/systems/PCjr.svg
+  Source: https://commons.wikimedia.org/wiki/File:IBM_PCjr_Compact_Logo.svg
+  Original file: IBM PCjr Compact Logo.svg
+  Author listed on Commons: IBM Corporation
+  Copyright status listed on Commons: public domain
+  Changes: Background stripes removed; recolored to one tone.
+
+  resources/images/systems/PCXT.svg
+  Source: https://commons.wikimedia.org/wiki/File:IBM_Personal_Computer_XT_badge_recreation.svg
+  Original file: IBM Personal Computer XT badge recreation.svg
+  Author listed on Commons: Own work (based on graphics by International Business Machines Corporation)
+  Copyright status listed on Commons: public domain
+  Changes: Brushed-metal plate removed.
+
+  resources/images/systems/PDP10.svg
+  Source: https://commons.wikimedia.org/wiki/File:PDP-10_masthead_recreation_1.svg
+  Original file: PDP-10 masthead recreation 1.svg
+  Author listed on Commons: Digital Equipment Corporation
+  Copyright status listed on Commons: public domain
+
+  resources/images/systems/PLATO.svg
+  Source: https://commons.wikimedia.org/wiki/File:CDC-Logo.svg
+  Original file: CDC-Logo.svg
+  Author listed on Commons: Control Data Corporation
+  Copyright status listed on Commons: public domain
+
+  resources/images/systems/Playdia.svg
+  Source: https://commons.wikimedia.org/wiki/File:Playdia-logo.png
+  Original file: Playdia-logo.png
+  Author listed on Commons: Bandai
+  Copyright status listed on Commons: public domain
+  Changes: Traced to vector from the raster original.
+
+  resources/images/systems/PlayStationVR2.svg
+  Source: https://commons.wikimedia.org/wiki/File:PlayStation_VR2_logo.svg
+  Original file: PlayStation VR2 logo.svg
+  Author listed on Commons: Sony Interactive Entertainment
+  Copyright status listed on Commons: public domain
+
+  resources/images/systems/RX78.svg
+  Source: https://commons.wikimedia.org/wiki/File:BANDAI.svg
+  Original file: BANDAI.svg
+  Author listed on Commons: Bandai
+  Copyright status listed on Commons: public domain
+  Also drawn for: Terebikko
+
+  resources/images/systems/SGIIndy.svg
+  Source: https://commons.wikimedia.org/wiki/File:Silicon_Graphics_(sgi)_tricolour_logo.svg
+  Original file: Silicon Graphics (sgi) tricolour logo.svg
+  Author listed on Commons: ™/®Silicon Graphics
+  Copyright status listed on Commons: public domain
+
+  resources/images/systems/Socrates.svg
+  Source: https://commons.wikimedia.org/wiki/File:Vtech_Socrates_Logo.jpg
+  Original file: Vtech Socrates Logo.jpg
+  Author listed on Commons: See below
+  Copyright status listed on Commons: public domain
+  Changes: Main wordmark traced to vector from the raster original.
+
+  resources/images/systems/SparcStation.svg
+  Source: https://commons.wikimedia.org/wiki/File:Sun_Microsystems_1980s_logo.svg
+  Original file: Sun Microsystems 1980s logo.svg
+  Author listed on Commons: Great Brightstar
+  Copyright status listed on Commons: public domain
+
+  resources/images/systems/Tamagotchi.svg
+  Source: https://commons.wikimedia.org/wiki/File:Tamagotchi_logo_black_no-tm.svg
+  Original file: Tamagotchi logo black no-tm.svg
+  Author listed on Commons: Bandai
+  Copyright status listed on Commons: public domain
+
+  resources/images/systems/Tandy1000.svg
+  Source: https://commons.wikimedia.org/wiki/File:Tandy_computer_logo.svg
+  Original file: Tandy computer logo.svg
+  Author listed on Commons: Tandy Corporation
+  Copyright status listed on Commons: public domain
+
+  resources/images/systems/TI89.svg
+  Source: https://commons.wikimedia.org/wiki/File:Texas_Instruments_logo_2024.svg
+  Original file: Texas Instruments logo 2024.svg
+  Author listed on Commons: DavidAndrewProsser
+  Copyright status listed on Commons: public domain
+
+  resources/images/systems/VideoBrain.svg
+  Source: https://commons.wikimedia.org/wiki/File:VideoBrain_logo.svg
+  Original file: VideoBrain logo.svg
+  Author listed on Commons: Umtech Incorporated
+  Copyright status listed on Commons: public domain
+
+  resources/images/systems/visionOS.svg
+  Source: https://commons.wikimedia.org/wiki/File:VisionOS_logo.svg
+  Original file: VisionOS logo.svg
+  Author listed on Commons: JimmyStardust
+  Copyright status listed on Commons: public domain
+
+  resources/images/systems/WindowsPhone.svg
+  Source: https://commons.wikimedia.org/wiki/File:Windows_Phone_7_logo_and_wordmark.svg
+  Original file: Windows Phone 7 logo and wordmark.svg
+  Author listed on Commons: Original work: Microsoft Corporation This SVG version: JCRules from English Wikipedia
+  Copyright status listed on Commons: public domain
+
+  resources/images/systems/Zeebo.svg
+  Source: https://commons.wikimedia.org/wiki/File:Zeebo_logo.svg
+  Original file: Zeebo logo.svg
+  Author listed on Commons: Zeebo Inc.
+  Copyright status listed on Commons: public domain
+
+The files from AliceMC10 through Sega32X.jp were converted to grayscale or
+single-color SVGs. All bundled files were optimized for size and are tinted
+to the theme at runtime; other changes are noted per file.
 
 Trademark notice: the logo and platform names may be protected as trademarks
 in some jurisdictions. They are included on a nominative-use basis to identify

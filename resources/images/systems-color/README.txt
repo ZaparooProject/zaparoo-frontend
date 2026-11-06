@@ -2,7 +2,8 @@ Colored platform logos for the optional systems-grid logo style.
 
 Filename stems match the tinted SVG set under resources/images/systems/.
 Most base PNGs were restored from the pre-tinting asset set. Regional
-variants were sourced from PRO100BYTE/console-logos Dark - Color assets.
+variants and later additions were sourced from PRO100BYTE/console-logos
+Dark - Color assets. Systems without a color PNG show their tinted logo.
 
 The default app style remains tinted SVG. These PNGs are only shown when the
 user selects "Full color" system logos in Settings. The frontend embeds
