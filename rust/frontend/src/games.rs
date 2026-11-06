@@ -2708,11 +2708,14 @@ fn page_cells(
 
 /// Replace this view's demand, including obsolete detail images. Other owners
 /// (Hub and modals) keep their independently enqueued requests.
-fn request_covers(ctx: &Ctx, model: &GamesModel, mut keys: Vec<MediaKey>) {
+fn request_covers(ctx: &Ctx, model: &GamesModel, mut keys: Vec<MediaKey>, held: bool) {
     // The focused game's background art rides the same cancellable
-    // demand, after the covers on screen.
-    if let Some(key) = background_game_key(model) {
-        keys.push(key);
+    // demand, after the covers on screen, and waits as they do while a
+    // list's selection is still settling.
+    if !held {
+        if let Some(key) = background_game_key(model) {
+            keys.push(key);
+        }
     }
     // Even a tiny thumbnail makes Core decode its original on a cold miss.
     // Fast navigation reuses prepared colors but starts no artwork work.
@@ -3270,7 +3273,7 @@ pub fn render(ctx: &Ctx, app: &App) {
         } else {
             wanted_detail_covers(ctx, model, detail_tier)
         };
-        request_covers(ctx, model, wanted);
+        request_covers(ctx, model, wanted, covers_held);
         refresh_detail_cover(ctx, app, model);
         (model.grid.current_index(), 1, detail_tier)
     } else {
@@ -3278,6 +3281,7 @@ pub fn render(ctx: &Ctx, app: &App) {
             ctx,
             model,
             wanted_covers(ctx, model, first_visible, window, tier),
+            false,
         );
         (first_visible, window, tier)
     };

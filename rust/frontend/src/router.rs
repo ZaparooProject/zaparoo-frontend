@@ -1128,6 +1128,9 @@ thread_local! {
     static RESTORE_FINISHED: std::cell::RefCell<Option<RestoreHook>> =
         const { std::cell::RefCell::new(None) };
     static RESTORE_SEQ: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    /// The restore ended while the background still held the curtain; the
+    /// background lifts it when it is ready (`background_ready`).
+    static RESTORE_WAITING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
 /// How long a cold-start restore may wait on Core before it is abandoned,
@@ -1160,8 +1163,10 @@ pub(crate) fn finish_restore(app: &App) {
     // curtain itself when it lands (or gives up), so the restored screen
     // and its background appear together.
     if crate::background::holds_curtain() {
+        RESTORE_WAITING.with(|waiting| waiting.set(true));
         return;
     }
+    RESTORE_WAITING.with(|waiting| waiting.set(false));
     shell.set_boot_curtain(false);
     crate::background::curtain_lifted();
     RESTORE_SEQ.with(|seq| seq.set(seq.get().wrapping_add(1)));
@@ -1175,6 +1180,16 @@ pub(crate) fn finish_restore(app: &App) {
                 hook(&app);
             }
         });
+    }
+}
+
+/// The background stopped holding the curtain (its image landed, failed,
+/// or ran out of time). Finishes the restore only if the restore already
+/// ended and was waiting for it: a restore still filling its screen keeps
+/// the curtain until it ends itself.
+pub(crate) fn background_ready(app: &App) {
+    if RESTORE_WAITING.with(std::cell::Cell::get) {
+        finish_restore(app);
     }
 }
 

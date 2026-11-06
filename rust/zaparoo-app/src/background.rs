@@ -405,6 +405,8 @@ fn resample(src: &[u8], stride_w: usize, crop: Rect, ow: usize, oh: usize) -> Ve
     for &b in &bin {
         col_count[b] += 1;
     }
+    let lo = (cw / ow) as u32;
+    debug_assert!(col_count.iter().all(|&c| c == lo || c == lo + 1));
     let mut out = vec![0u8; ow * oh * 3];
     let mut acc = vec![0u32; ow * 3];
     for oy in 0..oh {
@@ -421,9 +423,13 @@ fn resample(src: &[u8], stride_w: usize, crop: Rect, ow: usize, oh: usize) -> Ve
             }
         }
         let rows = (y1 - y0).max(1) as u32;
+        // A column bins the floor or the ceiling of `cw / ow` source
+        // columns, so two reciprocals a row cover every pixel.
+        let reciprocal = |count: u32| (1u64 << 24) / u64::from((count * rows).max(1));
+        let (inv_lo, inv_hi) = (reciprocal(lo), reciprocal(lo + 1));
         let dst = &mut out[oy * ow * 3..(oy + 1) * ow * 3];
         for (ox, px) in dst.chunks_exact_mut(3).enumerate() {
-            let inv = (1u64 << 24) / u64::from((col_count[ox] * rows).max(1));
+            let inv = if col_count[ox] == lo { inv_lo } else { inv_hi };
             for c in 0..3 {
                 px[c] = ((u64::from(acc[ox * 3 + c]) * inv + (1 << 23)) >> 24).min(255) as u8;
             }
@@ -763,6 +769,20 @@ mod tests {
         assert_eq!(at(1, 3), plain);
         let none = compose(&base, [0, 0, 0], 0.0, &Regions::default(), Format::Rgb888);
         assert!(none.iter().all(|&v| v == 200));
+    }
+
+    #[test]
+    fn an_uneven_shrink_averages_each_bin_exactly() {
+        // Five columns into two: bins of three and two, rows of two and
+        // three, so both reciprocals of a row are used.
+        let src: Vec<u8> = (0..5)
+            .flat_map(|_| (1..=5u8).flat_map(|x| [x * 10; 3]))
+            .collect();
+        let fitted = fit(&src, 5, 5, 2, 2);
+        for row in 0..2 {
+            assert_eq!(fitted.rgb[row * 6], 20);
+            assert_eq!(fitted.rgb[row * 6 + 3], 45);
+        }
     }
 
     #[test]

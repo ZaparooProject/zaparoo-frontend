@@ -47,8 +47,9 @@ struct Bitmap {
     card: Option<Box<Bitmap>>,
 }
 
-/// Bytes the prepared backgrounds may hold, reserved out of the cover
-/// cache's cap so the two together stay within it.
+/// Bytes the backgrounds may hold, reserved out of the cover cache's cap so
+/// the two together stay within it: the bitmaps on show and their copies
+/// first, and the kept bases and fitted sources in what is left.
 pub(crate) const CACHE_BYTES: usize = 16 * 1024 * 1024;
 
 /// The longest a cold start waits for the user's image before showing the
@@ -164,9 +165,61 @@ struct Shown {
 }
 
 impl Shown {
-    fn base_key(&self) -> (u64, u32, u32, i32) {
-        (self.source, self.width, self.height, self.blur)
+    fn base_key(&self) -> KeptKey {
+        KeptKey::Base(self.source, self.width, self.height, self.blur)
     }
+
+    fn fitted_key(&self) -> KeptKey {
+        KeptKey::Fitted(self.source, self.width, self.height)
+    }
+}
+
+/// What the kept cache holds: a blurred base by (source, size, blur), or a
+/// fitted source by (source, size).
+#[derive(Clone, PartialEq, Eq, Hash)]
+enum KeptKey {
+    Base(u64, u32, u32, i32),
+    Fitted(u64, u32, u32),
+}
+
+#[derive(Clone)]
+enum Kept {
+    Base(Arc<Base>),
+    Fitted(Arc<Fitted>),
+}
+
+/// Bytes a bitmap on show holds outside the kept cache: its pixels, the
+/// presenter's or the view's copy, and the same for its card-darkness copy
+/// (on `MiSTer` also the frame the presenter merges the card into).
+fn shown_bytes(bitmap: &Bitmap) -> usize {
+    let layer = |b: &Bitmap| {
+        #[cfg(feature = "mister")]
+        return b.rgb.len() + b.rgb565.as_ref().map_or(0, |p| p.len() * 2);
+        #[cfg(not(feature = "mister"))]
+        // The view's `Image` is a copy of its own.
+        return b.rgb.len() * 2;
+    };
+    let card = bitmap.card.as_deref().map_or(0, |card| {
+        let merged = if cfg!(feature = "mister") {
+            card.rgb.len() / 3 * 2
+        } else {
+            0
+        };
+        layer(card) + merged
+    });
+    layer(bitmap) + card
+}
+
+/// Size the kept cache to what the bitmaps on show leave of
+/// `CACHE_BYTES`, evicting the least recently used to fit.
+fn rebudget(state: &mut State) {
+    let shown: usize = state
+        .heads
+        .iter()
+        .filter_map(|head| head.rgb.as_ref())
+        .map(shown_bytes)
+        .sum();
+    state.kept.set_cap(CACHE_BYTES.saturating_sub(shown));
 }
 
 struct Head {
@@ -228,10 +281,10 @@ struct State {
     /// The last focused art shown, for the Settings preview when no image
     /// of the user's own is set.
     last_art: Option<Source>,
-    bases: Lru<(u64, u32, u32, i32), Arc<Base>>,
-    /// Fitted sources by (source, width, height): a Blur change reruns the
-    /// blur from these instead of decoding again.
-    fitted: Lru<(u64, u32, u32), Arc<Fitted>>,
+    /// Blurred bases, and fitted sources a Blur change reruns the blur
+    /// from instead of decoding again, sharing what the bitmaps on show
+    /// leave of `CACHE_BYTES`.
+    kept: Lru<KeptKey, Kept>,
     busy: bool,
     /// The cold start is holding its curtain for the user's image.
     curtain: Option<Instant>,
@@ -305,8 +358,7 @@ pub(crate) fn start(app: &App, mirror: Option<&App>, settings: Settings, crossfa
             focus: None,
             pending: None,
             last_art: None,
-            bases: Lru::new(CACHE_BYTES),
-            fitted: Lru::new(CACHE_BYTES / 2),
+            kept: Lru::new(CACHE_BYTES),
             busy: false,
             curtain,
         });
@@ -318,7 +370,7 @@ pub(crate) fn start(app: &App, mirror: Option<&App>, settings: Settings, crossfa
             if held {
                 tracing::warn!("background image not ready in time; showing the screen");
                 if let Some(app) = weak.upgrade() {
-                    crate::router::finish_restore(&app);
+                    crate::router::background_ready(&app);
                 }
             }
         });
@@ -369,7 +421,7 @@ pub(crate) fn holds_curtain() -> bool {
 
 fn release_curtain(app: &App) {
     if with_state(|state| state.curtain.take().is_some()).unwrap_or(false) {
-        crate::router::finish_restore(app);
+        crate::router::background_ready(app);
     }
 }
 
@@ -603,8 +655,14 @@ pub(crate) fn refresh() {
                 continue;
             }
             if next_job.is_none() && !state.busy {
-                let base = state.bases.get(&shown.base_key());
-                let fitted = state.fitted.get(&(shown.source, shown.width, shown.height));
+                let base = match state.kept.get(&shown.base_key()) {
+                    Some(Kept::Base(base)) => Some(base),
+                    _ => None,
+                };
+                let fitted = match state.kept.get(&shown.fitted_key()) {
+                    Some(Kept::Fitted(fitted)) => Some(fitted),
+                    _ => None,
+                };
                 next_job = Some(Job {
                     head: index,
                     shown,
@@ -634,6 +692,7 @@ fn show_none(state: &mut State, index: usize, app: &App) {
     }
     head.shown = None;
     head.rgb = None;
+    rebudget(state);
     let backdrop = app.global::<Backdrop>();
     backdrop.set_on(false);
     backdrop.set_glass(false);
@@ -865,12 +924,17 @@ fn landed(done: Done) {
         Ok(prepared) => {
             let stale = with_state(|state| {
                 let bytes = prepared.base.bytes();
-                state
-                    .bases
-                    .put(done.shown.base_key(), prepared.base.clone(), bytes);
+                state.kept.put(
+                    done.shown.base_key(),
+                    Kept::Base(prepared.base.clone()),
+                    bytes,
+                );
                 if let Some(fitted) = &prepared.fitted {
-                    let key = (done.shown.source, done.shown.width, done.shown.height);
-                    state.fitted.put(key, fitted.clone(), fitted.rgb.len());
+                    state.kept.put(
+                        done.shown.fitted_key(),
+                        Kept::Fitted(fitted.clone()),
+                        fitted.rgb.len(),
+                    );
                 }
                 // Applied only if it is still what this head should show;
                 // otherwise the refresh below makes the right one.
@@ -921,6 +985,7 @@ fn show(app: &App, index: usize, shown: Shown, bitmap: &Bitmap) {
         let was_on = head.shown.is_some_and(|old| old.source != shown.source);
         head.shown = Some(shown);
         head.rgb = Some(bitmap.clone());
+        rebudget(state);
         (state.crossfade, was_on, bitmap.card.is_some())
     })
     .unwrap_or_default();
@@ -1012,6 +1077,19 @@ impl<K: Hash + Eq + Clone, V: Clone> Lru<K, V> {
             self.bytes -= old;
         }
         self.bytes += bytes;
+        self.trim();
+    }
+
+    /// A new budget, evicting to fit it.
+    fn set_cap(&mut self, cap: usize) {
+        self.cap = cap;
+        self.trim();
+    }
+
+    /// Evict the least recently used until the bytes fit, keeping the
+    /// newest entry even when it alone is over: it is what the head on
+    /// show was just made from.
+    fn trim(&mut self) {
         while self.bytes > self.cap && self.entries.len() > 1 {
             let Some(oldest) = self
                 .entries
@@ -1195,4 +1273,25 @@ pub(crate) fn picker_start(setting: &str, custom_root: Option<PathBuf>) -> Optio
         .filter(|p| p.is_dir())
         .map(Path::to_path_buf)
         .or(custom_root)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Lru;
+
+    #[test]
+    fn a_smaller_budget_evicts_the_least_recently_used() {
+        let mut lru = Lru::new(30);
+        lru.put(1, 'a', 10);
+        lru.put(2, 'b', 10);
+        lru.put(3, 'c', 10);
+        assert_eq!(lru.get(&1), Some('a'));
+        // The bitmaps on show grew: 2 is the oldest unused, then 3.
+        lru.set_cap(20);
+        assert_eq!(lru.get(&2), None);
+        assert_eq!(lru.get(&1), Some('a'));
+        lru.set_cap(5);
+        // The most recently used entry stays, even alone over budget.
+        assert_eq!(lru.entries.len(), 1);
+    }
 }

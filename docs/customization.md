@@ -259,7 +259,7 @@ Settings → Appearance → Background sets what shows behind every screen.
   card (the browse lists, the Settings page, About, the music player and the
   file browser), darkened further under it; Solid keeps the card.
 
-The help bar keeps a darker band over the image. Blur, Dimming and List
+The help bar keeps a darker band over the image. Blur, Dimming and Card
 style show only while an image can show.
 
 Precedence: the focused item's art, then the background image, then the

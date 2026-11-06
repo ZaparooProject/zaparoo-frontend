@@ -667,8 +667,10 @@ export component SettingsRowView inherits Rectangle {
                 ? parent.width - self.width - root.pad - root.track-w - Sizing.pct-w(2)
                 : parent.width - self.width - root.pad - chevron.width - Sizing.pct-w(1);
         y: Sizing.snap((parent.height - self.height) / 2);
+        // Up to whatever stands at the right: the track on a slider, the
+        // chevron otherwise.
         width: Math.min(self.preferred-width, Math.max(0px,
-            chevron.x - Sizing.pct-w(2) - label.x - label.width - Sizing.pct-w(2)));
+            (root.is-slider ? track.x : chevron.x) - Sizing.pct-w(2) - label.x - label.width - Sizing.pct-w(2)));
         overflow: elide;
         text: root.value-text;
         color: root.focused ? (root.dim ? Theme.on-accent-muted : root.content-color)
