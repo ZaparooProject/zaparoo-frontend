@@ -740,7 +740,7 @@ fn list_only_layout(shared: &Shared) -> bool {
     shared.persist.settings.games_browse_layout == "list-only"
 }
 
-fn rotated(shared: &Shared) -> bool {
+pub(crate) fn rotated(shared: &Shared) -> bool {
     matches!(shared.persist.settings.orientation.as_str(), "cw" | "ccw")
 }
 
@@ -788,33 +788,7 @@ pub(crate) fn list_geometry_for(
     row_block: i32,
     target_rows: usize,
 ) -> rules::ListGeometry {
-    let derived = zaparoo_app::sizing::derive(inputs);
-    let view = if rotated {
-        View::GamesListTate
-    } else {
-        View::GamesList
-    };
-    let profile = layouts::profile(ThemeId::current(inputs), view, inputs);
-    let Body::List { list, .. } = profile.body else {
-        unreachable!("the games list views resolve to a list body");
-    };
-    rules::list_geometry(
-        &list,
-        &rules::ListFrame {
-            screen_width: inputs.screen_width as i32,
-            screen_height: inputs.screen_height as i32,
-            header_bottom: derived.header_bottom,
-            status_top_margin: profile.status.top_margin,
-            // The Menu chip row sits between the strip and the card.
-            strip_height: profile.status.strip_height + row_block,
-            help_bar_height: derived.help_bar_height,
-            tier_240: derived.tier == zaparoo_app::sizing::Tier::T240,
-            safe_bottom_gap: derived.help_bar_band,
-            target_rows,
-            min_row_height: inputs.pct_h(3.0),
-            default_row_height: inputs.pct_h(6.0),
-        },
-    )
+    rules::scene_list_geometry(inputs, rotated, row_block, target_rows)
 }
 
 /// The Core sort for the list on screen.

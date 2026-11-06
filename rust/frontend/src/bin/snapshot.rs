@@ -56,6 +56,11 @@ use generated::{App, Brand, GlyphSource, GridCell, LetterBucket, MenuEntry, Sizi
 )]
 use generated::{FileBrowserMode, FileBrowserView, GamesView, Layout, Motion, Shell, SystemsView};
 use generated::{KeyCell, KeyKind, SearchPane, SearchPaneRow, SearchScope, SearchView, SearchZone};
+use generated::{
+    MusicButton, MusicControl, MusicPage, MusicUnavailable, MusicView, PlaybackState, RepeatMode,
+};
+#[path = "../music_layout.rs"]
+mod music_layout;
 #[path = "../state_types.rs"]
 #[allow(
     dead_code,
@@ -240,6 +245,9 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
     status.set_current_step(5);
     status.set_total_steps(12);
     status.set_percent(42);
+    // Background music plays on the Hub and the music screens, so the
+    // header's music note renders there.
+    shell.set_music_playing(screen.contains("music") || screen.contains("hub"));
 
     // Representative persisted Hub layout: Resume first, the detected
     // categories, then the built-in actions, with one hidden system
@@ -322,6 +330,8 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
         fixture_ra_login(&app, screen.contains("error"));
     } else if screen.contains("file-browser") {
         fixture_file_browser(&app, scene_w, scene_h, crt, screen);
+    } else if screen.contains("music") {
+        fixture_music(&app, scene_w, scene_h, crt, screen);
     }
     // The browse filter: the header cue on the games screen, the picker's
     // categories page with a filter set, its values page with counts, and
@@ -781,8 +791,14 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
         };
         let entries: Vec<MenuEntry> = values
             .iter()
-            .map(|value| MenuEntry {
-                role: generated::MenuRole::default(),
+            .enumerate()
+            .map(|(i, value)| MenuEntry {
+                // The current choice carries a check.
+                role: if i == 6 {
+                    generated::MenuRole::Chosen
+                } else {
+                    generated::MenuRole::default()
+                },
                 detail_key: slint::SharedString::default(),
                 id: (*value).into(),
                 label: "".into(),
@@ -795,6 +811,75 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
         ov.set_list_setting_id(if palette { "colorScheme" } else { "language" }.into());
         ov.set_list_entries(slint::ModelRc::new(slint::VecModel::from(entries)));
         ov.set_list_index(6);
+        ov.set_list_open(true);
+    }
+    // "list-toggles" renders the music player's Menu list: rows that open
+    // something, a value on the right, a muted row with its reason, and the
+    // two settings as toggle switches (one on, one off).
+    if screen.ends_with("list-toggles") || screen.ends_with("list-slider") {
+        let ov = app.global::<generated::Overlays>();
+        let row = |id: &str,
+                   key: &str,
+                   name: &str,
+                   role: generated::MenuRole,
+                   enabled: bool,
+                   reason: &str| MenuEntry {
+            role,
+            detail_key: slint::SharedString::default(),
+            id: id.into(),
+            label: name.into(),
+            label_key: key.into(),
+            enabled,
+            reason_key: reason.into(),
+            detail: "".into(),
+        };
+        let option = generated::MenuRole::Option;
+        ov.set_list_title("title:menu".into());
+        ov.set_list_entries(slint::ModelRc::new(slint::VecModel::from(vec![
+            row(
+                "music_playlist",
+                "music_playlist",
+                "",
+                option,
+                false,
+                "music:no_playlist",
+            ),
+            row("music_choose", "music_choose", "", option, true, ""),
+            row("music_stop", "music_stop", "", option, true, ""),
+            MenuEntry {
+                detail: "80".into(),
+                ..row(
+                    "music_volume",
+                    "music_volume",
+                    "",
+                    generated::MenuRole::Slider,
+                    true,
+                    "",
+                )
+            },
+            row(
+                "music_autoplay",
+                "music_autoplay",
+                "",
+                generated::MenuRole::ToggleOn,
+                true,
+                "",
+            ),
+            row(
+                "music_pause_games",
+                "music_pause_games",
+                "",
+                generated::MenuRole::ToggleOff,
+                true,
+                "",
+            ),
+        ])));
+        // list-slider focuses the volume slider, list-toggles a toggle.
+        ov.set_list_index(if screen.ends_with("list-slider") {
+            3
+        } else {
+            4
+        });
         ov.set_list_open(true);
     }
     // "launcher-picker" renders the "Change launcher" list with one row
@@ -1731,6 +1816,149 @@ fn fixture_list(screen: &str) -> Option<generated::UserFlag> {
     }
 }
 
+/// The music player: `music` plays a tagged track with Play/Pause focused,
+/// `music-paused` has it paused with Repeat focused, `music-idle` has
+/// nothing on the slot, `music-playlist` is the open playlist's page, and
+/// `music-library` lists a folder of the Audio index.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one fixture fills the player and both list pages"
+)]
+fn fixture_music(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &str) {
+    let view = app.global::<MusicView>();
+    let inputs = sizing::Scene::of(app, scene_w, scene_h, crt).inputs();
+    let library = screen.contains("library");
+    let playlist = screen.contains("playlist");
+    let idle = screen.contains("idle");
+    let paused = screen.contains("paused");
+    let layout = music_layout::layout_for(&inputs, false, !playlist);
+    music_layout::push_layout(&view, &layout);
+    // The page's Menu chips, as the driver publishes them.
+    let chip = |id: &str, key: &str, name: &str| MenuEntry {
+        role: generated::MenuRole::Option,
+        detail_key: "".into(),
+        id: id.into(),
+        label: name.into(),
+        label_key: key.into(),
+        enabled: true,
+        reason_key: "".into(),
+        detail: "".into(),
+    };
+    let chips = if library {
+        vec![
+            chip("music_play_all", "music_play_all", ""),
+            chip("music_shuffle_all", "music_shuffle_all", ""),
+        ]
+    } else if playlist {
+        Vec::new()
+    } else if idle {
+        vec![
+            chip("music_choose", "music_choose", ""),
+            chip("music_volume", "music_volume", "80"),
+            chip("more", "more", ""),
+        ]
+    } else {
+        vec![
+            chip("music_playlist", "music_playlist", ""),
+            chip("music_choose", "music_choose", ""),
+            chip("music_stop", "music_stop", ""),
+            chip("music_volume", "music_volume", "80"),
+            chip("more", "more", ""),
+        ]
+    };
+    app.global::<generated::PageBar>()
+        .set_music_chips(slint::ModelRc::new(slint::VecModel::from(chips)));
+    view.set_page(if library {
+        MusicPage::Library
+    } else if playlist {
+        MusicPage::Playlist
+    } else {
+        MusicPage::Player
+    });
+    view.set_focus_ready(true);
+    view.set_has_track(!idle);
+    view.set_title("Tunnel Vision".into());
+    view.set_artist("Neon Harbor".into());
+    view.set_album("Night Drive".into());
+    view.set_up_next(if idle { "" } else { "Rearview" }.into());
+    view.set_playlist_name(if idle { "" } else { "Night Drive" }.into());
+    view.set_track_number(if idle { 0 } else { 3 });
+    view.set_track_total(if idle { 0 } else { 5 });
+    view.set_playback(if idle {
+        PlaybackState::Stopped
+    } else if paused {
+        PlaybackState::Paused
+    } else {
+        PlaybackState::Playing
+    });
+    view.set_progress_milli(if idle { 0 } else { 470 });
+    // Nothing playing has no time to show, as the driver leaves it.
+    view.set_position_text(if idle { "" } else { "1:42" }.into());
+    view.set_duration_text(if idle { "" } else { "3:37" }.into());
+    view.set_shuffle(false);
+    view.set_repeat(RepeatMode::All);
+    let controls = [
+        MusicControl::Shuffle,
+        MusicControl::Previous,
+        MusicControl::PlayPause,
+        MusicControl::Next,
+        MusicControl::Repeat,
+    ];
+    let buttons: Vec<MusicButton> = controls
+        .into_iter()
+        .map(|control| MusicButton {
+            control,
+            unavailable: if idle {
+                MusicUnavailable::NothingPlaying
+            } else {
+                MusicUnavailable::None
+            },
+        })
+        .collect();
+    view.set_buttons(slint::ModelRc::new(slint::VecModel::from(buttons)));
+    view.set_control_index(if paused { 4 } else { 2 });
+    let rows: Vec<GridCell> = if library {
+        ["Night Drive", "Harbor Lights (single)", "Live at the Pier"]
+            .iter()
+            .enumerate()
+            .map(|(i, name)| GridCell {
+                name: (*name).into(),
+                opens: i != 1,
+                ..Default::default()
+            })
+            .collect()
+    } else if playlist {
+        [
+            "Departure",
+            "Coastline",
+            "Tunnel Vision",
+            "Rearview",
+            "Arrival",
+        ]
+        .iter()
+        .enumerate()
+        .map(|(i, name)| GridCell {
+            name: (*name).into(),
+            now_playing: i == 2,
+            ..Default::default()
+        })
+        .collect()
+    } else {
+        Vec::new()
+    };
+    let selected = if library { 1 } else { 2 };
+    view.set_count(rows.len() as i32);
+    view.set_current_index(selected);
+    view.set_list_rows(slint::ModelRc::new(slint::VecModel::from(rows)));
+    view.set_list_view_top(0);
+    view.set_list_scroll_top(0);
+    view.set_list_sel(selected);
+    view.set_list_total_pages(1);
+    view.set_library_top(false);
+    view.set_library_title("Neon Harbor".into());
+    view.set_focused_opens(false);
+}
+
 fn fixture_screen(screen: &str) -> Screen {
     if screen.starts_with("route-")
         || screen.ends_with("hub-deck")
@@ -1749,6 +1977,8 @@ fn fixture_screen(screen: &str) -> Screen {
         Screen::TopPlayedSystems
     } else if screen.contains("top-played") {
         Screen::TopPlayed
+    } else if screen.contains("music") {
+        Screen::Music
     } else if screen.contains("rename") {
         Screen::Rename
     } else if screen.contains("ra-login") {
@@ -2409,6 +2639,8 @@ fn fixture_hub_items() -> Vec<zaparoo_app::hub::LayoutItem> {
             system: "SNES".into(),
             ..LayoutItem::default()
         },
+        // A Settings tile pinned to the Hub.
+        item("setting", "pageMusic"),
     ]
 }
 
@@ -3304,6 +3536,8 @@ mod fixture_tests {
         for name in [
             "picker",
             "palette-picker",
+            "list-toggles",
+            "list-slider",
             "crt-dialog",
             "token-error",
             "qr-docs",

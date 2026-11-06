@@ -29,7 +29,7 @@ tokens!(Screen {
     Search => "search", SearchResults => "search-results",
     Settings => "settings", About => "about", Update => "update", Rename => "rename",
     RaLogin => "ra-login", FileBrowser => "file-browser", Decks => "decks", Deck => "deck",
-    TopPlayed => "top-played", TopPlayedSystems => "top-played-systems", None => "",
+    TopPlayed => "top-played", TopPlayedSystems => "top-played-systems", Music => "music", None => "",
 });
 tokens!(SettingsPage {
     Root => "", Appearance => "pageAppearance", Library => "pageLibraryData",
@@ -49,7 +49,7 @@ tokens!(ErrorKind {
     AlternateDiscovery => "alternate_discovery", DiscList => "disc_list", VersionList => "version_list",
     QrCode => "qr_code", CardWrite => "card_write", Setting => "setting",
     Pairing => "pairing", Online => "online", Backup => "backup", ConfigFile => "config_file",
-    ImagePicker => "image_picker",
+    ImagePicker => "image_picker", Music => "music",
 });
 
 impl From<zaparoo_app::hub::Reason> for crate::DisabledReason {
@@ -189,6 +189,7 @@ mod tests {
             Screen::Deck,
             Screen::TopPlayed,
             Screen::TopPlayedSystems,
+            Screen::Music,
             Screen::None,
         ] {
             assert_eq!(Screen::try_from(value.token()), Ok(value));
@@ -221,6 +222,11 @@ mod tests {
     #[test]
     fn registry_and_error_vocabulary_have_typed_projections() {
         for page in zaparoo_app::settings::PAGES {
+            // The Background music tile opens a screen of its own, not a page of rows.
+            if page.id == zaparoo_app::settings::MUSIC_PAGE {
+                assert!(SettingsPage::try_from(page.id).is_err());
+                continue;
+            }
             assert!(
                 SettingsPage::try_from(page.id).is_ok(),
                 "unmapped page {}",

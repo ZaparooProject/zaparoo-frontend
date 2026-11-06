@@ -269,15 +269,15 @@ where it happens to live on screen.
   front edge, an accent focus ring, a press-down on activation. See
   "Pressable front edge" below.
 - **Vertical option lists get typographic treatment.** `BrowseList` rows,
-  `SettingsRowView` rows, `ContextMenu` rows, and `ListPickerModal` rows are all
+  `SettingsRowView` rows, `ContextMenu` rows, and list panel rows are all
   the same interaction, scan a list, pick one, and are read, not handled: no
   fill or border at rest, and selection is inverse video, the list's
   `SelectionCursor` fill swapping foreground and background rather than lifting
   off the page. See "Inverse-video rows" below.
 
 An earlier version of this split ran the other way: `ContextMenu` and
-`ListPickerModal` rows were raised buttons on the reasoning that "a menu entry
-*is* a button." That put a Settings row and the `ListPickerModal` row it
+list panel rows were raised buttons on the reasoning that "a menu entry
+*is* a button." That put a Settings row and the list panel row it
 opens, literally the same choice, continued, in opposite registers, and cost
 real legibility doing it. At 240p, a `ContextMenu` row (`Sizing.pct-h(6)` = 14px)
 has 2px of `press-edge-height` plus a 3px border/ring band on each side, leaving
@@ -370,7 +370,7 @@ versions got this wrong in opposite directions: a screen-relative percentage
 (matching `Tile`'s own tokens) ate ~38% of a short pressable row's face
 height on top of its existing static border and press edge, three
 concentric frames reading as clutter instead of one clear "this is focused"
-cue. (This history predates `ContextMenu`/`ListPickerModal` moving off
+cue. (This history predates `ContextMenu` and the list panel moving off
 `PressableSurface` entirely, see "Two registers" above, but the fix still
 governs every remaining `PressableSurface` caller.) Rescaling that same
 percentage to the row's OWN height instead floored to exactly 1px at every
@@ -508,7 +508,7 @@ legibility against `surface-card`, not against the solid selection fill.
 Nothing moves: no rail, no inset, no push-in. A
 text row is not a button, so it doesn't get a button's depth cue.
 
-`ContextMenu` and `ListPickerModal` rows follow the identical recipe against
+`ContextMenu` and list panel rows follow the identical recipe against
 their own `bg-panel` host instead of a `surface-card`: the same
 `SelectionCursor`, the same fill-plus-`on-accent` swap, no separate row card
 nested inside the panel. The color-scheme picker's swatch-preview border is
@@ -542,7 +542,7 @@ flash; see "Semantic tier" above), and forwards its host's
 keeps the accepting row down before it dispatches. Toggle rows are exempt from
 the flash (`flash-enabled` is false on them): the knob slide is their own
 activation cue. See "Toggle rows" below for how the track/knob colors work on
-a selected row. `ContextMenu` and `ListPickerModal` bind only `press-held`:
+a selected row. `ContextMenu` and the list panel bind only `press-held`:
 they close on accept rather than settling back into an idle list, so there is
 no pulse to cut short and no `screen-settling` transition to forward.
 
@@ -563,7 +563,7 @@ correct it: the selected copy of a row, the one painted inside the
 `SelectionClip`, draws at `FontWeight.medium` and the resting copy at
 `FontWeight.normal`, in `SettingsRowView` (`content-weight`), `BrowseList`
 (through `MarqueeCaption`'s `caption-weight`), `ContextMenu`, and
-`ListPickerModal` alike. The goal is parity with the resting row, not
+the list panel alike. The goal is parity with the resting row, not
 emphasis, `FontWeight.medium` is deliberately one notch, not a jump to
 bold. It resolves to a real cut rather than a synthesized one: the binary
 embeds static `resources/fonts/NotoSans-Medium.ttf` and
@@ -577,7 +577,7 @@ first place, the same reasoning `Theme.font-ui`'s bitmap branch already
 gets a pass on for size (see "Type ladder" below).
 
 Panel-width measurement (`desired-panel-w` in `ContextMenu`, `desired-w` in
-`ListPickerModal`) must size against the *selected* weight, not the resting
+the list panel) must size against the *selected* weight, not the resting
 one, or the widest label can elide the moment it becomes selected, both
 measure every label in a hidden `VerticalLayout` fixed at `FontWeight.medium`
 for exactly this.
@@ -663,7 +663,7 @@ Settings) rather than inventing a new glyph with no real precedent. It is
 deliberately the *one* row kind that centers, every other row stays
 left-aligned per "Two registers" above, and an embedded button (WinUI's
 `SettingsCard.ActionButton`, libadwaita's `AdwButtonRow`) was considered
-and rejected for the same reason `ContextMenu`/`ListPickerModal` moved off
+and rejected for the same reason `ContextMenu` and the list panel moved off
 `PressableSurface`: it would reintroduce a button-shaped object into a row
 register this file deliberately keeps flat and borderless.
 
@@ -803,7 +803,7 @@ way they could when the whole card lived inside the scrolling list.
 Grid tiles, modal buttons, and `LetterJumpModal`'s letter cells use
 `PressableSurface` in `tiles.slint`. Its focus ring is `Tile`'s two-rect
 construction reused, see "Tile focus ring" above. `ContextMenu` and
-`ListPickerModal` rows do not, see "Two registers" above for why they moved to
+list panel rows do not, see "Two registers" above for why they moved to
 the list's selection fill.
 
 **Front edge is not a shadow.** It is opaque physical material. Grid tiles use
@@ -1008,6 +1008,96 @@ panel (see "Modal depth").
 - **Menu** opens the Menu list of the caller's screen actions (Change
   icon… offers Use default icon). There is no chip row.
 
+## Music player
+
+The player for Core's background slot (`ui/music.slint`, `frontend::music`,
+rules in `zaparoo_app::music`). The Settings tile "Background music" opens
+it, as does the same tile pinned to the Hub; Back returns to whichever
+opened it. It is a screen of three pages, never a modal (see "Modal
+depth"), laid out as a Settings page is at every tier: every page keeps
+the Settings card's margins (`settings::page_geometry`), while the title
+strip and the Menu chip row span the screen as on every other page. The
+strip names the page, gives a list's total on its left ("12 tracks", the
+bare number at 240p) as a games list does, and above 240p shows the
+position on its right while there is more to scroll to. The player's card is as tall as what it holds and
+centers in the band the Settings card would fill; the playlist and
+library pages fill that band with one browse list.
+
+- **Player.** Titled "Background music", like its tile. The cover (the
+  music glyph when the track has none) is as tall as the text beside it at
+  every tier, so the card never frames an empty art box, and fades in as
+  it lands, as a browse pane's does. Title (the detail title's rung),
+  artist, album and "Up next" sit beside it; with nothing playing, "Not
+  playing" centers on the art. Under them,
+  one progress row across the card: elapsed time, `ProgressTrack`'s cells
+  as many as the span holds, the length. The cells fill a whole cell at a
+  time and never blink: a track's position is not a task in progress.
+  Then one row of controls in the order players share: Shuffle, Previous,
+  Play/Pause, Next, Repeat. The line under the row names the focused
+  control and its state ("Repeat: All"), or why it cannot act ("Next:
+  Starting track"): a row of the card in its own right, as far below the
+  buttons as they are below the progress row, at body size, with the name
+  in the label color and the value in the primary one, as a Settings row
+  pairs a name with its value. At 240p artist and album share a
+  line.
+- **The transport row is a row of controls like any other.** Raised
+  `PressableSurface` buttons, glyphs in `text-label` at rest and
+  `text-primary` focused, one `FocusCursor` ring that glides between them,
+  rides the face down with a press, and carries the tile focus zoom. Accept
+  goes through `press_feedback` (`PressOwner::Music`), so the button is
+  pushed for its moment and a second Accept waits for it; a click is the
+  same Accept, and hovering a button focuses it.
+- **One focus row.** Focus starts on Play/Pause, so A pauses. Left and
+  Right walk the row and stop at its ends, and the help bar names them
+  (not the whole d-pad), as on every row that only moves sideways. L and
+  R skip tracks.
+- **A track starting.** Core takes no other launch until a track it was
+  asked for has started, so after Previous, Next, a playlist row or new
+  music, Previous, Play/Pause and Next wait, muted with "Starting track",
+  until Core reports the new track (or five seconds pass). A second press
+  in that gap does nothing rather than raise an error.
+- **Disabled controls.** A control that cannot act stays focusable, keeps
+  its resting tint when focused and mutes its front edge, as a disabled
+  tile does; it takes no press. The line under the row says why ("Next: No
+  playlist") and the help bar drops A.
+- **Shuffle and Repeat** draw their glyph in the accent while they are on.
+  Repeat One has its own glyph.
+- **Menu.** The player's page actions are a Menu chip row (see below):
+  Show playlist, Browse music, Stop, Volume, and More with Play on startup and
+  Pause during games. A chip the slot cannot take right now is left off.
+  Where the scene has no row, Menu opens the same actions as the Menu
+  list, where a row that cannot act stays, muted, with its reason; while
+  Core's settings have not answered, the setting rows say so rather than
+  claim Core lacks them. Play on startup and Pause during games are toggle
+  switches and Volume is a slider, all changed in place; the Volume chip
+  opens a panel holding the slider alone.
+- **Playlist page.** The open playlist as one list, titled by its name and
+  seated on the playing track, which ends in a play glyph in the row's
+  text color, as a heart does. A plays a track, or pauses the one
+  playing. B returns to the player. It has no chips.
+- **Library page.** Core's Audio index routes, then folders and tracks,
+  in the browse list with its lettered rail; a long hold steps by letter.
+  A on a folder opens it; A on a track plays the folder from that track.
+  Options (or a right click) on a folder: Play folder, Shuffle folder; on
+  a track, the same for the folder it is in. Menu: Play all, Shuffle all,
+  as chips where there is a row. B goes up a folder, and from the top back
+  to the player. Music starts as the folder itself
+  (`**playlist.play:<folder>`), which Core lists exactly as the folder's
+  browse, so a picked track is `start=n` and the script stays small however
+  many tracks the folder holds. Starting music is a deferred route like a
+  folder read: the library stays on screen, taking only Back, until Core
+  takes the command, and only then does the player open; if Core refuses,
+  the library stays where it was with the error. Folder reads keep the
+  page on screen until the next one lands; one that fails or comes back
+  empty says so, and A tries again.
+- **Live state.** Core pushes `media.playback` on a start, a pause, a
+  resume, a seek and when a track's tags land, and `playlists.changed` for
+  the playlist. Between pushes the time advances on a local clock once a
+  second; asking Core again every 30 seconds is only a backup (every 5
+  seconds against a Core that does not push). A background `media.stopped`
+  is held 750 ms before the card reads as idle, so a track change never
+  blanks it. The header's music note is a status icon (`status/Music`).
+
 ## Menu chip row
 
 Two buttons act on two scopes. Options (North) acts on the focused item and
@@ -1032,6 +1122,8 @@ once, through the same relayout a scene change runs.
 | Favorites | Sort [value], Group by [value], Random game, Search here | Back to Hub |
 | Favorite systems | Group by [value], Search here | |
 | Search results | Edit search, Save to Hub / Remove from Hub | |
+| Background music (player) | Show playlist, Browse music, Stop, Volume [value] | Play on startup, Pause during games |
+| Background music (library) | Play all, Shuffle all | |
 
 - **Placement.** Directly under the title strip and above the grid or list
   card; on the Hub, under the header at the header's side margin, so it
@@ -1056,6 +1148,10 @@ once, through the same relayout a scene change runs.
   not persisted, like an open modal.
 - **Pickers.** A chip opens the same picker its Menu list row does. Backing
   out of it returns focus to the chip; a pick returns it to the content.
+- **Routes.** A chip that starts a route keeps focus while the route
+  loads its destination, so the content does not take focus back for the
+  wait; the route's commit releases the row, and Cancel leaves the source
+  with its chip focused.
 - **More.** Rare actions sit behind a last chip, More, which opens the Menu
   list titled More. A screen with nothing rare has no More chip.
 - **Dual head.** The CRT head of a dual-head pair draws the 240p layout,
@@ -1073,14 +1169,40 @@ once, through the same relayout a scene change runs.
   with Go to, a shoulder press waits `CHORD_WINDOW_MS` for its partner
   before it pages.
 
-## Form lists
+## List panels
 
-`FormListModal` is the list picker for a list that is long or has structure:
-the system picker and the tags picker. The plain `ListPickerModal` stays
-for short menus of centered commands.
+Every list a modal shows is one panel: `ListModal` for the Menu and picker
+lists, and the same `ListViewport` and `ListRow` (`ui/list_panel.slint`) under
+Core's picker, the Online lists and the launcher preference. A title sits
+centered over the rows; the rows read like Settings rows.
 
-- **Rows read like Settings rows:** the name on the left, its value on the
-  right in the muted tier (a chosen tag, a game count).
+- **Rows are left-aligned**, the name from the left and, on the right,
+  whatever the row carries: a value in the muted tier (a chosen tag, a game
+  count, "80%", "A-Z"); why the row cannot act ("no playlist", "not
+  installed"), in the same place; a check on a picker's current choice
+  (`MenuRole::Chosen`); a chevron on a row that opens a page; a color
+  scheme's three swatches; or a toggle switch for a setting changed in
+  place (`ToggleOn`, `ToggleOff`). A value never rides inside the name:
+  "Volume" and "80%", not "Volume: 80%" (a Menu chip has no right side, so
+  it keeps the phrase).
+- **One width.** The panel is the same share of the screen for every list
+  (`ListPanel.width`), not the width of its longest row, so a panel keeps
+  its size from one list to the next, and a name and its value always sit
+  side by side. At 240p it takes most of the screen.
+- **A toggle is the Settings toggle.** `ToggleSwitch` (`settings.slint`)
+  draws both. Its knob sliding is the whole activation cue, so a toggle row
+  takes no press and no flash (`press_feedback` gives it no target), the
+  help bar says Toggle, and a changed value is written into the rows the
+  panel already has so the knob slides instead of the list being rebuilt.
+- **A slider is a setting adjusted in place.** Its row (`MenuRole::Slider`)
+  is the name, the value ("80%") and a track of ten cells, each a whole
+  number of pixels so the fill moves a cell at a time. Left and Right step
+  it by ten and a held direction repeats; Accept does nothing on it, and the
+  help bar says Adjust. A click left of the track's middle steps down, right
+  of it up. The change is heard as it is made; Core is told once the steps
+  stop (250 ms), and the rows are updated in place so nothing is rebuilt
+  under the cursor. Like a toggle it takes no press.
+- **A picker marks its current choice** with a check; focus starts on it.
 - **Section headers** name the rows under them, in the caption tier over a
   rule. They take no focus: Up and Down pass over them, and the row under
   a header brings the header into view with it.
@@ -1089,10 +1211,14 @@ for short menus of centered commands.
   On a page of plain values they page instead.
 - **Actions sit at the foot, apart from the options:** centered, in the
   accent, under a rule, as a Settings action row. An action never looks
-  like an option. There is no Apply: a pick is kept as it is made, Back
-  leaves, and the help bar says Back rather than Cancel.
-- Only the rows on screen are built, so a list of every system costs no
-  more than a short one. The window snaps rather than glides.
+  like an option.
+- **Back leaves, on every list.** There is no Apply: a pick is kept as it
+  is made. The help bar says Back, never Cancel.
+- **A long list builds only the rows on screen** (the tags and systems
+  pickers), so a list of every system costs no more than a short one, and
+  its window snaps; a short list builds every row and its window glides.
+- A disabled row stays and takes focus, muted, with its reason on the
+  right (see "Disabled controls").
 
 The system list is the same wherever it is offered (the Search screen, the
 media update setup): All systems, the systems used lately where the screen
@@ -1567,7 +1693,7 @@ screen; a panel with a fixed width caps at `0.78`. Three different formulas had
 grown here.
 
 Panel has no border. Prefer extending the shell over bespoke chrome. Every
-modal panel is shell-based: `DialogModal`, `ListPickerModal`,
+modal panel is shell-based: `DialogModal`, `ListModal`,
 `LetterJumpModal`, `CardWriteModal`, and `QrCodeModal` in `app.slint`,
 `SetupModal` and `LogUploadModal` in `setup.slint`, and `GameInfoModal` in
 `game_info.slint`. The setup panel's form rows are `SettingsRowView` rows.
@@ -1650,7 +1776,7 @@ deep they are or how many Back presses get out. The rules:
    (`rust/frontend/src/title_versions.rs`), which Core is asked for. Back returns to
    the rows the page replaced, on the row that opened it (`context_action`
    in `router.rs`). One level only: a row on a page never opens a page.
-6. A screen may open a modal (Settings rows open `ListPickerModal`); a
+6. A screen may open a modal (Settings rows open `ListModal`); a
    modal that closes and *then* opens another (Menu list -> letter jump,
    error -> retry) is a sequence, not a stack, and is fine.
 
@@ -1662,12 +1788,9 @@ clamped between a degenerate-case floor (`Sizing.pct-w(30)`) and 92% of the
 viewport, with a second, height-derived cap (`Sizing.pct-h(90)`). A panel whose
 content sets its own width
 (the QR code, the setup and log-upload panels, the legal notice) takes the
-78% breathing-room cap instead. `ListPickerModal` measures its own entry
-labels the same way `ContextMenu` does and holds that exact width against the
-same 92% ceiling, not the 78% cap meant for content nobody measured. (Round 6
-follow-up: the picker's swatch band routinely pushes its measured width past
-78% of a small screen, so a 78% cap still truncated rows even after the
-label-measurement fix below.)
+78% breathing-room cap instead. The list panel takes one fixed share
+(`ListPanel.width`, capped at the same 92% ceiling) rather than measuring
+its rows, so lists keep one size.
 
 ### Game Info
 
@@ -1716,40 +1839,20 @@ calls one or the other from that surface's Back and finish paths.
 
 ### Picker swatch preview
 
-`ListPickerModal` rows are plain centered labels by default. One picker, the
-color-scheme picker, needs to show what a scheme actually looks like, not
-just its name. `ListPickerModal` in `app.slint` turns on swatch layout for the
-whole list when its `setting-id` is `colorScheme`; each row then paints three
-boxes from `Theme.preview-color(id, n)`, a callback `theme.rs` binds to
+The color-scheme picker shows what a scheme looks like, not just its name.
+Its list panel rows (`ListModal` with `setting-id` `colorScheme`) each paint
+three boxes from `Theme.preview-color(id, n)`, a callback `theme.rs` binds to
 `zaparoo_app::palette::preview_colors` (the preset's three authored colors, in
-primary/accent/text order). A picker is assumed homogeneous, never a mix of
-swatch and non-swatch rows.
-
-In swatch layout the row's label (`PickerRowBody`) moves from centered to
-left-aligned (`x: Sizing.pct-w(2)`, still vertically centered,
-`overflow: elide`) and three small `Rectangle` swatches right-align in the
-remaining width. Every other picker (view menus, launcher, resolution,
-language, ...) has a different `setting-id` or none, so it falls through to
-the original centered-label row untouched. `desired-w` adds the swatch band
-and a label gap only when swatches are present, so the panel still sizes to
-content per the content-driven-width pattern above. `preview_colors` is
-independent of the applied scheme (it's a pure function of the requested id).
-Each swatch box carries a `Theme.text-label` border at rest (round 6), a
-near-black or near-white swatch previously sat at the same contrast as the
-row's own resting background and disappeared into it; `text-label` is a mid
-neutral held >=3:1 against `bg-deep` on every preset, so it separates either
-extreme from the row. On a selected row the border flips to the cursor's
-`content` color (`Theme.on-accent`) instead, the same fix the favorite heart
-uses against the solid selection fill, see "Inverse-video rows" above.
-
-Content-driven width measurement (this section and [ContextMenu
-chrome](#contextmenu-chrome) below) carries deliberate slack over the
-measured label width (the `preferred-width` of a hidden measuring layout):
-`Sizing.stroke(2)` in `ListPickerModal`, `2 * Sizing.stroke(2)` in
-`ContextMenu`. The slack covers labels painted on hinted integer advances that
-can run a few px past the fractional measured width; a panel sized to the bare
-figure, round 5's `ListPickerModal` bug, elided text that should have fit,
-with most of the screen still empty.
+primary/accent/text order), at the right edge of the row; the current
+scheme's check sits just inside them. Every other picker has no swatches.
+`preview_colors` is independent of the applied scheme (it's a pure function of
+the requested id). Each swatch box carries a `Theme.text-label` border at
+rest, a near-black or near-white swatch would otherwise sit at the same
+contrast as the row's own resting background and disappear into it;
+`text-label` is a mid neutral held >=3:1 against `bg-deep` on every preset.
+On a selected row the border flips to the cursor's `content` color
+(`Theme.on-accent`) instead, the same fix the favorite heart uses against the
+solid selection fill, see "Inverse-video rows" above.
 
 ### Themed QR codes
 
@@ -2271,7 +2374,7 @@ A list that scrolls glides to its new position over `Motion.scroll-ms`,
 shorter than a grid page turn because a list scrolls far more often; it
 does not jump. A held key walks the browse lists and the context menu at
 constant speed instead (`list_follow`). This covers the Settings card,
-`ListPickerModal`, the context menu, the media setup picker and the Online
+the list panel, the context menu, the media setup picker and the Online
 list modal. The free-text bodies of Game info and About page over
 `Motion.page-ms`. All
 of the row lists share one mechanism: `ScrollOffset` with `reveal: true`,
@@ -2303,7 +2406,7 @@ but moved the bottom edge by a different amount at each scroll position,
 because headers and rows are not the same height.
 
 **One list, every modal.** A modal that lists rows is built from the same
-parts as `ListPickerModal`: `SelectionCursor` with each row drawn a second
+parts as the list panel (`ListViewport`, `ListRow`): `SelectionCursor` with each row drawn a second
 time inside `SelectionClip`, `ScrollCue` arrows in a reserved band with the
 spent one dimmed, a `TouchArea` per row routed through
 `Overlays.pointer-choice`, its own `PressOwner` so Accept presses the

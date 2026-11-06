@@ -143,6 +143,7 @@ pub fn cancel(ctx: &Ctx, app: &App) -> bool {
         crate::Screen::Hub => crate::hub::render(ctx, app),
         crate::Screen::Search => crate::search::resume(ctx, app),
         crate::Screen::FileBrowser => crate::file_browser::render(ctx, app),
+        crate::Screen::Music => crate::music::render(ctx, app),
         _ => {}
     }
     true

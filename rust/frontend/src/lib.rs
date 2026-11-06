@@ -68,6 +68,8 @@ mod mister;
     )
 )]
 mod mister_battery;
+mod music;
+mod music_layout;
 mod navigation;
 mod online;
 mod online_list;
@@ -1033,6 +1035,7 @@ fn run_application(
     rename::bind(&ctx, &app);
     ra_login::bind(&ctx, &app);
     file_browser::bind(&ctx, &app);
+    music::bind(&ctx, &app);
     settings::bind_input(&ctx, &app);
     media_setup::bind_input(&ctx, &app);
     game_info::bind(&ctx, &app);
@@ -2149,6 +2152,7 @@ fn restores_screen(active_screen: &str) -> bool {
             | "search-results"
             | "rename"
             | "file-browser"
+            | "music"
             | "settings"
             | "about"
     )
@@ -2160,7 +2164,7 @@ fn boot_curtain_for(active_screen: &str, has_saved_state: bool) -> bool {
         "settings" | "about" => false,
         "systems" | "favorite-systems" | "games" | "favorites" | "recents" | "decks" | "deck"
         | "top-played" | "top-played-systems" | "search" | "search-results" | "rename"
-        | "file-browser" => true,
+        | "file-browser" | "music" => true,
         _ => has_saved_state,
     }
 }
@@ -2301,6 +2305,7 @@ fn restore_target(ctx: &Arc<Ctx>, app: &App) {
             file_browser::restore(ctx, app);
             return;
         }
+        "music" => return music::restore(ctx, app),
         "settings" => {
             settings::enter(ctx, app, EntryMode::Restore);
             return;

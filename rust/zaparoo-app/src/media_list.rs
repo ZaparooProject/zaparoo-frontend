@@ -516,6 +516,45 @@ pub fn detail_prefetch_rows(count: usize, selected: usize) -> Vec<usize> {
         .collect()
 }
 
+/// The games list profile's card for a scene, below a Menu chip band of
+/// `row_block` (zero for a screen without chips). Every browse list sits
+/// in it: the games-style lists, the file browser's, the music player's.
+pub fn scene_list_geometry(
+    inputs: &crate::sizing::Inputs,
+    rotated: bool,
+    row_block: i32,
+    target_rows: usize,
+) -> ListGeometry {
+    use crate::layouts::{self, Body, ThemeId, View};
+    let derived = crate::sizing::derive(inputs);
+    let view = if rotated {
+        View::GamesListTate
+    } else {
+        View::GamesList
+    };
+    let profile = layouts::profile(ThemeId::current(inputs), view, inputs);
+    let Body::List { list, .. } = profile.body else {
+        return ListGeometry::default();
+    };
+    list_geometry(
+        &list,
+        &ListFrame {
+            screen_width: inputs.screen_width as i32,
+            screen_height: inputs.screen_height as i32,
+            header_bottom: derived.header_bottom,
+            status_top_margin: profile.status.top_margin,
+            // The Menu chip row sits between the strip and the card.
+            strip_height: profile.status.strip_height + row_block,
+            help_bar_height: derived.help_bar_height,
+            tier_240: derived.tier == crate::sizing::Tier::T240,
+            safe_bottom_gap: derived.help_bar_band,
+            target_rows,
+            min_row_height: inputs.pct_h(3.0),
+            default_row_height: inputs.pct_h(6.0),
+        },
+    )
+}
+
 /// The screen numbers `list_geometry` needs beside the list profile.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ListFrame {
@@ -536,7 +575,7 @@ pub struct ListFrame {
 }
 
 /// The list card, its list and detail sections, and the row metrics.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ListGeometry {
     pub card_x: i32,
     pub card_y: i32,
@@ -959,17 +998,7 @@ pub fn menu_target(entry_type: EntryType, media_capable: bool, path: &str) -> Me
     }
 }
 
-/// Escape zapscript separators while leaving path text readable.
-fn escape_zapscript_arg(value: &str) -> String {
-    let mut escaped = String::with_capacity(value.len());
-    for ch in value.chars() {
-        if matches!(ch, '^' | '?' | ',' | '&' | '|') {
-            escaped.push('^');
-        }
-        escaped.push(ch);
-    }
-    escaped
-}
+use crate::zapscript::escape_arg as escape_zapscript_arg;
 
 /// Core-backed random launch for the browse scope: the folder when inside
 /// one (recursive), else the whole system; favorites-only adds the tag.

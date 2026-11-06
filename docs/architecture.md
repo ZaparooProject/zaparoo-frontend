@@ -30,6 +30,11 @@ rust/frontend/  [frontend library and binary; Slint UI]
   ├── src/{hub,systems,games,search,settings,about,update}.rs
   │                        per-screen drivers (update.rs hosts the Update
   │                        module's session; see "Update module")
+  ├── src/music.rs       : the music player for Core's background slot: the
+  │                        player and library pages, commands to Core, and
+  │                        the once-a-second clock while music plays
+  ├── src/music_layout.rs : its geometry, shared with the CRT mirror and
+  │                        the snapshot tool
   ├── src/keyboard.rs    : on-screen keyboard state for one text field
   ├── src/browse_filter.rs : the tags picker, for Games and Search
   ├── src/{game_info,media_setup,log_upload,launchers,card_write}.rs
@@ -91,6 +96,8 @@ rust/zaparoo-app/  [toolkit-free product rules]
                                     screen's focus and count rules, tag filters
   form_list, system_picker        : cursor rules for sectioned lists, and the
                                     system list grouped by manufacturer
+  music                           : the music player's controls, commands,
+                                    clock and geometry
   input, status_line, action_error, buttons, clock, covers, customization,
   launchers, alternate_versions, multi_disc, title_versions, media_setup,
   log_upload, format
@@ -100,7 +107,12 @@ rust/zaparoo-core/  [Core client and shared state]
   client.rs           : WebSocket JSON-RPC 2.0 (tokio-tungstenite)
   transport.rs        : Core endpoint: TCP, or a Unix socket with an API key
   remote_resource.rs  : RemoteResource<T>/ResourceStatus<T>
-  store/              : Endpoint, Mutation, Tag, Store cache
+  store/              : Endpoint, Mutation, Tag, Store cache, and two live
+                        watch resources: media status (database, scraper,
+                        primary slot) and background media (the music
+                        track and the playlist open on Core's background
+                        slot, from `media`, `media.active` and
+                        `playlists.changed`)
   endpoints/          : CatalogEndpoint, MediaSearchEndpoint, RunMutation
   systems_catalog.rs  : CatalogData payload + by-category filter
   input_actions.rs    : action names + key-code bindings

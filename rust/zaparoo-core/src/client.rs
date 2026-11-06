@@ -17,18 +17,19 @@ use crate::collections::{
     Deck, DeckIdParams, DeckImageParams, DeckNewParams, DeckUpdateParams, DecksParams, DecksResult,
 };
 use crate::media_types::{
-    AuthLinkStatus, AuthStatusResult, BackupRemoteListResult, BackupRemoteRestoreResult,
-    BackupRemoteRunResult, BackupStatusResponse, HealthResult, LaunchersResult, LogDownloadResult,
+    ActiveMediaInfo, AuthLinkStatus, AuthStatusResult, BackupRemoteListResult,
+    BackupRemoteRestoreResult, BackupRemoteRunResult, BackupStatusResponse, HealthResult,
+    LaunchersResult, LogDownloadResult, MediaActiveImageParams, MediaActiveParams,
     MediaAssetParams, MediaAssetResult, MediaBrowseIndexParams, MediaBrowseIndexResult,
-    MediaBrowseParams, MediaBrowseResult, MediaHistoryLatestResult, MediaHistoryParams,
-    MediaHistoryResult, MediaHistoryTopParams, MediaHistoryTopResult, MediaImageParams,
-    MediaImageResult, MediaIndexParams, MediaLookupParams, MediaLookupResult, MediaMetaParams,
-    MediaMetaResult, MediaMetaUpdateParams, MediaResult, MediaScrapeParams, MediaSearchParams,
-    MediaSearchResult, MediaTagsParams, MediaTagsResult, MediaTagsUpdateParams,
-    MediaTagsUpdateResult, PairStartResult, ReadersResult, ReadersWriteParams,
-    RemoteActivityResult, RunParams, ScrapersResult, ScrapingStatusResponse, SettingsResult,
-    SystemsParams, SystemsResult, TokensHistoryResult, TokensResult, UpdateSettingsParams,
-    VersionResult,
+    MediaBrowseParams, MediaBrowseResult, MediaControlParams, MediaHistoryLatestResult,
+    MediaHistoryParams, MediaHistoryResult, MediaHistoryTopParams, MediaHistoryTopResult,
+    MediaImageParams, MediaImageResult, MediaIndexParams, MediaLookupParams, MediaLookupResult,
+    MediaMetaParams, MediaMetaResult, MediaMetaUpdateParams, MediaResult, MediaScrapeParams,
+    MediaSearchParams, MediaSearchResult, MediaTagsParams, MediaTagsResult, MediaTagsUpdateParams,
+    MediaTagsUpdateResult, PairStartResult, PlaylistsUpdateParams, ReadersResult,
+    ReadersWriteParams, RemoteActivityResult, RunParams, ScrapersResult, ScrapingStatusResponse,
+    SettingsResult, SystemsParams, SystemsResult, TokensHistoryResult, TokensResult,
+    UpdateSettingsParams, VersionResult,
 };
 use crate::transport::Transport;
 use crate::ui_events::{UiRespondParams, UiState};
@@ -1216,6 +1217,43 @@ impl Client {
         #[derive(Serialize)]
         struct P {}
         let val = self.call("media", &P {}).await?;
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
+    }
+
+    /// One slot's active media (`media.active`), `None` when the slot is
+    /// idle.
+    pub async fn media_active(&self, slot: &str) -> Result<Option<ActiveMediaInfo>, ClientError> {
+        let val = self
+            .call(
+                "media.active",
+                &MediaActiveParams {
+                    slot: slot.to_string(),
+                },
+            )
+            .await?;
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
+    }
+
+    /// A launcher control on one slot's media (`media.control`): pause,
+    /// resume, stop, or a relative seek.
+    pub async fn media_control(&self, params: MediaControlParams) -> Result<(), ClientError> {
+        self.call("media.control", &params).await?;
+        Ok(())
+    }
+
+    /// Shuffle an open playlist or change its repeat mode
+    /// (`playlists.update`). The new state arrives as `playlists.changed`.
+    pub async fn playlists_update(&self, params: PlaylistsUpdateParams) -> Result<(), ClientError> {
+        self.call("playlists.update", &params).await?;
+        Ok(())
+    }
+
+    /// The playing track's cover art on one slot (`media.active.image`).
+    pub async fn media_active_image(
+        &self,
+        params: MediaActiveImageParams,
+    ) -> Result<MediaImageResult, ClientError> {
+        let val = self.call("media.active.image", &params).await?;
         serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
     }
 

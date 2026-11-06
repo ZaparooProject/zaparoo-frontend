@@ -774,7 +774,7 @@ mod tests {
         let mut state = MediaStatusState::default();
         state.apply_active(&[
             ActiveMediaInfo {
-                slot: "audio".into(),
+                slot: "background".into(),
                 media_name: "Background music".into(),
                 ..ActiveMediaInfo::default()
             },
@@ -793,7 +793,7 @@ mod tests {
         );
 
         state.apply_active(&[ActiveMediaInfo {
-            slot: "audio".into(),
+            slot: "background".into(),
             ..ActiveMediaInfo::default()
         }]);
         assert!(state.primary_active.is_none());
@@ -880,14 +880,14 @@ mod tests {
         fold_notification(
             &Notification {
                 method: "media.started".into(),
-                params: json!({ "slot": "audio", "mediaName": "Music" }),
+                params: json!({ "slot": "background", "mediaName": "Music" }),
             },
             &tx,
         );
         fold_notification(
             &Notification {
                 method: "media.stopped".into(),
-                params: json!({ "slot": "audio", "mediaName": "Music" }),
+                params: json!({ "slot": "background", "mediaName": "Music" }),
             },
             &tx,
         );

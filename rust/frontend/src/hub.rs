@@ -1108,6 +1108,16 @@ fn activate_current(ctx: &Ctx, app: &App) {
     emit_activate(ctx, app);
 }
 
+/// A pinned Settings tile: the music player, or its Settings page, with
+/// Back returning to the Hub either way.
+fn open_setting_tile(ctx: &Ctx, app: &App, id: &str) {
+    if id == zaparoo_app::settings::MUSIC_PAGE {
+        crate::music::enter(ctx, app, crate::music::Origin::Hub);
+    } else if let Ok(page) = crate::SettingsPage::try_from(id) {
+        crate::settings::enter_page_from_hub(ctx, app, page);
+    }
+}
+
 fn emit_activate(ctx: &Ctx, app: &App) {
     let entry = {
         let shared = lock(&ctx.shared);
@@ -1194,6 +1204,7 @@ fn emit_activate(ctx: &Ctx, app: &App) {
                 crate::decks::open_deck(ctx, app, &entry.id, true);
             }
         }
+        Some(Kind::Setting) => open_setting_tile(ctx, app, &entry.id),
         Some(Kind::Search) => {
             crate::search::enter_saved(
                 ctx,
@@ -1495,7 +1506,9 @@ fn open_context_menu(ctx: &Ctx, app: &App) {
                     )
                 }
             },
-            Kind::Search => Plan::Show(menu::shortcut(false, false), MenuTarget::Tile),
+            Kind::Search | Kind::Setting => {
+                Plan::Show(menu::shortcut(false, false), MenuTarget::Tile)
+            }
             Kind::Collection => Plan::Show(
                 crate::decks::menu(&shared, &entry.id, true),
                 MenuTarget::Deck(entry.id.clone()),
@@ -1927,7 +1940,7 @@ pub(crate) fn open_add_picker(ctx: &Ctx, app: &App) {
     let entries = {
         let shared = lock(&ctx.shared);
         let hub = &shared.hub;
-        let available: Vec<(String, String)> = hub
+        let mut available: Vec<(String, String)> = hub
             .layout
             .available_known()
             .into_iter()
@@ -1936,6 +1949,13 @@ pub(crate) fn open_add_picker(ctx: &Ctx, app: &App) {
                     .map(|(k, i)| (k.to_string(), i.to_string()))
             })
             .collect();
+        // Every Settings root tile not already pinned.
+        available.extend(
+            zaparoo_app::settings::PAGES
+                .iter()
+                .filter(|page| hub.layout.setting_position(page.id).is_none())
+                .map(|page| ("setting".to_string(), page.id.to_string())),
+        );
         let live = Live {
             categories_loaded: hub.categories_loaded,
             confirmed_categories: &shared.all_categories,
@@ -2110,6 +2130,43 @@ fn add_target(shared: &Shared) -> usize {
     .unwrap_or(usize::MAX)
 }
 
+/// Whether Settings page `id` has a tile on the Hub, so its Options offer
+/// "Remove from Hub".
+pub fn has_setting(shared: &Shared, id: &str) -> bool {
+    shared.hub.layout.setting_position(id).is_some()
+}
+
+/// "Add to Hub" / "Remove from Hub" on a Settings root tile: the same
+/// gap-or-end placement, removal and header confirmation as
+/// `toggle_target`.
+pub fn toggle_setting(ctx: &Ctx, app: &App, id: &str) {
+    let cue = {
+        let mut shared = lock(&ctx.shared);
+        let hub = &mut shared.hub;
+        let cue = match hub.layout.setting_position(id) {
+            Some(index) => hub
+                .layout
+                .remove_visible_item(index)
+                .then_some(crate::AppCue::RemovedFromHub),
+            None => hub
+                .layout
+                .add_setting_item(id, None)
+                .then_some(crate::AppCue::AddedToHub),
+        };
+        if cue.is_some() {
+            hub.save(&ctx.handle);
+        }
+        cue
+    };
+    if let Some(cue) = cue {
+        rebuild(ctx, app);
+        crate::cue::flash(ctx, app, cue, zaparoo_app::wait_cue::CONFIRM_MS);
+    } else {
+        tracing::warn!("hub update did nothing for setting {id}");
+        crate::router::report_action_error(ctx, app, "add_to_hub", "");
+    }
+}
+
 /// Add picker accept: place the item, then hand it to the user to carry.
 pub fn add_picked(ctx: &Ctx, app: &App, id: &str) {
     if id == rules::CUSTOM_FOLDER_ENTRY {
@@ -2125,7 +2182,11 @@ pub fn add_picked(ctx: &Ctx, app: &App, id: &str) {
         let mut shared = lock(&ctx.shared);
         let target = add_target(&shared);
         let hub = &mut shared.hub;
-        let added = hub.layout.add_item(kind, item_id, target);
+        let added = if kind == "setting" {
+            hub.layout.add_setting_item(item_id, Some(target))
+        } else {
+            hub.layout.add_item(kind, item_id, target)
+        };
         if added {
             hub.save(&ctx.handle);
         }

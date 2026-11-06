@@ -132,7 +132,7 @@ export component GameInfoModal inherits ModalShell {
         : root.paging ? values-list.preferred-height : contents.preferred-height;
     // Lip, title, gap, rule, gap, scroll cue, body, scroll cue, lip. The
     // cues sit in a reserved band outside the viewport rather than in the
-    // lip, the same shape `ListPickerModal` uses, so the panel does not
+    // lip, the same shape the list panel uses, so the panel does not
     // resize as the body scrolls past either end.
     property <length> arrow: Sizing.pct-h(3);
     property <length> arrow-band: root.arrow + Sizing.pct-h(0.5);

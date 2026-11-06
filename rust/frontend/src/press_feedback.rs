@@ -246,6 +246,13 @@ fn current_with(app: &App, prepare_grid: impl FnOnce()) -> Option<Target> {
         let row = ov
             .get_list_entries()
             .row_data(usize::try_from(index).ok()?)?;
+        // A toggle answers with its knob sliding, so it takes no push.
+        if matches!(
+            row.role,
+            crate::MenuRole::ToggleOn | crate::MenuRole::ToggleOff
+        ) {
+            return None;
+        }
         return Some(target(
             PressOwner::List,
             index,
@@ -267,20 +274,24 @@ fn current_with(app: &App, prepare_grid: impl FnOnce()) -> Option<Target> {
     if app.global::<crate::GameInfoView>().get_modal_open() || shell.get_transitioning() {
         return None;
     }
-    if shell.get_active_screen() == Screen::Settings {
-        let view = app.global::<crate::SettingsView>();
-        return field_target(
-            PressOwner::Settings,
-            view.get_index(),
-            view.get_page().token(),
-            &view.get_rows(),
-        );
-    }
-    if shell.get_active_screen() == Screen::Update {
-        return update_target(app);
+    match shell.get_active_screen() {
+        Screen::Settings => return settings_target(app),
+        Screen::Update => return update_target(app),
+        Screen::Music => return music_target(app),
+        _ => {}
     }
     prepare_grid();
     grid_target(app)
+}
+
+fn settings_target(app: &App) -> Option<Target> {
+    let view = app.global::<crate::SettingsView>();
+    field_target(
+        PressOwner::Settings,
+        view.get_index(),
+        view.get_page().token(),
+        &view.get_rows(),
+    )
 }
 
 fn update_target(app: &App) -> Option<Target> {
@@ -297,6 +308,28 @@ fn update_target(app: &App) -> Option<Target> {
         PressOwner::Update,
         index,
         format!("{:?}:{:?}:{button:?}", view.get_page(), view.get_outcome()),
+    ))
+}
+
+/// The player's focused transport control. A control that cannot act has
+/// no target, so it is never pushed; the lists' rows flash instead.
+fn music_target(app: &App) -> Option<Target> {
+    if app.global::<crate::PageBar>().get_focused() {
+        return None;
+    }
+    let view = app.global::<crate::MusicView>();
+    if view.get_page() != crate::MusicPage::Player {
+        return None;
+    }
+    let index = view.get_control_index();
+    let button = view.get_buttons().row_data(usize::try_from(index).ok()?)?;
+    if button.unavailable != crate::MusicUnavailable::None {
+        return None;
+    }
+    Some(target(
+        PressOwner::Music,
+        index,
+        format!("{:?}:{:?}", button.control, view.get_playback()),
     ))
 }
 

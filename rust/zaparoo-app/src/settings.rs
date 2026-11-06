@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 
-//! The Settings registry: the six root categories, the rows each page
+//! The Settings registry: the eight root categories, the rows each page
 //! shows at the current runtime, what control each row carries, the
 //! canonical option lists, and the cursor rules over rows that include
 //! non-navigable headers. Every user-visible string stays a key the view
@@ -65,8 +65,9 @@ pub struct Page {
 
 /// The root grid, in the order the console-style menu shows it:
 /// Appearance is how it looks, Library the collection and its
-/// maintenance, Display the video output, Controls the input, Language
-/// the locale, About the identity and diagnostics.
+/// maintenance, Music the background music player, Online the account,
+/// Display the video output, Controls the input, Language the locale,
+/// About the identity and diagnostics.
 pub const PAGES: &[Page] = &[
     Page {
         id: "pageAppearance",
@@ -75,6 +76,10 @@ pub const PAGES: &[Page] = &[
     Page {
         id: "pageLibraryData",
         glyph: "icons/Library",
+    },
+    Page {
+        id: MUSIC_PAGE,
+        glyph: "icons/Music",
     },
     Page {
         id: "pageOnline",
@@ -97,6 +102,15 @@ pub const PAGES: &[Page] = &[
         glyph: "icons/Support",
     },
 ];
+
+/// The root tile that opens the music player, a screen of its own rather
+/// than a page of rows.
+pub const MUSIC_PAGE: &str = "pageMusic";
+
+/// The glyph of a root tile, for a pinned Hub tile that stands for it.
+pub fn page_glyph(id: &str) -> Option<&'static str> {
+    PAGES.iter().find(|p| p.id == id).map(|p| p.glyph)
+}
 
 /// What the registry needs to know about the machine it runs on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -613,6 +627,10 @@ fn hint_line_height(inputs: &crate::sizing::Inputs, size: i32) -> i32 {
 /// rows band it clips is the viewport the scroll was solved against.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PageGeometry {
+    /// The card is centered: as wide as the scene less 3% either side, and
+    /// never wider than 70% of it.
+    pub card_x: i32,
+    pub card_width: i32,
     pub card_y: i32,
     pub card_height: i32,
     /// The card's lip: above the first row, under the last, either side of
@@ -657,7 +675,13 @@ pub fn page_geometry(inputs: &crate::sizing::Inputs) -> PageGeometry {
     // it where the rows band stops, so a row gliding out never abuts the
     // rule.
     let rows_viewport = (card_height - 4 * pad - 2 - hint_height).max(0);
+    let screen_width = inputs.screen_width as i32;
+    let card_width = (screen_width - 2 * inputs.pct_w(3.0))
+        .min(inputs.pct_w(70.0))
+        .max(0);
     PageGeometry {
+        card_x: (screen_width - card_width) / 2,
+        card_width,
         card_y,
         card_height,
         pad,
@@ -957,13 +981,17 @@ mod tests {
     }
 
     #[test]
-    fn root_page_lists_the_seven_categories() {
+    fn root_page_lists_the_eight_categories() {
         let rows = page_rows("", &Inputs::default());
-        assert_eq!(rows.len(), 7);
+        assert_eq!(rows.len(), 8);
         assert!(rows.iter().all(|r| r.is_field()));
         assert_eq!(rows[0].id(), "pageAppearance");
-        assert_eq!(rows[2].id(), "pageOnline");
-        assert_eq!(rows[6].id(), "pageSupportAbout");
+        assert_eq!(rows[2].id(), MUSIC_PAGE);
+        assert_eq!(rows[3].id(), "pageOnline");
+        assert_eq!(rows[7].id(), "pageSupportAbout");
+        assert_eq!(root_grid_shape(rows.len(), false), (4, 2));
+        assert_eq!(page_glyph(MUSIC_PAGE), Some("icons/Music"));
+        assert_eq!(page_glyph("colorScheme"), None);
         assert_eq!(opens_page("pageLibraryData"), Some("pageLibraryData"));
         assert_eq!(opens_page("pageOnline"), Some("pageOnline"));
         assert_eq!(opens_page("colorScheme"), None);

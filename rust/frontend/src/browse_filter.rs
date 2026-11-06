@@ -23,7 +23,7 @@ use crate::router::{
 use crate::App;
 
 /// Rows the list picker shows at once: its viewport is 60% of the screen
-/// height over 7% rows with a 1% gap (`ListPickerModal`), whatever the
+/// height over 7% rows with a 1% gap (the list panel), whatever the
 /// resolution.
 const PICKER_ROWS: usize = 7;
 

@@ -45,6 +45,7 @@ pub struct PersistedState {
     /// The Top played screen and its systems: the same focus, order-free,
     /// as a built-in list keeps (`sort` stays unused).
     pub top_played: UserListState,
+    pub music: MusicState,
 }
 
 /// The Decks screen: the deck focused there.
@@ -108,6 +109,33 @@ pub struct FileBrowserState {
     pub selected: String,
     /// Set while picking a cover for this deck instead of a tile's icon.
     pub deck_id: String,
+}
+
+/// The music player: which page and control had focus, the playlist row
+/// it was on, where it was opened from, and the library folder being
+/// browsed with the selection at each level. Paths and ids only: what is
+/// playing always comes from Core.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct MusicState {
+    /// `"player"`, `"playlist"` or `"library"`; empty reads as the player.
+    pub page: String,
+    /// The focused transport control's token.
+    pub control: String,
+    /// The focused row of the playlist page, counted from 0, and its item's
+    /// `ZapScript`,
+    /// checked on restore so a playlist that changed in between seats on
+    /// the current track instead.
+    pub playlist_index: usize,
+    pub playlist_item: String,
+    /// A pinned Hub tile opened it, so Back returns to the Hub; otherwise
+    /// Back returns to Settings.
+    pub entered_from_hub: bool,
+    /// The library folders opened, outermost first; empty at the top.
+    pub library_path_stack: Vec<String>,
+    /// The entry selected at each level, by path, top level first.
+    pub library_selected_at_level: Vec<String>,
+    pub library_list_top_at_level: Vec<usize>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -950,7 +978,7 @@ mod tests {
 
     use super::{
         load_from, save_to, DeckState, DecksState, FavoriteSystemsState, FavoritesState,
-        FileBrowserState, GamesState, HubState, HubTarget, ListsState, PersistedState,
+        FileBrowserState, GamesState, HubState, HubTarget, ListsState, MusicState, PersistedState,
         RecentSearch, RecentsState, RenameState, SearchState, SettingsState, SystemFilter,
         SystemFocus, SystemsState, UserListState, MAX_RECENT_SEARCHES, MAX_SYSTEM_FILTERS,
         MAX_SYSTEM_FOCUS, SEARCH_SCOPE_BROWSE, SEARCH_SCOPE_FAVORITES,
@@ -1157,6 +1185,16 @@ mod tests {
                 system_id: "SNES".into(),
                 systems_list_top: Some(1),
             },
+            music: MusicState {
+                page: "player".into(),
+                control: "play-pause".into(),
+                playlist_index: 2,
+                playlist_item: "/music/a.mp3".into(),
+                entered_from_hub: false,
+                library_path_stack: vec!["/music".into()],
+                library_selected_at_level: vec!["/music/a.mp3".into()],
+                library_list_top_at_level: vec![0],
+            },
         };
         save_to(&path, &original);
         let loaded = load_from(&path);
@@ -1341,6 +1379,7 @@ resolution = "1920x1080"
                             decks: DecksState::default(),
                             deck: DeckState::default(),
                             top_played: UserListState::default(),
+                            music: MusicState::default(),
                         };
                         save_to(&path, &state);
                     }
@@ -1712,6 +1751,35 @@ future_field = "ignored"
         assert_eq!(old.file_browser, FileBrowserState::default());
         assert_eq!(old.decks, DecksState::default());
         assert_eq!(old.deck, DeckState::default());
+    }
+
+    #[test]
+    fn the_music_section_round_trips_and_defaults_when_absent() {
+        let state = PersistedState {
+            active_screen: "music".into(),
+            music: MusicState {
+                page: "library".into(),
+                control: "next".into(),
+                playlist_index: 4,
+                playlist_item: "/media/fat/Music/Crises/05 Taurus 3.mp3".into(),
+                entered_from_hub: true,
+                library_path_stack: vec![
+                    "/media/fat/Music".into(),
+                    "/media/fat/Music/Crises".into(),
+                ],
+                library_selected_at_level: vec![
+                    "/media/fat/Music".into(),
+                    "/media/fat/Music/Crises".into(),
+                    "/media/fat/Music/Crises/03 Moonlight Shadow.mp3".into(),
+                ],
+                library_list_top_at_level: vec![0, 2, 1],
+            },
+            ..PersistedState::default()
+        };
+        let decoded: PersistedState = toml::from_str(&toml::to_string(&state).unwrap()).unwrap();
+        assert_eq!(decoded, state);
+        let old: PersistedState = toml::from_str("active_screen = 'hub'").unwrap();
+        assert_eq!(old.music, MusicState::default());
     }
 
     #[test]

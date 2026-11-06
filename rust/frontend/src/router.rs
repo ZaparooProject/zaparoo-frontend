@@ -106,7 +106,7 @@ pub struct Shared {
     pub context_seq: u64,
     /// The strip button focus returns to when Up leaves the rows.
     pub context_strip_at: usize,
-    /// What the open `ListPickerModal` is for (the Menu list vs a settings
+    /// What the open list panel is for (the Menu list vs a settings
     /// picker field).
     pub list_context: ListContext,
     /// Restart-applied Display setting waiting behind the confirmation
@@ -172,6 +172,8 @@ pub struct Shared {
     pub search: crate::search::Model,
     pub rename: crate::rename::Model,
     pub file_browser: crate::file_browser::Model,
+    /// The music player.
+    pub music: crate::music::Model,
     /// Ticket for the per-game launcher read, so a picker only opens
     /// for the row the user is still on.
     pub game_launcher_seq: u64,
@@ -186,6 +188,9 @@ pub struct Shared {
     /// Settings page and row for Back and in-process restoration, not
     /// fresh entry. Memory only: a cold start opens Settings at its root.
     pub settings_focus: Option<(crate::SettingsPage, usize)>,
+    /// The Settings page on screen was opened from a pinned Hub tile, so
+    /// Back returns to the Hub. Memory only, like `settings_focus`.
+    pub settings_from_hub: bool,
 }
 
 /// Which surface an open context menu was invoked on. Favorites and
@@ -208,7 +213,7 @@ pub enum PendingRestart {
     CrtEnabled(bool),
 }
 
-/// What the shared `ListPickerModal` is currently picking.
+/// What the shared list panel is currently picking.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ListContext {
     /// The games screen's Menu list.
@@ -243,6 +248,16 @@ pub enum ListContext {
     SearchSystem,
     /// A settings picker row; the payload is the field id.
     SettingsPicker(String),
+    /// The music player's Menu, its More list (the Menu chip row's rare
+    /// rows), its Volume page, the library's Menu, and a library folder's
+    /// Options (the payload is the folder's path).
+    MusicMenu,
+    MusicMore,
+    MusicVolume,
+    MusicLibraryMenu,
+    MusicFolderOptions(String),
+    /// A Settings root tile's Options; the payload is its page id.
+    SettingsTileOptions(String),
     /// The "Change launcher" picker; the payload is the system id.
     SystemLauncher(String),
     /// The per-game "Change launcher" picker; the payload is the game's
@@ -354,11 +369,13 @@ impl Shared {
             search: crate::search::Model::default(),
             rename: crate::rename::Model::default(),
             file_browser: crate::file_browser::Model::default(),
+            music: crate::music::Model::default(),
             game_launcher_seq: 0,
             persist,
             restore_pending,
             hub: crate::hub::HubModel::new(hub_layout_path),
             settings_focus: None,
+            settings_from_hub: false,
         }
     }
 }
@@ -1187,6 +1204,14 @@ pub(crate) fn arm_restore_timeout(ctx: &Ctx, app: &App) {
 /// the nearest screen that is already complete. The saved state keeps
 /// naming the target, so the next start tries it again.
 pub(crate) fn abandon_restore(ctx: &Ctx, app: &App) {
+    // The music player lands where its Back would go.
+    let music_to_settings = crate::music::restore_fallback_is_settings(&lock(&ctx.shared));
+    crate::music::abandon(ctx);
+    if music_to_settings {
+        crate::navigation::finish(app);
+        crate::music::land_on_settings(ctx, app);
+        return;
+    }
     let parent = {
         let mut shared = lock(&ctx.shared);
         shared.games.fill_task.cancel();
@@ -1502,6 +1527,7 @@ fn screen_action(ctx: &Ctx, app: &App, action: &str) {
         crate::Screen::Rename => crate::rename::handle_action(ctx, app, action),
         crate::Screen::RaLogin => crate::ra_login::handle_action(ctx, app, action),
         crate::Screen::FileBrowser => crate::file_browser::handle_action(ctx, app, action),
+        crate::Screen::Music => crate::music::handle_action(ctx, app, action),
         crate::Screen::Settings => crate::settings::handle_action(ctx, app, action),
         crate::Screen::About => about_action(ctx, app, action),
         crate::Screen::Update => crate::update::handle_action(ctx, app, action),
@@ -1781,6 +1807,7 @@ pub(crate) fn relayout(ctx: &Ctx, app: &App) {
     crate::games::on_layout_changed(ctx, app);
     crate::settings::refresh(ctx, app);
     crate::file_browser::relayout(ctx, app);
+    crate::music::relayout(ctx, app);
 }
 
 /// Clock format or language changed: re-decide 12/24 hour and repaint.
@@ -1807,6 +1834,15 @@ pub(crate) fn open_view_menu(ctx: &Ctx, app: &App) {
     present_list(ctx, app, ListContext::ViewMenu, "title:menu", entries);
 }
 
+/// Whether the focused row of the open list is a slider.
+fn current_row_is_slider(app: &App) -> bool {
+    let overlays = app.global::<crate::Overlays>();
+    usize::try_from(overlays.get_list_index())
+        .ok()
+        .and_then(|i| overlays.get_list_entries().row_data(i))
+        .is_some_and(|row| row.role == crate::MenuRole::Slider && row.enabled)
+}
+
 /// What each row of the open list is, for the cursor rules.
 fn list_roles(app: &App) -> Vec<zaparoo_app::form_list::Role> {
     use zaparoo_app::form_list::Role;
@@ -1814,12 +1850,16 @@ fn list_roles(app: &App) -> Vec<zaparoo_app::form_list::Role> {
         .get_list_entries()
         .iter()
         .map(|entry| match entry.role {
-            // Page-opening and membership rows are context-menu rows; in
-            // a list they would be picked like any other.
+            // A row that opens a page, a picker's current choice and a
+            // setting switched in place are all picked like any other.
             crate::MenuRole::Option
             | crate::MenuRole::Submenu
             | crate::MenuRole::CheckOff
-            | crate::MenuRole::CheckOn => Role::Option,
+            | crate::MenuRole::CheckOn
+            | crate::MenuRole::Chosen
+            | crate::MenuRole::ToggleOff
+            | crate::MenuRole::ToggleOn
+            | crate::MenuRole::Slider => Role::Option,
             crate::MenuRole::Header => Role::Header,
             crate::MenuRole::Action => Role::Action,
         })
@@ -1877,6 +1917,16 @@ fn list_accept(ctx: &Ctx, app: &App, context: ListContext, id: &str) {
         ListContext::GameLauncher(system_id, path) => {
             crate::launchers::set_game_launcher(ctx, app, &system_id, &path, id);
         }
+        ListContext::MusicMenu
+        | ListContext::MusicMore
+        | ListContext::MusicVolume
+        | ListContext::MusicLibraryMenu
+        | ListContext::MusicFolderOptions(_) => crate::music::list_accept(ctx, app, &context, id),
+        ListContext::SettingsTileOptions(page) => {
+            if id == "hub_toggle" {
+                crate::hub::toggle_setting(ctx, app, &page);
+            }
+        }
     }
 }
 
@@ -1906,6 +1956,10 @@ fn list_action(ctx: &Ctx, app: &App, action: &str) {
             app.global::<crate::Overlays>()
                 .set_list_index(i32::try_from(next).unwrap_or(0));
         }
+        // Sideways on a slider row adjusts it, a step at a time.
+        actions::LEFT | actions::RIGHT if current_row_is_slider(app) => {
+            crate::music::slide(ctx, app, if action == actions::RIGHT { 1 } else { -1 });
+        }
         // Sideways and the shoulder buttons jump a section in a list that
         // has them.
         actions::LEFT | actions::RIGHT | actions::PAGE_PREV | actions::PAGE_NEXT
@@ -1932,6 +1986,9 @@ fn list_action(ctx: &Ctx, app: &App, action: &str) {
                     | ListContext::FilterCategories
                     | ListContext::FilterValues(_) => true,
                     ListContext::ViewMenu => id == "filter",
+                    ListContext::MusicMenu | ListContext::MusicMore => {
+                        crate::music::menu_stays_open(&id)
+                    }
                     _ => false,
                 };
                 // A pick that opens another screen keeps the list up until
@@ -2238,6 +2295,24 @@ pub(crate) fn menu_row_full(
     }
 }
 
+/// The same row with its role set: a picker's current choice (`Chosen`) or
+/// a setting switched in place (`ToggleOn`, `ToggleOff`).
+pub(crate) fn with_role(mut entry: crate::MenuEntry, role: crate::MenuRole) -> crate::MenuEntry {
+    entry.role = role;
+    entry
+}
+
+/// A picker's rows with the one that is the current choice marked.
+pub(crate) fn mark_chosen(
+    mut entries: Vec<crate::MenuEntry>,
+    current: usize,
+) -> Vec<crate::MenuEntry> {
+    if let Some(entry) = entries.get_mut(current) {
+        entry.role = crate::MenuRole::Chosen;
+    }
+    entries
+}
+
 /// Hub helpers the driver in `crate::hub` calls back into.
 pub(crate) fn has_indexable(shared: &Shared, category: &str) -> bool {
     zaparoo_core::systems_catalog::systems_in_category(&shared.systems, category)
@@ -2513,11 +2588,14 @@ pub(crate) fn open_top_played_page_menu(ctx: &Ctx, app: &App) {
 
 /// Top played's grouping page.
 pub(crate) fn open_top_played_grouping_menu(ctx: &Ctx, app: &App) {
-    let entries = vec![
-        menu_row_keyed("none", "group:none", ""),
-        menu_row_keyed("system", "group:system", ""),
-    ];
     let grouped = zaparoo_app::top_played::grouped(&lock(&ctx.shared).persist.top_played.grouping);
+    let entries = mark_chosen(
+        vec![
+            menu_row_keyed("none", "group:none", ""),
+            menu_row_keyed("system", "group:system", ""),
+        ],
+        usize::from(grouped),
+    );
     present_list(
         ctx,
         app,
@@ -2556,14 +2634,17 @@ fn top_played_grouping_picked(ctx: &Ctx, app: &App, id: &str) {
 
 /// The grouping page, reachable from either of a list's screens.
 pub(crate) fn open_favorites_grouping_menu(ctx: &Ctx, app: &App) {
-    let entries = vec![
-        menu_row_keyed("none", "group:none", ""),
-        menu_row_keyed("system", "group:system", ""),
-    ];
     let grouped = {
         let shared = lock(&ctx.shared);
         crate::user_lists::grouped(&shared, crate::user_lists::active(&shared))
     };
+    let entries = mark_chosen(
+        vec![
+            menu_row_keyed("none", "group:none", ""),
+            menu_row_keyed("system", "group:system", ""),
+        ],
+        usize::from(grouped),
+    );
     present_list(
         ctx,
         app,
@@ -2602,10 +2683,6 @@ fn favorites_grouping_picked(ctx: &Ctx, app: &App, id: &str) {
 
 pub(crate) fn open_favorites_sort_menu(ctx: &Ctx, app: &App) {
     use zaparoo_app::user_lists::ListSort;
-    let entries = ListSort::ALL
-        .iter()
-        .map(|sort| menu_row_keyed(sort.token(), sort.label_key(), ""))
-        .collect();
     let current = {
         let shared = lock(&ctx.shared);
         crate::user_lists::sort(&shared, crate::user_lists::active(&shared))
@@ -2614,6 +2691,13 @@ pub(crate) fn open_favorites_sort_menu(ctx: &Ctx, app: &App) {
         .iter()
         .position(|sort| *sort == current)
         .unwrap_or(0);
+    let entries = mark_chosen(
+        ListSort::ALL
+            .iter()
+            .map(|sort| menu_row_keyed(sort.token(), sort.label_key(), ""))
+            .collect(),
+        index,
+    );
     present_list(ctx, app, ListContext::FavoritesSort, "title:sort", entries);
     app.global::<crate::Overlays>()
         .set_list_index(i32::try_from(index).unwrap_or(0));
@@ -3003,6 +3087,17 @@ pub(crate) fn close_context_menu(ctx: &Ctx, app: &App) {
 /// accepts.
 pub fn bind_context_input(ctx: &Arc<Ctx>, app: &App) {
     crate::about::bind(ctx, app);
+    {
+        let ctx = ctx.clone();
+        let weak = app.as_weak();
+        app.global::<crate::Overlays>()
+            .on_slider_step(move |direction| {
+                let Some(app) = weak.upgrade() else { return };
+                if lock(&ctx.shared).persist.settings.mouse_enabled && current_row_is_slider(&app) {
+                    crate::music::slide(&ctx, &app, direction);
+                }
+            });
+    }
     {
         let ctx = ctx.clone();
         let weak = app.as_weak();

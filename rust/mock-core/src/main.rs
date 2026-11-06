@@ -15,6 +15,7 @@ mod fixtures;
 mod handler;
 mod library;
 mod media_state;
+mod music;
 mod ui_events;
 
 use futures_util::{SinkExt, StreamExt};

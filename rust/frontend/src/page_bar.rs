@@ -24,6 +24,9 @@ thread_local! {
     /// Search here all need Core's index. Set by the games driver with the
     /// mode, read where only the screen or mode is at hand (geometry).
     static LIVE_BROWSE: Cell<bool> = const { Cell::new(false) };
+    /// The music screen's page, as a surface: the player and the library
+    /// have chips, the playlist page has none. Set by the music driver.
+    static MUSIC_SURFACE: Cell<Surface> = const { Cell::new(Surface::MusicPlayer) };
 }
 
 /// The games driver entered or left a live folder.
@@ -53,6 +56,7 @@ fn surface_of(screen: Screen) -> Surface {
         Screen::Deck => Surface::Deck,
         Screen::TopPlayed => Surface::TopPlayed,
         Screen::TopPlayedSystems => Surface::TopPlayedSystems,
+        Screen::Music => MUSIC_SURFACE.with(Cell::get),
         _ => Surface::Other,
     }
 }
@@ -123,6 +127,7 @@ fn active_chips(app: &App) -> ModelRc<crate::MenuEntry> {
         | Surface::Deck
         | Surface::Decks
         | Surface::TopPlayed => bar.get_games_chips(),
+        Surface::MusicPlayer | Surface::MusicLibrary => bar.get_music_chips(),
         Surface::Other => ModelRc::default(),
     }
 }
@@ -187,7 +192,14 @@ fn entry(chip: Chip, surface: Surface, shared: &Shared) -> crate::MenuEntry {
         | Chip::AddItem
         | Chip::More
         | Chip::NewDeck
-        | Chip::PlayDeck => menu_row(chip.id()),
+        | Chip::PlayDeck
+        // The music driver words its own chips (`publish_music`).
+        | Chip::MusicPlaylist
+        | Chip::ChooseMusic
+        | Chip::StopMusic
+        | Chip::MusicVolume
+        | Chip::PlayAll
+        | Chip::ShuffleAll => menu_row(chip.id()),
     }
 }
 
@@ -240,6 +252,17 @@ pub(crate) fn publish_hub(app: &App, shared: &Shared) {
     let bar = app.global::<PageBar>();
     let next = entries(Surface::Hub, shared);
     set_if_changed(&bar.get_hub_chips(), next, |model| bar.set_hub_chips(model));
+    clamp_focus(app);
+}
+
+/// Publish the music screen's chips for the page on show.
+pub(crate) fn publish_music(app: &App, shared: &Shared, surface: Surface) {
+    MUSIC_SURFACE.with(|cell| cell.set(surface));
+    let bar = app.global::<PageBar>();
+    let next = crate::music::chip_entries(shared, surface);
+    set_if_changed(&bar.get_music_chips(), next, |model| {
+        bar.set_music_chips(model);
+    });
     clamp_focus(app);
 }
 
@@ -368,12 +391,24 @@ fn activate(ctx: &Ctx, app: &App, index: usize) {
         "new_deck" => crate::decks::new_deck(ctx, app),
         "play_deck" => crate::decks::play_open(ctx, app),
         "more" if surface == Surface::Deck => crate::decks::open_more(ctx, app),
+        "more" if surface == Surface::MusicPlayer => crate::music::open_more(ctx, app),
+        "music_playlist" | "music_choose" | "music_stop" | "music_volume" | "music_play_all"
+        | "music_shuffle_all" => crate::music::page_action(ctx, app, &id, false),
         "more" => open_more(ctx, app, surface),
         _ => {}
     }
     // A picker is up: backing out of it comes back to this chip.
     if crate::input::modal_open(app) && app.global::<Shell>().get_active_screen() == screen {
         RESUME.with(|resume| resume.set(Some((screen, index))));
+    }
+    // A route is loading its destination: focus stays on the chip that
+    // started it, rather than going back to the content for the wait. The
+    // route's commit releases the row (`screen_changed`); a Cancel keeps
+    // the source with its chip focused.
+    if app.global::<Shell>().get_transitioning() && row_takes_menu(app) {
+        let bar = app.global::<PageBar>();
+        bar.set_index(i32::try_from(index).unwrap_or(0));
+        bar.set_focused(true);
     }
 }
 

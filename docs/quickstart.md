@@ -207,6 +207,11 @@ only; pad buttons are not remappable.
 - Escape backs out, and held, goes straight to the Hub. On the Hub, Escape
   does nothing: Quit lives in the Menu, behind More.
 - PageUp and PageDown together open Go to on a games list.
+- Settings > Background music opens the **music player**. Its Menu >
+  Browse music browses the mock's Audio index; Enter on a track starts its folder as a
+  playlist on the background slot, and the mock plays it, ends tracks on
+  its own after about a minute and advances. PageUp and PageDown skip
+  tracks on the player, and Menu > Show playlist lists the open playlist.
 
 ## 5. Run tests and lints
 

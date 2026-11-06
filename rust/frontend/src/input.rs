@@ -523,6 +523,7 @@ fn key_released(ctx: &Ctx, app: &App, key: &str) {
         // Hold::release already cleared the hold. Stopping it again would
         // report false and skip the final selection's synchronous flush.
         crate::games::flush_persist(ctx);
+        crate::music::flush_selection(ctx);
     }
 }
 
@@ -560,6 +561,7 @@ pub fn stop_repeat(ctx: &Ctx) {
     };
     if held {
         crate::games::flush_persist(ctx);
+        crate::music::flush_selection(ctx);
     }
 }
 
@@ -826,6 +828,8 @@ fn push_rapid(ctx: &Ctx, app: &App, active: bool) {
     crate::games::set_rapid(ctx, app, active && on_list);
     let on_browser = app.global::<crate::Shell>().get_active_screen() == crate::Screen::FileBrowser;
     crate::file_browser::set_rapid(ctx, app, active && on_browser);
+    let on_music = app.global::<crate::Shell>().get_active_screen() == crate::Screen::Music;
+    crate::music::set_rapid(ctx, app, active && on_music);
 }
 
 /// Key events -> normalized actions -> router, honoring the merged

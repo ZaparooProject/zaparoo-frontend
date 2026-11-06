@@ -26,19 +26,28 @@ fill="none"):
   resources/images/icons/Language.svg
   resources/images/icons/Library.svg
   resources/images/icons/Loading.svg
+  resources/images/icons/Music.svg (music-double-note)
   resources/images/icons/NavDown.svg
   resources/images/icons/NavLeft.svg
   resources/images/icons/NavRight.svg
   resources/images/icons/NavUp.svg
+  resources/images/icons/Pause.svg
+  resources/images/icons/Play.svg
+  resources/images/icons/Repeat.svg
+  resources/images/icons/RepeatOne.svg (repeat-once)
   resources/images/icons/ScrollDown.svg
   resources/images/icons/ScrollUp.svg
   resources/images/icons/Search.svg
   resources/images/icons/Settings.svg
   resources/images/icons/ShiftLock.svg (NavUp.svg's chevron with a bar
     under it, for caps on the on-screen keyboard)
+  resources/images/icons/Shuffle.svg
+  resources/images/icons/SkipBack.svg (skip-prev)
+  resources/images/icons/SkipForward.svg (skip-next)
   resources/images/icons/Support.svg
   resources/images/icons/Tools.svg
   resources/images/status/Bluetooth.svg
+  resources/images/status/Music.svg (music-double-note, as icons/Music.svg)
   resources/images/status/WiFi.svg
   resources/images/status/WiredNetwork.svg
 

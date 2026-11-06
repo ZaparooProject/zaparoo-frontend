@@ -54,6 +54,8 @@ export struct GridCell {
     // The art comes from Core, so the cover and its placeholder fade in
     // when they land. Built-in logos and glyphs cut in.
     fetched: bool,
+    // The music player's current track: a play glyph closes the row.
+    now-playing: bool,
 }
 
 // One-line caption with the focused-overflow marquee: fits -> static

@@ -104,6 +104,7 @@ pub fn same_cell(left: &crate::GridCell, right: &crate::GridCell) -> bool {
         && left.placeholder == right.placeholder
         && left.fetched == right.fetched
         && left.opens == right.opens
+        && left.now_playing == right.now_playing
 }
 
 fn publish_by<T: Clone + 'static>(
