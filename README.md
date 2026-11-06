@@ -73,6 +73,10 @@ Third-party components:
 - **Wikimedia Commons public-domain text/logo assets** used for specific
   missing system logos. See
   [`LICENSES/wikimedia-public-domain-ATTRIBUTION.txt`](LICENSES/wikimedia-public-domain-ATTRIBUTION.txt).
+- **Simple Icons**, CC0 1.0 (Gear VR and SteamVR system logos). See
+  [`LICENSES/SimpleIcons-ATTRIBUTION.txt`](LICENSES/SimpleIcons-ATTRIBUTION.txt).
+- **Tux** by Larry Ewing and The GIMP (Linux system logo). See
+  [`LICENSES/Tux-ATTRIBUTION.txt`](LICENSES/Tux-ATTRIBUTION.txt).
 - **Noun Project icons** used in 2-player system logo composites. See
   [`LICENSES/NounProject-ATTRIBUTION.txt`](LICENSES/NounProject-ATTRIBUTION.txt).
 

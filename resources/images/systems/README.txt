@@ -13,6 +13,12 @@ dropping a file in the customization root's systems/ subfolder (named by
 system id); see docs/customization.md. Overrides are served as-is, bypassing
 the tint pipeline used for these bundled logos.
 
+Systems that share a maker's mark or a sibling's art (IremM92 drawn with
+IremM72, SVI328 with Spectravideo, and so on) borrow it through the
+shared-logo table in rust/zaparoo-app/src/systems.rs instead of shipping a
+copy.
+
 Sources and licences: LICENSES/console-logos-ATTRIBUTION.txt,
-LICENSES/wikimedia-public-domain-ATTRIBUTION.txt, and
-LICENSES/NounProject-ATTRIBUTION.txt
+LICENSES/wikimedia-public-domain-ATTRIBUTION.txt,
+LICENSES/NounProject-ATTRIBUTION.txt, LICENSES/Lucide-ATTRIBUTION.txt,
+LICENSES/SimpleIcons-ATTRIBUTION.txt, and LICENSES/Tux-ATTRIBUTION.txt

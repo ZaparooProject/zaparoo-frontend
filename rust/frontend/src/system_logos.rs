@@ -125,22 +125,21 @@ impl Logos {
         self.wake.notify_one();
     }
 
-    /// Resolve regional and style fallbacks without decoding. Unknown IDs do
-    /// not allocate negative-cache entries or background jobs.
+    /// Resolve regional, shared-art and style fallbacks without decoding.
+    /// Unknown IDs do not allocate negative-cache entries or background jobs.
     pub fn key(&self, id: &str, stem: &str, color: bool, bounds: Bounds) -> Option<Key> {
         let index = |table: &[(&str, &[u8])], name: &str| {
             table.binary_search_by(|(id, _)| id.cmp(&name)).ok()
         };
-        let gray = || {
-            index(EMBEDDED_LOGOS, stem)
-                .or_else(|| index(EMBEDDED_LOGOS, id))
-                .map(Asset::Gray)
+        let shared = zaparoo_app::systems::shared_logo_stem(id);
+        let lookup = |table: &[(&str, &[u8])]| {
+            index(table, stem)
+                .or_else(|| index(table, id))
+                .or_else(|| shared.and_then(|shared| index(table, shared)))
         };
+        let gray = || lookup(EMBEDDED_LOGOS).map(Asset::Gray);
         let asset = if color {
-            index(EMBEDDED_COLOR_LOGOS, stem)
-                .or_else(|| index(EMBEDDED_COLOR_LOGOS, id))
-                .map(Asset::Color)
-                .or_else(gray)
+            lookup(EMBEDDED_COLOR_LOGOS).map(Asset::Color).or_else(gray)
         } else {
             gray()
         }?;
@@ -356,7 +355,7 @@ fn prepare(key: Key, ramps: (Tints, Tints)) -> Option<Prepared> {
         }
         Asset::Color(index) => EMBEDDED_COLOR_LOGOS[index],
     };
-    // Embedded assets currently peak at 1716x160. Keep decoder scratch
+    // Embedded assets currently peak at 2108x160. Keep decoder scratch
     // bounded even if a future generated asset exceeds that contract.
     let mut limits = image::Limits::default();
     limits.max_image_width = Some(4096);
@@ -843,6 +842,31 @@ mod tests {
         assert_eq!(cache.lock().cache.bytes(), 0);
         cache.request([new]);
         assert!(cache.next_job().is_none());
+    }
+
+    #[test]
+    fn shared_logos_resolve_to_bundled_art() {
+        let cache = Logos::new();
+        let bounds = Bounds::new(256, 128);
+        for (id, stem) in zaparoo_app::systems::shared_logos() {
+            assert!(
+                EMBEDDED_LOGOS
+                    .binary_search_by_key(id, |(id, _)| id)
+                    .is_err(),
+                "{id} has its own logo; drop it from the shared table"
+            );
+            for color in [false, true] {
+                assert_eq!(
+                    cache.key(id, id, color, bounds),
+                    cache.key(stem, stem, color, bounds),
+                    "{id} borrows {stem}"
+                );
+            }
+            assert!(
+                cache.key(id, id, false, bounds).is_some(),
+                "{stem} is bundled"
+            );
+        }
     }
 
     #[test]

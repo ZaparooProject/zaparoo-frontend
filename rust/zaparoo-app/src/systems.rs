@@ -175,6 +175,41 @@ pub fn logo_system_id(stem: &str) -> &str {
         .unwrap_or(stem)
 }
 
+/// Systems drawn with another system's bundled logo: `(system id, artwork
+/// stem)`. Sibling boards and devices from one maker share its mark, so the
+/// art ships once. Only the bundled artwork lookup reads this; the system
+/// keeps its own id everywhere else, user overrides included.
+const SHARED_LOGOS: &[(&str, &str)] = &[
+    ("AdvancedPICOBeena", "Lindbergh"),
+    ("AmstradNC", "AmstradPCW"),
+    ("Chihiro", "Lindbergh"),
+    ("CoCo3", "CoCo2"),
+    ("IremM92", "IremM72"),
+    ("LeapsterExplorer", "Leapster"),
+    ("MacPlus", "MacOS"),
+    ("OculusGo", "OculusRift"),
+    ("OculusVR", "OculusRift"),
+    ("PanasonicM2", "PanasonicJungle"),
+    ("SVI328", "Spectravideo"),
+    ("Terebikko", "RX78"),
+    ("VSmile", "Laser"),
+    ("WindowsMixedReality", "Windows"),
+    ("WindowsMobile", "Windows"),
+];
+
+/// The bundled artwork stem `system_id` borrows when it has no logo of its
+/// own.
+pub fn shared_logo_stem(system_id: &str) -> Option<&'static str> {
+    SHARED_LOGOS
+        .iter()
+        .find_map(|(id, stem)| (*id == system_id).then_some(*stem))
+}
+
+/// Every shared-logo pair, for checks that the borrowed art is bundled.
+pub fn shared_logos() -> &'static [(&'static str, &'static str)] {
+    SHARED_LOGOS
+}
+
 /// The catalog fields the projection reads.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct CatalogSystem {
@@ -504,6 +539,17 @@ mod tests {
         assert_eq!(logo_artwork_stem("Genesis", Region::Us), "Genesis");
         assert_eq!(logo_artwork_stem("SNES", Region::Eu), "SNES");
         assert_eq!(logo_artwork_stem("SMS", Region::Eu), "SMS");
+    }
+
+    #[test]
+    fn shared_logos_borrow_a_sibling_stem() {
+        assert_eq!(shared_logo_stem("IremM92"), Some("IremM72"));
+        assert_eq!(shared_logo_stem("SVI328"), Some("Spectravideo"));
+        assert_eq!(shared_logo_stem("SNES"), None);
+        for (id, stem) in shared_logos() {
+            assert_ne!(id, stem, "{id} borrows itself");
+            assert_eq!(shared_logo_stem(stem), None, "{stem} is itself borrowed");
+        }
     }
 
     #[test]

@@ -1,0 +1,15 @@
+Tux Attribution
+===============
+
+This software bundles the Tux penguin as the Linux system logo:
+
+  resources/images/systems/Linux.svg
+
+  Original artwork: Larry Ewing (lewing@isc.tamu.edu), created with The GIMP
+  SVG version: Simon Budig and Garrett LeSage
+  Source: https://commons.wikimedia.org/wiki/File:Tux.svg
+
+  License: "Permission to use and/or modify this image is granted provided
+  you acknowledge me lewing@isc.tamu.edu and The GIMP if someone asks."
+
+The file was optimized for size and is tinted to the theme at runtime.
