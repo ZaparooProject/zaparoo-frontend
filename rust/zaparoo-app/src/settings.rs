@@ -26,6 +26,8 @@ pub enum Control {
     /// Shows a live value and nothing else: there is nothing to change, so
     /// it never takes focus.
     Info,
+    /// A value on a scale: Left and Right step it, holding repeats.
+    Slider,
 }
 
 /// A row on a settings page: a group header, or a field.
@@ -148,6 +150,9 @@ pub struct Inputs {
     pub launcher_preference: bool,
     /// The frontend runs on a `MiSTer` and can set up `MiSTer_RA` there.
     pub retro_achievements: bool,
+    /// A background image can show: a custom image is set, or Game
+    /// background is on. The rows that only shape an image show then.
+    pub background_active: bool,
     /// `retroachievements.cfg` holds a username and password.
     pub ra_logged_in: bool,
     /// `MiSTer_RA`, a `RetroAchievements` core, and the MiSTer.ini section
@@ -195,6 +200,7 @@ const NAVIGATES: &[&str] = &[
     "pageOnline",
     "pageSupportAbout",
     "launcherPreference",
+    "backgroundImage",
 ];
 
 const ACTIONS: &[&str] = &[
@@ -216,6 +222,9 @@ const ACTIONS: &[&str] = &[
 /// Rows whose current value sweeps between fully off and fully on across
 /// several settings at once; see `Control::TriToggle`.
 const TRI_TOGGLES: &[&str] = &["onlineAllFeatures"];
+
+/// Rows on a scale; see `Control::Slider`.
+const SLIDERS: &[&str] = &["backgroundBlur", "backgroundDim"];
 
 /// Rows that only report a live value; see `Control::Info`.
 const INFOS: &[&str] = &[
@@ -240,6 +249,8 @@ pub fn control(id: &str) -> Control {
         Control::TriToggle
     } else if INFOS.contains(&id) {
         Control::Info
+    } else if SLIDERS.contains(&id) {
+        Control::Slider
     } else {
         Control::Picker
     }
@@ -317,15 +328,30 @@ fn library_rows(inputs: &Inputs) -> Vec<Row> {
 pub fn page_rows(page: &str, inputs: &Inputs) -> Vec<Row> {
     match page {
         "" => PAGES.iter().map(|p| field(p.id)).collect(),
-        "pageAppearance" => vec![
-            field("colorScheme"),
-            field("colorIntensity"),
-            field("systemLogoStyle"),
-            field("showMenuRow"),
-            field("showHelpBar"),
-            field("reduceMotion"),
-            field("screensaverTimeout"),
-        ],
+        "pageAppearance" => {
+            let mut rows = vec![
+                field("colorScheme"),
+                field("colorIntensity"),
+                field("systemLogoStyle"),
+                field("showMenuRow"),
+                field("showHelpBar"),
+                field("reduceMotion"),
+                field("screensaverTimeout"),
+                Row::Header("background"),
+                field("backgroundImage"),
+                field("gameBackground"),
+            ];
+            // Blur, dimming and the list card only shape an image; with
+            // none that can show they would change nothing.
+            if inputs.background_active {
+                rows.extend([
+                    field("backgroundBlur"),
+                    field("backgroundDim"),
+                    field("backgroundListStyle"),
+                ]);
+            }
+            rows
+        }
         "pageDisplayInterface" => {
             let mut rows = Vec::new();
             // The interface resolution is the HDMI path's own; under the
@@ -474,6 +500,8 @@ pub fn options(id: &str, inputs: &Inputs) -> Option<Vec<&'static str>> {
         "crtVideoStandard" => CRT_VIDEO_STANDARDS,
         "onlineBackupSchedule" => BACKUP_SCHEDULES,
         "raPopupPosition" => POPUP_POSITIONS,
+        "gameBackground" => crate::background::GAME_BACKGROUND_TYPES,
+        "backgroundListStyle" => crate::background::LIST_STYLES,
         "screensaverTimeout" => {
             let mut values = SCREENSAVER_TIMEOUTS.to_vec();
             // A debug build can watch the screensaver arm immediately.

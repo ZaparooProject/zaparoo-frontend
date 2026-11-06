@@ -659,6 +659,25 @@ pub struct SettingsState {
     /// setting existed keeps the bar.
     #[serde(default = "default_show_help_bar")]
     pub show_help_bar: bool,
+    /// The custom background: an image file, or a folder to pick a random
+    /// image from once per power cycle. Empty is none.
+    #[serde(default)]
+    pub background_image: String,
+    /// Which art the focused game in a game list puts behind the screen:
+    /// `off`, or one of Core's image types (see
+    /// `zaparoo_app::background::GAME_BACKGROUND_TYPES`).
+    #[serde(default = "default_game_background")]
+    pub game_background: String,
+    /// Background blur, 0 to 100 percent.
+    #[serde(default = "default_background_blur")]
+    pub background_blur: i32,
+    /// Background dimming, in steps relative to the readable level: 0 is
+    /// readable, negative is lighter, positive darker.
+    #[serde(default)]
+    pub background_dim: i32,
+    /// The browse list card over a background image: `glass` or `solid`.
+    #[serde(default = "default_background_list_style")]
+    pub background_list_style: String,
     #[serde(default)]
     pub debug_logging: bool,
     #[serde(default = "default_screensaver_timeout")]
@@ -743,6 +762,11 @@ impl Default for SettingsState {
             reduce_motion: false,
             show_menu_row: default_show_menu_row(),
             show_help_bar: default_show_help_bar(),
+            background_image: String::new(),
+            game_background: default_game_background(),
+            background_blur: default_background_blur(),
+            background_dim: 0,
+            background_list_style: default_background_list_style(),
             debug_logging: false,
             screensaver_timeout: default_screensaver_timeout(),
             media_image_type: default_media_image_type(),
@@ -837,6 +861,18 @@ fn default_list_left_right() -> String {
 
 fn default_show_help_bar() -> bool {
     true
+}
+
+fn default_game_background() -> String {
+    "off".into()
+}
+
+fn default_background_blur() -> i32 {
+    50
+}
+
+fn default_background_list_style() -> String {
+    "glass".into()
 }
 
 fn default_screensaver_timeout() -> String {
@@ -1130,6 +1166,11 @@ mod tests {
                 reduce_motion: true,
                 show_menu_row: true,
                 show_help_bar: true,
+                background_image: "/media/fat/Wallpapers".into(),
+                game_background: "screenshot".into(),
+                background_blur: 40,
+                background_dim: -2,
+                background_list_style: "solid".into(),
                 debug_logging: true,
                 screensaver_timeout: "300".into(),
                 media_image_type: "auto".into(),

@@ -13,6 +13,7 @@ mod about;
 mod actions;
 mod add_to_deck;
 mod alternates;
+mod background;
 mod brand;
 mod browse_filter;
 mod browse_motion;
@@ -370,6 +371,17 @@ fn merge_config_settings(
     s.reduce_motion = c.reduce_motion.unwrap_or(s.reduce_motion);
     s.show_menu_row = c.show_menu_row.unwrap_or(s.show_menu_row);
     s.show_help_bar = c.show_help_bar.unwrap_or(s.show_help_bar);
+    if let Some(v) = &c.background_image {
+        s.background_image.clone_from(v);
+    }
+    if let Some(v) = &c.game_background {
+        s.game_background.clone_from(v);
+    }
+    s.background_blur = c.background_blur.unwrap_or(s.background_blur);
+    s.background_dim = c.background_dim.unwrap_or(s.background_dim);
+    if let Some(v) = &c.background_list_style {
+        s.background_list_style.clone_from(v);
+    }
     if let Some(v) = &c.screensaver_timeout {
         s.screensaver_timeout.clone_from(v);
     }
@@ -651,6 +663,22 @@ fn run_application(
             zaparoo_core::config::backup_path(&platform_paths::config_file_path()).display()
         );
     }
+    for skip in &config.theme_skips {
+        tracing::warn!("{skip}; skipped");
+    }
+    // The user's own color schemes join the presets before the first
+    // palette push, so a saved `custom:` scheme applies on the first frame.
+    let custom_themes: Vec<zaparoo_app::palette::CustomTheme<'_>> = config
+        .themes
+        .iter()
+        .map(|t| zaparoo_app::palette::CustomTheme {
+            name: &t.name,
+            primary: &t.primary,
+            accent: &t.accent,
+            text: &t.text,
+        })
+        .collect();
+    zaparoo_app::palette::set_custom(&custom_themes);
     #[cfg(feature = "mister")]
     let scanout_offer = mister::lease::configure();
 
@@ -836,6 +864,17 @@ fn run_application(
     } else {
         None
     };
+    #[cfg(not(feature = "mister"))]
+    let crt_mirror: Option<App> = None;
+
+    // The background starts before the first frame: a user image holds the
+    // boot curtain until it is ready.
+    background::start(
+        &app,
+        crt_mirror.as_ref(),
+        background::Settings::from_state(&persisted.settings),
+        display::background_crossfade(cfg!(feature = "mister"), persisted.settings.reduce_motion),
+    );
 
     seed_startup_state(&app, &persisted, boot_curtain);
 
@@ -943,6 +982,8 @@ fn run_application(
                 // (a tiling WM, a smaller display, a live resize), so
                 // every screen has to re-solve against what it got.
                 router::relayout(&ctx, &app);
+                // The background is prepared at the window's own size.
+                background::refresh();
             }
         });
     }
@@ -980,6 +1021,7 @@ fn run_application(
         mirror.on_viewport_changed(move |w, h| {
             if let Some(mirror) = weak.upgrade() {
                 apply_grid_shapes(&mirror, f64::from(w), f64::from(h), true);
+                background::refresh();
             }
         });
         // The CRT head measures its own help bar; its screens are re-fit
@@ -2551,6 +2593,11 @@ mod tests {
             reduce_motion: true,
             show_menu_row: false,
             show_help_bar: false,
+            background_image: "/media/fat/Wallpapers".to_string(),
+            game_background: "screenshot".to_string(),
+            background_blur: 30,
+            background_dim: -2,
+            background_list_style: "solid".to_string(),
             debug_logging: true,
             screensaver_timeout: "600".to_string(),
             media_image_type: "boxart".to_string(),

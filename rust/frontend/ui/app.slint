@@ -7,7 +7,7 @@
 // action and mutates the state properties below. No screen owns routing
 // logic; forward orchestration lives in the router.
 
-import { Theme, Sizing, Motion, Layout } from "theme.slint";
+import { Theme, Backdrop, GlassCard, Sizing, Motion, Layout } from "theme.slint";
 import { CoreUiKind, MenuRole, UserFlag, RenamePurpose, ContextPage, KeyKind, SearchZone, SearchPane, SearchScope, FileBrowserMode, MusicPage, MusicControl, PlaybackState, RepeatMode, MusicUnavailable, Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, StateTokens, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogButton, ErrorKind, ManualState, ManualFit, RaLoginStep, RaLoginStatus, LauncherPrefsPage, LauncherPrefsRowKind } from "state_types.slint";
 export { CoreUiKind, MenuRole, UserFlag, RenamePurpose, ContextPage, KeyKind, SearchZone, SearchPane, SearchScope, FileBrowserMode, MusicPage, MusicControl, PlaybackState, RepeatMode, MusicUnavailable, Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogButton, ErrorKind, ManualState, ManualFit, RaLoginStep, RaLoginStatus, LauncherPrefsPage, LauncherPrefsRowKind }
 import { FastScrollRail, GlyphSource, Brand, Buttons, HelpEntry, Status, HeaderBar, StatusLine, ProgressTrack, WaitCue, TopStatusStrip, FooterIndicator, ActiveLabel, HelpBar, SectionHeader, Divider, ScrollCue, ModalShell, QrPlate, StateCue } from "chrome.slint";
@@ -52,7 +52,7 @@ import "../../../resources/fonts/NotoSans-Medium.ttf";
 import "../../../resources/fonts/NotoSans-DemiBold.ttf";
 import "../../../resources/fonts/MxPlus_HP_100LX_6x8.ttf";
 
-export { Theme, Sizing, Motion, Layout, GlyphSource, Brand, Buttons, Status, HelpEntry, GridCell, DetailRow, SettingsRow, SettingsLabels, SetupPickerRow, GameInfoView, InfoRow, TagNames, Labels, AboutView }
+export { Theme, Backdrop, Sizing, Motion, Layout, GlyphSource, Brand, Buttons, Status, HelpEntry, GridCell, DetailRow, SettingsRow, SettingsLabels, SetupPickerRow, GameInfoView, InfoRow, TagNames, Labels, AboutView }
 export { UpdateView, UpdatePage, UpdateButton, UpdateOutcome, UpdateStatusKind, UpdateError, UpdateLinuxPhase, UpdateFilter, UpdateRowKind, UpdateRowStatus, UpdateFolderKind, UpdateHelpLabel, UpdateCounts, UpdateRow, UpdateMembership, UpdateHelp }
 
 // One choice of a Core picker: Core's label, and the system of the game it
@@ -945,12 +945,22 @@ component SettingsScreen inherits Rectangle {
     property <length> hint-y: self.card-h - self.pad - self.hint-h;
     property <length> hint-rule-y: self.hint-y - self.pad - Sizing.stroke(1);
 
+    // The outgoing copy of a page turn never reports; the card it shows
+    // is the one already baked.
+    if !root.outgoing: GlassCard {
+        shown: !root.root-grid;
+        x: root.card-x;
+        y: root.card-y;
+        width: root.card-w;
+        height: root.card-h;
+        radius: Sizing.radius-md;
+    }
     if !root.root-grid: Rectangle {
         x: root.card-x;
         y: root.card-y;
         width: root.card-w;
         height: root.card-h;
-        background: Theme.surface-card;
+        background: Backdrop.glass ? transparent : Theme.surface-card;
         // The settings card is not a browse view, so it takes the shared
         // radius rather than whichever profile the last browse screen left
         // in `Layout` -- same reason it carries its own margins.
@@ -1446,7 +1456,20 @@ component SystemsScreen inherits Rectangle {
     property <length> list-card-w: self.width - 2 * self.list-card-x;
     property <length> list-card-h: self.height - self.list-card-y - (Sizing.tier-240 ? Sizing.help-bar-height + Layout.card-bottom-margin - Sizing.help-bar-band : Layout.card-bottom-margin);
 
+    // Where the list card sits, for a glass background. Reported whenever
+    // the list layout is on, loading or not, so the darker card area stays
+    // put while the rows load.
+    GlassCard {
+        shown: root.list-layout;
+        x: root.list-card-x;
+        y: root.list-card-y;
+        width: root.list-card-w;
+        height: root.list-card-h;
+        radius: Layout.card-radius;
+    }
+
     if root.list-layout && !root.list-only && !root.gate-hide: BrowseListDetailView {
+        glass: Backdrop.glass;
         x: root.list-card-x;
         y: root.list-card-y;
         width: root.list-card-w;
@@ -1481,6 +1504,7 @@ component SystemsScreen inherits Rectangle {
 
     // Text-only list: BrowseList standalone, no detail pane.
     if root.list-only && !root.gate-hide: BrowseList {
+        glass: Backdrop.glass;
         x: root.list-card-x;
         y: root.list-card-y;
         width: root.list-card-w;
@@ -1587,7 +1611,9 @@ component ListModal inherits ModalShell {
 
     pure function entry-name(entry: MenuEntry, i: int) -> string {
         if (Overlays.launcher-saving-visible && i == root.current-index) { return @tr("Saving…"); }
-        if (root.setting-id != "") { return SettingsLabels.picker-value(root.setting-id, entry.id); }
+        // A settings value with a label of its own (a user color scheme) is
+        // shown as written.
+        if (root.setting-id != "") { return entry.label != "" ? entry.label : SettingsLabels.picker-value(root.setting-id, entry.id); }
         return entry.label-key != "" ? Labels.menu-name(entry.label-key, entry.label) : entry.label;
     }
     // The right-hand text: why a row cannot act, a value, or a count.
@@ -3034,7 +3060,20 @@ component GamesScreen inherits Rectangle {
     property <length> list-card-w: self.width - 2 * self.list-card-x;
     property <length> list-card-h: self.height - self.list-card-y - (Sizing.tier-240 ? Sizing.help-bar-height + Layout.card-bottom-margin - Sizing.help-bar-band : Layout.card-bottom-margin);
 
+    // Where the list card sits, for a glass background. Reported whenever
+    // the list layout is on, loading or not, so the darker card area stays
+    // put while the rows load.
+    GlassCard {
+        shown: root.list-layout;
+        x: root.list-card-x;
+        y: root.list-card-y;
+        width: root.list-card-w;
+        height: root.list-card-h;
+        radius: Layout.card-radius;
+    }
+
     if root.list-layout && !root.list-only && !root.gate-hide: BrowseListDetailView {
+        glass: Backdrop.glass;
         x: root.list-card-x;
         y: root.list-card-y;
         width: root.list-card-w;
@@ -3074,6 +3113,7 @@ component GamesScreen inherits Rectangle {
 
     // Text-only list: BrowseList standalone, no detail pane.
     if root.list-only && !root.gate-hide: BrowseList {
+        glass: Backdrop.glass;
         x: root.list-card-x;
         y: root.list-card-y;
         width: root.list-card-w;
@@ -4167,6 +4207,13 @@ export component App inherits Window {
                     { buttons: ["ButtonB"], label: @tr("Back") },
                 ];
             }
+            if (self.focused-settings-control() == ControlKind.slider) {
+                return [
+                    { buttons: ["DpadUp", "DpadDown"], label: @tr("Move") },
+                    { buttons: ["DpadLeft", "DpadRight"], label: @tr("Adjust") },
+                    { buttons: ["ButtonB"], label: @tr("Back") },
+                ];
+            }
             if (self.focused-settings-control() == ControlKind.picker) {
                 return [
                     { buttons: ["DpadUp", "DpadDown"], label: @tr("Move") },
@@ -4385,6 +4432,56 @@ export component App inherits Window {
         root.viewport-changed(self.scene-width, self.scene-height);
     }
 
+    // The prepared background, 1:1 with the window. Held back while the
+    // boot curtain is up so the restored screen and its background appear
+    // in the same frame.
+    if Backdrop.on && !Shell.boot-curtain && !Backdrop.host-painted: Image {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        source: Backdrop.image;
+        image-fit: fill;
+    }
+    if Backdrop.on && !Shell.boot-curtain && !Backdrop.host-painted && Backdrop.fade-ms > 0ms: Image {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        source: Backdrop.next;
+        image-fit: fill;
+        opacity: Backdrop.fade ? 1 : 0;
+        animate opacity { duration: Backdrop.fade ? Backdrop.fade-ms : 0ms; }
+    }
+    // A glass card's darker area: the same image at the card's darkness,
+    // inside the card's outline, moving with the card in the same frame.
+    if Backdrop.on && !Shell.boot-curtain && !Backdrop.host-painted && Backdrop.glass && Backdrop.card-shown: Rectangle {
+        x: Backdrop.card-x;
+        y: Backdrop.card-y;
+        width: Backdrop.card-w;
+        height: Backdrop.card-h;
+        border-radius: Backdrop.card-radius;
+        clip: true;
+        Image {
+            x: -parent.x;
+            y: -parent.y;
+            width: root.width;
+            height: root.height;
+            source: Backdrop.card-image;
+            image-fit: fill;
+        }
+        if Backdrop.fade-ms > 0ms: Image {
+            x: -parent.x;
+            y: -parent.y;
+            width: root.width;
+            height: root.height;
+            source: Backdrop.card-next;
+            image-fit: fill;
+            opacity: Backdrop.fade ? 1 : 0;
+            animate opacity { duration: Backdrop.fade ? Backdrop.fade-ms : 0ms; }
+        }
+    }
+
     // Extend modal dimming into the CRT overscan bands. The regular
     // scrim lives inside `scene`; this sibling only paints behind it.
     if Theme.crt && root.has-modal(): Rectangle {
@@ -4541,6 +4638,13 @@ export component App inherits Window {
     if CoreUiView.kind == CoreUiKind.picker: CorePickerModal {}
 
     if Overlays.dialog-open: DialogModal {}
+
+    // The help bar band for the background's bake: from the bar's top to
+    // the window's bottom edge, or nothing with the bar off.
+    property <length> backdrop-bar-top: Sizing.help-bar-enabled && Sizing.help-bar-height > 0px
+        ? scene.y + help-bar.y : root.height;
+    init => { Backdrop.bar-moved(self.backdrop-bar-top); }
+    changed backdrop-bar-top => { Backdrop.bar-moved(self.backdrop-bar-top); }
 
     // Hidden with the setting off (Settings > Appearance), when Rust gives
     // it no height. It stays instantiated so its wrap measurement holds.

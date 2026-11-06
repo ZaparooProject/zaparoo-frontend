@@ -9,7 +9,7 @@
 // profile in `Layout`.
 
 import { Wordmark } from "wordmark.slint";
-import { Theme, Sizing, Motion, Layout } from "theme.slint";
+import { Theme, Sizing, Motion, Layout, Backdrop } from "theme.slint";
 import { GlyphSource, WaitCue } from "chrome.slint";
 import { GridCell, MarqueeCaption } from "tiles.slint";
 import { InfoLineData, InfoFacts, InfoLabels } from "info_line.slint";
@@ -112,8 +112,11 @@ export component BrowseList inherits Rectangle {
     callback row-right-clicked(int);
     callback empty-right-clicked();
     callback wheel(int);
+    // A browse screen's card over a glass background: the darker card is
+    // baked into the background, so only the border paints.
+    in property <bool> glass: false;
 
-    background: root.show-chrome ? Theme.surface-card : transparent;
+    background: root.show-chrome && !root.glass ? Theme.surface-card : transparent;
     border-radius: root.show-chrome ? Layout.card-radius : 0px;
     border-width: root.show-chrome ? Sizing.card-border-width : 0px;
     border-color: Theme.border-mid;
@@ -777,8 +780,10 @@ export component BrowseListDetailView inherits Rectangle {
     callback empty-right-clicked();
     callback wheel(int);
     callback art-box(length, length);
+    // See `BrowseList.glass`.
+    in property <bool> glass: false;
 
-    background: Theme.surface-card;
+    background: root.glass ? transparent : Theme.surface-card;
     border-radius: Layout.card-radius;
     border-width: Sizing.card-border-width;
     border-color: Theme.border-mid;

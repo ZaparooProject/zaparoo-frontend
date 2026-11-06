@@ -27,8 +27,9 @@ use zaparoo_core::client::Client;
 use zaparoo_core::collections::DeckImageParams;
 use zaparoo_core::media_types::MediaImageParams;
 
-/// Hard ceiling on the decoded bytes the cache holds.
-const CACHE_CAP_BYTES: usize = 128 * 1024 * 1024;
+/// Hard ceiling on the decoded bytes the cache holds. The prepared
+/// backgrounds' own budget comes out of the same 128 MiB.
+const CACHE_CAP_BYTES: usize = 128 * 1024 * 1024 - crate::background::CACHE_BYTES;
 const NEGATIVE_CAP: usize = 4096;
 
 /// Cache key: `media_id` when Core provided one, otherwise the canonical

@@ -28,6 +28,9 @@ pub enum Mode {
     /// Folders only, as a list, each with a row that picks the folder
     /// itself.
     Folders,
+    /// Folders and image files as previews, each folder with a row that
+    /// picks the folder itself: a background image, or a folder of them.
+    ImageOrFolder,
 }
 
 impl Mode {
@@ -36,18 +39,30 @@ impl Mode {
             Self::Plain => "plain",
             Self::Images => "images",
             Self::Folders => "folders",
+            Self::ImageOrFolder => "image-or-folder",
         }
     }
 
     /// Shown as a list rather than a grid of previews.
     pub fn is_list(self) -> bool {
-        self != Self::Images
+        !self.previews()
+    }
+
+    /// Image files show as previews.
+    pub fn previews(self) -> bool {
+        matches!(self, Self::Images | Self::ImageOrFolder)
+    }
+
+    /// A folder offers a row that picks the folder itself.
+    pub fn picks_folder(self) -> bool {
+        matches!(self, Self::Folders | Self::ImageOrFolder)
     }
 
     pub fn parse(value: &str) -> Self {
         match value {
             "images" => Self::Images,
             "folders" => Self::Folders,
+            "image-or-folder" => Self::ImageOrFolder,
             _ => Self::Plain,
         }
     }
@@ -88,7 +103,9 @@ pub fn listing(raw: Vec<RawEntry>, mode: Mode, cap: usize) -> Listing {
         .filter(|entry| !entry.name.starts_with('.') && !entry.name.is_empty())
         .filter(|entry| match mode {
             Mode::Plain => true,
-            Mode::Images => entry.is_dir || customization::is_image_file(&entry.name),
+            Mode::Images | Mode::ImageOrFolder => {
+                entry.is_dir || customization::is_image_file(&entry.name)
+            }
             Mode::Folders => entry.is_dir,
         })
         .map(|entry| Entry {
@@ -553,6 +570,12 @@ mod tests {
         assert_eq!(join("/", "a"), "/a");
         assert_eq!(join("/a", "b"), "/a/b");
         assert_eq!(Mode::parse(Mode::Images.as_str()), Mode::Images);
+        assert_eq!(
+            Mode::parse(Mode::ImageOrFolder.as_str()),
+            Mode::ImageOrFolder
+        );
+        assert!(Mode::ImageOrFolder.previews() && Mode::ImageOrFolder.picks_folder());
+        assert!(!Mode::Images.picks_folder() && !Mode::Folders.previews());
         assert_eq!(Mode::parse("unknown"), Mode::Plain);
     }
 }

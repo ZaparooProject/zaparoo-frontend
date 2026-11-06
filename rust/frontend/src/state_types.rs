@@ -74,6 +74,7 @@ impl From<zaparoo_app::settings::Control> for crate::ControlKind {
             Control::Navigate => Self::Navigate,
             Control::TriToggle => Self::TriToggle,
             Control::Info => Self::Info,
+            Control::Slider => Self::Slider,
         }
     }
 }

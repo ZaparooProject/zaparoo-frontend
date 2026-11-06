@@ -233,6 +233,52 @@ than bypassing the decode-memory limits. Paths, gradients, clipping, and masks
 remain supported. Discovery retains up to 512 files per namespace within a
 shared 1 MiB index budget. Invalid or over-budget files use built-in art.
 
+## Background
+
+Settings → Appearance → Background sets what shows behind every screen.
+
+- **Background image** opens the file browser. Pick an image, or a folder
+  with "Use this folder" to show a random image from it, chosen once per
+  power cycle. The browser's Menu has "No background image".
+  Supported formats are PNG, JPEG, WebP and BMP, within the same limits as
+  `custom/` artwork (8 MB per file, 8192 px per edge). An image that is
+  missing or cannot be read leaves the scheme's solid background.
+- **Game background** shows the focused item's art behind game lists
+  (Games, Favorites, Recents, Top played, the collections, Decks and
+  Search results): Off, Screenshot, Fan art, Title screen or Box art. A
+  game shows art of exactly that type; a folder or a deck shows its own
+  art. An item without it shows the background image, or the solid color.
+  The art changes once focus rests, never while a direction is held, and
+  Core has to have the type scraped.
+- **Blur** softens the image, 0 to 100% (50% by default).
+- **Dimming** darkens it. The middle step, Readable, works out for each
+  image the darkening that keeps text at 4.5:1 over its brightest parts.
+  Each step to the right is darker; each step to the left lighter, down to
+  none at all.
+- **Card style**: Glass shows the background through each screen's main
+  card (the browse lists, the Settings page, About, the music player and the
+  file browser), darkened further under it; Solid keeps the card.
+
+The help bar keeps a darker band over the image. Blur, Dimming and Card
+style show only while an image can show.
+
+Precedence: the focused item's art, then the background image, then the
+scheme's solid background. The settings are stored in `[settings]` in
+`frontend.toml`:
+
+```toml
+[settings]
+background_image = "/media/fat/Wallpapers"   # a file or a folder
+game_background = "screenshot"               # off, screenshot, fanart, titleshot, boxart
+background_blur = 50                         # 0 to 100
+background_dim = 0                           # -6 (none) to 3; 0 is Readable
+background_list_style = "glass"              # glass or solid
+```
+
+The prepared image (never the file itself) is kept in the temporary
+directory so a relaunch shows it at once; on MiSTer that is RAM, cleared on
+reboot.
+
 ## Color scheme
 
 Choose a preset live under Settings → Appearance → Color scheme. There are 19
@@ -252,6 +298,27 @@ color_scheme = "zaparoo-dark" # or "nord", "dracula", "amber-phosphor", ...
 See `ids()` in `rust/zaparoo-app/src/palette.rs` for every available id.
 Unknown values fall back to `zaparoo-dark`. Presets recolor built-in tinted
 artwork; custom and full-color artwork remains unchanged.
+
+### Your own color schemes
+
+Add `[[themes]]` entries to `frontend.toml`, each with a name and three
+`#RRGGBB` colors. They appear in the picker after the presets, under their
+names:
+
+```toml
+[[themes]]
+name = "Midnight"
+primary = "#120a1f"   # the background
+accent = "#b06cff"    # focus and highlights
+text = "#f2eefb"
+```
+
+Every other color is derived from these three the way the presets' are.
+The accent is kept readable against the background; the text color is used
+exactly as written, however low its contrast. A scheme is saved as
+`color_scheme = "custom:Midnight"`; if the entry is removed or renamed, the
+default scheme is used. An entry with a missing field, an invalid color or a
+repeated name is skipped and noted in the log.
 
 ## System display names
 

@@ -59,6 +59,13 @@ pub struct Config {
     /// priority over the bundled `Names_MiSTer` localized data and the Core
     /// catalog name. Empty when the table is absent.
     pub system_names: HashMap<String, String>,
+    /// User color schemes from `[[themes]]`, in file order. Entries with a
+    /// missing field, an invalid color or a repeated name are skipped and
+    /// logged by the caller from `theme_skips`.
+    pub themes: Vec<ThemeConfig>,
+    /// Why each skipped `[[themes]]` entry was dropped, for the caller to
+    /// log once the logger is up.
+    pub theme_skips: Vec<String>,
     /// Why `frontend.toml` could not be used, when it exists but did not
     /// load. Everything above is then defaults, and nothing may be written
     /// back: a save would replace the user's file with those defaults.
@@ -186,6 +193,11 @@ pub struct SettingsConfig {
     pub reduce_motion: Option<bool>,
     pub show_menu_row: Option<bool>,
     pub show_help_bar: Option<bool>,
+    pub background_image: Option<String>,
+    pub game_background: Option<String>,
+    pub background_blur: Option<i32>,
+    pub background_dim: Option<i32>,
+    pub background_list_style: Option<String>,
     pub screensaver_timeout: Option<String>,
     pub media_image_type: Option<String>,
     pub favorites_grouping: Option<String>,
@@ -235,6 +247,11 @@ pub struct SettingsMirror<'a> {
     pub reduce_motion: bool,
     pub show_menu_row: bool,
     pub show_help_bar: bool,
+    pub background_image: &'a str,
+    pub game_background: &'a str,
+    pub background_blur: i32,
+    pub background_dim: i32,
+    pub background_list_style: &'a str,
     pub debug_logging: bool,
     pub screensaver_timeout: &'a str,
     pub media_image_type: &'a str,
@@ -250,6 +267,17 @@ pub struct SettingsMirror<'a> {
     pub crt_h_offset: i32,
     pub crt_v_offset: i32,
     pub crt_h_size: i32,
+}
+
+/// One `[[themes]]` entry: a color scheme the user wrote by hand. The
+/// colors are kept as written (`#RRGGBB`); the palette derives every other
+/// role from them, as it does for the built-in presets.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ThemeConfig {
+    pub name: String,
+    pub primary: String,
+    pub accent: String,
+    pub text: String,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -272,6 +300,8 @@ impl Default for Config {
             notice: NoticeConfig::default(),
             custom_dir: None,
             system_names: HashMap::new(),
+            themes: Vec::new(),
+            theme_skips: Vec::new(),
             fault: None,
             recoded: false,
         }
@@ -296,6 +326,62 @@ struct RawConfig {
     notice: RawNotice,
     #[serde(default)]
     custom: RawCustom,
+    #[serde(default)]
+    themes: Vec<RawTheme>,
+}
+
+#[derive(Deserialize, Default)]
+struct RawTheme {
+    name: Option<String>,
+    primary: Option<String>,
+    accent: Option<String>,
+    text: Option<String>,
+}
+
+/// `#RRGGBB`, with or without the leading `#`.
+fn theme_color(value: Option<&String>) -> Option<String> {
+    let hex = value?.trim().trim_start_matches('#');
+    (hex.len() == 6 && hex.chars().all(|c| c.is_ascii_hexdigit()))
+        .then(|| format!("#{}", hex.to_ascii_lowercase()))
+}
+
+fn themes_from_raw(raw: Vec<RawTheme>) -> (Vec<ThemeConfig>, Vec<String>) {
+    let mut themes: Vec<ThemeConfig> = Vec::new();
+    let mut skips = Vec::new();
+    for (index, entry) in raw.into_iter().enumerate() {
+        let name = entry.name.as_deref().map(str::trim).unwrap_or_default();
+        let label = if name.is_empty() {
+            format!("entry {}", index + 1)
+        } else {
+            format!("\"{name}\"")
+        };
+        if name.is_empty() {
+            skips.push(format!("theme {label}: missing name"));
+            continue;
+        }
+        if themes.iter().any(|t| t.name == name) {
+            skips.push(format!("theme {label}: duplicate name"));
+            continue;
+        }
+        let colors = (
+            theme_color(entry.primary.as_ref()),
+            theme_color(entry.accent.as_ref()),
+            theme_color(entry.text.as_ref()),
+        );
+        let (Some(primary), Some(accent), Some(text)) = colors else {
+            skips.push(format!(
+                "theme {label}: primary, accent and text must each be #RRGGBB"
+            ));
+            continue;
+        };
+        themes.push(ThemeConfig {
+            name: name.to_string(),
+            primary,
+            accent,
+            text,
+        });
+    }
+    (themes, skips)
 }
 
 #[derive(Deserialize, Default)]
@@ -348,6 +434,11 @@ struct RawSettings {
     reduce_motion: Option<bool>,
     show_menu_row: Option<bool>,
     show_help_bar: Option<bool>,
+    background_image: Option<String>,
+    game_background: Option<String>,
+    background_blur: Option<i32>,
+    background_dim: Option<i32>,
+    background_list_style: Option<String>,
     screensaver_timeout: Option<String>,
     media_image_type: Option<String>,
     favorites_grouping: Option<String>,
@@ -458,6 +549,7 @@ pub fn load_config(path: &Path) -> Config {
         cfg.key_to_action = input_actions::invert(&merged);
     }
     cfg.settings = settings_config_from_raw(raw.settings);
+    (cfg.themes, cfg.theme_skips) = themes_from_raw(raw.themes);
     cfg.notice = NoticeConfig {
         commercial_ack: raw.notice.commercial_ack.unwrap_or(false),
     };
@@ -516,6 +608,11 @@ fn settings_config_from_raw(raw: RawSettings) -> SettingsConfig {
         reduce_motion: raw.reduce_motion,
         show_menu_row: raw.show_menu_row,
         show_help_bar: raw.show_help_bar,
+        background_image: trim_opt(raw.background_image),
+        game_background: trim_opt(raw.game_background),
+        background_blur: raw.background_blur,
+        background_dim: raw.background_dim,
+        background_list_style: trim_opt(raw.background_list_style),
         screensaver_timeout: trim_opt(raw.screensaver_timeout),
         media_image_type: trim_opt(raw.media_image_type),
         favorites_grouping: trim_opt(raw.favorites_grouping).or_else(|| {
@@ -667,6 +764,28 @@ pub(crate) fn set_string_list(table: &mut toml_edit::Table, key: &str, values: &
     table.insert(key, toml_edit::value(arr));
 }
 
+/// The background rows of `[settings]`. No image is no key at all.
+fn set_background_settings(settings: &mut toml_edit::Table, mirror: &SettingsMirror<'_>) {
+    let background_image = mirror.background_image.trim();
+    if background_image.is_empty() {
+        settings.remove("background_image");
+    } else {
+        set_str(settings, "background_image", background_image);
+    }
+    set_str(settings, "game_background", mirror.game_background.trim());
+    set_int(
+        settings,
+        "background_blur",
+        i64::from(mirror.background_blur.clamp(0, 100)),
+    );
+    set_int(settings, "background_dim", i64::from(mirror.background_dim));
+    set_str(
+        settings,
+        "background_list_style",
+        mirror.background_list_style.trim(),
+    );
+}
+
 pub fn save_settings_mirror(path: &Path, mirror: SettingsMirror<'_>) -> Result<(), String> {
     let mut file = read_config_document(path)?;
     let doc = &mut file.doc;
@@ -724,6 +843,7 @@ pub fn save_settings_mirror(path: &Path, mirror: SettingsMirror<'_>) -> Result<(
     set_bool(settings, "reduce_motion", mirror.reduce_motion);
     set_bool(settings, "show_menu_row", mirror.show_menu_row);
     set_bool(settings, "show_help_bar", mirror.show_help_bar);
+    set_background_settings(settings, &mirror);
     set_str(
         settings,
         "screensaver_timeout",
@@ -1001,6 +1121,11 @@ mod tests {
             reduce_motion: false,
             show_menu_row: true,
             show_help_bar: true,
+            background_image: "",
+            game_background: "off",
+            background_blur: 100,
+            background_dim: 0,
+            background_list_style: "glass",
             debug_logging: false,
             screensaver_timeout: "60",
             media_image_type: "auto",
@@ -1564,6 +1689,11 @@ mod tests {
                 reduce_motion: true,
                 show_menu_row: false,
                 show_help_bar: false,
+                background_image: "/media/fat/Wallpapers/a.jpg",
+                game_background: "screenshot",
+                background_blur: 40,
+                background_dim: -2,
+                background_list_style: "solid",
                 debug_logging: true,
                 screensaver_timeout: "300",
                 media_image_type: "auto",
@@ -1598,6 +1728,14 @@ mod tests {
         assert_eq!(cfg.settings.mouse_enabled, Some(false));
         assert_eq!(cfg.settings.show_menu_row, Some(false));
         assert_eq!(cfg.settings.show_help_bar, Some(false));
+        assert_eq!(
+            cfg.settings.background_image.as_deref(),
+            Some("/media/fat/Wallpapers/a.jpg")
+        );
+        assert_eq!(cfg.settings.game_background.as_deref(), Some("screenshot"));
+        assert_eq!(cfg.settings.background_blur, Some(40));
+        assert_eq!(cfg.settings.background_dim, Some(-2));
+        assert_eq!(cfg.settings.background_list_style.as_deref(), Some("solid"));
         assert_eq!(cfg.settings.reduce_motion, Some(true));
         assert_eq!(cfg.settings.screensaver_timeout.as_deref(), Some("300"));
         assert_eq!(cfg.settings.favorites_grouping.as_deref(), Some("system"));
@@ -1639,6 +1777,11 @@ mod tests {
                 reduce_motion: false,
                 show_menu_row: true,
                 show_help_bar: true,
+                background_image: "",
+                game_background: "off",
+                background_blur: 100,
+                background_dim: 0,
+                background_list_style: "glass",
                 debug_logging: false,
                 screensaver_timeout: "60",
                 media_image_type: "auto",
@@ -1700,6 +1843,11 @@ mod tests {
             reduce_motion: false,
             show_menu_row: true,
             show_help_bar: true,
+            background_image: "",
+            game_background: "off",
+            background_blur: 100,
+            background_dim: 0,
+            background_list_style: "glass",
             debug_logging: true,
             screensaver_timeout: "off",
             media_image_type: "auto",
@@ -1982,5 +2130,51 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let cfg = load_config(dir.path());
         assert!(matches!(cfg.fault, Some(ConfigFault::Unreadable { .. })));
+    }
+
+    #[test]
+    fn themes_keep_valid_entries_and_report_the_rest() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("frontend.toml");
+        std::fs::write(
+            &path,
+            r##"
+[[themes]]
+name = "Midnight"
+primary = "#120A1F"
+accent = "b06cff"
+text = "#f2eefb"
+
+[[themes]]
+name = "Midnight"
+primary = "#000000"
+accent = "#ffffff"
+text = "#ffffff"
+
+[[themes]]
+name = "Broken"
+primary = "#12"
+accent = "#ffffff"
+text = "#ffffff"
+
+[[themes]]
+primary = "#000000"
+accent = "#ffffff"
+text = "#ffffff"
+"##,
+        )
+        .unwrap();
+        let cfg = load_config(&path);
+        assert!(cfg.fault.is_none());
+        assert_eq!(
+            cfg.themes,
+            vec![super::ThemeConfig {
+                name: "Midnight".into(),
+                primary: "#120a1f".into(),
+                accent: "#b06cff".into(),
+                text: "#f2eefb".into(),
+            }]
+        );
+        assert_eq!(cfg.theme_skips.len(), 3);
     }
 }

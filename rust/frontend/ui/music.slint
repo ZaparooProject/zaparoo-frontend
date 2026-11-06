@@ -13,7 +13,7 @@
 // focus ring that glides between them and carries the tile focus zoom.
 // The time text and the progress cells change once a second as hard cuts.
 
-import { Theme, Sizing, Layout, Motion } from "theme.slint";
+import { Theme, Backdrop, GlassCard, Sizing, Layout, Motion } from "theme.slint";
 import { TopStatusStrip, StateCue, FastScrollRail, GlyphSource, ProgressTrack } from "chrome.slint";
 import { GridCell, PressableSurface } from "tiles.slint";
 import { BrowseList } from "browse_list.slint";
@@ -222,7 +222,7 @@ component PlayerCard inherits Rectangle {
     property <float> ring-grow: Motion.zoom-by-size ? root.zoom - 100% : 0%;
     property <length> grow-px: MusicView.button-size * root.ring-grow / 2;
 
-    background: Theme.surface-card;
+    background: Backdrop.glass ? transparent : Theme.surface-card;
     border-radius: Sizing.radius-md;
     border-width: Sizing.card-border-width;
     border-color: Theme.border-mid;
@@ -491,6 +491,16 @@ export component MusicScreen inherits Rectangle {
         page-requested(delta) => { MusicInput.page-requested(delta); }
     }
 
+    // The player card or the list card, whichever page is open; the list's
+    // stays reported while its rows load, so the darker area stays put.
+    GlassCard {
+        x: root.player ? MusicView.card-x : MusicView.list-x;
+        y: root.player ? MusicView.card-y : MusicView.list-y;
+        width: root.player ? MusicView.card-width : MusicView.list-width;
+        height: root.player ? MusicView.card-height : MusicView.list-height;
+        radius: root.player ? Sizing.radius-md : Layout.card-radius;
+    }
+
     if root.player: PlayerCard {
         x: MusicView.card-x;
         y: MusicView.card-y;
@@ -505,6 +515,7 @@ export component MusicScreen inherits Rectangle {
         width: MusicView.list-width;
         height: MusicView.list-height;
         show-chrome: true;
+        glass: Backdrop.glass;
         rows: MusicView.list-rows;
         model-top: MusicView.list-view-top;
         glide: MusicView.list-glide;

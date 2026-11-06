@@ -49,7 +49,9 @@ use generated::{
     GamesMode, LogPhase, OnlineLinkPhase, Orientation, PairPhase, RowKind, ScopeKind, Screen,
     SettingsPage, SetupKind, SetupPicker, StatusKind, SystemsMode, VideoStandard,
 };
-use generated::{App, Brand, GlyphSource, GridCell, LetterBucket, MenuEntry, Sizing, Theme};
+use generated::{
+    App, Backdrop, Brand, GlyphSource, GridCell, LetterBucket, MenuEntry, Sizing, Theme,
+};
 #[allow(
     unused_imports,
     reason = "reached through crate:: paths from the shared sizing adapter"
@@ -145,6 +147,15 @@ fn main() {
     reason = "offline fixture dispatcher keeps scenario setup and capture in one place"
 )]
 fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool) -> bool {
+    // `…-bg` renders the screen over a prepared background image: the one
+    // `ZAPAROO_SNAPSHOT_BACKGROUND` names, or a generated one.
+    let (screen, background) = match screen.strip_suffix("-bg") {
+        Some(base) => (base, true),
+        None => (
+            screen,
+            std::env::var_os("ZAPAROO_SNAPSHOT_BACKGROUND").is_some(),
+        ),
+    };
     let app = App::new().unwrap();
     // ZAPAROO_SNAPSHOT_SCHEME / ZAPAROO_SNAPSHOT_INTENSITY render any preset.
     theme::apply_palette(
@@ -1382,6 +1393,9 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
         fixture_hub(&app, scene_w, scene_h, crt, 0);
         println!("late-set applied; drawing final frame");
     }
+    if background && rotation == RenderingRotation::NoRotation {
+        apply_background(&app, &window, width, height);
+    }
     slint::platform::update_timers_and_animations();
 
     let mut buf = vec![PremultipliedRgbaColor::default(); width as usize * height as usize];
@@ -1425,6 +1439,95 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
     img.save(out).expect("write png");
     println!("wrote {out}");
     true
+}
+
+/// Prepare a background through the real pipeline for this frame: a first
+/// draw lets the screens report their main card and the help bar its top,
+/// as they do to `background.rs`, then the composed image is set.
+fn apply_background(app: &App, window: &Rc<MinimalSoftwareWindow>, width: u32, height: u32) {
+    use zaparoo_app::background as rules;
+    let card = Rc::new(std::cell::Cell::new(None));
+    let bar = Rc::new(std::cell::Cell::new(None));
+    let backdrop = app.global::<Backdrop>();
+    {
+        let card = card.clone();
+        backdrop.on_card_moved(move |shown, x, y, w, h, radius| {
+            card.set((shown && w > 0.0).then(|| {
+                let rect = rules::Rect {
+                    x: x.round() as u32,
+                    y: y.round() as u32,
+                    width: w.round() as u32,
+                    height: h.round() as u32,
+                };
+                (rect, radius.round() as u32)
+            }));
+        });
+        let bar = bar.clone();
+        backdrop.on_bar_moved(move |top| bar.set(Some(top)));
+    }
+    let mut scratch = vec![PremultipliedRgbaColor::default(); width as usize * height as usize];
+    let _ = window.draw_if_needed(|r| {
+        r.render(scratch.as_mut_slice(), width as usize);
+    });
+    let source = std::env::var("ZAPAROO_SNAPSHOT_BACKGROUND")
+        .ok()
+        .and_then(|path| image::open(path).ok())
+        .map_or_else(synthetic_background, image::DynamicImage::into_rgb8);
+    let fitted = rules::fit(
+        source.as_raw(),
+        source.width(),
+        source.height(),
+        width,
+        height,
+    );
+    let base = rules::prepare_base(&fitted, rules::DEFAULT_BLUR);
+    let theme = app.global::<Theme>();
+    let rgb = |c: slint::Color| [c.red(), c.green(), c.blue()];
+    let (ground, text) = (rgb(theme.get_bg_deep()), rgb(theme.get_text_primary()));
+    let regions = rules::Regions {
+        help_bar: bar
+            .get()
+            .map(|top| top.round().max(0.0) as u32)
+            .filter(|top| *top < height)
+            .map(|top| rules::Rect {
+                x: 0,
+                y: top,
+                width,
+                height: height - top,
+            }),
+        card: card.get().map(|(rect, _)| rect),
+        card_radius: card.get().map_or(0, |(_, radius)| radius),
+    };
+    let dim = rules::dim_for(rules::readable_dim(&base.samples, text, ground), 0);
+    let composed = rules::compose(&base, ground, dim, &regions, rules::Format::Rgb888);
+    let buffer =
+        slint::SharedPixelBuffer::<slint::Rgb8Pixel>::clone_from_slice(&composed, width, height);
+    backdrop.set_image(slint::Image::from_rgb8(buffer));
+    backdrop.set_glass(regions.card.is_some());
+    backdrop.set_on(true);
+}
+
+/// A bright, busy stand-in for a user's wallpaper: a sky, a sun, hills and
+/// a band of fine stripes, the cases readability has to hold over.
+fn synthetic_background() -> image::RgbImage {
+    let (w, h) = (640u32, 360u32);
+    image::RgbImage::from_fn(w, h, |x, y| {
+        let (fx, fy) = (f64::from(x) / f64::from(w), f64::from(y) / f64::from(h));
+        let sun = ((fx - 0.72).powi(2) + (fy - 0.25).powi(2) * 3.0).sqrt() < 0.09;
+        let hill = fy > 0.62 + 0.06 * (fx * 9.0).sin() + 0.03 * (fx * 23.0).sin();
+        let stripes = fy > 0.05 && fy < 0.18 && fx < 0.4 && (x / 3) % 2 == 0;
+        if sun || stripes {
+            image::Rgb([255, 250, 230])
+        } else if hill {
+            image::Rgb([40, (110.0 - 40.0 * fy) as u8, 55])
+        } else {
+            image::Rgb([
+                (250.0 - 110.0 * fy) as u8,
+                (190.0 - 40.0 * fy) as u8,
+                (110.0 + 110.0 * fy) as u8,
+            ])
+        }
+    })
 }
 
 /// Every visible CRT label whose glyphs would start off a whole pixel.
@@ -2810,11 +2913,16 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
     // "…-online-unlinked": the same page before an account is linked, with
     // the cursor on a row that waits for one.
     let unlinked = screen.contains("online-unlinked");
+    // "…-settings-page-appearance": the Appearance page with a background
+    // image set, so its Background section shows every row.
+    let appearance = screen.contains("settings-page-appearance");
     let inputs = sizing::Scene::of(app, scene_w, scene_h, crt).inputs();
     let derived = zaparoo_app::sizing::derive(&inputs);
     let view = app.global::<generated::SettingsView>();
     let page_id = if online {
         SettingsPage::Online
+    } else if appearance {
+        SettingsPage::Appearance
     } else if page {
         SettingsPage::Library
     } else {
@@ -2835,6 +2943,7 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
         ra_logged_in: ra && !ra_setup,
         ra_installed: ra && !ra_setup,
         ra_conflict: ra && !ra_setup,
+        background_active: appearance,
     };
     // The card and its row heights, from the rule the driver uses.
     let geometry = rules::page_geometry(&inputs);
@@ -2886,6 +2995,12 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
                                 "raAccount" => "loggedIn",
                                 "raConflict" => "1",
                                 "raPopupPosition" => "left",
+                                "colorScheme" => "zaparoo-dark",
+                                "colorIntensity" => "subtle",
+                                "systemLogoStyle" => "tinted",
+                                "screensaverTimeout" => "300",
+                                "gameBackground" => "screenshot",
+                                "backgroundListStyle" => "glass",
                                 _ => "auto",
                             }
                             .into();
@@ -2907,7 +3022,20 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
                             };
                             out.value = rules::action_label_key(id, out.busy).into();
                         }
-                        Control::Navigate => {}
+                        Control::Navigate => {
+                            if id == "backgroundImage" {
+                                out.value = "/media/fat/Wallpapers".into();
+                                out.value_name = "Wallpapers".into();
+                            }
+                        }
+                        Control::Slider => {
+                            let (value, cells) = match id {
+                                "backgroundDim" => ("-1", zaparoo_app::background::dim_cells(-1)),
+                                _ => ("60", zaparoo_app::background::blur_cells(60)),
+                            };
+                            out.value = value.into();
+                            (out.cells, out.lit) = cells;
+                        }
                         Control::TriToggle => {
                             out.value = if unlinked { "off" } else { "mixed" }.into();
                         }
@@ -2951,6 +3079,11 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
     } else if ra {
         rows.iter()
             .position(|row| row.id == if ra_setup { "raLogIn" } else { "raLaunchers" })
+            .and_then(|i| i32::try_from(i).ok())
+            .unwrap_or(2)
+    } else if appearance {
+        rows.iter()
+            .position(|row| row.id == "backgroundDim")
             .and_then(|i| i32::try_from(i).ok())
             .unwrap_or(2)
     } else if page {

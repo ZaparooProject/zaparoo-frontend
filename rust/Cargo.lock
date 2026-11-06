@@ -1468,6 +1468,7 @@ dependencies = [
  "gilrs",
  "hayro",
  "i-slint-core",
+ "i-slint-renderer-software",
  "image",
  "libc",
  "qrcode",

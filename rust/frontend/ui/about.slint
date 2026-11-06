@@ -1,4 +1,4 @@
-import { Theme, Sizing, Motion } from "theme.slint";
+import { Theme, Backdrop, GlassCard, Sizing, Motion } from "theme.slint";
 import { Brand, GlyphSource, ScrollCue, TopStatusStrip } from "chrome.slint";
 
 export global AboutView {
@@ -78,8 +78,11 @@ export component AboutScreen inherits Rectangle {
         // than a flat `pct-h(8)`: the 240p bar grows to two rows when its
         // entries wrap, and a flat figure would not follow it.
         height: Math.max(0px, parent.height - self.y - Sizing.help-bar-clearance);
-        background: Theme.surface-card;
+        background: Backdrop.glass ? transparent : Theme.surface-card;
         border-radius: Sizing.radius-md;
+        GlassCard {
+            radius: Sizing.radius-md;
+        }
         // The card edge, at the card weight -- this was the one
         // `surface-card` in the app outlined with a bare hairline.
         border-width: Sizing.card-border-width;

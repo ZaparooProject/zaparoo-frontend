@@ -195,8 +195,17 @@ private `_` recipe. Container builds write to `rust/target/docker/`.
   `MAX_BROWSE_ENTRIES`, only where Core
   is colocated and its files are readable (MiSTer, and an embedding host that
   runs Core in the same app), and self-healing: a stale path just fails to open and falls
-  through to a normal Core request. Do not extend this carve-out to any other
-  cache without discussing it first.
+  through to a normal Core request.
+  **Second scoped exception:** `rust/frontend/src/background.rs` keeps the
+  user's *own* background image, prepared (cropped, blurred, scaled to the
+  output, undimmed), in the temporary directory (`zaparoo-background/`, RAM
+  on MiSTer), so a relaunch shows it before the first frame without decoding
+  the wallpaper again. Never Core art, never the source file, at most two
+  files keyed by the image's path, size, modification time, the output size
+  and the blur, and self-healing: a stale or unreadable file is ignored. A
+  folder's random pick is written beside them, so it changes per power
+  cycle. Do not extend either carve-out to any other cache without
+  discussing it first.
 - Do not open a modal from a modal. A choice made inside a modal is a page of
   that modal's own panel (the setup panel in `ui/setup.slint` swaps between
   its form and its picker page; the context menu hosts its Manage, Write to
@@ -210,9 +219,11 @@ private `_` recipe. Container builds write to `rust/target/docker/`.
   catalogs are embedded (`include_bytes!`, `include_str!`, `@image-url`,
   bundled translations). The only images read from disk are user overrides
   from the `custom/` folder, a Hub tile's `icon` when it is an absolute
-  path, the file browser's previews, and, on a colocated MiSTer, Core's own
-  thumbnail files. The two user-chosen kinds go through the customization
-  pipeline's limits and cache and are never copied or cached to disk.
+  path, the background image (Settings > Appearance), the file browser's
+  previews, and, on a colocated MiSTer, Core's own thumbnail files. The
+  user-chosen kinds go through the customization pipeline's limits and are
+  never copied or cached to disk, except the prepared background bitmap
+  described above.
 
 ## Build caching couplings
 
@@ -226,8 +237,10 @@ update rules, in short:
   same PR; CI publishes the new tag and fails a PR that skips the bump.
 - Bumping Slint touches `slint` and `slint-build` in `rust/frontend/Cargo.toml`
   (plus `fontique` and `resvg`, which must match the versions Slint resolves,
-  and the exact `i-slint-core` pin that gives the MiSTer and hosted builds
-  their image decoders),
+  the exact `i-slint-core` pin that gives the MiSTer and hosted builds
+  their image decoders, and the exact `i-slint-renderer-software` pin whose
+  `experimental` feature lets the MiSTer presenters fill the background
+  themselves; recheck that `TargetPixelBuffer` API on a bump),
   `SLINT_TR_EXTRACTOR_VERSION` in `Dockerfile.toolchain` (with a
   `scripts/toolchain/VERSION` bump), and the Slint exceptions in
   `rust/deny.toml`; then regenerate `just notices`.
@@ -256,6 +269,7 @@ update rules, in short:
 | `rust/frontend/src/{context_page,alternates,discs,title_versions}.rs` | Context-menu pages: the shared page (Manage and Write to token included), alternate versions, a multi-disc game's discs, a search result's versions |
 | `rust/frontend/src/{input,actions,gamepad,keyboard}.rs` | Key path: duplicate guard, swaps, hold-repeat, the text field owner; keyboard bindings; desktop gamepads; the on-screen keyboard's shared state and buttons |
 | `rust/frontend/src/{media_cache,hub_covers,customization}.rs` | Bounded in-memory cover cache, cold-boot cover manifest, user overrides |
+| `rust/frontend/src/background.rs` | The screen background: the user's image or the focused game's art, prepared off the event loop (rules in `zaparoo_app::background`) and published through the `Backdrop` global and to the presenters' page slides |
 | `rust/frontend/src/hub_refresh.rs` | Refreshes pinned Hub tiles' stored identifiers from Core after a catalog load or rescan |
 | `rust/frontend/src/{theme,sizing,glyphs,system_logos,fonts}.rs` | Palette push, scene sizing adapter, embedded art and fonts |
 | `rust/frontend/src/mister/` | MiSTer platform: fb0, DDR and vblank-latch presenters, evdev input, lease, service kick |

@@ -117,6 +117,54 @@ Two follow-on rules:
 | Hard color cuts on one small element | Animating `opacity` on a parent with many children |
 | Static scenes with one small property changing | Continuous animation over busy content |
 
+### Background images
+
+The screen background is one opaque RGB image exactly the window's size,
+drawn first (`Backdrop` in `ui/theme.slint`). Everything that makes it look
+right happens once, off the event loop, in `zaparoo_app::background`: crop,
+blur at a reduced size, smooth upscale, dimming, the help bar band, and an
+ordered dither to RGB565 values Slint's truncating conversion maps back
+exactly. With glass cards a second copy is made at the card's darkness.
+
+- **Never bake where a card sits.** The card's position is only known
+  once its screen is showing, and a prepare takes 70 to 300 ms on the A9:
+  baking it in left a solid card on the way into a screen and a dark one
+  on the way out. The card-darkness copy shows inside whichever card the
+  view reports (`GlassCard`), in the same frame; the presenter merges the
+  two bitmaps with a row copy per card row when the card moves
+  (`set_cutout`).
+
+- **On MiSTer the presenter paints it, not Slint.** Slint draws an
+  `Image` through its generic texture loop, a per-pixel gather of about
+  20 cycles on the A9 even at 1:1. Under a glass card, which
+  repaints its whole area on every scroll frame, that cost about 9 ms a
+  frame. The presenters instead render through
+  `render_into_buffer` with a `TargetPixelBuffer` whose
+  `fill_background` copies each dirty row straight from the bitmap
+  (`mister::transition::render_with_backdrop`); Slint then draws the
+  items over the real background pixels, and the view drops its `Image`
+  (`Backdrop.host-painted`). A new bitmap repaints the whole frame once.
+  This needs `i-slint-renderer-software`'s `experimental` feature, so
+  check the trait when bumping Slint. A rotated frame keeps the `Image`.
+  Desktop and hosted builds keep the `Image` too; the GPU does not care.
+
+- **No per-pixel division.** The `MiSTer`'s Cortex-A9 has no integer divide
+  instruction: a `/` or `%` in a pixel loop is a library call. The first
+  version of this pipeline was 50 to 100 times slower on the device than on
+  a desktop for that reason. Multiply by a fixed-point reciprocal, walk
+  rows, index dither tables with masks.
+- **Page slides keep the background still.** A cached slide moves raw
+  pixels, which would carry the wallpaper with the page. Over an image, the
+  presenter compares each page row with the background bitmap it was given
+  (`mister::transition::set_background`, converted the way Slint draws it)
+  and moves only the runs that differ; the gap and everything else is the
+  background in place. Partly transparent edges count as content and carry
+  a sliver of background for the length of the slide; the last step is
+  Slint's own frame again.
+- **Changing the background is a full repaint.** On the software renderer
+  it cuts, once focus has rested; the GPU build crossfades
+  (`display::background_crossfade`).
+
 ### Transforms and effects
 
 - The software renderer has no transform support: `transform-scale` and

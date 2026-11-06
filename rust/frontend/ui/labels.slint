@@ -305,8 +305,11 @@ export global Labels {
         if (key == "hub_icon:tile") { return @tr("Change icon…"); }
         // The file browser's Menu.
         if (key == "file_default_icon") { return @tr("Use default icon"); }
+        if (key == "file_no_background") { return @tr("No background image"); }
         // The folder picker's first row, which picks the folder on screen.
         if (key == "file_add_folder") { return @tr("Add this folder"); }
+        // The background picker's first row: a random image from the folder.
+        if (key == "file_use_folder") { return @tr("Use this folder"); }
         if (key == "hub_remove:resume") { return @tr("Hide Resume tile"); }
         if (key == "hub_reset") { return @tr("Reset layout"); }
         if (key == "hub_settings") { return @tr("Settings"); }

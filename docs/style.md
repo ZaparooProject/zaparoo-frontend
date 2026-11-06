@@ -850,6 +850,34 @@ Use `Theme.text-primary` for primary content and `Theme.text-label` for metadata
 Use Body or larger unless space has an explicitly documented specialist role.
 Pressable content belongs on card/control surface.
 
+### Over a background image
+
+With a background image (`docs/customization.md` → "Background") the same
+text sits on the prepared image instead of flat `bg-deep`. Readability is
+the image's job, not each label's: the Readable dimming holds
+`text-primary` at 4.5:1 against the brightest 1% of the blurred image,
+dimming toward `bg-deep` so light schemes keep their register. Secondary
+labels get no floor of their own; holding them to 3:1 too darkened most
+art past recognition, and the blur removes the busy detail that hurts
+small text most. Lighter steps are the user's choice and may go below that.
+
+- The help bar's band and the glass card are darker areas *of the image*,
+  never a translucent fill over it at runtime; the bar and the card paint
+  no fill. The bar's band is baked in when the image is prepared. The card
+  can be anywhere, so the image is also prepared whole at the card's
+  darkness, and that copy shows inside the card's rounded outline: the GPU
+  build draws it clipped to the card, the MiSTer presenter fills the card
+  from it. Either way it follows the card in the same frame, so a screen
+  change never shows a solid card or a leftover dark one. Glass applies to
+  each screen's main card: the browse lists, the Settings page card, About,
+  the music player and its lists, and the file browser's list.
+- Tile faces, cover-art plates, the detail pane's art and every modal stay
+  as they are: a background never weakens art, caption or focus contrast.
+- The card's position comes from the view (`GlassCard` in `theme.slint`
+  sets `Backdrop.card-*` and calls `Backdrop.card-moved`), so the darker
+  area and the card's border always line up. A new screen with a main card
+  places a `GlassCard` over it and joins `has_card` in `background.rs`.
+
 ## Focus
 
 Focus is always `Theme.accent`. No second focus color. Accent configurability is
@@ -1201,7 +1229,9 @@ centered over the rows; the rows read like Settings rows.
   help bar says Adjust. A click left of the track's middle steps down, right
   of it up. The change is heard as it is made; Core is told once the steps
   stop (250 ms), and the rows are updated in place so nothing is rebuilt
-  under the cursor. Like a toggle it takes no press.
+  under the cursor. Like a toggle it takes no press. Settings' Blur and
+  Dimming are sliders too, drawn with the same `SegmentedTrack`
+  (`settings.slint`): one cell a step, so Dimming has nine.
 - **A picker marks its current choice** with a check; focus starts on it.
 - **Section headers** name the rows under them, in the caption tier over a
   rule. They take no focus: Up and Down pass over them, and the row under

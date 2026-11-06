@@ -160,6 +160,12 @@ pub(crate) struct Active<T> {
     spec: Spec,
     source_region: Vec<T>,
     background: T,
+    /// A still background in frame layout, and each page's per-row content
+    /// spans `(start, len)`: with one, only the content moves and the
+    /// background shows through everywhere else, gap included.
+    bg: Option<std::sync::Arc<Vec<T>>>,
+    source_spans: Vec<Vec<(usize, usize)>>,
+    destination_spans: Option<Vec<Vec<(usize, usize)>>>,
     frame_index: u32,
     frame_width: usize,
     frame_height: usize,
@@ -196,6 +202,9 @@ impl<T: Copy> Active<T> {
             spec,
             source_region,
             background,
+            bg: None,
+            source_spans: Vec::new(),
+            destination_spans: None,
             frame_index: 0,
             frame_width,
             frame_height,
@@ -323,7 +332,43 @@ impl<T: Copy> Active<T> {
     fn fill_region(&self, output: &mut [T]) {
         for row in 0..self.spec.rect.height {
             let start = (self.spec.rect.y + row) * self.frame_width + self.spec.rect.x;
-            output[start..start + self.spec.rect.width].fill(self.background);
+            if let Some(bg) = &self.bg {
+                output[start..start + self.spec.rect.width]
+                    .copy_from_slice(&bg[start..start + self.spec.rect.width]);
+            } else {
+                output[start..start + self.spec.rect.width].fill(self.background);
+            }
+        }
+    }
+
+    /// Copy a page row's content spans that fall inside the page
+    /// columns `[from, from + columns)` to output row `out_row`, shifted so
+    /// page column `from` lands at band column `to`.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "one call shape for the four blits; the row geometry is plain numbers"
+    )]
+    fn copy_spans(
+        &self,
+        spans: &[(usize, usize)],
+        page: &[T],
+        page_row_start: usize,
+        output: &mut [T],
+        out_row: usize,
+        from: usize,
+        to: usize,
+        columns: usize,
+    ) {
+        let out_start = (self.spec.rect.y + out_row) * self.frame_width + self.spec.rect.x;
+        for &(start, len) in spans {
+            let a = start.max(from);
+            let b = (start + len).min(from + columns);
+            if a >= b {
+                continue;
+            }
+            let dst = out_start + to + (a - from);
+            output[dst..dst + (b - a)]
+                .copy_from_slice(&page[page_row_start + a..page_row_start + b]);
         }
     }
 
@@ -356,6 +401,21 @@ impl<T: Copy> Active<T> {
         let Some((source_x, destination_x, columns)) = self.visible_columns(left) else {
             return;
         };
+        if self.bg.is_some() {
+            for row in 0..self.spec.rect.height {
+                self.copy_spans(
+                    &self.source_spans[row],
+                    &self.source_region,
+                    row * self.spec.rect.width,
+                    output,
+                    row,
+                    source_x,
+                    destination_x,
+                    columns,
+                );
+            }
+            return;
+        }
         for row in 0..self.spec.rect.height {
             let source_start = row * self.spec.rect.width + source_x;
             let destination_start =
@@ -369,6 +429,22 @@ impl<T: Copy> Active<T> {
         let Some((source_x, destination_x, columns)) = self.visible_columns(left) else {
             return;
         };
+        if let (Some(_), Some(spans)) = (&self.bg, &self.destination_spans) {
+            for (row, row_spans) in spans.iter().enumerate() {
+                let row_start = (self.spec.rect.y + row) * self.frame_width + self.spec.rect.x;
+                self.copy_spans(
+                    row_spans,
+                    destination,
+                    row_start,
+                    output,
+                    row,
+                    source_x,
+                    destination_x,
+                    columns,
+                );
+            }
+            return;
+        }
         for row in 0..self.spec.rect.height {
             let row_start = (self.spec.rect.y + row) * self.frame_width + self.spec.rect.x;
             output[row_start + destination_x..row_start + destination_x + columns].copy_from_slice(
@@ -381,6 +457,21 @@ impl<T: Copy> Active<T> {
         let Some((source_y, destination_y, rows)) = self.visible_rows(top) else {
             return;
         };
+        if self.bg.is_some() {
+            for row in 0..rows {
+                self.copy_spans(
+                    &self.source_spans[source_y + row],
+                    &self.source_region,
+                    (source_y + row) * self.spec.rect.width,
+                    output,
+                    destination_y + row,
+                    0,
+                    0,
+                    self.spec.rect.width,
+                );
+            }
+            return;
+        }
         for row in 0..rows {
             let source_start = (source_y + row) * self.spec.rect.width;
             let destination_start =
@@ -395,6 +486,21 @@ impl<T: Copy> Active<T> {
         let Some((source_y, destination_y, rows)) = self.visible_rows(top) else {
             return;
         };
+        if let (Some(_), Some(spans)) = (&self.bg, &self.destination_spans) {
+            for row in 0..rows {
+                self.copy_spans(
+                    &spans[source_y + row],
+                    destination,
+                    (self.spec.rect.y + source_y + row) * self.frame_width + self.spec.rect.x,
+                    output,
+                    destination_y + row,
+                    0,
+                    0,
+                    self.spec.rect.width,
+                );
+            }
+            return;
+        }
         for row in 0..rows {
             let source_start =
                 (self.spec.rect.y + source_y + row) * self.frame_width + self.spec.rect.x;
@@ -404,6 +510,71 @@ impl<T: Copy> Active<T> {
                 .copy_from_slice(&destination[source_start..source_start + self.spec.rect.width]);
         }
     }
+}
+
+impl<T: Blend> Active<T> {
+    /// Slide only content over a still background. A pixel that equals the
+    /// background's is background; everything else is content, including
+    /// the partly transparent edges of tiles, which carry a sliver of the
+    /// background they were drawn over until the last step, when the frame
+    /// is Slint's own again. Returns the share of the outgoing band that
+    /// matched the background exactly.
+    pub fn set_background(&mut self, bg: std::sync::Arc<Vec<T>>) -> f64 {
+        let (w, h) = (self.spec.rect.width, self.spec.rect.height);
+        let mut matched = 0usize;
+        let mut spans = Vec::with_capacity(h);
+        for row in 0..h {
+            let bg_start = (self.spec.rect.y + row) * self.frame_width + self.spec.rect.x;
+            let page = &self.source_region[row * w..(row + 1) * w];
+            let (row_spans, row_matched) = content_spans(page, &bg[bg_start..bg_start + w]);
+            matched += row_matched;
+            spans.push(row_spans);
+        }
+        self.source_spans = spans;
+        self.bg = Some(bg);
+        matched as f64 / (w * h).max(1) as f64
+    }
+
+    /// The incoming page's spans, taken once Slint has rendered it.
+    pub fn ensure_destination_spans(&mut self, destination: &[T]) -> Option<f64> {
+        let bg = self.bg.as_ref()?;
+        if self.destination_spans.is_some() {
+            return None;
+        }
+        let (w, h) = (self.spec.rect.width, self.spec.rect.height);
+        let mut matched = 0usize;
+        let mut spans = Vec::with_capacity(h);
+        for row in 0..h {
+            let start = (self.spec.rect.y + row) * self.frame_width + self.spec.rect.x;
+            let (row_spans, row_matched) =
+                content_spans(&destination[start..start + w], &bg[start..start + w]);
+            matched += row_matched;
+            spans.push(row_spans);
+        }
+        self.destination_spans = Some(spans);
+        Some(matched as f64 / (w * h).max(1) as f64)
+    }
+}
+
+/// Runs of `page` that differ from `bg`, and how many pixels matched.
+fn content_spans<T: Blend>(page: &[T], bg: &[T]) -> (Vec<(usize, usize)>, usize) {
+    let mut spans = Vec::new();
+    let mut matched = 0;
+    let mut start = None;
+    for (x, (p, b)) in page.iter().zip(bg).enumerate() {
+        if p.same(*b) {
+            matched += 1;
+            if let Some(s) = start.take() {
+                spans.push((s, x - s));
+            }
+        } else if start.is_none() {
+            start = Some(x);
+        }
+    }
+    if let Some(s) = start {
+        spans.push((s, page.len() - s));
+    }
+    (spans, matched)
 }
 
 /// A presenter pixel the cover fade can mix.
@@ -1350,5 +1521,85 @@ mod tests {
         assert!(weights.windows(2).all(|pair| pair[0] < pair[1]));
         assert!(weights[0] > BLEND_ONE / COVER_FADE_FRAMES);
         assert!(weights.iter().all(|&weight| weight <= BLEND_ONE));
+    }
+
+    /// A 6x4 frame whose band is rows 1..3. The background is 50, the
+    /// outgoing page has content 1 at column 1, the incoming page content 2
+    /// at column 4.
+    fn background_slide(direction: Direction) -> (Active<u8>, Vec<u8>, std::sync::Arc<Vec<u8>>) {
+        let bg: Vec<u8> = (0..24).map(|i| 50 + (i % 6) as u8).collect();
+        let mut source = bg.clone();
+        let mut destination = bg.clone();
+        for row in 1..3 {
+            source[row * 6 + 1] = 1;
+            destination[row * 6 + 4] = 2;
+        }
+        let spec = Spec {
+            rect: Rect {
+                x: 0,
+                y: 1,
+                width: 6,
+                height: 2,
+            },
+            gap: 0,
+            direction,
+            total_frames: 4,
+            started: Started::Wall(Instant::now()),
+        };
+        let active = Active::new(&source, 6, 4, spec, 0);
+        assert!(active.is_ok(), "valid transition rejected");
+        let Ok(mut active) = active else {
+            unreachable!();
+        };
+        let bg = std::sync::Arc::new(bg);
+        let matched = active.set_background(bg.clone());
+        assert!((matched - 10.0 / 12.0).abs() < 1e-9);
+        active.ensure_destination_spans(&destination);
+        (active, destination, bg)
+    }
+
+    #[test]
+    fn over_a_background_only_content_moves() {
+        let (mut active, destination, bg) = background_slide(Direction::Left);
+        let mut output = vec![0u8; 24];
+        assert!(active.compose_step(&destination, &mut output, 2).is_ok());
+        for row in 1..3 {
+            let line = &output[row * 6..row * 6 + 6];
+            // Every pixel is background or content, never the gap color
+            // or a background pixel carried from another column.
+            for (x, &px) in line.iter().enumerate() {
+                assert!(
+                    px == 1 || px == 2 || px == bg[row * 6 + x],
+                    "{row} {x} {px}"
+                );
+            }
+            assert!(line.contains(&1) || line.contains(&2));
+        }
+        // Rows outside the band are untouched.
+        assert!(output[..6].iter().all(|&px| px == 0));
+    }
+
+    #[test]
+    fn over_a_background_the_last_step_is_the_canonical_frame() {
+        for direction in [
+            Direction::Up,
+            Direction::Left,
+            Direction::Down,
+            Direction::Right,
+        ] {
+            let (mut active, destination, _) = background_slide(direction);
+            let mut output = vec![0u8; 24];
+            let step = active.compose_step(&destination, &mut output, 4);
+            assert!(matches!(step, Ok(Step { finished: true, .. })));
+            assert_eq!(output, destination);
+        }
+    }
+
+    #[test]
+    fn content_spans_are_the_runs_that_differ() {
+        let bg = [5u8, 5, 5, 5, 5, 5];
+        let page = [5u8, 1, 1, 5, 2, 5];
+        assert_eq!(content_spans(&page, &bg), (vec![(1, 2), (4, 1)], 3));
+        assert_eq!(content_spans(&[1u8, 1], &[5u8, 5]), (vec![(0, 2)], 0));
     }
 }
