@@ -301,6 +301,8 @@ export component HeaderBar inherits Rectangle {
     in property <string> clock-sample: "23:59";
     in property <[string]> status-keys: [];
     in property <bool> status-icons-enabled: false;
+    // Background music is playing: a music note leads the status icons.
+    in property <bool> music-playing: false;
     in property <bool> has-battery: false;
     in property <int> battery-percent: 0;
     in property <string> browse-title: "";
@@ -346,7 +348,8 @@ export component HeaderBar inherits Rectangle {
     property <bool> battery-label-visible: root.battery-visible && !Theme.crt;
     property <length> icon-size: Sizing.font-caption;
     property <length> hud-spacing: Sizing.pct-w(1);
-    property <int> icon-count: (root.status-icons-enabled ? root.status-keys.length : 0) + (root.battery-visible ? 1 : 0);
+    property <int> music-slot: root.status-icons-enabled && root.music-playing ? 1 : 0;
+    property <int> icon-count: (root.status-icons-enabled ? root.status-keys.length : 0) + (root.battery-visible ? 1 : 0) + root.music-slot;
     property <length> battery-label-width: root.battery-label-visible ? Math.ceil(battery-measure.preferred-width / 1px) * 1px : 0px;
     property <length> clock-width: Math.ceil(clock-measure.preferred-width / 1px) * 1px;
     property <bool> clock-visible: root.clock-text != "";
@@ -378,8 +381,16 @@ export component HeaderBar inherits Rectangle {
         y: root.hud-y;
         width: root.hud-width;
         height: Sizing.header-row-height;
+        if root.music-slot > 0: Image {
+            x: 0;
+            y: Sizing.snap((parent.height - self.height) / 2);
+            width: root.icon-size;
+            height: root.icon-size;
+            source: GlyphSource.glyph("status/Music", root.icon-size, Theme.text-primary);
+            image-rendering: Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
+        }
         for key[i] in root.status-keys: Image {
-            x: i * (root.icon-size + root.hud-spacing);
+            x: (i + root.music-slot) * (root.icon-size + root.hud-spacing);
             y: Sizing.snap((parent.height - self.height) / 2);
             width: root.icon-size;
             height: root.icon-size;
@@ -387,7 +398,7 @@ export component HeaderBar inherits Rectangle {
             image-rendering: Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
         }
         if root.battery-visible: Image {
-            x: root.status-keys.length * (root.icon-size + root.hud-spacing);
+            x: (root.status-keys.length + root.music-slot) * (root.icon-size + root.hud-spacing);
             y: Sizing.snap((parent.height - self.height) / 2);
             width: root.icon-size;
             height: root.icon-size;

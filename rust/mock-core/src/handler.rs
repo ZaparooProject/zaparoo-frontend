@@ -10,7 +10,7 @@ use serde_json::Value;
 use tracing::{debug, info, warn};
 
 use crate::media_state::{self, Notifier};
-use crate::{decks, fixtures, library, ui_events};
+use crate::{decks, fixtures, library, music, ui_events};
 
 #[derive(Deserialize)]
 struct RpcRequest {
@@ -60,7 +60,10 @@ pub fn dispatch(text: &str, notifier: &Notifier) -> String {
 
     debug!(method = %req.method, "rpc");
 
-    let outcome: Option<Result<Value, String>> = match req.method.as_str() {
+    // The background slot's methods answer first; anything else is the
+    // rest of the mock's.
+    let routed = music::route(&req.method, &req.params, notifier);
+    let outcome: Option<Result<Value, String>> = routed.or_else(|| match req.method.as_str() {
         "systems" => Some(Ok(fixtures::systems_response(&req.params))),
         "launchers" => Some(Ok(fixtures::launchers_response())),
         "scrapers" => Some(Ok(fixtures::scrapers_response())),
@@ -68,6 +71,7 @@ pub fn dispatch(text: &str, notifier: &Notifier) -> String {
         "settings.update" => Some(fixtures::settings_update_response(&req.params)),
         "media.search" => Some(fixtures::media_search_response(&req.params)),
         "media.browse" => Some(Ok(fixtures::media_browse_response(&req.params))),
+        "media.active" => Some(Ok(media_state::primary_active())),
         "media.browse.index" => Some(Ok(fixtures::media_browse_index_response(&req.params))),
         "media.lookup" => Some(Ok(fixtures::media_lookup_response(&req.params))),
         "media.meta" => Some(Ok(fixtures::media_meta_response(&req.params))),
@@ -108,7 +112,7 @@ pub fn dispatch(text: &str, notifier: &Notifier) -> String {
         }
         "version" => Some(Ok(fixtures::version_response())),
         _ => None,
-    };
+    });
 
     let response = match outcome {
         Some(Ok(r)) => RpcResponse {
@@ -876,6 +880,37 @@ mod tests {
             r#"{"jsonrpc":"2.0","id":"1","method":"run","params":{"text":"**launch.system:nes"}}"#;
         let resp = parse(&dispatch(req));
         assert!(resp["result"].is_null());
+    }
+
+    #[tokio::test]
+    async fn a_background_playlist_plays_shuffles_and_stops() {
+        let play = serde_json::json!({
+            "jsonrpc": "2.0", "id": "1", "method": "run",
+            "params": { "text": "**playlist.play:{\"id\":\"/m\",\"name\":\"m\",\"items\":[{\"name\":\"A\",\"zapscript\":\"/m/a.mp3\"},{\"name\":\"B\",\"zapscript\":\"/m/b^,c.mp3\"}]}?slot=background&repeat=all&start=2" },
+        });
+        assert!(parse(&dispatch(&play.to_string()))["result"].is_null());
+        let active = parse(&dispatch(
+            r#"{"jsonrpc":"2.0","id":"2","method":"media.active","params":{"slot":"background"}}"#,
+        ));
+        assert_eq!(active["result"]["mediaPath"], "/m/b,c.mp3");
+        assert_eq!(active["result"]["slot"], "background");
+        let shuffle = parse(&dispatch(
+            r#"{"jsonrpc":"2.0","id":"3","method":"playlists.update","params":{"slot":"background","shuffle":true}}"#,
+        ));
+        assert!(shuffle["result"].is_null());
+        let media = parse(&dispatch(
+            r#"{"jsonrpc":"2.0","id":"4","method":"media","params":{}}"#,
+        ));
+        assert_eq!(media["result"]["playlists"][0]["shuffle"], true);
+        assert_eq!(media["result"]["playlists"][0]["repeat"], "all");
+        let stop = parse(&dispatch(
+            r#"{"jsonrpc":"2.0","id":"5","method":"run","params":{"text":"**playlist.stop?slot=background"}}"#,
+        ));
+        assert!(stop["result"].is_null());
+        let idle = parse(&dispatch(
+            r#"{"jsonrpc":"2.0","id":"6","method":"media.active","params":{"slot":"background"}}"#,
+        ));
+        assert!(idle["result"].is_null());
     }
 
     #[test]

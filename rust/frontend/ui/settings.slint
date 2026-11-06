@@ -118,6 +118,7 @@ export global SettingsLabels {
         // Root categories.
         if (id == "pageAppearance") { return @tr("Appearance"); }
         if (id == "pageLibraryData") { return @tr("Library"); }
+        if (id == "pageMusic") { return @tr("Background music"); }
         if (id == "pageOnline") { return @tr("Online"); }
         if (id == "pageDisplayInterface") { return @tr("Display"); }
         if (id == "pageControlsInput") { return @tr("Controls"); }
@@ -464,6 +465,41 @@ export global SettingsLabels {
 // value, the toggle knob or the action label. The host draws it twice --
 // once resting and once with `focused` inside the list's `SelectionClip`
 // -- so the inversion boundary is the travelling fill's own edge.
+// A toggle switch: a track and a knob that rests left (off) or right
+// (on), or in the middle (`level` 1) for a tri-toggle where some of what
+// it covers is on. The knob slides; that slide is a toggle row's whole
+// activation cue, so its row does not flash. `focused` draws it in the
+// selection's colors, for the inverted copy of a selected row, with
+// `fill-color` as the fill it sits on. Settings rows and list panel rows
+// share it.
+export component ToggleSwitch inherits Rectangle {
+    in property <length> knob-h;
+    in property <int> level;
+    in property <bool> focused;
+    in property <color> fill-color: Theme.selection-fill;
+    property <length> inset: Sizing.card-border-width * (Sizing.tier-240 ? 1 : 2);
+    width: root.knob-h * 1.85;
+    height: root.knob-h;
+    border-radius: Sizing.radius-sm;
+    background: root.focused
+        ? (root.level == 2 ? Theme.on-accent : Theme.on-accent-muted)
+        : (root.level == 2 ? Theme.accent
+            : root.level == 1 ? Theme.accent.mix(Theme.border-mid, 0.5) : Theme.border-mid);
+
+    Rectangle {
+        property <length> knob-x: root.inset + (root.width - self.width - 2 * root.inset) * root.level / 2;
+        x: self.knob-x;
+        y: root.inset;
+        width: root.height - 2 * root.inset;
+        height: self.width;
+        border-radius: Sizing.radius-sm;
+        background: root.focused ? root.fill-color : Theme.surface-card;
+        border-width: Sizing.card-border-width;
+        border-color: root.focused ? Theme.on-accent : Theme.accent;
+        animate knob-x { duration: Motion.dur(Motion.settle-ms); easing: ease-out; }
+    }
+}
+
 export component SettingsRowView inherits Rectangle {
     in property <SettingsRow> entry;
     in property <bool> focused: false;
@@ -572,30 +608,13 @@ export component SettingsRowView inherits Rectangle {
         ? (root.entry.value == "on" ? 2 : root.entry.value == "mixed" ? 1 : 0)
         : (root.entry.checked ? 2 : 0);
 
-    if root.entry.control == ControlKind.toggle || root.entry.control == ControlKind.tri-toggle: Rectangle {
-        property <length> inset: Sizing.card-border-width * (Sizing.tier-240 ? 1 : 2);
+    if root.entry.control == ControlKind.toggle || root.entry.control == ControlKind.tri-toggle: ToggleSwitch {
         x: parent.width - self.width - root.pad;
         y: Sizing.snap((parent.height - self.height) / 2);
-        width: root.knob-h * 1.85;
-        height: root.knob-h;
-        border-radius: Sizing.radius-sm;
-        background: root.focused
-            ? (root.level == 2 ? Theme.on-accent : Theme.on-accent-muted)
-            : (root.level == 2 ? Theme.accent
-                : root.level == 1 ? Theme.accent.mix(Theme.border-mid, 0.5) : Theme.border-mid);
-
-        Rectangle {
-            property <length> knob-x: parent.inset + (parent.width - self.width - 2 * parent.inset) * root.level / 2;
-            x: self.knob-x;
-            y: parent.inset;
-            width: parent.height - 2 * parent.inset;
-            height: self.width;
-            border-radius: Sizing.radius-sm;
-            background: root.focused ? root.fill-color : Theme.surface-card;
-            border-width: Sizing.card-border-width;
-            border-color: root.focused ? Theme.on-accent : Theme.accent;
-            animate knob-x { duration: Motion.dur(Motion.settle-ms); easing: ease-out; }
-        }
+        knob-h: root.knob-h;
+        level: root.level;
+        focused: root.focused;
+        fill-color: root.fill-color;
     }
 
     chevron := Image {

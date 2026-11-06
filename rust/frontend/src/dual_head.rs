@@ -180,6 +180,86 @@ fn mirror_file_browser(primary: &App, crt: &App) {
     }
 }
 
+/// The music player at the CRT head's own geometry: the now-playing card
+/// and its list solved for the CRT scene, showing the slice of the HDMI
+/// list around the focus.
+fn mirror_music(primary: &App, crt: &App) {
+    let source = primary.global::<crate::MusicView>();
+    let target = crt.global::<crate::MusicView>();
+    copy_properties!(source, target;
+        get_page => set_page,
+        get_focus_ready => set_focus_ready,
+        get_has_track => set_has_track,
+        get_title => set_title,
+        get_artist => set_artist,
+        get_album => set_album,
+        get_playlist_name => set_playlist_name,
+        get_track_number => set_track_number,
+        get_track_total => set_track_total,
+        get_playback => set_playback,
+        get_has_cover => set_has_cover,
+        get_position_text => set_position_text,
+        get_duration_text => set_duration_text,
+        get_progress_milli => set_progress_milli,
+        get_up_next => set_up_next,
+        get_shuffle => set_shuffle,
+        get_repeat => set_repeat,
+        get_control_index => set_control_index,
+        get_state => set_state,
+        get_library_title => set_library_title,
+        get_library_top => set_library_top,
+        get_focused_opens => set_focused_opens,
+        get_count => set_count,
+        get_current_index => set_current_index,
+        get_activate_pulse => set_activate_pulse,
+        get_release_pulse => set_release_pulse,
+        get_rail_visible => set_rail_visible,
+        get_rail_letters => set_rail_letters,
+        get_rail_index => set_rail_index,
+        get_rail_letter => set_rail_letter,
+    );
+    let cover = source.get_cover();
+    if !same_image(&target.get_cover(), &cover) {
+        target.set_cover(cover);
+    }
+    target.set_buttons(source.get_buttons());
+    target.set_rail_fraction(source.get_rail_fraction());
+    let sizing = crt.global::<crate::Sizing>();
+    let scene = crate::sizing::Scene::of(
+        crt,
+        f64::from(sizing.get_screen_width()),
+        f64::from(sizing.get_screen_height()),
+        true,
+    );
+    let inputs = scene.inputs();
+    // The CRT head draws the 240p layout, which has no chip row.
+    let layout = crate::music_layout::layout_for(
+        &inputs,
+        false,
+        source.get_page() != crate::MusicPage::Playlist,
+    );
+    crate::music_layout::push_layout(&target, &layout);
+    let capacity = i32::try_from(layout.list.visible_rows.max(1)).unwrap_or(1);
+    let (rows, selected, _) = project_page(
+        &source.get_list_rows(),
+        &target.get_list_rows(),
+        source.get_list_sel(),
+        capacity,
+    );
+    if let Some(rows) = rows {
+        target.set_list_rows(rows);
+    }
+    set_if_changed!(target, get_list_sel => set_list_sel, selected);
+    set_if_changed!(target, get_list_view_top => set_list_view_top, 0);
+    set_if_changed!(target, get_list_scroll_top => set_list_scroll_top, 0);
+    set_if_changed!(target, get_list_glide => set_list_glide, false);
+    copy_properties!(source, target;
+        get_list_total_pages => set_list_total_pages,
+        get_has_items_above => set_has_items_above,
+        get_has_items_below => set_has_items_below,
+    );
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 enum TransitionPhase {
     #[default]
@@ -220,6 +300,7 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_clock_sample => set_clock_sample,
         get_status_keys => set_status_keys,
         get_status_icons_enabled => set_status_icons_enabled,
+        get_music_playing => set_music_playing,
         get_has_battery => set_has_battery,
         get_battery_percent => set_battery_percent,
         get_boot_curtain => set_boot_curtain,
@@ -672,6 +753,7 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
     );
 
     mirror_file_browser(primary, crt);
+    mirror_music(primary, crt);
 
     let source = primary.global::<GamesView>();
     let target = crt.global::<GamesView>();

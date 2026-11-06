@@ -1,5 +1,5 @@
 // Closed UI discriminants shared with the generated Rust API.
-export enum Screen { hub, systems, favorite-systems, games, favorites, recents, search, search-results, settings, about, update, rename, ra-login, file-browser, decks, deck, top-played, top-played-systems, none }
+export enum Screen { hub, systems, favorite-systems, games, favorites, recents, search, search-results, settings, about, update, rename, ra-login, file-browser, decks, deck, top-played, top-played-systems, music, none }
 export enum GamesMode { browse, favorites, recents, search, deck, decks, top-played }
 export enum SystemsMode { category, favorites, top-played }
 // What a games-screen footer notes after the focused name.
@@ -7,8 +7,12 @@ export enum SystemsMode { category, favorites, top-played }
 // an action set apart at the foot of a form list, or a context-menu row
 // that turns the menu to one of its pages.
 // `check-off` and `check-on` are rows that toggle a membership, drawn with
-// an empty or filled box (the Add to deck page).
-export enum MenuRole { option, header, action, submenu, check-off, check-on }
+// an empty or filled box (the Add to deck page). `chosen` is a picker's
+// current choice, marked with a check. `toggle-off` and `toggle-on` are a
+// setting switched in place, drawn with a toggle switch. `slider` is a
+// setting adjusted in place with Left and Right: a track of ten cells, its
+// `detail` the value, 0 to 100.
+export enum MenuRole { option, header, action, submenu, check-off, check-on, chosen, toggle-off, toggle-on, slider }
 // A game's four built-in collections, in the Options strip's order.
 export enum UserFlag { favorite, like, dislike, play-later }
 // What the context menu is showing: its own rows, or the page one of them
@@ -22,6 +26,14 @@ export enum RenamePurpose { tile, new-deck, rename-deck }
 export enum SearchZone { system, filter, keys, pane }
 export enum SearchPane { none, recents, preview }
 export enum FileBrowserMode { plain, images }
+// The music player: its pages (the player, the open playlist, the
+// library), the transport controls in row order, what the background slot
+// is doing, an open playlist's repeat mode, and why a control cannot act.
+export enum MusicPage { player, playlist, library }
+export enum MusicControl { shuffle, previous, play-pause, next, repeat }
+export enum PlaybackState { stopped, playing, paused }
+export enum RepeatMode { off, all, one }
+export enum MusicUnavailable { none, nothing-playing, no-playlist, not-supported, starting }
 // What "Search here" limited a search to: a folder, a system's top level,
 // a category's systems, or a built-in list (which one is named beside the
 // scope). `none` is an unscoped search.
@@ -77,7 +89,7 @@ export enum LogPhase { uploading, done, failed }
 export enum PairPhase { closed, starting, showing, paired, expired }
 // The "link Online account" panel, on the same terms as pairing.
 export enum OnlineLinkPhase { closed, starting, showing, linked, failed, expired }
-export enum PressOwner { none, hub, systems, games, file-browser, settings, setup, context, list, online-list, letter, card-write, dialog, log, wake, update, launcher-prefs, core-picker }
+export enum PressOwner { none, hub, systems, games, file-browser, settings, setup, context, list, online-list, letter, card-write, dialog, log, wake, update, launcher-prefs, core-picker, music }
 export enum StatusKind {
     none, disconnected, reconnecting, connecting, core-error, indexing-paused,
     indexing, optimizing, importing-paused, importing, indexed-files,
@@ -88,7 +100,7 @@ export enum Orientation { horizontal, cw, ccw }
 export enum VideoStandard { ntsc, pal }
 export enum DialogKind { none, quit-confirm, quit-blocked, restart-setting, notice, core-version, first-run, hub-full, action-error, unlink-online, restore-online-backup, update-stop, ra-log-out, delete-deck, core-confirm }
 export enum DialogButton { ok, yes, no, retry, cancel, i-understand, start-media-update }
-export enum ErrorKind { generic, launch, launch-repair, favorite, collection, deck-list, deck-update, deck-create, media-visibility, media-busy, add-to-hub, save-to-hub, media-index, media-scrape, media-scrapers, media-cancel, launcher, launcher-save, alternate-discovery, disc-list, version-list, qr-code, card-write, setting, pairing, online, backup, config-file, image-picker }
+export enum ErrorKind { generic, launch, launch-repair, favorite, collection, deck-list, deck-update, deck-create, media-visibility, media-busy, add-to-hub, save-to-hub, media-index, media-scrape, media-scrapers, media-cancel, launcher, launcher-save, alternate-discovery, disc-list, version-list, qr-code, card-write, setting, pairing, online, backup, config-file, image-picker, music }
 
 // Text adapters are for vocabulary/resource keys and focus identity only,
 // never routing. Runtime decisions use the enums themselves.

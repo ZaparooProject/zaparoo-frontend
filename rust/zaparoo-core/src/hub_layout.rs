@@ -33,6 +33,9 @@ pub enum HubItemKind {
     Folder,
     ZapScript,
     Search,
+    /// A Settings root tile pinned to the Hub; `id` is its page id
+    /// (`pageMusic`, `pageDisplayInterface`, ...).
+    Setting,
     Blank,
     Collection,
     Unknown(String),
@@ -47,6 +50,7 @@ impl HubItemKind {
             Self::Folder => "folder",
             Self::ZapScript => "zapscript",
             Self::Search => "search",
+            Self::Setting => "setting",
             Self::Blank => "blank",
             Self::Collection => "collection",
             Self::Unknown(raw) => raw.as_str(),
@@ -61,6 +65,7 @@ impl HubItemKind {
             "folder" => Self::Folder,
             "zapscript" => Self::ZapScript,
             "search" => Self::Search,
+            "setting" => Self::Setting,
             "blank" => Self::Blank,
             "collection" => Self::Collection,
             other => Self::Unknown(other.to_string()),
@@ -652,6 +657,39 @@ impl HubLayout {
             .position(|real| self.items[real].is_live_folder() && self.items[real].path == path)
     }
 
+    /// Pin a Settings root tile. It lands on the `target`-th visible cell
+    /// when that cell is a blank (the Hub's own "Add item" on an empty
+    /// cell), otherwise in the first gap, otherwise at the end. Returns
+    /// `false` for an empty id or a page already pinned.
+    pub fn add_setting_item(&mut self, id: &str, target: Option<usize>) -> bool {
+        if id.is_empty() || self.setting_position(id).is_some() {
+            return false;
+        }
+        let entry = HubItem {
+            kind_raw: HubItemKind::Setting.as_str().to_string(),
+            id: id.to_string(),
+            ..HubItem::default()
+        };
+        let cell = target.and_then(|target| self.visible_indices().get(target).copied());
+        if let Some(real) = cell {
+            if self.items[real].kind() == HubItemKind::Blank {
+                self.items[real] = entry;
+                self.trim_trailing_blanks();
+                return true;
+            }
+        }
+        self.place_in_first_gap(entry);
+        true
+    }
+
+    /// The visible position of the pinned Settings tile for page `id`.
+    pub fn setting_position(&self, id: &str) -> Option<usize> {
+        self.visible_indices().into_iter().position(|real| {
+            let item = &self.items[real];
+            item.kind() == HubItemKind::Setting && item.id == id
+        })
+    }
+
     /// The visible position of the `search` tile that runs this search,
     /// when one is already on the Hub.
     pub fn search_position(
@@ -1071,6 +1109,65 @@ type = "blank"
             layout.live_folder_position("/media/fat/games/SNES"),
             Some(0)
         );
+    }
+
+    #[test]
+    fn a_pinned_setting_takes_the_first_gap_once() {
+        let mut layout = HubLayout {
+            known: Vec::new(),
+            items: vec![
+                HubItem::action("favorites"),
+                HubItem {
+                    kind_raw: "blank".into(),
+                    ..HubItem::default()
+                },
+                HubItem::action("settings"),
+            ],
+        };
+        assert!(layout.add_setting_item("pageMusic", None));
+        assert_eq!(layout.items[1].kind(), HubItemKind::Setting);
+        assert_eq!(layout.items[1].id, "pageMusic");
+        assert_eq!(layout.setting_position("pageMusic"), Some(1));
+        assert!(!layout.add_setting_item("pageMusic", None), "pinned once");
+        assert!(!layout.add_setting_item("", None));
+        assert!(layout.add_setting_item("pageDisplayInterface", Some(0)));
+        assert_eq!(
+            layout.items.last().map(|item| item.id.as_str()),
+            Some("pageDisplayInterface"),
+            "a tile under the target is never replaced"
+        );
+    }
+
+    #[test]
+    fn a_pinned_setting_fills_the_blank_it_was_added_on() {
+        let mut layout = HubLayout {
+            known: Vec::new(),
+            items: vec![
+                HubItem {
+                    kind_raw: "blank".into(),
+                    ..HubItem::default()
+                },
+                HubItem {
+                    kind_raw: "blank".into(),
+                    ..HubItem::default()
+                },
+                HubItem::action("settings"),
+            ],
+        };
+        assert!(layout.add_setting_item("pageMusic", Some(1)));
+        assert_eq!(layout.items[1].kind(), HubItemKind::Setting);
+        assert_eq!(layout.items[0].kind(), HubItemKind::Blank);
+    }
+
+    #[test]
+    fn a_setting_tile_round_trips() {
+        let mut layout = HubLayout::default();
+        assert!(layout.add_setting_item("pageMusic", None));
+        let file = write_tmp("");
+        save_hub_layout(file.path(), &layout).expect("save");
+        let loaded = load_hub_layout(file.path());
+        assert_eq!(loaded.items, layout.items);
+        assert_eq!(loaded.visible().count(), 1, "a setting tile renders");
     }
 
     #[test]

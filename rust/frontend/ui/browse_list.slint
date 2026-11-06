@@ -201,7 +201,7 @@ export component BrowseList inherits Rectangle {
         property <length> facts-w: self.facts-here ? Math.ceil(facts-measure.preferred-width / 1px) * 1px : 0px;
         property <length> favorite-slot: self.facts-here
             ? Layout.favorite-right-padding + self.facts-w
-            : (row.favorite ? Layout.favorite-right-padding + root.heart-size : 0px);
+            : (row.favorite || row.now-playing ? Layout.favorite-right-padding + root.heart-size : 0px);
         // The same chevron and size as a context-menu row that opens a page.
         property <length> chevron: GlyphSource.side(Sizing.pct-h(3));
         property <length> chevron-slot: row.opens ? Layout.favorite-right-padding + self.chevron : 0px;
@@ -266,6 +266,15 @@ export component BrowseList inherits Rectangle {
             icon-size: root.heart-size;
             font-size: Sizing.font-section;
             ink: sel.content;
+        }
+        if row.now-playing && !facts-here: Image {
+            x: parent.width - Layout.favorite-right-padding - root.heart-size;
+            y: Sizing.snap((parent.height - self.height) / 2);
+            width: root.heart-size;
+            height: root.heart-size;
+            // Text colored on the row's own surface, as the heart is.
+            source: GlyphSource.glyph("icons/Play", root.heart-size, highlighted ? sel.content : Theme.text-primary);
+            image-rendering: Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
         }
         if row.favorite && !facts-here: Image {
             x: parent.width - Layout.favorite-right-padding - root.heart-size;

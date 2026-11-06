@@ -1271,6 +1271,135 @@ pub struct ActiveMediaInfo {
     pub relative_path: Option<String>,
     #[serde(default)]
     pub zap_script: String,
+    /// How far into the track playback is, for launchers that can tell
+    /// (native audio). `None` when Core does not report it.
+    #[serde(default)]
+    pub position_ms: Option<i64>,
+    #[serde(default)]
+    pub duration_ms: Option<i64>,
+    /// A native audio track's own tags, when the file carries them.
+    #[serde(default)]
+    pub track: Option<TrackInfo>,
+}
+
+/// The background media slot: music that plays alongside a game.
+pub const SLOT_BACKGROUND: &str = "background";
+
+/// Whether `slot` names the background slot. Core also accepts `bg`.
+pub fn is_background_slot(slot: &str) -> bool {
+    slot.eq_ignore_ascii_case(SLOT_BACKGROUND) || slot.eq_ignore_ascii_case("bg")
+}
+
+/// A native audio track's tags, as Core read them from the file. Every
+/// field is optional: most files carry only some of them.
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct TrackInfo {
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub artist: String,
+    #[serde(default)]
+    pub album: String,
+    #[serde(default)]
+    pub album_artist: String,
+    #[serde(default)]
+    pub genre: String,
+    #[serde(default)]
+    pub year: Option<i32>,
+    #[serde(default)]
+    pub track_number: Option<i32>,
+    #[serde(default)]
+    pub track_total: Option<i32>,
+    #[serde(default)]
+    pub disc_number: Option<i32>,
+    #[serde(default)]
+    pub disc_total: Option<i32>,
+    /// Core has cover art for the track (`media.active.image`).
+    #[serde(default)]
+    pub has_art: bool,
+}
+
+/// One item of an open playlist.
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PlaylistItem {
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub zap_script: String,
+}
+
+/// An open playlist, as `media` and `playlists.changed` report it.
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PlaylistState {
+    #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub slot: String,
+    /// `none`, `all` or `one`.
+    #[serde(default)]
+    pub repeat: String,
+    #[serde(default)]
+    pub items: Vec<PlaylistItem>,
+    /// The current item, counted from 0.
+    #[serde(default)]
+    pub index: usize,
+    #[serde(default)]
+    pub total: usize,
+    #[serde(default)]
+    pub playing: bool,
+    /// `None` from a Core that predates shuffling an open playlist.
+    #[serde(default)]
+    pub shuffle: Option<bool>,
+}
+
+/// The `playlists.changed` notification: every open playlist.
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+pub struct PlaylistsChanged {
+    #[serde(default)]
+    pub playlists: Vec<PlaylistState>,
+}
+
+/// `media.active`: one slot's active media.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct MediaActiveParams {
+    pub slot: String,
+}
+
+/// `media.control`: a launcher control on one slot's media.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct MediaControlParams {
+    pub action: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub slot: String,
+    /// Core types control arguments as strings (`seconds: "10"`).
+    #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub args: std::collections::BTreeMap<String, String>,
+}
+
+/// `playlists.update`: change an open playlist's order or repeat mode
+/// without restarting the track.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct PlaylistsUpdateParams {
+    pub slot: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shuffle: Option<bool>,
+    /// `none`, `all` or `one`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub repeat: Option<String>,
+}
+
+/// `media.active.image`: the cover art of a slot's playing track.
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaActiveImageParams {
+    pub slot: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_size: Option<u32>,
 }
 
 /// Response envelope for the `media` query. Carries both the database
@@ -1283,6 +1412,8 @@ pub struct MediaResult {
     pub database: IndexingStatusResponse,
     #[serde(default)]
     pub active: Vec<ActiveMediaInfo>,
+    #[serde(default)]
+    pub playlists: Vec<PlaylistState>,
 }
 
 /// One scraper Core knows how to run. `id` is the value to pass to
@@ -1348,6 +1479,15 @@ pub struct SettingsResult {
     /// order for every system. `None` when Core predates it (v2.21.0).
     #[serde(default)]
     pub launcher_preference: Option<Vec<String>>,
+    /// Native audio's volume, 0 to 200. `None` when Core predates it.
+    #[serde(default)]
+    pub audio_music_volume: Option<i32>,
+    /// Resume the last music when Core starts.
+    #[serde(default)]
+    pub audio_music_autoplay: Option<bool>,
+    /// Pause background music while a game runs.
+    #[serde(default)]
+    pub audio_music_pause_on_launch: Option<bool>,
 }
 
 /// `settings.auth.status`: whether Core holds a credential for a URL. No
@@ -1688,6 +1828,12 @@ pub struct UpdateSettingsParams {
     /// stored list already holds it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub launcher_preference: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub audio_music_volume: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub audio_music_autoplay: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub audio_music_pause_on_launch: Option<bool>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]

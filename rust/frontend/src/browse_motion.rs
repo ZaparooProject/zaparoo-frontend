@@ -109,7 +109,7 @@ macro_rules! list_view {
     };
 }
 
-list_view!(GamesView, SystemsView, FileBrowserView);
+list_view!(GamesView, SystemsView, FileBrowserView, MusicView);
 
 /// Publish a browse list's window around `current`: the rows on screen
 /// plus a page either side, so a glide to the next row or the next page

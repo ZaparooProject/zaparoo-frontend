@@ -11,7 +11,7 @@ may itself predate them.
 
 ## Menu ordering
 
-Order every `ContextMenu` ("Options") and `ListPickerModal` ("Menu") entry
+Order every `ContextMenu` ("Options") and list panel ("Menu") entry
 list, and every Menu chip row, by this priority, top to bottom:
 
 1. The primary action — what most users came to this menu to do (usually
@@ -209,6 +209,9 @@ One term per concept, matching the vocabulary Zaparoo's own docs
 | **media database** | library, index (as a noun) | The scanned catalog of games; "Update media database" is always spelled out, never bare "Update" |
 | **Update metadata** | Scrape metadata, Get metadata, Import metadata | Filling in artwork and details for already-indexed games. One label at every entry point (Settings > Library, and the system/category/game context menus). The verb deliberately does not name the mechanism: today's sources import scrapes already on disk, future ones may fetch, and only the setup modal's own button resolves that ("Start import"). "Scrape" named the wrong mechanism; "Get" read wrong for the re-runs that make up most uses |
 | **App** | phone, mobile app | The companion Zaparoo App used to scan a QR code and write a token |
+| **music** | audio | What the background slot plays. Core's system id `Audio` is never shown; the Settings tile and the player say "Background music" |
+| **track** | song, file, item | One piece of music in the player or the library |
+| **playlist** | queue | The tracks open on the background slot, in play order, named as Core names them |
 | **Automatic** | Auto | The default/no-preference picker choice, spelled out everywhere it appears (resolution, language, region, clock, artwork) |
 
 `Update` (bare, capitalized, as a Hub tile) is reserved for the app/
@@ -241,11 +244,13 @@ lengthening a menu row further.
 
 ## Adding a setting — checklist
 
-1. Which of the seven Settings pages does it belong to **by what the user
+1. Which of the eight Settings tiles does it belong to **by what the user
    is trying to do**, not by which Rust module or `.slint` file implements
-   it? The seven root categories and their rows are registered in
+   it? The root categories and their rows are registered in
    `rust/zaparoo-app/src/settings.rs`. Anything that needs a Zaparoo Online
-   account goes on the Online page.
+   account goes on the Online page. Background music is the one tile that opens a
+   screen of its own instead of a page of rows; a music setting goes in
+   the player's Menu.
 2. Does it need a "restart required" or "takes effect next launch"
    description line? If the setting doesn't apply live, say so in the
    description — don't let the restart-confirm modal be the first the

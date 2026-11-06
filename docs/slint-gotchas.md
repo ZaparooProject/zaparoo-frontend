@@ -230,6 +230,15 @@ The "persistent motion" ban is about scale and location, not repetition. One
 small cell blinking in otherwise static header chrome was never the expensive
 case. See `docs/style.md` → "Header status line".
 
+The music player's progress row is a `ProgressTrack` across its card with
+the blink held off (`paused`): it reports a place in a song rather than
+work under way, so nothing blinks. Its cells and the time text change at
+most once a second while music plays (`zaparoo_app::music::TICK_MS`), a
+cell at a time and each a hard cut over a few dozen pixels in an
+otherwise still card, and only while the player is on screen. Everything
+else on the screen changes only when Core reports something or focus
+moves.
+
 ## Motion tokens and Reduce motion
 
 Every animation duration goes through the `Motion` global in `ui/theme.slint`.

@@ -1,0 +1,547 @@
+// Zaparoo Frontend
+// Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
+// SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
+//
+// The music player: what Core's background slot plays, on a card with the
+// Settings pages' margins, with one row of controls in the order every
+// player uses (Shuffle, Previous, Play/Pause, Next, Repeat) and the
+// progress track across the card. The open playlist and the Audio index
+// are pages of their own, each one browse list. Pure view: the driver is
+// `src/music.rs`, the rules are `zaparoo_app::music`, and every number
+// below is pushed by Rust. The transport row is built like every other
+// row of controls: raised surfaces pressed through `PressFeedback`, one
+// focus ring that glides between them and carries the tile focus zoom.
+// The time text and the progress cells change once a second as hard cuts.
+
+import { Theme, Sizing, Layout, Motion } from "theme.slint";
+import { TopStatusStrip, StateCue, FastScrollRail, GlyphSource, ProgressTrack } from "chrome.slint";
+import { GridCell, PressableSurface } from "tiles.slint";
+import { BrowseList } from "browse_list.slint";
+import { Labels } from "labels.slint";
+import { FocusCursor } from "focus.slint";
+import { PressFeedback } from "press_feedback.slint";
+import { ContentState, MusicPage, MusicControl, PlaybackState, RepeatMode, MusicUnavailable, PressOwner } from "state_types.slint";
+
+// One button of the transport row.
+export struct MusicButton {
+    control: MusicControl,
+    unavailable: MusicUnavailable,
+}
+
+export global MusicView {
+    in-out property <MusicPage> page: MusicPage.player;
+    in-out property <bool> focus-ready: false;
+    // Now playing. `title` is the track's own title, or its file name.
+    in-out property <bool> has-track: false;
+    in-out property <string> title;
+    in-out property <string> artist;
+    in-out property <string> album;
+    // The track after this one, empty when nothing follows.
+    in-out property <string> up-next;
+    in-out property <string> playlist-name;
+    // The current track, counted from 1, and the playlist's length; 0 with
+    // no playlist.
+    in-out property <int> track-number: 0;
+    in-out property <int> track-total: 0;
+    in-out property <PlaybackState> playback: PlaybackState.stopped;
+    in-out property <image> cover;
+    in-out property <bool> has-cover: false;
+    in-out property <string> position-text;
+    in-out property <string> duration-text;
+    // How far through the track, 0 to 1000.
+    in-out property <int> progress-milli: 0;
+    in-out property <bool> shuffle: false;
+    in-out property <RepeatMode> repeat: RepeatMode.off;
+    // The transport row and its focus.
+    in-out property <[MusicButton]> buttons: [];
+    in-out property <int> control-index: 2;
+    // The card, with the Settings pages' margins and as tall as the player
+    // it holds, solved in Rust (`zaparoo_app::music::geometry`).
+    in-out property <length> card-x: 0px;
+    in-out property <length> card-y: 0px;
+    in-out property <length> card-width: 0px;
+    in-out property <length> card-height: 0px;
+    in-out property <length> art-x: 0px;
+    in-out property <length> art-y: 0px;
+    in-out property <length> art-size: 0px;
+    in-out property <length> text-x: 0px;
+    in-out property <length> text-y: 0px;
+    in-out property <length> text-width: 0px;
+    in-out property <length> title-height: 0px;
+    in-out property <length> line-height: 0px;
+    in-out property <bool> album-line: true;
+    in-out property <length> padding: 0px;
+    in-out property <length> progress-y: 0px;
+    in-out property <length> progress-height: 0px;
+    in-out property <length> time-width: 0px;
+    // The span the progress track's cells are laid in.
+    in-out property <length> bar-x: 0px;
+    in-out property <length> bar-width: 0px;
+    in-out property <length> controls-x: 0px;
+    in-out property <length> controls-y: 0px;
+    in-out property <length> button-size: 0px;
+    in-out property <length> button-gap: 0px;
+    in-out property <length> label-y: 0px;
+    in-out property <length> label-height: 0px;
+    // The list on the playlist and library pages.
+    in-out property <ContentState> state: ContentState.ready;
+    in-out property <string> library-title;
+    in-out property <bool> library-top: true;
+    // Accept on the focused library row opens a folder, else plays.
+    in-out property <bool> focused-opens: false;
+    in-out property <int> count: 0;
+    in-out property <int> current-index: 0;
+    in-out property <[GridCell]> list-rows;
+    in-out property <int> list-view-top: 0;
+    in-out property <int> list-scroll-top: 0;
+    in-out property <int> list-sel: -1;
+    in-out property <bool> list-glide: true;
+    in-out property <int> list-step-ms: 0;
+    in-out property <length> list-x: 0px;
+    in-out property <length> list-y: 0px;
+    in-out property <length> list-width: 0px;
+    in-out property <length> list-height: 0px;
+    in-out property <length> list-row-height: 0px;
+    in-out property <int> list-total-pages: 1;
+    in-out property <bool> has-items-above: false;
+    in-out property <bool> has-items-below: false;
+    in-out property <int> activate-pulse: 0;
+    in-out property <int> release-pulse: 0;
+    // The fast-scroll rail (library).
+    in-out property <bool> rail-visible: false;
+    in-out property <[string]> rail-letters: [];
+    in-out property <int> rail-index: -1;
+    in-out property <string> rail-letter: "";
+    in-out property <float> rail-fraction: 0;
+
+    public pure function focused-button() -> MusicButton {
+        return self.control-index >= 0 && self.control-index < self.buttons.length
+            ? self.buttons[self.control-index]
+            : { control: MusicControl.play-pause, unavailable: MusicUnavailable.none };
+    }
+    public pure function playing() -> bool {
+        return self.playback == PlaybackState.playing;
+    }
+    // L and R skip tracks: offered while Next can act.
+    public pure function can-skip() -> bool {
+        return self.buttons.length > 3 && self.buttons[3].unavailable == MusicUnavailable.none;
+    }
+    // A on the playing track's row of the playlist pauses it.
+    public pure function focused-pauses() -> bool {
+        return self.playing() && self.list-sel >= 0 && self.list-sel < self.list-rows.length
+            && self.list-rows[self.list-sel].now-playing;
+    }
+}
+
+export global MusicInput {
+    callback hovered(int);
+    callback clicked(int);
+    callback row-right-clicked(int);
+    callback wheel(int);
+    callback page-requested(int);
+    callback control-hovered(int);
+    callback control-clicked(int);
+}
+
+// The words for the transport row's controls and their states.
+export global MusicLabels {
+    public pure function control(c: MusicControl) -> string {
+        if (c == MusicControl.shuffle) { return @tr("Shuffle"); }
+        if (c == MusicControl.previous) { return @tr("Previous"); }
+        if (c == MusicControl.play-pause) { return MusicView.playing() ? @tr("Pause") : @tr("Play"); }
+        if (c == MusicControl.next) { return @tr("Next"); }
+        return @tr("Repeat");
+    }
+    public pure function repeat(mode: RepeatMode) -> string {
+        if (mode == RepeatMode.all) { return @tr("All"); }
+        if (mode == RepeatMode.one) { return @tr("One"); }
+        return @tr("Off");
+    }
+    public pure function reason(why: MusicUnavailable) -> string {
+        if (why == MusicUnavailable.nothing-playing) { return @tr("Nothing playing"); }
+        if (why == MusicUnavailable.no-playlist) { return @tr("No playlist"); }
+        if (why == MusicUnavailable.not-supported) { return @tr("Not supported"); }
+        if (why == MusicUnavailable.starting) { return @tr("Starting track"); }
+        return "";
+    }
+    // The line under the row names the focused control and, where it has
+    // one, its value: its state, or why it cannot act. The name is drawn
+    // in the label color and the value in the primary one, as a Settings
+    // row pairs a name with its value.
+    public pure function focused-value(button: MusicButton) -> string {
+        if (button.unavailable != MusicUnavailable.none) {
+            return self.reason(button.unavailable);
+        }
+        if (button.control == MusicControl.shuffle) {
+            return MusicView.shuffle ? @tr("On") : @tr("Off");
+        }
+        if (button.control == MusicControl.repeat) {
+            return self.repeat(MusicView.repeat);
+        }
+        return "";
+    }
+    public pure function focused-name(button: MusicButton) -> string {
+        return self.focused-value(button) == "" ? self.control(button.control)
+            : @tr("{}:", self.control(button.control));
+    }
+    public pure function glyph(button: MusicButton) -> string {
+        if (button.control == MusicControl.shuffle) { return "icons/Shuffle"; }
+        if (button.control == MusicControl.previous) { return "icons/SkipBack"; }
+        if (button.control == MusicControl.play-pause) { return MusicView.playing() ? "icons/Pause" : "icons/Play"; }
+        if (button.control == MusicControl.next) { return "icons/SkipForward"; }
+        return MusicView.repeat == RepeatMode.one ? "icons/RepeatOne" : "icons/Repeat";
+    }
+    // Shuffle and Repeat draw their glyph in the accent while they are on.
+    public pure function lit(button: MusicButton) -> bool {
+        return button.unavailable == MusicUnavailable.none
+            && ((button.control == MusicControl.shuffle && MusicView.shuffle)
+                || (button.control == MusicControl.repeat && MusicView.repeat != RepeatMode.off));
+    }
+}
+
+component PlayerCard inherits Rectangle {
+    // The content has focus: false while the Menu chip row has it, when
+    // the content shows no selection.
+    in property <bool> content-focused: true;
+    property <length> glyph-size: Sizing.pixel-grid
+        ? Sizing.even(Math.min(MusicView.button-size - 6px, 14px))
+        : Math.round(MusicView.button-size * 0.5 / 1px) * 1px;
+    property <length> ring-gap: Sizing.card-border-width;
+    property <bool> has-focus: MusicView.focus-ready && root.content-focused
+        && MusicView.control-index >= 0 && MusicView.control-index < MusicView.buttons.length;
+    property <bool> focused-pressed: PressFeedback.active(PressOwner.music, MusicView.control-index);
+    property <float> press-t: root.focused-pressed ? 1 : 0;
+    animate press-t {
+        duration: Motion.dur(root.focused-pressed ? Motion.press-ms : Motion.settle-ms);
+        easing: ease-out-quad;
+    }
+    // The tile focus zoom: a transform where the renderer has one, the
+    // focused button and its ring grown by their geometry where it does
+    // not (`Motion.zoom-by-size`), as a cut.
+    property <percent> zoom: Motion.enabled ? Motion.focus-zoom : 100%;
+    property <float> ring-grow: Motion.zoom-by-size ? root.zoom - 100% : 0%;
+    property <length> grow-px: MusicView.button-size * root.ring-grow / 2;
+
+    background: Theme.surface-card;
+    border-radius: Sizing.radius-md;
+    border-width: Sizing.card-border-width;
+    border-color: Theme.border-mid;
+    clip: true;
+
+    // The art: the track's cover, fading in as it lands, or the music
+    // glyph where the track has none.
+    Rectangle {
+        x: MusicView.art-x;
+        y: MusicView.art-y;
+        width: MusicView.art-size;
+        height: MusicView.art-size;
+        clip: true;
+        Image {
+            source: MusicView.cover;
+            image-fit: contain;
+            image-rendering: Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
+            opacity: 0;
+            states [
+                shown when MusicView.has-cover: {
+                    opacity: 1;
+                    in {
+                        animate opacity { duration: Motion.dur(Motion.cover-reveal-ms); easing: ease-out; }
+                    }
+                }
+            ]
+        }
+        if !MusicView.has-cover: Image {
+            property <length> side: GlyphSource.side(MusicView.art-size * 0.5);
+            x: Sizing.snap((parent.width - self.width) / 2);
+            y: Sizing.snap((parent.height - self.height) / 2);
+            width: self.side;
+            height: self.side;
+            source: GlyphSource.glyph("icons/Music", self.side, Theme.text-label);
+            image-rendering: Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
+        }
+    }
+
+    // Title, artist and album, and what plays next.
+    // With nothing playing the title is the one line, centered on the art.
+    Text {
+        x: MusicView.text-x;
+        y: MusicView.has-track ? MusicView.text-y
+            : MusicView.art-y + Sizing.snap((MusicView.art-size - MusicView.title-height) / 2);
+        width: MusicView.text-width;
+        height: MusicView.title-height;
+        text: MusicView.has-track ? MusicView.title : @tr("Not playing");
+        color: MusicView.has-track ? Theme.text-primary : Theme.text-label;
+        font-size: Sizing.font-title;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+    Text {
+        x: MusicView.text-x;
+        y: MusicView.text-y + MusicView.title-height;
+        width: MusicView.text-width;
+        height: MusicView.line-height;
+        visible: MusicView.has-track;
+        text: MusicView.album-line || MusicView.album == "" ? MusicView.artist
+            : MusicView.artist == "" ? MusicView.album
+            : @tr("{} · {}", MusicView.artist, MusicView.album);
+        color: Theme.text-label;
+        font-size: Sizing.font-body;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+    if MusicView.album-line && MusicView.has-track: Text {
+        x: MusicView.text-x;
+        y: MusicView.text-y + MusicView.title-height + MusicView.line-height;
+        width: MusicView.text-width;
+        height: MusicView.line-height;
+        text: MusicView.album;
+        color: Theme.text-label;
+        font-size: Sizing.font-body;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+    if MusicView.up-next != "": Text {
+        x: MusicView.text-x;
+        y: MusicView.text-y + MusicView.title-height + MusicView.line-height * (MusicView.album-line ? 2 : 1);
+        width: MusicView.text-width;
+        height: MusicView.line-height;
+        text: @tr("Up next: {}", MusicView.up-next);
+        color: Theme.text-label;
+        font-size: Sizing.font-body;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+
+    // The progress row, across the card: elapsed, the track's cells, the
+    // length. The cells are `ProgressTrack`'s, as many as the span holds,
+    // so the fill moves a whole cell at a time. Nothing blinks: a track's
+    // position is not a task in progress.
+    if MusicView.has-track: Text {
+        x: MusicView.padding;
+        y: MusicView.progress-y;
+        width: MusicView.time-width;
+        height: MusicView.progress-height;
+        text: MusicView.position-text;
+        color: Theme.text-label;
+        font-size: Sizing.font-caption;
+        vertical-alignment: center;
+    }
+    track := ProgressTrack {
+        x: MusicView.bar-x + Sizing.snap((MusicView.bar-width - self.width) / 2);
+        y: MusicView.progress-y + Sizing.snap((MusicView.progress-height - self.height) / 2);
+        cell-count: Math.max(1, Math.floor((MusicView.bar-width + self.cell-gap) / (self.cell-width + self.cell-gap)));
+        active: MusicView.has-track;
+        paused: true;
+        current-step: MusicView.progress-milli;
+        total-steps: 1000;
+    }
+    if MusicView.has-track: Text {
+        x: MusicView.bar-x + MusicView.bar-width + (MusicView.bar-x - MusicView.padding - MusicView.time-width);
+        y: MusicView.progress-y;
+        width: MusicView.time-width;
+        height: MusicView.progress-height;
+        text: MusicView.duration-text;
+        color: Theme.text-label;
+        font-size: Sizing.font-caption;
+        horizontal-alignment: right;
+        vertical-alignment: center;
+    }
+
+    // The transport row. A control that cannot act keeps its resting tint
+    // when focused and mutes its front edge, as a disabled tile does.
+    for button[i] in MusicView.buttons: cell := Rectangle {
+        property <bool> zoomed: root.has-focus && i == MusicView.control-index;
+        property <float> grow: Motion.zoom-by-size && self.zoomed ? root.zoom - 100% : 0%;
+        property <bool> muted: button.unavailable != MusicUnavailable.none;
+        x: MusicView.controls-x + i * (MusicView.button-size + MusicView.button-gap)
+            - MusicView.button-size * self.grow / 2;
+        y: MusicView.controls-y - MusicView.button-size * self.grow / 2;
+        width: MusicView.button-size * (1 + self.grow);
+        height: MusicView.button-size * (1 + self.grow);
+        transform-scale-x: !Motion.zoom-by-size && self.zoomed ? root.zoom : 100%;
+        transform-scale-y: !Motion.zoom-by-size && self.zoomed ? root.zoom : 100%;
+        animate transform-scale-x, transform-scale-y {
+            duration: Motion.dur(Motion.zoom-ms);
+            easing: ease-out-quad;
+        }
+        face := PressableSurface {
+            edge-color: cell.muted ? Theme.border-mid : Theme.control-edge;
+            pressed: PressFeedback.active(PressOwner.music, i);
+            Image {
+                x: Sizing.snap((parent.width - self.width) / 2);
+                y: Sizing.snap((face.face-height - self.height) / 2);
+                width: root.glyph-size;
+                height: root.glyph-size;
+                source: GlyphSource.glyph(MusicLabels.glyph(button), root.glyph-size,
+                    MusicLabels.lit(button) ? Theme.accent
+                    : !cell.muted && cell.zoomed ? Theme.text-primary
+                    : Theme.text-label);
+                image-rendering: Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
+            }
+            TouchArea {
+                mouse-cursor: pointer;
+                changed has-hover => { if (self.has-hover) { MusicInput.control-hovered(i); } }
+                clicked => { MusicInput.control-clicked(i); }
+            }
+        }
+    }
+    // One ring for the row, gliding between buttons and riding the face
+    // down with a press, so ring and face never separate.
+    FocusCursor {
+        radius: Math.max(0px, Sizing.radius-sm - root.ring-gap);
+        stroke: Sizing.card-border-width * 2;
+        transform-scale-x: !Motion.zoom-by-size && root.has-focus ? root.zoom : 100%;
+        transform-scale-y: !Motion.zoom-by-size && root.has-focus ? root.zoom : 100%;
+        animate transform-scale-x, transform-scale-y {
+            duration: Motion.dur(Motion.zoom-ms);
+            easing: ease-out-quad;
+        }
+        target: {
+            x: MusicView.controls-x + MusicView.control-index * (MusicView.button-size + MusicView.button-gap)
+                - root.grow-px + root.ring-gap,
+            y: MusicView.controls-y - root.grow-px + root.ring-gap + root.press-t * Sizing.press-edge-height,
+            w: MusicView.button-size + 2 * root.grow-px - 2 * root.ring-gap,
+            h: MusicView.button-size + 2 * root.grow-px - Sizing.press-edge-height - 2 * root.ring-gap,
+            column: MusicView.control-index,
+            row: 0,
+            scope: "music:transport:" + MusicView.buttons.length,
+            valid: root.has-focus
+        };
+    }
+    // The line under the row: the name, then its value, centered as one.
+    property <string> line-name: root.has-focus ? MusicLabels.focused-name(MusicView.focused-button()) : "";
+    property <string> line-value: root.has-focus ? MusicLabels.focused-value(MusicView.focused-button()) : "";
+    property <length> line-gap: root.line-value == "" ? 0px : Sizing.snap(Sizing.font-body * 0.3);
+    property <length> line-room: root.width - 2 * MusicView.padding;
+    property <length> name-w: Math.min(Sizing.even(name-measure.preferred-width), root.line-room);
+    property <length> value-w: root.line-value == "" ? 0px
+        : Math.min(Sizing.even(value-measure.preferred-width), Math.max(0px, root.line-room - root.name-w - root.line-gap));
+    property <length> line-x: Sizing.snap((root.width - root.name-w - root.line-gap - root.value-w) / 2);
+    name-measure := Text {
+        visible: false;
+        text: root.line-name;
+        font-size: Sizing.font-body;
+    }
+    value-measure := Text {
+        visible: false;
+        text: root.line-value;
+        font-size: Sizing.font-body;
+    }
+    Text {
+        x: root.line-x;
+        y: MusicView.label-y;
+        width: root.name-w;
+        height: MusicView.label-height;
+        text: root.line-name;
+        color: Theme.text-label;
+        font-size: Sizing.font-body;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+    if root.line-value != "": Text {
+        x: root.line-x + root.name-w + root.line-gap;
+        y: MusicView.label-y;
+        width: root.value-w;
+        height: MusicView.label-height;
+        text: root.line-value;
+        color: Theme.text-primary;
+        font-size: Sizing.font-body;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+}
+
+export component MusicScreen inherits Rectangle {
+    // False while the Menu chip row has focus.
+    in property <bool> content-focused: true;
+    property <bool> player: MusicView.page == MusicPage.player;
+    property <bool> library: MusicView.page == MusicPage.library;
+    property <bool> gate-hide: MusicView.state != ContentState.ready || cue.loading-visible;
+    // Titled as a Settings page is: the player by its tile's name, the
+    // playlist by its own, a library folder by its folder's.
+    property <string> title: root.library
+        ? (MusicView.library-top ? @tr("Browse music") : MusicView.library-title)
+        : root.player || MusicView.playlist-name == "" ? @tr("Background music")
+        : MusicView.playlist-name;
+
+    // The lists' totals, on the strip's left as a games list's is.
+    property <string> count-text: root.player || MusicView.count <= 0 ? ""
+        : Sizing.tier-240 ? Labels.count(MusicView.count)
+        : root.library ? @tr("{n} item" | "{n} items" % MusicView.count)
+        : @tr("{n} track" | "{n} tracks" % MusicView.count);
+
+    // The strip as on a Settings page: the title, the lists' totals, and
+    // above 240p the position on the right while there is more to scroll
+    // to (the track on the player, the row on a list).
+    TopStatusStrip {
+        x: 0;
+        y: Sizing.header-bottom + Layout.top-margin;
+        height: Layout.strip-height;
+        slot-margin: Layout.slot-margin;
+        title: root.title;
+        total-text: root.count-text;
+        show-page-counter: !Sizing.crt && (root.player ? MusicView.track-total > 0 : MusicView.count > 0);
+        page-indicator-mode: true;
+        item-position-mode: true;
+        current-item: root.player ? MusicView.track-number - 1 : MusicView.current-index;
+        total-items: root.player ? MusicView.track-total : MusicView.count;
+        has-pages-above: !root.player && MusicView.has-items-above;
+        has-pages-below: !root.player && MusicView.has-items-below;
+        visible: Layout.top-strip-visible && (root.player || !root.gate-hide);
+        page-requested(delta) => { MusicInput.page-requested(delta); }
+    }
+
+    if root.player: PlayerCard {
+        x: MusicView.card-x;
+        y: MusicView.card-y;
+        width: MusicView.card-width;
+        height: MusicView.card-height;
+        content-focused: root.content-focused;
+    }
+
+    if !root.player && !root.gate-hide: BrowseList {
+        x: MusicView.list-x;
+        y: MusicView.list-y;
+        width: MusicView.list-width;
+        height: MusicView.list-height;
+        show-chrome: true;
+        rows: MusicView.list-rows;
+        model-top: MusicView.list-view-top;
+        glide: MusicView.list-glide;
+        step: MusicView.list-step-ms * 1ms;
+        scroll-top: MusicView.list-scroll-top;
+        scope: (root.library ? "music:library:" + MusicView.library-title : "music:playlist:" + MusicView.playlist-name);
+        selected: MusicView.list-sel;
+        focus-ready: MusicView.focus-ready && root.content-focused;
+        activate-pulse: MusicView.activate-pulse;
+        release-pulse: MusicView.release-pulse;
+        row-height: MusicView.list-row-height;
+        row-hovered(i) => { MusicInput.hovered(i); }
+        row-clicked(i) => { MusicInput.clicked(i); }
+        row-right-clicked(i) => { MusicInput.row-right-clicked(i); }
+        wheel(delta) => { MusicInput.wheel(delta); }
+    }
+
+    property <bool> rail-in-card: !Sizing.crt;
+    if root.library: FastScrollRail {
+        x: MusicView.list-x + MusicView.list-width - self.width - (root.rail-in-card ? Layout.card-padding-right : 0px);
+        y: MusicView.list-y + (root.rail-in-card ? Layout.card-padding-top : 0px);
+        height: MusicView.list-height - (root.rail-in-card ? Layout.card-padding-top + Layout.card-padding-bottom : 0px);
+        shown: !root.gate-hide && MusicView.rail-visible && MusicView.count > 0;
+        letters: MusicView.rail-letters;
+        current: MusicView.rail-index;
+        letter: MusicView.rail-letter;
+        fraction: MusicView.rail-fraction;
+    }
+
+    cue := StateCue {
+        x: MusicView.list-x;
+        y: MusicView.list-y;
+        width: MusicView.list-width;
+        height: MusicView.list-height;
+        cue-center-y: root.height / 2 - self.y;
+        state: root.player ? ContentState.ready : MusicView.state;
+        empty-text: root.library ? @tr("No music found") : @tr("Nothing here");
+        error-detail: @tr("This folder can't be opened.");
+    }
+}

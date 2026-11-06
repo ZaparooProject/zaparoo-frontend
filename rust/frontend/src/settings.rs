@@ -576,10 +576,32 @@ pub(crate) fn navigate_page(ctx: &Ctx, app: &App, page: crate::SettingsPage) {
     });
 }
 
+/// A Settings page pinned to the Hub: straight to the page, and Back
+/// returns to the Hub rather than to the root grid.
+pub(crate) fn enter_page_from_hub(ctx: &Ctx, app: &App, page: crate::SettingsPage) {
+    {
+        let mut shared = lock(&ctx.shared);
+        shared.persist.active_screen = "settings".to_string();
+        shared.settings_from_hub = true;
+        shared.settings_focus = None;
+    }
+    crate::router::save_persist(&ctx.shared);
+    if page == crate::SettingsPage::Online {
+        crate::online::refresh(ctx, app);
+    }
+    if page == crate::SettingsPage::Library {
+        crate::retro_achievements::refresh(ctx, app);
+    }
+    open_page(ctx, app, page);
+    remember_focus(ctx, app);
+    crate::router::transition_to_screen(app, crate::Screen::Settings, 1);
+}
+
 pub fn enter(ctx: &Ctx, app: &App, entry: EntryMode) {
     let focus = {
         let mut shared = lock(&ctx.shared);
         shared.persist.active_screen = "settings".to_string();
+        shared.settings_from_hub = false;
         if entry == EntryMode::Fresh {
             shared.settings_focus = None;
         }
@@ -685,7 +707,9 @@ fn dispatch(ctx: &Ctx, app: &App, action: &str) {
             }
             actions::ACCEPT => {
                 if let Some(row) = rows.get(index) {
-                    if let Ok(page) = crate::SettingsPage::try_from(row.id()) {
+                    if row.id() == rules::MUSIC_PAGE {
+                        crate::music::enter(ctx, app, crate::music::Origin::Settings);
+                    } else if let Ok(page) = crate::SettingsPage::try_from(row.id()) {
                         navigate_page(ctx, app, page);
                     }
                 }
@@ -694,6 +718,11 @@ fn dispatch(ctx: &Ctx, app: &App, action: &str) {
                 lock(&ctx.shared).persist.active_screen = "hub".to_string();
                 crate::router::save_persist(&ctx.shared);
                 crate::router::return_to_hub(ctx, app);
+            }
+            actions::CONTEXT_MENU => {
+                if let Some(row) = rows.get(index) {
+                    open_tile_options(ctx, app, row.id());
+                }
             }
             _ => {}
         }
@@ -725,9 +754,35 @@ fn dispatch(ctx: &Ctx, app: &App, action: &str) {
                 accept(ctx, app, id, *control);
             }
         }
-        actions::CANCEL => navigate_page(ctx, app, crate::SettingsPage::Root),
+        actions::CANCEL => {
+            let from_hub = std::mem::take(&mut lock(&ctx.shared).settings_from_hub);
+            if from_hub {
+                lock(&ctx.shared).persist.active_screen = "hub".to_string();
+                crate::router::save_persist(&ctx.shared);
+                crate::router::return_to_hub(ctx, app);
+            } else {
+                navigate_page(ctx, app, crate::SettingsPage::Root);
+            }
+        }
         _ => {}
     }
+}
+
+/// Options on a root tile: pin it to the Hub, or take it off.
+fn open_tile_options(ctx: &Ctx, app: &App, id: &str) {
+    let pinned = crate::hub::has_setting(&lock(&ctx.shared), id);
+    let row = if pinned {
+        crate::router::menu_row_keyed("hub_toggle", "hub:remove", "")
+    } else {
+        crate::router::menu_row_keyed("hub_toggle", "add_to_hub", "")
+    };
+    crate::router::present_list(
+        ctx,
+        app,
+        ListContext::SettingsTileOptions(id.to_string()),
+        "title:options",
+        vec![row],
+    );
 }
 
 /// A row that cannot be used right now: drawn muted, and no input changes
@@ -939,6 +994,7 @@ fn open_picker(ctx: &Ctx, app: &App, id: &str) {
             detail: SharedString::default(),
         })
         .collect();
+    let entries = crate::router::mark_chosen(entries, initial);
     lock(&ctx.shared).list_context = ListContext::SettingsPicker(id.to_string());
     let overlays = app.global::<crate::Overlays>();
     // The view translates both the title and every row through the

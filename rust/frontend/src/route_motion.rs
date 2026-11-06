@@ -1567,13 +1567,20 @@ fn every_screen_route_and_settings_category_commits_without_animation_delay() {
         settings.set_index(index as i32);
         settle(&window);
         crate::settings::handle_action(&ctx, &app, "accept");
-        assert_eq!(
-            Ok(settings.get_page()),
-            SettingsPage::try_from(page.id),
-            "Settings is synchronous"
-        );
         assert!(!shell.get_transitioning());
-        crate::settings::handle_action(&ctx, &app, "cancel");
+        if page.id == zaparoo_app::settings::MUSIC_PAGE {
+            // Music is a screen of its own, opened as synchronously.
+            assert_eq!(shell.get_active_screen(), Screen::Music);
+            crate::music::handle_action(&ctx, &app, "cancel");
+            assert_eq!(shell.get_active_screen(), Screen::Settings);
+        } else {
+            assert_eq!(
+                Ok(settings.get_page()),
+                SettingsPage::try_from(page.id),
+                "Settings is synchronous"
+            );
+            crate::settings::handle_action(&ctx, &app, "cancel");
+        }
         assert_eq!(settings.get_page(), SettingsPage::Root);
         assert_eq!(
             settings.get_index(),
@@ -12790,4 +12797,583 @@ fn core_loaders_and_notices_take_the_header_line() {
         app.global::<crate::CoreUiView>().get_kind(),
         crate::CoreUiKind::None
     );
+}
+
+/// A background slot with a two-track playlist, the second track playing.
+fn music_state(playing: bool) -> zaparoo_core::store::BackgroundMediaState {
+    use zaparoo_core::media_types::{ActiveMediaInfo, PlaylistItem, PlaylistState};
+    zaparoo_core::store::BackgroundMediaState {
+        seeded: true,
+        pushes_playback: false,
+        track: Some(ActiveMediaInfo {
+            slot: "background".into(),
+            media_path: "/m/2.mp3".into(),
+            media_name: "Two".into(),
+            playback_state: if playing { "playing" } else { "paused" }.into(),
+            launcher_controls: vec![
+                "toggle_pause".into(),
+                "rewind".into(),
+                "fast_forward".into(),
+            ],
+            position_ms: Some(61_000),
+            duration_ms: Some(180_000),
+            ..ActiveMediaInfo::default()
+        }),
+        playlist: Some(std::sync::Arc::new(PlaylistState {
+            id: "/m".into(),
+            name: "Mix".into(),
+            slot: "background".into(),
+            repeat: "all".into(),
+            items: vec![
+                PlaylistItem {
+                    name: "One".into(),
+                    zap_script: "/m/1.mp3".into(),
+                },
+                PlaylistItem {
+                    name: "Two".into(),
+                    zap_script: "/m/2.mp3".into(),
+                },
+            ],
+            index: 1,
+            total: 2,
+            playing,
+            shuffle: Some(false),
+        })),
+    }
+}
+
+/// The Background music tile opens the player straight from the Settings root, the
+/// saved screen follows it, and Back lands on the tile it came from.
+#[test]
+#[allow(
+    clippy::expect_used,
+    reason = "the tile is registered; fail fast if not"
+)]
+fn the_music_tile_opens_the_player_and_back_returns_to_it() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    app.global::<crate::Motion>().set_enabled(false);
+    crate::settings::enter(&ctx, &app, EntryMode::Fresh);
+    let music_tile = zaparoo_app::settings::PAGES
+        .iter()
+        .position(|page| page.id == zaparoo_app::settings::MUSIC_PAGE)
+        .expect("a Background music tile");
+    app.global::<crate::SettingsView>()
+        .set_index(i32::try_from(music_tile).unwrap_or(0));
+    crate::router::handle_action(&ctx, &app, "accept");
+    advance(zaparoo_app::input::PRESS_FEEDBACK_MS);
+    settle(&window);
+    let shell = app.global::<Shell>();
+    assert_eq!(shell.get_active_screen(), Screen::Music);
+    assert_eq!(
+        crate::router::lock(&ctx.shared).persist.active_screen,
+        "music"
+    );
+    assert!(
+        !crate::router::lock(&ctx.shared)
+            .persist
+            .music
+            .entered_from_hub
+    );
+    let view = app.global::<crate::MusicView>();
+    assert!(!view.get_has_track(), "nothing has been heard from Core");
+    assert_eq!(view.get_page(), crate::MusicPage::Player);
+    assert_eq!(view.get_control_index(), 2, "focus starts on Play/Pause");
+
+    crate::router::handle_action(&ctx, &app, "cancel");
+    settle(&window);
+    assert_eq!(shell.get_active_screen(), Screen::Settings);
+    assert_eq!(
+        app.global::<crate::SettingsView>().get_page(),
+        SettingsPage::Root
+    );
+    assert_eq!(
+        app.global::<crate::SettingsView>().get_index(),
+        i32::try_from(music_tile).unwrap_or(-1),
+        "seated on the Background music tile"
+    );
+    assert_eq!(
+        crate::router::lock(&ctx.shared).persist.active_screen,
+        "settings"
+    );
+}
+
+/// A pinned Hub tile opens the player, and Back goes to the Hub.
+#[test]
+fn a_pinned_music_tile_returns_to_the_hub() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    app.global::<crate::Motion>().set_enabled(false);
+    crate::music::enter(&ctx, &app, crate::music::Origin::Hub);
+    settle(&window);
+    let shell = app.global::<Shell>();
+    assert_eq!(shell.get_active_screen(), Screen::Music);
+    crate::router::handle_action(&ctx, &app, "cancel");
+    settle(&window);
+    assert_eq!(shell.get_active_screen(), Screen::Hub);
+    assert_eq!(
+        crate::router::lock(&ctx.shared).persist.active_screen,
+        "hub"
+    );
+}
+
+/// The background slot drives the player and the header's music note; the
+/// focus walks the transport row into the playlist and back.
+#[test]
+fn the_player_follows_the_background_slot_and_walks_into_the_playlist() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    app.global::<crate::Motion>().set_enabled(false);
+    crate::music::enter(&ctx, &app, crate::music::Origin::Settings);
+    crate::music::background_changed(&ctx, &app, music_state(true));
+    settle(&window);
+    let view = app.global::<crate::MusicView>();
+    assert!(view.get_has_track());
+    assert_eq!(view.get_title(), "Two");
+    assert_eq!(view.get_playlist_name(), "Mix");
+    assert_eq!(view.get_track_number(), 2);
+    assert_eq!(view.get_playback(), crate::PlaybackState::Playing);
+    assert_eq!(view.get_position_text(), "1:01");
+    assert_eq!(view.get_duration_text(), "3:00");
+    assert_eq!(view.get_repeat(), crate::RepeatMode::All);
+    assert!(app.global::<Shell>().get_music_playing());
+    assert_eq!(
+        view.get_up_next(),
+        "One",
+        "Repeat all comes around to the first"
+    );
+
+    // Left and Right walk the one row of controls.
+    crate::router::handle_action(&ctx, &app, "right");
+    assert_eq!(view.get_control_index(), 3);
+    crate::router::handle_action(&ctx, &app, "left");
+    assert_eq!(view.get_control_index(), 2);
+
+    // Accept pushes the focused control through the shared press cue, as
+    // every other control is pushed.
+    app.global::<crate::Motion>().set_enabled(true);
+    crate::router::handle_action(&ctx, &app, "accept");
+    let feedback = app.global::<crate::PressFeedback>();
+    assert_eq!(feedback.get_owner(), PressOwner::Music);
+    assert_eq!(feedback.get_index(), 2);
+    crate::press_feedback::cancel(&app);
+    app.global::<crate::Motion>().set_enabled(false);
+
+    // The Menu button puts focus on the chip row: the page's actions, with
+    // what the slot cannot take left off (no Volume until Core answers).
+    crate::router::handle_action(&ctx, &app, "page_menu");
+    assert!(app.global::<crate::PageBar>().get_focused());
+    assert_eq!(
+        crate::page_bar::chip_ids(&app),
+        ["music_playlist", "music_choose", "music_stop", "more"]
+    );
+    // Playlist opens the playlist as a page, on the playing track.
+    crate::router::handle_action(&ctx, &app, "accept");
+    assert!(!app.global::<crate::PageBar>().get_focused());
+    assert_eq!(view.get_page(), crate::MusicPage::Playlist);
+    assert_eq!(
+        crate::router::lock(&ctx.shared).music_focus().1,
+        1,
+        "the playlist seats on the current track"
+    );
+    let marked: Vec<bool> = view.get_list_rows().iter().map(|r| r.now_playing).collect();
+    assert_eq!(marked, vec![false, true], "the playing track is marked");
+
+    // The marker follows the track when only the playlist index changes.
+    let mut first = music_state(true);
+    if let Some(list) = first.playlist.as_mut() {
+        std::sync::Arc::make_mut(list).index = 0;
+    }
+    crate::music::background_changed(&ctx, &app, first);
+    let marked: Vec<bool> = view.get_list_rows().iter().map(|r| r.now_playing).collect();
+    assert_eq!(
+        marked,
+        vec![true, false],
+        "the marker moved to the new track"
+    );
+    crate::music::background_changed(&ctx, &app, music_state(true));
+
+    // Back returns to the player with its control kept.
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert_eq!(view.get_page(), crate::MusicPage::Player);
+    assert_eq!(view.get_control_index(), 2);
+
+    // Pausing shows at once and clears the header's note.
+    crate::music::background_changed(&ctx, &app, music_state(false));
+    assert_eq!(view.get_playback(), crate::PlaybackState::Paused);
+    assert!(!app.global::<Shell>().get_music_playing());
+}
+
+/// A list panel's toggle rows: they take no press (the knob is the cue),
+/// the help bar says Toggle, a changed value is written in place so the
+/// knob slides, and a picker's current choice is marked.
+#[test]
+fn a_toggle_row_takes_no_press_and_updates_in_place() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    app.global::<crate::Motion>().set_enabled(true);
+    crate::music::enter(&ctx, &app, crate::music::Origin::Settings);
+    crate::sizing::apply_scene(&app, crate::sizing::Scene::of(&app, 352.0, 240.0, false));
+    crate::router::lock(&ctx.shared).music_settings_for_test(Some(70));
+    settle(&window);
+    crate::router::handle_action(&ctx, &app, "page_menu");
+    let overlays = app.global::<crate::Overlays>();
+    let rows = overlays.get_list_entries();
+    let at = |id: &str| rows.iter().position(|e| e.id == id).unwrap_or(usize::MAX);
+    let autoplay = at("music_autoplay");
+    assert_ne!(autoplay, usize::MAX, "an autoplay row");
+    assert_ne!(at("music_volume"), usize::MAX, "a volume row");
+    assert_eq!(
+        rows.row_data(autoplay).map(|e| e.role),
+        Some(crate::MenuRole::ToggleOff)
+    );
+    overlays.set_list_index(i32::try_from(autoplay).unwrap_or(0));
+    assert!(
+        crate::press_feedback::current(&app).is_none(),
+        "a toggle is not pushed in; its knob is the cue"
+    );
+    let volume = at("music_volume");
+    overlays.set_list_index(i32::try_from(volume).unwrap_or(0));
+    assert!(
+        crate::press_feedback::current(&app).is_some(),
+        "a row that opens something is"
+    );
+
+    // A changed value is written into the rows the panel already has.
+    crate::router::lock(&ctx.shared).music_settings_for_test(Some(70));
+    let before = overlays.get_list_entries();
+    crate::music::list_accept(
+        &ctx,
+        &app,
+        &crate::router::ListContext::MusicMenu,
+        "music_autoplay",
+    );
+    assert_eq!(
+        overlays.get_list_entries(),
+        before,
+        "the same model, rows updated in place"
+    );
+    assert_eq!(
+        overlays
+            .get_list_entries()
+            .row_data(autoplay)
+            .map(|e| e.role),
+        Some(crate::MenuRole::ToggleOn)
+    );
+}
+
+/// A track change reaches the card: the title, artist, album and Up next
+/// follow the track Core reports, not the one the player opened on.
+#[test]
+fn a_track_change_updates_the_card() {
+    use zaparoo_core::media_types::TrackInfo;
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    app.global::<crate::Motion>().set_enabled(false);
+    crate::music::enter(&ctx, &app, crate::music::Origin::Settings);
+    let mut state = music_state(true);
+    if let Some(track) = state.track.as_mut() {
+        track.track = Some(TrackInfo {
+            title: "Two".into(),
+            artist: "Artist A".into(),
+            album: "Album A".into(),
+            ..TrackInfo::default()
+        });
+    }
+    crate::music::background_changed(&ctx, &app, state);
+    settle(&window);
+    let view = app.global::<crate::MusicView>();
+    assert_eq!(view.get_title(), "Two");
+    assert_eq!(view.get_artist(), "Artist A");
+    assert_eq!(view.get_album(), "Album A");
+    assert_eq!(view.get_up_next(), "One");
+
+    // Core moves on to the first item: a new track, a new index.
+    let mut next = music_state(true);
+    if let Some(track) = next.track.as_mut() {
+        track.media_path = "/m/1.mp3".into();
+        track.media_name = "One".into();
+        track.track = Some(TrackInfo {
+            title: "One".into(),
+            artist: "Artist B".into(),
+            album: "Album B".into(),
+            ..TrackInfo::default()
+        });
+    }
+    if let Some(list) = next.playlist.as_mut() {
+        std::sync::Arc::make_mut(list).index = 0;
+    }
+    crate::music::background_changed(&ctx, &app, next);
+    settle(&window);
+    assert_eq!(view.get_title(), "One");
+    assert_eq!(view.get_artist(), "Artist B");
+    assert_eq!(view.get_album(), "Album B");
+    assert_eq!(view.get_up_next(), "Two");
+    assert_eq!(view.get_track_number(), 1);
+}
+
+/// Browse music is a deferred route on the same screen: the player stays
+/// until the folder lands, a stale read is dropped, and Back from the
+/// library's top returns to the player.
+#[test]
+fn the_library_keeps_the_player_until_its_folder_lands() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    app.global::<crate::Motion>().set_enabled(false);
+    crate::music::enter(&ctx, &app, crate::music::Origin::Settings);
+    settle(&window);
+    crate::router::handle_action(&ctx, &app, "page_menu");
+    // Nothing plays: Browse music leads the chip row.
+    assert_eq!(crate::page_bar::chip_ids(&app), ["music_choose", "more"]);
+    crate::router::handle_action(&ctx, &app, "accept");
+    let shell = app.global::<Shell>();
+    assert!(
+        shell.get_transitioning(),
+        "the folder read is a deferred route"
+    );
+    assert!(
+        app.global::<crate::PageBar>().get_focused(),
+        "the chip keeps focus while the folder loads"
+    );
+    let view = app.global::<crate::MusicView>();
+    assert_eq!(
+        view.get_page(),
+        crate::MusicPage::Player,
+        "the player stays"
+    );
+
+    let stale = crate::router::lock(&ctx.shared).music_ticket();
+    crate::router::lock(&ctx.shared).music_bump_ticket();
+    crate::music::land_for_test(
+        &ctx,
+        &app,
+        stale,
+        Vec::new(),
+        vec![(zaparoo_app::music::EntryKind::Route, "/music", "/music")],
+    );
+    assert_eq!(
+        view.get_page(),
+        crate::MusicPage::Player,
+        "a stale read is dropped"
+    );
+
+    let ticket = crate::router::lock(&ctx.shared).music_ticket();
+    crate::music::land_for_test(
+        &ctx,
+        &app,
+        ticket,
+        Vec::new(),
+        vec![
+            (zaparoo_app::music::EntryKind::Route, "/music", "/music"),
+            (zaparoo_app::music::EntryKind::Route, "/audio", "/audio"),
+        ],
+    );
+    settle(&window);
+    assert!(!shell.get_transitioning());
+    assert!(
+        !app.global::<crate::PageBar>().get_focused(),
+        "the route's commit gives focus to the folder"
+    );
+    assert_eq!(view.get_page(), crate::MusicPage::Library);
+    assert_eq!(view.get_count(), 2);
+    assert!(view.get_library_top());
+    assert_eq!(
+        crate::router::lock(&ctx.shared).persist.music.page,
+        "library"
+    );
+
+    crate::router::handle_action(&ctx, &app, "cancel");
+    settle(&window);
+    assert_eq!(view.get_page(), crate::MusicPage::Player);
+    assert_eq!(shell.get_active_screen(), Screen::Music);
+}
+
+/// Where the scene has no chip row (240p), the Menu button opens the Menu
+/// list, and the volume is a slider row in it: Left and Right adjust it in
+/// place, Accept does nothing, and the rows are the ones the panel had.
+#[test]
+#[allow(
+    clippy::expect_used,
+    reason = "a fixed Menu that always has a Volume row"
+)]
+fn without_a_chip_row_the_menu_list_holds_the_volume_slider() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    app.global::<crate::Motion>().set_enabled(false);
+    crate::sizing::apply_scene(&app, crate::sizing::Scene::of(&app, 352.0, 240.0, false));
+    crate::music::enter(&ctx, &app, crate::music::Origin::Settings);
+    crate::music::background_changed(&ctx, &app, music_state(true));
+    crate::router::lock(&ctx.shared).music_settings_for_test(Some(70));
+    settle(&window);
+    assert!(!app.global::<Sizing>().get_menu_row());
+    crate::router::handle_action(&ctx, &app, "page_menu");
+    assert!(!app.global::<crate::PageBar>().get_focused());
+    let overlays = app.global::<crate::Overlays>();
+    assert!(overlays.get_list_open());
+    let rows = overlays.get_list_entries();
+    let volume = rows
+        .iter()
+        .position(|e| e.id == "music_volume")
+        .expect("a Volume row");
+    assert_eq!(
+        rows.row_data(volume).map(|e| e.role),
+        Some(crate::MenuRole::Slider)
+    );
+    overlays.set_list_index(i32::try_from(volume).unwrap_or(0));
+    let detail = |overlays: &crate::Overlays<'_>| {
+        overlays
+            .get_list_entries()
+            .row_data(volume)
+            .map(|e| e.detail.to_string())
+            .unwrap_or_default()
+    };
+    assert_eq!(detail(&overlays), "70");
+
+    crate::router::handle_action(&ctx, &app, "right");
+    assert_eq!(detail(&overlays), "80", "Right steps up by ten");
+    assert_eq!(
+        overlays.get_list_entries(),
+        rows,
+        "the rows were updated in place"
+    );
+    crate::router::handle_action(&ctx, &app, "left");
+    crate::router::handle_action(&ctx, &app, "left");
+    assert_eq!(detail(&overlays), "60");
+    crate::router::handle_action(&ctx, &app, "accept");
+    assert!(overlays.get_list_open(), "Accept does nothing on a slider");
+    assert_eq!(detail(&overlays), "60");
+    assert_eq!(
+        crate::router::lock(&ctx.shared).music_volume_for_test(),
+        Some(60)
+    );
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert!(!overlays.get_list_open());
+}
+
+/// Above 240p the Volume chip opens a panel holding the slider alone.
+#[test]
+fn the_volume_chip_opens_the_slider_on_its_own() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    app.global::<crate::Motion>().set_enabled(false);
+    crate::sizing::apply_scene(&app, crate::sizing::Scene::of(&app, 1280.0, 720.0, false));
+    crate::music::enter(&ctx, &app, crate::music::Origin::Settings);
+    crate::router::lock(&ctx.shared).music_settings_for_test(Some(70));
+    // The chip shows once Core's settings are known, at the next render.
+    crate::music::background_changed(&ctx, &app, music_state(true));
+    settle(&window);
+    crate::router::handle_action(&ctx, &app, "page_menu");
+    let ids = crate::page_bar::chip_ids(&app);
+    let at = ids.iter().position(|id| id == "music_volume");
+    assert!(at.is_some(), "a Volume chip: {ids:?}");
+    for _ in 0..at.unwrap_or(0) {
+        crate::router::handle_action(&ctx, &app, "right");
+    }
+    crate::router::handle_action(&ctx, &app, "accept");
+    let overlays = app.global::<crate::Overlays>();
+    assert!(overlays.get_list_open());
+    assert_eq!(overlays.get_list_title(), "title:volume");
+    let rows = overlays.get_list_entries();
+    assert_eq!(rows.row_count(), 1);
+    assert_eq!(
+        rows.row_data(0).map(|e| e.role),
+        Some(crate::MenuRole::Slider)
+    );
+    crate::router::handle_action(&ctx, &app, "right");
+    assert_eq!(
+        overlays
+            .get_list_entries()
+            .row_data(0)
+            .map(|e| e.detail.to_string()),
+        Some("80".to_string())
+    );
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert!(!overlays.get_list_open(), "Back closes it");
+}
+
+/// A cold start on the player waits under the curtain for Core's first
+/// answer, then comes back on the saved playlist row.
+#[test]
+fn a_restored_player_waits_for_core_and_seats_the_saved_row() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    app.global::<crate::Motion>().set_enabled(false);
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.persist.active_screen = "music".into();
+        shared.persist.music = zaparoo_core::persist::MusicState {
+            page: "playlist".into(),
+            control: "next".into(),
+            playlist_index: 0,
+            playlist_item: "/m/1.mp3".into(),
+            entered_from_hub: false,
+            ..zaparoo_core::persist::MusicState::default()
+        };
+    }
+    let shell = app.global::<Shell>();
+    shell.set_boot_curtain(true);
+    crate::music::restore(&ctx, &app);
+    assert!(shell.get_transitioning());
+    assert!(shell.get_boot_curtain(), "nothing shows until Core answers");
+    crate::music::restore_landed(&ctx, &app, music_state(true));
+    settle(&window);
+    assert!(!shell.get_boot_curtain());
+    assert_eq!(shell.get_active_screen(), Screen::Music);
+    let (control, row) = crate::router::lock(&ctx.shared).music_focus();
+    assert_eq!(
+        app.global::<crate::MusicView>().get_page(),
+        crate::MusicPage::Playlist,
+        "the playlist page comes back"
+    );
+    assert_eq!(row, 0, "the saved row still holds the saved track");
+    assert_eq!(control, zaparoo_app::music::Control::Next);
+}
+
+/// A Settings root tile pins to the Hub from its Options, opens its page
+/// from there, and Back returns to the Hub.
+#[test]
+#[allow(
+    clippy::expect_used,
+    reason = "the tile is registered; fail fast if not"
+)]
+fn a_settings_tile_pins_to_the_hub_and_opens_its_page_from_there() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    app.global::<crate::Motion>().set_enabled(false);
+    crate::settings::enter(&ctx, &app, EntryMode::Fresh);
+    let display = zaparoo_app::settings::PAGES
+        .iter()
+        .position(|page| page.id == "pageDisplayInterface")
+        .expect("a Display tile");
+    app.global::<crate::SettingsView>()
+        .set_index(i32::try_from(display).unwrap_or(0));
+    crate::router::handle_action(&ctx, &app, "context_menu");
+    let overlays = app.global::<crate::Overlays>();
+    assert!(overlays.get_list_open());
+    crate::router::handle_action(&ctx, &app, "accept");
+    assert!(crate::hub::has_setting(
+        &crate::router::lock(&ctx.shared),
+        "pageDisplayInterface"
+    ));
+
+    crate::settings::enter_page_from_hub(&ctx, &app, SettingsPage::Display);
+    settle(&window);
+    assert_eq!(app.global::<Shell>().get_active_screen(), Screen::Settings);
+    assert_eq!(
+        app.global::<crate::SettingsView>().get_page(),
+        SettingsPage::Display
+    );
+    crate::router::handle_action(&ctx, &app, "cancel");
+    settle(&window);
+    assert_eq!(app.global::<Shell>().get_active_screen(), Screen::Hub);
 }

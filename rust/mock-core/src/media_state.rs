@@ -175,7 +175,8 @@ fn index_step_delay() -> Duration {
 /// fetches on every connect, including any scripted primary launch.
 pub fn media_response() -> Value {
     with_state(|s| {
-        let active: Vec<Value> = s.primary_active.iter().cloned().collect();
+        let mut active: Vec<Value> = s.primary_active.iter().cloned().collect();
+        active.extend(crate::music::active_entry());
         json!({
             "database": {
                 "exists": s.exists,
@@ -189,8 +190,14 @@ pub fn media_response() -> Value {
                 "totalMedia": s.total_media,
             },
             "active": active,
+            "playlists": crate::music::playlists(),
         })
     })
+}
+
+/// `media.active` for the primary slot: the scripted launch, or `null`.
+pub fn primary_active() -> Value {
+    with_state(|s| s.primary_active.clone().unwrap_or(Value::Null))
 }
 
 /// Script a short primary-media session for UI lifecycle testing. Mock

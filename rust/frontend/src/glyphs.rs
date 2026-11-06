@@ -134,6 +134,38 @@ const SOURCES: &[(&str, &str)] = &[
         include_str!("../../../resources/images/icons/Minus.svg"),
     ),
     (
+        "icons/Music",
+        include_str!("../../../resources/images/icons/Music.svg"),
+    ),
+    (
+        "icons/Play",
+        include_str!("../../../resources/images/icons/Play.svg"),
+    ),
+    (
+        "icons/Pause",
+        include_str!("../../../resources/images/icons/Pause.svg"),
+    ),
+    (
+        "icons/SkipBack",
+        include_str!("../../../resources/images/icons/SkipBack.svg"),
+    ),
+    (
+        "icons/SkipForward",
+        include_str!("../../../resources/images/icons/SkipForward.svg"),
+    ),
+    (
+        "icons/Shuffle",
+        include_str!("../../../resources/images/icons/Shuffle.svg"),
+    ),
+    (
+        "icons/Repeat",
+        include_str!("../../../resources/images/icons/Repeat.svg"),
+    ),
+    (
+        "icons/RepeatOne",
+        include_str!("../../../resources/images/icons/RepeatOne.svg"),
+    ),
+    (
         "icons/NavDown",
         include_str!("../../../resources/images/icons/NavDown.svg"),
     ),
@@ -253,6 +285,10 @@ const SOURCES: &[(&str, &str)] = &[
     (
         "status/WiredNetwork",
         include_str!("../../../resources/images/status/WiredNetwork.svg"),
+    ),
+    (
+        "status/Music",
+        include_str!("../../../resources/images/status/Music.svg"),
     ),
     // Help-bar controller glyphs, one set per style (Kenney CC0 "Input
     // Prompts", see LICENSES/Kenney-ATTRIBUTION.txt).
@@ -504,6 +540,7 @@ const ALIASES: &[(&str, &str)] = &[
     ("Library", "icons/Library"),
     ("Support", "icons/Support"),
     ("Heart", "icons/Heart"),
+    ("Music", "icons/Music"),
 ];
 
 /// Hand-drawn pixel art for the small glyphs, used instead of the vector
@@ -545,6 +582,10 @@ const PIXEL_ART: &[(&str, &str)] = &[
     (
         "status/WiredNetwork",
         include_str!("../../../resources/images/pixel/status/WiredNetwork.txt"),
+    ),
+    (
+        "status/Music",
+        include_str!("../../../resources/images/pixel/status/Music.txt"),
     ),
     (
         "icons/Bookmark",
@@ -601,6 +642,34 @@ const PIXEL_ART: &[(&str, &str)] = &[
     (
         "icons/ScrollUp",
         include_str!("../../../resources/images/pixel/icons/ScrollUp.txt"),
+    ),
+    (
+        "icons/Play",
+        include_str!("../../../resources/images/pixel/icons/Play.txt"),
+    ),
+    (
+        "icons/Pause",
+        include_str!("../../../resources/images/pixel/icons/Pause.txt"),
+    ),
+    (
+        "icons/SkipBack",
+        include_str!("../../../resources/images/pixel/icons/SkipBack.txt"),
+    ),
+    (
+        "icons/SkipForward",
+        include_str!("../../../resources/images/pixel/icons/SkipForward.txt"),
+    ),
+    (
+        "icons/Shuffle",
+        include_str!("../../../resources/images/pixel/icons/Shuffle.txt"),
+    ),
+    (
+        "icons/Repeat",
+        include_str!("../../../resources/images/pixel/icons/Repeat.txt"),
+    ),
+    (
+        "icons/RepeatOne",
+        include_str!("../../../resources/images/pixel/icons/RepeatOne.txt"),
     ),
     (
         "icons/Search",

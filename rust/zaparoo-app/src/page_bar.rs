@@ -31,6 +31,10 @@ pub enum Surface {
     /// The most played games, and their systems when grouped.
     TopPlayed,
     TopPlayedSystems,
+    /// The music player.
+    MusicPlayer,
+    /// The music library: a folder of Core's Audio index.
+    MusicLibrary,
     /// Everything with no page actions: Recents, Settings, About, the
     /// Search screen itself.
     Other,
@@ -65,6 +69,18 @@ pub enum Chip {
     NewDeck,
     /// Play the deck on screen from its first item.
     PlayDeck,
+    /// The open playlist, a page of the player.
+    MusicPlaylist,
+    /// The music library.
+    ChooseMusic,
+    /// Stop the music.
+    StopMusic,
+    /// The music volume picker. Shows the volume.
+    MusicVolume,
+    /// Play the folder on screen.
+    PlayAll,
+    /// Shuffle the folder on screen.
+    ShuffleAll,
 }
 
 impl Chip {
@@ -84,6 +100,12 @@ impl Chip {
             Self::More => "more",
             Self::NewDeck => "new_deck",
             Self::PlayDeck => "play_deck",
+            Self::MusicPlaylist => "music_playlist",
+            Self::ChooseMusic => "music_choose",
+            Self::StopMusic => "music_stop",
+            Self::MusicVolume => "music_volume",
+            Self::PlayAll => "music_play_all",
+            Self::ShuffleAll => "music_shuffle_all",
         }
     }
 }
@@ -107,6 +129,17 @@ pub fn chips(surface: Surface) -> &'static [Chip] {
         Surface::Decks => &[Chip::NewDeck],
         Surface::Deck => &[Chip::PlayDeck, Chip::More],
         Surface::TopPlayed | Surface::TopPlayedSystems => &[Chip::GroupBy],
+        // The adapter drops the chips the slot cannot take right now: no
+        // Playlist without one open, no Stop with nothing playing, no Play
+        // all in a folder without tracks.
+        Surface::MusicPlayer => &[
+            Chip::MusicPlaylist,
+            Chip::ChooseMusic,
+            Chip::StopMusic,
+            Chip::MusicVolume,
+            Chip::More,
+        ],
+        Surface::MusicLibrary => &[Chip::PlayAll, Chip::ShuffleAll],
         Surface::Other => &[],
     }
 }
@@ -124,6 +157,7 @@ pub fn more_rows(surface: Surface) -> &'static [&'static str] {
             "deck_cover_remove",
             "deck_delete",
         ],
+        Surface::MusicPlayer => &["music_autoplay", "music_pause_games"],
         _ => &[],
     }
 }
@@ -196,6 +230,8 @@ mod tests {
             Surface::Deck,
             Surface::TopPlayed,
             Surface::TopPlayedSystems,
+            Surface::MusicPlayer,
+            Surface::MusicLibrary,
         ] {
             assert!(has_row(surface, true), "{surface:?}");
             assert!(!has_row(surface, false), "{surface:?}");
@@ -216,6 +252,8 @@ mod tests {
             Surface::Deck,
             Surface::TopPlayed,
             Surface::TopPlayedSystems,
+            Surface::MusicPlayer,
+            Surface::MusicLibrary,
         ] {
             let chips = chips(surface);
             let has_more = chips.contains(&Chip::More);

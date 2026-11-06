@@ -932,6 +932,12 @@ async fn read_local(path: String) -> Option<Vec<u8>> {
     }
 }
 
+/// A cover Core sent inline outside the cache's own requests (the music
+/// player's `media.active.image`), fitted to its painted box.
+pub(crate) fn decode_inline(data_b64: &str, fit: Fit) -> Option<DecodedImage> {
+    decode(data_b64, fit, false)
+}
+
 /// Base64 payload -> decoded RGBA8. Returns None for empty payloads
 /// or undecodable data (both memoized as negatives by the caller).
 fn decode(data_b64: &str, fit: Fit, capture: bool) -> Option<DecodedImage> {

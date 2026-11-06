@@ -127,6 +127,9 @@ pub fn settings_response() -> Value {
         "readersConnect": [],
         "systemDefaults": system_defaults,
         "launcherPreference": launcher_preference().clone(),
+        "audioMusicVolume": crate::music::settings().0,
+        "audioMusicAutoplay": crate::music::settings().1,
+        "audioMusicPauseOnLaunch": crate::music::settings().2,
     })
 }
 
@@ -172,6 +175,7 @@ fn validate_launcher_preference(next: &[String]) -> Result<(), String> {
 }
 
 pub fn settings_update_response(params: &Value) -> Result<Value, String> {
+    crate::music::update_settings(params)?;
     if let Some(items) = params.get("launcherPreference").and_then(Value::as_array) {
         let next: Vec<String> = items
             .iter()

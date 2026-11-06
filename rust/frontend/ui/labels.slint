@@ -98,6 +98,15 @@ export global Labels {
         if (key == "action:search") { return @tr("Search"); }
         if (key == "action:update") { return @tr("Update"); }
         if (key == "action:settings") { return @tr("Settings"); }
+        // Settings root tiles pinned to the Hub, worded as on Settings.
+        if (key == "setting:pageAppearance") { return @tr("Appearance"); }
+        if (key == "setting:pageLibraryData") { return @tr("Library"); }
+        if (key == "setting:pageMusic") { return @tr("Background music"); }
+        if (key == "setting:pageOnline") { return @tr("Online"); }
+        if (key == "setting:pageDisplayInterface") { return @tr("Display"); }
+        if (key == "setting:pageControlsInput") { return @tr("Controls"); }
+        if (key == "setting:pageLanguage") { return @tr("Language"); }
+        if (key == "setting:pageSupportAbout") { return @tr("About"); }
         return name;
     }
     // Counts arrive already grouped by Rust (`zaparoo_app::format`)
@@ -184,6 +193,28 @@ export global Labels {
     // key this table does not know falls through to the Hub vocabulary
     // (a hub item's own `category:`/`action:` key) and then to the name
     // the driver sent, which is already the item's own text.
+    // A list panel row's name for a row that carries a value: the name on
+    // its own, as the value goes to the row's right (`menu-row-value`).
+    // A chip, which has no right side, keeps the whole phrase (`menu`).
+    public pure function menu-name(key: string, name: string) -> string {
+        if (key == "filter") { return @tr("Tags"); }
+        if (key == "music_volume") { return @tr("Volume"); }
+        if (key == "music_autoplay") { return @tr("Play on startup"); }
+        if (key == "music_pause_games") { return @tr("Pause during games"); }
+        if (key == "favorites_sort") { return @tr("Sort"); }
+        if (key == "favorites_grouping") { return @tr("Group by"); }
+        return Labels.menu(key, name);
+    }
+
+    // The value such a row shows on its right; empty for every other row.
+    // A toggle's value is its switch, so it has none in words.
+    public pure function menu-row-value(key: string, name: string) -> string {
+        if (key == "filter") { return Labels.filter-value(name); }
+        if (key == "music_volume") { return @tr("{}%", name); }
+        if (key == "favorites_sort" || key == "favorites_grouping") { return Labels.menu-value(name); }
+        return "";
+    }
+
     public pure function menu(key: string, name: string) -> string {
         // Games, favorites and recents rows.
         if (key == "more_info") { return @tr("Details"); }
@@ -282,6 +313,20 @@ export global Labels {
         if (key == "hub_quit") { return @tr("Quit"); }
         if (key == "back_to_hub") { return @tr("Back to Hub"); }
         if (key == "more") { return @tr("More"); }
+        // The music player's Menu, its Volume page, and a library folder's
+        // Options. `name` carries the current value.
+        if (key == "music_playlist") { return @tr("Show playlist"); }
+        if (key == "music_choose") { return @tr("Browse music"); }
+        if (key == "music_stop") { return @tr("Stop"); }
+        if (key == "music_volume") { return @tr("Volume: {}%", name); }
+        if (key == "music_autoplay") { return @tr("Play on startup"); }
+        if (key == "music_pause_games") { return @tr("Pause during games"); }
+        if (key == "music_play_folder") { return @tr("Play folder"); }
+        if (key == "music_shuffle_folder") { return @tr("Shuffle folder"); }
+        if (key == "music_play_all") { return @tr("Play all"); }
+        if (key == "music_shuffle_all") { return @tr("Shuffle all"); }
+        if (key == "title:volume") { return @tr("Volume"); }
+        if (key == "title:options") { return @tr("Options"); }
         // The favorites Menu and its pages.
         // The two rows that show their current value; `name` carries the
         // value's own key so both halves get translated.
@@ -343,6 +388,12 @@ export global Labels {
     public pure function launcher-reason(key: string) -> string {
         if (key == "launcher:not_installed") { return @tr("not installed"); }
         if (key == "launcher:unavailable") { return @tr("unavailable"); }
+        if (key == "music:not_supported") { return @tr("not supported"); }
+        if (key == "music:no_playlist") { return @tr("no playlist"); }
+        if (key == "music:nothing_playing") { return @tr("nothing playing"); }
+        if (key == "music:no_tracks") { return @tr("no tracks here"); }
+        if (key == "music:loading") { return @tr("loading"); }
+        if (key == "music:no_answer") { return @tr("Core did not answer"); }
         return "";
     }
 }
@@ -437,6 +488,7 @@ export global DialogLabels {
         if (kind == ErrorKind.card-write) { return @tr("Token write failed"); }
         if (kind == ErrorKind.image-picker) { return @tr("Image picker failed"); }
         if (kind == ErrorKind.setting) { return @tr("Setting not saved"); }
+        if (kind == ErrorKind.music) { return @tr("Music control failed"); }
         if (kind == ErrorKind.pairing) { return @tr("Pairing could not start"); }
         if (kind == ErrorKind.online) { return @tr("Online account unavailable"); }
         if (kind == ErrorKind.backup) { return @tr("Cloud backup failed"); }
@@ -491,6 +543,11 @@ export global DialogLabels {
         if (kind == ErrorKind.card-write) { return @tr("Could not write to this token. Check that it is writable and try again."); }
         if (kind == ErrorKind.image-picker) { return @tr("Could not open an image picker, or the image chosen could not be read."); }
         if (kind == ErrorKind.setting) { return @tr("Could not save this setting. Try again."); }
+        if (kind == ErrorKind.music) {
+            if (context == "empty") { return @tr("This folder has no tracks of its own."); }
+            if (context == "read") { return @tr("Could not read this folder. Check Zaparoo Core and try again."); }
+            return @tr("Could not control the music. Check Zaparoo Core and try again.");
+        }
         if (kind == ErrorKind.pairing) { return @tr("Core would not start a pairing. It may already have as many paired devices as it allows, or it may be running on another device."); }
         if (kind == ErrorKind.online) { return @tr("Core could not reach or update your Zaparoo Online account. Check the network connection and try again."); }
         // A cloud backup or restore Core refused. `context` is the cause

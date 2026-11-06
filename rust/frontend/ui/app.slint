@@ -8,11 +8,12 @@
 // logic; forward orchestration lives in the router.
 
 import { Theme, Sizing, Motion, Layout } from "theme.slint";
-import { CoreUiKind, MenuRole, UserFlag, RenamePurpose, ContextPage, KeyKind, SearchZone, SearchPane, SearchScope, FileBrowserMode, Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, StateTokens, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogButton, ErrorKind, ManualState, ManualFit, RaLoginStep, RaLoginStatus, LauncherPrefsPage, LauncherPrefsRowKind } from "state_types.slint";
-export { CoreUiKind, MenuRole, UserFlag, RenamePurpose, ContextPage, KeyKind, SearchZone, SearchPane, SearchScope, FileBrowserMode, Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogButton, ErrorKind, ManualState, ManualFit, RaLoginStep, RaLoginStatus, LauncherPrefsPage, LauncherPrefsRowKind }
+import { CoreUiKind, MenuRole, UserFlag, RenamePurpose, ContextPage, KeyKind, SearchZone, SearchPane, SearchScope, FileBrowserMode, MusicPage, MusicControl, PlaybackState, RepeatMode, MusicUnavailable, Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, StateTokens, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogButton, ErrorKind, ManualState, ManualFit, RaLoginStep, RaLoginStatus, LauncherPrefsPage, LauncherPrefsRowKind } from "state_types.slint";
+export { CoreUiKind, MenuRole, UserFlag, RenamePurpose, ContextPage, KeyKind, SearchZone, SearchPane, SearchScope, FileBrowserMode, MusicPage, MusicControl, PlaybackState, RepeatMode, MusicUnavailable, Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogButton, ErrorKind, ManualState, ManualFit, RaLoginStep, RaLoginStatus, LauncherPrefsPage, LauncherPrefsRowKind }
 import { FastScrollRail, GlyphSource, Brand, Buttons, HelpEntry, Status, HeaderBar, StatusLine, ProgressTrack, WaitCue, TopStatusStrip, FooterIndicator, ActiveLabel, HelpBar, SectionHeader, Divider, ScrollCue, ModalShell, QrPlate, StateCue } from "chrome.slint";
 import { GridCell, MarqueeCaption, PressableSurface, Tile, PagedGridView, PageStrip } from "tiles.slint";
 import { ScrollOffset, SelectionCursor, SelectionClip, FocusCursor } from "focus.slint";
+import { ListPanel, ListViewport, ListRow } from "list_panel.slint";
 import { PressFeedback } from "press_feedback.slint";
 export { PressFeedback }
 import { DetailRow, MetaLabels, BrowseList, BrowseListDetailView } from "browse_list.slint";
@@ -32,6 +33,8 @@ import { RaLoginView, RaLoginInput, RaLoginScreen } from "ra_login.slint";
 export { RaLoginView, RaLoginInput }
 import { FileBrowserView, FileBrowserInput, FileBrowserScreen } from "file_browser.slint";
 export { FileBrowserView, FileBrowserInput }
+import { MusicView, MusicInput, MusicScreen, MusicButton, MusicLabels } from "music.slint";
+export { MusicView, MusicInput, MusicButton }
 import { UpdateView, UpdatePage, UpdateButton, UpdateOutcome, UpdateStatusKind, UpdateError, UpdateLinuxPhase, UpdateFilter, UpdateRowKind, UpdateRowStatus, UpdateFolderKind, UpdateHelpLabel, UpdateCounts, UpdateRow, UpdateMembership, UpdateHelp } from "update_view.slint";
 // The screen itself comes from the `zaparoo-update` crate: an empty stand-in
 // in public builds, the real module in official ones.
@@ -163,6 +166,8 @@ export global Shell {
     // post-first-frame gate.
     in-out property <[string]> status-keys: [];
     in-out property <bool> status-icons-enabled: false;
+    // Core's background slot is playing music (the header's music note).
+    in-out property <bool> music-playing: false;
     in-out property <bool> has-battery: false;
     in-out property <int> battery-percent: 0;
     // Cold-launch curtain. `boot-curtain` is true from the first frame
@@ -211,6 +216,8 @@ export global PageBar {
     in-out property <[MenuEntry]> hub-chips: [];
     in-out property <[MenuEntry]> systems-chips: [];
     in-out property <[MenuEntry]> games-chips: [];
+    // The music screen's page: the player's or the library's.
+    in-out property <[MenuEntry]> music-chips: [];
     in-out property <bool> focused: false;
     in-out property <int> index: 0;
 
@@ -228,6 +235,9 @@ export global PageBar {
             || Shell.active-screen == Screen.search-results || Shell.active-screen == Screen.deck
             || Shell.active-screen == Screen.decks || Shell.active-screen == Screen.top-played) {
             return self.games-chips.length;
+        }
+        if (Shell.active-screen == Screen.music) {
+            return self.music-chips.length;
         }
         return 0;
     }
@@ -653,6 +663,8 @@ export global GamesInput {
 // Context menu, View menu, letter picker, and card-writer state.
 export global Overlays {
     callback pointer-choice(PressOwner, int, bool);
+    // A click on a list panel's slider row: a step down (-1) or up (+1).
+    callback slider-step(int);
     in-out property <bool> context-open: false;
     in-out property <[MenuEntry]> context-entries: [];
     in-out property <int> context-index: 0;
@@ -689,7 +701,7 @@ export global Overlays {
     in-out property <string> list-setting-id: "";
     in-out property <[MenuEntry]> list-entries: [];
     // A form list: left-aligned rows with their value on the right,
-    // section headers and footer actions, drawn by `FormListModal`.
+    // section headers and footer actions, windowed by `ListModal`.
     in-out property <bool> list-form: false;
     in-out property <int> list-index: 0;
     in-out property <bool> letter-open: false;
@@ -781,49 +793,8 @@ export global Overlays {
 
 // Settings: the root is a grid of six category tiles; a page is a card of
 // rows over a two-line hint band carrying the focused row's description.
-// A picker row's visible content, with its colors as inputs so the row
-// can draw it twice: once at rest and once inverted inside a
-// `SelectionClip`. Splitting it out is what keeps the two copies from
-// drifting apart.
-component PickerRowBody inherits Rectangle {
-    in property <string> label;
-    in property <string> entry-id;
-    in property <bool> swatches;
-    in property <length> swatch-size;
-    in property <length> swatch-gap;
-    in property <length> swatch-band;
-    in property <color> content-color;
-    in property <color> swatch-edge;
-    in property <int> weight;
-
-    Text {
-        x: root.swatches ? Sizing.pct-w(2) : Sizing.snap((parent.width - self.width) / 2);
-        y: Sizing.snap((parent.height - self.height) / 2);
-        width: Math.min(self.preferred-width, Math.max(0px, parent.width - 2 * Sizing.pct-w(2) - root.swatch-band));
-        overflow: elide;
-        text: root.label;
-        color: root.content-color;
-        font-size: Sizing.font-body;
-        font-weight: root.weight;
-    }
-    if root.swatches: Rectangle {
-        x: parent.width - Sizing.pct-w(2) - self.width;
-        y: Sizing.snap((parent.height - self.height) / 2);
-        width: 3 * root.swatch-size + 2 * root.swatch-gap;
-        height: root.swatch-size;
-        for n in 3: Rectangle {
-            x: n * (root.swatch-size + root.swatch-gap);
-            width: root.swatch-size;
-            height: root.swatch-size;
-            background: Theme.preview-color(root.entry-id, n);
-            border-width: Sizing.stroke(1);
-            border-color: root.swatch-edge;
-        }
-    }
-}
-
 // A context-menu row's label, set from the leading edge. Drawn twice for the
-// same reason as `PickerRowBody`. A row that turns the menu to a page
+// same reason as a list panel row. A row that turns the menu to a page
 // carries a chevron at the trailing edge, and its label stops short of it.
 component ContextRowBody inherits Rectangle {
     in property <string> label;
@@ -1599,171 +1570,100 @@ component SystemsScreen inherits Rectangle {
     }
 }
 
-// Centered list-picker modal: a title over a focused row list. Carries
-// the West-button "View" menu (page/list-scoped operations - Go to...,
-// and later sort/filter/layout) and any future picker use.
-component ListPickerModal inherits ModalShell {
-    // The shell owns `title`; this is the caller's raw text before the
-    // settings-value lookup picks a label for it.
+// The Menu and picker list: a title over the list panel's rows (see
+// `list_panel.slint`). One panel for every list a screen or setting opens,
+// short menus and long structured lists alike: a long list (Rust's
+// `list-form`, the tags and systems pickers) builds only the rows on
+// screen and its window snaps; a short one builds every row and glides.
+// Rows that carry a value (Sort, Volume, a tag's count) show it on the
+// right; a setting switched in place shows a toggle switch.
+component ListModal inherits ModalShell {
     in property <string> title-text;
     in property <[MenuEntry]> entries;
     in property <int> current-index;
     // Set while picking a settings value; see Overlays.list-setting-id.
     in property <string> setting-id;
+    in property <bool> windowed;
 
-    property <length> row-h: Sizing.pct-h(7);
-    property <length> row-sp: Sizing.pct-h(1);
-    property <length> stride: root.row-h + root.row-sp;
-    property <length> arrow: Sizing.pct-h(3);
-    // A long option list (languages, color schemes) scrolls rather than
-    // growing the panel past the screen.
-    property <length> max-viewport: Sizing.pct-h(60);
-    property <int> visible-rows: Math.max(1, Math.min(root.entries.length,
-        Math.floor((root.max-viewport + root.row-sp) / root.stride)));
-    property <bool> scrollable: root.entries.length > root.visible-rows;
-    property <length> arrow-band: root.scrollable ? root.arrow + Sizing.pct-h(0.5) : 0px;
-    property <length> viewport-h: root.visible-rows * root.row-h
-        + Math.max(0, root.visible-rows - 1) * root.row-sp;
-    // Preserve the viewport until focus crosses an edge.
-    property <int> top: 0;
-    function reveal-current() {
-        root.top = Math.max(0, Math.min(Math.max(0, root.entries.length - root.visible-rows),
-            Math.min(root.current-index, Math.max(root.top, root.current-index - root.visible-rows + 1))));
+    pure function entry-name(entry: MenuEntry, i: int) -> string {
+        if (Overlays.launcher-saving-visible && i == root.current-index) { return @tr("Saving…"); }
+        if (root.setting-id != "") { return SettingsLabels.picker-value(root.setting-id, entry.id); }
+        return entry.label-key != "" ? Labels.menu-name(entry.label-key, entry.label) : entry.label;
     }
-    changed current-index => { root.reveal-current(); }
-    changed visible-rows => { root.reveal-current(); }
-    changed entries => { root.top = 0; root.reveal-current(); }
-    init => { root.reveal-current(); }
-    // The worded reason a row can't currently be used folds into the row's
-    // own text rather than an overlay - the same idiom captioned tiles use
-    // for a disambiguating tag. Never hidden either way. One `@tr()` template
-    // for the whole phrase, not a fixed concatenation, so translators can
-    // reorder the name and the reason.
-    pure function entry-label(entry: MenuEntry) -> string {
-        return entry.detail != "" ? @tr("{} · {}", root.entry-primary-label(entry), entry.detail)
-            : (entry.enabled || entry.reason-key == "" ? root.entry-primary-label(entry)
-            : @tr("{} · {}", root.entry-primary-label(entry), Labels.launcher-reason(entry.reason-key)));
+    // The right-hand text: why a row cannot act, a value, or a count.
+    pure function entry-value(entry: MenuEntry) -> string {
+        if (!entry.enabled && entry.reason-key != "") { return Labels.launcher-reason(entry.reason-key); }
+        if (entry.role == MenuRole.slider) { return @tr("{}%", entry.detail); }
+        if (entry.detail-key != "") { return Labels.menu(entry.detail-key, entry.detail); }
+        if (entry.detail != "") { return entry.detail; }
+        return entry.label-key != "" ? Labels.menu-row-value(entry.label-key, entry.label) : "";
     }
-    pure function entry-primary-label(entry: MenuEntry) -> string {
-        return root.setting-id != "" ? SettingsLabels.picker-value(root.setting-id, entry.id)
-            : (entry.label-key != "" ? Labels.menu(entry.label-key, entry.label) : entry.label);
-    }
-    property <bool> swatches: root.setting-id == "colorScheme";
-    property <length> swatch-size: Sizing.pct-h(2.4);
-    property <length> swatch-gap: Sizing.pct-w(0.6);
-    property <length> swatch-band: root.swatches ? 3 * root.swatch-size + 2 * root.swatch-gap + Sizing.pct-w(2) : 0px;
-    measure := VerticalLayout {
-        visible: false;
-        for entry in root.entries: Text {
-            text: root.entry-label(entry);
-            font-size: Sizing.font-body;
-            font-weight: FontWeight.medium;
-        }
-    }
-    title-measure := Text {
-        visible: false;
-        text: root.title;
-        font-size: Sizing.font-title;
-    }
-    property <length> desired-w: Math.max(measure.preferred-width + root.swatch-band
-        + 2 * Sizing.pct-w(2) + Sizing.stroke(2), title-measure.preferred-width)
-        + 2 * root.pad + Sizing.font-body * 1.5;
+    property <bool> on-toggle: root.current-index >= 0 && root.current-index < root.entries.length
+        && (root.entries[root.current-index].role == MenuRole.toggle-off
+            || root.entries[root.current-index].role == MenuRole.toggle-on);
 
     title: root.setting-id != "" ? SettingsLabels.label(root.setting-id) : root.title-text;
-    panel-width: Math.min(Sizing.pct-w(92), Math.max(Sizing.pct-w(30), Math.ceil(root.desired-w / 1px) * 1px));
-    content-height: root.viewport-h + 2 * root.arrow-band;
+    panel-width: ListPanel.width;
+    content-height: vp.height;
 
-        // Both cues stand while the list scrolls at all, and the spent one
-        // dims; hiding one per direction was the pre-round-9 rule the browse
-        // grids already moved off. See docs/style.md, "Spent cues".
-        if root.scrollable: ScrollCue {
-            x: Sizing.snap((root.panel-width - self.width) / 2);
-            y: root.content-y;
-            width: root.arrow;
-            glyph: "icons/ScrollUp";
-            live: root.top > 0;
+    vp := ListViewport {
+        x: root.pad;
+        y: root.content-y;
+        width: root.content-width;
+        count: root.entries.length;
+        current: root.current-index;
+        scope: root.title-text + ":" + root.setting-id;
+        glide: !root.windowed;
+        press-held: PressFeedback.active(PressOwner.list, root.current-index);
+        flash-enabled: !root.on-toggle;
+        current-under-header: root.windowed && root.current-index > 0
+            && root.current-index <= root.entries.length
+            && root.entries[root.current-index - 1].role == MenuRole.header;
+
+        for entry[i] in (root.windowed ? [] : root.entries): ListRow {
+            x: 0;
+            y: (i - vp.top) * vp.stride;
+            width: vp.width;
+            height: vp.row-h;
+            role: entry.role;
+            name: root.entry-name(entry, i);
+            value: root.entry-value(entry);
+            swatch-id: root.setting-id == "colorScheme" ? entry.id : "";
+            level: entry.role == MenuRole.slider ? entry.detail.to-float() : 0;
+            enabled: entry.enabled;
+            fill-top: vp.fill-top;
+            fill-bottom: vp.fill-bottom;
+            fill: vp.fill;
+            content: vp.content;
+            content-muted: vp.content-muted;
+            hovered => { Overlays.pointer-choice(PressOwner.list, i, false); }
+            clicked => { Overlays.pointer-choice(PressOwner.list, i, true); }
+            slid(direction) => { Overlays.pointer-choice(PressOwner.list, i, false); Overlays.slider-step(direction); }
         }
-
-        // The rows glide to a new window instead of jumping; the fill
-        // travels with them, the same way the settings card scrolls. A
-        // wrap from one end to the other is more than a viewport and snaps.
-        list-scroll := ScrollOffset {
-            target: root.top * root.stride;
-            step: root.viewport-h;
-            reveal: true;
-            duration: Motion.scroll-ms;
-            viewport: root.viewport-h;
-            scope: root.title-text + ":" + root.setting-id + ":" + Motion.epoch;
+        // Windowed: one row per slot, holding whichever entry is there.
+        for slot in (root.windowed ? vp.visible-rows : 0): cell := ListRow {
+            property <int> i: vp.top + slot;
+            property <MenuEntry> entry: root.entries[self.i];
+            visible: self.i < root.entries.length;
+            x: 0;
+            y: slot * vp.stride;
+            width: vp.width;
+            height: vp.row-h;
+            role: cell.entry.role;
+            name: root.entry-name(cell.entry, cell.i);
+            value: root.entry-value(cell.entry);
+            level: cell.entry.role == MenuRole.slider ? cell.entry.detail.to-float() : 0;
+            enabled: cell.entry.enabled;
+            fill-top: vp.fill-top;
+            fill-bottom: vp.fill-bottom;
+            fill: vp.fill;
+            content: vp.content;
+            content-muted: vp.content-muted;
+            hovered => { Overlays.pointer-choice(PressOwner.list, cell.i, false); }
+            clicked => { Overlays.pointer-choice(PressOwner.list, cell.i, true); }
+            slid(direction) => { Overlays.pointer-choice(PressOwner.list, cell.i, false); Overlays.slider-step(direction); }
         }
-        Rectangle {
-            x: root.pad;
-            y: root.content-y + root.arrow-band;
-            width: root.content-width;
-            height: root.viewport-h;
-            clip: true;
-
-            Rectangle {
-            y: root.top * root.stride - list-scroll.offset;
-            height: parent.height;
-
-            sel := SelectionCursor {
-                press-held: PressFeedback.active(PressOwner.list, root.current-index);
-                target: { x: 0px, y: (root.current-index - root.top) * root.stride,
-                    w: parent.width, h: root.row-h, column: 0, row: root.current-index,
-                    scope: root.title-text + ":" + root.setting-id + ":" + root.top,
-                    valid: root.current-index >= 0 && root.current-index < root.entries.length };
-            }
-            for entry[i] in root.entries: Rectangle {
-                x: 0;
-                y: (i - root.top) * root.stride;
-                height: root.row-h;
-                property <bool> lit: sel.fill-bottom > self.y && sel.fill-top < self.y + self.height;
-
-                PickerRowBody {
-                    entry-id: entry.id;
-                    label: Overlays.launcher-saving-visible && i == root.current-index ? @tr("Saving…") : root.entry-label(entry);
-                    swatches: root.swatches;
-                    swatch-size: root.swatch-size;
-                    swatch-gap: root.swatch-gap;
-                    swatch-band: root.swatch-band;
-                    // Muted, never hidden: docs/style.md, "Hidden and
-                    // disabled tiles" - the row stays pickable.
-                    content-color: entry.enabled ? Theme.text-primary : Theme.text-label;
-                    swatch-edge: Theme.text-label;
-                    weight: FontWeight.normal;
-                }
-                if lit: SelectionClip {
-                    row-top: parent.y; row-height: parent.height;
-                    fill-top: sel.fill-top; fill-bottom: sel.fill-bottom;
-                    fill: sel.fill;
-                    PickerRowBody {
-                        entry-id: entry.id;
-                        label: Overlays.launcher-saving-visible && i == root.current-index ? @tr("Saving…") : root.entry-label(entry);
-                        swatches: root.swatches;
-                        swatch-size: root.swatch-size;
-                        swatch-gap: root.swatch-gap;
-                        swatch-band: root.swatch-band;
-                        content-color: sel.content;
-                        swatch-edge: sel.content;
-                        weight: FontWeight.medium;
-                    }
-                }
-                TouchArea {
-                    mouse-cursor: pointer;
-                    changed has-hover => { if (self.has-hover) { Overlays.pointer-choice(PressOwner.list, i, false); } }
-                    clicked => { Overlays.pointer-choice(PressOwner.list, i, true); }
-                }
-            }
-            }
-        }
-
-        if root.scrollable: ScrollCue {
-            x: Sizing.snap((root.panel-width - self.width) / 2);
-            y: root.content-y + root.content-height - root.arrow;
-            width: root.arrow;
-            glyph: "icons/ScrollDown";
-            live: root.top + root.visible-rows < root.entries.length;
-        }
+    }
 }
 
 // Core's picker: a list of Core's choices titled as Core titled it, and,
@@ -1771,60 +1671,20 @@ component ListPickerModal inherits ModalShell {
 // event may sit above any other surface, so this is drawn above them and
 // below only the decision dialog.
 component CorePickerModal inherits ModalShell {
-    property <length> row-h: Sizing.pct-h(7);
-    property <length> row-sp: Sizing.pct-h(1);
-    property <length> stride: root.row-h + root.row-sp;
-    property <length> arrow: Sizing.pct-h(3);
-    property <length> max-viewport: Sizing.pct-h(60);
     property <int> count: CoreUiView.rows.length;
-    property <int> visible-rows: Math.max(1, Math.min(root.count,
-        Math.floor((root.max-viewport + root.row-sp) / root.stride)));
-    property <bool> scrollable: root.count > root.visible-rows;
-    property <length> arrow-band: root.scrollable ? root.arrow + Sizing.pct-h(0.5) : 0px;
-    property <length> viewport-h: root.visible-rows * root.row-h
-        + Math.max(0, root.visible-rows - 1) * root.row-sp;
     // The cover box: as tall as the list and never wider than a third of
     // the panel, so the labels keep the room they need at 240p.
-    // Snapped so the list column, and the labels centered in it, start on a
-    // whole pixel where the bitmap face is in use.
+    // Snapped so the list column starts on a whole pixel where the bitmap
+    // face is in use.
     property <length> art-side: CoreUiView.has-art
-        ? Sizing.snap(Math.min(root.viewport-h + 2 * root.arrow-band, root.content-width / 3)) : 0px;
+        ? Sizing.snap(Math.min(vp.height, root.content-width / 3)) : 0px;
     property <length> art-gap: CoreUiView.has-art ? root.pad : 0px;
     property <length> list-x: root.pad + root.art-side + root.art-gap;
     property <length> list-w: Sizing.even(Math.max(0px, root.content-width - root.art-side - root.art-gap));
-    property <int> top: 0;
-    function reveal-current() {
-        root.top = Math.max(0, Math.min(Math.max(0, root.count - root.visible-rows),
-            Math.min(CoreUiView.index, Math.max(root.top, CoreUiView.index - root.visible-rows + 1))));
-    }
-    property <int> current: CoreUiView.index;
-    changed current => { root.reveal-current(); }
-    changed count => { root.top = 0; root.reveal-current(); }
-    init => { root.reveal-current(); }
-    pure function row-label(row: CorePickerRow) -> string {
-        return row.detail != "" ? @tr("{} · {}", row.label, row.detail) : row.label;
-    }
-    measure := VerticalLayout {
-        visible: false;
-        for row in CoreUiView.rows: Text {
-            text: root.row-label(row);
-            font-size: Sizing.font-body;
-            font-weight: FontWeight.medium;
-        }
-    }
-    title-measure := Text {
-        visible: false;
-        text: root.title;
-        font-size: Sizing.font-title;
-    }
-    property <length> list-desired: measure.preferred-width + 2 * Sizing.pct-w(2) + Sizing.stroke(2);
-    property <length> desired-w: Math.max(root.list-desired + (CoreUiView.has-art ? root.list-desired / 2 + root.pad : 0px),
-        title-measure.preferred-width) + 2 * root.pad + Sizing.font-body * 1.5;
 
     title: CoreUiView.title;
-    panel-width: Math.min(Sizing.pct-w(92), Math.max(CoreUiView.has-art ? Sizing.pct-w(60) : Sizing.pct-w(30),
-        Math.ceil(root.desired-w / 1px) * 1px));
-    content-height: root.viewport-h + 2 * root.arrow-band;
+    panel-width: ListPanel.width;
+    content-height: vp.height;
 
     if CoreUiView.has-art: Rectangle {
         x: root.pad;
@@ -1856,262 +1716,35 @@ component CorePickerModal inherits ModalShell {
         }
     }
 
-    if root.scrollable: ScrollCue {
-        x: root.list-x + (root.list-w - self.width) / 2;
-        y: root.content-y;
-        width: root.arrow;
-        glyph: "icons/ScrollUp";
-        live: root.top > 0;
-    }
-    list-scroll := ScrollOffset {
-        target: root.top * root.stride;
-        step: root.viewport-h;
-        reveal: true;
-        duration: Motion.scroll-ms;
-        viewport: root.viewport-h;
-        scope: CoreUiView.title + ":" + Motion.epoch;
-    }
-    Rectangle {
+    // Core's choices on the list panel: the name, and what Core says of it
+    // (a game's system) on the right.
+    vp := ListViewport {
         x: root.list-x;
-        y: root.content-y + root.arrow-band;
+        y: root.content-y;
         width: root.list-w;
-        height: root.viewport-h;
-        clip: true;
+        count: root.count;
+        current: CoreUiView.index;
+        scope: CoreUiView.title;
+        press-held: PressFeedback.active(PressOwner.core-picker, CoreUiView.index);
 
-        Rectangle {
-        y: root.top * root.stride - list-scroll.offset;
-        height: parent.height;
-
-        sel := SelectionCursor {
-            press-held: PressFeedback.active(PressOwner.core-picker, CoreUiView.index);
-            target: { x: 0px, y: (CoreUiView.index - root.top) * root.stride,
-                w: parent.width, h: root.row-h, column: 0, row: CoreUiView.index,
-                scope: CoreUiView.title + ":" + root.top,
-                valid: CoreUiView.index >= 0 && CoreUiView.index < root.count };
-        }
-        for row[i] in CoreUiView.rows: Rectangle {
+        for row[i] in CoreUiView.rows: ListRow {
             x: 0;
-            y: (i - root.top) * root.stride;
-            height: root.row-h;
-            property <bool> lit: sel.fill-bottom > self.y && sel.fill-top < self.y + self.height;
-
-            PickerRowBody {
-                label: root.row-label(row);
-                swatches: false;
-                content-color: Theme.text-primary;
-                swatch-edge: Theme.text-label;
-                weight: FontWeight.normal;
-            }
-            if lit: SelectionClip {
-                row-top: parent.y; row-height: parent.height;
-                fill-top: sel.fill-top; fill-bottom: sel.fill-bottom;
-                fill: sel.fill;
-                PickerRowBody {
-                    label: root.row-label(row);
-                    swatches: false;
-                    content-color: sel.content;
-                    swatch-edge: sel.content;
-                    weight: FontWeight.medium;
-                }
-            }
-            TouchArea {
-                mouse-cursor: pointer;
-                changed has-hover => { if (self.has-hover) { Overlays.pointer-choice(PressOwner.core-picker, i, false); } }
-                clicked => { Overlays.pointer-choice(PressOwner.core-picker, i, true); }
-            }
+            y: (i - vp.top) * vp.stride;
+            width: vp.width;
+            height: vp.row-h;
+            name: row.label;
+            value: row.detail;
+            fill-top: vp.fill-top;
+            fill-bottom: vp.fill-bottom;
+            fill: vp.fill;
+            content: vp.content;
+            content-muted: vp.content-muted;
+            hovered => { Overlays.pointer-choice(PressOwner.core-picker, i, false); }
+            clicked => { Overlays.pointer-choice(PressOwner.core-picker, i, true); }
         }
-        }
-    }
-
-    if root.scrollable: ScrollCue {
-        x: root.list-x + (root.list-w - self.width) / 2;
-        y: root.content-y + root.content-height - root.arrow;
-        width: root.arrow;
-        glyph: "icons/ScrollDown";
-        live: root.top + root.visible-rows < root.count;
-    }
-    changed visible-rows => { root.reveal-current(); }
-}
-
-// One form-list row's content, colors as inputs so the row can draw it at
-// rest and again inverted inside a `SelectionClip`. An option is its name
-// on the left and its value on the right, as a Settings row; a header
-// names the section below it; an action is centered, as a Settings action.
-component FormRowBody inherits Rectangle {
-    in property <MenuEntry> entry;
-    in property <color> ink;
-    in property <color> ink-muted;
-    in property <color> ink-action;
-    in property <int> weight;
-    property <length> pad: Sizing.pct-w(2);
-    property <string> label: root.entry.label-key != "" ? Labels.menu(root.entry.label-key, root.entry.label) : root.entry.label;
-    property <string> detail: root.entry.detail-key != "" ? Labels.menu(root.entry.detail-key, "") : root.entry.detail;
-
-    if root.entry.role == MenuRole.header: Text {
-        x: root.pad;
-        y: parent.height - self.height - Sizing.pct-h(0.8);
-        width: Math.max(0px, parent.width - 2 * root.pad);
-        text: root.label;
-        color: Theme.text-label;
-        font-size: Sizing.font-caption;
-        font-weight: FontWeight.semi-bold;
-        overflow: elide;
-    }
-    if root.entry.role == MenuRole.header: Divider {
-        x: 0;
-        y: parent.height - self.height;
-    }
-    if root.entry.role == MenuRole.action: Text {
-        x: root.pad;
-        width: Sizing.even(Math.max(0px, parent.width - 2 * root.pad));
-        height: parent.height;
-        text: root.label;
-        color: root.ink-action;
-        font-size: Sizing.font-body;
-        font-weight: root.weight;
-        horizontal-alignment: center;
-        vertical-alignment: center;
-        overflow: elide;
-    }
-    if root.entry.role == MenuRole.option: Text {
-        x: root.pad;
-        width: Math.max(0px, parent.width - 2 * root.pad
-            - (value.text != "" ? value.width + root.pad : 0px));
-        height: parent.height;
-        text: root.label;
-        color: root.entry.enabled ? root.ink : root.ink-muted;
-        font-size: Sizing.font-body;
-        font-weight: root.weight;
-        vertical-alignment: center;
-        overflow: elide;
-    }
-    value := Text {
-        visible: root.entry.role == MenuRole.option;
-        x: parent.width - self.width - root.pad;
-        width: Math.min(self.preferred-width, parent.width * 0.5);
-        height: parent.height;
-        text: root.entry.role == MenuRole.option ? root.detail : "";
-        color: root.ink-muted;
-        font-size: Sizing.font-body;
-        vertical-alignment: center;
-        horizontal-alignment: right;
-        overflow: elide;
     }
 }
 
-// The list picker for long or structured lists: rows named on the left
-// with their value on the right, section headers that take no focus, and
-// actions set apart at the foot. Only the rows on screen are built, so a
-// list of every system costs no more than a short one. Pure presentation:
-// the router owns the cursor, skipping headers and jumping sections.
-component FormListModal inherits ModalShell {
-    in property <string> title-text;
-    in property <[MenuEntry]> entries;
-    in property <int> current-index;
-
-    property <length> row-h: Sizing.pct-h(7);
-    property <length> row-sp: Sizing.pct-h(1);
-    property <length> stride: root.row-h + root.row-sp;
-    property <length> arrow: Sizing.pct-h(3);
-    property <length> max-viewport: Sizing.pct-h(60);
-    property <int> visible-rows: Math.max(1, Math.min(root.entries.length,
-        Math.floor((root.max-viewport + root.row-sp) / root.stride)));
-    property <bool> scrollable: root.entries.length > root.visible-rows;
-    property <length> arrow-band: root.scrollable ? root.arrow + Sizing.pct-h(0.5) : 0px;
-    property <length> viewport-h: root.visible-rows * root.row-h
-        + Math.max(0, root.visible-rows - 1) * root.row-sp;
-    // Preserve the viewport until focus crosses an edge. A row under a
-    // header brings the header into view with it, so the first row of a
-    // section never sits at the top without its name.
-    property <int> top: 0;
-    pure function lead(index: int) -> int {
-        return index > 0 && index <= root.entries.length
-            && root.entries[index - 1].role == MenuRole.header ? 1 : 0;
-    }
-    function reveal-current() {
-        root.top = Math.max(0, Math.min(Math.max(0, root.entries.length - root.visible-rows),
-            Math.min(root.current-index - root.lead(root.current-index),
-                Math.max(root.top, root.current-index - root.visible-rows + 1))));
-    }
-    changed current-index => { root.reveal-current(); }
-    changed visible-rows => { root.reveal-current(); }
-    changed entries => { root.top = 0; root.reveal-current(); }
-    init => { root.reveal-current(); }
-
-    title: root.title-text;
-    panel-width: Math.min(Sizing.pct-w(92), Math.max(Sizing.pct-w(46), Sizing.pct-h(85)));
-    content-height: root.viewport-h + 2 * root.arrow-band;
-
-        if root.scrollable: ScrollCue {
-            x: Sizing.snap((root.panel-width - self.width) / 2);
-            y: root.content-y;
-            width: root.arrow;
-            glyph: "icons/ScrollUp";
-            live: root.top > 0;
-        }
-        Rectangle {
-            x: root.pad;
-            y: root.content-y + root.arrow-band;
-            width: root.content-width;
-            height: root.viewport-h;
-            clip: true;
-
-            sel := SelectionCursor {
-                press-held: PressFeedback.active(PressOwner.list, root.current-index);
-                target: { x: 0px, y: (root.current-index - root.top) * root.stride,
-                    w: parent.width, h: root.row-h, column: 0, row: root.current-index,
-                    scope: root.title-text + ":" + root.top,
-                    valid: root.current-index >= 0 && root.current-index < root.entries.length };
-            }
-            for slot in root.visible-rows: cell := Rectangle {
-                property <int> i: root.top + slot;
-                property <MenuEntry> entry: root.entries[self.i];
-                property <bool> lit: sel.fill-bottom > self.y && sel.fill-top < self.y + self.height;
-                visible: self.i < root.entries.length;
-                x: 0;
-                y: slot * root.stride;
-                height: root.row-h;
-
-                // The first action stands apart from the options above it.
-                if cell.entry.role == MenuRole.action && cell.i > 0
-                    && root.entries[cell.i - 1].role != MenuRole.action: Divider {
-                    x: 0;
-                    y: -(root.row-sp + self.height) / 2;
-                }
-                FormRowBody {
-                    entry: cell.entry;
-                    ink: Theme.text-primary;
-                    ink-muted: Theme.text-label;
-                    ink-action: Theme.accent;
-                    weight: FontWeight.normal;
-                }
-                if cell.lit && cell.entry.role != MenuRole.header: SelectionClip {
-                    row-top: cell.y; row-height: cell.height;
-                    fill-top: sel.fill-top; fill-bottom: sel.fill-bottom;
-                    fill: sel.fill;
-                    FormRowBody {
-                        entry: cell.entry;
-                        ink: sel.content;
-                        ink-muted: sel.content-muted;
-                        ink-action: sel.content;
-                        weight: FontWeight.medium;
-                    }
-                }
-                if cell.entry.role != MenuRole.header: TouchArea {
-                    mouse-cursor: pointer;
-                    changed has-hover => { if (self.has-hover) { Overlays.pointer-choice(PressOwner.list, cell.i, false); } }
-                    clicked => { Overlays.pointer-choice(PressOwner.list, cell.i, true); }
-                }
-            }
-        }
-        if root.scrollable: ScrollCue {
-            x: Sizing.snap((root.panel-width - self.width) / 2);
-            y: root.content-y + root.content-height - root.arrow;
-            width: root.arrow;
-            glyph: "icons/ScrollDown";
-            live: root.top + root.visible-rows < root.entries.length;
-        }
-}
 
 // Jump-to-letter grid picker: the buckets come from `media.browse.index`
 // (only non-empty sections in sort order), and each cell shows the bucket
@@ -2523,40 +2156,6 @@ component OnlineLinkModal inherits ModalShell {
     }
 }
 
-// One row of the Online list modal: what it is on the left, the detail a
-// second column carries on the right. Drawn twice per row, once resting and
-// once in the selection's colors, for the same reason as `PickerRowBody`.
-component OnlineListRowBody inherits Rectangle {
-    in property <string> label;
-    in property <string> detail;
-    in property <color> label-color;
-    in property <color> detail-color;
-    in property <int> weight;
-
-    Text {
-        x: Sizing.pct-w(2);
-        y: Sizing.snap((parent.height - self.height) / 2);
-        width: parent.width * 0.55 - Sizing.pct-w(2);
-        overflow: elide;
-        text: root.label;
-        color: root.label-color;
-        font-size: Sizing.font-body;
-        font-weight: root.weight;
-    }
-    // Right-aligned, so its right edge is what lands on the pixel grid.
-    Text {
-        x: Sizing.snap(parent.width * 0.55);
-        y: Sizing.snap((parent.height - self.height) / 2);
-        width: Sizing.snap(parent.width - Sizing.pct-w(2)) - self.x;
-        horizontal-alignment: right;
-        overflow: elide;
-        text: root.detail;
-        color: root.detail-color;
-        font-size: Sizing.font-caption;
-        font-weight: root.weight;
-    }
-}
-
 // The Online page's two lists, one modal: cloud backup snapshots (Accept
 // restores, after asking) and the remote-control activity log (read only).
 // Rust composes every row; the list itself is the picker's: the shared
@@ -2576,27 +2175,6 @@ component OnlineListModal inherits ModalShell {
         || Overlays.online-list-status == OnlineListStatus.failed
         || Overlays.online-list-status == OnlineListStatus.empty;
     property <bool> has-note: Overlays.online-list-note != "";
-
-    property <length> row-h: Sizing.pct-h(7);
-    property <length> row-sp: Sizing.pct-h(1);
-    property <length> stride: root.row-h + root.row-sp;
-    property <length> arrow: Sizing.pct-h(3);
-    property <length> max-viewport: Sizing.pct-h(46);
-    property <int> visible-rows: Math.max(1, Math.min(root.entries.length,
-        Math.floor((root.max-viewport + root.row-sp) / root.stride)));
-    property <bool> scrollable: root.entries.length > root.visible-rows;
-    property <length> arrow-band: root.scrollable ? root.arrow + Sizing.pct-h(0.5) : 0px;
-    property <length> viewport-h: root.entries.length == 0 ? 0px
-        : root.visible-rows * root.row-h + Math.max(0, root.visible-rows - 1) * root.row-sp;
-    // Preserve the viewport until focus crosses an edge.
-    property <int> top: 0;
-    function reveal-current() {
-        root.top = Math.max(0, Math.min(Math.max(0, root.entries.length - root.visible-rows),
-            Math.min(root.current-index, Math.max(root.top, root.current-index - root.visible-rows + 1))));
-    }
-    changed current-index => { root.reveal-current(); }
-    changed visible-rows => { root.reveal-current(); }
-    init => { root.reveal-current(); }
 
     // Why the list could not load, in the user's terms: two causes they
     // can fix themselves, and the network for anything else.
@@ -2620,12 +2198,12 @@ component OnlineListModal inherits ModalShell {
     }
 
     property <length> note-h: root.has-note ? Math.ceil(Sizing.font-caption / 1px * 1.6) * 1px + root.pad : 0px;
-    property <length> status-h: root.has-status ? root.row-h + (root.entries.length > 0 ? root.pad : 0px) : 0px;
+    property <length> status-h: root.has-status ? vp.row-h + (root.entries.length > 0 ? root.pad : 0px) : 0px;
     property <length> list-y: root.content-y + root.note-h + root.status-h;
 
     title: root.backups ? @tr("Cloud backups") : @tr("Remote activity");
-    panel-width: Sizing.snap(Math.min(root.width * 0.84, Sizing.pct-h(120)));
-    content-height: root.note-h + root.status-h + root.viewport-h + 2 * root.arrow-band;
+    panel-width: ListPanel.width;
+    content-height: root.note-h + root.status-h + vp.height;
 
     if root.has-note: Text {
         x: root.pad;
@@ -2641,7 +2219,7 @@ component OnlineListModal inherits ModalShell {
         x: root.pad;
         y: root.content-y + root.note-h;
         width: root.content-width;
-        height: root.row-h;
+        height: vp.row-h;
         glyph: Sizing.font-body;
         waiting: root.waiting;
         text: Overlays.online-list-status == OnlineListStatus.backing-up ? @tr("Backing up…")
@@ -2652,7 +2230,7 @@ component OnlineListModal inherits ModalShell {
         x: root.pad;
         y: root.content-y + root.note-h;
         width: root.content-width;
-        height: root.row-h;
+        height: vp.row-h;
         horizontal-alignment: center;
         vertical-alignment: center;
         wrap: word-wrap;
@@ -2662,82 +2240,35 @@ component OnlineListModal inherits ModalShell {
         font-size: Sizing.font-body;
     }
 
-    if root.scrollable: ScrollCue {
-        x: Sizing.snap((root.panel-width - self.width) / 2);
-        y: root.list-y;
-        width: root.arrow;
-        glyph: "icons/ScrollUp";
-        live: root.top > 0;
-    }
-
-    list-scroll := ScrollOffset {
-        target: root.top * root.stride;
-        step: root.viewport-h;
-        reveal: true;
-        duration: Motion.scroll-ms;
-        viewport: root.viewport-h;
-        scope: "online-list:" + (root.backups ? "backups" : "activity") + ":" + Motion.epoch;
-    }
-    Rectangle {
+    vp := ListViewport {
         x: root.pad;
-        y: root.list-y + root.arrow-band;
+        y: root.list-y;
         width: root.content-width;
-        height: root.viewport-h;
-        clip: true;
+        count: root.entries.length;
+        current: root.current-index;
+        scope: "online-list:" + (root.backups ? "backups" : "activity");
+        max-viewport: Sizing.pct-h(46);
+        press-held: PressFeedback.active(PressOwner.online-list, root.current-index);
 
-        Rectangle {
-        y: root.top * root.stride - list-scroll.offset;
-        height: parent.height;
-
-        sel := SelectionCursor {
-            press-held: PressFeedback.active(PressOwner.online-list, root.current-index);
-            target: { x: 0px, y: (root.current-index - root.top) * root.stride,
-                w: parent.width, h: root.row-h, column: 0, row: root.current-index,
-                scope: "online-list:" + (root.backups ? "backups" : "activity") + ":" + root.top,
-                valid: root.current-index >= 0 && root.current-index < root.entries.length };
-        }
-        for row[i] in root.entries: Rectangle {
+        for row[i] in root.entries: ListRow {
             x: 0;
-            y: (i - root.top) * root.stride;
-            height: root.row-h;
-            property <bool> lit: sel.fill-bottom > self.y && sel.fill-top < self.y + self.height;
-
-            OnlineListRowBody {
-                label: root.row-label(row);
-                detail: root.row-detail(row);
-                // Muted, never hidden: docs/style.md, "Hidden and disabled
-                // tiles". A snapshot this Core cannot restore still lists.
-                label-color: !row.enabled ? Theme.text-label : (row.id == "run" ? Theme.accent : Theme.text-primary);
-                detail-color: Theme.text-label;
-                weight: FontWeight.normal;
-            }
-            if lit: SelectionClip {
-                row-top: parent.y; row-height: parent.height;
-                fill-top: sel.fill-top; fill-bottom: sel.fill-bottom;
-                fill: sel.fill;
-                OnlineListRowBody {
-                    label: root.row-label(row);
-                    detail: root.row-detail(row);
-                    label-color: sel.content;
-                    detail-color: sel.content;
-                    weight: FontWeight.medium;
-                }
-            }
-            TouchArea {
-                mouse-cursor: pointer;
-                changed has-hover => { if (self.has-hover) { Overlays.pointer-choice(PressOwner.online-list, i, false); } }
-                clicked => { Overlays.pointer-choice(PressOwner.online-list, i, true); }
-            }
+            y: (i - vp.top) * vp.stride;
+            width: vp.width;
+            height: vp.row-h;
+            name: root.row-label(row);
+            value: root.row-detail(row);
+            // Muted, never hidden: a snapshot this Core cannot restore
+            // still lists.
+            enabled: row.enabled;
+            accent: row.id == "run";
+            fill-top: vp.fill-top;
+            fill-bottom: vp.fill-bottom;
+            fill: vp.fill;
+            content: vp.content;
+            content-muted: vp.content-muted;
+            hovered => { Overlays.pointer-choice(PressOwner.online-list, i, false); }
+            clicked => { Overlays.pointer-choice(PressOwner.online-list, i, true); }
         }
-        }
-    }
-
-    if root.scrollable: ScrollCue {
-        x: Sizing.snap((root.panel-width - self.width) / 2);
-        y: root.list-y + root.arrow-band + root.viewport-h + root.arrow-band - root.arrow;
-        width: root.arrow;
-        glyph: "icons/ScrollDown";
-        live: root.top + root.visible-rows < root.entries.length;
     }
 }
 
@@ -2749,30 +2280,9 @@ component OnlineListModal inherits ModalShell {
 // a window that glides, and rows that answer the pointer.
 component LauncherPrefsModal inherits ModalShell {
     property <[LauncherPrefsRow]> entries: Overlays.launcher-prefs-rows;
-    property <int> current-index: Overlays.launcher-prefs-index;
 
-    property <length> row-h: Sizing.pct-h(7);
-    property <length> row-sp: Sizing.pct-h(1);
-    property <length> stride: root.row-h + root.row-sp;
-    property <length> arrow: Sizing.pct-h(3);
-    property <length> max-viewport: Sizing.pct-h(46);
-    property <int> visible-rows: Math.max(1, Math.min(root.entries.length,
-        Math.floor((root.max-viewport + root.row-sp) / root.stride)));
-    property <bool> scrollable: root.entries.length > root.visible-rows;
-    property <length> arrow-band: root.scrollable ? root.arrow + Sizing.pct-h(0.5) : 0px;
-    property <length> viewport-h: root.entries.length == 0 ? 0px
-        : root.visible-rows * root.row-h + Math.max(0, root.visible-rows - 1) * root.row-sp;
-    property <int> top: 0;
-    function reveal-current() {
-        root.top = Math.max(0, Math.min(Math.max(0, root.entries.length - root.visible-rows),
-            Math.min(root.current-index, Math.max(root.top, root.current-index - root.visible-rows + 1))));
-    }
-    changed current-index => {
-        root.reveal-current();
-        root.blink-on = true;
-    }
-    changed visible-rows => { root.reveal-current(); }
-    init => { root.reveal-current(); }
+    property <int> current-index: Overlays.launcher-prefs-index;
+    changed current-index => { root.blink-on = true; }
 
     // A held entry blinks, as a held Hub tile does: only its own text
     // repaints.
@@ -2815,85 +2325,39 @@ component LauncherPrefsModal inherits ModalShell {
     title: Overlays.launcher-prefs-page == LauncherPrefsPage.entry ? root.row-label(Overlays.launcher-prefs-entry)
         : Overlays.launcher-prefs-page == LauncherPrefsPage.add ? @tr("Add")
         : @tr("Launcher preference");
-    panel-width: Math.min(root.width * 0.84, Sizing.pct-h(120));
-    content-height: root.viewport-h + 2 * root.arrow-band;
+    panel-width: ListPanel.width;
+    content-height: vp.height;
 
-    if root.scrollable: ScrollCue {
-        x: Sizing.snap((root.panel-width - self.width) / 2);
-        y: root.content-y;
-        width: root.arrow;
-        glyph: "icons/ScrollUp";
-        live: root.top > 0;
-    }
-
-    list-scroll := ScrollOffset {
-        target: root.top * root.stride;
-        step: root.viewport-h;
-        reveal: true;
-        duration: Motion.scroll-ms;
-        viewport: root.viewport-h;
-        scope: "launcher-prefs:" + StateTokens.launcher-prefs-page(Overlays.launcher-prefs-page) + ":" + Motion.epoch;
-    }
-    Rectangle {
+    vp := ListViewport {
         x: root.pad;
-        y: root.content-y + root.arrow-band;
+        y: root.content-y;
         width: root.content-width;
-        height: root.viewport-h;
-        clip: true;
+        count: root.entries.length;
+        current: root.current-index;
+        scope: "launcher-prefs:" + StateTokens.launcher-prefs-page(Overlays.launcher-prefs-page);
+        max-viewport: Sizing.pct-h(46);
+        press-held: PressFeedback.active(PressOwner.launcher-prefs, root.current-index);
 
-        Rectangle {
-        y: root.top * root.stride - list-scroll.offset;
-        height: parent.height;
-
-        sel := SelectionCursor {
-            press-held: PressFeedback.active(PressOwner.launcher-prefs, root.current-index);
-            target: { x: 0px, y: (root.current-index - root.top) * root.stride,
-                w: parent.width, h: root.row-h, column: 0, row: root.current-index,
-                scope: "launcher-prefs:" + StateTokens.launcher-prefs-page(Overlays.launcher-prefs-page) + ":" + root.top,
-                valid: root.current-index >= 0 && root.current-index < root.entries.length };
-        }
-        for row[i] in root.entries: Rectangle {
+        for row[i] in root.entries: ListRow {
             x: 0;
-            y: (i - root.top) * root.stride;
-            height: root.row-h;
-            property <bool> lit: sel.fill-bottom > self.y && sel.fill-top < self.y + self.height;
-            if !(row.held && !root.blink-on): OnlineListRowBody {
-                label: root.row-label(row);
-                detail: root.row-detail(row);
-                // Muted, never hidden: docs/style.md, "Hidden and disabled
-                // tiles". Core keeps an entry that is not installed yet.
-                label-color: !row.enabled ? Theme.text-label
-                    : (row.kind == LauncherPrefsRowKind.add ? Theme.accent : Theme.text-primary);
-                detail-color: Theme.text-label;
-                weight: FontWeight.normal;
-            }
-            if lit && !(row.held && !root.blink-on): SelectionClip {
-                row-top: parent.y; row-height: parent.height;
-                fill-top: sel.fill-top; fill-bottom: sel.fill-bottom;
-                fill: sel.fill;
-                OnlineListRowBody {
-                    label: root.row-label(row);
-                    detail: root.row-detail(row);
-                    label-color: sel.content;
-                    detail-color: sel.content;
-                    weight: FontWeight.medium;
-                }
-            }
-            TouchArea {
-                mouse-cursor: pointer;
-                changed has-hover => { if (self.has-hover) { Overlays.pointer-choice(PressOwner.launcher-prefs, i, false); } }
-                clicked => { Overlays.pointer-choice(PressOwner.launcher-prefs, i, true); }
-            }
+            y: (i - vp.top) * vp.stride;
+            width: vp.width;
+            height: vp.row-h;
+            visible: !(row.held && !root.blink-on);
+            name: root.row-label(row);
+            value: root.row-detail(row);
+            // Muted, never hidden: Core keeps an entry that is not
+            // installed yet.
+            enabled: row.enabled;
+            accent: row.kind == LauncherPrefsRowKind.add;
+            fill-top: vp.fill-top;
+            fill-bottom: vp.fill-bottom;
+            fill: vp.fill;
+            content: vp.content;
+            content-muted: vp.content-muted;
+            hovered => { Overlays.pointer-choice(PressOwner.launcher-prefs, i, false); }
+            clicked => { Overlays.pointer-choice(PressOwner.launcher-prefs, i, true); }
         }
-        }
-    }
-
-    if root.scrollable: ScrollCue {
-        x: Sizing.snap((root.panel-width - self.width) / 2);
-        y: root.content-y + root.arrow-band + root.viewport-h + root.arrow-band - root.arrow;
-        width: root.arrow;
-        glyph: "icons/ScrollDown";
-        live: root.top + root.visible-rows < root.entries.length;
     }
 }
 
@@ -3875,6 +3339,21 @@ component RouteScreen inherits Rectangle {
 
     if root.screen-token == Screen.file-browser: FileBrowserScreen {}
 
+    if root.screen-token == Screen.music: Rectangle {
+        MusicScreen {
+            content-focused: !PageBar.focused;
+        }
+        // The Menu chip row, under the strip.
+        MenuChipRow {
+            x: 0;
+            y: Sizing.header-bottom + Layout.top-margin + Layout.strip-height + Sizing.menu-row-gap;
+            height: Sizing.menu-row-height;
+            chips: PageBar.music-chips;
+            side-inset: Layout.slot-margin;
+            visible: PageBar.shown(PageBar.music-chips);
+        }
+    }
+
     if root.screen-token == Screen.games || root.screen-token == Screen.favorites
         || root.screen-token == Screen.recents || root.screen-token == Screen.search-results
         || root.screen-token == Screen.deck || root.screen-token == Screen.decks
@@ -3937,6 +3416,12 @@ export component App inherits Window {
         if (Shell.active-screen == Screen.ra-login) { return @tr("RetroAchievements"); }
         if (Shell.active-screen == Screen.file-browser) {
             return FileBrowserView.places ? @tr("Places") : FileBrowserView.title;
+        }
+        if (Shell.active-screen == Screen.music) {
+            return MusicView.page == MusicPage.library
+                ? (MusicView.library-top ? @tr("Browse music") : MusicView.library-title)
+                : MusicView.page == MusicPage.player || MusicView.playlist-name == "" ? @tr("Background music")
+                : MusicView.playlist-name;
         }
         if (Shell.active-screen == Screen.search-results) {
             return GamesView.display-title() == "" ? @tr("Search") : GamesView.display-title();
@@ -4212,6 +3697,73 @@ export component App inherits Window {
         return Labels.menu(button.on ? "play_later:remove" : "play_later:add", "");
     }
 
+    // The music player. On the player page A runs the focused control and
+    // L and R skip tracks; on the playlist page A plays the focused track
+    // (pauses the one playing); on the library page A opens a folder or
+    // plays from a track.
+    pure function music-help-entries() -> [HelpEntry] {
+        if (MusicView.page == MusicPage.library) {
+            // A folder that failed to read, or read empty, tries again.
+            if (MusicView.state == ContentState.error || MusicView.state == ContentState.empty) {
+                return [
+                    { buttons: ["ButtonA"], label: @tr("Retry") },
+                    { buttons: ["ButtonB"], label: @tr("Back") },
+                ];
+            }
+            if (MusicView.state != ContentState.ready) {
+                return [{ buttons: ["ButtonB"], label: @tr("Back") }];
+            }
+            // Options acts on the focused folder, or on a track's folder;
+            // Menu on the folder on screen.
+            return [
+                self.move-cue(MusicView.list-total-pages),
+                { buttons: ["ButtonA"], label: MusicView.focused-opens ? @tr("Open") : @tr("Play") },
+                { buttons: ["ButtonX"], label: @tr("Options") },
+                { buttons: ["ButtonY"], label: @tr("Menu") },
+                { buttons: ["ButtonB"], label: @tr("Back") },
+            ];
+        }
+        if (MusicView.page == MusicPage.playlist) {
+            if (MusicView.count == 0) {
+                return [{ buttons: ["ButtonB"], label: @tr("Back") }];
+            }
+            return [
+                self.move-cue(MusicView.list-total-pages),
+                { buttons: ["ButtonA"], label: MusicView.focused-pauses() ? @tr("Pause") : @tr("Play") },
+                { buttons: ["ButtonB"], label: @tr("Back") },
+            ];
+        }
+        if (MusicView.focused-button().unavailable != MusicUnavailable.none) {
+            if (MusicView.can-skip()) {
+                return [
+                    { buttons: ["DpadLeft", "DpadRight"], label: @tr("Move") },
+                    { buttons: ["ButtonL", "ButtonR"], label: @tr("Track") },
+                    { buttons: ["ButtonY"], label: @tr("Menu") },
+                    { buttons: ["ButtonB"], label: @tr("Back") },
+                ];
+            }
+            return [
+                { buttons: ["DpadLeft", "DpadRight"], label: @tr("Move") },
+                { buttons: ["ButtonY"], label: @tr("Menu") },
+                { buttons: ["ButtonB"], label: @tr("Back") },
+            ];
+        }
+        if (MusicView.can-skip()) {
+            return [
+                { buttons: ["DpadLeft", "DpadRight"], label: @tr("Move") },
+                { buttons: ["ButtonA"], label: MusicLabels.control(MusicView.focused-button().control) },
+                { buttons: ["ButtonL", "ButtonR"], label: @tr("Track") },
+                { buttons: ["ButtonY"], label: @tr("Menu") },
+                { buttons: ["ButtonB"], label: @tr("Back") },
+            ];
+        }
+        return [
+            { buttons: ["DpadLeft", "DpadRight"], label: @tr("Move") },
+            { buttons: ["ButtonA"], label: MusicLabels.control(MusicView.focused-button().control) },
+            { buttons: ["ButtonY"], label: @tr("Menu") },
+            { buttons: ["ButtonB"], label: @tr("Back") },
+        ];
+    }
     pure function help-entries() -> [HelpEntry] {
         if (Shell.boot-curtain) {
             return [];
@@ -4452,10 +4004,31 @@ export component App inherits Window {
             && !Overlays.list-entries[Overlays.list-index].enabled
             && Overlays.list-entries[Overlays.list-index].reason-key == "") {
             return [
-                { buttons: ["ButtonB"], label: @tr("Cancel") },
+                { buttons: ["ButtonB"], label: @tr("Back") },
             ];
         }
-        if (Overlays.list-open || Overlays.letter-open) {
+        // A slider row is adjusted sideways; Accept does nothing on it.
+        if (Overlays.list-open && Overlays.list-index >= 0 && Overlays.list-index < Overlays.list-entries.length
+            && Overlays.list-entries[Overlays.list-index].role == MenuRole.slider) {
+            return [
+                { buttons: ["DpadUp", "DpadDown"], label: @tr("Move") },
+                { buttons: ["DpadLeft", "DpadRight"], label: @tr("Adjust") },
+                { buttons: ["ButtonB"], label: @tr("Back") },
+            ];
+        }
+        // Every list panel leaves with Back: a pick is kept as it is made.
+        if (Overlays.list-open) {
+            return [
+                { buttons: ["Dpad"], label: @tr("Move") },
+                { buttons: ["ButtonA"],
+                    label: Overlays.list-index >= 0 && Overlays.list-index < Overlays.list-entries.length
+                    && (Overlays.list-entries[Overlays.list-index].role == MenuRole.toggle-off
+                        || Overlays.list-entries[Overlays.list-index].role == MenuRole.toggle-on)
+                    ? @tr("Toggle") : @tr("Select") },
+                { buttons: ["ButtonB"], label: @tr("Back") },
+            ];
+        }
+        if (Overlays.letter-open) {
             return [
                 { buttons: ["Dpad"], label: @tr("Move") },
                 { buttons: ["ButtonA"], label: @tr("Select") },
@@ -4557,16 +4130,19 @@ export component App inherits Window {
             ];
         }
         if (Shell.active-screen == Screen.settings) {
+            // Options pins the focused tile to the Hub.
             if (SettingsView.page == SettingsPage.root) {
                 if (SettingsView.rows.length > 1) {
                     return [
                         { buttons: ["Dpad"], label: @tr("Move") },
                         { buttons: ["ButtonA"], label: @tr("Open") },
+                        { buttons: ["ButtonX"], label: @tr("Options") },
                         { buttons: ["ButtonB"], label: @tr("Back") },
                     ];
                 }
                 return [
                     { buttons: ["ButtonA"], label: @tr("Open") },
+                    { buttons: ["ButtonX"], label: @tr("Options") },
                     { buttons: ["ButtonB"], label: @tr("Back") },
                 ];
             }
@@ -4629,6 +4205,9 @@ export component App inherits Window {
         }
         if (Shell.active-screen == Screen.file-browser && !Shell.transitioning) {
             return root.file-browser-help-entries();
+        }
+        if (Shell.active-screen == Screen.music && !Shell.transitioning) {
+            return root.music-help-entries();
         }
         // Games, Favorites, Recents and Search results share the
         // games-style rows.
@@ -4855,6 +4434,7 @@ export component App inherits Window {
         clock-sample: Shell.clock-sample;
         status-keys: Shell.status-keys;
         status-icons-enabled: Shell.status-icons-enabled;
+        music-playing: Shell.music-playing;
         has-battery: Shell.has-battery;
         battery-percent: Shell.battery-percent;
         browse-title: root.browse-header-title();
@@ -4937,17 +4517,12 @@ export component App inherits Window {
         anchor-zoomed: Overlays.context-anchor-zoomed;
     }
 
-    if Overlays.list-open && Overlays.list-form: FormListModal {
-        title-text: Labels.menu(Overlays.list-title, "");
-        entries: Overlays.list-entries;
-        current-index: Overlays.list-index;
-    }
-
-    if Overlays.list-open && !Overlays.list-form: ListPickerModal {
+    if Overlays.list-open: ListModal {
         title-text: Labels.menu(Overlays.list-title, "");
         setting-id: Overlays.list-setting-id;
         entries: Overlays.list-entries;
         current-index: Overlays.list-index;
+        windowed: Overlays.list-form;
     }
 
     if Overlays.letter-open: LetterJumpModal {

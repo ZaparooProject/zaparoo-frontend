@@ -60,6 +60,8 @@ pub enum Kind {
     Search,
     /// A deck pinned to the Hub, which opens it.
     Collection,
+    /// A Settings root tile pinned to the Hub; its id is the page id.
+    Setting,
     /// A blank cell: a persisted spacer or the last page's tail padding.
     Empty,
 }
@@ -74,6 +76,7 @@ impl Kind {
             Self::ZapScript => "zapscript",
             Self::Search => "search",
             Self::Collection => "collection",
+            Self::Setting => "setting",
             Self::Empty => "empty",
         }
     }
@@ -665,6 +668,25 @@ pub fn same_file_name(a: &str, b: &str) -> bool {
     !a.is_empty() && a == b
 }
 
+/// A pinned Settings tile: the root tile's glyph and words. A page this
+/// build does not have is left out.
+fn resolve_setting(resolver: &dyn Resolver, item: &LayoutItem) -> Option<Entry> {
+    let glyph = crate::settings::page_glyph(&item.id)?;
+    Some(with_overrides(
+        resolver,
+        item,
+        Entry {
+            kind: Some(Kind::Setting),
+            id: item.id.clone(),
+            label_key: format!("setting:{}", item.id),
+            cover_key: glyph.to_string(),
+            fallback_cover_key: glyph.to_string(),
+            hub_index: -1,
+            ..Entry::default()
+        },
+    ))
+}
+
 fn resolve_item(
     live: &Live,
     resolver: &dyn Resolver,
@@ -688,6 +710,7 @@ fn resolve_item(
         "zapscript" => resolve_zapscript(resolver, item),
         "search" => resolve_search(resolver, item),
         "collection" => resolve_collection(resolver, item),
+        "setting" => resolve_setting(resolver, item),
         _ => None,
     }?;
     entry.hub_index = hub_index;
@@ -851,6 +874,7 @@ pub fn restore_index(
             "zapscript" => Some(Kind::ZapScript),
             "search" => Some(Kind::Search),
             "collection" => Some(Kind::Collection),
+            "setting" => Some(Kind::Setting),
             _ => None,
         };
         if let Some(restored) = kind.and_then(|k| index_for(entries, k, id)) {
@@ -1012,6 +1036,10 @@ pub fn add_entries(
                     entry.label_key
                 }
                 "action" => resolve_action(live, resolver, id)?.label_key,
+                "setting" => {
+                    crate::settings::page_glyph(id)?;
+                    format!("setting:{id}")
+                }
                 _ => return None,
             };
             Some(AddEntry {
@@ -1501,6 +1529,28 @@ mod tests {
         assert_eq!(
             (out[1].id.as_str(), out[1].label_key.as_str()),
             ("category:Handhelds", "category:Handheld")
+        );
+    }
+
+    #[test]
+    fn a_pinned_setting_takes_its_root_tile_and_an_unknown_page_drops() {
+        let confirmed = Vec::new();
+        let l = live(&confirmed);
+        let music = resolve_item(&l, &Names, 3, &item("setting", "pageMusic")).expect("an entry");
+        assert_eq!(music.kind, Some(Kind::Setting));
+        assert_eq!(music.label_key, "setting:pageMusic");
+        assert_eq!(music.cover_key, "icons/Music");
+        assert_eq!(music.hub_index, 3);
+        assert!(resolve_item(&l, &Names, 0, &item("setting", "pageNope")).is_none());
+        let available = vec![
+            ("setting".to_string(), "pageMusic".to_string()),
+            ("setting".to_string(), "pageNope".to_string()),
+        ];
+        let out = add_entries(&available, &l, &Names);
+        assert_eq!(out.len(), 1);
+        assert_eq!(
+            (out[0].id.as_str(), out[0].label_key.as_str()),
+            ("setting:pageMusic", "setting:pageMusic")
         );
     }
 

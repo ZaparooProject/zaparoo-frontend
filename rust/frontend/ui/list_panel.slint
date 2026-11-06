@@ -1,0 +1,358 @@
+// Zaparoo Frontend
+// Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
+// SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
+//
+// The list panel: the one way a modal lists rows. Every list modal (the
+// Menu and picker list, Core's picker, the Online lists, the launcher
+// preference) is a `ModalShell` titled at its center around a
+// `ListViewport` of `ListRow`s. A row reads like a Settings row: its name
+// from the left, and on the right whatever it carries, a value, a reason
+// it cannot act, a check for a picker's current choice, a toggle switch,
+// a chevron for a row that opens a page, or a color scheme's swatches.
+// Each panel keeps its own rows and words; these parts only draw them.
+// See docs/style.md, "List panels".
+
+import { Theme, Sizing, Motion } from "theme.slint";
+import { GlyphSource, ScrollCue, Divider } from "chrome.slint";
+import { ScrollOffset, SelectionCursor, SelectionClip } from "focus.slint";
+import { ToggleSwitch } from "settings.slint";
+import { MenuRole } from "state_types.slint";
+
+// Every list panel's width: wide enough for a name and its value side by
+// side, a fixed share of the screen rather than the width of the longest
+// row, so a panel keeps its size from one list to the next. At 240p it
+// takes most of the screen, where the bitmap face needs the room.
+export global ListPanel {
+    out property <length> width: Math.min(Sizing.pct-w(92), Math.max(Sizing.pct-w(46), Sizing.pct-h(85),
+        Sizing.tier-240 ? Sizing.pct-w(80) : 0px));
+}
+
+// What one row draws, with its colors as inputs so the row can draw it
+// twice: once at rest and once inverted inside a `SelectionClip`.
+export component ListRowBody inherits Rectangle {
+    in property <MenuRole> role: MenuRole.option;
+    in property <string> name;
+    // The right-hand text: a value, a count, or why the row cannot act.
+    in property <string> value;
+    // A color scheme's id: its three swatches stand at the right.
+    in property <string> swatch-id;
+    in property <color> ink;
+    in property <color> ink-muted;
+    in property <color> ink-action;
+    // Drawn as the selected copy: the toggle switch takes the selection's
+    // colors, with `fill-color` as the fill it sits on.
+    in property <bool> selected: false;
+    in property <color> fill-color: Theme.selection-fill;
+    in property <int> weight;
+    // A slider's value, 0 to 100, in steps of ten cells.
+    in property <int> level: 0;
+
+    property <length> pad: Sizing.pct-w(2);
+    property <length> gap: Sizing.pct-w(1.5);
+    property <length> mark: GlyphSource.side(Sizing.pct-h(3));
+    property <length> knob-h: Sizing.pct-h(3.8);
+    property <length> swatch-size: Sizing.pct-h(2.4);
+    property <length> swatch-gap: Sizing.pct-w(0.6);
+    property <bool> toggle: root.role == MenuRole.toggle-off || root.role == MenuRole.toggle-on;
+    property <bool> slider: root.role == MenuRole.slider;
+    property <bool> marked: root.role == MenuRole.submenu || root.role == MenuRole.chosen;
+    property <bool> swatches: root.swatch-id != "";
+    // A slider's track: ten cells in a fixed share of the row, each a whole
+    // number of pixels, so the fill moves a cell at a time and stays sharp.
+    // Where the track's middle is: a click left of it steps down, right of
+    // it up.
+    out property <length> track-mid: root.control-x + root.track-w / 2;
+    property <length> cell-gap: Math.max(1px, Sizing.stroke(1));
+    property <length> cell-w: Math.max(2px, Math.floor((root.width * 0.3 - 9 * root.cell-gap) / 10 / 1px) * 1px);
+    property <length> cell-h: Sizing.pct-h(2.6);
+    property <length> track-w: 10 * root.cell-w + 9 * root.cell-gap;
+    // The control at the right edge: a toggle switch, the swatches, or the
+    // slider's track. A check or chevron sits just inside it, or at the
+    // edge with none.
+    property <length> control-w: root.toggle ? root.knob-h * 1.85
+        : root.slider ? root.track-w
+        : root.swatches ? 3 * root.swatch-size + 2 * root.swatch-gap
+        : 0px;
+    property <length> control-x: root.width - root.pad - root.control-w;
+    property <length> mark-x: root.width - root.pad - root.mark
+        - (root.control-w > 0px ? root.control-w + root.gap : 0px);
+    // Where the text before the controls stops.
+    property <length> value-end: root.marked ? root.mark-x - root.gap
+        : root.control-w > 0px ? root.control-x - root.gap
+        : root.width - root.pad;
+    property <bool> option: root.role != MenuRole.header && root.role != MenuRole.action;
+
+    if root.role == MenuRole.header: Text {
+        x: root.pad;
+        y: root.height - self.height - Sizing.pct-h(0.8);
+        width: Math.max(0px, root.width - 2 * root.pad);
+        text: root.name;
+        color: Theme.text-label;
+        font-size: Sizing.font-caption;
+        font-weight: FontWeight.semi-bold;
+        overflow: elide;
+    }
+    if root.role == MenuRole.header: Divider {
+        x: 0;
+        y: root.height - self.height;
+    }
+    // An action is set apart: centered, in the accent, as a Settings
+    // action row.
+    if root.role == MenuRole.action: Text {
+        x: root.pad;
+        width: Sizing.even(Math.max(0px, root.width - 2 * root.pad));
+        height: root.height;
+        text: root.name;
+        color: root.ink-action;
+        font-size: Sizing.font-body;
+        font-weight: root.weight;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+
+    value-text := Text {
+        visible: root.option && root.value != "";
+        x: Sizing.snap(root.value-end - self.width);
+        y: Sizing.snap((root.height - self.height) / 2);
+        width: Math.min(self.preferred-width, Math.max(0px, (root.width - 2 * root.pad) * 0.5));
+        text: root.value;
+        color: root.ink-muted;
+        font-size: Sizing.font-body;
+        font-weight: root.weight;
+        overflow: elide;
+    }
+    if root.option: Text {
+        x: root.pad;
+        y: Sizing.snap((root.height - self.height) / 2);
+        width: Math.max(0px, (root.value != "" ? value-text.x - root.gap : root.value-end) - root.pad);
+        text: root.name;
+        color: root.ink;
+        font-size: Sizing.font-body;
+        font-weight: root.weight;
+        overflow: elide;
+    }
+
+    if root.marked: Image {
+        x: root.mark-x;
+        y: Sizing.snap((root.height - self.height) / 2);
+        width: root.mark;
+        height: self.width;
+        source: GlyphSource.glyph(root.role == MenuRole.chosen ? "icons/Check" : "icons/NavRight",
+            Math.max(1px, self.width), root.role == MenuRole.chosen ? root.ink : root.ink-muted);
+        image-rendering: Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
+    }
+    if root.slider: Rectangle {
+        x: root.control-x;
+        y: Sizing.snap((root.height - root.cell-h) / 2);
+        width: root.track-w;
+        height: root.cell-h;
+        for n in 10: Rectangle {
+            property <bool> lit: root.level > n * 10 || (n == 0 && root.level > 0);
+            property <color> ink: root.selected ? Theme.on-accent : Theme.accent;
+            x: n * (root.cell-w + root.cell-gap);
+            width: root.cell-w;
+            height: root.cell-h;
+            border-radius: Sizing.radius-sm;
+            // A lit cell is solid and an unlit one is an outline, so the
+            // level reads by shape on any fill, selected or not, not by
+            // two colors that can sit close together.
+            background: self.lit ? self.ink : transparent;
+            border-width: Sizing.stroke(1);
+            border-color: self.lit ? self.ink : (root.selected ? Theme.on-accent : Theme.text-label);
+        }
+    }
+    if root.toggle: ToggleSwitch {
+        x: root.control-x;
+        y: Sizing.snap((root.height - self.height) / 2);
+        knob-h: root.knob-h;
+        level: root.role == MenuRole.toggle-on ? 2 : 0;
+        focused: root.selected;
+        fill-color: root.fill-color;
+    }
+    if root.swatches: Rectangle {
+        x: root.control-x;
+        y: Sizing.snap((root.height - self.height) / 2);
+        width: root.control-w;
+        height: root.swatch-size;
+        for n in 3: Rectangle {
+            x: n * (root.swatch-size + root.swatch-gap);
+            width: root.swatch-size;
+            height: root.swatch-size;
+            background: Theme.preview-color(root.swatch-id, n);
+            border-width: Sizing.stroke(1);
+            border-color: root.ink-muted;
+        }
+    }
+}
+
+// One row of a `ListViewport`: the body at rest, the same body inverted
+// and clipped to the selection fill, and the pointer. The fill values come
+// from the viewport the row sits in.
+export component ListRow inherits Rectangle {
+    in property <MenuRole> role: MenuRole.option;
+    in property <string> name;
+    in property <string> value;
+    in property <string> swatch-id;
+    // A slider's value, 0 to 100.
+    in property <int> level: 0;
+    // Muted, never hidden: a row that cannot act stays, in the label color.
+    in property <bool> enabled: true;
+    // The name in the accent at rest: a row that makes something, such as
+    // a backup or a new entry, among rows that pick one.
+    in property <bool> accent: false;
+    in property <length> fill-top;
+    in property <length> fill-bottom;
+    in property <color> fill;
+    in property <color> content;
+    in property <color> content-muted;
+    callback hovered();
+    callback clicked();
+    // A click on a slider row: -1 steps down, +1 up.
+    callback slid(int);
+
+    property <bool> lit: root.fill-bottom > root.y && root.fill-top < root.y + root.height;
+
+    body := ListRowBody {
+        role: root.role;
+        name: root.name;
+        value: root.value;
+        swatch-id: root.swatch-id;
+        level: root.level;
+        ink: !root.enabled ? Theme.text-label : root.accent ? Theme.accent : Theme.text-primary;
+        ink-muted: Theme.text-label;
+        ink-action: Theme.accent;
+        weight: FontWeight.normal;
+    }
+    if root.lit && root.role != MenuRole.header: SelectionClip {
+        row-top: root.y;
+        row-height: root.height;
+        fill-top: root.fill-top;
+        fill-bottom: root.fill-bottom;
+        fill: root.fill;
+        ListRowBody {
+            role: root.role;
+            name: root.name;
+            value: root.value;
+            swatch-id: root.swatch-id;
+            level: root.level;
+            ink: root.enabled ? root.content : root.content-muted;
+            ink-muted: root.content-muted;
+            ink-action: root.content;
+            selected: true;
+            fill-color: root.fill;
+            weight: FontWeight.medium;
+        }
+    }
+    if root.role != MenuRole.header: TouchArea {
+        mouse-cursor: pointer;
+        changed has-hover => { if (self.has-hover) { root.hovered(); } }
+        clicked => {
+            if (root.role == MenuRole.slider) {
+                if (root.enabled) { root.slid(self.mouse-x < body.track-mid ? -1 : 1); }
+            } else {
+                root.clicked();
+            }
+        }
+    }
+}
+
+// A list panel's rows: a window of them in the reserved band between two
+// scroll cues, the selection fill traveling over them, and the window
+// moving as the selection reaches its edge. Rows are the children; each
+// is placed at `(index - top) * stride` (or at its slot, windowed) and
+// given the fill values. With `glide` the window slides to its new place;
+// a windowed list, which builds only the rows on screen, snaps instead.
+export component ListViewport inherits Rectangle {
+    in property <int> count;
+    in property <int> current;
+    // A change of list (a new page of the panel) starts at the top.
+    in property <string> scope;
+    in property <length> max-viewport: Sizing.pct-h(60);
+    in property <bool> glide: true;
+    in property <bool> press-held;
+    // A toggle row answers with its knob, so it does not flash.
+    in property <bool> flash-enabled: true;
+    // The row above the current one is a section header, which comes into
+    // view with it.
+    in property <bool> current-under-header: false;
+
+    out property <length> row-h: Sizing.pct-h(7);
+    out property <length> row-sp: Sizing.pct-h(1);
+    out property <length> stride: root.row-h + root.row-sp;
+    out property <int> visible-rows: Math.max(1, Math.min(root.count,
+        Math.floor((root.max-viewport + root.row-sp) / root.stride)));
+    property <bool> scrollable: root.count > root.visible-rows;
+    property <length> arrow: GlyphSource.side(Sizing.pct-h(3));
+    out property <length> arrow-band: root.scrollable ? root.arrow + Sizing.pct-h(0.5) : 0px;
+    out property <length> viewport-h: root.count == 0 ? 0px
+        : root.visible-rows * root.row-h + Math.max(0, root.visible-rows - 1) * root.row-sp;
+    // Preserve the window until the selection crosses its edge.
+    out property <int> top: 0;
+    out property <length> fill-top: sel.fill-top;
+    out property <length> fill-bottom: sel.fill-bottom;
+    out property <color> fill: sel.fill;
+    out property <color> content: sel.content;
+    out property <color> content-muted: sel.content-muted;
+
+    function reveal-current() {
+        root.top = Math.max(0, Math.min(Math.max(0, root.count - root.visible-rows),
+            Math.min(root.current - (root.current-under-header ? 1 : 0),
+                Math.max(root.top, root.current - root.visible-rows + 1))));
+    }
+    changed current => { root.reveal-current(); }
+    changed visible-rows => { root.reveal-current(); }
+    changed count => { root.reveal-current(); }
+    changed scope => { root.top = 0; root.reveal-current(); }
+    init => { root.reveal-current(); }
+
+    height: root.viewport-h + 2 * root.arrow-band;
+
+    // Both cues stand while the list scrolls at all, and the spent one
+    // dims. See docs/style.md, "Spent cues".
+    if root.scrollable: ScrollCue {
+        x: Sizing.snap((root.width - self.width) / 2);
+        y: 0;
+        glyph: "icons/ScrollUp";
+        live: root.top > 0;
+    }
+    // The rows glide to a new window instead of jumping; the fill travels
+    // with them, as the Settings card scrolls. A wrap from one end to the
+    // other is more than a viewport and snaps.
+    list-scroll := ScrollOffset {
+        target: root.top * root.stride;
+        step: root.viewport-h;
+        reveal: true;
+        duration: Motion.scroll-ms;
+        viewport: root.viewport-h;
+        scope: root.scope + ":" + Motion.epoch;
+    }
+    Rectangle {
+        x: 0;
+        y: root.arrow-band;
+        width: root.width;
+        height: root.viewport-h;
+        clip: true;
+
+        Rectangle {
+            y: root.glide ? root.top * root.stride - list-scroll.offset : 0px;
+            height: parent.height;
+
+            sel := SelectionCursor {
+                press-held: root.press-held;
+                flash-enabled: root.flash-enabled;
+                target: { x: 0px, y: (root.current - root.top) * root.stride,
+                    w: parent.width, h: root.row-h, column: 0, row: root.current,
+                    scope: root.scope + ":" + root.top,
+                    valid: root.current >= 0 && root.current < root.count };
+            }
+            @children
+        }
+    }
+    if root.scrollable: ScrollCue {
+        x: Sizing.snap((root.width - self.width) / 2);
+        y: root.arrow-band + root.viewport-h + root.arrow-band - self.height;
+        glyph: "icons/ScrollDown";
+        live: root.top + root.visible-rows < root.count;
+    }
+}
