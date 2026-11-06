@@ -452,9 +452,57 @@ fn adv_arg<'a>(args: &'a str, key: &str) -> Option<&'a str> {
         .find_map(|pair| pair.strip_prefix(key)?.strip_prefix('='))
 }
 
-/// `run` with a background `**playlist.*` script; `None` for anything
-/// else, which the primary-slot launch simulation takes.
+/// Split a script on `||` outside inline JSON, as Core's parser does.
+fn commands(script: &str) -> Vec<&str> {
+    let bytes = script.as_bytes();
+    let (mut parts, mut start, mut depth, mut quoted, mut i) = (Vec::new(), 0, 0, false, 0);
+    while i < bytes.len() {
+        match bytes[i] {
+            b'\\' if quoted => i += 1,
+            b'"' => quoted = !quoted,
+            b'{' | b'[' if !quoted => depth += 1,
+            b'}' | b']' if !quoted => depth -= 1,
+            b'|' if !quoted && depth == 0 && bytes.get(i + 1) == Some(&b'|') => {
+                parts.push(&script[start..i]);
+                start = i + 2;
+                i += 1;
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    parts.push(&script[start..]);
+    parts
+}
+
+/// `run` with background `**playlist.*` commands, chained with `||`;
+/// `None` for anything else, which the primary-slot launch simulation takes.
 pub fn run(script: &str, notifier: &Notifier) -> Option<Result<Value, String>> {
+    let parts = commands(script);
+    if parts.len() > 1 && !parts.iter().all(|part| run_checked(part)) {
+        return None;
+    }
+    let mut result = None;
+    for part in parts {
+        let one = run_one(part, notifier)?;
+        let failed = one.is_err();
+        result = Some(one);
+        if failed {
+            break;
+        }
+    }
+    result
+}
+
+/// Whether one command is a background playlist command.
+fn run_checked(script: &str) -> bool {
+    script.starts_with("**playlist.")
+        && script
+            .split(['?', '&'])
+            .any(|pair| pair == "slot=background" || pair == "slot=bg")
+}
+
+fn run_one(script: &str, notifier: &Notifier) -> Option<Result<Value, String>> {
     let rest = script.strip_prefix("**playlist.")?;
     let (command, rest) = rest
         .split_once(['?', ':'])
@@ -514,7 +562,24 @@ pub fn run(script: &str, notifier: &Notifier) -> Option<Result<Value, String>> {
             if moved.is_none() {
                 return Some(Err("no such playlist item".into()));
             }
-            play_current(notifier);
+            // As in Core, a paused playlist only moves its place; a playing
+            // one launches the item.
+            if with(|p| p.playlist.as_ref().is_some_and(|l| l.playing)) {
+                play_current(notifier);
+            } else {
+                with(|p| {
+                    let item = p
+                        .playlist
+                        .as_ref()
+                        .and_then(|l| l.items.get(l.index).cloned());
+                    p.track = item;
+                    p.offset_ms = 0;
+                    p.since = None;
+                    p.generation += 1;
+                });
+                notify_playback(notifier);
+                notify_playlists(notifier);
+            }
         }
         _ => return Some(Err(format!("unknown playlist command {command}"))),
     }
@@ -596,7 +661,7 @@ fn play(arg: Option<&Value>, args: &str, notifier: &Notifier) -> Option<Result<V
         let open = with(|p| p.playlist.as_ref().map(|l| l.playing));
         match open {
             Some(false) => resume(notifier),
-            Some(true) => return run("**playlist.next?slot=background", notifier),
+            Some(true) => return run_one("**playlist.next?slot=background", notifier),
             None => return Some(Err("no playlist is open".into())),
         }
     }
@@ -726,6 +791,19 @@ pub fn update_settings(params: &Value) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_chain_splits_outside_inline_json() {
+        assert_eq!(
+            commands("**playlist.goto:2?slot=background||**playlist.play?slot=background"),
+            [
+                "**playlist.goto:2?slot=background",
+                "**playlist.play?slot=background"
+            ]
+        );
+        let json = r#"**playlist.play:{"name":"a||b"}?slot=background"#;
+        assert_eq!(commands(json), [json]);
+    }
 
     #[test]
     fn the_audio_index_lists_routes_then_folders_then_tracks() {

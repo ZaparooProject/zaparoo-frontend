@@ -148,7 +148,9 @@ async fn run_task(
     loop {
         let current = connection_rx.borrow_and_update().clone();
         if matches!(current, ConnectionState::Connected) {
-            seed_now(&client, &state).await;
+            while !seed_now(&client, &state).await
+                && matches!(*connection_rx.borrow(), ConnectionState::Connected)
+            {}
             loop {
                 tokio::select! {
                     notification = notifications_rx.recv() => {
@@ -290,7 +292,8 @@ async fn refresh_track(
     Ok(())
 }
 
-async fn seed_now(client: &Arc<Client>, state: &Arc<watch::Sender<BackgroundMediaState>>) {
+/// Seed from `media`; false when the read failed.
+async fn seed_now(client: &Arc<Client>, state: &Arc<watch::Sender<BackgroundMediaState>>) -> bool {
     match client.media().await {
         Ok(media) => {
             state.send_if_modified(|s| {
@@ -299,10 +302,12 @@ async fn seed_now(client: &Arc<Client>, state: &Arc<watch::Sender<BackgroundMedi
                 *s != was
             });
             debug!("background_media: seeded from media query");
+            true
         }
         Err(e) => {
             warn!("background_media: media seed failed: {e}");
             sleep(SEED_RETRY_DELAY).await;
+            false
         }
     }
 }

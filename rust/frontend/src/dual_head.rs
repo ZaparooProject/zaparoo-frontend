@@ -218,7 +218,10 @@ fn mirror_music(primary: &App, crt: &App) {
         get_rail_index => set_rail_index,
         get_rail_letter => set_rail_letter,
     );
-    target.set_cover(source.get_cover());
+    let cover = source.get_cover();
+    if !same_image(&target.get_cover(), &cover) {
+        target.set_cover(cover);
+    }
     target.set_buttons(source.get_buttons());
     target.set_rail_fraction(source.get_rail_fraction());
     let sizing = crt.global::<crate::Sizing>();

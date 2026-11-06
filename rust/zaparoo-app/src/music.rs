@@ -342,6 +342,13 @@ pub fn transport_command(control: Control, now: &Now) -> Option<Command> {
         Control::PlayPause if now.has_playlist => {
             if now.playing() {
                 playlist_command("pause")
+            } else if now.playlist_playing
+                && now.playback == Playback::Paused
+                && now.offers("toggle_pause")
+            {
+                // Paused outside the playlist (for a game): `play` would
+                // skip, so resume the track itself.
+                Command::Control("toggle_pause")
             } else {
                 // With no argument, play resumes the open playlist. Sent
                 // only while it is paused: on a playing one it skips.
@@ -782,6 +789,20 @@ mod tests {
         assert_eq!(
             stop_command(&now),
             Some(Command::Run("**playlist.stop?slot=background".into()))
+        );
+    }
+
+    #[test]
+    fn a_track_paused_outside_the_playlist_resumes_as_a_track() {
+        let now = Now {
+            playlist_playing: true,
+            playback: Playback::Paused,
+            controls: vec!["toggle_pause".into()],
+            ..playlist_now()
+        };
+        assert_eq!(
+            transport_command(Control::PlayPause, &now),
+            Some(Command::Control("toggle_pause"))
         );
     }
 
