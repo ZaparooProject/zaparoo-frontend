@@ -3558,6 +3558,13 @@ pub(crate) fn launch_first(ctx: &Ctx, app: &App, candidates: Vec<String>, name: 
     if candidates.is_empty() {
         return;
     }
+    // Keyed off where this frontend runs: one on another machine, connected to
+    // a MiSTer's Core, is not the frontend on that MiSTer's console.
+    let candidates = if ctx.is_mister {
+        zaparoo_app::zapscript::attribute_update_all(candidates)
+    } else {
+        candidates
+    };
     crate::perf::mark("launch-press", "");
     crate::hub_covers::record_browse_page(ctx);
     // The tile the user pressed stays pressed until Core answers, so the
