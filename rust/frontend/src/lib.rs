@@ -734,9 +734,9 @@ fn run_application(
     let hdmi_framebuffer_size = if visual_crt {
         hdmi_framebuffer_size
     } else {
-        let resolved =
-            mister::video_mode::resolve(config.video_explicit.then_some(hdmi_framebuffer_size));
-        if !resolved.explicit_applied {
+        let requested = config.video_explicit.then_some(hdmi_framebuffer_size);
+        let resolved = mister::video_mode::resolve(requested);
+        if resolved.saved_choice_unusable(requested) {
             persisted.settings.resolution.clear();
         }
         resolved.render
