@@ -40,6 +40,8 @@ pub enum Purpose {
     /// Settings > Appearance > Background image: an image, or a folder to
     /// pick one from.
     Background,
+    /// Settings > Appearance > Logo image: one image.
+    HeaderLogo,
 }
 
 impl Purpose {
@@ -393,6 +395,7 @@ pub(crate) fn open_hub_icon(ctx: &Ctx, app: &App, target: HubTarget, icon: &str)
             dir: String::new(),
             selected: String::new(),
             deck_id: String::new(),
+            header_logo: false,
         };
     }
     // Where it starts is decided off the event loop too: the icon's folder
@@ -456,6 +459,32 @@ pub(crate) fn open_background(ctx: &Ctx, app: &App) {
     });
 }
 
+/// Settings > Appearance > Logo image: images, from the current image's
+/// folder or the custom folder.
+pub(crate) fn open_header_logo(ctx: &Ctx, app: &App) {
+    let current = {
+        let mut shared = lock(&ctx.shared);
+        shared.file_browser = Model {
+            purpose: Some(Purpose::HeaderLogo),
+            mode: Mode::Images,
+            ticket: shared.file_browser.ticket,
+            ..Model::default()
+        };
+        shared.persist.file_browser = FileBrowserState {
+            mode: Mode::Images.as_str().to_string(),
+            header_logo: true,
+            ..FileBrowserState::default()
+        };
+        shared.persist.settings.header_logo_image.clone()
+    };
+    start(ctx, app, move |platform, custom_dir, mode| {
+        let dir = crate::background::picker_start(&current, Some(custom_dir.clone().into()))
+            .map(|dir| dir.to_string_lossy().into_owned())
+            .filter(|dir| is_dir(dir));
+        (read(platform, &custom_dir, dir, mode), Seat::Path(current))
+    });
+}
+
 /// Choose cover image… on a deck: images, from the custom folder.
 pub(crate) fn open_deck_cover(ctx: &Ctx, app: &App, deck_id: &str, source: crate::Screen) {
     {
@@ -485,14 +514,17 @@ pub(crate) fn open_deck_cover(ctx: &Ctx, app: &App, deck_id: &str, source: crate
 pub(crate) fn restore(ctx: &Ctx, app: &App) {
     let saved = lock(&ctx.shared).persist.file_browser.clone();
     let mode = Mode::parse(&saved.mode);
-    let purpose = if saved.deck_id.is_empty() {
+    let purpose = if saved.header_logo {
+        Purpose::HeaderLogo
+    } else if saved.deck_id.is_empty() {
         Purpose::for_mode(mode, saved.target.clone())
     } else {
         Purpose::DeckCover(saved.deck_id.clone(), crate::Screen::Hub)
     };
     // A folder pick has no tile yet; its cell is only where the new one
-    // lands. A deck's cover has no tile at all.
+    // lands. A deck's cover and the header logo have no tile at all.
     if saved.deck_id.is_empty()
+        && !saved.header_logo
         && !matches!(mode, Mode::Folders | Mode::ImageOrFolder)
         && crate::hub::edit_target_matching(ctx, app, &saved.target).is_none()
     {
@@ -1072,14 +1104,18 @@ fn leave(ctx: &Ctx, app: &App) {
         Some(Purpose::DeckCover(_, crate::Screen::Deck)) => {
             crate::games::enter_deck(ctx, app, crate::navigation::EntryMode::Restore);
         }
-        Some(Purpose::Background) => {
+        Some(purpose @ (Purpose::Background | Purpose::HeaderLogo)) => {
             lock(&ctx.shared).persist.active_screen = "settings".to_string();
             crate::router::save_persist(&ctx.shared);
             crate::settings::show_return(
                 ctx,
                 app,
                 crate::SettingsPage::Appearance,
-                "backgroundImage",
+                if purpose == Purpose::HeaderLogo {
+                    "headerLogoImage"
+                } else {
+                    "backgroundImage"
+                },
             );
         }
         Some(Purpose::HubFolder(_) | Purpose::DeckCover(..)) | None => {
@@ -1101,6 +1137,7 @@ fn pick(ctx: &Ctx, app: &App, path: &str) {
             return;
         }
         Some(Purpose::Background) => crate::settings::set_background_image(ctx, app, path),
+        Some(Purpose::HeaderLogo) => crate::settings::set_header_logo_image(ctx, app, path),
         Some(Purpose::DeckCover(deck_id, _)) => crate::decks::set_cover(
             ctx,
             app,
@@ -1128,7 +1165,7 @@ fn back(ctx: &Ctx, app: &App) {
         let purpose = lock(&ctx.shared).file_browser.purpose.clone();
         let folder_pick = matches!(purpose, Some(Purpose::HubFolder(_)));
         leave(ctx, app);
-        if matches!(purpose, Some(Purpose::Background)) {
+        if matches!(purpose, Some(Purpose::Background | Purpose::HeaderLogo)) {
             // `leave` has already gone back to Settings.
         } else if folder_pick {
             crate::hub::open_add_picker(ctx, app);
@@ -1205,7 +1242,7 @@ fn open_menu(ctx: &Ctx, app: &App) {
     let entries = match purpose {
         Some(Purpose::HubIcon(_)) => vec![crate::router::menu_row("file_default_icon")],
         Some(Purpose::Background) => vec![crate::router::menu_row("file_no_background")],
-        Some(Purpose::HubFolder(_) | Purpose::DeckCover(..)) | None => return,
+        Some(Purpose::HubFolder(_) | Purpose::DeckCover(..) | Purpose::HeaderLogo) | None => return,
     };
     crate::router::present_file_browser_menu(ctx, app, entries);
 }

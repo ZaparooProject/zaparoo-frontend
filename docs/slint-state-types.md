@@ -22,6 +22,7 @@ and consumers, the snapshot binary, and the MiSTer dual-head mirror/tests.
 | Dialogs | `DialogKind`, `ErrorKind`, `DialogButton`: kinds and decisions, separate from text payloads; first-time setup ends on Start media update and progress stays in the header |
 | Input | `PressOwner`, `ScrollAction`: delayed-accept ownership, overlay pointer dispatch and Details scroll commands |
 | Display | `Orientation`, `VideoStandard`: UI selection; orientation stays typed through scene sizing and live backend updates |
+| Header logo | `HeaderLogo` on `Brand.mode`: what the header and the screensaver show (the Zaparoo logo, the user's image, nothing). The persisted `header_logo` token is parsed by `zaparoo_app::branding::HeaderLogo` (unknown reads as `zaparoo`) and mapped explicitly; a custom image that fails to load publishes `zaparoo` |
 | Log upload | `LogPhase`: uploading, done, failed |
 | Manual | `ManualState`, `ManualFit`: Game Info's manual page (closed, loading, ready, too large, failed) and whether a page fits the box's width or sits wholly inside it |
 | Pairing | `PairPhase`: closed, starting, showing, paired, expired |

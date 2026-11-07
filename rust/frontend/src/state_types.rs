@@ -52,6 +52,16 @@ tokens!(ErrorKind {
     ImagePicker => "image_picker", Music => "music",
 });
 
+impl From<zaparoo_app::branding::HeaderLogo> for crate::HeaderLogo {
+    fn from(value: zaparoo_app::branding::HeaderLogo) -> Self {
+        match value {
+            zaparoo_app::branding::HeaderLogo::Zaparoo => Self::Zaparoo,
+            zaparoo_app::branding::HeaderLogo::Custom => Self::Custom,
+            zaparoo_app::branding::HeaderLogo::None => Self::None,
+        }
+    }
+}
+
 impl From<zaparoo_app::hub::Reason> for crate::DisabledReason {
     fn from(value: zaparoo_app::hub::Reason) -> Self {
         match value {

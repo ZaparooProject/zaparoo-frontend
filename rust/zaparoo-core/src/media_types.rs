@@ -1498,6 +1498,22 @@ pub struct AuthStatusResult {
     pub linked: bool,
 }
 
+/// `online.status`: whether this device is linked to an Online account and
+/// the account features Online last reported for it. `features_checked_at`
+/// is `None` until Core has had one successful answer from Online; an error
+/// on a later check leaves the last answer in place.
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct OnlineStatusResult {
+    /// Required: an answer without it is an error, which changes nothing,
+    /// where reading it as unlinked would revert a custom header logo.
+    pub linked: bool,
+    #[serde(default)]
+    pub features: Vec<String>,
+    #[serde(default)]
+    pub features_checked_at: Option<String>,
+}
+
 /// A `settings.auth.link*` status. The code and URLs come only with the
 /// link call's own answer and a local status poll; notifications omit them.
 #[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
@@ -1965,6 +1981,17 @@ mod tests {
         clippy::panic,
         reason = "tests should fail-fast on unexpected errors"
     )]
+
+    #[test]
+    fn online_status_requires_linked() {
+        assert!(serde_json::from_value::<super::OnlineStatusResult>(
+            serde_json::json!({ "features": [], "featuresCheckedAt": null })
+        )
+        .is_err());
+        let status: super::OnlineStatusResult =
+            serde_json::from_value(serde_json::json!({ "linked": false })).unwrap();
+        assert!(!status.linked);
+    }
 
     use super::{
         merged_root_view, BrowseEntry, HealthResult, IndexingStatusResponse, LauncherInfo,

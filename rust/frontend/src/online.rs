@@ -130,8 +130,31 @@ pub fn refresh(ctx: &Ctx, app: &App) {
                 Model::default()
             }
         };
+        // The header logo entitlement: only a successful answer changes
+        // it. An error, including a Core without the method, leaves it.
+        let branding = client
+            .online_status()
+            .await
+            .inspect_err(|error| {
+                tracing::debug!("reading Online status failed: {}", error.message);
+            })
+            .ok()
+            .map(|status| {
+                zaparoo_app::branding::entitlement(
+                    status.linked,
+                    &status.features,
+                    status.features_checked_at.as_deref(),
+                )
+            });
         let _ = weak.upgrade_in_event_loop(move |app| {
-            lock(&ctx.shared).online = model;
+            {
+                let mut shared = lock(&ctx.shared);
+                shared.online = model;
+                if let Some(branding) = branding {
+                    shared.branding = branding;
+                }
+            }
+            crate::settings::enforce_branding(&ctx, &app);
             crate::settings::reseat(&ctx, &app);
             crate::settings::refresh(&ctx, &app);
         });

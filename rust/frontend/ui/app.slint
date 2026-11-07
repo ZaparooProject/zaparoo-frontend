@@ -8,8 +8,8 @@
 // logic; forward orchestration lives in the router.
 
 import { Theme, Backdrop, GlassCard, Sizing, Motion, Layout } from "theme.slint";
-import { CoreUiKind, MenuRole, UserFlag, RenamePurpose, ContextPage, KeyKind, SearchZone, SearchPane, SearchScope, FileBrowserMode, MusicPage, MusicControl, PlaybackState, RepeatMode, MusicUnavailable, Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, StateTokens, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogButton, ErrorKind, ManualState, ManualFit, RaLoginStep, RaLoginStatus, LauncherPrefsPage, LauncherPrefsRowKind } from "state_types.slint";
-export { CoreUiKind, MenuRole, UserFlag, RenamePurpose, ContextPage, KeyKind, SearchZone, SearchPane, SearchScope, FileBrowserMode, MusicPage, MusicControl, PlaybackState, RepeatMode, MusicUnavailable, Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, DialogKind, DialogButton, ErrorKind, ManualState, ManualFit, RaLoginStep, RaLoginStatus, LauncherPrefsPage, LauncherPrefsRowKind }
+import { CoreUiKind, MenuRole, UserFlag, RenamePurpose, ContextPage, KeyKind, SearchZone, SearchPane, SearchScope, FileBrowserMode, MusicPage, MusicControl, PlaybackState, RepeatMode, MusicUnavailable, Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, StateTokens, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, HeaderLogo, DialogKind, DialogButton, ErrorKind, ManualState, ManualFit, RaLoginStep, RaLoginStatus, LauncherPrefsPage, LauncherPrefsRowKind } from "state_types.slint";
+export { CoreUiKind, MenuRole, UserFlag, RenamePurpose, ContextPage, KeyKind, SearchZone, SearchPane, SearchScope, FileBrowserMode, MusicPage, MusicControl, PlaybackState, RepeatMode, MusicUnavailable, Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, HeaderLogo, DialogKind, DialogButton, ErrorKind, ManualState, ManualFit, RaLoginStep, RaLoginStatus, LauncherPrefsPage, LauncherPrefsRowKind }
 import { FastScrollRail, GlyphSource, Brand, Buttons, HelpEntry, Status, HeaderBar, StatusLine, ProgressTrack, WaitCue, TopStatusStrip, FooterIndicator, ActiveLabel, HelpBar, SectionHeader, Divider, ScrollCue, ModalShell, QrPlate, StateCue } from "chrome.slint";
 import { GridCell, MarqueeCaption, PressableSurface, Tile, PagedGridView, PageStrip } from "tiles.slint";
 import { ScrollOffset, SelectionCursor, SelectionClip, FocusCursor } from "focus.slint";
@@ -2559,14 +2559,36 @@ component DialogModal inherits ModalShell {
 // then drifting DVD-style at 45° at one screen-width per 10 s. Per step
 // only the logo's own box repaints, so the software renderer's cost
 // stays tiny. Mounted fresh on every arm, so init state is always clean.
+// A custom logo bounces the same way at its header size; with no logo,
+// the clock bounces instead.
 component ScreensaverOverlay inherits Rectangle {
     background: black;
 
-    property <length> lh: Sizing.header-height;
-    property <length> lw: root.lh * Brand.aspect;
+    // The header's logo box.
+    property <length> box-h: Sizing.header-height;
+    property <length> box-w: root.box-h * Brand.aspect;
+    property <bool> clock: Brand.mode == HeaderLogo.none;
+    // The clock's box: the widest reading for the format, so the walk's
+    // edges never move as the digits change.
+    property <length> clock-w: Math.ceil(clock-measure.preferred-width / 1px) * 1px;
+    property <length> clock-h: Math.ceil(clock-measure.preferred-height / 1px) * 1px;
+    property <length> lw: root.clock
+        ? root.clock-w
+        : (Brand.mode == HeaderLogo.custom ? Brand.custom-width(root.box-w, root.box-h) : root.box-w);
+    property <length> lh: root.clock
+        ? root.clock-h
+        : (Brand.mode == HeaderLogo.custom ? Brand.custom-height(root.box-w, root.box-h) : root.box-h);
     // Always the on-dark variant: the backstop is solid black whatever
     // the preset.
-    property <image> logo: Brand.saver-logo(root.lw);
+    property <image> logo: Brand.mode == HeaderLogo.custom
+        ? Brand.custom-image(root.box-w, root.box-h)
+        : Brand.saver-logo(root.lw);
+
+    clock-measure := Text {
+        visible: false;
+        text: Shell.clock-sample;
+        font-size: Sizing.font-hero;
+    }
 
     // Float pixel positions; the Image rounds on paint. Start mirrors
     // the header logo so activation reads as the logo walking off.
@@ -2616,7 +2638,7 @@ component ScreensaverOverlay inherits Rectangle {
         }
     }
 
-    Image {
+    if !root.clock: Image {
         x: root.lx * 1px;
         y: root.ly * 1px;
         width: root.lw;
@@ -2624,6 +2646,18 @@ component ScreensaverOverlay inherits Rectangle {
         source: root.logo;
         image-fit: contain;
         image-rendering: Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
+    }
+    // Bitmap-font text starts on whole pixels.
+    if root.clock: Text {
+        x: Sizing.snap(root.lx * 1px);
+        y: Sizing.snap(root.ly * 1px);
+        width: root.lw;
+        height: root.lh;
+        text: Shell.clock-text;
+        // The backstop is black whatever the preset, like the logo's
+        // on-dark variant.
+        color: white;
+        font-size: Sizing.font-hero;
     }
 }
 

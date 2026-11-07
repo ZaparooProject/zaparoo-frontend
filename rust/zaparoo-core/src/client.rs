@@ -26,10 +26,10 @@ use crate::media_types::{
     MediaImageParams, MediaImageResult, MediaIndexParams, MediaLookupParams, MediaLookupResult,
     MediaMetaParams, MediaMetaResult, MediaMetaUpdateParams, MediaResult, MediaScrapeParams,
     MediaSearchParams, MediaSearchResult, MediaTagsParams, MediaTagsResult, MediaTagsUpdateParams,
-    MediaTagsUpdateResult, PairStartResult, PlaylistsUpdateParams, ReadersResult,
-    ReadersWriteParams, RemoteActivityResult, RunParams, ScrapersResult, ScrapingStatusResponse,
-    SettingsResult, SystemsParams, SystemsResult, TokensHistoryResult, TokensResult,
-    UpdateSettingsParams, VersionResult,
+    MediaTagsUpdateResult, OnlineStatusResult, PairStartResult, PlaylistsUpdateParams,
+    ReadersResult, ReadersWriteParams, RemoteActivityResult, RunParams, ScrapersResult,
+    ScrapingStatusResponse, SettingsResult, SystemsParams, SystemsResult, TokensHistoryResult,
+    TokensResult, UpdateSettingsParams, VersionResult,
 };
 use crate::transport::Transport;
 use crate::ui_events::{UiRespondParams, UiState};
@@ -888,6 +888,15 @@ impl Client {
         struct P {}
         self.call("settings.auth.unlink", &P {}).await?;
         Ok(())
+    }
+
+    /// The Online account link and the features Online last reported for
+    /// it. Core before the method existed answers method-not-found.
+    pub async fn online_status(&self) -> Result<OnlineStatusResult, ClientError> {
+        #[derive(Serialize)]
+        struct P {}
+        let val = self.call("online.status", &P {}).await?;
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
     }
 
     pub async fn settings_backup_status(&self) -> Result<BackupStatusResponse, ClientError> {

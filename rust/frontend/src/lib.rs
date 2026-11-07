@@ -304,6 +304,27 @@ pub(crate) fn set_live_orientation(app: &App, value: Orientation, framebuffer_si
     }
 }
 
+/// The background and header logo rows of `[settings]`.
+fn merge_image_settings(s: &mut persist::SettingsState, c: &zaparoo_core::config::SettingsConfig) {
+    if let Some(v) = &c.background_image {
+        s.background_image.clone_from(v);
+    }
+    if let Some(v) = &c.game_background {
+        s.game_background.clone_from(v);
+    }
+    s.background_blur = c.background_blur.unwrap_or(s.background_blur);
+    s.background_dim = c.background_dim.unwrap_or(s.background_dim);
+    if let Some(v) = &c.background_list_style {
+        s.background_list_style.clone_from(v);
+    }
+    if let Some(v) = &c.header_logo {
+        s.header_logo.clone_from(v);
+    }
+    if let Some(v) = &c.header_logo_image {
+        s.header_logo_image.clone_from(v);
+    }
+}
+
 /// Merge frontend.toml's durable settings over the tmpfs state snapshot;
 /// the config file wins at startup.
 fn merge_config_settings(
@@ -371,17 +392,7 @@ fn merge_config_settings(
     s.reduce_motion = c.reduce_motion.unwrap_or(s.reduce_motion);
     s.show_menu_row = c.show_menu_row.unwrap_or(s.show_menu_row);
     s.show_help_bar = c.show_help_bar.unwrap_or(s.show_help_bar);
-    if let Some(v) = &c.background_image {
-        s.background_image.clone_from(v);
-    }
-    if let Some(v) = &c.game_background {
-        s.game_background.clone_from(v);
-    }
-    s.background_blur = c.background_blur.unwrap_or(s.background_blur);
-    s.background_dim = c.background_dim.unwrap_or(s.background_dim);
-    if let Some(v) = &c.background_list_style {
-        s.background_list_style.clone_from(v);
-    }
+    merge_image_settings(s, c);
     if let Some(v) = &c.screensaver_timeout {
         s.screensaver_timeout.clone_from(v);
     }
@@ -484,30 +495,7 @@ fn fullscreen_requested(
         && !args.iter().any(|a| a == "--windowed")
 }
 
-/// CRT horizontal inset: fixed 12px total (6px per side), matching the
-/// Slint `crt-inset-w` in `app.slint`. The vertical inset stays at 5%.
-const CRT_INSET_W: f64 = 12.0;
-
-pub(crate) fn scene_size(
-    width: f64,
-    height: f64,
-    orientation: Orientation,
-    crt: bool,
-) -> (f64, f64) {
-    let inset_w = if crt { CRT_INSET_W } else { 0.0 };
-    let inset_h = if crt {
-        2.0 * (height * 0.05).round()
-    } else {
-        0.0
-    };
-    let safe_w = (width - inset_w).max(1.0);
-    let safe_h = (height - inset_h).max(1.0);
-    if matches!(orientation, Orientation::Cw | Orientation::Ccw) {
-        (safe_h, safe_w)
-    } else {
-        (safe_w, safe_h)
-    }
-}
+pub(crate) use sizing::scene_size;
 
 /// The effects `ZAPAROO_MOTION` turns off for this run. Read once: a
 /// comma-separated list of `zoom`, `cover-fade`, `rail`, `slides` and
@@ -830,6 +818,13 @@ fn run_application(
         true,
     );
     brand::register(&app);
+    // The logo setting applies as saved, before the first frame; Online
+    // only ever reverts it later (`settings::enforce_branding`).
+    brand::apply(
+        &app,
+        &persisted.settings.header_logo,
+        &persisted.settings.header_logo_image,
+    );
     app.global::<GlyphSource>()
         .on_raster(|key, px, tint, pixel_grid| {
             glyphs::render(key.as_str(), px.round().max(0.0) as u32, tint, pixel_grid)
@@ -2598,6 +2593,8 @@ mod tests {
             background_blur: 30,
             background_dim: -2,
             background_list_style: "solid".to_string(),
+            header_logo: "none".to_string(),
+            header_logo_image: "/media/fat/logo.png".to_string(),
             debug_logging: true,
             screensaver_timeout: "600".to_string(),
             media_image_type: "boxart".to_string(),

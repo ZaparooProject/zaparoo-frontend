@@ -46,8 +46,8 @@ mod generated {
 }
 use generated::{
     ActionStatus, AppCue, ControlKind, DialogButton, DialogKind, DisabledReason, ErrorKind,
-    GamesMode, LogPhase, OnlineLinkPhase, Orientation, PairPhase, RowKind, ScopeKind, Screen,
-    SettingsPage, SetupKind, SetupPicker, StatusKind, SystemsMode, VideoStandard,
+    GamesMode, HeaderLogo, LogPhase, OnlineLinkPhase, Orientation, PairPhase, RowKind, ScopeKind,
+    Screen, SettingsPage, SetupKind, SetupPicker, StatusKind, SystemsMode, VideoStandard,
 };
 use generated::{
     App, Backdrop, Brand, GlyphSource, GridCell, LetterBucket, MenuEntry, Sizing, Theme,
@@ -71,6 +71,10 @@ mod music_layout;
 mod state_types;
 
 #[path = "../brand.rs"]
+#[allow(
+    dead_code,
+    reason = "the app's logo loader; the snapshot tool loads synchronously"
+)]
 mod brand;
 #[path = "../fonts.rs"]
 mod fonts;
@@ -170,6 +174,7 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
         fonts::set_han_preference(&lang);
     }
     brand::register(&app);
+    fixture_logo(&app, screen);
     app.global::<GlyphSource>()
         .on_raster(|key, px, tint, pixel_grid| {
             glyphs::render(key.as_str(), px.round().max(0.0) as u32, tint, pixel_grid)
@@ -214,16 +219,13 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
     };
     app.window()
         .set_size(slint::PhysicalSize::new(logical_width, logical_height));
-    // The scene the App derives: the CRT path trims 5% from each edge.
-    let inset = |v: u32| {
-        if crt {
-            2.0 * (f64::from(v) * 0.05).round()
-        } else {
-            0.0
-        }
-    };
-    let scene_w = f64::from(logical_width) - inset(logical_width);
-    let scene_h = f64::from(logical_height) - inset(logical_height);
+    // The scene the App derives, with the same CRT safe-area insets.
+    let (scene_w, scene_h) = sizing::scene_size(
+        f64::from(width),
+        f64::from(height),
+        shell.get_orientation(),
+        crt,
+    );
     // ZAPAROO_SNAPSHOT_PROFILE renders an interface profile the host is
     // not: `handheld` is what a Steam Deck resolves `device` to, and it
     // changes page density, so the shapes only reproduce offline if the
@@ -1172,9 +1174,30 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
     // "dialog" renders the two-button decision dialog; "alert" renders
     // the one-button failure alert, both through the same vocabulary
     // the router drives.
-    if screen.ends_with("dialog") || screen.ends_with("alert") || screen.ends_with("notice") {
+    if screen.ends_with("dialog")
+        || screen.ends_with("alert")
+        || screen.ends_with("notice")
+        || screen.ends_with("logo-support")
+    {
         let overlays = app.global::<generated::Overlays>();
-        if screen.ends_with("notice") {
+        if screen.ends_with("logo-support") {
+            // "…-linked-logo-support" is a linked device without the
+            // feature; otherwise the device is unlinked.
+            overlays.set_dialog_kind(DialogKind::LogoSupport);
+            if screen.ends_with("linked-logo-support") {
+                overlays.set_dialog_arg("linked".into());
+                overlays.set_dialog_buttons(slint::ModelRc::new(slint::VecModel::from(vec![
+                    DialogButton::Ok,
+                ])));
+                overlays.set_dialog_focus(0);
+            } else {
+                overlays.set_dialog_buttons(slint::ModelRc::new(slint::VecModel::from(vec![
+                    DialogButton::Ok,
+                    DialogButton::LinkAccount,
+                ])));
+                overlays.set_dialog_focus(1);
+            }
+        } else if screen.ends_with("notice") {
             overlays.set_dialog_kind(DialogKind::Notice);
             overlays.set_dialog_buttons(slint::ModelRc::new(slint::VecModel::from(vec![
                 DialogButton::IUnderstand,
@@ -1439,6 +1462,54 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
     img.save(out).expect("write png");
     println!("wrote {out}");
     true
+}
+
+/// The header logo setting. `…logo-custom` shows a custom image, the one
+/// `ZAPAROO_SNAPSHOT_LOGO` names or a generated one; `…logo-none` and
+/// `…saver-clock` show no logo. `saver…` arms the screensaver over it.
+fn fixture_logo(app: &App, screen: &str) {
+    if screen.contains("logo-custom") {
+        let given = std::env::var("ZAPAROO_SNAPSHOT_LOGO").ok();
+        let path = given.clone().unwrap_or_else(|| {
+            // A wide badge: a filled rounded bar with a ring at its left,
+            // so its aspect and its fit inside the logo box both show.
+            let (w, h) = (360_u32, 120_u32);
+            let image = image::RgbaImage::from_fn(w, h, |x, y| {
+                let (fx, fy) = (x as f32 + 0.5, y as f32 + 0.5);
+                let r = h as f32 / 2.0;
+                let cx = if fx < r {
+                    r
+                } else if fx > w as f32 - r {
+                    w as f32 - r
+                } else {
+                    fx
+                };
+                if (fx - cx).hypot(fy - r) > r {
+                    return image::Rgba([0, 0, 0, 0]);
+                }
+                let ring = (fx - r).hypot(fy - r);
+                if (r * 0.45..r * 0.7).contains(&ring) {
+                    image::Rgba([255, 255, 255, 255])
+                } else {
+                    image::Rgba([230, 70, 40, 255])
+                }
+            });
+            let path = std::env::temp_dir()
+                .join(format!("zaparoo-snapshot-logo-{}.png", std::process::id()));
+            image.save(&path).expect("write logo");
+            path.to_string_lossy().into_owned()
+        });
+        brand::apply_now(app, &path);
+        if given.is_none() {
+            let _ = std::fs::remove_file(&path);
+        }
+    } else if screen.contains("logo-none") || screen.contains("saver-clock") {
+        app.global::<Brand>().set_mode(HeaderLogo::None);
+    }
+    if screen.trim_start_matches("crt-").starts_with("saver") {
+        app.global::<Shell>().set_saver_armed(true);
+        app.global::<Shell>().set_clock_sample("23:59".into());
+    }
 }
 
 /// Prepare a background through the real pipeline for this frame: a first
@@ -2118,16 +2189,12 @@ fn fixture_screen(screen: &str) -> Screen {
         || screen.contains("online-link")
     {
         Screen::Settings
-    } else if matches!(
-        screen,
-        "saver"
-            | "dialog"
-            | "alert"
-            | "config-alert"
-            | "notice"
-            | "calibration"
-            | "calibration-width"
-    ) {
+    } else if screen.trim_start_matches("crt-").starts_with("saver")
+        || matches!(
+            screen,
+            "dialog" | "alert" | "config-alert" | "notice" | "calibration" | "calibration-width"
+        )
+    {
         Screen::Hub
     } else if screen.contains("about") {
         Screen::About
@@ -2916,6 +2983,11 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
     // "…-settings-page-appearance": the Appearance page with a background
     // image set, so its Background section shows every row.
     let appearance = screen.contains("settings-page-appearance");
+    // "…-appearance-logo": a custom header logo, with the cursor on its
+    // image row. "…-appearance-locked": an account Online says cannot
+    // change the logo, with the cursor on the locked Logo row.
+    let logo_image = screen.contains("appearance-logo");
+    let logo_locked = screen.contains("appearance-locked");
     let inputs = sizing::Scene::of(app, scene_w, scene_h, crt).inputs();
     let derived = zaparoo_app::sizing::derive(&inputs);
     let view = app.global::<generated::SettingsView>();
@@ -2944,6 +3016,7 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
         ra_installed: ra && !ra_setup,
         ra_conflict: ra && !ra_setup,
         background_active: appearance,
+        header_logo_custom: logo_image,
     };
     // The card and its row heights, from the rule the driver uses.
     let geometry = rules::page_geometry(&inputs);
@@ -2969,6 +3042,7 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
                     let waits = (unlinked && rules::needs_online_link(id))
                         || (ra_setup && rules::needs_ra_install(id));
                     out.enabled = !waits;
+                    out.premium = logo_locked && zaparoo_app::branding::needs_entitlement(id);
                     match control {
                         Control::Toggle => {
                             out.checked = id == "showHidden"
@@ -3001,6 +3075,8 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
                                 "screensaverTimeout" => "300",
                                 "gameBackground" => "screenshot",
                                 "backgroundListStyle" => "glass",
+                                "headerLogo" if logo_image => "custom",
+                                "headerLogo" => "zaparoo",
                                 _ => "auto",
                             }
                             .into();
@@ -3026,6 +3102,10 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
                             if id == "backgroundImage" {
                                 out.value = "/media/fat/Wallpapers".into();
                                 out.value_name = "Wallpapers".into();
+                            }
+                            if id == "headerLogoImage" {
+                                out.value = "/media/fat/zaparoo/custom/arcade-logo.png".into();
+                                out.value_name = "arcade-logo.png".into();
                             }
                         }
                         Control::Slider => {
@@ -3082,8 +3162,17 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
             .and_then(|i| i32::try_from(i).ok())
             .unwrap_or(2)
     } else if appearance {
+        let focus = if logo_image {
+            "headerLogoImage"
+        } else if logo_locked && screen.ends_with("unfocused") {
+            "reduceMotion"
+        } else if logo_locked {
+            "headerLogo"
+        } else {
+            "backgroundDim"
+        };
         rows.iter()
-            .position(|row| row.id == "backgroundDim")
+            .position(|row| row.id == focus)
             .and_then(|i| i32::try_from(i).ok())
             .unwrap_or(2)
     } else if page {

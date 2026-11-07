@@ -62,6 +62,16 @@ pub fn version_response() -> Value {
     })
 }
 
+/// A linked account Online last checked successfully, entitled to a custom
+/// header logo, so a dev run shows the Logo rows unlocked.
+pub fn online_status_response() -> Value {
+    json!({
+        "linked": true,
+        "features": ["cloud_backup", "custom_branding"],
+        "featuresCheckedAt": "2026-01-01T00:00:00Z",
+    })
+}
+
 pub fn launchers_response() -> Value {
     json!({
         "launchers": [

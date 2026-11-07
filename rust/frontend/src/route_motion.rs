@@ -929,6 +929,149 @@ fn online_rows_follow_core_and_unlinking_asks_first() {
     assert!(crate::router::lock(&ctx.shared).online.linked);
 }
 
+/// The header logo setting applies as saved whatever is known; only a
+/// completed Online check without the feature locks its rows and puts the
+/// Zaparoo logo back, saving that.
+#[test]
+#[allow(clippy::expect_used, reason = "scratch config fixture")]
+fn a_known_missing_entitlement_locks_and_reverts_the_header_logo() {
+    use zaparoo_app::branding::Entitlement;
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, mut ctx) = offline_ctx();
+    let dir = std::env::temp_dir().join(format!("zaparoo-branding-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("scratch dir");
+    ctx.config_path = dir.join("frontend.toml");
+    app.global::<crate::Motion>().set_enabled(false);
+    app.global::<Shell>().set_active_screen(Screen::Settings);
+    crate::router::lock(&ctx.shared)
+        .persist
+        .settings
+        .header_logo = "none".into();
+    crate::settings::apply_header_logo(&ctx, &app);
+    let brand = app.global::<crate::Brand>();
+    assert_eq!(
+        brand.get_mode(),
+        crate::HeaderLogo::None,
+        "applies as saved"
+    );
+
+    for entitlement in [Entitlement::Unknown, Entitlement::Yes] {
+        crate::router::lock(&ctx.shared).branding = entitlement;
+        crate::settings::enforce_branding(&ctx, &app);
+        crate::settings::open_page(&ctx, &app, SettingsPage::Appearance);
+        assert_eq!(
+            crate::router::lock(&ctx.shared)
+                .persist
+                .settings
+                .header_logo,
+            "none"
+        );
+        assert_eq!(brand.get_mode(), crate::HeaderLogo::None);
+        assert!(settings_row(&app, "headerLogo").enabled);
+        assert!(!settings_row(&app, "headerLogo").premium);
+    }
+
+    crate::router::lock(&ctx.shared).branding = Entitlement::No;
+    crate::settings::enforce_branding(&ctx, &app);
+    crate::settings::open_page(&ctx, &app, SettingsPage::Appearance);
+    assert_eq!(
+        crate::router::lock(&ctx.shared)
+            .persist
+            .settings
+            .header_logo,
+        "zaparoo"
+    );
+    assert_eq!(brand.get_mode(), crate::HeaderLogo::Zaparoo);
+    let saved = std::fs::read_to_string(&ctx.config_path).expect("mirrored");
+    assert!(saved.contains("header_logo = \"zaparoo\""));
+    let row = settings_row(&app, "headerLogo");
+    assert!(row.enabled, "a locked row stays usable");
+    assert!(row.premium, "and carries the Pro badge");
+    assert_eq!(row.value, "zaparoo");
+    assert_eq!(settings_row(&app, "headerLogoImage").id, "");
+    // Accept on a locked row explains instead of opening the picker.
+    focus_settings_row(&app, "headerLogo");
+    crate::settings::handle_action(&ctx, &app, "accept");
+    let overlays = app.global::<crate::Overlays>();
+    assert!(!overlays.get_list_open());
+    assert!(overlays.get_dialog_open());
+    assert_eq!(overlays.get_dialog_kind(), DialogKind::LogoSupport);
+    // Unlinked: Link account sits beside OK, focused, and opens the link
+    // panel once the dialog closes.
+    let buttons: Vec<DialogButton> = overlays.get_dialog_buttons().iter().collect();
+    assert_eq!(buttons, [DialogButton::Ok, DialogButton::LinkAccount]);
+    assert_eq!(overlays.get_dialog_focus(), 1);
+    assert_eq!(overlays.get_dialog_arg(), "");
+    crate::router::close_dialog(&app);
+    // Linked: the copy says so, and OK is the only button.
+    crate::router::lock(&ctx.shared).online.linked = true;
+    crate::settings::handle_action(&ctx, &app, "accept");
+    let buttons: Vec<DialogButton> = overlays.get_dialog_buttons().iter().collect();
+    assert_eq!(buttons, [DialogButton::Ok]);
+    assert_eq!(overlays.get_dialog_arg(), "linked");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A custom logo is a paint-sized raster inside the logo box; a file that
+/// cannot be read shows the Zaparoo logo; no logo paints nothing.
+#[test]
+#[allow(clippy::expect_used, reason = "scratch image fixture")]
+fn a_custom_header_logo_fits_the_box_and_falls_back_to_zaparoo() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    crate::theme::apply_palette(&app, "zaparoo-dark", "normal");
+    let (width, height) = (960, 540);
+    window.set_size(slint::PhysicalSize::new(width, height));
+    let sizing = app.global::<Sizing>();
+    sizing.set_screen_width(width as f32);
+    sizing.set_screen_height(height as f32);
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(width), f64::from(height), false),
+    );
+    let dir = std::env::temp_dir().join(format!("zaparoo-custom-logo-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("scratch dir");
+    let square = dir.join("square.png");
+    image::RgbaImage::from_pixel(64, 64, image::Rgba([255, 0, 0, 255]))
+        .save(&square)
+        .expect("PNG");
+    crate::brand::apply_now(&app, &square.to_string_lossy());
+    let brand = app.global::<crate::Brand>();
+    assert_eq!(brand.get_mode(), crate::HeaderLogo::Custom);
+    let box_h = sizing.get_header_height();
+    let box_w = box_h * brand.get_aspect();
+    // A square image fills the box's height, not its width.
+    assert!((brand.invoke_custom_width(box_w, box_h) - box_h.round()).abs() < f32::EPSILON);
+    let image = brand.invoke_custom_image(box_w, box_h);
+    assert_eq!(
+        (image.size().width, image.size().height),
+        (box_h.round() as u32, box_h.round() as u32)
+    );
+    let capture = || {
+        let mut pixels = vec![Rgb565Pixel(0); (width * height) as usize];
+        window.request_redraw();
+        assert!(window.draw_if_needed(|renderer| {
+            renderer.render(&mut pixels, width as usize);
+        }));
+        pixels
+    };
+    let custom = capture();
+    let red = Rgb565Pixel(0xF800);
+    assert!(custom.iter().filter(|p| **p == red).count() > 100);
+    brand.set_mode(crate::HeaderLogo::None);
+    let none = capture();
+    assert!(none.iter().all(|p| *p != red));
+
+    let broken = dir.join("broken.png");
+    std::fs::write(&broken, b"not an image").expect("file");
+    crate::brand::apply_now(&app, &broken.to_string_lossy());
+    assert_eq!(brand.get_mode(), crate::HeaderLogo::Zaparoo);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 fn launcher(
     id: &str,
     system: &str,
@@ -12491,6 +12634,7 @@ fn a_folder_pick_restores_on_its_folder_after_a_kill() {
             dir: dir.clone(),
             selected: "_Favorites".into(),
             deck_id: String::new(),
+            header_logo: false,
         };
     }
     crate::file_browser::restore(&ctx, &app);
