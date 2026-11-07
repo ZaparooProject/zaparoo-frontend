@@ -398,7 +398,7 @@ export global SettingsLabels {
         // How many controllers Core lists as connected.
         if (id == "controllers") {
             if (value == "0") { return @tr("None connected"); }
-            return @tr("{} connected", value);
+            return @tr("{n} connected" | "{n} connected" % value.to-float());
         }
         if (id == "gameBackground") {
             if (value == "off") { return @tr("Off"); }

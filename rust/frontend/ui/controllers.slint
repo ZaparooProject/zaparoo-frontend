@@ -270,7 +270,7 @@ export component ControllersPanel inherits Rectangle {
     if ControllersView.overflow > 0: Text {
         x: parent.width - self.width - Sizing.pct-w(2);
         y: ControllersView.status-y + Sizing.pct-h(1.5);
-        text: @tr("+{} more", ControllersView.overflow);
+        text: @tr("+{n} more" | "+{n} more" % ControllersView.overflow);
         color: Theme.text-label;
         font-size: Sizing.font-body;
     }

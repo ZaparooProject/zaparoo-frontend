@@ -16,7 +16,7 @@
 
 use slint::{ComponentHandle, SharedString};
 use zaparoo_app::controllers::{
-    self as rules, Battery, Label, PageLayout, PairSession, Sighting, Slots,
+    self as rules, Battery, Label, PageLayout, PairSession, PairedOrder, Sighting, Slots,
 };
 use zaparoo_app::settings::Row;
 use zaparoo_core::device::{BluetoothDevice, Controller, ACTION_BLUETOOTH_PAIR};
@@ -46,9 +46,7 @@ struct Session {
     pair: PairSession,
     slots: Slots,
     overflow: usize,
-    /// The Paired controllers page's order: as first seen, newly paired
-    /// devices appended, forgotten ones dropped.
-    paired: Vec<String>,
+    paired: PairedOrder,
 }
 
 impl Model {
@@ -99,7 +97,7 @@ impl Model {
         inputs.can_pair_controllers = self.can_pair();
         if let Some(session) = &self.session {
             inputs.bluetooth_found = session.pair.found().len();
-            inputs.bluetooth_paired = session.paired.len();
+            inputs.bluetooth_paired = session.paired.ids().len();
         }
     }
 
@@ -138,23 +136,12 @@ impl Model {
             .filter(|d| d.paired)
             .map(|d| d.id.as_str())
             .collect();
-        // An adapter that is off or gone lists nothing, which says nothing
-        // about what is paired: BlueZ lists them again once it is back. Only
-        // a powered adapter's list drops a row, so the cursor on one stays
-        // put through a dongle reset.
         let listing = self
             .device
             .bluetooth_devices
             .as_ref()
             .is_some_and(|s| s.powered);
-        if listing {
-            session.paired.retain(|id| paired.contains(&id.as_str()));
-        }
-        for id in paired {
-            if !session.paired.iter().any(|p| p == id) {
-                session.paired.push(id.to_string());
-            }
-        }
+        session.paired.observe(&paired, listing);
         self.session = Some(session);
     }
 
@@ -220,6 +207,7 @@ impl Model {
         };
         let entries: Vec<(Option<&str>, Option<&str>)> = session
             .paired
+            .ids()
             .iter()
             .map(|id| {
                 let name = self.device(id).and_then(|d| {
@@ -253,6 +241,7 @@ impl Model {
                 ..
             } => session
                 .paired
+                .ids()
                 .get(index)
                 .map_or_else(String::new, |id| format!("paired:{id}")),
             _ => row.id().to_string(),
@@ -282,7 +271,7 @@ impl Model {
                 }
             }
             "pairedDevice" => {
-                let Some(id) = session.paired.get(index) else {
+                let Some(id) = session.paired.ids().get(index) else {
                     return;
                 };
                 put(out, self.paired_labels().get(index));
@@ -480,16 +469,16 @@ pub(crate) fn changed(ctx: &Ctx, app: &App, state: DeviceState) {
     shell.set_controller_batteries(slint::ModelRc::new(slint::VecModel::from(header_pads(
         controllers,
     ))));
-    let mut switched_on = false;
+    let mut ready = false;
     crate::settings::live_update(ctx, app, |model| {
-        let was_off = model.bluetooth_off();
+        let was_ready = model.can_pair() && !model.bluetooth_off();
         model.device = state;
         model.observe();
-        switched_on = was_off && !model.bluetooth_off() && model.session.is_some();
+        ready = !was_ready && model.can_pair() && !model.bluetooth_off() && model.session.is_some();
     });
-    // The adapter came on while the page is open: search now rather than
-    // at the next renewal.
-    if switched_on {
+    // The page is open and Core can now pair (an adapter appeared or came
+    // on): search now rather than at the next renewal.
+    if ready {
         start_scan(ctx, app, false);
     }
     schedule_retry(ctx, app);
@@ -518,7 +507,9 @@ fn request<T, F, Fut>(
 }
 
 /// The Controls page's Controllers row: open the page, and start the
-/// search where Core can pair.
+/// search where Core can pair. The renewal runs either way: it does
+/// nothing until Core can pair, and it ends the session once the page is
+/// left.
 pub(crate) fn open_controllers(ctx: &Ctx, app: &App) {
     let (ticket, can_pair) = {
         let mut shared = lock(&ctx.shared);
@@ -534,8 +525,8 @@ pub(crate) fn open_controllers(ctx: &Ctx, app: &App) {
     crate::settings::navigate_page(ctx, app, crate::SettingsPage::Controllers);
     if can_pair {
         start_scan(ctx, app, false);
-        renew_while_open(ctx, app, ticket);
     }
+    renew_while_open(ctx, app, ticket);
 }
 
 /// Ask Core to search, or to keep searching (`renewal`). A repeat request
@@ -808,7 +799,7 @@ pub(crate) fn open_options(ctx: &Ctx, app: &App, index: usize) {
             .controllers
             .session
             .as_ref()
-            .and_then(|s| s.paired.get(index))
+            .and_then(|s| s.paired.ids().get(index))
         else {
             return;
         };
@@ -836,7 +827,7 @@ pub(crate) fn forget_picked(ctx: &Ctx, app: &App, id: &str) {
         let Some(index) = model
             .session
             .as_ref()
-            .and_then(|s| s.paired.iter().position(|p| p == id))
+            .and_then(|s| s.paired.ids().iter().position(|p| p == id))
         else {
             return;
         };
@@ -1022,35 +1013,6 @@ mod tests {
         };
         assert_eq!(key(&m, 0), "found:A");
         assert_eq!(key(&m, 1), "found:B");
-    }
-
-    #[test]
-    fn paired_rows_ride_out_an_adapter_reset_and_a_forget_drops_one() {
-        let mut m = model(
-            Vec::new(),
-            vec![device("A", "A", true), device("B", "B", true)],
-        );
-        open(&mut m);
-        let paired = |m: &Model| m.session.as_ref().map(|s| s.paired.clone());
-        // The dongle drops off the bus: Core reports it off with nothing on it.
-        m.device.bluetooth_devices = Some(BluetoothState::default());
-        m.observe();
-        assert_eq!(paired(&m), Some(vec!["A".into(), "B".into()]));
-        // Back again, BlueZ lists them in its own order; the page keeps its.
-        m.device.bluetooth_devices = Some(BluetoothState {
-            powered: true,
-            devices: vec![device("B", "B", true), device("A", "A", true)],
-            ..BluetoothState::default()
-        });
-        m.observe();
-        assert_eq!(paired(&m), Some(vec!["A".into(), "B".into()]));
-        m.device.bluetooth_devices = Some(BluetoothState {
-            powered: true,
-            devices: vec![device("B", "B", true)],
-            ..BluetoothState::default()
-        });
-        m.observe();
-        assert_eq!(paired(&m), Some(vec!["B".into()]));
     }
 
     #[test]

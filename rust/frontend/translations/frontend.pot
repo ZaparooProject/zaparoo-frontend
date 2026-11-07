@@ -2,7 +2,7 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: frontend VERSION\n"
-"POT-Creation-Date: 2026-11-07 05:33+0000\n"
+"POT-Creation-Date: 2026-11-07 06:06+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -1028,8 +1028,10 @@ msgid "Put your controller in pairing mode. It shows up here."
 msgstr ""
 
 #: rust/frontend/ui/controllers.slint:273
-msgid "+{} more"
-msgstr ""
+msgid "+{n} more"
+msgid_plural "+{n} more"
+msgstr[0] ""
+msgstr[1] ""
 
 #: rust/frontend/ui/file_browser.slint:252 rust/frontend/ui/music.slint:556
 msgid "This folder can't be opened."
@@ -3387,8 +3389,10 @@ msgid "None connected"
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:401
-msgid "{} connected"
-msgstr ""
+msgid "{n} connected"
+msgid_plural "{n} connected"
+msgstr[0] ""
+msgstr[1] ""
 
 #: rust/frontend/ui/settings.slint:409
 msgid "No dimming"

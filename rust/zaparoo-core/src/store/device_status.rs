@@ -193,6 +193,10 @@ fn replace<T: PartialEq>(slot: &mut T, value: T) -> bool {
     true
 }
 
+/// How long to wait before asking for `device.status` again after Core
+/// did not answer it (a timeout or a `busy` refusal).
+const RESEED_AFTER: std::time::Duration = std::time::Duration::from_secs(5);
+
 async fn run_task(
     client: Arc<Client>,
     mut connection_rx: watch::Receiver<ConnectionState>,
@@ -202,7 +206,7 @@ async fn run_task(
     loop {
         let current = connection_rx.borrow_and_update().clone();
         if matches!(current, ConnectionState::Connected) {
-            seed(&client, &state).await;
+            let mut reseed = seed(&client, &state).await.then(retry_at);
             loop {
                 tokio::select! {
                     notification = notifications_rx.recv() => {
@@ -211,15 +215,20 @@ async fn run_task(
                                 match fold_notification(&n, &state) {
                                     Refresh::Nothing => {}
                                     Refresh::Devices => seed_bluetooth(&client, &state).await,
-                                    Refresh::Status => seed(&client, &state).await,
+                                    Refresh::Status => {
+                                        reseed = seed(&client, &state).await.then(retry_at);
+                                    }
                                 }
                             }
                             Err(broadcast::error::RecvError::Lagged(skipped)) => {
                                 warn!(skipped, "device: notifications lagged; re-seeding");
-                                seed(&client, &state).await;
+                                reseed = seed(&client, &state).await.then(retry_at);
                             }
                             Err(broadcast::error::RecvError::Closed) => return,
                         }
+                    }
+                    () = wait_until(reseed) => {
+                        reseed = seed(&client, &state).await.then(retry_at);
                     }
                     changed = connection_rx.changed() => {
                         if changed.is_err() {
@@ -240,11 +249,37 @@ async fn run_task(
     }
 }
 
-async fn seed(client: &Arc<Client>, state: &Arc<watch::Sender<DeviceState>>) {
+fn retry_at() -> tokio::time::Instant {
+    tokio::time::Instant::now() + RESEED_AFTER
+}
+
+/// Wait for a pending re-seed, or forever when none is due.
+async fn wait_until(at: Option<tokio::time::Instant>) {
+    match at {
+        Some(at) => tokio::time::sleep_until(at).await,
+        None => std::future::pending().await,
+    }
+}
+
+/// Whether a failed request is worth asking again: Core did not answer
+/// (the link dropped or the request timed out) or refused for now
+/// (`busy`). Anything else is Core's answer, such as an older Core with no
+/// `device.*`.
+fn transient(e: &ClientError) -> bool {
+    e.is_transport() || e.is_busy()
+}
+
+/// Read `device.status` and then the Bluetooth list. Returns true when Core
+/// did not answer and the held state was kept, so the caller asks again.
+async fn seed(client: &Arc<Client>, state: &Arc<watch::Sender<DeviceState>>) -> bool {
     match client.device_status().await {
         Ok(status) => {
             state.send_modify(|s| s.apply_status(status));
             debug!("device: seeded from device.status");
+        }
+        Err(e) if transient(&e) => {
+            debug!("device: device.status not answered, asking again: {e}");
+            return true;
         }
         Err(e) => {
             // An older Core has no `device.*`: nothing to show, not an
@@ -256,10 +291,11 @@ async fn seed(client: &Arc<Client>, state: &Arc<watch::Sender<DeviceState>>) {
                     ..DeviceState::default()
                 };
             });
-            return;
+            return false;
         }
     }
     seed_bluetooth(client, state).await;
+    false
 }
 
 /// Ask for the Bluetooth device list where this Core can give one.
@@ -351,6 +387,12 @@ mod tests {
         let mut state = DeviceState::default();
         state.apply_status(status);
         Arc::new(watch::channel(state).0)
+    }
+
+    #[test]
+    fn an_unanswered_status_is_asked_again_and_an_answer_is_not() {
+        assert!(transient(&ClientError::transport("request timed out")));
+        assert!(!transient(&ClientError::plain("method not found")));
     }
 
     #[test]

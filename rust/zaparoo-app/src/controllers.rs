@@ -348,6 +348,36 @@ impl Slots {
     }
 }
 
+/// The Paired controllers page's order: as first seen, newly paired
+/// devices appended, forgotten ones dropped.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PairedOrder {
+    ids: Vec<String>,
+}
+
+impl PairedOrder {
+    /// Fold in the devices Core lists as paired now. An adapter that is off
+    /// or gone lists nothing, which says nothing about what is paired: `BlueZ`
+    /// lists them again once it is back. Only a powered adapter's list
+    /// (`listing`) drops a row, so the cursor on one stays put through a
+    /// dongle reset.
+    pub fn observe(&mut self, paired: &[&str], listing: bool) {
+        if listing {
+            self.ids.retain(|id| paired.contains(&id.as_str()));
+        }
+        for id in paired {
+            if !self.ids.iter().any(|p| p == id) {
+                self.ids.push((*id).to_string());
+            }
+        }
+    }
+
+    /// The page's rows, in order.
+    pub fn ids(&self) -> &[String] {
+        &self.ids
+    }
+}
+
 /// Core's latest pairing attempt, as it reports it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Attempt<'a> {
@@ -826,6 +856,22 @@ pub fn page_layout(inputs: &crate::sizing::Inputs) -> PageLayout {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn paired_rows_ride_out_an_adapter_reset_and_a_forget_drops_one() {
+        let mut order = PairedOrder::default();
+        order.observe(&["A", "B"], true);
+        // The dongle drops off the bus: Core reports it off with nothing on it.
+        order.observe(&[], false);
+        assert_eq!(order.ids(), ["A", "B"]);
+        // Back again, BlueZ lists them in its own order; the page keeps its.
+        order.observe(&["B", "A"], true);
+        assert_eq!(order.ids(), ["A", "B"]);
+        order.observe(&["B"], true);
+        assert_eq!(order.ids(), ["B"]);
+        order.observe(&["B", "C"], true);
+        assert_eq!(order.ids(), ["B", "C"]);
+    }
 
     #[test]
     fn a_row_reads_its_charge_or_says_wired() {
