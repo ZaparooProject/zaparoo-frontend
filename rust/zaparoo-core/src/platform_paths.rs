@@ -84,12 +84,12 @@ pub fn custom_dir() -> PathBuf {
 /// Frontend-owned cache directory — currently just the Hub/Resume
 /// cold-boot cover manifest (a path list, not image bytes; see
 /// `media_image_cache.rs`'s "Memory only — never disk" module doc, which
-/// stays true of the bytes themselves). On `MiSTer` this is a sibling of
-/// Core's own `cache/thumbs/` inside Core's existing cache root
-/// (`config.CacheDir` in the Core repo) — confirmed safe from Core's own
-/// cleanup, which only ever touches `cache/thumbs/*` and a handful of
-/// named `.gob`/`.json` files, and already excluded from Core's
-/// backup/sync policy (`cache/` is regenerable, never collected). Returned
+/// stays true of the bytes themselves). On `MiSTer` this lives inside
+/// Core's existing cache root (`config.CacheDir` in the Core repo), safe
+/// from Core's own cleanup: Core's thumbnails now live in its image folder
+/// (`images/thumbs/`), and in `cache/` it only touches a handful of named
+/// `.gob`/`.json` files. `cache/` is also excluded from Core's
+/// backup/sync policy (regenerable, never collected). Returned
 /// even when it does not exist on disk — callers create it on first
 /// write, same convention as `custom_dir`.
 pub fn cache_dir() -> PathBuf {

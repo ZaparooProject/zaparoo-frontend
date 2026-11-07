@@ -38,7 +38,10 @@ export enum MusicUnavailable { none, nothing-playing, no-playlist, not-supported
 // a category's systems, or a built-in list (which one is named beside the
 // scope). `none` is an unscoped search.
 export enum SearchScope { none, folder, system, category, list }
-export enum SettingsPage { root, appearance, library, online, display, controls, language, about }
+// `controllers` is the page the Controls page's Controllers row opens, and
+// `paired-controllers` the page its Paired controllers row opens in turn;
+// neither is a root tile.
+export enum SettingsPage { root, appearance, library, online, display, controls, language, about, controllers, paired-controllers }
 export enum ContentState { ready, loading, empty, error }
 // What Core's current UI event puts on screen (`ui` / `ui.changed`). A
 // confirmation uses the decision dialog, a loader and a notice the header
@@ -54,7 +57,33 @@ export enum AppCue {
 export enum BootStatus { connecting, starting, migrating, reconnecting, loading, unreachable }
 export enum DisabledReason { none, no-recent-games, no-internet, not-available, deck-missing }
 export enum RowKind { header, field }
-export enum ControlKind { none, picker, toggle, action, navigate, tri-toggle, info, slider }
+export enum ControlKind { none, picker, toggle, action, navigate, tri-toggle, info, slider, device }
+// What a controller card says about its power (`zaparoo_app::controllers::
+// Reading`), and where a Bluetooth device row stands: a found row's
+// pairing (`DeviceState`), or a paired row's connection
+// (`not-connected`). `none` is every other row.
+export enum DeviceValue {
+    none,
+    wired, charging, charging-percent, charged, percent, level-empty, level-low, level-medium, level-full, level-unknown,
+    found, pairing, paired, connected, not-connected, failed
+}
+// The Controllers page's search, for the status line over its found list
+// (`zaparoo_app::controllers::Search`, with the adapter read from Core's
+// device state).
+export enum PairSearch { searching, pairing, adapter-off, failed }
+// The charge a header pad glyph shows (`zaparoo_app::controllers::Fill`).
+export enum PadFill { empty, low, half, full }
+// One controller's battery in the header
+// (`zaparoo_app::controllers::HeaderPad`): its glyph's charge, a charging
+// mark after it, the warning color, and how many marks come before it.
+export struct HeaderPad {
+    fill: PadFill,
+    charging: bool,
+    low: bool,
+    marks-before: int,
+}
+// Why pairing a device failed (`zaparoo_app::controllers::PairError`).
+export enum PairFailure { none, pin-required, not-powered, timeout, rejected, not-found, failed }
 export enum ActionStatus {
     none, optimizing, paused, running, indexed, imported,
     folders-ready, folder-opening, folder-saved, folder-cancelled, folder-denied, folder-failed, folder-revoked,
@@ -98,9 +127,9 @@ export enum StatusKind {
 }
 export enum Orientation { horizontal, cw, ccw }
 export enum VideoStandard { ntsc, pal }
-export enum DialogKind { none, quit-confirm, quit-blocked, restart-setting, notice, core-version, first-run, hub-full, action-error, unlink-online, restore-online-backup, update-stop, ra-log-out, delete-deck, core-confirm }
+export enum DialogKind { none, quit-confirm, quit-blocked, restart-setting, notice, core-version, first-run, hub-full, action-error, unlink-online, restore-online-backup, update-stop, ra-log-out, delete-deck, forget-controller, core-confirm }
 export enum DialogButton { ok, yes, no, retry, cancel, i-understand, start-media-update }
-export enum ErrorKind { generic, launch, launch-repair, favorite, collection, deck-list, deck-update, deck-create, media-visibility, media-busy, add-to-hub, save-to-hub, media-index, media-scrape, media-scrapers, media-cancel, launcher, launcher-save, alternate-discovery, disc-list, version-list, qr-code, card-write, setting, pairing, online, backup, config-file, image-picker, music }
+export enum ErrorKind { generic, launch, launch-repair, favorite, collection, deck-list, deck-update, deck-create, media-visibility, media-busy, add-to-hub, save-to-hub, media-index, media-scrape, media-scrapers, media-cancel, launcher, launcher-save, alternate-discovery, disc-list, version-list, qr-code, card-write, setting, pairing, online, backup, config-file, image-picker, music, bluetooth }
 
 // Text adapters are for vocabulary/resource keys and focus identity only,
 // never routing. Runtime decisions use the enums themselves.
@@ -113,6 +142,8 @@ export global StateTokens {
         if (page == SettingsPage.controls) { return "pageControlsInput"; }
         if (page == SettingsPage.language) { return "pageLanguage"; }
         if (page == SettingsPage.about) { return "pageSupportAbout"; }
+        if (page == SettingsPage.controllers) { return "pageControllers"; }
+        if (page == SettingsPage.paired-controllers) { return "pagePairedControllers"; }
         return "";
     }
     public pure function games(mode: GamesMode) -> string {

@@ -256,6 +256,33 @@ the vector source. The heart's `#` and `+` cells are its fill and keyline, so it
 keeps the same two marker roles. A new small glyph that shows on CRT gets
 art there too.
 
+The header shows each controller's battery as a gamepad with its charge
+inside (`status/ControllerEmpty`, `Low`, `Half`, `Full`, on the same steps
+as the header's own battery glyph), before the battery reading, in Core's
+order, four at most (`zaparoo_app::controllers::header_pads`). A wired pad,
+or one whose charge Core cannot read, gets none. A charging pad has the
+charging bolt tucked against it, and a pad that is low or empty with
+nothing charging it is drawn in the error color. No percentage goes with
+them; the percentages live on the Controllers page's cards. The compact
+header (240p and the CRT profile) has no room for that row: it shows one
+`status/ControllerLow` glyph, only while some controller is running flat,
+as a warning rather than a reading.
+
+The Controllers page (`ui/controllers.slint`) is laid out to stay still.
+Every figure comes from `zaparoo_app::controllers::page_layout` and is
+fixed per scene: four card slots across the top (at 240p and on the
+bitmap face, two lines of two compact lines: name, battery bar, reading),
+the search's status line, a found list with the rows it has room for, and
+the Paired controllers row pinned to the bottom under a rule. A card keeps
+its slot while the page is open; one that disconnects leaves its slot
+empty rather than pulling its neighbors along. The found list only
+appends, scrolls only to keep the cursor on it, and keeps a device listed
+after Core stops reporting it. Nothing on the page animates but the
+cursor. The battery bar is drawn with rectangles: an outline, a nub, and
+a charge in the error color when the pad is running flat; a charging pad
+adds `icons/Charging` after its reading, and a pad with no battery reads
+`Wired` with no bar.
+
 ## Two registers
 
 Everything in the frontend is drawn with one of two visual treatments, and

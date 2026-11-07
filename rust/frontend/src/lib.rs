@@ -19,6 +19,7 @@ mod browse_filter;
 mod browse_motion;
 mod card_write;
 mod context_page;
+mod controllers;
 mod core_ui;
 mod cover_fade;
 mod cue;
@@ -1112,6 +1113,7 @@ fn run_application(
     core_ui::bind(&ctx, &app, &client);
     decks::watch(&ctx, &app);
     pairing::bind_events(&ctx, &app, &client);
+    controllers::bind(&ctx, &app);
     online::bind_events(&ctx, &app, &client);
     bind_launchers(&ctx, &app, &store);
     retro_achievements::refresh(&ctx, &app);

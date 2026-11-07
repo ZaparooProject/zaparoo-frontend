@@ -35,6 +35,7 @@ tokens!(SettingsPage {
     Root => "", Appearance => "pageAppearance", Library => "pageLibraryData",
     Online => "pageOnline", Display => "pageDisplayInterface", Controls => "pageControlsInput",
     Language => "pageLanguage", About => "pageSupportAbout",
+    Controllers => "pageControllers", PairedControllers => "pagePairedControllers",
 });
 tokens!(Orientation { Horizontal => "horizontal", Cw => "cw", Ccw => "ccw" });
 tokens!(VideoStandard { Ntsc => "ntsc", Pal => "pal" });
@@ -49,7 +50,7 @@ tokens!(ErrorKind {
     AlternateDiscovery => "alternate_discovery", DiscList => "disc_list", VersionList => "version_list",
     QrCode => "qr_code", CardWrite => "card_write", Setting => "setting",
     Pairing => "pairing", Online => "online", Backup => "backup", ConfigFile => "config_file",
-    ImagePicker => "image_picker", Music => "music",
+    ImagePicker => "image_picker", Music => "music", Bluetooth => "bluetooth",
 });
 
 impl From<zaparoo_app::hub::Reason> for crate::DisabledReason {
@@ -75,6 +76,7 @@ impl From<zaparoo_app::settings::Control> for crate::ControlKind {
             Control::TriToggle => Self::TriToggle,
             Control::Info => Self::Info,
             Control::Slider => Self::Slider,
+            Control::Device => Self::Device,
         }
     }
 }
@@ -108,6 +110,52 @@ impl From<zaparoo_app::log_upload::Phase> for crate::LogPhase {
             zaparoo_app::log_upload::Phase::Uploading => Self::Uploading,
             zaparoo_app::log_upload::Phase::Done => Self::Done,
             zaparoo_app::log_upload::Phase::Failed => Self::Failed,
+        }
+    }
+}
+
+impl From<zaparoo_app::controllers::Reading> for crate::DeviceValue {
+    fn from(value: zaparoo_app::controllers::Reading) -> Self {
+        use zaparoo_app::controllers::{Level, Reading};
+        match value {
+            Reading::Wired => Self::Wired,
+            Reading::Unreported => Self::None,
+            Reading::Charging(None) => Self::Charging,
+            Reading::Charging(Some(_)) => Self::ChargingPercent,
+            Reading::Charged => Self::Charged,
+            Reading::Percent(_) => Self::Percent,
+            Reading::Level(Level::Empty) => Self::LevelEmpty,
+            Reading::Level(Level::Low) => Self::LevelLow,
+            Reading::Level(Level::Medium) => Self::LevelMedium,
+            Reading::Level(Level::Full) => Self::LevelFull,
+            Reading::Level(Level::Unknown) => Self::LevelUnknown,
+        }
+    }
+}
+
+impl From<zaparoo_app::controllers::DeviceState> for crate::DeviceValue {
+    fn from(value: zaparoo_app::controllers::DeviceState) -> Self {
+        use zaparoo_app::controllers::DeviceState;
+        match value {
+            DeviceState::Found => Self::Found,
+            DeviceState::Pairing => Self::Pairing,
+            DeviceState::Paired => Self::Paired,
+            DeviceState::Connected => Self::Connected,
+            DeviceState::Failed(_) => Self::Failed,
+        }
+    }
+}
+
+impl From<zaparoo_app::controllers::PairError> for crate::PairFailure {
+    fn from(value: zaparoo_app::controllers::PairError) -> Self {
+        use zaparoo_app::controllers::PairError;
+        match value {
+            PairError::PinRequired => Self::PinRequired,
+            PairError::NotPowered => Self::NotPowered,
+            PairError::Timeout => Self::Timeout,
+            PairError::Rejected => Self::Rejected,
+            PairError::NotFound => Self::NotFound,
+            PairError::Failed => Self::Failed,
         }
     }
 }
@@ -204,6 +252,8 @@ mod tests {
             SettingsPage::Controls,
             SettingsPage::Language,
             SettingsPage::About,
+            SettingsPage::Controllers,
+            SettingsPage::PairedControllers,
         ] {
             assert_eq!(SettingsPage::try_from(page.token()), Ok(page));
         }
@@ -234,6 +284,14 @@ mod tests {
                 page.id
             );
         }
+        assert_eq!(
+            SettingsPage::try_from(zaparoo_app::settings::CONTROLLERS_PAGE),
+            Ok(SettingsPage::Controllers)
+        );
+        assert_eq!(
+            SettingsPage::try_from(zaparoo_app::settings::PAIRED_PAGE),
+            Ok(SettingsPage::PairedControllers)
+        );
         for token in zaparoo_app::action_error::KINDS {
             assert_eq!(ErrorKind::try_from(token).map(ErrorKind::token), Ok(token));
         }

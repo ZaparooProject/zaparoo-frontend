@@ -19,6 +19,7 @@ pub mod background;
 pub mod browse_filter;
 pub mod buttons;
 pub mod clock;
+pub mod controllers;
 pub mod core_ui;
 pub mod cover_landing;
 pub mod covers;

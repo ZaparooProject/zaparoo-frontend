@@ -290,6 +290,33 @@ const SOURCES: &[(&str, &str)] = &[
         "status/Music",
         include_str!("../../../resources/images/status/Music.svg"),
     ),
+    // A controller's battery in the header: a gamepad with its charge
+    // inside. The low one is also the compact header's warning.
+    (
+        "status/ControllerEmpty",
+        include_str!("../../../resources/images/status/ControllerEmpty.svg"),
+    ),
+    (
+        "status/ControllerLow",
+        include_str!("../../../resources/images/status/ControllerLow.svg"),
+    ),
+    (
+        "status/ControllerHalf",
+        include_str!("../../../resources/images/status/ControllerHalf.svg"),
+    ),
+    (
+        "status/ControllerFull",
+        include_str!("../../../resources/images/status/ControllerFull.svg"),
+    ),
+    // A controller card's pad, and the mark on one that is charging.
+    (
+        "icons/Gamepad",
+        include_str!("../../../resources/images/icons/Gamepad.svg"),
+    ),
+    (
+        "icons/Charging",
+        include_str!("../../../resources/images/icons/Charging.svg"),
+    ),
     // Help-bar controller glyphs, one set per style (Kenney CC0 "Input
     // Prompts", see LICENSES/Kenney-ATTRIBUTION.txt).
     (
@@ -586,6 +613,30 @@ const PIXEL_ART: &[(&str, &str)] = &[
     (
         "status/Music",
         include_str!("../../../resources/images/pixel/status/Music.txt"),
+    ),
+    (
+        "status/ControllerEmpty",
+        include_str!("../../../resources/images/pixel/status/ControllerEmpty.txt"),
+    ),
+    (
+        "status/ControllerLow",
+        include_str!("../../../resources/images/pixel/status/ControllerLow.txt"),
+    ),
+    (
+        "status/ControllerHalf",
+        include_str!("../../../resources/images/pixel/status/ControllerHalf.txt"),
+    ),
+    (
+        "status/ControllerFull",
+        include_str!("../../../resources/images/pixel/status/ControllerFull.txt"),
+    ),
+    (
+        "icons/Gamepad",
+        include_str!("../../../resources/images/pixel/icons/Gamepad.txt"),
+    ),
+    (
+        "icons/Charging",
+        include_str!("../../../resources/images/pixel/icons/Charging.txt"),
     ),
     (
         "icons/Bookmark",

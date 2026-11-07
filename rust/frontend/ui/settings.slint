@@ -10,7 +10,7 @@ import { Theme, Sizing, Motion, Layout } from "theme.slint";
 import { GlyphSource } from "chrome.slint";
 import { GridCell, Tile } from "tiles.slint";
 import { Labels } from "labels.slint";
-import { SettingsPage, RowKind, ControlKind, ActionStatus, SetupKind, ScopeKind, SetupAction, StateTokens } from "state_types.slint";
+import { SettingsPage, RowKind, ControlKind, DeviceValue, PairFailure, PairSearch, ActionStatus, SetupKind, ScopeKind, SetupAction, StateTokens } from "state_types.slint";
 
 // One row: a group header, or a field with its control and state.
 export struct SettingsRow {
@@ -37,6 +37,14 @@ export struct SettingsRow {
     // A slider's cells, and how many of them are lit.
     cells: int,
     lit: int,
+    // A Bluetooth device row: where it stands, and why its pairing
+    // failed. It is named by `value-name` (empty for a device with no
+    // name, which reads as "Controller {item + 1}") and `name-tail`, the
+    // end of its address when another row shares its name.
+    device: DeviceValue,
+    pair-error: PairFailure,
+    item: int,
+    name-tail: string,
 }
 
 // The Settings string table: labels, the hint line under the list, and
@@ -80,6 +88,65 @@ export global SettingsLabels {
         if (key == ActionStatus.imported) { return @tr("{} imported", count); }
         return "";
     }
+    // What a Bluetooth device row reads on its right. A found device
+    // that has not been tried reads nothing: its name is the point.
+    public pure function device-value(value: DeviceValue) -> string {
+        if (value == DeviceValue.pairing) { return @tr("Pairing…"); }
+        if (value == DeviceValue.paired) { return @tr("Paired"); }
+        if (value == DeviceValue.connected) { return @tr("Connected"); }
+        if (value == DeviceValue.not-connected) { return @tr("Not connected"); }
+        if (value == DeviceValue.failed) { return @tr("Failed"); }
+        return "";
+    }
+    // What a controller card says beside its battery bar. A pad that
+    // reports only a level says it with the bar alone.
+    public pure function card-reading(value: DeviceValue, percent: int) -> string {
+        if (value == DeviceValue.wired) { return @tr("Wired"); }
+        if (value == DeviceValue.percent || value == DeviceValue.charging-percent) { return @tr("{}%", percent); }
+        if (value == DeviceValue.charging) { return @tr("Charging"); }
+        if (value == DeviceValue.charged) { return @tr("Charged"); }
+        return "";
+    }
+    // A controller or device's name: the one Core gives, with the end of
+    // its address when another entry shares it, or its place when it has
+    // none.
+    public pure function device-name(name: string, tail: string, ordinal: int) -> string {
+        if (name == "") { return @tr("Controller {}", ordinal); }
+        if (tail == "") { return name; }
+        return @tr("{} ({})", name, tail);
+    }
+    // The status line over the Controllers page's found list.
+    public pure function pair-search(search: PairSearch) -> string {
+        if (search == PairSearch.adapter-off) { return @tr("The Bluetooth adapter is off"); }
+        if (search == PairSearch.failed) { return @tr("Could not search for controllers"); }
+        if (search == PairSearch.pairing) { return @tr("Pairing…"); }
+        return @tr("Searching for controllers…");
+    }
+    // The hint under a Bluetooth device row: what Accept or Options does
+    // there, or why its pairing failed.
+    public pure function device-description(id: string, value: DeviceValue, error: PairFailure) -> string {
+        if (id == "pairedDevice") {
+            if (value == DeviceValue.connected) { return @tr("Connected. Options can forget it."); }
+            return @tr("Turn it on to connect. Options can forget it.");
+        }
+        if (value == DeviceValue.found) { return @tr("Pairs this controller and connects it."); }
+        if (value == DeviceValue.pairing) { return @tr("Keep the controller in pairing mode until it connects."); }
+        if (value == DeviceValue.paired) { return @tr("Paired. Turn it on to connect."); }
+        if (value == DeviceValue.connected) { return @tr("Paired and connected."); }
+        if (error == PairFailure.pin-required) { return @tr("This controller needs a PIN, which is not supported."); }
+        if (error == PairFailure.not-powered) { return @tr("The Bluetooth adapter is off."); }
+        if (error == PairFailure.timeout) { return @tr("No answer. Put the controller in pairing mode and try again."); }
+        if (error == PairFailure.rejected) { return @tr("The controller refused. Put it in pairing mode and try again."); }
+        if (error == PairFailure.not-found) { return @tr("The controller went out of range. Bring it closer and try again."); }
+        return @tr("Pairing failed. Put the controller in pairing mode and retry.");
+    }
+    // The hint band's text for a row: its description, or for a device
+    // row, what its state says.
+    public pure function row-description(row: SettingsRow) -> string {
+        if (row.id == "foundDevice" || row.id == "pairedDevice") { return self.device-description(row.id, row.device, row.pair-error); }
+        return self.description(row.id);
+    }
+
     public pure function page-title(page: SettingsPage) -> string {
         if (page == SettingsPage.root) { return @tr("Settings"); }
         return SettingsLabels.label(StateTokens.page(page));
@@ -127,6 +194,8 @@ export global SettingsLabels {
         if (id == "pageControlsInput") { return @tr("Controls"); }
         if (id == "pageLanguage") { return @tr("Language"); }
         if (id == "pageSupportAbout") { return @tr("About"); }
+        if (id == "pageControllers") { return @tr("Controllers"); }
+        if (id == "pagePairedControllers") { return @tr("Paired controllers"); }
         // Group headers.
         if (id == "analogVideo") { return @tr("Analog video"); }
         if (id == "maintenance") { return @tr("Maintenance"); }
@@ -167,6 +236,9 @@ export global SettingsLabels {
         if (id == "swapConfirmCancel") { return @tr("Swap controller confirm/cancel"); }
         if (id == "swapOptionsView") { return @tr("Swap controller options/menu"); }
         if (id == "mouseEnabled") { return @tr("Mouse support"); }
+        if (id == "controllers") { return @tr("Controllers"); }
+        if (id == "pairedControllers") { return @tr("Paired controllers"); }
+        if (id == "noPairedControllers") { return @tr("No paired controllers"); }
         // Library.
         if (id == "addGameFolder") { return @tr("Add game folder…"); }
         if (id == "detectLaunchers") { return @tr("Detect launchers…"); }
@@ -260,6 +332,8 @@ export global SettingsLabels {
         if (id == "swapConfirmCancel") { return @tr("Flips which controller button accepts and which cancels."); }
         if (id == "swapOptionsView") { return @tr("Swaps which controller button opens Options and Menu."); }
         if (id == "mouseEnabled") { return @tr("Lets a mouse click tiles and menu rows."); }
+        if (id == "controllers") { return @tr("Shows connected controllers and pairs new Bluetooth ones."); }
+        if (id == "pairedControllers") { return @tr("Lists every paired controller. Options can forget one."); }
         if (id == "updateMediaDb") { return @tr("Rescans game folders for added or removed files. Choose systems."); }
         if (id == "runScraper") { return @tr("Adds artwork and details from the sources Core offers."); }
         if (id == "systemsLayout") { return @tr("Shows systems as a cover grid or a list with details."); }
@@ -321,6 +395,11 @@ export global SettingsLabels {
         if (id == "screensaverTimeout") { return SettingsLabels.screensaver(value); }
         if (id == "mediaImageType") { return SettingsLabels.artwork(value); }
         if (id == "backgroundImage") { return @tr("None"); }
+        // How many controllers Core lists as connected.
+        if (id == "controllers") {
+            if (value == "0") { return @tr("None connected"); }
+            return @tr("{} connected", value);
+        }
         if (id == "gameBackground") {
             if (value == "off") { return @tr("Off"); }
             return Labels.image-type(value);
@@ -594,10 +673,13 @@ export component SettingsRowView inherits Rectangle {
         ? label.height + root.status-gap + status-measure.preferred-height
         : label.height;
 
-    // The conflict row names the systems it is about in its own label.
+    // The conflict row names the systems it is about in its own label; a
+    // controller or Bluetooth device row is named after the thing itself.
     property <string> label-text: root.entry.id == "raConflict"
         ? @tr("{0} uses its own launcher" | "{0} use their own launcher" % root.entry.value.to-float(), root.entry.value-name)
-        : SettingsLabels.label(root.entry.id);
+        : (root.entry.id == "foundDevice" || root.entry.id == "pairedDevice")
+            ? SettingsLabels.device-name(root.entry.value-name, root.entry.name-tail, root.entry.item + 1)
+            : SettingsLabels.label(root.entry.id);
 
     label-measure := Text {
         visible: false;
@@ -610,11 +692,23 @@ export component SettingsRowView inherits Rectangle {
         text: SettingsLabels.action-status(root.entry.status-key, root.entry.status-count);
         font-size: Sizing.font-caption;
     }
+    // A device row's state is the point of the row, so it keeps its room
+    // and a long name elides before it does.
+    property <length> value-reserve: root.entry.device != DeviceValue.none && root.value-text != ""
+        // The value's own width and the two gaps its Text keeps clear.
+        ? Math.ceil(value-measure.preferred-width / 1px) * 1px + Sizing.pct-w(4)
+        : 0px;
+    value-measure := Text {
+        visible: false;
+        text: root.value-text;
+        font-size: Sizing.font-body;
+        font-weight: FontWeight.medium;
+    }
     label := Text {
         x: root.is-action ? Sizing.snap((parent.width - self.width) / 2) : root.pad;
         y: Sizing.snap((parent.height - root.stack-height) / 2);
         width: Math.min(Math.ceil(label-measure.preferred-width / 1px) * 1px + Sizing.stroke(2),
-            parent.width - 2 * root.pad);
+            parent.width - 2 * root.pad - root.value-reserve);
         overflow: elide;
         text: root.label-text;
         color: root.focused ? (root.dim ? Theme.on-accent-muted : root.content-color)
@@ -634,7 +728,9 @@ export component SettingsRowView inherits Rectangle {
         font-weight: root.content-weight;
     }
 
-    property <string> value-text: (root.entry.id == "systems" || root.entry.id == "source")
+    property <string> value-text: root.entry.device != DeviceValue.none
+        ? SettingsLabels.device-value(root.entry.device)
+        : (root.entry.id == "systems" || root.entry.id == "source")
         ? SettingsLabels.scope(root.entry.scope-kind, root.entry.value-name)
         : (root.entry.id == "onlineStatus" && root.entry.value == "linked" && root.entry.value-name != "")
             ? @tr("Linked as {}", root.entry.value-name)
@@ -647,12 +743,14 @@ export component SettingsRowView inherits Rectangle {
                     : SettingsLabels.value(root.entry.id, root.entry.value);
 
     // An info row only reports: its value sits flush right in the label
-    // color, with no chevron, so it does not read as something to open.
-    property <bool> is-info: root.entry.control == ControlKind.info;
+    // color, with no chevron, so it does not read as something to open. A
+    // device row reads the same way, though it takes focus.
+    property <bool> is-info: root.entry.control == ControlKind.info || root.entry.control == ControlKind.device;
 
-    // The background image row is a navigation that still names its pick.
+    // The background image and Controllers rows are navigations that
+    // still name what they hold.
     property <bool> shows-value: root.entry.control == ControlKind.picker || root.is-info
-        || root.is-slider || root.entry.id == "backgroundImage";
+        || root.is-slider || root.entry.id == "backgroundImage" || root.entry.id == "controllers";
     property <bool> is-slider: root.entry.control == ControlKind.slider;
     // The slider's cells: the Volume page's cell size, from the same
     // share of the row, so the two sliders match.

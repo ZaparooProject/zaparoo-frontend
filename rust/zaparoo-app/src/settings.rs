@@ -28,9 +28,14 @@ pub enum Control {
     Info,
     /// A value on a scale: Left and Right step it, holding repeats.
     Slider,
+    /// One of a live list of things (a Bluetooth device on the pairing
+    /// page): it reads like an info row, but it takes focus, because
+    /// Accept or Options acts on the thing it stands for.
+    Device,
 }
 
-/// A row on a settings page: a group header, or a field.
+/// A row on a settings page: a group header, a field, or one entry of a
+/// live list.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Row {
     /// A non-navigable group label; the id is its vocabulary key.
@@ -39,22 +44,49 @@ pub enum Row {
         id: &'static str,
         control: Control,
     },
+    /// Entry `index` of a list the host holds (the connected controllers,
+    /// the Bluetooth devices). Every entry of one list shares the id, its
+    /// kind; the index says which one, in the host's own order, so a
+    /// page's static rows never move when the list grows or shrinks.
+    Item {
+        id: &'static str,
+        index: usize,
+        control: Control,
+    },
 }
 
 impl Row {
     pub fn id(self) -> &'static str {
         match self {
-            Self::Header(id) | Self::Field { id, .. } => id,
+            Self::Header(id) | Self::Field { id, .. } | Self::Item { id, .. } => id,
         }
     }
 
+    /// A row that is a setting or an entry, not a group heading.
     pub fn is_field(self) -> bool {
-        matches!(self, Self::Field { .. })
+        matches!(self, Self::Field { .. } | Self::Item { .. })
+    }
+
+    /// The row's control; a heading has none.
+    pub fn control(self) -> Option<Control> {
+        match self {
+            Self::Header(_) => None,
+            Self::Field { control, .. } | Self::Item { control, .. } => Some(control),
+        }
+    }
+
+    /// Which entry of its list an item row is.
+    pub fn item(self) -> Option<usize> {
+        match self {
+            Self::Item { index, .. } => Some(index),
+            _ => None,
+        }
     }
 
     /// A row the cursor can rest on: a field with something to do.
     pub fn is_navigable(self) -> bool {
-        matches!(self, Self::Field { control, .. } if control != Control::Info)
+        self.control()
+            .is_some_and(|control| control != Control::Info)
     }
 }
 
@@ -162,6 +194,18 @@ pub struct Inputs {
     /// `RetroAchievements` core has a default of its own that Core takes
     /// first.
     pub ra_conflict: bool,
+    /// Core reports the controllers connected to it; an older Core, or a
+    /// device that cannot, does not, and the Controls page has no
+    /// Controllers row.
+    pub controllers_listed: bool,
+    /// Core can pair a Bluetooth controller for this client
+    /// (`controllers::pairing_available`).
+    pub can_pair_controllers: bool,
+    /// How many devices the Controllers page's search has found so far
+    /// (`controllers::PairSession`, which only ever appends), and how many
+    /// the Paired controllers page lists.
+    pub bluetooth_found: usize,
+    pub bluetooth_paired: usize,
 }
 
 const TOGGLES: &[&str] = &[
@@ -201,6 +245,8 @@ const NAVIGATES: &[&str] = &[
     "pageSupportAbout",
     "launcherPreference",
     "backgroundImage",
+    "controllers",
+    "pairedControllers",
 ];
 
 const ACTIONS: &[&str] = &[
@@ -228,6 +274,7 @@ const SLIDERS: &[&str] = &["backgroundBlur", "backgroundDim"];
 
 /// Rows that only report a live value; see `Control::Info`.
 const INFOS: &[&str] = &[
+    "noPairedControllers",
     "onlineStatus",
     "onlineWarp",
     "onlineRemoteStatus",
@@ -324,6 +371,62 @@ fn library_rows(inputs: &Inputs) -> Vec<Row> {
     rows
 }
 
+/// The page the Controls page's Controllers row opens, and the page its
+/// Paired controllers row opens in turn: pages of the same panel, never
+/// root tiles.
+pub const CONTROLLERS_PAGE: &str = "pageControllers";
+pub const PAIRED_PAGE: &str = "pagePairedControllers";
+
+/// Controls. The input preferences, then the way to the controllers Core
+/// sees and to pairing another.
+fn controls_rows(inputs: &Inputs) -> Vec<Row> {
+    let mut rows = vec![
+        field("buttonLayout"),
+        field("swapConfirmCancel"),
+        field("swapOptionsView"),
+        field("mouseEnabled"),
+    ];
+    if inputs.controllers_listed || inputs.can_pair_controllers {
+        rows.push(field("controllers"));
+    }
+    rows
+}
+
+/// Controllers. The connected cards are drawn by the page itself and take
+/// no focus; the rows are what the search found, in the order it found
+/// them and only ever appended, then the fixed Paired controllers row. A
+/// find lands after the last one and before that row, so neither the
+/// rows already listed nor the cursor move. Without pairing the page is
+/// the cards alone.
+fn controllers_rows(inputs: &Inputs) -> Vec<Row> {
+    if !inputs.can_pair_controllers {
+        return Vec::new();
+    }
+    let mut rows: Vec<Row> = (0..inputs.bluetooth_found)
+        .map(|index| Row::Item {
+            id: "foundDevice",
+            index,
+            control: Control::Device,
+        })
+        .collect();
+    rows.push(field("pairedControllers"));
+    rows
+}
+
+/// Paired controllers: every device Core has paired, in a stable order.
+fn paired_rows(inputs: &Inputs) -> Vec<Row> {
+    if inputs.bluetooth_paired == 0 {
+        return vec![field("noPairedControllers")];
+    }
+    (0..inputs.bluetooth_paired)
+        .map(|index| Row::Item {
+            id: "pairedDevice",
+            index,
+            control: Control::Device,
+        })
+        .collect()
+}
+
 /// The rows of one page; the empty page id is the root category grid.
 pub fn page_rows(page: &str, inputs: &Inputs) -> Vec<Row> {
     match page {
@@ -375,12 +478,9 @@ pub fn page_rows(page: &str, inputs: &Inputs) -> Vec<Row> {
             rows
         }
         "pageLanguage" => vec![field("language"), field("region"), field("clockFormat")],
-        "pageControlsInput" => vec![
-            field("buttonLayout"),
-            field("swapConfirmCancel"),
-            field("swapOptionsView"),
-            field("mouseEnabled"),
-        ],
+        "pageControlsInput" => controls_rows(inputs),
+        CONTROLLERS_PAGE => controllers_rows(inputs),
+        PAIRED_PAGE => paired_rows(inputs),
         "pageLibraryData" => library_rows(inputs),
         // Account first: everything else on the page needs it. Status and
         // Warp only report (info rows, never focused); the one thing to do
@@ -609,6 +709,29 @@ pub fn seat_of(rows: &[Row], id: &str) -> usize {
         .unwrap_or_else(|| first_navigable(rows))
 }
 
+/// Where the cursor goes when a live list changes under it. `key` says
+/// what each row is (an item row's entry, not its index), so the cursor
+/// stays on the same device as entries come and go around it; when that
+/// one is gone it keeps its place on the page, on the nearest row it can
+/// rest on.
+pub fn follow_seat<K: PartialEq>(
+    rows: &[Row],
+    key: impl Fn(usize) -> K,
+    focused: &K,
+    previous: usize,
+) -> usize {
+    if let Some(i) = (0..rows.len()).find(|&i| rows[i].is_navigable() && key(i) == *focused) {
+        return i;
+    }
+    let from = previous.min(rows.len().saturating_sub(1));
+    if rows.get(from).is_some_and(|r| r.is_navigable()) {
+        return from;
+    }
+    let up = (0..from).rev().find(|&i| rows[i].is_navigable());
+    let down = (from..rows.len()).find(|&i| rows[i].is_navigable());
+    up.or(down).unwrap_or_else(|| first_navigable(rows))
+}
+
 /// The next navigable row in `dir`, wrapping and skipping headers.
 pub fn seek_navigable(rows: &[Row], from: usize, dir: i64) -> usize {
     let len = rows.len();
@@ -634,14 +757,14 @@ pub fn seek_navigable(rows: &[Row], from: usize, dir: i64) -> usize {
 /// Sans has a 1.362 em hhea line height and no line gap. Shared by the
 /// action status line and the group heading so they stay in step with the
 /// type ladder instead of with a magic percentage.
-fn line_height(size: i32) -> i32 {
+pub(crate) fn line_height(size: i32) -> i32 {
     (f64::from(size) * 1.362).ceil() as i32
 }
 
 /// One line of the hint band. The bitmap face has no leading: a line is
 /// exactly its cell, so the scaled figure would hold a third of a line of
 /// blank band open under every description.
-fn hint_line_height(inputs: &crate::sizing::Inputs, size: i32) -> i32 {
+pub(crate) fn hint_line_height(inputs: &crate::sizing::Inputs, size: i32) -> i32 {
     if inputs.bitmap_type {
         size
     } else {
@@ -1196,6 +1319,127 @@ mod tests {
         assert!(!action_busy("pairDevice", true, true));
         assert!(!action_disabled("pairDevice", true, true));
         assert_eq!(action_label_key("pairDevice", false), "pair");
+    }
+
+    #[test]
+    fn the_controls_page_ends_with_one_controllers_row() {
+        let ids = |inputs: &Inputs| -> Vec<&'static str> {
+            page_rows("pageControlsInput", inputs)
+                .into_iter()
+                .map(Row::id)
+                .collect()
+        };
+        // An older Core reports no controllers and cannot pair: the page
+        // is the input settings alone.
+        let input = [
+            "buttonLayout",
+            "swapConfirmCancel",
+            "swapOptionsView",
+            "mouseEnabled",
+        ];
+        assert_eq!(ids(&Inputs::default()), input);
+        for inputs in [
+            Inputs {
+                controllers_listed: true,
+                ..Inputs::default()
+            },
+            Inputs {
+                can_pair_controllers: true,
+                ..Inputs::default()
+            },
+        ] {
+            let got = ids(&inputs);
+            assert_eq!(&got[..4], &input);
+            assert_eq!(&got[4..], &["controllers"]);
+        }
+        // It opens a page of its own, so it reads as one, chevron and all.
+        assert_eq!(control("controllers"), Control::Navigate);
+        assert!(opens_page(CONTROLLERS_PAGE).is_none(), "not a root tile");
+        assert!(opens_page(PAIRED_PAGE).is_none(), "not a root tile");
+    }
+
+    #[test]
+    fn finds_land_before_the_paired_controllers_row() {
+        let page = |found| {
+            page_rows(
+                CONTROLLERS_PAGE,
+                &Inputs {
+                    can_pair_controllers: true,
+                    bluetooth_found: found,
+                    ..Inputs::default()
+                },
+            )
+        };
+        // Nothing found yet: the cursor opens on Paired controllers.
+        let empty = page(0);
+        assert_eq!(empty.len(), 1);
+        assert_eq!(first_navigable(&empty), 0);
+        assert_eq!(empty[0].id(), "pairedControllers");
+        assert_eq!(control("pairedControllers"), Control::Navigate);
+        let two = page(2);
+        let three = page(3);
+        assert_eq!(
+            two[1],
+            Row::Item {
+                id: "foundDevice",
+                index: 1,
+                control: Control::Device
+            }
+        );
+        // The rows already there keep their indices as one is appended,
+        // and the cursor follows Paired controllers by what it is.
+        assert_eq!(&three[..2], &two[..2]);
+        let key = |rows: &[Row]| {
+            let rows = rows.to_vec();
+            move |i: usize| rows[i].id()
+        };
+        assert_eq!(follow_seat(&three, key(&three), &"pairedControllers", 2), 3);
+        // Up from Paired controllers reaches the newest find; Down from
+        // the last find comes back.
+        assert_eq!(seek_navigable(&three, 3, -1), 2);
+        assert_eq!(seek_navigable(&three, 2, 1), 3);
+        // Without pairing the page is its cards alone.
+        assert!(page_rows(CONTROLLERS_PAGE, &Inputs::default()).is_empty());
+    }
+
+    #[test]
+    fn the_paired_page_lists_devices_or_says_there_are_none() {
+        let page = |paired| {
+            page_rows(
+                PAIRED_PAGE,
+                &Inputs {
+                    bluetooth_paired: paired,
+                    ..Inputs::default()
+                },
+            )
+        };
+        let none = page(0);
+        assert_eq!(none, vec![field("noPairedControllers")]);
+        assert!(!none[0].is_navigable());
+        let two = page(2);
+        assert_eq!(two.len(), 2);
+        assert_eq!(two[1].item(), Some(1));
+        assert!(two[0].is_navigable(), "a device row takes focus");
+    }
+
+    #[test]
+    fn the_cursor_follows_its_entry_when_one_before_it_goes() {
+        const BEFORE: [&str; 3] = ["a", "b", "c"];
+        const AFTER: [&str; 2] = ["a", "c"];
+        let rows = |n: usize| {
+            page_rows(
+                PAIRED_PAGE,
+                &Inputs {
+                    bluetooth_paired: n,
+                    ..Inputs::default()
+                },
+            )
+        };
+        let key = |list: &'static [&'static str]| move |row: usize| list.get(row).copied();
+        let focused = key(&BEFORE)(2);
+        assert_eq!(follow_seat(&rows(2), key(&AFTER), &focused, 2), 1);
+        // The focused one went: the nearest row it can rest on.
+        assert_eq!(follow_seat(&rows(2), key(&AFTER), &Some("b"), 1), 1);
     }
 
     #[test]

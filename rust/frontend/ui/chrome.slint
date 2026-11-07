@@ -10,7 +10,7 @@
 // these components carry almost no percentages of their own.
 
 import { Theme, Sizing, Motion, Layout, Backdrop } from "theme.slint";
-import { ContentState, StatusKind } from "state_types.slint";
+import { ContentState, StatusKind, HeaderPad, PadFill } from "state_types.slint";
 
 // Glyph provider implemented in Rust: the SVG sources under
 // resources/images are rasterized with resvg at the exact requested
@@ -290,7 +290,8 @@ export component StatusLine inherits Rectangle {
 }
 
 // Top header bar: logo bottom-left, host status row
-// (NFC / Wi-Fi / LAN / Bluetooth / Battery icons plus the clock)
+// (NFC / Wi-Fi / LAN / Bluetooth / controller batteries / Battery icons plus
+// the clock)
 // right-anchored, and the status line stacked under it. Height is fixed
 // at Sizing.header-height so the status line's slot stays reserved when
 // idle. The CRT profile pins the status row to the top, the HUD to the
@@ -303,6 +304,12 @@ export component HeaderBar inherits Rectangle {
     in property <bool> status-icons-enabled: false;
     // Background music is playing: a music note leads the status icons.
     in property <bool> music-playing: false;
+    // A controller is running flat. The compact header (240p and the CRT
+    // profile) has room for one glyph, a warning before the battery that
+    // never carries a percentage.
+    in property <bool> controller-battery-low: false;
+    // Every other header shows a glyph per controller battery instead.
+    in property <[HeaderPad]> controller-batteries: [];
     in property <bool> has-battery: false;
     in property <int> battery-percent: 0;
     in property <string> browse-title: "";
@@ -349,11 +356,23 @@ export component HeaderBar inherits Rectangle {
     property <length> icon-size: Sizing.font-caption;
     property <length> hud-spacing: Sizing.pct-w(1);
     property <int> music-slot: root.status-icons-enabled && root.music-playing ? 1 : 0;
-    property <int> icon-count: (root.status-icons-enabled ? root.status-keys.length : 0) + (root.battery-visible ? 1 : 0) + root.music-slot;
+    property <bool> compact-pads: Theme.crt || Sizing.tier-240;
+    property <int> controller-slot: root.status-icons-enabled && root.compact-pads && root.controller-battery-low ? 1 : 0;
+    property <int> pad-slots: root.status-icons-enabled && !root.compact-pads ? root.controller-batteries.length : 0;
+    // A charging mark tucks against its pad: the bolt's own margin
+    // overlaps the glyph's, so it adds only part of a slot.
+    property <length> mark-width: root.icon-size * 0.6;
+    property <int> mark-count: root.pad-slots > 0
+        ? root.controller-batteries[root.pad-slots - 1].marks-before
+            + (root.controller-batteries[root.pad-slots - 1].charging ? 1 : 0)
+        : 0;
+    property <length> pads-before-x: (root.status-keys.length + root.music-slot) * (root.icon-size + root.hud-spacing);
+    property <int> icon-count: (root.status-icons-enabled ? root.status-keys.length : 0) + (root.battery-visible ? 1 : 0) + root.music-slot + root.controller-slot + root.pad-slots;
     property <length> battery-label-width: root.battery-label-visible ? Math.ceil(battery-measure.preferred-width / 1px) * 1px : 0px;
     property <length> clock-width: Math.ceil(clock-measure.preferred-width / 1px) * 1px;
     property <bool> clock-visible: root.clock-text != "";
     property <length> hud-width: root.icon-count * (root.icon-size + root.hud-spacing)
+        + root.mark-count * root.mark-width
         + (root.battery-label-visible ? root.battery-label-width + root.hud-spacing : 0px)
         + (root.clock-visible ? root.clock-width : 0px);
     property <length> hud-x: root.width - Sizing.header-side-margin - root.hud-width;
@@ -397,8 +416,42 @@ export component HeaderBar inherits Rectangle {
             source: GlyphSource.glyph("status/" + key, root.icon-size, Theme.text-primary);
             image-rendering: Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
         }
-        if root.battery-visible: Image {
+        if root.controller-slot > 0: Image {
             x: (root.status-keys.length + root.music-slot) * (root.icon-size + root.hud-spacing);
+            y: Sizing.snap((parent.height - self.height) / 2);
+            width: root.icon-size;
+            height: root.icon-size;
+            source: GlyphSource.glyph("status/ControllerLow", root.icon-size, Theme.text-primary);
+            image-rendering: Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
+        }
+        for pad[i] in root.pad-slots > 0 ? root.controller-batteries : []: Rectangle {
+            x: root.pads-before-x + i * (root.icon-size + root.hud-spacing) + pad.marks-before * root.mark-width;
+            width: root.icon-size + (pad.charging ? root.mark-width : 0px);
+            property <color> tint: pad.low ? Theme.error : Theme.text-primary;
+            Image {
+                x: 0;
+                y: Sizing.snap((parent.height - self.height) / 2);
+                width: root.icon-size;
+                height: root.icon-size;
+                source: GlyphSource.glyph(
+                    pad.fill == PadFill.full ? "status/ControllerFull"
+                        : pad.fill == PadFill.half ? "status/ControllerHalf"
+                        : pad.fill == PadFill.low ? "status/ControllerLow"
+                        : "status/ControllerEmpty",
+                    root.icon-size, parent.tint);
+                image-rendering: Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
+            }
+            if pad.charging: Image {
+                x: root.icon-size * 0.8;
+                y: Sizing.snap((parent.height - self.height) / 2);
+                width: root.icon-size;
+                height: root.icon-size;
+                source: GlyphSource.glyph("icons/Charging", root.icon-size, Theme.text-primary);
+                image-rendering: Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
+            }
+        }
+        if root.battery-visible: Image {
+            x: root.pads-before-x + (root.controller-slot + root.pad-slots) * (root.icon-size + root.hud-spacing) + root.mark-count * root.mark-width;
             y: Sizing.snap((parent.height - self.height) / 2);
             width: root.icon-size;
             height: root.icon-size;
@@ -406,7 +459,7 @@ export component HeaderBar inherits Rectangle {
             image-rendering: Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
         }
         if root.battery-label-visible: Text {
-            x: root.icon-count * (root.icon-size + root.hud-spacing);
+            x: root.icon-count * (root.icon-size + root.hud-spacing) + root.mark-count * root.mark-width;
             y: Sizing.snap((parent.height - self.preferred-height) / 2);
             width: root.battery-label-width;
             text: @tr("{}%", root.battery-percent);

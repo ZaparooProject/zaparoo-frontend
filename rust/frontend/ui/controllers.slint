@@ -1,0 +1,364 @@
+// Zaparoo Frontend
+// Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
+// SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
+//
+// The Controllers page of Settings: the connected controllers as cards in
+// fixed slots, and under them the search for new ones, its found list and
+// the fixed Paired controllers row. A pure view. Rust
+// (`rust/frontend/src/controllers.rs`) seats the cards, keeps the found
+// list append-only and solves every figure here in whole pixels
+// (`zaparoo_app::controllers::page_layout`), so nothing on the page moves
+// unless the cursor does. Nothing animates but the cursor itself.
+
+import { Theme, Sizing, Layout } from "theme.slint";
+import { GlyphSource, SectionHeader, Divider } from "chrome.slint";
+import { SelectionCursor, SelectionClip } from "focus.slint";
+import { SettingsRow, SettingsLabels, SettingsRowView } from "settings.slint";
+import { DeviceValue, PairSearch, ControlKind } from "state_types.slint";
+
+// One slot of the Connected area. An empty slot draws nothing: a pad that
+// went away leaves its place empty rather than pulling its neighbors in.
+export struct ControllerSlot {
+    filled: bool,
+    // Core's name for it, empty for none; `tail` tells two of the same
+    // name apart (`SettingsLabels.device-name`).
+    name: string,
+    tail: string,
+    // What the card says beside its bar (`SettingsLabels.card-reading`).
+    reading: DeviceValue,
+    percent: int,
+    // How full the bar is drawn, 0 to 100; below 0 draws no bar (a pad
+    // with no battery of its own, or one Core cannot read).
+    bar: int,
+    // Running flat with nothing charging it: the bar takes the error color.
+    low: bool,
+    charging: bool,
+}
+
+export global ControllersView {
+    in-out property <[ControllerSlot]> slots: [];
+    // How many controllers are connected, and how many did not fit a slot.
+    in-out property <int> connected: 0;
+    in-out property <int> overflow: 0;
+    // Core can pair here: the search, its list and Paired controllers show.
+    in-out property <bool> can-pair: false;
+    in-out property <PairSearch> search: PairSearch.searching;
+    // The first found row the list shows.
+    in-out property <int> top: 0;
+    // `zaparoo_app::controllers::PageLayout`, inside the card's rows band.
+    in-out property <bool> compact: false;
+    in-out property <length> slots-y: 0px;
+    in-out property <int> slot-columns: 4;
+    in-out property <length> slot-width: 0px;
+    in-out property <length> slot-height: 0px;
+    in-out property <length> slot-gap: 0px;
+    in-out property <length> status-y: 0px;
+    in-out property <length> status-height: 0px;
+    in-out property <length> list-y: 0px;
+    in-out property <length> row-height: 0px;
+    in-out property <int> visible-rows: 0;
+    in-out property <length> paired-y: 0px;
+}
+
+// A battery drawn as an outline with its charge inside and a nub on the
+// right. Whole-pixel strokes; the charge is a share of the inside.
+component BatteryBar inherits Rectangle {
+    in property <int> level: 0;
+    in property <bool> low: false;
+    property <length> stroke: Sizing.stroke(1);
+    property <length> nub: Math.max(1px, Sizing.stroke(1));
+    property <length> inside: self.width - self.nub - 4 * self.stroke;
+    Rectangle {
+        width: parent.width - parent.nub;
+        x: 0;
+        border-width: root.stroke;
+        border-color: Theme.text-label;
+    }
+    Rectangle {
+        x: parent.width - parent.nub;
+        y: parent.height / 4;
+        width: parent.nub;
+        height: parent.height / 2;
+        background: Theme.text-label;
+    }
+    Rectangle {
+        x: 2 * root.stroke;
+        y: 2 * root.stroke;
+        width: Math.max(0px, root.inside * Math.min(100, Math.max(0, root.level)) / 100);
+        height: parent.height - 4 * root.stroke;
+        background: root.low ? Theme.error : Theme.text-primary;
+    }
+}
+
+// One connected controller as a card: its pad and name on top, its
+// battery under them.
+component ControllerCard inherits Rectangle {
+    in property <ControllerSlot> slot;
+    in property <int> ordinal;
+    property <length> inner: Sizing.pct-min(1.2);
+    property <length> icon: Sizing.font-body;
+    property <length> gap: Sizing.pct-w(0.8);
+    property <length> bar-w: Sizing.pct-h(5);
+    property <length> bar-h: Sizing.pct-h(2);
+    border-radius: Sizing.radius-sm;
+    border-width: Sizing.card-border-width;
+    border-color: Theme.border-mid;
+
+    name := Text {
+        x: root.inner + root.icon + root.gap;
+        y: root.inner;
+        width: Math.max(0px, parent.width - self.x - root.inner);
+        overflow: elide;
+        text: SettingsLabels.device-name(root.slot.name, root.slot.tail, root.ordinal);
+        color: Theme.text-primary;
+        font-size: Sizing.font-body;
+    }
+    Image {
+        x: root.inner;
+        y: Sizing.snap(name.y + (name.height - self.height) / 2);
+        width: root.icon;
+        height: root.icon;
+        source: GlyphSource.glyph("icons/Gamepad", root.icon, Theme.text-primary);
+        image-rendering: Sizing.pixel-grid ? ImageRendering.pixelated : ImageRendering.smooth;
+    }
+    property <length> line-y: name.y + name.height + Sizing.pct-h(0.8);
+    reading := Text {
+        x: root.slot.bar >= 0 ? root.inner + root.bar-w + root.gap : root.inner;
+        y: root.line-y;
+        text: SettingsLabels.card-reading(root.slot.reading, root.slot.percent);
+        color: Theme.text-label;
+        font-size: Sizing.font-caption;
+    }
+    if root.slot.bar >= 0: BatteryBar {
+        x: root.inner;
+        y: Sizing.snap(reading.y + (reading.height - self.height) / 2);
+        width: root.bar-w;
+        height: root.bar-h;
+        level: root.slot.bar;
+        low: root.slot.low;
+    }
+    if root.slot.charging: Image {
+        x: reading.x + (reading.text == "" ? 0px : reading.width + root.gap);
+        y: Sizing.snap(reading.y + (reading.height - self.height) / 2);
+        width: Sizing.font-caption;
+        height: Sizing.font-caption;
+        source: GlyphSource.glyph("icons/Charging", Sizing.font-caption, Theme.text-primary);
+        image-rendering: Sizing.pixel-grid ? ImageRendering.pixelated : ImageRendering.smooth;
+    }
+}
+
+// The same controller on one line, where cards do not fit: its name, then
+// the battery at the line's end, so a long name elides first. Two lines
+// share a row, so the pad glyph gives its room to the name.
+component ControllerLine inherits Rectangle {
+    in property <ControllerSlot> slot;
+    in property <int> ordinal;
+    property <length> icon: Sizing.font-body;
+    property <length> gap: Sizing.stroke(2);
+    property <length> bar-w: 2 * Sizing.font-body;
+    property <length> bar-h: Sizing.snap(Sizing.font-body * 0.75);
+    property <length> mark: root.slot.charging ? Sizing.font-body + root.gap : 0px;
+    property <length> bar-room: root.slot.bar >= 0 ? root.bar-w + root.gap : 0px;
+    property <length> reading-w: reading.text == "" ? 0px : Math.ceil(reading.preferred-width / 1px) * 1px + root.gap;
+
+    Text {
+        x: 0;
+        y: Sizing.snap((parent.height - self.height) / 2);
+        width: Math.max(0px, parent.width - self.x - root.gap - root.bar-room - root.reading-w - root.mark);
+        overflow: elide;
+        text: SettingsLabels.device-name(root.slot.name, root.slot.tail, root.ordinal);
+        color: Theme.text-primary;
+        font-size: Sizing.font-body;
+    }
+    if root.slot.bar >= 0: BatteryBar {
+        x: parent.width - root.mark - root.reading-w - root.bar-w;
+        y: Sizing.snap((parent.height - self.height) / 2);
+        width: root.bar-w;
+        height: root.bar-h;
+        level: root.slot.bar;
+        low: root.slot.low;
+    }
+    reading := Text {
+        x: parent.width - root.mark - root.reading-w + root.gap;
+        y: Sizing.snap((parent.height - self.height) / 2);
+        text: SettingsLabels.card-reading(root.slot.reading, root.slot.percent);
+        color: Theme.text-label;
+        font-size: Sizing.font-body;
+    }
+    if root.slot.charging: Image {
+        x: parent.width - root.icon;
+        y: Sizing.snap((parent.height - self.height) / 2);
+        width: root.icon;
+        height: root.icon;
+        source: GlyphSource.glyph("icons/Charging", root.icon, Theme.text-primary);
+        image-rendering: Sizing.pixel-grid ? ImageRendering.pixelated : ImageRendering.smooth;
+    }
+}
+
+// The page itself, drawn in the settings card's rows band. `rows` are the
+// page's focusable rows: the found devices, then Paired controllers last.
+export component ControllersPanel inherits Rectangle {
+    in property <[SettingsRow]> rows;
+    in property <int> index;
+    in property <string> scope;
+    in property <int> activate-pulse: 0;
+    in property <int> release-pulse: 0;
+    in property <bool> screen-settling: false;
+    in property <bool> press-held: false;
+    callback row-hovered(int);
+    callback row-clicked(int);
+
+    property <bool> pairing: ControllersView.can-pair && root.rows.length > 0;
+    property <int> found: root.pairing ? root.rows.length - 1 : 0;
+    property <length> row-h: ControllersView.row-height;
+    property <bool> focus-valid: root.pairing && root.index >= 0 && root.index < root.rows.length;
+    // Where a row sits on the panel: a found row in the list as scrolled,
+    // the last row on its fixed line.
+    pure function row-y(i: int) -> length {
+        return i < root.found
+            ? ControllersView.list-y + (i - ControllersView.top) * root.row-h
+            : ControllersView.paired-y;
+    }
+
+    // Connected.
+    for slot[i] in ControllersView.slots: Rectangle {
+        x: Math.mod(i, ControllersView.slot-columns) * (ControllersView.slot-width + ControllersView.slot-gap);
+        y: ControllersView.slots-y + Math.floor(i / ControllersView.slot-columns)
+            * (ControllersView.slot-height + ControllersView.slot-gap / 2);
+        width: ControllersView.slot-width;
+        height: ControllersView.slot-height;
+        if slot.filled && !ControllersView.compact: ControllerCard {
+            slot: slot;
+            ordinal: i + 1;
+        }
+        if slot.filled && ControllersView.compact: ControllerLine {
+            slot: slot;
+            ordinal: i + 1;
+        }
+    }
+    // Nothing connected: one quiet line where the cards would be.
+    if ControllersView.connected == 0: Text {
+        x: Sizing.pct-w(2);
+        y: Sizing.snap(ControllersView.slots-y + (ControllersView.slot-height - self.height) / 2);
+        width: Math.max(0px, parent.width - 2 * Sizing.pct-w(2));
+        overflow: elide;
+        text: @tr("No controllers connected");
+        color: Theme.text-label;
+        font-size: Sizing.font-body;
+    }
+
+    // Nothing found yet: what to do, where the finds will appear.
+    if root.pairing && root.found == 0 && ControllersView.search == PairSearch.searching: Text {
+        x: Sizing.pct-w(2);
+        y: ControllersView.list-y + Sizing.snap((root.row-h - Sizing.font-body) / 2);
+        width: Math.max(0px, parent.width - 2 * Sizing.pct-w(2));
+        height: ControllersView.visible-rows * root.row-h - (self.y - ControllersView.list-y);
+        wrap: word-wrap;
+        overflow: elide;
+        text: @tr("Put your controller in pairing mode. It shows up here.");
+        color: Theme.text-label;
+        font-size: Sizing.font-body;
+    }
+
+    if ControllersView.can-pair: SectionHeader {
+        y: ControllersView.status-y;
+        height: ControllersView.status-height;
+        label: SettingsLabels.pair-search(ControllersView.search);
+    }
+    // More controllers than slots: say how many are not shown, on the
+    // status line's right, where it never moves anything.
+    if ControllersView.overflow > 0: Text {
+        x: parent.width - self.width - Sizing.pct-w(2);
+        y: ControllersView.status-y + Sizing.pct-h(1.5);
+        text: @tr("+{} more", ControllersView.overflow);
+        color: Theme.text-label;
+        font-size: Sizing.font-body;
+    }
+
+    sel := SelectionCursor {
+        radius: Layout.row-radius;
+        activate-pulse: root.activate-pulse;
+        release-pulse: root.release-pulse;
+        screen-settling: root.screen-settling;
+        press-held: root.press-held;
+        target: { x: 0px,
+            y: root.focus-valid ? root.row-y(root.index) : 0px,
+            w: root.width,
+            h: root.row-h,
+            column: 0, row: root.index,
+            // A scroll of the list snaps the fill with the rows.
+            scope: root.scope + ":" + ControllersView.top,
+            valid: root.focus-valid };
+    }
+
+    // The found list, clipped to the rows it has room for.
+    if root.pairing: Rectangle {
+        y: ControllersView.list-y;
+        height: ControllersView.visible-rows * root.row-h;
+        clip: true;
+        for row[i] in root.rows: Rectangle {
+            property <bool> shown: i < root.found && i >= ControllersView.top
+                && i < ControllersView.top + ControllersView.visible-rows;
+            property <bool> lit: self.shown && sel.fill-bottom > root.row-y(i) && sel.fill-top < root.row-y(i) + root.row-h;
+            y: (i - ControllersView.top) * root.row-h;
+            height: root.row-h;
+            visible: self.shown;
+            if shown: SettingsRowView {
+                entry: row;
+                focused: false;
+            }
+            if lit: SelectionClip {
+                radius: Layout.row-radius;
+                row-top: root.row-y(i); row-height: root.row-h;
+                fill-top: sel.fill-top; fill-bottom: sel.fill-bottom;
+                fill: sel.fill;
+                SettingsRowView {
+                    entry: row;
+                    focused: true;
+                    flashing: sel.flashing;
+                }
+            }
+            if shown: TouchArea {
+                mouse-cursor: pointer;
+                changed has-hover => {
+                    if (self.has-hover) { root.row-hovered(i); }
+                }
+                clicked => { root.row-clicked(i); }
+            }
+        }
+    }
+
+    // Paired controllers, on its own line at the bottom, under a rule.
+    if root.pairing: Divider {
+        y: ControllersView.paired-y - self.height;
+        width: parent.width;
+    }
+    if root.pairing: Rectangle {
+        property <int> last: root.rows.length - 1;
+        property <bool> lit: sel.fill-bottom > self.y && sel.fill-top < self.y + self.height;
+        y: ControllersView.paired-y;
+        height: root.row-h;
+        SettingsRowView {
+            entry: root.rows[parent.last];
+            focused: false;
+        }
+        if lit: SelectionClip {
+            radius: Layout.row-radius;
+            row-top: parent.y; row-height: parent.height;
+            fill-top: sel.fill-top; fill-bottom: sel.fill-bottom;
+            fill: sel.fill;
+            SettingsRowView {
+                entry: root.rows[root.rows.length - 1];
+                focused: true;
+                flashing: sel.flashing;
+            }
+        }
+        TouchArea {
+            mouse-cursor: pointer;
+            changed has-hover => {
+                if (self.has-hover) { root.row-hovered(parent.last); }
+            }
+            clicked => { root.row-clicked(parent.last); }
+        }
+    }
+}

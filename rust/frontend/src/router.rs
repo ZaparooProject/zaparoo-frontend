@@ -191,6 +191,8 @@ pub struct Shared {
     /// The Settings page on screen was opened from a pinned Hub tile, so
     /// Back returns to the Hub. Memory only, like `settings_focus`.
     pub settings_from_hub: bool,
+    /// Connected controllers, Bluetooth devices and the pairing page.
+    pub controllers: crate::controllers::Model,
 }
 
 /// Which surface an open context menu was invoked on. Favorites and
@@ -258,6 +260,9 @@ pub enum ListContext {
     MusicFolderOptions(String),
     /// A Settings root tile's Options; the payload is its page id.
     SettingsTileOptions(String),
+    /// A paired Bluetooth device's Options on the pairing page; the
+    /// payload is its address.
+    BluetoothDeviceOptions(String),
     /// The "Change launcher" picker; the payload is the system id.
     SystemLauncher(String),
     /// The per-game "Change launcher" picker; the payload is the game's
@@ -376,6 +381,7 @@ impl Shared {
             hub: crate::hub::HubModel::new(hub_layout_path),
             settings_focus: None,
             settings_from_hub: false,
+            controllers: crate::controllers::Model::default(),
         }
     }
 }
@@ -800,6 +806,10 @@ fn dialog_accept(ctx: &Ctx, app: &App, kind: DialogKind, focus: usize) {
             close_dialog(app);
             crate::decks::delete_answered(ctx, app, confirmed);
         }
+        DialogKind::ForgetController => {
+            close_dialog(app);
+            crate::controllers::forget_answered(ctx, app, confirmed);
+        }
         DialogKind::CoreConfirm => {
             let ok = app
                 .global::<crate::Overlays>()
@@ -831,6 +841,10 @@ fn dialog_cancel(ctx: &Ctx, app: &App, kind: DialogKind) {
         DialogKind::DeleteDeck => {
             close_dialog(app);
             crate::decks::delete_answered(ctx, app, false);
+        }
+        DialogKind::ForgetController => {
+            close_dialog(app);
+            crate::controllers::forget_answered(ctx, app, false);
         }
         // Back dismisses, unless Core will not let this one go.
         DialogKind::CoreConfirm => crate::core_ui::confirm_answered(ctx, app, false),
@@ -1948,6 +1962,11 @@ fn list_accept(ctx: &Ctx, app: &App, context: ListContext, id: &str) {
         ListContext::SettingsTileOptions(page) => {
             if id == "hub_toggle" {
                 crate::hub::toggle_setting(ctx, app, &page);
+            }
+        }
+        ListContext::BluetoothDeviceOptions(device) => {
+            if id == "bluetooth_forget" {
+                crate::controllers::forget_picked(ctx, app, &device);
             }
         }
     }

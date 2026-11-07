@@ -45,9 +45,10 @@ mod generated {
     slint::include_modules!();
 }
 use generated::{
-    ActionStatus, AppCue, ControlKind, DialogButton, DialogKind, DisabledReason, ErrorKind,
-    GamesMode, LogPhase, OnlineLinkPhase, Orientation, PairPhase, RowKind, ScopeKind, Screen,
-    SettingsPage, SetupKind, SetupPicker, StatusKind, SystemsMode, VideoStandard,
+    ActionStatus, AppCue, ControlKind, DeviceValue, DialogButton, DialogKind, DisabledReason,
+    ErrorKind, GamesMode, LogPhase, OnlineLinkPhase, Orientation, PairFailure, PairPhase, RowKind,
+    ScopeKind, Screen, SettingsPage, SetupKind, SetupPicker, StatusKind, SystemsMode,
+    VideoStandard,
 };
 use generated::{
     App, Backdrop, Brand, GlyphSource, GridCell, LetterBucket, MenuEntry, Sizing, Theme,
@@ -2892,6 +2893,53 @@ fn list_geometry(
     ))
 }
 
+/// The Controllers page's own view: its layout from the rule the driver
+/// uses, two cards (or none), and the search under way.
+fn fixture_controllers(app: &App, inputs: &zaparoo_app::sizing::Inputs, none_connected: bool) {
+    use generated::{ControllerSlot, ControllersView, PairSearch};
+    let l = zaparoo_app::controllers::page_layout(inputs);
+    let view = app.global::<ControllersView>();
+    view.set_compact(l.compact);
+    view.set_slots_y(l.slots_y as f32);
+    view.set_slot_columns(l.slot_columns);
+    view.set_slot_width(l.slot_width as f32);
+    view.set_slot_height(l.slot_height as f32);
+    view.set_slot_gap(l.slot_gap as f32);
+    view.set_status_y(l.status_y as f32);
+    view.set_status_height(l.status_height as f32);
+    view.set_list_y(l.list_y as f32);
+    view.set_row_height(l.row_height as f32);
+    view.set_visible_rows(l.visible_rows);
+    view.set_paired_y(l.paired_y as f32);
+    view.set_top(0);
+    view.set_can_pair(true);
+    view.set_search(PairSearch::Searching);
+    let mut slots = vec![ControllerSlot::default(); zaparoo_app::controllers::SLOTS];
+    if !none_connected {
+        slots[0] = ControllerSlot {
+            filled: true,
+            name: "DualSense".into(),
+            reading: DeviceValue::ChargingPercent,
+            percent: 80,
+            bar: 80,
+            charging: true,
+            ..Default::default()
+        };
+        slots[1] = ControllerSlot {
+            filled: true,
+            name: "8BitDo Pro 2".into(),
+            reading: DeviceValue::Percent,
+            percent: 10,
+            bar: 10,
+            low: true,
+            ..Default::default()
+        };
+    }
+    view.set_connected(if none_connected { 0 } else { 2 });
+    view.set_overflow(0);
+    view.set_slots(slint::ModelRc::new(slint::VecModel::from(slots)));
+}
+
 /// The settings screen at its own geometry: the root tiles, or one page
 /// of rows straight from the registry.
 #[allow(
@@ -2916,6 +2964,46 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
     // "…-settings-page-appearance": the Appearance page with a background
     // image set, so its Background section shows every row.
     let appearance = screen.contains("settings-page-appearance");
+    // "…-settings-page-controls": the Controls page on its Controllers row,
+    // two connected. "…-controllers" the page it opens, mid-search: two
+    // cards (one charging, one running flat), and three finds (two of one
+    // name, told apart by their address; one pairing; one that failed for
+    // want of a PIN, under the cursor). "…-controllers-none" the same with
+    // nothing connected and the cursor where the page opens it, on Paired
+    // controllers. "…-controllers-empty" the page as it opens: the cards,
+    // nothing found yet, and what to do. "…-paired" the page that row
+    // opens.
+    let controls = screen.contains("settings-page-controls");
+    let controllers_page = screen.contains("settings-page-controllers");
+    let none_connected = screen.contains("controllers-none");
+    let nothing_found = screen.contains("controllers-empty");
+    let paired_page = screen.contains("settings-page-paired");
+    let found = [
+        (
+            "DualShock 4",
+            "79:CA",
+            DeviceValue::Found,
+            PairFailure::None,
+        ),
+        (
+            "DualShock 4",
+            "11:0F",
+            DeviceValue::Pairing,
+            PairFailure::None,
+        ),
+        (
+            "Arcade Stick",
+            "",
+            DeviceValue::Failed,
+            PairFailure::PinRequired,
+        ),
+    ];
+    let paired = [
+        ("DualSense", "", DeviceValue::Connected),
+        ("8BitDo Pro 2", "", DeviceValue::Connected),
+        ("Xbox Wireless Controller", "", DeviceValue::NotConnected),
+        ("", "", DeviceValue::NotConnected),
+    ];
     let inputs = sizing::Scene::of(app, scene_w, scene_h, crt).inputs();
     let derived = zaparoo_app::sizing::derive(&inputs);
     let view = app.global::<generated::SettingsView>();
@@ -2923,6 +3011,12 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
         SettingsPage::Online
     } else if appearance {
         SettingsPage::Appearance
+    } else if controls {
+        SettingsPage::Controls
+    } else if controllers_page {
+        SettingsPage::Controllers
+    } else if paired_page {
+        SettingsPage::PairedControllers
     } else if page {
         SettingsPage::Library
     } else {
@@ -2944,6 +3038,14 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
         ra_installed: ra && !ra_setup,
         ra_conflict: ra && !ra_setup,
         background_active: appearance,
+        controllers_listed: controls || controllers_page,
+        can_pair_controllers: controls || controllers_page || paired_page,
+        bluetooth_found: if controllers_page && !nothing_found {
+            found.len()
+        } else {
+            0
+        },
+        bluetooth_paired: if paired_page { paired.len() } else { 0 },
     };
     // The card and its row heights, from the rule the driver uses.
     let geometry = rules::page_geometry(&inputs);
@@ -2964,6 +3066,23 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
             };
             let height = match row {
                 Row::Header(_) => geometry.header_height,
+                Row::Item { id, index, control } => {
+                    out.control = control.into();
+                    out.item = i32::try_from(index).unwrap_or(0);
+                    if id == "foundDevice" {
+                        let (name, tail, value, error) = found[index];
+                        out.value_name = name.into();
+                        out.name_tail = tail.into();
+                        out.device = value;
+                        out.pair_error = error;
+                    } else {
+                        let (name, tail, value) = paired[index];
+                        out.value_name = name.into();
+                        out.name_tail = tail.into();
+                        out.device = value;
+                    }
+                    geometry.row_height
+                }
                 Row::Field { id, control } => {
                     out.control = control.into();
                     let waits = (unlinked && rules::needs_online_link(id))
@@ -3001,6 +3120,7 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
                                 "screensaverTimeout" => "300",
                                 "gameBackground" => "screenshot",
                                 "backgroundListStyle" => "glass",
+                                "noPairedControllers" => "",
                                 _ => "auto",
                             }
                             .into();
@@ -3026,6 +3146,8 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
                             if id == "backgroundImage" {
                                 out.value = "/media/fat/Wallpapers".into();
                                 out.value_name = "Wallpapers".into();
+                            } else if id == "controllers" {
+                                out.value = "2".into();
                             }
                         }
                         Control::Slider => {
@@ -3036,6 +3158,7 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
                             out.value = value.into();
                             (out.cells, out.lit) = cells;
                         }
+                        Control::Device => {}
                         Control::TriToggle => {
                             out.value = if unlinked { "off" } else { "mixed" }.into();
                         }
@@ -3086,7 +3209,20 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
             .position(|row| row.id == "backgroundDim")
             .and_then(|i| i32::try_from(i).ok())
             .unwrap_or(2)
-    } else if page {
+    } else if controls {
+        rows.iter()
+            .position(|row| row.id == "controllers")
+            .and_then(|i| i32::try_from(i).ok())
+            .unwrap_or(0)
+    } else if controllers_page {
+        if nothing_found {
+            0
+        } else if none_connected {
+            i32::try_from(found.len()).unwrap_or(0)
+        } else {
+            2
+        }
+    } else if paired_page || page {
         2
     } else {
         1
@@ -3100,6 +3236,29 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
     };
     view.set_field_index(fields(index.max(0) as usize));
     view.set_field_count(fields(rows.len()));
+    if controllers_page {
+        fixture_controllers(app, &inputs, none_connected);
+    }
+    if (controls || controllers_page || paired_page) && !none_connected {
+        // One of the two is running flat: the header says so. The same
+        // two pads as the cards: a charging DualSense and a flat 8BitDo.
+        let shell = app.global::<Shell>();
+        shell.set_controller_battery_low(true);
+        shell.set_controller_batteries(slint::ModelRc::new(slint::VecModel::from(vec![
+            generated::HeaderPad {
+                fill: generated::PadFill::Full,
+                charging: true,
+                low: false,
+                marks_before: 0,
+            },
+            generated::HeaderPad {
+                fill: generated::PadFill::Empty,
+                charging: false,
+                low: true,
+                marks_before: 1,
+            },
+        ])));
+    }
     // Same scroll the driver applies, from the same rule, so the fixture
     // cannot quietly frame the band differently from the app.
     let spans: Vec<(f32, f32)> = rows.iter().map(|r| (r.y_offset, r.height)).collect();

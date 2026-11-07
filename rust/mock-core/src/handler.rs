@@ -10,7 +10,7 @@ use serde_json::Value;
 use tracing::{debug, info, warn};
 
 use crate::media_state::{self, Notifier};
-use crate::{decks, fixtures, library, music, ui_events};
+use crate::{decks, device, fixtures, library, music, ui_events};
 
 #[derive(Deserialize)]
 struct RpcRequest {
@@ -34,6 +34,8 @@ struct RpcResponse {
 struct RpcError {
     code: i32,
     message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    data: Option<Value>,
 }
 
 const FALLBACK_INTERNAL_ERROR: &str = r#"{"jsonrpc":"2.0","id":null,"error":{"code":-32603,"message":"internal serialization error"}}"#;
@@ -53,6 +55,7 @@ pub fn dispatch(text: &str, notifier: &Notifier) -> String {
                 error: Some(RpcError {
                     code: -32700,
                     message: format!("parse error: {e}"),
+                    data: None,
                 }),
             });
         }
@@ -60,9 +63,10 @@ pub fn dispatch(text: &str, notifier: &Notifier) -> String {
 
     debug!(method = %req.method, "rpc");
 
-    // The background slot's methods answer first; anything else is the
-    // rest of the mock's.
-    let routed = music::route(&req.method, &req.params, notifier);
+    // The background slot's and the device's methods answer first;
+    // anything else is the rest of the mock's.
+    let routed = music::route(&req.method, &req.params, notifier)
+        .or_else(|| device::route(&req.method, &req.params, notifier));
     let outcome: Option<Result<Value, String>> = routed.or_else(|| match req.method.as_str() {
         "systems" => Some(Ok(fixtures::systems_response(&req.params))),
         "launchers" => Some(Ok(fixtures::launchers_response())),
@@ -127,6 +131,8 @@ pub fn dispatch(text: &str, notifier: &Notifier) -> String {
             result: None,
             error: Some(RpcError {
                 code: DOMAIN_ERROR_CODE,
+                data: device::error_category(&message)
+                    .map(|category| serde_json::json!({ "category": category })),
                 message,
             }),
         },
@@ -137,6 +143,7 @@ pub fn dispatch(text: &str, notifier: &Notifier) -> String {
             error: Some(RpcError {
                 code: -32601,
                 message: format!("method not found: {}", req.method),
+                data: None,
             }),
         },
     };
