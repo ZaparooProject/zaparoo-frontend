@@ -74,6 +74,10 @@ pub struct Shared {
     pub pairing: zaparoo_app::pairing::Session,
     /// Online account and play history consent, as Core last reported them.
     pub online: crate::online::Model,
+    /// Whether the account may change the header logo, from the last
+    /// successful `online.status`. Kept apart from `online`, which a failed
+    /// refresh resets: a failure must not change this.
+    pub branding: zaparoo_app::branding::Entitlement,
     /// The Online account link panel.
     pub online_link: zaparoo_app::online_link::Session,
     pub online_list: crate::online_list::State,
@@ -326,6 +330,7 @@ impl Shared {
             log_upload: crate::log_upload::LogUploadModel::new(),
             pairing: zaparoo_app::pairing::Session::default(),
             online: crate::online::Model::default(),
+            branding: zaparoo_app::branding::Entitlement::Unknown,
             online_link: zaparoo_app::online_link::Session::default(),
             online_list: crate::online_list::State::default(),
             errors: action_error::ErrorQueue::new(),
@@ -778,6 +783,17 @@ fn dialog_accept(ctx: &Ctx, app: &App, kind: DialogKind, focus: usize) {
             close_dialog(app);
             if confirmed {
                 crate::online::unlink(ctx, app);
+            }
+        }
+        DialogKind::LogoSupport => {
+            let link = app
+                .global::<crate::Overlays>()
+                .get_dialog_buttons()
+                .row_data(focus)
+                .is_some_and(|id| id == DialogButton::LinkAccount);
+            close_dialog(app);
+            if link {
+                crate::online::open(ctx, app);
             }
         }
         DialogKind::RaLogOut => {
@@ -1612,6 +1628,30 @@ pub(crate) fn confirm_unlink_online(app: &App) {
         &[DialogButton::No, DialogButton::Yes],
         0,
     );
+}
+
+/// Explain why the header logo is locked. An unlinked device also gets
+/// Link account, focused, which opens the Online link screen.
+pub(crate) fn open_logo_support(app: &App, linked: bool) {
+    if linked {
+        open_dialog(
+            app,
+            DialogKind::LogoSupport,
+            "",
+            "linked",
+            &[DialogButton::Ok],
+            0,
+        );
+    } else {
+        open_dialog(
+            app,
+            DialogKind::LogoSupport,
+            "",
+            "",
+            &[DialogButton::Ok, DialogButton::LinkAccount],
+            1,
+        );
+    }
 }
 
 /// Ask before removing the `RetroAchievements` login; No is focused.

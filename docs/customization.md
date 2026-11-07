@@ -233,6 +233,35 @@ than bypassing the decode-memory limits. Paths, gradients, clipping, and masks
 remain supported. Discovery retains up to 512 files per namespace within a
 shared 1 MiB index budget. Invalid or over-budget files use built-in art.
 
+## Header logo
+
+Settings → Appearance → Logo replaces the Zaparoo logo in the top bar with
+an image of your own, or removes it. It needs a Zaparoo Online account with
+Zaparoo Pro or a Zaparoo Warp subscription.
+
+- **Logo**: Zaparoo (the default), Custom image, or None. With None the
+  status line takes the logo's space, and the screensaver bounces the clock
+  instead of a logo.
+- **Logo image** (shown for Custom image) opens the file browser to pick one
+  image. It keeps its aspect and fits inside the Zaparoo logo's box, so the
+  header's layout does not change; the screensaver bounces it too. The same
+  formats and limits as `custom/` artwork apply. An image that is missing or
+  cannot be read shows the Zaparoo logo.
+
+About and the desktop's dormant screen always show the Zaparoo logo.
+
+The setting applies as saved at every start, with nothing to wait for. It
+goes back to the Zaparoo logo only when Core reports a completed Online
+check (Core's `online.status`) for an account without the feature; being
+offline, a failed check, or a Core too old to answer changes nothing. The
+rows stay on the page, dimmed, while the account is known not to have it.
+
+```toml
+[settings]
+header_logo = "custom"                        # zaparoo, custom, none
+header_logo_image = "/media/fat/zaparoo/custom/logo.png"
+```
+
 ## Background
 
 Settings → Appearance → Background sets what shows behind every screen.

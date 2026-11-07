@@ -448,6 +448,37 @@ pub fn mister_browse_grid_transition_geometry(
     })
 }
 
+/// CRT horizontal inset: fixed 12px total (6px per side), matching the
+/// Slint `crt-inset-w` in `app.slint`. The vertical inset stays at 5%.
+const CRT_INSET_W: f64 = 12.0;
+
+/// The logical scene for a framebuffer: the CRT safe-area insets taken on
+/// the physical axes, then the axes swapped for a rotated orientation.
+/// The app and the offline snapshots both solve geometry from this.
+pub(crate) fn scene_size(
+    width: f64,
+    height: f64,
+    orientation: crate::Orientation,
+    crt: bool,
+) -> (f64, f64) {
+    let inset_w = if crt { CRT_INSET_W } else { 0.0 };
+    let inset_h = if crt {
+        2.0 * (height * 0.05).round()
+    } else {
+        0.0
+    };
+    let safe_w = (width - inset_w).max(1.0);
+    let safe_h = (height - inset_h).max(1.0);
+    if matches!(
+        orientation,
+        crate::Orientation::Cw | crate::Orientation::Ccw
+    ) {
+        (safe_h, safe_w)
+    } else {
+        (safe_w, safe_h)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

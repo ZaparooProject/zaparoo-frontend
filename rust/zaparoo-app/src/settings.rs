@@ -153,6 +153,9 @@ pub struct Inputs {
     /// A background image can show: a custom image is set, or Game
     /// background is on. The rows that only shape an image show then.
     pub background_active: bool,
+    /// The header logo setting is a custom image: the row that picks the
+    /// image shows then.
+    pub header_logo_custom: bool,
     /// `retroachievements.cfg` holds a username and password.
     pub ra_logged_in: bool,
     /// `MiSTer_RA`, a `RetroAchievements` core, and the MiSTer.ini section
@@ -201,6 +204,7 @@ const NAVIGATES: &[&str] = &[
     "pageSupportAbout",
     "launcherPreference",
     "backgroundImage",
+    "headerLogoImage",
 ];
 
 const ACTIONS: &[&str] = &[
@@ -335,12 +339,18 @@ pub fn page_rows(page: &str, inputs: &Inputs) -> Vec<Row> {
                 field("systemLogoStyle"),
                 field("showMenuRow"),
                 field("showHelpBar"),
+                field("headerLogo"),
+            ];
+            if inputs.header_logo_custom {
+                rows.push(field("headerLogoImage"));
+            }
+            rows.extend([
                 field("reduceMotion"),
                 field("screensaverTimeout"),
                 Row::Header("background"),
                 field("backgroundImage"),
                 field("gameBackground"),
-            ];
+            ]);
             // Blur, dimming and the list card only shape an image; with
             // none that can show they would change nothing.
             if inputs.background_active {
@@ -502,6 +512,7 @@ pub fn options(id: &str, inputs: &Inputs) -> Option<Vec<&'static str>> {
         "raPopupPosition" => POPUP_POSITIONS,
         "gameBackground" => crate::background::GAME_BACKGROUND_TYPES,
         "backgroundListStyle" => crate::background::LIST_STYLES,
+        "headerLogo" => crate::branding::HEADER_LOGOS,
         "screensaverTimeout" => {
             let mut values = SCREENSAVER_TIMEOUTS.to_vec();
             // A debug build can watch the screensaver arm immediately.
@@ -1201,6 +1212,32 @@ mod tests {
     #[test]
     fn unknown_page_has_no_rows() {
         assert!(page_rows("pageNope", &Inputs::default()).is_empty());
+    }
+
+    #[test]
+    fn appearance_offers_the_logo_image_only_for_a_custom_logo() {
+        let ids = |inputs: &Inputs| -> Vec<&'static str> {
+            page_rows("pageAppearance", inputs)
+                .iter()
+                .map(|r| r.id())
+                .collect()
+        };
+        let plain = ids(&Inputs::default());
+        let at = plain.iter().position(|id| *id == "headerLogo").unwrap();
+        assert_eq!(plain[at - 1], "showHelpBar");
+        assert_eq!(plain[at + 1], "reduceMotion");
+        assert!(!plain.contains(&"headerLogoImage"));
+        let custom = ids(&Inputs {
+            header_logo_custom: true,
+            ..Inputs::default()
+        });
+        assert_eq!(custom[at + 1], "headerLogoImage");
+        assert_eq!(control("headerLogo"), Control::Picker);
+        assert_eq!(control("headerLogoImage"), Control::Navigate);
+        assert_eq!(
+            options("headerLogo", &Inputs::default()).unwrap(),
+            crate::branding::HEADER_LOGOS
+        );
     }
 
     #[test]

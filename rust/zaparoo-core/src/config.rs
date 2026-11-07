@@ -198,6 +198,8 @@ pub struct SettingsConfig {
     pub background_blur: Option<i32>,
     pub background_dim: Option<i32>,
     pub background_list_style: Option<String>,
+    pub header_logo: Option<String>,
+    pub header_logo_image: Option<String>,
     pub screensaver_timeout: Option<String>,
     pub media_image_type: Option<String>,
     pub favorites_grouping: Option<String>,
@@ -252,6 +254,8 @@ pub struct SettingsMirror<'a> {
     pub background_blur: i32,
     pub background_dim: i32,
     pub background_list_style: &'a str,
+    pub header_logo: &'a str,
+    pub header_logo_image: &'a str,
     pub debug_logging: bool,
     pub screensaver_timeout: &'a str,
     pub media_image_type: &'a str,
@@ -439,6 +443,8 @@ struct RawSettings {
     background_blur: Option<i32>,
     background_dim: Option<i32>,
     background_list_style: Option<String>,
+    header_logo: Option<String>,
+    header_logo_image: Option<String>,
     screensaver_timeout: Option<String>,
     media_image_type: Option<String>,
     favorites_grouping: Option<String>,
@@ -613,6 +619,8 @@ fn settings_config_from_raw(raw: RawSettings) -> SettingsConfig {
         background_blur: raw.background_blur,
         background_dim: raw.background_dim,
         background_list_style: trim_opt(raw.background_list_style),
+        header_logo: trim_opt(raw.header_logo),
+        header_logo_image: trim_opt(raw.header_logo_image),
         screensaver_timeout: trim_opt(raw.screensaver_timeout),
         media_image_type: trim_opt(raw.media_image_type),
         favorites_grouping: trim_opt(raw.favorites_grouping).or_else(|| {
@@ -786,6 +794,17 @@ fn set_background_settings(settings: &mut toml_edit::Table, mirror: &SettingsMir
     );
 }
 
+/// The header logo rows of `[settings]`. No image is no key at all.
+fn set_header_logo_settings(settings: &mut toml_edit::Table, mirror: &SettingsMirror<'_>) {
+    set_str(settings, "header_logo", mirror.header_logo.trim());
+    let image = mirror.header_logo_image.trim();
+    if image.is_empty() {
+        settings.remove("header_logo_image");
+    } else {
+        set_str(settings, "header_logo_image", image);
+    }
+}
+
 pub fn save_settings_mirror(path: &Path, mirror: SettingsMirror<'_>) -> Result<(), String> {
     let mut file = read_config_document(path)?;
     let doc = &mut file.doc;
@@ -844,6 +863,7 @@ pub fn save_settings_mirror(path: &Path, mirror: SettingsMirror<'_>) -> Result<(
     set_bool(settings, "show_menu_row", mirror.show_menu_row);
     set_bool(settings, "show_help_bar", mirror.show_help_bar);
     set_background_settings(settings, &mirror);
+    set_header_logo_settings(settings, &mirror);
     set_str(
         settings,
         "screensaver_timeout",
@@ -1126,6 +1146,8 @@ mod tests {
             background_blur: 100,
             background_dim: 0,
             background_list_style: "glass",
+            header_logo: "zaparoo",
+            header_logo_image: "",
             debug_logging: false,
             screensaver_timeout: "60",
             media_image_type: "auto",
@@ -1694,6 +1716,8 @@ mod tests {
                 background_blur: 40,
                 background_dim: -2,
                 background_list_style: "solid",
+                header_logo: "custom",
+                header_logo_image: "/media/fat/logo.png",
                 debug_logging: true,
                 screensaver_timeout: "300",
                 media_image_type: "auto",
@@ -1736,6 +1760,11 @@ mod tests {
         assert_eq!(cfg.settings.background_blur, Some(40));
         assert_eq!(cfg.settings.background_dim, Some(-2));
         assert_eq!(cfg.settings.background_list_style.as_deref(), Some("solid"));
+        assert_eq!(cfg.settings.header_logo.as_deref(), Some("custom"));
+        assert_eq!(
+            cfg.settings.header_logo_image.as_deref(),
+            Some("/media/fat/logo.png")
+        );
         assert_eq!(cfg.settings.reduce_motion, Some(true));
         assert_eq!(cfg.settings.screensaver_timeout.as_deref(), Some("300"));
         assert_eq!(cfg.settings.favorites_grouping.as_deref(), Some("system"));
@@ -1782,6 +1811,8 @@ mod tests {
                 background_blur: 100,
                 background_dim: 0,
                 background_list_style: "glass",
+                header_logo: "zaparoo",
+                header_logo_image: "",
                 debug_logging: false,
                 screensaver_timeout: "60",
                 media_image_type: "auto",
@@ -1848,6 +1879,8 @@ mod tests {
             background_blur: 100,
             background_dim: 0,
             background_list_style: "glass",
+            header_logo: "zaparoo",
+            header_logo_image: "",
             debug_logging: true,
             screensaver_timeout: "off",
             media_image_type: "auto",
