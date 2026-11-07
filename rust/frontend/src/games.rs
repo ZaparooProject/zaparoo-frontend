@@ -4302,6 +4302,10 @@ fn accept_current(ctx: &Ctx, app: &App) {
     if let Some(item) = &row.deck_item {
         // Inside a deck, an item plays the deck from there.
         crate::decks::play_from(ctx, app, item.position, &row.display);
+    } else if ctx.is_mister && zaparoo_app::zapscript::is_update_all(&row.path) {
+        // A live row's text is Core's zapScript, which the router's
+        // attribution would not recognize.
+        crate::router::launch(ctx, app, row.path.clone(), &row.display);
     } else if let Some(text) = row.launch_text_from(live) {
         crate::router::launch(ctx, app, text, &row.display);
     }
