@@ -41,6 +41,7 @@ impl HeaderLogo {
         }
     }
 
+    /// The persisted token for this value.
     pub fn token(self) -> &'static str {
         match self {
             Self::Zaparoo => "zaparoo",

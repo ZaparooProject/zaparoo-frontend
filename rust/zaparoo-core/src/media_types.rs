@@ -1505,7 +1505,8 @@ pub struct AuthStatusResult {
 #[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct OnlineStatusResult {
-    #[serde(default)]
+    /// Required: an answer without it is an error, which changes nothing,
+    /// where reading it as unlinked would revert a custom header logo.
     pub linked: bool,
     #[serde(default)]
     pub features: Vec<String>,
@@ -1980,6 +1981,17 @@ mod tests {
         clippy::panic,
         reason = "tests should fail-fast on unexpected errors"
     )]
+
+    #[test]
+    fn online_status_requires_linked() {
+        assert!(serde_json::from_value::<super::OnlineStatusResult>(
+            serde_json::json!({ "features": [], "featuresCheckedAt": null })
+        )
+        .is_err());
+        let status: super::OnlineStatusResult =
+            serde_json::from_value(serde_json::json!({ "linked": false })).unwrap();
+        assert!(!status.linked);
+    }
 
     use super::{
         merged_root_view, BrowseEntry, HealthResult, IndexingStatusResponse, LauncherInfo,

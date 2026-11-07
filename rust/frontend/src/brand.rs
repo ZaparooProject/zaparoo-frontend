@@ -158,6 +158,9 @@ thread_local! {
 }
 
 impl Custom {
+    /// The source scaled to a paint size, cached within the byte and entry
+    /// caps with the oldest evicted first. None for a stale `revision`, a
+    /// non-finite size, or no source.
     fn raster(&mut self, revision: i32, width: f32, height: f32) -> Option<slint::Image> {
         let source = self.source.clone()?;
         if revision != self.revision || !width.is_finite() || !height.is_finite() {
@@ -192,6 +195,8 @@ impl Custom {
         Some(image)
     }
 
+    /// Take a decode's result, None when it failed, and drop the rasters of
+    /// the previous source.
     fn set_source(&mut self, source: Option<image::RgbaImage>) {
         self.failed = source.is_none();
         self.source = source.map(Arc::new);
@@ -200,6 +205,8 @@ impl Custom {
         self.bytes = 0;
     }
 
+    /// Forget the image and invalidate any decode still running. Not a
+    /// failure: no image was asked for.
     fn clear(&mut self) {
         self.ticket = self.ticket.wrapping_add(1);
         self.path.clear();

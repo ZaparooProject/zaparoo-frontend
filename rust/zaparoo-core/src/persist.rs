@@ -825,6 +825,7 @@ fn default_favorites_grouping() -> String {
     "none".into()
 }
 
+/// The header logo token for state saved before the setting existed.
 fn default_header_logo() -> String {
     "zaparoo".into()
 }
