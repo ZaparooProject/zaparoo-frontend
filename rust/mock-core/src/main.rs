@@ -10,6 +10,7 @@
 // defaults to 7497.
 
 mod decks;
+mod device;
 mod events;
 mod fixtures;
 mod handler;

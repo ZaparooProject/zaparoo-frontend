@@ -301,6 +301,8 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_status_keys => set_status_keys,
         get_status_icons_enabled => set_status_icons_enabled,
         get_music_playing => set_music_playing,
+        get_controller_battery_low => set_controller_battery_low,
+        get_controller_batteries => set_controller_batteries,
         get_has_battery => set_has_battery,
         get_battery_percent => set_battery_percent,
         get_boot_curtain => set_boot_curtain,
@@ -686,6 +688,18 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_cells => set_cells,
         get_activate_pulse => set_activate_pulse,
         get_release_pulse => set_release_pulse,
+    );
+
+    // The Controllers page's state; its layout and the found list's top
+    // row are the CRT's own, set with the rest of the settings geometry.
+    let source = primary.global::<crate::ControllersView>();
+    let target = crt.global::<crate::ControllersView>();
+    copy_properties!(source, target;
+        get_slots => set_slots,
+        get_connected => set_connected,
+        get_overflow => set_overflow,
+        get_can_pair => set_can_pair,
+        get_search => set_search,
     );
 
     crate::settings::mirror_geometry(primary, crt);

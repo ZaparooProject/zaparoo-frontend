@@ -8,8 +8,8 @@
 // logic; forward orchestration lives in the router.
 
 import { Theme, Backdrop, GlassCard, Sizing, Motion, Layout } from "theme.slint";
-import { CoreUiKind, MenuRole, UserFlag, RenamePurpose, ContextPage, KeyKind, SearchZone, SearchPane, SearchScope, FileBrowserMode, MusicPage, MusicControl, PlaybackState, RepeatMode, MusicUnavailable, Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, StateTokens, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, HeaderLogo, DialogKind, DialogButton, ErrorKind, ManualState, ManualFit, RaLoginStep, RaLoginStatus, LauncherPrefsPage, LauncherPrefsRowKind } from "state_types.slint";
-export { CoreUiKind, MenuRole, UserFlag, RenamePurpose, ContextPage, KeyKind, SearchZone, SearchPane, SearchScope, FileBrowserMode, MusicPage, MusicControl, PlaybackState, RepeatMode, MusicUnavailable, Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, HeaderLogo, DialogKind, DialogButton, ErrorKind, ManualState, ManualFit, RaLoginStep, RaLoginStatus, LauncherPrefsPage, LauncherPrefsRowKind }
+import { CoreUiKind, MenuRole, UserFlag, RenamePurpose, ContextPage, KeyKind, SearchZone, SearchPane, SearchScope, FileBrowserMode, MusicPage, MusicControl, PlaybackState, RepeatMode, MusicUnavailable, Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, DeviceValue, PairFailure, PairSearch, PadFill, HeaderPad, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, StateTokens, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, HeaderLogo, DialogKind, DialogButton, ErrorKind, ManualState, ManualFit, RaLoginStep, RaLoginStatus, LauncherPrefsPage, LauncherPrefsRowKind } from "state_types.slint";
+export { CoreUiKind, MenuRole, UserFlag, RenamePurpose, ContextPage, KeyKind, SearchZone, SearchPane, SearchScope, FileBrowserMode, MusicPage, MusicControl, PlaybackState, RepeatMode, MusicUnavailable, Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, DeviceValue, PairFailure, PairSearch, PadFill, HeaderPad, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, HeaderLogo, DialogKind, DialogButton, ErrorKind, ManualState, ManualFit, RaLoginStep, RaLoginStatus, LauncherPrefsPage, LauncherPrefsRowKind }
 import { FastScrollRail, GlyphSource, Brand, Buttons, HelpEntry, Status, HeaderBar, StatusLine, ProgressTrack, WaitCue, TopStatusStrip, FooterIndicator, ActiveLabel, HelpBar, SectionHeader, Divider, ScrollCue, ModalShell, QrPlate, StateCue } from "chrome.slint";
 import { GridCell, MarqueeCaption, PressableSurface, Tile, PagedGridView, PageStrip } from "tiles.slint";
 import { ScrollOffset, SelectionCursor, SelectionClip, FocusCursor } from "focus.slint";
@@ -19,6 +19,8 @@ export { PressFeedback }
 import { DetailRow, MetaLabels, BrowseList, BrowseListDetailView } from "browse_list.slint";
 import { InfoLineData, InfoLineLabel } from "info_line.slint";
 import { SettingsRow, SettingsLabels, SettingsRowView } from "settings.slint";
+import { ControllerSlot, ControllersView, ControllersPanel } from "controllers.slint";
+export { ControllerSlot, ControllersView }
 import { SetupPickerRow, SetupModal, LogUploadModal } from "setup.slint";
 import { Labels, DialogLabels } from "labels.slint";
 import { GameInfoView, GameInfoModal, ManualReader, InfoRow } from "game_info.slint";
@@ -168,6 +170,13 @@ export global Shell {
     in-out property <bool> status-icons-enabled: false;
     // Core's background slot is playing music (the header's music note).
     in-out property <bool> music-playing: false;
+    // A controller Core lists is running flat and nothing is charging it
+    // (`zaparoo_app::controllers::any_low`): the compact header's one
+    // warning glyph.
+    in-out property <bool> controller-battery-low: false;
+    // Every other header shows each controller's battery
+    // (`zaparoo_app::controllers::header_pads`).
+    in-out property <[HeaderPad]> controller-batteries: [];
     in-out property <bool> has-battery: false;
     in-out property <int> battery-percent: 0;
     // Cold-launch curtain. `boot-curtain` is true from the first frame
@@ -853,6 +862,9 @@ component SettingsScreen inherits Rectangle {
     in property <bool> outgoing: false;
     property <SettingsPage> page: root.outgoing ? SettingsView.outgoing-page : SettingsView.page;
     property <bool> root-grid: root.page == SettingsPage.root;
+    // The Controllers page draws its own layout in the card in place of
+    // the stacked rows.
+    property <bool> controllers: root.page == SettingsPage.controllers;
     property <[SettingsRow]> rows: root.outgoing ? SettingsView.outgoing-rows : SettingsView.rows;
     property <int> index: root.outgoing ? SettingsView.outgoing-index : SettingsView.index;
     property <length> rows-height: root.outgoing ? SettingsView.outgoing-rows-height : SettingsView.rows-height;
@@ -868,13 +880,15 @@ component SettingsScreen inherits Rectangle {
         height: Layout.strip-height;
         slot-margin: Layout.slot-margin;
         title: SettingsLabels.page-title(root.page);
-        show-page-counter: !root.root-grid && !Sizing.crt;
+        // The Controllers page lays itself out and its list only grows, so
+        // a position among its rows would be a count that drifts.
+        show-page-counter: !root.root-grid && !Sizing.crt && !root.controllers;
         page-indicator-mode: true;
         item-position-mode: true;
         current-item: SettingsView.field-index;
         total-items: SettingsView.field-count;
-        has-pages-above: root.scroll > 0px;
-        has-pages-below: root.scroll + root.rows-clip-height < root.rows-content-h + 2 * root.pad;
+        has-pages-above: !root.controllers && root.scroll > 0px;
+        has-pages-below: !root.controllers && root.scroll + root.rows-clip-height < root.rows-content-h + 2 * root.pad;
         page-requested(delta) => { SettingsInput.page-requested(delta); }
         visible: Layout.top-strip-visible;
     }
@@ -941,7 +955,7 @@ component SettingsScreen inherits Rectangle {
     property <string> hint: root.index < 0 || root.index >= root.rows.length ? ""
         : !root.rows[root.index].enabled && SettingsLabels.disabled-reason(root.rows[root.index].id) != ""
             ? SettingsLabels.disabled-reason(root.rows[root.index].id)
-            : SettingsLabels.description(root.rows[root.index].id);
+            : SettingsLabels.row-description(root.rows[root.index]);
     property <length> hint-y: self.card-h - self.pad - self.hint-h;
     property <length> hint-rule-y: self.hint-y - self.pad - Sizing.stroke(1);
 
@@ -993,6 +1007,7 @@ component SettingsScreen inherits Rectangle {
             width: root.card-w - 2 * root.pad;
             height: root.hint-rule-y - Sizing.stroke(1) - self.y;
             clip: true;
+            visible: !root.controllers;
 
         // The fill and the rows hang off one scrolled parent, positioned
         // against where the band is going to settle rather than against
@@ -1075,6 +1090,22 @@ component SettingsScreen inherits Rectangle {
             }
         }
         }
+        }
+
+        if root.controllers: ControllersPanel {
+            x: root.pad;
+            y: root.pad;
+            width: root.card-w - 2 * root.pad;
+            height: root.rows-height;
+            rows: root.rows;
+            index: root.index;
+            scope: StateTokens.page(root.page);
+            activate-pulse: SettingsView.activate-pulse;
+            release-pulse: SettingsView.release-pulse;
+            screen-settling: Shell.active-screen != Screen.settings;
+            press-held: PressFeedback.active(PressOwner.settings, root.index);
+            row-hovered(i) => { SettingsInput.row-hovered(i); }
+            row-clicked(i) => { SettingsInput.row-clicked(i); }
         }
 
         // Hint band: the focused row's own description. The rows scroll
@@ -4248,6 +4279,42 @@ export component App inherits Window {
                     { buttons: ["ButtonB"], label: @tr("Back") },
                 ];
             }
+            // Nothing to act on: an empty page, or only a line that reports.
+            if (self.focused-settings-control() == ControlKind.none
+                || self.focused-settings-control() == ControlKind.info) {
+                return [{ buttons: ["ButtonB"], label: @tr("Back") }];
+            }
+            // A Bluetooth device: Accept pairs one the search found or stops
+            // the pairing underway, Options forgets one on the Paired
+            // controllers page.
+            if (self.focused-settings-control() == ControlKind.device) {
+                if (SettingsView.rows[SettingsView.index].device == DeviceValue.found
+                    || SettingsView.rows[SettingsView.index].device == DeviceValue.failed) {
+                    return [
+                        { buttons: ["DpadUp", "DpadDown"], label: @tr("Move") },
+                        { buttons: ["ButtonA"], label: SettingsLabels.action("pair") },
+                        { buttons: ["ButtonB"], label: @tr("Back") },
+                    ];
+                }
+                if (SettingsView.rows[SettingsView.index].device == DeviceValue.pairing) {
+                    return [
+                        { buttons: ["DpadUp", "DpadDown"], label: @tr("Move") },
+                        { buttons: ["ButtonA"], label: SettingsLabels.action("cancel") },
+                        { buttons: ["ButtonB"], label: @tr("Back") },
+                    ];
+                }
+                if (SettingsView.rows[SettingsView.index].id == "pairedDevice") {
+                    return [
+                        { buttons: ["DpadUp", "DpadDown"], label: @tr("Move") },
+                        { buttons: ["ButtonX"], label: @tr("Options") },
+                        { buttons: ["ButtonB"], label: @tr("Back") },
+                    ];
+                }
+                return [
+                    { buttons: ["DpadUp", "DpadDown"], label: @tr("Move") },
+                    { buttons: ["ButtonB"], label: @tr("Back") },
+                ];
+            }
             if (self.focused-settings-control() == ControlKind.picker) {
                 return [
                     { buttons: ["DpadUp", "DpadDown"], label: @tr("Move") },
@@ -4566,6 +4633,8 @@ export component App inherits Window {
         status-keys: Shell.status-keys;
         status-icons-enabled: Shell.status-icons-enabled;
         music-playing: Shell.music-playing;
+        controller-battery-low: Shell.controller-battery-low;
+        controller-batteries: Shell.controller-batteries;
         has-battery: Shell.has-battery;
         battery-percent: Shell.battery-percent;
         browse-title: root.browse-header-title();

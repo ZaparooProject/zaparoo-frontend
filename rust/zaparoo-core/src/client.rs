@@ -16,6 +16,7 @@
 use crate::collections::{
     Deck, DeckIdParams, DeckImageParams, DeckNewParams, DeckUpdateParams, DecksParams, DecksResult,
 };
+use crate::device::{BluetoothDeviceParams, BluetoothScanParams, BluetoothState, DeviceStatus};
 use crate::media_types::{
     ActiveMediaInfo, AuthLinkStatus, AuthStatusResult, BackupRemoteListResult,
     BackupRemoteRestoreResult, BackupRemoteRunResult, BackupStatusResponse, HealthResult,
@@ -971,6 +972,55 @@ impl Client {
         struct P {}
         self.call("clients.pair.cancel", &P {}).await?;
         Ok(())
+    }
+
+    /// The device Core runs on (`device.status`). Ask once per connect;
+    /// later changes arrive as `device.changed`.
+    pub async fn device_status(&self) -> Result<DeviceStatus, ClientError> {
+        let val = self.call("device.status", &serde_json::json!({})).await?;
+        deserialize_timed("device.status", val)
+    }
+
+    /// Paired Bluetooth devices and those the last scan found
+    /// (`device.bluetooth.devices`).
+    pub async fn bluetooth_devices(&self) -> Result<BluetoothState, ClientError> {
+        let val = self
+            .call("device.bluetooth.devices", &serde_json::json!({}))
+            .await?;
+        deserialize_timed("device.bluetooth.devices", val)
+    }
+
+    /// Start looking for Bluetooth devices (`device.bluetooth.scan.start`).
+    /// Core stops on its own after the timeout.
+    pub async fn bluetooth_scan_start(
+        &self,
+        params: BluetoothScanParams,
+    ) -> Result<BluetoothState, ClientError> {
+        let val = self.call("device.bluetooth.scan.start", &params).await?;
+        deserialize_timed("device.bluetooth.scan.start", val)
+    }
+
+    pub async fn bluetooth_scan_stop(&self) -> Result<BluetoothState, ClientError> {
+        let val = self
+            .call("device.bluetooth.scan.stop", &serde_json::json!({}))
+            .await?;
+        deserialize_timed("device.bluetooth.scan.stop", val)
+    }
+
+    /// Start pairing a device (`device.bluetooth.pair`). Core answers at
+    /// once with the attempt underway; `device.bluetooth.changed` carries
+    /// the outcome.
+    pub async fn bluetooth_pair(&self, id: &str) -> Result<BluetoothState, ClientError> {
+        let params = BluetoothDeviceParams { id: id.to_string() };
+        let val = self.call("device.bluetooth.pair", &params).await?;
+        deserialize_timed("device.bluetooth.pair", val)
+    }
+
+    /// Remove a paired device (`device.bluetooth.forget`).
+    pub async fn bluetooth_forget(&self, id: &str) -> Result<BluetoothState, ClientError> {
+        let params = BluetoothDeviceParams { id: id.to_string() };
+        let val = self.call("device.bluetooth.forget", &params).await?;
+        deserialize_timed("device.bluetooth.forget", val)
     }
 
     pub async fn launchers(&self) -> Result<LaunchersResult, ClientError> {

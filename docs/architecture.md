@@ -35,6 +35,13 @@ rust/frontend/  [frontend library and binary; Slint UI]
   │                        the once-a-second clock while music plays
   ├── src/music_layout.rs : its geometry, shared with the CRT mirror and
   │                        the snapshot tool
+  ├── src/controllers.rs : Core's controllers and Bluetooth: the header's
+  │                        controller battery glyphs, the Controls page's
+  │                        Controllers row, the Controllers page it opens
+  │                        (ui/controllers.slint: connected cards in fixed
+  │                        slots, a search renewed while the page is open,
+  │                        an append-only found list) and its Paired
+  │                        controllers page
   ├── src/keyboard.rs    : on-screen keyboard state for one text field
   ├── src/browse_filter.rs : the tags picker, for Games and Search
   ├── src/{game_info,media_setup,log_upload,launchers,card_write}.rs
@@ -98,6 +105,12 @@ rust/zaparoo-app/  [toolkit-free product rules]
                                     system list grouped by manufacturer
   music                           : the music player's controls, commands,
                                     clock and geometry
+  controllers                     : controller battery readings, the
+                                    header's battery glyphs and low
+                                    battery warning, names and their
+                                    address tails, card slots, the
+                                    pairing session and the Controllers
+                                    page layout
   input, status_line, action_error, buttons, clock, covers, customization,
   launchers, alternate_versions, multi_disc, title_versions, media_setup,
   log_upload, format
@@ -107,12 +120,15 @@ rust/zaparoo-core/  [Core client and shared state]
   client.rs           : WebSocket JSON-RPC 2.0 (tokio-tungstenite)
   transport.rs        : Core endpoint: TCP, or a Unix socket with an API key
   remote_resource.rs  : RemoteResource<T>/ResourceStatus<T>
-  store/              : Endpoint, Mutation, Tag, Store cache, and two live
+  store/              : Endpoint, Mutation, Tag, Store cache, and three live
                         watch resources: media status (database, scraper,
-                        primary slot) and background media (the music
+                        primary slot), background media (the music
                         track and the playlist open on Core's background
                         slot, from `media`, `media.active` and
-                        `playlists.changed`)
+                        `playlists.changed`), and the device (controllers
+                        and Bluetooth, from `device.status`,
+                        `device.changed` and `device.bluetooth.*`)
+  device.rs           : `device.*` wire types
   endpoints/          : CatalogEndpoint, MediaSearchEndpoint, RunMutation
   systems_catalog.rs  : CatalogData payload + by-category filter
   input_actions.rs    : action names + key-code bindings

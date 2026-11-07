@@ -86,7 +86,7 @@ pub(crate) fn inputs(ctx: &Ctx) -> rules::Inputs {
             HeaderLogo::parse(&shared.persist.settings.header_logo) == HeaderLogo::Custom,
         )
     };
-    rules::Inputs {
+    let mut inputs = rules::Inputs {
         background_active,
         header_logo_custom,
         launcher_preference,
@@ -103,7 +103,10 @@ pub(crate) fn inputs(ctx: &Ctx) -> rules::Inputs {
         crt_enabled: ctx.crt_enabled,
         debug_build: cfg!(debug_assertions),
         log_upload: ctx.log_uploader.is_some(),
-    }
+        ..rules::Inputs::default()
+    };
+    lock(&ctx.shared).controllers.fill_inputs(&mut inputs);
+    inputs
 }
 
 /// The canonical value a picker row currently holds.
@@ -254,6 +257,10 @@ fn fill_value(ctx: &Ctx, out: &mut SettingsRow, id: &str) {
             out.value = SharedString::from(current_value(ctx, id).as_str());
             out.value_name = value_name(ctx, id);
         }
+        _ if id == "controllers" => {
+            let connected = lock(&ctx.shared).controllers.connected();
+            out.value = SharedString::from(connected.to_string());
+        }
         _ => {}
     }
 }
@@ -394,6 +401,13 @@ fn action_status(
     }
 }
 
+/// A row that stays on its page, dimmed, until something else is done
+/// first: an account linked, `RetroAchievements` installed.
+fn waits(id: &str, inputs: &rules::Inputs, online_linked: bool) -> bool {
+    (rules::needs_online_link(id) && !online_linked)
+        || (rules::needs_ra_install(id) && !inputs.ra_installed)
+}
+
 /// Build the rows of the open page, with their stacked geometry.
 fn rows(ctx: &Ctx, app: &App, page: crate::SettingsPage) -> Vec<SettingsRow> {
     let ms = crate::router::media_state(ctx);
@@ -407,7 +421,6 @@ fn rows(ctx: &Ctx, app: &App, page: crate::SettingsPage) -> Vec<SettingsRow> {
         )
     };
     let inputs = inputs(ctx);
-    let ra_installed = inputs.ra_installed;
     let mut offset = 0;
     rules::page_rows(page.token(), &inputs)
         .into_iter()
@@ -425,6 +438,11 @@ fn rows(ctx: &Ctx, app: &App, page: crate::SettingsPage) -> Vec<SettingsRow> {
             };
             let height = match row {
                 Row::Header(_) => m.header_height,
+                Row::Item { control, .. } => {
+                    out.control = control.into();
+                    lock(&ctx.shared).controllers.fill_row(row, &mut out);
+                    m.row_height
+                }
                 Row::Field { id, control } => {
                     out.control = control.into();
                     match control {
@@ -466,16 +484,15 @@ fn rows(ctx: &Ctx, app: &App, page: crate::SettingsPage) -> Vec<SettingsRow> {
                             }
                         }
                         Control::Navigate | Control::Slider => fill_value(ctx, &mut out, id),
+                        // A device row is always an item row.
+                        Control::Device => {}
                         Control::TriToggle => {
                             out.value = SharedString::from(tri_toggle_value(ctx, id));
                         }
                     }
                     // After the control's own state: an action row sets
                     // `enabled` from whether its job is busy.
-                    if rules::needs_online_link(id) && !online_linked {
-                        out.enabled = false;
-                    }
-                    if rules::needs_ra_install(id) && !ra_installed {
+                    if waits(id, &inputs, online_linked) {
                         out.enabled = false;
                     }
                     // A row that needs Zaparoo Pro or Warp stays usable:
@@ -608,6 +625,9 @@ pub fn render(ctx: &Ctx, app: &App) {
         };
         view.set_field_index(i32::try_from(fields(index)).unwrap_or(0));
         view.set_field_count(i32::try_from(fields(published.row_count())).unwrap_or(0));
+    }
+    if page == crate::SettingsPage::Controllers {
+        crate::controllers::publish(ctx, app, index);
     }
     push_page_geometry(&view, &geometry);
     view.set_rows_height(viewport as f32);
@@ -789,6 +809,56 @@ pub(crate) fn reseat_to(ctx: &Ctx, app: &App, row: &str) {
     remember_focus(ctx, app);
 }
 
+/// Step back to `page` from a page inside it, seated on `row`.
+pub(crate) fn return_to_row(ctx: &Ctx, app: &App, page: crate::SettingsPage, row: &'static str) {
+    capture_outgoing(app);
+    let ctx = ctx.clone();
+    crate::router::transition_settings_page(app, -1, move |app| {
+        open_page(&ctx, app, page);
+        let rows = rules::page_rows(page.token(), &inputs(&ctx));
+        app.global::<SettingsView>()
+            .set_index(i32::try_from(rules::seat_of(&rows, row)).unwrap_or(0));
+        render(&ctx, app);
+        remember_focus(&ctx, app);
+    });
+}
+
+/// Something a page lists live changed (a controller connected, a device
+/// was found): apply it, and keep the cursor on the row it was on even
+/// as entries come and go around it.
+pub(crate) fn live_update(
+    ctx: &Ctx,
+    app: &App,
+    apply: impl FnOnce(&mut crate::controllers::Model),
+) {
+    let on_screen = app.global::<crate::Shell>().get_active_screen() == crate::Screen::Settings;
+    if !on_screen {
+        apply(&mut lock(&ctx.shared).controllers);
+        return;
+    }
+    let (_, rows, index) = page_rows_now(ctx, app);
+    let focused = rows
+        .get(index)
+        .map(|row| lock(&ctx.shared).controllers.row_key(*row));
+    apply(&mut lock(&ctx.shared).controllers);
+    let (page, rows, index) = page_rows_now(ctx, app);
+    if page != crate::SettingsPage::Root {
+        if let Some(focused) = focused {
+            let keys: Vec<String> = {
+                let shared = lock(&ctx.shared);
+                rows.iter()
+                    .map(|row| shared.controllers.row_key(*row))
+                    .collect()
+            };
+            let seat = rules::follow_seat(&rows, |i| keys[i].clone(), &focused, index);
+            app.global::<SettingsView>()
+                .set_index(i32::try_from(seat).unwrap_or(0));
+        }
+    }
+    render(ctx, app);
+    remember_focus(ctx, app);
+}
+
 pub(crate) fn show_about_return(ctx: &Ctx, app: &App) {
     // Stage the actual destination before arming the route, not a temporary root grid.
     let index = lock(&ctx.shared)
@@ -821,8 +891,18 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
 /// Keep the page and row for Back and in-process restoration.
 fn remember_focus(ctx: &Ctx, app: &App) {
     let view = app.global::<SettingsView>();
-    let index = usize::try_from(view.get_index()).unwrap_or(0);
-    lock(&ctx.shared).settings_focus = Some((view.get_page(), index));
+    let mut page = view.get_page();
+    let mut index = usize::try_from(view.get_index()).unwrap_or(0);
+    // The Controllers pages are never come back to: their search is over
+    // by then. Coming back lands on the row that opens them.
+    if matches!(
+        page,
+        crate::SettingsPage::Controllers | crate::SettingsPage::PairedControllers
+    ) {
+        page = crate::SettingsPage::Controls;
+        index = rules::seat_of(&rules::page_rows(page.token(), &inputs(ctx)), "controllers");
+    }
+    lock(&ctx.shared).settings_focus = Some((page, index));
 }
 
 fn dispatch(ctx: &Ctx, app: &App, action: &str) {
@@ -894,10 +974,30 @@ fn dispatch(ctx: &Ctx, app: &App, action: &str) {
                 }
             }
         }
-        actions::ACCEPT => {
-            if let Some(Row::Field { id, control }) = rows.get(index) {
-                accept(ctx, app, id, *control);
+        actions::ACCEPT => match rows.get(index) {
+            Some(Row::Field { id, control }) => accept(ctx, app, id, *control),
+            Some(Row::Item {
+                id: "foundDevice",
+                index,
+                ..
+            }) => crate::controllers::accept_device(ctx, app, *index),
+            _ => {}
+        },
+        actions::CONTEXT_MENU => {
+            if let Some(Row::Item {
+                id: "pairedDevice",
+                index,
+                ..
+            }) = rows.get(index)
+            {
+                crate::controllers::open_options(ctx, app, *index);
             }
+        }
+        actions::CANCEL if page == crate::SettingsPage::Controllers => {
+            crate::controllers::leave_controllers(ctx, app);
+        }
+        actions::CANCEL if page == crate::SettingsPage::PairedControllers => {
+            crate::controllers::leave_paired(ctx, app);
         }
         actions::CANCEL => {
             let from_hub = std::mem::take(&mut lock(&ctx.shared).settings_from_hub);
@@ -935,10 +1035,8 @@ fn open_tile_options(ctx: &Ctx, app: &App, id: &str) {
 /// pointer) asks this first, so none of them can act on a row the page
 /// shows as unavailable.
 fn blocked(ctx: &Ctx, id: &str) -> bool {
-    if rules::needs_online_link(id) && !lock(&ctx.shared).online.linked {
-        return true;
-    }
-    if rules::needs_ra_install(id) && !inputs(ctx).ra_installed {
+    let online_linked = lock(&ctx.shared).online.linked;
+    if waits(id, &inputs(ctx), online_linked) {
         return true;
     }
     let ms = crate::router::media_state(ctx);
@@ -959,7 +1057,7 @@ fn accept(ctx: &Ctx, app: &App, id: &str, control: Control) {
         Control::Toggle => toggle(ctx, app, id),
         Control::TriToggle => crate::online::toggle_all_features(ctx, app),
         Control::Picker => open_picker(ctx, app, id),
-        Control::Info | Control::Slider => {}
+        Control::Info | Control::Slider | Control::Device => {}
         Control::Navigate | Control::Action => match id {
             "backgroundImage" => crate::file_browser::open_background(ctx, app),
             "headerLogoImage" => crate::file_browser::open_header_logo(ctx, app),
@@ -979,6 +1077,8 @@ fn accept(ctx: &Ctx, app: &App, id: &str, control: Control) {
             "onlineRemoteActivity" => crate::online_list::open_activity(ctx, app),
             "crtCalibration" => crate::router::open_crt_calibration(ctx, app),
             "launcherPreference" => crate::launcher_prefs::open(ctx, app),
+            "controllers" => crate::controllers::open_controllers(ctx, app),
+            "pairedControllers" => crate::controllers::open_paired(ctx, app),
             "raLogIn" => crate::ra_login::open(ctx, app),
             "raLogOut" => crate::router::confirm_ra_log_out(app),
             "updateMediaDb" => {
@@ -1414,6 +1514,7 @@ pub(crate) fn mirror_geometry(primary: &App, crt: &App) {
     target.set_outgoing_scroll(scroll);
     target.set_outgoing_rows_height(viewport);
     target.set_outgoing_rows_clip_height(shown);
+    crate::controllers::mirror_layout(primary, crt, &inputs);
 }
 
 #[cfg(feature = "mister")]

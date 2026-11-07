@@ -259,6 +259,8 @@ export global Labels {
         if (key == "deck_cover_choose") { return @tr("Choose cover image…"); }
         if (key == "deck_cover_remove") { return @tr("Remove cover"); }
         if (key == "deck_delete") { return @tr("Delete deck"); }
+        // A paired Bluetooth device's Options.
+        if (key == "bluetooth_forget") { return @tr("Forget"); }
         if (key == "deck_use_cover") { return @tr("Use as deck cover"); }
         if (key == "deck_move") { return @tr("Move"); }
         if (key == "deck_remove") { return @tr("Remove from deck"); }
@@ -420,6 +422,7 @@ export global DialogLabels {
         if (kind == DialogKind.restore-online-backup) { return @tr("Restore this backup?"); }
         if (kind == DialogKind.update-stop) { return @tr("Stop update?"); }
         if (kind == DialogKind.delete-deck) { return @tr("Delete deck?"); }
+        if (kind == DialogKind.forget-controller) { return @tr("Forget controller?"); }
         if (kind == DialogKind.logo-support) { return @tr("Support Zaparoo"); }
         if (kind == DialogKind.action-error) { return DialogLabels.error-title(error); }
         return "";
@@ -437,6 +440,10 @@ export global DialogLabels {
         if (kind == DialogKind.update-stop) { return @tr("An update is still running. Leaving this screen stops it."); }
         if (kind == DialogKind.ra-log-out) { return @tr("Games stop earning achievements until you log in again."); }
         if (kind == DialogKind.delete-deck) { return @tr("{} and the list of what is in it are deleted. This cannot be undone.", detail); }
+        if (kind == DialogKind.forget-controller) {
+            // `arg` is the address tail that tells two of the same name apart.
+            return @tr("{} has to be paired again before it can connect.", arg == "" ? detail : @tr("{} ({})", detail, arg));
+        }
         if (kind == DialogKind.core-confirm) { return arg; }
         // `arg` is "linked" when this device already has an Online account.
         if (kind == DialogKind.logo-support) {
@@ -501,6 +508,7 @@ export global DialogLabels {
         if (kind == ErrorKind.setting) { return @tr("Setting not saved"); }
         if (kind == ErrorKind.music) { return @tr("Music control failed"); }
         if (kind == ErrorKind.pairing) { return @tr("Pairing could not start"); }
+        if (kind == ErrorKind.bluetooth) { return @tr("Bluetooth request failed"); }
         if (kind == ErrorKind.online) { return @tr("Online account unavailable"); }
         if (kind == ErrorKind.backup) { return @tr("Cloud backup failed"); }
         if (kind == ErrorKind.config-file) { return @tr("Config file not loaded"); }
@@ -560,6 +568,11 @@ export global DialogLabels {
             return @tr("Could not control the music. Check Zaparoo Core and try again.");
         }
         if (kind == ErrorKind.pairing) { return @tr("Core would not start a pairing. It may already have as many paired devices as it allows, or it may be running on another device."); }
+        // `context` is what was asked: a search, or forgetting a device.
+        if (kind == ErrorKind.bluetooth) {
+            if (context == "forget") { return @tr("Could not forget this controller. Check Zaparoo Core and try again."); }
+            return @tr("Could not search for controllers. Check Zaparoo Core and try again.");
+        }
         if (kind == ErrorKind.online) { return @tr("Core could not reach or update your Zaparoo Online account. Check the network connection and try again."); }
         // A cloud backup or restore Core refused. `context` is the cause
         // `zaparoo_app::online_lists::Failure::token` named, or empty.
