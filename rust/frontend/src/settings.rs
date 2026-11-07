@@ -10,6 +10,7 @@
 use std::sync::Arc;
 
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
+use zaparoo_app::branding::HeaderLogo;
 use zaparoo_app::layouts::{self, ThemeId, View};
 use zaparoo_app::paged_grid::{self, Insets};
 use zaparoo_app::settings::{self as rules, Control, Row};
@@ -70,6 +71,7 @@ pub(crate) fn inputs(ctx: &Ctx) -> rules::Inputs {
         ra_installed,
         ra_conflict,
         background_active,
+        header_logo_custom,
     ) = {
         let shared = lock(&ctx.shared);
         let (installed, conflicts) = ra_state(&shared);
@@ -81,10 +83,12 @@ pub(crate) fn inputs(ctx: &Ctx) -> rules::Inputs {
             installed,
             !conflicts.is_empty(),
             crate::background::Settings::from_state(&shared.persist.settings).active(),
+            HeaderLogo::parse(&shared.persist.settings.header_logo) == HeaderLogo::Custom,
         )
     };
     let mut inputs = rules::Inputs {
         background_active,
+        header_logo_custom,
         launcher_preference,
         retro_achievements: crate::retro_achievements::available(),
         ra_logged_in,
@@ -127,6 +131,8 @@ fn current_value(ctx: &Ctx, id: &str) -> String {
         "backgroundBlur" => s.background_blur.to_string(),
         "backgroundDim" => s.background_dim.to_string(),
         "backgroundImage" => s.background_image.clone(),
+        "headerLogo" => HeaderLogo::parse(&s.header_logo).token().to_string(),
+        "headerLogoImage" => s.header_logo_image.clone(),
         "language" => s.language.clone(),
         "region" => s.region.clone(),
         "clockFormat" => s.clock_format.clone(),
@@ -164,6 +170,9 @@ fn value_name(ctx: &Ctx, id: &str) -> SharedString {
         }
         "backgroundImage" => {
             crate::background::setting_name(&shared.persist.settings.background_image).into()
+        }
+        "headerLogoImage" => {
+            crate::background::setting_name(&shared.persist.settings.header_logo_image).into()
         }
         _ => SharedString::default(),
     }
@@ -236,7 +245,7 @@ fn options(ctx: &Ctx, id: &str) -> Vec<String> {
     }
 }
 
-/// The value a slider or the background image row shows.
+/// The value a slider or an image row shows.
 fn fill_value(ctx: &Ctx, out: &mut SettingsRow, id: &str) {
     match out.control {
         crate::ControlKind::Slider => {
@@ -244,7 +253,7 @@ fn fill_value(ctx: &Ctx, out: &mut SettingsRow, id: &str) {
             (out.cells, out.lit) = slider_cells(id, value.parse().unwrap_or(0));
             out.value = SharedString::from(value.as_str());
         }
-        _ if id == "backgroundImage" => {
+        _ if id == "backgroundImage" || id == "headerLogoImage" => {
             out.value = SharedString::from(current_value(ctx, id).as_str());
             out.value_name = value_name(ctx, id);
         }
@@ -297,6 +306,51 @@ pub(crate) fn set_background_image(ctx: &Ctx, app: &App, path: &str) {
     lock(&ctx.shared).persist.settings.background_image = path.to_string();
     save(ctx, app);
     apply_background(ctx);
+}
+
+/// Show the header logo settings as they now stand, on both heads.
+pub(crate) fn apply_header_logo(ctx: &Ctx, app: &App) {
+    let (setting, image) = {
+        let shared = lock(&ctx.shared);
+        let s = &shared.persist.settings;
+        (s.header_logo.clone(), s.header_logo_image.clone())
+    };
+    crate::brand::apply(app, &setting, &image);
+}
+
+/// Set the custom header logo image, from the picker.
+pub(crate) fn set_header_logo_image(ctx: &Ctx, app: &App, path: &str) {
+    lock(&ctx.shared).persist.settings.header_logo_image = path.to_string();
+    save(ctx, app);
+    apply_header_logo(ctx, app);
+}
+
+/// Online said this account cannot change the header logo: put the
+/// Zaparoo logo back and save that. Nothing else ever reverts it.
+pub(crate) fn enforce_branding(ctx: &Ctx, app: &App) {
+    let reverts = {
+        let mut shared = lock(&ctx.shared);
+        let entitlement = shared.branding;
+        let s = &mut shared.persist.settings;
+        let reverts = zaparoo_app::branding::reverts(&s.header_logo, entitlement);
+        if reverts {
+            s.header_logo = HeaderLogo::Zaparoo.token().to_string();
+        }
+        reverts
+    };
+    if reverts {
+        tracing::info!("header logo: account lacks the feature; showing the Zaparoo logo");
+        save(ctx, app);
+        apply_header_logo(ctx, app);
+    }
+}
+
+/// The header logo rows are locked: the device is not linked, or Online
+/// said its account does not have the feature. A locked row shows the Pro
+/// badge and Accept opens the explanation instead of changing anything.
+fn branding_locked(ctx: &Ctx, id: &str) -> bool {
+    zaparoo_app::branding::needs_entitlement(id)
+        && lock(&ctx.shared).branding == zaparoo_app::branding::Entitlement::No
 }
 
 // ---------- Rendering ----------
@@ -441,6 +495,9 @@ fn rows(ctx: &Ctx, app: &App, page: crate::SettingsPage) -> Vec<SettingsRow> {
                     if waits(id, &inputs, online_linked) {
                         out.enabled = false;
                     }
+                    // A row that needs Zaparoo Pro or Warp stays usable:
+                    // it carries the Pro badge, and Accept explains.
+                    out.premium = branding_locked(ctx, id);
                     if out.status_key == crate::ActionStatus::None {
                         m.row_height
                     } else {
@@ -990,6 +1047,11 @@ fn accept(ctx: &Ctx, app: &App, id: &str, control: Control) {
     if blocked(ctx, id) {
         return;
     }
+    if branding_locked(ctx, id) {
+        let linked = lock(&ctx.shared).online.linked;
+        crate::router::open_logo_support(app, linked);
+        return;
+    }
     let ms = crate::router::media_state(ctx);
     match control {
         Control::Toggle => toggle(ctx, app, id),
@@ -998,6 +1060,7 @@ fn accept(ctx: &Ctx, app: &App, id: &str, control: Control) {
         Control::Info | Control::Slider | Control::Device => {}
         Control::Navigate | Control::Action => match id {
             "backgroundImage" => crate::file_browser::open_background(ctx, app),
+            "headerLogoImage" => crate::file_browser::open_header_logo(ctx, app),
             "aboutLicense" => crate::router::enter_about(ctx, app, EntryMode::Fresh),
             "documentation" => crate::router::open_documentation_qr(app),
             "uploadLog" => crate::log_upload::open(ctx, app),
@@ -1254,6 +1317,7 @@ pub fn picker_selected(ctx: &Ctx, app: &App, id: &str, value: &str) {
             "buttonLayout" => s.button_layout = value.to_string(),
             "gameBackground" => s.game_background = value.to_string(),
             "backgroundListStyle" => s.background_list_style = value.to_string(),
+            "headerLogo" => s.header_logo = value.to_string(),
             _ => return,
         }
     }
@@ -1317,6 +1381,11 @@ fn apply(ctx: &Ctx, app: &App, id: &str, value: &str) {
             reseat_to(ctx, app, id);
         }
         "listLeftRight" => crate::games::reproject(ctx, app),
+        "headerLogo" => {
+            apply_header_logo(ctx, app);
+            // The image row comes and goes with a custom logo.
+            reseat_to(ctx, app, id);
+        }
         "systemsLayout" => {
             app.global::<crate::Shell>()
                 .set_systems_list_layout(value == "list" || value == "list-only");
@@ -1361,6 +1430,8 @@ pub(crate) fn mirror_of(s: &persist::SettingsState) -> zaparoo_core::config::Set
         background_blur: s.background_blur,
         background_dim: s.background_dim,
         background_list_style: &s.background_list_style,
+        header_logo: &s.header_logo,
+        header_logo_image: &s.header_logo_image,
         debug_logging: s.debug_logging,
         screensaver_timeout: &s.screensaver_timeout,
         media_image_type: &s.media_image_type,

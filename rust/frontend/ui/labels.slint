@@ -423,6 +423,7 @@ export global DialogLabels {
         if (kind == DialogKind.update-stop) { return @tr("Stop update?"); }
         if (kind == DialogKind.delete-deck) { return @tr("Delete deck?"); }
         if (kind == DialogKind.forget-controller) { return @tr("Forget controller?"); }
+        if (kind == DialogKind.logo-support) { return @tr("Support Zaparoo"); }
         if (kind == DialogKind.action-error) { return DialogLabels.error-title(error); }
         return "";
     }
@@ -444,6 +445,12 @@ export global DialogLabels {
             return @tr("{} has to be paired again before it can connect.", arg == "" ? detail : @tr("{} ({})", detail, arg));
         }
         if (kind == DialogKind.core-confirm) { return arg; }
+        // `arg` is "linked" when this device already has an Online account.
+        if (kind == DialogKind.logo-support) {
+            return arg == "linked"
+                ? @tr("Zaparoo Frontend takes a lot of work to build, and showing the Zaparoo logo is important to us.\n\nTo replace or hide the logo, please support the project by buying Zaparoo Pro in the Zaparoo App or subscribing to Zaparoo Warp on Zaparoo Online. This device picks it up the next time it checks with Zaparoo Online.")
+                : @tr("Zaparoo Frontend takes a lot of work to build, and showing the Zaparoo logo is important to us.\n\nTo replace or hide the logo, please support the project by buying Zaparoo Pro in the Zaparoo App or subscribing to Zaparoo Warp on Zaparoo Online, then link this device to your account.");
+        }
         if (kind == DialogKind.notice) {
             return @tr("Copyright 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.\n\nThis free source-available build is for personal and non-commercial use only. Commercial use requires a separate license.\n\nContact: legal@zaparoo.com\n\nFull details available any time under Settings > About / License.\n\nCreated by\nAndrea Bogazzi, BossRighteous, Tim Wilsie, Wizzo");
         }
@@ -470,6 +477,7 @@ export global DialogLabels {
         if (key == DialogButton.cancel) { return @tr("Cancel"); }
         if (key == DialogButton.i-understand) { return @tr("I understand"); }
         if (key == DialogButton.start-media-update) { return @tr("Start media update"); }
+        if (key == DialogButton.link-account) { return @tr("Link account"); }
         return "";
     }
 

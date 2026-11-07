@@ -16,6 +16,7 @@
 pub mod action_error;
 pub mod alternate_versions;
 pub mod background;
+pub mod branding;
 pub mod browse_filter;
 pub mod buttons;
 pub mod clock;

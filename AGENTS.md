@@ -219,7 +219,8 @@ private `_` recipe. Container builds write to `rust/target/docker/`.
   catalogs are embedded (`include_bytes!`, `include_str!`, `@image-url`,
   bundled translations). The only images read from disk are user overrides
   from the `custom/` folder, a Hub tile's `icon` when it is an absolute
-  path, the background image (Settings > Appearance), the file browser's
+  path, the background image and the header logo image (Settings >
+  Appearance), the file browser's
   previews, and, on a colocated MiSTer, Core's own thumbnail files. The
   user-chosen kinds go through the customization pipeline's limits and are
   never copied or cached to disk, except the prepared background bitmap

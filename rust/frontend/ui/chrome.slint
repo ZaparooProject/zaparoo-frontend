@@ -10,7 +10,7 @@
 // these components carry almost no percentages of their own.
 
 import { Theme, Sizing, Motion, Layout, Backdrop } from "theme.slint";
-import { ContentState, StatusKind, HeaderPad, PadFill } from "state_types.slint";
+import { ContentState, StatusKind, HeaderPad, PadFill, HeaderLogo } from "state_types.slint";
 
 // Glyph provider implemented in Rust: the SVG sources under
 // resources/images are rasterized with resvg at the exact requested
@@ -47,10 +47,33 @@ export global GlyphSource {
 
 // Rust filters the embedded master into a cached raster at the painted size.
 // This avoids nearest-neighbor downsampling of a larger rung on software.
+// The header and the screensaver show the logo setting's choice (`mode`);
+// About and the desktop dormant screen always show the Zaparoo logo.
 export global Brand {
     pure callback logo(bool, length) -> image;
-    // The master asset's own aspect ratio (width / height).
+    // The user's image filtered to exactly the painted width and height.
+    // The first argument is `revision`, so a newly loaded image re-runs
+    // every binding that draws it.
+    pure callback custom(int, length, length) -> image;
+    // The master asset's own aspect ratio (width / height), which is also
+    // the logo box a custom image fits inside.
     out property <float> aspect: 600 / 135;
+    in property <HeaderLogo> mode: HeaderLogo.zaparoo;
+    // The loaded custom image's aspect ratio (width / height).
+    in property <float> custom-aspect: 600 / 135;
+    // Bumped by Rust each time a custom image finishes loading.
+    in property <int> revision: 0;
+    // Exact-pixel contract: a custom image is rasterized at whole pixels
+    // and painted at that size, keeping its aspect inside the logo box.
+    public pure function custom-width(box-width: length, box-height: length) -> length {
+        return Math.max(1px, Math.round(Math.min(box-width, box-height * self.custom-aspect) / 1px) * 1px);
+    }
+    public pure function custom-height(box-width: length, box-height: length) -> length {
+        return Math.max(1px, Math.round(Math.min(box-height, box-width / self.custom-aspect) / 1px) * 1px);
+    }
+    public pure function custom-image(box-width: length, box-height: length) -> image {
+        return self.custom(self.revision, self.custom-width(box-width, box-height), self.custom-height(box-width, box-height));
+    }
     // The screensaver's bouncing copy always uses the on-dark variant:
     // its backstop is solid black regardless of the preset.
     public pure function saver-logo(painted-width: length) -> image {
@@ -315,13 +338,6 @@ export component HeaderBar inherits Rectangle {
     in property <string> browse-title: "";
     in property <string> app-text: "";
 
-    // Exposed for the screensaver so its bouncing copy starts exactly
-    // where the logo is painted.
-    out property <length> logo-x: logo.x;
-    out property <length> logo-y: logo.y;
-    out property <length> logo-width: logo.width;
-    out property <length> logo-height: logo.height;
-
     height: Sizing.header-height;
 
     // At 240p the CRT profile puts status on the upper 8px row; only the
@@ -330,9 +346,16 @@ export component HeaderBar inherits Rectangle {
     property <length> logo-h: root.compact-status-header
         ? Math.max(1px, Sizing.header-height - 1px)
         : Sizing.header-height;
+    // The logo box: the Zaparoo logo fills it; a custom image fits inside
+    // it, left and bottom aligned, so the header's layout never changes.
     property <length> logo-painted-width: root.logo-h * Brand.aspect;
+    property <length> custom-width: Brand.custom-width(root.logo-painted-width, root.logo-h);
+    // Where the logo actually ends: nothing at all with no logo.
+    property <length> logo-right: Brand.mode == HeaderLogo.none
+        ? 0px
+        : (Brand.mode == HeaderLogo.custom ? root.custom-width : root.logo-painted-width);
 
-    logo := Image {
+    if Brand.mode == HeaderLogo.zaparoo: Image {
         x: Sizing.header-side-margin;
         y: parent.height - self.height;
         width: root.logo-painted-width;
@@ -342,6 +365,14 @@ export component HeaderBar inherits Rectangle {
         image-rendering: Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
         horizontal-alignment: left;
         vertical-alignment: bottom;
+    }
+    if Brand.mode == HeaderLogo.custom: Image {
+        x: Sizing.header-side-margin;
+        y: parent.height - self.height;
+        width: root.custom-width;
+        height: Brand.custom-height(root.logo-painted-width, root.logo-h);
+        source: Brand.custom-image(root.logo-painted-width, root.logo-h);
+        image-rendering: Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
     }
 
     property <string> battery-icon: root.battery-percent >= 75
@@ -480,7 +511,7 @@ export component HeaderBar inherits Rectangle {
     // Browse title in the header (CRT profile only), centered between the
     // logo and the HUD and kept clear of the wider of the two; never less
     // than a third of the header.
-    property <length> title-side: Sizing.header-side-margin + Math.max(root.logo-painted-width,
+    property <length> title-side: Sizing.header-side-margin + Math.max(root.logo-right,
         Layout.hud-bottom-aligned ? root.hud-width : 0px) + Sizing.pct-w(1.5);
     if Layout.title-in-header && root.browse-title != "": Text {
         property <length> natural: Math.ceil(title-measure.preferred-width / 1px) * 1px;
@@ -504,11 +535,16 @@ export component HeaderBar inherits Rectangle {
 
     // Core / task / event status line under the HUD (or pinned to the
     // top on the CRT profile), spanning from the logo's right edge to
-    // the header's right margin so it knows its true elide budget.
+    // the header's right margin so it knows its true elide budget. With
+    // no logo it takes the whole width. On the compact header only the
+    // Zaparoo logo's kangaroo tip reaches the status row; a custom image
+    // can fill its box, so the line clears all of it.
     StatusLine {
-        property <length> left: root.compact-status-header
-            ? Sizing.header-side-margin + root.logo-painted-width * 0.14
-            : logo.x + logo.width + Sizing.pct-w(1);
+        property <length> left: Brand.mode == HeaderLogo.none
+            ? Sizing.header-side-margin
+            : (root.compact-status-header && Brand.mode == HeaderLogo.zaparoo
+                ? Sizing.header-side-margin + root.logo-painted-width * 0.14
+                : Sizing.header-side-margin + root.logo-right + Sizing.pct-w(1));
         x: self.left;
         y: Layout.status-pill-pinned-top
             ? 0px

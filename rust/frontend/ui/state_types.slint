@@ -55,6 +55,9 @@ export enum AppCue {
     added-to-hub, saved-to-hub, removed-from-hub, token-written
 }
 export enum BootStatus { connecting, starting, migrating, reconnecting, loading, unreachable }
+// What the header (and the screensaver) shows for a logo: Zaparoo's own,
+// the user's image, or nothing.
+export enum HeaderLogo { zaparoo, custom, none }
 export enum DisabledReason { none, no-recent-games, no-internet, not-available, deck-missing }
 export enum RowKind { header, field }
 export enum ControlKind { none, picker, toggle, action, navigate, tri-toggle, info, slider, device }
@@ -127,8 +130,8 @@ export enum StatusKind {
 }
 export enum Orientation { horizontal, cw, ccw }
 export enum VideoStandard { ntsc, pal }
-export enum DialogKind { none, quit-confirm, quit-blocked, restart-setting, notice, core-version, first-run, hub-full, action-error, unlink-online, restore-online-backup, update-stop, ra-log-out, delete-deck, forget-controller, core-confirm }
-export enum DialogButton { ok, yes, no, retry, cancel, i-understand, start-media-update }
+export enum DialogKind { none, quit-confirm, quit-blocked, restart-setting, notice, core-version, first-run, hub-full, action-error, unlink-online, restore-online-backup, update-stop, ra-log-out, delete-deck, forget-controller, core-confirm, logo-support }
+export enum DialogButton { ok, yes, no, retry, cancel, i-understand, start-media-update, link-account }
 export enum ErrorKind { generic, launch, launch-repair, favorite, collection, deck-list, deck-update, deck-create, media-visibility, media-busy, add-to-hub, save-to-hub, media-index, media-scrape, media-scrapers, media-cancel, launcher, launcher-save, alternate-discovery, disc-list, version-list, qr-code, card-write, setting, pairing, online, backup, config-file, image-picker, music, bluetooth }
 
 // Text adapters are for vocabulary/resource keys and focus identity only,

@@ -45,6 +45,9 @@ export struct SettingsRow {
     pair-error: PairFailure,
     item: int,
     name-tail: string,
+    // Needs Zaparoo Pro or Warp: the row carries the Pro badge, and
+    // Accept explains instead of changing it.
+    premium: bool,
 }
 
 // The Settings string table: labels, the hint line under the list, and
@@ -213,6 +216,8 @@ export global SettingsLabels {
         if (id == "systemLogoStyle") { return @tr("System logos"); }
         if (id == "showMenuRow") { return @tr("Show Menu row"); }
         if (id == "showHelpBar") { return @tr("Show button hints"); }
+        if (id == "headerLogo") { return @tr("Logo"); }
+        if (id == "headerLogoImage") { return @tr("Logo image"); }
         if (id == "reduceMotion") { return @tr("Reduce motion"); }
         if (id == "screensaverTimeout") { return @tr("Screensaver"); }
         if (id == "backgroundImage") { return @tr("Background image"); }
@@ -312,6 +317,8 @@ export global SettingsLabels {
         if (id == "systemLogoStyle") { return @tr("Shows system logos in original colors or tinted to match colors."); }
         if (id == "showMenuRow") { return @tr("Shows page actions as a row. Off, the Menu button lists them."); }
         if (id == "showHelpBar") { return @tr("Shows button hints along the bottom. Off, screens use the space."); }
+        if (id == "headerLogo") { return @tr("Replaces or hides the Zaparoo logo in the top bar."); }
+        if (id == "headerLogoImage") { return @tr("The image shown in place of the Zaparoo logo."); }
         if (id == "reduceMotion") { return @tr("Turns off animation throughout the interface."); }
         if (id == "screensaverTimeout") { return @tr("Sets idle time before the screensaver starts. Off disables it."); }
         if (id == "backgroundImage") { return @tr("Shows an image, or a random one from a folder, behind screens."); }
@@ -394,11 +401,16 @@ export global SettingsLabels {
         if (id == "colorScheme") { return SettingsLabels.color-scheme(value); }
         if (id == "screensaverTimeout") { return SettingsLabels.screensaver(value); }
         if (id == "mediaImageType") { return SettingsLabels.artwork(value); }
-        if (id == "backgroundImage") { return @tr("None"); }
+        if (id == "backgroundImage" || id == "headerLogoImage") { return @tr("None"); }
         // How many controllers Core lists as connected.
         if (id == "controllers") {
             if (value == "0") { return @tr("None connected"); }
             return @tr("{n} connected" | "{n} connected" % value.to-float());
+        }
+        if (id == "headerLogo") {
+            if (value == "custom") { return @tr("Custom image"); }
+            if (value == "none") { return @tr("None"); }
+            return @tr("Zaparoo");
         }
         if (id == "gameBackground") {
             if (value == "off") { return @tr("Off"); }
@@ -704,17 +716,41 @@ export component SettingsRowView inherits Rectangle {
         font-size: Sizing.font-body;
         font-weight: FontWeight.medium;
     }
+    // The Pro badge after a premium row's label, and the room it takes.
+    property <length> badge-gap: Sizing.pct-w(1);
+    property <length> badge-room: root.entry.premium ? badge.width + root.badge-gap : 0px;
+
     label := Text {
         x: root.is-action ? Sizing.snap((parent.width - self.width) / 2) : root.pad;
         y: Sizing.snap((parent.height - root.stack-height) / 2);
         width: Math.min(Math.ceil(label-measure.preferred-width / 1px) * 1px + Sizing.stroke(2),
-            parent.width - 2 * root.pad - root.value-reserve);
+            parent.width - 2 * root.pad - root.value-reserve - root.badge-room);
         overflow: elide;
         text: root.label-text;
         color: root.focused ? (root.dim ? Theme.on-accent-muted : root.content-color)
             : (root.dim ? Theme.text-label : (root.is-action ? Theme.accent : Theme.text-primary));
         font-size: Sizing.font-body;
         font-weight: root.content-weight;
+    }
+
+    // A borderless pill in the accent, inverted on the selected row so it
+    // stays distinct from the selection fill.
+    badge := Rectangle {
+        visible: root.entry.premium;
+        x: Sizing.snap(label.x + label.width + root.badge-gap);
+        y: Sizing.snap((parent.height - self.height) / 2);
+        width: Math.ceil(badge-text.preferred-width / 1px) * 1px + 2 * Sizing.snap(self.height / 2);
+        height: Math.ceil(badge-text.preferred-height / 1px) * 1px + 2 * Sizing.stroke(Sizing.pct-h(0.3) / 1px);
+        border-radius: self.height / 2;
+        background: root.focused ? root.content-color : Theme.accent;
+        badge-text := Text {
+            x: Sizing.snap((parent.width - self.width) / 2);
+            y: Sizing.snap((parent.height - self.height) / 2);
+            text: @tr("Pro");
+            color: root.focused ? root.fill-color : Theme.on-accent;
+            font-size: Sizing.font-caption;
+            font-weight: FontWeight.medium;
+        }
     }
 
     if root.has-status: Text {
@@ -736,9 +772,9 @@ export component SettingsRowView inherits Rectangle {
             ? @tr("Linked as {}", root.entry.value-name)
             : (root.entry.id == "raAccount" && root.entry.value == "loggedIn" && root.entry.value-name != "")
                 ? @tr("Logged in as {}", root.entry.value-name)
-                // A user color scheme and a chosen background image show
-                // their own names, as written.
-                : ((root.entry.id == "colorScheme" || root.entry.id == "backgroundImage") && root.entry.value-name != "")
+                // A user color scheme and a chosen background or logo
+                // image show their own names, as written.
+                : ((root.entry.id == "colorScheme" || root.entry.id == "backgroundImage" || root.entry.id == "headerLogoImage") && root.entry.value-name != "")
                     ? root.entry.value-name
                     : SettingsLabels.value(root.entry.id, root.entry.value);
 
@@ -747,10 +783,11 @@ export component SettingsRowView inherits Rectangle {
     // device row reads the same way, though it takes focus.
     property <bool> is-info: root.entry.control == ControlKind.info || root.entry.control == ControlKind.device;
 
-    // The background image and Controllers rows are navigations that
-    // still name what they hold.
+    // The background image, logo image and Controllers rows are navigations
+    // that still name what they hold.
     property <bool> shows-value: root.entry.control == ControlKind.picker || root.is-info
-        || root.is-slider || root.entry.id == "backgroundImage" || root.entry.id == "controllers";
+        || root.is-slider || root.entry.id == "backgroundImage" || root.entry.id == "headerLogoImage"
+        || root.entry.id == "controllers";
     property <bool> is-slider: root.entry.control == ControlKind.slider;
     // The slider's cells: the Volume page's cell size, from the same
     // share of the row, so the two sliders match.
@@ -768,7 +805,7 @@ export component SettingsRowView inherits Rectangle {
         // Up to whatever stands at the right: the track on a slider, the
         // chevron otherwise.
         width: Math.min(self.preferred-width, Math.max(0px,
-            (root.is-slider ? track.x : chevron.x) - Sizing.pct-w(2) - label.x - label.width - Sizing.pct-w(2)));
+            (root.is-slider ? track.x : chevron.x) - Sizing.pct-w(2) - label.x - label.width - root.badge-room - Sizing.pct-w(2)));
         overflow: elide;
         text: root.value-text;
         color: root.focused ? (root.dim ? Theme.on-accent-muted : root.content-color)

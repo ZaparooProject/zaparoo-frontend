@@ -318,6 +318,15 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_crt_enabled => set_crt_enabled,
         get_crt_standard => set_crt_standard,
     );
+    // The header logo: both heads draw a custom image from the one source
+    // `brand` keeps, so its mode, aspect and revision are all they need.
+    let brand = primary.global::<crate::Brand>();
+    let crt_brand = crt.global::<crate::Brand>();
+    copy_properties!(brand, crt_brand;
+        get_mode => set_mode,
+        get_custom_aspect => set_custom_aspect,
+        get_revision => set_revision,
+    );
     // The help bar setting is a sizing input, and the CRT head owns its
     // own `Sizing`: copy it and re-solve that head's scene when it flips.
     let help_bar = primary.global::<crate::Sizing>().get_help_bar_enabled();

@@ -115,6 +115,7 @@ pub fn dispatch(text: &str, notifier: &Notifier) -> String {
             Some(Ok(Value::Null))
         }
         "version" => Some(Ok(fixtures::version_response())),
+        "online.status" => Some(Ok(fixtures::online_status_response())),
         _ => None,
     });
 

@@ -109,6 +109,9 @@ pub struct FileBrowserState {
     pub selected: String,
     /// Set while picking a cover for this deck instead of a tile's icon.
     pub deck_id: String,
+    /// Set while picking the header logo image (Settings > Appearance)
+    /// instead of a tile's icon.
+    pub header_logo: bool,
 }
 
 /// The music player: which page and control had focus, the playlist row
@@ -678,6 +681,13 @@ pub struct SettingsState {
     /// The browse list card over a background image: `glass` or `solid`.
     #[serde(default = "default_background_list_style")]
     pub background_list_style: String,
+    /// The header logo: `zaparoo`, `custom` (the image in
+    /// `header_logo_image`) or `none`. Anything else reads as `zaparoo`.
+    #[serde(default = "default_header_logo")]
+    pub header_logo: String,
+    /// The image file the `custom` header logo shows. Empty is none.
+    #[serde(default)]
+    pub header_logo_image: String,
     #[serde(default)]
     pub debug_logging: bool,
     #[serde(default = "default_screensaver_timeout")]
@@ -767,6 +777,8 @@ impl Default for SettingsState {
             background_blur: default_background_blur(),
             background_dim: 0,
             background_list_style: default_background_list_style(),
+            header_logo: default_header_logo(),
+            header_logo_image: String::new(),
             debug_logging: false,
             screensaver_timeout: default_screensaver_timeout(),
             media_image_type: default_media_image_type(),
@@ -811,6 +823,11 @@ fn default_browse_layout() -> String {
 
 fn default_favorites_grouping() -> String {
     "none".into()
+}
+
+/// The header logo token for state saved before the setting existed.
+fn default_header_logo() -> String {
+    "zaparoo".into()
 }
 
 fn default_system_logo_style() -> String {
@@ -1171,6 +1188,8 @@ mod tests {
                 background_blur: 40,
                 background_dim: -2,
                 background_list_style: "solid".into(),
+                header_logo: "custom".into(),
+                header_logo_image: "/media/fat/logo.png".into(),
                 debug_logging: true,
                 screensaver_timeout: "300".into(),
                 media_image_type: "auto".into(),
@@ -1207,6 +1226,7 @@ mod tests {
                 dir: "/media/fat".into(),
                 selected: "art".into(),
                 deck_id: "0k3v9x2rq7bm".into(),
+                header_logo: false,
             },
             decks: DecksState {
                 selected_deck: "0k3v9x2rq7bm".into(),
