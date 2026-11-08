@@ -130,14 +130,34 @@ pub(crate) fn publish_list<R>(
     rows: &[R],
     cell: impl Fn(&R) -> crate::GridCell,
 ) -> usize {
+    publish_list_window(
+        view,
+        input,
+        current,
+        count,
+        visible,
+        previous,
+        |top, take| {
+            let cells = rows.iter().skip(top).take(take).map(cell).collect();
+            (top, cells)
+        },
+    )
+}
+
+/// The same for rows that are not one slice: `window` gets the wanted top
+/// and row count and answers with the top it could start from and its cells.
+pub(crate) fn publish_list_window(
+    view: &impl ListView,
+    input: &crate::input::InputModel,
+    current: usize,
+    count: usize,
+    visible: usize,
+    previous: usize,
+    window: impl FnOnce(usize, usize) -> (usize, Vec<crate::GridCell>),
+) -> usize {
     let scroll_top = window_top(current, count, visible, previous);
-    let top = scroll_top.saturating_sub(visible);
-    let cells: Vec<crate::GridCell> = rows
-        .iter()
-        .skip(top)
-        .take(scroll_top - top + 2 * visible)
-        .map(cell)
-        .collect();
+    let wanted_top = scroll_top.saturating_sub(visible);
+    let (top, cells) = window(wanted_top, scroll_top - wanted_top + 2 * visible);
     let moved = current.abs_diff(view.list_selected());
     if moved > 0 {
         let (glide, step_ms) = input.list_follow(moved);

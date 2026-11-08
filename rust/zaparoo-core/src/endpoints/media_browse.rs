@@ -112,6 +112,8 @@ impl Endpoint for MediaBrowseEndpoint {
                     include_hidden: (!args.live).then_some(args.include_hidden),
                     max_results: Some(args.max_results),
                     cursor: None,
+                    offset: None,
+                    anchor_path: None,
                     tags: args.tags,
                     letter: None,
                     sort: None,

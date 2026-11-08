@@ -1572,7 +1572,7 @@ fn held_game_pages_cut_at_repeat_cadence_but_taps_keep_slides() {
         let mut state = crate::router::lock(&ctx.shared);
         state.persist.settings.reduce_motion = false;
         state.games.loading = false;
-        state.games.rows = game_rows("Game", 200);
+        state.games.rows = game_rows("Game", 200).into();
         state.games.grid.set_item_count(200);
     }
     crate::games::render(&ctx, &app);
@@ -1776,7 +1776,7 @@ fn seat_visibility_list(
     let mut shared = crate::router::lock(&ctx.shared);
     shared.games.mode = mode;
     shared.games.system_id = "NES".into();
-    shared.games.rows = game_rows("Game", 3);
+    shared.games.rows = game_rows("Game", 3).into();
     for (index, row) in shared.games.rows.iter_mut().enumerate() {
         row.media_id = Some(index as i64 + 42);
         row.path = format!("/g/Game {index}.nes");
@@ -2893,7 +2893,7 @@ fn show_hidden_setting_retires_letter_scope_without_routing_out_of_settings() {
 
 fn seat_folder(ctx: &crate::router::Ctx, app: &App, name: &str, index: usize) {
     let mut shared = crate::router::lock(&ctx.shared);
-    shared.games.rows = game_rows(name, 8);
+    shared.games.rows = game_rows(name, 8).into();
     shared.games.grid.set_item_count(8);
     shared.games.grid.set_current_index_immediate(index);
     drop(shared);
@@ -3119,7 +3119,7 @@ fn page_lookahead_is_bounded_and_delayed_partial_pages_wait_then_slide() {
     {
         let mut shared = crate::router::lock(&ctx.shared);
         let model = &mut shared.games;
-        model.rows.truncate(size);
+        model.rows.dense_mut().truncate(size);
         model.grid.total_items_override = Some(size * 5);
         model.total_files = (size * 5) as u32;
         model.grid.set_item_count(size);
@@ -3292,7 +3292,7 @@ fn wrapped_game_grids_follow_keys_and_pointer_direction_in_every_mode() {
     let count = size * 3 - 1;
     {
         let mut shared = crate::router::lock(&ctx.shared);
-        shared.games.rows = game_rows("Game", count);
+        shared.games.rows = game_rows("Game", count).into();
         shared.games.total_files = count as u32;
         shared.games.grid.set_item_count(count);
     }
@@ -3358,7 +3358,7 @@ fn a_held_page_flip_stops_at_the_ends_from_its_first_repeat() {
     let size = crate::router::lock(&ctx.shared).games.grid.page_size();
     {
         let mut shared = crate::router::lock(&ctx.shared);
-        shared.games.rows = game_rows("Game", size * 2);
+        shared.games.rows = game_rows("Game", size * 2).into();
         shared.games.grid.set_item_count(size * 2);
         shared.games.grid.set_current_index_immediate(size);
     }
@@ -3398,7 +3398,7 @@ fn long_holds_step_pages_then_letters_and_the_rail_follows() {
         shared.games.mode = GamesMode::Browse;
         shared.games.system_id = "NES".into();
         shared.games.browse_path = "/roms/nes".into();
-        shared.games.rows = game_rows("Game", 60);
+        shared.games.rows = game_rows("Game", 60).into();
         shared.games.grid.set_item_count(60);
         shared.games.grid.set_current_index_immediate(0);
         shared.letter_buckets = vec![bucket("A", 0), bucket("B", 20), bucket("C", 45)];
@@ -4356,7 +4356,7 @@ fn launch_tile_release_cycle(reuse: bool) {
     shell.set_browse_list_layout(false);
     {
         let mut shared = crate::router::lock(&ctx.shared);
-        shared.games.rows = game_rows("Launch", 2);
+        shared.games.rows = game_rows("Launch", 2).into();
         for (i, row) in shared.games.rows.iter_mut().enumerate() {
             row.path = format!("/probe/{i}.rom");
         }
@@ -6116,7 +6116,7 @@ fn folder_title_descenders_stay_out_of_the_cached_grid_band() {
     app.global::<crate::Motion>().set_enabled(false);
     {
         let mut shared = crate::router::lock(&ctx.shared);
-        shared.games.rows = game_rows("Game", 40);
+        shared.games.rows = game_rows("Game", 40).into();
         shared.games.grid.set_item_count(40);
         shared.games.focus_armed = true;
         shared.games.restore_done = true;
@@ -6210,7 +6210,7 @@ fn held_window_down_key_enters_rapid_mode_without_direct_repeat_dispatch() {
     let ctx = std::sync::Arc::new(ctx);
     {
         let mut shared = crate::router::lock(&ctx.shared);
-        shared.games.rows = game_rows("Game", 1_000);
+        shared.games.rows = game_rows("Game", 1_000).into();
         shared.games.grid.set_item_count(1_000);
         shared.games.focus_armed = true;
         shared.games.restore_done = true;
@@ -6344,7 +6344,7 @@ fn browse_list_focus_and_scroll_are_local_and_restore_the_saved_viewport() {
         let mut shared = crate::router::lock(&ctx.shared);
         shared.persist.settings.games_browse_layout = "list".into();
         shared.persist.games.list_top_at_level = vec![0];
-        shared.games.rows = game_rows("Game", 40);
+        shared.games.rows = game_rows("Game", 40).into();
         shared.games.grid.set_item_count(40);
         shared.games.focus_armed = true;
     }
@@ -6416,7 +6416,7 @@ fn pending_folder_cancel_and_stale_reply_preserve_grid_and_list_sources() {
             shared.persist.settings.games_browse_layout = if list { "list" } else { "grid" }.into();
             shared.persist.games.path_stack = vec!["/parent".into()];
             shared.persist.games.selected_at_level = vec!["/parent/child".into()];
-            shared.games.rows = game_rows("Parent", 8);
+            shared.games.rows = game_rows("Parent", 8).into();
             shared.games.rows[0].entry_type = zaparoo_app::media_list::EntryType::Directory;
             shared.games.rows[0].path = "/parent/child".into();
             shared.games.grid.set_item_count(8);
@@ -7047,7 +7047,7 @@ fn accepting_during_page_motion_pushes_the_logical_destination_tile() {
     app.global::<Shell>().set_active_screen(Screen::Games);
     {
         let mut shared = crate::router::lock(&ctx.shared);
-        shared.games.rows = game_rows("Folder", 200);
+        shared.games.rows = game_rows("Folder", 200).into();
         for (i, row) in shared.games.rows.iter_mut().enumerate() {
             row.entry_type = zaparoo_app::media_list::EntryType::Directory;
             row.path = format!("/folder-{i}");
@@ -7199,7 +7199,7 @@ fn a_batch_of_landed_covers_repaints_games_once() {
     {
         let mut shared = crate::router::lock(&ctx.shared);
         shared.games.loading = false;
-        shared.games.rows = rows;
+        shared.games.rows = rows.into();
         shared.games.grid.set_item_count(40);
     }
     crate::games::render(&ctx, &app);
@@ -10409,7 +10409,7 @@ fn every_paged_grid_takes_a_cached_slide_on_crt_and_in_tate_but_lists_do_not() {
             .collect();
         shared.systems_model.grid.set_item_count(40);
         shared.games.loading = false;
-        shared.games.rows = game_rows("Game", 200);
+        shared.games.rows = game_rows("Game", 200).into();
         shared.games.grid.set_item_count(200);
     }
     let shell = app.global::<Shell>();
@@ -10741,7 +10741,7 @@ fn a_restored_game_list_backs_out_to_a_systems_grid_with_its_logos() {
             .collect();
         shared.persist.systems.system_id = "NES".into();
         shared.games.loading = false;
-        shared.games.rows = game_rows("Game", 40);
+        shared.games.rows = game_rows("Game", 40).into();
         shared.games.grid.set_item_count(40);
     }
     // The restore: the parent is filled unseen, then Games is the screen.
@@ -11099,7 +11099,7 @@ fn a_held_walk_scrolls_the_games_list_continuously() {
         let mut shared = crate::router::lock(&ctx.shared);
         shared.persist.settings.games_browse_layout = "list".into();
         shared.persist.games.list_top_at_level = vec![0];
-        shared.games.rows = game_rows("Game", 400);
+        shared.games.rows = game_rows("Game", 400).into();
         shared.games.grid.set_item_count(400);
         shared.games.focus_armed = true;
         shared.input.advance_test_clock(1);
@@ -11180,7 +11180,7 @@ fn lettered_folder(ctx: &crate::router::Ctx, app: &App) {
         shared.games.mode = GamesMode::Browse;
         shared.games.system_id = "NES".into();
         shared.games.browse_path = "/roms/nes".into();
-        shared.games.rows = game_rows("Game", 60);
+        shared.games.rows = game_rows("Game", 60).into();
         shared.games.grid.set_item_count(60);
         shared.games.grid.set_current_index_immediate(0);
         shared.letter_buckets = vec![bucket("A", 0), bucket("B", 20), bucket("C", 45)];
@@ -13520,4 +13520,434 @@ fn a_settings_tile_pins_to_the_hub_and_opens_its_page_from_there() {
     crate::router::handle_action(&ctx, &app, "cancel");
     settle(&window);
     assert_eq!(app.global::<Shell>().get_active_screen(), Screen::Hub);
+}
+
+fn position_page(
+    rows: std::ops::Range<usize>,
+    next: Option<&str>,
+    offset: Option<u64>,
+    anchor_index: Option<u64>,
+    total: usize,
+) -> zaparoo_core::media_types::MediaBrowseResult {
+    zaparoo_core::media_types::MediaBrowseResult {
+        entries: rows
+            .map(|index| zaparoo_core::media_types::BrowseEntry {
+                name: format!("Row {index}"),
+                path: format!("/target/{index}"),
+                entry_type: "media".into(),
+                ..Default::default()
+            })
+            .collect(),
+        total_files: u32::try_from(total).unwrap_or(0),
+        total_dirs: Some(0),
+        pagination: Some(zaparoo_core::media_types::Pagination {
+            has_next_page: next.is_some(),
+            next_cursor: next.map(str::to_string),
+            offset,
+            anchor_index,
+            ..Default::default()
+        }),
+        ..Default::default()
+    }
+}
+
+/// A 1,000-row folder whose first 50 rows have answered, from a Core that
+/// serves pages by position.
+fn seat_position_list(ctx: &crate::router::Ctx, app: &App, layout: &str, saved: &str) -> u64 {
+    crate::sizing::apply_scene(
+        app,
+        crate::sizing::Scene::of(app, f64::from(W), f64::from(H), false),
+    );
+    app.global::<Shell>().set_active_screen(Screen::Games);
+    let ticket = {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.persist.settings.games_browse_layout = layout.into();
+        shared.persist.games.path_stack = vec!["/target".into()];
+        shared.persist.games.selected_at_level = vec![saved.into()];
+        shared.games.browse_path = "/target".into();
+        shared.games.total_known = true;
+        shared.games.loading = true;
+        shared.games.ticket
+    };
+    crate::games::on_browse_ready(
+        ctx,
+        app,
+        ticket,
+        &position_page(0..50, Some("first"), Some(0), None, 1000),
+        false,
+        false,
+        false,
+    );
+    ticket
+}
+
+#[test]
+fn core_without_positions_keeps_the_walk() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    let ticket = {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.games.browse_path = "/target".into();
+        shared.games.total_known = true;
+        shared.games.ticket
+    };
+    crate::games::on_browse_ready(
+        &ctx,
+        &app,
+        ticket,
+        &position_page(0..50, Some("first"), None, None, 1000),
+        false,
+        false,
+        false,
+    );
+    let shared = crate::router::lock(&ctx.shared);
+    assert!(!shared.games.rows.is_positional());
+    assert_eq!(shared.games.rows.len(), 50);
+    assert!(shared.games.has_more());
+}
+
+#[test]
+fn a_folder_that_fits_one_page_is_not_positional() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let ticket = crate::router::lock(&ctx.shared).games.ticket;
+    crate::games::on_browse_ready(
+        &ctx,
+        &app,
+        ticket,
+        &position_page(0..20, None, Some(0), None, 20),
+        false,
+        false,
+        false,
+    );
+    assert!(!crate::router::lock(&ctx.shared).games.rows.is_positional());
+}
+
+#[test]
+fn a_positional_list_knows_its_whole_length_from_the_first_page() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    seat_position_list(&ctx, &app, "grid", "");
+    let shared = crate::router::lock(&ctx.shared);
+    assert!(shared.games.rows.is_positional());
+    assert_eq!(shared.games.rows.len(), 1000);
+    assert_eq!(shared.games.grid.current_index(), 0);
+    assert!(!shared.games.has_more());
+}
+
+#[test]
+fn a_step_past_the_loaded_rows_waits_and_lands_when_they_arrive() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let ticket = seat_position_list(&ctx, &app, "list", "");
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.games.grid.set_current_index_immediate(49);
+        shared.games.loading_more = false;
+    }
+    crate::games::handle_action(&ctx, &app, "down");
+    {
+        let shared = crate::router::lock(&ctx.shared);
+        assert_eq!(
+            shared.games.grid.current_index(),
+            49,
+            "no move onto nothing"
+        );
+        assert_eq!(shared.games.landing.map(|landing| landing.index), Some(50));
+        assert!(shared.games.loading_more);
+    }
+    crate::games::on_positional_page(
+        &ctx,
+        &app,
+        ticket,
+        50,
+        Ok(position_page(50..100, Some("next"), None, None, 1000)),
+    );
+    let shared = crate::router::lock(&ctx.shared);
+    assert_eq!(shared.games.grid.current_index(), 50);
+    assert!(shared.games.landing.is_none());
+    assert_eq!(shared.games.rows[50].path, "/target/50");
+}
+
+#[test]
+fn a_letter_jump_asks_once_for_its_page_and_lands_there() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let ticket = seat_position_list(&ctx, &app, "grid", "");
+    crate::router::lock(&ctx.shared).games.loading_more = false;
+    crate::games::jump_to_item(&ctx, &app, 500);
+    let start = {
+        let shared = crate::router::lock(&ctx.shared);
+        assert_eq!(shared.games.grid.current_index(), 0, "the source stays up");
+        assert!(shared.games.jump_loading);
+        assert!(shared.games.loading_more);
+        let size = shared.games.grid.page_size();
+        500 / size * size
+    };
+    crate::games::on_positional_page(
+        &ctx,
+        &app,
+        ticket,
+        start,
+        Ok(position_page(
+            start..start + 50,
+            Some("next"),
+            None,
+            None,
+            1000,
+        )),
+    );
+    let shared = crate::router::lock(&ctx.shared);
+    assert_eq!(shared.games.grid.current_index(), 500);
+    assert!(!shared.games.jump_loading);
+    assert_eq!(shared.persist.games.selected_at_level, vec!["/target/500"]);
+    assert!(
+        shared.games.rows.get(100).is_none(),
+        "nothing between the two pages was loaded"
+    );
+}
+
+#[test]
+fn rows_dropped_for_memory_load_again_when_moved_back_to() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let ticket = seat_position_list(&ctx, &app, "list", "");
+    crate::router::lock(&ctx.shared).games.loading_more = false;
+    crate::games::jump_to_item(&ctx, &app, 500);
+    crate::games::on_positional_page(
+        &ctx,
+        &app,
+        ticket,
+        450,
+        Ok(position_page(450..550, Some("next"), None, None, 1000)),
+    );
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        assert_eq!(shared.games.grid.current_index(), 500);
+        shared.games.rows.evict(450..550, 0, 50, |_| 1);
+        assert!(shared.games.rows.get(0).is_none());
+        shared.games.loading_more = false;
+    }
+    crate::games::jump_to_item(&ctx, &app, 0);
+    {
+        let shared = crate::router::lock(&ctx.shared);
+        assert_eq!(shared.games.grid.current_index(), 500);
+        assert!(shared.games.loading_more);
+    }
+    crate::games::on_positional_page(
+        &ctx,
+        &app,
+        ticket,
+        0,
+        Ok(position_page(0..50, Some("first"), Some(0), None, 1000)),
+    );
+    let shared = crate::router::lock(&ctx.shared);
+    assert_eq!(shared.games.grid.current_index(), 0);
+    assert_eq!(shared.games.rows[0].path, "/target/0");
+}
+
+#[test]
+fn a_failed_position_page_stops_until_the_next_move_retries_it() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let ticket = seat_position_list(&ctx, &app, "list", "");
+    crate::router::lock(&ctx.shared)
+        .games
+        .grid
+        .set_current_index_immediate(49);
+    crate::games::handle_action(&ctx, &app, "down");
+    crate::games::on_positional_page(
+        &ctx,
+        &app,
+        ticket,
+        50,
+        Err(crate::games::PageError::transport("not connected")),
+    );
+    {
+        let shared = crate::router::lock(&ctx.shared);
+        assert_eq!(shared.games.ticket, ticket);
+        assert!(shared.games.page_blocked);
+        assert!(!shared.games.loading_more, "no retry loop");
+        assert!(shared.games.landing.is_none());
+        assert_eq!(shared.games.grid.current_index(), 49);
+    }
+    crate::games::handle_action(&ctx, &app, "down");
+    {
+        let shared = crate::router::lock(&ctx.shared);
+        assert!(!shared.games.page_blocked);
+        assert!(shared.games.loading_more);
+    }
+    crate::games::on_positional_page(
+        &ctx,
+        &app,
+        ticket,
+        50,
+        Err(crate::games::PageError::refused("no")),
+    );
+    let shared = crate::router::lock(&ctx.shared);
+    assert_ne!(shared.games.ticket, ticket, "Core refused: reload the list");
+    assert!(shared.games.loading);
+    assert!(shared.games.page_restarted);
+}
+
+#[test]
+fn a_late_position_page_is_dropped() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let ticket = seat_position_list(&ctx, &app, "grid", "");
+    crate::games::on_positional_page(
+        &ctx,
+        &app,
+        ticket + 1,
+        500,
+        Ok(position_page(500..550, Some("next"), None, None, 1000)),
+    );
+    assert!(crate::router::lock(&ctx.shared)
+        .games
+        .rows
+        .get(500)
+        .is_none());
+}
+
+#[test]
+fn a_list_shorter_than_reported_ends_where_core_says_it_does() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let ticket = seat_position_list(&ctx, &app, "list", "");
+    crate::router::lock(&ctx.shared).games.loading_more = false;
+    crate::games::jump_to_item(&ctx, &app, 900);
+    crate::games::on_positional_page(
+        &ctx,
+        &app,
+        ticket,
+        850,
+        Ok(position_page(850..870, None, None, None, 870)),
+    );
+    let shared = crate::router::lock(&ctx.shared);
+    assert_eq!(shared.games.rows.len(), 870);
+    assert_eq!(shared.games.grid.current_index(), 869);
+    assert!(shared.games.landing.is_none());
+}
+
+#[test]
+fn a_restore_off_the_first_page_holds_the_source_for_one_request_and_lands() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let ticket = seat_position_list(&ctx, &app, "grid", "/target/700");
+    {
+        let shared = crate::router::lock(&ctx.shared);
+        assert!(shared.games.loading, "the anchor request is out");
+        assert!(
+            shared.games.rows.is_empty(),
+            "nothing lands at the top first"
+        );
+    }
+    let first = crate::games::FirstPage {
+        rows: crate::games::browse_rows(
+            &position_page(0..50, None, None, None, 1000).entries,
+            false,
+        ),
+        cursor: Some("first".into()),
+        totals: Some((1000, 0)),
+        total: 1000,
+        pinned: 0,
+        flip: false,
+    };
+    crate::games::on_restore_page(
+        &ctx,
+        &app,
+        ticket,
+        first,
+        None,
+        Ok(Some(position_page(
+            675..725,
+            Some("next"),
+            Some(675),
+            Some(700),
+            1000,
+        ))),
+    );
+    let shared = crate::router::lock(&ctx.shared);
+    assert!(!shared.games.loading);
+    assert_eq!(shared.games.grid.current_index(), 700);
+    assert_eq!(shared.games.rows[700].path, "/target/700");
+    assert_eq!(shared.games.rows[0].path, "/target/0");
+    assert_eq!(shared.games.rows.len(), 1000);
+}
+
+#[test]
+fn a_saved_row_core_no_longer_lists_stays_at_the_top_or_its_old_position() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let first = |total: usize| crate::games::FirstPage {
+        rows: crate::games::browse_rows(
+            &position_page(0..50, None, None, None, total).entries,
+            false,
+        ),
+        cursor: Some("first".into()),
+        totals: Some((u32::try_from(total).unwrap_or(0), 0)),
+        total,
+        pinned: 0,
+        flip: false,
+    };
+    let ticket = seat_position_list(&ctx, &app, "grid", "/gone");
+    crate::games::on_restore_page(&ctx, &app, ticket, first(1000), None, Ok(None));
+    assert_eq!(
+        crate::router::lock(&ctx.shared).games.grid.current_index(),
+        0
+    );
+
+    // A reload: the game went away, and the list came back shorter.
+    crate::games::on_restore_page(
+        &ctx,
+        &app,
+        ticket,
+        first(600),
+        Some(700),
+        Ok(Some(position_page(575..600, None, Some(575), None, 600))),
+    );
+    let shared = crate::router::lock(&ctx.shared);
+    assert_eq!(shared.games.rows.len(), 600);
+    assert_eq!(shared.games.grid.current_index(), 599);
+}
+
+#[test]
+fn a_rescan_reloads_an_open_list_and_marks_an_unseen_one() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let ticket = seat_position_list(&ctx, &app, "grid", "");
+    app.global::<Shell>().set_active_screen(Screen::Hub);
+    crate::games::reload_positional(&ctx, &app);
+    {
+        let shared = crate::router::lock(&ctx.shared);
+        assert_eq!(shared.games.ticket, ticket, "nothing loads off screen");
+        assert!(shared.games.positional_stale);
+    }
+    app.global::<Shell>().set_active_screen(Screen::Games);
+    crate::router::lock(&ctx.shared)
+        .games
+        .grid
+        .set_current_index_immediate(30);
+    crate::games::reload_positional(&ctx, &app);
+    let shared = crate::router::lock(&ctx.shared);
+    assert_ne!(shared.games.ticket, ticket);
+    assert_eq!(shared.games.reload_position, Some(30));
+    assert!(!shared.games.positional_stale);
+    assert_eq!(shared.games.rows.len(), 1000, "the rows stay up");
 }
