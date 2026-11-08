@@ -7,7 +7,7 @@
 // a second modal, the picker its rows open.
 
 import { Theme, Sizing, Motion, Layout } from "theme.slint";
-import { GlyphSource, ScrollCue, Divider, ModalShell, QrPlate, WaitCue } from "chrome.slint";
+import { GlyphSource, ScrollCue, Divider, CheckBox, ModalShell, QrPlate, WaitCue } from "chrome.slint";
 import { SelectionCursor, SelectionClip, ScrollOffset } from "focus.slint";
 import { SettingsRow, SettingsLabels, SettingsRowView } from "settings.slint";
 import { PressableSurface } from "tiles.slint";
@@ -34,7 +34,6 @@ component PickerScopeLabel inherits Rectangle {
 
     property <length> pad: Sizing.pct-w(2);
     property <length> box: Sizing.pct-h(3);
-    property <length> box-line: Sizing.card-border-width * (Sizing.tier-240 ? 1 : 2);
     property <length> box-band: root.checkable ? root.box + root.pad : 0px;
 
     Text {
@@ -48,23 +47,12 @@ component PickerScopeLabel inherits Rectangle {
         font-weight: root.weight;
     }
 
-    if root.checkable: Rectangle {
+    if root.checkable: CheckBox {
         x: parent.width - self.width - root.pad;
         y: (parent.height - self.height) / 2;
         width: root.box;
-        height: root.box;
-        border-radius: Sizing.radius-sm;
-        border-width: root.box-line;
-        border-color: root.content-color;
-
-        if root.checked: Rectangle {
-            x: 2 * root.box-line;
-            y: 2 * root.box-line;
-            width: parent.width - 4 * root.box-line;
-            height: parent.height - 4 * root.box-line;
-            border-radius: Math.max(0px, Sizing.radius-sm - 2 * root.box-line);
-            background: root.content-color;
-        }
+        checked: root.checked;
+        ink: root.content-color;
     }
 }
 

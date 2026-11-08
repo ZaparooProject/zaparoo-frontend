@@ -110,11 +110,14 @@ impl Scope {
 }
 
 /// Whether Core should include hidden games: when the setting says so, or
-/// when a chosen tag is a user tag (a List), which browse answers with
-/// hidden games included. The favorites scope's own tag does not count,
+/// when a chosen tag is a user tag (a List), required or one of a `~`
+/// group, which browse answers with hidden games included. The favorites scope's own tag does not count,
 /// as the Favorites list itself does not.
 pub fn includes_hidden(show_hidden: bool, chosen: &[String]) -> bool {
-    show_hidden || chosen.iter().any(|t| t.starts_with("user:"))
+    show_hidden
+        || chosen
+            .iter()
+            .any(|t| t.strip_prefix('~').unwrap_or(t).starts_with("user:"))
 }
 
 /// A saved search's systems or tags as its Hub tile wrote them: trimmed,
@@ -133,9 +136,11 @@ pub fn tile_list(values: &[String]) -> Vec<String> {
 }
 
 /// The search's written tags the tags picker cannot show, as written: a
-/// type it has no category for (`series:...`, a revision), or a value its
-/// category cannot hold (a second genre, `user:hidden`). Only a tag search
-/// from Game Info or a Hub tile puts one there.
+/// type it has no category for (`series:...`, a revision), a value its
+/// category cannot hold (`user:hidden`), or a category's plain repeats
+/// (`genre:rpg` and `genre:action`, both required), which the picker's
+/// alternatives cannot express. Only a tag search from Game Info or a Hub
+/// tile puts one there.
 pub fn extra_tags(tags: &[String]) -> Vec<String> {
     let shown = browse_filter::normalize(tags);
     tile_list(tags)
@@ -144,9 +149,9 @@ pub fn extra_tags(tags: &[String]) -> Vec<String> {
         .collect()
 }
 
-/// The picker category a tag belongs to, if any.
+/// The picker category a tag belongs to, if any; a `~` tag's too.
 fn category_of(tag: &str) -> Option<browse_filter::Category> {
-    let tag_type = tag.split_once(':').map_or(tag, |(t, _)| t);
+    let tag_type = browse_filter::split_tag(tag).map_or(tag, |(t, _)| t);
     browse_filter::Category::ALL
         .into_iter()
         .find(|category| category.tag_type() == tag_type)
@@ -162,8 +167,8 @@ fn kept_extras(written: &[String], picked: &[String]) -> Vec<String> {
         .into_iter()
         .filter(|tag| {
             category_of(tag).is_none_or(|category| {
-                browse_filter::selected(&before, category)
-                    == browse_filter::selected(picked, category)
+                browse_filter::selected_values(&before, category)
+                    == browse_filter::selected_values(picked, category)
             })
         })
         .collect()
@@ -176,7 +181,7 @@ pub fn with_picked(written: &[String], picked: Vec<String>) -> Vec<String> {
     [picked, extras].concat()
 }
 
-/// The search's tags: the picker's, one per category in menu order, then
+/// The search's tags: the picker's, by category in menu order, then
 /// the extras it cannot show (`extra_tags`).
 pub fn search_tags(tags: &[String]) -> Vec<String> {
     let mut all = browse_filter::normalize(tags);
@@ -211,22 +216,20 @@ pub const TAG_VALUE_CAP: usize = 100;
 /// its tag stays. Tags are kept as they are while the groups have not
 /// loaded.
 pub fn prune_tags(tags: &[String], groups: &[Group]) -> Vec<String> {
-    let tags = browse_filter::normalize(tags);
+    let mut picks = browse_filter::picks(tags);
     if groups.is_empty() {
-        return tags;
+        return browse_filter::write(&picks);
     }
-    tags.into_iter()
-        .filter(|tag| {
-            tag.split_once(':').is_some_and(|(tag_type, value)| {
-                groups
-                    .iter()
-                    .find(|g| g.category.tag_type() == tag_type)
-                    .is_some_and(|g| {
-                        g.values.len() >= TAG_VALUE_CAP || g.values.iter().any(|v| v.value == value)
-                    })
+    for pick in &mut picks {
+        let group = groups.iter().find(|g| g.category == pick.category);
+        pick.values.retain(|value| {
+            group.is_some_and(|g| {
+                g.values.len() >= TAG_VALUE_CAP || g.values.iter().any(|v| v.value == *value)
             })
-        })
-        .collect()
+        });
+    }
+    picks.retain(|pick| !pick.values.is_empty());
+    browse_filter::write(&picks)
 }
 
 /// `prune_tags` for a search whose tags are kept as written (a Hub tile's,
@@ -421,33 +424,80 @@ mod tests {
         step(focus, action, shape).0
     }
 
+    fn values(items: &[&str]) -> Vec<FilterValue> {
+        items
+            .iter()
+            .map(|v| FilterValue {
+                value: (*v).to_string(),
+                label: (*v).to_string(),
+                count: 1,
+            })
+            .collect()
+    }
+
     #[test]
     fn a_written_searchs_tags_stay_until_their_own_category_changes() {
-        let written: Vec<String> = ["genre:rpg", "genre:action", "user:hidden", "year:1994"]
-            .map(String::from)
-            .to_vec();
-        // The picker shows one genre and the year; the rest are extras.
-        assert_eq!(extra_tags(&written), ["genre:action", "user:hidden"]);
+        let written = tags(&["genre:rpg", "genre:action", "user:hidden", "year:1994"]);
+        // Both genres are required: the picker shows only the year.
+        assert_eq!(
+            extra_tags(&written),
+            ["genre:rpg", "genre:action", "user:hidden"]
+        );
+        let years = values(&["1994", "1995"]);
         // A new year leaves both genres and the hidden tag alone.
-        let picked = browse_filter::with_selection(
-            &browse_filter::normalize(&written),
+        let picked = browse_filter::toggle(
+            &browse_filter::clear_category(&written, Category::Year),
             Category::Year,
-            Some("1995"),
+            "1995",
+            &years,
         );
         assert_eq!(
             with_picked(&written, picked),
-            ["genre:rpg", "year:1995", "genre:action", "user:hidden"]
+            ["year:1995", "genre:rpg", "genre:action", "user:hidden"]
         );
-        // A new genre replaces both.
-        let picked = browse_filter::with_selection(
+        // A genre picked replaces both.
+        let picked = browse_filter::toggle(
             &browse_filter::normalize(&written),
             Category::Genre,
-            Some("racing"),
+            "racing",
+            &values(&["racing"]),
         );
         assert_eq!(
             with_picked(&written, picked),
             ["genre:racing", "year:1994", "user:hidden"]
         );
+    }
+
+    #[test]
+    fn alternatives_are_the_pickers_and_prune_one_by_one() {
+        let written = tags(&["~genre:rpg", "~genre:action", "series:Zelda"]);
+        assert_eq!(extra_tags(&written), ["series:Zelda"]);
+        assert_eq!(
+            search_tags(&written),
+            ["~genre:rpg", "~genre:action", "series:Zelda"]
+        );
+        let groups = vec![Group {
+            category: Category::Genre,
+            values: values(&["rpg"]),
+        }];
+        // The new system lists only one of them: it is left, plain.
+        assert_eq!(
+            prune_written_tags(&written, &groups),
+            ["genre:rpg", "series:Zelda"]
+        );
+    }
+
+    #[test]
+    fn a_list_among_alternatives_includes_hidden_games() {
+        assert!(includes_hidden(
+            false,
+            &tags(&["~user:favorite", "~user:liked"])
+        ));
+        assert!(includes_hidden(false, &tags(&["user:favorite"])));
+        assert!(!includes_hidden(
+            false,
+            &tags(&["-user:favorite", "genre:rpg"])
+        ));
     }
 
     #[test]

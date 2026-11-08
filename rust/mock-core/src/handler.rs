@@ -758,6 +758,28 @@ mod tests {
     }
 
     #[test]
+    fn media_browse_reads_any_of_per_type_and_exclusions() {
+        let total = |tags: &str| -> u64 {
+            let req = format!(
+                r#"{{"jsonrpc":"2.0","id":"1","method":"media.browse","params":{{"path":"/games","maxResults":1000,"tags":{tags}}}}}"#
+            );
+            parse(&dispatch(&req))["result"]["totalFiles"]
+                .as_u64()
+                .expect("count")
+        };
+        let rpg = total(r#"["genre:rpg"]"#);
+        let action = total(r#"["genre:action"]"#);
+        assert!(rpg > 0 && action > 0);
+        // One genre per game: either genre is both counts together.
+        assert_eq!(total(r#"["~genre:rpg","~genre:action"]"#), rpg + action);
+        // Another type's alternatives narrow it, not widen it.
+        assert!(
+            total(r#"["~genre:rpg","~genre:action","~year:1985","~year:1986"]"#) < rpg + action
+        );
+        assert_eq!(total(r#"["genre:rpg","-genre:rpg"]"#), 0);
+    }
+
+    #[test]
     fn portable_identifiers_ride_on_every_media_shape() {
         let search = parse(&dispatch(
             r#"{"jsonrpc":"2.0","id":"1","method":"media.search","params":{"systems":["NES"],"maxResults":1}}"#,

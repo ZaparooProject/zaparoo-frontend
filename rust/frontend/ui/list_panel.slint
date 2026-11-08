@@ -7,13 +7,14 @@
 // preference) is a `ModalShell` titled at its center around a
 // `ListViewport` of `ListRow`s. A row reads like a Settings row: its name
 // from the left, and on the right whatever it carries, a value, a reason
-// it cannot act, a check for a picker's current choice, a toggle switch,
-// a chevron for a row that opens a page, or a color scheme's swatches.
+// it cannot act, a check for a picker's current choice, a checkbox for a
+// checklist's value, a toggle switch, a chevron for a row that opens a
+// page, or a color scheme's swatches.
 // Each panel keeps its own rows and words; these parts only draw them.
 // See docs/style.md, "List panels".
 
 import { Theme, Sizing, Motion } from "theme.slint";
-import { GlyphSource, ScrollCue, Divider } from "chrome.slint";
+import { GlyphSource, ScrollCue, Divider, CheckBox } from "chrome.slint";
 import { ScrollOffset, SelectionCursor, SelectionClip } from "focus.slint";
 import { ToggleSwitch, SegmentedTrack } from "settings.slint";
 import { MenuRole } from "state_types.slint";
@@ -55,6 +56,7 @@ export component ListRowBody inherits Rectangle {
     property <length> swatch-gap: Sizing.pct-w(0.6);
     property <bool> toggle: root.role == MenuRole.toggle-off || root.role == MenuRole.toggle-on;
     property <bool> slider: root.role == MenuRole.slider;
+    property <bool> checkbox: root.role == MenuRole.check-off || root.role == MenuRole.check-on;
     property <bool> marked: root.role == MenuRole.submenu || root.role == MenuRole.chosen;
     property <bool> swatches: root.swatch-id != "";
     // A slider's track: ten cells in a fixed share of the row, each a whole
@@ -66,10 +68,11 @@ export component ListRowBody inherits Rectangle {
     property <length> cell-w: Math.max(2px, Math.floor((root.width * 0.3 - 9 * root.cell-gap) / 10 / 1px) * 1px);
     property <length> cell-h: Sizing.pct-h(2.6);
     property <length> track-w: 10 * root.cell-w + 9 * root.cell-gap;
-    // The control at the right edge: a toggle switch, the swatches, or the
-    // slider's track. A check or chevron sits just inside it, or at the
-    // edge with none.
+    // The control at the right edge: a toggle switch, a checkbox, the
+    // swatches, or the slider's track. A check or chevron sits just inside
+    // it, or at the edge with none.
     property <length> control-w: root.toggle ? root.knob-h * 1.85
+        : root.checkbox ? root.mark
         : root.slider ? root.track-w
         : root.swatches ? 3 * root.swatch-size + 2 * root.swatch-gap
         : 0px;
@@ -151,6 +154,13 @@ export component ListRowBody inherits Rectangle {
         cell-w: root.cell-w;
         cell-h: root.cell-h;
         selected: root.selected;
+    }
+    if root.checkbox: CheckBox {
+        x: root.control-x;
+        y: Sizing.snap((root.height - self.height) / 2);
+        width: root.control-w;
+        checked: root.role == MenuRole.check-on;
+        ink: root.ink;
     }
     if root.toggle: ToggleSwitch {
         x: root.control-x;

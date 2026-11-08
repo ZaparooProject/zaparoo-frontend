@@ -353,10 +353,7 @@ fn systems_response_for_count(params: &Value, indexed_systems: usize) -> Value {
                 .enumerate()
                 .filter(|(index, (_, file, system))| {
                     *system == id
-                        && tags.iter().all(|tag| {
-                            let game = json!({ "tags": tags_for(*index, file, system) });
-                            game_has_tag(&game, tag)
-                        })
+                        && game_matches(&json!({ "tags": tags_for(*index, file, system) }), &tags)
                 })
                 .count();
             if !tags.is_empty() && media_count == 0 {
@@ -414,7 +411,7 @@ pub fn media_search_response(params: &Value) -> Result<Value, String> {
         .unwrap_or_default();
 
     let matching: Vec<Value> = games_for_systems(&systems)
-        .filter(|game| tags.iter().all(|tag| game_has_tag(game, tag)))
+        .filter(|game| game_matches(game, &tags))
         .filter(|game| {
             let name = slug(game.get("name").and_then(Value::as_str).unwrap_or_default());
             words.iter().all(|word| name.contains(word.as_str()))
@@ -556,9 +553,32 @@ fn under_path(path: &str, prefix: &str) -> bool {
             .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
 }
 
-/// Match one `type:value` filter against a search row's `tags` array, the
-/// same shape Core returns. Only the AND form is modelled; the frontend
-/// never sends the `-`/`~` operators.
+/// Whether a search row matches `filters` as Core reads them: a plain or
+/// `+` tag is required, a `-` tag excluded, and `~` tags of one type are
+/// alternatives, at least one of each type required.
+fn game_matches(game: &Value, filters: &[&str]) -> bool {
+    let mut any_of: Vec<(&str, bool)> = Vec::new();
+    for filter in filters {
+        if let Some(rest) = filter.strip_prefix('~') {
+            let tag_type = rest.split_once(':').map_or(rest, |(t, _)| t);
+            let hit = game_has_tag(game, rest);
+            match any_of.iter_mut().find(|(t, _)| *t == tag_type) {
+                Some((_, matched)) => *matched |= hit,
+                None => any_of.push((tag_type, hit)),
+            }
+        } else if let Some(rest) = filter.strip_prefix('-') {
+            if game_has_tag(game, rest) {
+                return false;
+            }
+        } else if !game_has_tag(game, filter.strip_prefix('+').unwrap_or(filter)) {
+            return false;
+        }
+    }
+    any_of.iter().all(|(_, matched)| *matched)
+}
+
+/// Match one `type:value` tag against a search row's `tags` array, the
+/// same shape Core returns.
 fn game_has_tag(game: &Value, filter: &str) -> bool {
     let Some((want_type, want_value)) = filter.split_once(':') else {
         return false;
@@ -594,10 +614,7 @@ fn matching_media_rows(path_prefix: &str, systems: &[&str], filters: &[&str]) ->
                 "hasCover": true,
             });
             with_cover_color(&mut row, index);
-            filters
-                .iter()
-                .all(|filter| game_has_tag(&row, filter))
-                .then_some(row)
+            game_matches(&row, filters).then_some(row)
         })
         .collect();
     matching.sort_by_key(|entry| {

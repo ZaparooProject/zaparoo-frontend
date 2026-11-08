@@ -3,12 +3,15 @@
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 
 //! The Games browse filter: which of Core's tag types are offered, in what
-//! order, and how a one-value-per-category selection maps onto the
+//! order, and how a selection of values per category maps onto the
 //! `type:value` tags `media.browse` takes.
 //!
-//! Core joins every `~` (OR) tag into a single group, so "this genre or that
-//! one, and this region or that one" cannot be expressed. A selection is
-//! therefore at most one value per category, all required together.
+//! Values of one category are alternatives and categories are required
+//! together: "this genre or that one, and this region". One value is
+//! written plain (`genre:rpg`); two or more are written with Core's `~`
+//! operator (`~genre:rpg`, `~genre:action`), which Core groups by tag type.
+//! Plain repeats of one type (`genre:rpg` and `genre:action`, both
+//! required) are not the picker's to show; a search keeps them as extras.
 
 /// A tag as `media.tags` lists it.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -214,53 +217,169 @@ pub fn display_label(label: &str, value: &str) -> String {
     value.rsplit(':').next().unwrap_or(value).trim().to_string()
 }
 
-/// The value selected for `category`, if any.
-pub fn selected(tags: &[String], category: Category) -> Option<&str> {
-    let prefix = category.tag_type();
-    tags.iter().find_map(|t| {
-        let (tag_type, value) = t.split_once(':')?;
-        (tag_type == prefix && !value.is_empty() && category.accepts(value)).then_some(value)
-    })
+/// Core takes at most this many tags in one request.
+pub const MAX_TAGS: usize = 50;
+
+/// Core's operator for "any of these", grouped by tag type.
+const ANY_OF: char = '~';
+
+/// `tag`'s type and value, without a leading `~`: `~genre:rpg` and
+/// `genre:rpg` are both `("genre", "rpg")`. A value keeps its own colons.
+pub fn split_tag(tag: &str) -> Option<(&str, &str)> {
+    tag.strip_prefix(ANY_OF).unwrap_or(tag).split_once(':')
 }
 
-/// `tags` with `category` set to `value`, or cleared when `value` is `None`,
-/// in menu order. The other categories are untouched.
-pub fn with_selection(tags: &[String], category: Category, value: Option<&str>) -> Vec<String> {
-    let mut next: Vec<String> = tags
-        .iter()
-        .filter(|t| {
-            t.split_once(':')
-                .is_none_or(|(tag_type, _)| tag_type != category.tag_type())
-        })
-        .cloned()
-        .collect();
-    if let Some(value) = value.map(str::trim).filter(|v| !v.is_empty()) {
-        next.push(format!("{}:{value}", category.tag_type()));
+/// The values a tag of `category` holds in `tags`, as written: the `~`
+/// ones, and the plain ones.
+fn written_values(tags: &[String], category: Category) -> (Vec<&str>, Vec<&str>) {
+    let mut any: Vec<&str> = Vec::new();
+    let mut plain: Vec<&str> = Vec::new();
+    for tag in tags {
+        let (list, rest) = match tag.strip_prefix(ANY_OF) {
+            Some(rest) => (&mut any, rest),
+            None => (&mut plain, tag.as_str()),
+        };
+        let Some((tag_type, value)) = rest.split_once(':') else {
+            continue;
+        };
+        if tag_type == category.tag_type()
+            && !value.is_empty()
+            && category.accepts(value)
+            && !list.contains(&value)
+        {
+            list.push(value);
+        }
     }
-    normalize(&next)
+    (any, plain)
 }
 
-/// Keep only tags the picker could have produced: a known category, one per
-/// category, in menu order. Guards a hand-edited or older state file.
-pub fn normalize(tags: &[String]) -> Vec<String> {
+/// The values the picker holds for `category`: two or more `~` tags of its
+/// type, or else its one plain tag. Plain repeats (all required) and a lone
+/// `~` tag are written by something else and are not the picker's.
+pub fn selected_values(tags: &[String], category: Category) -> Vec<&str> {
+    let (any, plain) = written_values(tags, category);
+    if any.len() >= 2 {
+        any
+    } else if plain.len() == 1 {
+        plain
+    } else {
+        Vec::new()
+    }
+}
+
+/// One category's values as the picker holds them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Pick {
+    pub category: Category,
+    pub values: Vec<String>,
+}
+
+/// The picker's selection in `tags`, in menu order; categories with no
+/// value are left out.
+pub fn picks(tags: &[String]) -> Vec<Pick> {
     Category::ALL
         .into_iter()
         .filter_map(|category| {
-            selected(tags, category).map(|value| format!("{}:{value}", category.tag_type()))
+            let values = selected_values(tags, category);
+            (!values.is_empty()).then(|| Pick {
+                category,
+                values: values.into_iter().map(str::to_string).collect(),
+            })
         })
         .collect()
 }
 
+/// `picks` as tags: one value plain, two or more each with `~`.
+pub fn write(picks: &[Pick]) -> Vec<String> {
+    let mut tags = Vec::new();
+    for pick in picks {
+        let operator = if pick.values.len() >= 2 { "~" } else { "" };
+        for value in &pick.values {
+            tags.push(format!("{operator}{}:{value}", pick.category.tag_type()));
+        }
+    }
+    tags
+}
+
+fn value_count(picks: &[Pick]) -> usize {
+    picks.iter().map(|p| p.values.len()).sum()
+}
+
+/// `tags` with `value` ticked in `category` when it was not, or unticked
+/// when it was, in menu order and the category's values in `order` (the
+/// order the picker lists them). A value past `MAX_TAGS` is not added.
+pub fn toggle(
+    tags: &[String],
+    category: Category,
+    value: &str,
+    order: &[FilterValue],
+) -> Vec<String> {
+    let value = value.trim();
+    let mut picks = picks(tags);
+    if value.is_empty() || !category.accepts(value) {
+        return write(&picks);
+    }
+    let total = value_count(&picks);
+    let index = picks.iter().position(|p| p.category == category);
+    match index {
+        Some(i) if picks[i].values.iter().any(|v| v == value) => {
+            picks[i].values.retain(|v| v != value);
+            if picks[i].values.is_empty() {
+                picks.remove(i);
+            }
+        }
+        _ if total >= MAX_TAGS => {}
+        Some(i) => picks[i].values.push(value.to_string()),
+        None => {
+            picks.push(Pick {
+                category,
+                values: vec![value.to_string()],
+            });
+            picks.sort_by_key(|p| Category::ALL.iter().position(|c| *c == p.category));
+        }
+    }
+    if let Some(pick) = picks.iter_mut().find(|p| p.category == category) {
+        let rank = |v: &String| {
+            order
+                .iter()
+                .position(|o| o.value == *v)
+                .unwrap_or(usize::MAX)
+        };
+        pick.values.sort_by_key(rank);
+    }
+    write(&picks)
+}
+
+/// `tags` with nothing ticked in `category`.
+pub fn clear_category(tags: &[String], category: Category) -> Vec<String> {
+    let mut picks = picks(tags);
+    picks.retain(|p| p.category != category);
+    write(&picks)
+}
+
+/// Whether the picker can tick another value beside `tags`, every tag the
+/// request carries.
+pub fn has_room(tags: &[String]) -> bool {
+    tags.len() < MAX_TAGS
+}
+
+/// Keep only tags the picker could have produced: known categories, each
+/// value once, written plain or with `~` as `write` does, in menu order.
+/// Guards a hand-edited or older state file.
+pub fn normalize(tags: &[String]) -> Vec<String> {
+    write(&picks(tags))
+}
+
 /// The one-line cue for a filter: the first selected value (menu order),
-/// then `+N` for the N more behind it ("Platformer +1"). `label_of` resolves
-/// a `type:value` tag to Core's label when the tag list is loaded; otherwise
-/// the raw value is made readable. None when nothing is selected.
+/// then `+N` for the N more values behind it, in any category ("Platformer
+/// +1"). `label_of` resolves a plain `type:value` tag to Core's label when
+/// the tag list is loaded; otherwise the raw value is made readable. None when nothing is selected.
 pub fn summary(tags: &[String], label_of: impl Fn(&str) -> Option<String>) -> Option<String> {
     let tags = normalize(tags);
     let first = tags.first()?;
-    let value = first.split_once(':').map_or("", |(_, v)| v);
-    let label =
-        label_of(first).map_or_else(|| display_label("", value), |l| display_label(&l, value));
+    let (tag_type, value) = split_tag(first)?;
+    let label = label_of(&format!("{tag_type}:{value}"))
+        .map_or_else(|| display_label("", value), |l| display_label(&l, value));
     Some(match tags.len() - 1 {
         0 => label,
         extra => format!("{label} +{extra}"),
@@ -405,15 +524,16 @@ mod tests {
             ]
         );
         // A deck is one choice among the collections, like any other.
-        let chosen = with_selection(&[], Category::Lists, Some("deck:0k3v9x2rq7bm"));
+        let order = &groups[0].values;
+        let chosen = toggle(&[], Category::Lists, "deck:0k3v9x2rq7bm", order);
         assert_eq!(chosen, ["user:deck:0k3v9x2rq7bm"]);
         assert_eq!(
-            selected(&chosen, Category::Lists),
-            Some("deck:0k3v9x2rq7bm")
+            selected_values(&chosen, Category::Lists),
+            ["deck:0k3v9x2rq7bm"]
         );
         assert_eq!(
-            with_selection(&chosen, Category::Lists, Some("favorite")),
-            ["user:favorite"]
+            toggle(&chosen, Category::Lists, "favorite", order),
+            ["~user:favorite", "~user:deck:0k3v9x2rq7bm"]
         );
         assert_eq!(deck_id("deck:abc"), Some("abc"));
         assert_eq!(deck_id("deck:"), None);
@@ -432,25 +552,108 @@ mod tests {
         assert_eq!(display_label("", "SNK"), "SNK");
     }
 
+    fn values(items: &[&str]) -> Vec<FilterValue> {
+        items
+            .iter()
+            .map(|v| FilterValue {
+                value: (*v).to_string(),
+                label: (*v).to_string(),
+                count: 1,
+            })
+            .collect()
+    }
+
     #[test]
-    fn selection_holds_one_value_per_category_in_menu_order() {
+    fn categories_keep_menu_order_and_values_list_order() {
+        let genres = values(&["action", "puzzle", "rpg"]);
+        let regions = values(&["eu", "us"]);
         let mut tags = Vec::new();
-        tags = with_selection(&tags, Category::Region, Some("us"));
-        tags = with_selection(&tags, Category::Genre, Some("action"));
-        assert_eq!(tags, strings(&["genre:action", "region:us"]));
-        tags = with_selection(&tags, Category::Genre, Some("rpg"));
+        tags = toggle(&tags, Category::Region, "us", &regions);
+        tags = toggle(&tags, Category::Genre, "rpg", &genres);
         assert_eq!(tags, strings(&["genre:rpg", "region:us"]));
-        assert_eq!(selected(&tags, Category::Region), Some("us"));
-        assert_eq!(selected(&tags, Category::Year), None);
-        tags = with_selection(&tags, Category::Genre, None);
+        tags = toggle(&tags, Category::Genre, "action", &genres);
+        assert_eq!(tags, strings(&["~genre:action", "~genre:rpg", "region:us"]));
+        assert_eq!(selected_values(&tags, Category::Genre), ["action", "rpg"]);
+        assert_eq!(selected_values(&tags, Category::Region), ["us"]);
+        assert!(selected_values(&tags, Category::Year).is_empty());
+        tags = toggle(&tags, Category::Region, "eu", &regions);
+        assert_eq!(
+            tags,
+            strings(&["~genre:action", "~genre:rpg", "~region:eu", "~region:us"])
+        );
+    }
+
+    #[test]
+    fn unticking_down_to_one_value_writes_it_plain() {
+        let genres = values(&["action", "rpg"]);
+        let tags = strings(&["~genre:action", "~genre:rpg", "region:us"]);
+        let tags = toggle(&tags, Category::Genre, "action", &genres);
+        assert_eq!(tags, strings(&["genre:rpg", "region:us"]));
+        let tags = toggle(&tags, Category::Genre, "rpg", &genres);
         assert_eq!(tags, strings(&["region:us"]));
     }
 
     #[test]
+    fn clearing_a_category_leaves_the_others() {
+        let tags = strings(&["~genre:action", "~genre:rpg", "region:us"]);
+        assert_eq!(
+            clear_category(&tags, Category::Genre),
+            strings(&["region:us"])
+        );
+        assert_eq!(
+            clear_category(&tags, Category::Region),
+            strings(&["~genre:action", "~genre:rpg"])
+        );
+    }
+
+    #[test]
+    fn plain_repeats_and_a_lone_any_tag_are_not_the_pickers() {
+        // Both genres required, as a Hub tile writes them.
+        let tags = strings(&["genre:rpg", "genre:action", "region:us"]);
+        assert!(selected_values(&tags, Category::Genre).is_empty());
+        assert_eq!(normalize(&tags), strings(&["region:us"]));
+        assert!(selected_values(&strings(&["~genre:rpg"]), Category::Genre).is_empty());
+        // Alternatives beside a required value: the picker holds the
+        // alternatives.
+        let tags = strings(&["~genre:rpg", "~genre:action", "genre:puzzle"]);
+        assert_eq!(selected_values(&tags, Category::Genre), ["rpg", "action"]);
+    }
+
+    #[test]
+    fn values_keep_unknown_ones_after_the_listed_ones() {
+        let genres = values(&["action", "rpg"]);
+        let tags = toggle(&strings(&["genre:zzz"]), Category::Genre, "action", &genres);
+        assert_eq!(tags, strings(&["~genre:action", "~genre:zzz"]));
+    }
+
+    #[test]
+    fn ticking_stops_at_cores_tag_limit() {
+        let years: Vec<String> = (0..MAX_TAGS).map(|n| format!("{}", 1950 + n)).collect();
+        let order: Vec<FilterValue> = values(&years.iter().map(String::as_str).collect::<Vec<_>>());
+        let mut tags = Vec::new();
+        for year in &years {
+            tags = toggle(&tags, Category::Year, year, &order);
+        }
+        assert_eq!(tags.len(), MAX_TAGS);
+        assert!(!has_room(&tags));
+        assert_eq!(toggle(&tags, Category::Genre, "rpg", &order), tags);
+        let fewer = toggle(&tags, Category::Year, "1950", &order);
+        assert_eq!(fewer.len(), MAX_TAGS - 1);
+        assert!(has_room(&fewer));
+    }
+
+    #[test]
     fn genre_values_keep_their_own_colons() {
-        let tags = with_selection(&[], Category::Genre, Some("action:platformer"));
+        let tags = toggle(&[], Category::Genre, "action:platformer", &[]);
         assert_eq!(tags, strings(&["genre:action:platformer"]));
-        assert_eq!(selected(&tags, Category::Genre), Some("action:platformer"));
+        assert_eq!(
+            selected_values(&tags, Category::Genre),
+            ["action:platformer"]
+        );
+        assert_eq!(
+            split_tag("~genre:action:platformer"),
+            Some(("genre", "action:platformer"))
+        );
     }
 
     #[test]
@@ -463,8 +666,16 @@ mod tests {
             "user:liked",
             "genre:",
             "plain",
+            "~lang:en",
+            "~lang:ja",
+            "~lang:en",
+            "-genre:rpg",
+            "+year:1994",
         ]);
-        assert_eq!(normalize(&tags), strings(&["region:us", "user:liked"]));
+        assert_eq!(
+            normalize(&tags),
+            strings(&["~lang:en", "~lang:ja", "user:liked"])
+        );
     }
 
     #[test]
@@ -481,6 +692,11 @@ mod tests {
         assert_eq!(
             summary(&strings(&["year:1994"]), |_| None).as_deref(),
             Some("1994")
+        );
+        let tags = strings(&["~genre:shmup", "~genre:action:platformer", "year:1994"]);
+        assert_eq!(
+            summary(&tags, |t| (t == "genre:shmup").then(|| "Shooter".into())).as_deref(),
+            Some("Shooter +2")
         );
     }
 
