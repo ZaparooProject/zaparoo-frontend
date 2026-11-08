@@ -4090,6 +4090,14 @@ export component App inherits Window {
         // A form list keeps every pick as it is made, so Back leaves
         // rather than cancels.
         if (Overlays.list-open && Overlays.list-form) {
+            // A row that cannot act (a tag past the limit) offers no Accept.
+            if (Overlays.list-index >= 0 && Overlays.list-index < Overlays.list-entries.length
+                && !Overlays.list-entries[Overlays.list-index].enabled) {
+                return [
+                    self.move-cue(Overlays.list-entries.length > 7 ? 2 : 1),
+                    { buttons: ["ButtonB"], label: @tr("Back") },
+                ];
+            }
             return [
                 // The shoulder buttons jump or page only a list long enough
                 // to scroll.
