@@ -746,6 +746,10 @@ pub struct SettingsState {
     /// others → EU. Explicit values are `"us"`, `"eu"`, `"jp"`.
     #[serde(default = "default_region")]
     pub region: String,
+    /// `MiSTer` only: system names from Main's `/media/fat/names.txt`
+    /// where it has one, ahead of the regional names. Off by default.
+    #[serde(default)]
+    pub mister_names: bool,
     /// Native CRT video standard: `"ntsc"` (352x240@60), `"pal"`
     /// (352x288@50), or `"480i"` (720x480@60i, not exposed in the UI
     /// yet). Restart-applied; only meaningful when the frontend runs
@@ -802,6 +806,7 @@ impl Default for SettingsState {
             swap_confirm_cancel: false,
             swap_options_view: false,
             region: default_region(),
+            mister_names: false,
             crt_video_standard: default_crt_video_standard(),
             crt_h_offset: 0,
             crt_v_offset: 0,
@@ -1231,6 +1236,7 @@ mod tests {
                 swap_confirm_cancel: true,
                 swap_options_view: true,
                 region: "us".into(),
+                mister_names: true,
                 crt_video_standard: "pal".into(),
                 crt_h_offset: -3,
                 crt_v_offset: 2,
@@ -1359,6 +1365,8 @@ resolution = "1920x1080"
         assert_eq!(state.favorite_systems, FavoriteSystemsState::default());
         // reduce_motion absent from an older state file defaults to false.
         assert!(!state.settings.reduce_motion);
+        // mister_names absent from an older state file defaults to false.
+        assert!(!state.settings.mister_names);
         // swap_confirm_cancel absent from an older state file defaults to false.
         assert!(!state.settings.swap_confirm_cancel);
         // swap_options_view absent from an older state file defaults to false.

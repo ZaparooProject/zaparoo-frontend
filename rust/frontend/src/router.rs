@@ -58,6 +58,9 @@ pub struct Shared {
     pub favorites_sort: String,
     /// Full sorted systems list from the catalog.
     pub systems: Vec<SystemInfo>,
+    /// `MiSTer`'s `names.txt`, read once when Use names.txt is first on;
+    /// `None` until then, empty when the file is missing or unreadable.
+    pub mister_names: Option<std::collections::HashMap<String, String>>,
     /// The Systems screen: rows, cursor and swoop state.
     pub systems_model: crate::systems::SystemsModel,
     /// The games-style screens: rows, cursor, fetch and cue state.
@@ -328,6 +331,7 @@ impl Shared {
             hidden_system_ids,
             show_hidden,
             systems: Vec::new(),
+            mister_names: None,
             systems_model: crate::systems::SystemsModel::new(),
             games: crate::games::GamesModel::new(),
             game_info: crate::game_info::GameInfoModel::default(),

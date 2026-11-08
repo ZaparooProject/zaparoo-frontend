@@ -131,8 +131,12 @@ fn map_for(region: Region) -> &'static HashMap<String, String> {
 /// The localized display name for `system_id` in `region`, or `None` so
 /// the caller falls back to the Core catalog name.
 pub fn localized_name(system_id: &str, region: Region) -> Option<String> {
+    lookup(map_for(region), system_id)
+}
+
+/// A name table entry for `system_id`, matched on the normalized id.
+fn lookup(map: &HashMap<String, String>, system_id: &str) -> Option<String> {
     let normalized = normalize_key(system_id);
-    let map = map_for(region);
     if let Some(name) = map.get(&normalized) {
         return Some(name.clone());
     }
@@ -140,6 +144,14 @@ pub fn localized_name(system_id: &str, region: Region) -> Option<String> {
         .iter()
         .find_map(|(id, key)| (*id == normalized.as_str()).then_some(*key))
         .and_then(|alias_key| map.get(alias_key).cloned())
+}
+
+/// Parse a `MiSTer` `names.txt` (`key: name` lines, `#` comments). Its
+/// keys are Main's core names; an entry only names the system whose id
+/// it normalizes to, so a core shared by several systems names just the
+/// one that matches and the rest keep their usual names.
+pub fn parse_mister_names(text: &str) -> HashMap<String, String> {
+    parse_names(text)
 }
 
 /// Regional logo variants: `(base id, region, artwork stem)`. Everything
@@ -286,18 +298,38 @@ impl SystemRow {
     }
 }
 
-/// Display name priority: a user override, the localized name, then the
-/// Core catalog name.
+/// Where a system's display name comes from, past the user's own
+/// override: the region's bundled names and, when the user turned it on,
+/// the `MiSTer` `names.txt` table ahead of them.
+#[derive(Debug, Clone, Copy)]
+pub struct NameSources<'a> {
+    pub region: Region,
+    pub mister_names: Option<&'a HashMap<String, String>>,
+}
+
+impl NameSources<'_> {
+    /// The bundled names for `region` alone.
+    pub fn region(region: Region) -> Self {
+        NameSources {
+            region,
+            mister_names: None,
+        }
+    }
+}
+
+/// Display name priority: a user override, the `names.txt` entry, the
+/// localized name, then the Core catalog name.
 pub fn display_name(
     id: &str,
     fallback: &str,
-    region: Region,
+    sources: NameSources<'_>,
     user_override: Option<&str>,
 ) -> String {
     user_override
         .filter(|name| !name.is_empty())
         .map(str::to_string)
-        .or_else(|| localized_name(id, region))
+        .or_else(|| sources.mister_names.and_then(|map| lookup(map, id)))
+        .or_else(|| localized_name(id, sources.region))
         .unwrap_or_else(|| fallback.to_string())
 }
 
@@ -322,10 +354,10 @@ pub fn rows_for_category(
     category: &str,
     hidden_ids: &[String],
     show_hidden: bool,
-    region: Region,
+    sources: NameSources<'_>,
     user_name: &dyn Fn(&str) -> Option<String>,
 ) -> Vec<SystemRow> {
-    project_rows(systems, hidden_ids, show_hidden, region, user_name, &|s| {
+    project_rows(systems, hidden_ids, show_hidden, sources, user_name, &|s| {
         in_category(s, category)
     })
 }
@@ -336,12 +368,17 @@ pub fn rows_for_favorites(
     systems: &[CatalogSystem],
     hidden_ids: &[String],
     show_hidden: bool,
-    region: Region,
+    sources: NameSources<'_>,
     user_name: &dyn Fn(&str) -> Option<String>,
 ) -> Vec<SystemRow> {
-    project_rows(systems, hidden_ids, show_hidden, region, user_name, &|_| {
-        true
-    })
+    project_rows(
+        systems,
+        hidden_ids,
+        show_hidden,
+        sources,
+        user_name,
+        &|_| true,
+    )
 }
 
 /// The favorites total across the rows; `None` when Core left any system
@@ -362,7 +399,7 @@ fn project_rows(
     systems: &[CatalogSystem],
     hidden_ids: &[String],
     show_hidden: bool,
-    region: Region,
+    sources: NameSources<'_>,
     user_name: &dyn Fn(&str) -> Option<String>,
     keep: &dyn Fn(&CatalogSystem) -> bool,
 ) -> Vec<SystemRow> {
@@ -376,8 +413,8 @@ fn project_rows(
             }
             Some(SystemRow {
                 id: s.id.clone(),
-                name: display_name(&s.id, &s.name, region, user_name(&s.id).as_deref()),
-                cover_key: format!("systems/{}", logo_artwork_stem(&s.id, region)),
+                name: display_name(&s.id, &s.name, sources, user_name(&s.id).as_deref()),
+                cover_key: format!("systems/{}", logo_artwork_stem(&s.id, sources.region)),
                 category: s.category.clone(),
                 hidden,
                 zap_script: s.zap_script.clone(),
@@ -434,12 +471,28 @@ mod tests {
             },
         ];
         assert_eq!(
-            rows_for_category(&systems, "Console", &[], false, Region::Us, &|_| None).len(),
+            rows_for_category(
+                &systems,
+                "Console",
+                &[],
+                false,
+                NameSources::region(Region::Us),
+                &|_| None
+            )
+            .len(),
             1
         );
         // A system Core filed under nothing belongs to Other, alone.
         assert_eq!(
-            rows_for_category(&systems, "Other", &[], false, Region::Us, &|_| None).len(),
+            rows_for_category(
+                &systems,
+                "Other",
+                &[],
+                false,
+                NameSources::region(Region::Us),
+                &|_| None
+            )
+            .len(),
             1
         );
     }
@@ -592,7 +645,7 @@ mod tests {
             &[nes.clone(), arcade.clone()],
             &[],
             false,
-            Region::Us,
+            NameSources::region(Region::Us),
             &|_| None,
         );
         assert_eq!(rows.len(), 2);
@@ -601,7 +654,13 @@ mod tests {
         // One uncounted system means no trustworthy total.
         let mut unknown = sys("SNES", "SNES", "Consoles");
         unknown.media_count = None;
-        let rows = rows_for_favorites(&[nes, unknown], &[], false, Region::Us, &|_| None);
+        let rows = rows_for_favorites(
+            &[nes, unknown],
+            &[],
+            false,
+            NameSources::region(Region::Us),
+            &|_| None,
+        );
         assert_eq!(favorites_total(&rows), None);
     }
 
@@ -614,7 +673,7 @@ mod tests {
             ],
             &["NES".to_string()],
             false,
-            Region::Us,
+            NameSources::region(Region::Us),
             &|_| None,
         );
         assert_eq!(rows.len(), 1);
@@ -623,7 +682,7 @@ mod tests {
             &[sys("NES", "NES", "Consoles")],
             &["NES".to_string()],
             true,
-            Region::Us,
+            NameSources::region(Region::Us),
             &|_| None,
         );
         assert!(shown[0].hidden);
@@ -690,7 +749,14 @@ mod tests {
             sys("Genesis", "Sega Genesis", "Consoles"),
             sys("NoCat", "Loose", ""),
         ];
-        let rows = rows_for_category(&catalog, "Consoles", &[], false, Region::Eu, &|_| None);
+        let rows = rows_for_category(
+            &catalog,
+            "Consoles",
+            &[],
+            false,
+            NameSources::region(Region::Eu),
+            &|_| None,
+        );
         let names: Vec<&str> = rows.iter().map(|r| r.name.as_str()).collect();
         assert_eq!(names, ["Mega Drive", "Super Mario Bros", "Zelda"]);
         assert_eq!(rows[0].cover_key, "systems/Genesis.eu");
@@ -698,23 +764,50 @@ mod tests {
 
         let hidden = vec!["zelda".to_string()];
         assert_eq!(
-            rows_for_category(&catalog, "Consoles", &hidden, false, Region::Us, &|_| None).len(),
+            rows_for_category(
+                &catalog,
+                "Consoles",
+                &hidden,
+                false,
+                NameSources::region(Region::Us),
+                &|_| None
+            )
+            .len(),
             2
         );
-        let shown = rows_for_category(&catalog, "Consoles", &hidden, true, Region::Us, &|_| None);
+        let shown = rows_for_category(
+            &catalog,
+            "Consoles",
+            &hidden,
+            true,
+            NameSources::region(Region::Us),
+            &|_| None,
+        );
         assert_eq!(shown.len(), 3);
         assert!(shown
             .iter()
             .find(|r| r.id == "zelda")
             .is_some_and(|r| r.hidden));
 
-        let other = rows_for_category(&catalog, "Other", &[], false, Region::Us, &|_| None);
+        let other = rows_for_category(
+            &catalog,
+            "Other",
+            &[],
+            false,
+            NameSources::region(Region::Us),
+            &|_| None,
+        );
         assert_eq!(other.len(), 1);
         assert_eq!(other[0].id, "NoCat");
 
-        let overridden = rows_for_category(&catalog, "Consoles", &[], false, Region::Us, &|id| {
-            (id == "Genesis").then(|| "My Genesis".to_string())
-        });
+        let overridden = rows_for_category(
+            &catalog,
+            "Consoles",
+            &[],
+            false,
+            NameSources::region(Region::Us),
+            &|id| (id == "Genesis").then(|| "My Genesis".to_string()),
+        );
         assert_eq!(overridden[0].name, "My Genesis");
     }
 
@@ -779,5 +872,76 @@ mod tests {
             ),
             vec!["SNES".to_string()]
         );
+    }
+
+    #[test]
+    fn mister_names_parse_like_mains_file() {
+        let map = parse_mister_names(
+            "# comment\r\n\r\nSNES:   Super Famicom  \r\nno colon here\r\n:Blank key\r\nGameboy: Game Boy\r\nNES|NESMusic: Famicom\r\nEmpty:   \r\n",
+        );
+        assert_eq!(map.get("snes").map(String::as_str), Some("Super Famicom"));
+        assert_eq!(map.get("gameboy").map(String::as_str), Some("Game Boy"));
+        assert_eq!(map.len(), 2);
+    }
+
+    #[test]
+    fn mister_names_sit_between_the_override_and_the_regional_name() {
+        let map = parse_mister_names("snes: Super Famicom\nGameboy: Game Boy\n");
+        let on = NameSources {
+            region: Region::Eu,
+            mister_names: Some(&map),
+        };
+        // Key match ignores case and punctuation.
+        assert_eq!(display_name("SNES", "Core SNES", on, None), "Super Famicom");
+        // The user's own override still wins.
+        assert_eq!(display_name("SNES", "Core SNES", on, Some("Mine")), "Mine");
+        // A system sharing the core but not the id keeps its usual name.
+        assert_eq!(
+            display_name("GameboyColor", "Core GBC", on, None),
+            display_name(
+                "GameboyColor",
+                "Core GBC",
+                NameSources::region(Region::Eu),
+                None
+            ),
+        );
+        // No entry falls to the regional name, then Core's.
+        assert_eq!(
+            display_name("Genesis", "Sega Genesis", on, None),
+            "Mega Drive"
+        );
+        assert_eq!(
+            display_name("NoSuchSystem", "Core Name", on, None),
+            "Core Name"
+        );
+        // An empty table (missing file) changes nothing.
+        let empty = HashMap::new();
+        let unread = NameSources {
+            region: Region::Eu,
+            mister_names: Some(&empty),
+        };
+        assert_eq!(
+            display_name("SNES", "Core SNES", unread, None),
+            display_name("SNES", "Core SNES", NameSources::region(Region::Eu), None),
+        );
+    }
+
+    #[test]
+    fn mister_names_rename_rows_but_not_their_logos() {
+        let map = parse_mister_names("Genesis: My Drive\n");
+        let sources = NameSources {
+            region: Region::Eu,
+            mister_names: Some(&map),
+        };
+        let rows = rows_for_category(
+            &[sys("Genesis", "Sega Genesis", "Consoles")],
+            "Consoles",
+            &[],
+            false,
+            sources,
+            &|_| None,
+        );
+        assert_eq!(rows[0].name, "My Drive");
+        assert_eq!(rows[0].cover_key, "systems/Genesis.eu");
     }
 }

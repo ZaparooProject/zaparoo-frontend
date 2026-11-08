@@ -216,6 +216,7 @@ const TOGGLES: &[&str] = &[
     "showHidden",
     "showOriginalFilenames",
     "showTags",
+    "misterNames",
     "debugLogging",
     "reduceMotion",
     "showMenuRow",
@@ -432,6 +433,17 @@ fn paired_rows(inputs: &Inputs) -> Vec<Row> {
         .collect()
 }
 
+/// The Language page: `names.txt` sits under Region on a `MiSTer`.
+fn language_rows(inputs: &Inputs) -> Vec<Row> {
+    let mut rows = vec![field("language"), field("region")];
+    // `Main_MiSTer`'s own names.txt only exists on a `MiSTer`.
+    if inputs.is_mister {
+        rows.push(field("misterNames"));
+    }
+    rows.push(field("clockFormat"));
+    rows
+}
+
 /// The rows of one page; the empty page id is the root category grid.
 pub fn page_rows(page: &str, inputs: &Inputs) -> Vec<Row> {
     match page {
@@ -488,7 +500,7 @@ pub fn page_rows(page: &str, inputs: &Inputs) -> Vec<Row> {
             }
             rows
         }
-        "pageLanguage" => vec![field("language"), field("region"), field("clockFormat")],
+        "pageLanguage" => language_rows(inputs),
         "pageControlsInput" => controls_rows(inputs),
         CONTROLLERS_PAGE => controllers_rows(inputs),
         PAIRED_PAGE => paired_rows(inputs),
@@ -969,6 +981,25 @@ mod tests {
             log_upload: true,
             ..Inputs::default()
         }
+    }
+
+    #[test]
+    fn the_names_txt_row_is_mister_only() {
+        let ids = |inputs: &Inputs| -> Vec<&'static str> {
+            page_rows("pageLanguage", inputs)
+                .into_iter()
+                .map(Row::id)
+                .collect()
+        };
+        assert_eq!(
+            ids(&mister(false)),
+            ["language", "region", "misterNames", "clockFormat"]
+        );
+        assert_eq!(
+            ids(&Inputs::default()),
+            ["language", "region", "clockFormat"]
+        );
+        assert_eq!(control("misterNames"), Control::Toggle);
     }
 
     #[test]
