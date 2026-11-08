@@ -402,12 +402,17 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
                 ("Shooter", "176"),
                 ("Sports", "72"),
             ];
+            // A checklist: Platformer and Shooter ticked, the cursor on
+            // the first.
             let mut rows = vec![option("any", "filter:any", "", "")];
-            rows.extend(
-                values
-                    .iter()
-                    .map(|(name, count)| option(&format!("v:{name}"), "", name, count)),
-            );
+            rows.extend(values.iter().map(|(name, count)| {
+                let role = if matches!(*name, "Platformer" | "Shooter") {
+                    MenuRole::CheckOn
+                } else {
+                    MenuRole::CheckOff
+                };
+                row(&format!("v:{name}"), "", name, count, "", role)
+            }));
             ("title:filter_cat:genre", rows, 4)
         } else if screen.ends_with("system-picker") {
             // All systems, the ones used lately, then every system under
@@ -453,7 +458,7 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
             (
                 "title:filter",
                 vec![
-                    chosen("genre", "Platformer"),
+                    chosen("genre", "Platformer +1"),
                     any("year"),
                     chosen("players", "2"),
                     any("region"),

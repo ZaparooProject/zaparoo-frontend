@@ -569,6 +569,29 @@ export component Divider inherits Rectangle {
     background: root.decorative ? Theme.border-subtle : Theme.border-mid;
 }
 
+// A membership row's box: an outline, filled inside while `checked`. Every
+// checklist draws this one (the context menu, the setup picker, the list
+// panel); the row sets its side and ink.
+export component CheckBox inherits Rectangle {
+    in property <bool> checked: false;
+    in property <color> ink;
+
+    property <length> line: Sizing.card-border-width * (Sizing.tier-240 ? 1 : 2);
+    height: self.width;
+    border-radius: Sizing.radius-sm;
+    border-width: root.line;
+    border-color: root.ink;
+
+    if root.checked: Rectangle {
+        x: 2 * root.line;
+        y: 2 * root.line;
+        width: parent.width - 4 * root.line;
+        height: parent.height - 4 * root.line;
+        border-radius: Math.max(0px, Sizing.radius-sm - 2 * root.line);
+        background: root.ink;
+    }
+}
+
 // A scannable code on the plate a scanner needs. Both surfaces that show
 // one used to draw it differently: the log uploader put it on a hardcoded
 // white plate with a `border-subtle` frame, the QR modal drew the raster

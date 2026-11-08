@@ -4,9 +4,9 @@
 //
 // The tags picker: the "Tags" page of the Games View menu, and the Tags
 // field of the Search screen. One form list swaps between a page of
-// categories, each showing its chosen value, and a page of one category's
-// values (a modal never opens another modal). A pick is kept as it is
-// made and Back leaves; the owner refills once, when the picker closes. A
+// categories, each showing its chosen values, and a checklist of one
+// category's values (a modal never opens another modal). A tick is kept as
+// it is made and Back leaves; the owner refills once, when the picker closes. A
 // browse filter is saved per system, a search's tags with the search. The
 // category and value rules live in `zaparoo_app::browse_filter`.
 
@@ -17,8 +17,8 @@ use zaparoo_core::collections::{Deck, DecksParams};
 use zaparoo_core::media_types::{MediaTagsParams, MediaTagsResult, TagInfo};
 
 use crate::router::{
-    lock, menu_action, menu_row, menu_row_full, menu_row_keyed, menu_value, Ctx, ListContext,
-    Shared,
+    lock, menu_action, menu_row, menu_row_full, menu_row_keyed, menu_value, with_role, Ctx,
+    ListContext, Shared,
 };
 use crate::App;
 
@@ -120,10 +120,10 @@ fn set_picker_tags(shared: &mut Shared, tags: Vec<String>) {
     }
 }
 
-/// Whether the active filter requires a user tag (Lists), which Core
-/// answers with hidden games included.
+/// Whether the active filter holds a user tag (Lists), which Core answers
+/// with hidden games included.
 pub(crate) fn shows_hidden(shared: &Shared) -> bool {
-    active_tags(shared).iter().any(|t| t.starts_with("user:"))
+    zaparoo_app::search::includes_hidden(false, &active_tags(shared))
 }
 
 /// The groups loaded for `systems`; empty before they have loaded or
@@ -161,7 +161,7 @@ pub(crate) fn search_groups(shared: &Shared) -> Option<&[Group]> {
 /// A search tag's display label: Core's when the list is loaded, otherwise
 /// the raw value made readable.
 pub(crate) fn search_tag_label(shared: &Shared, tag: &str) -> String {
-    let value = tag.split_once(':').map_or(tag, |(_, value)| value);
+    let value = rules::split_tag(tag).map_or(tag, |(_, value)| value);
     let label = search_groups(shared)
         .and_then(|groups| label_for(groups, tag))
         .unwrap_or_default();
@@ -180,7 +180,7 @@ pub(crate) fn search_summary(shared: &Shared) -> Option<String> {
 }
 
 fn label_for(groups: &[Group], tag: &str) -> Option<String> {
-    let (tag_type, value) = tag.split_once(':')?;
+    let (tag_type, value) = rules::split_tag(tag)?;
     groups
         .iter()
         .filter(|g| g.category.tag_type() == tag_type)
@@ -345,17 +345,23 @@ fn landed(
     }
 }
 
-/// The value selected for `category`, as its display label.
+/// The values ticked in `category`: the first as its display label, then
+/// `+N` for the rest ("Shooter +1").
 fn selected_label(shared: &Shared, category: Category) -> String {
     let tags = picker_tags(shared);
-    let Some(value) = rules::selected(&tags, category) else {
+    let values = rules::selected_values(&tags, category);
+    let Some(value) = values.first() else {
         return String::new();
     };
     let tag = format!("{}:{value}", category.tag_type());
-    rules::display_label(
+    let label = rules::display_label(
         &label_for(picker_groups(shared), &tag).unwrap_or_default(),
         value,
-    )
+    );
+    match values.len() - 1 {
+        0 => label,
+        extra => format!("{label} +{extra}"),
+    }
 }
 
 fn category_rows(shared: &Shared) -> Vec<crate::MenuEntry> {
@@ -391,36 +397,49 @@ fn category_rows(shared: &Shared) -> Vec<crate::MenuEntry> {
     rows
 }
 
-/// `Any`, then every value of `category`; the second half of the pair is
-/// the index of the current choice.
+/// `Any`, chosen while nothing is ticked, then a checkbox for every value
+/// of `category`; the second half of the pair is the index of the first
+/// ticked value, or of `Any`. At Core's tag limit the unticked values are
+/// shown but cannot be ticked.
 fn value_rows(shared: &Shared, category: Category) -> (Vec<crate::MenuEntry>, usize) {
     let tags = picker_tags(shared);
-    let current = rules::selected(&tags, category);
-    let mut rows = vec![menu_row_keyed("any", "filter:any", "")];
-    let mut index = 0;
+    let ticked = rules::selected_values(&tags, category);
+    let room = rules::has_room(&held_tags(shared));
+    let any = menu_row_keyed("any", "filter:any", "");
+    let mut rows = vec![if ticked.is_empty() {
+        with_role(any, crate::MenuRole::Chosen)
+    } else {
+        any
+    }];
+    let mut index = None;
     if let Some(group) = picker_groups(shared)
         .iter()
         .find(|g| g.category == category)
     {
         for value in &group.values {
-            if current == Some(value.value.as_str()) {
-                index = rows.len();
+            let on = ticked.contains(&value.value.as_str());
+            if on && index.is_none() {
+                index = Some(rows.len());
             }
             let count = if value.count > 0 {
                 value.count.to_string()
             } else {
                 String::new()
             };
-            rows.push(menu_value(
-                &format!("v:{}", value.value),
-                "",
-                &value.label,
-                &count,
-                "",
-            ));
+            let mut row = menu_value(&format!("v:{}", value.value), "", &value.label, &count, "");
+            row.role = if on {
+                crate::MenuRole::CheckOn
+            } else {
+                crate::MenuRole::CheckOff
+            };
+            if !on && !room {
+                row.enabled = false;
+                row.reason_key = "filter:limit".into();
+            }
+            rows.push(row);
         }
     }
-    (rows, index)
+    (rows, index.unwrap_or(0))
 }
 
 fn present(
@@ -518,10 +537,35 @@ pub(crate) fn open(ctx: &Ctx, app: &App) {
     present_categories(ctx, app, None);
 }
 
-fn set_selection(ctx: &Ctx, category: Category, value: Option<&str>) {
+/// Tick `value` in `category`, or untick it; false when there was no
+/// room to tick it.
+fn toggle_value(ctx: &Ctx, category: Category, value: &str) -> bool {
     let mut shared = lock(&ctx.shared);
-    let next = rules::with_selection(&picker_tags(&shared), category, value);
+    let tags = picker_tags(&shared);
+    let ticked = rules::selected_values(&tags, category).contains(&value);
+    if !ticked && !rules::has_room(&held_tags(&shared)) {
+        return false;
+    }
+    let order = picker_groups(&shared)
+        .iter()
+        .find(|g| g.category == category)
+        .map_or(&[][..], |g| g.values.as_slice());
+    let next = rules::toggle(&tags, category, value, order);
     set_picker_tags(&mut shared, next);
+    true
+}
+
+fn clear_category(ctx: &Ctx, category: Category) {
+    let mut shared = lock(&ctx.shared);
+    let next = rules::clear_category(&picker_tags(&shared), category);
+    set_picker_tags(&mut shared, next);
+}
+
+/// Redraw the values page's rows in place, the focus where it was.
+fn refresh_values(ctx: &Ctx, app: &App, category: Category) {
+    let (rows, _) = value_rows(&lock(&ctx.shared), category);
+    app.global::<crate::Overlays>()
+        .set_list_entries(ModelRc::new(VecModel::from(rows)));
 }
 
 /// Clear filter drops every tag, the ones the picker cannot show too.
@@ -569,11 +613,16 @@ pub(crate) fn accept(ctx: &Ctx, app: &App, context: &ListContext, id: &str) {
                 present_values(ctx, app, category);
             }
         }
+        // A value ticks or unticks where it is; Any clears the category
+        // and goes back to the categories.
         ListContext::FilterValues(category) => {
-            let value = id.strip_prefix("v:");
-            if id == "any" || value.is_some() {
-                set_selection(ctx, *category, value);
+            if id == "any" {
+                clear_category(ctx, *category);
                 present_categories(ctx, app, Some(*category));
+            } else if let Some(value) = id.strip_prefix("v:") {
+                if toggle_value(ctx, *category, value) {
+                    refresh_values(ctx, app, *category);
+                }
             }
         }
         _ => {}
@@ -694,16 +743,57 @@ mod tests {
     }
 
     #[test]
-    fn value_rows_lead_with_any_and_focus_the_current_choice() {
+    fn value_rows_are_a_checklist_after_any_and_focus_the_first_tick() {
         let shared = shared_with(vec![genre_group()], &["genre:rpg"]);
         let (rows, index) = value_rows(&shared, Category::Genre);
         assert_eq!(ids(&rows), ["any", "v:action", "v:rpg"]);
         assert_eq!(index, 2);
         assert_eq!(rows[1].detail, "90");
         assert_eq!(rows[2].detail, "");
+        let roles: Vec<_> = rows.iter().map(|r| r.role).collect();
+        assert_eq!(
+            roles,
+            [
+                crate::MenuRole::Option,
+                crate::MenuRole::CheckOff,
+                crate::MenuRole::CheckOn
+            ]
+        );
 
         let idle = shared_with(vec![genre_group()], &[]);
-        assert_eq!(value_rows(&idle, Category::Genre).1, 0);
+        let (rows, index) = value_rows(&idle, Category::Genre);
+        assert_eq!(index, 0);
+        // Nothing ticked: Any is the choice.
+        assert_eq!(rows[0].role, crate::MenuRole::Chosen);
+
+        let both = shared_with(vec![genre_group()], &["~genre:action", "~genre:rpg"]);
+        let (rows, index) = value_rows(&both, Category::Genre);
+        assert_eq!(index, 1);
+        assert!(rows[1..].iter().all(|r| r.role == crate::MenuRole::CheckOn));
+        assert_eq!(category_rows(&both)[0].detail, "Action +1");
+    }
+
+    #[test]
+    fn at_the_tag_limit_only_ticked_values_stay_pickable() {
+        let years: Vec<String> = (0..rules::MAX_TAGS)
+            .map(|n| format!("~year:{}", 1950 + n))
+            .collect();
+        let years: Vec<&str> = years.iter().map(String::as_str).collect();
+        let mut filter = years.clone();
+        filter.truncate(rules::MAX_TAGS - 1);
+        let mut groups = vec![genre_group()];
+        groups.push(Group {
+            category: Category::Year,
+            values: vec![value("1950", "", 1)],
+        });
+        let shared = shared_with(groups.clone(), &filter);
+        assert!(value_rows(&shared, Category::Genre).0[1].enabled);
+        let full = shared_with(groups, &years);
+        let (rows, _) = value_rows(&full, Category::Genre);
+        assert!(!rows[1].enabled);
+        assert_eq!(rows[1].reason_key, "filter:limit");
+        let (rows, _) = value_rows(&full, Category::Year);
+        assert!(rows[1].enabled);
     }
 
     #[test]
@@ -824,6 +914,8 @@ mod tests {
         assert!(!shows_hidden(&plain));
         let lists = shared_with(Vec::new(), &["genre:rpg", "user:favorite"]);
         assert!(shows_hidden(&lists));
+        let either = shared_with(Vec::new(), &["~user:favorite", "~user:liked"]);
+        assert!(shows_hidden(&either));
     }
 
     #[test]

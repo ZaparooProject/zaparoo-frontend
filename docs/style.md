@@ -1012,8 +1012,10 @@ screen it opens goes to Game Info as well, and so does Back from the
 results of the edited search.
 
 A tag search or a Hub tile can carry tags the tags picker cannot show: a
-type it has no category for (a series, a revision), or a value its category
-cannot hold (a second genre, `user:hidden`). The Tags field counts them in
+type it has no category for (a series, a revision), a value its category
+cannot hold (`user:hidden`), or two plain values of one category
+(`genre:rpg` and `genre:action`, both required), which the picker's
+alternatives cannot express. The Tags field counts them in
 its summary and offers Clear filter for them alone. Changing a category in
 the picker replaces that category's extras and leaves the rest, a change of
 system keeps the ones it cannot rule out, and Clear filter drops them all
@@ -1235,7 +1237,9 @@ centered over the rows; the rows read like Settings rows.
   whatever the row carries: a value in the muted tier (a chosen tag, a game
   count, "80%", "A-Z"); why the row cannot act ("no playlist", "not
   installed"), in the same place; a check on a picker's current choice
-  (`MenuRole::Chosen`); a chevron on a row that opens a page; a color
+  (`MenuRole::Chosen`); a checkbox on a checklist's value (`CheckOn`,
+  `CheckOff`, the `CheckBox` the context menu draws too); a chevron on a
+  row that opens a page; a color
   scheme's three swatches; or a toggle switch for a setting changed in
   place (`ToggleOn`, `ToggleOff`). A value never rides inside the name:
   "Volume" and "80%", not "Volume: 80%" (a Menu chip has no right side, so
@@ -1260,6 +1264,9 @@ centered over the rows; the rows read like Settings rows.
   Dimming are sliders too, drawn with the same `SegmentedTrack`
   (`settings.slint`): one cell a step, so Dimming has nine.
 - **A picker marks its current choice** with a check; focus starts on it.
+- **A checklist ticks in place.** Accept on a checkbox row ticks or unticks
+  it and the rows are rewritten under the cursor, which stays put; the help
+  bar says Toggle.
 - **Section headers** name the rows under them, in the caption tier over a
   rule. They take no focus: Up and Down pass over them, and the row under
   a header brings the header into view with it.
@@ -1285,8 +1292,16 @@ one plain alphabetical list. Rules: `zaparoo_app::system_picker` and
 `zaparoo_app::form_list`.
 
 The tags picker is the same from the Games Menu (its Tags chip, or the Menu
-list's row at 240p) and from the Search screen's Tags field: a page of categories, each showing its chosen value
-or Any, then a page of one category's values with their game counts. It is
+list's row at 240p) and from the Search screen's Tags field: a page of
+categories, each showing its first ticked value and how many more ("Shooter
++1") or Any, then a checklist of one category's values with their game
+counts. Values ticked in one category are alternatives, and the categories
+are required together: "Platformer or Shooter, from Japan". One value is
+sent plain (`genre:rpg`); two or more are each sent with Core's `~`
+operator, which Core groups by tag type. Any, first on the values page and
+the choice while nothing is ticked, clears the category and goes back to
+the categories. Core takes at most 50 tags, so at that count the unticked
+values stay listed but cannot be ticked ("tag limit reached"). It is
 called Tags everywhere. Its Collections category lists the built-in
 collections first (Favorites, Liked, Play later), then the user's decks by
 name. Core tags a deck's games with the deck's id alone, so the names come
