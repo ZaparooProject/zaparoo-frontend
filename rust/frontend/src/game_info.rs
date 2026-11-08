@@ -180,6 +180,7 @@ pub fn open(ctx: &Ctx, app: &App, entry: &GameRow) {
     // A multi-disc folder follows the disc it launches, as the list does.
     let key = MediaKey {
         media_id: entry.media_id,
+        prefer: ctx.media.artwork_for(&system, &entry.relative_path),
         system,
         path: entry.path.clone(),
         max_size: crate::sizing::detail_cover_source_size(crate::router::output_scene(app)),
@@ -276,7 +277,7 @@ fn landed(ctx: &Ctx, app: &App, key: &MediaKey, meta: &zaparoo_core::media_types
     publish_documents(ctx, app, key, meta);
     let has_manual = lock(&ctx.shared).game_info.manual.has_documents();
     let images: Vec<MediaKey> = {
-        let preferred = ctx.media.preferred_image_type();
+        let preferred = ctx.media.effective_image_type(key.prefer.as_deref());
         let fit = lock(&ctx.shared).game_info.fit;
         zaparoo_app::media_list::detail_image_order(
             &crate::game_info_data::image_types(meta),
@@ -285,6 +286,7 @@ fn landed(ctx: &Ctx, app: &App, key: &MediaKey, meta: &zaparoo_core::media_types
         .into_iter()
         .map(|kind| MediaKey {
             image_type: Some(kind),
+            prefer: None,
             fit,
             ..key.clone()
         })
@@ -355,6 +357,7 @@ pub(crate) fn land_for_test(ctx: &Ctx, app: &App, meta: &zaparoo_core::media_typ
             fit: model.fit,
             folder: entry.entry_type == zaparoo_app::media_list::EntryType::Directory,
             image_type: None,
+            prefer: None,
         }
     };
     app.global::<GameInfoView>().set_modal_open(true);
@@ -813,6 +816,7 @@ mod tests {
                 fit: zaparoo_app::covers::Fit::SOURCE,
                 folder: false,
                 image_type: Some(kind.into()),
+                prefer: None,
             })
             .collect();
         model.stops = vec![Stop::Image, Stop::Row(1)];

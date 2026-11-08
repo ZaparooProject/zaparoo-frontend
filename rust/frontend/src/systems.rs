@@ -1719,6 +1719,7 @@ pub(crate) fn system_action(ctx: &Ctx, app: &App, id: &str, row: &SystemRow) {
             }
         }
         "change_launcher" => crate::launchers::open_system_picker(ctx, app, &row.id),
+        "artwork" => crate::artwork::open_picker(ctx, app, &row.id, ""),
         "toggle_hide_system" => crate::router::toggle_hidden_system(ctx, app, &row.id),
         "index_system" => crate::router::start_index(ctx, app, Some(vec![row.id.clone()])),
         "scrape_system" => crate::router::open_scrape_setup(

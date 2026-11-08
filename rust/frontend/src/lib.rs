@@ -13,6 +13,7 @@ mod about;
 mod actions;
 mod add_to_deck;
 mod alternates;
+mod artwork;
 mod background;
 mod brand;
 mod browse_filter;
@@ -878,6 +879,9 @@ fn run_application(
 
     let media = media_cache::MediaCache::new();
     media.set_preferred_image_type(&persisted.settings.media_image_type);
+    media.set_artwork_prefs(zaparoo_app::artwork_prefs::ArtworkPrefs::from_entries(
+        &config.artwork,
+    ));
     // Cover art can be read straight off the SD card when Core is on
     // this machine; the manifest then paints the Hub's real art on the
     // first frame instead of a placeholder. A hosted Core is always this

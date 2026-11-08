@@ -231,6 +231,7 @@ export global Labels {
         if (key == "add_to_deck:loading") { return @tr("Loading…"); }
         if (key == "new_deck") { return @tr("New deck…"); }
         if (key == "change_launcher") { return @tr("Change launcher"); }
+        if (key == "artwork") { return @tr("Preferred artwork"); }
         if (key == "write_card") { return @tr("Write to NFC token"); }
         if (key == "qr_code") { return @tr("Write with App"); }
         if (key == "discover") { return @tr("Discover alt. versions"); }
@@ -344,6 +345,11 @@ export global Labels {
         // Launcher picker rows.
         if (key == "launcher:default") { return @tr("Default"); }
         if (key == "launcher:current") { return @tr("Current: {}", name); }
+        // Preferred artwork picker rows: the inherited type, then each type.
+        if (key == "artwork:default") {
+            return @tr("Default ({})", Labels.image-type(name) == "" ? @tr("Automatic") : Labels.image-type(name));
+        }
+        if (key == "artwork:type") { return Labels.image-type(name); }
         // Picker titles.
         if (key == "title:menu") { return @tr("Menu"); }
         if (key == "title:more") { return @tr("More"); }
@@ -353,6 +359,7 @@ export global Labels {
         if (key == "title:sort") { return @tr("Sort"); }
         if (key == "title:group_by") { return @tr("Group by"); }
         if (key == "title:change_launcher") { return @tr("Change launcher"); }
+        if (key == "title:artwork") { return @tr("Preferred artwork"); }
         return Labels.hub(key, name);
     }
 

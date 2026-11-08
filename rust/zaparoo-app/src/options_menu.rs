@@ -126,7 +126,7 @@ impl Menu {
     pub fn opens(id: &str) -> Option<Opens> {
         Some(match id {
             "scrape_game" | "scrape_system" | "scrape_category" => Opens::Setup,
-            "change_launcher" => Opens::Picker,
+            "change_launcher" | "artwork" => Opens::Picker,
             "qr_code" => Opens::QrCode,
             "write_card" => Opens::TokenWrite,
             "more_info" => Opens::Details,
@@ -400,16 +400,28 @@ pub enum Folder {
     VirtualRoot,
 }
 
-/// A folder's two actions stay on Options: too few for a page.
-pub fn folder(kind: Folder, on_hub: bool, is_hidden: bool) -> Menu {
-    let root = match kind {
-        Folder::Directory => vec![
-            pin_row(on_hub),
-            hide_row("toggle_hidden", is_hidden, "hide:hide", "hide:unhide"),
-        ],
-        Folder::FilesystemRoot => vec![pin_row(on_hub)],
-        Folder::VirtualRoot => Vec::new(),
-    };
+/// A folder's few actions stay on Options: too few for a page.
+/// `artwork` is whether the folder has a system and a path inside it to
+/// key a preferred artwork choice on; a folder shared by several systems
+/// has neither.
+pub fn folder(kind: Folder, on_hub: bool, is_hidden: bool, artwork: bool) -> Menu {
+    let mut root = Vec::new();
+    if artwork && kind != Folder::VirtualRoot {
+        root.push(row("artwork"));
+    }
+    match kind {
+        Folder::Directory => {
+            root.push(pin_row(on_hub));
+            root.push(hide_row(
+                "toggle_hidden",
+                is_hidden,
+                "hide:hide",
+                "hide:unhide",
+            ));
+        }
+        Folder::FilesystemRoot => root.push(pin_row(on_hub)),
+        Folder::VirtualRoot => {}
+    }
     Menu {
         root,
         ..Menu::default()
@@ -488,6 +500,7 @@ pub fn system(input: &SystemInput) -> Menu {
     if input.has_launchers {
         menu.manage.push(row("change_launcher"));
     }
+    menu.manage.push(row("artwork"));
     menu.manage.push(pin);
     menu.manage.push(hide);
     if input.tile {
@@ -912,19 +925,25 @@ mod tests {
     #[test]
     fn folders_keep_their_actions_on_options() {
         assert_eq!(
-            keys(&folder(Folder::Directory, false, false).root),
+            keys(&folder(Folder::Directory, false, false, false).root),
             ["add_to_hub", "hide:hide"]
         );
         assert_eq!(
-            keys(&folder(Folder::Directory, true, true).root),
-            ["hub:remove", "hide:unhide"]
+            keys(&folder(Folder::Directory, true, true, true).root),
+            ["artwork", "hub:remove", "hide:unhide"]
         );
         assert_eq!(
-            keys(&folder(Folder::FilesystemRoot, false, false).root),
+            keys(&folder(Folder::FilesystemRoot, false, false, false).root),
             ["add_to_hub"]
         );
-        assert!(folder(Folder::VirtualRoot, false, false).is_empty());
-        assert!(folder(Folder::Directory, false, false).manage.is_empty());
+        assert_eq!(
+            keys(&folder(Folder::FilesystemRoot, false, false, true).root),
+            ["artwork", "add_to_hub"]
+        );
+        assert!(folder(Folder::VirtualRoot, false, false, true).is_empty());
+        assert!(folder(Folder::Directory, false, false, true)
+            .manage
+            .is_empty());
     }
 
     #[test]
@@ -941,6 +960,7 @@ mod tests {
             keys(&menu.manage),
             [
                 "change_launcher",
+                "artwork",
                 "add_to_hub",
                 "hide:hide",
                 "index_system",
@@ -953,7 +973,7 @@ mod tests {
             media_busy: true,
             ..SystemInput::default()
         });
-        assert_eq!(keys(&busy.manage), ["add_to_hub", "hide:hide"]);
+        assert_eq!(keys(&busy.manage), ["artwork", "add_to_hub", "hide:hide"]);
     }
 
     #[test]
@@ -1015,6 +1035,7 @@ mod tests {
             menu.manage,
             [
                 row("change_launcher"),
+                row("artwork"),
                 keyed("hub_remove", "hub:remove"),
                 keyed("toggle_hide_system", "unhide:system"),
                 keyed("hub_move", "hub_move:tile"),
@@ -1104,8 +1125,8 @@ mod tests {
         assert_eq!(rename.map(|at| at + 2), remove);
         // A menu with no layout rows gains nothing.
         assert_eq!(
-            folder(Folder::Directory, false, false).with_tile_edits(true),
-            folder(Folder::Directory, false, false)
+            folder(Folder::Directory, false, false, false).with_tile_edits(true),
+            folder(Folder::Directory, false, false, false)
         );
     }
 
@@ -1113,6 +1134,7 @@ mod tests {
     fn rows_that_open_a_surface_say_which() {
         assert_eq!(Menu::opens("scrape_system"), Some(Opens::Setup));
         assert_eq!(Menu::opens("change_launcher"), Some(Opens::Picker));
+        assert_eq!(Menu::opens("artwork"), Some(Opens::Picker));
         assert_eq!(Menu::opens("qr_code"), Some(Opens::QrCode));
         assert_eq!(Menu::opens("write_card"), Some(Opens::TokenWrite));
         assert_eq!(Menu::opens("more_info"), Some(Opens::Details));

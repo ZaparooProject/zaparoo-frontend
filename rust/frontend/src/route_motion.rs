@@ -451,6 +451,7 @@ fn list_artwork_requests_only_detail_neighbors_and_retires_old_focus() {
         fit: ctx.media.hub_fit(),
         folder: false,
         image_type: None,
+        prefer: None,
     };
     ctx.media.enqueue(hub.clone());
     crate::games::render(&ctx, &app);
@@ -2659,6 +2660,7 @@ fn pinned_tiles_show_what_they_stand_for_or_their_layout_actions() {
     assert_eq!(
         context_keys(&app),
         [
+            "artwork",
             "hub_rename:tile",
             "hub_icon:tile",
             "hub:remove",
@@ -2740,7 +2742,13 @@ fn systems_and_favorite_systems_show_the_same_system_the_same_way() {
     let manage = context_keys(&app);
     assert_eq!(
         manage,
-        ["add_to_hub", "hide:hide", "index_system", "scrape_system"]
+        [
+            "artwork",
+            "add_to_hub",
+            "hide:hide",
+            "index_system",
+            "scrape_system"
+        ]
     );
     crate::router::close_context_menu(&ctx, &app);
 
@@ -2949,6 +2957,7 @@ fn missing_browse_colors_use_real_previews_on_every_page_before_full_art() {
             fit: zaparoo_app::covers::Fit::SOURCE,
             folder: false,
             image_type: None,
+            prefer: None,
         })
         .collect();
     for key in &keys {
@@ -3063,6 +3072,7 @@ fn cover_colors_survive_appended_pages_and_warm_to_cold_tile_replacement() {
                 fit: crate::games::grid_cover_fit(&app, GamesMode::Browse),
                 folder: false,
                 image_type: None,
+                prefer: None,
             },
             crate::media_cache::DecodedImage {
                 buffer: slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(

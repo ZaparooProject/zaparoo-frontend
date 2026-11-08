@@ -25,7 +25,8 @@ use crate::{App, GridCell, HubInput, HubView};
 use zaparoo_core::input_actions::actions;
 
 /// Cover key prefix for a media cover the cache already holds; the rest
-/// is `system` + `\u{1f}` + `path`.
+/// is `system`, `path` and the artwork choice (empty for none), each
+/// separated by `\u{1f}`.
 const MEDIA_PREFIX: &str = "media:";
 /// Cover key for a user's own Hub icon (`custom/hub/<id>.png`); the
 /// payload is the id the file was matched by.
@@ -263,16 +264,13 @@ impl Resolver for SharedResolver<'_> {
         }
     }
 
-    fn media_cover_key(&self, system: &str, path: &str) -> String {
-        self.cover_key_for(MediaKey {
-            media_id: None,
-            system: system.to_string(),
-            path: path.to_string(),
-            max_size: HUB_COVER_TIER,
-            fit: self.media.hub_fit(),
-            folder: false,
-            image_type: None,
-        })
+    fn media_cover_key(&self, system: &str, path: &str, relative: &str) -> String {
+        self.cover_key_for(hub_media_key(
+            self.media,
+            system,
+            path,
+            self.media.artwork_for(system, relative),
+        ))
     }
 }
 
@@ -280,7 +278,7 @@ impl SharedResolver<'_> {
     /// The cover key for art the cache fetches, asked for now: the media
     /// key once it is settled, the loading glyph until then.
     fn cover_key_for(&self, key: MediaKey) -> String {
-        let (system, path) = (key.system.clone(), key.path.clone());
+        let encoded = encode_media_key(&key);
         // A cover Core has none for resolves like a present one: the tile
         // stays blank either way, but it is settled rather than loading.
         let settled = self.media.get(&key).is_some() || self.media.is_negative(&key);
@@ -288,7 +286,7 @@ impl SharedResolver<'_> {
         // a current one is not.
         self.media.enqueue(key);
         if settled {
-            format!("{MEDIA_PREFIX}{system}\u{1f}{path}")
+            encoded
         } else {
             LOADING_KEY.to_string()
         }
@@ -298,13 +296,12 @@ impl SharedResolver<'_> {
 /// Whether a resolved media cover key has art in memory. The Resume
 /// tile keeps its glyph while its art loads or when there is none.
 fn media_key_cached(media: &MediaCache, key: &str) -> bool {
-    let Some((system, path)) = key
-        .strip_prefix(MEDIA_PREFIX)
-        .and_then(|rest| rest.split_once('\u{1f}'))
-    else {
-        return true;
-    };
-    media.is_cached(&MediaKey {
+    decode_media_key(media, key).is_none_or(|key| media.is_cached(&key))
+}
+
+/// A Hub game tile's cover key, at the Hub's tier and box.
+fn hub_media_key(media: &MediaCache, system: &str, path: &str, prefer: Option<String>) -> MediaKey {
+    MediaKey {
         media_id: None,
         system: system.to_string(),
         path: path.to_string(),
@@ -312,7 +309,31 @@ fn media_key_cached(media: &MediaCache, key: &str) -> bool {
         fit: media.hub_fit(),
         folder: false,
         image_type: None,
-    })
+        prefer,
+    }
+}
+
+/// The tile's cover key as the string the Hub entry holds: system, path
+/// and artwork choice, so the key can be rebuilt exactly.
+fn encode_media_key(key: &MediaKey) -> String {
+    format!(
+        "{MEDIA_PREFIX}{}\u{1f}{}\u{1f}{}",
+        key.system,
+        key.path,
+        key.prefer.as_deref().unwrap_or_default()
+    )
+}
+
+fn decode_media_key(media: &MediaCache, key: &str) -> Option<MediaKey> {
+    let rest = key.strip_prefix(MEDIA_PREFIX)?;
+    let (system, rest) = rest.split_once('\u{1f}')?;
+    let (path, prefer) = rest.rsplit_once('\u{1f}').unwrap_or((rest, ""));
+    Some(hub_media_key(
+        media,
+        system,
+        path,
+        (!prefer.is_empty()).then(|| prefer.to_string()),
+    ))
 }
 
 /// Re-resolve the entries from the layout and the live state, then paint.
@@ -354,7 +375,7 @@ fn resolve_entries(ctx: &Ctx, app: &App) {
                     shared: shared_ref,
                     media: &ctx.media,
                 }
-                .media_cover_key(&e.system_id, &e.media_path)
+                .media_cover_key(&e.system_id, &e.media_path, "")
             })
             .filter(|key| key != LOADING_KEY && media_key_cached(&ctx.media, key))
             .unwrap_or_default();
@@ -459,17 +480,8 @@ fn cell_for(
                 cell.wordmark = ctx.logos.is_negative(&key);
             }
         }
-    } else if let Some(rest) = key.strip_prefix(MEDIA_PREFIX) {
-        if let Some((system, path)) = rest.split_once('\u{1f}') {
-            let media_key = MediaKey {
-                media_id: None,
-                system: system.to_string(),
-                path: path.to_string(),
-                max_size: HUB_COVER_TIER,
-                fit: ctx.media.hub_fit(),
-                folder: false,
-                image_type: None,
-            };
+    } else if key.starts_with(MEDIA_PREFIX) {
+        if let Some(media_key) = decode_media_key(&ctx.media, key) {
             cell.fetched = true;
             if let Some(decoded) = ctx.media.get(&media_key) {
                 cell.cover = slint::Image::from_rgba8(decoded.buffer);
@@ -497,21 +509,8 @@ pub fn page_covers_waiting(ctx: &Ctx, app: &App) -> bool {
         .skip(hub.grid.current_page() * page_size)
         .take(page_size)
         .any(|entry| {
-            let Some((system, path)) = entry
-                .cover_key
-                .strip_prefix(MEDIA_PREFIX)
-                .and_then(|rest| rest.split_once('\u{1f}'))
-            else {
+            let Some(key) = decode_media_key(&ctx.media, &entry.cover_key) else {
                 return false;
-            };
-            let key = MediaKey {
-                media_id: None,
-                system: system.to_string(),
-                path: path.to_string(),
-                max_size: HUB_COVER_TIER,
-                fit: ctx.media.hub_fit(),
-                folder: false,
-                image_type: None,
             };
             ctx.media.get(&key).is_none() && !ctx.media.is_negative(&key)
         })
@@ -527,16 +526,7 @@ fn cover_outstanding(ctx: &Ctx, entry: &Entry, cell: &GridCell) -> Option<bool> 
     if key == LOADING_KEY {
         return Some(true);
     }
-    let (system, path) = key.strip_prefix(MEDIA_PREFIX)?.split_once('\u{1f}')?;
-    let negative = ctx.media.is_negative(&MediaKey {
-        media_id: None,
-        system: system.to_string(),
-        path: path.to_string(),
-        max_size: HUB_COVER_TIER,
-        fit: ctx.media.hub_fit(),
-        folder: false,
-        image_type: None,
-    });
+    let negative = ctx.media.is_negative(&decode_media_key(&ctx.media, key)?);
     Some(!cell.has_cover && !negative)
 }
 
