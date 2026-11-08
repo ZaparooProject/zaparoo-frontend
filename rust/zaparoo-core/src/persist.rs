@@ -224,7 +224,9 @@ pub const MAX_SYSTEM_FOCUS: usize = 32;
 /// Systems whose browse filter is remembered.
 pub const MAX_SYSTEM_FILTERS: usize = 32;
 
-/// One system's browse filter: `type:value` tags, at most one per type.
+/// One system's browse filter: `type:value` tags. A type with one value is
+/// written plain; one with several writes each with Core's `~` operator
+/// (`~genre:rpg`), any of them matching.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct SystemFilter {
@@ -415,8 +417,9 @@ pub struct SearchState {
     /// Empty searches every system. The Search screen picks at most one; a
     /// saved search's Hub tile can name several.
     pub systems: Vec<String>,
-    /// `type:value` tags: at most one per type from the Search screen, as
-    /// written from a saved search's Hub tile.
+    /// `type:value` tags: from the Search screen one value per type plain,
+    /// or several each with `~` (any of them); as written from a saved
+    /// search's Hub tile.
     pub tags: Vec<String>,
     /// True when "Search here" opened the search, which fixes its scope
     /// and returns to where it was opened on Back.
@@ -1680,10 +1683,23 @@ future_field = "ignored"
         games.set_filter("SNES", vec!["year:1994".into()]);
         assert_eq!(games.filter_for("NES"), ["genre:action".to_string()]);
         // Most recent first; replacing an entry moves it to the front.
-        games.set_filter("NES", vec!["genre:rpg".into()]);
+        games.set_filter(
+            "NES",
+            vec![
+                "~genre:rpg".into(),
+                "~genre:action".into(),
+                "year:1994".into(),
+            ],
+        );
         assert_eq!(games.filters[0].system_id, "NES");
         assert_eq!(games.filters.len(), 2);
         // An empty list clears it, and a blank system id is ignored.
+        let state = PersistedState {
+            games: games.clone(),
+            ..PersistedState::default()
+        };
+        let decoded: PersistedState = toml::from_str(&toml::to_string(&state).unwrap()).unwrap();
+        assert_eq!(decoded.games.filter_for("NES"), games.filter_for("NES"));
         games.set_filter("SNES", Vec::new());
         assert!(games.filter_for("SNES").is_empty());
         games.set_filter("", vec!["genre:rpg".into()]);

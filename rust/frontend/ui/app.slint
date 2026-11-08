@@ -10,7 +10,7 @@
 import { Theme, Backdrop, GlassCard, Sizing, Motion, Layout } from "theme.slint";
 import { CoreUiKind, MenuRole, UserFlag, RenamePurpose, ContextPage, KeyKind, SearchZone, SearchPane, SearchScope, FileBrowserMode, CreditsPage, MusicPage, MusicControl, PlaybackState, RepeatMode, MusicUnavailable, Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, DeviceValue, PairFailure, PairSearch, PadFill, HeaderPad, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, StateTokens, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, HeaderLogo, DialogKind, DialogButton, ErrorKind, ManualState, ManualFit, RaLoginStep, RaLoginStatus, LauncherPrefsPage, LauncherPrefsRowKind } from "state_types.slint";
 export { CoreUiKind, MenuRole, UserFlag, RenamePurpose, ContextPage, KeyKind, SearchZone, SearchPane, SearchScope, FileBrowserMode, CreditsPage, MusicPage, MusicControl, PlaybackState, RepeatMode, MusicUnavailable, Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, DeviceValue, PairFailure, PairSearch, PadFill, HeaderPad, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, HeaderLogo, DialogKind, DialogButton, ErrorKind, ManualState, ManualFit, RaLoginStep, RaLoginStatus, LauncherPrefsPage, LauncherPrefsRowKind }
-import { FastScrollRail, GlyphSource, Brand, Buttons, HelpEntry, Status, HeaderBar, StatusLine, ProgressTrack, WaitCue, TopStatusStrip, FooterIndicator, ActiveLabel, HelpBar, SectionHeader, Divider, ScrollCue, ModalShell, QrPlate, StateCue } from "chrome.slint";
+import { FastScrollRail, GlyphSource, Brand, Buttons, HelpEntry, Status, HeaderBar, StatusLine, ProgressTrack, WaitCue, TopStatusStrip, FooterIndicator, ActiveLabel, HelpBar, SectionHeader, Divider, CheckBox, ScrollCue, ModalShell, QrPlate, StateCue } from "chrome.slint";
 import { GridCell, MarqueeCaption, PressableSurface, Tile, PagedGridView, PageStrip } from "tiles.slint";
 import { ScrollOffset, SelectionCursor, SelectionClip, FocusCursor } from "focus.slint";
 import { ListPanel, ListViewport, ListRow } from "list_panel.slint";
@@ -820,24 +820,12 @@ component ContextRowBody inherits Rectangle {
     in property <bool> checkable: false;
     in property <bool> checked: false;
 
-    property <length> box-line: Sizing.card-border-width * (Sizing.tier-240 ? 1 : 2);
-    if root.checkable: Rectangle {
+    if root.checkable: CheckBox {
         x: parent.width - self.width - root.inset;
         y: (parent.height - self.height) / 2;
         width: root.chevron;
-        height: self.width;
-        border-radius: Sizing.radius-sm;
-        border-width: root.box-line;
-        border-color: root.content-color;
-
-        if root.checked: Rectangle {
-            x: 2 * root.box-line;
-            y: 2 * root.box-line;
-            width: parent.width - 4 * root.box-line;
-            height: parent.height - 4 * root.box-line;
-            border-radius: Math.max(0px, Sizing.radius-sm - 2 * root.box-line);
-            background: root.content-color;
-        }
+        checked: root.checked;
+        ink: root.content-color;
     }
 
     if root.opens-page: Image {
@@ -3584,6 +3572,13 @@ export component App inherits Window {
         return { buttons: ["ButtonA"], label: GameInfoView.manual-fit == ManualFit.width ? @tr("Whole page") : @tr("Fit width") };
     }
     // A list whose Left and Right step images moves only up and down.
+    // Accept on a list row: a toggle or a checkbox switches in place.
+    pure function list-accept-label() -> string {
+        if (Overlays.list-index < 0 || Overlays.list-index >= Overlays.list-entries.length) { return @tr("Select"); }
+        let role = Overlays.list-entries[Overlays.list-index].role;
+        return role == MenuRole.toggle-off || role == MenuRole.toggle-on
+            || role == MenuRole.check-off || role == MenuRole.check-on ? @tr("Toggle") : @tr("Select");
+    }
     pure function list-move-cue(pages: int) -> HelpEntry {
         return { buttons: pages > 1 ? ["ButtonL", "ButtonR", "DpadUp", "DpadDown"] : ["DpadUp", "DpadDown"], label: @tr("Move") };
     }
@@ -4099,7 +4094,7 @@ export component App inherits Window {
                 // The shoulder buttons jump or page only a list long enough
                 // to scroll.
                 self.move-cue(Overlays.list-entries.length > 7 ? 2 : 1),
-                { buttons: ["ButtonA"], label: @tr("Select") },
+                { buttons: ["ButtonA"], label: self.list-accept-label() },
                 { buttons: ["ButtonB"], label: @tr("Back") },
             ];
         }
@@ -4132,11 +4127,7 @@ export component App inherits Window {
         if (Overlays.list-open) {
             return [
                 { buttons: ["Dpad"], label: @tr("Move") },
-                { buttons: ["ButtonA"],
-                    label: Overlays.list-index >= 0 && Overlays.list-index < Overlays.list-entries.length
-                    && (Overlays.list-entries[Overlays.list-index].role == MenuRole.toggle-off
-                        || Overlays.list-entries[Overlays.list-index].role == MenuRole.toggle-on)
-                    ? @tr("Toggle") : @tr("Select") },
+                { buttons: ["ButtonA"], label: self.list-accept-label() },
                 { buttons: ["ButtonB"], label: @tr("Back") },
             ];
         }

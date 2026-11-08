@@ -8685,26 +8685,49 @@ fn the_tags_picker_keeps_each_pick_and_back_leaves_with_them() {
     crate::router::handle_action(&ctx, &app, "down");
     crate::router::handle_action(&ctx, &app, "accept");
     advance(press);
-    // The pick is kept at once, and Clear appears as the foot's action.
-    assert_eq!(ids(&app), ["cat:genre", "filter_clear"]);
+    // A tick is kept at once and the values page stays open, focus in place.
+    assert_eq!(ids(&app), ["any", "v:racing", "v:rpg"]);
     let rows = overlays.get_list_entries();
-    assert_eq!(rows.row_data(0).map(|e| e.detail), Some("Racing".into()));
     assert_eq!(
         rows.row_data(1).map(|e| e.role),
-        Some(crate::MenuRole::Action)
+        Some(crate::MenuRole::CheckOn)
+    );
+    assert_eq!(
+        rows.row_data(2).map(|e| e.role),
+        Some(crate::MenuRole::CheckOff)
     );
     assert_eq!(
         crate::router::lock(&ctx.shared).persist.search.tags,
         ["genre:racing"]
     );
 
-    // Back leaves with the pick, rather than discarding it.
-    crate::router::handle_action(&ctx, &app, "cancel");
-    assert!(!overlays.get_list_open());
-    assert_eq!(view.get_filter_text(), "Racing");
+    // A second tick in the category makes the pair any-of.
+    crate::router::handle_action(&ctx, &app, "down");
+    crate::router::handle_action(&ctx, &app, "accept");
+    advance(press);
     assert_eq!(
         crate::router::lock(&ctx.shared).persist.search.tags,
-        ["genre:racing"]
+        ["~genre:racing", "~genre:rpg"]
+    );
+
+    // Back returns to the categories, and Clear appears as the foot's action.
+    crate::router::handle_action(&ctx, &app, "cancel");
+    advance(press);
+    assert_eq!(ids(&app), ["cat:genre", "filter_clear"]);
+    let rows = overlays.get_list_entries();
+    assert_eq!(rows.row_data(0).map(|e| e.detail), Some("Racing +1".into()));
+    assert_eq!(
+        rows.row_data(1).map(|e| e.role),
+        Some(crate::MenuRole::Action)
+    );
+
+    // Back leaves with the picks, rather than discarding them.
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert!(!overlays.get_list_open());
+    assert_eq!(view.get_filter_text(), "Racing +1");
+    assert_eq!(
+        crate::router::lock(&ctx.shared).persist.search.tags,
+        ["~genre:racing", "~genre:rpg"]
     );
 }
 
