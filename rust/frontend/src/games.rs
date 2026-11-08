@@ -21,7 +21,8 @@ use zaparoo_app::media_list::{
     LinearMove, SelectionPersist, State,
 };
 use zaparoo_app::options_menu as menu;
-use zaparoo_app::paged_grid::{self, Grid, Insets};
+use zaparoo_app::paged_grid::{self, Grid, Insets, PageDirection};
+use zaparoo_app::row_store::{PagePlan, RowStore};
 use zaparoo_app::user_flags::{Flag, Flags};
 use zaparoo_core::collections::DecksParams;
 use zaparoo_core::endpoints::decks::{DeckEndpoint, DecksEndpoint};
@@ -32,9 +33,9 @@ use zaparoo_core::endpoints::media_search::MediaSearchEndpoint;
 use zaparoo_core::endpoints::media_user_list::{MediaUserListEndpoint, UserListArgs};
 use zaparoo_core::input_actions::actions;
 use zaparoo_core::media_types::{
-    merged_root_view, BrowseEntry, MediaBrowseParams, MediaHistoryEntry, MediaHistoryParams,
-    MediaHistoryTopEntry, MediaItem, MediaMeta, MediaSearchParams, MediaSearchResult,
-    MediaTagsUpdateParams, MediaTagsUpdateResult, SystemInfo, TagInfo,
+    merged_root_view, BrowseEntry, MediaBrowseParams, MediaBrowseResult, MediaHistoryEntry,
+    MediaHistoryParams, MediaHistoryTopEntry, MediaItem, MediaMeta, MediaSearchParams,
+    MediaSearchResult, MediaTagsUpdateParams, MediaTagsUpdateResult, SystemInfo, TagInfo,
 };
 use zaparoo_core::persist::RecentsState;
 use zaparoo_core::remote_resource::ResourceStatus;
@@ -50,6 +51,10 @@ const FILE_GLYPH: &str = "icons/File";
 const FOLDER_GLYPH: &str = "icons/Folder";
 const DECK_GLYPH: &str = "icons/BookMarked";
 const ARCADE_SYSTEM_ID: &str = "Arcade";
+/// What a positional list may hold in rows before it drops the furthest.
+const ROW_BUDGET_BYTES: usize = 4 * 1024 * 1024;
+/// How many rows it drops at a time.
+const EVICT_STEP: usize = 50;
 
 /// Which list the screen shows; the mode picks the fill source, the
 /// copy, the persisted selection slot and the back route.
@@ -498,6 +503,16 @@ impl From<&MediaHistoryEntry> for GameRow {
     }
 }
 
+/// A move that waits for its rows: the selection stays where it is, and
+/// lands here once the rows it would show have loaded.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Landing {
+    pub index: usize,
+    pub direction: PageDirection,
+    /// A jump lands without a page turn.
+    pub jump: bool,
+}
+
 /// The screen's model: rows, cursor, fetch state and the transient cues.
 #[derive(Debug, Clone)]
 #[allow(
@@ -506,7 +521,7 @@ impl From<&MediaHistoryEntry> for GameRow {
 )]
 pub struct GamesModel {
     pub mode: GamesMode,
-    pub rows: Vec<GameRow>,
+    pub rows: RowStore<GameRow>,
     /// The Show tags setting: off, a row's tags never reach its suffix.
     pub show_tags: bool,
     /// Left and Right step the detail pane's images instead of turning
@@ -582,13 +597,26 @@ pub struct GamesModel {
     pub deck: Option<zaparoo_core::collections::Deck>,
     /// An item picked up by Move: the order to put back on Back.
     pub moving: Option<Vec<GameRow>>,
+    /// The move waiting for rows of a positional list.
+    pub landing: Option<Landing>,
+    /// The last move headed up the list, so behind loads before ahead.
+    pub heading_back: bool,
+    /// A positional page failed: nothing more is asked for until the next
+    /// move, which is the retry.
+    pub page_blocked: bool,
+    /// A reload of a positional list: where to land if the selected row is
+    /// no longer listed.
+    pub reload_position: Option<usize>,
+    /// Core's list changed while this list was not on screen: its positions
+    /// and cursors are out of date, so the next page reloads it instead.
+    pub positional_stale: bool,
 }
 
 impl GamesModel {
     pub fn new() -> Self {
         Self {
             mode: GamesMode::Browse,
-            rows: Vec::new(),
+            rows: RowStore::default(),
             show_tags: true,
             list_images: false,
             detail_image: (String::new(), 0),
@@ -632,6 +660,11 @@ impl GamesModel {
             focus_recalled: false,
             deck: None,
             moving: None,
+            landing: None,
+            heading_back: false,
+            page_blocked: false,
+            reload_position: None,
+            positional_stale: false,
         }
     }
 
@@ -647,11 +680,10 @@ impl GamesModel {
     /// excludes these virtual entries, including while only part of the
     /// directory prefix has loaded.
     fn root_count(&self) -> usize {
-        self.rows
-            .iter()
-            .take_while(|row| row.entry_type != EntryType::Media)
-            .filter(|row| row.entry_type == EntryType::Root)
-            .count()
+        if self.rows.is_positional() {
+            return self.rows.pinned();
+        }
+        leading_roots(self.rows.iter())
     }
 
     fn non_media_total(&self) -> usize {
@@ -674,7 +706,9 @@ impl GamesModel {
 
     /// Naming/language changes and replacement fills reproject the full model.
     fn refresh_display(&mut self, show_original_filenames: bool, language: &str) {
-        self.refresh_display_from(0, show_original_filenames, language);
+        for start in self.rows.block_starts() {
+            self.refresh_display_from(start, show_original_filenames, language);
+        }
     }
 
     /// Ordinary appends touch new rows and only the old sibling run they join.
@@ -685,7 +719,25 @@ impl GamesModel {
         show_original: bool,
         language: &str,
     ) -> usize {
-        for row in self.rows.iter_mut().skip(appended_from) {
+        self.refresh_display_range(appended_from..usize::MAX, show_original, language)
+    }
+
+    /// The same for rows stored anywhere in the list, with the sibling run
+    /// they join on either side. Runs do not reach across unloaded rows; the
+    /// page that fills the gap recomputes the joined run.
+    fn refresh_display_range(
+        &mut self,
+        range: std::ops::Range<usize>,
+        show_original: bool,
+        language: &str,
+    ) -> usize {
+        let show_tags = self.show_tags;
+        let Some((base, rows)) = self.rows.block_at_mut(range.start) else {
+            return 0;
+        };
+        let from = range.start - base;
+        let to = (range.end - base).min(rows.len());
+        for row in &mut rows[from..to] {
             row.display = rules::display_name(
                 &row.name,
                 &row.path,
@@ -693,19 +745,23 @@ impl GamesModel {
                 show_original,
             );
         }
-        let start = rules::sibling_group_start(&self.rows, appended_from, |row| &row.display);
-        let names: Vec<_> = self.rows[start..]
+        let start = rules::sibling_group_start(rows, from, |row| &row.display);
+        let mut end = to;
+        while end < rows.len() && rows[end].display == rows[to - 1].display {
+            end += 1;
+        }
+        let names: Vec<_> = rows[start..end]
             .iter()
             .map(|row| (row.display.clone(), row.tag_labels.clone()))
             .collect();
         let displays = crate::tag_utils::sibling_disambiguation_displays(&names);
         let count = |n: u32| zaparoo_app::format::count(i64::from(n), language);
-        for (row, tags) in self.rows[start..].iter_mut().zip(displays) {
+        for (row, tags) in rows[start..end].iter_mut().zip(displays) {
             // Two same-named roots keep what tells them apart: that is not
             // a tag, and hiding it would leave two identical rows.
             let tags = if !row.root_distinguisher.is_empty() {
                 row.root_distinguisher.clone()
-            } else if self.show_tags {
+            } else if show_tags {
                 tags
             } else {
                 String::default()
@@ -717,8 +773,34 @@ impl GamesModel {
                 &count,
             );
         }
-        self.rows.len() - start
+        end - start
     }
+}
+
+/// The virtual roots at the head of a list's rows.
+fn leading_roots<'a>(rows: impl Iterator<Item = &'a GameRow>) -> usize {
+    rows.take_while(|row| row.entry_type != EntryType::Media)
+        .filter(|row| row.entry_type == EntryType::Root)
+        .count()
+}
+
+/// What a row costs to hold, for the row budget.
+fn row_weight(row: &GameRow) -> usize {
+    size_of::<GameRow>()
+        + row.name.len()
+        + row.path.len()
+        + row.system_id.len()
+        + row.system_name.len()
+        + row.zap_script.len()
+        + row.relative_path.len()
+        + row.display.len()
+        + row.suffix.len()
+        + row.tag_labels.iter().map(String::len).sum::<usize>()
+        + row
+            .detail_rows
+            .iter()
+            .map(|(key, value)| key.len() + value.len())
+            .sum::<usize>()
 }
 
 impl Default for GamesModel {
@@ -846,7 +928,39 @@ fn saved_list_top(shared: &Shared) -> Option<usize> {
     }
 }
 
+/// The rows a selection on `index` puts on screen: its grid page, or its
+/// list window.
+fn view_range(ctx: &Ctx, app: &App, shared: &Shared, index: usize) -> std::ops::Range<usize> {
+    let model = &shared.games;
+    if list_layout(shared) {
+        let visible = list_rows_visible(ctx, app, shared);
+        let count = model.rows.len();
+        let previous = saved_list_top(shared)
+            .unwrap_or_else(|| rules::list_view_top(index, count, visible, None));
+        let top = crate::browse_motion::window_top(index, count, visible, previous);
+        top..top + visible
+    } else {
+        let size = model.grid.page_size();
+        let start = index / size * size;
+        start..start + size
+    }
+}
+
+/// The selection's rows are not all loaded.
+fn view_missing_rows(ctx: &Ctx, app: &App, shared: &Shared) -> bool {
+    shared.games.rows.is_positional()
+        && !shared.games.rows.is_loaded(view_range(
+            ctx,
+            app,
+            shared,
+            shared.games.grid.current_index(),
+        ))
+}
+
 fn list_restore_needs_rows(ctx: &Ctx, app: &App, shared: &Shared) -> bool {
+    if shared.games.rows.is_positional() {
+        return view_missing_rows(ctx, app, shared);
+    }
     if !list_layout(shared) || !shared.games.has_more() {
         return false;
     }
@@ -1257,8 +1371,18 @@ pub fn refresh_visibility(ctx: &Ctx, app: &App) {
     };
     let shell = app.global::<crate::Shell>();
     if shell.get_active_screen() != mode.screen() || shell.get_transitioning() {
+        let mut shared = lock(&ctx.shared);
+        shared.games.positional_stale = shared.games.rows.is_positional();
         return;
     }
+    let reload_position = {
+        let shared = lock(&ctx.shared);
+        shared
+            .games
+            .rows
+            .is_positional()
+            .then(|| shared.games.grid.current_index())
+    };
     let hidden_selection = {
         let shared = lock(&ctx.shared);
         mode == GamesMode::Browse
@@ -1272,7 +1396,11 @@ pub fn refresh_visibility(ctx: &Ctx, app: &App) {
         persist_now(ctx);
     }
     match mode {
-        GamesMode::Browse => browse(ctx, app, &path, false),
+        GamesMode::Browse => {
+            browse(ctx, app, &path, false);
+            // Set after `browse`, whose fresh fill forgets any older one.
+            lock(&ctx.shared).games.reload_position = reload_position;
+        }
         GamesMode::Favorites
         | GamesMode::Recents
         | GamesMode::Search
@@ -1282,6 +1410,28 @@ pub fn refresh_visibility(ctx: &Ctx, app: &App) {
             enter_flat(ctx, app, mode, false);
         }
     }
+}
+
+/// Core's list changed under an open positional list: a rescan finished, or
+/// its visibility rules did. The rows stay up with the header cue while the
+/// first page reloads and the selection is looked up again.
+pub fn reload_positional(ctx: &Ctx, app: &App) {
+    {
+        let shared = lock(&ctx.shared);
+        if shared.games.mode != GamesMode::Browse || !shared.games.rows.is_positional() {
+            return;
+        }
+    }
+    ctx.store.invalidate(&Tag::any(MediaBrowseEndpoint::NAME));
+    let busy = {
+        let shared = lock(&ctx.shared);
+        shared.games.loading
+    };
+    if busy {
+        lock(&ctx.shared).games.positional_stale = true;
+        return;
+    }
+    refresh_visibility(ctx, app);
 }
 
 /// Search results (the Search screen's submit): media matching the search
@@ -1646,6 +1796,10 @@ fn begin_fill(model: &mut GamesModel) -> u64 {
     model.cover_settle.reset();
     model.jump_loading = false;
     model.pending_restore_path.clear();
+    model.landing = None;
+    model.page_blocked = false;
+    model.reload_position = None;
+    model.positional_stale = false;
     model.detail_seq += 1;
     let _ = model.detail.disable(true);
     model.ticket
@@ -1725,7 +1879,7 @@ fn browse_with_motion(ctx: &Ctx, app: &App, path: &str, flip: bool, direction: i
 
 /// A browse page's rows. A live page carries no tags, so its rows' favorite
 /// and hidden state is not known.
-fn browse_rows(entries: &[BrowseEntry], live: bool) -> Vec<GameRow> {
+pub(crate) fn browse_rows(entries: &[BrowseEntry], live: bool) -> Vec<GameRow> {
     let roots: Vec<Option<&str>> = entries
         .iter()
         .map(|e| (e.entry_type == "root" && !e.path.is_empty()).then_some(e.path.as_str()))
@@ -1756,7 +1910,7 @@ pub(crate) fn on_browse_ready(
     ctx: &Ctx,
     app: &App,
     ticket: u64,
-    result: &zaparoo_core::media_types::MediaBrowseResult,
+    result: &MediaBrowseResult,
     at_root: bool,
     flip: bool,
     live: bool,
@@ -1785,21 +1939,40 @@ pub(crate) fn on_browse_ready(
         return;
     }
     let total_dirs = result.total_dirs.unwrap_or(0);
-    apply_fill(
-        ctx,
-        app,
-        ticket,
-        rows,
-        next_cursor(result.pagination.as_ref()),
-        Some((result.total_files, total_dirs)),
-        flip,
-    );
+    let totals = Some((result.total_files, total_dirs));
+    let cursor = next_cursor(result.pagination.as_ref());
+    let supports_position = result
+        .pagination
+        .as_ref()
+        .is_some_and(|pagination| pagination.offset.is_some());
+    let browsing = lock(&ctx.shared).games.mode == GamesMode::Browse;
+    if browsing && supports_position && !live && cursor.is_some() {
+        let pinned = leading_roots(rows.iter());
+        let total = pinned + result.total_files as usize + total_dirs as usize;
+        if total >= rows.len() {
+            let first = FirstPage {
+                rows,
+                cursor,
+                totals,
+                total,
+                pinned,
+                flip,
+            };
+            restore_positional(ctx, app, ticket, first);
+            fetch_letter_index_once(ctx, app);
+            return;
+        }
+    }
+    apply_fill(ctx, app, ticket, rows, cursor, totals, flip);
     // The fast-scroll rail and letter steps need the scope's letters
     // before the first long hold, not only once the picker opens. A live
     // folder has no letter index.
-    if live {
-        return;
+    if !live {
+        fetch_letter_index_once(ctx, app);
     }
+}
+
+fn fetch_letter_index_once(ctx: &Ctx, app: &App) {
     let fetched = {
         let shared = lock(&ctx.shared);
         shared.letter_scope.as_ref().is_some_and(|(system, path)| {
@@ -1809,6 +1982,169 @@ pub(crate) fn on_browse_ready(
     if !fetched {
         crate::router::fetch_letter_index(ctx, app);
     }
+}
+
+/// A large folder's first page, while the page holding its selection loads.
+#[derive(Debug, Clone)]
+pub(crate) struct FirstPage {
+    pub rows: Vec<GameRow>,
+    pub cursor: Option<String>,
+    pub totals: Option<(u32, u32)>,
+    pub total: usize,
+    pub pinned: usize,
+    pub flip: bool,
+}
+
+/// Fill a positional list. A selection on the first page lands at once;
+/// anywhere else the screen keeps its loading state for one more request,
+/// and both pages land together.
+fn restore_positional(ctx: &Ctx, app: &App, ticket: u64, first: FirstPage) {
+    let (saved, position, chunk, params) = {
+        let mut shared = lock(&ctx.shared);
+        if shared.games.ticket != ticket {
+            return;
+        }
+        let saved = saved_path(&shared);
+        let chunk = positional_chunk(ctx, app, &shared);
+        let tags = crate::browse_filter::active_tags(&shared);
+        let include_hidden = include_hidden(&shared);
+        let position = shared.games.reload_position.take();
+        let params = browse_page_params(&shared.games, tags, include_hidden, None);
+        (saved, position, chunk, params)
+    };
+    let on_first = (!saved.is_empty())
+        .then(|| {
+            first
+                .rows
+                .iter()
+                .position(|row| row.selection_key() == saved)
+        })
+        .flatten()
+        .or(position.filter(|at| saved.is_empty() && *at < first.rows.len()));
+    if on_first.is_some() || (saved.is_empty() && position.is_none()) {
+        let store = RowStore::positional(first.rows, first.cursor, first.total, first.pinned);
+        fill_rows(
+            ctx,
+            app,
+            ticket,
+            store,
+            None,
+            first.totals,
+            first.flip,
+            on_first,
+        );
+        return;
+    }
+    let client = ctx.store.client();
+    let weak = app.as_weak();
+    let ctx2 = ctx.clone();
+    let (total, pinned) = (first.total, first.pinned);
+    let task = ctx.handle.spawn(async move {
+        let found = if saved.is_empty() {
+            Ok(None)
+        } else {
+            client
+                .media_browse(MediaBrowseParams {
+                    anchor_path: Some(saved),
+                    max_results: Some(chunk),
+                    ..params.clone()
+                })
+                .await
+                .map(|page| {
+                    page.pagination
+                        .as_ref()
+                        .is_some_and(|pagination| pagination.anchor_index.is_some())
+                        .then_some(page)
+                })
+        };
+        let outcome = match (found, position) {
+            (Ok(None), Some(at)) => {
+                let (start, _) = reload_page(at, total, pinned, chunk as usize);
+                client
+                    .media_browse(MediaBrowseParams {
+                        offset: Some((start - pinned) as u64),
+                        max_results: Some(chunk),
+                        ..params
+                    })
+                    .await
+                    .map(Some)
+            }
+            (found, _) => found,
+        };
+        let _ = weak.upgrade_in_event_loop(move |app| {
+            on_restore_page(&ctx2, &app, ticket, first, position, outcome);
+        });
+    });
+    lock(&ctx.shared).games.fill_task.replace(task);
+}
+
+/// The page to reload around an old position, and that position inside the
+/// list as it now stands.
+fn reload_page(at: usize, total: usize, pinned: usize, chunk: usize) -> (usize, usize) {
+    let at = at.min(total.saturating_sub(1));
+    let chunk = chunk.max(1);
+    ((at / chunk * chunk).max(pinned), at)
+}
+
+/// The restore's second request has answered: land both pages in one turn.
+/// A selection Core no longer lists stays at the top, or on a reload at its
+/// old position. A failed lookup fails a route, as a failed restore page
+/// does; a reload of the open folder lands its first page at the top instead,
+/// and the saved selection stays for the next visit.
+pub(crate) fn on_restore_page(
+    ctx: &Ctx,
+    app: &App,
+    ticket: u64,
+    first: FirstPage,
+    position: Option<usize>,
+    outcome: Result<Option<MediaBrowseResult>, zaparoo_core::client::ClientError>,
+) {
+    let (page, position) = match outcome {
+        Ok(page) => (page, position),
+        Err(error) if app.global::<crate::Shell>().get_transitioning() => {
+            show_error(ctx, app, ticket, &error.message, first.flip);
+            return;
+        }
+        Err(error) => {
+            tracing::warn!("restore lookup failed: {}", error.message);
+            (None, None)
+        }
+    };
+    let mut store = RowStore::positional(first.rows, first.cursor, first.total, first.pinned);
+    let mut landed = None;
+    if let Some(page) = page {
+        let pagination = page.pagination.as_ref();
+        let anchor = pagination.and_then(|pagination| pagination.anchor_index);
+        let start = pagination
+            .and_then(|pagination| pagination.offset)
+            .map_or(first.pinned, |offset| first.pinned + offset as usize);
+        let rows = browse_rows(&page.entries, false);
+        let end = start + rows.len();
+        let tail = next_cursor(pagination);
+        if rows.is_empty() {
+            let total = store.len().min(start);
+            store.set_total(total);
+        } else {
+            store.insert(start, rows, tail.clone());
+            if tail.is_none() {
+                store.set_total(end);
+            }
+        }
+        landed = anchor
+            .map(|index| first.pinned + index as usize)
+            .or(position);
+    }
+    let landed = landed.map(|index| index.min(store.len().saturating_sub(1)));
+    fill_rows(
+        ctx,
+        app,
+        ticket,
+        store,
+        None,
+        first.totals,
+        first.flip,
+        landed,
+    );
 }
 
 /// Ready-side fill: store the rows, seat the persisted selection, persist
@@ -1821,6 +2157,24 @@ pub(crate) fn apply_fill(
     cursor: Option<String>,
     totals: Option<(u32, u32)>,
     flip: bool,
+) {
+    fill_rows(ctx, app, ticket, rows.into(), cursor, totals, flip, None);
+}
+
+/// `landed` seats the selection on a position a positional fill found.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "one call applies the whole fill for dense and positional lists"
+)]
+fn fill_rows(
+    ctx: &Ctx,
+    app: &App,
+    ticket: u64,
+    rows: RowStore<GameRow>,
+    cursor: Option<String>,
+    totals: Option<(u32, u32)>,
+    flip: bool,
+    landed: Option<usize>,
 ) {
     let (token, restore_fetch, fill_list) = {
         let mut shared = lock(&ctx.shared);
@@ -1850,10 +2204,14 @@ pub(crate) fn apply_fill(
         model.grid.set_has_more_pages(model.next_cursor.is_some());
         model.persist.end_replacement();
         // Restore: the saved path when loaded; otherwise row 0 while the
-        // restore walk keeps fetching for a deeper saved row.
-        let found = (!saved.is_empty())
-            .then(|| model.rows.iter().position(|r| r.selection_key() == saved))
-            .flatten();
+        // restore walk keeps fetching for a deeper saved row. A positional
+        // fill has already looked it up.
+        let positional = model.rows.is_positional();
+        let found = landed.or_else(|| {
+            (!positional && !saved.is_empty())
+                .then(|| model.rows.iter().position(|r| r.selection_key() == saved))
+                .flatten()
+        });
         let restore_fetch = match found {
             Some(index) => {
                 model.grid.set_current_index_immediate(index);
@@ -1871,9 +2229,10 @@ pub(crate) fn apply_fill(
                 false
             }
         };
-        if !restore_fetch {
+        if !restore_fetch && !positional {
             // Nothing left to walk: the restart landed, so a later failed
-            // page may restart again.
+            // page may restart again. A positional list says so with its
+            // next page.
             model.page_restarted = false;
         }
         model.restore_done = true;
@@ -1975,13 +2334,14 @@ fn browse_page_params(
     model: &GamesModel,
     tags: Vec<String>,
     include_hidden: bool,
-    cursor: &str,
+    cursor: Option<&str>,
 ) -> MediaBrowseParams {
     let path = model.browse_path.clone();
+    let cursor = cursor.map(str::to_string);
     if model.live {
         return MediaBrowseParams {
             path,
-            cursor: Some(cursor.to_string()),
+            cursor,
             live: true,
             ..MediaBrowseParams::default()
         };
@@ -1992,7 +2352,9 @@ fn browse_page_params(
         systems: vec![model.system_id.clone()],
         include_hidden: Some(include_hidden),
         max_results: None,
-        cursor: Some(cursor.to_string()),
+        cursor,
+        offset: None,
+        anchor_path: None,
         tags,
         letter: None,
         sort: None,
@@ -2000,7 +2362,293 @@ fn browse_page_params(
     }
 }
 
+/// A positional list's page size: `LIST_PAGE_FETCH` rows in whole grid pages
+/// or list windows, or the fast scroll's chunk.
+fn positional_chunk(ctx: &Ctx, app: &App, shared: &Shared) -> u32 {
+    let size = position_align(ctx, app, shared) as u32;
+    let wanted = if shared.games.rapid.active {
+        rules::RAPID_FETCH_CHUNK
+    } else {
+        rules::LIST_PAGE_FETCH
+    };
+    wanted
+        .div_ceil(size)
+        .saturating_mul(size)
+        .min(rules::JUMP_FETCH_CEILING)
+}
+
+/// Positional pages start on a multiple of this, so a turned page arrives
+/// whole.
+fn position_align(ctx: &Ctx, app: &App, shared: &Shared) -> usize {
+    if list_layout(shared) {
+        list_rows_visible(ctx, app, shared).max(1)
+    } else {
+        shared.games.grid.page_size().max(1)
+    }
+}
+
+/// The next page a positional list needs: what a waiting move lands on, then
+/// the screen, then the rows in the direction of travel, then those behind.
+fn positional_plan(ctx: &Ctx, app: &App, shared: &Shared) -> Option<PagePlan> {
+    let model = &shared.games;
+    let chunk = positional_chunk(ctx, app, shared) as usize;
+    let align = position_align(ctx, app, shared);
+    let view = view_range(ctx, app, shared, model.grid.current_index());
+    let (ahead, behind) = if list_layout(shared) {
+        (2 * align, align)
+    } else {
+        (model.grid.load_ahead_pages * align, align)
+    };
+    let ahead = if model.rapid.active {
+        rules::RAPID_FETCH_CHUNK as usize
+    } else {
+        ahead
+    };
+    let forward = view.end..view.end.saturating_add(ahead);
+    let backward = view.start.saturating_sub(behind)..view.start;
+    let (first, second) = if model.heading_back {
+        (backward, forward)
+    } else {
+        (forward, backward)
+    };
+    let landing = model
+        .landing
+        .map_or(0..0, |landing| view_range(ctx, app, shared, landing.index));
+    [landing, view, first, second]
+        .into_iter()
+        .find_map(|wanted| model.rows.plan_fetch(wanted, chunk, align))
+        .map(|plan| PagePlan {
+            limit: plan.limit.min(rules::JUMP_FETCH_CEILING as usize),
+            ..plan
+        })
+}
+
+/// Ask for a positional list's next page, if it needs one. One at a time;
+/// each answer asks again.
+fn fetch_positional(ctx: &Ctx, app: &App) {
+    let stale = {
+        let mut shared = lock(&ctx.shared);
+        let shell = app.global::<crate::Shell>();
+        let active =
+            shell.get_active_screen() == shared.games.mode.screen() && !shell.get_transitioning();
+        let stale = shared.games.positional_stale && active && !shared.games.loading;
+        if stale {
+            shared.games.positional_stale = false;
+        }
+        stale
+    };
+    if stale {
+        reload_positional(ctx, app);
+        return;
+    }
+    let (params, plan, ticket) = {
+        let mut shared = lock(&ctx.shared);
+        if shared.games.loading || shared.games.loading_more || shared.games.page_blocked {
+            return;
+        }
+        let Some(plan) = positional_plan(ctx, app, &shared) else {
+            return;
+        };
+        let tags = crate::browse_filter::active_tags(&shared);
+        let include_hidden = include_hidden(&shared);
+        let model = &mut shared.games;
+        model.loading_more = true;
+        model.grid.set_loading_more(true);
+        let offset = plan
+            .cursor
+            .is_none()
+            .then(|| plan.start.saturating_sub(model.rows.pinned()) as u64);
+        let params = MediaBrowseParams {
+            max_results: Some(u32::try_from(plan.limit).unwrap_or(rules::JUMP_FETCH_CEILING)),
+            offset,
+            ..browse_page_params(model, tags, include_hidden, plan.cursor.as_deref())
+        };
+        (params, plan, model.ticket)
+    };
+    render(ctx, app);
+    let client = ctx.store.client();
+    let weak = app.as_weak();
+    let ctx2 = ctx.clone();
+    ctx.handle.spawn(async move {
+        let outcome = client.media_browse(params).await.map_err(PageError::from);
+        let _ = weak.upgrade_in_event_loop(move |app| {
+            on_positional_page(&ctx2, &app, ticket, plan.start, outcome);
+        });
+    });
+}
+
+/// A positional page answered: store it, then land a move that was waiting
+/// for it. A cursor page does not say where it starts; it starts where it
+/// was asked to. Core's answer corrects the list's size: an empty page or a
+/// last page ends the list there, and a page with more after it means the
+/// list runs on past it.
+pub(crate) fn on_positional_page(
+    ctx: &Ctx,
+    app: &App,
+    ticket: u64,
+    asked_start: usize,
+    outcome: Result<MediaBrowseResult, PageError>,
+) {
+    let (landed, changed_page) = {
+        let mut shared = lock(&ctx.shared);
+        if shared.games.ticket != ticket {
+            return;
+        }
+        let show_original = shared.persist.settings.show_original_filenames;
+        let language = crate::effective_language(&shared.persist.settings.language);
+        shared.games.show_tags = shared.persist.settings.show_tags;
+        shared.games.list_images = shared.persist.settings.list_left_right == "image";
+        let model = &mut shared.games;
+        let from_page = model.grid.current_page();
+        model.loading_more = false;
+        model.grid.set_loading_more(false);
+        let page = match outcome {
+            Ok(page) => page,
+            Err(error) => {
+                model.landing = None;
+                model.jump_loading = false;
+                model.page_blocked = true;
+                let restart = !model.page_restarted;
+                drop(shared);
+                page_failed(ctx, app, ticket, &error, restart);
+                sync_waits(ctx, app);
+                return;
+            }
+        };
+        store_position_page(model, &page, asked_start, show_original, &language);
+        // Seat the selection inside the list before the grid hears its size,
+        // which would otherwise send it back to the top.
+        let last = model.rows.len().saturating_sub(1);
+        let current = model.grid.current_index();
+        if current > last {
+            model.grid.set_current_index_immediate(last);
+        }
+        if let Some(landing) = &mut model.landing {
+            landing.index = landing.index.min(last);
+        }
+        model.grid.total_items_override = model.known_total();
+        model.grid.set_item_count(model.rows.len());
+        model.page_restarted = false;
+        let landing = model.landing;
+        let ready = landing.filter(|landing| {
+            let view = view_range(ctx, app, &shared, landing.index);
+            shared.games.rows.is_loaded(view)
+        });
+        let model = &mut shared.games;
+        if let Some(landing) = ready {
+            model.grid.commit_index(landing.index, landing.direction);
+            model.landing = None;
+            model.jump_loading = false;
+        }
+        model.fetch_follows = model.landing.is_some();
+        // The rows around a waiting move are bounded by the move itself.
+        if model.landing.is_none() {
+            let view = view_range(ctx, app, &shared, shared.games.grid.current_index());
+            shared
+                .games
+                .rows
+                .evict(view, ROW_BUDGET_BYTES, EVICT_STEP, row_weight);
+        }
+        let changed_page = !list_layout(&shared) && shared.games.grid.current_page() != from_page;
+        (ready, changed_page)
+    };
+    if app.global::<crate::Shell>().get_transitioning() {
+        if list_restore_needs_rows(ctx, app, &lock(&ctx.shared)) {
+            fetch_more(ctx, app, 0, true);
+            return;
+        }
+        let token = lock(&ctx.shared).games.mode.screen();
+        crate::navigation::finish(app);
+        crate::router::save_persist(&ctx.shared);
+        crate::router::transition_to_screen(app, token, 1);
+        crate::folder_motion::start(ctx, app);
+    }
+    match landed {
+        Some(landing) if landing.jump => {
+            persist_now(ctx);
+            render(ctx, app);
+        }
+        Some(_) if changed_page => {
+            persist_current(ctx);
+            slide_to_current_page(ctx, app);
+        }
+        Some(_) => {
+            persist_current(ctx);
+            render(ctx, app);
+        }
+        None => render(ctx, app),
+    }
+    schedule_detail(ctx, app, false);
+    drain_load_requests(ctx, app);
+    // The next fetch has started, or there was none after all.
+    lock(&ctx.shared).games.fetch_follows = false;
+    sync_waits(ctx, app);
+}
+
+/// Keep one page's rows and what it says about the list's length.
+fn store_position_page(
+    model: &mut GamesModel,
+    page: &MediaBrowseResult,
+    asked_start: usize,
+    show_original: bool,
+    language: &str,
+) {
+    let pagination = page.pagination.as_ref();
+    let pinned = model.rows.pinned();
+    let start = pagination
+        .and_then(|pagination| pagination.offset)
+        .map_or(asked_start, |offset| pinned + offset as usize);
+    let tail = next_cursor(pagination);
+    let rows = browse_rows(&page.entries, false);
+    let end = start + rows.len();
+    if rows.is_empty() {
+        let total = model.rows.len().min(start);
+        model.rows.set_total(total);
+        return;
+    }
+    let last_page = tail.is_none();
+    model.rows.insert(start, rows, tail);
+    if last_page {
+        model.rows.set_total(end);
+    } else if model.rows.len() <= end {
+        model.rows.set_total(end + 1);
+    }
+    model.refresh_display_range(start..end, show_original, language);
+}
+
+/// Hold a positional move back until the rows it would show are loaded.
+/// True when it has to wait: the fetch is on its way and the move lands when
+/// it answers. A new move retries a failed page and replaces a waiting one.
+fn wait_for_rows(
+    ctx: &Ctx,
+    app: &App,
+    shared: &mut Shared,
+    index: usize,
+    direction: PageDirection,
+    jump: bool,
+) -> bool {
+    let view = view_range(ctx, app, shared, index);
+    let model = &mut shared.games;
+    model.heading_back = direction == PageDirection::Previous;
+    model.page_blocked = false;
+    if model.rows.is_loaded(view) {
+        model.landing = None;
+        return false;
+    }
+    model.landing = Some(Landing {
+        index,
+        direction,
+        jump,
+    });
+    model.jump_loading = jump;
+    true
+}
+
 fn fetch_more(ctx: &Ctx, app: &App, limit: u32, bulk: bool) {
+    if lock(&ctx.shared).games.rows.is_positional() {
+        fetch_positional(ctx, app);
+        return;
+    }
     let list_tag = crate::user_lists::active(&lock(&ctx.shared)).tag();
     let (mode, cursor, browse, ticket, sort, scope, search, live) = {
         let mut shared = lock(&ctx.shared);
@@ -2021,7 +2669,7 @@ fn fetch_more(ctx: &Ctx, app: &App, limit: u32, bulk: bool) {
         if bulk {
             model.covers_paused = true;
         }
-        let browse = browse_page_params(model, tags, include_hidden, &cursor);
+        let browse = browse_page_params(model, tags, include_hidden, Some(&cursor));
         (
             model.mode,
             cursor,
@@ -2301,6 +2949,17 @@ pub(crate) fn resume_after_cancel(ctx: &Ctx, app: &App) {
 /// Run the fetches the grid asked for: a jump loads up to its target in
 /// bulk, held rapid scrolling takes bigger chunks, everything else one page.
 pub(crate) fn drain_load_requests(ctx: &Ctx, app: &App) {
+    {
+        let mut shared = lock(&ctx.shared);
+        if shared.games.rows.is_positional() {
+            // The whole list counts as loaded to the grid: its own requests
+            // say nothing about which rows are here.
+            shared.games.grid.take_load_requests();
+            drop(shared);
+            fetch_positional(ctx, app);
+            return;
+        }
+    }
     let (limit, bulk) = {
         let mut shared = lock(&ctx.shared);
         let size = page_size(ctx, app, &shared) as usize;
@@ -2669,12 +3328,12 @@ pub fn page_covers_waiting(ctx: &Ctx, app: &App) -> bool {
     let model = &shared.games;
     let tier = cover_tier(app, model.mode);
     let page_size = model.grid.page_size();
-    model
+    let waiting = model
         .rows
-        .iter()
-        .skip(model.grid.current_page() * page_size)
+        .iter_from(model.grid.current_page() * page_size)
         .take(page_size)
-        .any(|row| cover_waiting(ctx, model, row, tier))
+        .any(|row| cover_waiting(ctx, model, row, tier));
+    waiting
 }
 
 fn cover_waiting(ctx: &Ctx, model: &GamesModel, row: &GameRow, tier: CoverSize) -> bool {
@@ -2699,8 +3358,7 @@ fn page_cells(
     let page_size = model.grid.page_size();
     model
         .rows
-        .iter()
-        .skip(page * page_size)
+        .iter_from(page * page_size)
         .take(page_size)
         .map(|row| cell_for(ctx, model, logos, row, tier))
         .collect()
@@ -3242,15 +3900,31 @@ pub fn render(ctx: &Ctx, app: &App) {
         let previous = saved_list_top(&shared).unwrap_or_else(|| {
             rules::list_view_top(model.grid.current_index(), count, visible, None)
         });
-        crate::browse_motion::publish_list(
+        let current = model.grid.current_index();
+        crate::browse_motion::publish_list_window(
             &view,
             &shared.input,
-            model.grid.current_index(),
+            current,
             count,
             visible,
             previous,
-            &model.rows,
-            text_cell,
+            |top, take| {
+                // A positional list shows the run of rows around the
+                // selection; the window starts where that run does.
+                let (base, rows) = if model.rows.is_positional() {
+                    model.rows.block_at(current).unwrap_or((top, &[]))
+                } else {
+                    (0, model.rows.dense())
+                };
+                let first = top.max(base);
+                let cells = rows
+                    .iter()
+                    .skip(first - base)
+                    .take(take - (first - top))
+                    .map(text_cell)
+                    .collect();
+                (first, cells)
+            },
         );
     } else {
         view.set_list_rows(ModelRc::new(VecModel::from(Vec::<GridCell>::new())));
@@ -3312,8 +3986,7 @@ pub fn render(ctx: &Ctx, app: &App) {
         };
         let visible = model
             .rows
-            .iter()
-            .skip(art_start)
+            .iter_from(art_start)
             .take(art_window)
             .filter_map(key);
         let neighbors = [
@@ -3321,14 +3994,14 @@ pub fn render(ctx: &Ctx, app: &App) {
             art_start.saturating_sub(art_window),
         ]
         .into_iter()
-        .flat_map(|first| model.rows.iter().skip(first).take(art_window))
+        .flat_map(|first| model.rows.iter_from(first).take(art_window))
         .filter_map(key);
         ctx.logos.request_window(visible, neighbors);
     } else {
         crate::system_logos::defer_refresh(ctx, app);
     }
     if crate::perf::enabled() {
-        let visible_rows = model.rows.iter().skip(art_start).take(art_window);
+        let visible_rows = model.rows.iter_from(art_start).take(art_window);
         let (visible, pending) = visible_rows.fold((0, 0), |(visible, pending), row| {
             let waiting = cover_waiting(ctx, model, row, art_tier);
             (visible + 1, pending + usize::from(waiting))
@@ -3338,7 +4011,15 @@ pub fn render(ctx: &Ctx, app: &App) {
     // A replacement temporarily seats row zero while old rows may still be
     // painted. That transient viewport must not overwrite the restore target.
     let stable_viewport = !model.loading && model.pending_restore_path.is_empty();
+    // A new shape or window can leave the selection's rows part loaded.
+    let refetch = !model.loading_more
+        && !model.loading
+        && !model.page_blocked
+        && view_missing_rows(ctx, app, &shared);
     drop(shared);
+    if refetch {
+        fetch_positional(ctx, app);
+    }
     if list && stable_viewport {
         remember_list_top(
             &mut lock(&ctx.shared),
@@ -3459,7 +4140,7 @@ pub fn covers_landed(ctx: &Ctx, app: &App, keys: &[MediaKey]) {
                 cover_tier(app, model.mode),
             )
         };
-        model.rows.iter().skip(first).take(window).any(|row| {
+        let relevant = model.rows.iter_from(first).take(window).any(|row| {
             let key = media_key(row, &model.system_id, tier);
             keys.contains(&key)
                 || (list && keys.contains(&detail_key(ctx, model, row, tier)))
@@ -3468,7 +4149,8 @@ pub fn covers_landed(ctx: &Ctx, app: &App, keys: &[MediaKey]) {
                     && row.has_cover
                     && row.cover_color.is_none()
                     && keys.contains(&key.color_preview()))
-        })
+        });
+        relevant
     };
     if relevant {
         render(ctx, app);
@@ -4037,6 +4719,30 @@ fn grid_move(ctx: &Ctx, app: &App, d_col: i32, d_row: i32, page_delta: i32) {
             return;
         }
         model.focus_armed = true;
+        if model.rows.is_positional() {
+            let mut probe = model.grid.clone();
+            let moved = if page_delta != 0 {
+                probe.page_by(page_delta)
+            } else {
+                probe.move_selection(d_col, d_row)
+            };
+            if moved
+                && wait_for_rows(
+                    ctx,
+                    app,
+                    &mut shared,
+                    probe.current_index(),
+                    probe.page_direction(),
+                    false,
+                )
+            {
+                drop(shared);
+                drain_load_requests(ctx, app);
+                sync_waits(ctx, app);
+                return;
+            }
+        }
+        let model = &mut shared.games;
         let from_page = model.grid.current_page();
         let moved = if page_delta != 0 {
             model.grid.page_by(page_delta)
@@ -4081,6 +4787,16 @@ fn list_move(ctx: &Ctx, app: &App, delta: i64) {
             };
         }
         let mut tail = false;
+        if let (LinearMove::To { index, .. }, true) = (outcome, model.rows.is_positional()) {
+            let direction = PageDirection::from_delta(if delta < 0 { -1 } else { 1 });
+            if wait_for_rows(ctx, app, &mut shared, index, direction, false) {
+                drop(shared);
+                drain_load_requests(ctx, app);
+                sync_waits(ctx, app);
+                return;
+            }
+        }
+        let model = &mut shared.games;
         if let LinearMove::To { index, .. } = outcome {
             model.grid.set_current_index_immediate(index);
             let lookahead = rules::list_lookahead(delta, visible);
@@ -4096,6 +4812,8 @@ fn list_move(ctx: &Ctx, app: &App, delta: i64) {
             schedule_detail(ctx, app, false);
             if fetch || tail {
                 fetch_more(ctx, app, limit, false);
+            } else if lock(&ctx.shared).games.rows.is_positional() {
+                drain_load_requests(ctx, app);
             }
         }
         LinearMove::FetchMore => fetch_more(ctx, app, limit, false),
@@ -4479,6 +5197,25 @@ fn jump_to_index(ctx: &Ctx, app: &App, target: usize) {
         let mut shared = lock(&ctx.shared);
         let model = &mut shared.games;
         model.focus_armed = true;
+        if model.rows.is_positional() {
+            let target = target.min(model.rows.len().saturating_sub(1));
+            let mut probe = model.grid.clone();
+            probe.jump_to_index(target);
+            let index = probe.current_index();
+            let direction = probe.page_direction();
+            if wait_for_rows(ctx, app, &mut shared, index, direction, true) {
+                drop(shared);
+                drain_load_requests(ctx, app);
+                sync_waits(ctx, app);
+                return;
+            }
+        }
+        let model = &mut shared.games;
+        let target = if model.rows.is_positional() {
+            target.min(model.rows.len().saturating_sub(1))
+        } else {
+            target
+        };
         let landed = model.grid.jump_to_index(target);
         model.jump_loading = !landed;
         landed
@@ -5109,7 +5846,7 @@ pub(crate) fn on_hidden_updated(
     match result {
         Ok(result) => {
             let fallback = shared.games.system_id.clone();
-            for row in &mut shared.games.rows {
+            for row in shared.games.rows.iter_mut() {
                 if row.path == target.path && row.system_or(&fallback) == system {
                     row.is_hidden = has_user_tag(&result.tags, "hidden");
                     row.flags = user_flags(&result.tags);
@@ -5120,10 +5857,18 @@ pub(crate) fn on_hidden_updated(
                 && !crate::browse_filter::shows_hidden(&shared)
                 && shared.games.current().is_some_and(|row| row.is_hidden)
             {
-                let hidden: Vec<bool> = shared.games.rows.iter().map(|row| row.is_hidden).collect();
-                if let Some(index) =
-                    rules::selection_after_hide(shared.games.grid.current_index(), &hidden)
-                {
+                // Among the rows at hand: a positional list's next row may
+                // not be loaded, and the reload lands on its old position.
+                let current = shared.games.grid.current_index();
+                let next = shared
+                    .games
+                    .rows
+                    .block_at(current)
+                    .and_then(|(base, rows)| {
+                        let hidden: Vec<bool> = rows.iter().map(|row| row.is_hidden).collect();
+                        rules::selection_after_hide(current - base, &hidden).map(|at| base + at)
+                    });
+                if let Some(index) = next {
                     shared.games.grid.set_current_index_immediate(index);
                 }
             }
@@ -5503,7 +6248,7 @@ mod tests {
         let mut folder = GameRow::from(&entry("directory", "RPGs", "/g/RPGs"));
         folder.file_count = 5;
         let game = GameRow::from(&entry("media", "Sonic CD", "/g/Sonic CD (USA).chd"));
-        model.rows = vec![folder, game];
+        model.rows = vec![folder, game].into();
         model.refresh_display(false, "en");
         assert_eq!(model.rows[0].display, "RPGs");
         assert_eq!(model.rows[0].suffix, "5");
@@ -5532,11 +6277,11 @@ mod tests {
                     let mut incremental = GamesModel::new();
                     for page in rows.chunks(batch) {
                         let first = incremental.rows.len();
-                        incremental.rows.extend_from_slice(page);
+                        incremental.rows.extend(page.to_vec());
                         incremental.refresh_display_from(first, original, language);
                         let mut rebuilt = incremental.clone();
                         rebuilt.refresh_display(original, language);
-                        for (actual, expected) in incremental.rows.iter().zip(&rebuilt.rows) {
+                        for (actual, expected) in incremental.rows.iter().zip(rebuilt.rows.iter()) {
                             assert_eq!(
                                 (&actual.display, &actual.suffix),
                                 (&expected.display, &expected.suffix)
@@ -5569,7 +6314,7 @@ mod tests {
             disambiguating_tags: vec![tag("region", "us")],
             ..entry("media", "Sonic CD", "/g/Sonic CD (USA).chd")
         });
-        model.rows = vec![folder, game];
+        model.rows = vec![folder, game].into();
         model.refresh_display(false, "en");
         assert_eq!(model.rows[1].suffix, "US");
         model.show_tags = false;
@@ -5590,7 +6335,8 @@ mod tests {
             disambiguating_tags: vec![tag("region", "us")],
             multi_disc: true,
             ..entry("directory", "Chrono Cross", "/g/PSX/Chrono Cross")
-        })];
+        })]
+        .into();
         model.refresh_display(false, "en");
         let row = &model.rows[0];
         assert!(row.multi_disc && !row.is_dir());

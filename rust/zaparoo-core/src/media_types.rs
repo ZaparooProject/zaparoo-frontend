@@ -264,6 +264,15 @@ pub struct Pagination {
     pub page_size: u32,
     #[serde(default)]
     pub next_cursor: Option<String>,
+    /// `media.browse`: where this page starts in the listing, not counting
+    /// root virtual entries. Core that can serve a page by position reports
+    /// it on every page that was not reached through a cursor or a letter.
+    #[serde(default)]
+    pub offset: Option<u64>,
+    /// `media.browse` with `anchor_path`: where that path sits in the
+    /// listing. Absent when it is not listed, and the page is then the first.
+    #[serde(default)]
+    pub anchor_index: Option<u64>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -310,6 +319,16 @@ pub struct MediaBrowseParams {
     pub max_results: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cursor: Option<String>,
+    /// Start at this position in the listing, not counting root virtual
+    /// entries. Core rejects it with `cursor`, `letter`, `live` or
+    /// `anchor_path`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub offset: Option<u64>,
+    /// Return the page holding this path, starting at the largest multiple
+    /// of `max_results` not after it. Core rejects it with `cursor`, `letter`,
+    /// `live` or `offset`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub anchor_path: Option<String>,
     /// Filter direct media files by tags while keeping directories navigable.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,
@@ -2457,6 +2476,8 @@ mod tests {
             systems: vec!["SNES".into()],
             max_results: Some(100),
             cursor: Some("opaque".into()),
+            offset: None,
+            anchor_path: None,
             tags: vec!["user:favorite".into()],
             letter: Some("M".into()),
             sort: Some("name-asc".into()),

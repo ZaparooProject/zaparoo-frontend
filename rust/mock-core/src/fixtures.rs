@@ -840,6 +840,33 @@ fn media_browse_live_response(path: &str, max: usize, offset: usize) -> Value {
     })
 }
 
+/// A saved row's page, or a page by position, as Core serves them.
+fn browse_position(
+    params: &Value,
+    matching: &[Value],
+    offset: usize,
+    max: usize,
+) -> (usize, Option<usize>) {
+    let anchor_index = params
+        .get("anchorPath")
+        .and_then(Value::as_str)
+        .and_then(|anchor| {
+            matching
+                .iter()
+                .position(|row| row.get("path").and_then(Value::as_str) == Some(anchor))
+        });
+    let offset = anchor_index.map_or_else(
+        || {
+            params
+                .get("offset")
+                .and_then(Value::as_u64)
+                .map_or(offset, |position| position as usize)
+        },
+        |index| index / max.max(1) * max.max(1),
+    );
+    (offset, anchor_index)
+}
+
 pub fn media_browse_response(params: &Value) -> Value {
     let path = params.get("path").and_then(Value::as_str).unwrap_or("");
     if params.get("live").and_then(Value::as_bool) == Some(true) {
@@ -907,6 +934,7 @@ pub fn media_browse_response(params: &Value) -> Value {
         hidden_itself,
     );
     let total_files = matching.len();
+    let (offset, anchor_index) = browse_position(params, &matching, offset, max);
     let entries: Vec<Value> = matching.into_iter().skip(offset).take(max).collect();
     let next_offset = offset.saturating_add(entries.len());
     let has_next_page = !entries.is_empty() && next_offset < total_files;
@@ -916,6 +944,12 @@ pub fn media_browse_response(params: &Value) -> Value {
     });
     if has_next_page {
         pagination["nextCursor"] = json!(next_offset.to_string());
+    }
+    if cursor.is_none() {
+        pagination["offset"] = json!(offset);
+    }
+    if let Some(index) = anchor_index {
+        pagination["anchorIndex"] = json!(index);
     }
     let mut result = json!({
         "path": path,

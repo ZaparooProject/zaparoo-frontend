@@ -1210,6 +1210,13 @@ fn bind_media_status(ctx: &Arc<Ctx>, app: &App, store: &Arc<Store>) {
         let mut art_run = zaparoo_core::store::MediaArtRun::new(&prev);
         while rx.changed().await.is_ok() {
             let curr = rx.borrow_and_update().clone();
+            // A rescan finished: an open list's positions have changed.
+            if prev.indexing && !curr.indexing {
+                let ctx_event = ctx.clone();
+                let _ = weak.upgrade_in_event_loop(move |app| {
+                    games::reload_positional(&ctx_event, &app);
+                });
+            }
             let task = status::task_of(&curr);
             // The store refetches its cached lists on this edge; covers are
             // this process's own cache, so after a run that could have
@@ -1495,6 +1502,13 @@ fn bind_collection_changes(ctx: &Arc<Ctx>, app: &App, client: &Arc<Client>) {
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
             };
             match notification.method.as_str() {
+                // Who may see what changed: an open list's positions have too.
+                "media.visibility" => {
+                    let ctx_event = ctx.clone();
+                    let _ = weak.upgrade_in_event_loop(move |app| {
+                        games::reload_positional(&ctx_event, &app);
+                    });
+                }
                 "media.tags.changed" => {
                     let Ok(changed) =
                         serde_json::from_value::<MediaTagsChanged>(notification.params)

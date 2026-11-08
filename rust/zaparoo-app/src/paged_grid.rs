@@ -121,7 +121,8 @@ pub enum PageDirection {
 }
 
 impl PageDirection {
-    fn from_delta(delta: i32) -> Self {
+    /// The direction of a signed move.
+    pub fn from_delta(delta: i32) -> Self {
         if delta < 0 {
             Self::Previous
         } else {
@@ -332,7 +333,8 @@ impl Grid {
         self.commit_index(index, direction);
     }
 
-    fn commit_index(&mut self, index: usize, direction: PageDirection) {
+    /// Put the selection on `index`, a turn in `direction` if the page changes.
+    pub fn commit_index(&mut self, index: usize, direction: PageDirection) {
         if index / self.page_size() != self.current_page() {
             self.page_direction = direction;
         }

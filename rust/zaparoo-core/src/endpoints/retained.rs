@@ -113,7 +113,9 @@ fields!(TagInfo {
 fields!(Pagination {
     has_next_page,
     page_size,
-    next_cursor
+    next_cursor,
+    offset,
+    anchor_index
 });
 fields!(BrowseEntry {
     media_id,

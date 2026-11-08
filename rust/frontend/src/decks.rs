@@ -574,12 +574,13 @@ fn remove_item(ctx: &Ctx, app: &App, deck_id: &str, item_id: i64) {
         let mut shared = lock(&ctx.shared);
         let name = name_of(&shared, deck_id);
         let model = &mut shared.games;
-        if let Some(index) = model.rows.iter().position(|row| {
+        let found = model.rows.iter().position(|row| {
             row.deck_item
                 .as_ref()
                 .is_some_and(|item| item.id == item_id)
-        }) {
-            model.rows.remove(index);
+        });
+        if let Some(index) = found {
+            model.rows.dense_mut().remove(index);
             model.grid.set_item_count(model.rows.len());
             let current = model
                 .grid
@@ -606,7 +607,7 @@ pub(crate) fn moving(ctx: &Ctx) -> bool {
 fn begin_move(ctx: &Ctx, app: &App) {
     {
         let mut shared = lock(&ctx.shared);
-        let rows = shared.games.rows.clone();
+        let rows = shared.games.rows.dense().to_vec();
         if rows.len() < 2 {
             return;
         }
@@ -639,7 +640,7 @@ fn step(ctx: &Ctx, app: &App, delta: i64) {
         else {
             return;
         };
-        model.rows.swap(from, to);
+        model.rows.dense_mut().swap(from, to);
         model.grid.set_current_index_immediate(to);
     }
     crate::games::render(ctx, app);
@@ -664,7 +665,7 @@ fn cancel_move(ctx: &Ctx, app: &App) {
                 })
             })
             .unwrap_or(0);
-        shared.games.rows = original;
+        shared.games.rows = original.into();
         shared.games.grid.set_current_index_immediate(index);
     }
     crate::games::render(ctx, app);
@@ -683,7 +684,7 @@ fn drop_item(ctx: &Ctx, app: &App) {
                 .filter_map(|row| row.deck_item.as_ref().map(|item| item.id))
                 .collect()
         };
-        let order = ids(&shared.games.rows);
+        let order = ids(shared.games.rows.dense());
         let id = shared.persist.deck.deck_id.clone();
         let name = name_of(&shared, &id);
         let changed = order != ids(&original);
