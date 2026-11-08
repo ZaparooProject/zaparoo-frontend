@@ -13927,6 +13927,43 @@ fn a_saved_row_core_no_longer_lists_stays_at_the_top_or_its_old_position() {
 }
 
 #[test]
+fn a_failed_lookup_on_a_reload_lands_the_first_page_and_keeps_the_saved_row() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (runtime, ctx) = offline_ctx();
+    let ticket = seat_position_list(&ctx, &app, "grid", "/target/700");
+    let failure = runtime.block_on(
+        ctx.store
+            .client()
+            .media_browse(zaparoo_core::media_types::MediaBrowseParams::default()),
+    );
+    assert!(failure.is_err());
+    let first = crate::games::FirstPage {
+        rows: crate::games::browse_rows(
+            &position_page(0..50, None, None, None, 1000).entries,
+            false,
+        ),
+        cursor: Some("first".into()),
+        totals: Some((1000, 0)),
+        total: 1000,
+        pinned: 0,
+        flip: false,
+    };
+    crate::games::on_restore_page(&ctx, &app, ticket, first, Some(700), failure.map(Some));
+    let shared = crate::router::lock(&ctx.shared);
+    assert!(!shared.games.loading);
+    assert!(shared.games.error.is_empty());
+    assert_eq!(shared.games.rows.len(), 1000);
+    assert_eq!(shared.games.rows[0].path, "/target/0");
+    assert_eq!(shared.games.grid.current_index(), 0);
+    assert_eq!(
+        shared.persist.games.selected_at_level,
+        vec!["/target/700".to_string()],
+        "a failed lookup is not proof the game is gone"
+    );
+}
+
+#[test]
 fn a_rescan_reloads_an_open_list_and_marks_an_unseen_one() {
     assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
     let (app, _window) = boot();

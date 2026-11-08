@@ -2088,7 +2088,9 @@ fn reload_page(at: usize, total: usize, pinned: usize, chunk: usize) -> (usize, 
 
 /// The restore's second request has answered: land both pages in one turn.
 /// A selection Core no longer lists stays at the top, or on a reload at its
-/// old position.
+/// old position. A failed lookup fails a route, as a failed restore page
+/// does; a reload of the open folder lands its first page at the top instead,
+/// and the saved selection stays for the next visit.
 pub(crate) fn on_restore_page(
     ctx: &Ctx,
     app: &App,
@@ -2097,11 +2099,15 @@ pub(crate) fn on_restore_page(
     position: Option<usize>,
     outcome: Result<Option<MediaBrowseResult>, zaparoo_core::client::ClientError>,
 ) {
-    let page = match outcome {
-        Ok(page) => page,
-        Err(error) => {
+    let (page, position) = match outcome {
+        Ok(page) => (page, position),
+        Err(error) if app.global::<crate::Shell>().get_transitioning() => {
             show_error(ctx, app, ticket, &error.message, first.flip);
             return;
+        }
+        Err(error) => {
+            tracing::warn!("restore lookup failed: {}", error.message);
+            (None, None)
         }
     };
     let mut store = RowStore::positional(first.rows, first.cursor, first.total, first.pinned);
