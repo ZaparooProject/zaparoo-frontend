@@ -1471,6 +1471,7 @@ dependencies = [
  "i-slint-renderer-software",
  "image",
  "libc",
+ "miniz_oxide 0.9.1",
  "qrcode",
  "raw-window-handle",
  "resvg",

@@ -122,7 +122,7 @@ fix:
 tr-extract:
     ./scripts/toolchain.sh bash scripts/extract-translations.sh
 
-# Regenerate the binary's third-party notices (toolchain image)
+# Regenerate rust/frontend/LICENSE.txt, the license and notices file (toolchain image)
 notices:
     ./scripts/toolchain.sh bash scripts/generate-notices.sh
 

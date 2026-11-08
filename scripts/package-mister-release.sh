@@ -136,9 +136,9 @@ if [ ! -f "$FRONTEND_BIN" ]; then
     error "frontend binary not found at $FRONTEND_BIN"
 fi
 
-NOTICES="$PROJECT_ROOT/rust/frontend/LICENSES/THIRD-PARTY-NOTICES.txt"
-if [ ! -f "$NOTICES" ]; then
-    error "missing $NOTICES; run 'just notices'"
+LICENSE_FILE="$PROJECT_ROOT/rust/frontend/LICENSE.txt"
+if [ ! -f "$LICENSE_FILE" ]; then
+    error "missing $LICENSE_FILE; run 'just notices'"
 fi
 
 mkdir -p "$RELEASE_DIR"
@@ -201,15 +201,13 @@ if [ "${ZAPAROO_INCLUDE_SCANOUT:-0}" = "1" ] || [ -n "$SCANOUT_BUNDLE" ]; then
     python3 "$PROJECT_ROOT/scripts/scanout_bundle.py" "$SCANOUT_BUNDLE" \
         --destination "$STAGE/zaparoo"
 fi
-install -m 0644 "$PROJECT_ROOT/COPYING" "$STAGE/COPYING"
-# The asset attributions (fonts, logos, glyphs) plus the generated notices
-# for every Rust crate linked into the binary (`just notices`).
-rsync -a --delete "$PROJECT_ROOT/LICENSES/" "$STAGE/LICENSES/"
-install -m 0644 "$NOTICES" "$STAGE/LICENSES/THIRD-PARTY-NOTICES.txt"
+# One file: the frontend's license, the asset notices and every linked
+# crate's license (`just notices`).
+install -m 0644 "$LICENSE_FILE" "$STAGE/LICENSE.txt"
 write_readme "$STAGE/README.txt"
 (
     cd "$STAGE"
-    zip -r "$ARCHIVE" zaparoo LICENSES README.txt COPYING
+    zip -r "$ARCHIVE" zaparoo README.txt LICENSE.txt
 )
 
 unzip -t "$ARCHIVE" > /dev/null

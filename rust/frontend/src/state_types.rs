@@ -27,7 +27,7 @@ tokens!(Screen {
     Hub => "hub", Systems => "systems", FavoriteSystems => "favorite-systems",
     Games => "games", Favorites => "favorites", Recents => "recents",
     Search => "search", SearchResults => "search-results",
-    Settings => "settings", About => "about", Update => "update", Rename => "rename",
+    Settings => "settings", About => "about", Credits => "credits", Update => "update", Rename => "rename",
     RaLogin => "ra-login", FileBrowser => "file-browser", Decks => "decks", Deck => "deck",
     TopPlayed => "top-played", TopPlayedSystems => "top-played-systems", Music => "music", None => "",
 });
@@ -240,6 +240,7 @@ mod tests {
             Screen::SearchResults,
             Screen::Settings,
             Screen::About,
+            Screen::Credits,
             Screen::Update,
             Screen::Rename,
             Screen::RaLogin,

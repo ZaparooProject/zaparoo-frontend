@@ -1,5 +1,5 @@
 // Closed UI discriminants shared with the generated Rust API.
-export enum Screen { hub, systems, favorite-systems, games, favorites, recents, search, search-results, settings, about, update, rename, ra-login, file-browser, decks, deck, top-played, top-played-systems, music, none }
+export enum Screen { hub, systems, favorite-systems, games, favorites, recents, search, search-results, settings, about, credits, update, rename, ra-login, file-browser, decks, deck, top-played, top-played-systems, music, none }
 export enum GamesMode { browse, favorites, recents, search, deck, decks, top-played }
 export enum SystemsMode { category, favorites, top-played }
 // What a games-screen footer notes after the focused name.
@@ -26,6 +26,8 @@ export enum RenamePurpose { tile, new-deck, rename-deck }
 export enum SearchZone { system, filter, keys, pane }
 export enum SearchPane { none, recents, preview }
 export enum FileBrowserMode { plain, images }
+// The Credits screen: its list of components, or one component's text.
+export enum CreditsPage { list, reading }
 // The music player: its pages (the player, the open playlist, the
 // library), the transport controls in row order, what the background slot
 // is doing, an open playlist's repeat mode, and why a control cannot act.

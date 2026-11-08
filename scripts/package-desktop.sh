@@ -43,16 +43,15 @@ STAGE="${RELEASE_DIR}/${NAME}"
 ARCHIVE="${RELEASE_DIR}/${NAME}.tar.gz"
 rm -rf "$STAGE" "$ARCHIVE"
 mkdir -p "$STAGE"
-NOTICES="$PROJECT_ROOT/rust/frontend/LICENSES/THIRD-PARTY-NOTICES.txt"
-if [ ! -f "$NOTICES" ]; then
-    echo "Error: missing $NOTICES; run 'just notices'" >&2
+LICENSE_FILE="$PROJECT_ROOT/rust/frontend/LICENSE.txt"
+if [ ! -f "$LICENSE_FILE" ]; then
+    echo "Error: missing $LICENSE_FILE; run 'just notices'" >&2
     exit 1
 fi
 install -m 0755 "$BIN" "$STAGE/frontend"
-install -m 0644 "$PROJECT_ROOT/COPYING" "$STAGE/COPYING"
-mkdir -p "$STAGE/LICENSES"
-install -m 0644 "$PROJECT_ROOT"/LICENSES/* "$STAGE/LICENSES/"
-install -m 0644 "$NOTICES" "$STAGE/LICENSES/THIRD-PARTY-NOTICES.txt"
+# One file: the frontend's license, the asset notices and every linked
+# crate's license (`just notices`).
+install -m 0644 "$LICENSE_FILE" "$STAGE/LICENSE.txt"
 cat > "$STAGE/README.txt" <<'EOF_README'
 # Zaparoo Frontend (desktop)
 

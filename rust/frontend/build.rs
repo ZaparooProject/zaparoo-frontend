@@ -26,6 +26,7 @@ fn main() {
         "system_color_logos_table.rs",
         "EMBEDDED_COLOR_LOGOS",
     );
+    embed_license();
     // One configuration for every target: fonts imported by the .slint
     // files are embedded as files and registered with the runtime font
     // stack on startup (see `src/fonts.rs`), on MiSTer as on the desktop.
@@ -136,6 +137,22 @@ fn merge_catalogs(base: &str, extra: &str) -> String {
     }
     merged.push('\n');
     merged
+}
+
+/// Writes `$OUT_DIR/LICENSE.txt.deflate`: `LICENSE.txt` (the license and
+/// notices file `just notices` generates) compressed, about a twentieth of
+/// its size, for the Credits screen (`src/credits.rs`) to inflate while it
+/// is open.
+fn embed_license() {
+    let manifest_dir = std::path::PathBuf::from(
+        std::env::var_os("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"),
+    );
+    let source = manifest_dir.join("LICENSE.txt");
+    println!("cargo:rerun-if-changed={}", source.display());
+    let text = std::fs::read(&source).expect("LICENSE.txt; run `just notices`");
+    let packed = miniz_oxide::deflate::compress_to_vec(&text, 10);
+    let out_dir = std::path::PathBuf::from(std::env::var_os("OUT_DIR").expect("OUT_DIR"));
+    std::fs::write(out_dir.join("LICENSE.txt.deflate"), packed).expect("write LICENSE.txt.deflate");
 }
 
 /// Writes `$OUT_DIR/<table_file>`: every `assets/<subdir>/<id>.png` as

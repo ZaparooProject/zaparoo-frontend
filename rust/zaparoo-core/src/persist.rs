@@ -46,6 +46,19 @@ pub struct PersistedState {
     /// as a built-in list keeps (`sort` stays unused).
     pub top_played: UserListState,
     pub music: MusicState,
+    pub credits: CreditsState,
+}
+
+/// The Credits screen: the component selected in its list (by name, so a
+/// dependency change seats on the same crate), the list's top row, and
+/// whether its text was open, read to `scroll_milli` (0..=1000).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct CreditsState {
+    pub selected: String,
+    pub list_top: Option<usize>,
+    pub reading: bool,
+    pub scroll_milli: u32,
 }
 
 /// The Decks screen: the deck focused there.
@@ -1030,11 +1043,11 @@ mod tests {
     )]
 
     use super::{
-        load_from, save_to, DeckState, DecksState, FavoriteSystemsState, FavoritesState,
-        FileBrowserState, GamesState, HubState, HubTarget, ListsState, MusicState, PersistedState,
-        RecentSearch, RecentsState, RenameState, SearchState, SettingsState, SystemFilter,
-        SystemFocus, SystemsState, UserListState, MAX_RECENT_SEARCHES, MAX_SYSTEM_FILTERS,
-        MAX_SYSTEM_FOCUS, SEARCH_SCOPE_BROWSE, SEARCH_SCOPE_FAVORITES,
+        load_from, save_to, CreditsState, DeckState, DecksState, FavoriteSystemsState,
+        FavoritesState, FileBrowserState, GamesState, HubState, HubTarget, ListsState, MusicState,
+        PersistedState, RecentSearch, RecentsState, RenameState, SearchState, SettingsState,
+        SystemFilter, SystemFocus, SystemsState, UserListState, MAX_RECENT_SEARCHES,
+        MAX_SYSTEM_FILTERS, MAX_SYSTEM_FOCUS, SEARCH_SCOPE_BROWSE, SEARCH_SCOPE_FAVORITES,
     };
     use std::thread;
 
@@ -1044,6 +1057,24 @@ mod tests {
         assert_eq!(old.about_scroll_milli, 0);
         let state = PersistedState {
             about_scroll_milli: 1234,
+            ..old
+        };
+        let decoded: PersistedState = toml::from_str(&toml::to_string(&state).unwrap()).unwrap();
+        assert_eq!(decoded, state);
+    }
+
+    #[test]
+    fn credits_state_defaults_for_old_state_and_round_trips() {
+        let old: PersistedState = toml::from_str("active_screen = 'settings'").unwrap();
+        assert_eq!(old.credits, CreditsState::default());
+        let state = PersistedState {
+            active_screen: "credits".into(),
+            credits: CreditsState {
+                selected: "serde".into(),
+                list_top: Some(12),
+                reading: true,
+                scroll_milli: 400,
+            },
             ..old
         };
         let decoded: PersistedState = toml::from_str(&toml::to_string(&state).unwrap()).unwrap();
@@ -1256,6 +1287,12 @@ mod tests {
                 library_selected_at_level: vec!["/music/a.mp3".into()],
                 library_list_top_at_level: vec![0],
             },
+            credits: CreditsState {
+                selected: "tokio".into(),
+                list_top: Some(3),
+                reading: true,
+                scroll_milli: 250,
+            },
         };
         save_to(&path, &original);
         let loaded = load_from(&path);
@@ -1441,6 +1478,7 @@ resolution = "1920x1080"
                             deck: DeckState::default(),
                             top_played: UserListState::default(),
                             music: MusicState::default(),
+                            credits: CreditsState::default(),
                         };
                         save_to(&path, &state);
                     }

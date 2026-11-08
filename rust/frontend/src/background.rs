@@ -83,6 +83,7 @@ fn has_card(screen: Screen) -> bool {
                 | Screen::TopPlayedSystems
                 | Screen::Settings
                 | Screen::About
+                | Screen::Credits
                 | Screen::Music
                 | Screen::FileBrowser
         )

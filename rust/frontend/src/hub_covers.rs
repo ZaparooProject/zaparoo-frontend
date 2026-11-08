@@ -327,6 +327,7 @@ pub fn seed_startup(ctx: &std::sync::Arc<Ctx>, app: &crate::App) -> crate::scope
                 | "search-results"
                 | "settings"
                 | "about"
+                | "credits"
         )
     };
     let deferred = if foreground {

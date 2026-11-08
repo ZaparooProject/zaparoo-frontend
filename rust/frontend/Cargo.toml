@@ -92,6 +92,9 @@ semver = { workspace = true }
 # `bmp` is here for the user's own override artwork; the bundled art is
 # all PNG. See docs/customization.md for the accepted types.
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "bmp"] }
+# Inflates the embedded LICENSE.txt for the Credits screen; already in the
+# graph through png and flate2, so no new crate ships.
+miniz_oxide = "0.9"
 # Same version Slint 1.18's own crates resolve, so the binary carries one
 # SVG stack; moves only with a Slint bump.
 resvg = { version = "0.48", default-features = false }
@@ -131,6 +134,9 @@ toml.workspace = true
 
 [build-dependencies]
 slint-build = "=1.18.0"
+# Compresses LICENSE.txt for the Credits screen; the same crate (already
+# in the graph through png and flate2) inflates it at runtime.
+miniz_oxide = "0.9"
 
 [lints]
 workspace = true

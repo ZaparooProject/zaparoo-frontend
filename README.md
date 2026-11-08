@@ -49,7 +49,7 @@ Third-party components:
 - **Slint** UI toolkit: used under the Slint Software License, which covers
   embedded distribution. The license text and the notices for every Rust
   crate linked into the binary are in
-  [`rust/frontend/LICENSES/THIRD-PARTY-NOTICES.txt`](rust/frontend/LICENSES/THIRD-PARTY-NOTICES.txt).
+  [`rust/frontend/LICENSE.txt`](rust/frontend/LICENSE.txt).
 - **Noto Sans** fonts: SIL Open Font License 1.1, © The Noto Project Authors.
   See [`LICENSES/NotoSans-ATTRIBUTION.txt`](LICENSES/NotoSans-ATTRIBUTION.txt)
   and [`LICENSES/NotoSans-OFL.txt`](LICENSES/NotoSans-OFL.txt).
@@ -80,4 +80,7 @@ Third-party components:
 - **Noun Project icons** used in 2-player system logo composites. See
   [`LICENSES/NounProject-ATTRIBUTION.txt`](LICENSES/NounProject-ATTRIBUTION.txt).
 
-See all bundled asset and third-party notices in [`LICENSES/`](LICENSES/).
+The attribution sources live in [`LICENSES/`](LICENSES/). `just notices` combines
+them with `COPYING` and the crate notices into
+[`rust/frontend/LICENSE.txt`](rust/frontend/LICENSE.txt), the one license file the
+release bundles ship. The app shows the same text in Settings > About > Credits.

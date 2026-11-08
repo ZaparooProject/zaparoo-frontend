@@ -22,6 +22,7 @@ mod context_page;
 mod controllers;
 mod core_ui;
 mod cover_fade;
+mod credits;
 mod cue;
 #[cfg(not(feature = "hosted"))]
 mod curl;
@@ -1073,6 +1074,7 @@ fn run_application(
     rename::bind(&ctx, &app);
     ra_login::bind(&ctx, &app);
     file_browser::bind(&ctx, &app);
+    credits::bind(&ctx, &app);
     music::bind(&ctx, &app);
     settings::bind_input(&ctx, &app);
     media_setup::bind_input(&ctx, &app);
@@ -1157,12 +1159,12 @@ fn run_application(
 /// `MainLayout`'s `coreIndependentStartupVisible` path paints them.
 fn restore_core_independent(ctx: &Arc<Ctx>, app: &App) {
     let target = lock(&ctx.shared).persist.active_screen.clone();
-    if matches!(target.as_str(), "settings" | "about") {
+    if matches!(target.as_str(), "settings" | "about" | "credits") {
         lock(&ctx.shared).restore_pending = false;
-        if target == "settings" {
-            settings::enter(ctx, app, EntryMode::Restore);
-        } else {
-            router::enter_about(ctx, app, EntryMode::Restore);
+        match target.as_str() {
+            "settings" => settings::enter(ctx, app, EntryMode::Restore),
+            "about" => router::enter_about(ctx, app, EntryMode::Restore),
+            _ => credits::enter(ctx, app, EntryMode::Restore),
         }
     }
 }
@@ -2208,13 +2210,14 @@ fn restores_screen(active_screen: &str) -> bool {
             | "music"
             | "settings"
             | "about"
+            | "credits"
     )
 }
 
 /// Whether a start with this saved screen opens behind the curtain.
 fn boot_curtain_for(active_screen: &str, has_saved_state: bool) -> bool {
     match active_screen {
-        "settings" | "about" => false,
+        "settings" | "about" | "credits" => false,
         "systems" | "favorite-systems" | "games" | "favorites" | "recents" | "decks" | "deck"
         | "top-played" | "top-played-systems" | "search" | "search-results" | "rename"
         | "file-browser" | "music" => true,
@@ -2305,6 +2308,15 @@ fn restore_collection(ctx: &Arc<Ctx>, app: &App, target: &str) {
     }
 }
 
+/// Settings and the screens it opens restore without a parent screen.
+fn restore_settings(ctx: &Arc<Ctx>, app: &App, target: &str) {
+    match target {
+        "about" => router::enter_about(ctx, app, EntryMode::Restore),
+        "credits" => credits::enter(ctx, app, EntryMode::Restore),
+        _ => settings::enter(ctx, app, EntryMode::Restore),
+    }
+}
+
 fn restore_target(ctx: &Arc<Ctx>, app: &App) {
     let (target, category, system_id, entered_from_hub) = {
         let shared = lock(&ctx.shared);
@@ -2359,12 +2371,8 @@ fn restore_target(ctx: &Arc<Ctx>, app: &App) {
             return;
         }
         "music" => return music::restore(ctx, app),
-        "settings" => {
-            settings::enter(ctx, app, EntryMode::Restore);
-            return;
-        }
-        "about" => {
-            router::enter_about(ctx, app, EntryMode::Restore);
+        "settings" | "about" | "credits" => {
+            restore_settings(ctx, app, &target);
             return;
         }
         _ => {}
@@ -2442,10 +2450,12 @@ mod tests {
             assert!(boot_curtain_for(screen, false), "{screen}");
             assert!(restores_screen(screen), "{screen} is restored");
         }
-        assert!(restores_screen("settings") && restores_screen("about"));
+        assert!(
+            restores_screen("settings") && restores_screen("about") && restores_screen("credits")
+        );
         assert!(!restores_screen("hub") && !restores_screen("screen-from-the-future"));
         // Settings and About paint final without Core.
-        for screen in ["settings", "about"] {
+        for screen in ["settings", "about", "credits"] {
             assert!(!boot_curtain_for(screen, true), "{screen}");
         }
         // A Hub relaunch waits for Core; a first start paints optimistically.

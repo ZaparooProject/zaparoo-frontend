@@ -180,6 +180,61 @@ fn mirror_file_browser(primary: &App, crt: &App) {
     }
 }
 
+/// Credits at the CRT head's own geometry: its list fitted to the CRT
+/// scene, showing the slice of the HDMI list around the focus, and the
+/// reading page at the same point of its text.
+fn mirror_credits(primary: &App, crt: &App) {
+    let source = primary.global::<crate::CreditsView>();
+    let target = crt.global::<crate::CreditsView>();
+    copy_properties!(source, target;
+        get_page => set_page,
+        get_focus_ready => set_focus_ready,
+        get_count => set_count,
+        get_current_index => set_current_index,
+        get_title => set_title,
+        get_blocks => set_blocks,
+        get_scroll_milli => set_scroll_milli,
+    );
+    let sizing = crt.global::<crate::Sizing>();
+    let scene = crate::sizing::Scene::of(
+        crt,
+        f64::from(sizing.get_screen_width()),
+        f64::from(sizing.get_screen_height()),
+        true,
+    );
+    let g = crate::games::list_geometry_for(
+        &scene.inputs(),
+        false,
+        0,
+        zaparoo_app::media_list::list_visible_rows(true, false),
+    );
+    let capacity = i32::try_from(g.visible_rows.max(1)).unwrap_or(1);
+    let (rows, selected, _) = project_page(
+        &source.get_list_rows(),
+        &target.get_list_rows(),
+        source.get_list_sel(),
+        capacity,
+    );
+    if let Some(rows) = rows {
+        target.set_list_rows(rows);
+    }
+    set_if_changed!(target, get_list_sel => set_list_sel, selected);
+    set_if_changed!(target, get_list_view_top => set_list_view_top, 0);
+    set_if_changed!(target, get_list_scroll_top => set_list_scroll_top, 0);
+    set_if_changed!(target, get_list_glide => set_list_glide, false);
+    copy_properties!(source, target;
+        get_list_page => set_list_page,
+        get_list_total_pages => set_list_total_pages,
+        get_has_items_above => set_has_items_above,
+        get_has_items_below => set_has_items_below,
+    );
+    target.set_list_x(g.card_x as f32);
+    target.set_list_y(g.card_y as f32);
+    target.set_list_width(g.card_width as f32);
+    target.set_list_height(g.card_height as f32);
+    target.set_list_row_height(g.row_height as f32);
+}
+
 /// The music player at the CRT head's own geometry: the now-playing card
 /// and its list solved for the CRT scene, showing the slice of the HDMI
 /// list around the focus.
@@ -776,6 +831,7 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
     );
 
     mirror_file_browser(primary, crt);
+    mirror_credits(primary, crt);
     mirror_music(primary, crt);
 
     let source = primary.global::<GamesView>();

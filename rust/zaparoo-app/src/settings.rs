@@ -237,6 +237,7 @@ const TOGGLES: &[&str] = &[
 
 const NAVIGATES: &[&str] = &[
     "aboutLicense",
+    "credits",
     "documentation",
     "crtCalibration",
     "pageAppearance",
@@ -535,6 +536,7 @@ pub fn page_rows(page: &str, inputs: &Inputs) -> Vec<Row> {
             let mut rows = vec![
                 field("pairDevice"),
                 field("aboutLicense"),
+                field("credits"),
                 field("documentation"),
                 field("debugLogging"),
             ];
@@ -1131,6 +1133,7 @@ mod tests {
         assert_eq!(control("showHidden"), Control::Toggle);
         assert_eq!(control("reduceMotion"), Control::Toggle);
         assert_eq!(control("aboutLicense"), Control::Navigate);
+        assert_eq!(control("credits"), Control::Navigate);
         assert_eq!(control("documentation"), Control::Navigate);
         assert_eq!(control("crtCalibration"), Control::Navigate);
         assert_eq!(control("pageDisplayInterface"), Control::Navigate);
@@ -1320,6 +1323,7 @@ mod tests {
             vec![
                 "pairDevice",
                 "aboutLicense",
+                "credits",
                 "documentation",
                 "debugLogging",
                 "uploadLog"

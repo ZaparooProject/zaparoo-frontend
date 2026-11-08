@@ -8,8 +8,8 @@
 // logic; forward orchestration lives in the router.
 
 import { Theme, Backdrop, GlassCard, Sizing, Motion, Layout } from "theme.slint";
-import { CoreUiKind, MenuRole, UserFlag, RenamePurpose, ContextPage, KeyKind, SearchZone, SearchPane, SearchScope, FileBrowserMode, MusicPage, MusicControl, PlaybackState, RepeatMode, MusicUnavailable, Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, DeviceValue, PairFailure, PairSearch, PadFill, HeaderPad, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, StateTokens, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, HeaderLogo, DialogKind, DialogButton, ErrorKind, ManualState, ManualFit, RaLoginStep, RaLoginStatus, LauncherPrefsPage, LauncherPrefsRowKind } from "state_types.slint";
-export { CoreUiKind, MenuRole, UserFlag, RenamePurpose, ContextPage, KeyKind, SearchZone, SearchPane, SearchScope, FileBrowserMode, MusicPage, MusicControl, PlaybackState, RepeatMode, MusicUnavailable, Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, DeviceValue, PairFailure, PairSearch, PadFill, HeaderPad, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, HeaderLogo, DialogKind, DialogButton, ErrorKind, ManualState, ManualFit, RaLoginStep, RaLoginStatus, LauncherPrefsPage, LauncherPrefsRowKind }
+import { CoreUiKind, MenuRole, UserFlag, RenamePurpose, ContextPage, KeyKind, SearchZone, SearchPane, SearchScope, FileBrowserMode, CreditsPage, MusicPage, MusicControl, PlaybackState, RepeatMode, MusicUnavailable, Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, DeviceValue, PairFailure, PairSearch, PadFill, HeaderPad, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, StateTokens, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, HeaderLogo, DialogKind, DialogButton, ErrorKind, ManualState, ManualFit, RaLoginStep, RaLoginStatus, LauncherPrefsPage, LauncherPrefsRowKind } from "state_types.slint";
+export { CoreUiKind, MenuRole, UserFlag, RenamePurpose, ContextPage, KeyKind, SearchZone, SearchPane, SearchScope, FileBrowserMode, CreditsPage, MusicPage, MusicControl, PlaybackState, RepeatMode, MusicUnavailable, Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, DeviceValue, PairFailure, PairSearch, PadFill, HeaderPad, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, HeaderLogo, DialogKind, DialogButton, ErrorKind, ManualState, ManualFit, RaLoginStep, RaLoginStatus, LauncherPrefsPage, LauncherPrefsRowKind }
 import { FastScrollRail, GlyphSource, Brand, Buttons, HelpEntry, Status, HeaderBar, StatusLine, ProgressTrack, WaitCue, TopStatusStrip, FooterIndicator, ActiveLabel, HelpBar, SectionHeader, Divider, ScrollCue, ModalShell, QrPlate, StateCue } from "chrome.slint";
 import { GridCell, MarqueeCaption, PressableSurface, Tile, PagedGridView, PageStrip } from "tiles.slint";
 import { ScrollOffset, SelectionCursor, SelectionClip, FocusCursor } from "focus.slint";
@@ -35,6 +35,8 @@ import { RaLoginView, RaLoginInput, RaLoginScreen } from "ra_login.slint";
 export { RaLoginView, RaLoginInput }
 import { FileBrowserView, FileBrowserInput, FileBrowserScreen } from "file_browser.slint";
 export { FileBrowserView, FileBrowserInput }
+import { CreditsView, CreditsInput, CreditsBlock, CreditsScreen } from "credits.slint";
+export { CreditsView, CreditsInput, CreditsBlock }
 import { MusicView, MusicInput, MusicScreen, MusicButton, MusicLabels } from "music.slint";
 export { MusicView, MusicInput, MusicButton }
 import { UpdateView, UpdatePage, UpdateButton, UpdateOutcome, UpdateStatusKind, UpdateError, UpdateLinuxPhase, UpdateFilter, UpdateRowKind, UpdateRowStatus, UpdateFolderKind, UpdateHelpLabel, UpdateCounts, UpdateRow, UpdateMembership, UpdateHelp } from "update_view.slint";
@@ -3435,6 +3437,8 @@ component RouteScreen inherits Rectangle {
 
     if root.screen-token == Screen.about: AboutScreen {}
 
+    if root.screen-token == Screen.credits: CreditsScreen {}
+
     if root.screen-token == Screen.update: UpdateScreen {}
 
     if root.screen-token == Screen.search: SearchScreen {}
@@ -3521,6 +3525,9 @@ export component App inherits Window {
         if (Shell.active-screen == Screen.ra-login) { return @tr("RetroAchievements"); }
         if (Shell.active-screen == Screen.file-browser) {
             return FileBrowserView.places ? @tr("Places") : FileBrowserView.title;
+        }
+        if (Shell.active-screen == Screen.credits) {
+            return CreditsView.page == CreditsPage.reading ? CreditsView.title : @tr("Credits");
         }
         if (Shell.active-screen == Screen.music) {
             return MusicView.page == MusicPage.library
@@ -4337,6 +4344,20 @@ export component App inherits Window {
         }
         if (Shell.active-screen == Screen.about) {
             if (AboutView.maximum-scroll-milli <= 0) { return [{ buttons: ["ButtonB"], label: @tr("Back") }]; }
+            return [
+                { buttons: ["DpadUp", "DpadDown"], label: @tr("Scroll") },
+                { buttons: ["ButtonB"], label: @tr("Back") },
+            ];
+        }
+        if (Shell.active-screen == Screen.credits) {
+            if (CreditsView.page == CreditsPage.list) {
+                return [
+                    self.move-cue(CreditsView.list-total-pages),
+                    { buttons: ["ButtonA"], label: @tr("Open") },
+                    { buttons: ["ButtonB"], label: @tr("Back") },
+                ];
+            }
+            if (CreditsView.maximum-scroll-milli <= 0) { return [{ buttons: ["ButtonB"], label: @tr("Back") }]; }
             return [
                 { buttons: ["DpadUp", "DpadDown"], label: @tr("Scroll") },
                 { buttons: ["ButtonB"], label: @tr("Back") },

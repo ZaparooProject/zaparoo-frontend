@@ -1,0 +1,217 @@
+// Zaparoo Frontend
+// Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
+// SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
+//
+// The Credits screen: every component the frontend is built from as a
+// browse list, and one component's license text on a reading page in the
+// same card. Pure view; the driver is `src/credits.rs`. The list is the
+// file browser's (the browse list, the strip and footer cues); the reading
+// page scrolls as About does, in thousandths of its range.
+
+import { Theme, Backdrop, GlassCard, Sizing, Layout, Motion } from "theme.slint";
+import { TopStatusStrip, FooterIndicator, ScrollCue } from "chrome.slint";
+import { GridCell } from "tiles.slint";
+import { BrowseList } from "browse_list.slint";
+import { CreditsPage } from "state_types.slint";
+
+// One block of the reading page: a license's name, or a paragraph.
+export struct CreditsBlock {
+    text: string,
+    heading: bool,
+}
+
+export global CreditsView {
+    in-out property <CreditsPage> page: CreditsPage.list;
+    in-out property <bool> focus-ready: false;
+    in-out property <int> count: 0;
+    in-out property <int> current-index: 0;
+    // The list, on the shared browse list.
+    in-out property <[GridCell]> list-rows;
+    in-out property <int> list-view-top: 0;
+    in-out property <int> list-scroll-top: 0;
+    in-out property <int> list-sel: -1;
+    in-out property <bool> list-glide: true;
+    in-out property <int> list-step-ms: 0;
+    in-out property <length> list-x: 0px;
+    in-out property <length> list-y: 0px;
+    in-out property <length> list-width: 0px;
+    in-out property <length> list-height: 0px;
+    in-out property <length> list-row-height: 0px;
+    in-out property <int> list-page: 0;
+    in-out property <int> list-total-pages: 1;
+    in-out property <bool> has-items-above: false;
+    in-out property <bool> has-items-below: false;
+    // The reading page: the component's name and its text.
+    in-out property <string> title;
+    in-out property <[CreditsBlock]> blocks;
+    // Thousandths of the scroll range, as on About, so both heads reach
+    // the same end whatever their wrapping.
+    in-out property <int> scroll-milli: 0;
+    in-out property <int> maximum-scroll-milli: 0;
+    // The text box's height, in thousandths of the screen's: one page.
+    in-out property <int> page-milli: 0;
+    callback scroll-requested(int);
+    // `delta` in thousandths of the screen's height.
+    public function move(delta: int) {
+        CreditsView.scroll-requested(Math.max(0, Math.min(1000,
+            Math.min(1000, CreditsView.scroll-milli)
+                + Math.round(delta * 1000 / Math.max(1, CreditsView.maximum-scroll-milli)))));
+    }
+}
+
+export global CreditsInput {
+    callback hovered(int);
+    callback clicked(int);
+    callback wheel(int);
+    callback page-requested(int);
+}
+
+component ReadingPage inherits Rectangle {
+    property <length> pad: Sizing.surface-pad;
+    // The CRT's scroll cues get a band inside the lip, as on About.
+    property <length> arrow: Sizing.pct-h(3);
+    property <length> arrow-band: Sizing.crt ? root.arrow + Sizing.pct-h(0.5) : 0px;
+    out property <length> maximum-scroll: Math.max(0px, content.preferred-height - viewport.height);
+    // Whole pixels, so the bitmap face's labels stay on the grid.
+    out property <length> scroll-y: Sizing.snap(Math.min(root.maximum-scroll,
+        CreditsView.scroll-milli * root.maximum-scroll / 1000));
+    property <length> shown-y: root.scroll-y;
+    animate shown-y { duration: body-touch.pressed ? 0ms : Motion.dur(Motion.page-ms); easing: ease-out; }
+    changed maximum-scroll => {
+        CreditsView.maximum-scroll-milli = Math.ceil(root.maximum-scroll / Math.max(1px, Sizing.screen-height) * 1000);
+    }
+    changed height => {
+        CreditsView.page-milli = Math.floor(viewport.height * 0.9 / Math.max(1px, Sizing.screen-height) * 1000);
+    }
+    init => {
+        CreditsView.page-milli = Math.floor(viewport.height * 0.9 / Math.max(1px, Sizing.screen-height) * 1000);
+    }
+
+    viewport := Rectangle {
+        x: root.pad;
+        y: root.pad + root.arrow-band;
+        width: parent.width - 2 * root.pad;
+        height: Math.max(0px, parent.height - 2 * self.y);
+        clip: true;
+        content := VerticalLayout {
+            y: -root.shown-y;
+            height: self.preferred-height;
+            spacing: Sizing.snap(Sizing.pct-h(1.5));
+            for block in CreditsView.blocks: Text {
+                text: block.text;
+                font-size: block.heading ? Sizing.font-caption : Sizing.font-body;
+                color: block.heading ? Theme.text-label : Theme.text-primary;
+                wrap: word-wrap;
+            }
+        }
+        body-touch := TouchArea {
+            property <length> drag-y;
+            property <int> drag-scroll;
+            pointer-event(event) => {
+                if (event.kind == PointerEventKind.down && event.button == PointerEventButton.left) {
+                    self.drag-y = self.mouse-y;
+                    self.drag-scroll = CreditsView.scroll-milli;
+                }
+            }
+            changed mouse-y => {
+                if (self.pressed) {
+                    CreditsView.scroll-requested(Math.max(0, Math.min(1000, self.drag-scroll
+                        - Math.round((self.mouse-y - self.drag-y) / Math.max(1px, root.maximum-scroll) * 1000))));
+                }
+            }
+            scroll-event(event) => {
+                CreditsView.move(Math.round(-event.delta-y / Math.max(1px, Sizing.screen-height) * 1000));
+                return accept;
+            }
+        }
+    }
+    for below in [false, true]: ScrollCue {
+        x: (parent.width - self.width) / 2;
+        y: below ? parent.height - root.pad - root.arrow : root.pad;
+        width: root.arrow;
+        visible: Sizing.crt && root.maximum-scroll > 0px;
+        glyph: below ? "icons/ScrollDown" : "icons/ScrollUp";
+        live: below ? root.scroll-y < root.maximum-scroll : root.scroll-y > 0px;
+    }
+}
+
+export component CreditsScreen inherits Rectangle {
+    property <bool> reading: CreditsView.page == CreditsPage.reading;
+    property <bool> page-cue-in-footer: Layout.page-cue-in-footer;
+    property <bool> show-top-page-cue: !root.page-cue-in-footer;
+    // The footer band, as on Systems.
+    property <length> label-y: root.height - (Sizing.tier-240 ? Sizing.help-bar-height : Layout.active-label-bottom-margin) - Layout.active-label-height;
+
+    TopStatusStrip {
+        x: 0;
+        y: Sizing.header-bottom + Layout.top-margin;
+        height: Layout.strip-height;
+        slot-margin: Layout.slot-margin;
+        title: root.reading ? CreditsView.title : @tr("Credits");
+        current-page: CreditsView.list-page;
+        total-pages: CreditsView.list-total-pages;
+        show-page-counter: root.reading ? !Sizing.crt : root.show-top-page-cue;
+        page-indicator-mode: root.reading || root.show-top-page-cue;
+        item-position-mode: !root.reading;
+        percent-mode: root.reading;
+        fraction: reader.maximum-scroll > 0px ? reader.scroll-y / reader.maximum-scroll : 0;
+        current-item: CreditsView.current-index;
+        total-items: CreditsView.count;
+        page-indicator-chevron-size: Layout.grid-page-chevron-size;
+        has-pages-above: root.reading ? reader.scroll-y > 0px : CreditsView.has-items-above;
+        has-pages-below: root.reading ? reader.scroll-y < reader.maximum-scroll : CreditsView.has-items-below;
+        visible: Layout.top-strip-visible;
+        page-requested(delta) => { CreditsInput.page-requested(delta); }
+    }
+
+    GlassCard {
+        x: CreditsView.list-x;
+        y: CreditsView.list-y;
+        width: CreditsView.list-width;
+        height: CreditsView.list-height;
+        radius: Layout.card-radius;
+    }
+
+    if !root.reading: BrowseList {
+        x: CreditsView.list-x;
+        y: CreditsView.list-y;
+        width: CreditsView.list-width;
+        height: CreditsView.list-height;
+        show-chrome: true;
+        glass: Backdrop.glass;
+        rows: CreditsView.list-rows;
+        model-top: CreditsView.list-view-top;
+        glide: CreditsView.list-glide;
+        step: CreditsView.list-step-ms * 1ms;
+        scroll-top: CreditsView.list-scroll-top;
+        scope: "credits";
+        selected: CreditsView.list-sel;
+        focus-ready: CreditsView.focus-ready;
+        row-height: CreditsView.list-row-height;
+        row-hovered(i) => { CreditsInput.hovered(i); }
+        row-clicked(i) => { CreditsInput.clicked(i); }
+        wheel(delta) => { CreditsInput.wheel(delta); }
+    }
+
+    reader := ReadingPage {
+        x: CreditsView.list-x;
+        y: CreditsView.list-y;
+        width: CreditsView.list-width;
+        height: CreditsView.list-height;
+        visible: root.reading;
+    }
+
+    FooterIndicator {
+        right-margin: Layout.bottom-status-right-margin;
+        cue-y: Sizing.snap(root.label-y + (Layout.active-label-height - self.height) / 2) - Sizing.label-raise;
+        current-page: CreditsView.list-page;
+        total-pages: CreditsView.list-total-pages;
+        item-position-mode: true;
+        current-item: CreditsView.current-index;
+        total-items: CreditsView.count;
+        has-pages-above: CreditsView.has-items-above;
+        has-pages-below: CreditsView.has-items-below;
+        visible: !root.reading && root.page-cue-in-footer;
+        page-requested(delta) => { CreditsInput.page-requested(delta); }
+    }
+}

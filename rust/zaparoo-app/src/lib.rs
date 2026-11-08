@@ -24,6 +24,7 @@ pub mod controllers;
 pub mod core_ui;
 pub mod cover_landing;
 pub mod covers;
+pub mod credits;
 pub mod customization;
 pub mod file_browser;
 pub mod folder_picker;
