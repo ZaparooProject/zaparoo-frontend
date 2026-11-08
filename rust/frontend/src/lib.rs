@@ -412,6 +412,7 @@ fn merge_config_settings(
     if let Some(v) = &c.region {
         s.region.clone_from(v);
     }
+    s.mister_names = c.mister_names.unwrap_or(s.mister_names);
     if let Some(v) = &c.crt_video_standard {
         s.crt_video_standard = zaparoo_core::config::normalize_crt_video_standard(v).to_string();
     }
@@ -1049,6 +1050,10 @@ fn run_application(
         if let Some(fault) = &config.fault {
             shared.config_fault = Some(fault.path().display().to_string());
             shared.hub.read_only = true;
+        }
+        // names.txt renames systems on the first frame, so read it now.
+        if ctx.is_mister && shared.persist.settings.mister_names {
+            systems::load_mister_names(&mut shared);
         }
     }
     // User customization: the name table applies at once, the artwork
@@ -2631,6 +2636,7 @@ mod tests {
             swap_confirm_cancel: true,
             swap_options_view: true,
             region: "jp".to_string(),
+            mister_names: true,
             crt_video_standard: "pal".to_string(),
             crt_h_offset: 2,
             crt_v_offset: -1,

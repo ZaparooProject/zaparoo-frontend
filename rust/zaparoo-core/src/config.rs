@@ -221,6 +221,7 @@ pub struct SettingsConfig {
     /// Systems grid hide/unhide — unrelated to the Hub, unchanged.
     pub hidden_system_ids: Vec<String>,
     pub region: Option<String>,
+    pub mister_names: Option<bool>,
     pub crt_video_standard: Option<String>,
     pub crt_h_offset: Option<i32>,
     pub crt_v_offset: Option<i32>,
@@ -267,6 +268,7 @@ pub struct SettingsMirror<'a> {
     pub swap_confirm_cancel: bool,
     pub swap_options_view: bool,
     pub region: &'a str,
+    pub mister_names: bool,
     pub crt_video_standard: &'a str,
     pub crt_h_offset: i32,
     pub crt_v_offset: i32,
@@ -461,6 +463,7 @@ struct RawSettings {
     #[serde(default)]
     hidden_system_ids: Vec<String>,
     region: Option<String>,
+    mister_names: Option<bool>,
     crt_video_standard: Option<String>,
     crt_h_offset: Option<i32>,
     crt_v_offset: Option<i32>,
@@ -636,6 +639,7 @@ fn settings_config_from_raw(raw: RawSettings) -> SettingsConfig {
         hidden_categories: normalize_string_list(raw.hidden_categories),
         hidden_system_ids: normalize_string_list(raw.hidden_system_ids),
         region: trim_opt(raw.region),
+        mister_names: raw.mister_names,
         crt_video_standard: trim_opt(raw.crt_video_standard),
         crt_h_offset: raw.crt_h_offset,
         crt_v_offset: raw.crt_v_offset,
@@ -887,6 +891,7 @@ pub fn save_settings_mirror(path: &Path, mirror: SettingsMirror<'_>) -> Result<(
     set_bool(settings, "swap_confirm_cancel", mirror.swap_confirm_cancel);
     set_bool(settings, "swap_options_view", mirror.swap_options_view);
     set_str(settings, "region", mirror.region.trim());
+    set_bool(settings, "mister_names", mirror.mister_names);
     set_str(
         settings,
         "crt_video_standard",
@@ -1159,6 +1164,7 @@ mod tests {
             swap_confirm_cancel: false,
             swap_options_view: false,
             region: "auto",
+            mister_names: false,
             crt_video_standard: "ntsc",
             crt_h_offset: 0,
             crt_v_offset: 0,
@@ -1320,6 +1326,15 @@ mod tests {
         let f = write_tmp("[settings]\nregion = \"jp\"\n");
         let cfg = load_config(f.path());
         assert_eq!(cfg.settings.region.as_deref(), Some("jp"));
+    }
+
+    #[test]
+    fn mister_names_setting_round_trips() {
+        let f = write_tmp("[settings]\nmister_names = true\n");
+        let cfg = load_config(f.path());
+        assert_eq!(cfg.settings.mister_names, Some(true));
+        let f = write_tmp("[settings]\nregion = \"jp\"\n");
+        assert_eq!(load_config(f.path()).settings.mister_names, None);
     }
 
     #[test]
@@ -1729,6 +1744,7 @@ mod tests {
                 swap_confirm_cancel: true,
                 swap_options_view: true,
                 region: "us",
+                mister_names: true,
                 crt_video_standard: "pal",
                 crt_h_offset: -3,
                 crt_v_offset: 1,
@@ -1775,6 +1791,7 @@ mod tests {
         assert_eq!(cfg.settings.swap_confirm_cancel, Some(true));
         assert_eq!(cfg.settings.swap_options_view, Some(true));
         assert_eq!(cfg.settings.region.as_deref(), Some("us"));
+        assert_eq!(cfg.settings.mister_names, Some(true));
         assert_eq!(cfg.settings.crt_video_standard.as_deref(), Some("pal"));
         assert_eq!(cfg.settings.crt_h_offset, Some(-3));
         assert_eq!(cfg.settings.crt_v_offset, Some(1));
@@ -1824,6 +1841,7 @@ mod tests {
                 swap_confirm_cancel: false,
                 swap_options_view: false,
                 region: "auto",
+                mister_names: false,
                 crt_video_standard: "ntsc",
                 crt_h_offset: 0,
                 crt_v_offset: 0,
@@ -1892,6 +1910,7 @@ mod tests {
             swap_confirm_cancel: false,
             swap_options_view: false,
             region: "auto",
+            mister_names: false,
             // Out-of-range offsets and an unknown standard must be
             // normalised on the way to disk, not written verbatim.
             crt_video_standard: "secam",

@@ -368,6 +368,26 @@ punctuation (`snes`, `SNES`, and `S.N.E.S` all resolve to the same entry). An
 override here takes priority over the built-in regional names and the name
 reported by Zaparoo Core.
 
+### MiSTer names.txt
+
+On MiSTer, Settings > Language > MiSTer names.txt (off by default, saved as
+`mister_names` under `[settings]`) uses the system names from
+`/media/fat/names.txt`, the file MiSTer's own menu uses to rename cores. The
+file is read once at startup, or when the setting is turned on; edits to it
+show after the frontend restarts.
+
+Each `key: name` line names the system whose id matches the key, with the
+same forgiving match as `[custom.system_names]`. MiSTer keys are core names,
+so a key only applies where the core name matches a system id: `SNES:`
+renames SNES, but `Gameboy:` renames only Game Boy and leaves Game Boy Color
+on its usual name, and a core name that differs from its system id (such as
+`MegaDrive:` for Genesis) matches nothing. Any system without a matching
+line, or every system when the file is missing, keeps its usual name.
+
+Names are chosen in this order: `[custom.system_names]`, then names.txt
+when the setting is on, then the built-in regional names, then the name
+reported by Zaparoo Core. The Region setting still picks the regional logos.
+
 ## Config file locations
 
 - **MiSTer:** `/media/fat/zaparoo/frontend.toml`

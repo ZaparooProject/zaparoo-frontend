@@ -96,6 +96,39 @@ pub fn region(shared: &Shared) -> Region {
     rules::resolve_region(&shared.persist.settings.region, &locale)
 }
 
+/// Where `Main_MiSTer` keeps its core display names.
+const MISTER_NAMES_PATH: &str = "/media/fat/names.txt";
+
+/// Read `names.txt` into `shared` once; a missing or unreadable file
+/// leaves an empty table, so every system keeps its usual name.
+pub(crate) fn load_mister_names(shared: &mut Shared) {
+    if shared.mister_names.is_some() {
+        return;
+    }
+    let names = match std::fs::read(MISTER_NAMES_PATH) {
+        Ok(bytes) => rules::parse_mister_names(&String::from_utf8_lossy(&bytes)),
+        Err(err) => {
+            tracing::info!("names.txt: {MISTER_NAMES_PATH} not read: {err}");
+            std::collections::HashMap::new()
+        }
+    };
+    shared.mister_names = Some(names);
+}
+
+/// The name sources the settings select: the region's bundled names, and
+/// `names.txt` ahead of them when it is on (`MiSTer` only).
+fn name_sources(shared: &Shared) -> rules::NameSources<'_> {
+    rules::NameSources {
+        region: region(shared),
+        mister_names: shared
+            .persist
+            .settings
+            .mister_names
+            .then_some(shared.mister_names.as_ref())
+            .flatten(),
+    }
+}
+
 /// The user's logo preferences, read once per render for screens that
 /// draw a system's logo from its id.
 #[derive(Clone, Copy)]
@@ -145,7 +178,7 @@ pub fn project(shared: &Shared, category: &str) -> Vec<SystemRow> {
         category,
         &shared.hidden_system_ids,
         shared.show_hidden,
-        region(shared),
+        name_sources(shared),
         &user_name,
     )
 }
@@ -156,7 +189,7 @@ fn project_favorites(shared: &Shared) -> Vec<SystemRow> {
         &shared.systems_model.favorites,
         &shared.hidden_system_ids,
         shared.show_hidden,
-        region(shared),
+        name_sources(shared),
         &user_name,
     )
 }
@@ -175,7 +208,7 @@ pub fn display_name(shared: &Shared, id: &str) -> String {
         .find(|s| s.id == id)
         .map_or_else(|| id.to_string(), |s| s.name.clone());
     let user = user_name(id);
-    rules::display_name(id, &fallback, region(shared), user.as_deref())
+    rules::display_name(id, &fallback, name_sources(shared), user.as_deref())
 }
 
 fn catalog_entry(shared: &Shared, id: &str) -> Option<SystemInfo> {
@@ -393,7 +426,7 @@ fn project_top(shared: &Shared) -> Vec<SystemRow> {
         &shared.systems_model.top,
         &shared.hidden_system_ids,
         shared.show_hidden,
-        region(shared),
+        name_sources(shared),
         &user_name,
     )
 }
@@ -909,8 +942,10 @@ pub(crate) fn warm_logos(ctx: &Ctx, app: &App) {
         let focus = focus_bounds(app, &shared, &geometry);
         let style = &shared.persist.settings.system_logo_style;
         let built_from = format!(
-            "{style}|{list}|{bounds:?}|{focus:?}|{:?}|{}|{}|{}|{:?}",
+            "{style}|{list}|{bounds:?}|{focus:?}|{:?}|{}|{}|{}|{}|{:?}",
             region(&shared),
+            // names.txt renames re-sort a category, changing its first tile.
+            shared.persist.settings.mister_names,
             shared.categories.len(),
             shared.systems.len(),
             shared.show_hidden,

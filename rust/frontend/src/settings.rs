@@ -201,6 +201,7 @@ fn checked(ctx: &Ctx, id: &str) -> bool {
         "showHidden" => shared.show_hidden,
         "showOriginalFilenames" => s.show_original_filenames,
         "showTags" => s.show_tags,
+        "misterNames" => s.mister_names,
         "reduceMotion" => s.reduce_motion,
         "showMenuRow" => s.show_menu_row,
         "showHelpBar" => s.show_help_bar,
@@ -1174,6 +1175,7 @@ fn toggle(ctx: &Ctx, app: &App, id: &str) {
             match id {
                 "showOriginalFilenames" => flip(&mut s.show_original_filenames),
                 "showTags" => flip(&mut s.show_tags),
+                "misterNames" => flip(&mut s.mister_names),
                 "reduceMotion" => flip(&mut s.reduce_motion),
                 "showMenuRow" => flip(&mut s.show_menu_row),
                 "showHelpBar" => flip(&mut s.show_help_bar),
@@ -1193,6 +1195,13 @@ fn toggle(ctx: &Ctx, app: &App, id: &str) {
             crate::games::refresh_visibility(ctx, app);
         }
         "showOriginalFilenames" | "showTags" => crate::games::reproject(ctx, app),
+        "misterNames" => {
+            if value {
+                crate::systems::load_mister_names(&mut lock(&ctx.shared));
+            }
+            crate::systems::reproject(ctx, app);
+            crate::router::reproject_hub(ctx, app);
+        }
         "reduceMotion" => {
             app.global::<crate::Shell>().set_reduce_motion(value);
             crate::background::set_crossfade(crate::display::background_crossfade(
@@ -1444,6 +1453,7 @@ pub(crate) fn mirror_of(s: &persist::SettingsState) -> zaparoo_core::config::Set
         swap_confirm_cancel: s.swap_confirm_cancel,
         swap_options_view: s.swap_options_view,
         region: &s.region,
+        mister_names: s.mister_names,
         crt_video_standard: &s.crt_video_standard,
         crt_h_offset: s.crt_h_offset,
         crt_v_offset: s.crt_v_offset,
