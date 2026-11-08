@@ -22,6 +22,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
 use tokio::sync::Notify;
+use zaparoo_app::artwork_prefs::{self, ArtworkPrefs};
 use zaparoo_app::covers::Fit;
 use zaparoo_core::client::Client;
 use zaparoo_core::collections::DeckImageParams;
@@ -49,6 +50,10 @@ pub struct MediaKey {
     pub fit: Fit,
     /// Explicit carousel slot; None retains the browse artwork preference ladder.
     pub image_type: Option<String>,
+    /// The folder's or system's preferred artwork (`zaparoo_app::artwork_prefs`),
+    /// leading the ladder in place of the global setting. Part of the key,
+    /// so a changed choice asks again for that folder's covers only.
+    pub prefer: Option<String>,
 }
 
 /// The `system` of a key for deck art (`decks.image`) rather than a
@@ -75,6 +80,7 @@ impl MediaKey {
             fit,
             image_type: None,
             folder: false,
+            prefer: None,
         }
     }
 
@@ -254,6 +260,8 @@ pub struct MediaCache {
     /// prepended to the request ladder when set. "auto"/empty keeps
     /// the default order.
     preferred_type: Mutex<String>,
+    /// Preferred artwork per system and folder, from `frontend.toml`.
+    artwork: Mutex<ArtworkPrefs>,
     /// The Hub tile's painted art box, packed width over height. Held
     /// here because the Hub and its cold-boot seeds both key covers by it.
     hub_fit: std::sync::atomic::AtomicU64,
@@ -270,6 +278,7 @@ impl MediaCache {
             inner: Mutex::new(CacheInner::default()),
             wake: Notify::new(),
             preferred_type: Mutex::new(String::new()),
+            artwork: Mutex::new(ArtworkPrefs::default()),
             hub_fit: std::sync::atomic::AtomicU64::new(0),
         })
     }
@@ -305,6 +314,34 @@ impl MediaCache {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
+    }
+
+    pub fn set_artwork_prefs(&self, prefs: ArtworkPrefs) {
+        *self.artwork.lock().unwrap_or_else(PoisonError::into_inner) = prefs;
+    }
+
+    /// A copy of every folder and system choice, for the picker to edit.
+    pub(crate) fn artwork_prefs(&self) -> ArtworkPrefs {
+        self.artwork
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    /// The folder or system choice for a game or folder: the `prefer` of
+    /// its cover key. `relative` is Core's launcher-relative path; empty
+    /// falls back to the system's choice.
+    pub fn artwork_for(&self, system: &str, relative: &str) -> Option<String> {
+        self.artwork
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .resolve(system, relative)
+            .map(ToString::to_string)
+    }
+
+    /// The type a cover keyed with `prefer` leads with.
+    pub(crate) fn effective_image_type(&self, prefer: Option<&str>) -> String {
+        prefer.map_or_else(|| self.preferred_image_type(), ToString::to_string)
     }
 
     /// Cached image for `key`, touching LRU recency.
@@ -669,18 +706,10 @@ pub fn fitted(decoded: image::DynamicImage, fit: Fit, capture: bool) -> DecodedI
 /// else by path. Artwork preference leads the fallback ladder unless a
 /// carousel slot names one type.
 fn request_params(cache: &MediaCache, key: &MediaKey) -> MediaImageParams {
-    let mut image_types: Vec<String> = zaparoo_app::media_list::COVER_LADDER
-        .iter()
-        .map(ToString::to_string)
-        .collect();
-    let preferred = cache.preferred_image_type();
-    if !preferred.is_empty() && preferred != "auto" {
-        image_types.retain(|kind| *kind != preferred);
-        image_types.insert(0, preferred);
-    }
-    if let Some(kind) = &key.image_type {
-        image_types = vec![kind.clone()];
-    }
+    let image_types = match &key.image_type {
+        Some(kind) => vec![kind.clone()],
+        None => artwork_prefs::ladder(&cache.effective_image_type(key.prefer.as_deref())),
+    };
     let delivery = should_request_local_path(key.max_size)
         .then(|| zaparoo_core::media_types::MEDIA_IMAGE_DELIVERY_LOCAL_PATH.to_string());
     if key.media_id.is_some() && !key.folder {
@@ -967,7 +996,55 @@ mod tests {
             fit: Fit::SOURCE,
             folder: false,
             image_type: None,
+            prefer: None,
         }
+    }
+
+    #[test]
+    fn a_folder_choice_leads_the_ladder_and_a_carousel_slot_still_wins() {
+        let cache = MediaCache::new();
+        cache.set_preferred_image_type("boxart");
+        let plain = key(1);
+        assert_eq!(request_params(&cache, &plain).image_types[0], "boxart");
+        let chosen = MediaKey {
+            prefer: Some("titleshot".into()),
+            ..plain.clone()
+        };
+        assert_ne!(plain, chosen, "a changed choice is a new key");
+        let types = request_params(&cache, &chosen).image_types;
+        assert_eq!(types[0], "titleshot");
+        assert!(
+            types.iter().any(|t| t == "boxart"),
+            "the ladder still falls back"
+        );
+        let slot = MediaKey {
+            image_type: Some("map".into()),
+            ..chosen
+        };
+        assert_eq!(
+            request_params(&cache, &slot).image_types,
+            vec!["map".to_string()]
+        );
+    }
+
+    #[test]
+    fn artwork_for_resolves_folder_then_system() {
+        let cache = MediaCache::new();
+        cache.set_artwork_prefs(ArtworkPrefs::from_entries([
+            ("Arcade", "screenshot"),
+            ("Arcade/_Arcade/_Organized", "titleshot"),
+        ]));
+        assert_eq!(
+            cache
+                .artwork_for("Arcade", "_Arcade/_Organized/_A/pacman.mra")
+                .as_deref(),
+            Some("titleshot")
+        );
+        assert_eq!(
+            cache.artwork_for("Arcade", "").as_deref(),
+            Some("screenshot")
+        );
+        assert_eq!(cache.artwork_for("NES", "NES/Game.nes"), None);
     }
 
     #[tokio::test]

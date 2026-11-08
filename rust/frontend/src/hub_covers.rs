@@ -69,6 +69,9 @@ struct BrowseEntry {
     fit_crisp: bool,
     #[serde(default)]
     folder: bool,
+    /// The artwork choice the cover was resolved under (`MediaKey::prefer`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    prefer: Option<String>,
 }
 
 impl BrowseEntry {
@@ -85,6 +88,7 @@ impl BrowseEntry {
             },
             folder: self.folder,
             image_type: None,
+            prefer: self.prefer.clone(),
         }
     }
 
@@ -99,6 +103,7 @@ impl BrowseEntry {
             fit_height: key.fit.height,
             fit_crisp: key.fit.crisp,
             folder: key.folder,
+            prefer: key.prefer,
         }
     }
 }
@@ -114,6 +119,9 @@ struct ManifestEntry {
     path: String,
     local_path: String,
     max_size: u32,
+    /// The artwork choice the path was resolved under (`MediaKey::prefer`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    prefer: Option<String>,
 }
 
 /// Every read-modify-write of the manifest holds this, so the tile half
@@ -213,6 +221,7 @@ fn entry_key(cache: &MediaCache, entry: &ManifestEntry) -> MediaKey {
         fit: cache.hub_fit(),
         folder: false,
         image_type: None,
+        prefer: entry.prefer.clone(),
     }
 }
 
@@ -417,14 +426,7 @@ async fn fetch_local_path(
     system_id: &str,
     path: &str,
 ) -> Option<String> {
-    let mut image_types: Vec<String> = ["boxart", "image", "thumbnail", "boxart3d", "screenshot"]
-        .iter()
-        .map(ToString::to_string)
-        .collect();
-    if !preferred.is_empty() && preferred != "auto" {
-        image_types.retain(|t| t != preferred);
-        image_types.insert(0, preferred.to_string());
-    }
+    let image_types = zaparoo_app::artwork_prefs::ladder(preferred);
     let result = client
         .media_image(MediaImageParams {
             media_id: None,
@@ -442,8 +444,11 @@ async fn fetch_local_path(
     result.local_path.filter(|p| !p.is_empty())
 }
 
+/// A cover to record: system, path and the artwork choice it resolves to.
+type Target = (String, String, Option<String>);
+
 /// The Hub's game shortcuts the tile half covers, in layout order.
-fn hub_targets(ctx: &Ctx) -> Vec<(String, String)> {
+fn hub_targets(ctx: &Ctx) -> Vec<Target> {
     let shared = lock(&ctx.shared);
     shared
         .hub
@@ -455,7 +460,10 @@ fn hub_targets(ctx: &Ctx) -> Vec<(String, String)> {
                 && !item.path.is_empty()
         })
         .take(MAX_HUB_ENTRIES)
-        .map(|item| (item.system.clone(), item.path.clone()))
+        .map(|item| {
+            let prefer = ctx.media.artwork_for(&item.system, &item.relative);
+            (item.system.clone(), item.path.clone(), prefer)
+        })
         .collect()
 }
 
@@ -470,25 +478,39 @@ async fn wait_for_core(client: &zaparoo_core::client::Client) {
 
 /// The first Hub rebuild of the process: write the tile half when the
 /// manifest has none yet, so a Hub whose layout never changes still
-/// gets its covers seeded on the next cold start.
+/// gets its covers seeded on the next cold start, or when an entry was
+/// recorded under another artwork choice (`frontend.toml` edited by
+/// hand), so the next cold start seeds it again.
 pub fn ensure_hub_entries(ctx: &Ctx) {
     if !eligible() || HUB_CHECKED.swap(true, Ordering::AcqRel) {
         return;
     }
-    if hub_targets(ctx).is_empty() {
+    let targets = hub_targets(ctx);
+    if targets.is_empty() {
         return;
     }
     let ctx = ctx.clone();
     ctx.handle.clone().spawn(async move {
-        let missing = tokio::task::spawn_blocking(|| {
-            read_manifest_from(&manifest_path()).hub_entries.is_empty()
+        let stale = tokio::task::spawn_blocking(move || {
+            hub_half_stale(&read_manifest_from(&manifest_path()).hub_entries, &targets)
         })
         .await
         .unwrap_or(false);
-        if missing {
+        if stale {
             refresh_hub_entries(&ctx);
         }
     });
+}
+
+/// Whether the recorded tile half needs writing again: it is empty, or a
+/// tile it records now resolves to another artwork choice.
+fn hub_half_stale(entries: &[ManifestEntry], targets: &[Target]) -> bool {
+    entries.is_empty()
+        || entries.iter().any(|entry| {
+            targets.iter().any(|(system, path, prefer)| {
+                *system == entry.system_id && *path == entry.path && *prefer != entry.prefer
+            })
+        })
 }
 
 /// Rebuild the tile half of the manifest from the Hub's current game
@@ -518,12 +540,12 @@ pub fn refresh_hub_entries(ctx: &Ctx) {
     ctx.handle.spawn(async move {
         wait_for_core(&client).await;
         let mut hub_entries = Vec::with_capacity(targets.len());
-        for (system_id, path) in targets {
+        for (system_id, path, prefer) in targets {
             if HUB_GENERATION.load(Ordering::Acquire) != generation {
                 return;
             }
-            let Some(local_path) = fetch_local_path(&client, &preferred, &system_id, &path).await
-            else {
+            let lead = prefer.as_deref().unwrap_or(&preferred);
+            let Some(local_path) = fetch_local_path(&client, lead, &system_id, &path).await else {
                 continue;
             };
             hub_entries.push(ManifestEntry {
@@ -531,6 +553,7 @@ pub fn refresh_hub_entries(ctx: &Ctx) {
                 path,
                 local_path,
                 max_size: HUB_TILE_MAX_SIZE,
+                prefer,
             });
         }
         update_manifest(|manifest| {
@@ -588,9 +611,12 @@ pub fn refresh_resume_entry(ctx: &Ctx, target: Option<(String, String)>) {
     };
     let client = ctx.store.client();
     let preferred = lock(&ctx.shared).persist.settings.media_image_type.clone();
+    // The Resume entry has no launcher-relative path: its system's choice.
+    let prefer = ctx.media.artwork_for(&system_id, "");
     ctx.handle.spawn(async move {
         wait_for_core(&client).await;
-        let local_path = fetch_local_path(&client, &preferred, &system_id, &path).await;
+        let lead = prefer.as_deref().unwrap_or(&preferred);
+        let local_path = fetch_local_path(&client, lead, &system_id, &path).await;
         update_manifest(|manifest| {
             if RESUME_GENERATION.load(Ordering::Acquire) != generation {
                 return false;
@@ -600,14 +626,15 @@ pub fn refresh_resume_entry(ctx: &Ctx, target: Option<(String, String)>) {
                 path,
                 local_path,
                 max_size: HUB_TILE_MAX_SIZE,
+                prefer,
             });
             true
         });
     });
 }
 
-/// The preferred artwork type changed: every recorded path names a file
-/// of the old type, so the Hub and Resume halves are resolved again and
+/// The preferred artwork type changed, globally or for a system or
+/// folder: a recorded path may name a file of the old type, so the Hub and Resume halves are resolved again and
 /// the browse page is dropped until the next launch records it. A Resume
 /// tile that has not loaded yet is left to its own load.
 pub fn refresh_for_image_type(ctx: &Ctx) {
@@ -650,6 +677,7 @@ mod tests {
             path: path.into(),
             local_path: String::new(),
             max_size: HUB_TILE_MAX_SIZE,
+            prefer: None,
         }
     }
 
@@ -721,6 +749,7 @@ mod tests {
             fit_height: 200,
             fit_crisp: false,
             folder: false,
+            prefer: None,
         };
         let cache = MediaCache::new();
         let epoch = cache.seed_epoch();
@@ -784,6 +813,7 @@ mod tests {
                 fit_height: 100,
                 fit_crisp: false,
                 folder: false,
+                prefer: None,
             })
             .collect();
         write_manifest_to(
@@ -813,6 +843,7 @@ mod tests {
             fit_height: 208,
             fit_crisp: false,
             folder: true,
+            prefer: Some("titleshot".into()),
         };
         let manifest = Manifest {
             hub_entries: vec![ManifestEntry {
@@ -820,6 +851,7 @@ mod tests {
                 path: "/games/SNES/Zelda.sfc".into(),
                 local_path: "/media/fat/zaparoo/cache/thumbs/v2/a/b.png".into(),
                 max_size: HUB_TILE_MAX_SIZE,
+                prefer: None,
             }],
             resume: None,
             browse: vec![browse.clone()],
@@ -849,6 +881,56 @@ mod tests {
     }
 
     #[test]
+    fn a_manifest_from_before_artwork_choices_still_loads() {
+        let manifest: Manifest = toml::from_str(
+            r#"
+[[hub_entries]]
+system_id = "SNES"
+path = "/games/SNES/Zelda.sfc"
+local_path = "/thumbs/b.png"
+max_size = 256
+
+[[browse]]
+media_id = 7
+system_id = "NES"
+path = "/games/NES/Mario.nes"
+local_path = "/thumbs/c.png"
+max_size = 512
+fit_width = 227
+fit_height = 208
+"#,
+        )
+        .expect("old manifest");
+        assert_eq!(manifest.hub_entries[0].prefer, None);
+        assert_eq!(manifest.browse[0].prefer, None);
+    }
+
+    #[test]
+    fn a_tile_under_another_artwork_choice_rewrites_the_hub_half() {
+        let entry = ManifestEntry {
+            system_id: "Genesis".into(),
+            path: "/games/nhl.md".into(),
+            local_path: "/thumbs/nhl.jpg".into(),
+            max_size: HUB_TILE_MAX_SIZE,
+            prefer: None,
+        };
+        let target = |prefer: Option<&str>| {
+            (
+                "Genesis".to_string(),
+                "/games/nhl.md".to_string(),
+                prefer.map(str::to_string),
+            )
+        };
+        let entries = vec![entry];
+        assert!(hub_half_stale(&[], &[target(None)]));
+        assert!(!hub_half_stale(&entries, &[target(None)]));
+        assert!(hub_half_stale(&entries, &[target(Some("screenshot"))]));
+        // A tile that left the Hub is the layout refresh's business.
+        let other = ("SNES".to_string(), "/games/smw.sfc".to_string(), None);
+        assert!(!hub_half_stale(&entries, &[other]));
+    }
+
+    #[test]
     fn a_hosted_start_makes_the_manifest_eligible() {
         // What `run_application` configures before seeding on a hosted
         // build, with no Core transport yet.
@@ -873,6 +955,7 @@ mod tests {
             path: format!("/games/{name}.sfc"),
             local_path: format!("/thumbs/{name}.png"),
             max_size: HUB_TILE_MAX_SIZE,
+            prefer: None,
         };
         std::thread::scope(|scope| {
             for round in 0..20 {

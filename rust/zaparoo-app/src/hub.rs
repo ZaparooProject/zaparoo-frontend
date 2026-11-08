@@ -208,7 +208,9 @@ pub trait Resolver {
     }
     fn system_name(&self, id: &str) -> String;
     fn system_cover_key(&self, id: &str) -> String;
-    fn media_cover_key(&self, system: &str, path: &str) -> String;
+    /// `relative` is Core's launcher-relative path, empty when unknown;
+    /// the folder's artwork choice is resolved from it.
+    fn media_cover_key(&self, system: &str, path: &str, relative: &str) -> String;
     /// A user override from the `custom/hub/` folder for `id`, if any.
     fn hub_override(&self, _id: &str) -> Option<String> {
         None
@@ -463,7 +465,7 @@ fn resolve_zapscript(resolver: &dyn Resolver, item: &LayoutItem) -> Option<Entry
     let cover_key = if !item.icon.is_empty() {
         icon_cover_key(resolver, &item.icon, "icons/File")
     } else if !item.system.is_empty() && !item.path.is_empty() {
-        resolver.media_cover_key(&item.system, &item.path)
+        resolver.media_cover_key(&item.system, &item.path, &item.relative)
     } else if !item.system.is_empty() {
         resolver.system_cover_key(&item.system)
     } else {
@@ -1157,7 +1159,7 @@ mod tests {
         fn system_cover_key(&self, id: &str) -> String {
             format!("systems/{id}")
         }
-        fn media_cover_key(&self, system: &str, path: &str) -> String {
+        fn media_cover_key(&self, system: &str, path: &str, _relative: &str) -> String {
             format!("media-image/{system}/{path}")
         }
     }
@@ -1178,7 +1180,7 @@ mod tests {
         fn system_cover_key(&self, id: &str) -> String {
             format!("systems/{id}")
         }
-        fn media_cover_key(&self, system: &str, path: &str) -> String {
+        fn media_cover_key(&self, system: &str, path: &str, _relative: &str) -> String {
             format!("media-image/{system}/{path}")
         }
         fn deck(&self, id: &str) -> DeckLookup {
@@ -1857,7 +1859,7 @@ mod tests {
             fn system_cover_key(&self, id: &str) -> String {
                 format!("systems/{id}")
             }
-            fn media_cover_key(&self, _system: &str, _path: &str) -> String {
+            fn media_cover_key(&self, _system: &str, _path: &str, _relative: &str) -> String {
                 String::new()
             }
             fn hub_override(&self, id: &str) -> Option<String> {
@@ -1901,7 +1903,7 @@ mod tests {
             fn system_cover_key(&self, id: &str) -> String {
                 format!("systems/{id}")
             }
-            fn media_cover_key(&self, _system: &str, _path: &str) -> String {
+            fn media_cover_key(&self, _system: &str, _path: &str, _relative: &str) -> String {
                 String::new()
             }
             fn hub_override(&self, id: &str) -> Option<String> {

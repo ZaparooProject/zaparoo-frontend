@@ -15,6 +15,7 @@
 
 pub mod action_error;
 pub mod alternate_versions;
+pub mod artwork_prefs;
 pub mod background;
 pub mod branding;
 pub mod browse_filter;

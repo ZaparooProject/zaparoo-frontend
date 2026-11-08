@@ -41,7 +41,7 @@ use zaparoo_core::persist::RecentsState;
 use zaparoo_core::remote_resource::ResourceStatus;
 use zaparoo_core::store::{Endpoint, Tag};
 
-use crate::media_cache::MediaKey;
+use crate::media_cache::{MediaCache, MediaKey};
 use crate::navigation::EntryMode;
 use crate::router::{lock, Ctx, Shared};
 use crate::{App, GamesInput, GamesView, GridCell};
@@ -3195,7 +3195,12 @@ pub(crate) fn grid_cover_fit(app: &App, mode: GamesMode) -> zaparoo_app::covers:
 /// A folder's art is asked for by path, with the disc it launches when it
 /// has one: Core then answers with the folder's own artwork before that
 /// disc's, and each disc caches under its own key.
-fn media_key(row: &GameRow, fallback_system: &str, tier: CoverSize) -> MediaKey {
+fn media_key(
+    media: &MediaCache,
+    row: &GameRow,
+    fallback_system: &str,
+    tier: CoverSize,
+) -> MediaKey {
     if let Some(deck) = &row.deck_entry {
         return MediaKey::deck_art(&deck.deck_id, None, deck.revision, tier.tier, tier.fit);
     }
@@ -3208,9 +3213,11 @@ fn media_key(row: &GameRow, fallback_system: &str, tier: CoverSize) -> MediaKey 
             tier.fit,
         );
     }
+    let system = row.system_or(fallback_system).to_string();
     MediaKey {
         media_id: row.media_id,
-        system: row.system_or(fallback_system).to_string(),
+        prefer: media.artwork_for(&system, &row.relative_path),
+        system,
         path: row.path.clone(),
         max_size: tier.tier,
         fit: tier.fit,
@@ -3244,7 +3251,7 @@ fn cell_for(
     if labelled_mode(model.mode) {
         cell.top_label = SharedString::from(top_label(row));
     }
-    let key = media_key(row, &model.system_id, tier);
+    let key = media_key(&ctx.media, row, &model.system_id, tier);
     let cached = ctx.media.get(&key);
     let state = rules::cover_state(
         row.entry_type,
@@ -3337,7 +3344,7 @@ pub fn page_covers_waiting(ctx: &Ctx, app: &App) -> bool {
 }
 
 fn cover_waiting(ctx: &Ctx, model: &GamesModel, row: &GameRow, tier: CoverSize) -> bool {
-    let key = media_key(row, &model.system_id, tier);
+    let key = media_key(&ctx.media, row, &model.system_id, tier);
     let state = rules::cover_state(
         row.entry_type,
         row.media_capable,
@@ -3402,6 +3409,7 @@ fn background_game_key(model: &GamesModel) -> Option<MediaKey> {
         max_size: crate::background::art_request_size(),
         fit: zaparoo_app::covers::Fit::SOURCE,
         image_type: Some(image_type.to_string()),
+        prefer: None,
     })
 }
 
@@ -3428,7 +3436,7 @@ fn report_background(ctx: &Ctx, model: &GamesModel, art_tier: CoverSize) {
         .filter(|row| row.wants_cover())
         .and_then(|row| {
             if shows_own_art(row) {
-                Some(media_key(row, &model.system_id, art_tier))
+                Some(media_key(&ctx.media, row, &model.system_id, art_tier))
             } else {
                 background_game_key(model)
             }
@@ -3467,7 +3475,7 @@ fn wanted_covers(
             .iter()
             .filter_map(|index| model.rows.get(*index))
             .filter(|row| row.wants_cover())
-            .map(|row| (row, media_key(row, &model.system_id, tier)))
+            .map(|row| (row, media_key(&ctx.media, row, &model.system_id, tier)))
             .filter(|(_, key)| !key.system.is_empty() && !key.path.is_empty())
             .collect();
         // Prepare real colors before this window's full-size art; replacing
@@ -3604,6 +3612,7 @@ fn hold_list_covers(ctx: &Ctx, app: &App) -> bool {
 
 fn wanted_detail_covers(ctx: &Ctx, model: &GamesModel, tier: CoverSize) -> Vec<MediaKey> {
     let mut keys = cover_keys(
+        &ctx.media,
         model,
         rules::detail_prefetch_rows(model.rows.len(), model.grid.current_index()),
         tier,
@@ -3631,9 +3640,14 @@ fn detail_images(ctx: &Ctx, model: &GamesModel) -> (usize, Vec<String>) {
         return (0, Vec::new());
     };
     let identity = row.identity(&model.system_id);
+    let preferred = ctx.media.effective_image_type(
+        ctx.media
+            .artwork_for(row.system_or(&model.system_id), &row.relative_path)
+            .as_deref(),
+    );
     let types = detail_cache()
         .image_types(&identity)
-        .map(|types| rules::detail_image_order(types, &ctx.media.preferred_image_type()))
+        .map(|types| rules::detail_image_order(types, &preferred))
         .unwrap_or_default();
     let index = if model.detail_image.0 == identity {
         model.detail_image.1.min(types.len().saturating_sub(1))
@@ -3648,17 +3662,15 @@ fn detail_images(ctx: &Ctx, model: &GamesModel) -> (usize, Vec<String>) {
 /// as browsing asks, so it is never fetched twice, unless a plain cover
 /// request cannot return it (a game with only a map and fanart).
 fn detail_key(ctx: &Ctx, model: &GamesModel, row: &GameRow, tier: CoverSize) -> MediaKey {
-    let key = media_key(row, &model.system_id, tier);
+    let key = media_key(&ctx.media, row, &model.system_id, tier);
     let (index, types) = detail_images(ctx, model);
+    let preferred = ctx.media.effective_image_type(key.prefer.as_deref());
     match types.get(index) {
-        Some(kind)
-            if index > 0 || !rules::plain_cover_serves(kind, &ctx.media.preferred_image_type()) =>
-        {
-            MediaKey {
-                image_type: Some(kind.clone()),
-                ..key
-            }
-        }
+        Some(kind) if index > 0 || !rules::plain_cover_serves(kind, &preferred) => MediaKey {
+            image_type: Some(kind.clone()),
+            prefer: None,
+            ..key
+        },
         _ => key,
     }
 }
@@ -3697,12 +3709,17 @@ fn step_detail_image(ctx: &Ctx, app: &App, delta: i64) -> bool {
     true
 }
 
-fn cover_keys(model: &GamesModel, indices: Vec<usize>, tier: CoverSize) -> Vec<MediaKey> {
+fn cover_keys(
+    media: &MediaCache,
+    model: &GamesModel,
+    indices: Vec<usize>,
+    tier: CoverSize,
+) -> Vec<MediaKey> {
     indices
         .into_iter()
         .filter_map(|index| model.rows.get(index))
         .filter(|row| row.wants_cover())
-        .map(|row| media_key(row, &model.system_id, tier))
+        .map(|row| media_key(media, row, &model.system_id, tier))
         .filter(|key| !key.system.is_empty() && !key.path.is_empty())
         .collect()
 }
@@ -3975,9 +3992,12 @@ pub fn render(ctx: &Ctx, app: &App) {
             if model.mode == GamesMode::Browse
                 || model.rapid.active
                 || (row.has_cover
-                    && !ctx
-                        .media
-                        .is_negative(&media_key(row, &model.system_id, art_tier)))
+                    && !ctx.media.is_negative(&media_key(
+                        &ctx.media,
+                        row,
+                        &model.system_id,
+                        art_tier,
+                    )))
             {
                 return None;
             }
@@ -4141,7 +4161,7 @@ pub fn covers_landed(ctx: &Ctx, app: &App, keys: &[MediaKey]) {
             )
         };
         let relevant = model.rows.iter_from(first).take(window).any(|row| {
-            let key = media_key(row, &model.system_id, tier);
+            let key = media_key(&ctx.media, row, &model.system_id, tier);
             keys.contains(&key)
                 || (list && keys.contains(&detail_key(ctx, model, row, tier)))
                 || background_game_key(model).is_some_and(|bg| keys.contains(&bg))
@@ -5360,7 +5380,8 @@ fn item_menu(app: &App, shared: &Shared, row: &GameRow, system: &str) -> menu::M
                     system,
                 )
             });
-            menu::folder(kind, on_hub, row.is_hidden)
+            let artwork = !system.is_empty() && !row.relative_path.is_empty();
+            menu::folder(kind, on_hub, row.is_hidden, artwork)
         }
         rules::MenuTarget::Game => {
             menu::game(&game_input(app, shared, model.mode, row, system, None))
@@ -5477,6 +5498,9 @@ pub fn context_accept(ctx: &Ctx, app: &App, id: &str) {
         "add_to_hub" if live && row.is_dir() => crate::hub::toggle_live_folder(ctx, app, &row.path),
         "toggle_hidden" => toggle_hidden(ctx, app, &row, &system),
         "add_to_hub" => add_to_hub(ctx, app, mode, &row, &system),
+        "artwork" if !row.relative_path.is_empty() => {
+            crate::artwork::open_picker(ctx, app, &system, &row.relative_path);
+        }
         "deck_use_cover" | "deck_move" | "deck_remove" => {
             crate::decks::item_action(ctx, app, id, &row, &system);
         }
@@ -6346,7 +6370,7 @@ mod tests {
             tier: 256,
             fit: zaparoo_app::covers::Fit::default(),
         };
-        let key = media_key(row, "PSX", tier);
+        let key = media_key(&MediaCache::new(), row, "PSX", tier);
         assert_eq!(
             (key.media_id, key.path.as_str(), key.folder),
             (Some(4), "/g/PSX/Chrono Cross", true)
@@ -6361,7 +6385,7 @@ mod tests {
         // are asked for again rather than served from disc 1's.
         let mut disc_two = row.clone();
         disc_two.media_id = Some(5);
-        assert_ne!(media_key(&disc_two, "PSX", tier), key);
+        assert_ne!(media_key(&MediaCache::new(), &disc_two, "PSX", tier), key);
         assert_ne!(disc_two.identity("PSX"), row.identity("PSX"));
 
         // A game keeps its id alone.
@@ -6369,7 +6393,7 @@ mod tests {
             media_id: Some(7),
             ..entry("media", "Game", "/g/Game.nes")
         });
-        let key = media_key(&game, "NES", tier);
+        let key = media_key(&MediaCache::new(), &game, "NES", tier);
         assert_eq!((key.media_id, key.folder), (Some(7), false));
         let meta = game.meta_params("NES".into());
         assert_eq!((meta.media_id, meta.path.as_str()), (Some(7), ""));

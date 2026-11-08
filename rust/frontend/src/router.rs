@@ -276,6 +276,12 @@ pub enum ListContext {
     /// The per-game "Change launcher" picker; the payload is the game's
     /// system id and path.
     GameLauncher(String, String),
+    /// The "Preferred artwork" picker; the payload is the system id and,
+    /// for a folder, Core's launcher-relative path (empty for the system).
+    Artwork {
+        system: String,
+        relative: String,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -2001,6 +2007,9 @@ fn list_accept(ctx: &Ctx, app: &App, context: ListContext, id: &str) {
         }
         ListContext::GameLauncher(system_id, path) => {
             crate::launchers::set_game_launcher(ctx, app, &system_id, &path, id);
+        }
+        ListContext::Artwork { system, relative } => {
+            crate::artwork::picked(ctx, app, &system, &relative, id);
         }
         ListContext::MusicMenu
         | ListContext::MusicMore

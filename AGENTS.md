@@ -187,7 +187,8 @@ private `_` recipe. Container builds write to `rust/target/docker/`.
   metadata) mapping each Hub `zapscript` tile, the Resume tile, and the browse
   page a game was last launched from to the Core thumbnail path Core itself
   already wrote to its thumbnail cache (on MiSTer
-  `/media/fat/zaparoo/images/thumbs/`), so those covers can seed the in-memory
+  `/media/fat/zaparoo/images/thumbs/`), with the artwork type token a
+  system or folder choice resolved it under, so those covers can seed the in-memory
   cache on a cold boot: before the first frame for the Hub, and while the rows
   load for a browse screen. The browse section is written when a launch starts
   or the frontend goes dormant, never while browsing. Bounded by

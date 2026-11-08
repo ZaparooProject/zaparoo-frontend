@@ -466,6 +466,7 @@ fn show_cover(ctx: &Ctx, app: &App) {
                 fit,
                 image_type: None,
                 folder: false,
+                prefer: ctx.media.artwork_for(&media.system, ""),
             });
         model.cover.clone_from(&key);
         key

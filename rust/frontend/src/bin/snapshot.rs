@@ -943,6 +943,38 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
         ov.set_list_index(1);
         ov.set_list_open(true);
     }
+    // "artwork-picker" renders the "Preferred artwork" list: Default names
+    // the type it inherits, and the folder's own choice is marked.
+    if screen.ends_with("artwork-picker") {
+        let ov = app.global::<generated::Overlays>();
+        ov.set_list_title("title:artwork".into());
+        let row = |id: &str, key: &str, name: &str, chosen: bool| MenuEntry {
+            role: if chosen {
+                generated::MenuRole::Chosen
+            } else {
+                generated::MenuRole::default()
+            },
+            detail_key: slint::SharedString::default(),
+            id: id.into(),
+            label: name.into(),
+            label_key: key.into(),
+            enabled: true,
+            reason_key: "".into(),
+            detail: "".into(),
+        };
+        let mut entries = vec![row("default", "artwork:default", "titleshot", false)];
+        entries.extend(
+            zaparoo_app::artwork_prefs::choices()
+                .map(|kind| row(kind, "artwork:type", kind, kind == "screenshot")),
+        );
+        let index = entries
+            .iter()
+            .position(|e| e.id == "screenshot")
+            .unwrap_or(0);
+        ov.set_list_entries(slint::ModelRc::new(slint::VecModel::from(entries)));
+        ov.set_list_index(i32::try_from(index).unwrap_or(0));
+        ov.set_list_open(true);
+    }
     if screen.ends_with("launcher-saving") {
         let ov = app.global::<generated::Overlays>();
         ov.set_list_title("title:change_launcher".into());
@@ -2900,7 +2932,7 @@ fn fixture_hub(app: &App, scene_w: f64, scene_h: f64, crt: bool, selected: usize
         fn system_cover_key(&self, id: &str) -> String {
             format!("systems/{id}")
         }
-        fn media_cover_key(&self, _system: &str, _path: &str) -> String {
+        fn media_cover_key(&self, _system: &str, _path: &str, _relative: &str) -> String {
             "icons/File".to_string()
         }
         fn deck(&self, _id: &str) -> hub::DeckLookup {
@@ -3997,6 +4029,7 @@ mod fixture_tests {
             "crt-dialog",
             "token-error",
             "qr-docs",
+            "artwork-picker",
         ] {
             assert_eq!(fixture_screen(name), Screen::None, "{name}");
         }

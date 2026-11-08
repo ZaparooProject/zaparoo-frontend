@@ -59,6 +59,11 @@ pub struct Config {
     /// priority over the bundled `Names_MiSTer` localized data and the Core
     /// catalog name. Empty when the table is absent.
     pub system_names: HashMap<String, String>,
+    /// Preferred artwork per system or folder, from the `[artwork]` table:
+    /// a system id, or a system id, a slash and Core's launcher-relative
+    /// folder path, mapped to an image type. Values that are not strings
+    /// are dropped; `zaparoo_app::artwork_prefs` decides which apply.
+    pub artwork: HashMap<String, String>,
     /// User color schemes from `[[themes]]`, in file order. Entries with a
     /// missing field, an invalid color or a repeated name are skipped and
     /// logged by the caller from `theme_skips`.
@@ -306,6 +311,7 @@ impl Default for Config {
             notice: NoticeConfig::default(),
             custom_dir: None,
             system_names: HashMap::new(),
+            artwork: HashMap::new(),
             themes: Vec::new(),
             theme_skips: Vec::new(),
             fault: None,
@@ -332,6 +338,8 @@ struct RawConfig {
     notice: RawNotice,
     #[serde(default)]
     custom: RawCustom,
+    #[serde(default)]
+    artwork: HashMap<String, toml::Value>,
     #[serde(default)]
     themes: Vec<RawTheme>,
 }
@@ -575,6 +583,11 @@ pub fn load_config(path: &Path) -> Config {
         .into_iter()
         .map(|(k, v)| (k.trim().to_string(), v.trim().to_string()))
         .filter(|(k, v)| !k.is_empty() && !v.is_empty())
+        .collect();
+    cfg.artwork = raw
+        .artwork
+        .into_iter()
+        .filter_map(|(k, v)| v.as_str().map(|v| (k, v.to_string())))
         .collect();
     cfg
 }
@@ -953,6 +966,27 @@ pub fn save_hidden_browse_prefs(
     file.write_if_changed(path)
 }
 
+/// Make or clear (`None`) one `[artwork]` choice, leaving every other
+/// entry, unknown values included, as it is. An emptied table stays, so a
+/// comment written above it is not lost. Durable, like the hidden-browse
+/// prefs.
+pub fn save_artwork_choice(path: &Path, key: &str, value: Option<&str>) -> Result<(), String> {
+    let mut file = read_config_document(path)?;
+    let doc = &mut file.doc;
+    match value {
+        Some(value) => set_str(section_mut(doc, "artwork", path)?, key, value),
+        None => {
+            if let Some(table) = doc
+                .get_mut("artwork")
+                .and_then(toml_edit::Item::as_table_mut)
+            {
+                table.remove(key);
+            }
+        }
+    }
+    file.write_if_changed(path)
+}
+
 /// Persist a first-run notice acknowledgement into `frontend.toml`.
 /// Mirrors `save_settings_mirror`'s atomic-write + section-preserving
 /// pattern so unrelated keys in the file (core endpoint, video, input
@@ -1117,8 +1151,9 @@ mod tests {
     )]
 
     use super::{
-        backup_path, load_config, save_favorites_sort, save_hidden_browse_prefs, save_notice_ack,
-        save_settings_mirror, Config, ConfigFault, SettingsMirror,
+        backup_path, load_config, save_artwork_choice, save_favorites_sort,
+        save_hidden_browse_prefs, save_notice_ack, save_settings_mirror, Config, ConfigFault,
+        SettingsMirror,
     };
     use std::io::Write;
 
@@ -1303,6 +1338,44 @@ mod tests {
             cfg.system_names.get("SNES").map(String::as_str),
             Some("Super Nintendo")
         );
+    }
+
+    #[test]
+    fn artwork_table_loads_string_values_only() {
+        let f = write_tmp(
+            "[artwork]\nArcade = \"titleshot\"\n\"SNES/SNES/Hacks\" = \"screenshot\"\nNES = 3\n",
+        );
+        let cfg = load_config(f.path());
+        assert!(cfg.fault.is_none());
+        assert_eq!(
+            cfg.artwork.get("Arcade").map(String::as_str),
+            Some("titleshot")
+        );
+        assert_eq!(
+            cfg.artwork.get("SNES/SNES/Hacks").map(String::as_str),
+            Some("screenshot")
+        );
+        assert!(!cfg.artwork.contains_key("NES"));
+    }
+
+    #[test]
+    fn artwork_choice_saves_one_entry_and_keeps_the_rest() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("frontend.toml");
+        std::fs::write(&path, "# mine\n[artwork]\nNES = \"hologram\"\n").expect("seed");
+        save_artwork_choice(&path, "SNES/SNES/Hacks", Some("screenshot")).expect("save");
+        let cfg = load_config(&path);
+        assert_eq!(
+            cfg.artwork.get("SNES/SNES/Hacks").map(String::as_str),
+            Some("screenshot")
+        );
+        assert_eq!(cfg.artwork.get("NES").map(String::as_str), Some("hologram"));
+        save_artwork_choice(&path, "SNES/SNES/Hacks", None).expect("clear");
+        save_artwork_choice(&path, "NES", None).expect("clear");
+        let text = std::fs::read_to_string(&path).expect("read");
+        assert!(text.contains("# mine"));
+        assert!(!text.contains("NES"));
+        save_artwork_choice(&path, "GB", None).expect("clear absent");
     }
 
     #[test]
