@@ -4,7 +4,9 @@
 //
 // What the Options menu offers for an item, and in what order. Options is a
 // quick menu: the frequent actions sit on its own rows, and configuration,
-// organization and maintenance move to one Manage page. A row is offered
+// organization and maintenance move to one Manage page. A Hub tile that
+// stands for an item keeps the tile's own rows on an Edit tile page beside
+// it, so the tile and the item it opens do not share one long page. A row is offered
 // because the item can do it, never because of the screen showing the item,
 // so the same game reads the same in Games, Favorites, Search results,
 // Recently played and on the Hub.
@@ -39,6 +41,7 @@ pub enum Page {
     ManageSystem,
     ManageCategory,
     ManageDeck,
+    EditTile,
 }
 
 impl Page {
@@ -50,6 +53,7 @@ impl Page {
             Self::ManageSystem => "manage_system",
             Self::ManageCategory => "manage_category",
             Self::ManageDeck => "manage_deck",
+            Self::EditTile => "edit_tile",
         }
     }
 }
@@ -81,6 +85,10 @@ pub struct Menu {
     pub write: Vec<Row>,
     /// The Manage page of whichever kind the root names.
     pub manage: Vec<Row>,
+    /// The Edit tile page: a Hub tile's own rows, when the tile stands for
+    /// an item with Options of its own. Empty when the tile's rows sit on
+    /// Options.
+    pub tile: Vec<Row>,
 }
 
 impl Menu {
@@ -97,6 +105,7 @@ impl Menu {
             "manage_system" => Page::ManageSystem,
             "manage_category" => Page::ManageCategory,
             "manage_deck" => Page::ManageDeck,
+            "edit_tile" => Page::EditTile,
             _ => return None,
         };
         (self.root.iter().any(|row| row.id == id) && !self.rows(page).is_empty()).then_some(page)
@@ -108,6 +117,7 @@ impl Menu {
             Page::ManageGame | Page::ManageSystem | Page::ManageCategory | Page::ManageDeck => {
                 &self.manage
             }
+            Page::EditTile => &self.tile,
         }
     }
 
@@ -155,20 +165,23 @@ impl Menu {
     }
 
     /// A Hub tile's own Rename and Change icon rows, ahead of its layout
-    /// rows (Remove, Move) wherever those sit: configuration before
-    /// organization. A menu with no layout rows is not a tile's.
+    /// rows (Move, then its removal): configuration before organization.
+    /// They lead the Edit tile page when the tile has one, and its layout
+    /// rows on Options otherwise. A menu with no layout rows is not a
+    /// tile's.
     #[must_use]
     pub fn with_tile_edits(mut self, can_change_icon: bool) -> Self {
         let mut edits = vec![keyed("hub_rename", "hub_rename:tile")];
         if can_change_icon {
             edits.push(keyed("hub_icon", "hub_icon:tile"));
         }
+        if !self.tile.is_empty() {
+            self.tile.splice(0..0, edits);
+            return self;
+        }
         let is_layout = |row: &Row| row.id == "hub_move" || row.id == "hub_remove";
-        for list in [&mut self.root, &mut self.manage] {
-            if let Some(at) = list.iter().position(is_layout) {
-                list.splice(at..at, edits);
-                break;
-            }
+        if let Some(at) = self.root.iter().position(is_layout) {
+            self.root.splice(at..at, edits);
         }
         self
     }
@@ -196,9 +209,14 @@ impl Menu {
         self
     }
 
-    fn with_manage(mut self, page: Page) -> Self {
+    /// The page rows, last on Options: Edit tile, then Manage, each only
+    /// when it has rows.
+    fn with_pages(mut self, manage: Page) -> Self {
+        if !self.tile.is_empty() {
+            self.root.push(row(Page::EditTile.menu_id()));
+        }
         if !self.manage.is_empty() {
-            self.root.push(row(page.menu_id()));
+            self.root.push(row(manage.menu_id()));
         }
         self
     }
@@ -231,16 +249,15 @@ pub struct DeckInput {
 }
 
 /// A deck's menu. Accept opens the deck, so playing it leads; then its
-/// place on the Hub, and for a deck the user can change, the edits on a
-/// Manage page.
+/// place on the Hub (on a tile, the Edit tile page), and for a deck the
+/// user can change, the edits on a Manage page.
 pub fn deck(input: &DeckInput) -> Menu {
     let mut menu = Menu::default();
     if input.has_items {
         menu.root.push(row("play_deck"));
     }
     if input.tile {
-        menu.root.push(keyed("hub_move", "hub_move:tile"));
-        menu.root.push(keyed("hub_remove", "hub:remove"));
+        menu.tile.extend(tile_rows());
     } else {
         menu.root.push(keyed(
             "deck_hub",
@@ -261,7 +278,7 @@ pub fn deck(input: &DeckInput) -> Menu {
         }
         menu.manage.push(row("deck_delete"));
     }
-    menu.with_manage(Page::ManageDeck)
+    menu.with_pages(Page::ManageDeck)
 }
 
 /// The Hub shortcut a game or system menu was opened on. Its layout actions
@@ -272,6 +289,17 @@ pub enum Tile {
     Resume,
     /// A shortcut pinned to the Hub.
     Pinned,
+}
+
+/// Every Hub tile's layout rows, worded the same on every kind of tile:
+/// taking one off is `Remove from Hub` whether it is a shortcut, a
+/// category, a built-in action or Resume, since Add item brings any of
+/// them back.
+fn tile_rows() -> [Row; 2] {
+    [
+        keyed("hub_move", "hub_move:tile"),
+        keyed("hub_remove", "hub:remove"),
+    ]
 }
 
 fn pin_row(on_hub: bool) -> Row {
@@ -361,32 +389,27 @@ pub fn game(input: &GameInput) -> Menu {
     if input.has_launchers && input.has_system {
         menu.manage.push(row("change_launcher"));
     }
-    match input.tile {
-        // The shortcut itself is the pin: removing it is this row.
-        Some(Tile::Pinned) => menu.manage.push(keyed("hub_remove", "hub:remove")),
-        Some(Tile::Resume) | None => {
-            if input.pinnable {
-                menu.manage.push(pin_row(input.on_hub));
-            }
-        }
+    // On a pinned tile the shortcut itself is the pin: removing it is the
+    // tile's own row, on Edit tile.
+    if input.tile != Some(Tile::Pinned) && input.pinnable {
+        menu.manage.push(pin_row(input.on_hub));
     }
     if input.hideable {
-        menu.manage.push(if input.tile.is_some() {
-            hide_row("toggle_hidden", input.is_hidden, "hide:game", "unhide:game")
-        } else {
-            hide_row("toggle_hidden", input.is_hidden, "hide:hide", "hide:unhide")
-        });
+        menu.manage.push(hide_row(
+            "toggle_hidden",
+            input.is_hidden,
+            "hide:game",
+            "unhide:game",
+        ));
     }
+    // Pinned or Resume, the tile moves and comes off the Hub the same way.
     if input.tile.is_some() {
-        menu.manage.push(keyed("hub_move", "hub_move:tile"));
-    }
-    if input.tile == Some(Tile::Resume) {
-        menu.manage.push(keyed("hub_remove", "hub_remove:resume"));
+        menu.tile.extend(tile_rows());
     }
     if input.has_system && !input.media_busy {
         menu.manage.push(row("scrape_game"));
     }
-    menu.with_manage(Page::ManageGame)
+    menu.with_pages(Page::ManageGame)
 }
 
 /// A row Accept browses into.
@@ -415,8 +438,8 @@ pub fn folder(kind: Folder, on_hub: bool, is_hidden: bool, artwork: bool) -> Men
             root.push(hide_row(
                 "toggle_hidden",
                 is_hidden,
-                "hide:hide",
-                "hide:unhide",
+                "hide:folder",
+                "unhide:folder",
             ));
         }
         Folder::FilesystemRoot => root.push(pin_row(on_hub)),
@@ -457,33 +480,21 @@ pub struct SystemInput {
 }
 
 pub fn system(input: &SystemInput) -> Menu {
-    let hide = if input.tile {
-        hide_row(
-            "toggle_hide_system",
-            input.is_hidden,
-            "hide:system",
-            "unhide:system",
-        )
-    } else {
-        hide_row(
-            "toggle_hide_system",
-            input.is_hidden,
-            "hide:hide",
-            "hide:unhide",
-        )
-    };
-    let pin = if input.tile {
-        keyed("hub_remove", "hub:remove")
-    } else {
-        pin_row(input.on_hub)
-    };
+    let hide = hide_row(
+        "toggle_hide_system",
+        input.is_hidden,
+        "hide:system",
+        "unhide:system",
+    );
+    let tile_rows = tile_rows();
     if input.launch_only {
         // Accept launches it, and nothing here is indexed: the few rows
-        // left need no page.
-        let mut root = vec![pin, hide];
-        if input.tile {
-            root.push(keyed("hub_move", "hub_move:tile"));
-        }
+        // left need no page. On a tile, the tile's own rows lead.
+        let root = if input.tile {
+            vec![tile_rows[0], tile_rows[1], hide]
+        } else {
+            vec![pin_row(input.on_hub), hide]
+        };
         return Menu {
             root,
             ..Menu::default()
@@ -501,35 +512,36 @@ pub fn system(input: &SystemInput) -> Menu {
         menu.manage.push(row("change_launcher"));
     }
     menu.manage.push(row("artwork"));
-    menu.manage.push(pin);
-    menu.manage.push(hide);
     if input.tile {
-        menu.manage.push(keyed("hub_move", "hub_move:tile"));
+        menu.tile.extend(tile_rows);
+    } else {
+        menu.manage.push(pin_row(input.on_hub));
     }
+    menu.manage.push(hide);
     if !input.media_busy {
         menu.manage.push(row("index_system"));
         menu.manage.push(row("scrape_system"));
     }
-    menu.with_manage(Page::ManageSystem)
+    menu.with_pages(Page::ManageSystem)
 }
 
 /// A Hub category tile. `maintainable` is false while a media job runs or
 /// when the category holds nothing Core indexes.
 pub fn category(maintainable: bool) -> Menu {
     let mut menu = Menu {
-        root: vec![row("hub_move"), keyed("hub_remove", "hub_remove:hide")],
+        root: tile_rows().to_vec(),
         ..Menu::default()
     };
     if maintainable {
         menu.manage = vec![row("index_category"), row("scrape_category")];
     }
-    menu.with_manage(Page::ManageCategory)
+    menu.with_pages(Page::ManageCategory)
 }
 
 /// A built-in Hub action, or Resume with no game to act on.
 pub fn built_in() -> Menu {
     Menu {
-        root: vec![row("hub_move"), keyed("hub_remove", "hub_remove:hide")],
+        root: tile_rows().to_vec(),
         ..Menu::default()
     }
 }
@@ -538,7 +550,7 @@ pub fn built_in() -> Menu {
 /// its layout actions remain.
 pub fn unresolved_shortcut() -> Menu {
     Menu {
-        root: vec![row("hub_move"), keyed("hub_remove", "hub:remove")],
+        root: tile_rows().to_vec(),
         ..Menu::default()
     }
 }
@@ -550,8 +562,7 @@ pub fn shortcut(has_script: bool, has_nfc: bool) -> Menu {
     if has_script {
         push_write(&mut menu, has_nfc);
     }
-    menu.root.push(keyed("hub_remove", "hub:remove"));
-    menu.root.push(keyed("hub_move", "hub_move:tile"));
+    menu.root.extend(tile_rows());
     menu
 }
 
@@ -604,23 +615,21 @@ mod deck_tests {
     }
 
     #[test]
-    fn a_deck_tile_has_the_tiles_rows() {
+    fn a_deck_tile_keeps_the_tiles_rows_on_edit_tile() {
         let menu = deck(&DeckInput {
+            editable: true,
             has_items: true,
             tile: true,
             ..DeckInput::default()
         })
         .with_tile_edits(true);
+        assert_eq!(ids(&menu.root), ["play_deck", "edit_tile", "manage_deck"]);
         assert_eq!(
-            ids(&menu.root),
-            [
-                "play_deck",
-                "hub_rename",
-                "hub_icon",
-                "hub_move",
-                "hub_remove"
-            ]
+            ids(&menu.tile),
+            ["hub_rename", "hub_icon", "hub_move", "hub_remove"]
         );
+        assert_eq!(ids(&menu.manage), ["deck_rename", "deck_delete"]);
+        assert_eq!(menu.page_for("edit_tile"), Some(Page::EditTile));
     }
 
     #[test]
@@ -677,7 +686,7 @@ mod tests {
         );
         assert_eq!(
             keys(&menu.manage),
-            ["change_launcher", "add_to_hub", "hide:hide", "scrape_game"]
+            ["change_launcher", "add_to_hub", "hide:game", "scrape_game"]
         );
         assert_eq!(menu.page_for("manage_game"), Some(Page::ManageGame));
     }
@@ -703,7 +712,7 @@ mod tests {
         });
         assert_eq!(keys(&matched.root)[0], "more_info");
         assert!(!keys(&matched.root).contains(&"favorite:add"));
-        assert!(!keys(&matched.manage).contains(&"hide:hide"));
+        assert!(!keys(&matched.manage).contains(&"hide:game"));
     }
 
     #[test]
@@ -816,7 +825,7 @@ mod tests {
             [
                 "change_launcher",
                 "hub:remove",
-                "hide:unhide",
+                "unhide:game",
                 "scrape_game"
             ]
         );
@@ -830,7 +839,7 @@ mod tests {
         });
         assert_eq!(
             keys(&busy.manage),
-            ["change_launcher", "add_to_hub", "hide:hide"]
+            ["change_launcher", "add_to_hub", "hide:game"]
         );
         assert_eq!(keys(&busy.root), keys(&game(&regular()).root));
 
@@ -852,7 +861,7 @@ mod tests {
             has_system: false,
             ..regular()
         });
-        assert_eq!(keys(&no_system.manage), ["add_to_hub", "hide:hide"]);
+        assert_eq!(keys(&no_system.manage), ["add_to_hub", "hide:game"]);
 
         let no_payload = game(&GameInput {
             has_payload: false,
@@ -879,30 +888,45 @@ mod tests {
     }
 
     #[test]
-    fn the_resume_tile_adds_its_layout_actions_to_the_games_own() {
+    fn the_resume_tile_keeps_its_own_rows_on_edit_tile() {
         let menu = game(&GameInput {
             tile: Some(Tile::Resume),
             ..regular()
-        });
+        })
+        .with_tile_edits(true);
         assert_eq!(
             keys(&menu.root),
-            ["more_info", "add_to_deck", "write_token", "manage_game"]
+            [
+                "more_info",
+                "add_to_deck",
+                "write_token",
+                "edit_tile",
+                "manage_game"
+            ]
         );
+        assert_eq!(
+            menu.tile,
+            [
+                keyed("hub_rename", "hub_rename:tile"),
+                keyed("hub_icon", "hub_icon:tile"),
+                keyed("hub_move", "hub_move:tile"),
+                keyed("hub_remove", "hub:remove"),
+            ]
+        );
+        // Add to Hub pins the game itself, not the Resume tile.
         assert_eq!(
             menu.manage,
             [
                 row("change_launcher"),
                 row("add_to_hub"),
                 keyed("toggle_hidden", "hide:game"),
-                keyed("hub_move", "hub_move:tile"),
-                keyed("hub_remove", "hub_remove:resume"),
                 row("scrape_game"),
             ]
         );
     }
 
     #[test]
-    fn a_pinned_game_removes_its_shortcut_where_the_pin_toggle_sits() {
+    fn a_pinned_game_removes_its_shortcut_on_edit_tile() {
         let menu = game(&GameInput {
             tile: Some(Tile::Pinned),
             is_hidden: true,
@@ -910,12 +934,17 @@ mod tests {
             ..regular()
         });
         assert_eq!(
+            menu.tile,
+            [
+                keyed("hub_move", "hub_move:tile"),
+                keyed("hub_remove", "hub:remove"),
+            ]
+        );
+        assert_eq!(
             menu.manage,
             [
                 row("change_launcher"),
-                keyed("hub_remove", "hub:remove"),
                 keyed("toggle_hidden", "unhide:game"),
-                keyed("hub_move", "hub_move:tile"),
                 row("scrape_game"),
             ]
         );
@@ -923,14 +952,27 @@ mod tests {
     }
 
     #[test]
+    fn a_tile_with_nothing_to_manage_still_has_edit_tile() {
+        let menu = game(&GameInput {
+            tile: Some(Tile::Pinned),
+            has_launchers: false,
+            hideable: false,
+            has_system: false,
+            ..regular()
+        });
+        assert!(menu.manage.is_empty());
+        assert_eq!(ids(&menu.root).last(), Some(&"edit_tile"));
+    }
+
+    #[test]
     fn folders_keep_their_actions_on_options() {
         assert_eq!(
             keys(&folder(Folder::Directory, false, false, false).root),
-            ["add_to_hub", "hide:hide"]
+            ["add_to_hub", "hide:folder"]
         );
         assert_eq!(
             keys(&folder(Folder::Directory, true, true, true).root),
-            ["artwork", "hub:remove", "hide:unhide"]
+            ["artwork", "hub:remove", "unhide:folder"]
         );
         assert_eq!(
             keys(&folder(Folder::FilesystemRoot, false, false, false).root),
@@ -962,7 +1004,7 @@ mod tests {
                 "change_launcher",
                 "artwork",
                 "add_to_hub",
-                "hide:hide",
+                "hide:system",
                 "index_system",
                 "scrape_system"
             ]
@@ -973,7 +1015,7 @@ mod tests {
             media_busy: true,
             ..SystemInput::default()
         });
-        assert_eq!(keys(&busy.manage), ["artwork", "add_to_hub", "hide:hide"]);
+        assert_eq!(keys(&busy.manage), ["artwork", "add_to_hub", "hide:system"]);
     }
 
     #[test]
@@ -1005,7 +1047,7 @@ mod tests {
             has_launchers: true,
             ..SystemInput::default()
         });
-        assert_eq!(keys(&menu.root), ["add_to_hub", "hide:hide"]);
+        assert_eq!(keys(&menu.root), ["add_to_hub", "hide:system"]);
         assert!(menu.manage.is_empty());
 
         let pinned = system(&SystemInput {
@@ -1014,31 +1056,49 @@ mod tests {
             ..SystemInput::default()
         });
         assert_eq!(
-            keys(&pinned.root),
-            ["hub:remove", "hide:system", "hub_move:tile"]
+            keys(&pinned.with_tile_edits(false).root),
+            [
+                "hub_rename:tile",
+                "hub_move:tile",
+                "hub:remove",
+                "hide:system"
+            ]
         );
     }
 
     #[test]
-    fn a_pinned_system_manages_its_shortcut_with_the_system() {
+    fn a_pinned_system_splits_its_tile_from_the_system() {
         let menu = system(&SystemInput {
             tile: true,
             has_launchers: true,
             is_hidden: true,
             ..SystemInput::default()
-        });
+        })
+        .with_tile_edits(true);
         assert_eq!(
             keys(&menu.root),
-            ["launch_system", "launch_random_system", "manage_system"]
+            [
+                "launch_system",
+                "launch_random_system",
+                "edit_tile",
+                "manage_system"
+            ]
+        );
+        assert_eq!(
+            keys(&menu.tile),
+            [
+                "hub_rename:tile",
+                "hub_icon:tile",
+                "hub_move:tile",
+                "hub:remove"
+            ]
         );
         assert_eq!(
             menu.manage,
             [
                 row("change_launcher"),
                 row("artwork"),
-                keyed("hub_remove", "hub:remove"),
                 keyed("toggle_hide_system", "unhide:system"),
-                keyed("hub_move", "hub_move:tile"),
                 row("index_system"),
                 row("scrape_system"),
             ]
@@ -1050,32 +1110,32 @@ mod tests {
         let menu = category(true);
         assert_eq!(
             keys(&menu.root),
-            ["hub_move", "hub_remove:hide", "manage_category"]
+            ["hub_move:tile", "hub:remove", "manage_category"]
         );
         assert_eq!(keys(&menu.manage), ["index_category", "scrape_category"]);
         assert_eq!(menu.page_for("manage_category"), Some(Page::ManageCategory));
 
         let idle = category(false);
-        assert_eq!(keys(&idle.root), ["hub_move", "hub_remove:hide"]);
+        assert_eq!(keys(&idle.root), ["hub_move:tile", "hub:remove"]);
         assert_eq!(idle.page_for("manage_category"), None);
     }
 
     #[test]
     fn small_hub_menus_stay_small() {
-        assert_eq!(keys(&built_in().root), ["hub_move", "hub_remove:hide"]);
+        assert_eq!(keys(&built_in().root), ["hub_move:tile", "hub:remove"]);
         assert_eq!(
             keys(&unresolved_shortcut().root),
-            ["hub_move", "hub:remove"]
+            ["hub_move:tile", "hub:remove"]
         );
         // A saved search is not a script to write.
         assert_eq!(
             keys(&shortcut(false, true).root),
-            ["hub:remove", "hub_move:tile"]
+            ["hub_move:tile", "hub:remove"]
         );
         let script = shortcut(true, true);
         assert_eq!(
             keys(&script.root),
-            ["write_token", "hub:remove", "hub_move:tile"]
+            ["write_token", "hub_move:tile", "hub:remove"]
         );
         assert_eq!(script.page_for("write_token"), Some(Page::WriteToken));
         assert_eq!(shortcut(true, false).page_for("write_token"), None);
@@ -1088,16 +1148,16 @@ mod tests {
             [
                 "hub_rename:tile",
                 "hub_icon:tile",
-                "hub_move",
-                "hub_remove:hide"
+                "hub_move:tile",
+                "hub:remove"
             ]
         );
         assert_eq!(
             keys(&category(true).with_tile_edits(false).root),
             [
                 "hub_rename:tile",
-                "hub_move",
-                "hub_remove:hide",
+                "hub_move:tile",
+                "hub:remove",
                 "manage_category"
             ]
         );
@@ -1107,22 +1167,22 @@ mod tests {
                 "write_token",
                 "hub_rename:tile",
                 "hub_icon:tile",
-                "hub:remove",
-                "hub_move:tile"
+                "hub_move:tile",
+                "hub:remove"
             ]
         );
-        // A game tile keeps its layout rows on Manage, and the edits join
-        // them there.
+        // A game tile keeps its tile rows on Edit tile, the edits first.
         let pinned = game(&GameInput {
             tile: Some(Tile::Pinned),
             ..regular()
         })
         .with_tile_edits(true);
         assert!(!ids(&pinned.root).contains(&"hub_rename"));
-        let manage = ids(&pinned.manage);
-        let rename = manage.iter().position(|id| *id == "hub_rename");
-        let remove = manage.iter().position(|id| *id == "hub_remove");
-        assert_eq!(rename.map(|at| at + 2), remove);
+        assert!(!ids(&pinned.manage).contains(&"hub_rename"));
+        assert_eq!(
+            ids(&pinned.tile),
+            ["hub_rename", "hub_icon", "hub_move", "hub_remove"]
+        );
         // A menu with no layout rows gains nothing.
         assert_eq!(
             folder(Folder::Directory, false, false, false).with_tile_edits(true),
@@ -1163,11 +1223,14 @@ mod tests {
             Page::ManageGame,
             Page::ManageSystem,
             Page::ManageCategory,
+            Page::ManageDeck,
+            Page::EditTile,
         ] {
             let menu = Menu {
                 root: vec![row(page.menu_id())],
                 write: vec![row("write_card")],
                 manage: vec![row("scrape_game")],
+                tile: vec![row("hub_move")],
                 ..Menu::default()
             };
             assert_eq!(menu.page_for(page.menu_id()), Some(page));

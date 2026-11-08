@@ -154,16 +154,16 @@ Core shows them empty.
 
 ### Renaming a tile and changing its icon
 
-A tile's Options menu has **Rename tile…** and **Change icon…** (on a game or
-system tile they are on its Manage page, with Move tile and Remove from
-Hub). Both write the tile's `[[hub.items]]` entry for you.
+A tile's Options menu has **Rename tile…** and **Change tile icon…** (on a game,
+system or deck tile they are on its Edit tile page, with Move tile and
+Remove from Hub). Both write the tile's `[[hub.items]]` entry for you.
 
 - **Rename tile…** opens the name on the on-screen keyboard. Save keeps
   it; Back leaves it as it was. Saving an empty name, or the tile's own
   name, goes back to the tile's own name and removes `name` from the file.
   A script tile has no name of its own to go back to, so it cannot be
   saved empty.
-- **Change icon…** opens the file browser on the folder of the tile's
+- **Change tile icon…** opens the file browser on the folder of the tile's
   current icon, or `custom/hub/` the first time. It lists folders and
   images as previews. Picking an image saves its absolute path as `icon`.
   Back goes up a folder and, from the top of a drive, to Places (the
@@ -172,7 +172,7 @@ Hub). Both write the tile's `[[hub.items]]` entry for you.
   default icon**, which removes `icon` from the file.
 
 An embedding host that runs its own image picker shows that instead of the
-file browser. A host without one does not offer Change icon….
+file browser. A host without one does not offer Change tile icon….
 
 #### Saved searches
 

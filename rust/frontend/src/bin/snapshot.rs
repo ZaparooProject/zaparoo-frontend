@@ -476,8 +476,8 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
     // The context menu over the games screen, its rows taken from the
     // product rules so the fixture cannot drift from the app. "context" is
     // an arcade game's own rows with a reader connected; the other screens
-    // are the pages those rows open, the Manage page being the Resume
-    // tile's, which is the tallest and has the longest labels.
+    // are the pages those rows open, the Manage and Edit tile pages being
+    // the Resume tile's, which has the longest labels.
     if screen.contains("context") || screen.contains("deck-item") {
         use zaparoo_app::options_menu::{self as menu, GameInput, Page, Tile};
         use zaparoo_app::user_flags::{Flag, Flags};
@@ -496,9 +496,11 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
             pinnable: true,
             hideable: true,
             has_system: true,
-            tile: screen.ends_with("context-manage").then_some(Tile::Resume),
+            tile: (screen.ends_with("context-manage") || screen.ends_with("context-tile"))
+                .then_some(Tile::Resume),
             ..GameInput::default()
-        });
+        })
+        .with_tile_edits(true);
         // An item of an editable deck: the game's rows, with its place in
         // the deck leading the Manage page.
         let game = if screen.contains("deck-item") {
@@ -571,6 +573,12 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
             (
                 generated::ContextPage::ManageGame,
                 page_rows(Page::ManageGame),
+                0,
+            )
+        } else if screen.ends_with("context-tile") {
+            (
+                generated::ContextPage::EditTile,
+                page_rows(Page::EditTile),
                 0,
             )
         } else if screen.ends_with("context-write") {

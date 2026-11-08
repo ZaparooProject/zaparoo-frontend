@@ -1832,7 +1832,7 @@ deep they are or how many Back presses get out. The rules:
 5. `ContextMenu` is an anchored transient, not a card. It closes before
    anything it triggers opens. A row that opens a screen of its own
    or a picker that waits on Core (`options_menu::Menu::holds_open`:
-   Rename tile…, Change icon…, and a game's Change launcher) is the
+   Rename tile…, Change tile icon…, and a game's Change launcher) is the
    exception: the menu stays up with the row held down until what it opens
    is ready, as any deferred route keeps its control down, and leaves in
    the frame that appears. Closing it first showed the screen underneath

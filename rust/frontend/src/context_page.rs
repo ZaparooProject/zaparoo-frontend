@@ -86,6 +86,7 @@ impl Page {
             Self::Menu(MenuPage::ManageSystem) => crate::ContextPage::ManageSystem,
             Self::Menu(MenuPage::ManageCategory) => crate::ContextPage::ManageCategory,
             Self::Menu(MenuPage::ManageDeck) => crate::ContextPage::ManageDeck,
+            Self::Menu(MenuPage::EditTile) => crate::ContextPage::EditTile,
         }
     }
 

@@ -66,13 +66,13 @@ and ends with `New deck…`.
 
 A deck's Options (on the Decks screen and its Hub tile) leads with `Play
 deck`, since Accept opens the deck rather than playing it; then `Add to
-Hub` or `Remove from Hub`. A deck the user can change keeps its edits on
-a `Manage deck` page: `Rename deck…`, `Choose cover image…` (only where
-Core can read the files the browser shows), `Remove cover`, then `Delete
-deck`, which asks first. A saved or locked deck has no edit rows at all.
+Hub` (or, on its Hub tile, the `Edit tile` page). A deck the user can
+change keeps its edits on a `Manage deck` page: `Rename deck…`, `Choose
+cover image…` (only where Core can read the files the browser shows),
+`Remove cover`, then `Delete deck`, which asks first. A saved or locked deck has no edit rows at all.
 The Deck screen's Menu carries the same rows. On the Deck screen, Accept
 plays the deck from the focused item; an item of a deck the user can
-change adds `Use as deck cover` (a game), `Move` and `Remove from deck`,
+change adds `Use as deck cover` (a game), `Move in deck` and `Remove from deck`,
 which are its place in the deck and so lead its organization: on its
 Manage page when it has one, on Options otherwise. `Remove from deck`
 asks nothing; the item can be added back from the game's own menu.
@@ -101,12 +101,24 @@ with its lock, the hidden mark, then the tags, dim. The icons carry these
 facts without words; do not add `Locked`, `Hidden` or a collection name
 beside them. See `docs/style.md` → "Tiles and the info line".
 
-On a Hub shortcut the item's rows and the tile's own share a menu, so
-their labels say which they act on: `Hide game` or `Hide system` for the
-item, `Move tile` and `Remove from Hub` for the shortcut, and `Hide Resume
-tile` for the built-in Resume tile. Every tile also has `Rename tile…` and
-`Change icon…`, which configure the tile itself and so lead its layout
-rows, wherever those sit (Options, or the Manage page).
+Every Options row names the thing it acts on, so a row reads the same
+wherever it appears. A Hub tile's own rows always read, in this order,
+`Rename tile…`, `Change tile icon…`, `Move tile`, `Remove from Hub`, on
+every kind of tile: a shortcut, a category, a built-in action and Resume
+alike, since taking any of them off is the same act and Add item brings
+any of them back. Never word one tile's removal `Hide`. The item's rows
+name the item: `Hide game`, `Hide system` and `Hide folder` (and their
+`Unhide`), in a list and on a tile alike; a deck item's move is `Move in
+deck`. On a tile that stands
+for an item with Options of its own (a game, including Resume, a system
+Accept browses into, a deck), those rows are one `Edit tile` page, its
+row just before the item's Manage row, and the item's Manage page keeps
+only the item's own rows. The tile and the item it opens never share one
+page: on a system tile that page ran to eight rows of four different
+kinds. A tile that is only itself (a category, a built-in action, a
+script or saved search, a launch-only system, an unresolved shortcut)
+keeps its rows on Options, followed by the item's own `Hide system` where
+there is one.
 
 A destructive or permanent action is never first, and sits with the
 other organizational actions rather than at the very bottom next to
@@ -134,7 +146,8 @@ press.
 Judge a menu by whether it still fits without scrolling at 240p, not by a
 row count. Scrolling hides entries, and a hidden entry is an undiscoverable
 one. Four to six rows on Options is the range to aim for on an item with
-many actions; past that, the Manage page is where the rest belong. A page
+many actions; past that, the Manage page (and on a Hub tile, the Edit
+tile page) is where the rest belong. A page
 of the menu is one level deep: a row on a page acts, it never opens
 another page. A task that needs more than that is a screen.
 
