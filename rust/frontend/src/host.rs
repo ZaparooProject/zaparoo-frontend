@@ -502,6 +502,7 @@ mod tests {
             fit: zaparoo_app::covers::Fit::SOURCE,
             folder: false,
             image_type: None,
+            prefer: None,
         };
         media.seed(
             key.clone(),
