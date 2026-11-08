@@ -346,6 +346,8 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
         fixture_file_browser(&app, scene_w, scene_h, crt, screen);
     } else if screen.contains("music") {
         fixture_music(&app, scene_w, scene_h, crt, screen);
+    } else if screen.contains("credits") {
+        fixture_credits(&app, scene_w, scene_h, crt, screen.contains("reading"));
     }
     // The browse filter: the header cue on the games screen, the picker's
     // categories page with a filter set, its values page with counts, and
@@ -2134,8 +2136,76 @@ fn fixture_music(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &str)
     view.set_focused_opens(false);
 }
 
+/// The Credits screen from the license file the binary embeds: the list a
+/// few rows in, or the reading page on the first crate license.
+fn fixture_credits(app: &App, scene_w: f64, scene_h: f64, crt: bool, reading: bool) {
+    use zaparoo_app::credits::{Block, Credits};
+    let Ok(credits) = Credits::parse(include_str!("../../LICENSE.txt").to_string()) else {
+        return;
+    };
+    let view = app.global::<generated::CreditsView>();
+    let components = credits.components();
+    let count = components.len();
+    let selected = 3.min(count.saturating_sub(1));
+    view.set_focus_ready(true);
+    view.set_count(count as i32);
+    view.set_current_index(selected as i32);
+    if let Some(geometry) = list_geometry(app, scene_w, scene_h, crt, 10, false) {
+        view.set_list_x(geometry.card_x as f32);
+        view.set_list_y(geometry.card_y as f32);
+        view.set_list_width(geometry.card_width as f32);
+        view.set_list_height(geometry.card_height as f32);
+        view.set_list_row_height(geometry.row_height as f32);
+        let visible = geometry.visible_rows.max(1);
+        view.set_list_total_pages(count.div_ceil(visible) as i32);
+        view.set_has_items_below(count > visible);
+    }
+    let cells: Vec<GridCell> = components
+        .iter()
+        .take(30)
+        .map(|component| GridCell {
+            name: credits.name(component).into(),
+            tags: credits.licenses(component).join(" / ").into(),
+            opens: true,
+            ..Default::default()
+        })
+        .collect();
+    view.set_list_rows(slint::ModelRc::new(slint::VecModel::from(cells)));
+    view.set_list_view_top(0);
+    view.set_list_scroll_top(0);
+    view.set_list_sel(selected as i32);
+    if !reading {
+        return;
+    }
+    let Some(component) = components
+        .iter()
+        .find(|component| !credits.licenses(component).is_empty())
+    else {
+        return;
+    };
+    view.set_page(generated::CreditsPage::Reading);
+    view.set_title(credits.name(component).into());
+    let blocks: Vec<generated::CreditsBlock> = credits
+        .blocks(component)
+        .into_iter()
+        .map(|block| match block {
+            Block::Heading(text) => generated::CreditsBlock {
+                text: text.into(),
+                heading: true,
+            },
+            Block::Paragraph(text) => generated::CreditsBlock {
+                text: text.as_ref().into(),
+                heading: false,
+            },
+        })
+        .collect();
+    view.set_blocks(slint::ModelRc::new(slint::VecModel::from(blocks)));
+}
+
 fn fixture_screen(screen: &str) -> Screen {
-    if screen.starts_with("route-")
+    if screen.contains("credits") {
+        Screen::Credits
+    } else if screen.starts_with("route-")
         || screen.ends_with("hub-deck")
         || screen.ends_with("core-picker")
         || screen.ends_with("core-confirm")
@@ -3944,6 +4014,8 @@ mod fixture_tests {
             ("game-info", Screen::Games),
             ("settings-page", Screen::Settings),
             ("about", Screen::About),
+            ("credits", Screen::Credits),
+            ("crt-credits-reading", Screen::Credits),
             ("update-intro", Screen::Update),
             ("crt-update-details", Screen::Update),
             ("decks", Screen::Decks),

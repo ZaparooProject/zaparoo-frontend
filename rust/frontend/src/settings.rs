@@ -1062,6 +1062,7 @@ fn accept(ctx: &Ctx, app: &App, id: &str, control: Control) {
             "backgroundImage" => crate::file_browser::open_background(ctx, app),
             "headerLogoImage" => crate::file_browser::open_header_logo(ctx, app),
             "aboutLicense" => crate::router::enter_about(ctx, app, EntryMode::Fresh),
+            "credits" => crate::credits::enter(ctx, app, EntryMode::Fresh),
             "documentation" => crate::router::open_documentation_qr(app),
             "uploadLog" => crate::log_upload::open(ctx, app),
             "pairDevice" => {

@@ -28,7 +28,8 @@ targets = [
     "x86_64-unknown-linux-gnu",
 ]
 
-# The workspace crates are ours; their own license is in COPYING.
+# The workspace crates are ours; their own license, COPYING, leads
+# rust/frontend/LICENSE.txt.
 private = { ignore = true }
 
 # The Slint crates are not clarified here: their license is a custom

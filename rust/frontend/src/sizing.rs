@@ -157,8 +157,8 @@ fn current_view(app: &App) -> View {
         crate::Screen::FileBrowser => {
             app.global::<crate::FileBrowserView>().get_mode() == crate::FileBrowserMode::Plain
         }
-        // The music player is lists only.
-        crate::Screen::Music => true,
+        // The music player and Credits are lists only.
+        crate::Screen::Music | crate::Screen::Credits => true,
         _ => shell.get_browse_list_layout(),
     };
     if list_layout {

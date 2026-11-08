@@ -156,8 +156,7 @@ class PackagingTests(unittest.TestCase):
                 inputs = {
                     'rust/Cargo.toml': '[workspace.package]\nversion = "0.0.1"\n',
                     'rust/target/docker/armv7-unknown-linux-musleabihf/release/frontend': 'frontend',
-                    'rust/frontend/LICENSES/THIRD-PARTY-NOTICES.txt': 'notices',
-                    'LICENSES/notice': 'attribution', 'COPYING': 'license',
+                    'rust/frontend/LICENSE.txt': 'license',
                 }
                 for name, contents in inputs.items():
                     target = root / name

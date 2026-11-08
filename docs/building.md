@@ -93,8 +93,9 @@ The release workflow clones it with the `ZAPAROO_UPDATE_DEPLOY_KEY` secret
 (a read-only deploy key) at `inputs.update_ref`, then the
 `ZAPAROO_UPDATE_REF` repository variable, then `main`. A release that would
 be published fails when the key is missing; a dispatch that uploads nothing
-only warns and builds the stand-in. The stand-in ships
-`LICENSES/zaparoo-update-NOTICE.txt` in every bundle either way.
+only warns and builds the stand-in. The
+`LICENSES/zaparoo-update-NOTICE.txt` text ships in every bundle's
+`LICENSE.txt` either way.
 
 ## Toolchain image
 
@@ -156,7 +157,7 @@ Steam.
 
 `just package-desktop [tag]` builds the release binary and writes
 `output/release/zaparoo-frontend-<tag>-<os>-<arch>.tar.gz` with the binary,
-`COPYING`, the asset attributions, and the crate notices.
+`LICENSE.txt`, the one license file `just notices` generates.
 
 ## MiSTer ARM32 build
 
@@ -300,8 +301,9 @@ The gate, which CI runs as-is inside the toolchain image:
   or any other toolkit
 - `scripts/check-translations.sh`: the committed `frontend.pot` must match a
   fresh extraction from the `.slint` files
-- `scripts/check-notices.sh`: `THIRD-PARTY-NOTICES.txt` must match the current
-  dependency set; `just notices` regenerates it
+- `scripts/check-notices.sh`: `rust/frontend/LICENSE.txt` must match the
+  current `COPYING`, `LICENSES/` and dependency set; `just notices`
+  regenerates it
 - `python3 scripts/prepare-system-logos.py --check`: the embedded logo sets
   under `rust/frontend/assets/` must match the sources under
   `resources/images/systems*/`; `just logos` regenerates them
@@ -401,9 +403,9 @@ and a tag.
    (`[workspace.package]`), then regenerate the lockfile with
    `cargo update --workspace` from `rust/`. That is the only place to edit;
    About and the log upload read `CARGO_PKG_VERSION`.
-2. **Refresh the notices** if dependencies changed: `just notices`, and commit
-   `rust/frontend/LICENSES/THIRD-PARTY-NOTICES.txt`. Packaging fails when the
-   file is missing.
+2. **Refresh the notices** if dependencies, `COPYING` or `LICENSES/` changed:
+   `just notices`, and commit `rust/frontend/LICENSE.txt`. Packaging fails
+   when the file is missing.
 3. **Tag and publish.** Push a `vX.Y.Z` tag (or run the `Build release ZIP`
    workflow with `upload` enabled). The workflow checks the tag against the
    workspace version, builds with `just release`, packages the bundle, uploads
@@ -418,8 +420,7 @@ To bundle a specific menu or host build instead of latest, set the workflow's
 `scripts/package-mister-release.sh` directly).
 
 The bundle layout: `zaparoo/frontend`, `zaparoo/MiSTer_Zaparoo`,
-`zaparoo/menu_zaparoo.rbf`, `LICENSES/` (asset attributions plus
-`THIRD-PARTY-NOTICES.txt`), `README.txt`, and `COPYING`.
+`zaparoo/menu_zaparoo.rbf`, `README.txt`, and `LICENSE.txt`.
 
 ### Bundling scanout modules
 

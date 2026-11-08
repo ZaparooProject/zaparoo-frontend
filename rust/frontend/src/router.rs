@@ -176,6 +176,7 @@ pub struct Shared {
     pub search: crate::search::Model,
     pub rename: crate::rename::Model,
     pub file_browser: crate::file_browser::Model,
+    pub credits: crate::credits::Model,
     /// The music player.
     pub music: crate::music::Model,
     /// Ticket for the per-game launcher read, so a picker only opens
@@ -379,6 +380,7 @@ impl Shared {
             search: crate::search::Model::default(),
             rename: crate::rename::Model::default(),
             file_browser: crate::file_browser::Model::default(),
+            credits: crate::credits::Model::default(),
             music: crate::music::Model::default(),
             game_launcher_seq: 0,
             persist,
@@ -1583,6 +1585,7 @@ fn screen_action(ctx: &Ctx, app: &App, action: &str) {
         crate::Screen::Music => crate::music::handle_action(ctx, app, action),
         crate::Screen::Settings => crate::settings::handle_action(ctx, app, action),
         crate::Screen::About => about_action(ctx, app, action),
+        crate::Screen::Credits => crate::credits::handle_action(ctx, app, action),
         crate::Screen::Update => crate::update::handle_action(ctx, app, action),
         crate::Screen::None => {}
     }
@@ -1884,6 +1887,7 @@ pub(crate) fn relayout(ctx: &Ctx, app: &App) {
     crate::games::on_layout_changed(ctx, app);
     crate::settings::refresh(ctx, app);
     crate::file_browser::relayout(ctx, app);
+    crate::credits::relayout(ctx, app);
     crate::music::relayout(ctx, app);
 }
 
