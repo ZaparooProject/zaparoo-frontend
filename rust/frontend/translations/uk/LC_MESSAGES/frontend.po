@@ -2271,12 +2271,12 @@ msgid "Schedule"
 msgstr "Розклад"
 
 #: rust/frontend/ui/settings.slint:198
-msgid "Manage backups…"
-msgstr "Керувати копіями…"
+msgid "Manage backups"
+msgstr "Керувати копіями"
 
 #: rust/frontend/ui/settings.slint:200
-msgid "Activity…"
-msgstr "Активність…"
+msgid "Activity"
+msgstr "Активність"
 
 #: rust/frontend/ui/settings.slint:205
 msgid "Debug logging"
@@ -4919,3 +4919,30 @@ msgstr "Меню"
 msgctxt "tag-value"
 msgid "Volume {}"
 msgstr "Том {}"
+
+msgid "Update media database…"
+msgstr "Оновити базу медіа…"
+
+msgid "Update metadata…"
+msgstr "Оновити метадані…"
+
+msgid "Unlink account…"
+msgstr "Відв'язати обліковий запис…"
+
+msgid "Grid"
+msgstr "Перегляд сіткою"
+
+msgid "Detailed list"
+msgstr "Детальний перегляд списку"
+
+msgid "Recommended"
+msgstr "Рекомендовано"
+
+msgid "1 second"
+msgstr "1 секунда"
+
+msgid "Testing"
+msgstr "Тест"
+
+msgid "No animations"
+msgstr "Без анімацій"

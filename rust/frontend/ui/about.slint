@@ -49,7 +49,7 @@ export component AboutScreen inherits Rectangle {
     TopStatusStrip {
         y: Sizing.header-bottom + Sizing.pct-h(1);
         height: Sizing.pct-h(7);
-        title: @tr("About / License");
+        title: @tr("Version and license");
         show-page-counter: !Sizing.crt;
         page-indicator-mode: true;
         percent-mode: true;
@@ -65,7 +65,7 @@ export component AboutScreen inherits Rectangle {
     // The scroll cues get a reserved band inside the lip, the same shape
     // the list panel uses; folding them into the padding is what made
     // the old `pct-h(4)` end inset look like a considered number.
-    property <length> arrow: Sizing.pct-h(3);
+    property <length> arrow: GlyphSource.cue-side();
     property <length> arrow-band: Sizing.crt ? root.arrow + Sizing.pct-h(0.5) : 0px;
 
     card := Rectangle {

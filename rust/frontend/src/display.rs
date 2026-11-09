@@ -133,20 +133,20 @@ mod tests {
             "Automatic"
         );
         assert_eq!(
-            labels.invoke_picker_value("resolution".into(), "".into()),
-            "Automatic (Recommended)"
+            labels.invoke_picker_note("resolution".into(), "".into()),
+            "Recommended"
         );
         assert_eq!(
             labels.invoke_value("resolution".into(), "1920x1080".into()),
             "1920 × 1080"
         );
         assert_eq!(
-            labels.invoke_picker_value("resolution".into(), "1920x1080".into()),
-            "1920 × 1080 (Animations off)"
+            labels.invoke_picker_note("resolution".into(), "1920x1080".into()),
+            "No animations"
         );
         assert_eq!(
-            labels.invoke_picker_value("resolution".into(), "1280x720".into()),
-            "1280 × 720"
+            labels.invoke_picker_note("resolution".into(), "1280x720".into()),
+            ""
         );
         Ok(())
     }

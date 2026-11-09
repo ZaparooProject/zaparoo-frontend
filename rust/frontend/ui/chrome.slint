@@ -43,6 +43,12 @@ export global GlyphSource {
     public pure function help-side() -> length {
         return Sizing.tier-240 ? Sizing.help-glyph-size : self.side(Sizing.pct-h(4));
     }
+    // A scroll cue's side: 3% of the height, and on the bitmap-face scenes
+    // never under the 7 px its pixel art needs to tell a filled arrow from
+    // an outlined one (the CRT's safe area alone would make it 6).
+    public pure function cue-side() -> length {
+        return Sizing.pixel-grid ? Math.max(7px, self.side(Sizing.pct-h(3))) : self.side(Sizing.pct-h(3));
+    }
 }
 
 // Rust filters the embedded master into a cached raster at the painted size.
@@ -715,27 +721,29 @@ export component ModalShell inherits Rectangle {
 // One directional cue: a scroll arrow, or one half of `PageIndicator`'s
 // pair, or a carousel arrow. Painted whether or not the direction is live,
 // because a press the other way brings it straight back and hiding it
-// takes away the only sign that the surface scrolls at all. What toggles
-// is the color, and the spent color is `Theme.cue-spent` rather than
-// `text-label`: a state carried by color alone needs 3:1 between the two,
-// and `text-label` manages that on three of the twenty presets. Hosts hide
-// the whole pair when nothing scrolls; that is a different question from
-// one direction being spent. See docs/style.md -> "Spent cues".
+// takes away the only sign that the surface scrolls at all. A spent scroll
+// arrow turns from filled to outlined, so the state does not rest on color
+// alone, and takes `Theme.cue-spent` as well: `text-label` would clear 3:1
+// against the text on only three of the twenty presets. The carousel's
+// chevrons have no filled form and change color only. Hosts hide the whole
+// pair when nothing scrolls; that is a different question from one
+// direction being spent. See docs/style.md -> "Spent cues".
 export component ScrollCue inherits Image {
     in property <string> glyph: "icons/ScrollDown";
     in property <bool> live: true;
-    width: GlyphSource.side(Sizing.pct-h(3));
+    property <bool> outlined: !root.live && (root.glyph == "icons/ScrollUp" || root.glyph == "icons/ScrollDown");
+    width: GlyphSource.cue-side();
     height: self.width;
     image-rendering: Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
-    source: GlyphSource.glyph(root.glyph, Math.max(1px, self.width),
+    source: GlyphSource.glyph(root.outlined ? root.glyph + "Outline" : root.glyph, Math.max(1px, self.width),
         root.live ? Theme.text-primary : Theme.cue-spent);
 }
 
 // Compact "where am I" cue: an up/down chevron pair
 // plus "N/M". Reserves its full width unconditionally so arming a
 // second page changes only the text, never the chevrons' position.
-// Unavailable directions dim to text-label; with a single page the
-// whole cue hides (but still reserves its width).
+// Unavailable directions turn to outlines (see ScrollCue); with a
+// single page the whole cue hides (but still reserves its width).
 export component PageIndicator inherits Rectangle {
     in property <int> current-page: 0;
     in property <int> total-pages: 1;

@@ -2259,12 +2259,12 @@ msgid "Schedule"
 msgstr "주기"
 
 #: rust/frontend/ui/settings.slint:198
-msgid "Manage backups…"
-msgstr "백업 관리…"
+msgid "Manage backups"
+msgstr "백업 관리"
 
 #: rust/frontend/ui/settings.slint:200
-msgid "Activity…"
-msgstr "활동…"
+msgid "Activity"
+msgstr "활동"
 
 #: rust/frontend/ui/settings.slint:205
 msgid "Debug logging"
@@ -4901,3 +4901,30 @@ msgstr "메뉴"
 msgctxt "tag-value"
 msgid "Volume {}"
 msgstr "Vol. {}"
+
+msgid "Update media database…"
+msgstr "미디어 데이터베이스 업데이트…"
+
+msgid "Update metadata…"
+msgstr "메타데이터 업데이트…"
+
+msgid "Unlink account…"
+msgstr "계정 연동 해제…"
+
+msgid "Grid"
+msgstr "그리드 보기"
+
+msgid "Detailed list"
+msgstr "자세한 목록 보기"
+
+msgid "Recommended"
+msgstr "권장"
+
+msgid "1 second"
+msgstr "1초"
+
+msgid "Testing"
+msgstr "테스트용"
+
+msgid "No animations"
+msgstr "애니메이션 끔"

@@ -2259,12 +2259,12 @@ msgid "Schedule"
 msgstr "スケジュール"
 
 #: rust/frontend/ui/settings.slint:198
-msgid "Manage backups…"
-msgstr "バックアップを管理…"
+msgid "Manage backups"
+msgstr "バックアップを管理"
 
 #: rust/frontend/ui/settings.slint:200
-msgid "Activity…"
-msgstr "操作履歴…"
+msgid "Activity"
+msgstr "操作履歴"
 
 #: rust/frontend/ui/settings.slint:205
 msgid "Debug logging"
@@ -4901,3 +4901,30 @@ msgstr "メニュー"
 msgctxt "tag-value"
 msgid "Volume {}"
 msgstr "Vol.{}"
+
+msgid "Update media database…"
+msgstr "メディアデータベースを更新…"
+
+msgid "Update metadata…"
+msgstr "メタデータを更新…"
+
+msgid "Unlink account…"
+msgstr "アカウントの連携を解除…"
+
+msgid "Grid"
+msgstr "グリッド表示"
+
+msgid "Detailed list"
+msgstr "詳細リスト表示"
+
+msgid "Recommended"
+msgstr "推奨"
+
+msgid "1 second"
+msgstr "1秒"
+
+msgid "Testing"
+msgstr "テスト"
+
+msgid "No animations"
+msgstr "アニメーションオフ"

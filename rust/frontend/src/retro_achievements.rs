@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 //
-// Settings > Library > RetroAchievements on a MiSTer: odelot's
+// Settings > RetroAchievements on a MiSTer: odelot's
 // RetroAchievements Main (`MiSTer_RA`) and the file it reads at the root
 // of the SD card. This is the frontend's own stopgap until Core handles
 // RetroAchievements itself: it reads and edits `retroachievements.cfg`,
@@ -96,7 +96,7 @@ fn write_in_place(path: &Path, edits: &[Edit]) -> std::io::Result<RaConfig> {
 }
 
 /// Read the card again and repaint the page. Settings asks when the
-/// Library page opens.
+/// `RetroAchievements` page opens.
 pub(crate) fn refresh(ctx: &Ctx, app: &App) {
     if !available() {
         return;

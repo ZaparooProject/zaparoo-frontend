@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 
-//! The Settings registry: the eight root categories, the rows each page
+//! The Settings registry: the root categories, the rows each page
 //! shows at the current runtime, what control each row carries, the
 //! canonical option lists, and the cursor rules over rows that include
 //! non-navigable headers. Every user-visible string stays a key the view
@@ -26,6 +26,9 @@ pub enum Control {
     /// Shows a live value and nothing else: there is nothing to change, so
     /// it never takes focus.
     Info,
+    /// Reads like an info row, but takes focus, because its description
+    /// says what to do about what it reports.
+    Notice,
     /// A value on a scale: Left and Right step it, holding repeats.
     Slider,
     /// One of a live list of things (a Bluetooth device on the pairing
@@ -97,27 +100,28 @@ pub struct Page {
     pub glyph: &'static str,
 }
 
-/// The root grid, in the order the console-style menu shows it:
-/// Appearance is how it looks, Library the collection and its
-/// maintenance, Music the background music player, Online the account,
-/// Display the video output, Controls the input, Language the locale,
-/// About the identity and diagnostics.
+/// Every root category tile, in the order the console-style menu shows
+/// it: what the collection holds and how it is browsed, the music player,
+/// how the interface looks and the output it draws on, input, locale, the
+/// accounts the frontend links to, then About, always last.
+/// The `RetroAchievements` tile shows only where `MiSTer_RA` can be set up; see
+/// `root_pages`.
 pub const PAGES: &[Page] = &[
-    Page {
-        id: "pageAppearance",
-        glyph: "icons/Appearance",
-    },
     Page {
         id: "pageLibraryData",
         glyph: "icons/Library",
+    },
+    Page {
+        id: BROWSING_PAGE,
+        glyph: "icons/Browsing",
     },
     Page {
         id: MUSIC_PAGE,
         glyph: "icons/Music",
     },
     Page {
-        id: "pageOnline",
-        glyph: "icons/Online",
+        id: "pageAppearance",
+        glyph: "icons/Appearance",
     },
     Page {
         id: "pageDisplayInterface",
@@ -132,10 +136,32 @@ pub const PAGES: &[Page] = &[
         glyph: "icons/Language",
     },
     Page {
+        id: "pageOnline",
+        glyph: "icons/Online",
+    },
+    Page {
+        id: RETRO_ACHIEVEMENTS_PAGE,
+        glyph: "icons/Trophy",
+    },
+    Page {
         id: "pageSupportAbout",
         glyph: "icons/Support",
     },
 ];
+
+/// The browse lists' presentation: layouts, artwork, what a list shows.
+pub const BROWSING_PAGE: &str = "pageBrowsing";
+
+/// The `RetroAchievements` account and `MiSTer_RA`'s options, a root tile
+/// only where the frontend can set `MiSTer_RA` up.
+pub const RETRO_ACHIEVEMENTS_PAGE: &str = "pageRetroAchievements";
+
+/// The root tiles this machine shows, in `PAGES` order.
+pub fn root_pages(retro_achievements: bool) -> impl Iterator<Item = &'static Page> {
+    PAGES
+        .iter()
+        .filter(move |p| retro_achievements || p.id != RETRO_ACHIEVEMENTS_PAGE)
+}
 
 /// The root tile that opens the music player, a screen of its own rather
 /// than a page of rows.
@@ -246,6 +272,8 @@ const NAVIGATES: &[&str] = &[
     "pageLanguage",
     "pageControlsInput",
     "pageLibraryData",
+    "pageBrowsing",
+    "pageRetroAchievements",
     "pageOnline",
     "pageSupportAbout",
     "launcherPreference",
@@ -253,6 +281,8 @@ const NAVIGATES: &[&str] = &[
     "controllers",
     "pairedControllers",
     "headerLogoImage",
+    "onlineManageBackups",
+    "onlineRemoteActivity",
 ];
 
 const ACTIONS: &[&str] = &[
@@ -265,8 +295,6 @@ const ACTIONS: &[&str] = &[
     "playtimeAccess",
     "onlineLinkAccount",
     "onlineUnlinkAccount",
-    "onlineManageBackups",
-    "onlineRemoteActivity",
     "raLogIn",
     "raLogOut",
 ];
@@ -285,9 +313,10 @@ const INFOS: &[&str] = &[
     "onlineWarp",
     "onlineRemoteStatus",
     "raAccount",
-    "raInstall",
-    "raConflict",
 ];
+
+/// Rows that report something to act on elsewhere; see `Control::Notice`.
+const NOTICES: &[&str] = &["raInstall", "raConflict"];
 
 /// The control a row id carries: everything that is not a toggle, a
 /// navigation, a one-shot, a tri-toggle or an info row is a picker.
@@ -302,6 +331,8 @@ pub fn control(id: &str) -> Control {
         Control::TriToggle
     } else if INFOS.contains(&id) {
         Control::Info
+    } else if NOTICES.contains(&id) {
+        Control::Notice
     } else if SLIDERS.contains(&id) {
         Control::Slider
     } else {
@@ -316,15 +347,13 @@ fn field(id: &'static str) -> Row {
     }
 }
 
-/// Library & data. Maintenance leads: these are rows a user comes here to
-/// do, not one-time preferences.
+/// Library: getting games in and keeping the media database current.
+/// Maintenance leads: these are rows a user comes here to do, not one-time
+/// preferences. The launcher rows close the page.
 fn library_rows(inputs: &Inputs) -> Vec<Row> {
     let mut rows = Vec::new();
     if inputs.can_pick_folder {
         rows.push(field("addGameFolder"));
-    }
-    if inputs.can_scan_launchers {
-        rows.push(field("detectLaunchers"));
     }
     if inputs.can_request_playtime_access {
         rows.push(field("playtimeAccess"));
@@ -333,47 +362,75 @@ fn library_rows(inputs: &Inputs) -> Vec<Row> {
         Row::Header("maintenance"),
         field("updateMediaDb"),
         field("runScraper"),
-        Row::Header("browsing"),
+    ]);
+    if inputs.can_scan_launchers || inputs.launcher_preference {
+        rows.push(Row::Header("launchers"));
+        if inputs.can_scan_launchers {
+            rows.push(field("detectLaunchers"));
+        }
+        if inputs.launcher_preference {
+            rows.push(field("launcherPreference"));
+        }
+    }
+    rows
+}
+
+/// Browsing: how the browse screens lay out and label what they list.
+/// Layouts first, then what Left and Right do in the list a layout picks,
+/// the artwork, then what a list shows.
+fn browsing_rows() -> Vec<Row> {
+    vec![
         field("systemsLayout"),
         field("gamesLayout"),
         field("listLeftRight"),
         field("mediaImageType"),
-        field("showHidden"),
-        field("showOriginalFilenames"),
         field("showTags"),
-    ]);
-    if inputs.launcher_preference {
-        rows.push(Row::Header("launchers"));
-        rows.push(field("launcherPreference"));
+        field("showOriginalFilenames"),
+        field("showHidden"),
+    ]
+}
+
+/// The `RetroAchievements` page, laid out like Online's. The account
+/// leads: nothing else here does anything without it. Setup follows (the
+/// launcher switch and what stands in its way), then the options
+/// `MiSTer_RA` reads as a game starts, the popups grouped last. A section
+/// with nothing to show keeps no header.
+fn retro_achievements_rows(inputs: &Inputs) -> Vec<Row> {
+    if !inputs.retro_achievements {
+        return Vec::new();
     }
-    if inputs.retro_achievements {
-        // The account leads: nothing else here does anything without it.
-        // The launcher switch comes next with what stands in its way, then
-        // the options MiSTer_RA reads as a game starts.
-        rows.push(Row::Header("retroAchievements"));
-        rows.push(field("raAccount"));
-        rows.push(field(if inputs.ra_logged_in {
+    let mut rows = vec![
+        Row::Header("account"),
+        field("raAccount"),
+        field(if inputs.ra_logged_in {
             "raLogOut"
         } else {
             "raLogIn"
-        }));
-        if inputs.launcher_preference {
-            rows.push(field("raLaunchers"));
-        }
-        if !inputs.ra_installed {
-            rows.push(field("raInstall"));
-        } else if inputs.ra_conflict {
-            rows.push(field("raConflict"));
-        }
-        rows.extend([
-            field("raHardcore"),
-            field("raProgressPopups"),
-            field("raChallengePopups"),
-            field("raLeaderboardPopups"),
-            field("raPopupPosition"),
-            field("raListHotkey"),
-        ]);
+        }),
+    ];
+    let mut setup = Vec::new();
+    if inputs.launcher_preference {
+        setup.push(field("raLaunchers"));
     }
+    if !inputs.ra_installed {
+        setup.push(field("raInstall"));
+    } else if inputs.ra_conflict {
+        setup.push(field("raConflict"));
+    }
+    if !setup.is_empty() {
+        rows.push(Row::Header("setup"));
+        rows.extend(setup);
+    }
+    rows.extend([
+        Row::Header("gameplay"),
+        field("raHardcore"),
+        field("raListHotkey"),
+        Row::Header("popups"),
+        field("raProgressPopups"),
+        field("raChallengePopups"),
+        field("raLeaderboardPopups"),
+        field("raPopupPosition"),
+    ]);
     rows
 }
 
@@ -383,18 +440,19 @@ fn library_rows(inputs: &Inputs) -> Vec<Row> {
 pub const CONTROLLERS_PAGE: &str = "pageControllers";
 pub const PAIRED_PAGE: &str = "pagePairedControllers";
 
-/// Controls. The input preferences, then the way to the controllers Core
-/// sees and to pairing another.
+/// Controls. The way to the controllers Core sees and to pairing another
+/// leads, the row a user comes here to do; the input preferences follow.
 fn controls_rows(inputs: &Inputs) -> Vec<Row> {
-    let mut rows = vec![
+    let mut rows = Vec::new();
+    if inputs.controllers_listed || inputs.can_pair_controllers {
+        rows.push(field("controllers"));
+    }
+    rows.extend([
         field("buttonLayout"),
         field("swapConfirmCancel"),
         field("swapOptionsView"),
         field("mouseEnabled"),
-    ];
-    if inputs.controllers_listed || inputs.can_pair_controllers {
-        rows.push(field("controllers"));
-    }
+    ]);
     rows
 }
 
@@ -447,20 +505,22 @@ fn language_rows(inputs: &Inputs) -> Vec<Row> {
 /// The rows of one page; the empty page id is the root category grid.
 pub fn page_rows(page: &str, inputs: &Inputs) -> Vec<Row> {
     match page {
-        "" => PAGES.iter().map(|p| field(p.id)).collect(),
+        "" => root_pages(inputs.retro_achievements)
+            .map(|p| field(p.id))
+            .collect(),
         "pageAppearance" => {
             let mut rows = vec![
                 field("colorScheme"),
                 field("colorIntensity"),
                 field("systemLogoStyle"),
-                field("showMenuRow"),
-                field("showHelpBar"),
                 field("headerLogo"),
             ];
             if inputs.header_logo_custom {
                 rows.push(field("headerLogoImage"));
             }
             rows.extend([
+                field("showMenuRow"),
+                field("showHelpBar"),
                 field("reduceMotion"),
                 field("screensaverTimeout"),
                 Row::Header("background"),
@@ -505,17 +565,19 @@ pub fn page_rows(page: &str, inputs: &Inputs) -> Vec<Row> {
         CONTROLLERS_PAGE => controllers_rows(inputs),
         PAIRED_PAGE => paired_rows(inputs),
         "pageLibraryData" => library_rows(inputs),
+        BROWSING_PAGE => browsing_rows(),
+        RETRO_ACHIEVEMENTS_PAGE => retro_achievements_rows(inputs),
         // Account first: everything else on the page needs it. Status and
         // Warp only report (info rows, never focused); the one thing to do
         // there is link or unlink. Features lead with the one switch that
-        // covers all four, then each on its own; Backup and Remote close
-        // the page with the one action each actually needs doing from here.
+        // covers all four, then each on its own; Remote and Backup close
+        // the page, in the features' order, with the one action each
+        // actually needs doing from here.
         "pageOnline" => {
             if !inputs.can_link_online {
-                // Unreachable for any client this frontend ships as today
-                // (every embedding is its own Core's local, privileged
-                // client); kept so a future non-local role still gets an
-                // honest page instead of a crash or a silently empty one.
+                // Core has not answered the online settings: it is not
+                // connected yet, or too old to offer Online, or this client
+                // is not a local one. Say so instead of an empty page.
                 return vec![Row::Header("onlineUnavailable")];
             }
             let mut rows = vec![Row::Header("account"), field("onlineStatus")];
@@ -532,29 +594,29 @@ pub fn page_rows(page: &str, inputs: &Inputs) -> Vec<Row> {
                 field("playtimeSync"),
                 field("onlineLibrarySync"),
                 field("onlineCloudBackup"),
-                Row::Header("backup"),
-                field("onlineBackupSchedule"),
-                field("onlineManageBackups"),
                 Row::Header("remote"),
                 field("onlineRemoteStatus"),
                 field("onlineRemoteActivity"),
+                Row::Header("backup"),
+                field("onlineBackupSchedule"),
+                field("onlineManageBackups"),
             ]);
             rows
         }
         // Pairing leads: it is the one row here a user comes to *do*,
-        // the way the Library page leads with its own action rows. The
-        // rest of the page is identity and diagnostics.
+        // the way the Library page leads with its own action rows. Help
+        // follows in task order (read the guide, turn on debug logging,
+        // upload the log), then identity closes the page.
         "pageSupportAbout" => {
             let mut rows = vec![
                 field("pairDevice"),
-                field("aboutLicense"),
-                field("credits"),
                 field("documentation"),
                 field("debugLogging"),
             ];
             if inputs.log_upload {
                 rows.push(field("uploadLog"));
             }
+            rows.extend([field("aboutLicense"), field("credits")]);
             rows
         }
         _ => Vec::new(),
@@ -575,7 +637,6 @@ pub const REGIONS: &[&str] = &["auto", "us", "eu", "jp"];
 pub const INTERFACE_PROFILES: &[&str] = &["device", "standard", "handheld"];
 pub const ORIENTATIONS: &[&str] = &["horizontal", "cw", "ccw"];
 pub const BROWSE_LAYOUTS: &[&str] = &["grid", "list", "list-only"];
-pub const FAVORITES_GROUPINGS: &[&str] = &["none", "system"];
 /// What Left and Right do in the detailed list: turn a page, or step the
 /// detail pane through the game's images.
 pub const LIST_LEFT_RIGHT: &[&str] = &["page", "image"];
@@ -615,7 +676,6 @@ pub fn options(id: &str, inputs: &Inputs) -> Option<Vec<&'static str>> {
         "interfaceProfile" => INTERFACE_PROFILES,
         "orientation" => ORIENTATIONS,
         "systemsLayout" | "gamesLayout" => BROWSE_LAYOUTS,
-        "favoritesGrouping" => FAVORITES_GROUPINGS,
         "listLeftRight" => LIST_LEFT_RIGHT,
         "systemLogoStyle" => SYSTEM_LOGO_STYLES,
         "colorIntensity" => COLOR_INTENSITIES,
@@ -1077,8 +1137,8 @@ mod tests {
         assert_eq!(control("onlineWarp"), Control::Info);
         assert_eq!(control("onlineRemoteStatus"), Control::Info);
         assert_eq!(control("onlineBackupSchedule"), Control::Picker);
-        assert_eq!(control("onlineManageBackups"), Control::Action);
-        assert_eq!(control("onlineRemoteActivity"), Control::Action);
+        assert_eq!(control("onlineManageBackups"), Control::Navigate);
+        assert_eq!(control("onlineRemoteActivity"), Control::Navigate);
         assert_eq!(control("onlineRemoteControl"), Control::Toggle);
         assert_eq!(control("onlineLibrarySync"), Control::Toggle);
         assert_eq!(control("onlineCloudBackup"), Control::Toggle);
@@ -1099,10 +1159,12 @@ mod tests {
             "the all-features switch leads the Features group"
         );
         let last = seek_navigable(&page, seat, -1);
+        assert_eq!(page[last].id(), "onlineManageBackups");
+        let activity = seat_of(&page, "onlineRemoteActivity");
         assert_eq!(
-            page[last].id(),
-            "onlineRemoteActivity",
-            "wrapping up from the first row skips the remote status row"
+            page[seek_navigable(&page, activity, -1)].id(),
+            "onlineCloudBackup",
+            "up from Activity skips the remote status row"
         );
         assert!(page.iter().all(|row| row.is_navigable()
             || !row.is_field()
@@ -1149,12 +1211,17 @@ mod tests {
             .iter()
             .any(|row| row.id() == "detectLaunchers"));
         inputs.can_scan_launchers = true;
+        let rows = page_rows("pageLibraryData", &inputs);
+        let mut after = rows
+            .iter()
+            .skip_while(|r| **r != Row::Header("launchers"))
+            .skip(1);
         assert_eq!(
-            page_rows("pageLibraryData", &inputs)[0],
-            Row::Field {
+            after.next(),
+            Some(&Row::Field {
                 id: "detectLaunchers",
                 control: Control::Action
-            }
+            })
         );
         assert_eq!(control("detectLaunchers"), Control::Action);
     }
@@ -1177,15 +1244,43 @@ mod tests {
     }
 
     #[test]
-    fn root_page_lists_the_eight_categories() {
+    fn root_page_lists_the_categories() {
+        let ids = |inputs: &Inputs| -> Vec<&'static str> {
+            page_rows("", inputs).into_iter().map(Row::id).collect()
+        };
         let rows = page_rows("", &Inputs::default());
-        assert_eq!(rows.len(), 8);
         assert!(rows.iter().all(|r| r.is_field()));
-        assert_eq!(rows[0].id(), "pageAppearance");
-        assert_eq!(rows[2].id(), MUSIC_PAGE);
-        assert_eq!(rows[3].id(), "pageOnline");
-        assert_eq!(rows[7].id(), "pageSupportAbout");
-        assert_eq!(root_grid_shape(rows.len(), false), (4, 2));
+        assert_eq!(
+            ids(&Inputs::default()),
+            [
+                "pageLibraryData",
+                BROWSING_PAGE,
+                MUSIC_PAGE,
+                "pageAppearance",
+                "pageDisplayInterface",
+                "pageControlsInput",
+                "pageLanguage",
+                "pageOnline",
+                "pageSupportAbout",
+            ]
+        );
+        assert_eq!(root_grid_shape(rows.len(), false), (5, 2));
+        // RetroAchievements is a tile only where MiSTer_RA can be set up,
+        // between Online and About.
+        let mister = ids(&Inputs {
+            retro_achievements: true,
+            ..Inputs::default()
+        });
+        assert_eq!(mister.len(), 10);
+        assert_eq!(
+            &mister[7..],
+            ["pageOnline", RETRO_ACHIEVEMENTS_PAGE, "pageSupportAbout"]
+        );
+        assert_eq!(root_grid_shape(mister.len(), false), (5, 2));
+        assert_eq!(page_glyph(RETRO_ACHIEVEMENTS_PAGE), Some("icons/Trophy"));
+        assert_eq!(page_glyph(BROWSING_PAGE), Some("icons/Browsing"));
+        assert_eq!(control(BROWSING_PAGE), Control::Navigate);
+        assert_eq!(control(RETRO_ACHIEVEMENTS_PAGE), Control::Navigate);
         assert_eq!(page_glyph(MUSIC_PAGE), Some("icons/Music"));
         assert_eq!(page_glyph("colorScheme"), None);
         assert_eq!(opens_page("pageLibraryData"), Some("pageLibraryData"));
@@ -1234,11 +1329,34 @@ mod tests {
     #[test]
     fn library_page_leads_with_maintenance() {
         let rows = page_rows("pageLibraryData", &Inputs::default());
-        assert_eq!(rows[0], Row::Header("maintenance"));
-        assert_eq!(rows[1].id(), "updateMediaDb");
-        assert_eq!(rows[3], Row::Header("browsing"));
-        assert_eq!(rows[4].id(), "systemsLayout");
-        assert_eq!(rows[5].id(), "gamesLayout");
+        let ids: Vec<&str> = rows.iter().map(|r| r.id()).collect();
+        assert_eq!(ids, ["maintenance", "updateMediaDb", "runScraper"]);
+        let hosted: Vec<&str> = page_rows(
+            "pageLibraryData",
+            &Inputs {
+                can_pick_folder: true,
+                can_scan_launchers: true,
+                can_request_playtime_access: true,
+                launcher_preference: true,
+                ..Inputs::default()
+            },
+        )
+        .iter()
+        .map(|r| r.id())
+        .collect();
+        assert_eq!(
+            hosted,
+            [
+                "addGameFolder",
+                "playtimeAccess",
+                "maintenance",
+                "updateMediaDb",
+                "runScraper",
+                "launchers",
+                "detectLaunchers",
+                "launcherPreference",
+            ]
+        );
         // Round 10 retired the arcade alternate-versions toggle.
         assert!(!rows
             .iter()
@@ -1247,7 +1365,27 @@ mod tests {
     }
 
     #[test]
-    fn library_page_adds_the_launcher_and_retroachievements_sections() {
+    fn browsing_page_lists_the_list_preferences() {
+        let ids: Vec<&str> = page_rows(BROWSING_PAGE, &Inputs::default())
+            .iter()
+            .map(|r| r.id())
+            .collect();
+        assert_eq!(
+            ids,
+            [
+                "systemsLayout",
+                "gamesLayout",
+                "listLeftRight",
+                "mediaImageType",
+                "showTags",
+                "showOriginalFilenames",
+                "showHidden",
+            ]
+        );
+    }
+
+    #[test]
+    fn library_page_adds_the_launcher_section_and_ra_has_its_own_page() {
         let ids = |inputs: &Inputs| -> Vec<&'static str> {
             page_rows("pageLibraryData", inputs)
                 .into_iter()
@@ -1256,7 +1394,7 @@ mod tests {
         };
         let plain = ids(&Inputs::default());
         assert!(!plain.contains(&"launcherPreference"));
-        assert!(!plain.contains(&"retroAchievements"));
+        assert!(!plain.contains(&"launchers"));
 
         let core = ids(&Inputs {
             launcher_preference: true,
@@ -1272,25 +1410,31 @@ mod tests {
             retro_achievements: true,
             ..Inputs::default()
         };
-        let rows = ids(&fresh);
-        let at = rows
-            .iter()
-            .position(|id| *id == "retroAchievements")
-            .unwrap();
+        assert!(!ids(&fresh).iter().any(|id| id.starts_with("ra")));
+        let ids = |inputs: &Inputs| -> Vec<&'static str> {
+            page_rows(RETRO_ACHIEVEMENTS_PAGE, inputs)
+                .into_iter()
+                .map(Row::id)
+                .collect()
+        };
+        assert!(ids(&Inputs::default()).is_empty());
         assert_eq!(
-            &rows[at..],
-            &[
-                "retroAchievements",
+            ids(&fresh),
+            [
+                "account",
                 "raAccount",
                 "raLogIn",
+                "setup",
                 "raLaunchers",
                 "raInstall",
+                "gameplay",
                 "raHardcore",
+                "raListHotkey",
+                "popups",
                 "raProgressPopups",
                 "raChallengePopups",
                 "raLeaderboardPopups",
                 "raPopupPosition",
-                "raListHotkey",
             ]
         );
         let ready = ids(&Inputs {
@@ -1306,10 +1450,16 @@ mod tests {
             ..fresh
         });
         assert!(!old_core.contains(&"raLaunchers"));
+        let bare = ids(&Inputs {
+            launcher_preference: false,
+            ra_installed: true,
+            ..fresh
+        });
+        assert!(!bare.contains(&"setup"), "an empty section keeps no header");
 
         assert_eq!(control("raAccount"), Control::Info);
-        assert_eq!(control("raInstall"), Control::Info);
-        assert_eq!(control("raConflict"), Control::Info);
+        assert_eq!(control("raInstall"), Control::Notice);
+        assert_eq!(control("raConflict"), Control::Notice);
         assert_eq!(control("raLogIn"), Control::Action);
         assert_eq!(control("raLogOut"), Control::Action);
         assert_eq!(control("raLaunchers"), Control::Toggle);
@@ -1321,7 +1471,7 @@ mod tests {
         assert!(needs_ra_install("raLaunchers"));
         assert!(!needs_ra_install("raHardcore"));
 
-        let page = page_rows("pageLibraryData", &fresh);
+        let page = page_rows(RETRO_ACHIEVEMENTS_PAGE, &fresh);
         assert_eq!(page[seat_of(&page, "raLogIn")].id(), "raLogIn");
         assert_eq!(seat_of(&page, "raLogOut"), first_navigable(&page));
         assert_eq!(
@@ -1353,11 +1503,11 @@ mod tests {
             ids,
             vec![
                 "pairDevice",
-                "aboutLicense",
-                "credits",
                 "documentation",
                 "debugLogging",
-                "uploadLog"
+                "uploadLog",
+                "aboutLicense",
+                "credits",
             ]
         );
         // Pairing has nothing to do with a media job, so neither job can
@@ -1368,7 +1518,7 @@ mod tests {
     }
 
     #[test]
-    fn the_controls_page_ends_with_one_controllers_row() {
+    fn the_controls_page_leads_with_one_controllers_row() {
         let ids = |inputs: &Inputs| -> Vec<&'static str> {
             page_rows("pageControlsInput", inputs)
                 .into_iter()
@@ -1395,8 +1545,8 @@ mod tests {
             },
         ] {
             let got = ids(&inputs);
-            assert_eq!(&got[..4], &input);
-            assert_eq!(&got[4..], &["controllers"]);
+            assert_eq!(&got[..1], &["controllers"]);
+            assert_eq!(&got[1..], &input);
         }
         // It opens a page of its own, so it reads as one, chevron and all.
         assert_eq!(control("controllers"), Control::Navigate);
@@ -1503,8 +1653,8 @@ mod tests {
         };
         let plain = ids(&Inputs::default());
         let at = plain.iter().position(|id| *id == "headerLogo").unwrap();
-        assert_eq!(plain[at - 1], "showHelpBar");
-        assert_eq!(plain[at + 1], "reduceMotion");
+        assert_eq!(plain[at - 1], "systemLogoStyle");
+        assert_eq!(plain[at + 1], "showMenuRow");
         assert!(!plain.contains(&"headerLogoImage"));
         let custom = ids(&Inputs {
             header_logo_custom: true,
@@ -1583,7 +1733,13 @@ mod tests {
 
     #[test]
     fn the_cursor_skips_headers_and_wraps() {
-        let rows = page_rows("pageLibraryData", &Inputs::default());
+        let rows = page_rows(
+            "pageLibraryData",
+            &Inputs {
+                launcher_preference: true,
+                ..Inputs::default()
+            },
+        );
         assert_eq!(first_navigable(&rows), 1);
         // Down off the last maintenance row lands past the next header.
         assert_eq!(seek_navigable(&rows, 2, 1), 4);

@@ -87,7 +87,7 @@ export component SetupModal inherits ModalShell {
     property <length> row-gap: Sizing.pct-h(1.5);
     property <length> picker-row-h: Sizing.pct-h(7);
     property <length> picker-gap: Sizing.pct-h(1);
-    property <length> arrow: Sizing.pct-h(3);
+    property <length> arrow: GlyphSource.cue-side();
     // The scroll cues only take room when there is somewhere to scroll.
     property <length> arrow-band: (root.has-above || root.has-below) ? root.arrow + Sizing.pct-h(0.5) : 0px;
     // The form's own height is the stacked rows Rust measured.

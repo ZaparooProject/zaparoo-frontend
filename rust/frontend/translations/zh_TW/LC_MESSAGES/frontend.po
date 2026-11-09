@@ -2259,12 +2259,12 @@ msgid "Schedule"
 msgstr "排程"
 
 #: rust/frontend/ui/settings.slint:198
-msgid "Manage backups…"
-msgstr "管理備份…"
+msgid "Manage backups"
+msgstr "管理備份"
 
 #: rust/frontend/ui/settings.slint:200
-msgid "Activity…"
-msgstr "活動記錄…"
+msgid "Activity"
+msgstr "活動記錄"
 
 #: rust/frontend/ui/settings.slint:205
 msgid "Debug logging"
@@ -4901,3 +4901,30 @@ msgstr "選單"
 msgctxt "tag-value"
 msgid "Volume {}"
 msgstr "第 {} 卷"
+
+msgid "Update media database…"
+msgstr "更新媒體資料庫…"
+
+msgid "Update metadata…"
+msgstr "更新中繼資料…"
+
+msgid "Unlink account…"
+msgstr "解除帳號連結…"
+
+msgid "Grid"
+msgstr "格狀檢視"
+
+msgid "Detailed list"
+msgstr "詳細清單檢視"
+
+msgid "Recommended"
+msgstr "建議"
+
+msgid "1 second"
+msgstr "1 秒"
+
+msgid "Testing"
+msgstr "測試"
+
+msgid "No animations"
+msgstr "關閉動畫"

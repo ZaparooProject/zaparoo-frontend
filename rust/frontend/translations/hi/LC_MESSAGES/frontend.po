@@ -2265,12 +2265,12 @@ msgid "Schedule"
 msgstr "शेड्यूल"
 
 #: rust/frontend/ui/settings.slint:198
-msgid "Manage backups…"
-msgstr "बैकअप प्रबंधित करें…"
+msgid "Manage backups"
+msgstr "बैकअप प्रबंधित करें"
 
 #: rust/frontend/ui/settings.slint:200
-msgid "Activity…"
-msgstr "गतिविधि…"
+msgid "Activity"
+msgstr "गतिविधि"
 
 #: rust/frontend/ui/settings.slint:205
 msgid "Debug logging"
@@ -4910,3 +4910,30 @@ msgstr "मेनू"
 msgctxt "tag-value"
 msgid "Volume {}"
 msgstr "खंड {}"
+
+msgid "Update media database…"
+msgstr "मीडिया डेटाबेस अपडेट करें…"
+
+msgid "Update metadata…"
+msgstr "मेटाडेटा अपडेट करें…"
+
+msgid "Unlink account…"
+msgstr "खाता अनलिंक करें…"
+
+msgid "Grid"
+msgstr "ग्रिड दृश्य"
+
+msgid "Detailed list"
+msgstr "विस्तृत सूची दृश्य"
+
+msgid "Recommended"
+msgstr "सुझाया गया"
+
+msgid "1 second"
+msgstr "1 सेकंड"
+
+msgid "Testing"
+msgstr "परीक्षण"
+
+msgid "No animations"
+msgstr "ऐनिमेशन बंद"

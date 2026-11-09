@@ -59,6 +59,11 @@ fn ra_state(shared: &crate::router::Shared) -> (bool, Vec<String>) {
     (installed, conflicts)
 }
 
+/// The root tiles this machine shows.
+pub(crate) fn root_pages() -> Vec<&'static rules::Page> {
+    rules::root_pages(crate::retro_achievements::available()).collect()
+}
+
 /// What the registry needs to know about this machine.
 pub(crate) fn inputs(ctx: &Ctx) -> rules::Inputs {
     // One lock for all of it: a guard held across the struct literal is
@@ -148,7 +153,6 @@ fn current_value(ctx: &Ctx, id: &str) -> String {
             "loggedOut"
         }
         .to_string(),
-        "raConflict" => ra_state(&shared).1.len().to_string(),
         _ => String::new(),
     }
 }
@@ -448,7 +452,7 @@ fn rows(ctx: &Ctx, app: &App, page: crate::SettingsPage) -> Vec<SettingsRow> {
                     out.control = control.into();
                     match control {
                         Control::Toggle => out.checked = checked(ctx, id),
-                        Control::Picker | Control::Info => {
+                        Control::Picker | Control::Info | Control::Notice => {
                             out.value = SharedString::from(current_value(ctx, id).as_str());
                             out.value_name = value_name(ctx, id);
                         }
@@ -551,7 +555,8 @@ fn root_geometry_for(
         column_gap: derived.hub_grid_column_gap,
         row_gap: derived.hub_grid_row_gap,
     };
-    let (columns, grid_rows) = rules::root_grid_shape(rules::PAGES.len(), rotated);
+    let count = root_pages().len();
+    let (columns, grid_rows) = rules::root_grid_shape(count, rotated);
     let columns = i32::try_from(columns).unwrap_or(3);
     let grid_rows = i32::try_from(grid_rows).unwrap_or(2);
     let mut fit = paged_grid::fit(
@@ -567,7 +572,7 @@ fn root_geometry_for(
     // re-centers on what the capped cells actually occupy.
     fit.cell_width = fit.cell_width.min(derived.hub_tile_width);
     fit.cell_height = fit.cell_height.min(derived.hub_tile_height);
-    let fields = i32::try_from(rules::PAGES.len()).unwrap_or(columns);
+    let fields = i32::try_from(count).unwrap_or(columns);
     let visible_columns = columns.min(fields).max(1);
     let visible_rows = grid_rows.min(((fields + columns - 1) / columns).max(1));
     fit.content_width =
@@ -636,8 +641,8 @@ pub fn render(ctx: &Ctx, app: &App) {
     view.set_scroll(scroll);
 
     if page == crate::SettingsPage::Root {
-        let cells: Vec<GridCell> = rules::PAGES
-            .iter()
+        let cells: Vec<GridCell> = root_pages()
+            .into_iter()
             .map(|p| GridCell {
                 label_key: SharedString::from(p.id),
                 glyph_key: SharedString::from(p.glyph),
@@ -711,7 +716,7 @@ pub(crate) fn navigate_page(ctx: &Ctx, app: &App, page: crate::SettingsPage) {
     }
     // The RetroAchievements files can change behind the frontend's back
     // (Update All, a hand edit, a Core profile switch).
-    if page == crate::SettingsPage::Library {
+    if page == crate::SettingsPage::RetroAchievements {
         crate::retro_achievements::refresh(ctx, app);
     }
     let direction = if page == crate::SettingsPage::Root {
@@ -724,7 +729,7 @@ pub(crate) fn navigate_page(ctx: &Ctx, app: &App, page: crate::SettingsPage) {
     crate::router::transition_settings_page(app, direction, move |app| {
         open_page(&ctx, app, page);
         if page == crate::SettingsPage::Root {
-            let index = rules::PAGES
+            let index = root_pages()
                 .iter()
                 .position(|page| page.id == from.token())
                 .unwrap_or(0);
@@ -747,7 +752,7 @@ pub(crate) fn enter_page_from_hub(ctx: &Ctx, app: &App, page: crate::SettingsPag
     if page == crate::SettingsPage::Online {
         crate::online::refresh(ctx, app);
     }
-    if page == crate::SettingsPage::Library {
+    if page == crate::SettingsPage::RetroAchievements {
         crate::retro_achievements::refresh(ctx, app);
     }
     open_page(ctx, app, page);
@@ -1058,7 +1063,7 @@ fn accept(ctx: &Ctx, app: &App, id: &str, control: Control) {
         Control::Toggle => toggle(ctx, app, id),
         Control::TriToggle => crate::online::toggle_all_features(ctx, app),
         Control::Picker => open_picker(ctx, app, id),
-        Control::Info | Control::Slider | Control::Device => {}
+        Control::Info | Control::Notice | Control::Slider | Control::Device => {}
         Control::Navigate | Control::Action => match id {
             "backgroundImage" => crate::file_browser::open_background(ctx, app),
             "headerLogoImage" => crate::file_browser::open_header_logo(ctx, app),
@@ -1674,5 +1679,31 @@ mod status_tests {
             action_status(&MediaStatusState::default(), "runScraper"),
             (crate::ActionStatus::None, 0)
         );
+    }
+
+    /// Every English row description fits the hint band's two lines at
+    /// 240p (`docs/content-style.md` → "Adding a setting").
+    #[test]
+    fn every_description_fits_the_240p_hint_band() {
+        const MAX_CHARS: usize = 64;
+        let source = include_str!("../ui/settings.slint");
+        let body = source
+            .split_once("public pure function description(id: string)")
+            .and_then(|(_, rest)| rest.split_once("\n    }\n"))
+            .map_or("", |(body, _)| body);
+        let mut seen = 0;
+        for text in body
+            .split("@tr(\"")
+            .skip(1)
+            .filter_map(|rest| rest.split_once("\")").map(|(text, _)| text))
+        {
+            seen += 1;
+            assert!(
+                text.chars().count() <= MAX_CHARS,
+                "{} chars, over {MAX_CHARS}: {text}",
+                text.chars().count()
+            );
+        }
+        assert!(seen > 40, "found only {seen} descriptions");
     }
 }

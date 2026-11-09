@@ -2176,6 +2176,13 @@ the bar, preserving hue and chroma the way `clamp_accent` does; the two tests
 beside it hold every preset above 3:1 against the text and above 1.5:1 against
 the page, so a spent arrow is always both distinguishable and visible.
 
+Color is not the only signal. A live scroll arrow is a filled triangle and a
+spent one is the same triangle in outline (`ScrollUpOutline`,
+`ScrollDownOutline`, with 7x4 pixel art on the bitmap-face scenes so the two
+differ by more than a pixel there), so the state still reads for someone who
+cannot tell the two colors apart. The game info image switcher's chevrons
+have no filled form and change color only.
+
 One component owns the rule: `ScrollCue` in `chrome.slint`. `PageIndicator`'s
 own chevron pair, the list picker, the setup picker page, the About card, the
 game info body and the game info image switcher all go through it. Hosts still

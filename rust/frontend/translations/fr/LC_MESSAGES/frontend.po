@@ -2265,12 +2265,12 @@ msgid "Schedule"
 msgstr "Fréquence"
 
 #: rust/frontend/ui/settings.slint:198
-msgid "Manage backups…"
-msgstr "Gérer les sauvegardes…"
+msgid "Manage backups"
+msgstr "Gérer les sauvegardes"
 
 #: rust/frontend/ui/settings.slint:200
-msgid "Activity…"
-msgstr "Activité…"
+msgid "Activity"
+msgstr "Activité"
 
 #: rust/frontend/ui/settings.slint:205
 msgid "Debug logging"
@@ -4910,3 +4910,30 @@ msgstr "Menu"
 msgctxt "tag-value"
 msgid "Volume {}"
 msgstr "Volume {}"
+
+msgid "Update media database…"
+msgstr "Mettre à jour la base de données média…"
+
+msgid "Update metadata…"
+msgstr "Mettre à jour les métadonnées…"
+
+msgid "Unlink account…"
+msgstr "Dissocier le compte…"
+
+msgid "Grid"
+msgstr "Vue en grille"
+
+msgid "Detailed list"
+msgstr "Vue liste détaillée"
+
+msgid "Recommended"
+msgstr "Recommandé"
+
+msgid "1 second"
+msgstr "1 seconde"
+
+msgid "Testing"
+msgstr "Test"
+
+msgid "No animations"
+msgstr "Sans animations"

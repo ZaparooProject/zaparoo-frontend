@@ -99,13 +99,15 @@ export global Labels {
         if (key == "action:update") { return @tr("Update"); }
         if (key == "action:settings") { return @tr("Settings"); }
         // Settings root tiles pinned to the Hub, worded as on Settings.
-        if (key == "setting:pageAppearance") { return @tr("Appearance"); }
         if (key == "setting:pageLibraryData") { return @tr("Library"); }
+        if (key == "setting:pageBrowsing") { return @tr("Browsing"); }
         if (key == "setting:pageMusic") { return @tr("Background music"); }
-        if (key == "setting:pageOnline") { return @tr("Online"); }
+        if (key == "setting:pageAppearance") { return @tr("Appearance"); }
         if (key == "setting:pageDisplayInterface") { return @tr("Display"); }
         if (key == "setting:pageControlsInput") { return @tr("Controls"); }
         if (key == "setting:pageLanguage") { return @tr("Language"); }
+        if (key == "setting:pageOnline") { return @tr("Online"); }
+        if (key == "setting:pageRetroAchievements") { return @tr("RetroAchievements"); }
         if (key == "setting:pageSupportAbout") { return @tr("About"); }
         return name;
     }
@@ -456,7 +458,7 @@ export global DialogLabels {
                 : @tr("Zaparoo Frontend takes a lot of work to build, and showing the Zaparoo logo is important to us.\n\nTo replace or hide the logo, please support the project by buying Zaparoo Pro in the Zaparoo App or subscribing to Zaparoo Warp on Zaparoo Online, then link this device to your account.");
         }
         if (kind == DialogKind.notice) {
-            return @tr("Copyright 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.\n\nThis free source-available build is for personal and non-commercial use only. Commercial use requires a separate license.\n\nContact: legal@zaparoo.com\n\nFull details available any time under Settings > About / License.\n\nCreated by\nAndrea Bogazzi, BossRighteous, Tim Wilsie, Wizzo");
+            return @tr("Copyright 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.\n\nThis free source-available build is for personal and non-commercial use only. Commercial use requires a separate license.\n\nContact: legal@zaparoo.com\n\nFull details available any time under Settings > About > Version and license.\n\nCreated by\nAndrea Bogazzi, BossRighteous, Tim Wilsie, Wizzo");
         }
         if (kind == DialogKind.core-version) {
             return @tr("This frontend needs Zaparoo Core {} or newer. You're running {}. Some features may not work until you update.", detail, arg);

@@ -381,7 +381,11 @@ fill="none"):
   resources/images/icons/Repeat.svg
   resources/images/icons/RepeatOne.svg (repeat-once)
   resources/images/icons/ScrollDown.svg
+  resources/images/icons/ScrollDownOutline.svg (ScrollDown.svg's triangle
+    as an outline, for a spent scroll direction)
   resources/images/icons/ScrollUp.svg
+  resources/images/icons/ScrollUpOutline.svg (ScrollUp.svg's triangle as
+    an outline, for a spent scroll direction)
   resources/images/icons/Search.svg
   resources/images/icons/Settings.svg
   resources/images/icons/ShiftLock.svg (NavUp.svg's chevron with a bar

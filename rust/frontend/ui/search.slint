@@ -7,7 +7,7 @@
 // driver is `src/search.rs` and the rules are `zaparoo_app::search`.
 
 import { Theme, Sizing, Layout, Motion } from "theme.slint";
-import { TopStatusStrip, SectionHeader, ScrollCue } from "chrome.slint";
+import { TopStatusStrip, SectionHeader, ScrollCue, GlyphSource } from "chrome.slint";
 import { SelectionCursor, SelectionClip } from "focus.slint";
 import { KeyKind, SearchZone, SearchPane, SearchScope, UserFlag } from "state_types.slint";
 import { Labels } from "labels.slint";
@@ -287,7 +287,7 @@ export component SearchScreen inherits Rectangle {
         property <length> list-h: self.body-h - (SearchView.pane-clear ? root.pane-row-h : 0px);
         // A list longer than the card scrolls, and gives up a band at each
         // end to the cues that say so.
-        property <length> arrow: Sizing.pct-h(3);
+        property <length> arrow: GlyphSource.cue-side();
         property <length> band: self.arrow + Sizing.pct-h(0.5);
         property <bool> scrollable: SearchView.pane-rows.length > Math.floor(self.list-h / root.pane-row-h);
         property <length> list-y: self.scrollable ? self.band : 0px;

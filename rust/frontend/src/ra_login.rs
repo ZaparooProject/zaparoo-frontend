@@ -122,7 +122,7 @@ pub(crate) fn render(ctx: &Ctx, app: &App) {
     view.set_can_submit(model.can_submit());
 }
 
-/// Log in… on Settings > Library: start on the username, filled in with the
+/// Log in… on the `RetroAchievements` settings page: start on the username, filled in with the
 /// one already saved.
 pub(crate) fn open(ctx: &Ctx, app: &App) {
     {
@@ -153,7 +153,7 @@ fn leave(ctx: &Ctx, app: &App) {
             "raLogIn"
         }
     };
-    crate::settings::show_return(ctx, app, crate::SettingsPage::Library, row);
+    crate::settings::show_return(ctx, app, crate::SettingsPage::RetroAchievements, row);
 }
 
 fn submit(ctx: &Ctx, app: &App) {

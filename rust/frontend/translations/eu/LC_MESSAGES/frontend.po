@@ -2265,12 +2265,12 @@ msgid "Schedule"
 msgstr "Programazioa"
 
 #: rust/frontend/ui/settings.slint:198
-msgid "Manage backups…"
-msgstr "Kudeatu babeskopiak…"
+msgid "Manage backups"
+msgstr "Kudeatu babeskopiak"
 
 #: rust/frontend/ui/settings.slint:200
-msgid "Activity…"
-msgstr "Jarduera…"
+msgid "Activity"
+msgstr "Jarduera"
 
 #: rust/frontend/ui/settings.slint:205
 msgid "Debug logging"
@@ -4910,3 +4910,30 @@ msgstr "Menua"
 msgctxt "tag-value"
 msgid "Volume {}"
 msgstr "Liburukia {}"
+
+msgid "Update media database…"
+msgstr "Eguneratu multimedia datu-basea…"
+
+msgid "Update metadata…"
+msgstr "Eguneratu metadatuak…"
+
+msgid "Unlink account…"
+msgstr "Kendu kontuaren lotura…"
+
+msgid "Grid"
+msgstr "Sarearen ikuspegia"
+
+msgid "Detailed list"
+msgstr "Xehetasun listaren ikuspegia"
+
+msgid "Recommended"
+msgstr "Gomendatua"
+
+msgid "1 second"
+msgstr "segundu 1"
+
+msgid "Testing"
+msgstr "Frogatzen"
+
+msgid "No animations"
+msgstr "Animaziorik gabe"

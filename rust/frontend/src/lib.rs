@@ -2264,7 +2264,7 @@ fn bind_launchers(ctx: &Arc<Ctx>, app: &App, store: &Arc<Store>) {
             let snapshot = rx.borrow_and_update().clone();
             if let ResourceStatus::Ready(data) = snapshot {
                 lock(&shared).launchers.clone_from(&data.launchers);
-                // What is installed decides rows on the Library page.
+                // What is installed decides rows on the RetroAchievements page.
                 let ctx = ctx2.clone();
                 let _ = weak.upgrade_in_event_loop(move |app| settings::refresh(&ctx, &app));
             }
