@@ -2,7 +2,7 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: frontend VERSION\n"
-"POT-Creation-Date: 2026-11-08 23:53+0000\n"
+"POT-Creation-Date: 2026-11-09 00:38+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -119,10 +119,10 @@ msgid "Saving…"
 msgstr ""
 
 #: rust/frontend/ui/app.slint:1643 rust/frontend/ui/chrome.slint:168
-#: rust/frontend/ui/app.slint:1643 rust/frontend/ui/chrome.slint:168 rust/frontend/ui/chrome.slint:414
-#: rust/frontend/ui/app.slint:1643 rust/frontend/ui/chrome.slint:168 rust/frontend/ui/chrome.slint:414 rust/frontend/ui/chrome.slint:759
-#: rust/frontend/ui/app.slint:1643 rust/frontend/ui/chrome.slint:168 rust/frontend/ui/chrome.slint:414 rust/frontend/ui/chrome.slint:759 rust/frontend/ui/settings.slint:108
-#: rust/frontend/ui/app.slint:1643 rust/frontend/ui/chrome.slint:168 rust/frontend/ui/chrome.slint:414 rust/frontend/ui/chrome.slint:759 rust/frontend/ui/settings.slint:108
+#: rust/frontend/ui/app.slint:1643 rust/frontend/ui/chrome.slint:168 rust/frontend/ui/chrome.slint:419
+#: rust/frontend/ui/app.slint:1643 rust/frontend/ui/chrome.slint:168 rust/frontend/ui/chrome.slint:419 rust/frontend/ui/chrome.slint:764
+#: rust/frontend/ui/app.slint:1643 rust/frontend/ui/chrome.slint:168 rust/frontend/ui/chrome.slint:419 rust/frontend/ui/chrome.slint:764 rust/frontend/ui/settings.slint:108
+#: rust/frontend/ui/app.slint:1643 rust/frontend/ui/chrome.slint:168 rust/frontend/ui/chrome.slint:419 rust/frontend/ui/chrome.slint:764 rust/frontend/ui/settings.slint:108
 msgid "{}%"
 msgstr ""
 
@@ -917,15 +917,15 @@ msgstr ""
 
 #: rust/frontend/ui/browse_list.slint:369
 #: rust/frontend/ui/browse_list.slint:369 rust/frontend/ui/chrome.slint:163
-#: rust/frontend/ui/browse_list.slint:369 rust/frontend/ui/chrome.slint:163 rust/frontend/ui/chrome.slint:1304
-#: rust/frontend/ui/browse_list.slint:369 rust/frontend/ui/chrome.slint:163 rust/frontend/ui/chrome.slint:1304 rust/frontend/ui/labels.slint:231
-#: rust/frontend/ui/browse_list.slint:369 rust/frontend/ui/chrome.slint:163 rust/frontend/ui/chrome.slint:1304 rust/frontend/ui/labels.slint:231 rust/frontend/ui/labels.slint:244
+#: rust/frontend/ui/browse_list.slint:369 rust/frontend/ui/chrome.slint:163 rust/frontend/ui/chrome.slint:1309
+#: rust/frontend/ui/browse_list.slint:369 rust/frontend/ui/chrome.slint:163 rust/frontend/ui/chrome.slint:1309 rust/frontend/ui/labels.slint:231
+#: rust/frontend/ui/browse_list.slint:369 rust/frontend/ui/chrome.slint:163 rust/frontend/ui/chrome.slint:1309 rust/frontend/ui/labels.slint:231 rust/frontend/ui/labels.slint:244
 msgid "Loading…"
 msgstr ""
 
-#: rust/frontend/ui/browse_list.slint:606 rust/frontend/ui/chrome.slint:761
-#: rust/frontend/ui/browse_list.slint:606 rust/frontend/ui/chrome.slint:761 rust/frontend/ui/game_info.slint:346
-#: rust/frontend/ui/browse_list.slint:606 rust/frontend/ui/chrome.slint:761 rust/frontend/ui/game_info.slint:346
+#: rust/frontend/ui/browse_list.slint:606 rust/frontend/ui/chrome.slint:766
+#: rust/frontend/ui/browse_list.slint:606 rust/frontend/ui/chrome.slint:766 rust/frontend/ui/game_info.slint:346
+#: rust/frontend/ui/browse_list.slint:606 rust/frontend/ui/chrome.slint:766 rust/frontend/ui/game_info.slint:346
 msgid "{}/{}"
 msgstr ""
 
@@ -1003,27 +1003,27 @@ msgstr ""
 msgid "Playtime limit in {}"
 msgstr ""
 
-#: rust/frontend/ui/chrome.slint:764
+#: rust/frontend/ui/chrome.slint:769
 msgid "{}"
 msgstr ""
 
-#: rust/frontend/ui/chrome.slint:857
+#: rust/frontend/ui/chrome.slint:862
 msgid "Page {} / {}"
 msgstr ""
 
-#: rust/frontend/ui/chrome.slint:858
+#: rust/frontend/ui/chrome.slint:863
 msgid "Page {}"
 msgstr ""
 
-#: rust/frontend/ui/chrome.slint:1301 rust/frontend/ui/music.slint:555
+#: rust/frontend/ui/chrome.slint:1306 rust/frontend/ui/music.slint:555
 msgid "Nothing here"
 msgstr ""
 
-#: rust/frontend/ui/chrome.slint:1303
+#: rust/frontend/ui/chrome.slint:1308
 msgid "Check Zaparoo Core and try again."
 msgstr ""
 
-#: rust/frontend/ui/chrome.slint:1315
+#: rust/frontend/ui/chrome.slint:1320
 msgid "Failed to load"
 msgstr ""
 

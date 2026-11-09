@@ -1,5 +1,23 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg width="24px" height="24px" color="#000000" fill="none" version="1.1" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
- <path d="m7 6.5h10a5 5 0 0 1 5 5v4a2.5 2.5 0 0 1-4.5 1.5l-1.5-2h-8l-1.5 2a2.5 2.5 0 0 1-4.5-1.5v-4a5 5 0 0 1 5-5z" stroke="#fff" stroke-linejoin="round" stroke-width="1.5"/>
- <rect x="4.75" y="9.25" width="3" height="4.5" rx="1" fill="#fff"/>
+<svg width="24px" height="24px" fill="none" version="1.1" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+ <mask id="badge" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24">
+  <rect width="24" height="24" fill="#fff"/>
+  <rect x="10.5" y="11.5" width="14" height="13" rx="2" fill="#000"/>
+ </mask>
+ <g mask="url(#badge)">
+  <rect x="2" y="7" width="17" height="10" rx="2" stroke="#fff" stroke-width="1.5"/>
+  <path d="m20 10v4" stroke="#fff" stroke-linecap="round" stroke-width="2"/>
+  <rect x="4.5" y="9.5" width="3" height="5" rx="1" fill="#fff"/>
+ </g>
+ <g transform="translate(11.5 12) scale(.5)" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M17.5 17.5C20 21 23.9486 18.4151 23 15C21.5753 9.87113 20.8001 7.01556 20.3969 5.50793C20.1597 4.62136 19.3562 4 18.4384 4L5.56155 4C4.64382 4 3.844 4.62481 3.62085 5.515C2.7815 8.86349 2.0326 11.8016 1.14415 15C0.195501 18.4151 4.14415 21 6.64415 17.5"/>
+  <path d="M18 8.5L18.0111 8.51"/>
+  <path d="M16.49 7L16.5011 7.01"/>
+  <path d="M16.49 10L16.5011 10.01"/>
+  <path d="M15 8.5L15.0111 8.51"/>
+  <path d="M7 7V10"/>
+  <path d="M5.5 8.5H8.5"/>
+  <path d="M8 16C9.10457 16 10 15.1046 10 14C10 12.8954 9.10457 12 8 12C6.89543 12 6 12.8954 6 14C6 15.1046 6.89543 16 8 16Z"/>
+  <path d="M16 16C17.1046 16 18 15.1046 18 14C18 12.8954 17.1046 12 16 12C14.8954 12 14 12.8954 14 14C14 15.1046 14.8954 16 16 16Z"/>
+ </g>
 </svg>
