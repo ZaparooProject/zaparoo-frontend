@@ -2195,7 +2195,7 @@ fn a_game_reads_the_same_on_every_list() {
     );
     assert_eq!(
         manage,
-        ["change_launcher", "add_to_hub", "hide:hide", "scrape_game"]
+        ["change_launcher", "add_to_hub", "hide:game", "scrape_game"]
     );
     for (mode, other_root, other_manage) in &menus[1..] {
         assert_eq!(other_root, &root, "{mode:?}");
@@ -2516,7 +2516,13 @@ fn the_resume_tile_shows_its_games_menu_once_core_says_what_it_is() {
     assert!(overlays.get_context_open());
     assert_eq!(
         context_keys(&app),
-        ["more_info", "add_to_deck", "write_token", "manage_game"]
+        [
+            "more_info",
+            "add_to_deck",
+            "write_token",
+            "edit_tile",
+            "manage_game"
+        ]
     );
     assert!(strip_states(&app)[0], "the strip shows the game's favorite");
     focus_context_row(&app, "manage_game");
@@ -2524,14 +2530,20 @@ fn the_resume_tile_shows_its_games_menu_once_core_says_what_it_is() {
     settle(&window);
     assert_eq!(
         context_keys(&app),
+        ["add_to_hub", "hide:game", "scrape_game"]
+    );
+    crate::router::handle_action(&ctx, &app, "cancel");
+    focus_context_row(&app, "edit_tile");
+    crate::router::handle_action(&ctx, &app, "accept");
+    settle(&window);
+    assert_eq!(overlays.get_context_page(), crate::ContextPage::EditTile);
+    assert_eq!(
+        context_keys(&app),
         [
-            "add_to_hub",
-            "hide:game",
             "hub_rename:tile",
             "hub_icon:tile",
             "hub_move:tile",
-            "hub_remove:resume",
-            "scrape_game"
+            "hub:remove"
         ]
     );
 
@@ -2547,7 +2559,7 @@ fn the_resume_tile_shows_its_games_menu_once_core_says_what_it_is() {
     };
     assert_eq!(captured, "/g/Game.nes");
 
-    // The tile's own actions are still there, one page down.
+    // The tile's own actions are still there, on Edit tile.
     focus_context_row(&app, "hub_move");
     crate::router::handle_action(&ctx, &app, "accept");
     settle(&window);
@@ -2571,8 +2583,8 @@ fn the_resume_tile_shows_its_games_menu_once_core_says_what_it_is() {
         [
             "hub_rename:tile",
             "hub_icon:tile",
-            "hub_move",
-            "hub_remove:hide"
+            "hub_move:tile",
+            "hub:remove"
         ]
     );
 }
@@ -2601,17 +2613,24 @@ fn pinned_tiles_show_what_they_stand_for_or_their_layout_actions() {
         crate::router::handle_action(&ctx, &app, "context_menu");
     };
 
-    // A pinned game: its own menu, with the shortcut's actions managed.
+    // A pinned game: its own menu, with the shortcut's actions on Edit
+    // tile.
     next_tile();
     assert!(!overlays.get_context_open());
     let request = crate::hub::pending_game_request(&ctx, Tile::Pinned, "NES", "/g/Pinned.nes");
     crate::hub::game_answered(&ctx, &app, &request, Some(&favorite_meta("/g/Pinned.nes")));
     assert_eq!(
         context_keys(&app),
-        ["more_info", "add_to_deck", "write_token", "manage_game"]
+        [
+            "more_info",
+            "add_to_deck",
+            "write_token",
+            "edit_tile",
+            "manage_game"
+        ]
     );
     assert!(strip_states(&app)[0], "the strip shows the game's favorite");
-    focus_context_row(&app, "manage_game");
+    focus_context_row(&app, "edit_tile");
     crate::router::handle_action(&ctx, &app, "accept");
     settle(&window);
     assert_eq!(
@@ -2619,12 +2638,15 @@ fn pinned_tiles_show_what_they_stand_for_or_their_layout_actions() {
         [
             "hub_rename:tile",
             "hub_icon:tile",
-            "hub:remove",
-            "hide:game",
             "hub_move:tile",
-            "scrape_game"
+            "hub:remove"
         ]
     );
+    crate::router::handle_action(&ctx, &app, "cancel");
+    focus_context_row(&app, "manage_game");
+    crate::router::handle_action(&ctx, &app, "accept");
+    settle(&window);
+    assert_eq!(context_keys(&app), ["hide:game", "scrape_game"]);
 
     // A script that is not one game: it can be written as it is.
     next_tile();
@@ -2634,8 +2656,8 @@ fn pinned_tiles_show_what_they_stand_for_or_their_layout_actions() {
             "write_token",
             "hub_rename:tile",
             "hub_icon:tile",
-            "hub:remove",
-            "hub_move:tile"
+            "hub_move:tile",
+            "hub:remove"
         ]
     );
     focus_context_row(&app, "write_token");
@@ -2644,12 +2666,32 @@ fn pinned_tiles_show_what_they_stand_for_or_their_layout_actions() {
     assert!(overlays.get_qr_open());
     overlays.set_qr_open(false);
 
-    // A pinned system: the system's menu.
+    // A pinned system: the system's menu, the tile's rows on Edit tile.
     next_tile();
     assert_eq!(
         context_keys(&app),
-        ["launch_system", "launch_random_system", "manage_system"]
+        [
+            "launch_system",
+            "launch_random_system",
+            "edit_tile",
+            "manage_system"
+        ]
     );
+    focus_context_row(&app, "edit_tile");
+    crate::router::handle_action(&ctx, &app, "accept");
+    settle(&window);
+    assert_eq!(overlays.get_context_page(), crate::ContextPage::EditTile);
+    assert_eq!(
+        context_keys(&app),
+        [
+            "hub_rename:tile",
+            "hub_icon:tile",
+            "hub_move:tile",
+            "hub:remove"
+        ]
+    );
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert_eq!(context_row_id(&app).as_deref(), Some("edit_tile"));
     focus_context_row(&app, "manage_system");
     crate::router::handle_action(&ctx, &app, "accept");
     settle(&window);
@@ -2659,23 +2701,19 @@ fn pinned_tiles_show_what_they_stand_for_or_their_layout_actions() {
     );
     assert_eq!(
         context_keys(&app),
-        [
-            "artwork",
-            "hub_rename:tile",
-            "hub_icon:tile",
-            "hub:remove",
-            "hide:system",
-            "hub_move:tile",
-            "index_system",
-            "scrape_system"
-        ]
+        ["artwork", "hide:system", "index_system", "scrape_system"]
     );
 
     // A folder's visibility is not something the tile knows.
     next_tile();
     assert_eq!(
         context_keys(&app),
-        ["hub_rename:tile", "hub_icon:tile", "hub_move", "hub:remove"]
+        [
+            "hub_rename:tile",
+            "hub_icon:tile",
+            "hub_move:tile",
+            "hub:remove"
+        ]
     );
 
     // A saved search is neither a game nor a script to write.
@@ -2685,8 +2723,8 @@ fn pinned_tiles_show_what_they_stand_for_or_their_layout_actions() {
         [
             "hub_rename:tile",
             "hub_icon:tile",
-            "hub:remove",
-            "hub_move:tile"
+            "hub_move:tile",
+            "hub:remove"
         ]
     );
 
@@ -2727,7 +2765,7 @@ fn systems_and_favorite_systems_show_the_same_system_the_same_way() {
     // Rows sort by name: the launch-only system first. Accept launches
     // it, so its menu neither repeats that nor needs a page.
     crate::router::handle_action(&ctx, &app, "context_menu");
-    assert_eq!(context_keys(&app), ["add_to_hub", "hide:hide"]);
+    assert_eq!(context_keys(&app), ["add_to_hub", "hide:system"]);
     crate::router::close_context_menu(&ctx, &app);
 
     crate::router::handle_action(&ctx, &app, "right");
@@ -2745,7 +2783,7 @@ fn systems_and_favorite_systems_show_the_same_system_the_same_way() {
         [
             "artwork",
             "add_to_hub",
-            "hide:hide",
+            "hide:system",
             "index_system",
             "scrape_system"
         ]

@@ -98,7 +98,8 @@ rust/zaparoo-app/  [toolkit-free product rules]
   paged_grid, media_list, hub, systems, settings, letter_jump
                                   navigation, paging, menus, rows
   options_menu                    : what an item's Options menu offers, in
-                                    order, and what moves to its Manage page
+                                    order, and what moves to its Manage and
+                                    Edit tile pages
   keyboard, search, browse_filter : key layout and text editing, the Search
                                     screen's focus and count rules, tag filters
   form_list, system_picker        : cursor rules for sectioned lists, and the
@@ -230,7 +231,7 @@ crate still owns all UI, navigation and input semantics.
   the same guarded request as the rows. Configuration and status live with
   the window, so a host configures them again for every new window.
 - `Input::configure_image_picker` registers the host's own image picker
-  for Change icon… on a Hub tile; without one, a hosted build does not
+  for Change tile icon… on a Hub tile; without one, a hosted build does not
   offer that row. The host answers with `image_picker_result`: an ordered
   revision and `Picked(path)`, `Cancelled`, `Denied` or `Failed`, where a
   stale revision or an answer with no request open is ignored. Unlike the

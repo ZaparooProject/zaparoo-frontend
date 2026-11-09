@@ -254,6 +254,7 @@ export global Labels {
         if (key == "manage_system") { return @tr("Manage system"); }
         if (key == "manage_category") { return @tr("Manage category"); }
         if (key == "manage_deck") { return @tr("Manage deck"); }
+        if (key == "edit_tile") { return @tr("Edit tile"); }
         // Deck rows, on a deck and on the items of one.
         if (key == "play_deck") { return @tr("Play deck"); }
         if (key == "deck_rename") { return @tr("Rename deck…"); }
@@ -263,17 +264,15 @@ export global Labels {
         // A paired Bluetooth device's Options.
         if (key == "bluetooth_forget") { return @tr("Forget"); }
         if (key == "deck_use_cover") { return @tr("Use as deck cover"); }
-        if (key == "deck_move") { return @tr("Move"); }
+        if (key == "deck_move") { return @tr("Move in deck"); }
         if (key == "deck_remove") { return @tr("Remove from deck"); }
-        // Games, folders and systems share the toggle.
-        if (key == "hide:hide") { return @tr("Hide"); }
-        if (key == "hide:unhide") { return @tr("Unhide"); }
-        // On a Hub shortcut the row names what it hides, since the shortcut
-        // has a Remove of its own.
+        // The hide toggle names what it hides, in a list and on a Hub tile.
         if (key == "hide:game") { return @tr("Hide game"); }
         if (key == "unhide:game") { return @tr("Unhide game"); }
         if (key == "hide:system") { return @tr("Hide system"); }
         if (key == "unhide:system") { return @tr("Unhide system"); }
+        if (key == "hide:folder") { return @tr("Hide folder"); }
+        if (key == "unhide:folder") { return @tr("Unhide folder"); }
         // Systems rows.
         if (key == "launch_system") { return @tr("Launch system"); }
         if (key == "launch_random_system" || key == "launch_random_favorite") { return @tr("Random game"); }
@@ -301,11 +300,9 @@ export global Labels {
         if (key == "hub_add") { return @tr("Add item…"); }
         // The Add item row that picks a folder from disk.
         if (key == "hub_add:folder") { return @tr("Custom folder…"); }
-        if (key == "hub_move") { return @tr("Move"); }
-        if (key == "hub_remove:hide") { return @tr("Hide"); }
         if (key == "hub_move:tile") { return @tr("Move tile"); }
         if (key == "hub_rename:tile") { return @tr("Rename tile…"); }
-        if (key == "hub_icon:tile") { return @tr("Change icon…"); }
+        if (key == "hub_icon:tile") { return @tr("Change tile icon…"); }
         // The file browser's Menu.
         if (key == "file_default_icon") { return @tr("Use default icon"); }
         if (key == "file_no_background") { return @tr("No background image"); }
@@ -313,7 +310,6 @@ export global Labels {
         if (key == "file_add_folder") { return @tr("Add this folder"); }
         // The background picker's first row: a random image from the folder.
         if (key == "file_use_folder") { return @tr("Use this folder"); }
-        if (key == "hub_remove:resume") { return @tr("Hide Resume tile"); }
         if (key == "hub_reset") { return @tr("Reset layout"); }
         if (key == "hub_settings") { return @tr("Settings"); }
         if (key == "hub_quit") { return @tr("Quit"); }
