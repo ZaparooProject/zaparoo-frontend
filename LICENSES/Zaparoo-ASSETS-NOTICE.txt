@@ -15,10 +15,6 @@ third-party asset license:
   resources/images/pixel/status/ControllerFull.txt
   resources/images/pixel/status/ControllerHalf.txt
   resources/images/pixel/status/ControllerLow.txt
-  resources/images/status/ControllerEmpty.svg
-  resources/images/status/ControllerFull.svg
-  resources/images/status/ControllerHalf.svg
-  resources/images/status/ControllerLow.svg
 
 Redistributors or downstream projects should review README.md's trademark
 section before reusing Zaparoo marks.

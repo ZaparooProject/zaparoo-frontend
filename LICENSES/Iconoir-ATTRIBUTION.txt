@@ -47,6 +47,10 @@ fill="none"):
   resources/images/icons/Support.svg
   resources/images/icons/Tools.svg
   resources/images/status/Bluetooth.svg
+  resources/images/status/ControllerEmpty.svg (gamepad, as a badge on the battery)
+  resources/images/status/ControllerFull.svg (gamepad, as a badge on the battery)
+  resources/images/status/ControllerHalf.svg (gamepad, as a badge on the battery)
+  resources/images/status/ControllerLow.svg (gamepad, as a badge on the battery)
   resources/images/status/Music.svg (music-double-note, as icons/Music.svg)
   resources/images/status/WiFi.svg
   resources/images/status/WiredNetwork.svg
