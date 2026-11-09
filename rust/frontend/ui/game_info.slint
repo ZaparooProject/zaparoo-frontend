@@ -510,11 +510,13 @@ export component GameInfoModal inherits ModalShell {
         }
 }
 
-// One of the reader's arrows on its black plate. A spent direction dims
-// rather than going away, as `ScrollCue` does.
+// One of the reader's arrows on its black plate. A spent direction stays,
+// as `ScrollCue` does: a scroll arrow turns to its outline and dims, a
+// page chevron only dims.
 component ReaderCue inherits Rectangle {
     in property <string> glyph;
     in property <bool> live: true;
+    property <bool> outlined: !root.live && (root.glyph == "icons/ScrollUp" || root.glyph == "icons/ScrollDown");
     in property <length> side;
     in property <length> pad;
     width: root.side + 2 * root.pad;
@@ -525,7 +527,7 @@ component ReaderCue inherits Rectangle {
         width: root.side;
         height: root.side;
         image-rendering: Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
-        source: GlyphSource.glyph(root.glyph, Math.max(1px, root.side),
+        source: GlyphSource.glyph(root.outlined ? root.glyph + "Outline" : root.glyph, Math.max(1px, root.side),
             root.live ? #ffffff : #ffffff59);
     }
 }

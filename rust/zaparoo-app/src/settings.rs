@@ -1482,6 +1482,28 @@ mod tests {
     }
 
     #[test]
+    fn ra_notices_take_the_cursor() {
+        let fresh = Inputs {
+            retro_achievements: true,
+            ..Inputs::default()
+        };
+        let navigable = |inputs: &Inputs, id: &str| {
+            page_rows(RETRO_ACHIEVEMENTS_PAGE, inputs)
+                .into_iter()
+                .any(|row| row.id() == id && row.is_navigable())
+        };
+        assert!(navigable(&fresh, "raInstall"));
+        assert!(navigable(
+            &Inputs {
+                ra_installed: true,
+                ra_conflict: true,
+                ..fresh
+            },
+            "raConflict"
+        ));
+    }
+
+    #[test]
     fn the_about_page_leads_with_pairing() {
         let rows = page_rows(
             "pageSupportAbout",
