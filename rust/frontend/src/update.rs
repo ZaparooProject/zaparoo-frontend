@@ -304,7 +304,7 @@ fn apply_state(app: &App, state: &Arc<api::ViewState>) -> bool {
     view.set_details_counts(counts(&state.details.counts));
     view.set_allows_screensaver(state.allows_screensaver);
     if !state.allows_screensaver {
-        app.global::<crate::Shell>().set_saver_armed(false);
+        crate::screensaver::disarm(app);
     }
 
     // The models below only rebuild when their content changed: a fresh

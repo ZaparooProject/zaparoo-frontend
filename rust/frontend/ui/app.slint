@@ -8,8 +8,8 @@
 // logic; forward orchestration lives in the router.
 
 import { Theme, Backdrop, GlassCard, Sizing, Motion, Layout } from "theme.slint";
-import { CoreUiKind, MenuRole, UserFlag, RenamePurpose, ContextPage, KeyKind, SearchZone, SearchPane, SearchScope, FileBrowserMode, CreditsPage, MusicPage, MusicControl, PlaybackState, RepeatMode, MusicUnavailable, Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, DeviceValue, PairFailure, PairSearch, PadFill, HeaderPad, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, StateTokens, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, HeaderLogo, DialogKind, DialogButton, ErrorKind, ManualState, ManualFit, RaLoginStep, RaLoginStatus, LauncherPrefsPage, LauncherPrefsRowKind } from "state_types.slint";
-export { CoreUiKind, MenuRole, UserFlag, RenamePurpose, ContextPage, KeyKind, SearchZone, SearchPane, SearchScope, FileBrowserMode, CreditsPage, MusicPage, MusicControl, PlaybackState, RepeatMode, MusicUnavailable, Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, DeviceValue, PairFailure, PairSearch, PadFill, HeaderPad, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, HeaderLogo, DialogKind, DialogButton, ErrorKind, ManualState, ManualFit, RaLoginStep, RaLoginStatus, LauncherPrefsPage, LauncherPrefsRowKind }
+import { ScreensaverStyle, SaverBouncing, SaverLook, CoreUiKind, MenuRole, UserFlag, RenamePurpose, ContextPage, KeyKind, SearchZone, SearchPane, SearchScope, FileBrowserMode, CreditsPage, MusicPage, MusicControl, PlaybackState, RepeatMode, MusicUnavailable, Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, DeviceValue, PairFailure, PairSearch, PadFill, HeaderPad, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, StateTokens, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, HeaderLogo, DialogKind, DialogButton, ErrorKind, ManualState, ManualFit, RaLoginStep, RaLoginStatus, LauncherPrefsPage, LauncherPrefsRowKind } from "state_types.slint";
+export { ScreensaverStyle, SaverBouncing, SaverLook, CoreUiKind, MenuRole, UserFlag, RenamePurpose, ContextPage, KeyKind, SearchZone, SearchPane, SearchScope, FileBrowserMode, CreditsPage, MusicPage, MusicControl, PlaybackState, RepeatMode, MusicUnavailable, Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, DeviceValue, PairFailure, PairSearch, PadFill, HeaderPad, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, HeaderLogo, DialogKind, DialogButton, ErrorKind, ManualState, ManualFit, RaLoginStep, RaLoginStatus, LauncherPrefsPage, LauncherPrefsRowKind }
 import { FastScrollRail, GlyphSource, Brand, Buttons, HelpEntry, Status, HeaderBar, StatusLine, ProgressTrack, WaitCue, TopStatusStrip, FooterIndicator, ActiveLabel, HelpBar, SectionHeader, Divider, CheckBox, ScrollCue, ModalShell, QrPlate, StateCue } from "chrome.slint";
 import { GridCell, MarqueeCaption, PressableSurface, Tile, PagedGridView, PageStrip } from "tiles.slint";
 import { ScrollOffset, SelectionCursor, SelectionClip, FocusCursor } from "focus.slint";
@@ -19,6 +19,8 @@ export { PressFeedback }
 import { DetailRow, MetaLabels, BrowseList, BrowseListDetailView } from "browse_list.slint";
 import { InfoLineData, InfoLineLabel } from "info_line.slint";
 import { SettingsRow, SettingsLabels, SettingsRowView } from "settings.slint";
+import { Saver, SaverSprite, ScreensaverOverlay } from "screensaver.slint";
+export { Saver, SaverSprite }
 import { ControllerSlot, ControllersView, ControllersPanel } from "controllers.slint";
 export { ControllerSlot, ControllersView }
 import { SetupPickerRow, SetupModal, LogUploadModal } from "setup.slint";
@@ -2575,114 +2577,6 @@ component DialogModal inherits ModalShell {
         }
 }
 
-// Screen-burn protection: a solid-black backstop - the only background
-// that gives OLED pixels-off rest and CRT phosphor a true break - with
-// one copy of the logo starting at the header position, holding 1 s,
-// then drifting DVD-style at 45° at one screen-width per 10 s. Per step
-// only the logo's own box repaints, so the software renderer's cost
-// stays tiny. Mounted fresh on every arm, so init state is always clean.
-// A custom logo bounces the same way at its header size; with no logo,
-// the clock bounces instead.
-component ScreensaverOverlay inherits Rectangle {
-    background: black;
-
-    // The header's logo box.
-    property <length> box-h: Sizing.header-height;
-    property <length> box-w: root.box-h * Brand.aspect;
-    property <bool> clock: Brand.mode == HeaderLogo.none;
-    // The clock's box: the widest reading for the format, so the walk's
-    // edges never move as the digits change.
-    property <length> clock-w: Math.ceil(clock-measure.preferred-width / 1px) * 1px;
-    property <length> clock-h: Math.ceil(clock-measure.preferred-height / 1px) * 1px;
-    property <length> lw: root.clock
-        ? root.clock-w
-        : (Brand.mode == HeaderLogo.custom ? Brand.custom-width(root.box-w, root.box-h) : root.box-w);
-    property <length> lh: root.clock
-        ? root.clock-h
-        : (Brand.mode == HeaderLogo.custom ? Brand.custom-height(root.box-w, root.box-h) : root.box-h);
-    // Always the on-dark variant: the backstop is solid black whatever
-    // the preset.
-    property <image> logo: Brand.mode == HeaderLogo.custom
-        ? Brand.custom-image(root.box-w, root.box-h)
-        : Brand.saver-logo(root.lw);
-
-    clock-measure := Text {
-        visible: false;
-        text: Shell.clock-sample;
-        font-size: Sizing.font-hero;
-    }
-
-    // Float pixel positions; the Image rounds on paint. Start mirrors
-    // the header logo so activation reads as the logo walking off.
-    property <float> lx: Sizing.header-side-margin / 1px;
-    property <float> ly: Sizing.header-top-margin / 1px;
-    property <float> dxs: 1;
-    property <float> dys: 1;
-    property <bool> bouncing: false;
-
-    // 1 s hold at the header position before the walk starts.
-    Timer {
-        interval: 1s;
-        running: !root.bouncing;
-        triggered() => {
-            root.bouncing = true;
-        }
-    }
-
-    // Drift ticks. 16 ms steps at one screen-width per 10 s keeps the
-    // classic slow DVD-player feel at every resolution.
-    Timer {
-        interval: 16ms;
-        running: root.bouncing;
-        triggered() => {
-            root.step();
-        }
-    }
-
-    function step() {
-        root.lx += root.dxs * (root.width / 1px) * 0.0016;
-        root.ly += root.dys * (root.width / 1px) * 0.0016;
-        if (root.lx <= 0) {
-            root.lx = 0;
-            root.dxs = 1;
-        }
-        if (root.lx >= (root.width - root.lw) / 1px) {
-            root.lx = (root.width - root.lw) / 1px;
-            root.dxs = -1;
-        }
-        if (root.ly <= 0) {
-            root.ly = 0;
-            root.dys = 1;
-        }
-        if (root.ly >= (root.height - root.lh) / 1px) {
-            root.ly = (root.height - root.lh) / 1px;
-            root.dys = -1;
-        }
-    }
-
-    if !root.clock: Image {
-        x: root.lx * 1px;
-        y: root.ly * 1px;
-        width: root.lw;
-        height: root.lh;
-        source: root.logo;
-        image-fit: contain;
-        image-rendering: Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
-    }
-    // Bitmap-font text starts on whole pixels.
-    if root.clock: Text {
-        x: Sizing.snap(root.lx * 1px);
-        y: Sizing.snap(root.ly * 1px);
-        width: root.lw;
-        height: root.lh;
-        text: Shell.clock-text;
-        // The backstop is black whatever the preset, like the logo's
-        // on-dark variant.
-        color: white;
-        font-size: Sizing.font-hero;
-    }
-}
-
 // Item-scoped context menu: the panel positions itself beside the
 // anchored tile (right, then left, then below/above) and clamps to the
 // window; the scrim is four bands drawn AROUND the anchor so the tile the
@@ -4794,7 +4688,10 @@ export component App inherits Window {
 
     // Burn protection covers the entire framebuffer including the CRT
     // overscan bands, so no UI bleeds through at the edges.
-    if Shell.saver-armed: ScreensaverOverlay {}
+    if Shell.saver-armed: ScreensaverOverlay {
+        clock-text: Shell.clock-text;
+        clock-sample: Shell.clock-sample;
+    }
 
     // Desktop remains mapped behind the launched game. If the compositor
     // exposes it, cover every live pixel with a static, opaque dormant face:

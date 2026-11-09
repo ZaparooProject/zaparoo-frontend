@@ -1424,7 +1424,7 @@ fn input_storm_keeps_one_idle_countdown_and_off_cancels_it() {
     advance(1);
     assert!(shell.get_saver_armed());
     assert_eq!(crate::router::idle_firings(), before + 1);
-    shell.set_saver_armed(false);
+    crate::screensaver::disarm(&app);
     crate::router::reset_idle(&ctx, &app);
     crate::router::lock(&ctx.shared)
         .persist
@@ -1473,7 +1473,7 @@ fn idle_countdown_preserves_busy_gates_and_shutdown_cancellation() {
     assert!(!shell.get_saver_armed());
     advance(1000);
     assert!(shell.get_saver_armed());
-    shell.set_saver_armed(false);
+    crate::screensaver::disarm(&app);
     crate::router::reset_idle(&ctx, &app);
     crate::router::stop_idle();
     advance(3000);
@@ -1511,6 +1511,85 @@ fn app_activation_dismisses_saver_and_restarts_idle_from_foreground_return() {
         shell.get_saver_armed(),
         "new countdown starts on activation"
     );
+}
+
+#[test]
+fn every_screensaver_style_arms_steps_and_tears_down() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let shell = app.global::<Shell>();
+    let saver = app.global::<crate::Saver>();
+    shell.set_boot_complete(true);
+    for token in zaparoo_app::screensaver::STYLES {
+        {
+            let mut shared = crate::router::lock(&ctx.shared);
+            shared.persist.settings.screensaver_timeout = "1".into();
+            shared.persist.settings.screensaver_style = (*token).into();
+            shared.persist.settings.screensaver_bouncing = "logo".into();
+        }
+        crate::router::reset_idle(&ctx, &app);
+        advance(1000);
+        assert!(shell.get_saver_armed(), "{token} arms");
+        assert!(crate::screensaver::running(), "{token} holds its run");
+        // A few seconds of steps: every style's tick runs.
+        for _ in 0..30 {
+            advance(100);
+        }
+        crate::screensaver::disarm(&app);
+        assert!(!shell.get_saver_armed(), "{token} disarms");
+        assert!(!crate::screensaver::running(), "{token} drops its run");
+        assert_eq!(saver.get_sprites().row_count(), 0, "{token} sprites");
+        assert_eq!(saver.get_frame().size().width, 0, "{token} frame");
+    }
+    crate::router::stop_idle();
+}
+
+#[test]
+fn random_screensaver_never_plays_the_same_style_twice_running() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    app.global::<Shell>().set_boot_complete(true);
+    crate::router::lock(&ctx.shared)
+        .persist
+        .settings
+        .screensaver_style = "random".into();
+    let mut last = None;
+    for _ in 0..8 {
+        crate::screensaver::arm(&ctx, &app);
+        let style = app.global::<crate::Saver>().get_style();
+        assert_ne!(Some(style), last, "Random repeated a style");
+        last = Some(style);
+        crate::screensaver::disarm(&app);
+    }
+}
+
+#[test]
+fn hiding_the_header_logo_switches_a_bouncing_logo_to_the_clock() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let bouncing = |ctx: &crate::router::Ctx| {
+        crate::router::lock(&ctx.shared)
+            .persist
+            .settings
+            .screensaver_bouncing
+            .clone()
+    };
+    crate::router::lock(&ctx.shared)
+        .persist
+        .settings
+        .screensaver_bouncing = "logo".into();
+    crate::settings::picker_selected(&ctx, &app, "headerLogo", "none");
+    assert_eq!(bouncing(&ctx), "clock");
+    // Showing the logo again leaves the clock alone.
+    crate::settings::picker_selected(&ctx, &app, "headerLogo", "zaparoo");
+    assert_eq!(bouncing(&ctx), "clock");
+    // A Recent game choice is not the logo: hiding it changes nothing.
+    crate::settings::picker_selected(&ctx, &app, "screensaverBouncing", "recent-game");
+    crate::settings::picker_selected(&ctx, &app, "headerLogo", "none");
+    assert_eq!(bouncing(&ctx), "recent-game");
 }
 
 #[test]

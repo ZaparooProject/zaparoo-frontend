@@ -382,6 +382,32 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_custom_aspect => set_custom_aspect,
         get_revision => set_revision,
     );
+    // The screensaver: the primary head resolves and steps the style, the
+    // CRT head draws the same state. The sprite and outline models are
+    // shared, so they mirror by pointer; `aspect` lets the CRT spread the
+    // primary's layout across its own width.
+    let saver = primary.global::<crate::Saver>();
+    let crt_saver = crt.global::<crate::Saver>();
+    copy_properties!(saver, crt_saver;
+        get_style => set_style,
+        get_bouncing => set_bouncing,
+        get_aspect => set_aspect,
+        get_sprites => set_sprites,
+        get_fade => set_fade,
+        get_frame => set_frame,
+        get_card_image => set_card_image,
+        get_card_title => set_card_title,
+        get_card_system => set_card_system,
+        get_score_left => set_score_left,
+        get_score_right => set_score_right,
+        get_shift_x => set_shift_x,
+        get_shift_y => set_shift_y,
+        get_pass_logo => set_pass_logo,
+        get_pass_title => set_pass_title,
+        get_pass_clock => set_pass_clock,
+        get_pass_progress => set_pass_progress,
+        get_pass_y => set_pass_y,
+    );
     // The help bar setting is a sizing input, and the CRT head owns its
     // own `Sizing`: copy it and re-solve that head's scene when it flips.
     let help_bar = primary.global::<crate::Sizing>().get_help_bar_enabled();

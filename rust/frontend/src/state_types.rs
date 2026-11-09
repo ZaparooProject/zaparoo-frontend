@@ -37,6 +37,7 @@ tokens!(SettingsPage {
     Language => "pageLanguage", About => "pageSupportAbout",
     Controllers => "pageControllers", PairedControllers => "pagePairedControllers",
     Browsing => "pageBrowsing", RetroAchievements => "pageRetroAchievements",
+    Screensaver => "pageScreensaver",
 });
 tokens!(Orientation { Horizontal => "horizontal", Cw => "cw", Ccw => "ccw" });
 tokens!(VideoStandard { Ntsc => "ntsc", Pal => "pal" });
@@ -60,6 +61,39 @@ impl From<zaparoo_app::branding::HeaderLogo> for crate::HeaderLogo {
             zaparoo_app::branding::HeaderLogo::Zaparoo => Self::Zaparoo,
             zaparoo_app::branding::HeaderLogo::Custom => Self::Custom,
             zaparoo_app::branding::HeaderLogo::None => Self::None,
+        }
+    }
+}
+
+impl From<zaparoo_app::screensaver::Style> for crate::ScreensaverStyle {
+    /// Random never reaches the view (`screensaver::resolve` picks first);
+    /// it maps to Bouncing so the match stays total.
+    fn from(value: zaparoo_app::screensaver::Style) -> Self {
+        use zaparoo_app::screensaver::Style;
+        match value {
+            Style::Bouncing | Style::Random => Self::Bouncing,
+            Style::SpinningLogo => Self::SpinningLogo,
+            Style::SystemLogos => Self::SystemLogos,
+            Style::CoverWall => Self::CoverWall,
+            Style::RecentGames => Self::RecentGames,
+            Style::PaddleClock => Self::PaddleClock,
+            Style::Starfield => Self::Starfield,
+            Style::Flyby => Self::Flyby,
+            Style::Polygons => Self::Polygons,
+            Style::Pipes => Self::Pipes,
+            Style::Life => Self::Life,
+            Style::Maze => Self::Maze,
+        }
+    }
+}
+
+impl From<zaparoo_app::screensaver::Bouncing> for crate::SaverBouncing {
+    fn from(value: zaparoo_app::screensaver::Bouncing) -> Self {
+        use zaparoo_app::screensaver::Bouncing;
+        match value {
+            Bouncing::Logo => Self::Logo,
+            Bouncing::Clock => Self::Clock,
+            Bouncing::RecentGame => Self::RecentGame,
         }
     }
 }
@@ -269,6 +303,7 @@ mod tests {
             SettingsPage::PairedControllers,
             SettingsPage::Browsing,
             SettingsPage::RetroAchievements,
+            SettingsPage::Screensaver,
         ] {
             assert_eq!(SettingsPage::try_from(page.token()), Ok(page));
         }

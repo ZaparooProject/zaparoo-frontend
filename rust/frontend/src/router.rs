@@ -903,7 +903,7 @@ pub fn refresh_startup_notices(ctx: &Ctx, app: &App) {
 /// Disarm a saver that may have started while the app was in the background.
 #[cfg(any(feature = "hosted", all(test, feature = "mister")))]
 pub(crate) fn on_app_activated(ctx: &Ctx, app: &App) {
-    app.global::<crate::Shell>().set_saver_armed(false);
+    crate::screensaver::disarm(app);
     reset_idle(ctx, app);
     #[cfg(feature = "hosted")]
     if crate::host::take_trimmed() {
@@ -916,6 +916,8 @@ pub(crate) fn on_app_activated(ctx: &Ctx, app: &App) {
 
 thread_local! {
     static IDLE_TIMER: slint::Timer = slint::Timer::default();
+    // Gathers the screensaver's art shortly before the countdown ends.
+    static PREFETCH_TIMER: slint::Timer = slint::Timer::default();
     #[cfg(all(test, feature = "mister"))]
     static IDLE_FIRES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
@@ -923,6 +925,7 @@ thread_local! {
 /// Drop pending countdown work on dormancy and before a hosted event loop ends.
 pub(crate) fn stop_idle() {
     IDLE_TIMER.with(slint::Timer::stop);
+    PREFETCH_TIMER.with(slint::Timer::stop);
 }
 
 #[cfg(all(test, feature = "mister"))]
@@ -945,7 +948,22 @@ pub fn reset_idle(ctx: &Ctx, app: &App) {
     if secs == 0 {
         return;
     }
+    let lead = secs.saturating_sub(crate::screensaver::PREFETCH_LEAD);
     let weak = app.as_weak();
+    let prefetch_ctx = ctx.clone();
+    PREFETCH_TIMER.with(|timer| {
+        timer.start(
+            slint::TimerMode::SingleShot,
+            Duration::from_secs(lead),
+            move || {
+                if let Some(app) = weak.upgrade() {
+                    crate::screensaver::prefetch(&prefetch_ctx, &app);
+                }
+            },
+        );
+    });
+    let weak = app.as_weak();
+    let ctx = ctx.clone();
     IDLE_TIMER.with(|timer| {
         timer.start(
             slint::TimerMode::SingleShot,
@@ -969,7 +987,7 @@ pub fn reset_idle(ctx: &Ctx, app: &App) {
                 {
                     return;
                 }
-                shell.set_saver_armed(true);
+                crate::screensaver::arm(&ctx, &app);
             },
         );
     });
@@ -1433,7 +1451,7 @@ fn dispatch_action(ctx: &Ctx, app: &App, action: &str) {
     // Screensaver eats the waking press whole: disarm, restart the idle
     // clock, swallow.
     if app.global::<crate::Shell>().get_saver_armed() {
-        app.global::<crate::Shell>().set_saver_armed(false);
+        crate::screensaver::disarm(app);
         // A held key dismissed mid-repeat would otherwise keep ticking
         // against a screen the user cannot see.
         crate::input::stop_repeat(ctx);
@@ -3211,7 +3229,7 @@ pub fn bind_context_input(ctx: &Arc<Ctx>, app: &App) {
                 }
                 if kind == crate::PressOwner::Wake {
                     if app.global::<crate::Shell>().get_saver_armed() {
-                        app.global::<crate::Shell>().set_saver_armed(false);
+                        crate::screensaver::disarm(&app);
                         reset_idle(&ctx, &app);
                     }
                     return;

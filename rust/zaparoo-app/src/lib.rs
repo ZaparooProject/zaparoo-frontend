@@ -62,6 +62,7 @@ pub mod pairing;
 pub mod palette;
 pub mod retro_achievements;
 pub mod row_store;
+pub mod screensaver;
 pub mod search;
 pub mod settings;
 pub mod sizing;

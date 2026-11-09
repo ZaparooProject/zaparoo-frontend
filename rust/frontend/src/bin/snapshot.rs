@@ -62,6 +62,7 @@ use generated::{KeyCell, KeyKind, SearchPane, SearchPaneRow, SearchScope, Search
 use generated::{
     MusicButton, MusicControl, MusicPage, MusicUnavailable, MusicView, PlaybackState, RepeatMode,
 };
+use generated::{Saver, SaverBouncing, SaverLook, SaverSprite, ScreensaverStyle};
 #[path = "../music_layout.rs"]
 mod music_layout;
 #[path = "../state_types.rs"]
@@ -90,6 +91,12 @@ mod keyboard;
 #[path = "../qr.rs"]
 #[allow(dead_code, reason = "the snapshot tool renders one fixture code")]
 mod qr;
+#[path = "../screensaver_scene.rs"]
+#[allow(
+    dead_code,
+    reason = "the screensaver's scene; snapshots step it without the runtime"
+)]
+mod screensaver_scene;
 #[path = "../sizing.rs"]
 #[allow(
     dead_code,
@@ -246,6 +253,7 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
     app.global::<Sizing>()
         .set_help_bar_enabled(std::env::var("ZAPAROO_SNAPSHOT_HELP_BAR").as_deref() != Ok("off"));
     sizing::apply_scene(&app, sizing::Scene::of(&app, scene_w, scene_h, crt));
+    fixture_saver(&app, screen);
     // Chrome fixtures: a full HUD with a battery reading, and an
     // indexing run in the status line so the track and percent render.
     shell.set_status_icons_enabled(true);
@@ -1514,7 +1522,8 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
 
 /// The header logo setting. `…logo-custom` shows a custom image, the one
 /// `ZAPAROO_SNAPSHOT_LOGO` names or a generated one; `…logo-none` and
-/// `…saver-clock` show no logo. `saver…` arms the screensaver over it.
+/// `…saver-clock` show no logo. `saver…` arms the screensaver over it;
+/// `fixture_saver` fills the style once the scene is solved.
 fn fixture_logo(app: &App, screen: &str) {
     if screen.contains("logo-custom") {
         let given = std::env::var("ZAPAROO_SNAPSHOT_LOGO").ok();
@@ -1551,13 +1560,128 @@ fn fixture_logo(app: &App, screen: &str) {
         if given.is_none() {
             let _ = std::fs::remove_file(&path);
         }
-    } else if screen.contains("logo-none") || screen.contains("saver-clock") {
+    } else if screen.contains("logo-none") {
         app.global::<Brand>().set_mode(HeaderLogo::None);
     }
     if screen.trim_start_matches("crt-").starts_with("saver") {
         app.global::<Shell>().set_saver_armed(true);
         app.global::<Shell>().set_clock_sample("23:59".into());
     }
+}
+
+/// `saver-<style>` screens: that screensaver style, stepped a few seconds
+/// from a fixed seed over generated covers and embedded system logos.
+/// `saver` and `saver-logo-custom` are Bouncing: Logo, `saver-clock`
+/// Bouncing: Clock and `saver-recent-game` Bouncing: Recent game.
+fn fixture_saver(app: &App, screen: &str) {
+    use screensaver_scene::{Art, Card, Face, Line, Scene, View};
+    use zaparoo_app::screensaver::{self as rules, Bouncing, Rng, Style};
+    let Some(rest) = screen.trim_start_matches("crt-").strip_prefix("saver") else {
+        return;
+    };
+    let rest = rest.trim_start_matches('-');
+    let (style, bouncing) = match rest {
+        "clock" => (Style::Bouncing, Bouncing::Clock),
+        "recent-game" => (Style::Bouncing, Bouncing::RecentGame),
+        token => (Style::parse(token), Bouncing::Logo),
+    };
+    let logo = |id: &str| {
+        Face::of(
+            slint::Image::load_from_path(std::path::Path::new(&format!(
+                "{}/assets/systems-color/{id}.png",
+                env!("CARGO_MANIFEST_DIR")
+            )))
+            .expect("fixture system logo"),
+        )
+    };
+    let games = [
+        ("SNES", "Super Nintendo", "Example Quest"),
+        ("Genesis", "Mega Drive", "Sample Racer"),
+        ("NES", "Nintendo", "Demo Adventure"),
+        ("PSX", "PlayStation", "Fixture Fighters"),
+        ("Nintendo64", "Nintendo 64", "Test Kart"),
+        ("GBA", "Game Boy Advance", "Pocket Example"),
+        ("TurboGrafx16", "PC Engine", "Shooter Sample"),
+        ("NeoGeo", "Neo Geo", "Arcade Demo"),
+        ("MasterSystem", "Master System", "Retro Fixture"),
+        ("Atari2600", "Atari 2600", "Block Breaker"),
+    ];
+    let systems: Vec<Face> = games.iter().map(|(id, ..)| logo(id)).collect();
+    let covers: Vec<Face> = (0..12).map(|i| Face::of(fixture_saver_cover(i))).collect();
+    let cards = games
+        .iter()
+        .zip(&covers)
+        .map(|((_, system, title), cover)| Card {
+            cover: cover.image.clone(),
+            title: (*title).into(),
+            system: (*system).into(),
+        })
+        .collect();
+    let lines = games
+        .iter()
+        .zip(&systems)
+        .map(|((.., title), face)| Line {
+            logo: face.image.clone(),
+            title: (*title).into(),
+        })
+        .collect();
+    let art = Art {
+        systems,
+        covers,
+        cards,
+        lines,
+    };
+    let mut rng = Rng::new(231);
+    let resolved = rules::resolve(style, bouncing, art.counts(), None, &mut rng);
+    let time = (10, 32);
+    let mut scene = Scene::new(app, resolved, art, View::of(app), 231, time, false);
+    // Four seconds in, so every style has something on screen; Flyby
+    // launches slowly, so its parade gets fifteen.
+    let step = 1.0 / 30.0;
+    let ticks = if resolved.style == Style::Flyby {
+        450
+    } else {
+        120
+    };
+    for _ in 0..ticks {
+        scene.tick(app, step, time);
+    }
+}
+
+/// A generated cover for the screensaver fixtures: a two-tone gradient
+/// with a light band, a different pair of hues per index.
+fn fixture_saver_cover(index: u32) -> slint::Image {
+    let (width, height) = (192_u32, 256_u32);
+    let hue = |slot: u32| {
+        let palette: [[u8; 3]; 6] = [
+            [200, 60, 50],
+            [50, 120, 200],
+            [240, 180, 40],
+            [70, 170, 90],
+            [150, 70, 190],
+            [230, 110, 30],
+        ];
+        palette[(slot % 6) as usize]
+    };
+    let (top, bottom) = (hue(index), hue(index * 5 + 2));
+    let mut buffer = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(width, height);
+    for (index_px, px) in buffer.make_mut_slice().iter_mut().enumerate() {
+        let (col, row) = (index_px as u32 % width, index_px as u32 / width);
+        let fall = row as f32 / height as f32;
+        let band = (row as f32 - height as f32 * 0.62).abs() < height as f32 * 0.06
+            && col > width / 10
+            && col < width * 9 / 10;
+        let mix = |channel: usize| {
+            let value = f32::from(top[channel]) * (1.0 - fall) + f32::from(bottom[channel]) * fall;
+            if band {
+                (value * 0.4 + 150.0) as u8
+            } else {
+                value as u8
+            }
+        };
+        *px = slint::Rgba8Pixel::new(mix(0), mix(1), mix(2), 255);
+    }
+    slint::Image::from_rgba8(buffer)
 }
 
 /// Prepare a background through the real pipeline for this frame: a first
@@ -3160,6 +3284,7 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
     // opens.
     let controls = screen.contains("settings-page-controls");
     let controllers_page = screen.contains("settings-page-controllers");
+    let saver_page = screen.contains("settings-page-screensaver");
     let none_connected = screen.contains("controllers-none");
     let nothing_found = screen.contains("controllers-empty");
     let paired_page = screen.contains("settings-page-paired");
@@ -3211,6 +3336,8 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
         SettingsPage::RetroAchievements
     } else if browsing {
         SettingsPage::Browsing
+    } else if saver_page {
+        SettingsPage::Screensaver
     } else if page {
         SettingsPage::Library
     } else {
@@ -3241,6 +3368,7 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
         },
         bluetooth_paired: if paired_page { paired.len() } else { 0 },
         header_logo_custom: logo_image,
+        screensaver_bounces: true,
     };
     // The card and its row heights, from the rule the driver uses.
     let geometry = rules::page_geometry(&inputs);
@@ -3313,6 +3441,8 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
                                 "colorIntensity" => "subtle",
                                 "systemLogoStyle" => "tinted",
                                 "screensaverTimeout" => "300",
+                                "screensaverStyle" => "random",
+                                "screensaverBouncing" => "clock",
                                 "gameBackground" => "screenshot",
                                 "backgroundListStyle" => "glass",
                                 "noPairedControllers" | "raInstall" | "raConflict" => "",

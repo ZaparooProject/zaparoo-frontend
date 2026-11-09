@@ -105,6 +105,8 @@ mod press_feedback;
 mod route_motion;
 mod router;
 mod scoped_task;
+mod screensaver;
+mod screensaver_scene;
 mod search;
 mod settings;
 mod sizing;
@@ -328,6 +330,19 @@ fn merge_image_settings(s: &mut persist::SettingsState, c: &zaparoo_core::config
     }
 }
 
+/// An install that hid its header logo before the screensaver had a
+/// Bouncing choice saw a bouncing clock; keep showing it one. True when the
+/// choice changed and wants saving.
+fn migrate_screensaver(s: &mut persist::SettingsState) -> bool {
+    match zaparoo_app::screensaver::migrate(&s.screensaver_bouncing, &s.header_logo) {
+        Some(token) => {
+            s.screensaver_bouncing = token.to_string();
+            true
+        }
+        None => false,
+    }
+}
+
 /// Merge frontend.toml's durable settings over the tmpfs state snapshot;
 /// the config file wins at startup.
 fn merge_config_settings(
@@ -398,6 +413,12 @@ fn merge_config_settings(
     merge_image_settings(s, c);
     if let Some(v) = &c.screensaver_timeout {
         s.screensaver_timeout.clone_from(v);
+    }
+    if let Some(v) = &c.screensaver_style {
+        s.screensaver_style.clone_from(v);
+    }
+    if let Some(v) = &c.screensaver_bouncing {
+        s.screensaver_bouncing.clone_from(v);
     }
     if let Some(v) = &c.media_image_type {
         s.media_image_type.clone_from(v);
@@ -699,6 +720,7 @@ fn run_application(
     let has_saved_state = persist::has_saved_state();
     let mut persisted = persist::load();
     merge_config_settings(&mut persisted, &config);
+    let screensaver_migrated = migrate_screensaver(&mut persisted.settings);
     let restore_pending = restores_screen(&persisted.active_screen);
     // The cold-launch curtain covers every Core-dependent restore until
     // the restored screen is complete, so nothing is shown in between.
@@ -930,6 +952,9 @@ fn run_application(
             platform_paths::config_file_path(),
         ))),
     });
+    if screensaver_migrated {
+        settings::save(&ctx, &app);
+    }
     start_media_cache(&ctx, &app, &client);
     system_logos::spawn_driver(&ctx, &app);
     #[cfg(feature = "hosted")]
@@ -1384,7 +1409,7 @@ fn set_dormant(ctx: &Ctx, app: &App, dormant: bool) {
         // could; nothing may still be pushed in when the frontend comes back.
         press_feedback::cancel(app);
         router::stop_idle();
-        shell.set_saver_armed(false);
+        screensaver::disarm(app);
         app.global::<Motion>().set_enabled(false);
         // After the launch that led here the last covers have landed.
         hub_covers::record_browse_page(ctx);
@@ -2632,6 +2657,8 @@ mod tests {
             header_logo_image: "/media/fat/logo.png".to_string(),
             debug_logging: true,
             screensaver_timeout: "600".to_string(),
+            screensaver_style: "maze".to_string(),
+            screensaver_bouncing: "clock".to_string(),
             media_image_type: "boxart".to_string(),
             show_hidden: true,
             show_original_filenames: true,
@@ -2660,5 +2687,27 @@ mod tests {
         merge_config_settings(&mut persisted, &config);
 
         assert_eq!(persisted.settings, saved);
+    }
+
+    #[test]
+    fn a_hidden_header_logo_turns_an_unchosen_bouncing_logo_into_the_clock() {
+        let mut s = persist::SettingsState {
+            header_logo: "none".to_string(),
+            ..persist::SettingsState::default()
+        };
+        assert!(migrate_screensaver(&mut s));
+        assert_eq!(s.screensaver_bouncing, "clock");
+        // Once chosen, never again.
+        assert!(!migrate_screensaver(&mut s));
+        let mut chosen = persist::SettingsState {
+            header_logo: "none".to_string(),
+            screensaver_bouncing: "logo".to_string(),
+            ..persist::SettingsState::default()
+        };
+        assert!(!migrate_screensaver(&mut chosen));
+        assert_eq!(chosen.screensaver_bouncing, "logo");
+        let mut shown = persist::SettingsState::default();
+        assert!(!migrate_screensaver(&mut shown));
+        assert!(shown.screensaver_bouncing.is_empty());
     }
 }

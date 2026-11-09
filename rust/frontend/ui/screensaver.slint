@@ -1,0 +1,356 @@
+// Zaparoo Frontend
+// Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
+// SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
+
+// The screensaver: a solid-black backstop (the only background that gives
+// OLED pixels-off rest and CRT phosphor a true break) with one style on
+// top. Rust resolves the style, runs its simulation
+// (`zaparoo_app::screensaver`) and publishes what to draw through the
+// `Saver` global; the view only paints it. Every style keeps its dirty
+// region small on the software renderer, except the pixel-buffer styles
+// (Polygons, Life, Maze), which Rust runs at a low frame rate under the heavy-phase
+// bracket. See `docs/slint-gotchas.md` → "Screensaver costs".
+
+import { Sizing } from "theme.slint";
+import { Brand } from "chrome.slint";
+import { HeaderLogo, ScreensaverStyle, SaverBouncing, SaverLook } from "state_types.slint";
+
+// One thing on screen. Geometry is in height units: 1.0 is the scene's
+// height, so x runs from 0 to the scene's aspect ratio.
+export struct SaverSprite {
+    x: float,
+    y: float,
+    w: float,
+    h: float,
+    opacity: float,
+    look: SaverLook,
+    image: image,
+    color: color,
+}
+
+export global Saver {
+    in property <ScreensaverStyle> style: ScreensaverStyle.bouncing;
+    in property <SaverBouncing> bouncing: SaverBouncing.logo;
+    in property <[SaverSprite]> sprites;
+    // The width over height the sprites were laid out for.
+    // A head with another shape (the CRT beside HDMI) spreads them across
+    // its own width instead of cutting them off.
+    in property <float> aspect: 16 / 9;
+    // Whether sprites fade between opacities (System logos) or cut.
+    in property <bool> fade: false;
+    // Life's and Maze's picture, scaled up to the whole scene.
+    in property <image> frame;
+    // Bouncing: Recent game's card.
+    in property <image> card-image;
+    in property <string> card-title;
+    in property <string> card-system;
+    // Paddle clock: the score and the court's offset, in height units.
+    in property <string> score-left;
+    in property <string> score-right;
+    in property <float> shift-x;
+    in property <float> shift-y;
+    // Recent games: the line on screen now, how far across it is (0 is
+    // just off the right edge, 1 just off the left) and its top.
+    in property <image> pass-logo;
+    in property <string> pass-title;
+    in property <bool> pass-clock;
+    in property <float> pass-progress;
+    in property <float> pass-y;
+    // The Bouncing walk hit an edge: Recent game moves to the next game.
+    callback bounced();
+}
+
+// Today's walk: the content holds 1 s where the header logo sits, then
+// drifts at 45° at one screen-width per 10 s. Per step only the content's
+// own box repaints. Mounted fresh on every arm, so its state starts clean.
+component Bouncing inherits Rectangle {
+    in property <string> clock-text;
+    in property <string> clock-sample;
+
+    property <length> box-h: Sizing.header-height;
+    property <length> box-w: root.box-h * Brand.aspect;
+    // The clock's box: the widest reading for the format, so the walk's
+    // edges never move as the digits change.
+    property <length> clock-w: Math.ceil(clock-measure.preferred-width / 1px) * 1px;
+    property <length> clock-h: Math.ceil(clock-measure.preferred-height / 1px) * 1px;
+    // Recent game's card: a cover box and two lines under it.
+    property <length> cover-h: Math.round(root.height * 0.3 / 1px) * 1px;
+    property <length> cover-w: Math.round(root.cover-h * 0.75 / 1px) * 1px;
+    property <length> card-w: Math.round(root.cover-w * 1.6 / 1px) * 1px;
+    property <length> line-h: Math.ceil(title-measure.preferred-height / 1px) * 1px;
+    property <length> card-h: root.cover-h + root.line-h * 2;
+    property <bool> custom: Brand.mode == HeaderLogo.custom;
+    property <length> lw: Saver.bouncing == SaverBouncing.clock ? root.clock-w
+        : Saver.bouncing == SaverBouncing.recent-game ? root.card-w
+        : root.custom ? Brand.custom-width(root.box-w, root.box-h) : root.box-w;
+    property <length> lh: Saver.bouncing == SaverBouncing.clock ? root.clock-h
+        : Saver.bouncing == SaverBouncing.recent-game ? root.card-h
+        : root.custom ? Brand.custom-height(root.box-w, root.box-h) : root.box-h;
+
+    clock-measure := Text {
+        visible: false;
+        text: root.clock-sample;
+        font-size: Sizing.font-hero;
+    }
+
+    title-measure := Text {
+        visible: false;
+        text: "Ag";
+        font-size: Sizing.font-body;
+    }
+
+    // Float pixel positions; the content rounds on paint. The start
+    // mirrors the header logo, so arming reads as the logo walking off.
+    property <float> lx: Sizing.header-side-margin / 1px;
+    property <float> ly: Sizing.header-top-margin / 1px;
+    property <float> dxs: 1;
+    property <float> dys: 1;
+    property <bool> walking: false;
+
+    Timer {
+        interval: 1s;
+        running: !root.walking;
+        triggered() => {
+            root.walking = true;
+        }
+    }
+
+    Timer {
+        interval: 16ms;
+        running: root.walking;
+        triggered() => {
+            root.step();
+        }
+    }
+
+    function step() {
+        root.lx += root.dxs * (root.width / 1px) * 0.0016;
+        root.ly += root.dys * (root.width / 1px) * 0.0016;
+        let hit-x = root.lx <= 0 || root.lx >= (root.width - root.lw) / 1px;
+        let hit-y = root.ly <= 0 || root.ly >= (root.height - root.lh) / 1px;
+        if (root.lx <= 0) {
+            root.lx = 0;
+            root.dxs = 1;
+        }
+        if (root.lx >= (root.width - root.lw) / 1px) {
+            root.lx = (root.width - root.lw) / 1px;
+            root.dxs = -1;
+        }
+        if (root.ly <= 0) {
+            root.ly = 0;
+            root.dys = 1;
+        }
+        if (root.ly >= (root.height - root.lh) / 1px) {
+            root.ly = (root.height - root.lh) / 1px;
+            root.dys = -1;
+        }
+        if (hit-x || hit-y) {
+            Saver.bounced();
+        }
+    }
+
+    // Always the on-dark variant: the backstop is black whatever the
+    // preset. With the header logo hidden, the Zaparoo logo bounces.
+    if Saver.bouncing == SaverBouncing.logo: Image {
+        x: root.lx * 1px;
+        y: root.ly * 1px;
+        width: root.lw;
+        height: root.lh;
+        source: root.custom ? Brand.custom-image(root.box-w, root.box-h) : Brand.saver-logo(root.lw);
+        image-fit: contain;
+        image-rendering: Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
+    }
+    // Bitmap-font text starts on whole pixels.
+    if Saver.bouncing == SaverBouncing.clock: Text {
+        x: Sizing.snap(root.lx * 1px);
+        y: Sizing.snap(root.ly * 1px);
+        width: root.lw;
+        height: root.lh;
+        text: root.clock-text;
+        color: white;
+        font-size: Sizing.font-hero;
+    }
+    if Saver.bouncing == SaverBouncing.recent-game: Rectangle {
+        x: root.lx * 1px;
+        y: root.ly * 1px;
+        width: root.lw;
+        height: root.lh;
+
+        Image {
+            x: (parent.width - self.width) / 2;
+            y: 0;
+            width: root.cover-w;
+            height: root.cover-h;
+            source: Saver.card-image;
+            image-fit: contain;
+            image-rendering: Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
+        }
+
+        Text {
+            x: Sizing.snap(parent.x) - parent.x;
+            y: Sizing.snap(parent.y + root.cover-h) - parent.y;
+            width: parent.width;
+            height: root.line-h;
+            text: Saver.card-title;
+            color: white;
+            font-size: Sizing.font-body;
+            horizontal-alignment: center;
+            overflow: elide;
+        }
+
+        Text {
+            x: Sizing.snap(parent.x) - parent.x;
+            y: Sizing.snap(parent.y + root.cover-h + root.line-h) - parent.y;
+            width: parent.width;
+            height: root.line-h;
+            text: Saver.card-system;
+            color: #b8b8c0;
+            font-size: Sizing.font-caption;
+            horizontal-alignment: center;
+            overflow: elide;
+        }
+    }
+}
+
+// Every Rust-driven sprite style: one element per model row, so a row
+// that changes repaints only its own box.
+component Sprites inherits Rectangle {
+    in property <string> clock-text;
+
+    property <float> spread: root.width / root.height / Saver.aspect;
+
+    for s in Saver.sprites: Rectangle {
+        // Centers spread, sizes kept; on the layout's own shape this is
+        // just `s.x`. Fliers enter and leave past the edges, so no clamp.
+        x: (s.x + s.w / 2) * root.spread * root.height - self.width / 2;
+        y: s.y * root.height;
+        width: s.w * root.height;
+        height: s.h * root.height;
+        opacity: s.opacity;
+        background: s.look == SaverLook.block || s.look == SaverLook.round ? s.color : transparent;
+        border-radius: s.look == SaverLook.round ? self.height / 2 : 0;
+        animate opacity {
+            duration: Saver.fade ? 700ms : 0ms;
+            easing: ease-in-out;
+        }
+
+        if s.look == SaverLook.image: Image {
+            width: parent.width;
+            height: parent.height;
+            source: s.image;
+            image-fit: fill;
+            image-rendering: Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
+        }
+        if s.look == SaverLook.clock: Text {
+            // Whole pixels on screen, not just within the sprite.
+            x: Sizing.snap(parent.x + (parent.width - self.preferred-width) / 2) - parent.x;
+            y: Sizing.snap(parent.y + (parent.height - self.preferred-height) / 2) - parent.y;
+            width: self.preferred-width;
+            height: self.preferred-height;
+            text: root.clock-text;
+            color: white;
+            font-size: Sizing.font-hero;
+        }
+    }
+}
+
+// Paddle clock: the net and the score sit with the court, which moves a
+// few pixels with every point; the paddles and the ball are sprites.
+component Court inherits Rectangle {
+    property <length> score-size: Sizing.pixel-grid ? Sizing.font-hero : Sizing.font-hero * 2;
+    property <length> dash: Math.max(2px, Math.round(root.height / 40 / 1px) * 1px);
+    property <length> net-x: (root.width - root.dash) / 2 + Saver.shift-x * root.height;
+
+    for i in 20: Rectangle {
+        x: root.net-x;
+        y: (i * 2 + 0.5) * root.height / 40 + Saver.shift-y * root.height;
+        width: root.dash;
+        height: root.dash;
+        background: #5a5a66;
+    }
+
+    Text {
+        x: Sizing.snap(root.width / 4 - self.preferred-width / 2 + Saver.shift-x * root.height);
+        y: Sizing.snap(root.height * 0.08 + Saver.shift-y * root.height);
+        width: self.preferred-width;
+        height: self.preferred-height;
+        text: Saver.score-left;
+        color: white;
+        font-size: root.score-size;
+        font-weight: FontWeight.bold;
+    }
+
+    Text {
+        x: Sizing.snap(root.width * 3 / 4 - self.preferred-width / 2 + Saver.shift-x * root.height);
+        y: Sizing.snap(root.height * 0.08 + Saver.shift-y * root.height);
+        width: self.preferred-width;
+        height: self.preferred-height;
+        text: Saver.score-right;
+        color: white;
+        font-size: root.score-size;
+        font-weight: FontWeight.bold;
+    }
+}
+
+// Recent games: one line crossing right to left, the system logo then the
+// title; only the thin band it crosses repaints.
+component Marquee inherits Rectangle {
+    in property <string> clock-text;
+
+    property <length> line-h: root.height * 0.09;
+    property <length> logo-w: Saver.pass-clock ? 0px : root.line-h * 2;
+    property <length> gap: Saver.pass-clock ? 0px : root.line-h * 0.4;
+    property <length> line-w: root.logo-w + root.gap + label.preferred-width;
+
+    Rectangle {
+        x: root.width - Saver.pass-progress * (root.width + root.line-w);
+        y: Saver.pass-y * root.height;
+        width: root.line-w;
+        height: root.line-h;
+
+        if !Saver.pass-clock: Image {
+            x: 0;
+            width: root.logo-w;
+            height: parent.height;
+            source: Saver.pass-logo;
+            image-fit: contain;
+            image-rendering: Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
+        }
+
+        label := Text {
+            x: Sizing.snap(parent.x + root.logo-w + root.gap) - parent.x;
+            y: Sizing.snap(parent.y + (parent.height - self.preferred-height) / 2) - parent.y;
+            width: self.preferred-width;
+            height: self.preferred-height;
+            text: Saver.pass-clock ? root.clock-text : Saver.pass-title;
+            color: white;
+            font-size: Sizing.font-hero;
+        }
+    }
+}
+
+export component ScreensaverOverlay inherits Rectangle {
+    in property <string> clock-text;
+    in property <string> clock-sample;
+
+    background: black;
+
+    if Saver.style == ScreensaverStyle.bouncing: Bouncing {
+        clock-text: root.clock-text;
+        clock-sample: root.clock-sample;
+    }
+    if Saver.style == ScreensaverStyle.life || Saver.style == ScreensaverStyle.maze || Saver.style == ScreensaverStyle.polygons: Image {
+        width: root.width;
+        height: root.height;
+        source: Saver.frame;
+        image-fit: fill;
+        image-rendering: ImageRendering.pixelated;
+    }
+    if Saver.style == ScreensaverStyle.paddle-clock: Court {}
+    if Saver.style == ScreensaverStyle.recent-games: Marquee {
+        clock-text: root.clock-text;
+    }
+    Sprites {
+        clock-text: root.clock-text;
+    }
+}

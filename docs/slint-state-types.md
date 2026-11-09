@@ -23,6 +23,7 @@ and consumers, the snapshot binary, and the MiSTer dual-head mirror/tests.
 | Input | `PressOwner`, `ScrollAction`: delayed-accept ownership, overlay pointer dispatch and Details scroll commands |
 | Display | `Orientation`, `VideoStandard`: UI selection; orientation stays typed through scene sizing and live backend updates |
 | Header logo | `HeaderLogo` on `Brand.mode`: what the header and the screensaver show (the Zaparoo logo, the user's image, nothing). The persisted `header_logo` token is parsed by `zaparoo_app::branding::HeaderLogo` (unknown reads as `zaparoo`) and mapped explicitly; a custom image that fails to load publishes `zaparoo` |
+| Screensaver | `ScreensaverStyle`, `SaverBouncing`, `SaverLook`: the style that plays and what Bouncing bounces (logo, clock, recent game), published on `Saver` once the run resolves Random (Random is never published; it maps to Bouncing), and what one sprite draws (image, block, round, clock). The persisted `screensaver_style` and `screensaver_bouncing` tokens are parsed by `zaparoo_app::screensaver` (unknown reads as the default) and mapped explicitly. The settings page is `SettingsPage.screensaver` |
 | Log upload | `LogPhase`: uploading, done, failed |
 | Manual | `ManualState`, `ManualFit`: Game Info's manual page (closed, loading, ready, too large, failed) and whether a page fits the box's width or sits wholly inside it |
 | Pairing | `PairPhase`: closed, starting, showing, paired, expired |

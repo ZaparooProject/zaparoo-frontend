@@ -154,6 +154,13 @@ impl LogoPrefs {
         let stem = rules::logo_artwork_stem(id, self.region);
         ctx.logos.key(id, stem, self.color, bounds)
     }
+
+    /// The same preferences with full-color logos, for surfaces that
+    /// always draw in color (the screensaver).
+    pub(crate) fn in_color(mut self) -> Self {
+        self.color = true;
+        self
+    }
 }
 
 pub fn catalog_systems(systems: &[SystemInfo]) -> Vec<CatalogSystem> {
