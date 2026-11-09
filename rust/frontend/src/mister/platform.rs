@@ -252,6 +252,11 @@ impl DynamicResolution {
         if self.enabled && self.high && crate::drs::heavy_active() {
             self.set_mode(presenter, window, rotation, false);
         }
+        // Idempotent: the presenter reports a change only on a switch.
+        if presenter.set_picture_mode(crate::drs::picture_active()) {
+            apply_window_geometry(presenter, window, rotation);
+            self.force_full_redraw = true;
+        }
     }
 
     fn rendered(

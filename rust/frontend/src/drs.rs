@@ -13,9 +13,32 @@
 // Plain statics because the router and the frame loop share the UI
 // thread; atomics keep it sound if a signal ever moves off-thread.
 
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 static HEAVY: AtomicU32 = AtomicU32::new(0);
+
+/// Picture mode: the screensaver is showing a style that repaints most
+/// of the screen, so a frame loop with a hardware scaler renders at half
+/// its geometry and lets the scaler stretch the frame. One owner (the
+/// screensaver run), so a flag.
+static PICTURE: AtomicBool = AtomicBool::new(false);
+
+/// Set or clear picture mode.
+pub fn set_picture(on: bool) {
+    PICTURE.store(on, Ordering::SeqCst);
+}
+
+/// True while picture mode is set.
+#[cfg_attr(
+    not(feature = "mister"),
+    allow(
+        dead_code,
+        reason = "read by the MiSTer frame loop; desktop has no scaler"
+    )
+)]
+pub fn picture_active() -> bool {
+    PICTURE.load(Ordering::SeqCst)
+}
 
 /// Enter a heavy phase. Pair every call with exactly one `heavy_end`.
 pub fn heavy_begin() {

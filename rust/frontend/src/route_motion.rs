@@ -1424,7 +1424,7 @@ fn input_storm_keeps_one_idle_countdown_and_off_cancels_it() {
     advance(1);
     assert!(shell.get_saver_armed());
     assert_eq!(crate::router::idle_firings(), before + 1);
-    shell.set_saver_armed(false);
+    crate::screensaver::disarm(&app);
     crate::router::reset_idle(&ctx, &app);
     crate::router::lock(&ctx.shared)
         .persist
@@ -1473,7 +1473,7 @@ fn idle_countdown_preserves_busy_gates_and_shutdown_cancellation() {
     assert!(!shell.get_saver_armed());
     advance(1000);
     assert!(shell.get_saver_armed());
-    shell.set_saver_armed(false);
+    crate::screensaver::disarm(&app);
     crate::router::reset_idle(&ctx, &app);
     crate::router::stop_idle();
     advance(3000);
@@ -1511,6 +1511,85 @@ fn app_activation_dismisses_saver_and_restarts_idle_from_foreground_return() {
         shell.get_saver_armed(),
         "new countdown starts on activation"
     );
+}
+
+#[test]
+fn every_screensaver_style_arms_steps_and_tears_down() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let shell = app.global::<Shell>();
+    let saver = app.global::<crate::Saver>();
+    shell.set_boot_complete(true);
+    for token in zaparoo_app::screensaver::STYLES {
+        {
+            let mut shared = crate::router::lock(&ctx.shared);
+            shared.persist.settings.screensaver_timeout = "1".into();
+            shared.persist.settings.screensaver_style = (*token).into();
+            shared.persist.settings.screensaver_bouncing = "logo".into();
+        }
+        crate::router::reset_idle(&ctx, &app);
+        advance(1000);
+        assert!(shell.get_saver_armed(), "{token} arms");
+        assert!(crate::screensaver::running(), "{token} holds its run");
+        // A few seconds of steps: every style's tick runs.
+        for _ in 0..30 {
+            advance(100);
+        }
+        crate::screensaver::disarm(&app);
+        assert!(!shell.get_saver_armed(), "{token} disarms");
+        assert!(!crate::screensaver::running(), "{token} drops its run");
+        assert_eq!(saver.get_sprites().row_count(), 0, "{token} sprites");
+        assert_eq!(saver.get_frame().size().width, 0, "{token} frame");
+    }
+    crate::router::stop_idle();
+}
+
+#[test]
+fn random_screensaver_never_plays_the_same_style_twice_running() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    app.global::<Shell>().set_boot_complete(true);
+    crate::router::lock(&ctx.shared)
+        .persist
+        .settings
+        .screensaver_style = "random".into();
+    let mut last = None;
+    for _ in 0..8 {
+        crate::screensaver::arm(&ctx, &app);
+        let style = app.global::<crate::Saver>().get_style();
+        assert_ne!(Some(style), last, "Random repeated a style");
+        last = Some(style);
+        crate::screensaver::disarm(&app);
+    }
+}
+
+#[test]
+fn hiding_the_header_logo_switches_a_bouncing_logo_to_the_clock() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let bouncing = |ctx: &crate::router::Ctx| {
+        crate::router::lock(&ctx.shared)
+            .persist
+            .settings
+            .screensaver_bouncing
+            .clone()
+    };
+    crate::router::lock(&ctx.shared)
+        .persist
+        .settings
+        .screensaver_bouncing = "logo".into();
+    crate::settings::picker_selected(&ctx, &app, "headerLogo", "none");
+    assert_eq!(bouncing(&ctx), "clock");
+    // Showing the logo again leaves the clock alone.
+    crate::settings::picker_selected(&ctx, &app, "headerLogo", "zaparoo");
+    assert_eq!(bouncing(&ctx), "clock");
+    // A Recent game choice is not the logo: hiding it changes nothing.
+    crate::settings::picker_selected(&ctx, &app, "screensaverBouncing", "recent-game");
+    crate::settings::picker_selected(&ctx, &app, "headerLogo", "none");
+    assert_eq!(bouncing(&ctx), "recent-game");
 }
 
 #[test]
@@ -14059,4 +14138,61 @@ fn a_rescan_reloads_an_open_list_and_marks_an_unseen_one() {
     assert_eq!(shared.games.reload_position, Some(30));
     assert!(!shared.games.positional_stale);
     assert_eq!(shared.games.rows.len(), 1000, "the rows stay up");
+}
+
+#[test]
+fn a_picker_opened_below_its_first_window_paints_the_fill_at_once() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    app.global::<Shell>().set_active_screen(Screen::None);
+    let magenta = slint::Rgb8Pixel {
+        r: 255,
+        g: 0,
+        b: 255,
+    };
+    app.global::<crate::Theme>()
+        .set_selection_fill(slint::Color::from_rgb_u8(magenta.r, magenta.g, magenta.b));
+    let ov = app.global::<crate::Overlays>();
+    let filled = |window: &Rc<MinimalSoftwareWindow>| {
+        pixels(window)
+            .iter()
+            .filter(|p| p.0 == Rgb565Pixel::from(magenta).0)
+            .count()
+    };
+    // Opened the way Settings opens a picker: rows, then the current
+    // value, then open. The rows past the first window scroll the list as
+    // it is built, and the fill has to follow on the first frame.
+    for (index, current) in [(0usize, 0), (3, 3), (10, 10), (12, 12)] {
+        let entries: Vec<crate::MenuEntry> = (0..13)
+            .map(|i| crate::MenuEntry {
+                role: crate::MenuRole::default(),
+                detail_key: SharedString::default(),
+                id: i.to_string().into(),
+                label: format!("Row {i}").into(),
+                label_key: "".into(),
+                enabled: true,
+                reason_key: "".into(),
+                detail: "".into(),
+            })
+            .collect();
+        ov.set_list_entries(ModelRc::new(VecModel::from(crate::router::mark_chosen(
+            entries, index,
+        ))));
+        ov.set_list_index(current);
+        ov.set_list_open(true);
+        let first = filled(&window);
+        settle(&window);
+        assert!(first > 0, "row {index}: no fill on the first frame");
+        assert_eq!(
+            first,
+            filled(&window),
+            "row {index}: the fill moved after opening"
+        );
+        ov.set_list_open(false);
+        settle(&window);
+    }
 }

@@ -64,6 +64,11 @@ rust/frontend/  [frontend library and binary; Slint UI]
   ├── src/system_status.rs : host-local hardware and network HUD probes
   ├── src/{power_supply,mister_battery}.rs
   │                        the two battery probes behind one HUD field
+  ├── src/screensaver.rs : the screensaver's runtime: gathers art ahead of
+  │                        the timeout, resolves the style (Random) when it
+  │                        arms, steps it on a timer, tears it down on wake
+  ├── src/screensaver_scene.rs : each style's scene, published through the
+  │                        `Saver` global that ui/screensaver.slint paints
   ├── src/media_cache.rs : bounded in-memory cover cache (LRU, bytes cap)
   ├── src/hub_covers.rs  : cold-boot cover path manifest: Hub tiles and the
   │                        browse page a game was launched from (MiSTer only)
@@ -112,6 +117,12 @@ rust/zaparoo-app/  [toolkit-free product rules]
                                     address tails, card slots, the
                                     pairing session and the Controllers
                                     page layout
+  screensaver                     : style and Bouncing tokens, Random,
+                                    the hide-logo switch, and every style's
+                                    seeded simulation (bounce, spin, logo
+                                    hops, cover wall, marquee, paddle clock,
+                                    stars, flyby, polygons, snakes, Life,
+                                    maze and its raycaster)
   input, status_line, action_error, buttons, clock, covers, customization,
   launchers, alternate_versions, multi_disc, title_versions, media_setup,
   log_upload, format

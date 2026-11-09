@@ -202,6 +202,7 @@ export global SettingsLabels {
         if (id == "pageSupportAbout") { return @tr("About"); }
         if (id == "pageControllers") { return @tr("Controllers"); }
         if (id == "pagePairedControllers") { return @tr("Paired controllers"); }
+        if (id == "pageScreensaver") { return @tr("Screensaver"); }
         // Group headers.
         if (id == "analogVideo") { return @tr("Analog video"); }
         if (id == "maintenance") { return @tr("Maintenance"); }
@@ -223,7 +224,10 @@ export global SettingsLabels {
         if (id == "headerLogo") { return @tr("Top bar logo"); }
         if (id == "headerLogoImage") { return @tr("Logo image"); }
         if (id == "reduceMotion") { return @tr("Reduce motion"); }
-        if (id == "screensaverTimeout") { return @tr("Screensaver"); }
+        if (id == "screensaver") { return @tr("Screensaver"); }
+        if (id == "screensaverTimeout") { return @tr("Start after"); }
+        if (id == "screensaverStyle") { return @tr("Style"); }
+        if (id == "screensaverBouncing") { return @tr("Bouncing"); }
         if (id == "backgroundImage") { return @tr("Background image"); }
         if (id == "gameBackground") { return @tr("Game background"); }
         if (id == "backgroundBlur") { return @tr("Blur"); }
@@ -327,7 +331,10 @@ export global SettingsLabels {
         if (id == "headerLogo") { return @tr("Replaces or hides the Zaparoo logo in the top bar."); }
         if (id == "headerLogoImage") { return @tr("Picks the image shown in place of the Zaparoo logo."); }
         if (id == "reduceMotion") { return @tr("Turns off animation throughout the interface."); }
+        if (id == "screensaver") { return @tr("Sets when the screensaver starts and what it shows."); }
         if (id == "screensaverTimeout") { return @tr("Sets idle time before the screensaver starts. Off disables it."); }
+        if (id == "screensaverStyle") { return @tr("Picks what plays while the screensaver is on."); }
+        if (id == "screensaverBouncing") { return @tr("Picks what bounces around the screen."); }
         if (id == "backgroundImage") { return @tr("Shows an image, or a random one from a folder, behind screens."); }
         if (id == "gameBackground") { return @tr("Shows the focused game's art behind game lists."); }
         if (id == "backgroundBlur") { return @tr("Softens the background image."); }
@@ -411,6 +418,8 @@ export global SettingsLabels {
         if (id == "language") { return SettingsLabels.language(value); }
         if (id == "colorScheme") { return SettingsLabels.color-scheme(value); }
         if (id == "screensaverTimeout") { return SettingsLabels.screensaver(value); }
+        if (id == "screensaverStyle") { return SettingsLabels.screensaver-style(value); }
+        if (id == "screensaverBouncing") { return SettingsLabels.screensaver-bouncing(value); }
         if (id == "mediaImageType") { return SettingsLabels.artwork(value); }
         if (id == "backgroundImage" || id == "headerLogoImage") { return @tr("None"); }
         // How many controllers Core lists as connected.
@@ -581,6 +590,28 @@ export global SettingsLabels {
         if (value == "900") { return @tr("15 minutes"); }
         if (value == "1800") { return @tr("30 minutes"); }
         return @tr("{} seconds", value);
+    }
+
+    pure function screensaver-style(value: string) -> string {
+        if (value == "spinning-logo") { return @tr("Spinning logo"); }
+        if (value == "system-logos") { return @tr("System logos"); }
+        if (value == "cover-wall") { return @tr("Cover wall"); }
+        if (value == "recent-games") { return @tr("Recent games"); }
+        if (value == "paddle-clock") { return @tr("Paddle clock"); }
+        if (value == "starfield") { return @tr("Starfield"); }
+        if (value == "flyby") { return @tr("Flyby"); }
+        if (value == "polygons") { return @tr("Polygons"); }
+        if (value == "snakes") { return @tr("Snakes"); }
+        if (value == "life") { return @tr("Life"); }
+        if (value == "maze") { return @tr("Maze"); }
+        if (value == "random") { return @tr("Random"); }
+        return @tr("Bouncing");
+    }
+
+    pure function screensaver-bouncing(value: string) -> string {
+        if (value == "clock") { return @tr("Clock"); }
+        if (value == "recent-game") { return @tr("Recent game"); }
+        return @tr("Logo");
     }
 
     pure function artwork(value: string) -> string {

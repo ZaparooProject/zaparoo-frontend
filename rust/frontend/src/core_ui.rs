@@ -274,7 +274,7 @@ fn show(ctx: &Ctx, app: &App, event: &UiEvent) {
 /// An event that wants an answer brings the screen back from the
 /// screensaver.
 fn wake(ctx: &Ctx, app: &App) {
-    app.global::<Shell>().set_saver_armed(false);
+    crate::screensaver::disarm(app);
     crate::router::reset_idle(ctx, app);
 }
 

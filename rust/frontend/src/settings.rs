@@ -13,6 +13,7 @@ use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 use zaparoo_app::branding::HeaderLogo;
 use zaparoo_app::layouts::{self, ThemeId, View};
 use zaparoo_app::paged_grid::{self, Insets};
+use zaparoo_app::screensaver::{self, Bouncing, Style};
 use zaparoo_app::settings::{self as rules, Control, Row};
 use zaparoo_core::input_actions::actions;
 use zaparoo_core::persist;
@@ -77,6 +78,7 @@ pub(crate) fn inputs(ctx: &Ctx) -> rules::Inputs {
         ra_conflict,
         background_active,
         header_logo_custom,
+        screensaver_bounces,
     ) = {
         let shared = lock(&ctx.shared);
         let (installed, conflicts) = ra_state(&shared);
@@ -89,11 +91,16 @@ pub(crate) fn inputs(ctx: &Ctx) -> rules::Inputs {
             !conflicts.is_empty(),
             crate::background::Settings::from_state(&shared.persist.settings).active(),
             HeaderLogo::parse(&shared.persist.settings.header_logo) == HeaderLogo::Custom,
+            matches!(
+                Style::parse(&shared.persist.settings.screensaver_style),
+                Style::Bouncing | Style::Random
+            ),
         )
     };
     let mut inputs = rules::Inputs {
         background_active,
         header_logo_custom,
+        screensaver_bounces,
         launcher_preference,
         retro_achievements: crate::retro_achievements::available(),
         ra_logged_in,
@@ -124,6 +131,8 @@ fn current_value(ctx: &Ctx, id: &str) -> String {
         "interfaceProfile" => s.interface_profile.clone(),
         "crtVideoStandard" => s.crt_video_standard.clone(),
         "screensaverTimeout" => s.screensaver_timeout.clone(),
+        "screensaverStyle" => Style::parse(&s.screensaver_style).token().to_string(),
+        "screensaverBouncing" => Bouncing::parse(&s.screensaver_bouncing).token().to_string(),
         "systemsLayout" => s.systems_browse_layout.clone(),
         "gamesLayout" => s.games_browse_layout.clone(),
         "systemLogoStyle" => s.system_logo_style.clone(),
@@ -999,13 +1008,21 @@ fn dispatch(ctx: &Ctx, app: &App, action: &str) {
                 crate::controllers::open_options(ctx, app, *index);
             }
         }
-        actions::CANCEL if page == crate::SettingsPage::Controllers => {
-            crate::controllers::leave_controllers(ctx, app);
+        actions::CANCEL => back(ctx, app, page),
+        _ => {}
+    }
+}
+
+/// Cancel on a page below the root: a nested page returns to the row that
+/// opened it, a top-level page to the root (or the Hub it was opened from).
+fn back(ctx: &Ctx, app: &App, page: crate::SettingsPage) {
+    match page {
+        crate::SettingsPage::Screensaver => {
+            return_to_row(ctx, app, crate::SettingsPage::Appearance, "screensaver");
         }
-        actions::CANCEL if page == crate::SettingsPage::PairedControllers => {
-            crate::controllers::leave_paired(ctx, app);
-        }
-        actions::CANCEL => {
+        crate::SettingsPage::Controllers => crate::controllers::leave_controllers(ctx, app),
+        crate::SettingsPage::PairedControllers => crate::controllers::leave_paired(ctx, app),
+        _ => {
             let from_hub = std::mem::take(&mut lock(&ctx.shared).settings_from_hub);
             if from_hub {
                 lock(&ctx.shared).persist.active_screen = "hub".to_string();
@@ -1015,7 +1032,6 @@ fn dispatch(ctx: &Ctx, app: &App, action: &str) {
                 navigate_page(ctx, app, crate::SettingsPage::Root);
             }
         }
-        _ => {}
     }
 }
 
@@ -1085,6 +1101,7 @@ fn accept(ctx: &Ctx, app: &App, id: &str, control: Control) {
             "crtCalibration" => crate::router::open_crt_calibration(ctx, app),
             "launcherPreference" => crate::launcher_prefs::open(ctx, app),
             "controllers" => crate::controllers::open_controllers(ctx, app),
+            "screensaver" => navigate_page(ctx, app, crate::SettingsPage::Screensaver),
             "pairedControllers" => crate::controllers::open_paired(ctx, app),
             "raLogIn" => crate::ra_login::open(ctx, app),
             "raLogOut" => crate::router::confirm_ra_log_out(app),
@@ -1315,6 +1332,8 @@ pub fn picker_selected(ctx: &Ctx, app: &App, id: &str, value: &str) {
             "orientation" => s.orientation = value.to_string(),
             "interfaceProfile" => s.interface_profile = value.to_string(),
             "screensaverTimeout" => s.screensaver_timeout = value.to_string(),
+            "screensaverStyle" => s.screensaver_style = value.to_string(),
+            "screensaverBouncing" => s.screensaver_bouncing = value.to_string(),
             "systemsLayout" => s.systems_browse_layout = value.to_string(),
             "gamesLayout" => s.games_browse_layout = value.to_string(),
             "systemLogoStyle" => s.system_logo_style = value.to_string(),
@@ -1332,7 +1351,16 @@ pub fn picker_selected(ctx: &Ctx, app: &App, id: &str, value: &str) {
             "buttonLayout" => s.button_layout = value.to_string(),
             "gameBackground" => s.game_background = value.to_string(),
             "backgroundListStyle" => s.background_list_style = value.to_string(),
-            "headerLogo" => s.header_logo = value.to_string(),
+            "headerLogo" => {
+                s.header_logo = value.to_string();
+                // Hiding the logo stops it bouncing too: the clock takes
+                // its place. Nothing else ties the two together.
+                let bouncing = screensaver::after_header_logo(
+                    Bouncing::parse(&s.screensaver_bouncing),
+                    HeaderLogo::parse(value),
+                );
+                s.screensaver_bouncing = bouncing.token().to_string();
+            }
             _ => return,
         }
     }
@@ -1390,6 +1418,8 @@ fn apply(ctx: &Ctx, app: &App, id: &str, value: &str) {
             crate::games::reproject(ctx, app);
         }
         "screensaverTimeout" => crate::router::reset_idle(ctx, app),
+        // The Bouncing row comes and goes with the style.
+        "screensaverStyle" => reseat_to(ctx, app, id),
         "gameBackground" | "backgroundListStyle" => {
             apply_background(ctx);
             // The rows that only shape an image come and go with it.
@@ -1449,6 +1479,8 @@ pub(crate) fn mirror_of(s: &persist::SettingsState) -> zaparoo_core::config::Set
         header_logo_image: &s.header_logo_image,
         debug_logging: s.debug_logging,
         screensaver_timeout: &s.screensaver_timeout,
+        screensaver_style: &s.screensaver_style,
+        screensaver_bouncing: &s.screensaver_bouncing,
         media_image_type: &s.media_image_type,
         favorites_grouping: &s.favorites_grouping,
         show_hidden: s.show_hidden,

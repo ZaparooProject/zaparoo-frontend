@@ -87,6 +87,11 @@ pub struct LatchPresenter {
     /// fits latch slots. None when output is small enough to stay at
     /// one geometry.
     res_modes: Option<((u32, u32), (u32, u32))>,
+    /// The geometry the UI is laid out against: the sharp half of the
+    /// pair, or the one fixed geometry.
+    layout: (u32, u32),
+    /// Which geometry the DRS and picture modes select.
+    mode: GeometryMode,
     /// Damage accumulated per slot since that slot was last filled.
     stale: [Damage; SLOT_COUNT],
     next_slot: usize,
@@ -183,6 +188,22 @@ fn dynamic_resolution_pair(
         && motion.1 <= settled.1
         && motion != settled)
         .then_some((motion, settled))
+}
+
+/// The latch presenter's geometry selection.
+#[derive(Clone, Copy, Debug, Default)]
+struct GeometryMode {
+    /// The pair's sharp geometry (only with a DRS pair).
+    high: bool,
+    /// Picture mode: half the selected geometry, for the screensaver's
+    /// full-screen styles. The scaler stretches the smaller frame.
+    picture: bool,
+}
+
+/// Picture mode's geometry: half of `base` on each axis, never below
+/// one pixel.
+fn picture_geometry(base: (u32, u32)) -> (u32, u32) {
+    ((base.0 / 2).max(1), (base.1 / 2).max(1))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -335,6 +356,8 @@ impl LatchPresenter {
             out_width: raster.0,
             out_height: raster.1,
             res_modes,
+            layout: res_modes.map_or(settled, |(_, high)| high),
+            mode: GeometryMode::default(),
             // Both slots start unwritten: first two frames copy fully.
             stale: [
                 Damage {
@@ -517,33 +540,27 @@ impl LatchPresenter {
             }
         }
     }
-}
 
-impl Presenter for LatchPresenter {
-    fn size(&self) -> (u32, u32) {
-        (self.width, self.height)
-    }
-
-    fn window_scale_factor(&self) -> f32 {
-        self.res_modes
-            .map_or(1.0, |(_, high)| self.width as f32 / high.0 as f32)
-    }
-
-    fn last_copy(&self) -> Duration {
-        self.last_copy
-    }
-
-    fn supports_res_modes(&self) -> bool {
-        self.res_modes.is_some()
-    }
-
-    fn set_res_mode(&mut self, high: bool) {
-        let Some((low, high_res)) = self.res_modes else {
-            return;
+    /// Switch to the geometry the DRS and picture modes select. True
+    /// when the size changed.
+    fn apply_geometry(&mut self) -> bool {
+        let base = match self.res_modes {
+            Some((low, high)) => {
+                if self.mode.high {
+                    high
+                } else {
+                    low
+                }
+            }
+            None => self.layout,
         };
-        let (w, h) = if high { high_res } else { low };
+        let (w, h) = if self.mode.picture {
+            picture_geometry(base)
+        } else {
+            base
+        };
         if (w, h) == (self.width, self.height) {
-            return;
+            return false;
         }
         self.width = w;
         self.height = h;
@@ -557,6 +574,38 @@ impl Presenter for LatchPresenter {
             y1: h,
         };
         self.stale = [full, full];
+        true
+    }
+}
+
+impl Presenter for LatchPresenter {
+    fn size(&self) -> (u32, u32) {
+        (self.width, self.height)
+    }
+
+    fn window_scale_factor(&self) -> f32 {
+        self.width as f32 / self.layout.0 as f32
+    }
+
+    fn last_copy(&self) -> Duration {
+        self.last_copy
+    }
+
+    fn supports_res_modes(&self) -> bool {
+        self.res_modes.is_some()
+    }
+
+    fn set_res_mode(&mut self, high: bool) {
+        if self.res_modes.is_none() {
+            return;
+        }
+        self.mode.high = high;
+        self.apply_geometry();
+    }
+
+    fn set_picture_mode(&mut self, on: bool) -> bool {
+        self.mode.picture = on;
+        self.apply_geometry()
     }
 
     fn wait_vsync(&mut self) {
@@ -704,7 +753,10 @@ impl Drop for LatchPresenter {
 #[cfg(test)]
 mod tests {
     use super::super::scanout::expected_layout;
-    use super::{destination_raster, dynamic_resolution_pair, select_geometry, ResolutionPolicy};
+    use super::{
+        destination_raster, dynamic_resolution_pair, picture_geometry, select_geometry,
+        ResolutionPolicy,
+    };
 
     #[test]
     fn pixel_repeated_raster_is_accepted_and_empty_or_oversized_is_not() {
@@ -753,5 +805,12 @@ mod tests {
     fn skips_pair_for_small_or_identical_geometry() {
         assert_eq!(dynamic_resolution_pair((1280, 720), (1280, 720)), None);
         assert_eq!(dynamic_resolution_pair((1280, 720), (2560, 1440)), None);
+    }
+
+    #[test]
+    fn picture_mode_halves_the_selected_geometry() {
+        assert_eq!(picture_geometry((960, 540)), (480, 270));
+        assert_eq!(picture_geometry((1280, 720)), (640, 360));
+        assert_eq!(picture_geometry((1, 1)), (1, 1));
     }
 }

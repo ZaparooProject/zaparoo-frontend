@@ -206,6 +206,8 @@ pub struct SettingsConfig {
     pub header_logo: Option<String>,
     pub header_logo_image: Option<String>,
     pub screensaver_timeout: Option<String>,
+    pub screensaver_style: Option<String>,
+    pub screensaver_bouncing: Option<String>,
     pub media_image_type: Option<String>,
     pub favorites_grouping: Option<String>,
     pub show_hidden: Option<bool>,
@@ -264,6 +266,8 @@ pub struct SettingsMirror<'a> {
     pub header_logo_image: &'a str,
     pub debug_logging: bool,
     pub screensaver_timeout: &'a str,
+    pub screensaver_style: &'a str,
+    pub screensaver_bouncing: &'a str,
     pub media_image_type: &'a str,
     pub favorites_grouping: &'a str,
     pub show_hidden: bool,
@@ -456,6 +460,8 @@ struct RawSettings {
     header_logo: Option<String>,
     header_logo_image: Option<String>,
     screensaver_timeout: Option<String>,
+    screensaver_style: Option<String>,
+    screensaver_bouncing: Option<String>,
     media_image_type: Option<String>,
     favorites_grouping: Option<String>,
     // Pre-release compatibility: early grouped-Favorites builds wrote a bool.
@@ -638,6 +644,8 @@ fn settings_config_from_raw(raw: RawSettings) -> SettingsConfig {
         header_logo: trim_opt(raw.header_logo),
         header_logo_image: trim_opt(raw.header_logo_image),
         screensaver_timeout: trim_opt(raw.screensaver_timeout),
+        screensaver_style: trim_opt(raw.screensaver_style),
+        screensaver_bouncing: trim_opt(raw.screensaver_bouncing),
         media_image_type: trim_opt(raw.media_image_type),
         favorites_grouping: trim_opt(raw.favorites_grouping).or_else(|| {
             raw.favorites_grouped
@@ -812,6 +820,27 @@ fn set_background_settings(settings: &mut toml_edit::Table, mirror: &SettingsMir
 }
 
 /// The header logo rows of `[settings]`. No image is no key at all.
+fn set_screensaver_settings(settings: &mut toml_edit::Table, mirror: &SettingsMirror<'_>) {
+    set_str(
+        settings,
+        "screensaver_timeout",
+        mirror.screensaver_timeout.trim(),
+    );
+    set_str(
+        settings,
+        "screensaver_style",
+        mirror.screensaver_style.trim(),
+    );
+    // Never chosen stays unwritten, so the first-load migration can still
+    // tell it from an explicit choice.
+    let bouncing = mirror.screensaver_bouncing.trim();
+    if bouncing.is_empty() {
+        settings.remove("screensaver_bouncing");
+    } else {
+        set_str(settings, "screensaver_bouncing", bouncing);
+    }
+}
+
 fn set_header_logo_settings(settings: &mut toml_edit::Table, mirror: &SettingsMirror<'_>) {
     set_str(settings, "header_logo", mirror.header_logo.trim());
     let image = mirror.header_logo_image.trim();
@@ -881,11 +910,7 @@ pub fn save_settings_mirror(path: &Path, mirror: SettingsMirror<'_>) -> Result<(
     set_bool(settings, "show_help_bar", mirror.show_help_bar);
     set_background_settings(settings, &mirror);
     set_header_logo_settings(settings, &mirror);
-    set_str(
-        settings,
-        "screensaver_timeout",
-        mirror.screensaver_timeout.trim(),
-    );
+    set_screensaver_settings(settings, &mirror);
     set_str(settings, "media_image_type", mirror.media_image_type.trim());
     settings.remove("favorites_grouped");
     set_str(
@@ -1190,6 +1215,8 @@ mod tests {
             header_logo_image: "",
             debug_logging: false,
             screensaver_timeout: "60",
+            screensaver_style: "bouncing",
+            screensaver_bouncing: "",
             media_image_type: "auto",
             favorites_grouping: "system",
             show_hidden: false,
@@ -1808,6 +1835,8 @@ mod tests {
                 header_logo_image: "/media/fat/logo.png",
                 debug_logging: true,
                 screensaver_timeout: "300",
+                screensaver_style: "pipes",
+                screensaver_bouncing: "clock",
                 media_image_type: "auto",
                 favorites_grouping: "system",
                 show_hidden: true,
@@ -1856,6 +1885,8 @@ mod tests {
         );
         assert_eq!(cfg.settings.reduce_motion, Some(true));
         assert_eq!(cfg.settings.screensaver_timeout.as_deref(), Some("300"));
+        assert_eq!(cfg.settings.screensaver_style.as_deref(), Some("pipes"));
+        assert_eq!(cfg.settings.screensaver_bouncing.as_deref(), Some("clock"));
         assert_eq!(cfg.settings.favorites_grouping.as_deref(), Some("system"));
         assert_eq!(cfg.settings.show_hidden, Some(true));
         assert_eq!(cfg.settings.show_original_filenames, Some(true));
@@ -1905,6 +1936,8 @@ mod tests {
                 header_logo_image: "",
                 debug_logging: false,
                 screensaver_timeout: "60",
+                screensaver_style: "bouncing",
+                screensaver_bouncing: "",
                 media_image_type: "auto",
                 favorites_grouping: "system",
                 show_hidden: false,
@@ -1939,6 +1972,7 @@ mod tests {
         assert_eq!(cfg.settings.mouse_enabled, Some(true));
         assert_eq!(cfg.settings.reduce_motion, Some(false));
         assert_eq!(cfg.settings.screensaver_timeout.as_deref(), Some("60"));
+        assert_eq!(cfg.settings.screensaver_bouncing, None);
         assert_eq!(cfg.settings.favorites_grouping.as_deref(), Some("system"));
         assert_eq!(cfg.settings.hidden_categories, vec!["Arcade"]);
         assert_eq!(cfg.settings.hidden_system_ids, vec!["NES"]);
@@ -1974,6 +2008,8 @@ mod tests {
             header_logo_image: "",
             debug_logging: true,
             screensaver_timeout: "off",
+            screensaver_style: "life",
+            screensaver_bouncing: "recent-game",
             media_image_type: "auto",
             favorites_grouping: "system",
             show_hidden: false,
@@ -2007,6 +2043,8 @@ mod tests {
         assert!(written.contains("button_layout = \"c\""));
         assert!(written.contains("mouse_enabled = false"));
         assert!(written.contains("screensaver_timeout = \"off\""));
+        assert!(written.contains("screensaver_style = \"life\""));
+        assert!(written.contains("screensaver_bouncing = \"recent-game\""));
         assert!(written.contains("debug = true"));
         let cfg = load_config(f.path());
         assert_eq!(cfg.language, "");

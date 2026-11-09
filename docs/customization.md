@@ -240,11 +240,13 @@ an image of your own, or removes it. It needs a Zaparoo Online account with
 Zaparoo Pro or a Zaparoo Warp subscription.
 
 - **Logo**: Zaparoo (the default), Custom image, or None. With None the
-  status line takes the logo's space, and the screensaver bounces the clock
-  instead of a logo.
+  status line takes the logo's space. Choosing None also switches the
+  screensaver's Bouncing choice from Logo to Clock; any other screensaver
+  choice is left alone.
 - **Logo image** (shown for Custom image) opens the file browser to pick one
   image. It keeps its aspect and fits inside the Zaparoo logo's box, so the
-  header's layout does not change; the screensaver bounces it too. The same
+  header's layout does not change; the screensaver's Bouncing: Logo
+  bounces it too. The same
   formats and limits as `custom/` artwork apply. An image that is missing or
   cannot be read shows the Zaparoo logo.
 
@@ -261,6 +263,39 @@ rows stay on the page, dimmed, while the account is known not to have it.
 header_logo = "custom"                        # zaparoo, custom, none
 header_logo_image = "/media/fat/zaparoo/custom/logo.png"
 ```
+
+## Screensaver
+
+Settings → Appearance → Screensaver sets when the screensaver starts and
+what it shows.
+
+- **Start after**: how long without input before it starts, or never.
+- **Style**: Random (the default), Bouncing, Spinning logo, System logos,
+  Cover wall, Recent games, Paddle clock, Starfield, Flyby, Polygons,
+  Snakes, Life, or Maze. Random picks a style each time the screensaver
+  starts and never plays the same one twice in a row.
+- **Bouncing** (shown for Bouncing and Random): what bounces around the
+  screen: the logo, the clock, or the cover of a recently played game.
+
+The styles draw only the Zaparoo logo, the built-in system logos and the
+cover art Core already has. System logos are limited to systems with games.
+A style that needs covers (Cover wall wants at least eight, Bouncing:
+Recent game one) plays Bouncing: Logo when there are not enough. Random
+skips those styles instead. Covers are gathered shortly before the
+screensaver starts and kept in memory only, like every other cover.
+
+```toml
+[settings]
+screensaver_timeout = "300"        # seconds: 60, 120, 300, 600, 900,
+                                   # 1800, or "off"
+screensaver_style = "random"       # random, bouncing, spinning-logo,
+                                   # system-logos, cover-wall, recent-games,
+                                   # paddle-clock, starfield, flyby, polygons,
+                                   # snakes, life, maze
+screensaver_bouncing = "clock"     # logo, clock, recent-game
+```
+
+An unknown value reads as the default (`random`, `logo`).
 
 ## Background
 

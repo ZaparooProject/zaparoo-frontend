@@ -235,6 +235,9 @@ pub struct Inputs {
     /// the Paired controllers page lists.
     pub bluetooth_found: usize,
     pub bluetooth_paired: usize,
+    /// The screensaver style is Bouncing or Random: the row that picks
+    /// what bounces shows then.
+    pub screensaver_bounces: bool,
 }
 
 const TOGGLES: &[&str] = &[
@@ -283,6 +286,7 @@ const NAVIGATES: &[&str] = &[
     "headerLogoImage",
     "onlineManageBackups",
     "onlineRemoteActivity",
+    "screensaver",
 ];
 
 const ACTIONS: &[&str] = &[
@@ -440,6 +444,20 @@ fn retro_achievements_rows(inputs: &Inputs) -> Vec<Row> {
 pub const CONTROLLERS_PAGE: &str = "pageControllers";
 pub const PAIRED_PAGE: &str = "pagePairedControllers";
 
+/// The page Appearance's Screensaver row opens: a page of the same panel,
+/// never a root tile.
+pub const SCREENSAVER_PAGE: &str = "pageScreensaver";
+
+/// Screensaver. When it starts, what plays, and, for the styles that
+/// bounce something, what bounces.
+fn screensaver_rows(inputs: &Inputs) -> Vec<Row> {
+    let mut rows = vec![field("screensaverTimeout"), field("screensaverStyle")];
+    if inputs.screensaver_bounces {
+        rows.push(field("screensaverBouncing"));
+    }
+    rows
+}
+
 /// Controls. The way to the controllers Core sees and to pairing another
 /// leads, the row a user comes here to do; the input preferences follow.
 fn controls_rows(inputs: &Inputs) -> Vec<Row> {
@@ -522,7 +540,7 @@ pub fn page_rows(page: &str, inputs: &Inputs) -> Vec<Row> {
                 field("showMenuRow"),
                 field("showHelpBar"),
                 field("reduceMotion"),
-                field("screensaverTimeout"),
+                field("screensaver"),
                 Row::Header("background"),
                 field("backgroundImage"),
                 field("gameBackground"),
@@ -564,6 +582,7 @@ pub fn page_rows(page: &str, inputs: &Inputs) -> Vec<Row> {
         "pageControlsInput" => controls_rows(inputs),
         CONTROLLERS_PAGE => controllers_rows(inputs),
         PAIRED_PAGE => paired_rows(inputs),
+        SCREENSAVER_PAGE => screensaver_rows(inputs),
         "pageLibraryData" => library_rows(inputs),
         BROWSING_PAGE => browsing_rows(),
         RETRO_ACHIEVEMENTS_PAGE => retro_achievements_rows(inputs),
@@ -687,6 +706,8 @@ pub fn options(id: &str, inputs: &Inputs) -> Option<Vec<&'static str>> {
         "gameBackground" => crate::background::GAME_BACKGROUND_TYPES,
         "backgroundListStyle" => crate::background::LIST_STYLES,
         "headerLogo" => crate::branding::HEADER_LOGOS,
+        "screensaverStyle" => crate::screensaver::STYLES,
+        "screensaverBouncing" => crate::screensaver::BOUNCINGS,
         "screensaverTimeout" => {
             let mut values = SCREENSAVER_TIMEOUTS.to_vec();
             // A debug build can watch the screensaver arm immediately.
@@ -1677,6 +1698,8 @@ mod tests {
         let at = plain.iter().position(|id| *id == "headerLogo").unwrap();
         assert_eq!(plain[at - 1], "systemLogoStyle");
         assert_eq!(plain[at + 1], "showMenuRow");
+        let motion = plain.iter().position(|id| *id == "reduceMotion").unwrap();
+        assert_eq!(plain[motion + 1], "screensaver");
         assert!(!plain.contains(&"headerLogoImage"));
         let custom = ids(&Inputs {
             header_logo_custom: true,
@@ -1704,6 +1727,45 @@ mod tests {
         assert_eq!(options("resolution", &Inputs::default()), None);
         assert_eq!(options("colorScheme", &Inputs::default()), None);
         assert_eq!(options("showHidden", &Inputs::default()), None);
+    }
+
+    #[test]
+    fn the_screensaver_page_offers_bouncing_only_for_styles_that_bounce() {
+        let ids = |bounces| -> Vec<&'static str> {
+            page_rows(
+                SCREENSAVER_PAGE,
+                &Inputs {
+                    screensaver_bounces: bounces,
+                    ..Inputs::default()
+                },
+            )
+            .iter()
+            .map(|r| r.id())
+            .collect()
+        };
+        assert_eq!(ids(false), ["screensaverTimeout", "screensaverStyle"]);
+        assert_eq!(
+            ids(true),
+            [
+                "screensaverTimeout",
+                "screensaverStyle",
+                "screensaverBouncing"
+            ]
+        );
+        assert_eq!(control("screensaver"), Control::Navigate);
+        assert!(opens_page(SCREENSAVER_PAGE).is_none(), "not a root tile");
+        assert_eq!(control("screensaverStyle"), Control::Picker);
+        assert_eq!(
+            options("screensaverStyle", &Inputs::default()).unwrap(),
+            crate::screensaver::STYLES
+        );
+        assert_eq!(
+            options("screensaverBouncing", &Inputs::default()).unwrap(),
+            crate::screensaver::BOUNCINGS
+        );
+        assert!(!page_rows("pageAppearance", &Inputs::default())
+            .iter()
+            .any(|r| r.id() == "screensaverTimeout"));
     }
 
     #[test]

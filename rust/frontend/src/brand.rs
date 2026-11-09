@@ -27,6 +27,8 @@ use zaparoo_app::customization as limits;
 
 const DARK: &[u8] = include_bytes!("../../../resources/images/logo/logo-on-dark-600.png");
 const LIGHT: &[u8] = include_bytes!("../../../resources/images/logo/logo-on-light-600.png");
+/// The Zaparoo app icon: the screensaver's small mark.
+const ICON: &[u8] = include_bytes!("../../../resources/images/logo/icon-256.png");
 const MAX_WIDTH: u32 = 1024;
 const MAX_ENTRIES: usize = 4;
 const MAX_BYTES: usize = 2 * 1024 * 1024;
@@ -111,6 +113,32 @@ pub(crate) fn resize_premultiplied(
         }
     }
     scaled
+}
+
+/// The on-dark logo's pixels, straight alpha: the screensaver's source
+/// for its own rasters and outlines.
+pub(crate) fn logo_rgba() -> Option<image::RgbaImage> {
+    image::load_from_memory(DARK).ok().map(|i| i.to_rgba8())
+}
+
+/// The app icon's pixels, straight alpha.
+pub(crate) fn icon_rgba() -> Option<image::RgbaImage> {
+    image::load_from_memory(ICON).ok().map(|i| i.to_rgba8())
+}
+
+/// `source` drawn at `height` pixels tall, its aspect kept, ready to paint.
+pub(crate) fn raster_at_height(source: &image::RgbaImage, height: u32) -> Option<slint::Image> {
+    if source.width() == 0 || source.height() == 0 {
+        return None;
+    }
+    let height = height.clamp(1, MAX_WIDTH);
+    let width = (f64::from(height) * f64::from(source.width()) / f64::from(source.height()))
+        .round()
+        .clamp(1.0, f64::from(MAX_WIDTH)) as u32;
+    let scaled = resize_premultiplied(source.clone(), width, height);
+    Some(slint::Image::from_rgba8_premultiplied(
+        slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(&scaled, width, height),
+    ))
 }
 
 fn prepare(light: bool, width: u32) -> Option<slint::Image> {

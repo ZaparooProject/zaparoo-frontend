@@ -708,6 +708,15 @@ pub struct SettingsState {
     pub debug_logging: bool,
     #[serde(default = "default_screensaver_timeout")]
     pub screensaver_timeout: String,
+    /// The screensaver style (`zaparoo_app::screensaver::STYLES`).
+    /// Anything unknown (empty included) reads as `random`.
+    #[serde(default = "default_screensaver_style")]
+    pub screensaver_style: String,
+    /// What the Bouncing style bounces: `logo`, `clock` or `recent-game`.
+    /// Empty (never chosen) reads as `logo`; the first load turns it into
+    /// `clock` where the header logo was already hidden.
+    #[serde(default)]
+    pub screensaver_bouncing: String,
     #[serde(default = "default_media_image_type")]
     pub media_image_type: String,
     /// When true, hidden systems and categories reappear in the browse UI
@@ -801,6 +810,8 @@ impl Default for SettingsState {
             header_logo_image: String::new(),
             debug_logging: false,
             screensaver_timeout: default_screensaver_timeout(),
+            screensaver_style: default_screensaver_style(),
+            screensaver_bouncing: String::new(),
             media_image_type: default_media_image_type(),
             show_hidden: false,
             show_original_filenames: false,
@@ -915,6 +926,10 @@ fn default_background_list_style() -> String {
 
 fn default_screensaver_timeout() -> String {
     "300".into()
+}
+
+fn default_screensaver_style() -> String {
+    "random".into()
 }
 
 fn default_media_image_type() -> String {
@@ -1231,6 +1246,8 @@ mod tests {
                 header_logo_image: "/media/fat/logo.png".into(),
                 debug_logging: true,
                 screensaver_timeout: "300".into(),
+                screensaver_style: "maze".into(),
+                screensaver_bouncing: "clock".into(),
                 media_image_type: "auto".into(),
                 show_hidden: true,
                 show_original_filenames: true,

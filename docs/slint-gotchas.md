@@ -47,6 +47,13 @@ Two follow-on rules:
   small dirty regions are cheap at native resolution, and a switch on a quiet
   screen is a visible snap. Pair every `heavy_begin` with exactly one
   `heavy_end`.
+- **Picture mode** (`drs::set_picture`). The screensaver's full-screen
+  styles go one step further: the latch presenter renders at half its
+  geometry on each axis (480x270 under a 960x540 scene) with the window
+  scale factor halved, so the layout does not move, and the HDMI scaler
+  stretches the frame. The switch lands on the saver's black backdrop as
+  it arms and on wake. Presenters without a scaler (fb0, the native CRT)
+  ignore it.
 - **Cached page transitions** (`rust/frontend/src/frame_transition.rs`). A page slide
   renders each endpoint once and moves pixels between the two cached frames,
   instead of traversing the component tree every frame. Every MiSTer
@@ -286,6 +293,72 @@ cell at a time and each a hard cut over a few dozen pixels in an
 otherwise still card, and only while the player is on screen. Everything
 else on the screen changes only when Core reports something or focus
 moves.
+
+### Screensaver costs
+
+The screensaver is the one place motion runs for as long as nobody touches
+the controls, so each style is built around what the software renderer
+repaints, not around what looks busiest:
+
+- **Sprite styles repaint only their movers.** Bouncing, Spinning logo,
+  System logos, Recent games, Paddle clock, Starfield, Flyby and Snakes
+  publish small sprites through `Saver.sprites` over the black backstop.
+  A frame's dirty region is the union of what moved: one logo, one line,
+  three paddle-game pieces, the stars and up to two logos (Starfield
+  keeps 80 stars, 60 at 240p), at most six fliers (Flyby). Stars and
+  fliers spread over the whole screen, so Starfield and Flyby repaint
+  close to all of it and run like the picture styles below. Snakes keeps
+  a fixed set of segment slots per snake and rewrites one slot per snake
+  a step (the tail's segment becomes the head's), so a step repaints two
+  cells per snake.
+  Cover wall changes one tile every few seconds.
+- **Full-screen styles render at half resolution.** Polygons, Life and
+  Maze render whole frames in Rust into a pixel buffer (`Saver.frame`)
+  that the view scales to the screen. Polygons started as Slint `Path`
+  outlines: twelve screen-sized paths cost about 136 ms a frame on the
+  MiSTer, so it draws its lines in Rust instead. Painting a full-screen
+  picture into a 960x540 scene cost about 35 ms whatever was in it, so
+  while one of these or Starfield or Flyby plays, `drs::heavy_begin`
+  holds the renderer at its motion resolution and `drs::set_picture`
+  halves it again (picture mode, above), which brings every one of them
+  to about 15 ms. The run clears picture mode and calls `heavy_end`
+  exactly once when it disarms. Life's board is 90 rows,
+  the Maze's picture 180 lines and Polygons' 270; in a 240p scene Life
+  uses four-pixel cells and the others draw at the scene's own lines.
+- **Reduced rates.** Each style steps on its own Rust timer, never faster
+  than it needs: 30 fps for Spinning logo, Recent games and Paddle clock,
+  20 for Starfield, Flyby, Polygons and Maze, 12 for Snakes and Life, 10
+  for System logos (its fades animate at the display rate), and 4 for the
+  Cover wall. Bouncing keeps its own
+  view-side animation. A late tick advances by at most a quarter second.
+- **The dual-head CRT shares the HDMI run.** It does not run a second
+  simulation or render a second buffer: `dual_head.rs` copies the `Saver`
+  global, and the CRT view spreads the scene from its center by
+  `Saver.aspect`, so a 16:9 scene on a 4:3 tube keeps its middle.
+  Polygons, Life and Maze frames stretch to fill the tube
+  (`image-fit: fill`).
+
+Measured on the MiSTer test device at 1080p HDMI output (540p render),
+steady state after the first 600-frame profile window, in milliseconds
+per rendered frame:
+
+| Style | Average | 99th percentile | Step |
+|---|---|---|---|
+| Bouncing | 4.7 | 7.0 | view animation |
+| Spinning logo | 6.4 | 12.8 | 33 |
+| System logos | 11.2 | 17.4 | 100 (fades at display rate) |
+| Recent games | 5.0 | 8.7 | 33 |
+| Paddle clock | 6.2 | 10.4 | 33 |
+| Starfield | 15.3 | 18.7 | 50 |
+| Flyby | 10.0 | 13.9 | 50 |
+| Polygons | 15.7 | 19.4 | 50 |
+| Maze | 15.3 | 18.0 | 50 |
+
+Starfield, Flyby, Polygons and Maze run in picture mode; before it they
+cost 25.2, 17.9, 38.2 and 38.0 ms on average. Cover wall and Life render
+too few frames to fill a profile window.
+Every style shows the same isolated 100 to 300 ms spikes the rest of the
+UI does.
 
 ## Motion tokens and Reduce motion
 

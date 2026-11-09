@@ -154,6 +154,18 @@ impl LogoPrefs {
         let stem = rules::logo_artwork_stem(id, self.region);
         ctx.logos.key(id, stem, self.color, bounds)
     }
+
+    /// The full-color logo only, never the grayscale fallback, for
+    /// surfaces that always draw in color (the screensaver).
+    pub(crate) fn color_key(
+        self,
+        ctx: &Ctx,
+        id: &str,
+        bounds: zaparoo_app::logo_cache::Bounds,
+    ) -> Option<crate::system_logos::Key> {
+        let stem = rules::logo_artwork_stem(id, self.region);
+        ctx.logos.color_key(id, stem, bounds)
+    }
 }
 
 pub fn catalog_systems(systems: &[SystemInfo]) -> Vec<CatalogSystem> {

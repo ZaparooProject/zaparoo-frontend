@@ -272,6 +272,13 @@ pub trait Presenter {
     /// Switch between the low/high geometry. `size()` reflects the
     /// change; the caller resizes the Slint window to match.
     fn set_res_mode(&mut self, _high: bool) {}
+    /// Picture mode: render at half the current geometry while the
+    /// screensaver plays a full-screen picture style, and let the scaler
+    /// stretch it. True when the size changed; the caller resizes the
+    /// Slint scene to match. Presenters without a scaler ignore it.
+    fn set_picture_mode(&mut self, _on: bool) -> bool {
+        false
+    }
     /// Apply pending presenter controls before timers/rendering. A size
     /// return asks the platform to resize the Slint scene immediately.
     fn sync_controls(&mut self) -> Option<(u32, u32)> {

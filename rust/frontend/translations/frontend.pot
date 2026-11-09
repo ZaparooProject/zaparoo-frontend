@@ -2,7 +2,7 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: frontend VERSION\n"
-"POT-Creation-Date: 2026-11-09 04:21+0000\n"
+"POT-Creation-Date: 2026-11-09 05:53+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -12,11 +12,11 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=1; plural=0;\n"
 
-#: rust/frontend/ui/about.slint:52 rust/frontend/ui/settings.slint:296
+#: rust/frontend/ui/about.slint:52 rust/frontend/ui/settings.slint:300
 msgid "Version and license"
 msgstr ""
 
-#: rust/frontend/ui/about.slint:111 rust/frontend/ui/app.slint:3476
+#: rust/frontend/ui/about.slint:111 rust/frontend/ui/app.slint:3370
 msgid "Zaparoo Frontend"
 msgstr ""
 
@@ -64,705 +64,705 @@ msgstr ""
 msgid "Full license texts in Settings > About > Credits."
 msgstr ""
 
-#: rust/frontend/ui/app.slint:562 rust/frontend/ui/app.slint:563
-#: rust/frontend/ui/app.slint:562 rust/frontend/ui/app.slint:563 rust/frontend/ui/music.slint:286
-#: rust/frontend/ui/app.slint:562 rust/frontend/ui/app.slint:563 rust/frontend/ui/music.slint:286
+#: rust/frontend/ui/app.slint:564 rust/frontend/ui/app.slint:565
+#: rust/frontend/ui/app.slint:564 rust/frontend/ui/app.slint:565 rust/frontend/ui/music.slint:286
+#: rust/frontend/ui/app.slint:564 rust/frontend/ui/app.slint:565 rust/frontend/ui/music.slint:286
 msgid "{} · {}"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:1345
+#: rust/frontend/ui/app.slint:1347
 msgid "Updating the media database"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:1345
+#: rust/frontend/ui/app.slint:1347
 msgid "No games found yet"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:1347
+#: rust/frontend/ui/app.slint:1349
 msgid "Your games appear here as Core finds them."
 msgstr ""
 
-#: rust/frontend/ui/app.slint:1348
+#: rust/frontend/ui/app.slint:1350
 msgid "Update media database in Settings > Library."
 msgstr ""
 
-#: rust/frontend/ui/app.slint:1369 rust/frontend/ui/app.slint:2994
-#: rust/frontend/ui/app.slint:1369 rust/frontend/ui/app.slint:2994 rust/frontend/ui/app.slint:3508
-#: rust/frontend/ui/app.slint:1369 rust/frontend/ui/app.slint:2994 rust/frontend/ui/app.slint:3508
+#: rust/frontend/ui/app.slint:1371 rust/frontend/ui/app.slint:2888
+#: rust/frontend/ui/app.slint:1371 rust/frontend/ui/app.slint:2888 rust/frontend/ui/app.slint:3402
+#: rust/frontend/ui/app.slint:1371 rust/frontend/ui/app.slint:2888 rust/frontend/ui/app.slint:3402
 msgid "Top played"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:1378
+#: rust/frontend/ui/app.slint:1380
 msgid "{} systems"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:1573 rust/frontend/ui/labels.slint:156
+#: rust/frontend/ui/app.slint:1575 rust/frontend/ui/labels.slint:156
 msgid "{n} game"
 msgid_plural "{n} games"
 msgstr[0] ""
 msgstr[1] ""
 
-#: rust/frontend/ui/app.slint:1576 rust/frontend/ui/browse_list.slint:48
+#: rust/frontend/ui/app.slint:1578 rust/frontend/ui/browse_list.slint:48
 msgid "Hidden"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:1613 rust/frontend/ui/app.slint:3279
+#: rust/frontend/ui/app.slint:1615 rust/frontend/ui/app.slint:3173
 msgid "Nothing played yet"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:1614
+#: rust/frontend/ui/app.slint:1616
 msgid "No systems in this category"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:1634 rust/frontend/ui/labels.slint:377
+#: rust/frontend/ui/app.slint:1636 rust/frontend/ui/labels.slint:377
 msgid "Saving…"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:1643 rust/frontend/ui/chrome.slint:174
-#: rust/frontend/ui/app.slint:1643 rust/frontend/ui/chrome.slint:174 rust/frontend/ui/chrome.slint:425
-#: rust/frontend/ui/app.slint:1643 rust/frontend/ui/chrome.slint:174 rust/frontend/ui/chrome.slint:425 rust/frontend/ui/chrome.slint:772
-#: rust/frontend/ui/app.slint:1643 rust/frontend/ui/chrome.slint:174 rust/frontend/ui/chrome.slint:425 rust/frontend/ui/chrome.slint:772 rust/frontend/ui/settings.slint:109
-#: rust/frontend/ui/app.slint:1643 rust/frontend/ui/chrome.slint:174 rust/frontend/ui/chrome.slint:425 rust/frontend/ui/chrome.slint:772 rust/frontend/ui/settings.slint:109
+#: rust/frontend/ui/app.slint:1645 rust/frontend/ui/chrome.slint:174
+#: rust/frontend/ui/app.slint:1645 rust/frontend/ui/chrome.slint:174 rust/frontend/ui/chrome.slint:425
+#: rust/frontend/ui/app.slint:1645 rust/frontend/ui/chrome.slint:174 rust/frontend/ui/chrome.slint:425 rust/frontend/ui/chrome.slint:772
+#: rust/frontend/ui/app.slint:1645 rust/frontend/ui/chrome.slint:174 rust/frontend/ui/chrome.slint:425 rust/frontend/ui/chrome.slint:772 rust/frontend/ui/settings.slint:109
+#: rust/frontend/ui/app.slint:1645 rust/frontend/ui/chrome.slint:174 rust/frontend/ui/chrome.slint:425 rust/frontend/ui/chrome.slint:772 rust/frontend/ui/settings.slint:109
 msgid "{}%"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:1827 rust/frontend/ui/labels.slint:284
+#: rust/frontend/ui/app.slint:1829 rust/frontend/ui/labels.slint:284
 msgid "Go to…"
 msgstr ""
 
 #. The status line in place of the grid, with the wait cue's hourglass.
-#: rust/frontend/ui/app.slint:1829
+#: rust/frontend/ui/app.slint:1831
 msgid "Loading sections…"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:1830
+#: rust/frontend/ui/app.slint:1832
 msgid "Failed to load sections"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:1830
+#: rust/frontend/ui/app.slint:1832
 msgid "No sections"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:1933
+#: rust/frontend/ui/app.slint:1935
 msgid "Hold a writable token near the reader"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:1957 rust/frontend/ui/app.slint:3604
-#: rust/frontend/ui/app.slint:1957 rust/frontend/ui/app.slint:3604 rust/frontend/ui/app.slint:3743
-#: rust/frontend/ui/app.slint:1957 rust/frontend/ui/app.slint:3604 rust/frontend/ui/app.slint:3743 rust/frontend/ui/app.slint:3933
-#: rust/frontend/ui/app.slint:1957 rust/frontend/ui/app.slint:3604 rust/frontend/ui/app.slint:3743 rust/frontend/ui/app.slint:3933 rust/frontend/ui/app.slint:3993
-#: rust/frontend/ui/app.slint:1957 rust/frontend/ui/app.slint:3604 rust/frontend/ui/app.slint:3743 rust/frontend/ui/app.slint:3933 rust/frontend/ui/app.slint:3993 rust/frontend/ui/app.slint:4113
-#: rust/frontend/ui/app.slint:1957 rust/frontend/ui/app.slint:3604 rust/frontend/ui/app.slint:3743 rust/frontend/ui/app.slint:3933 rust/frontend/ui/app.slint:3993 rust/frontend/ui/app.slint:4113 rust/frontend/ui/app.slint:4179
-#: rust/frontend/ui/app.slint:1957 rust/frontend/ui/app.slint:3604 rust/frontend/ui/app.slint:3743 rust/frontend/ui/app.slint:3933 rust/frontend/ui/app.slint:3993 rust/frontend/ui/app.slint:4113 rust/frontend/ui/app.slint:4179 rust/frontend/ui/labels.slint:483
-#: rust/frontend/ui/app.slint:1957 rust/frontend/ui/app.slint:3604 rust/frontend/ui/app.slint:3743 rust/frontend/ui/app.slint:3933 rust/frontend/ui/app.slint:3993 rust/frontend/ui/app.slint:4113 rust/frontend/ui/app.slint:4179 rust/frontend/ui/labels.slint:483
+#: rust/frontend/ui/app.slint:1959 rust/frontend/ui/app.slint:3498
+#: rust/frontend/ui/app.slint:1959 rust/frontend/ui/app.slint:3498 rust/frontend/ui/app.slint:3637
+#: rust/frontend/ui/app.slint:1959 rust/frontend/ui/app.slint:3498 rust/frontend/ui/app.slint:3637 rust/frontend/ui/app.slint:3827
+#: rust/frontend/ui/app.slint:1959 rust/frontend/ui/app.slint:3498 rust/frontend/ui/app.slint:3637 rust/frontend/ui/app.slint:3827 rust/frontend/ui/app.slint:3887
+#: rust/frontend/ui/app.slint:1959 rust/frontend/ui/app.slint:3498 rust/frontend/ui/app.slint:3637 rust/frontend/ui/app.slint:3827 rust/frontend/ui/app.slint:3887 rust/frontend/ui/app.slint:4007
+#: rust/frontend/ui/app.slint:1959 rust/frontend/ui/app.slint:3498 rust/frontend/ui/app.slint:3637 rust/frontend/ui/app.slint:3827 rust/frontend/ui/app.slint:3887 rust/frontend/ui/app.slint:4007 rust/frontend/ui/app.slint:4073
+#: rust/frontend/ui/app.slint:1959 rust/frontend/ui/app.slint:3498 rust/frontend/ui/app.slint:3637 rust/frontend/ui/app.slint:3827 rust/frontend/ui/app.slint:3887 rust/frontend/ui/app.slint:4007 rust/frontend/ui/app.slint:4073 rust/frontend/ui/labels.slint:483
+#: rust/frontend/ui/app.slint:1959 rust/frontend/ui/app.slint:3498 rust/frontend/ui/app.slint:3637 rust/frontend/ui/app.slint:3827 rust/frontend/ui/app.slint:3887 rust/frontend/ui/app.slint:4007 rust/frontend/ui/app.slint:4073 rust/frontend/ui/labels.slint:483
 msgid "Cancel"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:1979 rust/frontend/ui/settings.slint:295
+#: rust/frontend/ui/app.slint:1981 rust/frontend/ui/settings.slint:299
 msgid "Pair a device"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:2003 rust/frontend/ui/app.slint:2108
-#: rust/frontend/ui/app.slint:2003 rust/frontend/ui/app.slint:2108
+#: rust/frontend/ui/app.slint:2005 rust/frontend/ui/app.slint:2110
+#: rust/frontend/ui/app.slint:2005 rust/frontend/ui/app.slint:2110
 msgid "Starting…"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:2025
+#: rust/frontend/ui/app.slint:2027
 msgid "Enter this PIN on the device you are pairing."
 msgstr ""
 
-#: rust/frontend/ui/app.slint:2039 rust/frontend/ui/app.slint:2197
+#: rust/frontend/ui/app.slint:2041 rust/frontend/ui/app.slint:2199
 msgid "Expires in {n} minute"
 msgid_plural "Expires in {n} minutes"
 msgstr[0] ""
 msgstr[1] ""
 
-#: rust/frontend/ui/app.slint:2040 rust/frontend/ui/app.slint:2198
+#: rust/frontend/ui/app.slint:2042 rust/frontend/ui/app.slint:2200
 msgid "Expires in {n} second"
 msgid_plural "Expires in {n} seconds"
 msgstr[0] ""
 msgstr[1] ""
 
-#: rust/frontend/ui/app.slint:2057
+#: rust/frontend/ui/app.slint:2059
 msgid "A device is now paired with Core."
 msgstr ""
 
-#: rust/frontend/ui/app.slint:2058
+#: rust/frontend/ui/app.slint:2060
 msgid "{} is now paired with Core."
 msgstr ""
 
-#: rust/frontend/ui/app.slint:2072
+#: rust/frontend/ui/app.slint:2074
 msgid "The PIN expired before a device used it. Pair again for a new one."
 msgstr ""
 
-#: rust/frontend/ui/app.slint:2094
+#: rust/frontend/ui/app.slint:2096
 msgid "Link Online account"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:2118
+#: rust/frontend/ui/app.slint:2120
 msgid "This device is now linked to your Zaparoo Online account."
 msgstr ""
 
-#: rust/frontend/ui/app.slint:2119
+#: rust/frontend/ui/app.slint:2121
 msgid "The code expired before it was approved. Link again for a new one."
 msgstr ""
 
-#: rust/frontend/ui/app.slint:2120
+#: rust/frontend/ui/app.slint:2122
 msgid "Linking failed. Check the network connection and try again."
 msgstr ""
 
-#: rust/frontend/ui/app.slint:2134
+#: rust/frontend/ui/app.slint:2136
 msgid ""
 "Scan this code with your phone, or open the address below and enter the code."
 msgstr ""
 
-#: rust/frontend/ui/app.slint:2147
+#: rust/frontend/ui/app.slint:2149
 msgid "Or press Accept to open it on this device."
 msgstr ""
 
-#: rust/frontend/ui/app.slint:2231 rust/frontend/ui/labels.slint:588
+#: rust/frontend/ui/app.slint:2233 rust/frontend/ui/labels.slint:588
 msgid ""
 "This device is not linked. Link your Zaparoo Online account, then try again."
 msgstr ""
 
-#: rust/frontend/ui/app.slint:2234 rust/frontend/ui/labels.slint:587
+#: rust/frontend/ui/app.slint:2236 rust/frontend/ui/labels.slint:587
 msgid "Cloud backup needs an active Zaparoo Warp subscription."
 msgstr ""
 
-#: rust/frontend/ui/app.slint:2236
+#: rust/frontend/ui/app.slint:2238
 msgid "Could not load this. Check the network connection and try again."
 msgstr ""
 
-#: rust/frontend/ui/app.slint:2239
+#: rust/frontend/ui/app.slint:2241
 msgid "Back up now"
 msgstr ""
 
 #. Zaparoo made; it says so where its detail already is.
-#: rust/frontend/ui/app.slint:2244
+#: rust/frontend/ui/app.slint:2246
 msgid "{}, needs a newer Zaparoo"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:2245
+#: rust/frontend/ui/app.slint:2247
 msgid "{}, this device"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:2252
+#: rust/frontend/ui/app.slint:2254
 msgid "Cloud backups"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:2252
+#: rust/frontend/ui/app.slint:2254
 msgid "Remote activity"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:2273
+#: rust/frontend/ui/app.slint:2275
 msgid "Backing up…"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:2274
+#: rust/frontend/ui/app.slint:2276
 msgid "Restoring…"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:2275
+#: rust/frontend/ui/app.slint:2277
 msgid "Loading backups…"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:2275
+#: rust/frontend/ui/app.slint:2277
 msgid "Loading activity…"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:2286
+#: rust/frontend/ui/app.slint:2288
 msgid "No cloud backups yet."
 msgstr ""
 
-#: rust/frontend/ui/app.slint:2286
+#: rust/frontend/ui/app.slint:2288
 msgid "Nothing has run through remote control yet."
 msgstr ""
 
-#: rust/frontend/ui/app.slint:2345
+#: rust/frontend/ui/app.slint:2347
 msgid "Dual SDRAM"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:2346
+#: rust/frontend/ui/app.slint:2348
 msgid "Kodi TV"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:2347
+#: rust/frontend/ui/app.slint:2349
 msgid "Kodi music"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:2348
+#: rust/frontend/ui/app.slint:2350
 msgid "MiSTer arcade"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:2349
+#: rust/frontend/ui/app.slint:2351
 msgid "Media players"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:2350
+#: rust/frontend/ui/app.slint:2352
 msgid "Native"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:2351
+#: rust/frontend/ui/app.slint:2353
 msgid "Unstable"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:2352
+#: rust/frontend/ui/app.slint:2354
 msgid "Video"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:2356
+#: rust/frontend/ui/app.slint:2358
 msgid "Add…"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:2357 rust/frontend/ui/app.slint:3584
-#: rust/frontend/ui/app.slint:2357 rust/frontend/ui/app.slint:3584 rust/frontend/ui/app.slint:3601
-#: rust/frontend/ui/app.slint:2357 rust/frontend/ui/app.slint:3584 rust/frontend/ui/app.slint:3601 rust/frontend/ui/app.slint:3626
-#: rust/frontend/ui/app.slint:2357 rust/frontend/ui/app.slint:3584 rust/frontend/ui/app.slint:3601 rust/frontend/ui/app.slint:3626 rust/frontend/ui/app.slint:3641
-#: rust/frontend/ui/app.slint:2357 rust/frontend/ui/app.slint:3584 rust/frontend/ui/app.slint:3601 rust/frontend/ui/app.slint:3626 rust/frontend/ui/app.slint:3641 rust/frontend/ui/app.slint:3656
-#: rust/frontend/ui/app.slint:2357 rust/frontend/ui/app.slint:3584 rust/frontend/ui/app.slint:3601 rust/frontend/ui/app.slint:3626 rust/frontend/ui/app.slint:3641 rust/frontend/ui/app.slint:3656 rust/frontend/ui/app.slint:3673
-#: rust/frontend/ui/app.slint:2357 rust/frontend/ui/app.slint:3584 rust/frontend/ui/app.slint:3601 rust/frontend/ui/app.slint:3626 rust/frontend/ui/app.slint:3641 rust/frontend/ui/app.slint:3656 rust/frontend/ui/app.slint:3673 rust/frontend/ui/app.slint:3688
-#: rust/frontend/ui/app.slint:2357 rust/frontend/ui/app.slint:3584 rust/frontend/ui/app.slint:3601 rust/frontend/ui/app.slint:3626 rust/frontend/ui/app.slint:3641 rust/frontend/ui/app.slint:3656 rust/frontend/ui/app.slint:3673 rust/frontend/ui/app.slint:3688 rust/frontend/ui/app.slint:3711
-#: rust/frontend/ui/app.slint:2357 rust/frontend/ui/app.slint:3584 rust/frontend/ui/app.slint:3601 rust/frontend/ui/app.slint:3626 rust/frontend/ui/app.slint:3641 rust/frontend/ui/app.slint:3656 rust/frontend/ui/app.slint:3673 rust/frontend/ui/app.slint:3688 rust/frontend/ui/app.slint:3711 rust/frontend/ui/app.slint:3725
-#: rust/frontend/ui/app.slint:2357 rust/frontend/ui/app.slint:3584 rust/frontend/ui/app.slint:3601 rust/frontend/ui/app.slint:3626 rust/frontend/ui/app.slint:3641 rust/frontend/ui/app.slint:3656 rust/frontend/ui/app.slint:3673 rust/frontend/ui/app.slint:3688 rust/frontend/ui/app.slint:3711 rust/frontend/ui/app.slint:3725 rust/frontend/ui/app.slint:3748
-#: rust/frontend/ui/app.slint:2357 rust/frontend/ui/app.slint:3584 rust/frontend/ui/app.slint:3601 rust/frontend/ui/app.slint:3626 rust/frontend/ui/app.slint:3641 rust/frontend/ui/app.slint:3656 rust/frontend/ui/app.slint:3673 rust/frontend/ui/app.slint:3688 rust/frontend/ui/app.slint:3711 rust/frontend/ui/app.slint:3725 rust/frontend/ui/app.slint:3748 rust/frontend/ui/app.slint:3847
-#: rust/frontend/ui/app.slint:2357 rust/frontend/ui/app.slint:3584 rust/frontend/ui/app.slint:3601 rust/frontend/ui/app.slint:3626 rust/frontend/ui/app.slint:3641 rust/frontend/ui/app.slint:3656 rust/frontend/ui/app.slint:3673 rust/frontend/ui/app.slint:3688 rust/frontend/ui/app.slint:3711 rust/frontend/ui/app.slint:3725 rust/frontend/ui/app.slint:3748 rust/frontend/ui/app.slint:3847 rust/frontend/ui/app.slint:3861
-#: rust/frontend/ui/app.slint:2357 rust/frontend/ui/app.slint:3584 rust/frontend/ui/app.slint:3601 rust/frontend/ui/app.slint:3626 rust/frontend/ui/app.slint:3641 rust/frontend/ui/app.slint:3656 rust/frontend/ui/app.slint:3673 rust/frontend/ui/app.slint:3688 rust/frontend/ui/app.slint:3711 rust/frontend/ui/app.slint:3725 rust/frontend/ui/app.slint:3748 rust/frontend/ui/app.slint:3847 rust/frontend/ui/app.slint:3861 rust/frontend/ui/app.slint:3883
-#: rust/frontend/ui/app.slint:2357 rust/frontend/ui/app.slint:3584 rust/frontend/ui/app.slint:3601 rust/frontend/ui/app.slint:3626 rust/frontend/ui/app.slint:3641 rust/frontend/ui/app.slint:3656 rust/frontend/ui/app.slint:3673 rust/frontend/ui/app.slint:3688 rust/frontend/ui/app.slint:3711 rust/frontend/ui/app.slint:3725 rust/frontend/ui/app.slint:3748 rust/frontend/ui/app.slint:3847 rust/frontend/ui/app.slint:3861 rust/frontend/ui/app.slint:3883 rust/frontend/ui/app.slint:3911
-#: rust/frontend/ui/app.slint:2357 rust/frontend/ui/app.slint:3584 rust/frontend/ui/app.slint:3601 rust/frontend/ui/app.slint:3626 rust/frontend/ui/app.slint:3641 rust/frontend/ui/app.slint:3656 rust/frontend/ui/app.slint:3673 rust/frontend/ui/app.slint:3688 rust/frontend/ui/app.slint:3711 rust/frontend/ui/app.slint:3725 rust/frontend/ui/app.slint:3748 rust/frontend/ui/app.slint:3847 rust/frontend/ui/app.slint:3861 rust/frontend/ui/app.slint:3883 rust/frontend/ui/app.slint:3911 rust/frontend/ui/app.slint:3931
-#: rust/frontend/ui/app.slint:2357 rust/frontend/ui/app.slint:3584 rust/frontend/ui/app.slint:3601 rust/frontend/ui/app.slint:3626 rust/frontend/ui/app.slint:3641 rust/frontend/ui/app.slint:3656 rust/frontend/ui/app.slint:3673 rust/frontend/ui/app.slint:3688 rust/frontend/ui/app.slint:3711 rust/frontend/ui/app.slint:3725 rust/frontend/ui/app.slint:3748 rust/frontend/ui/app.slint:3847 rust/frontend/ui/app.slint:3861 rust/frontend/ui/app.slint:3883 rust/frontend/ui/app.slint:3911 rust/frontend/ui/app.slint:3931 rust/frontend/ui/app.slint:3972
-#: rust/frontend/ui/app.slint:2357 rust/frontend/ui/app.slint:3584 rust/frontend/ui/app.slint:3601 rust/frontend/ui/app.slint:3626 rust/frontend/ui/app.slint:3641 rust/frontend/ui/app.slint:3656 rust/frontend/ui/app.slint:3673 rust/frontend/ui/app.slint:3688 rust/frontend/ui/app.slint:3711 rust/frontend/ui/app.slint:3725 rust/frontend/ui/app.slint:3748 rust/frontend/ui/app.slint:3847 rust/frontend/ui/app.slint:3861 rust/frontend/ui/app.slint:3883 rust/frontend/ui/app.slint:3911 rust/frontend/ui/app.slint:3931 rust/frontend/ui/app.slint:3972 rust/frontend/ui/app.slint:4046
-#: rust/frontend/ui/app.slint:2357 rust/frontend/ui/app.slint:3584 rust/frontend/ui/app.slint:3601 rust/frontend/ui/app.slint:3626 rust/frontend/ui/app.slint:3641 rust/frontend/ui/app.slint:3656 rust/frontend/ui/app.slint:3673 rust/frontend/ui/app.slint:3688 rust/frontend/ui/app.slint:3711 rust/frontend/ui/app.slint:3725 rust/frontend/ui/app.slint:3748 rust/frontend/ui/app.slint:3847 rust/frontend/ui/app.slint:3861 rust/frontend/ui/app.slint:3883 rust/frontend/ui/app.slint:3911 rust/frontend/ui/app.slint:3931 rust/frontend/ui/app.slint:3972 rust/frontend/ui/app.slint:4046 rust/frontend/ui/app.slint:4063
-#: rust/frontend/ui/app.slint:2357 rust/frontend/ui/app.slint:3584 rust/frontend/ui/app.slint:3601 rust/frontend/ui/app.slint:3626 rust/frontend/ui/app.slint:3641 rust/frontend/ui/app.slint:3656 rust/frontend/ui/app.slint:3673 rust/frontend/ui/app.slint:3688 rust/frontend/ui/app.slint:3711 rust/frontend/ui/app.slint:3725 rust/frontend/ui/app.slint:3748 rust/frontend/ui/app.slint:3847 rust/frontend/ui/app.slint:3861 rust/frontend/ui/app.slint:3883 rust/frontend/ui/app.slint:3911 rust/frontend/ui/app.slint:3931 rust/frontend/ui/app.slint:3972 rust/frontend/ui/app.slint:4046 rust/frontend/ui/app.slint:4063 rust/frontend/ui/app.slint:4078
-#: rust/frontend/ui/app.slint:2357 rust/frontend/ui/app.slint:3584 rust/frontend/ui/app.slint:3601 rust/frontend/ui/app.slint:3626 rust/frontend/ui/app.slint:3641 rust/frontend/ui/app.slint:3656 rust/frontend/ui/app.slint:3673 rust/frontend/ui/app.slint:3688 rust/frontend/ui/app.slint:3711 rust/frontend/ui/app.slint:3725 rust/frontend/ui/app.slint:3748 rust/frontend/ui/app.slint:3847 rust/frontend/ui/app.slint:3861 rust/frontend/ui/app.slint:3883 rust/frontend/ui/app.slint:3911 rust/frontend/ui/app.slint:3931 rust/frontend/ui/app.slint:3972 rust/frontend/ui/app.slint:4046 rust/frontend/ui/app.slint:4063 rust/frontend/ui/app.slint:4078 rust/frontend/ui/app.slint:4138
-#: rust/frontend/ui/app.slint:2357 rust/frontend/ui/app.slint:3584 rust/frontend/ui/app.slint:3601 rust/frontend/ui/app.slint:3626 rust/frontend/ui/app.slint:3641 rust/frontend/ui/app.slint:3656 rust/frontend/ui/app.slint:3673 rust/frontend/ui/app.slint:3688 rust/frontend/ui/app.slint:3711 rust/frontend/ui/app.slint:3725 rust/frontend/ui/app.slint:3748 rust/frontend/ui/app.slint:3847 rust/frontend/ui/app.slint:3861 rust/frontend/ui/app.slint:3883 rust/frontend/ui/app.slint:3911 rust/frontend/ui/app.slint:3931 rust/frontend/ui/app.slint:3972 rust/frontend/ui/app.slint:4046 rust/frontend/ui/app.slint:4063 rust/frontend/ui/app.slint:4078 rust/frontend/ui/app.slint:4138 rust/frontend/ui/app.slint:4162
-#: rust/frontend/ui/app.slint:2357 rust/frontend/ui/app.slint:3584 rust/frontend/ui/app.slint:3601 rust/frontend/ui/app.slint:3626 rust/frontend/ui/app.slint:3641 rust/frontend/ui/app.slint:3656 rust/frontend/ui/app.slint:3673 rust/frontend/ui/app.slint:3688 rust/frontend/ui/app.slint:3711 rust/frontend/ui/app.slint:3725 rust/frontend/ui/app.slint:3748 rust/frontend/ui/app.slint:3847 rust/frontend/ui/app.slint:3861 rust/frontend/ui/app.slint:3883 rust/frontend/ui/app.slint:3911 rust/frontend/ui/app.slint:3931 rust/frontend/ui/app.slint:3972 rust/frontend/ui/app.slint:4046 rust/frontend/ui/app.slint:4063 rust/frontend/ui/app.slint:4078 rust/frontend/ui/app.slint:4138 rust/frontend/ui/app.slint:4162 rust/frontend/ui/app.slint:4263
-#: rust/frontend/ui/app.slint:2357 rust/frontend/ui/app.slint:3584 rust/frontend/ui/app.slint:3601 rust/frontend/ui/app.slint:3626 rust/frontend/ui/app.slint:3641 rust/frontend/ui/app.slint:3656 rust/frontend/ui/app.slint:3673 rust/frontend/ui/app.slint:3688 rust/frontend/ui/app.slint:3711 rust/frontend/ui/app.slint:3725 rust/frontend/ui/app.slint:3748 rust/frontend/ui/app.slint:3847 rust/frontend/ui/app.slint:3861 rust/frontend/ui/app.slint:3883 rust/frontend/ui/app.slint:3911 rust/frontend/ui/app.slint:3931 rust/frontend/ui/app.slint:3972 rust/frontend/ui/app.slint:4046 rust/frontend/ui/app.slint:4063 rust/frontend/ui/app.slint:4078 rust/frontend/ui/app.slint:4138 rust/frontend/ui/app.slint:4162 rust/frontend/ui/app.slint:4263 rust/frontend/ui/app.slint:4277
-#: rust/frontend/ui/app.slint:2357 rust/frontend/ui/app.slint:3584 rust/frontend/ui/app.slint:3601 rust/frontend/ui/app.slint:3626 rust/frontend/ui/app.slint:3641 rust/frontend/ui/app.slint:3656 rust/frontend/ui/app.slint:3673 rust/frontend/ui/app.slint:3688 rust/frontend/ui/app.slint:3711 rust/frontend/ui/app.slint:3725 rust/frontend/ui/app.slint:3748 rust/frontend/ui/app.slint:3847 rust/frontend/ui/app.slint:3861 rust/frontend/ui/app.slint:3883 rust/frontend/ui/app.slint:3911 rust/frontend/ui/app.slint:3931 rust/frontend/ui/app.slint:3972 rust/frontend/ui/app.slint:4046 rust/frontend/ui/app.slint:4063 rust/frontend/ui/app.slint:4078 rust/frontend/ui/app.slint:4138 rust/frontend/ui/app.slint:4162 rust/frontend/ui/app.slint:4263 rust/frontend/ui/app.slint:4277 rust/frontend/ui/app.slint:4297
-#: rust/frontend/ui/app.slint:2357 rust/frontend/ui/app.slint:3584 rust/frontend/ui/app.slint:3601 rust/frontend/ui/app.slint:3626 rust/frontend/ui/app.slint:3641 rust/frontend/ui/app.slint:3656 rust/frontend/ui/app.slint:3673 rust/frontend/ui/app.slint:3688 rust/frontend/ui/app.slint:3711 rust/frontend/ui/app.slint:3725 rust/frontend/ui/app.slint:3748 rust/frontend/ui/app.slint:3847 rust/frontend/ui/app.slint:3861 rust/frontend/ui/app.slint:3883 rust/frontend/ui/app.slint:3911 rust/frontend/ui/app.slint:3931 rust/frontend/ui/app.slint:3972 rust/frontend/ui/app.slint:4046 rust/frontend/ui/app.slint:4063 rust/frontend/ui/app.slint:4078 rust/frontend/ui/app.slint:4138 rust/frontend/ui/app.slint:4162 rust/frontend/ui/app.slint:4263 rust/frontend/ui/app.slint:4277 rust/frontend/ui/app.slint:4297 rust/frontend/ui/app.slint:4315
-#: rust/frontend/ui/app.slint:2357 rust/frontend/ui/app.slint:3584 rust/frontend/ui/app.slint:3601 rust/frontend/ui/app.slint:3626 rust/frontend/ui/app.slint:3641 rust/frontend/ui/app.slint:3656 rust/frontend/ui/app.slint:3673 rust/frontend/ui/app.slint:3688 rust/frontend/ui/app.slint:3711 rust/frontend/ui/app.slint:3725 rust/frontend/ui/app.slint:3748 rust/frontend/ui/app.slint:3847 rust/frontend/ui/app.slint:3861 rust/frontend/ui/app.slint:3883 rust/frontend/ui/app.slint:3911 rust/frontend/ui/app.slint:3931 rust/frontend/ui/app.slint:3972 rust/frontend/ui/app.slint:4046 rust/frontend/ui/app.slint:4063 rust/frontend/ui/app.slint:4078 rust/frontend/ui/app.slint:4138 rust/frontend/ui/app.slint:4162 rust/frontend/ui/app.slint:4263 rust/frontend/ui/app.slint:4277 rust/frontend/ui/app.slint:4297 rust/frontend/ui/app.slint:4315 rust/frontend/ui/app.slint:4328
-#: rust/frontend/ui/app.slint:2357 rust/frontend/ui/app.slint:3584 rust/frontend/ui/app.slint:3601 rust/frontend/ui/app.slint:3626 rust/frontend/ui/app.slint:3641 rust/frontend/ui/app.slint:3656 rust/frontend/ui/app.slint:3673 rust/frontend/ui/app.slint:3688 rust/frontend/ui/app.slint:3711 rust/frontend/ui/app.slint:3725 rust/frontend/ui/app.slint:3748 rust/frontend/ui/app.slint:3847 rust/frontend/ui/app.slint:3861 rust/frontend/ui/app.slint:3883 rust/frontend/ui/app.slint:3911 rust/frontend/ui/app.slint:3931 rust/frontend/ui/app.slint:3972 rust/frontend/ui/app.slint:4046 rust/frontend/ui/app.slint:4063 rust/frontend/ui/app.slint:4078 rust/frontend/ui/app.slint:4138 rust/frontend/ui/app.slint:4162 rust/frontend/ui/app.slint:4263 rust/frontend/ui/app.slint:4277 rust/frontend/ui/app.slint:4297 rust/frontend/ui/app.slint:4315 rust/frontend/ui/app.slint:4328 rust/frontend/ui/app.slint:4340
-#: rust/frontend/ui/app.slint:2357 rust/frontend/ui/app.slint:3584 rust/frontend/ui/app.slint:3601 rust/frontend/ui/app.slint:3626 rust/frontend/ui/app.slint:3641 rust/frontend/ui/app.slint:3656 rust/frontend/ui/app.slint:3673 rust/frontend/ui/app.slint:3688 rust/frontend/ui/app.slint:3711 rust/frontend/ui/app.slint:3725 rust/frontend/ui/app.slint:3748 rust/frontend/ui/app.slint:3847 rust/frontend/ui/app.slint:3861 rust/frontend/ui/app.slint:3883 rust/frontend/ui/app.slint:3911 rust/frontend/ui/app.slint:3931 rust/frontend/ui/app.slint:3972 rust/frontend/ui/app.slint:4046 rust/frontend/ui/app.slint:4063 rust/frontend/ui/app.slint:4078 rust/frontend/ui/app.slint:4138 rust/frontend/ui/app.slint:4162 rust/frontend/ui/app.slint:4263 rust/frontend/ui/app.slint:4277 rust/frontend/ui/app.slint:4297 rust/frontend/ui/app.slint:4315 rust/frontend/ui/app.slint:4328 rust/frontend/ui/app.slint:4340
+#: rust/frontend/ui/app.slint:2359 rust/frontend/ui/app.slint:3478
+#: rust/frontend/ui/app.slint:2359 rust/frontend/ui/app.slint:3478 rust/frontend/ui/app.slint:3495
+#: rust/frontend/ui/app.slint:2359 rust/frontend/ui/app.slint:3478 rust/frontend/ui/app.slint:3495 rust/frontend/ui/app.slint:3520
+#: rust/frontend/ui/app.slint:2359 rust/frontend/ui/app.slint:3478 rust/frontend/ui/app.slint:3495 rust/frontend/ui/app.slint:3520 rust/frontend/ui/app.slint:3535
+#: rust/frontend/ui/app.slint:2359 rust/frontend/ui/app.slint:3478 rust/frontend/ui/app.slint:3495 rust/frontend/ui/app.slint:3520 rust/frontend/ui/app.slint:3535 rust/frontend/ui/app.slint:3550
+#: rust/frontend/ui/app.slint:2359 rust/frontend/ui/app.slint:3478 rust/frontend/ui/app.slint:3495 rust/frontend/ui/app.slint:3520 rust/frontend/ui/app.slint:3535 rust/frontend/ui/app.slint:3550 rust/frontend/ui/app.slint:3567
+#: rust/frontend/ui/app.slint:2359 rust/frontend/ui/app.slint:3478 rust/frontend/ui/app.slint:3495 rust/frontend/ui/app.slint:3520 rust/frontend/ui/app.slint:3535 rust/frontend/ui/app.slint:3550 rust/frontend/ui/app.slint:3567 rust/frontend/ui/app.slint:3582
+#: rust/frontend/ui/app.slint:2359 rust/frontend/ui/app.slint:3478 rust/frontend/ui/app.slint:3495 rust/frontend/ui/app.slint:3520 rust/frontend/ui/app.slint:3535 rust/frontend/ui/app.slint:3550 rust/frontend/ui/app.slint:3567 rust/frontend/ui/app.slint:3582 rust/frontend/ui/app.slint:3605
+#: rust/frontend/ui/app.slint:2359 rust/frontend/ui/app.slint:3478 rust/frontend/ui/app.slint:3495 rust/frontend/ui/app.slint:3520 rust/frontend/ui/app.slint:3535 rust/frontend/ui/app.slint:3550 rust/frontend/ui/app.slint:3567 rust/frontend/ui/app.slint:3582 rust/frontend/ui/app.slint:3605 rust/frontend/ui/app.slint:3619
+#: rust/frontend/ui/app.slint:2359 rust/frontend/ui/app.slint:3478 rust/frontend/ui/app.slint:3495 rust/frontend/ui/app.slint:3520 rust/frontend/ui/app.slint:3535 rust/frontend/ui/app.slint:3550 rust/frontend/ui/app.slint:3567 rust/frontend/ui/app.slint:3582 rust/frontend/ui/app.slint:3605 rust/frontend/ui/app.slint:3619 rust/frontend/ui/app.slint:3642
+#: rust/frontend/ui/app.slint:2359 rust/frontend/ui/app.slint:3478 rust/frontend/ui/app.slint:3495 rust/frontend/ui/app.slint:3520 rust/frontend/ui/app.slint:3535 rust/frontend/ui/app.slint:3550 rust/frontend/ui/app.slint:3567 rust/frontend/ui/app.slint:3582 rust/frontend/ui/app.slint:3605 rust/frontend/ui/app.slint:3619 rust/frontend/ui/app.slint:3642 rust/frontend/ui/app.slint:3741
+#: rust/frontend/ui/app.slint:2359 rust/frontend/ui/app.slint:3478 rust/frontend/ui/app.slint:3495 rust/frontend/ui/app.slint:3520 rust/frontend/ui/app.slint:3535 rust/frontend/ui/app.slint:3550 rust/frontend/ui/app.slint:3567 rust/frontend/ui/app.slint:3582 rust/frontend/ui/app.slint:3605 rust/frontend/ui/app.slint:3619 rust/frontend/ui/app.slint:3642 rust/frontend/ui/app.slint:3741 rust/frontend/ui/app.slint:3755
+#: rust/frontend/ui/app.slint:2359 rust/frontend/ui/app.slint:3478 rust/frontend/ui/app.slint:3495 rust/frontend/ui/app.slint:3520 rust/frontend/ui/app.slint:3535 rust/frontend/ui/app.slint:3550 rust/frontend/ui/app.slint:3567 rust/frontend/ui/app.slint:3582 rust/frontend/ui/app.slint:3605 rust/frontend/ui/app.slint:3619 rust/frontend/ui/app.slint:3642 rust/frontend/ui/app.slint:3741 rust/frontend/ui/app.slint:3755 rust/frontend/ui/app.slint:3777
+#: rust/frontend/ui/app.slint:2359 rust/frontend/ui/app.slint:3478 rust/frontend/ui/app.slint:3495 rust/frontend/ui/app.slint:3520 rust/frontend/ui/app.slint:3535 rust/frontend/ui/app.slint:3550 rust/frontend/ui/app.slint:3567 rust/frontend/ui/app.slint:3582 rust/frontend/ui/app.slint:3605 rust/frontend/ui/app.slint:3619 rust/frontend/ui/app.slint:3642 rust/frontend/ui/app.slint:3741 rust/frontend/ui/app.slint:3755 rust/frontend/ui/app.slint:3777 rust/frontend/ui/app.slint:3805
+#: rust/frontend/ui/app.slint:2359 rust/frontend/ui/app.slint:3478 rust/frontend/ui/app.slint:3495 rust/frontend/ui/app.slint:3520 rust/frontend/ui/app.slint:3535 rust/frontend/ui/app.slint:3550 rust/frontend/ui/app.slint:3567 rust/frontend/ui/app.slint:3582 rust/frontend/ui/app.slint:3605 rust/frontend/ui/app.slint:3619 rust/frontend/ui/app.slint:3642 rust/frontend/ui/app.slint:3741 rust/frontend/ui/app.slint:3755 rust/frontend/ui/app.slint:3777 rust/frontend/ui/app.slint:3805 rust/frontend/ui/app.slint:3825
+#: rust/frontend/ui/app.slint:2359 rust/frontend/ui/app.slint:3478 rust/frontend/ui/app.slint:3495 rust/frontend/ui/app.slint:3520 rust/frontend/ui/app.slint:3535 rust/frontend/ui/app.slint:3550 rust/frontend/ui/app.slint:3567 rust/frontend/ui/app.slint:3582 rust/frontend/ui/app.slint:3605 rust/frontend/ui/app.slint:3619 rust/frontend/ui/app.slint:3642 rust/frontend/ui/app.slint:3741 rust/frontend/ui/app.slint:3755 rust/frontend/ui/app.slint:3777 rust/frontend/ui/app.slint:3805 rust/frontend/ui/app.slint:3825 rust/frontend/ui/app.slint:3866
+#: rust/frontend/ui/app.slint:2359 rust/frontend/ui/app.slint:3478 rust/frontend/ui/app.slint:3495 rust/frontend/ui/app.slint:3520 rust/frontend/ui/app.slint:3535 rust/frontend/ui/app.slint:3550 rust/frontend/ui/app.slint:3567 rust/frontend/ui/app.slint:3582 rust/frontend/ui/app.slint:3605 rust/frontend/ui/app.slint:3619 rust/frontend/ui/app.slint:3642 rust/frontend/ui/app.slint:3741 rust/frontend/ui/app.slint:3755 rust/frontend/ui/app.slint:3777 rust/frontend/ui/app.slint:3805 rust/frontend/ui/app.slint:3825 rust/frontend/ui/app.slint:3866 rust/frontend/ui/app.slint:3940
+#: rust/frontend/ui/app.slint:2359 rust/frontend/ui/app.slint:3478 rust/frontend/ui/app.slint:3495 rust/frontend/ui/app.slint:3520 rust/frontend/ui/app.slint:3535 rust/frontend/ui/app.slint:3550 rust/frontend/ui/app.slint:3567 rust/frontend/ui/app.slint:3582 rust/frontend/ui/app.slint:3605 rust/frontend/ui/app.slint:3619 rust/frontend/ui/app.slint:3642 rust/frontend/ui/app.slint:3741 rust/frontend/ui/app.slint:3755 rust/frontend/ui/app.slint:3777 rust/frontend/ui/app.slint:3805 rust/frontend/ui/app.slint:3825 rust/frontend/ui/app.slint:3866 rust/frontend/ui/app.slint:3940 rust/frontend/ui/app.slint:3957
+#: rust/frontend/ui/app.slint:2359 rust/frontend/ui/app.slint:3478 rust/frontend/ui/app.slint:3495 rust/frontend/ui/app.slint:3520 rust/frontend/ui/app.slint:3535 rust/frontend/ui/app.slint:3550 rust/frontend/ui/app.slint:3567 rust/frontend/ui/app.slint:3582 rust/frontend/ui/app.slint:3605 rust/frontend/ui/app.slint:3619 rust/frontend/ui/app.slint:3642 rust/frontend/ui/app.slint:3741 rust/frontend/ui/app.slint:3755 rust/frontend/ui/app.slint:3777 rust/frontend/ui/app.slint:3805 rust/frontend/ui/app.slint:3825 rust/frontend/ui/app.slint:3866 rust/frontend/ui/app.slint:3940 rust/frontend/ui/app.slint:3957 rust/frontend/ui/app.slint:3972
+#: rust/frontend/ui/app.slint:2359 rust/frontend/ui/app.slint:3478 rust/frontend/ui/app.slint:3495 rust/frontend/ui/app.slint:3520 rust/frontend/ui/app.slint:3535 rust/frontend/ui/app.slint:3550 rust/frontend/ui/app.slint:3567 rust/frontend/ui/app.slint:3582 rust/frontend/ui/app.slint:3605 rust/frontend/ui/app.slint:3619 rust/frontend/ui/app.slint:3642 rust/frontend/ui/app.slint:3741 rust/frontend/ui/app.slint:3755 rust/frontend/ui/app.slint:3777 rust/frontend/ui/app.slint:3805 rust/frontend/ui/app.slint:3825 rust/frontend/ui/app.slint:3866 rust/frontend/ui/app.slint:3940 rust/frontend/ui/app.slint:3957 rust/frontend/ui/app.slint:3972 rust/frontend/ui/app.slint:4032
+#: rust/frontend/ui/app.slint:2359 rust/frontend/ui/app.slint:3478 rust/frontend/ui/app.slint:3495 rust/frontend/ui/app.slint:3520 rust/frontend/ui/app.slint:3535 rust/frontend/ui/app.slint:3550 rust/frontend/ui/app.slint:3567 rust/frontend/ui/app.slint:3582 rust/frontend/ui/app.slint:3605 rust/frontend/ui/app.slint:3619 rust/frontend/ui/app.slint:3642 rust/frontend/ui/app.slint:3741 rust/frontend/ui/app.slint:3755 rust/frontend/ui/app.slint:3777 rust/frontend/ui/app.slint:3805 rust/frontend/ui/app.slint:3825 rust/frontend/ui/app.slint:3866 rust/frontend/ui/app.slint:3940 rust/frontend/ui/app.slint:3957 rust/frontend/ui/app.slint:3972 rust/frontend/ui/app.slint:4032 rust/frontend/ui/app.slint:4056
+#: rust/frontend/ui/app.slint:2359 rust/frontend/ui/app.slint:3478 rust/frontend/ui/app.slint:3495 rust/frontend/ui/app.slint:3520 rust/frontend/ui/app.slint:3535 rust/frontend/ui/app.slint:3550 rust/frontend/ui/app.slint:3567 rust/frontend/ui/app.slint:3582 rust/frontend/ui/app.slint:3605 rust/frontend/ui/app.slint:3619 rust/frontend/ui/app.slint:3642 rust/frontend/ui/app.slint:3741 rust/frontend/ui/app.slint:3755 rust/frontend/ui/app.slint:3777 rust/frontend/ui/app.slint:3805 rust/frontend/ui/app.slint:3825 rust/frontend/ui/app.slint:3866 rust/frontend/ui/app.slint:3940 rust/frontend/ui/app.slint:3957 rust/frontend/ui/app.slint:3972 rust/frontend/ui/app.slint:4032 rust/frontend/ui/app.slint:4056 rust/frontend/ui/app.slint:4157
+#: rust/frontend/ui/app.slint:2359 rust/frontend/ui/app.slint:3478 rust/frontend/ui/app.slint:3495 rust/frontend/ui/app.slint:3520 rust/frontend/ui/app.slint:3535 rust/frontend/ui/app.slint:3550 rust/frontend/ui/app.slint:3567 rust/frontend/ui/app.slint:3582 rust/frontend/ui/app.slint:3605 rust/frontend/ui/app.slint:3619 rust/frontend/ui/app.slint:3642 rust/frontend/ui/app.slint:3741 rust/frontend/ui/app.slint:3755 rust/frontend/ui/app.slint:3777 rust/frontend/ui/app.slint:3805 rust/frontend/ui/app.slint:3825 rust/frontend/ui/app.slint:3866 rust/frontend/ui/app.slint:3940 rust/frontend/ui/app.slint:3957 rust/frontend/ui/app.slint:3972 rust/frontend/ui/app.slint:4032 rust/frontend/ui/app.slint:4056 rust/frontend/ui/app.slint:4157 rust/frontend/ui/app.slint:4171
+#: rust/frontend/ui/app.slint:2359 rust/frontend/ui/app.slint:3478 rust/frontend/ui/app.slint:3495 rust/frontend/ui/app.slint:3520 rust/frontend/ui/app.slint:3535 rust/frontend/ui/app.slint:3550 rust/frontend/ui/app.slint:3567 rust/frontend/ui/app.slint:3582 rust/frontend/ui/app.slint:3605 rust/frontend/ui/app.slint:3619 rust/frontend/ui/app.slint:3642 rust/frontend/ui/app.slint:3741 rust/frontend/ui/app.slint:3755 rust/frontend/ui/app.slint:3777 rust/frontend/ui/app.slint:3805 rust/frontend/ui/app.slint:3825 rust/frontend/ui/app.slint:3866 rust/frontend/ui/app.slint:3940 rust/frontend/ui/app.slint:3957 rust/frontend/ui/app.slint:3972 rust/frontend/ui/app.slint:4032 rust/frontend/ui/app.slint:4056 rust/frontend/ui/app.slint:4157 rust/frontend/ui/app.slint:4171 rust/frontend/ui/app.slint:4191
+#: rust/frontend/ui/app.slint:2359 rust/frontend/ui/app.slint:3478 rust/frontend/ui/app.slint:3495 rust/frontend/ui/app.slint:3520 rust/frontend/ui/app.slint:3535 rust/frontend/ui/app.slint:3550 rust/frontend/ui/app.slint:3567 rust/frontend/ui/app.slint:3582 rust/frontend/ui/app.slint:3605 rust/frontend/ui/app.slint:3619 rust/frontend/ui/app.slint:3642 rust/frontend/ui/app.slint:3741 rust/frontend/ui/app.slint:3755 rust/frontend/ui/app.slint:3777 rust/frontend/ui/app.slint:3805 rust/frontend/ui/app.slint:3825 rust/frontend/ui/app.slint:3866 rust/frontend/ui/app.slint:3940 rust/frontend/ui/app.slint:3957 rust/frontend/ui/app.slint:3972 rust/frontend/ui/app.slint:4032 rust/frontend/ui/app.slint:4056 rust/frontend/ui/app.slint:4157 rust/frontend/ui/app.slint:4171 rust/frontend/ui/app.slint:4191 rust/frontend/ui/app.slint:4209
+#: rust/frontend/ui/app.slint:2359 rust/frontend/ui/app.slint:3478 rust/frontend/ui/app.slint:3495 rust/frontend/ui/app.slint:3520 rust/frontend/ui/app.slint:3535 rust/frontend/ui/app.slint:3550 rust/frontend/ui/app.slint:3567 rust/frontend/ui/app.slint:3582 rust/frontend/ui/app.slint:3605 rust/frontend/ui/app.slint:3619 rust/frontend/ui/app.slint:3642 rust/frontend/ui/app.slint:3741 rust/frontend/ui/app.slint:3755 rust/frontend/ui/app.slint:3777 rust/frontend/ui/app.slint:3805 rust/frontend/ui/app.slint:3825 rust/frontend/ui/app.slint:3866 rust/frontend/ui/app.slint:3940 rust/frontend/ui/app.slint:3957 rust/frontend/ui/app.slint:3972 rust/frontend/ui/app.slint:4032 rust/frontend/ui/app.slint:4056 rust/frontend/ui/app.slint:4157 rust/frontend/ui/app.slint:4171 rust/frontend/ui/app.slint:4191 rust/frontend/ui/app.slint:4209 rust/frontend/ui/app.slint:4222
+#: rust/frontend/ui/app.slint:2359 rust/frontend/ui/app.slint:3478 rust/frontend/ui/app.slint:3495 rust/frontend/ui/app.slint:3520 rust/frontend/ui/app.slint:3535 rust/frontend/ui/app.slint:3550 rust/frontend/ui/app.slint:3567 rust/frontend/ui/app.slint:3582 rust/frontend/ui/app.slint:3605 rust/frontend/ui/app.slint:3619 rust/frontend/ui/app.slint:3642 rust/frontend/ui/app.slint:3741 rust/frontend/ui/app.slint:3755 rust/frontend/ui/app.slint:3777 rust/frontend/ui/app.slint:3805 rust/frontend/ui/app.slint:3825 rust/frontend/ui/app.slint:3866 rust/frontend/ui/app.slint:3940 rust/frontend/ui/app.slint:3957 rust/frontend/ui/app.slint:3972 rust/frontend/ui/app.slint:4032 rust/frontend/ui/app.slint:4056 rust/frontend/ui/app.slint:4157 rust/frontend/ui/app.slint:4171 rust/frontend/ui/app.slint:4191 rust/frontend/ui/app.slint:4209 rust/frontend/ui/app.slint:4222 rust/frontend/ui/app.slint:4234
+#: rust/frontend/ui/app.slint:2359 rust/frontend/ui/app.slint:3478 rust/frontend/ui/app.slint:3495 rust/frontend/ui/app.slint:3520 rust/frontend/ui/app.slint:3535 rust/frontend/ui/app.slint:3550 rust/frontend/ui/app.slint:3567 rust/frontend/ui/app.slint:3582 rust/frontend/ui/app.slint:3605 rust/frontend/ui/app.slint:3619 rust/frontend/ui/app.slint:3642 rust/frontend/ui/app.slint:3741 rust/frontend/ui/app.slint:3755 rust/frontend/ui/app.slint:3777 rust/frontend/ui/app.slint:3805 rust/frontend/ui/app.slint:3825 rust/frontend/ui/app.slint:3866 rust/frontend/ui/app.slint:3940 rust/frontend/ui/app.slint:3957 rust/frontend/ui/app.slint:3972 rust/frontend/ui/app.slint:4032 rust/frontend/ui/app.slint:4056 rust/frontend/ui/app.slint:4157 rust/frontend/ui/app.slint:4171 rust/frontend/ui/app.slint:4191 rust/frontend/ui/app.slint:4209 rust/frontend/ui/app.slint:4222 rust/frontend/ui/app.slint:4234
 msgid "Move"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:2358
+#: rust/frontend/ui/app.slint:2360
 msgid "Remove"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:2364
+#: rust/frontend/ui/app.slint:2366
 msgid "Group"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:2364
+#: rust/frontend/ui/app.slint:2366
 msgid "Group, not installed"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:2368 rust/frontend/ui/settings.slint:506
+#: rust/frontend/ui/app.slint:2370 rust/frontend/ui/settings.slint:515
 msgid "Not installed"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:2368
+#: rust/frontend/ui/app.slint:2370
 msgid "{}, not installed"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:2374 rust/frontend/ui/app.slint:3749
+#: rust/frontend/ui/app.slint:2376 rust/frontend/ui/app.slint:3643
 msgid "Add"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:2375 rust/frontend/ui/settings.slint:265
+#: rust/frontend/ui/app.slint:2377 rust/frontend/ui/settings.slint:269
 msgid "Launcher preference"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:2424 rust/frontend/ui/settings.slint:298
+#: rust/frontend/ui/app.slint:2426 rust/frontend/ui/settings.slint:302
 msgid "Documentation"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:2424 rust/frontend/ui/labels.slint:238
+#: rust/frontend/ui/app.slint:2426 rust/frontend/ui/labels.slint:238
 msgid "Write with App"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:2443
+#: rust/frontend/ui/app.slint:2445
 msgid "Scan this code to open the Zaparoo Frontend guide on your phone."
 msgstr ""
 
-#: rust/frontend/ui/app.slint:2444
+#: rust/frontend/ui/app.slint:2446
 msgid ""
 "Scan this code with the Zaparoo App to write this game to a Zaparoo token."
 msgstr ""
 
-#: rust/frontend/ui/app.slint:2993 rust/frontend/ui/app.slint:3505
-#: rust/frontend/ui/app.slint:2993 rust/frontend/ui/app.slint:3505
+#: rust/frontend/ui/app.slint:2887 rust/frontend/ui/app.slint:3399
+#: rust/frontend/ui/app.slint:2887 rust/frontend/ui/app.slint:3399
 msgid "Decks"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:2996 rust/frontend/ui/app.slint:3504
-#: rust/frontend/ui/app.slint:2996 rust/frontend/ui/app.slint:3504
+#: rust/frontend/ui/app.slint:2890 rust/frontend/ui/app.slint:3398
+#: rust/frontend/ui/app.slint:2890 rust/frontend/ui/app.slint:3398
 msgid "Recently played"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:2997 rust/frontend/ui/app.slint:3528
-#: rust/frontend/ui/app.slint:2997 rust/frontend/ui/app.slint:3528 rust/frontend/ui/app.slint:3635
-#: rust/frontend/ui/app.slint:2997 rust/frontend/ui/app.slint:3528 rust/frontend/ui/app.slint:3635 rust/frontend/ui/app.slint:4047
-#: rust/frontend/ui/app.slint:2997 rust/frontend/ui/app.slint:3528 rust/frontend/ui/app.slint:3635 rust/frontend/ui/app.slint:4047 rust/frontend/ui/search.slint:82
+#: rust/frontend/ui/app.slint:2891 rust/frontend/ui/app.slint:3422
+#: rust/frontend/ui/app.slint:2891 rust/frontend/ui/app.slint:3422 rust/frontend/ui/app.slint:3529
+#: rust/frontend/ui/app.slint:2891 rust/frontend/ui/app.slint:3422 rust/frontend/ui/app.slint:3529 rust/frontend/ui/app.slint:3941
+#: rust/frontend/ui/app.slint:2891 rust/frontend/ui/app.slint:3422 rust/frontend/ui/app.slint:3529 rust/frontend/ui/app.slint:3941 rust/frontend/ui/search.slint:82
 msgid "Search"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:3008
+#: rust/frontend/ui/app.slint:2902
 msgid "{n} deck"
 msgid_plural "{n} decks"
 msgstr[0] ""
 msgstr[1] ""
 
-#: rust/frontend/ui/app.slint:3010
+#: rust/frontend/ui/app.slint:2904
 msgid "{} games"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:3163
+#: rust/frontend/ui/app.slint:3057
 msgid "Loading game…"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:3277
+#: rust/frontend/ui/app.slint:3171
 msgid "This deck is empty"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:3278
+#: rust/frontend/ui/app.slint:3172
 msgid "No decks yet"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:3280 rust/frontend/ui/search.slint:99
+#: rust/frontend/ui/app.slint:3174 rust/frontend/ui/search.slint:99
 msgid "No matches"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:3281
+#: rust/frontend/ui/app.slint:3175
 msgid "No games match these tags"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:3281
+#: rust/frontend/ui/app.slint:3175
 msgid "No games in this system"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:3283 rust/frontend/ui/labels.slint:55
+#: rust/frontend/ui/app.slint:3177 rust/frontend/ui/labels.slint:55
 msgid "Loading deck…"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:3284 rust/frontend/ui/labels.slint:54
+#: rust/frontend/ui/app.slint:3178 rust/frontend/ui/labels.slint:54
 msgid "Loading decks…"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:3285 rust/frontend/ui/labels.slint:56
+#: rust/frontend/ui/app.slint:3179 rust/frontend/ui/labels.slint:56
 msgid "Loading top played…"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:3286 rust/frontend/ui/labels.slint:52
+#: rust/frontend/ui/app.slint:3180 rust/frontend/ui/labels.slint:52
 msgid "Loading recently played…"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:3287 rust/frontend/ui/labels.slint:53
-#: rust/frontend/ui/app.slint:3287 rust/frontend/ui/labels.slint:53 rust/frontend/ui/search.slint:97
+#: rust/frontend/ui/app.slint:3181 rust/frontend/ui/labels.slint:53
+#: rust/frontend/ui/app.slint:3181 rust/frontend/ui/labels.slint:53 rust/frontend/ui/search.slint:97
 msgid "Searching…"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:3287 rust/frontend/ui/labels.slint:50
+#: rust/frontend/ui/app.slint:3181 rust/frontend/ui/labels.slint:50
 msgid "Loading games…"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:3368
+#: rust/frontend/ui/app.slint:3262
 msgid "Left/Right adjust width"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:3369
+#: rust/frontend/ui/app.slint:3263
 msgid "Arrows adjust position"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:3392
+#: rust/frontend/ui/app.slint:3286
 msgid "Adjust position"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:3392
+#: rust/frontend/ui/app.slint:3286
 msgid "Adjust width"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:3399
+#: rust/frontend/ui/app.slint:3293
 msgid "Accept or Back saves"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:3511 rust/frontend/ui/rename.slint:61
+#: rust/frontend/ui/app.slint:3405 rust/frontend/ui/rename.slint:61
 msgid "New deck"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:3512 rust/frontend/ui/rename.slint:62
+#: rust/frontend/ui/app.slint:3406 rust/frontend/ui/rename.slint:62
 msgid "Rename deck"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:3512 rust/frontend/ui/rename.slint:62
+#: rust/frontend/ui/app.slint:3406 rust/frontend/ui/rename.slint:62
 msgid "Rename tile"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:3514 rust/frontend/ui/labels.slint:110
-#: rust/frontend/ui/app.slint:3514 rust/frontend/ui/labels.slint:110 rust/frontend/ui/settings.slint:201
+#: rust/frontend/ui/app.slint:3408 rust/frontend/ui/labels.slint:110
+#: rust/frontend/ui/app.slint:3408 rust/frontend/ui/labels.slint:110 rust/frontend/ui/settings.slint:201
 msgid "RetroAchievements"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:3516 rust/frontend/ui/file_browser.slint:96
+#: rust/frontend/ui/app.slint:3410 rust/frontend/ui/file_browser.slint:96
 msgid "Places"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:3519 rust/frontend/ui/credits.slint:150
-#: rust/frontend/ui/app.slint:3519 rust/frontend/ui/credits.slint:150
+#: rust/frontend/ui/app.slint:3413 rust/frontend/ui/credits.slint:150
+#: rust/frontend/ui/app.slint:3413 rust/frontend/ui/credits.slint:150
 msgid "Credits"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:3523 rust/frontend/ui/labels.slint:323
-#: rust/frontend/ui/app.slint:3523 rust/frontend/ui/labels.slint:323
+#: rust/frontend/ui/app.slint:3417 rust/frontend/ui/labels.slint:323
+#: rust/frontend/ui/app.slint:3417 rust/frontend/ui/labels.slint:323
 msgid "Browse music"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:3524 rust/frontend/ui/labels.slint:104
-#: rust/frontend/ui/app.slint:3524 rust/frontend/ui/labels.slint:104 rust/frontend/ui/settings.slint:195
+#: rust/frontend/ui/app.slint:3418 rust/frontend/ui/labels.slint:104
+#: rust/frontend/ui/app.slint:3418 rust/frontend/ui/labels.slint:104 rust/frontend/ui/settings.slint:195
 msgid "Background music"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:3559 rust/frontend/ui/app.slint:4057
+#: rust/frontend/ui/app.slint:3453 rust/frontend/ui/app.slint:3951
 msgid "View"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:3560 rust/frontend/ui/app.slint:3651
-#: rust/frontend/ui/app.slint:3560 rust/frontend/ui/app.slint:3651 rust/frontend/ui/app.slint:3772
-#: rust/frontend/ui/app.slint:3560 rust/frontend/ui/app.slint:3651 rust/frontend/ui/app.slint:3772 rust/frontend/ui/app.slint:4200
-#: rust/frontend/ui/app.slint:3560 rust/frontend/ui/app.slint:3651 rust/frontend/ui/app.slint:3772 rust/frontend/ui/app.slint:4200 rust/frontend/ui/app.slint:4238
-#: rust/frontend/ui/app.slint:3560 rust/frontend/ui/app.slint:3651 rust/frontend/ui/app.slint:3772 rust/frontend/ui/app.slint:4200 rust/frontend/ui/app.slint:4238 rust/frontend/ui/app.slint:4256
-#: rust/frontend/ui/app.slint:3560 rust/frontend/ui/app.slint:3651 rust/frontend/ui/app.slint:3772 rust/frontend/ui/app.slint:4200 rust/frontend/ui/app.slint:4238 rust/frontend/ui/app.slint:4256 rust/frontend/ui/app.slint:4363
-#: rust/frontend/ui/app.slint:3560 rust/frontend/ui/app.slint:3651 rust/frontend/ui/app.slint:3772 rust/frontend/ui/app.slint:4200 rust/frontend/ui/app.slint:4238 rust/frontend/ui/app.slint:4256 rust/frontend/ui/app.slint:4363 rust/frontend/ui/app.slint:4436
-#: rust/frontend/ui/app.slint:3560 rust/frontend/ui/app.slint:3651 rust/frontend/ui/app.slint:3772 rust/frontend/ui/app.slint:4200 rust/frontend/ui/app.slint:4238 rust/frontend/ui/app.slint:4256 rust/frontend/ui/app.slint:4363 rust/frontend/ui/app.slint:4436 rust/frontend/ui/app.slint:4453
-#: rust/frontend/ui/app.slint:3560 rust/frontend/ui/app.slint:3651 rust/frontend/ui/app.slint:3772 rust/frontend/ui/app.slint:4200 rust/frontend/ui/app.slint:4238 rust/frontend/ui/app.slint:4256 rust/frontend/ui/app.slint:4363 rust/frontend/ui/app.slint:4436 rust/frontend/ui/app.slint:4453 rust/frontend/ui/app.slint:4471
-#: rust/frontend/ui/app.slint:3560 rust/frontend/ui/app.slint:3651 rust/frontend/ui/app.slint:3772 rust/frontend/ui/app.slint:4200 rust/frontend/ui/app.slint:4238 rust/frontend/ui/app.slint:4256 rust/frontend/ui/app.slint:4363 rust/frontend/ui/app.slint:4436 rust/frontend/ui/app.slint:4453 rust/frontend/ui/app.slint:4471 rust/frontend/ui/app.slint:4487
-#: rust/frontend/ui/app.slint:3560 rust/frontend/ui/app.slint:3651 rust/frontend/ui/app.slint:3772 rust/frontend/ui/app.slint:4200 rust/frontend/ui/app.slint:4238 rust/frontend/ui/app.slint:4256 rust/frontend/ui/app.slint:4363 rust/frontend/ui/app.slint:4436 rust/frontend/ui/app.slint:4453 rust/frontend/ui/app.slint:4471 rust/frontend/ui/app.slint:4487
+#: rust/frontend/ui/app.slint:3454 rust/frontend/ui/app.slint:3545
+#: rust/frontend/ui/app.slint:3454 rust/frontend/ui/app.slint:3545 rust/frontend/ui/app.slint:3666
+#: rust/frontend/ui/app.slint:3454 rust/frontend/ui/app.slint:3545 rust/frontend/ui/app.slint:3666 rust/frontend/ui/app.slint:4094
+#: rust/frontend/ui/app.slint:3454 rust/frontend/ui/app.slint:3545 rust/frontend/ui/app.slint:3666 rust/frontend/ui/app.slint:4094 rust/frontend/ui/app.slint:4132
+#: rust/frontend/ui/app.slint:3454 rust/frontend/ui/app.slint:3545 rust/frontend/ui/app.slint:3666 rust/frontend/ui/app.slint:4094 rust/frontend/ui/app.slint:4132 rust/frontend/ui/app.slint:4150
+#: rust/frontend/ui/app.slint:3454 rust/frontend/ui/app.slint:3545 rust/frontend/ui/app.slint:3666 rust/frontend/ui/app.slint:4094 rust/frontend/ui/app.slint:4132 rust/frontend/ui/app.slint:4150 rust/frontend/ui/app.slint:4257
+#: rust/frontend/ui/app.slint:3454 rust/frontend/ui/app.slint:3545 rust/frontend/ui/app.slint:3666 rust/frontend/ui/app.slint:4094 rust/frontend/ui/app.slint:4132 rust/frontend/ui/app.slint:4150 rust/frontend/ui/app.slint:4257 rust/frontend/ui/app.slint:4330
+#: rust/frontend/ui/app.slint:3454 rust/frontend/ui/app.slint:3545 rust/frontend/ui/app.slint:3666 rust/frontend/ui/app.slint:4094 rust/frontend/ui/app.slint:4132 rust/frontend/ui/app.slint:4150 rust/frontend/ui/app.slint:4257 rust/frontend/ui/app.slint:4330 rust/frontend/ui/app.slint:4347
+#: rust/frontend/ui/app.slint:3454 rust/frontend/ui/app.slint:3545 rust/frontend/ui/app.slint:3666 rust/frontend/ui/app.slint:4094 rust/frontend/ui/app.slint:4132 rust/frontend/ui/app.slint:4150 rust/frontend/ui/app.slint:4257 rust/frontend/ui/app.slint:4330 rust/frontend/ui/app.slint:4347 rust/frontend/ui/app.slint:4365
+#: rust/frontend/ui/app.slint:3454 rust/frontend/ui/app.slint:3545 rust/frontend/ui/app.slint:3666 rust/frontend/ui/app.slint:4094 rust/frontend/ui/app.slint:4132 rust/frontend/ui/app.slint:4150 rust/frontend/ui/app.slint:4257 rust/frontend/ui/app.slint:4330 rust/frontend/ui/app.slint:4347 rust/frontend/ui/app.slint:4365 rust/frontend/ui/app.slint:4381
+#: rust/frontend/ui/app.slint:3454 rust/frontend/ui/app.slint:3545 rust/frontend/ui/app.slint:3666 rust/frontend/ui/app.slint:4094 rust/frontend/ui/app.slint:4132 rust/frontend/ui/app.slint:4150 rust/frontend/ui/app.slint:4257 rust/frontend/ui/app.slint:4330 rust/frontend/ui/app.slint:4347 rust/frontend/ui/app.slint:4365 rust/frontend/ui/app.slint:4381
 msgid "Open"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:3570
+#: rust/frontend/ui/app.slint:3464
 msgid "Page"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:3573
+#: rust/frontend/ui/app.slint:3467
 msgid "Whole page"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:3573
+#: rust/frontend/ui/app.slint:3467
 msgid "Fit width"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:3578 rust/frontend/ui/app.slint:3581
-#: rust/frontend/ui/app.slint:3578 rust/frontend/ui/app.slint:3581 rust/frontend/ui/app.slint:3635
-#: rust/frontend/ui/app.slint:3578 rust/frontend/ui/app.slint:3581 rust/frontend/ui/app.slint:3635 rust/frontend/ui/app.slint:3651
-#: rust/frontend/ui/app.slint:3578 rust/frontend/ui/app.slint:3581 rust/frontend/ui/app.slint:3635 rust/frontend/ui/app.slint:3651 rust/frontend/ui/app.slint:3689
-#: rust/frontend/ui/app.slint:3578 rust/frontend/ui/app.slint:3581 rust/frontend/ui/app.slint:3635 rust/frontend/ui/app.slint:3651 rust/frontend/ui/app.slint:3689 rust/frontend/ui/app.slint:3755
-#: rust/frontend/ui/app.slint:3578 rust/frontend/ui/app.slint:3581 rust/frontend/ui/app.slint:3635 rust/frontend/ui/app.slint:3651 rust/frontend/ui/app.slint:3689 rust/frontend/ui/app.slint:3755 rust/frontend/ui/app.slint:3772
-#: rust/frontend/ui/app.slint:3578 rust/frontend/ui/app.slint:3581 rust/frontend/ui/app.slint:3635 rust/frontend/ui/app.slint:3651 rust/frontend/ui/app.slint:3689 rust/frontend/ui/app.slint:3755 rust/frontend/ui/app.slint:3772 rust/frontend/ui/app.slint:3884
-#: rust/frontend/ui/app.slint:3578 rust/frontend/ui/app.slint:3581 rust/frontend/ui/app.slint:3635 rust/frontend/ui/app.slint:3651 rust/frontend/ui/app.slint:3689 rust/frontend/ui/app.slint:3755 rust/frontend/ui/app.slint:3772 rust/frontend/ui/app.slint:3884 rust/frontend/ui/app.slint:3932
-#: rust/frontend/ui/app.slint:3578 rust/frontend/ui/app.slint:3581 rust/frontend/ui/app.slint:3635 rust/frontend/ui/app.slint:3651 rust/frontend/ui/app.slint:3689 rust/frontend/ui/app.slint:3755 rust/frontend/ui/app.slint:3772 rust/frontend/ui/app.slint:3884 rust/frontend/ui/app.slint:3932 rust/frontend/ui/app.slint:4146
-#: rust/frontend/ui/app.slint:3578 rust/frontend/ui/app.slint:3581 rust/frontend/ui/app.slint:3635 rust/frontend/ui/app.slint:3651 rust/frontend/ui/app.slint:3689 rust/frontend/ui/app.slint:3755 rust/frontend/ui/app.slint:3772 rust/frontend/ui/app.slint:3884 rust/frontend/ui/app.slint:3932 rust/frontend/ui/app.slint:4146 rust/frontend/ui/app.slint:4168
-#: rust/frontend/ui/app.slint:3578 rust/frontend/ui/app.slint:3581 rust/frontend/ui/app.slint:3635 rust/frontend/ui/app.slint:3651 rust/frontend/ui/app.slint:3689 rust/frontend/ui/app.slint:3755 rust/frontend/ui/app.slint:3772 rust/frontend/ui/app.slint:3884 rust/frontend/ui/app.slint:3932 rust/frontend/ui/app.slint:4146 rust/frontend/ui/app.slint:4168
+#: rust/frontend/ui/app.slint:3472 rust/frontend/ui/app.slint:3475
+#: rust/frontend/ui/app.slint:3472 rust/frontend/ui/app.slint:3475 rust/frontend/ui/app.slint:3529
+#: rust/frontend/ui/app.slint:3472 rust/frontend/ui/app.slint:3475 rust/frontend/ui/app.slint:3529 rust/frontend/ui/app.slint:3545
+#: rust/frontend/ui/app.slint:3472 rust/frontend/ui/app.slint:3475 rust/frontend/ui/app.slint:3529 rust/frontend/ui/app.slint:3545 rust/frontend/ui/app.slint:3583
+#: rust/frontend/ui/app.slint:3472 rust/frontend/ui/app.slint:3475 rust/frontend/ui/app.slint:3529 rust/frontend/ui/app.slint:3545 rust/frontend/ui/app.slint:3583 rust/frontend/ui/app.slint:3649
+#: rust/frontend/ui/app.slint:3472 rust/frontend/ui/app.slint:3475 rust/frontend/ui/app.slint:3529 rust/frontend/ui/app.slint:3545 rust/frontend/ui/app.slint:3583 rust/frontend/ui/app.slint:3649 rust/frontend/ui/app.slint:3666
+#: rust/frontend/ui/app.slint:3472 rust/frontend/ui/app.slint:3475 rust/frontend/ui/app.slint:3529 rust/frontend/ui/app.slint:3545 rust/frontend/ui/app.slint:3583 rust/frontend/ui/app.slint:3649 rust/frontend/ui/app.slint:3666 rust/frontend/ui/app.slint:3778
+#: rust/frontend/ui/app.slint:3472 rust/frontend/ui/app.slint:3475 rust/frontend/ui/app.slint:3529 rust/frontend/ui/app.slint:3545 rust/frontend/ui/app.slint:3583 rust/frontend/ui/app.slint:3649 rust/frontend/ui/app.slint:3666 rust/frontend/ui/app.slint:3778 rust/frontend/ui/app.slint:3826
+#: rust/frontend/ui/app.slint:3472 rust/frontend/ui/app.slint:3475 rust/frontend/ui/app.slint:3529 rust/frontend/ui/app.slint:3545 rust/frontend/ui/app.slint:3583 rust/frontend/ui/app.slint:3649 rust/frontend/ui/app.slint:3666 rust/frontend/ui/app.slint:3778 rust/frontend/ui/app.slint:3826 rust/frontend/ui/app.slint:4040
+#: rust/frontend/ui/app.slint:3472 rust/frontend/ui/app.slint:3475 rust/frontend/ui/app.slint:3529 rust/frontend/ui/app.slint:3545 rust/frontend/ui/app.slint:3583 rust/frontend/ui/app.slint:3649 rust/frontend/ui/app.slint:3666 rust/frontend/ui/app.slint:3778 rust/frontend/ui/app.slint:3826 rust/frontend/ui/app.slint:4040 rust/frontend/ui/app.slint:4062
+#: rust/frontend/ui/app.slint:3472 rust/frontend/ui/app.slint:3475 rust/frontend/ui/app.slint:3529 rust/frontend/ui/app.slint:3545 rust/frontend/ui/app.slint:3583 rust/frontend/ui/app.slint:3649 rust/frontend/ui/app.slint:3666 rust/frontend/ui/app.slint:3778 rust/frontend/ui/app.slint:3826 rust/frontend/ui/app.slint:4040 rust/frontend/ui/app.slint:4062
 msgid "Select"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:3581 rust/frontend/ui/app.slint:3606
-#: rust/frontend/ui/app.slint:3581 rust/frontend/ui/app.slint:3606 rust/frontend/ui/settings.slint:181
+#: rust/frontend/ui/app.slint:3475 rust/frontend/ui/app.slint:3500
+#: rust/frontend/ui/app.slint:3475 rust/frontend/ui/app.slint:3500 rust/frontend/ui/settings.slint:181
 msgid "Toggle"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:3603 rust/frontend/ui/settings.slint:180
+#: rust/frontend/ui/app.slint:3497 rust/frontend/ui/settings.slint:180
 msgid "Start"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:3605 rust/frontend/ui/app.slint:3756
-#: rust/frontend/ui/app.slint:3605 rust/frontend/ui/app.slint:3756 rust/frontend/ui/app.slint:3955
-#: rust/frontend/ui/app.slint:3605 rust/frontend/ui/app.slint:3756 rust/frontend/ui/app.slint:3955 rust/frontend/ui/app.slint:3980
-#: rust/frontend/ui/app.slint:3605 rust/frontend/ui/app.slint:3756 rust/frontend/ui/app.slint:3955 rust/frontend/ui/app.slint:3980 rust/frontend/ui/app.slint:3990
-#: rust/frontend/ui/app.slint:3605 rust/frontend/ui/app.slint:3756 rust/frontend/ui/app.slint:3955 rust/frontend/ui/app.slint:3980 rust/frontend/ui/app.slint:3990 rust/frontend/ui/app.slint:4058
-#: rust/frontend/ui/app.slint:3605 rust/frontend/ui/app.slint:3756 rust/frontend/ui/app.slint:3955 rust/frontend/ui/app.slint:3980 rust/frontend/ui/app.slint:3990 rust/frontend/ui/app.slint:4058 rust/frontend/ui/app.slint:4072
-#: rust/frontend/ui/app.slint:3605 rust/frontend/ui/app.slint:3756 rust/frontend/ui/app.slint:3955 rust/frontend/ui/app.slint:3980 rust/frontend/ui/app.slint:3990 rust/frontend/ui/app.slint:4058 rust/frontend/ui/app.slint:4072 rust/frontend/ui/app.slint:4086
-#: rust/frontend/ui/app.slint:3605 rust/frontend/ui/app.slint:3756 rust/frontend/ui/app.slint:3955 rust/frontend/ui/app.slint:3980 rust/frontend/ui/app.slint:3990 rust/frontend/ui/app.slint:4058 rust/frontend/ui/app.slint:4072 rust/frontend/ui/app.slint:4086
+#: rust/frontend/ui/app.slint:3499 rust/frontend/ui/app.slint:3650
+#: rust/frontend/ui/app.slint:3499 rust/frontend/ui/app.slint:3650 rust/frontend/ui/app.slint:3849
+#: rust/frontend/ui/app.slint:3499 rust/frontend/ui/app.slint:3650 rust/frontend/ui/app.slint:3849 rust/frontend/ui/app.slint:3874
+#: rust/frontend/ui/app.slint:3499 rust/frontend/ui/app.slint:3650 rust/frontend/ui/app.slint:3849 rust/frontend/ui/app.slint:3874 rust/frontend/ui/app.slint:3884
+#: rust/frontend/ui/app.slint:3499 rust/frontend/ui/app.slint:3650 rust/frontend/ui/app.slint:3849 rust/frontend/ui/app.slint:3874 rust/frontend/ui/app.slint:3884 rust/frontend/ui/app.slint:3952
+#: rust/frontend/ui/app.slint:3499 rust/frontend/ui/app.slint:3650 rust/frontend/ui/app.slint:3849 rust/frontend/ui/app.slint:3874 rust/frontend/ui/app.slint:3884 rust/frontend/ui/app.slint:3952 rust/frontend/ui/app.slint:3966
+#: rust/frontend/ui/app.slint:3499 rust/frontend/ui/app.slint:3650 rust/frontend/ui/app.slint:3849 rust/frontend/ui/app.slint:3874 rust/frontend/ui/app.slint:3884 rust/frontend/ui/app.slint:3952 rust/frontend/ui/app.slint:3966 rust/frontend/ui/app.slint:3980
+#: rust/frontend/ui/app.slint:3499 rust/frontend/ui/app.slint:3650 rust/frontend/ui/app.slint:3849 rust/frontend/ui/app.slint:3874 rust/frontend/ui/app.slint:3884 rust/frontend/ui/app.slint:3952 rust/frontend/ui/app.slint:3966 rust/frontend/ui/app.slint:3980
 msgid "Close"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:3607
+#: rust/frontend/ui/app.slint:3501
 msgid "Info"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:3608 rust/frontend/ui/app.slint:3622
-#: rust/frontend/ui/app.slint:3608 rust/frontend/ui/app.slint:3622 rust/frontend/ui/app.slint:3636
-#: rust/frontend/ui/app.slint:3608 rust/frontend/ui/app.slint:3622 rust/frontend/ui/app.slint:3636 rust/frontend/ui/app.slint:3652
-#: rust/frontend/ui/app.slint:3608 rust/frontend/ui/app.slint:3622 rust/frontend/ui/app.slint:3636 rust/frontend/ui/app.slint:3652 rust/frontend/ui/app.slint:3669
-#: rust/frontend/ui/app.slint:3608 rust/frontend/ui/app.slint:3622 rust/frontend/ui/app.slint:3636 rust/frontend/ui/app.slint:3652 rust/frontend/ui/app.slint:3669 rust/frontend/ui/app.slint:3684
-#: rust/frontend/ui/app.slint:3608 rust/frontend/ui/app.slint:3622 rust/frontend/ui/app.slint:3636 rust/frontend/ui/app.slint:3652 rust/frontend/ui/app.slint:3669 rust/frontend/ui/app.slint:3684 rust/frontend/ui/app.slint:3707
-#: rust/frontend/ui/app.slint:3608 rust/frontend/ui/app.slint:3622 rust/frontend/ui/app.slint:3636 rust/frontend/ui/app.slint:3652 rust/frontend/ui/app.slint:3669 rust/frontend/ui/app.slint:3684 rust/frontend/ui/app.slint:3707 rust/frontend/ui/app.slint:3721
-#: rust/frontend/ui/app.slint:3608 rust/frontend/ui/app.slint:3622 rust/frontend/ui/app.slint:3636 rust/frontend/ui/app.slint:3652 rust/frontend/ui/app.slint:3669 rust/frontend/ui/app.slint:3684 rust/frontend/ui/app.slint:3707 rust/frontend/ui/app.slint:3721 rust/frontend/ui/app.slint:3750
-#: rust/frontend/ui/app.slint:3608 rust/frontend/ui/app.slint:3622 rust/frontend/ui/app.slint:3636 rust/frontend/ui/app.slint:3652 rust/frontend/ui/app.slint:3669 rust/frontend/ui/app.slint:3684 rust/frontend/ui/app.slint:3707 rust/frontend/ui/app.slint:3721 rust/frontend/ui/app.slint:3750 rust/frontend/ui/app.slint:3767
-#: rust/frontend/ui/app.slint:3608 rust/frontend/ui/app.slint:3622 rust/frontend/ui/app.slint:3636 rust/frontend/ui/app.slint:3652 rust/frontend/ui/app.slint:3669 rust/frontend/ui/app.slint:3684 rust/frontend/ui/app.slint:3707 rust/frontend/ui/app.slint:3721 rust/frontend/ui/app.slint:3750 rust/frontend/ui/app.slint:3767 rust/frontend/ui/app.slint:3780
-#: rust/frontend/ui/app.slint:3608 rust/frontend/ui/app.slint:3622 rust/frontend/ui/app.slint:3636 rust/frontend/ui/app.slint:3652 rust/frontend/ui/app.slint:3669 rust/frontend/ui/app.slint:3684 rust/frontend/ui/app.slint:3707 rust/frontend/ui/app.slint:3721 rust/frontend/ui/app.slint:3750 rust/frontend/ui/app.slint:3767 rust/frontend/ui/app.slint:3780 rust/frontend/ui/app.slint:3818
-#: rust/frontend/ui/app.slint:3608 rust/frontend/ui/app.slint:3622 rust/frontend/ui/app.slint:3636 rust/frontend/ui/app.slint:3652 rust/frontend/ui/app.slint:3669 rust/frontend/ui/app.slint:3684 rust/frontend/ui/app.slint:3707 rust/frontend/ui/app.slint:3721 rust/frontend/ui/app.slint:3750 rust/frontend/ui/app.slint:3767 rust/frontend/ui/app.slint:3780 rust/frontend/ui/app.slint:3818 rust/frontend/ui/app.slint:3831
-#: rust/frontend/ui/app.slint:3608 rust/frontend/ui/app.slint:3622 rust/frontend/ui/app.slint:3636 rust/frontend/ui/app.slint:3652 rust/frontend/ui/app.slint:3669 rust/frontend/ui/app.slint:3684 rust/frontend/ui/app.slint:3707 rust/frontend/ui/app.slint:3721 rust/frontend/ui/app.slint:3750 rust/frontend/ui/app.slint:3767 rust/frontend/ui/app.slint:3780 rust/frontend/ui/app.slint:3818 rust/frontend/ui/app.slint:3831 rust/frontend/ui/app.slint:3841
-#: rust/frontend/ui/app.slint:3608 rust/frontend/ui/app.slint:3622 rust/frontend/ui/app.slint:3636 rust/frontend/ui/app.slint:3652 rust/frontend/ui/app.slint:3669 rust/frontend/ui/app.slint:3684 rust/frontend/ui/app.slint:3707 rust/frontend/ui/app.slint:3721 rust/frontend/ui/app.slint:3750 rust/frontend/ui/app.slint:3767 rust/frontend/ui/app.slint:3780 rust/frontend/ui/app.slint:3818 rust/frontend/ui/app.slint:3831 rust/frontend/ui/app.slint:3841 rust/frontend/ui/app.slint:3856
-#: rust/frontend/ui/app.slint:3608 rust/frontend/ui/app.slint:3622 rust/frontend/ui/app.slint:3636 rust/frontend/ui/app.slint:3652 rust/frontend/ui/app.slint:3669 rust/frontend/ui/app.slint:3684 rust/frontend/ui/app.slint:3707 rust/frontend/ui/app.slint:3721 rust/frontend/ui/app.slint:3750 rust/frontend/ui/app.slint:3767 rust/frontend/ui/app.slint:3780 rust/frontend/ui/app.slint:3818 rust/frontend/ui/app.slint:3831 rust/frontend/ui/app.slint:3841 rust/frontend/ui/app.slint:3856 rust/frontend/ui/app.slint:3872
-#: rust/frontend/ui/app.slint:3608 rust/frontend/ui/app.slint:3622 rust/frontend/ui/app.slint:3636 rust/frontend/ui/app.slint:3652 rust/frontend/ui/app.slint:3669 rust/frontend/ui/app.slint:3684 rust/frontend/ui/app.slint:3707 rust/frontend/ui/app.slint:3721 rust/frontend/ui/app.slint:3750 rust/frontend/ui/app.slint:3767 rust/frontend/ui/app.slint:3780 rust/frontend/ui/app.slint:3818 rust/frontend/ui/app.slint:3831 rust/frontend/ui/app.slint:3841 rust/frontend/ui/app.slint:3856 rust/frontend/ui/app.slint:3872 rust/frontend/ui/app.slint:3900
-#: rust/frontend/ui/app.slint:3608 rust/frontend/ui/app.slint:3622 rust/frontend/ui/app.slint:3636 rust/frontend/ui/app.slint:3652 rust/frontend/ui/app.slint:3669 rust/frontend/ui/app.slint:3684 rust/frontend/ui/app.slint:3707 rust/frontend/ui/app.slint:3721 rust/frontend/ui/app.slint:3750 rust/frontend/ui/app.slint:3767 rust/frontend/ui/app.slint:3780 rust/frontend/ui/app.slint:3818 rust/frontend/ui/app.slint:3831 rust/frontend/ui/app.slint:3841 rust/frontend/ui/app.slint:3856 rust/frontend/ui/app.slint:3872 rust/frontend/ui/app.slint:3900 rust/frontend/ui/app.slint:3925
-#: rust/frontend/ui/app.slint:3608 rust/frontend/ui/app.slint:3622 rust/frontend/ui/app.slint:3636 rust/frontend/ui/app.slint:3652 rust/frontend/ui/app.slint:3669 rust/frontend/ui/app.slint:3684 rust/frontend/ui/app.slint:3707 rust/frontend/ui/app.slint:3721 rust/frontend/ui/app.slint:3750 rust/frontend/ui/app.slint:3767 rust/frontend/ui/app.slint:3780 rust/frontend/ui/app.slint:3818 rust/frontend/ui/app.slint:3831 rust/frontend/ui/app.slint:3841 rust/frontend/ui/app.slint:3856 rust/frontend/ui/app.slint:3872 rust/frontend/ui/app.slint:3900 rust/frontend/ui/app.slint:3925 rust/frontend/ui/app.slint:4008
-#: rust/frontend/ui/app.slint:3608 rust/frontend/ui/app.slint:3622 rust/frontend/ui/app.slint:3636 rust/frontend/ui/app.slint:3652 rust/frontend/ui/app.slint:3669 rust/frontend/ui/app.slint:3684 rust/frontend/ui/app.slint:3707 rust/frontend/ui/app.slint:3721 rust/frontend/ui/app.slint:3750 rust/frontend/ui/app.slint:3767 rust/frontend/ui/app.slint:3780 rust/frontend/ui/app.slint:3818 rust/frontend/ui/app.slint:3831 rust/frontend/ui/app.slint:3841 rust/frontend/ui/app.slint:3856 rust/frontend/ui/app.slint:3872 rust/frontend/ui/app.slint:3900 rust/frontend/ui/app.slint:3925 rust/frontend/ui/app.slint:4008 rust/frontend/ui/app.slint:4015
-#: rust/frontend/ui/app.slint:3608 rust/frontend/ui/app.slint:3622 rust/frontend/ui/app.slint:3636 rust/frontend/ui/app.slint:3652 rust/frontend/ui/app.slint:3669 rust/frontend/ui/app.slint:3684 rust/frontend/ui/app.slint:3707 rust/frontend/ui/app.slint:3721 rust/frontend/ui/app.slint:3750 rust/frontend/ui/app.slint:3767 rust/frontend/ui/app.slint:3780 rust/frontend/ui/app.slint:3818 rust/frontend/ui/app.slint:3831 rust/frontend/ui/app.slint:3841 rust/frontend/ui/app.slint:3856 rust/frontend/ui/app.slint:3872 rust/frontend/ui/app.slint:3900 rust/frontend/ui/app.slint:3925 rust/frontend/ui/app.slint:4008 rust/frontend/ui/app.slint:4015 rust/frontend/ui/app.slint:4029
-#: rust/frontend/ui/app.slint:3608 rust/frontend/ui/app.slint:3622 rust/frontend/ui/app.slint:3636 rust/frontend/ui/app.slint:3652 rust/frontend/ui/app.slint:3669 rust/frontend/ui/app.slint:3684 rust/frontend/ui/app.slint:3707 rust/frontend/ui/app.slint:3721 rust/frontend/ui/app.slint:3750 rust/frontend/ui/app.slint:3767 rust/frontend/ui/app.slint:3780 rust/frontend/ui/app.slint:3818 rust/frontend/ui/app.slint:3831 rust/frontend/ui/app.slint:3841 rust/frontend/ui/app.slint:3856 rust/frontend/ui/app.slint:3872 rust/frontend/ui/app.slint:3900 rust/frontend/ui/app.slint:3925 rust/frontend/ui/app.slint:4008 rust/frontend/ui/app.slint:4015 rust/frontend/ui/app.slint:4029 rust/frontend/ui/app.slint:4041
-#: rust/frontend/ui/app.slint:3608 rust/frontend/ui/app.slint:3622 rust/frontend/ui/app.slint:3636 rust/frontend/ui/app.slint:3652 rust/frontend/ui/app.slint:3669 rust/frontend/ui/app.slint:3684 rust/frontend/ui/app.slint:3707 rust/frontend/ui/app.slint:3721 rust/frontend/ui/app.slint:3750 rust/frontend/ui/app.slint:3767 rust/frontend/ui/app.slint:3780 rust/frontend/ui/app.slint:3818 rust/frontend/ui/app.slint:3831 rust/frontend/ui/app.slint:3841 rust/frontend/ui/app.slint:3856 rust/frontend/ui/app.slint:3872 rust/frontend/ui/app.slint:3900 rust/frontend/ui/app.slint:3925 rust/frontend/ui/app.slint:4008 rust/frontend/ui/app.slint:4015 rust/frontend/ui/app.slint:4029 rust/frontend/ui/app.slint:4041 rust/frontend/ui/app.slint:4099
-#: rust/frontend/ui/app.slint:3608 rust/frontend/ui/app.slint:3622 rust/frontend/ui/app.slint:3636 rust/frontend/ui/app.slint:3652 rust/frontend/ui/app.slint:3669 rust/frontend/ui/app.slint:3684 rust/frontend/ui/app.slint:3707 rust/frontend/ui/app.slint:3721 rust/frontend/ui/app.slint:3750 rust/frontend/ui/app.slint:3767 rust/frontend/ui/app.slint:3780 rust/frontend/ui/app.slint:3818 rust/frontend/ui/app.slint:3831 rust/frontend/ui/app.slint:3841 rust/frontend/ui/app.slint:3856 rust/frontend/ui/app.slint:3872 rust/frontend/ui/app.slint:3900 rust/frontend/ui/app.slint:3925 rust/frontend/ui/app.slint:4008 rust/frontend/ui/app.slint:4015 rust/frontend/ui/app.slint:4029 rust/frontend/ui/app.slint:4041 rust/frontend/ui/app.slint:4099 rust/frontend/ui/app.slint:4123
-#: rust/frontend/ui/app.slint:3608 rust/frontend/ui/app.slint:3622 rust/frontend/ui/app.slint:3636 rust/frontend/ui/app.slint:3652 rust/frontend/ui/app.slint:3669 rust/frontend/ui/app.slint:3684 rust/frontend/ui/app.slint:3707 rust/frontend/ui/app.slint:3721 rust/frontend/ui/app.slint:3750 rust/frontend/ui/app.slint:3767 rust/frontend/ui/app.slint:3780 rust/frontend/ui/app.slint:3818 rust/frontend/ui/app.slint:3831 rust/frontend/ui/app.slint:3841 rust/frontend/ui/app.slint:3856 rust/frontend/ui/app.slint:3872 rust/frontend/ui/app.slint:3900 rust/frontend/ui/app.slint:3925 rust/frontend/ui/app.slint:4008 rust/frontend/ui/app.slint:4015 rust/frontend/ui/app.slint:4029 rust/frontend/ui/app.slint:4041 rust/frontend/ui/app.slint:4099 rust/frontend/ui/app.slint:4123 rust/frontend/ui/app.slint:4140
-#: rust/frontend/ui/app.slint:3608 rust/frontend/ui/app.slint:3622 rust/frontend/ui/app.slint:3636 rust/frontend/ui/app.slint:3652 rust/frontend/ui/app.slint:3669 rust/frontend/ui/app.slint:3684 rust/frontend/ui/app.slint:3707 rust/frontend/ui/app.slint:3721 rust/frontend/ui/app.slint:3750 rust/frontend/ui/app.slint:3767 rust/frontend/ui/app.slint:3780 rust/frontend/ui/app.slint:3818 rust/frontend/ui/app.slint:3831 rust/frontend/ui/app.slint:3841 rust/frontend/ui/app.slint:3856 rust/frontend/ui/app.slint:3872 rust/frontend/ui/app.slint:3900 rust/frontend/ui/app.slint:3925 rust/frontend/ui/app.slint:4008 rust/frontend/ui/app.slint:4015 rust/frontend/ui/app.slint:4029 rust/frontend/ui/app.slint:4041 rust/frontend/ui/app.slint:4099 rust/frontend/ui/app.slint:4123 rust/frontend/ui/app.slint:4140 rust/frontend/ui/app.slint:4169
-#: rust/frontend/ui/app.slint:3608 rust/frontend/ui/app.slint:3622 rust/frontend/ui/app.slint:3636 rust/frontend/ui/app.slint:3652 rust/frontend/ui/app.slint:3669 rust/frontend/ui/app.slint:3684 rust/frontend/ui/app.slint:3707 rust/frontend/ui/app.slint:3721 rust/frontend/ui/app.slint:3750 rust/frontend/ui/app.slint:3767 rust/frontend/ui/app.slint:3780 rust/frontend/ui/app.slint:3818 rust/frontend/ui/app.slint:3831 rust/frontend/ui/app.slint:3841 rust/frontend/ui/app.slint:3856 rust/frontend/ui/app.slint:3872 rust/frontend/ui/app.slint:3900 rust/frontend/ui/app.slint:3925 rust/frontend/ui/app.slint:4008 rust/frontend/ui/app.slint:4015 rust/frontend/ui/app.slint:4029 rust/frontend/ui/app.slint:4041 rust/frontend/ui/app.slint:4099 rust/frontend/ui/app.slint:4123 rust/frontend/ui/app.slint:4140 rust/frontend/ui/app.slint:4169 rust/frontend/ui/app.slint:4220
-#: rust/frontend/ui/app.slint:3608 rust/frontend/ui/app.slint:3622 rust/frontend/ui/app.slint:3636 rust/frontend/ui/app.slint:3652 rust/frontend/ui/app.slint:3669 rust/frontend/ui/app.slint:3684 rust/frontend/ui/app.slint:3707 rust/frontend/ui/app.slint:3721 rust/frontend/ui/app.slint:3750 rust/frontend/ui/app.slint:3767 rust/frontend/ui/app.slint:3780 rust/frontend/ui/app.slint:3818 rust/frontend/ui/app.slint:3831 rust/frontend/ui/app.slint:3841 rust/frontend/ui/app.slint:3856 rust/frontend/ui/app.slint:3872 rust/frontend/ui/app.slint:3900 rust/frontend/ui/app.slint:3925 rust/frontend/ui/app.slint:4008 rust/frontend/ui/app.slint:4015 rust/frontend/ui/app.slint:4029 rust/frontend/ui/app.slint:4041 rust/frontend/ui/app.slint:4099 rust/frontend/ui/app.slint:4123 rust/frontend/ui/app.slint:4140 rust/frontend/ui/app.slint:4169 rust/frontend/ui/app.slint:4220 rust/frontend/ui/app.slint:4233
-#: rust/frontend/ui/app.slint:3608 rust/frontend/ui/app.slint:3622 rust/frontend/ui/app.slint:3636 rust/frontend/ui/app.slint:3652 rust/frontend/ui/app.slint:3669 rust/frontend/ui/app.slint:3684 rust/frontend/ui/app.slint:3707 rust/frontend/ui/app.slint:3721 rust/frontend/ui/app.slint:3750 rust/frontend/ui/app.slint:3767 rust/frontend/ui/app.slint:3780 rust/frontend/ui/app.slint:3818 rust/frontend/ui/app.slint:3831 rust/frontend/ui/app.slint:3841 rust/frontend/ui/app.slint:3856 rust/frontend/ui/app.slint:3872 rust/frontend/ui/app.slint:3900 rust/frontend/ui/app.slint:3925 rust/frontend/ui/app.slint:4008 rust/frontend/ui/app.slint:4015 rust/frontend/ui/app.slint:4029 rust/frontend/ui/app.slint:4041 rust/frontend/ui/app.slint:4099 rust/frontend/ui/app.slint:4123 rust/frontend/ui/app.slint:4140 rust/frontend/ui/app.slint:4169 rust/frontend/ui/app.slint:4220 rust/frontend/ui/app.slint:4233 rust/frontend/ui/app.slint:4252
-#: rust/frontend/ui/app.slint:3608 rust/frontend/ui/app.slint:3622 rust/frontend/ui/app.slint:3636 rust/frontend/ui/app.slint:3652 rust/frontend/ui/app.slint:3669 rust/frontend/ui/app.slint:3684 rust/frontend/ui/app.slint:3707 rust/frontend/ui/app.slint:3721 rust/frontend/ui/app.slint:3750 rust/frontend/ui/app.slint:3767 rust/frontend/ui/app.slint:3780 rust/frontend/ui/app.slint:3818 rust/frontend/ui/app.slint:3831 rust/frontend/ui/app.slint:3841 rust/frontend/ui/app.slint:3856 rust/frontend/ui/app.slint:3872 rust/frontend/ui/app.slint:3900 rust/frontend/ui/app.slint:3925 rust/frontend/ui/app.slint:4008 rust/frontend/ui/app.slint:4015 rust/frontend/ui/app.slint:4029 rust/frontend/ui/app.slint:4041 rust/frontend/ui/app.slint:4099 rust/frontend/ui/app.slint:4123 rust/frontend/ui/app.slint:4140 rust/frontend/ui/app.slint:4169 rust/frontend/ui/app.slint:4220 rust/frontend/ui/app.slint:4233 rust/frontend/ui/app.slint:4252 rust/frontend/ui/app.slint:4264
-#: rust/frontend/ui/app.slint:3608 rust/frontend/ui/app.slint:3622 rust/frontend/ui/app.slint:3636 rust/frontend/ui/app.slint:3652 rust/frontend/ui/app.slint:3669 rust/frontend/ui/app.slint:3684 rust/frontend/ui/app.slint:3707 rust/frontend/ui/app.slint:3721 rust/frontend/ui/app.slint:3750 rust/frontend/ui/app.slint:3767 rust/frontend/ui/app.slint:3780 rust/frontend/ui/app.slint:3818 rust/frontend/ui/app.slint:3831 rust/frontend/ui/app.slint:3841 rust/frontend/ui/app.slint:3856 rust/frontend/ui/app.slint:3872 rust/frontend/ui/app.slint:3900 rust/frontend/ui/app.slint:3925 rust/frontend/ui/app.slint:4008 rust/frontend/ui/app.slint:4015 rust/frontend/ui/app.slint:4029 rust/frontend/ui/app.slint:4041 rust/frontend/ui/app.slint:4099 rust/frontend/ui/app.slint:4123 rust/frontend/ui/app.slint:4140 rust/frontend/ui/app.slint:4169 rust/frontend/ui/app.slint:4220 rust/frontend/ui/app.slint:4233 rust/frontend/ui/app.slint:4252 rust/frontend/ui/app.slint:4264 rust/frontend/ui/app.slint:4279
-#: rust/frontend/ui/app.slint:3608 rust/frontend/ui/app.slint:3622 rust/frontend/ui/app.slint:3636 rust/frontend/ui/app.slint:3652 rust/frontend/ui/app.slint:3669 rust/frontend/ui/app.slint:3684 rust/frontend/ui/app.slint:3707 rust/frontend/ui/app.slint:3721 rust/frontend/ui/app.slint:3750 rust/frontend/ui/app.slint:3767 rust/frontend/ui/app.slint:3780 rust/frontend/ui/app.slint:3818 rust/frontend/ui/app.slint:3831 rust/frontend/ui/app.slint:3841 rust/frontend/ui/app.slint:3856 rust/frontend/ui/app.slint:3872 rust/frontend/ui/app.slint:3900 rust/frontend/ui/app.slint:3925 rust/frontend/ui/app.slint:4008 rust/frontend/ui/app.slint:4015 rust/frontend/ui/app.slint:4029 rust/frontend/ui/app.slint:4041 rust/frontend/ui/app.slint:4099 rust/frontend/ui/app.slint:4123 rust/frontend/ui/app.slint:4140 rust/frontend/ui/app.slint:4169 rust/frontend/ui/app.slint:4220 rust/frontend/ui/app.slint:4233 rust/frontend/ui/app.slint:4252 rust/frontend/ui/app.slint:4264 rust/frontend/ui/app.slint:4279 rust/frontend/ui/app.slint:4292
-#: rust/frontend/ui/app.slint:3608 rust/frontend/ui/app.slint:3622 rust/frontend/ui/app.slint:3636 rust/frontend/ui/app.slint:3652 rust/frontend/ui/app.slint:3669 rust/frontend/ui/app.slint:3684 rust/frontend/ui/app.slint:3707 rust/frontend/ui/app.slint:3721 rust/frontend/ui/app.slint:3750 rust/frontend/ui/app.slint:3767 rust/frontend/ui/app.slint:3780 rust/frontend/ui/app.slint:3818 rust/frontend/ui/app.slint:3831 rust/frontend/ui/app.slint:3841 rust/frontend/ui/app.slint:3856 rust/frontend/ui/app.slint:3872 rust/frontend/ui/app.slint:3900 rust/frontend/ui/app.slint:3925 rust/frontend/ui/app.slint:4008 rust/frontend/ui/app.slint:4015 rust/frontend/ui/app.slint:4029 rust/frontend/ui/app.slint:4041 rust/frontend/ui/app.slint:4099 rust/frontend/ui/app.slint:4123 rust/frontend/ui/app.slint:4140 rust/frontend/ui/app.slint:4169 rust/frontend/ui/app.slint:4220 rust/frontend/ui/app.slint:4233 rust/frontend/ui/app.slint:4252 rust/frontend/ui/app.slint:4264 rust/frontend/ui/app.slint:4279 rust/frontend/ui/app.slint:4292 rust/frontend/ui/app.slint:4310
-#: rust/frontend/ui/app.slint:3608 rust/frontend/ui/app.slint:3622 rust/frontend/ui/app.slint:3636 rust/frontend/ui/app.slint:3652 rust/frontend/ui/app.slint:3669 rust/frontend/ui/app.slint:3684 rust/frontend/ui/app.slint:3707 rust/frontend/ui/app.slint:3721 rust/frontend/ui/app.slint:3750 rust/frontend/ui/app.slint:3767 rust/frontend/ui/app.slint:3780 rust/frontend/ui/app.slint:3818 rust/frontend/ui/app.slint:3831 rust/frontend/ui/app.slint:3841 rust/frontend/ui/app.slint:3856 rust/frontend/ui/app.slint:3872 rust/frontend/ui/app.slint:3900 rust/frontend/ui/app.slint:3925 rust/frontend/ui/app.slint:4008 rust/frontend/ui/app.slint:4015 rust/frontend/ui/app.slint:4029 rust/frontend/ui/app.slint:4041 rust/frontend/ui/app.slint:4099 rust/frontend/ui/app.slint:4123 rust/frontend/ui/app.slint:4140 rust/frontend/ui/app.slint:4169 rust/frontend/ui/app.slint:4220 rust/frontend/ui/app.slint:4233 rust/frontend/ui/app.slint:4252 rust/frontend/ui/app.slint:4264 rust/frontend/ui/app.slint:4279 rust/frontend/ui/app.slint:4292 rust/frontend/ui/app.slint:4310 rust/frontend/ui/app.slint:4324
-#: rust/frontend/ui/app.slint:3608 rust/frontend/ui/app.slint:3622 rust/frontend/ui/app.slint:3636 rust/frontend/ui/app.slint:3652 rust/frontend/ui/app.slint:3669 rust/frontend/ui/app.slint:3684 rust/frontend/ui/app.slint:3707 rust/frontend/ui/app.slint:3721 rust/frontend/ui/app.slint:3750 rust/frontend/ui/app.slint:3767 rust/frontend/ui/app.slint:3780 rust/frontend/ui/app.slint:3818 rust/frontend/ui/app.slint:3831 rust/frontend/ui/app.slint:3841 rust/frontend/ui/app.slint:3856 rust/frontend/ui/app.slint:3872 rust/frontend/ui/app.slint:3900 rust/frontend/ui/app.slint:3925 rust/frontend/ui/app.slint:4008 rust/frontend/ui/app.slint:4015 rust/frontend/ui/app.slint:4029 rust/frontend/ui/app.slint:4041 rust/frontend/ui/app.slint:4099 rust/frontend/ui/app.slint:4123 rust/frontend/ui/app.slint:4140 rust/frontend/ui/app.slint:4169 rust/frontend/ui/app.slint:4220 rust/frontend/ui/app.slint:4233 rust/frontend/ui/app.slint:4252 rust/frontend/ui/app.slint:4264 rust/frontend/ui/app.slint:4279 rust/frontend/ui/app.slint:4292 rust/frontend/ui/app.slint:4310 rust/frontend/ui/app.slint:4324 rust/frontend/ui/app.slint:4336
-#: rust/frontend/ui/app.slint:3608 rust/frontend/ui/app.slint:3622 rust/frontend/ui/app.slint:3636 rust/frontend/ui/app.slint:3652 rust/frontend/ui/app.slint:3669 rust/frontend/ui/app.slint:3684 rust/frontend/ui/app.slint:3707 rust/frontend/ui/app.slint:3721 rust/frontend/ui/app.slint:3750 rust/frontend/ui/app.slint:3767 rust/frontend/ui/app.slint:3780 rust/frontend/ui/app.slint:3818 rust/frontend/ui/app.slint:3831 rust/frontend/ui/app.slint:3841 rust/frontend/ui/app.slint:3856 rust/frontend/ui/app.slint:3872 rust/frontend/ui/app.slint:3900 rust/frontend/ui/app.slint:3925 rust/frontend/ui/app.slint:4008 rust/frontend/ui/app.slint:4015 rust/frontend/ui/app.slint:4029 rust/frontend/ui/app.slint:4041 rust/frontend/ui/app.slint:4099 rust/frontend/ui/app.slint:4123 rust/frontend/ui/app.slint:4140 rust/frontend/ui/app.slint:4169 rust/frontend/ui/app.slint:4220 rust/frontend/ui/app.slint:4233 rust/frontend/ui/app.slint:4252 rust/frontend/ui/app.slint:4264 rust/frontend/ui/app.slint:4279 rust/frontend/ui/app.slint:4292 rust/frontend/ui/app.slint:4310 rust/frontend/ui/app.slint:4324 rust/frontend/ui/app.slint:4336 rust/frontend/ui/app.slint:4353
-#: rust/frontend/ui/app.slint:3608 rust/frontend/ui/app.slint:3622 rust/frontend/ui/app.slint:3636 rust/frontend/ui/app.slint:3652 rust/frontend/ui/app.slint:3669 rust/frontend/ui/app.slint:3684 rust/frontend/ui/app.slint:3707 rust/frontend/ui/app.slint:3721 rust/frontend/ui/app.slint:3750 rust/frontend/ui/app.slint:3767 rust/frontend/ui/app.slint:3780 rust/frontend/ui/app.slint:3818 rust/frontend/ui/app.slint:3831 rust/frontend/ui/app.slint:3841 rust/frontend/ui/app.slint:3856 rust/frontend/ui/app.slint:3872 rust/frontend/ui/app.slint:3900 rust/frontend/ui/app.slint:3925 rust/frontend/ui/app.slint:4008 rust/frontend/ui/app.slint:4015 rust/frontend/ui/app.slint:4029 rust/frontend/ui/app.slint:4041 rust/frontend/ui/app.slint:4099 rust/frontend/ui/app.slint:4123 rust/frontend/ui/app.slint:4140 rust/frontend/ui/app.slint:4169 rust/frontend/ui/app.slint:4220 rust/frontend/ui/app.slint:4233 rust/frontend/ui/app.slint:4252 rust/frontend/ui/app.slint:4264 rust/frontend/ui/app.slint:4279 rust/frontend/ui/app.slint:4292 rust/frontend/ui/app.slint:4310 rust/frontend/ui/app.slint:4324 rust/frontend/ui/app.slint:4336 rust/frontend/ui/app.slint:4353 rust/frontend/ui/app.slint:4364
-#: rust/frontend/ui/app.slint:3608 rust/frontend/ui/app.slint:3622 rust/frontend/ui/app.slint:3636 rust/frontend/ui/app.slint:3652 rust/frontend/ui/app.slint:3669 rust/frontend/ui/app.slint:3684 rust/frontend/ui/app.slint:3707 rust/frontend/ui/app.slint:3721 rust/frontend/ui/app.slint:3750 rust/frontend/ui/app.slint:3767 rust/frontend/ui/app.slint:3780 rust/frontend/ui/app.slint:3818 rust/frontend/ui/app.slint:3831 rust/frontend/ui/app.slint:3841 rust/frontend/ui/app.slint:3856 rust/frontend/ui/app.slint:3872 rust/frontend/ui/app.slint:3900 rust/frontend/ui/app.slint:3925 rust/frontend/ui/app.slint:4008 rust/frontend/ui/app.slint:4015 rust/frontend/ui/app.slint:4029 rust/frontend/ui/app.slint:4041 rust/frontend/ui/app.slint:4099 rust/frontend/ui/app.slint:4123 rust/frontend/ui/app.slint:4140 rust/frontend/ui/app.slint:4169 rust/frontend/ui/app.slint:4220 rust/frontend/ui/app.slint:4233 rust/frontend/ui/app.slint:4252 rust/frontend/ui/app.slint:4264 rust/frontend/ui/app.slint:4279 rust/frontend/ui/app.slint:4292 rust/frontend/ui/app.slint:4310 rust/frontend/ui/app.slint:4324 rust/frontend/ui/app.slint:4336 rust/frontend/ui/app.slint:4353 rust/frontend/ui/app.slint:4364 rust/frontend/ui/app.slint:4370
-#: rust/frontend/ui/app.slint:3608 rust/frontend/ui/app.slint:3622 rust/frontend/ui/app.slint:3636 rust/frontend/ui/app.slint:3652 rust/frontend/ui/app.slint:3669 rust/frontend/ui/app.slint:3684 rust/frontend/ui/app.slint:3707 rust/frontend/ui/app.slint:3721 rust/frontend/ui/app.slint:3750 rust/frontend/ui/app.slint:3767 rust/frontend/ui/app.slint:3780 rust/frontend/ui/app.slint:3818 rust/frontend/ui/app.slint:3831 rust/frontend/ui/app.slint:3841 rust/frontend/ui/app.slint:3856 rust/frontend/ui/app.slint:3872 rust/frontend/ui/app.slint:3900 rust/frontend/ui/app.slint:3925 rust/frontend/ui/app.slint:4008 rust/frontend/ui/app.slint:4015 rust/frontend/ui/app.slint:4029 rust/frontend/ui/app.slint:4041 rust/frontend/ui/app.slint:4099 rust/frontend/ui/app.slint:4123 rust/frontend/ui/app.slint:4140 rust/frontend/ui/app.slint:4169 rust/frontend/ui/app.slint:4220 rust/frontend/ui/app.slint:4233 rust/frontend/ui/app.slint:4252 rust/frontend/ui/app.slint:4264 rust/frontend/ui/app.slint:4279 rust/frontend/ui/app.slint:4292 rust/frontend/ui/app.slint:4310 rust/frontend/ui/app.slint:4324 rust/frontend/ui/app.slint:4336 rust/frontend/ui/app.slint:4353 rust/frontend/ui/app.slint:4364 rust/frontend/ui/app.slint:4370 rust/frontend/ui/app.slint:4396
-#: rust/frontend/ui/app.slint:3608 rust/frontend/ui/app.slint:3622 rust/frontend/ui/app.slint:3636 rust/frontend/ui/app.slint:3652 rust/frontend/ui/app.slint:3669 rust/frontend/ui/app.slint:3684 rust/frontend/ui/app.slint:3707 rust/frontend/ui/app.slint:3721 rust/frontend/ui/app.slint:3750 rust/frontend/ui/app.slint:3767 rust/frontend/ui/app.slint:3780 rust/frontend/ui/app.slint:3818 rust/frontend/ui/app.slint:3831 rust/frontend/ui/app.slint:3841 rust/frontend/ui/app.slint:3856 rust/frontend/ui/app.slint:3872 rust/frontend/ui/app.slint:3900 rust/frontend/ui/app.slint:3925 rust/frontend/ui/app.slint:4008 rust/frontend/ui/app.slint:4015 rust/frontend/ui/app.slint:4029 rust/frontend/ui/app.slint:4041 rust/frontend/ui/app.slint:4099 rust/frontend/ui/app.slint:4123 rust/frontend/ui/app.slint:4140 rust/frontend/ui/app.slint:4169 rust/frontend/ui/app.slint:4220 rust/frontend/ui/app.slint:4233 rust/frontend/ui/app.slint:4252 rust/frontend/ui/app.slint:4264 rust/frontend/ui/app.slint:4279 rust/frontend/ui/app.slint:4292 rust/frontend/ui/app.slint:4310 rust/frontend/ui/app.slint:4324 rust/frontend/ui/app.slint:4336 rust/frontend/ui/app.slint:4353 rust/frontend/ui/app.slint:4364 rust/frontend/ui/app.slint:4370 rust/frontend/ui/app.slint:4396 rust/frontend/ui/app.slint:4409
-#: rust/frontend/ui/app.slint:3608 rust/frontend/ui/app.slint:3622 rust/frontend/ui/app.slint:3636 rust/frontend/ui/app.slint:3652 rust/frontend/ui/app.slint:3669 rust/frontend/ui/app.slint:3684 rust/frontend/ui/app.slint:3707 rust/frontend/ui/app.slint:3721 rust/frontend/ui/app.slint:3750 rust/frontend/ui/app.slint:3767 rust/frontend/ui/app.slint:3780 rust/frontend/ui/app.slint:3818 rust/frontend/ui/app.slint:3831 rust/frontend/ui/app.slint:3841 rust/frontend/ui/app.slint:3856 rust/frontend/ui/app.slint:3872 rust/frontend/ui/app.slint:3900 rust/frontend/ui/app.slint:3925 rust/frontend/ui/app.slint:4008 rust/frontend/ui/app.slint:4015 rust/frontend/ui/app.slint:4029 rust/frontend/ui/app.slint:4041 rust/frontend/ui/app.slint:4099 rust/frontend/ui/app.slint:4123 rust/frontend/ui/app.slint:4140 rust/frontend/ui/app.slint:4169 rust/frontend/ui/app.slint:4220 rust/frontend/ui/app.slint:4233 rust/frontend/ui/app.slint:4252 rust/frontend/ui/app.slint:4264 rust/frontend/ui/app.slint:4279 rust/frontend/ui/app.slint:4292 rust/frontend/ui/app.slint:4310 rust/frontend/ui/app.slint:4324 rust/frontend/ui/app.slint:4336 rust/frontend/ui/app.slint:4353 rust/frontend/ui/app.slint:4364 rust/frontend/ui/app.slint:4370 rust/frontend/ui/app.slint:4396 rust/frontend/ui/app.slint:4409 rust/frontend/ui/app.slint:4438
-#: rust/frontend/ui/app.slint:3608 rust/frontend/ui/app.slint:3622 rust/frontend/ui/app.slint:3636 rust/frontend/ui/app.slint:3652 rust/frontend/ui/app.slint:3669 rust/frontend/ui/app.slint:3684 rust/frontend/ui/app.slint:3707 rust/frontend/ui/app.slint:3721 rust/frontend/ui/app.slint:3750 rust/frontend/ui/app.slint:3767 rust/frontend/ui/app.slint:3780 rust/frontend/ui/app.slint:3818 rust/frontend/ui/app.slint:3831 rust/frontend/ui/app.slint:3841 rust/frontend/ui/app.slint:3856 rust/frontend/ui/app.slint:3872 rust/frontend/ui/app.slint:3900 rust/frontend/ui/app.slint:3925 rust/frontend/ui/app.slint:4008 rust/frontend/ui/app.slint:4015 rust/frontend/ui/app.slint:4029 rust/frontend/ui/app.slint:4041 rust/frontend/ui/app.slint:4099 rust/frontend/ui/app.slint:4123 rust/frontend/ui/app.slint:4140 rust/frontend/ui/app.slint:4169 rust/frontend/ui/app.slint:4220 rust/frontend/ui/app.slint:4233 rust/frontend/ui/app.slint:4252 rust/frontend/ui/app.slint:4264 rust/frontend/ui/app.slint:4279 rust/frontend/ui/app.slint:4292 rust/frontend/ui/app.slint:4310 rust/frontend/ui/app.slint:4324 rust/frontend/ui/app.slint:4336 rust/frontend/ui/app.slint:4353 rust/frontend/ui/app.slint:4364 rust/frontend/ui/app.slint:4370 rust/frontend/ui/app.slint:4396 rust/frontend/ui/app.slint:4409 rust/frontend/ui/app.slint:4438 rust/frontend/ui/app.slint:4456
-#: rust/frontend/ui/app.slint:3608 rust/frontend/ui/app.slint:3622 rust/frontend/ui/app.slint:3636 rust/frontend/ui/app.slint:3652 rust/frontend/ui/app.slint:3669 rust/frontend/ui/app.slint:3684 rust/frontend/ui/app.slint:3707 rust/frontend/ui/app.slint:3721 rust/frontend/ui/app.slint:3750 rust/frontend/ui/app.slint:3767 rust/frontend/ui/app.slint:3780 rust/frontend/ui/app.slint:3818 rust/frontend/ui/app.slint:3831 rust/frontend/ui/app.slint:3841 rust/frontend/ui/app.slint:3856 rust/frontend/ui/app.slint:3872 rust/frontend/ui/app.slint:3900 rust/frontend/ui/app.slint:3925 rust/frontend/ui/app.slint:4008 rust/frontend/ui/app.slint:4015 rust/frontend/ui/app.slint:4029 rust/frontend/ui/app.slint:4041 rust/frontend/ui/app.slint:4099 rust/frontend/ui/app.slint:4123 rust/frontend/ui/app.slint:4140 rust/frontend/ui/app.slint:4169 rust/frontend/ui/app.slint:4220 rust/frontend/ui/app.slint:4233 rust/frontend/ui/app.slint:4252 rust/frontend/ui/app.slint:4264 rust/frontend/ui/app.slint:4279 rust/frontend/ui/app.slint:4292 rust/frontend/ui/app.slint:4310 rust/frontend/ui/app.slint:4324 rust/frontend/ui/app.slint:4336 rust/frontend/ui/app.slint:4353 rust/frontend/ui/app.slint:4364 rust/frontend/ui/app.slint:4370 rust/frontend/ui/app.slint:4396 rust/frontend/ui/app.slint:4409 rust/frontend/ui/app.slint:4438 rust/frontend/ui/app.slint:4456 rust/frontend/ui/app.slint:4473
-#: rust/frontend/ui/app.slint:3608 rust/frontend/ui/app.slint:3622 rust/frontend/ui/app.slint:3636 rust/frontend/ui/app.slint:3652 rust/frontend/ui/app.slint:3669 rust/frontend/ui/app.slint:3684 rust/frontend/ui/app.slint:3707 rust/frontend/ui/app.slint:3721 rust/frontend/ui/app.slint:3750 rust/frontend/ui/app.slint:3767 rust/frontend/ui/app.slint:3780 rust/frontend/ui/app.slint:3818 rust/frontend/ui/app.slint:3831 rust/frontend/ui/app.slint:3841 rust/frontend/ui/app.slint:3856 rust/frontend/ui/app.slint:3872 rust/frontend/ui/app.slint:3900 rust/frontend/ui/app.slint:3925 rust/frontend/ui/app.slint:4008 rust/frontend/ui/app.slint:4015 rust/frontend/ui/app.slint:4029 rust/frontend/ui/app.slint:4041 rust/frontend/ui/app.slint:4099 rust/frontend/ui/app.slint:4123 rust/frontend/ui/app.slint:4140 rust/frontend/ui/app.slint:4169 rust/frontend/ui/app.slint:4220 rust/frontend/ui/app.slint:4233 rust/frontend/ui/app.slint:4252 rust/frontend/ui/app.slint:4264 rust/frontend/ui/app.slint:4279 rust/frontend/ui/app.slint:4292 rust/frontend/ui/app.slint:4310 rust/frontend/ui/app.slint:4324 rust/frontend/ui/app.slint:4336 rust/frontend/ui/app.slint:4353 rust/frontend/ui/app.slint:4364 rust/frontend/ui/app.slint:4370 rust/frontend/ui/app.slint:4396 rust/frontend/ui/app.slint:4409 rust/frontend/ui/app.slint:4438 rust/frontend/ui/app.slint:4456 rust/frontend/ui/app.slint:4473 rust/frontend/ui/app.slint:4490
+#: rust/frontend/ui/app.slint:3502 rust/frontend/ui/app.slint:3516
+#: rust/frontend/ui/app.slint:3502 rust/frontend/ui/app.slint:3516 rust/frontend/ui/app.slint:3530
+#: rust/frontend/ui/app.slint:3502 rust/frontend/ui/app.slint:3516 rust/frontend/ui/app.slint:3530 rust/frontend/ui/app.slint:3546
+#: rust/frontend/ui/app.slint:3502 rust/frontend/ui/app.slint:3516 rust/frontend/ui/app.slint:3530 rust/frontend/ui/app.slint:3546 rust/frontend/ui/app.slint:3563
+#: rust/frontend/ui/app.slint:3502 rust/frontend/ui/app.slint:3516 rust/frontend/ui/app.slint:3530 rust/frontend/ui/app.slint:3546 rust/frontend/ui/app.slint:3563 rust/frontend/ui/app.slint:3578
+#: rust/frontend/ui/app.slint:3502 rust/frontend/ui/app.slint:3516 rust/frontend/ui/app.slint:3530 rust/frontend/ui/app.slint:3546 rust/frontend/ui/app.slint:3563 rust/frontend/ui/app.slint:3578 rust/frontend/ui/app.slint:3601
+#: rust/frontend/ui/app.slint:3502 rust/frontend/ui/app.slint:3516 rust/frontend/ui/app.slint:3530 rust/frontend/ui/app.slint:3546 rust/frontend/ui/app.slint:3563 rust/frontend/ui/app.slint:3578 rust/frontend/ui/app.slint:3601 rust/frontend/ui/app.slint:3615
+#: rust/frontend/ui/app.slint:3502 rust/frontend/ui/app.slint:3516 rust/frontend/ui/app.slint:3530 rust/frontend/ui/app.slint:3546 rust/frontend/ui/app.slint:3563 rust/frontend/ui/app.slint:3578 rust/frontend/ui/app.slint:3601 rust/frontend/ui/app.slint:3615 rust/frontend/ui/app.slint:3644
+#: rust/frontend/ui/app.slint:3502 rust/frontend/ui/app.slint:3516 rust/frontend/ui/app.slint:3530 rust/frontend/ui/app.slint:3546 rust/frontend/ui/app.slint:3563 rust/frontend/ui/app.slint:3578 rust/frontend/ui/app.slint:3601 rust/frontend/ui/app.slint:3615 rust/frontend/ui/app.slint:3644 rust/frontend/ui/app.slint:3661
+#: rust/frontend/ui/app.slint:3502 rust/frontend/ui/app.slint:3516 rust/frontend/ui/app.slint:3530 rust/frontend/ui/app.slint:3546 rust/frontend/ui/app.slint:3563 rust/frontend/ui/app.slint:3578 rust/frontend/ui/app.slint:3601 rust/frontend/ui/app.slint:3615 rust/frontend/ui/app.slint:3644 rust/frontend/ui/app.slint:3661 rust/frontend/ui/app.slint:3674
+#: rust/frontend/ui/app.slint:3502 rust/frontend/ui/app.slint:3516 rust/frontend/ui/app.slint:3530 rust/frontend/ui/app.slint:3546 rust/frontend/ui/app.slint:3563 rust/frontend/ui/app.slint:3578 rust/frontend/ui/app.slint:3601 rust/frontend/ui/app.slint:3615 rust/frontend/ui/app.slint:3644 rust/frontend/ui/app.slint:3661 rust/frontend/ui/app.slint:3674 rust/frontend/ui/app.slint:3712
+#: rust/frontend/ui/app.slint:3502 rust/frontend/ui/app.slint:3516 rust/frontend/ui/app.slint:3530 rust/frontend/ui/app.slint:3546 rust/frontend/ui/app.slint:3563 rust/frontend/ui/app.slint:3578 rust/frontend/ui/app.slint:3601 rust/frontend/ui/app.slint:3615 rust/frontend/ui/app.slint:3644 rust/frontend/ui/app.slint:3661 rust/frontend/ui/app.slint:3674 rust/frontend/ui/app.slint:3712 rust/frontend/ui/app.slint:3725
+#: rust/frontend/ui/app.slint:3502 rust/frontend/ui/app.slint:3516 rust/frontend/ui/app.slint:3530 rust/frontend/ui/app.slint:3546 rust/frontend/ui/app.slint:3563 rust/frontend/ui/app.slint:3578 rust/frontend/ui/app.slint:3601 rust/frontend/ui/app.slint:3615 rust/frontend/ui/app.slint:3644 rust/frontend/ui/app.slint:3661 rust/frontend/ui/app.slint:3674 rust/frontend/ui/app.slint:3712 rust/frontend/ui/app.slint:3725 rust/frontend/ui/app.slint:3735
+#: rust/frontend/ui/app.slint:3502 rust/frontend/ui/app.slint:3516 rust/frontend/ui/app.slint:3530 rust/frontend/ui/app.slint:3546 rust/frontend/ui/app.slint:3563 rust/frontend/ui/app.slint:3578 rust/frontend/ui/app.slint:3601 rust/frontend/ui/app.slint:3615 rust/frontend/ui/app.slint:3644 rust/frontend/ui/app.slint:3661 rust/frontend/ui/app.slint:3674 rust/frontend/ui/app.slint:3712 rust/frontend/ui/app.slint:3725 rust/frontend/ui/app.slint:3735 rust/frontend/ui/app.slint:3750
+#: rust/frontend/ui/app.slint:3502 rust/frontend/ui/app.slint:3516 rust/frontend/ui/app.slint:3530 rust/frontend/ui/app.slint:3546 rust/frontend/ui/app.slint:3563 rust/frontend/ui/app.slint:3578 rust/frontend/ui/app.slint:3601 rust/frontend/ui/app.slint:3615 rust/frontend/ui/app.slint:3644 rust/frontend/ui/app.slint:3661 rust/frontend/ui/app.slint:3674 rust/frontend/ui/app.slint:3712 rust/frontend/ui/app.slint:3725 rust/frontend/ui/app.slint:3735 rust/frontend/ui/app.slint:3750 rust/frontend/ui/app.slint:3766
+#: rust/frontend/ui/app.slint:3502 rust/frontend/ui/app.slint:3516 rust/frontend/ui/app.slint:3530 rust/frontend/ui/app.slint:3546 rust/frontend/ui/app.slint:3563 rust/frontend/ui/app.slint:3578 rust/frontend/ui/app.slint:3601 rust/frontend/ui/app.slint:3615 rust/frontend/ui/app.slint:3644 rust/frontend/ui/app.slint:3661 rust/frontend/ui/app.slint:3674 rust/frontend/ui/app.slint:3712 rust/frontend/ui/app.slint:3725 rust/frontend/ui/app.slint:3735 rust/frontend/ui/app.slint:3750 rust/frontend/ui/app.slint:3766 rust/frontend/ui/app.slint:3794
+#: rust/frontend/ui/app.slint:3502 rust/frontend/ui/app.slint:3516 rust/frontend/ui/app.slint:3530 rust/frontend/ui/app.slint:3546 rust/frontend/ui/app.slint:3563 rust/frontend/ui/app.slint:3578 rust/frontend/ui/app.slint:3601 rust/frontend/ui/app.slint:3615 rust/frontend/ui/app.slint:3644 rust/frontend/ui/app.slint:3661 rust/frontend/ui/app.slint:3674 rust/frontend/ui/app.slint:3712 rust/frontend/ui/app.slint:3725 rust/frontend/ui/app.slint:3735 rust/frontend/ui/app.slint:3750 rust/frontend/ui/app.slint:3766 rust/frontend/ui/app.slint:3794 rust/frontend/ui/app.slint:3819
+#: rust/frontend/ui/app.slint:3502 rust/frontend/ui/app.slint:3516 rust/frontend/ui/app.slint:3530 rust/frontend/ui/app.slint:3546 rust/frontend/ui/app.slint:3563 rust/frontend/ui/app.slint:3578 rust/frontend/ui/app.slint:3601 rust/frontend/ui/app.slint:3615 rust/frontend/ui/app.slint:3644 rust/frontend/ui/app.slint:3661 rust/frontend/ui/app.slint:3674 rust/frontend/ui/app.slint:3712 rust/frontend/ui/app.slint:3725 rust/frontend/ui/app.slint:3735 rust/frontend/ui/app.slint:3750 rust/frontend/ui/app.slint:3766 rust/frontend/ui/app.slint:3794 rust/frontend/ui/app.slint:3819 rust/frontend/ui/app.slint:3902
+#: rust/frontend/ui/app.slint:3502 rust/frontend/ui/app.slint:3516 rust/frontend/ui/app.slint:3530 rust/frontend/ui/app.slint:3546 rust/frontend/ui/app.slint:3563 rust/frontend/ui/app.slint:3578 rust/frontend/ui/app.slint:3601 rust/frontend/ui/app.slint:3615 rust/frontend/ui/app.slint:3644 rust/frontend/ui/app.slint:3661 rust/frontend/ui/app.slint:3674 rust/frontend/ui/app.slint:3712 rust/frontend/ui/app.slint:3725 rust/frontend/ui/app.slint:3735 rust/frontend/ui/app.slint:3750 rust/frontend/ui/app.slint:3766 rust/frontend/ui/app.slint:3794 rust/frontend/ui/app.slint:3819 rust/frontend/ui/app.slint:3902 rust/frontend/ui/app.slint:3909
+#: rust/frontend/ui/app.slint:3502 rust/frontend/ui/app.slint:3516 rust/frontend/ui/app.slint:3530 rust/frontend/ui/app.slint:3546 rust/frontend/ui/app.slint:3563 rust/frontend/ui/app.slint:3578 rust/frontend/ui/app.slint:3601 rust/frontend/ui/app.slint:3615 rust/frontend/ui/app.slint:3644 rust/frontend/ui/app.slint:3661 rust/frontend/ui/app.slint:3674 rust/frontend/ui/app.slint:3712 rust/frontend/ui/app.slint:3725 rust/frontend/ui/app.slint:3735 rust/frontend/ui/app.slint:3750 rust/frontend/ui/app.slint:3766 rust/frontend/ui/app.slint:3794 rust/frontend/ui/app.slint:3819 rust/frontend/ui/app.slint:3902 rust/frontend/ui/app.slint:3909 rust/frontend/ui/app.slint:3923
+#: rust/frontend/ui/app.slint:3502 rust/frontend/ui/app.slint:3516 rust/frontend/ui/app.slint:3530 rust/frontend/ui/app.slint:3546 rust/frontend/ui/app.slint:3563 rust/frontend/ui/app.slint:3578 rust/frontend/ui/app.slint:3601 rust/frontend/ui/app.slint:3615 rust/frontend/ui/app.slint:3644 rust/frontend/ui/app.slint:3661 rust/frontend/ui/app.slint:3674 rust/frontend/ui/app.slint:3712 rust/frontend/ui/app.slint:3725 rust/frontend/ui/app.slint:3735 rust/frontend/ui/app.slint:3750 rust/frontend/ui/app.slint:3766 rust/frontend/ui/app.slint:3794 rust/frontend/ui/app.slint:3819 rust/frontend/ui/app.slint:3902 rust/frontend/ui/app.slint:3909 rust/frontend/ui/app.slint:3923 rust/frontend/ui/app.slint:3935
+#: rust/frontend/ui/app.slint:3502 rust/frontend/ui/app.slint:3516 rust/frontend/ui/app.slint:3530 rust/frontend/ui/app.slint:3546 rust/frontend/ui/app.slint:3563 rust/frontend/ui/app.slint:3578 rust/frontend/ui/app.slint:3601 rust/frontend/ui/app.slint:3615 rust/frontend/ui/app.slint:3644 rust/frontend/ui/app.slint:3661 rust/frontend/ui/app.slint:3674 rust/frontend/ui/app.slint:3712 rust/frontend/ui/app.slint:3725 rust/frontend/ui/app.slint:3735 rust/frontend/ui/app.slint:3750 rust/frontend/ui/app.slint:3766 rust/frontend/ui/app.slint:3794 rust/frontend/ui/app.slint:3819 rust/frontend/ui/app.slint:3902 rust/frontend/ui/app.slint:3909 rust/frontend/ui/app.slint:3923 rust/frontend/ui/app.slint:3935 rust/frontend/ui/app.slint:3993
+#: rust/frontend/ui/app.slint:3502 rust/frontend/ui/app.slint:3516 rust/frontend/ui/app.slint:3530 rust/frontend/ui/app.slint:3546 rust/frontend/ui/app.slint:3563 rust/frontend/ui/app.slint:3578 rust/frontend/ui/app.slint:3601 rust/frontend/ui/app.slint:3615 rust/frontend/ui/app.slint:3644 rust/frontend/ui/app.slint:3661 rust/frontend/ui/app.slint:3674 rust/frontend/ui/app.slint:3712 rust/frontend/ui/app.slint:3725 rust/frontend/ui/app.slint:3735 rust/frontend/ui/app.slint:3750 rust/frontend/ui/app.slint:3766 rust/frontend/ui/app.slint:3794 rust/frontend/ui/app.slint:3819 rust/frontend/ui/app.slint:3902 rust/frontend/ui/app.slint:3909 rust/frontend/ui/app.slint:3923 rust/frontend/ui/app.slint:3935 rust/frontend/ui/app.slint:3993 rust/frontend/ui/app.slint:4017
+#: rust/frontend/ui/app.slint:3502 rust/frontend/ui/app.slint:3516 rust/frontend/ui/app.slint:3530 rust/frontend/ui/app.slint:3546 rust/frontend/ui/app.slint:3563 rust/frontend/ui/app.slint:3578 rust/frontend/ui/app.slint:3601 rust/frontend/ui/app.slint:3615 rust/frontend/ui/app.slint:3644 rust/frontend/ui/app.slint:3661 rust/frontend/ui/app.slint:3674 rust/frontend/ui/app.slint:3712 rust/frontend/ui/app.slint:3725 rust/frontend/ui/app.slint:3735 rust/frontend/ui/app.slint:3750 rust/frontend/ui/app.slint:3766 rust/frontend/ui/app.slint:3794 rust/frontend/ui/app.slint:3819 rust/frontend/ui/app.slint:3902 rust/frontend/ui/app.slint:3909 rust/frontend/ui/app.slint:3923 rust/frontend/ui/app.slint:3935 rust/frontend/ui/app.slint:3993 rust/frontend/ui/app.slint:4017 rust/frontend/ui/app.slint:4034
+#: rust/frontend/ui/app.slint:3502 rust/frontend/ui/app.slint:3516 rust/frontend/ui/app.slint:3530 rust/frontend/ui/app.slint:3546 rust/frontend/ui/app.slint:3563 rust/frontend/ui/app.slint:3578 rust/frontend/ui/app.slint:3601 rust/frontend/ui/app.slint:3615 rust/frontend/ui/app.slint:3644 rust/frontend/ui/app.slint:3661 rust/frontend/ui/app.slint:3674 rust/frontend/ui/app.slint:3712 rust/frontend/ui/app.slint:3725 rust/frontend/ui/app.slint:3735 rust/frontend/ui/app.slint:3750 rust/frontend/ui/app.slint:3766 rust/frontend/ui/app.slint:3794 rust/frontend/ui/app.slint:3819 rust/frontend/ui/app.slint:3902 rust/frontend/ui/app.slint:3909 rust/frontend/ui/app.slint:3923 rust/frontend/ui/app.slint:3935 rust/frontend/ui/app.slint:3993 rust/frontend/ui/app.slint:4017 rust/frontend/ui/app.slint:4034 rust/frontend/ui/app.slint:4063
+#: rust/frontend/ui/app.slint:3502 rust/frontend/ui/app.slint:3516 rust/frontend/ui/app.slint:3530 rust/frontend/ui/app.slint:3546 rust/frontend/ui/app.slint:3563 rust/frontend/ui/app.slint:3578 rust/frontend/ui/app.slint:3601 rust/frontend/ui/app.slint:3615 rust/frontend/ui/app.slint:3644 rust/frontend/ui/app.slint:3661 rust/frontend/ui/app.slint:3674 rust/frontend/ui/app.slint:3712 rust/frontend/ui/app.slint:3725 rust/frontend/ui/app.slint:3735 rust/frontend/ui/app.slint:3750 rust/frontend/ui/app.slint:3766 rust/frontend/ui/app.slint:3794 rust/frontend/ui/app.slint:3819 rust/frontend/ui/app.slint:3902 rust/frontend/ui/app.slint:3909 rust/frontend/ui/app.slint:3923 rust/frontend/ui/app.slint:3935 rust/frontend/ui/app.slint:3993 rust/frontend/ui/app.slint:4017 rust/frontend/ui/app.slint:4034 rust/frontend/ui/app.slint:4063 rust/frontend/ui/app.slint:4114
+#: rust/frontend/ui/app.slint:3502 rust/frontend/ui/app.slint:3516 rust/frontend/ui/app.slint:3530 rust/frontend/ui/app.slint:3546 rust/frontend/ui/app.slint:3563 rust/frontend/ui/app.slint:3578 rust/frontend/ui/app.slint:3601 rust/frontend/ui/app.slint:3615 rust/frontend/ui/app.slint:3644 rust/frontend/ui/app.slint:3661 rust/frontend/ui/app.slint:3674 rust/frontend/ui/app.slint:3712 rust/frontend/ui/app.slint:3725 rust/frontend/ui/app.slint:3735 rust/frontend/ui/app.slint:3750 rust/frontend/ui/app.slint:3766 rust/frontend/ui/app.slint:3794 rust/frontend/ui/app.slint:3819 rust/frontend/ui/app.slint:3902 rust/frontend/ui/app.slint:3909 rust/frontend/ui/app.slint:3923 rust/frontend/ui/app.slint:3935 rust/frontend/ui/app.slint:3993 rust/frontend/ui/app.slint:4017 rust/frontend/ui/app.slint:4034 rust/frontend/ui/app.slint:4063 rust/frontend/ui/app.slint:4114 rust/frontend/ui/app.slint:4127
+#: rust/frontend/ui/app.slint:3502 rust/frontend/ui/app.slint:3516 rust/frontend/ui/app.slint:3530 rust/frontend/ui/app.slint:3546 rust/frontend/ui/app.slint:3563 rust/frontend/ui/app.slint:3578 rust/frontend/ui/app.slint:3601 rust/frontend/ui/app.slint:3615 rust/frontend/ui/app.slint:3644 rust/frontend/ui/app.slint:3661 rust/frontend/ui/app.slint:3674 rust/frontend/ui/app.slint:3712 rust/frontend/ui/app.slint:3725 rust/frontend/ui/app.slint:3735 rust/frontend/ui/app.slint:3750 rust/frontend/ui/app.slint:3766 rust/frontend/ui/app.slint:3794 rust/frontend/ui/app.slint:3819 rust/frontend/ui/app.slint:3902 rust/frontend/ui/app.slint:3909 rust/frontend/ui/app.slint:3923 rust/frontend/ui/app.slint:3935 rust/frontend/ui/app.slint:3993 rust/frontend/ui/app.slint:4017 rust/frontend/ui/app.slint:4034 rust/frontend/ui/app.slint:4063 rust/frontend/ui/app.slint:4114 rust/frontend/ui/app.slint:4127 rust/frontend/ui/app.slint:4146
+#: rust/frontend/ui/app.slint:3502 rust/frontend/ui/app.slint:3516 rust/frontend/ui/app.slint:3530 rust/frontend/ui/app.slint:3546 rust/frontend/ui/app.slint:3563 rust/frontend/ui/app.slint:3578 rust/frontend/ui/app.slint:3601 rust/frontend/ui/app.slint:3615 rust/frontend/ui/app.slint:3644 rust/frontend/ui/app.slint:3661 rust/frontend/ui/app.slint:3674 rust/frontend/ui/app.slint:3712 rust/frontend/ui/app.slint:3725 rust/frontend/ui/app.slint:3735 rust/frontend/ui/app.slint:3750 rust/frontend/ui/app.slint:3766 rust/frontend/ui/app.slint:3794 rust/frontend/ui/app.slint:3819 rust/frontend/ui/app.slint:3902 rust/frontend/ui/app.slint:3909 rust/frontend/ui/app.slint:3923 rust/frontend/ui/app.slint:3935 rust/frontend/ui/app.slint:3993 rust/frontend/ui/app.slint:4017 rust/frontend/ui/app.slint:4034 rust/frontend/ui/app.slint:4063 rust/frontend/ui/app.slint:4114 rust/frontend/ui/app.slint:4127 rust/frontend/ui/app.slint:4146 rust/frontend/ui/app.slint:4158
+#: rust/frontend/ui/app.slint:3502 rust/frontend/ui/app.slint:3516 rust/frontend/ui/app.slint:3530 rust/frontend/ui/app.slint:3546 rust/frontend/ui/app.slint:3563 rust/frontend/ui/app.slint:3578 rust/frontend/ui/app.slint:3601 rust/frontend/ui/app.slint:3615 rust/frontend/ui/app.slint:3644 rust/frontend/ui/app.slint:3661 rust/frontend/ui/app.slint:3674 rust/frontend/ui/app.slint:3712 rust/frontend/ui/app.slint:3725 rust/frontend/ui/app.slint:3735 rust/frontend/ui/app.slint:3750 rust/frontend/ui/app.slint:3766 rust/frontend/ui/app.slint:3794 rust/frontend/ui/app.slint:3819 rust/frontend/ui/app.slint:3902 rust/frontend/ui/app.slint:3909 rust/frontend/ui/app.slint:3923 rust/frontend/ui/app.slint:3935 rust/frontend/ui/app.slint:3993 rust/frontend/ui/app.slint:4017 rust/frontend/ui/app.slint:4034 rust/frontend/ui/app.slint:4063 rust/frontend/ui/app.slint:4114 rust/frontend/ui/app.slint:4127 rust/frontend/ui/app.slint:4146 rust/frontend/ui/app.slint:4158 rust/frontend/ui/app.slint:4173
+#: rust/frontend/ui/app.slint:3502 rust/frontend/ui/app.slint:3516 rust/frontend/ui/app.slint:3530 rust/frontend/ui/app.slint:3546 rust/frontend/ui/app.slint:3563 rust/frontend/ui/app.slint:3578 rust/frontend/ui/app.slint:3601 rust/frontend/ui/app.slint:3615 rust/frontend/ui/app.slint:3644 rust/frontend/ui/app.slint:3661 rust/frontend/ui/app.slint:3674 rust/frontend/ui/app.slint:3712 rust/frontend/ui/app.slint:3725 rust/frontend/ui/app.slint:3735 rust/frontend/ui/app.slint:3750 rust/frontend/ui/app.slint:3766 rust/frontend/ui/app.slint:3794 rust/frontend/ui/app.slint:3819 rust/frontend/ui/app.slint:3902 rust/frontend/ui/app.slint:3909 rust/frontend/ui/app.slint:3923 rust/frontend/ui/app.slint:3935 rust/frontend/ui/app.slint:3993 rust/frontend/ui/app.slint:4017 rust/frontend/ui/app.slint:4034 rust/frontend/ui/app.slint:4063 rust/frontend/ui/app.slint:4114 rust/frontend/ui/app.slint:4127 rust/frontend/ui/app.slint:4146 rust/frontend/ui/app.slint:4158 rust/frontend/ui/app.slint:4173 rust/frontend/ui/app.slint:4186
+#: rust/frontend/ui/app.slint:3502 rust/frontend/ui/app.slint:3516 rust/frontend/ui/app.slint:3530 rust/frontend/ui/app.slint:3546 rust/frontend/ui/app.slint:3563 rust/frontend/ui/app.slint:3578 rust/frontend/ui/app.slint:3601 rust/frontend/ui/app.slint:3615 rust/frontend/ui/app.slint:3644 rust/frontend/ui/app.slint:3661 rust/frontend/ui/app.slint:3674 rust/frontend/ui/app.slint:3712 rust/frontend/ui/app.slint:3725 rust/frontend/ui/app.slint:3735 rust/frontend/ui/app.slint:3750 rust/frontend/ui/app.slint:3766 rust/frontend/ui/app.slint:3794 rust/frontend/ui/app.slint:3819 rust/frontend/ui/app.slint:3902 rust/frontend/ui/app.slint:3909 rust/frontend/ui/app.slint:3923 rust/frontend/ui/app.slint:3935 rust/frontend/ui/app.slint:3993 rust/frontend/ui/app.slint:4017 rust/frontend/ui/app.slint:4034 rust/frontend/ui/app.slint:4063 rust/frontend/ui/app.slint:4114 rust/frontend/ui/app.slint:4127 rust/frontend/ui/app.slint:4146 rust/frontend/ui/app.slint:4158 rust/frontend/ui/app.slint:4173 rust/frontend/ui/app.slint:4186 rust/frontend/ui/app.slint:4204
+#: rust/frontend/ui/app.slint:3502 rust/frontend/ui/app.slint:3516 rust/frontend/ui/app.slint:3530 rust/frontend/ui/app.slint:3546 rust/frontend/ui/app.slint:3563 rust/frontend/ui/app.slint:3578 rust/frontend/ui/app.slint:3601 rust/frontend/ui/app.slint:3615 rust/frontend/ui/app.slint:3644 rust/frontend/ui/app.slint:3661 rust/frontend/ui/app.slint:3674 rust/frontend/ui/app.slint:3712 rust/frontend/ui/app.slint:3725 rust/frontend/ui/app.slint:3735 rust/frontend/ui/app.slint:3750 rust/frontend/ui/app.slint:3766 rust/frontend/ui/app.slint:3794 rust/frontend/ui/app.slint:3819 rust/frontend/ui/app.slint:3902 rust/frontend/ui/app.slint:3909 rust/frontend/ui/app.slint:3923 rust/frontend/ui/app.slint:3935 rust/frontend/ui/app.slint:3993 rust/frontend/ui/app.slint:4017 rust/frontend/ui/app.slint:4034 rust/frontend/ui/app.slint:4063 rust/frontend/ui/app.slint:4114 rust/frontend/ui/app.slint:4127 rust/frontend/ui/app.slint:4146 rust/frontend/ui/app.slint:4158 rust/frontend/ui/app.slint:4173 rust/frontend/ui/app.slint:4186 rust/frontend/ui/app.slint:4204 rust/frontend/ui/app.slint:4218
+#: rust/frontend/ui/app.slint:3502 rust/frontend/ui/app.slint:3516 rust/frontend/ui/app.slint:3530 rust/frontend/ui/app.slint:3546 rust/frontend/ui/app.slint:3563 rust/frontend/ui/app.slint:3578 rust/frontend/ui/app.slint:3601 rust/frontend/ui/app.slint:3615 rust/frontend/ui/app.slint:3644 rust/frontend/ui/app.slint:3661 rust/frontend/ui/app.slint:3674 rust/frontend/ui/app.slint:3712 rust/frontend/ui/app.slint:3725 rust/frontend/ui/app.slint:3735 rust/frontend/ui/app.slint:3750 rust/frontend/ui/app.slint:3766 rust/frontend/ui/app.slint:3794 rust/frontend/ui/app.slint:3819 rust/frontend/ui/app.slint:3902 rust/frontend/ui/app.slint:3909 rust/frontend/ui/app.slint:3923 rust/frontend/ui/app.slint:3935 rust/frontend/ui/app.slint:3993 rust/frontend/ui/app.slint:4017 rust/frontend/ui/app.slint:4034 rust/frontend/ui/app.slint:4063 rust/frontend/ui/app.slint:4114 rust/frontend/ui/app.slint:4127 rust/frontend/ui/app.slint:4146 rust/frontend/ui/app.slint:4158 rust/frontend/ui/app.slint:4173 rust/frontend/ui/app.slint:4186 rust/frontend/ui/app.slint:4204 rust/frontend/ui/app.slint:4218 rust/frontend/ui/app.slint:4230
+#: rust/frontend/ui/app.slint:3502 rust/frontend/ui/app.slint:3516 rust/frontend/ui/app.slint:3530 rust/frontend/ui/app.slint:3546 rust/frontend/ui/app.slint:3563 rust/frontend/ui/app.slint:3578 rust/frontend/ui/app.slint:3601 rust/frontend/ui/app.slint:3615 rust/frontend/ui/app.slint:3644 rust/frontend/ui/app.slint:3661 rust/frontend/ui/app.slint:3674 rust/frontend/ui/app.slint:3712 rust/frontend/ui/app.slint:3725 rust/frontend/ui/app.slint:3735 rust/frontend/ui/app.slint:3750 rust/frontend/ui/app.slint:3766 rust/frontend/ui/app.slint:3794 rust/frontend/ui/app.slint:3819 rust/frontend/ui/app.slint:3902 rust/frontend/ui/app.slint:3909 rust/frontend/ui/app.slint:3923 rust/frontend/ui/app.slint:3935 rust/frontend/ui/app.slint:3993 rust/frontend/ui/app.slint:4017 rust/frontend/ui/app.slint:4034 rust/frontend/ui/app.slint:4063 rust/frontend/ui/app.slint:4114 rust/frontend/ui/app.slint:4127 rust/frontend/ui/app.slint:4146 rust/frontend/ui/app.slint:4158 rust/frontend/ui/app.slint:4173 rust/frontend/ui/app.slint:4186 rust/frontend/ui/app.slint:4204 rust/frontend/ui/app.slint:4218 rust/frontend/ui/app.slint:4230 rust/frontend/ui/app.slint:4247
+#: rust/frontend/ui/app.slint:3502 rust/frontend/ui/app.slint:3516 rust/frontend/ui/app.slint:3530 rust/frontend/ui/app.slint:3546 rust/frontend/ui/app.slint:3563 rust/frontend/ui/app.slint:3578 rust/frontend/ui/app.slint:3601 rust/frontend/ui/app.slint:3615 rust/frontend/ui/app.slint:3644 rust/frontend/ui/app.slint:3661 rust/frontend/ui/app.slint:3674 rust/frontend/ui/app.slint:3712 rust/frontend/ui/app.slint:3725 rust/frontend/ui/app.slint:3735 rust/frontend/ui/app.slint:3750 rust/frontend/ui/app.slint:3766 rust/frontend/ui/app.slint:3794 rust/frontend/ui/app.slint:3819 rust/frontend/ui/app.slint:3902 rust/frontend/ui/app.slint:3909 rust/frontend/ui/app.slint:3923 rust/frontend/ui/app.slint:3935 rust/frontend/ui/app.slint:3993 rust/frontend/ui/app.slint:4017 rust/frontend/ui/app.slint:4034 rust/frontend/ui/app.slint:4063 rust/frontend/ui/app.slint:4114 rust/frontend/ui/app.slint:4127 rust/frontend/ui/app.slint:4146 rust/frontend/ui/app.slint:4158 rust/frontend/ui/app.slint:4173 rust/frontend/ui/app.slint:4186 rust/frontend/ui/app.slint:4204 rust/frontend/ui/app.slint:4218 rust/frontend/ui/app.slint:4230 rust/frontend/ui/app.slint:4247 rust/frontend/ui/app.slint:4258
+#: rust/frontend/ui/app.slint:3502 rust/frontend/ui/app.slint:3516 rust/frontend/ui/app.slint:3530 rust/frontend/ui/app.slint:3546 rust/frontend/ui/app.slint:3563 rust/frontend/ui/app.slint:3578 rust/frontend/ui/app.slint:3601 rust/frontend/ui/app.slint:3615 rust/frontend/ui/app.slint:3644 rust/frontend/ui/app.slint:3661 rust/frontend/ui/app.slint:3674 rust/frontend/ui/app.slint:3712 rust/frontend/ui/app.slint:3725 rust/frontend/ui/app.slint:3735 rust/frontend/ui/app.slint:3750 rust/frontend/ui/app.slint:3766 rust/frontend/ui/app.slint:3794 rust/frontend/ui/app.slint:3819 rust/frontend/ui/app.slint:3902 rust/frontend/ui/app.slint:3909 rust/frontend/ui/app.slint:3923 rust/frontend/ui/app.slint:3935 rust/frontend/ui/app.slint:3993 rust/frontend/ui/app.slint:4017 rust/frontend/ui/app.slint:4034 rust/frontend/ui/app.slint:4063 rust/frontend/ui/app.slint:4114 rust/frontend/ui/app.slint:4127 rust/frontend/ui/app.slint:4146 rust/frontend/ui/app.slint:4158 rust/frontend/ui/app.slint:4173 rust/frontend/ui/app.slint:4186 rust/frontend/ui/app.slint:4204 rust/frontend/ui/app.slint:4218 rust/frontend/ui/app.slint:4230 rust/frontend/ui/app.slint:4247 rust/frontend/ui/app.slint:4258 rust/frontend/ui/app.slint:4264
+#: rust/frontend/ui/app.slint:3502 rust/frontend/ui/app.slint:3516 rust/frontend/ui/app.slint:3530 rust/frontend/ui/app.slint:3546 rust/frontend/ui/app.slint:3563 rust/frontend/ui/app.slint:3578 rust/frontend/ui/app.slint:3601 rust/frontend/ui/app.slint:3615 rust/frontend/ui/app.slint:3644 rust/frontend/ui/app.slint:3661 rust/frontend/ui/app.slint:3674 rust/frontend/ui/app.slint:3712 rust/frontend/ui/app.slint:3725 rust/frontend/ui/app.slint:3735 rust/frontend/ui/app.slint:3750 rust/frontend/ui/app.slint:3766 rust/frontend/ui/app.slint:3794 rust/frontend/ui/app.slint:3819 rust/frontend/ui/app.slint:3902 rust/frontend/ui/app.slint:3909 rust/frontend/ui/app.slint:3923 rust/frontend/ui/app.slint:3935 rust/frontend/ui/app.slint:3993 rust/frontend/ui/app.slint:4017 rust/frontend/ui/app.slint:4034 rust/frontend/ui/app.slint:4063 rust/frontend/ui/app.slint:4114 rust/frontend/ui/app.slint:4127 rust/frontend/ui/app.slint:4146 rust/frontend/ui/app.slint:4158 rust/frontend/ui/app.slint:4173 rust/frontend/ui/app.slint:4186 rust/frontend/ui/app.slint:4204 rust/frontend/ui/app.slint:4218 rust/frontend/ui/app.slint:4230 rust/frontend/ui/app.slint:4247 rust/frontend/ui/app.slint:4258 rust/frontend/ui/app.slint:4264 rust/frontend/ui/app.slint:4290
+#: rust/frontend/ui/app.slint:3502 rust/frontend/ui/app.slint:3516 rust/frontend/ui/app.slint:3530 rust/frontend/ui/app.slint:3546 rust/frontend/ui/app.slint:3563 rust/frontend/ui/app.slint:3578 rust/frontend/ui/app.slint:3601 rust/frontend/ui/app.slint:3615 rust/frontend/ui/app.slint:3644 rust/frontend/ui/app.slint:3661 rust/frontend/ui/app.slint:3674 rust/frontend/ui/app.slint:3712 rust/frontend/ui/app.slint:3725 rust/frontend/ui/app.slint:3735 rust/frontend/ui/app.slint:3750 rust/frontend/ui/app.slint:3766 rust/frontend/ui/app.slint:3794 rust/frontend/ui/app.slint:3819 rust/frontend/ui/app.slint:3902 rust/frontend/ui/app.slint:3909 rust/frontend/ui/app.slint:3923 rust/frontend/ui/app.slint:3935 rust/frontend/ui/app.slint:3993 rust/frontend/ui/app.slint:4017 rust/frontend/ui/app.slint:4034 rust/frontend/ui/app.slint:4063 rust/frontend/ui/app.slint:4114 rust/frontend/ui/app.slint:4127 rust/frontend/ui/app.slint:4146 rust/frontend/ui/app.slint:4158 rust/frontend/ui/app.slint:4173 rust/frontend/ui/app.slint:4186 rust/frontend/ui/app.slint:4204 rust/frontend/ui/app.slint:4218 rust/frontend/ui/app.slint:4230 rust/frontend/ui/app.slint:4247 rust/frontend/ui/app.slint:4258 rust/frontend/ui/app.slint:4264 rust/frontend/ui/app.slint:4290 rust/frontend/ui/app.slint:4303
+#: rust/frontend/ui/app.slint:3502 rust/frontend/ui/app.slint:3516 rust/frontend/ui/app.slint:3530 rust/frontend/ui/app.slint:3546 rust/frontend/ui/app.slint:3563 rust/frontend/ui/app.slint:3578 rust/frontend/ui/app.slint:3601 rust/frontend/ui/app.slint:3615 rust/frontend/ui/app.slint:3644 rust/frontend/ui/app.slint:3661 rust/frontend/ui/app.slint:3674 rust/frontend/ui/app.slint:3712 rust/frontend/ui/app.slint:3725 rust/frontend/ui/app.slint:3735 rust/frontend/ui/app.slint:3750 rust/frontend/ui/app.slint:3766 rust/frontend/ui/app.slint:3794 rust/frontend/ui/app.slint:3819 rust/frontend/ui/app.slint:3902 rust/frontend/ui/app.slint:3909 rust/frontend/ui/app.slint:3923 rust/frontend/ui/app.slint:3935 rust/frontend/ui/app.slint:3993 rust/frontend/ui/app.slint:4017 rust/frontend/ui/app.slint:4034 rust/frontend/ui/app.slint:4063 rust/frontend/ui/app.slint:4114 rust/frontend/ui/app.slint:4127 rust/frontend/ui/app.slint:4146 rust/frontend/ui/app.slint:4158 rust/frontend/ui/app.slint:4173 rust/frontend/ui/app.slint:4186 rust/frontend/ui/app.slint:4204 rust/frontend/ui/app.slint:4218 rust/frontend/ui/app.slint:4230 rust/frontend/ui/app.slint:4247 rust/frontend/ui/app.slint:4258 rust/frontend/ui/app.slint:4264 rust/frontend/ui/app.slint:4290 rust/frontend/ui/app.slint:4303 rust/frontend/ui/app.slint:4332
+#: rust/frontend/ui/app.slint:3502 rust/frontend/ui/app.slint:3516 rust/frontend/ui/app.slint:3530 rust/frontend/ui/app.slint:3546 rust/frontend/ui/app.slint:3563 rust/frontend/ui/app.slint:3578 rust/frontend/ui/app.slint:3601 rust/frontend/ui/app.slint:3615 rust/frontend/ui/app.slint:3644 rust/frontend/ui/app.slint:3661 rust/frontend/ui/app.slint:3674 rust/frontend/ui/app.slint:3712 rust/frontend/ui/app.slint:3725 rust/frontend/ui/app.slint:3735 rust/frontend/ui/app.slint:3750 rust/frontend/ui/app.slint:3766 rust/frontend/ui/app.slint:3794 rust/frontend/ui/app.slint:3819 rust/frontend/ui/app.slint:3902 rust/frontend/ui/app.slint:3909 rust/frontend/ui/app.slint:3923 rust/frontend/ui/app.slint:3935 rust/frontend/ui/app.slint:3993 rust/frontend/ui/app.slint:4017 rust/frontend/ui/app.slint:4034 rust/frontend/ui/app.slint:4063 rust/frontend/ui/app.slint:4114 rust/frontend/ui/app.slint:4127 rust/frontend/ui/app.slint:4146 rust/frontend/ui/app.slint:4158 rust/frontend/ui/app.slint:4173 rust/frontend/ui/app.slint:4186 rust/frontend/ui/app.slint:4204 rust/frontend/ui/app.slint:4218 rust/frontend/ui/app.slint:4230 rust/frontend/ui/app.slint:4247 rust/frontend/ui/app.slint:4258 rust/frontend/ui/app.slint:4264 rust/frontend/ui/app.slint:4290 rust/frontend/ui/app.slint:4303 rust/frontend/ui/app.slint:4332 rust/frontend/ui/app.slint:4350
+#: rust/frontend/ui/app.slint:3502 rust/frontend/ui/app.slint:3516 rust/frontend/ui/app.slint:3530 rust/frontend/ui/app.slint:3546 rust/frontend/ui/app.slint:3563 rust/frontend/ui/app.slint:3578 rust/frontend/ui/app.slint:3601 rust/frontend/ui/app.slint:3615 rust/frontend/ui/app.slint:3644 rust/frontend/ui/app.slint:3661 rust/frontend/ui/app.slint:3674 rust/frontend/ui/app.slint:3712 rust/frontend/ui/app.slint:3725 rust/frontend/ui/app.slint:3735 rust/frontend/ui/app.slint:3750 rust/frontend/ui/app.slint:3766 rust/frontend/ui/app.slint:3794 rust/frontend/ui/app.slint:3819 rust/frontend/ui/app.slint:3902 rust/frontend/ui/app.slint:3909 rust/frontend/ui/app.slint:3923 rust/frontend/ui/app.slint:3935 rust/frontend/ui/app.slint:3993 rust/frontend/ui/app.slint:4017 rust/frontend/ui/app.slint:4034 rust/frontend/ui/app.slint:4063 rust/frontend/ui/app.slint:4114 rust/frontend/ui/app.slint:4127 rust/frontend/ui/app.slint:4146 rust/frontend/ui/app.slint:4158 rust/frontend/ui/app.slint:4173 rust/frontend/ui/app.slint:4186 rust/frontend/ui/app.slint:4204 rust/frontend/ui/app.slint:4218 rust/frontend/ui/app.slint:4230 rust/frontend/ui/app.slint:4247 rust/frontend/ui/app.slint:4258 rust/frontend/ui/app.slint:4264 rust/frontend/ui/app.slint:4290 rust/frontend/ui/app.slint:4303 rust/frontend/ui/app.slint:4332 rust/frontend/ui/app.slint:4350 rust/frontend/ui/app.slint:4367
+#: rust/frontend/ui/app.slint:3502 rust/frontend/ui/app.slint:3516 rust/frontend/ui/app.slint:3530 rust/frontend/ui/app.slint:3546 rust/frontend/ui/app.slint:3563 rust/frontend/ui/app.slint:3578 rust/frontend/ui/app.slint:3601 rust/frontend/ui/app.slint:3615 rust/frontend/ui/app.slint:3644 rust/frontend/ui/app.slint:3661 rust/frontend/ui/app.slint:3674 rust/frontend/ui/app.slint:3712 rust/frontend/ui/app.slint:3725 rust/frontend/ui/app.slint:3735 rust/frontend/ui/app.slint:3750 rust/frontend/ui/app.slint:3766 rust/frontend/ui/app.slint:3794 rust/frontend/ui/app.slint:3819 rust/frontend/ui/app.slint:3902 rust/frontend/ui/app.slint:3909 rust/frontend/ui/app.slint:3923 rust/frontend/ui/app.slint:3935 rust/frontend/ui/app.slint:3993 rust/frontend/ui/app.slint:4017 rust/frontend/ui/app.slint:4034 rust/frontend/ui/app.slint:4063 rust/frontend/ui/app.slint:4114 rust/frontend/ui/app.slint:4127 rust/frontend/ui/app.slint:4146 rust/frontend/ui/app.slint:4158 rust/frontend/ui/app.slint:4173 rust/frontend/ui/app.slint:4186 rust/frontend/ui/app.slint:4204 rust/frontend/ui/app.slint:4218 rust/frontend/ui/app.slint:4230 rust/frontend/ui/app.slint:4247 rust/frontend/ui/app.slint:4258 rust/frontend/ui/app.slint:4264 rust/frontend/ui/app.slint:4290 rust/frontend/ui/app.slint:4303 rust/frontend/ui/app.slint:4332 rust/frontend/ui/app.slint:4350 rust/frontend/ui/app.slint:4367 rust/frontend/ui/app.slint:4384
 msgid "Back"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:3627 rust/frontend/ui/app.slint:3643
-#: rust/frontend/ui/app.slint:3627 rust/frontend/ui/app.slint:3643 rust/frontend/ui/app.slint:3691
-#: rust/frontend/ui/app.slint:3627 rust/frontend/ui/app.slint:3643 rust/frontend/ui/app.slint:3691 rust/frontend/ui/app.slint:3727
+#: rust/frontend/ui/app.slint:3521 rust/frontend/ui/app.slint:3537
+#: rust/frontend/ui/app.slint:3521 rust/frontend/ui/app.slint:3537 rust/frontend/ui/app.slint:3585
+#: rust/frontend/ui/app.slint:3521 rust/frontend/ui/app.slint:3537 rust/frontend/ui/app.slint:3585 rust/frontend/ui/app.slint:3621
 msgid "Delete"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:3628 rust/frontend/ui/app.slint:3644
-#: rust/frontend/ui/app.slint:3628 rust/frontend/ui/app.slint:3644 rust/frontend/ui/app.slint:3692
-#: rust/frontend/ui/app.slint:3628 rust/frontend/ui/app.slint:3644 rust/frontend/ui/app.slint:3692 rust/frontend/ui/app.slint:3728
+#: rust/frontend/ui/app.slint:3522 rust/frontend/ui/app.slint:3538
+#: rust/frontend/ui/app.slint:3522 rust/frontend/ui/app.slint:3538 rust/frontend/ui/app.slint:3586
+#: rust/frontend/ui/app.slint:3522 rust/frontend/ui/app.slint:3538 rust/frontend/ui/app.slint:3586 rust/frontend/ui/app.slint:3622
 msgid "Space"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:3657 rust/frontend/ui/app.slint:4270
-#: rust/frontend/ui/app.slint:3657 rust/frontend/ui/app.slint:4270 rust/frontend/ui/settings.slint:182
+#: rust/frontend/ui/app.slint:3551 rust/frontend/ui/app.slint:4164
+#: rust/frontend/ui/app.slint:3551 rust/frontend/ui/app.slint:4164 rust/frontend/ui/settings.slint:182
 msgid "Change"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:3683 rust/frontend/ui/app.slint:3690
+#: rust/frontend/ui/app.slint:3577 rust/frontend/ui/app.slint:3584
 msgid "Create"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:3683 rust/frontend/ui/app.slint:3690
-#: rust/frontend/ui/app.slint:3683 rust/frontend/ui/app.slint:3690
+#: rust/frontend/ui/app.slint:3577 rust/frontend/ui/app.slint:3584
+#: rust/frontend/ui/app.slint:3577 rust/frontend/ui/app.slint:3584
 msgid "Save"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:3734 rust/frontend/ui/settings.slint:401
+#: rust/frontend/ui/app.slint:3628 rust/frontend/ui/settings.slint:408
 msgid "Log in"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:3734 rust/frontend/ui/music.slint:152
+#: rust/frontend/ui/app.slint:3628 rust/frontend/ui/music.slint:152
 msgid "Next"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:3742 rust/frontend/ui/app.slint:3899
-#: rust/frontend/ui/app.slint:3742 rust/frontend/ui/app.slint:3899 rust/frontend/ui/app.slint:3998
-#: rust/frontend/ui/app.slint:3742 rust/frontend/ui/app.slint:3899 rust/frontend/ui/app.slint:3998
+#: rust/frontend/ui/app.slint:3636 rust/frontend/ui/app.slint:3793
+#: rust/frontend/ui/app.slint:3636 rust/frontend/ui/app.slint:3793 rust/frontend/ui/app.slint:3892
+#: rust/frontend/ui/app.slint:3636 rust/frontend/ui/app.slint:3793 rust/frontend/ui/app.slint:3892
 msgid "Done"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:3766 rust/frontend/ui/app.slint:3779
-#: rust/frontend/ui/app.slint:3766 rust/frontend/ui/app.slint:3779 rust/frontend/ui/app.slint:3849
-#: rust/frontend/ui/app.slint:3766 rust/frontend/ui/app.slint:3779 rust/frontend/ui/app.slint:3849 rust/frontend/ui/app.slint:3864
-#: rust/frontend/ui/app.slint:3766 rust/frontend/ui/app.slint:3779 rust/frontend/ui/app.slint:3849 rust/frontend/ui/app.slint:3864 rust/frontend/ui/app.slint:4189
-#: rust/frontend/ui/app.slint:3766 rust/frontend/ui/app.slint:3779 rust/frontend/ui/app.slint:3849 rust/frontend/ui/app.slint:3864 rust/frontend/ui/app.slint:4189 rust/frontend/ui/app.slint:4202
-#: rust/frontend/ui/app.slint:3766 rust/frontend/ui/app.slint:3779 rust/frontend/ui/app.slint:3849 rust/frontend/ui/app.slint:3864 rust/frontend/ui/app.slint:4189 rust/frontend/ui/app.slint:4202 rust/frontend/ui/app.slint:4227
-#: rust/frontend/ui/app.slint:3766 rust/frontend/ui/app.slint:3779 rust/frontend/ui/app.slint:3849 rust/frontend/ui/app.slint:3864 rust/frontend/ui/app.slint:4189 rust/frontend/ui/app.slint:4202 rust/frontend/ui/app.slint:4227 rust/frontend/ui/app.slint:4408
-#: rust/frontend/ui/app.slint:3766 rust/frontend/ui/app.slint:3779 rust/frontend/ui/app.slint:3849 rust/frontend/ui/app.slint:3864 rust/frontend/ui/app.slint:4189 rust/frontend/ui/app.slint:4202 rust/frontend/ui/app.slint:4227 rust/frontend/ui/app.slint:4408 rust/frontend/ui/app.slint:4455
-#: rust/frontend/ui/app.slint:3766 rust/frontend/ui/app.slint:3779 rust/frontend/ui/app.slint:3849 rust/frontend/ui/app.slint:3864 rust/frontend/ui/app.slint:4189 rust/frontend/ui/app.slint:4202 rust/frontend/ui/app.slint:4227 rust/frontend/ui/app.slint:4408 rust/frontend/ui/app.slint:4455 rust/frontend/ui/app.slint:4489
-#: rust/frontend/ui/app.slint:3766 rust/frontend/ui/app.slint:3779 rust/frontend/ui/app.slint:3849 rust/frontend/ui/app.slint:3864 rust/frontend/ui/app.slint:4189 rust/frontend/ui/app.slint:4202 rust/frontend/ui/app.slint:4227 rust/frontend/ui/app.slint:4408 rust/frontend/ui/app.slint:4455 rust/frontend/ui/app.slint:4489
+#: rust/frontend/ui/app.slint:3660 rust/frontend/ui/app.slint:3673
+#: rust/frontend/ui/app.slint:3660 rust/frontend/ui/app.slint:3673 rust/frontend/ui/app.slint:3743
+#: rust/frontend/ui/app.slint:3660 rust/frontend/ui/app.slint:3673 rust/frontend/ui/app.slint:3743 rust/frontend/ui/app.slint:3758
+#: rust/frontend/ui/app.slint:3660 rust/frontend/ui/app.slint:3673 rust/frontend/ui/app.slint:3743 rust/frontend/ui/app.slint:3758 rust/frontend/ui/app.slint:4083
+#: rust/frontend/ui/app.slint:3660 rust/frontend/ui/app.slint:3673 rust/frontend/ui/app.slint:3743 rust/frontend/ui/app.slint:3758 rust/frontend/ui/app.slint:4083 rust/frontend/ui/app.slint:4096
+#: rust/frontend/ui/app.slint:3660 rust/frontend/ui/app.slint:3673 rust/frontend/ui/app.slint:3743 rust/frontend/ui/app.slint:3758 rust/frontend/ui/app.slint:4083 rust/frontend/ui/app.slint:4096 rust/frontend/ui/app.slint:4121
+#: rust/frontend/ui/app.slint:3660 rust/frontend/ui/app.slint:3673 rust/frontend/ui/app.slint:3743 rust/frontend/ui/app.slint:3758 rust/frontend/ui/app.slint:4083 rust/frontend/ui/app.slint:4096 rust/frontend/ui/app.slint:4121 rust/frontend/ui/app.slint:4302
+#: rust/frontend/ui/app.slint:3660 rust/frontend/ui/app.slint:3673 rust/frontend/ui/app.slint:3743 rust/frontend/ui/app.slint:3758 rust/frontend/ui/app.slint:4083 rust/frontend/ui/app.slint:4096 rust/frontend/ui/app.slint:4121 rust/frontend/ui/app.slint:4302 rust/frontend/ui/app.slint:4349
+#: rust/frontend/ui/app.slint:3660 rust/frontend/ui/app.slint:3673 rust/frontend/ui/app.slint:3743 rust/frontend/ui/app.slint:3758 rust/frontend/ui/app.slint:4083 rust/frontend/ui/app.slint:4096 rust/frontend/ui/app.slint:4121 rust/frontend/ui/app.slint:4302 rust/frontend/ui/app.slint:4349 rust/frontend/ui/app.slint:4383
+#: rust/frontend/ui/app.slint:3660 rust/frontend/ui/app.slint:3673 rust/frontend/ui/app.slint:3743 rust/frontend/ui/app.slint:3758 rust/frontend/ui/app.slint:4083 rust/frontend/ui/app.slint:4096 rust/frontend/ui/app.slint:4121 rust/frontend/ui/app.slint:4302 rust/frontend/ui/app.slint:4349 rust/frontend/ui/app.slint:4383
 msgid "Menu"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:3817 rust/frontend/ui/app.slint:3899
-#: rust/frontend/ui/app.slint:3817 rust/frontend/ui/app.slint:3899 rust/frontend/ui/app.slint:4207
-#: rust/frontend/ui/app.slint:3817 rust/frontend/ui/app.slint:3899 rust/frontend/ui/app.slint:4207 rust/frontend/ui/app.slint:4232
-#: rust/frontend/ui/app.slint:3817 rust/frontend/ui/app.slint:3899 rust/frontend/ui/app.slint:4207 rust/frontend/ui/app.slint:4232 rust/frontend/ui/app.slint:4402
-#: rust/frontend/ui/app.slint:3817 rust/frontend/ui/app.slint:3899 rust/frontend/ui/app.slint:4207 rust/frontend/ui/app.slint:4232 rust/frontend/ui/app.slint:4402 rust/frontend/ui/labels.slint:482
-#: rust/frontend/ui/app.slint:3817 rust/frontend/ui/app.slint:3899 rust/frontend/ui/app.slint:4207 rust/frontend/ui/app.slint:4232 rust/frontend/ui/app.slint:4402 rust/frontend/ui/labels.slint:482
+#: rust/frontend/ui/app.slint:3711 rust/frontend/ui/app.slint:3793
+#: rust/frontend/ui/app.slint:3711 rust/frontend/ui/app.slint:3793 rust/frontend/ui/app.slint:4101
+#: rust/frontend/ui/app.slint:3711 rust/frontend/ui/app.slint:3793 rust/frontend/ui/app.slint:4101 rust/frontend/ui/app.slint:4126
+#: rust/frontend/ui/app.slint:3711 rust/frontend/ui/app.slint:3793 rust/frontend/ui/app.slint:4101 rust/frontend/ui/app.slint:4126 rust/frontend/ui/app.slint:4296
+#: rust/frontend/ui/app.slint:3711 rust/frontend/ui/app.slint:3793 rust/frontend/ui/app.slint:4101 rust/frontend/ui/app.slint:4126 rust/frontend/ui/app.slint:4296 rust/frontend/ui/labels.slint:482
+#: rust/frontend/ui/app.slint:3711 rust/frontend/ui/app.slint:3793 rust/frontend/ui/app.slint:4101 rust/frontend/ui/app.slint:4126 rust/frontend/ui/app.slint:4296 rust/frontend/ui/labels.slint:482
 msgid "Retry"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:3828 rust/frontend/ui/app.slint:3840
-#: rust/frontend/ui/app.slint:3828 rust/frontend/ui/app.slint:3840 rust/frontend/ui/app.slint:4436
-#: rust/frontend/ui/app.slint:3828 rust/frontend/ui/app.slint:3840 rust/frontend/ui/app.slint:4436 rust/frontend/ui/app.slint:4453
-#: rust/frontend/ui/app.slint:3828 rust/frontend/ui/app.slint:3840 rust/frontend/ui/app.slint:4436 rust/frontend/ui/app.slint:4453 rust/frontend/ui/app.slint:4487
-#: rust/frontend/ui/app.slint:3828 rust/frontend/ui/app.slint:3840 rust/frontend/ui/app.slint:4436 rust/frontend/ui/app.slint:4453 rust/frontend/ui/app.slint:4487
+#: rust/frontend/ui/app.slint:3722 rust/frontend/ui/app.slint:3734
+#: rust/frontend/ui/app.slint:3722 rust/frontend/ui/app.slint:3734 rust/frontend/ui/app.slint:4330
+#: rust/frontend/ui/app.slint:3722 rust/frontend/ui/app.slint:3734 rust/frontend/ui/app.slint:4330 rust/frontend/ui/app.slint:4347
+#: rust/frontend/ui/app.slint:3722 rust/frontend/ui/app.slint:3734 rust/frontend/ui/app.slint:4330 rust/frontend/ui/app.slint:4347 rust/frontend/ui/app.slint:4381
+#: rust/frontend/ui/app.slint:3722 rust/frontend/ui/app.slint:3734 rust/frontend/ui/app.slint:4330 rust/frontend/ui/app.slint:4347 rust/frontend/ui/app.slint:4381
 msgid "Play"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:3829 rust/frontend/ui/app.slint:4188
-#: rust/frontend/ui/app.slint:3829 rust/frontend/ui/app.slint:4188 rust/frontend/ui/app.slint:4239
-#: rust/frontend/ui/app.slint:3829 rust/frontend/ui/app.slint:4188 rust/frontend/ui/app.slint:4239 rust/frontend/ui/app.slint:4257
-#: rust/frontend/ui/app.slint:3829 rust/frontend/ui/app.slint:4188 rust/frontend/ui/app.slint:4239 rust/frontend/ui/app.slint:4257 rust/frontend/ui/app.slint:4437
-#: rust/frontend/ui/app.slint:3829 rust/frontend/ui/app.slint:4188 rust/frontend/ui/app.slint:4239 rust/frontend/ui/app.slint:4257 rust/frontend/ui/app.slint:4437 rust/frontend/ui/app.slint:4472
-#: rust/frontend/ui/app.slint:3829 rust/frontend/ui/app.slint:4188 rust/frontend/ui/app.slint:4239 rust/frontend/ui/app.slint:4257 rust/frontend/ui/app.slint:4437 rust/frontend/ui/app.slint:4472 rust/frontend/ui/labels.slint:333
+#: rust/frontend/ui/app.slint:3723 rust/frontend/ui/app.slint:4082
+#: rust/frontend/ui/app.slint:3723 rust/frontend/ui/app.slint:4082 rust/frontend/ui/app.slint:4133
+#: rust/frontend/ui/app.slint:3723 rust/frontend/ui/app.slint:4082 rust/frontend/ui/app.slint:4133 rust/frontend/ui/app.slint:4151
+#: rust/frontend/ui/app.slint:3723 rust/frontend/ui/app.slint:4082 rust/frontend/ui/app.slint:4133 rust/frontend/ui/app.slint:4151 rust/frontend/ui/app.slint:4331
+#: rust/frontend/ui/app.slint:3723 rust/frontend/ui/app.slint:4082 rust/frontend/ui/app.slint:4133 rust/frontend/ui/app.slint:4151 rust/frontend/ui/app.slint:4331 rust/frontend/ui/app.slint:4366
+#: rust/frontend/ui/app.slint:3723 rust/frontend/ui/app.slint:4082 rust/frontend/ui/app.slint:4133 rust/frontend/ui/app.slint:4151 rust/frontend/ui/app.slint:4331 rust/frontend/ui/app.slint:4366 rust/frontend/ui/labels.slint:333
 msgid "Options"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:3840 rust/frontend/ui/music.slint:151
+#: rust/frontend/ui/app.slint:3734 rust/frontend/ui/music.slint:151
 msgid "Pause"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:3848 rust/frontend/ui/app.slint:3863
+#: rust/frontend/ui/app.slint:3742 rust/frontend/ui/app.slint:3757
 msgid "Track"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:3939 rust/frontend/ui/labels.slint:481
+#: rust/frontend/ui/app.slint:3833 rust/frontend/ui/labels.slint:481
 msgid "OK"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:4007 rust/frontend/ui/app.slint:4056
-#: rust/frontend/ui/app.slint:4007 rust/frontend/ui/app.slint:4056 rust/frontend/ui/app.slint:4071
-#: rust/frontend/ui/app.slint:4007 rust/frontend/ui/app.slint:4056 rust/frontend/ui/app.slint:4071 rust/frontend/ui/app.slint:4435
-#: rust/frontend/ui/app.slint:4007 rust/frontend/ui/app.slint:4056 rust/frontend/ui/app.slint:4071 rust/frontend/ui/app.slint:4435 rust/frontend/ui/app.slint:4452
-#: rust/frontend/ui/app.slint:4007 rust/frontend/ui/app.slint:4056 rust/frontend/ui/app.slint:4071 rust/frontend/ui/app.slint:4435 rust/frontend/ui/app.slint:4452
+#: rust/frontend/ui/app.slint:3901 rust/frontend/ui/app.slint:3950
+#: rust/frontend/ui/app.slint:3901 rust/frontend/ui/app.slint:3950 rust/frontend/ui/app.slint:3965
+#: rust/frontend/ui/app.slint:3901 rust/frontend/ui/app.slint:3950 rust/frontend/ui/app.slint:3965 rust/frontend/ui/app.slint:4329
+#: rust/frontend/ui/app.slint:3901 rust/frontend/ui/app.slint:3950 rust/frontend/ui/app.slint:3965 rust/frontend/ui/app.slint:4329 rust/frontend/ui/app.slint:4346
+#: rust/frontend/ui/app.slint:3901 rust/frontend/ui/app.slint:3950 rust/frontend/ui/app.slint:3965 rust/frontend/ui/app.slint:4329 rust/frontend/ui/app.slint:4346
 msgid "Image"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:4020 rust/frontend/ui/app.slint:4034
-#: rust/frontend/ui/app.slint:4020 rust/frontend/ui/app.slint:4034 rust/frontend/ui/app.slint:4355
-#: rust/frontend/ui/app.slint:4020 rust/frontend/ui/app.slint:4034 rust/frontend/ui/app.slint:4355
+#: rust/frontend/ui/app.slint:3914 rust/frontend/ui/app.slint:3928
+#: rust/frontend/ui/app.slint:3914 rust/frontend/ui/app.slint:3928 rust/frontend/ui/app.slint:4249
+#: rust/frontend/ui/app.slint:3914 rust/frontend/ui/app.slint:3928 rust/frontend/ui/app.slint:4249
 msgid "Scroll"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:4131 rust/frontend/ui/app.slint:4152
-#: rust/frontend/ui/app.slint:4131 rust/frontend/ui/app.slint:4152
+#: rust/frontend/ui/app.slint:4025 rust/frontend/ui/app.slint:4046
+#: rust/frontend/ui/app.slint:4025 rust/frontend/ui/app.slint:4046
 msgid "Adjust"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:4153
+#: rust/frontend/ui/app.slint:4047
 msgid "Position"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:4153
+#: rust/frontend/ui/app.slint:4047
 msgid "Size"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:4177
+#: rust/frontend/ui/app.slint:4071
 msgid "Reposition"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:4178
+#: rust/frontend/ui/app.slint:4072
 msgid "Place"
 msgstr ""
 
-#: rust/frontend/ui/app.slint:4417
+#: rust/frontend/ui/app.slint:4311
 msgid "Drop"
 msgstr ""
 
@@ -937,7 +937,7 @@ msgstr ""
 msgid "Reconnecting…"
 msgstr ""
 
-#: rust/frontend/ui/chrome.slint:145 rust/frontend/ui/settings.slint:519
+#: rust/frontend/ui/chrome.slint:145 rust/frontend/ui/settings.slint:528
 msgid "Connecting…"
 msgstr ""
 
@@ -1295,7 +1295,7 @@ msgid "Controls"
 msgstr ""
 
 #: rust/frontend/ui/labels.slint:108 rust/frontend/ui/labels.slint:186
-#: rust/frontend/ui/labels.slint:108 rust/frontend/ui/labels.slint:186 rust/frontend/ui/settings.slint:240
+#: rust/frontend/ui/labels.slint:108 rust/frontend/ui/labels.slint:186 rust/frontend/ui/settings.slint:244
 msgid "Language"
 msgstr ""
 
@@ -1409,8 +1409,8 @@ msgstr ""
 msgid "Recently added"
 msgstr ""
 
-#: rust/frontend/ui/labels.slint:166 rust/frontend/ui/settings.slint:415
-#: rust/frontend/ui/labels.slint:166 rust/frontend/ui/settings.slint:415
+#: rust/frontend/ui/labels.slint:166 rust/frontend/ui/settings.slint:424
+#: rust/frontend/ui/labels.slint:166 rust/frontend/ui/settings.slint:424
 msgid "None"
 msgstr ""
 
@@ -1419,7 +1419,7 @@ msgstr ""
 msgid "Any"
 msgstr ""
 
-#: rust/frontend/ui/labels.slint:185 rust/frontend/ui/settings.slint:241
+#: rust/frontend/ui/labels.slint:185 rust/frontend/ui/settings.slint:245
 msgid "Region"
 msgstr ""
 
@@ -1787,10 +1787,10 @@ msgstr ""
 msgid "Default ({})"
 msgstr ""
 
-#: rust/frontend/ui/labels.slint:348 rust/frontend/ui/settings.slint:408
-#: rust/frontend/ui/labels.slint:348 rust/frontend/ui/settings.slint:408 rust/frontend/ui/settings.slint:456
-#: rust/frontend/ui/labels.slint:348 rust/frontend/ui/settings.slint:408 rust/frontend/ui/settings.slint:456 rust/frontend/ui/settings.slint:467
-#: rust/frontend/ui/labels.slint:348 rust/frontend/ui/settings.slint:408 rust/frontend/ui/settings.slint:456 rust/frontend/ui/settings.slint:467 rust/frontend/ui/settings.slint:587
+#: rust/frontend/ui/labels.slint:348 rust/frontend/ui/settings.slint:415
+#: rust/frontend/ui/labels.slint:348 rust/frontend/ui/settings.slint:415 rust/frontend/ui/settings.slint:465
+#: rust/frontend/ui/labels.slint:348 rust/frontend/ui/settings.slint:415 rust/frontend/ui/settings.slint:465 rust/frontend/ui/settings.slint:476
+#: rust/frontend/ui/labels.slint:348 rust/frontend/ui/settings.slint:415 rust/frontend/ui/settings.slint:465 rust/frontend/ui/settings.slint:476 rust/frontend/ui/settings.slint:618
 msgid "Automatic"
 msgstr ""
 
@@ -1850,7 +1850,7 @@ msgstr ""
 msgid "No internet connection"
 msgstr ""
 
-#: rust/frontend/ui/labels.slint:391 rust/frontend/ui/settings.slint:522
+#: rust/frontend/ui/labels.slint:391 rust/frontend/ui/settings.slint:531
 msgid "Not available"
 msgstr ""
 
@@ -2062,7 +2062,7 @@ msgstr ""
 msgid "Start media update"
 msgstr ""
 
-#: rust/frontend/ui/labels.slint:486 rust/frontend/ui/settings.slint:283
+#: rust/frontend/ui/labels.slint:486 rust/frontend/ui/settings.slint:287
 msgid "Link account"
 msgstr ""
 
@@ -2495,7 +2495,7 @@ msgstr ""
 msgid "Repeat"
 msgstr ""
 
-#: rust/frontend/ui/music.slint:156 rust/frontend/ui/settings.slint:285
+#: rust/frontend/ui/music.slint:156 rust/frontend/ui/settings.slint:289
 msgid "All"
 msgstr ""
 
@@ -2504,8 +2504,8 @@ msgid "One"
 msgstr ""
 
 #: rust/frontend/ui/music.slint:158 rust/frontend/ui/music.slint:176
-#: rust/frontend/ui/music.slint:158 rust/frontend/ui/music.slint:176 rust/frontend/ui/settings.slint:517
-#: rust/frontend/ui/music.slint:158 rust/frontend/ui/music.slint:176 rust/frontend/ui/settings.slint:517
+#: rust/frontend/ui/music.slint:158 rust/frontend/ui/music.slint:176 rust/frontend/ui/settings.slint:526
+#: rust/frontend/ui/music.slint:158 rust/frontend/ui/music.slint:176 rust/frontend/ui/settings.slint:526
 msgid "Off"
 msgstr ""
 
@@ -2707,8 +2707,8 @@ msgstr ""
 msgid "Linked to Zaparoo Online"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:87 rust/frontend/ui/settings.slint:509
-#: rust/frontend/ui/settings.slint:87 rust/frontend/ui/settings.slint:509
+#: rust/frontend/ui/settings.slint:87 rust/frontend/ui/settings.slint:518
+#: rust/frontend/ui/settings.slint:87 rust/frontend/ui/settings.slint:518
 msgid "Not linked"
 msgstr ""
 
@@ -2867,1038 +2867,1118 @@ msgstr ""
 msgid "Start import"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:203 rust/frontend/ui/settings.slint:249
+#: rust/frontend/ui/settings.slint:203 rust/frontend/ui/settings.slint:253
 msgid "Controllers"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:204 rust/frontend/ui/settings.slint:250
+#: rust/frontend/ui/settings.slint:204 rust/frontend/ui/settings.slint:254
 msgid "Paired controllers"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:206
-msgid "Analog video"
-msgstr ""
-
-#: rust/frontend/ui/settings.slint:207
-msgid "Maintenance"
-msgstr ""
-
-#: rust/frontend/ui/settings.slint:208
-msgid "Account"
-msgstr ""
-
-#: rust/frontend/ui/settings.slint:209
-msgid "Features"
-msgstr ""
-
-#: rust/frontend/ui/settings.slint:210
-msgid "Backup"
-msgstr ""
-
-#: rust/frontend/ui/settings.slint:211
-msgid "Remote"
-msgstr ""
-
-#: rust/frontend/ui/settings.slint:212
-msgid "Launchers"
-msgstr ""
-
-#: rust/frontend/ui/settings.slint:213
-msgid "Setup"
-msgstr ""
-
-#: rust/frontend/ui/settings.slint:214
-msgid "Gameplay"
-msgstr ""
-
-#: rust/frontend/ui/settings.slint:215
-msgid "Popups"
-msgstr ""
-
-#: rust/frontend/ui/settings.slint:216
-msgid "Background"
-msgstr ""
-
-#: rust/frontend/ui/settings.slint:218
-msgid "Color scheme"
-msgstr ""
-
-#: rust/frontend/ui/settings.slint:219
-msgid "Color intensity"
-msgstr ""
-
-#: rust/frontend/ui/settings.slint:220
-msgid "System logos"
-msgstr ""
-
-#: rust/frontend/ui/settings.slint:221
-msgid "Show Menu row"
-msgstr ""
-
-#: rust/frontend/ui/settings.slint:222
-msgid "Show button hints"
-msgstr ""
-
-#: rust/frontend/ui/settings.slint:223
-msgid "Top bar logo"
-msgstr ""
-
-#: rust/frontend/ui/settings.slint:224
-msgid "Logo image"
-msgstr ""
-
-#: rust/frontend/ui/settings.slint:225
-msgid "Reduce motion"
-msgstr ""
-
-#: rust/frontend/ui/settings.slint:226
+#: rust/frontend/ui/settings.slint:205 rust/frontend/ui/settings.slint:227
 msgid "Screensaver"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:227
-msgid "Background image"
+#: rust/frontend/ui/settings.slint:207
+msgid "Analog video"
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:208
+msgid "Maintenance"
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:209
+msgid "Account"
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:210
+msgid "Features"
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:211
+msgid "Backup"
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:212
+msgid "Remote"
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:213
+msgid "Launchers"
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:214
+msgid "Setup"
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:215
+msgid "Gameplay"
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:216
+msgid "Popups"
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:217
+msgid "Background"
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:219
+msgid "Color scheme"
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:220
+msgid "Color intensity"
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:221 rust/frontend/ui/settings.slint:597
+msgid "System logos"
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:222
+msgid "Show Menu row"
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:223
+msgid "Show button hints"
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:224
+msgid "Top bar logo"
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:225
+msgid "Logo image"
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:226
+msgid "Reduce motion"
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:228
-msgid "Game background"
+msgid "Start after"
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:229
-msgid "Blur"
+msgid "Style"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:230
-msgid "Dimming"
+#: rust/frontend/ui/settings.slint:230 rust/frontend/ui/settings.slint:608
+msgid "Bouncing"
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:231
-msgid "Card style"
+msgid "Background image"
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:232
+msgid "Game background"
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:233
-msgid "Interface resolution"
+msgid "Blur"
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:234
-msgid "Interface layout"
+msgid "Dimming"
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:235
-msgid "Orientation"
-msgstr ""
-
-#: rust/frontend/ui/settings.slint:236
-msgid "CRT mode"
+msgid "Card style"
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:237
-msgid "Video standard"
+msgid "Interface resolution"
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:238
-msgid "Screen position"
+msgid "Interface layout"
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:239
+msgid "Orientation"
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:240
+msgid "CRT mode"
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:241
+msgid "Video standard"
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:242
-msgid "MiSTer names.txt"
-msgstr ""
-
-#: rust/frontend/ui/settings.slint:243
-msgid "Clock format"
-msgstr ""
-
-#: rust/frontend/ui/settings.slint:245
-msgid "Button style"
+msgid "Screen position"
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:246
-msgid "Swap confirm and cancel"
+msgid "MiSTer names.txt"
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:247
-msgid "Swap Options and Menu"
+msgid "Clock format"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:248
-msgid "Mouse support"
+#: rust/frontend/ui/settings.slint:249
+msgid "Button style"
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:250
+msgid "Swap confirm and cancel"
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:251
-msgid "No paired controllers"
+msgid "Swap Options and Menu"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:253
-msgid "Add game folder…"
-msgstr ""
-
-#: rust/frontend/ui/settings.slint:254
-msgid "Detect launchers…"
+#: rust/frontend/ui/settings.slint:252
+msgid "Mouse support"
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:255
-msgid "Verify playtime…"
-msgstr ""
-
-#: rust/frontend/ui/settings.slint:256
-msgid "Update media database…"
+msgid "No paired controllers"
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:257
-msgid "Update metadata…"
+msgid "Add game folder…"
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:258
-msgid "Systems layout"
+msgid "Detect launchers…"
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:259
-msgid "Games layout"
+msgid "Verify playtime…"
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:260
+msgid "Update media database…"
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:261
-msgid "Show hidden items"
+msgid "Update metadata…"
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:262
-msgid "Show original filenames"
+msgid "Systems layout"
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:263
+msgid "Games layout"
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:265
+msgid "Show hidden items"
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:266
+msgid "Show original filenames"
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:267
 msgid "Show tags"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:264
+#: rust/frontend/ui/settings.slint:268
 msgid "Left and Right in lists"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:267 rust/frontend/ui/settings.slint:271
-#: rust/frontend/ui/settings.slint:267 rust/frontend/ui/settings.slint:271 rust/frontend/ui/settings.slint:292
+#: rust/frontend/ui/settings.slint:271 rust/frontend/ui/settings.slint:275
+#: rust/frontend/ui/settings.slint:271 rust/frontend/ui/settings.slint:275 rust/frontend/ui/settings.slint:296
 msgid "Status"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:268
+#: rust/frontend/ui/settings.slint:272
 msgid "Log in…"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:269
+#: rust/frontend/ui/settings.slint:273
 msgid "Log out…"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:270
+#: rust/frontend/ui/settings.slint:274
 msgid "RetroAchievements launchers"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:272
+#: rust/frontend/ui/settings.slint:276
 msgid "Skipped systems"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:273
+#: rust/frontend/ui/settings.slint:277
 msgid "Hardcore mode"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:274
+#: rust/frontend/ui/settings.slint:278
 msgid "Progress popups"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:275
+#: rust/frontend/ui/settings.slint:279
 msgid "Challenge popups"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:276
+#: rust/frontend/ui/settings.slint:280
 msgid "Leaderboard popups"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:277
+#: rust/frontend/ui/settings.slint:281
 msgid "Popup position"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:278
+#: rust/frontend/ui/settings.slint:282
 msgid "Achievement list shortcut"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:280
+#: rust/frontend/ui/settings.slint:284
 msgid "Online is not available right now"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:282
+#: rust/frontend/ui/settings.slint:286
 msgid "Warp"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:284
+#: rust/frontend/ui/settings.slint:288
 msgid "Unlink account…"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:286
+#: rust/frontend/ui/settings.slint:290
 msgid "Sync play history"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:287
+#: rust/frontend/ui/settings.slint:291
 msgid "Remote control"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:288
+#: rust/frontend/ui/settings.slint:292
 msgid "Library sync"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:289
+#: rust/frontend/ui/settings.slint:293
 msgid "Cloud backup"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:290
+#: rust/frontend/ui/settings.slint:294
 msgid "Schedule"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:291
+#: rust/frontend/ui/settings.slint:295
 msgid "Manage backups"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:293
+#: rust/frontend/ui/settings.slint:297
 msgid "Activity"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:299
+#: rust/frontend/ui/settings.slint:303
 msgid "Debug logging"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:300 rust/frontend/ui/setup.slint:307
+#: rust/frontend/ui/settings.slint:304 rust/frontend/ui/setup.slint:307
 msgid "Upload log file"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:310
+#: rust/frontend/ui/settings.slint:314
 msgid "Link your Zaparoo Online account first."
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:313
+#: rust/frontend/ui/settings.slint:317
 msgid "Wait for the metadata update to finish."
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:314
+#: rust/frontend/ui/settings.slint:318
 msgid "Wait for the media database update to finish."
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:315
+#: rust/frontend/ui/settings.slint:319
 msgid "Install RetroAchievements with Update All first."
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:319
+#: rust/frontend/ui/settings.slint:323
 msgid "Adds a folder of system folders. Update media database scans it."
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:320
+#: rust/frontend/ui/settings.slint:324
 msgid "Scans a folder you choose for launchers already installed."
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:321
+#: rust/frontend/ui/settings.slint:325
 msgid "Allows exact game time in system settings. Optional."
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:322
+#: rust/frontend/ui/settings.slint:326
 msgid "Changes colors across screens, including text and highlights."
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:323
+#: rust/frontend/ui/settings.slint:327
 msgid "Controls how strongly accent colors tint tiles and backgrounds."
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:324
+#: rust/frontend/ui/settings.slint:328
 msgid "Shows system logos in original colors or tinted to match colors."
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:325
+#: rust/frontend/ui/settings.slint:329
 msgid "Shows page actions as a row. Off, the Menu button lists them."
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:326
+#: rust/frontend/ui/settings.slint:330
 msgid "Shows button hints along the bottom. Off, screens use the space."
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:327
+#: rust/frontend/ui/settings.slint:331
 msgid "Replaces or hides the Zaparoo logo in the top bar."
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:328
+#: rust/frontend/ui/settings.slint:332
 msgid "Picks the image shown in place of the Zaparoo logo."
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:329
+#: rust/frontend/ui/settings.slint:333
 msgid "Turns off animation throughout the interface."
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:330
-msgid "Sets idle time before the screensaver starts. Off disables it."
-msgstr ""
-
-#: rust/frontend/ui/settings.slint:331
-msgid "Shows an image, or a random one from a folder, behind screens."
-msgstr ""
-
-#: rust/frontend/ui/settings.slint:332
-msgid "Shows the focused game's art behind game lists."
-msgstr ""
-
-#: rust/frontend/ui/settings.slint:333
-msgid "Softens the background image."
-msgstr ""
-
 #: rust/frontend/ui/settings.slint:334
-msgid "Darkens the background so text stays readable."
+msgid "Sets when the screensaver starts and what it shows."
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:335
-msgid "Sets whether cards are solid or show the background through."
+msgid "Sets idle time before the screensaver starts. Off disables it."
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:336
-msgid "Sets the interface's render resolution. Restarts the frontend."
+msgid "Picks what plays while the screensaver is on."
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:337
-msgid "Adjusts layout density for standard and handheld screens."
+msgid "Picks what bounces around the screen."
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:338
-msgid "Rotates the interface for a sideways screen or tate cabinet."
+msgid "Shows an image, or a random one from a folder, behind screens."
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:339
-msgid "Outputs 15 kHz analog video. Restarts the frontend."
+msgid "Shows the focused game's art behind game lists."
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:340
-msgid "Matches analog output to NTSC or PAL. Restarts the frontend."
+msgid "Softens the background image."
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:341
-msgid "Opens a test pattern to set analog picture position and width."
+msgid "Darkens the background so text stays readable."
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:342
-msgid "Sets the language of interface text. Restarts the frontend."
+msgid "Sets whether cards are solid or show the background through."
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:343
-msgid "Selects regional system and game names, such as Mega Drive."
+msgid "Sets the interface's render resolution. Restarts the frontend."
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:344
-msgid "Uses system names from /media/fat/names.txt where it has one."
+msgid "Adjusts layout density for standard and handheld screens."
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:345
-msgid "Shows 12-hour or 24-hour time in the top bar."
+msgid "Rotates the interface for a sideways screen or tate cabinet."
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:346
-msgid "Matches on-screen prompt icons to your controller."
+msgid "Outputs 15 kHz analog video. Restarts the frontend."
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:347
-msgid "Flips which controller button accepts and which cancels."
+msgid "Matches analog output to NTSC or PAL. Restarts the frontend."
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:348
-msgid "Swaps which controller button opens Options and Menu."
+msgid "Opens a test pattern to set analog picture position and width."
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:349
-msgid "Lets a mouse click tiles and menu rows."
+msgid "Sets the language of interface text. Restarts the frontend."
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:350
-msgid "Shows connected controllers and pairs new Bluetooth ones."
+msgid "Selects regional system and game names, such as Mega Drive."
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:351
-msgid "Lists every paired controller. Options can forget one."
+msgid "Uses system names from /media/fat/names.txt where it has one."
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:352
-msgid "Rescans game folders for added or removed files."
+msgid "Shows 12-hour or 24-hour time in the top bar."
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:353
-msgid "Adds artwork and details from the sources Core offers."
+msgid "Matches on-screen prompt icons to your controller."
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:354
-msgid "Shows systems as a grid, a detailed list, or plain text."
+msgid "Flips which controller button accepts and which cancels."
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:355
-msgid "Shows game lists as a grid, a detailed list, or plain text."
+msgid "Swaps which controller button opens Options and Menu."
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:356
-msgid "Prefers an artwork type when games have multiple images."
+msgid "Lets a mouse click tiles and menu rows."
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:357
-msgid "Shows hidden items so they can be unhidden."
+msgid "Shows connected controllers and pairs new Bluetooth ones."
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:358
-msgid "Shows real filenames instead of cleaned-up display titles."
+msgid "Lists every paired controller. Options can forget one."
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:359
-msgid "Shows region, revision, and disc tags after game names."
+msgid "Rescans game folders for added or removed files."
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:360
-msgid "Turns the page or changes the image in the detailed list."
+msgid "Adds artwork and details from the sources Core offers."
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:361
-msgid "Sets the launchers and groups tried first on every system."
+msgid "Shows systems as a grid, a detailed list, or plain text."
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:362
-msgid "Saves your RetroAchievements login on this MiSTer."
+msgid "Shows game lists as a grid, a detailed list, or plain text."
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:363
-msgid "Removes your RetroAchievements login from this MiSTer."
+msgid "Prefers an artwork type when games have multiple images."
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:364
-msgid "Uses RetroAchievements launchers where a system has one."
+msgid "Shows hidden items so they can be unhidden."
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:365
-msgid "Install RetroAchievements with Update All."
+msgid "Shows real filenames instead of cleaned-up display titles."
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:366
-msgid "Their own default launcher wins. Change it from Systems."
+msgid "Shows region, revision, and disc tags after game names."
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:367
-msgid "Earns hardcore unlocks. Turns off save states and cheats."
+msgid "Turns the page or changes the image in the detailed list."
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:368
-msgid "Shows progress toward an achievement while you play."
+msgid "Sets the launchers and groups tried first on every system."
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:369
-msgid "Shows when a timed or conditional challenge starts."
+msgid "Saves your RetroAchievements login on this MiSTer."
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:370
-msgid "Shows leaderboard attempts and submitted scores."
+msgid "Removes your RetroAchievements login from this MiSTer."
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:371
-msgid "Sets where achievement popups appear on screen."
+msgid "Uses RetroAchievements launchers where a system has one."
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:372
-msgid "Shows a game's achievements when you hold Y and press Menu."
+msgid "Install RetroAchievements with Update All."
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:373
-msgid "Connects this device to your Zaparoo Online account with a code."
+msgid "Their own default launcher wins. Change it from Systems."
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:374
-msgid "Removes this device's Zaparoo Online account credentials."
+msgid "Earns hardcore unlocks. Turns off save states and cheats."
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:375
-msgid "Turns every online feature on or off at once."
+msgid "Shows progress toward an achievement while you play."
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:376
-msgid "Uploads verified playtime to your account. Estimates stay local."
+msgid "Shows when a timed or conditional challenge starts."
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:377
-msgid "Lets your Online account send approved commands here."
+msgid "Shows leaderboard attempts and submitted scores."
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:378
-msgid "Syncs your games and collections with your Online account."
+msgid "Sets where achievement popups appear on screen."
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:379
-msgid "Backs up this device to the cloud on a schedule."
+msgid "Shows a game's achievements when you hold Y and press Menu."
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:380
-msgid "Sets how often automatic cloud backup runs."
+msgid "Connects this device to your Zaparoo Online account with a code."
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:381
-msgid "Backs up now, or lists cloud backups to restore."
+msgid "Removes this device's Zaparoo Online account credentials."
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:382
-msgid "Shows what remote commands have done on this device."
+msgid "Turns every online feature on or off at once."
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:383
-msgid "Shows a PIN for pairing a new device with Core."
+msgid "Uploads verified playtime to your account. Estimates stay local."
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:384
-msgid "Shows the version, build date, license terms, and contributors."
+msgid "Lets your Online account send approved commands here."
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:385
-msgid "Shows licenses for the fonts, artwork, and software used."
+msgid "Syncs your games and collections with your Online account."
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:386
-msgid "Shows a code for opening the Frontend guide on your phone."
+msgid "Backs up this device to the cloud on a schedule."
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:387
-msgid "Adds troubleshooting detail to logs. Restarts the frontend."
+msgid "Sets how often automatic cloud backup runs."
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:388
-msgid "Uploads the log and provides a link for problem reports."
+msgid "Backs up now, or lists cloud backups to restore."
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:389
+msgid "Shows what remote commands have done on this device."
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:390
+msgid "Shows a PIN for pairing a new device with Core."
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:391
+msgid "Shows the version, build date, license terms, and contributors."
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:392
+msgid "Shows licenses for the fonts, artwork, and software used."
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:393
+msgid "Shows a code for opening the Frontend guide on your phone."
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:394
+msgid "Adds troubleshooting detail to logs. Restarts the frontend."
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:395
-msgid "Configure"
-msgstr ""
-
-#: rust/frontend/ui/settings.slint:396
-msgid "Upload"
-msgstr ""
-
-#: rust/frontend/ui/settings.slint:397
-msgid "Detect"
-msgstr ""
-
-#: rust/frontend/ui/settings.slint:398
-msgid "Pair"
-msgstr ""
-
-#: rust/frontend/ui/settings.slint:399
-msgid "Link"
-msgstr ""
-
-#: rust/frontend/ui/settings.slint:400
-msgid "Unlink"
+msgid "Uploads the log and provides a link for problem reports."
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:402
-msgid "Log out"
+msgid "Configure"
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:403
+msgid "Upload"
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:404
+msgid "Detect"
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:405
+msgid "Pair"
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:406
+msgid "Link"
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:407
+msgid "Unlink"
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:409
+msgid "Log out"
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:416
 msgid "{} × {}"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:418
+#: rust/frontend/ui/settings.slint:427
 msgid "None connected"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:419
+#: rust/frontend/ui/settings.slint:428
 msgid "{n} connected"
 msgid_plural "{n} connected"
 msgstr[0] ""
 msgstr[1] ""
 
-#: rust/frontend/ui/settings.slint:422
+#: rust/frontend/ui/settings.slint:431
 msgid "Custom image"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:424
+#: rust/frontend/ui/settings.slint:433
 msgid "Zaparoo"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:432
+#: rust/frontend/ui/settings.slint:441
 msgid "No dimming"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:433
+#: rust/frontend/ui/settings.slint:442
 msgid "Lighter {}"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:434
+#: rust/frontend/ui/settings.slint:443
 msgid "Darker {}"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:435
+#: rust/frontend/ui/settings.slint:444
 msgid "Readable"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:438
+#: rust/frontend/ui/settings.slint:447
 msgid "Solid"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:439
+#: rust/frontend/ui/settings.slint:448
 msgid "Glass"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:442
+#: rust/frontend/ui/settings.slint:451
 msgid "Change image"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:443
+#: rust/frontend/ui/settings.slint:452
 msgid "Change page"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:446
+#: rust/frontend/ui/settings.slint:455
 msgid "Style A"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:447
+#: rust/frontend/ui/settings.slint:456
 msgid "Style B"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:448
+#: rust/frontend/ui/settings.slint:457
 msgid "Style C"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:449
+#: rust/frontend/ui/settings.slint:458
 msgid "Style D"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:450
+#: rust/frontend/ui/settings.slint:459
 msgid "Style E"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:454
+#: rust/frontend/ui/settings.slint:463
 msgid "12-hour"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:455
+#: rust/frontend/ui/settings.slint:464
 msgid "24-hour"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:459
+#: rust/frontend/ui/settings.slint:468
 msgid "Americas"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:460
+#: rust/frontend/ui/settings.slint:469
 msgid "Europe"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:461
+#: rust/frontend/ui/settings.slint:470
 msgid "Japan"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:465
+#: rust/frontend/ui/settings.slint:474
 msgid "Standard"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:466
+#: rust/frontend/ui/settings.slint:475
 msgid "Handheld"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:470
+#: rust/frontend/ui/settings.slint:479
 msgid "Rotated CW"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:471
+#: rust/frontend/ui/settings.slint:480
 msgid "Rotated CCW"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:472
+#: rust/frontend/ui/settings.slint:481
 msgid "Horizontal"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:475
+#: rust/frontend/ui/settings.slint:484
 msgid "Detailed list"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:476
+#: rust/frontend/ui/settings.slint:485
 msgid "Text only"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:477
+#: rust/frontend/ui/settings.slint:486
 msgid "Grid"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:480
+#: rust/frontend/ui/settings.slint:489
 msgid "Full color"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:481
+#: rust/frontend/ui/settings.slint:490
 msgid "Tinted"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:484
+#: rust/frontend/ui/settings.slint:493
 msgid "Vivid"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:485
+#: rust/frontend/ui/settings.slint:494
 msgid "Subtle"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:488
+#: rust/frontend/ui/settings.slint:497
 msgid "PAL"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:489
+#: rust/frontend/ui/settings.slint:498
 msgid "480i"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:490
+#: rust/frontend/ui/settings.slint:499
 msgid "NTSC"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:493
+#: rust/frontend/ui/settings.slint:502
 msgid "Daily"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:494
+#: rust/frontend/ui/settings.slint:503
 msgid "Weekly"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:495
+#: rust/frontend/ui/settings.slint:504
 msgid "Manual"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:498
+#: rust/frontend/ui/settings.slint:507
 msgid "Center"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:499
+#: rust/frontend/ui/settings.slint:508
 msgid "Right"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:500
+#: rust/frontend/ui/settings.slint:509
 msgid "Left"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:503
+#: rust/frontend/ui/settings.slint:512
 msgid "Logged in"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:504
+#: rust/frontend/ui/settings.slint:513
 msgid "Not logged in"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:508
+#: rust/frontend/ui/settings.slint:517
 msgid "Linked"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:512
+#: rust/frontend/ui/settings.slint:521
 msgid "Active"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:513
+#: rust/frontend/ui/settings.slint:522
 msgid "Not active"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:514
+#: rust/frontend/ui/settings.slint:523
 msgid "Checking…"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:520
+#: rust/frontend/ui/settings.slint:529
 msgid "Waiting for commands…"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:521
+#: rust/frontend/ui/settings.slint:530
 msgid "Not the remote device"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:523
+#: rust/frontend/ui/settings.slint:532
 msgid "Link rejected"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:524
+#: rust/frontend/ui/settings.slint:533
 msgid "Server unreachable"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:525
+#: rust/frontend/ui/settings.slint:534
 msgid "Unknown"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:531
+#: rust/frontend/ui/settings.slint:540
 msgid "English"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:532
+#: rust/frontend/ui/settings.slint:541
 msgid "Italian"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:533
+#: rust/frontend/ui/settings.slint:542
 msgid "Spanish"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:534
+#: rust/frontend/ui/settings.slint:543
 msgid "Basque"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:535
+#: rust/frontend/ui/settings.slint:544
 msgid "German"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:536
+#: rust/frontend/ui/settings.slint:545
 msgid "Greek"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:537
+#: rust/frontend/ui/settings.slint:546
 msgid "Japanese"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:538
+#: rust/frontend/ui/settings.slint:547
 msgid "Korean"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:539
+#: rust/frontend/ui/settings.slint:548
 msgid "Dutch"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:540
+#: rust/frontend/ui/settings.slint:549
 msgid "Romanian"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:541
+#: rust/frontend/ui/settings.slint:550
 msgid "Slovak"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:542
+#: rust/frontend/ui/settings.slint:551
 msgid "Ukrainian"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:543
+#: rust/frontend/ui/settings.slint:552
 msgid "Chinese (Simplified)"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:544
+#: rust/frontend/ui/settings.slint:553
 msgid "Chinese (Traditional)"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:545
+#: rust/frontend/ui/settings.slint:554
 msgid "Hebrew"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:546
+#: rust/frontend/ui/settings.slint:555
 msgid "Arabic"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:547
+#: rust/frontend/ui/settings.slint:556
 msgid "Hindi"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:548
+#: rust/frontend/ui/settings.slint:557
 msgid "French"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:553
+#: rust/frontend/ui/settings.slint:562
 msgid "Zaparoo Light"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:554
+#: rust/frontend/ui/settings.slint:563
 msgid "Classic Purple"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:555
+#: rust/frontend/ui/settings.slint:564
 msgid "Amber Phosphor"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:556
+#: rust/frontend/ui/settings.slint:565
 msgid "Game Boy"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:557
+#: rust/frontend/ui/settings.slint:566
 msgid "Green Phosphor"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:558
+#: rust/frontend/ui/settings.slint:567
 msgid "Neo Geo"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:559
+#: rust/frontend/ui/settings.slint:568
 msgid "NES"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:560
+#: rust/frontend/ui/settings.slint:569
 msgid "Virtual Boy"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:561
+#: rust/frontend/ui/settings.slint:570
 msgid "Dracula"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:562
+#: rust/frontend/ui/settings.slint:571
 msgid "Everforest"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:563
+#: rust/frontend/ui/settings.slint:572
 msgid "Gruvbox"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:564
+#: rust/frontend/ui/settings.slint:573
 msgid "Nord"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:565
+#: rust/frontend/ui/settings.slint:574
 msgid "Oxocarbon"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:566
+#: rust/frontend/ui/settings.slint:575
 msgid "Rosé Pine"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:567
+#: rust/frontend/ui/settings.slint:576
 msgid "Solarized Dark"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:568
+#: rust/frontend/ui/settings.slint:577
 msgid "Synthwave '84"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:569
+#: rust/frontend/ui/settings.slint:578
 msgid "Flexoki Paper"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:570
+#: rust/frontend/ui/settings.slint:579
 msgid "Solarized Light"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:571
+#: rust/frontend/ui/settings.slint:580
 msgid "Zaparoo Dark"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:576
+#: rust/frontend/ui/settings.slint:585
 msgid "1 second"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:577
+#: rust/frontend/ui/settings.slint:586
 msgid "1 minute"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:578
+#: rust/frontend/ui/settings.slint:587
 msgid "2 minutes"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:579
+#: rust/frontend/ui/settings.slint:588
 msgid "5 minutes"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:580
+#: rust/frontend/ui/settings.slint:589
 msgid "10 minutes"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:581
+#: rust/frontend/ui/settings.slint:590
 msgid "15 minutes"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:582
+#: rust/frontend/ui/settings.slint:591
 msgid "30 minutes"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:583
+#: rust/frontend/ui/settings.slint:592
 msgid "{} seconds"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:755
+#: rust/frontend/ui/settings.slint:596
+msgid "Spinning logo"
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:598
+msgid "Cover wall"
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:599
+msgid "Recent games"
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:600
+msgid "Paddle clock"
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:601
+msgid "Starfield"
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:602
+msgid "Flyby"
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:603
+msgid "Polygons"
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:604
+msgid "Snakes"
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:605
+msgid "Life"
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:606
+msgid "Maze"
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:607
+msgid "Random"
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:612
+msgid "Clock"
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:613
+msgid "Recent game"
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:614
+msgid "Logo"
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:786
 msgid "Pro"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:778
+#: rust/frontend/ui/settings.slint:809
 msgid "Linked as {}"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:780
+#: rust/frontend/ui/settings.slint:811
 msgid "Logged in as {}"
 msgstr ""
 
