@@ -12,8 +12,11 @@ use super::Rng;
 pub const SWAP_EVERY: f32 = 3.0;
 /// Seconds between clock moves.
 pub const CLOCK_EVERY: f32 = 60.0;
-/// A cover tile's width over its height.
-pub const TILE_ASPECT: f32 = 0.75;
+/// Rows on the wall.
+pub const ROWS: usize = 2;
+/// Columns per unit of the scene's aspect: four across 16:9, three
+/// across 4:3.
+const COLUMNS_PER_ASPECT: f32 = 2.25;
 /// The gap between tiles, in height units.
 pub const GAP: f32 = 0.012;
 
@@ -37,21 +40,22 @@ pub struct Grid {
 }
 
 impl Grid {
-    /// Rows by scene: three on a low-resolution output, four otherwise,
-    /// and as many columns as fit across.
-    pub fn for_scene(aspect: f32, low_res: bool) -> Self {
-        let rows = if low_res { 3 } else { 4 };
-        let tile_h = (1.0 - GAP * (rows as f32 + 1.0)) / rows as f32;
-        let tile_w = tile_h * TILE_ASPECT;
-        let columns = (((aspect - GAP) / (tile_w + GAP)).floor() as usize).max(1);
-        let used_w = columns as f32 * (tile_w + GAP) - GAP;
+    /// Square tiles, `ROWS` high and a few across by the scene's shape,
+    /// as large as fit and centered both ways.
+    pub fn for_scene(aspect: f32) -> Self {
+        let rows = ROWS;
+        let columns = ((aspect * COLUMNS_PER_ASPECT).round() as usize).max(1);
+        let side = ((1.0 - GAP * (rows as f32 + 1.0)) / rows as f32)
+            .min((aspect - GAP * (columns as f32 + 1.0)) / columns as f32);
+        let used_w = columns as f32 * (side + GAP) - GAP;
+        let used_h = rows as f32 * (side + GAP) - GAP;
         Self {
             columns,
             rows,
-            tile_w,
-            tile_h,
+            tile_w: side,
+            tile_h: side,
             left: (aspect - used_w) / 2.0,
-            top: GAP,
+            top: (1.0 - used_h) / 2.0,
         }
     }
 
@@ -61,6 +65,24 @@ impl Grid {
 
     pub fn is_empty(&self) -> bool {
         self.len() == 0
+    }
+
+    /// Where a picture `aspect` wide over high sits in tile `i`: as large
+    /// as fits, keeping its shape, centered. (x, y, width, height).
+    pub fn fit(&self, tile: usize, aspect: f32) -> (f32, f32, f32, f32) {
+        let (left, top) = self.origin(tile);
+        let aspect = if aspect > 0.0 { aspect } else { 1.0 };
+        let (width, height) = if aspect >= self.tile_w / self.tile_h {
+            (self.tile_w, self.tile_w / aspect)
+        } else {
+            (self.tile_h * aspect, self.tile_h)
+        };
+        (
+            left + (self.tile_w - width) / 2.0,
+            top + (self.tile_h - height) / 2.0,
+            width,
+            height,
+        )
     }
 
     /// Tile `i`'s top-left corner.
@@ -184,19 +206,40 @@ mod tests {
 
     #[test]
     fn grid_fits_the_scene() {
-        for (aspect, low) in [(16.0 / 9.0, false), (4.0 / 3.0, true), (16.0 / 10.0, false)] {
-            let g = Grid::for_scene(aspect, low);
-            assert!(g.columns >= 3);
+        for (aspect, columns) in [(16.0 / 9.0, 4), (4.0 / 3.0, 3), (16.0 / 10.0, 4)] {
+            let g = Grid::for_scene(aspect);
+            assert_eq!((g.columns, g.rows), (columns, ROWS));
+            assert!((g.tile_w - g.tile_h).abs() < 1e-6, "square tiles");
             let (x, y) = g.origin(g.len() - 1);
             assert!(x + g.tile_w <= aspect + 1e-4);
             assert!(y + g.tile_h <= 1.0 + 1e-4);
-            assert!(g.left >= 0.0);
+            assert!(g.left >= 0.0 && g.top >= 0.0);
+        }
+    }
+
+    #[test]
+    fn a_cover_fills_its_square_and_keeps_its_shape() {
+        let grid = Grid::for_scene(16.0 / 9.0);
+        let (ox, oy) = grid.origin(5);
+        for aspect in [0.7, 1.0, 1.4] {
+            let (x, y, w, h) = grid.fit(5, aspect);
+            assert!((w / h - aspect).abs() < 1e-4);
+            assert!(
+                (w - grid.tile_w).abs() < 1e-6 || (h - grid.tile_h).abs() < 1e-6,
+                "touches two sides"
+            );
+            assert!(x >= ox - 1e-6 && y >= oy - 1e-6);
+            assert!(x + w <= ox + grid.tile_w + 1e-6 && y + h <= oy + grid.tile_h + 1e-6);
+            assert!(
+                ((x - ox) - (ox + grid.tile_w - x - w)).abs() < 1e-5,
+                "centered"
+            );
         }
     }
 
     #[test]
     fn one_clock_always_and_one_tile_per_swap() {
-        let grid = Grid::for_scene(16.0 / 9.0, false);
+        let grid = Grid::for_scene(16.0 / 9.0);
         let mut wall = Wall::new(grid, 40, 5);
         for _ in 0..2000 {
             let changed = wall.step(0.5);
@@ -210,7 +253,7 @@ mod tests {
 
     #[test]
     fn the_clock_moves() {
-        let grid = Grid::for_scene(16.0 / 9.0, false);
+        let grid = Grid::for_scene(16.0 / 9.0);
         let mut wall = Wall::new(grid, 12, 6);
         let at = |w: &Wall| w.tiles().iter().position(|t| *t == Tile::Clock);
         let start = at(&wall);
@@ -220,7 +263,7 @@ mod tests {
 
     #[test]
     fn many_covers_keep_the_wall_free_of_duplicates() {
-        let grid = Grid::for_scene(16.0 / 9.0, false);
+        let grid = Grid::for_scene(16.0 / 9.0);
         let mut wall = Wall::new(grid, 200, 8);
         for _ in 0..500 {
             wall.step(SWAP_EVERY);

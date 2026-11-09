@@ -396,8 +396,6 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_fade => set_fade,
         get_frame => set_frame,
         get_card_image => set_card_image,
-        get_card_title => set_card_title,
-        get_card_system => set_card_system,
         get_score_left => set_score_left,
         get_score_right => set_score_right,
         get_shift_x => set_shift_x,

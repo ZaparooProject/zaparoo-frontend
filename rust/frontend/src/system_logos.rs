@@ -151,6 +151,13 @@ impl Logos {
         })
     }
 
+    /// The full-color logo for `id`, or none when it has no color art:
+    /// for surfaces that never fall back to the grayscale set.
+    pub fn color_key(&self, id: &str, stem: &str, bounds: Bounds) -> Option<Key> {
+        self.key(id, stem, true, bounds)
+            .filter(|key| matches!(key.asset, Asset::Color(_)))
+    }
+
     pub fn get(&self, key: &Key) -> Option<Prepared> {
         self.lock().cache.get(key).cloned().flatten()
     }

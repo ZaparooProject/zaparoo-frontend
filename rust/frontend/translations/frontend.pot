@@ -2,7 +2,7 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: frontend VERSION\n"
-"POT-Creation-Date: 2026-11-09 04:48+0000\n"
+"POT-Creation-Date: 2026-11-09 05:53+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -3943,7 +3943,7 @@ msgid "Polygons"
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:604
-msgid "Pipes"
+msgid "Snakes"
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:605

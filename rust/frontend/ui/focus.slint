@@ -66,7 +66,10 @@ export component ScrollOffset inherits Rectangle {
     }
     changed scope => { root.snap(); }
     changed motion => { if (!root.motion) { root.snap(); } }
-    function snap() {
+    // Jumps to the target. A host that moves the target from its own
+    // `init` calls this after: a change made while the component is being
+    // built does not run `changed target`.
+    public function snap() {
         root.glide = false;
         root.position = root.target;
         root.position-linear = root.target;
@@ -275,7 +278,10 @@ export component SelectionCursor inherits Rectangle {
         running: root.flash;
         triggered => { root.flash = false; }
     }
-    function snap() {
+    // Places the fill at the target without gliding. A host that moves the
+    // target from its own `init` calls this after: a change made while the
+    // component is being built does not run `changed target`.
+    public function snap() {
         root.glide = false;
         root.stretch = 1.0;
         root.previous = root.target;

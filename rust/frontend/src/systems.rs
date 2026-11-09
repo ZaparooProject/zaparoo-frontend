@@ -155,11 +155,16 @@ impl LogoPrefs {
         ctx.logos.key(id, stem, self.color, bounds)
     }
 
-    /// The same preferences with full-color logos, for surfaces that
-    /// always draw in color (the screensaver).
-    pub(crate) fn in_color(mut self) -> Self {
-        self.color = true;
-        self
+    /// The full-color logo only, never the grayscale fallback, for
+    /// surfaces that always draw in color (the screensaver).
+    pub(crate) fn color_key(
+        self,
+        ctx: &Ctx,
+        id: &str,
+        bounds: zaparoo_app::logo_cache::Bounds,
+    ) -> Option<crate::system_logos::Key> {
+        let stem = rules::logo_artwork_stem(id, self.region);
+        ctx.logos.color_key(id, stem, bounds)
     }
 }
 

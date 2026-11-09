@@ -63,12 +63,12 @@ export enum BootStatus { connecting, starting, migrating, reconnecting, loading,
 export enum HeaderLogo { zaparoo, custom, none }
 // The screensaver style that plays (`zaparoo_app::screensaver::Style`),
 // resolved: Random has already picked one by the time the view sees it.
-export enum ScreensaverStyle { bouncing, spinning-logo, system-logos, cover-wall, recent-games, paddle-clock, starfield, flyby, polygons, pipes, life, maze }
+export enum ScreensaverStyle { bouncing, spinning-logo, system-logos, cover-wall, recent-games, paddle-clock, starfield, flyby, polygons, snakes, life, maze }
 // What the Bouncing style bounces.
 export enum SaverBouncing { logo, clock, recent-game }
 // How one of the screensaver's sprites paints: a picture, a flat
-// rectangle, a disc, or the clock.
-export enum SaverLook { image, block, round, clock }
+// rectangle, or the clock.
+export enum SaverLook { image, block, clock }
 export enum DisabledReason { none, no-recent-games, no-internet, not-available, deck-missing }
 export enum RowKind { header, field }
 export enum ControlKind { none, picker, toggle, action, navigate, tri-toggle, info, notice, slider, device }

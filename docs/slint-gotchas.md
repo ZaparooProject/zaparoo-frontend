@@ -301,14 +301,16 @@ the controls, so each style is built around what the software renderer
 repaints, not around what looks busiest:
 
 - **Sprite styles repaint only their movers.** Bouncing, Spinning logo,
-  System logos, Recent games, Paddle clock, Starfield, Flyby and Pipes
+  System logos, Recent games, Paddle clock, Starfield, Flyby and Snakes
   publish small sprites through `Saver.sprites` over the black backstop.
   A frame's dirty region is the union of what moved: one logo, one line,
   three paddle-game pieces, the stars and up to two logos (Starfield
   keeps 80 stars, 60 at 240p), at most six fliers (Flyby). Stars and
   fliers spread over the whole screen, so Starfield and Flyby repaint
-  close to all of it and run like the picture styles below. Pipes adds
-  one segment per step and keeps the rest still until the board clears.
+  close to all of it and run like the picture styles below. Snakes keeps
+  a fixed set of segment slots per snake and rewrites one slot per snake
+  a step (the tail's segment becomes the head's), so a step repaints two
+  cells per snake.
   Cover wall changes one tile every few seconds.
 - **Full-screen styles render at half resolution.** Polygons, Life and
   Maze render whole frames in Rust into a pixel buffer (`Saver.frame`)
@@ -325,8 +327,8 @@ repaints, not around what looks busiest:
   uses four-pixel cells and the others draw at the scene's own lines.
 - **Reduced rates.** Each style steps on its own Rust timer, never faster
   than it needs: 30 fps for Spinning logo, Recent games and Paddle clock,
-  20 for Starfield, Flyby, Polygons and Maze, 12 for Pipes, 10 for System
-  logos (its fades animate at the display rate), and 4 for Life and the
+  20 for Starfield, Flyby, Polygons and Maze, 12 for Snakes and Life, 10
+  for System logos (its fades animate at the display rate), and 4 for the
   Cover wall. Bouncing keeps its own
   view-side animation. A late tick advances by at most a quarter second.
 - **The dual-head CRT shares the HDMI run.** It does not run a second
@@ -350,7 +352,6 @@ per rendered frame:
 | Starfield | 15.3 | 18.7 | 50 |
 | Flyby | 10.0 | 13.9 | 50 |
 | Polygons | 15.7 | 19.4 | 50 |
-| Pipes | 11.8 | 22.1 | 83 |
 | Maze | 15.3 | 18.0 | 50 |
 
 Starfield, Flyby, Polygons and Maze run in picture mode; before it they

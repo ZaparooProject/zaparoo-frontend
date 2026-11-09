@@ -121,7 +121,7 @@ rust/zaparoo-app/  [toolkit-free product rules]
                                     the hide-logo switch, and every style's
                                     seeded simulation (bounce, spin, logo
                                     hops, cover wall, marquee, paddle clock,
-                                    stars, flyby, polygons, pipes, Life,
+                                    stars, flyby, polygons, snakes, Life,
                                     maze and its raycaster)
   input, status_line, action_error, buttons, clock, covers, customization,
   launchers, alternate_versions, multi_disc, title_versions, media_setup,

@@ -11,11 +11,16 @@
 use super::{slot_rgb, Rng};
 
 /// Generations per second.
-pub const RATE: f32 = 4.0;
+pub const RATE: f32 = 12.0;
 /// Generations remembered to spot a loop.
 pub const MEMORY: usize = 16;
 /// Generations a board may run before it is reseeded anyway.
-pub const MAX_GENERATIONS: u32 = 1500;
+pub const MAX_GENERATIONS: u32 = 3000;
+/// Around the logo or the clock, the share of cells a new board scatters
+/// alive, so no two boards from the same shape play out alike.
+pub const SCATTER: usize = 12;
+/// How far past the shape's edges the scatter reaches, in cells.
+const SCATTER_REACH: usize = 6;
 
 /// What a new board starts from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -107,7 +112,43 @@ impl Life {
                 }
             }
             Seed::Clock => self.digits(time),
-            Seed::Soup => self.soup(),
+            Seed::Soup => {
+                self.soup();
+                return;
+            }
+        }
+        self.scatter();
+    }
+
+    /// Scatter live cells over the shape just drawn and a little past it.
+    fn scatter(&mut self) {
+        let (w, h) = (self.width, self.height);
+        let mut bounds: Option<(usize, usize, usize, usize)> = None;
+        for (i, age) in self.ages.iter().enumerate() {
+            if *age > 0 {
+                let (x, y) = (i % w, i / w);
+                bounds = Some(bounds.map_or((x, y, x, y), |(x0, y0, x1, y1)| {
+                    (x0.min(x), y0.min(y), x1.max(x), y1.max(y))
+                }));
+            }
+        }
+        let Some((x0, y0, x1, y1)) = bounds else {
+            return;
+        };
+        let (x0, y0) = (
+            x0.saturating_sub(SCATTER_REACH),
+            y0.saturating_sub(SCATTER_REACH),
+        );
+        let (x1, y1) = (
+            (x1 + SCATTER_REACH).min(w - 1),
+            (y1 + SCATTER_REACH).min(h - 1),
+        );
+        for y in y0..=y1 {
+            for x in x0..=x1 {
+                if self.rng.below(100) < SCATTER {
+                    self.ages[y * w + x] = 1;
+                }
+            }
         }
     }
 
@@ -175,7 +216,8 @@ impl Life {
             || self.generation >= MAX_GENERATIONS
         {
             let seeds = [Seed::Soup, Seed::Logo, Seed::Clock];
-            self.next_seed = (self.next_seed + 1) % seeds.len();
+            // Any seed but the last one.
+            self.next_seed = (self.next_seed + 1 + self.rng.below(seeds.len() - 1)) % seeds.len();
             self.seed(seeds[self.next_seed], time);
         } else {
             if self.history.len() == MEMORY {
@@ -307,8 +349,38 @@ mod tests {
         life.seed(Seed::Clock, (12, 34));
         assert!(life.alive() > 20);
         life.seed(Seed::Logo, (0, 0));
-        assert_eq!(life.alive(), 12);
-        assert!(life.ages[(45 - 3) / 2 * 80 + (80 - 4) / 2] > 0);
+        let (x0, y0) = ((80 - 4) / 2, (45 - 3) / 2);
+        for y in y0..y0 + 3 {
+            for x in x0..x0 + 4 {
+                assert!(life.ages[y * 80 + x] > 0, "the logo is whole");
+            }
+        }
+        // The scatter stays near the logo.
+        let reach = SCATTER_REACH;
+        for (i, age) in life.ages.iter().enumerate() {
+            if *age > 0 {
+                let (x, y) = (i % 80, i / 80);
+                assert!(x + reach >= x0 && x <= x0 + 3 + reach);
+                assert!(y + reach >= y0 && y <= y0 + 2 + reach);
+            }
+        }
+    }
+
+    #[test]
+    fn the_same_shape_starts_differently_each_run() {
+        let logo = Some((vec![true; 6 * 4], 6, 4));
+        let boards: Vec<Vec<u8>> = (0..4)
+            .map(|seed| {
+                let mut life = Life::new(80, 45, logo.clone(), seed);
+                life.seed(Seed::Logo, (0, 0));
+                life.ages
+            })
+            .collect();
+        for (i, a) in boards.iter().enumerate() {
+            for b in &boards[i + 1..] {
+                assert_ne!(a, b);
+            }
+        }
     }
 
     #[test]

@@ -18,7 +18,7 @@ use std::time::{Duration, Instant};
 
 use slint::ComponentHandle;
 use zaparoo_app::screensaver::{self as rules, Bouncing, Style};
-use zaparoo_core::media_types::{MediaHistoryParams, MediaSearchParams};
+use zaparoo_core::media_types::{MediaHistoryParams, MediaHistoryTopParams, MediaSearchParams};
 
 use crate::media_cache::MediaKey;
 use crate::router::{lock, Ctx};
@@ -30,24 +30,23 @@ const POOL_FRESH: Duration = Duration::from_mins(10);
 /// Seconds before the timeout to start gathering art.
 pub(crate) const PREFETCH_LEAD: u64 = 20;
 /// Recent games asked for.
-const RECENTS: u32 = 30;
-/// Below this many recent games, a page of the library tops the pool up.
+const RECENTS: u32 = 100;
+/// Top played games asked for, merged with the recent ones.
+const TOP_PLAYED: u32 = 100;
+/// Below this many played games, a page of the library tops the pool up.
 const TOP_UP_BELOW: usize = 16;
-/// Covers held by one run, at most.
-const MAX_COVERS: usize = 16;
+/// Covers held by one run, at most, drawn at random from the pool.
+const MAX_COVERS: usize = 48;
 /// System logos one run draws from, at most.
 const MAX_SYSTEMS: usize = 16;
 /// Logos prepared on the spot at arm time when the prefetch missed them.
 const PREPARE_NOW: usize = 4;
-/// The cover tier the pool asks for: the Hub's.
-const COVER_TIER: u32 = 256;
 /// The longest step a late timer tick advances by.
 const MAX_STEP: f32 = 0.25;
 
 #[derive(Clone)]
 struct Recent {
     system: String,
-    system_name: String,
     name: String,
     key: MediaKey,
 }
@@ -57,6 +56,8 @@ struct Pool {
     recents: Vec<Recent>,
     /// Covers from the library when there were few recent games.
     extra: Vec<MediaKey>,
+    /// The cover size the keys were made for; a scene change asks again.
+    px: u32,
 }
 
 static POOL: Mutex<Option<(Instant, Pool)>> = Mutex::new(None);
@@ -97,13 +98,16 @@ fn logo_bounds(view: View) -> zaparoo_app::logo_cache::Bounds {
     zaparoo_app::logo_cache::Bounds::new(h * 2, h)
 }
 
-fn cover_key(ctx: &Ctx, system: &str, path: &str, relative: &str) -> MediaKey {
+/// A cover sized for the largest box the saver paints one in, a Cover
+/// wall tile, at Core's tier for that size.
+fn cover_key(ctx: &Ctx, px: u32, system: &str, path: &str, relative: &str) -> MediaKey {
+    let side = i32::try_from(px).unwrap_or(i32::MAX);
     MediaKey {
         media_id: None,
         system: system.to_string(),
         path: path.to_string(),
-        max_size: COVER_TIER,
-        fit: ctx.media.hub_fit(),
+        max_size: zaparoo_app::sizing::snap_cover_tier(f64::from(px)) as u32,
+        fit: zaparoo_app::covers::Fit::new(side, side),
         folder: false,
         image_type: None,
         prefer: ctx.media.artwork_for(system, relative),
@@ -111,22 +115,23 @@ fn cover_key(ctx: &Ctx, system: &str, path: &str, relative: &str) -> MediaKey {
 }
 
 /// Start gathering art for the next run: system logos in color, and the
-/// covers of recently played games (topped up from the library when
+/// covers of recently and most played games (topped up from the library when
 /// there are few). Called ahead of the timeout so a run starts with its
 /// art in memory; a fresh pool is only asked for its covers again.
 pub(crate) fn prefetch(ctx: &Ctx, app: &App) {
     let view = View::of(app);
     let bounds = logo_bounds(view);
-    let prefs = crate::systems::LogoPrefs::of(&lock(&ctx.shared)).in_color();
+    let prefs = crate::systems::LogoPrefs::of(&lock(&ctx.shared));
     let ids = systems_with_games(ctx);
     ctx.logos.request(
         ids.iter()
-            .filter_map(|id| prefs.key(ctx, id, bounds))
+            .filter_map(|id| prefs.color_key(ctx, id, bounds))
             .collect::<Vec<_>>(),
     );
+    let px = view.cover_px();
     let fresh = pool()
         .as_ref()
-        .filter(|(at, _)| at.elapsed() < POOL_FRESH)
+        .filter(|(at, p)| at.elapsed() < POOL_FRESH && p.px == px)
         .map(|(_, p)| p.clone());
     if let Some(pool) = fresh {
         enqueue(ctx, &pool);
@@ -147,57 +152,106 @@ pub(crate) fn prefetch(ctx: &Ctx, app: &App) {
             .await
         {
             for e in history.entries {
+                if e.media_path.is_empty() {
+                    continue;
+                }
                 recents.push(Recent {
                     key: cover_key(
                         &ctx,
+                        px,
                         &e.system_id,
                         &e.media_path,
                         e.relative_path.as_deref().unwrap_or_default(),
                     ),
                     system: e.system_id,
-                    system_name: e.system_name,
                     name: e.media_name,
                 });
             }
         }
-        let mut extra = Vec::new();
-        if recents.len() < TOP_UP_BELOW && !ids.is_empty() {
-            let mut rng = scene::rng_now();
-            let system = ids[rng.below(ids.len())].clone();
-            if let Ok(page) = client
-                .media_search(MediaSearchParams {
-                    systems: vec![system],
-                    max_results: Some(40),
-                    ..MediaSearchParams::default()
-                })
-                .await
-            {
-                let mut items = page.results;
-                rng.shuffle(&mut items);
-                for item in items.into_iter().take(TOP_UP_BELOW - recents.len()) {
-                    extra.push(cover_key(
-                        &ctx,
-                        &item.system.id,
-                        &item.path,
-                        item.relative_path.as_deref().unwrap_or_default(),
-                    ));
+        if let Ok(top) = client
+            .media_history_top(MediaHistoryTopParams {
+                limit: Some(TOP_PLAYED),
+                systems: Vec::new(),
+            })
+            .await
+        {
+            for e in top.entries {
+                if e.media_path.is_empty() || recents.iter().any(|r| r.key.path == e.media_path) {
+                    continue;
                 }
+                recents.push(Recent {
+                    key: cover_key(
+                        &ctx,
+                        px,
+                        &e.system_id,
+                        &e.media_path,
+                        e.relative_path.as_deref().unwrap_or_default(),
+                    ),
+                    system: e.system_id,
+                    name: e.media_name,
+                });
             }
         }
-        let pool_now = Pool { recents, extra };
+        let extra = if recents.len() < TOP_UP_BELOW && !ids.is_empty() {
+            top_up(&ctx, &client, &ids, px, TOP_UP_BELOW - recents.len()).await
+        } else {
+            Vec::new()
+        };
+        let pool_now = Pool { recents, extra, px };
         enqueue(&ctx, &pool_now);
         *pool() = Some((Instant::now(), pool_now));
     });
 }
 
+/// Up to `want` covers from a page of one random system's games, for a
+/// player with few played games.
+async fn top_up(
+    ctx: &Ctx,
+    client: &zaparoo_core::client::Client,
+    ids: &[String],
+    px: u32,
+    want: usize,
+) -> Vec<MediaKey> {
+    let mut rng = scene::rng_now();
+    let system = ids[rng.below(ids.len())].clone();
+    let Ok(page) = client
+        .media_search(MediaSearchParams {
+            systems: vec![system],
+            max_results: Some(40),
+            ..MediaSearchParams::default()
+        })
+        .await
+    else {
+        return Vec::new();
+    };
+    let mut items = page.results;
+    rng.shuffle(&mut items);
+    items
+        .into_iter()
+        .take(want)
+        .map(|item| {
+            cover_key(
+                ctx,
+                px,
+                &item.system.id,
+                &item.path,
+                item.relative_path.as_deref().unwrap_or_default(),
+            )
+        })
+        .collect()
+}
+
+/// Ask for a random `MAX_COVERS` of the pool's covers, so each run
+/// draws a different handful from a long play history.
 fn enqueue(ctx: &Ctx, pool: &Pool) {
-    for key in pool
+    let mut keys: Vec<&MediaKey> = pool
         .recents
         .iter()
         .map(|r| &r.key)
         .chain(&pool.extra)
-        .take(MAX_COVERS)
-    {
+        .collect();
+    scene::rng_now().shuffle(&mut keys);
+    for key in keys.into_iter().take(MAX_COVERS) {
         ctx.media.enqueue(key.clone());
     }
 }
@@ -206,10 +260,10 @@ fn enqueue(ctx: &Ctx, pool: &Pool) {
 fn gather(ctx: &Ctx, view: View) -> Art {
     let pool = pool().as_ref().map(|(_, p)| p.clone()).unwrap_or_default();
     let bounds = logo_bounds(view);
-    let prefs = crate::systems::LogoPrefs::of(&lock(&ctx.shared)).in_color();
+    let prefs = crate::systems::LogoPrefs::of(&lock(&ctx.shared));
     let mut prepared_now = 0;
     let mut logo = |id: &str, prepare: bool| {
-        let key = prefs.key(ctx, id, bounds)?;
+        let key = prefs.color_key(ctx, id, bounds)?;
         if let Some(ready) = ctx.logos.get(&key) {
             return Some(ready.images().0);
         }
@@ -238,7 +292,9 @@ fn gather(ctx: &Ctx, view: View) -> Art {
     let mut covers = Vec::new();
     let mut cards = Vec::new();
     let mut lines = Vec::new();
-    for recent in &pool.recents {
+    let mut played = pool.recents.clone();
+    rng.shuffle(&mut played);
+    for recent in &played {
         lines.push(Line {
             logo: logo(&recent.system, false).unwrap_or_default(),
             title: recent.name.clone(),
@@ -247,8 +303,6 @@ fn gather(ctx: &Ctx, view: View) -> Art {
             if let Some(face) = cover(&recent.key) {
                 cards.push(Card {
                     cover: face.image.clone(),
-                    title: recent.name.clone(),
-                    system: recent.system_name.clone(),
                 });
                 covers.push(face);
             }

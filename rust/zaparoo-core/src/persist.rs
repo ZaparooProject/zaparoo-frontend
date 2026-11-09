@@ -929,7 +929,7 @@ fn default_screensaver_timeout() -> String {
 }
 
 fn default_screensaver_style() -> String {
-    "bouncing".into()
+    "random".into()
 }
 
 fn default_media_image_type() -> String {

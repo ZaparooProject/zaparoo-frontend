@@ -40,10 +40,8 @@ export global Saver {
     in property <bool> fade: false;
     // Life's and Maze's picture, scaled up to the whole scene.
     in property <image> frame;
-    // Bouncing: Recent game's card.
+    // Bouncing: Recent game's cover.
     in property <image> card-image;
-    in property <string> card-title;
-    in property <string> card-system;
     // Paddle clock: the score and the court's offset, in height units.
     in property <string> score-left;
     in property <string> score-right;
@@ -73,18 +71,15 @@ component Bouncing inherits Rectangle {
     // edges never move as the digits change.
     property <length> clock-w: Math.ceil(clock-measure.preferred-width / 1px) * 1px;
     property <length> clock-h: Math.ceil(clock-measure.preferred-height / 1px) * 1px;
-    // Recent game's card: a cover box and two lines under it.
+    // Recent game's cover box.
     property <length> cover-h: Math.round(root.height * 0.3 / 1px) * 1px;
     property <length> cover-w: Math.round(root.cover-h * 0.75 / 1px) * 1px;
-    property <length> card-w: Math.round(root.cover-w * 1.6 / 1px) * 1px;
-    property <length> line-h: Math.ceil(title-measure.preferred-height / 1px) * 1px;
-    property <length> card-h: root.cover-h + root.line-h * 2;
     property <bool> custom: Brand.mode == HeaderLogo.custom;
     property <length> lw: Saver.bouncing == SaverBouncing.clock ? root.clock-w
-        : Saver.bouncing == SaverBouncing.recent-game ? root.card-w
+        : Saver.bouncing == SaverBouncing.recent-game ? root.cover-w
         : root.custom ? Brand.custom-width(root.box-w, root.box-h) : root.box-w;
     property <length> lh: Saver.bouncing == SaverBouncing.clock ? root.clock-h
-        : Saver.bouncing == SaverBouncing.recent-game ? root.card-h
+        : Saver.bouncing == SaverBouncing.recent-game ? root.cover-h
         : root.custom ? Brand.custom-height(root.box-w, root.box-h) : root.box-h;
 
     clock-measure := Text {
@@ -93,11 +88,6 @@ component Bouncing inherits Rectangle {
         font-size: Sizing.font-hero;
     }
 
-    title-measure := Text {
-        visible: false;
-        text: "Ag";
-        font-size: Sizing.font-body;
-    }
 
     // Float pixel positions; the content rounds on paint. The start
     // mirrors the header logo, so arming reads as the logo walking off.
@@ -170,45 +160,14 @@ component Bouncing inherits Rectangle {
         color: white;
         font-size: Sizing.font-hero;
     }
-    if Saver.bouncing == SaverBouncing.recent-game: Rectangle {
+    if Saver.bouncing == SaverBouncing.recent-game: Image {
         x: root.lx * 1px;
         y: root.ly * 1px;
         width: root.lw;
         height: root.lh;
-
-        Image {
-            x: (parent.width - self.width) / 2;
-            y: 0;
-            width: root.cover-w;
-            height: root.cover-h;
-            source: Saver.card-image;
-            image-fit: contain;
-            image-rendering: Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
-        }
-
-        Text {
-            x: Sizing.snap(parent.x) - parent.x;
-            y: Sizing.snap(parent.y + root.cover-h) - parent.y;
-            width: parent.width;
-            height: root.line-h;
-            text: Saver.card-title;
-            color: white;
-            font-size: Sizing.font-body;
-            horizontal-alignment: center;
-            overflow: elide;
-        }
-
-        Text {
-            x: Sizing.snap(parent.x) - parent.x;
-            y: Sizing.snap(parent.y + root.cover-h + root.line-h) - parent.y;
-            width: parent.width;
-            height: root.line-h;
-            text: Saver.card-system;
-            color: #b8b8c0;
-            font-size: Sizing.font-caption;
-            horizontal-alignment: center;
-            overflow: elide;
-        }
+        source: Saver.card-image;
+        image-fit: contain;
+        image-rendering: Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
     }
 }
 
@@ -227,8 +186,7 @@ component Sprites inherits Rectangle {
         width: s.w * root.height;
         height: s.h * root.height;
         opacity: s.opacity;
-        background: s.look == SaverLook.block || s.look == SaverLook.round ? s.color : transparent;
-        border-radius: s.look == SaverLook.round ? self.height / 2 : 0;
+        background: s.look == SaverLook.block ? s.color : transparent;
         animate opacity {
             duration: Saver.fade ? 700ms : 0ms;
             easing: ease-in-out;

@@ -270,9 +270,9 @@ Settings → Appearance → Screensaver sets when the screensaver starts and
 what it shows.
 
 - **Start after**: how long without input before it starts, or never.
-- **Style**: Bouncing (the default), Spinning logo, System logos, Cover
-  wall, Recent games, Paddle clock, Starfield, Flyby, Polygons, Pipes,
-  Life, Maze, or Random. Random picks a style each time the screensaver
+- **Style**: Random (the default), Bouncing, Spinning logo, System logos,
+  Cover wall, Recent games, Paddle clock, Starfield, Flyby, Polygons,
+  Snakes, Life, or Maze. Random picks a style each time the screensaver
   starts and never plays the same one twice in a row.
 - **Bouncing** (shown for Bouncing and Random): what bounces around the
   screen: the logo, the clock, or the cover of a recently played game.
@@ -288,14 +288,14 @@ screensaver starts and kept in memory only, like every other cover.
 [settings]
 screensaver_timeout = "300"        # seconds: 60, 120, 300, 600, 900,
                                    # 1800, or "off"
-screensaver_style = "random"       # bouncing, spinning-logo, system-logos,
-                                   # cover-wall, recent-games, paddle-clock,
-                                   # starfield, flyby, polygons, pipes, life,
-                                   # maze, random
+screensaver_style = "random"       # random, bouncing, spinning-logo,
+                                   # system-logos, cover-wall, recent-games,
+                                   # paddle-clock, starfield, flyby, polygons,
+                                   # snakes, life, maze
 screensaver_bouncing = "clock"     # logo, clock, recent-game
 ```
 
-An unknown value reads as the default (`bouncing`, `logo`).
+An unknown value reads as the default (`random`, `logo`).
 
 ## Background
 

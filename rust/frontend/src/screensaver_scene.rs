@@ -19,8 +19,8 @@ use zaparoo_app::screensaver::life::Life;
 use zaparoo_app::screensaver::marquee::{self, Marquee, Pass};
 use zaparoo_app::screensaver::maze::{self, Maze, Texture};
 use zaparoo_app::screensaver::paddle::{self, Paddle};
-use zaparoo_app::screensaver::pipes::{Change, Pipes};
 use zaparoo_app::screensaver::polygons::Polygons;
+use zaparoo_app::screensaver::snakes::Snakes;
 use zaparoo_app::screensaver::spin::Spin;
 use zaparoo_app::screensaver::stars::Stars;
 use zaparoo_app::screensaver::wall::{Grid, Tile, Wall};
@@ -63,12 +63,10 @@ impl Face {
     }
 }
 
-/// A recently played game with its cover: Bouncing: Recent game's card.
+/// A played game's cover: Bouncing: Recent game's card.
 #[derive(Clone)]
 pub(crate) struct Card {
     pub cover: Image,
-    pub title: String,
-    pub system: String,
 }
 
 /// A recently played game for the Recent games line: its system's logo
@@ -122,6 +120,12 @@ impl View {
     }
 
     /// The pixel height every logo and cover raster is made at.
+    /// The side of a Cover wall tile, the largest box a cover is painted in.
+    pub(crate) fn cover_px(self) -> u32 {
+        let grid = Grid::for_scene(self.aspect());
+        (self.height * grid.tile_h).round().max(8.0) as u32
+    }
+
     pub(crate) fn face_px(self) -> u32 {
         (self.height * FACE_HEIGHT).round().max(8.0) as u32
     }
@@ -145,14 +149,15 @@ enum Sim {
         /// The picture's size in pixels.
         size: (usize, usize),
     },
-    Pipes(Pipes),
+    Snakes(Snakes),
     Life(Life),
     Maze {
         maze: Box<Maze>,
         size: (usize, usize),
         textures: Vec<Texture>,
         mark: Texture,
-        depth: Vec<f32>,
+        rats: Vec<Texture>,
+        scratch: maze::Scratch,
     },
 }
 
@@ -206,11 +211,9 @@ impl Scene {
                 Sim::Spin(Spin::new(aspect, logo.aspect, art.systems.len(), seed))
             }
             Style::SystemLogos => Sim::Hops(Hops::new(art.systems.len(), seed)),
-            Style::CoverWall => Sim::Wall(Wall::new(
-                Grid::for_scene(aspect, view.low_res),
-                art.covers.len(),
-                seed,
-            )),
+            Style::CoverWall => {
+                Sim::Wall(Wall::new(Grid::for_scene(aspect), art.covers.len(), seed))
+            }
             Style::RecentGames => Sim::Marquee {
                 marquee: Marquee::new(art.lines.len(), seed),
                 elapsed: 0.0,
@@ -232,7 +235,7 @@ impl Scene {
                 ),
                 size: frame_size(view, POLYGON_LINES),
             },
-            Style::Pipes => Sim::Pipes(Pipes::new(aspect, view.low_res, seed)),
+            Style::Snakes => Sim::Snakes(Snakes::new(aspect, view.low_res, seed)),
             Style::Life => {
                 let (w, h) = life_board(view);
                 let mask = logo_source.as_ref().map(|s| life_mask(s, w, h));
@@ -271,8 +274,8 @@ impl Scene {
             Style::SpinningLogo | Style::RecentGames | Style::PaddleClock => 33,
             Style::Starfield | Style::Flyby | Style::Polygons | Style::Maze => 50,
             Style::SystemLogos => 100,
-            Style::Pipes => 83,
-            Style::CoverWall | Style::Life => 250,
+            Style::Snakes | Style::Life => 83,
+            Style::CoverWall => 250,
         };
         Some(Duration::from_millis(ms))
     }
@@ -296,12 +299,8 @@ impl Scene {
         let saver = app.global::<Saver>();
         if let Some(card) = self.art.cards.get(self.card) {
             saver.set_card_image(card.cover.clone());
-            saver.set_card_title(card.title.as_str().into());
-            saver.set_card_system(card.system.as_str().into());
         } else {
             saver.set_card_image(Image::default());
-            saver.set_card_title("".into());
-            saver.set_card_system("".into());
         }
     }
 
@@ -309,7 +308,7 @@ impl Scene {
         match &mut self.sim {
             Sim::Wall(wall) => {
                 let rows: Vec<Sprite> = (0..wall.tiles().len())
-                    .map(|i| wall_sprite(wall, i))
+                    .map(|i| wall_sprite(wall, &self.art, i))
                     .collect();
                 let rows: Vec<SaverSprite> = rows.iter().map(|s| self.row(s)).collect();
                 self.sprites.set_vec(rows);
@@ -321,6 +320,10 @@ impl Scene {
             Sim::Paddle(p) => {
                 let (score, shift) = (p.score(), p.shift());
                 self.show_score(app, score, shift);
+            }
+            Sim::Snakes(snakes) => {
+                let rows: Vec<SaverSprite> = snakes.sprites().iter().map(|s| self.row(s)).collect();
+                self.sprites.set_vec(rows);
             }
             _ => {}
         }
@@ -351,7 +354,7 @@ impl Scene {
                 let changed = wall.step(dt);
                 let rows: Vec<(usize, Sprite)> = changed
                     .into_iter()
-                    .map(|i| (i, wall_sprite(wall, i)))
+                    .map(|i| (i, wall_sprite(wall, &self.art, i)))
                     .collect();
                 for (i, s) in rows {
                     let row = self.row(&s);
@@ -405,16 +408,14 @@ impl Scene {
                 app.global::<Saver>().set_frame(Image::from_rgb8(buffer));
                 None
             }
-            Sim::Pipes(pipes) => {
-                match pipes.step(dt) {
-                    Change::Add(pieces) => {
-                        let rows: Vec<SaverSprite> = pieces.iter().map(|s| self.row(s)).collect();
-                        for row in rows {
-                            self.sprites.push(row);
-                        }
-                    }
-                    Change::Clear => self.sprites.set_vec(Vec::new()),
-                    Change::Nothing => {}
+            Sim::Snakes(snakes) => {
+                let changes: Vec<(usize, SaverSprite)> = snakes
+                    .step(dt)
+                    .iter()
+                    .map(|(i, s)| (*i, self.row(s)))
+                    .collect();
+                for (i, row) in changes {
+                    self.sprites.set_row_data(i, row);
                 }
                 None
             }
@@ -432,11 +433,19 @@ impl Scene {
                 size,
                 textures,
                 mark,
-                depth,
+                rats,
+                scratch,
             } => {
                 maze.step(dt);
                 let mut buffer = SharedPixelBuffer::<Rgb8Pixel>::new(size.0 as u32, size.1 as u32);
-                maze.render(buffer.make_mut_bytes(), *size, textures, mark, depth);
+                maze.render(
+                    buffer.make_mut_bytes(),
+                    *size,
+                    textures,
+                    mark,
+                    rats,
+                    scratch,
+                );
                 app.global::<Saver>().set_frame(Image::from_rgb8(buffer));
                 None
             }
@@ -507,7 +516,6 @@ impl Scene {
             ),
             Look::Clock => (SaverLook::Clock, Image::default(), slint::Color::default()),
             Look::Block(n) => (SaverLook::Block, Image::default(), self.slot(n)),
-            Look::Round(n) => (SaverLook::Round, Image::default(), self.slot(n)),
         };
         SaverSprite {
             x: s.x,
@@ -559,17 +567,24 @@ fn face_aspect(art: &Art, logo_aspect: f32, look: Look) -> f32 {
         Look::System(i) => art.systems.get(i).map_or(2.0, |f| f.aspect),
         Look::Cover(i) => art.covers.get(i).map_or(0.75, |f| f.aspect),
         Look::Clock => 2.6,
-        Look::Mark | Look::Block(_) | Look::Round(_) => 1.0,
+        Look::Mark | Look::Block(_) => 1.0,
     }
 }
 
-fn wall_sprite(wall: &Wall, i: usize) -> Sprite {
-    let (x, y) = wall.grid.origin(i);
-    let look = match wall.tiles().get(i) {
-        Some(Tile::Cover(c)) => Look::Cover(*c),
-        Some(Tile::Clock) | None => Look::Clock,
-    };
-    Sprite::new(x, y, wall.grid.tile_w, wall.grid.tile_h, look)
+/// Tile `i` of the wall: a cover fitted inside its square, keeping its
+/// shape, or the clock across the whole tile.
+fn wall_sprite(wall: &Wall, art: &Art, tile: usize) -> Sprite {
+    match wall.tiles().get(tile) {
+        Some(Tile::Cover(cover)) => {
+            let aspect = art.covers.get(*cover).map_or(0.75, |f| f.aspect);
+            let (left, top, width, height) = wall.grid.fit(tile, aspect);
+            Sprite::new(left, top, width, height, Look::Cover(*cover))
+        }
+        Some(Tile::Clock) | None => {
+            let (left, top) = wall.grid.origin(tile);
+            Sprite::new(left, top, wall.grid.tile_w, wall.grid.tile_h, Look::Clock)
+        }
+    }
 }
 
 /// The bolt at the logo's left, outlined, resampled and normalized.
@@ -604,8 +619,9 @@ fn fallback_mark() -> (Vec<(f32, f32)>, f32) {
     contour::normalize(&contour::resample(&square, MARK_POINTS))
 }
 
-/// The Maze's simulation: the maze, the covers framed on its walls and
-/// the Zaparoo mark spinning at its junctions.
+/// The Maze's simulation: the maze, the covers framed on its walls, the
+/// Zaparoo mark spinning at its junctions and the system logos running
+/// about.
 fn maze_sim(art: &Art, view: View, seed: u64) -> Sim {
     let textures: Vec<Texture> = art
         .covers
@@ -621,12 +637,19 @@ fn maze_sim(art: &Art, view: View, seed: u64) -> Sim {
         },
         |s| texture_from(&s),
     );
+    let rats: Vec<Texture> = art
+        .systems
+        .iter()
+        .take(maze::MAX_RATS)
+        .filter_map(|f| logo_texture(&f.image))
+        .collect();
     Sim::Maze {
-        maze: Box::new(Maze::new(MAZE_CELLS, textures.len(), seed)),
+        maze: Box::new(Maze::new(MAZE_CELLS, textures.len(), rats.len(), seed)),
         size: frame_size(view, MAZE_LINES),
         textures,
         mark,
-        depth: Vec::new(),
+        rats,
+        scratch: maze::Scratch::default(),
     }
 }
 
@@ -677,6 +700,27 @@ fn texture(image: &Image) -> Option<Texture> {
     let source =
         image::RgbaImage::from_raw(buffer.width(), buffer.height(), buffer.as_bytes().to_vec())?;
     Some(texture_from(&source))
+}
+
+/// A logo as a texture `MAZE_TEXTURE` tall, keeping its shape.
+fn logo_texture(image: &Image) -> Option<Texture> {
+    let buffer = image.to_rgba8()?;
+    let (w, h) = (buffer.width().max(1), buffer.height().max(1));
+    let source = image::RgbaImage::from_raw(w, h, buffer.as_bytes().to_vec())?;
+    let height = MAZE_TEXTURE;
+    let width =
+        (u64::from(w) * u64::from(height) / u64::from(h)).clamp(1, u64::from(height) * 3) as u32;
+    let small = image::imageops::resize(
+        &source,
+        width,
+        height,
+        image::imageops::FilterType::Triangle,
+    );
+    Some(Texture {
+        width: width as usize,
+        height: height as usize,
+        rgba: small.into_raw(),
+    })
 }
 
 fn texture_from(source: &image::RgbaImage) -> Texture {

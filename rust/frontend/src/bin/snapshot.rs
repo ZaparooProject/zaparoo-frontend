@@ -1608,13 +1608,11 @@ fn fixture_saver(app: &App, screen: &str) {
     ];
     let systems: Vec<Face> = games.iter().map(|(id, ..)| logo(id)).collect();
     let covers: Vec<Face> = (0..12).map(|i| Face::of(fixture_saver_cover(i))).collect();
-    let cards = games
+    let cards = covers
         .iter()
-        .zip(&covers)
-        .map(|((_, system, title), cover)| Card {
+        .take(games.len())
+        .map(|cover| Card {
             cover: cover.image.clone(),
-            title: (*title).into(),
-            system: (*system).into(),
         })
         .collect();
     let lines = games

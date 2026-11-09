@@ -304,7 +304,13 @@ export component ListViewport inherits Rectangle {
     changed visible-rows => { root.reveal-current(); }
     changed count => { root.reveal-current(); }
     changed scope => { root.top = 0; root.reveal-current(); }
-    init => { root.reveal-current(); }
+    // The scroll and the cursor placed themselves before this scrolled to
+    // the current row.
+    init => {
+        root.reveal-current();
+        list-scroll.snap();
+        sel.snap();
+    }
 
     height: root.viewport-h + 2 * root.arrow-band;
 

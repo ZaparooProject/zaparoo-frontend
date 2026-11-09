@@ -14139,3 +14139,60 @@ fn a_rescan_reloads_an_open_list_and_marks_an_unseen_one() {
     assert!(!shared.games.positional_stale);
     assert_eq!(shared.games.rows.len(), 1000, "the rows stay up");
 }
+
+#[test]
+fn a_picker_opened_below_its_first_window_paints_the_fill_at_once() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    app.global::<Shell>().set_active_screen(Screen::None);
+    let magenta = slint::Rgb8Pixel {
+        r: 255,
+        g: 0,
+        b: 255,
+    };
+    app.global::<crate::Theme>()
+        .set_selection_fill(slint::Color::from_rgb_u8(magenta.r, magenta.g, magenta.b));
+    let ov = app.global::<crate::Overlays>();
+    let filled = |window: &Rc<MinimalSoftwareWindow>| {
+        pixels(window)
+            .iter()
+            .filter(|p| p.0 == Rgb565Pixel::from(magenta).0)
+            .count()
+    };
+    // Opened the way Settings opens a picker: rows, then the current
+    // value, then open. The rows past the first window scroll the list as
+    // it is built, and the fill has to follow on the first frame.
+    for (index, current) in [(0usize, 0), (3, 3), (10, 10), (12, 12)] {
+        let entries: Vec<crate::MenuEntry> = (0..13)
+            .map(|i| crate::MenuEntry {
+                role: crate::MenuRole::default(),
+                detail_key: SharedString::default(),
+                id: i.to_string().into(),
+                label: format!("Row {i}").into(),
+                label_key: "".into(),
+                enabled: true,
+                reason_key: "".into(),
+                detail: "".into(),
+            })
+            .collect();
+        ov.set_list_entries(ModelRc::new(VecModel::from(crate::router::mark_chosen(
+            entries, index,
+        ))));
+        ov.set_list_index(current);
+        ov.set_list_open(true);
+        let first = filled(&window);
+        settle(&window);
+        assert!(first > 0, "row {index}: no fill on the first frame");
+        assert_eq!(
+            first,
+            filled(&window),
+            "row {index}: the fill moved after opening"
+        );
+        ov.set_list_open(false);
+        settle(&window);
+    }
+}

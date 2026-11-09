@@ -17,8 +17,17 @@ pub const PADDLE_H: f32 = 0.17;
 pub const BALL: f32 = 0.055;
 /// Seconds the ball takes to cross the court.
 pub const CROSS_SECONDS: f32 = 1.7;
-/// Paddle speed, in height units per second.
+/// A paddle's top speed, in height units per second.
 pub const PADDLE_SPEED: f32 = 1.6;
+/// The top speed of a paddle drifting back to the middle after its hit.
+pub const DRIFT_SPEED: f32 = 0.35;
+/// How quickly a paddle closes on where it is going: the share of the
+/// distance left it covers per second, so it eases in rather than stops dead.
+pub const EASE: f32 = 6.0;
+/// The receiving paddle's reaction time after a hit or serve, in seconds.
+pub const REACT: (f32, f32) = (0.15, 0.35);
+/// Seconds the ball stays out after a point before the next serve.
+pub const SERVE_PAUSE: f32 = 1.2;
 /// How far the court can drift from center, in height units.
 pub const SHIFT: f32 = 0.012;
 
@@ -43,6 +52,14 @@ pub struct Paddle {
     loser: Option<Side>,
     /// Where the court sits, offset from center.
     shift: (f32, f32),
+    /// Seconds before the receiving paddle starts to move.
+    react: f32,
+    /// Where on its face the receiving paddle means to take the ball,
+    /// from its middle, in height units.
+    aim: f32,
+    /// After a point: the side the next serve heads for, and the seconds
+    /// left before it.
+    serving: Option<(Side, f32)>,
     rng: Rng,
 }
 
@@ -59,6 +76,9 @@ impl Paddle {
             shown: (hour, minute),
             loser: None,
             shift: (0.0, 0.0),
+            react: 0.0,
+            aim: 0.0,
+            serving: None,
             rng: Rng::new(seed),
         };
         let first = if p.rng.coin() {
@@ -95,6 +115,14 @@ impl Paddle {
         let speed = (self.court_right() - self.court_left()) / CROSS_SECONDS;
         self.vx = if toward == Side::Left { -speed } else { speed };
         self.vy = self.rng.range(0.25, 0.55) * if self.rng.coin() { 1.0 } else { -1.0 };
+        self.new_volley();
+    }
+
+    /// The ball is on its way to the other side: that player takes a
+    /// moment to react and picks a spot on the paddle to take it on.
+    fn new_volley(&mut self) {
+        self.react = self.rng.range(REACT.0, REACT.1);
+        self.aim = self.rng.range(-0.3, 0.3) * PADDLE_H;
     }
 
     /// Advance by `dt` seconds with the wall clock at `hour:minute`.
@@ -108,6 +136,18 @@ impl Paddle {
                 Side::Right
             });
         }
+        if let Some((toward, left)) = self.serving {
+            // The ball is out; both players settle before the serve.
+            self.move_paddles(dt);
+            let left = left - dt;
+            if left > 0.0 {
+                self.serving = Some((toward, left));
+            } else {
+                self.serving = None;
+                self.serve(toward);
+            }
+            return false;
+        }
         self.ball_x += self.vx * dt;
         self.ball_y += self.vy * dt;
         if self.ball_y <= self.court_top() {
@@ -117,6 +157,7 @@ impl Paddle {
             self.ball_y = self.court_bottom() - BALL;
             self.vy = -self.vy.abs();
         }
+        self.react -= dt;
         self.move_paddles(dt);
 
         let left_face = self.court_left() + PADDLE_W;
@@ -128,9 +169,9 @@ impl Paddle {
                 }
             } else {
                 self.ball_x = left_face;
-                self.left_y = self.cover(self.left_y);
                 self.vx = -self.vx;
                 self.vy = self.english(self.left_y);
+                self.new_volley();
             }
         } else if self.vx > 0.0 && self.ball_x + BALL >= right_face {
             if self.loser == Some(Side::Right) {
@@ -139,27 +180,22 @@ impl Paddle {
                 }
             } else {
                 self.ball_x = right_face - BALL;
-                self.right_y = self.cover(self.right_y);
                 self.vx = -self.vx;
                 self.vy = self.english(self.right_y);
+                self.new_volley();
             }
         }
         false
     }
 
+    /// The ball is out past `missed`: the score turns now, and the next
+    /// serve heads for the side that missed after a pause.
     fn point(&mut self, hour: u8, minute: u8, missed: Side) -> bool {
         self.shown = (hour, minute);
         self.loser = None;
         self.shift = (self.rng.range(-SHIFT, SHIFT), self.rng.range(-SHIFT, SHIFT));
-        self.serve(missed);
+        self.serving = Some((missed, SERVE_PAUSE));
         true
-    }
-
-    /// A paddle at `y` moved just enough to meet the ball.
-    fn cover(&self, y: f32) -> f32 {
-        let lo = self.ball_y + BALL - PADDLE_H + 0.01;
-        let hi = self.ball_y - 0.01;
-        y.clamp(lo.min(hi), hi.max(lo))
     }
 
     /// Where the ball goes after meeting a paddle at `y`: off the edge of
@@ -169,33 +205,62 @@ impl Paddle {
         offset.clamp(-1.0, 1.0) * 0.7 + self.vy.signum() * 0.1
     }
 
+    /// The ball's middle when it reaches the face it is heading for,
+    /// bouncing off the top and bottom on the way.
+    fn landing_mid(&self) -> f32 {
+        let face = if self.vx < 0.0 {
+            self.court_left() + PADDLE_W
+        } else {
+            self.court_right() - PADDLE_W - BALL
+        };
+        let t = if self.vx == 0.0 {
+            0.0
+        } else {
+            ((face - self.ball_x) / self.vx).max(0.0)
+        };
+        let top = self.court_top();
+        let span = (self.court_bottom() - BALL - top).max(f32::EPSILON);
+        let mut m = (self.ball_y + self.vy * t - top).rem_euclid(2.0 * span);
+        if m > span {
+            m = 2.0 * span - m;
+        }
+        top + m + BALL / 2.0
+    }
+
     fn move_paddles(&mut self, dt: f32) {
-        let ball_mid = self.ball_y + BALL / 2.0;
         let center = (self.court_top() + self.court_bottom() - PADDLE_H) / 2.0;
+        let landing = self.landing_mid();
+        let court_mid = self.court_top().midpoint(self.court_bottom());
         for side in [Side::Left, Side::Right] {
-            let incoming = match side {
-                Side::Left => self.vx < 0.0,
-                Side::Right => self.vx > 0.0,
-            };
-            let target = if self.loser == Some(side) && incoming {
-                // Step aside, the way a player who misjudged it would.
-                if ball_mid > self.court_top().midpoint(self.court_bottom()) {
-                    ball_mid - PADDLE_H - 0.2
+            let incoming = self.serving.is_none()
+                && match side {
+                    Side::Left => self.vx < 0.0,
+                    Side::Right => self.vx > 0.0,
+                };
+            let (target, speed) = if incoming && self.react > 0.0 {
+                // Still reading the shot.
+                continue;
+            } else if incoming && self.loser == Some(side) {
+                // Misjudge it and go the wrong way.
+                let wrong = if landing > court_mid {
+                    landing - PADDLE_H - 0.2
                 } else {
-                    ball_mid + 0.2
-                }
+                    landing + 0.2
+                };
+                (wrong, PADDLE_SPEED)
             } else if incoming {
-                ball_mid - PADDLE_H / 2.0
+                (landing - PADDLE_H / 2.0 - self.aim, PADDLE_SPEED)
             } else {
-                center
+                (center, DRIFT_SPEED)
             };
             let target = target.clamp(self.court_top(), self.court_bottom() - PADDLE_H);
             let y = match side {
                 Side::Left => &mut self.left_y,
                 Side::Right => &mut self.right_y,
             };
-            let max = PADDLE_SPEED * dt;
-            *y += (target - *y).clamp(-max, max);
+            let ease = 1.0 - (-EASE * dt).exp();
+            let max = speed * dt;
+            *y += ((target - *y) * ease).clamp(-max, max);
         }
     }
 
@@ -288,5 +353,55 @@ mod tests {
                 assert!(s.y >= 0.0 && s.y + s.h <= 1.0);
             }
         }
+    }
+
+    /// Paddles glide: no jump at a hit or a point, and the ball always
+    /// meets the paddle that returns it.
+    #[test]
+    fn paddles_glide_and_meet_the_ball() {
+        let dt = 1.0 / 30.0;
+        for (seed, aspect) in [(2, 16.0 / 9.0), (3, 4.0 / 3.0), (9, 16.0 / 10.0)] {
+            let mut p = Paddle::new(aspect, 7, 0, seed);
+            let mut minute = 0;
+            for frame in 0..(30 * 600) {
+                if frame % (30 * 20) == 0 {
+                    minute = (minute + 1) % 60;
+                }
+                let before = (p.left_y, p.right_y, p.vx);
+                p.step(dt, 7, minute);
+                let max = PADDLE_SPEED * dt + 1e-5;
+                assert!((p.left_y - before.0).abs() <= max);
+                assert!((p.right_y - before.1).abs() <= max);
+                if p.vx.signum() != before.2.signum() && p.serving.is_none() && before.2 != 0.0 {
+                    let paddle = if p.vx > 0.0 { p.left_y } else { p.right_y };
+                    let mid = p.ball_y + BALL / 2.0;
+                    assert!(
+                        mid >= paddle - BALL / 2.0 && mid <= paddle + PADDLE_H + BALL / 2.0,
+                        "seed {seed}: ball at {mid} met a paddle at {paddle}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// After a point the ball stays out of sight before the next serve.
+    #[test]
+    fn the_ball_waits_out_of_sight_after_a_point() {
+        let mut p = Paddle::new(16.0 / 9.0, 3, 4, 11);
+        let dt = 1.0 / 30.0;
+        let mut frames = 0;
+        while !p.step(dt, 3, 5) {
+            frames += 1;
+            assert!(frames < 30 * 30, "no point");
+        }
+        let out = |p: &Paddle| p.ball_x + BALL < 0.0 || p.ball_x > 16.0 / 9.0;
+        let mut waited = 0.0;
+        while p.serving.is_some() {
+            assert!(out(&p));
+            p.step(dt, 3, 5);
+            waited += dt;
+        }
+        assert!(waited >= SERVE_PAUSE - dt);
+        assert!(!out(&p));
     }
 }

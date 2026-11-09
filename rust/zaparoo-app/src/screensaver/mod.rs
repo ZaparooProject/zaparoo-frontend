@@ -20,8 +20,8 @@ pub mod life;
 pub mod marquee;
 pub mod maze;
 pub mod paddle;
-pub mod pipes;
 pub mod polygons;
+pub mod snakes;
 pub mod spin;
 pub mod stars;
 pub mod wall;
@@ -30,6 +30,7 @@ pub mod wall;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Style {
     #[default]
+    Random,
     Bouncing,
     SpinningLogo,
     SystemLogos,
@@ -39,14 +40,14 @@ pub enum Style {
     Starfield,
     Flyby,
     Polygons,
-    Pipes,
+    Snakes,
     Life,
     Maze,
-    Random,
 }
 
 /// Every style token, in picker order.
 pub const STYLES: &[&str] = &[
+    "random",
     "bouncing",
     "spinning-logo",
     "system-logos",
@@ -56,14 +57,13 @@ pub const STYLES: &[&str] = &[
     "starfield",
     "flyby",
     "polygons",
-    "pipes",
+    "snakes",
     "life",
     "maze",
-    "random",
 ];
 
 /// The persisted default style.
-pub const DEFAULT_STYLE: &str = "bouncing";
+pub const DEFAULT_STYLE: &str = "random";
 
 impl Style {
     /// Every style but Random, which only ever resolves to one of these.
@@ -77,12 +77,12 @@ impl Style {
         Self::Starfield,
         Self::Flyby,
         Self::Polygons,
-        Self::Pipes,
+        Self::Snakes,
         Self::Life,
         Self::Maze,
     ];
 
-    /// A persisted token; anything unknown is Bouncing.
+    /// A persisted token; anything unknown is Random.
     pub fn parse(token: &str) -> Self {
         match token.trim() {
             "spinning-logo" => Self::SpinningLogo,
@@ -93,11 +93,11 @@ impl Style {
             "starfield" => Self::Starfield,
             "flyby" => Self::Flyby,
             "polygons" => Self::Polygons,
-            "pipes" => Self::Pipes,
+            "snakes" => Self::Snakes,
             "life" => Self::Life,
             "maze" => Self::Maze,
-            "random" => Self::Random,
-            _ => Self::Bouncing,
+            "bouncing" => Self::Bouncing,
+            _ => Self::Random,
         }
     }
 
@@ -113,7 +113,7 @@ impl Style {
             Self::Starfield => "starfield",
             Self::Flyby => "flyby",
             Self::Polygons => "polygons",
-            Self::Pipes => "pipes",
+            Self::Snakes => "snakes",
             Self::Life => "life",
             Self::Maze => "maze",
             Self::Random => "random",
@@ -330,8 +330,6 @@ pub enum Look {
     Cover(usize),
     /// A flat rectangle in palette slot `n`.
     Block(u8),
-    /// A disc in palette slot `n`.
-    Round(u8),
 }
 
 /// One thing on screen, in height units (see the module docs): its
@@ -389,7 +387,7 @@ mod tests {
         for token in BOUNCINGS {
             assert_eq!(Bouncing::parse(token).token(), *token);
         }
-        assert_eq!(Style::parse("toasters"), Style::Bouncing);
+        assert_eq!(Style::parse("toasters"), Style::Random);
         assert_eq!(Bouncing::parse(""), Bouncing::Logo);
         assert_eq!(Bouncing::parse("nope"), Bouncing::Logo);
         assert_eq!(STYLES.len(), Style::PLAYABLE.len() + 1);
