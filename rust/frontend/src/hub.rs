@@ -1941,8 +1941,8 @@ pub(crate) fn open_add_picker(ctx: &Ctx, app: &App) {
             .collect();
         // Every Settings root tile not already pinned.
         available.extend(
-            zaparoo_app::settings::PAGES
-                .iter()
+            crate::settings::root_pages()
+                .into_iter()
                 .filter(|page| hub.layout.setting_position(page.id).is_none())
                 .map(|page| ("setting".to_string(), page.id.to_string())),
         );

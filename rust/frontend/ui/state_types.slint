@@ -43,7 +43,7 @@ export enum SearchScope { none, folder, system, category, list }
 // `controllers` is the page the Controls page's Controllers row opens, and
 // `paired-controllers` the page its Paired controllers row opens in turn;
 // neither is a root tile.
-export enum SettingsPage { root, appearance, library, online, display, controls, language, about, controllers, paired-controllers }
+export enum SettingsPage { root, appearance, library, online, display, controls, language, about, controllers, paired-controllers, browsing, retro-achievements }
 export enum ContentState { ready, loading, empty, error }
 // What Core's current UI event puts on screen (`ui` / `ui.changed`). A
 // confirmation uses the decision dialog, a loader and a notice the header
@@ -62,7 +62,7 @@ export enum BootStatus { connecting, starting, migrating, reconnecting, loading,
 export enum HeaderLogo { zaparoo, custom, none }
 export enum DisabledReason { none, no-recent-games, no-internet, not-available, deck-missing }
 export enum RowKind { header, field }
-export enum ControlKind { none, picker, toggle, action, navigate, tri-toggle, info, slider, device }
+export enum ControlKind { none, picker, toggle, action, navigate, tri-toggle, info, notice, slider, device }
 // What a controller card says about its power (`zaparoo_app::controllers::
 // Reading`), and where a Bluetooth device row stands: a found row's
 // pairing (`DeviceState`), or a paired row's connection
@@ -149,6 +149,8 @@ export global StateTokens {
         if (page == SettingsPage.about) { return "pageSupportAbout"; }
         if (page == SettingsPage.controllers) { return "pageControllers"; }
         if (page == SettingsPage.paired-controllers) { return "pagePairedControllers"; }
+        if (page == SettingsPage.browsing) { return "pageBrowsing"; }
+        if (page == SettingsPage.retro-achievements) { return "pageRetroAchievements"; }
         return "";
     }
     public pure function games(mode: GamesMode) -> string {

@@ -9,7 +9,7 @@
 // page scrolls as About does, in thousandths of its range.
 
 import { Theme, Backdrop, GlassCard, Sizing, Layout, Motion } from "theme.slint";
-import { TopStatusStrip, FooterIndicator, ScrollCue } from "chrome.slint";
+import { TopStatusStrip, FooterIndicator, ScrollCue, GlyphSource } from "chrome.slint";
 import { GridCell } from "tiles.slint";
 import { BrowseList } from "browse_list.slint";
 import { CreditsPage } from "state_types.slint";
@@ -69,7 +69,7 @@ export global CreditsInput {
 component ReadingPage inherits Rectangle {
     property <length> pad: Sizing.surface-pad;
     // The CRT's scroll cues get a band inside the lip, as on About.
-    property <length> arrow: Sizing.pct-h(3);
+    property <length> arrow: GlyphSource.cue-side();
     property <length> arrow-band: Sizing.crt ? root.arrow + Sizing.pct-h(0.5) : 0px;
     out property <length> maximum-scroll: Math.max(0px, content.preferred-height - viewport.height);
     // Whole pixels, so the bitmap face's labels stay on the grid.

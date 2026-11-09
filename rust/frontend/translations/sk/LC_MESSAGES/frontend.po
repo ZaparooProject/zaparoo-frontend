@@ -2271,12 +2271,12 @@ msgid "Schedule"
 msgstr "Plán"
 
 #: rust/frontend/ui/settings.slint:198
-msgid "Manage backups…"
-msgstr "Spravovať zálohy…"
+msgid "Manage backups"
+msgstr "Spravovať zálohy"
 
 #: rust/frontend/ui/settings.slint:200
-msgid "Activity…"
-msgstr "Aktivita…"
+msgid "Activity"
+msgstr "Aktivita"
 
 #: rust/frontend/ui/settings.slint:205
 msgid "Debug logging"
@@ -4919,3 +4919,30 @@ msgstr "Ponuka"
 msgctxt "tag-value"
 msgid "Volume {}"
 msgstr "Zväzok {}"
+
+msgid "Update media database…"
+msgstr "Aktualizovať databázu médií…"
+
+msgid "Update metadata…"
+msgstr "Aktualizovať metadáta…"
+
+msgid "Unlink account…"
+msgstr "Zrušiť prepojenie účtu…"
+
+msgid "Grid"
+msgstr "Zobrazenie mriežky"
+
+msgid "Detailed list"
+msgstr "Podrobné zobrazenie zoznamu"
+
+msgid "Recommended"
+msgstr "Odporúčané"
+
+msgid "1 second"
+msgstr "1 sekunda"
+
+msgid "Testing"
+msgstr "Test"
+
+msgid "No animations"
+msgstr "Animácie vypnuté"

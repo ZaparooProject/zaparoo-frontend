@@ -283,7 +283,7 @@ export component ListViewport inherits Rectangle {
     out property <int> visible-rows: Math.max(1, Math.min(root.count,
         Math.floor((root.max-viewport + root.row-sp) / root.stride)));
     property <bool> scrollable: root.count > root.visible-rows;
-    property <length> arrow: GlyphSource.side(Sizing.pct-h(3));
+    property <length> arrow: GlyphSource.cue-side();
     out property <length> arrow-band: root.scrollable ? root.arrow + Sizing.pct-h(0.5) : 0px;
     out property <length> viewport-h: root.count == 0 ? 0px
         : root.visible-rows * root.row-h + Math.max(0, root.visible-rows - 1) * root.row-sp;

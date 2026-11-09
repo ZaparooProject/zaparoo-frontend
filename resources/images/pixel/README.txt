@@ -16,8 +16,11 @@ One row of pixels per line:
   +  the favorite heart's keyline
 
 Keep the art no larger than the smallest slot it is drawn in on CRT
-(status icons 8 px, the header's controller glyphs 16 px, scroll and
-chevron arrows 6 px, the list heart 7 px), and draw every new file's key
-from the vector set it stands in for.
+(status icons 8 px, the header's controller glyphs 16 px, scroll arrows
+7 px through GlyphSource.cue-side, chevrons 6 px, the list heart 7 px), and
+draw every new file's key from the vector set it stands in for. The scroll
+arrows come in pairs, filled for a live direction and outlined
+(ScrollUpOutline, ScrollDownOutline) for a spent one; at 7x4 the two differ
+by more than a pixel.
 
 Original artwork for this project.

@@ -2265,12 +2265,12 @@ msgid "Schedule"
 msgstr "תזמון"
 
 #: rust/frontend/ui/settings.slint:198
-msgid "Manage backups…"
-msgstr "ניהול גיבויים…"
+msgid "Manage backups"
+msgstr "ניהול גיבויים"
 
 #: rust/frontend/ui/settings.slint:200
-msgid "Activity…"
-msgstr "פעילות…"
+msgid "Activity"
+msgstr "פעילות"
 
 #: rust/frontend/ui/settings.slint:205
 msgid "Debug logging"
@@ -4910,3 +4910,30 @@ msgstr "תפריט"
 msgctxt "tag-value"
 msgid "Volume {}"
 msgstr "כרך {}"
+
+msgid "Update media database…"
+msgstr "עדכון מסד נתוני המדיה…"
+
+msgid "Update metadata…"
+msgstr "עדכון מטא-נתונים…"
+
+msgid "Unlink account…"
+msgstr "בטל קישור חשבון…"
+
+msgid "Grid"
+msgstr "תצוגת רשת"
+
+msgid "Detailed list"
+msgstr "תצוגת רשימה מפורטת"
+
+msgid "Recommended"
+msgstr "מומלץ"
+
+msgid "1 second"
+msgstr "שנייה אחת"
+
+msgid "Testing"
+msgstr "לבדיקה"
+
+msgid "No animations"
+msgstr "ללא אנימציות"

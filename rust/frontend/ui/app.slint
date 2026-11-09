@@ -1634,7 +1634,7 @@ component ListModal inherits ModalShell {
         if (Overlays.launcher-saving-visible && i == root.current-index) { return @tr("Saving…"); }
         // A settings value with a label of its own (a user color scheme) is
         // shown as written.
-        if (root.setting-id != "") { return entry.label != "" ? entry.label : SettingsLabels.picker-value(root.setting-id, entry.id); }
+        if (root.setting-id != "") { return entry.label != "" ? entry.label : SettingsLabels.value(root.setting-id, entry.id); }
         return entry.label-key != "" ? Labels.menu-name(entry.label-key, entry.label) : entry.label;
     }
     // The right-hand text: why a row cannot act, a value, or a count.
@@ -1643,6 +1643,7 @@ component ListModal inherits ModalShell {
         if (entry.role == MenuRole.slider) { return @tr("{}%", entry.detail); }
         if (entry.detail-key != "") { return Labels.menu(entry.detail-key, entry.detail); }
         if (entry.detail != "") { return entry.detail; }
+        if (root.setting-id != "") { return SettingsLabels.picker-note(root.setting-id, entry.id); }
         return entry.label-key != "" ? Labels.menu-row-value(entry.label-key, entry.label) : "";
     }
     property <bool> on-toggle: root.current-index >= 0 && root.current-index < root.entries.length
@@ -2778,7 +2779,7 @@ component ContextMenu inherits Rectangle {
     // now nothing said so: the panel just clipped. Same reserved band and
     // same cue as the pickers.
     property <bool> scrollable: root.content-h > root.panel-h;
-    property <length> arrow: Sizing.pct-h(3);
+    property <length> arrow: GlyphSource.cue-side();
     property <length> arrow-band: root.scrollable ? root.arrow + Sizing.pct-h(0.5) : 0px;
     property <length> viewport-h: Math.max(0px,
         root.panel-h - 2 * root.pad - root.strip-band - 2 * root.arrow-band);
@@ -4289,6 +4290,13 @@ export component App inherits Window {
             if (self.focused-settings-control() == ControlKind.none
                 || self.focused-settings-control() == ControlKind.info) {
                 return [{ buttons: ["ButtonB"], label: @tr("Back") }];
+            }
+            // A notice takes the cursor between other rows but has no action.
+            if (self.focused-settings-control() == ControlKind.notice) {
+                return [
+                    { buttons: ["DpadUp", "DpadDown"], label: @tr("Move") },
+                    { buttons: ["ButtonB"], label: @tr("Back") },
+                ];
             }
             // A Bluetooth device: Accept pairs one the search found or stops
             // the pairing underway, Options forgets one on the Paired

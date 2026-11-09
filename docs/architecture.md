@@ -493,7 +493,7 @@ connected, which is why the desktop build pins `SLINT_SCALE_FACTOR=1`.
 **Never gate runtime behavior on `Platform`, never gate Core
 assumptions on `Runtime`.** They are independent.
 
-Settings > Library's RetroAchievements section is a runtime gate:
+The Settings > RetroAchievements tile is a runtime gate:
 `retro_achievements::available()` reads `Runtime`, because it edits files
 on the card of the machine the frontend runs on (odelot's `MiSTer_RA` and
 its `/media/fat/retroachievements.cfg`), whatever Core reports. Hosted

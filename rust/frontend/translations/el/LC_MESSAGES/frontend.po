@@ -2265,12 +2265,12 @@ msgid "Schedule"
 msgstr "Πρόγραμμα"
 
 #: rust/frontend/ui/settings.slint:198
-msgid "Manage backups…"
-msgstr "Διαχείριση αντιγράφων…"
+msgid "Manage backups"
+msgstr "Διαχείριση αντιγράφων"
 
 #: rust/frontend/ui/settings.slint:200
-msgid "Activity…"
-msgstr "Δραστηριότητα…"
+msgid "Activity"
+msgstr "Δραστηριότητα"
 
 #: rust/frontend/ui/settings.slint:205
 msgid "Debug logging"
@@ -4910,3 +4910,30 @@ msgstr "Μενού"
 msgctxt "tag-value"
 msgid "Volume {}"
 msgstr "Τόμος {}"
+
+msgid "Update media database…"
+msgstr "Ενημέρωση βάσης δεδομένων…"
+
+msgid "Update metadata…"
+msgstr "Ενημέρωση μεταδεδομένων…"
+
+msgid "Unlink account…"
+msgstr "Αποσύνδεση λογαριασμού…"
+
+msgid "Grid"
+msgstr "Προβολή πλέγματος"
+
+msgid "Detailed list"
+msgstr "Λεπτομερής προβολή λίστας"
+
+msgid "Recommended"
+msgstr "Προτείνεται"
+
+msgid "1 second"
+msgstr "1 δευτερόλεπτο"
+
+msgid "Testing"
+msgstr "Δοκιμή"
+
+msgid "No animations"
+msgstr "Χωρίς εφέ κίνησης"

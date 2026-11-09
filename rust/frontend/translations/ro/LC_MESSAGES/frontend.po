@@ -2271,12 +2271,12 @@ msgid "Schedule"
 msgstr "Programare"
 
 #: rust/frontend/ui/settings.slint:198
-msgid "Manage backups…"
-msgstr "Gestionare backupuri…"
+msgid "Manage backups"
+msgstr "Gestionare backupuri"
 
 #: rust/frontend/ui/settings.slint:200
-msgid "Activity…"
-msgstr "Activitate…"
+msgid "Activity"
+msgstr "Activitate"
 
 #: rust/frontend/ui/settings.slint:205
 msgid "Debug logging"
@@ -4919,3 +4919,30 @@ msgstr "Meniu"
 msgctxt "tag-value"
 msgid "Volume {}"
 msgstr "Volumul {}"
+
+msgid "Update media database…"
+msgstr "Actualizare bază de date media…"
+
+msgid "Update metadata…"
+msgstr "Actualizare metadate…"
+
+msgid "Unlink account…"
+msgstr "Dezasociere cont…"
+
+msgid "Grid"
+msgstr "Vizualizare grilă"
+
+msgid "Detailed list"
+msgstr "Vizualizare listă detaliată"
+
+msgid "Recommended"
+msgstr "Recomandat"
+
+msgid "1 second"
+msgstr "1 secundă"
+
+msgid "Testing"
+msgstr "Test"
+
+msgid "No animations"
+msgstr "Fără animații"

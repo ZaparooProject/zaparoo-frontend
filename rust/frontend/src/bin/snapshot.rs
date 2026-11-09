@@ -734,7 +734,7 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
             slint::SharedString::from("Bluetooth"),
         ])));
     // Settings fixtures: the root category grid, or the Library page
-    // with a header, both maintenance actions and the browsing rows.
+    // with its Maintenance header and both maintenance actions.
     fixture_settings(&app, scene_w, scene_h, crt, screen);
     // "setup" renders the scrape setup form over Settings; "setup-picker"
     // renders its scope page.
@@ -3134,11 +3134,14 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
     let page = screen.contains("settings-page");
     let playtime = screen.contains("settings-page-playtime");
     let online = screen.contains("settings-page-online");
-    // "…-settings-page-ra": the Library page's RetroAchievements section,
-    // logged in with a system whose own default wins; "…-ra-new" before
-    // anything is set up. "…-launcher-prefs" puts the preference list
-    // over the Library page, "…-launcher-prefs-add" its Add page.
-    let ra = screen.contains("settings-page-ra") || screen.contains("launcher-prefs");
+    // "…-settings-page-ra": the RetroAchievements page, logged in with a
+    // system whose own default wins; "…-ra-new" before anything is set up.
+    // "…-launcher-prefs" puts the preference list over the Library page,
+    // "…-launcher-prefs-add" its Add page.
+    let ra_page = screen.contains("settings-page-ra");
+    let ra = ra_page || screen.contains("launcher-prefs");
+    // "…-settings-page-browsing": the Browsing page.
+    let browsing = screen.contains("settings-page-browsing");
     let ra_setup = screen.contains("ra-new");
     // "…-online-unlinked": the same page before an account is linked, with
     // the cursor on a row that waits for one.
@@ -3204,6 +3207,10 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
         SettingsPage::Controllers
     } else if paired_page {
         SettingsPage::PairedControllers
+    } else if ra_page {
+        SettingsPage::RetroAchievements
+    } else if browsing {
+        SettingsPage::Browsing
     } else if page {
         SettingsPage::Library
     } else {
@@ -3290,7 +3297,7 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
                                             | "raLeaderboardPopups"
                                     ));
                         }
-                        Control::Picker | Control::Info => {
+                        Control::Picker | Control::Info | Control::Notice => {
                             out.value = match id {
                                 "systemsLayout" => "grid",
                                 "gamesLayout" => "list",
@@ -3301,7 +3308,6 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
                                 "onlineRemoteStatus" => "waiting",
                                 "raAccount" if ra_setup => "loggedOut",
                                 "raAccount" => "loggedIn",
-                                "raConflict" => "1",
                                 "raPopupPosition" => "left",
                                 "colorScheme" => "zaparoo-dark",
                                 "colorIntensity" => "subtle",
@@ -3309,7 +3315,7 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
                                 "screensaverTimeout" => "300",
                                 "gameBackground" => "screenshot",
                                 "backgroundListStyle" => "glass",
-                                "noPairedControllers" => "",
+                                "noPairedControllers" | "raInstall" | "raConflict" => "",
                                 "headerLogo" if logo_image => "custom",
                                 "headerLogo" => "zaparoo",
                                 _ => "auto",
@@ -3495,8 +3501,10 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
         column_gap: grid.column_gap,
         row_gap: grid.row_gap,
     };
-    let (columns, grid_rows) =
-        rules::root_grid_shape(rules::PAGES.len(), inputs.swap_percentage_axes);
+    // The CRT fixtures stand in for a MiSTer, which has the
+    // RetroAchievements tile.
+    let pages: Vec<&rules::Page> = rules::root_pages(crt).collect();
+    let (columns, grid_rows) = rules::root_grid_shape(pages.len(), inputs.swap_percentage_axes);
     let columns = i32::try_from(columns).unwrap_or(3);
     let grid_rows = i32::try_from(grid_rows).unwrap_or(2);
     let fit = zaparoo_app::paged_grid::fit(
@@ -3508,7 +3516,7 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
         true,
         &insets,
     );
-    let cells: Vec<GridCell> = rules::PAGES
+    let cells: Vec<GridCell> = pages
         .iter()
         .map(|p| GridCell {
             label_key: p.id.into(),

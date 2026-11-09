@@ -257,18 +257,27 @@ lengthening a menu row further.
 
 ## Adding a setting — checklist
 
-1. Which of the eight Settings tiles does it belong to **by what the user
-   is trying to do**, not by which Rust module or `.slint` file implements
-   it? The root categories and their rows are registered in
-   `rust/zaparoo-app/src/settings.rs`. Anything that needs a Zaparoo Online
-   account goes on the Online page. Background music is the one tile that opens a
-   screen of its own instead of a page of rows; a music setting goes in
-   the player's Menu.
-2. Does it need a "restart required" or "takes effect next launch"
+1. Which Settings tile does it belong to **by what the user is trying to
+   do**, not by which Rust module or `.slint` file implements it? The root
+   categories and their rows are registered in
+   `rust/zaparoo-app/src/settings.rs`. Library is getting games in and
+   keeping the media database current; Browsing is how the browse screens
+   lay out and label what they list; Appearance is how the whole interface
+   looks; Display is the output it draws on. Anything that needs a Zaparoo
+   Online account goes on the Online page, and anything `MiSTer_RA` reads
+   on the RetroAchievements page. Background music is the one tile that
+   opens a screen of its own instead of a page of rows; a music setting
+   goes in the player's Menu.
+2. Where does it sit on its page? A row the user comes to the page to
+   *do* (an action, or a way into a page of its own) leads; preferences
+   follow; a group header gathers a run of rows about one thing. Identity
+   rows (version, credits) close the About page.
+3. Does it need a "restart required" or "takes effect next launch"
    description line? If the setting doesn't apply live, say so in the
    description — don't let the restart-confirm modal be the first the
-   user hears of it.
-3. Is the row's own label enough, or does it need a description to avoid
+   user hears of it. End it with the same sentence every such row uses:
+   `Restarts the frontend.`
+4. Is the row's own label enough, or does it need a description to avoid
    ambiguity? Prefer a short label plus a description over a long,
    over-explained label. A description renders in the shared hint band at
    the bottom of the settings card (see `docs/style.md` → "Settings hint
@@ -276,6 +285,9 @@ lengthening a menu row further.
    and elides past that, and the band's width is the card's own width
    minus its side padding, narrower again at the 240p tier. English source
    descriptions must stay at or below 64 characters; hardware measurement
-   puts the 240p cutoff at roughly 66, leaving a small wrapping margin.
-4. Sentence case, and reuse an existing picker's value vocabulary
+   puts the 240p cutoff at roughly 66, leaving a small wrapping margin. A
+   test in `rust/frontend/src/settings.rs` enforces it. Start a
+   description with a third-person verb (`Shows…`, `Sets…`, `Turns…`), not
+   a noun phrase or an instruction.
+5. Sentence case, and reuse an existing picker's value vocabulary
    (`Automatic`, not a new synonym) wherever the same concept recurs.

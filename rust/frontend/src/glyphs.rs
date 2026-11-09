@@ -206,6 +206,14 @@ const SOURCES: &[(&str, &str)] = &[
         include_str!("../../../resources/images/icons/ScrollUp.svg"),
     ),
     (
+        "icons/ScrollDownOutline",
+        include_str!("../../../resources/images/icons/ScrollDownOutline.svg"),
+    ),
+    (
+        "icons/ScrollUpOutline",
+        include_str!("../../../resources/images/icons/ScrollUpOutline.svg"),
+    ),
+    (
         "icons/Search",
         include_str!("../../../resources/images/icons/Search.svg"),
     ),
@@ -693,6 +701,14 @@ const PIXEL_ART: &[(&str, &str)] = &[
     (
         "icons/ScrollUp",
         include_str!("../../../resources/images/pixel/icons/ScrollUp.txt"),
+    ),
+    (
+        "icons/ScrollDownOutline",
+        include_str!("../../../resources/images/pixel/icons/ScrollDownOutline.txt"),
+    ),
+    (
+        "icons/ScrollUpOutline",
+        include_str!("../../../resources/images/pixel/icons/ScrollUpOutline.txt"),
     ),
     (
         "icons/Play",

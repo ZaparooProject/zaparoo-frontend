@@ -637,6 +637,7 @@ fn launcher_scan_setting_dispatches_host_once_until_completion() {
     }));
     app.global::<Shell>().set_active_screen(Screen::Settings);
     crate::settings::open_page(&ctx, &app, SettingsPage::Library);
+    crate::settings::reseat_to(&ctx, &app, "detectLaunchers");
     crate::settings::handle_action(&ctx, &app, "accept");
     crate::settings::handle_action(&ctx, &app, "accept");
     assert_eq!(requests.load(Ordering::SeqCst), 1);
@@ -1235,7 +1236,7 @@ fn the_retroachievements_login_masks_the_password_and_is_never_restored() {
     let (_runtime, ctx) = offline_ctx();
     app.global::<crate::Motion>().set_enabled(false);
     crate::settings::enter(&ctx, &app, EntryMode::Fresh);
-    crate::settings::open_page(&ctx, &app, SettingsPage::Library);
+    crate::settings::open_page(&ctx, &app, SettingsPage::RetroAchievements);
     crate::router::lock(&ctx.shared).ra.cfg.username = "Callan".into();
 
     crate::ra_login::open(&ctx, &app);
@@ -1275,7 +1276,7 @@ fn the_retroachievements_login_masks_the_password_and_is_never_restored() {
     assert_eq!(app.global::<Shell>().get_active_screen(), Screen::Settings);
     assert_eq!(
         app.global::<crate::SettingsView>().get_page(),
-        SettingsPage::Library
+        SettingsPage::RetroAchievements
     );
     assert_eq!(
         crate::router::lock(&ctx.shared).persist.active_screen,
@@ -1707,7 +1708,7 @@ fn every_screen_route_and_settings_category_commits_without_animation_delay() {
     shell.set_active_screen(Screen::Settings);
     crate::settings::open_page(&ctx, &app, SettingsPage::Root);
     let settings = app.global::<crate::SettingsView>();
-    for (index, page) in zaparoo_app::settings::PAGES.iter().enumerate() {
+    for (index, page) in crate::settings::root_pages().into_iter().enumerate() {
         settings.set_index(index as i32);
         settle(&window);
         crate::settings::handle_action(&ctx, &app, "accept");
@@ -1732,7 +1733,7 @@ fn every_screen_route_and_settings_category_commits_without_animation_delay() {
             "Back restores the category tile"
         );
     }
-    crate::settings::open_page(&ctx, &app, SettingsPage::Library);
+    crate::settings::open_page(&ctx, &app, SettingsPage::Appearance);
     assert!(settings.get_scroll().abs() < f32::EPSILON);
     for _ in 0..6 {
         crate::settings::handle_action(&ctx, &app, "down");
@@ -2917,9 +2918,9 @@ fn show_hidden_setting_retires_letter_scope_without_routing_out_of_settings() {
             .with_file_name("frontend.toml");
     app.global::<Shell>().set_active_screen(Screen::Settings);
     let view = app.global::<crate::SettingsView>();
-    view.set_page(SettingsPage::Library);
+    view.set_page(SettingsPage::Browsing);
     let rows = zaparoo_app::settings::page_rows(
-        SettingsPage::Library.token(),
+        SettingsPage::Browsing.token(),
         &crate::settings::inputs(&ctx),
     );
     view.set_index(
@@ -6997,7 +6998,7 @@ fn window_and_pointer_accept_push_settings_tiles_before_opening_page() {
         assert_eq!(view.get_page(), SettingsPage::Root);
         assert_eq!(depressed, pixels(&window), "push holds until dispatch");
         advance(1);
-        assert_eq!(view.get_page(), SettingsPage::Appearance);
+        assert_eq!(view.get_page(), SettingsPage::Library);
         assert!(!crate::press_feedback::pending(&app));
         save_push_evidence(&format!("{prefix}-2-page"), &pixels(&window));
         crate::router::handle_action(&ctx, &app, "cancel");
@@ -7018,11 +7019,11 @@ fn window_and_pointer_accept_push_settings_tiles_before_opening_page() {
     assert!(!crate::press_feedback::pending(&app));
     app.global::<crate::Motion>().set_enabled(false);
     crate::router::handle_action(&ctx, &app, "accept");
-    assert_eq!(view.get_page(), SettingsPage::Appearance);
+    assert_eq!(view.get_page(), SettingsPage::Library);
     app.invoke_input_lost();
     assert_eq!(
         view.get_page(),
-        SettingsPage::Appearance,
+        SettingsPage::Library,
         "input loss cannot retract completed navigation"
     );
     assert!(!crate::press_feedback::pending(&app));
@@ -13070,7 +13071,7 @@ fn the_music_tile_opens_the_player_and_back_returns_to_it() {
     let (_runtime, ctx) = offline_ctx();
     app.global::<crate::Motion>().set_enabled(false);
     crate::settings::enter(&ctx, &app, EntryMode::Fresh);
-    let music_tile = zaparoo_app::settings::PAGES
+    let music_tile = crate::settings::root_pages()
         .iter()
         .position(|page| page.id == zaparoo_app::settings::MUSIC_PAGE)
         .expect("a Background music tile");
@@ -13566,7 +13567,7 @@ fn a_settings_tile_pins_to_the_hub_and_opens_its_page_from_there() {
     let (_runtime, ctx) = offline_ctx();
     app.global::<crate::Motion>().set_enabled(false);
     crate::settings::enter(&ctx, &app, EntryMode::Fresh);
-    let display = zaparoo_app::settings::PAGES
+    let display = crate::settings::root_pages()
         .iter()
         .position(|page| page.id == "pageDisplayInterface")
         .expect("a Display tile");

@@ -36,6 +36,7 @@ tokens!(SettingsPage {
     Online => "pageOnline", Display => "pageDisplayInterface", Controls => "pageControlsInput",
     Language => "pageLanguage", About => "pageSupportAbout",
     Controllers => "pageControllers", PairedControllers => "pagePairedControllers",
+    Browsing => "pageBrowsing", RetroAchievements => "pageRetroAchievements",
 });
 tokens!(Orientation { Horizontal => "horizontal", Cw => "cw", Ccw => "ccw" });
 tokens!(VideoStandard { Ntsc => "ntsc", Pal => "pal" });
@@ -85,6 +86,7 @@ impl From<zaparoo_app::settings::Control> for crate::ControlKind {
             Control::Navigate => Self::Navigate,
             Control::TriToggle => Self::TriToggle,
             Control::Info => Self::Info,
+            Control::Notice => Self::Notice,
             Control::Slider => Self::Slider,
             Control::Device => Self::Device,
         }
@@ -265,6 +267,8 @@ mod tests {
             SettingsPage::About,
             SettingsPage::Controllers,
             SettingsPage::PairedControllers,
+            SettingsPage::Browsing,
+            SettingsPage::RetroAchievements,
         ] {
             assert_eq!(SettingsPage::try_from(page.token()), Ok(page));
         }

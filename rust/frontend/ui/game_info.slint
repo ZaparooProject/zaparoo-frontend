@@ -134,7 +134,7 @@ export component GameInfoModal inherits ModalShell {
     // cues sit in a reserved band outside the viewport rather than in the
     // lip, the same shape the list panel uses, so the panel does not
     // resize as the body scrolls past either end.
-    property <length> arrow: Sizing.pct-h(3);
+    property <length> arrow: GlyphSource.cue-side();
     property <length> arrow-band: root.arrow + Sizing.pct-h(0.5);
     // The tallest body this panel may show, from the screen down rather
     // than from the panel: taking it off the panel's own height would
@@ -510,11 +510,13 @@ export component GameInfoModal inherits ModalShell {
         }
 }
 
-// One of the reader's arrows on its black plate. A spent direction dims
-// rather than going away, as `ScrollCue` does.
+// One of the reader's arrows on its black plate. A spent direction stays,
+// as `ScrollCue` does: a scroll arrow turns to its outline and dims, a
+// page chevron only dims.
 component ReaderCue inherits Rectangle {
     in property <string> glyph;
     in property <bool> live: true;
+    property <bool> outlined: !root.live && (root.glyph == "icons/ScrollUp" || root.glyph == "icons/ScrollDown");
     in property <length> side;
     in property <length> pad;
     width: root.side + 2 * root.pad;
@@ -525,7 +527,7 @@ component ReaderCue inherits Rectangle {
         width: root.side;
         height: root.side;
         image-rendering: Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
-        source: GlyphSource.glyph(root.glyph, Math.max(1px, root.side),
+        source: GlyphSource.glyph(root.outlined ? root.glyph + "Outline" : root.glyph, Math.max(1px, root.side),
             root.live ? #ffffff : #ffffff59);
     }
 }
@@ -554,7 +556,7 @@ export component ManualReader inherits Rectangle {
     // go when zoomed in.
     property <bool> side-arrows: root.ready && root.count > 1 && (root.zoomed || root.images);
     property <length> margin: Sizing.pct-h(4);
-    property <length> arrow: GlyphSource.side(Sizing.pct-h(3));
+    property <length> arrow: GlyphSource.cue-side();
     property <length> arrow-gap: Sizing.pct-h(1);
     // The page number and the arrows sit on black plates, whatever the
     // scrim lets through behind them.
