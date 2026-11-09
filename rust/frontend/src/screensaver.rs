@@ -114,11 +114,31 @@ fn cover_key(ctx: &Ctx, px: u32, system: &str, path: &str, relative: &str) -> Me
     }
 }
 
+/// The saved style and Bouncing choice.
+fn chosen(ctx: &Ctx) -> (Style, Bouncing) {
+    let shared = lock(&ctx.shared);
+    let s = &shared.persist.settings;
+    (
+        Style::parse(&s.screensaver_style),
+        Bouncing::parse(&s.screensaver_bouncing),
+    )
+}
+
+/// Whether a run of `style` can draw covers or system logos. Random can
+/// resolve to any style, so it does.
+fn uses_art(style: Style, bouncing: Bouncing) -> bool {
+    style != Style::Bouncing || bouncing == Bouncing::RecentGame
+}
+
 /// Start gathering art for the next run: system logos in color, and the
 /// covers of recently and most played games (topped up from the library when
 /// there are few). Called ahead of the timeout so a run starts with its
 /// art in memory; a fresh pool is only asked for its covers again.
 pub(crate) fn prefetch(ctx: &Ctx, app: &App) {
+    let (style, bouncing) = chosen(ctx);
+    if !uses_art(style, bouncing) {
+        return;
+    }
     let view = View::of(app);
     let bounds = logo_bounds(view);
     let prefs = crate::systems::LogoPrefs::of(&lock(&ctx.shared));
@@ -333,19 +353,12 @@ pub(crate) fn arm(ctx: &Ctx, app: &App) {
     }
     // A run whose flag was dropped without `disarm` still holds its timer.
     teardown(app);
-    let (style, bouncing) = {
-        let shared = lock(&ctx.shared);
-        let s = &shared.persist.settings;
-        (
-            Style::parse(&s.screensaver_style),
-            Bouncing::parse(&s.screensaver_bouncing),
-        )
-    };
+    let (style, bouncing) = chosen(ctx);
     let view = View::of(app);
-    let art = if style == Style::Bouncing && bouncing != Bouncing::RecentGame {
-        Art::default()
-    } else {
+    let art = if uses_art(style, bouncing) {
         gather(ctx, view)
+    } else {
+        Art::default()
     };
     let mut rng = scene::rng_now();
     let resolved = rules::resolve(style, bouncing, art.counts(), LAST.get(), &mut rng);

@@ -709,7 +709,7 @@ pub struct SettingsState {
     #[serde(default = "default_screensaver_timeout")]
     pub screensaver_timeout: String,
     /// The screensaver style (`zaparoo_app::screensaver::STYLES`).
-    /// Anything unknown reads as `bouncing`.
+    /// Anything unknown (empty included) reads as `random`.
     #[serde(default = "default_screensaver_style")]
     pub screensaver_style: String,
     /// What the Bouncing style bounces: `logo`, `clock` or `recent-game`.
