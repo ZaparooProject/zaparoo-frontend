@@ -39,6 +39,9 @@ pub struct Model {
     /// The event this frontend answered. Its closing `ui.changed` may come
     /// after a state that still lists it, and it must not open again.
     answered: Option<String>,
+    /// The last event Core was told is on screen (`ui.shown`), so a picker
+    /// that closes and opens again is not reported twice.
+    reported: Option<String>,
     /// The picker's choices, in the order its rows show them.
     choices: Vec<UiChoice>,
     /// The picker's cover box.
@@ -264,10 +267,35 @@ fn show(ctx: &Ctx, app: &App, event: &UiEvent) {
         }
         UiEventKind::Unknown => return,
     }
-    lock(&ctx.shared).core_ui.shown = Some(Shown {
-        id: event.id.clone(),
-        kind: event.kind,
-        dismissible: event.dismissible,
+    let report = {
+        let mut shared = lock(&ctx.shared);
+        let model = &mut shared.core_ui;
+        model.shown = Some(Shown {
+            id: event.id.clone(),
+            kind: event.kind,
+            dismissible: event.dismissible,
+        });
+        let wants_answer = matches!(event.kind, UiEventKind::Picker | UiEventKind::Confirm);
+        let first = model.reported.as_ref() != Some(&event.id);
+        if wants_answer && first {
+            model.reported = Some(event.id.clone());
+        }
+        wants_answer && first
+    };
+    if report {
+        report_shown(ctx, event.id.clone());
+    }
+}
+
+/// Tell Core an event that wants an answer is on screen now (`ui.shown`),
+/// so its time to answer starts here rather than when Core posted it. An
+/// older Core does not know the method; that is only logged.
+fn report_shown(ctx: &Ctx, id: String) {
+    let client = ctx.store.client();
+    ctx.handle.spawn(async move {
+        if let Err(e) = client.ui_shown(&id).await {
+            tracing::debug!("ui.shown failed: {}", e.message);
+        }
     });
 }
 
@@ -323,6 +351,7 @@ fn close_shown(ctx: &Ctx, app: &App) {
     };
     let Some(shown) = shown else { return };
     let view = app.global::<CoreUiView>();
+    let asked = asking(app);
     view.set_kind(CoreUiKind::None);
     match shown.kind {
         UiEventKind::Loader | UiEventKind::Notice => {
@@ -345,6 +374,20 @@ fn close_shown(ctx: &Ctx, app: &App) {
         }
         UiEventKind::Unknown => {}
     }
+    // The screensaver waited out the question; its clock starts again now.
+    if asked {
+        crate::router::reset_idle(ctx, app);
+    }
+}
+
+/// Core is waiting on an answer from what is on screen: the screensaver
+/// must not cover it, or the waking press is swallowed while the question's
+/// time runs out.
+pub fn asking(app: &App) -> bool {
+    matches!(
+        app.global::<CoreUiView>().get_kind(),
+        CoreUiKind::Picker | CoreUiKind::Confirm
+    )
 }
 
 /// The picker is on screen and takes input.

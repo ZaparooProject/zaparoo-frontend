@@ -211,6 +211,9 @@ pub struct Inputs {
     /// A background image can show: a custom image is set, or Game
     /// background is on. The rows that only shape an image show then.
     pub background_active: bool,
+    /// A background image or folder is set: the row that picks it shows
+    /// then.
+    pub background_custom: bool,
     /// The header logo setting is a custom image: the row that picks the
     /// image shows then.
     pub header_logo_custom: bool,
@@ -520,42 +523,48 @@ fn language_rows(inputs: &Inputs) -> Vec<Row> {
     rows
 }
 
+/// The Appearance page's rows.
+fn appearance_rows(inputs: &Inputs) -> Vec<Row> {
+    let mut rows = vec![
+        field("colorScheme"),
+        field("colorIntensity"),
+        field("systemLogoStyle"),
+        field("headerLogo"),
+    ];
+    if inputs.header_logo_custom {
+        rows.push(field("headerLogoImage"));
+    }
+    rows.extend([
+        field("showMenuRow"),
+        field("showHelpBar"),
+        field("reduceMotion"),
+        field("screensaver"),
+        Row::Header("background"),
+        field("backgroundSource"),
+    ]);
+    if inputs.background_custom {
+        rows.push(field("backgroundImage"));
+    }
+    rows.push(field("gameBackground"));
+    // Blur, dimming and the list card only shape an image; with
+    // none that can show they would change nothing.
+    if inputs.background_active {
+        rows.extend([
+            field("backgroundBlur"),
+            field("backgroundDim"),
+            field("backgroundListStyle"),
+        ]);
+    }
+    rows
+}
+
 /// The rows of one page; the empty page id is the root category grid.
 pub fn page_rows(page: &str, inputs: &Inputs) -> Vec<Row> {
     match page {
         "" => root_pages(inputs.retro_achievements)
             .map(|p| field(p.id))
             .collect(),
-        "pageAppearance" => {
-            let mut rows = vec![
-                field("colorScheme"),
-                field("colorIntensity"),
-                field("systemLogoStyle"),
-                field("headerLogo"),
-            ];
-            if inputs.header_logo_custom {
-                rows.push(field("headerLogoImage"));
-            }
-            rows.extend([
-                field("showMenuRow"),
-                field("showHelpBar"),
-                field("reduceMotion"),
-                field("screensaver"),
-                Row::Header("background"),
-                field("backgroundImage"),
-                field("gameBackground"),
-            ]);
-            // Blur, dimming and the list card only shape an image; with
-            // none that can show they would change nothing.
-            if inputs.background_active {
-                rows.extend([
-                    field("backgroundBlur"),
-                    field("backgroundDim"),
-                    field("backgroundListStyle"),
-                ]);
-            }
-            rows
-        }
+        "pageAppearance" => appearance_rows(inputs),
         "pageDisplayInterface" => {
             let mut rows = Vec::new();
             // The interface resolution is the HDMI path's own; under the
@@ -706,6 +715,7 @@ pub fn options(id: &str, inputs: &Inputs) -> Option<Vec<&'static str>> {
         "gameBackground" => crate::background::GAME_BACKGROUND_TYPES,
         "backgroundListStyle" => crate::background::LIST_STYLES,
         "headerLogo" => crate::branding::HEADER_LOGOS,
+        "backgroundSource" => crate::background::SOURCES,
         "screensaverStyle" => crate::screensaver::STYLES,
         "screensaverBouncing" => crate::screensaver::BOUNCINGS,
         "screensaverTimeout" => {
@@ -1712,6 +1722,41 @@ mod tests {
             options("headerLogo", &Inputs::default()).unwrap(),
             crate::branding::HEADER_LOGOS
         );
+    }
+
+    #[test]
+    fn appearance_offers_the_background_image_only_once_one_is_set() {
+        let ids = |inputs: &Inputs| -> Vec<&'static str> {
+            page_rows("pageAppearance", inputs)
+                .iter()
+                .map(|r| r.id())
+                .collect()
+        };
+        let plain = ids(&Inputs::default());
+        let at = plain
+            .iter()
+            .position(|id| *id == "backgroundSource")
+            .unwrap();
+        assert_eq!(plain[at - 1], "background");
+        assert_eq!(plain[at + 1], "gameBackground");
+        assert!(!plain.contains(&"backgroundImage"));
+        assert!(!plain.contains(&"backgroundBlur"));
+        let custom = ids(&Inputs {
+            background_custom: true,
+            background_active: true,
+            ..Inputs::default()
+        });
+        assert_eq!(custom[at + 1], "backgroundImage");
+        assert_eq!(custom[at + 2], "gameBackground");
+        assert!(custom.contains(&"backgroundBlur"));
+        assert_eq!(control("backgroundSource"), Control::Picker);
+        assert_eq!(control("backgroundImage"), Control::Navigate);
+        assert_eq!(
+            options("backgroundSource", &Inputs::default()).unwrap(),
+            ["none", "custom"]
+        );
+        assert_eq!(crate::background::source(""), "none");
+        assert_eq!(crate::background::source("/media/fat/a.png"), "custom");
     }
 
     #[test]

@@ -3357,6 +3357,7 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
         ra_installed: ra && !ra_setup,
         ra_conflict: ra && !ra_setup,
         background_active: appearance,
+        background_custom: appearance,
         controllers_listed: controls || controllers_page,
         can_pair_controllers: controls || controllers_page || paired_page,
         bluetooth_found: if controllers_page && !nothing_found {
@@ -3444,6 +3445,7 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
                                 "gameBackground" => "screenshot",
                                 "backgroundListStyle" => "glass",
                                 "noPairedControllers" | "raInstall" | "raConflict" => "",
+                                "backgroundSource" => "custom",
                                 "headerLogo" if logo_image => "custom",
                                 "headerLogo" => "zaparoo",
                                 _ => "auto",

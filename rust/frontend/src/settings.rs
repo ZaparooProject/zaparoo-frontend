@@ -77,6 +77,7 @@ pub(crate) fn inputs(ctx: &Ctx) -> rules::Inputs {
         ra_installed,
         ra_conflict,
         background_active,
+        background_custom,
         header_logo_custom,
         screensaver_bounces,
     ) = {
@@ -90,6 +91,7 @@ pub(crate) fn inputs(ctx: &Ctx) -> rules::Inputs {
             installed,
             !conflicts.is_empty(),
             crate::background::Settings::from_state(&shared.persist.settings).active(),
+            !shared.persist.settings.background_image.is_empty(),
             HeaderLogo::parse(&shared.persist.settings.header_logo) == HeaderLogo::Custom,
             matches!(
                 Style::parse(&shared.persist.settings.screensaver_style),
@@ -99,6 +101,7 @@ pub(crate) fn inputs(ctx: &Ctx) -> rules::Inputs {
     };
     let mut inputs = rules::Inputs {
         background_active,
+        background_custom,
         header_logo_custom,
         screensaver_bounces,
         launcher_preference,
@@ -145,6 +148,7 @@ fn current_value(ctx: &Ctx, id: &str) -> String {
         "backgroundBlur" => s.background_blur.to_string(),
         "backgroundDim" => s.background_dim.to_string(),
         "backgroundImage" => s.background_image.clone(),
+        "backgroundSource" => zaparoo_app::background::source(&s.background_image).to_string(),
         "headerLogo" => HeaderLogo::parse(&s.header_logo).token().to_string(),
         "headerLogoImage" => s.header_logo_image.clone(),
         "language" => s.language.clone(),
@@ -315,11 +319,31 @@ pub(crate) fn apply_background(ctx: &Ctx) {
     crate::background::apply_settings(settings);
 }
 
-/// Set the background image (empty for none), from the picker.
+/// Set the background image (empty for none), from the picker. The
+/// Settings rows that follow it are rebuilt when the browser returns.
 pub(crate) fn set_background_image(ctx: &Ctx, app: &App, path: &str) {
     lock(&ctx.shared).persist.settings.background_image = path.to_string();
     save(ctx, app);
     apply_background(ctx);
+}
+
+/// The Background image picker: None clears the image at once; Custom
+/// image opens the browser to pick one, unless one is already set.
+fn pick_background_source(ctx: &Ctx, app: &App, value: &str) {
+    let set = !lock(&ctx.shared)
+        .persist
+        .settings
+        .background_image
+        .is_empty();
+    match value {
+        "none" if set => {
+            set_background_image(ctx, app, "");
+            // The image row and the rows that only shape an image go.
+            reseat_to(ctx, app, "backgroundSource");
+        }
+        "custom" if !set => crate::file_browser::open_background(ctx, app),
+        _ => {}
+    }
 }
 
 /// Show the header logo settings as they now stand, on both heads.
@@ -1323,6 +1347,10 @@ pub fn picker_selected(ctx: &Ctx, app: &App, id: &str, value: &str) {
     }
     if id == "raPopupPosition" {
         crate::retro_achievements::set_popup_position(ctx, app, value);
+        return;
+    }
+    if id == "backgroundSource" {
+        pick_background_source(ctx, app, value);
         return;
     }
     {

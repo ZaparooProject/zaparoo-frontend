@@ -63,10 +63,11 @@ pub fn dispatch(text: &str, notifier: &Notifier) -> String {
 
     debug!(method = %req.method, "rpc");
 
-    // The background slot's and the device's methods answer first;
-    // anything else is the rest of the mock's.
+    // The background slot's, the device's and the UI events' methods
+    // answer first; anything else is the rest of the mock's.
     let routed = music::route(&req.method, &req.params, notifier)
-        .or_else(|| device::route(&req.method, &req.params, notifier));
+        .or_else(|| device::route(&req.method, &req.params, notifier))
+        .or_else(|| ui_events::route(&req.method, &req.params, notifier));
     let outcome: Option<Result<Value, String>> = routed.or_else(|| match req.method.as_str() {
         "systems" => Some(Ok(fixtures::systems_response(&req.params))),
         "launchers" => Some(Ok(fixtures::launchers_response())),
@@ -90,8 +91,6 @@ pub fn dispatch(text: &str, notifier: &Notifier) -> String {
         "decks.delete" => Some(decks::delete(&req.params, notifier)),
         "decks.image" => Some(decks::image(&req.params)),
         "media.tags.update" => Some(library::tags_update(&req.params, notifier)),
-        "ui" => Some(Ok(ui_events::state())),
-        "ui.respond" => Some(ui_events::respond(&req.params, notifier)),
         "media.history" => Some(Ok(fixtures::media_history_response(&req.params))),
         "media.history.latest" => Some(Ok(fixtures::media_history_latest_response())),
         "media.history.top" => Some(Ok(fixtures::media_history_top_response(&req.params))),
@@ -2119,5 +2118,29 @@ mod tests {
             call("ui", &json!({}), &notifier)["result"]["events"],
             json!([])
         );
+    }
+
+    #[tokio::test]
+    async fn shown_restarts_the_expiry_once() {
+        let (notifier, mut rx) = Notifier::channel();
+        run(
+            &format!("**playlist.open:deck://{}", decks::ARCADE_DECK_ID),
+            &notifier,
+        );
+        let id = ui_changed(&mut rx)["events"][0]["id"]
+            .as_str()
+            .expect("id")
+            .to_string();
+        let shown = call("ui.shown", &json!({ "id": id }), &notifier);
+        assert_eq!(shown["result"], Value::Null);
+        let changed = ui_changed(&mut rx);
+        assert_eq!(changed["revision"], 2);
+        assert_eq!(changed["events"][0]["id"], json!(id));
+        assert!(changed["events"][0]["expiresAt"].is_string());
+        // A repeat, and an id that is not showing, change nothing.
+        call("ui.shown", &json!({ "id": id }), &notifier);
+        call("ui.shown", &json!({ "id": "gone" }), &notifier);
+        assert_eq!(call("ui", &json!({}), &notifier)["result"]["revision"], 2);
+        assert!(call("ui.shown", &json!({}), &notifier)["error"].is_object());
     }
 }

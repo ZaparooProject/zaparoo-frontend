@@ -872,7 +872,10 @@ pub(crate) fn render(ctx: &Ctx, app: &App) {
         focused.map(|row| &row.kind),
         Some(RowKind::File | RowKind::PickFolder)
     ));
-    view.set_has_menu(matches!(model.purpose, Some(Purpose::HubIcon(_))));
+    view.set_has_menu(matches!(
+        model.purpose,
+        Some(Purpose::HubIcon(_) | Purpose::Background)
+    ));
     view.set_count(i32::try_from(count).unwrap_or(i32::MAX));
     view.set_current_index(i32::try_from(current).unwrap_or(0));
     view.set_activate_pulse(model.activate_pulse);
@@ -1105,18 +1108,20 @@ fn leave(ctx: &Ctx, app: &App) {
             crate::games::enter_deck(ctx, app, crate::navigation::EntryMode::Restore);
         }
         Some(purpose @ (Purpose::Background | Purpose::HeaderLogo)) => {
-            lock(&ctx.shared).persist.active_screen = "settings".to_string();
-            crate::router::save_persist(&ctx.shared);
-            crate::settings::show_return(
-                ctx,
-                app,
-                crate::SettingsPage::Appearance,
+            let row = {
+                let mut shared = lock(&ctx.shared);
+                shared.persist.active_screen = "settings".to_string();
                 if purpose == Purpose::HeaderLogo {
                     "headerLogoImage"
+                } else if shared.persist.settings.background_image.is_empty() {
+                    // No image: its row is gone, the picker stays.
+                    "backgroundSource"
                 } else {
                     "backgroundImage"
-                },
-            );
+                }
+            };
+            crate::router::save_persist(&ctx.shared);
+            crate::settings::show_return(ctx, app, crate::SettingsPage::Appearance, row);
         }
         Some(Purpose::HubFolder(_) | Purpose::DeckCover(..)) | None => {
             crate::router::return_to_hub(ctx, app);

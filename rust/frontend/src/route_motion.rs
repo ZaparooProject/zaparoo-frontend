@@ -1463,6 +1463,15 @@ fn idle_countdown_preserves_busy_gates_and_shutdown_cancellation() {
         assert!(!shell.get_saver_armed());
     }
     shell.set_active_screen(Screen::Hub);
+    // A question from Core is never covered while it waits for its answer.
+    for kind in [crate::CoreUiKind::Picker, crate::CoreUiKind::Confirm] {
+        app.global::<crate::CoreUiView>().set_kind(kind);
+        crate::router::reset_idle(&ctx, &app);
+        advance(1000);
+        assert!(!shell.get_saver_armed());
+    }
+    app.global::<crate::CoreUiView>()
+        .set_kind(crate::CoreUiKind::None);
     crate::router::reset_idle(&ctx, &app);
     crate::router::lock(&ctx.shared)
         .persist
@@ -1590,6 +1599,35 @@ fn hiding_the_header_logo_switches_a_bouncing_logo_to_the_clock() {
     crate::settings::picker_selected(&ctx, &app, "screensaverBouncing", "recent-game");
     crate::settings::picker_selected(&ctx, &app, "headerLogo", "none");
     assert_eq!(bouncing(&ctx), "recent-game");
+}
+
+#[test]
+fn background_none_clears_the_image_and_its_rows() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    crate::router::lock(&ctx.shared)
+        .persist
+        .settings
+        .background_image = "/media/fat/zaparoo/custom".into();
+    app.global::<Shell>().set_active_screen(Screen::Settings);
+    crate::settings::open_page(&ctx, &app, SettingsPage::Appearance);
+    assert_eq!(settings_row(&app, "backgroundSource").value, "custom");
+    assert_eq!(settings_row(&app, "backgroundImage").id, "backgroundImage");
+    assert_eq!(settings_row(&app, "backgroundBlur").id, "backgroundBlur");
+
+    crate::settings::picker_selected(&ctx, &app, "backgroundSource", "none");
+    assert!(crate::router::lock(&ctx.shared)
+        .persist
+        .settings
+        .background_image
+        .is_empty());
+    assert_eq!(settings_row(&app, "backgroundSource").value, "none");
+    assert!(settings_row(&app, "backgroundImage").id.is_empty());
+    assert!(settings_row(&app, "backgroundBlur").id.is_empty());
+    let view = app.global::<crate::SettingsView>();
+    let focused = view.get_rows().row_data(view.get_index() as usize);
+    assert_eq!(focused.map(|row| row.id), Some("backgroundSource".into()));
 }
 
 #[test]
