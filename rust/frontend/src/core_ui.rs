@@ -40,7 +40,8 @@ pub struct Model {
     /// after a state that still lists it, and it must not open again.
     answered: Option<String>,
     /// The last event Core was told is on screen (`ui.shown`), so a picker
-    /// that closes and opens again is not reported twice.
+    /// that closes and opens again is not reported twice. Cleared when the
+    /// report never reached Core, so the next state sends it again.
     reported: Option<String>,
     /// The picker's choices, in the order its rows show them.
     choices: Vec<UiChoice>,
@@ -233,17 +234,17 @@ fn show(ctx: &Ctx, app: &App, event: &UiEvent) {
                     CoreUiKind::Notice
                 });
         }
+        // An event already on screen is not drawn again, but still goes on
+        // to the report below: a report lost to a dropped connection is
+        // sent again when the reconnect's state lists the same event.
         UiEventKind::Picker => {
-            if already {
-                return;
+            if !already {
+                show_picker(ctx, app, event);
+                wake(ctx, app);
             }
-            show_picker(ctx, app, event);
-            wake(ctx, app);
         }
+        UiEventKind::Confirm if already => {}
         UiEventKind::Confirm => {
-            if already {
-                return;
-            }
             let overlays = app.global::<Overlays>();
             // One dialog at a time: a confirmation waits for the one up now.
             if overlays.get_dialog_open() {
@@ -287,14 +288,28 @@ fn show(ctx: &Ctx, app: &App, event: &UiEvent) {
     }
 }
 
+/// The event Core was last told is on screen; tests clear it to stand in
+/// for a report that never reached Core.
+#[cfg(all(test, feature = "mister"))]
+pub(crate) fn reported(model: &mut Model) -> &mut Option<String> {
+    &mut model.reported
+}
+
 /// Tell Core an event that wants an answer is on screen now (`ui.shown`),
 /// so its time to answer starts here rather than when Core posted it. An
 /// older Core does not know the method; that is only logged.
 fn report_shown(ctx: &Ctx, id: String) {
     let client = ctx.store.client();
+    let shared = ctx.shared.clone();
     ctx.handle.spawn(async move {
         if let Err(e) = client.ui_shown(&id).await {
             tracing::debug!("ui.shown failed: {}", e.message);
+            if e.is_transport() {
+                let mut shared = lock(&shared);
+                if shared.core_ui.reported.as_ref() == Some(&id) {
+                    shared.core_ui.reported = None;
+                }
+            }
         }
     });
 }

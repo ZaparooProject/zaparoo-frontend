@@ -13057,6 +13057,26 @@ fn answering_a_core_picker_closes_it_for_good() {
 }
 
 #[test]
+fn a_lost_shown_report_is_sent_again_for_the_picker_still_up() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let reported = |ctx: &crate::router::Ctx| {
+        crate::core_ui::reported(&mut crate::router::lock(&ctx.shared).core_ui).clone()
+    };
+    crate::core_ui::apply_state(&ctx, &app, core_state(1, &core_picker()));
+    assert_eq!(reported(&ctx).as_deref(), Some("e1"));
+    // The report never reached Core (the link dropped), which clears it.
+    *crate::core_ui::reported(&mut crate::router::lock(&ctx.shared).core_ui) = None;
+    // The reconnect's state lists the same picker, still on screen: it is
+    // not drawn again, but it is reported again.
+    crate::core_ui::apply_state(&ctx, &app, core_state(2, &core_picker()));
+    assert_eq!(reported(&ctx).as_deref(), Some("e1"));
+    let view = app.global::<crate::CoreUiView>();
+    assert_eq!(view.get_kind(), crate::CoreUiKind::Picker);
+}
+
+#[test]
 fn a_core_event_waits_under_the_boot_curtain() {
     assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
     let (app, _window) = boot();
