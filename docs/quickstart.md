@@ -137,6 +137,10 @@ for one run and `--windowed` turns it off for one run, which beats editing the
 config to test a layout. Neither applies on MiSTer or in CRT mode, where the
 presenter owns the raster.
 
+`--version` prints the version, commit, build date and channel, then exits
+without starting the interface, so it is safe to run next to a frontend that
+is already running.
+
 SteamOS is detected as its own runtime and needs none of this: it starts
 fullscreen and picks the handheld page density on its own. Writing
 `fullscreen = false` still puts it in a window, because an absent key and an

@@ -228,7 +228,8 @@ export global SettingsLabels {
         if (id == "screensaverTimeout") { return @tr("Start after"); }
         if (id == "screensaverStyle") { return @tr("Style"); }
         if (id == "screensaverBouncing") { return @tr("Bouncing"); }
-        if (id == "backgroundImage") { return @tr("Background image"); }
+        if (id == "backgroundSource") { return @tr("Background image"); }
+        if (id == "backgroundImage") { return @tr("Image"); }
         if (id == "gameBackground") { return @tr("Game background"); }
         if (id == "backgroundBlur") { return @tr("Blur"); }
         if (id == "backgroundDim") { return @tr("Dimming"); }
@@ -335,7 +336,8 @@ export global SettingsLabels {
         if (id == "screensaverTimeout") { return @tr("Sets idle time before the screensaver starts. Off disables it."); }
         if (id == "screensaverStyle") { return @tr("Picks what plays while the screensaver is on."); }
         if (id == "screensaverBouncing") { return @tr("Picks what bounces around the screen."); }
-        if (id == "backgroundImage") { return @tr("Shows an image, or a random one from a folder, behind screens."); }
+        if (id == "backgroundSource") { return @tr("Shows an image, or a random one from a folder, behind screens."); }
+        if (id == "backgroundImage") { return @tr("Picks the image, or a folder to show a random one from."); }
         if (id == "gameBackground") { return @tr("Shows the focused game's art behind game lists."); }
         if (id == "backgroundBlur") { return @tr("Softens the background image."); }
         if (id == "backgroundDim") { return @tr("Darkens the background so text stays readable."); }
@@ -426,6 +428,10 @@ export global SettingsLabels {
         if (id == "controllers") {
             if (value == "0") { return @tr("None connected"); }
             return @tr("{n} connected" | "{n} connected" % value.to-float());
+        }
+        if (id == "backgroundSource") {
+            if (value == "custom") { return @tr("Custom image"); }
+            return @tr("None");
         }
         if (id == "headerLogo") {
             if (value == "custom") { return @tr("Custom image"); }

@@ -22,6 +22,19 @@
 /// image types. A game shows art of exactly this type or nothing.
 pub const GAME_BACKGROUND_TYPES: &[&str] = &["off", "screenshot", "fanart", "titleshot", "boxart"];
 
+/// What the "Background image" picker can name: no image, or the user's
+/// own image or folder. Not persisted: the path being set is the answer.
+pub const SOURCES: &[&str] = &["none", "custom"];
+
+/// The "Background image" picker's value for a stored path.
+pub fn source(path: &str) -> &'static str {
+    if path.is_empty() {
+        "none"
+    } else {
+        "custom"
+    }
+}
+
 /// The browse list card over a background image.
 pub const LIST_STYLES: &[&str] = &["glass", "solid"];
 

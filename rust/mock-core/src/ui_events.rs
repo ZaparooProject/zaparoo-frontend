@@ -2,11 +2,12 @@
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 //
-// Core's UI events (`ui`, `ui.respond`, `ui.changed`): one active event at
-// a time, a revision that grows on every change, and the resolution of the
-// event that left. Mirrors `pkg/ui/events` in Core: opening an event
-// supersedes the one showing, `ui.respond` validates the id, the action
-// and the choice, and an event with an expiry times out.
+// Core's UI events (`ui`, `ui.respond`, `ui.shown`, `ui.changed`): one
+// active event at a time, a revision that grows on every change, and the
+// resolution of the event that left. Mirrors `pkg/ui/events` in Core:
+// opening an event supersedes the one showing, `ui.respond` validates the
+// id, the action and the choice, an event with an expiry times out, and
+// `ui.shown` restarts that expiry once, from when a client shows it.
 //
 // `run` opens them from ZapScript: `**playlist.open:deck://<id>` opens a
 // picker over the deck's items (a select launches the item), and the
@@ -65,6 +66,9 @@ struct Event {
     /// When the event times out, as a deadline and as the wall time the
     /// client is told.
     expires: Option<(Instant, SystemTime)>,
+    /// A client reported it on screen (`ui.shown`); later reports change
+    /// nothing.
+    shown: bool,
 }
 
 impl Event {
@@ -204,6 +208,7 @@ fn open(request: Request, notifier: &Notifier) -> String {
             expires: request
                 .expires
                 .then(|| (now + EVENT_TIMEOUT, wall + EVENT_TIMEOUT)),
+            shown: false,
         };
         let resolved: Vec<Value> = store
             .active
@@ -218,12 +223,7 @@ fn open(request: Request, notifier: &Notifier) -> String {
     notifier.send("ui.changed", &state);
 
     if request.expires {
-        let notifier = notifier.clone();
-        let timed = id.clone();
-        tokio::spawn(async move {
-            tokio::time::sleep(EVENT_TIMEOUT).await;
-            time_out(&timed, &notifier);
-        });
+        arm_expiry(&id, notifier);
     }
     if request.kind == Kind::Loader {
         let notifier = notifier.clone();
@@ -253,6 +253,56 @@ fn resolve(id: &str, outcome: &str, notifier: &Notifier) -> bool {
         }
         None => false,
     }
+}
+
+/// Times `id` out after the event timeout, unless its expiry has moved on
+/// by then (a `ui.shown` armed a later timer).
+fn arm_expiry(id: &str, notifier: &Notifier) {
+    let notifier = notifier.clone();
+    let timed = id.to_string();
+    tokio::spawn(async move {
+        tokio::time::sleep(EVENT_TIMEOUT).await;
+        let due = with_store(|store| {
+            store.active.as_ref().is_some_and(|event| {
+                event.id == timed
+                    && event
+                        .expires
+                        .is_some_and(|(deadline, _)| Instant::now() >= deadline)
+            })
+        });
+        if due {
+            time_out(&timed, &notifier);
+        }
+    });
+}
+
+/// `ui.shown`: the first report for the active event restarts its expiry
+/// from now. A repeat, or an event that has gone, changes nothing.
+pub fn shown(params: &Value, notifier: &Notifier) -> Result<Value, String> {
+    let id = params
+        .get("id")
+        .and_then(Value::as_str)
+        .filter(|id| !id.is_empty())
+        .ok_or("invalid params: id is required")?;
+    let state = with_store(|store| {
+        let event = store
+            .active
+            .as_mut()
+            .filter(|event| event.id == id && !event.shown)?;
+        event.shown = true;
+        event.expires?;
+        event.expires = Some((
+            Instant::now() + EVENT_TIMEOUT,
+            SystemTime::now() + EVENT_TIMEOUT,
+        ));
+        store.revision += 1;
+        Some(store.state(Vec::new()))
+    });
+    if let Some(state) = state {
+        notifier.send("ui.changed", &state);
+        arm_expiry(id, notifier);
+    }
+    Ok(Value::Null)
 }
 
 /// The expiry timer: times the event out when it is still showing.
@@ -341,6 +391,16 @@ fn open_deck_picker(deck_id: &str, notifier: &Notifier) -> Result<Value, String>
         notifier,
     );
     Ok(Value::Null)
+}
+
+/// The UI events' methods: `ui`, `ui.respond` and `ui.shown`.
+pub fn route(method: &str, params: &Value, notifier: &Notifier) -> Option<Result<Value, String>> {
+    match method {
+        "ui" => Some(Ok(state())),
+        "ui.respond" => Some(respond(params, notifier)),
+        "ui.shown" => Some(shown(params, notifier)),
+        _ => None,
+    }
 }
 
 /// `ui.respond`.

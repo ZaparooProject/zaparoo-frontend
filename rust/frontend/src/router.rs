@@ -979,6 +979,7 @@ pub fn reset_idle(ctx: &Ctx, app: &App) {
                     || shell.get_boot_curtain()
                     || shell.get_dormant()
                     || shell.get_transitioning()
+                    || crate::core_ui::asking(&app)
                 {
                     return;
                 }

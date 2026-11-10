@@ -1463,6 +1463,15 @@ fn idle_countdown_preserves_busy_gates_and_shutdown_cancellation() {
         assert!(!shell.get_saver_armed());
     }
     shell.set_active_screen(Screen::Hub);
+    // A question from Core is never covered while it waits for its answer.
+    for kind in [crate::CoreUiKind::Picker, crate::CoreUiKind::Confirm] {
+        app.global::<crate::CoreUiView>().set_kind(kind);
+        crate::router::reset_idle(&ctx, &app);
+        advance(1000);
+        assert!(!shell.get_saver_armed());
+    }
+    app.global::<crate::CoreUiView>()
+        .set_kind(crate::CoreUiKind::None);
     crate::router::reset_idle(&ctx, &app);
     crate::router::lock(&ctx.shared)
         .persist
@@ -1590,6 +1599,35 @@ fn hiding_the_header_logo_switches_a_bouncing_logo_to_the_clock() {
     crate::settings::picker_selected(&ctx, &app, "screensaverBouncing", "recent-game");
     crate::settings::picker_selected(&ctx, &app, "headerLogo", "none");
     assert_eq!(bouncing(&ctx), "recent-game");
+}
+
+#[test]
+fn background_none_clears_the_image_and_its_rows() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    crate::router::lock(&ctx.shared)
+        .persist
+        .settings
+        .background_image = "/media/fat/zaparoo/custom".into();
+    app.global::<Shell>().set_active_screen(Screen::Settings);
+    crate::settings::open_page(&ctx, &app, SettingsPage::Appearance);
+    assert_eq!(settings_row(&app, "backgroundSource").value, "custom");
+    assert_eq!(settings_row(&app, "backgroundImage").id, "backgroundImage");
+    assert_eq!(settings_row(&app, "backgroundBlur").id, "backgroundBlur");
+
+    crate::settings::picker_selected(&ctx, &app, "backgroundSource", "none");
+    assert!(crate::router::lock(&ctx.shared)
+        .persist
+        .settings
+        .background_image
+        .is_empty());
+    assert_eq!(settings_row(&app, "backgroundSource").value, "none");
+    assert!(settings_row(&app, "backgroundImage").id.is_empty());
+    assert!(settings_row(&app, "backgroundBlur").id.is_empty());
+    let view = app.global::<crate::SettingsView>();
+    let focused = view.get_rows().row_data(view.get_index() as usize);
+    assert_eq!(focused.map(|row| row.id), Some("backgroundSource".into()));
 }
 
 #[test]
@@ -13016,6 +13054,26 @@ fn answering_a_core_picker_closes_it_for_good() {
     // A state from before Core took the answer still lists it: it stays shut.
     crate::core_ui::apply_state(&ctx, &app, core_state(1, &core_picker()));
     assert_eq!(view.get_kind(), crate::CoreUiKind::None);
+}
+
+#[test]
+fn a_lost_shown_report_is_sent_again_for_the_picker_still_up() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let reported = |ctx: &crate::router::Ctx| {
+        crate::core_ui::reported(&mut crate::router::lock(&ctx.shared).core_ui).clone()
+    };
+    crate::core_ui::apply_state(&ctx, &app, core_state(1, &core_picker()));
+    assert_eq!(reported(&ctx).as_deref(), Some("e1"));
+    // The report never reached Core (the link dropped), which clears it.
+    *crate::core_ui::reported(&mut crate::router::lock(&ctx.shared).core_ui) = None;
+    // The reconnect's state lists the same picker, still on screen: it is
+    // not drawn again, but it is reported again.
+    crate::core_ui::apply_state(&ctx, &app, core_state(2, &core_picker()));
+    assert_eq!(reported(&ctx).as_deref(), Some("e1"));
+    let view = app.global::<crate::CoreUiView>();
+    assert_eq!(view.get_kind(), crate::CoreUiKind::Picker);
 }
 
 #[test]

@@ -1259,6 +1259,14 @@ impl Client {
         Ok(())
     }
 
+    /// Tells Core an event is on screen (`ui.shown`): its time to answer
+    /// restarts from now, and a press no longer cancels what it waits on.
+    pub async fn ui_shown(&self, id: &str) -> Result<(), ClientError> {
+        self.call("ui.shown", &serde_json::json!({ "id": id }))
+            .await?;
+        Ok(())
+    }
+
     /// Adds or removes mutable user tags for one indexed media item.
     pub async fn media_tags_update(
         &self,

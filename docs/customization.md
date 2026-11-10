@@ -301,9 +301,11 @@ An unknown value reads as the default (`random`, `logo`).
 
 Settings → Appearance → Background sets what shows behind every screen.
 
-- **Background image** opens the file browser. Pick an image, or a folder
-  with "Use this folder" to show a random image from it, chosen once per
-  power cycle. The browser's Menu has "No background image".
+- **Background image**: None (the default) or Custom image. Choosing
+  Custom image opens the file browser; choosing None removes the image.
+- **Image** (shown once one is set) opens the file browser. Pick an image,
+  or a folder with "Use this folder" to show a random image from it, chosen
+  once per power cycle. The browser's Menu has "No background image".
   Supported formats are PNG, JPEG, WebP and BMP, within the same limits as
   `custom/` artwork (8 MB per file, 8192 px per edge). An image that is
   missing or cannot be read leaves the scheme's solid background.

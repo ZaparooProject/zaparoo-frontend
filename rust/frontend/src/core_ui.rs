@@ -39,6 +39,10 @@ pub struct Model {
     /// The event this frontend answered. Its closing `ui.changed` may come
     /// after a state that still lists it, and it must not open again.
     answered: Option<String>,
+    /// The last event Core was told is on screen (`ui.shown`), so a picker
+    /// that closes and opens again is not reported twice. Cleared when the
+    /// report never reached Core, so the next state sends it again.
+    reported: Option<String>,
     /// The picker's choices, in the order its rows show them.
     choices: Vec<UiChoice>,
     /// The picker's cover box.
@@ -230,17 +234,17 @@ fn show(ctx: &Ctx, app: &App, event: &UiEvent) {
                     CoreUiKind::Notice
                 });
         }
+        // An event already on screen is not drawn again, but still goes on
+        // to the report below: a report lost to a dropped connection is
+        // sent again when the reconnect's state lists the same event.
         UiEventKind::Picker => {
-            if already {
-                return;
+            if !already {
+                show_picker(ctx, app, event);
+                wake(ctx, app);
             }
-            show_picker(ctx, app, event);
-            wake(ctx, app);
         }
+        UiEventKind::Confirm if already => {}
         UiEventKind::Confirm => {
-            if already {
-                return;
-            }
             let overlays = app.global::<Overlays>();
             // One dialog at a time: a confirmation waits for the one up now.
             if overlays.get_dialog_open() {
@@ -264,10 +268,49 @@ fn show(ctx: &Ctx, app: &App, event: &UiEvent) {
         }
         UiEventKind::Unknown => return,
     }
-    lock(&ctx.shared).core_ui.shown = Some(Shown {
-        id: event.id.clone(),
-        kind: event.kind,
-        dismissible: event.dismissible,
+    let report = {
+        let mut shared = lock(&ctx.shared);
+        let model = &mut shared.core_ui;
+        model.shown = Some(Shown {
+            id: event.id.clone(),
+            kind: event.kind,
+            dismissible: event.dismissible,
+        });
+        let wants_answer = matches!(event.kind, UiEventKind::Picker | UiEventKind::Confirm);
+        let first = model.reported.as_ref() != Some(&event.id);
+        if wants_answer && first {
+            model.reported = Some(event.id.clone());
+        }
+        wants_answer && first
+    };
+    if report {
+        report_shown(ctx, event.id.clone());
+    }
+}
+
+/// The event Core was last told is on screen; tests clear it to stand in
+/// for a report that never reached Core.
+#[cfg(all(test, feature = "mister"))]
+pub(crate) fn reported(model: &mut Model) -> &mut Option<String> {
+    &mut model.reported
+}
+
+/// Tell Core an event that wants an answer is on screen now (`ui.shown`),
+/// so its time to answer starts here rather than when Core posted it. An
+/// older Core does not know the method; that is only logged.
+fn report_shown(ctx: &Ctx, id: String) {
+    let client = ctx.store.client();
+    let shared = ctx.shared.clone();
+    ctx.handle.spawn(async move {
+        if let Err(e) = client.ui_shown(&id).await {
+            tracing::debug!("ui.shown failed: {}", e.message);
+            if e.is_transport() {
+                let mut shared = lock(&shared);
+                if shared.core_ui.reported.as_ref() == Some(&id) {
+                    shared.core_ui.reported = None;
+                }
+            }
+        }
     });
 }
 
@@ -323,6 +366,7 @@ fn close_shown(ctx: &Ctx, app: &App) {
     };
     let Some(shown) = shown else { return };
     let view = app.global::<CoreUiView>();
+    let asked = asking(app);
     view.set_kind(CoreUiKind::None);
     match shown.kind {
         UiEventKind::Loader | UiEventKind::Notice => {
@@ -345,6 +389,20 @@ fn close_shown(ctx: &Ctx, app: &App) {
         }
         UiEventKind::Unknown => {}
     }
+    // The screensaver waited out the question; its clock starts again now.
+    if asked {
+        crate::router::reset_idle(ctx, app);
+    }
+}
+
+/// Core is waiting on an answer from what is on screen: the screensaver
+/// must not cover it, or the waking press is swallowed while the question's
+/// time runs out.
+pub fn asking(app: &App) -> bool {
+    matches!(
+        app.global::<CoreUiView>().get_kind(),
+        CoreUiKind::Picker | CoreUiKind::Confirm
+    )
 }
 
 /// The picker is on screen and takes input.
