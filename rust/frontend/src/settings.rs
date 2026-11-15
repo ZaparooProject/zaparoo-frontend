@@ -120,7 +120,11 @@ pub(crate) fn inputs(ctx: &Ctx) -> rules::Inputs {
         log_upload: ctx.log_uploader.is_some(),
         ..rules::Inputs::default()
     };
-    lock(&ctx.shared).controllers.fill_inputs(&mut inputs);
+    {
+        let shared = lock(&ctx.shared);
+        shared.controllers.fill_inputs(&mut inputs);
+        crate::core_settings::fill_inputs(&shared, &mut inputs);
+    }
     inputs
 }
 
@@ -166,7 +170,7 @@ fn current_value(ctx: &Ctx, id: &str) -> String {
             "loggedOut"
         }
         .to_string(),
-        _ => String::new(),
+        _ => crate::core_settings::current_value(&shared, id).unwrap_or_default(),
     }
 }
 
@@ -191,7 +195,7 @@ fn value_name(ctx: &Ctx, id: &str) -> SharedString {
         "headerLogoImage" => {
             crate::background::setting_name(&shared.persist.settings.header_logo_image).into()
         }
-        _ => SharedString::default(),
+        _ => crate::core_settings::value_name(&shared, id).unwrap_or_default(),
     }
 }
 
@@ -223,7 +227,6 @@ fn checked(ctx: &Ctx, id: &str) -> bool {
         "showMenuRow" => s.show_menu_row,
         "showHelpBar" => s.show_help_bar,
         "mouseEnabled" => s.mouse_enabled,
-        "debugLogging" => s.debug_logging,
         "swapConfirmCancel" => s.swap_confirm_cancel,
         "swapOptionsView" => s.swap_options_view,
         "crtEnabled" => ctx.crt_enabled,
@@ -237,7 +240,8 @@ fn checked(ctx: &Ctx, id: &str) -> bool {
                 zaparoo_app::launcher_preference::RETRO_ACHIEVEMENTS,
             )
         }),
-        _ => zaparoo_app::retro_achievements::option_checked(&shared.ra.cfg, id),
+        _ => crate::core_settings::checked(&shared, id)
+            .unwrap_or_else(|| zaparoo_app::retro_achievements::option_checked(&shared.ra.cfg, id)),
     }
 }
 
@@ -259,7 +263,7 @@ fn options(ctx: &Ctx, id: &str) -> Vec<String> {
             .into_iter()
             .map(str::to_string)
             .collect(),
-        _ => Vec::new(),
+        _ => crate::core_settings::options(&lock(&ctx.shared), id).unwrap_or_default(),
     }
 }
 
@@ -272,6 +276,13 @@ fn fill_value(ctx: &Ctx, out: &mut SettingsRow, id: &str) {
             out.value = SharedString::from(value.as_str());
         }
         _ if id == "backgroundImage" || id == "headerLogoImage" => {
+            out.value = SharedString::from(current_value(ctx, id).as_str());
+            out.value_name = value_name(ctx, id);
+        }
+        // Pair a device names this device the way the others will see it.
+        _ if id == "pairDevice" => out.value_name = value_name(ctx, id),
+        // The profile being edited shows its name and whether it has a PIN.
+        _ if id == "profileName" || id == "profilePin" => {
             out.value = SharedString::from(current_value(ctx, id).as_str());
             out.value_name = value_name(ctx, id);
         }
@@ -447,6 +458,7 @@ fn waits(id: &str, inputs: &rules::Inputs, online_linked: bool) -> bool {
 }
 
 /// Build the rows of the open page, with their stacked geometry.
+#[allow(clippy::too_many_lines, reason = "one arm per kind of Settings row")]
 fn rows(ctx: &Ctx, app: &App, page: crate::SettingsPage) -> Vec<SettingsRow> {
     let ms = crate::router::media_state(ctx);
     let index_busy = ms.indexing || ms.optimizing;
@@ -478,7 +490,11 @@ fn rows(ctx: &Ctx, app: &App, page: crate::SettingsPage) -> Vec<SettingsRow> {
                 Row::Header(_) => m.header_height,
                 Row::Item { control, .. } => {
                     out.control = control.into();
-                    lock(&ctx.shared).controllers.fill_row(row, &mut out);
+                    {
+                        let shared = lock(&ctx.shared);
+                        shared.controllers.fill_row(row, &mut out);
+                        crate::core_settings::fill_item(&shared, row, &mut out);
+                    }
                     m.row_height
                 }
                 Row::Field { id, control } => {
@@ -488,6 +504,11 @@ fn rows(ctx: &Ctx, app: &App, page: crate::SettingsPage) -> Vec<SettingsRow> {
                         Control::Picker | Control::Info | Control::Notice => {
                             out.value = SharedString::from(current_value(ctx, id).as_str());
                             out.value_name = value_name(ctx, id);
+                            if let Some(driver) =
+                                crate::core_settings::field_driver(&lock(&ctx.shared), id)
+                            {
+                                out.driver = driver.into();
+                            }
                         }
                         Control::Action => {
                             let busy = rules::action_busy(id, index_busy, ms.scraping);
@@ -530,7 +551,9 @@ fn rows(ctx: &Ctx, app: &App, page: crate::SettingsPage) -> Vec<SettingsRow> {
                     }
                     // After the control's own state: an action row sets
                     // `enabled` from whether its job is busy.
-                    if waits(id, &inputs, online_linked) {
+                    if waits(id, &inputs, online_linked)
+                        || crate::core_settings::refused(&lock(&ctx.shared), id)
+                    {
                         out.enabled = false;
                     }
                     // A row that needs Zaparoo Pro or Warp stays usable:
@@ -706,6 +729,13 @@ pub fn refresh(ctx: &Ctx, app: &App) {
 /// Open a page and seat the cursor.
 pub fn open_page(ctx: &Ctx, app: &App, page: crate::SettingsPage) {
     let view = app.global::<SettingsView>();
+    let old = view.get_page();
+    if old != page {
+        crate::core_settings::on_leave(ctx, old);
+    }
+    // Core's pages ask for what they show every time they open, so a
+    // return from another screen never shows a stale answer.
+    crate::core_settings::on_open(ctx, app, page);
     view.set_page(page);
     let seat = rules::first_navigable(&rules::page_rows(page.token(), &inputs(ctx)));
     view.set_index(i32::try_from(seat).unwrap_or(0));
@@ -739,6 +769,11 @@ pub(crate) fn capture_outgoing(app: &App) {
 pub(crate) fn navigate_page(ctx: &Ctx, app: &App, page: crate::SettingsPage) {
     let view = app.global::<SettingsView>();
     if view.get_page() == page {
+        return;
+    }
+    if rules::gated_page(page.token())
+        && !crate::core_settings::admitted(ctx, app, move |ctx, app| navigate_page(ctx, app, page))
+    {
         return;
     }
     let from = view.get_page();
@@ -775,10 +810,17 @@ pub(crate) fn navigate_page(ctx: &Ctx, app: &App, page: crate::SettingsPage) {
 /// A Settings page pinned to the Hub: straight to the page, and Back
 /// returns to the Hub rather than to the root grid.
 pub(crate) fn enter_page_from_hub(ctx: &Ctx, app: &App, page: crate::SettingsPage) {
+    if rules::gated_page(page.token())
+        && !crate::core_settings::admitted(ctx, app, move |ctx, app| {
+            enter_page_from_hub(ctx, app, page);
+        })
+    {
+        return;
+    }
     {
         let mut shared = lock(&ctx.shared);
         shared.persist.active_screen = "settings".to_string();
-        shared.settings_from_hub = true;
+        shared.settings_from_hub = Some(page);
         shared.settings_focus = None;
     }
     crate::router::save_persist(&ctx.shared);
@@ -797,11 +839,15 @@ pub fn enter(ctx: &Ctx, app: &App, entry: EntryMode) {
     let focus = {
         let mut shared = lock(&ctx.shared);
         shared.persist.active_screen = "settings".to_string();
-        shared.settings_from_hub = false;
+        shared.settings_from_hub = None;
         if entry == EntryMode::Fresh {
             shared.settings_focus = None;
         }
         shared.settings_focus
+    };
+    let focus = match (focus, entry) {
+        (None, EntryMode::Restore) => restored_focus(ctx),
+        (focus, _) => focus,
     };
     crate::router::save_persist(&ctx.shared);
     match focus {
@@ -942,8 +988,71 @@ fn remember_focus(ctx: &Ctx, app: &App) {
         index = rules::seat_of(&rules::page_rows(page.token(), &inputs(ctx)), "controllers");
     }
     lock(&ctx.shared).settings_focus = Some((page, index));
+    keep_page(ctx, page, index);
 }
 
+/// The Readers, Profiles or System row a kill returns to, for the page
+/// now showing: its own row there, or the row that opens it on the kept
+/// page above it. Anywhere else, Settings comes back at its root.
+fn kept_position(ctx: &Ctx, page: crate::SettingsPage, index: usize) -> persist::SettingsPageState {
+    let mut page = page;
+    let mut row = rules::page_rows(page.token(), &inputs(ctx))
+        .get(index)
+        .map(|row| row.id().to_string())
+        .unwrap_or_default();
+    loop {
+        if rules::kept_page(page.token()) {
+            return persist::SettingsPageState {
+                page: page.token().to_string(),
+                row,
+            };
+        }
+        let Some((parent, opener)) = crate::core_settings::parent(page) else {
+            return persist::SettingsPageState::default();
+        };
+        page = parent;
+        row = opener.to_string();
+    }
+}
+
+/// Write the kept position once the cursor rests, as the browse lists do.
+fn keep_page(ctx: &Ctx, page: crate::SettingsPage, index: usize) {
+    let kept = kept_position(ctx, page, index);
+    let seq = {
+        let mut shared = lock(&ctx.shared);
+        if shared.persist.settings_page == kept {
+            return;
+        }
+        shared.persist.settings_page = kept;
+        shared.settings_persist_seq += 1;
+        shared.settings_persist_seq
+    };
+    let ctx = ctx.clone();
+    slint::Timer::single_shot(
+        std::time::Duration::from_millis(zaparoo_app::media_list::PERSIST_DEBOUNCE_MS),
+        move || {
+            if lock(&ctx.shared).settings_persist_seq == seq {
+                crate::router::save_persist(&ctx.shared);
+            }
+        },
+    );
+}
+
+/// A cold start's Settings focus: the kept page and row, if one was saved.
+fn restored_focus(ctx: &Ctx) -> Option<(crate::SettingsPage, usize)> {
+    let kept = lock(&ctx.shared).persist.settings_page.clone();
+    let page = crate::SettingsPage::try_from(kept.page.as_str()).ok()?;
+    if !rules::kept_page(page.token()) {
+        return None;
+    }
+    let rows = rules::page_rows(page.token(), &inputs(ctx));
+    Some((page, rules::seat_of(&rows, &kept.row)))
+}
+
+#[allow(
+    clippy::too_many_lines,
+    reason = "the Settings input ladder, one arm per action"
+)]
 fn dispatch(ctx: &Ctx, app: &App, action: &str) {
     let (page, rows, index) = page_rows_now(ctx, app);
     let view = app.global::<SettingsView>();
@@ -963,9 +1072,7 @@ fn dispatch(ctx: &Ctx, app: &App, action: &str) {
             }
             actions::ACCEPT => {
                 if let Some(row) = rows.get(index) {
-                    if row.id() == rules::MUSIC_PAGE {
-                        crate::music::enter(ctx, app, crate::music::Origin::Settings);
-                    } else if let Ok(page) = crate::SettingsPage::try_from(row.id()) {
+                    if let Ok(page) = crate::SettingsPage::try_from(row.id()) {
                         navigate_page(ctx, app, page);
                     }
                 }
@@ -973,6 +1080,7 @@ fn dispatch(ctx: &Ctx, app: &App, action: &str) {
             actions::CANCEL => {
                 lock(&ctx.shared).persist.active_screen = "hub".to_string();
                 crate::router::save_persist(&ctx.shared);
+                leave_settings(ctx);
                 crate::router::return_to_hub(ctx, app);
             }
             actions::CONTEXT_MENU => {
@@ -1000,12 +1108,26 @@ fn dispatch(ctx: &Ctx, app: &App, action: &str) {
         // open their list, so a long option list never has to be cycled
         // blind.
         actions::LEFT | actions::RIGHT => {
+            if let Some(Row::Item {
+                id,
+                index,
+                control: Control::Toggle,
+            }) = rows.get(index)
+            {
+                crate::core_settings::toggle_item(ctx, app, id, *index);
+                return;
+            }
             if let Some(Row::Field { id, control }) = rows.get(index) {
                 if blocked(ctx, id) {
                     return;
                 }
                 match control {
-                    Control::Toggle => toggle(ctx, app, id),
+                    Control::Toggle => {
+                        let id = *id;
+                        if gate_row(ctx, app, id, move |ctx, app| toggle(ctx, app, id)) {
+                            toggle(ctx, app, id);
+                        }
+                    }
                     Control::Slider => {
                         step_slider(ctx, app, id, if action == actions::LEFT { -1 } else { 1 });
                     }
@@ -1020,18 +1142,28 @@ fn dispatch(ctx: &Ctx, app: &App, action: &str) {
                 index,
                 ..
             }) => crate::controllers::accept_device(ctx, app, *index),
+            Some(Row::Item { id, index, .. }) => {
+                let (id, index) = (*id, *index);
+                let retry = move |ctx: &Ctx, app: &App| {
+                    crate::core_settings::accept_item(ctx, app, id, index);
+                };
+                if gate_row(ctx, app, id, retry) {
+                    crate::core_settings::accept_item(ctx, app, id, index);
+                }
+            }
             _ => {}
         },
-        actions::CONTEXT_MENU => {
-            if let Some(Row::Item {
+        actions::CONTEXT_MENU => match rows.get(index) {
+            Some(Row::Item {
                 id: "pairedDevice",
                 index,
                 ..
-            }) = rows.get(index)
-            {
-                crate::controllers::open_options(ctx, app, *index);
+            }) => crate::controllers::open_options(ctx, app, *index),
+            Some(Row::Item { id, index, .. }) if crate::core_settings::has_options(id) => {
+                crate::core_settings::options_item(ctx, app, id, *index);
             }
-        }
+            _ => {}
+        },
         actions::CANCEL => back(ctx, app, page),
         _ => {}
     }
@@ -1046,17 +1178,72 @@ fn back(ctx: &Ctx, app: &App, page: crate::SettingsPage) {
         }
         crate::SettingsPage::Controllers => crate::controllers::leave_controllers(ctx, app),
         crate::SettingsPage::PairedControllers => crate::controllers::leave_paired(ctx, app),
+        page if crate::core_settings::parent(page).is_some() && !from_hub_page(ctx, page) => {
+            let Some((parent, row)) = crate::core_settings::parent(page) else {
+                return;
+            };
+            let item = crate::core_settings::parent_item(ctx, page);
+            return_to_item(ctx, app, parent, row, item);
+        }
         _ => {
-            let from_hub = std::mem::take(&mut lock(&ctx.shared).settings_from_hub);
+            let from_hub = lock(&ctx.shared).settings_from_hub.take().is_some();
             if from_hub {
                 lock(&ctx.shared).persist.active_screen = "hub".to_string();
                 crate::router::save_persist(&ctx.shared);
+                leave_settings(ctx);
                 crate::router::return_to_hub(ctx, app);
             } else {
                 navigate_page(ctx, app, crate::SettingsPage::Root);
             }
         }
     }
+}
+
+/// A page pinned to the Hub that is also nested (Language under System):
+/// Back from it returns to the Hub it was opened from.
+fn from_hub_page(ctx: &Ctx, page: crate::SettingsPage) -> bool {
+    lock(&ctx.shared).settings_from_hub == Some(page)
+}
+
+/// Settings went away: the admin gate locks again, and a token inspector
+/// lets `ZapScript` run.
+pub(crate) fn leave_settings(ctx: &Ctx) {
+    crate::token_inspector::close(ctx);
+    crate::core_settings::left_settings(ctx);
+}
+
+/// A row only an admin may act on: true when the action may run now.
+/// Otherwise the PIN panel opens and `retry` runs once it is unlocked.
+fn gate_row(ctx: &Ctx, app: &App, id: &str, retry: impl FnOnce(&Ctx, &App) + 'static) -> bool {
+    !rules::gated_row(id) || crate::core_settings::admitted(ctx, app, retry)
+}
+
+/// Step back to `page`, seated on `row`, or on its `item`th entry when the
+/// row is one entry of a list.
+fn return_to_item(
+    ctx: &Ctx,
+    app: &App,
+    page: crate::SettingsPage,
+    row: &'static str,
+    item: Option<usize>,
+) {
+    capture_outgoing(app);
+    let ctx = ctx.clone();
+    crate::router::transition_settings_page(app, -1, move |app| {
+        open_page(&ctx, app, page);
+        let rows = rules::page_rows(page.token(), &inputs(&ctx));
+        let seat = item
+            .and_then(|item| {
+                rows.iter().position(
+                    |r| matches!(r, Row::Item { id, index, .. } if *id == row && *index == item),
+                )
+            })
+            .unwrap_or_else(|| rules::seat_of(&rows, row));
+        app.global::<SettingsView>()
+            .set_index(i32::try_from(seat).unwrap_or(0));
+        render(&ctx, app);
+        remember_focus(&ctx, app);
+    });
 }
 
 /// Options on a root tile: pin it to the Hub, or take it off.
@@ -1082,16 +1269,41 @@ fn open_tile_options(ctx: &Ctx, app: &App, id: &str) {
 /// shows as unavailable.
 fn blocked(ctx: &Ctx, id: &str) -> bool {
     let online_linked = lock(&ctx.shared).online.linked;
-    if waits(id, &inputs(ctx), online_linked) {
+    if waits(id, &inputs(ctx), online_linked)
+        || crate::core_settings::refused(&lock(&ctx.shared), id)
+    {
         return true;
     }
     let ms = crate::router::media_state(ctx);
     rules::action_disabled(id, ms.indexing || ms.optimizing, ms.scraping)
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "one arm per kind of Settings control"
+)]
 fn accept(ctx: &Ctx, app: &App, id: &str, control: Control) {
     if blocked(ctx, id) {
         return;
+    }
+    let retry = {
+        let id = id.to_string();
+        move |ctx: &Ctx, app: &App| accept(ctx, app, &id, control)
+    };
+    if !gate_row(ctx, app, id, retry) {
+        return;
+    }
+    // A row that opens a page of its own (Language and region under
+    // System, the Readers pages).
+    if control == Control::Navigate {
+        let page = crate::SettingsPage::try_from(id).ok().or_else(|| {
+            zaparoo_app::readers::opens(id)
+                .and_then(|token| crate::SettingsPage::try_from(token).ok())
+        });
+        if let Some(page) = page {
+            navigate_page(ctx, app, page);
+            return;
+        }
     }
     if branding_locked(ctx, id) {
         let linked = lock(&ctx.shared).online.linked;
@@ -1179,7 +1391,9 @@ fn accept(ctx: &Ctx, app: &App, id: &str, control: Control) {
                     );
                 }
             }
-            _ => {}
+            _ => {
+                crate::core_settings::accept(ctx, app, id);
+            }
         },
     }
 }
@@ -1210,6 +1424,13 @@ fn toggle(ctx: &Ctx, app: &App, id: &str) {
         crate::retro_achievements::toggle_option(ctx, app, id);
         return;
     }
+    if crate::core_settings::toggle(ctx, app, id) {
+        return;
+    }
+    let debug_on = checked(ctx, "debugLogging");
+    if id == "debugLogging" {
+        crate::core_settings::set_debug_logging(ctx, app, !debug_on);
+    }
     let value = {
         let mut shared = lock(&ctx.shared);
         if id == "showHidden" {
@@ -1228,7 +1449,12 @@ fn toggle(ctx: &Ctx, app: &App, id: &str) {
                 "mouseEnabled" => flip(&mut s.mouse_enabled),
                 "swapConfirmCancel" => flip(&mut s.swap_confirm_cancel),
                 "swapOptionsView" => flip(&mut s.swap_options_view),
-                "debugLogging" => flip(&mut s.debug_logging),
+                // One row for the frontend's flag and Core's: a mixed
+                // state reads Off, and choosing it turns both on.
+                "debugLogging" => {
+                    s.debug_logging = !debug_on;
+                    s.debug_logging
+                }
                 _ => return,
             }
         }
@@ -1326,9 +1552,36 @@ fn open_picker(ctx: &Ctx, app: &App, id: &str) {
     overlays.set_list_open(true);
 }
 
+/// Open a picker over entries a Core page built itself (a reader type's
+/// modes), focused on `current`. The view names every entry through the
+/// settings vocabulary under `id`, like any other picker.
+pub(crate) fn present_picker(
+    ctx: &Ctx,
+    app: &App,
+    id: &str,
+    entries: Vec<crate::MenuEntry>,
+    current: usize,
+) {
+    if entries.is_empty() {
+        return;
+    }
+    let entries = crate::router::mark_chosen(entries, current);
+    lock(&ctx.shared).list_context = ListContext::SettingsPicker(id.to_string());
+    let overlays = app.global::<crate::Overlays>();
+    overlays.set_list_setting_id(SharedString::from(id));
+    overlays.set_list_title(SharedString::default());
+    overlays.set_list_form(false);
+    overlays.set_list_entries(ModelRc::new(VecModel::from(entries)));
+    overlays.set_list_index(i32::try_from(current).unwrap_or(0));
+    overlays.set_list_open(true);
+}
+
 /// A picker row was accepted: stage the restart-applied ones, apply the
 /// rest at once.
 pub fn picker_selected(ctx: &Ctx, app: &App, id: &str, value: &str) {
+    if crate::core_settings::picker_selected(ctx, app, id, value) {
+        return;
+    }
     if id == "resolution" {
         if value != lock(&ctx.shared).persist.settings.resolution {
             crate::router::stage_restart(ctx, app, PendingRestart::Resolution(value.to_string()));

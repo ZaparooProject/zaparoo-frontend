@@ -32,6 +32,15 @@ use crate::media_types::{
     ScrapingStatusResponse, SettingsResult, SystemsParams, SystemsResult, TokensHistoryResult,
     TokensResult, UpdateSettingsParams, VersionResult,
 };
+use crate::profile_types::{
+    ActiveProfile, ClientsResult, NewProfileParams, PlaytimeLimits, Profile, ProfilesResult,
+    SwitchProfileParams, UpdatePlaytimeLimitsParams, UpdateProfileParams, VerifiedProfile,
+    VerifyProfileParams,
+};
+use crate::readers_types::{
+    DriversResult, MappingsResult, NewMappingParams, PortsResult, TokenResolution,
+    UpdateMappingParams,
+};
 use crate::transport::Transport;
 use crate::ui_events::{UiRespondParams, UiState};
 use futures_util::{SinkExt, StreamExt};
@@ -693,6 +702,12 @@ impl Client {
         });
     }
 
+    /// The transport this client connects with, for a second connection
+    /// to the same Core.
+    pub fn current_transport(&self) -> Option<Transport> {
+        self.transport.borrow().clone()
+    }
+
     pub fn is_local(&self) -> bool {
         self.transport
             .borrow()
@@ -958,10 +973,19 @@ impl Client {
     /// client, and answers the PIN to read out plus the deadline it stops
     /// working at. It can refuse, for instance when the paired-client cap
     /// is already reached.
-    pub async fn clients_pair_start(&self) -> Result<PairStartResult, ClientError> {
+    ///
+    /// `role` is `"admin"` or `"member"`; `None` leaves it to Core, which
+    /// pairs the first device as an admin and any later one as a member.
+    pub async fn clients_pair_start(
+        &self,
+        role: Option<&str>,
+    ) -> Result<PairStartResult, ClientError> {
         #[derive(Serialize)]
-        struct P {}
-        let val = self.call("clients.pair.start", &P {}).await?;
+        struct P<'a> {
+            #[serde(skip_serializing_if = "Option::is_none")]
+            role: Option<&'a str>,
+        }
+        let val = self.call("clients.pair.start", &P { role }).await?;
         serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
     }
 
@@ -1390,6 +1414,177 @@ impl Client {
 
     pub async fn readers_write(&self, params: ReadersWriteParams) -> Result<(), ClientError> {
         self.call("readers.write", &params).await?;
+        Ok(())
+    }
+
+    /// Stop waiting for a token to write; Core errors when nothing is
+    /// pending, which callers may ignore.
+    pub async fn readers_write_cancel(&self, reader_id: Option<&str>) -> Result<(), ClientError> {
+        #[derive(Serialize)]
+        #[serde(rename_all = "camelCase")]
+        struct P<'a> {
+            #[serde(skip_serializing_if = "Option::is_none")]
+            reader_id: Option<&'a str>,
+        }
+        self.call("readers.write.cancel", &P { reader_id }).await?;
+        Ok(())
+    }
+
+    /// The drivers this Core can run.
+    pub async fn readers_drivers(&self) -> Result<DriversResult, ClientError> {
+        #[derive(Serialize)]
+        struct P {}
+        let val = self.call("readers.drivers", &P {}).await?;
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
+    }
+
+    /// The paths a driver could connect on.
+    pub async fn readers_ports(&self, driver: &str) -> Result<PortsResult, ClientError> {
+        #[derive(Serialize)]
+        struct P<'a> {
+            driver: &'a str,
+        }
+        let val = self.call("readers.ports", &P { driver }).await?;
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
+    }
+
+    /// What the last token read (on `reader_id` when given) would do.
+    pub async fn tokens_resolve(
+        &self,
+        reader_id: Option<&str>,
+    ) -> Result<TokenResolution, ClientError> {
+        #[derive(Serialize)]
+        #[serde(rename_all = "camelCase")]
+        struct P<'a> {
+            #[serde(skip_serializing_if = "Option::is_none")]
+            reader_id: Option<&'a str>,
+        }
+        let val = self.call("tokens.resolve", &P { reader_id }).await?;
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
+    }
+
+    /// Stop Core running `ZapScript` for as long as this connection lives.
+    pub async fn settings_zapscript_hold(&self) -> Result<(), ClientError> {
+        #[derive(Serialize)]
+        struct P {}
+        self.call("settings.zapscript.hold", &P {}).await?;
+        Ok(())
+    }
+
+    pub async fn mappings(&self) -> Result<MappingsResult, ClientError> {
+        #[derive(Serialize)]
+        struct P {}
+        let val = self.call("mappings", &P {}).await?;
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
+    }
+
+    pub async fn mappings_new(&self, params: NewMappingParams) -> Result<(), ClientError> {
+        self.call("mappings.new", &params).await?;
+        Ok(())
+    }
+
+    pub async fn mappings_update(&self, params: UpdateMappingParams) -> Result<(), ClientError> {
+        self.call("mappings.update", &params).await?;
+        Ok(())
+    }
+
+    pub async fn mappings_delete(&self, id: i64) -> Result<(), ClientError> {
+        #[derive(Serialize)]
+        struct P {
+            id: i64,
+        }
+        self.call("mappings.delete", &P { id }).await?;
+        Ok(())
+    }
+
+    pub async fn profiles(&self) -> Result<ProfilesResult, ClientError> {
+        #[derive(Serialize)]
+        struct P {}
+        let val = self.call("profiles", &P {}).await?;
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
+    }
+
+    /// The active profile; `None` is the shared profile.
+    pub async fn profiles_active(&self) -> Result<Option<ActiveProfile>, ClientError> {
+        #[derive(Serialize)]
+        struct P {}
+        let val = self.call("profiles.active", &P {}).await?;
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
+    }
+
+    pub async fn profiles_switch(&self, params: SwitchProfileParams) -> Result<(), ClientError> {
+        self.call("profiles.switch", &params).await?;
+        Ok(())
+    }
+
+    pub async fn profiles_verify(
+        &self,
+        params: VerifyProfileParams,
+    ) -> Result<VerifiedProfile, ClientError> {
+        let val = self.call("profiles.verify", &params).await?;
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
+    }
+
+    /// End a pending verify-by-scan.
+    pub async fn profiles_verify_cancel(&self) -> Result<(), ClientError> {
+        #[derive(Serialize)]
+        struct P {}
+        self.call("profiles.verify.cancel", &P {}).await?;
+        Ok(())
+    }
+
+    pub async fn profiles_new(&self, params: NewProfileParams) -> Result<Profile, ClientError> {
+        let val = self.call("profiles.new", &params).await?;
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
+    }
+
+    pub async fn profiles_update(&self, params: UpdateProfileParams) -> Result<(), ClientError> {
+        self.call("profiles.update", &params).await?;
+        Ok(())
+    }
+
+    pub async fn profiles_delete(&self, profile_id: &str) -> Result<(), ClientError> {
+        #[derive(Serialize)]
+        #[serde(rename_all = "camelCase")]
+        struct P<'a> {
+            profile_id: &'a str,
+        }
+        self.call("profiles.delete", &P { profile_id }).await?;
+        Ok(())
+    }
+
+    /// Paired devices. Local callers only.
+    pub async fn clients(&self) -> Result<ClientsResult, ClientError> {
+        #[derive(Serialize)]
+        struct P {}
+        let val = self.call("clients", &P {}).await?;
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
+    }
+
+    /// Revoke a paired device. Local callers only.
+    pub async fn clients_delete(&self, client_id: &str) -> Result<(), ClientError> {
+        #[derive(Serialize)]
+        #[serde(rename_all = "camelCase")]
+        struct P<'a> {
+            client_id: &'a str,
+        }
+        self.call("clients.delete", &P { client_id }).await?;
+        Ok(())
+    }
+
+    pub async fn playtime_limits(&self) -> Result<PlaytimeLimits, ClientError> {
+        #[derive(Serialize)]
+        struct P {}
+        let val = self.call("settings.playtime.limits", &P {}).await?;
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
+    }
+
+    pub async fn playtime_limits_update(
+        &self,
+        params: UpdatePlaytimeLimitsParams,
+    ) -> Result<(), ClientError> {
+        self.call("settings.playtime.limits.update", &params)
+            .await?;
         Ok(())
     }
 

@@ -44,6 +44,9 @@ export struct GridCell {
     // A list row Accept browses into rather than launches: it ends in a
     // chevron.
     opens: bool,
+    // A list row that names the group below it: drawn as a group heading,
+    // and the cursor passes over it.
+    heading: bool,
     top-label: string,
     // A structural placeholder: paints nothing, ever.
     is-empty: bool,

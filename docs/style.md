@@ -1378,9 +1378,16 @@ connection problem; an active
 background task (including why it's paused, "game running"); a terminal
 message held ~6 s after a task ends (a scrape failure lands here too, not as
 its own tier, since Core only reports `state: "failed"` on that same
-terminal frame); a transient event (card scan, playtime warning, inbox
-message) dropped rather than queued while a higher tier owns the line; or
-nothing.
+terminal frame); a transient event (playtime warning, inbox message)
+dropped rather than queued while a higher tier owns the line; or nothing.
+
+A token at a reader answers what the person just did, so its line speaks over
+a background task the way Core's own lines do. `tokens.added` shows a short
+"Token read" cue (about 2 s), never the token's text. `run.failed` shows
+Core's reason under its category (media not found, invalid ZapScript, blocked,
+playtime limit, busy, blank token) and replaces the read cue, held about 10 s;
+a later read never hides a failure still held. `profiles.data` with `failed`
+or `unavailable` holds its reason the same way. Nothing shows for a success.
 
 ### Progress track
 

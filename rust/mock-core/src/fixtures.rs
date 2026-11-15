@@ -30,6 +30,51 @@ static HIDDEN_PATHS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
 // The global launcher preference set via `settings.update`. Dev-server
 // state like the others.
 static LAUNCHER_PREFERENCE: Mutex<Vec<String>> = Mutex::new(Vec::new());
+/// Settings keys the mock stores as given: the readers, launch guard,
+/// profile and media version keys, plus the plain flags below.
+static STORED_SETTINGS: Mutex<Option<serde_json::Map<String, Value>>> = Mutex::new(None);
+
+const STORED_KEYS: &[&str] = &[
+    "debugLogging",
+    "errorReporting",
+    "audioScanFeedback",
+    "readersAutoDetect",
+    "readersScanMode",
+    "readersScanExitDelay",
+    "readersScanIgnoreSystems",
+    "readersConnect",
+];
+
+fn stored_settings<T>(f: impl FnOnce(&mut serde_json::Map<String, Value>) -> T) -> T {
+    let mut guard = STORED_SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let map = guard.get_or_insert_with(|| {
+        let mut map = crate::readers::settings_defaults();
+        for (k, v) in [
+            ("debugLogging", json!(false)),
+            ("errorReporting", json!(false)),
+            ("audioScanFeedback", json!(true)),
+            ("readersAutoDetect", json!(true)),
+            ("readersScanMode", json!("tap")),
+            ("readersScanExitDelay", json!(0.0)),
+            ("readersScanIgnoreSystems", json!([])),
+            (
+                "readersConnect",
+                json!([{"driver": "simpleserial", "path": "/dev/ttyACM0"}]),
+            ),
+        ] {
+            map.insert(k.into(), v);
+        }
+        map
+    });
+    f(map)
+}
+
+/// One stored setting's current value.
+pub(crate) fn stored_setting(key: &str) -> Option<Value> {
+    stored_settings(|stored| stored.get(key).cloned())
+}
 
 /// The folder every mock system lists as one game on several discs.
 const DISC_FOLDER: &str = "Disc Game";
@@ -59,6 +104,7 @@ pub fn version_response() -> Value {
     json!({
         "version": "mock-0.1.0",
         "platform": "mock",
+        "networkName": "mock-core",
     })
 }
 
@@ -125,22 +171,20 @@ pub fn settings_response() -> Value {
             })
         })
         .collect();
-    json!({
+    let mut out = json!({
         "runZapScript": true,
-        "debugLogging": false,
-        "audioScanFeedback": true,
-        "readersAutoDetect": true,
-        "readersScanMode": "tap",
-        "readersScanExitDelay": 0.0,
-        "readersScanIgnoreSystems": [],
-        "errorReporting": false,
-        "readersConnect": [],
         "systemDefaults": system_defaults,
         "launcherPreference": launcher_preference().clone(),
         "audioMusicVolume": crate::music::settings().0,
         "audioMusicAutoplay": crate::music::settings().1,
         "audioMusicPauseOnLaunch": crate::music::settings().2,
-    })
+    });
+    stored_settings(|stored| {
+        if let Some(out) = out.as_object_mut() {
+            out.extend(stored.clone());
+        }
+    });
+    out
 }
 
 fn launcher_preference() -> std::sync::MutexGuard<'static, Vec<String>> {
@@ -186,6 +230,25 @@ fn validate_launcher_preference(next: &[String]) -> Result<(), String> {
 
 pub fn settings_update_response(params: &Value) -> Result<Value, String> {
     crate::music::update_settings(params)?;
+    stored_settings(|stored| {
+        let Some(params) = params.as_object() else {
+            return;
+        };
+        for (k, v) in params {
+            if k == "readersDrivers" {
+                // Update replaces the given drivers' entries only.
+                if let (Some(next), Some(Value::Object(cur))) =
+                    (v.as_object(), stored.get_mut("readersDrivers"))
+                {
+                    for (driver, config) in next {
+                        cur.insert(driver.clone(), config.clone());
+                    }
+                }
+            } else if STORED_KEYS.contains(&k.as_str()) || stored.contains_key(k) {
+                stored.insert(k.clone(), v.clone());
+            }
+        }
+    });
     if let Some(items) = params.get("launcherPreference").and_then(Value::as_array) {
         let next: Vec<String> = items
             .iter()

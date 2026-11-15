@@ -168,6 +168,16 @@ export global Status {
         // Core's own words, as it sent them.
         if (self.kind == StatusKind.core-loader) { return self.arg == "" ? @tr("Loading…") : self.arg; }
         if (self.kind == StatusKind.core-notice) { return self.arg; }
+        if (self.kind == StatusKind.token-read) { return @tr("Token read"); }
+        if (self.kind == StatusKind.scan-media-not-found) { return @tr("Token did not start: game not found"); }
+        if (self.kind == StatusKind.scan-invalid-script) { return @tr("Token did not start: its text isn't valid"); }
+        if (self.kind == StatusKind.scan-blocked) { return @tr("Token did not start: not allowed"); }
+        if (self.kind == StatusKind.scan-profile-required) { return @tr("Token did not start: choose a profile first"); }
+        if (self.kind == StatusKind.scan-playtime-limit) { return @tr("Token did not start: playtime limit reached"); }
+        if (self.kind == StatusKind.scan-busy) { return @tr("Token did not start: busy, try again"); }
+        if (self.kind == StatusKind.scan-blank) { return @tr("Token is blank"); }
+        if (self.kind == StatusKind.scan-failed) { return @tr("Token did not start"); }
+        if (self.kind == StatusKind.profile-data-failed) { return @tr("Could not switch save files"); }
         return "";
     }
     public pure function percent-text() -> string {
@@ -341,6 +351,9 @@ export component HeaderBar inherits Rectangle {
     in property <[HeaderPad]> controller-batteries: [];
     in property <bool> has-battery: false;
     in property <int> battery-percent: 0;
+    // Core's active profile: its name leads the HUD, or a profile glyph
+    // where the compact header has no room for a name.
+    in property <string> profile-name: "";
     in property <string> browse-title: "";
     in property <string> app-text: "";
 
@@ -419,6 +432,35 @@ export component HeaderBar inherits Rectangle {
         + (root.clock-visible ? root.clock-width : 0px);
     property <length> hud-x: root.width - Sizing.header-side-margin - root.hud-width;
     property <length> hud-y: Layout.hud-bottom-aligned ? root.height - Sizing.header-row-height : 0px;
+
+    property <bool> profile-visible: root.status-icons-enabled && root.profile-name != "";
+    property <bool> profile-compact: root.compact-pads || Sizing.pixel-grid;
+    property <length> profile-name-width: Math.min(Math.ceil(profile-measure.preferred-width / 1px) * 1px, Sizing.pct-w(20));
+    property <length> profile-width: !root.profile-visible ? 0px
+        : (root.profile-compact ? root.icon-size : root.profile-name-width) + root.hud-spacing;
+
+    profile-measure := Text {
+        visible: false;
+        text: root.profile-name;
+        font-size: Sizing.font-caption;
+    }
+    if root.profile-visible && root.profile-compact: Image {
+        x: root.hud-x - root.profile-width;
+        y: root.hud-y + Sizing.snap((Sizing.header-row-height - self.height) / 2);
+        width: root.icon-size;
+        height: root.icon-size;
+        source: GlyphSource.glyph("status/Profile", root.icon-size, Theme.text-primary);
+        image-rendering: Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
+    }
+    if root.profile-visible && !root.profile-compact: Text {
+        x: root.hud-x - root.profile-width;
+        y: root.hud-y + (Sizing.header-row-height - self.preferred-height) / 2;
+        width: root.profile-name-width;
+        text: root.profile-name;
+        overflow: elide;
+        color: Theme.text-primary;
+        font-size: Sizing.font-caption;
+    }
 
     battery-measure := Text {
         visible: false;
@@ -523,7 +565,7 @@ export component HeaderBar inherits Rectangle {
     // logo and the HUD and kept clear of the wider of the two; never less
     // than a third of the header.
     property <length> title-side: Sizing.header-side-margin + Math.max(root.logo-right,
-        Layout.hud-bottom-aligned ? root.hud-width : 0px) + Sizing.pct-w(1.5);
+        Layout.hud-bottom-aligned ? root.hud-width + root.profile-width : 0px) + Sizing.pct-w(1.5);
     if Layout.title-in-header && root.browse-title != "": Text {
         property <length> natural: Math.ceil(title-measure.preferred-width / 1px) * 1px;
         property <length> room: parent.width - 2 * root.title-side;

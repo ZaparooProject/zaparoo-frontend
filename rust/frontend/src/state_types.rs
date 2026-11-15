@@ -29,7 +29,8 @@ tokens!(Screen {
     Search => "search", SearchResults => "search-results",
     Settings => "settings", About => "about", Credits => "credits", Update => "update", Rename => "rename",
     RaLogin => "ra-login", FileBrowser => "file-browser", Decks => "decks", Deck => "deck",
-    TopPlayed => "top-played", TopPlayedSystems => "top-played-systems", Music => "music", None => "",
+    TopPlayed => "top-played", TopPlayedSystems => "top-played-systems", Music => "music",
+    GamePicker => "game-picker", None => "",
 });
 tokens!(SettingsPage {
     Root => "", Appearance => "pageAppearance", Library => "pageLibraryData",
@@ -38,6 +39,13 @@ tokens!(SettingsPage {
     Controllers => "pageControllers", PairedControllers => "pagePairedControllers",
     Browsing => "pageBrowsing", RetroAchievements => "pageRetroAchievements",
     Screensaver => "pageScreensaver",
+    Readers => "pageReaders", ReaderDetail => "pageReaderDetail", AddReader => "pageAddReader",
+    AddReaderPort => "pageAddReaderPort", AddReaderOptions => "pageAddReaderOptions",
+    ReaderTypes => "pageReaderTypes", LaunchGuard => "pageLaunchGuard",
+    Mappings => "pageMappings", TokenInspector => "pageTokenInspector",
+    Profiles => "pageProfiles", ProfileEdit => "pageProfileEdit",
+    PlaytimeLimits => "pagePlaytimeLimits", GameVersions => "pageGameVersions",
+    PairedDevices => "pagePairedDevices", IgnoredSystems => "pageIgnoredSystems",
 });
 tokens!(Orientation { Horizontal => "horizontal", Cw => "cw", Ccw => "ccw" });
 tokens!(VideoStandard { Ntsc => "ntsc", Pal => "pal" });
@@ -53,6 +61,7 @@ tokens!(ErrorKind {
     QrCode => "qr_code", CardWrite => "card_write", Setting => "setting",
     Pairing => "pairing", Online => "online", Backup => "backup", ConfigFile => "config_file",
     ImagePicker => "image_picker", Music => "music", Bluetooth => "bluetooth",
+    Mapping => "mapping",
 });
 
 impl From<zaparoo_app::branding::HeaderLogo> for crate::HeaderLogo {
@@ -211,6 +220,7 @@ impl From<zaparoo_app::pairing::Phase> for PairPhase {
         use zaparoo_app::pairing::Phase;
         match value {
             Phase::Closed => Self::Closed,
+            Phase::Role => Self::Role,
             Phase::Starting => Self::Starting,
             Phase::Showing => Self::Showing,
             Phase::Paired => Self::Paired,
@@ -255,6 +265,16 @@ impl From<zaparoo_app::status_line::Kind> for crate::StatusKind {
             Kind::Inbox => Self::Inbox,
             Kind::CoreLoader => Self::CoreLoader,
             Kind::CoreNotice => Self::CoreNotice,
+            Kind::TokenRead => Self::TokenRead,
+            Kind::ScanMediaNotFound => Self::ScanMediaNotFound,
+            Kind::ScanInvalidScript => Self::ScanInvalidScript,
+            Kind::ScanBlocked => Self::ScanBlocked,
+            Kind::ScanProfileRequired => Self::ScanProfileRequired,
+            Kind::ScanPlaytimeLimit => Self::ScanPlaytimeLimit,
+            Kind::ScanBusy => Self::ScanBusy,
+            Kind::ScanBlank => Self::ScanBlank,
+            Kind::ScanFailed => Self::ScanFailed,
+            Kind::ProfileDataFailed => Self::ProfileDataFailed,
         }
     }
 }
@@ -286,6 +306,7 @@ mod tests {
             Screen::TopPlayed,
             Screen::TopPlayedSystems,
             Screen::Music,
+            Screen::GamePicker,
             Screen::None,
         ] {
             assert_eq!(Screen::try_from(value.token()), Ok(value));
@@ -304,6 +325,21 @@ mod tests {
             SettingsPage::Browsing,
             SettingsPage::RetroAchievements,
             SettingsPage::Screensaver,
+            SettingsPage::Readers,
+            SettingsPage::ReaderDetail,
+            SettingsPage::AddReader,
+            SettingsPage::AddReaderPort,
+            SettingsPage::AddReaderOptions,
+            SettingsPage::ReaderTypes,
+            SettingsPage::LaunchGuard,
+            SettingsPage::Mappings,
+            SettingsPage::TokenInspector,
+            SettingsPage::Profiles,
+            SettingsPage::ProfileEdit,
+            SettingsPage::PlaytimeLimits,
+            SettingsPage::GameVersions,
+            SettingsPage::PairedDevices,
+            SettingsPage::IgnoredSystems,
         ] {
             assert_eq!(SettingsPage::try_from(page.token()), Ok(page));
         }
@@ -323,11 +359,6 @@ mod tests {
     #[test]
     fn registry_and_error_vocabulary_have_typed_projections() {
         for page in zaparoo_app::settings::PAGES {
-            // The Background music tile opens a screen of its own, not a page of rows.
-            if page.id == zaparoo_app::settings::MUSIC_PAGE {
-                assert!(SettingsPage::try_from(page.id).is_err());
-                continue;
-            }
             assert!(
                 SettingsPage::try_from(page.id).is_ok(),
                 "unmapped page {}",

@@ -1507,6 +1507,53 @@ pub struct SettingsResult {
     /// Pause background music while a game runs.
     #[serde(default)]
     pub audio_music_pause_on_launch: Option<bool>,
+    /// Core's own debug log level, not the frontend's.
+    #[serde(default)]
+    pub debug_logging: Option<bool>,
+    /// Whether Core sends crash reports.
+    #[serde(default)]
+    pub error_reporting: Option<bool>,
+    /// Whether Core refuses unencrypted remote connections.
+    #[serde(default)]
+    pub encryption: Option<bool>,
+    #[serde(default)]
+    pub readers_auto_detect: Option<bool>,
+    /// "tap" or "hold".
+    #[serde(default)]
+    pub readers_scan_mode: Option<String>,
+    /// Seconds a removed token in hold mode waits before exiting the game.
+    #[serde(default)]
+    pub readers_scan_exit_delay: Option<f32>,
+    #[serde(default)]
+    pub readers_scan_ignore_systems: Option<Vec<String>>,
+    #[serde(default)]
+    pub readers_scan_ignore_on_connect: Option<bool>,
+    #[serde(default)]
+    pub readers_connect: Option<Vec<crate::readers_types::ReaderConnection>>,
+    /// Per-driver overrides; a driver missing here runs on its defaults.
+    #[serde(default)]
+    pub readers_drivers:
+        Option<std::collections::BTreeMap<String, crate::readers_types::DriverConfig>>,
+    #[serde(default)]
+    pub audio_scan_feedback: Option<bool>,
+    #[serde(default)]
+    pub launch_guard_enabled: Option<bool>,
+    /// Seconds a staged token waits for confirmation; -1 waits forever.
+    #[serde(default)]
+    pub launch_guard_timeout: Option<f32>,
+    /// Seconds before a second tap can confirm.
+    #[serde(default)]
+    pub launch_guard_delay: Option<f32>,
+    #[serde(default)]
+    pub launch_guard_require_confirm: Option<bool>,
+    #[serde(default)]
+    pub profiles_require_for_launch: Option<bool>,
+    /// Which regions' versions a title launches and scrapes, in order.
+    #[serde(default)]
+    pub media_default_regions: Option<Vec<String>>,
+    /// Which languages' versions a title launches and scrapes, in order.
+    #[serde(default)]
+    pub media_default_langs: Option<Vec<String>>,
 }
 
 /// `settings.auth.status`: whether Core holds a credential for a URL. No
@@ -1869,6 +1916,45 @@ pub struct UpdateSettingsParams {
     pub audio_music_autoplay: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub audio_music_pause_on_launch: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub debug_logging: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_reporting: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub encryption: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub readers_auto_detect: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub readers_scan_mode: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub readers_scan_exit_delay: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub readers_scan_ignore_systems: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub readers_scan_ignore_on_connect: Option<bool>,
+    /// Replaces the whole manual connection list.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub readers_connect: Option<Vec<crate::readers_types::ReaderConnection>>,
+    /// Replaces the named drivers' overrides; others are untouched.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub readers_drivers:
+        Option<std::collections::BTreeMap<String, crate::readers_types::DriverConfig>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub audio_scan_feedback: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub launch_guard_enabled: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub launch_guard_timeout: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub launch_guard_delay: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub launch_guard_require_confirm: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profiles_require_for_launch: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub media_default_regions: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub media_default_langs: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
@@ -1911,8 +1997,12 @@ pub struct RunParams {
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ReadersWriteParams {
     pub text: String,
+    /// The reader to write with; Core picks one when absent.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reader_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, PartialEq, Eq)]
@@ -1929,7 +2019,7 @@ pub struct SystemsResult {
     pub systems: Vec<SystemInfo>,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ReaderInfo {
     #[serde(default)]
@@ -1944,6 +2034,18 @@ pub struct ReaderInfo {
     pub connected: bool,
     #[serde(default)]
     pub capabilities: Vec<String>,
+    /// The port or address the reader is on.
+    #[serde(default)]
+    pub path: String,
+    /// "auto" for a detected reader, "connect" for a manual connection.
+    #[serde(default)]
+    pub source: String,
+    /// Why a configured connection is not connected.
+    #[serde(default)]
+    pub error: Option<String>,
+    /// "tap" or "hold".
+    #[serde(default)]
+    pub scan_mode: String,
 }
 
 impl ReaderInfo {
@@ -1979,6 +2081,9 @@ pub struct VersionResult {
     pub version: String,
     #[serde(default)]
     pub platform: String,
+    /// The name Core announces itself by on the network.
+    #[serde(default, rename = "networkName")]
+    pub network_name: String,
 }
 
 /// `clients.pair.start`: the PIN to read out and Core's own deadline for

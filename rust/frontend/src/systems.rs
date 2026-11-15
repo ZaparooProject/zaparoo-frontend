@@ -1604,6 +1604,7 @@ pub(crate) fn menu_input(
         is_hidden: row.hidden,
         media_busy: crate::router::media_busy(app),
         tile,
+        has_nfc: shared.has_nfc,
     }
 }
 
@@ -1730,6 +1731,8 @@ pub(crate) fn system_action(ctx: &Ctx, app: &App, id: &str, row: &SystemRow) {
                 crate::router::launch(ctx, app, text, &row.name);
             }
         }
+        "write_card" => crate::card_write::begin(ctx, app, row.launch_text()),
+        "qr_code" => crate::router::open_qr_text(ctx, app, &row.launch_text(), &row.name),
         "change_launcher" => crate::launchers::open_system_picker(ctx, app, &row.id),
         "artwork" => crate::artwork::open_picker(ctx, app, &row.id, ""),
         "toggle_hide_system" => crate::router::toggle_hidden_system(ctx, app, &row.id),

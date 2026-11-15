@@ -8,6 +8,12 @@
 /// The longest name a tile takes; the caption elides past what fits.
 pub const TILE_NAME_MAX_CHARS: usize = 40;
 
+/// The longest profile name the rename screen takes.
+pub const PROFILE_NAME_MAX_CHARS: usize = 40;
+
+/// The longest reader address or path the rename screen takes.
+pub const READER_PATH_MAX_CHARS: usize = 255;
+
 /// The value to store for a typed name: trimmed, and empty (the tile's own
 /// name again) when it is blank or spells the default exactly. A default
 /// kept as empty still follows the language and the system's own name.

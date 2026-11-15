@@ -47,6 +47,20 @@ pub struct PersistedState {
     pub top_played: UserListState,
     pub music: MusicState,
     pub credits: CreditsState,
+    /// The Readers, Profiles and System pages' focused row.
+    pub settings_page: SettingsPageState,
+}
+
+/// The Settings page a kill returns to and the row it had focus on, by
+/// the page's and the row's ids. Only Readers, Profiles and System are
+/// kept; a page under one of them is kept as the row that opens it, so a
+/// gated page never comes back unlocked. Empty: Settings opens at its
+/// root.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SettingsPageState {
+    pub page: String,
+    pub row: String,
 }
 
 /// The Credits screen: the component selected in its list (by name, so a
@@ -1068,8 +1082,8 @@ mod tests {
     use super::{
         load_from, save_to, CreditsState, DeckState, DecksState, FavoriteSystemsState,
         FavoritesState, FileBrowserState, GamesState, HubState, HubTarget, ListsState, MusicState,
-        PersistedState, RecentSearch, RecentsState, RenameState, SearchState, SettingsState,
-        SystemFilter, SystemFocus, SystemsState, UserListState, MAX_RECENT_SEARCHES,
+        PersistedState, RecentSearch, RecentsState, RenameState, SearchState, SettingsPageState,
+        SettingsState, SystemFilter, SystemFocus, SystemsState, UserListState, MAX_RECENT_SEARCHES,
         MAX_SYSTEM_FILTERS, MAX_SYSTEM_FOCUS, SEARCH_SCOPE_BROWSE, SEARCH_SCOPE_FAVORITES,
     };
     use std::thread;
@@ -1217,6 +1231,10 @@ mod tests {
                     systems: vec!["SNES".into()],
                     tags: Vec::new(),
                 }],
+            },
+            settings_page: SettingsPageState {
+                page: "readers".into(),
+                row: "readerTypes".into(),
             },
             settings: SettingsState {
                 resolution: "1920x1080".into(),
@@ -1507,6 +1525,7 @@ resolution = "1920x1080"
                             top_played: UserListState::default(),
                             music: MusicState::default(),
                             credits: CreditsState::default(),
+                            settings_page: SettingsPageState::default(),
                         };
                         save_to(&path, &state);
                     }
@@ -1891,6 +1910,23 @@ future_field = "ignored"
         assert_eq!(old.file_browser, FileBrowserState::default());
         assert_eq!(old.decks, DecksState::default());
         assert_eq!(old.deck, DeckState::default());
+    }
+
+    #[test]
+    fn the_settings_page_section_round_trips_and_defaults_when_absent() {
+        let state = PersistedState {
+            active_screen: "settings".into(),
+            settings_page: SettingsPageState {
+                page: "pageReaders".into(),
+                row: "mappings".into(),
+            },
+            ..PersistedState::default()
+        };
+        let text = toml::to_string(&state).expect("serialize");
+        let back: PersistedState = toml::from_str(&text).expect("parse");
+        assert_eq!(back.settings_page, state.settings_page);
+        let old: PersistedState = toml::from_str("active_screen = \"settings\"\n").expect("parse");
+        assert_eq!(old.settings_page, SettingsPageState::default());
     }
 
     #[test]

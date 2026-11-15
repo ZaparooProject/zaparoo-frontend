@@ -60,6 +60,9 @@ pub struct UiEvent {
     pub selected_choice_id: String,
     #[serde(default)]
     pub dismissible: bool,
+    /// The game a confirm is about (the launch guard's), for its cover.
+    #[serde(default)]
+    pub media: Option<UiChoiceMedia>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]

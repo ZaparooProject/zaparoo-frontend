@@ -59,7 +59,12 @@ export component RenameScreen inherits Rectangle {
         height: Layout.strip-height;
         slot-margin: Layout.slot-margin;
         title: RenameView.purpose == RenamePurpose.new-deck ? @tr("New deck")
-            : (RenameView.purpose == RenamePurpose.rename-deck ? @tr("Rename deck") : @tr("Rename tile"));
+            : RenameView.purpose == RenamePurpose.rename-deck ? @tr("Rename deck")
+            : RenameView.purpose == RenamePurpose.profile-name ? @tr("Rename profile")
+            : RenameView.purpose == RenamePurpose.new-profile ? @tr("New profile")
+            : RenameView.purpose == RenamePurpose.reader-address ? @tr("MQTT reader")
+            : RenameView.purpose == RenamePurpose.reader-path ? @tr("File reader")
+            : @tr("Rename tile");
         show-page-counter: false;
         visible: Layout.top-strip-visible;
     }
@@ -69,7 +74,9 @@ export component RenameScreen inherits Rectangle {
         y: root.top;
         width: root.keys-w;
         height: root.field-h;
-        label: @tr("Name");
+        label: RenameView.purpose == RenamePurpose.reader-address ? @tr("Broker and topic")
+            : RenameView.purpose == RenamePurpose.reader-path ? @tr("Path")
+            : @tr("Name");
         before: RenameView.before;
         at: RenameView.at;
         after: RenameView.after;

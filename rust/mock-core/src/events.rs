@@ -20,7 +20,7 @@ pub fn events_enabled() -> bool {
     std::env::var_os("MOCK_CORE_EVENTS").is_some()
 }
 
-/// Rotates through the three transient event kinds this mock emits.
+/// Rotates through the four transient event kinds this mock emits.
 /// Dates are fixed illustrative values (matching the convention already
 /// used for `fixtures.rs`'s history fixtures) rather than the real
 /// clock — nothing here depends on wall-clock time.
@@ -29,23 +29,40 @@ pub async fn run(notifier: Notifier) {
     loop {
         sleep(EVENT_INTERVAL).await;
         tick += 1;
-        match tick % 3 {
+        match tick % 4 {
             1 => notifier_send_tokens_added(&notifier),
             2 => notifier_send_playtime_warning(&notifier),
+            3 => notifier_send_blank_token(&notifier),
             _ => notifier_send_inbox_added(&notifier, tick),
         }
     }
 }
 
 fn notifier_send_tokens_added(notifier: &Notifier) {
+    let token = json!({
+        "type": "nfc",
+        "uid": "04a1b2c3d4e5f6",
+        "text": "Super Mario World",
+        "data": "",
+        "scanTime": "2026-04-29T23:00:00Z",
+        "readerId": crate::readers::READER_ID,
+    });
+    crate::readers::remember_token(&token);
+    notifier.send("tokens.added", &token);
+}
+
+/// A blank token: read, then refused with Core's `blank` category.
+fn notifier_send_blank_token(notifier: &Notifier) {
+    let token = crate::readers::blank_token();
+    crate::readers::remember_token(&token);
+    notifier.send("tokens.added", &token);
     notifier.send(
-        "tokens.added",
+        "run.failed",
         &json!({
-            "type": "nfc",
-            "uid": "04a1b2c3d4e5f6",
-            "text": "Super Mario World",
-            "scanTime": "2026-04-29T23:00:00Z",
-            "readerId": "mock-reader-1",
+            "source": "reader",
+            "readerId": crate::readers::READER_ID,
+            "category": "blank",
+            "message": "The token is blank",
         }),
     );
 }

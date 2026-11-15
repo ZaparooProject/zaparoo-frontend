@@ -12,7 +12,9 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use slint::{ComponentHandle, SharedString};
-use zaparoo_app::status_line::{Event, Ladder, Link, LinkInput, Output, TaskInput};
+use zaparoo_app::status_line::{
+    is_reader_run, Event, Ladder, Link, LinkInput, Output, ScanFailure, TaskInput,
+};
 use zaparoo_core::client::{ConnectionState, Notification};
 use zaparoo_core::store::MediaStatusState;
 
@@ -99,6 +101,17 @@ pub fn classify(notification: &Notification) -> Option<Event> {
             field("remaining").unwrap_or_default(),
         )),
         "inbox.added" => Some(Event::InboxMessage(field("title").unwrap_or_default())),
+        // Only a token a reader read: a run the frontend started reports its
+        // own failure where it started.
+        "run.failed" if field("source").is_some_and(|s| is_reader_run(&s)) => {
+            Some(Event::RunFailed(ScanFailure::from_category(
+                &field("category").unwrap_or_default(),
+                &field("reason").unwrap_or_default(),
+            )))
+        }
+        "profiles.data" if matches!(field("status").as_deref(), Some("failed" | "unavailable")) => {
+            Some(Event::ProfileDataFailed)
+        }
         _ => None,
     }
 }
@@ -188,7 +201,7 @@ pub fn push(shared: &Shared, app: &App, handle: &tokio::runtime::Handle) {
         let now = Instant::now();
         (
             d.ladder.render(&d.link, &d.task, now),
-            d.ladder.next_deadline(),
+            d.ladder.next_deadline(now),
             d.generation,
         )
     };
@@ -257,6 +270,31 @@ mod tests {
         assert_eq!(
             classify(&n("inbox.added", json!({"title": "Update available"}))),
             Some(Event::InboxMessage("Update available".into()))
+        );
+        assert_eq!(
+            classify(&n(
+                "run.failed",
+                json!({"source": "reader", "readerId": "r1", "category": "blank", "message": "blank"})
+            )),
+            Some(Event::RunFailed(ScanFailure::Blank))
+        );
+        assert_eq!(
+            classify(&n(
+                "run.failed",
+                json!({"source": "API", "category": "media_not_found", "message": "x"})
+            )),
+            None
+        );
+        assert_eq!(
+            classify(&n(
+                "profiles.data",
+                json!({"profileId": "p", "status": "failed", "reason": "disk full"})
+            )),
+            Some(Event::ProfileDataFailed)
+        );
+        assert_eq!(
+            classify(&n("profiles.data", json!({"status": "applied"}))),
+            None
         );
         assert_eq!(classify(&n("media.indexing", json!({}))), None);
     }

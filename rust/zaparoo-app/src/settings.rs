@@ -101,9 +101,10 @@ pub struct Page {
 }
 
 /// Every root category tile, in the order the console-style menu shows
-/// it: what the collection holds and how it is browsed, the music player,
-/// how the interface looks and the output it draws on, input, locale, the
-/// accounts the frontend links to, then About, always last.
+/// it: what the collection holds and how it is browsed, how the interface
+/// looks and the output it draws on, input, the readers that scan tokens,
+/// who is playing, the accounts the frontend links to, then System, always
+/// last.
 /// The `RetroAchievements` tile shows only where `MiSTer_RA` can be set up; see
 /// `root_pages`.
 pub const PAGES: &[Page] = &[
@@ -114,10 +115,6 @@ pub const PAGES: &[Page] = &[
     Page {
         id: BROWSING_PAGE,
         glyph: "icons/Browsing",
-    },
-    Page {
-        id: MUSIC_PAGE,
-        glyph: "icons/Music",
     },
     Page {
         id: "pageAppearance",
@@ -132,8 +129,12 @@ pub const PAGES: &[Page] = &[
         glyph: "icons/Controls",
     },
     Page {
-        id: "pageLanguage",
-        glyph: "icons/Language",
+        id: READERS_PAGE,
+        glyph: "status/NFC",
+    },
+    Page {
+        id: PROFILES_PAGE,
+        glyph: "icons/Users",
     },
     Page {
         id: "pageOnline",
@@ -144,10 +145,37 @@ pub const PAGES: &[Page] = &[
         glyph: "icons/Trophy",
     },
     Page {
-        id: "pageSupportAbout",
-        glyph: "icons/Support",
+        id: SYSTEM_PAGE,
+        glyph: "icons/Settings",
     },
 ];
+
+/// The readers Core scans tokens with, and what a scan does.
+pub const READERS_PAGE: &str = "pageReaders";
+
+/// Who is playing: the profile list, switching, and managing them.
+pub const PROFILES_PAGE: &str = "pageProfiles";
+
+/// System: pairing, security, language, logs, documentation and identity.
+/// Its id is the old About page's, so a pinned Hub tile keeps opening it.
+pub const SYSTEM_PAGE: &str = "pageSupportAbout";
+
+/// Language and region, a row of System. No longer a root tile, but a
+/// pinned Hub tile keeps opening it and the Hub still offers it.
+pub const LANGUAGE_PAGE: &str = "pageLanguage";
+
+/// Library's preferred game versions: Core's default regions and
+/// languages for a game with several versions.
+pub const GAME_VERSIONS_PAGE: &str = "pageGameVersions";
+
+/// The devices paired with Core, a page of System.
+pub const PAIRED_DEVICES_PAGE: &str = "pagePairedDevices";
+
+/// One profile's settings, opened from its entry on the Profiles page.
+pub const PROFILE_EDIT_PAGE: &str = "pageProfileEdit";
+
+/// The playtime limits every profile inherits, a page of Profiles.
+pub const PLAYTIME_LIMITS_PAGE: &str = "pagePlaytimeLimits";
 
 /// The browse lists' presentation: layouts, artwork, what a list shows.
 pub const BROWSING_PAGE: &str = "pageBrowsing";
@@ -163,13 +191,18 @@ pub fn root_pages(retro_achievements: bool) -> impl Iterator<Item = &'static Pag
         .filter(move |p| retro_achievements || p.id != RETRO_ACHIEVEMENTS_PAGE)
 }
 
-/// The root tile that opens the music player, a screen of its own rather
-/// than a page of rows.
+/// The music player's old root tile. It is a Hub action now; a tile pinned
+/// while it was a Settings page keeps opening the player.
 pub const MUSIC_PAGE: &str = "pageMusic";
 
-/// The glyph of a root tile, for a pinned Hub tile that stands for it.
+/// The glyph of a root tile, for a pinned Hub tile that stands for it,
+/// and of the pages a pinned tile can open that are not root tiles.
 pub fn page_glyph(id: &str) -> Option<&'static str> {
-    PAGES.iter().find(|p| p.id == id).map(|p| p.glyph)
+    match id {
+        MUSIC_PAGE => Some("icons/Music"),
+        LANGUAGE_PAGE => Some("icons/Language"),
+        _ => PAGES.iter().find(|p| p.id == id).map(|p| p.glyph),
+    }
 }
 
 /// What the registry needs to know about the machine it runs on.
@@ -241,6 +274,26 @@ pub struct Inputs {
     /// The screensaver style is Bouncing or Random: the row that picks
     /// what bounces shows then.
     pub screensaver_bounces: bool,
+    /// Core answered `settings`: the rows that are Core's own show then.
+    pub core_settings: bool,
+    /// How many devices are paired with Core (`clients`).
+    pub paired_devices: usize,
+    /// How many profiles Core has, and whether one is active.
+    pub profiles: usize,
+    pub active_profile: bool,
+    /// The profile being edited has a PIN: the row that removes it shows.
+    pub profile_has_pin: bool,
+    /// The profile being edited has limits turned off: its own daily and
+    /// session limits mean nothing then.
+    pub profile_limits_off: bool,
+    /// Playtime limits are on: the global limits show then.
+    pub playtime_enabled: bool,
+    /// How many regions and languages the preferred game versions page
+    /// lists (`game_version_choices`).
+    pub game_regions: usize,
+    pub game_langs: usize,
+    /// What the Readers pages show (`readers::Inputs`).
+    pub readers: crate::readers::Inputs,
 }
 
 const TOGGLES: &[&str] = &[
@@ -266,6 +319,10 @@ const TOGGLES: &[&str] = &[
     "raChallengePopups",
     "raLeaderboardPopups",
     "raListHotkey",
+    "encryption",
+    "errorReporting",
+    "playtimeEnabled",
+    "profilesRequireForLaunch",
 ];
 
 const NAVIGATES: &[&str] = &[
@@ -290,6 +347,12 @@ const NAVIGATES: &[&str] = &[
     "onlineManageBackups",
     "onlineRemoteActivity",
     "screensaver",
+    LANGUAGE_PAGE,
+    GAME_VERSIONS_PAGE,
+    PAIRED_DEVICES_PAGE,
+    PLAYTIME_LIMITS_PAGE,
+    "profileName",
+    "profilePin",
 ];
 
 const ACTIONS: &[&str] = &[
@@ -304,6 +367,11 @@ const ACTIONS: &[&str] = &[
     "onlineUnlinkAccount",
     "raLogIn",
     "raLogOut",
+    "leaveProfile",
+    "newProfile",
+    "profileClearPin",
+    "writeSwitchCard",
+    "deleteProfile",
 ];
 
 /// Rows whose current value sweeps between fully off and fully on across
@@ -320,6 +388,8 @@ const INFOS: &[&str] = &[
     "onlineWarp",
     "onlineRemoteStatus",
     "raAccount",
+    "noPairedDevices",
+    "noProfiles",
 ];
 
 /// Rows that report something to act on elsewhere; see `Control::Notice`.
@@ -370,6 +440,10 @@ fn library_rows(inputs: &Inputs) -> Vec<Row> {
         field("updateMediaDb"),
         field("runScraper"),
     ]);
+    // Core's own preference, so it waits for Core's settings.
+    if inputs.core_settings {
+        rows.extend([Row::Header("preferences"), field(GAME_VERSIONS_PAGE)]);
+    }
     if inputs.can_scan_launchers || inputs.launcher_preference {
         rows.push(Row::Header("launchers"));
         if inputs.can_scan_launchers {
@@ -512,6 +586,105 @@ fn paired_rows(inputs: &Inputs) -> Vec<Row> {
         .collect()
 }
 
+/// System. Pairing leads, with the devices already paired and the
+/// encryption they must use; then language, then help in task order (turn
+/// on debug logging, report errors, upload the log, read the guide), and
+/// identity closes the page. Core's own rows wait for its settings.
+fn system_rows(inputs: &Inputs) -> Vec<Row> {
+    let mut rows = vec![field("pairDevice"), field(PAIRED_DEVICES_PAGE)];
+    if inputs.core_settings {
+        rows.push(field("encryption"));
+    }
+    rows.extend([field(LANGUAGE_PAGE), field("debugLogging")]);
+    if inputs.core_settings {
+        rows.push(field("errorReporting"));
+    }
+    if inputs.log_upload {
+        rows.push(field("uploadLog"));
+    }
+    rows.extend([
+        field("documentation"),
+        field("aboutLicense"),
+        field("credits"),
+    ]);
+    rows
+}
+
+fn items(id: &'static str, count: usize, control: Control) -> impl Iterator<Item = Row> {
+    (0..count).map(move |index| Row::Item { id, index, control })
+}
+
+/// Paired devices: every client Core has paired, or a line saying there
+/// are none.
+fn paired_device_rows(inputs: &Inputs) -> Vec<Row> {
+    if inputs.paired_devices == 0 {
+        return vec![field("noPairedDevices")];
+    }
+    items("pairedClient", inputs.paired_devices, Control::Device).collect()
+}
+
+/// Preferred game versions: a switch per region, then per language.
+fn game_version_rows(inputs: &Inputs) -> Vec<Row> {
+    let mut rows = vec![Row::Header("regions")];
+    rows.extend(items("gameRegion", inputs.game_regions, Control::Toggle));
+    rows.push(Row::Header("languages"));
+    rows.extend(items("gameLang", inputs.game_langs, Control::Toggle));
+    rows
+}
+
+/// Profiles: who is playing, picked from the list, and a way to leave;
+/// then the rows that manage them.
+fn profiles_rows(inputs: &Inputs) -> Vec<Row> {
+    let mut rows: Vec<Row> = if inputs.profiles == 0 {
+        vec![field("noProfiles")]
+    } else {
+        items("profile", inputs.profiles, Control::Device).collect()
+    };
+    if inputs.active_profile {
+        rows.push(field("leaveProfile"));
+    }
+    rows.extend([
+        Row::Header("manage"),
+        field("newProfile"),
+        field(PLAYTIME_LIMITS_PAGE),
+    ]);
+    rows
+}
+
+/// One profile: who it is and how it unlocks, its own limits, then its
+/// switch card and deleting it.
+fn profile_edit_rows(inputs: &Inputs) -> Vec<Row> {
+    let mut rows = vec![field("profileName"), field("profilePin")];
+    if inputs.profile_has_pin {
+        rows.push(field("profileClearPin"));
+    }
+    rows.extend([
+        field("profileRole"),
+        Row::Header("limits"),
+        field("profileLimits"),
+    ]);
+    if !inputs.profile_limits_off {
+        rows.extend([field("profileDailyLimit"), field("profileSessionLimit")]);
+    }
+    rows.extend([
+        Row::Header("manage"),
+        field("writeSwitchCard"),
+        field("deleteProfile"),
+    ]);
+    rows
+}
+
+/// Playtime limits: the switch, the limits every profile inherits while
+/// it is on, and whether a profile must be picked to play at all.
+fn playtime_limit_rows(inputs: &Inputs) -> Vec<Row> {
+    let mut rows = vec![field("playtimeEnabled")];
+    if inputs.playtime_enabled {
+        rows.extend([field("playtimeDaily"), field("playtimeSession")]);
+    }
+    rows.push(field("profilesRequireForLaunch"));
+    rows
+}
+
 /// The Language page: `names.txt` sits under Region on a `MiSTer`.
 fn language_rows(inputs: &Inputs) -> Vec<Row> {
     let mut rows = vec![field("language"), field("region")];
@@ -587,7 +760,12 @@ pub fn page_rows(page: &str, inputs: &Inputs) -> Vec<Row> {
             }
             rows
         }
-        "pageLanguage" => language_rows(inputs),
+        LANGUAGE_PAGE => language_rows(inputs),
+        GAME_VERSIONS_PAGE => game_version_rows(inputs),
+        PAIRED_DEVICES_PAGE => paired_device_rows(inputs),
+        PROFILES_PAGE => profiles_rows(inputs),
+        PROFILE_EDIT_PAGE => profile_edit_rows(inputs),
+        PLAYTIME_LIMITS_PAGE => playtime_limit_rows(inputs),
         "pageControlsInput" => controls_rows(inputs),
         CONTROLLERS_PAGE => controllers_rows(inputs),
         PAIRED_PAGE => paired_rows(inputs),
@@ -631,29 +809,25 @@ pub fn page_rows(page: &str, inputs: &Inputs) -> Vec<Row> {
             ]);
             rows
         }
-        // Pairing leads: it is the one row here a user comes to *do*,
-        // the way the Library page leads with its own action rows. Help
-        // follows in task order (read the guide, turn on debug logging,
-        // upload the log), then identity closes the page.
-        "pageSupportAbout" => {
-            let mut rows = vec![
-                field("pairDevice"),
-                field("documentation"),
-                field("debugLogging"),
-            ];
-            if inputs.log_upload {
-                rows.push(field("uploadLog"));
-            }
-            rows.extend([field("aboutLicense"), field("credits")]);
-            rows
-        }
-        _ => Vec::new(),
+        SYSTEM_PAGE => system_rows(inputs),
+        page => crate::readers::page_rows(page, &inputs.readers).unwrap_or_default(),
     }
 }
 
-/// The page a row opens, for the navigation rows that are category tiles.
+/// The page a row opens, for the navigation rows that are category tiles
+/// or pages inside one.
 pub fn opens_page(id: &str) -> Option<&'static str> {
-    PAGES.iter().find(|p| p.id == id).map(|p| p.id)
+    const SUB_PAGES: &[&str] = &[
+        LANGUAGE_PAGE,
+        GAME_VERSIONS_PAGE,
+        PAIRED_DEVICES_PAGE,
+        PLAYTIME_LIMITS_PAGE,
+    ];
+    PAGES
+        .iter()
+        .map(|p| p.id)
+        .chain(SUB_PAGES.iter().copied())
+        .find(|page| *page == id)
 }
 
 pub const LANGUAGES: &[&str] = &[
@@ -692,6 +866,15 @@ pub const MEDIA_IMAGE_TYPES: &[&str] = &[
 pub const CRT_VIDEO_STANDARDS: &[&str] = &["ntsc", "pal"];
 pub const BACKUP_SCHEDULES: &[&str] = &["daily", "weekly", "manual"];
 pub const POPUP_POSITIONS: &[&str] = &["left", "center", "right"];
+pub const PROFILE_ROLES: &[&str] = &["member", "admin"];
+/// A profile's own limits: what every profile inherits, or on or off for
+/// this one.
+pub const PROFILE_LIMIT_MODES: &[&str] = &["default", "on", "off"];
+/// A playtime limit in minutes; "0" is no limit.
+pub const PLAYTIME_LIMITS: &[&str] = &["0", "30", "60", "90", "120", "180", "240"];
+/// A profile's own limit, which can also inherit the global one.
+pub const PROFILE_PLAYTIME_LIMITS: &[&str] =
+    &["default", "0", "30", "60", "90", "120", "180", "240"];
 
 /// The option list of a picker row, when it is a fixed one. Resolutions
 /// and color schemes come from the host (the output modes it detected,
@@ -712,12 +895,17 @@ pub fn options(id: &str, inputs: &Inputs) -> Option<Vec<&'static str>> {
         "crtVideoStandard" => CRT_VIDEO_STANDARDS,
         "onlineBackupSchedule" => BACKUP_SCHEDULES,
         "raPopupPosition" => POPUP_POSITIONS,
+        "profileRole" => PROFILE_ROLES,
+        "profileLimits" => PROFILE_LIMIT_MODES,
+        "profileDailyLimit" | "profileSessionLimit" => PROFILE_PLAYTIME_LIMITS,
+        "playtimeDaily" | "playtimeSession" => PLAYTIME_LIMITS,
         "gameBackground" => crate::background::GAME_BACKGROUND_TYPES,
         "backgroundListStyle" => crate::background::LIST_STYLES,
         "headerLogo" => crate::branding::HEADER_LOGOS,
         "backgroundSource" => crate::background::SOURCES,
         "screensaverStyle" => crate::screensaver::STYLES,
         "screensaverBouncing" => crate::screensaver::BOUNCINGS,
+        id if crate::readers::options(id).is_some() => crate::readers::options(id)?,
         "screensaverTimeout" => {
             let mut values = SCREENSAVER_TIMEOUTS.to_vec();
             // A debug build can watch the screensaver arm immediately.
@@ -749,6 +937,11 @@ pub fn action_label_key(id: &str, busy: bool) -> &'static str {
         "onlineUnlinkAccount" => "unlink",
         "raLogIn" => "logIn",
         "raLogOut" => "logOut",
+        "leaveProfile" => "leave",
+        "newProfile" => "create",
+        "profileClearPin" => "remove",
+        "writeSwitchCard" => "write",
+        "deleteProfile" => "delete",
         _ => "open",
     }
 }
@@ -867,6 +1060,232 @@ pub fn seek_navigable(rows: &[Row], from: usize, dir: i64) -> usize {
         }
     }
     from
+}
+
+// ---------- Admin gate ----------
+
+/// Pages only an admin may open while Core has profiles.
+pub fn gated_page(id: &str) -> bool {
+    matches!(
+        id,
+        "pageOnline"
+            | GAME_VERSIONS_PAGE
+            | PAIRED_DEVICES_PAGE
+            | PROFILE_EDIT_PAGE
+            | PLAYTIME_LIMITS_PAGE
+            | "pageReaderDetail"
+            | "pageAddReader"
+            | "pageAddReaderPort"
+            | "pageAddReaderOptions"
+            | "pageReaderTypes"
+            | "pageLaunchGuard"
+            | "pageMappings"
+            | "pageIgnoredSystems"
+    )
+}
+
+/// The pages whose focused row survives a kill. A page under one of them
+/// comes back as the row on it that opens that page.
+pub fn kept_page(page: &str) -> bool {
+    matches!(page, READERS_PAGE | PROFILES_PAGE | SYSTEM_PAGE)
+}
+
+/// Rows only an admin may act on (Accept, a change, or Options) while
+/// Core has profiles, on pages anyone can open.
+pub fn gated_row(id: &str) -> bool {
+    matches!(
+        id,
+        "updateMediaDb"
+            | "runScraper"
+            | "launcherPreference"
+            | "raLogIn"
+            | "pairDevice"
+            | "encryption"
+            | "errorReporting"
+            | "newProfile"
+            | "readersScanMode"
+            | "readersScanExitDelay"
+            | "readersScanIgnoreSystems"
+            | "readersScanIgnoreOnConnect"
+            | "audioScanFeedback"
+            | "connectedReader"
+            | "mapToken"
+            | "removeMapping"
+    )
+}
+
+/// An admin must unlock first. Never while Core has no profiles, nor
+/// while none of them is an admin (nobody could unlock it then), nor once
+/// an admin has unlocked it.
+pub fn admin_required(profiles: usize, admins: usize, unlocked: bool) -> bool {
+    profiles > 0 && admins > 0 && !unlocked
+}
+
+/// A profile Core verified unlocks the gate only as an admin.
+pub fn verified_admin(role: &str) -> bool {
+    role == "admin"
+}
+
+/// Core refuses to remove the last admin, whether a paired device or a
+/// profile, so that one is never offered for removal. `admins` counts
+/// every admin in the list `this` belongs to.
+pub fn last_admin(this_is_admin: bool, admins: usize) -> bool {
+    this_is_admin && admins == 1
+}
+
+/// A PIN is 4 to 8 digits.
+pub const PIN_MIN: usize = 4;
+pub const PIN_MAX: usize = 8;
+
+/// The PIN typed so far can be sent.
+pub fn pin_complete(pin: &str) -> bool {
+    (PIN_MIN..=PIN_MAX).contains(&pin.len()) && pin.bytes().all(|b| b.is_ascii_digit())
+}
+
+// ---------- System ----------
+
+/// Debug logging is one row for the frontend's flag and Core's: on only
+/// while both are. Before Core answers, the frontend's alone. A mixed
+/// state reads as off, so choosing the row turns both on.
+pub fn debug_logging_on(frontend: bool, core: Option<bool>) -> bool {
+    frontend && core.unwrap_or(true)
+}
+
+// ---------- Playtime limits ----------
+
+/// Minutes in a Go duration string ("1h30m0s", "90m", "0s", "0").
+/// Fractions of a minute round to the nearest one. Anything else is
+/// `None`.
+pub fn duration_minutes(value: &str) -> Option<u64> {
+    let value = value.trim();
+    if value == "0" {
+        return Some(0);
+    }
+    if value.is_empty() {
+        return None;
+    }
+    let mut seconds = 0.0_f64;
+    let mut rest = value;
+    while !rest.is_empty() {
+        let digits = rest
+            .find(|c: char| !(c.is_ascii_digit() || c == '.'))
+            .unwrap_or(rest.len());
+        if digits == 0 {
+            return None;
+        }
+        let amount: f64 = rest[..digits].parse().ok()?;
+        rest = &rest[digits..];
+        let unit = rest
+            .find(|c: char| c.is_ascii_digit() || c == '.')
+            .unwrap_or(rest.len());
+        let scale = match &rest[..unit] {
+            "h" => 3600.0,
+            "m" => 60.0,
+            "s" => 1.0,
+            "ms" => 1e-3,
+            "us" | "\u{b5}s" => 1e-6,
+            "ns" => 1e-9,
+            _ => return None,
+        };
+        seconds += amount * scale;
+        rest = &rest[unit..];
+    }
+    Some((seconds / 60.0).round() as u64)
+}
+
+/// A limit's picker token: minutes, or "default" while a profile inherits
+/// the global one.
+pub fn limit_token(value: Option<&str>) -> String {
+    match value {
+        None => "default".to_string(),
+        Some(value) => duration_minutes(value).unwrap_or(0).to_string(),
+    }
+}
+
+/// The duration Core takes for a picker token of minutes.
+pub fn limit_duration(token: &str) -> String {
+    format!("{token}m")
+}
+
+/// A profile's limits switch as a picker token.
+pub fn limit_mode_token(enabled: Option<bool>) -> &'static str {
+    match enabled {
+        None => "default",
+        Some(true) => "on",
+        Some(false) => "off",
+    }
+}
+
+// ---------- Preferred game versions ----------
+
+/// The regions Core knows, in the order the page lists them.
+pub const GAME_REGIONS: &[&str] = &[
+    "world",
+    "us",
+    "eu",
+    "jp",
+    "asia",
+    "au",
+    "br",
+    "ca",
+    "cn",
+    "fr",
+    "de",
+    "hk",
+    "it",
+    "kr",
+    "es",
+    "scandinavia",
+    "tw",
+];
+
+/// The languages Core knows, in the order the page lists them.
+pub const GAME_LANGS: &[&str] = &[
+    "en", "fr", "de", "es", "it", "ja", "ko", "zh", "pt", "nl", "sv", "no", "da", "fi", "pl", "ru",
+    "ar",
+];
+
+/// What Core uses while its list is empty.
+pub const DEFAULT_GAME_REGIONS: &[&str] = &["us", "world"];
+pub const DEFAULT_GAME_LANGS: &[&str] = &["en"];
+
+/// The values Core uses: its list, or its defaults while the list is
+/// empty.
+pub fn effective_versions(current: &[String], defaults: &[&str]) -> Vec<String> {
+    if current.is_empty() {
+        defaults.iter().map(|v| (*v).to_string()).collect()
+    } else {
+        current.to_vec()
+    }
+}
+
+/// Every value the page lists: the known ones, then any other value
+/// already in Core's list, so it can be seen and turned off.
+pub fn game_version_choices(known: &[&str], current: &[String]) -> Vec<String> {
+    let mut choices: Vec<String> = known.iter().map(|v| (*v).to_string()).collect();
+    for value in current {
+        if !choices.contains(value) {
+            choices.push(value.clone());
+        }
+    }
+    choices
+}
+
+/// `value` is the only one on. It stays on: an empty list is Core's
+/// defaults, so turning it off would bring the defaults back on.
+pub fn last_version(current: &[String], defaults: &[&str], value: &str) -> bool {
+    let on = effective_versions(current, defaults);
+    on.len() == 1 && on[0] == value
+}
+
+/// Core's list after one value is turned on (added last) or off.
+pub fn toggle_version(current: &[String], defaults: &[&str], value: &str, on: bool) -> Vec<String> {
+    let mut list = effective_versions(current, defaults);
+    list.retain(|v| v != value);
+    if on {
+        list.push(value.to_string());
+    }
+    list
 }
 
 /// One rendered line of text at `size`, the way Slint lays it out: Noto
@@ -1286,13 +1705,13 @@ mod tests {
             [
                 "pageLibraryData",
                 BROWSING_PAGE,
-                MUSIC_PAGE,
                 "pageAppearance",
                 "pageDisplayInterface",
                 "pageControlsInput",
-                "pageLanguage",
+                READERS_PAGE,
+                PROFILES_PAGE,
                 "pageOnline",
-                "pageSupportAbout",
+                SYSTEM_PAGE,
             ]
         );
         assert_eq!(root_grid_shape(rows.len(), false), (5, 2));
@@ -1535,7 +1954,7 @@ mod tests {
     }
 
     #[test]
-    fn the_about_page_leads_with_pairing() {
+    fn the_system_page_leads_with_pairing() {
         let rows = page_rows(
             "pageSupportAbout",
             &Inputs {
@@ -1556,9 +1975,11 @@ mod tests {
             ids,
             vec![
                 "pairDevice",
-                "documentation",
+                PAIRED_DEVICES_PAGE,
+                LANGUAGE_PAGE,
                 "debugLogging",
                 "uploadLog",
+                "documentation",
                 "aboutLicense",
                 "credits",
             ]
@@ -2034,5 +2455,255 @@ mod tests {
         use super::band_extent;
         let rows = [(0.0_f32, 60.0_f32)];
         assert_eq!(band_extent(&rows, 9, 200.0, 10.0), (0.0, 220.0));
+    }
+}
+
+#[cfg(test)]
+mod profile_rules_tests {
+    use super::*;
+
+    #[test]
+    fn the_gate_is_free_without_profiles_or_admins_and_after_an_unlock() {
+        assert!(!admin_required(0, 0, false));
+        assert!(!admin_required(2, 0, false));
+        assert!(admin_required(2, 1, false));
+        assert!(!admin_required(2, 1, true));
+        assert!(verified_admin("admin"));
+        assert!(!verified_admin("member"));
+    }
+
+    #[test]
+    fn only_the_last_admin_is_kept_from_removal() {
+        assert!(last_admin(true, 1));
+        assert!(!last_admin(true, 2));
+        assert!(!last_admin(false, 1));
+    }
+
+    #[test]
+    fn gated_pages_and_rows_are_the_management_ones() {
+        for page in [
+            "pageOnline",
+            GAME_VERSIONS_PAGE,
+            PAIRED_DEVICES_PAGE,
+            PROFILE_EDIT_PAGE,
+            PLAYTIME_LIMITS_PAGE,
+            "pageMappings",
+        ] {
+            assert!(gated_page(page), "{page}");
+        }
+        for page in [PROFILES_PAGE, SYSTEM_PAGE, READERS_PAGE, LANGUAGE_PAGE, ""] {
+            assert!(!gated_page(page), "{page}");
+        }
+        for row in [
+            "updateMediaDb",
+            "pairDevice",
+            "encryption",
+            "newProfile",
+            "mapToken",
+        ] {
+            assert!(gated_row(row), "{row}");
+        }
+        for row in ["readToken", "debugLogging", "leaveProfile", "language"] {
+            assert!(!gated_row(row), "{row}");
+        }
+    }
+
+    #[test]
+    fn only_the_ungated_core_pages_keep_their_row() {
+        for page in [READERS_PAGE, PROFILES_PAGE, SYSTEM_PAGE] {
+            assert!(kept_page(page) && !gated_page(page), "{page}");
+        }
+        for page in [
+            "pageMappings",
+            PROFILE_EDIT_PAGE,
+            LANGUAGE_PAGE,
+            "pageAppearance",
+            "",
+        ] {
+            assert!(!kept_page(page), "{page}");
+        }
+    }
+
+    #[test]
+    fn a_pin_is_four_to_eight_digits() {
+        assert!(!pin_complete("123"));
+        assert!(pin_complete("1234"));
+        assert!(pin_complete("12345678"));
+        assert!(!pin_complete("123456789"));
+        assert!(!pin_complete("12a4"));
+    }
+
+    #[test]
+    fn debug_logging_is_on_only_when_both_are() {
+        assert!(debug_logging_on(true, Some(true)));
+        assert!(!debug_logging_on(true, Some(false)));
+        assert!(!debug_logging_on(false, Some(true)));
+        assert!(debug_logging_on(true, None));
+        assert!(!debug_logging_on(false, None));
+    }
+
+    #[test]
+    fn go_durations_read_as_minutes() {
+        assert_eq!(duration_minutes("0"), Some(0));
+        assert_eq!(duration_minutes("0s"), Some(0));
+        assert_eq!(duration_minutes("1h30m0s"), Some(90));
+        assert_eq!(duration_minutes("45m"), Some(45));
+        assert_eq!(duration_minutes("2h"), Some(120));
+        assert_eq!(duration_minutes("1.5h"), Some(90));
+        assert_eq!(duration_minutes("90s"), Some(2));
+        assert_eq!(duration_minutes(""), None);
+        assert_eq!(duration_minutes("soon"), None);
+        assert_eq!(duration_minutes("5x"), None);
+        assert_eq!(limit_token(None), "default");
+        assert_eq!(limit_token(Some("1h0m0s")), "60");
+        assert_eq!(limit_duration("90"), "90m");
+        assert_eq!(limit_mode_token(None), "default");
+        assert_eq!(limit_mode_token(Some(false)), "off");
+    }
+
+    #[test]
+    fn game_versions_toggle_against_core_defaults() {
+        let empty: Vec<String> = Vec::new();
+        assert_eq!(
+            effective_versions(&empty, DEFAULT_GAME_REGIONS),
+            ["us", "world"]
+        );
+        assert_eq!(
+            toggle_version(&empty, DEFAULT_GAME_REGIONS, "jp", true),
+            ["us", "world", "jp"]
+        );
+        assert_eq!(
+            toggle_version(&empty, DEFAULT_GAME_REGIONS, "us", false),
+            ["world"]
+        );
+        let one = vec!["en".to_string()];
+        assert!(last_version(&one, DEFAULT_GAME_LANGS, "en"));
+        assert!(last_version(&empty, DEFAULT_GAME_LANGS, "en"));
+        assert!(!last_version(&empty, DEFAULT_GAME_REGIONS, "us"));
+        assert!(!last_version(&one, DEFAULT_GAME_LANGS, "fr"));
+        let odd = vec!["xx".to_string(), "us".to_string()];
+        let choices = game_version_choices(GAME_REGIONS, &odd);
+        assert_eq!(choices.len(), GAME_REGIONS.len() + 1);
+        assert_eq!(choices.last().map(String::as_str), Some("xx"));
+    }
+
+    fn with(f: impl FnOnce(&mut Inputs)) -> Inputs {
+        let mut inputs = Inputs::default();
+        f(&mut inputs);
+        inputs
+    }
+
+    #[test]
+    fn system_page_lists_pairing_security_language_help_then_identity() {
+        let ids = |inputs: &Inputs| -> Vec<&str> {
+            page_rows(SYSTEM_PAGE, inputs)
+                .iter()
+                .map(|r| r.id())
+                .collect()
+        };
+        assert_eq!(
+            ids(&with(|i| {
+                i.core_settings = true;
+                i.log_upload = true;
+            })),
+            [
+                "pairDevice",
+                PAIRED_DEVICES_PAGE,
+                "encryption",
+                LANGUAGE_PAGE,
+                "debugLogging",
+                "errorReporting",
+                "uploadLog",
+                "documentation",
+                "aboutLicense",
+                "credits",
+            ]
+        );
+        assert_eq!(
+            ids(&Inputs::default()),
+            [
+                "pairDevice",
+                PAIRED_DEVICES_PAGE,
+                LANGUAGE_PAGE,
+                "debugLogging",
+                "documentation",
+                "aboutLicense",
+                "credits",
+            ]
+        );
+        assert_eq!(opens_page(LANGUAGE_PAGE), Some(LANGUAGE_PAGE));
+        assert_eq!(control(PAIRED_DEVICES_PAGE), Control::Navigate);
+    }
+
+    #[test]
+    fn profile_pages_follow_what_core_has() {
+        let none = page_rows(PROFILES_PAGE, &Inputs::default());
+        assert_eq!(none[0].id(), "noProfiles");
+        assert_eq!(none[first_navigable(&none)].id(), "newProfile");
+        let some = page_rows(
+            PROFILES_PAGE,
+            &with(|i| {
+                i.profiles = 2;
+                i.active_profile = true;
+            }),
+        );
+        assert_eq!(some[1].item(), Some(1));
+        assert_eq!(some[2].id(), "leaveProfile");
+
+        let edit = |inputs: &Inputs| -> Vec<&str> {
+            page_rows(PROFILE_EDIT_PAGE, inputs)
+                .iter()
+                .map(|r| r.id())
+                .collect()
+        };
+        let full = edit(&with(|i| i.profile_has_pin = true));
+        assert!(full.contains(&"profileClearPin"));
+        assert!(full.contains(&"profileDailyLimit"));
+        let off = edit(&with(|i| i.profile_limits_off = true));
+        assert!(!off.contains(&"profileClearPin"));
+        assert!(!off.contains(&"profileSessionLimit"));
+
+        let limits = |inputs: &Inputs| page_rows(PLAYTIME_LIMITS_PAGE, inputs).len();
+        assert_eq!(limits(&Inputs::default()), 2);
+        assert_eq!(limits(&with(|i| i.playtime_enabled = true)), 4);
+    }
+
+    #[test]
+    fn game_versions_and_paired_devices_list_their_entries() {
+        let rows = page_rows(
+            GAME_VERSIONS_PAGE,
+            &with(|i| {
+                i.game_regions = 3;
+                i.game_langs = 2;
+            }),
+        );
+        assert_eq!(rows.len(), 7);
+        assert_eq!(rows[4], Row::Header("languages"));
+        assert_eq!(rows[1].control(), Some(Control::Toggle));
+        let none = page_rows(PAIRED_DEVICES_PAGE, &Inputs::default());
+        assert_eq!(
+            none,
+            [Row::Field {
+                id: "noPairedDevices",
+                control: Control::Info
+            }]
+        );
+        let two = page_rows(PAIRED_DEVICES_PAGE, &with(|i| i.paired_devices = 2));
+        assert_eq!(two.len(), 2);
+        assert!(
+            page_rows("pageLibraryData", &with(|i| i.core_settings = true))
+                .iter()
+                .any(|r| r.id() == GAME_VERSIONS_PAGE)
+        );
+    }
+
+    #[test]
+    fn music_and_language_keep_their_glyphs_off_the_root() {
+        assert_eq!(page_glyph(MUSIC_PAGE), Some("icons/Music"));
+        assert_eq!(page_glyph(LANGUAGE_PAGE), Some("icons/Language"));
+        assert_eq!(page_glyph(PROFILES_PAGE), Some("icons/Users"));
+        assert!(!PAGES
+            .iter()
+            .any(|p| p.id == MUSIC_PAGE || p.id == LANGUAGE_PAGE));
     }
 }

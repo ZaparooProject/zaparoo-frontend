@@ -96,6 +96,14 @@ pub struct Shared {
     /// to NFC token" entry (`has_readers` alone would count non-NFC
     /// readers too).
     pub has_nfc: bool,
+    /// Core's readers as `readers` last listed them, configured
+    /// connections that failed to open included. Kept current on
+    /// `readers.added` / `readers.removed` and the status poll.
+    pub readers: Vec<zaparoo_core::media_types::ReaderInfo>,
+    /// The active profile; `None` is the shared profile. Read with
+    /// `profiles.active` on connect, then followed through its
+    /// notification. Memory only.
+    pub active_profile: Option<zaparoo_core::profile_types::ActiveProfile>,
     /// Which surface the open context menu targets, with the target's
     /// projected index on that surface.
     pub context_owner: ContextOwner,
@@ -180,6 +188,8 @@ pub struct Shared {
     pub rename: crate::rename::Model,
     pub file_browser: crate::file_browser::Model,
     pub credits: crate::credits::Model,
+    /// "Choose a game", while it is open.
+    pub game_picker: crate::game_picker::Model,
     /// The music player.
     pub music: crate::music::Model,
     /// Ticket for the per-game launcher read, so a picker only opens
@@ -194,13 +204,20 @@ pub struct Shared {
     /// The Hub: persisted layout, entries, cursor and Move session.
     pub hub: crate::hub::HubModel,
     /// Settings page and row for Back and in-process restoration, not
-    /// fresh entry. Memory only: a cold start opens Settings at its root.
+    /// fresh entry. Memory only: a cold start opens Settings at its root,
+    /// or at the Readers, Profiles or System row `persist.settings_page`
+    /// kept.
     pub settings_focus: Option<(crate::SettingsPage, usize)>,
-    /// The Settings page on screen was opened from a pinned Hub tile, so
-    /// Back returns to the Hub. Memory only, like `settings_focus`.
-    pub settings_from_hub: bool,
+    /// The Settings page a pinned Hub tile opened, so Back from it returns
+    /// to the Hub. Memory only, like `settings_focus`.
+    pub settings_from_hub: Option<crate::SettingsPage>,
+    /// Bumped by every Settings move, so only the last one in a burst
+    /// writes the kept page's row to disk.
+    pub settings_persist_seq: u64,
     /// Connected controllers, Bluetooth devices and the pairing page.
     pub controllers: crate::controllers::Model,
+    /// Core's settings, readers, profiles and mappings the Settings pages show.
+    pub core: crate::core_settings::Model,
 }
 
 /// Which surface an open context menu was invoked on. Favorites and
@@ -271,6 +288,9 @@ pub enum ListContext {
     /// A paired Bluetooth device's Options on the pairing page; the
     /// payload is its address.
     BluetoothDeviceOptions(String),
+    /// A token mapping's actions on the Mappings page; the payload is
+    /// its ID, so a refetch that reorders the list cannot retarget it.
+    MappingOptions(String),
     /// The "Change launcher" picker; the payload is the system id.
     SystemLauncher(String),
     /// The per-game "Change launcher" picker; the payload is the game's
@@ -354,6 +374,8 @@ impl Shared {
             input: crate::input::InputModel::new(),
             has_readers: false,
             has_nfc: false,
+            readers: Vec::new(),
+            active_profile: None,
             context_owner: ContextOwner::Games,
             context_target: 0,
             flag_requests: zaparoo_app::user_flags::Requests::default(),
@@ -391,14 +413,17 @@ impl Shared {
             rename: crate::rename::Model::default(),
             file_browser: crate::file_browser::Model::default(),
             credits: crate::credits::Model::default(),
+            game_picker: crate::game_picker::Model::default(),
             music: crate::music::Model::default(),
             game_launcher_seq: 0,
             persist,
             restore_pending,
             hub: crate::hub::HubModel::new(hub_layout_path),
             settings_focus: None,
-            settings_from_hub: false,
+            settings_persist_seq: 0,
+            settings_from_hub: None,
             controllers: crate::controllers::Model::default(),
+            core: crate::core_settings::Model::default(),
         }
     }
 }
@@ -754,6 +779,7 @@ fn dialog_action(ctx: &Ctx, app: &App, action: &str) {
     }
 }
 
+#[allow(clippy::too_many_lines, reason = "one arm per decision dialog kind")]
 fn dialog_accept(ctx: &Ctx, app: &App, kind: DialogKind, focus: usize) {
     let confirmed = app
         .global::<crate::Overlays>()
@@ -838,6 +864,18 @@ fn dialog_accept(ctx: &Ctx, app: &App, kind: DialogKind, focus: usize) {
             close_dialog(app);
             crate::controllers::forget_answered(ctx, app, confirmed);
         }
+        DialogKind::RevokeDevice | DialogKind::DeleteProfile | DialogKind::DeleteMapping => {
+            close_dialog(app);
+            crate::core_settings::confirm_answered(ctx, app, confirmed);
+        }
+        DialogKind::BlankToken => {
+            let button = app
+                .global::<crate::Overlays>()
+                .get_dialog_buttons()
+                .row_data(focus)
+                .unwrap_or(DialogButton::Cancel);
+            crate::blank_token::answered(ctx, app, button);
+        }
         DialogKind::CoreConfirm => {
             let ok = app
                 .global::<crate::Overlays>()
@@ -874,6 +912,11 @@ fn dialog_cancel(ctx: &Ctx, app: &App, kind: DialogKind) {
             close_dialog(app);
             crate::controllers::forget_answered(ctx, app, false);
         }
+        DialogKind::RevokeDevice | DialogKind::DeleteProfile | DialogKind::DeleteMapping => {
+            close_dialog(app);
+            crate::core_settings::confirm_answered(ctx, app, false);
+        }
+        DialogKind::BlankToken => crate::blank_token::answered(ctx, app, DialogButton::Cancel),
         // Back dismisses, unless Core will not let this one go.
         DialogKind::CoreConfirm => crate::core_ui::confirm_answered(ctx, app, false),
         _ => close_dialog(app),
@@ -1288,14 +1331,7 @@ pub(crate) fn arm_restore_timeout(ctx: &Ctx, app: &App) {
 /// the nearest screen that is already complete. The saved state keeps
 /// naming the target, so the next start tries it again.
 pub(crate) fn abandon_restore(ctx: &Ctx, app: &App) {
-    // The music player lands where its Back would go.
-    let music_to_settings = crate::music::restore_fallback_is_settings(&lock(&ctx.shared));
     crate::music::abandon(ctx);
-    if music_to_settings {
-        crate::navigation::finish(app);
-        crate::music::land_on_settings(ctx, app);
-        return;
-    }
     let parent = {
         let mut shared = lock(&ctx.shared);
         shared.games.fill_task.cancel();
@@ -1492,6 +1528,12 @@ fn dispatch_action(ctx: &Ctx, app: &App, action: &str) {
             return;
         }
     }
+    // The PIN panel: a gated action waits on it, so it sits above every
+    // other modal; only an action-error alert goes over it.
+    if crate::pin::is_open(app) {
+        crate::pin::handle_action(ctx, app, action);
+        return;
+    }
     // Single input gate during forward transitions.
     // Modals run on top of the gate; pickers and menus are topmost.
     if app.global::<crate::LogUploadView>().get_open() {
@@ -1538,11 +1580,7 @@ fn dispatch_action(ctx: &Ctx, app: &App, action: &str) {
         return;
     }
     if app.global::<crate::Overlays>().get_card_write_open() {
-        // Accept commits the focused Cancel button; Back cancels directly.
-        if action == actions::CANCEL || action == actions::ACCEPT {
-            crate::card_write::cancel(ctx, app);
-            return_to_menu(ctx, app, zaparoo_app::options_menu::Opens::TokenWrite);
-        }
+        crate::card_write::handle_action(ctx, app, action);
         return;
     }
     if app.global::<crate::Overlays>().get_letter_open() {
@@ -1615,6 +1653,7 @@ fn screen_action(ctx: &Ctx, app: &App, action: &str) {
         crate::Screen::Settings => crate::settings::handle_action(ctx, app, action),
         crate::Screen::About => about_action(ctx, app, action),
         crate::Screen::Credits => crate::credits::handle_action(ctx, app, action),
+        crate::Screen::GamePicker => crate::game_picker::handle_action(ctx, app, action),
         crate::Screen::Update => crate::update::handle_action(ctx, app, action),
         crate::Screen::None => {}
     }
@@ -1917,6 +1956,7 @@ pub(crate) fn relayout(ctx: &Ctx, app: &App) {
     crate::settings::refresh(ctx, app);
     crate::file_browser::relayout(ctx, app);
     crate::credits::relayout(ctx, app);
+    crate::game_picker::relayout(ctx, app);
     crate::music::relayout(ctx, app);
 }
 
@@ -2044,6 +2084,9 @@ fn list_accept(ctx: &Ctx, app: &App, context: ListContext, id: &str) {
             if id == "bluetooth_forget" {
                 crate::controllers::forget_picked(ctx, app, &device);
             }
+        }
+        ListContext::MappingOptions(mapping) => {
+            crate::mappings::option_picked(ctx, app, &mapping, id);
         }
     }
 }
@@ -2315,22 +2358,112 @@ fn letter_action(ctx: &Ctx, app: &App, action: &str) {
     clippy::too_many_lines,
     reason = "jump transaction keeps async fetch and selection publication together"
 )]
-/// Refresh the connected-readers flag from Core (gates the "Write to
-/// NFC token" entry). Lazy: the flag read at menu-open time may be one
-/// refresh old.
-pub(crate) fn refresh_readers(ctx: &Ctx) {
+/// Refresh Core's reader list (gates the "Write to NFC token" entry and
+/// feeds the Readers pages and the header's NFC glyph). Lazy: the flag
+/// read at menu-open time may be one refresh old.
+pub(crate) fn refresh_readers(ctx: &Ctx, app: &App) {
     let client = ctx.store.client();
-    let shared = ctx.shared.clone();
+    let weak = app.as_weak();
+    let ctx2 = ctx.clone();
     ctx.handle.spawn(async move {
-        if let Ok(result) = client.readers().await {
-            let mut guard = lock(&shared);
-            guard.has_readers = !result.readers.is_empty();
-            guard.has_nfc = result
-                .readers
-                .iter()
-                .any(zaparoo_core::media_types::ReaderInfo::is_nfc_reader);
-        }
+        let Ok(result) = client.readers().await else {
+            return;
+        };
+        let _ = weak.upgrade_in_event_loop(move |app| {
+            store_readers(&ctx2, &app, result.readers);
+        });
     });
+}
+
+/// Core's reader list. Configured connections that are not connected are
+/// listed too, with their error; only connected readers count as readers.
+/// Answers whether the list changed.
+fn set_readers(shared: &mut Shared, readers: Vec<zaparoo_core::media_types::ReaderInfo>) -> bool {
+    shared.has_readers = readers.iter().any(|r| r.connected);
+    shared.has_nfc = readers.iter().any(|r| r.connected && r.is_nfc_reader());
+    let changed = shared.readers != readers;
+    shared.readers = readers;
+    changed
+}
+
+/// Store Core's reader list and everything drawn from it. Every reader
+/// refresh lands here, on the UI thread.
+pub(crate) fn store_readers(
+    ctx: &Ctx,
+    app: &App,
+    readers: Vec<zaparoo_core::media_types::ReaderInfo>,
+) {
+    let (changed, has_nfc) = {
+        let mut shared = lock(&ctx.shared);
+        let changed = set_readers(&mut shared, readers);
+        (changed, shared.has_nfc)
+    };
+    publish_nfc_key(app, has_nfc);
+    if !changed {
+        return;
+    }
+    if app.global::<crate::Shell>().get_active_screen() == crate::Screen::Settings {
+        crate::settings::reseat(ctx, app);
+        crate::settings::refresh(ctx, app);
+    }
+    crate::token_inspector::readers_changed(ctx, app);
+}
+
+/// The header's NFC glyph leads the status keys while an NFC reader is
+/// connected; the other keys keep their order.
+fn publish_nfc_key(app: &App, has_nfc: bool) {
+    use slint::Model as _;
+    let shell = app.global::<crate::Shell>();
+    let current = shell.get_status_keys();
+    if current.iter().any(|k| k == "NFC") == has_nfc {
+        return;
+    }
+    let mut keys: Vec<SharedString> = current.iter().filter(|k| k != "NFC").collect();
+    if has_nfc {
+        keys.insert(0, "NFC".into());
+    }
+    shell.set_status_keys(ModelRc::new(VecModel::from(keys)));
+}
+
+/// Ask Core which profile is active (on connect and reconnect).
+pub(crate) fn refresh_active_profile(ctx: &Ctx, app: &App) {
+    let client = ctx.store.client();
+    let weak = app.as_weak();
+    let ctx2 = ctx.clone();
+    ctx.handle.spawn(async move {
+        let Ok(profile) = client.profiles_active().await else {
+            return;
+        };
+        let _ = weak.upgrade_in_event_loop(move |app| {
+            store_active_profile(&ctx2, &app, profile);
+        });
+    });
+}
+
+/// Store the active profile (`None` is the shared profile) and show its
+/// name in the header.
+pub(crate) fn store_active_profile(
+    ctx: &Ctx,
+    app: &App,
+    profile: Option<zaparoo_core::profile_types::ActiveProfile>,
+) {
+    let (changed, name) = {
+        let mut shared = lock(&ctx.shared);
+        let changed = shared.active_profile != profile;
+        shared.active_profile = profile;
+        let name = shared
+            .active_profile
+            .as_ref()
+            .map(|p| p.name.clone())
+            .unwrap_or_default();
+        (changed, name)
+    };
+    app.global::<crate::Shell>()
+        .set_profile_name(SharedString::from(name.as_str()));
+    if changed && app.global::<crate::Shell>().get_active_screen() == crate::Screen::Settings {
+        crate::settings::reseat(ctx, app);
+        crate::settings::refresh(ctx, app);
+    }
 }
 
 /// QR write deep-link for the focused row: the scanning device opens
@@ -2354,15 +2487,20 @@ pub(crate) fn open_qr_code(ctx: &Ctx, app: &App, entry: &GameRow) {
     } else {
         entry.zap_script.clone()
     };
+    open_qr_text(ctx, app, &text, &entry.name);
+}
+
+/// The QR code that writes `text` to a token from the App.
+pub(crate) fn open_qr_text(ctx: &Ctx, app: &App, text: &str, name: &str) {
     if text.is_empty() {
-        tracing::warn!("QR code for {} has no launch payload", entry.name);
+        tracing::warn!("QR code for {name} has no launch payload");
         report_action_error(ctx, app, "qr_code", "");
         return;
     }
     let Some((image, modules)) =
-        crate::qr::qr_image(&crate::qr::write_url(&text), crate::qr::code_colors(app))
+        crate::qr::qr_image(&crate::qr::write_url(text), crate::qr::code_colors(app))
     else {
-        tracing::warn!("QR code for {} could not be rendered", entry.name);
+        tracing::warn!("QR code for {name} could not be rendered");
         report_action_error(ctx, app, "qr_code", "");
         return;
     };
@@ -3203,6 +3341,10 @@ pub(crate) fn close_context_menu(ctx: &Ctx, app: &App) {
 
 /// Pointer input on the context menu's rows: hover moves focus, a click
 /// accepts.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one closure per context menu page callback"
+)]
 pub fn bind_context_input(ctx: &Arc<Ctx>, app: &App) {
     crate::about::bind(ctx, app);
     {
@@ -3239,7 +3381,9 @@ pub fn bind_context_input(ctx: &Arc<Ctx>, app: &App) {
                 let row = index as usize;
                 match kind {
                     crate::PressOwner::CardWrite
-                        if !ov.get_dialog_open() && ov.get_card_write_open() && row == 0 => {}
+                        if !ov.get_dialog_open()
+                            && ov.get_card_write_open()
+                            && crate::card_write::focus(&app, row) => {}
                     crate::PressOwner::Dialog
                         if ov.get_dialog_open() && row < ov.get_dialog_buttons().row_count() =>
                     {

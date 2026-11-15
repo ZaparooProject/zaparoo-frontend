@@ -53,6 +53,7 @@ fn render(ctx: &Ctx, app: &App) {
     overlays.set_pair_pin(SharedString::from(session.pin.as_str()));
     overlays.set_pair_expires_in(i32::try_from(session.expires_in).unwrap_or(0));
     overlays.set_pair_client(SharedString::from(session.client_name.as_str()));
+    overlays.set_pair_admin(session.admin);
     overlays.set_pair_open(phase != PairPhase::Closed);
 }
 
@@ -68,17 +69,40 @@ fn send_cancel(ctx: &Ctx) {
     });
 }
 
-/// Accepted the row: open the panel and ask Core for a PIN. Answers the
-/// ticket this run's replies carry.
+/// Accepted the row: open the panel on its Role page, or, with nothing
+/// paired yet, ask Core for a PIN straight away: Core makes the first
+/// device an admin whatever is asked. Answers the ticket a started run's
+/// replies carry, 0 while the Role page is up.
 pub fn open(ctx: &Ctx, app: &App) -> u64 {
     crate::press_feedback::cancel(app);
-    let ticket = lock(&ctx.shared).pairing.begin();
+    let first = {
+        let mut shared = lock(&ctx.shared);
+        let first = shared.core.clients.is_empty();
+        if !first {
+            shared.pairing.choose();
+        }
+        first
+    };
+    if first {
+        return start(ctx, app);
+    }
+    render(ctx, app);
+    0
+}
+
+/// Ask Core for a PIN for the role chosen. Answers the run's ticket.
+fn start(ctx: &Ctx, app: &App) -> u64 {
+    let (ticket, role) = {
+        let mut shared = lock(&ctx.shared);
+        let role = shared.pairing.role();
+        (shared.pairing.begin(), role)
+    };
     render(ctx, app);
     let client = ctx.store.client();
     let ctx = ctx.clone();
     let weak = app.as_weak();
     ctx.handle.clone().spawn(async move {
-        let result = client.clients_pair_start().await;
+        let result = client.clients_pair_start(role).await;
         if let Err(error) = &result {
             tracing::warn!("starting a pairing failed: {}", error.message);
         }
@@ -162,6 +186,20 @@ pub fn close(ctx: &Ctx, app: &App) {
 /// only means anything once there is nothing left to wait for.
 pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
     let phase = lock(&ctx.shared).pairing.phase;
+    if phase == rules::Phase::Role {
+        match action {
+            actions::UP | actions::DOWN => {
+                lock(&ctx.shared).pairing.flip_role();
+                render(ctx, app);
+            }
+            actions::ACCEPT => {
+                start(ctx, app);
+            }
+            actions::CANCEL => close(ctx, app),
+            _ => {}
+        }
+        return;
+    }
     let finished = matches!(phase, rules::Phase::Paired | rules::Phase::Expired);
     if action == actions::CANCEL || (action == actions::ACCEPT && finished) {
         close(ctx, app);
@@ -172,6 +210,22 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
 /// same subscription the status line takes; this one reads only
 /// `clients.paired`.
 pub fn bind_events(ctx: &Arc<Ctx>, app: &App, client: &Arc<Client>) {
+    let weak = app.as_weak();
+    let pointer_ctx = ctx.clone();
+    app.global::<Overlays>().on_pointer_pair_role(move |index| {
+        let Some(app) = weak.upgrade() else { return };
+        let admin = index == 1;
+        {
+            let mut shared = lock(&pointer_ctx.shared);
+            if shared.pairing.phase != rules::Phase::Role {
+                return;
+            }
+            if shared.pairing.admin != admin {
+                shared.pairing.flip_role();
+            }
+        }
+        start(&pointer_ctx, &app);
+    });
     let mut rx = client.subscribe_notifications();
     let weak = app.as_weak();
     let ctx = ctx.clone();

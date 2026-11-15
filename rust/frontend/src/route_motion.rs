@@ -744,6 +744,8 @@ fn pairing_row_shows_a_pin_and_every_exit_calls_the_pairing_off() {
     settle(&window);
     app.window().request_redraw();
     let settings_page = frame(&window);
+    // Pair a device is gated; this offline test enters unlocked.
+    crate::router::lock(&ctx.shared).core.unlocked = true;
     crate::settings::handle_action(&ctx, &app, "accept");
     assert!(ov.get_pair_open());
     assert_eq!(ov.get_pair_phase(), PairPhase::Starting);
@@ -1139,6 +1141,8 @@ fn the_launcher_preference_list_adds_moves_and_removes_in_its_own_panel() {
         ];
         shared.launcher_preference = Some(vec!["SNES".into()]);
         shared.launcher_pref_confirmed = Some(vec!["SNES".into()]);
+        // The launcher preference is gated; this offline test enters unlocked.
+        shared.core.unlocked = true;
     }
     crate::settings::open_page(&ctx, &app, SettingsPage::Library);
     let row = settings_row(&app, "launcherPreference");
@@ -1828,21 +1832,17 @@ fn every_screen_route_and_settings_category_commits_without_animation_delay() {
     for (index, page) in crate::settings::root_pages().into_iter().enumerate() {
         settings.set_index(index as i32);
         settle(&window);
+        // A gated page asks Core for its profiles first; this offline test
+        // checks routing, so it enters unlocked. Root clears it each time.
+        crate::router::lock(&ctx.shared).core.unlocked = true;
         crate::settings::handle_action(&ctx, &app, "accept");
         assert!(!shell.get_transitioning());
-        if page.id == zaparoo_app::settings::MUSIC_PAGE {
-            // Music is a screen of its own, opened as synchronously.
-            assert_eq!(shell.get_active_screen(), Screen::Music);
-            crate::music::handle_action(&ctx, &app, "cancel");
-            assert_eq!(shell.get_active_screen(), Screen::Settings);
-        } else {
-            assert_eq!(
-                Ok(settings.get_page()),
-                SettingsPage::try_from(page.id),
-                "Settings is synchronous"
-            );
-            crate::settings::handle_action(&ctx, &app, "cancel");
-        }
+        assert_eq!(
+            Ok(settings.get_page()),
+            SettingsPage::try_from(page.id),
+            "Settings is synchronous"
+        );
+        crate::settings::handle_action(&ctx, &app, "cancel");
         assert_eq!(settings.get_page(), SettingsPage::Root);
         assert_eq!(
             settings.get_index(),
@@ -2791,6 +2791,7 @@ fn pinned_tiles_show_what_they_stand_for_or_their_layout_actions() {
         [
             "launch_system",
             "launch_random_system",
+            "write_token",
             "edit_tile",
             "manage_system"
         ]
@@ -2883,14 +2884,22 @@ fn systems_and_favorite_systems_show_the_same_system_the_same_way() {
     // Rows sort by name: the launch-only system first. Accept launches
     // it, so its menu neither repeats that nor needs a page.
     crate::router::handle_action(&ctx, &app, "context_menu");
-    assert_eq!(context_keys(&app), ["add_to_hub", "hide:system"]);
+    assert_eq!(
+        context_keys(&app),
+        ["write_token", "add_to_hub", "hide:system"]
+    );
     crate::router::close_context_menu(&ctx, &app);
 
     crate::router::handle_action(&ctx, &app, "right");
     crate::router::handle_action(&ctx, &app, "context_menu");
     assert_eq!(
         context_keys(&app),
-        ["launch_system", "launch_random_system", "manage_system"]
+        [
+            "launch_system",
+            "launch_random_system",
+            "write_token",
+            "manage_system"
+        ]
     );
     focus_context_row(&app, "manage_system");
     crate::router::handle_action(&ctx, &app, "accept");
@@ -2914,7 +2923,12 @@ fn systems_and_favorite_systems_show_the_same_system_the_same_way() {
     crate::router::handle_action(&ctx, &app, "context_menu");
     assert_eq!(
         context_keys(&app),
-        ["launch_system", "random_favorite", "manage_system"]
+        [
+            "launch_system",
+            "random_favorite",
+            "write_token",
+            "manage_system"
+        ]
     );
     focus_context_row(&app, "manage_system");
     crate::router::handle_action(&ctx, &app, "accept");
@@ -7423,6 +7437,37 @@ fn fresh_settings_entry_resets_the_page_and_row() {
     crate::settings::enter(&ctx, &app, EntryMode::Fresh);
     assert_eq!(view.get_page(), SettingsPage::Root);
     assert_eq!(view.get_index(), 0);
+}
+
+#[test]
+fn a_cold_start_restores_a_kept_settings_page_and_never_a_gated_one() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let view = app.global::<crate::SettingsView>();
+    crate::router::lock(&ctx.shared).persist.settings_page =
+        zaparoo_core::persist::SettingsPageState {
+            page: "pageReaders".into(),
+            row: "mappings".into(),
+        };
+    crate::settings::enter(&ctx, &app, EntryMode::Restore);
+    settle(&window);
+    assert_eq!(view.get_page(), SettingsPage::Readers);
+    let rows = zaparoo_app::settings::page_rows("pageReaders", &crate::settings::inputs(&ctx));
+    assert_eq!(
+        usize::try_from(view.get_index()).ok(),
+        Some(zaparoo_app::settings::seat_of(&rows, "mappings"))
+    );
+    // A gated page saved by hand never opens: Settings comes back at its root.
+    crate::router::lock(&ctx.shared).settings_focus = None;
+    crate::router::lock(&ctx.shared).persist.settings_page =
+        zaparoo_core::persist::SettingsPageState {
+            page: "pageMappings".into(),
+            row: String::new(),
+        };
+    crate::settings::enter(&ctx, &app, EntryMode::Restore);
+    settle(&window);
+    assert_eq!(view.get_page(), SettingsPage::Root);
 }
 
 #[test]
@@ -13195,61 +13240,12 @@ fn music_state(playing: bool) -> zaparoo_core::store::BackgroundMediaState {
     }
 }
 
-/// The Background music tile opens the player straight from the Settings root, the
-/// saved screen follows it, and Back lands on the tile it came from.
+/// Music is not a Settings tile any more; the player opens from the Hub.
 #[test]
-#[allow(
-    clippy::expect_used,
-    reason = "the tile is registered; fail fast if not"
-)]
-fn the_music_tile_opens_the_player_and_back_returns_to_it() {
-    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
-    let (app, window) = boot();
-    let (_runtime, ctx) = offline_ctx();
-    app.global::<crate::Motion>().set_enabled(false);
-    crate::settings::enter(&ctx, &app, EntryMode::Fresh);
-    let music_tile = crate::settings::root_pages()
+fn settings_has_no_music_tile() {
+    assert!(!crate::settings::root_pages()
         .iter()
-        .position(|page| page.id == zaparoo_app::settings::MUSIC_PAGE)
-        .expect("a Background music tile");
-    app.global::<crate::SettingsView>()
-        .set_index(i32::try_from(music_tile).unwrap_or(0));
-    crate::router::handle_action(&ctx, &app, "accept");
-    advance(zaparoo_app::input::PRESS_FEEDBACK_MS);
-    settle(&window);
-    let shell = app.global::<Shell>();
-    assert_eq!(shell.get_active_screen(), Screen::Music);
-    assert_eq!(
-        crate::router::lock(&ctx.shared).persist.active_screen,
-        "music"
-    );
-    assert!(
-        !crate::router::lock(&ctx.shared)
-            .persist
-            .music
-            .entered_from_hub
-    );
-    let view = app.global::<crate::MusicView>();
-    assert!(!view.get_has_track(), "nothing has been heard from Core");
-    assert_eq!(view.get_page(), crate::MusicPage::Player);
-    assert_eq!(view.get_control_index(), 2, "focus starts on Play/Pause");
-
-    crate::router::handle_action(&ctx, &app, "cancel");
-    settle(&window);
-    assert_eq!(shell.get_active_screen(), Screen::Settings);
-    assert_eq!(
-        app.global::<crate::SettingsView>().get_page(),
-        SettingsPage::Root
-    );
-    assert_eq!(
-        app.global::<crate::SettingsView>().get_index(),
-        i32::try_from(music_tile).unwrap_or(-1),
-        "seated on the Background music tile"
-    );
-    assert_eq!(
-        crate::router::lock(&ctx.shared).persist.active_screen,
-        "settings"
-    );
+        .any(|page| page.id == zaparoo_app::settings::MUSIC_PAGE));
 }
 
 /// A pinned Hub tile opens the player, and Back goes to the Hub.
@@ -13259,7 +13255,7 @@ fn a_pinned_music_tile_returns_to_the_hub() {
     let (app, window) = boot();
     let (_runtime, ctx) = offline_ctx();
     app.global::<crate::Motion>().set_enabled(false);
-    crate::music::enter(&ctx, &app, crate::music::Origin::Hub);
+    crate::music::enter(&ctx, &app);
     settle(&window);
     let shell = app.global::<Shell>();
     assert_eq!(shell.get_active_screen(), Screen::Music);
@@ -13280,7 +13276,7 @@ fn the_player_follows_the_background_slot_and_walks_into_the_playlist() {
     let (app, window) = boot();
     let (_runtime, ctx) = offline_ctx();
     app.global::<crate::Motion>().set_enabled(false);
-    crate::music::enter(&ctx, &app, crate::music::Origin::Settings);
+    crate::music::enter(&ctx, &app);
     crate::music::background_changed(&ctx, &app, music_state(true));
     settle(&window);
     let view = app.global::<crate::MusicView>();
@@ -13369,7 +13365,7 @@ fn a_toggle_row_takes_no_press_and_updates_in_place() {
     let (app, window) = boot();
     let (_runtime, ctx) = offline_ctx();
     app.global::<crate::Motion>().set_enabled(true);
-    crate::music::enter(&ctx, &app, crate::music::Origin::Settings);
+    crate::music::enter(&ctx, &app);
     crate::sizing::apply_scene(&app, crate::sizing::Scene::of(&app, 352.0, 240.0, false));
     crate::router::lock(&ctx.shared).music_settings_for_test(Some(70));
     settle(&window);
@@ -13428,7 +13424,7 @@ fn a_track_change_updates_the_card() {
     let (app, window) = boot();
     let (_runtime, ctx) = offline_ctx();
     app.global::<crate::Motion>().set_enabled(false);
-    crate::music::enter(&ctx, &app, crate::music::Origin::Settings);
+    crate::music::enter(&ctx, &app);
     let mut state = music_state(true);
     if let Some(track) = state.track.as_mut() {
         track.track = Some(TrackInfo {
@@ -13479,7 +13475,7 @@ fn the_library_keeps_the_player_until_its_folder_lands() {
     let (app, window) = boot();
     let (_runtime, ctx) = offline_ctx();
     app.global::<crate::Motion>().set_enabled(false);
-    crate::music::enter(&ctx, &app, crate::music::Origin::Settings);
+    crate::music::enter(&ctx, &app);
     settle(&window);
     crate::router::handle_action(&ctx, &app, "page_menu");
     // Nothing plays: Browse music leads the chip row.
@@ -13561,7 +13557,7 @@ fn without_a_chip_row_the_menu_list_holds_the_volume_slider() {
     let (_runtime, ctx) = offline_ctx();
     app.global::<crate::Motion>().set_enabled(false);
     crate::sizing::apply_scene(&app, crate::sizing::Scene::of(&app, 352.0, 240.0, false));
-    crate::music::enter(&ctx, &app, crate::music::Origin::Settings);
+    crate::music::enter(&ctx, &app);
     crate::music::background_changed(&ctx, &app, music_state(true));
     crate::router::lock(&ctx.shared).music_settings_for_test(Some(70));
     settle(&window);
@@ -13618,7 +13614,7 @@ fn the_volume_chip_opens_the_slider_on_its_own() {
     let (_runtime, ctx) = offline_ctx();
     app.global::<crate::Motion>().set_enabled(false);
     crate::sizing::apply_scene(&app, crate::sizing::Scene::of(&app, 1280.0, 720.0, false));
-    crate::music::enter(&ctx, &app, crate::music::Origin::Settings);
+    crate::music::enter(&ctx, &app);
     crate::router::lock(&ctx.shared).music_settings_for_test(Some(70));
     // The chip shows once Core's settings are known, at the next render.
     crate::music::background_changed(&ctx, &app, music_state(true));

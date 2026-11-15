@@ -372,6 +372,21 @@ fn resolve_action(live: &Live, resolver: &dyn Resolver, id: &str) -> Option<Entr
             false,
             Reason::None,
         )),
+        // Offered by "Add item…", never seeded.
+        "music" => Some(action_entry(
+            resolver,
+            id,
+            "icons/Music",
+            false,
+            Reason::None,
+        )),
+        "switchprofile" => Some(action_entry(
+            resolver,
+            id,
+            "icons/Users",
+            false,
+            Reason::None,
+        )),
         _ => None,
     }
 }

@@ -235,6 +235,74 @@ fn mirror_credits(primary: &App, crt: &App) {
     target.set_list_row_height(g.row_height as f32);
 }
 
+/// The Game picker at the CRT head's own geometry: always one pane, the
+/// one the HDMI head has the cursor in, each list showing the slice of
+/// the HDMI list around its focus.
+fn mirror_game_picker(primary: &App, crt: &App) {
+    let source = primary.global::<crate::GamePickerView>();
+    let target = crt.global::<crate::GamePickerView>();
+    copy_properties!(source, target;
+        get_purpose => set_purpose,
+        get_pane => set_pane,
+        get_games_state => set_games_state,
+        get_source_name => set_source_name,
+        get_count => set_count,
+        get_current_index => set_current_index,
+        get_before => set_before,
+        get_at => set_at,
+        get_after => set_after,
+        get_keys => set_keys,
+        get_key_rows => set_key_rows,
+        get_key_index => set_key_index,
+        get_pressed_key => set_pressed_key,
+        get_key_kind => set_key_kind,
+        get_can_search => set_can_search,
+    );
+    set_if_changed!(target, get_two_panes => set_two_panes, false);
+    let keyboard = source.get_pane() == crate::PickerPane::Keyboard;
+    set_if_changed!(target, get_keyboard_shown => set_keyboard_shown, keyboard);
+    let sizing = crt.global::<crate::Sizing>();
+    let scene = crate::sizing::Scene::of(
+        crt,
+        f64::from(sizing.get_screen_width()),
+        f64::from(sizing.get_screen_height()),
+        true,
+    );
+    let g = crate::games::list_geometry_for(
+        &scene.inputs(),
+        false,
+        0,
+        zaparoo_app::media_list::list_visible_rows(true, false),
+    );
+    let capacity = i32::try_from(g.visible_rows.max(1)).unwrap_or(1);
+    macro_rules! project_list {
+        ($view:ident) => {{
+            let source = primary.global::<crate::$view>();
+            let target = crt.global::<crate::$view>();
+            let (rows, selected, _) = project_page(
+                &source.get_list_rows(),
+                &target.get_list_rows(),
+                source.get_list_sel(),
+                capacity,
+            );
+            if let Some(rows) = rows {
+                target.set_list_rows(rows);
+            }
+            set_if_changed!(target, get_list_sel => set_list_sel, selected);
+            set_if_changed!(target, get_list_view_top => set_list_view_top, 0);
+            set_if_changed!(target, get_list_scroll_top => set_list_scroll_top, 0);
+            set_if_changed!(target, get_list_glide => set_list_glide, false);
+        }};
+    }
+    project_list!(PickerSourcesView);
+    project_list!(PickerGamesView);
+    target.set_card_x(g.card_x as f32);
+    target.set_card_y(g.card_y as f32);
+    target.set_card_width(g.card_width as f32);
+    target.set_card_height(g.card_height as f32);
+    target.set_row_height(g.row_height as f32);
+}
+
 /// The music player at the CRT head's own geometry: the now-playing card
 /// and its list solved for the CRT scene, showing the slice of the HDMI
 /// list around the focus.
@@ -360,6 +428,7 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_controller_batteries => set_controller_batteries,
         get_has_battery => set_has_battery,
         get_battery_percent => set_battery_percent,
+        get_profile_name => set_profile_name,
         get_boot_curtain => set_boot_curtain,
         get_boot_complete => set_boot_complete,
         get_boot_status => set_boot_status,
@@ -781,6 +850,25 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_search => set_search,
     );
 
+    // The PIN panel, so the CRT shows it whenever the HDMI screen does.
+    let source = primary.global::<crate::PinView>();
+    let target = crt.global::<crate::PinView>();
+    copy_properties!(source, target;
+        get_open => set_open,
+        get_page => set_page,
+        get_name => set_name,
+        get_digits => set_digits,
+        get_focus => set_focus,
+        get_error => set_error,
+        get_error_text => set_error_text,
+        get_can_scan => set_can_scan,
+        get_setting => set_setting,
+        get_first_admin => set_first_admin,
+        get_unlocking => set_unlocking,
+        get_admins => set_admins,
+        get_admin_index => set_admin_index,
+    );
+
     crate::settings::mirror_geometry(primary, crt);
 
     let source = primary.global::<crate::SearchView>();
@@ -856,6 +944,7 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
 
     mirror_file_browser(primary, crt);
     mirror_credits(primary, crt);
+    mirror_game_picker(primary, crt);
     mirror_music(primary, crt);
 
     let source = primary.global::<GamesView>();

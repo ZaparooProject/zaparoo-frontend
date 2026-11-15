@@ -18,6 +18,10 @@ pub enum Phase {
     /// The panel is not up.
     #[default]
     Closed,
+    /// Choosing what the new device may do, before Core is asked for a
+    /// PIN. Skipped when nothing is paired yet: Core makes the first
+    /// device an admin whatever is asked.
+    Role,
     /// `clients.pair.start` is in flight.
     Starting,
     /// A PIN is on screen and Core is waiting for a device to use it.
@@ -79,6 +83,8 @@ pub struct Session {
     pub expires_in: i64,
     /// The name the device reported when it finished pairing.
     pub client_name: String,
+    /// The Role page's choice: the new device pairs as an admin.
+    pub admin: bool,
     /// Bumped whenever a run starts or ends, so a late reply and an armed
     /// countdown from an earlier run both land on nothing.
     ticket: u64,
@@ -88,6 +94,20 @@ pub struct Session {
 }
 
 impl Session {
+    /// Open on the Role page, Member chosen. Retires any earlier run's
+    /// ticket; nothing is owed Core until a PIN is asked for.
+    pub fn choose(&mut self) {
+        self.close();
+        self.phase = Phase::Role;
+        self.admin = false;
+    }
+
+    /// The role Core is asked for: `None` lets Core decide, which it
+    /// does for the first device and when nothing was chosen.
+    pub fn role(&self) -> Option<&'static str> {
+        self.admin.then_some("admin")
+    }
+
     /// Start a run. Answers the ticket every later answer must carry.
     pub fn begin(&mut self) -> u64 {
         self.ticket = self.ticket.wrapping_add(1);
@@ -96,6 +116,13 @@ impl Session {
         self.client_name.clear();
         self.expires_in = 0;
         self.ticket
+    }
+
+    /// The Role page's cursor moved: two choices, so any move flips it.
+    pub fn flip_role(&mut self) {
+        if self.phase == Phase::Role {
+            self.admin = !self.admin;
+        }
     }
 
     /// Core answered with a PIN, good for `seconds` (see `window`). A
@@ -291,5 +318,21 @@ mod tests {
         assert_eq!(window(1_700_000_000, 1_700_000_900), MIN_WINDOW_SECS);
         assert_eq!(window(i64::MAX, 0), MAX_WINDOW_SECS);
         assert_eq!(window(i64::MIN, i64::MAX), MIN_WINDOW_SECS);
+    }
+
+    #[test]
+    fn the_role_page_owes_core_nothing_and_starts_on_member() {
+        let mut session = Session::default();
+        session.choose();
+        assert_eq!(session.phase, Phase::Role);
+        assert_eq!(session.role(), None);
+        session.flip_role();
+        assert_eq!(session.role(), Some("admin"));
+        assert!(!session.leave(), "no PIN was asked for, so none is owed");
+        assert_eq!(session.cancels, 0);
+        session.choose();
+        assert_eq!(session.role(), None, "every run starts on Member");
+        let ticket = session.begin();
+        assert_eq!(session.started(ticket, "123456", 60), Started::Shown);
     }
 }

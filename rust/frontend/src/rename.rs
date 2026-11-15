@@ -21,6 +21,7 @@ use zaparoo_app::text_entry::{self as rules, TILE_NAME_MAX_CHARS};
 use zaparoo_core::input_actions::actions;
 use zaparoo_core::persist::{HubTarget, RenameState};
 
+use crate::core_settings::TextKind;
 use crate::keyboard::{Flash, Keyboard, Press};
 use crate::router::{lock, Ctx};
 use crate::{App, RenameInput, RenameView};
@@ -58,6 +59,9 @@ pub struct Model {
     has_default: bool,
     /// Set while the screen names a new deck rather than a tile.
     new_deck: Option<NewDeck>,
+    /// Set while the screen types a Settings value: a profile's name, a
+    /// reader's address or path.
+    text: Option<TextKind>,
 }
 
 impl Default for Model {
@@ -68,6 +72,7 @@ impl Default for Model {
             default_name: String::new(),
             has_default: true,
             new_deck: None,
+            text: None,
         }
     }
 }
@@ -95,11 +100,17 @@ pub(crate) fn render(ctx: &Ctx, app: &App) {
     view.set_key_kind(model.keyboard.key_kind());
     view.set_pressed_key(model.flash.index());
     view.set_can_save(can_save(model));
-    view.set_purpose(match model.new_deck.as_ref().map(|deck| &deck.name) {
-        Some(DeckName::New(_)) => crate::RenamePurpose::NewDeck,
-        Some(DeckName::Rename(_)) => crate::RenamePurpose::RenameDeck,
-        None => crate::RenamePurpose::Tile,
-    });
+    view.set_purpose(
+        match (&model.text, model.new_deck.as_ref().map(|deck| &deck.name)) {
+            (Some(TextKind::ProfileName(_)), _) => crate::RenamePurpose::ProfileName,
+            (Some(TextKind::NewProfile), _) => crate::RenamePurpose::NewProfile,
+            (Some(TextKind::ReaderAddress), _) => crate::RenamePurpose::ReaderAddress,
+            (Some(TextKind::ReaderPath), _) => crate::RenamePurpose::ReaderPath,
+            (None, Some(DeckName::New(_))) => crate::RenamePurpose::NewDeck,
+            (None, Some(DeckName::Rename(_))) => crate::RenamePurpose::RenameDeck,
+            (None, None) => crate::RenamePurpose::Tile,
+        },
+    );
 }
 
 /// Keep the draft on disk, so a kill mid-edit restores it.
@@ -213,10 +224,64 @@ fn open_deck_name(ctx: &Ctx, app: &App, name: DeckName, initial: &str, source: c
     show(ctx, app);
 }
 
+/// Type a Settings value: a profile's name, or where a reader being added
+/// is. Save and Back hand the text to `core_settings::text_entered`.
+pub(crate) fn open_text(ctx: &Ctx, app: &App, kind: TextKind, initial: &str) {
+    {
+        let mut shared = lock(&ctx.shared);
+        let max = match kind {
+            TextKind::ProfileName(_) | TextKind::NewProfile => rules::PROFILE_NAME_MAX_CHARS,
+            TextKind::ReaderAddress | TextKind::ReaderPath => rules::READER_PATH_MAX_CHARS,
+        };
+        let state = RenameState {
+            purpose: kind.token(),
+            ..RenameState::default()
+        };
+        let mut model = Model {
+            keyboard: Keyboard::new(Layers::Full, max),
+            has_default: false,
+            text: Some(kind),
+            ..Model::default()
+        };
+        model.keyboard.set_text(initial);
+        shared.persist.rename = RenameState {
+            draft: model.keyboard.text().to_string(),
+            caret: model.keyboard.caret(),
+            ..state
+        };
+        shared.rename = model;
+    }
+    show(ctx, app);
+}
+
+/// Leave a Settings value's entry: with its text on Save, without on Back.
+fn leave_text(ctx: &Ctx, app: &App, kind: &TextKind, text: Option<String>) {
+    {
+        let mut shared = lock(&ctx.shared);
+        shared.rename = Model::default();
+        shared.persist.rename = RenameState::default();
+        shared.persist.active_screen = crate::Screen::Settings.token().to_string();
+    }
+    crate::router::save_persist(&ctx.shared);
+    crate::core_settings::text_entered(ctx, app, kind, text);
+}
+
 /// Cold start on the rename screen: the same tile and draft, or the Hub
-/// when the tile is no longer where it was.
+/// when the tile is no longer where it was. A Settings value's entry is
+/// not restored: it may be behind the admin gate, which a cold start never
+/// opens, so the restore lands on its Settings page instead.
 pub(crate) fn restore(ctx: &Ctx, app: &App) {
     let saved = lock(&ctx.shared).persist.rename.clone();
+    if let Some(kind) = TextKind::parse(&saved.purpose) {
+        {
+            let mut shared = lock(&ctx.shared);
+            shared.persist.rename = RenameState::default();
+            shared.persist.active_screen = crate::Screen::Settings.token().to_string();
+        }
+        crate::router::save_persist(&ctx.shared);
+        crate::core_settings::restore_text(ctx, app, &kind);
+        return;
+    }
     if saved.purpose == PURPOSE_NEW_DECK || saved.purpose == PURPOSE_RENAME_DECK {
         restore_new_deck(ctx, app, &saved);
         return;
@@ -340,6 +405,11 @@ fn create_deck(ctx: &Ctx, app: &App, new_deck: &NewDeck, name: String) {
 
 /// Back to the Hub on the tile, saved or not.
 fn leave(ctx: &Ctx, app: &App) {
+    let text = lock(&ctx.shared).rename.text.clone();
+    if let Some(kind) = text {
+        leave_text(ctx, app, &kind, None);
+        return;
+    }
     let new_deck = lock(&ctx.shared).rename.new_deck.clone();
     if let Some(new_deck) = new_deck {
         leave_new_deck(ctx, app, new_deck.source);
@@ -355,6 +425,22 @@ fn leave(ctx: &Ctx, app: &App) {
 }
 
 fn save(ctx: &Ctx, app: &App) {
+    let text = {
+        let shared = lock(&ctx.shared);
+        shared
+            .rename
+            .text
+            .clone()
+            .map(|kind| (kind, shared.rename.keyboard.text().trim().to_string()))
+    };
+    if let Some((kind, value)) = text {
+        if value.is_empty() {
+            render(ctx, app);
+        } else {
+            leave_text(ctx, app, &kind, Some(value));
+        }
+        return;
+    }
     let new_deck = {
         let shared = lock(&ctx.shared);
         shared

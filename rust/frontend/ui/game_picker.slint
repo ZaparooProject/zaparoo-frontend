@@ -1,0 +1,204 @@
+// Zaparoo Frontend
+// Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
+// SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
+//
+// "Choose a game": the sources (Recently played, the user's lists, each
+// deck, Search) beside the focused source's games, or one of them at a
+// time where a browse list has no room for its detail pane. Pure view.
+// The driver is `src/game_picker.rs` and the rules are
+// `zaparoo_app::game_picker`.
+
+import { Theme, Backdrop, GlassCard, Sizing, Layout } from "theme.slint";
+import { TopStatusStrip } from "chrome.slint";
+import { GridCell } from "tiles.slint";
+import { BrowseList } from "browse_list.slint";
+import { ContentState, KeyKind, PickerPane, PickerPurpose } from "state_types.slint";
+import { KeyCell, OnScreenKeyboard, TextField } from "keyboard.slint";
+
+// The source list's rows and window, as every browse list carries them.
+export global PickerSourcesView {
+    in-out property <[GridCell]> list-rows;
+    in-out property <int> list-view-top: 0;
+    in-out property <int> list-scroll-top: 0;
+    in-out property <int> list-sel: -1;
+    in-out property <bool> list-glide: true;
+    in-out property <int> list-step-ms: 0;
+}
+
+// The focused source's games.
+export global PickerGamesView {
+    in-out property <[GridCell]> list-rows;
+    in-out property <int> list-view-top: 0;
+    in-out property <int> list-scroll-top: 0;
+    in-out property <int> list-sel: -1;
+    in-out property <bool> list-glide: true;
+    in-out property <int> list-step-ms: 0;
+}
+
+export global GamePickerView {
+    in-out property <PickerPurpose> purpose: PickerPurpose.write-token;
+    // Where the cursor is: the sources, the games, or Search's keyboard.
+    in-out property <PickerPane> pane: PickerPane.sources;
+    // Sources and games side by side; otherwise the pane alone.
+    in-out property <bool> two-panes: false;
+    // The games pane shows Search's keyboard rather than games.
+    in-out property <bool> keyboard-shown: false;
+    in-out property <ContentState> games-state: ContentState.loading;
+    // The games pane's source, for its title in one pane.
+    in-out property <string> source-name;
+    in-out property <int> count: 0;
+    in-out property <int> current-index: 0;
+    in-out property <length> card-x: 0px;
+    in-out property <length> card-y: 0px;
+    in-out property <length> card-width: 0px;
+    in-out property <length> card-height: 0px;
+    in-out property <length> row-height: 0px;
+    in-out property <length> sources-width: 0px;
+    in-out property <length> games-x: 0px;
+    in-out property <length> games-width: 0px;
+    // Search's field and keys.
+    in-out property <string> before;
+    in-out property <string> at;
+    in-out property <string> after;
+    in-out property <[KeyCell]> keys;
+    in-out property <int> key-rows: 4;
+    in-out property <int> key-index: 0;
+    in-out property <int> pressed-key: -1;
+    in-out property <KeyKind> key-kind: KeyKind.char;
+    in-out property <bool> can-search: false;
+}
+
+export global GamePickerInput {
+    callback source-hovered(int);
+    callback source-clicked(int);
+    callback game-hovered(int);
+    callback game-clicked(int);
+    callback key-hovered(int);
+    callback key-clicked(int);
+    callback wheel(int);
+}
+
+export component GamePickerScreen inherits Rectangle {
+    property <bool> sources-shown: GamePickerView.two-panes || GamePickerView.pane == PickerPane.sources;
+    property <bool> games-shown: GamePickerView.two-panes || GamePickerView.pane != PickerPane.sources;
+    property <length> games-x: GamePickerView.two-panes ? GamePickerView.games-x : 0px;
+    property <length> games-w: GamePickerView.two-panes ? GamePickerView.games-width : GamePickerView.card-width;
+    property <length> pad: Sizing.surface-pad;
+
+    TopStatusStrip {
+        x: 0;
+        y: Sizing.header-bottom + Layout.top-margin;
+        height: Layout.strip-height;
+        slot-margin: Layout.slot-margin;
+        title: !GamePickerView.two-panes && GamePickerView.pane != PickerPane.sources
+            ? GamePickerView.source-name : @tr("Choose a game");
+        show-page-counter: false;
+        visible: Layout.top-strip-visible;
+    }
+
+    GlassCard {
+        x: GamePickerView.card-x;
+        y: GamePickerView.card-y;
+        width: GamePickerView.card-width;
+        height: GamePickerView.card-height;
+        radius: Layout.card-radius;
+    }
+
+    if root.sources-shown: BrowseList {
+        x: GamePickerView.card-x;
+        y: GamePickerView.card-y;
+        width: GamePickerView.two-panes ? GamePickerView.sources-width : GamePickerView.card-width;
+        height: GamePickerView.card-height;
+        show-chrome: true;
+        glass: Backdrop.glass;
+        rows: PickerSourcesView.list-rows;
+        model-top: PickerSourcesView.list-view-top;
+        glide: PickerSourcesView.list-glide;
+        step: PickerSourcesView.list-step-ms * 1ms;
+        scroll-top: PickerSourcesView.list-scroll-top;
+        scope: "picker-sources";
+        selected: PickerSourcesView.list-sel;
+        focus-ready: GamePickerView.pane == PickerPane.sources;
+        mark-selected: GamePickerView.two-panes;
+        row-height: GamePickerView.row-height;
+        row-hovered(i) => { GamePickerInput.source-hovered(i); }
+        row-clicked(i) => { GamePickerInput.source-clicked(i); }
+        wheel(delta) => { GamePickerInput.wheel(delta); }
+    }
+
+    if root.games-shown && !GamePickerView.keyboard-shown && GamePickerView.games-state == ContentState.ready: BrowseList {
+        x: GamePickerView.card-x + root.games-x;
+        y: GamePickerView.card-y;
+        width: root.games-w;
+        height: GamePickerView.card-height;
+        show-chrome: true;
+        glass: Backdrop.glass;
+        rows: PickerGamesView.list-rows;
+        model-top: PickerGamesView.list-view-top;
+        glide: PickerGamesView.list-glide;
+        step: PickerGamesView.list-step-ms * 1ms;
+        scroll-top: PickerGamesView.list-scroll-top;
+        scope: "picker-games";
+        selected: GamePickerView.pane == PickerPane.games ? PickerGamesView.list-sel : -1;
+        focus-ready: GamePickerView.pane == PickerPane.games;
+        row-height: GamePickerView.row-height;
+        row-hovered(i) => { GamePickerInput.game-hovered(i); }
+        row-clicked(i) => { GamePickerInput.game-clicked(i); }
+        wheel(delta) => { GamePickerInput.wheel(delta); }
+    }
+
+    if root.games-shown && !GamePickerView.keyboard-shown && GamePickerView.games-state != ContentState.ready: Text {
+        x: GamePickerView.card-x + root.games-x + root.pad;
+        y: GamePickerView.card-y + root.pad;
+        width: Math.max(1px, root.games-w - 2 * root.pad);
+        height: Math.max(1px, GamePickerView.card-height - 2 * root.pad);
+        text: GamePickerView.games-state == ContentState.loading ? @tr("Loading…")
+            : GamePickerView.games-state == ContentState.error ? @tr("Could not load these games. Check Zaparoo Core and try again.")
+            : @tr("No games here");
+        font-size: Sizing.font-body;
+        color: Theme.text-label;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        wrap: word-wrap;
+    }
+
+    if root.games-shown && GamePickerView.keyboard-shown: Rectangle {
+        property <length> gap: Sizing.pct-h(1);
+        property <length> unit: (self.height - 2 * root.pad - self.gap) / (1.2 + 1.1 * GamePickerView.key-rows);
+        property <length> inner-w: Math.max(1px, self.width - 2 * root.pad);
+        property <length> keys-w: Math.min(self.inner-w, 10 * 2 * self.unit * 1.1);
+        property <length> block-x: Sizing.snap(root.pad + (self.inner-w - self.keys-w) / 2);
+        x: GamePickerView.card-x + root.games-x;
+        y: GamePickerView.card-y;
+        width: root.games-w;
+        height: GamePickerView.card-height;
+
+        TextField {
+            x: parent.block-x;
+            y: root.pad;
+            width: parent.keys-w;
+            height: parent.unit * 1.2;
+            label: @tr("Search");
+            before: GamePickerView.before;
+            at: GamePickerView.at;
+            after: GamePickerView.after;
+            typing: GamePickerView.pane == PickerPane.keyboard;
+        }
+
+        OnScreenKeyboard {
+            x: parent.block-x;
+            y: root.pad + parent.unit * 1.2 + parent.gap;
+            width: parent.keys-w;
+            height: parent.unit * 1.1 * GamePickerView.key-rows;
+            keys: GamePickerView.keys;
+            rows: GamePickerView.key-rows;
+            current-index: GamePickerView.key-index;
+            focused: GamePickerView.pane == PickerPane.keyboard;
+            pressed-index: GamePickerView.pressed-key;
+            submit-enabled: GamePickerView.can-search;
+            scope: "picker-keys";
+            key-hovered(i) => { GamePickerInput.key-hovered(i); }
+            key-clicked(i) => { GamePickerInput.key-clicked(i); }
+        }
+    }
+}

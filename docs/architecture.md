@@ -379,6 +379,14 @@ half-filled list.
 - The saved screen keeps naming the restore target until it commits, so a kill
   mid-restore comes back to the same place. Startup notices open only after the
   curtain lifts.
+- Some places are never restored as they were. The RetroAchievements login
+  screen comes back as Settings. The Game picker ("Choose a game") never writes
+  itself as the saved screen, so a kill while it is open comes back to the
+  screen that opened it. Settings keeps only the Readers, Profiles and System
+  pages' row (`persist.settings_page`); a page under one of them, gated ones
+  included (Mappings, a reader, a profile's edit page), is kept as the row on
+  that page that opens it, so an admin unlock, which lives in memory only, is
+  never restored. Any other Settings page comes back at the Settings root.
 
 ### Core UI events
 
