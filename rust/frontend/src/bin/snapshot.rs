@@ -2652,6 +2652,7 @@ fn fixture_screen(screen: &str) -> Screen {
     } else if (screen.ends_with("deck") && !screen.contains("context"))
         || screen.ends_with("deck-list")
         || screen.contains("deck-item")
+        || screen.contains("token-write-deck")
     {
         Screen::Deck
     } else if screen.contains("top-played-systems") {
@@ -2675,7 +2676,7 @@ fn fixture_screen(screen: &str) -> Screen {
     } else if screen.contains("context")
         || screen == "letters"
         || screen == "letters-few"
-        || (screen.contains("list") && !screen.contains("systems"))
+        || (screen.contains("list") && !screen.contains("systems") && !screen.starts_with("list-"))
         || screen.contains("games")
         || screen.contains("filter")
         || screen.contains("fast-scroll")
@@ -4764,6 +4765,9 @@ mod fixture_tests {
             "token-error",
             "qr-docs",
             "artwork-picker",
+            "revoke-confirm",
+            "crt-mapping-alert",
+            "crt-mapping-delete-unlabeled",
         ] {
             assert_eq!(fixture_screen(name), Screen::None, "{name}");
         }
@@ -4812,11 +4816,8 @@ mod fixture_tests {
             ("crt-blank-token-game", Screen::Games),
             ("status-scan", Screen::Hub),
             ("crt-status-scan", Screen::Hub),
-            ("revoke-confirm", Screen::Hub),
-            ("crt-mapping-alert", Screen::Hub),
-            ("crt-mapping-delete-unlabeled", Screen::Hub),
-            ("token-write-deck", Screen::Hub),
-            ("crt-token-write-deck-failed", Screen::Hub),
+            ("token-write-deck", Screen::Deck),
+            ("crt-token-write-deck-failed", Screen::Deck),
             ("game-picker", Screen::GamePicker),
             ("game-picker-search", Screen::GamePicker),
             ("crt-game-picker-games", Screen::GamePicker),

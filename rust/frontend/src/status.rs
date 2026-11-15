@@ -201,7 +201,7 @@ pub fn push(shared: &Shared, app: &App, handle: &tokio::runtime::Handle) {
         let now = Instant::now();
         (
             d.ladder.render(&d.link, &d.task, now),
-            d.ladder.next_deadline(),
+            d.ladder.next_deadline(now),
             d.generation,
         )
     };

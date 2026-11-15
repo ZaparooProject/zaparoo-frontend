@@ -12,6 +12,7 @@
 // Core keeps of cards someone tapped are its cache, not a collection.
 
 use slint::{ComponentHandle, SharedString};
+use std::sync::atomic::{AtomicU64, Ordering};
 use zaparoo_app::options_menu as menu;
 use zaparoo_core::collections::{
     Deck, DeckCover, DeckItemInput, DeckItemKind, DeckUpdateParams, DecksChanged, DecksParams,
@@ -447,7 +448,9 @@ fn deck_action(ctx: &Ctx, app: &App, id: &str, deck_id: &str, source: crate::Scr
     }
 }
 
-/// The Delete deck dialog closed.
+/// The last "Write games to tokens" deck fetch asked for.
+static BATCH_FETCH: AtomicU64 = AtomicU64::new(0);
+
 /// Write each of the deck's games to a token of its own. The open deck
 /// has its items already; a deck picked from the list is fetched first.
 fn write_games(ctx: &Ctx, app: &App, deck_id: &str, name: &str) {
@@ -470,10 +473,19 @@ fn write_games(ctx: &Ctx, app: &App, deck_id: &str, name: &str) {
     let deck_id = deck_id.to_string();
     let name = name.to_string();
     let wait = crate::cue::begin(ctx, app, crate::AppCue::LoadingList, "", "");
+    // A later request supersedes this one, and leaving the screen it was
+    // asked from calls it off: the late answer then starts nothing.
+    let ticket = BATCH_FETCH.fetch_add(1, Ordering::Relaxed) + 1;
+    let screen = app.global::<crate::Shell>().get_active_screen();
     ctx.handle.spawn(async move {
         let result = client.deck_get(&deck_id).await;
         let _ = weak.upgrade_in_event_loop(move |app| {
             crate::cue::end(&ctx2, &app, wait);
+            if BATCH_FETCH.load(Ordering::Relaxed) != ticket
+                || app.global::<crate::Shell>().get_active_screen() != screen
+            {
+                return;
+            }
             match result {
                 Ok(deck) => start_batch(&ctx2, &app, batch_items(&deck), &name),
                 Err(e) => {
@@ -512,6 +524,7 @@ fn batch_items(deck: &Deck) -> Vec<zaparoo_app::token_batch::Item> {
         .collect()
 }
 
+/// The Delete deck dialog closed.
 pub(crate) fn delete_answered(ctx: &Ctx, app: &App, confirmed: bool) {
     let Some((deck_id, name, source)) = lock(&ctx.shared).decks.pending_delete.take() else {
         return;

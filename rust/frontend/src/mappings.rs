@@ -23,6 +23,16 @@ fn mapping_at(ctx: &Ctx, index: usize) -> Option<Mapping> {
         .cloned()
 }
 
+/// The mapping with this ID, wherever a refetch has moved it.
+fn mapping_by_id(ctx: &Ctx, id: &str) -> Option<Mapping> {
+    lock(&ctx.shared)
+        .core
+        .mappings
+        .as_ref()
+        .and_then(|m| m.iter().find(|m| m.id == id))
+        .cloned()
+}
+
 /// Accept or Options on a mapping: its actions, unless it is a file's.
 pub(crate) fn open_options(ctx: &Ctx, app: &App, index: usize) {
     let Some(mapping) = mapping_at(ctx, index) else {
@@ -44,17 +54,20 @@ pub(crate) fn open_options(ctx: &Ctx, app: &App, index: usize) {
     crate::router::present_list(
         ctx,
         app,
-        ListContext::MappingOptions(index),
+        ListContext::MappingOptions(mapping.id.clone()),
         "title:options",
         rows,
     );
 }
 
 /// A mapping's action was picked.
-pub(crate) fn option_picked(ctx: &Ctx, app: &App, index: usize, action: &str) {
-    let Some(mapping) = mapping_at(ctx, index) else {
+pub(crate) fn option_picked(ctx: &Ctx, app: &App, mapping_id: &str, action: &str) {
+    let Some(mapping) = mapping_by_id(ctx, mapping_id) else {
         return;
     };
+    if mapping.read_only {
+        return;
+    }
     let Ok(id) = mapping.id.parse::<i64>() else {
         return;
     };
@@ -65,7 +78,7 @@ pub(crate) fn option_picked(ctx: &Ctx, app: &App, index: usize, action: &str) {
                 .core
                 .mappings
                 .as_mut()
-                .and_then(|m| m.get_mut(index))
+                .and_then(|m| m.iter_mut().find(|m| m.id == mapping_id))
             {
                 m.enabled = on;
             }

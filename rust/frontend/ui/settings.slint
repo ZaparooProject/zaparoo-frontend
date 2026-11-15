@@ -1141,9 +1141,9 @@ export component SettingsRowView inherits Rectangle {
         text: SettingsLabels.action-status(root.entry.status-key, root.entry.status-count);
         font-size: Sizing.font-caption;
     }
-    // A device row's state is the point of the row, so it keeps its room
-    // and a long name elides before it does.
-    property <length> value-reserve: root.entry.device != DeviceValue.none && root.value-text != ""
+    // A device row's state, and a profile's Active or Admin, is the point
+    // of the row, so it keeps its room and a long name elides before it does.
+    property <length> value-reserve: (root.entry.device != DeviceValue.none || root.entry.id == "profile") && root.value-text != ""
         // The value's own width and the two gaps its Text keeps clear.
         ? Math.ceil(value-measure.preferred-width / 1px) * 1px + Sizing.pct-w(4)
         : 0px;

@@ -288,8 +288,9 @@ pub enum ListContext {
     /// A paired Bluetooth device's Options on the pairing page; the
     /// payload is its address.
     BluetoothDeviceOptions(String),
-    /// A token mapping's actions on the Mappings page, by its row.
-    MappingOptions(usize),
+    /// A token mapping's actions on the Mappings page; the payload is
+    /// its ID, so a refetch that reorders the list cannot retarget it.
+    MappingOptions(String),
     /// The "Change launcher" picker; the payload is the system id.
     SystemLauncher(String),
     /// The per-game "Change launcher" picker; the payload is the game's
@@ -2084,8 +2085,8 @@ fn list_accept(ctx: &Ctx, app: &App, context: ListContext, id: &str) {
                 crate::controllers::forget_picked(ctx, app, &device);
             }
         }
-        ListContext::MappingOptions(index) => {
-            crate::mappings::option_picked(ctx, app, index, id);
+        ListContext::MappingOptions(mapping) => {
+            crate::mappings::option_picked(ctx, app, &mapping, id);
         }
     }
 }

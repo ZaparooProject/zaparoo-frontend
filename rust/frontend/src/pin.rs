@@ -92,12 +92,17 @@ pub(crate) fn gate(ctx: &Ctx, app: &App, then: impl FnOnce(&Ctx, &App) + 'static
     ctx.handle.spawn(async move {
         let result = client.profiles().await;
         let _ = weak.upgrade_in_event_loop(move |app| {
-            let Some((pending, then)) = PENDING.with(|p| p.borrow_mut().take()) else {
+            // Only this request's own continuation: a newer gate keeps
+            // its own, and one called off has none left.
+            let Some(then) = PENDING.with(|p| {
+                let mut p = p.borrow_mut();
+                match p.as_ref() {
+                    Some((pending, _)) if *pending == ticket => p.take().map(|(_, then)| then),
+                    _ => None,
+                }
+            }) else {
                 return;
             };
-            if pending != ticket {
-                return;
-            }
             match result {
                 Ok(list) => {
                     let profiles = list.profiles;
@@ -128,6 +133,12 @@ pub(crate) fn gate(ctx: &Ctx, app: &App, then: impl FnOnce(&Ctx, &App) + 'static
             }
         });
     });
+}
+
+/// Settings went away or back to its hub: a gate still waiting for
+/// Core's profile list opens nothing and runs nothing when it answers.
+pub(crate) fn cancel_pending() {
+    PENDING.with(|p| p.borrow_mut().take());
 }
 
 thread_local! {

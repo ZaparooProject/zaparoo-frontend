@@ -850,6 +850,25 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_search => set_search,
     );
 
+    // The PIN panel, so the CRT shows it whenever the HDMI screen does.
+    let source = primary.global::<crate::PinView>();
+    let target = crt.global::<crate::PinView>();
+    copy_properties!(source, target;
+        get_open => set_open,
+        get_page => set_page,
+        get_name => set_name,
+        get_digits => set_digits,
+        get_focus => set_focus,
+        get_error => set_error,
+        get_error_text => set_error_text,
+        get_can_scan => set_can_scan,
+        get_setting => set_setting,
+        get_first_admin => set_first_admin,
+        get_unlocking => set_unlocking,
+        get_admins => set_admins,
+        get_admin_index => set_admin_index,
+    );
+
     crate::settings::mirror_geometry(primary, crt);
 
     let source = primary.global::<crate::SearchView>();

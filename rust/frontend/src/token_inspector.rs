@@ -11,7 +11,7 @@
 use std::sync::Arc;
 
 use zaparoo_app::readers::{self as readers_rules, Inspector, Token};
-use zaparoo_core::client::Client;
+use zaparoo_core::client::{Client, ConnectionState};
 use zaparoo_core::media_types::RunParams;
 use zaparoo_core::readers_types::{NewMappingParams, TokenResolution};
 
@@ -29,6 +29,11 @@ pub struct Model {
     /// Bumped on open and close, so a late answer for a page that was
     /// left is dropped.
     ticket: u64,
+    /// Bumped on every read, so an older read's late answer never
+    /// replaces a newer one's.
+    read: u64,
+    /// Keeps the hold on that connection, again after each reconnect.
+    holder: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl Model {
@@ -181,8 +186,7 @@ pub(crate) fn value_name(shared: &Shared, id: &str) -> Option<SharedString> {
 
 /// The page opens: hold `ZapScript` off on a connection of its own.
 pub(crate) fn open(ctx: &Ctx, app: &App) {
-    let _ = app;
-    let client = {
+    let (client, ticket) = {
         let mut shared = lock(&ctx.shared);
         let model = &mut shared.core.inspector;
         if model.open() {
@@ -195,19 +199,73 @@ pub(crate) fn open(ctx: &Ctx, app: &App) {
         };
         let client = Client::with_transport(transport, &ctx.handle);
         model.hold = Some(client.clone());
-        client
+        (client, model.ticket)
     };
-    ctx.handle.spawn(async move {
-        // The connection may still be opening: the first call waits for it,
-        // and one retry covers a refusal while it settles.
-        for _ in 0..2 {
-            match client.settings_zapscript_hold().await {
-                Ok(()) => return,
-                Err(error) => tracing::warn!("settings.zapscript.hold failed: {}", error.message),
+    let ctx2 = ctx.clone();
+    let weak = app.as_weak();
+    let holder = ctx.handle.spawn(async move {
+        let mut state = client.connection.subscribe();
+        loop {
+            // A hold lasts as long as the link it was made on, so it is
+            // asked for again each time the connection comes up.
+            while *state.borrow_and_update() != ConnectionState::Connected {
+                if state.changed().await.is_err() {
+                    return;
+                }
             }
-            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+            if !hold(&client).await {
+                let _ = weak.upgrade_in_event_loop(move |app| hold_failed(&ctx2, &app, ticket));
+                return;
+            }
+            loop {
+                if state.changed().await.is_err() {
+                    return;
+                }
+                if *state.borrow_and_update() != ConnectionState::Connected {
+                    break;
+                }
+            }
         }
     });
+    let mut shared = lock(&ctx.shared);
+    let model = &mut shared.core.inspector;
+    if model.ticket == ticket {
+        model.holder = Some(holder);
+    } else {
+        holder.abort();
+    }
+}
+
+/// Ask Core to hold `ZapScript` off; one retry covers a refusal while the
+/// connection settles.
+async fn hold(client: &Client) -> bool {
+    for attempt in 0..2 {
+        if attempt > 0 {
+            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        }
+        match client.settings_zapscript_hold().await {
+            Ok(()) => return true,
+            Err(error) => tracing::warn!("settings.zapscript.hold failed: {}", error.message),
+        }
+    }
+    false
+}
+
+/// Core would not hold `ZapScript` off: a token read now would run, so
+/// the page closes and says so.
+fn hold_failed(ctx: &Ctx, app: &App, ticket: u64) {
+    {
+        let shared = lock(&ctx.shared);
+        let model = &shared.core.inspector;
+        if model.ticket != ticket || !model.open() {
+            return;
+        }
+    }
+    close(ctx);
+    if app.global::<crate::SettingsView>().get_page() == SettingsPage::TokenInspector {
+        crate::settings::return_to_row(ctx, app, SettingsPage::Readers, "readToken");
+    }
+    crate::router::report_action_error(ctx, app, "setting", "");
 }
 
 /// The page closed: drop the connection, and with it the hold.
@@ -215,6 +273,9 @@ pub(crate) fn close(ctx: &Ctx) {
     let mut shared = lock(&ctx.shared);
     let model = &mut shared.core.inspector;
     model.ticket = model.ticket.wrapping_add(1);
+    if let Some(holder) = model.holder.take() {
+        holder.abort();
+    }
     model.hold = None;
     model.resolution = None;
 }
@@ -222,12 +283,14 @@ pub(crate) fn close(ctx: &Ctx) {
 /// Core reported a token read: ask what it resolves to, while the page is
 /// open.
 pub(crate) fn token_added(ctx: &Ctx, app: &App, reader_id: &str) {
-    let ticket = {
-        let shared = lock(&ctx.shared);
-        if !shared.core.inspector.open() {
+    let (ticket, read) = {
+        let mut shared = lock(&ctx.shared);
+        let model = &mut shared.core.inspector;
+        if !model.open() {
             return;
         }
-        shared.core.inspector.ticket
+        model.read = model.read.wrapping_add(1);
+        (model.ticket, model.read)
     };
     let client = ctx.store.client();
     let reader = (!reader_id.is_empty()).then(|| reader_id.to_string());
@@ -239,7 +302,7 @@ pub(crate) fn token_added(ctx: &Ctx, app: &App, reader_id: &str) {
             {
                 let mut shared = lock(&ctx.shared);
                 let model = &mut shared.core.inspector;
-                if model.ticket != ticket || !model.open() {
+                if model.ticket != ticket || model.read != read || !model.open() {
                     return;
                 }
                 match result {

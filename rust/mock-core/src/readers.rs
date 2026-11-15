@@ -21,6 +21,8 @@ struct State {
     next_mapping_id: i64,
     hold: bool,
     writing: bool,
+    /// The token last sent in `tokens.added`, once one was.
+    last: Option<Value>,
 }
 
 static STATE: Mutex<State> = Mutex::new(State {
@@ -28,6 +30,7 @@ static STATE: Mutex<State> = Mutex::new(State {
     next_mapping_id: 2,
     hold: false,
     writing: false,
+    last: None,
 });
 
 fn state() -> MutexGuard<'static, State> {
@@ -54,34 +57,49 @@ pub fn route(method: &str, params: &Value, notifier: &Notifier) -> Option<Result
     }
 }
 
+/// The auto-detected PN532, unless its driver or auto-detect was turned
+/// off, then every stored manual connection, none of which opens.
 fn readers_response() -> Value {
-    json!({
-        "readers": [
-            {
-                "id": "pn532:/dev/ttyUSB0",
-                "readerId": READER_ID,
-                "driver": "pn532",
-                "info": "PN532 v1.6",
-                "path": "/dev/ttyUSB0",
-                "source": "auto",
-                "scanMode": "tap",
-                "capabilities": ["write"],
-                "connected": true,
-            },
-            {
-                "id": "simpleserial:/dev/ttyACM0",
-                "readerId": "",
-                "driver": "simpleserial",
-                "info": "",
-                "path": "/dev/ttyACM0",
-                "source": "connect",
-                "scanMode": "",
-                "capabilities": [],
-                "connected": false,
-                "error": "no such device",
-            },
-        ],
-    })
+    let setting = |key: &str| crate::fixtures::stored_setting(key).unwrap_or(Value::Null);
+    let pn532 = &setting("readersDrivers")["pn532"];
+    let detected = setting("readersAutoDetect") != false
+        && pn532["enabled"] != false
+        && pn532["autoDetect"] != false;
+    let mut readers = Vec::new();
+    if detected {
+        readers.push(json!({
+            "id": "pn532:/dev/ttyUSB0",
+            "readerId": READER_ID,
+            "driver": "pn532",
+            "info": "PN532 v1.6",
+            "path": "/dev/ttyUSB0",
+            "source": "auto",
+            "scanMode": "tap",
+            "capabilities": ["write"],
+            "connected": true,
+        }));
+    }
+    let connect = setting("readersConnect");
+    for entry in connect.as_array().into_iter().flatten() {
+        if entry["enabled"] == false {
+            continue;
+        }
+        let driver = entry["driver"].as_str().unwrap_or_default();
+        let path = entry["path"].as_str().unwrap_or_default();
+        readers.push(json!({
+            "id": format!("{driver}:{path}"),
+            "readerId": "",
+            "driver": driver,
+            "info": "",
+            "path": path,
+            "source": "connect",
+            "scanMode": "",
+            "capabilities": [],
+            "connected": false,
+            "error": "no such device",
+        }));
+    }
+    json!({ "readers": readers })
 }
 
 fn drivers_response() -> Value {
@@ -156,8 +174,19 @@ fn write_cancel() -> Result<Value, String> {
     Ok(Value::Null)
 }
 
-/// The token the mock pretends was last read: the one `events.rs` sends.
+/// The token `tokens.resolve` reports: the last one `events.rs` sent,
+/// or a blank one before any was.
 pub fn last_token() -> Value {
+    state().last.clone().unwrap_or_else(blank_token)
+}
+
+/// Note a token sent in `tokens.added`.
+pub fn remember_token(token: &Value) {
+    state().last = Some(token.clone());
+}
+
+/// A blank token on the mock reader.
+pub fn blank_token() -> Value {
     json!({
         "type": "ntag",
         "uid": "04a1b2c3d4e5f6",
@@ -169,13 +198,14 @@ pub fn last_token() -> Value {
 }
 
 fn resolve_response() -> Value {
+    let token = last_token();
     let s = state();
     let mapping = s
         .mappings
         .iter()
-        .find(|m| m["pattern"] == "04a1b2c3d4e5f6" && m["enabled"] == true);
+        .find(|m| m["pattern"] == token["uid"] && m["enabled"] == true);
     let mut out = json!({
-        "token": last_token(),
+        "token": token,
         "redacted": false,
         "script": "",
     });
@@ -288,8 +318,16 @@ pub fn settings_defaults() -> Map<String, Value> {
 mod tests {
     use super::*;
 
+    /// The tests share the mock's one state, so they take turns.
+    static SERIAL: Mutex<()> = Mutex::new(());
+
+    fn serial() -> MutexGuard<'static, ()> {
+        SERIAL.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
     #[test]
     fn a_new_mapping_resolves_the_last_token() {
+        let _turn = serial();
         let notifier = Notifier::noop();
         let params = json!({
             "label": "SMW", "type": "uid", "match": "exact",
@@ -303,6 +341,7 @@ mod tests {
 
     #[test]
     fn cancelling_with_no_write_is_an_error() {
+        let _turn = serial();
         state().writing = false;
         assert!(write_cancel().is_err());
         write(&json!({"text": "x"}));

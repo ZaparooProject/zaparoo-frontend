@@ -61,11 +61,19 @@ impl PickedGame {
         if row.is_dir() || row.deck_entry.is_some() {
             return None;
         }
+        // A deck item is its own script (launcher or options included),
+        // the one the deck plays and "Write games to tokens" writes.
+        let deck_script = row
+            .deck_item
+            .as_ref()
+            .and(Some(row.zap_script.trim()))
+            .filter(|script| !script.is_empty())
+            .map(str::to_string);
         Some(Self {
             name: row.display.clone(),
             system: row.system_id.clone(),
             path: row.path.clone(),
-            zapscript: row.launch_text()?,
+            zapscript: deck_script.or_else(|| row.launch_text())?,
         })
     }
 }

@@ -127,6 +127,14 @@ pub struct Model {
     picking: Option<usize>,
     confirm: Option<Confirm>,
     pub inspector: crate::token_inspector::Model,
+    /// Bumped by every local settings edit, so a `settings` answer asked
+    /// for before it cannot put the old value back.
+    settings_rev: u64,
+    /// Settings edits Core has not answered yet.
+    settings_inflight: u32,
+    /// The same pair for profile edits and Core's profile list.
+    profiles_rev: u64,
+    profiles_inflight: u32,
 }
 
 impl std::fmt::Debug for Model {
@@ -630,13 +638,18 @@ fn changed(ctx: &Ctx, app: &App) {
 
 pub(crate) fn fetch_settings(ctx: &Ctx, app: &App) {
     let client = ctx.store.client();
+    let rev = lock(&ctx.shared).core.settings_rev;
     fetch(
         ctx,
         app,
         "settings",
         async move { client.settings().await },
-        |s, r| {
-            s.core.settings = Some(r);
+        move |s, r| {
+            // An edit made since, or one still on its way, is newer than
+            // this answer: the page keeps showing it.
+            if s.core.settings_rev == rev && s.core.settings_inflight == 0 {
+                s.core.settings = Some(r);
+            }
         },
     );
 }
@@ -668,13 +681,16 @@ fn fetch_readers(ctx: &Ctx, app: &App) {
 
 pub(crate) fn fetch_profiles(ctx: &Ctx, app: &App) {
     let client = ctx.store.client();
+    let rev = lock(&ctx.shared).core.profiles_rev;
     fetch(
         ctx,
         app,
         "profiles",
         async move { client.profiles().await },
-        |s, r| {
-            s.core.profiles = Some(r.profiles);
+        move |s, r| {
+            if s.core.profiles_rev == rev && s.core.profiles_inflight == 0 {
+                s.core.profiles = Some(r.profiles);
+            }
         },
     );
 }
@@ -734,7 +750,14 @@ fn fetch_version(ctx: &Ctx, app: &App) {
 /// A page opens: ask Core for what it shows.
 pub(crate) fn on_open(ctx: &Ctx, app: &App, page: SettingsPage) {
     match page {
-        SettingsPage::Root => lock(&ctx.shared).core.unlocked = false,
+        SettingsPage::Root => {
+            {
+                let mut shared = lock(&ctx.shared);
+                shared.core.unlocked = false;
+                shared.core.pass = false;
+            }
+            crate::pin::cancel_pending();
+        }
         SettingsPage::Readers => {
             fetch_settings(ctx, app);
             fetch_readers(ctx, app);
@@ -777,6 +800,8 @@ pub(crate) fn left_settings(ctx: &Ctx) {
     let mut shared = lock(&ctx.shared);
     shared.core.unlocked = false;
     shared.core.pass = false;
+    drop(shared);
+    crate::pin::cancel_pending();
 }
 
 // ---------- The admin gate ----------
@@ -786,7 +811,10 @@ pub(crate) fn left_settings(ctx: &Ctx) {
 pub(crate) fn admitted(ctx: &Ctx, app: &App, retry: impl FnOnce(&Ctx, &App) + 'static) -> bool {
     {
         let mut shared = lock(&ctx.shared);
-        if shared.core.unlocked || std::mem::take(&mut shared.core.pass) {
+        // The one-shot pass is spent whatever else lets this action in,
+        // so it can never carry over to a later one.
+        let pass = std::mem::take(&mut shared.core.pass);
+        if shared.core.unlocked || pass {
             return true;
         }
     }
@@ -807,8 +835,14 @@ fn update(
     params: UpdateSettingsParams,
     local: impl FnOnce(&mut SettingsResult),
 ) {
-    if let Some(settings) = lock(&ctx.shared).core.settings.as_mut() {
-        local(settings);
+    {
+        let mut shared = lock(&ctx.shared);
+        let core = &mut shared.core;
+        core.settings_rev = core.settings_rev.wrapping_add(1);
+        core.settings_inflight += 1;
+        if let Some(settings) = core.settings.as_mut() {
+            local(settings);
+        }
     }
     crate::settings::refresh(ctx, app);
     let client = ctx.store.client();
@@ -816,6 +850,10 @@ fn update(
     let weak = app.as_weak();
     ctx.handle.spawn(async move {
         let result = client.settings_update(params).await;
+        {
+            let mut shared = lock(&ctx2.shared);
+            shared.core.settings_inflight = shared.core.settings_inflight.saturating_sub(1);
+        }
         if let Err(error) = result {
             tracing::warn!("settings.update failed: {}", error.message);
             let _ = weak.upgrade_in_event_loop(move |app| {
@@ -1057,11 +1095,21 @@ fn update_profile(
     params: UpdateProfileParams,
     then: impl FnOnce(&Ctx, &App) + Send + 'static,
 ) {
+    {
+        let mut shared = lock(&ctx.shared);
+        let core = &mut shared.core;
+        core.profiles_rev = core.profiles_rev.wrapping_add(1);
+        core.profiles_inflight += 1;
+    }
     let client = ctx.store.client();
     let ctx2 = ctx.clone();
     let weak = app.as_weak();
     ctx.handle.spawn(async move {
         let result = client.profiles_update(params).await;
+        {
+            let mut shared = lock(&ctx2.shared);
+            shared.core.profiles_inflight = shared.core.profiles_inflight.saturating_sub(1);
+        }
         let _ = weak.upgrade_in_event_loop(move |app| {
             match result {
                 Ok(()) => then(&ctx2, &app),
@@ -1167,10 +1215,22 @@ fn update_profile_field(ctx: &Ctx, app: &App, id: &str, value: &str) {
     let cleared = (profile.limits_enabled.is_some() && limits_enabled.is_none())
         || (profile.daily_limit.is_some() && daily.is_none())
         || (profile.session_limit.is_some() && session.is_none());
+    // The next edit builds on this one, not on the list Core last sent.
+    if let Some(edited) = lock(&ctx.shared)
+        .core
+        .profiles
+        .as_mut()
+        .and_then(|list| list.iter_mut().find(|p| p.profile_id == profile.profile_id))
+    {
+        edited.limits_enabled = limits_enabled;
+        edited.daily_limit.clone_from(&daily);
+        edited.session_limit.clone_from(&session);
+    }
     params.clear_limits = cleared;
     params.limits_enabled = limits_enabled;
     params.daily_limit = daily;
     params.session_limit = session;
+    crate::settings::refresh(ctx, app);
     update_profile(ctx, app, params, |_, _| {});
 }
 

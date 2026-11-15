@@ -1862,11 +1862,13 @@ fn start_status(app: &App, ctx: &Arc<Ctx>) {
             let local = tokio::task::spawn_blocking(system_status::probe)
                 .await
                 .unwrap_or_default();
-            let readers = match ctx.store.client().readers().await {
-                Ok(result) => result.readers,
-                Err(_) => Vec::new(),
+            // A failed query keeps the readers already known: only Core's
+            // answer can say one went away.
+            let readers = ctx.store.client().readers().await.ok().map(|r| r.readers);
+            let has_nfc = match &readers {
+                Some(readers) => readers.iter().any(|r| r.connected && r.is_nfc_reader()),
+                None => lock(&ctx.shared).has_nfc,
             };
-            let has_nfc = readers.iter().any(|r| r.connected && r.is_nfc_reader());
 
             let mut keys: Vec<SharedString> = Vec::new();
             if has_nfc {
@@ -1888,7 +1890,9 @@ fn start_status(app: &App, ctx: &Arc<Ctx>) {
                 shell.set_has_battery(local.has_battery);
                 shell.set_battery_percent(local.battery_percent);
                 shell.set_status_icons_enabled(true);
-                router::store_readers(&ctx_inner, &app, readers);
+                if let Some(readers) = readers {
+                    router::store_readers(&ctx_inner, &app, readers);
+                }
                 hub::set_internet(
                     &ctx_inner,
                     &app,

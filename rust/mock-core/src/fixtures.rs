@@ -71,6 +71,11 @@ fn stored_settings<T>(f: impl FnOnce(&mut serde_json::Map<String, Value>) -> T) 
     f(map)
 }
 
+/// One stored setting's current value.
+pub(crate) fn stored_setting(key: &str) -> Option<Value> {
+    stored_settings(|stored| stored.get(key).cloned())
+}
+
 /// The folder every mock system lists as one game on several discs.
 const DISC_FOLDER: &str = "Disc Game";
 const DISC_COUNT: u64 = 2;

@@ -543,7 +543,9 @@ impl Ladder {
     }
 
     /// When the line next changes on its own (a dwell expiring), if ever.
-    pub fn next_deadline(&self) -> Option<Instant> {
+    /// A dwell already over is not one: its line is gone, and returning it
+    /// would ask for another push at once, forever.
+    pub fn next_deadline(&self, now: Instant) -> Option<Instant> {
         let terminal = self
             .terminal
             .as_ref()
@@ -553,7 +555,11 @@ impl Ladder {
             .as_ref()
             .map(|(_, since)| *since + self.event_dwell);
         let scan = self.scan.as_ref().map(|(_, since, dwell)| *since + *dwell);
-        [terminal, event, scan].into_iter().flatten().min()
+        [terminal, event, scan]
+            .into_iter()
+            .flatten()
+            .filter(|deadline| *deadline > now)
+            .min()
     }
 }
 
@@ -785,7 +791,7 @@ mod tests {
         assert_eq!(out.message.kind, Kind::IndexedFiles);
         assert_eq!(out.message.arg, "1234");
         assert!(!out.show_track);
-        assert_eq!(ladder.next_deadline(), Some(t0 + Duration::from_secs(6)));
+        assert_eq!(ladder.next_deadline(t0), Some(t0 + Duration::from_secs(6)));
 
         let later = t0 + Duration::from_secs(6);
         let out = ladder.render(&connected(), &idle, later);
@@ -850,7 +856,7 @@ mod tests {
             ladder.render(&connected(), &busy, t0).message.kind,
             Kind::Indexing
         );
-        assert_eq!(ladder.next_deadline(), None);
+        assert_eq!(ladder.next_deadline(t0), None);
     }
 
     #[test]
@@ -881,14 +887,11 @@ mod tests {
             ladder.render(&link, &task, t2).message.kind,
             Kind::ScanMediaNotFound
         );
-        assert_eq!(ladder.next_deadline(), Some(t1 + Duration::from_secs(10)));
-        assert_eq!(
-            ladder
-                .render(&link, &task, t1 + Duration::from_secs(11))
-                .message
-                .kind,
-            Kind::None
-        );
+        assert_eq!(ladder.next_deadline(t2), Some(t1 + Duration::from_secs(10)));
+        let after = t1 + Duration::from_secs(11);
+        assert_eq!(ladder.render(&link, &task, after).message.kind, Kind::None);
+        // Every dwell is over: nothing is left to wait for.
+        assert_eq!(ladder.next_deadline(after), None);
     }
 
     #[test]

@@ -1714,11 +1714,6 @@ pub fn context_accept(ctx: &Ctx, app: &App, id: &str) {
     system_action(ctx, app, id, &row);
 }
 
-/// The script a system's token runs: open its games in Core's launcher.
-fn system_script(id: &str) -> String {
-    format!("**launch.system:{id}")
-}
-
 /// A system's own actions, whichever screen it was reached from.
 pub(crate) fn system_action(ctx: &Ctx, app: &App, id: &str, row: &SystemRow) {
     match id {
@@ -1736,8 +1731,8 @@ pub(crate) fn system_action(ctx: &Ctx, app: &App, id: &str, row: &SystemRow) {
                 crate::router::launch(ctx, app, text, &row.name);
             }
         }
-        "write_card" => crate::card_write::begin(ctx, app, system_script(&row.id)),
-        "qr_code" => crate::router::open_qr_text(ctx, app, &system_script(&row.id), &row.name),
+        "write_card" => crate::card_write::begin(ctx, app, row.launch_text()),
+        "qr_code" => crate::router::open_qr_text(ctx, app, &row.launch_text(), &row.name),
         "change_launcher" => crate::launchers::open_system_picker(ctx, app, &row.id),
         "artwork" => crate::artwork::open_picker(ctx, app, &row.id, ""),
         "toggle_hide_system" => crate::router::toggle_hidden_system(ctx, app, &row.id),

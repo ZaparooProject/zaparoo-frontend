@@ -39,21 +39,23 @@ pub async fn run(notifier: Notifier) {
 }
 
 fn notifier_send_tokens_added(notifier: &Notifier) {
-    notifier.send(
-        "tokens.added",
-        &json!({
-            "type": "nfc",
-            "uid": "04a1b2c3d4e5f6",
-            "text": "Super Mario World",
-            "scanTime": "2026-04-29T23:00:00Z",
-            "readerId": "mock-reader-1",
-        }),
-    );
+    let token = json!({
+        "type": "nfc",
+        "uid": "04a1b2c3d4e5f6",
+        "text": "Super Mario World",
+        "data": "",
+        "scanTime": "2026-04-29T23:00:00Z",
+        "readerId": crate::readers::READER_ID,
+    });
+    crate::readers::remember_token(&token);
+    notifier.send("tokens.added", &token);
 }
 
 /// A blank token: read, then refused with Core's `blank` category.
 fn notifier_send_blank_token(notifier: &Notifier) {
-    notifier.send("tokens.added", &crate::readers::last_token());
+    let token = crate::readers::blank_token();
+    crate::readers::remember_token(&token);
+    notifier.send("tokens.added", &token);
     notifier.send(
         "run.failed",
         &json!({

@@ -3585,7 +3585,12 @@ export component App inherits Window {
         if (Shell.active-screen == Screen.search) { return SearchView.title(); }
         if (Shell.active-screen == Screen.rename) {
             return RenameView.purpose == RenamePurpose.new-deck ? @tr("New deck")
-                : (RenameView.purpose == RenamePurpose.rename-deck ? @tr("Rename deck") : @tr("Rename tile"));
+                : RenameView.purpose == RenamePurpose.rename-deck ? @tr("Rename deck")
+                : RenameView.purpose == RenamePurpose.profile-name ? @tr("Rename profile")
+                : RenameView.purpose == RenamePurpose.new-profile ? @tr("New profile")
+                : RenameView.purpose == RenamePurpose.reader-address ? @tr("MQTT reader")
+                : RenameView.purpose == RenamePurpose.reader-path ? @tr("File reader")
+                : @tr("Rename tile");
         }
         if (Shell.active-screen == Screen.ra-login) { return @tr("RetroAchievements"); }
         if (Shell.active-screen == Screen.file-browser) {
