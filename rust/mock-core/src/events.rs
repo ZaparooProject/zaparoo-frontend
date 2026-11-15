@@ -20,7 +20,7 @@ pub fn events_enabled() -> bool {
     std::env::var_os("MOCK_CORE_EVENTS").is_some()
 }
 
-/// Rotates through the three transient event kinds this mock emits.
+/// Rotates through the four transient event kinds this mock emits.
 /// Dates are fixed illustrative values (matching the convention already
 /// used for `fixtures.rs`'s history fixtures) rather than the real
 /// clock — nothing here depends on wall-clock time.
@@ -29,9 +29,10 @@ pub async fn run(notifier: Notifier) {
     loop {
         sleep(EVENT_INTERVAL).await;
         tick += 1;
-        match tick % 3 {
+        match tick % 4 {
             1 => notifier_send_tokens_added(&notifier),
             2 => notifier_send_playtime_warning(&notifier),
+            3 => notifier_send_blank_token(&notifier),
             _ => notifier_send_inbox_added(&notifier, tick),
         }
     }
@@ -46,6 +47,20 @@ fn notifier_send_tokens_added(notifier: &Notifier) {
             "text": "Super Mario World",
             "scanTime": "2026-04-29T23:00:00Z",
             "readerId": "mock-reader-1",
+        }),
+    );
+}
+
+/// A blank token: read, then refused with Core's `blank` category.
+fn notifier_send_blank_token(notifier: &Notifier) {
+    notifier.send("tokens.added", &crate::readers::last_token());
+    notifier.send(
+        "run.failed",
+        &json!({
+            "source": "reader",
+            "readerId": crate::readers::READER_ID,
+            "category": "blank",
+            "message": "The token is blank",
         }),
     );
 }

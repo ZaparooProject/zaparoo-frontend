@@ -737,44 +737,57 @@ impl GamesModel {
         };
         let from = range.start - base;
         let to = (range.end - base).min(rows.len());
-        for row in &mut rows[from..to] {
-            row.display = rules::display_name(
-                &row.name,
-                &row.path,
-                row.entry_type.is_folder(),
-                show_original,
-            );
-        }
-        let start = rules::sibling_group_start(rows, from, |row| &row.display);
-        let mut end = to;
-        while end < rows.len() && rows[end].display == rows[to - 1].display {
-            end += 1;
-        }
-        let names: Vec<_> = rows[start..end]
-            .iter()
-            .map(|row| (row.display.clone(), row.tag_labels.clone()))
-            .collect();
-        let displays = crate::tag_utils::sibling_disambiguation_displays(&names);
-        let count = |n: u32| zaparoo_app::format::count(i64::from(n), language);
-        for (row, tags) in rows[start..end].iter_mut().zip(displays) {
-            // Two same-named roots keep what tells them apart: that is not
-            // a tag, and hiding it would leave two identical rows.
-            let tags = if !row.root_distinguisher.is_empty() {
-                row.root_distinguisher.clone()
-            } else if show_tags {
-                tags
-            } else {
-                String::default()
-            };
-            row.suffix = rules::row_suffix(
-                row.entry_type,
-                &tags,
-                rules::effective_file_count(row.media_capable, row.file_count),
-                &count,
-            );
-        }
-        end - start
+        refresh_displays(rows, from..to, show_tags, show_original, language)
     }
+}
+
+/// Recompute the display name and dim suffix of `rows[range]`, with the
+/// sibling run they join on either side. Returns how many rows changed.
+pub(crate) fn refresh_displays(
+    rows: &mut [GameRow],
+    range: std::ops::Range<usize>,
+    show_tags: bool,
+    show_original: bool,
+    language: &str,
+) -> usize {
+    let (from, to) = (range.start, range.end.min(rows.len()));
+    for row in &mut rows[from..to] {
+        row.display = rules::display_name(
+            &row.name,
+            &row.path,
+            row.entry_type.is_folder(),
+            show_original,
+        );
+    }
+    let start = rules::sibling_group_start(rows, from, |row| &row.display);
+    let mut end = to;
+    while end < rows.len() && rows[end].display == rows[to - 1].display {
+        end += 1;
+    }
+    let names: Vec<_> = rows[start..end]
+        .iter()
+        .map(|row| (row.display.clone(), row.tag_labels.clone()))
+        .collect();
+    let displays = crate::tag_utils::sibling_disambiguation_displays(&names);
+    let count = |n: u32| zaparoo_app::format::count(i64::from(n), language);
+    for (row, tags) in rows[start..end].iter_mut().zip(displays) {
+        // Two same-named roots keep what tells them apart: that is not
+        // a tag, and hiding it would leave two identical rows.
+        let tags = if !row.root_distinguisher.is_empty() {
+            row.root_distinguisher.clone()
+        } else if show_tags {
+            tags
+        } else {
+            String::default()
+        };
+        row.suffix = rules::row_suffix(
+            row.entry_type,
+            &tags,
+            rules::effective_file_count(row.media_capable, row.file_count),
+            &count,
+        );
+    }
+    end - start
 }
 
 /// The virtual roots at the head of a list's rows.
@@ -1738,38 +1751,51 @@ fn fill_from<E: Endpoint>(
     rows: fn(&E::Output) -> Page,
 ) {
     let (ticket, flip) = fill;
-    let resource = ctx.store.subscribe::<E>(args);
-    let mut rx = resource.subscribe();
-    let weak = app.as_weak();
-    let ctx2 = ctx.clone();
-    let task = ctx.handle.spawn(async move {
-        loop {
-            let snapshot = rx.borrow_and_update().clone();
-            match snapshot {
-                ResourceStatus::Ready(result) => {
-                    let _ = weak.upgrade_in_event_loop(move |app| {
-                        let (rows, cursor) = rows(&result);
-                        apply_fill(&ctx2, &app, ticket, rows, cursor, None, flip);
-                    });
-                    return;
-                }
-                ResourceStatus::Errored { message, .. } => {
-                    let _ = weak.upgrade_in_event_loop(move |app| {
-                        show_error(&ctx2, &app, ticket, &message, flip);
-                    });
-                    return;
-                }
-                ResourceStatus::Idle | ResourceStatus::Loading => {}
-            }
-            if rx.changed().await.is_err() {
-                return;
-            }
+    let task = settled::<E>(ctx, app, args, move |ctx, app, result| match result {
+        Ok(result) => {
+            let (rows, cursor) = rows(&result);
+            apply_fill(ctx, app, ticket, rows, cursor, None, flip);
         }
+        Err(message) => show_error(ctx, app, ticket, &message, flip),
     });
     lock(&ctx.shared).games.fill_task.replace(task);
 }
 
-fn next_cursor(pagination: Option<&zaparoo_core::media_types::Pagination>) -> Option<String> {
+/// Wait for an endpoint's shared resource to settle and hand its result,
+/// or Core's error, to `done` on the event loop. The caller keeps the task
+/// and checks its own ticket in `done`.
+pub(crate) fn settled<E: Endpoint>(
+    ctx: &Ctx,
+    app: &App,
+    args: E::Args,
+    done: impl FnOnce(&Ctx, &App, Result<E::Output, String>) + Send + 'static,
+) -> tokio::task::JoinHandle<()> {
+    let resource = ctx.store.subscribe::<E>(args);
+    let mut rx = resource.subscribe();
+    let weak = app.as_weak();
+    let ctx2 = ctx.clone();
+    ctx.handle.spawn(async move {
+        loop {
+            let snapshot = rx.borrow_and_update().clone();
+            let result = match snapshot {
+                ResourceStatus::Ready(result) => Ok(result),
+                ResourceStatus::Errored { message, .. } => Err(message),
+                ResourceStatus::Idle | ResourceStatus::Loading => {
+                    if rx.changed().await.is_err() {
+                        return;
+                    }
+                    continue;
+                }
+            };
+            let _ = weak.upgrade_in_event_loop(move |app| done(&ctx2, &app, result));
+            return;
+        }
+    })
+}
+
+pub(crate) fn next_cursor(
+    pagination: Option<&zaparoo_core::media_types::Pagination>,
+) -> Option<String> {
     pagination
         .filter(|p| p.has_next_page)
         .and_then(|p| p.next_cursor.clone())
@@ -3227,7 +3253,7 @@ fn media_key(
 }
 
 /// List rows never resolve artwork: only their separate detail pane paints it.
-fn text_cell(row: &GameRow) -> GridCell {
+pub(crate) fn text_cell(row: &GameRow) -> GridCell {
     GridCell {
         name: SharedString::from(row.display.as_str()),
         tags: SharedString::from(row.suffix.as_str()),
@@ -5470,7 +5496,7 @@ fn open_context_menu(ctx: &Ctx, app: &App) {
     crate::router::set_context_anchor(app, &anchor);
     let index = lock(&ctx.shared).games.grid.current_index();
     crate::router::present_games_context_menu(ctx, app, index, menu);
-    crate::router::refresh_readers(ctx);
+    crate::router::refresh_readers(ctx, app);
 }
 
 /// Where the menu sits when Back brings it back: the focused cell now.

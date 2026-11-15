@@ -222,6 +222,10 @@ const SOURCES: &[(&str, &str)] = &[
         include_str!("../../../resources/images/icons/Settings.svg"),
     ),
     (
+        "icons/Users",
+        include_str!("../../../resources/images/icons/Users.svg"),
+    ),
+    (
         "icons/ShiftLock",
         include_str!("../../../resources/images/icons/ShiftLock.svg"),
     ),
@@ -297,6 +301,11 @@ const SOURCES: &[(&str, &str)] = &[
     (
         "status/Music",
         include_str!("../../../resources/images/status/Music.svg"),
+    ),
+    // The compact header's active profile, where its name has no room.
+    (
+        "status/Profile",
+        include_str!("../../../resources/images/status/Profile.svg"),
     ),
     // A controller's battery in the header: a gamepad with its charge
     // inside. The low one is also the compact header's warning.
@@ -621,6 +630,10 @@ const PIXEL_ART: &[(&str, &str)] = &[
     (
         "status/Music",
         include_str!("../../../resources/images/pixel/status/Music.txt"),
+    ),
+    (
+        "status/Profile",
+        include_str!("../../../resources/images/pixel/status/Profile.txt"),
     ),
     (
         "status/ControllerEmpty",

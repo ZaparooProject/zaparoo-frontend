@@ -1102,7 +1102,7 @@ fn activate_current(ctx: &Ctx, app: &App) {
 /// Back returning to the Hub either way.
 fn open_setting_tile(ctx: &Ctx, app: &App, id: &str) {
     if id == zaparoo_app::settings::MUSIC_PAGE {
-        crate::music::enter(ctx, app, crate::music::Origin::Hub);
+        crate::music::enter(ctx, app);
     } else if let Ok(page) = crate::SettingsPage::try_from(id) {
         crate::settings::enter_page_from_hub(ctx, app, page);
     }
@@ -1159,6 +1159,11 @@ fn emit_activate(ctx: &Ctx, app: &App) {
                 "recents" => crate::games::enter_recents(ctx, app, EntryMode::Fresh),
                 "topplayed" => crate::games::enter_top_played(ctx, app, EntryMode::Fresh),
                 "search" => crate::search::enter(ctx, app, EntryMode::Fresh),
+                "music" => crate::music::enter(ctx, app),
+                // Profiles opens without the admin gate: switching is free.
+                "switchprofile" => {
+                    crate::settings::enter_page_from_hub(ctx, app, crate::SettingsPage::Profiles);
+                }
                 "settings" => crate::settings::enter(ctx, app, EntryMode::Fresh),
                 "update" => crate::update::enter(app),
                 _ => {}
@@ -1520,7 +1525,7 @@ fn present_menu(ctx: &Ctx, app: &App, menu: menu::Menu, target: MenuTarget) {
     lock(&ctx.shared).hub.menu_target = target;
     crate::router::set_context_anchor(app, &context_anchor(ctx, app));
     crate::router::present_hub_context_menu(ctx, app, menu);
-    crate::router::refresh_readers(ctx);
+    crate::router::refresh_readers(ctx, app);
 }
 
 /// The focused tile's rect, where the menu sits.
@@ -2413,6 +2418,24 @@ fn list_for_action(id: &str) -> zaparoo_app::user_flags::Flag {
         "disliked" => Flag::Dislike,
         _ => Flag::Favorite,
     }
+}
+
+/// The focused tile's game, when it is a pinned game.
+pub(crate) fn focused_game(shared: &Shared) -> Option<crate::game_picker::PickedGame> {
+    let entry = shared.hub.current()?;
+    if entry.kind != Some(Kind::ZapScript) || entry.script.trim().is_empty() {
+        return None;
+    }
+    Some(crate::game_picker::PickedGame {
+        name: if entry.custom_name.is_empty() {
+            entry.name.clone()
+        } else {
+            entry.custom_name.clone()
+        },
+        system: entry.system.clone(),
+        path: entry.path.clone(),
+        zapscript: entry.script.clone(),
+    })
 }
 
 #[cfg(test)]

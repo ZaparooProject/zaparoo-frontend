@@ -17,6 +17,8 @@ mod handler;
 mod library;
 mod media_state;
 mod music;
+mod profiles;
+mod readers;
 mod ui_events;
 
 use futures_util::{SinkExt, StreamExt};

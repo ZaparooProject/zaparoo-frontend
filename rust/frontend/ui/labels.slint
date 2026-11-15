@@ -67,6 +67,17 @@ export global Labels {
         if (key == "root") { return @tr("Root"); }
         return name;
     }
+    // A row of the Game picker's sources, by the key Rust sends; a deck is
+    // called by its own name.
+    public pure function picker-source(key: string, name: string) -> string {
+        if (key == "recents") { return @tr("Recently played"); }
+        if (key == "favorites") { return @tr("Favorites"); }
+        if (key == "liked") { return @tr("Liked"); }
+        if (key == "play_later") { return @tr("Play later"); }
+        if (key == "decks") { return @tr("Decks"); }
+        if (key == "search") { return @tr("Search"); }
+        return name;
+    }
     // The file browser's last row when a folder holds more than it lists.
     public pure function more-not-shown(n: int) -> string {
         return @tr("{n} more not shown" | "{n} more not shown" % n);
@@ -92,6 +103,8 @@ export global Labels {
         if (key == "action:liked") { return @tr("Liked"); }
         if (key == "action:playlater") { return @tr("Play later"); }
         if (key == "action:disliked") { return @tr("Disliked"); }
+        if (key == "action:music") { return @tr("Music"); }
+        if (key == "action:switchprofile") { return @tr("Switch profile"); }
         if (key == "action:decks") { return @tr("Decks"); }
         if (key == "action:recents") { return @tr("Recently played"); }
         if (key == "action:topplayed") { return @tr("Top played"); }
@@ -105,10 +118,12 @@ export global Labels {
         if (key == "setting:pageAppearance") { return @tr("Appearance"); }
         if (key == "setting:pageDisplayInterface") { return @tr("Display"); }
         if (key == "setting:pageControlsInput") { return @tr("Controls"); }
-        if (key == "setting:pageLanguage") { return @tr("Language"); }
+        if (key == "setting:pageLanguage") { return @tr("Language and region"); }
+        if (key == "setting:pageReaders") { return @tr("Readers"); }
+        if (key == "setting:pageProfiles") { return @tr("Profiles"); }
         if (key == "setting:pageOnline") { return @tr("Online"); }
         if (key == "setting:pageRetroAchievements") { return @tr("RetroAchievements"); }
-        if (key == "setting:pageSupportAbout") { return @tr("About"); }
+        if (key == "setting:pageSupportAbout") { return @tr("System"); }
         return name;
     }
     // Counts arrive already grouped by Rust (`zaparoo_app::format`)
@@ -218,6 +233,13 @@ export global Labels {
     }
 
     public pure function menu(key: string, name: string) -> string {
+        // A picker's mark on the choice that is the default.
+        if (key == "setting:default") { return @tr("Default"); }
+        // A mapping's options.
+        if (key == "mapping:enable") { return @tr("Turn on"); }
+        if (key == "mapping:disable") { return @tr("Turn off"); }
+        if (key == "mapping:change_game") { return @tr("Change game"); }
+        if (key == "mapping:delete") { return @tr("Delete"); }
         // Games, favorites and recents rows.
         if (key == "more_info") { return @tr("Details"); }
         if (key == "favorite:add") { return @tr("Add to favorites"); }
@@ -405,6 +427,8 @@ export global Labels {
         if (key == "music:loading") { return @tr("loading"); }
         if (key == "filter:limit") { return @tr("tag limit reached"); }
         if (key == "music:no_answer") { return @tr("Core did not answer"); }
+        if (key == "auto_detect_off") { return @tr("Auto-detect readers is off"); }
+        if (key == "auto_detect_unsupported") { return @tr("this type cannot be found automatically"); }
         return "";
     }
 }
@@ -413,7 +437,7 @@ export global Labels {
 // the minimum Core version, or a Core confirmation's own heading; `arg`
 // carries context, running version, count, or a Core confirmation's text.
 export global DialogLabels {
-    public pure function title(kind: DialogKind, error: ErrorKind, detail: string) -> string {
+    public pure function title(kind: DialogKind, error: ErrorKind, detail: string, arg: string) -> string {
         // Core words its own confirmations; they read as Core sent them.
         if (kind == DialogKind.core-confirm) { return detail != "" ? detail : @tr("Confirm"); }
         if (kind == DialogKind.quit-confirm) { return @tr("Quit Zaparoo Frontend?"); }
@@ -430,7 +454,11 @@ export global DialogLabels {
         if (kind == DialogKind.delete-deck) { return @tr("Delete deck?"); }
         if (kind == DialogKind.forget-controller) { return @tr("Forget controller?"); }
         if (kind == DialogKind.logo-support) { return @tr("Support Zaparoo"); }
-        if (kind == DialogKind.action-error) { return DialogLabels.error-title(error); }
+        if (kind == DialogKind.revoke-device) { return @tr("Unpair device?"); }
+        if (kind == DialogKind.delete-profile) { return @tr("Delete profile?"); }
+        if (kind == DialogKind.delete-mapping) { return @tr("Delete mapping?"); }
+        if (kind == DialogKind.blank-token) { return @tr("This token is blank"); }
+        if (kind == DialogKind.action-error) { return DialogLabels.error-title(error, arg); }
         return "";
     }
 
@@ -451,6 +479,20 @@ export global DialogLabels {
             return @tr("{} has to be paired again before it can connect.", arg == "" ? detail : @tr("{} ({})", detail, arg));
         }
         if (kind == DialogKind.core-confirm) { return arg; }
+        if (kind == DialogKind.revoke-device) { return @tr("{} cannot control Zaparoo until you pair it again.", detail); }
+        if (kind == DialogKind.delete-profile) { return @tr("{} is deleted. This cannot be undone.", detail); }
+        // `detail` is the mapping's label, empty when it has none.
+        if (kind == DialogKind.delete-mapping) {
+            return detail == ""
+                ? @tr("Its token will go back to running what's written on it.")
+                : @tr("Scanning its token will no longer start {}.", detail);
+        }
+        // `detail` is the game in focus when the token was read.
+        if (kind == DialogKind.blank-token) {
+            return detail == ""
+                ? @tr("Write a game to it?")
+                : @tr("Write {} to it, or choose another game.", detail);
+        }
         // `arg` is "linked" when this device already has an Online account.
         if (kind == DialogKind.logo-support) {
             return arg == "linked"
@@ -484,12 +526,15 @@ export global DialogLabels {
         if (key == DialogButton.i-understand) { return @tr("I understand"); }
         if (key == DialogButton.start-media-update) { return @tr("Start media update"); }
         if (key == DialogButton.link-account) { return @tr("Link account"); }
+        if (key == DialogButton.write-game) { return @tr("Write game"); }
+        if (key == DialogButton.choose-game) { return @tr("Choose a game"); }
         return "";
     }
 
     // A failed user action. The technical detail is already in the log;
     // these say what failed and what the user can do about it.
-    public pure function error-title(kind: ErrorKind) -> string {
+    // `context` is the alert's argument, as `error-body` reads it.
+    public pure function error-title(kind: ErrorKind, context: string) -> string {
         if (kind == ErrorKind.launch || kind == ErrorKind.launch-repair) { return @tr("Launch failed"); }
         if (kind == ErrorKind.favorite) { return @tr("Favorite update failed"); }
         if (kind == ErrorKind.collection) { return @tr("Collection update failed"); }
@@ -512,6 +557,9 @@ export global DialogLabels {
         if (kind == ErrorKind.card-write) { return @tr("Token write failed"); }
         if (kind == ErrorKind.image-picker) { return @tr("Image picker failed"); }
         if (kind == ErrorKind.setting) { return @tr("Setting not saved"); }
+        if (kind == ErrorKind.mapping) {
+            return context == "delete" ? @tr("Mapping not removed") : @tr("Mapping not saved");
+        }
         if (kind == ErrorKind.music) { return @tr("Music control failed"); }
         if (kind == ErrorKind.pairing) { return @tr("Pairing could not start"); }
         if (kind == ErrorKind.bluetooth) { return @tr("Bluetooth request failed"); }
@@ -568,6 +616,11 @@ export global DialogLabels {
         if (kind == ErrorKind.card-write) { return @tr("Could not write to this token. Check that it is writable and try again."); }
         if (kind == ErrorKind.image-picker) { return @tr("Could not open an image picker, or the image chosen could not be read."); }
         if (kind == ErrorKind.setting) { return @tr("Could not save this setting. Try again."); }
+        // `context` is "delete" for a removal, empty for a save.
+        if (kind == ErrorKind.mapping) {
+            if (context == "delete") { return @tr("Could not remove this mapping. Check Zaparoo Core and try again."); }
+            return @tr("Could not save this mapping. Check Zaparoo Core and try again.");
+        }
         if (kind == ErrorKind.music) {
             if (context == "empty") { return @tr("This folder has no tracks of its own."); }
             if (context == "read") { return @tr("Could not read this folder. Check Zaparoo Core and try again."); }

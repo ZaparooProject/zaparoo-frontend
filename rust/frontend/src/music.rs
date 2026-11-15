@@ -33,24 +33,6 @@ use crate::music_layout::{layout_for, push_layout, Layout};
 use crate::router::{lock, Ctx, Shared};
 use crate::{App, ContentState, GridCell, MusicInput, MusicView};
 
-/// Where the player was opened from; Back returns there.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum Origin {
-    #[default]
-    Settings,
-    Hub,
-}
-
-impl Origin {
-    fn from_hub(from_hub: bool) -> Self {
-        if from_hub {
-            Self::Hub
-        } else {
-            Self::Settings
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 enum Page {
     #[default]
@@ -111,7 +93,6 @@ impl Settings {
 #[derive(Debug, Default)]
 pub struct Model {
     page: Page,
-    origin: Origin,
     /// The focused control on the player.
     control: Control,
     /// The focused row on the playlist page.
@@ -925,7 +906,9 @@ fn write_persist(shared: &mut Shared) {
             .get(model.row)
             .map(|i| i.zap_script.clone())
             .unwrap_or_default(),
-        entered_from_hub: model.origin == Origin::Hub,
+        // The player only opens from the Hub now; the flag keeps its
+        // meaning for a state file an older build wrote.
+        entered_from_hub: true,
         library_path_stack: model.stack.clone(),
         library_selected_at_level: {
             let mut selected = model.selected.clone();
@@ -1012,15 +995,14 @@ pub(crate) fn flush_selection(ctx: &Ctx) {
     flush_persist(ctx);
 }
 
-/// Open the player from Settings or a pinned Hub tile.
-pub(crate) fn enter(ctx: &Ctx, app: &App, origin: Origin) {
+/// Open the player from its Hub tile.
+pub(crate) fn enter(ctx: &Ctx, app: &App) {
     {
         let mut shared = lock(&ctx.shared);
         let bg = ctx.store.background_media().current();
         let model = &mut shared.music;
         model.task.cancel();
         model.page = Page::Player;
-        model.origin = origin;
         model.bg = bg;
         model.control = Control::default();
         model.row = current_track(model);
@@ -1043,7 +1025,6 @@ pub(crate) fn restore(ctx: &Ctx, app: &App) {
     {
         let mut shared = lock(&ctx.shared);
         let model = &mut shared.music;
-        model.origin = Origin::from_hub(saved.entered_from_hub);
         model.control = Control::parse(&saved.control);
         model.row = saved.playlist_index;
         model.stack.clone_from(&saved.library_path_stack);
@@ -1122,52 +1103,20 @@ pub(crate) fn abandon(ctx: &Ctx) {
     shared.music.ticket = shared.music.ticket.wrapping_add(1);
 }
 
-/// Where a restore that timed out lands: the screen Back would return to.
-pub(crate) fn restore_fallback_is_settings(shared: &Shared) -> bool {
-    shared.persist.active_screen == crate::Screen::Music.token()
-        && !shared.persist.music.entered_from_hub
-}
-
-/// A restore that timed out lands on Settings, seated on this tile. The
-/// saved state keeps naming the player, so the next start tries it again.
-pub(crate) fn land_on_settings(ctx: &Ctx, app: &App) {
-    crate::settings::show_return(
-        ctx,
-        app,
-        crate::SettingsPage::Root,
-        zaparoo_app::settings::MUSIC_PAGE,
-    );
-}
-
 fn leave(ctx: &Ctx, app: &App) {
     flush_persist(ctx);
-    let origin = {
+    {
         let mut shared = lock(&ctx.shared);
         shared.music.task.cancel();
         drop_play_read(&mut shared.music);
         shared.music.rows.clear();
         shared.music.stack.clear();
         shared.persist.music = MusicState::default();
-        shared.music.origin
-    };
-    TICK.with(slint::Timer::stop);
-    match origin {
-        Origin::Settings => {
-            lock(&ctx.shared).persist.active_screen = crate::Screen::Settings.token().to_string();
-            crate::router::save_persist(&ctx.shared);
-            crate::settings::show_return(
-                ctx,
-                app,
-                crate::SettingsPage::Root,
-                zaparoo_app::settings::MUSIC_PAGE,
-            );
-        }
-        Origin::Hub => {
-            lock(&ctx.shared).persist.active_screen = crate::Screen::Hub.token().to_string();
-            crate::router::save_persist(&ctx.shared);
-            crate::router::return_to_hub(ctx, app);
-        }
     }
+    TICK.with(slint::Timer::stop);
+    lock(&ctx.shared).persist.active_screen = crate::Screen::Hub.token().to_string();
+    crate::router::save_persist(&ctx.shared);
+    crate::router::return_to_hub(ctx, app);
 }
 
 // ---------- Settings ----------
@@ -2523,12 +2472,6 @@ mod tests {
     fn an_unnamed_item_shows_its_file_name_without_the_extension() {
         assert_eq!(track_name("", "/m/02 Two.mp3"), "02 Two");
         assert_eq!(track_name("One", "/m/1.mp3"), "One");
-    }
-
-    #[test]
-    fn origins_follow_the_saved_flag() {
-        assert_eq!(Origin::from_hub(true), Origin::Hub);
-        assert_eq!(Origin::from_hub(false), Origin::Settings);
     }
 
     #[test]

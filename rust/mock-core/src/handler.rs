@@ -10,7 +10,7 @@ use serde_json::Value;
 use tracing::{debug, info, warn};
 
 use crate::media_state::{self, Notifier};
-use crate::{decks, device, fixtures, library, music, ui_events};
+use crate::{decks, device, fixtures, library, music, profiles, readers, ui_events};
 
 #[derive(Deserialize)]
 struct RpcRequest {
@@ -67,7 +67,9 @@ pub fn dispatch(text: &str, notifier: &Notifier) -> String {
     // answer first; anything else is the rest of the mock's.
     let routed = music::route(&req.method, &req.params, notifier)
         .or_else(|| device::route(&req.method, &req.params, notifier))
-        .or_else(|| ui_events::route(&req.method, &req.params, notifier));
+        .or_else(|| ui_events::route(&req.method, &req.params, notifier))
+        .or_else(|| readers::route(&req.method, &req.params, notifier))
+        .or_else(|| profiles::route(&req.method, &req.params, notifier));
     let outcome: Option<Result<Value, String>> = routed.or_else(|| match req.method.as_str() {
         "systems" => Some(Ok(fixtures::systems_response(&req.params))),
         "launchers" => Some(Ok(fixtures::launchers_response())),
@@ -107,11 +109,6 @@ pub fn dispatch(text: &str, notifier: &Notifier) -> String {
                 ui_events::run_script(zap_script, notifier)
                     .unwrap_or_else(|| Ok(media_state::start_launch(zap_script, notifier))),
             )
-        }
-        "readers.write" => {
-            let zap_script = req.params.get("text").and_then(Value::as_str).unwrap_or("");
-            info!(%zap_script, "readers.write");
-            Some(Ok(Value::Null))
         }
         "version" => Some(Ok(fixtures::version_response())),
         "online.status" => Some(Ok(fixtures::online_status_response())),

@@ -267,6 +267,15 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
     status.set_current_step(5);
     status.set_total_steps(12);
     status.set_percent(42);
+    // "…-status-scan": a token that did not start, held in the status
+    // line, with an active profile in the header.
+    if screen.ends_with("status-scan") {
+        status.set_kind(StatusKind::ScanPlaytimeLimit);
+        status.set_arg("".into());
+        status.set_show_track(false);
+        status.set_percent(-1);
+        shell.set_profile_name("Sam".into());
+    }
     // Background music plays on the Hub and the music screens, so the
     // header's music note renders there.
     shell.set_music_playing(screen.contains("music") || screen.contains("hub"));
@@ -328,7 +337,7 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
         &i18n_titles,
         i18n,
         games_mode,
-        screen.contains("context").then_some(6),
+        (screen.contains("context") || screen.ends_with("blank-token-game")).then_some(6),
         screen.contains("markers"),
     );
     // `…-list-images`: Left and Right step the pane's images.
@@ -1025,6 +1034,39 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
         app.global::<generated::Overlays>()
             .set_card_write_open(true);
     }
+    // "…-token-write-deck": the second game of a deck's Write games to
+    // tokens; "…-token-write-deck-failed" after that write failed.
+    if screen.ends_with("token-write-deck") || screen.ends_with("token-write-deck-failed") {
+        let failed = screen.ends_with("failed");
+        let ov = app.global::<generated::Overlays>();
+        ov.set_card_write_batch(true);
+        ov.set_card_write_name("Super Metroid".into());
+        ov.set_card_write_step(2);
+        ov.set_card_write_count(5);
+        ov.set_card_write_failed(failed);
+        let art = slint::Image::load_from_path(std::path::Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/assets/systems-color/SNES.png"
+        )))
+        .expect("fixture art");
+        ov.set_card_write_art(art);
+        ov.set_card_write_has_art(true);
+        let buttons = if failed {
+            vec![
+                generated::CardWriteButton::Retry,
+                generated::CardWriteButton::Skip,
+                generated::CardWriteButton::Cancel,
+            ]
+        } else {
+            vec![
+                generated::CardWriteButton::Skip,
+                generated::CardWriteButton::Cancel,
+            ]
+        };
+        ov.set_card_write_buttons(slint::ModelRc::new(slint::VecModel::from(buttons)));
+        ov.set_card_write_focus(0);
+        ov.set_card_write_open(true);
+    }
     if screen.ends_with("token-error") {
         let ov = app.global::<generated::Overlays>();
         ov.set_dialog_kind(DialogKind::ActionError);
@@ -1266,6 +1308,9 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
             if screen.ends_with("config-alert") {
                 overlays.set_dialog_error(ErrorKind::ConfigFile);
                 overlays.set_dialog_arg("/media/fat/zaparoo/frontend.toml".into());
+            } else if screen.ends_with("mapping-alert") {
+                overlays.set_dialog_error(ErrorKind::Mapping);
+                overlays.set_dialog_arg("delete".into());
             } else {
                 overlays.set_dialog_error(ErrorKind::Launch);
                 overlays.set_dialog_arg("Sonic the Hedgehog".into());
@@ -1282,6 +1327,30 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
             ])));
             overlays.set_dialog_focus(0);
         }
+        overlays.set_dialog_open(true);
+    }
+    // The confirmations Settings asks before removing something of Core's.
+    let removal = if screen.ends_with("revoke-confirm") {
+        Some((DialogKind::RevokeDevice, "Living room phone"))
+    } else if screen.ends_with("profile-delete-confirm") {
+        Some((DialogKind::DeleteProfile, "Sam"))
+    } else if screen.ends_with("mapping-delete-confirm") {
+        Some((DialogKind::DeleteMapping, "Super Metroid"))
+    } else if screen.ends_with("mapping-delete-unlabeled") {
+        Some((DialogKind::DeleteMapping, ""))
+    } else {
+        None
+    };
+    if let Some((kind, detail)) = removal {
+        let overlays = app.global::<generated::Overlays>();
+        overlays.set_dialog_kind(kind);
+        overlays.set_dialog_detail(detail.into());
+        overlays.set_dialog_arg("".into());
+        overlays.set_dialog_buttons(slint::ModelRc::new(slint::VecModel::from(vec![
+            DialogButton::No,
+            DialogButton::Yes,
+        ])));
+        overlays.set_dialog_focus(0);
         overlays.set_dialog_open(true);
     }
     // Core's UI events: a deck's picker, with the focused game's cover
@@ -1332,6 +1401,69 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
         ])));
         overlays.set_dialog_focus(0);
         overlays.set_dialog_open(true);
+    }
+    // "…-blank-token": the panel a blank token opens over the Hub, where
+    // no game tile is in focus. "…-blank-token-game" opens it over a
+    // games screen, offering the game in focus.
+    if screen.ends_with("blank-token") || screen.ends_with("blank-token-game") {
+        let with_game = screen.ends_with("blank-token-game");
+        let overlays = app.global::<generated::Overlays>();
+        overlays.set_dialog_kind(DialogKind::BlankToken);
+        overlays.set_dialog_detail(
+            if with_game {
+                "Example Game Title 7"
+            } else {
+                ""
+            }
+            .into(),
+        );
+        overlays.set_dialog_arg("".into());
+        let mut buttons = Vec::new();
+        if with_game {
+            buttons.push(DialogButton::WriteGame);
+        }
+        buttons.extend([DialogButton::ChooseGame, DialogButton::Cancel]);
+        overlays.set_dialog_buttons(slint::ModelRc::new(slint::VecModel::from(buttons)));
+        overlays.set_dialog_focus(0);
+        overlays.set_dialog_open(true);
+    }
+    // "…-pin": the PIN panel over the Profiles page, two digits typed and
+    // a wrong PIN reported; "…-pin-admins" its admin picker page;
+    // "…-pin-first" the first profile's admin PIN, nothing typed.
+    if screen.contains("-pin") {
+        let pin = app.global::<generated::PinView>();
+        if screen.ends_with("pin-admins") {
+            pin.set_page(generated::PinPage::Admins);
+            pin.set_admins(slint::ModelRc::new(slint::VecModel::from(vec![
+                slint::SharedString::from("Callan"),
+                slint::SharedString::from("Alex"),
+            ])));
+            pin.set_admin_index(1);
+        } else if screen.ends_with("pin-first") {
+            pin.set_page(generated::PinPage::Entry);
+            pin.set_focus(4);
+            pin.set_setting(true);
+            pin.set_first_admin(true);
+        } else {
+            pin.set_page(generated::PinPage::Entry);
+            pin.set_digits(2);
+            pin.set_focus(4);
+            pin.set_error(generated::PinError::Incorrect);
+            pin.set_can_scan(true);
+            pin.set_unlocking(true);
+        }
+        pin.set_name("Callan".into());
+        pin.set_open(true);
+    }
+    // "…-pair-role": Pair a device's Role page over System, Member chosen.
+    if screen.ends_with("pair-role") {
+        let overlays = app.global::<generated::Overlays>();
+        overlays.set_pair_phase(PairPhase::Role);
+        overlays.set_pair_admin(false);
+        overlays.set_pair_open(true);
+    }
+    if screen.contains("game-picker") {
+        fixture_game_picker(&app, scene_w, scene_h, crt, screen);
     }
     if screen.starts_with("calibration") {
         let overlays = app.global::<generated::Overlays>();
@@ -2369,13 +2501,150 @@ fn fixture_credits(app: &App, scene_w: f64, scene_h: f64, crt: bool, reading: bo
     view.set_blocks(slint::ModelRc::new(slint::VecModel::from(blocks)));
 }
 
+/// "Choose a game" for a blank token. "game-picker": the sources with
+/// Favorites in focus, its games beside them where two panes fit;
+/// "…-search" Search in focus with a query typed; "…-games" the one-pane
+/// layout on the chosen source's games.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one explicit inventory of the fixture keeps its state reviewable"
+)]
+fn fixture_game_picker(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &str) {
+    use generated::{
+        GamePickerView, PickerGamesView, PickerPane, PickerPurpose, PickerSourcesView,
+    };
+    use zaparoo_app::game_picker as rules;
+    let inputs = sizing::Scene::of(app, scene_w, scene_h, crt).inputs();
+    let derived = zaparoo_app::sizing::derive(&inputs);
+    let rotated = inputs.swap_percentage_axes;
+    let two = rules::two_panes(rules::Scene {
+        tier_240: derived.tier == zaparoo_app::sizing::Tier::T240,
+        crt,
+        rotated,
+        text_only: false,
+    });
+    let g = zaparoo_app::media_list::scene_list_geometry(
+        &inputs,
+        rotated,
+        0,
+        zaparoo_app::media_list::list_visible_rows(crt, rotated),
+    );
+    let view = app.global::<GamePickerView>();
+    let search = screen.contains("search");
+    let games_pane = screen.contains("-games");
+    view.set_purpose(PickerPurpose::WriteToken);
+    view.set_two_panes(two);
+    view.set_card_x(g.card_x as f32);
+    view.set_card_y(g.card_y as f32);
+    view.set_card_width(g.card_width as f32);
+    view.set_card_height(g.card_height as f32);
+    view.set_row_height(g.row_height as f32);
+    let gap = (g.detail_x - g.list_width).max(1);
+    let (left, games_x, right) = rules::split(g.card_width, gap);
+    view.set_sources_width(left as f32);
+    view.set_games_x(games_x as f32);
+    view.set_games_width(right as f32);
+    let labels = app.global::<generated::Labels>();
+    let decks = [
+        ("1".to_string(), "Party night".to_string()),
+        ("2".to_string(), "Couch co-op".to_string()),
+    ];
+    let sources = rules::sources(decks);
+    let source_index = if search { sources.len() - 1 } else { 1 };
+    let cells: Vec<GridCell> = sources
+        .iter()
+        .map(|source| {
+            let (key, name) = match source {
+                rules::Source::Recents => ("recents", ""),
+                rules::Source::Favorites => ("favorites", ""),
+                rules::Source::Liked => ("liked", ""),
+                rules::Source::PlayLater => ("play_later", ""),
+                rules::Source::DecksHeading => ("decks", ""),
+                rules::Source::Deck { name, .. } => ("", name.as_str()),
+                rules::Source::Search => ("search", ""),
+            };
+            GridCell {
+                name: labels.invoke_picker_source(key.into(), name.into()),
+                disabled: !source.selectable(),
+                heading: !source.selectable(),
+                opens: source.selectable(),
+                ..Default::default()
+            }
+        })
+        .collect();
+    view.set_source_name(cells[source_index].name.clone());
+    let sources_view = app.global::<PickerSourcesView>();
+    sources_view.set_list_rows(slint::ModelRc::new(slint::VecModel::from(cells)));
+    sources_view.set_list_view_top(0);
+    sources_view.set_list_scroll_top(0);
+    sources_view.set_list_sel(i32::try_from(source_index).unwrap_or(0));
+    let games: Vec<GridCell> = [
+        ("Super Metroid", "(USA)"),
+        ("Chrono Trigger", ""),
+        ("Sonic the Hedgehog", "(World)"),
+        ("Street Fighter II Turbo", ""),
+        ("The Legend of Zelda: A Link to the Past", ""),
+        ("Castlevania: Symphony of the Night", ""),
+        ("F-Zero", ""),
+        ("Kirby's Adventure", ""),
+    ]
+    .into_iter()
+    .map(|(name, tags)| GridCell {
+        name: name.into(),
+        tags: tags.into(),
+        favorite: true,
+        ..Default::default()
+    })
+    .collect();
+    let games_view = app.global::<PickerGamesView>();
+    view.set_count(i32::try_from(games.len()).unwrap_or(0));
+    view.set_current_index(if games_pane { 2 } else { 0 });
+    games_view.set_list_rows(slint::ModelRc::new(slint::VecModel::from(games)));
+    games_view.set_list_view_top(0);
+    games_view.set_list_scroll_top(0);
+    games_view.set_list_sel(if games_pane { 2 } else { -1 });
+    view.set_games_state(generated::ContentState::Ready);
+    let pane = if search {
+        PickerPane::Keyboard
+    } else if games_pane {
+        PickerPane::Games
+    } else {
+        PickerPane::Sources
+    };
+    view.set_pane(pane);
+    view.set_keyboard_shown(search);
+    let mut keys = keyboard::Keyboard::new(
+        zaparoo_app::keyboard::Layers::Basic,
+        zaparoo_app::search::QUERY_MAX_CHARS,
+    );
+    if search {
+        keys.set_text("metro");
+        keys.focus(zaparoo_app::keyboard::Key::Char('i'));
+    }
+    let (before, at, after) = keys.display();
+    view.set_before(before);
+    view.set_at(at);
+    view.set_after(after);
+    view.set_keys(slint::ModelRc::new(slint::VecModel::from(keys.cells())));
+    view.set_key_rows(i32::try_from(keys.row_count()).unwrap_or(4));
+    view.set_key_index(i32::try_from(keys.index()).unwrap_or(0));
+    view.set_key_kind(KeyKind::Char);
+    view.set_can_search(search);
+}
+
 fn fixture_screen(screen: &str) -> Screen {
-    if screen.contains("credits") {
+    if screen.ends_with("blank-token-game") {
+        Screen::Games
+    } else if screen.contains("game-picker") {
+        Screen::GamePicker
+    } else if screen.contains("credits") {
         Screen::Credits
     } else if screen.starts_with("route-")
         || screen.ends_with("hub-deck")
         || screen.ends_with("core-picker")
         || screen.ends_with("core-confirm")
+        || screen.ends_with("blank-token")
+        || screen.ends_with("status-scan")
     {
         Screen::Hub
     } else if screen.ends_with("decks") || screen.ends_with("decks-list") {
@@ -3244,6 +3513,128 @@ fn fixture_controllers(app: &App, inputs: &zaparoo_app::sizing::Inputs, none_con
     view.set_slots(slint::ModelRc::new(slint::VecModel::from(slots)));
 }
 
+/// One of Core's list rows, filled the way `core_settings::fill_item`
+/// fills it. False when the row is not one of Core's.
+#[allow(clippy::too_many_arguments, reason = "one list per kind of row")]
+fn fixture_core_item(
+    out: &mut generated::SettingsRow,
+    id: &str,
+    index: usize,
+    readers: &[(&str, bool, &str)],
+    drivers: &[(&str, &str, bool)],
+    mappings: &[(&str, &str, &str)],
+    profiles: &[(&str, &str)],
+    regions: &[&str],
+    langs: &[&str],
+) -> bool {
+    match id {
+        "connectedReader" => {
+            let (driver, connected, text) = readers[index];
+            out.driver = driver.into();
+            out.title = driver.into();
+            out.value = if connected {
+                "connected"
+            } else {
+                "notConnected"
+            }
+            .into();
+            out.text = text.into();
+        }
+        "addReaderType" | "readerType" => {
+            let (driver, mode, _) = drivers[index];
+            out.driver = driver.into();
+            out.title = driver.into();
+            if id == "readerType" {
+                out.value = mode.into();
+            }
+        }
+        "addReaderPort" => {
+            let (path, description) = [
+                ("/dev/ttyUSB0", "CP2102 USB to UART Bridge"),
+                ("/dev/ttyACM0", ""),
+            ][index];
+            out.title = path.into();
+            out.text = description.into();
+        }
+        "mapping" => {
+            let (label, game, state) = mappings[index];
+            out.title = label.into();
+            out.text = game.into();
+            out.value = state.into();
+        }
+        "pairedClient" => {
+            let (name, role) = [
+                ("Zaparoo App", "admin"),
+                ("Living room TV", ""),
+                ("Phone", ""),
+            ][index];
+            out.title = name.into();
+            out.value = role.into();
+        }
+        "profile" => {
+            let (name, value) = profiles[index];
+            out.title = name.into();
+            out.value = value.into();
+        }
+        "gameRegion" | "gameLang" => {
+            let value = if id == "gameRegion" {
+                regions[index]
+            } else {
+                langs[index]
+            };
+            out.value = value.into();
+            out.checked = matches!(value, "us" | "world" | "en");
+            // English is the only language on, so it stays on.
+            out.enabled = value != "en";
+        }
+        _ => return false,
+    }
+    true
+}
+
+/// One of Core's field rows, filled the way `core_settings` fills it.
+fn fixture_core_field(out: &mut generated::SettingsRow, id: &str, no_reader: bool) {
+    let seconds = |s: f32| -> &'static str {
+        Box::leak(zaparoo_app::readers::seconds_token(s).into_boxed_str())
+    };
+    let (value, name, driver): (&str, &str, &str) = match id {
+        "readersScanMode" => ("hold", "", ""),
+        "readersScanExitDelay" => (seconds(2.0), "", ""),
+        "launchGuardTimeout" => (seconds(15.0), "", ""),
+        "launchGuardDelay" => (seconds(0.0), "", ""),
+        "inspectorReaders" if no_reader => ("0", "", ""),
+        "inspectorReaders" => ("1", "PN532", "pn532"),
+        "inspectorState" if no_reader => ("noReader", "", ""),
+        "inspectorState" => ("waiting", "", ""),
+        "tokenTime" => ("", "2026-11-15 09:41:07", ""),
+        "tokenId" => ("", "04:A2:3B:1C:5F:80:00", ""),
+        "tokenType" => ("", "NTAG215", ""),
+        "tokenValue" => ("", "SNES/Super Metroid.sfc", ""),
+        "tokenReader" => ("", "PN532", "pn532"),
+        "tokenResolves" => ("", "Super Metroid (SNES)", ""),
+        "tokenMapping" => ("", "Blue card", ""),
+        "pairDevice" => ("", "MiSTer-Den", ""),
+        "addReaderDriver" => (
+            "opticaldrive",
+            "Optical drive CD/DVD reader",
+            "opticaldrive",
+        ),
+        "addReaderPath" => ("", "/dev/sr0", ""),
+        "addReaderIdSource" => ("label", "", ""),
+        "profileName" => ("", "Sam", ""),
+        "profilePin" => ("set", "", ""),
+        "profileRole" => ("member", "", ""),
+        "profileLimits" | "profileDailyLimit" => ("default", "", ""),
+        "profileSessionLimit" => ("30", "", ""),
+        "playtimeDaily" => ("120", "", ""),
+        "playtimeSession" => ("60", "", ""),
+        _ => return,
+    };
+    out.value = value.into();
+    out.value_name = name.into();
+    out.driver = driver.into();
+}
+
 /// The settings screen at its own geometry: the root tiles, or one page
 /// of rows straight from the registry.
 #[allow(
@@ -3317,6 +3708,71 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
     // change the logo, with the cursor on the locked Logo row.
     let logo_image = screen.contains("appearance-logo");
     let logo_locked = screen.contains("appearance-locked");
+    // The pages that are Core's own. "…-readers": Hold mode, two readers
+    // connected and a third configured one that failed. "…-reader-types",
+    // "…-add-reader" (and its "-port" and "-options" steps, the latter
+    // for the disc drive), "…-launch-guard", "…-mappings", "…-profiles" (one
+    // active), "…-system", "…-game-versions". "…-inspector" waits for a
+    // token, "…-inspector-none" has no reader, "…-inspector-scanned" has
+    // read a mapped token on a reader that can write.
+    let readers_page = screen.contains("settings-page-readers");
+    let types_page = screen.contains("settings-page-reader-types");
+    let add_port = screen.contains("settings-page-add-reader-port");
+    let add_options = screen.contains("settings-page-add-reader-options");
+    let add_page = screen.contains("settings-page-add-reader") && !add_port && !add_options;
+    let guard_page = screen.contains("settings-page-launch-guard");
+    let mappings_page = screen.contains("settings-page-mappings");
+    let profiles_page = screen.contains("settings-page-profiles");
+    let profile_edit = screen.contains("settings-page-profile-edit");
+    // "…-profile-edit-admin": the only admin profile, which Core keeps an
+    // admin and won't delete.
+    let last_admin = screen.contains("profile-edit-admin");
+    let limits_page = screen.contains("settings-page-playtime-limits");
+    let system_page = screen.contains("settings-page-system");
+    let versions_page = screen.contains("settings-page-game-versions");
+    // "…-clients": three devices paired with Core.
+    let clients_page = screen.contains("settings-page-clients");
+    let inspector_page = screen.contains("settings-page-inspector");
+    let inspector_none = screen.contains("inspector-none");
+    let inspector_scanned = screen.contains("inspector-scanned");
+    let core_page = readers_page
+        || types_page
+        || add_page
+        || add_port
+        || add_options
+        || guard_page
+        || mappings_page
+        || profiles_page
+        || profile_edit
+        || limits_page
+        || system_page
+        || versions_page
+        || clients_page
+        || inspector_page;
+    // (driver, connected, port or info, or error)
+    let readers = [
+        ("pn532", true, "/dev/ttyUSB0"),
+        ("ccid", true, "ACS ACR122U"),
+        ("mqtt", false, "connection refused"),
+    ];
+    // (driver, mode, display)
+    let drivers = [
+        ("pn532", "auto", false),
+        ("ccid", "auto", false),
+        ("legacypn532uart", "manual", false),
+        ("simpleserial", "off", false),
+        ("opticaldrive", "off", false),
+        ("tty2oled", "off", true),
+    ];
+    // (label, game, state)
+    let mappings = [
+        ("Blue card", "Super Metroid (SNES)", ""),
+        ("Kid's tag", "", "off"),
+        ("mappings.toml", "Sonic the Hedgehog (Genesis)", "file"),
+    ];
+    let profiles = [("Callan", "admin"), ("Sam", "active"), ("Guest", "")];
+    let regions = rules::GAME_REGIONS;
+    let langs = rules::GAME_LANGS;
     let inputs = sizing::Scene::of(app, scene_w, scene_h, crt).inputs();
     let derived = zaparoo_app::sizing::derive(&inputs);
     let view = app.global::<generated::SettingsView>();
@@ -3336,6 +3792,34 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
         SettingsPage::Browsing
     } else if saver_page {
         SettingsPage::Screensaver
+    } else if readers_page {
+        SettingsPage::Readers
+    } else if types_page {
+        SettingsPage::ReaderTypes
+    } else if add_page {
+        SettingsPage::AddReader
+    } else if add_port {
+        SettingsPage::AddReaderPort
+    } else if add_options {
+        SettingsPage::AddReaderOptions
+    } else if guard_page {
+        SettingsPage::LaunchGuard
+    } else if mappings_page {
+        SettingsPage::Mappings
+    } else if profiles_page {
+        SettingsPage::Profiles
+    } else if profile_edit {
+        SettingsPage::ProfileEdit
+    } else if limits_page {
+        SettingsPage::PlaytimeLimits
+    } else if system_page {
+        SettingsPage::About
+    } else if versions_page {
+        SettingsPage::GameVersions
+    } else if clients_page {
+        SettingsPage::PairedDevices
+    } else if inspector_page {
+        SettingsPage::TokenInspector
     } else if page {
         SettingsPage::Library
     } else {
@@ -3345,7 +3829,7 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
         is_mister: crt,
         crt_enabled: crt,
         debug_build: false,
-        log_upload: false,
+        log_upload: system_page,
         can_pick_folder: false,
         can_scan_launchers: false,
         can_request_playtime_access: playtime,
@@ -3368,6 +3852,52 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
         bluetooth_paired: if paired_page { paired.len() } else { 0 },
         header_logo_custom: logo_image,
         screensaver_bounces: true,
+        core_settings: core_page,
+        profiles: if profiles_page { profiles.len() } else { 0 },
+        active_profile: profiles_page,
+        profile_has_pin: profile_edit,
+        playtime_enabled: limits_page,
+        game_regions: if versions_page { regions.len() } else { 0 },
+        game_langs: if versions_page { langs.len() } else { 0 },
+        paired_devices: if clients_page { 3 } else { 0 },
+        readers: zaparoo_app::readers::Inputs {
+            loaded: core_page,
+            entries: if readers_page { readers.len() } else { 0 },
+            hold_mode: readers_page,
+            drivers: if types_page || add_page {
+                drivers.len()
+            } else {
+                0
+            },
+            display_drivers: if types_page || add_page {
+                drivers.iter().filter(|d| d.2).count()
+            } else {
+                0
+            },
+            ports: if add_port { 2 } else { 0 },
+            draft_path: add_options,
+            id_sources: add_options,
+            guard_on: guard_page,
+            guard_scan_again: guard_page,
+            mappings_loaded: mappings_page,
+            mappings: if mappings_page { mappings.len() } else { 0 },
+            inspector: if inspector_scanned {
+                zaparoo_app::readers::Inspector::Scanned
+            } else if inspector_none {
+                zaparoo_app::readers::Inspector::NoReader
+            } else {
+                zaparoo_app::readers::Inspector::Waiting
+            },
+            token: zaparoo_app::readers::Token {
+                launchable: true,
+                writable: true,
+                has_id: true,
+                database_mapping: false,
+                mapped: false,
+            },
+            ..zaparoo_app::readers::Inputs::default()
+        },
+        ..rules::Inputs::default()
     };
     // The card and its row heights, from the rule the driver uses.
     let geometry = rules::page_geometry(&inputs);
@@ -3391,7 +3921,11 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
                 Row::Item { id, index, control } => {
                     out.control = control.into();
                     out.item = i32::try_from(index).unwrap_or(0);
-                    if id == "foundDevice" {
+                    if fixture_core_item(
+                        &mut out, id, index, &readers, &drivers, &mappings, &profiles, regions,
+                        langs,
+                    ) {
+                    } else if id == "foundDevice" {
                         let (name, tail, value, error) = found[index];
                         out.value_name = name.into();
                         out.name_tail = tail.into();
@@ -3411,9 +3945,29 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
                         || (ra_setup && rules::needs_ra_install(id));
                     out.enabled = !waits;
                     out.premium = logo_locked && zaparoo_app::branding::needs_entitlement(id);
+                    fixture_core_field(&mut out, id, inspector_none);
+                    if last_admin {
+                        match id {
+                            "profileName" => out.value_name = "Alex".into(),
+                            "profileRole" => out.value = "admin".into(),
+                            _ => {}
+                        }
+                        if matches!(id, "profileRole" | "deleteProfile" | "profileClearPin") {
+                            out.enabled = false;
+                        }
+                    }
                     match control {
                         Control::Toggle => {
                             out.checked = id == "showHidden"
+                                || matches!(
+                                    id,
+                                    "readersAutoDetect"
+                                        | "audioScanFeedback"
+                                        | "launchGuardEnabled"
+                                        | "launchGuardScanAgain"
+                                        | "playtimeEnabled"
+                                        | "encryption"
+                                )
                                 || (id == "playtimeSync" && !unlinked)
                                 || (!ra_setup
                                     && matches!(
@@ -3424,6 +3978,8 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
                                             | "raLeaderboardPopups"
                                     ));
                         }
+                        Control::Picker | Control::Info | Control::Notice
+                            if !out.value.is_empty() || !out.value_name.is_empty() => {}
                         Control::Picker | Control::Info | Control::Notice => {
                             out.value = match id {
                                 "systemsLayout" => "grid",
@@ -3562,6 +4118,35 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
         } else {
             2
         }
+    } else if core_page {
+        let focus = if readers_page {
+            "connectedReader"
+        } else if types_page {
+            "readerType"
+        } else if guard_page && crt {
+            // MiSTer's hint for the scan-again switch says what is left without it.
+            "launchGuardScanAgain"
+        } else if guard_page {
+            "launchGuardTimeout"
+        } else if profiles_page {
+            "profile"
+        } else if last_admin {
+            "profileRole"
+        } else if profile_edit {
+            "profileLimits"
+        } else if versions_page {
+            "gameRegion"
+        } else if inspector_scanned {
+            "tokenResolves"
+        } else if add_options {
+            "addReaderIdSource"
+        } else {
+            ""
+        };
+        rows.iter()
+            .position(|row| row.id == focus)
+            .and_then(|i| i32::try_from(i).ok())
+            .unwrap_or(0)
     } else if paired_page || page {
         2
     } else {
@@ -3578,6 +4163,9 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
     view.set_field_count(fields(rows.len()));
     if controllers_page {
         fixture_controllers(app, &inputs, none_connected);
+    }
+    if profiles_page {
+        app.global::<Shell>().set_profile_name("Sam".into());
     }
     if (controls || controllers_page || paired_page) && !none_connected {
         // One of the two is running flat: the header says so. The same
@@ -4218,6 +4806,24 @@ mod fixture_tests {
             ("crt-hub-deck", Screen::Hub),
             ("core-picker", Screen::Hub),
             ("crt-core-confirm", Screen::Hub),
+            ("blank-token", Screen::Hub),
+            ("crt-blank-token", Screen::Hub),
+            ("blank-token-game", Screen::Games),
+            ("crt-blank-token-game", Screen::Games),
+            ("status-scan", Screen::Hub),
+            ("crt-status-scan", Screen::Hub),
+            ("revoke-confirm", Screen::Hub),
+            ("crt-mapping-alert", Screen::Hub),
+            ("crt-mapping-delete-unlabeled", Screen::Hub),
+            ("token-write-deck", Screen::Hub),
+            ("crt-token-write-deck-failed", Screen::Hub),
+            ("game-picker", Screen::GamePicker),
+            ("game-picker-search", Screen::GamePicker),
+            ("crt-game-picker-games", Screen::GamePicker),
+            ("settings-page-profiles-pin", Screen::Settings),
+            ("settings-page-profiles-pin-first", Screen::Settings),
+            ("crt-settings-page-profiles-pin-first", Screen::Settings),
+            ("settings-page-inspector-scanned", Screen::Settings),
         ] {
             assert_eq!(fixture_screen(name), screen, "{name}");
         }

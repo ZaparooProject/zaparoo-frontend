@@ -48,6 +48,12 @@ export struct SettingsRow {
     // Needs Zaparoo Pro or Warp: the row carries the Pro badge, and
     // Accept explains instead of changing it.
     premium: bool,
+    // An item of one of Core's lists: its own name (a profile, a mapping,
+    // a port), the reader driver it is about, and a second line Core
+    // supplies (a reader's info or last error, a mapping's script).
+    title: string,
+    driver: string,
+    text: string,
 }
 
 // The Settings string table: labels, the hint line under the list, and
@@ -145,9 +151,36 @@ export global SettingsLabels {
         return @tr("Pairing failed. Put the controller in pairing mode and retry.");
     }
     // The hint band's text for a row: its description, or for a device
-    // row, what its state says.
-    public pure function row-description(row: SettingsRow) -> string {
+    // row, what its state says. MiSTer shows nothing over a running game,
+    // so there a second scan is the only way to switch.
+    public pure function row-description(row: SettingsRow, mister: bool) -> string {
+        if (row.id == "launchGuardScanAgain" && mister) {
+            return @tr("On MiSTer, this is the only way to switch while a game is running.");
+        }
+        if (row.id == "mapping" && row.value == "file") {
+            return @tr("This mapping comes from a file and can only be changed there.");
+        }
+        if (row.id == "pairedClient") {
+            if (row.value == "lastAdmin") { return @tr("The last admin device can't be unpaired."); }
+            if (row.value == "admin") { return @tr("Can change settings and manage profiles."); }
+            return @tr("Can play games and switch profiles, but not change settings.");
+        }
+        if (row.id == "inspectorState") {
+            if (row.value == "noReader") { return @tr("Plug in a reader, or set one up with Add a reader."); }
+            return @tr("Nothing runs while this page is open.");
+        }
+        if (row.id == "gameRegion" && !row.enabled) { return @tr("Keep at least one region on."); }
+        if (row.id == "gameLang" && !row.enabled) { return @tr("Keep at least one language on."); }
+        if (row.id == "deleteProfile" && !row.enabled) { return @tr("The last admin profile can't be deleted."); }
+        if (row.id == "profileRole" && !row.enabled) {
+            if (row.value == "admin") { return @tr("The last admin profile must stay an admin."); }
+            return @tr("Set a PIN first to make this profile an admin.");
+        }
+        if (row.id == "profileClearPin" && !row.enabled) { return @tr("Admin profiles need a PIN."); }
         if (row.id == "foundDevice" || row.id == "pairedDevice") { return self.device-description(row.id, row.device, row.pair-error); }
+        if (row.id == "pairDevice" && row.value-name != "") {
+            return @tr("Shows a PIN to pair an app. This device appears as {}.", row.value-name);
+        }
         return self.description(row.id);
     }
 
@@ -196,10 +229,25 @@ export global SettingsLabels {
         if (id == "pageAppearance") { return @tr("Appearance"); }
         if (id == "pageDisplayInterface") { return @tr("Display"); }
         if (id == "pageControlsInput") { return @tr("Controls"); }
-        if (id == "pageLanguage") { return @tr("Language"); }
+        if (id == "pageLanguage") { return @tr("Language and region"); }
         if (id == "pageOnline") { return @tr("Online"); }
         if (id == "pageRetroAchievements") { return @tr("RetroAchievements"); }
-        if (id == "pageSupportAbout") { return @tr("About"); }
+        if (id == "pageSupportAbout") { return @tr("System"); }
+        if (id == "pageReaders") { return @tr("Readers"); }
+        if (id == "pageProfiles") { return @tr("Profiles"); }
+        if (id == "pageReaderDetail") { return @tr("Reader"); }
+        if (id == "pageAddReader") { return @tr("Add a reader"); }
+        if (id == "pageAddReaderPort") { return @tr("Choose a port"); }
+        if (id == "pageAddReaderOptions") { return @tr("Reader options"); }
+        if (id == "pageReaderTypes") { return @tr("Reader types"); }
+        if (id == "pageLaunchGuard") { return @tr("Launch guard"); }
+        if (id == "pageMappings") { return @tr("Mappings"); }
+        if (id == "pageTokenInspector") { return @tr("Read a token"); }
+        if (id == "pageProfileEdit") { return @tr("Edit profile"); }
+        if (id == "pagePlaytimeLimits") { return @tr("Playtime limits"); }
+        if (id == "pageGameVersions") { return @tr("Preferred game versions"); }
+        if (id == "pagePairedDevices") { return @tr("Paired devices"); }
+        if (id == "pageIgnoredSystems") { return @tr("Systems that keep running"); }
         if (id == "pageControllers") { return @tr("Controllers"); }
         if (id == "pagePairedControllers") { return @tr("Paired controllers"); }
         if (id == "pageScreensaver") { return @tr("Screensaver"); }
@@ -303,6 +351,83 @@ export global SettingsLabels {
         if (id == "documentation") { return @tr("Documentation"); }
         if (id == "debugLogging") { return @tr("Debug logging"); }
         if (id == "uploadLog") { return @tr("Upload log file"); }
+        if (id == "encryption") { return @tr("Require encryption"); }
+        if (id == "errorReporting") { return @tr("Error reporting"); }
+        if (id == "noPairedDevices") { return @tr("No paired devices"); }
+        // Readers.
+        if (id == "connectedReaders") { return @tr("Connected readers"); }
+        if (id == "scanning") { return @tr("Scanning"); }
+        if (id == "duringPlay") { return @tr("During play"); }
+        if (id == "readToken") { return @tr("Read a token"); }
+        if (id == "noReaders") { return @tr("No readers connected"); }
+        if (id == "addReader") { return @tr("Add a reader"); }
+        if (id == "readerTypes") { return @tr("Reader types"); }
+        if (id == "displays") { return @tr("Displays"); }
+        if (id == "readersAutoDetect") { return @tr("Auto-detect readers"); }
+        if (id == "readerType") { return @tr("Reader type"); }
+        if (id == "readersScanMode") { return @tr("Scan mode"); }
+        if (id == "readersScanExitDelay") { return @tr("Wait before exiting"); }
+        if (id == "readersScanIgnoreSystems") { return @tr("Systems that keep running"); }
+        if (id == "readersScanIgnoreOnConnect") { return @tr("Ignore tokens already on a reader"); }
+        if (id == "audioScanFeedback") { return @tr("Scan sound"); }
+        if (id == "launchGuard") { return @tr("Launch guard"); }
+        if (id == "launchGuardEnabled") { return @tr("Ask before switching games"); }
+        if (id == "launchGuardTimeout") { return @tr("Time to answer"); }
+        if (id == "launchGuardDelay") { return @tr("Wait before the second tap"); }
+        if (id == "launchGuardScanAgain") { return @tr("Tap again to switch"); }
+        if (id == "mappings") { return @tr("Mappings"); }
+        if (id == "noMappings") { return @tr("No mappings"); }
+        if (id == "noPorts") { return @tr("No ports found"); }
+        if (id == "addReaderDriver") { return @tr("Type"); }
+        if (id == "addReaderPath") { return @tr("Connection"); }
+        if (id == "addReaderIdSource") { return @tr("Identify discs by"); }
+        if (id == "saveReader") { return @tr("Add reader"); }
+        if (id == "readerDriver") { return @tr("Type"); }
+        if (id == "readerPort") { return @tr("Port"); }
+        if (id == "readerWrite") { return @tr("Can write tokens"); }
+        if (id == "readerScanMode") { return @tr("Scan mode"); }
+        if (id == "readerError") { return @tr("Problem"); }
+        if (id == "removeReader") { return @tr("Remove reader"); }
+        if (id == "stopDetecting") { return @tr("Stop detecting this type"); }
+        // Read a token.
+        if (id == "inspectorReaders") { return @tr("Readers"); }
+        if (id == "inspectorState") { return @tr("Status"); }
+        if (id == "token") { return @tr("Token"); }
+        if (id == "resolvesTo") { return @tr("When scanned"); }
+        if (id == "tokenTime") { return @tr("Time"); }
+        if (id == "tokenId") { return @tr("ID"); }
+        if (id == "tokenType") { return @tr("Type"); }
+        if (id == "tokenValue") { return @tr("Text"); }
+        if (id == "tokenReader") { return @tr("Reader"); }
+        if (id == "tokenResolves") { return @tr("Launches"); }
+        if (id == "tokenMapping") { return @tr("Mapping"); }
+        if (id == "launchToken") { return @tr("Launch"); }
+        if (id == "writeToken") { return @tr("Write a game"); }
+        if (id == "mapToken") { return @tr("Map to a game"); }
+        if (id == "removeMapping") { return @tr("Remove mapping"); }
+        // Profiles.
+        if (id == "noProfiles") { return @tr("No profiles"); }
+        if (id == "leaveProfile") { return @tr("Use the shared profile"); }
+        if (id == "manage") { return @tr("Manage"); }
+        if (id == "newProfile") { return @tr("New profile"); }
+        if (id == "profileName") { return @tr("Name"); }
+        if (id == "profilePin") { return @tr("PIN"); }
+        if (id == "profileClearPin") { return @tr("Remove PIN"); }
+        if (id == "profileRole") { return @tr("Role"); }
+        if (id == "limits") { return @tr("Limits"); }
+        if (id == "profileLimits") { return @tr("Limits for this profile"); }
+        if (id == "profileDailyLimit") { return @tr("Daily limit"); }
+        if (id == "profileSessionLimit") { return @tr("Session limit"); }
+        if (id == "writeSwitchCard") { return @tr("Write switch card"); }
+        if (id == "deleteProfile") { return @tr("Delete profile"); }
+        if (id == "playtimeEnabled") { return @tr("Playtime limits"); }
+        if (id == "playtimeDaily") { return @tr("Daily limit"); }
+        if (id == "playtimeSession") { return @tr("Session limit"); }
+        if (id == "profilesRequireForLaunch") { return @tr("Require a profile before launching"); }
+        // Preferred game versions.
+        if (id == "preferences") { return @tr("Preferences"); }
+        if (id == "regions") { return @tr("Regions"); }
+        if (id == "languages") { return @tr("Languages"); }
         return id;
     }
 
@@ -389,12 +514,78 @@ export global SettingsLabels {
         if (id == "onlineBackupSchedule") { return @tr("Sets how often automatic cloud backup runs."); }
         if (id == "onlineManageBackups") { return @tr("Backs up now, or lists cloud backups to restore."); }
         if (id == "onlineRemoteActivity") { return @tr("Shows what remote commands have done on this device."); }
-        if (id == "pairDevice") { return @tr("Shows a PIN for pairing a new device with Core."); }
+        if (id == "pairDevice") { return @tr("Shows a PIN to pair an app."); }
         if (id == "aboutLicense") { return @tr("Shows the version, build date, license terms, and contributors."); }
         if (id == "credits") { return @tr("Shows licenses for the fonts, artwork, and software used."); }
         if (id == "documentation") { return @tr("Shows a code for opening the Frontend guide on your phone."); }
-        if (id == "debugLogging") { return @tr("Adds troubleshooting detail to logs. Restarts the frontend."); }
+        if (id == "debugLogging") { return @tr("Adds troubleshooting detail to the logs. Restarts the menu."); }
         if (id == "uploadLog") { return @tr("Uploads the log and provides a link for problem reports."); }
+        if (id == "pageLanguage") { return @tr("Sets the interface language and regional names."); }
+        if (id == "pagePairedDevices") { return @tr("Apps that can control Zaparoo. Use Options to unpair one."); }
+        if (id == "encryption") { return @tr("Apps and devices must pair and use a secure connection."); }
+        if (id == "errorReporting") { return @tr("Sends crash reports to the Zaparoo team to help fix problems."); }
+        if (id == "pageGameVersions") { return @tr("Which version of a game starts when there are several."); }
+        if (id == "gameRegion") { return @tr("A game's version from a region that's on starts first."); }
+        if (id == "gameLang") { return @tr("A game's version in a language that's on starts first."); }
+        // Readers.
+        if (id == "readToken") { return @tr("Scan a token to see what it does, without starting it."); }
+        if (id == "noReaders") { return @tr("Plug in a reader. If it does not show up, use Add a reader."); }
+        if (id == "connectedReader") { return @tr("Shows this reader's details."); }
+        if (id == "addReader") { return @tr("Sets up a reader that is not found when plugged in."); }
+        if (id == "addReaderType") { return @tr("Adds a reader of this type."); }
+        if (id == "addReaderPort") { return @tr("Choose the one your reader is plugged into."); }
+        if (id == "addReaderPath") { return @tr("Where the reader is connected."); }
+        if (id == "addReaderIdSource") { return @tr("Used to recognize each disc you put in."); }
+        if (id == "saveReader") { return @tr("Saves the reader and connects it."); }
+        if (id == "noPorts") { return @tr("Plug the reader in, then open this page again."); }
+        if (id == "readerTypes") { return @tr("Chooses which kinds of readers are found when plugged in."); }
+        if (id == "readersAutoDetect") { return @tr("Finds supported readers when they are plugged in."); }
+        if (id == "readerType") { return @tr("Auto-detect finds it when plugged in. If not, use Add a reader."); }
+        if (id == "readersScanMode") { return @tr("Tap starts the game. Hold also exits when the token is removed."); }
+        if (id == "readersScanExitDelay") { return @tr("How long after the token is removed the game exits."); }
+        if (id == "readersScanIgnoreSystems") { return @tr("Removing the token does not exit games on these systems."); }
+        if (id == "readersScanIgnoreOnConnect") { return @tr("A token already on a reader when it is plugged in is ignored."); }
+        if (id == "audioScanFeedback") { return @tr("Plays a sound when a token is read."); }
+        if (id == "launchGuard") { return @tr("Ask before a scan switches the game you're playing."); }
+        if (id == "launchGuardEnabled") { return @tr("Scanning a token during a game asks before starting the new one."); }
+        if (id == "launchGuardTimeout") { return @tr("With no answer in time, the game you're playing keeps going."); }
+        if (id == "launchGuardDelay") { return @tr("Stops a quick double tap from switching games by accident."); }
+        if (id == "launchGuardScanAgain") { return @tr("Tap the same token a second time to switch games."); }
+        if (id == "mappings") { return @tr("Start a game from a token without writing to it."); }
+        if (id == "mapping") { return @tr("Use Options to turn it off, change its game or delete it."); }
+        if (id == "noMappings") { return @tr("Scan a token in Read a token, then choose Map to a game."); }
+        if (id == "removeReader") { return @tr("Disconnects this reader and stops using it."); }
+        if (id == "stopDetecting") { return @tr("Readers of this type are no longer found when plugged in."); }
+        if (id == "readerError") { return @tr("Why the reader could not connect."); }
+        // Read a token.
+        if (id == "inspectorReaders") { return @tr("Readers connected right now."); }
+        if (id == "tokenTime") { return @tr("When the token was read."); }
+        if (id == "tokenId") { return @tr("The token's serial number. Mappings can match it."); }
+        if (id == "tokenType") { return @tr("The kind of token."); }
+        if (id == "tokenValue") { return @tr("What's written on the token."); }
+        if (id == "tokenReader") { return @tr("The reader that read it."); }
+        if (id == "tokenResolves") { return @tr("What scanning this token does."); }
+        if (id == "tokenMapping") { return @tr("A mapping that changes what this token does."); }
+        if (id == "launchToken") { return @tr("Does what scanning this token does."); }
+        if (id == "writeToken") { return @tr("Puts a game on this token."); }
+        if (id == "mapToken") { return @tr("Scanning this token starts a game, without writing to it."); }
+        if (id == "removeMapping") { return @tr("This token stops starting the game it is mapped to."); }
+        // Profiles.
+        if (id == "profile") { return @tr("Switches to this profile. Use Options to edit it."); }
+        if (id == "leaveProfile") { return @tr("Go back to the settings, play history and saves everyone shares."); }
+        if (id == "newProfile") { return @tr("Adds a profile for someone who plays here."); }
+        if (id == "profileName") { return @tr("Shown at the top of the screen while this profile is in use."); }
+        if (id == "profilePin") { return @tr("Needed to switch to this profile."); }
+        if (id == "profileClearPin") { return @tr("Anyone can switch to this profile without a PIN."); }
+        if (id == "profileRole") { return @tr("Admins can unlock settings that need a PIN."); }
+        if (id == "profileLimits") { return @tr("Choose whether playtime limits apply to this profile."); }
+        if (id == "profileDailyLimit") { return @tr("Total play time allowed each day."); }
+        if (id == "profileSessionLimit") { return @tr("Play time allowed in one sitting."); }
+        if (id == "writeSwitchCard") { return @tr("Writes a token that switches to this profile."); }
+        if (id == "deleteProfile") { return @tr("Deletes the profile and its playtime."); }
+        if (id == "pagePlaytimeLimits") { return @tr("How long games can be played each day and in one sitting."); }
+        if (id == "playtimeEnabled") { return @tr("Stops play when a limit is reached."); }
+        if (id == "profilesRequireForLaunch") { return @tr("Games only start after someone picks a profile."); }
         return "";
     }
 
@@ -409,6 +600,11 @@ export global SettingsLabels {
         if (key == "unlink") { return @tr("Unlink"); }
         if (key == "logIn") { return @tr("Log in"); }
         if (key == "logOut") { return @tr("Log out"); }
+        if (key == "leave") { return @tr("Leave"); }
+        if (key == "create") { return @tr("Create"); }
+        if (key == "remove") { return @tr("Remove"); }
+        if (key == "write") { return @tr("Write"); }
+        if (key == "delete") { return @tr("Delete"); }
         return @tr("Open");
     }
 
@@ -539,7 +735,203 @@ export global SettingsLabels {
             if (value == "error") { return @tr("Server unreachable"); }
             return @tr("Unknown");
         }
+        if (id == "readerType") {
+            if (value == "manual") { return @tr("Manual only"); }
+            if (value == "auto") { return @tr("Auto-detect"); }
+            return @tr("Off");
+        }
+        if (id == "readersScanMode" || id == "readerScanMode") {
+            if (value == "hold") { return @tr("Hold"); }
+            return @tr("Tap");
+        }
+        if (id == "readersScanExitDelay" || id == "launchGuardDelay") {
+            if (value == "0") { return @tr("None"); }
+            return SettingsLabels.seconds(value);
+        }
+        if (id == "launchGuardTimeout") {
+            if (value == "-1") { return @tr("Forever"); }
+            return SettingsLabels.seconds(value);
+        }
+        if (id == "addReaderIdSource") {
+            if (value == "uuid") { return @tr("UUID"); }
+            if (value == "label") { return @tr("Label"); }
+            return @tr("UUID and label");
+        }
+        if (id == "readerWrite") {
+            if (value == "yes") { return @tr("Yes"); }
+            return @tr("No");
+        }
+        if (id == "inspectorState") {
+            if (value == "noReader") { return @tr("No reader connected"); }
+            return @tr("Tap a token on the reader");
+        }
+        if (id == "tokenValue") {
+            if (value == "redacted") { return @tr("Hidden"); }
+            return @tr("Empty");
+        }
+        if (id == "tokenResolves") { return @tr("Nothing"); }
+        if (id == "profileRole" || id == "pairedClient") {
+            if (value == "admin" || value == "lastAdmin") { return @tr("Admin"); }
+            return @tr("Member");
+        }
+        if (id == "profileLimits") {
+            if (value == "on") { return @tr("On"); }
+            if (value == "off") { return @tr("Off"); }
+            return @tr("Same as everyone");
+        }
+        if ((id == "profileDailyLimit" || id == "profileSessionLimit") && (value == "default" || value == "")) {
+            return @tr("Same as everyone");
+        }
+        if (id == "profileDailyLimit" || id == "profileSessionLimit" || id == "playtimeDaily" || id == "playtimeSession") {
+            return SettingsLabels.minutes(value);
+        }
+        if (id == "profilePin") {
+            if (value == "set") { return @tr("Set"); }
+            return @tr("None");
+        }
+        if (id == "gameRegion") { return SettingsLabels.game-region(value); }
+        if (id == "gameLang") { return SettingsLabels.game-language(value); }
         return value;
+    }
+
+    pure function seconds(value: string) -> string {
+        if (value == "1") { return @tr("1 second"); }
+        return @tr("{} seconds", value);
+    }
+
+    pure function minutes(value: string) -> string {
+        if (value == "default" || value == "") { return @tr("Default"); }
+        if (value == "0") { return @tr("No limit"); }
+        if (value == "30") { return @tr("30 minutes"); }
+        if (value == "60") { return @tr("1 hour"); }
+        if (value == "90") { return @tr("1 hour 30 minutes"); }
+        if (value == "120") { return @tr("2 hours"); }
+        if (value == "180") { return @tr("3 hours"); }
+        if (value == "240") { return @tr("4 hours"); }
+        return @tr("{} minutes", value);
+    }
+
+    pure function game-region(value: string) -> string {
+        if (value == "world") { return @tr("World"); }
+        if (value == "us") { return @tr("USA"); }
+        if (value == "eu") { return @tr("Europe"); }
+        if (value == "jp") { return @tr("Japan"); }
+        if (value == "asia") { return @tr("Asia"); }
+        if (value == "au") { return @tr("Australia"); }
+        if (value == "br") { return @tr("Brazil"); }
+        if (value == "ca") { return @tr("Canada"); }
+        if (value == "cn") { return @tr("China"); }
+        if (value == "fr") { return @tr("France"); }
+        if (value == "de") { return @tr("Germany"); }
+        if (value == "hk") { return @tr("Hong Kong"); }
+        if (value == "it") { return @tr("Italy"); }
+        if (value == "kr") { return @tr("Korea"); }
+        if (value == "es") { return @tr("Spain"); }
+        if (value == "scandinavia") { return @tr("Scandinavia"); }
+        if (value == "tw") { return @tr("Taiwan"); }
+        return value;
+    }
+
+    pure function game-language(value: string) -> string {
+        if (value == "en") { return @tr("English"); }
+        if (value == "fr") { return @tr("French"); }
+        if (value == "de") { return @tr("German"); }
+        if (value == "es") { return @tr("Spanish"); }
+        if (value == "it") { return @tr("Italian"); }
+        if (value == "ja") { return @tr("Japanese"); }
+        if (value == "ko") { return @tr("Korean"); }
+        if (value == "zh") { return @tr("Chinese"); }
+        if (value == "pt") { return @tr("Portuguese"); }
+        if (value == "nl") { return @tr("Dutch"); }
+        if (value == "sv") { return @tr("Swedish"); }
+        if (value == "no") { return @tr("Norwegian"); }
+        if (value == "da") { return @tr("Danish"); }
+        if (value == "fi") { return @tr("Finnish"); }
+        if (value == "pl") { return @tr("Polish"); }
+        if (value == "ru") { return @tr("Russian"); }
+        if (value == "ar") { return @tr("Arabic"); }
+        return value;
+    }
+
+    // A reader driver in plain words, keyed by Core's driver ID. A driver
+    // this list does not know keeps Core's own description.
+    public pure function driver-name(driver: string, fallback: string) -> string {
+        if (driver == "pn532") { return @tr("PN532"); }
+        if (driver == "ccid") { return @tr("USB smart card reader"); }
+        if (driver == "libnfc") { return @tr("libnfc"); }
+        if (driver == "libnfcacr122") { return @tr("ACR122U (libnfc)"); }
+        if (driver == "legacypn532uart") { return @tr("PN532 USB (legacy)"); }
+        if (driver == "legacypn532i2c") { return @tr("PN532 I2C (legacy)"); }
+        if (driver == "simpleserial") { return @tr("Simple Serial"); }
+        if (driver == "simpleserial_ble") { return @tr("Simple Serial (Bluetooth)"); }
+        if (driver == "rs232barcode") { return @tr("Serial barcode scanner"); }
+        if (driver == "opticaldrive") { return @tr("Optical drive"); }
+        if (driver == "externaldrive") { return @tr("External drive"); }
+        if (driver == "file") { return @tr("File reader"); }
+        if (driver == "mqtt") { return @tr("MQTT reader"); }
+        if (driver == "tty2oled") { return @tr("TTY2OLED display"); }
+        if (fallback != "") { return fallback; }
+        return driver;
+    }
+
+    // Rows that each stand for one thing Core has: named by that thing.
+    public pure function is-item(id: string) -> bool {
+        return id == "connectedReader" || id == "addReaderType" || id == "addReaderPort"
+            || id == "readerType" || id == "mapping" || id == "ignoredSystem"
+            || id == "pairedClient" || id == "profile" || id == "gameRegion" || id == "gameLang";
+    }
+
+    public pure function item-label(row: SettingsRow) -> string {
+        if (row.driver != "") { return self.driver-name(row.driver, row.title); }
+        if (row.title != "") { return row.title; }
+        if (row.id == "gameRegion" || row.id == "gameLang") { return self.value(row.id, row.value); }
+        return self.label(row.id);
+    }
+
+    public pure function item-value(row: SettingsRow) -> string {
+        if (row.id == "connectedReader") {
+            // Why it is not connected shows on its details page.
+            if (row.value == "connected") { return row.text; }
+            return @tr("Not connected");
+        }
+        if (row.id == "addReaderPort") { return row.text; }
+        if (row.id == "readerType") { return self.value("readerType", row.value); }
+        if (row.id == "mapping") {
+            if (row.value == "file") { return @tr("From file"); }
+            if (row.value == "off") { return @tr("Off"); }
+            return row.text;
+        }
+        if (row.id == "pairedClient") { return self.value("pairedClient", row.value); }
+        if (row.id == "profile") {
+            if (row.value == "active") { return @tr("Active"); }
+            if (row.value == "admin") { return @tr("Admin"); }
+        }
+        return "";
+    }
+
+    // A field row that shows what Core reports, as written: a name, a
+    // path, a token's fields. A driver is named in plain words instead.
+    public pure function field-value(row: SettingsRow) -> string {
+        if (row.id == "inspectorReaders") {
+            if (row.value == "1" && row.driver != "") { return @tr("1 reader ({})", self.driver-name(row.driver, row.value-name)); }
+            if (row.value == "1") { return @tr("1 reader"); }
+            if (row.value == "0") { return @tr("None"); }
+            return @tr("{} readers", row.value);
+        }
+        if (row.value != "" && (row.id == "tokenValue" || row.id == "tokenResolves")) {
+            return self.value(row.id, row.value);
+        }
+        if (row.driver != "") { return self.driver-name(row.driver, row.value-name); }
+        if (row.value-name != "") { return row.value-name; }
+        return self.value(row.id, row.value);
+    }
+
+    public pure function shows-name(id: string) -> bool {
+        return id == "profileName" || id == "addReaderPath" || id == "addReaderDriver"
+            || id == "readerDriver" || id == "readerPort" || id == "readerError"
+            || id == "inspectorReaders" || id == "tokenTime" || id == "tokenId"
+            || id == "tokenType" || id == "tokenValue" || id == "tokenReader"
+            || id == "tokenResolves" || id == "tokenMapping";
     }
 
     pure function language(value: string) -> string {
@@ -734,7 +1126,9 @@ export component SettingsRowView inherits Rectangle {
     // A controller or Bluetooth device row is named after the thing itself.
     property <string> label-text: (root.entry.id == "foundDevice" || root.entry.id == "pairedDevice")
         ? SettingsLabels.device-name(root.entry.value-name, root.entry.name-tail, root.entry.item + 1)
-        : SettingsLabels.label(root.entry.id);
+        : SettingsLabels.is-item(root.entry.id)
+            ? SettingsLabels.item-label(root.entry)
+            : SettingsLabels.label(root.entry.id);
 
     label-measure := Text {
         visible: false;
@@ -809,6 +1203,10 @@ export component SettingsRowView inherits Rectangle {
 
     property <string> value-text: root.entry.device != DeviceValue.none
         ? SettingsLabels.device-value(root.entry.device)
+        : SettingsLabels.is-item(root.entry.id)
+        ? SettingsLabels.item-value(root.entry)
+        : SettingsLabels.shows-name(root.entry.id)
+        ? SettingsLabels.field-value(root.entry)
         : (root.entry.id == "systems" || root.entry.id == "source")
         ? SettingsLabels.scope(root.entry.scope-kind, root.entry.value-name)
         : (root.entry.id == "onlineStatus" && root.entry.value == "linked" && root.entry.value-name != "")
@@ -828,11 +1226,12 @@ export component SettingsRowView inherits Rectangle {
     property <bool> is-info: root.entry.control == ControlKind.info || root.entry.control == ControlKind.notice
         || root.entry.control == ControlKind.device;
 
-    // The background image, logo image and Controllers rows are navigations
+    // The background image, logo image and Controllers rows, and the items of Core's lists, are navigations
     // that still name what they hold.
     property <bool> shows-value: root.entry.control == ControlKind.picker || root.is-info
         || root.is-slider || root.entry.id == "backgroundImage" || root.entry.id == "headerLogoImage"
-        || root.entry.id == "controllers";
+        || root.entry.id == "controllers" || root.entry.id == "profileName"
+        || root.entry.id == "profilePin" || SettingsLabels.is-item(root.entry.id);
     property <bool> is-slider: root.entry.control == ControlKind.slider;
     // The slider's cells: the Volume page's cell size, from the same
     // share of the row, so the two sliders match.

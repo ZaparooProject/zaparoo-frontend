@@ -10,7 +10,7 @@
 
 import { Wordmark } from "wordmark.slint";
 import { Theme, Sizing, Motion, Layout, Backdrop } from "theme.slint";
-import { GlyphSource, WaitCue } from "chrome.slint";
+import { GlyphSource, WaitCue, SectionHeader } from "chrome.slint";
 import { GridCell, MarqueeCaption } from "tiles.slint";
 import { InfoLineData, InfoFacts, InfoLabels } from "info_line.slint";
 import { Labels } from "labels.slint";
@@ -84,6 +84,9 @@ export component BrowseList inherits Rectangle {
     in property <string> scope: "";
     in property <int> selected: -1;
     in property <bool> focus-ready: true;
+    // While the cursor is elsewhere, the selected row keeps an outline:
+    // the list whose contents another pane is showing.
+    in property <bool> mark-selected: false;
     in property <int> activate-pulse: 0;
     in property <int> release-pulse: 0;
     in property <bool> settling: false;
@@ -210,10 +213,21 @@ export component BrowseList inherits Rectangle {
         property <length> chevron-slot: row.opens ? Layout.favorite-right-padding + self.chevron : 0px;
         property <length> caption-w: Math.max(0px, self.width - Layout.row-text-left-padding - Layout.row-text-right-padding - favorite-slot - chevron-slot);
 
+        if row.heading: SectionHeader {
+            height: parent.height;
+            label: row.name;
+            label-inset: Layout.row-text-left-padding;
+        }
+        if i == root.selected && !root.focus-ready && root.mark-selected: Rectangle {
+            border-width: Sizing.stroke(2);
+            border-color: Theme.selection-fill;
+            border-radius: Layout.row-radius;
+        }
         MarqueeCaption {
             x: Layout.row-text-left-padding;
             y: 0;
             width: caption-w;
+            visible: !row.heading;
             content: row.name;
             tags: row.tags;
             focused: highlighted;
@@ -223,7 +237,7 @@ export component BrowseList inherits Rectangle {
             caption-color: row.hidden ? Theme.text-variant : Theme.text-primary;
             tags-color: Theme.text-variant;
         }
-        if lit: SelectionClip {
+        if lit && !row.heading: SelectionClip {
             radius: Layout.row-radius;
             row-top: parent.y; row-height: parent.height;
             fill-top: sel.fill-top; fill-bottom: sel.fill-bottom;

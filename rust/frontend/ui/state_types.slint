@@ -1,5 +1,5 @@
 // Closed UI discriminants shared with the generated Rust API.
-export enum Screen { hub, systems, favorite-systems, games, favorites, recents, search, search-results, settings, about, credits, update, rename, ra-login, file-browser, decks, deck, top-played, top-played-systems, music, none }
+export enum Screen { hub, systems, favorite-systems, games, favorites, recents, search, search-results, settings, about, credits, update, rename, ra-login, file-browser, decks, deck, top-played, top-played-systems, music, game-picker, none }
 export enum GamesMode { browse, favorites, recents, search, deck, decks, top-played }
 export enum SystemsMode { category, favorites, top-played }
 // What a games-screen footer notes after the focused name.
@@ -22,9 +22,14 @@ export enum ContextPage { root, write-token, manage-game, manage-system, manage-
 // and what its side pane lists.
 export enum KeyKind { char, space, backspace, shift, symbols, submit }
 // What the rename screen names: a Hub tile, a new deck, or a deck.
-export enum RenamePurpose { tile, new-deck, rename-deck }
+export enum RenamePurpose { tile, new-deck, rename-deck, profile-name, new-profile, reader-address, reader-path }
 export enum SearchZone { system, filter, keys, pane }
 export enum SearchPane { none, recents, preview }
+// "Choose a game": the pane the cursor is in (the sources, a source's
+// games, or Search's keyboard), and who asked for the game, which names
+// the screen.
+export enum PickerPane { sources, games, keyboard }
+export enum PickerPurpose { write-token, map-token, change-mapping }
 export enum FileBrowserMode { plain, images }
 // The Credits screen: its list of components, or one component's text.
 export enum CreditsPage { list, reading }
@@ -43,8 +48,12 @@ export enum SearchScope { none, folder, system, category, list }
 // `controllers` is the page the Controls page's Controllers row opens, and
 // `paired-controllers` the page its Paired controllers row opens in turn;
 // `screensaver` is the page Appearance's Screensaver row opens. None of
-// those three is a root tile.
-export enum SettingsPage { root, appearance, library, online, display, controls, language, about, controllers, paired-controllers, browsing, retro-achievements, screensaver }
+// those three is a root tile. The pages from `reader-detail` on open from
+// the Readers page and its rows.
+export enum SettingsPage { root, appearance, library, online, display, controls, language, about, controllers, paired-controllers, browsing, retro-achievements, screensaver, readers, reader-detail, add-reader, add-reader-port, add-reader-options, reader-types, launch-guard, mappings, token-inspector, profiles, profile-edit, playtime-limits, game-versions, paired-devices, ignored-systems }
+// What the token inspector shows (`zaparoo_app::readers::Inspector`): no
+// reader to read with, a reader waiting for a token, or a token read.
+export enum InspectorState { no-reader, waiting, scanned }
 export enum ContentState { ready, loading, empty, error }
 // What Core's current UI event puts on screen (`ui` / `ui.changed`). A
 // confirmation uses the decision dialog, a loader and a notice the header
@@ -129,7 +138,7 @@ export enum ScopeKind { all, category, system, systems, game, source, source-loa
 export enum LogPhase { uploading, done, failed }
 // The "pair a device" panel. `closed` is the resting value; the panel's
 // own open flag is what mounts it.
-export enum PairPhase { closed, starting, showing, paired, expired }
+export enum PairPhase { closed, role, starting, showing, paired, expired }
 // The "link Online account" panel, on the same terms as pairing.
 export enum OnlineLinkPhase { closed, starting, showing, linked, failed, expired }
 export enum PressOwner { none, hub, systems, games, file-browser, settings, setup, context, list, online-list, letter, card-write, dialog, log, wake, update, launcher-prefs, core-picker, music }
@@ -137,13 +146,19 @@ export enum StatusKind {
     none, disconnected, reconnecting, connecting, core-error, indexing-paused,
     indexing, optimizing, importing-paused, importing, indexed-files,
     indexing-complete, import-failed, imported, playtime-warning, inbox,
-    core-loader, core-notice,
+    core-loader, core-notice, token-read, scan-media-not-found,
+    scan-invalid-script, scan-blocked, scan-profile-required, scan-playtime-limit, scan-busy,
+    scan-blank, scan-failed, profile-data-failed,
 }
 export enum Orientation { horizontal, cw, ccw }
 export enum VideoStandard { ntsc, pal }
-export enum DialogKind { none, quit-confirm, quit-blocked, restart-setting, notice, core-version, first-run, hub-full, action-error, unlink-online, restore-online-backup, update-stop, ra-log-out, delete-deck, forget-controller, core-confirm, logo-support }
-export enum DialogButton { ok, yes, no, retry, cancel, i-understand, start-media-update, link-account }
-export enum ErrorKind { generic, launch, launch-repair, favorite, collection, deck-list, deck-update, deck-create, media-visibility, media-busy, add-to-hub, save-to-hub, media-index, media-scrape, media-scrapers, media-cancel, launcher, launcher-save, alternate-discovery, disc-list, version-list, qr-code, card-write, setting, pairing, online, backup, config-file, image-picker, music, bluetooth }
+export enum DialogKind { none, quit-confirm, quit-blocked, restart-setting, notice, core-version, first-run, hub-full, action-error, unlink-online, restore-online-backup, update-stop, ra-log-out, delete-deck, forget-controller, core-confirm, logo-support, revoke-device, delete-profile, delete-mapping, blank-token }
+export enum DialogButton { ok, yes, no, retry, cancel, i-understand, start-media-update, link-account, write-game, choose-game }
+export enum PinPage { entry, admins }
+// The token write panel's buttons (`zaparoo_app::token_batch::Button`).
+export enum CardWriteButton { retry, skip, cancel }
+export enum PinError { none, incorrect, not-admin, failed }
+export enum ErrorKind { generic, launch, launch-repair, favorite, collection, deck-list, deck-update, deck-create, media-visibility, media-busy, add-to-hub, save-to-hub, media-index, media-scrape, media-scrapers, media-cancel, launcher, launcher-save, alternate-discovery, disc-list, version-list, qr-code, card-write, setting, pairing, online, backup, config-file, image-picker, music, bluetooth, mapping }
 
 // Text adapters are for vocabulary/resource keys and focus identity only,
 // never routing. Runtime decisions use the enums themselves.
@@ -161,6 +176,21 @@ export global StateTokens {
         if (page == SettingsPage.browsing) { return "pageBrowsing"; }
         if (page == SettingsPage.retro-achievements) { return "pageRetroAchievements"; }
         if (page == SettingsPage.screensaver) { return "pageScreensaver"; }
+        if (page == SettingsPage.readers) { return "pageReaders"; }
+        if (page == SettingsPage.reader-detail) { return "pageReaderDetail"; }
+        if (page == SettingsPage.add-reader) { return "pageAddReader"; }
+        if (page == SettingsPage.add-reader-port) { return "pageAddReaderPort"; }
+        if (page == SettingsPage.add-reader-options) { return "pageAddReaderOptions"; }
+        if (page == SettingsPage.reader-types) { return "pageReaderTypes"; }
+        if (page == SettingsPage.launch-guard) { return "pageLaunchGuard"; }
+        if (page == SettingsPage.mappings) { return "pageMappings"; }
+        if (page == SettingsPage.token-inspector) { return "pageTokenInspector"; }
+        if (page == SettingsPage.profiles) { return "pageProfiles"; }
+        if (page == SettingsPage.profile-edit) { return "pageProfileEdit"; }
+        if (page == SettingsPage.playtime-limits) { return "pagePlaytimeLimits"; }
+        if (page == SettingsPage.game-versions) { return "pageGameVersions"; }
+        if (page == SettingsPage.paired-devices) { return "pagePairedDevices"; }
+        if (page == SettingsPage.ignored-systems) { return "pageIgnoredSystems"; }
         return "";
     }
     public pure function games(mode: GamesMode) -> string {

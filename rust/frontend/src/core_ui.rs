@@ -263,7 +263,22 @@ fn show(ctx: &Ctx, app: &App, event: &UiEvent) {
                 buttons,
                 0,
             );
-            app.global::<CoreUiView>().set_kind(CoreUiKind::Confirm);
+            // The launch guard names its game: its cover sits over the
+            // message, through the picker's cover path as a single choice.
+            let media = event.media.clone();
+            let view = app.global::<CoreUiView>();
+            view.set_has_art(media.is_some());
+            view.set_index(0);
+            lock(&ctx.shared).core_ui.choices = media
+                .map(|media| {
+                    vec![UiChoice {
+                        media: Some(media),
+                        ..Default::default()
+                    }]
+                })
+                .unwrap_or_default();
+            view.set_kind(CoreUiKind::Confirm);
+            show_cover(ctx, app);
             wake(ctx, app);
         }
         UiEventKind::Unknown => return,
@@ -500,10 +515,11 @@ fn respond(ctx: &Ctx, app: &App, action: UiAction, choice_id: String) {
     });
 }
 
-/// Show the focused choice's cover, or ask for it.
+/// Show the focused choice's cover (a confirm's game is its one
+/// choice), or ask for it.
 fn show_cover(ctx: &Ctx, app: &App) {
     let view = app.global::<CoreUiView>();
-    if view.get_kind() != CoreUiKind::Picker || !view.get_has_art() {
+    if !matches!(view.get_kind(), CoreUiKind::Picker | CoreUiKind::Confirm) || !view.get_has_art() {
         return;
     }
     let index = usize::try_from(view.get_index()).unwrap_or(0);

@@ -8,8 +8,8 @@
 // logic; forward orchestration lives in the router.
 
 import { Theme, Backdrop, GlassCard, Sizing, Motion, Layout } from "theme.slint";
-import { ScreensaverStyle, SaverBouncing, SaverLook, CoreUiKind, MenuRole, UserFlag, RenamePurpose, ContextPage, KeyKind, SearchZone, SearchPane, SearchScope, FileBrowserMode, CreditsPage, MusicPage, MusicControl, PlaybackState, RepeatMode, MusicUnavailable, Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, DeviceValue, PairFailure, PairSearch, PadFill, HeaderPad, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, StateTokens, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, HeaderLogo, DialogKind, DialogButton, ErrorKind, ManualState, ManualFit, RaLoginStep, RaLoginStatus, LauncherPrefsPage, LauncherPrefsRowKind } from "state_types.slint";
-export { ScreensaverStyle, SaverBouncing, SaverLook, CoreUiKind, MenuRole, UserFlag, RenamePurpose, ContextPage, KeyKind, SearchZone, SearchPane, SearchScope, FileBrowserMode, CreditsPage, MusicPage, MusicControl, PlaybackState, RepeatMode, MusicUnavailable, Screen, GamesMode, SystemsMode, SettingsPage, ContentState, RowKind, ControlKind, DeviceValue, PairFailure, PairSearch, PadFill, HeaderPad, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, HeaderLogo, DialogKind, DialogButton, ErrorKind, ManualState, ManualFit, RaLoginStep, RaLoginStatus, LauncherPrefsPage, LauncherPrefsRowKind }
+import { ScreensaverStyle, SaverBouncing, SaverLook, CoreUiKind, MenuRole, UserFlag, RenamePurpose, ContextPage, KeyKind, SearchZone, SearchPane, SearchScope, FileBrowserMode, CreditsPage, MusicPage, MusicControl, PlaybackState, RepeatMode, MusicUnavailable, Screen, GamesMode, SystemsMode, SettingsPage, InspectorState, ContentState, RowKind, ControlKind, DeviceValue, PairFailure, PairSearch, PadFill, HeaderPad, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, StateTokens, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, HeaderLogo, DialogKind, DialogButton, ErrorKind, ManualState, ManualFit, RaLoginStep, RaLoginStatus, LauncherPrefsPage, LauncherPrefsRowKind, PinPage, PinError, CardWriteButton, PickerPane, PickerPurpose } from "state_types.slint";
+export { ScreensaverStyle, SaverBouncing, SaverLook, CoreUiKind, MenuRole, UserFlag, RenamePurpose, ContextPage, KeyKind, SearchZone, SearchPane, SearchScope, FileBrowserMode, CreditsPage, MusicPage, MusicControl, PlaybackState, RepeatMode, MusicUnavailable, Screen, GamesMode, SystemsMode, SettingsPage, InspectorState, ContentState, RowKind, ControlKind, DeviceValue, PairFailure, PairSearch, PadFill, HeaderPad, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, HeaderLogo, DialogKind, DialogButton, ErrorKind, ManualState, ManualFit, RaLoginStep, RaLoginStatus, LauncherPrefsPage, LauncherPrefsRowKind, PinPage, PinError, CardWriteButton, PickerPane, PickerPurpose }
 import { FastScrollRail, GlyphSource, Brand, Buttons, HelpEntry, Status, HeaderBar, StatusLine, ProgressTrack, WaitCue, TopStatusStrip, FooterIndicator, ActiveLabel, HelpBar, SectionHeader, Divider, CheckBox, ScrollCue, ModalShell, QrPlate, StateCue } from "chrome.slint";
 import { GridCell, MarqueeCaption, PressableSurface, Tile, PagedGridView, PageStrip } from "tiles.slint";
 import { ScrollOffset, SelectionCursor, SelectionClip, FocusCursor } from "focus.slint";
@@ -38,9 +38,13 @@ export { RaLoginView, RaLoginInput }
 import { FileBrowserView, FileBrowserInput, FileBrowserScreen } from "file_browser.slint";
 export { FileBrowserView, FileBrowserInput }
 import { CreditsView, CreditsInput, CreditsBlock, CreditsScreen } from "credits.slint";
+import { GamePickerView, GamePickerInput, PickerSourcesView, PickerGamesView, GamePickerScreen } from "game_picker.slint";
+export { GamePickerView, GamePickerInput, PickerSourcesView, PickerGamesView }
 export { CreditsView, CreditsInput, CreditsBlock }
 import { MusicView, MusicInput, MusicScreen, MusicButton, MusicLabels } from "music.slint";
 export { MusicView, MusicInput, MusicButton }
+import { PinView, PinModal } from "pin.slint";
+export { PinView }
 import { UpdateView, UpdatePage, UpdateButton, UpdateOutcome, UpdateStatusKind, UpdateError, UpdateLinuxPhase, UpdateFilter, UpdateRowKind, UpdateRowStatus, UpdateFolderKind, UpdateHelpLabel, UpdateCounts, UpdateRow, UpdateMembership, UpdateHelp } from "update_view.slint";
 // The screen itself comes from the `zaparoo-update` crate: an empty stand-in
 // in public builds, the real module in official ones.
@@ -183,6 +187,8 @@ export global Shell {
     in-out property <[HeaderPad]> controller-batteries: [];
     in-out property <bool> has-battery: false;
     in-out property <int> battery-percent: 0;
+    // Core's active profile name; empty for the shared profile.
+    in-out property <string> profile-name: "";
     // Cold-launch curtain. `boot-curtain` is true from the first frame
     // until the restored screen is complete, so a start shows the
     // curtain and then that screen, never a parent or a half-filled
@@ -727,6 +733,18 @@ export global Overlays {
         Sizing.pct-w(78) - 2 * Sizing.pct-w(4), Sizing.pct-h(52), Sizing.pct-w(1));
     in-out property <bool> card-write-open: false;
     in-out property <string> card-write-key: "";
+    // A batch write (a deck's games, one token each): the item on this
+    // page, its place in the batch, whether its write failed, and its
+    // cover. A single write leaves `card-write-batch` false.
+    in-out property <bool> card-write-batch: false;
+    in-out property <string> card-write-name: "";
+    in-out property <int> card-write-step: 0;
+    in-out property <int> card-write-count: 0;
+    in-out property <bool> card-write-failed: false;
+    in-out property <bool> card-write-has-art: false;
+    in-out property <image> card-write-art;
+    in-out property <[CardWriteButton]> card-write-buttons: [CardWriteButton.cancel];
+    in-out property <int> card-write-focus: 0;
     // Pairing a device with Core: Rust owns the phase, the PIN Core
     // minted, the seconds left on it and the name the device reported.
     // The PIN is cleared the moment it stops being worth reading out, so
@@ -736,6 +754,10 @@ export global Overlays {
     in-out property <string> pair-pin: "";
     in-out property <int> pair-expires-in: 0;
     in-out property <string> pair-client: "";
+    // The Role page's choice: the new device pairs as an admin.
+    in-out property <bool> pair-admin: false;
+    // A Role page row was clicked: 0 Member, 1 Admin.
+    callback pointer-pair-role(int);
     // The Online account link panel: Core's code, the URL to open, and
     // the same URL with the code in it as a QR code.
     in-out property <bool> online-open: false;
@@ -947,7 +969,7 @@ component SettingsScreen inherits Rectangle {
     property <string> hint: root.index < 0 || root.index >= root.rows.length ? ""
         : !root.rows[root.index].enabled && SettingsLabels.disabled-reason(root.rows[root.index].id) != ""
             ? SettingsLabels.disabled-reason(root.rows[root.index].id)
-            : SettingsLabels.row-description(root.rows[root.index]);
+            : SettingsLabels.row-description(root.rows[root.index], Shell.is-mister);
     property <length> hint-y: self.card-h - self.pad - self.hint-h;
     property <length> hint-rule-y: self.hint-y - self.pad - Sizing.stroke(1);
 
@@ -1927,15 +1949,27 @@ component LetterJumpModal inherits ModalShell {
     }
 }
 
-// Card write transient: a tap prompt and a focused Cancel surface.
-// Failures replace this modal with the router's Retry alert.
+// Card write transient: a tap prompt and its buttons. A single write has
+// Cancel alone; its failure replaces this modal with the router's Retry
+// alert. A batch (a deck's games) shows the item on this page, its cover,
+// its place in the batch and a failed write in place, with Retry, Skip and
+// Cancel.
 component CardWriteModal inherits ModalShell {
     property <length> btn-h: Sizing.pct-h(7);
+    property <length> btn-gap: Sizing.pct-w(2);
+    property <length> art-side: Overlays.card-write-batch && Overlays.card-write-has-art ? Sizing.even(Sizing.pct-h(30)) : 0;
+    property <length> gap: Sizing.pct-h(2);
+    property <length> line-h: Sizing.even(Sizing.font-body * 1.4);
+    property <int> lines: Overlays.card-write-batch ? (Overlays.card-write-failed ? 3 : 2) : 0;
+    property <length> info-h: root.lines * root.line-h + (root.art-side > 0 ? root.art-side + root.gap : 0);
 
-    title: @tr("Hold a writable token near the reader");
-    panel-width: Sizing.snap(Math.min(Math.min(root.width * 0.92, Sizing.pct-h(90)),
-        Math.max(Sizing.pct-w(30), root.title-width + 2 * root.pad)));
-    content-height: root.btn-h;
+    title: Overlays.card-write-failed
+        ? @tr("Could not write to this token")
+        : @tr("Hold a token on the reader");
+    panel-width: Sizing.even(Math.min(Math.min(root.width * 0.92, Sizing.pct-h(90)),
+        Math.max(Math.max(Sizing.pct-w(30), buttons-measure.preferred-width + 2 * root.pad),
+            root.title-width + 2 * root.pad)));
+    content-height: root.info-h + (root.info-h > 0 ? root.gap : 0) + root.btn-h;
 
     // The shell centres and elides its title; this one wants to wrap, so
     // the panel sizes around a measurement instead.
@@ -1945,24 +1979,93 @@ component CardWriteModal inherits ModalShell {
         font-size: Sizing.font-title;
     }
     property <length> title-width: Math.ceil(title-measure.preferred-width / 1px) * 1px;
+    buttons-measure := HorizontalLayout {
+        visible: false;
+        spacing: root.btn-gap;
+        for label in Overlays.card-write-buttons: Rectangle {
+            width: caption.preferred-width + Sizing.pct-w(8);
+            caption := Text { text: root.button-label(label); font-size: Sizing.font-body; }
+        }
+    }
 
-    cancel-button := PressableSurface {
+    pure function button-label(button: CardWriteButton) -> string {
+        if (button == CardWriteButton.retry) { return @tr("Retry"); }
+        if (button == CardWriteButton.skip) { return @tr("Skip"); }
+        return @tr("Cancel");
+    }
+
+    if root.art-side > 0: Rectangle {
         x: Sizing.snap((root.panel-width - self.width) / 2);
         y: root.content-y;
-        width: Math.min(Sizing.pct-w(28), root.content-width);
+        width: root.art-side;
+        height: root.art-side;
+        Image {
+            width: parent.width;
+            height: parent.height;
+            source: Overlays.card-write-art;
+            image-fit: contain;
+        }
+    }
+    if Overlays.card-write-batch: Text {
+        x: root.pad;
+        y: Sizing.snap(root.content-y + (root.art-side > 0 ? root.art-side + root.gap : 0));
+        width: root.content-width;
+        height: root.line-h;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        overflow: elide;
+        text: Overlays.card-write-name;
+        color: Theme.text-primary;
+        font-size: Sizing.font-body;
+    }
+    if Overlays.card-write-batch: Text {
+        x: root.pad;
+        y: Sizing.snap(root.content-y + (root.art-side > 0 ? root.art-side + root.gap : 0) + root.line-h);
+        width: root.content-width;
+        height: root.line-h;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        text: @tr("Token {} of {}", Overlays.card-write-step, Overlays.card-write-count);
+        color: Theme.text-label;
+        font-size: Sizing.font-body;
+    }
+    if Overlays.card-write-batch && Overlays.card-write-failed: Text {
+        x: root.pad;
+        y: Sizing.snap(root.content-y + (root.art-side > 0 ? root.art-side + root.gap : 0) + 2 * root.line-h);
+        width: root.content-width;
+        height: root.line-h;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        overflow: elide;
+        text: @tr("Check the token isn't locked.");
+        color: Theme.text-label;
+        font-size: Sizing.font-body;
+    }
+
+    property <length> btn-w: Math.min(Sizing.pct-w(28),
+        (root.content-width - (Overlays.card-write-buttons.length - 1) * root.btn-gap)
+            / Math.max(1, Overlays.card-write-buttons.length));
+    property <length> row-w: Overlays.card-write-buttons.length * root.btn-w
+        + (Overlays.card-write-buttons.length - 1) * root.btn-gap;
+    for label[i] in Overlays.card-write-buttons: button := PressableSurface {
+        x: Sizing.snap((root.panel-width - root.row-w) / 2 + i * (root.btn-w + root.btn-gap));
+        y: Sizing.snap(root.content-y + root.info-h + (root.info-h > 0 ? root.gap : 0));
+        width: root.btn-w;
         height: root.btn-h;
-        focused: true;
-        pressed: PressFeedback.active(PressOwner.card-write, 0);
+        focused: i == Overlays.card-write-focus;
+        pressed: PressFeedback.active(PressOwner.card-write, i);
         Text {
             x: Sizing.snap((parent.width - self.width) / 2);
-            y: Sizing.snap((cancel-button.face-height - self.height) / 2);
-            text: @tr("Cancel");
-            color: Theme.text-primary;
+            y: Sizing.snap((button.face-height - self.height) / 2);
+            max-width: parent.width - Sizing.pct-w(1);
+            overflow: elide;
+            text: root.button-label(label);
+            color: button.focused ? Theme.text-primary : Theme.text-label;
             font-size: Sizing.font-body;
         }
         TouchArea {
             mouse-cursor: pointer;
-            clicked => { Overlays.pointer-choice(PressOwner.card-write, 0, true); }
+            clicked => { Overlays.pointer-choice(PressOwner.card-write, i, true); }
         }
     }
 }
@@ -1998,6 +2101,47 @@ component PairDeviceModal inherits ModalShell {
         width: root.content-width;
         height: self.preferred-height;
         spacing: root.pad;
+
+        // What the new device may do, before Core is asked for a PIN.
+        if Overlays.pair-phase == PairPhase.role: Rectangle {
+            height: role-list.height;
+            role-list := ListViewport {
+                x: 0;
+                y: 0;
+                width: parent.width;
+                count: 2;
+                current: Overlays.pair-admin ? 1 : 0;
+                scope: "pair-role";
+
+                for name[i] in [@tr("Member"), @tr("Admin")]: ListRow {
+                    x: 0;
+                    y: i * role-list.stride;
+                    width: role-list.width;
+                    height: role-list.row-h;
+                    name: name;
+                    fill-top: role-list.fill-top;
+                    fill-bottom: role-list.fill-bottom;
+                    fill: role-list.fill;
+                    content: role-list.content;
+                    content-muted: role-list.content-muted;
+                    clicked => { Overlays.pointer-pair-role(i); }
+                }
+            }
+        }
+        if Overlays.pair-phase == PairPhase.role: Rectangle {
+            height: Math.ceil(role-hint.preferred-height / 1px) * 1px;
+            role-hint := Text {
+                x: 0;
+                y: 0;
+                width: parent.width;
+                horizontal-alignment: center;
+                text: Overlays.pair-admin ? @tr("Can change settings and manage profiles.")
+                    : @tr("Can play games and switch profiles, but not change settings.");
+                color: Theme.text-label;
+                font-size: Sizing.font-caption;
+                wrap: word-wrap;
+            }
+        }
 
         if Overlays.pair-phase == PairPhase.starting: WaitCue {
             height: self.glyph;
@@ -2486,7 +2630,7 @@ component DialogModal inherits ModalShell {
     // does not stack up into extra lines on a 240p screen.
     title-measure := Text {
         visible: false;
-        text: DialogLabels.title(Overlays.dialog-kind, Overlays.dialog-error, Overlays.dialog-detail);
+        text: DialogLabels.title(Overlays.dialog-kind, Overlays.dialog-error, Overlays.dialog-detail, Overlays.dialog-arg);
         font-size: Sizing.font-title;
     }
     body-measure := Text {
@@ -2511,19 +2655,56 @@ component DialogModal inherits ModalShell {
         Math.max(Math.min(body-measure.preferred-width, line-measure.preferred-width * 45 / 26),
             button-measure.preferred-width)) + 2 * root.pad;
     // CommercialNoticeModal uses a wider shell for its long legal copy.
+    // Even on the pixel grid, so the centered body starts on a whole pixel.
+    property <length> panel-w-step: Sizing.pixel-grid ? 2px : 1px;
     property <length> panel-w-raw: Math.ceil((Overlays.dialog-kind == DialogKind.notice
         ? Math.min(root.width * 0.78, Sizing.pct-h(110))
-        : Math.min(Math.min(root.width * 0.92, Sizing.pct-h(90)),
-            Math.max(Sizing.pct-w(30), root.desired-w))) / 1px) * 1px;
+        : Math.min(Math.min(root.width * 0.92,
+                // The height-derived cap gives way to a button row that
+                // would otherwise clip its captions (three at 240p).
+                Math.max(Sizing.pct-h(90), button-measure.preferred-width + 2 * root.pad)),
+            Math.max(Sizing.pct-w(30), root.desired-w))) / root.panel-w-step) * root.panel-w-step;
     property <length> btn-h: Sizing.pct-h(7);
     property <length> btn-gap: Sizing.pct-w(2);
     property <length> body-h: body-t.preferred-height;
-    property <length> body-y: root.content-y;
+    // A Core confirm about a game (the launch guard) shows its cover over
+    // the message, through the Core picker's cover path.
+    property <bool> show-art: Overlays.dialog-kind == DialogKind.core-confirm
+        && CoreUiView.kind == CoreUiKind.confirm && CoreUiView.has-art;
+    property <length> art-side: root.show-art ? Sizing.snap(Sizing.pct-h(28)) : 0px;
+    property <length> art-gap: root.show-art ? root.pad : 0px;
+    property <length> body-y: root.content-y + root.art-side + root.art-gap;
     property <length> button-y: root.body-y + root.body-h + root.pad;
 
-    title: DialogLabels.title(Overlays.dialog-kind, Overlays.dialog-error, Overlays.dialog-detail);
+    title: DialogLabels.title(Overlays.dialog-kind, Overlays.dialog-error, Overlays.dialog-detail, Overlays.dialog-arg);
     panel-width: root.panel-w-raw;
     content-height: root.button-y + root.btn-h - root.content-y;
+
+        if root.show-art: Rectangle {
+            x: Sizing.snap((root.panel-width - self.width) / 2);
+            y: root.content-y;
+            width: root.art-side;
+            height: root.art-side;
+            init => { CoreUiView.art-box(Math.round(self.width / 1px), Math.round(self.height / 1px)); }
+            changed width => { CoreUiView.art-box(Math.round(self.width / 1px), Math.round(self.height / 1px)); }
+            Image {
+                width: parent.width;
+                height: parent.height;
+                source: CoreUiView.cover;
+                image-fit: contain;
+                image-rendering: Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
+                visible: CoreUiView.has-cover;
+            }
+            if !CoreUiView.has-cover && CoreUiView.cover-absent: Image {
+                property <length> s: GlyphSource.side(parent.width * 0.4);
+                x: (parent.width - self.s) / 2;
+                y: (parent.height - self.s) / 2;
+                width: self.s;
+                height: self.s;
+                source: GlyphSource.glyph("icons/File", self.s, Theme.text-label);
+                image-rendering: Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
+            }
+        }
 
         body-t := Text {
             x: Sizing.snap((root.panel-width - self.width) / 2);
@@ -3321,6 +3502,7 @@ component RouteScreen inherits Rectangle {
     if root.screen-token == Screen.about: AboutScreen {}
 
     if root.screen-token == Screen.credits: CreditsScreen {}
+    if root.screen-token == Screen.game-picker: GamePickerScreen {}
 
     if root.screen-token == Screen.update: UpdateScreen {}
 
@@ -3409,6 +3591,10 @@ export component App inherits Window {
         if (Shell.active-screen == Screen.file-browser) {
             return FileBrowserView.places ? @tr("Places") : FileBrowserView.title;
         }
+        if (Shell.active-screen == Screen.game-picker) {
+            return !GamePickerView.two-panes && GamePickerView.pane != PickerPane.sources
+                ? GamePickerView.source-name : @tr("Choose a game");
+        }
         if (Shell.active-screen == Screen.credits) {
             return CreditsView.page == CreditsPage.reading ? CreditsView.title : @tr("Credits");
         }
@@ -3427,7 +3613,7 @@ export component App inherits Window {
     pure function has-modal() -> bool {
         return LogUploadView.open || SetupModalView.open || GameInfoView.modal-open || Overlays.card-write-open || Overlays.qr-open
             || Overlays.pair-open || Overlays.online-open || Overlays.online-list-open || Overlays.launcher-prefs-open || Overlays.dialog-open || Overlays.list-open || Overlays.letter-open
-            || Overlays.context-open || CoreUiView.kind == CoreUiKind.picker;
+            || Overlays.context-open || CoreUiView.kind == CoreUiKind.picker || PinView.open;
     }
 
     // Router state, owned by Rust.
@@ -3843,6 +4029,13 @@ export component App inherits Window {
             ];
         }
         if (Overlays.card-write-open) {
+            if (Overlays.card-write-buttons.length > 1) {
+                return [
+                    { buttons: ["Dpad"], label: @tr("Move") },
+                    { buttons: ["ButtonA"], label: @tr("Select") },
+                    { buttons: ["ButtonB"], label: @tr("Cancel") },
+                ];
+            }
             return [{ buttons: ["ButtonB"], label: @tr("Cancel") }];
         }
         if (Overlays.qr-open) {
@@ -3855,6 +4048,11 @@ export component App inherits Window {
         // an outcome both buttons just close.
         if (Overlays.launcher-prefs-open) {
             return root.launcher-prefs-help-entries();
+        }
+        if (PinView.open) {
+            return PinView.page == PinPage.admins
+                ? [{ buttons: ["ButtonA"], label: @tr("Choose") }, { buttons: ["ButtonB"], label: @tr("Cancel") }]
+                : [{ buttons: ["ButtonA"], label: @tr("Select") }, { buttons: ["ButtonB"], label: @tr("Cancel") }];
         }
         if (Overlays.online-list-open) {
             if (Overlays.online-list-kind == OnlineListKind.backups && Overlays.online-list-rows.length > 0
@@ -3887,6 +4085,13 @@ export component App inherits Window {
             return [{ buttons: ["ButtonB"], label: @tr("Cancel") }];
         }
         if (Overlays.pair-open) {
+            if (Overlays.pair-phase == PairPhase.role) {
+                return [
+                    { buttons: ["DpadUp", "DpadDown"], label: @tr("Move") },
+                    { buttons: ["ButtonA"], label: @tr("Choose") },
+                    { buttons: ["ButtonB"], label: @tr("Cancel") },
+                ];
+            }
             if (Overlays.pair-phase == PairPhase.paired || Overlays.pair-phase == PairPhase.expired) {
                 return [
                     { buttons: ["ButtonA"], label: @tr("Done") },
@@ -4218,6 +4423,30 @@ export component App inherits Window {
                         { buttons: ["ButtonB"], label: @tr("Back") },
                     ];
                 }
+                // A profile: Accept switches to it, Options edits it.
+                if (SettingsView.rows[SettingsView.index].id == "profile"
+                    && SettingsView.rows[SettingsView.index].value != "active") {
+                    return [
+                        { buttons: ["DpadUp", "DpadDown"], label: @tr("Move") },
+                        { buttons: ["ButtonA"], label: @tr("Switch") },
+                        { buttons: ["ButtonX"], label: @tr("Options") },
+                        { buttons: ["ButtonB"], label: @tr("Back") },
+                    ];
+                }
+                // A mapping saved in Core (one from a file cannot change),
+                // a paired client other than the last admin, or the
+                // active profile: Options only.
+                if ((SettingsView.rows[SettingsView.index].id == "mapping"
+                        && SettingsView.rows[SettingsView.index].value != "file")
+                    || (SettingsView.rows[SettingsView.index].id == "pairedClient"
+                        && SettingsView.rows[SettingsView.index].value != "lastAdmin")
+                    || SettingsView.rows[SettingsView.index].id == "profile") {
+                    return [
+                        { buttons: ["DpadUp", "DpadDown"], label: @tr("Move") },
+                        { buttons: ["ButtonX"], label: @tr("Options") },
+                        { buttons: ["ButtonB"], label: @tr("Back") },
+                    ];
+                }
                 return [
                     { buttons: ["DpadUp", "DpadDown"], label: @tr("Move") },
                     { buttons: ["ButtonB"], label: @tr("Back") },
@@ -4261,6 +4490,27 @@ export component App inherits Window {
             if (CreditsView.maximum-scroll-milli <= 0) { return [{ buttons: ["ButtonB"], label: @tr("Back") }]; }
             return [
                 { buttons: ["DpadUp", "DpadDown"], label: @tr("Scroll") },
+                { buttons: ["ButtonB"], label: @tr("Back") },
+            ];
+        }
+        if (Shell.active-screen == Screen.game-picker && !Shell.transitioning) {
+            if (GamePickerView.pane == PickerPane.keyboard) {
+                return [
+                    { buttons: ["Dpad"], label: @tr("Move") },
+                    { buttons: ["ButtonA"], label: GamePickerView.key-kind == KeyKind.submit ? @tr("Search") : @tr("Select") },
+                    { buttons: ["ButtonB"], label: @tr("Back") },
+                ];
+            }
+            if (GamePickerView.pane == PickerPane.games) {
+                return [
+                    { buttons: ["DpadUp", "DpadDown"], label: @tr("Move") },
+                    { buttons: ["ButtonA"], label: @tr("Choose") },
+                    { buttons: ["ButtonB"], label: @tr("Back") },
+                ];
+            }
+            return [
+                { buttons: ["DpadUp", "DpadDown"], label: @tr("Move") },
+                { buttons: ["ButtonA"], label: @tr("Open") },
                 { buttons: ["ButtonB"], label: @tr("Back") },
             ];
         }
@@ -4559,6 +4809,7 @@ export component App inherits Window {
         controller-batteries: Shell.controller-batteries;
         has-battery: Shell.has-battery;
         battery-percent: Shell.battery-percent;
+        profile-name: Shell.profile-name;
         browse-title: root.browse-header-title();
         // The curtain carries its own cue; a restore filling beneath it
         // does not add a second one here.
@@ -4593,6 +4844,7 @@ export component App inherits Window {
     if Overlays.online-open: OnlineLinkModal {}
     if Overlays.online-list-open: OnlineListModal {}
     if Overlays.launcher-prefs-open: LauncherPrefsModal {}
+    if PinView.open: PinModal {}
 
     if LogUploadView.open: LogUploadModal {
         phase: LogUploadView.phase;

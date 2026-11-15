@@ -11,8 +11,9 @@
 //
 // `run` opens them from ZapScript: `**playlist.open:deck://<id>` opens a
 // picker over the deck's items (a select launches the item), and the
-// mock-only `**mock.confirm`, `**mock.notice[:text]` and `**mock.loader`
-// open the other kinds so a renderer can be tried against each.
+// mock-only `**mock.confirm`, `**mock.launchguard` (a confirm with its
+// game's media), `**mock.notice[:text]` and `**mock.loader` open the
+// other kinds so a renderer can be tried against each.
 
 use serde_json::{json, Value};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -62,6 +63,7 @@ struct Event {
     choices: Vec<Choice>,
     selected_choice_id: Option<String>,
     dismissible: bool,
+    media: Option<Value>,
     created_at: SystemTime,
     /// When the event times out, as a deadline and as the wall time the
     /// client is told.
@@ -87,6 +89,9 @@ impl Event {
         }
         if !self.message.is_empty() {
             event["message"] = json!(self.message);
+        }
+        if let Some(media) = &self.media {
+            event["media"] = media.clone();
         }
         if let Some(selected) = &self.selected_choice_id {
             event["selectedChoiceId"] = json!(selected);
@@ -173,6 +178,8 @@ struct Request {
     selected: usize,
     dismissible: bool,
     expires: bool,
+    /// The game a confirm is about (the launch guard's).
+    media: Option<Value>,
 }
 
 /// Opens an event, superseding the one showing, and announces it. Returns
@@ -204,6 +211,7 @@ fn open(request: Request, notifier: &Notifier) -> String {
             choices,
             selected_choice_id,
             dismissible: request.dismissible,
+            media: request.media,
             created_at: wall,
             expires: request
                 .expires
@@ -331,6 +339,24 @@ pub fn run_script(text: &str, notifier: &Notifier) -> Option<Result<Value, Strin
             selected: 0,
             dismissible: true,
             expires: true,
+            media: None,
+        }
+    } else if text == "**mock.launchguard" {
+        // The launch guard's confirm: the resolved game as the message,
+        // its media for the cover.
+        Request {
+            kind: Kind::Confirm,
+            title: "Launch guard".into(),
+            message: "Super Metroid (SNES)".into(),
+            choices: Vec::new(),
+            selected: 0,
+            dismissible: true,
+            expires: true,
+            media: Some(json!({
+                "system": "SNES",
+                "path": "/mock/games/SNES/sm.sfc",
+                "name": "Super Metroid",
+            })),
         }
     } else if text == "**mock.notice" || text.starts_with("**mock.notice:") {
         let message = text
@@ -346,6 +372,7 @@ pub fn run_script(text: &str, notifier: &Notifier) -> Option<Result<Value, Strin
             selected: 0,
             dismissible: true,
             expires: true,
+            media: None,
         }
     } else if text == "**mock.loader" {
         Request {
@@ -356,6 +383,7 @@ pub fn run_script(text: &str, notifier: &Notifier) -> Option<Result<Value, Strin
             selected: 0,
             dismissible: false,
             expires: false,
+            media: None,
         }
     } else {
         return None;
@@ -387,6 +415,7 @@ fn open_deck_picker(deck_id: &str, notifier: &Notifier) -> Result<Value, String>
             selected: 0,
             dismissible: true,
             expires: true,
+            media: None,
         },
         notifier,
     );
@@ -511,6 +540,20 @@ mod tests {
         assert_eq!(rfc3339(leap), "2000-02-29T00:00:00Z");
         let later = UNIX_EPOCH + Duration::from_secs(1_793_000_000 + 3_661);
         assert_eq!(rfc3339(later), "2026-10-26T08:34:21Z");
+    }
+
+    #[tokio::test]
+    async fn the_launch_guard_confirm_carries_its_games_media() {
+        let (notifier, mut rx) = Notifier::channel();
+        run_script("**mock.launchguard", &notifier)
+            .expect("handled")
+            .expect("opened");
+        let opened = rx.try_recv().expect("ui.changed");
+        let event = &opened["params"]["events"][0];
+        assert_eq!(event["kind"], "confirm");
+        assert_eq!(event["message"], "Super Metroid (SNES)");
+        assert_eq!(event["media"]["system"], "SNES");
+        assert_eq!(event["media"]["path"], "/mock/games/SNES/sm.sfc");
     }
 
     #[tokio::test]

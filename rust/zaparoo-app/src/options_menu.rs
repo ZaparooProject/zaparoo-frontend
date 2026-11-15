@@ -246,6 +246,8 @@ pub struct DeckInput {
     pub on_hub: bool,
     /// Opened on the deck's Hub tile, whose own rows join.
     pub tile: bool,
+    /// A connected reader can write NFC tokens.
+    pub has_nfc: bool,
 }
 
 /// A deck's menu. Accept opens the deck, so playing it leads; then its
@@ -255,6 +257,11 @@ pub fn deck(input: &DeckInput) -> Menu {
     let mut menu = Menu::default();
     if input.has_items {
         menu.root.push(row("play_deck"));
+        // A token that plays the deck, or one token per game in it.
+        push_write(&mut menu, input.has_nfc);
+        if input.has_nfc {
+            menu.write.push(row("write_deck_games"));
+        }
     }
     if input.tile {
         menu.tile.extend(tile_rows());
@@ -477,6 +484,8 @@ pub struct SystemInput {
     pub media_busy: bool,
     /// Opened on the system's pinned Hub shortcut.
     pub tile: bool,
+    /// A connected reader can write NFC tokens.
+    pub has_nfc: bool,
 }
 
 pub fn system(input: &SystemInput) -> Menu {
@@ -489,16 +498,17 @@ pub fn system(input: &SystemInput) -> Menu {
     let tile_rows = tile_rows();
     if input.launch_only {
         // Accept launches it, and nothing here is indexed: the few rows
-        // left need no page. On a tile, the tile's own rows lead.
-        let root = if input.tile {
-            vec![tile_rows[0], tile_rows[1], hide]
+        // left need no page. Writing a token comes first, then the tile's
+        // own rows on a tile.
+        let mut menu = Menu::default();
+        push_write(&mut menu, input.has_nfc);
+        if input.tile {
+            menu.root.extend(tile_rows);
         } else {
-            vec![pin_row(input.on_hub), hide]
-        };
-        return Menu {
-            root,
-            ..Menu::default()
-        };
+            menu.root.push(pin_row(input.on_hub));
+        }
+        menu.root.push(hide);
+        return menu;
     }
     let mut menu = Menu::default();
     // Accept opens the system's games, so launching it is not a duplicate.
@@ -508,6 +518,7 @@ pub fn system(input: &SystemInput) -> Menu {
     } else {
         row("launch_random_system")
     });
+    push_write(&mut menu, input.has_nfc);
     if input.has_launchers {
         menu.manage.push(row("change_launcher"));
     }
@@ -583,7 +594,11 @@ mod deck_tests {
             can_choose_cover: true,
             ..DeckInput::default()
         });
-        assert_eq!(ids(&menu.root), ["play_deck", "deck_hub", "manage_deck"]);
+        assert_eq!(
+            ids(&menu.root),
+            ["play_deck", "write_token", "deck_hub", "manage_deck"]
+        );
+        assert_eq!(menu.page_for("write_token"), None);
         assert_eq!(
             ids(&menu.manage),
             [
@@ -603,9 +618,28 @@ mod deck_tests {
             on_hub: true,
             ..DeckInput::default()
         });
-        assert_eq!(ids(&menu.root), ["play_deck", "deck_hub"]);
-        assert_eq!(menu.root[1].key, "hub:remove");
+        assert_eq!(ids(&menu.root), ["play_deck", "write_token", "deck_hub"]);
+        assert_eq!(menu.root[2].key, "hub:remove");
         assert!(menu.manage.is_empty());
+    }
+
+    #[test]
+    fn a_reader_writes_the_deck_or_each_of_its_games() {
+        let menu = deck(&DeckInput {
+            has_items: true,
+            has_nfc: true,
+            ..DeckInput::default()
+        });
+        assert_eq!(menu.page_for("write_token"), Some(Page::WriteToken));
+        assert_eq!(
+            ids(&menu.write),
+            ["write_card", "qr_code", "write_deck_games"]
+        );
+        let empty = deck(&DeckInput {
+            has_nfc: true,
+            ..DeckInput::default()
+        });
+        assert!(empty.write.is_empty());
     }
 
     #[test]
@@ -623,7 +657,10 @@ mod deck_tests {
             ..DeckInput::default()
         })
         .with_tile_edits(true);
-        assert_eq!(ids(&menu.root), ["play_deck", "edit_tile", "manage_deck"]);
+        assert_eq!(
+            ids(&menu.root),
+            ["play_deck", "write_token", "edit_tile", "manage_deck"]
+        );
         assert_eq!(
             ids(&menu.tile),
             ["hub_rename", "hub_icon", "hub_move", "hub_remove"]
@@ -996,7 +1033,12 @@ mod tests {
         });
         assert_eq!(
             keys(&menu.root),
-            ["launch_system", "launch_random_system", "manage_system"]
+            [
+                "launch_system",
+                "launch_random_system",
+                "write_token",
+                "manage_system"
+            ]
         );
         assert_eq!(
             keys(&menu.manage),
@@ -1030,6 +1072,7 @@ mod tests {
             [
                 row("launch_system"),
                 keyed("launch_random_favorite", "random_favorite"),
+                row("write_token"),
                 row("manage_system"),
             ]
         );
@@ -1047,7 +1090,10 @@ mod tests {
             has_launchers: true,
             ..SystemInput::default()
         });
-        assert_eq!(keys(&menu.root), ["add_to_hub", "hide:system"]);
+        assert_eq!(
+            keys(&menu.root),
+            ["write_token", "add_to_hub", "hide:system"]
+        );
         assert!(menu.manage.is_empty());
 
         let pinned = system(&SystemInput {
@@ -1058,6 +1104,7 @@ mod tests {
         assert_eq!(
             keys(&pinned.with_tile_edits(false).root),
             [
+                "write_token",
                 "hub_rename:tile",
                 "hub_move:tile",
                 "hub:remove",
@@ -1080,6 +1127,7 @@ mod tests {
             [
                 "launch_system",
                 "launch_random_system",
+                "write_token",
                 "edit_tile",
                 "manage_system"
             ]

@@ -15,6 +15,8 @@ pub mod logger;
 pub mod media_types;
 pub mod persist;
 pub mod platform_paths;
+pub mod profile_types;
+pub mod readers_types;
 pub mod remote_resource;
 pub mod runtime;
 pub mod store;

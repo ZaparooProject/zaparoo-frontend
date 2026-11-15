@@ -114,7 +114,9 @@ list_view!(
     SystemsView,
     FileBrowserView,
     MusicView,
-    CreditsView
+    CreditsView,
+    PickerSourcesView,
+    PickerGamesView
 );
 
 /// Publish a browse list's window around `current`: the rows on screen

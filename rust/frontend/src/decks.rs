@@ -276,8 +276,13 @@ fn leave_deck(ctx: &Ctx, app: &App) {
 }
 
 /// Play a deck as a playlist from its first item.
+/// The script that plays the deck: what Play sends and its token holds.
+fn play_script(deck_id: &str) -> String {
+    format!("**playlist.play:deck://{deck_id}")
+}
+
 fn play(ctx: &Ctx, app: &App, deck_id: &str, name: &str) {
-    crate::router::launch(ctx, app, format!("**playlist.play:deck://{deck_id}"), name);
+    crate::router::launch(ctx, app, play_script(deck_id), name);
 }
 
 /// Play the deck on the Deck screen from the item at `position`.
@@ -390,6 +395,7 @@ fn input(shared: &Shared, deck_id: &str, tile: bool) -> menu::DeckInput {
             can_choose_cover: crate::media_cache::should_request_local_path(256),
             on_hub,
             tile,
+            has_nfc: shared.has_nfc,
         },
     )
 }
@@ -422,6 +428,9 @@ fn deck_action(ctx: &Ctx, app: &App, id: &str, deck_id: &str, source: crate::Scr
         "deck_rename" => crate::rename::open_deck_rename(ctx, app, deck_id, &name, source),
         "deck_cover_choose" => crate::file_browser::open_deck_cover(ctx, app, deck_id, source),
         "deck_cover_remove" => set_cover(ctx, app, deck_id, DeckCover::None),
+        "write_card" => crate::card_write::begin(ctx, app, play_script(deck_id)),
+        "qr_code" => crate::router::open_qr_text(ctx, app, &play_script(deck_id), &name),
+        "write_deck_games" => write_games(ctx, app, deck_id, &name),
         "deck_delete" => {
             lock(&ctx.shared).decks.pending_delete =
                 Some((deck_id.to_string(), name.clone(), source));
@@ -439,6 +448,70 @@ fn deck_action(ctx: &Ctx, app: &App, id: &str, deck_id: &str, source: crate::Scr
 }
 
 /// The Delete deck dialog closed.
+/// Write each of the deck's games to a token of its own. The open deck
+/// has its items already; a deck picked from the list is fetched first.
+fn write_games(ctx: &Ctx, app: &App, deck_id: &str, name: &str) {
+    let open = {
+        let shared = lock(&ctx.shared);
+        shared
+            .games
+            .deck
+            .as_ref()
+            .filter(|deck| deck.deck_id == deck_id && !deck.items.is_empty())
+            .map(batch_items)
+    };
+    if let Some(items) = open {
+        start_batch(ctx, app, items, name);
+        return;
+    }
+    let client = ctx.store.client();
+    let ctx2 = ctx.clone();
+    let weak = app.as_weak();
+    let deck_id = deck_id.to_string();
+    let name = name.to_string();
+    let wait = crate::cue::begin(ctx, app, crate::AppCue::LoadingList, "", "");
+    ctx.handle.spawn(async move {
+        let result = client.deck_get(&deck_id).await;
+        let _ = weak.upgrade_in_event_loop(move |app| {
+            crate::cue::end(&ctx2, &app, wait);
+            match result {
+                Ok(deck) => start_batch(&ctx2, &app, batch_items(&deck), &name),
+                Err(e) => {
+                    tracing::warn!("decks.get for a token batch failed: {}", e.message);
+                    crate::router::report_action_error(&ctx2, &app, "card_write", &name);
+                }
+            }
+        });
+    });
+}
+
+fn start_batch(ctx: &Ctx, app: &App, items: Vec<zaparoo_app::token_batch::Item>, name: &str) {
+    if !crate::card_write::begin_batch(ctx, app, items, None) {
+        crate::router::report_action_error(ctx, app, "card_write", name);
+    }
+}
+
+/// The deck's items as a token batch, in deck order.
+fn batch_items(deck: &Deck) -> Vec<zaparoo_app::token_batch::Item> {
+    deck.items
+        .iter()
+        .map(|item| {
+            let media = item.media.as_ref();
+            let name = media
+                .map(|media| media.name.as_str())
+                .filter(|name| !name.trim().is_empty())
+                .unwrap_or(item.name.as_str());
+            zaparoo_app::token_batch::Item {
+                name: name.to_string(),
+                system: media.map(|m| m.system.clone()).unwrap_or_default(),
+                path: media.map(|m| m.path.clone()).unwrap_or_default(),
+                zapscript: item.zapscript.clone(),
+                online_card: item.kind == DeckItemKind::Card,
+            }
+        })
+        .collect()
+}
+
 pub(crate) fn delete_answered(ctx: &Ctx, app: &App, confirmed: bool) {
     let Some((deck_id, name, source)) = lock(&ctx.shared).decks.pending_delete.take() else {
         return;

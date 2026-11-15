@@ -1,0 +1,162 @@
+// Zaparoo Frontend
+// Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
+// SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
+
+// The PIN panel: a profile's PIN typed on a number pad, for the admin gate
+// and for switching to a profile that has one. With several admins, the
+// first page picks whose PIN it is. Rust owns every state change; the
+// panel appears and goes in one cut, with no fade (docs/slint-gotchas.md).
+
+import { Theme, Sizing } from "theme.slint";
+import { ModalShell } from "chrome.slint";
+import { ListPanel, ListViewport, ListRow } from "list_panel.slint";
+import { PinPage, PinError } from "state_types.slint";
+
+export global PinView {
+    in property <bool> open: false;
+    in property <PinPage> page: PinPage.entry;
+    // The profile whose PIN this is.
+    in property <string> name;
+    // How many digits are typed: the panel shows dots, never the digits.
+    in property <int> digits: 0;
+    // The pad key under the cursor, 0 to 11 in a phone's order.
+    in property <int> focus: 4;
+    in property <PinError> error: PinError.none;
+    // Core's own words when it refused for a reason of its own.
+    in property <string> error-text;
+    // A reader is connected: a switch card can stand in for the PIN.
+    in property <bool> can-scan: false;
+    // A new PIN is being set for `name`, rather than one checked.
+    in property <bool> setting: false;
+    // The PIN is for the first profile, which is always an admin.
+    in property <bool> first-admin: false;
+    // The admin gate is asking, so only an admin's card or PIN opens it.
+    in property <bool> unlocking: false;
+    // The admins to pick from, and the one under the cursor.
+    in property <[string]> admins;
+    in property <int> admin-index: 0;
+    // A pad key or an admin row was clicked.
+    callback pointer-key(int);
+    callback pointer-admin(int);
+}
+
+component PadKey inherits Rectangle {
+    in property <string> label;
+    in property <bool> focused;
+    callback clicked();
+    border-radius: Sizing.radius-sm;
+    background: root.focused ? Theme.selection-fill : Theme.surface-card;
+    Text {
+        x: Sizing.snap((parent.width - self.width) / 2);
+        y: Sizing.snap((parent.height - self.height) / 2);
+        text: root.label;
+        color: root.focused ? Theme.on-accent : Theme.text-primary;
+        font-size: Sizing.font-body;
+        font-weight: root.focused ? FontWeight.medium : FontWeight.normal;
+    }
+    TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+export component PinModal inherits ModalShell {
+    property <length> key-w: Sizing.snap(Math.max(Sizing.pct-w(9), Sizing.pct-h(13)));
+    property <length> key-h: Sizing.snap(Sizing.pct-h(8));
+    property <length> gap: Sizing.snap(Sizing.pct-h(1));
+    property <length> pad-w: 3 * root.key-w + 2 * root.gap;
+    property <length> pad-h: 4 * root.key-h + 3 * root.gap;
+    property <length> dot: Sizing.snap(Sizing.pct-h(2.4));
+    // One caption line, held whether or not there is anything to say.
+    property <length> line-h: Sizing.snap(Sizing.font-caption * 1.5);
+
+    title: PinView.page == PinPage.admins ? @tr("Choose an admin")
+        : PinView.first-admin ? @tr("Admin PIN for {}", PinView.name)
+        : PinView.setting ? @tr("New PIN for {}", PinView.name)
+        : PinView.name == "" ? @tr("Enter PIN")
+        : @tr("PIN for {}", PinView.name);
+    panel-width: PinView.page == PinPage.admins ? ListPanel.width
+        : Sizing.snap(Math.min(Sizing.pct-w(92), Math.max(root.pad-w, Sizing.pct-w(40)) + 2 * root.pad));
+    content-height: PinView.page == PinPage.admins ? vp.height
+        : root.dot + root.gap + root.line-h + root.gap + root.pad-h
+            + (PinView.can-scan ? root.gap + root.line-h : 0px);
+
+    property <string> status-text: PinView.error == PinError.incorrect ? @tr("Wrong PIN. Try again.")
+        : PinView.error == PinError.not-admin ? @tr("Only an admin can unlock this.")
+        : PinView.error == PinError.failed ? (PinView.error-text == "" ? @tr("Could not check the PIN.") : PinView.error-text)
+        : PinView.setting ? @tr("Use 4 to 8 digits.")
+        : "";
+
+    if PinView.page == PinPage.entry: Rectangle {
+        x: root.pad;
+        y: root.content-y;
+        width: root.content-width;
+        height: root.content-height;
+
+        // One dot per typed digit, centered.
+        for i in PinView.digits: Rectangle {
+            x: Sizing.snap((parent.width - (PinView.digits * 2 - 1) * root.dot) / 2) + i * 2 * root.dot;
+            y: 0px;
+            width: root.dot;
+            height: root.dot;
+            border-radius: root.dot / 2;
+            background: Theme.accent;
+        }
+
+        status := Text {
+            x: Sizing.snap((parent.width - self.width) / 2);
+            y: root.dot + root.gap;
+            width: Math.min(self.preferred-width, parent.width);
+            overflow: elide;
+            // A blank line holds the pad still when there is nothing to say.
+            text: root.status-text == "" ? " " : root.status-text;
+            color: Theme.text-label;
+            font-size: Sizing.font-caption;
+        }
+
+        for label[i] in ["1", "2", "3", "4", "5", "6", "7", "8", "9", @tr("Delete"), "0", @tr("OK")]: PadKey {
+            x: Sizing.snap((parent.width - root.pad-w) / 2) + Math.mod(i, 3) * (root.key-w + root.gap);
+            y: root.dot + root.gap + root.line-h + root.gap + Math.floor(i / 3) * (root.key-h + root.gap);
+            width: root.key-w;
+            height: root.key-h;
+            label: label;
+            focused: PinView.focus == i;
+            clicked => { PinView.pointer-key(i); }
+        }
+
+        if PinView.can-scan: Text {
+            x: Sizing.snap((parent.width - self.width) / 2);
+            y: root.dot + root.gap + root.line-h + root.gap + root.pad-h + root.gap;
+            width: Math.min(self.preferred-width, parent.width);
+            overflow: elide;
+            text: PinView.unlocking ? @tr("Or scan an admin card") : @tr("Or scan a switch card");
+            color: Theme.text-label;
+            font-size: Sizing.font-caption;
+        }
+    }
+
+    vp := ListViewport {
+        visible: PinView.page == PinPage.admins;
+        x: root.pad;
+        y: root.content-y;
+        width: root.content-width;
+        count: PinView.admins.length;
+        current: PinView.admin-index;
+        scope: "pin-admins";
+        max-viewport: Sizing.pct-h(46);
+
+        for name[i] in PinView.admins: ListRow {
+            x: 0;
+            y: (i - vp.top) * vp.stride;
+            width: vp.width;
+            height: vp.row-h;
+            name: name;
+            fill-top: vp.fill-top;
+            fill-bottom: vp.fill-bottom;
+            fill: vp.fill;
+            content: vp.content;
+            content-muted: vp.content-muted;
+            clicked => { PinView.pointer-admin(i); }
+        }
+    }
+}

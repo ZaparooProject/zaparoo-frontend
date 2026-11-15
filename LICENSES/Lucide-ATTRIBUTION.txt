@@ -36,6 +36,7 @@ attribute on the SVG root):
   resources/images/icons/ThumbsUp.svg
   resources/images/icons/ThumbsUpOutline.svg
   resources/images/icons/Trophy.svg
+  resources/images/icons/Users.svg
   resources/images/status/NFC.svg
   resources/images/categories/Other.svg
 

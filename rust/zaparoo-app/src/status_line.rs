@@ -63,13 +63,71 @@ impl TaskInput {
     }
 }
 
-/// Tier 4 input: a classified Core notification. `TokenScanned` is
-/// deliberately never shown, but is kept so the classifier stays complete.
+/// Tier 4 input: a classified Core notification. `TokenScanned` shows a
+/// short "Token read" cue, never the token's own text; `RunFailed` and
+/// `ProfileDataFailed` hold the scan line longer than an ordinary notice.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Event {
     TokenScanned(String),
     PlaytimeWarning(String),
     InboxMessage(String),
+    /// A token a reader read could not run. Core's message is English and
+    /// not shown; the category picks a translated line.
+    RunFailed(ScanFailure),
+    /// Switching profiles could not swap the profile's data. Core's reason
+    /// is a raw error and not shown.
+    ProfileDataFailed,
+}
+
+/// Why a scanned token did not run, from Core's `run.failed` category.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScanFailure {
+    MediaNotFound,
+    InvalidScript,
+    Blocked,
+    /// Blocked because launching needs an active profile and none is.
+    ProfileRequired,
+    PlaytimeLimit,
+    Busy,
+    Blank,
+    /// Any other category: a generic line.
+    Other,
+}
+
+impl ScanFailure {
+    /// Core's category and reason tokens; unknown and future categories
+    /// fall back to a generic line.
+    pub fn from_category(category: &str, reason: &str) -> Self {
+        match category {
+            "media_not_found" => Self::MediaNotFound,
+            "invalid_script" => Self::InvalidScript,
+            "blocked" if reason == "profile_required" => Self::ProfileRequired,
+            "blocked" | "disabled" => Self::Blocked,
+            "playtime_limit" => Self::PlaytimeLimit,
+            "busy" => Self::Busy,
+            "blank" => Self::Blank,
+            _ => Self::Other,
+        }
+    }
+
+    fn kind(self) -> Kind {
+        match self {
+            Self::MediaNotFound => Kind::ScanMediaNotFound,
+            Self::InvalidScript => Kind::ScanInvalidScript,
+            Self::Blocked => Kind::ScanBlocked,
+            Self::ProfileRequired => Kind::ScanProfileRequired,
+            Self::PlaytimeLimit => Kind::ScanPlaytimeLimit,
+            Self::Busy => Kind::ScanBusy,
+            Self::Blank => Kind::ScanBlank,
+            Self::Other => Kind::ScanFailed,
+        }
+    }
+}
+
+/// Whether a `run.failed` speaks for a token a reader read. A run the
+/// frontend started itself reports its failure where it started.
+pub fn is_reader_run(origin: &str) -> bool {
+    origin.eq_ignore_ascii_case("reader")
 }
 
 /// A loader or notice Core asked every client to show (its `ui` events).
@@ -114,6 +172,17 @@ pub enum Kind {
     CoreLoader,
     /// `arg` carries Core's message.
     CoreNotice,
+    /// A reader read a token.
+    TokenRead,
+    ScanMediaNotFound,
+    ScanInvalidScript,
+    ScanBlocked,
+    ScanProfileRequired,
+    ScanPlaytimeLimit,
+    ScanBusy,
+    ScanBlank,
+    ScanFailed,
+    ProfileDataFailed,
 }
 
 impl Kind {
@@ -137,6 +206,16 @@ impl Kind {
             Self::Inbox => "inbox",
             Self::CoreLoader => "core-loader",
             Self::CoreNotice => "core-notice",
+            Self::TokenRead => "token-read",
+            Self::ScanMediaNotFound => "scan-media-not-found",
+            Self::ScanInvalidScript => "scan-invalid-script",
+            Self::ScanBlocked => "scan-blocked",
+            Self::ScanProfileRequired => "scan-profile-required",
+            Self::ScanPlaytimeLimit => "scan-playtime-limit",
+            Self::ScanBusy => "scan-busy",
+            Self::ScanBlank => "scan-blank",
+            Self::ScanFailed => "scan-failed",
+            Self::ProfileDataFailed => "profile-data-failed",
         }
     }
 }
@@ -205,8 +284,12 @@ pub struct Ladder {
     terminal: Option<(Message, Instant)>,
     event: Option<(Message, Instant)>,
     core: Option<CoreLine>,
+    /// The scan line: the read cue or a failure, each with its own dwell.
+    scan: Option<(Message, Instant, Duration)>,
     terminal_dwell: Duration,
     event_dwell: Duration,
+    read_dwell: Duration,
+    failure_dwell: Duration,
 }
 
 impl Default for Ladder {
@@ -218,6 +301,12 @@ impl Default for Ladder {
 impl Ladder {
     pub const TERMINAL_DWELL: Duration = Duration::from_secs(6);
     pub const EVENT_DWELL: Duration = Duration::from_secs(5);
+    /// "Token read" is a cue, not news: brief.
+    pub const READ_DWELL: Duration = Duration::from_secs(2);
+    /// A scan that did not run, or a profile whose data did not swap, is
+    /// held longer than an ordinary notice: the person is likely looking
+    /// at the reader, not the screen.
+    pub const FAILURE_DWELL: Duration = Duration::from_secs(10);
 
     pub fn new() -> Self {
         Self {
@@ -227,8 +316,11 @@ impl Ladder {
             terminal: None,
             event: None,
             core: None,
+            scan: None,
             terminal_dwell: Self::TERMINAL_DWELL,
             event_dwell: Self::EVENT_DWELL,
+            read_dwell: Self::READ_DWELL,
+            failure_dwell: Self::FAILURE_DWELL,
         }
     }
 
@@ -238,6 +330,15 @@ impl Ladder {
     pub fn with_dwells(mut self, terminal: Duration, event: Duration) -> Self {
         self.terminal_dwell = terminal;
         self.event_dwell = event;
+        self
+    }
+
+    /// Shorter scan dwells for tests.
+    #[cfg(test)]
+    #[must_use]
+    pub fn with_scan_dwells(mut self, read: Duration, failure: Duration) -> Self {
+        self.read_dwell = read;
+        self.failure_dwell = failure;
         self
     }
 
@@ -292,6 +393,27 @@ impl Ladder {
         event: &Event,
         now: Instant,
     ) {
+        // The scan line answers what the person just did at the reader, so
+        // it speaks over a background task the way Core's own lines do.
+        let scan = match event {
+            Event::TokenScanned(_) => Some((Message::new(Kind::TokenRead), self.read_dwell)),
+            Event::RunFailed(failure) => Some((Message::new(failure.kind()), self.failure_dwell)),
+            Event::ProfileDataFailed => {
+                Some((Message::new(Kind::ProfileDataFailed), self.failure_dwell))
+            }
+            Event::PlaytimeWarning(_) | Event::InboxMessage(_) => None,
+        };
+        if let Some((message, dwell)) = scan {
+            // A failure replaces the read cue; a read never hides a
+            // failure still held.
+            let holding_failure = self
+                .scan_message(now)
+                .is_some_and(|m| m.kind != Kind::TokenRead);
+            if !(message.kind == Kind::TokenRead && holding_failure) {
+                self.scan = Some((message, now, dwell));
+            }
+            return;
+        }
         if connection_message(link).is_some()
             || self.task_active(link, task)
             || self.terminal_message(now).is_some()
@@ -299,7 +421,9 @@ impl Ladder {
             return;
         }
         let message = match event {
-            Event::TokenScanned(_) => return,
+            Event::TokenScanned(_) | Event::RunFailed(_) | Event::ProfileDataFailed => {
+                return;
+            }
             Event::PlaytimeWarning(remaining) => {
                 Message::with_arg(Kind::PlaytimeWarning, remaining.clone())
             }
@@ -325,6 +449,13 @@ impl Ladder {
             .as_ref()
             .filter(|(_, since)| now.duration_since(*since) < self.terminal_dwell)
             .map(|(message, _)| message)
+    }
+
+    fn scan_message(&self, now: Instant) -> Option<&Message> {
+        self.scan
+            .as_ref()
+            .filter(|(_, since, dwell)| now.duration_since(*since) < *dwell)
+            .map(|(message, _, _)| message)
     }
 
     fn event_message(&self, now: Instant) -> Option<&Message> {
@@ -358,6 +489,14 @@ impl Ladder {
                 total_steps: 0,
                 percent: None,
                 link_trouble: false,
+            };
+        }
+        if let (None, Some(message)) = (&link_message, self.scan_message(now)) {
+            return Output {
+                is_error: message.kind != Kind::TokenRead,
+                message: message.clone(),
+                total_known: true,
+                ..Output::default()
             };
         }
         let task_active = self.task_active(link, task);
@@ -413,10 +552,8 @@ impl Ladder {
             .event
             .as_ref()
             .map(|(_, since)| *since + self.event_dwell);
-        match (terminal, event) {
-            (Some(a), Some(b)) => Some(a.min(b)),
-            (a, b) => a.or(b),
-        }
+        let scan = self.scan.as_ref().map(|(_, since, dwell)| *since + *dwell);
+        [terminal, event, scan].into_iter().flatten().min()
     }
 }
 
@@ -717,17 +854,98 @@ mod tests {
     }
 
     #[test]
+    fn a_read_shows_briefly_and_a_failure_replaces_it() {
+        let mut ladder =
+            Ladder::new().with_scan_dwells(Duration::from_secs(2), Duration::from_secs(10));
+        let t0 = Instant::now();
+        let link = connected();
+        let task = TaskInput::default();
+        ladder.observe_event(&link, &task, &Event::TokenScanned("x".into()), t0);
+        let out = ladder.render(&link, &task, t0);
+        assert_eq!(out.message.kind, Kind::TokenRead);
+        assert!(!out.is_error);
+        let t1 = t0 + Duration::from_millis(500);
+        ladder.observe_event(
+            &link,
+            &task,
+            &Event::RunFailed(ScanFailure::from_category("media_not_found", "")),
+            t1,
+        );
+        let out = ladder.render(&link, &task, t0 + Duration::from_secs(5));
+        assert_eq!(out.message.kind, Kind::ScanMediaNotFound);
+        assert!(out.is_error);
+        // A later read does not hide the failure still held.
+        let t2 = t1 + Duration::from_secs(1);
+        ladder.observe_event(&link, &task, &Event::TokenScanned("y".into()), t2);
+        assert_eq!(
+            ladder.render(&link, &task, t2).message.kind,
+            Kind::ScanMediaNotFound
+        );
+        assert_eq!(ladder.next_deadline(), Some(t1 + Duration::from_secs(10)));
+        assert_eq!(
+            ladder
+                .render(&link, &task, t1 + Duration::from_secs(11))
+                .message
+                .kind,
+            Kind::None
+        );
+    }
+
+    #[test]
+    fn scan_lines_speak_over_tasks_but_not_link_trouble() {
+        let mut ladder = Ladder::new();
+        let t0 = Instant::now();
+        ladder.enable_media_activity(&TaskInput::default());
+        let task = TaskInput {
+            indexing: true,
+            ..TaskInput::default()
+        };
+        let link = connected();
+        ladder.observe_event(&link, &task, &Event::ProfileDataFailed, t0);
+        let out = ladder.render(&link, &task, t0);
+        assert_eq!(out.message.kind, Kind::ProfileDataFailed);
+        assert_eq!(out.message.arg, "");
+        let down = LinkInput::default();
+        assert_eq!(
+            ladder.render(&down, &task, t0).message.kind,
+            Kind::Disconnected
+        );
+    }
+
+    #[test]
+    fn categories_map_with_a_fallback() {
+        assert_eq!(ScanFailure::from_category("blank", ""), ScanFailure::Blank);
+        assert_eq!(ScanFailure::from_category("busy", ""), ScanFailure::Busy);
+        assert_eq!(
+            ScanFailure::from_category("playtime_limit", ""),
+            ScanFailure::PlaytimeLimit
+        );
+        assert_eq!(
+            ScanFailure::from_category("blocked", "profile_required"),
+            ScanFailure::ProfileRequired
+        );
+        assert_eq!(
+            ScanFailure::from_category("blocked", ""),
+            ScanFailure::Blocked
+        );
+        assert_eq!(
+            ScanFailure::from_category("disabled", "profile_required"),
+            ScanFailure::Blocked
+        );
+        assert_eq!(
+            ScanFailure::from_category("something_new", ""),
+            ScanFailure::Other
+        );
+        assert!(is_reader_run("Reader"));
+        assert!(!is_reader_run("API"));
+    }
+
+    #[test]
     fn events_show_only_when_nothing_higher_owns_the_line() {
         let mut ladder = Ladder::new().with_dwells(Duration::from_secs(6), Duration::from_secs(5));
         ladder.enable_media_activity(&TaskInput::default());
         let t0 = Instant::now();
         let idle = TaskInput::default();
-
-        ladder.observe_event(&connected(), &idle, &Event::TokenScanned("x".into()), t0);
-        assert_eq!(
-            ladder.render(&connected(), &idle, t0).message.kind,
-            Kind::None
-        );
 
         ladder.observe_event(
             &connected(),

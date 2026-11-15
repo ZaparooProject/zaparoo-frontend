@@ -15,12 +15,14 @@ mod add_to_deck;
 mod alternates;
 mod artwork;
 mod background;
+mod blank_token;
 mod brand;
 mod browse_filter;
 mod browse_motion;
 mod card_write;
 mod context_page;
 mod controllers;
+mod core_settings;
 mod core_ui;
 mod cover_fade;
 mod credits;
@@ -42,6 +44,7 @@ mod fonts;
 mod frame_transition;
 mod game_info;
 mod game_info_data;
+mod game_picker;
 mod gamepad;
 mod games;
 mod gamescope;
@@ -60,6 +63,7 @@ mod launcher_scan;
 mod launchers;
 mod log_upload;
 mod manual;
+mod mappings;
 mod media_cache;
 mod media_setup;
 #[cfg(feature = "mister")]
@@ -89,6 +93,7 @@ mod pairing;
     )
 )]
 mod perf;
+mod pin;
 mod playtime_access;
 // Reads the kernel power-supply class, which only the desktop feature
 // set has any use for; `MiSTer`'s reading comes off the `SMBus` instead.
@@ -120,6 +125,7 @@ mod systems;
 mod tag_utils;
 mod theme;
 mod title_versions;
+mod token_inspector;
 mod update;
 mod user_lists;
 mod view_model;
@@ -1107,8 +1113,10 @@ fn run_application(
     search::bind(&ctx, &app);
     rename::bind(&ctx, &app);
     ra_login::bind(&ctx, &app);
+    pin::bind(&ctx, &app);
     file_browser::bind(&ctx, &app);
     credits::bind(&ctx, &app);
+    game_picker::bind(&ctx, &app);
     music::bind(&ctx, &app);
     settings::bind_input(&ctx, &app);
     media_setup::bind_input(&ctx, &app);
@@ -1139,6 +1147,7 @@ fn run_application(
     // not have to start a second one.
     steam_host::start(&config.core_endpoint);
     bind_status_events(&ctx, &app, &client);
+    bind_core_state(&ctx, &app, &client);
     bind_history_changes(&ctx, &app, &client);
     bind_collection_changes(&ctx, &app, &client);
     core_ui::bind(&ctx, &app, &client);
@@ -1468,6 +1477,65 @@ fn bind_status_events(ctx: &Arc<Ctx>, app: &App, client: &Arc<Client>) {
     });
 }
 
+/// Core's readers and active profile, kept current in `Shared`: read on
+/// every connect, then followed through their notifications. A blank token
+/// a reader read offers to write a game to it (`blank_token`).
+fn bind_core_state(ctx: &Arc<Ctx>, app: &App, client: &Arc<Client>) {
+    let weak = app.as_weak();
+    let ctx_connect = ctx.clone();
+    let mut connection = client.connection.subscribe();
+    ctx.handle.clone().spawn(async move {
+        loop {
+            let connected = matches!(*connection.borrow_and_update(), ConnectionState::Connected);
+            if connected {
+                let ctx = ctx_connect.clone();
+                let _ = weak.upgrade_in_event_loop(move |app| {
+                    router::refresh_active_profile(&ctx, &app);
+                    router::refresh_readers(&ctx, &app);
+                });
+            }
+            if connection.changed().await.is_err() {
+                return;
+            }
+        }
+    });
+
+    let mut rx = client.subscribe_notifications();
+    let weak = app.as_weak();
+    let ctx = ctx.clone();
+    ctx.handle.clone().spawn(async move {
+        loop {
+            let notification = match rx.recv().await {
+                Ok(notification) => notification,
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
+            };
+            let ctx = ctx.clone();
+            match notification.method.as_str() {
+                "profiles.active" => {
+                    let Ok(result) = serde_json::from_value::<
+                        zaparoo_core::profile_types::ActiveProfileResult,
+                    >(notification.params) else {
+                        continue;
+                    };
+                    let _ = weak.upgrade_in_event_loop(move |app| {
+                        router::store_active_profile(&ctx, &app, result.profile);
+                    });
+                }
+                "run.failed" => {
+                    let Some(reader_id) = blank_token::blank_read(&notification.params) else {
+                        continue;
+                    };
+                    let _ = weak.upgrade_in_event_loop(move |app| {
+                        blank_token::offer(&ctx, &app, reader_id);
+                    });
+                }
+                _ => {}
+            }
+        }
+    });
+}
+
 /// Core's `media.history.changed`: a platform recorded play history
 /// after the fact, with no `media.stopped` to trigger the refresh in
 /// `bind_desktop_lifecycle`. Drop cached history and refill what shows it.
@@ -1568,6 +1636,24 @@ fn bind_collection_changes(ctx: &Arc<Ctx>, app: &App, client: &Arc<Client>) {
                     let _ = weak.upgrade_in_event_loop(move |app| {
                         decks::changed(&ctx_event, &app, &changed);
                         add_to_deck::refresh(&ctx_event, &app);
+                    });
+                }
+                "readers.added" | "readers.removed" => {
+                    let ctx_event = ctx.clone();
+                    let _ = weak.upgrade_in_event_loop(move |app| {
+                        router::refresh_readers(&ctx_event, &app);
+                    });
+                }
+                "tokens.added" => {
+                    let reader = notification
+                        .params
+                        .get("readerId")
+                        .and_then(serde_json::Value::as_str)
+                        .unwrap_or_default()
+                        .to_string();
+                    let ctx_event = ctx.clone();
+                    let _ = weak.upgrade_in_event_loop(move |app| {
+                        token_inspector::token_added(&ctx_event, &app, &reader);
                     });
                 }
                 _ => {}
@@ -1776,21 +1862,11 @@ fn start_status(app: &App, ctx: &Arc<Ctx>) {
             let local = tokio::task::spawn_blocking(system_status::probe)
                 .await
                 .unwrap_or_default();
-            let (has_nfc, has_readers) = match ctx.store.client().readers().await {
-                Ok(result) => (
-                    result
-                        .readers
-                        .iter()
-                        .any(zaparoo_core::media_types::ReaderInfo::is_nfc_reader),
-                    !result.readers.is_empty(),
-                ),
-                Err(_) => (false, false),
+            let readers = match ctx.store.client().readers().await {
+                Ok(result) => result.readers,
+                Err(_) => Vec::new(),
             };
-            {
-                let mut guard = lock(&ctx.shared);
-                guard.has_readers = has_readers;
-                guard.has_nfc = has_nfc;
-            }
+            let has_nfc = readers.iter().any(|r| r.connected && r.is_nfc_reader());
 
             let mut keys: Vec<SharedString> = Vec::new();
             if has_nfc {
@@ -1812,6 +1888,7 @@ fn start_status(app: &App, ctx: &Arc<Ctx>) {
                 shell.set_has_battery(local.has_battery);
                 shell.set_battery_percent(local.battery_percent);
                 shell.set_status_icons_enabled(true);
+                router::store_readers(&ctx_inner, &app, readers);
                 hub::set_internet(
                     &ctx_inner,
                     &app,
@@ -1998,6 +2075,7 @@ pub(crate) fn deliver_covers(ctx: &Ctx, app: &App, keys: &[media_cache::MediaKey
         hub::covers_landed(ctx, app, &browse);
         games::covers_landed(ctx, app, &browse);
         core_ui::covers_landed(ctx, app, &browse);
+        card_write::covers_landed(ctx, app, &browse);
     }
 }
 
@@ -2307,7 +2385,11 @@ fn fetch_settings(ctx: &Arc<Ctx>, app: &App) {
     let weak = app.as_weak();
     ctx.handle.clone().spawn(async move {
         if let Ok(result) = client.settings().await {
-            lock(&ctx.shared).system_defaults = result.system_defaults;
+            {
+                let mut shared = lock(&ctx.shared);
+                core_settings::observe_settings(&mut shared, &result);
+                shared.system_defaults = result.system_defaults;
+            }
             launcher_prefs::observe(&ctx, result.launcher_preference);
             let _ = weak.upgrade_in_event_loop(move |app| settings::refresh(&ctx, &app));
         }

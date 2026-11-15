@@ -200,8 +200,9 @@ pub const BUILT_IN_ACTIONS: &[&str] = &[
 /// Built-in actions a layout never gets on its own: "Add item…" offers
 /// them, and once added they are tracked in `known` like any other.
 /// Disliked is here because nobody plays from it; it is where a dislike
-/// is reviewed or taken back.
-pub const OFFERED_ACTIONS: &[&str] = &["disliked"];
+/// is reviewed or taken back. Music and Switch profile are for the people
+/// who want them one press from the Hub.
+pub const OFFERED_ACTIONS: &[&str] = &["disliked", "music", "switchprofile"];
 
 /// The persisted Hub layout.
 ///
@@ -1699,17 +1700,26 @@ type = "blank"
         layout.reconcile(&["Arcade".to_string()], &[]);
         assert!(!layout.items.iter().any(|i| i.id == "disliked"));
         assert!(!layout.reconcile(&["Arcade".to_string()], &[]));
-        assert_eq!(layout.available_known(), vec!["action:disliked"]);
+        assert_eq!(
+            layout.available_known(),
+            vec!["action:disliked", "action:music", "action:switchprofile"]
+        );
         assert!(layout.add_item("action", "disliked", 0));
         assert!(layout.items.iter().any(|i| i.id == "disliked"));
-        assert!(layout.available_known().is_empty());
+        assert_eq!(
+            layout.available_known(),
+            vec!["action:music", "action:switchprofile"]
+        );
         let at = layout
             .items
             .iter()
             .position(|i| i.id == "disliked")
             .expect("disliked");
         layout.remove_visible_item(at);
-        assert_eq!(layout.available_known(), vec!["action:disliked"]);
+        assert_eq!(
+            layout.available_known(),
+            vec!["action:disliked", "action:music", "action:switchprofile"]
+        );
         let mut reset = HubLayout::default();
         reset.reset(&["Arcade".to_string()]);
         assert!(!reset.items.iter().any(|i| i.id == "disliked"));
@@ -1719,8 +1729,12 @@ type = "blank"
     fn available_known_lists_only_known_keys_missing_from_items() {
         let mut layout = HubLayout::default();
         layout.reconcile(&["Arcade".to_string()], &[]);
-        // Disliked is always on offer until it is on the Hub.
-        assert_eq!(layout.available_known(), vec!["action:disliked"]);
+        // Disliked, Music and Switch profile are always on offer until
+        // they are on the Hub.
+        assert_eq!(
+            layout.available_known(),
+            vec!["action:disliked", "action:music", "action:switchprofile"]
+        );
         let arcade_index = layout
             .items
             .iter()
@@ -1729,7 +1743,12 @@ type = "blank"
         layout.remove_visible_item(arcade_index);
         assert_eq!(
             layout.available_known(),
-            vec!["category:Arcade", "action:disliked"]
+            vec![
+                "category:Arcade",
+                "action:disliked",
+                "action:music",
+                "action:switchprofile"
+            ]
         );
     }
 
@@ -1746,7 +1765,10 @@ type = "blank"
         assert_eq!(layout.items[arcade_index].kind(), HubItemKind::Blank);
         assert!(layout.add_item("category", "Arcade", arcade_index));
         assert_eq!(layout.items[arcade_index].id, "Arcade");
-        assert_eq!(layout.available_known(), vec!["action:disliked"]);
+        assert_eq!(
+            layout.available_known(),
+            vec!["action:disliked", "action:music", "action:switchprofile"]
+        );
     }
 
     #[test]

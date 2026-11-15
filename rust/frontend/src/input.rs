@@ -219,6 +219,7 @@ pub(crate) fn modal_open(app: &App) -> bool {
         || overlays.get_letter_open()
         || overlays.get_context_open()
         || overlays.get_crt_calibration_open()
+        || crate::pin::is_open(app)
 }
 
 /// A screen whose text field takes what is typed.
@@ -227,6 +228,10 @@ pub(crate) enum TextOwner {
     Search,
     Rename,
     RaLogin,
+    /// The PIN panel: number keys type digits.
+    Pin,
+    /// The Game picker's Search keyboard.
+    GamePicker,
 }
 
 impl TextOwner {
@@ -235,6 +240,8 @@ impl TextOwner {
             Self::Search => crate::search::key_repeats(ctx),
             Self::Rename => crate::rename::key_repeats(ctx),
             Self::RaLogin => crate::ra_login::key_repeats(ctx),
+            Self::Pin => false,
+            Self::GamePicker => crate::game_picker::key_repeats(ctx),
         }
     }
 
@@ -243,6 +250,8 @@ impl TextOwner {
             Self::Search => crate::search::type_char(ctx, app, c),
             Self::Rename => crate::rename::type_char(ctx, app, c),
             Self::RaLogin => crate::ra_login::type_char(ctx, app, c),
+            Self::Pin => crate::pin::type_char(ctx, app, c),
+            Self::GamePicker => crate::game_picker::type_char(ctx, app, c),
         }
     }
 
@@ -250,7 +259,7 @@ impl TextOwner {
     /// has none.
     fn on_shift(self, ctx: &Ctx) -> bool {
         match self {
-            Self::Search => false,
+            Self::Search | Self::Pin | Self::GamePicker => false,
             Self::Rename => crate::rename::on_shift(ctx),
             Self::RaLogin => crate::ra_login::on_shift(ctx),
         }
@@ -258,7 +267,7 @@ impl TextOwner {
 
     fn lock_shift(self, ctx: &Ctx, app: &App) {
         match self {
-            Self::Search => {}
+            Self::Search | Self::Pin | Self::GamePicker => {}
             Self::Rename => crate::rename::lock_shift(ctx, app),
             Self::RaLogin => crate::ra_login::lock_shift(ctx, app),
         }
@@ -269,17 +278,24 @@ impl TextOwner {
 /// over it.
 pub(crate) fn text_owner(app: &App) -> Option<TextOwner> {
     let shell = app.global::<crate::Shell>();
-    if shell.get_transitioning()
-        || shell.get_saver_armed()
-        || shell.get_boot_curtain()
-        || modal_open(app)
-    {
+    if shell.get_transitioning() || shell.get_saver_armed() || shell.get_boot_curtain() {
+        return None;
+    }
+    // The PIN panel takes digits while nothing sits above it; only an
+    // action-error alert can.
+    if crate::pin::is_open(app) {
+        return (!app.global::<crate::Overlays>().get_dialog_open()).then_some(TextOwner::Pin);
+    }
+    if modal_open(app) {
         return None;
     }
     match shell.get_active_screen() {
         crate::Screen::Search => Some(TextOwner::Search),
         crate::Screen::Rename => Some(TextOwner::Rename),
         crate::Screen::RaLogin => Some(TextOwner::RaLogin),
+        crate::Screen::GamePicker => (app.global::<crate::GamePickerView>().get_pane()
+            == crate::PickerPane::Keyboard)
+            .then_some(TextOwner::GamePicker),
         _ => None,
     }
 }
