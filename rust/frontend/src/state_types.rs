@@ -88,6 +88,7 @@ impl From<zaparoo_app::screensaver::Style> for crate::ScreensaverStyle {
             Style::PaddleClock => Self::PaddleClock,
             Style::Starfield => Self::Starfield,
             Style::Flyby => Self::Flyby,
+            Style::Aquarium => Self::Aquarium,
             Style::Polygons => Self::Polygons,
             Style::Snakes => Self::Snakes,
             Style::Life => Self::Life,

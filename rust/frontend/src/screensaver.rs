@@ -70,6 +70,7 @@ struct Run {
 thread_local! {
     static RUN: RefCell<Option<Run>> = const { RefCell::new(None) };
     static LAST: Cell<Option<Style>> = const { Cell::new(None) };
+    static LAST_SEABED: Cell<Option<rules::aquarium::Seabed>> = const { Cell::new(None) };
 }
 
 fn pool() -> std::sync::MutexGuard<'static, Option<(Instant, Pool)>> {
@@ -127,7 +128,7 @@ fn chosen(ctx: &Ctx) -> (Style, Bouncing) {
 /// Whether a run of `style` can draw covers or system logos. Random can
 /// resolve to any style, so it does.
 fn uses_art(style: Style, bouncing: Bouncing) -> bool {
-    style != Style::Bouncing || bouncing == Bouncing::RecentGame
+    style != Style::Aquarium && (style != Style::Bouncing || bouncing == Bouncing::RecentGame)
 }
 
 /// Start gathering art for the next run: system logos in color, and the
@@ -370,7 +371,7 @@ pub(crate) fn arm(ctx: &Ctx, app: &App) {
     let twelve = ctx
         .clock_twelve_hour
         .load(std::sync::atomic::Ordering::Relaxed);
-    let scene = Scene::new(
+    let mut scene = Scene::new(
         app,
         resolved,
         art,
@@ -379,6 +380,9 @@ pub(crate) fn arm(ctx: &Ctx, app: &App) {
         local_time(),
         twelve,
     );
+    if let Some(seabed) = scene.prepare_aquarium(app, LAST_SEABED.get()) {
+        LAST_SEABED.set(Some(seabed));
+    }
     let heavy = scene.heavy();
     let interval = scene.interval();
     let scene = Rc::new(RefCell::new(scene));

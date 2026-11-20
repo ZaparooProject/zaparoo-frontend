@@ -13,6 +13,7 @@ mod about;
 mod actions;
 mod add_to_deck;
 mod alternates;
+mod aquarium_assets;
 mod artwork;
 mod background;
 mod blank_token;

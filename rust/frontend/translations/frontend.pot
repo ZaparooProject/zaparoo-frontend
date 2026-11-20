@@ -2,7 +2,7 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: frontend VERSION\n"
-"POT-Creation-Date: 2026-11-20 08:00+0000\n"
+"POT-Creation-Date: 2026-11-20 09:18+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -1956,7 +1956,7 @@ msgstr ""
 #: rust/frontend/ui/labels.slint:370 rust/frontend/ui/settings.slint:613
 #: rust/frontend/ui/labels.slint:370 rust/frontend/ui/settings.slint:613 rust/frontend/ui/settings.slint:668
 #: rust/frontend/ui/labels.slint:370 rust/frontend/ui/settings.slint:613 rust/frontend/ui/settings.slint:668 rust/frontend/ui/settings.slint:679
-#: rust/frontend/ui/labels.slint:370 rust/frontend/ui/settings.slint:613 rust/frontend/ui/settings.slint:668 rust/frontend/ui/settings.slint:679 rust/frontend/ui/settings.slint:1017
+#: rust/frontend/ui/labels.slint:370 rust/frontend/ui/settings.slint:613 rust/frontend/ui/settings.slint:668 rust/frontend/ui/settings.slint:679 rust/frontend/ui/settings.slint:1018
 msgid "Automatic"
 msgstr ""
 
@@ -3352,7 +3352,7 @@ msgstr ""
 msgid "Style"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:278 rust/frontend/ui/settings.slint:1007
+#: rust/frontend/ui/settings.slint:278 rust/frontend/ui/settings.slint:1008
 msgid "Bouncing"
 msgstr ""
 
@@ -5054,46 +5054,50 @@ msgid "Flyby"
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:1002
-msgid "Polygons"
+msgid "Aquarium"
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:1003
-msgid "Snakes"
+msgid "Polygons"
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:1004
-msgid "Life"
+msgid "Snakes"
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:1005
-msgid "Maze"
+msgid "Life"
 msgstr ""
 
 #: rust/frontend/ui/settings.slint:1006
+msgid "Maze"
+msgstr ""
+
+#: rust/frontend/ui/settings.slint:1007
 msgid "Random"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:1011
+#: rust/frontend/ui/settings.slint:1012
 msgid "Clock"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:1012
+#: rust/frontend/ui/settings.slint:1013
 msgid "Recent game"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:1013
+#: rust/frontend/ui/settings.slint:1014
 msgid "Logo"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:1187
+#: rust/frontend/ui/settings.slint:1188
 msgid "Pro"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:1214
+#: rust/frontend/ui/settings.slint:1215
 msgid "Linked as {}"
 msgstr ""
 
-#: rust/frontend/ui/settings.slint:1216
+#: rust/frontend/ui/settings.slint:1217
 msgid "Logged in as {}"
 msgstr ""
 

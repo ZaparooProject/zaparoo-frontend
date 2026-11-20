@@ -325,6 +325,38 @@ repaints, not around what looks busiest:
   exactly once when it disarms. Life's board is 90 rows,
   the Maze's picture 180 lines and Polygons' 270; in a 240p scene Life
   uses four-pixel cells and the others draw at the scene's own lines.
+- **Aquarium keeps native pixels.** Fish are drawn from all 178 original
+  catalog PNGs at one source pixel per output pixel, without resampling;
+  only transparent padding is trimmed, and facing is mirrored horizontally.
+  Each run chooses a new school without repeating catalog entries, with random
+  starting positions, directions and the existing movement speed profiles.
+  Each fish also draws a fixed 0.5×–2.5× multiplier for that run; it scales
+  travel speed along the same path, leaving the bob and pause timing intact.
+  Counts are 6–10 at 240p, 17–25 at 720p and 30–40 at 1080p, interpolated
+  between those heights and capped at 40. A simultaneous CRT mirror shows
+  a 6–10-fish subset of the same school. They retain a one-pixel bob, timed off-screen
+  pauses and four small bubble plumes. It publishes fixed sprite slots at
+  20 fps; two corals and two scenery images are static, displayed on
+  original 128-pixel canvases without resampling. A solid water color,
+  a ten-percent sand strip and those four decorations are chosen afresh
+  on every arm; an exact repeat of the previous combination is prevented.
+  The background stays static while the fish swim and bubbles rise from
+  the sand. It uses native-size sprite
+  updates without the heavy-resolution bracket. `Saver.source-height` preserves native
+  sizes on the CRT mirror, and each row's pixel offset keeps the bob and
+  bottom anchors independent of the other output's height. The complete
+  source collection lives in `resources/aquarium/`; `just aquarium-assets`
+  packs it into an embedded USTAR archive. The adapter borrows one PNG by
+  path without unpacking the collection into RAM. The `runtime/` images
+  contain the former preview's prepared fish and plant images, retained as
+  source history; live fish now use `fish/`, and decorations come from
+  `coral/` and `scenery/`. A small generated `fish-catalog.tsv` in the archive
+  supplies crop bounds and facing, so only the chosen school's PNGs get
+  decoded on each start. The other categories
+  remain available for future scene compositions.
+  Desktop `--crt` normally enlarges the entire CRT canvas 3× for inspection.
+  For a physical 1:1 CRT preview, use
+  `SLINT_SCALE_FACTOR=1 just run-dev --crt --windowed`.
 - **Reduced rates.** Each style steps on its own Rust timer, never faster
   than it needs: 30 fps for Spinning logo, Recent games and Paddle clock,
   20 for Starfield, Flyby, Polygons and Maze, 12 for Snakes and Life, 10
