@@ -25,6 +25,8 @@ ignore  = [
     # pin-utils, through `slint-macros` -> `spin_on` (a build-time executor
     # for the Slint macros; still there in Slint 1.18.1).
     "RUSTSEC-2026-0441", # pin-utils
+    # chrono, through `i-slint-core` (all versions affected, no upgrade).
+    "RUSTSEC-2026-0543", # chrono
 ]
 
 [licenses]
