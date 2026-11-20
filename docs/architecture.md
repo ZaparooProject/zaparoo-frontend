@@ -61,9 +61,8 @@ rust/frontend/  [frontend library and binary; Slint UI]
   ├── src/{input,actions,gamepad}.rs
   │                        key path, keyboard bindings, desktop gamepads
   ├── src/status.rs      : header status-line driver over the ladder
-  ├── src/system_status.rs : host-local hardware and network HUD probes
-  ├── src/{power_supply,mister_battery}.rs
-  │                        the two battery probes behind one HUD field
+  ├── src/device_hud.rs  : header network, Bluetooth and battery glyphs
+  │                        and the internet gate, from Core's device state
   ├── src/screensaver.rs : the screensaver's runtime: gathers art ahead of
   │                        the timeout, resolves the style (Random) when it
   │                        arms, steps it on a timer, tears it down on wake
@@ -210,10 +209,6 @@ crate still owns all UI, navigation and input semantics.
   user returned from another app). It counts as activity: a screensaver
   that armed in the background is dismissed and the idle countdown
   restarts.
-- `host::system_status` reports network, Bluetooth and battery state for
-  the header; a hosted build never probes the machine itself. It is
-  device-level: callable from any thread before any window exists, and the
-  latest report wakes the header at once.
 - `host::controller(name)` names the pad now driving the UI (`None`: none).
   It sets the help bar's glyphs and returns the actions for the pad's
   labelled A, B, X and Y buttons, so a host that reads buttons by label
@@ -262,10 +257,10 @@ crate still owns all UI, navigation and input semantics.
   carry no behavior.
 
 A hosted build compiles out what the host owns: process-global logging,
-command-line arguments, process restart, the Linux network probe, the Steam
-session host and gamescope focus claims. `just hosted-check` runs clippy and
-the library tests for the hosted feature set on the software renderer; it
-does not compile for any particular host target.
+command-line arguments, process restart, the Steam session host and
+gamescope focus claims. `just hosted-check` runs clippy and the library
+tests for the hosted feature set on the software renderer; it does not
+compile for any particular host target.
 
 ## Update module
 

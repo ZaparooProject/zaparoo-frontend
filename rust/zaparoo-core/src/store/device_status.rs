@@ -2,8 +2,8 @@
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 //
-// `DeviceResource`: the connected controllers, the Bluetooth adapter and
-// its devices, as one `watch` channel. Seeded from `device.status` (and
+// `DeviceResource`: the device's power and network, the connected
+// controllers, the Bluetooth adapter and its devices, as one `watch` channel. Seeded from `device.status` (and
 // `device.bluetooth.devices` where Core can pair) on every connect, then
 // kept current from `device.changed` and `device.bluetooth.changed`.
 //
@@ -14,7 +14,7 @@
 use crate::client::{Client, ClientError, ConnectionState, Notification};
 use crate::device::{
     BluetoothAdapter, BluetoothScanParams, BluetoothState, Capabilities, Controller, Controllers,
-    DeviceStatus, Power,
+    DeviceStatus, Network, Power,
 };
 use serde_json::Value;
 use std::sync::Arc;
@@ -29,6 +29,7 @@ pub struct DeviceState {
     pub seeded: bool,
     pub capabilities: Capabilities,
     pub power: Option<Power>,
+    pub network: Option<Network>,
     pub bluetooth: Option<BluetoothAdapter>,
     /// `None` when Core reports no controllers section at all.
     pub controllers: Option<Vec<Controller>>,
@@ -41,6 +42,7 @@ impl DeviceState {
     fn apply_status(&mut self, status: DeviceStatus) {
         self.capabilities = status.capabilities;
         self.power = status.power;
+        self.network = status.network;
         self.bluetooth = status.bluetooth;
         self.controllers = status.controllers.map(|c| c.items);
         self.seeded = true;
@@ -56,6 +58,9 @@ impl DeviceState {
         let section = |key: &str| sections.get(key).filter(|v| !v.is_null()).cloned();
         if sections.contains_key("power") {
             self.power = section("power").and_then(|v| decode("power", v));
+        }
+        if sections.contains_key("network") {
+            self.network = section("network").and_then(|v| decode("network", v));
         }
         if sections.contains_key("bluetooth") {
             self.bluetooth = section("bluetooth").and_then(|v| decode("bluetooth", v));
@@ -364,6 +369,7 @@ fn fold_notification(
 #[allow(clippy::unwrap_used, reason = "a decode failure is the test failing")]
 mod tests {
     use super::*;
+    use crate::device::{Internet, NetworkType};
     use serde_json::json;
 
     fn notification(method: &str, params: Value) -> Notification {
@@ -377,6 +383,7 @@ mod tests {
         let status: DeviceStatus = serde_json::from_value(json!({
             "capabilities": { "actions": { "device.bluetooth.pair": "supported" } },
             "power": null,
+            "network": { "type": "wifi", "interface": "wlan0", "internet": "full", "interfaces": [] },
             "bluetooth": { "present": true, "powered": true },
             "controllers": { "count": 1, "items": [
                 { "id": "a", "name": "Pad", "connection": "bluetooth",
@@ -419,6 +426,30 @@ mod tests {
         let s = state.borrow().clone();
         assert_eq!(s.bluetooth.unwrap().powered, Some(false));
         assert_eq!(s.controllers, None, "a null section is no section");
+    }
+
+    #[test]
+    fn a_network_push_replaces_the_held_link() {
+        let state = seeded();
+        assert_eq!(
+            state.borrow().network.as_ref().map(|n| n.internet),
+            Some(Some(Internet::Full))
+        );
+        fold_notification(
+            &notification(
+                "device.changed",
+                json!({ "network": { "type": "wired", "internet": "portal" } }),
+            ),
+            &state,
+        );
+        let network = state.borrow().network.clone().unwrap();
+        assert_eq!(network.kind, NetworkType::Wired);
+        assert_eq!(network.internet, Some(Internet::Portal));
+        fold_notification(
+            &notification("device.changed", json!({ "network": null })),
+            &state,
+        );
+        assert_eq!(state.borrow().network, None);
     }
 
     #[test]
