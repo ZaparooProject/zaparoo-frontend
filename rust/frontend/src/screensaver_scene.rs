@@ -12,6 +12,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use slint::{ComponentHandle, Image, Model, ModelRc, Rgb8Pixel, SharedPixelBuffer, VecModel};
+use zaparoo_app::screensaver::aquarium::{self, Aquarium};
 use zaparoo_app::screensaver::contour::{self, Mask};
 use zaparoo_app::screensaver::flyby::Flyby;
 use zaparoo_app::screensaver::hops::Hops;
@@ -144,6 +145,7 @@ enum Sim {
     Paddle(Paddle),
     Stars(Stars),
     Flyby(Flyby),
+    Aquarium(Aquarium),
     Polygons {
         polygons: Polygons,
         /// The picture's size in pixels.
@@ -166,6 +168,7 @@ pub(crate) struct Scene {
     style: Style,
     sim: Sim,
     art: Art,
+    aquarium_art: Vec<Image>,
     logo: Face,
     mark: Image,
     view: View,
@@ -225,6 +228,13 @@ impl Scene {
                 seed,
             )),
             Style::Flyby => Sim::Flyby(Flyby::new(art.systems.len(), art.covers.len(), seed)),
+            Style::Aquarium => {
+                let sizes: Vec<_> = crate::aquarium_assets::fish_catalog()
+                    .iter()
+                    .map(crate::aquarium_assets::FishAsset::size)
+                    .collect();
+                Sim::Aquarium(Aquarium::new(view.width, view.height, seed, &sizes))
+            }
             Style::Polygons => Sim::Polygons {
                 polygons: Polygons::new(
                     aspect,
@@ -243,10 +253,15 @@ impl Scene {
             }
             Style::Maze => maze_sim(&art, view, seed),
         };
+        let aquarium_art = match &sim {
+            Sim::Aquarium(aquarium) => aquarium_art(aquarium),
+            _ => Vec::new(),
+        };
         let mut scene = Self {
             style,
             sim,
             art,
+            aquarium_art,
             logo,
             mark,
             view,
@@ -259,12 +274,35 @@ impl Scene {
         saver.set_style(style.into());
         saver.set_bouncing(resolved.bouncing.into());
         saver.set_aspect(aspect);
+        saver.set_source_height(view.height);
         saver.set_fade(style == Style::SystemLogos);
         saver.set_frame(Image::default());
         saver.set_sprites(ModelRc::from(scene.sprites.clone()));
+        scene.prepare_aquarium(app, None);
         scene.show_card(app);
         scene.first_frame(app, time);
         scene
+    }
+
+    /// Publish the static scene before arming, avoiding the previous run's combination.
+    pub(crate) fn prepare_aquarium(
+        &mut self,
+        app: &crate::App,
+        previous: Option<aquarium::Seabed>,
+    ) -> Option<aquarium::Seabed> {
+        let Sim::Aquarium(aquarium) = &mut self.sim else {
+            return None;
+        };
+        aquarium.avoid_repeat(previous);
+        let seabed = aquarium.seabed();
+        let color = |rgb| slint::Color::from_rgb_u8((rgb >> 16) as u8, (rgb >> 8) as u8, rgb as u8);
+        let saver = app.global::<Saver>();
+        saver.set_aquarium_water(color(seabed.water));
+        saver.set_aquarium_sand(color(seabed.sand));
+        saver.set_aquarium_sand_top(aquarium::SAND_TOP);
+        saver.set_aquarium_fish_row(aquarium::FISH_ROW as i32);
+        saver.set_aquarium_crt_fish_count(aquarium.crt_fish_count() as i32);
+        Some(seabed)
     }
 
     /// How often the style steps; `None` when the view animates itself.
@@ -272,7 +310,7 @@ impl Scene {
         let ms = match self.style {
             Style::Bouncing | Style::Random => return None,
             Style::SpinningLogo | Style::RecentGames | Style::PaddleClock => 33,
-            Style::Starfield | Style::Flyby | Style::Polygons | Style::Maze => 50,
+            Style::Starfield | Style::Flyby | Style::Aquarium | Style::Polygons | Style::Maze => 50,
             Style::SystemLogos => 100,
             Style::Snakes | Style::Life => 83,
             Style::CoverWall => 250,
@@ -395,6 +433,20 @@ impl Scene {
                 flyby.step(dt, aspect, faces);
                 Some(flyby.sprites())
             }
+            Sim::Aquarium(aquarium) => {
+                aquarium.step(dt);
+                let drawings = aquarium.sprites();
+                let rows = drawings
+                    .iter()
+                    .map(|drawing| {
+                        let mut row = self.row(&drawing.sprite);
+                        row.pixel_offset_y = drawing.pixel_y;
+                        row
+                    })
+                    .collect();
+                publish(&self.sprites, rows);
+                None
+            }
             Sim::Polygons { polygons, size } => {
                 polygons.step(dt, aspect);
                 let mut buffer = SharedPixelBuffer::<Rgb8Pixel>::new(size.0 as u32, size.1 as u32);
@@ -514,6 +566,11 @@ impl Scene {
                     .unwrap_or_default(),
                 slint::Color::default(),
             ),
+            Look::Aquarium(i) => (
+                SaverLook::Image,
+                self.aquarium_art.get(i).cloned().unwrap_or_default(),
+                slint::Color::default(),
+            ),
             Look::Clock => (SaverLook::Clock, Image::default(), slint::Color::default()),
             Look::Block(n) => (SaverLook::Block, Image::default(), self.slot(n)),
         };
@@ -523,6 +580,7 @@ impl Scene {
             w: s.w,
             h: s.h,
             opacity: s.opacity,
+            pixel_offset_y: 0.0,
             look,
             image,
             color,
@@ -530,6 +588,9 @@ impl Scene {
     }
 
     fn slot(&self, n: u8) -> slint::Color {
+        if self.style == Style::Aquarium {
+            return slint::Color::from_rgb_u8(0x42, 0x6d, 0x7c);
+        }
         if self.white && n == 0 {
             return slint::Color::from_rgb_u8(0xFF, 0xFF, 0xFF);
         }
@@ -561,13 +622,59 @@ fn publish<T: Clone + PartialEq + 'static>(model: &VecModel<T>, rows: Vec<T>) {
     }
 }
 
+/// Lossless trim of transparent padding; visible pixels stay at native resolution.
+fn aquarium_fish_pixels(asset: &crate::aquarium_assets::FishAsset) -> Option<image::RgbaImage> {
+    let bytes = crate::aquarium_assets::get(asset.path)?;
+    let decoded = image::load_from_memory(bytes).ok()?.to_rgba8();
+    let [x, y, width, height] = asset.crop;
+    let pixels = image::imageops::crop_imm(&decoded, x, y, width, height).to_image();
+    Some(if asset.faces_right {
+        image::imageops::flip_horizontal(&pixels)
+    } else {
+        pixels
+    })
+}
+
+/// Decode only this run's fish and four decorations, with no resampling.
+fn aquarium_art(aquarium: &Aquarium) -> Vec<Image> {
+    let catalog = crate::aquarium_assets::fish_catalog();
+    let count = aquarium.fish_indices().len();
+    let image = |pixels: &image::RgbaImage| {
+        Image::from_rgba8(SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(
+            pixels.as_raw(),
+            pixels.width(),
+            pixels.height(),
+        ))
+    };
+    let mut left = Vec::with_capacity(count * 2 + 4);
+    let mut right = Vec::with_capacity(count);
+    for index in aquarium.fish_indices() {
+        let pixels = catalog.get(index).and_then(aquarium_fish_pixels);
+        if let Some(pixels) = pixels {
+            left.push(image(&pixels));
+            right.push(image(&image::imageops::flip_horizontal(&pixels)));
+        } else {
+            left.push(Image::default());
+            right.push(Image::default());
+        }
+    }
+    left.extend(right);
+    for path in aquarium.seabed().decorations {
+        let pixels = crate::aquarium_assets::get(path)
+            .and_then(|bytes| image::load_from_memory(bytes).ok())
+            .map(|image| image.to_rgba8());
+        left.push(pixels.as_ref().map_or_else(Image::default, image));
+    }
+    left
+}
+
 fn face_aspect(art: &Art, logo_aspect: f32, look: Look) -> f32 {
     match look {
         Look::Logo => logo_aspect,
         Look::System(i) => art.systems.get(i).map_or(2.0, |f| f.aspect),
         Look::Cover(i) => art.covers.get(i).map_or(0.75, |f| f.aspect),
         Look::Clock => 2.6,
-        Look::Mark | Look::Block(_) => 1.0,
+        Look::Mark | Look::Block(_) | Look::Aquarium(_) => 1.0,
     }
 }
 
@@ -747,4 +854,69 @@ pub(crate) fn seed_now() -> u64 {
 /// A generator for `resolve`, seeded from the clock.
 pub(crate) fn rng_now() -> Rng {
     Rng::new(seed_now())
+}
+
+#[cfg(test)]
+mod aquarium_tests {
+    use super::*;
+
+    #[test]
+    fn selected_art_matches_native_catalog_sizes_in_both_directions() {
+        let catalog = crate::aquarium_assets::fish_catalog();
+        let sizes: Vec<_> = catalog
+            .iter()
+            .map(crate::aquarium_assets::FishAsset::size)
+            .collect();
+        for (width, height) in [(320.0, 240.0), (1280.0, 720.0), (1920.0, 1080.0)] {
+            let aquarium = Aquarium::new(width, height, 42, &sizes);
+            let count = aquarium.fish_indices().len();
+            let art = aquarium_art(&aquarium);
+            assert_eq!(art.len(), count * 2 + 4);
+            for (i, catalog_index) in aquarium.fish_indices().enumerate() {
+                for index in [i, i + count] {
+                    let size = art[index].size();
+                    assert_eq!((size.width, size.height), catalog[catalog_index].size());
+                }
+            }
+            for decoration in &art[count * 2..] {
+                let size = decoration.size();
+                assert_eq!(
+                    (size.width, size.height),
+                    (aquarium::DECORATION_SIZE, aquarium::DECORATION_SIZE)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn every_fish_keeps_its_original_pixels_without_resampling() {
+        for asset in crate::aquarium_assets::fish_catalog() {
+            let original = crate::aquarium_assets::get(asset.path)
+                .and_then(|bytes| image::load_from_memory(bytes).ok());
+            let loaded = aquarium_fish_pixels(asset);
+            assert!(
+                original.is_some() && loaded.is_some(),
+                "{} failed to decode",
+                asset.path
+            );
+            if let (Some(original), Some(loaded)) = (original, loaded) {
+                assert_eq!((loaded.width(), loaded.height()), asset.size());
+                let original = original.to_rgba8();
+                let [x, y, width, height] = asset.crop;
+                for row in 0..height {
+                    for col in 0..width {
+                        let source_col = if asset.faces_right {
+                            width - 1 - col
+                        } else {
+                            col
+                        };
+                        assert_eq!(
+                            loaded.get_pixel(col, row),
+                            original.get_pixel(x + source_col, y + row)
+                        );
+                    }
+                }
+            }
+        }
+    }
 }
