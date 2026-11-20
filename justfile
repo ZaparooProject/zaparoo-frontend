@@ -128,6 +128,10 @@ notices:
 
 # --- embedded art ---
 
+# Package the Aquarium source images into the embedded, zero-copy archive.
+aquarium-assets *args:
+    python3 scripts/package-aquarium.py {{args}}
+
 # Rasterizes resources/images/systems/*.svg and scales
 # resources/images/systems-color/*.png into rust/frontend/assets/, the logo
 # sets build.rs embeds, along with the half-size grayscale copies small

@@ -20,8 +20,10 @@ repo_root="$(cd -- "$script_dir/.." && pwd -P)"
 cd "$repo_root/rust"
 cargo build -q -p frontend --features snapshot --bin snapshot
 snapshot="${CARGO_TARGET_DIR:-target}/debug/snapshot"
-frame="$(mktemp --suffix=.png 2> /dev/null || mktemp)"
-trap 'rm -f -- "$frame"' EXIT
+# BSD mktemp has no --suffix; the renderer needs a PNG extension on all hosts.
+frame_dir="$(mktemp -d)"
+frame="$frame_dir/frame.png"
+trap 'rm -f -- "$frame"; rmdir -- "$frame_dir"' EXIT
 
 # shellcheck source=scripts/snapshot-screens.sh
 . "$script_dir/snapshot-screens.sh"
