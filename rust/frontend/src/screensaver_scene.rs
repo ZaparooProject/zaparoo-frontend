@@ -256,7 +256,7 @@ impl Scene {
             Style::Life => {
                 let (w, h) = life_board(view);
                 let mask = logo_source.as_ref().map(|s| life_mask(s, w, h));
-                Sim::Life(Life::new(w, h, mask, seed))
+                Sim::Life(Life::new(w, h, mask, art.clock, seed))
             }
             Style::Maze => maze_sim(&art, view, seed),
         };

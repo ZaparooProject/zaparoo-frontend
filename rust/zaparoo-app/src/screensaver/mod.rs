@@ -221,8 +221,9 @@ pub struct Art {
     /// without a cover.
     pub lines: usize,
     /// The time is set. Until a device with no clock battery learns it from
-    /// the network, nothing shows a clock: the clock styles fall back, and
-    /// the Cover wall leaves out its clock tile.
+    /// the network, nothing shows a clock: the clock styles fall back, the
+    /// Cover wall leaves out its clock tile, and Life never seeds a board
+    /// from the time.
     pub clock: bool,
 }
 
