@@ -72,6 +72,8 @@ mod music_layout;
 )]
 mod state_types;
 
+#[path = "../aquarium_assets.rs"]
+mod aquarium_assets;
 #[path = "../brand.rs"]
 #[allow(
     dead_code,
@@ -1713,6 +1715,7 @@ fn fixture_saver(app: &App, screen: &str) {
     };
     let rest = rest.trim_start_matches('-');
     let (style, bouncing) = match rest {
+        "aquarium-mirror" => (Style::Aquarium, Bouncing::Logo),
         "clock" => (Style::Bouncing, Bouncing::Clock),
         "recent-game" => (Style::Bouncing, Bouncing::RecentGame),
         token => (Style::parse(token), Bouncing::Logo),
@@ -1764,7 +1767,17 @@ fn fixture_saver(app: &App, screen: &str) {
     let mut rng = Rng::new(231);
     let resolved = rules::resolve(style, bouncing, art.counts(), None, &mut rng);
     let time = (10, 32);
-    let mut scene = Scene::new(app, resolved, art, View::of(app), 231, time, false);
+    // Exercise the native-size CRT projection from a Full HD primary.
+    let view = if rest == "aquarium-mirror" {
+        View {
+            width: 1920.0,
+            height: 1080.0,
+            low_res: false,
+        }
+    } else {
+        View::of(app)
+    };
+    let mut scene = Scene::new(app, resolved, art, view, 231, time, false);
     // Four seconds in, so every style has something on screen; Flyby
     // launches slowly, so its parade gets fifteen.
     let step = 1.0 / 30.0;

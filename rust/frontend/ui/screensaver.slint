@@ -4,7 +4,8 @@
 
 // The screensaver: a solid-black backstop (the only background that gives
 // OLED pixels-off rest and CRT phosphor a true break) with one style on
-// top. Rust resolves the style, runs its simulation
+// top. Aquarium supplies its own static water and sand colors instead.
+// Rust resolves the style, runs its simulation
 // (`zaparoo_app::screensaver`) and publishes what to draw through the
 // `Saver` global; the view only paints it. Every style keeps its dirty
 // region small on the software renderer, except the pixel-buffer styles
@@ -23,6 +24,8 @@ export struct SaverSprite {
     w: float,
     h: float,
     opacity: float,
+    // Aquarium: native output-pixel bob and bottom anchors.
+    pixel-offset-y: float,
     look: SaverLook,
     image: image,
     color: color,
@@ -36,6 +39,13 @@ export global Saver {
     // A head with another shape (the CRT beside HDMI) spreads them across
     // its own width instead of cutting them off.
     in property <float> aspect: 16 / 9;
+    // Aquarium keeps native sprite sizes on HDMI and its smaller CRT mirror.
+    in property <float> source-height: 240;
+    in property <color> aquarium-water;
+    in property <color> aquarium-sand;
+    in property <float> aquarium-sand-top: 0.9;
+    in property <int> aquarium-fish-row;
+    in property <int> aquarium-crt-fish-count;
     // Whether sprites fade between opacities (System logos) or cut.
     in property <bool> fade: false;
     // Life's and Maze's picture, scaled up to the whole scene.
@@ -177,14 +187,26 @@ component Sprites inherits Rectangle {
     in property <string> clock-text;
 
     property <float> spread: root.width / root.height / Saver.aspect;
+    property <bool> native-pixels: Saver.style == ScreensaverStyle.aquarium;
+    property <length> sprite-height: root.native-pixels ? Saver.source-height * 1px : root.height;
 
-    for s in Saver.sprites: Rectangle {
+    for s[i] in Saver.sprites: Rectangle {
+        visible: Saver.style != ScreensaverStyle.aquarium || !Sizing.crt
+            || i < Saver.aquarium-fish-row + Saver.aquarium-crt-fish-count;
         // Centers spread, sizes kept; on the layout's own shape this is
         // just `s.x`. Fliers enter and leave past the edges, so no clamp.
-        x: (s.x + s.w / 2) * root.spread * root.height - self.width / 2;
-        y: s.y * root.height;
-        width: s.w * root.height;
-        height: s.h * root.height;
+        x: root.native-pixels
+            ? (s.x + s.w) / (Saver.aspect + s.w) * (root.width + self.width) - self.width
+            : (s.x + s.w / 2) * root.spread * root.height - self.width / 2;
+        // Spread the swimming space above sand while keeping native fish heights
+        // on a smaller mirror. On the source output this remains the original y.
+        y: root.native-pixels && i >= Saver.aquarium-fish-row
+            ? s.y / Math.max(0.001, Saver.aquarium-sand-top - s.h)
+                * Math.max(0px, root.height * Saver.aquarium-sand-top - self.height)
+                + s.pixel-offset-y * 1px
+            : s.y * root.height + s.pixel-offset-y * 1px;
+        width: s.w * root.sprite-height;
+        height: s.h * root.sprite-height;
         opacity: s.opacity;
         background: s.look == SaverLook.block ? s.color : transparent;
         animate opacity {
@@ -197,7 +219,7 @@ component Sprites inherits Rectangle {
             height: parent.height;
             source: s.image;
             image-fit: fill;
-            image-rendering: Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
+            image-rendering: (Sizing.crt || root.native-pixels) ? ImageRendering.pixelated : ImageRendering.smooth;
         }
         if s.look == SaverLook.clock: Text {
             // Whole pixels on screen, not just within the sprite.
@@ -291,7 +313,13 @@ export component ScreensaverOverlay inherits Rectangle {
     in property <string> clock-text;
     in property <string> clock-sample;
 
-    background: black;
+    background: Saver.style == ScreensaverStyle.aquarium ? Saver.aquarium-water : black;
+
+    if Saver.style == ScreensaverStyle.aquarium: Rectangle {
+        y: root.height * Saver.aquarium-sand-top;
+        height: root.height - self.y;
+        background: Saver.aquarium-sand;
+    }
 
     if Saver.style == ScreensaverStyle.bouncing: Bouncing {
         clock-text: root.clock-text;

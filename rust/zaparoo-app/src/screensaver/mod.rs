@@ -5,13 +5,14 @@
 //! The screensaver: which style plays, what the Bouncing style bounces,
 //! and each style's motion as a pure, seeded step function.
 //!
-//! Every style draws on solid black with art the app already has: the
-//! Zaparoo logo, the embedded system logos and the covers Core scraped.
+//! Every style draws on solid black with embedded art or art the app
+//! already has: the Zaparoo logo, system logos and covers Core scraped.
 //! The adapter owns the timers and the images; the rules here decide where
 //! things are and what they show. Positions are in *height units*: the
 //! scene is `aspect` wide and 1 tall, so a square stays square on any
 //! output.
 
+pub mod aquarium;
 pub mod bounce;
 pub mod contour;
 pub mod flyby;
@@ -39,6 +40,7 @@ pub enum Style {
     PaddleClock,
     Starfield,
     Flyby,
+    Aquarium,
     Polygons,
     Snakes,
     Life,
@@ -56,6 +58,7 @@ pub const STYLES: &[&str] = &[
     "paddle-clock",
     "starfield",
     "flyby",
+    "aquarium",
     "polygons",
     "snakes",
     "life",
@@ -67,7 +70,7 @@ pub const DEFAULT_STYLE: &str = "random";
 
 impl Style {
     /// Every style but Random, which only ever resolves to one of these.
-    pub const PLAYABLE: [Self; 12] = [
+    pub const PLAYABLE: [Self; 13] = [
         Self::Bouncing,
         Self::SpinningLogo,
         Self::SystemLogos,
@@ -76,6 +79,7 @@ impl Style {
         Self::PaddleClock,
         Self::Starfield,
         Self::Flyby,
+        Self::Aquarium,
         Self::Polygons,
         Self::Snakes,
         Self::Life,
@@ -92,6 +96,7 @@ impl Style {
             "paddle-clock" => Self::PaddleClock,
             "starfield" => Self::Starfield,
             "flyby" => Self::Flyby,
+            "aquarium" => Self::Aquarium,
             "polygons" => Self::Polygons,
             "snakes" => Self::Snakes,
             "life" => Self::Life,
@@ -112,6 +117,7 @@ impl Style {
             Self::PaddleClock => "paddle-clock",
             Self::Starfield => "starfield",
             Self::Flyby => "flyby",
+            Self::Aquarium => "aquarium",
             Self::Polygons => "polygons",
             Self::Snakes => "snakes",
             Self::Life => "life",
@@ -328,6 +334,8 @@ pub enum Look {
     Clock,
     System(usize),
     Cover(usize),
+    /// Embedded Aquarium art, including each fish facing both directions.
+    Aquarium(usize),
     /// A flat rectangle in palette slot `n`.
     Block(u8),
 }
