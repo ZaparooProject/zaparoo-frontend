@@ -463,6 +463,7 @@ pub fn bind(ctx: &Ctx, app: &App) {
 }
 
 pub(crate) fn changed(ctx: &Ctx, app: &App, state: DeviceState) {
+    crate::device_hud::publish(ctx, app, &state);
     let controllers = state.controllers.as_deref().unwrap_or_default();
     let shell = app.global::<crate::Shell>();
     shell.set_controller_battery_low(any_low(controllers));
@@ -917,6 +918,7 @@ mod tests {
                 seeded: true,
                 capabilities,
                 power: None,
+                network: None,
                 bluetooth: Some(BluetoothAdapter {
                     present: true,
                     powered: Some(true),

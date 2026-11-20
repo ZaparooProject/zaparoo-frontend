@@ -3,8 +3,8 @@
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 //
 // Wire types for Core's `device.*` methods: the parts of `device.status`
-// and `device.changed` the frontend reads (power, controllers, the
-// Bluetooth adapter, capabilities), and the `device.bluetooth.*` state.
+// and `device.changed` the frontend reads (power, network, controllers,
+// the Bluetooth adapter, capabilities), and the `device.bluetooth.*` state.
 // Every field tolerates a missing key and an explicit `null`, so a Core
 // that predates a field, or reports a section as unknown, still decodes.
 
@@ -55,6 +55,47 @@ pub struct Power {
     pub source: Option<String>,
     #[serde(default)]
     pub charge_state: Option<String>,
+}
+
+/// The kind of link carrying the device's default route.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum NetworkType {
+    Wifi,
+    Wired,
+    Other,
+    /// No interface carries a default route.
+    #[serde(rename = "none")]
+    NoLink,
+    /// A token this frontend does not know, or no value at all.
+    #[default]
+    #[serde(other)]
+    Unknown,
+}
+
+/// How far beyond the local network the device can reach.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Internet {
+    Full,
+    /// Something such as a sign-in page answers in place of the internet.
+    Portal,
+    #[serde(rename = "none")]
+    Offline,
+    /// A token this frontend does not know.
+    #[serde(other)]
+    Unknown,
+}
+
+/// `network`: the link holding the default route and whether it reaches
+/// the internet.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+pub struct Network {
+    #[serde(default, rename = "type", deserialize_with = "null_default")]
+    pub kind: NetworkType,
+    /// `None` until Core's first answer, and where Core does not check.
+    #[serde(default)]
+    pub internet: Option<Internet>,
 }
 
 /// `bluetooth`: the adapter, as Core reads it.
@@ -119,6 +160,8 @@ pub struct DeviceStatus {
     pub capabilities: Capabilities,
     #[serde(default)]
     pub power: Option<Power>,
+    #[serde(default)]
+    pub network: Option<Network>,
     #[serde(default)]
     pub bluetooth: Option<BluetoothAdapter>,
     #[serde(default)]
@@ -226,7 +269,7 @@ mod tests {
                 "actions": { "device.bluetooth.pair": "supported" }
             },
             "power": { "present": true, "percent": 96, "source": "external", "chargeState": "charging" },
-            "network": { "type": "wifi" },
+            "network": { "type": "wifi", "interface": "wlan0", "internet": "full", "interfaces": [] },
             "bluetooth": { "present": true, "powered": true },
             "controllers": {
                 "count": 2,
@@ -251,6 +294,13 @@ mod tests {
             Some(SUPPORTED)
         );
         assert_eq!(status.power.unwrap().percent, Some(96));
+        assert_eq!(
+            status.network,
+            Some(Network {
+                kind: NetworkType::Wifi,
+                internet: Some(Internet::Full)
+            })
+        );
         assert_eq!(status.bluetooth.unwrap().powered, Some(true));
         let items = status.controllers.unwrap().items;
         assert_eq!(items.len(), 2);
@@ -282,6 +332,39 @@ mod tests {
             .unwrap();
         assert_eq!(battery.level, "low");
         assert_eq!(battery.charge_state, None);
+    }
+
+    #[test]
+    fn network_reads_every_token_and_tolerates_unknown_ones() {
+        let read = |value: serde_json::Value| -> Network { serde_json::from_value(value).unwrap() };
+        let cases = [
+            (
+                json!({ "type": "wired", "internet": "portal" }),
+                NetworkType::Wired,
+                Some(Internet::Portal),
+            ),
+            (
+                json!({ "type": "none", "internet": "none" }),
+                NetworkType::NoLink,
+                Some(Internet::Offline),
+            ),
+            (
+                json!({ "type": "other", "internet": null }),
+                NetworkType::Other,
+                None,
+            ),
+            (
+                json!({ "type": "satellite", "internet": "partial" }),
+                NetworkType::Unknown,
+                Some(Internet::Unknown),
+            ),
+            (json!({ "type": null }), NetworkType::Unknown, None),
+        ];
+        for (value, kind, internet) in cases {
+            assert_eq!(read(value), Network { kind, internet });
+        }
+        let status: DeviceStatus = serde_json::from_value(json!({ "network": null })).unwrap();
+        assert_eq!(status.network, None);
     }
 
     #[test]
