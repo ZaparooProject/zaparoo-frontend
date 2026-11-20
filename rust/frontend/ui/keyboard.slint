@@ -77,7 +77,7 @@ export component OnScreenKeyboard inherits Rectangle {
         return Theme.text-primary;
     }
     pure function key-glyph(key: KeyCell) -> string {
-        if (key.kind == KeyKind.backspace) { return "icons/NavLeft"; }
+        if (key.kind == KeyKind.backspace) { return "icons/Backspace"; }
         if (key.kind == KeyKind.shift) { return root.shift-locked ? "icons/ShiftLock" : "icons/NavUp"; }
         if (key.kind == KeyKind.submit) { return root.submit-glyph; }
         return "";

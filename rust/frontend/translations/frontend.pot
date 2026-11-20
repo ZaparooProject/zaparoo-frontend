@@ -2,7 +2,7 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: frontend VERSION\n"
-"POT-Creation-Date: 2026-11-20 09:18+0000\n"
+"POT-Creation-Date: 2026-11-20 21:39+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -717,8 +717,7 @@ msgstr ""
 #: rust/frontend/ui/app.slint:3719 rust/frontend/ui/app.slint:3735
 #: rust/frontend/ui/app.slint:3719 rust/frontend/ui/app.slint:3735 rust/frontend/ui/app.slint:3783
 #: rust/frontend/ui/app.slint:3719 rust/frontend/ui/app.slint:3735 rust/frontend/ui/app.slint:3783 rust/frontend/ui/app.slint:3819
-#: rust/frontend/ui/app.slint:3719 rust/frontend/ui/app.slint:3735 rust/frontend/ui/app.slint:3783 rust/frontend/ui/app.slint:3819 rust/frontend/ui/pin.slint:117
-#: rust/frontend/ui/app.slint:3719 rust/frontend/ui/app.slint:3735 rust/frontend/ui/app.slint:3783 rust/frontend/ui/app.slint:3819 rust/frontend/ui/pin.slint:117
+#: rust/frontend/ui/app.slint:3719 rust/frontend/ui/app.slint:3735 rust/frontend/ui/app.slint:3783 rust/frontend/ui/app.slint:3819 rust/frontend/ui/settings.slint:607
 msgid "Delete"
 msgstr ""
 
@@ -2787,47 +2786,48 @@ msgstr[1] ""
 msgid "No music found"
 msgstr ""
 
-#: rust/frontend/ui/pin.slint:73
+#: rust/frontend/ui/pin.slint:67
 msgid "Choose an admin"
 msgstr ""
 
-#: rust/frontend/ui/pin.slint:74
+#: rust/frontend/ui/pin.slint:68
 msgid "Admin PIN for {}"
 msgstr ""
 
-#: rust/frontend/ui/pin.slint:75
+#: rust/frontend/ui/pin.slint:69
 msgid "New PIN for {}"
 msgstr ""
 
-#: rust/frontend/ui/pin.slint:76
+#: rust/frontend/ui/pin.slint:70
 msgid "Enter PIN"
 msgstr ""
 
-#: rust/frontend/ui/pin.slint:77
+#: rust/frontend/ui/pin.slint:71
 msgid "PIN for {}"
 msgstr ""
 
-#: rust/frontend/ui/pin.slint:84
+#. goes back to its standing hint.
+#: rust/frontend/ui/pin.slint:79
 msgid "Wrong PIN. Try again."
 msgstr ""
 
-#: rust/frontend/ui/pin.slint:85
+#: rust/frontend/ui/pin.slint:80
 msgid "Only an admin can unlock this."
 msgstr ""
 
-#: rust/frontend/ui/pin.slint:86
+#: rust/frontend/ui/pin.slint:81
 msgid "Could not check the PIN."
 msgstr ""
 
-#: rust/frontend/ui/pin.slint:87
+#: rust/frontend/ui/pin.slint:82
 msgid "Use 4 to 8 digits."
 msgstr ""
 
-#: rust/frontend/ui/pin.slint:132
+#: rust/frontend/ui/pin.slint:84
 msgid "Or scan an admin card"
 msgstr ""
 
-#: rust/frontend/ui/pin.slint:132
+#: rust/frontend/ui/pin.slint:85
 msgid "Or scan a switch card"
 msgstr ""
 
