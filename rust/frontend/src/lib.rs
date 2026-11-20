@@ -32,6 +32,7 @@ mod cue;
 mod curl;
 mod customization;
 mod decks;
+mod device_hud;
 mod discs;
 mod display;
 mod drs;
@@ -69,14 +70,6 @@ mod media_cache;
 mod media_setup;
 #[cfg(feature = "mister")]
 mod mister;
-#[cfg_attr(
-    not(feature = "mister"),
-    allow(
-        dead_code,
-        reason = "the SMBus probe is MiSTer-only; the desktop build reads the power-supply class instead"
-    )
-)]
-mod mister_battery;
 mod music;
 mod music_layout;
 mod navigation;
@@ -96,10 +89,6 @@ mod pairing;
 mod perf;
 mod pin;
 mod playtime_access;
-// Reads the kernel power-supply class, which only the desktop feature
-// set has any use for; `MiSTer`'s reading comes off the `SMBus` instead.
-#[cfg(feature = "desktop")]
-mod power_supply;
 mod qr;
 mod ra_login;
 mod rename;
@@ -121,7 +110,6 @@ mod status;
 mod steam;
 mod steam_host;
 mod system_logos;
-mod system_status;
 mod systems;
 mod tag_utils;
 mod theme;
@@ -159,7 +147,7 @@ mod generated {
 pub use generated::*;
 
 use router::{lock, Ctx, Shared};
-use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
+use slint::{ComponentHandle, SharedString};
 use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -1164,7 +1152,7 @@ fn run_application(
         push_header_clock(&app, &guard.persist.settings);
     }
     start_clock(&app, &handle, clock_twelve_hour, ctx.dormant.subscribe());
-    start_status(&app, &ctx);
+    start_reader_poll(&app, &ctx);
 
     #[cfg(feature = "mister")]
     let _dual_runtime = crt_mirror
@@ -1845,7 +1833,6 @@ fn start_clock(
             let wait = Duration::from_secs(if unset { 2 } else { 30 });
             tokio::select! {
                 () = tokio::time::sleep(wait) => {}
-                () = system_status::changed() => {}
                 changed = dormant.changed() => {
                     if changed.is_err() {
                         return;
@@ -1856,15 +1843,11 @@ fn start_clock(
     });
 }
 
-/// Header HUD status icons, refreshed every 30 seconds (every 5 while a
-/// switched-on Wi-Fi adapter waits for internet, so its dimmed icon turns
-/// solid soon after it connects) and whenever an embedding host reports a
-/// change: host-local probe (default-route
-/// class, internet reachability, Bluetooth adapter, battery HAT; on an
-/// embedding host, what the host reported) on a blocking thread, NFC
-/// projected from Core's `readers` (Core owns the reader). Keys are in
-/// display order.
-fn start_status(app: &App, ctx: &Arc<Ctx>) {
+/// The header's NFC glyph: Core's `readers`, asked every 30 seconds (Core
+/// owns the reader). A failed query keeps the readers already known: only
+/// Core's answer can say one went away. The other device glyphs follow
+/// Core's device state (`device_hud`).
+fn start_reader_poll(app: &App, ctx: &Arc<Ctx>) {
     let weak = app.as_weak();
     let mut dormant = ctx.dormant.subscribe();
     let ctx = ctx.clone();
@@ -1875,51 +1858,14 @@ fn start_status(app: &App, ctx: &Arc<Ctx>) {
                     return;
                 }
             }
-            let local = tokio::task::spawn_blocking(system_status::probe)
-                .await
-                .unwrap_or_default();
-            // A failed query keeps the readers already known: only Core's
-            // answer can say one went away.
-            let readers = ctx.store.client().readers().await.ok().map(|r| r.readers);
-            let has_nfc = match &readers {
-                Some(readers) => readers.iter().any(|r| r.connected && r.is_nfc_reader()),
-                None => lock(&ctx.shared).has_nfc,
-            };
-
-            let mut keys: Vec<SharedString> = Vec::new();
-            if has_nfc {
-                keys.push("NFC".into());
+            if let Ok(readers) = ctx.store.client().readers().await {
+                let ctx_inner = ctx.clone();
+                let _ = weak.upgrade_in_event_loop(move |app| {
+                    router::store_readers(&ctx_inner, &app, readers.readers);
+                });
             }
-            if local.has_wifi_internet || local.wifi_pending {
-                keys.push("WiFi".into());
-            }
-            if local.has_lan_internet {
-                keys.push("WiredNetwork".into());
-            }
-            if local.has_bluetooth {
-                keys.push("Bluetooth".into());
-            }
-            let ctx_inner = ctx.clone();
-            let _ = weak.upgrade_in_event_loop(move |app| {
-                let shell = app.global::<Shell>();
-                shell.set_status_keys(ModelRc::new(VecModel::from(keys)));
-                shell.set_wifi_pending(local.wifi_pending);
-                shell.set_has_battery(local.has_battery);
-                shell.set_battery_percent(local.battery_percent);
-                shell.set_status_icons_enabled(true);
-                if let Some(readers) = readers {
-                    router::store_readers(&ctx_inner, &app, readers);
-                }
-                hub::set_internet(
-                    &ctx_inner,
-                    &app,
-                    local.has_wifi_internet || local.has_lan_internet,
-                );
-            });
-            let wait = Duration::from_secs(if local.wifi_pending { 5 } else { 30 });
             tokio::select! {
-                () = tokio::time::sleep(wait) => {}
-                () = system_status::changed() => {}
+                () = tokio::time::sleep(Duration::from_secs(30)) => {}
                 changed = dormant.changed() => {
                     if changed.is_err() {
                         return;

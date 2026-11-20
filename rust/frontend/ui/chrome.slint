@@ -340,7 +340,7 @@ export component HeaderBar inherits Rectangle {
     // Widest clock reading for the format, so the slot never reflows.
     in property <string> clock-sample: "23:59";
     in property <[string]> status-keys: [];
-    // The WiFi icon is dimmed: the adapter is on but not online yet.
+    // The WiFi icon is dimmed: joined to Wi-Fi but not online yet.
     in property <bool> wifi-pending;
     in property <bool> status-icons-enabled: false;
     // Background music is playing: a music note leads the status icons.

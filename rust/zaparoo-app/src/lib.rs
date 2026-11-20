@@ -27,6 +27,7 @@ pub mod cover_landing;
 pub mod covers;
 pub mod credits;
 pub mod customization;
+pub mod device_hud;
 pub mod file_browser;
 pub mod folder_picker;
 pub mod form_list;

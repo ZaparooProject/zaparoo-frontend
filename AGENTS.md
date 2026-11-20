@@ -394,12 +394,10 @@ ask to go.
   page comes back as its parent's row (`docs/architecture.md` →
   "Cold-start restore").
 - Debug logging is enabled with `[logging] debug = true` or `ZAPAROO_DEBUG=1`.
-- The header's battery reading has two probes behind one HUD field.
-  `MiSTer` reads the optional pi-top-style `SMBus` fuel gauge
-  (`mister_battery.rs`); everything else reads the kernel power-supply
-  class (`power_supply.rs`). Filter that second one on `scope`: a paired
-  DualSense shows up as a `type=Battery` with `scope=Device`, so a naive
-  "first battery wins" puts the controller's charge in the status bar.
+- The header's network, Bluetooth and battery glyphs, and the Hub's
+  internet gate, come from Core's `device.status` and `device.changed`
+  (`device_hud.rs`), never from a probe of the frontend's own machine:
+  Core may run on another one. Core reads the MiSTer battery board itself.
 - The desktop build pins `SLINT_SCALE_FACTOR=1` before the window exists.
   Sizing keys off the real framebuffer (that is what the resolution tiers
   are), so a compositor-derived scale factor is a bug here, not a feature:

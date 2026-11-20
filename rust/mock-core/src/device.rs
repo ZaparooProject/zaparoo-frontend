@@ -3,16 +3,16 @@
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 //
 // The device Core runs on, simulated for the Controllers page and the
-// header: `device.status` with two Bluetooth controllers (one charging at
-// 80%, one at 10% and running down) and two more paired but switched off,
-// and the `device.bluetooth.*` methods over a scripted radio. A search
-// finds gamepads spread over its first twenty seconds: two that share a
-// name, one that always wants a PIN, and one with no name at all. Asked to
-// search again while it still is, the radio extends the search from now
-// and keeps what it found, as Core does. Pairing takes about two seconds
-// and connects the pad as a controller; Forget drops it again. Each change
-// is pushed as Core pushes it (`device.bluetooth.changed`,
-// `device.changed`).
+// header: `device.status` on Wi-Fi with the internet, two Bluetooth
+// controllers (one charging at 80%, one at 10% and running down) and two
+// more paired but switched off, and the `device.bluetooth.*` methods over
+// a scripted radio. A search finds gamepads spread over its first twenty
+// seconds: two that share a name, one that always wants a PIN, and one
+// with no name at all. Asked to search again while it still is, the radio
+// extends the search from now and keeps what it found, as Core does.
+// Pairing takes about two seconds and connects the pad as a controller;
+// Forget drops it again. Each change is pushed as Core pushes it
+// (`device.bluetooth.changed`, `device.changed`).
 //
 // `MOCK_CORE_BLUETOOTH=off` reports the adapter switched off, and `none`
 // answers like a Core that predates `device.*`.
@@ -439,6 +439,7 @@ fn status() -> Value {
         "capabilities": {
             "sections": {
                 "power": "unsupported",
+                "network": "supported",
                 "bluetooth": "supported",
                 "controllers": "supported",
                 "time": "supported",
@@ -446,7 +447,14 @@ fn status() -> Value {
             "actions": actions,
         },
         "power": null,
-        "network": null,
+        "network": {
+            "type": "wifi",
+            "interface": "wlan0",
+            "internet": "full",
+            "interfaces": [
+                { "name": "wlan0", "type": "wifi", "up": true, "addresses": ["192.168.1.20"] },
+            ],
+        },
         "bluetooth": adapter,
         "storage": null,
         "display": null,
@@ -466,7 +474,7 @@ fn push_device(notifier: &Notifier) {
         "device.changed",
         &json!({
             "power": null,
-            "network": null,
+            "network": { "type": "wifi", "internet": "full" },
             "bluetooth": adapter,
             "display": null,
             "controllers": controllers,
