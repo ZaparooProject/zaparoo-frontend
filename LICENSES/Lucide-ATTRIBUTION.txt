@@ -16,6 +16,7 @@ Licensed under the ISC License.
 Bundled icons (identifiable by the `class="lucide lucide-..."`
 attribute on the SVG root):
 
+  resources/images/icons/Backspace.svg
   resources/images/icons/BookMarked.svg
   resources/images/icons/Bookmark.svg
   resources/images/icons/BookmarkOutline.svg
