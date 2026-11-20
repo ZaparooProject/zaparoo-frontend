@@ -7,10 +7,13 @@
 // first page picks whose PIN it is. Rust owns every state change; the
 // panel appears and goes in one cut, with no fade (docs/slint-gotchas.md).
 
-import { Theme, Sizing } from "theme.slint";
-import { ModalShell } from "chrome.slint";
+import { Theme, Sizing, Motion } from "theme.slint";
+import { ModalShell, GlyphSource } from "chrome.slint";
 import { ListPanel, ListViewport, ListRow } from "list_panel.slint";
-import { PinPage, PinError } from "state_types.slint";
+import { PressableSurface } from "tiles.slint";
+import { FocusCursor } from "focus.slint";
+import { PressFeedback } from "press_feedback.slint";
+import { PinPage, PinError, PressOwner } from "state_types.slint";
 
 export global PinView {
     in property <bool> open: false;
@@ -40,26 +43,6 @@ export global PinView {
     callback pointer-admin(int);
 }
 
-component PadKey inherits Rectangle {
-    in property <string> label;
-    in property <bool> focused;
-    callback clicked();
-    border-radius: Sizing.radius-sm;
-    background: root.focused ? Theme.selection-fill : Theme.surface-card;
-    Text {
-        x: Sizing.snap((parent.width - self.width) / 2);
-        y: Sizing.snap((parent.height - self.height) / 2);
-        text: root.label;
-        color: root.focused ? Theme.on-accent : Theme.text-primary;
-        font-size: Sizing.font-body;
-        font-weight: root.focused ? FontWeight.medium : FontWeight.normal;
-    }
-    TouchArea {
-        mouse-cursor: pointer;
-        clicked => { root.clicked(); }
-    }
-}
-
 export component PinModal inherits ModalShell {
     property <length> key-w: Sizing.snap(Math.max(Sizing.pct-w(9), Sizing.pct-h(13)));
     property <length> key-h: Sizing.snap(Sizing.pct-h(8));
@@ -67,8 +50,19 @@ export component PinModal inherits ModalShell {
     property <length> pad-w: 3 * root.key-w + 2 * root.gap;
     property <length> pad-h: 4 * root.key-h + 3 * root.gap;
     property <length> dot: Sizing.snap(Sizing.pct-h(2.4));
-    // One caption line, held whether or not there is anything to say.
+    // The band above the pad the dots are centered in.
+    property <length> dot-band: root.key-h;
+    property <length> pad-y: root.dot-band + root.gap;
+    // One caption line under the pad, held whether or not there is
+    // anything to say, so the pad never moves.
     property <length> line-h: Sizing.snap(Sizing.font-caption * 1.5);
+    property <length> ring-gap: Sizing.card-border-width;
+    property <bool> focus-pressed: PressFeedback.active(PressOwner.pin, PinView.focus);
+    property <float> press-t: root.focus-pressed ? 1 : 0;
+    animate press-t {
+        duration: Motion.dur(root.focus-pressed ? Motion.press-ms : Motion.settle-ms);
+        easing: ease-out-quad;
+    }
 
     title: PinView.page == PinPage.admins ? @tr("Choose an admin")
         : PinView.first-admin ? @tr("Admin PIN for {}", PinView.name)
@@ -78,58 +72,92 @@ export component PinModal inherits ModalShell {
     panel-width: PinView.page == PinPage.admins ? ListPanel.width
         : Sizing.snap(Math.min(Sizing.pct-w(92), Math.max(root.pad-w, Sizing.pct-w(40)) + 2 * root.pad));
     content-height: PinView.page == PinPage.admins ? vp.height
-        : root.dot + root.gap + root.line-h + root.gap + root.pad-h
-            + (PinView.can-scan ? root.gap + root.line-h : 0px);
+        : root.pad-y + root.pad-h + root.gap + root.line-h;
 
-    property <string> status-text: PinView.error == PinError.incorrect ? @tr("Wrong PIN. Try again.")
+    // A refusal shows for a few seconds (Rust clears it), then the line
+    // goes back to its standing hint.
+    property <string> caption: PinView.error == PinError.incorrect ? @tr("Wrong PIN. Try again.")
         : PinView.error == PinError.not-admin ? @tr("Only an admin can unlock this.")
         : PinView.error == PinError.failed ? (PinView.error-text == "" ? @tr("Could not check the PIN.") : PinView.error-text)
         : PinView.setting ? @tr("Use 4 to 8 digits.")
-        : "";
+        : !PinView.can-scan ? ""
+        : PinView.unlocking ? @tr("Or scan an admin card")
+        : @tr("Or scan a switch card");
 
     if PinView.page == PinPage.entry: Rectangle {
         x: root.pad;
         y: root.content-y;
         width: root.content-width;
         height: root.content-height;
+        property <length> pad-x: Sizing.snap((self.width - root.pad-w) / 2);
 
-        // One dot per typed digit, centered.
+        // One dot per typed digit, centered in the band above the pad.
         for i in PinView.digits: Rectangle {
             x: Sizing.snap((parent.width - (PinView.digits * 2 - 1) * root.dot) / 2) + i * 2 * root.dot;
-            y: 0px;
+            y: Sizing.snap((root.dot-band - root.dot) / 2);
             width: root.dot;
             height: root.dot;
             border-radius: root.dot / 2;
-            background: Theme.accent;
+            background: Theme.text-primary;
         }
 
-        status := Text {
-            x: Sizing.snap((parent.width - self.width) / 2);
-            y: root.dot + root.gap;
-            width: Math.min(self.preferred-width, parent.width);
-            overflow: elide;
-            // A blank line holds the pad still when there is nothing to say.
-            text: root.status-text == "" ? " " : root.status-text;
-            color: Theme.text-label;
-            font-size: Sizing.font-caption;
-        }
-
-        for label[i] in ["1", "2", "3", "4", "5", "6", "7", "8", "9", @tr("Delete"), "0", @tr("OK")]: PadKey {
-            x: Sizing.snap((parent.width - root.pad-w) / 2) + Math.mod(i, 3) * (root.key-w + root.gap);
-            y: root.dot + root.gap + root.line-h + root.gap + Math.floor(i / 3) * (root.key-h + root.gap);
+        for label[i] in ["1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", @tr("OK")]: face := PressableSurface {
+            x: parent.pad-x + Math.mod(i, 3) * (root.key-w + root.gap);
+            y: root.pad-y + Math.floor(i / 3) * (root.key-h + root.gap);
             width: root.key-w;
             height: root.key-h;
-            label: label;
-            focused: PinView.focus == i;
-            clicked => { PinView.pointer-key(i); }
+            pressed: PressFeedback.active(PressOwner.pin, i);
+            property <length> glyph-size: Math.round(Math.min(self.width, self.face-height) * 0.5 / 1px) * 1px;
+
+            if label != "": Text {
+                x: 0;
+                width: Sizing.even(parent.width);
+                height: face.face-height;
+                text: label;
+                color: Theme.text-primary;
+                font-size: Sizing.font-body;
+                font-weight: FontWeight.medium;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+            // Delete is drawn, not lettered: the keyboard's backspace.
+            if label == "": Image {
+                x: (parent.width - self.width) / 2;
+                y: (face.face-height - self.height) / 2;
+                width: face.glyph-size;
+                height: face.glyph-size;
+                source: GlyphSource.glyph("icons/Backspace", face.glyph-size, Theme.text-primary);
+            }
+            TouchArea {
+                mouse-cursor: pointer;
+                clicked => { PinView.pointer-key(i); }
+            }
         }
 
-        if PinView.can-scan: Text {
+        FocusCursor {
+            radius: Math.max(0px, Sizing.radius-sm - root.ring-gap);
+            stroke: Sizing.card-border-width * 2;
+            target: {
+                x: parent.pad-x + Math.mod(PinView.focus, 3) * (root.key-w + root.gap) + root.ring-gap,
+                y: root.pad-y + Math.floor(PinView.focus / 3) * (root.key-h + root.gap)
+                    + root.ring-gap + root.press-t * Sizing.press-edge-height,
+                w: root.key-w - 2 * root.ring-gap,
+                h: root.key-h - Sizing.press-edge-height - 2 * root.ring-gap,
+                column: Math.mod(PinView.focus, 3),
+                row: Math.floor(PinView.focus / 3),
+                scope: "pin",
+                valid: PinView.focus >= 0 && PinView.focus < 12
+            };
+        }
+
+        Text {
             x: Sizing.snap((parent.width - self.width) / 2);
-            y: root.dot + root.gap + root.line-h + root.gap + root.pad-h + root.gap;
+            y: root.pad-y + root.pad-h + root.gap;
             width: Math.min(self.preferred-width, parent.width);
             overflow: elide;
-            text: PinView.unlocking ? @tr("Or scan an admin card") : @tr("Or scan a switch card");
+            // A blank line holds the panel's height when there is nothing to say.
+            text: root.caption == "" ? " " : root.caption;
             color: Theme.text-label;
             font-size: Sizing.font-caption;
         }
@@ -144,6 +172,7 @@ export component PinModal inherits ModalShell {
         current: PinView.admin-index;
         scope: "pin-admins";
         max-viewport: Sizing.pct-h(46);
+        press-held: PressFeedback.active(PressOwner.pin, PinView.admin-index);
 
         for name[i] in PinView.admins: ListRow {
             x: 0;

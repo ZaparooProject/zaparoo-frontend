@@ -54,6 +54,9 @@ struct Model {
     ticket: u64,
     /// A PIN check is in flight: the pad waits for it.
     checking: bool,
+    /// Bumped by every refusal, open and close, so a message's timeout
+    /// clears only the message it was set for.
+    message: u64,
     /// The scan wait, aborted when the panel closes.
     scan: Option<tokio::task::JoinHandle<()>>,
 }
@@ -64,6 +67,12 @@ thread_local! {
 
 fn with<T>(f: impl FnOnce(&mut Model) -> T) -> T {
     MODEL.with(|m| f(&mut m.borrow_mut()))
+}
+
+/// The open panel's ticket, for tests that answer a request themselves.
+#[cfg(all(test, feature = "mister"))]
+pub(crate) fn ticket_for_test() -> u64 {
+    with(|m| m.ticket)
 }
 
 pub(crate) fn is_open(app: &App) -> bool {
@@ -261,6 +270,7 @@ fn request_switch(
 fn open(ctx: &Ctx, app: &App) {
     with(|m| {
         m.ticket += 1;
+        m.message += 1;
         m.pin.clear();
         m.focus = rules::START;
         m.checking = false;
@@ -371,20 +381,40 @@ pub(crate) fn pin_saved(ctx: &Ctx, app: &App, ticket: u64, error: Option<String>
 }
 
 fn refused(app: &App, error: PinError, text: &str) {
-    with(|m| {
+    let message = with(|m| {
         m.pin.clear();
         m.checking = false;
+        m.message += 1;
+        m.message
     });
     let view = app.global::<PinView>();
     view.set_error(error);
     view.set_error_text(SharedString::from(text));
     render(app);
+    // The message gives the caption line back to the standing hint.
+    let weak = app.as_weak();
+    slint::Timer::single_shot(
+        std::time::Duration::from_millis(rules::MESSAGE_MS),
+        move || {
+            let Some(app) = weak.upgrade() else { return };
+            if with(|m| m.message) == message {
+                clear_message(&app);
+            }
+        },
+    );
+}
+
+fn clear_message(app: &App) {
+    let view = app.global::<PinView>();
+    view.set_error(PinError::None);
+    view.set_error_text(SharedString::default());
 }
 
 /// Close the panel without unlocking anything; a scan wait is called off.
 pub(crate) fn close(ctx: &Ctx, app: &App) {
     let scan = with(|m| {
         m.ticket += 1;
+        m.message += 1;
         m.purpose = None;
         m.pin.clear();
         m.checking = false;
