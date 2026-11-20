@@ -627,8 +627,8 @@ pub struct FavoriteSystemsState {
 /// dimensions from `frontend.toml`.
 /// `language` mirrors `[general].language` in `frontend.toml` so the UI
 /// settings snapshot stays coherent with the config-backed startup path.
-/// `clock_format` is `auto`, `12h`, or `24h`; `auto` follows the effective
-/// UI locale.
+/// `clock_format` is `auto`, `12h`, `24h`, or `off`; `auto` follows the
+/// effective UI locale, and `off` hides the header clock.
 #[allow(
     clippy::struct_excessive_bools,
     reason = "flat settings mirror; each bool is an independent user-visible toggle"

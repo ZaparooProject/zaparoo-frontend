@@ -1760,6 +1760,7 @@ fn fixture_saver(app: &App, screen: &str) {
         covers,
         cards,
         lines,
+        clock: true,
     };
     let mut rng = Rng::new(231);
     let resolved = rules::resolve(style, bouncing, art.counts(), None, &mut rng);

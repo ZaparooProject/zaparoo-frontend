@@ -342,6 +342,7 @@ fn gather(ctx: &Ctx, view: View) -> Art {
         covers,
         cards,
         lines,
+        clock: crate::clock_is_set(),
     }
 }
 
@@ -358,7 +359,10 @@ pub(crate) fn arm(ctx: &Ctx, app: &App) {
     let art = if uses_art(style, bouncing) {
         gather(ctx, view)
     } else {
-        Art::default()
+        Art {
+            clock: crate::clock_is_set(),
+            ..Art::default()
+        }
     };
     let mut rng = scene::rng_now();
     let resolved = rules::resolve(style, bouncing, art.counts(), LAST.get(), &mut rng);

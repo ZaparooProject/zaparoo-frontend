@@ -26,6 +26,9 @@ const INTERNET_TIMEOUT: Duration = Duration::from_millis(800);
 pub struct LocalStatus {
     pub has_wifi_internet: bool,
     pub has_lan_internet: bool,
+    /// No internet yet, with a Wi-Fi adapter switched on: the header shows
+    /// a dimmed Wi-Fi icon until it connects.
+    pub wifi_pending: bool,
     pub has_bluetooth: bool,
     /// A battery answered: the optional `MiSTer` HAT on the `SMBus`, or
     /// a system battery in the kernel's power-supply class off it.
@@ -57,9 +60,11 @@ pub fn probe() -> LocalStatus {
     let battery = crate::mister_battery::read_capacity_percent();
     #[cfg(not(feature = "mister"))]
     let battery = crate::power_supply::read_capacity_percent();
+    let offline = !network.0 && !network.1;
     LocalStatus {
         has_wifi_internet: network.0,
         has_lan_internet: network.1,
+        wifi_pending: offline && wifi_adapter_up(),
         has_bluetooth: bluetooth_adapter_present(),
         has_battery: battery.is_some(),
         battery_percent: i32::from(battery.unwrap_or(0)),
@@ -129,6 +134,35 @@ fn is_wireless_interface(iface: &str) -> bool {
         || iface.starts_with("wl")
 }
 
+/// A wireless interface the system has switched on, joined to a network
+/// or not yet.
+#[cfg(not(feature = "hosted"))]
+fn wifi_adapter_up() -> bool {
+    fs::read_dir("/sys/class/net")
+        .ok()
+        .into_iter()
+        .flatten()
+        .filter_map(Result::ok)
+        .any(|entry| {
+            let iface = entry.file_name().to_string_lossy().into_owned();
+            is_wireless_interface(&iface)
+                && fs::read_to_string(entry.path().join("flags"))
+                    .is_ok_and(|flags| interface_flags_up(&flags))
+        })
+}
+
+/// Whether a `/sys/class/net/<iface>/flags` reading (`0x1003`) has
+/// `IFF_UP` set.
+#[cfg(any(test, not(feature = "hosted")))]
+fn interface_flags_up(flags: &str) -> bool {
+    let digits = flags.trim();
+    let digits = digits
+        .strip_prefix("0x")
+        .or_else(|| digits.strip_prefix("0X"))
+        .unwrap_or(digits);
+    u32::from_str_radix(digits, 16).is_ok_and(|flags| flags & 0x1 != 0)
+}
+
 #[cfg(not(feature = "hosted"))]
 fn internet_reachable() -> bool {
     [
@@ -155,6 +189,7 @@ fn bluetooth_adapter_present() -> bool {
 static HOST_STATUS: std::sync::Mutex<LocalStatus> = std::sync::Mutex::new(LocalStatus {
     has_wifi_internet: false,
     has_lan_internet: false,
+    wifi_pending: false,
     has_bluetooth: false,
     has_battery: false,
     battery_percent: 0,
@@ -188,7 +223,16 @@ pub async fn changed() {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_default_route_interface;
+    use super::{interface_flags_up, parse_default_route_interface};
+
+    #[test]
+    fn interface_flags_read_iff_up() {
+        assert!(interface_flags_up("0x1003\n"));
+        assert!(interface_flags_up("0x1"));
+        assert!(!interface_flags_up("0x1002\n"));
+        assert!(!interface_flags_up(""));
+        assert!(!interface_flags_up("garbage"));
+    }
 
     #[test]
     fn parse_default_route_selects_lowest_metric() {

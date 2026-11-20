@@ -425,6 +425,7 @@ pub fn system_status(
     crate::system_status::set_host_status(crate::system_status::LocalStatus {
         has_wifi_internet: wifi_internet,
         has_lan_internet: lan_internet,
+        wifi_pending: false,
         has_bluetooth: bluetooth,
         has_battery: battery_percent.is_some(),
         battery_percent: battery_percent.unwrap_or(0).clamp(0, 100),

@@ -3,13 +3,31 @@
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 //
 // The header clock: the `clock_format` setting picks 12h or 24h outright,
-// and `auto` follows the effective locale (the language setting, else the
-// host locale). With no CLDR tables to consult, the locale rule is a small
-// list of the 12-hour languages the app ships.
+// `off` hides the header clock, and `auto` follows the effective locale
+// (the language setting, else the host locale). With no CLDR tables to
+// consult, the locale rule is a small list of the 12-hour languages the
+// app ships.
 
-/// Whether the clock shows 12-hour time for `clock_format` (`auto`, `12h`
-/// or `24h`), given the language setting (`auto` or empty defers to the
-/// host locale tag, if any).
+/// The first year a clock reading is taken as set. A device with no clock
+/// battery boots in 1970 and only learns the time from the network; this
+/// is the same floor Core uses for its own `clockReliable`.
+pub const MIN_SET_YEAR: i32 = 2024;
+
+/// Whether a reading in `year` is a real time rather than the boot default
+/// of a device that has not synced yet.
+pub fn is_set(year: i32) -> bool {
+    year >= MIN_SET_YEAR
+}
+
+/// Whether the header shows the clock for `clock_format`.
+pub fn shown(clock_format: &str) -> bool {
+    clock_format != "off"
+}
+
+/// Whether the clock shows 12-hour time for `clock_format` (`auto`, `12h`,
+/// `24h` or `off`), given the language setting (`auto` or empty defers to
+/// the host locale tag, if any). `off` only hides the header clock; the
+/// screensaver's clock styles still follow the language, as `auto` does.
 pub fn uses_twelve_hour(clock_format: &str, language: &str, host_locale: Option<&str>) -> bool {
     match clock_format {
         "12h" => true,
@@ -90,6 +108,24 @@ mod tests {
         assert!(uses_twelve_hour("auto", "ko", None));
         assert!(uses_twelve_hour("auto", "zh-TW", None));
         assert!(!uses_twelve_hour("auto", "zh_CN", None));
+    }
+
+    #[test]
+    fn off_hides_the_header_clock_and_formats_like_auto() {
+        assert!(!shown("off"));
+        assert!(shown("auto"));
+        assert!(shown("12h"));
+        assert!(shown("24h"));
+        assert!(uses_twelve_hour("off", "en", None));
+        assert!(!uses_twelve_hour("off", "de", None));
+    }
+
+    #[test]
+    fn a_boot_default_year_is_not_a_set_clock() {
+        assert!(!is_set(1970));
+        assert!(!is_set(2023));
+        assert!(is_set(2024));
+        assert!(is_set(2026));
     }
 
     #[test]

@@ -1158,6 +1158,10 @@ fn run_application(
     bind_launchers(&ctx, &app, &store);
     retro_achievements::refresh(&ctx, &app);
     bind_controller_report(&ctx, &app);
+    {
+        let guard = lock(&ctx.shared);
+        push_header_clock(&app, &guard.persist.settings);
+    }
     start_clock(&app, &handle, clock_twelve_hour, ctx.dormant.subscribe());
     start_status(&app, &ctx);
 
@@ -1805,7 +1809,10 @@ fn request_resume(ctx: &Arc<Ctx>, app: &App, show_loading: bool) {
 }
 
 /// Wall-clock readout for the header, ticking every 30 seconds
-/// (minutes-only display never needs finer).
+/// (minutes-only display never needs finer). Until the time is set (a
+/// device with no clock battery boots in 1970) the text is empty, which
+/// hides the clock, and it is read every 2 seconds so the clock appears
+/// soon after the network sets the time.
 /// The flag follows `clock_twelve_hour` (the persisted `clock_format`
 /// setting, with `auto` following the language or host locale) and is
 /// shared with the Settings toggle so format changes apply live.
@@ -1818,6 +1825,7 @@ fn start_clock(
     push_clock(app, twelve_hour.load(Ordering::Relaxed));
     let weak = app.as_weak();
     handle.spawn(async move {
+        let mut shown: Option<String> = None;
         loop {
             while *dormant.borrow_and_update() {
                 if dormant.changed().await.is_err() {
@@ -1825,12 +1833,17 @@ fn start_clock(
                 }
             }
             let text = clock_string(twelve_hour.load(Ordering::Relaxed));
-            let _ = weak.upgrade_in_event_loop(move |app| {
-                app.global::<Shell>()
-                    .set_clock_text(SharedString::from(text.as_str()));
-            });
+            let unset = text.is_empty();
+            if shown.as_deref() != Some(text.as_str()) {
+                shown = Some(text.clone());
+                let _ = weak.upgrade_in_event_loop(move |app| {
+                    app.global::<Shell>()
+                        .set_clock_text(SharedString::from(text.as_str()));
+                });
+            }
+            let wait = Duration::from_secs(if unset { 2 } else { 30 });
             tokio::select! {
-                () = tokio::time::sleep(Duration::from_secs(30)) => {}
+                () = tokio::time::sleep(wait) => {}
                 () = system_status::changed() => {}
                 changed = dormant.changed() => {
                     if changed.is_err() {
@@ -1842,8 +1855,10 @@ fn start_clock(
     });
 }
 
-/// Header HUD status icons, refreshed every 30 seconds and whenever an
-/// embedding host reports a change: host-local probe (default-route
+/// Header HUD status icons, refreshed every 30 seconds (every 5 while a
+/// switched-on Wi-Fi adapter waits for internet, so its dimmed icon turns
+/// solid soon after it connects) and whenever an embedding host reports a
+/// change: host-local probe (default-route
 /// class, internet reachability, Bluetooth adapter, battery HAT; on an
 /// embedding host, what the host reported) on a blocking thread, NFC
 /// projected from Core's `readers` (Core owns the reader). Keys are in
@@ -1874,7 +1889,7 @@ fn start_status(app: &App, ctx: &Arc<Ctx>) {
             if has_nfc {
                 keys.push("NFC".into());
             }
-            if local.has_wifi_internet {
+            if local.has_wifi_internet || local.wifi_pending {
                 keys.push("WiFi".into());
             }
             if local.has_lan_internet {
@@ -1887,6 +1902,7 @@ fn start_status(app: &App, ctx: &Arc<Ctx>) {
             let _ = weak.upgrade_in_event_loop(move |app| {
                 let shell = app.global::<Shell>();
                 shell.set_status_keys(ModelRc::new(VecModel::from(keys)));
+                shell.set_wifi_pending(local.wifi_pending);
                 shell.set_has_battery(local.has_battery);
                 shell.set_battery_percent(local.battery_percent);
                 shell.set_status_icons_enabled(true);
@@ -1899,8 +1915,9 @@ fn start_status(app: &App, ctx: &Arc<Ctx>) {
                     local.has_wifi_internet || local.has_lan_internet,
                 );
             });
+            let wait = Duration::from_secs(if local.wifi_pending { 5 } else { 30 });
             tokio::select! {
-                () = tokio::time::sleep(Duration::from_secs(30)) => {}
+                () = tokio::time::sleep(wait) => {}
                 () = system_status::changed() => {}
                 changed = dormant.changed() => {
                     if changed.is_err() {
@@ -1912,10 +1929,19 @@ fn start_status(app: &App, ctx: &Arc<Ctx>) {
     });
 }
 
-/// Header clock text for the current minute.
+/// Header clock text for the current minute, or empty while the time has
+/// not been set.
 pub(crate) fn clock_string(twelve_hour: bool) -> String {
+    if !clock_is_set() {
+        return String::new();
+    }
     let now = time::OffsetDateTime::now_local().unwrap_or_else(|_| time::OffsetDateTime::now_utc());
     zaparoo_app::clock::format(now.hour(), now.minute(), twelve_hour)
+}
+
+/// Whether this machine's clock holds a real time.
+pub(crate) fn clock_is_set() -> bool {
+    zaparoo_app::clock::is_set(time::OffsetDateTime::now_utc().year())
 }
 
 /// Clock text plus the widest sample for its format, so the header's
@@ -1926,6 +1952,13 @@ pub(crate) fn push_clock(app: &App, twelve_hour: bool) {
     shell.set_clock_sample(SharedString::from(zaparoo_app::clock::widest_sample(
         twelve_hour,
     )));
+}
+
+/// Whether the header shows the clock: the Clock setting's `Off` hides it.
+/// The screensaver's clock styles read `clock-text` either way.
+pub(crate) fn push_header_clock(app: &App, settings: &persist::SettingsState) {
+    app.global::<Shell>()
+        .set_header_clock(zaparoo_app::clock::shown(&settings.clock_format));
 }
 
 /// The 12-hour decision for the persisted clock and language settings.

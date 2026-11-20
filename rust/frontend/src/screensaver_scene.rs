@@ -84,6 +84,8 @@ pub(crate) struct Art {
     pub covers: Vec<Face>,
     pub cards: Vec<Card>,
     pub lines: Vec<Line>,
+    /// The time is set, so a clock may show.
+    pub clock: bool,
 }
 
 impl Art {
@@ -92,6 +94,8 @@ impl Art {
             covers: self.covers.len(),
             recents: self.cards.len(),
             systems: self.systems.len(),
+            lines: self.lines.len(),
+            clock: self.clock,
         }
     }
 }
@@ -211,9 +215,12 @@ impl Scene {
                 Sim::Spin(Spin::new(aspect, logo.aspect, art.systems.len(), seed))
             }
             Style::SystemLogos => Sim::Hops(Hops::new(art.systems.len(), seed)),
-            Style::CoverWall => {
-                Sim::Wall(Wall::new(Grid::for_scene(aspect), art.covers.len(), seed))
-            }
+            Style::CoverWall => Sim::Wall(Wall::new(
+                Grid::for_scene(aspect),
+                art.covers.len(),
+                art.clock,
+                seed,
+            )),
             Style::RecentGames => Sim::Marquee {
                 marquee: Marquee::new(art.lines.len(), seed),
                 elapsed: 0.0,

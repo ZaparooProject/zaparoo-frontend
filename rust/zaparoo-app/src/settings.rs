@@ -834,7 +834,7 @@ pub const LANGUAGES: &[&str] = &[
     "auto", "ar", "eu", "zh_CN", "zh_TW", "nl", "en", "fr", "de", "el", "he", "hi", "it_IT", "ja",
     "ko", "ro", "sk", "es", "uk",
 ];
-pub const CLOCK_FORMATS: &[&str] = &["auto", "12h", "24h"];
+pub const CLOCK_FORMATS: &[&str] = &["auto", "12h", "24h", "off"];
 pub const REGIONS: &[&str] = &["auto", "us", "eu", "jp"];
 pub const INTERFACE_PROFILES: &[&str] = &["device", "standard", "handheld"];
 pub const ORIENTATIONS: &[&str] = &["horizontal", "cw", "ccw"];
