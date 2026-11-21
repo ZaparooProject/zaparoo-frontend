@@ -167,7 +167,11 @@ export global Shell {
     // The values the cue's sentence takes: a name, or a count and its total.
     in-out property <string> status-arg: "";
     in-out property <string> status-arg2: "";
+    // The current minute, or empty while the time has not been set.
     in-out property <string> clock-text: "";
+    // The header shows the clock (the Clock setting is not `Off`). The
+    // screensaver's clock styles read `clock-text` either way.
+    in-out property <bool> header-clock: true;
     // Widest reading for the clock format, so its slot never reflows.
     in-out property <string> clock-sample: "23:59";
     // Header HUD status icon keys in display order (NFC / WiFi /
@@ -175,6 +179,9 @@ export global Shell {
     // battery reading. `status-icons-enabled` mirrors MainLayout's
     // post-first-frame gate.
     in-out property <[string]> status-keys: [];
+    // The WiFi key is a Wi-Fi link that does not reach the internet yet:
+    // its icon is dimmed.
+    in-out property <bool> wifi-pending: false;
     in-out property <bool> status-icons-enabled: false;
     // Core's background slot is playing music (the header's music note).
     in-out property <bool> music-playing: false;
@@ -4805,9 +4812,10 @@ export component App inherits Window {
     header := HeaderBar {
         x: 0;
         y: Sizing.header-top-margin;
-        clock-text: Shell.clock-text;
+        clock-text: Shell.header-clock ? Shell.clock-text : "";
         clock-sample: Shell.clock-sample;
         status-keys: Shell.status-keys;
+        wifi-pending: Shell.wifi-pending;
         status-icons-enabled: Shell.status-icons-enabled;
         music-playing: Shell.music-playing;
         controller-battery-low: Shell.controller-battery-low;

@@ -217,6 +217,14 @@ pub struct Art {
     pub recents: usize,
     /// Systems with games, whose logos can show.
     pub systems: usize,
+    /// Recently played games Recent games can name in a pass, with or
+    /// without a cover.
+    pub lines: usize,
+    /// The time is set. Until a device with no clock battery learns it from
+    /// the network, nothing shows a clock: the clock styles fall back, the
+    /// Cover wall leaves out its clock tile, and Life never seeds a board
+    /// from the time.
+    pub clock: bool,
 }
 
 /// What actually plays: a style that is never Random, and the Bouncing
@@ -232,9 +240,14 @@ pub struct Resolved {
 pub fn playable(style: Style, bouncing: Bouncing, art: Art) -> bool {
     match style {
         Style::CoverWall => art.covers >= WALL_MIN_COVERS,
-        Style::Bouncing => {
-            bouncing != Bouncing::RecentGame || (art.covers >= 1 && art.recents >= 1)
-        }
+        Style::Bouncing => match bouncing {
+            Bouncing::Logo => true,
+            Bouncing::Clock => art.clock,
+            Bouncing::RecentGame => art.covers >= 1 && art.recents >= 1,
+        },
+        Style::PaddleClock => art.clock,
+        // With no recent game to name, every pass is the clock.
+        Style::RecentGames => art.lines >= 1 || art.clock,
         Style::Random => false,
         _ => true,
     }
@@ -465,11 +478,44 @@ mod tests {
             covers: 8,
             recents: 3,
             systems: 4,
+            lines: 3,
+            clock: true,
         };
         let r = resolve(Style::CoverWall, Bouncing::Clock, art, None, &mut rng);
         assert_eq!(r.style, Style::CoverWall);
         let r = resolve(Style::Maze, Bouncing::Logo, none, None, &mut rng);
         assert_eq!(r.style, Style::Maze, "covers on its walls are optional");
+    }
+
+    #[test]
+    fn an_unset_clock_leaves_the_clock_styles_out() {
+        let mut rng = Rng::new(5);
+        let unset = Art {
+            covers: 20,
+            recents: 5,
+            systems: 9,
+            lines: 0,
+            clock: false,
+        };
+        let r = resolve(Style::PaddleClock, Bouncing::Logo, unset, None, &mut rng);
+        assert_eq!((r.style, r.bouncing), (Style::Bouncing, Bouncing::Logo));
+        let r = resolve(Style::Bouncing, Bouncing::Clock, unset, None, &mut rng);
+        assert_eq!((r.style, r.bouncing), (Style::Bouncing, Bouncing::Logo));
+        let r = resolve(Style::RecentGames, Bouncing::Logo, unset, None, &mut rng);
+        assert_eq!(r.style, Style::Bouncing, "no game to name and no clock");
+        let named = Art { lines: 2, ..unset };
+        let r = resolve(Style::RecentGames, Bouncing::Logo, named, None, &mut rng);
+        assert_eq!(r.style, Style::RecentGames);
+        let r = resolve(Style::CoverWall, Bouncing::Logo, unset, None, &mut rng);
+        assert_eq!(r.style, Style::CoverWall, "the wall leaves its clock out");
+        let mut last = None;
+        for _ in 0..500 {
+            let r = resolve(Style::Random, Bouncing::Clock, unset, last, &mut rng);
+            assert_ne!(r.style, Style::PaddleClock);
+            assert_ne!(r.style, Style::RecentGames);
+            assert_ne!(r.style, Style::Bouncing, "a bouncing clock cannot play");
+            last = Some(r.style);
+        }
     }
 
     #[test]
@@ -479,6 +525,8 @@ mod tests {
             covers: 2,
             recents: 1,
             systems: 3,
+            lines: 1,
+            clock: true,
         };
         let mut last = None;
         for _ in 0..500 {
@@ -500,6 +548,8 @@ mod tests {
             covers: 20,
             recents: 5,
             systems: 9,
+            lines: 5,
+            clock: true,
         };
         let mut seen = std::collections::HashSet::new();
         let mut last = None;

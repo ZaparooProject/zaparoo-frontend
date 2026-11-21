@@ -62,6 +62,7 @@ pub(crate) fn publish(ctx: &Ctx, app: &App, state: &DeviceState) {
     if !shell.get_status_keys().iter().eq(keys.iter().cloned()) {
         shell.set_status_keys(ModelRc::new(VecModel::from(keys)));
     }
+    shell.set_wifi_pending(hud.wifi_pending);
     shell.set_has_battery(hud.battery_percent.is_some());
     shell.set_battery_percent(hud.battery_percent.unwrap_or(0));
     shell.set_status_icons_enabled(true);
