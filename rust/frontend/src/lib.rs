@@ -12,7 +12,6 @@ use crate::navigation::EntryMode;
 mod about;
 mod actions;
 mod add_to_deck;
-mod alternates;
 mod aquarium_assets;
 mod artwork;
 mod background;
@@ -104,6 +103,7 @@ mod screensaver;
 mod screensaver_scene;
 mod search;
 mod settings;
+mod similar;
 mod sizing;
 mod state_types;
 mod status;
@@ -1333,6 +1333,7 @@ fn bind_desktop_lifecycle(ctx: &Arc<Ctx>, app: &App, client: &Arc<Client>) {
                         refresh_resume(&ctx_event, &app);
                         games::refresh_recents(&ctx_event, &app);
                         games::refresh_top_played(&ctx_event, &app);
+                        games::refresh_recommended(&ctx_event, &app);
                         games::refresh_after_launch(&ctx_event, &app);
                     });
                 });
@@ -1548,6 +1549,7 @@ fn bind_history_changes(ctx: &Arc<Ctx>, app: &App, client: &Arc<Client>) {
                     refresh_resume(&ctx_event, &app);
                     games::refresh_recents(&ctx_event, &app);
                     games::refresh_top_played(&ctx_event, &app);
+                    games::refresh_recommended(&ctx_event, &app);
                 });
             }
         }
@@ -2270,6 +2272,7 @@ fn restores_screen(active_screen: &str) -> bool {
             | "deck"
             | "top-played"
             | "top-played-systems"
+            | "recommended"
             | "search"
             | "search-results"
             | "rename"
@@ -2286,8 +2289,8 @@ fn boot_curtain_for(active_screen: &str, has_saved_state: bool) -> bool {
     match active_screen {
         "settings" | "about" | "credits" => false,
         "systems" | "favorite-systems" | "games" | "favorites" | "recents" | "decks" | "deck"
-        | "top-played" | "top-played-systems" | "search" | "search-results" | "rename"
-        | "file-browser" | "music" => true,
+        | "top-played" | "top-played-systems" | "recommended" | "search" | "search-results"
+        | "rename" | "file-browser" | "music" => true,
         _ => has_saved_state,
     }
 }
@@ -2415,6 +2418,10 @@ fn restore_target(ctx: &Arc<Ctx>, app: &App) {
             games::enter_recents(ctx, app, EntryMode::Restore);
             return;
         }
+        "recommended" => {
+            games::enter_recommended(ctx, app, EntryMode::Restore);
+            return;
+        }
         "decks" | "top-played" | "top-played-systems" => {
             restore_collection(ctx, app, &target);
             return;
@@ -2512,6 +2519,7 @@ mod tests {
             "deck",
             "top-played",
             "top-played-systems",
+            "recommended",
             "search",
             "search-results",
             "rename",

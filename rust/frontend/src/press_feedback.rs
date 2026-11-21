@@ -76,7 +76,8 @@ pub fn prepare(ctx: &crate::router::Ctx, app: &App) -> Option<Target> {
             | Screen::SearchResults
             | Screen::Deck
             | Screen::Decks
-            | Screen::TopPlayed => {
+            | Screen::TopPlayed
+            | Screen::Recommended => {
                 crate::games::interrupt_page(ctx, app);
             }
             Screen::FileBrowser => crate::file_browser::interrupt_page(ctx, app),
@@ -375,7 +376,8 @@ fn grid_target(app: &App) -> Option<Target> {
         | Screen::SearchResults
         | Screen::Deck
         | Screen::Decks
-        | Screen::TopPlayed => {
+        | Screen::TopPlayed
+        | Screen::Recommended => {
             let view = app.global::<crate::GamesView>();
             if shell.get_browse_list_layout() {
                 return None;

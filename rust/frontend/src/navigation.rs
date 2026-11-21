@@ -126,7 +126,8 @@ pub fn cancel(ctx: &Ctx, app: &App) -> bool {
         | crate::Screen::SearchResults
         | crate::Screen::Deck
         | crate::Screen::Decks
-        | crate::Screen::TopPlayed => {
+        | crate::Screen::TopPlayed
+        | crate::Screen::Recommended => {
             crate::games::render(ctx, app);
             crate::games::resume_after_cancel(ctx, app);
         }

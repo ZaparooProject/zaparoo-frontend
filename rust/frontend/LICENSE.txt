@@ -465,6 +465,7 @@ attribute on the SVG root):
   resources/images/icons/History.svg
   resources/images/icons/Lock.svg
   resources/images/icons/RefreshCw.svg
+  resources/images/icons/Sparkles.svg
   resources/images/icons/PlayOutline.svg
   resources/images/icons/Stack.svg
   resources/images/icons/ThumbsDown.svg

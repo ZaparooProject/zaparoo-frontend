@@ -63,7 +63,7 @@ const DISK_ENTRIES: usize = 2;
 const DISK_VERSION: u32 = 3;
 
 /// The screens that follow the focused item.
-const GAME_LISTS: [Screen; 7] = [
+const GAME_LISTS: [Screen; 8] = [
     Screen::Games,
     Screen::Favorites,
     Screen::Recents,
@@ -71,6 +71,7 @@ const GAME_LISTS: [Screen; 7] = [
     Screen::Deck,
     Screen::Decks,
     Screen::TopPlayed,
+    Screen::Recommended,
 ];
 
 /// The screens whose main card can be glass.

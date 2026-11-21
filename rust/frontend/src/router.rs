@@ -1441,6 +1441,7 @@ fn dispatch_with_focus(ctx: &Ctx, app: &App, action: &str) {
             | crate::Screen::TopPlayedSystems
             | crate::Screen::Decks
             | crate::Screen::TopPlayed
+            | crate::Screen::Recommended
             | crate::Screen::Games
             | crate::Screen::Favorites
             | crate::Screen::Recents
@@ -1479,7 +1480,8 @@ fn list_layout_active(app: &App) -> bool {
         | crate::Screen::SearchResults
         | crate::Screen::Deck
         | crate::Screen::Decks
-        | crate::Screen::TopPlayed => shell.get_browse_list_layout(),
+        | crate::Screen::TopPlayed
+        | crate::Screen::Recommended => shell.get_browse_list_layout(),
         _ => false,
     }
 }
@@ -1642,7 +1644,8 @@ fn screen_action(ctx: &Ctx, app: &App, action: &str) {
         | crate::Screen::SearchResults
         | crate::Screen::Deck
         | crate::Screen::Decks
-        | crate::Screen::TopPlayed => {
+        | crate::Screen::TopPlayed
+        | crate::Screen::Recommended => {
             crate::games::handle_action(ctx, app, action);
         }
         crate::Screen::Search => crate::search::handle_action(ctx, app, action),
@@ -2460,6 +2463,13 @@ pub(crate) fn store_active_profile(
     };
     app.global::<crate::Shell>()
         .set_profile_name(SharedString::from(name.as_str()));
+    if changed {
+        // Core recommends for the active profile only.
+        ctx.store.invalidate(&zaparoo_core::store::Tag::any(
+            <zaparoo_core::endpoints::media_recommended::MediaRecommendedEndpoint as zaparoo_core::store::Endpoint>::NAME,
+        ));
+        crate::games::refresh_recommended(ctx, app);
+    }
     if changed && app.global::<crate::Shell>().get_active_screen() == crate::Screen::Settings {
         crate::settings::reseat(ctx, app);
         crate::settings::refresh(ctx, app);
@@ -3008,10 +3018,10 @@ pub(crate) fn config_writable(ctx: &Ctx) -> bool {
 pub(crate) fn report_action_error(ctx: &Ctx, app: &App, kind: &str, context: &str) {
     // An error ends on the screen, never back in a menu.
     forget_menu_return(ctx);
-    // An alert is the one thing allowed above a modal, but a failed
-    // discovery arrives while the context menu still holds its
-    // "Searching…" row: close the menu first so Back returns to the
-    // screen rather than to a row that can never resolve.
+    // An alert is the one thing allowed above a modal, but a failed page
+    // load arrives while the context menu still holds the row that asked:
+    // close the menu first so Back returns to the screen rather than to a
+    // row that can never resolve.
     if action_error::closes_context_menu(kind) && app.global::<crate::Overlays>().get_context_open()
     {
         close_context_menu(ctx, app);
@@ -3132,6 +3142,17 @@ pub struct MenuReturn {
     screen: crate::Screen,
     page: Option<zaparoo_app::options_menu::Page>,
     row: String,
+    /// A page Core listed that the row was on, rows and all, so Back
+    /// shows it again without asking.
+    listed: Option<ListedPage>,
+}
+
+/// A page of Core's rows, and the one that was focused.
+#[derive(Debug, Clone)]
+struct ListedPage {
+    page: crate::context_page::Page,
+    rows: Vec<crate::context_page::PageRow>,
+    index: usize,
 }
 
 /// A row is about to open something: note where the menu is, so Back
@@ -3157,7 +3178,42 @@ fn remember_menu_return(ctx: &Ctx, app: &App, id: &str) {
         screen: app.global::<crate::Shell>().get_active_screen(),
         page,
         row: id.to_string(),
+        listed: None,
     });
+}
+
+/// Row `index` of the page Core listed opens something in the menu's place
+/// through `action` (`opens`): Back there brings the menu back on that page
+/// and row. The menu stays up, its row held, until what it opens is ready.
+pub(crate) fn open_from_page(
+    ctx: &Ctx,
+    app: &App,
+    opens: zaparoo_app::options_menu::Opens,
+    index: usize,
+    action: impl FnOnce(),
+) {
+    {
+        let mut shared = lock(&ctx.shared);
+        let Some(page) = shared.context_page.showing else {
+            return;
+        };
+        shared.menu_return = Some(MenuReturn {
+            opens,
+            owner: shared.context_owner,
+            screen: app.global::<crate::Shell>().get_active_screen(),
+            page: None,
+            row: page.menu_id().to_string(),
+            listed: Some(ListedPage {
+                page,
+                rows: shared.context_page.rows.clone(),
+                index,
+            }),
+        });
+    }
+    hold_menu_through(app, HeldMenu::Context, action);
+    if !app.global::<crate::Overlays>().get_context_open() {
+        close_context_menu(ctx, app);
+    }
 }
 
 /// The menu Back would bring back, with its rows and owner, taken out of
@@ -3245,6 +3301,12 @@ pub(crate) fn return_to_menu(
     overlays.set_context_strip_index(-1);
     if let Some(page) = back.page {
         crate::context_page::turn(ctx, app, page);
+    }
+    if let Some(listed) = back.listed {
+        lock(&ctx.shared).context_page.rows = listed.rows;
+        crate::context_page::present_at(ctx, app, listed.page, listed.index);
+        overlays.set_context_open(true);
+        return true;
     }
     let index = overlays
         .get_context_entries()
@@ -3633,9 +3695,13 @@ fn context_accept(ctx: &Ctx, app: &App, id: &str) {
     };
     if matches!(
         showing,
-        Some(Page::Alternates | Page::Discs | Page::Versions | Page::AddToDeck)
+        Some(Page::Discs | Page::Versions | Page::AddToDeck)
     ) {
         crate::context_page::accept(ctx, app, id);
+        return;
+    }
+    if showing == Some(Page::Similar) {
+        crate::similar::accept(ctx, app, id);
         return;
     }
     if let Some(page) = opens {

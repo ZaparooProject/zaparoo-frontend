@@ -1,5 +1,5 @@
 import { Theme, Sizing, Motion } from "theme.slint";
-import { ScrollAction, ManualState, ManualFit, RowKind } from "state_types.slint";
+import { ScrollAction, ManualState, ManualFit, RowKind, PickSignal } from "state_types.slint";
 import { TagNames } from "tag_names.slint";
 import { GlyphSource, SectionHeader, ScrollCue, ModalShell, WaitCue } from "chrome.slint";
 import { Labels } from "labels.slint";
@@ -26,6 +26,7 @@ export global GameInfoView {
     // Where focus rests, by stop; each item says which stop it is, or -1.
     in-out property <int> focus: 0;
     in-out property <int> image-stop: -1;
+    in-out property <int> play-stop: -1;
     in-out property <int> manual-stop: -1;
     in-out property <int> description-stop: -1;
     // A row with several values lists them in the panel's place.
@@ -57,6 +58,12 @@ export global GameInfoView {
     in-out property <bool> scroll-snap: true;
     // The painted art box, in pixels, so a cover can be resized to it.
     callback art-box(int, int);
+    // Why the game was offered, under the art: the interest a
+    // recommendation came from, or a `Labels.menu` key for what a similar
+    // game shares. Both empty for a game opened to read about.
+    in-out property <PickSignal> pick: PickSignal.none;
+    in-out property <string> seed: "";
+    in-out property <string> shared-key: "";
     // The game has a manual Core can serve; the action row offers it.
     in-out property <bool> has-manual: false;
     // The manual, read in the details' place (`ManualReader`); `closed`
@@ -119,6 +126,25 @@ component ValueText inherits Rectangle {
         font-weight: root.bold ? FontWeight.medium : FontWeight.normal;
         color: root.ink;
         overflow: elide;
+    }
+}
+
+// A button of the details' action row (Play, Manual), filled while focused.
+component ActionButton inherits Rectangle {
+    in property <string> label;
+    in property <bool> focused;
+    in property <length> line-h;
+    width: label-text.preferred-width + 2 * Sizing.pct-w(2);
+    height: root.line-h + Sizing.pct-h(1.6);
+    border-radius: Sizing.radius-sm;
+    background: root.focused ? Theme.selection-fill : Theme.surface-card;
+    border-width: root.focused ? 0px : Sizing.stroke(1);
+    border-color: Theme.border-mid;
+    label-text := Text {
+        text: root.label;
+        font-size: Sizing.font-body;
+        font-weight: root.focused ? FontWeight.medium : FontWeight.normal;
+        color: root.focused ? Theme.on-accent : Theme.text-primary;
     }
 }
 
@@ -349,27 +375,33 @@ export component GameInfoModal inherits ModalShell {
                         }
                     }
                 }
-                // Its own fill, not the travelling one: the button is as
-                // wide as its word.
-                if GameInfoView.has-manual: manual-row := HorizontalLayout {
-                    property <bool> focused: GameInfoView.focus == GameInfoView.manual-stop && GameInfoView.manual-stop >= 0;
+                if GameInfoView.pick != PickSignal.none || GameInfoView.shared-key != "": Text {
+                    text: GameInfoView.pick != PickSignal.none
+                        ? Labels.pick(GameInfoView.pick, GameInfoView.seed)
+                        : Labels.menu(GameInfoView.shared-key, "");
+                    color: Theme.text-label;
+                    font-size: Sizing.font-body;
+                    wrap: word-wrap;
+                }
+                // Each button has its own fill, not the travelling one: a
+                // button is as wide as its word.
+                if GameInfoView.play-stop >= 0 || GameInfoView.has-manual: HorizontalLayout {
+                    property <bool> focused: (GameInfoView.focus == GameInfoView.play-stop && GameInfoView.play-stop >= 0)
+                        || (GameInfoView.focus == GameInfoView.manual-stop && GameInfoView.manual-stop >= 0);
                     init => { if (self.focused) { root.seat(self.y, self.height, false); } }
                     changed focused => { if (self.focused) { root.seat(self.y, self.height, false); } }
                     changed y => { if (self.focused) { root.seat(self.y, self.height, false); } }
                     alignment: start;
-                    Rectangle {
-                        width: manual-label.preferred-width + 2 * Sizing.pct-w(2);
-                        height: root.line-h + Sizing.pct-h(1.6);
-                        border-radius: Sizing.radius-sm;
-                        background: parent.focused ? Theme.selection-fill : Theme.surface-card;
-                        border-width: parent.focused ? 0px : Sizing.stroke(1);
-                        border-color: Theme.border-mid;
-                        manual-label := Text {
-                            text: @tr("game-document" => "Manual");
-                            font-size: Sizing.font-body;
-                            font-weight: manual-row.focused ? FontWeight.medium : FontWeight.normal;
-                            color: manual-row.focused ? Theme.on-accent : Theme.text-primary;
-                        }
+                    spacing: Sizing.pct-w(1.6);
+                    if GameInfoView.play-stop >= 0: ActionButton {
+                        label: @tr("Play");
+                        line-h: root.line-h;
+                        focused: GameInfoView.focus == GameInfoView.play-stop;
+                    }
+                    if GameInfoView.has-manual: ActionButton {
+                        label: @tr("game-document" => "Manual");
+                        line-h: root.line-h;
+                        focused: GameInfoView.focus == GameInfoView.manual-stop && GameInfoView.manual-stop >= 0;
                     }
                 }
                 if GameInfoView.media-missing: Text {

@@ -1833,7 +1833,7 @@ deep they are or how many Back presses get out. The rules:
    `ErrorQueue` in `zaparoo_app::action_error` shows one failure at a time,
    drops a duplicate of one already showing or queued, and holds the rest
    until the dialog is free. A context-menu page that fails to load
-   (alternate versions, a game's discs) closes the context menu first
+   (a game's versions or discs) closes the context menu first
    (`closes_context_menu`), so Back never returns to a waiting row that can
    never resolve.
 5. `ContextMenu` is an anchored transient, not a card. It closes before
@@ -1849,9 +1849,8 @@ deep they are or how many Back presses get out. The rules:
    systems); `router::hold_menu_through` holds either, and the route's end
    closes it, however it ends. Its pages are an in-place swap of its rows
    through `rust/frontend/src/context_page.rs`: Manage and Write to token,
-   whose rows are the menu's own, and alternate versions
-   (`rust/frontend/src/alternates.rs`), a multi-disc game's discs
-   (`rust/frontend/src/discs.rs`) and a search result's versions
+   whose rows are the menu's own, and a multi-disc game's discs
+   (`rust/frontend/src/discs.rs`) and a game's versions
    (`rust/frontend/src/title_versions.rs`), which Core is asked for. Back returns to
    the rows the page replaced, on the row that opened it (`context_action`
    in `router.rs`). One level only: a row on a page never opens a page.
@@ -1874,7 +1873,11 @@ its rows, so lists keep one size.
 ### Game Info
 
 Game Info follows the Zaparoo App's details modal: the art, an action row
-(Manual), the description, then a Details table and Technical details.
+(Play, Manual), the description, then a Details table and Technical details.
+Play is there only when the panel was opened from Similar games, and is
+focused then; the details a menu's own Details row opens never offer it.
+Under the art of a similar or recommended game, one line says why it was
+offered.
 The system, years and players are rows of the table, not a caption under
 the art as well. Under the art, the image's type and its place in the
 set (`Box art 1/3`); the list's detail pane names it the same way. A tag type is one
@@ -1895,8 +1898,9 @@ Left and Right always step
 the images. A new thing to do in Game Info is a new focus stop with its own
 A, never a button of its own. The selection fill travels between rows as
 it does in Settings (`SelectionCursor` with each row drawn again inside a
-`SelectionClip`); the art and the description take a ring, and the Manual
-button its own fill. Opening the panel, or coming back to it, scrolls
+`SelectionClip`); the art and the description take a ring, and the Play and
+Manual buttons each their own fill. Back from details opened from Similar
+games returns to that page on the same row. Opening the panel, or coming back to it, scrolls
 straight to the focused row; only the user's moves glide.
 
 ### Back to Options

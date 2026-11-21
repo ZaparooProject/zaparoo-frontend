@@ -1787,6 +1787,7 @@ fn every_screen_route_and_settings_category_commits_without_animation_delay() {
         (Screen::FavoriteSystems, Screen::Favorites),
         (Screen::Hub, Screen::Favorites),
         (Screen::Hub, Screen::Recents),
+        (Screen::Hub, Screen::Recommended),
         (Screen::Hub, Screen::Settings),
         (Screen::Settings, Screen::About),
     ] {
@@ -1801,6 +1802,7 @@ fn every_screen_route_and_settings_category_commits_without_animation_delay() {
         app.global::<crate::GamesView>().set_mode(match to {
             Screen::Favorites => GamesMode::Favorites,
             Screen::Recents => GamesMode::Recents,
+            Screen::Recommended => GamesMode::Recommended,
             _ => GamesMode::Browse,
         });
         crate::settings::open_page(
@@ -1874,6 +1876,8 @@ fn game_rows(name: &str, count: usize) -> Vec<crate::games::GameRow> {
                 name: format!("{name} {i}"),
                 entry_type: "media".into(),
                 has_cover: false,
+                // Core counts a browse entry's versions; one is none.
+                version_count: Some(1),
                 ..Default::default()
             });
             row.display.clone_from(&row.name);
@@ -1950,6 +1954,7 @@ fn disc_rows() -> Vec<crate::context_page::PageRow> {
             label: disc.to_string(),
             name: "Game 0".into(),
             launch_text: format!("/g/Game 0/Game 0 (Disc {disc}).chd"),
+            similar: None,
             deck: None,
         })
         .collect()
@@ -2097,6 +2102,7 @@ fn version_rows() -> Vec<crate::context_page::PageRow> {
             label: region.into(),
             name: "Game 0".into(),
             launch_text: format!("/g/Game 0 ({region}).nes"),
+            similar: None,
             deck: None,
         })
         .collect()
@@ -2113,11 +2119,11 @@ fn a_search_result_with_versions_counts_them_and_lists_them_as_a_page() {
         let mut shared = crate::router::lock(&ctx.shared);
         let row = &mut shared.games.rows[0];
         row.title_id = Some(9);
-        row.version_count = 3;
+        row.version_count = Some(3);
         // One version counts as none: the info line and the menu stay plain.
         let single = &mut shared.games.rows[1];
         single.title_id = Some(10);
-        single.version_count = 1;
+        single.version_count = Some(1);
     }
     let view = app.global::<crate::GamesView>();
     let overlays = app.global::<crate::Overlays>();
@@ -2188,6 +2194,236 @@ fn a_search_result_with_versions_counts_them_and_lists_them_as_a_page() {
     assert!(!overlays.get_dialog_open());
 }
 
+#[test]
+fn a_browsed_game_with_versions_lists_them_as_a_page() {
+    use crate::context_page::Page;
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    seat_visibility_list(&ctx, &app, GamesMode::Browse);
+    crate::router::lock(&ctx.shared).games.rows[0].version_count = Some(2);
+    crate::games::render(&ctx, &app);
+    let overlays = app.global::<crate::Overlays>();
+
+    // Core counted the entry's versions, so the menu opens at once.
+    crate::router::handle_action(&ctx, &app, "context_menu");
+    assert!(overlays.get_context_open());
+    focus_context_row(&app, "choose_version");
+    crate::router::handle_action(&ctx, &app, "accept");
+    settle(&window);
+    let ticket = crate::context_page::ticket(&ctx);
+    crate::context_page::landed(&ctx, &app, Page::Versions, ticket, Ok(version_rows()));
+    assert_eq!(overlays.get_context_page(), crate::ContextPage::Versions);
+    assert_eq!(overlays.get_context_entries().row_count(), 2);
+}
+
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one walk through the page, its details, Back, Play and the menu's own Details"
+)]
+fn a_similar_game_opens_its_details_on_play_and_back_returns_to_its_row() {
+    use crate::context_page::{Page, PageRow};
+    use crate::similar::SimilarGame;
+    use zaparoo_app::suggestions::Shared;
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let base = seat_visibility_list(&ctx, &app, GamesMode::Browse);
+    crate::router::lock(&ctx.shared).games.rows[0].version_count = Some(1);
+    crate::games::render(&ctx, &app);
+    let overlays = app.global::<crate::Overlays>();
+    let info = app.global::<crate::GameInfoView>();
+    let meta = zaparoo_core::media_types::MediaMeta {
+        available_image_types: vec!["boxart".into()],
+        ..Default::default()
+    };
+    let similar = || {
+        [("Game 7", Some(Shared::Series)), ("Game 9", None)]
+            .into_iter()
+            .map(|(name, shared)| {
+                let mut game = base.clone();
+                game.name = name.into();
+                game.path = format!("/g/{name}.nes");
+                PageRow {
+                    label_key: "",
+                    label: name.into(),
+                    name: name.into(),
+                    launch_text: game.path.clone(),
+                    similar: Some(Box::new(SimilarGame { game, shared })),
+                    deck: None,
+                }
+            })
+            .collect::<Vec<_>>()
+    };
+    let open_page = || {
+        crate::router::handle_action(&ctx, &app, "context_menu");
+        assert!(overlays.get_context_open());
+        let opener = focus_context_row(&app, "similar_games");
+        crate::router::handle_action(&ctx, &app, "accept");
+        settle(&window);
+        assert!(overlays.get_context_open());
+        (crate::context_page::ticket(&ctx), opener)
+    };
+
+    // A run the user closed the menu on is orphaned.
+    let (stale, _) = open_page();
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert!(!overlays.get_context_open());
+    let (ticket, opener) = open_page();
+    crate::context_page::landed(&ctx, &app, Page::Similar, stale, Ok(similar()));
+    assert!(!crate::context_page::showing(&ctx));
+    crate::context_page::landed(&ctx, &app, Page::Similar, ticket, Ok(similar()));
+    assert!(crate::context_page::showing(&ctx));
+    assert_eq!(overlays.get_context_page(), crate::ContextPage::Similar);
+    let labels: Vec<String> = overlays
+        .get_context_entries()
+        .iter()
+        .map(|entry| entry.label.to_string())
+        .collect();
+    assert_eq!(labels, ["Game 7", "Game 9"]);
+
+    // A game opens its details in the menu's place, saying what it shares,
+    // focused on Play.
+    crate::router::handle_action(&ctx, &app, "accept");
+    advance(zaparoo_app::input::PRESS_FEEDBACK_MS);
+    crate::game_info::land_for_test(&ctx, &app, &meta);
+    settle(&window);
+    assert!(!overlays.get_context_open());
+    assert!(info.get_modal_open());
+    assert_eq!(info.get_modal_name(), "Game 7");
+    assert_eq!(info.get_shared_key(), "similar:series");
+    assert_eq!(info.get_image_stop(), 0);
+    assert_eq!(info.get_play_stop(), 1);
+    assert_eq!(info.get_focus(), 1, "on Play");
+
+    // Back: the page again, on the game it opened.
+    crate::router::handle_action(&ctx, &app, "cancel");
+    settle(&window);
+    assert!(!info.get_modal_open());
+    assert!(overlays.get_context_open());
+    assert_eq!(overlays.get_context_page(), crate::ContextPage::Similar);
+    assert_eq!(overlays.get_context_index(), 0);
+    crate::router::handle_action(&ctx, &app, "down");
+    crate::router::handle_action(&ctx, &app, "accept");
+    advance(zaparoo_app::input::PRESS_FEEDBACK_MS);
+    crate::game_info::land_for_test(&ctx, &app, &meta);
+    settle(&window);
+    assert_eq!(info.get_modal_name(), "Game 9");
+    assert_eq!(info.get_shared_key(), "");
+    crate::router::handle_action(&ctx, &app, "cancel");
+    settle(&window);
+    assert_eq!(overlays.get_context_index(), 1);
+
+    // Back on the page returns to the menu, on its row.
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert!(overlays.get_context_open() && !crate::context_page::showing(&ctx));
+    assert_eq!(overlays.get_context_index(), opener);
+
+    // Play launches and leaves nothing to come back to.
+    crate::router::handle_action(&ctx, &app, "accept");
+    settle(&window);
+    let ticket = crate::context_page::ticket(&ctx);
+    crate::context_page::landed(&ctx, &app, Page::Similar, ticket, Ok(similar()));
+    crate::router::handle_action(&ctx, &app, "accept");
+    advance(zaparoo_app::input::PRESS_FEEDBACK_MS);
+    crate::game_info::land_for_test(&ctx, &app, &meta);
+    settle(&window);
+    crate::router::handle_action(&ctx, &app, "accept");
+    advance(zaparoo_app::input::PRESS_FEEDBACK_MS);
+    settle(&window);
+    assert!(!info.get_modal_open());
+    assert!(!overlays.get_context_open());
+    assert!(crate::router::lock(&ctx.shared).menu_return.is_none());
+
+    // Details opened from the menu's own row offer no Play.
+    crate::router::handle_action(&ctx, &app, "context_menu");
+    focus_context_row(&app, "more_info");
+    crate::router::handle_action(&ctx, &app, "accept");
+    advance(zaparoo_app::input::PRESS_FEEDBACK_MS);
+    crate::game_info::land_for_test(&ctx, &app, &meta);
+    settle(&window);
+    assert!(info.get_modal_open());
+    assert_eq!(info.get_play_stop(), -1);
+    assert_eq!(info.get_focus(), 0);
+    crate::router::handle_action(&ctx, &app, "cancel");
+    settle(&window);
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert!(!overlays.get_context_open());
+
+    // Nothing like it: the row says so in place.
+    let (ticket, _) = open_page();
+    crate::context_page::landed(&ctx, &app, Page::Similar, ticket, Ok(Vec::new()));
+    let keys: Vec<String> = overlays
+        .get_context_entries()
+        .iter()
+        .map(|entry| entry.label_key.to_string())
+        .collect();
+    assert!(keys.iter().any(|key| key == "similar_games:none"));
+    assert!(!context_ids(&app).iter().any(|id| id == "similar_games"));
+    crate::router::handle_action(&ctx, &app, "cancel");
+
+    // A list Core cannot give closes the menu under its alert.
+    let (ticket, _) = open_page();
+    crate::context_page::landed(&ctx, &app, Page::Similar, ticket, Err("offline".into()));
+    assert!(!overlays.get_context_open());
+    assert!(overlays.get_dialog_open());
+    assert_eq!(overlays.get_dialog_error(), ErrorKind::SimilarList);
+}
+
+#[test]
+#[allow(clippy::expect_used, reason = "Options on a game asks Core first")]
+fn options_on_a_recent_game_asks_core_for_its_versions_first() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    seat_visibility_list(&ctx, &app, GamesMode::Recents);
+    // History carries no count.
+    for row in crate::router::lock(&ctx.shared).games.rows.iter_mut() {
+        row.version_count = None;
+    }
+    let overlays = app.global::<crate::Overlays>();
+    let focus = |index: usize| {
+        crate::router::lock(&ctx.shared)
+            .games
+            .grid
+            .set_current_index_immediate(index);
+        crate::games::render(&ctx, &app);
+    };
+
+    // Nothing opens until Core answers, and an answer the user moved on
+    // from opens nothing.
+    crate::router::handle_action(&ctx, &app, "context_menu");
+    assert!(!overlays.get_context_open());
+    let stale = crate::games::pending_versions_request(&ctx).expect("asked");
+    focus(1);
+    crate::games::versions_answered(&ctx, &app, &stale, Some(3));
+    assert!(!overlays.get_context_open());
+
+    // A count above one offers the versions and stays on the row.
+    crate::router::handle_action(&ctx, &app, "context_menu");
+    let request = crate::games::pending_versions_request(&ctx).expect("asked");
+    crate::games::versions_answered(&ctx, &app, &request, Some(3));
+    assert!(overlays.get_context_open());
+    assert!(context_ids(&app).iter().any(|id| id == "choose_version"));
+    crate::router::close_context_menu(&ctx, &app);
+    assert_eq!(
+        crate::router::lock(&ctx.shared).games.rows[1].version_count,
+        Some(3)
+    );
+    crate::router::handle_action(&ctx, &app, "context_menu");
+    assert!(overlays.get_context_open(), "a known count opens at once");
+    crate::router::close_context_menu(&ctx, &app);
+
+    // No answer from Core opens the menu without the row.
+    focus(2);
+    crate::router::handle_action(&ctx, &app, "context_menu");
+    let request = crate::games::pending_versions_request(&ctx).expect("asked");
+    crate::games::versions_answered(&ctx, &app, &request, None);
+    assert!(overlays.get_context_open());
+    assert!(!context_ids(&app).iter().any(|id| id == "choose_version"));
+}
+
 /// Which of the strip's four buttons are on, in its order.
 fn strip_states(app: &App) -> Vec<bool> {
     app.global::<crate::Overlays>()
@@ -2218,10 +2454,16 @@ fn manage_and_write_to_token_are_pages_that_back_returns_from() {
     crate::router::handle_action(&ctx, &app, "context_menu");
     assert_eq!(
         context_ids(&app),
-        ["more_info", "add_to_deck", "write_token", "manage_game"]
+        [
+            "more_info",
+            "add_to_deck",
+            "similar_games",
+            "write_token",
+            "manage_game"
+        ]
     );
     assert_eq!(overlays.get_context_page(), crate::ContextPage::Root);
-    let write = overlays.get_context_entries().row_data(2);
+    let write = overlays.get_context_entries().row_data(3);
     assert_eq!(
         write.map(|entry| entry.role),
         Some(crate::MenuRole::Option),
@@ -2239,7 +2481,7 @@ fn manage_and_write_to_token_are_pages_that_back_returns_from() {
     crate::router::handle_action(&ctx, &app, "context_menu");
     let root = context_ids(&app);
     let opener = focus_context_row(&app, "write_token");
-    let write = overlays.get_context_entries().row_data(2);
+    let write = overlays.get_context_entries().row_data(3);
     assert_eq!(
         write.map(|entry| entry.role),
         Some(crate::MenuRole::Submenu)
@@ -2309,7 +2551,13 @@ fn a_game_reads_the_same_on_every_list() {
     let (_, root, manage) = menus[0].clone();
     assert_eq!(
         root,
-        ["more_info", "add_to_deck", "write_token", "manage_game"]
+        [
+            "more_info",
+            "add_to_deck",
+            "similar_games",
+            "write_token",
+            "manage_game"
+        ]
     );
     assert_eq!(
         manage,
@@ -2530,7 +2778,7 @@ fn history_core_cannot_resolve_offers_no_state_it_does_not_know() {
     crate::router::handle_action(&ctx, &app, "context_menu");
     assert_eq!(
         context_ids(&app),
-        ["more_info", "write_token", "manage_game"]
+        ["more_info", "similar_games", "write_token", "manage_game"]
     );
     focus_context_row(&app, "manage_game");
     crate::router::handle_action(&ctx, &app, "accept");
@@ -2626,17 +2874,18 @@ fn the_resume_tile_shows_its_games_menu_once_core_says_what_it_is() {
     let stale = resume();
     crate::router::handle_action(&ctx, &app, "right");
     crate::router::handle_action(&ctx, &app, "left");
-    crate::hub::game_answered(&ctx, &app, &stale, Some(&meta));
+    crate::hub::game_answered(&ctx, &app, &stale, Some(&meta), None);
     assert!(!overlays.get_context_open());
 
     crate::router::handle_action(&ctx, &app, "context_menu");
-    crate::hub::game_answered(&ctx, &app, &resume(), Some(&meta));
+    crate::hub::game_answered(&ctx, &app, &resume(), Some(&meta), None);
     assert!(overlays.get_context_open());
     assert_eq!(
         context_keys(&app),
         [
             "more_info",
             "add_to_deck",
+            "similar_games",
             "write_token",
             "edit_tile",
             "manage_game"
@@ -2695,7 +2944,7 @@ fn the_resume_tile_shows_its_games_menu_once_core_says_what_it_is() {
     // A game Core no longer has leaves the tile its layout actions.
     crate::router::handle_action(&ctx, &app, "context_menu");
     let request = crate::hub::pending_game_request(&ctx, Tile::Resume, "NES", "/g/Other.nes");
-    crate::hub::game_answered(&ctx, &app, &request, None);
+    crate::hub::game_answered(&ctx, &app, &request, None, None);
     assert_eq!(
         context_keys(&app),
         [
@@ -2736,17 +2985,36 @@ fn pinned_tiles_show_what_they_stand_for_or_their_layout_actions() {
     next_tile();
     assert!(!overlays.get_context_open());
     let request = crate::hub::pending_game_request(&ctx, Tile::Pinned, "NES", "/g/Pinned.nes");
-    crate::hub::game_answered(&ctx, &app, &request, Some(&favorite_meta("/g/Pinned.nes")));
+    crate::hub::game_answered(
+        &ctx,
+        &app,
+        &request,
+        Some(&favorite_meta("/g/Pinned.nes")),
+        None,
+    );
     assert_eq!(
         context_keys(&app),
         [
             "more_info",
             "add_to_deck",
+            "similar_games",
             "write_token",
             "edit_tile",
             "manage_game"
         ]
     );
+    // Versions Core counted beside the meta are offered.
+    crate::router::close_context_menu(&ctx, &app);
+    crate::router::handle_action(&ctx, &app, "context_menu");
+    let request = crate::hub::pending_game_request(&ctx, Tile::Pinned, "NES", "/g/Pinned.nes");
+    crate::hub::game_answered(
+        &ctx,
+        &app,
+        &request,
+        Some(&favorite_meta("/g/Pinned.nes")),
+        Some(2),
+    );
+    assert!(context_keys(&app).iter().any(|key| key == "choose_version"));
     assert!(strip_states(&app)[0], "the strip shows the game's favorite");
     focus_context_row(&app, "edit_tile");
     crate::router::handle_action(&ctx, &app, "accept");
@@ -2985,6 +3253,7 @@ fn hidden_management_keeps_favorites_recents_and_recovery_selection() {
             GamesMode::Search => &shared.persist.search.selected_path,
             GamesMode::Deck => &shared.persist.deck.selected_item,
             GamesMode::Decks => &shared.persist.decks.selected_deck,
+            GamesMode::Recommended => &shared.persist.recommended.selected_path,
             GamesMode::TopPlayed => &shared.persist.top_played.selected_path,
         };
         assert_eq!(selected, &target.path);
@@ -3481,6 +3750,7 @@ fn wrapped_game_grids_follow_keys_and_pointer_direction_in_every_mode() {
         (Screen::Games, GamesMode::Browse),
         (Screen::Favorites, GamesMode::Favorites),
         (Screen::Recents, GamesMode::Recents),
+        (Screen::Recommended, GamesMode::Recommended),
     ] {
         app.global::<Shell>().set_active_screen(screen);
         crate::router::lock(&ctx.shared).games.mode = mode;
@@ -9197,6 +9467,7 @@ fn cold_flat_list_restores_show_the_curtain_then_the_list_and_never_the_hub() {
     for (token, screen) in [
         ("favorites", Screen::Favorites),
         ("recents", Screen::Recents),
+        ("recommended", Screen::Recommended),
         ("search-results", Screen::SearchResults),
     ] {
         let (app, window, _runtime, ctx) = cold_start(token);

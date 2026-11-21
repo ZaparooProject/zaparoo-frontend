@@ -4,7 +4,8 @@
 //! The panel is laid out as the Zaparoo App's details modal is: the art,
 //! the actions, the description, then the facts. Focus moves over
 //! what acts (`zaparoo_app::game_details::Stop`) and A does what the focused
-//! item does: view the art full screen, open the manual, or search by a tag.
+//! item does: view the art full screen, play the game, open the manual, or
+//! search by a tag.
 
 use crate::game_info_data::InfoRow;
 use crate::games::GameRow;
@@ -32,6 +33,17 @@ pub struct Drill {
     /// from Game Info after the round trip still brings it back. Options
     /// on a result in between builds a menu of its own.
     menu: Option<crate::router::HeldReturn>,
+    opened: Opened,
+}
+
+/// What the panel was opened for, beyond the game it shows.
+#[derive(Debug, Clone, Default)]
+pub struct Opened {
+    /// Opened to choose a game (a row of Similar games), so the panel
+    /// offers Play, focused.
+    pub play: bool,
+    /// What the game shares with the one it was found for.
+    pub shared: Option<zaparoo_app::suggestions::Shared>,
 }
 
 /// The metadata the open panel was laid out from, and the key it was
@@ -49,6 +61,7 @@ pub struct GameInfoModel {
     /// The game's manual, read in the panel's place.
     pub manual: crate::manual::ManualModel,
     entry: Option<GameRow>,
+    opened: Opened,
     system: String,
     rows: Vec<InfoRow>,
     stops: Vec<Stop>,
@@ -156,7 +169,12 @@ pub fn bind(ctx: &std::sync::Arc<Ctx>, app: &App) {
 /// the menu stays up with its row held until then; Back there calls the
 /// read off. A wait that outlasts the delay says so in the header.
 pub fn open(ctx: &Ctx, app: &App, entry: &GameRow) {
-    let Some((ticket, fit, system)) = prepare(ctx, app, entry) else {
+    open_as(ctx, app, entry, Opened::default());
+}
+
+/// Game Info opened for `opened`, as `open` is.
+pub fn open_as(ctx: &Ctx, app: &App, entry: &GameRow, opened: Opened) {
+    let Some((ticket, fit, system)) = prepare(ctx, app, entry, opened) else {
         return;
     };
     let hold = crate::router::hold_menu_for(|ctx| {
@@ -222,6 +240,7 @@ fn prepare(
     ctx: &Ctx,
     app: &App,
     entry: &GameRow,
+    opened: Opened,
 ) -> Option<(u64, zaparoo_app::covers::Fit, String)> {
     let (ticket, fit, system) = {
         let mut shared = lock(&ctx.shared);
@@ -233,10 +252,12 @@ fn prepare(
         let model = &mut shared.game_info;
         let ticket = model.reset();
         model.entry = Some(entry.clone());
+        model.opened = opened;
         model.system.clone_from(&system);
         (ticket, model.fit, system)
     };
     let view = app.global::<GameInfoView>();
+    publish_reason(ctx, app);
     view.set_modal_name(entry.name.trim().into());
     view.set_modal_system(system.clone().into());
     view.set_modal_path(entry.path.clone().into());
@@ -293,12 +314,25 @@ fn landed(ctx: &Ctx, app: &App, key: &MediaKey, meta: &zaparoo_core::media_types
         .collect()
     };
     let searchable: Vec<bool> = rows.iter().map(InfoRow::searchable).collect();
-    let stops = rules::stops(
-        !images.is_empty(),
-        has_manual,
-        !description.is_empty(),
-        &searchable,
-    );
+    let play = {
+        let shared = lock(&ctx.shared);
+        let model = &shared.game_info;
+        model.opened.play
+            && model
+                .entry
+                .as_ref()
+                .is_some_and(|e| e.launch_text().is_some())
+    };
+    let shown: Vec<Stop> = [
+        (Stop::Image, !images.is_empty()),
+        (Stop::Play, play),
+        (Stop::Manual, has_manual),
+        (Stop::Description, !description.is_empty()),
+    ]
+    .into_iter()
+    .filter_map(|(stop, shown)| shown.then_some(stop))
+    .collect();
+    let stops = rules::stops(&shown, &searchable);
     let view_rows: Vec<crate::InfoRow> = rows
         .iter()
         .enumerate()
@@ -321,7 +355,8 @@ fn landed(ctx: &Ctx, app: &App, key: &MediaKey, meta: &zaparoo_core::media_types
     {
         let mut shared = lock(&ctx.shared);
         let model = &mut shared.game_info;
-        // Back from a tag search lands on the row it searched from.
+        // Back from a tag search lands on the row it searched from; a
+        // panel opened to choose a game opens on Play.
         let refocus = model.refocus.take();
         model.focus = refocus
             .and_then(|kind| {
@@ -329,6 +364,7 @@ fn landed(ctx: &Ctx, app: &App, key: &MediaKey, meta: &zaparoo_core::media_types
                     matches!(stop, Stop::Row(row) if rows.get(*row).is_some_and(|r| r.kind == kind))
                 })
             })
+            .or_else(|| stops.iter().position(|stop| *stop == Stop::Play))
             .unwrap_or(0);
         model.rows = rows;
         model.stops = stops;
@@ -360,13 +396,16 @@ pub(crate) fn land_for_test(ctx: &Ctx, app: &App, meta: &zaparoo_core::media_typ
             prefer: None,
         }
     };
+    // As Core's answer does: a menu held for the panel goes with it.
+    crate::press_feedback::cancel(app);
+    crate::router::end_held_wait(app);
     app.global::<GameInfoView>().set_modal_open(true);
     landed(ctx, app, &key, meta);
 }
 
 /// The stops and the focused one, for the view to ring.
 fn publish_focus(ctx: &Ctx, app: &App) {
-    let (focus, image, manual, description) = {
+    let (focus, image, play, manual, description) = {
         let shared = lock(&ctx.shared);
         let model = &shared.game_info;
         (
@@ -376,15 +415,40 @@ fn publish_focus(ctx: &Ctx, app: &App) {
                 i32::try_from(model.focus).unwrap_or(0)
             },
             model.stop_index(Stop::Image),
+            model.stop_index(Stop::Play),
             model.stop_index(Stop::Manual),
             model.stop_index(Stop::Description),
         )
     };
     let view = app.global::<GameInfoView>();
     view.set_image_stop(image);
+    view.set_play_stop(play);
     view.set_manual_stop(manual);
     view.set_description_stop(description);
     view.set_focus(focus);
+}
+
+/// Why the game was offered, for the line under the art: the interest a
+/// recommendation came from, or what a similar game shares.
+fn publish_reason(ctx: &Ctx, app: &App) {
+    let (pick, shared) = {
+        let shared = lock(&ctx.shared);
+        let model = &shared.game_info;
+        (
+            model.entry.as_ref().and_then(|entry| entry.pick.clone()),
+            model.opened.shared,
+        )
+    };
+    let view = app.global::<GameInfoView>();
+    view.set_pick(pick.as_ref().map_or(crate::PickSignal::None, |pick| {
+        crate::games::pick_signal(pick.signal)
+    }));
+    view.set_seed(pick.map(|pick| pick.seed).unwrap_or_default().into());
+    view.set_shared_key(
+        shared
+            .map_or("", zaparoo_app::suggestions::Shared::key)
+            .into(),
+    );
 }
 
 /// The game's documents, from its properties: the action row offers them.
@@ -656,6 +720,7 @@ fn accept(ctx: &Ctx, app: &App) {
             app.global::<GameInfoView>().set_viewer_open(true);
             show_viewer(ctx, app);
         }
+        Some(Stop::Play) => play(ctx, app),
         Some(Stop::Manual) => crate::manual::open(ctx, app),
         Some(Stop::Row(_)) => {
             let Some((index, row)) = row else { return };
@@ -667,6 +732,21 @@ fn accept(ctx: &Ctx, app: &App) {
         }
         Some(Stop::Description) | None => {}
     }
+}
+
+/// Play on the panel: it closes and the game launches. Back afterwards is
+/// the screen's own: the menu it was chosen from is done with.
+fn play(ctx: &Ctx, app: &App) {
+    let entry = lock(&ctx.shared).game_info.entry.clone();
+    let Some((entry, text)) = entry.and_then(|entry| {
+        let text = entry.launch_text()?;
+        Some((entry, text))
+    }) else {
+        return;
+    };
+    close(ctx, app);
+    crate::router::forget_menu_return(ctx);
+    crate::router::launch(ctx, app, text, &entry.name);
 }
 
 /// Search the game's system for one of its tags, as the app's tag links
@@ -690,6 +770,7 @@ fn drill(ctx: &Ctx, app: &App, kind: &str, search: &str) {
             meta: shared.game_info.landed.take(),
             image: shared.game_info.selected,
             menu: crate::router::take_menu_return(&mut shared),
+            opened: shared.game_info.opened.clone(),
         };
         shared.game_info.drill = Some(drill);
     }
@@ -723,10 +804,10 @@ pub(crate) fn return_from_drill(ctx: &Ctx, app: &App) -> bool {
     // The screen and the panel over it change in this one turn.
     let Some((key, meta)) = drill.meta else {
         lock(&ctx.shared).game_info.refocus = Some(drill.row);
-        open(ctx, app, &drill.entry);
+        open_as(ctx, app, &drill.entry, drill.opened);
         return true;
     };
-    if prepare(ctx, app, &drill.entry).is_some() {
+    if prepare(ctx, app, &drill.entry, drill.opened).is_some() {
         {
             let mut shared = lock(&ctx.shared);
             shared.game_info.refocus = Some(drill.row);

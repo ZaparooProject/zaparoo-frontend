@@ -326,6 +326,8 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
         GamesMode::Favorites
     } else if screen.contains("recents") {
         GamesMode::Recents
+    } else if screen.contains("recommended") {
+        GamesMode::Recommended
     } else if fixture_screen(screen) == Screen::Deck {
         GamesMode::Deck
     } else {
@@ -510,7 +512,8 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
             can_add_to_deck: true,
             has_payload: true,
             has_nfc: true,
-            can_discover: true,
+            versions: true,
+            similar: true,
             has_launchers: true,
             pinnable: true,
             hideable: true,
@@ -573,14 +576,21 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
                 ],
                 1,
             )
-        } else if screen.ends_with("context-alt") {
-            let names = [
-                "Bubble Bobble (Japan)",
-                "Bubble Bobble (Bootleg)",
-                "Bubble Bobble (Rev A)",
-            ];
+        } else if screen.ends_with("context-versions") {
+            let names = ["Contra EU", "Contra JP", "Probotector EU"];
             (
-                generated::ContextPage::Alternates,
+                generated::ContextPage::Versions,
+                names
+                    .iter()
+                    .enumerate()
+                    .map(|(index, name)| entry(&format!("page_row:{index}"), "", name, false))
+                    .collect(),
+                0,
+            )
+        } else if screen.ends_with("context-similar") {
+            let names = ["Contra III", "Gunstar Heroes", "Probotector"];
+            (
+                generated::ContextPage::Similar,
                 names
                     .iter()
                     .enumerate()
@@ -613,7 +623,7 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
                     .iter()
                     .map(|row| {
                         let opens = game.page_for(row.id).is_some()
-                            || row.id == "discover"
+                            || row.id == "choose_version"
                             || row.id == "add_to_deck";
                         entry(row.id, row.key, "", opens)
                     })
@@ -653,7 +663,7 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
                 scene_h,
                 crt,
                 0,
-                games_mode != GamesMode::Recents,
+                !matches!(games_mode, GamesMode::Recents | GamesMode::Recommended),
             ) {
                 let layout = app.global::<Layout>();
                 let row_h = g.row_height as f32;
@@ -2672,6 +2682,8 @@ fn fixture_screen(screen: &str) -> Screen {
         Screen::TopPlayedSystems
     } else if screen.contains("top-played") {
         Screen::TopPlayed
+    } else if screen.contains("recommended") {
+        Screen::Recommended
     } else if screen.contains("music") {
         Screen::Music
     } else if screen.contains("rename") {
@@ -3119,7 +3131,10 @@ fn fixture_game_info(app: &App, screen: &str) {
     if view.get_loading() || view.get_failed() {
         return;
     }
-    let short = screen.ends_with("short");
+    // `game-info-play` is the short page opened from Similar games: Play
+    // focused and what the game shares under the art.
+    let play = screen.ends_with("play");
+    let short = play || screen.ends_with("short");
     // The table `game_info_data::info_rows` lays out: the facts under
     // Details, the leftover tags, then Technical details. `stop` is the
     // focus index after the art (0), the manual (1) and the description (2).
@@ -3160,13 +3175,17 @@ fn fixture_game_info(app: &App, screen: &str) {
     view.set_info_rows(slint::ModelRc::new(slint::VecModel::from(rows)));
     view.set_image_stop(if short { -1 } else { 0 });
     view.set_manual_stop(1);
+    if play {
+        view.set_play_stop(0);
+        view.set_shared_key("similar:series".into());
+    }
     view.set_description_stop(if short { -1 } else { 2 });
     // `…-focus-row` puts focus on Genre; `…-values` lists its values.
     view.set_focus(
         if screen.contains("focus-row") || screen.ends_with("values") {
             7
         } else {
-            i32::from(short)
+            i32::from(short && !play)
         },
     );
     if screen.ends_with("values") {
@@ -3322,6 +3341,7 @@ fn fixture_hub_items() -> Vec<zaparoo_app::hub::LayoutItem> {
         item("collection", "0k3v9x2rq7bm"),
         item("action", "recents"),
         item("action", "topplayed"),
+        item("action", "recommended"),
         item("action", "update"),
         item("action", "settings"),
         LayoutItem {
@@ -4304,7 +4324,7 @@ fn fixture_chips(app: &App, mode: GamesMode) {
             "favorites_grouping",
             "group:none",
         )],
-        GamesMode::Recents => Vec::new(),
+        GamesMode::Recents | GamesMode::Recommended => Vec::new(),
     };
     let bar = app.global::<generated::PageBar>();
     bar.set_games_chips(slint::ModelRc::new(slint::VecModel::from(games)));
@@ -4367,7 +4387,7 @@ fn fixture_games(
     let grid_y = derived.header_bottom
         + profile.status.top_margin
         + profile.status.strip_height
-        + if mode == GamesMode::Recents {
+        + if matches!(mode, GamesMode::Recents | GamesMode::Recommended) {
             0
         } else {
             derived.menu_row_block
@@ -4485,8 +4505,14 @@ fn fixture_games(
     // card beside the focused row's detail pane. Filled here too so the
     // `*-list` screens render what the driver would push, not an empty
     // card.
-    let (list_row_height, list_visible) =
-        list_metrics(app, scene_w, scene_h, crt, 0, mode != GamesMode::Recents);
+    let (list_row_height, list_visible) = list_metrics(
+        app,
+        scene_w,
+        scene_h,
+        crt,
+        0,
+        !matches!(mode, GamesMode::Recents | GamesMode::Recommended),
+    );
     let list_rows: Vec<GridCell> = (1..=list_visible)
         .map(|i| GridCell {
             name: if i == 1 && !flat {
@@ -4579,6 +4605,10 @@ fn fixture_games(
         info.locked = true;
         info.tags = "".into();
         view.set_count(i32::try_from(DECKS.len()).unwrap_or(0));
+    } else if mode == GamesMode::Recommended {
+        info.pick = generated::PickSignal::Played;
+        info.seed = "Contra".into();
+        info.tags = "".into();
     } else if mode == GamesMode::TopPlayed {
         info.has_play_time = true;
         info.hours = 12;
@@ -4814,6 +4844,8 @@ mod fixture_tests {
             ("top-played", Screen::TopPlayed),
             ("crt-top-played-list", Screen::TopPlayed),
             ("top-played-systems", Screen::TopPlayedSystems),
+            ("recommended", Screen::Recommended),
+            ("crt-recommended-list", Screen::Recommended),
             ("games-markers", Screen::Games),
             ("crt-games-list-markers", Screen::Games),
             ("crt-deck", Screen::Deck),

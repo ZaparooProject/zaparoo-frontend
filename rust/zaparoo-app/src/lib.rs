@@ -14,7 +14,6 @@
 // See `docs/architecture.md` for where this crate sits in the frontend.
 
 pub mod action_error;
-pub mod alternate_versions;
 pub mod artwork_prefs;
 pub mod background;
 pub mod branding;
@@ -71,6 +70,7 @@ pub mod search;
 pub mod settings;
 pub mod sizing;
 pub mod status_line;
+pub mod suggestions;
 pub mod system_picker;
 pub mod systems;
 pub mod text_entry;

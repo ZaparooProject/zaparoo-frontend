@@ -12,6 +12,7 @@ pub mod launchers;
 pub mod media_browse;
 pub mod media_history;
 pub mod media_history_top;
+pub mod media_recommended;
 pub mod media_search;
 pub mod media_tags_update;
 pub mod media_user_list;

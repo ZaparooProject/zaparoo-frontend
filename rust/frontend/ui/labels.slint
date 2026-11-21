@@ -6,7 +6,7 @@
 // them into translated text. Kept in its own file so every screen and
 // modal can reach it without importing the app tree.
 
-import { Screen, UserFlag, AppCue, BootStatus, DisabledReason, DialogKind, DialogButton, ErrorKind } from "state_types.slint";
+import { Screen, PickSignal, UserFlag, AppCue, BootStatus, DisabledReason, DialogKind, DialogButton, ErrorKind } from "state_types.slint";
 
 // Key-to-copy vocabulary for labels Rust hands over as stable ids.
 export global Labels {
@@ -44,6 +44,16 @@ export global Labels {
         if (minutes > 0) { return @tr("{}m", minutes); }
         return @tr("<1m");
     }
+    // Why a game is on the Recommended screen, after the game it is most
+    // like.
+    public pure function pick(signal: PickSignal, seed: string) -> string {
+        if (signal == PickSignal.played) { return @tr("Because you played {}", seed); }
+        if (signal == PickSignal.favorite) { return @tr("Like {}, a favorite", seed); }
+        if (signal == PickSignal.liked) { return @tr("Because you liked {}", seed); }
+        if (signal == PickSignal.deck) { return @tr("Like {} in your decks", seed); }
+        if (signal == PickSignal.play-later) { return @tr("In Play later"); }
+        return "";
+    }
     // `list` names the built-in list the two list screens show.
     public pure function loading(target: Screen, list: UserFlag) -> string {
         if (target == Screen.favorite-systems) { return Labels.list-systems-loading(list); }
@@ -54,6 +64,7 @@ export global Labels {
         if (target == Screen.decks) { return @tr("Loading decks…"); }
         if (target == Screen.deck) { return @tr("Loading deck…"); }
         if (target == Screen.top-played || target == Screen.top-played-systems) { return @tr("Loading top played…"); }
+        if (target == Screen.recommended) { return @tr("Loading recommended…"); }
         return @tr("Loading…");
     }
     // A file browser Place, by the key Rust sends; a drive is called by its
@@ -108,6 +119,7 @@ export global Labels {
         if (key == "action:decks") { return @tr("Decks"); }
         if (key == "action:recents") { return @tr("Recently played"); }
         if (key == "action:topplayed") { return @tr("Top played"); }
+        if (key == "action:recommended") { return @tr("Recommended"); }
         if (key == "action:search") { return @tr("Search"); }
         if (key == "action:update") { return @tr("Update"); }
         if (key == "action:settings") { return @tr("Settings"); }
@@ -258,15 +270,26 @@ export global Labels {
         if (key == "artwork") { return @tr("Preferred artwork"); }
         if (key == "write_card") { return @tr("Write to NFC token"); }
         if (key == "qr_code") { return @tr("Write with App"); }
-        if (key == "discover") { return @tr("Discover alt. versions"); }
-        if (key == "discover:searching") { return @tr("Searching…"); }
-        if (key == "discover:none") { return @tr("No alternates found"); }
         if (key == "choose_disc") { return @tr("Choose disc"); }
         if (key == "choose_disc:loading") { return @tr("Loading…"); }
         if (key == "choose_disc:none") { return @tr("No discs found"); }
         if (key == "choose_version") { return @tr("Choose version"); }
         if (key == "choose_version:loading") { return @tr("Loading…"); }
         if (key == "choose_version:none") { return @tr("No versions found"); }
+        if (key == "similar_games") { return @tr("Similar games"); }
+        if (key == "similar_games:loading") { return @tr("Loading…"); }
+        if (key == "similar_games:none") { return @tr("No similar games found"); }
+        // What a similar game shares with the game it was found for.
+        if (key == "similar:series") { return @tr("Same series"); }
+        if (key == "similar:genre") { return @tr("Same genre"); }
+        if (key == "similar:perspective") { return @tr("Same perspective"); }
+        if (key == "similar:art") { return @tr("Same art style"); }
+        if (key == "similar:based") { return @tr("Same source"); }
+        if (key == "similar:developer") { return @tr("Same developer"); }
+        if (key == "similar:publisher") { return @tr("Same publisher"); }
+        if (key == "similar:players") { return @tr("Same players"); }
+        if (key == "similar:year") { return @tr("Same year"); }
+        if (key == "similar:decade") { return @tr("Same decade"); }
         if (key == "disc") { return @tr("Disc {}", name); }
         if (key == "add_to_hub") { return @tr("Add to Hub"); }
         if (key == "save_to_hub") { return @tr("Save to Hub"); }
@@ -550,9 +573,9 @@ export global DialogLabels {
         if (kind == ErrorKind.media-scrapers) { return @tr("Source list unavailable"); }
         if (kind == ErrorKind.media-cancel) { return @tr("Cancel failed"); }
         if (kind == ErrorKind.launcher || kind == ErrorKind.launcher-save) { return @tr("Launcher update failed"); }
-        if (kind == ErrorKind.alternate-discovery) { return @tr("Alternate versions unavailable"); }
         if (kind == ErrorKind.disc-list) { return @tr("Disc list unavailable"); }
         if (kind == ErrorKind.version-list) { return @tr("Version list unavailable"); }
+        if (kind == ErrorKind.similar-list) { return @tr("Similar games unavailable"); }
         if (kind == ErrorKind.qr-code) { return @tr("QR code failed"); }
         if (kind == ErrorKind.card-write) { return @tr("Token write failed"); }
         if (kind == ErrorKind.image-picker) { return @tr("Image picker failed"); }
@@ -609,9 +632,9 @@ export global DialogLabels {
         if (kind == ErrorKind.media-scrapers) { return @tr("Could not load the list of metadata sources. Check Zaparoo Core and try again."); }
         if (kind == ErrorKind.media-cancel) { return @tr("Could not cancel the media operation. Check Zaparoo Core and try again."); }
         if (kind == ErrorKind.launcher || kind == ErrorKind.launcher-save) { return @tr("Could not change the launcher. Check Zaparoo Core and try again."); }
-        if (kind == ErrorKind.alternate-discovery) { return @tr("Could not find alternate versions. Check Zaparoo Core and try again."); }
         if (kind == ErrorKind.disc-list) { return @tr("Could not list the discs of this game. Check Zaparoo Core and try again."); }
         if (kind == ErrorKind.version-list) { return @tr("Could not list the versions of this game. Check Zaparoo Core and try again."); }
+        if (kind == ErrorKind.similar-list) { return @tr("Could not find games like this one. Check Zaparoo Core and try again."); }
         if (kind == ErrorKind.qr-code) { return @tr("Could not create the QR code for this item."); }
         if (kind == ErrorKind.card-write) { return @tr("Could not write to this token. Check that it is writable and try again."); }
         if (kind == ErrorKind.image-picker) { return @tr("Could not open an image picker, or the image chosen could not be read."); }

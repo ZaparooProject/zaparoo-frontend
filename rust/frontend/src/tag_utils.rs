@@ -86,10 +86,13 @@ fn format_disambiguating_tag(tag: &TagInfo) -> Option<String> {
         // in the least space (`'96`).
         "builddate" => format_year_token(&value),
         "edition" => compact_edition(&value),
+        "unlicensed" => compact_unlicensed(&value),
         // Free-text / flag types: lowercase readable value with its dashes kept
         // (they double as word breaks for the sibling-diff), hard-capped so it
         // can't run away.
-        _ => truncate_token(&tag_display_value(tag).to_ascii_lowercase()),
+        _ => truncate_token(&hierarchy_words(
+            &tag_display_value(tag).to_ascii_lowercase(),
+        )),
     };
     Some(token.trim().to_string())
 }
@@ -123,6 +126,22 @@ fn strip_rev_prefix(value: &str) -> &str {
         }
     }
     value
+}
+
+/// Short forms for the fan translations, the only unlicensed values too
+/// long to read whole; the rest read as themselves (`hack`, `bootleg`).
+fn compact_unlicensed(value: &str) -> String {
+    match value {
+        "translation" => "transl".to_string(),
+        "translation:old" => "old-transl".to_string(),
+        other => truncate_token(&hierarchy_words(other)),
+    }
+}
+
+/// A hierarchical value (`parent:child`) as words, the narrower part
+/// first, so no raw `:` reaches a caption.
+fn hierarchy_words(value: &str) -> String {
+    value.rsplit(':').collect::<Vec<_>>().join("-")
 }
 
 /// Uppercase short forms for the common edition values; everything else falls
@@ -288,6 +307,19 @@ mod tests {
             ]),
             // Curated codes uppercase; free-text flag stays lowercase.
             vec!["2P", "'96", "hack"]
+        );
+    }
+
+    #[test]
+    fn fan_translations_read_without_the_raw_hierarchy() {
+        assert_eq!(
+            disambiguating_tag_labels(&[
+                tag("translation:old", "unlicensed"),
+                tag("translation", "unlicensed"),
+                tag("hack", "unlicensed"),
+                tag("demo:kiosk", "unfinished"),
+            ]),
+            vec!["old-transl", "transl", "hack", "kiosk-demo"]
         );
     }
 

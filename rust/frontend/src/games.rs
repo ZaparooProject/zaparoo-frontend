@@ -29,13 +29,15 @@ use zaparoo_core::endpoints::decks::{DeckEndpoint, DecksEndpoint};
 use zaparoo_core::endpoints::media_browse::{BrowseArgs, MediaBrowseEndpoint};
 use zaparoo_core::endpoints::media_history::{HistoryArgs, MediaHistoryEndpoint};
 use zaparoo_core::endpoints::media_history_top::{MediaHistoryTopEndpoint, TopArgs};
+use zaparoo_core::endpoints::media_recommended::MediaRecommendedEndpoint;
 use zaparoo_core::endpoints::media_search::MediaSearchEndpoint;
 use zaparoo_core::endpoints::media_user_list::{MediaUserListEndpoint, UserListArgs};
 use zaparoo_core::input_actions::actions;
 use zaparoo_core::media_types::{
     merged_root_view, BrowseEntry, MediaBrowseParams, MediaBrowseResult, MediaHistoryEntry,
     MediaHistoryParams, MediaHistoryTopEntry, MediaItem, MediaMeta, MediaSearchParams,
-    MediaSearchResult, MediaTagsUpdateParams, MediaTagsUpdateResult, SystemInfo, TagInfo,
+    MediaSearchResult, MediaTagsUpdateParams, MediaTagsUpdateResult, SuggestedMedia, SystemInfo,
+    TagInfo,
 };
 use zaparoo_core::persist::RecentsState;
 use zaparoo_core::remote_resource::ResourceStatus;
@@ -70,6 +72,7 @@ impl GamesMode {
             Self::Deck => crate::Screen::Deck,
             Self::Decks => crate::Screen::Decks,
             Self::TopPlayed => crate::Screen::TopPlayed,
+            Self::Recommended => crate::Screen::Recommended,
         }
     }
 }
@@ -113,9 +116,10 @@ pub struct GameRow {
     /// The title a grouped search result stands for, which its versions
     /// page asks Core for.
     pub title_id: Option<i64>,
-    /// How many versions of the title the search matched. Zero outside a
-    /// grouped search.
-    pub version_count: u32,
+    /// How many versions of the game Core holds, the row included: from
+    /// a browse, a grouped search (the versions the search matched), or
+    /// asked for when the menu opened. `None` until Core has said.
+    pub version_count: Option<u32>,
     /// The roots page distinguisher, when siblings share a name.
     pub root_distinguisher: String,
     /// The metadata rows Core sent with the row (the detail pane's
@@ -130,6 +134,8 @@ pub struct GameRow {
     pub deck_entry: Option<DeckEntryRow>,
     /// Set on Top played: the game's total play time, in seconds.
     pub play_seconds: Option<u64>,
+    /// Set on Recommended: why Core recommends the game.
+    pub pick: Option<zaparoo_app::suggestions::Pick>,
 }
 
 /// A row that is one deck on the Decks screen.
@@ -182,11 +188,24 @@ impl GameRow {
     /// How many versions the row stands for, for the info line: zero
     /// unless it stands for more than one.
     pub(crate) fn versions(&self) -> i32 {
-        if zaparoo_app::title_versions::has_versions(self.title_id, self.version_count) {
-            i32::try_from(self.version_count).unwrap_or(i32::MAX)
+        let count = self.version_count.unwrap_or(0);
+        if zaparoo_app::title_versions::has_versions(self.title_id, count) {
+            i32::try_from(count).unwrap_or(i32::MAX)
         } else {
             0
         }
+    }
+
+    /// Where the row's Choose version page gets its list. `system` is the
+    /// row's own with the screen's as the fallback.
+    pub(crate) fn version_source(&self, system: &str) -> zaparoo_app::title_versions::Source {
+        let addressable = self.media_id.is_some() || (!system.is_empty() && !self.path.is_empty());
+        zaparoo_app::title_versions::source(
+            self.title_id,
+            self.version_count,
+            addressable,
+            self.multi_disc,
+        )
     }
 
     /// What the row's selection is persisted and restored by: its path, or
@@ -320,7 +339,7 @@ impl From<&BrowseEntry> for GameRow {
             media_capable: rules::is_media_capable(entry_type, e.media_id.is_some(), &e.zap_script),
             multi_disc: e.multi_disc,
             title_id: None,
-            version_count: 0,
+            version_count: e.version_count,
             root_distinguisher: String::new(),
             detail_rows: rules::detail_rows_from_tags(&tag_pairs(&e.tags)),
             display: String::new(),
@@ -328,6 +347,7 @@ impl From<&BrowseEntry> for GameRow {
             deck_item: None,
             deck_entry: None,
             play_seconds: None,
+            pick: None,
         }
     }
 }
@@ -352,8 +372,10 @@ impl From<&MediaItem> for GameRow {
             tags_known: true,
             media_capable: true,
             multi_disc: false,
-            title_id: item.title_id,
-            version_count: item.version_count.unwrap_or(0),
+            // Only a grouped result stands for its title. A flat result
+            // carries the title too, but its versions are its media's.
+            title_id: item.version_count.and(item.title_id),
+            version_count: item.version_count,
             root_distinguisher: String::new(),
             detail_rows: rules::detail_rows_from_tags(&tag_pairs(&item.tags)),
             display: String::new(),
@@ -361,6 +383,7 @@ impl From<&MediaItem> for GameRow {
             deck_item: None,
             deck_entry: None,
             play_seconds: None,
+            pick: None,
         }
     }
 }
@@ -389,7 +412,7 @@ impl GameRow {
             // `media.meta` does not say whether a game spans several discs.
             multi_disc: false,
             title_id: None,
-            version_count: 0,
+            version_count: None,
             root_distinguisher: String::new(),
             detail_rows: Vec::new(),
             display: name.to_string(),
@@ -397,6 +420,7 @@ impl GameRow {
             deck_item: None,
             deck_entry: None,
             play_seconds: None,
+            pick: None,
         }
     }
 
@@ -462,8 +486,9 @@ impl From<&MediaHistoryTopEntry> for GameRow {
             deck_item: None,
             deck_entry: None,
             play_seconds: Some(e.total_play_time),
+            pick: None,
             title_id: None,
-            version_count: 0,
+            version_count: None,
         }
     }
 }
@@ -491,7 +516,7 @@ impl From<&MediaHistoryEntry> for GameRow {
             media_capable: true,
             multi_disc: false,
             title_id: None,
-            version_count: 0,
+            version_count: None,
             root_distinguisher: String::new(),
             detail_rows: Vec::new(),
             display: String::new(),
@@ -499,7 +524,19 @@ impl From<&MediaHistoryEntry> for GameRow {
             deck_item: None,
             deck_entry: None,
             play_seconds: None,
+            pick: None,
         }
+    }
+}
+
+impl From<&SuggestedMedia> for GameRow {
+    fn from(item: &SuggestedMedia) -> Self {
+        let mut row = Self::from(&item.media);
+        row.pick = zaparoo_app::suggestions::pick(
+            item.signal.as_deref(),
+            item.seed.as_ref().map(|seed| seed.name.as_str()),
+        );
+        row
     }
 }
 
@@ -588,6 +625,9 @@ pub struct GamesModel {
     /// A jump walk is loading its target pages.
     pub jump_loading: bool,
     pub press_seq: u64,
+    /// Bumped each time Options is asked for, so a version count Core
+    /// answers late never opens a menu the user moved on from.
+    pub menu_seq: u64,
     /// Bulk appends pause cover fetches until they land.
     pub covers_paused: bool,
     /// The fill in flight restores a saved folder; if that folder is
@@ -656,6 +696,7 @@ impl GamesModel {
             folder_sliding: false,
             jump_loading: false,
             press_seq: 0,
+            menu_seq: 0,
             covers_paused: false,
             focus_recalled: false,
             deck: None,
@@ -670,6 +711,10 @@ impl GamesModel {
 
     pub fn current(&self) -> Option<&GameRow> {
         self.rows.get(self.grid.current_index())
+    }
+
+    pub fn current_mut(&mut self) -> Option<&mut GameRow> {
+        self.rows.get_mut(self.grid.current_index())
     }
 
     pub fn has_more(&self) -> bool {
@@ -919,6 +964,7 @@ fn saved_path(shared: &Shared) -> String {
         GamesMode::Deck => shared.persist.deck.selected_item.clone(),
         GamesMode::Decks => shared.persist.decks.selected_deck.clone(),
         GamesMode::TopPlayed => shared.persist.top_played.selected_path.clone(),
+        GamesMode::Recommended => shared.persist.recommended.selected_path.clone(),
     }
 }
 
@@ -938,6 +984,7 @@ fn saved_list_top(shared: &Shared) -> Option<usize> {
         GamesMode::Deck => shared.persist.deck.list_top,
         GamesMode::Decks => shared.persist.decks.list_top,
         GamesMode::TopPlayed => shared.persist.top_played.list_top,
+        GamesMode::Recommended => shared.persist.recommended.list_top,
     }
 }
 
@@ -1004,6 +1051,7 @@ fn remember_list_top(shared: &mut Shared, top: usize) {
         GamesMode::Deck => shared.persist.deck.list_top = Some(top),
         GamesMode::Decks => shared.persist.decks.list_top = Some(top),
         GamesMode::TopPlayed => shared.persist.top_played.list_top = Some(top),
+        GamesMode::Recommended => shared.persist.recommended.list_top = Some(top),
     }
 }
 
@@ -1023,6 +1071,7 @@ fn write_saved_path(shared: &mut Shared, path: String) {
         GamesMode::Deck => shared.persist.deck.selected_item = path,
         GamesMode::Decks => shared.persist.decks.selected_deck = path,
         GamesMode::TopPlayed => shared.persist.top_played.selected_path = path,
+        GamesMode::Recommended => shared.persist.recommended.selected_path = path,
     }
 }
 
@@ -1419,7 +1468,8 @@ pub fn refresh_visibility(ctx: &Ctx, app: &App) {
         | GamesMode::Search
         | GamesMode::Deck
         | GamesMode::Decks
-        | GamesMode::TopPlayed => {
+        | GamesMode::TopPlayed
+        | GamesMode::Recommended => {
             enter_flat(ctx, app, mode, false);
         }
     }
@@ -1558,6 +1608,26 @@ pub fn refresh_top_played(ctx: &Ctx, app: &App) {
     }
 }
 
+/// Recommended (Hub action): what Core suggests the active profile plays
+/// next.
+pub fn enter_recommended(ctx: &Ctx, app: &App, entry: EntryMode) {
+    crate::navigation::stage(ctx, app);
+    if entry == EntryMode::Fresh {
+        lock(&ctx.shared).persist.recommended = RecentsState::default();
+    }
+    enter_flat(ctx, app, GamesMode::Recommended, true);
+}
+
+/// Refill a visible Recommended screen after what it is built from
+/// changed: play history, a collection, a deck or the active profile.
+pub fn refresh_recommended(ctx: &Ctx, app: &App) {
+    let visible = lock(&ctx.shared).games.mode == GamesMode::Recommended
+        && app.global::<crate::Shell>().get_active_screen() == crate::Screen::Recommended;
+    if visible {
+        enter_flat(ctx, app, GamesMode::Recommended, false);
+    }
+}
+
 /// Recently played (Hub action): Core's play history.
 pub fn enter_recents(ctx: &Ctx, app: &App, entry: EntryMode) {
     crate::navigation::stage(ctx, app);
@@ -1681,6 +1751,11 @@ fn enter_flat(ctx: &Ctx, app: &App, mode: GamesMode, flip: bool) {
             (ticket, flip),
             |result| (result.entries.iter().map(GameRow::from).collect(), None),
         ),
+        GamesMode::Recommended => {
+            fill_from::<MediaRecommendedEndpoint>(ctx, app, (), (ticket, flip), |result| {
+                (result.queue().iter().map(GameRow::from).collect(), None)
+            });
+        }
         GamesMode::Browse => {}
     }
 }
@@ -2350,7 +2425,8 @@ fn fetch_cap(mode: GamesMode) -> u32 {
         | GamesMode::Favorites
         | GamesMode::Search
         | GamesMode::Deck
-        | GamesMode::Decks => rules::JUMP_FETCH_CEILING,
+        | GamesMode::Decks
+        | GamesMode::Recommended => rules::JUMP_FETCH_CEILING,
     }
 }
 
@@ -2760,9 +2836,11 @@ fn fetch_more(ctx: &Ctx, app: &App, limit: u32, bulk: bool) {
                     (r.entries.iter().map(GameRow::from).collect(), cursor)
                 })
                 .map_err(PageError::from),
-            // A deck, the deck list and Top played fill whole: there is
-            // never a page to follow.
-            GamesMode::Deck | GamesMode::Decks | GamesMode::TopPlayed => Ok((Vec::new(), None)),
+            // A deck, the deck list, Top played and Recommended fill
+            // whole: there is never a page to follow.
+            GamesMode::Deck | GamesMode::Decks | GamesMode::TopPlayed | GamesMode::Recommended => {
+                Ok((Vec::new(), None))
+            }
         };
         let _ = weak.upgrade_in_event_loop(move |app| {
             on_append(&ctx2, &app, ticket, outcome);
@@ -2959,7 +3037,8 @@ fn restart_after_failed_page(ctx: &Ctx, app: &App) {
         | GamesMode::Search
         | GamesMode::Deck
         | GamesMode::Decks
-        | GamesMode::TopPlayed => {
+        | GamesMode::TopPlayed
+        | GamesMode::Recommended => {
             enter_flat(ctx, app, mode, false);
         }
     }
@@ -3091,7 +3170,8 @@ pub(crate) fn grid_geometry_for(
         | GamesMode::Recents
         | GamesMode::Search
         | GamesMode::Deck
-        | GamesMode::TopPlayed => {
+        | GamesMode::TopPlayed
+        | GamesMode::Recommended => {
             let label_height = inputs.pct_h(7.0);
             let bottom = if t240 {
                 derived.help_bar_height + label_height
@@ -3834,7 +3914,10 @@ pub fn render(ctx: &Ctx, app: &App) {
         )));
     }
     view.set_options_available(options_available(app, &shared));
-    view.set_page_menu(mode != GamesMode::Recents && !(mode == GamesMode::Browse && model.live));
+    view.set_page_menu(
+        !(matches!(mode, GamesMode::Recents | GamesMode::Recommended)
+            || mode == GamesMode::Browse && model.live),
+    );
     view.set_loading(model.loading);
     view.set_error(SharedString::from(model.error.as_str()));
     view.set_count(i32::try_from(count).unwrap_or(0));
@@ -4888,7 +4971,7 @@ fn open_page_menu(ctx: &Ctx, app: &App, mode: GamesMode) {
         GamesMode::Deck => crate::decks::open_page_menu(ctx, app),
         GamesMode::Decks => crate::decks::open_list_menu(ctx, app),
         GamesMode::TopPlayed => crate::router::open_top_played_page_menu(ctx, app),
-        GamesMode::Recents => {}
+        GamesMode::Recents | GamesMode::Recommended => {}
     }
 }
 
@@ -5020,7 +5103,8 @@ fn retry(ctx: &Ctx, app: &App) {
         | GamesMode::Search
         | GamesMode::Deck
         | GamesMode::Decks
-        | GamesMode::TopPlayed => {
+        | GamesMode::TopPlayed
+        | GamesMode::Recommended => {
             enter_flat(ctx, app, mode, false);
         }
     }
@@ -5193,9 +5277,11 @@ fn cancel(ctx: &Ctx, app: &App) {
             }
             GamesMode::Deck => crate::Screen::Decks,
             GamesMode::TopPlayed if grouped_top => crate::Screen::TopPlayedSystems,
-            GamesMode::Favorites | GamesMode::Recents | GamesMode::Decks | GamesMode::TopPlayed => {
-                crate::Screen::Hub
-            }
+            GamesMode::Favorites
+            | GamesMode::Recents
+            | GamesMode::Decks
+            | GamesMode::TopPlayed
+            | GamesMode::Recommended => crate::Screen::Hub,
         };
         shared.persist.active_screen = target.token().to_string();
         target
@@ -5336,10 +5422,14 @@ pub(crate) fn game_input(
         flags: (row.tags_known && addressable).then_some(row.flags),
         can_add_to_deck: row.tags_known && !system.is_empty() && !row.path.is_empty(),
         multi_disc: row.multi_disc,
-        versions: row.versions() > 0,
+        versions: matches!(
+            row.version_source(system),
+            zaparoo_app::title_versions::Source::Title(_)
+                | zaparoo_app::title_versions::Source::Media
+        ),
+        similar: addressable,
         has_payload: !row.zap_script.trim().is_empty() || !row.path.is_empty(),
         has_nfc: shared.has_nfc,
-        can_discover: zaparoo_app::alternate_versions::can_discover(system, &row.name, &row.path),
         has_launchers: shared.launchers.iter().any(|l| l.system_id == system),
         pinnable: pin.is_some(),
         on_hub: pin.is_some_and(|pin| {
@@ -5435,7 +5525,8 @@ fn info_line(row: Option<&GameRow>) -> zaparoo_app::info_line::InfoLine {
         locked: deck.is_some_and(|d| d.locked),
         hidden: row.is_hidden,
         item_count: deck.map(|d| d.item_count),
-        tags: if deck.is_some() {
+        pick: row.pick.clone(),
+        tags: if deck.is_some() || row.pick.is_some() {
             String::new()
         } else {
             row.suffix.clone()
@@ -5468,7 +5559,25 @@ fn info_data(line: &zaparoo_app::info_line::InfoLine) -> crate::InfoLineData {
         item_count: line
             .item_count
             .map_or(-1, |n| i32::try_from(n).unwrap_or(i32::MAX)),
+        pick: line
+            .pick
+            .as_ref()
+            .map_or(crate::PickSignal::None, |pick| pick_signal(pick.signal)),
+        seed: line.pick.as_ref().map_or_else(SharedString::new, |pick| {
+            SharedString::from(pick.seed.as_str())
+        }),
         tags: SharedString::from(line.tags.as_str()),
+    }
+}
+
+pub(crate) fn pick_signal(signal: zaparoo_app::suggestions::Signal) -> crate::PickSignal {
+    use zaparoo_app::suggestions::Signal;
+    match signal {
+        Signal::Played => crate::PickSignal::Played,
+        Signal::Favorite => crate::PickSignal::Favorite,
+        Signal::Liked => crate::PickSignal::Liked,
+        Signal::Deck => crate::PickSignal::Deck,
+        Signal::PlayLater => crate::PickSignal::PlayLater,
     }
 }
 
@@ -5481,7 +5590,112 @@ fn options_available(app: &App, shared: &Shared) -> bool {
 }
 
 /// Options on the focused row, for every list of games.
+/// An Options menu waiting on Core for the focused game's version count,
+/// which Core did not send with the row.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct VersionsRequest {
+    seq: u64,
+    mode: GamesMode,
+    key: String,
+}
+
 fn open_context_menu(ctx: &Ctx, app: &App) {
+    let ask = {
+        let mut shared = lock(&ctx.shared);
+        let include_hidden = include_hidden(&shared);
+        let model = &mut shared.games;
+        model.menu_seq += 1;
+        let Some(row) = model.current() else {
+            return;
+        };
+        let system = row.system_or(&model.system_id);
+        let is_game = row.deck_entry.is_none()
+            && rules::menu_target(row.entry_type, row.media_capable, &row.path)
+                == rules::MenuTarget::Game;
+        (is_game && row.version_source(system) == zaparoo_app::title_versions::Source::Unknown)
+            .then(|| {
+                let media = crate::title_versions::media_params(
+                    row.media_id,
+                    system,
+                    &row.path,
+                    include_hidden,
+                );
+                let request = VersionsRequest {
+                    seq: model.menu_seq,
+                    mode: model.mode,
+                    key: row.selection_key(),
+                };
+                (request, media)
+            })
+    };
+    let Some((request, media)) = ask else {
+        present_context_menu(ctx, app);
+        return;
+    };
+    // Core counts versions ahead, so the answer is quick; the header says
+    // so if it is not.
+    let client = ctx.store.client();
+    let ctx2 = ctx.clone();
+    let weak = app.as_weak();
+    let wait = crate::cue::begin(ctx, app, crate::AppCue::LoadingList, "", "");
+    ctx.handle.spawn(async move {
+        let total = crate::title_versions::count(&client, media).await;
+        let _ = weak.upgrade_in_event_loop(move |app| {
+            crate::cue::end(&ctx2, &app, wait);
+            versions_answered(&ctx2, &app, &request, total);
+        });
+    });
+}
+
+/// The request Options is waiting on, for a test to answer or outrun.
+#[cfg(all(test, feature = "mister"))]
+pub(crate) fn pending_versions_request(ctx: &Ctx) -> Option<VersionsRequest> {
+    let shared = lock(&ctx.shared);
+    let model = &shared.games;
+    model.current().map(|row| VersionsRequest {
+        seq: model.menu_seq,
+        mode: model.mode,
+        key: row.selection_key(),
+    })
+}
+
+/// Core said how many versions the focused game has: keep the count on
+/// the row and open its menu, unless the user has moved on. A count Core
+/// could not give opens the menu without the row and is asked again next
+/// time.
+pub(crate) fn versions_answered(
+    ctx: &Ctx,
+    app: &App,
+    request: &VersionsRequest,
+    total: Option<u32>,
+) {
+    {
+        let mut shared = lock(&ctx.shared);
+        let shell = app.global::<crate::Shell>();
+        let model = &mut shared.games;
+        if model.menu_seq != request.seq
+            || model.mode != request.mode
+            || shell.get_active_screen() != request.mode.screen()
+            || shell.get_transitioning()
+            || app.global::<crate::Overlays>().get_context_open()
+        {
+            return;
+        }
+        let Some(row) = model.current_mut() else {
+            return;
+        };
+        if row.selection_key() != request.key {
+            return;
+        }
+        if total.is_some() {
+            row.version_count = total;
+        }
+    }
+    present_context_menu(ctx, app);
+}
+
+/// Open the focused row's Options menu with what the row knows now.
+fn present_context_menu(ctx: &Ctx, app: &App) {
     let menu = {
         let shared = lock(&ctx.shared);
         let Some(row) = shared.games.current() else {
@@ -5560,7 +5774,7 @@ pub(crate) fn game_action(ctx: &Ctx, app: &App, id: &str, row: &GameRow, system:
     }
 }
 
-/// "Discover alt. versions", "Choose disc" and "Choose version" turn the
+/// "Choose disc" and "Choose version" turn the
 /// menu to a page of its own: it stays open while Core answers. False when
 /// `id` is an ordinary entry.
 pub fn begin_context_page(ctx: &Ctx, app: &App, id: &str) -> bool {
@@ -5583,18 +5797,31 @@ pub(crate) fn begin_game_page(ctx: &Ctx, app: &App, id: &str, row: &GameRow, sys
     use crate::context_page::Page;
     if id == Page::AddToDeck.menu_id() {
         crate::add_to_deck::begin(ctx, app, system, &row.path, &row.display);
-    } else if id == Page::Alternates.menu_id() {
-        crate::alternates::begin(ctx, app, system, &row.name, &row.path);
     } else if id == Page::Discs.menu_id() {
         let include_hidden = include_hidden(&lock(&ctx.shared));
         crate::discs::begin(ctx, app, system, &row.path, &row.display, include_hidden);
     } else if id == Page::Versions.menu_id() {
-        let Some(title_id) = row.title_id else {
-            return true;
-        };
-        // The search that counted the versions filters the list of them.
-        let search = crate::search::args(&lock(&ctx.shared));
-        crate::title_versions::begin(ctx, app, title_id, &row.display, &search);
+        use zaparoo_app::title_versions::Source;
+        match row.version_source(system) {
+            Source::Title(title_id) => {
+                // The search that counted the versions filters the list of them.
+                let search = crate::search::args(&lock(&ctx.shared));
+                crate::title_versions::begin(ctx, app, title_id, &row.display, &search);
+            }
+            Source::Media => {
+                let include_hidden = include_hidden(&lock(&ctx.shared));
+                let media = crate::title_versions::media_params(
+                    row.media_id,
+                    system,
+                    &row.path,
+                    include_hidden,
+                );
+                crate::title_versions::begin_media(ctx, app, media, &row.display);
+            }
+            Source::None | Source::Unknown => {}
+        }
+    } else if id == Page::Similar.menu_id() {
+        crate::similar::begin(ctx, app, row.media_id, system, &row.path);
     } else {
         return false;
     }
@@ -6147,6 +6374,7 @@ mod tests {
             has_cover: true,
             cover_color: None,
             multi_disc: false,
+            version_count: None,
         }
     }
 
@@ -6542,6 +6770,32 @@ mod tests {
         });
         assert!(bare.relative_path.is_empty());
         assert!(bare.zap_script.is_empty());
+    }
+
+    #[test]
+    fn only_a_grouped_result_lists_its_title() {
+        use zaparoo_app::title_versions::Source;
+
+        let grouped = GameRow::from(&MediaItem {
+            path: "/g/NES/Game.nes".into(),
+            title_id: Some(9),
+            version_count: Some(3),
+            ..MediaItem::default()
+        });
+        assert_eq!(grouped.version_source("NES"), Source::Title(9));
+
+        let mut flat = GameRow::from(&MediaItem {
+            path: "/g/NES/Game.nes".into(),
+            title_id: Some(9),
+            ..MediaItem::default()
+        });
+        assert_eq!(flat.version_source("NES"), Source::Unknown);
+        flat.version_count = Some(3);
+        assert_eq!(
+            flat.version_source("NES"),
+            Source::Media,
+            "a count Core gave when asked lists the media's versions"
+        );
     }
 
     #[test]

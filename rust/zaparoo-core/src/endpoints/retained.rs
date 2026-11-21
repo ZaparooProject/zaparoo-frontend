@@ -4,8 +4,9 @@
 use crate::collections::{Deck, DeckItem, DeckItemKind, DeckItemMedia, DecksResult};
 use crate::media_types::{
     BrowseEntry, LauncherInfo, LaunchersResult, MediaBrowseResult, MediaHistoryEntry,
-    MediaHistoryResult, MediaHistoryTopEntry, MediaHistoryTopResult, MediaItem, MediaSearchResult,
-    Pagination, System, SystemInfo, SystemsResult, TagInfo,
+    MediaHistoryResult, MediaHistoryTopEntry, MediaHistoryTopResult, MediaItem,
+    MediaRecommendedResult, MediaSearchResult, Pagination, RecommendedSection, SuggestedMedia,
+    SuggestedReason, System, SystemInfo, SystemsResult, TagInfo,
 };
 use crate::systems_catalog::CatalogData;
 
@@ -134,6 +135,7 @@ fields!(BrowseEntry {
     has_cover,
     cover_color,
     multi_disc,
+    version_count,
 });
 fields!(MediaBrowseResult {
     path,
@@ -218,6 +220,15 @@ fields!(MediaHistoryTopEntry {
     tags
 });
 fields!(MediaHistoryTopResult { entries });
+fields!(SuggestedReason { code, tags });
+fields!(SuggestedMedia {
+    media,
+    reasons,
+    signal,
+    seed
+});
+fields!(RecommendedSection { kind, items });
+fields!(MediaRecommendedResult { sections });
 fields!(LauncherInfo {
     id,
     system_id,

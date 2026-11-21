@@ -25,12 +25,14 @@ use crate::media_types::{
     MediaBrowseParams, MediaBrowseResult, MediaControlParams, MediaHistoryLatestResult,
     MediaHistoryParams, MediaHistoryResult, MediaHistoryTopParams, MediaHistoryTopResult,
     MediaImageParams, MediaImageResult, MediaIndexParams, MediaLookupParams, MediaLookupResult,
-    MediaMetaParams, MediaMetaResult, MediaMetaUpdateParams, MediaResult, MediaScrapeParams,
-    MediaSearchParams, MediaSearchResult, MediaTagsParams, MediaTagsResult, MediaTagsUpdateParams,
-    MediaTagsUpdateResult, OnlineStatusResult, PairStartResult, PlaylistsUpdateParams,
-    ReadersResult, ReadersWriteParams, RemoteActivityResult, RunParams, ScrapersResult,
-    ScrapingStatusResponse, SettingsResult, SystemsParams, SystemsResult, TokensHistoryResult,
-    TokensResult, UpdateSettingsParams, VersionResult,
+    MediaMetaParams, MediaMetaResult, MediaMetaUpdateParams, MediaRecommendedParams,
+    MediaRecommendedResult, MediaResult, MediaScrapeParams, MediaSearchParams, MediaSearchResult,
+    MediaSimilarParams, MediaSimilarResult, MediaTagsParams, MediaTagsResult,
+    MediaTagsUpdateParams, MediaTagsUpdateResult, MediaVersionsParams, MediaVersionsResult,
+    OnlineStatusResult, PairStartResult, PlaylistsUpdateParams, ReadersResult, ReadersWriteParams,
+    RemoteActivityResult, RunParams, ScrapersResult, ScrapingStatusResponse, SettingsResult,
+    SystemsParams, SystemsResult, TokensHistoryResult, TokensResult, UpdateSettingsParams,
+    VersionResult,
 };
 use crate::profile_types::{
     ActiveProfile, ClientsResult, NewProfileParams, PlaytimeLimits, Profile, ProfilesResult,
@@ -1068,6 +1070,35 @@ impl Client {
     ) -> Result<MediaSearchResult, ClientError> {
         let val = self.call("media.search", &params).await?;
         deserialize_timed("media.search", val)
+    }
+
+    /// Other versions of one media item's game: regions, revisions and
+    /// releases under another name, the item itself marked `current`.
+    pub async fn media_versions(
+        &self,
+        params: MediaVersionsParams,
+    ) -> Result<MediaVersionsResult, ClientError> {
+        let val = self.call("media.versions", &params).await?;
+        deserialize_timed("media.versions", val)
+    }
+
+    /// Games like one media item, best first (`media.similar`).
+    pub async fn media_similar(
+        &self,
+        params: MediaSimilarParams,
+    ) -> Result<MediaSimilarResult, ClientError> {
+        let val = self.call("media.similar", &params).await?;
+        deserialize_timed("media.similar", val)
+    }
+
+    /// What the active profile may want to play next
+    /// (`media.recommended`).
+    pub async fn media_recommended(
+        &self,
+        params: MediaRecommendedParams,
+    ) -> Result<MediaRecommendedResult, ClientError> {
+        let val = self.call("media.recommended", &params).await?;
+        deserialize_timed("media.recommended", val)
     }
 
     pub async fn media_browse(

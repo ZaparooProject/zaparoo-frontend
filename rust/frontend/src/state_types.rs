@@ -30,7 +30,7 @@ tokens!(Screen {
     Settings => "settings", About => "about", Credits => "credits", Update => "update", Rename => "rename",
     RaLogin => "ra-login", FileBrowser => "file-browser", Decks => "decks", Deck => "deck",
     TopPlayed => "top-played", TopPlayedSystems => "top-played-systems", Music => "music",
-    GamePicker => "game-picker", None => "",
+    GamePicker => "game-picker", Recommended => "recommended", None => "",
 });
 tokens!(SettingsPage {
     Root => "", Appearance => "pageAppearance", Library => "pageLibraryData",
@@ -57,7 +57,7 @@ tokens!(ErrorKind {
     SaveToHub => "save_to_hub",
     MediaIndex => "media_index", MediaScrape => "media_scrape", MediaScrapers => "media_scrapers",
     MediaCancel => "media_cancel", Launcher => "launcher", LauncherSave => "launcher_save",
-    AlternateDiscovery => "alternate_discovery", DiscList => "disc_list", VersionList => "version_list",
+    DiscList => "disc_list", VersionList => "version_list", SimilarList => "similar_list",
     QrCode => "qr_code", CardWrite => "card_write", Setting => "setting",
     Pairing => "pairing", Online => "online", Backup => "backup", ConfigFile => "config_file",
     ImagePicker => "image_picker", Music => "music", Bluetooth => "bluetooth",
@@ -308,6 +308,7 @@ mod tests {
             Screen::TopPlayedSystems,
             Screen::Music,
             Screen::GamePicker,
+            Screen::Recommended,
             Screen::None,
         ] {
             assert_eq!(Screen::try_from(value.token()), Ok(value));

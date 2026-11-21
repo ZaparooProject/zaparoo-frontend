@@ -344,13 +344,13 @@ pub struct GameInput {
     pub can_add_to_deck: bool,
     /// A folder of one game's discs.
     pub multi_disc: bool,
-    /// A search result standing for several versions of one title.
+    /// Core reports other versions of the game.
     pub versions: bool,
+    /// Core can address the game to ask for games like it.
+    pub similar: bool,
     /// There is a script or path to write to a token.
     pub has_payload: bool,
     pub has_nfc: bool,
-    /// An arcade game Core can look up other versions of.
-    pub can_discover: bool,
     /// A launcher exists for the game's system.
     pub has_launchers: bool,
     /// There is something to pin to the Hub.
@@ -387,11 +387,12 @@ pub fn game(input: &GameInput) -> Menu {
     if input.versions {
         menu.root.push(row("choose_version"));
     }
+    // A folder of discs is one game, but Core addresses its discs, not it.
+    if input.similar && !input.multi_disc {
+        menu.root.push(row("similar_games"));
+    }
     if input.has_payload {
         push_write(&mut menu, input.has_nfc);
-    }
-    if input.can_discover {
-        menu.root.push(row("discover"));
     }
     if input.has_launchers && input.has_system {
         menu.manage.push(row("change_launcher"));
@@ -777,21 +778,7 @@ mod tests {
     }
 
     #[test]
-    fn discs_and_alternates_stay_on_options_in_their_own_places() {
-        let arcade = game(&GameInput {
-            can_discover: true,
-            ..regular()
-        });
-        assert_eq!(
-            keys(&arcade.root),
-            [
-                "more_info",
-                "add_to_deck",
-                "write_token",
-                "discover",
-                "manage_game"
-            ]
-        );
+    fn discs_stay_on_options_in_their_own_place() {
         let discs = game(&GameInput {
             multi_disc: true,
             has_launchers: false,
@@ -807,26 +794,10 @@ mod tests {
                 "manage_game"
             ]
         );
-        let both = game(&GameInput {
-            multi_disc: true,
-            can_discover: true,
-            ..regular()
-        });
-        assert_eq!(
-            keys(&both.root),
-            [
-                "more_info",
-                "add_to_deck",
-                "choose_disc",
-                "write_token",
-                "discover",
-                "manage_game"
-            ]
-        );
     }
 
     #[test]
-    fn a_title_with_versions_offers_them_where_discs_sit() {
+    fn a_game_with_versions_offers_them_where_discs_sit() {
         let stacked = game(&GameInput {
             versions: true,
             ..regular()
@@ -842,6 +813,33 @@ mod tests {
             ]
         );
         assert_eq!(stacked.page_for("choose_version"), None);
+    }
+
+    #[test]
+    fn similar_games_follow_the_versions() {
+        let menu = game(&GameInput {
+            versions: true,
+            similar: true,
+            ..regular()
+        });
+        assert_eq!(
+            keys(&menu.root),
+            [
+                "more_info",
+                "add_to_deck",
+                "choose_version",
+                "similar_games",
+                "write_token",
+                "manage_game"
+            ]
+        );
+        assert_eq!(menu.page_for("similar_games"), None);
+        let discs = game(&GameInput {
+            multi_disc: true,
+            similar: true,
+            ..regular()
+        });
+        assert!(!keys(&discs.root).contains(&"similar_games"));
     }
 
     #[test]

@@ -1108,6 +1108,16 @@ fn open_setting_tile(ctx: &Ctx, app: &App, id: &str) {
     }
 }
 
+/// A Hub tile for one of the lists Core keeps from play: Recents, Top
+/// played or Recommended.
+fn enter_play_list(ctx: &Ctx, app: &App, id: &str) {
+    match id {
+        "recents" => crate::games::enter_recents(ctx, app, EntryMode::Fresh),
+        "topplayed" => crate::games::enter_top_played(ctx, app, EntryMode::Fresh),
+        _ => crate::games::enter_recommended(ctx, app, EntryMode::Fresh),
+    }
+}
+
 fn emit_activate(ctx: &Ctx, app: &App) {
     let entry = {
         let shared = lock(&ctx.shared);
@@ -1156,8 +1166,7 @@ fn emit_activate(ctx: &Ctx, app: &App) {
                     crate::router::enter_list(ctx, app, list, EntryMode::Fresh);
                 }
                 "decks" => crate::decks::enter(ctx, app, EntryMode::Fresh),
-                "recents" => crate::games::enter_recents(ctx, app, EntryMode::Fresh),
-                "topplayed" => crate::games::enter_top_played(ctx, app, EntryMode::Fresh),
+                "recents" | "topplayed" | "recommended" => enter_play_list(ctx, app, &entry.id),
                 "search" => crate::search::enter(ctx, app, EntryMode::Fresh),
                 "music" => crate::music::enter(ctx, app),
                 // Profiles opens without the admin gate: switching is free.
@@ -1564,15 +1573,20 @@ fn ask_game(ctx: &Ctx, app: &App, request: GameRequest) {
     let weak = app.as_weak();
     let wait = crate::cue::begin(ctx, app, crate::AppCue::LoadingList, "", "");
     let params = MediaMetaParams::for_media(request.system.clone(), request.path.clone());
+    let include_hidden = crate::games::include_hidden(&lock(&ctx.shared));
+    let versions_params =
+        crate::title_versions::media_params(None, &request.system, &request.path, include_hidden);
     ctx.handle.spawn(async move {
-        let meta = client
-            .media_meta(params)
-            .await
-            .ok()
-            .map(|result| result.media);
+        // The game's versions are counted beside its state, so the menu
+        // opens once, complete.
+        let (meta, versions) = tokio::join!(
+            client.media_meta(params),
+            crate::title_versions::count(&client, versions_params),
+        );
+        let meta = meta.ok().map(|result| result.media);
         let _ = weak.upgrade_in_event_loop(move |app| {
             crate::cue::end(&ctx2, &app, wait);
-            game_answered(&ctx2, &app, &request, meta.as_ref());
+            game_answered(&ctx2, &app, &request, meta.as_ref(), versions);
         });
     });
 }
@@ -1591,9 +1605,16 @@ pub(crate) fn pending_game_request(ctx: &Ctx, tile: Tile, system: &str, path: &s
     }
 }
 
-/// Core said what it knows about a tile's game: open the game's menu, or
-/// the tile's own when Core no longer has the game.
-pub(crate) fn game_answered(ctx: &Ctx, app: &App, request: &GameRequest, meta: Option<&MediaMeta>) {
+/// Core said what it knows about a tile's game and how many versions it
+/// has: open the game's menu, or the tile's own when Core no longer has
+/// the game.
+pub(crate) fn game_answered(
+    ctx: &Ctx,
+    app: &App,
+    request: &GameRequest,
+    meta: Option<&MediaMeta>,
+    versions: Option<u32>,
+) {
     let (menu, target) = {
         let shared = lock(&ctx.shared);
         let hub = &shared.hub;
@@ -1614,7 +1635,9 @@ pub(crate) fn game_answered(ctx: &Ctx, app: &App, request: &GameRequest, meta: O
         let found = meta.filter(|meta| !meta.is_missing && !meta.path.is_empty());
         match found {
             Some(meta) => {
-                let row = crate::games::GameRow::from_meta(&request.system, &request.name, meta);
+                let mut row =
+                    crate::games::GameRow::from_meta(&request.system, &request.name, meta);
+                row.version_count = versions;
                 let input = crate::games::game_input(
                     app,
                     &shared,
