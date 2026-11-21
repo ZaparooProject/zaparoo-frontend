@@ -2,7 +2,7 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: frontend VERSION\n"
-"POT-Creation-Date: 2026-11-20 23:41+0000\n"
+"POT-Creation-Date: 2026-11-21 01:12+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -1023,8 +1023,8 @@ msgid "Loading…"
 msgstr ""
 
 #: rust/frontend/ui/browse_list.slint:620 rust/frontend/ui/chrome.slint:816
-#: rust/frontend/ui/browse_list.slint:620 rust/frontend/ui/chrome.slint:816 rust/frontend/ui/game_info.slint:372
-#: rust/frontend/ui/browse_list.slint:620 rust/frontend/ui/chrome.slint:816 rust/frontend/ui/game_info.slint:372
+#: rust/frontend/ui/browse_list.slint:620 rust/frontend/ui/chrome.slint:816 rust/frontend/ui/game_info.slint:361
+#: rust/frontend/ui/browse_list.slint:620 rust/frontend/ui/chrome.slint:816 rust/frontend/ui/game_info.slint:361
 msgid "{}/{}"
 msgstr ""
 
@@ -1184,16 +1184,16 @@ msgstr[1] ""
 msgid "This folder can't be opened."
 msgstr ""
 
-#: rust/frontend/ui/game_info.slint:267 rust/frontend/ui/labels.slint:421
+#: rust/frontend/ui/game_info.slint:266 rust/frontend/ui/labels.slint:421
 msgid "Loading details…"
 msgstr ""
 
-#: rust/frontend/ui/game_info.slint:273
-msgid "Could not load details. Check Zaparoo Core and try again."
+#: rust/frontend/ui/game_info.slint:332 rust/frontend/ui/game_info.slint:669
+msgid "Loading image…"
 msgstr ""
 
-#: rust/frontend/ui/game_info.slint:343 rust/frontend/ui/game_info.slint:669
-msgid "Loading image…"
+#: rust/frontend/ui/game_info.slint:370
+msgid "Could not load details. Check Zaparoo Core and try again."
 msgstr ""
 
 #: rust/frontend/ui/game_info.slint:402

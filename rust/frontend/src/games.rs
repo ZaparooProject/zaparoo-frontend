@@ -3431,6 +3431,7 @@ pub fn page_covers_waiting(ctx: &Ctx, app: &App) -> bool {
             | crate::Screen::Deck
             | crate::Screen::Decks
             | crate::Screen::TopPlayed
+            | crate::Screen::Recommended
     ) {
         return false;
     }
@@ -4095,6 +4096,7 @@ pub fn render(ctx: &Ctx, app: &App) {
             | crate::Screen::Deck
             | crate::Screen::Decks
             | crate::Screen::TopPlayed
+            | crate::Screen::Recommended
     ) {
         let bounds = zaparoo_app::logo_cache::Bounds::new(art_tier.tier, art_tier.tier);
         let key = |row: &GameRow| {
@@ -4649,6 +4651,7 @@ impl crate::page_motion::PagedScreen for GamesScreen {
                 | crate::Screen::Deck
                 | crate::Screen::Decks
                 | crate::Screen::TopPlayed
+                | crate::Screen::Recommended
         )
     }
     fn list_layout(app: &App) -> bool {
@@ -4991,6 +4994,9 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
     let (list, state, mode) = {
         let mut shared = lock(&ctx.shared);
         shared.games.focus_armed = true;
+        // Any input abandons an Options menu still waiting on Core, as on
+        // the Hub; Options itself takes a fresh ticket.
+        shared.games.menu_seq += 1;
         (
             list_layout(&shared),
             shared.games.state(),

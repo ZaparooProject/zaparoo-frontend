@@ -497,9 +497,9 @@ fn save_hidden_prefs(ctx: &Ctx, app: &App, categories: &[String], system_ids: &[
 // ---------- Startup decision dialogs ----------
 
 /// Dev builds and unparseable versions fail open: only a parsed semver
-/// below the floor triggers the warning. 2.22.0 is the first Core that
-/// takes a multi-disc folder's launch disc with its path.
-const MIN_CORE_VERSION: &str = "2.22.0";
+/// below the floor triggers the warning. 2.23.0 is the first Core that
+/// lists a game's versions, similar games and recommendations.
+const MIN_CORE_VERSION: &str = "2.23.0";
 
 pub(crate) fn version_supported(raw: &str) -> bool {
     let v = raw.trim();
@@ -552,11 +552,11 @@ mod version_gate_tests {
 
     #[test]
     fn semver_floor_enforced() {
-        assert!(version_supported("2.22.0"));
-        assert!(version_supported("2.22.0-beta.1"));
+        assert!(version_supported("2.23.0"));
+        assert!(version_supported("2.23.0-beta.1"));
         assert!(version_supported("3.0.1"));
-        assert!(!version_supported("2.21.0"));
-        assert!(!version_supported("2.21.1-beta.1"));
+        assert!(!version_supported("2.22.1"));
+        assert!(!version_supported("2.22.0-beta.1"));
         assert!(!version_supported("1.0.0"));
     }
 }

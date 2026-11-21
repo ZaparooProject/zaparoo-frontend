@@ -226,8 +226,7 @@ pub fn open_as(ctx: &Ctx, app: &App, entry: &GameRow, opened: Opened) {
                 Ok(result) => landed(&ctx, &app, &key, &result.media),
                 Err(error) => {
                     tracing::warn!(path = %key.path, "game info fetch failed: {}", error.message);
-                    view.set_failed(true);
-                    publish_focus(&ctx, &app);
+                    failed(&ctx, &app);
                 }
             }
         });
@@ -279,6 +278,7 @@ fn prepare(
     let valid = !system.trim().is_empty() && !entry.path.trim().is_empty();
     if !valid {
         view.set_modal_open(true);
+        seat_play_only(ctx, app);
         return None;
     }
     Some((ticket, fit, system))
@@ -314,15 +314,7 @@ fn landed(ctx: &Ctx, app: &App, key: &MediaKey, meta: &zaparoo_core::media_types
         .collect()
     };
     let searchable: Vec<bool> = rows.iter().map(InfoRow::searchable).collect();
-    let play = {
-        let shared = lock(&ctx.shared);
-        let model = &shared.game_info;
-        model.opened.play
-            && model
-                .entry
-                .as_ref()
-                .is_some_and(|e| e.launch_text().is_some())
-    };
+    let play = offers_play(&lock(&ctx.shared).game_info);
     let shown: Vec<Stop> = [
         (Stop::Image, !images.is_empty()),
         (Stop::Play, play),
@@ -401,6 +393,45 @@ pub(crate) fn land_for_test(ctx: &Ctx, app: &App, meta: &zaparoo_core::media_typ
     crate::router::end_held_wait(app);
     app.global::<GameInfoView>().set_modal_open(true);
     landed(ctx, app, &key, meta);
+}
+
+/// Core could not describe the game: say so, and still offer Play when
+/// the panel was opened to choose it.
+fn failed(ctx: &Ctx, app: &App) {
+    app.global::<GameInfoView>().set_failed(true);
+    seat_play_only(ctx, app);
+}
+
+/// Lands a `media.meta` failure as Core's error does, for a test.
+#[cfg(all(test, feature = "mister"))]
+pub(crate) fn fail_for_test(ctx: &Ctx, app: &App) {
+    crate::press_feedback::cancel(app);
+    crate::router::end_held_wait(app);
+    app.global::<GameInfoView>().set_modal_open(true);
+    failed(ctx, app);
+}
+
+/// Whether the panel offers Play: opened to choose a game Core can launch.
+fn offers_play(model: &GameInfoModel) -> bool {
+    model.opened.play
+        && model
+            .entry
+            .as_ref()
+            .is_some_and(|entry| entry.launch_text().is_some())
+}
+
+/// No metadata to lay out: Play, when the panel offers it, is still the
+/// one stop, so a game chosen to play can be played.
+fn seat_play_only(ctx: &Ctx, app: &App) {
+    {
+        let mut shared = lock(&ctx.shared);
+        let model = &mut shared.game_info;
+        if offers_play(model) {
+            model.stops = vec![Stop::Play];
+            model.focus = 0;
+        }
+    }
+    publish_focus(ctx, app);
 }
 
 /// The stops and the focused one, for the view to ring.

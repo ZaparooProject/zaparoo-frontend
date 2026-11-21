@@ -154,7 +154,6 @@ export component GameInfoModal inherits ModalShell {
     property <bool> paging: GameInfoView.values-open;
     property <length> line-h: Math.ceil(Sizing.font-body * 1.362 / 1px) * 1px;
     property <length> body-h: GameInfoView.loading ? loading-label.height
-        : GameInfoView.failed ? error-label.preferred-height
         : root.paging ? values-list.preferred-height : contents.preferred-height;
     // Lip, title, gap, rule, gap, scroll cue, body, scroll cue, lip. The
     // cues sit in a reserved band outside the viewport rather than in the
@@ -169,7 +168,7 @@ export component GameInfoModal inherits ModalShell {
         - root.content-y - root.pad - 2 * root.arrow-band);
     out property <length> viewport-height: Math.min(root.body-budget, root.body-h);
     out property <length> maximum-scroll: Math.max(0px, root.body-h - root.viewport-height);
-    out property <bool> scrollable: !GameInfoView.loading && !GameInfoView.failed && root.maximum-scroll > 0px;
+    out property <bool> scrollable: !GameInfoView.loading && root.maximum-scroll > 0px;
 
     // The values page names the row it lists, as a picker page names its
     // field.
@@ -192,7 +191,7 @@ export component GameInfoModal inherits ModalShell {
     property <length> reveal-margin: Sizing.pct-h(2);
 
     public function move-scroll(delta: length) {
-        if (!GameInfoView.loading && !GameInfoView.failed) {
+        if (!GameInfoView.loading) {
             GameInfoView.scroll-position = Math.max(0px,
                 Math.min(root.maximum-scroll, root.scroll-y + delta)) / Math.max(1px, Sizing.screen-height);
         }
@@ -266,16 +265,6 @@ export component GameInfoModal inherits ModalShell {
             waiting: GameInfoView.loading;
             text: @tr("Loading details…");
         }
-        error-label := Text {
-            x: root.pad;
-            y: root.content-y + root.arrow-band;
-            width: root.content-width;
-            text: @tr("Could not load details. Check Zaparoo Core and try again.");
-            font-size: Sizing.font-body;
-            color: Theme.text-primary;
-            wrap: word-wrap;
-            visible: !GameInfoView.loading && GameInfoView.failed;
-        }
 
         viewport := Rectangle {
             x: root.pad;
@@ -283,7 +272,7 @@ export component GameInfoModal inherits ModalShell {
             width: root.content-width;
             height: root.viewport-height;
             clip: true;
-            visible: !GameInfoView.loading && !GameInfoView.failed;
+            visible: !GameInfoView.loading;
 
             Rectangle {
                 y: -root.shown-y;
@@ -375,6 +364,14 @@ export component GameInfoModal inherits ModalShell {
                         }
                     }
                 }
+                // Above Play, which a game chosen to play keeps without its
+                // details.
+                if GameInfoView.failed: Text {
+                    text: @tr("Could not load details. Check Zaparoo Core and try again.");
+                    font-size: Sizing.font-body;
+                    color: Theme.text-primary;
+                    wrap: word-wrap;
+                }
                 if GameInfoView.pick != PickSignal.none || GameInfoView.shared-key != "": Text {
                     text: GameInfoView.pick != PickSignal.none
                         ? Labels.pick(GameInfoView.pick, GameInfoView.seed)
@@ -388,8 +385,11 @@ export component GameInfoModal inherits ModalShell {
                 if GameInfoView.play-stop >= 0 || GameInfoView.has-manual: HorizontalLayout {
                     property <bool> focused: (GameInfoView.focus == GameInfoView.play-stop && GameInfoView.play-stop >= 0)
                         || (GameInfoView.focus == GameInfoView.manual-stop && GameInfoView.manual-stop >= 0);
+                    // Which of its buttons has focus, so a move from Play to
+                    // Manual reveals the row too.
+                    property <int> focused-stop: self.focused ? GameInfoView.focus : -1;
                     init => { if (self.focused) { root.seat(self.y, self.height, false); } }
-                    changed focused => { if (self.focused) { root.seat(self.y, self.height, false); } }
+                    changed focused-stop => { if (self.focused) { root.seat(self.y, self.height, false); } }
                     changed y => { if (self.focused) { root.seat(self.y, self.height, false); } }
                     alignment: start;
                     spacing: Sizing.pct-w(1.6);

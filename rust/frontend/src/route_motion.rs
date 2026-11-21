@@ -2315,6 +2315,18 @@ fn a_similar_game_opens_its_details_on_play_and_back_returns_to_its_row() {
     settle(&window);
     assert_eq!(overlays.get_context_index(), 1);
 
+    // Core could not describe it: the panel says so and still offers Play.
+    crate::router::handle_action(&ctx, &app, "accept");
+    advance(zaparoo_app::input::PRESS_FEEDBACK_MS);
+    crate::game_info::fail_for_test(&ctx, &app);
+    settle(&window);
+    assert!(info.get_failed());
+    assert_eq!(info.get_play_stop(), 0);
+    assert_eq!(info.get_focus(), 0, "on Play");
+    crate::router::handle_action(&ctx, &app, "cancel");
+    settle(&window);
+    assert_eq!(overlays.get_context_index(), 1);
+
     // Back on the page returns to the menu, on its row.
     crate::router::handle_action(&ctx, &app, "cancel");
     assert!(overlays.get_context_open() && !crate::context_page::showing(&ctx));
@@ -2398,6 +2410,14 @@ fn options_on_a_recent_game_asks_core_for_its_versions_first() {
     let stale = crate::games::pending_versions_request(&ctx).expect("asked");
     focus(1);
     crate::games::versions_answered(&ctx, &app, &stale, Some(3));
+    assert!(!overlays.get_context_open());
+    // Nor does one the user moved off and back onto.
+    crate::router::handle_action(&ctx, &app, "context_menu");
+    let left = crate::games::pending_versions_request(&ctx).expect("asked");
+    crate::router::handle_action(&ctx, &app, "down");
+    crate::router::handle_action(&ctx, &app, "up");
+    focus(1);
+    crate::games::versions_answered(&ctx, &app, &left, Some(3));
     assert!(!overlays.get_context_open());
 
     // A count above one offers the versions and stays on the row.
@@ -4373,14 +4393,12 @@ fn position_changes_paint_only_header_cue(list: bool) {
         systems.set_current_index(0);
         games.set_current_index(0);
         shot();
-        advance(500);
         let before = shot();
         systems.set_page(1);
         games.set_page(1);
         systems.set_current_index(1);
         games.set_current_index(1);
         shot();
-        advance(500);
         let after = shot();
         let changed: Vec<_> = before
             .iter()
@@ -6781,7 +6799,6 @@ fn grid_focus_glides_retargets_and_snaps_on_page_or_reduced_motion() {
         second,
         "live reduced motion snaps immediately"
     );
-    advance(500);
     assert_eq!(ring_left(&pixels(&window)), second);
 }
 
@@ -10242,7 +10259,6 @@ fn a_header_wait_cue_skips_a_fast_answer_and_never_flashes_a_slow_one() {
     let long = crate::cue::begin(&ctx, &app, crate::AppCue::Starting, "", "");
     advance(CUE_DELAY_MS);
     advance(CUE_HOLD_MS);
-    advance(500);
     assert_eq!(header_cue(&app), crate::AppCue::Starting);
     crate::cue::end(&ctx, &app, long);
     assert_eq!(header_cue(&app), crate::AppCue::None);
