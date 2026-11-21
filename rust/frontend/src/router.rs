@@ -1967,6 +1967,7 @@ pub(crate) fn relayout(ctx: &Ctx, app: &App) {
 pub(crate) fn apply_clock_setting(ctx: &Ctx, app: &App) {
     let twelve = {
         let guard = lock(&ctx.shared);
+        crate::push_header_clock(app, &guard.persist.settings);
         crate::clock_twelve_hour(&guard.persist.settings)
     };
     ctx.clock_twelve_hour.store(twelve, Ordering::Relaxed);

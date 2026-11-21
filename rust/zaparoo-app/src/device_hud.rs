@@ -45,8 +45,11 @@ pub enum NetworkGlyph {
 /// What the header and the internet gate show.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Hud {
-    /// Shown only while the link reaches the internet.
+    /// Shown while the link reaches the internet, and dimmed for a Wi-Fi
+    /// link that does not reach it yet.
     pub network: Option<NetworkGlyph>,
+    /// The Wi-Fi glyph is dimmed: joined, but not online.
+    pub wifi_pending: bool,
     /// Online features are offered.
     pub internet: bool,
     pub bluetooth: bool,
@@ -57,12 +60,14 @@ pub struct Hud {
 pub fn hud(reading: Reading) -> Hud {
     let internet = matches!(reading.network, Some((_, Reach::Full)));
     let network = match reading.network {
-        Some((Link::Wifi, Reach::Full)) => Some(NetworkGlyph::Wifi),
+        // Wi-Fi shows either way, dimmed until it reaches the internet.
+        Some((Link::Wifi, _)) => Some(NetworkGlyph::Wifi),
         Some((Link::Wired, Reach::Full)) => Some(NetworkGlyph::Wired),
         _ => None,
     };
     Hud {
         network,
+        wifi_pending: matches!(reading.network, Some((Link::Wifi, Reach::Limited))),
         internet,
         bluetooth: reading.bluetooth,
         battery_percent: reading
@@ -90,9 +95,14 @@ mod tests {
             reach(Link::Wired, Reach::Full).network,
             Some(NetworkGlyph::Wired)
         );
+        assert!(!wifi.wifi_pending);
         let portal = reach(Link::Wifi, Reach::Limited);
-        assert_eq!(portal.network, None);
+        assert_eq!(portal.network, Some(NetworkGlyph::Wifi), "dimmed");
+        assert!(portal.wifi_pending);
         assert!(!portal.internet);
+        let wired = reach(Link::Wired, Reach::Limited);
+        assert_eq!(wired.network, None);
+        assert!(!wired.wifi_pending);
         let other = reach(Link::Other, Reach::Full);
         assert_eq!(other.network, None, "no glyph for the link");
         assert!(other.internet, "but it is online");

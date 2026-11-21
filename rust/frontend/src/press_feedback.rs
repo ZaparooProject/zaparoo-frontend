@@ -147,6 +147,22 @@ fn online_list_target(ov: &Overlays<'_>) -> Option<Target> {
         .then(|| target(PressOwner::OnlineList, index, row.id.to_string()))
 }
 
+/// The PIN panel's pad key, or the admin row on its first page.
+fn pin_target(app: &App) -> Option<Target> {
+    let view = app.global::<crate::PinView>();
+    match view.get_page() {
+        crate::PinPage::Entry => {
+            let focus = view.get_focus();
+            Some(target(PressOwner::Pin, focus, format!("entry:{focus}")))
+        }
+        crate::PinPage::Admins => {
+            let index = view.get_admin_index();
+            let name = view.get_admins().row_data(usize::try_from(index).ok()?)?;
+            Some(target(PressOwner::Pin, index, format!("admins:{name}")))
+        }
+    }
+}
+
 /// The launcher preference list: any row but a held one, which Accept
 /// sets down rather than presses.
 fn launcher_prefs_target(ov: &Overlays<'_>) -> Option<Target> {
@@ -193,6 +209,10 @@ fn current_with(app: &App, prepare_grid: impl FnOnce()) -> Option<Target> {
     if let Some(target) = core_picker_target(app) {
         return Some(target);
     }
+    // The PIN panel is above every other modal; nothing under it is pushed.
+    if crate::pin::is_open(app) {
+        return pin_target(app);
+    }
     if app.global::<crate::LogUploadView>().get_open() {
         return log_target(app);
     }
@@ -208,13 +228,10 @@ fn current_with(app: &App, prepare_grid: impl FnOnce()) -> Option<Target> {
             &setup.get_rows(),
         );
     }
-    if ov.get_qr_open() {
-        return None;
-    }
-    // The pairing panel carries no pressable control: its two keys are
-    // named in the help bar and nothing on the screen below it may take
-    // the push.
-    if ov.get_pair_open() {
+    // The QR and pairing panels carry no pressable control: the pairing
+    // panel's two keys are named in the help bar, and nothing on the
+    // screen below either may take the push.
+    if ov.get_qr_open() || ov.get_pair_open() {
         return None;
     }
     // The link panel has nothing to press either: Accept is named in its

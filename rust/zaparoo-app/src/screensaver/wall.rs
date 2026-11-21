@@ -4,7 +4,8 @@
 
 //! Cover wall: a grid of covers, one tile swapping to another cover every
 //! few seconds, and one tile showing the clock that moves to another slot
-//! every so often. Each change repaints one or two tiles.
+//! every so often. Each change repaints one or two tiles. While the time
+//! is not set the wall is all covers.
 
 use super::Rng;
 
@@ -110,7 +111,9 @@ pub struct Wall {
 }
 
 impl Wall {
-    pub fn new(grid: Grid, covers: usize, seed: u64) -> Self {
+    /// `clock` puts the clock tile on the wall; without it every tile is a
+    /// cover.
+    pub fn new(grid: Grid, covers: usize, clock: bool, seed: u64) -> Self {
         let mut rng = Rng::new(seed);
         let mut order: Vec<usize> = (0..covers).collect();
         rng.shuffle(&mut order);
@@ -125,9 +128,11 @@ impl Wall {
             tiles.push(Tile::Cover(order[next % covers]));
             next += 1;
         }
-        let clock_at = rng.below(len);
-        if let Some(tile) = tiles.get_mut(clock_at) {
-            *tile = Tile::Clock;
+        if clock {
+            let clock_at = rng.below(len);
+            if let Some(tile) = tiles.get_mut(clock_at) {
+                *tile = Tile::Clock;
+            }
         }
         Self {
             grid,
@@ -161,15 +166,15 @@ impl Wall {
         }
         if self.clock_t >= CLOCK_EVERY && self.tiles.len() > 1 {
             self.clock_t -= CLOCK_EVERY;
-            let from = self.tiles.iter().position(|t| *t == Tile::Clock);
+            let Some(from) = self.tiles.iter().position(|t| *t == Tile::Clock) else {
+                return changed;
+            };
             let mut to = self.rng.below(self.tiles.len());
-            if Some(to) == from {
+            if to == from {
                 to = (to + 1) % self.tiles.len();
             }
-            if let Some(from) = from {
-                self.tiles.swap(from, to);
-                changed.push(from);
-            }
+            self.tiles.swap(from, to);
+            changed.push(from);
             changed.push(to);
         }
         changed
@@ -240,7 +245,7 @@ mod tests {
     #[test]
     fn one_clock_always_and_one_tile_per_swap() {
         let grid = Grid::for_scene(16.0 / 9.0);
-        let mut wall = Wall::new(grid, 40, 5);
+        let mut wall = Wall::new(grid, 40, true, 5);
         for _ in 0..2000 {
             let changed = wall.step(0.5);
             assert!(changed.len() <= 3);
@@ -252,9 +257,19 @@ mod tests {
     }
 
     #[test]
+    fn an_unset_clock_leaves_only_covers() {
+        let grid = Grid::for_scene(16.0 / 9.0);
+        let mut wall = Wall::new(grid, 40, false, 5);
+        for _ in 0..500 {
+            wall.step(0.5);
+            assert!(wall.tiles().iter().all(|t| matches!(t, Tile::Cover(_))));
+        }
+    }
+
+    #[test]
     fn the_clock_moves() {
         let grid = Grid::for_scene(16.0 / 9.0);
-        let mut wall = Wall::new(grid, 12, 6);
+        let mut wall = Wall::new(grid, 12, true, 6);
         let at = |w: &Wall| w.tiles().iter().position(|t| *t == Tile::Clock);
         let start = at(&wall);
         wall.step(CLOCK_EVERY + 0.01);
@@ -264,7 +279,7 @@ mod tests {
     #[test]
     fn many_covers_keep_the_wall_free_of_duplicates() {
         let grid = Grid::for_scene(16.0 / 9.0);
-        let mut wall = Wall::new(grid, 200, 8);
+        let mut wall = Wall::new(grid, 200, true, 8);
         for _ in 0..500 {
             wall.step(SWAP_EVERY);
             let mut covers: Vec<_> = wall

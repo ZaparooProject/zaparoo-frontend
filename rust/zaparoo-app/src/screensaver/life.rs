@@ -56,6 +56,8 @@ pub struct Life {
     carry: f32,
     /// The logo as a mask at the grid's scale, `(mask, width, height)`.
     logo: Option<(Vec<bool>, usize, usize)>,
+    /// The time is set, so the clock may seed a board.
+    clock: bool,
     next_seed: usize,
     rng: Rng,
 }
@@ -65,6 +67,7 @@ impl Life {
         width: usize,
         height: usize,
         logo: Option<(Vec<bool>, usize, usize)>,
+        clock: bool,
         seed: u64,
     ) -> Self {
         let mut life = Self {
@@ -76,13 +79,16 @@ impl Life {
             generation: 0,
             carry: 0.0,
             logo,
+            clock,
             next_seed: 0,
             rng: Rng::new(seed),
         };
-        let first = if life.logo.is_some() && life.rng.coin() {
+        let first = if life.logo.is_some() && (!clock || life.rng.coin()) {
             Seed::Logo
-        } else {
+        } else if clock {
             Seed::Clock
+        } else {
+            Seed::Soup
         };
         life.seed(first, (12, 0));
         life
@@ -215,7 +221,8 @@ impl Life {
             || alive < (self.width * self.height) / 200
             || self.generation >= MAX_GENERATIONS
         {
-            let seeds = [Seed::Soup, Seed::Logo, Seed::Clock];
+            let all = [Seed::Soup, Seed::Logo, Seed::Clock];
+            let seeds = if self.clock { &all[..] } else { &all[..2] };
             // Any seed but the last one.
             self.next_seed = (self.next_seed + 1 + self.rng.below(seeds.len() - 1)) % seeds.len();
             self.seed(seeds[self.next_seed], time);
@@ -312,7 +319,7 @@ mod tests {
 
     #[test]
     fn a_blinker_blinks() {
-        let mut life = Life::new(8, 8, None, 1);
+        let mut life = Life::new(8, 8, None, true, 1);
         life.ages.fill(0);
         for x in 2..5 {
             life.ages[3 * 8 + x] = 1;
@@ -324,8 +331,24 @@ mod tests {
     }
 
     #[test]
+    fn an_unset_time_never_seeds_the_clock() {
+        for seed in 0..8 {
+            // With no logo the first board is soup, far denser than the
+            // digits would be at this size.
+            let mut life = Life::new(40, 40, None, false, seed);
+            assert!(life.alive() > 200);
+            for _ in 0..50 {
+                life.ages.fill(0);
+                life.step(1.0 / RATE, (10, 30));
+                assert_eq!(life.generation, 0);
+                assert_ne!(life.next_seed, 2);
+            }
+        }
+    }
+
+    #[test]
     fn a_still_board_starts_over() {
-        let mut life = Life::new(16, 16, None, 2);
+        let mut life = Life::new(16, 16, None, true, 2);
         life.ages.fill(0);
         // A block: a still life.
         for (x, y) in [(5, 5), (6, 5), (5, 6), (6, 6)] {
@@ -345,7 +368,7 @@ mod tests {
 
     #[test]
     fn the_clock_seed_draws_digits_and_logo_seeds_center() {
-        let mut life = Life::new(80, 45, Some((vec![true; 4 * 3], 4, 3)), 3);
+        let mut life = Life::new(80, 45, Some((vec![true; 4 * 3], 4, 3)), true, 3);
         life.seed(Seed::Clock, (12, 34));
         assert!(life.alive() > 20);
         life.seed(Seed::Logo, (0, 0));
@@ -371,7 +394,7 @@ mod tests {
         let logo = Some((vec![true; 6 * 4], 6, 4));
         let boards: Vec<Vec<u8>> = (0..4)
             .map(|seed| {
-                let mut life = Life::new(80, 45, logo.clone(), seed);
+                let mut life = Life::new(80, 45, logo.clone(), true, seed);
                 life.seed(Seed::Logo, (0, 0));
                 life.ages
             })
@@ -385,7 +408,7 @@ mod tests {
 
     #[test]
     fn rendering_fills_three_bytes_a_cell() {
-        let life = Life::new(10, 6, None, 4);
+        let life = Life::new(10, 6, None, true, 4);
         let mut out = vec![0u8; 10 * 6 * 3];
         life.render(&mut out);
         let lit = out.chunks(3).filter(|p| p != &[0, 0, 0]).count();

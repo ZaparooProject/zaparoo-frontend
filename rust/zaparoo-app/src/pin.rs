@@ -35,6 +35,10 @@ pub const KEYS: [Key; 12] = [
 /// Where the cursor starts: the 5 in the middle of the pad.
 pub const START: usize = 4;
 
+/// How long a refusal stays in the panel's caption line before the line
+/// goes back to its standing hint. A key press clears it sooner.
+pub const MESSAGE_MS: u64 = 4_000;
+
 /// The key at a cursor position.
 pub fn key_at(index: usize) -> Key {
     KEYS[index.min(KEYS.len() - 1)]

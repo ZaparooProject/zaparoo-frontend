@@ -14537,3 +14537,70 @@ fn a_picker_opened_below_its_first_window_paints_the_fill_at_once() {
         settle(&window);
     }
 }
+
+fn pin_profile() -> zaparoo_core::profile_types::Profile {
+    zaparoo_core::profile_types::Profile {
+        profile_id: "p1".into(),
+        name: "Sam".into(),
+        role: "member".into(),
+        ..Default::default()
+    }
+}
+
+/// Accept on the PIN pad pushes the pad key, never the Settings row under
+/// the panel.
+#[test]
+fn pin_accept_presses_the_pad_key_not_the_row_behind() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let ctx = std::sync::Arc::new(ctx);
+    app.global::<Shell>().set_active_screen(Screen::Settings);
+    crate::pin::set_pin(&ctx, &app, &pin_profile());
+    settle(&window);
+    let view = app.global::<crate::PinView>();
+    let focus = view.get_focus();
+    let target = crate::press_feedback::current(&app);
+    assert_eq!(target.as_ref().map(|t| t.owner), Some(PressOwner::Pin));
+    assert_eq!(target.map(|t| t.index), Some(focus));
+    let settings = app.global::<crate::SettingsView>();
+    let pulse = settings.get_activate_pulse();
+    crate::router::handle_action(&ctx, &app, "accept");
+    settle(&window);
+    assert_eq!(
+        settings.get_activate_pulse(),
+        pulse,
+        "the row behind stays still"
+    );
+    assert_eq!(view.get_digits(), 1, "the focused key typed its digit");
+}
+
+/// A refusal holds the caption line for `MESSAGE_MS`, and an older
+/// refusal's timeout never clears a newer one.
+#[test]
+fn pin_message_clears_after_its_own_timeout() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    let ctx = std::sync::Arc::new(ctx);
+    crate::pin::set_pin(&ctx, &app, &pin_profile());
+    let view = app.global::<crate::PinView>();
+    let ticket = crate::pin::ticket_for_test();
+    crate::pin::pin_saved(&ctx, &app, ticket, Some("first".into()));
+    assert_eq!(view.get_error(), crate::PinError::Failed);
+    advance(zaparoo_app::pin::MESSAGE_MS - 1_000);
+    crate::pin::pin_saved(&ctx, &app, ticket, Some("second".into()));
+    advance(1_500);
+    assert_eq!(
+        view.get_error(),
+        crate::PinError::Failed,
+        "the first timeout left the second"
+    );
+    assert_eq!(view.get_error_text(), "second");
+    advance(zaparoo_app::pin::MESSAGE_MS);
+    assert_eq!(
+        view.get_error(),
+        crate::PinError::None,
+        "the line went back to its hint"
+    );
+}

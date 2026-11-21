@@ -664,6 +664,7 @@ export global SettingsLabels {
         if (id == "clockFormat") {
             if (value == "12h") { return @tr("12-hour"); }
             if (value == "24h") { return @tr("24-hour"); }
+            if (value == "off") { return @tr("Off"); }
             return @tr("Automatic");
         }
         if (id == "region") {

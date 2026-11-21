@@ -170,6 +170,10 @@ const SOURCES: &[(&str, &str)] = &[
         include_str!("../../../resources/images/icons/NavDown.svg"),
     ),
     (
+        "icons/Backspace",
+        include_str!("../../../resources/images/icons/Backspace.svg"),
+    ),
+    (
         "icons/NavLeft",
         include_str!("../../../resources/images/icons/NavLeft.svg"),
     ),
@@ -698,6 +702,10 @@ const PIXEL_ART: &[(&str, &str)] = &[
     (
         "icons/NavDown",
         include_str!("../../../resources/images/pixel/icons/NavDown.txt"),
+    ),
+    (
+        "icons/Backspace",
+        include_str!("../../../resources/images/pixel/icons/Backspace.txt"),
     ),
     (
         "icons/NavLeft",
