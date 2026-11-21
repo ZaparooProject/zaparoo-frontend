@@ -234,6 +234,10 @@ const SOURCES: &[(&str, &str)] = &[
         include_str!("../../../resources/images/icons/ShiftLock.svg"),
     ),
     (
+        "icons/Sparkles",
+        include_str!("../../../resources/images/icons/Sparkles.svg"),
+    ),
+    (
         "icons/Stack",
         include_str!("../../../resources/images/icons/Stack.svg"),
     ),

@@ -210,7 +210,7 @@ private `_` recipe. Container builds write to `rust/target/docker/`.
 - Do not open a modal from a modal. A choice made inside a modal is a page of
   that modal's own panel (the setup panel in `ui/setup.slint` swaps between
   its form and its picker page; the context menu hosts its Manage, Write to
-  token, disc, version and alternate-versions pages); only an action-error alert (shown through the decision dialog) may
+  token, disc, version and similar games pages); only an action-error alert (shown through the decision dialog) may
   sit above an open modal. See `docs/style.md` → "Modal depth".
 - Do not add `.git/` rerun-if triggers or `ZAPAROO_BUILD_*` provenance baking
   to `rust/frontend/build.rs`. Provenance lives in the `rust/build-info` leaf
@@ -272,7 +272,7 @@ update rules, in short:
 | `rust/frontend/src/controllers.rs` | Core's controllers and Bluetooth (`device.status`, `device.changed`, `device.bluetooth.*`): the header's controller battery glyphs (one low-battery warning glyph at 240p and on CRT), the Controls page's Controllers row, and the Controllers page it opens (`ui/controllers.slint`: connected cards in fixed slots, a search renewed while the page is open, an append-only found list, the cursor moved only by input) and its Paired controllers page (Forget), pages of the same panel |
 | `rust/frontend/src/core_ui.rs` | Core's UI events (`ui`, `ui.changed`, `ui.respond`): the picker panel, confirmations in the decision dialog, loaders and notices in the header line. See `docs/architecture.md` → "Core UI events" |
 | `rust/frontend/src/decks.rs` | Decks: the Decks screen (games grid in its `decks` mode), the Deck screen (games grid in its `deck` mode), deck menus, Move, covers and the session deck list |
-| `rust/frontend/src/{context_page,alternates,discs,title_versions}.rs` | Context-menu pages: the shared page (Manage and Write to token included), alternate versions, a multi-disc game's discs, a search result's versions |
+| `rust/frontend/src/{context_page,discs,title_versions,similar}.rs` | Context-menu pages: the shared page (Manage and Write to token included), a multi-disc game's discs, a game's versions (`media.versions`, or a search result's title), Similar games (`media.similar`) |
 | `rust/frontend/src/{input,actions,gamepad,keyboard}.rs` | Key path: duplicate guard, swaps, hold-repeat, the text field owner; keyboard bindings; desktop gamepads; the on-screen keyboard's shared state and buttons |
 | `rust/frontend/src/{media_cache,hub_covers,customization}.rs` | Bounded in-memory cover cache, cold-boot cover manifest, user overrides |
 | `rust/frontend/src/background.rs` | The screen background: the user's image or the focused game's art, prepared off the event loop (rules in `zaparoo_app::background`) and published through the `Backdrop` global and to the presenters' page slides |
@@ -296,7 +296,8 @@ update rules, in short:
 ## Screens and routing
 
 The frontend has root screens (Hub, Systems, Favorite systems, Games,
-Favorites, Recents, Top played and its systems, Decks, Deck, Search,
+Favorites, Recents, Top played and its systems, Recommended, Decks,
+Deck, Search,
 Search results, Rename, File browser, Music, Game picker, Settings, About,
 Credits) plus modals. The `.slint` views are
 **pure views**: every key press is forwarded to Rust, `router::dispatch_action`

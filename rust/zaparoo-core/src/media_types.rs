@@ -289,6 +289,133 @@ pub struct MediaSearchResult {
     pub total: i64,
 }
 
+/// `media.versions`: the versions of one media item's game, named by
+/// `mediaId` or by `system` and `path`.
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaVersionsParams {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub media_id: Option<i64>,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub system: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_results: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub include_hidden: Option<bool>,
+}
+
+/// One version of a game: a search result, the reason Core links it, and
+/// whether it is the media the request asked about.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaVersion {
+    #[serde(flatten)]
+    pub media: MediaItem,
+    /// `title` when it shares the requested media's title, `link` when it
+    /// is filed under a linked title.
+    #[serde(default)]
+    pub reason: String,
+    #[serde(default)]
+    pub current: bool,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct MediaVersionsResult {
+    /// The asked-about media included, marked `current`.
+    #[serde(default)]
+    pub versions: Vec<MediaVersion>,
+    /// Versions across every page: the same number `versionCount` reports.
+    #[serde(default)]
+    pub total: u32,
+}
+
+/// `media.similar`: games like one media item, named by `mediaId` or by
+/// `system` and `path`.
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaSimilarParams {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub media_id: Option<i64>,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub system: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_results: Option<u32>,
+}
+
+/// One thing a suggested game shares with the game it was suggested for:
+/// a code such as `series` or `genre`, and the shared tags.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+pub struct SuggestedReason {
+    #[serde(default)]
+    pub code: String,
+    #[serde(default)]
+    pub tags: Vec<TagInfo>,
+}
+
+/// A game Core suggests: a search result, up to three reasons strongest
+/// first, and in a recommended queue the interest that put it there.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SuggestedMedia {
+    #[serde(flatten)]
+    pub media: MediaItem,
+    #[serde(default)]
+    pub reasons: Vec<SuggestedReason>,
+    /// `played`, `favorite`, `liked`, `deck` or `playLater`.
+    #[serde(default)]
+    pub signal: Option<String>,
+    /// The game the item is most like.
+    #[serde(default)]
+    pub seed: Option<MediaItem>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct MediaSimilarResult {
+    #[serde(default)]
+    pub results: Vec<SuggestedMedia>,
+}
+
+/// `media.recommended`: what the active profile may want to play next.
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaRecommendedParams {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_results: Option<u32>,
+    /// `sections` (Core's default) or `queue`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub layout: Option<String>,
+}
+
+/// One section of recommendations. Kinds are `seed`, `playLater`,
+/// `series` and `queue`; more may be added.
+#[derive(Debug, Clone, Deserialize)]
+pub struct RecommendedSection {
+    #[serde(default)]
+    pub kind: String,
+    #[serde(default)]
+    pub items: Vec<SuggestedMedia>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct MediaRecommendedResult {
+    #[serde(default)]
+    pub sections: Vec<RecommendedSection>,
+}
+
+impl MediaRecommendedResult {
+    /// The items of the `queue` section, empty when Core sent none.
+    pub fn queue(&self) -> &[SuggestedMedia] {
+        self.sections
+            .iter()
+            .find(|s| s.kind == "queue")
+            .map_or(&[], |s| s.items.as_slice())
+    }
+}
+
 impl MediaSearchResult {
     pub fn has_next_page(&self) -> bool {
         self.pagination.as_ref().is_some_and(|p| p.has_next_page)
@@ -422,6 +549,11 @@ pub struct BrowseEntry {
     /// others are listed by browsing the entry's `path`.
     #[serde(default)]
     pub multi_disc: bool,
+    /// On `media` entries: how many versions of the game the library holds,
+    /// the entry included. Omitted by older Core, for a system Core has not
+    /// recounted since, and when Core could not work it out in time.
+    #[serde(default)]
+    pub version_count: Option<u32>,
 }
 
 impl Default for BrowseEntry {
@@ -445,6 +577,7 @@ impl Default for BrowseEntry {
             has_cover: true,
             cover_color: None,
             multi_disc: false,
+            version_count: None,
         }
     }
 }
@@ -2107,6 +2240,77 @@ mod tests {
     )]
 
     #[test]
+    fn similar_games_carry_their_reasons() {
+        let result: super::MediaSimilarResult = serde_json::from_value(serde_json::json!({
+            "results": [{
+                "mediaId": 4,
+                "name": "Contra III",
+                "path": "SNES/Contra III.sfc",
+                "zapScript": "",
+                "system": { "id": "SNES", "name": "SNES", "category": "Console" },
+                "reasons": [
+                    { "code": "series", "tags": [{ "type": "series", "tag": "contra" }] },
+                    { "code": "decade" }
+                ]
+            }]
+        }))
+        .unwrap();
+        let game = &result.results[0];
+        assert_eq!(game.media.name, "Contra III");
+        assert_eq!(game.media.media_id, Some(4));
+        assert_eq!(game.reasons[0].code, "series");
+        assert_eq!(game.reasons[0].tags.len(), 1);
+        assert!(game.reasons[1].tags.is_empty());
+        assert!(game.signal.is_none() && game.seed.is_none());
+
+        let params = serde_json::to_value(super::MediaSimilarParams {
+            media_id: Some(4),
+            max_results: Some(20),
+            ..Default::default()
+        })
+        .unwrap();
+        assert_eq!(
+            params,
+            serde_json::json!({ "mediaId": 4, "maxResults": 20 })
+        );
+    }
+
+    #[test]
+    fn recommended_queue_is_the_queue_section() {
+        let result: super::MediaRecommendedResult = serde_json::from_value(serde_json::json!({
+            "sections": [
+                { "kind": "seed", "items": [{ "name": "Other", "path": "a" }] },
+                { "kind": "queue", "items": [{
+                    "name": "Gradius",
+                    "path": "NES/Gradius.nes",
+                    "reasons": [],
+                    "signal": "played",
+                    "seed": { "name": "Contra", "path": "NES/Contra.nes" }
+                }] }
+            ]
+        }))
+        .unwrap();
+        let queue = result.queue();
+        assert_eq!(queue.len(), 1);
+        assert_eq!(queue[0].signal.as_deref(), Some("played"));
+        assert_eq!(
+            queue[0].seed.as_ref().map(|s| s.name.as_str()),
+            Some("Contra")
+        );
+        assert!(super::MediaRecommendedResult::default().queue().is_empty());
+
+        let params = serde_json::to_value(super::MediaRecommendedParams {
+            max_results: Some(30),
+            layout: Some("queue".into()),
+        })
+        .unwrap();
+        assert_eq!(
+            params,
+            serde_json::json!({ "maxResults": 30, "layout": "queue" })
+        );
+    }
+
+    #[test]
     fn online_status_requires_linked() {
         assert!(serde_json::from_value::<super::OnlineStatusResult>(
             serde_json::json!({ "features": [], "featuresCheckedAt": null })
@@ -2124,10 +2328,10 @@ mod tests {
         MediaHistoryParams, MediaHistoryResult, MediaImageParams, MediaImageResult,
         MediaIndexParams, MediaItem, MediaLookupParams, MediaLookupResult, MediaMetaParams,
         MediaMetaResult, MediaMetaUpdateParams, MediaResult, MediaScrapeParams, MediaScrapeScope,
-        MediaSearchParams, MediaSearchResult, ReaderInfo, ReadersResult, ScrapersResult,
-        ScrapingStatusResponse, SettingsResult, SystemDefault, SystemsParams, SystemsResult,
-        TagInfo, TokensHistoryResult, TokensResult, UpdateSettingsParams, VersionResult,
-        MEDIA_IMAGE_DELIVERY_LOCAL_PATH,
+        MediaSearchParams, MediaSearchResult, MediaVersionsParams, MediaVersionsResult, ReaderInfo,
+        ReadersResult, ScrapersResult, ScrapingStatusResponse, SettingsResult, SystemDefault,
+        SystemsParams, SystemsResult, TagInfo, TokensHistoryResult, TokensResult,
+        UpdateSettingsParams, VersionResult, MEDIA_IMAGE_DELIVERY_LOCAL_PATH,
     };
 
     #[test]
@@ -2403,6 +2607,67 @@ mod tests {
             serde_json::from_value(serde_json::json!({ "name": "A", "path": "/a" }))
                 .expect("flat row");
         assert_eq!((flat.title_id, flat.version_count), (None, None));
+    }
+
+    #[test]
+    fn a_browse_entry_carries_its_version_count() {
+        let entry: BrowseEntry = serde_json::from_value(serde_json::json!({
+            "name": "Contra",
+            "path": "/g/NES/Contra (USA).nes",
+            "type": "media",
+            "versionCount": 2,
+        }))
+        .expect("entry");
+        assert_eq!(entry.version_count, Some(2));
+        let older: BrowseEntry =
+            serde_json::from_value(serde_json::json!({ "name": "A", "path": "/a" }))
+                .expect("older entry");
+        assert_eq!(older.version_count, None);
+    }
+
+    #[test]
+    fn media_versions_names_the_media_and_reads_the_list() {
+        let params = MediaVersionsParams {
+            media_id: Some(456),
+            max_results: Some(1),
+            ..MediaVersionsParams::default()
+        };
+        assert_eq!(
+            serde_json::to_value(params).expect("params"),
+            serde_json::json!({ "mediaId": 456, "maxResults": 1 })
+        );
+        let result: MediaVersionsResult = serde_json::from_value(serde_json::json!({
+            "versions": [
+                {
+                    "reason": "title",
+                    "current": true,
+                    "mediaId": 456,
+                    "name": "Contra",
+                    "path": "/g/NES/Contra (USA).nes",
+                    "zapScript": "@NES/Contra (region:us)",
+                    "system": { "id": "NES", "name": "NES", "category": "Console" },
+                    "tags": [{ "tag": "us", "type": "region" }],
+                    "disambiguatingTags": [{ "tag": "us", "type": "region" }],
+                },
+                {
+                    "reason": "link",
+                    "sources": ["gamedatabase-id"],
+                    "mediaId": 457,
+                    "name": "Probotector",
+                    "path": "/g/NES/Probotector (Europe).nes",
+                    "zapScript": "@NES/Probotector",
+                    "tags": [],
+                },
+            ],
+            "total": 2,
+            "pagination": { "hasNextPage": false, "pageSize": 100 },
+        }))
+        .expect("result");
+        assert_eq!(result.total, 2);
+        assert!(result.versions[0].current);
+        assert_eq!(result.versions[1].reason, "link");
+        assert_eq!(result.versions[1].media.name, "Probotector");
+        assert!(!result.versions[1].current);
     }
 
     #[test]

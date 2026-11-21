@@ -2,23 +2,25 @@
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 //
-// "Choose version": a search result stands for one title, launching the
-// version Core picked. Its menu lists every version the search matched as
-// a page of the context menu, by asking Core for the title's versions
-// under the same filters. The rules live in `zaparoo_app::title_versions`.
+// "Choose version": a game's other versions, as a page of the context
+// menu. A grouped search result stands for one title, launching the
+// version Core picked, and lists every version the search matched under
+// the same filters. Any other game lists what `media.versions` reports for
+// its media, releases under another name included. The rules live in
+// `zaparoo_app::title_versions`.
 
 use zaparoo_app::title_versions::{self as rules, Version};
 use zaparoo_core::client::Client;
 use zaparoo_core::endpoints::media_search::SearchArgs;
-use zaparoo_core::media_types::{MediaItem, MediaSearchParams};
+use zaparoo_core::media_types::{MediaItem, MediaSearchParams, MediaVersionsParams};
 
 use crate::context_page::{Page, PageRow};
 use crate::router::Ctx;
 use crate::App;
 
-/// Menu row accepted: list the title's versions, leaving the menu open.
-/// `name` is the game's, for the launch cue; `search` is the search that
-/// counted them.
+/// Menu row accepted on a grouped search result: list the title's
+/// versions, leaving the menu open. `name` is the game's, for the launch
+/// cue; `search` is the search that counted them.
 pub fn begin(ctx: &Ctx, app: &App, title_id: i64, name: &str, search: &SearchArgs) {
     let client = ctx.store.client();
     let params = params(title_id, search);
@@ -26,6 +28,66 @@ pub fn begin(ctx: &Ctx, app: &App, title_id: i64, name: &str, search: &SearchArg
     crate::context_page::begin(ctx, app, Page::Versions, async move {
         list(&client, params, &name).await
     });
+}
+
+/// Menu row accepted on any other game: list the versions Core holds for
+/// its media, leaving the menu open.
+pub fn begin_media(ctx: &Ctx, app: &App, media: MediaVersionsParams, name: &str) {
+    let client = ctx.store.client();
+    let params = MediaVersionsParams {
+        max_results: Some(rules::MAX_VERSIONS),
+        ..media
+    };
+    let name = name.to_string();
+    crate::context_page::begin(ctx, app, Page::Versions, async move {
+        let result = client.media_versions(params).await.map_err(|e| e.message)?;
+        let others: Vec<MediaItem> = result
+            .versions
+            .into_iter()
+            .filter(|version| !version.current)
+            .map(|version| version.media)
+            .collect();
+        Ok(rows(&others, &name))
+    });
+}
+
+/// The media a game row names, for `media.versions`: its id when Core sent
+/// one, else its system and path.
+pub fn media_params(
+    media_id: Option<i64>,
+    system: &str,
+    path: &str,
+    include_hidden: bool,
+) -> MediaVersionsParams {
+    MediaVersionsParams {
+        media_id,
+        system: if media_id.is_some() {
+            String::new()
+        } else {
+            system.to_string()
+        },
+        path: if media_id.is_some() {
+            String::new()
+        } else {
+            path.to_string()
+        },
+        max_results: None,
+        include_hidden: include_hidden.then_some(true),
+    }
+}
+
+/// How many versions Core holds for a game, the game included. `None`
+/// when Core could not say, which reads as none to offer.
+pub async fn count(client: &Client, media: MediaVersionsParams) -> Option<u32> {
+    let params = MediaVersionsParams {
+        max_results: Some(1),
+        ..media
+    };
+    client
+        .media_versions(params)
+        .await
+        .ok()
+        .map(|result| result.total)
 }
 
 /// Core lists the versions matching the search's tags, folder and
@@ -87,6 +149,7 @@ fn rows(items: &[MediaItem], name: &str) -> Vec<PageRow> {
             label,
             name: name.to_string(),
             launch_text,
+            similar: None,
             deck: None,
         })
         .collect()
@@ -128,6 +191,19 @@ mod tests {
                 "includeHidden": true,
                 "maxResults": rules::MAX_VERSIONS,
             })
+        );
+    }
+
+    #[test]
+    fn a_game_is_named_by_its_id_when_core_sent_one() {
+        assert_eq!(
+            serde_json::to_value(media_params(Some(456), "NES", "/g/a.nes", false))
+                .expect("serialise"),
+            serde_json::json!({ "mediaId": 456 })
+        );
+        assert_eq!(
+            serde_json::to_value(media_params(None, "NES", "/g/a.nes", true)).expect("serialise"),
+            serde_json::json!({ "system": "NES", "path": "/g/a.nes", "includeHidden": true })
         );
     }
 

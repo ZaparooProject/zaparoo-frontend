@@ -675,6 +675,7 @@ fn matching_media_rows(path_prefix: &str, systems: &[&str], filters: &[&str]) ->
                 "tags": tags_for(index, file, system),
                 "disambiguatingTags": disambiguating_tags_for(file),
                 "hasCover": true,
+                "versionCount": version_indices(name, system).count(),
             });
             with_cover_color(&mut row, index);
             game_matches(&row, filters).then_some(row)
@@ -1472,6 +1473,170 @@ fn games_for_systems<'a>(systems: &'a [&'a str]) -> impl Iterator<Item = Value> 
             with_cover_color(&mut item, index);
             Some(item)
         })
+}
+
+/// The games that are versions of one title, as `media.versions` sees
+/// them: the same name on the same system.
+fn version_indices<'a>(name: &'a str, system: &'a str) -> impl Iterator<Item = usize> + 'a {
+    ALL_GAMES
+        .iter()
+        .enumerate()
+        .filter(move |(_, (n, _, s))| *n == name && *s == system)
+        .map(|(index, _)| index)
+}
+
+/// `media.versions`: every version of the game named by `mediaId` (its
+/// position in the library, from 1) or `system` and `path`, the game
+/// itself included and marked `current`. A game the library does not
+/// hold is an error, as in Core.
+pub fn media_versions_response(params: &Value) -> Result<Value, String> {
+    let media_id = params.get("mediaId").and_then(Value::as_u64);
+    let system = params.get("system").and_then(Value::as_str).unwrap_or("");
+    let path = params.get("path").and_then(Value::as_str).unwrap_or("");
+    if media_id.is_none() && (system.is_empty() || path.is_empty()) {
+        return Err("invalid params: mediaId or system/path is required".into());
+    }
+    let file = path.rsplit('/').next().unwrap_or_default();
+    let current = match media_id {
+        Some(id) => usize::try_from(id)
+            .ok()
+            .and_then(|id| id.checked_sub(1))
+            .filter(|index| *index < ALL_GAMES.len()),
+        None => ALL_GAMES
+            .iter()
+            .position(|(_, f, s)| *f == file && *s == system),
+    }
+    .ok_or_else(|| "media not found".to_string())?;
+    let (name, _, system) = ALL_GAMES[current];
+    let max = params
+        .get("maxResults")
+        .and_then(Value::as_u64)
+        .unwrap_or(100)
+        .min(100) as usize;
+    let all: Vec<usize> = version_indices(name, system).collect();
+    let versions: Vec<Value> = all
+        .iter()
+        .take(max)
+        .map(|&index| {
+            let (name, file, system) = ALL_GAMES[index];
+            let (system_name, category) = system_meta(system);
+            let mut item = json!({
+                "mediaId": index + 1,
+                "name": name,
+                "path": format!("/mock/games/{system}/{file}"),
+                "relativePath": format!("{system}/{file}"),
+                "zapScript": format!("@{system}/{file}"),
+                "system": { "id": system, "name": system_name, "category": category },
+                "tags": tags_for(index, file, system),
+                "disambiguatingTags": disambiguating_tags_for(file),
+                "hasCover": true,
+                "titleId": title_id(name, system),
+                "reason": "title",
+                "sources": [],
+                "current": index == current,
+            });
+            with_cover_color(&mut item, index);
+            item
+        })
+        .collect();
+    Ok(json!({
+        "versions": versions,
+        "total": all.len(),
+        "pagination": { "hasNextPage": all.len() > max, "pageSize": max },
+    }))
+}
+
+/// A game of `ALL_GAMES` as Core sends a Media object.
+fn media_object(index: usize) -> Value {
+    let (name, file, system) = ALL_GAMES[index];
+    let (system_name, category) = system_meta(system);
+    let mut item = json!({
+        "mediaId": index + 1,
+        "name": name,
+        "path": format!("/mock/games/{system}/{file}"),
+        "relativePath": format!("{system}/{file}"),
+        "zapScript": format!("@{system}/{file}"),
+        "system": { "id": system, "name": system_name, "category": category },
+        "tags": tags_for(index, file, system),
+        "disambiguatingTags": disambiguating_tags_for(file),
+        "hasCover": true,
+        "titleId": title_id(name, system),
+    });
+    with_cover_color(&mut item, index);
+    item
+}
+
+/// Games like the one asked about: the other titles on its system, each
+/// with a reason or two, strongest first. An unknown code is mixed in,
+/// as a newer Core may send one.
+pub fn media_similar_response(params: &Value) -> Result<Value, String> {
+    const CODES: [&str; 5] = ["series", "genre", "developer", "mood", "decade"];
+    let media_id = params.get("mediaId").and_then(Value::as_u64);
+    let system = params.get("system").and_then(Value::as_str).unwrap_or("");
+    let path = params.get("path").and_then(Value::as_str).unwrap_or("");
+    if media_id.is_none() && (system.is_empty() || path.is_empty()) {
+        return Err("invalid params: mediaId or system/path is required".into());
+    }
+    let file = path.rsplit('/').next().unwrap_or_default();
+    let current = match media_id {
+        Some(id) => usize::try_from(id)
+            .ok()
+            .and_then(|id| id.checked_sub(1))
+            .filter(|index| *index < ALL_GAMES.len()),
+        None => ALL_GAMES
+            .iter()
+            .position(|(_, f, s)| *f == file && *s == system),
+    }
+    .ok_or_else(|| "media not found".to_string())?;
+    let (name, _, system) = ALL_GAMES[current];
+    let max = params
+        .get("maxResults")
+        .and_then(Value::as_u64)
+        .unwrap_or(20)
+        .min(50) as usize;
+    let results: Vec<Value> = ALL_GAMES
+        .iter()
+        .enumerate()
+        .filter(|(_, (n, _, s))| *s == system && *n != name)
+        .take(max)
+        .enumerate()
+        .map(|(rank, (index, _))| {
+            let mut item = media_object(index);
+            item["reasons"] = json!([
+                { "code": CODES[rank % CODES.len()] },
+                { "code": "decade" },
+            ]);
+            item
+        })
+        .collect();
+    Ok(json!({ "results": results }))
+}
+
+/// The profile's queue: games across systems, each with the interest
+/// that put it there and the game that interest was in.
+pub fn media_recommended_response(params: &Value) -> Value {
+    const SIGNALS: [&str; 5] = ["played", "favorite", "liked", "deck", "playLater"];
+    let max = params
+        .get("maxResults")
+        .and_then(Value::as_u64)
+        .unwrap_or(30)
+        .min(30) as usize;
+    let items: Vec<Value> = (0..ALL_GAMES.len())
+        .step_by(7)
+        .take(max)
+        .enumerate()
+        .map(|(rank, index)| {
+            let mut item = media_object(index);
+            let signal = SIGNALS[rank % SIGNALS.len()];
+            item["reasons"] = json!([{ "code": "genre" }]);
+            item["signal"] = json!(signal);
+            if signal != "playLater" {
+                item["seed"] = media_object((index + 3) % ALL_GAMES.len());
+            }
+            item
+        })
+        .collect();
+    json!({ "sections": [{ "kind": "queue", "items": items }] })
 }
 
 /// One title per name and system, as Core's grouped search sees it: the

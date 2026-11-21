@@ -832,25 +832,23 @@ fn vocabulary(kind: &str, value: &str) -> Option<Name> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Stop {
     Image,
+    /// Launches the game: offered where the details were opened to choose
+    /// a game rather than to read about the one in hand.
+    Play,
     Manual,
     Description,
     /// A row of the table, by its index there.
     Row(usize),
 }
 
-/// The details' stops in reading order. `searchable` says, for each table
-/// row, whether A on it searches.
-pub fn stops(image: bool, manual: bool, description: bool, searchable: &[bool]) -> Vec<Stop> {
-    let mut stops = Vec::new();
-    if image {
-        stops.push(Stop::Image);
-    }
-    if manual {
-        stops.push(Stop::Manual);
-    }
-    if description {
-        stops.push(Stop::Description);
-    }
+/// The details' stops in reading order: those of the art, Play, Manual
+/// and the description that `shown` lists, then the table rows that
+/// `searchable` says A on searches.
+pub fn stops(shown: &[Stop], searchable: &[bool]) -> Vec<Stop> {
+    let mut stops: Vec<Stop> = [Stop::Image, Stop::Play, Stop::Manual, Stop::Description]
+        .into_iter()
+        .filter(|stop| shown.contains(stop))
+        .collect();
     stops.extend(
         searchable
             .iter()
@@ -889,16 +887,24 @@ mod tests {
     #[test]
     fn stops_run_top_to_bottom_over_what_acts() {
         assert_eq!(
-            stops(true, true, true, &[false, true, false, true]),
+            stops(
+                &[Stop::Description, Stop::Manual, Stop::Play, Stop::Image],
+                &[false, true, false, true]
+            ),
             [
                 Stop::Image,
+                Stop::Play,
                 Stop::Manual,
                 Stop::Description,
                 Stop::Row(1),
                 Stop::Row(3)
             ]
         );
-        assert_eq!(stops(false, false, false, &[false]), []);
+        assert_eq!(stops(&[], &[false]), []);
+        assert_eq!(
+            stops(&[Stop::Manual], &[true]),
+            [Stop::Manual, Stop::Row(0)]
+        );
         assert_eq!(step(0, -1, 4), 0);
         assert_eq!(step(2, 1, 4), 3);
         assert_eq!(step(3, 1, 4), 3);

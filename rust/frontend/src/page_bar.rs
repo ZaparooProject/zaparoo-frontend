@@ -70,7 +70,7 @@ pub(crate) fn games_surface(mode: GamesMode) -> Surface {
         GamesMode::Deck => Surface::Deck,
         GamesMode::Decks => Surface::Decks,
         GamesMode::TopPlayed => Surface::TopPlayed,
-        GamesMode::Recents => Surface::Other,
+        GamesMode::Recents | GamesMode::Recommended => Surface::Other,
     }
 }
 

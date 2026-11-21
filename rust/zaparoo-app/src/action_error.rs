@@ -29,9 +29,9 @@ pub const KINDS: [&str; 30] = [
     "media_cancel",
     "launcher",
     "launcher_save",
-    "alternate_discovery",
     "disc_list",
     "version_list",
+    "similar_list",
     "qr_code",
     "card_write",
     "setting",
@@ -52,7 +52,7 @@ pub const KINDS: [&str; 30] = [
 pub fn closes_context_menu(kind: &str) -> bool {
     matches!(
         kind,
-        "alternate_discovery" | "disc_list" | "version_list" | "deck_list"
+        "disc_list" | "version_list" | "similar_list" | "deck_list"
     )
 }
 
@@ -229,7 +229,7 @@ mod tests {
 
     #[test]
     fn only_a_failed_menu_page_closes_the_context_menu() {
-        for kind in ["alternate_discovery", "disc_list", "version_list"] {
+        for kind in ["disc_list", "version_list", "similar_list"] {
             assert!(closes_context_menu(kind));
             assert!(KINDS.contains(&kind));
         }

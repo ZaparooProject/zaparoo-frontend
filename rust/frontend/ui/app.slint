@@ -8,8 +8,8 @@
 // logic; forward orchestration lives in the router.
 
 import { Theme, Backdrop, GlassCard, Sizing, Motion, Layout } from "theme.slint";
-import { ScreensaverStyle, SaverBouncing, SaverLook, CoreUiKind, MenuRole, UserFlag, RenamePurpose, ContextPage, KeyKind, SearchZone, SearchPane, SearchScope, FileBrowserMode, CreditsPage, MusicPage, MusicControl, PlaybackState, RepeatMode, MusicUnavailable, Screen, GamesMode, SystemsMode, SettingsPage, InspectorState, ContentState, RowKind, ControlKind, DeviceValue, PairFailure, PairSearch, PadFill, HeaderPad, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, StateTokens, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, HeaderLogo, DialogKind, DialogButton, ErrorKind, ManualState, ManualFit, RaLoginStep, RaLoginStatus, LauncherPrefsPage, LauncherPrefsRowKind, PinPage, PinError, CardWriteButton, PickerPane, PickerPurpose } from "state_types.slint";
-export { ScreensaverStyle, SaverBouncing, SaverLook, CoreUiKind, MenuRole, UserFlag, RenamePurpose, ContextPage, KeyKind, SearchZone, SearchPane, SearchScope, FileBrowserMode, CreditsPage, MusicPage, MusicControl, PlaybackState, RepeatMode, MusicUnavailable, Screen, GamesMode, SystemsMode, SettingsPage, InspectorState, ContentState, RowKind, ControlKind, DeviceValue, PairFailure, PairSearch, PadFill, HeaderPad, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, HeaderLogo, DialogKind, DialogButton, ErrorKind, ManualState, ManualFit, RaLoginStep, RaLoginStatus, LauncherPrefsPage, LauncherPrefsRowKind, PinPage, PinError, CardWriteButton, PickerPane, PickerPurpose }
+import { PickSignal, ScreensaverStyle, SaverBouncing, SaverLook, CoreUiKind, MenuRole, UserFlag, RenamePurpose, ContextPage, KeyKind, SearchZone, SearchPane, SearchScope, FileBrowserMode, CreditsPage, MusicPage, MusicControl, PlaybackState, RepeatMode, MusicUnavailable, Screen, GamesMode, SystemsMode, SettingsPage, InspectorState, ContentState, RowKind, ControlKind, DeviceValue, PairFailure, PairSearch, PadFill, HeaderPad, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, StateTokens, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, HeaderLogo, DialogKind, DialogButton, ErrorKind, ManualState, ManualFit, RaLoginStep, RaLoginStatus, LauncherPrefsPage, LauncherPrefsRowKind, PinPage, PinError, CardWriteButton, PickerPane, PickerPurpose } from "state_types.slint";
+export { PickSignal, ScreensaverStyle, SaverBouncing, SaverLook, CoreUiKind, MenuRole, UserFlag, RenamePurpose, ContextPage, KeyKind, SearchZone, SearchPane, SearchScope, FileBrowserMode, CreditsPage, MusicPage, MusicControl, PlaybackState, RepeatMode, MusicUnavailable, Screen, GamesMode, SystemsMode, SettingsPage, InspectorState, ContentState, RowKind, ControlKind, DeviceValue, PairFailure, PairSearch, PadFill, HeaderPad, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, HeaderLogo, DialogKind, DialogButton, ErrorKind, ManualState, ManualFit, RaLoginStep, RaLoginStatus, LauncherPrefsPage, LauncherPrefsRowKind, PinPage, PinError, CardWriteButton, PickerPane, PickerPurpose }
 import { FastScrollRail, GlyphSource, Brand, Buttons, HelpEntry, Status, HeaderBar, StatusLine, ProgressTrack, WaitCue, TopStatusStrip, FooterIndicator, ActiveLabel, HelpBar, SectionHeader, Divider, CheckBox, ScrollCue, ModalShell, QrPlate, StateCue } from "chrome.slint";
 import { GridCell, MarqueeCaption, PressableSurface, Tile, PagedGridView, PageStrip } from "tiles.slint";
 import { ScrollOffset, SelectionCursor, SelectionClip, FocusCursor } from "focus.slint";
@@ -549,7 +549,8 @@ export global GamesView {
         : (self.mode == GamesMode.search ? Screen.search-results
         : (self.mode == GamesMode.deck ? Screen.deck
         : (self.mode == GamesMode.decks ? Screen.decks
-        : (self.mode == GamesMode.top-played ? Screen.top-played : Screen.games)))));
+        : (self.mode == GamesMode.top-played ? Screen.top-played
+        : (self.mode == GamesMode.recommended ? Screen.recommended : Screen.games))))));
     // Games: the system's display name, or the folder's own name below
     // the system root; the Deck screen: the deck's name. The flat lists
     // compose their titles in the view.
@@ -2857,9 +2858,8 @@ component ContextMenu inherits Rectangle {
         root.height - Sizing.help-bar-clearance - root.margin);
     property <length> panel-h: Math.min(root.content-h,
         Math.max(0px, root.usable-bottom - root.margin));
-    // The discovery list can outrun the room the anchor leaves, and until
-    // now nothing said so: the panel just clipped. Same reserved band and
-    // same cue as the pickers.
+    // A page's list can outrun the room the anchor leaves. Same reserved
+    // band and same cue as the pickers.
     property <bool> scrollable: root.content-h > root.panel-h;
     property <length> arrow: GlyphSource.cue-side();
     property <length> arrow-band: root.scrollable ? root.arrow + Sizing.pct-h(0.5) : 0px;
@@ -3074,6 +3074,7 @@ component GamesScreen inherits Rectangle {
     property <string> title: GamesView.mode == GamesMode.favorites ? Labels.list-title(Shell.active-list)
         : GamesView.mode == GamesMode.decks ? @tr("Decks")
         : GamesView.mode == GamesMode.top-played ? @tr("Top played")
+        : GamesView.mode == GamesMode.recommended ? @tr("Recommended")
         : (GamesView.mode == GamesMode.deck ? GamesView.title
         : (GamesView.mode == GamesMode.recents ? @tr("Recently played")
         : (GamesView.mode == GamesMode.search && GamesView.display-title() == "" ? @tr("Search") : GamesView.display-title())));
@@ -3358,6 +3359,7 @@ component GamesScreen inherits Rectangle {
         empty-text: GamesView.mode == GamesMode.favorites ? Labels.list-empty(Shell.active-list)
             : GamesView.mode == GamesMode.deck ? @tr("This deck is empty")
             : GamesView.mode == GamesMode.decks ? @tr("No decks yet")
+            : GamesView.mode == GamesMode.recommended ? @tr("Nothing to recommend yet")
             : (GamesView.mode == GamesMode.recents || GamesView.mode == GamesMode.top-played ? @tr("Nothing played yet")
             : (GamesView.mode == GamesMode.search ? @tr("No matches")
             : (GamesView.filter-text != "" ? @tr("No games match these tags") : @tr("No games in this system"))));
@@ -3365,6 +3367,7 @@ component GamesScreen inherits Rectangle {
             : GamesView.mode == GamesMode.deck ? @tr("Loading deck…")
             : GamesView.mode == GamesMode.decks ? @tr("Loading decks…")
             : GamesView.mode == GamesMode.top-played ? @tr("Loading top played…")
+            : GamesView.mode == GamesMode.recommended ? @tr("Loading recommended…")
             : (GamesView.mode == GamesMode.recents ? @tr("Loading recently played…")
             : (GamesView.mode == GamesMode.search ? @tr("Searching…") : @tr("Loading games…")));
         error-detail: GamesView.error;
@@ -3538,7 +3541,7 @@ component RouteScreen inherits Rectangle {
     if root.screen-token == Screen.games || root.screen-token == Screen.favorites
         || root.screen-token == Screen.recents || root.screen-token == Screen.search-results
         || root.screen-token == Screen.deck || root.screen-token == Screen.decks
-        || root.screen-token == Screen.top-played: GamesScreen {
+        || root.screen-token == Screen.top-played || root.screen-token == Screen.recommended: GamesScreen {
         gated: root.gated;
     }
 }
@@ -3588,6 +3591,7 @@ export component App inherits Window {
         if (Shell.active-screen == Screen.decks) { return @tr("Decks"); }
         if (Shell.active-screen == Screen.deck) { return GamesView.title; }
         if (Shell.active-screen == Screen.top-played) { return @tr("Top played"); }
+        if (Shell.active-screen == Screen.recommended) { return @tr("Recommended"); }
         if (Shell.active-screen == Screen.top-played-systems) { return @tr("Top played"); }
         if (Shell.active-screen == Screen.search) { return SearchView.title(); }
         if (Shell.active-screen == Screen.rename) {
@@ -3649,10 +3653,12 @@ export component App inherits Window {
         // stop is -1 then, so the comparisons below would all match.
         if (GameInfoView.focus < 0) { return ""; }
         if (GameInfoView.focus == GameInfoView.image-stop) { return @tr("View"); }
+        if (GameInfoView.focus == GameInfoView.play-stop) { return @tr("Play"); }
         if (GameInfoView.focus == GameInfoView.manual-stop) { return @tr("Open"); }
         if (GameInfoView.focus == GameInfoView.description-stop) { return ""; }
         if (GameInfoView.focus >= 0 && GameInfoView.focus > GameInfoView.description-stop
-            && GameInfoView.focus > GameInfoView.manual-stop && GameInfoView.focus > GameInfoView.image-stop) {
+            && GameInfoView.focus > GameInfoView.manual-stop && GameInfoView.focus > GameInfoView.play-stop
+            && GameInfoView.focus > GameInfoView.image-stop) {
             return @tr("Search");
         }
         return "";

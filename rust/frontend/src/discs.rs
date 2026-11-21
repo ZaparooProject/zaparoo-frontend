@@ -73,6 +73,7 @@ fn rows(entries: &[BrowseEntry], name: &str) -> Vec<PageRow> {
                 label,
                 name: name.to_string(),
                 launch_text,
+                similar: None,
                 deck: None,
             })
         })

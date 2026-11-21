@@ -47,9 +47,10 @@ rust/frontend/  [frontend library and binary; Slint UI]
   ├── src/{game_info,media_setup,log_upload,launchers,card_write}.rs
   │                        modal drivers
   ├── src/context_page.rs : a page of the context menu: Manage and Write to
-  │                        token from the menu's own rows, and the three
-  │                        Core is asked for, alternates.rs, discs.rs and
-  │                        title_versions.rs
+  │                        token from the menu's own rows, and the ones
+  │                        Core is asked for: discs.rs,
+  │                        title_versions.rs, similar.rs and
+  │                        add_to_deck.rs
   ├── src/game_info_data.rs : Game Info's table and image order;
   │                        tags are grouped and named by
   │                        zaparoo_app::game_details and ui/tag_names.slint
@@ -123,7 +124,7 @@ rust/zaparoo-app/  [toolkit-free product rules]
                                     stars, flyby, polygons, snakes, Life,
                                     maze and its raycaster)
   input, status_line, action_error, buttons, clock, covers, customization,
-  launchers, alternate_versions, multi_disc, title_versions, media_setup,
+  launchers, multi_disc, title_versions, suggestions, media_setup,
   log_upload, format
   (no Slint or other toolkit dependency; scripts/check-toolkit-free.sh)
 

@@ -16,7 +16,7 @@ use crate::paged_grid::{self, Fit, Grid, Insets};
 use crate::sizing::{Derived, Inputs, Tier};
 
 /// The built-in action ids in their seed order (`hub_layout.rs`).
-pub const BUILT_IN_ACTIONS: [&str; 10] = [
+pub const BUILT_IN_ACTIONS: [&str; 11] = [
     "resume",
     "favorites",
     "liked",
@@ -24,6 +24,7 @@ pub const BUILT_IN_ACTIONS: [&str; 10] = [
     "decks",
     "recents",
     "topplayed",
+    "recommended",
     "search",
     "update",
     "settings",
@@ -320,35 +321,6 @@ fn resolve_action(live: &Live, resolver: &dyn Resolver, id: &str) -> Option<Entr
             entry.name = name.to_string();
             Some(entry)
         }
-        "favorites" | "liked" | "playlater" | "disliked" => Some(action_entry(
-            resolver,
-            id,
-            list_icon(id),
-            false,
-            Reason::None,
-        )),
-        "decks" => Some(action_entry(resolver, id, DECK_GLYPH, false, Reason::None)),
-        "recents" => Some(action_entry(
-            resolver,
-            id,
-            "icons/History",
-            false,
-            Reason::None,
-        )),
-        "topplayed" => Some(action_entry(
-            resolver,
-            id,
-            "icons/Trophy",
-            false,
-            Reason::None,
-        )),
-        "search" => Some(action_entry(
-            resolver,
-            id,
-            "icons/Search",
-            false,
-            Reason::None,
-        )),
         "update" => {
             if !live.update_enabled {
                 return None;
@@ -365,30 +337,25 @@ fn resolve_action(live: &Live, resolver: &dyn Resolver, id: &str) -> Option<Entr
                 },
             ))
         }
-        "settings" => Some(action_entry(
-            resolver,
-            id,
-            "icons/Tools",
-            false,
-            Reason::None,
-        )),
-        // Offered by "Add item…", never seeded.
-        "music" => Some(action_entry(
-            resolver,
-            id,
-            "icons/Music",
-            false,
-            Reason::None,
-        )),
-        "switchprofile" => Some(action_entry(
-            resolver,
-            id,
-            "icons/Users",
-            false,
-            Reason::None,
-        )),
-        _ => None,
+        _ => plain_icon(id).map(|icon| action_entry(resolver, id, icon, false, Reason::None)),
     }
+}
+
+/// The icon of an action tile that is always available.
+fn plain_icon(id: &str) -> Option<&'static str> {
+    Some(match id {
+        "favorites" | "liked" | "playlater" | "disliked" => list_icon(id),
+        "decks" => DECK_GLYPH,
+        "recents" => "icons/History",
+        "topplayed" => "icons/Trophy",
+        "recommended" => "icons/Sparkles",
+        "search" => "icons/Search",
+        "settings" => "icons/Tools",
+        // Offered by "Add item…", never seeded.
+        "music" => "icons/Music",
+        "switchprofile" => "icons/Users",
+        _ => return None,
+    })
 }
 
 fn resolve_category(live: &Live, resolver: &dyn Resolver, id: &str) -> Entry {
@@ -1356,6 +1323,9 @@ mod tests {
         let top = resolve_action(&l, &Names, "topplayed").expect("top played");
         assert!(!top.disabled);
         assert_eq!(top.fallback_cover_key, "icons/Trophy");
+        let recommended = resolve_action(&l, &Names, "recommended").expect("recommended");
+        assert!(!recommended.disabled);
+        assert_eq!(recommended.fallback_cover_key, "icons/Sparkles");
     }
 
     #[test]
@@ -1363,7 +1333,7 @@ mod tests {
         let confirmed: Vec<String> = Vec::new();
         let mut l = live(&confirmed);
         l.update_enabled = false;
-        let out = entries(&[], true, &l, &Names, 14, 0);
+        let out = entries(&[], true, &l, &Names, 15, 0);
         let keys: Vec<&str> = out.iter().map(|e| e.label_key.as_str()).collect();
         assert_eq!(
             keys,
@@ -1380,6 +1350,7 @@ mod tests {
                 "action:decks",
                 "action:recents",
                 "action:topplayed",
+                "action:recommended",
                 "action:search",
                 "action:settings",
             ]

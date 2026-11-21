@@ -35,8 +35,16 @@ page (`Manage game`, `Manage system`, `Manage category`), the last row of
 Options, and the two ways of writing a token share one `Write to token`
 row. Within Manage the same order holds: configuration (`Change
 launcher`), then organization, then maintenance last. `Choose disc`,
-`Choose version` and `Discover alt. versions` stay on Options, since they
-are what the user opened the menu for. A menu whose organizational actions number two or
+`Choose version` and `Similar games` stay on Options, since they are what
+the user opened the menu for. A game's root rows read `Details`, `Add to
+deck`, `Choose disc` or `Choose version`, `Similar games`, `Write to
+token`, then `Manage game`. `Similar games` is offered on every game Core
+can address and asks Core only when chosen; when Core finds nothing the
+row reads `No similar games found` in place. A similar game's row is
+just its name; A opens its details, which offer `Play` and say under the
+art the strongest thing it shares with this one (`Same series`, `Same
+genre`), or nothing when Core gave no reason the interface words. A
+recommended game's details say why it was picked the same way. A menu whose organizational actions number two or
 three keeps them on Options (a folder, a launch-only system, a built-in
 Hub tile): a Manage page is for overflow, not for uniformity. The rules
 and their tests are `rust/zaparoo-app/src/options_menu.rs`.
@@ -85,6 +93,12 @@ later opens on `Recently added`, since it is a queue, and the others on
 `Default`. Say `Recently added` for when a game joined a list and
 `Recently played` only for play history; never shorten either to
 `Recent`.
+
+`Recommended` is Core's queue of games the active profile may want next,
+in Core's order. It has no Menu: the order is Core's. The focused game's
+info line says why it is there in place of its tags (`Because you played
+{game}`, `Like {game}, a favorite`, `Because you liked {game}`, `Like
+{game} in your decks`, `In Play later`).
 
 `Top played` is the games Core has the most play time for, most first.
 Its Menu has `Group by` only (`System` or `None`, as on Favorites); it

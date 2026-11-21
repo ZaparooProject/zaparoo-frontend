@@ -9,6 +9,7 @@
 import { Theme, Sizing } from "theme.slint";
 import { GlyphSource } from "chrome.slint";
 import { Labels } from "labels.slint";
+import { PickSignal } from "state_types.slint";
 
 export struct InfoLineData {
     name: string,
@@ -28,6 +29,10 @@ export struct InfoLineData {
     hidden: bool,
     // A deck's item count, shown dim where a game's tags go; -1 for none.
     item-count: int,
+    // Why a recommended game is there, shown dim where its tags go, and
+    // the game it is most like.
+    pick: PickSignal,
+    seed: string,
     tags: string,
 }
 
@@ -36,6 +41,7 @@ export global InfoLabels {
     // game's tags.
     public pure function trailing(info: InfoLineData) -> string {
         if (info.item-count >= 0) { return @tr("{n} item" | "{n} items" % info.item-count); }
+        if (info.pick != PickSignal.none) { return Labels.pick(info.pick, info.seed); }
         return info.tags;
     }
     public pure function has-facts(info: InfoLineData) -> bool {

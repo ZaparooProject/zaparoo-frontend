@@ -67,6 +67,7 @@ fn focused_game(ctx: &Ctx, app: &App) -> Option<PickedGame> {
         | crate::Screen::Recents
         | crate::Screen::SearchResults
         | crate::Screen::TopPlayed
+        | crate::Screen::Recommended
         | crate::Screen::Deck => PickedGame::from_row(shared.games.current()?),
         _ => None,
     }

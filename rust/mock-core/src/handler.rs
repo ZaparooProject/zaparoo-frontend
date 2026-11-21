@@ -80,6 +80,9 @@ pub fn dispatch(text: &str, notifier: &Notifier) -> String {
         "media.browse" => Some(Ok(fixtures::media_browse_response(&req.params))),
         "media.active" => Some(Ok(media_state::primary_active())),
         "media.browse.index" => Some(Ok(fixtures::media_browse_index_response(&req.params))),
+        "media.versions" => Some(fixtures::media_versions_response(&req.params)),
+        "media.similar" => Some(fixtures::media_similar_response(&req.params)),
+        "media.recommended" => Some(Ok(fixtures::media_recommended_response(&req.params))),
         "media.lookup" => Some(Ok(fixtures::media_lookup_response(&req.params))),
         "media.meta" => Some(Ok(fixtures::media_meta_response(&req.params))),
         "media.meta.update" => Some(fixtures::media_meta_update_response(&req.params)),
@@ -247,6 +250,59 @@ mod tests {
             .filter_map(|system| system["mediaCount"].as_u64())
             .sum::<u64>();
         assert_eq!(total, 20);
+    }
+
+    #[test]
+    fn media_versions_lists_a_title_with_the_asked_game_current() {
+        let req = r#"{"jsonrpc":"2.0","id":"1","method":"media.versions","params":{"system":"MAME","path":"/mock/games/MAME/pang_u.zip"}}"#;
+        let resp = parse(&dispatch(req));
+        let versions = resp["result"]["versions"].as_array().expect("array");
+        assert_eq!(resp["result"]["total"], 2);
+        assert_eq!(versions.len(), 2);
+        assert!(versions
+            .iter()
+            .all(|version| version["name"] == "Pang" && version["reason"] == "title"));
+        let current: Vec<&Value> = versions
+            .iter()
+            .filter(|version| version["current"] == true)
+            .collect();
+        assert_eq!(current.len(), 1);
+        assert_eq!(current[0]["path"], "/mock/games/MAME/pang_u.zip");
+
+        let req = r#"{"jsonrpc":"2.0","id":"1","method":"media.versions","params":{"mediaId":1,"maxResults":1}}"#;
+        let resp = parse(&dispatch(req));
+        assert_eq!(resp["result"]["total"], 1);
+        assert_eq!(resp["result"]["versions"][0]["current"], true);
+
+        let req = r#"{"jsonrpc":"2.0","id":"1","method":"media.versions","params":{"system":"NES","path":"/nope.nes"}}"#;
+        assert!(parse(&dispatch(req))["error"].is_object());
+    }
+
+    #[test]
+    fn media_similar_lists_other_titles_with_reasons() {
+        let req = r#"{"jsonrpc":"2.0","id":"1","method":"media.similar","params":{"mediaId":1,"maxResults":3}}"#;
+        let resp = parse(&dispatch(req));
+        let results = resp["result"]["results"].as_array().expect("array");
+        assert!(!results.is_empty() && results.len() <= 3);
+        assert!(results.iter().all(|game| game["mediaId"] != 1));
+        assert!(results.iter().all(|game| game["reasons"].is_array()));
+
+        let req = r#"{"jsonrpc":"2.0","id":"1","method":"media.similar","params":{}}"#;
+        assert!(parse(&dispatch(req))["error"].is_object());
+    }
+
+    #[test]
+    fn media_recommended_sends_one_queue() {
+        let req = r#"{"jsonrpc":"2.0","id":"1","method":"media.recommended","params":{"layout":"queue","maxResults":5}}"#;
+        let resp = parse(&dispatch(req));
+        let sections = resp["result"]["sections"].as_array().expect("array");
+        assert_eq!(sections.len(), 1);
+        assert_eq!(sections[0]["kind"], "queue");
+        let items = sections[0]["items"].as_array().expect("items");
+        assert_eq!(items.len(), 5);
+        assert_eq!(items[0]["signal"], "played");
+        assert!(items[0]["seed"]["name"].is_string());
+        assert!(items[4]["seed"].is_null());
     }
 
     #[test]

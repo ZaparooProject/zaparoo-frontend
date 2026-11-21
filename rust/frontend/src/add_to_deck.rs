@@ -52,6 +52,7 @@ pub(crate) fn rows(decks: &[Deck]) -> Vec<PageRow> {
         label: String::new(),
         name: String::new(),
         launch_text: String::new(),
+        similar: None,
         deck: Some(DeckChoice::New),
     });
     rows
@@ -64,6 +65,7 @@ fn deck_row(deck: &Deck) -> PageRow {
         label: name.clone(),
         name,
         launch_text: String::new(),
+        similar: None,
         deck: Some(DeckChoice::Deck {
             deck_id: deck.deck_id.clone(),
             item_ids: deck.contains_item_ids.clone().unwrap_or_default(),

@@ -9,6 +9,7 @@
 // fields in one fixed order. See `docs/style.md` -> "Tiles and the info
 // line".
 
+use crate::suggestions::Pick;
 use crate::top_played::PlayTime;
 use crate::user_flags::Flags;
 
@@ -27,7 +28,8 @@ pub enum Field {
     Owner,
     /// Shown although hidden, as an eye-off icon.
     Hidden,
-    /// Tags, dim; a deck's item count takes this place.
+    /// Tags, dim; a deck's item count or a recommended game's reason
+    /// takes this place.
     Tags,
 }
 
@@ -47,6 +49,8 @@ pub struct InfoLine {
     pub hidden: bool,
     /// A deck's item count, shown dim where a game's tags go.
     pub item_count: Option<u32>,
+    /// Why a recommended game is there, shown dim where its tags go.
+    pub pick: Option<Pick>,
     pub tags: String,
 }
 
@@ -80,7 +84,9 @@ impl InfoLine {
             Field::PlayTime => self.play_time.is_some(),
             Field::Owner => !self.owner.is_empty() || self.locked,
             Field::Hidden => self.hidden,
-            Field::Tags => !self.tags.is_empty() || self.item_count.is_some(),
+            Field::Tags => {
+                !self.tags.is_empty() || self.item_count.is_some() || self.pick.is_some()
+            }
         }
     }
 
@@ -129,6 +135,7 @@ mod tests {
             locked: true,
             hidden: true,
             item_count: None,
+            pick: None,
             tags: "USA".into(),
         };
         assert_eq!(line.fields(), ORDER);
@@ -153,6 +160,16 @@ mod tests {
             ..InfoLine::default()
         };
         assert_eq!(line.fields(), [Field::Name, Field::Owner, Field::Tags]);
+    }
+
+    #[test]
+    fn a_recommended_game_shows_why_where_its_tags_go() {
+        let line = InfoLine {
+            name: "Super C".into(),
+            pick: crate::suggestions::pick(Some("played"), Some("Contra")),
+            ..InfoLine::default()
+        };
+        assert_eq!(line.fields(), [Field::Name, Field::Tags]);
     }
 
     #[test]

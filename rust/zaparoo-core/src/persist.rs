@@ -45,6 +45,8 @@ pub struct PersistedState {
     /// The Top played screen and its systems: the same focus, order-free,
     /// as a built-in list keeps (`sort` stays unused).
     pub top_played: UserListState,
+    /// The Recommended screen's focus; Core owns the list.
+    pub recommended: RecentsState,
     pub music: MusicState,
     pub credits: CreditsState,
     /// The Readers, Profiles and System pages' focused row.
@@ -1321,6 +1323,10 @@ mod tests {
                 system_id: "SNES".into(),
                 systems_list_top: Some(1),
             },
+            recommended: RecentsState {
+                selected_path: "/games/nes/contra.nes".into(),
+                list_top: Some(4),
+            },
             music: MusicState {
                 page: "player".into(),
                 control: "play-pause".into(),
@@ -1523,6 +1529,7 @@ resolution = "1920x1080"
                             decks: DecksState::default(),
                             deck: DeckState::default(),
                             top_played: UserListState::default(),
+                            recommended: RecentsState::default(),
                             music: MusicState::default(),
                             credits: CreditsState::default(),
                             settings_page: SettingsPageState::default(),

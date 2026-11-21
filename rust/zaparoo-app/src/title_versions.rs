@@ -2,11 +2,13 @@
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 
-//! One title's versions. A grouped search lists a title once, as the
-//! version Core would launch, with how many versions match; the row's menu
-//! lists them all as a page. Core does the grouping and picks the default;
-//! these rules only word the versions so the page tells them apart. The
-//! Core calls stay in the shell.
+//! A game's versions: regions, revisions and releases under another name.
+//! A grouped search lists a title once, as the version Core would launch,
+//! with how many versions match; any other game row asks Core for the
+//! versions of its media. The row's menu lists them as a page. Core does
+//! the grouping and the counting; these rules pick where the list comes
+//! from and word the versions so the page tells them apart. The Core calls
+//! stay in the shell.
 
 /// Most versions one page lists.
 pub const MAX_VERSIONS: u32 = 100;
@@ -15,6 +17,47 @@ pub const MAX_VERSIONS: u32 = 100;
 /// offers them. Core counts them and names the title the page asks for.
 pub fn has_versions(title_id: Option<i64>, version_count: u32) -> bool {
     title_id.is_some() && version_count > 1
+}
+
+/// Where a game's Choose version page gets its list, if it has one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Source {
+    /// Core reported no other versions, or the row cannot name its media.
+    None,
+    /// A grouped search result: the title's versions under the search's
+    /// filters, as the result counted them.
+    Title(i64),
+    /// Any other game: `media.versions` for the row's media.
+    Media,
+    /// Core sent no count with the row: ask it before the menu opens.
+    Unknown,
+}
+
+/// Where a game row's versions come from. `version_count` is the count
+/// Core sent with the row, the game included; `addressable` says the row
+/// names its media by id or by system and path. A multi-disc folder lists
+/// its discs instead.
+pub fn source(
+    title_id: Option<i64>,
+    version_count: Option<u32>,
+    addressable: bool,
+    multi_disc: bool,
+) -> Source {
+    if let (Some(title_id), Some(count)) = (title_id, version_count) {
+        return if count > 1 {
+            Source::Title(title_id)
+        } else {
+            Source::None
+        };
+    }
+    if !addressable || multi_disc {
+        return Source::None;
+    }
+    match version_count {
+        Some(count) if count > 1 => Source::Media,
+        Some(_) => Source::None,
+        None => Source::Unknown,
+    }
 }
 
 /// One version as Core listed it.
@@ -166,6 +209,25 @@ mod tests {
         assert!(!has_versions(Some(3), 1));
         assert!(!has_versions(Some(3), 0));
         assert!(!has_versions(None, 4), "older Core sends no title");
+    }
+
+    #[test]
+    fn a_grouped_result_lists_its_title_and_other_rows_their_media() {
+        assert_eq!(source(Some(3), Some(2), true, false), Source::Title(3));
+        assert_eq!(source(Some(3), Some(1), true, false), Source::None);
+        assert_eq!(source(None, Some(2), true, false), Source::Media);
+        assert_eq!(source(None, Some(1), true, false), Source::None);
+        assert_eq!(source(None, Some(0), true, false), Source::None);
+        // A flat search result names its title but carries no count.
+        assert_eq!(source(Some(3), None, true, false), Source::Unknown);
+        assert_eq!(source(None, None, true, false), Source::Unknown);
+    }
+
+    #[test]
+    fn a_row_core_cannot_look_up_has_no_versions() {
+        assert_eq!(source(None, None, false, false), Source::None);
+        assert_eq!(source(None, Some(4), false, false), Source::None);
+        assert_eq!(source(None, None, true, true), Source::None);
     }
 
     #[test]

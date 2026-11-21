@@ -7,7 +7,7 @@
 // either part of the menu itself (Manage, Write to token: the rows are
 // already known) or a list Core has to be asked for, in which case the menu
 // stays open while Core answers and what the page lists is its own module's
-// business (`alternates`, `discs`, `title_versions`, `add_to_deck`).
+// business (`discs`, `title_versions`, `similar`, `add_to_deck`).
 
 use std::future::Future;
 
@@ -21,9 +21,10 @@ use crate::App;
 /// The pages a context menu can turn to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Page {
-    Alternates,
     Discs,
     Versions,
+    /// Games Core finds like this one.
+    Similar,
     /// The decks a game can be added to or removed from.
     AddToDeck,
     /// A page of the menu's own rows.
@@ -34,9 +35,9 @@ impl Page {
     /// The menu row that opens the page.
     pub fn menu_id(self) -> &'static str {
         match self {
-            Self::Alternates => "discover",
             Self::Discs => "choose_disc",
             Self::Versions => "choose_version",
+            Self::Similar => "similar_games",
             Self::AddToDeck => "add_to_deck",
             Self::Menu(page) => page.menu_id(),
         }
@@ -45,9 +46,9 @@ impl Page {
     /// The row's label while Core is being asked.
     fn waiting_key(self) -> &'static str {
         match self {
-            Self::Alternates => "discover:searching",
             Self::Discs => "choose_disc:loading",
             Self::Versions => "choose_version:loading",
+            Self::Similar => "similar_games:loading",
             Self::AddToDeck => "add_to_deck:loading",
             Self::Menu(_) => "",
         }
@@ -56,9 +57,9 @@ impl Page {
     /// The row's label when Core had nothing to list.
     fn empty_key(self) -> &'static str {
         match self {
-            Self::Alternates => "discover:none",
             Self::Discs => "choose_disc:none",
             Self::Versions => "choose_version:none",
+            Self::Similar => "similar_games:none",
             // Never empty: New deck is always there.
             Self::AddToDeck | Self::Menu(_) => "",
         }
@@ -66,9 +67,9 @@ impl Page {
 
     fn error_kind(self) -> &'static str {
         match self {
-            Self::Alternates => "alternate_discovery",
             Self::Discs => "disc_list",
             Self::Versions => "version_list",
+            Self::Similar => "similar_list",
             Self::AddToDeck => "deck_list",
             Self::Menu(_) => "",
         }
@@ -77,9 +78,9 @@ impl Page {
     /// What the view titles the page with.
     fn view(self) -> crate::ContextPage {
         match self {
-            Self::Alternates => crate::ContextPage::Alternates,
             Self::Discs => crate::ContextPage::Discs,
             Self::Versions => crate::ContextPage::Versions,
+            Self::Similar => crate::ContextPage::Similar,
             Self::AddToDeck => crate::ContextPage::AddToDeck,
             Self::Menu(MenuPage::WriteToken) => crate::ContextPage::WriteToken,
             Self::Menu(MenuPage::ManageGame) => crate::ContextPage::ManageGame,
@@ -97,7 +98,7 @@ impl Page {
 }
 
 /// One row of a page: what to show, and what to run.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct PageRow {
     /// A `Labels.menu` key that words `label`, or empty when `label` is
     /// the row's own text.
@@ -106,6 +107,8 @@ pub struct PageRow {
     /// The name the launch cue shows.
     pub name: String,
     pub launch_text: String,
+    /// On the Similar games page, the game the row opens Game Info for.
+    pub similar: Option<Box<crate::similar::SimilarGame>>,
     /// On the Add to deck page, the deck the row toggles the game in, or
     /// New deck. `None` on a page whose rows launch.
     pub deck: Option<DeckChoice>,
@@ -173,14 +176,9 @@ impl PageModel {
 
 /// Whether the menu row `id` opens a page Core has to be asked for.
 pub fn asks_core(id: &str) -> bool {
-    [
-        Page::Alternates,
-        Page::Discs,
-        Page::Versions,
-        Page::AddToDeck,
-    ]
-    .iter()
-    .any(|page| id == page.menu_id())
+    [Page::Discs, Page::Versions, Page::Similar, Page::AddToDeck]
+        .iter()
+        .any(|page| id == page.menu_id())
 }
 
 fn row_id(index: usize) -> String {
