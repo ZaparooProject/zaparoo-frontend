@@ -59,7 +59,8 @@ tokens!(ErrorKind {
     MediaCancel => "media_cancel", Launcher => "launcher", LauncherSave => "launcher_save",
     DiscList => "disc_list", VersionList => "version_list", SimilarList => "similar_list",
     QrCode => "qr_code", CardWrite => "card_write", Setting => "setting",
-    Pairing => "pairing", Online => "online", Backup => "backup", ConfigFile => "config_file",
+    Pairing => "pairing", Online => "online", Backup => "backup", LocalBackup => "local_backup",
+    ConfigFile => "config_file",
     ImagePicker => "image_picker", Music => "music", Bluetooth => "bluetooth",
     Mapping => "mapping",
 });

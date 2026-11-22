@@ -146,6 +146,18 @@ impl Activity {
             self
         }
     }
+
+    /// The pace once a `settings.backup.status` read lands. `None` is a
+    /// read that failed. A `backup.state` that arrived while the read was
+    /// in flight is newer than it, so it stands: a read taken before an
+    /// end must not bring the operation back.
+    #[must_use]
+    pub fn after_read(self, active_operation: Option<&str>, event_since: bool) -> Self {
+        match active_operation {
+            Some(operation) if !event_since => self.seeded(operation),
+            _ => self,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -197,5 +209,20 @@ mod tests {
         assert_eq!(Activity::Paused.seeded(""), Activity::Idle);
         assert!(!Activity::Idle.is_running());
         assert!(Activity::Slowed.is_running());
+    }
+
+    #[test]
+    fn an_event_newer_than_the_status_read_wins() {
+        assert_eq!(
+            Activity::Idle.after_read(Some("remote-upload"), false),
+            Activity::Running
+        );
+        assert_eq!(
+            Activity::Idle.after_read(Some("remote-upload"), true),
+            Activity::Idle,
+            "the operation ended while the read was in flight"
+        );
+        assert_eq!(Activity::Slowed.after_read(Some(""), false), Activity::Idle);
+        assert_eq!(Activity::Paused.after_read(None, false), Activity::Paused);
     }
 }

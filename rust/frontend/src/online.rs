@@ -53,6 +53,13 @@ pub struct Model {
     /// Whether a backup or restore runs in Core, and at what pace. Seeded
     /// from `activeOperation`, kept current by `backup.state`.
     pub activity: Activity,
+    /// Counts `backup.state` events, so a status read can tell whether one
+    /// arrived while it was in flight.
+    pub activity_events: u64,
+    /// An Auto Backup change is waiting for Core's answer. The row takes
+    /// no other flip until it lands, so a failure can put back exactly the
+    /// value it replaced.
+    pub auto_backup_pending: bool,
 }
 
 /// Core's `backup.state` notification: the pace of the running backup or
@@ -100,11 +107,12 @@ fn seconds_until(expires_at: &str) -> i64 {
 
 /// Ask Core for the account and consent state, then redraw the rows.
 pub fn refresh(ctx: &Ctx, app: &App) {
+    let events = lock(&ctx.shared).online.activity_events;
     let client = ctx.store.client();
     let ctx = ctx.clone();
     let weak = app.as_weak();
     ctx.handle.clone().spawn(async move {
-        let (mut model, active_operation) = match client.settings().await {
+        let (model, active_operation) = match client.settings().await {
             Ok(settings) => {
                 // Account identity and Warp come from the backup status
                 // call's remote side, the same as Core's own TUI reads
@@ -158,6 +166,8 @@ pub fn refresh(ctx: &Ctx, app: &App) {
                         protection,
                         last_attempt,
                         activity: Activity::Idle,
+                        activity_events: 0,
+                        auto_backup_pending: false,
                         features: OnlineFeatures {
                             remote_control: settings.remote_control_enabled.unwrap_or(false),
                             play_history: settings.playtime_sync_enabled.unwrap_or(false),
@@ -192,26 +202,56 @@ pub fn refresh(ctx: &Ctx, app: &App) {
                 )
             });
         let _ = weak.upgrade_in_event_loop(move |app| {
-            crate::settings::keep_seat(&ctx, &app, || {
-                let mut shared = lock(&ctx.shared);
-                // The status says whether something runs; the pace a
-                // `backup.state` already reported stands. No status answer
-                // leaves the activity as it was.
-                model.activity = match active_operation {
-                    Some(operation) => shared.online.activity.seeded(&operation),
-                    None => shared.online.activity,
-                };
-                shared.online = model;
-                if let Some(branding) = branding {
-                    shared.branding = branding;
-                }
-            });
-            crate::online_list::publish_activity(&ctx, &app);
-            crate::settings::enforce_branding(&ctx, &app);
-            crate::settings::reseat(&ctx, &app);
-            crate::settings::refresh(&ctx, &app);
+            let read = Read {
+                model,
+                active_operation,
+                branding,
+                events,
+            };
+            publish(&ctx, &app, read);
         });
     });
+}
+
+/// What one `refresh` read from Core.
+struct Read {
+    model: Model,
+    /// `activeOperation`, or `None` when the status read failed.
+    active_operation: Option<String>,
+    branding: Option<zaparoo_app::branding::Entitlement>,
+    /// `Model::activity_events` when the read began.
+    events: u64,
+}
+
+/// Put a refresh's read in place and redraw what shows it.
+fn publish(ctx: &Ctx, app: &App, read: Read) {
+    let Read {
+        mut model,
+        active_operation,
+        branding,
+        events,
+    } = read;
+    crate::settings::keep_seat(ctx, app, || {
+        let mut shared = lock(&ctx.shared);
+        // The status says whether something runs; the pace a
+        // `backup.state` already reported stands, and so does one that
+        // arrived after this read began.
+        let event_since = shared.online.activity_events != events;
+        model.activity = shared
+            .online
+            .activity
+            .after_read(active_operation.as_deref(), event_since);
+        model.activity_events = shared.online.activity_events;
+        model.auto_backup_pending = shared.online.auto_backup_pending;
+        shared.online = model;
+        if let Some(branding) = branding {
+            shared.branding = branding;
+        }
+    });
+    crate::online_list::publish_activity(ctx, app);
+    crate::settings::enforce_branding(ctx, app);
+    crate::settings::reseat(ctx, app);
+    crate::settings::refresh(ctx, app);
 }
 
 /// "linked" or "unlinked": the view adds the device name itself.
@@ -478,11 +518,12 @@ pub fn toggle_auto_backup(ctx: &Ctx, app: &App) {
         let Some(current) = shared
             .online
             .auto_backup
-            .filter(|_| shared.online.available)
+            .filter(|_| shared.online.available && !shared.online.auto_backup_pending)
         else {
             return;
         };
         shared.online.auto_backup = Some(!current);
+        shared.online.auto_backup_pending = true;
         !current
     };
     crate::settings::refresh(ctx, app);
@@ -496,21 +537,22 @@ pub fn toggle_auto_backup(ctx: &Ctx, app: &App) {
                 ..Default::default()
             })
             .await;
-        if let Err(error) = result {
+        if let Err(error) = &result {
             tracing::warn!("changing Auto Backup failed: {}", error.message);
-            let _ = weak.upgrade_in_event_loop(move |app| {
-                {
-                    // Only while the row still shows this request's value:
-                    // a later flip that Core accepted must stand.
-                    let mut shared = lock(&ctx.shared);
-                    if shared.online.auto_backup == Some(next) {
-                        shared.online.auto_backup = Some(!next);
-                    }
+        }
+        let _ = weak.upgrade_in_event_loop(move |app| {
+            {
+                let mut shared = lock(&ctx.shared);
+                shared.online.auto_backup_pending = false;
+                if result.is_err() {
+                    shared.online.auto_backup = Some(!next);
                 }
+            }
+            if result.is_err() {
                 crate::settings::refresh(&ctx, &app);
                 crate::router::report_action_error(&ctx, &app, "online", "");
-            });
-        }
+            }
+        });
     });
 }
 
@@ -774,7 +816,11 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
 /// activity row and the list panel's working status follow it; an end
 /// re-reads the status, which carries the outcome.
 fn observe_backup_state(ctx: &Ctx, app: &App, activity: Activity) {
-    crate::settings::keep_seat(ctx, app, || lock(&ctx.shared).online.activity = activity);
+    crate::settings::keep_seat(ctx, app, || {
+        let mut shared = lock(&ctx.shared);
+        shared.online.activity = activity;
+        shared.online.activity_events = shared.online.activity_events.wrapping_add(1);
+    });
     crate::online_list::publish_activity(ctx, app);
     crate::settings::refresh(ctx, app);
     if !activity.is_running() {

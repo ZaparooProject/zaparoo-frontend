@@ -449,7 +449,7 @@ pub fn delete_confirmed(ctx: &Ctx, app: &App) {
                 Ok(()) => back_to_local(&ctx, &app),
                 Err(error) => {
                     tracing::warn!("deleting a local backup failed: {}", error.message);
-                    crate::router::report_action_error(&ctx, &app, "backup", "");
+                    crate::router::report_action_error(&ctx, &app, "local_backup", "");
                     lock(&ctx.shared).online_list.status = Status::Ready;
                     render(&ctx, &app);
                 }

@@ -2389,13 +2389,17 @@ component OnlineListModal inherits ModalShell {
     property <bool> has-note: Overlays.online-list-note != "";
 
     // Why the list could not load, in the user's terms: two causes they
-    // can fix themselves, and the network for anything else.
+    // can fix themselves, and Core or the network for anything else.
     pure function failure-text() -> string {
         if (Overlays.online-list-failure == OnlineListFailure.unlinked) {
             return @tr("This device is not linked. Link your Zaparoo Online account, then try again.");
         }
         if (Overlays.online-list-failure == OnlineListFailure.needs-warp) {
             return @tr("Cloud backup needs an active Zaparoo Warp subscription.");
+        }
+        // Local backups never leave this device: the network is not why.
+        if (root.local || root.details) {
+            return @tr("Could not load this. Check Zaparoo Core and try again.");
         }
         return @tr("Could not load this. Check the network connection and try again.");
     }
